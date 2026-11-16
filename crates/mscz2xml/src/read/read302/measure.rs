@@ -249,14 +249,20 @@ fn read_clef(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
         clef.transposed = clef.concert;
     }
 
-    // Avant 4.1, l'en-tête de mesure est deviné : une clef au début de la
-    // mesure qui ne suit aucune armure ni métrique est une clef d'en-tête.
+    // Avant 4.1, l'en-tête de mesure est deviné (`readVoice`) : au début de la
+    // mesure, la première clef d'une voix est une clef d'en-tête même si une
+    // autre portée a déjà posé l'armure ou la métrique ; ensuite, seule une
+    // clef qui ne suit aucune armure ni métrique en est une.
     let measure = &reader.score.measures[ctx.measure];
-    let header = ctx.tick == measure.start_tick
-        && !measure.segments.iter().any(|segment| {
-            segment.tick == measure.start_tick
-                && (segment.kind.is_key_sig_type() || segment.kind.is_time_sig_type())
-        });
+    let voice_has_segment = measure
+        .segments
+        .iter()
+        .any(|segment| segment.tick == measure.start_tick && segment.element(ctx.track).is_some());
+    let has_key_or_time = measure.segments.iter().any(|segment| {
+        segment.tick == measure.start_tick
+            && (segment.kind.is_key_sig_type() || segment.kind.is_time_sig_type())
+    });
+    let header = ctx.tick == measure.start_tick && (!voice_has_segment || !has_key_or_time);
     let kind = if header {
         SegmentType::HeaderClef
     } else {

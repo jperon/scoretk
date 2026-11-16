@@ -29,6 +29,12 @@ pub struct Instrument {
     pub transpose: Option<Transpose>,
     /// Numéro de programme MIDI (0-127), si connu.
     pub midi_program: Option<u8>,
+    /// Canal MIDI assigné au premier canal de l'instrument (`<midiChannel>`,
+    /// base zéro), tel que lu dans le fichier.
+    ///
+    /// Absent quand le fichier ne fixe pas de canal ; MuseScore attribue alors
+    /// un canal libre dans l'ordre des instruments (`rebuildMidiMapping`).
+    pub midi_channel: Option<u8>,
     /// Volume du canal MIDI (`Channel::controller` 7), 0-127.
     ///
     /// Absent quand le fichier ne règle pas le contrôleur 7 ; MuseScore retient
@@ -55,6 +61,7 @@ impl Instrument {
             short_name,
             transpose: None,
             midi_program: None,
+            midi_channel: None,
             volume: None,
             pan: None,
         }

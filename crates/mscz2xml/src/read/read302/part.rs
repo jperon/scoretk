@@ -125,15 +125,15 @@ fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         // MuseScore 3.6.x écrivait des identifiants d'instrument erronés.
         attribute_id = fix_instrument_id(&attribute_id, &track_name);
     }
-    // TODO(parité): pour les versions antérieures à 3.02, le C++ dérive
-    // l'identifiant du nom de piste (`Instrument::updateInstrumentId`).
-
     let musicxml_id = node
         .child("instrumentId")
         .map(Node::trimmed_text)
         .unwrap_or_default();
     let mut instrument = Instrument {
         id: if musicxml_id.is_empty() {
+            // L'identifiant d'attribut n'est un identifiant MusicXML que pour
+            // les fichiers qui n'en écrivent pas ; il sert surtout de repli
+            // pour `fixInstrumentId`.
             attribute_id
         } else {
             musicxml_id
@@ -149,6 +149,7 @@ fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         track_name,
         transpose: None,
         midi_program: None,
+        midi_channel: None,
         volume: None,
         pan: None,
     };
@@ -173,6 +174,34 @@ fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
                 break;
             }
         }
+    }
+
+    // Canal MIDI du premier canal sonore (`<Channel><midiChannel>`, base zéro).
+    instrument.midi_channel = node
+        .children_named("Channel")
+        .next()
+        .and_then(|channel| channel.child("midiChannel"))
+        .and_then(Node::int_text)
+        .and_then(|value| u8::try_from(value.clamp(0, 127)).ok());
+
+    // Les partitions antérieures à 3.6 ne stockent ni identifiant MusicXML ni
+    // programme par défaut : `Instrument::updateInstrumentId` les retrouve dans
+    // le catalogue à partir des noms. `read(Instrument*)` complète ensuite un
+    // programme absent, y compris en 3.6.
+    let (recognized_id, recognized_program) = crate::read::instruments::recognize(
+        &instrument.id,
+        [
+            instrument.track_name.as_str(),
+            instrument.long_name.as_str(),
+            instrument.short_name.as_str(),
+        ],
+        instrument.midi_program.map(i16::from),
+    );
+    if reader.version.as_u32() != 302 {
+        instrument.id = recognized_id;
+    }
+    if instrument.midi_program.is_none() {
+        instrument.midi_program = recognized_program.and_then(|value| u8::try_from(value).ok());
     }
 
     // Réglages de canal : contrôleur 7 (volume) et 10 (panoramique).

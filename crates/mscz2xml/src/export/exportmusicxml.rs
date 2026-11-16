@@ -488,9 +488,13 @@ impl<'a> Context<'a> {
                 .tag_with("midi-device", &[("id", &instrument_id), ("port", "1")], "");
             out.xml
                 .start_element("midi-instrument", &[("id", &instrument_id)]);
-            // MuseScore n'écrit le canal que s'il tient dans 1..=16.
-            if number <= 16 {
-                out.xml.tag("midi-channel", &number.to_string());
+            // MuseScore n'écrit le canal que s'il tient dans 1..=16. Le canal
+            // du fichier (`<midiChannel>`, base zéro) prime ; à défaut,
+            // `rebuildMidiMapping` attribue les canaux dans l'ordre des parties.
+            let midi_channel =
+                usize::from(part.instrument.midi_channel.unwrap_or((number - 1) as u8));
+            if midi_channel < 16 {
+                out.xml.tag("midi-channel", &(midi_channel + 1).to_string());
             }
             if let Some(program) = part.instrument.midi_program {
                 if u16::from(program) < 128 {
