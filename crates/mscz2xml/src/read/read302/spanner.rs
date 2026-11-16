@@ -14,7 +14,8 @@ use super::tables;
 use super::xml::Node;
 use super::{Reader, VoiceCtx};
 use crate::model::{
-    Fraction, Measure, NoteId, SegmentType, Spanner, SpannerAnchor, SpannerType, Track, VOICES,
+    Fraction, Measure, NoteId, SegmentType, Spanner, SpannerAnchor, SpannerType, Track, VoltaInfo,
+    VOICES,
 };
 
 /// Position d'une extrémité de connecteur.
@@ -97,7 +98,7 @@ enum Receiver {
 enum Payload {
     Tie,
     Slur,
-    Spanner(SpannerType, Option<String>),
+    Spanner(SpannerType, Option<String>, Option<VoltaInfo>),
 }
 
 /// Moitié de connecteur en attente d'appariement.
@@ -204,14 +205,19 @@ fn read_payload(node: &Node) -> Option<Payload> {
         "HairPin" => Payload::Spanner(
             SpannerType::Hairpin(tables::hairpin_type(node)),
             text_of(node),
+            None,
         ),
-        "Ottava" => Payload::Spanner(SpannerType::Ottava(tables::ottava_type(node)), None),
-        "Pedal" => Payload::Spanner(SpannerType::Pedal, text_of(node)),
-        "Volta" => Payload::Spanner(SpannerType::Volta, text_of(node)),
-        "TextLine" => Payload::Spanner(SpannerType::TextLine, text_of(node)),
-        "Trill" => Payload::Spanner(SpannerType::Trill, None),
-        "Glissando" => Payload::Spanner(SpannerType::Glissando, None),
-        other => Payload::Spanner(SpannerType::Other(other.to_owned()), text_of(node)),
+        "Ottava" => Payload::Spanner(SpannerType::Ottava(tables::ottava_type(node)), None, None),
+        "Pedal" => Payload::Spanner(SpannerType::Pedal, text_of(node), None),
+        "Volta" => Payload::Spanner(
+            SpannerType::Volta,
+            text_of(node),
+            Some(super::repeats::read_volta(node)),
+        ),
+        "TextLine" => Payload::Spanner(SpannerType::TextLine, text_of(node), None),
+        "Trill" => Payload::Spanner(SpannerType::Trill, None, None),
+        "Glissando" => Payload::Spanner(SpannerType::Glissando, None, None),
+        other => Payload::Spanner(SpannerType::Other(other.to_owned()), text_of(node), None),
     };
     Some(payload)
 }
@@ -389,8 +395,10 @@ fn emit(reader: &mut Reader, chain: &[usize]) {
                 reader.score.note_mut(end_note).tie_back = Some(start_note);
             }
         }
-        Some(Payload::Slur) => push_spanner(reader, SpannerType::Slur, None, start, end),
-        Some(Payload::Spanner(kind, text)) => push_spanner(reader, kind, text, start, end),
+        Some(Payload::Slur) => push_spanner(reader, SpannerType::Slur, None, None, start, end),
+        Some(Payload::Spanner(kind, text, volta)) => {
+            push_spanner(reader, kind, text, volta, start, end)
+        }
         None => {}
     }
 }
@@ -399,6 +407,7 @@ fn push_spanner(
     reader: &mut Reader,
     kind: SpannerType,
     text: Option<String>,
+    volta: Option<VoltaInfo>,
     start: Anchor,
     end: Anchor,
 ) {
@@ -408,6 +417,7 @@ fn push_spanner(
         SpannerAnchor::new(end.tick, end.track),
     );
     spanner.text = text;
+    spanner.volta = volta;
     reader.score.add_spanner(spanner);
 }
 

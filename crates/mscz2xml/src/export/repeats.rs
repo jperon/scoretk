@@ -375,9 +375,14 @@ fn direction_jump(out: &mut Out, jump: &Jump) {
         }
     };
 
-    let sound_attributes: Vec<(&str, &str)> = if jump.kind.is_da_capo() {
+    let is_da_capo = jump.kind.is_da_capo()
+        || (jump.kind == crate::model::JumpType::User && jump.jump_to == "start");
+    let is_dal_segno = jump.kind.is_dal_segno()
+        || (jump.kind == crate::model::JumpType::User && jump.jump_to != "start");
+
+    let sound_attributes: Vec<(&str, &str)> = if is_da_capo {
         vec![("dacapo", "yes")]
-    } else if jump.kind.is_dal_segno() {
+    } else if is_dal_segno {
         let target = if jump.text.is_empty() {
             "1"
         } else {
