@@ -65,10 +65,12 @@ pub mod repeat;
 pub mod score;
 pub mod segment;
 pub mod spanner;
+pub mod text;
 pub mod tuplet;
 
 pub use annotation::{
-    Annotation, Dynamic, Harmony, Placement, RehearsalMark, StaffText, SystemText, Tempo,
+    text_style_defaults, Annotation, Dynamic, Harmony, InstrumentChange, Placement, RehearsalFrame,
+    RehearsalMark, StaffText, SystemText, Tempo,
 };
 pub use chord::{
     Articulation, ArticulationAnchor, ArticulationType, BeamMode, Chord, ChordRest, ChordRestKind,
@@ -89,6 +91,10 @@ pub use segment::{
     Segment, SegmentAnnotation, SegmentItem, SegmentType, TimeSig, TimeSigType,
 };
 pub use spanner::{HairpinType, OttavaType, Spanner, SpannerAnchor, SpannerType};
+pub use text::{
+    symbol_character, Credit, CreditJustify, CreditStyle, CreditValign, RichText, TextFormat,
+    TextFragment, DEFAULT_TEXT_FONT, DEFAULT_TEXT_SIZE, MUSICAL_TEXT_FONT,
+};
 pub use tuplet::{Tuplet, TupletNumberType};
 
 #[cfg(test)]

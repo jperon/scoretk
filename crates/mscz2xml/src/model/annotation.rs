@@ -3,12 +3,16 @@
 //! Portage minimal des objets que MuseScore range dans
 //! `Segment::annotations()` (`engraving/dom/segment.h`) : dynamiques
 //! (`engraving/dom/dynamic.h`), textes de portée
-//! (`engraving/dom/stafftext.h`), tempos (`engraving/dom/tempo.h`),
-//! repères de répétition (`engraving/dom/rehearsalmark.h`) et accords
+//! (`engraving/dom/stafftext.h`), textes système
+//! (`engraving/dom/systemtext.h`), tempos (`engraving/dom/tempotext.h`),
+//! repères de répétition (`engraving/dom/rehearsalmark.h`), changements
+//! d'instrument (`engraving/dom/instrumentchange.h`) et accords
 //! (`engraving/dom/harmony.h`).
 //!
 //! Seuls les champs utiles à l'export MusicXML sont conservés ; les variantes
 //! peuvent être enrichies sans changer la structure du modèle.
+
+use super::text::{RichText, TextFormat};
 
 /// Placement vertical d'un élément.
 ///
@@ -22,6 +26,23 @@ pub enum Placement {
     Below,
 }
 
+/// Cadre d'un repère de répétition.
+///
+/// Correspond à `FrameType` dans `engraving/dom/textbase.h`, propriété
+/// `frameType` du style ou du texte (`ExportMusicXml::rehearsal` écrit
+/// `enclosure` d'après elle).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum RehearsalFrame {
+    /// Cadre rectangulaire : valeur par défaut du style MuseScore 4.7, que
+    /// MusicXML rend par l'absence d'attribut (`enclosure="square"` implicite).
+    #[default]
+    Rectangle,
+    /// Cadre circulaire (`enclosure="circle"`).
+    Circle,
+    /// Aucun cadre (`enclosure="none"`).
+    NoFrame,
+}
+
 /// Annotation attachée à un segment.
 ///
 /// Dans MuseScore, ces objets sont dans `Segment::annotations()` et peuvent
@@ -33,6 +54,9 @@ pub enum Annotation {
     Dynamic(Dynamic),
     /// Texte de portée (`StaffText` dans `engraving/dom/stafftext.h`).
     StaffText(StaffText),
+    /// Texte d'expression (`Expression` dans `engraving/dom/expression.h`) :
+    /// même portage que le texte de portée.
+    Expression(StaffText),
     /// Texte système (`SystemText` dans `engraving/dom/systemtext.h`).
     SystemText(SystemText),
     /// Indication de tempo (`TempoText` dans `engraving/dom/tempotext.h`).
@@ -40,6 +64,9 @@ pub enum Annotation {
     /// Repère de répétition (`RehearsalMark` dans
     /// `engraving/dom/rehearsalmark.h`).
     RehearsalMark(RehearsalMark),
+    /// Changement d'instrument (`InstrumentChange` dans
+    /// `engraving/dom/instrumentchange.h`), réduit à son texte affiché.
+    InstrumentChange(InstrumentChange),
     /// Symbole d'accord (`Harmony` dans `engraving/dom/harmony.h`).
     Harmony(Harmony),
     /// Annotation non encore modélisée.
@@ -58,12 +85,26 @@ impl Annotation {
     pub const fn placement(&self) -> Placement {
         match self {
             Self::Dynamic(value) => value.placement,
-            Self::StaffText(value) => value.placement,
+            Self::StaffText(value) | Self::Expression(value) => value.placement,
             Self::SystemText(value) => value.placement,
             Self::Tempo(value) => value.placement,
             Self::RehearsalMark(value) => value.placement,
+            Self::InstrumentChange(value) => value.placement,
             Self::Harmony(value) => value.placement,
             Self::Other { placement, .. } => *placement,
+        }
+    }
+
+    /// Vrai si l'annotation est visible (donc exportée).
+    pub const fn visible(&self) -> bool {
+        match self {
+            Self::Dynamic(value) => value.visible,
+            Self::StaffText(value) | Self::Expression(value) => value.visible,
+            Self::SystemText(value) => value.visible,
+            Self::Tempo(value) => value.visible,
+            Self::RehearsalMark(value) => value.visible,
+            Self::InstrumentChange(value) => value.visible,
+            Self::Harmony(_) | Self::Other { .. } => true,
         }
     }
 
@@ -71,13 +112,35 @@ impl Annotation {
     pub fn text(&self) -> &str {
         match self {
             Self::Dynamic(value) => &value.text,
-            Self::StaffText(value) => &value.text,
-            Self::SystemText(value) => &value.text,
-            Self::Tempo(value) => &value.text,
-            Self::RehearsalMark(value) => &value.text,
+            Self::StaffText(value) | Self::Expression(value) => value.text.plain(),
+            Self::SystemText(value) => value.text.plain(),
+            Self::Tempo(value) => value.text.plain(),
+            Self::RehearsalMark(value) => value.text.plain(),
+            Self::InstrumentChange(value) => value.text.plain(),
             Self::Harmony(value) => &value.text,
             Self::Other { text, .. } => text,
         }
+    }
+}
+
+/// Défauts d'un style de texte MuseScore (`<style>` d'une annotation).
+///
+/// Un style fixe un placement vertical et une police que le fichier `.mscx` ne
+/// répète pas : `<style>expression</style>` suffit, par exemple, à rendre un
+/// `StaffText` italique au-dessous de la portée. Seuls les styles utiles aux
+/// annotations exportées sont décrits ; les autres gardent les valeurs par
+/// défaut (au-dessus, format neutre).
+pub fn text_style_defaults(style: &str) -> (Placement, TextFormat) {
+    match style {
+        // `TextStyleType::EXPRESSION`.
+        "expression" => (
+            Placement::Below,
+            TextFormat {
+                italic: true,
+                ..TextFormat::default()
+            },
+        ),
+        _ => (Placement::Above, TextFormat::default()),
     }
 }
 
@@ -97,7 +160,8 @@ pub struct Dynamic {
     /// Un texte personnalisé est exporté en `<other-dynamics>` même s'il
     /// ressemble à une nuance MusicXML.
     pub custom: bool,
-    /// Vrai si la nuance est visible.
+    /// Vrai si la nuance est visible (les invisibles ne sont pas exportées,
+    /// `ExportMusicXml::canWrite`).
     pub visible: bool,
 }
 
@@ -117,20 +181,23 @@ impl Dynamic {
 /// Texte de portée.
 ///
 /// Correspond à `StaffText` dans `engraving/dom/stafftext.h`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StaffText {
-    /// Texte.
-    pub text: String,
+    /// Texte, avec son balisage (`<b>`, `<font>`…).
+    pub text: RichText,
     /// Placement.
     pub placement: Placement,
+    /// Vrai si le texte est visible.
+    pub visible: bool,
 }
 
 impl StaffText {
     /// Construit un texte au-dessus de la portée.
     pub fn new(text: impl Into<String>) -> Self {
         Self {
-            text: text.into(),
+            text: RichText::new(text),
             placement: Placement::Above,
+            visible: true,
         }
     }
 }
@@ -138,20 +205,23 @@ impl StaffText {
 /// Texte système.
 ///
 /// Correspond à `SystemText` dans `engraving/dom/systemtext.h`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SystemText {
-    /// Texte.
-    pub text: String,
+    /// Texte, avec son balisage.
+    pub text: RichText,
     /// Placement.
     pub placement: Placement,
+    /// Vrai si le texte est visible.
+    pub visible: bool,
 }
 
 impl SystemText {
     /// Construit un texte système au-dessus de la portée.
     pub fn new(text: impl Into<String>) -> Self {
         Self {
-            text: text.into(),
+            text: RichText::new(text),
             placement: Placement::Above,
+            visible: true,
         }
     }
 }
@@ -161,24 +231,28 @@ impl SystemText {
 /// Correspond à `TempoText` dans `engraving/dom/tempotext.h`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tempo {
-    /// Texte affiché (`"Allegro"`, `"♩ = 120"`…).
-    pub text: String,
+    /// Texte affiché (`"Allegro"`, `"♩ = 120"`…), avec son balisage.
+    pub text: RichText,
     /// Battements par seconde, si la valeur est numérique.
     pub beats_per_second: Option<f64>,
     /// Vrai si le tempo suit les modifications de texte.
     pub follow_text: bool,
     /// Placement.
     pub placement: Placement,
+    /// Vrai si le tempo est visible (un tempo invisible n'exporte que son
+    /// `<sound tempo>`).
+    pub visible: bool,
 }
 
 impl Tempo {
     /// Construit un tempo au-dessus de la portée.
     pub fn new(text: impl Into<String>) -> Self {
         Self {
-            text: text.into(),
+            text: RichText::new(text),
             beats_per_second: None,
             follow_text: false,
             placement: Placement::Above,
+            visible: true,
         }
     }
 }
@@ -186,20 +260,53 @@ impl Tempo {
 /// Repère de répétition.
 ///
 /// Correspond à `RehearsalMark` dans `engraving/dom/rehearsalmark.h`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RehearsalMark {
-    /// Texte du repère (`"A"`, `"1"`…).
-    pub text: String,
+    /// Texte du repère (`"A"`, `"1"`…), avec son balisage.
+    pub text: RichText,
     /// Placement.
     pub placement: Placement,
+    /// Cadre du repère.
+    pub frame: RehearsalFrame,
+    /// Vrai si le repère est visible.
+    pub visible: bool,
 }
 
 impl RehearsalMark {
-    /// Construit un repère au-dessus de la portée.
+    /// Construit un repère au-dessus de la portée, avec le cadre du style.
     pub fn new(text: impl Into<String>) -> Self {
         Self {
-            text: text.into(),
+            text: RichText::new(text),
             placement: Placement::Above,
+            frame: RehearsalFrame::Rectangle,
+            visible: true,
+        }
+    }
+}
+
+/// Changement d'instrument.
+///
+/// Correspond à `InstrumentChange` dans `engraving/dom/instrumentchange.h`.
+/// MuseScore exporte son texte comme un `<words>` (`ExportMusicXml::words`),
+/// puis les détails de l'instrument (`writeInstrumentChange`), que le modèle
+/// ne porte pas encore.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InstrumentChange {
+    /// Texte affiché, avec son balisage.
+    pub text: RichText,
+    /// Placement.
+    pub placement: Placement,
+    /// Vrai si le changement est visible.
+    pub visible: bool,
+}
+
+impl InstrumentChange {
+    /// Construit un changement d'instrument au-dessus de la portée.
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: RichText::new(text),
+            placement: Placement::Above,
+            visible: true,
         }
     }
 }

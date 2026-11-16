@@ -696,3 +696,60 @@ s'arrêter aux enfants directs du `<Score>` maître.
     `version="5.00"` → 500, ne pas comparer `"5.0"` à `"5.00"` ni déduire le
     schéma de `<programVersion>`. Une mesure sans `<voice>` garde sa durée :
     générer un repos de mesure à l'export.
+
+## 18. Textes et cadres
+```xml
+<StaffText><placement>below</placement><text>doux <b>et</b> <i>lié</i></text></StaffText>
+<Tempo><tempo>2</tempo><followText>1</followText>
+  <text><sym>metNoteQuarterUp</sym> = 120</text></Tempo>
+<RehearsalMark><frameType>2</frameType><text>A</text></RehearsalMark>
+<VBox><height>10</height>
+  <Text><style>title</style><text>Mon titre</text></Text>
+</VBox>
+```
+Annotations de segment (aucune ne consomme de tick, section 6) : `StaffText`,
+`SystemText`, `Tempo`, `RehearsalMark`, `Expression`, `InstrumentChange`,
+`Dynamic`, `Harmony`. Propriétés lues : `<text>`, `<placement>` (`above`
+défaut / `below`), `<visible>` (0 = non exporté), `<frameType>` (0 sans cadre,
+1 rectangle, 2 cercle), `<style>`, `<italic>`/`<bold>`/`<underline>`/`<strike>` ;
+pour `Tempo` `<tempo>` (battements **par seconde**) et `<followText>` ; pour
+`InstrumentChange` `<Instrument>` (non lu). `<style>` fixe le placement et la
+police de départ que le fichier ne répète pas : `<style>expression</style>`
+donne un texte italique **sous** la portée (`TextStyleType::EXPRESSION`), et les
+propriétés `italic`/`bold` ci-dessus écrasent ce format de départ.
+
+`<text>` est du **balisage** et non du texte brut : `TRead::readProperties`
+utilise `XmlReader::readXml` (`rw/xmlreader.cpp:212`), qui re-sérialise les
+balises internes. Balises : `<b>`, `<i>`, `<u>`, `<s>`, `<sub>`, `<sup>`,
+`<font face="…"/>` et `<font size="…"/>` (une propriété par balise ;
+`</font>` ne restaure pas le format précédent), `<sym>nom</sym>` (symbole
+SMuFL rendu par un point de code MuseScore), `\n` = saut de ligne. Les entités
+nommées (`&quot;`, `&amp;`) sont conservées telles quelles dans le texte
+interne, les références numériques sont résolues.
+
+Export (`export/text.rs`, portage de `MScoreTextToMusicXml::writeTextFragments`
+et `ExportMusicXml::words`/`tempoText`/`systemText`/`rehearsal`/`credits`) :
+un `<words>` par fragment, attributs de format seulement quand ils changent par
+rapport au fragment précédent (référence = style des textes de portée : Edwin
+10). `StaffText`/`Expression`/`InstrumentChange` → `<direction>` + `<words>` ;
+`SystemText` et `Tempo` → `system="only-top"` ; `Tempo` → `<metronome>` quand
+`findMetronome`/`TempoText::findTempoDuration` reconnaît une formule
+(`<beat-unit>`, `<beat-unit-dot>`, `<per-minute>`), plus `<sound tempo>`
+(arrondi à 2 décimales) ; un tempo invisible n'exporte que ce `<sound>`.
+`RehearsalMark` → `<rehearsal>` avec `enclosure` (absent si rectangle).
+Un texte décalé par rapport au tick courant ajoute
+`<offset sound="yes">` (tempo, `<words>`) ou `<offset>` (repère).
+
+`<VBox>` → `<credit>` (`ExportMusicXml::credits`) : un `<credit page="1">` par
+`<Text>` visible, `<credit-type>` d'après `<style>` (`title`, `subtitle`,
+`composer`, `lyricist`, vide sinon), alignements `justify`/`valign` du style,
+police et taille par défaut selon le style. `<work>`, `<movement-number>`,
+`<movement-title>` et les `<creator>` d'`<identification>` viennent des
+`<metaTag>`, pas des textes.
+
+Non porté : textes de `TBox` (`tboxTextAsWords`), textes de spanner
+(`TextLine`), détails des changements d'instrument (`writeInstrumentChange`),
+symboles hors table de métronome, positions (`default-x`/`default-y`), style de
+partition (`<Style>`/`.mss`) et `<miscellaneous>`. Les `<Marker>`/`<Jump>`
+(D.C., D.S., Fine…) sont eux exportés en `<words>` par `export/repeats.rs` :
+ne pas les produire une seconde fois depuis les annotations.

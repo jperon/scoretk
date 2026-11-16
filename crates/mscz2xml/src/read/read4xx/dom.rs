@@ -21,6 +21,14 @@ pub struct Element {
     pub attrs: Vec<(String, String)>,
     /// Texte direct de l'élément (feuilles uniquement en pratique).
     pub text: String,
+    /// Contenu mixte re-sérialisé, balises internes comprises.
+    ///
+    /// Sert aux textes riches MuseScore, dont le balisage (`<b>`, `<font
+    /// face="…">`, `<sym>`) est conservé tel quel : `Element::text` perd l'ordre
+    /// du texte et des enfants, `raw_inner` ne le perd pas. Correspond à ce que
+    /// `XmlReader::readXml` (`engraving/rw/xmlreader.cpp`) renvoie au lecteur
+    /// C++.
+    pub raw_inner: String,
     /// Enfants, dans l'ordre du fichier.
     pub children: Vec<Element>,
 }
@@ -96,20 +104,36 @@ pub fn parse_fraction(text: &str) -> Option<Fraction> {
 /// Construit l'arbre à partir des octets d'un `.mscx`.
 pub fn parse(bytes: &[u8]) -> Result<Element> {
     let mut reader = Reader::from_reader(bytes);
-    reader.config_mut().trim_text(true);
+    // Le texte n'est pas rogné globalement : les textes riches MuseScore
+    // contiennent des espaces significatifs (`<font face="Edwin"></font> = 80`).
+    // Les accesseurs rognent eux-mêmes (`Element::text`, `int`, `fraction`).
+    reader.config_mut().trim_text(false);
 
     let mut stack: Vec<Element> = Vec::new();
     let mut root: Option<Element> = None;
 
     loop {
         match reader.read_event()? {
-            Event::Start(start) => stack.push(element_from_start(&start)?),
+            Event::Start(start) => {
+                let element = element_from_start(&start)?;
+                stack.push(element);
+            }
             Event::Empty(start) => {
                 let element = element_from_start(&start)?;
+                if let Some(parent) = stack.last_mut() {
+                    parent.raw_inner.push_str(&start_tag(&element, true));
+                }
                 attach(&mut stack, &mut root, element);
             }
             Event::End(_) => {
                 if let Some(element) = stack.pop() {
+                    if let Some(parent) = stack.last_mut() {
+                        parent.raw_inner.push_str(&start_tag(&element, false));
+                        parent.raw_inner.push_str(&element.raw_inner);
+                        parent.raw_inner.push_str("</");
+                        parent.raw_inner.push_str(&element.name);
+                        parent.raw_inner.push('>');
+                    }
                     attach(&mut stack, &mut root, element);
                 }
             }
@@ -117,11 +141,16 @@ pub fn parse(bytes: &[u8]) -> Result<Element> {
                 let raw = text.xml_content(XmlVersion::Implicit1_0);
                 if let Some(current) = stack.last_mut() {
                     current.text.push_str(&unescape(&raw));
+                    escape_into(&mut current.raw_inner, &raw);
                 }
             }
             Event::GeneralRef(reference) => {
+                let entity = reference.as_ref();
                 if let Some(current) = stack.last_mut() {
-                    current.text.push_str(&decode_reference(reference.as_ref()));
+                    current.text.push_str(&decode_reference(entity));
+                    current.raw_inner.push('&');
+                    current.raw_inner.push_str(entity);
+                    current.raw_inner.push(';');
                 }
             }
             Event::Eof => break,
@@ -143,8 +172,37 @@ fn element_from_start(start: &BytesStart<'_>) -> Result<Element> {
         name: start.name().as_ref().to_owned(),
         attrs,
         text: String::new(),
+        raw_inner: String::new(),
         children: Vec::new(),
     })
+}
+
+/// Re-sérialise une balise ouvrante, pour `Element::raw_inner`.
+fn start_tag(element: &Element, self_closing: bool) -> String {
+    let mut out = String::new();
+    out.push('<');
+    out.push_str(&element.name);
+    for (name, value) in &element.attrs {
+        out.push(' ');
+        out.push_str(name);
+        out.push_str("=\"");
+        escape_into(&mut out, value);
+        out.push('"');
+    }
+    out.push_str(if self_closing { "/>" } else { ">" });
+    out
+}
+
+/// Échappe `<`, `>` et `&` pour reconstruire un balisage interne.
+fn escape_into(buffer: &mut String, text: &str) {
+    for character in text.chars() {
+        match character {
+            '&' => buffer.push_str("&amp;"),
+            '<' => buffer.push_str("&lt;"),
+            '>' => buffer.push_str("&gt;"),
+            other => buffer.push(other),
+        }
+    }
 }
 
 /// Décode les entités XML prédéfinies et les références numériques.
@@ -234,5 +292,30 @@ mod tests {
         assert_eq!(parse_fraction("4/0"), None);
         assert_eq!(parse_fraction(""), None);
         assert_eq!(parse_fraction("x/y"), None);
+    }
+
+    #[test]
+    fn contenu_mixte_des_textes() {
+        // Le balisage des textes riches doit survivre tel quel, ordre compris :
+        // `Element::text` ne garde que le texte direct, `raw_inner` tout.
+        let xml = br#"<museScore version="4.60"><Score><Staff id="1"><Measure><voice>
+            <Tempo><tempo>1.333333</tempo>
+            <text><sym>metNoteQuarterUp</sym><font face="Edwin"></font> = 80</text>
+            </Tempo></voice></Measure></Staff></Score></museScore>"#;
+        let root = parse(xml).unwrap();
+        let score = root.child("Score").unwrap();
+        let staff = score.child("Staff").unwrap();
+        let measure = staff.child("Measure").unwrap();
+        let voice = measure.child("voice").unwrap();
+        let tempo = voice.child("Tempo").unwrap();
+        let text = tempo.child("text").unwrap();
+        assert_eq!(
+            text.raw_inner,
+            "<sym>metNoteQuarterUp</sym><font face=\"Edwin\"></font> = 80"
+        );
+        // Le texte direct est conservé sans rognage dans `text` ; `text()` rogne.
+        assert_eq!(text.text, " = 80");
+        assert_eq!(text.text(), "= 80");
+        assert_eq!(tempo.child("tempo").unwrap().text(), "1.333333");
     }
 }

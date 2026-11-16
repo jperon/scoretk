@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
+use mscz2xml::model::{Annotation, CreditStyle, Placement, RehearsalFrame};
 use mscz2xml::read::read_score;
 use mscz2xml::MsczContainer;
 
@@ -194,7 +195,7 @@ fn nombres_de_mesures_parties_et_notes_conformes_aux_references() {
 /// `<InstrumentLabel>`) et la lecture d'un n-plet imbriqué avec liaison.
 #[test]
 fn lit_un_mscx_5_00_synthetique() {
-    let mscx = br#"<?xml version="1.0" encoding="UTF-8"?>
+    let mscx = r#"<?xml version="1.0" encoding="UTF-8"?>
 <museScore version="5.00">
   <Score>
     <Division>480</Division>
@@ -234,7 +235,7 @@ fn lit_un_mscx_5_00_synthetique() {
 </museScore>
 "#;
 
-    let container = MsczContainer::from_bytes(mscx).expect("conteneur 5.00");
+    let container = MsczContainer::from_bytes(mscx.as_bytes()).expect("conteneur 5.00");
     let score = read_score(&container).expect("lecture 5.00");
 
     assert_eq!(score.parts.len(), 1);
@@ -343,4 +344,129 @@ fn liaisons_tuplets_et_paroles() {
         melisma.map(|value| value.to_string()),
         Some("1/4".to_owned())
     );
+}
+
+/// Les textes (portée, système, tempo, repère) et les crédits de la page de
+/// titre sont lus avec leur balisage, leur placement, leur visibilité et leur
+/// style.
+#[test]
+fn lit_les_textes_et_les_credits() {
+    let mscx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="4.00">
+  <Score>
+    <Division>480</Division>
+    <metaTag name="workTitle">Oeuvre</metaTag>
+    <Part>
+      <Staff id="1"><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <trackName>Piano</trackName>
+      <Instrument id="piano">
+        <longName>Piano</longName>
+        <shortName>Pno.</shortName>
+        <instrumentId>keyboard.piano</instrumentId>
+      </Instrument>
+    </Part>
+    <Staff id="1">
+      <VBox>
+        <height>10</height>
+        <Text><style>title</style><text>Mon titre</text></Text>
+        <Text><style>subtitle</style><text>Sous-titre</text></Text>
+        <Text><style>composer</style><text>Compositrice</text></Text>
+        <Text><style>lyricist</style><visible>0</visible><text>Caché</text></Text>
+      </VBox>
+      <Measure>
+        <voice>
+          <StaffText>
+            <placement>below</placement>
+            <text>doux <b>et</b> <i>lié</i></text>
+            </StaffText>
+          <StaffText>
+            <visible>0</visible>
+            <text>invisible</text>
+            </StaffText>
+          <SystemText>
+            <text>Chœur</text>
+            </SystemText>
+          <RehearsalMark>
+            <frameType>2</frameType>
+            <text><b>A</b></text>
+            </RehearsalMark>
+          <Expression>
+            <text>dolce</text>
+            </Expression>
+          <InstrumentChange>
+            <text>pizz.</text>
+            </InstrumentChange>
+          <Tempo>
+            <tempo>2</tempo>
+            <followText>1</followText>
+            <text><sym>metNoteQuarterUp</sym> = 120</text>
+            </Tempo>
+          <Chord><durationType>whole</durationType>
+            <Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+          </voice>
+        </Measure>
+      </Staff>
+  </Score>
+</museScore>
+"#;
+
+    let container = MsczContainer::from_bytes(mscx.as_bytes()).expect("conteneur");
+    let score = read_score(&container).expect("lecture");
+
+    // Crédits : les textes de `<VBox>` dans l'ordre, le texte invisible écarté.
+    assert_eq!(score.credits.len(), 3);
+    assert_eq!(score.credits[0].style, CreditStyle::Title);
+    assert_eq!(score.credits[0].text.plain(), "Mon titre");
+    assert_eq!(score.credits[0].style.credit_type(), Some("title"));
+    assert_eq!(score.credits[1].style, CreditStyle::Subtitle);
+    assert_eq!(score.credits[1].text.plain(), "Sous-titre");
+    assert_eq!(score.credits[2].style, CreditStyle::Composer);
+    assert_eq!(score.credits[2].text.plain(), "Compositrice");
+    assert_eq!(score.metadata.work_title, "Oeuvre");
+
+    let annotations = &score.measures[0].segments[0].annotations;
+    assert_eq!(annotations.len(), 7);
+
+    let Annotation::StaffText(text) = &annotations[0].annotation else {
+        panic!("texte de portée attendu");
+    };
+    assert_eq!(text.placement, Placement::Below);
+    assert_eq!(text.text.plain(), "doux et lié");
+    // Quatre fragments : normal, gras, normal (l'espace après `</b>`), italique.
+    assert_eq!(text.text.fragments().len(), 4);
+    assert!(text.text.fragments()[1].format.bold);
+    assert!(text.text.fragments()[3].format.italic);
+
+    let Annotation::StaffText(invisible) = &annotations[1].annotation else {
+        panic!("texte de portée attendu");
+    };
+    assert!(!invisible.visible);
+
+    let Annotation::SystemText(system) = &annotations[2].annotation else {
+        panic!("texte système attendu");
+    };
+    assert_eq!(system.text.plain(), "Chœur");
+
+    let Annotation::RehearsalMark(mark) = &annotations[3].annotation else {
+        panic!("repère attendu");
+    };
+    assert_eq!(mark.frame, RehearsalFrame::Circle);
+    assert_eq!(mark.text.plain(), "A");
+
+    assert!(matches!(
+        &annotations[4].annotation,
+        Annotation::Expression(expression) if expression.text.plain() == "dolce"
+    ));
+    assert!(matches!(
+        &annotations[5].annotation,
+        Annotation::InstrumentChange(change) if change.text.plain() == "pizz."
+    ));
+
+    let Annotation::Tempo(tempo) = &annotations[6].annotation else {
+        panic!("tempo attendu");
+    };
+    assert!(tempo.follow_text);
+    assert_eq!(tempo.beats_per_second, Some(2.0));
+    // Le symbole de métronome garde son point de code MuseScore.
+    assert_eq!(tempo.text.plain(), "\u{ECA5} = 120");
 }

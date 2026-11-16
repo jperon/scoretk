@@ -23,6 +23,7 @@ mod exportmusicxml;
 mod nuances;
 mod pitch;
 mod repeats;
+mod text;
 mod writer;
 
 #[cfg(test)]

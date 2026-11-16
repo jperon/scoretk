@@ -7,7 +7,8 @@
 use super::tables;
 use super::xml::Node;
 use crate::model::{
-    tpc, Annotation, Harmony, Placement, RehearsalMark, StaffText, SystemText, Tempo,
+    text_style_defaults, tpc, Annotation, Harmony, Placement, RehearsalFrame, RehearsalMark,
+    RichText, StaffText, SystemText, Tempo, TextFormat,
 };
 
 /// Lit une annotation de segment, ou `None` si l'élément n'en est pas une.
@@ -15,6 +16,14 @@ pub(crate) fn read(node: &Node) -> Option<Annotation> {
     let placement = node
         .child("placement")
         .map(|child| tables::placement(&child.trimmed_text()));
+    // Le style fixe le placement et la police de départ ; les propriétés
+    // `italic`/`bold`/`underline`/`strike` du texte les écrasent ensuite.
+    let (style_placement, style_format) = text_style_defaults(
+        node.child("style")
+            .map(|child| child.trimmed_text())
+            .unwrap_or_default()
+            .as_str(),
+    );
 
     let annotation = match node.name() {
         "Dynamic" => {
@@ -22,29 +31,49 @@ pub(crate) fn read(node: &Node) -> Option<Annotation> {
             Annotation::Dynamic(dynamic)
         }
         "StaffText" | "Text" => Annotation::StaffText(StaffText {
-            text: text_of(node, "text"),
-            placement: placement.unwrap_or(Placement::Above),
+            text: rich_text(node, &style_format),
+            placement: placement.unwrap_or(style_placement),
+            visible: visible(node),
         }),
         "SystemText" => Annotation::SystemText(SystemText {
-            text: text_of(node, "text"),
-            placement: placement.unwrap_or(Placement::Above),
+            text: rich_text(node, &style_format),
+            placement: placement.unwrap_or(style_placement),
+            visible: visible(node),
         }),
         "Tempo" => {
-            let mut tempo = Tempo::new(text_of(node, "text"));
-            tempo.beats_per_second = node
-                .child("tempo")
-                .and_then(|child| child.trimmed_text().parse::<f64>().ok());
-            tempo.follow_text = node
-                .child("followText")
-                .and_then(Node::int_text)
-                .unwrap_or(0)
-                != 0;
-            tempo.placement = placement.unwrap_or(Placement::Above);
+            // `TempoText::TempoText` part de 2 battements par seconde
+            // (120 BPM) ; `<tempo>` l'écrase.
+            let mut tempo = Tempo {
+                text: rich_text(node, &style_format),
+                beats_per_second: Some(
+                    node.child("tempo")
+                        .and_then(|child| child.trimmed_text().parse::<f64>().ok())
+                        .unwrap_or(2.0),
+                ),
+                follow_text: node
+                    .child("followText")
+                    .and_then(Node::int_text)
+                    .unwrap_or(0)
+                    != 0,
+                placement: placement.unwrap_or(style_placement),
+                visible: visible(node),
+            };
+            // `TRead::read(TempoText*)` : un tempo sans texte reçoit le texte
+            // « ♩ = N » et devient invisible.
+            if tempo.text.is_empty() {
+                if let Some(beats_per_second) = tempo.beats_per_second {
+                    let bpm = (beats_per_second * 60.0).round();
+                    tempo.text = RichText::new(format!("<sym>metNoteQuarterUp</sym> = {bpm:.0}"));
+                }
+                tempo.visible = false;
+            }
             Annotation::Tempo(tempo)
         }
         "RehearsalMark" => Annotation::RehearsalMark(RehearsalMark {
-            text: text_of(node, "text"),
-            placement: placement.unwrap_or(Placement::Above),
+            text: rich_text(node, &style_format),
+            placement: placement.unwrap_or(style_placement),
+            frame: rehearsal_frame(node),
+            visible: visible(node),
         }),
         "Harmony" => Annotation::Harmony(read_harmony(node, placement)),
         "Fermata" => Annotation::Other {
@@ -55,22 +84,51 @@ pub(crate) fn read(node: &Node) -> Option<Annotation> {
                 .unwrap_or_default(),
             placement: placement.unwrap_or(Placement::Above),
         },
-        "Expression" => Annotation::Other {
-            kind: "Expression".to_owned(),
-            text: text_of(node, "text"),
-            placement: placement.unwrap_or(Placement::Below),
-        },
+        "Expression" => Annotation::Expression(StaffText {
+            text: rich_text(node, &style_format),
+            placement: placement.unwrap_or(style_placement),
+            visible: visible(node),
+        }),
         _ => return None,
     };
     Some(annotation)
 }
 
-fn text_of(node: &Node, child: &str) -> String {
-    node.child(child)
-        .map(Node::text)
+/// Texte d'une annotation, balisage compris (`<b>`, `<font>`, `<sym>`…).
+///
+/// `format` est le format du style, éventuellement écrasé par les propriétés
+/// `<italic>`, `<bold>`, `<underline>` et `<strike>` du texte.
+fn rich_text(node: &Node, style_format: &TextFormat) -> RichText {
+    let mut format = style_format.clone();
+    for (name, value) in [
+        ("bold", &mut format.bold),
+        ("italic", &mut format.italic),
+        ("underline", &mut format.underline),
+        ("strike", &mut format.strike),
+    ] {
+        if let Some(flag) = node.child(name).and_then(Node::int_text) {
+            *value = flag != 0;
+        }
+    }
+    node.child("text")
+        .map(|child| RichText::from_markup_with(&child.inner_markup(), &format))
         .unwrap_or_default()
-        .trim()
-        .to_owned()
+}
+
+/// Vrai si l'annotation n'est pas marquée `<visible>0</visible>`.
+fn visible(node: &Node) -> bool {
+    node.child("visible")
+        .and_then(Node::int_text)
+        .is_none_or(|value| value != 0)
+}
+
+/// Cadre d'un repère (`<frameType>` : 0 sans cadre, 1 rectangle, 2 cercle).
+fn rehearsal_frame(node: &Node) -> RehearsalFrame {
+    match node.child("frameType").and_then(Node::int_text) {
+        Some(0) => RehearsalFrame::NoFrame,
+        Some(2) => RehearsalFrame::Circle,
+        _ => RehearsalFrame::Rectangle,
+    }
 }
 
 /// Lit un `<Harmony>`.

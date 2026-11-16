@@ -94,6 +94,46 @@ impl Node {
         }
     }
 
+    /// Contenu mixte re-sérialisé en balisage, pour les textes riches.
+    ///
+    /// `Node` conserve l'ordre du texte et des éléments : on peut donc
+    /// reconstituer les balises internes d'un `<text>` (`<b>`, `<font
+    /// face="…">`, `<sym>`…), comme `XmlReader::readXml` le fait pour le
+    /// lecteur C++. Les caractères réservés sont ré-échappés, guillemet
+    /// compris, comme `String::toXmlEscaped` dans MuseScore : le texte interne
+    /// contient donc `&quot;` et l'export l'écrit tel quel.
+    pub(crate) fn inner_markup(&self) -> String {
+        let mut out = String::new();
+        self.write_content(&mut out);
+        out
+    }
+
+    fn write_content(&self, out: &mut String) {
+        for item in &self.content {
+            match item {
+                Content::Text(text) => escape_markup(out, text),
+                Content::Element(node) => node.write_markup(out),
+            }
+        }
+    }
+
+    fn write_markup(&self, out: &mut String) {
+        out.push('<');
+        out.push_str(&self.name);
+        for (name, value) in &self.attrs {
+            out.push(' ');
+            out.push_str(name);
+            out.push_str("=\"");
+            escape_markup(out, value);
+            out.push('"');
+        }
+        out.push('>');
+        self.write_content(out);
+        out.push_str("</");
+        out.push_str(&self.name);
+        out.push('>');
+    }
+
     /// Texte débarrassé des espaces de début et de fin.
     pub(crate) fn trimmed_text(&self) -> String {
         self.text().trim().to_owned()
@@ -117,6 +157,19 @@ impl Node {
             (Some(z), Some(n)) => Fraction::try_new(i64::from(z), i64::from(n)),
             (Some(z), None) => Fraction::try_new(i64::from(z), 1),
             _ => None,
+        }
+    }
+}
+
+/// Échappe le contenu textuel d'un balisage (`toXmlEscaped`).
+fn escape_markup(out: &mut String, text: &str) {
+    for character in text.chars() {
+        match character {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            other => out.push(other),
         }
     }
 }
