@@ -507,6 +507,8 @@ impl<'a> Context<'a> {
         let staves = part.staves.len();
         let is_first = measure_index == 0;
 
+        // TODO(parité): numérotation `implicit="yes"` des mesures d'anacrouse
+        // (le modèle n'a pas l'équivalent de `excludeFromNumbering`).
         let number = (measure_index + 1).to_string();
         out.xml.start_element("measure", &[("number", &number)]);
         out.in_attributes = false;
@@ -959,6 +961,7 @@ impl Context<'_> {
             out.tick += global_ticks;
         }
 
+        let duration = grace_duration.copied().unwrap_or(chord_rest.duration);
         let notated = grace_duration.map_or_else(
             || self.notated_ticks(chord_rest, measure),
             |duration| duration.ticks(),
@@ -1013,14 +1016,20 @@ impl Context<'_> {
             if let Some(accidental) = &note.accidental {
                 write_accidental(out, accidental);
             }
-            self.write_time_modification(out, chord_rest);
+            // Un accord d'agrément n'appartient à aucun n-olet.
+            if !grace {
+                self.write_time_modification(out, chord_rest);
+            }
 
-            match chord.stem {
-                StemDirection::Up => out.xml.tag("stem", "up"),
-                StemDirection::Down => out.xml.tag("stem", "down"),
-                // La direction automatique est calculée par la mise en page :
-                // le modèle ne la connaît pas.
-                StemDirection::Auto => {}
+            // Pas de hampe pour les rondes et les valeurs plus longues.
+            if duration.kind.has_stem() {
+                match chord.stem {
+                    StemDirection::Up => out.xml.tag("stem", "up"),
+                    StemDirection::Down => out.xml.tag("stem", "down"),
+                    // La direction automatique est calculée par la mise en
+                    // page : le modèle ne la connaît pas.
+                    StemDirection::Auto => {}
+                }
             }
 
             write_notehead(out, note, chord);
@@ -1029,7 +1038,7 @@ impl Context<'_> {
                 out.xml.tag("staff", &xml_staff.to_string());
             }
 
-            if first {
+            if first && !grace {
                 write_beam(out, chord_rest.beam_mode);
             }
 
@@ -1785,7 +1794,11 @@ fn write_notehead(out: &mut Out, note: &Note, chord: &Chord) {
         NoteHeadType::Half | NoteHeadType::Whole => {
             out.xml.tag_with("notehead", &[("filled", "no")], "normal");
         }
-        NoteHeadType::Breve => out.xml.tag("notehead", "breve"),
+        // MuseScore désigne la tête de brève par son nom SMuFL.
+        NoteHeadType::Breve => {
+            out.xml
+                .tag_with("notehead", &[("smufl", "noteheadDoubleWhole")], "other");
+        }
         NoteHeadType::Cross => out.xml.tag("notehead", "cross"),
         NoteHeadType::Diamond => out.xml.tag("notehead", "diamond"),
         NoteHeadType::Triangle => {
