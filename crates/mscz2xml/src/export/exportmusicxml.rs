@@ -1,0 +1,2296 @@
+//! Export MusicXML `partwise`.
+//!
+//! Portage de `importexport/musicxml/internal/export/exportmusicxml.cpp` et
+//! des helpers de `internal/shared/`. La structure et les noms de méthodes
+//! suivent le C++ (`write`, `write_parts`, `write_measure`,
+//! `write_measure_staves`, `write_measure_tracks`, `chord`, `rest`,
+//! `calc_divisions`, `move_to_tick`, …) pour que les itérations vers la
+//! parité restent directes.
+//!
+//! # Ce qui n'est pas exporté
+//!
+//! Le modèle ne contient ni style, ni mise en page, ni géométrie : tout ce que
+//! MuseScore tire de `MStyle` et des positions (`<defaults>`, `<credit>`,
+//! `<print>`, attributs `default-x`/`default-y`, largeur des mesures,
+//! `<measure-style>`, sauts de page/système, hampes calculées) est absent de
+//! la sortie. Les éléments correspondants portent un `// TODO(parité)`.
+//!
+//! Les éléments dont le modèle ne garde pas l'information (spanners, symboles,
+//! doigtés, changements d'instrument, voltas, marqueurs, pédales, etc.) sont
+//! ignorés silencieusement.
+
+use std::collections::BTreeSet;
+
+use crate::model::chord::ChordRestKind;
+use crate::model::{
+    Accidental, AccidentalType, Annotation, Articulation, ArticulationAnchor, ArticulationType,
+    BarLineType, BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType,
+    Harmony, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadType, Part,
+    Placement, Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig,
+    TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
+};
+use crate::Result;
+
+use super::pitch;
+use super::writer::XmlWriter;
+
+/// Logiciel annoncé dans `<encoding>`, identique à MuseScore 4.7.
+pub const DEFAULT_SOFTWARE: &str = "MuseScore Studio 4.7.4";
+
+/// Date d'encodage par défaut.
+///
+/// MuseScore écrit la date du jour ; la bibliothèque n'a ni horloge ni
+/// entrées/sorties et doit rester déterministe, d'où cette constante figée
+/// (surchargeable par [`ExportOptions::encoding_date`]).
+pub const DEFAULT_ENCODING_DATE: &str = "2026-11-16";
+
+/// Options d'export.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportOptions {
+    /// Contenu de `<software>`.
+    pub software: String,
+    /// Contenu de `<encoding-date>`.
+    pub encoding_date: String,
+    /// Vrai pour exporter les hauteurs en sons réels (concert pitch).
+    ///
+    /// MuseScore exporte par défaut les hauteurs écrites (`false`), en
+    /// utilisant `Note::tpc_transposed` et la transposition de l'instrument.
+    pub concert_pitch: bool,
+}
+
+impl Default for ExportOptions {
+    fn default() -> Self {
+        Self {
+            software: DEFAULT_SOFTWARE.to_owned(),
+            encoding_date: DEFAULT_ENCODING_DATE.to_owned(),
+            concert_pitch: false,
+        }
+    }
+}
+
+/// Exporte une partition en MusicXML `partwise` non compressé.
+pub fn export_musicxml(score: &Score) -> Result<String> {
+    export_musicxml_with(score, &ExportOptions::default())
+}
+
+/// Variante de [`export_musicxml`] avec options.
+pub fn export_musicxml_with(score: &Score, options: &ExportOptions) -> Result<String> {
+    let context = Context::new(score, options);
+    let mut out = Out::new();
+    context.write(&mut out);
+    Ok(out.xml.finish())
+}
+
+/// Calcule les divisions MusicXML, comme `ExportMusicXml::calcDivisions`.
+///
+/// Parcourt toutes les parties, toutes les voix et tous les segments pour
+/// récolter les durées de déplacement (`backup`/`forward`) et les durées
+/// réelles, puis prend le PPCM des dénominateurs divisé par quatre. La
+/// constante de départ vaut quatre pour garantir des divisions non nulles.
+pub fn calc_divisions(score: &Score) -> u32 {
+    compute_divisions(&Context::new(score, &ExportOptions::default()))
+}
+
+/// État d'écriture : tampon, divisions, position courante et `attributes`.
+struct Out {
+    xml: XmlWriter,
+    div: u32,
+    tick: Tick,
+    in_attributes: bool,
+}
+
+impl Out {
+    fn new() -> Self {
+        Self {
+            xml: XmlWriter::new(),
+            div: 1,
+            tick: Tick::ZERO,
+            in_attributes: false,
+        }
+    }
+
+    /// Ouvre ou ferme `<attributes>` à la demande, comme `Attributes::doAttr`.
+    fn attr(&mut self, open: bool) {
+        if open && !self.in_attributes {
+            self.xml.start_element("attributes", &[]);
+            self.in_attributes = true;
+        } else if !open && self.in_attributes {
+            self.xml.end_element();
+            self.in_attributes = false;
+        }
+    }
+
+    /// Ferme `<attributes>` s'il est encore ouvert (`Attributes::stop`).
+    fn attr_stop(&mut self) {
+        self.attr(false);
+    }
+
+    /// Convertit une durée en divisions MusicXML.
+    ///
+    /// Reproduit `calculateTimeDeltaInDivisions` : le C++ réduit la fraction
+    /// puis prend son numérateur, ce qui suppose que le PPCM des divisions
+    /// rend le résultat entier.
+    fn duration_in_divisions(&self, delta: Tick) -> i64 {
+        (delta * Fraction::from_integer(i64::from(self.div) * 4)).numerator()
+    }
+
+    /// Déplace la position courante en émettant `<backup>` ou `<forward>`.
+    ///
+    /// Reproduit `ExportMusicXml::moveToTick`. Le paramètre `stretch` du C++
+    /// n'a pas d'équivalent dans le modèle (pas d'étirement de portée).
+    fn move_to_tick(&mut self, target: Tick) {
+        if target < self.tick {
+            self.attr(false);
+            let duration = self.duration_in_divisions(self.tick - target);
+            self.xml.start_element("backup", &[]);
+            self.xml.tag("duration", &duration.to_string());
+            self.xml.end_element();
+        } else if target > self.tick {
+            self.attr(false);
+            let duration = self.duration_in_divisions(target - self.tick);
+            self.xml.start_element("forward", &[]);
+            self.xml.tag("duration", &duration.to_string());
+            self.xml.end_element();
+        }
+        self.tick = target;
+    }
+}
+
+/// Profondeur maximale d'imbrication de n-olets suivie par l'export.
+///
+/// MuseScore n'impose pas de limite, mais un modèle corrompu pourrait former
+/// une chaîne cyclique : cette borne évite toute boucle infinie.
+const MAX_TUPLET_DEPTH: usize = 64;
+
+/// Élément enfant d'un n-olet, dans l'ordre de `Tuplet::elements()`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TupletElement {
+    /// Accord ou silence directement enfant du n-olet.
+    Chord {
+        /// Position du segment.
+        tick: Tick,
+        /// Piste (portée et voix).
+        track: Track,
+        /// Durée notée, utilisée par `determineTupletNormalTicks`.
+        duration: Fraction,
+    },
+    /// N-olet imbriqué directement enfant de celui-ci.
+    Tuplet(TupletId),
+}
+
+impl TupletElement {
+    fn tick(self, score: &Score) -> Tick {
+        match self {
+            Self::Chord { tick, .. } => tick,
+            Self::Tuplet(id) => score.tuplet(id).tick,
+        }
+    }
+
+    fn duration(self, score: &Score) -> Fraction {
+        match self {
+            Self::Chord { duration, .. } => duration,
+            Self::Tuplet(id) => score.tuplet(id).len,
+        }
+    }
+}
+
+/// Deux références désignent-elles le même enfant de n-olet ?
+///
+/// La durée stockée dans `TupletElement::Chord` ne fait pas partie de
+/// l'identité : elle ne sert qu'à `determineTupletNormalTicks`.
+fn same_element(left: TupletElement, right: TupletElement) -> bool {
+    match (left, right) {
+        (
+            TupletElement::Chord {
+                tick: left_tick,
+                track: left_track,
+                ..
+            },
+            TupletElement::Chord {
+                tick: right_tick,
+                track: right_track,
+                ..
+            },
+        ) => left_tick == right_tick && left_track == right_track,
+        (TupletElement::Tuplet(left), TupletElement::Tuplet(right)) => left == right,
+        _ => false,
+    }
+}
+
+/// Index des enfants de chaque n-olet, triés par position.
+struct TupletIndex {
+    elements: Vec<Vec<TupletElement>>,
+}
+
+impl TupletIndex {
+    fn new(score: &Score) -> Self {
+        let mut elements = vec![Vec::new(); score.tuplets.len()];
+
+        for measure in &score.measures {
+            for segment in &measure.segments {
+                for (track, item) in segment.iter_elements() {
+                    let SegmentItem::ChordRest(chord_rest) = item else {
+                        continue;
+                    };
+                    let Some(id) = chord_rest.tuplet else {
+                        continue;
+                    };
+                    if let Some(children) = elements.get_mut(id.index()) {
+                        children.push(TupletElement::Chord {
+                            tick: segment.tick,
+                            track,
+                            duration: chord_rest.duration.ticks(),
+                        });
+                    }
+                }
+            }
+        }
+
+        for (id, tuplet) in score.tuplets.iter().enumerate() {
+            if let Some(parent) = tuplet.parent {
+                if let Some(children) = elements.get_mut(parent.index()) {
+                    children.push(TupletElement::Tuplet(TupletId::from_index(id)));
+                }
+            }
+        }
+
+        for children in &mut elements {
+            children.sort_by(|left, right| {
+                left.tick(score)
+                    .cmp(&right.tick(score))
+                    .then_with(|| rank(*left).cmp(&rank(*right)))
+            });
+        }
+
+        Self { elements }
+    }
+
+    fn children(&self, id: TupletId) -> &[TupletElement] {
+        self.elements
+            .get(id.index())
+            .map_or(&[], |children| children.as_slice())
+    }
+
+    fn is_first(&self, id: TupletId, element: TupletElement) -> bool {
+        self.children(id)
+            .first()
+            .is_some_and(|first| same_element(*first, element))
+    }
+
+    fn is_last(&self, id: TupletId, element: TupletElement) -> bool {
+        self.children(id)
+            .last()
+            .is_some_and(|last| same_element(*last, element))
+    }
+
+    /// Vrai si le n-olet n'a que des accords ou silences pour enfants.
+    fn is_simple(&self, score: &Score, id: TupletId) -> bool {
+        if score.tuplet(id).parent.is_some() {
+            return false;
+        }
+        self.children(id)
+            .iter()
+            .all(|element| matches!(element, TupletElement::Chord { .. }))
+    }
+}
+
+fn rank(element: TupletElement) -> u8 {
+    match element {
+        TupletElement::Tuplet(_) => 0,
+        TupletElement::Chord { .. } => 1,
+    }
+}
+
+/// Contexte immuable de l'export.
+struct Context<'a> {
+    score: &'a Score,
+    options: &'a ExportOptions,
+    tuplets: TupletIndex,
+}
+
+impl<'a> Context<'a> {
+    fn new(score: &'a Score, options: &'a ExportOptions) -> Self {
+        Self {
+            score,
+            options,
+            tuplets: TupletIndex::new(score),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Haut niveau : write, work, identification, part-list, parties
+    // ------------------------------------------------------------------
+
+    fn write(&self, out: &mut Out) {
+        out.div = compute_divisions(self);
+
+        out.xml.start_document();
+        out.xml.doctype(
+            "score-partwise PUBLIC \"-//Recordare//DTD MusicXML 4.0 Partwise//EN\" \
+             \"http://www.musicxml.org/dtds/partwise.dtd\"",
+        );
+        out.xml
+            .start_element("score-partwise", &[("version", "4.0")]);
+
+        self.work(out);
+        self.identification(out);
+        // TODO(parité): <defaults> et <credit> (style, polices, mise en page).
+        self.part_list(out);
+        self.write_parts(out);
+
+        out.xml.end_element();
+    }
+
+    /// Écrit `<work>` et `<movement-title>`.
+    fn work(&self, out: &mut Out) {
+        let metadata = &self.score.metadata;
+        if !metadata.work_title.is_empty() || !metadata.work_number.is_empty() {
+            out.xml.start_element("work", &[]);
+            if !metadata.work_number.is_empty() {
+                out.xml.tag("work-number", &metadata.work_number);
+            }
+            if !metadata.work_title.is_empty() {
+                out.xml.tag("work-title", &metadata.work_title);
+            }
+            out.xml.end_element();
+        }
+        if !metadata.movement_title.is_empty() {
+            out.xml.tag("movement-title", &metadata.movement_title);
+        }
+    }
+
+    /// Écrit `<identification>`.
+    ///
+    /// MuseScore y range les créateurs par ordre alphabétique de type, puis
+    /// `rights`, `encoding`, `source` et `miscellaneous`. Les champs
+    /// `creationDate` et `platform` des fichiers MuseScore ne sont pas dans le
+    /// modèle : `miscellaneous` est donc omis.
+    fn identification(&self, out: &mut Out) {
+        let metadata = &self.score.metadata;
+
+        out.xml.start_element("identification", &[]);
+        for (kind, value) in [
+            ("arranger", &metadata.arranger),
+            ("composer", &metadata.composer),
+            ("lyricist", &metadata.lyricist),
+        ] {
+            if !value.is_empty() {
+                out.xml.tag_with("creator", &[("type", kind)], value);
+            }
+        }
+        if !metadata.copyright.is_empty() {
+            out.xml.tag("rights", &metadata.copyright);
+        }
+
+        out.xml.start_element("encoding", &[]);
+        out.xml.tag("software", &self.options.software);
+        out.xml.tag("encoding-date", &self.options.encoding_date);
+        out.xml
+            .tag_empty("supports", &[("element", "accidental"), ("type", "yes")]);
+        out.xml
+            .tag_empty("supports", &[("element", "beam"), ("type", "yes")]);
+        out.xml.tag_empty(
+            "supports",
+            &[
+                ("element", "print"),
+                ("attribute", "new-page"),
+                ("type", "yes"),
+                ("value", "yes"),
+            ],
+        );
+        out.xml.tag_empty(
+            "supports",
+            &[
+                ("element", "print"),
+                ("attribute", "new-system"),
+                ("type", "yes"),
+                ("value", "yes"),
+            ],
+        );
+        out.xml
+            .tag_empty("supports", &[("element", "stem"), ("type", "yes")]);
+        out.xml.end_element();
+
+        if !metadata.source.is_empty() {
+            out.xml.tag("source", &metadata.source);
+        }
+        // TODO(parité): <miscellaneous> (creationDate, platform, autres
+        // métadonnées MuseScore absentes du modèle).
+        out.xml.end_element();
+    }
+
+    /// Écrit `<part-list>` (`partList`).
+    ///
+    /// TODO(parité): `<part-group>` (accolades, crochets, portées liées), qui
+    /// demande les informations de bracket absentes du modèle.
+    fn part_list(&self, out: &mut Out) {
+        let hidden_name = self.score.parts.len() == 1;
+
+        out.xml.start_element("part-list", &[]);
+        for (index, part) in self.score.parts.iter().enumerate() {
+            let number = index + 1;
+            let part_id = format!("P{number}");
+            let instrument_id = format!("P{number}-I1");
+
+            out.xml.start_element("score-part", &[("id", &part_id)]);
+
+            let name = plain_part_name(part);
+            let name_attributes: &[(&str, &str)] = if hidden_name {
+                &[("print-object", "no")]
+            } else {
+                &[]
+            };
+            out.xml.tag_with("part-name", name_attributes, &name);
+            // TODO(parité): <part-name-display> pour les noms contenant des
+            // altérations (♭/♯), qui demandent les fragments de texte.
+
+            if !part.short_name.is_empty() {
+                let abbreviation = plain_text(&part.short_name);
+                out.xml
+                    .tag_with("part-abbreviation", name_attributes, &abbreviation);
+            }
+
+            out.xml
+                .start_element("score-instrument", &[("id", &instrument_id)]);
+            let instrument_name = if part.instrument.long_name.is_empty() {
+                name.clone()
+            } else {
+                plain_text(&part.instrument.long_name)
+            };
+            out.xml.tag("instrument-name", &instrument_name);
+            if !part.instrument.id.is_empty() {
+                out.xml.tag("instrument-sound", &part.instrument.id);
+            }
+            out.xml.end_element();
+
+            // MuseScore écrit un élément vide non auto-fermant pour
+            // <midi-device>. Le modèle n'a pas de port MIDI : celui par
+            // défaut de MuseScore vaut 1.
+            out.xml
+                .tag_with("midi-device", &[("id", &instrument_id), ("port", "1")], "");
+            out.xml
+                .start_element("midi-instrument", &[("id", &instrument_id)]);
+            // MuseScore n'écrit le canal que s'il tient dans 1..=16.
+            if number <= 16 {
+                out.xml.tag("midi-channel", &number.to_string());
+            }
+            if let Some(program) = part.instrument.midi_program {
+                if u16::from(program) < 128 {
+                    out.xml
+                        .tag("midi-program", &(u16::from(program) + 1).to_string());
+                }
+            }
+            // Valeurs par défaut de MuseScore (volume 100/127, pan centré) :
+            // le modèle ne porte pas les réglages de canal.
+            out.xml.tag("volume", "78.7402");
+            out.xml.tag("pan", "0");
+            out.xml.end_element();
+
+            out.xml.end_element();
+        }
+        out.xml.end_element();
+    }
+
+    /// Écrit toutes les parties (`writeParts`).
+    fn write_parts(&self, out: &mut Out) {
+        for part_index in 0..self.score.parts.len() {
+            let part_id = format!("P{}", part_index + 1);
+            out.tick = Tick::ZERO;
+            out.in_attributes = false;
+            out.xml.start_element("part", &[("id", &part_id)]);
+
+            for measure_index in 0..self.score.measures.len() {
+                self.write_measure(out, measure_index, part_index);
+            }
+
+            out.xml.end_element();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Mesures
+    // ------------------------------------------------------------------
+
+    /// Écrit une mesure (`writeMeasure`).
+    fn write_measure(&self, out: &mut Out, measure_index: usize, part_index: usize) {
+        let measure = &self.score.measures[measure_index];
+        let part = &self.score.parts[part_index];
+        let staves = part.staves.len();
+        let is_first = measure_index == 0;
+
+        // TODO(parité): numérotation `implicit="yes"` des mesures d'anacrouse
+        // (le modèle n'a pas l'équivalent de `excludeFromNumbering`).
+        let number = (measure_index + 1).to_string();
+        out.xml.start_element("measure", &[("number", &number)]);
+        out.in_attributes = false;
+
+        // TODO(parité): <print> (sauts de page/système, numéro de page) et
+        // attribut width : la mise en page n'est pas dans le modèle.
+
+        // La barre de gauche doit être le premier élément de la mesure.
+        self.barline_left(out, measure);
+
+        // Les attributs ne sont écrits que sur la première mesure réelle.
+        if is_first {
+            out.attr(true);
+            out.xml.tag("divisions", &out.div.to_string());
+        }
+        self.keysig_timesig(out, measure, part);
+        if is_first && staves > 1 {
+            out.xml.tag("staves", &staves.to_string());
+        }
+        // TODO(parité): <instruments> pour les parties multi-instruments.
+        self.write_measure_clefs(out, measure, measure_index, part);
+        if is_first {
+            self.write_staff_details(out, part);
+            self.write_instrument_details(out, part);
+        }
+        // TODO(parité): <measure-style> (silences multi-mesures, reprises de
+        // mesure).
+
+        self.write_measure_staves(out, measure, part);
+        self.annotations_without_note(out, measure, part);
+
+        out.move_to_tick(measure.end_tick());
+        // TODO(parité): repeatAtMeasureStop (voltas, marqueurs, sauts).
+        self.barline_right(out, measure);
+        out.attr_stop();
+
+        out.xml.end_element();
+    }
+
+    /// Écrit les portées d'une mesure pour une partie (`writeMeasureStaves`).
+    fn write_measure_staves(&self, out: &mut Out, measure: &Measure, part: &Part) {
+        let staves = part.staves.len();
+        for (position, staff_id) in part.staves.iter().enumerate() {
+            out.move_to_tick(measure.start_tick);
+            let xml_staff = if staves > 1 { position + 1 } else { 0 };
+            self.write_measure_tracks(out, measure, *staff_id, xml_staff);
+            if position + 1 < staves {
+                // Retour au début de la mesure pour la portée suivante.
+                out.move_to_tick(measure.start_tick);
+            }
+        }
+    }
+
+    /// Écrit les quatre voix d'une portée (`writeMeasureTracks`).
+    fn write_measure_tracks(
+        &self,
+        out: &mut Out,
+        measure: &Measure,
+        staff_id: StaffId,
+        xml_staff: usize,
+    ) {
+        for voice in 0..VOICES {
+            let track = Track::new(staff_id, voice as u8);
+            for segment in &measure.segments {
+                // TODO(parité): spanners et annotations des segments TimeTick.
+                if segment.kind.is_time_tick_type() {
+                    continue;
+                }
+                let Some(item) = segment.element(track) else {
+                    continue;
+                };
+                if let SegmentItem::BarLine(barline) = item {
+                    // Une reprise au début ne doit pas produire de
+                    // backup/forward parasite.
+                    if barline.kind.is_repeat_start() {
+                        continue;
+                    }
+                }
+
+                out.move_to_tick(segment.tick);
+
+                if let SegmentItem::ChordRest(_) = item {
+                    out.attr(false);
+                    if annotation_track(segment, staff_id) == Some(track) {
+                        self.harmonies(out, segment, staff_id);
+                        self.annotations(out, segment, staff_id, xml_staff);
+                    }
+                    // TODO(parité): figured bass, spannerStart, spannerStop.
+                }
+
+                self.write_element(out, segment, item, measure, xml_staff, track);
+            }
+        }
+    }
+
+    /// Écrit un élément de segment (`writeElement`).
+    fn write_element(
+        &self,
+        out: &mut Out,
+        segment: &Segment,
+        item: &SegmentItem,
+        measure: &Measure,
+        xml_staff: usize,
+        track: Track,
+    ) {
+        match item {
+            SegmentItem::Clef(clef) => {
+                self.mid_measure_clef(out, segment, clef, measure, xml_staff);
+            }
+            SegmentItem::ChordRest(chord_rest) => match &chord_rest.kind {
+                ChordRestKind::Chord(chord) => {
+                    self.chord_entry(out, chord_rest, chord, measure, xml_staff, track);
+                }
+                ChordRestKind::Rest(rest) => {
+                    if !rest.gap {
+                        self.rest(out, chord_rest, measure, xml_staff, track);
+                    }
+                }
+            },
+            SegmentItem::BarLine(barline) => {
+                if segment.tick != measure.start_tick && segment.tick != measure.end_tick() {
+                    self.barline_middle(out, barline.kind);
+                }
+            }
+            // Armures, indications de mesure et respirations sont écrites
+            // ailleurs (ou ignorées pour les respirations).
+            SegmentItem::KeySig(_) | SegmentItem::TimeSig(_) | SegmentItem::Breath(_) => {}
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Divisions et durées
+    // ------------------------------------------------------------------
+
+    /// Durée notée d'un accord ou d'un silence, points compris.
+    fn notated_ticks(&self, chord_rest: &ChordRest, measure: &Measure) -> Fraction {
+        if chord_rest.is_full_measure_rest() {
+            measure.len
+        } else {
+            chord_rest.duration.ticks()
+        }
+    }
+
+    /// Durée réelle (`globalTicks`), n-olets appliqués.
+    ///
+    /// MuseScore divise la durée notée par le ratio de chaque n-olet parent.
+    /// Le modèle n'a pas d'étirement de portée (`Staff::timeStretch`), le
+    /// facteur correspondant vaut donc un.
+    fn global_ticks(&self, chord_rest: &ChordRest, measure: &Measure) -> Fraction {
+        let mut ticks = self.notated_ticks(chord_rest, measure);
+        let mut tuplet = chord_rest.tuplet;
+        let mut depth = 0;
+        while let Some(id) = tuplet {
+            let Some(value) = self.score.tuplets.get(id.index()) else {
+                break;
+            };
+            // Un ratio nul ou une chaîne cyclique (modèle corrompu) ne doit pas
+            // faire boucler l'export.
+            if value.ratio.is_zero() || depth >= MAX_TUPLET_DEPTH {
+                break;
+            }
+            ticks /= value.ratio;
+            tuplet = value.parent;
+            depth += 1;
+        }
+        ticks
+    }
+
+    /// Transposition chromatique de la portée, en demi-tons.
+    fn transpose_chromatic(&self, staff_id: StaffId) -> i32 {
+        if self.options.concert_pitch {
+            return 0;
+        }
+        let part = self.score.part(self.score.staff(staff_id).part);
+        part.instrument
+            .transpose
+            .map_or(0, |transpose| transpose.chromatic)
+    }
+}
+
+// ----------------------------------------------------------------------
+// N-olets
+// ----------------------------------------------------------------------
+
+impl Context<'_> {
+    /// Nombre de niveaux de n-olets au-dessus d'un élément (`tupletNesting`).
+    fn tuplet_nesting(&self, chord_rest: &ChordRest) -> usize {
+        let mut nesting = 0;
+        let mut tuplet = chord_rest.tuplet;
+        while let Some(id) = tuplet {
+            if nesting >= MAX_TUPLET_DEPTH {
+                break;
+            }
+            nesting += 1;
+            tuplet = self.score.tuplet(id).parent;
+        }
+        nesting
+    }
+
+    /// N-olet de l'élément, ou celui de son ancêtre s'il s'agit d'un n-olet.
+    fn element_tuplet(&self, element: TupletElement, chord_rest: &ChordRest) -> Option<TupletId> {
+        match element {
+            TupletElement::Chord { .. } => chord_rest.tuplet,
+            TupletElement::Tuplet(id) => self.score.tuplet(id).parent,
+        }
+    }
+
+    /// N-olet qui commence à ce niveau (`startTupletAtLevel`).
+    fn start_tuplet_at_level(
+        &self,
+        chord_rest: &ChordRest,
+        tick: Tick,
+        track: Track,
+        level: usize,
+    ) -> Option<TupletId> {
+        let mut element = TupletElement::Chord {
+            tick,
+            track,
+            duration: chord_rest.duration.ticks(),
+        };
+        for _ in 0..level {
+            let tuplet = self.element_tuplet(element, chord_rest)?;
+            if !self.tuplets.is_first(tuplet, element) {
+                return None;
+            }
+            element = TupletElement::Tuplet(tuplet);
+        }
+        match element {
+            TupletElement::Tuplet(id) => Some(id),
+            TupletElement::Chord { .. } => None,
+        }
+    }
+
+    /// N-olet qui se termine à ce niveau (`stopTupletAtLevel`).
+    fn stop_tuplet_at_level(
+        &self,
+        chord_rest: &ChordRest,
+        tick: Tick,
+        track: Track,
+        level: usize,
+    ) -> Option<TupletId> {
+        let mut element = TupletElement::Chord {
+            tick,
+            track,
+            duration: chord_rest.duration.ticks(),
+        };
+        for _ in 0..level {
+            let tuplet = self.element_tuplet(element, chord_rest)?;
+            if !self.tuplets.is_last(tuplet, element) {
+                return None;
+            }
+            element = TupletElement::Tuplet(tuplet);
+        }
+        match element {
+            TupletElement::Tuplet(id) => Some(id),
+            TupletElement::Chord { .. } => None,
+        }
+    }
+
+    /// Écrit les `<tuplet>` d'un accord ou d'un silence (`tupletStartStop`).
+    fn tuplet_start_stop(
+        &self,
+        out: &mut Out,
+        chord_rest: &ChordRest,
+        tick: Tick,
+        track: Track,
+        notations: &mut Notations,
+    ) {
+        let nesting = self.tuplet_nesting(chord_rest);
+        let need_actual_and_normal = nesting > 1;
+
+        for level in (0..nesting).rev() {
+            if let Some(tuplet) = self.start_tuplet_at_level(chord_rest, tick, track, level + 1) {
+                self.tuplet_start(
+                    out,
+                    tuplet,
+                    nesting - level,
+                    need_actual_and_normal,
+                    notations,
+                );
+            }
+            if let Some(tuplet) = self.stop_tuplet_at_level(chord_rest, tick, track, level + 1) {
+                self.tuplet_stop(out, tuplet, nesting - level, notations);
+            }
+        }
+    }
+
+    /// Écrit `<tuplet type="start">` avec ses éventuels actual/normal.
+    fn tuplet_start(
+        &self,
+        out: &mut Out,
+        id: TupletId,
+        number: usize,
+        need_actual_and_normal: bool,
+        notations: &mut Notations,
+    ) {
+        let tuplet = self.score.tuplet(id);
+        let simple = self.tuplets.is_simple(self.score, id);
+
+        let mut attributes: Vec<(&str, String)> = vec![("type", "start".to_owned())];
+        if !simple {
+            attributes.push(("number", number.to_string()));
+        }
+        attributes.push((
+            "bracket",
+            if tuplet.bracket { "yes" } else { "no" }.to_owned(),
+        ));
+        match tuplet.number_type {
+            TupletNumberType::Number => {}
+            TupletNumberType::Ratio => attributes.push(("show-number", "both".to_owned())),
+            TupletNumberType::None => attributes.push(("show-number", "none".to_owned())),
+        }
+        // TODO(parité): direction/placement du n-olet (absent du modèle).
+
+        let borrowed = borrow_attributes(&attributes);
+        notations.tag(out, None);
+        if need_actual_and_normal {
+            out.xml.start_element("tuplet", &borrowed);
+            tuplet_actual_and_normal(out, tuplet);
+            out.xml.end_element();
+        } else {
+            out.xml.tag_empty("tuplet", &borrowed);
+        }
+    }
+
+    /// Écrit `<tuplet type="stop">`.
+    fn tuplet_stop(&self, out: &mut Out, id: TupletId, number: usize, notations: &mut Notations) {
+        let simple = self.tuplets.is_simple(self.score, id);
+        let number = number.to_string();
+        let mut attributes: Vec<(&str, &str)> = vec![("type", "stop")];
+        if !simple {
+            attributes.push(("number", &number));
+        }
+        notations.tag(out, None);
+        out.xml.tag_empty("tuplet", &attributes);
+    }
+
+    /// Indique si MuseScore doit écrire `<normal-type>` (`determineTupletNormalTicks`).
+    ///
+    /// Un `<normal-type>` n'est nécessaire que si les enfants du n-olet ont
+    /// des durées différentes ou si leur nombre ne correspond pas au
+    /// numérateur du ratio.
+    fn tuplet_normal_ticks(&self, id: TupletId) -> Option<Fraction> {
+        let tuplet = self.score.tuplet(id);
+        let children = self.tuplets.children(id);
+        if children.len() > 1 {
+            let first = children[0].duration(self.score);
+            if children[1..]
+                .iter()
+                .any(|element| element.duration(self.score) != first)
+            {
+                return Some(tuplet.base_len);
+            }
+        }
+        if children.len() as i64 != tuplet.ratio.numerator() {
+            return Some(tuplet.base_len);
+        }
+        None
+    }
+
+    /// Écrit `<time-modification>` (`writeTimeModification`).
+    fn write_time_modification(&self, out: &mut Out, chord_rest: &ChordRest) {
+        let mut actual: i64 = 1;
+        let mut normal: i64 = 1;
+        let mut tuplet = chord_rest.tuplet;
+        let mut depth = 0;
+        while let Some(id) = tuplet {
+            if depth >= MAX_TUPLET_DEPTH {
+                break;
+            }
+            let value = self.score.tuplet(id);
+            actual *= value.ratio.numerator();
+            normal *= value.ratio.denominator();
+            tuplet = value.parent;
+            depth += 1;
+        }
+        if actual == 1 && normal == 1 {
+            return;
+        }
+
+        out.xml.start_element("time-modification", &[]);
+        out.xml.tag("actual-notes", &actual.to_string());
+        out.xml.tag("normal-notes", &normal.to_string());
+        if let Some(normal_ticks) = chord_rest
+            .tuplet
+            .and_then(|id| self.tuplet_normal_ticks(id))
+        {
+            if let Some(base) = pitch::tick_to_xml(normal_ticks) {
+                out.xml.tag("normal-type", base.0);
+                for _ in 0..base.1 {
+                    out.xml.tag_empty("normal-dot", &[]);
+                }
+            }
+        }
+        out.xml.end_element();
+    }
+}
+
+// ----------------------------------------------------------------------
+// Accords, silences, notes
+// ----------------------------------------------------------------------
+
+impl Context<'_> {
+    /// Écrit un accord principal et ses accords d'agrément (`writeElement`).
+    fn chord_entry(
+        &self,
+        out: &mut Out,
+        chord_rest: &ChordRest,
+        chord: &Chord,
+        measure: &Measure,
+        xml_staff: usize,
+        track: Track,
+    ) {
+        for grace in &chord.grace_chords {
+            let kind = grace.chord.grace.unwrap_or(GraceType::Appoggiatura);
+            if !grace_is_after(kind) {
+                self.chord(
+                    out,
+                    &grace.chord,
+                    Some(&grace.duration),
+                    chord_rest,
+                    measure,
+                    xml_staff,
+                    track,
+                    true,
+                );
+            }
+        }
+        self.chord(
+            out, chord, None, chord_rest, measure, xml_staff, track, false,
+        );
+        for grace in &chord.grace_chords {
+            let kind = grace.chord.grace.unwrap_or(GraceType::Appoggiatura);
+            if grace_is_after(kind) {
+                self.chord(
+                    out,
+                    &grace.chord,
+                    Some(&grace.duration),
+                    chord_rest,
+                    measure,
+                    xml_staff,
+                    track,
+                    true,
+                );
+            }
+        }
+    }
+
+    /// Écrit un accord (`chord`).
+    #[allow(clippy::too_many_arguments)]
+    fn chord(
+        &self,
+        out: &mut Out,
+        chord: &Chord,
+        grace_duration: Option<&Duration>,
+        chord_rest: &ChordRest,
+        measure: &Measure,
+        xml_staff: usize,
+        track: Track,
+        grace: bool,
+    ) {
+        let segment_tick = out.tick;
+        let global_ticks = self.global_ticks(chord_rest, measure);
+        if !grace {
+            out.tick += global_ticks;
+        }
+
+        let duration = grace_duration.copied().unwrap_or(chord_rest.duration);
+        let notated = grace_duration.map_or_else(
+            || self.notated_ticks(chord_rest, measure),
+            |duration| duration.ticks(),
+        );
+        let voice = voice_number(xml_staff, track.voice());
+        let transpose = self.transpose_chromatic(track.staff());
+
+        for (index, note_id) in chord.notes.iter().enumerate() {
+            let note = self.score.note(*note_id);
+            let first = index == 0;
+
+            out.attr(false);
+            out.xml.start_element("note", &[]);
+
+            if grace {
+                // MuseScore affiche la barre oblique pour une acciaccatura,
+                // même quand le fichier ne stocke pas le drapeau.
+                if chord.grace_slash || chord.grace == Some(GraceType::Acciaccatura) {
+                    out.xml.tag_empty("grace", &[("slash", "yes")]);
+                } else {
+                    out.xml.tag_empty("grace", &[]);
+                }
+            }
+            let cue = is_cue_note(chord, note);
+            if cue {
+                out.xml.tag_empty("cue", &[]);
+            }
+            if !first {
+                out.xml.tag_empty("chord", &[]);
+            }
+
+            write_pitch(out, note, self.options.concert_pitch, transpose);
+
+            if !grace {
+                out.xml.tag(
+                    "duration",
+                    &out.duration_in_divisions(global_ticks).to_string(),
+                );
+            }
+
+            if !cue {
+                if note.tie_back.is_some() {
+                    out.xml.tag_empty("tie", &[("type", "stop")]);
+                }
+                if note.tie_forward.is_some() {
+                    out.xml.tag_empty("tie", &[("type", "start")]);
+                }
+            }
+
+            // TODO(parité): <instrument> pour les parties multi-instruments.
+
+            out.xml.tag("voice", &voice.to_string());
+            write_type(out, notated, chord, note, grace);
+            if let Some(accidental) = &note.accidental {
+                write_accidental(out, accidental);
+            }
+            // Un accord d'agrément n'appartient à aucun n-olet.
+            if !grace {
+                self.write_time_modification(out, chord_rest);
+            }
+
+            // Pas de hampe pour les rondes et les valeurs plus longues.
+            if duration.kind.has_stem() {
+                match chord.stem {
+                    StemDirection::Up => out.xml.tag("stem", "up"),
+                    StemDirection::Down => out.xml.tag("stem", "down"),
+                    // La direction automatique est calculée par la mise en
+                    // page : le modèle ne la connaît pas.
+                    StemDirection::Auto => {}
+                }
+            }
+
+            write_notehead(out, note, chord);
+
+            if xml_staff > 0 {
+                out.xml.tag("staff", &xml_staff.to_string());
+            }
+
+            if first && !grace {
+                write_beam(out, chord_rest.beam_mode);
+            }
+
+            let mut notations = Notations::new();
+            if note.tie_back.is_some() {
+                notations.tag(out, None);
+                out.xml.tag_empty("tied", &[("type", "stop")]);
+            }
+            if note.tie_forward.is_some() {
+                notations.tag(out, None);
+                out.xml.tag_empty("tied", &[("type", "start")]);
+            }
+            if first && !grace {
+                self.tuplet_start_stop(out, chord_rest, segment_tick, track, &mut notations);
+            }
+            if first {
+                self.chord_attributes(out, chord, &mut notations);
+            }
+            notations.finish(out);
+
+            if first && !grace {
+                for lyric in &chord_rest.lyrics {
+                    write_lyric(out, lyric);
+                }
+            }
+
+            out.xml.end_element();
+        }
+    }
+
+    /// Écrit un silence (`rest`).
+    fn rest(
+        &self,
+        out: &mut Out,
+        chord_rest: &ChordRest,
+        measure: &Measure,
+        xml_staff: usize,
+        track: Track,
+    ) {
+        let segment_tick = out.tick;
+        out.attr(false);
+
+        out.xml.start_element("note", &[]);
+
+        if chord_rest.is_full_measure_rest() {
+            out.xml.tag_empty("rest", &[("measure", "yes")]);
+        } else {
+            out.xml.tag_empty("rest", &[]);
+        }
+
+        let tick_len = self.global_ticks(chord_rest, measure);
+        out.tick += tick_len;
+        out.xml
+            .tag("duration", &out.duration_in_divisions(tick_len).to_string());
+
+        let voice = voice_number(xml_staff, track.voice());
+        out.xml.tag("voice", &voice.to_string());
+
+        // Pas de <type> pour un silence de mesure entière.
+        if !chord_rest.duration.is_measure() {
+            let name = pitch::duration_type_name(chord_rest.duration.kind);
+            if !name.is_empty() {
+                out.xml.tag("type", name);
+            }
+            for _ in 0..chord_rest.duration.dots {
+                out.xml.tag_empty("dot", &[]);
+            }
+        }
+
+        self.write_time_modification(out, chord_rest);
+
+        if xml_staff > 0 {
+            out.xml.tag("staff", &xml_staff.to_string());
+        }
+
+        write_beam(out, chord_rest.beam_mode);
+
+        let mut notations = Notations::new();
+        // TODO(parité): fermatas, soupirs et symboles attachés au silence.
+        self.tuplet_start_stop(out, chord_rest, segment_tick, track, &mut notations);
+        notations.finish(out);
+
+        for lyric in &chord_rest.lyrics {
+            write_lyric(out, lyric);
+        }
+
+        out.xml.end_element();
+    }
+
+    /// Écrit les articulations et ornements d'un accord (`chordAttributes`).
+    fn chord_attributes(&self, out: &mut Out, chord: &Chord, notations: &mut Notations) {
+        // TODO(parité): fermatas attachées au segment.
+        for articulation in &chord.articulations {
+            write_articulation(out, articulation, notations);
+        }
+        notations.close_container(out);
+    }
+}
+
+// ----------------------------------------------------------------------
+// Attributs de mesure : armures, mesures, clefs, portées
+// ----------------------------------------------------------------------
+
+impl Context<'_> {
+    /// Écrit les armures et indications de mesure (`keysigTimesig`).
+    fn keysig_timesig(&self, out: &mut Out, measure: &Measure, part: &Part) {
+        let mut keysigs: Vec<(usize, &KeySig)> = Vec::new();
+        let mut timesigs: Vec<(usize, &TimeSig)> = Vec::new();
+
+        for (position, staff_id) in part.staves.iter().enumerate() {
+            let track = Track::new(*staff_id, 0);
+            for segment in &measure.segments {
+                if segment.tick > measure.start_tick {
+                    break;
+                }
+                match segment.element(track) {
+                    Some(SegmentItem::KeySig(keysig)) => keysigs.push((position, keysig)),
+                    Some(SegmentItem::TimeSig(timesig)) => timesigs.push((position, timesig)),
+                    _ => {}
+                }
+            }
+        }
+
+        if keysigs.is_empty() {
+            // MuseScore écrit toujours une armure au tick zéro.
+            if measure.start_tick.is_zero() {
+                // MuseScore crée une armure factice à l'armure inconnue : seul
+                // <fifths> est écrit.
+                self.keysig(out, 0, Key::C, KeyMode::Unknown);
+            }
+        } else {
+            let first = self.active_key(keysigs[0].1);
+            let single = keysigs
+                .iter()
+                .all(|(_, keysig)| self.active_key(keysig) == first);
+            if single {
+                let keysig = keysigs[0].1;
+                self.keysig(out, 0, first, keysig.mode);
+            } else {
+                for (position, keysig) in keysigs {
+                    self.keysig(out, position + 1, self.active_key(keysig), keysig.mode);
+                }
+            }
+        }
+
+        if !timesigs.is_empty() {
+            let single = timesigs.iter().all(|(_, timesig)| {
+                timesig.numerator == timesigs[0].1.numerator
+                    && timesig.denominator == timesigs[0].1.denominator
+            });
+            if single {
+                self.timesig(out, timesigs[0].1, 0);
+            } else {
+                for (position, timesig) in timesigs {
+                    self.timesig(out, timesig, position + 1);
+                }
+            }
+        }
+    }
+
+    /// Tonalité à afficher (concert ou transposée).
+    fn active_key(&self, keysig: &KeySig) -> Key {
+        if self.options.concert_pitch {
+            keysig.concert_key
+        } else {
+            keysig.transposed_key
+        }
+    }
+
+    /// Écrit `<key>` (`keysig`).
+    fn keysig(&self, out: &mut Out, staff: usize, key: Key, mode: KeyMode) {
+        out.attr(true);
+        let number = staff.to_string();
+        let mut attributes: Vec<(&str, &str)> = Vec::new();
+        if staff > 0 {
+            attributes.push(("number", &number));
+        }
+        out.xml.start_element("key", &attributes);
+        // TODO(parité): armures non traditionnelles (key-step/key-alter/
+        // key-accidental), qui demandent la liste des symboles d'armure.
+        out.xml.tag("fifths", &key.fifths().to_string());
+        match mode {
+            KeyMode::Major => out.xml.tag("mode", "major"),
+            KeyMode::Minor => out.xml.tag("mode", "minor"),
+            KeyMode::None => out.xml.tag("mode", "none"),
+            KeyMode::Unknown => {}
+        }
+        out.xml.end_element();
+    }
+
+    /// Écrit `<time>` (`timesig`).
+    fn timesig(&self, out: &mut Out, timesig: &TimeSig, staff: usize) {
+        out.attr(true);
+        let number = staff.to_string();
+        let mut attributes: Vec<(&str, &str)> = Vec::new();
+        match timesig.kind {
+            TimeSigType::FourFour => attributes.push(("symbol", "common")),
+            TimeSigType::AllaBreve => attributes.push(("symbol", "cut")),
+            _ => {}
+        }
+        if staff > 0 {
+            attributes.push(("number", &number));
+        }
+        // TODO(parité): print-object="no" (mesure non visible ou non affichée
+        // sur cette portée) : le modèle n'a pas ces propriétés.
+        out.xml.start_element("time", &attributes);
+        out.xml.tag("beats", &timesig.numerator.to_string());
+        out.xml.tag("beat-type", &timesig.denominator.to_string());
+        out.xml.end_element();
+    }
+
+    /// Écrit les clefs de début de mesure (`findAndExportClef`, `exportDefaultClef`).
+    fn write_measure_clefs(
+        &self,
+        out: &mut Out,
+        measure: &Measure,
+        measure_index: usize,
+        part: &Part,
+    ) {
+        let staves = part.staves.len();
+
+        // MuseScore reprend la clef posée à la fin de la mesure précédente,
+        // ou la clef d'en-tête de la première mesure. Une clef de type `Clef`
+        // au début d'une mesure est écrite par `writeElement` avec
+        // `after-barline="yes"`.
+        let segment = if measure_index > 0 {
+            let previous = &self.score.measures[measure_index - 1];
+            find_segment(previous, SegmentType::Clef, measure.start_tick)
+        } else {
+            find_segment(measure, SegmentType::HeaderClef, measure.start_tick)
+        };
+
+        if let Some(segment) = segment {
+            for (position, staff_id) in part.staves.iter().enumerate() {
+                let track = Track::new(*staff_id, 0);
+                if let Some(SegmentItem::Clef(clef)) = segment.element(track) {
+                    let xml_staff = if staves > 1 { position + 1 } else { 0 };
+                    self.clef(out, xml_staff, self.active_clef(clef), &[]);
+                }
+            }
+        }
+
+        // Clef par défaut si le segment d'en-tête existe mais n'en porte pas.
+        if measure.start_tick.is_zero() {
+            if let Some(segment) = find_segment(measure, SegmentType::HeaderClef, Tick::ZERO) {
+                for (position, staff_id) in part.staves.iter().enumerate() {
+                    let track = Track::new(*staff_id, 0);
+                    if !matches!(segment.element(track), Some(SegmentItem::Clef(_))) {
+                        let xml_staff = if staves > 1 { position + 1 } else { 0 };
+                        self.clef(out, xml_staff, ClefType::G, &[("print-object", "no")]);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Clef à afficher (concert ou transposée).
+    fn active_clef(&self, clef: &Clef) -> ClefType {
+        if self.options.concert_pitch {
+            clef.concert
+        } else if clef.transposed != ClefType::Invalid {
+            clef.transposed
+        } else {
+            clef.concert
+        }
+    }
+
+    /// Écrit `<clef>` (`clef`).
+    fn clef(&self, out: &mut Out, staff: usize, clef: ClefType, extra: &[(&str, &str)]) {
+        out.attr(true);
+        let number = staff.to_string();
+        let mut attributes: Vec<(&str, &str)> = Vec::new();
+        if staff > 0 {
+            attributes.push(("number", &number));
+        }
+        attributes.extend_from_slice(extra);
+        out.xml.start_element("clef", &attributes);
+
+        let sign = clef.sign().musicxml_name();
+        out.xml.tag("sign", sign);
+        if sign != "percussion" && sign != "TAB" && clef.line() != 0 {
+            out.xml.tag("line", &clef.line().to_string());
+        }
+        if clef.octave_change() != 0 {
+            out.xml
+                .tag("clef-octave-change", &clef.octave_change().to_string());
+        }
+        out.xml.end_element();
+    }
+
+    /// Écrit une clef changée au milieu d'une mesure (`writeElement`).
+    fn mid_measure_clef(
+        &self,
+        out: &mut Out,
+        segment: &Segment,
+        clef: &Clef,
+        measure: &Measure,
+        xml_staff: usize,
+    ) {
+        // MuseScore n'écrit ni les clefs générées ni celles de l'en-tête.
+        if segment.kind == SegmentType::HeaderClef {
+            return;
+        }
+        if segment.tick != measure.start_tick && segment.tick != measure.end_tick() {
+            self.clef(out, xml_staff, self.active_clef(clef), &[]);
+        } else if segment.tick == measure.start_tick {
+            self.clef(
+                out,
+                xml_staff,
+                self.active_clef(clef),
+                &[("after-barline", "yes")],
+            );
+        }
+        // Une clef en fin de mesure sera écrite au début de la suivante.
+    }
+
+    /// Écrit `<staff-details>` pour les portées non standard (`writeStaffDetails`).
+    fn write_staff_details(&self, out: &mut Out, part: &Part) {
+        let staves = part.staves.len();
+        for (position, staff_id) in part.staves.iter().enumerate() {
+            let staff = self.score.staff(*staff_id);
+            // TODO(parité): portées en petit format (staff-size), tablature
+            // et portées masquées.
+            if staff.lines == 5 {
+                continue;
+            }
+            out.attr(true);
+            let number = (position + 1).to_string();
+            let mut attributes: Vec<(&str, &str)> = Vec::new();
+            if staves > 1 {
+                attributes.push(("number", &number));
+            }
+            out.xml.start_element("staff-details", &attributes);
+            out.xml.tag("staff-lines", &staff.lines.to_string());
+            out.xml.end_element();
+        }
+    }
+
+    /// Écrit `<transpose>` (`writeInstrumentDetails`).
+    fn write_instrument_details(&self, out: &mut Out, part: &Part) {
+        let Some(transpose) = part.instrument.transpose else {
+            return;
+        };
+        if transpose.chromatic == 0 {
+            return;
+        }
+
+        out.attr(true);
+        if self.options.concert_pitch {
+            out.xml.start_element("for-part", &[]);
+            out.xml.start_element("part-transpose", &[]);
+        } else {
+            out.xml.start_element("transpose", &[]);
+        }
+        out.xml
+            .tag("diatonic", &(transpose.diatonic % 7).to_string());
+        out.xml
+            .tag("chromatic", &(transpose.chromatic % 12).to_string());
+        let octave_change = transpose.chromatic / 12;
+        if octave_change != 0 {
+            out.xml.tag("octave-change", &octave_change.to_string());
+        }
+        out.xml.end_element();
+        if self.options.concert_pitch {
+            out.xml.end_element();
+        }
+        out.attr(false);
+    }
+}
+
+// ----------------------------------------------------------------------
+// Barres de mesure
+// ----------------------------------------------------------------------
+
+impl Context<'_> {
+    /// Écrit une reprise au début de la mesure (`barlineLeft`).
+    fn barline_left(&self, out: &mut Out, measure: &Measure) {
+        if !measure.start_bar_line.is_repeat_start() {
+            return;
+        }
+        // TODO(parité): volta et ailes de reprise (style).
+        out.attr(false);
+        out.xml.start_element("barline", &[("location", "left")]);
+        out.xml.tag("bar-style", "heavy-light");
+        out.xml.tag_empty("repeat", &[("direction", "forward")]);
+        out.xml.end_element();
+    }
+
+    /// Écrit une barre de milieu de mesure (`barlineMiddle`).
+    fn barline_middle(&self, out: &mut Out, kind: BarLineType) {
+        if let Some(style) = barline_style(kind) {
+            out.attr(false);
+            out.xml.start_element("barline", &[("location", "middle")]);
+            out.xml.tag("bar-style", style);
+            out.xml.end_element();
+        }
+    }
+
+    /// Écrit la barre de fin de mesure (`barlineRight`).
+    fn barline_right(&self, out: &mut Out, measure: &Measure) {
+        let kind = measure.end_bar_line;
+        if kind == BarLineType::Normal || kind == BarLineType::StartRepeat {
+            return;
+        }
+        // TODO(parité): volta, fermata sur la barre, ailes et reprises
+        // comptées (`times`).
+        out.attr(false);
+        out.xml.start_element("barline", &[("location", "right")]);
+        if let Some(style) = barline_style(kind) {
+            out.xml.tag("bar-style", style);
+        }
+        if kind.is_repeat_end() {
+            out.xml.tag_empty("repeat", &[("direction", "backward")]);
+        }
+        out.xml.end_element();
+    }
+}
+
+// ----------------------------------------------------------------------
+// Annotations : harmonies, nuances, textes
+// ----------------------------------------------------------------------
+
+impl Context<'_> {
+    /// Écrit les accords chiffrés du segment (`harmonies`).
+    fn harmonies(&self, out: &mut Out, segment: &Segment, staff_id: StaffId) {
+        for entry in &segment.annotations {
+            if entry.track.staff() != staff_id {
+                continue;
+            }
+            if let Annotation::Harmony(harmony) = &entry.annotation {
+                write_harmony(out, harmony);
+            }
+        }
+    }
+
+    /// Écrit les annotations du segment (`annotations`).
+    ///
+    /// MuseScore rattache toutes les annotations d'une portée à la première
+    /// voix occupée du segment (`findTrackForAnnotations`).
+    fn annotations(&self, out: &mut Out, segment: &Segment, staff_id: StaffId, xml_staff: usize) {
+        for entry in &segment.annotations {
+            if entry.track.staff() != staff_id {
+                continue;
+            }
+            match &entry.annotation {
+                Annotation::Harmony(_) => {}
+                Annotation::Dynamic(dynamic) => write_dynamic(out, dynamic, xml_staff),
+                Annotation::StaffText(text) => {
+                    write_words(out, &text.text, text.placement, false, xml_staff);
+                }
+                Annotation::SystemText(text) => {
+                    write_words(out, &text.text, text.placement, true, xml_staff);
+                }
+                Annotation::Tempo(tempo) => write_tempo(out, tempo, xml_staff),
+                Annotation::RehearsalMark(mark) => write_rehearsal(out, mark, xml_staff),
+                // TODO(parité): annotations non modélisées (doigtés,
+                // symboles, pédales…).
+                Annotation::Other { .. } => {}
+            }
+        }
+    }
+
+    /// Écrit les annotations qui ne sont attachées à aucune note
+    /// (`annotationsWithoutNote`).
+    fn annotations_without_note(&self, out: &mut Out, measure: &Measure, part: &Part) {
+        let staves = part.staves.len();
+        for segment in &measure.segments {
+            if segment.kind != SegmentType::ChordRest {
+                continue;
+            }
+            for (position, staff_id) in part.staves.iter().enumerate() {
+                if annotation_track(segment, *staff_id).is_some() {
+                    continue;
+                }
+                let xml_staff = if staves > 1 { position + 1 } else { 0 };
+                self.annotations(out, segment, *staff_id, xml_staff);
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------------------------
+// Helpers d'écriture
+// ----------------------------------------------------------------------
+
+/// Gestion de `<notations>` (`Notations` dans le C++).
+struct Notations {
+    printed: bool,
+    container: Option<&'static str>,
+}
+
+impl Notations {
+    fn new() -> Self {
+        Self {
+            printed: false,
+            container: None,
+        }
+    }
+
+    /// Ouvre `<notations>` puis le conteneur demandé si nécessaire.
+    fn tag(&mut self, out: &mut Out, container: Option<&'static str>) {
+        if !self.printed {
+            out.xml.start_element("notations", &[]);
+            self.printed = true;
+        }
+        if self.container != container {
+            if self.container.is_some() {
+                out.xml.end_element();
+            }
+            if let Some(name) = container {
+                out.xml.start_element(name, &[]);
+            }
+            self.container = container;
+        }
+    }
+
+    /// Ferme le conteneur courant, sans fermer `<notations>`.
+    fn close_container(&mut self, out: &mut Out) {
+        if self.container.is_some() {
+            out.xml.end_element();
+            self.container = None;
+        }
+    }
+
+    /// Ferme tout ce qui est ouvert (`etag`).
+    fn finish(&mut self, out: &mut Out) {
+        self.close_container(out);
+        if self.printed {
+            out.xml.end_element();
+            self.printed = false;
+        }
+    }
+}
+
+/// Écrit `<pitch>` (`writePitch`).
+fn write_pitch(out: &mut Out, note: &Note, concert_pitch: bool, transpose_chromatic: i32) {
+    // TODO(parité): percussions (unpitched), micro-intervalles
+    // (centOffset/tuning) absents du modèle.
+    let (step, alter, octave) = if !pitch::tpc_is_valid(note.tpc) {
+        pitch::midi_pitch(note.pitch)
+    } else {
+        let used_tpc = if concert_pitch {
+            note.tpc
+        } else if pitch::tpc_is_valid(note.tpc_transposed) {
+            note.tpc_transposed
+        } else {
+            note.tpc
+        };
+        let transpose = if concert_pitch {
+            0
+        } else {
+            transpose_chromatic
+        };
+        pitch::written_pitch(note.pitch, used_tpc, transpose)
+    };
+
+    out.xml.start_element("pitch", &[]);
+    out.xml.tag("step", &step.to_string());
+    if alter != 0 {
+        out.xml.tag("alter", &alter.to_string());
+    }
+    out.xml.tag("octave", &octave.to_string());
+    out.xml.end_element();
+}
+
+/// Écrit `<type>` et les `<dot>` (`writeType`, `tick2xml`).
+fn write_type(out: &mut Out, notated: Fraction, chord: &Chord, note: &Note, grace: bool) {
+    let small = chord.small;
+    let cue = is_cue_note(chord, note);
+    let Some((name, dots)) = pitch::tick_to_xml(notated) else {
+        return;
+    };
+    if name == "measure" {
+        return;
+    }
+    if small && !cue && !grace {
+        out.xml.tag_with("type", &[("size", "cue")], name);
+    } else if small && !cue && grace {
+        out.xml.tag_with("type", &[("size", "grace-cue")], name);
+    } else {
+        out.xml.tag("type", name);
+    }
+    for _ in 0..dots {
+        out.xml.tag_empty("dot", &[]);
+    }
+}
+
+/// Écrit `<tuplet-actual>` et `<tuplet-normal>`.
+fn tuplet_actual_and_normal(out: &mut Out, tuplet: &Tuplet) {
+    let actual = tuplet.ratio.numerator().to_string();
+    let normal = tuplet.ratio.denominator().to_string();
+    let base = pitch::tick_to_xml(tuplet.base_len);
+
+    out.xml.start_element("tuplet-actual", &[]);
+    out.xml.tag("tuplet-number", &actual);
+    write_tuplet_type_and_dots(out, base);
+    out.xml.end_element();
+
+    out.xml.start_element("tuplet-normal", &[]);
+    out.xml.tag("tuplet-number", &normal);
+    write_tuplet_type_and_dots(out, base);
+    out.xml.end_element();
+}
+
+/// Écrit `<tuplet-type>` et ses points.
+fn write_tuplet_type_and_dots(out: &mut Out, base: Option<(&'static str, u8)>) {
+    if let Some((name, dots)) = base {
+        out.xml.tag("tuplet-type", name);
+        for _ in 0..dots {
+            out.xml.tag_empty("tuplet-dot", &[]);
+        }
+    }
+}
+
+/// Écrit `<beam>` (`writeBeam`).
+///
+/// MuseScore déduit les niveaux de ligature de l'objet `Beam` ; le modèle ne
+/// garde que le mode de l'élément, d'où une sortie limitée au premier niveau.
+fn write_beam(out: &mut Out, mode: BeamMode) {
+    let name = match mode {
+        BeamMode::Auto | BeamMode::None => return,
+        BeamMode::Begin => "begin",
+        BeamMode::Mid => "continue",
+        BeamMode::End => "end",
+        BeamMode::ForwardHook => "forward hook",
+        BeamMode::BackwardHook => "backward hook",
+    };
+    out.xml.tag_with("beam", &[("number", "1")], name);
+}
+
+/// Écrit une syllabe (`<lyric>`).
+fn write_lyric(out: &mut Out, lyric: &Lyrics) {
+    if lyric.text.is_empty() {
+        return;
+    }
+    let number = lyric.number().to_string();
+    let mut attributes: Vec<(&str, String)> = vec![("number", number)];
+    if lyric.placement == Placement::Above {
+        attributes.push(("placement", "above".to_owned()));
+    }
+    let borrowed = borrow_attributes(&attributes);
+    out.xml.start_element("lyric", &borrowed);
+    out.xml.tag("syllabic", syllabic_name(lyric.syllabic));
+    out.xml.tag("text", &lyric.text);
+    if lyric.melisma.is_some() {
+        out.xml.tag_empty("extend", &[]);
+    }
+    out.xml.end_element();
+}
+
+/// Écrit une articulation (`symIdToArtic`, `fermata`, `writeBreathMark`).
+fn write_articulation(out: &mut Out, articulation: &Articulation, notations: &mut Notations) {
+    let placement = match articulation.anchor {
+        ArticulationAnchor::Up => Some("above"),
+        ArticulationAnchor::Down => Some("below"),
+        ArticulationAnchor::Auto => None,
+    };
+
+    match &articulation.kind {
+        ArticulationType::Staccato => articulations_tag(out, notations, "staccato", placement),
+        ArticulationType::Staccatissimo => {
+            articulations_tag(out, notations, "staccatissimo", placement);
+        }
+        ArticulationType::Accent => articulations_tag(out, notations, "accent", placement),
+        ArticulationType::Marcato => {
+            let direction = if articulation.anchor == ArticulationAnchor::Down {
+                "down"
+            } else {
+                "up"
+            };
+            notations.tag(out, Some("articulations"));
+            out.xml.tag_empty("strong-accent", &[("type", direction)]);
+        }
+        ArticulationType::Tenuto => articulations_tag(out, notations, "tenuto", placement),
+        ArticulationType::Portato => {
+            articulations_tag(out, notations, "detached-legato", placement);
+        }
+        ArticulationType::BreathMark => {
+            notations.tag(out, Some("articulations"));
+            out.xml.tag("breath-mark", "comma");
+        }
+        ArticulationType::Caesura => {
+            notations.tag(out, Some("articulations"));
+            out.xml.tag_empty("caesura", &[]);
+        }
+        ArticulationType::Fermata
+        | ArticulationType::FermataShort
+        | ArticulationType::FermataLong
+        | ArticulationType::FermataVeryShort
+        | ArticulationType::FermataVeryLong => {
+            let upright = articulation.anchor != ArticulationAnchor::Down;
+            let kind = if upright { "upright" } else { "inverted" };
+            notations.tag(out, None);
+            let body = match articulation.kind {
+                ArticulationType::FermataShort => Some("angled"),
+                ArticulationType::FermataLong => Some("square"),
+                ArticulationType::FermataVeryShort => Some("double-angled"),
+                ArticulationType::FermataVeryLong => Some("double-square"),
+                _ => None,
+            };
+            match body {
+                Some(body) => out.xml.tag_with("fermata", &[("type", kind)], body),
+                None => out.xml.tag_empty("fermata", &[("type", kind)]),
+            }
+        }
+        ArticulationType::UpBow => technical(out, notations, "up-bow", placement),
+        ArticulationType::DownBow => technical(out, notations, "down-bow", placement),
+        ArticulationType::Harmonic => {
+            notations.tag(out, Some("technical"));
+            out.xml.start_element("harmonic", &[]);
+            out.xml.tag_empty("natural", &[]);
+            out.xml.end_element();
+        }
+        ArticulationType::Open => technical(out, notations, "open-string", placement),
+        ArticulationType::Stopped => technical(out, notations, "stopped", placement),
+        ArticulationType::SnapPizzicato => technical(out, notations, "snap-pizzicato", placement),
+        ArticulationType::Other(name) => {
+            notations.tag(out, Some("articulations"));
+            out.xml.tag_empty("other-articulation", &[("smufl", name)]);
+        }
+    }
+}
+
+fn articulations_tag(
+    out: &mut Out,
+    notations: &mut Notations,
+    name: &str,
+    placement: Option<&str>,
+) {
+    notations.tag(out, Some("articulations"));
+    match placement {
+        Some(placement) => out.xml.tag_empty(name, &[("placement", placement)]),
+        None => out.xml.tag_empty(name, &[]),
+    }
+}
+
+fn technical(out: &mut Out, notations: &mut Notations, name: &str, placement: Option<&str>) {
+    notations.tag(out, Some("technical"));
+    match placement {
+        Some(placement) => out.xml.tag_empty(name, &[("placement", placement)]),
+        None => out.xml.tag_empty(name, &[]),
+    }
+}
+
+/// Écrit `<notehead>` (`writeNotehead`).
+///
+/// Le modèle n'a pas de groupe de tête distinct du type et pas de schéma de
+/// tête : les têtes nommées (smufl) ne sont pas exportées.
+fn write_notehead(out: &mut Out, note: &Note, chord: &Chord) {
+    match note.head {
+        NoteHeadType::Auto => {}
+        NoteHeadType::Quarter => out.xml.tag_with("notehead", &[("filled", "yes")], "normal"),
+        NoteHeadType::Half | NoteHeadType::Whole => {
+            out.xml.tag_with("notehead", &[("filled", "no")], "normal");
+        }
+        // MuseScore désigne la tête de brève par son nom SMuFL.
+        NoteHeadType::Breve => {
+            out.xml
+                .tag_with("notehead", &[("smufl", "noteheadDoubleWhole")], "other");
+        }
+        NoteHeadType::Cross => out.xml.tag("notehead", "cross"),
+        NoteHeadType::Diamond => out.xml.tag("notehead", "diamond"),
+        NoteHeadType::Triangle => {
+            let value = if chord.stem == StemDirection::Down {
+                "inverted triangle"
+            } else {
+                "triangle"
+            };
+            out.xml.tag("notehead", value);
+        }
+        NoteHeadType::Slash => out.xml.tag("notehead", "slash"),
+        NoteHeadType::Square => out.xml.tag("notehead", "square"),
+        NoteHeadType::X => out.xml.tag("notehead", "x"),
+        // TODO(parité): têtes « other » (smufl) et têtes nommées.
+        NoteHeadType::Other(_) => {}
+    }
+}
+
+/// Écrit une altération (`writeAccidental`).
+fn write_accidental(out: &mut Out, accidental: &Accidental) {
+    if !accidental.visible {
+        return;
+    }
+    let Some(name) = accidental_name(accidental.kind) else {
+        return;
+    };
+    let mut attributes: Vec<(&str, &str)> = Vec::new();
+    if accidental.bracket {
+        attributes.push(("bracket", "yes"));
+    } else if accidental.parentheses {
+        attributes.push(("parentheses", "yes"));
+    }
+    // TODO(parité): smufl pour les altérations exotiques, taille, couleur.
+    out.xml.tag_with("accidental", &attributes, name);
+}
+
+/// Nom MusicXML d'une altération (`accidentalType2MusicXmlString`).
+fn accidental_name(kind: AccidentalType) -> Option<&'static str> {
+    match kind {
+        AccidentalType::Flat => Some("flat"),
+        AccidentalType::Natural => Some("natural"),
+        AccidentalType::Sharp => Some("sharp"),
+        AccidentalType::DoubleFlat => Some("flat-flat"),
+        AccidentalType::DoubleSharp => Some("double-sharp"),
+        AccidentalType::NaturalFlat => Some("natural-flat"),
+        AccidentalType::NaturalSharp => Some("natural-sharp"),
+        AccidentalType::TripleFlat => Some("triple-flat"),
+        AccidentalType::TripleSharp => Some("triple-sharp"),
+        AccidentalType::None | AccidentalType::Other(_) => None,
+    }
+}
+
+/// Écrit un accord chiffré (`harmony`).
+fn write_harmony(out: &mut Out, harmony: &Harmony) {
+    out.attr(false);
+    let mut attributes: Vec<(&str, String)> = Vec::new();
+    if harmony.placement == Placement::Below {
+        attributes.push(("placement", "below".to_owned()));
+    }
+    attributes.push(("print-frame", "no".to_owned()));
+    let borrowed = borrow_attributes(&attributes);
+
+    out.xml.start_element("harmony", &borrowed);
+
+    let text = if !harmony.text.is_empty() {
+        harmony.text.as_str()
+    } else {
+        harmony.kind.as_str()
+    };
+    let kind = musicxml_kind(&harmony.kind);
+
+    if pitch::tpc_is_valid(harmony.root_tpc) {
+        harmony_root(out, "root", harmony.root_tpc);
+        // TODO(parité): table complète `harmonyXmlKind` de MuseScore. Le
+        // modèle ne garde que le nom interne, sans correspondance MusicXML ;
+        // on retombe sur le texte comme MuseScore pour un accord non reconnu.
+        match kind {
+            Some(kind) if !text.is_empty() => {
+                out.xml.tag_with("kind", &[("text", text)], kind);
+            }
+            Some(kind) => out.xml.tag("kind", kind),
+            None if !text.is_empty() => {
+                out.xml.tag_with("kind", &[("text", text)], "");
+            }
+            None => out.xml.tag("kind", "none"),
+        }
+        if let Some(bass) = harmony.bass_tpc {
+            if pitch::tpc_is_valid(bass) {
+                harmony_root(out, "bass", bass);
+            }
+        }
+    } else if !text.is_empty() {
+        out.xml.tag_with("kind", &[("text", text)], "");
+    } else {
+        out.xml.tag("kind", "none");
+    }
+
+    out.xml.end_element();
+}
+
+/// Écrit `<root>` ou `<bass>` d'un accord chiffré.
+fn harmony_root(out: &mut Out, name: &str, tpc: i8) {
+    let alter = pitch::tpc_alter(tpc);
+    let step = pitch::tpc_step_name(tpc);
+    out.xml.start_element(name, &[]);
+    out.xml.tag(&format!("{name}-step"), &step.to_string());
+    if alter != 0 {
+        out.xml.tag(&format!("{name}-alter"), &alter.to_string());
+    }
+    out.xml.end_element();
+}
+
+/// Écrit une nuance (`dynamic`).
+fn write_dynamic(out: &mut Out, dynamic: &crate::model::Dynamic, xml_staff: usize) {
+    if dynamic.text.is_empty() {
+        return;
+    }
+    out.attr(false);
+    let placement = placement_name(dynamic.placement);
+    out.xml
+        .start_element("direction", &[("placement", placement)]);
+    out.xml.start_element("direction-type", &[]);
+    out.xml.start_element("dynamics", &[]);
+    if is_musicxml_dynamic(&dynamic.text) {
+        out.xml.tag_empty(&dynamic.text, &[]);
+    } else {
+        out.xml.tag("other-dynamics", &dynamic.text);
+    }
+    out.xml.end_element();
+    out.xml.end_element();
+    if let Some(velocity) = dynamic.velocity {
+        if velocity > 0 {
+            let value = f64::from(velocity) * 100.0 / 90.0;
+            out.xml
+                .tag_empty("sound", &[("dynamics", &format_number(value, 2))]);
+        }
+    }
+    if xml_staff > 0 {
+        out.xml.tag("staff", &xml_staff.to_string());
+    }
+    out.xml.end_element();
+}
+
+/// Écrit un texte de portée ou système (`words`).
+fn write_words(out: &mut Out, text: &str, placement: Placement, system: bool, xml_staff: usize) {
+    if text.is_empty() {
+        return;
+    }
+    out.attr(false);
+    let mut attributes: Vec<(&str, &str)> = vec![("placement", placement_name(placement))];
+    if system {
+        attributes.push(("system", "only-top"));
+    }
+    out.xml.start_element("direction", &attributes);
+    out.xml.start_element("direction-type", &[]);
+    out.xml.tag("words", text);
+    out.xml.end_element();
+    if xml_staff > 0 {
+        out.xml.tag("staff", &xml_staff.to_string());
+    }
+    out.xml.end_element();
+}
+
+/// Écrit une indication de tempo (`tempoText`, `tempoSound`).
+fn write_tempo(out: &mut Out, tempo: &crate::model::Tempo, xml_staff: usize) {
+    if tempo.text.is_empty() && tempo.beats_per_second.is_none() {
+        return;
+    }
+    out.attr(false);
+    out.xml.start_element(
+        "direction",
+        &[("placement", placement_name(tempo.placement))],
+    );
+    out.xml.start_element("direction-type", &[]);
+    // TODO(parité): <metronome> quand le texte en contient un.
+    if !tempo.text.is_empty() {
+        out.xml.tag("words", &tempo.text);
+    }
+    out.xml.end_element();
+    if xml_staff > 0 {
+        out.xml.tag("staff", &xml_staff.to_string());
+    }
+    if let Some(beats_per_second) = tempo.beats_per_second {
+        let bpm = (beats_per_second * 60.0 * 100.0).round() / 100.0;
+        out.xml
+            .tag_empty("sound", &[("tempo", &format_number(bpm, 2))]);
+    }
+    out.xml.end_element();
+}
+
+/// Écrit un repère de répétition (`rehearsal`).
+fn write_rehearsal(out: &mut Out, mark: &crate::model::RehearsalMark, xml_staff: usize) {
+    if mark.text.is_empty() {
+        return;
+    }
+    out.attr(false);
+    out.xml.start_element(
+        "direction",
+        &[("placement", placement_name(mark.placement))],
+    );
+    out.xml.start_element("direction-type", &[]);
+    out.xml.tag("rehearsal", &mark.text);
+    out.xml.end_element();
+    if xml_staff > 0 {
+        out.xml.tag("staff", &xml_staff.to_string());
+    }
+    out.xml.end_element();
+}
+
+// ----------------------------------------------------------------------
+// Helpers
+// ----------------------------------------------------------------------
+
+/// Emprunte des attributs construits dynamiquement.
+fn borrow_attributes<'a>(attributes: &'a [(&'a str, String)]) -> Vec<(&'a str, &'a str)> {
+    attributes
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect()
+}
+
+/// Première valeur occupée d'une portée dans un segment.
+fn annotation_track(segment: &Segment, staff_id: StaffId) -> Option<Track> {
+    (0..VOICES)
+        .map(|voice| Track::new(staff_id, voice as u8))
+        .find(|track| segment.element(*track).is_some())
+}
+
+/// Numéro de voix MusicXML (`voice` dans `ExportMusicXml::chord`).
+fn voice_number(xml_staff: usize, voice: u8) -> i32 {
+    if xml_staff == 0 {
+        i32::from(voice) + 1
+    } else {
+        (xml_staff as i32 - 1) * VOICES as i32 + i32::from(voice) + 1
+    }
+}
+
+/// Vrai si l'accord d'agrément vient après l'accord principal.
+fn grace_is_after(kind: GraceType) -> bool {
+    matches!(
+        kind,
+        GraceType::Grace8After | GraceType::Grace16After | GraceType::Grace32After
+    )
+}
+
+/// Vrai pour une petite note jouée comme repère (`isCueNote`).
+fn is_cue_note(chord: &Chord, note: &Note) -> bool {
+    chord.small && !note.play
+}
+
+fn syllabic_name(syllabic: LyricsSyllabic) -> &'static str {
+    match syllabic {
+        LyricsSyllabic::Single => "single",
+        LyricsSyllabic::Begin => "begin",
+        LyricsSyllabic::Middle => "middle",
+        LyricsSyllabic::End => "end",
+    }
+}
+
+fn placement_name(placement: Placement) -> &'static str {
+    match placement {
+        Placement::Above => "above",
+        Placement::Below => "below",
+    }
+}
+
+/// Style de barre MusicXML (`normalBarlineStyle`).
+fn barline_style(kind: BarLineType) -> Option<&'static str> {
+    match kind {
+        BarLineType::Normal => Some("regular"),
+        BarLineType::Double => Some("light-light"),
+        BarLineType::Broken | BarLineType::Dashed => Some("dashed"),
+        BarLineType::End | BarLineType::EndRepeat | BarLineType::EndStartRepeat => {
+            Some("light-heavy")
+        }
+        BarLineType::Dotted => Some("dotted"),
+        // MuseScore ne produit pas de style pour cette variante.
+        BarLineType::DoubleDotted => None,
+        BarLineType::Short | BarLineType::DoubleShort => Some("short"),
+        BarLineType::Tick => Some("tick"),
+        BarLineType::StartRepeat => None,
+    }
+}
+
+/// Vrai pour une nuance reconnue par MusicXML (`validMusicXmlDynamics`).
+fn is_musicxml_dynamic(text: &str) -> bool {
+    matches!(
+        text,
+        "p" | "pp"
+            | "ppp"
+            | "pppp"
+            | "ppppp"
+            | "pppppp"
+            | "f"
+            | "ff"
+            | "fff"
+            | "ffff"
+            | "fffff"
+            | "ffffff"
+            | "mp"
+            | "mf"
+            | "sf"
+            | "sfp"
+            | "sfpp"
+            | "fp"
+            | "rf"
+            | "rfz"
+            | "sfz"
+            | "sffz"
+            | "fz"
+            | "n"
+            | "pf"
+            | "sfzp"
+    )
+}
+
+/// Correspondance minimale entre nom interne d'accord et valeur MusicXML.
+///
+/// Le modèle ne conserve pas la sémantique du chiffrage : seuls les noms qui
+/// sont déjà des valeurs MusicXML sont reconnus.
+fn musicxml_kind(kind: &str) -> Option<&'static str> {
+    const KINDS: [&str; 39] = [
+        "major",
+        "minor",
+        "augmented",
+        "diminished",
+        "dominant",
+        "major-seventh",
+        "minor-seventh",
+        "diminished-seventh",
+        "augmented-seventh",
+        "half-diminished",
+        "major-minor",
+        "major-sixth",
+        "minor-sixth",
+        "dominant-ninth",
+        "major-ninth",
+        "minor-ninth",
+        "dominant-11th",
+        "major-11th",
+        "minor-11th",
+        "dominant-13th",
+        "major-13th",
+        "minor-13th",
+        "suspended-second",
+        "suspended-fourth",
+        "Neapolitan",
+        "Italian",
+        "French",
+        "German",
+        "pedal",
+        "power",
+        "Tristan",
+        "other",
+        "none",
+        "major-seventh-flat-five",
+        "major-seventh-sharp-five",
+        "major-seventh-sharp-eleventh",
+        "minor-seventh-flat-five",
+        "minor-seventh-sharp-five",
+        "minor-major",
+    ];
+    KINDS
+        .iter()
+        .find(|candidate| candidate.eq_ignore_ascii_case(kind))
+        .copied()
+}
+
+/// Texte brut d'un nom de partie, altérations remplacées comme MuseScore.
+fn plain_part_name(part: &Part) -> String {
+    if !part.long_name.is_empty() {
+        plain_text(&part.long_name)
+    } else if !part.name.is_empty() {
+        plain_text(&part.name)
+    } else {
+        String::new()
+    }
+}
+
+/// Remplace les bémols et dièses typographiques par leur équivalent ASCII.
+fn plain_text(text: &str) -> String {
+    text.replace('♭', "b").replace('♯', "#")
+}
+
+/// Nombre formaté comme MuseScore : entier si possible, sinon arrondi.
+fn format_number(value: f64, decimals: usize) -> String {
+    let factor = 10_f64.powi(decimals as i32);
+    let rounded = (value * factor).round() / factor;
+    if rounded.fract() == 0.0 && rounded.abs() < 1e15 {
+        format!("{}", rounded as i64)
+    } else {
+        format!("{rounded}")
+    }
+}
+
+/// Cherche un segment d'un type et d'un tick donnés.
+fn find_segment(measure: &Measure, kind: SegmentType, tick: Tick) -> Option<&Segment> {
+    measure
+        .segments
+        .iter()
+        .find(|segment| segment.kind == kind && segment.tick == tick)
+}
+
+/// Calcule les divisions (`calcDivisions`).
+fn compute_divisions(context: &Context<'_>) -> u32 {
+    let mut fractions: BTreeSet<Fraction> = BTreeSet::new();
+
+    for part in &context.score.parts {
+        let mut tick = Tick::ZERO;
+        for measure in &context.score.measures {
+            for staff_id in &part.staves {
+                for voice in 0..VOICES {
+                    let track = Track::new(*staff_id, voice as u8);
+                    for segment in &measure.segments {
+                        let Some(item) = segment.element(track) else {
+                            continue;
+                        };
+                        if let SegmentItem::BarLine(barline) = item {
+                            if barline.kind.is_repeat_start() {
+                                continue;
+                            }
+                        }
+                        if tick != segment.tick {
+                            fractions.insert((segment.tick - tick).abs());
+                            tick = segment.tick;
+                        }
+                        if let SegmentItem::ChordRest(chord_rest) = item {
+                            let length = context.global_ticks(chord_rest, measure);
+                            if !length.is_zero() {
+                                fractions.insert(length.abs());
+                            }
+                            tick += length;
+                        }
+                    }
+                }
+            }
+            let end = measure.end_tick();
+            if end != tick {
+                fractions.insert((end - tick).abs());
+            }
+            tick = end;
+        }
+    }
+
+    let mut divisions: u128 = 4;
+    for fraction in &fractions {
+        divisions = lcm(divisions, u128::from(fraction.denominator().unsigned_abs()));
+    }
+    let result = divisions / 4;
+    u32::try_from(result).unwrap_or(u32::MAX)
+}
+
+fn lcm(left: u128, right: u128) -> u128 {
+    if left == 0 || right == 0 {
+        return 0;
+    }
+    left / gcd(left, right) * right
+}
+
+fn gcd(mut left: u128, mut right: u128) -> u128 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left
+}

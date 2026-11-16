@@ -11,10 +11,12 @@
 //!
 //! Le module [`model`] contient le modèle de partition en mémoire, sans aucune
 //! lecture ni écriture XML : il est rempli par les lecteurs `.mscx` et parcouru
-//! par l'export MusicXML.
+//! par l'export MusicXML. Le module [`export`] produit le document MusicXML
+//! `partwise` (ou l'archive `.mxl`) à partir de ce modèle.
 
 mod container;
 mod error;
+pub mod export;
 pub mod model;
 pub mod read;
 
