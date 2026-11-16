@@ -259,6 +259,7 @@ fn read_note(
     let mut head = NoteHeadType::Auto;
     let mut ghost = false;
     let mut play = true;
+    let mut parentheses = false;
     let mut fingerings = Vec::new();
 
     for child in node.children() {
@@ -277,6 +278,13 @@ fn read_note(
             "head" => head = tables::note_head(child.int_text()),
             "ghost" | "dead" => ghost = child.int_text().unwrap_or(0) != 0,
             "play" => play = child.int_text().unwrap_or(1) != 0,
+            "Symbol" => {
+                if let Some(name) = child.child("name") {
+                    if name.trimmed_text().starts_with("noteheadParenthesis") {
+                        parentheses = true;
+                    }
+                }
+            }
             "Spanner" => spanner::read_note_spanner(reader, child, ctx, id, grace, index),
             "ChordLine" => {
                 if let Some(kind) = notations::read_chord_line(child) {
@@ -322,6 +330,7 @@ fn read_note(
 
     let note = reader.score.note_mut(id);
     note.pitch = pitch;
+    note.parentheses = parentheses;
     note.tpc = tpc1;
     note.tpc_transposed = tpc2;
     note.accidental = accidental;

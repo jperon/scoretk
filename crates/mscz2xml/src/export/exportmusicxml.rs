@@ -2440,6 +2440,9 @@ fn write_lyric(out: &mut Out, lyric: &Lyrics) {
 /// pour les têtes sans équivalent.
 fn write_notehead(out: &mut Out, note: &Note, chord: &Chord, duration: Duration) {
     let mut attributes: Vec<(&str, &str)> = Vec::new();
+    if note.parentheses {
+        attributes.push(("parentheses", "yes"));
+    }
     match note.head {
         NoteHeadType::Quarter => attributes.push(("filled", "yes")),
         NoteHeadType::Half | NoteHeadType::Whole => attributes.push(("filled", "no")),
@@ -2461,7 +2464,7 @@ fn write_notehead(out: &mut Out, note: &Note, chord: &Chord, duration: Duration)
 
     let value = match &note.head_group {
         NoteHeadGroup::Normal => {
-            if note.head == NoteHeadType::Auto {
+            if note.head == NoteHeadType::Auto && !note.parentheses {
                 None
             } else {
                 Some("normal")

@@ -1407,6 +1407,13 @@ impl Reader {
                     }
                 }
                 "visible" => note.visible = child.int().unwrap_or(1) != 0,
+                "Symbol" => {
+                    if let Some(name) = child.child("name") {
+                        if name.text().starts_with("noteheadParenthesis") {
+                            note.parentheses = true;
+                        }
+                    }
+                }
                 "ghost" | "dead" => note.ghost = child.int().unwrap_or(0) != 0,
                 "play" => note.play = child.int().unwrap_or(1) != 0,
                 "Spanner" if child.attr("type") == Some("Tie") => {
