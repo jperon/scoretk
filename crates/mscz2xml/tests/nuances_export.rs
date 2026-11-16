@@ -169,3 +169,40 @@ fn soufflet_en_texte_avec_dynamiques() {
     assert!(xml.contains("<dashes type=\"start\" number=\"1\"/>"));
     assert!(xml.contains("<dashes type=\"stop\" number=\"1\"/>"));
 }
+
+#[test]
+fn nuance_rattachee_a_la_deuxieme_portee() {
+    let mut score = Score::new();
+    let part = score.add_part(Part::new("Piano", "Piano"));
+    let _upper = score.add_staff(part);
+    let lower = score.add_staff(part);
+    let measure = ajouter_mesure(&mut score, Fraction::ZERO, Fraction::ONE);
+    let track = Track::new(lower, 0);
+    ajouter_accord(&mut score, measure, track, Fraction::ZERO);
+    let mut dynamic = Dynamic::new("mf");
+    dynamic.velocity = Some(80);
+    ajouter_nuance(&mut score, measure, track, dynamic);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<staff>2</staff>"));
+    assert!(xml.contains("<mf/>"));
+}
+
+#[test]
+fn soufflet_place_au_dessus() {
+    let (mut score, track, _) = score_simple();
+    let mut data = Hairpin::new();
+    data.placement = Placement::Above;
+    soufflet(
+        &mut score,
+        track,
+        Fraction::ZERO,
+        Fraction::ONE,
+        data,
+        HairpinType::Crescendo,
+    );
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<direction placement=\"above\">"));
+    assert!(xml.contains("<wedge type=\"crescendo\" number=\"1\"/>"));
+}
