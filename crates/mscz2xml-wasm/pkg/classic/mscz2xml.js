@@ -73,6 +73,13 @@
 
   var exports = null;
 
+  // Le glue `no-modules` déclare `let wasm_bindgen = …` : c'est une liaison
+  // lexicale globale, visible des autres scripts classiques mais PAS une
+  // propriété de `self`. D'où la référence par identifiant, sous `typeof`.
+  function glue() {
+    return typeof wasm_bindgen === 'undefined' ? null : wasm_bindgen;
+  }
+
   var ready = new Promise(function (resolve, reject) {
     if (typeof global.importScripts !== 'function') {
       reject(
@@ -89,14 +96,14 @@
       reject(error);
       return;
     }
-    if (typeof global.wasm_bindgen !== 'function') {
+    var init = glue();
+    if (typeof init !== 'function') {
       reject(new Error('mscz2xml : wasm_bindgen absent après importScripts'));
       return;
     }
-    global
-      .wasm_bindgen(fileUrl('mscz2xml_wasm_bg.wasm'))
+    init({ module_or_path: fileUrl('mscz2xml_wasm_bg.wasm') })
       .then(function () {
-        exports = global.wasm_bindgen;
+        exports = glue();
         resolve(api);
       })
       .catch(reject);
