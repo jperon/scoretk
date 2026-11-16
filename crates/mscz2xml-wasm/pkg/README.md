@@ -53,4 +53,4 @@ l'`importScripts`.
 
 ## Licence
 
-GPL-3.0-or-later, comme la bibliothèque.
+GPL-3.0-only, comme la bibliothèque.
