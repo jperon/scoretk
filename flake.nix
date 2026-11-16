@@ -126,7 +126,7 @@
           name = "mscz2xml";
           inherit version;
           description = "Conversion MuseScore (.mscz/.mscx) vers MusicXML, dans le navigateur (WebAssembly)";
-          license = "GPL-3.0-or-later";
+          license = "GPL-3.0-only";
           type = "module";
           main = "./esm/mscz2xml_wasm.js";
           types = "./esm/mscz2xml_wasm.d.ts";
