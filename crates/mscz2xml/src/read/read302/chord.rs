@@ -25,7 +25,13 @@ pub(crate) fn read_chord_rest(
     grace_index: usize,
 ) -> ChordRest {
     let is_rest = node.name() == "Rest";
-    let mut duration_kind = DurationType::Quarter;
+    // `MeasureRead::readVoice` crée tout `<Rest>` en silence de mesure entière ;
+    // `<durationType>` le cas échéant change la figure.
+    let mut duration_kind = if is_rest {
+        DurationType::Measure
+    } else {
+        DurationType::Quarter
+    };
     let mut dots = 0u8;
     let mut explicit: Option<Fraction> = None;
     let mut grace: Option<GraceType> = None;
@@ -72,6 +78,12 @@ pub(crate) fn read_chord_rest(
             // figure. MuseScore garde la figure lue et écrase seulement les
             // ticks ; on préfère ici une figure dont la durée est juste.
             duration = tables::duration_from_ticks(ticks);
+        }
+    }
+
+    if is_rest {
+        for child in node.children_named("Spanner") {
+            spanner::read_chord_spanner(reader, child, ctx);
         }
     }
 
@@ -258,6 +270,8 @@ fn read_accidental(node: &Node) -> Accidental {
             }
             "bracket" => accidental.bracket = child.int_text().unwrap_or(0) != 0,
             "parens" | "parentheses" => accidental.parentheses = child.int_text().unwrap_or(0) != 0,
+            // TODO(parité): `<role>` (accidentals d'avertissement, exportés en
+            // `cautionary="yes"`) n'a pas d'équivalent dans le modèle.
             "visible" => accidental.visible = child.int_text().unwrap_or(1) != 0,
             _ => {}
         }

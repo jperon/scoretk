@@ -17,10 +17,11 @@
 //!
 //! Le corpus ne contient que des fichiers 3.00 à 3.02.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use mscz2xml::model::{tpc, Score, SpannerType};
+use mscz2xml::model::{tpc, ChordRestKind, Fraction, NoteId, Score, SegmentItem, SpannerType};
 use mscz2xml::read::read302;
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -31,6 +32,7 @@ struct Counts {
     measures: usize,
     parts: usize,
     notes: usize,
+    ties: usize,
 }
 
 /// Hauteur écrite et orthographe d'une note de la référence.
@@ -94,6 +96,13 @@ fn load_corpus() -> Vec<CorpusEntry> {
         .collect()
 }
 
+fn has_type(element: &quick_xml::events::BytesStart<'_>, expected: &str) -> bool {
+    element
+        .attributes()
+        .flatten()
+        .any(|attribute| attribute.key.as_ref() == "type" && attribute.value.as_ref() == expected)
+}
+
 fn count_reference(path: &Path) -> Counts {
     let bytes = fs::read(path).unwrap_or_else(|error| panic!("{} : {error}", path.display()));
     let mut reader = Reader::from_reader(bytes.as_slice());
@@ -122,6 +131,7 @@ fn count_reference(path: &Path) -> Counts {
                 "score-part" => counts.parts += 1,
                 "rest" if note_depth.is_some() => note_has_rest = true,
                 "note" => counts.notes += 1,
+                "tie" if has_type(&empty, "start") => counts.ties += 1,
                 _ => {}
             },
             Ok(Event::End(_)) => {
@@ -294,6 +304,18 @@ fn corpus_v3_se_lit_sans_erreur_et_a_les_bons_compteurs() {
                 entry.counts.notes
             ));
         }
+        let ties = entry
+            .score
+            .notes
+            .iter()
+            .filter(|note| note.tie_forward.is_some())
+            .count();
+        if ties != entry.counts.ties {
+            differences.push(format!(
+                "{} : {ties} liaisons commencées pour {} dans la référence",
+                entry.name, entry.counts.ties
+            ));
+        }
     }
 
     assert!(
@@ -382,10 +404,90 @@ fn corpus_v3_hauteurs_et_orthographes() {
     );
 }
 
-/// Cohérence interne des mesures : contiguïté et absence de débordement.
+/// Position de chaque note (tick du segment qui la porte).
+fn note_positions(score: &Score) -> HashMap<NoteId, Fraction> {
+    let mut positions = HashMap::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (_, item) in segment.iter_elements() {
+                let SegmentItem::ChordRest(chord_rest) = item else {
+                    continue;
+                };
+                let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                    continue;
+                };
+                for &note in &chord.notes {
+                    positions.insert(note, segment.tick);
+                }
+                for grace in &chord.grace_chords {
+                    for &note in &grace.chord.notes {
+                        positions.insert(note, segment.tick);
+                    }
+                }
+            }
+        }
+    }
+    positions
+}
+
+/// Les liaisons de prolongation relient deux notes de même hauteur, plus tard.
+#[test]
+fn corpus_v3_liaisons_coherentes() {
+    for entry in load_corpus() {
+        let positions = note_positions(&entry.score);
+        for (index, note) in entry.score.notes.iter().enumerate() {
+            let id = NoteId::from_index(index);
+            if let Some(forward) = note.tie_forward {
+                let target = entry.score.note(forward);
+                assert_eq!(
+                    target.pitch, note.pitch,
+                    "{} : liaison vers une note de hauteur différente",
+                    entry.name
+                );
+                assert_eq!(
+                    target.tie_back,
+                    Some(id),
+                    "{} : liaison avant/arrière non symétrique",
+                    entry.name
+                );
+                assert!(
+                    positions[&forward] > positions[&id],
+                    "{} : liaison qui ne va pas vers l'avant",
+                    entry.name
+                );
+            }
+            if let Some(back) = note.tie_back {
+                assert_eq!(
+                    entry.score.note(back).tie_forward,
+                    Some(id),
+                    "{} : liaison arrière/avant non symétrique",
+                    entry.name
+                );
+            }
+        }
+    }
+}
+
+/// Cohérence interne : mesures contiguës, pas de débordement, spanners orientés.
 #[test]
 fn corpus_v3_mesures_coherentes() {
     for entry in load_corpus() {
+        for spanner in &entry.score.spanners {
+            assert!(
+                spanner.start.tick <= spanner.end.tick,
+                "{} : spanner {:?} orienté à l'envers ({} > {})",
+                entry.name,
+                spanner.kind,
+                spanner.start.tick.as_f64(),
+                spanner.end.tick.as_f64()
+            );
+            assert!(
+                spanner.start.tick >= Fraction::ZERO,
+                "{} : spanner {:?} avant le début",
+                entry.name,
+                spanner.kind
+            );
+        }
         for (index, measure) in entry.score.measures.iter().enumerate() {
             assert!(
                 measure.len.is_positive(),

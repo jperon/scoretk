@@ -138,7 +138,9 @@ impl Reader {
                 "Part" => part::read_part(self, child),
                 // TODO(parité): `<Score>` imbriqué (parties liées), `<Style>`,
                 // `<Order>`, `<SystemObjects>`, `<PageLocks>`, `<SystemLocks>`,
-                // `<SpannerMap>` (5.0)… ne sont pas lus.
+                // `<SpannerMap>` (5.0)… ne sont pas lus. Les `<Spanner>`
+                // complets écrits au niveau du `<Score>` (fichiers antérieurs à
+                // 3.01) ne le sont pas non plus.
                 _ => {}
             }
         }

@@ -68,6 +68,9 @@ fn read_voice(
     irregular: bool,
 ) {
     let measure_start = reader.score.measures[index].start_tick;
+    // L'indice de voix est positionnel (ordre des blocs `<voice>`). Au-delà de
+    // quatre blocs, le C++ déborde sur la portée suivante ; le modèle, lui, n'a
+    // que quatre voix par portée : on garde la dernière plutôt que de déborder.
     let track = Track::from_raw((staff * VOICES + usize::from(voice.min(VOICES as u8 - 1))) as u32);
     let mut ctx = VoiceCtx {
         tick: measure_start,
