@@ -21,6 +21,7 @@ mod dom;
 mod names;
 mod nuances;
 mod repeats;
+mod style;
 
 use dom::Element;
 
@@ -97,9 +98,11 @@ struct Reader {
 
 impl Reader {
     fn new(version: MscVersion) -> Self {
+        let mut score = Score::new();
+        score.style = crate::model::StyleSettings::for_version(version.major());
         Self {
             version: version.as_u32(),
-            score: Score::new(),
+            score,
             file_division: 480,
             staves: Vec::new(),
             staff_ids: Vec::new(),
@@ -136,6 +139,9 @@ impl Reader {
                     }
                 }
                 "Part" => self.read_part(child),
+                "Style" => {
+                    self.score.style = style::read(child, MscVersion::from_raw(self.version))
+                }
                 "metaTag" => self.read_meta_tag(child),
                 "workTitle" => self.score.metadata.work_title = child.text().to_owned(),
                 "workNumber" => self.score.metadata.work_number = child.text().to_owned(),
@@ -360,6 +366,10 @@ impl Reader {
         }
 
         let mut measure_index = 0usize;
+        // Numéro de page courant pour les textes de cadre, comme
+        // `Score::pages()` : un `<LayoutBreak>` de type `page` place l'élément
+        // qui le porte sur la page suivante.
+        let mut page = 1u32;
         for child in &element.children {
             match child.name.as_str() {
                 "Measure" => {
@@ -381,11 +391,18 @@ impl Reader {
                     // Les cadres sont des objets de partition : MuseScore les
                     // écrit sous la première portée (`StaffRead::readStaff`).
                     if staff_index == 0 {
-                        self.read_vbox(child);
+                        self.read_vbox(child, page);
                     }
                 }
                 "tick" => {}
                 _ => {}
+            }
+            // Un saut de page s'applique *après* l'élément qui le porte :
+            // le cadre ou la mesure reste sur la page courante, le suivant
+            // commence la page d'après (mise en page de MuseScore).
+            if staff_index == 0 && page_break(child) {
+                page += 1;
+                self.score.style.page_count = self.score.style.page_count.max(page);
             }
         }
         Ok(())
@@ -394,9 +411,14 @@ impl Reader {
     /// Lit les textes d'un cadre vertical (`VBox`), exportés en `<credit>`.
     ///
     /// `VBox::el()` (`engraving/dom/vbox.cpp`) contient des `Text` ; l'export
-    /// les parcourt par page (`ExportMusicXml::credits`). Le modèle n'a qu'une
-    /// page, d'où `page = 1`.
-    fn read_vbox(&mut self, element: &Element) {
+    /// les parcourt par page (`ExportMusicXml::credits`). `page` vient du
+    /// dernier `<LayoutBreak>` rencontré.
+    fn read_vbox(&mut self, element: &Element, page: u32) {
+        let height = element
+            .child("height")
+            .map(Element::text)
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap_or(10.0);
         for text_element in element.children_named("Text") {
             if !visible(text_element) {
                 continue;
@@ -413,6 +435,8 @@ impl Reader {
                 continue;
             }
             let mut credit = Credit::new(text, CreditStyle::from_name(style));
+            credit.page = page;
+            credit.vbox_height = height;
             // `<align>` ne fixe que l'alignement horizontal (`Pid::POSITION`),
             // l'alignement vertical reste celui du style.
             if let Some(align) = text_element.child("align").map(Element::text) {
@@ -959,7 +983,7 @@ impl Reader {
                         // non modélisées.
                     }
                 }
-                "Lyrics" => lyrics.push(read_lyrics(child)),
+                "Lyrics" => lyrics.push(read_lyrics(child, self.score.style.lyrics_placement)),
                 // TODO(parité): <Ornament> — l'accord qu'il embarque n'est pas
                 // un accord de segment et ne doit pas être compté ;
                 // <Tremolo>, <TremoloTwoChord>, <Arpeggio>, <Stem>, <Hook>,
@@ -1018,7 +1042,7 @@ impl Reader {
                 }
                 "duration" => explicit = child.fraction(),
                 "gap" => gap = child.int().unwrap_or(0) != 0,
-                "Lyrics" => lyrics.push(read_lyrics(child)),
+                "Lyrics" => lyrics.push(read_lyrics(child, self.score.style.lyrics_placement)),
                 _ => {}
             }
         }
@@ -1540,7 +1564,11 @@ fn read_clef(element: &Element) -> Clef {
 }
 
 /// Lecture des `<Lyrics>` d'un accord.
-fn read_lyrics(element: &Element) -> Lyrics {
+///
+/// `default_placement` est `lyricsPlacement` (`Lyrics::propertyDefault` pour
+/// `Pid::PLACEMENT`, « below » par défaut) : les fichiers n'écrivent
+/// `<placement>` que si la valeur diffère du style.
+fn read_lyrics(element: &Element, default_placement: Placement) -> Lyrics {
     let verse = element
         .child("no")
         .and_then(Element::int)
@@ -1559,7 +1587,9 @@ fn read_lyrics(element: &Element) -> Lyrics {
         .child("ticks_f")
         .or_else(|| element.child("ticks"))
         .and_then(Element::fraction);
-    lyrics.placement = placement(element.child("placement"));
+    lyrics.placement = element
+        .child("placement")
+        .map_or(default_placement, |node| placement(Some(node)));
     lyrics
 }
 
@@ -1611,6 +1641,15 @@ fn read_text_base(element: &Element) -> ParsedTextBase {
             .map_or(style_placement, |node| placement(Some(node))),
         visible: visible(element),
     }
+}
+
+/// Vrai si l'élément porte un saut de page (`<LayoutBreak>` `page`).
+fn page_break(element: &Element) -> bool {
+    element.child("LayoutBreak").is_some_and(|layout_break| {
+        layout_break
+            .child("subtype")
+            .is_some_and(|subtype| subtype.text() == "page")
+    })
 }
 
 /// Vrai si l'élément n'est pas marqué `<visible>0</visible>`.

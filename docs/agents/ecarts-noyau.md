@@ -40,7 +40,7 @@ ouverts.
 | repeat68 | **identique** |
 | repeat69 | **identique** |
 | tenuto_accent | **identique** |
-| testExcludeInvisibleElements | 21 |
+| testExcludeInvisibleElements | 20 |
 | testLocalTimesig1 | **identique** |
 | testNoteheads2 | **identique** |
 | testTempoPrecision | **identique** |
@@ -364,3 +364,43 @@ n'a qu'une durée de mesure globale (`Measure::len`), calculée à partir de la
 première portée ; sans `<duration>` explicite, le silence « mesure » de la
 seconde portée prendrait encore 9/8 au lieu de 3/4 (durée de mesure par portée
 non modélisée).
+
+## 15. Paroles au-dessus de la portée et crédits sans mise en page — corrigé
+
+**Corrigé** (modèle, lecteurs 3.x et 4.x, export) :
+
+- `Lyrics::placement` par défaut vaut `below`, comme `lyricsPlacement` dans
+  MuseScore (`engraving/dom/lyrics.cpp`, `propertyDefault(Pid::PLACEMENT)`).
+  Les deux lecteurs lisent `<Style><lyricsPlacement>` et ne prennent
+  `<placement>` d'une syllabe que s'il est présent ; l'export n'écrit
+  `placement="above"` que pour un placement explicitement supérieur.
+  Avant, tout `<Lyrics>` sans `<placement>` était lu comme « au-dessus ».
+- `StyleSettings` (nouveau `model/style.rs`) conserve le format de page, les
+  marges, les tailles de police des crédits et le nombre de pages. Les lecteurs
+  lisent `<Style>` (`Spatium`, `pageWidth`/`pageHeight`, `page*Margin`,
+  `pageTwosided`, `lyricsPlacement`, `*FontSize`) ; les valeurs absentes
+  prennent les défauts de MuseScore pour la version du fichier (marges 10/20 mm
+  en 3.x, 15 mm en 4.x, titre 24 puis 22 pt).
+- L'export écrit `<defaults>` (`<scaling>`, `<page-layout>` et ses
+  `<page-margins>`) et positionne les `<credit>` comme `textAsCreditWords` :
+  `default-x` d'après l'alignement et les marges, `default-y` d'après la
+  hauteur de page, la marge haute, le décalage du sous-titre (10 mm) et la
+  hauteur du `VBox` pour les alignements bas. Le copyright est répété sur
+  chaque page déduite des `<LayoutBreak>` de type `page`.
+
+Tests : `crates/mscz2xml/tests/credits_corpus.rs` compare crédits, format de
+page et paroles des corpus v3 et v4.
+
+Écarts restants, listés dans ce test :
+
+- `<defaults>` n'écrit pas encore `<appearance>`, `<music-font>`,
+  `<word-font>` ni `<lyric-font>` : ces blocs demandent une trentaine de
+  valeurs de style (largeurs de traits, polices) absentes du modèle.
+- `moonlight.mscx` : les entités nommées d'un texte de crédit
+  (`&quot;`) sont ré-échappées par l'écrivain XML (`&amp;quot;`).
+- `testBreaksPage.mscx` : un `VBox` placé après deux systèmes n'est pas en
+  haut de page ; sans moteur de mise en page, son `default-y` calculé est
+  celui d'un cadre en haut de page (1626,67 au lieu de 1446,67, soit 18 sp).
+- Les nombres du format de page sont rendus à six chiffres significatifs comme
+  MuseScore ; les marges du corpus v3 diffèrent parfois de 0,0001 dixième
+  (`56.6893` au lieu de `56.6894`) par arrondi de la valeur de style.

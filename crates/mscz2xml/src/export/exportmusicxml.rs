@@ -32,6 +32,7 @@ use crate::model::{
 };
 use crate::Result;
 
+use super::layout;
 use super::nuances::{self, Nuances};
 use super::pitch;
 use super::repeats;
@@ -339,8 +340,8 @@ impl<'a> Context<'a> {
 
         self.work(out);
         self.identification(out);
+        layout::write_defaults(out, &self.score.style);
         text::write_credits(out, self.score);
-        // TODO(parité): <defaults> (style, polices, mise en page).
         self.part_list(out);
         self.write_parts(out, nuances);
 

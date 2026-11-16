@@ -65,7 +65,7 @@ pub(crate) fn read_chord_rest(
             "StemDirection" => stem = tables::stem_direction(&child.trimmed_text()),
             "small" => small = child.int_text().unwrap_or(0) != 0,
             "BeamMode" => beam = tables::beam_mode(&child.trimmed_text()),
-            "Lyrics" => lyrics.push(read_lyrics(child)),
+            "Lyrics" => lyrics.push(read_lyrics(child, reader.score.style.lyrics_placement)),
             "Articulation" => articulations.push(read_articulation(child)),
             // TODO(parité): `<staffMove>` (notes sur une autre portée),
             // `<Arpeggio>`, `<Tremolo>`, `<Stem>`, `<Hook>`, `<StemSlash>`,
@@ -286,12 +286,14 @@ fn read_accidental(node: &Node) -> Accidental {
     accidental
 }
 
-fn read_lyrics(node: &Node) -> Lyrics {
+/// `default_placement` est `lyricsPlacement` (`Lyrics::propertyDefault` pour
+/// `Pid::PLACEMENT`, « below » par défaut).
+fn read_lyrics(node: &Node, default_placement: Placement) -> Lyrics {
     let mut verse = 0usize;
     let mut syllabic = LyricsSyllabic::Single;
     let mut text = String::new();
     let mut melisma = None;
-    let mut placement = Placement::Below;
+    let mut placement = default_placement;
 
     for child in node.children() {
         match child.name() {

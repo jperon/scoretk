@@ -17,11 +17,12 @@
 
 use crate::model::{
     Credit, CreditJustify, CreditStyle, CreditValign, DurationType, Placement, RehearsalFrame,
-    RehearsalMark, RichText, Score, Tempo, TextFormat, TextFragment, DEFAULT_TEXT_FONT,
-    DEFAULT_TEXT_SIZE, MUSICAL_TEXT_FONT,
+    RehearsalMark, RichText, Score, StyleSettings, Tempo, TextFormat, TextFragment,
+    DEFAULT_TEXT_FONT, DEFAULT_TEXT_SIZE, MUSICAL_TEXT_FONT,
 };
 
 use super::exportmusicxml::{format_number, placement_name, Out};
+use super::layout;
 use super::pitch;
 
 // ----------------------------------------------------------------------
@@ -77,10 +78,14 @@ const REHEARSAL_STYLE: StyleFormat = StyleFormat {
 const BASE_FORMAT: StyleFormat = WORDS_STYLE;
 
 /// Format du style d'un crédit.
-fn credit_style(credit: &Credit) -> StyleFormat {
+///
+/// La taille par défaut dépend de la version de MuseScore (le style « title »
+/// vaut 24 pt en 3.x et 22 pt en 4.x) : elle vient de [`StyleSettings`], jamais
+/// du seul nom du style.
+fn credit_style(credit: &Credit, settings: &StyleSettings) -> StyleFormat {
     StyleFormat {
         font_family: DEFAULT_TEXT_FONT,
-        font_size: credit.style.default_font_size(),
+        font_size: settings.credit_font_size(&credit.style),
         bold: false,
     }
 }
@@ -671,28 +676,35 @@ pub(crate) fn write_rehearsal(out: &mut Out, mark: &RehearsalMark, xml_staff: us
 
 /// Écrit les `<credit>` de la partition (`ExportMusicXml::credits`).
 ///
-/// MuseScore parcourt les cadres verticaux de toutes les pages ; le modèle n'a
-/// qu'une page, et les textes sont ordonnés comme dans le fichier.
+/// MuseScore parcourt les cadres verticaux de toutes les pages, dans l'ordre
+/// des pages ; `Credit::page` vient des `<LayoutBreak>` lus par le lecteur.
 pub(crate) fn write_credits(out: &mut Out, score: &Score) {
     for credit in &score.credits {
-        write_credit(out, credit);
+        write_credit(out, credit, &score.style);
     }
 
     // MuseScore ajoute le copyright en bas au centre de chaque page.
     if !score.metadata.copyright.is_empty() {
-        let credit = Credit {
-            text: RichText::new(score.metadata.copyright.clone()),
-            style: CreditStyle::Other("rights".to_owned()),
-            justify: CreditJustify::Center,
-            valign: CreditValign::Bottom,
-            page: 1,
-        };
-        write_credit(out, &credit);
+        for page in 1..=score.style.page_count.max(1) {
+            let credit = Credit {
+                text: RichText::new(score.metadata.copyright.clone()),
+                style: CreditStyle::Other("rights".to_owned()),
+                justify: CreditJustify::Center,
+                valign: CreditValign::Bottom,
+                page,
+                vbox_height: 10.0,
+            };
+            write_credit(out, &credit, &score.style);
+        }
     }
 }
 
 /// Écrit un `<credit>` (`creditWords`).
-fn write_credit(out: &mut Out, credit: &Credit) {
+///
+/// La position est celle que calcule `textAsCreditWords` : `default-x` selon
+/// l'alignement et les marges, `default-y` depuis le haut de la page et la
+/// marge haute (voir [`layout::credit_position`]).
+fn write_credit(out: &mut Out, credit: &Credit, settings: &StyleSettings) {
     if credit.text.is_empty() {
         return;
     }
@@ -700,14 +712,26 @@ fn write_credit(out: &mut Out, credit: &Credit) {
     out.xml.start_element("credit", &[("page", &page)]);
     // MuseScore passe le type au crédit lui-même : `tidToCreditType` pour les
     // textes de cadre, `rights` pour le copyright.
-    let kind = match &credit.style {
-        CreditStyle::Other(name) if name == "rights" => Some("rights"),
-        style => style.credit_type(),
+    let is_rights = matches!(&credit.style, CreditStyle::Other(name) if name == "rights");
+    let kind = if is_rights {
+        Some("rights")
+    } else {
+        credit.style.credit_type()
     };
     if let Some(kind) = kind {
         out.xml.tag("credit-type", kind);
     }
+
+    let (x, y) = if is_rights {
+        layout::rights_position(settings)
+    } else {
+        layout::credit_position(credit, settings)
+    };
+    let x = format_number(x, 2);
+    let y = format_number(y, 2);
     let attributes: Vec<(&str, &str)> = vec![
+        ("default-x", &x),
+        ("default-y", &y),
         ("justify", credit.justify.musicxml_name()),
         ("valign", credit.valign.musicxml_name()),
     ];
@@ -716,7 +740,7 @@ fn write_credit(out: &mut Out, credit: &Credit) {
         "credit-words",
         &attributes,
         credit.text.fragments(),
-        &credit_style(credit),
+        &credit_style(credit, settings),
     );
     out.xml.end_element();
 }
