@@ -1588,6 +1588,10 @@ impl Reader {
         }
 
         let mut key_sig = KeySig::new(Key::new(concert));
+        key_sig.visible = element
+            .child("visible")
+            .and_then(Element::int)
+            .is_none_or(|value| value != 0);
         key_sig.transposed_key = Key::new(written.unwrap_or(concert));
         key_sig.mode = element
             .child("mode")
@@ -1799,6 +1803,10 @@ fn read_time_sig(element: &Element) -> TimeSig {
         kind,
         stretch,
         courtesy: false,
+        visible: element
+            .child("visible")
+            .and_then(Element::int)
+            .is_none_or(|value| value != 0),
     }
 }
 

@@ -294,6 +294,10 @@ fn read_clef(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
 }
 
 fn read_key_sig(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
+    let key_visible = node
+        .child("visible")
+        .and_then(Node::int_text)
+        .is_none_or(|value| value != 0);
     let mut written = Key::C;
     let mut mode = KeyMode::Unknown;
     let mut valid = false;
@@ -338,6 +342,7 @@ fn read_key_sig(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
         transposed_key: written,
         mode,
         courtesy: announce,
+        visible: key_visible,
     };
     segment_mut(&mut reader.score.measures[ctx.measure], kind, ctx.tick)
         .set_element(ctx.track, SegmentItem::KeySig(key_sig));
@@ -356,6 +361,7 @@ fn read_time_sig(reader: &mut Reader, ctx: &VoiceCtx, node: &Node, irregular: bo
             "subtype" => subtype = child.int_text(),
             "stretchN" => stretch_numerator = child.int_text(),
             "stretchD" => stretch_denominator = child.int_text(),
+            "visible" => time_sig.visible = child.int_text().unwrap_or(1) != 0,
             "isCourtesy" => time_sig.courtesy = child.int_text().unwrap_or(0) != 0,
             // TODO(parité): `<textN>`/`<textD>` et `<Groups>` (affichage) ne
             // sont pas modélisés.

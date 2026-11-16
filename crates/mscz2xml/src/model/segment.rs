@@ -102,6 +102,8 @@ pub struct KeySig {
     pub mode: KeyMode,
     /// Vrai pour une armure de courtoisie.
     pub courtesy: bool,
+    /// Vrai si l'armure est visible (`print-object="no"` sinon).
+    pub visible: bool,
 }
 
 impl KeySig {
@@ -112,6 +114,7 @@ impl KeySig {
             transposed_key: concert_key,
             mode: KeyMode::Major,
             courtesy: false,
+            visible: true,
         }
     }
 }
@@ -149,6 +152,8 @@ pub struct TimeSig {
     pub stretch: Fraction,
     /// Vrai pour une mesure de courtoisie.
     pub courtesy: bool,
+    /// Vrai si l'indication de mesure est visible.
+    pub visible: bool,
 }
 
 impl TimeSig {
@@ -160,6 +165,7 @@ impl TimeSig {
             kind: TimeSigType::Normal,
             stretch: Fraction::ONE,
             courtesy: false,
+            visible: true,
         }
     }
 
