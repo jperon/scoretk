@@ -923,15 +923,15 @@ impl Reader {
                 }
                 "head" => {
                     if let Some(head) = names::note_head(child.text()) {
-                        note.head = head;
+                        note.head_group = head;
                     }
-                    // TODO(parité): têtes non modélisées (groupes SMuFL).
                 }
                 "headType" => {
                     if let Some(head) = names::head_type(child.text()) {
                         note.head = head;
                     }
                 }
+                "visible" => note.visible = child.int().unwrap_or(1) != 0,
                 "ghost" | "dead" => note.ghost = child.int().unwrap_or(0) != 0,
                 "play" => note.play = child.int().unwrap_or(1) != 0,
                 "Spanner" if child.attr("type") == Some("Tie") => {

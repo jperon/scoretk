@@ -106,7 +106,14 @@ ne stocke pas le nom de piste (TODO explicite) ; l'export se replie sur
 
 ## 3. Têtes de note : mauvais nom, têtes nommées perdues — 3 fichiers
 
-Fichiers : testNoteheads2 (principal), voiceswitching, testExcludeInvisibleElements.
+**Corrigé** (lecteur/modèle/export) : `Note` distingue désormais le groupe de
+tête (`head_group`, `NoteHeadGroup`) du type (`head`), et `visible`.
+L'export reproduit `writeNotehead` : valeur MusicXML du groupe (`x`, `cross`,
+`circle-x`, `slashed`, `triangle`, `inverted triangle`, solfège…), nom SMuFL
+avec `other` pour les groupes sans équivalent, `none` pour une note invisible,
+attribut `filled` d'après `<headType>`.
+
+Fichiers : testNoteheads2 (conforme), voiceswitching, testExcludeInvisibleElements.
 
 Diff (testNoteheads2) :
 

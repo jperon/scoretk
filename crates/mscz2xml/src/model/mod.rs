@@ -77,7 +77,7 @@ pub use fraction::{Fraction, Tick};
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::Measure;
-pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadType};
+pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadGroup, NoteHeadType};
 pub use part::{Instrument, Part, Staff, Transpose};
 pub use score::{Score, ScoreMetadata, DEFAULT_DIVISION};
 pub use segment::{

@@ -46,6 +46,7 @@ const EXPECTED_CONFORMANT: &[&str] = &[
     "repeat68",
     "repeat69",
     "tenuto_accent",
+    "testNoteheads2",
     "testTempoPrecision",
 ];
 

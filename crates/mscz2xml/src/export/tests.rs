@@ -7,9 +7,9 @@
 use crate::model::{
     tpc, Accidental, AccidentalType, Annotation, Articulation, ArticulationType, BarLineType,
     BeamMode, ChordRest, Clef, ClefType, Duration, DurationType, Fraction, GraceChord, GraceType,
-    Harmony, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadType,
-    NoteId, Part, PartId, Score, Segment, SegmentItem, SegmentType, Staff, StaffId, TimeSig, Track,
-    Transpose, Tuplet,
+    Harmony, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note,
+    NoteHeadGroup, NoteId, Part, PartId, Score, Segment, SegmentItem, SegmentType, Staff, StaffId,
+    TimeSig, Track, Transpose, Tuplet,
 };
 
 use super::{export_musicxml, export_musicxml_with, ExportOptions};
@@ -556,7 +556,7 @@ fn alterations_et_tetes_de_note() {
         Duration::quarter(),
         &[(65, tpc::F)],
     );
-    score.note_mut(ids[0]).head = NoteHeadType::X;
+    score.note_mut(ids[0]).head_group = NoteHeadGroup::Cross;
 
     score.add_measure(measure);
 

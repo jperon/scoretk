@@ -25,9 +25,9 @@ use crate::model::chord::ChordRestKind;
 use crate::model::{
     Accidental, AccidentalType, Annotation, Articulation, ArticulationAnchor, ArticulationType,
     BarLineType, BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType,
-    Harmony, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadType, Part,
-    Placement, Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig,
-    TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
+    Harmony, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup,
+    NoteHeadType, Part, Placement, Score, Segment, SegmentItem, SegmentType, StaffId,
+    StemDirection, Tick, TimeSig, TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::Result;
 
@@ -1056,7 +1056,7 @@ impl Context<'_> {
                 }
             }
 
-            write_notehead(out, note, chord);
+            write_notehead(out, note, chord, duration);
 
             if xml_staff > 0 {
                 out.xml.tag("staff", &xml_staff.to_string());
@@ -1804,35 +1804,144 @@ fn technical(out: &mut Out, notations: &mut Notations, name: &str, placement: Op
 
 /// Écrit `<notehead>` (`writeNotehead`).
 ///
-/// Le modèle n'a pas de groupe de tête distinct du type et pas de schéma de
-/// tête : les têtes nommées (smufl) ne sont pas exportées.
-fn write_notehead(out: &mut Out, note: &Note, chord: &Chord) {
+/// Le groupe (`<head>`) et le type (`<headType>`) sont distincts : le type
+/// donne l'attribut `filled`, le groupe la valeur MusicXML, ou son nom SMuFL
+/// pour les têtes sans équivalent.
+fn write_notehead(out: &mut Out, note: &Note, chord: &Chord, duration: Duration) {
+    let mut attributes: Vec<(&str, &str)> = Vec::new();
     match note.head {
-        NoteHeadType::Auto => {}
-        NoteHeadType::Quarter => out.xml.tag_with("notehead", &[("filled", "yes")], "normal"),
-        NoteHeadType::Half | NoteHeadType::Whole => {
-            out.xml.tag_with("notehead", &[("filled", "no")], "normal");
-        }
-        // MuseScore désigne la tête de brève par son nom SMuFL.
-        NoteHeadType::Breve => {
-            out.xml
-                .tag_with("notehead", &[("smufl", "noteheadDoubleWhole")], "other");
-        }
-        NoteHeadType::Cross => out.xml.tag("notehead", "cross"),
-        NoteHeadType::Diamond => out.xml.tag("notehead", "diamond"),
-        NoteHeadType::Triangle => {
-            let value = if chord.stem == StemDirection::Down {
-                "inverted triangle"
+        NoteHeadType::Quarter => attributes.push(("filled", "yes")),
+        NoteHeadType::Half | NoteHeadType::Whole => attributes.push(("filled", "no")),
+        _ => {}
+    }
+
+    let up = chord.stem != StemDirection::Down;
+    let head_type = if note.head == NoteHeadType::Auto {
+        duration.kind.head_type()
+    } else {
+        note.head
+    };
+
+    // Note invisible : la tête seule disparaît (`writeNotehead`).
+    if !note.visible {
+        out.xml.tag_with("notehead", &attributes, "none");
+        return;
+    }
+
+    let value = match &note.head_group {
+        NoteHeadGroup::Normal => {
+            if note.head == NoteHeadType::Auto {
+                None
             } else {
-                "triangle"
-            };
-            out.xml.tag("notehead", value);
+                Some("normal")
+            }
         }
-        NoteHeadType::Slash => out.xml.tag("notehead", "slash"),
-        NoteHeadType::Square => out.xml.tag("notehead", "square"),
-        NoteHeadType::X => out.xml.tag("notehead", "x"),
-        // TODO(parité): têtes « other » (smufl) et têtes nommées.
-        NoteHeadType::Other(_) => {}
+        NoteHeadGroup::Slash => Some("slash"),
+        NoteHeadGroup::TriangleUp => Some("triangle"),
+        NoteHeadGroup::Diamond => Some("diamond"),
+        NoteHeadGroup::Plus => Some("cross"),
+        NoteHeadGroup::Cross => Some("x"),
+        NoteHeadGroup::Circled => Some("circled"),
+        NoteHeadGroup::XCircle => Some("circle-x"),
+        NoteHeadGroup::TriangleDown => Some("inverted triangle"),
+        NoteHeadGroup::Slashed1 => Some("slashed"),
+        NoteHeadGroup::Slashed2 => Some("back slashed"),
+        NoteHeadGroup::Do => Some("do"),
+        NoteHeadGroup::Re => Some("re"),
+        NoteHeadGroup::Mi => Some("mi"),
+        NoteHeadGroup::Fa => Some(if up { "fa up" } else { "fa" }),
+        NoteHeadGroup::La => Some("la"),
+        NoteHeadGroup::Ti => Some("ti"),
+        NoteHeadGroup::Sol => Some("so"),
+        NoteHeadGroup::WithX
+        | NoteHeadGroup::DiamondOld
+        | NoteHeadGroup::CircledLarge
+        | NoteHeadGroup::LargeArrow
+        | NoteHeadGroup::BrevisAlt
+        | NoteHeadGroup::LargeDiamond
+        | NoteHeadGroup::HeavyCross
+        | NoteHeadGroup::HeavyCrossHat => {
+            // Groupe sans équivalent MusicXML : MuseScore écrit son nom SMuFL.
+            if let Some(name) = smufl_notehead(&note.head_group, head_type, up) {
+                attributes.push(("smufl", name));
+                out.xml.tag_with("notehead", &attributes, "other");
+            }
+            return;
+        }
+        // TODO(parité): groupes MuseScore hors du corpus, dont le symbole
+        // SMuFL dépend du type de tête et de la direction de hampe.
+        NoteHeadGroup::Other(_) => return,
+    };
+
+    if let Some(value) = value {
+        out.xml.tag_with("notehead", &attributes, value);
+    }
+}
+
+/// Nom SMuFL de la tête (`SymNames::nameForSymId(note->noteHead())`).
+///
+/// Reproduit la table `noteHeads` de `engraving/dom/note.cpp` pour les groupes
+/// sans valeur MusicXML ; la hampe ne change le symbole que pour les grandes
+/// flèches et les grands losanges.
+fn smufl_notehead(
+    group: &NoteHeadGroup,
+    head_type: NoteHeadType,
+    up: bool,
+) -> Option<&'static str> {
+    use NoteHeadType::{Breve, Half, Whole};
+    let name = match (group, head_type) {
+        (NoteHeadGroup::WithX, Whole) => "noteheadWholeWithX",
+        (NoteHeadGroup::WithX, Half) => "noteheadHalfWithX",
+        (NoteHeadGroup::WithX, Breve) => "noteheadDoubleWholeWithX",
+        (NoteHeadGroup::WithX, _) => "noteheadVoidWithX",
+
+        (NoteHeadGroup::DiamondOld, Whole) => "noteheadDiamondWholeOld",
+        (NoteHeadGroup::DiamondOld, Half) => "noteheadDiamondHalfOld",
+        (NoteHeadGroup::DiamondOld, Breve) => "noteheadDiamondDoubleWholeOld",
+        (NoteHeadGroup::DiamondOld, _) => "noteheadDiamondBlackOld",
+
+        (NoteHeadGroup::CircledLarge, Whole) => "noteheadCircledWholeLarge",
+        (NoteHeadGroup::CircledLarge, Half) => "noteheadCircledHalfLarge",
+        (NoteHeadGroup::CircledLarge, Breve) => "noteheadCircledDoubleWholeLarge",
+        (NoteHeadGroup::CircledLarge, _) => "noteheadCircledBlackLarge",
+
+        (NoteHeadGroup::LargeArrow, _) => arrow_name(up, head_type),
+
+        (NoteHeadGroup::BrevisAlt, Whole) => "noteheadWhole",
+        (NoteHeadGroup::BrevisAlt, Half) => "noteheadHalf",
+        (NoteHeadGroup::BrevisAlt, Breve) => "noteheadDoubleWholeSquare",
+        (NoteHeadGroup::BrevisAlt, _) => "noteheadBlack",
+
+        (NoteHeadGroup::LargeDiamond, Whole) => "noteheadSlashWhiteWhole",
+        (NoteHeadGroup::LargeDiamond, Half) => "noteheadSlashDiamondWhite",
+        (NoteHeadGroup::LargeDiamond, Breve) => {
+            if up {
+                "noteheadSlashWhiteDoubleWhole"
+            } else {
+                "noteheadSlashWhiteWhole"
+            }
+        }
+        (NoteHeadGroup::LargeDiamond, _) => "noteheadSlashHorizontalEnds",
+
+        (NoteHeadGroup::HeavyCross, _) => "noteheadHeavyX",
+        (NoteHeadGroup::HeavyCrossHat, _) => "noteheadHeavyXHat",
+        _ => return None,
+    };
+    Some(name)
+}
+
+/// Nom de la grande flèche : le sens du symbole est inverse de la hampe.
+fn arrow_name(up: bool, head_type: NoteHeadType) -> &'static str {
+    use NoteHeadType::{Breve, Half, Whole};
+    match (up, head_type) {
+        (true, Whole) => "noteheadLargeArrowDownWhole",
+        (true, Half) => "noteheadLargeArrowDownHalf",
+        (true, Breve) => "noteheadLargeArrowDownDoubleWhole",
+        (true, _) => "noteheadLargeArrowDownBlack",
+        (false, Whole) => "noteheadLargeArrowUpWhole",
+        (false, Half) => "noteheadLargeArrowUpHalf",
+        (false, Breve) => "noteheadLargeArrowUpDoubleWhole",
+        (false, _) => "noteheadLargeArrowUpBlack",
     }
 }
 
