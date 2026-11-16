@@ -5,6 +5,7 @@
 //! Une partie possède une ou plusieurs portées ; la liste `staves` et le champ
 //! [`Staff::part`] sont maintenus cohérents par [`super::Score::add_staff`].
 
+use super::fraction::Fraction;
 use super::ids::{PartId, StaffId};
 use super::segment::{Clef, ClefType};
 
@@ -132,6 +133,9 @@ pub struct Staff {
     pub lines: u8,
     /// Vrai si la portée est en petit format.
     pub small: bool,
+    /// Étirement temporel de la portée (`Staff::timeStretch`, indication de
+    /// mesure locale). Vaut un hors indication locale.
+    pub time_stretch: Fraction,
     /// Clef par défaut de la portée (`Staff::defaultClefType()`).
     ///
     /// MuseScore s'en sert quand aucun `<Clef>` n'ouvre la partition : la mise
@@ -148,6 +152,7 @@ impl Staff {
             part,
             lines: 5,
             small: false,
+            time_stretch: Fraction::ONE,
             default_clef: Clef::new(ClefType::G),
         }
     }

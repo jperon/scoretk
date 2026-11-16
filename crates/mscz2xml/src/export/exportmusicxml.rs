@@ -663,9 +663,12 @@ impl<'a> Context<'a> {
     ///
     /// MuseScore divise la durée notée par le ratio de chaque n-olet parent.
     /// Le modèle n'a pas d'étirement de portée (`Staff::timeStretch`), le
-    /// facteur correspondant vaut donc un.
+    /// facteur correspondant vaut donc un. Quand `<duration>` diffère de la
+    /// figure (trémolo, figure étirée), sa valeur fait foi.
     fn global_ticks(&self, chord_rest: &ChordRest, measure: &Measure) -> Fraction {
-        let mut ticks = self.notated_ticks(chord_rest, measure);
+        let mut ticks = chord_rest
+            .ticks
+            .unwrap_or_else(|| self.notated_ticks(chord_rest, measure));
         let mut tuplet = chord_rest.tuplet;
         let mut depth = 0;
         while let Some(id) = tuplet {
@@ -682,6 +685,25 @@ impl<'a> Context<'a> {
             depth += 1;
         }
         ticks
+    }
+
+    /// Durée consommée par l'élément (`DurationElement::actualTicks`).
+    ///
+    /// C'est la durée réelle divisée par l'étirement de la portée ; la valeur
+    /// exportée dans `<duration>` reste [`Context::global_ticks`].
+    fn actual_ticks(
+        &self,
+        chord_rest: &ChordRest,
+        measure: &Measure,
+        staff_id: StaffId,
+    ) -> Fraction {
+        let ticks = self.global_ticks(chord_rest, measure);
+        let stretch = self.score.staff(staff_id).time_stretch;
+        if stretch.is_positive() {
+            ticks / stretch
+        } else {
+            ticks
+        }
     }
 
     /// Transposition chromatique de la portée, en demi-tons.
@@ -878,7 +900,11 @@ impl Context<'_> {
 
     /// Écrit `<time-modification>` (`writeTimeModification`).
     fn write_time_modification(&self, out: &mut Out, chord_rest: &ChordRest) {
-        let mut actual: i64 = 1;
+        // Un trémolo à deux notes vaut un rapport 2:1 (`tremoloCorrection`).
+        let tremolo = chord_rest
+            .chord_ref()
+            .is_some_and(|chord| chord.tremolo_two_chord);
+        let mut actual: i64 = if tremolo { 2 } else { 1 };
         let mut normal: i64 = 1;
         let mut tuplet = chord_rest.tuplet;
         let mut depth = 0;
@@ -980,7 +1006,7 @@ impl Context<'_> {
         let segment_tick = out.tick;
         let global_ticks = self.global_ticks(chord_rest, measure);
         if !grace {
-            out.tick += global_ticks;
+            out.tick += self.actual_ticks(chord_rest, measure, track.staff());
         }
 
         let duration = grace_duration.copied().unwrap_or(chord_rest.duration);
@@ -1114,7 +1140,7 @@ impl Context<'_> {
         }
 
         let tick_len = self.global_ticks(chord_rest, measure);
-        out.tick += tick_len;
+        out.tick += self.actual_ticks(chord_rest, measure, track.staff());
         out.xml
             .tag("duration", &out.duration_in_divisions(tick_len).to_string());
 
@@ -2354,7 +2380,18 @@ fn compute_divisions(context: &Context<'_>) -> u32 {
                             tick = segment.tick;
                         }
                         if let SegmentItem::ChordRest(chord_rest) = item {
-                            let length = context.global_ticks(chord_rest, measure);
+                            let length = {
+                                let mut length = context.global_ticks(chord_rest, measure);
+                                // `calcDivisions` compte un trémolo à deux
+                                // notes pour sa moitié.
+                                if chord_rest
+                                    .chord_ref()
+                                    .is_some_and(|chord| chord.tremolo_two_chord)
+                                {
+                                    length /= Fraction::from_integer(2);
+                                }
+                                length
+                            };
                             if !length.is_zero() {
                                 fractions.insert(length.abs());
                             }

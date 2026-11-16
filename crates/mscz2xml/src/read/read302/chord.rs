@@ -122,6 +122,7 @@ pub(crate) fn read_chord_rest(
 
     ChordRest {
         duration,
+        ticks: None,
         tuplet: None,
         lyrics,
         beam_mode: beam,

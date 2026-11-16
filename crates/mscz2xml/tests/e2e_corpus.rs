@@ -46,8 +46,10 @@ const EXPECTED_CONFORMANT: &[&str] = &[
     "repeat68",
     "repeat69",
     "tenuto_accent",
+    "testLocalTimesig1",
     "testNoteheads2",
     "testTempoPrecision",
+    "timesig-09",
 ];
 
 /// Éléments dont le sous-arbre entier est ignoré.

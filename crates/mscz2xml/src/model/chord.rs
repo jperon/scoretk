@@ -185,6 +185,9 @@ pub struct Chord {
     pub articulations: Vec<Articulation>,
     /// Vrai si l'accord est en petit format.
     pub small: bool,
+    /// Vrai si l'accord appartient à un trémolo à deux notes
+    /// (`Chord::tremoloTwoChord()`).
+    pub tremolo_two_chord: bool,
 }
 
 /// Accord d'agrément rattaché à un accord principal.
@@ -245,6 +248,13 @@ pub struct Rest {
 pub struct ChordRest {
     /// Figure et points.
     pub duration: Duration,
+    /// Durée réelle (`DurationElement::ticks`) quand `<duration>` la donne,
+    /// indépendamment de la figure.
+    ///
+    /// MuseScore lit `<duration>` dans les ticks de l'élément et garde la
+    /// figure dans `durationType` : les deux diffèrent pour un trémolo à deux
+    /// notes ou une figure étirée. `None` signifie « durée de la figure ».
+    pub ticks: Option<Fraction>,
     /// N-olet auquel appartient cet élément, si c'est le cas.
     pub tuplet: Option<TupletId>,
     /// Paroles attachées à cet accord ou silence.
@@ -269,6 +279,7 @@ impl ChordRest {
     pub fn chord(duration: Duration) -> Self {
         Self {
             duration,
+            ticks: None,
             tuplet: None,
             lyrics: Vec::new(),
             beam_mode: BeamMode::Auto,
@@ -281,6 +292,7 @@ impl ChordRest {
         let full_measure = duration.is_measure();
         Self {
             duration,
+            ticks: None,
             tuplet: None,
             lyrics: Vec::new(),
             beam_mode: BeamMode::Auto,

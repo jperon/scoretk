@@ -8,33 +8,44 @@ Méthode : les deux documents sont normalisés (métadonnées, mise en page,
 `<direction>`, `<stem>`, `<beam>`, `<print>`, `<notations>` hors `tied`/`tuplet`,
 `<barline>` hors `<repeat>` retirés), puis comparés ligne à ligne avec `similar`.
 Le tableau ci-dessous donne, pour chaque fichier, le nombre de lignes d'écart
-après normalisation ; `copypastesymbollist-lyrics` est le seul fichier conforme
-et constitue la liste `EXPECTED_CONFORMANT` du test.
+après normalisation ; les fichiers marqués **identique** constituent la liste
+`EXPECTED_CONFORMANT` du test.
 
 Écarts triés par fréquence (nombre de fichiers touchés), puis par nombre
-d'occurrences. Les causes sont classées « lecteur », « modèle » ou « export » :
-aucun de ces écarts n'a été corrigé dans cette tâche.
+d'occurrences. Les causes sont classées « lecteur », « modèle » ou « export ».
+Les écarts 1 à 4 sont corrigés (voir chaque section) ; les suivants restent
+ouverts.
 
 ## Tableau de conformité
 
 | Fichier | Lignes d'écart |
 | --- | ---: |
-| beamStemDir | 8 |
-| changevisibility | 4 |
-| copypaste_parts | 56 |
+| beamStemDir | **identique** |
+| changevisibility | **identique** |
+| copypaste_parts | 10 |
 | copypastesymbollist-lyrics | **identique** |
-| dynamics | 4 |
-| hairpin_dynamic_inside | 8 |
-| linked-ties | 4 |
-| mmrest | 27 |
-| part-textlines | 20 |
-| repeat65 | 6 |
-| tenuto_accent | 8 |
-| testExcludeInvisibleElements | 26 |
-| testLocalTimesig1 | 14 |
-| testNoteheads2 | 34 |
-| timesig-09 | 184 |
-| voiceswitching | 58 |
+| dynamics | **identique** |
+| dynamics_niente | 16 |
+| expression-1 | **identique** |
+| hairpin_dynamic_inside | 2 |
+| hairpin_dynamic_jump | 2 |
+| hairpin_simple | 2 |
+| hairpins_and_repeats | **identique** |
+| linked-ties | **identique** |
+| mmrest | 23 |
+| part-textlines | 10 |
+| partExclusion | 8 |
+| repeat65 | 2 |
+| repeat66 | 17 |
+| repeat68 | **identique** |
+| repeat69 | **identique** |
+| tenuto_accent | **identique** |
+| testExcludeInvisibleElements | 21 |
+| testLocalTimesig1 | **identique** |
+| testNoteheads2 | **identique** |
+| testTempoPrecision | **identique** |
+| timesig-09 | **identique** |
+| voiceswitching | 30 |
 
 ## 1. Clef par défaut absente — 14 fichiers
 
@@ -144,9 +155,17 @@ Deux problèmes se cumulent :
 
 ## 4. Durée réelle (`<duration>`) ignorée : durée, divisions, `time-modification`, `backup` — 2 fichiers
 
-Fichiers : timesig-09 (184 lignes, cause dominante), copypaste_parts.
+**Corrigé** (lecteur/modèle/export) : `ChordRest::ticks` conserve le
+`<duration>` explicite, `Staff::time_stretch` l'étirement d'une indication
+locale, et `Chord::tremolo_two_chord` le trémolo à deux notes (appariement de
+l'accord suivant dans la même voix, comme `Measure::connectTremolo`). L'export
+écrit `<duration>` depuis les ticks réels, avance la position avec
+`actualTicks` (ticks / étirement), compte la moitié d'un trémolo dans
+`calcDivisions` et ajoute `<time-modification>` 2:1 pour un trémolo.
 
-Diff (timesig-09) :
+Fichiers : timesig-09 (conforme), copypaste_parts (ne garde que l'écart 5).
+
+Diff initial (timesig-09) :
 
 ```diff
 -        <duration>2</duration>
@@ -165,12 +184,10 @@ Diff (timesig-09) :
 
 Ces accords portent `<durationType>whole</durationType>` **et**
 `<duration>1/2</duration>` (figure ronde étirée à une demi-ronde). `read_chord`
-lit bien `<duration>` dans `ParsedChord::ticks` et avance le curseur en
-conséquence, mais le modèle ne garde que `duration` (la figure) : l'export
-recalcule la durée avec `duration.ticks()` et ne peut pas produire le
-`<time-modification>` 2:1 ni les `backup` de MuseScore. Le même écart fausse
-`calc_divisions` (1 au lieu de 2 dans copypaste_parts). **Cause :
-lecteur/modèle.**
+lit `<duration>` dans `ParsedChord::ticks` et avance le curseur en
+conséquence ; le modèle ne gardait que `duration` (la figure) et l'export
+recalculait la durée avec `duration.ticks()`, d'où l'absence de
+`<time-modification>` 2:1, de `backup` corrects et de divisions justes.
 
 ## 5. Spanner `Ottava` non appliqué à la hauteur — 2 fichiers
 
@@ -327,9 +344,14 @@ liaisons sont présentes dans la référence, y compris celles dont le trait est
 
 ## 14. Indication de mesure locale par portée — 1 fichier
 
+**Corrigé pour le corpus** (mêmes ajouts que l'écart 4) : le silence de la
+seconde portée porte un `<duration>` explicite, désormais conservé, et
+`Staff::time_stretch` permet d'avancer la position comme
+`DurationElement::actualTicks`. testLocalTimesig1 est conforme.
+
 Fichier : testLocalTimesig1.
 
-Diff :
+Diff initial :
 
 ```diff
 -        <duration>6</duration>
@@ -339,6 +361,6 @@ Diff :
 Deux portées d'une même partie portent des indications locales différentes
 (9/8 et 3/4 avec `<stretchN>2</stretchN><stretchD>3</stretchD>`). Le modèle
 n'a qu'une durée de mesure globale (`Measure::len`), calculée à partir de la
-première portée ; le silence « mesure » de la seconde portée prend donc 9/8 au
-lieu de 3/4. **Cause : lecteur/modèle** (indication locale non stockée par
-portée).
+première portée ; sans `<duration>` explicite, le silence « mesure » de la
+seconde portée prendrait encore 9/8 au lieu de 3/4 (durée de mesure par portée
+non modélisée).
