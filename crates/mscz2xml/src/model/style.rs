@@ -120,9 +120,9 @@ impl StyleSettings {
     pub fn set_value(&mut self, name: &str, value: &str) {
         let value = value.trim();
         match name {
-            "Spatium" => Self::set_number(&mut self.spatium_mm, value),
-            "pageWidth" => Self::set_number(&mut self.page_width_in, value),
-            "pageHeight" => Self::set_number(&mut self.page_height_in, value),
+            "Spatium" => Self::set_positive(&mut self.spatium_mm, value),
+            "pageWidth" => Self::set_positive(&mut self.page_width_in, value),
+            "pageHeight" => Self::set_positive(&mut self.page_height_in, value),
             "pageEvenLeftMargin" => Self::set_number(&mut self.page_even_left_margin_in, value),
             "pageOddLeftMargin" => Self::set_number(&mut self.page_odd_left_margin_in, value),
             "pageEvenRightMargin" => Self::set_number(&mut self.page_even_right_margin_in, value),
@@ -153,7 +153,15 @@ impl StyleSettings {
 
     fn set_number(field: &mut f64, value: &str) {
         if let Ok(number) = value.parse::<f64>() {
-            if number > 0.0 {
+            if number >= 0.0 && number.is_finite() {
+                *field = number;
+            }
+        }
+    }
+
+    fn set_positive(field: &mut f64, value: &str) {
+        if let Ok(number) = value.parse::<f64>() {
+            if number > 0.0 && number.is_finite() {
                 *field = number;
             }
         }
@@ -278,5 +286,12 @@ mod tests {
         assert!((style.tenths_from_inches(style.page_odd_left_margin_in) - 56.69).abs() < 0.01);
         assert_eq!(style.lyrics_placement, Placement::Above);
         assert_eq!(style.title_font_size, 30.0);
+
+        // Une marge nulle est valide (MuseScore l'accepte) ; un spatium nul
+        // serait invalide et garde sa valeur.
+        style.set_value("pageEvenTopMargin", "0");
+        assert_eq!(style.page_even_top_margin_in, 0.0);
+        style.set_value("Spatium", "0");
+        assert!(style.spatium_mm > 0.0);
     }
 }
