@@ -80,6 +80,8 @@ pub(crate) struct Reader {
     pub(crate) staff_clefs: Vec<Option<Clef>>,
     /// Vrai si le style active les silences multi-mesures.
     pub(crate) create_multi_measure_rests: bool,
+    /// Vrai si le `<bracket>` du n-olet était explicite dans le fichier.
+    pub(crate) explicit_tuplet_brackets: Vec<bool>,
 }
 
 /// Mesure marquée `<RepeatMeasure>` : son contenu est celui de la précédente.
@@ -114,6 +116,7 @@ impl Reader {
             measure_repeats: Vec::new(),
             staff_clefs: Vec::new(),
             create_multi_measure_rests: false,
+            explicit_tuplet_brackets: Vec::new(),
         }
     }
 
@@ -121,6 +124,7 @@ impl Reader {
         self.apply_default_clefs();
         self.expand_measure_repeats();
         self.assign_multiple_rests();
+        self.adjust_tuplet_brackets();
         spanner::resolve(&mut self);
         self.score
     }
@@ -242,6 +246,11 @@ impl Reader {
         if !self.create_multi_measure_rests {
             return;
         }
+        // Les mesures vides isolées ne deviennent un multi-repos de un que si
+        // la partition entière en est faite (mise en page de MuseScore).
+        if !self.score.measures.iter().all(is_empty_measure) {
+            return;
+        }
         let mut covered_until = 0usize;
         for index in 0..self.score.measures.len() {
             if index < covered_until {
@@ -254,6 +263,35 @@ impl Reader {
             if is_empty_measure(&self.score.measures[index]) {
                 self.score.measures[index].multi_measure_rest = Some(1);
                 covered_until = index + 1;
+            }
+        }
+    }
+
+    /// Ajuste le crochet des n-olets une fois leur imbrication connue.
+    ///
+    /// Un n-olet sans enfant ne porte pas de crochet (notes groupées par
+    /// ligature) ; un n-olet qui en contient un en porte un. Le `<bracket>`
+    /// explicite du fichier reste prioritaire.
+    fn adjust_tuplet_brackets(&mut self) {
+        let mut has_child = vec![false; self.score.tuplets.len()];
+        for tuplet in &self.score.tuplets {
+            if let Some(parent) = tuplet.parent {
+                if let Some(entry) = has_child.get_mut(parent.index()) {
+                    *entry = true;
+                }
+            }
+        }
+        for index in 0..self.score.tuplets.len() {
+            if self
+                .explicit_tuplet_brackets
+                .get(index)
+                .copied()
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            if has_child[index] {
+                self.score.tuplets[index].bracket = true;
             }
         }
     }

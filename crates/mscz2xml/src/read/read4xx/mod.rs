@@ -523,6 +523,12 @@ impl Reader {
         if !self.create_multi_measure_rests {
             return;
         }
+        // Les mesures vides isolées ne deviennent un multi-repos de un que si
+        // la partition entière en est faite (mise en page de MuseScore) ; une
+        // partition avec du contenu ne les regroupe pas.
+        if !self.score.measures.iter().all(is_empty_measure) {
+            return;
+        }
         let mut covered_until = 0usize;
         for index in 0..self.score.measures.len() {
             if index < covered_until {
@@ -1346,8 +1352,8 @@ impl Reader {
         let mut tuplet = Tuplet::new(ratio, base_len, tick, len);
         // MuseScore affiche les nombres bruts du fichier (`4:4` reste `4:4`
         // dans `<tuplet-actual>`, même si le ratio interne est réduit).
-        tuplet.actual_notes = i64::from(actual.max(1));
-        tuplet.normal_notes = i64::from(normal.max(1));
+        tuplet.actual_notes = actual.max(1);
+        tuplet.normal_notes = normal.max(1);
         if let Some(number) = element.child("Number") {
             let text = number.child("text").map(Element::text).unwrap_or_default();
             tuplet.number_type = if text.is_empty() {

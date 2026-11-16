@@ -45,6 +45,7 @@ impl Location {
 #[derive(Clone, Debug)]
 pub(crate) struct Half {
     kind: SpannerType,
+    visible: bool,
     measure: usize,
     tick: Tick,
     track: Track,
@@ -69,8 +70,13 @@ pub(crate) fn read_half(
         // La moitié de fin ne répète pas `<Ottava>` : le type vient du début.
         SpannerType::Ottava(OttavaType::OctaveUp)
     };
+    let visible = payload
+        .and_then(|node| node.child("visible"))
+        .and_then(Element::int)
+        .is_none_or(|value| value != 0);
     let mut half = Half {
         kind,
+        visible,
         measure,
         tick,
         track,
@@ -149,10 +155,12 @@ pub(crate) fn resolve(score: &mut Score, halves: &[Half]) {
         used[start] = true;
         used[end] = true;
         let last = &halves[end];
-        score.add_spanner(Spanner::new(
+        let mut spanner = Spanner::new(
             half.kind.clone(),
             SpannerAnchor::new(half.tick, half.track),
             SpannerAnchor::new(last.tick, last.track),
-        ));
+        );
+        spanner.visible = half.visible;
+        score.add_spanner(spanner);
     }
 }

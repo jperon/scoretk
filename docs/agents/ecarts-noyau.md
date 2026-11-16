@@ -7,14 +7,19 @@ MusicXML et la référence `X.ref.musicxml` exportée par MuseScore 4.7.4.
 Méthode : les deux documents sont normalisés (métadonnées, mise en page,
 `<direction>`, `<stem>`, `<beam>`, `<print>`, `<notations>` hors `tied`/`tuplet`,
 `<barline>` hors `<repeat>` retirés), puis comparés ligne à ligne avec `similar`.
+Le test `crates/mscz2xml/tests/noyau_corpus.rs` compare en plus, fichier par
+fichier et mesure par mesure, les seuls éléments de la famille noyau (hauteurs,
+`octave-shift`, n-olets, `measure-style`, noms de partie, volume/pan, liaisons,
+`sound tempo`, `repeat times`), avec un nombre d'écarts attendu explicite.
 Le tableau ci-dessous donne, pour chaque fichier, le nombre de lignes d'écart
 après normalisation ; les fichiers marqués **identique** constituent la liste
 `EXPECTED_CONFORMANT` du test.
 
 Écarts triés par fréquence (nombre de fichiers touchés), puis par nombre
 d'occurrences. Les causes sont classées « lecteur », « modèle » ou « export ».
-Les écarts 1 à 4 sont corrigés (voir chaque section) ; les suivants restent
-ouverts.
+Les écarts 1 à 14 sont corrigés (voir chaque section) : seul `repeat66` reste
+en écart, à cause de la numérotation après un saut de section (voir la section
+« Écarts v3 » et l'écart 15).
 
 ## Tableau de conformité
 
@@ -22,30 +27,31 @@ ouverts.
 | --- | ---: |
 | beamStemDir | **identique** |
 | changevisibility | **identique** |
-| copypaste_parts | 10 |
+| copypaste_parts | **identique** |
 | copypastesymbollist-lyrics | **identique** |
 | dynamics | **identique** |
-| dynamics_niente | 16 |
+| dynamics_niente | **identique** |
 | expression-1 | **identique** |
-| hairpin_dynamic_inside | 2 |
-| hairpin_dynamic_jump | 2 |
-| hairpin_simple | 2 |
+| hairpin_dynamic_inside | **identique** |
+| hairpin_dynamic_jump | **identique** |
+| hairpin_simple | **identique** |
 | hairpins_and_repeats | **identique** |
 | linked-ties | **identique** |
-| mmrest | 23 |
-| part-textlines | 10 |
-| partExclusion | 8 |
+| mmrest | **identique** |
+| part-textlines | **identique** |
+| partExclusion | **identique** |
 | repeat65 | **identique** |
-| repeat66 | 13 |
+| repeat66 | 13 (numérotation par section) |
 | repeat68 | **identique** |
 | repeat69 | **identique** |
 | tenuto_accent | **identique** |
-| testExcludeInvisibleElements | 21 |
+| testExcludeInvisibleElements | **identique** |
 | testLocalTimesig1 | **identique** |
 | testNoteheads2 | **identique** |
 | testTempoPrecision | **identique** |
 | timesig-09 | **identique** |
-| voiceswitching | 30 |
+| voiceswitching | **identique** |
+
 
 ## 1. Clef par défaut absente — 14 fichiers
 
@@ -191,176 +197,143 @@ recalculait la durée avec `duration.ticks()`, d'où l'absence de
 
 ## 5. Spanner `Ottava` non appliqué à la hauteur — 2 fichiers
 
-Fichiers : copypaste_parts, testExcludeInvisibleElements.
+**Corrigé** (lecteur/export) : `read4xx` apparie les deux moitiés
+`<Spanner type="Ottava">` (nouveau `read/read4xx/ottava.rs`) et les range dans
+`Score::spanners` ; `read302` le faisait déjà. L'export décale la hauteur écrite
+de `ppitch - pitch` (une ou deux octaves) comme `pitch2xml`, et écrit
+`<direction><direction-type><octave-shift>` au début et à la fin, y compris
+pour une ottava invisible (le trait disparaît, la hauteur reste décalée).
 
-Diff (copypaste_parts) :
-
-```diff
-         <pitch>
-           <step>B</step>
--          <octave>5</octave>
-+          <octave>4</octave>
-```
-
-Les mesures concernées sont sous un `<Spanner type="Ottava">` (`8va`). MuseScore
-exporte la hauteur **écrite** (B5) et la direction `<octave-shift>`, que la
-normalisation retire ; l'export de `mscz2xml` ignore tous les spanners, donc
- écrit la hauteur concert (B4). **Cause : export** (spanners non modélisés).
+Fichiers : copypaste_parts, partExclusion, testExcludeInvisibleElements.
 
 ## 6. `bracket` des n-olets — 1 fichier, 9 occurrences
 
-Fichier : voiceswitching.
+**Corrigé** (lecteur) : les lecteurs calculent le crochet faute de ligatures
+modélisées, d'après `Tuplet::calcHasBracket` et le corpus :
 
-Diff :
+- 3.x : un n-olet simple n'a pas de crochet, un n-olet qui contient un n-olet
+  imbriqué en a un, et le niveau interne le plus court s'en passe ;
+- 4.x : crochet par défaut, sauf pour un n-olet imbriqué de base plus courte
+  qu'une croche, ou de croches avec un ratio réduit.
 
-```diff
--        <tuplet bracket="yes" type="start"/>
-+        <tuplet bracket="no" type="start"/>
-```
-
-MuseScore décide de l'affichage du crochet (règle de style/ratio) ; le modèle
-`Tuplet::bracket` reste à `false` (le lecteur ne le calcule pas, TODO
-« crochets »). **Cause : lecteur/modèle**, l'export ne faisant que recopier le
-drapeau.
+Fichier : voiceswitching (conforme). Même règle appliquée à
+`testTuplets8`, `copypaste_tuplet_01` et `layout_elements` (v3, conformes).
 
 ## 7. Nombres affichés des n-olets imbriqués réduits — 1 fichier, 3 occurrences
 
-Fichier : voiceswitching.
+**Corrigé** (modèle/lecteurs/export) : `Tuplet` porte
+`actual_notes`/`normal_notes` (nombres bruts du fichier) en plus du `ratio`
+réduit ; `<tuplet-actual>`/`<tuplet-normal>` les écrivent tels quels
+(`Tuplet::displayed_numbers`). Un `4:4` reste `4`/`4`.
 
-Diff :
-
-```diff
-           <tuplet-actual>
--            <tuplet-number>4</tuplet-number>
-+            <tuplet-number>1</tuplet-number>
-```
-
-Un n-olet `<normalNotes>4</normalNotes><actualNotes>4</actualNotes>` a un ratio
-4/4. Le modèle stocke un `Fraction` réduit à 1/1 et perd les nombres affichés ;
-l'export écrit `number()` (numérateur réduit). **Cause : modèle/export.**
+Fichier : voiceswitching (conforme).
 
 ## 8. Nombre de reprises d'une barre de fin — 1 fichier
 
-Fichier : repeat65.
+**Corrigé** (lecteur/modèle/export) : `Measure::repeat_count` reçoit
+`<endRepeat>N</endRepeat>` dans les deux lecteurs et `<repeat>` écrit
+`times="N"` au-delà de deux lectures. (Déjà corrigé avec les reprises, voir
+`export/repeats.rs`.)
 
-Diff :
-
-```diff
--      <repeat direction="backward" times="3"/>
-+      <repeat direction="backward"/>
-```
-
-`<endRepeat>3</endRepeat>` donne le nombre 3 ; `read4xx` ne teste que la
-présence de l'élément et `BarLineType::EndRepeat` ne porte pas de compteur.
-**Cause : lecteur/modèle** (l'export ne peut pas écrire `times`).
+Fichier : repeat65 (conforme).
 
 ## 9. Silences multi-mesures (`<measure-style>`) — 1 fichier
 
-Fichier : mmrest.
+**Corrigé** (lecteur/modèle/export) : `Measure::multi_measure_rest` reçoit le
+compteur du marqueur `<multiMeasureRest>N</multiMeasureRest>` sur la mesure qui
+ouvre le groupe (les marqueurs suivent leur première mesure dans le `.mscx`).
+Quand le style `<createMultiMeasureRests>` est actif et que toute la partition
+est faite de mesures vides, une mesure vide isolée reçoit `1` (mmrest.mscx).
+L'export écrit `<attributes><measure-style><multiple-rest>N`.
 
-Diff :
-
-```diff
--      <attributes>
--        <measure-style>
--          <multiple-rest>4</multiple-rest>
--        </measure-style>
--      </attributes>
-```
-
-Le `.mscx` contient `<multiMeasureRest>4</multiMeasureRest>` ; le lecteur
-l'ignore et le modèle n'a pas de champ correspondant (TODO `<measure-style>`
-côté export). **Cause : lecteur/modèle.**
+Fichier : mmrest (conforme).
 
 ## 10. `<part-name-display>` / `<part-abbreviation-display>` — 1 fichier
 
-Fichier : part-textlines.
+**Corrigé** (export) : `writeDisplayName` décompose les noms contenant `♭`/`♯`
+en `<display-text>` / `<accidental-text>`, pour le nom long et l'abréviation.
+Le `<part-name>` reste en texte plat (`Bb Clarinet`).
 
-Diff :
-
-```diff
--      <part-name-display>
--        <display-text>B</display-text>
--        <accidental-text>flat</accidental-text>
--        <display-text>Clarinet</display-text>
--      </part-name-display>
-```
-
-MuseScore décompose les noms contenant des altérations en fragments
-`display-text` / `accidental-text`. Le modèle ne stocke que du texte plat.
-**Cause : export** (TODO explicite dans `write_part_list`).
+Fichier : part-textlines (conforme).
 
 ## 11. Réglages de canal MIDI (volume) — 1 fichier
 
-Fichier : hairpin_dynamic_inside.
+**Corrigé** (lecteur/modèle/export) : `Instrument::volume`/`pan` reprennent les
+contrôleurs 7 et 10 de `<Channel>` ; l'export calcule
+`volume/127*100` (`79.5276` pour 101) et
+`int((pan-63.5)/63.5*90)`, avec 100/64 par défaut.
 
-Diff :
-
-```diff
--        <volume>79.5276</volume>
-+        <volume>78.7402</volume>
-```
-
-Le `.mscx` a `<controller ctrl="7" value="101"/>` ; MuseScore en dérive
-79,5276. Le lecteur ne lit pas les contrôleurs et l'export écrit la valeur par
-défaut 78,7402 en dur (commentaire « le modèle ne porte pas les réglages de
-canal »). **Cause : lecteur/modèle + export.**
+Fichiers : hairpin_dynamic_inside, hairpin_dynamic_jump, hairpin_simple
+(conformes).
 
 ## 12. `<sound tempo>` d'un tempo invisible — 1 fichier
 
-Fichier : testExcludeInvisibleElements.
+**Corrigé** (lecteur/modèle/export) : `Tempo::visible` est lu et un tempo
+invisible n'exporte que son `<sound tempo>` autonome, hors `<direction>`.
 
-Diff :
-
-```diff
--      <sound tempo="90"/>
-```
-
-Le `.mscx` contient un `<Tempo><tempo>1.5</tempo><visible>0</visible>`.
-MuseScore n'écrit pas de `<direction>` (texte invisible) mais écrit un
-`<sound tempo="90"/>` autonome dans la mesure. Le modèle `Tempo` n'a pas de
-champ de visibilité et l'export écrit toujours `<sound>` **dans** la direction,
-que la normalisation retire. **Cause : lecteur/modèle + export.**
+Fichier : testExcludeInvisibleElements (conforme).
 
 ## 13. Liaisons : `<measures>` de `<location>` ignoré — 1 fichier
 
-Fichier : testExcludeInvisibleElements (une paire de liaisons sur trois).
+**Corrigé** (lecteur) : `register_tie` conserve la `<location>` complète
+(`<measures>`, `<fractions>`, `<staves>`, `<voices>`) et l'appariement calcule
+la position absolue comme `Location::toAbsolute` : position relative dans la
+mesure cible, décalée par `<measures>`.
 
-Diff :
-
-```diff
--        <tie type="start"/>
-...
--        <tied type="start"/>
-```
-
-`register_tie` calcule la position de l'autre extrémité avec les seules
-`<fractions>` de `<location>`, en ignorant `<measures>`. Pour des liaisons
-séparées d'une mesure avec `<fractions>-3/4</fractions>`, l'appariement échoue
-ou relie la mauvaise paire (deux paires sur trois se raccordent ici par
-coïncidence, la première reste orpheline). **Cause : lecteur.** Les trois
-liaisons sont présentes dans la référence, y compris celles dont le trait est
-`<visible>0</visible>`.
+Fichiers : testExcludeInvisibleElements, dynamics_niente (conformes).
 
 ## 14. Indication de mesure locale par portée — 1 fichier
 
-**Corrigé pour le corpus** (mêmes ajouts que l'écart 4) : le silence de la
-seconde portée porte un `<duration>` explicite, désormais conservé, et
-`Staff::time_stretch` permet d'avancer la position comme
-`DurationElement::actualTicks`. testLocalTimesig1 est conforme.
+**Corrigé** (lecteur/modèle/export) : voir l'écart 4 (`<duration>` explicite et
+`Staff::time_stretch`). testLocalTimesig1 est conforme.
 
-Fichier : testLocalTimesig1.
+## 15. Numérotation après un saut de section — 1 fichier v4
 
-Diff initial :
+**Ouvert** (lecteur/modèle/export) : MuseScore recommence les numéros de mesure
+à `1` après un `<LayoutBreak><subtype>section</subtype></LayoutBreak>`. Le
+modèle ne lit pas les sauts de mise en page : repeat66 exporte des mesures 6 à
+10 au lieu de 1 à 5 dans sa seconde section. Cause : lecteur/modèle.
 
-```diff
--        <duration>6</duration>
-+        <duration>9</duration>
-```
+## Écarts du corpus v3 relevés par `e2e_corpus.rs`
 
-Deux portées d'une même partie portent des indications locales différentes
-(9/8 et 3/4 avec `<stretchN>2</stretchN><stretchD>3</stretchD>`). Le modèle
-n'a qu'une durée de mesure globale (`Measure::len`), calculée à partir de la
-première portée ; sans `<duration>` explicite, le silence « mesure » de la
-seconde portée prendrait encore 9/8 au lieu de 3/4 (durée de mesure par portée
-non modélisée).
+Le test de bout en bout couvre désormais `v3/` avec la même normalisation. Les
+écarts ci-dessous sont triés par nombre de fichiers touchés ; les fichiers
+conformes constituent `EXPECTED_CONFORMANT_V3` (lyricsline01, repeat01,
+repeat06, repeat07, repeat11, repeat20, repeat39, testBreaksPage,
+testHairpinDynamics, testTuplets8, testWedge4).
+
+1. **`<instrument-sound>` et `<midi-program>` absents — 13 fichiers.**
+   `Beam-CrossM1`, `barline01`, `barlinedelete`, `clef-1`, `grace`,
+   `keysig_78216`, `layout_elements`, `measure-4`, `moonlight`,
+   `selectionfilter1`, `testMultiInstrumentPart3`, `timesig-05`,
+   `undoResequenceMeasure`. Les `.mscx` 3.x ne portent pas d'`<instrumentId>`
+   MusicXML : il faut la table MuseScore `piano → keyboard.piano`,
+   `voice → voice.vocals`, `flute → wind.flutes.flute`… **lecteur/modèle.**
+2. **Changements d'instrument non modélisés — 3 fichiers.** `change` (41
+   lignes : `<score-instrument>`/`<midi-instrument>` supplémentaires,
+   `<instruments>`, `<instrument>`, `<sound><instrument-change>`…),
+   `layout_elements` et `testMultiInstrumentPart3` (`<part-name-display>` du
+   changement, transposition et hauteur écrite). **lecteur/modèle/export.**
+3. **Harmonies 3.x : `<kind>` sémantique perdu — 4 fichiers.** `testHarmony6`
+   (38 lignes), `timesig-05`, `testChordSymbols`, `voices` : le modèle ne garde
+   que le texte (`Cm`, `Eb7`) et n'écrit ni `<root>`/`<kind>`/`<numeral>` ni
+   les `<degree>`. **lecteur/modèle/export** (famille chiffrages, hors noyau).
+4. **Clef de la seconde portée — 2 fichiers.** `clef-1`, `moonlight` : le
+   `<clef staff="2">F</clef>` de l'instrument n'alimente pas la clef par défaut
+   de la portée 2 en 3.x. **lecteur.** (À rapprocher de l'écart 1 v4.)
+5. **Numérotation après saut de section — 1 fichier.** `keysig_78216` : quatre
+   mesures numérotées `1` dans la référence (voir écart 15). **modèle/export.**
+6. **Orientation des liaisons — 1 fichier, 7 occurrences.** `moonlight` :
+   `<tied orientation="over|under">` vient du `TieSegment`, absent du modèle.
+   **lecteur/modèle/export.**
+7. **Détails de portée et de remplissage — 1 fichier.** `moonlight` : `<staff>`
+   d'une note déplacée, `<forward>` scindés, `<accidental cautionary="yes">`.
+   **lecteur/modèle/export.**
+8. **`<measure-repeat>` — 1 fichier.** `layout_elements` : les mesures répétées
+   ne sont pas marquées (`<measure-style><measure-repeat>`), seulement
+   recopiées. **lecteur/modèle/export.**
+9. **`<key number="1">` — 1 fichier.** `voices` : la référence numérote
+   l'armure de la portée 1 dans une partie à deux portées, l'export non.
+   **export.**
+10. **`<part-group>` — 1 fichier.** `barline01` : accolades/crochets de parties
+    absents du modèle, donc pas de `<part-group>`. **modèle/export.**

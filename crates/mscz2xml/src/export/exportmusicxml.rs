@@ -455,7 +455,7 @@ impl<'a> Context<'a> {
             // fragments `<display-text>`/`<accidental-text>`.
             if let Some(display) = part_display_name(part) {
                 out.xml.start_element("part-name-display", name_attributes);
-                write_display_name(out, &display);
+                write_display_name(out, display);
                 out.xml.end_element();
             }
 
@@ -589,9 +589,6 @@ impl<'a> Context<'a> {
         self.annotations_without_note(out, measure, part);
 
         out.move_to_tick(measure.end_tick());
-        for staff_id in &part.staves {
-            ottava::write_stops(self.score, out, measure, *staff_id);
-        }
         repeats::repeat_at_measure_stop(self, out, measure, part_index);
         self.barline_right(out, measure, part_index, measure_index);
         out.attr_stop();
@@ -610,10 +607,18 @@ impl<'a> Context<'a> {
         let staves = part.staves.len();
         for (position, staff_id) in part.staves.iter().enumerate() {
             out.move_to_tick(measure.start_tick);
-            // Les ottavas s'écrivent au début de la portée, avant ses notes.
-            ottava::write_starts(self.score, out, measure, *staff_id);
             let xml_staff = if staves > 1 { position + 1 } else { 0 };
-            self.write_measure_tracks(out, measure, *staff_id, xml_staff, nuances);
+            let mut started = vec![false; self.score.spanners.len()];
+            let mut stopped = vec![false; self.score.spanners.len()];
+            self.write_measure_tracks(
+                out,
+                measure,
+                *staff_id,
+                xml_staff,
+                nuances,
+                &mut started,
+                &mut stopped,
+            );
             if position + 1 < staves {
                 // Retour au début de la mesure pour la portée suivante.
                 out.move_to_tick(measure.start_tick);
@@ -622,6 +627,7 @@ impl<'a> Context<'a> {
     }
 
     /// Écrit les quatre voix d'une portée (`writeMeasureTracks`).
+    #[allow(clippy::too_many_arguments)]
     fn write_measure_tracks(
         &self,
         out: &mut Out,
@@ -629,6 +635,8 @@ impl<'a> Context<'a> {
         staff_id: StaffId,
         xml_staff: usize,
         nuances: &mut Nuances,
+        ottava_started: &mut [bool],
+        ottava_stopped: &mut [bool],
     ) {
         for voice in 0..VOICES {
             let track = Track::new(staff_id, voice as u8);
@@ -657,6 +665,15 @@ impl<'a> Context<'a> {
                         self.annotations(out, segment, staff_id, xml_staff);
                     }
                     nuances.start(self.score, out, segment, staff_id, xml_staff, track);
+                    // `spannerStart` : l'ottava s'écrit après les annotations du
+                    // segment et avant ses notes.
+                    ottava::write_starts_at(
+                        self.score,
+                        out,
+                        segment.tick,
+                        staff_id,
+                        ottava_started,
+                    );
                 }
                 let is_chord_rest = matches!(item, SegmentItem::ChordRest(_));
 
@@ -664,6 +681,8 @@ impl<'a> Context<'a> {
 
                 if is_chord_rest {
                     nuances.stop(self.score, out, out.tick, staff_id, xml_staff);
+                    // `spannerStop` : fin d'ottava éventuelle à ce tick.
+                    ottava::write_stops_at(self.score, out, out.tick, staff_id, ottava_stopped);
                 }
             }
         }

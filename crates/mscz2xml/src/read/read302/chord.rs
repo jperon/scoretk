@@ -189,13 +189,17 @@ pub(crate) fn read_tuplet(
     tuplet.number_type = number_type;
     tuplet.actual_notes = actual;
     tuplet.normal_notes = normal;
-    // `Tuplet::calcHasBracket` n'est qu'une mise en page ; faute de ligatures
-    // modélisées, on applique la règle du corpus : un n-olet imbriqué de durée
-    // de base plus courte qu'une croche, ou de croches avec un ratio réduit,
-    // se passe de crochet.
+    // `Tuplet::calcHasBracket` n'est qu'une mise en page. En 3.x, un n-olet
+    // simple n'a pas de crochet (les notes sont groupées par ligature), tandis
+    // qu'un n-olet englobant en porte un ; le plus interne, de durée de base
+    // plus courte qu'une croche, s'en passe aussi.
     let short_base = base_len < Fraction::new(1, 8)
         || (base_len == Fraction::new(1, 8) && ratio != Fraction::ONE);
-    tuplet.bracket = bracket.unwrap_or(!(short_base && parent.is_some()));
+    tuplet.bracket = bracket.unwrap_or(match parent {
+        None => false,
+        Some(_) => !short_base,
+    });
+    reader.explicit_tuplet_brackets.push(bracket.is_some());
     reader.score.add_tuplet(tuplet)
 }
 

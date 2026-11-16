@@ -9,7 +9,7 @@
 //! `note->ppitch() - note->pitch()` : `8va` ajoute une octave écrite, `8vb`
 //! la retire.
 
-use crate::model::{Measure, Score, Spanner, SpannerType, StaffId, Tick};
+use crate::model::{Score, Spanner, SpannerType, StaffId, Tick};
 
 /// Nombre d'octaves dont la hauteur écrite est décalée par une ottava.
 fn written_shift(kind: SpannerType) -> i32 {
@@ -85,19 +85,25 @@ fn number(score: &Score, spanner: &Spanner) -> usize {
         .map_or(1, |index| index + 1)
 }
 
-/// Écrit les `<octave-shift>` qui commencent au début de la mesure.
-pub(super) fn write_starts(
+/// Écrit les `<octave-shift>` qui commencent à ce tick sur la portée.
+pub(super) fn write_starts_at(
     score: &Score,
     out: &mut super::exportmusicxml::Out,
-    measure: &Measure,
+    tick: Tick,
     staff: StaffId,
+    written: &mut [bool],
 ) {
-    for spanner in &score.spanners {
+    for (index, spanner) in score.spanners.iter().enumerate() {
         if !matches!(spanner.kind, SpannerType::Ottava(_))
+            || !spanner.visible
             || spanner.start.track.staff() != staff
-            || spanner.start.tick != measure.start_tick
+            || spanner.start.tick != tick
+            || written.get(index).copied().unwrap_or(true)
         {
             continue;
+        }
+        if let Some(entry) = written.get_mut(index) {
+            *entry = true;
         }
         let (Some(kind), Some(size)) =
             (start_type(spanner.kind.clone()), size(spanner.kind.clone()))
@@ -121,19 +127,25 @@ pub(super) fn write_starts(
     }
 }
 
-/// Écrit les `<octave-shift type="stop">` qui finissent à la fin de la mesure.
-pub(super) fn write_stops(
+/// Écrit les `<octave-shift type="stop">` qui finissent à ce tick.
+pub(super) fn write_stops_at(
     score: &Score,
     out: &mut super::exportmusicxml::Out,
-    measure: &Measure,
+    tick: Tick,
     staff: StaffId,
+    written: &mut [bool],
 ) {
-    for spanner in &score.spanners {
+    for (index, spanner) in score.spanners.iter().enumerate() {
         if !matches!(spanner.kind, SpannerType::Ottava(_))
+            || !spanner.visible
             || spanner.start.track.staff() != staff
-            || spanner.end.tick != measure.end_tick()
+            || spanner.end.tick != tick
+            || written.get(index).copied().unwrap_or(true)
         {
             continue;
+        }
+        if let Some(entry) = written.get_mut(index) {
+            *entry = true;
         }
         let Some(size) = size(spanner.kind.clone()) else {
             continue;

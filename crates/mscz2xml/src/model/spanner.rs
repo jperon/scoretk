@@ -102,6 +102,11 @@ pub struct Spanner {
     pub number: u8,
     /// Compléments propres aux soufflets.
     pub hairpin: Option<Hairpin>,
+    /// Vrai si le spanner et ses traits sont affichés (`<visible>`).
+    ///
+    /// Une ottava invisible décale quand même la hauteur écrite ; seul son
+    /// `<octave-shift>` est omis.
+    pub visible: bool,
 }
 
 impl Spanner {
@@ -115,6 +120,7 @@ impl Spanner {
             volta: None,
             number: 0,
             hairpin: None,
+            visible: true,
         }
     }
 }
