@@ -67,6 +67,9 @@ pub(crate) fn read_chord_rest(
             "BeamMode" => beam = tables::beam_mode(&child.trimmed_text()),
             "Lyrics" => lyrics.push(read_lyrics(child)),
             "Articulation" => articulations.push(read_articulation(child)),
+            // TODO(parité): `<staffMove>` (notes sur une autre portée),
+            // `<Arpeggio>`, `<Tremolo>`, `<Stem>`, `<Hook>`, `<StemSlash>`,
+            // `<ChordLine>`, `<Tempo>`/`<Symbol>` d'accord ne sont pas modélisés.
             _ => {}
         }
     }
@@ -221,6 +224,9 @@ fn read_note(
             "ghost" | "dead" => ghost = child.int_text().unwrap_or(0) != 0,
             "play" => play = child.int_text().unwrap_or(1) != 0,
             "Spanner" => spanner::read_note_spanner(reader, child, ctx, id, grace, index),
+            // TODO(parité): `<Fingering>`, `<Symbol>`, `<Bend>`, `<NoteDot>`,
+            // `<Events>`, `<offset>`, `<ChordLine>`, `<tpc2>` absent et
+            // `<velocity>` (ignorée avant 4.0 par le C++) ne sont pas modélisés.
             _ => {}
         }
     }
