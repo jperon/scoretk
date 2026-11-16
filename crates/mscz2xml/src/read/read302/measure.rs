@@ -6,7 +6,7 @@
 
 use super::tables;
 use super::xml::{parse_fraction, Node};
-use super::{annotations, chord, spanner, Reader, VoiceCtx};
+use super::{annotations, chord, repeats, spanner, Reader, VoiceCtx};
 use crate::model::{
     BarLine, BarLineType, Breath, BreathType, ChordRestKind, Clef, ClefType, Fraction, GraceChord,
     Key, KeyMode, KeySig, Measure, Segment, SegmentItem, SegmentType, TimeSig, Track, VOICES,
@@ -31,6 +31,7 @@ pub(crate) fn read_measure(
 
     let mut start_repeat = false;
     let mut end_repeat = false;
+    let mut repeat_count = 0u8;
     let mut voice = 0u8;
 
     for child in node.children() {
@@ -40,13 +41,31 @@ pub(crate) fn read_measure(
                 voice = voice.saturating_add(1);
             }
             "startRepeat" => start_repeat = true,
-            "endRepeat" => end_repeat = true,
-            // TODO(parité): `<Marker>`, `<Jump>`, `<LayoutBreak>`, `<stretch>`
-            // (ignoré avant 4.0), `<noOffset>`, `<irregular>`,
-            // `<measureRepeatCount>`, `<vspacer*>`, `<visible>`, `<SystemDivider>`
-            // et `<MeasureNumber>` ne changent pas le noyau musical lu ici. Un
-            // `<multiMeasureRest>` ne parvient jamais ici : `read_staff` écarte
-            // la mesure marqueur avant de la lire.
+            "endRepeat" => {
+                end_repeat = true;
+                // `MeasureRead::readMeasure` lit la valeur de `<endRepeat>`
+                // (`readInt` vaut zéro quand la balise est vide).
+                repeat_count = child
+                    .int_text()
+                    .and_then(|value| u8::try_from(value.clamp(0, 255)).ok())
+                    .unwrap_or(0);
+            }
+            "Marker" => {
+                let marker = repeats::read_marker(child, staff);
+                reader.score.measures[index]
+                    .repeat_marks
+                    .push(crate::model::RepeatMark::Marker(marker));
+            }
+            "Jump" => {
+                let jump = repeats::read_jump(child, staff);
+                reader.score.measures[index]
+                    .repeat_marks
+                    .push(crate::model::RepeatMark::Jump(jump));
+            }
+            // TODO(parité): `<LayoutBreak>`, `<stretch>` (ignoré avant 4.0),
+            // `<noOffset>`, `<irregular>`, `<measureRepeatCount>`, `<vspacer*>`,
+            // `<visible>`, `<SystemDivider>`, `<MeasureNumber>` et
+            // `<multiMeasureRest>` ne changent pas le noyau musical lu ici.
             _ => {}
         }
     }
@@ -56,6 +75,7 @@ pub(crate) fn read_measure(
     }
     if end_repeat {
         reader.score.measures[index].end_bar_line = BarLineType::EndRepeat;
+        reader.score.measures[index].repeat_count = repeat_count;
     }
     reader.score.measures[index].end_tick()
 }

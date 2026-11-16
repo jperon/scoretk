@@ -29,6 +29,7 @@ mod chord;
 mod measure;
 mod nuances;
 mod part;
+mod repeats;
 mod spanner;
 mod tables;
 mod xml;

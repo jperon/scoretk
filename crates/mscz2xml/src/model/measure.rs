@@ -8,6 +8,7 @@
 //! dans MuseScore, elle se déduit de `len != nominal_len`.
 
 use super::fraction::{Fraction, Tick};
+use super::repeat::RepeatMark;
 use super::segment::{BarLineType, Segment, SegmentType};
 
 /// Mesure.
@@ -28,6 +29,14 @@ pub struct Measure {
     pub start_bar_line: BarLineType,
     /// Barre de mesure à la fin.
     pub end_bar_line: BarLineType,
+    /// Nombre de lectures de la reprise de fin (`<endRepeat>N</endRepeat>`).
+    ///
+    /// Zéro quand la mesure ne termine pas de reprise. MuseScore n'écrit
+    /// l'attribut `times` de `<repeat>` que si ce nombre dépasse deux.
+    pub repeat_count: u8,
+    /// Marqueurs et sauts attachés à la mesure, dans l'ordre du fichier
+    /// (`Measure::el()` dans MuseScore).
+    pub repeat_marks: Vec<RepeatMark>,
     /// Segments de la mesure, triés par `(tick, type)`.
     pub segments: Vec<Segment>,
 }
@@ -42,6 +51,8 @@ impl Measure {
             nominal_len,
             start_bar_line: BarLineType::Normal,
             end_bar_line: BarLineType::Normal,
+            repeat_count: 0,
+            repeat_marks: Vec::new(),
             segments: Vec::new(),
         }
     }

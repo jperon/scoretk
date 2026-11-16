@@ -61,6 +61,7 @@ pub mod lyrics;
 pub mod measure;
 pub mod note;
 pub mod part;
+pub mod repeat;
 pub mod score;
 pub mod segment;
 pub mod spanner;
@@ -81,6 +82,7 @@ pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::Measure;
 pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadType};
 pub use part::{Instrument, Part, Staff, Transpose};
+pub use repeat::{Jump, JumpType, Marker, MarkerType, RepeatMark, VoltaInfo};
 pub use score::{Score, ScoreMetadata, DEFAULT_DIVISION};
 pub use segment::{
     BarLine, BarLineType, Breath, BreathType, Clef, ClefSign, ClefType, Key, KeyMode, KeySig,
