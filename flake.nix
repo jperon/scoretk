@@ -252,6 +252,24 @@
 
           fmt = craneLib.cargoFmt commonArgs;
 
+          # Vérifie que les licences des crates liées restent compatibles avec
+          # GPL-3.0-only (docs/licences-tierces.md). crane vend les sources des
+          # dépendances et pose CARGO_NET_OFFLINE : `cargo tree --offline` ne
+          # fait aucun accès réseau pendant le check.
+          licences = craneLib.mkCargoDerivation {
+            pname = "mscz2xml-licences";
+            inherit version;
+            src = pkgs.lib.cleanSource ./.;
+            cargoArtifacts = null;
+            nativeBuildInputs = [pkgs.python3];
+            buildPhaseCargoCommand = "python3 scripts/check-licences.py";
+            doInstallCargoArtifacts = false;
+            installPhaseCommand = ''
+              mkdir -p $out
+              cp docs/licences-tierces.md $out/
+            '';
+          };
+
           # Test Node du paquet était bâti par `packages.wasm` : il vérifie la
           # variante ESM telle que livrée (initSync, conversion du corpus,
           # entrée invalide).
