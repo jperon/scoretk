@@ -29,7 +29,10 @@ fn construire_partition() -> Score {
         .lyrics
         .push(Lyrics::new(0, LyricsSyllabic::Single, "Do"));
     chord_segment.set_element(Track::new(staff_id, 0), SegmentItem::ChordRest(chord));
-    chord_segment.add_annotation(Annotation::Dynamic(Dynamic::new("mf")));
+    chord_segment.add_annotation(
+        Track::new(staff_id, 0),
+        Annotation::Dynamic(Dynamic::new("mf")),
+    );
     measure.add_segment(chord_segment);
 
     let mut rest_segment = Segment::new(SegmentType::ChordRest, Fraction::QUARTER, staff_count);
@@ -202,6 +205,84 @@ fn signatures_clefs_barres_et_pistes() {
     assert_eq!(spanner.start.tick, Fraction::ZERO);
     assert_eq!(spanner.end.tick, Fraction::ONE);
     assert_eq!(spanner.end.track, track);
+}
+
+#[test]
+fn accords_d_agrement() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Violon", "Vln"));
+    let staff_id = score.add_staff(part_id);
+
+    let main_note = score.add_note(Note::new(69, tpc::A));
+    let appoggiatura_note = score.add_note(Note::new(67, tpc::G));
+    let after_grace_note = score.add_note(Note::new(71, tpc::B));
+
+    let mut chord_rest = ChordRest::chord(Duration::quarter());
+    let main_chord = chord_rest
+        .chord_mut()
+        .expect("l'élément doit être un accord");
+    main_chord.notes.push(main_note);
+
+    let mut appoggiatura = GraceChord::new(GraceType::Appoggiatura, Duration::eighth());
+    appoggiatura.chord_mut().notes.push(appoggiatura_note);
+
+    let mut after_grace = GraceChord::new(GraceType::Grace8After, Duration::eighth());
+    after_grace.chord_mut().notes.push(after_grace_note);
+
+    main_chord.grace_chords.push(appoggiatura);
+    main_chord.grace_chords.push(after_grace);
+
+    let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, score.staves.len());
+    segment.set_element(Track::new(staff_id, 0), SegmentItem::ChordRest(chord_rest));
+
+    let chord = segment
+        .chord_rest(Track::new(staff_id, 0))
+        .expect("le segment doit contenir l'accord principal")
+        .chord_ref()
+        .expect("l'élément doit être un accord");
+    assert_eq!(chord.grace_chords.len(), 2);
+    assert_eq!(chord.grace_chords[0].duration, Duration::eighth());
+    assert_eq!(
+        chord.grace_chords[0].chord.grace,
+        Some(GraceType::Appoggiatura)
+    );
+    assert_eq!(chord.grace_chords[0].chord.notes, vec![appoggiatura_note]);
+    assert_eq!(
+        score.note(appoggiatura_note).pitch,
+        67,
+        "la note d'agrément reste dans l'arène Score::notes"
+    );
+    assert_eq!(
+        chord.grace_chords[1].chord.grace,
+        Some(GraceType::Grace8After)
+    );
+    assert_eq!(chord.grace_chords[1].chord.notes, vec![after_grace_note]);
+}
+
+#[test]
+fn annotations_avec_piste() {
+    let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 2);
+    let first_staff_voice_0 = Track::new(StaffId::from_index(0), 0);
+    let second_staff_voice_2 = Track::new(StaffId::from_index(1), 2);
+
+    segment.add_annotation(first_staff_voice_0, Annotation::Dynamic(Dynamic::new("p")));
+    segment.add_annotation(
+        second_staff_voice_2,
+        Annotation::StaffText(StaffText::new("solo")),
+    );
+
+    assert_eq!(segment.annotations.len(), 2);
+    assert_eq!(segment.annotations[0].track, first_staff_voice_0);
+    assert_eq!(segment.annotations[0].text(), "p");
+    assert_eq!(segment.annotations[1].track, second_staff_voice_2);
+    assert_eq!(segment.annotations[1].text(), "solo");
+
+    let on_second_staff: Vec<&str> = segment
+        .annotations_on(second_staff_voice_2)
+        .map(Annotation::text)
+        .collect();
+    assert_eq!(on_second_staff, vec!["solo"]);
+    assert_eq!(segment.annotations_on(first_staff_voice_0).count(), 1);
 }
 
 #[test]

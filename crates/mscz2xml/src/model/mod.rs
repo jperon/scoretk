@@ -37,7 +37,8 @@
 //! ├── parts: Vec<Part>            (instrument, noms, portées)
 //! ├── staves: Vec<Staff>
 //! ├── measures: Vec<Measure>      (numéro, tick, len, nominal_len, barres)
-//! │   └── segments: Vec<Segment>  (tick, type, élément par piste, annotations)
+//! │   └── segments: Vec<Segment>  (tick, type, élément par piste,
+//! │                                annotations avec piste)
 //! ├── notes: Vec<Note>            (pitch, tpc, liaisons, altération, tête)
 //! ├── tuplets: Vec<Tuplet>        (ratio, base_len, imbrication)
 //! └── spanners: Vec<Spanner>      (début/fin en tick et piste, type)
@@ -69,7 +70,7 @@ pub use annotation::{
 };
 pub use chord::{
     Articulation, ArticulationAnchor, ArticulationType, BeamMode, Chord, ChordRest, ChordRestKind,
-    GraceType, Rest, StemDirection,
+    GraceChord, GraceType, Rest, StemDirection,
 };
 pub use duration::{Duration, DurationType};
 pub use fraction::{Fraction, Tick};
@@ -81,7 +82,7 @@ pub use part::{Instrument, Part, Staff, Transpose};
 pub use score::{Score, ScoreMetadata, DEFAULT_DIVISION};
 pub use segment::{
     BarLine, BarLineType, Breath, BreathType, Clef, ClefSign, ClefType, Key, KeyMode, KeySig,
-    Segment, SegmentItem, SegmentType, TimeSig, TimeSigType,
+    Segment, SegmentAnnotation, SegmentItem, SegmentType, TimeSig, TimeSigType,
 };
 pub use spanner::{HairpinType, OttavaType, Spanner, SpannerAnchor, SpannerType};
 pub use tuplet::{Tuplet, TupletNumberType};

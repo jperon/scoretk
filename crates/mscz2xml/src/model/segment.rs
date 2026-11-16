@@ -625,19 +625,50 @@ impl SegmentItem {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct SegmentAnnotation {
+    /// Piste à laquelle l'annotation est rattachée.
+    pub track: Track,
+    /// Annotation elle-même.
+    pub annotation: Annotation,
+}
+
+impl SegmentAnnotation {
+    /// Construit une annotation de segment rattachée à une piste.
+    pub fn new(track: Track, annotation: Annotation) -> Self {
+        Self { track, annotation }
+    }
+
+    /// Piste de l'annotation.
+    pub const fn track(&self) -> Track {
+        self.track
+    }
+
+    /// Annotation.
+    pub fn annotation(&self) -> &Annotation {
+        &self.annotation
+    }
+
+    /// Texte affiché, si l'annotation en a un.
+    pub fn text(&self) -> &str {
+        self.annotation.text()
+    }
+}
+
 /// Segment vertical d'une mesure.
 ///
 /// Correspond à `Segment` dans `engraving/dom/segment.h`. Tous les éléments
 /// d'un segment commencent au même tick ; `elements` est indexé par
-/// [`Track::raw`], avec `len = nb_portées * VOICES`.
+/// [`Track::raw`], avec `len = nb_portées * VOICES`. Les annotations portent
+/// aussi leur piste, comme `EngravingItem::track()` dans MuseScore.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Segment {
     /// Tick du segment.
     pub tick: Tick,
     /// Type du segment.
     pub kind: SegmentType,
-    /// Annotations attachées au segment.
-    pub annotations: Vec<Annotation>,
+    /// Annotations attachées au segment, avec leur piste.
+    pub annotations: Vec<SegmentAnnotation>,
     elements: Vec<Option<SegmentItem>>,
 }
 
@@ -689,9 +720,23 @@ impl Segment {
             .and_then(SegmentItem::as_chord_rest_mut)
     }
 
-    /// Ajoute une annotation au segment.
-    pub fn add_annotation(&mut self, annotation: Annotation) {
-        self.annotations.push(annotation);
+    /// Ajoute une annotation au segment, rattachée à une piste.
+    ///
+    /// La piste joue le rôle de `EngravingItem::track()` dans MuseScore :
+    /// elle indique la portée et la voix auxquelles l'export doit rattacher
+    /// l'annotation (`Segment::annotations()` dans
+    /// `engraving/dom/segment.h`).
+    pub fn add_annotation(&mut self, track: Track, annotation: Annotation) {
+        self.annotations
+            .push(SegmentAnnotation::new(track, annotation));
+    }
+
+    /// Annotations d'une piste donnée.
+    pub fn annotations_on(&self, track: Track) -> impl Iterator<Item = &Annotation> + '_ {
+        self.annotations
+            .iter()
+            .filter(move |entry| entry.track == track)
+            .map(|entry| &entry.annotation)
     }
 
     /// Éléments indexés par piste.

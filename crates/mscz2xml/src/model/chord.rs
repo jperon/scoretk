@@ -166,9 +166,18 @@ impl Articulation {
 pub struct Chord {
     /// Notes de l'accord, référencées dans l'arène des notes.
     pub notes: Vec<NoteId>,
+    /// Accords d'agrément qui précèdent ou suivent cet accord.
+    ///
+    /// Correspond à `Chord::graceNotes()` dans `engraving/dom/chord.h`
+    /// (`m_graceNotes`) : les accords d'agrément ne sont pas des éléments de
+    /// segment, ils vivent donc ici. Leur `Chord::grace` donne le type
+    /// (appoggiature, acciaccatura, ornement après l'accord…), leur
+    /// [`GraceChord::duration`] leur durée. Leurs notes restent dans
+    /// l'arène [`super::Score::notes`].
+    pub grace_chords: Vec<GraceChord>,
     /// Direction de hampe.
     pub stem: StemDirection,
-    /// Type d'ornement, si l'accord est une appoggiature.
+    /// Type d'ornement, si cet accord est lui-même un accord d'agrément.
     pub grace: Option<GraceType>,
     /// Vrai si l'ornement est barré.
     pub grace_slash: bool,
@@ -176,6 +185,43 @@ pub struct Chord {
     pub articulations: Vec<Articulation>,
     /// Vrai si l'accord est en petit format.
     pub small: bool,
+}
+
+/// Accord d'agrément rattaché à un accord principal.
+///
+/// Équivalent de chaque élément de `Chord::graceNotes()` dans
+/// `engraving/dom/chord.h` : un `Chord` MuseScore est lui-même un
+/// `ChordRest` et porte donc sa durée. Comme il n'est pas un élément de
+/// segment, la durée est stockée à côté de l'accord plutôt que dans le
+/// [`ChordRest`] du segment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GraceChord {
+    /// Durée notée de l'accord d'agrément (points compris dans le type
+    /// [`Duration`]).
+    pub duration: Duration,
+    /// Accord d'agrément ; son [`Chord::grace`] indique le type.
+    pub chord: Chord,
+}
+
+impl GraceChord {
+    /// Construit un accord d'agrément vide du type donné.
+    pub fn new(grace: GraceType, duration: Duration) -> Self {
+        let chord = Chord {
+            grace: Some(grace),
+            ..Chord::default()
+        };
+        Self { duration, chord }
+    }
+
+    /// Accès à l'accord d'agrément.
+    pub fn chord(&self) -> &Chord {
+        &self.chord
+    }
+
+    /// Accès mutable à l'accord d'agrément.
+    pub fn chord_mut(&mut self) -> &mut Chord {
+        &mut self.chord
+    }
 }
 
 /// Silence.
