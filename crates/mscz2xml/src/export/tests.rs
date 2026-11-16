@@ -9,8 +9,9 @@ use crate::model::{
     BeamMode, ChordRest, Clef, ClefType, Credit, CreditStyle, Duration, DurationType, Fraction,
     GraceChord, GraceType, Harmony, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
     LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteId, Part, PartId, Placement, RehearsalFrame,
-    RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffBracket,
-    StaffId, StaffText, SystemText, Tempo, TimeSig, Track, Transpose, Tuplet,
+    RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor,
+    SpannerType, Staff, StaffBracket, StaffId, StaffText, SwingParameters, SwingUnit, SystemText,
+    TboxText, Tempo, TempoKind, TextLineInfo, TimeSig, Track, Transpose, Tuplet,
 };
 
 use super::{export_musicxml, export_musicxml_with, ExportOptions};
@@ -1692,7 +1693,9 @@ fn textes_de_portee_et_de_systeme() {
     // Un texte invisible n'est pas exporté (`canWrite`).
     assert!(!xml.contains("caché"));
     assert!(xml.contains("<words>espressivo</words>"));
-    assert!(xml.contains("<words>pizz.</words>"));
+    // Le changement d'instrument reprend le style « Instrument Name » :
+    // gras, taille 12.
+    assert!(xml.contains("<words font-weight=\"bold\" font-size=\"12\">pizz.</words>"));
 }
 
 #[test]
@@ -1801,7 +1804,7 @@ fn reperes_de_repetition() {
     let xml = export_musicxml(&score).expect("export");
 
     assert!(xml.contains(
-        "<direction placement=\"below\">\n        <direction-type>\n          \
+        "<direction placement=\"below\" system=\"only-top\">\n        <direction-type>\n          \
          <rehearsal font-weight=\"bold\" font-size=\"14\">A</rehearsal>"
     ));
     assert!(xml.contains("<rehearsal enclosure=\"circle\" font-weight=\"bold\" font-size=\"14\">B"));
@@ -1883,6 +1886,197 @@ fn credits_et_metadonnees_de_page_de_titre() {
     assert!(xml.contains(
         "<credit-words default-x=\"600.17\" default-y=\"85.71\" justify=\"center\" \
          valign=\"bottom\" font-size=\"8\">© 2026</credit-words>"
+    ));
+}
+
+// ----------------------------------------------------------------------
+// Lignes de texte, cadres, changements d'instrument, swing
+// ----------------------------------------------------------------------
+
+/// Partition d'une mesure de silence, avec une ligne de texte de la mesure 0
+/// à la fin de la mesure.
+fn score_avec_ligne(info: TextLineInfo) -> Score {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    score.add_measure(measure);
+    let mut spanner = Spanner::new(
+        SpannerType::TextLine,
+        SpannerAnchor::new(Fraction::ZERO, track),
+        SpannerAnchor::new(Fraction::ONE, track),
+    );
+    spanner.text_line = Some(info);
+    score.add_spanner(spanner);
+    score
+}
+
+#[test]
+fn ligne_de_texte_visible_en_bracket() {
+    let mut info = TextLineInfo {
+        begin_hook: crate::model::HookType::Hook90,
+        end_hook: crate::model::HookType::Hook90,
+        end_hook_height: 1.5,
+        ..TextLineInfo::default()
+    };
+    info.begin_text = Some(RichText::new("Staff/1"));
+    let score = score_avec_ligne(info);
+    let xml = export_musicxml(&score).expect("export");
+
+    assert!(xml.contains(
+        "<direction placement=\"above\">\n        <direction-type>\n          \
+         <words>Staff/1</words>\n          </direction-type>"
+    ));
+    assert!(xml.contains(
+        "<bracket type=\"start\" number=\"1\" line-end=\"down\" line-type=\"solid\" end-length=\"15\"/>"
+    ));
+    assert!(
+        xml.contains("<bracket type=\"stop\" number=\"1\" line-end=\"down\" end-length=\"15\"/>")
+    );
+}
+
+#[test]
+fn ligne_de_texte_invisible_avec_texte_de_fin() {
+    let mut info = TextLineInfo {
+        line_visible: false,
+        ..TextLineInfo::default()
+    };
+    info.end_text = Some(RichText::new("3x"));
+    let score = score_avec_ligne(info);
+    let xml = export_musicxml(&score).expect("export");
+
+    // `writeHairpinText` écrit toujours la police de l'extrémité.
+    assert!(xml.contains("<words font-family=\"Edwin\" font-size=\"10\">3x</words>"));
+    assert!(!xml.contains("<bracket"));
+    // `spannerStop` passe la position sentinelle -1 : 4 * 1 * (-1 - 1) = -8.
+    assert!(xml.contains("<offset sound=\"yes\">-8</offset>"));
+}
+
+#[test]
+fn texte_de_tbox_en_words() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    score.add_measure(measure);
+    score.add_tbox_text(TboxText::new(RichText::new("1,2,3,4   2,3,4"), 0));
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains(
+        "<direction placement=\"above\">\n        <direction-type>\n          \
+         <words valign=\"top\">1,2,3,4   2,3,4</words>"
+    ));
+}
+
+#[test]
+fn changement_d_instrument_complet() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    let mut change = InstrumentChange::new("Flûte");
+    change.instrument = Some(Instrument {
+        id: "wind.flutes.flute".to_owned(),
+        long_name: "Flute".to_owned(),
+        short_name: "Fl.".to_owned(),
+        track_name: "Flute".to_owned(),
+        transpose: Some(Transpose::new(-1, -2)),
+        midi_program: Some(73),
+        ..piano_instrument()
+    });
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        track,
+        Fraction::ZERO,
+        Annotation::InstrumentChange(change),
+    );
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains(
+        "<print>\n        <part-name-display>\n          \
+         <display-text>Flute</display-text>\n          </part-name-display>"
+    ));
+    assert!(xml.contains("<part-abbreviation-display>\n          <display-text>Fl.</display-text>"));
+    assert!(xml.contains(
+        "<transpose>\n          <diatonic>-1</diatonic>\n          \
+         <chromatic>-2</chromatic>\n          </transpose>"
+    ));
+    assert!(xml.contains(
+        "<sound>\n        <instrument-change id=\"P1-I2\">\n          \
+         <instrument-sound>wind.flutes.flute</instrument-sound>"
+    ));
+    assert!(xml.contains("<words font-weight=\"bold\" font-size=\"12\">Flûte</words>"));
+}
+
+#[test]
+fn a_tempo_reprend_le_tempo_precedent() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    let mut first = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut first, track, Fraction::ZERO);
+    let mut tempo = Tempo::new("Andante");
+    tempo.beats_per_second = Some(1.5);
+    ajouter_annotation(
+        &mut first,
+        score.staves.len(),
+        track,
+        Fraction::ZERO,
+        Annotation::Tempo(tempo),
+    );
+    score.add_measure(first);
+
+    let mut second = ajouter_mesure(1, Fraction::ONE, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut second, track, Fraction::ONE);
+    let mut a_tempo = Tempo::new("a tempo");
+    a_tempo.beats_per_second = Some(9.9);
+    a_tempo.kind = TempoKind::ATempo;
+    ajouter_annotation(
+        &mut second,
+        score.staves.len(),
+        track,
+        Fraction::ONE,
+        Annotation::Tempo(a_tempo),
+    );
+    score.add_measure(second);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert_eq!(xml.matches("<sound tempo=\"90\"/>").count(), 2);
+    assert!(!xml.contains("tempo=\"594\""));
+}
+
+#[test]
+fn swing_de_texte_systeme() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    let mut texte = SystemText::new("Swing");
+    texte.swing = Some(SwingParameters {
+        unit: SwingUnit::Eighth,
+        ratio: 60,
+    });
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        track,
+        Fraction::ZERO,
+        Annotation::SystemText(texte),
+    );
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains(
+        "<sound>\n          <swing>\n            <first>5</first>\n            \
+         <second>3</second>\n            <swing-type>eighth</swing-type>\n            \
+         </swing>\n          </sound>"
     ));
 }
 

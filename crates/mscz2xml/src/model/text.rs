@@ -384,6 +384,36 @@ pub fn symbol_character(name: &str) -> Option<char> {
     Some(character)
 }
 
+/// Texte d'un cadre `TBox`, exporté en `<words>` de direction.
+///
+/// Correspond à `TBox::text()` (`engraving/dom/tbox.h`) : MuseScore l'écrit au
+/// début de la première mesure du système qui porte le cadre
+/// (`ExportMusicXml::tboxTextAsWords`). Le modèle n'a qu'une page et pas de
+/// systèmes : le texte est rattaché à l'indice de la mesure qui suit le cadre.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TboxText {
+    /// Texte du cadre.
+    pub text: RichText,
+    /// Indice de la mesure devant laquelle le texte est écrit.
+    pub measure: usize,
+    /// Placement (`above` si le cadre est au-dessus de la mesure).
+    pub placement: super::annotation::Placement,
+    /// Taille de police du style du cadre (défauts du fichier), si connue.
+    pub font_size: Option<f64>,
+}
+
+impl TboxText {
+    /// Construit le texte d'un cadre rattaché à une mesure.
+    pub fn new(text: RichText, measure: usize) -> Self {
+        Self {
+            text,
+            measure,
+            placement: super::annotation::Placement::Above,
+            font_size: None,
+        }
+    }
+}
+
 /// Style d'un texte de cadre de titre.
 ///
 /// Correspond à `TextStyleType` (`engraving/dom/textstyle.h`) réduit aux styles
@@ -541,6 +571,8 @@ pub struct Credit {
     pub valign: CreditValign,
     /// Page (1-based).
     pub page: u32,
+    /// Taille de police explicite (défauts de style du fichier), si connue.
+    pub font_size: Option<f64>,
     /// Hauteur du cadre vertical qui contient le texte, en spatiums.
     ///
     /// `ExportMusicXml::credits` passe `parentHeight(text)` à
@@ -560,6 +592,7 @@ impl Credit {
             justify,
             valign,
             page: 1,
+            font_size: None,
             vbox_height: 10.0,
         }
     }

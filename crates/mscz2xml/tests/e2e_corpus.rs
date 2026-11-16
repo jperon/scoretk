@@ -69,6 +69,7 @@ const EXPECTED_CONFORMANT: &[&str] = &[
 const EXPECTED_CONFORMANT_V3: &[&str] = &[
     "Beam-CrossM1",
     "barlinedelete",
+    "change",
     "clef-1",
     "copypaste_tuplet_01",
     "grace",
@@ -86,6 +87,7 @@ const EXPECTED_CONFORMANT_V3: &[&str] = &[
     "testChordSymbols",
     "testHairpinDynamics",
     "testHarmony6",
+    "testMultiInstrumentPart3",
     "testTboxWords1",
     "testTuplets8",
     "testWedge4",

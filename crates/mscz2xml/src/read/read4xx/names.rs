@@ -5,8 +5,8 @@
 //! renvoient `None` : le lecteur les ignore alors silencieusement.
 
 use crate::model::{
-    AccidentalType, ArticulationAnchor, ArticulationType, BarLineType, BeamMode, ClefType,
-    DurationType, GraceType, KeyMode, LyricsSyllabic, NoteHeadGroup, NoteHeadType, TimeSigType,
+    AccidentalType, BarLineType, BeamMode, ClefType, DurationType, GraceType, KeyMode,
+    LyricsSyllabic, NoteHeadGroup, NoteHeadType, TimeSigType,
 };
 
 /// Figure de durée (`durationType`).
@@ -118,47 +118,6 @@ pub fn accidental_type(name: &str) -> Option<AccidentalType> {
         "accidentalTripleSharp" => AccidentalType::TripleSharp,
         _ => return None,
     })
-}
-
-/// Articulation (`Articulation/subtype`), ancre comprise dans le nom.
-///
-/// MuseScore encode l'ancre dans le suffixe `Above` / `Below`. Les articulations
-/// composées (`articTenutoAccent`…) n'ont pas de variante dans le modèle : elles
-/// sont rapprochées de leur composant principal avec un `TODO(parité)` chez
-/// l'appelant.
-pub fn articulation(name: &str) -> Option<(ArticulationType, ArticulationAnchor)> {
-    let (base, anchor) = if let Some(base) = name.strip_suffix("Below") {
-        (base, ArticulationAnchor::Down)
-    } else if let Some(base) = name.strip_suffix("Above") {
-        (base, ArticulationAnchor::Up)
-    } else {
-        (name, ArticulationAnchor::Auto)
-    };
-
-    let kind = match base {
-        "articStaccato" => ArticulationType::Staccato,
-        "articStaccatissimo" => ArticulationType::Staccatissimo,
-        "articAccent" => ArticulationType::Accent,
-        "articMarcato" => ArticulationType::Marcato,
-        "articTenuto" => ArticulationType::Tenuto,
-        "articTenutoAccent" => ArticulationType::Portato,
-        "articTenutoStaccato" => ArticulationType::Portato,
-        "fermata" | "fermataAbove" | "fermataBelow" => ArticulationType::Fermata,
-        "fermataShort" => ArticulationType::FermataShort,
-        "fermataLong" => ArticulationType::FermataLong,
-        "fermataVeryShort" => ArticulationType::FermataVeryShort,
-        "fermataVeryLong" => ArticulationType::FermataVeryLong,
-        "breathMarkComma" | "breathMark" => ArticulationType::BreathMark,
-        "caesura" | "caesuraCurved" | "caesuraShort" => ArticulationType::Caesura,
-        "stringsUpBow" | "articUpBow" => ArticulationType::UpBow,
-        "stringsDownBow" | "articDownBow" => ArticulationType::DownBow,
-        "stringsHarmonic" | "articHarmonic" => ArticulationType::Harmonic,
-        "articOpen" => ArticulationType::Open,
-        "articStopped" => ArticulationType::Stopped,
-        "articSnapPizzicato" => ArticulationType::SnapPizzicato,
-        _ => return None,
-    };
-    Some((kind, anchor))
 }
 
 /// Mode de ligature (`BeamMode`).

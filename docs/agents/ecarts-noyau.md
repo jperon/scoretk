@@ -317,8 +317,9 @@ page et paroles des corpus v3 et v4.
 - `<defaults>` n'écrit pas encore `<appearance>`, `<music-font>`,
   `<word-font>` ni `<lyric-font>` : ces blocs demandent une trentaine de
   valeurs de style (largeurs de traits, polices) absentes du modèle.
-- `moonlight.mscx` : les entités nommées d'un texte de crédit
-  (`&quot;`) sont ré-échappées par l'écrivain XML (`&amp;quot;`).
+- `moonlight.mscx` : **corrigé** (famille textes) — les fragments de texte
+  sont écrits bruts (`XmlWriter::tag_raw`), les entités nommées (`&quot;`)
+  sont donc conservées comme dans MuseScore.
 - `testBreaksPage.mscx` : un `VBox` placé après deux systèmes n'est pas en
   haut de page ; sans moteur de mise en page, son `default-y` calculé est
   celui d'un cadre en haut de page (1626,67 au lieu de 1446,67, soit 18 sp).
@@ -356,16 +357,15 @@ Les points 1 à 5 et 9 à 12 sont corrigés ; restent les points 6 à 8 et 13.
    les noms long/court (poids 4/2/1), à défaut par le programme MIDI, sinon
    `keyboard.piano` ; le programme par défaut vient du même instrument.
    `<midi-channel>` est lu quand le fichier le fixe.
-2. **Changements d'instrument — 3 fichiers.**
-   **Corrigé côté modèle/lecteur/export** : `Part` porte les instruments
-   successifs, `<InstrumentChange>` enregistre le sien au tick du segment
-   (`Segment::add`), et l'export écrit un `<score-instrument>`/
-   `<midi-instrument>` par instrument, `<instruments>` à la première mesure,
-   `<instrument>` par note, les canaux MIDI dans l'ordre (canal « harmony »
-   compris) et la hauteur écrite avec la transposition en vigueur.
-   **Reste** `<sound><instrument-change>` et les `<attributes><transpose>` du
-   changement, portés par `writeInstrumentChange` (famille textes) : `change`,
-   `layout_elements`, `testMultiInstrumentPart3`.
+2. **Changements d'instrument — 3 fichiers.** **Corrigé** (modèle, lecteurs,
+   export, avec la famille textes) : `Part` porte les instruments successifs,
+   `<InstrumentChange>` enregistre le sien au tick du segment (`Segment::add`),
+   et l'export écrit un `<score-instrument>`/`<midi-instrument>` par instrument,
+   `<instruments>` à la première mesure, `<instrument>` par note, les canaux
+   MIDI dans l'ordre (canal « harmony » compris) et la hauteur écrite avec la
+   transposition en vigueur. `writeInstrumentChange` (famille textes) écrit
+   `<print><part-name-display>`, `<transpose>` et `<sound><instrument-change>`.
+   `change` et `testMultiInstrumentPart3` sont conformes.
 3. **Harmonies 3.x — 4 fichiers.** **Corrigé** (modèle/lecteur/export) :
    `Harmony` garde le suffixe (`<name>`), le type (`normal`/`roman`/`nashville`),
    la fonction et les `<degree>`. `export/harmony.rs` analyse le suffixe comme
@@ -388,8 +388,8 @@ Les points 1 à 5 et 9 à 12 sont corrigés ; restent les points 6 à 8 et 13.
    `<staffMove>` place les notes croisées sur l'autre portée (`<staff>` juste)
    et `<role>` utilisateur d'une altération produit `cautionary="yes"
    parentheses="no"` (ou `editorial` avec des crochets). **Reste** les
-   `<forward>` scindés en fin de mesure (`36` au lieu de `12`+`24`), qui
-   viennent du découpage des segments par la mise en page.
+   `<forward>`/`<backup>` scindés en fin de mesure (`36` au lieu de `12`+`24`),
+   qui viennent du découpage des segments par la mise en page.
 8. **`<measure-repeat>` — 1 fichier.** **Ouvert** : `layout_elements` recopie
    les mesures répétées au lieu d'écrire
    `<measure-style><measure-repeat>`.
@@ -408,6 +408,10 @@ Les points 1 à 5 et 9 à 12 sont corrigés ; restent les points 6 à 8 et 13.
     `<hideEmptyStaves>` et la décision dépend de la mise en page (distance
     nulle entre portées).
 
+Écarts de `layout_elements` restants, hors familles instruments et accords
+(voir écarts 8 et 18) : `<figured-bass>`, `<notehead parentheses="yes">` et
+`<measure-repeat>`.
+
 ## Tests dédiés
 
 - `crates/mscz2xml/tests/instruments_corpus.rs` compare, pour chaque fichier
@@ -419,3 +423,90 @@ Les points 1 à 5 et 9 à 12 sont corrigés ; restent les points 6 à 8 et 13.
 - `crates/mscz2xml/src/export/tests.rs` couvre sur des partitions construites à
   la main les parties multi-instruments, la numérotation après saut de section
   et les altérations d'avertissement.
+- `crates/mscz2xml/tests/texts_corpus.rs` et
+  `crates/mscz2xml/tests/notations_corpus.rs` couvrent les familles textes et
+  notations (voir écarts 17 et 18).
+
+## 17. Textes de ligne, cadres `TBox`, changements d'instrument, swing — famille textes
+
+**Corrigé** (lecteur/modèle/export) et couvert par
+`crates/mscz2xml/tests/texts_corpus.rs` sur le corpus **v3 et v4** (l'e2e v4
+ignore les `<direction>` et `<print>`) :
+
+- **lignes de texte** (`<Spanner type="TextLine">`) : `TextLineInfo` porte
+  `lineVisible`, `beginText`/`endText`, style de trait, crochets, hauteurs de
+  crochet, polices et `system`. L'export reproduit `ExportMusicXml::textLine`
+  et `writeHairpinText` : `<words>` de début/fin, `<bracket type=… number=…
+  line-end=… line-type=… end-length=…>`, `<dashes>` pour un trait sans
+  crochet, et l'`<offset sound="yes">` négatif des fins de ligne invisible
+  (la position sentinelle `Fraction(-1,1)` du C++) ;
+- **textes de `TBox`** (`tboxTextAsWords`) : lus dans les deux lecteurs,
+  exportés en `<words valign="top">` au début de la mesure, au-dessus ou
+  au-dessous selon le cadre (défauts de style 3.x : 12 points) ;
+- **changements d'instrument** (`writeInstrumentChange`) :
+  `<print><part-name-display>`/`<part-abbreviation-display>` (♭/♯ en
+  `<accidental-text>`), `<transpose>` dans `<attributes>` et
+  `<sound><instrument-change id="Pn-Im"><instrument-sound>`. L'identifiant
+  MusicXML absent des `.mscx` 3.x est retrouvé par nom ou programme MIDI
+  (`recognize_musicxml_id`) ;
+- **tempo** : `<type>aTempo</type>`/`<type>tempoPrimo</type>` reprennent le
+  dernier tempo normal (`tempoSound`) ;
+- **swing** : `<swing unit=… ratio=…>` d'un `SystemText` exporté en
+  `<sound><swing>` (`straight`, `first`/`second`/`swing-type`), offset
+  compris pour un texte invisible ;
+- **crédits 3.x** : les `VBox` sont lus (styles 3.x : titre 24, sous-titre 14,
+  compositeur/parolier 12, `frame` 12, `instrument_excerpt` 18, copyright 8),
+  avec pagination et répétition du copyright ; les tailles de police suivent
+  `QString::arg(double)` (6 chiffres significatifs) au lieu d'un arrondi à
+  deux décimales.
+
+Écart restant, documenté et filtré dans `texts_corpus.rs` : les `<words>` et
+`<dashes>` des **soufflets** (`HairPin` avec `beginText`/`endText`), dont la
+mise en forme relève de `writeHairpinText` côté famille nuances
+(`testHairpinDynamics`, `voices`). Le repère « A » ré-exporté de
+`layout_elements` vient d'une reprise de mesure (`RepeatMeasure`), hors
+famille textes.
+
+## 18. Notations : écarts résiduels d'une famille désormais couverte
+
+La famille des notations (articulations, points d'orgue, liaisons d'expression,
+ornements, trilles, trémolos, techniques, arpèges, glissandos, respirations et
+lignes d'accord) est couverte par un test dédié,
+`crates/mscz2xml/tests/notations_corpus.rs`, qui compare les `<notations>` de
+ces éléments à la référence, mesure par mesure et dans l'ordre. Les tests de
+bout en bout ci-dessus continuent de retirer `<notations>` sauf `tied`/`tuplet` :
+les écarts ci-dessous n'apparaissent donc pas dans leurs tableaux.
+
+Corrigé dans cette passe :
+
+- **lecteurs 3.x et 4.x** : articulations (y compris l'éclatement des
+  articulations composées en `staccato`/`tenuto`/`accent`…), points d'orgue,
+  ornements et leurs altérations, trémolos simples et à deux notes, arpèges,
+  lignes d'accord, doigtés, respirations/césures, et les spanners `Slur`,
+  `Trill`, `Glissando` avec leurs propriétés (sens, texte, style de trait,
+  visibilité) ;
+- **export** : `<articulations>`, `<fermata>`, `<slur>` avec numéro et
+  `orientation`/`placement`, `<ornaments>` (`trill-mark`, `turn`, `mordent`,
+  `wavy-line`, `tremolo`, `accidental-mark`), `<technical>` (`up-bow`,
+  `down-bow`, `harmonic`, `open`, `stopped`, `snap-pizzicato`, `fingering`,
+  `pluck`), `<arpeggiate>`/`<non-arpeggiate>`, `<glissando>`/`<slide>`,
+  `<breath-mark>`/`<caesura>` et `falloff`/`doit`/`plop`/`scoop` ;
+- `print-object="no"` sur un `<notations>` dont l'élément est invisible,
+  réouverture d'un `<notations>` quand la visibilité change.
+
+Écarts restants, déclarés dans `ECARTS_CONNUS` du test dédié :
+
+- **v3/layout_elements** : les `<Bend>` (technique de guitare) ne sont pas
+  modélisés, et la reprise de mesure (`<measure-repeat>`) n'est pas dépliée à
+  l'export (voir écart 8 du corpus v3) ; les deux glissandos de la mesure
+  répétée manquent donc. **Cause : modèle/export.**
+- **v4/copypaste_parts** : pour un trille, MuseScore 4.7 écrit le
+  `wavy-line type="stop"` sur l'accord de départ, alors que le modèle le place
+  sur l'accord de fin (`tick2 = départ + 1/4`). Le contenu est identique, seul
+  le rattachement diffère. **Cause : export** (interprétation de
+  `Trill::endElement`).
+- **v4/testExcludeInvisibleElements** : la visibilité des liaisons de
+  prolongation n'est pas modélisée (écart 13 ci-dessus). Avec un `tied`
+  invisible, MuseScore regroupe les `<notations>` autrement ; le contenu de la
+  famille est identique, seule la répartition des ouvertures
+  `print-object="no"` diffère. **Cause : lecteur/modèle** (tie invisible).

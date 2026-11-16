@@ -59,6 +59,7 @@ pub mod hairpin;
 pub mod ids;
 pub mod lyrics;
 pub mod measure;
+pub mod notation;
 pub mod note;
 pub mod part;
 pub mod repeat;
@@ -71,7 +72,8 @@ pub mod tuplet;
 
 pub use annotation::{
     text_style_defaults, Annotation, Dynamic, Harmony, HarmonyDegree, HarmonyDegreeKind,
-    InstrumentChange, Placement, RehearsalFrame, RehearsalMark, StaffText, SystemText, Tempo,
+    InstrumentChange, Placement, RehearsalFrame, RehearsalMark, StaffText, SwingParameters,
+    SwingUnit, SystemText, Tempo, TempoKind,
 };
 pub use chord::{
     Articulation, ArticulationAnchor, ArticulationType, BeamMode, Chord, ChordRest, ChordRestKind,
@@ -83,19 +85,27 @@ pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::Measure;
+pub use notation::{
+    Arpeggio, ArpeggioType, ChordLineType, Fermata, FermataType, Fingering, Glissando,
+    GlissandoType, LineStyle, Ornament, OrnamentAccidental, OrnamentType, Slur, SpannerNotation,
+    Tremolo, TremoloKind, Trill, TrillType,
+};
 pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadGroup, NoteHeadType};
-pub use part::{Instrument, Part, Staff, StaffBracket, Transpose};
+pub use part::{recognize_musicxml_id, Instrument, Part, Staff, StaffBracket, Transpose};
 pub use repeat::{Jump, JumpType, Marker, MarkerType, RepeatMark, VoltaInfo};
 pub use score::{Score, ScoreMetadata, DEFAULT_DIVISION};
 pub use segment::{
     BarLine, BarLineType, Breath, BreathType, Clef, ClefSign, ClefType, Key, KeyMode, KeySig,
     Segment, SegmentAnnotation, SegmentItem, SegmentType, TimeSig, TimeSigType,
 };
-pub use spanner::{HairpinType, OttavaType, Spanner, SpannerAnchor, SpannerType};
+pub use spanner::{
+    HairpinType, HookType, LineFont, OttavaType, Spanner, SpannerAnchor, SpannerType, TextLineInfo,
+    TextLineStyle,
+};
 pub use style::{StyleSettings, TENTHS};
 pub use text::{
-    symbol_character, Credit, CreditJustify, CreditStyle, CreditValign, RichText, TextFormat,
-    TextFragment, DEFAULT_TEXT_FONT, DEFAULT_TEXT_SIZE, MUSICAL_TEXT_FONT,
+    symbol_character, Credit, CreditJustify, CreditStyle, CreditValign, RichText, TboxText,
+    TextFormat, TextFragment, DEFAULT_TEXT_FONT, DEFAULT_TEXT_SIZE, MUSICAL_TEXT_FONT,
 };
 pub use tuplet::{Tuplet, TupletNumberType};
 

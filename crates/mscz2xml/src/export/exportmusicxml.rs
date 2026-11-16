@@ -24,21 +24,23 @@ use std::collections::BTreeSet;
 
 use crate::model::chord::ChordRestKind;
 use crate::model::{
-    Accidental, AccidentalType, Annotation, Articulation, ArticulationAnchor, ArticulationType,
-    BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType, Instrument, Key,
-    KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part,
-    Placement, Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig,
+    Accidental, AccidentalType, Annotation, BeamMode, Chord, ChordRest, Clef, ClefType, Duration,
+    Fraction, GraceType, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
+    LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part, Placement, Score, Segment,
+    SegmentItem, SegmentType, SpannerType, StaffId, StemDirection, Tempo, TempoKind, Tick, TimeSig,
     TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::Result;
 
 use super::harmony;
 use super::layout;
+use super::notations;
 use super::nuances::{self, Nuances};
 use super::ottava;
 use super::pitch;
 use super::repeats;
 use super::text;
+use super::textlines;
 use super::writer::XmlWriter;
 
 /// Logiciel annoncé dans `<encoding>`, identique à MuseScore 4.7.
@@ -103,8 +105,10 @@ pub fn calc_divisions(score: &Score) -> u32 {
 pub(crate) struct Out {
     pub(crate) xml: XmlWriter,
     div: u32,
-    tick: Tick,
+    pub(crate) tick: Tick,
     in_attributes: bool,
+    /// État des notations à numéroter (liaisons, glissandos, arpèges).
+    pub(crate) notations: notations::NotationsState,
 }
 
 impl Out {
@@ -114,6 +118,7 @@ impl Out {
             div: 1,
             tick: Tick::ZERO,
             in_attributes: false,
+            notations: notations::NotationsState::default(),
         }
     }
 
@@ -316,6 +321,18 @@ pub(crate) struct Context<'a> {
     tuplets: TupletIndex,
 }
 
+/// État des spanners d'une partie (`spannersStopped` et compteur d'instruments
+/// dans le C++).
+#[derive(Default)]
+struct PartSpanners {
+    /// Spanners dont le début a déjà été écrit.
+    started: Vec<usize>,
+    /// Spanners dont la fin a déjà été écrite.
+    stopped: Vec<usize>,
+    /// Numéro du prochain instrument introduit (`I1` étant le principal).
+    next_instrument: usize,
+}
+
 impl<'a> Context<'a> {
     fn new(score: &'a Score, options: &'a ExportOptions) -> Self {
         Self {
@@ -323,6 +340,38 @@ impl<'a> Context<'a> {
             options,
             tuplets: TupletIndex::new(score),
         }
+    }
+
+    /// Vrai si l'export écrit les hauteurs en sons réels (`concertPitch`).
+    pub(crate) fn concert_pitch(&self) -> bool {
+        self.options.concert_pitch
+    }
+
+    /// Tempo en battements par seconde en vigueur à un tick
+    /// (`Score::tempo(tick)`).
+    ///
+    /// Pour « a tempo » et « Tempo I », MuseScore relit la carte des tempos
+    /// au lieu du tempo propre au texte. Le modèle n'a pas de carte : le
+    /// dernier tempo normal au tick ou avant en tient lieu.
+    pub(crate) fn tempo_at(&self, tick: Tick) -> Option<f64> {
+        let mut found = None;
+        for measure in &self.score.measures {
+            for segment in &measure.segments {
+                if segment.tick > tick {
+                    continue;
+                }
+                for entry in &segment.annotations {
+                    if let Annotation::Tempo(tempo) = &entry.annotation {
+                        if tempo.kind == TempoKind::Normal {
+                            if let Some(beats_per_second) = tempo.beats_per_second {
+                                found = Some(beats_per_second);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        found
     }
 
     // ------------------------------------------------------------------
@@ -653,10 +702,18 @@ impl<'a> Context<'a> {
             out.tick = Tick::ZERO;
             out.in_attributes = false;
             nuances.reset_part();
+            out.notations.reset_part();
+            // I1 est l'instrument principal ; les changements d'instrument
+            // prennent les numéros suivants (`initInstrMap`).
+            let mut spanners = PartSpanners {
+                started: Vec::new(),
+                stopped: Vec::new(),
+                next_instrument: 2,
+            };
             out.xml.start_element("part", &[("id", &part_id)]);
 
             for measure_index in 0..self.score.measures.len() {
-                self.write_measure(out, measure_index, part_index, nuances);
+                self.write_measure(out, measure_index, part_index, nuances, &mut spanners);
             }
 
             out.xml.end_element();
@@ -674,6 +731,7 @@ impl<'a> Context<'a> {
         measure_index: usize,
         part_index: usize,
         nuances: &mut Nuances,
+        spanners: &mut PartSpanners,
     ) {
         let measure = &self.score.measures[measure_index];
         let part = &self.score.parts[part_index];
@@ -728,7 +786,14 @@ impl<'a> Context<'a> {
 
         repeats::repeat_at_measure_start(self, out, measure, part_index);
 
-        self.write_measure_staves(out, measure, part, nuances);
+        // Les textes de `TBox` ne sont écrits que par la première partie, au
+        // début de la mesure qui suit le cadre (`tboxTextAsWords`).
+        if part_index == 0 {
+            // `write_tbox` ferme les attributs lui-même s'il écrit un texte.
+            textlines::write_tboxes(out, self, measure_index);
+        }
+
+        self.write_measure_staves(out, measure, part, nuances, part_index, spanners);
         self.annotations_without_note(out, measure, part);
 
         out.move_to_tick(measure.end_tick());
@@ -746,8 +811,11 @@ impl<'a> Context<'a> {
         measure: &Measure,
         part: &Part,
         nuances: &mut Nuances,
+        part_index: usize,
+        spanners: &mut PartSpanners,
     ) {
         let staves = part.staves.len();
+        out.notations.start_measure();
         for (position, staff_id) in part.staves.iter().enumerate() {
             out.move_to_tick(measure.start_tick);
             let xml_staff = if staves > 1 { position + 1 } else { 0 };
@@ -759,6 +827,9 @@ impl<'a> Context<'a> {
                 *staff_id,
                 xml_staff,
                 nuances,
+                part_index,
+                position,
+                spanners,
                 &mut started,
                 &mut stopped,
             );
@@ -778,6 +849,9 @@ impl<'a> Context<'a> {
         staff_id: StaffId,
         xml_staff: usize,
         nuances: &mut Nuances,
+        part_index: usize,
+        staff_position: usize,
+        spanners: &mut PartSpanners,
         ottava_started: &mut [bool],
         ottava_stopped: &mut [bool],
     ) {
@@ -801,11 +875,37 @@ impl<'a> Context<'a> {
 
                 out.move_to_tick(segment.tick);
 
-                if let SegmentItem::ChordRest(_) = item {
+                if matches!(item, SegmentItem::ChordRest(_)) {
                     out.attr(false);
+                    // Changement d'instrument : MuseScore l'écrit une fois, au
+                    // début de la partie, avant les annotations du segment.
+                    if staff_position == 0 && voice == 0 {
+                        if let Some(change) = instrument_change(segment, staff_id) {
+                            textlines::write_instrument_change(
+                                out,
+                                self,
+                                change,
+                                part_index,
+                                spanners.next_instrument,
+                            );
+                            spanners.next_instrument += 1;
+                        }
+                    }
                     if annotation_track(segment, staff_id) == Some(track) {
                         self.harmonies(out, measure, segment, staff_id, track);
                         self.annotations(out, segment, staff_id, xml_staff);
+                    }
+                    // Débuts de lignes de texte (`spannerStart`).
+                    for (index, spanner) in self.score.spanners.iter().enumerate() {
+                        if spanner.kind != SpannerType::TextLine
+                            || spanner.start.tick != segment.tick
+                            || spanner.start.track.staff() != staff_id
+                            || spanners.started.contains(&index)
+                        {
+                            continue;
+                        }
+                        textlines::start(out, spanner, xml_staff);
+                        spanners.started.push(index);
                     }
                     nuances.start(self.score, out, segment, staff_id, xml_staff, track);
                     // `spannerStart` : l'ottava s'écrit après les annotations du
@@ -824,6 +924,18 @@ impl<'a> Context<'a> {
 
                 if is_chord_rest {
                     nuances.stop(self.score, out, out.tick, staff_id, xml_staff);
+                    // Fins de lignes de texte (`spannerStop`), une seule fois.
+                    for (index, spanner) in self.score.spanners.iter().enumerate() {
+                        if spanner.kind != SpannerType::TextLine
+                            || spanner.end.tick != out.tick
+                            || spanner.start.track.staff() != staff_id
+                            || spanners.stopped.contains(&index)
+                        {
+                            continue;
+                        }
+                        textlines::stop(out, spanner, xml_staff);
+                        spanners.stopped.push(index);
+                    }
                     // `spannerStop` : fin d'ottava éventuelle à ce tick.
                     ottava::write_stops_at(self.score, out, out.tick, staff_id, ottava_stopped);
                 }
@@ -1073,7 +1185,7 @@ impl Context<'_> {
         // TODO(parité): direction/placement du n-olet (absent du modèle).
 
         let borrowed = borrow_attributes(&attributes);
-        notations.tag(out, None);
+        notations.tag(&mut out.xml, None);
         if need_actual_and_normal {
             out.xml.start_element("tuplet", &borrowed);
             tuplet_actual_and_normal(out, tuplet);
@@ -1091,7 +1203,7 @@ impl Context<'_> {
         if !simple {
             attributes.push(("number", &number));
         }
-        notations.tag(out, None);
+        notations.tag(&mut out.xml, None);
         out.xml.tag_empty("tuplet", &attributes);
     }
 
@@ -1334,20 +1446,48 @@ impl Context<'_> {
 
             let mut notations = Notations::new();
             if note.tie_back.is_some() {
-                notations.tag(out, None);
+                notations.tag(&mut out.xml, None);
                 out.xml.tag_empty("tied", &[("type", "stop")]);
             }
             if note.tie_forward.is_some() {
-                notations.tag(out, None);
+                notations.tag(&mut out.xml, None);
                 out.xml.tag_empty("tied", &[("type", "start")]);
             }
             if first && !grace {
                 self.tuplet_start_stop(out, chord_rest, segment_tick, track, &mut notations);
             }
             if first {
-                self.chord_attributes(out, chord, &mut notations);
+                self.chord_attributes(
+                    out,
+                    chord,
+                    grace,
+                    measure,
+                    segment_tick,
+                    track,
+                    &mut notations,
+                );
             }
-            notations.finish(out);
+            notations::fingering(&mut out.xml, note, &mut notations);
+            let last = index + 1 == chord.notes.len();
+            notations::arpeggio(
+                &mut out.xml,
+                &mut out.notations,
+                chord,
+                segment_tick,
+                track,
+                first,
+                last,
+                &mut notations,
+            );
+            notations::glissandi(
+                self.score,
+                &mut out.xml,
+                &mut out.notations,
+                segment_tick,
+                track,
+                &mut notations,
+            );
+            notations.finish(&mut out.xml);
 
             if first && !grace {
                 for lyric in &chord_rest.lyrics {
@@ -1407,9 +1547,23 @@ impl Context<'_> {
         write_beam(out, chord_rest.beam_mode);
 
         let mut notations = Notations::new();
-        // TODO(parité): fermatas, soupirs et symboles attachés au silence.
+        let segment = measure
+            .segments
+            .iter()
+            .find(|segment| segment.tick == segment_tick && segment.chord_rest(track).is_some());
+        notations::rest_notations(
+            self.score,
+            &mut out.xml,
+            measure,
+            &mut out.notations,
+            segment,
+            segment_tick,
+            out.tick,
+            track,
+            &mut notations,
+        );
         self.tuplet_start_stop(out, chord_rest, segment_tick, track, &mut notations);
-        notations.finish(out);
+        notations.finish(&mut out.xml);
 
         for lyric in &chord_rest.lyrics {
             write_lyric(out, lyric);
@@ -1419,12 +1573,46 @@ impl Context<'_> {
     }
 
     /// Écrit les articulations et ornements d'un accord (`chordAttributes`).
-    fn chord_attributes(&self, out: &mut Out, chord: &Chord, notations: &mut Notations) {
-        // TODO(parité): fermatas attachées au segment.
-        for articulation in &chord.articulations {
-            write_articulation(out, articulation, notations);
+    #[allow(clippy::too_many_arguments)]
+    fn chord_attributes(
+        &self,
+        out: &mut Out,
+        chord: &Chord,
+        grace: bool,
+        measure: &Measure,
+        segment_tick: Tick,
+        track: Track,
+        notations: &mut Notations,
+    ) {
+        let segment = measure
+            .segments
+            .iter()
+            .find(|segment| segment.tick == segment_tick && segment.chord_rest(track).is_some());
+        // `doSlurs` est appelé juste avant `chordAttributes`. Un accord
+        // d'agrément partage le tick de son accord principal : sans identité
+        // de note dans le modèle, la liaison ne doit être écrite qu'une fois.
+        if !grace {
+            notations::slurs(
+                self.score,
+                &mut out.xml,
+                &mut out.notations,
+                segment_tick,
+                track,
+                notations,
+            );
         }
-        notations.close_container(out);
+        notations::chord_attributes(
+            self.score,
+            &mut out.xml,
+            chord,
+            grace,
+            measure,
+            segment,
+            segment_tick,
+            track,
+            out.tick,
+            notations,
+        );
     }
 }
 
@@ -1787,10 +1975,22 @@ impl Context<'_> {
             }
             if !entry.annotation.visible() {
                 // `commonAnnotations` : un tempo invisible n'exporte que son
-                // `<sound tempo>`.
-                if let Annotation::Tempo(tempo) = &entry.annotation {
-                    out.attr(false);
-                    text::write_tempo_sound(out, tempo);
+                // `<sound tempo>` ; un texte système invisible exporte son
+                // swing avec un offset.
+                match &entry.annotation {
+                    Annotation::Tempo(tempo) => {
+                        out.attr(false);
+                        let beats_per_second = effective_tempo(self, tempo, segment.tick);
+                        text::write_tempo_sound_value(out, beats_per_second);
+                    }
+                    Annotation::SystemText(text) => {
+                        if let Some(swing) = &text.swing {
+                            let offset = out.duration_in_divisions(segment.tick - out.tick);
+                            out.attr(false);
+                            text::write_swing_sound(out, swing, Some(offset));
+                        }
+                    }
+                    _ => {}
                 }
                 continue;
             }
@@ -1805,22 +2005,33 @@ impl Context<'_> {
                     text::write_words(out, &text.text, text.placement, false, xml_staff, offset);
                 }
                 Annotation::SystemText(text) => {
-                    text::write_words(out, &text.text, text.placement, true, xml_staff, offset);
+                    text::write_system_text(out, text, xml_staff, offset);
                 }
-                Annotation::Tempo(tempo) => text::write_tempo(out, tempo, xml_staff, offset),
+                Annotation::Tempo(tempo) => {
+                    let beats_per_second = effective_tempo(self, tempo, segment.tick);
+                    let tempo = Tempo {
+                        beats_per_second,
+                        ..tempo.clone()
+                    };
+                    text::write_tempo(out, &tempo, xml_staff, offset);
+                }
                 Annotation::RehearsalMark(mark) => {
                     text::write_rehearsal(out, mark, xml_staff, offset);
                 }
                 Annotation::InstrumentChange(change) => {
-                    text::write_words(
+                    text::write_words_styled(
                         out,
                         &change.text,
                         change.placement,
                         false,
                         xml_staff,
                         offset,
+                        &text::INSTRUMENT_CHANGE_STYLE,
                     );
                 }
+                // Le point d'orgue est écrit dans les `<notations>` de
+                // l'accord ou du silence de la même piste.
+                Annotation::Fermata(_) => {}
                 // TODO(parité): annotations non modélisées (doigtés,
                 // symboles, pédales…).
                 Annotation::Other { .. } => {}
@@ -1852,52 +2063,109 @@ impl Context<'_> {
 // ----------------------------------------------------------------------
 
 /// Gestion de `<notations>` (`Notations` dans le C++).
-struct Notations {
+///
+/// Le C++ rouvre `<notations>` quand la visibilité de l'élément change : une
+/// articulation invisible ouvre `<notations print-object="no">`, et l'élément
+/// visible suivant rouvre un `<notations>` normal.
+pub(crate) struct Notations {
     printed: bool,
     container: Option<&'static str>,
+    visible: bool,
 }
 
 impl Notations {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             printed: false,
             container: None,
+            visible: true,
         }
     }
 
-    /// Ouvre `<notations>` puis le conteneur demandé si nécessaire.
-    fn tag(&mut self, out: &mut Out, container: Option<&'static str>) {
+    /// Ouvre `<notations>` puis le conteneur demandé (`Notations::tag`).
+    pub(crate) fn tag(&mut self, xml: &mut XmlWriter, container: Option<&'static str>) {
+        self.tag_element(xml, container, true);
+    }
+
+    /// Variante de [`Notations::tag`] qui tient compte de la visibilité de
+    /// l'élément écrit (`print-object="no"`).
+    pub(crate) fn tag_element(
+        &mut self,
+        xml: &mut XmlWriter,
+        container: Option<&'static str>,
+        visible: bool,
+    ) {
+        if self.printed && self.visible != visible {
+            self.finish(xml);
+        }
         if !self.printed {
-            out.xml.start_element("notations", &[]);
-            self.printed = true;
+            if visible {
+                xml.start_element("notations", &[]);
+            } else {
+                xml.start_element("notations", &[("print-object", "no")]);
+            }
+            // Le C++ rouvre le conteneur courant quand il appartient encore
+            // au nouveau `<notations>`.
+            if let Some(name) = container {
+                if self.container == Some(name) {
+                    xml.start_element(name, &[]);
+                }
+            }
         }
         if self.container != container {
             if self.container.is_some() {
-                out.xml.end_element();
+                xml.end_element();
             }
             if let Some(name) = container {
-                out.xml.start_element(name, &[]);
+                xml.start_element(name, &[]);
             }
-            self.container = container;
         }
+        self.container = container;
+        self.printed = true;
+        self.visible = visible;
     }
 
     /// Ferme le conteneur courant, sans fermer `<notations>`.
-    fn close_container(&mut self, out: &mut Out) {
+    pub(crate) fn close_container(&mut self, xml: &mut XmlWriter) {
         if self.container.is_some() {
-            out.xml.end_element();
+            xml.end_element();
             self.container = None;
         }
     }
 
     /// Ferme tout ce qui est ouvert (`etag`).
-    fn finish(&mut self, out: &mut Out) {
-        self.close_container(out);
+    pub(crate) fn finish(&mut self, xml: &mut XmlWriter) {
+        self.close_container(xml);
         if self.printed {
-            out.xml.end_element();
+            xml.end_element();
             self.printed = false;
         }
     }
+}
+
+/// Tempo effectif d'une indication (`tempoSound`).
+///
+/// « a tempo » et « Tempo I » reprennent le tempo en vigueur au tick.
+fn effective_tempo(context: &Context<'_>, tempo: &Tempo, tick: Tick) -> Option<f64> {
+    if tempo.kind == TempoKind::Normal {
+        tempo.beats_per_second
+    } else {
+        context.tempo_at(tick).or(tempo.beats_per_second)
+    }
+}
+
+/// Premier changement d'instrument d'une portée dans un segment
+/// (`Segment::findAnnotation`).
+fn instrument_change(segment: &Segment, staff_id: StaffId) -> Option<&InstrumentChange> {
+    segment.annotations.iter().find_map(|entry| {
+        if entry.track.staff() != staff_id {
+            return None;
+        }
+        match &entry.annotation {
+            Annotation::InstrumentChange(change) => Some(change),
+            _ => None,
+        }
+    })
 }
 
 /// Écrit `<pitch>` (`writePitch`).
@@ -2025,100 +2293,6 @@ fn write_lyric(out: &mut Out, lyric: &Lyrics) {
         out.xml.tag_empty("extend", &[]);
     }
     out.xml.end_element();
-}
-
-/// Écrit une articulation (`symIdToArtic`, `fermata`, `writeBreathMark`).
-fn write_articulation(out: &mut Out, articulation: &Articulation, notations: &mut Notations) {
-    let placement = match articulation.anchor {
-        ArticulationAnchor::Up => Some("above"),
-        ArticulationAnchor::Down => Some("below"),
-        ArticulationAnchor::Auto => None,
-    };
-
-    match &articulation.kind {
-        ArticulationType::Staccato => articulations_tag(out, notations, "staccato", placement),
-        ArticulationType::Staccatissimo => {
-            articulations_tag(out, notations, "staccatissimo", placement);
-        }
-        ArticulationType::Accent => articulations_tag(out, notations, "accent", placement),
-        ArticulationType::Marcato => {
-            let direction = if articulation.anchor == ArticulationAnchor::Down {
-                "down"
-            } else {
-                "up"
-            };
-            notations.tag(out, Some("articulations"));
-            out.xml.tag_empty("strong-accent", &[("type", direction)]);
-        }
-        ArticulationType::Tenuto => articulations_tag(out, notations, "tenuto", placement),
-        ArticulationType::Portato => {
-            articulations_tag(out, notations, "detached-legato", placement);
-        }
-        ArticulationType::BreathMark => {
-            notations.tag(out, Some("articulations"));
-            out.xml.tag("breath-mark", "comma");
-        }
-        ArticulationType::Caesura => {
-            notations.tag(out, Some("articulations"));
-            out.xml.tag_empty("caesura", &[]);
-        }
-        ArticulationType::Fermata
-        | ArticulationType::FermataShort
-        | ArticulationType::FermataLong
-        | ArticulationType::FermataVeryShort
-        | ArticulationType::FermataVeryLong => {
-            let upright = articulation.anchor != ArticulationAnchor::Down;
-            let kind = if upright { "upright" } else { "inverted" };
-            notations.tag(out, None);
-            let body = match articulation.kind {
-                ArticulationType::FermataShort => Some("angled"),
-                ArticulationType::FermataLong => Some("square"),
-                ArticulationType::FermataVeryShort => Some("double-angled"),
-                ArticulationType::FermataVeryLong => Some("double-square"),
-                _ => None,
-            };
-            match body {
-                Some(body) => out.xml.tag_with("fermata", &[("type", kind)], body),
-                None => out.xml.tag_empty("fermata", &[("type", kind)]),
-            }
-        }
-        ArticulationType::UpBow => technical(out, notations, "up-bow", placement),
-        ArticulationType::DownBow => technical(out, notations, "down-bow", placement),
-        ArticulationType::Harmonic => {
-            notations.tag(out, Some("technical"));
-            out.xml.start_element("harmonic", &[]);
-            out.xml.tag_empty("natural", &[]);
-            out.xml.end_element();
-        }
-        ArticulationType::Open => technical(out, notations, "open-string", placement),
-        ArticulationType::Stopped => technical(out, notations, "stopped", placement),
-        ArticulationType::SnapPizzicato => technical(out, notations, "snap-pizzicato", placement),
-        ArticulationType::Other(name) => {
-            notations.tag(out, Some("articulations"));
-            out.xml.tag_empty("other-articulation", &[("smufl", name)]);
-        }
-    }
-}
-
-fn articulations_tag(
-    out: &mut Out,
-    notations: &mut Notations,
-    name: &str,
-    placement: Option<&str>,
-) {
-    notations.tag(out, Some("articulations"));
-    match placement {
-        Some(placement) => out.xml.tag_empty(name, &[("placement", placement)]),
-        None => out.xml.tag_empty(name, &[]),
-    }
-}
-
-fn technical(out: &mut Out, notations: &mut Notations, name: &str, placement: Option<&str>) {
-    notations.tag(out, Some("technical"));
-    match placement {
-        Some(placement) => out.xml.tag_empty(name, &[("placement", placement)]),
-        None => out.xml.tag_empty(name, &[]),
-    }
 }
 
 /// Écrit `<notehead>` (`writeNotehead`).
@@ -2293,7 +2467,7 @@ fn write_accidental(out: &mut Out, accidental: &Accidental) {
 }
 
 /// Nom MusicXML d'une altération (`accidentalType2MusicXmlString`).
-fn accidental_name(kind: AccidentalType) -> Option<&'static str> {
+pub(crate) fn accidental_name(kind: AccidentalType) -> Option<&'static str> {
     match kind {
         AccidentalType::Flat => Some("flat"),
         AccidentalType::Natural => Some("natural"),

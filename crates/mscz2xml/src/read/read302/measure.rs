@@ -8,8 +8,9 @@ use super::tables;
 use super::xml::{parse_fraction, Node};
 use super::{annotations, chord, repeats, spanner, Reader, VoiceCtx};
 use crate::model::{
-    BarLine, BarLineType, Breath, BreathType, ChordRestKind, Clef, ClefType, Fraction, GraceChord,
-    Key, KeyMode, KeySig, Measure, Segment, SegmentItem, SegmentType, TimeSig, Track, VOICES,
+    Annotation, BarLine, BarLineType, Breath, BreathType, ChordRestKind, Clef, ClefType, Fraction,
+    GraceChord, Key, KeyMode, KeySig, Measure, Segment, SegmentItem, SegmentType, TimeSig, Track,
+    VOICES,
 };
 
 /// Lit une mesure et renvoie son tick de fin.
@@ -160,18 +161,20 @@ fn read_voice(
                 });
                 ctx.tick += reader.score.measures[index].len;
             }
-            "InstrumentChange" => {
-                let annotation = super::instruments::read_instrument_change(reader, child, &ctx);
-                segment_mut(
-                    &mut reader.score.measures[index],
-                    SegmentType::ChordRest,
-                    ctx.tick,
-                )
-                .add_annotation(ctx.track, annotation);
-            }
             "Dynamic" | "Expression" | "Tempo" | "StaffText" | "SystemText" | "Text"
-            | "RehearsalMark" | "Harmony" | "Fermata" => {
-                if let Some(annotation) = annotations::read(child) {
+            | "RehearsalMark" | "Harmony" | "Fermata" | "InstrumentChange" => {
+                if let Some(annotation) = annotations::read(reader, child) {
+                    // `Segment::add` enregistre l'instrument d'un changement au
+                    // tick du segment (`part->setInstrument`).
+                    if let Annotation::InstrumentChange(change) = &annotation {
+                        if let Some(instrument) = &change.instrument {
+                            let part_id = reader.score.staves[staff].part;
+                            reader
+                                .score
+                                .part_mut(part_id)
+                                .set_instrument_at(ctx.tick, instrument.clone());
+                        }
+                    }
                     segment_mut(
                         &mut reader.score.measures[index],
                         SegmentType::ChordRest,
@@ -440,14 +443,26 @@ fn read_breath(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
             }
             "symbol" => {
                 breath.kind = match child.trimmed_text().as_str() {
-                    "caesura" | "caesuraCurved" | "caesuraShort" => BreathType::Caesura,
+                    "caesura" => BreathType::Caesura,
+                    "caesuraCurved" => BreathType::CaesuraCurved,
+                    "caesuraShort" => BreathType::CaesuraShort,
+                    "caesuraThick" => BreathType::CaesuraThick,
+                    "caesuraSingleStroke" | "chantCaesura" => BreathType::CaesuraSingle,
                     "breathMarkTick" => BreathType::Tick,
                     "stringsUpBow" => BreathType::Upbow,
                     _ => BreathType::Comma,
                 };
             }
+            "placement" => {
+                breath.placement = tables::placement(&child.trimmed_text());
+            }
             _ => {}
         }
+    }
+    // `MeasureRead::readVoice` : la voix 0 place la respiration au-dessus,
+    // la voix 1 au-dessous.
+    if ctx.track.voice() % 2 == 1 {
+        breath.placement = crate::model::Placement::Below;
     }
     segment_mut(
         &mut reader.score.measures[ctx.measure],

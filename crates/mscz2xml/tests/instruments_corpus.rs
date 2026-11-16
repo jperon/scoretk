@@ -35,18 +35,8 @@ const ENCODING_DATE: &str = "2026-01-01";
 
 /// Écarts restants, par fichier, avec les éléments encore manquants.
 ///
-/// - `<sound>` : `<instrument-change>` d'un changement d'instrument, porté par
-///   `writeInstrumentChange` (famille textes) ;
-/// - `<transpose>` : transposition du nouvel instrument au changement ;
 /// - `<staff-details>` : portée masquée, qui dépend de la mise en page.
-const ECARTS_ATTENDUS: &[(&str, &str, &[&str])] = &[
-    (
-        "v3",
-        "testMultiInstrumentPart3",
-        &["transpose", "diatonic", "chromatic", "octave-change"],
-    ),
-    ("v3", "barline01", &["staff-details"]),
-];
+const ECARTS_ATTENDUS: &[(&str, &str, &[&str])] = &[("v3", "barline01", &["staff-details"])];
 
 /// Vrai si `name`, enfant de `parent`, ouvre un sous-arbre de la famille.
 fn est_racine(name: &str, parent: Option<&str>) -> bool {

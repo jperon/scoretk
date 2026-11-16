@@ -22,11 +22,13 @@ use crate::Result;
 mod exportmusicxml;
 mod harmony;
 mod layout;
+mod notations;
 mod nuances;
 mod ottava;
 mod pitch;
 mod repeats;
 mod text;
+mod textlines;
 mod writer;
 
 #[cfg(test)]

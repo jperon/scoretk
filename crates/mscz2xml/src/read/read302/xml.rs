@@ -108,6 +108,49 @@ impl Node {
         out
     }
 
+    /// Contenu mixte re-sérialisé **sans échappement**, éléments vides
+    /// auto-fermants compris.
+    ///
+    /// Les noms d'instruments de MuseScore 3.x gardent leur balisage
+    /// (`<font size="…"></font>Piano`) et `Instrument::nameAsPlainText` le rend
+    /// tel quel, sans ré-échapper ; `writeDisplayName` échappe ensuite une
+    /// seule fois le tout.
+    pub(crate) fn inner_markup_raw_self_closing(&self) -> String {
+        let mut out = String::new();
+        self.write_content_raw_self_closing(&mut out);
+        out
+    }
+
+    fn write_content_raw_self_closing(&self, out: &mut String) {
+        for item in &self.content {
+            match item {
+                Content::Text(text) => out.push_str(text),
+                Content::Element(node) => node.write_markup_raw_self_closing(out),
+            }
+        }
+    }
+
+    fn write_markup_raw_self_closing(&self, out: &mut String) {
+        out.push('<');
+        out.push_str(&self.name);
+        for (name, value) in &self.attrs {
+            out.push(' ');
+            out.push_str(name);
+            out.push_str("=\"");
+            out.push_str(value);
+            out.push('"');
+        }
+        if self.content.is_empty() {
+            out.push_str("/>");
+            return;
+        }
+        out.push('>');
+        self.write_content_raw_self_closing(out);
+        out.push_str("</");
+        out.push_str(&self.name);
+        out.push('>');
+    }
+
     fn write_content(&self, out: &mut String) {
         for item in &self.content {
             match item {

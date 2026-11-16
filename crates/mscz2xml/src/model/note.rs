@@ -5,6 +5,7 @@
 //! [`NoteId`] : plus de pointeur `tieBack` / `tieForward`, donc plus de cycle.
 
 use super::ids::NoteId;
+use super::notation::Fingering;
 
 /// Constantes de classe de hauteur tonale (`Tpc`).
 ///
@@ -250,6 +251,9 @@ pub struct Note {
     pub ghost: bool,
     /// Vrai si la note est jouée.
     pub play: bool,
+    /// Doigtés attachés à la note (`<Fingering>`), exportés en
+    /// `<technical><fingering>`.
+    pub fingerings: Vec<Fingering>,
 }
 
 impl Note {
@@ -267,6 +271,7 @@ impl Note {
             visible: true,
             ghost: false,
             play: true,
+            fingerings: Vec::new(),
         }
     }
 
