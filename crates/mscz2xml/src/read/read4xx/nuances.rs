@@ -179,6 +179,10 @@ pub(crate) fn read_half(
         .and_then(|node| node.child("endText"))
         .map(|node| node.text.clone())
         .unwrap_or_default();
+    if let Some(payload) = payload {
+        read_font(payload, "beginFont", &mut hairpin.begin_font);
+        read_font(payload, "endFont", &mut hairpin.end_font);
+    }
 
     let mut half = Half {
         kind,
@@ -290,5 +294,22 @@ pub(crate) fn resolve(score: &mut Score, halves: &[Half]) {
         spanner.visible = first.visible;
         spanner.text = Some(first.hairpin.begin_text.clone());
         score.add_spanner(spanner);
+    }
+}
+
+/// Complète une police depuis `<beginFontFace>`, `<beginFontSize>`, etc.
+fn read_font(element: &Element, prefix: &str, font: &mut crate::model::LineFont) {
+    if let Some(face) = element.child(&format!("{prefix}Face")) {
+        font.family = face.text().to_owned();
+    }
+    if let Some(size) = element
+        .child(&format!("{prefix}Size"))
+        .and_then(|node| node.text().parse::<f64>().ok())
+    {
+        font.size = size;
+    }
+    if let Some(style) = element.child(&format!("{prefix}Style")) {
+        font.italic = style.text().contains("italic");
+        font.bold = style.text().contains("bold");
     }
 }

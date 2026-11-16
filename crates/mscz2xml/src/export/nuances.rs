@@ -11,7 +11,7 @@
 use std::collections::BTreeSet;
 
 use crate::model::{
-    Dynamic, Hairpin, HairpinType, Placement, Score, Spanner, SpannerId, StaffId, Tick,
+    Dynamic, Hairpin, HairpinType, LineFont, Placement, Score, Spanner, SpannerId, StaffId, Tick,
 };
 
 use super::exportmusicxml::Out;
@@ -184,7 +184,7 @@ fn write_hairpin(
     );
 
     if is_start {
-        write_hairpin_text(out, &data.begin_text);
+        write_hairpin_text(out, &data.begin_text, &data.begin_font);
     }
 
     if data.line {
@@ -232,7 +232,7 @@ fn write_hairpin(
     }
 
     if !is_start {
-        write_hairpin_text(out, &data.end_text);
+        write_hairpin_text(out, &data.end_text, &data.end_font);
     }
 
     if xml_staff > 0 {
@@ -246,7 +246,7 @@ fn write_hairpin(
 /// Le texte peut mêler du texte libre et des `<sym>` MuseScore : chaque
 /// séquence correspondant à une nuance connue devient un `<dynamics>`, le
 /// reste un `<words>`.
-fn write_hairpin_text(out: &mut Out, text: &str) {
+fn write_hairpin_text(out: &mut Out, text: &str, font: &LineFont) {
     let mut rest = text;
     while !rest.is_empty() {
         let found = find_dynamic_in_string(rest);
@@ -262,18 +262,34 @@ fn write_hairpin_text(out: &mut Out, text: &str) {
             Some((position, _, _)) => {
                 let (before, after) = rest.split_at(position);
                 out.xml.start_element("direction-type", &[]);
-                out.xml.tag("words", before);
+                write_words(out, before, font);
                 out.xml.end_element();
                 rest = after;
             }
             None => {
                 out.xml.start_element("direction-type", &[]);
-                out.xml.tag("words", rest);
+                write_words(out, rest, font);
                 out.xml.end_element();
                 rest = "";
             }
         }
     }
+}
+
+/// Écrit `<words>` avec la police du soufflet (`fontStyleToXML`).
+fn write_words(out: &mut Out, text: &str, font: &LineFont) {
+    let family = font.family.clone();
+    let size = crate::export::text::format_font_size(font.size);
+    let weight = if font.bold { Some("bold") } else { None };
+    let style = if font.italic { Some("italic") } else { None };
+    let mut attributes: Vec<(&str, &str)> = vec![("font-family", &family), ("font-size", &size)];
+    if let Some(weight) = weight {
+        attributes.push(("font-weight", weight));
+    }
+    if let Some(style) = style {
+        attributes.push(("font-style", style));
+    }
+    out.xml.tag_with("words", &attributes, text);
 }
 
 /// Plus long texte de nuance reconnu au plus tôt dans `text`.
