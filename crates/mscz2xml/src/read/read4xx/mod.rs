@@ -186,13 +186,30 @@ impl Reader {
     fn read_part(&mut self, element: &Element) {
         let part_id = self.score.add_part(Part::new("", ""));
 
+        // L'instrument précède les portées : `Staff::init` prend sa clef par
+        // défaut sur l'instrument, puis `<defaultClef>` peut la remplacer.
+        let instrument_element = element.child("Instrument");
+        let mut instrument = instrument_element
+            .map(|child| self.read_instrument(child))
+            .unwrap_or_default();
+        let instrument_clefs = instrument_element
+            .map(read_instrument_clefs)
+            .unwrap_or_default();
+
         let mut declared = 0usize;
         for staff_element in element.children_named("Staff") {
             let mut staff = Staff::new(part_id);
             if let Some(staff_type) = staff_element.child("StaffType") {
                 staff.lines = staff_lines(staff_type);
             }
-            staff.default_clef = read_default_clef(staff_element);
+            staff.default_clef = if has_default_clef(staff_element) {
+                read_default_clef(staff_element)
+            } else {
+                instrument_clefs
+                    .get(declared)
+                    .copied()
+                    .unwrap_or(Clef::new(ClefType::G))
+            };
             self.score.add_staff_with(part_id, staff);
             self.staff_ids
                 .push(staff_element.attr_i64("id").map(|id| id as u32));
@@ -201,7 +218,12 @@ impl Reader {
         }
         if declared == 0 {
             // Une partie doit avoir au moins une portée (`Part::nstaves() > 0`).
-            self.score.add_staff(part_id);
+            let mut staff = Staff::new(part_id);
+            staff.default_clef = instrument_clefs
+                .first()
+                .copied()
+                .unwrap_or(Clef::new(ClefType::G));
+            self.score.add_staff_with(part_id, staff);
             self.staff_ids.push(None);
             self.staves.push(StaffState::default());
         }
@@ -217,11 +239,6 @@ impl Reader {
         let part_short_name = element
             .child("shortName")
             .map(|child| child.text().to_owned())
-            .unwrap_or_default();
-
-        let mut instrument = element
-            .child("Instrument")
-            .map(|child| self.read_instrument(child))
             .unwrap_or_default();
 
         let long_name = if instrument.long_name.is_empty() {
@@ -251,8 +268,7 @@ impl Reader {
         part.long_name = long_name;
         part.short_name = short_name;
         part.instrument = instrument;
-        // TODO(parité): <preferSharpFlat>, <show>, <soloist>, clef par défaut
-        // de portée (`<clef staff="N">` de l'instrument).
+        // TODO(parité): <preferSharpFlat>, <show>, <soloist>.
     }
 
     fn read_instrument(&self, element: &Element) -> Instrument {
@@ -1333,6 +1349,57 @@ fn read_time_sig(element: &Element) -> TimeSig {
         stretch,
         courtesy: false,
     }
+}
+
+/// Vrai si la portée déclare elle-même sa clef par défaut.
+fn has_default_clef(element: &Element) -> bool {
+    element.children.iter().any(|child| {
+        matches!(
+            child.name.as_str(),
+            "defaultClef" | "defaultConcertClef" | "defaultTransposingClef"
+        )
+    })
+}
+
+/// Moitié de `ClefTypeList` modifiée par une balise de clef d'instrument.
+#[derive(Clone, Copy)]
+enum ClefChange {
+    Both,
+    Concert,
+    Transposed,
+}
+
+/// Clefs par portée d'un `<Instrument>` (`<clef>`, `<concertClef>`,
+/// `<transposingClef>`, attribut `staff` à partir de 1).
+///
+/// `Instrument::setClefType` crée les entrées manquantes avec la paire sol/sol ;
+/// `<concertClef>` et `<transposingClef>` ne changent qu'une moitié.
+fn read_instrument_clefs(element: &Element) -> Vec<Clef> {
+    let mut clefs: Vec<Clef> = Vec::new();
+    for child in &element.children {
+        let change = match child.name.as_str() {
+            "clef" => ClefChange::Both,
+            "concertClef" => ClefChange::Concert,
+            "transposingClef" => ClefChange::Transposed,
+            _ => continue,
+        };
+        let index = child
+            .attr_i64("staff")
+            .filter(|value| *value >= 1)
+            .map_or(0, |value| (value - 1) as usize);
+        let Some(kind) = names::clef_type(child.text()) else {
+            continue;
+        };
+        while clefs.len() <= index {
+            clefs.push(Clef::new(ClefType::G));
+        }
+        match change {
+            ClefChange::Both => clefs[index] = Clef::new(kind),
+            ClefChange::Concert => clefs[index].concert = kind,
+            ClefChange::Transposed => clefs[index].transposed = kind,
+        }
+    }
+    clefs
 }
 
 /// Clef par défaut d'une portée (`TRead::readProperties(Staff*)`).

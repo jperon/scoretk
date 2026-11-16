@@ -7,13 +7,18 @@
 use super::tables;
 use super::xml::Node;
 use super::Reader;
-use crate::model::{ClefType, Instrument, Part, Staff, Transpose};
+use crate::model::{Clef, ClefType, Instrument, Part, Staff, Transpose};
 
 /// Lit un `<Part>` : portées déclarées, noms et instrument principal.
 pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
-    let instrument = node
-        .child("Instrument")
+    let instrument_node = node.child("Instrument");
+    let instrument = instrument_node
         .map(|child| read_instrument(reader, child))
+        .unwrap_or_default();
+    // `Staff::init` prend la clef par défaut sur l'instrument ; `<defaultClef>`
+    // la remplace ensuite.
+    let instrument_clefs = instrument_node
+        .map(read_instrument_clefs)
         .unwrap_or_default();
 
     let long_name = node
@@ -47,6 +52,7 @@ pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
     };
     let part_id = reader.score.add_part(part);
 
+    let mut declared = 0usize;
     for staff_node in node.children_named("Staff") {
         let mut staff = Staff::new(part_id);
         let mut clef = None;
@@ -60,8 +66,8 @@ pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
                 .unwrap_or(0)
                 != 0;
             clef = match staff_type.attr("group") {
-                Some("tab") => Some(ClefType::Tab),
-                Some("percussion") => Some(ClefType::Perc),
+                Some("tab") => Some(Clef::new(ClefType::Tab)),
+                Some("percussion") => Some(Clef::new(ClefType::Perc)),
                 _ => None,
             };
         }
@@ -73,15 +79,37 @@ pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
         {
             staff.small = true;
         }
-        for tag in ["defaultClef", "defaultConcertClef"] {
-            if let Some(value) = staff_node.child(tag) {
-                if let Some(clef_type) = tables::clef_type(&value.trimmed_text()) {
-                    clef = Some(clef_type);
-                }
+        // `<defaultClef>` fixe les deux clefs ; les variantes concert et
+        // transposée une seule, en partant de sol/sol comme `ClefTypeList`.
+        let mut declared_clef = false;
+        for tag in [
+            "defaultClef",
+            "defaultConcertClef",
+            "defaultTransposingClef",
+        ] {
+            let Some(value) = staff_node.child(tag) else {
+                continue;
+            };
+            let Some(clef_type) = tables::clef_type(&value.trimmed_text()) else {
+                continue;
+            };
+            declared_clef = true;
+            let pair = clef.get_or_insert(Clef::new(ClefType::G));
+            match tag {
+                "defaultClef" => *pair = Clef::new(clef_type),
+                "defaultConcertClef" => pair.concert = clef_type,
+                _ => pair.transposed = clef_type,
             }
         }
+        if !declared_clef {
+            if let Some(instrument_clef) = instrument_clefs.get(declared) {
+                clef = Some(*instrument_clef);
+            }
+        }
+        staff.default_clef = clef.unwrap_or(Clef::new(ClefType::G));
         reader.staff_clefs.push(clef);
         reader.score.add_staff_with(part_id, staff);
+        declared += 1;
     }
     // TODO(parité): `<bracket>`, `<barLineSpan>` et les instruments secondaires
     // (`<Instrument>` successifs / `<InstrumentChange>`) ne sont pas modélisés.
@@ -146,6 +174,47 @@ fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
     }
 
     instrument
+}
+
+/// Clefs par portée d'un `<Instrument>` (`<clef>`, `<concertClef>`,
+/// `<transposingClef>`, attribut `staff` à partir de 1).
+///
+/// `Instrument::setClefType` crée les entrées manquantes avec la paire sol/sol ;
+/// `<concertClef>` et `<transposingClef>` ne changent qu'une moitié.
+fn read_instrument_clefs(node: &Node) -> Vec<Clef> {
+    let mut clefs: Vec<Clef> = Vec::new();
+    for child in node.children() {
+        let change = match child.name() {
+            "clef" => ClefChange::Both,
+            "concertClef" => ClefChange::Concert,
+            "transposingClef" => ClefChange::Transposed,
+            _ => continue,
+        };
+        let index = child
+            .attr("staff")
+            .and_then(|value| value.trim().parse::<usize>().ok())
+            .map_or(0, |value| value.saturating_sub(1));
+        let Some(kind) = tables::clef_type(&child.trimmed_text()) else {
+            continue;
+        };
+        while clefs.len() <= index {
+            clefs.push(Clef::new(ClefType::G));
+        }
+        match change {
+            ClefChange::Both => clefs[index] = Clef::new(kind),
+            ClefChange::Concert => clefs[index].concert = kind,
+            ClefChange::Transposed => clefs[index].transposed = kind,
+        }
+    }
+    clefs
+}
+
+/// Moitié de `ClefTypeList` modifiée par une balise de clef d'instrument.
+#[derive(Clone, Copy)]
+enum ClefChange {
+    Both,
+    Concert,
+    Transposed,
 }
 
 /// Corrige les identifiants d'instrument faux de MuseScore 3.6.x.
