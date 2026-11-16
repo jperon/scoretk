@@ -150,14 +150,10 @@ impl Fraction {
 
     /// Valeur absolue.
     pub fn abs(self) -> Self {
-        if self.numerator < 0 {
-            Self {
-                numerator: -self.numerator,
-                denominator: self.denominator,
-            }
-        } else {
-            self
-        }
+        from_i128(
+            i128::from(self.numerator).abs(),
+            i128::from(self.denominator),
+        )
     }
 
     /// Inverse.

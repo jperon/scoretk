@@ -1,0 +1,227 @@
+//! Annotations de segment et placement.
+//!
+//! Portage minimal des objets que MuseScore range dans
+//! `Segment::annotations()` (`engraving/dom/segment.h`) : dynamiques
+//! (`engraving/dom/dynamic.h`), textes de portée
+//! (`engraving/dom/stafftext.h`), tempos (`engraving/dom/tempo.h`),
+//! repères de répétition (`engraving/dom/rehearsalmark.h`) et accords
+//! (`engraving/dom/harmony.h`).
+//!
+//! Seuls les champs utiles à l'export MusicXML sont conservés ; les variantes
+//! peuvent être enrichies sans changer la structure du modèle.
+
+/// Placement vertical d'un élément.
+///
+/// Correspond à `PlacementV` dans `engraving/types/types.h`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Placement {
+    /// Au-dessus de la portée.
+    #[default]
+    Above,
+    /// Au-dessous de la portée.
+    Below,
+}
+
+/// Annotation attachée à un segment.
+///
+/// Dans MuseScore, ces objets sont dans `Segment::annotations()` et peuvent
+/// appartenir à une piste précise. La variante [`Annotation::Other`] permet
+/// d'attendre les types moins prioritaires sans bloquer les lecteurs.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Annotation {
+    /// Nuance (`Dynamic` dans `engraving/dom/dynamic.h`).
+    Dynamic(Dynamic),
+    /// Texte de portée (`StaffText` dans `engraving/dom/stafftext.h`).
+    StaffText(StaffText),
+    /// Texte système (`SystemText` dans `engraving/dom/systemtext.h`).
+    SystemText(SystemText),
+    /// Indication de tempo (`TempoText` dans `engraving/dom/tempotext.h`).
+    Tempo(Tempo),
+    /// Repère de répétition (`RehearsalMark` dans
+    /// `engraving/dom/rehearsalmark.h`).
+    RehearsalMark(RehearsalMark),
+    /// Symbole d'accord (`Harmony` dans `engraving/dom/harmony.h`).
+    Harmony(Harmony),
+    /// Annotation non encore modélisée.
+    Other {
+        /// Nom du type MuseScore (par exemple `"Fermata"`).
+        kind: String,
+        /// Texte éventuel.
+        text: String,
+        /// Placement.
+        placement: Placement,
+    },
+}
+
+impl Annotation {
+    /// Placement de l'annotation.
+    pub const fn placement(&self) -> Placement {
+        match self {
+            Self::Dynamic(value) => value.placement,
+            Self::StaffText(value) => value.placement,
+            Self::SystemText(value) => value.placement,
+            Self::Tempo(value) => value.placement,
+            Self::RehearsalMark(value) => value.placement,
+            Self::Harmony(value) => value.placement,
+            Self::Other { placement, .. } => *placement,
+        }
+    }
+
+    /// Texte affiché, si l'annotation en a un.
+    pub fn text(&self) -> &str {
+        match self {
+            Self::Dynamic(value) => &value.text,
+            Self::StaffText(value) => &value.text,
+            Self::SystemText(value) => &value.text,
+            Self::Tempo(value) => &value.text,
+            Self::RehearsalMark(value) => &value.text,
+            Self::Harmony(value) => &value.text,
+            Self::Other { text, .. } => text,
+        }
+    }
+}
+
+/// Nuance.
+///
+/// Correspond à `Dynamic` dans `engraving/dom/dynamic.h`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Dynamic {
+    /// Texte de la nuance (`"p"`, `"mf"`, `"sfz"`…).
+    pub text: String,
+    /// Vélocité MIDI associée (0-127), si connue.
+    pub velocity: Option<u8>,
+    /// Placement.
+    pub placement: Placement,
+}
+
+impl Dynamic {
+    /// Construit une nuance au-dessous de la portée.
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            velocity: None,
+            placement: Placement::Below,
+        }
+    }
+}
+
+/// Texte de portée.
+///
+/// Correspond à `StaffText` dans `engraving/dom/stafftext.h`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StaffText {
+    /// Texte.
+    pub text: String,
+    /// Placement.
+    pub placement: Placement,
+}
+
+impl StaffText {
+    /// Construit un texte au-dessus de la portée.
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            placement: Placement::Above,
+        }
+    }
+}
+
+/// Texte système.
+///
+/// Correspond à `SystemText` dans `engraving/dom/systemtext.h`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SystemText {
+    /// Texte.
+    pub text: String,
+    /// Placement.
+    pub placement: Placement,
+}
+
+impl SystemText {
+    /// Construit un texte système au-dessus de la portée.
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            placement: Placement::Above,
+        }
+    }
+}
+
+/// Indication de tempo.
+///
+/// Correspond à `TempoText` dans `engraving/dom/tempotext.h`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tempo {
+    /// Texte affiché (`"Allegro"`, `"♩ = 120"`…).
+    pub text: String,
+    /// Battements par seconde, si la valeur est numérique.
+    pub beats_per_second: Option<f64>,
+    /// Vrai si le tempo suit les modifications de texte.
+    pub follow_text: bool,
+    /// Placement.
+    pub placement: Placement,
+}
+
+impl Tempo {
+    /// Construit un tempo au-dessus de la portée.
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            beats_per_second: None,
+            follow_text: false,
+            placement: Placement::Above,
+        }
+    }
+}
+
+/// Repère de répétition.
+///
+/// Correspond à `RehearsalMark` dans `engraving/dom/rehearsalmark.h`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RehearsalMark {
+    /// Texte du repère (`"A"`, `"1"`…).
+    pub text: String,
+    /// Placement.
+    pub placement: Placement,
+}
+
+impl RehearsalMark {
+    /// Construit un repère au-dessus de la portée.
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            placement: Placement::Above,
+        }
+    }
+}
+
+/// Symbole d'accord.
+///
+/// Correspond à `Harmony` dans `engraving/dom/harmony.h`. Les hauteurs sont
+/// des classes de hauteur tonale (`tpc`), comme dans MuseScore.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Harmony {
+    /// Texte affiché (`"Cm7"`, `"F/A"`…).
+    pub text: String,
+    /// Tpc de la fondamentale, ou [`super::note::tpc::INVALID`].
+    pub root_tpc: i8,
+    /// Tpc de la basse, si l'accord est renversé.
+    pub bass_tpc: Option<i8>,
+    /// Type d'accord (chiffrage interne).
+    pub kind: String,
+    /// Placement.
+    pub placement: Placement,
+}
+
+impl Harmony {
+    /// Construit un accord au-dessus de la portée.
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            root_tpc: super::note::tpc::INVALID,
+            bass_tpc: None,
+            kind: String::new(),
+            placement: Placement::Above,
+        }
+    }
+}

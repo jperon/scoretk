@@ -1,0 +1,331 @@
+//! Accords, silences, articulations et éléments rythmiques d'un segment.
+//!
+//! Portage de `ChordRest` (`engraving/dom/chordrest.h`), `Chord`
+//! (`engraving/dom/chord.h`), `Rest` (`engraving/dom/rest.h`) et
+//! `Articulation` (`engraving/dom/articulation.h`).
+//!
+//! Les notes ne sont pas possédées par l'accord : `Chord::notes` contient des
+//! [`NoteId`] vers l'arène [`super::Score::notes`], ce qui permet aux liaisons
+//! de prolongation et aux autres objets de référencer une note sans pointeur
+//! cyclique.
+
+use super::duration::{Duration, DurationType};
+use super::fraction::Fraction;
+use super::ids::{NoteId, TupletId};
+use super::lyrics::Lyrics;
+
+/// Mode de hampe d'un accord.
+///
+/// Correspond à `BeamMode` dans `engraving/types/types.h`, utilisé par
+/// `ChordRest::beamMode()` dans `engraving/dom/chordrest.h`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum BeamMode {
+    /// Automatique.
+    #[default]
+    Auto,
+    /// Pas de ligature.
+    None,
+    /// Début de ligature.
+    Begin,
+    /// Milieu de ligature.
+    Mid,
+    /// Fin de ligature.
+    End,
+    /// Crochet avant.
+    ForwardHook,
+    /// Crochet arrière.
+    BackwardHook,
+}
+
+/// Direction de hampe.
+///
+/// Correspond à `DirectionV` / `MScore::Direction` utilisé par
+/// `Chord::stemDirection()` dans `engraving/dom/chord.h`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum StemDirection {
+    /// Automatique selon la position sur la portée.
+    #[default]
+    Auto,
+    /// Hampe vers le haut.
+    Up,
+    /// Hampe vers le bas.
+    Down,
+}
+
+/// Type d'appoggiature ou de note d'ornement.
+///
+/// Correspond à `NoteType` dans `engraving/dom/chord.h` et à
+/// `Chord::graceType()` / `Chord::noteType()`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GraceType {
+    /// Acciaccatura (petite note barrée).
+    Acciaccatura,
+    /// Appoggiature (petite note non barrée).
+    Appoggiatura,
+    /// Ornement de valeur d'une quadruple croche.
+    Grace4,
+    /// Ornement de valeur d'une croche, après l'accord.
+    Grace8After,
+    /// Ornement de valeur d'une double croche.
+    Grace16,
+    /// Ornement de valeur d'une double croche, après l'accord.
+    Grace16After,
+    /// Ornement de valeur d'une triple croche.
+    Grace32,
+    /// Ornement de valeur d'une triple croche, après l'accord.
+    Grace32After,
+}
+
+/// Ancre verticale d'une articulation.
+///
+/// Correspond à `ArticulationAnchor` dans `engraving/dom/articulation.h`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ArticulationAnchor {
+    /// Automatique.
+    #[default]
+    Auto,
+    /// Au-dessus.
+    Up,
+    /// Au-dessous.
+    Down,
+}
+
+/// Type d'articulation.
+///
+/// Correspond aux `SymId` d'articulation de `engraving/dom/articulation.h`
+/// (`Articulation::symId()`), transcrits en variantes nommées.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ArticulationType {
+    /// Point d'articulation (staccato).
+    Staccato,
+    /// Staccatissimo.
+    Staccatissimo,
+    /// Accent.
+    Accent,
+    /// Accent fort (marcato).
+    Marcato,
+    /// Tenuto.
+    Tenuto,
+    /// Portato (point et trait).
+    Portato,
+    /// Point d'orgue.
+    Fermata,
+    /// Point d'orgue court.
+    FermataShort,
+    /// Point d'orgue long.
+    FermataLong,
+    /// Point d'orgue très court.
+    FermataVeryShort,
+    /// Point d'orgue très long.
+    FermataVeryLong,
+    /// Respiration.
+    BreathMark,
+    /// Césure.
+    Caesura,
+    /// Coup d'archet vers le haut.
+    UpBow,
+    /// Coup d'archet vers le bas.
+    DownBow,
+    /// Harmonique.
+    Harmonic,
+    /// Note ouverte.
+    Open,
+    /// Note étouffée.
+    Stopped,
+    /// Pizzicato sec (snap).
+    SnapPizzicato,
+    /// Autre articulation, nom MuseScore conservé tel quel.
+    Other(String),
+}
+
+/// Articulation attachée à un accord.
+///
+/// Correspond à `Articulation` dans `engraving/dom/articulation.h`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Articulation {
+    /// Type d'articulation.
+    pub kind: ArticulationType,
+    /// Ancre verticale.
+    pub anchor: ArticulationAnchor,
+}
+
+impl Articulation {
+    /// Construit une articulation avec ancre automatique.
+    pub fn new(kind: ArticulationType) -> Self {
+        Self {
+            kind,
+            anchor: ArticulationAnchor::Auto,
+        }
+    }
+}
+
+/// Accord.
+///
+/// Correspond à `Chord` dans `engraving/dom/chord.h`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Chord {
+    /// Notes de l'accord, référencées dans l'arène des notes.
+    pub notes: Vec<NoteId>,
+    /// Direction de hampe.
+    pub stem: StemDirection,
+    /// Type d'ornement, si l'accord est une appoggiature.
+    pub grace: Option<GraceType>,
+    /// Vrai si l'ornement est barré.
+    pub grace_slash: bool,
+    /// Articulations attachées à l'accord.
+    pub articulations: Vec<Articulation>,
+    /// Vrai si l'accord est en petit format.
+    pub small: bool,
+}
+
+/// Silence.
+///
+/// Correspond à `Rest` dans `engraving/dom/rest.h`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Rest {
+    /// Vrai pour le silence qui occupe toute la mesure
+    /// (`DurationType::Measure`).
+    pub full_measure: bool,
+    /// Vrai pour un silence « gap » qui ne compte pas dans la mesure.
+    pub gap: bool,
+}
+
+/// Contenu rythmique d'un accord ou d'un silence.
+///
+/// Correspond à `ChordRest` dans `engraving/dom/chordrest.h` : les champs
+/// communs (durée, n-olet, paroles, ligature) sont portés par le wrapper, et
+/// `kind` distingue un [`Chord`] d'un [`Rest`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChordRest {
+    /// Figure et points.
+    pub duration: Duration,
+    /// N-olet auquel appartient cet élément, si c'est le cas.
+    pub tuplet: Option<TupletId>,
+    /// Paroles attachées à cet accord ou silence.
+    pub lyrics: Vec<Lyrics>,
+    /// Mode de ligature.
+    pub beam_mode: BeamMode,
+    /// Accord ou silence.
+    pub kind: ChordRestKind,
+}
+
+/// Variante d'un [`ChordRest`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChordRestKind {
+    /// Accord.
+    Chord(Chord),
+    /// Silence.
+    Rest(Rest),
+}
+
+impl ChordRest {
+    /// Construit un accord vide, avec la durée donnée.
+    pub fn chord(duration: Duration) -> Self {
+        Self {
+            duration,
+            tuplet: None,
+            lyrics: Vec::new(),
+            beam_mode: BeamMode::Auto,
+            kind: ChordRestKind::Chord(Chord::default()),
+        }
+    }
+
+    /// Construit un silence avec la durée donnée.
+    pub fn rest(duration: Duration) -> Self {
+        let full_measure = duration.is_measure();
+        Self {
+            duration,
+            tuplet: None,
+            lyrics: Vec::new(),
+            beam_mode: BeamMode::Auto,
+            kind: ChordRestKind::Rest(Rest {
+                full_measure,
+                gap: false,
+            }),
+        }
+    }
+
+    /// Construit un silence de mesure entière.
+    pub fn full_measure_rest() -> Self {
+        Self::rest(Duration::measure())
+    }
+
+    /// Vrai si l'élément est un accord.
+    pub const fn is_chord(&self) -> bool {
+        matches!(self.kind, ChordRestKind::Chord(_))
+    }
+
+    /// Vrai si l'élément est un silence.
+    pub const fn is_rest(&self) -> bool {
+        matches!(self.kind, ChordRestKind::Rest(_))
+    }
+
+    /// Vrai si l'élément est un silence de mesure entière.
+    pub fn is_full_measure_rest(&self) -> bool {
+        match &self.kind {
+            ChordRestKind::Rest(rest) => rest.full_measure || self.duration.is_measure(),
+            ChordRestKind::Chord(_) => false,
+        }
+    }
+
+    /// Accès à l'accord, si cet élément en est un.
+    pub fn chord_ref(&self) -> Option<&Chord> {
+        match &self.kind {
+            ChordRestKind::Chord(chord) => Some(chord),
+            ChordRestKind::Rest(_) => None,
+        }
+    }
+
+    /// Accès mutable à l'accord, si cet élément en est un.
+    pub fn chord_mut(&mut self) -> Option<&mut Chord> {
+        match &mut self.kind {
+            ChordRestKind::Chord(chord) => Some(chord),
+            ChordRestKind::Rest(_) => None,
+        }
+    }
+
+    /// Accès au silence, si cet élément en est un.
+    pub fn rest_ref(&self) -> Option<&Rest> {
+        match &self.kind {
+            ChordRestKind::Rest(rest) => Some(rest),
+            ChordRestKind::Chord(_) => None,
+        }
+    }
+
+    /// Accès mutable au silence, si cet élément en est un.
+    pub fn rest_mut(&mut self) -> Option<&mut Rest> {
+        match &mut self.kind {
+            ChordRestKind::Rest(rest) => Some(rest),
+            ChordRestKind::Chord(_) => None,
+        }
+    }
+
+    /// Durée notée, points compris.
+    ///
+    /// Pour un silence de mesure entière, vaut zéro : utiliser
+    /// [`ChordRest::ticks_in_measure`] avec la longueur réelle de la mesure.
+    pub fn ticks(&self) -> Fraction {
+        self.duration.ticks()
+    }
+
+    /// Durée effective, en remplaçant un silence de mesure entière par la
+    /// longueur de la mesure.
+    pub fn ticks_in_measure(&self, measure_len: Fraction) -> Fraction {
+        if self.is_full_measure_rest() {
+            measure_len
+        } else {
+            self.ticks()
+        }
+    }
+
+    /// Vrai si la figure est une mesure.
+    pub const fn is_measure_duration(&self) -> bool {
+        self.duration.is_measure()
+    }
+}
+
+impl Default for ChordRest {
+    fn default() -> Self {
+        Self::rest(Duration::new(DurationType::Invalid))
+    }
+}
