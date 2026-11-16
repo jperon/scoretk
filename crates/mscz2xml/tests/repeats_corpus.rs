@@ -309,3 +309,33 @@ fn reprises_du_corpus() {
         echecs.join("\n\n")
     );
 }
+
+/// Garde-fou : vérifie que l'extraction voit bien les marqueurs, les sauts et
+/// les endings, et pas seulement les barres de mesure.
+#[test]
+fn extraction_couvre_marqueurs_et_sauts() {
+    let lire = |chemin: &str| {
+        let mut xml = fs::read_to_string(corpus_dir().join(chemin))
+            .unwrap_or_else(|error| panic!("lecture de {chemin} : {error}"));
+        xml.make_ascii_lowercase();
+        extraire(&xml)
+            .values()
+            .flatten()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let fine = lire("v3/repeat07.ref.musicxml");
+    assert!(fine.contains("fine=\"yes\""), "{fine}");
+    assert!(fine.contains("dacapo=\"yes\""), "{fine}");
+
+    let segno = lire("v3/repeat11.ref.musicxml");
+    assert!(segno.contains("<segno"), "{segno}");
+    assert!(segno.contains("tocoda="), "{segno}");
+    assert!(segno.contains("<coda"), "{segno}");
+
+    let times = lire("v4/repeat65.ref.musicxml");
+    assert!(times.contains("times=\"3\""), "{times}");
+    assert!(times.contains("ending"), "{times}");
+}

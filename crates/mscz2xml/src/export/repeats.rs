@@ -160,6 +160,7 @@ fn end_bar_line_type(
 ) -> BarLineType {
     if measure.end_bar_line == BarLineType::Normal
         && measure_index + 1 == context.score.measures.len()
+        && end_bar_line(measure).is_none()
     {
         BarLineType::End
     } else {
