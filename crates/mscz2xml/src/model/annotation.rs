@@ -12,6 +12,7 @@
 //! Seuls les champs utiles à l'export MusicXML sont conservés ; les variantes
 //! peuvent être enrichies sans changer la structure du modèle.
 
+use super::notation::Fermata;
 use super::part::Instrument;
 use super::text::{RichText, TextFormat};
 
@@ -70,6 +71,8 @@ pub enum Annotation {
     InstrumentChange(InstrumentChange),
     /// Symbole d'accord (`Harmony` dans `engraving/dom/harmony.h`).
     Harmony(Harmony),
+    /// Point d'orgue (`Fermata` dans `engraving/dom/fermata.h`).
+    Fermata(Fermata),
     /// Annotation non encore modélisée.
     Other {
         /// Nom du type MuseScore (par exemple `"Fermata"`).
@@ -92,6 +95,7 @@ impl Annotation {
             Self::RehearsalMark(value) => value.placement,
             Self::InstrumentChange(value) => value.placement,
             Self::Harmony(value) => value.placement,
+            Self::Fermata(value) => value.placement,
             Self::Other { placement, .. } => *placement,
         }
     }
@@ -105,7 +109,7 @@ impl Annotation {
             Self::Tempo(value) => value.visible,
             Self::RehearsalMark(value) => value.visible,
             Self::InstrumentChange(value) => value.visible,
-            Self::Harmony(_) | Self::Other { .. } => true,
+            Self::Harmony(_) | Self::Fermata(_) | Self::Other { .. } => true,
         }
     }
 
@@ -119,6 +123,7 @@ impl Annotation {
             Self::RehearsalMark(value) => value.text.plain(),
             Self::InstrumentChange(value) => value.text.plain(),
             Self::Harmony(value) => &value.text,
+            Self::Fermata(_) => "",
             Self::Other { text, .. } => text,
         }
     }

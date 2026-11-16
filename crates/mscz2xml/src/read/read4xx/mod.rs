@@ -19,6 +19,7 @@
 
 mod dom;
 mod names;
+mod notations;
 mod nuances;
 mod ottava;
 mod repeats;
@@ -36,7 +37,7 @@ use crate::model::{
     InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteId, Part,
     Placement, RehearsalFrame, RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType,
     Staff, StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType, Track,
-    Transpose, Tuplet, TupletId, TupletNumberType, VOICES,
+    Transpose, TremoloKind, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::{Error, Result};
 
@@ -147,6 +148,8 @@ struct Reader {
     voltas: Vec<repeats::VoltaHalf>,
     /// Moitiés de soufflets lues mais pas encore appariées.
     spanner_halves: Vec<nuances::Half>,
+    /// Moitiés de spanners de notation (liaison, trille, glissando).
+    notation_halves: Vec<notations::Half>,
     /// Moitiés de lignes de texte lues mais pas encore appariées.
     text_lines: Vec<textlines::TextLineHalf>,
     /// Moitiés d'ottavas lues mais pas encore appariées.
@@ -172,6 +175,7 @@ impl Reader {
             ties: Vec::new(),
             voltas: Vec::new(),
             spanner_halves: Vec::new(),
+            notation_halves: Vec::new(),
             text_lines: Vec::new(),
             ottava_halves: Vec::new(),
             create_multi_measure_rests: false,
@@ -234,6 +238,7 @@ impl Reader {
         repeats::resolve(self);
         textlines::resolve(self);
         nuances::resolve(&mut self.score, &self.spanner_halves);
+        notations::resolve(self);
         ottava::resolve(&mut self.score, &self.ottava_halves);
         Ok(())
     }
@@ -704,7 +709,7 @@ impl Reader {
         let mut stretch = self.stretch(staff_index);
         // Premier accord d'un trémolo à deux notes : l'accord suivant de la
         // même voix fait partie du même trémolo (`Measure::connectTremolo`).
-        let mut pending_tremolo = false;
+        let mut pending_tremolo: Option<u8> = None;
 
         for child in &element.children {
             match child.name.as_str() {
@@ -738,11 +743,14 @@ impl Reader {
                     let duration = parsed.duration;
                     let lyrics = parsed.lyrics.clone();
                     let mut chord = parsed.into_chord(std::mem::take(&mut grace_chords));
-                    if pending_tremolo {
-                        pending_tremolo = false;
+                    if let Some(count) = pending_tremolo.take() {
                         chord.tremolo_two_chord = true;
+                        chord.tremolo = Some(notations::tremolo_stop(count));
                     } else {
-                        pending_tremolo = chord.tremolo_two_chord;
+                        pending_tremolo = chord
+                            .tremolo
+                            .filter(|tremolo| tremolo.kind == TremoloKind::Start)
+                            .map(|tremolo| tremolo.count);
                     }
 
                     let mut chord_rest = ChordRest::chord(duration);
@@ -761,7 +769,7 @@ impl Reader {
                     tick += actual_ticks(ticks, &tuplets, stretch);
                 }
                 "Rest" => {
-                    let parsed = self.read_rest(child, measure_index, stretch);
+                    let parsed = self.read_rest(child, measure_index, stretch, tick, track);
                     let tuplet = tuplets.last().map(|(id, _)| *id);
                     let ticks = parsed.ticks;
                     let duration = parsed.duration;
@@ -899,17 +907,28 @@ impl Reader {
                 }
                 "Breath" => {
                     let kind = match child.child("symbol").map(Element::text) {
-                        Some("caesuraCurved" | "caesura" | "caesuraShort") => BreathType::Caesura,
+                        Some("caesura") => BreathType::Caesura,
+                        Some("caesuraCurved") => BreathType::CaesuraCurved,
+                        Some("caesuraShort") => BreathType::CaesuraShort,
+                        Some("caesuraThick") => BreathType::CaesuraThick,
+                        Some("caesuraSingleStroke" | "chantCaesura") => BreathType::CaesuraSingle,
                         Some("breathTick") => BreathType::Tick,
                         Some("stringsUpBow") => BreathType::Upbow,
                         _ => BreathType::Comma,
+                    };
+                    // `MeasureRead::readVoice` place la respiration au-dessus
+                    // pour la voix 0 et au-dessous pour la voix 1.
+                    let placement = if track.voice() % 2 == 1 {
+                        crate::model::Placement::Below
+                    } else {
+                        crate::model::Placement::Above
                     };
                     self.insert_item(
                         measure_index,
                         SegmentType::Breath,
                         tick,
                         track,
-                        SegmentItem::Breath(Breath { kind }),
+                        SegmentItem::Breath(Breath { kind, placement }),
                     );
                 }
                 "Dynamic" => {
@@ -1055,17 +1074,7 @@ impl Reader {
                     self.add_annotation(measure_index, tick, track, Annotation::Harmony(harmony));
                 }
                 "Fermata" => {
-                    // TODO(parité): `Fermata` a son propre type MuseScore ; le
-                    // modèle n'a qu'une annotation générique.
-                    let annotation = Annotation::Other {
-                        kind: "Fermata".to_owned(),
-                        text: child
-                            .child("subtype")
-                            .map(Element::text)
-                            .unwrap_or_default()
-                            .to_owned(),
-                        placement: placement(child.child("placement")),
-                    };
+                    let annotation = notations::read_fermata(child);
                     self.add_annotation(measure_index, tick, track, annotation);
                 }
                 // TODO(parité): <Spanner> autres que Tie (Slur, HairPin, Ottava,
@@ -1074,6 +1083,7 @@ impl Reader {
                 // traitées dans <Note>.
                 "Spanner" => {
                     repeats::read_spanner(self, child, tick, track, measure_index);
+                    notations::read_spanner(self, child, tick, track);
                     textlines::read_spanner(self, child, tick, track, measure_index);
                     if let Some(half) = nuances::read_half(child, measure_index, tick, track) {
                         self.spanner_halves.push(half);
@@ -1108,6 +1118,10 @@ impl Reader {
         let mut stem = StemDirection::Auto;
         let mut small = false;
         let mut articulations = Vec::new();
+        let mut ornaments = Vec::new();
+        let mut tremolo = None;
+        let mut arpeggio = None;
+        let mut chord_line = None;
         let mut lyrics = Vec::new();
         let mut notes = Vec::new();
         let mut tremolo_two_chord = false;
@@ -1136,7 +1150,7 @@ impl Reader {
                     };
                 }
                 "small" => small = child.int().unwrap_or(0) != 0,
-                "Note" => notes.push(self.read_note(child, tick, track)?),
+                "Note" => notes.push(self.read_note(child, tick, track, &mut chord_line)?),
                 // Trémolo à deux notes : la sous-famille `c8`…`c256` (ou
                 // l'élément 5.0 `<TremoloTwoChord>`) réduit la durée réelle et
                 // ajoute le rapport 2:1 de `<time-modification>`.
@@ -1145,22 +1159,34 @@ impl Reader {
                     if subtype.starts_with('c') {
                         tremolo_two_chord = true;
                     }
+                    tremolo = notations::read_tremolo(child);
                 }
-                "TremoloTwoChord" => tremolo_two_chord = true,
+                "TremoloSingleChord" => tremolo = notations::read_tremolo(child),
+                "TremoloTwoChord" => {
+                    tremolo_two_chord = true;
+                    tremolo = notations::read_tremolo_two_chord(child);
+                }
                 "Articulation" => {
-                    if let Some(name) = child.child("subtype").map(Element::text) {
-                        if let Some((kind, anchor)) = names::articulation(name) {
-                            articulations.push(Articulation { kind, anchor });
+                    for articulation in notations::read_articulations(child) {
+                        match crate::read::notation_names::ornament_from_articulation(&articulation)
+                        {
+                            Some(ornament) => ornaments.push(ornament),
+                            None => articulations.push(articulation),
                         }
-                        // TODO(parité): articulations composées et variantes
-                        // non modélisées.
                     }
                 }
+                "Ornament" => {
+                    // L'accord embarqué dans l'ornement n'est pas un accord de
+                    // segment : il ne compte pas dans la durée.
+                    if let Some(ornament) = notations::read_ornament(child) {
+                        ornaments.push(ornament);
+                    }
+                }
+                "Arpeggio" => arpeggio = Some(notations::read_arpeggio(child)),
+                "ChordLine" => chord_line = notations::read_chord_line(child),
                 "Lyrics" => lyrics.push(read_lyrics(child, self.score.style.lyrics_placement)),
-                // TODO(parité): <Ornament> — l'accord qu'il embarque n'est pas
-                // un accord de segment et ne doit pas être compté ;
-                // <Tremolo>, <TremoloTwoChord>, <Arpeggio>, <Stem>, <Hook>,
-                // <ChordLine>, <noStem>, <staffMove>.
+                "Spanner" => notations::read_spanner(self, child, tick, track),
+                // TODO(parité): <Stem>, <Hook>, <noStem>, <staffMove>.
                 _ => {}
             }
             if let Some(kind) = names::grace_type(child.name.as_str()) {
@@ -1185,6 +1211,10 @@ impl Reader {
             small,
             tremolo_two_chord,
             articulations,
+            ornaments,
+            tremolo,
+            arpeggio,
+            chord_line,
             lyrics,
         })
     }
@@ -1194,6 +1224,8 @@ impl Reader {
         element: &Element,
         measure_index: usize,
         stretch: Fraction,
+        tick: Tick,
+        track: Track,
     ) -> ParsedRest {
         let mut duration_type = DurationType::Measure;
         let mut dots = 0u8;
@@ -1216,6 +1248,7 @@ impl Reader {
                 "duration" => explicit = child.fraction(),
                 "gap" => gap = child.int().unwrap_or(0) != 0,
                 "Lyrics" => lyrics.push(read_lyrics(child, self.score.style.lyrics_placement)),
+                "Spanner" => notations::read_spanner(self, child, tick, track),
                 _ => {}
             }
         }
@@ -1245,7 +1278,13 @@ impl Reader {
         }
     }
 
-    fn read_note(&mut self, element: &Element, tick: Tick, track: Track) -> Result<NoteId> {
+    fn read_note(
+        &mut self,
+        element: &Element,
+        tick: Tick,
+        track: Track,
+        chord_line: &mut Option<crate::model::ChordLineType>,
+    ) -> Result<NoteId> {
         let mut note = Note::new(0, tpc::INVALID);
 
         for child in &element.children {
@@ -1300,8 +1339,18 @@ impl Reader {
                 "Spanner" if child.attr("type") == Some("Tie") => {
                     self.register_tie(&note, child, tick, track);
                 }
-                // TODO(parité): autres spanners ancrés sur note (Glissando,
-                // NoteLine).
+                "Spanner" => notations::read_spanner(self, child, tick, track),
+                "ChordLine" => {
+                    if let Some(kind) = notations::read_chord_line(child) {
+                        *chord_line = Some(kind);
+                    }
+                }
+                "Fingering" => {
+                    if let Some(fingering) = notations::read_fingering(child) {
+                        note.fingerings.push(fingering);
+                    }
+                }
+                // TODO(parité): <NoteLine> et autres spanners ancrés sur note.
                 _ => {}
             }
         }
@@ -1591,6 +1640,10 @@ struct ParsedChord {
     small: bool,
     tremolo_two_chord: bool,
     articulations: Vec<Articulation>,
+    ornaments: Vec<crate::model::Ornament>,
+    tremolo: Option<crate::model::Tremolo>,
+    arpeggio: Option<crate::model::Arpeggio>,
+    chord_line: Option<crate::model::ChordLineType>,
     lyrics: Vec<Lyrics>,
 }
 
@@ -1605,6 +1658,10 @@ impl ParsedChord {
             articulations: self.articulations,
             small: self.small,
             tremolo_two_chord: self.tremolo_two_chord,
+            ornaments: self.ornaments,
+            tremolo: self.tremolo,
+            arpeggio: self.arpeggio,
+            chord_line: self.chord_line,
         }
     }
 }

@@ -21,6 +21,7 @@ use crate::Result;
 
 mod exportmusicxml;
 mod layout;
+mod notations;
 mod nuances;
 mod ottava;
 mod pitch;

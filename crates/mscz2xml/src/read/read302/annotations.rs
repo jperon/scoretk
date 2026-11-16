@@ -82,14 +82,7 @@ pub(crate) fn read(reader: &Reader, node: &Node) -> Option<Annotation> {
             visible: visible(node),
         }),
         "Harmony" => Annotation::Harmony(read_harmony(node, placement)),
-        "Fermata" => Annotation::Other {
-            kind: "Fermata".to_owned(),
-            text: node
-                .child("subtype")
-                .map(Node::trimmed_text)
-                .unwrap_or_default(),
-            placement: placement.unwrap_or(Placement::Above),
-        },
+        "Fermata" => super::notations::read_fermata(node),
         "Expression" => Annotation::Expression(StaffText {
             text: rich_text(node, &style_format),
             placement: placement.unwrap_or(style_placement),

@@ -9,6 +9,7 @@
 use super::fraction::Tick;
 use super::hairpin::Hairpin;
 use super::ids::Track;
+use super::notation::SpannerNotation;
 use super::repeat::VoltaInfo;
 use super::text::RichText;
 
@@ -255,6 +256,8 @@ pub struct Spanner {
     pub number: u8,
     /// Compléments propres aux soufflets.
     pub hairpin: Option<Hairpin>,
+    /// Complément propre aux liaisons d'expression, glissandos et trilles.
+    pub notation: Option<SpannerNotation>,
     /// Compléments propres aux lignes de texte.
     pub text_line: Option<TextLineInfo>,
     /// Vrai si le spanner et ses traits sont affichés (`<visible>`).
@@ -275,6 +278,7 @@ impl Spanner {
             volta: None,
             number: 0,
             hairpin: None,
+            notation: None,
             text_line: None,
             visible: true,
         }

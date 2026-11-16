@@ -13,6 +13,7 @@ use super::duration::{Duration, DurationType};
 use super::fraction::Fraction;
 use super::ids::{NoteId, TupletId};
 use super::lyrics::Lyrics;
+use super::notation::{Arpeggio, ChordLineType, Ornament, Tremolo};
 
 /// Mode de hampe d'un accord.
 ///
@@ -108,6 +109,21 @@ pub enum ArticulationType {
     Tenuto,
     /// Portato (point et trait).
     Portato,
+    /// Accent doux (`soft-accent`).
+    SoftAccent,
+    /// Accent doux avec staccato (`soft-accent` + `staccato`).
+    SoftAccentStaccato,
+    /// Accent doux avec tenuto (`soft-accent` + `tenuto`).
+    SoftAccentTenuto,
+    /// Accent doux avec tenuto et staccato (`soft-accent` +
+    /// `detached-legato`).
+    SoftAccentTenutoStaccato,
+    /// Accentuation (`stress`).
+    Stress,
+    /// Atténuation (`unstress`).
+    Unstress,
+    /// Spiccato (`spiccato`).
+    Spiccato,
     /// Point d'orgue.
     Fermata,
     /// Point d'orgue court.
@@ -147,14 +163,22 @@ pub struct Articulation {
     pub kind: ArticulationType,
     /// Ancre verticale.
     pub anchor: ArticulationAnchor,
+    /// Vrai si l'articulation est visible ; une articulation invisible ouvre
+    /// `<notations print-object="no">`.
+    pub visible: bool,
+    /// Sens du symbole (`Articulation::up()`), tiré du suffixe `Above` /
+    /// `Below` du nom SMuFL. Sert à l'attribut `type` de `strong-accent`.
+    pub up: bool,
 }
 
 impl Articulation {
-    /// Construit une articulation avec ancre automatique.
+    /// Construit une articulation visible avec ancre automatique.
     pub fn new(kind: ArticulationType) -> Self {
         Self {
             kind,
             anchor: ArticulationAnchor::Auto,
+            visible: true,
+            up: true,
         }
     }
 }
@@ -188,6 +212,14 @@ pub struct Chord {
     /// Vrai si l'accord appartient à un trémolo à deux notes
     /// (`Chord::tremoloTwoChord()`).
     pub tremolo_two_chord: bool,
+    /// Ornements autonomes (`<Ornament>` enfant de `<Chord>`).
+    pub ornaments: Vec<Ornament>,
+    /// Trémolo de l'accord, si le fichier en donne un.
+    pub tremolo: Option<Tremolo>,
+    /// Arpège de l'accord (`<Arpeggio>`).
+    pub arpeggio: Option<Arpeggio>,
+    /// Ligne d'accord (`<ChordLine>` : chute, montée, plop, scoop).
+    pub chord_line: Option<ChordLineType>,
 }
 
 /// Accord d'agrément rattaché à un accord principal.

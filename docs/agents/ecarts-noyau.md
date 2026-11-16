@@ -339,9 +339,9 @@ modèle ne lit pas les sauts de mise en page : repeat66 exporte des mesures 6 à
 
 Le test de bout en bout couvre désormais `v3/` avec la même normalisation. Les
 écarts ci-dessous sont triés par nombre de fichiers touchés ; les fichiers
-conformes constituent `EXPECTED_CONFORMANT_V3` (lyricsline01, repeat01,
-repeat06, repeat07, repeat11, repeat20, repeat39, testBreaksPage,
-testHairpinDynamics, testTuplets8, testWedge4).
+conformes constituent `EXPECTED_CONFORMANT_V3` (copypaste_tuplet_01,
+lyricsline01, repeat01, repeat06, repeat07, repeat11, repeat20, repeat39,
+testBreaksPage, testHairpinDynamics, testTboxWords1, testTuplets8, testWedge4).
 
 1. **`<instrument-sound>` et `<midi-program>` absents — 13 fichiers.**
    `Beam-CrossM1`, `barline01`, `barlinedelete`, `clef-1`, `grace`,
@@ -427,3 +427,48 @@ mise en forme relève de `writeHairpinText` côté famille nuances
 (`testHairpinDynamics`, `voices`). Le repère « A » ré-exporté de
 `layout_elements` vient d'une reprise de mesure (`RepeatMeasure`), hors
 famille textes.
+
+## 18. Notations : écarts résiduels d'une famille désormais couverte
+
+La famille des notations (articulations, points d'orgue, liaisons d'expression,
+ornements, trilles, trémolos, techniques, arpèges, glissandos, respirations et
+lignes d'accord) est couverte par un test dédié,
+`crates/mscz2xml/tests/notations_corpus.rs`, qui compare les `<notations>` de
+ces éléments à la référence, mesure par mesure et dans l'ordre. Les tests de
+bout en bout ci-dessus continuent de retirer `<notations>` sauf `tied`/`tuplet` :
+les écarts ci-dessous n'apparaissent donc pas dans leurs tableaux.
+
+Corrigé dans cette passe :
+
+- **lecteurs 3.x et 4.x** : articulations (y compris l'éclatement des
+  articulations composées en `staccato`/`tenuto`/`accent`…), points d'orgue,
+  ornements et leurs altérations, trémolos simples et à deux notes, arpèges,
+  lignes d'accord, doigtés, respirations/césures, et les spanners `Slur`,
+  `Trill`, `Glissando` avec leurs propriétés (sens, texte, style de trait,
+  visibilité) ;
+- **export** : `<articulations>`, `<fermata>`, `<slur>` avec numéro et
+  `orientation`/`placement`, `<ornaments>` (`trill-mark`, `turn`, `mordent`,
+  `wavy-line`, `tremolo`, `accidental-mark`), `<technical>` (`up-bow`,
+  `down-bow`, `harmonic`, `open`, `stopped`, `snap-pizzicato`, `fingering`,
+  `pluck`), `<arpeggiate>`/`<non-arpeggiate>`, `<glissando>`/`<slide>`,
+  `<breath-mark>`/`<caesura>` et `falloff`/`doit`/`plop`/`scoop` ;
+- `print-object="no"` sur un `<notations>` dont l'élément est invisible,
+  réouverture d'un `<notations>` quand la visibilité change.
+
+Écarts restants, déclarés dans `ECARTS_CONNUS` du test dédié :
+
+- **v3/layout_elements** : les `<Bend>` (technique de guitare) ne sont pas
+  modélisés, et la reprise de mesure (`<measure-repeat>`) n'est pas dépliée à
+  l'export (voir écart 8 du corpus v3) ; les deux glissandos de la mesure
+  répétée manquent donc. **Cause : modèle/export.**
+- **v4/copypaste_parts** : pour un trille, MuseScore 4.7 écrit le
+  `wavy-line type="stop"` sur l'accord de départ, alors que le modèle le place
+  sur l'accord de fin (`tick2 = départ + 1/4`). Le contenu est identique, seul
+  le rattachement diffère. **Cause : export** (interprétation de
+  `Trill::endElement`).
+- **v4/testExcludeInvisibleElements** : la visibilité des liaisons de
+  prolongation n'est pas modélisée (écart 13 ci-dessus). Avec un `tied`
+  invisible, MuseScore regroupe les `<notations>` autrement ; le contenu de la
+  famille est identique, seule la répartition des ouvertures
+  `print-object="no"` diffère. **Cause : lecteur/modèle** (tie invisible).
+

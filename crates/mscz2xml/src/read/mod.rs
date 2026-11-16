@@ -17,6 +17,8 @@ pub mod read302;
 /// Lecteur des partitions MuseScore 4.00 à 5.00 (portage de `read4xx`).
 pub mod read4xx;
 
+mod notation_names;
+
 use crate::container::MsczContainer;
 use crate::model::Score;
 use crate::{Error, Result};
