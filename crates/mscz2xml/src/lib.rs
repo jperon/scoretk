@@ -16,6 +16,7 @@
 mod container;
 mod error;
 pub mod model;
+pub mod read;
 
 pub use container::{detect_version, MscVersion, MsczContainer};
 pub use error::Error;
