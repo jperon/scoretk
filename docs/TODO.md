@@ -3,7 +3,7 @@
 ## Évolution de mscz2xml vers musictk
 
 Faire évoluer mscz2xml en **musictk**, une boîte à outils de conversion
-**bidirectionnelle** entre quatre formats de partition :
+**bidirectionnelle** entre cinq formats de partition :
 
 | Format | Lecture | Écriture |
 |---|---|---|
@@ -11,9 +11,17 @@ Faire évoluer mscz2xml en **musictk**, une boîte à outils de conversion
 | MusicXML (`.musicxml` / `.mxl`) | à faire | fait |
 | LilyPond (`.ly`) | à faire | à faire |
 | ABC (`.abc`) | à faire | à faire |
+| MIDI (`.mid`) | à faire | à faire |
 
 Toutes les combinaisons doivent fonctionner : mscz ↔ musicxml, musicxml ↔ ly,
-musicxml ↔ abc, et donc aussi mscz ↔ ly, mscz ↔ abc et ly ↔ abc.
+musicxml ↔ abc, musicxml ↔ midi, et donc aussi toutes les paires entre mscz,
+ly, abc et midi.
+
+MIDI est à part : c'est un format de performance, pas de notation. L'écriture
+MIDI demande de dérouler les reprises et sauts (comme `RepeatList` de
+MuseScore), d'appliquer nuances, articulations et tempo. La lecture MIDI
+demande une quantification (durées, voix, mesures, armure déduite), donc une
+conversion approximative.
 
 Pistes :
 
@@ -31,6 +39,7 @@ Pistes :
   - MusicXML → ly : `musicxml2ly` (LilyPond).
   - ly → MusicXML : `python-ly`.
   - MusicXML ↔ abc : `xml2abc` et `abc2xml` (W. Vree).
+  - MIDI : l'export MIDI de MuseScore (`src/importexport/midi`, `engraving/compat/midi`), son import MIDI (quantification), et la crate Rust `midly` (pure Rust, `no_std`) pour le format de fichier.
   - Vérifier les licences de chacune avant tout portage.
 - **Contraintes inchangées.** La bibliothèque reste portable : wasm pour la PWA
   `../cantus`, Android, sans fs ni threads, et sans dépendance C.
