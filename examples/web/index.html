@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mscz2xml — démo ESM</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        max-width: 60rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      #drop {
+        border: 2px dashed currentColor;
+        border-radius: 0.5rem;
+        padding: 2rem;
+        text-align: center;
+        opacity: 0.7;
+        margin: 1rem 0;
+      }
+      #drop.over {
+        opacity: 1;
+        background: color-mix(in srgb, currentColor 10%, transparent);
+      }
+      pre {
+        max-height: 60vh;
+        overflow: auto;
+        padding: 1rem;
+        border: 1px solid currentColor;
+        border-radius: 0.5rem;
+        font-size: 0.8rem;
+      }
+      #error {
+        color: #c00;
+        white-space: pre-wrap;
+      }
+      #error:empty {
+        display: none;
+      }
+      footer {
+        margin-top: 2rem;
+        font-size: 0.85rem;
+        opacity: 0.7;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>mscz2xml — variante ESM</h1>
+    <p>
+      Conversion locale (WebAssembly) d'un fichier MuseScore <code>.mscz</code> ou
+      <code>.mscx</code> en MusicXML. Aucun envoi réseau.
+    </p>
+    <p id="version">chargement du module…</p>
+
+    <input type="file" id="file" accept=".mscz,.mscx" />
+    <div id="drop">… ou déposer un fichier ici</div>
+
+    <p id="error" role="alert"></p>
+    <button id="download" disabled>Télécharger le MusicXML</button>
+    <pre id="xml" hidden></pre>
+
+    <footer>
+      Démo de la variante <code>esm/</code> du paquet <code>result/</code>. Voir aussi
+      <a href="worker-demo.html">la démo Web Worker</a> (variante <code>classic/</code>).
+    </footer>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
