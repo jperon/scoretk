@@ -135,10 +135,12 @@ pub fn beam_mode(name: &str, version: u32) -> Option<BeamMode> {
     };
     Some(match name {
         "auto" => BeamMode::Auto,
-        "none" => BeamMode::None,
+        "none" | "no" => BeamMode::None,
         "begin" => BeamMode::Begin,
-        "mid" => BeamMode::Mid,
-        "end" => BeamMode::End,
+        "begin16" => BeamMode::Begin16,
+        "begin32" => BeamMode::Begin32,
+        "mid" | "mid16" | "mid32" | "mid64" => BeamMode::Mid,
+        "end" | "end16" | "end32" | "end64" => BeamMode::End,
         "forward hook" => BeamMode::ForwardHook,
         "backward hook" => BeamMode::BackwardHook,
         _ => return None,

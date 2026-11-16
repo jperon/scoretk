@@ -28,6 +28,10 @@ pub enum BeamMode {
     None,
     /// Début de ligature.
     Begin,
+    /// Rupture des ligatures de niveau 2 et plus (`begin16`).
+    Begin16,
+    /// Rupture des ligatures de niveau 3 et plus (`begin32`).
+    Begin32,
     /// Milieu de ligature.
     Mid,
     /// Fin de ligature.
@@ -293,6 +297,13 @@ pub struct ChordRest {
     pub lyrics: Vec<Lyrics>,
     /// Mode de ligature.
     pub beam_mode: BeamMode,
+    /// Direction de la ligature lue dans `<Beam><StemDirection>`.
+    ///
+    /// MuseScore attache l'objet `Beam` lu au premier accord de la ligature ;
+    /// sa direction explicite (`Beam::direction()`) l'emporte alors sur la
+    /// direction calculée. `None` pour une ligature sans direction écrite
+    /// (les fichiers 4.x écrivent un `<Beam>` vide).
+    pub beam_direction: Option<StemDirection>,
     /// Accord ou silence.
     pub kind: ChordRestKind,
 }
@@ -315,6 +326,7 @@ impl ChordRest {
             tuplet: None,
             lyrics: Vec::new(),
             beam_mode: BeamMode::Auto,
+            beam_direction: None,
             kind: ChordRestKind::Chord(Chord::default()),
         }
     }
@@ -328,6 +340,7 @@ impl ChordRest {
             tuplet: None,
             lyrics: Vec::new(),
             beam_mode: BeamMode::Auto,
+            beam_direction: None,
             kind: ChordRestKind::Rest(Rest {
                 full_measure,
                 gap: false,

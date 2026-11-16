@@ -9,7 +9,8 @@ use super::xml::{parse_fraction, Node};
 use super::{annotations, chord, repeats, spanner, Reader, VoiceCtx};
 use crate::model::{
     BarLine, BarLineType, Breath, BreathType, ChordRestKind, Clef, ClefType, Fraction, GraceChord,
-    Key, KeyMode, KeySig, Measure, Segment, SegmentItem, SegmentType, TimeSig, Track, VOICES,
+    Key, KeyMode, KeySig, Measure, Segment, SegmentItem, SegmentType, StemDirection, TimeSig,
+    Track, VOICES,
 };
 
 /// Lit une mesure et renvoie son tick de fin.
@@ -101,6 +102,9 @@ fn read_voice(
         tuplets: Vec::new(),
     };
     let mut grace: Vec<GraceChord> = Vec::new();
+    // `<Beam><StemDirection>` s'applique au premier accord ou silence qui
+    // suit (`MeasureRead::readVoice` : `startingBeam`).
+    let mut pending_beam: Option<StemDirection> = None;
 
     for child in node.children() {
         match child.name() {
@@ -127,6 +131,7 @@ fn read_voice(
                     chord.grace_chords = std::mem::take(&mut grace);
                 }
                 cr.tuplet = ctx.tuplets.last().copied();
+                cr.beam_direction = pending_beam.take();
                 let measure_len = reader.score.measures[index].len;
                 let advance = chord::advance(&cr, measure_len, &ctx.tuplets, &reader.score);
                 segment_mut(
@@ -136,6 +141,11 @@ fn read_voice(
                 )
                 .set_element(ctx.track, SegmentItem::ChordRest(cr));
                 ctx.tick += advance;
+            }
+            "Beam" => {
+                pending_beam = child
+                    .child("StemDirection")
+                    .map(|direction| tables::stem_direction(&direction.trimmed_text()));
             }
             "Tuplet" => {
                 let parent = ctx.tuplets.last().copied();

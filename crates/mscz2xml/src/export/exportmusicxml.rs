@@ -24,14 +24,15 @@ use std::collections::BTreeSet;
 
 use crate::model::chord::ChordRestKind;
 use crate::model::{
-    Accidental, AccidentalType, Annotation, BeamMode, Chord, ChordRest, Clef, ClefType, Duration,
-    Fraction, GraceType, Harmony, InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
-    Measure, Note, NoteHeadGroup, NoteHeadType, Part, Placement, Score, Segment, SegmentItem,
-    SegmentType, SpannerType, StaffId, StemDirection, Tempo, TempoKind, Tick, TimeSig, TimeSigType,
-    Track, Tuplet, TupletId, TupletNumberType, VOICES,
+    Accidental, AccidentalType, Annotation, Chord, ChordRest, Clef, ClefType, Duration, Fraction,
+    GraceType, Harmony, InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure,
+    Note, NoteHeadGroup, NoteHeadType, Part, Placement, Score, Segment, SegmentItem, SegmentType,
+    SpannerType, StaffId, StemDirection, Tempo, TempoKind, Tick, TimeSig, TimeSigType, Track,
+    Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::Result;
 
+use super::beams;
 use super::layout;
 use super::notations;
 use super::nuances::{self, Nuances};
@@ -319,6 +320,8 @@ pub(crate) struct Context<'a> {
     pub(crate) score: &'a Score,
     options: &'a ExportOptions,
     tuplets: TupletIndex,
+    /// Ligatures reconstituées, comme les `Beam` de la mise en page.
+    beams: beams::Beams,
 }
 
 /// État des spanners d'une partie (`spannersStopped` et compteur d'instruments
@@ -339,6 +342,7 @@ impl<'a> Context<'a> {
             score,
             options,
             tuplets: TupletIndex::new(score),
+            beams: beams::Beams::new(score, options.concert_pitch),
         }
     }
 
@@ -1146,38 +1150,68 @@ impl Context<'_> {
         xml_staff: usize,
         track: Track,
     ) {
-        for grace in &chord.grace_chords {
-            let kind = grace.chord.grace.unwrap_or(GraceType::Appoggiatura);
-            if !grace_is_after(kind) {
-                self.chord(
-                    out,
-                    &grace.chord,
-                    Some(&grace.duration),
-                    chord_rest,
-                    measure,
-                    xml_staff,
-                    track,
-                    true,
-                );
-            }
+        let before: Vec<usize> = (0..chord.grace_chords.len())
+            .filter(|index| {
+                let kind = chord.grace_chords[*index]
+                    .chord
+                    .grace
+                    .unwrap_or(GraceType::Appoggiatura);
+                !grace_is_after(kind)
+            })
+            .collect();
+        let after: Vec<usize> = (0..chord.grace_chords.len())
+            .filter(|index| {
+                let kind = chord.grace_chords[*index]
+                    .chord
+                    .grace
+                    .unwrap_or(GraceType::Appoggiatura);
+                grace_is_after(kind)
+            })
+            .collect();
+        // `BeamLayout::beamGraceNotes` : les ornements avant et après forment
+        // deux groupes distincts.
+        let multiple_voices = stems::has_other_voices(
+            measure,
+            track,
+            out.tick,
+            self.actual_ticks(chord_rest, measure, track.staff()),
+        );
+        let track_even = track.raw().is_multiple_of(2);
+        let before_beams =
+            beams::grace_beams(&chord.grace_chords, &before, multiple_voices, track_even);
+        let after_beams =
+            beams::grace_beams(&chord.grace_chords, &after, multiple_voices, track_even);
+
+        for (position, index) in before.iter().enumerate() {
+            let grace = &chord.grace_chords[*index];
+            self.chord(
+                out,
+                &grace.chord,
+                Some(&grace.duration),
+                chord_rest,
+                measure,
+                xml_staff,
+                track,
+                before_beams[position].as_ref(),
+                true,
+            );
         }
         self.chord(
-            out, chord, None, chord_rest, measure, xml_staff, track, false,
+            out, chord, None, chord_rest, measure, xml_staff, track, None, false,
         );
-        for grace in &chord.grace_chords {
-            let kind = grace.chord.grace.unwrap_or(GraceType::Appoggiatura);
-            if grace_is_after(kind) {
-                self.chord(
-                    out,
-                    &grace.chord,
-                    Some(&grace.duration),
-                    chord_rest,
-                    measure,
-                    xml_staff,
-                    track,
-                    true,
-                );
-            }
+        for (position, index) in after.iter().enumerate() {
+            let grace = &chord.grace_chords[*index];
+            self.chord(
+                out,
+                &grace.chord,
+                Some(&grace.duration),
+                chord_rest,
+                measure,
+                xml_staff,
+                track,
+                after_beams[position].as_ref(),
+                true,
+            );
         }
     }
 
@@ -1192,6 +1226,7 @@ impl Context<'_> {
         measure: &Measure,
         xml_staff: usize,
         track: Track,
+        grace_beam: Option<&beams::GraceBeam>,
         grace: bool,
     ) {
         let segment_tick = out.tick;
@@ -1282,7 +1317,10 @@ impl Context<'_> {
                     actual,
                     self.options.concert_pitch,
                     transpose,
-                    None,
+                    grace_beam.map_or_else(
+                        || self.beams.up(measure.number, track, segment_tick),
+                        |beam| Some(beam.up),
+                    ),
                 );
                 out.xml.tag("stem", if up { "up" } else { "down" });
             }
@@ -1293,8 +1331,17 @@ impl Context<'_> {
                 out.xml.tag("staff", &xml_staff.to_string());
             }
 
-            if first && !grace {
-                write_beam(out, chord_rest.beam_mode);
+            if first {
+                if grace {
+                    if let Some(beam) = grace_beam {
+                        for (level, text) in beam.texts.iter().enumerate() {
+                            let number = (level + 1).to_string();
+                            out.xml.tag_with("beam", &[("number", &number)], text);
+                        }
+                    }
+                } else {
+                    self.write_beams(out, measure, track, segment_tick);
+                }
             }
 
             let mut notations = Notations::new();
@@ -1352,6 +1399,19 @@ impl Context<'_> {
         }
     }
 
+    /// Écrit les `<beam>` d'un élément d'après les ligatures reconstituées.
+    fn write_beams(&self, out: &mut Out, measure: &Measure, track: Track, tick: Fraction) {
+        for (index, text) in self
+            .beams
+            .texts(measure.number, track, tick)
+            .iter()
+            .enumerate()
+        {
+            let number = (index + 1).to_string();
+            out.xml.tag_with("beam", &[("number", &number)], text);
+        }
+    }
+
     /// Écrit un silence (`rest`).
     fn rest(
         &self,
@@ -1397,7 +1457,7 @@ impl Context<'_> {
             out.xml.tag("staff", &xml_staff.to_string());
         }
 
-        write_beam(out, chord_rest.beam_mode);
+        self.write_beams(out, measure, track, segment_tick);
 
         let mut notations = Notations::new();
         let segment = measure
@@ -2072,22 +2132,6 @@ fn write_tuplet_type_and_dots(out: &mut Out, base: Option<(&'static str, u8)>) {
             out.xml.tag_empty("tuplet-dot", &[]);
         }
     }
-}
-
-/// Écrit `<beam>` (`writeBeam`).
-///
-/// MuseScore déduit les niveaux de ligature de l'objet `Beam` ; le modèle ne
-/// garde que le mode de l'élément, d'où une sortie limitée au premier niveau.
-fn write_beam(out: &mut Out, mode: BeamMode) {
-    let name = match mode {
-        BeamMode::Auto | BeamMode::None => return,
-        BeamMode::Begin => "begin",
-        BeamMode::Mid => "continue",
-        BeamMode::End => "end",
-        BeamMode::ForwardHook => "forward hook",
-        BeamMode::BackwardHook => "backward hook",
-    };
-    out.xml.tag_with("beam", &[("number", "1")], name);
 }
 
 /// Écrit une syllabe (`<lyric>`).

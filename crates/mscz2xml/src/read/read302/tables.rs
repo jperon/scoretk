@@ -187,12 +187,16 @@ pub(crate) fn tuplet_number_type(value: Option<i32>) -> TupletNumberType {
 
 /// Mode de ligature (`<BeamMode>`).
 ///
-/// Le modèle ne distingue pas les anciens modes par durée (`begin16`,
-/// `begin32`, `begin64`) : ils sont tous ramenés à [`BeamMode::Begin`].
+/// Les modes `begin16` et `begin32` conservent leur niveau de rupture, comme
+/// `BeamMode::BEGIN16` / `BeamMode::BEGIN32` dans MuseScore. Les fichiers
+/// antérieurs à 4.1 nomment ces ruptures un cran plus haut
+/// (`begin64`/`begin32`, voir `rw/read400/tread.cpp`).
 pub(crate) fn beam_mode(name: &str) -> BeamMode {
     match name.trim() {
-        "none" => BeamMode::None,
-        "begin" | "begin16" | "begin32" | "begin64" => BeamMode::Begin,
+        "none" | "no" => BeamMode::None,
+        "begin" => BeamMode::Begin,
+        "begin16" | "begin32" => BeamMode::Begin16,
+        "begin64" => BeamMode::Begin32,
         "mid" | "mid16" | "mid32" | "mid64" => BeamMode::Mid,
         "end" | "end16" | "end32" | "end64" => BeamMode::End,
         "forward hook" => BeamMode::ForwardHook,

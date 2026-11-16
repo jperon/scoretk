@@ -710,6 +710,9 @@ impl Reader {
         // Premier accord d'un trémolo à deux notes : l'accord suivant de la
         // même voix fait partie du même trémolo (`Measure::connectTremolo`).
         let mut pending_tremolo: Option<u8> = None;
+        // `<Beam><StemDirection>` s'applique au premier accord ou silence qui
+        // suit (`MeasureRead::readVoice` : `startingBeam`).
+        let mut pending_beam: Option<StemDirection> = None;
 
         for child in &element.children {
             match child.name.as_str() {
@@ -757,6 +760,7 @@ impl Reader {
                     chord_rest.ticks = explicit_ticks;
                     chord_rest.tuplet = tuplet;
                     chord_rest.beam_mode = beam;
+                    chord_rest.beam_direction = pending_beam.take();
                     chord_rest.lyrics = lyrics;
                     chord_rest.kind = ChordRestKind::Chord(chord);
                     self.insert_item(
@@ -780,6 +784,7 @@ impl Reader {
                     chord_rest.ticks = parsed.explicit_ticks;
                     chord_rest.tuplet = tuplet;
                     chord_rest.lyrics = lyrics;
+                    chord_rest.beam_direction = pending_beam.take();
                     if gap {
                         if let Some(rest) = chord_rest.rest_mut() {
                             rest.gap = true;
@@ -793,6 +798,15 @@ impl Reader {
                         SegmentItem::ChordRest(chord_rest),
                     );
                     tick += actual_ticks(ticks, &tuplets, stretch);
+                }
+                "Beam" => {
+                    pending_beam = child.child("StemDirection").map(|direction| {
+                        match direction.text().trim() {
+                            "up" => StemDirection::Up,
+                            "down" => StemDirection::Down,
+                            _ => StemDirection::Auto,
+                        }
+                    });
                 }
                 "Tuplet" => {
                     let tuplet = self.read_tuplet(child, tick);

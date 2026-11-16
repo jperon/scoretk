@@ -19,6 +19,7 @@ use zip::{CompressionMethod, ZipWriter};
 use crate::model::Score;
 use crate::Result;
 
+mod beams;
 mod exportmusicxml;
 mod layout;
 mod notations;

@@ -146,6 +146,7 @@ pub(crate) fn read_chord_rest(
         tuplet: None,
         lyrics,
         beam_mode: beam,
+        beam_direction: None,
         kind,
     }
 }
