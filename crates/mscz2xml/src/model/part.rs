@@ -5,7 +5,9 @@
 //! Une partie possède une ou plusieurs portées ; la liste `staves` et le champ
 //! [`Staff::part`] sont maintenus cohérents par [`super::Score::add_staff`].
 
+use super::fraction::Fraction;
 use super::ids::{PartId, StaffId};
+use super::segment::{Clef, ClefType};
 
 /// Instrument d'une partie.
 ///
@@ -20,6 +22,9 @@ pub struct Instrument {
     pub long_name: String,
     /// Nom court de l'instrument.
     pub short_name: String,
+    /// Nom de piste (`Instrument::trackName`) : c'est lui que MuseScore écrit
+    /// dans `<instrument-name>`.
+    pub track_name: String,
     /// Transposition écrite, si l'instrument est transpositeur.
     pub transpose: Option<Transpose>,
     /// Numéro de programme MIDI (0-127), si connu.
@@ -33,10 +38,14 @@ impl Instrument {
         long_name: impl Into<String>,
         short_name: impl Into<String>,
     ) -> Self {
+        let id = id.into();
+        let long_name = long_name.into();
+        let short_name = short_name.into();
         Self {
-            id: id.into(),
-            long_name: long_name.into(),
-            short_name: short_name.into(),
+            id,
+            track_name: long_name.clone(),
+            long_name,
+            short_name,
             transpose: None,
             midi_program: None,
         }
@@ -100,6 +109,7 @@ impl Part {
             instrument: Instrument {
                 long_name: long_name.clone(),
                 short_name: short_name.clone(),
+                track_name: long_name.clone(),
                 ..Instrument::default()
             },
             long_name,
@@ -123,6 +133,15 @@ pub struct Staff {
     pub lines: u8,
     /// Vrai si la portée est en petit format.
     pub small: bool,
+    /// Étirement temporel de la portée (`Staff::timeStretch`, indication de
+    /// mesure locale). Vaut un hors indication locale.
+    pub time_stretch: Fraction,
+    /// Clef par défaut de la portée (`Staff::defaultClefType()`).
+    ///
+    /// MuseScore s'en sert quand aucun `<Clef>` n'ouvre la partition : la mise
+    /// en page génère alors une clef de ce type au début de la première mesure.
+    /// Par défaut, la paire vaut sol/sol comme `ClefTypeList`.
+    pub default_clef: Clef,
 }
 
 impl Staff {
@@ -133,6 +152,8 @@ impl Staff {
             part,
             lines: 5,
             small: false,
+            time_stretch: Fraction::ONE,
+            default_clef: Clef::new(ClefType::G),
         }
     }
 }

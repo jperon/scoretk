@@ -188,12 +188,30 @@ impl Reader {
     fn read_part(&mut self, element: &Element) {
         let part_id = self.score.add_part(Part::new("", ""));
 
+        // L'instrument précède les portées : `Staff::init` prend sa clef par
+        // défaut sur l'instrument, puis `<defaultClef>` peut la remplacer.
+        let instrument_element = element.child("Instrument");
+        let mut instrument = instrument_element
+            .map(|child| self.read_instrument(child))
+            .unwrap_or_default();
+        let instrument_clefs = instrument_element
+            .map(read_instrument_clefs)
+            .unwrap_or_default();
+
         let mut declared = 0usize;
         for staff_element in element.children_named("Staff") {
             let mut staff = Staff::new(part_id);
             if let Some(staff_type) = staff_element.child("StaffType") {
                 staff.lines = staff_lines(staff_type);
             }
+            staff.default_clef = if has_default_clef(staff_element) {
+                read_default_clef(staff_element)
+            } else {
+                instrument_clefs
+                    .get(declared)
+                    .copied()
+                    .unwrap_or(Clef::new(ClefType::G))
+            };
             self.score.add_staff_with(part_id, staff);
             self.staff_ids
                 .push(staff_element.attr_i64("id").map(|id| id as u32));
@@ -202,7 +220,12 @@ impl Reader {
         }
         if declared == 0 {
             // Une partie doit avoir au moins une portée (`Part::nstaves() > 0`).
-            self.score.add_staff(part_id);
+            let mut staff = Staff::new(part_id);
+            staff.default_clef = instrument_clefs
+                .first()
+                .copied()
+                .unwrap_or(Clef::new(ClefType::G));
+            self.score.add_staff_with(part_id, staff);
             self.staff_ids.push(None);
             self.staves.push(StaffState::default());
         }
@@ -218,11 +241,6 @@ impl Reader {
         let part_short_name = element
             .child("shortName")
             .map(|child| child.text().to_owned())
-            .unwrap_or_default();
-
-        let mut instrument = element
-            .child("Instrument")
-            .map(|child| self.read_instrument(child))
             .unwrap_or_default();
 
         let long_name = if instrument.long_name.is_empty() {
@@ -252,8 +270,7 @@ impl Reader {
         part.long_name = long_name;
         part.short_name = short_name;
         part.instrument = instrument;
-        // TODO(parité): <preferSharpFlat>, <show>, <soloist>, clef par défaut
-        // de portée (`<clef staff="N">` de l'instrument).
+        // TODO(parité): <preferSharpFlat>, <show>, <soloist>.
     }
 
     fn read_instrument(&self, element: &Element) -> Instrument {
@@ -282,10 +299,19 @@ impl Reader {
                 })
                 .map(|child| child.text().to_owned())
                 .unwrap_or_default(),
+            // `Instrument::trackName()`, distinct du nom long : c'est lui que
+            // `<instrument-name>` reprend.
+            track_name: element
+                .child("trackName")
+                .or_else(|| {
+                    element
+                        .child("InstrumentLabel")
+                        .and_then(|label| label.child("trackName"))
+                })
+                .map(|child| child.text().to_owned())
+                .unwrap_or_default(),
             ..Instrument::default()
         };
-        // TODO(parité): le nom de piste de l'instrument peut différer du nom
-        // long ; le modèle ne le stocke pas séparément.
 
         let chromatic = element
             .child("transposeChromatic")
@@ -510,6 +536,9 @@ impl Reader {
         let mut tuplets: Vec<(TupletId, Fraction)> = Vec::new();
         let mut grace_chords: Vec<GraceChord> = Vec::new();
         let mut stretch = self.stretch(staff_index);
+        // Premier accord d'un trémolo à deux notes : l'accord suivant de la
+        // même voix fait partie du même trémolo (`Measure::connectTremolo`).
+        let mut pending_tremolo = false;
 
         for child in &element.children {
             match child.name.as_str() {
@@ -538,12 +567,20 @@ impl Reader {
 
                     let tuplet = tuplets.last().map(|(id, _)| *id);
                     let ticks = parsed.ticks;
+                    let explicit_ticks = parsed.explicit_ticks;
                     let beam = parsed.beam;
                     let duration = parsed.duration;
                     let lyrics = parsed.lyrics.clone();
-                    let chord = parsed.into_chord(std::mem::take(&mut grace_chords));
+                    let mut chord = parsed.into_chord(std::mem::take(&mut grace_chords));
+                    if pending_tremolo {
+                        pending_tremolo = false;
+                        chord.tremolo_two_chord = true;
+                    } else {
+                        pending_tremolo = chord.tremolo_two_chord;
+                    }
 
                     let mut chord_rest = ChordRest::chord(duration);
+                    chord_rest.ticks = explicit_ticks;
                     chord_rest.tuplet = tuplet;
                     chord_rest.beam_mode = beam;
                     chord_rest.lyrics = lyrics;
@@ -566,6 +603,7 @@ impl Reader {
                     let lyrics = parsed.lyrics;
 
                     let mut chord_rest = ChordRest::rest(duration);
+                    chord_rest.ticks = parsed.explicit_ticks;
                     chord_rest.tuplet = tuplet;
                     chord_rest.lyrics = lyrics;
                     if gap {
@@ -617,6 +655,11 @@ impl Reader {
                             Fraction::ONE
                         };
                         self.staves[staff_index].time_stretch = Some(stretch);
+                        // L'étirement de portée sert aussi à l'export :
+                        // `DurationElement::actualTicks` divise par lui.
+                        self.score
+                            .staff_mut(StaffId::from_index(staff_index))
+                            .time_stretch = stretch;
                         if staff_index == 0 {
                             // `TimeSig::stretch` divise la durée réelle : une
                             // métrique 3/4 étirée 2/3 vaut 9/8.
@@ -870,6 +913,7 @@ impl Reader {
         let mut articulations = Vec::new();
         let mut lyrics = Vec::new();
         let mut notes = Vec::new();
+        let mut tremolo_two_chord = false;
 
         for child in &element.children {
             match child.name.as_str() {
@@ -896,6 +940,16 @@ impl Reader {
                 }
                 "small" => small = child.int().unwrap_or(0) != 0,
                 "Note" => notes.push(self.read_note(child, tick, track)?),
+                // Trémolo à deux notes : la sous-famille `c8`…`c256` (ou
+                // l'élément 5.0 `<TremoloTwoChord>`) réduit la durée réelle et
+                // ajoute le rapport 2:1 de `<time-modification>`.
+                "Tremolo" => {
+                    let subtype = child.child("subtype").map(Element::text).unwrap_or("");
+                    if subtype.starts_with('c') {
+                        tremolo_two_chord = true;
+                    }
+                }
+                "TremoloTwoChord" => tremolo_two_chord = true,
                 "Articulation" => {
                     if let Some(name) = child.child("subtype").map(Element::text) {
                         if let Some((kind, anchor)) = names::articulation(name) {
@@ -920,19 +974,19 @@ impl Reader {
         let duration = Duration::with_dots(duration_type, dots);
         let mut ticks = duration.ticks();
         if let Some(value) = explicit {
-            // TODO(parité): `<duration>` peut différer de la figure (tremolo
-            // two-chord) ; le modèle n'a pas de champ « durée réelle ».
             ticks = value;
         }
 
         Ok(ParsedChord {
             duration,
             ticks,
+            explicit_ticks: explicit,
             notes,
             grace,
             beam,
             stem,
             small,
+            tremolo_two_chord,
             articulations,
             lyrics,
         })
@@ -988,6 +1042,7 @@ impl Reader {
         ParsedRest {
             duration: Duration::with_dots(duration_type, dots),
             ticks,
+            explicit_ticks: explicit,
             gap,
             lyrics,
         }
@@ -1034,15 +1089,15 @@ impl Reader {
                 }
                 "head" => {
                     if let Some(head) = names::note_head(child.text()) {
-                        note.head = head;
+                        note.head_group = head;
                     }
-                    // TODO(parité): têtes non modélisées (groupes SMuFL).
                 }
                 "headType" => {
                     if let Some(head) = names::head_type(child.text()) {
                         note.head = head;
                     }
                 }
+                "visible" => note.visible = child.int().unwrap_or(1) != 0,
                 "ghost" | "dead" => note.ghost = child.int().unwrap_or(0) != 0,
                 "play" => note.play = child.int().unwrap_or(1) != 0,
                 "Spanner" if child.attr("type") == Some("Tie") => {
@@ -1314,11 +1369,14 @@ impl Reader {
 struct ParsedChord {
     duration: Duration,
     ticks: Fraction,
+    /// `<duration>` explicite, s'il diffère de la figure.
+    explicit_ticks: Option<Fraction>,
     notes: Vec<NoteId>,
     grace: Option<GraceType>,
     beam: BeamMode,
     stem: StemDirection,
     small: bool,
+    tremolo_two_chord: bool,
     articulations: Vec<Articulation>,
     lyrics: Vec<Lyrics>,
 }
@@ -1333,6 +1391,7 @@ impl ParsedChord {
             grace_slash: false,
             articulations: self.articulations,
             small: self.small,
+            tremolo_two_chord: self.tremolo_two_chord,
         }
     }
 }
@@ -1341,6 +1400,8 @@ impl ParsedChord {
 struct ParsedRest {
     duration: Duration,
     ticks: Fraction,
+    /// `<duration>` explicite, s'il diffère de la figure.
+    explicit_ticks: Option<Fraction>,
     gap: bool,
     lyrics: Vec<Lyrics>,
 }
@@ -1385,6 +1446,83 @@ fn read_time_sig(element: &Element) -> TimeSig {
         stretch,
         courtesy: false,
     }
+}
+
+/// Vrai si la portée déclare elle-même sa clef par défaut.
+fn has_default_clef(element: &Element) -> bool {
+    element.children.iter().any(|child| {
+        matches!(
+            child.name.as_str(),
+            "defaultClef" | "defaultConcertClef" | "defaultTransposingClef"
+        )
+    })
+}
+
+/// Moitié de `ClefTypeList` modifiée par une balise de clef d'instrument.
+#[derive(Clone, Copy)]
+enum ClefChange {
+    Both,
+    Concert,
+    Transposed,
+}
+
+/// Clefs par portée d'un `<Instrument>` (`<clef>`, `<concertClef>`,
+/// `<transposingClef>`, attribut `staff` à partir de 1).
+///
+/// `Instrument::setClefType` crée les entrées manquantes avec la paire sol/sol ;
+/// `<concertClef>` et `<transposingClef>` ne changent qu'une moitié.
+fn read_instrument_clefs(element: &Element) -> Vec<Clef> {
+    let mut clefs: Vec<Clef> = Vec::new();
+    for child in &element.children {
+        let change = match child.name.as_str() {
+            "clef" => ClefChange::Both,
+            "concertClef" => ClefChange::Concert,
+            "transposingClef" => ClefChange::Transposed,
+            _ => continue,
+        };
+        let index = child
+            .attr_i64("staff")
+            .filter(|value| *value >= 1)
+            .map_or(0, |value| (value - 1) as usize);
+        let Some(kind) = names::clef_type(child.text()) else {
+            continue;
+        };
+        while clefs.len() <= index {
+            clefs.push(Clef::new(ClefType::G));
+        }
+        match change {
+            ClefChange::Both => clefs[index] = Clef::new(kind),
+            ClefChange::Concert => clefs[index].concert = kind,
+            ClefChange::Transposed => clefs[index].transposed = kind,
+        }
+    }
+    clefs
+}
+
+/// Clef par défaut d'une portée (`TRead::readProperties(Staff*)`).
+///
+/// `<defaultClef>` fixe les deux clefs, `<defaultConcertClef>` et
+/// `<defaultTransposingClef>` une seule ; sans élément, la paire vaut
+/// sol/sol comme `ClefTypeList`.
+fn read_default_clef(element: &Element) -> Clef {
+    let mut clef = Clef::new(ClefType::G);
+    for child in &element.children {
+        let value = child.text();
+        match child.name.as_str() {
+            "defaultClef" => {
+                let kind = names::clef_type(value).unwrap_or(ClefType::G);
+                clef = Clef::new(kind);
+            }
+            "defaultConcertClef" => {
+                clef.concert = names::clef_type(value).unwrap_or(ClefType::G);
+            }
+            "defaultTransposingClef" => {
+                clef.transposed = names::clef_type(value).unwrap_or(ClefType::G);
+            }
+            _ => {}
+        }
+    }
+    clef
 }
 
 /// Lecture d'une clef.

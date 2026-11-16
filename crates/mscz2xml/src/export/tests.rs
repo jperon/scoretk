@@ -8,7 +8,7 @@ use crate::model::{
     tpc, Accidental, AccidentalType, Annotation, Articulation, ArticulationType, BarLineType,
     BeamMode, ChordRest, Clef, ClefType, Credit, CreditStyle, Duration, DurationType, Fraction,
     GraceChord, GraceType, Harmony, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
-    LyricsSyllabic, Measure, Note, NoteHeadType, NoteId, Part, PartId, Placement, RehearsalFrame,
+    LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteId, Part, PartId, Placement, RehearsalFrame,
     RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffId, StaffText,
     SystemText, Tempo, TimeSig, Track, Transpose, Tuplet,
 };
@@ -127,6 +127,7 @@ fn piano_instrument() -> Instrument {
         id: "keyboard.piano".to_owned(),
         long_name: "Piano".to_owned(),
         short_name: "Pno.".to_owned(),
+        track_name: "Piano".to_owned(),
         transpose: None,
         midi_program: Some(0),
     }
@@ -556,7 +557,7 @@ fn alterations_et_tetes_de_note() {
         Duration::quarter(),
         &[(65, tpc::F)],
     );
-    score.note_mut(ids[0]).head = NoteHeadType::X;
+    score.note_mut(ids[0]).head_group = NoteHeadGroup::Cross;
 
     score.add_measure(measure);
 
@@ -575,6 +576,7 @@ fn transposition_et_concert_pitch() {
         id: "wind.reed.clarinet.bflat".to_owned(),
         long_name: "B♭ Clarinet".to_owned(),
         short_name: "Bb Cl.".to_owned(),
+        track_name: "B♭ Clarinet".to_owned(),
         transpose: Some(Transpose::new(-1, -2)),
         midi_program: Some(71),
     };
@@ -983,6 +985,7 @@ fn corpus_linked_ties() {
         id: "wind.flutes.flute".to_owned(),
         long_name: "Flute".to_owned(),
         short_name: "Fl.".to_owned(),
+        track_name: "Flute".to_owned(),
         transpose: None,
         midi_program: Some(73),
     };
@@ -1146,6 +1149,7 @@ fn corpus_paroles() {
         id: "voice.vocals".to_owned(),
         long_name: "Voice".to_owned(),
         short_name: String::new(),
+        track_name: "Voice".to_owned(),
         transpose: None,
         midi_program: Some(52),
     };

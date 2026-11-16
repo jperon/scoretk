@@ -93,6 +93,70 @@ pub enum NoteHeadType {
     Other(u8),
 }
 
+/// Groupe de tête de note.
+///
+/// Correspond à `NoteHeadGroup` dans `engraving/types/types.h`, distinct de
+/// [`NoteHeadType`] (qui donne le remplissage et la figure). Les variantes
+/// couvrent les groupes du corpus ; les autres conservent leur nom MuseScore.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum NoteHeadGroup {
+    /// Tête normale (`HEAD_NORMAL`).
+    #[default]
+    Normal,
+    /// Tête en croix (`HEAD_CROSS`).
+    Cross,
+    /// Tête en plus (`HEAD_PLUS`).
+    Plus,
+    /// Tête encerclée d'une croix (`HEAD_XCIRCLE`).
+    XCircle,
+    /// Tête vide barrée (`HEAD_WITHX`).
+    WithX,
+    /// Triangle vers le haut (`HEAD_TRIANGLE_UP`).
+    TriangleUp,
+    /// Triangle vers le bas (`HEAD_TRIANGLE_DOWN`).
+    TriangleDown,
+    /// Tête barrée (`HEAD_SLASHED1`).
+    Slashed1,
+    /// Tête barrée en sens inverse (`HEAD_SLASHED2`).
+    Slashed2,
+    /// Losange (`HEAD_DIAMOND`).
+    Diamond,
+    /// Ancien losange (`HEAD_DIAMOND_OLD`).
+    DiamondOld,
+    /// Tête encerclée (`HEAD_CIRCLED`).
+    Circled,
+    /// Grande tête encerclée (`HEAD_CIRCLED_LARGE`).
+    CircledLarge,
+    /// Grande flèche (`HEAD_LARGE_ARROW`).
+    LargeArrow,
+    /// Variante de brève (`HEAD_BREVIS_ALT`).
+    BrevisAlt,
+    /// Tête en barre oblique (`HEAD_SLASH`).
+    Slash,
+    /// Grand losange (`HEAD_LARGE_DIAMOND`).
+    LargeDiamond,
+    /// Syllabe `do` (têtes de solfège).
+    Do,
+    /// Syllabe `re`.
+    Re,
+    /// Syllabe `mi`.
+    Mi,
+    /// Syllabe `fa`.
+    Fa,
+    /// Syllabe `sol`.
+    Sol,
+    /// Syllabe `la`.
+    La,
+    /// Syllabe `ti`.
+    Ti,
+    /// Croix épaisse (`HEAD_HEAVY_X`).
+    HeavyCross,
+    /// Croix épaisse avec chapeau (`HEAD_HEAVY_X_HAT`).
+    HeavyCrossHat,
+    /// Groupe non modélisé, nom MuseScore conservé.
+    Other(String),
+}
+
 /// Type d'altération affichée.
 ///
 /// Correspond à `AccidentalType` dans `engraving/types/types.h` et à
@@ -174,6 +238,10 @@ pub struct Note {
     pub accidental: Option<Accidental>,
     /// Tête de note demandée.
     pub head: NoteHeadType,
+    /// Groupe de tête de note (`<head>`), distinct du type ci-dessus.
+    pub head_group: NoteHeadGroup,
+    /// Vrai si la note est visible.
+    pub visible: bool,
     /// Vrai pour une note fantôme (note morte, guitare).
     pub ghost: bool,
     /// Vrai si la note est jouée.
@@ -191,6 +259,8 @@ impl Note {
             tie_back: None,
             accidental: None,
             head: NoteHeadType::Auto,
+            head_group: NoteHeadGroup::Normal,
+            visible: true,
             ghost: false,
             play: true,
         }

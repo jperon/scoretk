@@ -26,9 +26,9 @@ use crate::model::chord::ChordRestKind;
 use crate::model::{
     Accidental, AccidentalType, Annotation, Articulation, ArticulationAnchor, ArticulationType,
     BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType, Harmony, Key,
-    KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadType, Part, Placement, Score,
-    Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig, TimeSigType, Track,
-    Tuplet, TupletId, TupletNumberType, VOICES,
+    KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part,
+    Placement, Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig,
+    TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::Result;
 
@@ -461,11 +461,7 @@ impl<'a> Context<'a> {
 
             out.xml
                 .start_element("score-instrument", &[("id", &instrument_id)]);
-            let instrument_name = if part.instrument.long_name.is_empty() {
-                name.clone()
-            } else {
-                plain_text(&part.instrument.long_name)
-            };
+            let instrument_name = part.instrument.track_name.clone();
             out.xml.tag("instrument-name", &instrument_name);
             if !part.instrument.id.is_empty() {
                 out.xml.tag("instrument-sound", &part.instrument.id);
@@ -697,9 +693,12 @@ impl<'a> Context<'a> {
     ///
     /// MuseScore divise la durée notée par le ratio de chaque n-olet parent.
     /// Le modèle n'a pas d'étirement de portée (`Staff::timeStretch`), le
-    /// facteur correspondant vaut donc un.
+    /// facteur correspondant vaut donc un. Quand `<duration>` diffère de la
+    /// figure (trémolo, figure étirée), sa valeur fait foi.
     fn global_ticks(&self, chord_rest: &ChordRest, measure: &Measure) -> Fraction {
-        let mut ticks = self.notated_ticks(chord_rest, measure);
+        let mut ticks = chord_rest
+            .ticks
+            .unwrap_or_else(|| self.notated_ticks(chord_rest, measure));
         let mut tuplet = chord_rest.tuplet;
         let mut depth = 0;
         while let Some(id) = tuplet {
@@ -716,6 +715,25 @@ impl<'a> Context<'a> {
             depth += 1;
         }
         ticks
+    }
+
+    /// Durée consommée par l'élément (`DurationElement::actualTicks`).
+    ///
+    /// C'est la durée réelle divisée par l'étirement de la portée ; la valeur
+    /// exportée dans `<duration>` reste [`Context::global_ticks`].
+    fn actual_ticks(
+        &self,
+        chord_rest: &ChordRest,
+        measure: &Measure,
+        staff_id: StaffId,
+    ) -> Fraction {
+        let ticks = self.global_ticks(chord_rest, measure);
+        let stretch = self.score.staff(staff_id).time_stretch;
+        if stretch.is_positive() {
+            ticks / stretch
+        } else {
+            ticks
+        }
     }
 
     /// Transposition chromatique de la portée, en demi-tons.
@@ -912,7 +930,11 @@ impl Context<'_> {
 
     /// Écrit `<time-modification>` (`writeTimeModification`).
     fn write_time_modification(&self, out: &mut Out, chord_rest: &ChordRest) {
-        let mut actual: i64 = 1;
+        // Un trémolo à deux notes vaut un rapport 2:1 (`tremoloCorrection`).
+        let tremolo = chord_rest
+            .chord_ref()
+            .is_some_and(|chord| chord.tremolo_two_chord);
+        let mut actual: i64 = if tremolo { 2 } else { 1 };
         let mut normal: i64 = 1;
         let mut tuplet = chord_rest.tuplet;
         let mut depth = 0;
@@ -1014,7 +1036,7 @@ impl Context<'_> {
         let segment_tick = out.tick;
         let global_ticks = self.global_ticks(chord_rest, measure);
         if !grace {
-            out.tick += global_ticks;
+            out.tick += self.actual_ticks(chord_rest, measure, track.staff());
         }
 
         let duration = grace_duration.copied().unwrap_or(chord_rest.duration);
@@ -1090,7 +1112,7 @@ impl Context<'_> {
                 }
             }
 
-            write_notehead(out, note, chord);
+            write_notehead(out, note, chord, duration);
 
             if xml_staff > 0 {
                 out.xml.tag("staff", &xml_staff.to_string());
@@ -1148,7 +1170,7 @@ impl Context<'_> {
         }
 
         let tick_len = self.global_ticks(chord_rest, measure);
-        out.tick += tick_len;
+        out.tick += self.actual_ticks(chord_rest, measure, track.staff());
         out.xml
             .tag("duration", &out.duration_in_divisions(tick_len).to_string());
 
@@ -1329,26 +1351,21 @@ impl Context<'_> {
             find_segment(measure, SegmentType::HeaderClef, measure.start_tick)
         };
 
-        if let Some(segment) = segment {
-            for (position, staff_id) in part.staves.iter().enumerate() {
-                let track = Track::new(*staff_id, 0);
-                if let Some(SegmentItem::Clef(clef)) = segment.element(track) {
-                    let xml_staff = if staves > 1 { position + 1 } else { 0 };
+        for (position, staff_id) in part.staves.iter().enumerate() {
+            let track = Track::new(*staff_id, 0);
+            let xml_staff = if staves > 1 { position + 1 } else { 0 };
+            match segment.and_then(|segment| segment.element(track)) {
+                Some(SegmentItem::Clef(clef)) => {
                     self.clef(out, xml_staff, self.active_clef(clef), &[]);
                 }
-            }
-        }
-
-        // Clef par défaut si le segment d'en-tête existe mais n'en porte pas.
-        if measure.start_tick.is_zero() {
-            if let Some(segment) = find_segment(measure, SegmentType::HeaderClef, Tick::ZERO) {
-                for (position, staff_id) in part.staves.iter().enumerate() {
-                    let track = Track::new(*staff_id, 0);
-                    if !matches!(segment.element(track), Some(SegmentItem::Clef(_))) {
-                        let xml_staff = if staves > 1 { position + 1 } else { 0 };
-                        self.clef(out, xml_staff, ClefType::G, &[("print-object", "no")]);
-                    }
+                // Aucune clef n'ouvre la partition : la mise en page en génère
+                // une du type par défaut de la portée (`Staff::clefType`), que
+                // `findAndExportClef` exporte comme une clef ordinaire.
+                _ if measure.start_tick.is_zero() => {
+                    let clef = self.score.staff(*staff_id).default_clef;
+                    self.clef(out, xml_staff, self.active_clef(&clef), &[]);
                 }
+                _ => {}
             }
         }
     }
@@ -1847,35 +1864,144 @@ fn technical(out: &mut Out, notations: &mut Notations, name: &str, placement: Op
 
 /// Écrit `<notehead>` (`writeNotehead`).
 ///
-/// Le modèle n'a pas de groupe de tête distinct du type et pas de schéma de
-/// tête : les têtes nommées (smufl) ne sont pas exportées.
-fn write_notehead(out: &mut Out, note: &Note, chord: &Chord) {
+/// Le groupe (`<head>`) et le type (`<headType>`) sont distincts : le type
+/// donne l'attribut `filled`, le groupe la valeur MusicXML, ou son nom SMuFL
+/// pour les têtes sans équivalent.
+fn write_notehead(out: &mut Out, note: &Note, chord: &Chord, duration: Duration) {
+    let mut attributes: Vec<(&str, &str)> = Vec::new();
     match note.head {
-        NoteHeadType::Auto => {}
-        NoteHeadType::Quarter => out.xml.tag_with("notehead", &[("filled", "yes")], "normal"),
-        NoteHeadType::Half | NoteHeadType::Whole => {
-            out.xml.tag_with("notehead", &[("filled", "no")], "normal");
-        }
-        // MuseScore désigne la tête de brève par son nom SMuFL.
-        NoteHeadType::Breve => {
-            out.xml
-                .tag_with("notehead", &[("smufl", "noteheadDoubleWhole")], "other");
-        }
-        NoteHeadType::Cross => out.xml.tag("notehead", "cross"),
-        NoteHeadType::Diamond => out.xml.tag("notehead", "diamond"),
-        NoteHeadType::Triangle => {
-            let value = if chord.stem == StemDirection::Down {
-                "inverted triangle"
+        NoteHeadType::Quarter => attributes.push(("filled", "yes")),
+        NoteHeadType::Half | NoteHeadType::Whole => attributes.push(("filled", "no")),
+        _ => {}
+    }
+
+    let up = chord.stem != StemDirection::Down;
+    let head_type = if note.head == NoteHeadType::Auto {
+        duration.kind.head_type()
+    } else {
+        note.head
+    };
+
+    // Note invisible : la tête seule disparaît (`writeNotehead`).
+    if !note.visible {
+        out.xml.tag_with("notehead", &attributes, "none");
+        return;
+    }
+
+    let value = match &note.head_group {
+        NoteHeadGroup::Normal => {
+            if note.head == NoteHeadType::Auto {
+                None
             } else {
-                "triangle"
-            };
-            out.xml.tag("notehead", value);
+                Some("normal")
+            }
         }
-        NoteHeadType::Slash => out.xml.tag("notehead", "slash"),
-        NoteHeadType::Square => out.xml.tag("notehead", "square"),
-        NoteHeadType::X => out.xml.tag("notehead", "x"),
-        // TODO(parité): têtes « other » (smufl) et têtes nommées.
-        NoteHeadType::Other(_) => {}
+        NoteHeadGroup::Slash => Some("slash"),
+        NoteHeadGroup::TriangleUp => Some("triangle"),
+        NoteHeadGroup::Diamond => Some("diamond"),
+        NoteHeadGroup::Plus => Some("cross"),
+        NoteHeadGroup::Cross => Some("x"),
+        NoteHeadGroup::Circled => Some("circled"),
+        NoteHeadGroup::XCircle => Some("circle-x"),
+        NoteHeadGroup::TriangleDown => Some("inverted triangle"),
+        NoteHeadGroup::Slashed1 => Some("slashed"),
+        NoteHeadGroup::Slashed2 => Some("back slashed"),
+        NoteHeadGroup::Do => Some("do"),
+        NoteHeadGroup::Re => Some("re"),
+        NoteHeadGroup::Mi => Some("mi"),
+        NoteHeadGroup::Fa => Some(if up { "fa up" } else { "fa" }),
+        NoteHeadGroup::La => Some("la"),
+        NoteHeadGroup::Ti => Some("ti"),
+        NoteHeadGroup::Sol => Some("so"),
+        NoteHeadGroup::WithX
+        | NoteHeadGroup::DiamondOld
+        | NoteHeadGroup::CircledLarge
+        | NoteHeadGroup::LargeArrow
+        | NoteHeadGroup::BrevisAlt
+        | NoteHeadGroup::LargeDiamond
+        | NoteHeadGroup::HeavyCross
+        | NoteHeadGroup::HeavyCrossHat => {
+            // Groupe sans équivalent MusicXML : MuseScore écrit son nom SMuFL.
+            if let Some(name) = smufl_notehead(&note.head_group, head_type, up) {
+                attributes.push(("smufl", name));
+                out.xml.tag_with("notehead", &attributes, "other");
+            }
+            return;
+        }
+        // TODO(parité): groupes MuseScore hors du corpus, dont le symbole
+        // SMuFL dépend du type de tête et de la direction de hampe.
+        NoteHeadGroup::Other(_) => return,
+    };
+
+    if let Some(value) = value {
+        out.xml.tag_with("notehead", &attributes, value);
+    }
+}
+
+/// Nom SMuFL de la tête (`SymNames::nameForSymId(note->noteHead())`).
+///
+/// Reproduit la table `noteHeads` de `engraving/dom/note.cpp` pour les groupes
+/// sans valeur MusicXML ; la hampe ne change le symbole que pour les grandes
+/// flèches et les grands losanges.
+fn smufl_notehead(
+    group: &NoteHeadGroup,
+    head_type: NoteHeadType,
+    up: bool,
+) -> Option<&'static str> {
+    use NoteHeadType::{Breve, Half, Whole};
+    let name = match (group, head_type) {
+        (NoteHeadGroup::WithX, Whole) => "noteheadWholeWithX",
+        (NoteHeadGroup::WithX, Half) => "noteheadHalfWithX",
+        (NoteHeadGroup::WithX, Breve) => "noteheadDoubleWholeWithX",
+        (NoteHeadGroup::WithX, _) => "noteheadVoidWithX",
+
+        (NoteHeadGroup::DiamondOld, Whole) => "noteheadDiamondWholeOld",
+        (NoteHeadGroup::DiamondOld, Half) => "noteheadDiamondHalfOld",
+        (NoteHeadGroup::DiamondOld, Breve) => "noteheadDiamondDoubleWholeOld",
+        (NoteHeadGroup::DiamondOld, _) => "noteheadDiamondBlackOld",
+
+        (NoteHeadGroup::CircledLarge, Whole) => "noteheadCircledWholeLarge",
+        (NoteHeadGroup::CircledLarge, Half) => "noteheadCircledHalfLarge",
+        (NoteHeadGroup::CircledLarge, Breve) => "noteheadCircledDoubleWholeLarge",
+        (NoteHeadGroup::CircledLarge, _) => "noteheadCircledBlackLarge",
+
+        (NoteHeadGroup::LargeArrow, _) => arrow_name(up, head_type),
+
+        (NoteHeadGroup::BrevisAlt, Whole) => "noteheadWhole",
+        (NoteHeadGroup::BrevisAlt, Half) => "noteheadHalf",
+        (NoteHeadGroup::BrevisAlt, Breve) => "noteheadDoubleWholeSquare",
+        (NoteHeadGroup::BrevisAlt, _) => "noteheadBlack",
+
+        (NoteHeadGroup::LargeDiamond, Whole) => "noteheadSlashWhiteWhole",
+        (NoteHeadGroup::LargeDiamond, Half) => "noteheadSlashDiamondWhite",
+        (NoteHeadGroup::LargeDiamond, Breve) => {
+            if up {
+                "noteheadSlashWhiteDoubleWhole"
+            } else {
+                "noteheadSlashWhiteWhole"
+            }
+        }
+        (NoteHeadGroup::LargeDiamond, _) => "noteheadSlashHorizontalEnds",
+
+        (NoteHeadGroup::HeavyCross, _) => "noteheadHeavyX",
+        (NoteHeadGroup::HeavyCrossHat, _) => "noteheadHeavyXHat",
+        _ => return None,
+    };
+    Some(name)
+}
+
+/// Nom de la grande flèche : le sens du symbole est inverse de la hampe.
+fn arrow_name(up: bool, head_type: NoteHeadType) -> &'static str {
+    use NoteHeadType::{Breve, Half, Whole};
+    match (up, head_type) {
+        (true, Whole) => "noteheadLargeArrowDownWhole",
+        (true, Half) => "noteheadLargeArrowDownHalf",
+        (true, Breve) => "noteheadLargeArrowDownDoubleWhole",
+        (true, _) => "noteheadLargeArrowDownBlack",
+        (false, Whole) => "noteheadLargeArrowUpWhole",
+        (false, Half) => "noteheadLargeArrowUpHalf",
+        (false, Breve) => "noteheadLargeArrowUpDoubleWhole",
+        (false, _) => "noteheadLargeArrowUpBlack",
     }
 }
 
@@ -2141,7 +2267,18 @@ fn compute_divisions(context: &Context<'_>) -> u32 {
                             tick = segment.tick;
                         }
                         if let SegmentItem::ChordRest(chord_rest) = item {
-                            let length = context.global_ticks(chord_rest, measure);
+                            let length = {
+                                let mut length = context.global_ticks(chord_rest, measure);
+                                // `calcDivisions` compte un trémolo à deux
+                                // notes pour sa moitié.
+                                if chord_rest
+                                    .chord_ref()
+                                    .is_some_and(|chord| chord.tremolo_two_chord)
+                                {
+                                    length /= Fraction::from_integer(2);
+                                }
+                                length
+                            };
                             if !length.is_zero() {
                                 fractions.insert(length.abs());
                             }

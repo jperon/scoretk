@@ -75,8 +75,9 @@ pub(crate) struct Reader {
     /// Mesures à répéter, développées en fin de lecture.
     pub(crate) measure_repeats: Vec<MeasureRepeat>,
     /// Clef initiale déclarée par chaque portée (`<defaultClef>`, groupe de
-    /// `StaffType`), appliquée en fin de lecture.
-    pub(crate) staff_clefs: Vec<Option<ClefType>>,
+    /// `StaffType`, sinon `<clef>` de l'instrument), appliquée en fin de
+    /// lecture.
+    pub(crate) staff_clefs: Vec<Option<Clef>>,
 }
 
 /// Mesure marquée `<RepeatMeasure>` : son contenu est celui de la précédente.
@@ -256,7 +257,7 @@ impl Reader {
                 .get(staff)
                 .copied()
                 .flatten()
-                .unwrap_or(ClefType::G);
+                .unwrap_or(Clef::new(ClefType::G));
             let track = Track::from_raw((staff * VOICES) as u32);
             let has_clef = self.score.measures[0].segments.iter().any(|segment| {
                 segment.kind.is_clef_type()
@@ -267,7 +268,7 @@ impl Reader {
                 continue;
             }
             measure::segment_mut(&mut self.score.measures[0], SegmentType::HeaderClef, start)
-                .set_element(track, SegmentItem::Clef(Clef::new(clef)));
+                .set_element(track, SegmentItem::Clef(clef));
         }
     }
 

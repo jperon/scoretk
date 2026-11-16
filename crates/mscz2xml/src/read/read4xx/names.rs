@@ -6,7 +6,7 @@
 
 use crate::model::{
     AccidentalType, ArticulationAnchor, ArticulationType, BarLineType, BeamMode, ClefType,
-    DurationType, GraceType, KeyMode, LyricsSyllabic, NoteHeadType, TimeSigType,
+    DurationType, GraceType, KeyMode, LyricsSyllabic, NoteHeadGroup, NoteHeadType, TimeSigType,
 };
 
 /// Figure de durée (`durationType`).
@@ -213,23 +213,37 @@ pub fn syllabic(name: &str) -> LyricsSyllabic {
 
 /// Tête de note (`Note/head`), nom de groupe de têtes MuseScore.
 ///
-/// Le modèle ne connaît que quelques formes ; les autres têtes sont
-/// rapprochées de la variante la plus proche et signalées par un
-/// `TODO(parité)` chez l'appelant.
-pub fn note_head(name: &str) -> Option<NoteHeadType> {
+/// Les noms suivent `TConv::fromXml` pour `NoteHeadGroup` ; les groupes non
+/// modélisés gardent leur nom d'origine.
+pub fn note_head(name: &str) -> Option<NoteHeadGroup> {
     Some(match name {
-        "normal" | "auto" => NoteHeadType::Auto,
-        "whole" => NoteHeadType::Whole,
-        "half" => NoteHeadType::Half,
-        "quarter" => NoteHeadType::Quarter,
-        "breve" | "altbrevis" => NoteHeadType::Breve,
-        "cross" | "heavy-cross" | "heavy-cross-hat" => NoteHeadType::Cross,
-        "xcircle" | "withx" => NoteHeadType::X,
-        "diamond" | "diamond-old" | "large-diamond" => NoteHeadType::Diamond,
-        "triangle-up" | "triangle-down" | "large-arrow" => NoteHeadType::Triangle,
-        "slash" | "slashed1" | "slashed2" => NoteHeadType::Slash,
-        "square" => NoteHeadType::Square,
-        _ => return None,
+        "normal" | "auto" => NoteHeadGroup::Normal,
+        "cross" => NoteHeadGroup::Cross,
+        "plus" => NoteHeadGroup::Plus,
+        "xcircle" => NoteHeadGroup::XCircle,
+        "withx" => NoteHeadGroup::WithX,
+        "triangle-up" => NoteHeadGroup::TriangleUp,
+        "triangle-down" => NoteHeadGroup::TriangleDown,
+        "slashed1" => NoteHeadGroup::Slashed1,
+        "slashed2" => NoteHeadGroup::Slashed2,
+        "diamond" => NoteHeadGroup::Diamond,
+        "diamond-old" => NoteHeadGroup::DiamondOld,
+        "circled" => NoteHeadGroup::Circled,
+        "circled-large" => NoteHeadGroup::CircledLarge,
+        "large-arrow" => NoteHeadGroup::LargeArrow,
+        "altbrevis" => NoteHeadGroup::BrevisAlt,
+        "slash" => NoteHeadGroup::Slash,
+        "large-diamond" => NoteHeadGroup::LargeDiamond,
+        "do" => NoteHeadGroup::Do,
+        "re" => NoteHeadGroup::Re,
+        "mi" => NoteHeadGroup::Mi,
+        "fa" => NoteHeadGroup::Fa,
+        "sol" => NoteHeadGroup::Sol,
+        "la" => NoteHeadGroup::La,
+        "ti" => NoteHeadGroup::Ti,
+        "heavy-cross" => NoteHeadGroup::HeavyCross,
+        "heavy-cross-hat" => NoteHeadGroup::HeavyCrossHat,
+        other => NoteHeadGroup::Other(other.to_owned()),
     })
 }
 

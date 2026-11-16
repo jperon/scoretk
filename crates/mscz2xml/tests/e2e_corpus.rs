@@ -35,7 +35,23 @@ const ENCODING_DATE: &str = "2026-01-01";
 /// Fichiers dont la conversion est aujourd'hui identique à la référence après
 /// normalisation. Toute régression sur cette liste fait échouer le test ; les
 /// fichiers absents sont suivis dans `docs/agents/ecarts-noyau.md`.
-const EXPECTED_CONFORMANT: &[&str] = &["copypastesymbollist-lyrics"];
+const EXPECTED_CONFORMANT: &[&str] = &[
+    "beamStemDir",
+    "changevisibility",
+    "copypastesymbollist-lyrics",
+    "dynamics",
+    "expression-1",
+    "hairpins_and_repeats",
+    "linked-ties",
+    "repeat65",
+    "repeat68",
+    "repeat69",
+    "tenuto_accent",
+    "testLocalTimesig1",
+    "testNoteheads2",
+    "testTempoPrecision",
+    "timesig-09",
+];
 
 /// Éléments dont le sous-arbre entier est ignoré.
 const IGNORED_ELEMENTS: &[&str] = &[
