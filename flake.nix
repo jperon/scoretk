@@ -72,6 +72,15 @@
         # à changer dans les expressions ci-dessous.
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
+        # Dépendances précompilées pour wasm32. Crane impose que
+        # buildDepsOnly et la construction qui consomme ses artefacts aient le
+        # même CARGO_BUILD_TARGET : d'où une dérivation distincte des artefacts
+        # hôte.
+        wasmCargoArtifacts = craneLib.buildDepsOnly (commonArgs
+          // {
+            CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+          });
+
         sharedDevTools = with pkgs; [
           rustToolchain
           cargo-ndk
@@ -137,7 +146,7 @@
           # (doCheck = false) puisqu'on ne peut pas les exécuter sur cette cible.
           wasm32-unknown-unknown = craneLib.cargoBuild (commonArgs
             // {
-              inherit cargoArtifacts;
+              cargoArtifacts = wasmCargoArtifacts;
               CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
               cargoExtraArgs = "-p mscz2xml";
               doCheck = false;
