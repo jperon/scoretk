@@ -157,8 +157,7 @@ pub fn detect_version(mscx: &[u8]) -> Result<MscVersion> {
     loop {
         match reader.read_event()? {
             Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "museScore" => {
-                let value = find_version_attribute(&e)?
-                    .ok_or(Error::MissingVersion)?;
+                let value = find_version_attribute(&e)?.ok_or(Error::MissingVersion)?;
                 return MscVersion::parse(&value);
             }
             Event::Eof => return Err(Error::MissingVersion),
@@ -184,16 +183,10 @@ fn find_version_attribute(element: &BytesStart<'_>) -> Result<Option<String>> {
 /// Vrai si les octets ressemblent à du XML (`.mscx` nu) plutôt qu'à un ZIP.
 fn looks_like_xml(bytes: &[u8]) -> bool {
     let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
-    matches!(
-        bytes.iter().find(|b| !b.is_ascii_whitespace()),
-        Some(b'<')
-    )
+    matches!(bytes.iter().find(|b| !b.is_ascii_whitespace()), Some(b'<'))
 }
 
-fn read_zip_entry(
-    archive: &mut ZipArchive<Cursor<&[u8]>>,
-    name: &str,
-) -> Result<Option<Vec<u8>>> {
+fn read_zip_entry(archive: &mut ZipArchive<Cursor<&[u8]>>, name: &str) -> Result<Option<Vec<u8>>> {
     match archive.by_name(name) {
         Ok(mut entry) => {
             let mut data = Vec::with_capacity(entry.size() as usize);
@@ -207,19 +200,16 @@ fn read_zip_entry(
     }
 }
 
-fn read_first_root_mscx(
-    archive: &mut ZipArchive<Cursor<&[u8]>>,
-) -> Result<Option<MsczContainer>> {
+fn read_first_root_mscx(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Result<Option<MsczContainer>> {
     let names: Vec<String> = archive.file_names().map(str::to_owned).collect();
-    let candidate = names.into_iter().find(|name| {
-        !name.contains('/') && name.to_ascii_lowercase().ends_with(".mscx")
-    });
+    let candidate = names
+        .into_iter()
+        .find(|name| !name.contains('/') && name.to_ascii_lowercase().ends_with(".mscx"));
 
     match candidate {
         Some(name) => {
-            let data = read_zip_entry(archive, &name)?.ok_or_else(|| {
-                Error::RootFileNotFound(name.clone())
-            })?;
+            let data = read_zip_entry(archive, &name)?
+                .ok_or_else(|| Error::RootFileNotFound(name.clone()))?;
             Ok(Some(MsczContainer {
                 main_mscx_name: name,
                 main_mscx: data,
@@ -296,8 +286,7 @@ mod tests {
 
     fn build_zip(files: &[(&str, &[u8])]) -> Vec<u8> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let options = SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Deflated);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
         for (name, data) in files {
             writer.start_file(*name, options).unwrap();
             writer.write_all(data).unwrap();
