@@ -40,7 +40,7 @@ ouverts.
 | repeat68 | **identique** |
 | repeat69 | **identique** |
 | tenuto_accent | **identique** |
-| testExcludeInvisibleElements | 21 |
+| testExcludeInvisibleElements | 20 |
 | testLocalTimesig1 | **identique** |
 | testNoteheads2 | **identique** |
 | testTempoPrecision | **identique** |
@@ -364,3 +364,43 @@ n'a qu'une durée de mesure globale (`Measure::len`), calculée à partir de la
 première portée ; sans `<duration>` explicite, le silence « mesure » de la
 seconde portée prendrait encore 9/8 au lieu de 3/4 (durée de mesure par portée
 non modélisée).
+
+## 15. Textes de ligne, cadres `TBox`, changements d'instrument, swing — famille textes
+
+**Corrigé** (lecteur/modèle/export) et couvert par
+`crates/mscz2xml/tests/texts_corpus.rs` sur le corpus **v3 et v4** (l'e2e v4
+ignore les `<direction>` et `<print>`) :
+
+- **lignes de texte** (`<Spanner type="TextLine">`) : `TextLineInfo` porte
+  `lineVisible`, `beginText`/`endText`, style de trait, crochets, hauteurs de
+  crochet, polices et `system`. L'export reproduit `ExportMusicXml::textLine`
+  et `writeHairpinText` : `<words>` de début/fin, `<bracket type=… number=…
+  line-end=… line-type=… end-length=…>`, `<dashes>` pour un trait sans
+  crochet, et l'`<offset sound="yes">` négatif des fins de ligne invisible
+  (la position sentinelle `Fraction(-1,1)` du C++) ;
+- **textes de `TBox`** (`tboxTextAsWords`) : lus dans les deux lecteurs,
+  exportés en `<words valign="top">` au début de la mesure, au-dessus ou
+  au-dessous selon le cadre (défauts de style 3.x : 12 points) ;
+- **changements d'instrument** (`writeInstrumentChange`) :
+  `<print><part-name-display>`/`<part-abbreviation-display>` (♭/♯ en
+  `<accidental-text>`), `<transpose>` dans `<attributes>` et
+  `<sound><instrument-change id="Pn-Im"><instrument-sound>`. L'identifiant
+  MusicXML absent des `.mscx` 3.x est retrouvé par nom ou programme MIDI
+  (`recognize_musicxml_id`) ;
+- **tempo** : `<type>aTempo</type>`/`<type>tempoPrimo</type>` reprennent le
+  dernier tempo normal (`tempoSound`) ;
+- **swing** : `<swing unit=… ratio=…>` d'un `SystemText` exporté en
+  `<sound><swing>` (`straight`, `first`/`second`/`swing-type`), offset
+  compris pour un texte invisible ;
+- **crédits 3.x** : les `VBox` sont lus (styles 3.x : titre 24, sous-titre 14,
+  compositeur/parolier 12, `frame` 12, `instrument_excerpt` 18, copyright 8),
+  avec pagination et répétition du copyright ; les tailles de police suivent
+  `QString::arg(double)` (6 chiffres significatifs) au lieu d'un arrondi à
+  deux décimales.
+
+Écart restant, documenté et filtré dans `texts_corpus.rs` : les `<words>` et
+`<dashes>` des **soufflets** (`HairPin` avec `beginText`/`endText`), dont la
+mise en forme relève de `writeHairpinText` côté famille nuances
+(`testHairpinDynamics`, `voices`). Le repère « A » ré-exporté de
+`layout_elements` vient d'une reprise de mesure (`RepeatMeasure`), hors
+famille textes.

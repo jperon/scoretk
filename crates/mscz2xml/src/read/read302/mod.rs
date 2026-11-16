@@ -218,11 +218,9 @@ impl Reader {
                         self.score.add_tbox_text(text);
                     }
                 }
-                "VBox" => {
-                    if staff == 0 {
-                        for credit in frames::read_vbox(child, page) {
-                            self.score.add_credit(credit);
-                        }
+                "VBox" if staff == 0 => {
+                    for credit in frames::read_vbox(child, page) {
+                        self.score.add_credit(credit);
                     }
                 }
                 // TODO(parité): `<HBox>` et `<FBox>` ne portent pas de texte ;
