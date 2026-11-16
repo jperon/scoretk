@@ -1134,6 +1134,7 @@ impl Reader {
         let mut grace = None;
         let mut beam = BeamMode::Auto;
         let mut stem = StemDirection::Auto;
+        let mut staff_move = 0i8;
         let mut small = false;
         let mut articulations = Vec::new();
         let mut ornaments = Vec::new();
@@ -1166,6 +1167,14 @@ impl Reader {
                         "down" => StemDirection::Down,
                         _ => StemDirection::Auto,
                     };
+                }
+                "staffMove" => {
+                    staff_move = child
+                        .int()
+                        .unwrap_or(0)
+                        .clamp(-4, 4)
+                        .try_into()
+                        .unwrap_or(0);
                 }
                 "small" => small = child.int().unwrap_or(0) != 0,
                 "Note" => notes.push(self.read_note(child, tick, track, &mut chord_line)?),
@@ -1204,7 +1213,7 @@ impl Reader {
                 "ChordLine" => chord_line = notations::read_chord_line(child),
                 "Lyrics" => lyrics.push(read_lyrics(child, self.score.style.lyrics_placement)),
                 "Spanner" => notations::read_spanner(self, child, tick, track),
-                // TODO(parité): <Stem>, <Hook>, <noStem>, <staffMove>.
+                // TODO(parité): <Stem>, <Hook>, <noStem>.
                 _ => {}
             }
             if let Some(kind) = names::grace_type(child.name.as_str()) {
@@ -1226,6 +1235,7 @@ impl Reader {
             grace,
             beam,
             stem,
+            staff_move,
             small,
             tremolo_two_chord,
             articulations,
@@ -1655,6 +1665,7 @@ struct ParsedChord {
     grace: Option<GraceType>,
     beam: BeamMode,
     stem: StemDirection,
+    staff_move: i8,
     small: bool,
     tremolo_two_chord: bool,
     articulations: Vec<Articulation>,
@@ -1671,6 +1682,7 @@ impl ParsedChord {
             notes: self.notes,
             grace_chords,
             stem: self.stem,
+            staff_move: self.staff_move,
             grace: self.grace,
             grace_slash: false,
             articulations: self.articulations,

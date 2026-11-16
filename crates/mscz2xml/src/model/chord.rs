@@ -205,6 +205,11 @@ pub struct Chord {
     pub grace_chords: Vec<GraceChord>,
     /// Direction de hampe.
     pub stem: StemDirection,
+    /// Décalage de portée (`Chord::staffMove`).
+    ///
+    /// `0` : notes sur la portée de l'accord ; `1` : une portée en dessous
+    /// (accord croisé), `-1` : une portée au-dessus.
+    pub staff_move: i8,
     /// Type d'ornement, si cet accord est lui-même un accord d'agrément.
     pub grace: Option<GraceType>,
     /// Vrai si l'ornement est barré.

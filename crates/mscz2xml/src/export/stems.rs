@@ -79,7 +79,13 @@ pub(crate) fn stem_up(
         return true;
     }
 
-    // 6. Hauteurs des notes.
+    // 6. Accord croisé entre portées : la hampe suit le sens du déplacement
+    //    (`ldata->up = staffMove() > 0`).
+    if chord.staff_move != 0 {
+        return chord.staff_move > 0;
+    }
+
+    // 7. Hauteurs des notes.
     auto_up(
         score,
         chord,
@@ -188,6 +194,7 @@ pub(crate) fn chord_distances(
     concert_pitch: bool,
     transpose_chromatic: i32,
 ) -> Vec<i32> {
+    let staff = moved_staff(score, staff, chord.staff_move);
     let clef = active_clef(score, staff, tick, concert_pitch);
     let offset = clef_pitch_offset(clef);
     chord
@@ -225,6 +232,16 @@ fn written_pitch_and_tpc(note: &Note, concert_pitch: bool, transpose_chromatic: 
                 note.tpc
             },
         )
+    }
+}
+
+/// Portée effective d'un accord (`Chord::vStaffIdx`).
+pub(crate) fn moved_staff(score: &Score, staff: StaffId, movement: i8) -> StaffId {
+    let target = i64::from(staff.raw()) + i64::from(movement);
+    if target >= 0 && (target as usize) < score.staves.len() {
+        StaffId::from_raw(target as u32)
+    } else {
+        staff
     }
 }
 

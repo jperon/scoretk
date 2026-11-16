@@ -765,6 +765,21 @@ fn beam_up(
         }
     }
 
+    // Accords croisés entre portées (`computeUpForMovedCross`, puis
+    // `maxCRMove`/`minCRMove`).
+    let moves: Vec<i8> = group
+        .iter()
+        .filter_map(|element| element_chord(score, element).map(|chord| chord.staff_move))
+        .collect();
+    let max_move = moves.iter().copied().max().unwrap_or(0);
+    let min_move = moves.iter().copied().min().unwrap_or(0);
+    if max_move > 0 {
+        return false;
+    }
+    if min_move < 0 {
+        return true;
+    }
+
     let multiple_voices = stems::has_other_voices(measure, track, first.tick, first.actual);
 
     if multiple_voices {

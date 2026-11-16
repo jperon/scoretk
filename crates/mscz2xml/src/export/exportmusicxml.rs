@@ -1361,8 +1361,11 @@ impl Context<'_> {
 
             write_notehead(out, note, chord, duration);
 
-            if xml_staff > 0 {
-                out.xml.tag("staff", &xml_staff.to_string());
+            // `staff + note->chord()->staffMove()` : un accord croisé change
+            // de portée sans changer de piste.
+            let written_staff = xml_staff as i32 + i32::from(chord.staff_move);
+            if written_staff > 0 {
+                out.xml.tag("staff", &written_staff.to_string());
             }
 
             if first {

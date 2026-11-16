@@ -38,6 +38,7 @@ pub(crate) fn read_chord_rest(
     let mut grace: Option<GraceType> = None;
     let mut slash = false;
     let mut stem = StemDirection::Auto;
+    let mut staff_move = 0i8;
     let mut small = false;
     let mut beam = BeamMode::Auto;
     let mut lyrics = Vec::new();
@@ -68,6 +69,14 @@ pub(crate) fn read_chord_rest(
             "grace32after" => grace = Some(GraceType::Grace32After),
             "StemSlash" => slash = true,
             "StemDirection" => stem = tables::stem_direction(&child.trimmed_text()),
+            "staffMove" => {
+                staff_move = child
+                    .int_text()
+                    .unwrap_or(0)
+                    .clamp(-4, 4)
+                    .try_into()
+                    .unwrap_or(0);
+            }
             "small" => small = child.int_text().unwrap_or(0) != 0,
             "BeamMode" => beam = tables::beam_mode(&child.trimmed_text()),
             "Lyrics" => lyrics.push(read_lyrics(child, reader.score.style.lyrics_placement)),
@@ -82,9 +91,8 @@ pub(crate) fn read_chord_rest(
             "Ornament" => ornaments.push(notations::read_ornament(child)),
             "Tremolo" => tremolo = notations::read_tremolo(child),
             "Arpeggio" => arpeggio = Some(notations::read_arpeggio(child)),
-            // TODO(parité): `<staffMove>` (notes sur une autre portée),
-            // `<Stem>`, `<Hook>`, `<StemSlash>`, `<Tempo>`/`<Symbol>`
-            // d'accord ne sont pas modélisés.
+            // TODO(parité): `<Stem>`, `<Hook>`, `<StemSlash>`,
+            // `<Tempo>`/`<Symbol>` d'accord ne sont pas modélisés.
             _ => {}
         }
     }
@@ -113,6 +121,7 @@ pub(crate) fn read_chord_rest(
     } else {
         let mut chord = Chord {
             stem,
+            staff_move,
             small,
             grace,
             grace_slash: slash,
