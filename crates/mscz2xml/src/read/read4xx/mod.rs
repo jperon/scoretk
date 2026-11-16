@@ -23,6 +23,7 @@ mod nuances;
 mod ottava;
 mod repeats;
 mod style;
+mod textlines;
 
 use dom::Element;
 
@@ -38,6 +39,15 @@ use crate::model::{
     Transpose, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::{Error, Result};
+
+/// Vrai si un cadre porte un saut de page (`LayoutBreak` `page`).
+fn has_page_break(element: &Element) -> bool {
+    element.children_named("LayoutBreak").any(|layout_break| {
+        layout_break
+            .child("subtype")
+            .is_some_and(|subtype| subtype.text() == "page")
+    })
+}
 
 /// Lit un `.mscx` 4.x/5.x.
 pub fn read(mscx: &[u8], version: MscVersion) -> Result<Score> {
@@ -137,6 +147,8 @@ struct Reader {
     voltas: Vec<repeats::VoltaHalf>,
     /// Moitiés de soufflets lues mais pas encore appariées.
     spanner_halves: Vec<nuances::Half>,
+    /// Moitiés de lignes de texte lues mais pas encore appariées.
+    text_lines: Vec<textlines::TextLineHalf>,
     /// Moitiés d'ottavas lues mais pas encore appariées.
     ottava_halves: Vec<ottava::Half>,
     /// Vrai si le style active les silences multi-mesures
@@ -160,6 +172,7 @@ impl Reader {
             ties: Vec::new(),
             voltas: Vec::new(),
             spanner_halves: Vec::new(),
+            text_lines: Vec::new(),
             ottava_halves: Vec::new(),
             create_multi_measure_rests: false,
         }
@@ -219,6 +232,7 @@ impl Reader {
         self.resolve_ties();
         self.resolve_ties();
         repeats::resolve(self);
+        textlines::resolve(self);
         nuances::resolve(&mut self.score, &self.spanner_halves);
         ottava::resolve(&mut self.score, &self.ottava_halves);
         Ok(())
@@ -477,6 +491,17 @@ impl Reader {
                     // écrit sous la première portée (`StaffRead::readStaff`).
                     if staff_index == 0 {
                         self.read_vbox(child, page);
+                    }
+                }
+                "TBox" => {
+                    // Texte de cadre exporté en `<words>` au début de la mesure
+                    // qui suit (`tboxTextAsWords`) ; un cadre suivi d'un saut
+                    // de page est au-dessous du système précédent.
+                    if staff_index == 0 {
+                        let below = measure_index > 0 && has_page_break(child);
+                        if let Some(text) = textlines::read_tbox(child, measure_index, below) {
+                            self.score.add_tbox_text(text);
+                        }
                     }
                 }
                 "tick" => {}
@@ -927,6 +952,7 @@ impl Reader {
                             text: text.text,
                             placement: text.placement,
                             visible: text.visible,
+                            swing: textlines::read_swing(child),
                         }),
                     );
                 }
@@ -946,6 +972,7 @@ impl Reader {
                         follow_text: child.has_child("followText"),
                         placement: text.placement,
                         visible: text.visible,
+                        kind: textlines::read_tempo_kind(child),
                     };
                     // `TRead::read(TempoText*)` : un tempo sans texte reçoit le
                     // texte « ♩ = N » et devient invisible.
@@ -981,6 +1008,18 @@ impl Reader {
                 }
                 "InstrumentChange" => {
                     let text = read_text_base(child);
+                    let instrument = child.child("Instrument").map(|instrument| {
+                        let mut instrument = self.read_instrument(instrument);
+                        if instrument.id.is_empty() {
+                            if let Some(id) = crate::model::recognize_musicxml_id(
+                                &instrument.track_name,
+                                instrument.midi_program,
+                            ) {
+                                instrument.id = id.to_owned();
+                            }
+                        }
+                        instrument
+                    });
                     self.add_annotation(
                         measure_index,
                         tick,
@@ -989,6 +1028,7 @@ impl Reader {
                             text: text.text,
                             placement: text.placement,
                             visible: text.visible,
+                            instrument,
                         }),
                     );
                 }
@@ -1034,6 +1074,7 @@ impl Reader {
                 // traitées dans <Note>.
                 "Spanner" => {
                     repeats::read_spanner(self, child, tick, track, measure_index);
+                    textlines::read_spanner(self, child, tick, track, measure_index);
                     if let Some(half) = nuances::read_half(child, measure_index, tick, track) {
                         self.spanner_halves.push(half);
                     }
@@ -1780,6 +1821,17 @@ fn read_text_base(element: &Element) -> ParsedTextBase {
     ] {
         if let Some(flag) = element.child(name).and_then(Element::int) {
             *value = flag != 0;
+        }
+    }
+    if let Some(size) = element
+        .child("size")
+        .and_then(|node| node.text().parse::<f64>().ok())
+    {
+        format.font_size = Some(size);
+    }
+    if let Some(family) = element.child("family").map(Element::text) {
+        if !family.is_empty() {
+            format.font_family = Some(family.to_owned());
         }
     }
     ParsedTextBase {

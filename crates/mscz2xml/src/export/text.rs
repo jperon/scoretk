@@ -43,7 +43,7 @@ struct EffectiveFormat {
 /// Format par défaut du style d'un texte (ce que le fichier `.mscx` ne porte
 /// pas : MuseScore le tire de `MStyle`).
 #[derive(Clone, Copy, Debug)]
-struct StyleFormat {
+pub(crate) struct StyleFormat {
     font_family: &'static str,
     font_size: f64,
     bold: bool,
@@ -70,6 +70,14 @@ const TEMPO_STYLE: StyleFormat = StyleFormat {
 const REHEARSAL_STYLE: StyleFormat = StyleFormat {
     font_family: DEFAULT_TEXT_FONT,
     font_size: 14.0,
+    bold: true,
+};
+
+/// Style des changements d'instrument (`InstrumentChange`) : MuseScore les
+/// affiche en gras, taille 12 (style « Instrument Name »).
+pub(crate) const INSTRUMENT_CHANGE_STYLE: StyleFormat = StyleFormat {
+    font_family: DEFAULT_TEXT_FONT,
+    font_size: 12.0,
     bold: true,
 };
 
@@ -106,6 +114,26 @@ fn effective_format(format: &TextFormat, style: &StyleFormat) -> EffectiveFormat
         font_family,
         font_size: format.font_size.unwrap_or(style.font_size),
     }
+}
+
+/// Formate une taille de police comme `String::number`/`QString::arg(double)`
+/// (six chiffres significatifs, zéros finaux retirés).
+pub(crate) fn format_font_size(value: f64) -> String {
+    if !value.is_finite() || value == 0.0 {
+        return "0".to_owned();
+    }
+    let magnitude = value.abs().log10().floor() as i32;
+    let decimals = (6 - 1 - magnitude).max(0) as usize;
+    let mut text = format!("{value:.decimals$}");
+    if text.contains('.') {
+        while text.ends_with('0') {
+            text.pop();
+        }
+        if text.ends_with('.') {
+            text.pop();
+        }
+    }
+    text
 }
 
 // ----------------------------------------------------------------------
@@ -165,7 +193,7 @@ fn write_fragments(
         if current.font_size < 0.99 * previous.font_size
             || current.font_size > 1.01 * previous.font_size
         {
-            changes.push(("font-size", format_number(current.font_size, 2)));
+            changes.push(("font-size", format_font_size(current.font_size)));
         }
 
         let mut all: Vec<(&str, &str)> = Vec::new();
@@ -175,7 +203,7 @@ fn write_fragments(
         for (name, value) in &changes {
             all.push((name, value.as_str()));
         }
-        out.xml.tag_with(tag, &all, &fragment.text);
+        out.xml.tag_raw(tag, &all, &fragment.text);
         previous = current;
         first = false;
     }
@@ -585,6 +613,27 @@ pub(crate) fn write_words(
     xml_staff: usize,
     offset: i64,
 ) {
+    write_words_styled(
+        out,
+        text,
+        placement,
+        system,
+        xml_staff,
+        offset,
+        &WORDS_STYLE,
+    );
+}
+
+/// Variante de [`write_words`] avec le style du texte (`wordsMetronome`).
+pub(crate) fn write_words_styled(
+    out: &mut Out,
+    text: &RichText,
+    placement: Placement,
+    system: bool,
+    xml_staff: usize,
+    offset: i64,
+    style: &StyleFormat,
+) {
     if text.is_empty() {
         return;
     }
@@ -594,16 +643,126 @@ pub(crate) fn write_words(
         attributes.push(("system", "only-top"));
     }
     out.xml.start_element("direction", &attributes);
-    write_words_metronome(out, text, &WORDS_STYLE, offset);
+    write_words_metronome(out, text, style, offset);
     if xml_staff > 0 {
         out.xml.tag("staff", &xml_staff.to_string());
     }
     out.xml.end_element();
 }
 
+/// Écrit `<sound><swing>` (`ExportMusicXml::swingSound`).
+///
+/// `offset` ajoute `<offset sound="yes">` à l'intérieur de `<sound>`, pour un
+/// texte système invisible.
+pub(crate) fn write_swing_sound(
+    out: &mut Out,
+    swing: &crate::model::SwingParameters,
+    offset: Option<i64>,
+) {
+    use crate::model::SwingUnit;
+
+    out.xml.start_element("sound", &[]);
+    out.xml.start_element("swing", &[]);
+    match swing.unit {
+        SwingUnit::Straight => out.xml.tag_empty("straight", &[]),
+        SwingUnit::Eighth | SwingUnit::Sixteenth => {
+            let ratio = i64::from(swing.ratio);
+            let divisor = gcd(ratio, 100).max(1);
+            out.xml.tag("first", &(100 / divisor).to_string());
+            out.xml.tag("second", &(ratio / divisor).to_string());
+            let kind = if swing.unit == SwingUnit::Eighth {
+                "eighth"
+            } else {
+                "16th"
+            };
+            out.xml.tag("swing-type", kind);
+        }
+    }
+    out.xml.end_element();
+    if let Some(offset) = offset {
+        out.xml
+            .tag_with("offset", &[("sound", "yes")], &offset.to_string());
+    }
+    out.xml.end_element();
+}
+
+/// Plus grand commun diviseur (signe ignoré).
+fn gcd(left: i64, right: i64) -> i64 {
+    let (mut left, mut right) = (left.abs(), right.abs());
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left
+}
+
+/// Écrit un texte système (`ExportMusicXml::systemText`), swing compris.
+pub(crate) fn write_system_text(
+    out: &mut Out,
+    text: &crate::model::SystemText,
+    xml_staff: usize,
+    offset: i64,
+) {
+    if text.text.is_empty() {
+        return;
+    }
+    out.attr(false);
+    out.xml.start_element(
+        "direction",
+        &[
+            ("placement", placement_name(text.placement)),
+            ("system", "only-top"),
+        ],
+    );
+    write_words_metronome(out, &text.text, &WORDS_STYLE, offset);
+    if let Some(swing) = &text.swing {
+        write_swing_sound(out, swing, None);
+    }
+    if xml_staff > 0 {
+        out.xml.tag("staff", &xml_staff.to_string());
+    }
+    out.xml.end_element();
+}
+
+/// Écrit le texte d'un cadre `TBox` (`ExportMusicXml::tboxTextAsWords`).
+///
+/// MuseScore l'écrit en `<words valign="top">` dans une direction au début de
+/// la mesure qui suit le cadre ; les positions (`default-x`, `default-y`) sont
+/// de la mise en page et ne sont pas modélisées.
+pub(crate) fn write_tbox(out: &mut Out, tbox: &crate::model::TboxText) {
+    if tbox.text.is_empty() {
+        return;
+    }
+    out.attr(false);
+    out.xml.start_element(
+        "direction",
+        &[("placement", placement_name(tbox.placement))],
+    );
+    out.xml.start_element("direction-type", &[]);
+    let mut style = WORDS_STYLE;
+    if let Some(font_size) = tbox.font_size {
+        style.font_size = font_size;
+    }
+    write_fragments(
+        out,
+        "words",
+        &[("valign", "top")],
+        tbox.text.fragments(),
+        &style,
+    );
+    out.xml.end_element();
+    out.xml.end_element();
+}
+
 /// Écrit `<sound tempo=…>` (`tempoSound`).
 pub(crate) fn write_tempo_sound(out: &mut Out, tempo: &Tempo) {
-    let Some(beats_per_second) = tempo.beats_per_second else {
+    write_tempo_sound_value(out, tempo.beats_per_second);
+}
+
+/// Écrit `<sound tempo=…>` à partir d'une valeur en battements par seconde.
+pub(crate) fn write_tempo_sound_value(out: &mut Out, beats_per_second: Option<f64>) {
+    let Some(beats_per_second) = beats_per_second else {
         return;
     };
     // MuseScore arrondit à deux décimales : les fichiers stockent parfois
@@ -642,7 +801,10 @@ pub(crate) fn write_rehearsal(out: &mut Out, mark: &RehearsalMark, xml_staff: us
     out.attr(false);
     out.xml.start_element(
         "direction",
-        &[("placement", placement_name(mark.placement))],
+        &[
+            ("placement", placement_name(mark.placement)),
+            ("system", "only-top"),
+        ],
     );
     out.xml.start_element("direction-type", &[]);
     let mut attributes: Vec<(&str, &str)> = Vec::new();
@@ -692,6 +854,7 @@ pub(crate) fn write_credits(out: &mut Out, score: &Score) {
                 justify: CreditJustify::Center,
                 valign: CreditValign::Bottom,
                 page,
+                font_size: None,
                 vbox_height: 10.0,
             };
             write_credit(out, &credit, &score.style);
@@ -735,12 +898,16 @@ fn write_credit(out: &mut Out, credit: &Credit, settings: &StyleSettings) {
         ("justify", credit.justify.musicxml_name()),
         ("valign", credit.valign.musicxml_name()),
     ];
+    let mut style = credit_style(credit, settings);
+    if let Some(font_size) = credit.font_size {
+        style.font_size = font_size;
+    }
     write_fragments(
         out,
         "credit-words",
         &attributes,
         credit.text.fragments(),
-        &credit_style(credit, settings),
+        &style,
     );
     out.xml.end_element();
 }

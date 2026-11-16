@@ -15,7 +15,7 @@ use super::xml::Node;
 use super::{Reader, VoiceCtx};
 use crate::model::{
     Fraction, Hairpin, HairpinType, Measure, NoteId, SegmentType, Spanner, SpannerAnchor,
-    SpannerType, Track, VoltaInfo, VOICES,
+    SpannerType, TextLineInfo, Track, VoltaInfo, VOICES,
 };
 
 /// Position d'une extrémité de connecteur.
@@ -99,6 +99,8 @@ enum Payload {
     Tie,
     Slur,
     Spanner(SpannerType, Option<String>, Option<VoltaInfo>),
+    /// Ligne de texte, avec ses textes et son trait.
+    TextLine(TextLineInfo),
     /// Soufflet, avec ses textes, son niente et son placement.
     Hairpin(HairpinType, Hairpin),
 }
@@ -215,7 +217,7 @@ fn read_payload(node: &Node) -> Option<Payload> {
             text_of(node),
             Some(super::repeats::read_volta(node)),
         ),
-        "TextLine" => Payload::Spanner(SpannerType::TextLine, text_of(node), None),
+        "TextLine" => Payload::TextLine(super::textlines::read_text_line(node)),
         "Trill" => Payload::Spanner(SpannerType::Trill, None, None),
         "Glissando" => Payload::Spanner(SpannerType::Glissando, None, None),
         other => Payload::Spanner(SpannerType::Other(other.to_owned()), text_of(node), None),
@@ -432,6 +434,16 @@ fn emit(reader: &mut Reader, chain: &[usize]) {
         Some(Payload::Slur) => push_spanner(reader, SpannerType::Slur, None, None, start, end),
         Some(Payload::Spanner(kind, text, volta)) => {
             push_spanner(reader, kind, text, volta, start, end);
+        }
+        Some(Payload::TextLine(info)) => {
+            let mut spanner = Spanner::new(
+                SpannerType::TextLine,
+                SpannerAnchor::new(start.tick, start.track),
+                SpannerAnchor::new(end.tick, end.track),
+            );
+            spanner.text = info.begin_text.as_ref().map(|text| text.plain().to_owned());
+            spanner.text_line = Some(info);
+            reader.score.add_spanner(spanner);
         }
         Some(Payload::Hairpin(kind, hairpin)) => {
             let mut spanner = Spanner::new(

@@ -105,6 +105,22 @@ impl XmlWriter {
         self.buffer.push('>');
     }
 
+    /// Écrit un élément avec attributs et contenu **brut** (déjà échappé).
+    ///
+    /// MuseScore conserve les entités du texte interne (`&quot;`) et les écrit
+    /// telles quelles (`XmlWriter::tagRaw`) ; les attributs restent échappés.
+    pub(crate) fn tag_raw(&mut self, name: &str, attributes: &[(&str, &str)], body: &str) {
+        self.start_line();
+        self.buffer.push('<');
+        self.buffer.push_str(name);
+        self.write_attributes(attributes);
+        self.buffer.push('>');
+        self.buffer.push_str(body);
+        self.buffer.push_str("</");
+        self.buffer.push_str(name);
+        self.buffer.push('>');
+    }
+
     fn start_line(&mut self) {
         if !self.buffer.is_empty() {
             self.buffer.push('\n');

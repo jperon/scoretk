@@ -25,10 +25,11 @@ use std::collections::BTreeSet;
 use crate::model::chord::ChordRestKind;
 use crate::model::{
     Accidental, AccidentalType, Annotation, Articulation, ArticulationAnchor, ArticulationType,
-    BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType, Harmony, Key,
-    KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part,
-    Placement, Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig,
-    TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
+    BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType, Harmony,
+    InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup,
+    NoteHeadType, Part, Placement, Score, Segment, SegmentItem, SegmentType, SpannerType, StaffId,
+    StemDirection, Tempo, TempoKind, Tick, TimeSig, TimeSigType, Track, Tuplet, TupletId,
+    TupletNumberType, VOICES,
 };
 use crate::Result;
 
@@ -38,6 +39,7 @@ use super::ottava;
 use super::pitch;
 use super::repeats;
 use super::text;
+use super::textlines;
 use super::writer::XmlWriter;
 
 /// Logiciel annoncé dans `<encoding>`, identique à MuseScore 4.7.
@@ -102,7 +104,7 @@ pub fn calc_divisions(score: &Score) -> u32 {
 pub(crate) struct Out {
     pub(crate) xml: XmlWriter,
     div: u32,
-    tick: Tick,
+    pub(crate) tick: Tick,
     in_attributes: bool,
 }
 
@@ -315,6 +317,18 @@ pub(crate) struct Context<'a> {
     tuplets: TupletIndex,
 }
 
+/// État des spanners d'une partie (`spannersStopped` et compteur d'instruments
+/// dans le C++).
+#[derive(Default)]
+struct PartSpanners {
+    /// Spanners dont le début a déjà été écrit.
+    started: Vec<usize>,
+    /// Spanners dont la fin a déjà été écrite.
+    stopped: Vec<usize>,
+    /// Numéro du prochain instrument introduit (`I1` étant le principal).
+    next_instrument: usize,
+}
+
 impl<'a> Context<'a> {
     fn new(score: &'a Score, options: &'a ExportOptions) -> Self {
         Self {
@@ -322,6 +336,38 @@ impl<'a> Context<'a> {
             options,
             tuplets: TupletIndex::new(score),
         }
+    }
+
+    /// Vrai si l'export écrit les hauteurs en sons réels (`concertPitch`).
+    pub(crate) fn concert_pitch(&self) -> bool {
+        self.options.concert_pitch
+    }
+
+    /// Tempo en battements par seconde en vigueur à un tick
+    /// (`Score::tempo(tick)`).
+    ///
+    /// Pour « a tempo » et « Tempo I », MuseScore relit la carte des tempos
+    /// au lieu du tempo propre au texte. Le modèle n'a pas de carte : le
+    /// dernier tempo normal au tick ou avant en tient lieu.
+    pub(crate) fn tempo_at(&self, tick: Tick) -> Option<f64> {
+        let mut found = None;
+        for measure in &self.score.measures {
+            for segment in &measure.segments {
+                if segment.tick > tick {
+                    continue;
+                }
+                for entry in &segment.annotations {
+                    if let Annotation::Tempo(tempo) = &entry.annotation {
+                        if tempo.kind == TempoKind::Normal {
+                            if let Some(beats_per_second) = tempo.beats_per_second {
+                                found = Some(beats_per_second);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        found
     }
 
     // ------------------------------------------------------------------
@@ -519,10 +565,17 @@ impl<'a> Context<'a> {
             out.tick = Tick::ZERO;
             out.in_attributes = false;
             nuances.reset_part();
+            // I1 est l'instrument principal ; les changements d'instrument
+            // prennent les numéros suivants (`initInstrMap`).
+            let mut spanners = PartSpanners {
+                started: Vec::new(),
+                stopped: Vec::new(),
+                next_instrument: 2,
+            };
             out.xml.start_element("part", &[("id", &part_id)]);
 
             for measure_index in 0..self.score.measures.len() {
-                self.write_measure(out, measure_index, part_index, nuances);
+                self.write_measure(out, measure_index, part_index, nuances, &mut spanners);
             }
 
             out.xml.end_element();
@@ -540,6 +593,7 @@ impl<'a> Context<'a> {
         measure_index: usize,
         part_index: usize,
         nuances: &mut Nuances,
+        spanners: &mut PartSpanners,
     ) {
         let measure = &self.score.measures[measure_index];
         let part = &self.score.parts[part_index];
@@ -586,7 +640,14 @@ impl<'a> Context<'a> {
 
         repeats::repeat_at_measure_start(self, out, measure, part_index);
 
-        self.write_measure_staves(out, measure, part, nuances);
+        // Les textes de `TBox` ne sont écrits que par la première partie, au
+        // début de la mesure qui suit le cadre (`tboxTextAsWords`).
+        if part_index == 0 {
+            out.attr(false);
+            textlines::write_tboxes(out, self, measure_index);
+        }
+
+        self.write_measure_staves(out, measure, part, nuances, part_index, spanners);
         self.annotations_without_note(out, measure, part);
 
         out.move_to_tick(measure.end_tick());
@@ -604,6 +665,8 @@ impl<'a> Context<'a> {
         measure: &Measure,
         part: &Part,
         nuances: &mut Nuances,
+        part_index: usize,
+        spanners: &mut PartSpanners,
     ) {
         let staves = part.staves.len();
         for (position, staff_id) in part.staves.iter().enumerate() {
@@ -617,6 +680,9 @@ impl<'a> Context<'a> {
                 *staff_id,
                 xml_staff,
                 nuances,
+                part_index,
+                position,
+                spanners,
                 &mut started,
                 &mut stopped,
             );
@@ -636,6 +702,9 @@ impl<'a> Context<'a> {
         staff_id: StaffId,
         xml_staff: usize,
         nuances: &mut Nuances,
+        part_index: usize,
+        staff_position: usize,
+        spanners: &mut PartSpanners,
         ottava_started: &mut [bool],
         ottava_stopped: &mut [bool],
     ) {
@@ -659,11 +728,37 @@ impl<'a> Context<'a> {
 
                 out.move_to_tick(segment.tick);
 
-                if let SegmentItem::ChordRest(_) = item {
+                if matches!(item, SegmentItem::ChordRest(_)) {
                     out.attr(false);
+                    // Changement d'instrument : MuseScore l'écrit une fois, au
+                    // début de la partie, avant les annotations du segment.
+                    if staff_position == 0 && voice == 0 {
+                        if let Some(change) = instrument_change(segment, staff_id) {
+                            textlines::write_instrument_change(
+                                out,
+                                self,
+                                change,
+                                part_index,
+                                spanners.next_instrument,
+                            );
+                            spanners.next_instrument += 1;
+                        }
+                    }
                     if annotation_track(segment, staff_id) == Some(track) {
                         self.harmonies(out, segment, staff_id);
                         self.annotations(out, segment, staff_id, xml_staff);
+                    }
+                    // Débuts de lignes de texte (`spannerStart`).
+                    for (index, spanner) in self.score.spanners.iter().enumerate() {
+                        if spanner.kind != SpannerType::TextLine
+                            || spanner.start.tick != segment.tick
+                            || spanner.start.track.staff() != staff_id
+                            || spanners.started.contains(&index)
+                        {
+                            continue;
+                        }
+                        textlines::start(out, spanner, xml_staff);
+                        spanners.started.push(index);
                     }
                     nuances.start(self.score, out, segment, staff_id, xml_staff, track);
                     // `spannerStart` : l'ottava s'écrit après les annotations du
@@ -682,6 +777,18 @@ impl<'a> Context<'a> {
 
                 if is_chord_rest {
                     nuances.stop(self.score, out, out.tick, staff_id, xml_staff);
+                    // Fins de lignes de texte (`spannerStop`), une seule fois.
+                    for (index, spanner) in self.score.spanners.iter().enumerate() {
+                        if spanner.kind != SpannerType::TextLine
+                            || spanner.end.tick != out.tick
+                            || spanner.start.track.staff() != staff_id
+                            || spanners.stopped.contains(&index)
+                        {
+                            continue;
+                        }
+                        textlines::stop(out, spanner, xml_staff);
+                        spanners.stopped.push(index);
+                    }
                     // `spannerStop` : fin d'ottava éventuelle à ce tick.
                     ottava::write_stops_at(self.score, out, out.tick, staff_id, ottava_stopped);
                 }
@@ -1589,10 +1696,22 @@ impl Context<'_> {
             }
             if !entry.annotation.visible() {
                 // `commonAnnotations` : un tempo invisible n'exporte que son
-                // `<sound tempo>`.
-                if let Annotation::Tempo(tempo) = &entry.annotation {
-                    out.attr(false);
-                    text::write_tempo_sound(out, tempo);
+                // `<sound tempo>` ; un texte système invisible exporte son
+                // swing avec un offset.
+                match &entry.annotation {
+                    Annotation::Tempo(tempo) => {
+                        out.attr(false);
+                        let beats_per_second = effective_tempo(self, tempo, segment.tick);
+                        text::write_tempo_sound_value(out, beats_per_second);
+                    }
+                    Annotation::SystemText(text) => {
+                        if let Some(swing) = &text.swing {
+                            let offset = out.duration_in_divisions(segment.tick - out.tick);
+                            out.attr(false);
+                            text::write_swing_sound(out, swing, Some(offset));
+                        }
+                    }
+                    _ => {}
                 }
                 continue;
             }
@@ -1607,20 +1726,28 @@ impl Context<'_> {
                     text::write_words(out, &text.text, text.placement, false, xml_staff, offset);
                 }
                 Annotation::SystemText(text) => {
-                    text::write_words(out, &text.text, text.placement, true, xml_staff, offset);
+                    text::write_system_text(out, text, xml_staff, offset);
                 }
-                Annotation::Tempo(tempo) => text::write_tempo(out, tempo, xml_staff, offset),
+                Annotation::Tempo(tempo) => {
+                    let beats_per_second = effective_tempo(self, tempo, segment.tick);
+                    let tempo = Tempo {
+                        beats_per_second,
+                        ..tempo.clone()
+                    };
+                    text::write_tempo(out, &tempo, xml_staff, offset);
+                }
                 Annotation::RehearsalMark(mark) => {
                     text::write_rehearsal(out, mark, xml_staff, offset);
                 }
                 Annotation::InstrumentChange(change) => {
-                    text::write_words(
+                    text::write_words_styled(
                         out,
                         &change.text,
                         change.placement,
                         false,
                         xml_staff,
                         offset,
+                        &text::INSTRUMENT_CHANGE_STYLE,
                     );
                 }
                 // TODO(parité): annotations non modélisées (doigtés,
@@ -1700,6 +1827,31 @@ impl Notations {
             self.printed = false;
         }
     }
+}
+
+/// Tempo effectif d'une indication (`tempoSound`).
+///
+/// « a tempo » et « Tempo I » reprennent le tempo en vigueur au tick.
+fn effective_tempo(context: &Context<'_>, tempo: &Tempo, tick: Tick) -> Option<f64> {
+    if tempo.kind == TempoKind::Normal {
+        tempo.beats_per_second
+    } else {
+        context.tempo_at(tick).or(tempo.beats_per_second)
+    }
+}
+
+/// Premier changement d'instrument d'une portée dans un segment
+/// (`Segment::findAnnotation`).
+fn instrument_change(segment: &Segment, staff_id: StaffId) -> Option<&InstrumentChange> {
+    segment.annotations.iter().find_map(|entry| {
+        if entry.track.staff() != staff_id {
+            return None;
+        }
+        match &entry.annotation {
+            Annotation::InstrumentChange(change) => Some(change),
+            _ => None,
+        }
+    })
 }
 
 /// Écrit `<pitch>` (`writePitch`).

@@ -33,6 +33,7 @@ mod part;
 mod repeats;
 mod spanner;
 mod tables;
+mod textlines;
 mod xml;
 
 use crate::container::MscVersion;
@@ -179,7 +180,9 @@ impl Reader {
         let Some(name) = node.attr("name") else {
             return;
         };
-        let text = node.text().trim().to_owned();
+        // `Score::setMetaTag` conserve le texte tel quel (retours à la ligne
+        // compris).
+        let text = node.text();
         let metadata = &mut self.score.metadata;
         match name {
             "workTitle" => metadata.work_title = text,
@@ -233,18 +236,24 @@ impl Reader {
                         tick = self.file_tick(value);
                     }
                 }
+                // Texte de cadre exporté en `<words>` au début de la mesure
+                // (`tboxTextAsWords`). Un cadre suivi d'un saut de page est
+                // au-dessous du système précédent.
+                "TBox" => {
+                    let below = index > 0 && credits::page_break(child);
+                    if let Some(text) = textlines::read_tbox(child, index, below) {
+                        self.score.add_tbox_text(text);
+                    }
+                }
                 "VBox" => {
                     // Les textes d'un `VBox` deviennent des `<credit>` ; les
-                    // autres cadres (`HBox`, `TBox`, `FBox`) n'en portent pas.
+                    // autres cadres n'en portent pas.
                     if staff == 0 {
                         credits::read_vbox(&mut self.score, child, page);
                     }
                 }
-                // TODO(parité): `<HBox>`, `<TBox>` et `<FBox>` sont des cadres
-                // sans durée musicale ; l'export en tire des textes, des sauts
-                // de page et, pour un texte de style « title », `<work-title>`
-                // quand le `metaTag` correspondant est vide (voir
-                // `moonlight.mscx`).
+                // TODO(parité): `<HBox>` et `<FBox>` ne portent pas de texte ;
+                // seuls leurs sauts de page comptent (voir plus bas).
                 _ => {}
             }
             // Un saut de page s'applique après l'élément qui le porte.
