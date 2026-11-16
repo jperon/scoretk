@@ -68,6 +68,9 @@ pub struct StyleSettings {
     /// Taille de police du pied de page (`footerFontSize`), utilisée pour le
     /// crédit `rights` du copyright.
     pub footer_font_size: f64,
+    /// Hauteur d'un soufflet en espaces (`hairpinHeight`), exportée en
+    /// `spread` (dixièmes) sur les `<wedge>`.
+    pub hairpin_height_sp: f64,
 }
 
 impl StyleSettings {
@@ -79,12 +82,12 @@ impl StyleSettings {
     /// marges de 10/20 mm et 15 mm, et des titres en 24 pt puis 22 pt.
     pub fn for_version(major: u32) -> Self {
         let legacy = major <= 3;
-        let (spatium_mm, margins, composer_size, title_size) = if legacy {
+        let (spatium_mm, margins, composer_size, title_size, hairpin_height) = if legacy {
             // MuseScore 3.x : marges 10 mm (20 mm en bas), compositeur 12 pt.
-            (1.764, (0.3937008, 0.7874016), 12.0, 24.0)
+            (1.764, (0.3937008, 0.7874016), 12.0, 24.0, 1.2)
         } else {
             // MuseScore 4.x : marges 15 mm, compositeur 10 pt.
-            (1.75, (0.5905512, 0.5905512), 10.0, 22.0)
+            (1.75, (0.5905512, 0.5905512), 10.0, 22.0, 1.15)
         };
         let (vertical, bottom) = margins;
         Self {
@@ -109,6 +112,7 @@ impl StyleSettings {
             frame_font_size: 12.0,
             instrument_excerpt_font_size: 18.0,
             footer_font_size: 8.0,
+            hairpin_height_sp: hairpin_height,
         }
     }
 
@@ -147,6 +151,7 @@ impl StyleSettings {
                 Self::set_number(&mut self.instrument_excerpt_font_size, value);
             }
             "footerFontSize" => Self::set_number(&mut self.footer_font_size, value),
+            "hairpinHeight" => Self::set_positive(&mut self.hairpin_height_sp, value),
             _ => {}
         }
     }

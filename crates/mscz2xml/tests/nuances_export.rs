@@ -140,7 +140,7 @@ fn soufflet_wedge_niente_et_numeros() {
 
     let xml = export_musicxml(&score).expect("export");
     assert!(xml.contains("<wedge type=\"diminuendo\" number=\"1\"/>"));
-    assert!(xml.contains("<wedge type=\"crescendo\" niente=\"yes\" number=\"2\"/>"));
+    assert!(xml.contains("<wedge type=\"crescendo\" niente=\"yes\" spread=\"11.5\" number=\"2\"/>"));
     assert!(!xml.contains("<wedge type=\"stop\" niente=\"yes\" number=\"1\"/>"));
 }
 
@@ -204,5 +204,5 @@ fn soufflet_place_au_dessus() {
 
     let xml = export_musicxml(&score).expect("export");
     assert!(xml.contains("<direction placement=\"above\">"));
-    assert!(xml.contains("<wedge type=\"crescendo\" number=\"1\"/>"));
+    assert!(xml.contains("<wedge type=\"crescendo\" spread=\"11.5\" number=\"1\"/>"));
 }

@@ -12,6 +12,10 @@
 //! Les versions antérieures ou inconnues renvoient
 //! [`Error::UnsupportedVersion`](crate::Error::UnsupportedVersion).
 
+/// Catalogue d'instruments de MuseScore, pour les fichiers 3.x sans
+/// identifiant MusicXML.
+pub(crate) mod instruments;
+
 /// Lecteur des partitions MuseScore 3.00 à 3.99 (portage de `read302`).
 pub mod read302;
 /// Lecteur des partitions MuseScore 4.00 à 5.00 (portage de `read4xx`).

@@ -128,7 +128,7 @@ pub(crate) fn read(reader: &Reader, node: &Node) -> Option<Annotation> {
 ///
 /// `format` est le format du style, éventuellement écrasé par les propriétés
 /// `<italic>`, `<bold>`, `<underline>` et `<strike>` du texte.
-fn rich_text(node: &Node, style_format: &TextFormat) -> RichText {
+pub(super) fn rich_text(node: &Node, style_format: &TextFormat) -> RichText {
     let mut format = style_format.clone();
     for (name, value) in [
         ("bold", &mut format.bold),
@@ -157,7 +157,7 @@ fn rich_text(node: &Node, style_format: &TextFormat) -> RichText {
 }
 
 /// Vrai si l'annotation n'est pas marquée `<visible>0</visible>`.
-fn visible(node: &Node) -> bool {
+pub(super) fn visible(node: &Node) -> bool {
     node.child("visible")
         .and_then(Node::int_text)
         .is_none_or(|value| value != 0)
@@ -176,8 +176,9 @@ fn rehearsal_frame(node: &Node) -> RehearsalFrame {
 ///
 /// Le texte est reconstitué comme `Harmony::text()` : fondamentale (issue du
 /// `tpc`), `<name>` puis basse si l'accord est renversé. Le champ `kind`
-/// conserve le chiffrage interne (`normal`, `roman`, `nashville`) et les
-/// degrés ne sont pas modélisés.
+/// conserve le chiffrage interne (`normal`, `roman`, `nashville`) ; `name`,
+/// `function` et les `<degree>` restent disponibles pour l'export, qui les
+/// analyse comme `ParsedChord`.
 fn read_harmony(node: &Node, placement: Option<Placement>) -> Harmony {
     let mut harmony = Harmony::new(String::new());
     let mut name = String::new();
@@ -198,7 +199,13 @@ fn read_harmony(node: &Node, placement: Option<Placement>) -> Harmony {
                 );
             }
             "name" => name = child.trimmed_text(),
+            "function" => harmony.function = Some(child.trimmed_text()),
             "text" => custom_text = Some(child.text().trim().to_owned()),
+            "degree" => {
+                if let Some(degree) = read_harmony_degree(child) {
+                    harmony.degrees.push(degree);
+                }
+            }
             "harmonyType" => {
                 harmony.kind = match child.int_text() {
                     Some(0) | None => "normal",
@@ -208,9 +215,8 @@ fn read_harmony(node: &Node, placement: Option<Placement>) -> Harmony {
                 }
                 .to_owned();
             }
-            // TODO(parité): `<function>`, `<degree>`, `<extension>`,
-            // `<rootCase>`/`<baseCase>` et `<leftParen>`/`<rightParen>` ne sont
-            // pas modélisés ; le texte reste celui de `<name>`.
+            // TODO(parité): `<extension>`, `<rootCase>`/`<baseCase>` et
+            // `<leftParen>`/`<rightParen>` ne sont pas modélisés.
             _ => {}
         }
     }
@@ -226,8 +232,48 @@ fn read_harmony(node: &Node, placement: Option<Placement>) -> Harmony {
         }
         harmony.text = text;
     }
+    harmony.name = name;
     if let Some(placement) = placement {
         harmony.placement = placement;
     }
     harmony
+}
+
+/// Lit un `<degree>` d'accord (`degree-value`, `degree-alter`, `degree-type`).
+///
+/// Reproduit les bornes de `TRead::read(Harmony*)` : un degré hors de `1..=13`,
+/// une altération hors de `-2..=2` ou un type inconnu est ignoré.
+fn read_harmony_degree(node: &Node) -> Option<crate::model::HarmonyDegree> {
+    let mut value = 0u8;
+    let mut alter = 0i8;
+    let mut kind = None;
+    for child in node.children() {
+        match child.name() {
+            "degree-value" => {
+                value = child
+                    .int_text()
+                    .and_then(|value| u8::try_from(value).ok())
+                    .unwrap_or(0);
+            }
+            "degree-alter" => {
+                alter = child
+                    .int_text()
+                    .map_or(0, |value| value.clamp(-128, 127) as i8);
+            }
+            "degree-type" => {
+                kind = match child.trimmed_text().as_str() {
+                    "add" => Some(crate::model::HarmonyDegreeKind::Add),
+                    "alter" => Some(crate::model::HarmonyDegreeKind::Alter),
+                    "subtract" => Some(crate::model::HarmonyDegreeKind::Subtract),
+                    _ => None,
+                };
+            }
+            _ => {}
+        }
+    }
+    let kind = kind?;
+    if value == 0 || value > 13 || !(-2..=2).contains(&alter) {
+        return None;
+    }
+    Some(crate::model::HarmonyDegree { value, alter, kind })
 }

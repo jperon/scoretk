@@ -8,9 +8,9 @@ use super::tables;
 use super::xml::{parse_fraction, Node};
 use super::{annotations, chord, repeats, spanner, Reader, VoiceCtx};
 use crate::model::{
-    BarLine, BarLineType, Breath, BreathType, ChordRestKind, Clef, ClefType, Fraction, GraceChord,
-    Key, KeyMode, KeySig, Measure, Segment, SegmentItem, SegmentType, StemDirection, TimeSig,
-    Track, VOICES,
+    Annotation, BarLine, BarLineType, Breath, BreathType, ChordRestKind, Clef, ClefType, Fraction,
+    GraceChord, Key, KeyMode, KeySig, Measure, Segment, SegmentItem, SegmentType, StemDirection,
+    TimeSig, Track, VOICES,
 };
 
 /// Lit une mesure et renvoie son tick de fin.
@@ -173,6 +173,17 @@ fn read_voice(
             "Dynamic" | "Expression" | "Tempo" | "StaffText" | "SystemText" | "Text"
             | "RehearsalMark" | "Harmony" | "Fermata" | "InstrumentChange" => {
                 if let Some(annotation) = annotations::read(reader, child) {
+                    // `Segment::add` enregistre l'instrument d'un changement au
+                    // tick du segment (`part->setInstrument`).
+                    if let Annotation::InstrumentChange(change) = &annotation {
+                        if let Some(instrument) = &change.instrument {
+                            let part_id = reader.score.staves[staff].part;
+                            reader
+                                .score
+                                .part_mut(part_id)
+                                .set_instrument_at(ctx.tick, instrument.clone());
+                        }
+                    }
                     segment_mut(
                         &mut reader.score.measures[index],
                         SegmentType::ChordRest,
@@ -182,10 +193,10 @@ fn read_voice(
                 }
             }
             // TODO(parité): `<Symbol>`, `<FretDiagram>`, `<FiguredBass>`,
-            // `<TremoloBar>`, `<Arpeggio>`, `<InstrumentChange>`, `<StaffState>`,
-            // `<Sticking>`, `<PlayTechAnnotation>`, `<Image>`, `<Ambitus>`,
-            // `<Beam>`, `<Segment>`, `<LayoutBreak>` : sans effet sur le noyau
-            // musical lu ici (le tick n'avance pas).
+            // `<TremoloBar>`, `<Arpeggio>`, `<StaffState>`, `<Sticking>`,
+            // `<PlayTechAnnotation>`, `<Image>`, `<Ambitus>`, `<Beam>`,
+            // `<Segment>`, `<LayoutBreak>` : sans effet sur le noyau musical
+            // lu ici (le tick n'avance pas).
             _ => {}
         }
     }
@@ -259,14 +270,20 @@ fn read_clef(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
         clef.transposed = clef.concert;
     }
 
-    // Avant 4.1, l'en-tête de mesure est deviné : une clef au début de la
-    // mesure qui ne suit aucune armure ni métrique est une clef d'en-tête.
+    // Avant 4.1, l'en-tête de mesure est deviné (`readVoice`) : au début de la
+    // mesure, la première clef d'une voix est une clef d'en-tête même si une
+    // autre portée a déjà posé l'armure ou la métrique ; ensuite, seule une
+    // clef qui ne suit aucune armure ni métrique en est une.
     let measure = &reader.score.measures[ctx.measure];
-    let header = ctx.tick == measure.start_tick
-        && !measure.segments.iter().any(|segment| {
-            segment.tick == measure.start_tick
-                && (segment.kind.is_key_sig_type() || segment.kind.is_time_sig_type())
-        });
+    let voice_has_segment = measure
+        .segments
+        .iter()
+        .any(|segment| segment.tick == measure.start_tick && segment.element(ctx.track).is_some());
+    let has_key_or_time = measure.segments.iter().any(|segment| {
+        segment.tick == measure.start_tick
+            && (segment.kind.is_key_sig_type() || segment.kind.is_time_sig_type())
+    });
+    let header = ctx.tick == measure.start_tick && (!voice_has_segment || !has_key_or_time);
     let kind = if header {
         SegmentType::HeaderClef
     } else {

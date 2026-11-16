@@ -53,6 +53,7 @@ const EXPECTED_CONFORMANT: &[&str] = &[
     "part-textlines",
     "partExclusion",
     "repeat65",
+    "repeat66",
     "repeat68",
     "repeat69",
     "tenuto_accent",
@@ -67,19 +68,33 @@ const EXPECTED_CONFORMANT: &[&str] = &[
 /// Fichiers du corpus 3.x dont la conversion est identique à la référence
 /// après normalisation (voir `docs/agents/ecarts-noyau.md`).
 const EXPECTED_CONFORMANT_V3: &[&str] = &[
+    "Beam-CrossM1",
+    "barlinedelete",
+    "change",
+    "clef-1",
     "copypaste_tuplet_01",
+    "grace",
+    "keysig_78216",
     "lyricsline01",
+    "measure-4",
     "repeat01",
     "repeat06",
     "repeat07",
     "repeat11",
     "repeat20",
     "repeat39",
+    "selectionfilter1",
     "testBreaksPage",
+    "testChordSymbols",
     "testHairpinDynamics",
+    "testHarmony6",
+    "testMultiInstrumentPart3",
     "testTboxWords1",
     "testTuplets8",
     "testWedge4",
+    "timesig-05",
+    "undoResequenceMeasure",
+    "voices",
 ];
 
 /// Éléments dont le sous-arbre entier est ignoré.

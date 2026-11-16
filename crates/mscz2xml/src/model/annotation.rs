@@ -388,14 +388,46 @@ impl InstrumentChange {
 pub struct Harmony {
     /// Texte affiché (`"Cm7"`, `"F/A"`…).
     pub text: String,
+    /// Suffixe écrit dans `<name>` (`"m7"`, `"7"`, `"m(add9)"`…), sans la
+    /// fondamentale ni la basse.
+    ///
+    /// C'est lui que MuseScore analyse pour retrouver le `<kind>` MusicXML.
+    pub name: String,
     /// Tpc de la fondamentale, ou [`super::note::tpc::INVALID`].
     pub root_tpc: i8,
     /// Tpc de la basse, si l'accord est renversé.
     pub bass_tpc: Option<i8>,
-    /// Type d'accord (chiffrage interne).
+    /// Type de chiffrage MuseScore (`<harmonyType>`) : `"normal"`, `"roman"`
+    /// ou `"nashville"`.
     pub kind: String,
+    /// Fonction écrite (`<function>`), pour un chiffrage de Nashville.
+    pub function: Option<String>,
+    /// Degrés explicites (`<degree>`), en plus de ceux du nom.
+    pub degrees: Vec<HarmonyDegree>,
     /// Placement.
     pub placement: Placement,
+}
+
+/// Degré d'un accord chiffré (`<degree>` de MuseScore).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HarmonyDegree {
+    /// Degré (1 à 13).
+    pub value: u8,
+    /// Altération (-2 à 2).
+    pub alter: i8,
+    /// Sens du degré (`degree-type`).
+    pub kind: HarmonyDegreeKind,
+}
+
+/// Sens d'un [`HarmonyDegree`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HarmonyDegreeKind {
+    /// Degré ajouté (`add`).
+    Add,
+    /// Degré altéré (`alter`).
+    Alter,
+    /// Degré retiré (`subtract`).
+    Subtract,
 }
 
 impl Harmony {
@@ -403,9 +435,12 @@ impl Harmony {
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
+            name: String::new(),
             root_tpc: super::note::tpc::INVALID,
             bass_tpc: None,
-            kind: String::new(),
+            kind: "normal".to_owned(),
+            function: None,
+            degrees: Vec::new(),
             placement: Placement::Above,
         }
     }

@@ -271,13 +271,25 @@ impl GraceChord {
 /// Silence.
 ///
 /// Correspond à `Rest` dans `engraving/dom/rest.h`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rest {
     /// Vrai pour le silence qui occupe toute la mesure
     /// (`DurationType::Measure`).
     pub full_measure: bool,
     /// Vrai pour un silence « gap » qui ne compte pas dans la mesure.
     pub gap: bool,
+    /// Vrai si le silence est visible (`print-object="no"` sinon).
+    pub visible: bool,
+}
+
+impl Default for Rest {
+    fn default() -> Self {
+        Self {
+            full_measure: false,
+            gap: false,
+            visible: true,
+        }
+    }
 }
 
 /// Contenu rythmique d'un accord ou d'un silence.
@@ -349,6 +361,7 @@ impl ChordRest {
             kind: ChordRestKind::Rest(Rest {
                 full_measure,
                 gap: false,
+                visible: true,
             }),
         }
     }

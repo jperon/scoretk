@@ -289,6 +289,20 @@ impl Reader {
             if let Some(staff_type) = staff_element.child("StaffType") {
                 staff.lines = staff_lines(staff_type);
             }
+            if let Some(value) = staff_element.child("barLineSpan").and_then(Element::int) {
+                staff.bar_line_span = value != 0;
+            }
+            for bracket in staff_element.children_named("bracket") {
+                let kind = bracket.attr_i64("type").unwrap_or(-1);
+                if kind < 0 {
+                    continue;
+                }
+                staff.brackets.push(crate::model::StaffBracket {
+                    kind: kind.clamp(0, 127) as i8,
+                    span: bracket.attr_i64("span").unwrap_or(0).max(0) as usize,
+                    visible: bracket.attr_i64("visible").unwrap_or(1) != 0,
+                });
+            }
             staff.default_clef = if has_default_clef(staff_element) {
                 read_default_clef(staff_element)
             } else {
@@ -467,6 +481,8 @@ impl Reader {
         // `Score::pages()` : un `<LayoutBreak>` de type `page` place l'élément
         // qui le porte sur la page suivante.
         let mut page = 1u32;
+        // Un saut de section porte sur la mesure suivante.
+        let mut section_break = false;
         for child in &element.children {
             match child.name.as_str() {
                 "Measure" => {
@@ -489,20 +505,24 @@ impl Reader {
                         continue;
                     }
                     self.read_measure(child, staff_index, measure_index)?;
+                    if section_break {
+                        self.score.measures[measure_index].section_break_before = true;
+                    }
+                    section_break = Self::has_section_break(child);
                     measure_index += 1;
                 }
-                // TODO(parité): HBox/TBox/FBox (cadres : ils changent la
-                // numérotation affichée mais pas le tick musical). Les textes de
-                // `TBox` sont exportés en `<words>` par MuseScore
-                // (`tboxTextAsWords`), ils ne sont pas encore lus.
+                // Les cadres changent la numérotation affichée mais pas le
+                // tick musical ; un saut de section y porte sur la mesure
+                // suivante. MuseScore les écrit sous la première portée
+                // (`StaffRead::readStaff`).
                 "VBox" => {
-                    // Les cadres sont des objets de partition : MuseScore les
-                    // écrit sous la première portée (`StaffRead::readStaff`).
+                    section_break |= Self::has_section_break(child);
                     if staff_index == 0 {
                         self.read_vbox(child, page);
                     }
                 }
                 "TBox" => {
+                    section_break |= Self::has_section_break(child);
                     // Texte de cadre exporté en `<words>` au début de la mesure
                     // qui suit (`tboxTextAsWords`) ; un cadre suivi d'un saut
                     // de page est au-dessous du système précédent.
@@ -512,6 +532,9 @@ impl Reader {
                             self.score.add_tbox_text(text);
                         }
                     }
+                }
+                "HBox" | "FBox" => {
+                    section_break |= Self::has_section_break(child);
                 }
                 "tick" => {}
                 _ => {}
@@ -525,6 +548,14 @@ impl Reader {
             }
         }
         Ok(())
+    }
+
+    /// Vrai si un cadre ou une mesure porte un saut de section.
+    fn has_section_break(element: &Element) -> bool {
+        element
+            .child("LayoutBreak")
+            .and_then(|layout_break| layout_break.child("subtype"))
+            .is_some_and(|subtype| subtype.text() == "section")
     }
 
     /// Lit les textes d'un cadre vertical (`VBox`), exportés en `<credit>`.
@@ -782,6 +813,7 @@ impl Reader {
                     let ticks = parsed.ticks;
                     let duration = parsed.duration;
                     let gap = parsed.gap;
+                    let visible = parsed.visible;
                     let lyrics = parsed.lyrics;
 
                     let mut chord_rest = ChordRest::rest(duration);
@@ -789,10 +821,9 @@ impl Reader {
                     chord_rest.tuplet = tuplet;
                     chord_rest.lyrics = lyrics;
                     chord_rest.beam_direction = pending_beam.take();
-                    if gap {
-                        if let Some(rest) = chord_rest.rest_mut() {
-                            rest.gap = true;
-                        }
+                    if let Some(rest) = chord_rest.rest_mut() {
+                        rest.gap = gap;
+                        rest.visible = visible;
                     }
                     self.insert_item(
                         measure_index,
@@ -1084,7 +1115,8 @@ impl Reader {
                         .child("bass")
                         .and_then(Element::int)
                         .and_then(|value| i8::try_from(value).ok());
-                    harmony.kind = name;
+                    harmony.name = name;
+                    harmony.function = child.child("function").map(|node| node.text().to_owned());
                     harmony.placement = placement(child.child("placement"));
                     if let Some(text) = child.child("text") {
                         harmony.text = text.text.clone();
@@ -1259,6 +1291,7 @@ impl Reader {
         let mut dots = 0u8;
         let mut explicit = None;
         let mut gap = false;
+        let mut visible = true;
         let mut lyrics = Vec::new();
 
         for child in &element.children {
@@ -1275,6 +1308,7 @@ impl Reader {
                 }
                 "duration" => explicit = child.fraction(),
                 "gap" => gap = child.int().unwrap_or(0) != 0,
+                "visible" => visible = child.int().unwrap_or(1) != 0,
                 "Lyrics" => lyrics.push(read_lyrics(child, self.score.style.lyrics_placement)),
                 "Spanner" => notations::read_spanner(self, child, tick, track),
                 _ => {}
@@ -1302,6 +1336,7 @@ impl Reader {
             ticks,
             explicit_ticks: explicit,
             gap,
+            visible,
             lyrics,
         }
     }
@@ -1703,6 +1738,7 @@ struct ParsedRest {
     /// `<duration>` explicite, s'il diffère de la figure.
     explicit_ticks: Option<Fraction>,
     gap: bool,
+    visible: bool,
     lyrics: Vec<Lyrics>,
 }
 

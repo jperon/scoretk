@@ -10,8 +10,8 @@ use crate::model::{
     GraceChord, GraceType, Harmony, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
     LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteId, Part, PartId, Placement, RehearsalFrame,
     RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor,
-    SpannerType, Staff, StaffId, StaffText, SwingParameters, SwingUnit, SystemText, TboxText,
-    Tempo, TempoKind, TextLineInfo, TimeSig, Track, Transpose, Tuplet,
+    SpannerType, Staff, StaffBracket, StaffId, StaffText, SwingParameters, SwingUnit, SystemText,
+    TboxText, Tempo, TempoKind, TextLineInfo, TimeSig, Track, Transpose, Tuplet,
 };
 
 use super::{export_musicxml, export_musicxml_with, ExportOptions};
@@ -130,6 +130,7 @@ fn piano_instrument() -> Instrument {
         short_name: "Pno.".to_owned(),
         track_name: "Piano".to_owned(),
         transpose: None,
+        midi_channel: None,
         midi_program: Some(0),
         volume: None,
         pan: None,
@@ -293,6 +294,12 @@ fn partie_a_deux_portees() {
     score.part_mut(part_id).instrument = piano_instrument();
     let first = score.add_staff(part_id);
     let second = score.add_staff_with(part_id, Staff::new(part_id));
+    // Accolade implicite du piano, comme l'instrument du corpus.
+    score.staff_mut(first).brackets.push(StaffBracket {
+        kind: 1,
+        span: 2,
+        visible: true,
+    });
     let first_track = Track::new(first, 0);
     let second_track = Track::new(second, 0);
 
@@ -596,7 +603,8 @@ fn accords_chiffres_nuances_et_textes() {
     let segment = measure.segments.last_mut().expect("segment");
     let mut harmony = Harmony::new("Cm7");
     harmony.root_tpc = tpc::C;
-    harmony.kind = "minor-seventh".to_owned();
+    harmony.name = "m7".to_owned();
+    harmony.kind = "normal".to_owned();
     segment.add_annotation(track, Annotation::Harmony(harmony));
     let mut dynamic = crate::model::Dynamic::new("mf");
     dynamic.velocity = Some(80);
@@ -610,7 +618,7 @@ fn accords_chiffres_nuances_et_textes() {
     let xml = export_musicxml(&score).expect("export");
     assert!(xml.contains("<harmony print-frame=\"no\">"));
     assert!(xml.contains("<root-step>C</root-step>"));
-    assert!(xml.contains("<kind text=\"Cm7\">minor-seventh</kind>"));
+    assert!(xml.contains("<kind text=\"m7\">minor-seventh</kind>"));
     assert!(xml.contains("<direction placement=\"below\">"));
     assert!(xml.contains("<mf/>"));
     assert!(xml.contains("<sound dynamics=\"88.89\"/>"));
@@ -665,6 +673,7 @@ fn transposition_et_concert_pitch() {
         short_name: "Bb Cl.".to_owned(),
         track_name: "B♭ Clarinet".to_owned(),
         transpose: Some(Transpose::new(-1, -2)),
+        midi_channel: None,
         midi_program: Some(71),
         volume: None,
         pan: None,
@@ -1076,6 +1085,7 @@ fn corpus_linked_ties() {
         short_name: "Fl.".to_owned(),
         track_name: "Flute".to_owned(),
         transpose: None,
+        midi_channel: None,
         midi_program: Some(73),
         volume: None,
         pan: None,
@@ -1181,6 +1191,12 @@ fn corpus_tenuto_accent() {
     score.part_mut(part_id).instrument = piano_instrument();
     let first = score.add_staff(part_id);
     let second = score.add_staff_with(part_id, Staff::new(part_id));
+    // Accolade implicite du piano, comme l'instrument du corpus.
+    score.staff_mut(first).brackets.push(StaffBracket {
+        kind: 1,
+        span: 2,
+        visible: true,
+    });
     let first_track = Track::new(first, 0);
     let second_track = Track::new(second, 0);
 
@@ -1190,6 +1206,7 @@ fn corpus_tenuto_accent() {
     clefs.set_element(second_track, SegmentItem::Clef(Clef::new(ClefType::F)));
     measure.add_segment(clefs);
     ajouter_armure(&mut score, &mut measure, first_track, 0, KeyMode::Unknown);
+    ajouter_armure(&mut score, &mut measure, second_track, 0, KeyMode::Unknown);
     ajouter_indication_mesure(&mut score, &mut measure, first_track, 4, 4);
 
     let note = score.add_note(Note::new(65, tpc::F));
@@ -1242,6 +1259,7 @@ fn corpus_paroles() {
         short_name: String::new(),
         track_name: "Voice".to_owned(),
         transpose: None,
+        midi_channel: None,
         midi_program: Some(52),
         volume: None,
         pan: None,
@@ -2060,4 +2078,110 @@ fn swing_de_texte_systeme() {
          <second>3</second>\n            <swing-type>eighth</swing-type>\n            \
          </swing>\n          </sound>"
     ));
+}
+
+#[test]
+fn parties_multi_instruments() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Flute", "Fl."));
+    let mut flute = piano_instrument();
+    flute.id = "wind.flutes.flute".to_owned();
+    flute.track_name = "Flute".to_owned();
+    flute.midi_program = Some(73);
+    score.part_mut(part_id).instrument = flute.clone();
+    let mut oboe = flute;
+    oboe.id = "wind.reed.oboe".to_owned();
+    oboe.track_name = "Oboe".to_owned();
+    oboe.midi_program = Some(68);
+    score
+        .part_mut(part_id)
+        .set_instrument_at(Fraction::new(1, 2), oboe);
+    let staff = score.add_staff(part_id);
+    let track = Track::new(staff, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::half(),
+        &[(60, tpc::C)],
+    );
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::new(1, 2),
+        Duration::half(),
+        &[(62, tpc::D)],
+    );
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<score-instrument id=\"P1-I2\">"));
+    assert!(xml.contains("<instrument-name>Oboe</instrument-name>"));
+    assert!(xml.contains("<instrument-sound>wind.reed.oboe</instrument-sound>"));
+    assert!(xml.contains("<midi-instrument id=\"P1-I2\">"));
+    assert!(xml.contains("<midi-channel>2</midi-channel>"));
+    assert!(xml.contains("<midi-program>69</midi-program>"));
+    assert!(xml.contains("<instruments>2</instruments>"));
+    assert!(xml.contains("<instrument id=\"P1-I1\"/>"));
+    assert!(xml.contains("<instrument id=\"P1-I2\"/>"));
+}
+
+#[test]
+fn numerotation_apres_saut_de_section() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    for index in 0..3 {
+        let start = Fraction::from_integer(index as i64);
+        let mut measure = ajouter_mesure(index, start, Fraction::ONE, Fraction::ONE);
+        if index == 1 {
+            measure.section_break_before = true;
+        }
+        ajouter_accord(
+            &mut score,
+            &mut measure,
+            track,
+            start,
+            Duration::whole(),
+            &[(60, tpc::C)],
+        );
+        score.add_measure(measure);
+    }
+
+    let xml = export_musicxml(&score).expect("export");
+    // La deuxième mesure rouvre une section : elle repart à 1 et réécrit les
+    // divisions, la troisième suit.
+    assert_eq!(xml.matches("<measure number=\"1\">").count(), 2);
+    assert!(xml.contains("<measure number=\"2\">"));
+    assert_eq!(xml.matches("<divisions>").count(), 2);
+}
+
+#[test]
+fn alteration_d_avertissement() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let ids = ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(61, tpc::C)],
+    );
+    let mut accidental = Accidental::new(AccidentalType::Sharp);
+    accidental.user = true;
+    score.note_mut(ids[0]).accidental = Some(accidental);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<accidental cautionary=\"yes\" parentheses=\"no\">sharp</accidental>"));
 }

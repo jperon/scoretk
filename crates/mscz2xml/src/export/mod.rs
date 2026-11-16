@@ -21,6 +21,7 @@ use crate::Result;
 
 mod beams;
 mod exportmusicxml;
+mod harmony;
 mod layout;
 mod notations;
 mod nuances;

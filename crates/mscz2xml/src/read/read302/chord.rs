@@ -38,15 +38,16 @@ pub(crate) fn read_chord_rest(
     let mut grace: Option<GraceType> = None;
     let mut slash = false;
     let mut stem = StemDirection::Auto;
-    let mut staff_move = 0i8;
     let mut small = false;
     let mut beam = BeamMode::Auto;
     let mut lyrics = Vec::new();
     let mut articulations = Vec::new();
+    let mut staff_move = 0i8;
     let mut ornaments = Vec::new();
     let mut tremolo = None;
     let mut arpeggio = None;
     let mut chord_line = None;
+    let mut visible = true;
 
     for child in node.children() {
         match child.name() {
@@ -69,15 +70,8 @@ pub(crate) fn read_chord_rest(
             "grace32after" => grace = Some(GraceType::Grace32After),
             "StemSlash" => slash = true,
             "StemDirection" => stem = tables::stem_direction(&child.trimmed_text()),
-            "staffMove" => {
-                staff_move = child
-                    .int_text()
-                    .unwrap_or(0)
-                    .clamp(-4, 4)
-                    .try_into()
-                    .unwrap_or(0);
-            }
             "small" => small = child.int_text().unwrap_or(0) != 0,
+            "visible" => visible = child.int_text().unwrap_or(1) != 0,
             "BeamMode" => beam = tables::beam_mode(&child.trimmed_text()),
             "Lyrics" => lyrics.push(read_lyrics(child, reader.score.style.lyrics_placement)),
             "Articulation" => {
@@ -91,8 +85,13 @@ pub(crate) fn read_chord_rest(
             "Ornament" => ornaments.push(notations::read_ornament(child)),
             "Tremolo" => tremolo = notations::read_tremolo(child),
             "Arpeggio" => arpeggio = Some(notations::read_arpeggio(child)),
-            // TODO(parité): `<Stem>`, `<Hook>`, `<StemSlash>`,
-            // `<Tempo>`/`<Symbol>` d'accord ne sont pas modélisés.
+            "staffMove" => {
+                staff_move = child
+                    .int_text()
+                    .map_or(0, |value| value.clamp(-128, 127) as i8);
+            }
+            // TODO(parité): `<Stem>`, `<Hook>`, `<StemSlash>`, `<Tempo>`/
+            // `<Symbol>` d'accord ne sont pas modélisés.
             _ => {}
         }
     }
@@ -117,6 +116,7 @@ pub(crate) fn read_chord_rest(
         ChordRestKind::Rest(Rest {
             full_measure: duration.is_measure(),
             gap: false,
+            visible,
         })
     } else {
         let mut chord = Chord {
@@ -332,8 +332,8 @@ fn read_accidental(node: &Node) -> Accidental {
             }
             "bracket" => accidental.bracket = child.int_text().unwrap_or(0) != 0,
             "parens" | "parentheses" => accidental.parentheses = child.int_text().unwrap_or(0) != 0,
-            // TODO(parité): `<role>` (accidentals d'avertissement, exportés en
-            // `cautionary="yes"`) n'a pas d'équivalent dans le modèle.
+            // `AccidentalRole::USER` vaut 1 ; le rôle par défaut est AUTO.
+            "role" => accidental.user = child.int_text().is_some_and(|value| value == 1),
             "visible" => accidental.visible = child.int_text().unwrap_or(1) != 0,
             _ => {}
         }

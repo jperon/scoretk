@@ -214,6 +214,9 @@ impl Reader {
         // Numéro de page courant pour les textes de cadre : un `<LayoutBreak>`
         // de type `page` place l'élément qui le porte sur la page suivante.
         let mut page = 1u32;
+        // Un saut de section porte sur la mesure suivante : MuseScore y
+        // recommence la numérotation à 1 (et les `<attributes>` MusicXML).
+        let mut section_break = false;
         for child in node.children() {
             match child.name() {
                 "Measure" => {
@@ -233,6 +236,8 @@ impl Reader {
                         continue;
                     }
                     let measure = self.ensure_measure(index, tick);
+                    self.score.measures[measure].section_break_before |= section_break;
+                    section_break = Self::has_section_break(child);
                     tick = measure::read_measure(self, measure, child, staff);
                     index += 1;
                 }
@@ -245,12 +250,14 @@ impl Reader {
                 // (`tboxTextAsWords`). Un cadre suivi d'un saut de page est
                 // au-dessous du système précédent.
                 "TBox" => {
+                    section_break |= Self::has_section_break(child);
                     let below = index > 0 && credits::page_break(child);
                     if let Some(text) = textlines::read_tbox(child, index, below) {
                         self.score.add_tbox_text(text);
                     }
                 }
                 "VBox" => {
+                    section_break |= Self::has_section_break(child);
                     // Les textes d'un `VBox` deviennent des `<credit>` ; les
                     // autres cadres n'en portent pas.
                     if staff == 0 {
@@ -258,7 +265,10 @@ impl Reader {
                     }
                 }
                 // TODO(parité): `<HBox>` et `<FBox>` ne portent pas de texte ;
-                // seuls leurs sauts de page comptent (voir plus bas).
+                // seuls leurs sauts de page et de section comptent.
+                "HBox" | "FBox" => {
+                    section_break |= Self::has_section_break(child);
+                }
                 _ => {}
             }
             // Un saut de page s'applique après l'élément qui le porte.
@@ -267,6 +277,13 @@ impl Reader {
                 self.score.style.page_count = self.score.style.page_count.max(page);
             }
         }
+    }
+
+    /// Vrai si un cadre ou une mesure porte un saut de section.
+    fn has_section_break(node: &Node) -> bool {
+        node.child("LayoutBreak")
+            .and_then(|layout_break| layout_break.child("subtype"))
+            .is_some_and(|subtype| subtype.trimmed_text() == "section")
     }
 
     /// Complète les silences multi-mesures d'un seul tenant.

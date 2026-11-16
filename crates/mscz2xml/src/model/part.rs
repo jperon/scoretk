@@ -29,6 +29,12 @@ pub struct Instrument {
     pub transpose: Option<Transpose>,
     /// Numéro de programme MIDI (0-127), si connu.
     pub midi_program: Option<u8>,
+    /// Canal MIDI assigné au premier canal de l'instrument (`<midiChannel>`,
+    /// base zéro), tel que lu dans le fichier.
+    ///
+    /// Absent quand le fichier ne fixe pas de canal ; MuseScore attribue alors
+    /// un canal libre dans l'ordre des instruments (`rebuildMidiMapping`).
+    pub midi_channel: Option<u8>,
     /// Volume du canal MIDI (`Channel::controller` 7), 0-127.
     ///
     /// Absent quand le fichier ne règle pas le contrôleur 7 ; MuseScore retient
@@ -55,6 +61,7 @@ impl Instrument {
             short_name,
             transpose: None,
             midi_program: None,
+            midi_channel: None,
             volume: None,
             pan: None,
         }
@@ -158,6 +165,13 @@ pub struct Part {
     pub short_name: String,
     /// Instrument principal de la partie.
     pub instrument: Instrument,
+    /// Changements d'instrument, triés par tick.
+    ///
+    /// Correspond aux entrées supplémentaires de `Part::instruments()` dans
+    /// MuseScore : chaque `<InstrumentChange>` y ajoute son instrument au tick
+    /// du segment (`Segment::add`). L'export en tire `<score-instrument>`,
+    /// `<instruments>` et `<instrument>` par note.
+    pub instrument_changes: Vec<(Fraction, Instrument)>,
     /// Portées appartenant à la partie, dans l'ordre.
     pub staves: Vec<StaffId>,
 }
@@ -181,9 +195,66 @@ impl Part {
             },
             long_name,
             short_name,
+            instrument_changes: Vec::new(),
             staves: Vec::new(),
         }
     }
+
+    /// Enregistre un instrument au tick d'un changement d'instrument.
+    ///
+    /// Comme `InstrumentList::setInstrument`, une entrée existante au même tick
+    /// est remplacée ; les changements restent triés par tick.
+    pub fn set_instrument_at(&mut self, tick: Fraction, instrument: Instrument) {
+        match self
+            .instrument_changes
+            .binary_search_by(|(existing, _)| existing.cmp(&tick))
+        {
+            Ok(index) => self.instrument_changes[index].1 = instrument,
+            Err(index) => self.instrument_changes.insert(index, (tick, instrument)),
+        }
+    }
+
+    /// Instrument en vigueur à un tick donné (`Part::instrument`).
+    ///
+    /// C'est le dernier changement dont le tick ne dépasse pas `tick`, ou
+    /// l'instrument principal.
+    pub fn instrument_at(&self, tick: Fraction) -> &Instrument {
+        self.instrument_changes
+            .iter()
+            .rev()
+            .find(|(change, _)| *change <= tick)
+            .map_or(&self.instrument, |(_, instrument)| instrument)
+    }
+
+    /// Instruments de la partie, principal puis changements dans l'ordre des
+    /// ticks (`Part::instruments()`).
+    pub fn instruments(&self) -> impl Iterator<Item = &Instrument> {
+        std::iter::once(&self.instrument).chain(
+            self.instrument_changes
+                .iter()
+                .map(|(_, instrument)| instrument),
+        )
+    }
+
+    /// Rang d'un instrument dans [`Self::instruments`], pour son identifiant
+    /// `P<n>-I<rang+1>`.
+    pub fn instrument_index_at(&self, tick: Fraction) -> usize {
+        self.instrument_changes
+            .iter()
+            .filter(|(change, _)| *change <= tick)
+            .count()
+    }
+}
+
+/// Accolade ou crochet d'une portée (`<bracket>`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StaffBracket {
+    /// Type MuseScore : 0 crochet, 1 accolade, 2 trait, 3 crochet carré.
+    pub kind: i8,
+    /// Nombre de portées couvertes.
+    pub span: usize,
+    /// Vrai si l'accolade est visible.
+    pub visible: bool,
 }
 
 /// Portée d'une partie.
@@ -203,6 +274,12 @@ pub struct Staff {
     /// Étirement temporel de la portée (`Staff::timeStretch`, indication de
     /// mesure locale). Vaut un hors indication locale.
     pub time_stretch: Fraction,
+    /// Barre de mesure commune avec la portée suivante de la partie
+    /// (`Staff::barLineSpan()`), pour `group-barline`.
+    pub bar_line_span: bool,
+    /// Accolades et crochets de la portée (`<bracket>`), dans l'ordre des
+    /// colonnes.
+    pub brackets: Vec<StaffBracket>,
     /// Clef par défaut de la portée (`Staff::defaultClefType()`).
     ///
     /// MuseScore s'en sert quand aucun `<Clef>` n'ouvre la partition : la mise
@@ -219,6 +296,8 @@ impl Staff {
             part,
             lines: 5,
             small: false,
+            bar_line_span: false,
+            brackets: Vec::new(),
             time_stretch: Fraction::ONE,
             default_clef: Clef::new(ClefType::G),
         }

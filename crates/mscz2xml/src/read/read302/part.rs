@@ -7,7 +7,7 @@
 use super::tables;
 use super::xml::Node;
 use super::Reader;
-use crate::model::{Clef, ClefType, Instrument, Part, Staff, Transpose};
+use crate::model::{Clef, ClefType, Instrument, Part, Staff, StaffBracket, Transpose};
 
 /// Lit un `<Part>` : portées déclarées, noms et instrument principal.
 pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
@@ -79,6 +79,22 @@ pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
         {
             staff.small = true;
         }
+        // `<barLineSpan>` : la valeur 1 vaut « barre commune avec la portée
+        // suivante », comme `TRead::read(Staff*)`.
+        if let Some(value) = staff_node.child("barLineSpan").and_then(Node::int_text) {
+            staff.bar_line_span = value != 0;
+        }
+        for bracket in staff_node.children_named("bracket") {
+            let kind = bracket.attr_i32("type").unwrap_or(-1);
+            if kind < 0 {
+                continue;
+            }
+            staff.brackets.push(StaffBracket {
+                kind: kind.clamp(0, 127) as i8,
+                span: bracket.attr_i32("span").unwrap_or(0).max(0) as usize,
+                visible: bracket.attr_i32("visible").unwrap_or(1) != 0,
+            });
+        }
         // `<defaultClef>` fixe les deux clefs ; les variantes concert et
         // transposée une seule, en partant de sol/sol comme `ClefTypeList`.
         let mut declared_clef = false;
@@ -111,8 +127,9 @@ pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
         reader.score.add_staff_with(part_id, staff);
         declared += 1;
     }
-    // TODO(parité): `<bracket>`, `<barLineSpan>` et les instruments secondaires
-    // (`<Instrument>` successifs / `<InstrumentChange>`) ne sont pas modélisés.
+    // TODO(parité): les instruments secondaires déclarés directement dans la
+    // partie (`<Instrument>` successifs) ne sont pas modélisés ; les
+    // changements d'instrument le sont par `instruments.rs`.
 }
 
 pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
@@ -125,15 +142,15 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         // MuseScore 3.6.x écrivait des identifiants d'instrument erronés.
         attribute_id = fix_instrument_id(&attribute_id, &track_name);
     }
-    // TODO(parité): pour les versions antérieures à 3.02, le C++ dérive
-    // l'identifiant du nom de piste (`Instrument::updateInstrumentId`).
-
     let musicxml_id = node
         .child("instrumentId")
         .map(Node::trimmed_text)
         .unwrap_or_default();
     let mut instrument = Instrument {
         id: if musicxml_id.is_empty() {
+            // L'identifiant d'attribut n'est un identifiant MusicXML que pour
+            // les fichiers qui n'en écrivent pas ; il sert surtout de repli
+            // pour `fixInstrumentId`.
             attribute_id
         } else {
             musicxml_id
@@ -149,6 +166,7 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         track_name,
         transpose: None,
         midi_program: None,
+        midi_channel: None,
         volume: None,
         pan: None,
     };
@@ -173,6 +191,34 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
                 break;
             }
         }
+    }
+
+    // Canal MIDI du premier canal sonore (`<Channel><midiChannel>`, base zéro).
+    instrument.midi_channel = node
+        .children_named("Channel")
+        .next()
+        .and_then(|channel| channel.child("midiChannel"))
+        .and_then(Node::int_text)
+        .and_then(|value| u8::try_from(value.clamp(0, 127)).ok());
+
+    // Les partitions antérieures à 3.6 ne stockent ni identifiant MusicXML ni
+    // programme par défaut : `Instrument::updateInstrumentId` les retrouve dans
+    // le catalogue à partir des noms. `read(Instrument*)` complète ensuite un
+    // programme absent, y compris en 3.6.
+    let (recognized_id, recognized_program) = crate::read::instruments::recognize(
+        &instrument.id,
+        [
+            instrument.track_name.as_str(),
+            instrument.long_name.as_str(),
+            instrument.short_name.as_str(),
+        ],
+        instrument.midi_program.map(i16::from),
+    );
+    if reader.version.as_u32() != 302 {
+        instrument.id = recognized_id;
+    }
+    if instrument.midi_program.is_none() {
+        instrument.midi_program = recognized_program.and_then(|value| u8::try_from(value).ok());
     }
 
     // Réglages de canal : contrôleur 7 (volume) et 10 (panoramique).
