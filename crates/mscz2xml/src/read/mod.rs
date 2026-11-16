@@ -70,4 +70,14 @@ mod tests {
             "version 3.02 lue par le lecteur 3.x"
         );
     }
+
+    #[test]
+    fn accepte_les_versions_3_et_4() {
+        for version in ["3.02", "4.00"] {
+            assert!(
+                read_score(&container(version)).is_ok(),
+                "version {version} lue"
+            );
+        }
+    }
 }
