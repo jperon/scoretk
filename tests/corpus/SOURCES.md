@@ -60,6 +60,6 @@ sources by `scripts/gen-references.sh` using MuseScore:
 
 ## Files that fail to export
 
-Fichiers retirés du corpus après échec d'export :
-
-- (aucun)
+Export test run on 2026-11-16 with MuseScore 4.7.4 : les 32 fichiers
+ci-dessus ont tous été exportés correctement (`scripts/gen-references.sh`,
+code de sortie 0). Aucun fichier n'a dû être retiré.
