@@ -22,8 +22,8 @@
 //! portées, ligatures d'ornements) retombent sur les règles ci-dessus.
 
 use crate::model::{
-    Chord, ClefType, Fraction, Measure, Note, Score, SegmentItem, SegmentType,
-    StaffId, StemDirection, Tick, Track,
+    Chord, ClefType, Fraction, Measure, Note, Score, SegmentItem, SegmentType, StaffId,
+    StemDirection, Tick, Track,
 };
 
 use super::pitch;
@@ -96,7 +96,12 @@ pub(crate) fn stem_up(
 /// Le C++ ignore les éléments invisibles ; le modèle ne conserve pas la
 /// visibilité d'un accord ou d'un silence, on considère donc tout élément
 /// présent comme audible.
-fn has_other_voices(measure: &Measure, track: Track, start: Tick, actual_ticks: Fraction) -> bool {
+pub(crate) fn has_other_voices(
+    measure: &Measure,
+    track: Track,
+    start: Tick,
+    actual_ticks: Fraction,
+) -> bool {
     if !actual_ticks.is_positive() {
         return false;
     }
@@ -153,7 +158,7 @@ fn auto_up(
 
 /// `ChordLayout::computeAutoStemDirection` : compare les notes par paires en
 /// partant des extrêmes. Renvoie `1` (haut), `-1` (bas) ou `0` (milieu).
-fn auto_stem_direction(distances: &[i32]) -> i32 {
+pub(crate) fn auto_stem_direction(distances: &[i32]) -> i32 {
     let mut left = 0;
     let mut right = distances.len().saturating_sub(1);
     while left <= right && !distances.is_empty() {
@@ -171,6 +176,25 @@ fn auto_stem_direction(distances: &[i32]) -> i32 {
         return if net > 0 { 1 } else { -1 };
     }
     0
+}
+
+/// Distance à la ligne médiane de chaque note d'un accord, pour une position
+/// donnée (la clef peut changer au fil de la mesure).
+pub(crate) fn chord_distances(
+    score: &Score,
+    chord: &Chord,
+    tick: Tick,
+    staff: StaffId,
+    concert_pitch: bool,
+    transpose_chromatic: i32,
+) -> Vec<i32> {
+    let clef = active_clef(score, staff, tick, concert_pitch);
+    let offset = clef_pitch_offset(clef);
+    chord
+        .notes
+        .iter()
+        .map(|id| note_distance(score, *id, offset, concert_pitch, transpose_chromatic))
+        .collect()
 }
 
 /// Distance d'une note à la ligne médiane (`Note::line() - middleLine`).
@@ -194,7 +218,7 @@ fn written_pitch_and_tpc(note: &Note, concert_pitch: bool, transpose_chromatic: 
         (i32::from(note.pitch), note.tpc)
     } else {
         (
-            i32::from(note.pitch) + transpose_chromatic,
+            i32::from(note.pitch) - transpose_chromatic,
             if pitch::tpc_is_valid(note.tpc_transposed) {
                 note.tpc_transposed
             } else {
