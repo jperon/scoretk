@@ -11,8 +11,9 @@
 
 mod container;
 mod error;
+pub mod model;
 
-pub use container::{detect_version, MsczContainer, MscVersion};
+pub use container::{detect_version, MscVersion, MsczContainer};
 pub use error::Error;
 
 /// Résultat de la bibliothèque.
