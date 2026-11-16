@@ -1007,7 +1007,8 @@ impl Reader {
                         .child("bass")
                         .and_then(Element::int)
                         .and_then(|value| i8::try_from(value).ok());
-                    harmony.kind = name;
+                    harmony.name = name;
+                    harmony.function = child.child("function").map(|node| node.text().to_owned());
                     harmony.placement = placement(child.child("placement"));
                     if let Some(text) = child.child("text") {
                         harmony.text = text.text.clone();

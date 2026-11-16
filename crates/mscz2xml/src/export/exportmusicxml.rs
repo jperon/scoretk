@@ -25,13 +25,14 @@ use std::collections::BTreeSet;
 use crate::model::chord::ChordRestKind;
 use crate::model::{
     Accidental, AccidentalType, Annotation, Articulation, ArticulationAnchor, ArticulationType,
-    BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType, Harmony, Key,
-    KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part,
-    Placement, Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig,
-    TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
+    BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType, Key, KeyMode,
+    KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part, Placement,
+    Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig, TimeSigType,
+    Track, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::Result;
 
+use super::harmony;
 use super::layout;
 use super::nuances::{self, Nuances};
 use super::ottava;
@@ -666,7 +667,7 @@ impl<'a> Context<'a> {
                 if let SegmentItem::ChordRest(_) = item {
                     out.attr(false);
                     if annotation_track(segment, staff_id) == Some(track) {
-                        self.harmonies(out, segment, staff_id);
+                        self.harmonies(out, measure, segment, staff_id, track);
                         self.annotations(out, segment, staff_id, xml_staff);
                     }
                     nuances.start(self.score, out, segment, staff_id, xml_staff, track);
@@ -1305,9 +1306,12 @@ impl Context<'_> {
             }
         } else {
             let first = self.active_key(keysigs[0].1);
-            let single = keysigs
-                .iter()
-                .all(|(_, keysig)| self.active_key(keysig) == first);
+            // `keysigTimesig` n'écrit une armure commune que si toutes les
+            // portées en ont une, identique ; sinon chaque armure est numérotée.
+            let single = keysigs.len() == part.staves.len()
+                && keysigs
+                    .iter()
+                    .all(|(_, keysig)| self.active_key(keysig) == first);
             if single {
                 let keysig = keysigs[0].1;
                 self.keysig(out, 0, first, keysig.mode);
@@ -1570,14 +1574,40 @@ impl Context<'_> {
 // ----------------------------------------------------------------------
 
 impl Context<'_> {
-    /// Écrit les accords chiffrés du segment (`harmonies`).
-    fn harmonies(&self, out: &mut Out, segment: &Segment, staff_id: StaffId) {
+    /// Écrit les accords chiffrés du segment (`segmentHarmonies`, `harmonies`).
+    ///
+    /// MuseScore range un accord sans note dans un segment `ChordRest` vide ;
+    /// MusicXML impose de l'écrire avant la note suivante avec un `<offset>`.
+    /// On explore donc les segments suivants jusqu'au prochain élément de la
+    /// piste, comme `harmonies`.
+    fn harmonies(
+        &self,
+        out: &mut Out,
+        measure: &Measure,
+        segment: &Segment,
+        staff_id: StaffId,
+        track: Track,
+    ) {
+        self.segment_harmonies(out, segment, staff_id, Tick::ZERO);
+        for next in &measure.segments {
+            if !next.kind.is_chord_rest_type() || next.tick <= segment.tick {
+                continue;
+            }
+            if next.element(track).is_some() {
+                break;
+            }
+            self.segment_harmonies(out, next, staff_id, next.tick - segment.tick);
+        }
+    }
+
+    /// Écrit les accords d'un segment avec le décalage donné.
+    fn segment_harmonies(&self, out: &mut Out, segment: &Segment, staff_id: StaffId, offset: Tick) {
         for entry in &segment.annotations {
             if entry.track.staff() != staff_id {
                 continue;
             }
             if let Annotation::Harmony(harmony) = &entry.annotation {
-                write_harmony(out, harmony);
+                harmony::write(out, harmony, offset);
             }
         }
     }
@@ -2104,66 +2134,6 @@ fn accidental_name(kind: AccidentalType) -> Option<&'static str> {
     }
 }
 
-/// Écrit un accord chiffré (`harmony`).
-fn write_harmony(out: &mut Out, harmony: &Harmony) {
-    out.attr(false);
-    let mut attributes: Vec<(&str, String)> = Vec::new();
-    if harmony.placement == Placement::Below {
-        attributes.push(("placement", "below".to_owned()));
-    }
-    attributes.push(("print-frame", "no".to_owned()));
-    let borrowed = borrow_attributes(&attributes);
-
-    out.xml.start_element("harmony", &borrowed);
-
-    let text = if !harmony.text.is_empty() {
-        harmony.text.as_str()
-    } else {
-        harmony.kind.as_str()
-    };
-    let kind = musicxml_kind(&harmony.kind);
-
-    if pitch::tpc_is_valid(harmony.root_tpc) {
-        harmony_root(out, "root", harmony.root_tpc);
-        // TODO(parité): table complète `harmonyXmlKind` de MuseScore. Le
-        // modèle ne garde que le nom interne, sans correspondance MusicXML ;
-        // on retombe sur le texte comme MuseScore pour un accord non reconnu.
-        match kind {
-            Some(kind) if !text.is_empty() => {
-                out.xml.tag_with("kind", &[("text", text)], kind);
-            }
-            Some(kind) => out.xml.tag("kind", kind),
-            None if !text.is_empty() => {
-                out.xml.tag_with("kind", &[("text", text)], "");
-            }
-            None => out.xml.tag("kind", "none"),
-        }
-        if let Some(bass) = harmony.bass_tpc {
-            if pitch::tpc_is_valid(bass) {
-                harmony_root(out, "bass", bass);
-            }
-        }
-    } else if !text.is_empty() {
-        out.xml.tag_with("kind", &[("text", text)], "");
-    } else {
-        out.xml.tag("kind", "none");
-    }
-
-    out.xml.end_element();
-}
-
-/// Écrit `<root>` ou `<bass>` d'un accord chiffré.
-fn harmony_root(out: &mut Out, name: &str, tpc: i8) {
-    let alter = pitch::tpc_alter(tpc);
-    let step = pitch::tpc_step_name(tpc);
-    out.xml.start_element(name, &[]);
-    out.xml.tag(&format!("{name}-step"), &step.to_string());
-    if alter != 0 {
-        out.xml.tag(&format!("{name}-alter"), &alter.to_string());
-    }
-    out.xml.end_element();
-}
-
 // ----------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------
@@ -2219,58 +2189,6 @@ pub(crate) fn placement_name(placement: Placement) -> &'static str {
         Placement::Above => "above",
         Placement::Below => "below",
     }
-}
-
-/// Correspondance minimale entre nom interne d'accord et valeur MusicXML.
-///
-/// Le modèle ne conserve pas la sémantique du chiffrage : seuls les noms qui
-/// sont déjà des valeurs MusicXML sont reconnus.
-fn musicxml_kind(kind: &str) -> Option<&'static str> {
-    const KINDS: [&str; 39] = [
-        "major",
-        "minor",
-        "augmented",
-        "diminished",
-        "dominant",
-        "major-seventh",
-        "minor-seventh",
-        "diminished-seventh",
-        "augmented-seventh",
-        "half-diminished",
-        "major-minor",
-        "major-sixth",
-        "minor-sixth",
-        "dominant-ninth",
-        "major-ninth",
-        "minor-ninth",
-        "dominant-11th",
-        "major-11th",
-        "minor-11th",
-        "dominant-13th",
-        "major-13th",
-        "minor-13th",
-        "suspended-second",
-        "suspended-fourth",
-        "Neapolitan",
-        "Italian",
-        "French",
-        "German",
-        "pedal",
-        "power",
-        "Tristan",
-        "other",
-        "none",
-        "major-seventh-flat-five",
-        "major-seventh-sharp-five",
-        "major-seventh-sharp-eleventh",
-        "minor-seventh-flat-five",
-        "minor-seventh-sharp-five",
-        "minor-major",
-    ];
-    KINDS
-        .iter()
-        .find(|candidate| candidate.eq_ignore_ascii_case(kind))
-        .copied()
 }
 
 /// Texte brut d'un nom de partie, altérations remplacées comme MuseScore.

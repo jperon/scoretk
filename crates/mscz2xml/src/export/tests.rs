@@ -596,7 +596,8 @@ fn accords_chiffres_nuances_et_textes() {
     let segment = measure.segments.last_mut().expect("segment");
     let mut harmony = Harmony::new("Cm7");
     harmony.root_tpc = tpc::C;
-    harmony.kind = "minor-seventh".to_owned();
+    harmony.name = "m7".to_owned();
+    harmony.kind = "normal".to_owned();
     segment.add_annotation(track, Annotation::Harmony(harmony));
     let mut dynamic = crate::model::Dynamic::new("mf");
     dynamic.velocity = Some(80);
@@ -610,7 +611,7 @@ fn accords_chiffres_nuances_et_textes() {
     let xml = export_musicxml(&score).expect("export");
     assert!(xml.contains("<harmony print-frame=\"no\">"));
     assert!(xml.contains("<root-step>C</root-step>"));
-    assert!(xml.contains("<kind text=\"Cm7\">minor-seventh</kind>"));
+    assert!(xml.contains("<kind text=\"m7\">minor-seventh</kind>"));
     assert!(xml.contains("<direction placement=\"below\">"));
     assert!(xml.contains("<mf/>"));
     assert!(xml.contains("<sound dynamics=\"88.89\"/>"));

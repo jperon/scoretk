@@ -126,12 +126,16 @@ impl XmlWriter {
 }
 
 /// Échappe le contenu textuel d'un élément.
+///
+/// MuseScore échappe aussi les guillemets doubles (`XmlWriter::escape`) ; le
+/// corpus en contient dans des crédits et des paroles.
 fn escape_text_into(buffer: &mut String, text: &str) {
     for character in text.chars() {
         match character {
             '&' => buffer.push_str("&amp;"),
             '<' => buffer.push_str("&lt;"),
             '>' => buffer.push_str("&gt;"),
+            '"' => buffer.push_str("&quot;"),
             other => buffer.push(other),
         }
     }
@@ -175,10 +179,13 @@ mod tests {
     fn echappement() {
         let mut xml = XmlWriter::new();
         xml.tag("words", "a & b < c");
+        xml.tag("words", "dit \"bonjour\"");
         xml.tag_empty("x", &[("v", "\"quoted\"")]);
         assert_eq!(
             xml.finish(),
-            "<words>a &amp; b &lt; c</words>\n<x v=\"&quot;quoted&quot;\"/>\n"
+            "<words>a &amp; b &lt; c</words>\n\
+             <words>dit &quot;bonjour&quot;</words>\n\
+             <x v=\"&quot;quoted&quot;\"/>\n"
         );
     }
 }

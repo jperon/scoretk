@@ -70,8 +70,8 @@ pub mod text;
 pub mod tuplet;
 
 pub use annotation::{
-    text_style_defaults, Annotation, Dynamic, Harmony, InstrumentChange, Placement, RehearsalFrame,
-    RehearsalMark, StaffText, SystemText, Tempo,
+    text_style_defaults, Annotation, Dynamic, Harmony, HarmonyDegree, HarmonyDegreeKind,
+    InstrumentChange, Placement, RehearsalFrame, RehearsalMark, StaffText, SystemText, Tempo,
 };
 pub use chord::{
     Articulation, ArticulationAnchor, ArticulationType, BeamMode, Chord, ChordRest, ChordRestKind,
