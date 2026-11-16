@@ -13,8 +13,8 @@
 use super::dom::Element;
 use super::{placement, Reader};
 use crate::model::{
-    Fraction, Jump, Marker, MarkerType, Spanner, SpannerAnchor, SpannerType, Tick, Track,
-    VoltaInfo, VOICES,
+    BarLine, BarLineType, Fraction, Jump, Marker, MarkerType, Spanner, SpannerAnchor, SpannerType,
+    Tick, Track, VoltaInfo, VOICES,
 };
 
 /// Piste d'attache d'un marqueur ou d'un saut.
@@ -68,6 +68,31 @@ pub(super) fn read_jump(element: &Element, staff_index: usize) -> Jump {
         placement(element.child("placement")),
         measure_track(staff_index),
     )
+}
+
+/// Lit un `<BarLine>` enfant d'une voix (`TRead::read(BarLine*)`).
+///
+/// Les extensions (`span`, `spanFromOffset`, `spanToOffset`) servent à
+/// reconnaître les barres courtes et en tick à l'export.
+pub(super) fn read_bar_line(element: &Element) -> BarLine {
+    let mut bar_line = BarLine::default();
+    for child in &element.children {
+        match child.name.as_str() {
+            "subtype" => {
+                bar_line.kind =
+                    super::names::bar_line_type(child.text()).unwrap_or(BarLineType::Normal);
+            }
+            "span" => bar_line.span_staff = child.int().unwrap_or(0) != 0,
+            "spanFromOffset" => {
+                bar_line.span_from = child.int().unwrap_or(0).clamp(-128, 127) as i8;
+            }
+            "spanToOffset" => {
+                bar_line.span_to = child.int().unwrap_or(0).clamp(-128, 127) as i8;
+            }
+            _ => {}
+        }
+    }
+    bar_line
 }
 
 /// `<location>` relative d'une extrémité de spanner.

@@ -621,12 +621,8 @@ impl Reader {
                     self.insert_item(measure_index, kind, tick, track, SegmentItem::Clef(clef));
                 }
                 "BarLine" => {
-                    let kind = child
-                        .child("subtype")
-                        .map(Element::text)
-                        .and_then(names::bar_line_type)
-                        .unwrap_or(BarLineType::Normal);
-                    self.read_bar_line(measure_index, tick, track, kind);
+                    let bar_line = repeats::read_bar_line(child);
+                    self.read_bar_line(measure_index, tick, track, bar_line);
                 }
                 "Breath" => {
                     let kind = match child.child("symbol").map(Element::text) {
@@ -1120,7 +1116,8 @@ impl Reader {
         })
     }
 
-    fn read_bar_line(&mut self, measure_index: usize, tick: Tick, track: Track, kind: BarLineType) {
+    fn read_bar_line(&mut self, measure_index: usize, tick: Tick, track: Track, bar_line: BarLine) {
+        let kind = bar_line.kind;
         let (measure_start, measure_len) = {
             let measure = &self.score.measures[measure_index];
             (measure.start_tick, measure.len)
@@ -1139,7 +1136,6 @@ impl Reader {
             SegmentType::EndBarLine
         };
 
-        let bar_line = BarLine::new(kind);
         self.insert_item(
             measure_index,
             segment_kind,
