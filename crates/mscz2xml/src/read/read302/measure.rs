@@ -43,9 +43,10 @@ pub(crate) fn read_measure(
             "endRepeat" => end_repeat = true,
             // TODO(parité): `<Marker>`, `<Jump>`, `<LayoutBreak>`, `<stretch>`
             // (ignoré avant 4.0), `<noOffset>`, `<irregular>`,
-            // `<measureRepeatCount>`, `<vspacer*>`, `<visible>`, `<SystemDivider>`,
-            // `<MeasureNumber>` et `<multiMeasureRest>` ne changent pas le noyau
-            // musical lu ici.
+            // `<measureRepeatCount>`, `<vspacer*>`, `<visible>`, `<SystemDivider>`
+            // et `<MeasureNumber>` ne changent pas le noyau musical lu ici. Un
+            // `<multiMeasureRest>` ne parvient jamais ici : `read_staff` écarte
+            // la mesure marqueur avant de la lire.
             _ => {}
         }
     }
