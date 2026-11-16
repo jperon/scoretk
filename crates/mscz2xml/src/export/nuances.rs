@@ -29,12 +29,15 @@ pub(super) struct Nuances {
     dashes: [Option<usize>; MAX_NUMBER_LEVEL],
     /// Soufflets déjà arrêtés dans la partie courante.
     stopped: BTreeSet<usize>,
+    /// Soufflets dont le début a déjà été écrit.
+    started: BTreeSet<usize>,
 }
 
 impl Nuances {
     /// Réinitialise l'ensemble des soufflets arrêtés au début d'une partie.
     pub(super) fn reset_part(&mut self) {
         self.stopped.clear();
+        self.started.clear();
     }
 
     fn table_mut(&mut self, line: bool) -> &mut [Option<usize>; MAX_NUMBER_LEVEL] {
@@ -87,10 +90,7 @@ impl Nuances {
             let Some(kind) = hairpin_kind(spanner) else {
                 continue;
             };
-            if spanner.start.tick != segment.tick
-                || spanner.start.track.staff() != staff_id
-                || self.stopped.contains(&index)
-            {
+            if spanner.start.tick != segment.tick || spanner.start.track.staff() != staff_id {
                 continue;
             }
             let data = spanner.hairpin.clone().unwrap_or_default();
@@ -98,7 +98,13 @@ impl Nuances {
             let Some(number) = self.number(SpannerId::from_index(index), line) else {
                 continue;
             };
+            self.started.insert(index);
             write_hairpin(out, kind, &data, true, number, xml_staff);
+            // L'arrêt a déjà été écrit (voix traitée avant celle du début) :
+            // le numéro n'a plus à rester réservé.
+            if self.stopped.contains(&index) {
+                self.release(SpannerId::from_index(index), line, number);
+            }
         }
     }
 
@@ -127,7 +133,9 @@ impl Nuances {
                 continue;
             };
             write_hairpin(out, kind, &data, false, number, xml_staff);
-            self.release(SpannerId::from_index(index), line, number);
+            if self.started.remove(&index) {
+                self.release(SpannerId::from_index(index), line, number);
+            }
         }
     }
 }
@@ -220,7 +228,7 @@ fn write_hairpin_text(out: &mut Out, text: &str) {
     while !rest.is_empty() {
         let found = find_dynamic_in_string(rest);
         match found {
-            Some((position, length, name)) if position == 0 => {
+            Some((0, length, name)) => {
                 out.xml.start_element("direction-type", &[]);
                 out.xml.start_element("dynamics", &[]);
                 out.xml.tag_empty(name, &[]);

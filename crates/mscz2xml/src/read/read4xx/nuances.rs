@@ -144,8 +144,13 @@ pub(crate) fn read_half(
     if element.attr("type") != Some("HairPin") {
         return None;
     }
-    let payload = element.child("HairPin")?;
-    let subtype = payload.child("subtype").and_then(Element::int).unwrap_or(0);
+    // La moitié de fin ne porte que `<prev>`, sans `<HairPin>` : les détails
+    // viennent toujours de la moitié de début.
+    let payload = element.child("HairPin");
+    let subtype = payload
+        .and_then(|node| node.child("subtype"))
+        .and_then(Element::int)
+        .unwrap_or(0);
     let kind = if subtype == 1 || subtype == 3 {
         HairpinType::Diminuendo
     } else {
@@ -154,19 +159,22 @@ pub(crate) fn read_half(
     let mut hairpin = Hairpin::new();
     hairpin.line = subtype >= 2;
     hairpin.niente = payload
-        .child("hairpinCircledTip")
+        .and_then(|node| node.child("hairpinCircledTip"))
         .and_then(Element::int)
         .is_some_and(|value| value != 0);
-    hairpin.placement = match payload.child("direction").map(Element::text) {
+    hairpin.placement = match payload
+        .and_then(|node| node.child("direction"))
+        .map(Element::text)
+    {
         Some("up") => Placement::Above,
         _ => Placement::Below,
     };
     hairpin.begin_text = payload
-        .child("beginText")
+        .and_then(|node| node.child("beginText"))
         .map(|node| node.text.clone())
         .unwrap_or_default();
     hairpin.end_text = payload
-        .child("endText")
+        .and_then(|node| node.child("endText"))
         .map(|node| node.text.clone())
         .unwrap_or_default();
 
@@ -221,16 +229,21 @@ pub(crate) fn resolve(score: &mut Score, halves: &[Half]) {
             .next
             .map(|rel| rel.absolute_tick(half.measure, half.tick, &score.measures));
         let wanted_track = half.next.map(|rel| rel.absolute_track(half.track));
+        let start_track = half.next.map(|rel| rel.absolute_track(half.track));
         let partner = halves.iter().enumerate().find(|(index, candidate)| {
             *index != start
                 && !used[*index]
                 && candidate.prev.is_some()
                 && candidate.next.is_none()
-                && candidate.kind == half.kind
                 && wanted_track == Some(candidate.track)
+                && start_track
+                    == candidate
+                        .prev
+                        .map(|rel| rel.absolute_track(candidate.track))
                 && candidate.prev.map(|rel| {
                     rel.absolute_tick(candidate.measure, candidate.tick, &score.measures)
-                }) == wanted
+                }) == Some(half.tick)
+                && wanted == Some(candidate.tick)
                 && half.prev.is_none()
         });
         if let Some((end, _)) = partner {
@@ -250,7 +263,6 @@ pub(crate) fn resolve(score: &mut Score, halves: &[Half]) {
                 && index > start
                 && candidate.prev.is_some()
                 && candidate.next.is_none()
-                && candidate.kind == half.kind
                 && candidate.track == half.track
         });
         if let Some(end) = partner {
