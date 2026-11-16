@@ -14,8 +14,8 @@ use super::tables;
 use super::xml::Node;
 use super::{Reader, VoiceCtx};
 use crate::model::{
-    Fraction, Hairpin, HairpinType, Measure, NoteId, SegmentType, Spanner, SpannerAnchor,
-    SpannerType, TextLineInfo, Track, VoltaInfo, VOICES,
+    Fraction, Hairpin, HairpinType, HookType, Measure, NoteId, PedalInfo, Placement, SegmentType,
+    Spanner, SpannerAnchor, SpannerType, TextLineInfo, Track, VoltaInfo, VOICES,
 };
 
 /// Position d'une extrémité de connecteur.
@@ -107,6 +107,8 @@ enum Payload {
     TextLine(TextLineInfo),
     /// Soufflet, avec ses textes, son niente et son placement.
     Hairpin(HairpinType, Hairpin),
+    /// Pédale, avec son trait, ses textes et ses crochets.
+    Pedal(PedalInfo),
 }
 
 /// Moitié de connecteur en attente d'appariement.
@@ -215,7 +217,7 @@ fn read_payload(node: &Node) -> Option<Payload> {
             Payload::Hairpin(kind, hairpin)
         }
         "Ottava" => Payload::Spanner(SpannerType::Ottava(tables::ottava_type(node)), None, None),
-        "Pedal" => Payload::Spanner(SpannerType::Pedal, text_of(node), None),
+        "Pedal" => Payload::Pedal(read_pedal(node)),
         "Volta" => Payload::Spanner(
             SpannerType::Volta,
             text_of(node),
@@ -227,6 +229,32 @@ fn read_payload(node: &Node) -> Option<Payload> {
         other => Payload::Spanner(SpannerType::Other(other.to_owned()), text_of(node), None),
     };
     Some(payload)
+}
+
+/// Lit les propriétés d'un `<Pedal>`.
+fn read_pedal(node: &Node) -> PedalInfo {
+    let mut info = PedalInfo::new();
+    for child in node.children() {
+        match child.name() {
+            "beginText" => info.begin_text = child.text().to_owned(),
+            "endText" => info.end_text = child.text().to_owned(),
+            "lineVisible" => info.line_visible = child.int_text().unwrap_or(1) != 0,
+            "beginHookType" => {
+                info.begin_hook = HookType::from_mcsx(child.int_text().unwrap_or(0));
+            }
+            "endHookType" => {
+                info.end_hook = HookType::from_mcsx(child.int_text().unwrap_or(0));
+            }
+            "direction" => {
+                info.placement = match child.trimmed_text().as_str() {
+                    "up" => Placement::Above,
+                    _ => Placement::Below,
+                };
+            }
+            _ => {}
+        }
+    }
+    info
 }
 
 fn text_of(node: &Node) -> Option<String> {
@@ -460,6 +488,16 @@ fn emit(reader: &mut Reader, chain: &[usize]) {
                 SpannerAnchor::new(end.tick, end.track),
             );
             spanner.notation = Some(crate::model::SpannerNotation::Trill(trill));
+            reader.score.add_spanner(spanner);
+        }
+        Some(Payload::Pedal(info)) => {
+            let mut spanner = Spanner::new(
+                SpannerType::Pedal,
+                SpannerAnchor::new(start.tick, start.track),
+                SpannerAnchor::new(end.tick, end.track),
+            );
+            spanner.text = Some(info.begin_text.clone());
+            spanner.pedal = Some(info);
             reader.score.add_spanner(spanner);
         }
         Some(Payload::Spanner(kind, text, volta)) => {

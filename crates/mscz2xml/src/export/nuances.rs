@@ -11,8 +11,7 @@
 use std::collections::BTreeSet;
 
 use crate::model::{
-    Dynamic, Hairpin, HairpinType, Placement, Score, Segment, Spanner, SpannerId, StaffId, Tick,
-    Track,
+    Dynamic, Hairpin, HairpinType, Placement, Score, Spanner, SpannerId, StaffId, Tick,
 };
 
 use super::exportmusicxml::Out;
@@ -72,47 +71,43 @@ impl Nuances {
         }
     }
 
-    /// Écrit les soufflets qui commencent à ce segment.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn start(
+    /// Écrit le début d'un soufflet précis, dans l'ordre des spanners.
+    pub(super) fn start_one(
         &mut self,
         score: &Score,
         out: &mut Out,
-        segment: &Segment,
-        staff_id: StaffId,
+        index: usize,
         xml_staff: usize,
-        track: Track,
     ) {
-        if super::exportmusicxml::annotation_track(segment, staff_id) != Some(track) {
+        let Some(spanner) = score.spanners.get(index) else {
+            return;
+        };
+        let Some(kind) = hairpin_kind(spanner) else {
+            return;
+        };
+        // `ExportMusicXml::canWrite` : un soufflet invisible n'est pas exporté.
+        if !spanner.visible {
             return;
         }
-        for (index, spanner) in score.spanners.iter().enumerate() {
-            let Some(kind) = hairpin_kind(spanner) else {
-                continue;
-            };
-            if spanner.start.tick != segment.tick || spanner.start.track.staff() != staff_id {
-                continue;
-            }
-            let data = spanner.hairpin.clone().unwrap_or_default();
-            let line = data.line;
-            let Some(number) = self.number(SpannerId::from_index(index), line) else {
-                continue;
-            };
-            self.started.insert(index);
-            write_hairpin(
-                out,
-                kind,
-                &data,
-                true,
-                number,
-                xml_staff,
-                score.style.hairpin_height_sp,
-            );
-            // L'arrêt a déjà été écrit (voix traitée avant celle du début) :
-            // le numéro n'a plus à rester réservé.
-            if self.stopped.contains(&index) {
-                self.release(SpannerId::from_index(index), line, number);
-            }
+        let data = spanner.hairpin.clone().unwrap_or_default();
+        let line = data.line;
+        let Some(number) = self.number(SpannerId::from_index(index), line) else {
+            return;
+        };
+        self.started.insert(index);
+        write_hairpin(
+            out,
+            kind,
+            &data,
+            true,
+            number,
+            xml_staff,
+            score.style.hairpin_height_sp,
+        );
+        // L'arrêt a déjà été écrit (voix traitée avant celle du début) :
+        // le numéro n'a plus à rester réservé.
+        if self.stopped.contains(&index) {
+            self.release(SpannerId::from_index(index), line, number);
         }
     }
 
@@ -129,6 +124,9 @@ impl Nuances {
             let Some(kind) = hairpin_kind(spanner) else {
                 continue;
             };
+            if !spanner.visible {
+                continue;
+            }
             if spanner.end.tick != tick
                 || spanner.start.track.staff() != staff_id
                 || !self.stopped.insert(index)

@@ -8,6 +8,7 @@
 //! le silence ne référence que le n-olet le plus interne via
 //! [`super::ChordRest::tuplet`].
 
+use super::annotation::Placement;
 use super::fraction::{Fraction, Tick};
 use super::ids::TupletId;
 
@@ -52,6 +53,11 @@ pub struct Tuplet {
     pub actual_notes: i64,
     /// Nombre de notes normales tel qu'écrit (`<normalNotes>`), non réduit.
     pub normal_notes: i64,
+    /// Placement explicite du nombre (`<direction>`), exporté en `placement`.
+    ///
+    /// `None` correspond à `DirectionV::AUTO` : MuseScore n'écrit alors pas
+    /// d'attribut `placement`.
+    pub placement: Option<Placement>,
 }
 
 impl Tuplet {
@@ -67,6 +73,7 @@ impl Tuplet {
             bracket: false,
             actual_notes: ratio.numerator(),
             normal_notes: ratio.denominator(),
+            placement: None,
         }
     }
 

@@ -38,6 +38,7 @@ use super::layout;
 use super::notations;
 use super::nuances::{self, Nuances};
 use super::ottava;
+use super::pedals;
 use super::pitch;
 use super::repeats;
 use super::stems;
@@ -934,28 +935,32 @@ impl<'a> Context<'a> {
                         self.harmonies(out, measure, segment, staff_id, track);
                         self.annotations(out, segment, staff_id, xml_staff);
                     }
-                    // Débuts de lignes de texte (`spannerStart`).
+                    // `spannerStart` : les directions de spanner suivent
+                    // l'ordre des spanners, comme la `spannerMap` du C++.
                     for (index, spanner) in self.score.spanners.iter().enumerate() {
-                        if spanner.kind != SpannerType::TextLine
-                            || spanner.start.tick != segment.tick
+                        if spanner.start.tick != segment.tick
                             || spanner.start.track.staff() != staff_id
                             || spanners.started.contains(&index)
                         {
                             continue;
                         }
-                        textlines::start(out, spanner, xml_staff);
+                        match spanner.kind {
+                            SpannerType::TextLine => textlines::start(out, spanner, xml_staff),
+                            SpannerType::Hairpin(_) => {
+                                nuances.start_one(self.score, out, index, xml_staff)
+                            }
+                            SpannerType::Ottava(_) => ottava::write_start(
+                                self.score,
+                                out,
+                                index,
+                                xml_staff,
+                                ottava_started,
+                            ),
+                            SpannerType::Pedal => pedals::start(out, spanner, xml_staff),
+                            _ => continue,
+                        }
                         spanners.started.push(index);
                     }
-                    nuances.start(self.score, out, segment, staff_id, xml_staff, track);
-                    // `spannerStart` : l'ottava s'écrit après les annotations du
-                    // segment et avant ses notes.
-                    ottava::write_starts_at(
-                        self.score,
-                        out,
-                        segment.tick,
-                        staff_id,
-                        ottava_started,
-                    );
                 }
                 let is_chord_rest = matches!(item, SegmentItem::ChordRest(_));
 
@@ -975,8 +980,24 @@ impl<'a> Context<'a> {
                         textlines::stop(out, spanner, xml_staff);
                         spanners.stopped.push(index);
                     }
-                    // `spannerStop` : fin d'ottava éventuelle à ce tick.
-                    ottava::write_stops_at(self.score, out, out.tick, staff_id, ottava_stopped);
+                    // `spannerStop` : pédales et ottavas finissant à ce tick.
+                    for spanner in &self.score.spanners {
+                        if spanner.kind == SpannerType::Pedal
+                            && spanner.visible
+                            && spanner.start.track.staff() == staff_id
+                            && spanner.end.tick == out.tick
+                        {
+                            pedals::stop(out, spanner, xml_staff);
+                        }
+                    }
+                    ottava::write_stops_at(
+                        self.score,
+                        out,
+                        out.tick,
+                        staff_id,
+                        xml_staff,
+                        ottava_stopped,
+                    );
                 }
             }
         }
@@ -1221,7 +1242,16 @@ impl Context<'_> {
             TupletNumberType::Ratio => attributes.push(("show-number", "both".to_owned())),
             TupletNumberType::None => attributes.push(("show-number", "none".to_owned())),
         }
-        // TODO(parité): direction/placement du n-olet (absent du modèle).
+        if let Some(placement) = tuplet.placement {
+            attributes.push((
+                "placement",
+                match placement {
+                    Placement::Above => "above",
+                    Placement::Below => "below",
+                }
+                .to_owned(),
+            ));
+        }
 
         let borrowed = borrow_attributes(&attributes);
         notations.tag(&mut out.xml, None);

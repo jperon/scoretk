@@ -93,6 +93,8 @@ pub(crate) struct Half {
     tick: Tick,
     /// Piste de la moitié.
     track: Track,
+    /// Vrai si le soufflet est visible (`<visible>`).
+    visible: bool,
     /// Extrémité `<prev>`, relative.
     prev: Option<Rel>,
     /// Extrémité `<next>`, relative.
@@ -184,6 +186,10 @@ pub(crate) fn read_half(
         measure,
         tick,
         track,
+        visible: payload
+            .and_then(|node| node.child("visible"))
+            .and_then(Element::int)
+            .is_none_or(|value| value != 0),
         prev: None,
         next: None,
     };
@@ -281,6 +287,7 @@ pub(crate) fn resolve(score: &mut Score, halves: &[Half]) {
             SpannerAnchor::new(last.tick, last.track),
         );
         spanner.hairpin = Some(first.hairpin.clone());
+        spanner.visible = first.visible;
         spanner.text = Some(first.hairpin.begin_text.clone());
         score.add_spanner(spanner);
     }

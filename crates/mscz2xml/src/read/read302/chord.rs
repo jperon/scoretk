@@ -195,6 +195,7 @@ pub(crate) fn read_tuplet(
     let mut base_dots = 0u8;
     let mut number_type = TupletNumberType::Number;
     let mut bracket = None;
+    let mut tuplet_placement = None;
 
     for child in node.children() {
         match child.name() {
@@ -207,6 +208,13 @@ pub(crate) fn read_tuplet(
             "baseDots" => base_dots = child.int_text().unwrap_or(0).clamp(0, 4) as u8,
             "numberType" => number_type = tables::tuplet_number_type(child.int_text()),
             "bracket" => bracket = Some(child.int_text().unwrap_or(0) != 0),
+            "direction" => {
+                tuplet_placement = match child.trimmed_text().as_str() {
+                    "up" => Some(Placement::Above),
+                    "down" => Some(Placement::Below),
+                    _ => None,
+                };
+            }
             _ => {}
         }
     }
@@ -217,6 +225,7 @@ pub(crate) fn read_tuplet(
     let mut tuplet = Tuplet::new(ratio, base_len, tick, len);
     tuplet.parent = parent;
     tuplet.number_type = number_type;
+    tuplet.placement = tuplet_placement;
     tuplet.actual_notes = actual;
     tuplet.normal_notes = normal;
     // `Tuplet::calcHasBracket` n'est qu'une mise en page. En 3.x, un n-olet
