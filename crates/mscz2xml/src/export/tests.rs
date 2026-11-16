@@ -387,6 +387,90 @@ fn paroles_et_accords_d_agrement() {
 }
 
 #[test]
+fn placement_des_paroles_par_defaut_et_au_dessus() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+
+    let first = score.add_note(Note::new(69, tpc::A));
+    let second = score.add_note(Note::new(71, tpc::B));
+    let mut chord_rest = ChordRest::chord(Duration::half());
+    chord_rest
+        .lyrics
+        .push(Lyrics::new(0, LyricsSyllabic::Single, "Do"));
+    let mut above = Lyrics::new(1, LyricsSyllabic::Single, "Ré");
+    above.placement = Placement::Above;
+    chord_rest.lyrics.push(above);
+    {
+        let chord = chord_rest.chord_mut().expect("accord");
+        chord.notes.push(first);
+    }
+    ajouter_element(&mut score, &mut measure, track, Fraction::ZERO, chord_rest);
+
+    let mut second_measure = ajouter_mesure(1, Fraction::ONE, Fraction::ONE, Fraction::ONE);
+    let mut other = ChordRest::chord(Duration::half());
+    other.lyrics.push(Lyrics::new(0, LyricsSyllabic::End, "mi"));
+    if let Some(chord) = other.chord_mut() {
+        chord.notes.push(second);
+    }
+    ajouter_element(
+        &mut score,
+        &mut second_measure,
+        track,
+        Fraction::ZERO,
+        other,
+    );
+    score.add_measure(measure);
+    score.add_measure(second_measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    // Le premier couplet est au-dessous (défaut) : aucun attribut placement.
+    assert!(xml.contains("<lyric number=\"1\">"));
+    assert!(!xml.contains("<lyric number=\"1\" placement"));
+    // Le second est explicitement au-dessus.
+    assert!(xml.contains("<lyric number=\"2\" placement=\"above\">"));
+}
+
+#[test]
+fn defaults_de_page_et_credits_positionnes() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    score.add_credit(Credit::new(RichText::new("Titre"), CreditStyle::Title));
+    score.add_credit(Credit::new(
+        RichText::new("Compositrice"),
+        CreditStyle::Composer,
+    ));
+    score.metadata.copyright = "© 2026".to_owned();
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<defaults>\n    <scaling>"));
+    assert!(xml.contains("<millimeters>7</millimeters>"));
+    assert!(xml.contains("<tenths>40</tenths>"));
+    assert!(xml.contains("<page-height>1696.72</page-height>"));
+    assert!(xml.contains("<page-width>1200.33</page-width>"));
+    assert!(xml.contains(
+        "<credit-words default-x=\"600.17\" default-y=\"1611.01\" justify=\"center\" \
+         valign=\"top\" font-size=\"22\">Titre</credit-words>"
+    ));
+    assert!(xml.contains(
+        "<credit-words default-x=\"1114.62\" default-y=\"1511.01\" justify=\"right\" \
+         valign=\"bottom\">Compositrice</credit-words>"
+    ));
+    assert!(xml.contains(
+        "<credit-words default-x=\"600.17\" default-y=\"85.71\" justify=\"center\" \
+         valign=\"bottom\" font-size=\"8\">© 2026</credit-words>"
+    ));
+}
+
+#[test]
 fn mesure_irreguliere_armure_et_reprise() {
     let mut score = Score::new();
     let (_, staff) = piano(&mut score);
@@ -1769,12 +1853,17 @@ fn credits_et_metadonnees_de_page_de_titre() {
     assert!(xml.contains("<creator type=\"lyricist\">Parolier</creator>"));
     assert!(xml.contains(
         "<credit page=\"1\">\n    <credit-type>title</credit-type>\n    \
-         <credit-words justify=\"center\" valign=\"top\" font-size=\"22\">Titre</credit-words>"
+         <credit-words default-x=\"600.17\" default-y=\"1611.01\" justify=\"center\" \
+         valign=\"top\" font-size=\"22\">Titre</credit-words>"
     ));
     assert!(xml.contains("<credit-type>subtitle</credit-type>"));
-    assert!(xml.contains("<credit-words justify=\"center\" valign=\"top\" font-weight=\"bold\" font-size=\"14\">Sous-titre</credit-words>"));
+    assert!(xml.contains(
+        "<credit-words default-x=\"600.17\" default-y=\"1553.86\" justify=\"center\" \
+         valign=\"top\" font-weight=\"bold\" font-size=\"14\">Sous-titre</credit-words>"
+    ));
     assert!(xml.contains("<credit-type>rights</credit-type>"));
-    assert!(
-        xml.contains("<credit-words justify=\"center\" valign=\"bottom\">© 2026</credit-words>")
-    );
+    assert!(xml.contains(
+        "<credit-words default-x=\"600.17\" default-y=\"85.71\" justify=\"center\" \
+         valign=\"bottom\" font-size=\"8\">© 2026</credit-words>"
+    ));
 }

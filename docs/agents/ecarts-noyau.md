@@ -19,7 +19,7 @@ après normalisation ; les fichiers marqués **identique** constituent la liste
 d'occurrences. Les causes sont classées « lecteur », « modèle » ou « export ».
 Les écarts 1 à 14 sont corrigés (voir chaque section) : seul `repeat66` reste
 en écart, à cause de la numérotation après un saut de section (voir la section
-« Écarts v3 » et l'écart 15).
+« Écarts v3 » et l'écart 16).
 
 ## Tableau de conformité
 
@@ -287,7 +287,47 @@ Fichiers : testExcludeInvisibleElements, dynamics_niente (conformes).
 **Corrigé** (lecteur/modèle/export) : voir l'écart 4 (`<duration>` explicite et
 `Staff::time_stretch`). testLocalTimesig1 est conforme.
 
-## 15. Numérotation après un saut de section — 1 fichier v4
+## 15. Paroles au-dessus de la portée et crédits sans mise en page — corrigé
+
+**Corrigé** (modèle, lecteurs 3.x et 4.x, export) :
+
+- `Lyrics::placement` par défaut vaut `below`, comme `lyricsPlacement` dans
+  MuseScore (`engraving/dom/lyrics.cpp`, `propertyDefault(Pid::PLACEMENT)`).
+  Les deux lecteurs lisent `<Style><lyricsPlacement>` et ne prennent
+  `<placement>` d'une syllabe que s'il est présent ; l'export n'écrit
+  `placement="above"` que pour un placement explicitement supérieur.
+  Avant, tout `<Lyrics>` sans `<placement>` était lu comme « au-dessus ».
+- `StyleSettings` (nouveau `model/style.rs`) conserve le format de page, les
+  marges, les tailles de police des crédits et le nombre de pages. Les lecteurs
+  lisent `<Style>` (`Spatium`, `pageWidth`/`pageHeight`, `page*Margin`,
+  `pageTwosided`, `lyricsPlacement`, `*FontSize`) ; les valeurs absentes
+  prennent les défauts de MuseScore pour la version du fichier (marges 10/20 mm
+  en 3.x, 15 mm en 4.x, titre 24 puis 22 pt).
+- L'export écrit `<defaults>` (`<scaling>`, `<page-layout>` et ses
+  `<page-margins>`) et positionne les `<credit>` comme `textAsCreditWords` :
+  `default-x` d'après l'alignement et les marges, `default-y` d'après la
+  hauteur de page, la marge haute, le décalage du sous-titre (10 mm) et la
+  hauteur du `VBox` pour les alignements bas. Le copyright est répété sur
+  chaque page déduite des `<LayoutBreak>` de type `page`.
+
+Tests : `crates/mscz2xml/tests/credits_corpus.rs` compare crédits, format de
+page et paroles des corpus v3 et v4.
+
+Écarts restants, listés dans ce test :
+
+- `<defaults>` n'écrit pas encore `<appearance>`, `<music-font>`,
+  `<word-font>` ni `<lyric-font>` : ces blocs demandent une trentaine de
+  valeurs de style (largeurs de traits, polices) absentes du modèle.
+- `moonlight.mscx` : les entités nommées d'un texte de crédit
+  (`&quot;`) sont ré-échappées par l'écrivain XML (`&amp;quot;`).
+- `testBreaksPage.mscx` : un `VBox` placé après deux systèmes n'est pas en
+  haut de page ; sans moteur de mise en page, son `default-y` calculé est
+  celui d'un cadre en haut de page (1626,67 au lieu de 1446,67, soit 18 sp).
+- Les nombres du format de page sont rendus à six chiffres significatifs comme
+  MuseScore ; les marges du corpus v3 diffèrent parfois de 0,0001 dixième
+  (`56.6893` au lieu de `56.6894`) par arrondi de la valeur de style.
+
+## 16. Numérotation après un saut de section — 1 fichier v4
 
 **Ouvert** (lecteur/modèle/export) : MuseScore recommence les numéros de mesure
 à `1` après un `<LayoutBreak><subtype>section</subtype></LayoutBreak>`. Le
@@ -322,7 +362,7 @@ testHairpinDynamics, testTuplets8, testWedge4).
    `<clef staff="2">F</clef>` de l'instrument n'alimente pas la clef par défaut
    de la portée 2 en 3.x. **lecteur.** (À rapprocher de l'écart 1 v4.)
 5. **Numérotation après saut de section — 1 fichier.** `keysig_78216` : quatre
-   mesures numérotées `1` dans la référence (voir écart 15). **modèle/export.**
+   mesures numérotées `1` dans la référence (voir écart 16). **modèle/export.**
 6. **Orientation des liaisons — 1 fichier, 7 occurrences.** `moonlight` :
    `<tied orientation="over|under">` vient du `TieSegment`, absent du modèle.
    **lecteur/modèle/export.**

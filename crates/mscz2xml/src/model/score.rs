@@ -12,6 +12,7 @@ use super::measure::Measure;
 use super::note::Note;
 use super::part::{Part, Staff};
 use super::spanner::Spanner;
+use super::style::StyleSettings;
 use super::text::Credit;
 use super::tuplet::Tuplet;
 
@@ -57,6 +58,8 @@ pub struct ScoreMetadata {
 pub struct Score {
     /// Métadonnées d'œuvre.
     pub metadata: ScoreMetadata,
+    /// Réglages de style globaux (format de page, `lyricsPlacement`…).
+    pub style: StyleSettings,
     /// Divisions MusicXML par noire.
     pub division: u32,
     /// Parties, dans l'ordre de la partition.
@@ -93,6 +96,7 @@ impl Score {
         );
         Self {
             metadata: ScoreMetadata::default(),
+            style: StyleSettings::default(),
             division,
             parts: Vec::new(),
             staves: Vec::new(),

@@ -437,8 +437,11 @@ impl CreditStyle {
     /// Alignement horizontal par défaut du style.
     pub fn default_justify(&self) -> CreditJustify {
         match self {
-            Self::Composer | Self::Lyricist => CreditJustify::Right,
-            Self::Title | Self::Subtitle | Self::Other(_) => CreditJustify::Center,
+            // Le style « composer » est aligné à droite ; « lyricist » et les
+            // styles de cadre (`frame`, `instrument_excerpt`…) à gauche.
+            Self::Composer => CreditJustify::Right,
+            Self::Title | Self::Subtitle => CreditJustify::Center,
+            Self::Lyricist | Self::Other(_) => CreditJustify::Left,
         }
     }
 
@@ -538,6 +541,12 @@ pub struct Credit {
     pub valign: CreditValign,
     /// Page (1-based).
     pub page: u32,
+    /// Hauteur du cadre vertical qui contient le texte, en spatiums.
+    ///
+    /// `ExportMusicXml::credits` passe `parentHeight(text)` à
+    /// `getTenthsFromDots` : un crédit aligné en bas est décalé de la hauteur
+    /// du `VBox`. La valeur par défaut est celle du style (`10 sp`).
+    pub vbox_height: f64,
 }
 
 impl Credit {
@@ -551,6 +560,7 @@ impl Credit {
             justify,
             valign,
             page: 1,
+            vbox_height: 10.0,
         }
     }
 }

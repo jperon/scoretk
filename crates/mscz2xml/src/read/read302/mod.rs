@@ -26,6 +26,7 @@
 
 mod annotations;
 mod chord;
+mod credits;
 mod measure;
 mod nuances;
 mod part;
@@ -37,7 +38,7 @@ mod xml;
 use crate::container::MscVersion;
 use crate::model::{
     BarLineType, ChordRestKind, Clef, ClefType, Fraction, Measure, NoteId, Score, SegmentItem,
-    SegmentType, Track, Transpose, TupletId, VOICES,
+    SegmentType, StyleSettings, Track, Transpose, TupletId, VOICES,
 };
 use crate::Result;
 
@@ -108,9 +109,11 @@ pub(crate) struct VoiceCtx {
 
 impl Reader {
     fn new(version: MscVersion) -> Self {
+        let mut score = Score::new();
+        score.style = StyleSettings::for_version(version.major());
         Self {
             version,
-            score: Score::new(),
+            score,
             file_division: crate::model::DEFAULT_DIVISION,
             connectors: Vec::new(),
             measure_repeats: Vec::new(),
@@ -148,12 +151,13 @@ impl Reader {
                 "source" => self.score.metadata.source = child.trimmed_text(),
                 "Part" => part::read_part(self, child),
                 "Style" => {
+                    self.score.style = credits::read_style(child, self.version);
                     self.create_multi_measure_rests = child
                         .child("createMultiMeasureRests")
                         .and_then(Node::int_text)
                         .is_some_and(|value| value != 0);
                 }
-                // TODO(parité): `<Score>` imbriqué (parties liées), `<Style>`,
+                // TODO(parité): `<Score>` imbriqué (parties liées),
                 // `<Order>`, `<SystemObjects>`, `<PageLocks>`, `<SystemLocks>`,
                 // `<SpannerMap>` (5.0)… ne sont pas lus. Les `<Spanner>`
                 // complets écrits au niveau du `<Score>` (fichiers antérieurs à
@@ -199,6 +203,9 @@ impl Reader {
 
         let mut tick = Fraction::ZERO;
         let mut index = 0usize;
+        // Numéro de page courant pour les textes de cadre : un `<LayoutBreak>`
+        // de type `page` place l'élément qui le porte sur la page suivante.
+        let mut page = 1u32;
         for child in node.children() {
             match child.name() {
                 "Measure" => {
@@ -226,12 +233,24 @@ impl Reader {
                         tick = self.file_tick(value);
                     }
                 }
-                // TODO(parité): `<HBox>`, `<VBox>`, `<TBox>` et `<FBox>` sont
-                // des cadres sans durée musicale ; l'export en tire des textes,
-                // des sauts de page et, pour un texte de style « title »,
-                // `<work-title>` quand le `metaTag` correspondant est vide
-                // (voir `moonlight.mscx`).
+                "VBox" => {
+                    // Les textes d'un `VBox` deviennent des `<credit>` ; les
+                    // autres cadres (`HBox`, `TBox`, `FBox`) n'en portent pas.
+                    if staff == 0 {
+                        credits::read_vbox(&mut self.score, child, page);
+                    }
+                }
+                // TODO(parité): `<HBox>`, `<TBox>` et `<FBox>` sont des cadres
+                // sans durée musicale ; l'export en tire des textes, des sauts
+                // de page et, pour un texte de style « title », `<work-title>`
+                // quand le `metaTag` correspondant est vide (voir
+                // `moonlight.mscx`).
                 _ => {}
+            }
+            // Un saut de page s'applique après l'élément qui le porte.
+            if staff == 0 && credits::page_break(child) {
+                page += 1;
+                self.score.style.page_count = self.score.style.page_count.max(page);
             }
         }
     }
