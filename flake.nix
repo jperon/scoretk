@@ -63,15 +63,18 @@
           name = "mscz2xml-source";
         };
 
+        # Une seule source de vérité pour la version, partagée par les
+        # dérivations et par le package.json du paquet navigateur.
+        version = "0.1.0";
+
         commonArgs = {
-          inherit src;
+          inherit src version;
           strictDeps = true;
           nativeBuildInputs = [pkgs.pkg-config];
           # Le Cargo.toml racine sera un manifeste de workspace (pas de
           # [package]), donc crane ne peut pas en déduire nom et version :
           # on les fixe ici. Ils ne servent qu'à nommer les dérivations.
           pname = "mscz2xml";
-          version = "0.1.0";
         };
 
         # Dépendances compilées une seule fois et partagées par la CLI et par
@@ -93,6 +96,97 @@
           // {
             CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
           });
+
+        # --- Paquet navigateur (`nix build .#wasm`) ----------------------
+        #
+        # Deux étapes : (1) compiler le cdylib wasm avec crane, en réutilisant
+        # les dépendances déjà compilées pour wasm32 ; (2) passer le .wasm à
+        # wasm-bindgen (deux cibles) et wasm-opt dans une dérivation séparée.
+        # Aucune des deux ne demande le réseau : les sources des dépendances
+        # sont vendues par crane à partir de Cargo.lock.
+        #
+        # `doInstallCargoArtifacts = false` : on ne veut pas l'archive des
+        # artefacts cargo, seulement le .wasm.
+        wasm32Build = craneLib.cargoBuild (commonArgs
+          // {
+            cargoArtifacts = wasmCargoArtifacts;
+            CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+            cargoExtraArgs = "--locked -p mscz2xml-wasm";
+            doCheck = false;
+            doInstallCargoArtifacts = false;
+            installPhaseCommand = ''
+              mkdir -p $out
+              cp target/wasm32-unknown-unknown/release/mscz2xml_wasm.wasm $out/
+            '';
+          });
+
+        # `package.json` généré depuis la version du workspace : pas de
+        # deuxième numéro de version à maintenir.
+        wasmPackageJson = pkgs.writeText "mscz2xml-package.json" (builtins.toJSON {
+          name = "mscz2xml";
+          inherit version;
+          description = "Conversion MuseScore (.mscz/.mscx) vers MusicXML, dans le navigateur (WebAssembly)";
+          license = "GPL-3.0-or-later";
+          type = "module";
+          main = "./esm/mscz2xml_wasm.js";
+          types = "./esm/mscz2xml_wasm.d.ts";
+          exports = {
+            "." = {
+              types = "./esm/mscz2xml_wasm.d.ts";
+              default = "./esm/mscz2xml_wasm.js";
+            };
+            "./classic/mscz2xml.js" = "./classic/mscz2xml.js";
+            "./classic/*" = "./classic/*";
+            "./package.json" = "./package.json";
+          };
+          files = ["esm" "classic" "README.md"];
+          # La variante classic s'auto-installe sur `self.mscz2xml` au chargement.
+          sideEffects = ["./classic/mscz2xml.js"];
+        });
+
+        wasm = pkgs.runCommand "mscz2xml-wasm-${version}" {
+          nativeBuildInputs = [pkgs.wasm-bindgen-cli pkgs.binaryen];
+        } ''
+          mkdir -p $out/esm $out/classic
+
+          # Variante module ES (page, bundler) : init() par défaut charge le
+          # .wasm voisin du module.
+          wasm-bindgen --target web \
+            --out-dir $out/esm --out-name mscz2xml_wasm \
+            ${wasm32Build}/mscz2xml_wasm.wasm
+
+          # Variante script classique (importScripts dans un Web Worker) :
+          # expose le global `wasm_bindgen`, initialisé avec une URL explicite.
+          wasm-bindgen --target no-modules \
+            --out-dir $out/classic --out-name mscz2xml_wasm \
+            ${wasm32Build}/mscz2xml_wasm.wasm
+
+          # wasm-bindgen ne compacte pas ; wasm-opt (binaryen) retire le code
+          # mort restant et les noms de débogage. Chaque variante a son propre
+          # exemplaire du .wasm, optimisé séparément.
+          for module in $out/esm/mscz2xml_wasm_bg.wasm $out/classic/mscz2xml_wasm_bg.wasm; do
+            wasm-opt -Oz --strip-debug "$module" -o "$module.opt"
+            mv "$module.opt" "$module"
+          done
+
+          # Wrapper de confort `self.mscz2xml = { ready, convert, version }`.
+          install -m 0644 ${./crates/mscz2xml-wasm/pkg/classic/mscz2xml.js} \
+            $out/classic/mscz2xml.js
+
+          install -m 0644 ${wasmPackageJson} $out/package.json
+          install -m 0644 ${./crates/mscz2xml-wasm/pkg/README.md} $out/README.md
+        '';
+
+        # Test Node de la variante ESM, sur le paquet tel que `nix build` le
+        # produit (même chemin de code que le navigateur, sans navigateur).
+        wasmNodeSmoke = pkgs.runCommand "mscz2xml-wasm-node-smoke" {
+          nativeBuildInputs = [pkgs.nodejs];
+        } ''
+          export MSCZ2XML_PKG_DIR=${wasm}
+          export MSCZ2XML_CORPUS=${./tests/corpus/v4/dynamics.mscx}
+          node ${./crates/mscz2xml-wasm/tests/node-smoke.mjs}
+          touch $out
+        '';
 
         sharedDevTools = with pkgs; [
           rustToolchain
@@ -140,6 +234,9 @@
             cargoExtraArgs = "-p mscz2xml-cli";
           });
 
+        # Paquet navigateur : `nix build .#wasm` → result/{esm,classic,package.json,README.md}.
+        packages.wasm = wasm;
+
         checks = {
           # `-D warnings` : un warning casse le check, comme en CI.
           clippy = craneLib.cargoClippy (commonArgs
@@ -154,6 +251,11 @@
             });
 
           fmt = craneLib.cargoFmt commonArgs;
+
+          # Test Node du paquet était bâti par `packages.wasm` : il vérifie la
+          # variante ESM telle que livrée (initSync, conversion du corpus,
+          # entrée invalide).
+          nodeSmoke = wasmNodeSmoke;
 
           # La librairie doit au moins compiler pour wasm32 ; pas de tests ici
           # (doCheck = false) puisqu'on ne peut pas les exécuter sur cette cible.
