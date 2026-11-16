@@ -27,6 +27,7 @@
 mod annotations;
 mod chord;
 mod measure;
+mod nuances;
 mod part;
 mod spanner;
 mod tables;
