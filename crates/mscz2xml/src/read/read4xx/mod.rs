@@ -27,10 +27,10 @@ use crate::model::{ids::StaffId, tpc};
 use crate::model::{
     Accidental, Annotation, Articulation, BarLine, BarLineType, BeamMode, Breath, BreathType,
     Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration, DurationType, Dynamic, Fraction,
-    GraceChord, GraceType, Harmony, Instrument, Key, KeySig, Lyrics, LyricsSyllabic, Measure, Note,
-    NoteId, Part, Placement, RehearsalMark, Score, Segment, SegmentItem, SegmentType, Staff,
-    StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType, Track, Transpose,
-    Tuplet, TupletId, TupletNumberType, VOICES,
+    GraceChord, GraceType, Harmony, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
+    Measure, Note, NoteId, Part, Placement, RehearsalMark, Score, Segment, SegmentItem,
+    SegmentType, Staff, StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType,
+    Track, Transpose, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::{Error, Result};
 
@@ -252,10 +252,21 @@ impl Reader {
                 .unwrap_or_default(),
             long_name: element
                 .child("longName")
+                .or_else(|| {
+                    // 5.0 déplace les noms dans <InstrumentLabel>.
+                    element
+                        .child("InstrumentLabel")
+                        .and_then(|label| label.child("longName"))
+                })
                 .map(|child| child.text().to_owned())
                 .unwrap_or_default(),
             short_name: element
                 .child("shortName")
+                .or_else(|| {
+                    element
+                        .child("InstrumentLabel")
+                        .and_then(|label| label.child("shortName"))
+                })
                 .map(|child| child.text().to_owned())
                 .unwrap_or_default(),
             ..Instrument::default()
@@ -313,6 +324,13 @@ impl Reader {
         for child in &element.children {
             match child.name.as_str() {
                 "Measure" => {
+                    // Une mesure de multi-repos est un marqueur de mise en
+                    // page : ce n'est pas une mesure musicale, elle ne compte
+                    // donc ni dans la numérotation ni dans le tick.
+                    if child.has_child("multiMeasureRest") {
+                        // TODO(parité): conserver le regroupement de multi-repos.
+                        continue;
+                    }
                     self.read_measure(child, staff_index, measure_index)?;
                     measure_index += 1;
                 }
@@ -512,7 +530,9 @@ impl Reader {
                     } else {
                         SegmentType::TimeSig
                     };
-                    if !courtesy {
+                    // La métrique ne change la durée de la mesure que lue à son
+                    // début (`currTick == measure->tick()` dans le C++).
+                    if !courtesy && tick == self.score.measures[measure_index].start_tick {
                         stretch = if time_sig.stretch.is_positive() {
                             time_sig.stretch
                         } else {
@@ -1049,13 +1069,11 @@ impl Reader {
 
         let mut key_sig = KeySig::new(Key::new(concert));
         key_sig.transposed_key = Key::new(written.unwrap_or(concert));
-        if let Some(mode) = element
+        key_sig.mode = element
             .child("mode")
             .map(Element::text)
             .and_then(names::key_mode)
-        {
-            key_sig.mode = mode;
-        }
+            .unwrap_or(KeyMode::Unknown);
         // TODO(parité): <subtype> (ancien encodage), armures personnalisées
         // (<CustDef>/<KeySym>), <showNaturals>, <forInstrumentChange>.
         key_sig

@@ -188,3 +188,69 @@ fn nombres_de_mesures_parties_et_notes_conformes_aux_references() {
         failures.join("\n")
     );
 }
+
+/// Le corpus ne contient pas de fichier 5.00 : ce test synthétique vérifie la
+/// disposition propre à 5.0 (`<Part id>`, `<Staff>` sans `id`, noms dans
+/// `<InstrumentLabel>`) et la lecture d'un n-plet imbriqué avec liaison.
+#[test]
+fn lit_un_mscx_5_00_synthetique() {
+    let mscx = br#"<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="5.00">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <Instrument id="piano">
+        <InstrumentLabel>
+          <longName>Piano</longName>
+          <shortName>Pno.</shortName>
+        </InstrumentLabel>
+        <instrumentId>keyboard.piano</instrumentId>
+        <Channel><program value="0"/></Channel>
+      </Instrument>
+    </Part>
+    <Staff>
+      <Measure>
+        <voice>
+          <TimeSig><sigN>2</sigN><sigD>4</sigD></TimeSig>
+          <Tuplet><normalNotes>2</normalNotes><actualNotes>3</actualNotes><baseNote>eighth</baseNote></Tuplet>
+          <Chord><durationType>eighth</durationType>
+            <Note><pitch>60</pitch><tpc>14</tpc>
+              <Spanner type="Tie"><Tie/><next><location><fractions>1/12</fractions></location></next></Spanner>
+            </Note>
+          </Chord>
+          <Chord><durationType>eighth</durationType>
+            <Note><pitch>60</pitch><tpc>14</tpc>
+              <Spanner type="Tie"><Tie/><prev><location><fractions>-1/12</fractions></location></prev></Spanner>
+            </Note>
+          </Chord>
+          <Chord><durationType>eighth</durationType><Note><pitch>62</pitch><tpc>16</tpc></Note></Chord>
+          <endTuplet/>
+          <Chord><durationType>quarter</durationType><Note><pitch>64</pitch><tpc>18</tpc></Note></Chord>
+        </voice>
+      </Measure>
+    </Staff>
+  </Score>
+</museScore>
+"#;
+
+    let container = MsczContainer::from_bytes(mscx).expect("conteneur 5.00");
+    let score = read_score(&container).expect("lecture 5.00");
+
+    assert_eq!(score.parts.len(), 1);
+    assert_eq!(score.parts[0].long_name, "Piano");
+    assert_eq!(score.parts[0].short_name, "Pno.");
+    assert_eq!(score.parts[0].instrument.id, "keyboard.piano");
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(score.notes.len(), 4);
+    assert_eq!(score.tuplets.len(), 1);
+    assert_eq!(score.tuplets[0].ratio.to_string(), "3/2");
+    assert_eq!(
+        score.notes[0].tie_forward,
+        Some(mscz2xml::model::NoteId::from_index(1))
+    );
+    assert_eq!(
+        score.notes[1].tie_back,
+        Some(mscz2xml::model::NoteId::from_index(0))
+    );
+}
