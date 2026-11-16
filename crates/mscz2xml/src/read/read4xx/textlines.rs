@@ -11,8 +11,8 @@
 use super::dom::Element;
 use super::{placement, Reader};
 use crate::model::{
-    Fraction, HookType, LineFont, RichText, Spanner, SpannerAnchor, SpannerType, TextLineInfo,
-    TextLineStyle, TboxText, Tick, Track, VOICES,
+    Fraction, HookType, LineFont, RichText, Spanner, SpannerAnchor, SpannerType, TboxText,
+    TextLineInfo, TextLineStyle, Tick, Track, VOICES,
 };
 
 /// `<location>` relative d'une extrémité de spanner.
@@ -206,10 +206,7 @@ pub(super) fn resolve(reader: &mut Reader) {
                 SpannerAnchor::new(second.tick, second.track),
             );
             if let Some(info) = info {
-                spanner.text = info
-                    .begin_text
-                    .as_ref()
-                    .map(|text| text.plain().to_owned());
+                spanner.text = info.begin_text.as_ref().map(|text| text.plain().to_owned());
                 spanner.text_line = Some(info);
             }
             spanners.push(spanner);

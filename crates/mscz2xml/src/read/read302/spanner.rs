@@ -441,10 +441,7 @@ fn emit(reader: &mut Reader, chain: &[usize]) {
                 SpannerAnchor::new(start.tick, start.track),
                 SpannerAnchor::new(end.tick, end.track),
             );
-            spanner.text = info
-                .begin_text
-                .as_ref()
-                .map(|text| text.plain().to_owned());
+            spanner.text = info.begin_text.as_ref().map(|text| text.plain().to_owned());
             spanner.text_line = Some(info);
             reader.score.add_spanner(spanner);
         }

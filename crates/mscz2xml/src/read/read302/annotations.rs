@@ -101,7 +101,10 @@ pub(crate) fn read(reader: &Reader, node: &Node) -> Option<Annotation> {
                 let mut instrument = super::part::read_instrument(reader, instrument_node);
                 // `Instrument::nameAsPlainText` garde le balisage des noms 3.x
                 // (`<font size="…"/>Piano`), que `writeDisplayName` ré-échappe.
-                for (tag, name) in [("longName", &mut instrument.long_name), ("shortName", &mut instrument.short_name)] {
+                for (tag, name) in [
+                    ("longName", &mut instrument.long_name),
+                    ("shortName", &mut instrument.short_name),
+                ] {
                     if let Some(value) = instrument_node.child(tag) {
                         *name = value.inner_markup_raw_self_closing();
                     }

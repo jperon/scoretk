@@ -28,8 +28,8 @@ use crate::model::{
     BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType, Harmony,
     InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup,
     NoteHeadType, Part, Placement, Score, Segment, SegmentItem, SegmentType, SpannerType, StaffId,
-    StemDirection, Tempo, TempoKind, Tick, TimeSig, TimeSigType, Track, Tuplet,
-    TupletId, TupletNumberType, VOICES,
+    StemDirection, Tempo, TempoKind, Tick, TimeSig, TimeSigType, Track, Tuplet, TupletId,
+    TupletNumberType, VOICES,
 };
 use crate::Result;
 
@@ -1786,9 +1786,7 @@ fn effective_tempo(context: &Context<'_>, tempo: &Tempo, tick: Tick) -> Option<f
     if tempo.kind == TempoKind::Normal {
         tempo.beats_per_second
     } else {
-        context
-            .tempo_at(tick)
-            .or(tempo.beats_per_second)
+        context.tempo_at(tick).or(tempo.beats_per_second)
     }
 }
 

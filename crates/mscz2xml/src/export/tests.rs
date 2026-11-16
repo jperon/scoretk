@@ -10,8 +10,8 @@ use crate::model::{
     GraceChord, GraceType, Harmony, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
     LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteId, Part, PartId, Placement, RehearsalFrame,
     RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor,
-    SpannerType, Staff, StaffId, StaffText, SwingParameters, SwingUnit, SystemText, Tempo,
-    TempoKind, TextLineInfo, TboxText, TimeSig, Track, Transpose, Tuplet,
+    SpannerType, Staff, StaffId, StaffText, SwingParameters, SwingUnit, SystemText, TboxText,
+    Tempo, TempoKind, TextLineInfo, TimeSig, Track, Transpose, Tuplet,
 };
 
 use super::{export_musicxml, export_musicxml_with, ExportOptions};
@@ -1585,9 +1585,7 @@ fn textes_de_portee_et_de_systeme() {
     assert!(xml.contains("<words>espressivo</words>"));
     // Le changement d'instrument reprend le style « Instrument Name » :
     // gras, taille 12.
-    assert!(xml.contains(
-        "<words font-weight=\"bold\" font-size=\"12\">pizz.</words>"
-    ));
+    assert!(xml.contains("<words font-weight=\"bold\" font-size=\"12\">pizz.</words>"));
 }
 
 #[test]
@@ -1818,9 +1816,9 @@ fn ligne_de_texte_visible_en_bracket() {
     assert!(xml.contains(
         "<bracket type=\"start\" number=\"1\" line-end=\"down\" line-type=\"solid\" end-length=\"15\"/>"
     ));
-    assert!(xml.contains(
-        "<bracket type=\"stop\" number=\"1\" line-end=\"down\" end-length=\"15\"/>"
-    ));
+    assert!(
+        xml.contains("<bracket type=\"stop\" number=\"1\" line-end=\"down\" end-length=\"15\"/>")
+    );
 }
 
 #[test]
@@ -1834,9 +1832,7 @@ fn ligne_de_texte_invisible_avec_texte_de_fin() {
     let xml = export_musicxml(&score).expect("export");
 
     // `writeHairpinText` écrit toujours la police de l'extrémité.
-    assert!(xml.contains(
-        "<words font-family=\"Edwin\" font-size=\"10\">3x</words>"
-    ));
+    assert!(xml.contains("<words font-family=\"Edwin\" font-size=\"10\">3x</words>"));
     assert!(!xml.contains("<bracket"));
     // `spannerStop` passe la position sentinelle -1 : 4 * 1 * (-1 - 1) = -8.
     assert!(xml.contains("<offset sound=\"yes\">-8</offset>"));
@@ -1889,9 +1885,7 @@ fn changement_d_instrument_complet() {
         "<print>\n        <part-name-display>\n          \
          <display-text>Flute</display-text>\n          </part-name-display>"
     ));
-    assert!(xml.contains(
-        "<part-abbreviation-display>\n          <display-text>Fl.</display-text>"
-    ));
+    assert!(xml.contains("<part-abbreviation-display>\n          <display-text>Fl.</display-text>"));
     assert!(xml.contains(
         "<transpose>\n          <diatonic>-1</diatonic>\n          \
          <chromatic>-2</chromatic>\n          </transpose>"

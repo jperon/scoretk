@@ -118,15 +118,13 @@ fn write_text_line(
 
     out.xml.start_element("direction-type", &[]);
     if is_dashes {
-        out.xml.tag_empty("dashes", &[("type", kind), ("number", "1")]);
+        out.xml
+            .tag_empty("dashes", &[("type", kind), ("number", "1")]);
     } else {
         let number = "1".to_owned();
         let end_length = end_length.map(|value| format_number(value, 0));
-        let mut attributes: Vec<(&str, &str)> = vec![
-            ("type", kind),
-            ("number", &number),
-            ("line-end", line_end),
-        ];
+        let mut attributes: Vec<(&str, &str)> =
+            vec![("type", kind), ("number", &number), ("line-end", line_end)];
         // `line-type` n'est écrit qu'au début de la ligne.
         let line_type = if is_start {
             info.line_style.musicxml_name()
@@ -195,10 +193,7 @@ fn write_line_words(out: &mut Out, text: &str, font: &LineFont) {
     let size = super::text::format_font_size(font.size);
     let weight = if font.bold { Some("bold") } else { None };
     let style = if font.italic { Some("italic") } else { None };
-    let mut attributes: Vec<(&str, &str)> = vec![
-        ("font-family", &family),
-        ("font-size", &size),
-    ];
+    let mut attributes: Vec<(&str, &str)> = vec![("font-family", &family), ("font-size", &size)];
     if let Some(weight) = weight {
         attributes.push(("font-weight", weight));
     }
@@ -263,8 +258,7 @@ pub(crate) fn write_instrument_change(
     if instrument.id.is_empty() {
         out.xml.tag_empty("instrument-change", &[("id", &id)]);
     } else {
-        out.xml
-            .start_element("instrument-change", &[("id", &id)]);
+        out.xml.start_element("instrument-change", &[("id", &id)]);
         out.xml.tag("instrument-sound", &instrument.id);
         out.xml.end_element();
     }

@@ -7,7 +7,7 @@
 
 use super::xml::Node;
 use crate::model::{
-    HookType, LineFont, RichText, SwingParameters, SwingUnit, TextLineInfo, TextLineStyle, TboxText,
+    HookType, LineFont, RichText, SwingParameters, SwingUnit, TboxText, TextLineInfo, TextLineStyle,
 };
 
 /// Lit les propriétés d'une `<TextLine>` (`TRead::read(TextLineBase*)`).
@@ -68,7 +68,9 @@ pub(crate) fn read_text_line(node: &Node) -> TextLineInfo {
                     info.end_font.size = value;
                 }
             }
-            "beginFontStyle" => apply_font_style(&mut info.begin_font, child.int_text().unwrap_or(0)),
+            "beginFontStyle" => {
+                apply_font_style(&mut info.begin_font, child.int_text().unwrap_or(0))
+            }
             "endFontStyle" => apply_font_style(&mut info.end_font, child.int_text().unwrap_or(0)),
             _ => {}
         }

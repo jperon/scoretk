@@ -132,7 +132,10 @@ fn attribut_utile(name: &str, attribute: &str) -> bool {
                 | "valign"
         ),
         "metronome" => matches!(attribute, "parentheses"),
-        "bracket" => matches!(attribute, "type" | "number" | "line-end" | "line-type" | "end-length"),
+        "bracket" => matches!(
+            attribute,
+            "type" | "number" | "line-end" | "line-type" | "end-length"
+        ),
         "dashes" => matches!(attribute, "type" | "number"),
         "sound" => attribute == "tempo",
         "instrument-change" => attribute == "id",
@@ -235,9 +238,12 @@ fn contient_texte(frag: &Frag) -> bool {
 
 /// Vrai si le fragment est un `<print>` de changement d'instrument.
 fn print_de_changement(frag: &Frag) -> bool {
-    frag.children
-        .iter()
-        .any(|child| matches!(child.name.as_str(), "part-name-display" | "part-abbreviation-display"))
+    frag.children.iter().any(|child| {
+        matches!(
+            child.name.as_str(),
+            "part-name-display" | "part-abbreviation-display"
+        )
+    })
 }
 
 /// Extrait les éléments textuels d'un document MusicXML.
