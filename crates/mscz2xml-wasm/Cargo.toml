@@ -1,0 +1,19 @@
+[package]
+name = "mscz2xml-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+
+[lib]
+# cdylib : le .wasm consommé par wasm-bindgen ; rlib : pour les tests hôte
+# (`cargo test`/`clippy` sans cible wasm).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+mscz2xml = { path = "../mscz2xml" }
+# Doit être ÉGALE à la version de wasm-bindgen-cli du shell nix : le CLI refuse
+# un .wasm produit par une version différente (`wasm-bindgen --version`).
+wasm-bindgen = "=0.2.130"
+js-sys = "0.3"

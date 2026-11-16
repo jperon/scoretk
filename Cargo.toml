@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/mscz2xml", "crates/mscz2xml-cli"]
+members = ["crates/mscz2xml", "crates/mscz2xml-cli", "crates/mscz2xml-wasm"]
 
 [workspace.package]
 version = "0.1.0"
@@ -17,3 +17,7 @@ clap = { version = "4", features = ["derive"] }
 
 [profile.release]
 lto = true
+# Le paquet navigateur vise la taille (wasm téléchargé par la PWA) ; pour la
+# CLI, le coût est négligeable.
+opt-level = "z"
+codegen-units = 1
