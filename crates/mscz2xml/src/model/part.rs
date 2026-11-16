@@ -188,6 +188,17 @@ impl Part {
     }
 }
 
+/// Accolade ou crochet d'une portée (`<bracket>`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StaffBracket {
+    /// Type MuseScore : 0 crochet, 1 accolade, 2 trait, 3 crochet carré.
+    pub kind: i8,
+    /// Nombre de portées couvertes.
+    pub span: usize,
+    /// Vrai si l'accolade est visible.
+    pub visible: bool,
+}
+
 /// Portée d'une partie.
 ///
 /// Correspond à `Staff` dans `engraving/dom/staff.h`.
@@ -205,6 +216,12 @@ pub struct Staff {
     /// Étirement temporel de la portée (`Staff::timeStretch`, indication de
     /// mesure locale). Vaut un hors indication locale.
     pub time_stretch: Fraction,
+    /// Barre de mesure commune avec la portée suivante de la partie
+    /// (`Staff::barLineSpan()`), pour `group-barline`.
+    pub bar_line_span: bool,
+    /// Accolades et crochets de la portée (`<bracket>`), dans l'ordre des
+    /// colonnes.
+    pub brackets: Vec<StaffBracket>,
     /// Clef par défaut de la portée (`Staff::defaultClefType()`).
     ///
     /// MuseScore s'en sert quand aucun `<Clef>` n'ouvre la partition : la mise
@@ -221,6 +238,8 @@ impl Staff {
             part,
             lines: 5,
             small: false,
+            bar_line_span: false,
+            brackets: Vec::new(),
             time_stretch: Fraction::ONE,
             default_clef: Clef::new(ClefType::G),
         }

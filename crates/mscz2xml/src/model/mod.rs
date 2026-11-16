@@ -84,7 +84,7 @@ pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VO
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::Measure;
 pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadGroup, NoteHeadType};
-pub use part::{Instrument, Part, Staff, Transpose};
+pub use part::{Instrument, Part, Staff, StaffBracket, Transpose};
 pub use repeat::{Jump, JumpType, Marker, MarkerType, RepeatMark, VoltaInfo};
 pub use score::{Score, ScoreMetadata, DEFAULT_DIVISION};
 pub use segment::{

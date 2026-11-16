@@ -41,6 +41,7 @@ pub(crate) fn read_chord_rest(
     let mut beam = BeamMode::Auto;
     let mut lyrics = Vec::new();
     let mut articulations = Vec::new();
+    let mut staff_move = 0i8;
 
     for child in node.children() {
         match child.name() {
@@ -67,9 +68,14 @@ pub(crate) fn read_chord_rest(
             "BeamMode" => beam = tables::beam_mode(&child.trimmed_text()),
             "Lyrics" => lyrics.push(read_lyrics(child, reader.score.style.lyrics_placement)),
             "Articulation" => articulations.push(read_articulation(child)),
-            // TODO(parité): `<staffMove>` (notes sur une autre portée),
-            // `<Arpeggio>`, `<Tremolo>`, `<Stem>`, `<Hook>`, `<StemSlash>`,
-            // `<ChordLine>`, `<Tempo>`/`<Symbol>` d'accord ne sont pas modélisés.
+            "staffMove" => {
+                staff_move = child
+                    .int_text()
+                    .map_or(0, |value| value.clamp(-128, 127) as i8);
+            }
+            // TODO(parité): `<Arpeggio>`, `<Tremolo>`, `<Stem>`, `<Hook>`,
+            // `<StemSlash>`, `<ChordLine>`, `<Tempo>`/`<Symbol>` d'accord ne
+            // sont pas modélisés.
             _ => {}
         }
     }
@@ -102,6 +108,7 @@ pub(crate) fn read_chord_rest(
             grace,
             grace_slash: slash,
             articulations,
+            staff_move,
             ..Chord::default()
         };
         let note_grace = if grace.is_some() {
@@ -289,8 +296,8 @@ fn read_accidental(node: &Node) -> Accidental {
             }
             "bracket" => accidental.bracket = child.int_text().unwrap_or(0) != 0,
             "parens" | "parentheses" => accidental.parentheses = child.int_text().unwrap_or(0) != 0,
-            // TODO(parité): `<role>` (accidentals d'avertissement, exportés en
-            // `cautionary="yes"`) n'a pas d'équivalent dans le modèle.
+            // `AccidentalRole::USER` vaut 1 ; le rôle par défaut est AUTO.
+            "role" => accidental.user = child.int_text().is_some_and(|value| value == 1),
             "visible" => accidental.visible = child.int_text().unwrap_or(1) != 0,
             _ => {}
         }

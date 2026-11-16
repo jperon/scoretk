@@ -52,9 +52,7 @@ const FICHIERS: &[(&str, &str, usize)] = &[
     ("v3", "clef-1", 0),
     ("v3", "copypaste_tuplet_01", 0),
     ("v3", "grace", 0),
-    // Numérotation des mesures : la référence recommence à 1 après chaque
-    // saut de section, non modélisé.
-    ("v3", "keysig_78216", 6),
+    ("v3", "keysig_78216", 0),
     // 1 : <part-name-display> d'un changement d'instrument (writeInstrumentChange) ;
     // 1 : <measure-style><measure-repeat> non modélisé.
     ("v3", "layout_elements", 2),

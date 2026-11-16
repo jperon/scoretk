@@ -9,8 +9,8 @@ use crate::model::{
     BeamMode, ChordRest, Clef, ClefType, Credit, CreditStyle, Duration, DurationType, Fraction,
     GraceChord, GraceType, Harmony, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
     LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteId, Part, PartId, Placement, RehearsalFrame,
-    RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffId, StaffText,
-    SystemText, Tempo, TimeSig, Track, Transpose, Tuplet,
+    RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffBracket,
+    StaffId, StaffText, SystemText, Tempo, TimeSig, Track, Transpose, Tuplet,
 };
 
 use super::{export_musicxml, export_musicxml_with, ExportOptions};
@@ -293,6 +293,12 @@ fn partie_a_deux_portees() {
     score.part_mut(part_id).instrument = piano_instrument();
     let first = score.add_staff(part_id);
     let second = score.add_staff_with(part_id, Staff::new(part_id));
+    // Accolade implicite du piano, comme l'instrument du corpus.
+    score.staff_mut(first).brackets.push(StaffBracket {
+        kind: 1,
+        span: 2,
+        visible: true,
+    });
     let first_track = Track::new(first, 0);
     let second_track = Track::new(second, 0);
 
@@ -1184,6 +1190,12 @@ fn corpus_tenuto_accent() {
     score.part_mut(part_id).instrument = piano_instrument();
     let first = score.add_staff(part_id);
     let second = score.add_staff_with(part_id, Staff::new(part_id));
+    // Accolade implicite du piano, comme l'instrument du corpus.
+    score.staff_mut(first).brackets.push(StaffBracket {
+        kind: 1,
+        span: 2,
+        visible: true,
+    });
     let first_track = Track::new(first, 0);
     let second_track = Track::new(second, 0);
 

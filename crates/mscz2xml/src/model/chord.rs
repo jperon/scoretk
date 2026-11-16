@@ -188,6 +188,9 @@ pub struct Chord {
     /// Vrai si l'accord appartient à un trémolo à deux notes
     /// (`Chord::tremoloTwoChord()`).
     pub tremolo_two_chord: bool,
+    /// Décalage de portée (`Chord::staffMove`) : une note posée sur l'autre
+    /// portée de la partie, en croisement de mains.
+    pub staff_move: i8,
 }
 
 /// Accord d'agrément rattaché à un accord principal.

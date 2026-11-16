@@ -7,7 +7,7 @@
 use super::tables;
 use super::xml::Node;
 use super::Reader;
-use crate::model::{Clef, ClefType, Instrument, Part, Staff, Transpose};
+use crate::model::{Clef, ClefType, Instrument, Part, Staff, StaffBracket, Transpose};
 
 /// Lit un `<Part>` : portées déclarées, noms et instrument principal.
 pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
@@ -79,6 +79,22 @@ pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
         {
             staff.small = true;
         }
+        // `<barLineSpan>` : la valeur 1 vaut « barre commune avec la portée
+        // suivante », comme `TRead::read(Staff*)`.
+        if let Some(value) = staff_node.child("barLineSpan").and_then(Node::int_text) {
+            staff.bar_line_span = value != 0;
+        }
+        for bracket in staff_node.children_named("bracket") {
+            let kind = bracket.attr_i32("type").unwrap_or(-1);
+            if kind < 0 {
+                continue;
+            }
+            staff.brackets.push(StaffBracket {
+                kind: kind.clamp(0, 127) as i8,
+                span: bracket.attr_i32("span").unwrap_or(0).max(0) as usize,
+                visible: bracket.attr_i32("visible").unwrap_or(1) != 0,
+            });
+        }
         // `<defaultClef>` fixe les deux clefs ; les variantes concert et
         // transposée une seule, en partant de sol/sol comme `ClefTypeList`.
         let mut declared_clef = false;
@@ -111,8 +127,9 @@ pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
         reader.score.add_staff_with(part_id, staff);
         declared += 1;
     }
-    // TODO(parité): `<bracket>`, `<barLineSpan>` et les instruments secondaires
-    // (`<Instrument>` successifs / `<InstrumentChange>`) ne sont pas modélisés.
+    // TODO(parité): les instruments secondaires déclarés directement dans la
+    // partie (`<Instrument>` successifs) ne sont pas modélisés ; les
+    // changements d'instrument le sont par `instruments.rs`.
 }
 
 pub(super) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {

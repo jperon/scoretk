@@ -460,9 +460,15 @@ impl<'a> Context<'a> {
         };
 
         out.xml.start_element("part-list", &[]);
+        // `partList` : groupes de parties ouverts par les accolades du premier
+        // personnel, fermés quand `staffCount` atteint leur fin.
+        let mut part_group_end: Vec<Option<usize>> = vec![None; 32];
+        let mut staff_count = 0usize;
         for (index, part) in self.score.parts.iter().enumerate() {
             let number = index + 1;
             let part_id = format!("P{number}");
+
+            self.part_groups(out, index, part, &mut part_group_end, staff_count);
 
             out.xml.start_element("score-part", &[("id", &part_id)]);
 
@@ -550,6 +556,75 @@ impl<'a> Context<'a> {
             }
 
             out.xml.end_element();
+
+            staff_count += part.staves.len();
+            for (group, end) in part_group_end.iter_mut().enumerate() {
+                if end.is_some_and(|end| staff_count >= end) {
+                    let group = (group + 1).to_string();
+                    out.xml
+                        .tag_empty("part-group", &[("type", "stop"), ("number", &group)]);
+                    *end = None;
+                }
+            }
+        }
+        out.xml.end_element();
+    }
+
+    /// Ouvre les `<part-group>` d'une partie (`partList`).
+    fn part_groups(
+        &self,
+        out: &mut Out,
+        index: usize,
+        part: &Part,
+        part_group_end: &mut [Option<usize>],
+        staff_count: usize,
+    ) {
+        let Some(first_staff) = part.staves.first() else {
+            return;
+        };
+        let staff = self.score.staff(*first_staff);
+        let mut bracket_found = false;
+        for bracket in &staff.brackets {
+            if bracket.kind < 0 {
+                continue;
+            }
+            bracket_found = true;
+            // Une accolade qui couvre exactement la partie est implicite : ne
+            // pas l'exporter (MuseScore filtre les accolades « brace »).
+            if bracket.span == part.staves.len() && bracket.kind == 1 {
+                continue;
+            }
+            if index + 1 >= self.score.parts.len() {
+                continue;
+            }
+            if let Some(group) = part_group_end.iter().position(Option::is_none) {
+                self.part_group_start(
+                    out,
+                    group + 1,
+                    bracket_symbol(bracket.kind),
+                    staff.bar_line_span,
+                );
+                part_group_end[group] = Some(staff_count + bracket.span);
+            }
+        }
+        // Partie à plusieurs portées sans accolade : groupe sans symbole, pour
+        // que les portées restent liées dans MusicXML.
+        if !bracket_found && part.staves.len() > 1 {
+            if let Some(group) = part_group_end.iter().position(Option::is_none) {
+                self.part_group_start(out, group + 1, "none", false);
+                part_group_end[group] = Some(staff_count + part.staves.len());
+            }
+        }
+    }
+
+    /// Écrit un `<part-group type="start">`.
+    fn part_group_start(&self, out: &mut Out, number: usize, symbol: &str, barline: bool) {
+        let number = number.to_string();
+        out.xml
+            .start_element("part-group", &[("type", "start"), ("number", &number)]);
+        out.xml.tag("group-symbol", symbol);
+        if barline {
+            out.xml.tag("group-barline", "yes");
         }
         out.xml.end_element();
     }
@@ -603,11 +678,14 @@ impl<'a> Context<'a> {
         let measure = &self.score.measures[measure_index];
         let part = &self.score.parts[part_index];
         let staves = part.staves.len();
-        let is_first = measure_index == 0;
+        // Un saut de section rouvre une section : la numérotation repart à 1
+        // et les `<attributes>` de début de section sont réécrits
+        // (`MeasureNumberStateHandler`).
+        let is_first = measure_index == 0 || measure.section_break_before;
 
         // TODO(parité): numérotation `implicit="yes"` des mesures d'anacrouse
         // (le modèle n'a pas l'équivalent de `excludeFromNumbering`).
-        let number = (measure_index + 1).to_string();
+        let number = self.measure_number(measure_index).to_string();
         out.xml.start_element("measure", &[("number", &number)]);
         out.in_attributes = false;
 
@@ -1244,7 +1322,10 @@ impl Context<'_> {
             write_notehead(out, note, chord, duration);
 
             if xml_staff > 0 {
-                out.xml.tag("staff", &xml_staff.to_string());
+                // `<staffMove>` place l'accord sur l'autre portée de la partie
+                // (croisement de mains), comme `staff + chord->staffMove()`.
+                let staff = xml_staff as i32 + i32::from(chord.staff_move);
+                out.xml.tag("staff", &staff.to_string());
             }
 
             if first && !grace {
@@ -1352,6 +1433,15 @@ impl Context<'_> {
 // ----------------------------------------------------------------------
 
 impl Context<'_> {
+    /// Numéro affiché d'une mesure, remis à 1 après un saut de section.
+    fn measure_number(&self, index: usize) -> usize {
+        let start = self.score.measures[..=index]
+            .iter()
+            .rposition(|measure| measure.section_break_before)
+            .unwrap_or(0);
+        index - start + 1
+    }
+
     /// Écrit les armures et indications de mesure (`keysigTimesig`).
     fn keysig_timesig(&self, out: &mut Out, measure: &Measure, part: &Part) {
         let mut keysigs: Vec<(usize, &KeySig)> = Vec::new();
@@ -2183,10 +2273,20 @@ fn write_accidental(out: &mut Out, accidental: &Accidental) {
         return;
     };
     let mut attributes: Vec<(&str, &str)> = Vec::new();
+    // `writeAccidental` : le rôle utilisateur rend l'altération d'avertissement.
     if accidental.bracket {
+        if accidental.user {
+            attributes.push(("editorial", "yes"));
+        }
         attributes.push(("bracket", "yes"));
     } else if accidental.parentheses {
+        if accidental.user {
+            attributes.push(("cautionary", "yes"));
+        }
         attributes.push(("parentheses", "yes"));
+    } else if accidental.user {
+        attributes.push(("cautionary", "yes"));
+        attributes.push(("parentheses", "no"));
     }
     // TODO(parité): smufl pour les altérations exotiques, taille, couleur.
     out.xml.tag_with("accidental", &attributes, name);
@@ -2262,6 +2362,17 @@ pub(crate) fn placement_name(placement: Placement) -> &'static str {
     match placement {
         Placement::Above => "above",
         Placement::Below => "below",
+    }
+}
+
+/// Symbole MusicXML d'une accolade MuseScore (`partGroupStart`).
+fn bracket_symbol(kind: i8) -> &'static str {
+    match kind {
+        0 => "bracket",
+        1 => "brace",
+        2 => "line",
+        3 => "square",
+        _ => "none",
     }
 }
 
