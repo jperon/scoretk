@@ -27,6 +27,7 @@
 mod annotations;
 mod chord;
 mod measure;
+mod nuances;
 mod part;
 mod repeats;
 mod spanner;
@@ -186,6 +187,13 @@ impl Reader {
         for child in node.children() {
             match child.name() {
                 "Measure" => {
+                    // Une mesure de multi-repos est un marqueur de mise en
+                    // page : `StaffRead::readStaff` ne l'ajoute pas à la liste
+                    // des mesures et n'avance pas le tick (elle est rattachée à
+                    // la mesure précédente par `setMMRest`).
+                    if child.child("multiMeasureRest").is_some() {
+                        continue;
+                    }
                     let measure = self.ensure_measure(index, tick);
                     tick = measure::read_measure(self, measure, child, staff);
                     index += 1;

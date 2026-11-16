@@ -14,8 +14,8 @@ use super::tables;
 use super::xml::Node;
 use super::{Reader, VoiceCtx};
 use crate::model::{
-    Fraction, Measure, NoteId, SegmentType, Spanner, SpannerAnchor, SpannerType, Track, VoltaInfo,
-    VOICES,
+    Fraction, Hairpin, HairpinType, Measure, NoteId, SegmentType, Spanner, SpannerAnchor,
+    SpannerType, Track, VoltaInfo, VOICES,
 };
 
 /// Position d'une extrémité de connecteur.
@@ -99,6 +99,8 @@ enum Payload {
     Tie,
     Slur,
     Spanner(SpannerType, Option<String>, Option<VoltaInfo>),
+    /// Soufflet, avec ses textes, son niente et son placement.
+    Hairpin(HairpinType, Hairpin),
 }
 
 /// Moitié de connecteur en attente d'appariement.
@@ -202,11 +204,10 @@ fn read_payload(node: &Node) -> Option<Payload> {
     let payload = match node.name() {
         "Tie" => Payload::Tie,
         "Slur" => Payload::Slur,
-        "HairPin" => Payload::Spanner(
-            SpannerType::Hairpin(tables::hairpin_type(node)),
-            text_of(node),
-            None,
-        ),
+        "HairPin" => {
+            let (kind, hairpin) = super::nuances::read_hairpin(node);
+            Payload::Hairpin(kind, hairpin)
+        }
         "Ottava" => Payload::Spanner(SpannerType::Ottava(tables::ottava_type(node)), None, None),
         "Pedal" => Payload::Spanner(SpannerType::Pedal, text_of(node), None),
         "Volta" => Payload::Spanner(
@@ -274,6 +275,39 @@ pub(crate) fn resolve(reader: &mut Reader) {
             emit(reader, &chain);
             active.retain(|candidate| !chain.contains(candidate));
         }
+    }
+
+    // Soufflets dont les `<location>` ne coïncident pas exactement (testWedge4
+    // par exemple) : `reconnectBrokenConnectors` les apparie par proximité.
+    // Chaque début restant prend la première fin restante de même sens ;
+    // `readAddConnector` retient ensuite les positions réelles des moitiés.
+    let mut hairpin_pairs: Vec<(usize, usize)> = Vec::new();
+    for start in 0..reader.connectors.len() {
+        let connector = &reader.connectors[start];
+        if connector.prev.is_some()
+            || connector.next.is_none()
+            || connector.prev_link.is_some()
+            || !matches!(connector.payload, Some(Payload::Hairpin(..)))
+        {
+            continue;
+        }
+        let end = (start + 1..reader.connectors.len()).find(|&index| {
+            let candidate = &reader.connectors[index];
+            matches!(candidate.payload, Some(Payload::Hairpin(..)))
+                && candidate.prev.is_some()
+                && candidate.next.is_none()
+                && candidate.next_link.is_none()
+                && candidate.anchor.track == connector.anchor.track
+                && candidate.anchor.tick >= connector.anchor.tick
+        });
+        if let Some(end) = end {
+            reader.connectors[start].next_link = Some(end);
+            reader.connectors[end].prev_link = Some(start);
+            hairpin_pairs.push((start, end));
+        }
+    }
+    for (start, end) in hairpin_pairs {
+        emit(reader, &[start, end]);
     }
 
     // Liaisons de prolongation sans extrémité : `Score::connectTies` cherche la
@@ -397,7 +431,17 @@ fn emit(reader: &mut Reader, chain: &[usize]) {
         }
         Some(Payload::Slur) => push_spanner(reader, SpannerType::Slur, None, None, start, end),
         Some(Payload::Spanner(kind, text, volta)) => {
-            push_spanner(reader, kind, text, volta, start, end)
+            push_spanner(reader, kind, text, volta, start, end);
+        }
+        Some(Payload::Hairpin(kind, hairpin)) => {
+            let mut spanner = Spanner::new(
+                SpannerType::Hairpin(kind),
+                SpannerAnchor::new(start.tick, start.track),
+                SpannerAnchor::new(end.tick, end.track),
+            );
+            spanner.text = Some(hairpin.begin_text.clone());
+            spanner.hairpin = Some(hairpin);
+            reader.score.add_spanner(spanner);
         }
         None => {}
     }

@@ -92,6 +92,13 @@ pub struct Dynamic {
     pub velocity: Option<u8>,
     /// Placement.
     pub placement: Placement,
+    /// Vrai quand le texte est personnalisé (`hasCustomText` dans MuseScore).
+    ///
+    /// Un texte personnalisé est exporté en `<other-dynamics>` même s'il
+    /// ressemble à une nuance MusicXML.
+    pub custom: bool,
+    /// Vrai si la nuance est visible.
+    pub visible: bool,
 }
 
 impl Dynamic {
@@ -101,6 +108,8 @@ impl Dynamic {
             text: text.into(),
             velocity: None,
             placement: Placement::Below,
+            custom: false,
+            visible: true,
         }
     }
 }

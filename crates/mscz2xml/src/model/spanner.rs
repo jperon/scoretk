@@ -7,6 +7,7 @@
 //! `Spanner::endTick()` / `Spanner::endTrack()`.
 
 use super::fraction::Tick;
+use super::hairpin::Hairpin;
 use super::ids::Track;
 use super::repeat::VoltaInfo;
 
@@ -99,6 +100,8 @@ pub struct Spanner {
     /// Numéro d'ordre pour les spanners imbriqués (par exemple les reprises
     /// de slurs).
     pub number: u8,
+    /// Compléments propres aux soufflets.
+    pub hairpin: Option<Hairpin>,
 }
 
 impl Spanner {
@@ -111,6 +114,7 @@ impl Spanner {
             text: None,
             volta: None,
             number: 0,
+            hairpin: None,
         }
     }
 }

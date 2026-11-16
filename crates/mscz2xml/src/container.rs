@@ -219,40 +219,53 @@ fn read_first_root_mscx(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Result<Optio
     }
 }
 
-/// Extrait l'attribut `full-path` du premier `rootfile` de container.xml.
+/// Extrait le `full-path` du premier `rootfile` de container.xml qui désigne
+/// un `.mscx`.
+///
+/// Comme `MscReader::mainFileName` dans MuseScore, on ne prend pas
+/// aveuglément le premier `rootfile` : un `.mscz` écrit par MuseScore 4 liste
+/// d'abord `score_style.mss`, puis le `.mscx`. Les entrées qui ne sont pas des
+/// `.mscx` (styles, vignette, réglages) sont donc ignorées. S'il n'y a aucun
+/// `rootfile` en `.mscx`, on renvoie `None` pour laisser l'appelant retomber
+/// sur le premier `.mscx` à la racine de l'archive.
 fn parse_container_root(container_xml: &[u8]) -> Result<Option<String>> {
     let mut reader = Reader::from_reader(container_xml);
     reader.config_mut().trim_text(true);
 
     let mut saw_rootfile = false;
+    let mut saw_full_path = false;
+    let mut mscx_root = None;
     loop {
         match reader.read_event()? {
             Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "rootfile" => {
                 saw_rootfile = true;
                 for attribute in e.attributes() {
                     let attribute = attribute?;
-                    if attribute.key.as_ref() == "full-path" {
-                        let path = attribute
-                            .normalized_value(XmlVersion::Implicit1_0)?
-                            .into_owned();
-                        let path = path.trim().to_owned();
-                        if path.is_empty() {
-                            return Err(Error::NoRootFile);
-                        }
-                        return Ok(Some(path));
+                    if attribute.key.as_ref() != "full-path" {
+                        continue;
+                    }
+                    let path = attribute
+                        .normalized_value(XmlVersion::Implicit1_0)?
+                        .into_owned();
+                    let path = path.trim().to_owned();
+                    if path.is_empty() {
+                        return Err(Error::NoRootFile);
+                    }
+                    saw_full_path = true;
+                    if mscx_root.is_none() && path.to_ascii_lowercase().ends_with(".mscx") {
+                        mscx_root = Some(path);
                     }
                 }
             }
-            Event::Eof => {
-                return if saw_rootfile {
-                    Err(Error::NoRootFile)
-                } else {
-                    Ok(None)
-                };
-            }
+            Event::Eof => break,
             _ => {}
         }
     }
+
+    if saw_rootfile && !saw_full_path {
+        return Err(Error::NoRootFile);
+    }
+    Ok(mscx_root)
 }
 
 #[cfg(test)]
@@ -284,6 +297,20 @@ mod tests {
         .into_bytes()
     }
 
+    /// container.xml tel qu'écrit par MuseScore 4.0.1 : le `.mscx` n'est pas
+    /// la première entrée, loin s'en faut.
+    const CONTAINER_XML_401: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<container>
+  <rootfiles>
+    <rootfile full-path="score_style.mss"/>
+    <rootfile full-path="X.mscx"/>
+    <rootfile full-path="Thumbnails/thumbnail.png"/>
+    <rootfile full-path="audiosettings.json"/>
+    <rootfile full-path="viewsettings.json"/>
+  </rootfiles>
+</container>
+"#;
+
     fn build_zip(files: &[(&str, &[u8])]) -> Vec<u8> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -307,6 +334,38 @@ mod tests {
         assert_eq!(container.main_mscx(), MSCX_460);
         assert_eq!(container.version().unwrap().as_u32(), 460);
         assert_eq!(container.version().unwrap().to_string(), "4.60");
+    }
+
+    #[test]
+    fn picks_first_mscx_rootfile_from_musescore_401_container() {
+        let zip = build_zip(&[
+            ("META-INF/container.xml", CONTAINER_XML_401),
+            ("score_style.mss", br#"<museScore version="4.60"/>"#),
+            ("X.mscx", MSCX_460),
+            ("Thumbnails/thumbnail.png", b"png"),
+            ("audiosettings.json", b"{}"),
+            ("viewsettings.json", b"{}"),
+        ]);
+
+        let container = MsczContainer::from_bytes(&zip).unwrap();
+        assert_eq!(container.main_mscx_name(), "X.mscx");
+        assert_eq!(container.main_mscx(), MSCX_460);
+        assert_eq!(container.version().unwrap().as_u32(), 460);
+    }
+
+    #[test]
+    fn falls_back_to_root_mscx_when_no_rootfile_is_mscx() {
+        let zip = build_zip(&[
+            ("META-INF/container.xml", &container_xml("score_style.mss")),
+            ("score_style.mss", br#"<museScore version="4.60"/>"#),
+            ("Thumbnails/thumbnail.png", b"png"),
+            ("Excerpts/part.mscx", br#"<museScore version="4.60"/>"#),
+            ("my_score.mscx", MSCX_460),
+        ]);
+
+        let container = MsczContainer::from_bytes(&zip).unwrap();
+        assert_eq!(container.main_mscx_name(), "my_score.mscx");
+        assert_eq!(container.version().unwrap().as_u32(), 460);
     }
 
     #[test]
