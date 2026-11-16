@@ -45,4 +45,41 @@ mod tests {
         assert_eq!(style.lyrics_placement, Placement::Above);
         assert!((style.page_width_in - 8.5).abs() < 1e-9);
     }
+
+    #[test]
+    fn les_paroles_suivent_lyrics_placement() {
+        use crate::model::SegmentItem;
+
+        let read_placement = |style: &str| {
+            let mscx = format!(
+                r#"<museScore version="4.00"><Score>{style}<Part><Staff id="1"/></Part>
+                <Staff id="1"><Measure><voice><Chord>
+                <durationType>quarter</durationType><Lyrics><text>Do</text></Lyrics>
+                <Note><pitch>60</pitch></Note></Chord></voice></Measure></Staff></Score></museScore>"#
+            );
+            let score = crate::read::read4xx::read(mscx.as_bytes(), MscVersion::from_raw(400))
+                .expect("partition lue");
+            let placement = score
+                .measures
+                .iter()
+                .flat_map(|measure| &measure.segments)
+                .flat_map(|segment| segment.iter_elements())
+                .find_map(|(_, item)| match item {
+                    SegmentItem::ChordRest(chord_rest) => {
+                        chord_rest.lyrics.first().map(|lyrics| lyrics.placement)
+                    }
+                    _ => None,
+                })
+                .expect("parole");
+            placement
+        };
+
+        // Sans <placement> ni style : below, la valeur de lyricsPlacement.
+        assert_eq!(read_placement(""), Placement::Below);
+        // Style surchargé : above.
+        assert_eq!(
+            read_placement("<Style><lyricsPlacement>above</lyricsPlacement></Style>"),
+            Placement::Above
+        );
+    }
 }

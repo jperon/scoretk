@@ -108,4 +108,39 @@ mod tests {
         .expect("XML");
         assert!(page_break(&break_node));
     }
+
+    #[test]
+    fn les_paroles_suivent_lyrics_placement() {
+        use crate::model::SegmentItem;
+
+        let read_placement = |style: &str| {
+            let mscx = format!(
+                r#"<museScore version="3.02"><Score><Division>480</Division>{style}
+                <Part><Staff id="1"/></Part><Staff id="1"><Measure><voice><Chord>
+                <durationType>quarter</durationType><Lyrics><text>Do</text></Lyrics>
+                <Note><pitch>60</pitch></Note></Chord></voice></Measure></Staff></Score></museScore>"#
+            );
+            let score = super::super::read(mscx.as_bytes(), MscVersion::from_raw(302))
+                .expect("partition lue");
+            let placement = score
+                .measures
+                .iter()
+                .flat_map(|measure| &measure.segments)
+                .flat_map(|segment| segment.iter_elements())
+                .find_map(|(_, item)| match item {
+                    SegmentItem::ChordRest(chord_rest) => {
+                        chord_rest.lyrics.first().map(|lyrics| lyrics.placement)
+                    }
+                    _ => None,
+                })
+                .expect("parole");
+            placement
+        };
+
+        assert_eq!(read_placement(""), Placement::Below);
+        assert_eq!(
+            read_placement("<Style><lyricsPlacement>above</lyricsPlacement></Style>"),
+            Placement::Above
+        );
+    }
 }
