@@ -43,6 +43,7 @@ const EXPECTED_CONFORMANT: &[&str] = &[
     "expression-1",
     "hairpins_and_repeats",
     "linked-ties",
+    "repeat65",
     "repeat68",
     "repeat69",
     "tenuto_accent",
