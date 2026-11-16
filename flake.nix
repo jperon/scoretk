@@ -46,9 +46,22 @@
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
         # cleanCargoSource ne garde que ce qui influence la compilation Cargo
-        # (Cargo.toml, Cargo.lock, .cargo/config, src/, tests/, benches/,
-        # examples/) : pas besoin de reconstruire quand la doc change.
-        src = craneLib.cleanCargoSource ./.;
+        # (.rs, *.toml, Cargo.lock, .cargo/config, plus les répertoires) : pas
+        # besoin de reconstruire quand la doc change. Il faut y ajouter
+        # `tests/corpus/` (données .mscx/.mscz/.musicxml) : les tests
+        # d'intégration les lisent via CARGO_MANIFEST_DIR/../../tests/corpus,
+        # et sans elles le check `tests` échoue (« No such file or directory »),
+        # crane ne conservant que le répertoire vide.
+        # buildDepsOnly n'est pas alourdi par ce corpus : crane y remplace les
+        # sources par un dummy src, donc les dépendances ne sont pas
+        # recompilées quand le corpus change.
+        src = pkgs.lib.cleanSourceWith {
+          src = pkgs.lib.cleanSource ./.;
+          filter = path: type:
+            craneLib.filterCargoSources path type
+            || pkgs.lib.hasPrefix (toString ./tests/corpus + "/") (toString path);
+          name = "mscz2xml-source";
+        };
 
         commonArgs = {
           inherit src;
