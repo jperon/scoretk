@@ -19,6 +19,7 @@ use zip::{CompressionMethod, ZipWriter};
 use crate::model::Score;
 use crate::Result;
 
+mod beams;
 mod exportmusicxml;
 mod harmony;
 mod layout;
@@ -27,6 +28,7 @@ mod nuances;
 mod ottava;
 mod pitch;
 mod repeats;
+mod stems;
 mod text;
 mod textlines;
 mod writer;

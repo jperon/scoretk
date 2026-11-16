@@ -482,7 +482,7 @@ fn write_trill_symbol(xml: &mut XmlWriter, trill: &Trill) {
 }
 
 /// Écrit un point d'orgue (`fermata`).
-fn write_fermata(xml: &mut XmlWriter, fermata: &Fermata) {
+pub(crate) fn write_fermata(xml: &mut XmlWriter, fermata: &Fermata) {
     let kind = if fermata.placement == Placement::Above {
         "upright"
     } else {

@@ -47,6 +47,7 @@ pub(crate) fn read_chord_rest(
     let mut tremolo = None;
     let mut arpeggio = None;
     let mut chord_line = None;
+    let mut visible = true;
 
     for child in node.children() {
         match child.name() {
@@ -70,6 +71,7 @@ pub(crate) fn read_chord_rest(
             "StemSlash" => slash = true,
             "StemDirection" => stem = tables::stem_direction(&child.trimmed_text()),
             "small" => small = child.int_text().unwrap_or(0) != 0,
+            "visible" => visible = child.int_text().unwrap_or(1) != 0,
             "BeamMode" => beam = tables::beam_mode(&child.trimmed_text()),
             "Lyrics" => lyrics.push(read_lyrics(child, reader.score.style.lyrics_placement)),
             "Articulation" => {
@@ -114,15 +116,16 @@ pub(crate) fn read_chord_rest(
         ChordRestKind::Rest(Rest {
             full_measure: duration.is_measure(),
             gap: false,
+            visible,
         })
     } else {
         let mut chord = Chord {
             stem,
+            staff_move,
             small,
             grace,
             grace_slash: slash,
             articulations,
-            staff_move,
             ornaments,
             tremolo,
             arpeggio,
@@ -152,6 +155,7 @@ pub(crate) fn read_chord_rest(
         tuplet: None,
         lyrics,
         beam_mode: beam,
+        beam_direction: None,
         kind,
     }
 }

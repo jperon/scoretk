@@ -26,7 +26,7 @@ pub const DEFAULT_DIVISION: u32 = 480;
 /// Correspond aux champs de `Score` lus par l'export MusicXML
 /// (`engraving/dom/score.h`, `exportmusicxml.cpp` pour `<work>`,
 /// `<identification>` et `<credit>`).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScoreMetadata {
     /// Titre de l'œuvre.
     pub work_title: String,
@@ -46,6 +46,44 @@ pub struct ScoreMetadata {
     pub copyright: String,
     /// Source.
     pub source: String,
+    /// Date de création du fichier (`creationDate`), exportée dans
+    /// `<miscellaneous>`.
+    ///
+    /// Vide quand le `.mscx` ne la porte pas ; l'export retombe alors sur la
+    /// date d'encodage, comme `MasterScore` initialise les métadonnées à la
+    /// date du jour.
+    pub creation_date: String,
+    /// Plateforme d'origine (`platform`), exportée dans `<miscellaneous>`.
+    ///
+    /// `MasterScore` la fixe à la plateforme courante ; la bibliothèque étant
+    /// déterministe, la valeur par défaut est `Linux`, celle des références du
+    /// corpus. Un `<metaTag>` présent, même vide, la remplace.
+    pub platform: String,
+    /// Sous-titre (`subtitle`), exporté dans `<miscellaneous>`.
+    pub subtitle: String,
+    /// Version du format source (`mscVersion`), exportée dans
+    /// `<miscellaneous>` quand le fichier la porte.
+    pub msc_version: String,
+}
+
+impl Default for ScoreMetadata {
+    fn default() -> Self {
+        Self {
+            work_title: String::new(),
+            movement_title: String::new(),
+            movement_number: String::new(),
+            work_number: String::new(),
+            composer: String::new(),
+            lyricist: String::new(),
+            arranger: String::new(),
+            copyright: String::new(),
+            source: String::new(),
+            creation_date: String::new(),
+            platform: "Linux".to_owned(),
+            subtitle: String::new(),
+            msc_version: String::new(),
+        }
+    }
 }
 
 /// Partition en mémoire.

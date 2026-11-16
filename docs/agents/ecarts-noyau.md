@@ -510,3 +510,48 @@ Corrigé dans cette passe :
   invisible, MuseScore regroupe les `<notations>` autrement ; le contenu de la
   famille est identique, seule la répartition des ouvertures
   `print-object="no"` diffère. **Cause : lecteur/modèle** (tie invisible).
+
+## 19. Parité complète : hampes, ligatures, barres, métadonnées
+
+Le test de bout en bout a un second niveau, `Level::Full` (`corpus_v3_complet`,
+`corpus_v4_complet`, `ecarts_complets_document`), qui ne retire que la mise en
+page pure (attributs `default-x`/`default-y`/`relative-x`/`relative-y`/`width`,
+points de contrôle `bezier-x`/`bezier-y`, blocs `<defaults>` et `<print>`,
+`<system-layout>`, `<staff-layout>`, `<encoding-date>`) et produit
+`docs/agents/ecarts-complets.md`.
+
+Corrigé dans cette passe :
+
+- **hampes** : toujours écrites (`stem.ts`), direction calculée comme
+  `Chord::up()` (`export/stems.rs`) : direction explicite hors ligature,
+  ligature, trémolo, plusieurs voix (parité de piste), ornement, accord croisé,
+  puis hauteurs (`computeAutoStemDirection`, `Tpc` → `relStep` avec la clef en
+  vigueur et la hauteur écrite des instruments transpositeurs). Résultat :
+  aucun écart de hampe hors `v3/moonlight` (9 notes croisées dont la ligature
+  impose une direction que le modèle ne restitue pas).
+- **ligatures** : `export/beams.rs` reconstruit `BeamLayout::createBeams` et
+  `Groups::baseBeamMode`/`actualBeamMode` (table `noteGroups`, subdivisions de
+  temps, anacrouse, n-olets, reprise entre mesures), puis écrit
+  `begin`/`continue`/`end`/`forward hook`/`backward hook` par niveau comme
+  `writeBeam`, y compris les ornements (`beamGraceNotes`). `BeamMode` gagne
+  `begin16`/`begin32` et `ChordRest::beam_direction` porte le
+  `<Beam><StemDirection>` lu. Aucun écart de `<beam>` sur les deux corpus.
+- **barres** : la fermata posée en fin de mesure est écrite dans
+  `<barline location="right">` comme `barlineRight`, et non dans les notations
+  du silence.
+- **accords croisés** : `Chord::staff_move` (lecture des deux formats) décale
+  `<staff>` et la direction de hampe ; `v3/moonlight` passe de 213 à 5 lignes
+  d'écart `<staff>`.
+- **métadonnées** : `<miscellaneous>` reprend `creationDate`, `mscVersion`,
+  `platform` et `subtitle` (plateforme `Linux` et date d'encodage par défaut,
+  comme `MasterScore`).
+- **soufflets** : `spread` vient de `hairpinHeight` (12 en 3.x, 11.5 en 4.x).
+- **silences invisibles** : `<note print-object="no">` pour un silence masqué.
+
+Écarts complets restants (détail et fréquence dans `ecarts-complets.md`) :
+`<wedge>` de `part-textlines`/`testExcludeInvisibleElements` (soufflets
+invisibles ou déplacés), `<direction>` déplacées par un changement
+d'instrument, `<tuplet placement>`, `<tied orientation>`, `figured-bass`,
+`<duration>` de `moonlight`, formes de têtes/altérations, `part-group`,
+`<measure-repeat>`, et les barlines de courtoisie générées par la mise en page
+(avant un changement de tonalité/mesure en fin de système).

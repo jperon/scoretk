@@ -24,14 +24,15 @@ use std::collections::BTreeSet;
 
 use crate::model::chord::ChordRestKind;
 use crate::model::{
-    Accidental, AccidentalType, Annotation, BeamMode, Chord, ChordRest, Clef, ClefType, Duration,
-    Fraction, GraceType, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
-    LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part, Placement, Score, Segment,
-    SegmentItem, SegmentType, SpannerType, StaffId, StemDirection, Tempo, TempoKind, Tick, TimeSig,
-    TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
+    Accidental, AccidentalType, Annotation, Chord, ChordRest, Clef, ClefType, Duration, Fraction,
+    GraceType, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure,
+    Note, NoteHeadGroup, NoteHeadType, Part, Placement, Score, Segment, SegmentItem, SegmentType,
+    SpannerType, StaffId, StemDirection, Tempo, TempoKind, Tick, TimeSig, TimeSigType, Track,
+    Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::Result;
 
+use super::beams;
 use super::harmony;
 use super::layout;
 use super::notations;
@@ -39,6 +40,7 @@ use super::nuances::{self, Nuances};
 use super::ottava;
 use super::pitch;
 use super::repeats;
+use super::stems;
 use super::text;
 use super::textlines;
 use super::writer::XmlWriter;
@@ -319,6 +321,8 @@ pub(crate) struct Context<'a> {
     pub(crate) score: &'a Score,
     options: &'a ExportOptions,
     tuplets: TupletIndex,
+    /// Ligatures reconstituées, comme les `Beam` de la mise en page.
+    beams: beams::Beams,
 }
 
 /// État des spanners d'une partie (`spannersStopped` et compteur d'instruments
@@ -339,6 +343,7 @@ impl<'a> Context<'a> {
             score,
             options,
             tuplets: TupletIndex::new(score),
+            beams: beams::Beams::new(score, options.concert_pitch),
         }
     }
 
@@ -475,8 +480,42 @@ impl<'a> Context<'a> {
         if !metadata.source.is_empty() {
             out.xml.tag("source", &metadata.source);
         }
-        // TODO(parité): <miscellaneous> (creationDate, platform, autres
-        // métadonnées MuseScore absentes du modèle).
+        // MuseScore écrit toutes les métadonnées non standard, triées par nom ;
+        // `creationDate` et `platform` ont toujours une valeur (celle du
+        // fichier, sinon celle de l'export).
+        let creation_date = if metadata.creation_date.is_empty() {
+            self.options.encoding_date.as_str()
+        } else {
+            metadata.creation_date.as_str()
+        };
+        out.xml.start_element("miscellaneous", &[]);
+        out.xml.tag_with(
+            "miscellaneous-field",
+            &[("name", "creationDate")],
+            creation_date,
+        );
+        if !metadata.msc_version.is_empty() {
+            out.xml.tag_with(
+                "miscellaneous-field",
+                &[("name", "mscVersion")],
+                &metadata.msc_version,
+            );
+        }
+        if !metadata.platform.is_empty() {
+            out.xml.tag_with(
+                "miscellaneous-field",
+                &[("name", "platform")],
+                &metadata.platform,
+            );
+        }
+        if !metadata.subtitle.is_empty() {
+            out.xml.tag_with(
+                "miscellaneous-field",
+                &[("name", "subtitle")],
+                &metadata.subtitle,
+            );
+        }
+        out.xml.end_element();
         out.xml.end_element();
     }
 
@@ -1287,38 +1326,68 @@ impl Context<'_> {
         xml_staff: usize,
         track: Track,
     ) {
-        for grace in &chord.grace_chords {
-            let kind = grace.chord.grace.unwrap_or(GraceType::Appoggiatura);
-            if !grace_is_after(kind) {
-                self.chord(
-                    out,
-                    &grace.chord,
-                    Some(&grace.duration),
-                    chord_rest,
-                    measure,
-                    xml_staff,
-                    track,
-                    true,
-                );
-            }
+        let before: Vec<usize> = (0..chord.grace_chords.len())
+            .filter(|index| {
+                let kind = chord.grace_chords[*index]
+                    .chord
+                    .grace
+                    .unwrap_or(GraceType::Appoggiatura);
+                !grace_is_after(kind)
+            })
+            .collect();
+        let after: Vec<usize> = (0..chord.grace_chords.len())
+            .filter(|index| {
+                let kind = chord.grace_chords[*index]
+                    .chord
+                    .grace
+                    .unwrap_or(GraceType::Appoggiatura);
+                grace_is_after(kind)
+            })
+            .collect();
+        // `BeamLayout::beamGraceNotes` : les ornements avant et après forment
+        // deux groupes distincts.
+        let multiple_voices = stems::has_other_voices(
+            measure,
+            track,
+            out.tick,
+            self.actual_ticks(chord_rest, measure, track.staff()),
+        );
+        let track_even = track.raw().is_multiple_of(2);
+        let before_beams =
+            beams::grace_beams(&chord.grace_chords, &before, multiple_voices, track_even);
+        let after_beams =
+            beams::grace_beams(&chord.grace_chords, &after, multiple_voices, track_even);
+
+        for (position, index) in before.iter().enumerate() {
+            let grace = &chord.grace_chords[*index];
+            self.chord(
+                out,
+                &grace.chord,
+                Some(&grace.duration),
+                chord_rest,
+                measure,
+                xml_staff,
+                track,
+                before_beams[position].as_ref(),
+                true,
+            );
         }
         self.chord(
-            out, chord, None, chord_rest, measure, xml_staff, track, false,
+            out, chord, None, chord_rest, measure, xml_staff, track, None, false,
         );
-        for grace in &chord.grace_chords {
-            let kind = grace.chord.grace.unwrap_or(GraceType::Appoggiatura);
-            if grace_is_after(kind) {
-                self.chord(
-                    out,
-                    &grace.chord,
-                    Some(&grace.duration),
-                    chord_rest,
-                    measure,
-                    xml_staff,
-                    track,
-                    true,
-                );
-            }
+        for (position, index) in after.iter().enumerate() {
+            let grace = &chord.grace_chords[*index];
+            self.chord(
+                out,
+                &grace.chord,
+                Some(&grace.duration),
+                chord_rest,
+                measure,
+                xml_staff,
+                track,
+                after_beams[position].as_ref(),
+                true,
+            );
         }
     }
 
@@ -1339,6 +1408,7 @@ impl Context<'_> {
         measure: &Measure,
         xml_staff: usize,
         track: Track,
+        grace_beam: Option<&beams::GraceBeam>,
         grace: bool,
     ) {
         let segment_tick = out.tick;
@@ -1421,27 +1491,51 @@ impl Context<'_> {
             }
 
             // Pas de hampe pour les rondes et les valeurs plus longues.
+            // MuseScore écrit toujours une hampe dès qu'il y en a une ; la
+            // direction automatique se calcule comme `Chord::up()`.
             if duration.kind.has_stem() {
-                match chord.stem {
-                    StemDirection::Up => out.xml.tag("stem", "up"),
-                    StemDirection::Down => out.xml.tag("stem", "down"),
-                    // La direction automatique est calculée par la mise en
-                    // page : le modèle ne la connaît pas.
-                    StemDirection::Auto => {}
-                }
+                let actual = if grace {
+                    Fraction::ZERO
+                } else {
+                    self.actual_ticks(chord_rest, measure, track.staff())
+                };
+                let up = stems::stem_up(
+                    self.score,
+                    chord,
+                    measure,
+                    track,
+                    segment_tick,
+                    actual,
+                    self.options.concert_pitch,
+                    transpose,
+                    grace_beam.map_or_else(
+                        || self.beams.up(measure.number, track, segment_tick),
+                        |beam| Some(beam.up),
+                    ),
+                );
+                out.xml.tag("stem", if up { "up" } else { "down" });
             }
 
             write_notehead(out, note, chord, duration);
 
-            if xml_staff > 0 {
-                // `<staffMove>` place l'accord sur l'autre portée de la partie
-                // (croisement de mains), comme `staff + chord->staffMove()`.
-                let staff = xml_staff as i32 + i32::from(chord.staff_move);
-                out.xml.tag("staff", &staff.to_string());
+            // `staff + note->chord()->staffMove()` : un accord croisé change
+            // de portée sans changer de piste.
+            let written_staff = xml_staff as i32 + i32::from(chord.staff_move);
+            if written_staff > 0 {
+                out.xml.tag("staff", &written_staff.to_string());
             }
 
-            if first && !grace {
-                write_beam(out, chord_rest.beam_mode);
+            if first {
+                if grace {
+                    if let Some(beam) = grace_beam {
+                        for (level, text) in beam.texts.iter().enumerate() {
+                            let number = (level + 1).to_string();
+                            out.xml.tag_with("beam", &[("number", &number)], text);
+                        }
+                    }
+                } else {
+                    self.write_beams(out, measure, track, segment_tick);
+                }
             }
 
             let mut notations = Notations::new();
@@ -1499,6 +1593,19 @@ impl Context<'_> {
         }
     }
 
+    /// Écrit les `<beam>` d'un élément d'après les ligatures reconstituées.
+    fn write_beams(&self, out: &mut Out, measure: &Measure, track: Track, tick: Fraction) {
+        for (index, text) in self
+            .beams
+            .texts(measure.number, track, tick)
+            .iter()
+            .enumerate()
+        {
+            let number = (index + 1).to_string();
+            out.xml.tag_with("beam", &[("number", &number)], text);
+        }
+    }
+
     /// Écrit un silence (`rest`).
     fn rest(
         &self,
@@ -1511,7 +1618,12 @@ impl Context<'_> {
         let segment_tick = out.tick;
         out.attr(false);
 
-        out.xml.start_element("note", &[]);
+        let visible = chord_rest.rest_ref().is_none_or(|rest| rest.visible);
+        if visible {
+            out.xml.start_element("note", &[]);
+        } else {
+            out.xml.start_element("note", &[("print-object", "no")]);
+        }
 
         if chord_rest.is_full_measure_rest() {
             out.xml.tag_empty("rest", &[("measure", "yes")]);
@@ -1544,7 +1656,7 @@ impl Context<'_> {
             out.xml.tag("staff", &xml_staff.to_string());
         }
 
-        write_beam(out, chord_rest.beam_mode);
+        self.write_beams(out, measure, track, segment_tick);
 
         let mut notations = Notations::new();
         let segment = measure
@@ -2257,22 +2369,6 @@ fn write_tuplet_type_and_dots(out: &mut Out, base: Option<(&'static str, u8)>) {
             out.xml.tag_empty("tuplet-dot", &[]);
         }
     }
-}
-
-/// Écrit `<beam>` (`writeBeam`).
-///
-/// MuseScore déduit les niveaux de ligature de l'objet `Beam` ; le modèle ne
-/// garde que le mode de l'élément, d'où une sortie limitée au premier niveau.
-fn write_beam(out: &mut Out, mode: BeamMode) {
-    let name = match mode {
-        BeamMode::Auto | BeamMode::None => return,
-        BeamMode::Begin => "begin",
-        BeamMode::Mid => "continue",
-        BeamMode::End => "end",
-        BeamMode::ForwardHook => "forward hook",
-        BeamMode::BackwardHook => "backward hook",
-    };
-    out.xml.tag_with("beam", &[("number", "1")], name);
 }
 
 /// Écrit une syllabe (`<lyric>`).

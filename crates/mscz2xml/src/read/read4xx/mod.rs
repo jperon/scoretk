@@ -257,7 +257,11 @@ impl Reader {
             "arranger" => metadata.arranger = value,
             "copyright" => metadata.copyright = value,
             "source" => metadata.source = value,
-            // TODO(parité): subtitle, translator, creationDate, platform.
+            "creationDate" => metadata.creation_date = value,
+            "platform" => metadata.platform = value,
+            "subtitle" => metadata.subtitle = value,
+            "mscVersion" => metadata.msc_version = value,
+            // TODO(parité): translator.
             _ => {}
         }
     }
@@ -741,6 +745,9 @@ impl Reader {
         // Premier accord d'un trémolo à deux notes : l'accord suivant de la
         // même voix fait partie du même trémolo (`Measure::connectTremolo`).
         let mut pending_tremolo: Option<u8> = None;
+        // `<Beam><StemDirection>` s'applique au premier accord ou silence qui
+        // suit (`MeasureRead::readVoice` : `startingBeam`).
+        let mut pending_beam: Option<StemDirection> = None;
 
         for child in &element.children {
             match child.name.as_str() {
@@ -788,6 +795,7 @@ impl Reader {
                     chord_rest.ticks = explicit_ticks;
                     chord_rest.tuplet = tuplet;
                     chord_rest.beam_mode = beam;
+                    chord_rest.beam_direction = pending_beam.take();
                     chord_rest.lyrics = lyrics;
                     chord_rest.kind = ChordRestKind::Chord(chord);
                     self.insert_item(
@@ -805,16 +813,17 @@ impl Reader {
                     let ticks = parsed.ticks;
                     let duration = parsed.duration;
                     let gap = parsed.gap;
+                    let visible = parsed.visible;
                     let lyrics = parsed.lyrics;
 
                     let mut chord_rest = ChordRest::rest(duration);
                     chord_rest.ticks = parsed.explicit_ticks;
                     chord_rest.tuplet = tuplet;
                     chord_rest.lyrics = lyrics;
-                    if gap {
-                        if let Some(rest) = chord_rest.rest_mut() {
-                            rest.gap = true;
-                        }
+                    chord_rest.beam_direction = pending_beam.take();
+                    if let Some(rest) = chord_rest.rest_mut() {
+                        rest.gap = gap;
+                        rest.visible = visible;
                     }
                     self.insert_item(
                         measure_index,
@@ -824,6 +833,15 @@ impl Reader {
                         SegmentItem::ChordRest(chord_rest),
                     );
                     tick += actual_ticks(ticks, &tuplets, stretch);
+                }
+                "Beam" => {
+                    pending_beam = child.child("StemDirection").map(|direction| {
+                        match direction.text().trim() {
+                            "up" => StemDirection::Up,
+                            "down" => StemDirection::Down,
+                            _ => StemDirection::Auto,
+                        }
+                    });
                 }
                 "Tuplet" => {
                     let tuplet = self.read_tuplet(child, tick);
@@ -1148,6 +1166,7 @@ impl Reader {
         let mut grace = None;
         let mut beam = BeamMode::Auto;
         let mut stem = StemDirection::Auto;
+        let mut staff_move = 0i8;
         let mut small = false;
         let mut articulations = Vec::new();
         let mut ornaments = Vec::new();
@@ -1180,6 +1199,14 @@ impl Reader {
                         "down" => StemDirection::Down,
                         _ => StemDirection::Auto,
                     };
+                }
+                "staffMove" => {
+                    staff_move = child
+                        .int()
+                        .unwrap_or(0)
+                        .clamp(-4, 4)
+                        .try_into()
+                        .unwrap_or(0);
                 }
                 "small" => small = child.int().unwrap_or(0) != 0,
                 "Note" => notes.push(self.read_note(child, tick, track, &mut chord_line)?),
@@ -1218,7 +1245,7 @@ impl Reader {
                 "ChordLine" => chord_line = notations::read_chord_line(child),
                 "Lyrics" => lyrics.push(read_lyrics(child, self.score.style.lyrics_placement)),
                 "Spanner" => notations::read_spanner(self, child, tick, track),
-                // TODO(parité): <Stem>, <Hook>, <noStem>, <staffMove>.
+                // TODO(parité): <Stem>, <Hook>, <noStem>.
                 _ => {}
             }
             if let Some(kind) = names::grace_type(child.name.as_str()) {
@@ -1240,6 +1267,7 @@ impl Reader {
             grace,
             beam,
             stem,
+            staff_move,
             small,
             tremolo_two_chord,
             articulations,
@@ -1263,6 +1291,7 @@ impl Reader {
         let mut dots = 0u8;
         let mut explicit = None;
         let mut gap = false;
+        let mut visible = true;
         let mut lyrics = Vec::new();
 
         for child in &element.children {
@@ -1279,6 +1308,7 @@ impl Reader {
                 }
                 "duration" => explicit = child.fraction(),
                 "gap" => gap = child.int().unwrap_or(0) != 0,
+                "visible" => visible = child.int().unwrap_or(1) != 0,
                 "Lyrics" => lyrics.push(read_lyrics(child, self.score.style.lyrics_placement)),
                 "Spanner" => notations::read_spanner(self, child, tick, track),
                 _ => {}
@@ -1306,6 +1336,7 @@ impl Reader {
             ticks,
             explicit_ticks: explicit,
             gap,
+            visible,
             lyrics,
         }
     }
@@ -1669,6 +1700,7 @@ struct ParsedChord {
     grace: Option<GraceType>,
     beam: BeamMode,
     stem: StemDirection,
+    staff_move: i8,
     small: bool,
     tremolo_two_chord: bool,
     articulations: Vec<Articulation>,
@@ -1685,12 +1717,12 @@ impl ParsedChord {
             notes: self.notes,
             grace_chords,
             stem: self.stem,
+            staff_move: self.staff_move,
             grace: self.grace,
             grace_slash: false,
             articulations: self.articulations,
             small: self.small,
             tremolo_two_chord: self.tremolo_two_chord,
-            staff_move: 0,
             ornaments: self.ornaments,
             tremolo: self.tremolo,
             arpeggio: self.arpeggio,
@@ -1706,6 +1738,7 @@ struct ParsedRest {
     /// `<duration>` explicite, s'il diffère de la figure.
     explicit_ticks: Option<Fraction>,
     gap: bool,
+    visible: bool,
     lyrics: Vec<Lyrics>,
 }
 

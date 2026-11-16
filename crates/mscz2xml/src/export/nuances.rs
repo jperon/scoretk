@@ -99,7 +99,15 @@ impl Nuances {
                 continue;
             };
             self.started.insert(index);
-            write_hairpin(out, kind, &data, true, number, xml_staff);
+            write_hairpin(
+                out,
+                kind,
+                &data,
+                true,
+                number,
+                xml_staff,
+                score.style.hairpin_height_sp,
+            );
             // L'arrêt a déjà été écrit (voix traitée avant celle du début) :
             // le numéro n'a plus à rester réservé.
             if self.stopped.contains(&index) {
@@ -132,7 +140,15 @@ impl Nuances {
             let Some(number) = self.number(SpannerId::from_index(index), line) else {
                 continue;
             };
-            write_hairpin(out, kind, &data, false, number, xml_staff);
+            write_hairpin(
+                out,
+                kind,
+                &data,
+                false,
+                number,
+                xml_staff,
+                score.style.hairpin_height_sp,
+            );
             if self.started.remove(&index) {
                 self.release(SpannerId::from_index(index), line, number);
             }
@@ -156,6 +172,7 @@ fn write_hairpin(
     is_start: bool,
     number: usize,
     xml_staff: usize,
+    hairpin_height: f64,
 ) {
     // MuseScore n'écrit rien pour un soufflet de ligne invisible sans texte.
     if data.line && data.begin_text.is_empty() && data.end_text.is_empty() {
@@ -201,6 +218,14 @@ fn write_hairpin(
                 || !is_start && matches!(kind, HairpinType::Diminuendo));
         if niente {
             attributes.push(("niente", "yes"));
+        }
+        // `spread` : `hairpinHeight * 10`, sur un crescendo au départ et un
+        // diminuendo à l'arrivée.
+        let spread_needed = (is_start && matches!(kind, HairpinType::Crescendo))
+            || (!is_start && matches!(kind, HairpinType::Diminuendo));
+        let spread = super::exportmusicxml::format_number(hairpin_height * 10.0, 2);
+        if spread_needed {
+            attributes.push(("spread", &spread));
         }
         let number = (number + 1).to_string();
         attributes.push(("number", &number));
