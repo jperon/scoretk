@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0">
+  <work>
+    <work-title>Repeat Test</work-title>
+    </work>
+  <identification>
+    <encoding>
+      <software>MuseScore Studio 4.7.4</software>
+      <encoding-date>2026-11-16</encoding-date>
+      <supports element="accidental" type="yes"/>
+      <supports element="beam" type="yes"/>
+      <supports element="print" attribute="new-page" type="yes" value="yes"/>
+      <supports element="print" attribute="new-system" type="yes" value="yes"/>
+      <supports element="stem" type="yes"/>
+      </encoding>
+    <miscellaneous>
+      <miscellaneous-field name="creationDate">2026-11-16</miscellaneous-field>
+      <miscellaneous-field name="platform">Linux</miscellaneous-field>
+      </miscellaneous>
+    </identification>
+  <defaults>
+    <scaling>
+      <millimeters>7.05556</millimeters>
+      <tenths>40</tenths>
+      </scaling>
+    <page-layout>
+      <page-height>1683.36</page-height>
+      <page-width>1190.88</page-width>
+      <page-margins type="even">
+        <left-margin>85.0393</left-margin>
+        <right-margin>85.0393</right-margin>
+        <top-margin>85.0393</top-margin>
+        <bottom-margin>85.0393</bottom-margin>
+        </page-margins>
+      <page-margins type="odd">
+        <left-margin>85.0393</left-margin>
+        <right-margin>85.0393</right-margin>
+        <top-margin>85.0393</top-margin>
+        <bottom-margin>85.0393</bottom-margin>
+        </page-margins>
+      </page-layout>
+    <appearance>
+      <line-width type="light barline">1.8</line-width>
+      <line-width type="heavy barline">5.5</line-width>
+      <line-width type="beam">5</line-width>
+      <line-width type="bracket">4.5</line-width>
+      <line-width type="dashes">1</line-width>
+      <line-width type="enclosure">1</line-width>
+      <line-width type="ending">1.1</line-width>
+      <line-width type="extend">1</line-width>
+      <line-width type="leger">1.6</line-width>
+      <line-width type="pedal">1.1</line-width>
+      <line-width type="octave shift">1.1</line-width>
+      <line-width type="slur middle">2.1</line-width>
+      <line-width type="slur tip">0.5</line-width>
+      <line-width type="staff">1.1</line-width>
+      <line-width type="stem">1</line-width>
+      <line-width type="tie middle">2.1</line-width>
+      <line-width type="tie tip">0.5</line-width>
+      <line-width type="tuplet bracket">1</line-width>
+      <line-width type="wedge">1.2</line-width>
+      <note-size type="cue">70</note-size>
+      <note-size type="grace">70</note-size>
+      <note-size type="grace-cue">49</note-size>
+      </appearance>
+    <music-font font-family="Leland"/>
+    <word-font font-family="Edwin" font-size="10"/>
+    <lyric-font font-family="Edwin" font-size="10"/>
+    </defaults>
+  <credit page="1">
+    <credit-type>title</credit-type>
+    <credit-words default-x="595.44" default-y="1598.32" justify="center" valign="top" font-size="22">repeat66</credit-words>
+    </credit>
+  <credit page="1">
+    <credit-type>subtitle</credit-type>
+    <credit-words default-x="595.44" default-y="1541.63" justify="center" valign="top" font-size="14">Force Final Repeat should reset when crossing to next section.</credit-words>
+    </credit>
+  <part-list>
+    <score-part id="P1">
+      <part-name print-object="no">Piano</part-name>
+      <part-abbreviation print-object="no">Pno.</part-abbreviation>
+      <score-instrument id="P1-I1">
+        <instrument-name>Piano</instrument-name>
+        <instrument-sound>keyboard.piano</instrument-sound>
+        </score-instrument>
+      <midi-device id="P1-I1" port="1"></midi-device>
+      <midi-instrument id="P1-I1">
+        <midi-channel>1</midi-channel>
+        <midi-program>1</midi-program>
+        <volume>78.7402</volume>
+        <pan>0</pan>
+        </midi-instrument>
+      </score-part>
+    </part-list>
+  <part id="P1">
+    <measure number="1" width="237.11">
+      <print>
+        <system-layout>
+          <system-margins>
+            <left-margin>50</left-margin>
+            <right-margin>0</right-margin>
+            </system-margins>
+          <top-system-distance>241.9</top-system-distance>
+          </system-layout>
+        </print>
+      <attributes>
+        <divisions>1</divisions>
+        <key>
+          <fifths>0</fifths>
+          </key>
+        <time>
+          <beats>4</beats>
+          <beat-type>4</beat-type>
+          </time>
+        <clef>
+          <sign>G</sign>
+          <line>2</line>
+          </clef>
+        </attributes>
+      <direction placement="above">
+        <direction-type>
+          <words default-x="-44.33" default-y="126.23" valign="top">1,2,3,4   2,3,4   1,2   5   |   1,2,3,4   2,3,4   2   5
+</words>
+          <words></words>
+          </direction-type>
+        </direction>
+      <direction placement="above" system="only-top">
+        <direction-type>
+          <metronome parentheses="no" default-x="-37.68" relative-y="20">
+            <beat-unit>quarter</beat-unit>
+            <per-minute>400</per-minute>
+            </metronome>
+          </direction-type>
+        <sound tempo="400"/>
+        </direction>
+      <note default-x="79.27" default-y="-50">
+        <pitch>
+          <step>C</step>
+          <octave>4</octave>
+          </pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        </note>
+      </measure>
+    <measure number="2" width="191">
+      <barline location="left">
+        <bar-style>heavy-light</bar-style>
+        <repeat direction="forward"/>
+        </barline>
+      <note default-x="31.36" default-y="-45">
+        <pitch>
+          <step>D</step>
+          <octave>4</octave>
+          </pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        </note>
+      </measure>
+    <measure number="3" width="172.14">
+      <barline location="left">
+        <ending number="1, 2" type="start" default-y="70.71">1, 2</ending>
+        </barline>
+      <note default-x="12.5" default-y="-40">
+        <pitch>
+          <step>E</step>
+          <octave>4</octave>
+          </pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        </note>
+      </measure>
+    <measure number="4" width="189.2">
+      <note default-x="12.5" default-y="-35">
+        <pitch>
+          <step>F</step>
+          <octave>4</octave>
+          </pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        </note>
+      <direction placement="above">
+        <direction-type>
+          <words font-family="Edwin" font-size="10">3x</words>
+          </direction-type>
+        <offset sound="yes">-20</offset>
+        </direction>
+      <direction placement="above">
+        <direction-type>
+          <words default-x="189.2" default-y="56.62" relative-x="-10" relative-y="20">D.C.</words>
+          </direction-type>
+        <sound dacapo="yes"/>
+        </direction>
+      <barline location="right">
+        <bar-style>light-heavy</bar-style>
+        <ending number="1, 2" type="stop"/>
+        <repeat direction="backward" times="3"/>
+        </barline>
+      </measure>
+    <measure number="5" width="181.34">
+      <barline location="left">
+        <ending number="3" type="start" default-y="70.71">3.</ending>
+        </barline>
+      <note default-x="12.5" default-y="-30">
+        <pitch>
+          <step>G</step>
+          <octave>4</octave>
+          </pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        </note>
+      <barline location="right">
+        <bar-style>light-heavy</bar-style>
+        <ending number="3" type="stop"/>
+        </barline>
+      </measure>
+    <measure number="1" width="219.41">
+      <print new-system="yes">
+        <system-layout>
+          <system-margins>
+            <left-margin>50</left-margin>
+            <right-margin>0</right-margin>
+            </system-margins>
+          <system-distance>235</system-distance>
+          </system-layout>
+        </print>
+      <attributes>
+        <divisions>1</divisions>
+        </attributes>
+      <note default-x="57.14" default-y="-30">
+        <pitch>
+          <step>G</step>
+          <octave>4</octave>
+          </pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        </note>
+      </measure>
+    <measure number="2" width="195.43">
+      <barline location="left">
+        <bar-style>heavy-light</bar-style>
+        <repeat direction="forward"/>
+        </barline>
+      <note default-x="31.36" default-y="-35">
+        <pitch>
+          <step>F</step>
+          <octave>4</octave>
+          </pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        </note>
+      </measure>
+    <measure number="3" width="176.57">
+      <barline location="left">
+        <ending number="1, 2" type="start" default-y="70.71">1, 2</ending>
+        </barline>
+      <note default-x="12.5" default-y="-40">
+        <pitch>
+          <step>E</step>
+          <octave>4</octave>
+          </pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        </note>
+      </measure>
+    <measure number="4" width="193.63">
+      <note default-x="12.5" default-y="-45">
+        <pitch>
+          <step>D</step>
+          <octave>4</octave>
+          </pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        </note>
+      <direction placement="above">
+        <direction-type>
+          <words font-family="Edwin" font-size="10">3x</words>
+          </direction-type>
+        <offset sound="yes">-40</offset>
+        </direction>
+      <barline location="right">
+        <bar-style>light-heavy</bar-style>
+        <ending number="1, 2" type="stop"/>
+        <repeat direction="backward" times="3"/>
+        </barline>
+      </measure>
+    <measure number="5" width="185.77">
+      <barline location="left">
+        <ending number="3" type="start" default-y="70.71">3.</ending>
+        </barline>
+      <note default-x="12.5" default-y="-50">
+        <pitch>
+          <step>C</step>
+          <octave>4</octave>
+          </pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        </note>
+      <barline location="right">
+        <bar-style>light-heavy</bar-style>
+        <ending number="3" type="stop"/>
+        </barline>
+      </measure>
+    </part>
+  </score-partwise>

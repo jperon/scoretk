@@ -19,19 +19,20 @@
 
 mod dom;
 mod names;
+mod nuances;
 
 use dom::Element;
 
 use crate::container::MscVersion;
 use crate::model::{ids::StaffId, tpc};
 use crate::model::{
-    Accidental, Annotation, Articulation, BarLine, BarLineType, BeamMode, Breath, BreathType,
-    Chord, ChordRest, ChordRestKind, Clef, ClefType, Credit, CreditJustify, CreditStyle, Duration,
-    DurationType, Dynamic, Fraction, GraceChord, GraceType, Harmony, Instrument, InstrumentChange,
-    Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteId, Part, Placement,
-    RehearsalFrame, RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType, Staff,
-    StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType, Track, Transpose,
-    Tuplet, TupletId, TupletNumberType, VOICES,
+    text_style_defaults, Accidental, Annotation, Articulation, BarLine, BarLineType, BeamMode,
+    Breath, BreathType, Chord, ChordRest, ChordRestKind, Clef, ClefType, Credit, CreditJustify,
+    CreditStyle, Duration, DurationType, Fraction, GraceChord, GraceType, Harmony, Instrument,
+    InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteId, Part,
+    Placement, RehearsalFrame, RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType,
+    Staff, StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType, Track,
+    Transpose, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::{Error, Result};
 
@@ -87,6 +88,8 @@ struct Reader {
     last_nominal: Fraction,
     /// Liaisons lues mais pas encore appariées.
     ties: Vec<TieRecord>,
+    /// Moitiés de soufflets lues mais pas encore appariées.
+    spanner_halves: Vec<nuances::Half>,
 }
 
 impl Reader {
@@ -101,6 +104,7 @@ impl Reader {
             global_tick: Fraction::ZERO,
             last_nominal: Fraction::ONE,
             ties: Vec::new(),
+            spanner_halves: Vec::new(),
         }
     }
 
@@ -148,6 +152,7 @@ impl Reader {
         }
 
         self.resolve_ties();
+        nuances::resolve(&mut self.score, &self.spanner_halves);
         Ok(())
     }
 
@@ -664,18 +669,7 @@ impl Reader {
                     );
                 }
                 "Dynamic" => {
-                    let text = child
-                        .child("subtype")
-                        .map(Element::text)
-                        .unwrap_or_default()
-                        .to_owned();
-                    let mut dynamic = Dynamic::new(text);
-                    dynamic.velocity = child
-                        .child("velocity")
-                        .and_then(Element::int)
-                        .and_then(|value| u8::try_from(value).ok());
-                    dynamic.placement = placement(child.child("placement"));
-                    dynamic.visible = visible(child);
+                    let dynamic = nuances::read_dynamic(child);
                     self.add_annotation(measure_index, tick, track, Annotation::Dynamic(dynamic));
                 }
                 "StaffText" => {
@@ -819,7 +813,11 @@ impl Reader {
                 // Volta, TextLine, Trill, Pedal, LetRing…) : à modéliser dans
                 // `Score::spanners`. Les liaisons de prolongation sont
                 // traitées dans <Note>.
-                "Spanner" => {}
+                "Spanner" => {
+                    if let Some(half) = nuances::read_half(child, measure_index, tick, track) {
+                        self.spanner_halves.push(half);
+                    }
+                }
                 // TODO(parité): <Beam>, <Ambitus>, <Segment>, <MeasureRepeat>,
                 // <Symbol>, <Image>, <FretDiagram>, <TremoloBar>, <StaffState>,
                 // <PlayTechAnnotation>, <Sticking>, <FiguredBass>,
@@ -1426,9 +1424,29 @@ fn read_text_base(element: &Element) -> ParsedTextBase {
     let markup = element
         .child("text")
         .map_or("", |node| node.raw_inner.as_str());
+    // Le style fixe le placement et la police de départ (`TextBase`), puis les
+    // propriétés `italic`/`bold`/`underline`/`strike` du texte les écrasent.
+    let (style_placement, mut format) = text_style_defaults(
+        element
+            .child("style")
+            .map(Element::text)
+            .unwrap_or_default(),
+    );
+    for (name, value) in [
+        ("bold", &mut format.bold),
+        ("italic", &mut format.italic),
+        ("underline", &mut format.underline),
+        ("strike", &mut format.strike),
+    ] {
+        if let Some(flag) = element.child(name).and_then(Element::int) {
+            *value = flag != 0;
+        }
+    }
     ParsedTextBase {
-        text: RichText::from_markup(markup),
-        placement: placement(element.child("placement")),
+        text: RichText::from_markup_with(markup, &format),
+        placement: element
+            .child("placement")
+            .map_or(style_placement, |node| placement(Some(node))),
         visible: visible(element),
     }
 }

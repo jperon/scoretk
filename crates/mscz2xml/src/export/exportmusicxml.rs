@@ -32,6 +32,7 @@ use crate::model::{
 };
 use crate::Result;
 
+use super::nuances::{self, Nuances};
 use super::pitch;
 use super::text;
 use super::writer::XmlWriter;
@@ -79,7 +80,8 @@ pub fn export_musicxml(score: &Score) -> Result<String> {
 pub fn export_musicxml_with(score: &Score, options: &ExportOptions) -> Result<String> {
     let context = Context::new(score, options);
     let mut out = Out::new();
-    context.write(&mut out);
+    let mut nuances = Nuances::default();
+    context.write(&mut out, &mut nuances);
     Ok(out.xml.finish())
 }
 
@@ -94,11 +96,11 @@ pub fn calc_divisions(score: &Score) -> u32 {
 }
 
 /// État d'écriture : tampon, divisions, position courante et `attributes`.
-pub(crate) struct Out {
-    pub(crate) xml: XmlWriter,
-    pub(crate) div: u32,
-    pub(crate) tick: Tick,
-    pub(crate) in_attributes: bool,
+pub(super) struct Out {
+    pub(super) xml: XmlWriter,
+    div: u32,
+    tick: Tick,
+    in_attributes: bool,
 }
 
 impl Out {
@@ -112,7 +114,7 @@ impl Out {
     }
 
     /// Ouvre ou ferme `<attributes>` à la demande, comme `Attributes::doAttr`.
-    pub(crate) fn attr(&mut self, open: bool) {
+    pub(super) fn attr(&mut self, open: bool) {
         if open && !self.in_attributes {
             self.xml.start_element("attributes", &[]);
             self.in_attributes = true;
@@ -323,7 +325,7 @@ impl<'a> Context<'a> {
     // Haut niveau : write, work, identification, part-list, parties
     // ------------------------------------------------------------------
 
-    fn write(&self, out: &mut Out) {
+    fn write(&self, out: &mut Out, nuances: &mut Nuances) {
         out.div = compute_divisions(self);
 
         out.xml.start_document();
@@ -339,7 +341,7 @@ impl<'a> Context<'a> {
         text::write_credits(out, self.score);
         // TODO(parité): <defaults> (style, polices, mise en page).
         self.part_list(out);
-        self.write_parts(out);
+        self.write_parts(out, nuances);
 
         out.xml.end_element();
     }
@@ -498,15 +500,16 @@ impl<'a> Context<'a> {
     }
 
     /// Écrit toutes les parties (`writeParts`).
-    fn write_parts(&self, out: &mut Out) {
+    fn write_parts(&self, out: &mut Out, nuances: &mut Nuances) {
         for part_index in 0..self.score.parts.len() {
             let part_id = format!("P{}", part_index + 1);
             out.tick = Tick::ZERO;
             out.in_attributes = false;
+            nuances.reset_part();
             out.xml.start_element("part", &[("id", &part_id)]);
 
             for measure_index in 0..self.score.measures.len() {
-                self.write_measure(out, measure_index, part_index);
+                self.write_measure(out, measure_index, part_index, nuances);
             }
 
             out.xml.end_element();
@@ -518,7 +521,13 @@ impl<'a> Context<'a> {
     // ------------------------------------------------------------------
 
     /// Écrit une mesure (`writeMeasure`).
-    fn write_measure(&self, out: &mut Out, measure_index: usize, part_index: usize) {
+    fn write_measure(
+        &self,
+        out: &mut Out,
+        measure_index: usize,
+        part_index: usize,
+        nuances: &mut Nuances,
+    ) {
         let measure = &self.score.measures[measure_index];
         let part = &self.score.parts[part_index];
         let staves = part.staves.len();
@@ -554,7 +563,7 @@ impl<'a> Context<'a> {
         // TODO(parité): <measure-style> (silences multi-mesures, reprises de
         // mesure).
 
-        self.write_measure_staves(out, measure, part);
+        self.write_measure_staves(out, measure, part, nuances);
         self.annotations_without_note(out, measure, part);
 
         out.move_to_tick(measure.end_tick());
@@ -566,12 +575,18 @@ impl<'a> Context<'a> {
     }
 
     /// Écrit les portées d'une mesure pour une partie (`writeMeasureStaves`).
-    fn write_measure_staves(&self, out: &mut Out, measure: &Measure, part: &Part) {
+    fn write_measure_staves(
+        &self,
+        out: &mut Out,
+        measure: &Measure,
+        part: &Part,
+        nuances: &mut Nuances,
+    ) {
         let staves = part.staves.len();
         for (position, staff_id) in part.staves.iter().enumerate() {
             out.move_to_tick(measure.start_tick);
             let xml_staff = if staves > 1 { position + 1 } else { 0 };
-            self.write_measure_tracks(out, measure, *staff_id, xml_staff);
+            self.write_measure_tracks(out, measure, *staff_id, xml_staff, nuances);
             if position + 1 < staves {
                 // Retour au début de la mesure pour la portée suivante.
                 out.move_to_tick(measure.start_tick);
@@ -586,6 +601,7 @@ impl<'a> Context<'a> {
         measure: &Measure,
         staff_id: StaffId,
         xml_staff: usize,
+        nuances: &mut Nuances,
     ) {
         for voice in 0..VOICES {
             let track = Track::new(staff_id, voice as u8);
@@ -613,10 +629,15 @@ impl<'a> Context<'a> {
                         self.harmonies(out, segment, staff_id);
                         self.annotations(out, segment, staff_id, xml_staff);
                     }
-                    // TODO(parité): figured bass, spannerStart, spannerStop.
+                    nuances.start(self.score, out, segment, staff_id, xml_staff, track);
                 }
+                let is_chord_rest = matches!(item, SegmentItem::ChordRest(_));
 
                 self.write_element(out, segment, item, measure, xml_staff, track);
+
+                if is_chord_rest {
+                    nuances.stop(self.score, out, out.tick, staff_id, xml_staff);
+                }
             }
         }
     }
@@ -1529,7 +1550,7 @@ impl Context<'_> {
             let offset = out.duration_in_divisions(segment.tick - out.tick);
             match &entry.annotation {
                 Annotation::Harmony(_) => {}
-                Annotation::Dynamic(dynamic) => write_dynamic(out, dynamic, xml_staff),
+                Annotation::Dynamic(dynamic) => nuances::write_dynamic(out, dynamic, xml_staff),
                 Annotation::StaffText(text) => {
                     text::write_words(out, &text.text, text.placement, false, xml_staff, offset);
                 }
@@ -1970,37 +1991,6 @@ fn harmony_root(out: &mut Out, name: &str, tpc: i8) {
     out.xml.end_element();
 }
 
-/// Écrit une nuance (`dynamic`).
-fn write_dynamic(out: &mut Out, dynamic: &crate::model::Dynamic, xml_staff: usize) {
-    if dynamic.text.is_empty() {
-        return;
-    }
-    out.attr(false);
-    let placement = placement_name(dynamic.placement);
-    out.xml
-        .start_element("direction", &[("placement", placement)]);
-    out.xml.start_element("direction-type", &[]);
-    out.xml.start_element("dynamics", &[]);
-    if is_musicxml_dynamic(&dynamic.text) {
-        out.xml.tag_empty(&dynamic.text, &[]);
-    } else {
-        out.xml.tag("other-dynamics", &dynamic.text);
-    }
-    out.xml.end_element();
-    out.xml.end_element();
-    if let Some(velocity) = dynamic.velocity {
-        if velocity > 0 {
-            let value = f64::from(velocity) * 100.0 / 90.0;
-            out.xml
-                .tag_empty("sound", &[("dynamics", &format_number(value, 2))]);
-        }
-    }
-    if xml_staff > 0 {
-        out.xml.tag("staff", &xml_staff.to_string());
-    }
-    out.xml.end_element();
-}
-
 // ----------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------
@@ -2014,7 +2004,7 @@ fn borrow_attributes<'a>(attributes: &'a [(&'a str, String)]) -> Vec<(&'a str, &
 }
 
 /// Première valeur occupée d'une portée dans un segment.
-fn annotation_track(segment: &Segment, staff_id: StaffId) -> Option<Track> {
+pub(super) fn annotation_track(segment: &Segment, staff_id: StaffId) -> Option<Track> {
     (0..VOICES)
         .map(|voice| Track::new(staff_id, voice as u8))
         .find(|track| segment.element(*track).is_some())
@@ -2074,38 +2064,6 @@ fn barline_style(kind: BarLineType) -> Option<&'static str> {
         BarLineType::Tick => Some("tick"),
         BarLineType::StartRepeat => None,
     }
-}
-
-/// Vrai pour une nuance reconnue par MusicXML (`validMusicXmlDynamics`).
-fn is_musicxml_dynamic(text: &str) -> bool {
-    matches!(
-        text,
-        "p" | "pp"
-            | "ppp"
-            | "pppp"
-            | "ppppp"
-            | "pppppp"
-            | "f"
-            | "ff"
-            | "fff"
-            | "ffff"
-            | "fffff"
-            | "ffffff"
-            | "mp"
-            | "mf"
-            | "sf"
-            | "sfp"
-            | "sfpp"
-            | "fp"
-            | "rf"
-            | "rfz"
-            | "sfz"
-            | "sffz"
-            | "fz"
-            | "n"
-            | "pf"
-            | "sfzp"
-    )
 }
 
 /// Correspondance minimale entre nom interne d'accord et valeur MusicXML.

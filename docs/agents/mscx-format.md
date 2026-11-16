@@ -711,8 +711,12 @@ Annotations de segment (aucune ne consomme de tick, section 6) : `StaffText`,
 `SystemText`, `Tempo`, `RehearsalMark`, `Expression`, `InstrumentChange`,
 `Dynamic`, `Harmony`. Propriétés lues : `<text>`, `<placement>` (`above`
 défaut / `below`), `<visible>` (0 = non exporté), `<frameType>` (0 sans cadre,
-1 rectangle, 2 cercle) ; pour `Tempo` `<tempo>` (battements **par seconde**) et
-`<followText>` ; pour `InstrumentChange` `<Instrument>` (non lu).
+1 rectangle, 2 cercle), `<style>`, `<italic>`/`<bold>`/`<underline>`/`<strike>` ;
+pour `Tempo` `<tempo>` (battements **par seconde**) et `<followText>` ; pour
+`InstrumentChange` `<Instrument>` (non lu). `<style>` fixe le placement et la
+police de départ que le fichier ne répète pas : `<style>expression</style>`
+donne un texte italique **sous** la portée (`TextStyleType::EXPRESSION`), et les
+propriétés `italic`/`bold` ci-dessus écrasent ce format de départ.
 
 `<text>` est du **balisage** et non du texte brut : `TRead::readProperties`
 utilise `XmlReader::readXml` (`rw/xmlreader.cpp:212`), qui re-sérialise les

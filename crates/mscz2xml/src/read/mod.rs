@@ -12,8 +12,10 @@
 //! Les versions antérieures ou inconnues renvoient
 //! [`Error::UnsupportedVersion`](crate::Error::UnsupportedVersion).
 
-mod read302;
-mod read4xx;
+/// Lecteur des partitions MuseScore 3.00 à 3.99 (portage de `read302`).
+pub mod read302;
+/// Lecteur des partitions MuseScore 4.00 à 5.00 (portage de `read4xx`).
+pub mod read4xx;
 
 use crate::container::MsczContainer;
 use crate::model::Score;
@@ -55,11 +57,26 @@ mod tests {
 
     #[test]
     fn refuse_les_versions_non_prises_en_charge() {
-        for version in ["3.02", "2.06", "5.01"] {
+        for version in ["2.06", "1.14", "5.01", "6.00"] {
             let error = read_score(&container(version)).unwrap_err();
             assert!(
                 matches!(error, Error::UnsupportedVersion(_)),
                 "version {version} : {error}"
+            );
+        }
+
+        assert!(
+            read_score(&container("3.02")).is_ok(),
+            "version 3.02 lue par le lecteur 3.x"
+        );
+    }
+
+    #[test]
+    fn accepte_les_versions_3_et_4() {
+        for version in ["3.02", "4.00"] {
+            assert!(
+                read_score(&container(version)).is_ok(),
+                "version {version} lue"
             );
         }
     }

@@ -77,6 +77,11 @@ const ECARTS_CONNUS: &[(&str, &[&str])] = &[
     // trait et le `<direction-type>` vide de la ligne elle-même.
     ("mmrest", &["VII"]),
     ("part-textlines", &["System", "Staff/1", "Staff/2"]),
+    // Mêmes classes pour les fichiers ajoutés avec le corpus 3.x/4.x :
+    // `TextLine` (« 3x »), marqueurs (« D.C. », « D.S. ») et textes de `TBox`.
+    ("repeat66", &["3x", "D.C.", "1,2,3,4"]),
+    ("repeat68", &["no playback"]),
+    ("repeat69", &["D.S."]),
 ];
 
 fn corpus_dir() -> PathBuf {

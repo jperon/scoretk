@@ -12,7 +12,7 @@
 //! Seuls les champs utiles à l'export MusicXML sont conservés ; les variantes
 //! peuvent être enrichies sans changer la structure du modèle.
 
-use super::text::RichText;
+use super::text::{RichText, TextFormat};
 
 /// Placement vertical d'un élément.
 ///
@@ -123,6 +123,27 @@ impl Annotation {
     }
 }
 
+/// Défauts d'un style de texte MuseScore (`<style>` d'une annotation).
+///
+/// Un style fixe un placement vertical et une police que le fichier `.mscx` ne
+/// répète pas : `<style>expression</style>` suffit, par exemple, à rendre un
+/// `StaffText` italique au-dessous de la portée. Seuls les styles utiles aux
+/// annotations exportées sont décrits ; les autres gardent les valeurs par
+/// défaut (au-dessus, format neutre).
+pub fn text_style_defaults(style: &str) -> (Placement, TextFormat) {
+    match style {
+        // `TextStyleType::EXPRESSION`.
+        "expression" => (
+            Placement::Below,
+            TextFormat {
+                italic: true,
+                ..TextFormat::default()
+            },
+        ),
+        _ => (Placement::Above, TextFormat::default()),
+    }
+}
+
 /// Nuance.
 ///
 /// Correspond à `Dynamic` dans `engraving/dom/dynamic.h`.
@@ -134,6 +155,11 @@ pub struct Dynamic {
     pub velocity: Option<u8>,
     /// Placement.
     pub placement: Placement,
+    /// Vrai quand le texte est personnalisé (`hasCustomText` dans MuseScore).
+    ///
+    /// Un texte personnalisé est exporté en `<other-dynamics>` même s'il
+    /// ressemble à une nuance MusicXML.
+    pub custom: bool,
     /// Vrai si la nuance est visible (les invisibles ne sont pas exportées,
     /// `ExportMusicXml::canWrite`).
     pub visible: bool,
@@ -146,6 +172,7 @@ impl Dynamic {
             text: text.into(),
             velocity: None,
             placement: Placement::Below,
+            custom: false,
             visible: true,
         }
     }

@@ -55,6 +55,7 @@ pub mod annotation;
 pub mod chord;
 pub mod duration;
 pub mod fraction;
+pub mod hairpin;
 pub mod ids;
 pub mod lyrics;
 pub mod measure;
@@ -67,8 +68,8 @@ pub mod text;
 pub mod tuplet;
 
 pub use annotation::{
-    Annotation, Dynamic, Harmony, InstrumentChange, Placement, RehearsalFrame, RehearsalMark,
-    StaffText, SystemText, Tempo,
+    text_style_defaults, Annotation, Dynamic, Harmony, InstrumentChange, Placement, RehearsalFrame,
+    RehearsalMark, StaffText, SystemText, Tempo,
 };
 pub use chord::{
     Articulation, ArticulationAnchor, ArticulationType, BeamMode, Chord, ChordRest, ChordRestKind,
@@ -76,6 +77,7 @@ pub use chord::{
 };
 pub use duration::{Duration, DurationType};
 pub use fraction::{Fraction, Tick};
+pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::Measure;

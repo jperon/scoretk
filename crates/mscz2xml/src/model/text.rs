@@ -107,7 +107,16 @@ impl RichText {
 
     /// Construit un texte à partir de son balisage MuseScore.
     pub fn from_markup(markup: &str) -> Self {
-        let blocks = parse_blocks(markup);
+        Self::from_markup_with(markup, &TextFormat::default())
+    }
+
+    /// Construit un texte à partir de son balisage, avec un format de départ.
+    ///
+    /// Le format de départ est celui du style du texte (`TextStyle` dans
+    /// MuseScore) : le curseur de `TextBase::createBlocks` part du format du
+    /// style, si bien que `<i>`/`</i>` ne font que basculer par rapport à lui.
+    pub fn from_markup_with(markup: &str, base: &TextFormat) -> Self {
+        let blocks = parse_blocks(markup, base);
         let mut fragments = Vec::new();
         let mut plain = String::new();
         for block in blocks {
@@ -205,7 +214,7 @@ fn append_str(blocks: &mut [Block], format: &TextFormat, text: &str) {
 /// (`engraving/dom/textbase.cpp`) : texte brut, balises `<…>` et entités `&…;`,
 /// avec `<sym>nom</sym>` pour les symboles musicaux. Les entités sont
 /// conservées telles quelles, comme dans MuseScore (voir plus bas).
-fn parse_blocks(markup: &str) -> Vec<Block> {
+fn parse_blocks(markup: &str, base: &TextFormat) -> Vec<Block> {
     /// État de l'analyseur.
     #[derive(Clone, Copy, PartialEq)]
     enum State {
@@ -215,7 +224,7 @@ fn parse_blocks(markup: &str) -> Vec<Block> {
     }
 
     let mut blocks = vec![Block::default()];
-    let mut format = TextFormat::default();
+    let mut format = base.clone();
     let mut state = State::Text;
     let mut token = String::new();
     let mut symbol_state = false;

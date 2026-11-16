@@ -57,13 +57,12 @@ const WORDS_STYLE: StyleFormat = StyleFormat {
 
 /// Style des indications de tempo (`TempoText`).
 ///
-/// MuseScore 4.7 utilise la police des textes musicaux en taille 12 pour le
-/// style « Tempo » ; le corpus n'exerce que la formule de métronome, qui ne
-/// porte aucun attribut de police.
+/// Le style « Tempo » de MuseScore 4.7 est en gras, taille 12 (voir
+/// `testTempoPrecision` dans le corpus).
 const TEMPO_STYLE: StyleFormat = StyleFormat {
     font_family: DEFAULT_TEXT_FONT,
     font_size: 12.0,
-    bold: false,
+    bold: true,
 };
 
 /// Style des repères de répétition (`RehearsalMark`) : gras, taille 14.
