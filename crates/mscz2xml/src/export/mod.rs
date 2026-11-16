@@ -26,6 +26,7 @@ mod nuances;
 mod ottava;
 mod pitch;
 mod repeats;
+mod stems;
 mod text;
 mod textlines;
 mod writer;

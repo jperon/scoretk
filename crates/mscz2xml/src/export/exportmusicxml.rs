@@ -38,6 +38,7 @@ use super::nuances::{self, Nuances};
 use super::ottava;
 use super::pitch;
 use super::repeats;
+use super::stems;
 use super::text;
 use super::textlines;
 use super::writer::XmlWriter;
@@ -1264,14 +1265,26 @@ impl Context<'_> {
             }
 
             // Pas de hampe pour les rondes et les valeurs plus longues.
+            // MuseScore écrit toujours une hampe dès qu'il y en a une ; la
+            // direction automatique se calcule comme `Chord::up()`.
             if duration.kind.has_stem() {
-                match chord.stem {
-                    StemDirection::Up => out.xml.tag("stem", "up"),
-                    StemDirection::Down => out.xml.tag("stem", "down"),
-                    // La direction automatique est calculée par la mise en
-                    // page : le modèle ne la connaît pas.
-                    StemDirection::Auto => {}
-                }
+                let actual = if grace {
+                    Fraction::ZERO
+                } else {
+                    self.actual_ticks(chord_rest, measure, track.staff())
+                };
+                let up = stems::stem_up(
+                    self.score,
+                    chord,
+                    measure,
+                    track,
+                    segment_tick,
+                    actual,
+                    self.options.concert_pitch,
+                    transpose,
+                    None,
+                );
+                out.xml.tag("stem", if up { "up" } else { "down" });
             }
 
             write_notehead(out, note, chord, duration);
