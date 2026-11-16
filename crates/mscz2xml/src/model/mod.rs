@@ -65,6 +65,7 @@ pub mod repeat;
 pub mod score;
 pub mod segment;
 pub mod spanner;
+pub mod style;
 pub mod text;
 pub mod tuplet;
 
@@ -94,6 +95,7 @@ pub use spanner::{
     HairpinType, HookType, LineFont, OttavaType, Spanner, SpannerAnchor, SpannerType, TextLineInfo,
     TextLineStyle,
 };
+pub use style::{StyleSettings, TENTHS};
 pub use text::{
     symbol_character, Credit, CreditJustify, CreditStyle, CreditValign, RichText, TboxText,
     TextFormat, TextFragment, DEFAULT_TEXT_FONT, DEFAULT_TEXT_SIZE, MUSICAL_TEXT_FONT,

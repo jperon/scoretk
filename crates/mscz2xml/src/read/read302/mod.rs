@@ -26,7 +26,7 @@
 
 mod annotations;
 mod chord;
-mod frames;
+mod credits;
 mod measure;
 mod nuances;
 mod part;
@@ -38,8 +38,8 @@ mod xml;
 
 use crate::container::MscVersion;
 use crate::model::{
-    ChordRestKind, Clef, ClefType, Fraction, Measure, NoteId, Score, SegmentItem, SegmentType,
-    Track, Transpose, TupletId, VOICES,
+    BarLineType, ChordRestKind, Clef, ClefType, Fraction, Measure, NoteId, Score, SegmentItem,
+    SegmentType, StyleSettings, Track, Transpose, TupletId, VOICES,
 };
 use crate::Result;
 
@@ -80,6 +80,10 @@ pub(crate) struct Reader {
     /// `StaffType`, sinon `<clef>` de l'instrument), appliquée en fin de
     /// lecture.
     pub(crate) staff_clefs: Vec<Option<Clef>>,
+    /// Vrai si le style active les silences multi-mesures.
+    pub(crate) create_multi_measure_rests: bool,
+    /// Vrai si le `<bracket>` du n-olet était explicite dans le fichier.
+    pub(crate) explicit_tuplet_brackets: Vec<bool>,
 }
 
 /// Mesure marquée `<RepeatMeasure>` : son contenu est celui de la précédente.
@@ -106,19 +110,25 @@ pub(crate) struct VoiceCtx {
 
 impl Reader {
     fn new(version: MscVersion) -> Self {
+        let mut score = Score::new();
+        score.style = StyleSettings::for_version(version.major());
         Self {
             version,
-            score: Score::new(),
+            score,
             file_division: crate::model::DEFAULT_DIVISION,
             connectors: Vec::new(),
             measure_repeats: Vec::new(),
             staff_clefs: Vec::new(),
+            create_multi_measure_rests: false,
+            explicit_tuplet_brackets: Vec::new(),
         }
     }
 
     fn finish(mut self) -> Score {
         self.apply_default_clefs();
         self.expand_measure_repeats();
+        self.assign_multiple_rests();
+        self.adjust_tuplet_brackets();
         spanner::resolve(&mut self);
         self.score
     }
@@ -141,7 +151,14 @@ impl Reader {
                 }
                 "source" => self.score.metadata.source = child.trimmed_text(),
                 "Part" => part::read_part(self, child),
-                // TODO(parité): `<Score>` imbriqué (parties liées), `<Style>`,
+                "Style" => {
+                    self.score.style = credits::read_style(child, self.version);
+                    self.create_multi_measure_rests = child
+                        .child("createMultiMeasureRests")
+                        .and_then(Node::int_text)
+                        .is_some_and(|value| value != 0);
+                }
+                // TODO(parité): `<Score>` imbriqué (parties liées),
                 // `<Order>`, `<SystemObjects>`, `<PageLocks>`, `<SystemLocks>`,
                 // `<SpannerMap>` (5.0)… ne sont pas lus. Les `<Spanner>`
                 // complets écrits au niveau du `<Score>` (fichiers antérieurs à
@@ -189,6 +206,8 @@ impl Reader {
 
         let mut tick = Fraction::ZERO;
         let mut index = 0usize;
+        // Numéro de page courant pour les textes de cadre : un `<LayoutBreak>`
+        // de type `page` place l'élément qui le porte sur la page suivante.
         let mut page = 1u32;
         for child in node.children() {
             match child.name() {
@@ -197,7 +216,15 @@ impl Reader {
                     // page : `StaffRead::readStaff` ne l'ajoute pas à la liste
                     // des mesures et n'avance pas le tick (elle est rattachée à
                     // la mesure précédente par `setMMRest`).
-                    if child.child("multiMeasureRest").is_some() {
+                    if let Some(count) = child
+                        .child("multiMeasureRest")
+                        .and_then(Node::int_text)
+                        .filter(|count| *count > 0)
+                    {
+                        if staff == 0 && index > 0 {
+                            self.score.measures[index - 1].multi_measure_rest =
+                                Some(u16::try_from(count).unwrap_or(u16::MAX));
+                        }
                         continue;
                     }
                     let measure = self.ensure_measure(index, tick);
@@ -213,28 +240,87 @@ impl Reader {
                 // (`tboxTextAsWords`). Un cadre suivi d'un saut de page est
                 // au-dessous du système précédent.
                 "TBox" => {
-                    let below = index > 0 && frames::page_break(child);
+                    let below = index > 0 && credits::page_break(child);
                     if let Some(text) = textlines::read_tbox(child, index, below) {
                         self.score.add_tbox_text(text);
                     }
                 }
-                "VBox" if staff == 0 => {
-                    for credit in frames::read_vbox(child, page) {
-                        self.score.add_credit(credit);
+                "VBox" => {
+                    // Les textes d'un `VBox` deviennent des `<credit>` ; les
+                    // autres cadres n'en portent pas.
+                    if staff == 0 {
+                        credits::read_vbox(&mut self.score, child, page);
                     }
                 }
                 // TODO(parité): `<HBox>` et `<FBox>` ne portent pas de texte ;
                 // seuls leurs sauts de page comptent (voir plus bas).
                 _ => {}
             }
-            if frames::page_break(child) {
+            // Un saut de page s'applique après l'élément qui le porte.
+            if staff == 0 && credits::page_break(child) {
                 page += 1;
+                self.score.style.page_count = self.score.style.page_count.max(page);
             }
         }
-        if staff == 0 {
-            self.score.page_count = page;
-            // Style « rights » de MuseScore 3.x : 8 points.
-            self.score.copyright_font_size = 8.0;
+    }
+
+    /// Complète les silences multi-mesures d'un seul tenant.
+    ///
+    /// Avec `<createMultiMeasureRests>`, MuseScore remplace aussi les mesures
+    /// vides isolées par un multi-repos de un, sans écrire de marqueur dans le
+    /// `.mscx`. Les groupes plus longs viennent des marqueurs lus ; toute
+    /// mesure vide non couverte reçoit `multiple-rest 1`.
+    fn assign_multiple_rests(&mut self) {
+        if !self.create_multi_measure_rests {
+            return;
+        }
+        // Les mesures vides isolées ne deviennent un multi-repos de un que si
+        // la partition entière en est faite (mise en page de MuseScore).
+        if !self.score.measures.iter().all(is_empty_measure) {
+            return;
+        }
+        let mut covered_until = 0usize;
+        for index in 0..self.score.measures.len() {
+            if index < covered_until {
+                continue;
+            }
+            if let Some(count) = self.score.measures[index].multi_measure_rest {
+                covered_until = index + usize::from(count);
+                continue;
+            }
+            if is_empty_measure(&self.score.measures[index]) {
+                self.score.measures[index].multi_measure_rest = Some(1);
+                covered_until = index + 1;
+            }
+        }
+    }
+
+    /// Ajuste le crochet des n-olets une fois leur imbrication connue.
+    ///
+    /// Un n-olet sans enfant ne porte pas de crochet (notes groupées par
+    /// ligature) ; un n-olet qui en contient un en porte un. Le `<bracket>`
+    /// explicite du fichier reste prioritaire.
+    fn adjust_tuplet_brackets(&mut self) {
+        let mut has_child = vec![false; self.score.tuplets.len()];
+        for tuplet in &self.score.tuplets {
+            if let Some(parent) = tuplet.parent {
+                if let Some(entry) = has_child.get_mut(parent.index()) {
+                    *entry = true;
+                }
+            }
+        }
+        for index in 0..self.score.tuplets.len() {
+            if self
+                .explicit_tuplet_brackets
+                .get(index)
+                .copied()
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            if has_child[index] {
+                self.score.tuplets[index].bracket = true;
+            }
         }
     }
 
@@ -360,6 +446,30 @@ impl Reader {
         }
         copies
     }
+}
+
+/// Vrai si la mesure ne contient qu'un silence de mesure entière.
+fn is_empty_measure(measure: &Measure) -> bool {
+    if !measure.repeat_marks.is_empty() {
+        return false;
+    }
+    if measure.start_bar_line != BarLineType::Normal || measure.end_bar_line != BarLineType::Normal
+    {
+        return false;
+    }
+    let mut rest = false;
+    for segment in &measure.segments {
+        for (_, item) in segment.iter_elements() {
+            match item {
+                SegmentItem::ChordRest(chord_rest) if chord_rest.is_full_measure_rest() => {
+                    rest = true;
+                }
+                SegmentItem::ChordRest(_) => return false,
+                _ => {}
+            }
+        }
+    }
+    rest
 }
 
 /// Transposition de l'instrument porté par une portée.

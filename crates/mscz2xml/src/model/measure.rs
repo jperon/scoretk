@@ -34,6 +34,12 @@ pub struct Measure {
     /// Zéro quand la mesure ne termine pas de reprise. MuseScore n'écrit
     /// l'attribut `times` de `<repeat>` que si ce nombre dépasse deux.
     pub repeat_count: u8,
+    /// Nombre de mesures regroupées par un silence multi-mesures.
+    ///
+    /// Vaut `Some(n)` sur la première mesure d'un groupe, comme
+    /// `Measure::mmRestCount()` sur la mesure qui remplace le groupe ; `None`
+    /// quand la mesure n'ouvre aucun `<multiple-rest>`.
+    pub multi_measure_rest: Option<u16>,
     /// Marqueurs et sauts attachés à la mesure, dans l'ordre du fichier
     /// (`Measure::el()` dans MuseScore).
     pub repeat_marks: Vec<RepeatMark>,
@@ -52,6 +58,7 @@ impl Measure {
             start_bar_line: BarLineType::Normal,
             end_bar_line: BarLineType::Normal,
             repeat_count: 0,
+            multi_measure_rest: None,
             repeat_marks: Vec::new(),
             segments: Vec::new(),
         }

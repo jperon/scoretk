@@ -29,6 +29,13 @@ pub struct Instrument {
     pub transpose: Option<Transpose>,
     /// Numéro de programme MIDI (0-127), si connu.
     pub midi_program: Option<u8>,
+    /// Volume du canal MIDI (`Channel::controller` 7), 0-127.
+    ///
+    /// Absent quand le fichier ne règle pas le contrôleur 7 ; MuseScore retient
+    /// alors 100, valeur par défaut de son canal.
+    pub volume: Option<u8>,
+    /// Panoramique du canal MIDI (`Channel::controller` 10), 0-127.
+    pub pan: Option<u8>,
 }
 
 impl Instrument {
@@ -48,6 +55,8 @@ impl Instrument {
             short_name,
             transpose: None,
             midi_program: None,
+            volume: None,
+            pan: None,
         }
     }
 }

@@ -12,6 +12,7 @@ use super::measure::Measure;
 use super::note::Note;
 use super::part::{Part, Staff};
 use super::spanner::Spanner;
+use super::style::StyleSettings;
 use super::text::{Credit, TboxText};
 use super::tuplet::Tuplet;
 
@@ -57,6 +58,8 @@ pub struct ScoreMetadata {
 pub struct Score {
     /// Métadonnées d'œuvre.
     pub metadata: ScoreMetadata,
+    /// Réglages de style globaux (format de page, `lyricsPlacement`…).
+    pub style: StyleSettings,
     /// Divisions MusicXML par noire.
     pub division: u32,
     /// Parties, dans l'ordre de la partition.
@@ -69,10 +72,6 @@ pub struct Score {
     pub credits: Vec<Credit>,
     /// Textes de cadres `TBox`, exportés en `<words>` de direction.
     pub tbox_texts: Vec<TboxText>,
-    /// Taille de police des crédits de copyright (défaut de style du fichier).
-    pub copyright_font_size: f64,
-    /// Nombre de pages de la partition (pour répéter le copyright).
-    pub page_count: u32,
     /// Arène des notes.
     pub notes: Vec<Note>,
     /// Arène des n-olets.
@@ -99,14 +98,13 @@ impl Score {
         );
         Self {
             metadata: ScoreMetadata::default(),
+            style: StyleSettings::default(),
             division,
             parts: Vec::new(),
             staves: Vec::new(),
             measures: Vec::new(),
             credits: Vec::new(),
             tbox_texts: Vec::new(),
-            copyright_font_size: super::text::DEFAULT_TEXT_SIZE,
-            page_count: 1,
             notes: Vec::new(),
             tuplets: Vec::new(),
             spanners: Vec::new(),

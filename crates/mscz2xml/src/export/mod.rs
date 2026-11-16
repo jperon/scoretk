@@ -20,7 +20,9 @@ use crate::model::Score;
 use crate::Result;
 
 mod exportmusicxml;
+mod layout;
 mod nuances;
+mod ottava;
 mod pitch;
 mod repeats;
 mod text;

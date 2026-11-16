@@ -257,6 +257,11 @@ pub struct Spanner {
     pub hairpin: Option<Hairpin>,
     /// Compléments propres aux lignes de texte.
     pub text_line: Option<TextLineInfo>,
+    /// Vrai si le spanner et ses traits sont affichés (`<visible>`).
+    ///
+    /// Une ottava invisible décale quand même la hauteur écrite ; seul son
+    /// `<octave-shift>` est omis.
+    pub visible: bool,
 }
 
 impl Spanner {
@@ -271,6 +276,7 @@ impl Spanner {
             number: 0,
             hairpin: None,
             text_line: None,
+            visible: true,
         }
     }
 }
