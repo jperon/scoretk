@@ -161,8 +161,8 @@ fn read_voice(
                 ctx.tick += reader.score.measures[index].len;
             }
             "Dynamic" | "Expression" | "Tempo" | "StaffText" | "SystemText" | "Text"
-            | "RehearsalMark" | "Harmony" | "Fermata" => {
-                if let Some(annotation) = annotations::read(child) {
+            | "RehearsalMark" | "Harmony" | "Fermata" | "InstrumentChange" => {
+                if let Some(annotation) = annotations::read(reader, child) {
                     segment_mut(
                         &mut reader.score.measures[index],
                         SegmentType::ChordRest,

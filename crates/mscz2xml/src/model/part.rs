@@ -83,6 +83,64 @@ impl Transpose {
     }
 }
 
+/// Identifiant MusicXML approché d'un instrument (`Instrument::recognizeMusicXmlId`).
+///
+/// MuseScore cherche l'instrument dans son catalogue par nom puis par
+/// programme MIDI. Le modèle n'embarque pas le catalogue : cette table couvre
+/// les instruments les plus courants, ce qui suffit à retrouver le
+/// `<instrument-sound>` d'un changement d'instrument ancien (3.x) qui ne
+/// stocke pas `instrumentId`.
+pub fn recognize_musicxml_id(track_name: &str, program: Option<u8>) -> Option<&'static str> {
+    let name = track_name.to_lowercase();
+    let by_name = [
+        ("flute", "wind.flutes.flute"),
+        ("piccolo", "wind.flutes.piccolo"),
+        ("oboe", "wind.reed.oboe"),
+        ("bassoon", "wind.reed.bassoon"),
+        ("clarinet", "wind.reed.clarinet.bflat"),
+        ("sax", "wind.reed.saxophone"),
+        ("trumpet", "brass.trumpet"),
+        ("trombone", "brass.trombone"),
+        ("tuba", "brass.tuba"),
+        ("horn", "brass.french-horn"),
+        ("violin", "strings.violin"),
+        ("viola", "strings.viola"),
+        ("cello", "strings.cello"),
+        ("contrabass", "strings.contrabass"),
+        ("guitar", "pluck.guitar"),
+        ("harp", "pluck.harp"),
+        ("piano", "keyboard.piano"),
+        ("organ", "keyboard.organ"),
+        ("harpsichord", "keyboard.harpsichord"),
+        ("timpani", "percussion.timpani"),
+        ("voice", "voice"),
+    ];
+    if let Some((_, id)) = by_name.iter().find(|(needle, _)| name.contains(needle)) {
+        return Some(id);
+    }
+    match program? {
+        0 => Some("keyboard.piano"),
+        6 => Some("keyboard.harpsichord"),
+        19 => Some("keyboard.organ"),
+        24 => Some("pluck.guitar"),
+        40 => Some("strings.violin"),
+        41 => Some("strings.viola"),
+        42 => Some("strings.cello"),
+        43 => Some("strings.contrabass"),
+        46 => Some("pluck.harp"),
+        47 => Some("percussion.timpani"),
+        56 => Some("brass.trumpet"),
+        57 => Some("brass.trombone"),
+        58 => Some("brass.tuba"),
+        60 => Some("brass.french-horn"),
+        68 => Some("wind.reed.oboe"),
+        70 => Some("wind.reed.bassoon"),
+        71 => Some("wind.reed.clarinet.bflat"),
+        73 => Some("wind.flutes.flute"),
+        _ => None,
+    }
+}
+
 /// Partie de la partition.
 ///
 /// Correspond à `Part` dans `engraving/dom/part.h`. Le champ `name` correspond

@@ -27,6 +27,7 @@ mod ottava;
 mod pitch;
 mod repeats;
 mod text;
+mod textlines;
 mod writer;
 
 #[cfg(test)]

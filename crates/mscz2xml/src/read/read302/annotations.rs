@@ -6,24 +6,28 @@
 
 use super::tables;
 use super::xml::Node;
+use super::Reader;
 use crate::model::{
-    text_style_defaults, tpc, Annotation, Harmony, Placement, RehearsalFrame, RehearsalMark,
-    RichText, StaffText, SystemText, Tempo, TextFormat,
+    text_style_defaults, tpc, Annotation, Harmony, InstrumentChange, Placement, RehearsalFrame,
+    RehearsalMark, RichText, StaffText, SystemText, Tempo, TempoKind, TextFormat,
 };
 
 /// Lit une annotation de segment, ou `None` si l'élément n'en est pas une.
-pub(crate) fn read(node: &Node) -> Option<Annotation> {
+pub(crate) fn read(reader: &Reader, node: &Node) -> Option<Annotation> {
     let placement = node
         .child("placement")
         .map(|child| tables::placement(&child.trimmed_text()));
     // Le style fixe le placement et la police de départ ; les propriétés
     // `italic`/`bold`/`underline`/`strike` du texte les écrasent ensuite.
-    let (style_placement, style_format) = text_style_defaults(
-        node.child("style")
-            .map(|child| child.trimmed_text())
-            .unwrap_or_default()
-            .as_str(),
-    );
+    let style_name = node
+        .child("style")
+        .map(|child| child.trimmed_text())
+        .unwrap_or_default();
+    let (style_placement, mut style_format) = text_style_defaults(&style_name);
+    // Style « Expression » de MuseScore 3.x : italique 11 points.
+    if style_name.eq_ignore_ascii_case("expression") {
+        style_format.font_size = Some(11.0);
+    }
 
     let annotation = match node.name() {
         "Dynamic" => {
@@ -39,6 +43,7 @@ pub(crate) fn read(node: &Node) -> Option<Annotation> {
             text: rich_text(node, &style_format),
             placement: placement.unwrap_or(style_placement),
             visible: visible(node),
+            swing: super::textlines::read_swing(node),
         }),
         "Tempo" => {
             // `TempoText::TempoText` part de 2 battements par seconde
@@ -57,6 +62,7 @@ pub(crate) fn read(node: &Node) -> Option<Annotation> {
                     != 0,
                 placement: placement.unwrap_or(style_placement),
                 visible: visible(node),
+                kind: TempoKind::Normal,
             };
             // `TRead::read(TempoText*)` : un tempo sans texte reçoit le texte
             // « ♩ = N » et devient invisible.
@@ -82,6 +88,37 @@ pub(crate) fn read(node: &Node) -> Option<Annotation> {
             placement: placement.unwrap_or(style_placement),
             visible: visible(node),
         }),
+        "InstrumentChange" => {
+            let instrument_node = node.child("Instrument");
+            let instrument = instrument_node.map(|instrument_node| {
+                let mut instrument = super::part::read_instrument(reader, instrument_node);
+                // `Instrument::nameAsPlainText` garde le balisage des noms 3.x
+                // (`<font size="…"/>Piano`), que `writeDisplayName` ré-échappe.
+                for (tag, name) in [
+                    ("longName", &mut instrument.long_name),
+                    ("shortName", &mut instrument.short_name),
+                ] {
+                    if let Some(value) = instrument_node.child(tag) {
+                        *name = value.inner_markup_raw_self_closing();
+                    }
+                }
+                if instrument.id.is_empty() {
+                    if let Some(id) = crate::model::recognize_musicxml_id(
+                        &instrument.track_name,
+                        instrument.midi_program,
+                    ) {
+                        instrument.id = id.to_owned();
+                    }
+                }
+                instrument
+            });
+            Annotation::InstrumentChange(InstrumentChange {
+                text: rich_text(node, &style_format),
+                placement: placement.unwrap_or(style_placement),
+                visible: visible(node),
+                instrument,
+            })
+        }
         _ => return None,
     };
     Some(annotation)
@@ -101,6 +138,17 @@ fn rich_text(node: &Node, style_format: &TextFormat) -> RichText {
     ] {
         if let Some(flag) = node.child(name).and_then(Node::int_text) {
             *value = flag != 0;
+        }
+    }
+    if let Some(size) = node
+        .child("size")
+        .and_then(|child| child.trimmed_text().parse::<f64>().ok())
+    {
+        format.font_size = Some(size);
+    }
+    if let Some(family) = node.child("family").map(Node::trimmed_text) {
+        if !family.is_empty() {
+            format.font_family = Some(family);
         }
     }
     node.child("text")
