@@ -1193,6 +1193,7 @@ fn corpus_tenuto_accent() {
     clefs.set_element(second_track, SegmentItem::Clef(Clef::new(ClefType::F)));
     measure.add_segment(clefs);
     ajouter_armure(&mut score, &mut measure, first_track, 0, KeyMode::Unknown);
+    ajouter_armure(&mut score, &mut measure, second_track, 0, KeyMode::Unknown);
     ajouter_indication_mesure(&mut score, &mut measure, first_track, 4, 4);
 
     let note = score.add_note(Note::new(65, tpc::F));

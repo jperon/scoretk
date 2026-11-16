@@ -25,10 +25,10 @@ use std::collections::BTreeSet;
 use crate::model::chord::ChordRestKind;
 use crate::model::{
     Accidental, AccidentalType, Annotation, Articulation, ArticulationAnchor, ArticulationType,
-    BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType, Key, KeyMode,
-    KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part, Placement,
-    Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig, TimeSigType,
-    Track, Tuplet, TupletId, TupletNumberType, VOICES,
+    BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType, Instrument, Key,
+    KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part,
+    Placement, Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig,
+    TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::Result;
 
@@ -437,12 +437,32 @@ impl<'a> Context<'a> {
     /// demande les informations de bracket absentes du modèle.
     fn part_list(&self, out: &mut Out) {
         let hidden_name = self.score.parts.len() == 1;
+        // `rebuildMidiMapping` attribue les canaux libres dans l'ordre des
+        // parties, instruments puis canaux. Les canaux écrits dans le fichier
+        // sont réservés d'avance et priment. Le canal 10 (percussion) reste
+        // libre pour les instruments mélodiques.
+        let mut used: BTreeSet<usize> = self
+            .score
+            .parts
+            .iter()
+            .flat_map(Part::instruments)
+            .filter_map(|instrument| instrument.midi_channel.map(usize::from))
+            .collect();
+        let mut next_channel = 0usize;
+        let mut take_free = || {
+            while used.contains(&next_channel) || next_channel == 9 {
+                next_channel += 1;
+            }
+            let channel = next_channel;
+            used.insert(channel);
+            next_channel += 1;
+            channel
+        };
 
         out.xml.start_element("part-list", &[]);
         for (index, part) in self.score.parts.iter().enumerate() {
             let number = index + 1;
             let part_id = format!("P{number}");
-            let instrument_id = format!("P{number}-I1");
 
             out.xml.start_element("score-part", &[("id", &part_id)]);
 
@@ -473,48 +493,82 @@ impl<'a> Context<'a> {
                 }
             }
 
-            out.xml
-                .start_element("score-instrument", &[("id", &instrument_id)]);
-            let instrument_name = part.instrument.track_name.clone();
-            out.xml.tag("instrument-name", &instrument_name);
-            if !part.instrument.id.is_empty() {
-                out.xml.tag("instrument-sound", &part.instrument.id);
-            }
-            out.xml.end_element();
-
-            // MuseScore écrit un élément vide non auto-fermant pour
-            // <midi-device>. Le modèle n'a pas de port MIDI : celui par
-            // défaut de MuseScore vaut 1.
-            out.xml
-                .tag_with("midi-device", &[("id", &instrument_id), ("port", "1")], "");
-            out.xml
-                .start_element("midi-instrument", &[("id", &instrument_id)]);
-            // MuseScore n'écrit le canal que s'il tient dans 1..=16. Le canal
-            // du fichier (`<midiChannel>`, base zéro) prime ; à défaut,
-            // `rebuildMidiMapping` attribue les canaux dans l'ordre des parties.
-            let midi_channel =
-                usize::from(part.instrument.midi_channel.unwrap_or((number - 1) as u8));
-            if midi_channel < 16 {
-                out.xml.tag("midi-channel", &(midi_channel + 1).to_string());
-            }
-            if let Some(program) = part.instrument.midi_program {
-                if u16::from(program) < 128 {
-                    out.xml
-                        .tag("midi-program", &(u16::from(program) + 1).to_string());
+            // `scoreInstrument` puis `midiInstrument` pour chaque instrument de
+            // la partie, dans l'ordre de `Part::instruments()`.
+            let instruments: Vec<&Instrument> = part.instruments().collect();
+            for (instrument_index, instrument) in instruments.iter().enumerate() {
+                let instrument_id = format!("P{number}-I{}", instrument_index + 1);
+                out.xml
+                    .start_element("score-instrument", &[("id", &instrument_id)]);
+                out.xml.tag("instrument-name", &instrument.track_name);
+                if !instrument.id.is_empty() {
+                    out.xml.tag("instrument-sound", &instrument.id);
                 }
+                out.xml.end_element();
             }
-            // `midiInstrument` : volume et panorama viennent des contrôleurs du
-            // canal, avec les valeurs par défaut de MuseScore (100/127 et 64).
-            let volume = f64::from(part.instrument.volume.unwrap_or(100)) / 127.0 * 100.0;
-            out.xml.tag("volume", &format_number(volume, 4));
-            let pan = f64::from(part.instrument.pan.unwrap_or(64));
-            let pan = ((pan - 63.5) / 63.5 * 90.0) as i32;
-            out.xml.tag("pan", &pan.to_string());
-            out.xml.end_element();
+            let has_harmony = self.part_has_harmony(part);
+            for (instrument_index, instrument) in instruments.iter().enumerate() {
+                let instrument_id = format!("P{number}-I{}", instrument_index + 1);
+                // MuseScore écrit un élément vide non auto-fermant pour
+                // <midi-device>. Le modèle n'a pas de port MIDI : celui par
+                // défaut de MuseScore vaut 1.
+                out.xml
+                    .tag_with("midi-device", &[("id", &instrument_id), ("port", "1")], "");
+                out.xml
+                    .start_element("midi-instrument", &[("id", &instrument_id)]);
+                let midi_channel = match instrument.midi_channel {
+                    Some(channel) => usize::from(channel),
+                    None => {
+                        let channel = take_free();
+                        // Le canal « harmony » du premier instrument occupe
+                        // aussi un canal, mais n'est pas exporté.
+                        if instrument_index == 0 && has_harmony {
+                            let _ = take_free();
+                        }
+                        channel
+                    }
+                };
+                // MuseScore n'écrit le canal que s'il tient dans 1..=16.
+                if midi_channel < 16 {
+                    out.xml.tag("midi-channel", &(midi_channel + 1).to_string());
+                }
+                if let Some(program) = instrument.midi_program {
+                    if u16::from(program) < 128 {
+                        out.xml
+                            .tag("midi-program", &(u16::from(program) + 1).to_string());
+                    }
+                }
+                // `midiInstrument` : volume et panorama viennent des
+                // contrôleurs du canal, avec les valeurs par défaut de
+                // MuseScore (100/127 et 64).
+                let volume = f64::from(instrument.volume.unwrap_or(100)) / 127.0 * 100.0;
+                out.xml.tag("volume", &format_number(volume, 4));
+                let pan = f64::from(instrument.pan.unwrap_or(64));
+                let pan = ((pan - 63.5) / 63.5 * 90.0) as i32;
+                out.xml.tag("pan", &pan.to_string());
+                out.xml.end_element();
+            }
 
             out.xml.end_element();
         }
         out.xml.end_element();
+    }
+
+    /// Vrai si la partie contient un accord chiffré.
+    ///
+    /// `Part::updateHarmonyChannels` ajoute un canal « harmony » à son premier
+    /// instrument, ce qui décale les canaux MIDI des instruments suivants.
+    fn part_has_harmony(&self, part: &Part) -> bool {
+        part.staves.iter().any(|staff_id| {
+            self.score.measures.iter().any(|measure| {
+                measure.segments.iter().any(|segment| {
+                    segment.annotations.iter().any(|entry| {
+                        entry.track.staff() == *staff_id
+                            && matches!(entry.annotation, Annotation::Harmony(_))
+                    })
+                })
+            })
+        })
     }
 
     /// Écrit toutes les parties (`writeParts`).
@@ -572,7 +626,12 @@ impl<'a> Context<'a> {
         if is_first && staves > 1 {
             out.xml.tag("staves", &staves.to_string());
         }
-        // TODO(parité): <instruments> pour les parties multi-instruments.
+        if is_first && !part.instrument_changes.is_empty() {
+            out.xml.tag(
+                "instruments",
+                &(part.instrument_changes.len() + 1).to_string(),
+            );
+        }
         self.write_measure_clefs(out, measure, measure_index, part);
         if is_first {
             self.write_staff_details(out, part);
@@ -790,12 +849,12 @@ impl<'a> Context<'a> {
     }
 
     /// Transposition chromatique de la portée, en demi-tons.
-    fn transpose_chromatic(&self, staff_id: StaffId) -> i32 {
+    fn transpose_chromatic(&self, staff_id: StaffId, tick: Tick) -> i32 {
         if self.options.concert_pitch {
             return 0;
         }
         let part = self.score.part(self.score.staff(staff_id).part);
-        part.instrument
+        part.instrument_at(tick)
             .transpose
             .map_or(0, |transpose| transpose.chromatic)
     }
@@ -1073,6 +1132,12 @@ impl Context<'_> {
         }
     }
 
+    /// Rang de la partie à laquelle appartient une portée.
+    fn part_index_for_staff(&self, staff: StaffId) -> Option<usize> {
+        let part_id = self.score.staff(staff).part;
+        self.score.parts.iter().position(|part| part.id == part_id)
+    }
+
     /// Écrit un accord (`chord`).
     #[allow(clippy::too_many_arguments)]
     fn chord(
@@ -1098,7 +1163,7 @@ impl Context<'_> {
             |duration| duration.ticks(),
         );
         let voice = voice_number(xml_staff, track.voice());
-        let transpose = self.transpose_chromatic(track.staff());
+        let transpose = self.transpose_chromatic(track.staff(), segment_tick);
         // Hauteur écrite : une ottava décale l'octave exportée.
         let ottava = ottava::shift(self.score, track.staff(), segment_tick);
 
@@ -1144,7 +1209,16 @@ impl Context<'_> {
                 }
             }
 
-            // TODO(parité): <instrument> pour les parties multi-instruments.
+            // `<instrument>` désigne l'instrument en vigueur quand la partie
+            // en change en cours de route (`m_instrMap.size() > 1`).
+            if let Some(part_index) = self.part_index_for_staff(track.staff()) {
+                let part = &self.score.parts[part_index];
+                if !part.instrument_changes.is_empty() {
+                    let index = part.instrument_index_at(segment_tick);
+                    let id = format!("P{}-I{}", part_index + 1, index + 1);
+                    out.xml.tag_empty("instrument", &[("id", &id)]);
+                }
+            }
 
             out.xml.tag("voice", &voice.to_string());
             write_type(out, notated, chord, note, grace);

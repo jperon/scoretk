@@ -115,7 +115,7 @@ pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
     // (`<Instrument>` successifs / `<InstrumentChange>`) ne sont pas modélisés.
 }
 
-fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
+pub(super) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
     let track_name = node
         .child("trackName")
         .map(Node::trimmed_text)

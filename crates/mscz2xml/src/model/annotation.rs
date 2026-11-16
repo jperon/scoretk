@@ -12,6 +12,7 @@
 //! Seuls les champs utiles à l'export MusicXML sont conservés ; les variantes
 //! peuvent être enrichies sans changer la structure du modèle.
 
+use super::part::Instrument;
 use super::text::{RichText, TextFormat};
 
 /// Placement vertical d'un élément.
@@ -298,6 +299,8 @@ pub struct InstrumentChange {
     pub placement: Placement,
     /// Vrai si le changement est visible.
     pub visible: bool,
+    /// Instrument vers lequel la partie change, quand il est connu.
+    pub instrument: Option<Instrument>,
 }
 
 impl InstrumentChange {
@@ -307,6 +310,7 @@ impl InstrumentChange {
             text: RichText::new(text),
             placement: Placement::Above,
             visible: true,
+            instrument: None,
         }
     }
 }

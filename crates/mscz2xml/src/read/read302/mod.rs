@@ -27,6 +27,7 @@
 mod annotations;
 mod chord;
 mod credits;
+mod instruments;
 mod measure;
 mod nuances;
 mod part;

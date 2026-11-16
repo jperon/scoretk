@@ -98,7 +98,7 @@ pub(crate) fn read(node: &Node) -> Option<Annotation> {
 ///
 /// `format` est le format du style, éventuellement écrasé par les propriétés
 /// `<italic>`, `<bold>`, `<underline>` et `<strike>` du texte.
-fn rich_text(node: &Node, style_format: &TextFormat) -> RichText {
+pub(super) fn rich_text(node: &Node, style_format: &TextFormat) -> RichText {
     let mut format = style_format.clone();
     for (name, value) in [
         ("bold", &mut format.bold),
@@ -116,7 +116,7 @@ fn rich_text(node: &Node, style_format: &TextFormat) -> RichText {
 }
 
 /// Vrai si l'annotation n'est pas marquée `<visible>0</visible>`.
-fn visible(node: &Node) -> bool {
+pub(super) fn visible(node: &Node) -> bool {
     node.child("visible")
         .and_then(Node::int_text)
         .is_none_or(|value| value != 0)

@@ -989,6 +989,7 @@ impl Reader {
                             text: text.text,
                             placement: text.placement,
                             visible: text.visible,
+                            instrument: None,
                         }),
                     );
                 }

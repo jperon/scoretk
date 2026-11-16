@@ -160,6 +160,15 @@ fn read_voice(
                 });
                 ctx.tick += reader.score.measures[index].len;
             }
+            "InstrumentChange" => {
+                let annotation = super::instruments::read_instrument_change(reader, child, &ctx);
+                segment_mut(
+                    &mut reader.score.measures[index],
+                    SegmentType::ChordRest,
+                    ctx.tick,
+                )
+                .add_annotation(ctx.track, annotation);
+            }
             "Dynamic" | "Expression" | "Tempo" | "StaffText" | "SystemText" | "Text"
             | "RehearsalMark" | "Harmony" | "Fermata" => {
                 if let Some(annotation) = annotations::read(child) {
@@ -172,10 +181,10 @@ fn read_voice(
                 }
             }
             // TODO(parité): `<Symbol>`, `<FretDiagram>`, `<FiguredBass>`,
-            // `<TremoloBar>`, `<Arpeggio>`, `<InstrumentChange>`, `<StaffState>`,
-            // `<Sticking>`, `<PlayTechAnnotation>`, `<Image>`, `<Ambitus>`,
-            // `<Beam>`, `<Segment>`, `<LayoutBreak>` : sans effet sur le noyau
-            // musical lu ici (le tick n'avance pas).
+            // `<TremoloBar>`, `<Arpeggio>`, `<StaffState>`, `<Sticking>`,
+            // `<PlayTechAnnotation>`, `<Image>`, `<Ambitus>`, `<Beam>`,
+            // `<Segment>`, `<LayoutBreak>` : sans effet sur le noyau musical
+            // lu ici (le tick n'avance pas).
             _ => {}
         }
     }

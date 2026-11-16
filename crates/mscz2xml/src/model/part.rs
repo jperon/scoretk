@@ -107,6 +107,13 @@ pub struct Part {
     pub short_name: String,
     /// Instrument principal de la partie.
     pub instrument: Instrument,
+    /// Changements d'instrument, triés par tick.
+    ///
+    /// Correspond aux entrées supplémentaires de `Part::instruments()` dans
+    /// MuseScore : chaque `<InstrumentChange>` y ajoute son instrument au tick
+    /// du segment (`Segment::add`). L'export en tire `<score-instrument>`,
+    /// `<instruments>` et `<instrument>` par note.
+    pub instrument_changes: Vec<(Fraction, Instrument)>,
     /// Portées appartenant à la partie, dans l'ordre.
     pub staves: Vec<StaffId>,
 }
@@ -130,8 +137,54 @@ impl Part {
             },
             long_name,
             short_name,
+            instrument_changes: Vec::new(),
             staves: Vec::new(),
         }
+    }
+
+    /// Enregistre un instrument au tick d'un changement d'instrument.
+    ///
+    /// Comme `InstrumentList::setInstrument`, une entrée existante au même tick
+    /// est remplacée ; les changements restent triés par tick.
+    pub fn set_instrument_at(&mut self, tick: Fraction, instrument: Instrument) {
+        match self
+            .instrument_changes
+            .binary_search_by(|(existing, _)| existing.cmp(&tick))
+        {
+            Ok(index) => self.instrument_changes[index].1 = instrument,
+            Err(index) => self.instrument_changes.insert(index, (tick, instrument)),
+        }
+    }
+
+    /// Instrument en vigueur à un tick donné (`Part::instrument`).
+    ///
+    /// C'est le dernier changement dont le tick ne dépasse pas `tick`, ou
+    /// l'instrument principal.
+    pub fn instrument_at(&self, tick: Fraction) -> &Instrument {
+        self.instrument_changes
+            .iter()
+            .rev()
+            .find(|(change, _)| *change <= tick)
+            .map_or(&self.instrument, |(_, instrument)| instrument)
+    }
+
+    /// Instruments de la partie, principal puis changements dans l'ordre des
+    /// ticks (`Part::instruments()`).
+    pub fn instruments(&self) -> impl Iterator<Item = &Instrument> {
+        std::iter::once(&self.instrument).chain(
+            self.instrument_changes
+                .iter()
+                .map(|(_, instrument)| instrument),
+        )
+    }
+
+    /// Rang d'un instrument dans [`Self::instruments`], pour son identifiant
+    /// `P<n>-I<rang+1>`.
+    pub fn instrument_index_at(&self, tick: Fraction) -> usize {
+        self.instrument_changes
+            .iter()
+            .filter(|(change, _)| *change <= tick)
+            .count()
     }
 }
 
