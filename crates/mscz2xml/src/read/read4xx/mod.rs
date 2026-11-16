@@ -19,6 +19,7 @@
 
 mod dom;
 mod names;
+mod nuances;
 
 use dom::Element;
 
@@ -26,11 +27,11 @@ use crate::container::MscVersion;
 use crate::model::{ids::StaffId, tpc};
 use crate::model::{
     Accidental, Annotation, Articulation, BarLine, BarLineType, BeamMode, Breath, BreathType,
-    Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration, DurationType, Dynamic, Fraction,
-    GraceChord, GraceType, Harmony, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
-    Measure, Note, NoteId, Part, Placement, RehearsalMark, Score, Segment, SegmentItem,
-    SegmentType, Staff, StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType,
-    Track, Transpose, Tuplet, TupletId, TupletNumberType, VOICES,
+    Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration, DurationType, Fraction, GraceChord,
+    GraceType, Harmony, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note,
+    NoteId, Part, Placement, RehearsalMark, Score, Segment, SegmentItem, SegmentType, Staff,
+    StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType, Track, Transpose,
+    Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::{Error, Result};
 
@@ -86,6 +87,8 @@ struct Reader {
     last_nominal: Fraction,
     /// Liaisons lues mais pas encore appariées.
     ties: Vec<TieRecord>,
+    /// Moitiés de soufflets lues mais pas encore appariées.
+    spanner_halves: Vec<nuances::Half>,
 }
 
 impl Reader {
@@ -100,6 +103,7 @@ impl Reader {
             global_tick: Fraction::ZERO,
             last_nominal: Fraction::ONE,
             ties: Vec::new(),
+            spanner_halves: Vec::new(),
         }
     }
 
@@ -147,6 +151,7 @@ impl Reader {
         }
 
         self.resolve_ties();
+        nuances::resolve(&mut self.score, &self.spanner_halves);
         Ok(())
     }
 
@@ -618,16 +623,7 @@ impl Reader {
                     );
                 }
                 "Dynamic" => {
-                    let text = child
-                        .child("subtype")
-                        .map(Element::text)
-                        .unwrap_or_default()
-                        .to_owned();
-                    let mut dynamic = Dynamic::new(text);
-                    dynamic.velocity = child
-                        .child("velocity")
-                        .and_then(Element::int)
-                        .and_then(|value| u8::try_from(value).ok());
+                    let dynamic = nuances::read_dynamic(child);
                     self.add_annotation(measure_index, tick, track, Annotation::Dynamic(dynamic));
                 }
                 "StaffText" => {
@@ -720,7 +716,11 @@ impl Reader {
                 // Volta, TextLine, Trill, Pedal, LetRing…) : à modéliser dans
                 // `Score::spanners`. Les liaisons de prolongation sont
                 // traitées dans <Note>.
-                "Spanner" => {}
+                "Spanner" => {
+                    if let Some(half) = nuances::read_half(child, measure_index, tick, track) {
+                        self.spanner_halves.push(half);
+                    }
+                }
                 // TODO(parité): <Beam>, <Ambitus>, <Segment>, <MeasureRepeat>,
                 // <Expression>, <Symbol>, <Image>, <FretDiagram>, <TremoloBar>,
                 // <InstrumentChange>, <StaffState>, <PlayTechAnnotation>,

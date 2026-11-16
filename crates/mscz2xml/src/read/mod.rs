@@ -57,11 +57,21 @@ mod tests {
 
     #[test]
     fn refuse_les_versions_non_prises_en_charge() {
-        for version in ["3.02", "2.06", "5.01"] {
+        for version in ["2.06", "5.01"] {
             let error = read_score(&container(version)).unwrap_err();
             assert!(
                 matches!(error, Error::UnsupportedVersion(_)),
                 "version {version} : {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepte_les_versions_3_et_4() {
+        for version in ["3.02", "4.00"] {
+            assert!(
+                read_score(&container(version)).is_ok(),
+                "version {version} lue"
             );
         }
     }

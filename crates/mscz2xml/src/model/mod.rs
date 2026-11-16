@@ -55,6 +55,7 @@ pub mod annotation;
 pub mod chord;
 pub mod duration;
 pub mod fraction;
+pub mod hairpin;
 pub mod ids;
 pub mod lyrics;
 pub mod measure;
@@ -74,6 +75,7 @@ pub use chord::{
 };
 pub use duration::{Duration, DurationType};
 pub use fraction::{Fraction, Tick};
+pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::Measure;
