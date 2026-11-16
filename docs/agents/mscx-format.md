@@ -748,7 +748,8 @@ police et taille par défaut selon le style. `<work>`, `<movement-number>`,
 `<metaTag>`, pas des textes.
 
 Non porté : textes de `TBox` (`tboxTextAsWords`), textes de spanner
-(`TextLine`), `<Marker>`/`<Jump>` (D.C.…), détails des changements
-d'instrument (`writeInstrumentChange`), symboles hors table de métronome,
-positions (`default-x`/`default-y`), style de partition (`<Style>`/`.mss`) et
-`<miscellaneous>`.
+(`TextLine`), détails des changements d'instrument (`writeInstrumentChange`),
+symboles hors table de métronome, positions (`default-x`/`default-y`), style de
+partition (`<Style>`/`.mss`) et `<miscellaneous>`. Les `<Marker>`/`<Jump>`
+(D.C., D.S., Fine…) sont eux exportés en `<words>` par `export/repeats.rs` :
+ne pas les produire une seconde fois depuis les annotations.

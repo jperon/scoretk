@@ -25,15 +25,16 @@ use std::collections::BTreeSet;
 use crate::model::chord::ChordRestKind;
 use crate::model::{
     Accidental, AccidentalType, Annotation, Articulation, ArticulationAnchor, ArticulationType,
-    BarLineType, BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType,
-    Harmony, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadType, Part,
-    Placement, Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig,
-    TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
+    BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType, Harmony, Key,
+    KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadType, Part, Placement, Score,
+    Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig, TimeSigType, Track,
+    Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::Result;
 
 use super::nuances::{self, Nuances};
 use super::pitch;
+use super::repeats;
 use super::text;
 use super::writer::XmlWriter;
 
@@ -96,8 +97,8 @@ pub fn calc_divisions(score: &Score) -> u32 {
 }
 
 /// État d'écriture : tampon, divisions, position courante et `attributes`.
-pub(super) struct Out {
-    pub(super) xml: XmlWriter,
+pub(crate) struct Out {
+    pub(crate) xml: XmlWriter,
     div: u32,
     tick: Tick,
     in_attributes: bool,
@@ -114,7 +115,7 @@ impl Out {
     }
 
     /// Ouvre ou ferme `<attributes>` à la demande, comme `Attributes::doAttr`.
-    pub(super) fn attr(&mut self, open: bool) {
+    pub(crate) fn attr(&mut self, open: bool) {
         if open && !self.in_attributes {
             self.xml.start_element("attributes", &[]);
             self.in_attributes = true;
@@ -306,8 +307,8 @@ fn rank(element: TupletElement) -> u8 {
 }
 
 /// Contexte immuable de l'export.
-struct Context<'a> {
-    score: &'a Score,
+pub(crate) struct Context<'a> {
+    pub(crate) score: &'a Score,
     options: &'a ExportOptions,
     tuplets: TupletIndex,
 }
@@ -543,7 +544,7 @@ impl<'a> Context<'a> {
         // attribut width : la mise en page n'est pas dans le modèle.
 
         // La barre de gauche doit être le premier élément de la mesure.
-        self.barline_left(out, measure);
+        self.barline_left(out, measure, part_index);
 
         // Les attributs ne sont écrits que sur la première mesure réelle.
         if is_first {
@@ -563,12 +564,14 @@ impl<'a> Context<'a> {
         // TODO(parité): <measure-style> (silences multi-mesures, reprises de
         // mesure).
 
+        repeats::repeat_at_measure_start(self, out, measure, part_index);
+
         self.write_measure_staves(out, measure, part, nuances);
         self.annotations_without_note(out, measure, part);
 
         out.move_to_tick(measure.end_tick());
-        // TODO(parité): repeatAtMeasureStop (voltas, marqueurs, sauts).
-        self.barline_right(out, measure);
+        repeats::repeat_at_measure_stop(self, out, measure, part_index);
+        self.barline_right(out, measure, part_index, measure_index);
         out.attr_stop();
 
         out.xml.end_element();
@@ -668,7 +671,7 @@ impl<'a> Context<'a> {
             },
             SegmentItem::BarLine(barline) => {
                 if segment.tick != measure.start_tick && segment.tick != measure.end_tick() {
-                    self.barline_middle(out, barline.kind);
+                    self.barline_middle(out, barline);
                 }
             }
             // Armures, indications de mesure et respirations sont écrites
@@ -1469,46 +1472,25 @@ impl Context<'_> {
 // ----------------------------------------------------------------------
 
 impl Context<'_> {
-    /// Écrit une reprise au début de la mesure (`barlineLeft`).
-    fn barline_left(&self, out: &mut Out, measure: &Measure) {
-        if !measure.start_bar_line.is_repeat_start() {
-            return;
-        }
-        // TODO(parité): volta et ailes de reprise (style).
-        out.attr(false);
-        out.xml.start_element("barline", &[("location", "left")]);
-        out.xml.tag("bar-style", "heavy-light");
-        out.xml.tag_empty("repeat", &[("direction", "forward")]);
-        out.xml.end_element();
+    /// Écrit une reprise ou une volta au début de la mesure (`barlineLeft`).
+    fn barline_left(&self, out: &mut Out, measure: &Measure, part_index: usize) {
+        repeats::barline_left(self, out, measure, part_index);
     }
 
     /// Écrit une barre de milieu de mesure (`barlineMiddle`).
-    fn barline_middle(&self, out: &mut Out, kind: BarLineType) {
-        if let Some(style) = barline_style(kind) {
-            out.attr(false);
-            out.xml.start_element("barline", &[("location", "middle")]);
-            out.xml.tag("bar-style", style);
-            out.xml.end_element();
-        }
+    fn barline_middle(&self, out: &mut Out, bar_line: &crate::model::BarLine) {
+        repeats::barline_middle(out, bar_line);
     }
 
     /// Écrit la barre de fin de mesure (`barlineRight`).
-    fn barline_right(&self, out: &mut Out, measure: &Measure) {
-        let kind = measure.end_bar_line;
-        if kind == BarLineType::Normal || kind == BarLineType::StartRepeat {
-            return;
-        }
-        // TODO(parité): volta, fermata sur la barre, ailes et reprises
-        // comptées (`times`).
-        out.attr(false);
-        out.xml.start_element("barline", &[("location", "right")]);
-        if let Some(style) = barline_style(kind) {
-            out.xml.tag("bar-style", style);
-        }
-        if kind.is_repeat_end() {
-            out.xml.tag_empty("repeat", &[("direction", "backward")]);
-        }
-        out.xml.end_element();
+    fn barline_right(
+        &self,
+        out: &mut Out,
+        measure: &Measure,
+        part_index: usize,
+        measure_index: usize,
+    ) {
+        repeats::barline_right(self, out, measure, part_index, measure_index);
     }
 }
 
@@ -2045,24 +2027,6 @@ pub(crate) fn placement_name(placement: Placement) -> &'static str {
     match placement {
         Placement::Above => "above",
         Placement::Below => "below",
-    }
-}
-
-/// Style de barre MusicXML (`normalBarlineStyle`).
-fn barline_style(kind: BarLineType) -> Option<&'static str> {
-    match kind {
-        BarLineType::Normal => Some("regular"),
-        BarLineType::Double => Some("light-light"),
-        BarLineType::Broken | BarLineType::Dashed => Some("dashed"),
-        BarLineType::End | BarLineType::EndRepeat | BarLineType::EndStartRepeat => {
-            Some("light-heavy")
-        }
-        BarLineType::Dotted => Some("dotted"),
-        // MuseScore ne produit pas de style pour cette variante.
-        BarLineType::DoubleDotted => None,
-        BarLineType::Short | BarLineType::DoubleShort => Some("short"),
-        BarLineType::Tick => Some("tick"),
-        BarLineType::StartRepeat => None,
     }
 }
 

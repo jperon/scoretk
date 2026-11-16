@@ -67,9 +67,6 @@ const ECARTS_CONNUS: &[(&str, &[&str])] = &[
     // « 3x » est l'`<endText>` d'un `TextLine` : les spanners textuels ne sont
     // pas modélisés.
     ("repeat65", &["3x"]),
-    // « D.C. » vient d'un `<Marker>` (saute de lecture), non modélisé ; MuseScore
-    // l'exporte en `<words>` suivi de `<sound dacapo="yes">`.
-    ("repeat65", &["D.C."]),
     // Texte de `TBox` (voir ci-dessus) : exporté en `<words>` au début de la
     // première mesure par `tboxTextAsWords`.
     ("voiceswitching", &["This test goes through each measure"]),
@@ -78,10 +75,9 @@ const ECARTS_CONNUS: &[(&str, &[&str])] = &[
     ("mmrest", &["VII"]),
     ("part-textlines", &["System", "Staff/1", "Staff/2"]),
     // Mêmes classes pour les fichiers ajoutés avec le corpus 3.x/4.x :
-    // `TextLine` (« 3x »), marqueurs (« D.C. », « D.S. ») et textes de `TBox`.
-    ("repeat66", &["3x", "D.C.", "1,2,3,4"]),
+    // `TextLine` (« 3x ») et textes de `TBox`.
+    ("repeat66", &["3x", "1,2,3,4"]),
     ("repeat68", &["no playback"]),
-    ("repeat69", &["D.S."]),
 ];
 
 fn corpus_dir() -> PathBuf {

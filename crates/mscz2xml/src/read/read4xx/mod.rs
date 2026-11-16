@@ -20,6 +20,7 @@
 mod dom;
 mod names;
 mod nuances;
+mod repeats;
 
 use dom::Element;
 
@@ -88,6 +89,8 @@ struct Reader {
     last_nominal: Fraction,
     /// Liaisons lues mais pas encore appariées.
     ties: Vec<TieRecord>,
+    /// Moitiés de voltas lues mais pas encore appariées.
+    voltas: Vec<repeats::VoltaHalf>,
     /// Moitiés de soufflets lues mais pas encore appariées.
     spanner_halves: Vec<nuances::Half>,
 }
@@ -104,6 +107,7 @@ impl Reader {
             global_tick: Fraction::ZERO,
             last_nominal: Fraction::ONE,
             ties: Vec::new(),
+            voltas: Vec::new(),
             spanner_halves: Vec::new(),
         }
     }
@@ -152,6 +156,8 @@ impl Reader {
         }
 
         self.resolve_ties();
+        self.resolve_ties();
+        repeats::resolve(self);
         nuances::resolve(&mut self.score, &self.spanner_halves);
         Ok(())
     }
@@ -440,21 +446,42 @@ impl Reader {
             if element.has_child("startRepeat") {
                 measure.start_bar_line = BarLineType::StartRepeat;
             }
-            if element.has_child("endRepeat") {
+            if let Some(end_repeat) = element.child("endRepeat") {
                 measure.end_bar_line = BarLineType::EndRepeat;
+                measure.repeat_count = end_repeat
+                    .int()
+                    .and_then(|value| u8::try_from(value.clamp(0, 255)).ok())
+                    .unwrap_or(0);
             }
         }
 
         let mut voice_index = 0u8;
         for child in &element.children {
-            if child.name == "voice" {
-                self.read_voice(model_index, staff_index, voice_index, child, irregular)?;
-                // TODO(parité): plus de quatre voix par portée n'est pas
-                // représentable dans le modèle (`VOICES`).
-                voice_index = (voice_index + 1).min(VOICES as u8 - 1);
+            match child.name.as_str() {
+                "voice" => {
+                    self.read_voice(model_index, staff_index, voice_index, child, irregular)?;
+                    // TODO(parité): plus de quatre voix par portée n'est pas
+                    // représentable dans le modèle (`VOICES`).
+                    voice_index = (voice_index + 1).min(VOICES as u8 - 1);
+                }
+                "Marker" => {
+                    // `MeasureRead::readMeasure` : l'objet est ajouté à la
+                    // mesure, pas à un segment.
+                    let marker = repeats::read_marker(child, staff_index);
+                    self.score.measures[model_index]
+                        .repeat_marks
+                        .push(crate::model::RepeatMark::Marker(marker));
+                }
+                "Jump" => {
+                    let jump = repeats::read_jump(child, staff_index);
+                    self.score.measures[model_index]
+                        .repeat_marks
+                        .push(crate::model::RepeatMark::Jump(jump));
+                }
+                // TODO(parité): <LayoutBreak>, <stretch>, <noOffset>,
+                // <measureRepeatCount>, <MMRestRange>, <visible>.
+                _ => {}
             }
-            // TODO(parité): <Marker>, <Jump>, <LayoutBreak>, <stretch>,
-            // <noOffset>, <measureRepeatCount>, <MMRestRange>, <visible>.
         }
 
         if staff_index == 0 {
@@ -646,12 +673,8 @@ impl Reader {
                     self.insert_item(measure_index, kind, tick, track, SegmentItem::Clef(clef));
                 }
                 "BarLine" => {
-                    let kind = child
-                        .child("subtype")
-                        .map(Element::text)
-                        .and_then(names::bar_line_type)
-                        .unwrap_or(BarLineType::Normal);
-                    self.read_bar_line(measure_index, tick, track, kind);
+                    let bar_line = repeats::read_bar_line(child);
+                    self.read_bar_line(measure_index, tick, track, bar_line);
                 }
                 "Breath" => {
                     let kind = match child.child("symbol").map(Element::text) {
@@ -810,10 +833,11 @@ impl Reader {
                     self.add_annotation(measure_index, tick, track, annotation);
                 }
                 // TODO(parité): <Spanner> autres que Tie (Slur, HairPin, Ottava,
-                // Volta, TextLine, Trill, Pedal, LetRing…) : à modéliser dans
+                // TextLine, Trill, Pedal, LetRing…) : à modéliser dans
                 // `Score::spanners`. Les liaisons de prolongation sont
                 // traitées dans <Note>.
                 "Spanner" => {
+                    repeats::read_spanner(self, child, tick, track, measure_index);
                     if let Some(half) = nuances::read_half(child, measure_index, tick, track) {
                         self.spanner_halves.push(half);
                     }
@@ -1189,7 +1213,8 @@ impl Reader {
         })
     }
 
-    fn read_bar_line(&mut self, measure_index: usize, tick: Tick, track: Track, kind: BarLineType) {
+    fn read_bar_line(&mut self, measure_index: usize, tick: Tick, track: Track, bar_line: BarLine) {
+        let kind = bar_line.kind;
         let (measure_start, measure_len) = {
             let measure = &self.score.measures[measure_index];
             (measure.start_tick, measure.len)
@@ -1208,7 +1233,6 @@ impl Reader {
             SegmentType::EndBarLine
         };
 
-        let bar_line = BarLine::new(kind);
         self.insert_item(
             measure_index,
             segment_kind,
