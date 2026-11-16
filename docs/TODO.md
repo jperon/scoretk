@@ -1,8 +1,8 @@
 # TODO
 
-## Évolution de mscz2xml vers musictk
+## Évolution de mscz2xml vers scoretk
 
-Faire évoluer mscz2xml en **musictk**, une boîte à outils de conversion
+Faire évoluer mscz2xml en **scoretk**, une boîte à outils de conversion
 **bidirectionnelle** entre cinq formats de partition :
 
 | Format | Lecture | Écriture |
@@ -31,8 +31,8 @@ Pistes :
   rendre moins spécifique à MuseScore. On peut aussi convertir via MusicXML
   quand c'est plus simple, mais au prix de pertes cumulées.
 - **Organisation.** Prévoir un crate par format, ou des features, et un crate
-  `musictk` qui les regroupe. La CLI déduit les formats des extensions
-  (`musictk entrée.ly -o sortie.mscz`).
+  `scoretk` qui les regroupe. La CLI déduit les formats des extensions
+  (`scoretk entrée.ly -o sortie.mscz`).
 - **Références existantes.**
   - MusicXML → mscz : l'import MusicXML de MuseScore
     (`src/importexport/musicxml/internal/import`).
