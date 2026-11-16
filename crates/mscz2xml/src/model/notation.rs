@@ -1,3 +1,27 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//
+// Copyright (C) 2026 les auteurs de mscz2xml
+//
+// Portage de `engraving/dom/fermata.h`, `engraving/dom/ornament.h`,
+// `engraving/dom/tremolosinglechord.h`, `engraving/dom/tremolotwochord.h`,
+// `engraving/dom/arpeggio.h`, `engraving/dom/glissando.h`,
+// `engraving/dom/chordline.h` et `engraving/dom/fingering.h` de MuseScore
+// Studio, Copyright (C) MuseScore Limited and others, modifié (réécrit en
+// Rust) en 2026.
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License version 3 as published by
+// the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+// more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// this program. If not, see the LICENSE file at the root of this repository or
+// <https://www.gnu.org/licenses/gpl-3.0.html>.
+
 //! Notations attachées aux accords et aux notes.
 //!
 //! Portage des objets de `engraving/dom/` que l'export MusicXML écrit dans
