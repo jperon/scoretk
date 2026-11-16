@@ -12,8 +12,10 @@
 //! Les versions antérieures ou inconnues renvoient
 //! [`Error::UnsupportedVersion`](crate::Error::UnsupportedVersion).
 
-mod read302;
-mod read4xx;
+/// Lecteur des partitions MuseScore 3.00 à 3.99 (portage de `read302`).
+pub mod read302;
+/// Lecteur des partitions MuseScore 4.00 à 5.00 (portage de `read4xx`).
+pub mod read4xx;
 
 use crate::container::MsczContainer;
 use crate::model::Score;
