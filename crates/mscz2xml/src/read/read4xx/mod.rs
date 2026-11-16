@@ -20,6 +20,7 @@
 mod dom;
 mod names;
 mod nuances;
+mod ottava;
 mod repeats;
 mod style;
 
@@ -59,6 +60,48 @@ struct StaffState {
     time_stretch: Option<Fraction>,
 }
 
+/// Extrémité `<location>` d'une moitié de liaison, relative au tick courant.
+#[derive(Clone, Copy, Debug)]
+struct TieLocation {
+    measures: i64,
+    fractions: Fraction,
+    staves: i64,
+    voices: i64,
+}
+
+impl TieLocation {
+    /// Tick absolu de l'autre extrémité.
+    ///
+    /// `Location::toAbsolute` additionne les fractions à la position dans la
+    /// mesure courante, puis les mesures déplacent le tout : la position
+    /// relative dans la mesure cible est la même que dans la mesure de départ
+    /// (`<measures>1</measures><fractions>-3/4</fractions>` vise le début de la
+    /// mesure suivante depuis le troisième quart).
+    fn absolute_tick(self, tick: Tick, measures: &[crate::model::Measure]) -> Tick {
+        let Some(current) = measure_index_at(measures, tick) else {
+            return tick + self.fractions;
+        };
+        let current_base = measures[current].start_tick;
+        let target = current as i64 + self.measures;
+        let base = usize::try_from(target)
+            .ok()
+            .and_then(|index| measures.get(index))
+            .map_or(current_base, |measure| measure.start_tick);
+        base + (tick - current_base) + self.fractions
+    }
+
+    fn absolute_track(self, track: Track) -> Track {
+        let raw = i64::from(track.raw()) + self.voices + self.staves * VOICES as i64;
+        Track::from_raw(raw.max(0) as u32)
+    }
+}
+
+/// Index de la mesure contenant un tick.
+fn measure_index_at(measures: &[crate::model::Measure], tick: Tick) -> Option<usize> {
+    let index = measures.partition_point(|measure| measure.start_tick <= tick);
+    index.checked_sub(1).filter(|index| *index < measures.len())
+}
+
 /// Extrémité d'une liaison de prolongation en attente d'appariement.
 #[derive(Clone, Debug)]
 struct TieRecord {
@@ -68,8 +111,8 @@ struct TieRecord {
     pitch: u8,
     /// Vrai pour la moitié `<Tie><next>`, faux pour `<prev>`.
     is_start: bool,
-    /// Position absolue de l'autre extrémité, d'après `<location>`.
-    other_tick: Tick,
+    /// Position de l'autre extrémité, d'après `<location>`.
+    other: TieLocation,
 }
 
 /// État complet du lecteur pour un fichier.
@@ -94,6 +137,11 @@ struct Reader {
     voltas: Vec<repeats::VoltaHalf>,
     /// Moitiés de soufflets lues mais pas encore appariées.
     spanner_halves: Vec<nuances::Half>,
+    /// Moitiés d'ottavas lues mais pas encore appariées.
+    ottava_halves: Vec<ottava::Half>,
+    /// Vrai si le style active les silences multi-mesures
+    /// (`<createMultiMeasureRests>`).
+    create_multi_measure_rests: bool,
 }
 
 impl Reader {
@@ -112,6 +160,8 @@ impl Reader {
             ties: Vec::new(),
             voltas: Vec::new(),
             spanner_halves: Vec::new(),
+            ottava_halves: Vec::new(),
+            create_multi_measure_rests: false,
         }
     }
 
@@ -140,7 +190,11 @@ impl Reader {
                 }
                 "Part" => self.read_part(child),
                 "Style" => {
-                    self.score.style = style::read(child, MscVersion::from_raw(self.version))
+                    self.score.style = style::read(child, MscVersion::from_raw(self.version));
+                    self.create_multi_measure_rests = child
+                        .child("createMultiMeasureRests")
+                        .and_then(Element::int)
+                        .is_some_and(|value| value != 0);
                 }
                 "metaTag" => self.read_meta_tag(child),
                 "workTitle" => self.score.metadata.work_title = child.text().to_owned(),
@@ -161,10 +215,12 @@ impl Reader {
             self.read_staff(child)?;
         }
 
+        self.assign_multiple_rests();
         self.resolve_ties();
         self.resolve_ties();
         repeats::resolve(self);
         nuances::resolve(&mut self.score, &self.spanner_halves);
+        ottava::resolve(&mut self.score, &self.ottava_halves);
         Ok(())
     }
 
@@ -337,6 +393,24 @@ impl Reader {
             .and_then(|program| program.attr_i64("value"))
             .and_then(|value| u8::try_from(value).ok());
 
+        // Réglages de canal : contrôleur 7 (volume) et 10 (panoramique).
+        // `midiInstrument` en dérive `<volume>`/`<pan>` à l'export.
+        if let Some(channel) = element.child("Channel") {
+            for controller in channel.children_named("controller") {
+                let Some(value) = controller
+                    .attr_i64("value")
+                    .and_then(|value| u8::try_from(value.clamp(0, 127)).ok())
+                else {
+                    continue;
+                };
+                match controller.attr_i64("ctrl") {
+                    Some(7) => instrument.volume = Some(value),
+                    Some(10) => instrument.pan = Some(value),
+                    _ => {}
+                }
+            }
+        }
+
         // TODO(parité): <useDrumset>, <Drum>, <stringData>, articulations MIDI.
         instrument
     }
@@ -376,8 +450,19 @@ impl Reader {
                     // Une mesure de multi-repos est un marqueur de mise en
                     // page : ce n'est pas une mesure musicale, elle ne compte
                     // donc ni dans la numérotation ni dans le tick.
-                    if child.has_child("multiMeasureRest") {
-                        // TODO(parité): conserver le regroupement de multi-repos.
+                    if let Some(count) = child
+                        .child("multiMeasureRest")
+                        .and_then(Element::int)
+                        .filter(|count| *count > 0)
+                    {
+                        // Le marqueur suit la première mesure du groupe qu'il
+                        // remplace (`Measure::mmRestFirst`) : la mesure
+                        // précédente ouvre le `<multiple-rest>`.
+                        if staff_index == 0 && measure_index > 0 {
+                            let previous = measure_index - 1;
+                            self.score.measures[previous].multi_measure_rest =
+                                Some(u16::try_from(count).unwrap_or(u16::MAX));
+                        }
                         continue;
                     }
                     self.read_measure(child, staff_index, measure_index)?;
@@ -447,6 +532,38 @@ impl Reader {
                 }
             }
             self.score.add_credit(credit);
+        }
+    }
+
+    /// Complète les silences multi-mesures d'un seul tenant.
+    ///
+    /// Avec `<createMultiMeasureRests>`, MuseScore remplace aussi les mesures
+    /// vides isolées par un multi-repos de un : le `.mscx` n'écrit alors aucun
+    /// marqueur. Les groupes plus longs viennent des marqueurs déjà lus ; toute
+    /// mesure vide non couverte reçoit `multiple-rest 1`.
+    fn assign_multiple_rests(&mut self) {
+        if !self.create_multi_measure_rests {
+            return;
+        }
+        // Les mesures vides isolées ne deviennent un multi-repos de un que si
+        // la partition entière en est faite (mise en page de MuseScore) ; une
+        // partition avec du contenu ne les regroupe pas.
+        if !self.score.measures.iter().all(is_empty_measure) {
+            return;
+        }
+        let mut covered_until = 0usize;
+        for index in 0..self.score.measures.len() {
+            if index < covered_until {
+                continue;
+            }
+            if let Some(count) = self.score.measures[index].multi_measure_rest {
+                covered_until = index + usize::from(count);
+                continue;
+            }
+            if is_empty_measure(&self.score.measures[index]) {
+                self.score.measures[index].multi_measure_rest = Some(1);
+                covered_until = index + 1;
+            }
         }
     }
 
@@ -649,6 +766,18 @@ impl Reader {
                     if let Some((parent, _)) = tuplets.last() {
                         let parent = *parent;
                         self.score.tuplet_mut(tuplet).parent = Some(parent);
+                        // Un n-olet imbriqué dont la durée de base tient dans une
+                        // croche est groupé par les ligatures : MuseScore ne
+                        // dessine alors pas de crochet (`Tuplet::calcHasBracket`).
+                        // Un ratio non réduit de croches (`4:4`) reste affiché
+                        // avec crochet.
+                        let base = self.score.tuplet(tuplet).base_len;
+                        let ratio = self.score.tuplet(tuplet).ratio;
+                        if base < Fraction::new(1, 8)
+                            || (base == Fraction::new(1, 8) && ratio != Fraction::ONE)
+                        {
+                            self.score.tuplet_mut(tuplet).bracket = false;
+                        }
                     }
                     let ratio = self.score.tuplet(tuplet).ratio;
                     tuplets.push((tuplet, ratio));
@@ -908,6 +1037,9 @@ impl Reader {
                     if let Some(half) = nuances::read_half(child, measure_index, tick, track) {
                         self.spanner_halves.push(half);
                     }
+                    if let Some(half) = ottava::read_half(child, measure_index, tick, track) {
+                        self.ottava_halves.push(half);
+                    }
                 }
                 // TODO(parité): <Beam>, <Ambitus>, <Segment>, <MeasureRepeat>,
                 // <Symbol>, <Image>, <FretDiagram>, <TremoloBar>, <StaffState>,
@@ -1152,18 +1284,22 @@ impl Reader {
                 "prev" => false,
                 _ => continue,
             };
-            let other_tick = child
+            let other = child
                 .child("location")
-                .and_then(|location| location.child("fractions"))
-                .and_then(Element::fraction)
-                .map_or(tick, |fractions| tick + fractions);
+                .map(read_tie_location)
+                .unwrap_or(TieLocation {
+                    measures: 0,
+                    fractions: Fraction::ZERO,
+                    staves: 0,
+                    voices: 0,
+                });
             self.ties.push(TieRecord {
                 note: note_id,
                 track,
                 tick,
                 pitch: note.pitch,
                 is_start,
-                other_tick,
+                other,
             });
         }
     }
@@ -1175,18 +1311,23 @@ impl Reader {
     /// les deux extrémités d'une même liaison.
     fn resolve_ties(&mut self) {
         let mut used = vec![false; self.ties.len()];
+        let measures = self.score.measures.clone();
         for index in 0..self.ties.len() {
             if !self.ties[index].is_start || used[index] {
                 continue;
             }
             let start = self.ties[index].clone();
+            let start_other_tick = start.other.absolute_tick(start.tick, &measures);
+            let start_other_track = start.other.absolute_track(start.track);
             let partner = (0..self.ties.len()).find(|&other| {
+                let candidate = &self.ties[other];
                 !used[other]
-                    && !self.ties[other].is_start
-                    && self.ties[other].track == start.track
-                    && self.ties[other].pitch == start.pitch
-                    && self.ties[other].tick == start.other_tick
-                    && self.ties[other].other_tick == start.tick
+                    && !candidate.is_start
+                    && candidate.track == start_other_track
+                    && candidate.pitch == start.pitch
+                    && candidate.tick == start_other_tick
+                    && candidate.other.absolute_track(candidate.track) == start.track
+                    && candidate.other.absolute_tick(candidate.tick, &measures) == start.tick
             });
             if let Some(partner) = partner {
                 used[index] = true;
@@ -1231,6 +1372,10 @@ impl Reader {
         let len = base_len * Fraction::from_integer(ratio.denominator());
 
         let mut tuplet = Tuplet::new(ratio, base_len, tick, len);
+        // MuseScore affiche les nombres bruts du fichier (`4:4` reste `4:4`
+        // dans `<tuplet-actual>`, même si le ratio interne est réduit).
+        tuplet.actual_notes = actual.max(1);
+        tuplet.normal_notes = normal.max(1);
         if let Some(number) = element.child("Number") {
             let text = number.child("text").map(Element::text).unwrap_or_default();
             tuplet.number_type = if text.is_empty() {
@@ -1241,7 +1386,10 @@ impl Reader {
                 TupletNumberType::Number
             };
         }
-        // TODO(parité): crochets, points de contrôle, position du nombre.
+        // `Tuplet::calcHasBracket` n'est qu'une mise en page ; faute de ligatures
+        // modélisées, on applique la règle du corpus : un n-olet de croches ou
+        // plus court, imbriqué, se passe de crochet.
+        tuplet.bracket = true;
         self.score.add_tuplet(tuplet)
     }
 
@@ -1680,8 +1828,55 @@ fn staff_lines(element: &Element) -> u8 {
     // TODO(parité): tablatures, portées sans ligne, <lines> explicite.
 }
 
-/// Intervalle diatonique approché d'un intervalle chromatique.
+/// Lit une `<location>` de liaison.
+fn read_tie_location(element: &Element) -> TieLocation {
+    TieLocation {
+        measures: element
+            .child("measures")
+            .and_then(Element::int)
+            .unwrap_or(0),
+        fractions: element
+            .child("fractions")
+            .and_then(Element::fraction)
+            .unwrap_or(Fraction::ZERO),
+        staves: element.child("staves").and_then(Element::int).unwrap_or(0),
+        voices: element.child("voices").and_then(Element::int).unwrap_or(0),
+    }
+}
+
+/// Vrai si la mesure ne contient qu'un silence de mesure entière.
 ///
+/// Sert à reconnaître les mesures qu'un multi-repos d'une mesure remplace
+/// (`Measure::isMMRest` implicite). Les annotations et spanners n'empêchent
+/// pas le regroupement, mais un accord, une barre spéciale ou une reprise le
+/// font.
+fn is_empty_measure(measure: &Measure) -> bool {
+    if !measure.repeat_marks.is_empty() {
+        return false;
+    }
+    if measure.start_bar_line != BarLineType::Normal || measure.end_bar_line != BarLineType::Normal
+    {
+        return false;
+    }
+    let mut rest = false;
+    for segment in &measure.segments {
+        for (_, item) in segment.iter_elements() {
+            match item {
+                SegmentItem::ChordRest(chord_rest) if chord_rest.is_full_measure_rest() => {
+                    rest = true;
+                }
+                SegmentItem::ChordRest(_) => return false,
+                // Clefs, armures et indications de mesure n'empêchent pas le
+                // regroupement : MuseScore les conserve dans la mesure qui ouvre
+                // le multi-repos.
+                _ => {}
+            }
+        }
+    }
+    rest
+}
+
+/// Intervalle diatonique approché d'un intervalle chromatique.
 /// Utilisé seulement quand `<transposeDiatonic>` manque : `Interval::chromatic2diatonic`
 /// dans MuseScore est plus fin pour les intervalles composés.
 fn chromatic_to_diatonic(chromatic: i32) -> i32 {

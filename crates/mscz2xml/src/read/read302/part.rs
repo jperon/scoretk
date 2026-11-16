@@ -149,6 +149,8 @@ fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         track_name,
         transpose: None,
         midi_program: None,
+        volume: None,
+        pan: None,
     };
 
     let diatonic = node.child("transposeDiatonic").and_then(Node::int_text);
@@ -169,6 +171,24 @@ fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
                     instrument.midi_program = Some(value as u8);
                 }
                 break;
+            }
+        }
+    }
+
+    // Réglages de canal : contrôleur 7 (volume) et 10 (panoramique).
+    for channel in node.children_named("Channel") {
+        for controller in channel.children_named("controller") {
+            let Some(value) = controller
+                .attr_i32("value")
+                .or_else(|| controller.int_text())
+                .filter(|value| (0..=127).contains(value))
+            else {
+                continue;
+            };
+            match controller.attr_i32("ctrl") {
+                Some(7) => instrument.volume = Some(value as u8),
+                Some(10) => instrument.pan = Some(value as u8),
+                _ => {}
             }
         }
     }

@@ -38,19 +38,45 @@ const ENCODING_DATE: &str = "2026-01-01";
 const EXPECTED_CONFORMANT: &[&str] = &[
     "beamStemDir",
     "changevisibility",
+    "copypaste_parts",
     "copypastesymbollist-lyrics",
     "dynamics",
+    "dynamics_niente",
     "expression-1",
+    "hairpin_dynamic_inside",
+    "hairpin_dynamic_jump",
+    "hairpin_simple",
     "hairpins_and_repeats",
     "linked-ties",
+    "mmrest",
+    "part-textlines",
+    "partExclusion",
     "repeat65",
     "repeat68",
     "repeat69",
     "tenuto_accent",
+    "testExcludeInvisibleElements",
     "testLocalTimesig1",
     "testNoteheads2",
     "testTempoPrecision",
     "timesig-09",
+    "voiceswitching",
+];
+
+/// Fichiers du corpus 3.x dont la conversion est identique à la référence
+/// après normalisation (voir `docs/agents/ecarts-noyau.md`).
+const EXPECTED_CONFORMANT_V3: &[&str] = &[
+    "lyricsline01",
+    "repeat01",
+    "repeat06",
+    "repeat07",
+    "repeat11",
+    "repeat20",
+    "repeat39",
+    "testBreaksPage",
+    "testHairpinDynamics",
+    "testTuplets8",
+    "testWedge4",
 ];
 
 /// Éléments dont le sous-arbre entier est ignoré.
@@ -114,13 +140,13 @@ enum Entry {
     Node(Node),
 }
 
-fn corpus_dir() -> PathBuf {
+fn corpus_dir(version: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("tests")
         .join("corpus")
-        .join("v4")
+        .join(version)
 }
 
 /// Décide du sort d'un élément d'après son parent et son nom.
@@ -335,7 +361,17 @@ fn truncate_diff(diff: &str, max_lines: usize) -> String {
 
 #[test]
 fn corpus_v4_conforme_aux_references() {
-    let directory = corpus_dir();
+    run_corpus("v4", EXPECTED_CONFORMANT);
+}
+
+#[test]
+fn corpus_v3_conforme_aux_references() {
+    run_corpus("v3", EXPECTED_CONFORMANT_V3);
+}
+
+/// Convertit tout un corpus et compare chaque fichier à sa référence.
+fn run_corpus(version: &str, expected_conformant: &[&str]) {
+    let directory = corpus_dir(version);
     let mut files: Vec<PathBuf> = fs::read_dir(&directory)
         .unwrap_or_else(|error| panic!("corpus introuvable dans {} : {error}", directory.display()))
         .map(|entry| entry.expect("entrée de répertoire").path())
@@ -346,7 +382,10 @@ fn corpus_v4_conforme_aux_references() {
         .collect();
     files.sort();
 
-    assert!(!files.is_empty(), "aucun fichier .mscx dans le corpus v4");
+    assert!(
+        !files.is_empty(),
+        "aucun fichier .mscx dans le corpus {version}"
+    );
 
     let options = ConvertOptions {
         format: OutputFormat::MusicXml,
@@ -397,7 +436,7 @@ fn corpus_v4_conforme_aux_references() {
         }
     }
 
-    println!("conformité du corpus v4 (après normalisation) :");
+    println!("conformité du corpus {version} (après normalisation) :");
     for row in &rows {
         println!("  {row}");
     }
@@ -405,7 +444,7 @@ fn corpus_v4_conforme_aux_references() {
         println!("{diffs}");
     }
 
-    for name in EXPECTED_CONFORMANT {
+    for name in expected_conformant {
         assert!(
             names.iter().any(|candidate| candidate == name),
             "{name} est listé dans EXPECTED_CONFORMANT mais absent du corpus"

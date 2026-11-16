@@ -44,6 +44,14 @@ pub struct Tuplet {
     pub number_type: TupletNumberType,
     /// Vrai si le n-olet est encadré d'un crochet.
     pub bracket: bool,
+    /// Nombre de notes jouées tel qu'écrit dans le fichier (`<actualNotes>`).
+    ///
+    /// Le ratio est réduit, donc `4/4` y devient `1/1` ; MuseScore affiche en
+    /// revanche les nombres bruts dans `<tuplet-actual>`/`<tuplet-normal>`.
+    /// Vaut le numérateur du ratio pour un n-olet construit à la main.
+    pub actual_notes: i64,
+    /// Nombre de notes normales tel qu'écrit (`<normalNotes>`), non réduit.
+    pub normal_notes: i64,
 }
 
 impl Tuplet {
@@ -57,7 +65,14 @@ impl Tuplet {
             parent: None,
             number_type: TupletNumberType::Number,
             bracket: false,
+            actual_notes: ratio.numerator(),
+            normal_notes: ratio.denominator(),
         }
+    }
+
+    /// Nombres affichés, non réduits (`<actualNotes>` et `<normalNotes>`).
+    pub const fn displayed_numbers(&self) -> (i64, i64) {
+        (self.actual_notes, self.normal_notes)
     }
 
     /// Nombre affiché du n-olet (numérateur du ratio).
