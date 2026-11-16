@@ -33,6 +33,7 @@ use crate::model::{
 use crate::Result;
 
 use super::nuances::{self, Nuances};
+use super::ottava;
 use super::pitch;
 use super::repeats;
 use super::text;
@@ -450,13 +451,24 @@ impl<'a> Context<'a> {
                 &[]
             };
             out.xml.tag_with("part-name", name_attributes, &name);
-            // TODO(parité): <part-name-display> pour les noms contenant des
-            // altérations (♭/♯), qui demandent les fragments de texte.
+            // MuseScore décompose les noms contenant des altérations en
+            // fragments `<display-text>`/`<accidental-text>`.
+            if let Some(display) = part_display_name(part) {
+                out.xml.start_element("part-name-display", name_attributes);
+                write_display_name(out, &display);
+                out.xml.end_element();
+            }
 
             if !part.short_name.is_empty() {
                 let abbreviation = plain_text(&part.short_name);
                 out.xml
                     .tag_with("part-abbreviation", name_attributes, &abbreviation);
+                if contains_accidental(&part.short_name) {
+                    out.xml
+                        .start_element("part-abbreviation-display", name_attributes);
+                    write_display_name(out, &part.short_name);
+                    out.xml.end_element();
+                }
             }
 
             out.xml
@@ -485,10 +497,13 @@ impl<'a> Context<'a> {
                         .tag("midi-program", &(u16::from(program) + 1).to_string());
                 }
             }
-            // Valeurs par défaut de MuseScore (volume 100/127, pan centré) :
-            // le modèle ne porte pas les réglages de canal.
-            out.xml.tag("volume", "78.7402");
-            out.xml.tag("pan", "0");
+            // `midiInstrument` : volume et panorama viennent des contrôleurs du
+            // canal, avec les valeurs par défaut de MuseScore (100/127 et 64).
+            let volume = f64::from(part.instrument.volume.unwrap_or(100)) / 127.0 * 100.0;
+            out.xml.tag("volume", &format_number(volume, 4));
+            let pan = f64::from(part.instrument.pan.unwrap_or(64));
+            let pan = ((pan - 63.5) / 63.5 * 90.0) as i32;
+            out.xml.tag("pan", &pan.to_string());
             out.xml.end_element();
 
             out.xml.end_element();
@@ -557,8 +572,16 @@ impl<'a> Context<'a> {
             self.write_staff_details(out, part);
             self.write_instrument_details(out, part);
         }
-        // TODO(parité): <measure-style> (silences multi-mesures, reprises de
-        // mesure).
+        // `measureStyle` : un `<measure-style>` ouvre le groupe de silences
+        // multi-mesures, sur la première mesure du groupe.
+        if let Some(count) = measure.multi_measure_rest {
+            out.attr(true);
+            out.xml.start_element("measure-style", &[]);
+            out.xml.tag("multiple-rest", &count.to_string());
+            out.xml.end_element();
+        }
+        // TODO(parité): <measure-style> des mesures répétées
+        // (`<measure-repeat>`), qui demande le compteur de `<RepeatMeasure>`.
 
         repeats::repeat_at_measure_start(self, out, measure, part_index);
 
@@ -566,6 +589,9 @@ impl<'a> Context<'a> {
         self.annotations_without_note(out, measure, part);
 
         out.move_to_tick(measure.end_tick());
+        for staff_id in &part.staves {
+            ottava::write_stops(self.score, out, measure, *staff_id);
+        }
         repeats::repeat_at_measure_stop(self, out, measure, part_index);
         self.barline_right(out, measure, part_index, measure_index);
         out.attr_stop();
@@ -584,6 +610,8 @@ impl<'a> Context<'a> {
         let staves = part.staves.len();
         for (position, staff_id) in part.staves.iter().enumerate() {
             out.move_to_tick(measure.start_tick);
+            // Les ottavas s'écrivent au début de la portée, avant ses notes.
+            ottava::write_starts(self.score, out, measure, *staff_id);
             let xml_staff = if staves > 1 { position + 1 } else { 0 };
             self.write_measure_tracks(out, measure, *staff_id, xml_staff, nuances);
             if position + 1 < staves {
@@ -1046,6 +1074,8 @@ impl Context<'_> {
         );
         let voice = voice_number(xml_staff, track.voice());
         let transpose = self.transpose_chromatic(track.staff());
+        // Hauteur écrite : une ottava décale l'octave exportée.
+        let ottava = ottava::shift(self.score, track.staff(), segment_tick);
 
         for (index, note_id) in chord.notes.iter().enumerate() {
             let note = self.score.note(*note_id);
@@ -1071,7 +1101,7 @@ impl Context<'_> {
                 out.xml.tag_empty("chord", &[]);
             }
 
-            write_pitch(out, note, self.options.concert_pitch, transpose);
+            write_pitch(out, note, self.options.concert_pitch, transpose, ottava);
 
             if !grace {
                 out.xml.tag(
@@ -1653,7 +1683,13 @@ impl Notations {
 }
 
 /// Écrit `<pitch>` (`writePitch`).
-fn write_pitch(out: &mut Out, note: &Note, concert_pitch: bool, transpose_chromatic: i32) {
+fn write_pitch(
+    out: &mut Out,
+    note: &Note,
+    concert_pitch: bool,
+    transpose_chromatic: i32,
+    ottava: i32,
+) {
     // TODO(parité): percussions (unpitched), micro-intervalles
     // (centOffset/tuning) absents du modèle.
     let (step, alter, octave) = if !pitch::tpc_is_valid(note.tpc) {
@@ -1673,6 +1709,8 @@ fn write_pitch(out: &mut Out, note: &Note, concert_pitch: bool, transpose_chroma
         };
         pitch::written_pitch(note.pitch, used_tpc, transpose)
     };
+    // `pitch2xml` corrige l'octave des ottavas (`ppitch - pitch`).
+    let octave = octave + ottava;
 
     out.xml.start_element("pitch", &[]);
     out.xml.tag("step", &step.to_string());
@@ -1707,8 +1745,11 @@ fn write_type(out: &mut Out, notated: Fraction, chord: &Chord, note: &Note, grac
 
 /// Écrit `<tuplet-actual>` et `<tuplet-normal>`.
 fn tuplet_actual_and_normal(out: &mut Out, tuplet: &Tuplet) {
-    let actual = tuplet.ratio.numerator().to_string();
-    let normal = tuplet.ratio.denominator().to_string();
+    // MuseScore écrit les nombres bruts du fichier, non réduits : `4:4` reste
+    // `4`/`4` dans `<tuplet-number>`.
+    let (actual, normal) = tuplet.displayed_numbers();
+    let actual = actual.to_string();
+    let normal = normal.to_string();
     let base = pitch::tick_to_xml(tuplet.base_len);
 
     out.xml.start_element("tuplet-actual", &[]);
@@ -2216,6 +2257,44 @@ fn plain_part_name(part: &Part) -> String {
         plain_text(&part.name)
     } else {
         String::new()
+    }
+}
+
+/// Nom de partie à décomposer en fragments, si MuseScore en écrit un.
+///
+/// `writePartList` ne produit `<part-name-display>` que si le nom contient un
+/// bémol ou un dièse typographique.
+fn part_display_name(part: &Part) -> Option<&str> {
+    if contains_accidental(&part.long_name) {
+        Some(&part.long_name)
+    } else if part.long_name.is_empty() && contains_accidental(&part.name) {
+        Some(&part.name)
+    } else {
+        None
+    }
+}
+
+fn contains_accidental(text: &str) -> bool {
+    text.contains('♭') || text.contains('♯')
+}
+
+/// Écrit les fragments d'un nom (`writeDisplayName`).
+fn write_display_name(out: &mut Out, name: &str) {
+    let mut display = String::new();
+    for ch in name.chars() {
+        if ch != '♭' && ch != '♯' {
+            display.push(ch);
+            continue;
+        }
+        if !display.is_empty() {
+            out.xml.tag("display-text", &display);
+        }
+        out.xml
+            .tag("accidental-text", if ch == '♭' { "flat" } else { "sharp" });
+        display.clear();
+    }
+    if !display.is_empty() {
+        out.xml.tag("display-text", &display);
     }
 }
 

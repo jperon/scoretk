@@ -130,6 +130,8 @@ fn piano_instrument() -> Instrument {
         track_name: "Piano".to_owned(),
         transpose: None,
         midi_program: Some(0),
+        volume: None,
+        pan: None,
     }
 }
 
@@ -579,6 +581,8 @@ fn transposition_et_concert_pitch() {
         track_name: "B♭ Clarinet".to_owned(),
         transpose: Some(Transpose::new(-1, -2)),
         midi_program: Some(71),
+        volume: None,
+        pan: None,
     };
     let staff = score.add_staff(part_id);
     let track = Track::new(staff, 0);
@@ -988,6 +992,8 @@ fn corpus_linked_ties() {
         track_name: "Flute".to_owned(),
         transpose: None,
         midi_program: Some(73),
+        volume: None,
+        pan: None,
     };
     let staff = score.add_staff(part_id);
     let track = Track::new(staff, 0);
@@ -1152,6 +1158,8 @@ fn corpus_paroles() {
         track_name: "Voice".to_owned(),
         transpose: None,
         midi_program: Some(52),
+        volume: None,
+        pan: None,
     };
     let staff = score.add_staff(part_id);
     let track = Track::new(staff, 0);
