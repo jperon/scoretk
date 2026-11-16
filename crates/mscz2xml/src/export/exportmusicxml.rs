@@ -10,14 +10,15 @@
 //! # Ce qui n'est pas exporté
 //!
 //! Le modèle ne contient ni style, ni mise en page, ni géométrie : tout ce que
-//! MuseScore tire de `MStyle` et des positions (`<defaults>`, `<credit>`,
-//! `<print>`, attributs `default-x`/`default-y`, largeur des mesures,
-//! `<measure-style>`, sauts de page/système, hampes calculées) est absent de
-//! la sortie. Les éléments correspondants portent un `// TODO(parité)`.
+//! MuseScore tire de `MStyle` et des positions (`<defaults>`, `<print>`,
+//! attributs `default-x`/`default-y`, largeur des mesures, `<measure-style>`,
+//! sauts de page/système, hampes calculées) est absent de la sortie. Les
+//! éléments correspondants portent un `// TODO(parité)`. Les `<credit>` sont
+//! exportés pour leur texte, sans position ni police du style.
 //!
 //! Les éléments dont le modèle ne garde pas l'information (spanners, symboles,
-//! doigtés, changements d'instrument, voltas, marqueurs, pédales, etc.) sont
-//! ignorés silencieusement.
+//! doigtés, détails des changements d'instrument, voltas, marqueurs, pédales,
+//! etc.) sont ignorés silencieusement.
 
 use std::collections::BTreeSet;
 

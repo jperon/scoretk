@@ -7,10 +7,10 @@
 use crate::model::{
     tpc, Accidental, AccidentalType, Annotation, Articulation, ArticulationType, BarLineType,
     BeamMode, ChordRest, Clef, ClefType, Credit, CreditStyle, Duration, DurationType, Fraction,
-    GraceChord, GraceType, Harmony, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
-    Measure, Note, NoteHeadType, NoteId, Part, PartId, Placement, RehearsalFrame, RehearsalMark,
-    RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffId, StaffText, SystemText,
-    Tempo, TimeSig, Track, Transpose, Tuplet,
+    GraceChord, GraceType, Harmony, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
+    LyricsSyllabic, Measure, Note, NoteHeadType, NoteId, Part, PartId, Placement, RehearsalFrame,
+    RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffId, StaffText,
+    SystemText, Tempo, TimeSig, Track, Transpose, Tuplet,
 };
 
 use super::{export_musicxml, export_musicxml_with, ExportOptions};
@@ -1541,6 +1541,21 @@ fn textes_de_portee_et_de_systeme() {
         Fraction::ZERO,
         Annotation::StaffText(invisible),
     );
+    // Texte d'expression et changement d'instrument : eux aussi des `<words>`.
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        first_track,
+        Fraction::ZERO,
+        Annotation::Expression(StaffText::new("espressivo")),
+    );
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        first_track,
+        Fraction::ZERO,
+        Annotation::InstrumentChange(InstrumentChange::new("pizz.")),
+    );
     score.add_measure(measure);
 
     let xml = export_musicxml(&score).expect("export");
@@ -1562,6 +1577,8 @@ fn textes_de_portee_et_de_systeme() {
     ));
     // Un texte invisible n'est pas exporté (`canWrite`).
     assert!(!xml.contains("caché"));
+    assert!(xml.contains("<words>espressivo</words>"));
+    assert!(xml.contains("<words>pizz.</words>"));
 }
 
 #[test]

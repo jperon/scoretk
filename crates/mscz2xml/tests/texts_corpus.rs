@@ -35,14 +35,28 @@ struct Frag {
     text: String,
 }
 
-/// Fichiers du corpus qui contiennent des textes.
-const FICHIERS: &[&str] = &[
-    "copypaste_parts",
-    "hairpin_dynamic_inside",
-    "repeat65",
-    "testExcludeInvisibleElements",
-    "voiceswitching",
-];
+/// Fichiers du corpus v4 : ceux qui n'ont pas de texte n'ajoutent que leurs
+/// `<work>`, `<credit>` et `<creator>` à la comparaison.
+fn fichiers_du_corpus() -> Vec<String> {
+    let mut noms: Vec<String> = fs::read_dir(corpus_dir())
+        .expect("corpus v4")
+        .map(|entree| entree.expect("entrée de répertoire").path())
+        .filter(|chemin| {
+            chemin
+                .extension()
+                .is_some_and(|extension| extension == "mscx")
+        })
+        .map(|chemin| {
+            chemin
+                .file_stem()
+                .expect("nom de fichier")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    noms.sort();
+    noms
+}
 
 /// Écarts connus, par fichier : éléments de la référence que l'export ne
 /// produit pas encore (documentés dans le rapport de la tâche).
@@ -59,6 +73,10 @@ const ECARTS_CONNUS: &[(&str, &[&str])] = &[
     // Texte de `TBox` (voir ci-dessus) : exporté en `<words>` au début de la
     // première mesure par `tboxTextAsWords`.
     ("voiceswitching", &["This test goes through each measure"]),
+    // Textes de `TextLine` (spanner) : le `<words>` vient de `beginText`, le
+    // trait et le `<direction-type>` vide de la ligne elle-même.
+    ("mmrest", &["VII"]),
+    ("part-textlines", &["System", "Staff/1", "Staff/2"]),
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -271,9 +289,9 @@ fn reference(nom: &str) -> Vec<String> {
 fn textes_du_corpus_conformes_aux_references() {
     let mut erreurs: Vec<String> = Vec::new();
 
-    for nom in FICHIERS {
-        let attendus = reference(nom);
-        let obtenus = notre_export(nom);
+    for nom in fichiers_du_corpus() {
+        let attendus = reference(&nom);
+        let obtenus = notre_export(&nom);
 
         let mut manquants = BTreeSet::new();
         let mut restants: Vec<String> = obtenus.clone();
@@ -288,7 +306,7 @@ fn textes_du_corpus_conformes_aux_references() {
         // Écarts documentés : on ne les compte pas comme des régressions.
         let connus: Vec<&str> = ECARTS_CONNUS
             .iter()
-            .filter(|(fichier, _)| fichier == nom)
+            .filter(|(fichier, _)| *fichier == nom)
             .flat_map(|(_, motifs)| motifs.iter().copied())
             .collect();
         let mut manquants_non_documentes: Vec<&String> = Vec::new();

@@ -336,8 +336,10 @@ impl Reader {
                     self.read_measure(child, staff_index, measure_index)?;
                     measure_index += 1;
                 }
-                // TODO(parité): HBox/VBox/TBox/FBox (cadres : ils changent la
-                // numérotation affichée mais pas le tick musical).
+                // TODO(parité): HBox/TBox/FBox (cadres : ils changent la
+                // numérotation affichée mais pas le tick musical). Les textes de
+                // `TBox` sont exportés en `<words>` par MuseScore
+                // (`tboxTextAsWords`), ils ne sont pas encore lus.
                 "VBox" => {
                     // Les cadres sont des objets de partition : MuseScore les
                     // écrit sous la première portée (`StaffRead::readStaff`).
@@ -717,12 +719,17 @@ impl Reader {
                 }
                 "Tempo" => {
                     let text = read_text_base(child);
+                    // `TempoText::TempoText` initialise le tempo à 2 battements
+                    // par seconde (120 BPM) ; `<tempo>` l'écrase.
                     let mut tempo = Tempo {
                         text: text.text,
-                        beats_per_second: child
-                            .child("tempo")
-                            .map(Element::text)
-                            .and_then(|value| value.parse().ok()),
+                        beats_per_second: Some(
+                            child
+                                .child("tempo")
+                                .map(Element::text)
+                                .and_then(|value| value.parse().ok())
+                                .unwrap_or(2.0),
+                        ),
                         follow_text: child.has_child("followText"),
                         placement: text.placement,
                         visible: text.visible,
@@ -814,9 +821,9 @@ impl Reader {
                 // traitées dans <Note>.
                 "Spanner" => {}
                 // TODO(parité): <Beam>, <Ambitus>, <Segment>, <MeasureRepeat>,
-                // <Expression>, <Symbol>, <Image>, <FretDiagram>, <TremoloBar>,
-                // <InstrumentChange>, <StaffState>, <PlayTechAnnotation>,
-                // <Sticking>, <FiguredBass>, <HarpPedalDiagram>.
+                // <Symbol>, <Image>, <FretDiagram>, <TremoloBar>, <StaffState>,
+                // <PlayTechAnnotation>, <Sticking>, <FiguredBass>,
+                // <HarpPedalDiagram>.
                 _ => {}
             }
         }
