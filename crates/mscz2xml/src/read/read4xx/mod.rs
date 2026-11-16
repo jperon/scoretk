@@ -257,7 +257,11 @@ impl Reader {
             "arranger" => metadata.arranger = value,
             "copyright" => metadata.copyright = value,
             "source" => metadata.source = value,
-            // TODO(parité): subtitle, translator, creationDate, platform.
+            "creationDate" => metadata.creation_date = value,
+            "platform" => metadata.platform = value,
+            "subtitle" => metadata.subtitle = value,
+            "mscVersion" => metadata.msc_version = value,
+            // TODO(parité): translator.
             _ => {}
         }
     }

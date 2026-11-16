@@ -194,6 +194,10 @@ impl Reader {
             "arranger" => metadata.arranger = text,
             "copyright" => metadata.copyright = text,
             "source" => metadata.source = text,
+            "creationDate" => metadata.creation_date = text,
+            "platform" => metadata.platform = text,
+            "subtitle" => metadata.subtitle = text,
+            "mscVersion" => metadata.msc_version = text,
             _ => {}
         }
     }

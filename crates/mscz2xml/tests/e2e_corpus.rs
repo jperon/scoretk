@@ -31,7 +31,7 @@ use mscz2xml::{convert, ConvertOptions, ExportOptions, OutputFormat};
 
 /// Date d'encodage figée : `<identification>` est normalisé de toute façon,
 /// mais la sortie reste ainsi entièrement reproductible.
-const ENCODING_DATE: &str = "2026-01-01";
+const ENCODING_DATE: &str = "2026-11-16";
 
 /// Fichiers dont la conversion est aujourd'hui identique à la référence après
 /// normalisation. Toute régression sur cette liste fait échouer le test ; les
@@ -142,7 +142,19 @@ const FULL_PAGE_ELEMENTS: &[&str] = &[
 ];
 
 /// Attributs de mise en page pure retirés au niveau [`Level::Full`].
-const FULL_PAGE_ATTRIBUTES: &[&str] = &["default-x", "default-y", "relative-x", "relative-y", "width"];
+///
+/// `bezier-x`/`bezier-y` sont les points de contrôle des courbes de liaison et
+/// de glissando : géométrie calculée par la mise en page, sans équivalent dans
+/// le modèle.
+const FULL_PAGE_ATTRIBUTES: &[&str] = &[
+    "default-x",
+    "default-y",
+    "relative-x",
+    "relative-y",
+    "width",
+    "bezier-x",
+    "bezier-y",
+];
 
 /// Décision de filtrage pour un élément.
 #[derive(Clone, Copy)]
@@ -446,13 +458,20 @@ fn line_tag(line: &str) -> Option<String> {
     let rest = trimmed.strip_prefix('<')?;
     let rest = rest.strip_prefix('/').unwrap_or(rest);
     let end = rest
-        .find(|character: char| !(character.is_ascii_alphanumeric() || character == '-' || character == '_'))
+        .find(|character: char| {
+            !(character.is_ascii_alphanumeric() || character == '-' || character == '_')
+        })
         .unwrap_or(rest.len());
     (end > 0).then(|| rest[..end].to_owned())
 }
 
 /// Enregistre les balises des lignes modifiées d'un diff.
-fn collect_tags(expected: &[String], actual: &[String], file: &str, tags: &mut BTreeMap<String, TagStat>) {
+fn collect_tags(
+    expected: &[String],
+    actual: &[String],
+    file: &str,
+    tags: &mut BTreeMap<String, TagStat>,
+) {
     let expected_refs: Vec<&str> = expected.iter().map(String::as_str).collect();
     let actual_refs: Vec<&str> = actual.iter().map(String::as_str).collect();
     let text_diff = TextDiff::from_slices(&expected_refs, &actual_refs);
@@ -644,8 +663,10 @@ fn ecarts_complets_document() {
 
     println!("## Écarts groupés par balise");
     println!();
-    println!("Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; \
-              fichiers = nombre de fichiers touchés. Tri par fréquence décroissante.");
+    println!(
+        "Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; \
+              fichiers = nombre de fichiers touchés. Tri par fréquence décroissante."
+    );
     println!();
     println!("| Balise | Lignes | Fichiers | Exemples |");
     println!("| --- | ---: | ---: | --- |");

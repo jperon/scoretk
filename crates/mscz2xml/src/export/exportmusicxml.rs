@@ -479,8 +479,42 @@ impl<'a> Context<'a> {
         if !metadata.source.is_empty() {
             out.xml.tag("source", &metadata.source);
         }
-        // TODO(parité): <miscellaneous> (creationDate, platform, autres
-        // métadonnées MuseScore absentes du modèle).
+        // MuseScore écrit toutes les métadonnées non standard, triées par nom ;
+        // `creationDate` et `platform` ont toujours une valeur (celle du
+        // fichier, sinon celle de l'export).
+        let creation_date = if metadata.creation_date.is_empty() {
+            self.options.encoding_date.as_str()
+        } else {
+            metadata.creation_date.as_str()
+        };
+        out.xml.start_element("miscellaneous", &[]);
+        out.xml.tag_with(
+            "miscellaneous-field",
+            &[("name", "creationDate")],
+            creation_date,
+        );
+        if !metadata.msc_version.is_empty() {
+            out.xml.tag_with(
+                "miscellaneous-field",
+                &[("name", "mscVersion")],
+                &metadata.msc_version,
+            );
+        }
+        if !metadata.platform.is_empty() {
+            out.xml.tag_with(
+                "miscellaneous-field",
+                &[("name", "platform")],
+                &metadata.platform,
+            );
+        }
+        if !metadata.subtitle.is_empty() {
+            out.xml.tag_with(
+                "miscellaneous-field",
+                &[("name", "subtitle")],
+                &metadata.subtitle,
+            );
+        }
+        out.xml.end_element();
         out.xml.end_element();
     }
 
