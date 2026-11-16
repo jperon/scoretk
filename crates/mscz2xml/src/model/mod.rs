@@ -59,6 +59,7 @@ pub mod hairpin;
 pub mod ids;
 pub mod lyrics;
 pub mod measure;
+pub mod notation;
 pub mod note;
 pub mod part;
 pub mod repeat;
@@ -82,6 +83,11 @@ pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::Measure;
+pub use notation::{
+    Arpeggio, ArpeggioType, ChordLineType, Fermata, FermataType, Fingering, Glissando,
+    GlissandoType, LineStyle, Ornament, OrnamentAccidental, OrnamentType, Slur, SpannerNotation,
+    Tremolo, TremoloKind, Trill, TrillType,
+};
 pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadGroup, NoteHeadType};
 pub use part::{Instrument, Part, Staff, Transpose};
 pub use repeat::{Jump, JumpType, Marker, MarkerType, RepeatMark, VoltaInfo};

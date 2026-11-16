@@ -425,14 +425,26 @@ fn read_breath(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
             }
             "symbol" => {
                 breath.kind = match child.trimmed_text().as_str() {
-                    "caesura" | "caesuraCurved" | "caesuraShort" => BreathType::Caesura,
+                    "caesura" => BreathType::Caesura,
+                    "caesuraCurved" => BreathType::CaesuraCurved,
+                    "caesuraShort" => BreathType::CaesuraShort,
+                    "caesuraThick" => BreathType::CaesuraThick,
+                    "caesuraSingleStroke" | "chantCaesura" => BreathType::CaesuraSingle,
                     "breathMarkTick" => BreathType::Tick,
                     "stringsUpBow" => BreathType::Upbow,
                     _ => BreathType::Comma,
                 };
             }
+            "placement" => {
+                breath.placement = tables::placement(&child.trimmed_text());
+            }
             _ => {}
         }
+    }
+    // `MeasureRead::readVoice` : la voix 0 place la respiration au-dessus,
+    // la voix 1 au-dessous.
+    if ctx.track.voice() % 2 == 1 {
+        breath.placement = crate::model::Placement::Below;
     }
     segment_mut(
         &mut reader.score.measures[ctx.measure],

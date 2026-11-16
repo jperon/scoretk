@@ -9,7 +9,7 @@
 //! `nb_portées * VOICES`, et l'index est [`Track::raw`], exactement comme
 //! `Segment::_elist` dans MuseScore.
 
-use super::annotation::Annotation;
+use super::annotation::{Annotation, Placement};
 use super::chord::ChordRest;
 use super::fraction::{Fraction, Tick};
 use super::ids::{Track, VOICES};
@@ -459,8 +459,16 @@ pub enum BreathType {
     /// Virgule.
     #[default]
     Comma,
-    /// Césure.
+    /// Césure normale.
     Caesura,
+    /// Césure courbe (`caesuraCurved`).
+    CaesuraCurved,
+    /// Césure courte (`caesuraShort`).
+    CaesuraShort,
+    /// Césure épaisse (`caesuraThick`).
+    CaesuraThick,
+    /// Césure simple trait (`caesuraSingleStroke`).
+    CaesuraSingle,
     /// Respiration en tick.
     Tick,
     /// Coup d'archet.
@@ -474,6 +482,9 @@ pub enum BreathType {
 pub struct Breath {
     /// Type de respiration.
     pub kind: BreathType,
+    /// Placement vertical (`ChordRest::hasBreathMark` : la voix 0 est
+    /// au-dessus, la voix 1 au-dessous).
+    pub placement: Placement,
 }
 
 /// Type de segment.

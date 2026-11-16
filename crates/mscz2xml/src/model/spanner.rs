@@ -9,6 +9,7 @@
 use super::fraction::Tick;
 use super::hairpin::Hairpin;
 use super::ids::Track;
+use super::notation::SpannerNotation;
 use super::repeat::VoltaInfo;
 
 /// Extrémité d'un spanner.
@@ -102,6 +103,8 @@ pub struct Spanner {
     pub number: u8,
     /// Compléments propres aux soufflets.
     pub hairpin: Option<Hairpin>,
+    /// Complément propre aux liaisons d'expression, glissandos et trilles.
+    pub notation: Option<SpannerNotation>,
 }
 
 impl Spanner {
@@ -115,6 +118,7 @@ impl Spanner {
             volta: None,
             number: 0,
             hairpin: None,
+            notation: None,
         }
     }
 }

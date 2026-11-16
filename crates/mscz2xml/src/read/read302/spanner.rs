@@ -97,8 +97,12 @@ enum Receiver {
 #[derive(Clone)]
 enum Payload {
     Tie,
-    Slur,
+    Slur(crate::model::Slur),
     Spanner(SpannerType, Option<String>, Option<VoltaInfo>),
+    /// Glissando, avec son texte et son style de trait.
+    Glissando(crate::model::Glissando),
+    /// Trille, avec son type et son altération.
+    Trill(crate::model::Trill),
     /// Soufflet, avec ses textes, son niente et son placement.
     Hairpin(HairpinType, Hairpin),
 }
@@ -203,7 +207,7 @@ fn read_rel(node: &Node) -> Rel {
 fn read_payload(node: &Node) -> Option<Payload> {
     let payload = match node.name() {
         "Tie" => Payload::Tie,
-        "Slur" => Payload::Slur,
+        "Slur" => Payload::Slur(super::notations::read_slur(node)),
         "HairPin" => {
             let (kind, hairpin) = super::nuances::read_hairpin(node);
             Payload::Hairpin(kind, hairpin)
@@ -216,8 +220,8 @@ fn read_payload(node: &Node) -> Option<Payload> {
             Some(super::repeats::read_volta(node)),
         ),
         "TextLine" => Payload::Spanner(SpannerType::TextLine, text_of(node), None),
-        "Trill" => Payload::Spanner(SpannerType::Trill, None, None),
-        "Glissando" => Payload::Spanner(SpannerType::Glissando, None, None),
+        "Trill" => Payload::Trill(super::notations::read_trill(node)),
+        "Glissando" => Payload::Glissando(super::notations::read_glissando(node)),
         other => Payload::Spanner(SpannerType::Other(other.to_owned()), text_of(node), None),
     };
     Some(payload)
@@ -429,7 +433,33 @@ fn emit(reader: &mut Reader, chain: &[usize]) {
                 reader.score.note_mut(end_note).tie_back = Some(start_note);
             }
         }
-        Some(Payload::Slur) => push_spanner(reader, SpannerType::Slur, None, None, start, end),
+        Some(Payload::Slur(slur)) => {
+            let mut spanner = Spanner::new(
+                SpannerType::Slur,
+                SpannerAnchor::new(start.tick, start.track),
+                SpannerAnchor::new(end.tick, end.track),
+            );
+            spanner.notation = Some(crate::model::SpannerNotation::Slur(slur));
+            reader.score.add_spanner(spanner);
+        }
+        Some(Payload::Glissando(glissando)) => {
+            let mut spanner = Spanner::new(
+                SpannerType::Glissando,
+                SpannerAnchor::new(start.tick, start.track),
+                SpannerAnchor::new(end.tick, end.track),
+            );
+            spanner.notation = Some(crate::model::SpannerNotation::Glissando(glissando));
+            reader.score.add_spanner(spanner);
+        }
+        Some(Payload::Trill(trill)) => {
+            let mut spanner = Spanner::new(
+                SpannerType::Trill,
+                SpannerAnchor::new(start.tick, start.track),
+                SpannerAnchor::new(end.tick, end.track),
+            );
+            spanner.notation = Some(crate::model::SpannerNotation::Trill(trill));
+            reader.score.add_spanner(spanner);
+        }
         Some(Payload::Spanner(kind, text, volta)) => {
             push_spanner(reader, kind, text, volta, start, end);
         }

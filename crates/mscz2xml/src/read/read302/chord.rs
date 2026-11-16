@@ -4,12 +4,13 @@
 //! `read(Rest*)`, `read(Note*)`, `read(Lyrics*)` et `read(Tuplet*)`
 //! (`engraving/rw/read400/tread.cpp`).
 
+use super::notations;
 use super::spanner;
 use super::tables;
 use super::xml::Node;
 use super::{Reader, VoiceCtx};
 use crate::model::{
-    tpc, Accidental, Articulation, BeamMode, Chord, ChordRest, ChordRestKind, Duration,
+    tpc, Accidental, BeamMode, Chord, ChordLineType, ChordRest, ChordRestKind, Duration,
     DurationType, Fraction, GraceType, Lyrics, LyricsSyllabic, Note, NoteHeadType, NoteId,
     Placement, Rest, Score, StemDirection, Transpose, Tuplet, TupletId, TupletNumberType,
 };
@@ -41,6 +42,10 @@ pub(crate) fn read_chord_rest(
     let mut beam = BeamMode::Auto;
     let mut lyrics = Vec::new();
     let mut articulations = Vec::new();
+    let mut ornaments = Vec::new();
+    let mut tremolo = None;
+    let mut arpeggio = None;
+    let mut chord_line = None;
 
     for child in node.children() {
         match child.name() {
@@ -66,10 +71,13 @@ pub(crate) fn read_chord_rest(
             "small" => small = child.int_text().unwrap_or(0) != 0,
             "BeamMode" => beam = tables::beam_mode(&child.trimmed_text()),
             "Lyrics" => lyrics.push(read_lyrics(child)),
-            "Articulation" => articulations.push(read_articulation(child)),
+            "Articulation" => articulations.extend(notations::read_articulations(child)),
+            "Ornament" => ornaments.push(notations::read_ornament(child)),
+            "Tremolo" => tremolo = notations::read_tremolo(child),
+            "Arpeggio" => arpeggio = Some(notations::read_arpeggio(child)),
             // TODO(parité): `<staffMove>` (notes sur une autre portée),
-            // `<Arpeggio>`, `<Tremolo>`, `<Stem>`, `<Hook>`, `<StemSlash>`,
-            // `<ChordLine>`, `<Tempo>`/`<Symbol>` d'accord ne sont pas modélisés.
+            // `<Stem>`, `<Hook>`, `<StemSlash>`, `<Tempo>`/`<Symbol>`
+            // d'accord ne sont pas modélisés.
             _ => {}
         }
     }
@@ -102,6 +110,10 @@ pub(crate) fn read_chord_rest(
             grace,
             grace_slash: slash,
             articulations,
+            ornaments,
+            tremolo,
+            arpeggio,
+            chord_line: None,
             ..Chord::default()
         };
         let note_grace = if grace.is_some() {
@@ -111,9 +123,10 @@ pub(crate) fn read_chord_rest(
         };
         for child in node.children_named("Note") {
             let index = chord.notes.len();
-            let note = read_note(reader, child, ctx, note_grace, index);
+            let note = read_note(reader, child, ctx, note_grace, index, &mut chord_line);
             chord.notes.push(note);
         }
+        chord.chord_line = chord_line;
         for child in node.children_named("Spanner") {
             spanner::read_chord_spanner(reader, child, ctx);
         }
@@ -197,6 +210,7 @@ fn read_note(
     ctx: &VoiceCtx,
     grace: Option<usize>,
     index: usize,
+    chord_line: &mut Option<ChordLineType>,
 ) -> NoteId {
     let id = reader.score.add_note(Note::new(60, tpc::C));
     let mut pitch = 60u8;
@@ -207,6 +221,7 @@ fn read_note(
     let mut head = NoteHeadType::Auto;
     let mut ghost = false;
     let mut play = true;
+    let mut fingerings = Vec::new();
 
     for child in node.children() {
         match child.name() {
@@ -225,9 +240,19 @@ fn read_note(
             "ghost" | "dead" => ghost = child.int_text().unwrap_or(0) != 0,
             "play" => play = child.int_text().unwrap_or(1) != 0,
             "Spanner" => spanner::read_note_spanner(reader, child, ctx, id, grace, index),
-            // TODO(parité): `<Fingering>`, `<Symbol>`, `<Bend>`, `<NoteDot>`,
-            // `<Events>`, `<offset>`, `<ChordLine>`, `<tpc2>` absent et
-            // `<velocity>` (ignorée avant 4.0 par le C++) ne sont pas modélisés.
+            "ChordLine" => {
+                if let Some(kind) = notations::read_chord_line(child) {
+                    *chord_line = Some(kind);
+                }
+            }
+            "Fingering" => {
+                if let Some(fingering) = notations::read_fingering(child) {
+                    fingerings.push(fingering);
+                }
+            }
+            // TODO(parité): `<Symbol>`, `<Bend>`, `<NoteDot>`, `<Events>`,
+            // `<offset>`, `<tpc2>` absent et `<velocity>` (ignorée avant 4.0
+            // par le C++) ne sont pas modélisés.
             _ => {}
         }
     }
@@ -265,6 +290,7 @@ fn read_note(
     note.head = head;
     note.ghost = ghost;
     note.play = play;
+    note.fingerings = fingerings;
     id
 }
 
@@ -311,23 +337,4 @@ fn read_lyrics(node: &Node) -> Lyrics {
         melisma,
         placement,
     }
-}
-
-fn read_articulation(node: &Node) -> Articulation {
-    let mut articulation = Articulation::new(crate::model::ArticulationType::Other(String::new()));
-    for child in node.children() {
-        match child.name() {
-            "subtype" => articulation.kind = tables::articulation_type(&child.trimmed_text()),
-            "anchor" => articulation.anchor = tables::articulation_anchor(child.int_text()),
-            "direction" => {
-                articulation.anchor = match child.trimmed_text().as_str() {
-                    "up" => crate::model::ArticulationAnchor::Up,
-                    "down" => crate::model::ArticulationAnchor::Down,
-                    _ => crate::model::ArticulationAnchor::Auto,
-                };
-            }
-            _ => {}
-        }
-    }
-    articulation
 }

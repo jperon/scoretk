@@ -8,9 +8,9 @@
 
 use crate::model::Fraction;
 use crate::model::{
-    note::tpc, AccidentalType, ArticulationAnchor, ArticulationType, BarLineType, BeamMode,
-    ClefType, Duration, DurationType, KeyMode, LyricsSyllabic, NoteHeadType, OttavaType, Placement,
-    StemDirection, TimeSigType, Transpose, TupletNumberType,
+    note::tpc, AccidentalType, ArticulationAnchor, BarLineType, BeamMode, ClefType, Duration,
+    DurationType, KeyMode, LyricsSyllabic, NoteHeadType, OttavaType, Placement, StemDirection,
+    TimeSigType, Transpose, TupletNumberType,
 };
 
 /// Figure de durée à partir du nom écrit dans `<durationType>`.
@@ -143,38 +143,6 @@ pub(crate) fn accidental_type(name: &str) -> AccidentalType {
         "accidentalTripleFlat" => AccidentalType::TripleFlat,
         "accidentalTripleSharp" => AccidentalType::TripleSharp,
         _ => AccidentalType::None,
-    }
-}
-
-/// Type d'articulation à partir de son nom SMuFL.
-pub(crate) fn articulation_type(name: &str) -> ArticulationType {
-    let name = name.trim();
-    // Les articulations MuseScore portent un suffixe de position
-    // (`articAccentAbove`, `fermataBelow`…) qui ne change pas le type.
-    let base = name
-        .strip_suffix("Above")
-        .or_else(|| name.strip_suffix("Below"))
-        .unwrap_or(name);
-    match base {
-        "articStaccato" => ArticulationType::Staccato,
-        "articStaccatissimo" => ArticulationType::Staccatissimo,
-        "articTenutoStaccato" => ArticulationType::Portato,
-        "articAccent" => ArticulationType::Accent,
-        "articMarcato" => ArticulationType::Marcato,
-        "articTenuto" => ArticulationType::Tenuto,
-        "fermata" => ArticulationType::Fermata,
-        "fermataShort" => ArticulationType::FermataShort,
-        "fermataLong" => ArticulationType::FermataLong,
-        "fermataVeryShort" => ArticulationType::FermataVeryShort,
-        "fermataVeryLong" => ArticulationType::FermataVeryLong,
-        "breathMarkComma" => ArticulationType::BreathMark,
-        "caesura" | "caesuraCurved" | "caesuraShort" => ArticulationType::Caesura,
-        "stringsUpBow" => ArticulationType::UpBow,
-        "stringsDownBow" => ArticulationType::DownBow,
-        "stringsHarmonic" => ArticulationType::Harmonic,
-        "brassMuteOpen" => ArticulationType::Open,
-        "brassMuteClosed" => ArticulationType::Stopped,
-        _ => ArticulationType::Other(name.to_owned()),
     }
 }
 
