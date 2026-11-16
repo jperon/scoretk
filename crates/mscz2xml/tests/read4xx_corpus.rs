@@ -254,3 +254,93 @@ fn lit_un_mscx_5_00_synthetique() {
         Some(mscz2xml::model::NoteId::from_index(0))
     );
 }
+
+fn lire_du_corpus(name: &str) -> mscz2xml::model::Score {
+    let path = corpus_dir().join(name);
+    let data =
+        fs::read(&path).unwrap_or_else(|error| panic!("lecture de {} : {error}", path.display()));
+    let container = MsczContainer::from_bytes(&data).expect("conteneur");
+    read_score(&container).expect("lecture du .mscx")
+}
+
+#[test]
+fn liaisons_tuplets_et_paroles() {
+    // `linked-ties` : trois liaisons de prolongation, dont deux impliquant des
+    // ornements (appoggiature et grace8after).
+    let ties = lire_du_corpus("linked-ties.mscx");
+    let mut forward = 0;
+    for (index, note) in ties.notes.iter().enumerate() {
+        if let Some(target) = note.tie_forward {
+            forward += 1;
+            assert_eq!(
+                ties.note(target).tie_back,
+                Some(mscz2xml::model::NoteId::from_index(index)),
+                "liaison {index} mal appariée"
+            );
+        }
+    }
+    assert_eq!(forward, 3);
+    assert_eq!(
+        ties.notes
+            .iter()
+            .filter(|note| note.tie_back.is_some())
+            .count(),
+        3
+    );
+
+    // `voiceswitching` : quinze n-olets, dont des n-olets imbriqués sur trois
+    // niveaux ; les accords intérieurs pointent vers le n-olet le plus interne.
+    let tuplets = lire_du_corpus("voiceswitching.mscx");
+    assert_eq!(tuplets.tuplets.len(), 15);
+    assert!(tuplets.tuplets.iter().any(|tuplet| tuplet.parent.is_some()));
+    assert_eq!(tuplets.tuplets[0].ratio.to_string(), "3/2");
+    assert_eq!(tuplets.tuplets[0].base_len.to_string(), "1/2");
+    assert_eq!(tuplets.tuplets[0].len.to_string(), "1/1");
+    let mut chords_in_tuplets = 0;
+    for measure in &tuplets.measures {
+        for segment in &measure.segments {
+            for (_, item) in segment.iter_elements() {
+                if let mscz2xml::model::SegmentItem::ChordRest(chord_rest) = item {
+                    if chord_rest.tuplet.is_some() {
+                        chords_in_tuplets += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert!(chords_in_tuplets > 0);
+
+    // `copypastesymbollist-lyrics` : paroles sur l'accord, syllabisation et
+    // mélisme lus depuis `<ticks_f>`.
+    let lyrics = lire_du_corpus("copypastesymbollist-lyrics.mscx");
+    let mut syllables = Vec::new();
+    let mut melisma = None;
+    for measure in &lyrics.measures {
+        for segment in &measure.segments {
+            for (_, item) in segment.iter_elements() {
+                if let mscz2xml::model::SegmentItem::ChordRest(chord_rest) = item {
+                    for lyric in &chord_rest.lyrics {
+                        syllables.push((lyric.text.clone(), lyric.syllabic, lyric.number()));
+                        melisma = melisma.or(lyric.melisma);
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(
+        syllables.first().map(|(text, _, _)| text.as_str()),
+        Some("Nel")
+    );
+    assert_eq!(
+        syllables.get(1),
+        Some(&("mez".to_owned(), mscz2xml::model::LyricsSyllabic::Begin, 1))
+    );
+    assert_eq!(
+        syllables.get(2).map(|(_, syllabic, _)| *syllabic),
+        Some(mscz2xml::model::LyricsSyllabic::End)
+    );
+    assert_eq!(
+        melisma.map(|value| value.to_string()),
+        Some("1/4".to_owned())
+    );
+}

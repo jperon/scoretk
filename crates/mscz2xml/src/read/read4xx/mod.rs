@@ -1055,15 +1055,16 @@ impl Reader {
 
         if self.version < 460 {
             if let Some(accidental) = element.child("accidental").and_then(Element::int) {
-                concert = accidental.clamp(-7, 7) as i8;
+                // Pas de borne : MuseScore autorise les armures personnalisées.
+                concert = i8::try_from(accidental).unwrap_or(0);
             }
         }
         if self.version >= 410 {
             if let Some(value) = element.child("concertKey").and_then(Element::int) {
-                concert = value.clamp(-7, 7) as i8;
+                concert = i8::try_from(value).unwrap_or(0);
             }
             if let Some(value) = element.child("actualKey").and_then(Element::int) {
-                written = Some(value.clamp(-7, 7) as i8);
+                written = Some(i8::try_from(value).unwrap_or(0));
             }
         }
 
