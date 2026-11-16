@@ -130,6 +130,12 @@
           type = "module";
           main = "./esm/mscz2xml_wasm.js";
           types = "./esm/mscz2xml_wasm.d.ts";
+          # GPL §6 : indiquer où obtenir la source correspondante. Aucun remote
+          # git n'existe encore dans ce dépôt ; à remplacer par l'URL réelle.
+          repository = {
+            type = "git";
+            url = "TODO: URL du dépôt à renseigner (aucun remote git n'est défini dans ce dépôt)";
+          };
           exports = {
             "." = {
               types = "./esm/mscz2xml_wasm.d.ts";
@@ -139,10 +145,24 @@
             "./classic/*" = "./classic/*";
             "./package.json" = "./package.json";
           };
-          files = ["esm" "classic" "README.md"];
+          files = ["esm" "classic" "README.md" "LICENSE" "NOTICE"];
           # La variante classic s'auto-installe sur `self.mscz2xml` au chargement.
           sideEffects = ["./classic/mscz2xml.js"];
         });
+
+        # Bandeau de licence ajouté en tête de chaque fichier JS généré par
+        # wasm-bindgen. Le `/*!` est conservé par esbuild et les minificateurs
+        # usuels, contrairement aux commentaires ordinaires : la mention de
+        # licence survit donc à la minification (§5a et §6 de la GPL).
+        wasmLicenseBanner = pkgs.writeText "mscz2xml-license-banner.js" ''
+          /*! @license GPL-3.0-only — mscz2xml (WebAssembly)
+           * Copyright (C) 2026 les auteurs de mscz2xml
+           * Portage de MuseScore Studio, Copyright (C) MuseScore Limited and others,
+           * modifié (réécrit en Rust) en 2026.
+           * source : URL du dépôt à renseigner (TODO : aucun remote git défini).
+           * Distribué SANS AUCUNE GARANTIE ; licence complète dans LICENSE.
+           */
+        '';
 
         wasm = pkgs.runCommand "mscz2xml-wasm-${version}" {
           nativeBuildInputs = [pkgs.wasm-bindgen-cli pkgs.binaryen];
@@ -173,8 +193,20 @@
           install -m 0644 ${./crates/mscz2xml-wasm/pkg/classic/mscz2xml.js} \
             $out/classic/mscz2xml.js
 
+          # Bandeau `/*! @license … */` en tête des fichiers générés par
+          # wasm-bindgen : il porte la licence et l'indication de la source
+          # correspondante, et survit à la minification.
+          for module in $out/esm/mscz2xml_wasm.js $out/classic/mscz2xml_wasm.js; do
+            cat ${wasmLicenseBanner} "$module" > "$module.banner"
+            mv "$module.banner" "$module"
+          done
+
           install -m 0644 ${wasmPackageJson} $out/package.json
           install -m 0644 ${./crates/mscz2xml-wasm/pkg/README.md} $out/README.md
+          # GPL §6 : le paquet doit permettre d'obtenir la source
+          # correspondante ; licence et NOTICE accompagnent la distribution.
+          install -m 0644 ${./LICENSE} $out/LICENSE
+          install -m 0644 ${./NOTICE} $out/NOTICE
         '';
 
         # Test Node de la variante ESM, sur le paquet tel que `nix build` le
@@ -251,6 +283,24 @@
             });
 
           fmt = craneLib.cargoFmt commonArgs;
+
+          # Vérifie que les licences des crates liées restent compatibles avec
+          # GPL-3.0-only (docs/licences-tierces.md). crane vend les sources des
+          # dépendances et pose CARGO_NET_OFFLINE : `cargo tree --offline` ne
+          # fait aucun accès réseau pendant le check.
+          licences = craneLib.mkCargoDerivation {
+            pname = "mscz2xml-licences";
+            inherit version;
+            src = pkgs.lib.cleanSource ./.;
+            cargoArtifacts = null;
+            nativeBuildInputs = [pkgs.python3];
+            buildPhaseCargoCommand = "python3 scripts/check-licences.py";
+            doInstallCargoArtifacts = false;
+            installPhaseCommand = ''
+              mkdir -p $out
+              cp docs/licences-tierces.md $out/
+            '';
+          };
 
           # Test Node du paquet était bâti par `packages.wasm` : il vérifie la
           # variante ESM telle que livrée (initSync, conversion du corpus,

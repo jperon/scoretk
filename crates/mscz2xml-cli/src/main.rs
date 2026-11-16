@@ -1,3 +1,20 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//
+// Copyright (C) 2026 les auteurs de mscz2xml
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License version 3 as published by
+// the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+// more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// this program. If not, see the LICENSE file at the root of this repository or
+// <https://www.gnu.org/licenses/gpl-3.0.html>.
+
 //! CLI `mscz2xml` : convertit un `.mscz` ou un `.mscx` en MusicXML.
 //!
 //! Le format de sortie est déduit de l'extension du fichier de sortie
@@ -17,9 +34,17 @@ use clap::Parser;
 
 use mscz2xml::{convert, ConvertOptions, ExportOptions, OutputFormat};
 
+/// Version affichée par `--version` : en plus du numéro, la licence et
+/// l'absence de garantie (GPL §0, « Appropriate Legal Notices »).
+const VERSION_LINE: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    "\nLicence : GNU GPL version 3 seulement (GPL-3.0-only), sans aucune garantie ;",
+    "\nvoir le fichier LICENSE ou <https://www.gnu.org/licenses/gpl-3.0.html>."
+);
+
 /// Portage Rust de l'export MusicXML de MuseScore.
 #[derive(Debug, Parser)]
-#[command(name = "mscz2xml", version, about)]
+#[command(name = "mscz2xml", version = VERSION_LINE, about)]
 struct Cli {
     /// Fichier d'entrée (.mscz ou .mscx)
     input: std::path::PathBuf,
@@ -181,6 +206,15 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_affiche_la_licence() {
+        use clap::CommandFactory;
+
+        let version = Cli::command().render_version().to_string();
+        assert!(version.contains("GPL-3.0-only"), "{version}");
+        assert!(version.contains("garantie"), "{version}");
+    }
 
     #[test]
     fn dates_civiles_connues() {

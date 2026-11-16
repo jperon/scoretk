@@ -1,0 +1,86 @@
+# NOTICE
+
+mscz2xml est un portage en Rust de l'export MusicXML et des lecteurs de
+partitions (`.mscx` / `.mscz`, formats 3.x et 4.x/5.x) de **MuseScore Studio**.
+Ce fichier récapitule l'origine du code et des données, les licences
+correspondantes et les marques.
+
+## Licence du projet
+
+Le projet est distribué sous **GNU General Public License version 3 seulement
+(GPL-3.0-only)**. Le texte complet est dans [`LICENSE`](LICENSE) ; chaque
+fichier source porte l'identifiant SPDX `GPL-3.0-only` et l'avis de modification
+requis par la section 5(a) de la licence.
+
+## Code porté depuis MuseScore Studio
+
+- Projet d'origine : **MuseScore Studio**,
+  <https://github.com/musescore/MuseScore>.
+- Copie de référence utilisée en lecture seule (répertoire `ref-musescore/`,
+  non versionné dans ce dépôt) : commit
+  `2b9e82df847111d673c2051a93deeaaeea3f5a29` du 2026-11-16. Le fichier
+  `version.cmake` de cette copie déclare la version **5.0.0** (branche de
+  développement, `MUSE_APP_UNSTABLE ON`).
+- Licence du projet amont : **GNU GPL version 3** (fichier `LICENSE.txt` amont),
+  Copyright (C) 1999-2026 MuseScore Limited and others.
+- Nature de la reprise : **réécriture en Rust**, à partir de la lecture des
+  sources C++. Aucun fichier C++ de MuseScore n'est distribué dans ce dépôt.
+  Les en-têtes des fichiers Rust indiquent, pour chacun, le ou les fichiers
+  C++ d'origine (`Portage de … de MuseScore Studio, … modifié (réécrit en
+  Rust) en 2026`).
+
+Correspondance des grands ensembles :
+
+| Code Rust | Sources MuseScore Studio (sous `src/`) |
+| --- | --- |
+| `crates/mscz2xml/src/export/` | `importexport/musicxml/internal/export/exportmusicxml.cpp`, `importexport/musicxml/internal/shared/`, et pour les ligatures/hampes `engraving/rendering/score/beamlayout.cpp`, `chordlayout.cpp` |
+| `crates/mscz2xml/src/read/read302/` | `engraving/rw/read302/read302.cpp`, `engraving/rw/read400/{staffrw,measurerw,tread,connectorinforeader}.cpp` |
+| `crates/mscz2xml/src/read/read4xx/` | `engraving/rw/read400/`, `read410/`, `read460/`, `read500/` (`read*.cpp`, `staffr*.cpp`, `measurer*.cpp`, `tread.cpp`, `connectorinforeader.cpp`) et `engraving/rw/compat/readstyle.cpp` |
+| `crates/mscz2xml/src/model/` | `engraving/dom/*.h` (partition, segments, notes, accords, spanners, styles de texte…), `engraving/types/`, `engraving/style/style.h` |
+| `crates/mscz2xml/src/container.rs` | `engraving/infrastructure/mscreader.cpp` |
+| `crates/mscz2xml/src/read/mod.rs` | `engraving/rw/rwregister.cpp` |
+| `crates/mscz2xml/src/export/writer.rs` | forme d'écriture XML de `engraving/rw/xmlwriter.cpp` |
+
+Les tables de conversion de noms (`read302/tables.rs`, `read4xx/names.rs`)
+reprennent `TConv::fromXml` de `engraving/rw/types/typesconv.cpp` — fichier
+**généré** à la construction chez MuseScore et donc absent de la copie de
+référence — et les valeurs de `engraving/types/types.h`.
+
+## Données reprises
+
+### Corpus de tests
+
+- `tests/corpus/v3/*.mscx` et `tests/corpus/v4/*.mscx` : partitions de test
+  copiées telles quelles depuis MuseScore Studio (même commit que ci-dessus),
+  principalement `src/engraving/tests/**` et
+  `src/importexport/musicxml/tests/data/`. Licence GPL-3.0, Copyright (C)
+  MuseScore Limited and others. Le détail fichier par fichier est dans
+  [`tests/corpus/SOURCES.md`](tests/corpus/SOURCES.md).
+- `tests/corpus/**/*.ref.musicxml` : références produites localement par
+  `scripts/gen-references.sh` avec **MuseScore 4.7.4** (paquet nixpkgs), lancé
+  en mode headless. Ce sont des sorties du programme MuseScore, couvertes par
+  la même licence.
+
+### Table des instruments
+
+`crates/mscz2xml/src/read/instruments.rs` est généré par
+`scripts/gen-instruments-table.py` à partir de
+`share/instruments/instruments.xml` de MuseScore (version 4.4), licence
+GPL-3.0, Copyright (C) MuseScore Limited and others. La table est une donnée
+dérivée (identifiants MuseScore, noms, identifiants MusicXML, programmes MIDI),
+convertie en Rust en 2026.
+
+## Marques
+
+« MuseScore » est une marque de **MuseScore Limited**. Ce projet est un
+portage indépendant : il n'est **ni affilié à, ni approuvé par** MuseScore
+Limited. Les noms « MuseScore », « mscz », « mscx » et « MusicXML » sont
+utilisés uniquement pour décrire les formats et l'origine du code, sans
+suggestion d'approbation.
+
+## Dépendances tierces
+
+La liste des crates tierces effectivement liées dans les binaires, avec leur
+licence et la vérification de compatibilité GPL-3.0-only, est dans
+[`docs/licences-tierces.md`](docs/licences-tierces.md). Le contrôle est
+automatisé par `scripts/check-licences.py` et le check de flake `licences`.
