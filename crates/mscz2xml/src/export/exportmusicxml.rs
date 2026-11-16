@@ -156,6 +156,12 @@ impl Out {
     }
 }
 
+/// Profondeur maximale d'imbrication de n-olets suivie par l'export.
+///
+/// MuseScore n'impose pas de limite, mais un modèle corrompu pourrait former
+/// une chaîne cyclique : cette borne évite toute boucle infinie.
+const MAX_TUPLET_DEPTH: usize = 64;
+
 /// Élément enfant d'un n-olet, dans l'ordre de `Tuplet::elements()`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TupletElement {
@@ -464,10 +470,15 @@ impl<'a> Context<'a> {
                 .tag_with("midi-device", &[("id", &instrument_id), ("port", "1")], "");
             out.xml
                 .start_element("midi-instrument", &[("id", &instrument_id)]);
-            out.xml.tag("midi-channel", &number.to_string());
+            // MuseScore n'écrit le canal que s'il tient dans 1..=16.
+            if number <= 16 {
+                out.xml.tag("midi-channel", &number.to_string());
+            }
             if let Some(program) = part.instrument.midi_program {
-                out.xml
-                    .tag("midi-program", &(u16::from(program) + 1).to_string());
+                if u16::from(program) < 128 {
+                    out.xml
+                        .tag("midi-program", &(u16::from(program) + 1).to_string());
+                }
             }
             // Valeurs par défaut de MuseScore (volume 100/127, pan centré) :
             // le modèle ne porte pas les réglages de canal.
@@ -660,12 +671,19 @@ impl<'a> Context<'a> {
     fn global_ticks(&self, chord_rest: &ChordRest, measure: &Measure) -> Fraction {
         let mut ticks = self.notated_ticks(chord_rest, measure);
         let mut tuplet = chord_rest.tuplet;
+        let mut depth = 0;
         while let Some(id) = tuplet {
             let Some(value) = self.score.tuplets.get(id.index()) else {
                 break;
             };
+            // Un ratio nul ou une chaîne cyclique (modèle corrompu) ne doit pas
+            // faire boucler l'export.
+            if value.ratio.is_zero() || depth >= MAX_TUPLET_DEPTH {
+                break;
+            }
             ticks /= value.ratio;
             tuplet = value.parent;
+            depth += 1;
         }
         ticks
     }
@@ -692,6 +710,9 @@ impl Context<'_> {
         let mut nesting = 0;
         let mut tuplet = chord_rest.tuplet;
         while let Some(id) = tuplet {
+            if nesting >= MAX_TUPLET_DEPTH {
+                break;
+            }
             nesting += 1;
             tuplet = self.score.tuplet(id).parent;
         }
@@ -864,11 +885,16 @@ impl Context<'_> {
         let mut actual: i64 = 1;
         let mut normal: i64 = 1;
         let mut tuplet = chord_rest.tuplet;
+        let mut depth = 0;
         while let Some(id) = tuplet {
+            if depth >= MAX_TUPLET_DEPTH {
+                break;
+            }
             let value = self.score.tuplet(id);
             actual *= value.ratio.numerator();
             normal *= value.ratio.denominator();
             tuplet = value.parent;
+            depth += 1;
         }
         if actual == 1 && normal == 1 {
             return;
@@ -977,7 +1003,9 @@ impl Context<'_> {
             out.xml.start_element("note", &[]);
 
             if grace {
-                if chord.grace_slash {
+                // MuseScore affiche la barre oblique pour une acciaccatura,
+                // même quand le fichier ne stocke pas le drapeau.
+                if chord.grace_slash || chord.grace == Some(GraceType::Acciaccatura) {
                     out.xml.tag_empty("grace", &[("slash", "yes")]);
                 } else {
                     out.xml.tag_empty("grace", &[]);
@@ -1704,10 +1732,10 @@ fn write_articulation(out: &mut Out, articulation: &Articulation, notations: &mu
         }
         ArticulationType::Accent => articulations_tag(out, notations, "accent", placement),
         ArticulationType::Marcato => {
-            let direction = if articulation.anchor == ArticulationAnchor::Up {
-                "up"
-            } else {
+            let direction = if articulation.anchor == ArticulationAnchor::Down {
                 "down"
+            } else {
+                "up"
             };
             notations.tag(out, Some("articulations"));
             out.xml.tag_empty("strong-accent", &[("type", direction)]);
