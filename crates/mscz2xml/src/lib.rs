@@ -57,21 +57,12 @@ pub enum OutputFormat {
 /// };
 /// assert_eq!(options.format, OutputFormat::Mxl);
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ConvertOptions {
     /// Format de sortie.
     pub format: OutputFormat,
     /// Options transmises à l'export MusicXML.
     pub export: ExportOptions,
-}
-
-impl Default for ConvertOptions {
-    fn default() -> Self {
-        Self {
-            format: OutputFormat::default(),
-            export: ExportOptions::default(),
-        }
-    }
 }
 
 /// Convertit un `.mscz` ou un `.mscx` en MusicXML, en une seule étape.
