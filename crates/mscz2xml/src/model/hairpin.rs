@@ -29,6 +29,7 @@
 //! [`super::spanner::SpannerType::Hairpin`] ; ce module ne le duplique pas.
 
 use super::annotation::Placement;
+use super::spanner::LineFont;
 
 /// Compléments d'un soufflet.
 ///
@@ -36,7 +37,7 @@ use super::annotation::Placement;
 /// `ExportMusicXml::hairpin` : `HairpinType::CRESC_LINE`/`DIM_LINE`
 /// (`line`), `hairpinCircledTip` (`niente`), `direction` (`placement`) et
 /// `beginText`/`endText`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Hairpin {
     /// Vrai pour un soufflet en trait pointillé (`<dashes>` dans MusicXML).
     ///
@@ -50,6 +51,10 @@ pub struct Hairpin {
     pub begin_text: String,
     /// Texte de fin, éventuellement avec des `<sym>` MuseScore.
     pub end_text: String,
+    /// Police du texte de début.
+    pub begin_font: LineFont,
+    /// Police du texte de fin.
+    pub end_font: LineFont,
 }
 
 impl Hairpin {
@@ -61,6 +66,19 @@ impl Hairpin {
             placement: Placement::Below,
             begin_text: String::new(),
             end_text: String::new(),
+            // Police par défaut des textes de soufflet dans MuseScore.
+            begin_font: LineFont {
+                family: "FreeSerif".to_owned(),
+                size: 12.0,
+                italic: true,
+                ..LineFont::default()
+            },
+            end_font: LineFont {
+                family: "FreeSerif".to_owned(),
+                size: 12.0,
+                italic: true,
+                ..LineFont::default()
+            },
         }
     }
 }

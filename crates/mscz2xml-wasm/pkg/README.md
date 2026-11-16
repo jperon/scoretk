@@ -53,6 +53,7 @@ l'`importScripts`.
 
 ## Licence et sources
 
+<<<<<<< HEAD
 Le paquet est distribué sous **GPL-3.0-only** (GNU General Public License
 version 3 seulement), comme la bibliothèque dont il est issu. Le texte complet
 accompagne ce paquet dans `LICENSE` ; l'origine du code et des données est

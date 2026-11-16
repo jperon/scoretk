@@ -1,7 +1,7 @@
 # mscz2xml
 
 Portage en Rust de l'export MusicXML de MuseScore, sous licence
-GPL-3.0-or-later.
+GPL-3.0-only.
 
 ## Objectifs de portabilité
 
@@ -63,4 +63,8 @@ $ cargo build -p mscz2xml --target wasm32-unknown-unknown
 
 ## Licence
 
-GPL-3.0-or-later. Le texte complet est dans [`LICENSE`](LICENSE).
+GPL-3.0-only. Le texte complet est dans [`LICENSE`](LICENSE).
+
+Ce projet est un portage du code d'import/export de MuseScore Studio
+(© MuseScore Limited and others), distribué sous GPL-3.0-only. Il s'agit
+d'une œuvre dérivée : seule la version 3 de la GPL s'applique.

@@ -1822,10 +1822,12 @@ fn reperes_de_repetition() {
 
     assert!(xml.contains(
         "<direction placement=\"below\" system=\"only-top\">\n        <direction-type>\n          \
-         <rehearsal font-weight=\"bold\" font-size=\"14\">A</rehearsal>"
+         <rehearsal justify=\"center\" font-weight=\"bold\" font-size=\"14\">A</rehearsal>"
     ));
-    assert!(xml.contains("<rehearsal enclosure=\"circle\" font-weight=\"bold\" font-size=\"14\">B"));
-    assert!(xml.contains("<rehearsal enclosure=\"none\" font-weight=\"bold\" font-size=\"14\">C"));
+    assert!(xml.contains("<rehearsal enclosure=\"circle\" justify=\"center\" font-weight=\"bold\" font-size=\"14\">B"));
+    assert!(xml.contains(
+        "<rehearsal enclosure=\"none\" justify=\"center\" font-weight=\"bold\" font-size=\"14\">C"
+    ));
 }
 
 #[test]

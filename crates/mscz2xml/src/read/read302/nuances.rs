@@ -115,5 +115,25 @@ pub(crate) fn read_hairpin(node: &Node) -> (HairpinType, Hairpin) {
     };
     hairpin.begin_text = node.child("beginText").map(Node::text).unwrap_or_default();
     hairpin.end_text = node.child("endText").map(Node::text).unwrap_or_default();
+    read_font(node, "beginFont", &mut hairpin.begin_font);
+    read_font(node, "endFont", &mut hairpin.end_font);
     (kind, hairpin)
+}
+
+/// Complète une police depuis `<beginFontFace>`, `<beginFontSize>`, etc.
+fn read_font(node: &Node, prefix: &str, font: &mut crate::model::LineFont) {
+    if let Some(face) = node.child(&format!("{prefix}Face")) {
+        font.family = face.trimmed_text();
+    }
+    if let Some(size) = node
+        .child(&format!("{prefix}Size"))
+        .and_then(|node| node.trimmed_text().parse::<f64>().ok())
+    {
+        font.size = size;
+    }
+    if let Some(style) = node.child(&format!("{prefix}Style")) {
+        let style = style.trimmed_text();
+        font.italic = style.contains("italic") || style == "1";
+        font.bold = style.contains("bold");
+    }
 }

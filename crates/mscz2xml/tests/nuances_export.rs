@@ -179,9 +179,13 @@ fn soufflet_en_texte_avec_dynamiques() {
     );
 
     let xml = export_musicxml(&score).expect("export");
-    assert!(xml.contains("<words>cresc. from </words>"));
+    assert!(xml.contains(
+        "<words font-family=\"FreeSerif\" font-size=\"12\" font-style=\"italic\">cresc. from </words>"
+    ));
     assert!(xml.contains("<mf/>"));
-    assert!(xml.contains("<words> to </words>"));
+    assert!(xml.contains(
+        "<words font-family=\"FreeSerif\" font-size=\"12\" font-style=\"italic\"> to </words>"
+    ));
     assert!(xml.contains("<fff/>"));
     assert!(xml.contains("<dashes type=\"start\" number=\"1\"/>"));
     assert!(xml.contains("<dashes type=\"stop\" number=\"1\"/>"));

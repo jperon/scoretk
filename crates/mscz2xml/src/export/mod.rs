@@ -47,6 +47,7 @@ mod layout;
 mod notations;
 mod nuances;
 mod ottava;
+mod pedals;
 mod pitch;
 mod repeats;
 mod stems;

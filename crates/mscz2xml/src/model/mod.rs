@@ -119,8 +119,8 @@ pub use segment::{
     Segment, SegmentAnnotation, SegmentItem, SegmentType, TimeSig, TimeSigType,
 };
 pub use spanner::{
-    HairpinType, HookType, LineFont, OttavaType, Spanner, SpannerAnchor, SpannerType, TextLineInfo,
-    TextLineStyle,
+    HairpinType, HookType, LineFont, OttavaType, PedalInfo, Spanner, SpannerAnchor, SpannerType,
+    TextLineInfo, TextLineStyle,
 };
 pub use style::{StyleSettings, TENTHS};
 pub use text::{

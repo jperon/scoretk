@@ -268,6 +268,8 @@ pub struct Note {
     pub head_group: NoteHeadGroup,
     /// Vrai si la note est visible.
     pub visible: bool,
+    /// Vrai si la tête est entre parenthèses (`HAS_PARENTHESES`).
+    pub parentheses: bool,
     /// Vrai pour une note fantôme (note morte, guitare).
     pub ghost: bool,
     /// Vrai si la note est jouée.
@@ -290,6 +292,7 @@ impl Note {
             head: NoteHeadType::Auto,
             head_group: NoteHeadGroup::Normal,
             visible: true,
+            parentheses: false,
             ghost: false,
             play: true,
             fingerings: Vec::new(),

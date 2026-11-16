@@ -44,6 +44,7 @@ mod names;
 mod notations;
 mod nuances;
 mod ottava;
+mod pedals;
 mod repeats;
 mod style;
 mod textlines;
@@ -176,6 +177,7 @@ struct Reader {
     text_lines: Vec<textlines::TextLineHalf>,
     /// Moitiés d'ottavas lues mais pas encore appariées.
     ottava_halves: Vec<ottava::Half>,
+    pedal_halves: Vec<pedals::Half>,
     /// Vrai si le style active les silences multi-mesures
     /// (`<createMultiMeasureRests>`).
     create_multi_measure_rests: bool,
@@ -200,6 +202,7 @@ impl Reader {
             notation_halves: Vec::new(),
             text_lines: Vec::new(),
             ottava_halves: Vec::new(),
+            pedal_halves: Vec::new(),
             create_multi_measure_rests: false,
         }
     }
@@ -258,8 +261,12 @@ impl Reader {
         self.resolve_ties();
         self.resolve_ties();
         repeats::resolve(self);
-        textlines::resolve(self);
+        // Les soufflets sont résolus avant les lignes de texte : à un même
+        // tick, MuseScore ajoute les spanners dans l'ordre du fichier, où le
+        // soufflet précède la ligne de texte dans le corpus.
         nuances::resolve(&mut self.score, &self.spanner_halves);
+        textlines::resolve(self);
+        pedals::resolve(&mut self.score, &self.pedal_halves);
         notations::resolve(self);
         ottava::resolve(&mut self.score, &self.ottava_halves);
         Ok(())
@@ -1163,6 +1170,9 @@ impl Reader {
                     if let Some(half) = ottava::read_half(child, measure_index, tick, track) {
                         self.ottava_halves.push(half);
                     }
+                    if let Some(half) = pedals::read_half(child, measure_index, tick, track) {
+                        self.pedal_halves.push(half);
+                    }
                 }
                 // TODO(parité): <Beam>, <Ambitus>, <Segment>, <MeasureRepeat>,
                 // <Symbol>, <Image>, <FretDiagram>, <TremoloBar>, <StaffState>,
@@ -1419,6 +1429,13 @@ impl Reader {
                     }
                 }
                 "visible" => note.visible = child.int().unwrap_or(1) != 0,
+                "Symbol" => {
+                    if let Some(name) = child.child("name") {
+                        if name.text().starts_with("noteheadParenthesis") {
+                            note.parentheses = true;
+                        }
+                    }
+                }
                 "ghost" | "dead" => note.ghost = child.int().unwrap_or(0) != 0,
                 "play" => note.play = child.int().unwrap_or(1) != 0,
                 "Spanner" if child.attr("type") == Some("Tie") => {
@@ -1547,6 +1564,14 @@ impl Reader {
         let len = base_len * Fraction::from_integer(ratio.denominator());
 
         let mut tuplet = Tuplet::new(ratio, base_len, tick, len);
+        tuplet.placement =
+            element
+                .child("direction")
+                .and_then(|direction| match direction.text() {
+                    "up" => Some(crate::model::Placement::Above),
+                    "down" => Some(crate::model::Placement::Below),
+                    _ => None,
+                });
         // MuseScore affiche les nombres bruts du fichier (`4:4` reste `4:4`
         // dans `<tuplet-actual>`, même si le ratio interne est réduit).
         tuplet.actual_notes = actual.max(1);
@@ -1592,6 +1617,10 @@ impl Reader {
         }
 
         let mut key_sig = KeySig::new(Key::new(concert));
+        key_sig.visible = element
+            .child("visible")
+            .and_then(Element::int)
+            .is_none_or(|value| value != 0);
         key_sig.transposed_key = Key::new(written.unwrap_or(concert));
         key_sig.mode = element
             .child("mode")
@@ -1803,6 +1832,10 @@ fn read_time_sig(element: &Element) -> TimeSig {
         kind,
         stretch,
         courtesy: false,
+        visible: element
+            .child("visible")
+            .and_then(Element::int)
+            .is_none_or(|value| value != 0),
     }
 }
 
