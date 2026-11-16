@@ -481,3 +481,145 @@ pub(super) fn repeat_at_measure_stop(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::model::{
+        BarLine, BarLineType, ChordRest, Fraction, Jump, Marker, MarkerType, Measure, Part,
+        Placement, RepeatMark, Score, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor,
+        SpannerType, Track, VoltaInfo,
+    };
+
+    use crate::export::export_musicxml;
+
+    fn portee(score: &mut Score) -> Track {
+        let part = score.add_part(Part::new("Piano", "Pno."));
+        let staff = score.add_staff(part);
+        Track::new(staff, 0)
+    }
+
+    fn ajouter_mesure(score: &mut Score, number: usize, track: Track) -> usize {
+        let start = score
+            .measures
+            .last()
+            .map_or(Fraction::ZERO, Measure::end_tick);
+        let mut measure = Measure::new(number, start, Fraction::new(4, 4));
+        let mut segment = Segment::new(SegmentType::ChordRest, measure.start_tick, 1);
+        segment.set_element(
+            track,
+            SegmentItem::ChordRest(ChordRest::full_measure_rest()),
+        );
+        measure.add_segment(segment);
+        score.add_measure(measure).index()
+    }
+
+    fn marqueur(kind: MarkerType, label: &str, text: &str, track: Track) -> RepeatMark {
+        RepeatMark::Marker(Marker {
+            kind,
+            label: label.to_owned(),
+            text: text.to_owned(),
+            placement: Placement::Above,
+            track,
+        })
+    }
+
+    #[test]
+    fn reprise_avec_volta_et_fin_de_mesure() {
+        let mut score = Score::new();
+        let track = portee(&mut score);
+        let first = ajouter_mesure(&mut score, 0, track);
+        let last = ajouter_mesure(&mut score, 1, track);
+
+        score.measures[first].start_bar_line = BarLineType::StartRepeat;
+        score.measures[first].repeat_marks = vec![
+            marqueur(MarkerType::Segno, "segno", "segno", track),
+            marqueur(MarkerType::ToCoda, "coda", "To Coda", track),
+        ];
+        score.measures[last].end_bar_line = BarLineType::EndRepeat;
+        score.measures[last].repeat_count = 3;
+        score.measures[last].repeat_marks = vec![RepeatMark::Jump(Jump::new(
+            "D.C. al Fine",
+            "start",
+            "fine",
+            "",
+            Placement::Above,
+            track,
+        ))];
+
+        let mut volta = Spanner::new(
+            SpannerType::Volta,
+            SpannerAnchor::new(score.measures[first].start_tick, track),
+            SpannerAnchor::new(score.measures[last].end_tick(), track),
+        );
+        volta.text = Some("1, 2".to_owned());
+        volta.volta = Some(VoltaInfo {
+            endings: vec![1, 2],
+            closed: false,
+        });
+        score.add_spanner(volta);
+
+        let xml = export_musicxml(&score).expect("export");
+
+        assert!(xml.contains("<barline location=\"left\">"));
+        assert!(xml.contains("<bar-style>heavy-light</bar-style>"));
+        assert!(xml.contains("<ending number=\"1, 2\" type=\"start\">1, 2</ending>"));
+        assert!(xml.contains("<repeat direction=\"forward\"/>"));
+        assert!(xml.contains("<segno/>"));
+        assert!(xml.contains("<sound segno=\"segno\"/>"));
+        assert!(xml.contains("<words>To Coda</words>"));
+        assert!(xml.contains("<sound tocoda=\"1\"/>"));
+        assert!(xml.contains("<words>D.C. al Fine</words>"));
+        assert!(xml.contains("<sound dacapo=\"yes\"/>"));
+        assert!(xml.contains("<ending number=\"1, 2\" type=\"discontinue\"/>"));
+        assert!(xml.contains("<repeat direction=\"backward\" times=\"3\"/>"));
+        assert!(xml.contains("<bar-style>light-heavy</bar-style>"));
+    }
+
+    #[test]
+    fn barre_courte_au_milieu_et_volta_fermee() {
+        let mut score = Score::new();
+        let track = portee(&mut score);
+        let first = ajouter_mesure(&mut score, 0, track);
+        let last = ajouter_mesure(&mut score, 1, track);
+
+        let mut bar_line = BarLine::new(BarLineType::Normal);
+        bar_line.span_from = 2;
+        bar_line.span_to = -2;
+        let tick = score.measures[first].start_tick + Fraction::new(1, 2);
+        let mut segment = Segment::new(SegmentType::BarLine, tick, 1);
+        segment.set_element(track, SegmentItem::BarLine(bar_line));
+        score.measures[first].add_segment(segment);
+
+        score.measures[last].end_bar_line = BarLineType::EndRepeat;
+        score.measures[last].repeat_count = 2;
+        let mut volta = Spanner::new(
+            SpannerType::Volta,
+            SpannerAnchor::new(score.measures[first].start_tick, track),
+            SpannerAnchor::new(score.measures[last].end_tick(), track),
+        );
+        volta.text = Some("1.".to_owned());
+        volta.volta = Some(VoltaInfo {
+            endings: vec![1],
+            closed: true,
+        });
+        score.add_spanner(volta);
+
+        let xml = export_musicxml(&score).expect("export");
+        assert!(xml.contains("<barline location=\"middle\">"));
+        assert!(xml.contains("<bar-style>short</bar-style>"));
+        assert!(xml.contains("<ending number=\"1\" type=\"stop\"/>"));
+        // `times` n'est écrit que pour plus de deux lectures.
+        assert!(xml.contains("<repeat direction=\"backward\"/>"));
+        assert!(!xml.contains("times="));
+    }
+
+    #[test]
+    fn derniere_mesure_sans_barre_explicite() {
+        let mut score = Score::new();
+        let track = portee(&mut score);
+        ajouter_mesure(&mut score, 0, track);
+        let xml = export_musicxml(&score).expect("export");
+        assert!(xml.contains("<barline location=\"right\">"));
+        assert!(xml.contains("<bar-style>light-heavy</bar-style>"));
+    }
+}
