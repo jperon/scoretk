@@ -40,23 +40,23 @@ pub(crate) fn read_articulations(element: &Element) -> Vec<Articulation> {
         ArticulationAnchor::Auto
     };
 
+    // L'ancre du suffixe ne fixe pas `ArticulationAnchor` dans MuseScore :
+    // elle donne seulement le sens du glyphe (`Articulation::up()`).
+    let (_, suffix_anchor) = names::split_anchor(subtype);
+    let up = suffix_anchor != ArticulationAnchor::Down;
     let parsed = names::articulations(subtype);
     let kinds = if parsed.is_empty() {
-        let (base, anchor) = names::split_anchor(subtype);
-        vec![(ArticulationType::Other(base.to_owned()), anchor)]
+        vec![(ArticulationType::Other(subtype.to_owned()), suffix_anchor)]
     } else {
         parsed
     };
     kinds
         .into_iter()
-        .map(|(kind, anchor)| Articulation {
+        .map(|(kind, _)| Articulation {
             kind,
-            anchor: if explicit_anchor == ArticulationAnchor::Auto {
-                anchor
-            } else {
-                explicit_anchor
-            },
+            anchor: explicit_anchor,
             visible,
+            up,
         })
         .collect()
 }
@@ -163,7 +163,12 @@ pub(crate) fn read_arpeggio(element: &Element) -> Arpeggio {
         .child("subtype")
         .map(Element::text)
         .unwrap_or_default();
-    Arpeggio::new(names::arpeggio_type(subtype))
+    let mut arpeggio = Arpeggio::new(names::arpeggio_type(subtype));
+    arpeggio.visible = !element
+        .child("visible")
+        .and_then(Element::int)
+        .is_some_and(|value| value == 0);
+    arpeggio
 }
 
 /// Lit un `<ChordLine>` (enfant de note).
@@ -249,7 +254,7 @@ pub(crate) struct Half {
     track: Track,
     prev: Option<Location>,
     next: Option<Location>,
-    notation: Notation,
+    notation: Option<Notation>,
 }
 
 /// Lit un `<Spanner>` de notation rencontré dans une voix, un accord ou une
@@ -261,14 +266,13 @@ pub(crate) fn read_spanner(reader: &mut super::Reader, element: &Node, tick: Tic
     if !matches!(kind, "Slur" | "Trill" | "Glissando") {
         return;
     }
-    let Some(payload) = element.child(kind) else {
-        return;
-    };
-    let notation = match kind {
+    // La moitié de fin n'a pas d'enfant portant le nom du type : ses données
+    // viennent de la moitié de départ.
+    let notation = element.child(kind).map(|payload| match kind {
         "Slur" => Notation::Slur(read_slur(payload)),
         "Trill" => Notation::Trill(read_trill_payload(payload)),
         _ => Notation::Glissando(read_glissando(payload)),
-    };
+    });
     let mut half = Half {
         tick,
         track,
@@ -347,6 +351,10 @@ fn read_glissando(element: &Node) -> Glissando {
         .child("showText")
         .and_then(Element::int)
         .is_some_and(|value| value == 0);
+    glissando.visible = !element
+        .child("visible")
+        .and_then(Element::int)
+        .is_some_and(|value| value == 0);
     glissando
 }
 
@@ -376,14 +384,17 @@ pub(crate) fn resolve(reader: &mut super::Reader) {
             if second.tick != end_tick || second.track != end_track {
                 continue;
             }
-            let kind = match &first.notation {
+            let Some(notation) = first.notation.as_ref().or(second.notation.as_ref()) else {
+                continue;
+            };
+            let kind = match notation {
                 Notation::Slur(_) => SpannerType::Slur,
                 Notation::Trill(_) => SpannerType::Trill,
                 Notation::Glissando(_) => SpannerType::Glissando,
             };
             let mut spanner =
                 Spanner::new(kind, start, SpannerAnchor::new(second.tick, second.track));
-            spanner.notation = Some(match &first.notation {
+            spanner.notation = Some(match notation {
                 Notation::Slur(slur) => SpannerNotation::Slur(slur.clone()),
                 Notation::Trill(trill) => SpannerNotation::Trill(trill.clone()),
                 Notation::Glissando(glissando) => SpannerNotation::Glissando(glissando.clone()),

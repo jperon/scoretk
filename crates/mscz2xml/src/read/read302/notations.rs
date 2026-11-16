@@ -26,24 +26,25 @@ pub(crate) fn read_articulations(node: &Node) -> Vec<Articulation> {
     let Some(subtype) = node.child("subtype").map(Node::trimmed_text) else {
         return Vec::new();
     };
+    // L'ancre du suffixe ne fixe pas `ArticulationAnchor` dans MuseScore :
+    // elle donne seulement le sens du glyphe (`Articulation::up()`).
+    let (_, suffix_anchor) = names::split_anchor(&subtype);
+    let up = suffix_anchor != ArticulationAnchor::Down;
     // `articulationNames2SymId206` accepte aussi les anciens noms : les noms
-    // inconnus deviennent `Other`, avec leur ancre calculée par le suffixe.
+    // inconnus deviennent `Other`.
     let parsed = names::articulations(&subtype);
     let kinds = if parsed.is_empty() {
-        let (base, suffix_anchor) = names::split_anchor(&subtype);
-        vec![(ArticulationType::Other(base.to_owned()), suffix_anchor)]
+        vec![(ArticulationType::Other(subtype.clone()), suffix_anchor)]
     } else {
         parsed
     };
     kinds
         .into_iter()
-        .map(|(kind, anchor)| Articulation {
+        .map(|(kind, _)| Articulation {
             kind,
-            anchor: match explicit_anchor {
-                ArticulationAnchor::Auto => anchor,
-                explicit => explicit,
-            },
+            anchor: explicit_anchor,
             visible,
+            up,
         })
         .collect()
 }
@@ -150,7 +151,12 @@ pub(crate) fn read_arpeggio(node: &Node) -> Arpeggio {
         .child("subtype")
         .map(Node::trimmed_text)
         .unwrap_or_default();
-    Arpeggio::new(names::arpeggio_type(&subtype))
+    let mut arpeggio = Arpeggio::new(names::arpeggio_type(&subtype));
+    arpeggio.visible = node
+        .child("visible")
+        .and_then(Node::int_text)
+        .is_none_or(|value| value != 0);
+    arpeggio
 }
 
 /// Ligne d'accord d'un `<ChordLine>` enfant de note.
@@ -209,6 +215,10 @@ pub(crate) fn read_glissando(node: &Node) -> Glissando {
     glissando.text = node.child("text").map(Node::text).unwrap_or_default();
     glissando.show_text = node
         .child("showText")
+        .and_then(Node::int_text)
+        .is_none_or(|value| value != 0);
+    glissando.visible = node
+        .child("visible")
         .and_then(Node::int_text)
         .is_none_or(|value| value != 0);
     glissando

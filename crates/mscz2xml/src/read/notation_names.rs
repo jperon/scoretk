@@ -6,8 +6,8 @@
 //! deux lecteurs.
 
 use crate::model::{
-    ArpeggioType, ArticulationAnchor, ArticulationType, ChordLineType, FermataType, GlissandoType,
-    LineStyle, OrnamentType, TrillType,
+    ArpeggioType, Articulation, ArticulationAnchor, ArticulationType, ChordLineType, FermataType,
+    GlissandoType, LineStyle, Ornament, OrnamentType, Placement, TrillType,
 };
 
 /// Découpe un nom SMuFL en base et ancre verticale.
@@ -200,4 +200,27 @@ pub(crate) fn glissando_type(subtype: Option<&str>, style: LineStyle) -> Glissan
         Some("1" | "wavy") => GlissandoType::Wavy,
         _ => GlissandoType::Straight(style),
     }
+}
+
+/// Ornement rangé par un fichier 4.x dans `<Articulation>`.
+///
+/// MuseScore 4 écrit certains ornements comme des articulations SMuFL
+/// (`ornamentTurn`, `ornamentTrill`…) et d'autres dans `<Ornament>`.
+pub(crate) fn ornament_from_articulation(articulation: &Articulation) -> Option<Ornament> {
+    let ArticulationType::Other(name) = &articulation.kind else {
+        return None;
+    };
+    if !name.starts_with("ornament") {
+        return None;
+    }
+    let mut ornament = Ornament::new(ornament_type(name));
+    // MuseScore 4.7 écrit un ornement invisible comme visible (`Notations`
+    // ne tient pas compte de `<visible>` pour les ornements).
+    let _ = articulation.visible;
+    ornament.placement = match articulation.anchor {
+        ArticulationAnchor::Up => Some(Placement::Above),
+        ArticulationAnchor::Down => Some(Placement::Below),
+        ArticulationAnchor::Auto => None,
+    };
+    Some(ornament)
 }

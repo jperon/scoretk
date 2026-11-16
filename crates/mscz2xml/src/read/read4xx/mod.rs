@@ -603,7 +603,7 @@ impl Reader {
                     tick += actual_ticks(ticks, &tuplets, stretch);
                 }
                 "Rest" => {
-                    let parsed = self.read_rest(child, measure_index, stretch);
+                    let parsed = self.read_rest(child, measure_index, stretch, tick, track);
                     let tuplet = tuplets.last().map(|(id, _)| *id);
                     let ticks = parsed.ticks;
                     let duration = parsed.duration;
@@ -964,11 +964,20 @@ impl Reader {
                     }
                     tremolo = notations::read_tremolo(child);
                 }
+                "TremoloSingleChord" => tremolo = notations::read_tremolo(child),
                 "TremoloTwoChord" => {
                     tremolo_two_chord = true;
                     tremolo = notations::read_tremolo_two_chord(child);
                 }
-                "Articulation" => articulations.extend(notations::read_articulations(child)),
+                "Articulation" => {
+                    for articulation in notations::read_articulations(child) {
+                        match crate::read::notation_names::ornament_from_articulation(&articulation)
+                        {
+                            Some(ornament) => ornaments.push(ornament),
+                            None => articulations.push(articulation),
+                        }
+                    }
+                }
                 "Ornament" => {
                     // L'accord embarqué dans l'ornement n'est pas un accord de
                     // segment : il ne compte pas dans la durée.
@@ -979,6 +988,7 @@ impl Reader {
                 "Arpeggio" => arpeggio = Some(notations::read_arpeggio(child)),
                 "ChordLine" => chord_line = notations::read_chord_line(child),
                 "Lyrics" => lyrics.push(read_lyrics(child)),
+                "Spanner" => notations::read_spanner(self, child, tick, track),
                 // TODO(parité): <Stem>, <Hook>, <noStem>, <staffMove>.
                 _ => {}
             }
@@ -1017,6 +1027,8 @@ impl Reader {
         element: &Element,
         measure_index: usize,
         stretch: Fraction,
+        tick: Tick,
+        track: Track,
     ) -> ParsedRest {
         let mut duration_type = DurationType::Measure;
         let mut dots = 0u8;
@@ -1039,6 +1051,7 @@ impl Reader {
                 "duration" => explicit = child.fraction(),
                 "gap" => gap = child.int().unwrap_or(0) != 0,
                 "Lyrics" => lyrics.push(read_lyrics(child)),
+                "Spanner" => notations::read_spanner(self, child, tick, track),
                 _ => {}
             }
         }
@@ -1436,7 +1449,6 @@ impl ParsedChord {
             tremolo: self.tremolo,
             arpeggio: self.arpeggio,
             chord_line: self.chord_line,
-            ..Chord::default()
         }
     }
 }

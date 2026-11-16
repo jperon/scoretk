@@ -207,12 +207,17 @@ pub enum ArpeggioType {
 pub struct Arpeggio {
     /// Type d'arpège.
     pub kind: ArpeggioType,
+    /// Vrai si l'arpège est visible.
+    pub visible: bool,
 }
 
 impl Arpeggio {
-    /// Construit un arpège du type donné.
+    /// Construit un arpège visible du type donné.
     pub const fn new(kind: ArpeggioType) -> Self {
-        Self { kind }
+        Self {
+            kind,
+            visible: true,
+        }
     }
 }
 
@@ -273,6 +278,8 @@ pub struct Glissando {
     pub text: String,
     /// Vrai si le texte est affiché (`showText`).
     pub show_text: bool,
+    /// Vrai si le glissando est visible.
+    pub visible: bool,
 }
 
 impl Glissando {
@@ -282,6 +289,7 @@ impl Glissando {
             kind,
             text: String::new(),
             show_text: true,
+            visible: true,
         }
     }
 }

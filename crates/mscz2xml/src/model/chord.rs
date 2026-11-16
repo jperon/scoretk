@@ -166,6 +166,9 @@ pub struct Articulation {
     /// Vrai si l'articulation est visible ; une articulation invisible ouvre
     /// `<notations print-object="no">`.
     pub visible: bool,
+    /// Sens du symbole (`Articulation::up()`), tiré du suffixe `Above` /
+    /// `Below` du nom SMuFL. Sert à l'attribut `type` de `strong-accent`.
+    pub up: bool,
 }
 
 impl Articulation {
@@ -175,6 +178,7 @@ impl Articulation {
             kind,
             anchor: ArticulationAnchor::Auto,
             visible: true,
+            up: true,
         }
     }
 }

@@ -1141,7 +1141,15 @@ impl Context<'_> {
                 self.tuplet_start_stop(out, chord_rest, segment_tick, track, &mut notations);
             }
             if first {
-                self.chord_attributes(out, chord, measure, segment_tick, track, &mut notations);
+                self.chord_attributes(
+                    out,
+                    chord,
+                    grace,
+                    measure,
+                    segment_tick,
+                    track,
+                    &mut notations,
+                );
             }
             notations::fingering(&mut out.xml, note, &mut notations);
             let last = index + 1 == chord.notes.len();
@@ -1249,10 +1257,12 @@ impl Context<'_> {
     }
 
     /// Écrit les articulations et ornements d'un accord (`chordAttributes`).
+    #[allow(clippy::too_many_arguments)]
     fn chord_attributes(
         &self,
         out: &mut Out,
         chord: &Chord,
+        grace: bool,
         measure: &Measure,
         segment_tick: Tick,
         track: Track,
@@ -1262,19 +1272,24 @@ impl Context<'_> {
             .segments
             .iter()
             .find(|segment| segment.tick == segment_tick && segment.chord_rest(track).is_some());
-        // `doSlurs` est appelé juste avant `chordAttributes`.
-        notations::slurs(
-            self.score,
-            &mut out.xml,
-            &mut out.notations,
-            segment_tick,
-            track,
-            notations,
-        );
+        // `doSlurs` est appelé juste avant `chordAttributes`. Un accord
+        // d'agrément partage le tick de son accord principal : sans identité
+        // de note dans le modèle, la liaison ne doit être écrite qu'une fois.
+        if !grace {
+            notations::slurs(
+                self.score,
+                &mut out.xml,
+                &mut out.notations,
+                segment_tick,
+                track,
+                notations,
+            );
+        }
         notations::chord_attributes(
             self.score,
             &mut out.xml,
             chord,
+            grace,
             measure,
             segment,
             segment_tick,

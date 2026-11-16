@@ -71,7 +71,14 @@ pub(crate) fn read_chord_rest(
             "small" => small = child.int_text().unwrap_or(0) != 0,
             "BeamMode" => beam = tables::beam_mode(&child.trimmed_text()),
             "Lyrics" => lyrics.push(read_lyrics(child)),
-            "Articulation" => articulations.extend(notations::read_articulations(child)),
+            "Articulation" => {
+                for articulation in notations::read_articulations(child) {
+                    match crate::read::notation_names::ornament_from_articulation(&articulation) {
+                        Some(ornament) => ornaments.push(ornament),
+                        None => articulations.push(articulation),
+                    }
+                }
+            }
             "Ornament" => ornaments.push(notations::read_ornament(child)),
             "Tremolo" => tremolo = notations::read_tremolo(child),
             "Arpeggio" => arpeggio = Some(notations::read_arpeggio(child)),

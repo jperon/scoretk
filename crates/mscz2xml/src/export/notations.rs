@@ -57,10 +57,11 @@ impl NotationsState {
         self.arpeggios.clear();
     }
 
-    fn slur_number(&mut self, id: usize) -> Option<usize> {
-        if let Some(index) = self.slur_slots.iter().position(|slot| *slot == Some(id)) {
-            return Some(index);
-        }
+    fn slur_slot(&self, id: usize) -> Option<usize> {
+        self.slur_slots.iter().position(|slot| *slot == Some(id))
+    }
+
+    fn allocate_slur(&mut self, id: usize) -> Option<usize> {
         let index = self.slur_slots.iter().position(Option::is_none)?;
         self.slur_slots[index] = Some(id);
         Some(index)
@@ -112,6 +113,7 @@ pub(crate) fn chord_attributes(
     score: &Score,
     xml: &mut XmlWriter,
     chord: &Chord,
+    grace: bool,
     measure: &Measure,
     segment: Option<&Segment>,
     segment_tick: Tick,
@@ -119,8 +121,8 @@ pub(crate) fn chord_attributes(
     end_tick: Tick,
     notations: &mut Notations,
 ) {
-    // Points d'orgue d'abord (`fermatas`).
-    if let Some(segment) = segment {
+    // Points d'orgue d'abord (`fermatas`), jamais sur un ornement.
+    if let (false, Some(segment)) = (grace, segment) {
         for annotation in segment.annotations_on(track) {
             if let Annotation::Fermata(fermata) = annotation {
                 notations.tag_element(xml, None, fermata.visible);
@@ -212,20 +214,21 @@ pub(crate) fn arpeggio(
     };
     let number = state.arpeggio_number(tick, track);
     let number_text = number.to_string();
+    let visible = arpeggio.visible;
     match arpeggio.kind {
         crate::model::ArpeggioType::Normal => {
-            notations.tag(xml, None);
+            notations.tag_element(xml, None, visible);
             xml.tag_empty("arpeggiate", &[("number", &number_text)]);
         }
         crate::model::ArpeggioType::Up => {
-            notations.tag(xml, None);
+            notations.tag_element(xml, None, visible);
             xml.tag_empty(
                 "arpeggiate",
                 &[("direction", "up"), ("number", &number_text)],
             );
         }
         crate::model::ArpeggioType::Down => {
-            notations.tag(xml, None);
+            notations.tag_element(xml, None, visible);
             xml.tag_empty(
                 "arpeggiate",
                 &[("direction", "down"), ("number", &number_text)],
@@ -233,14 +236,14 @@ pub(crate) fn arpeggio(
         }
         crate::model::ArpeggioType::Bracket => {
             if first {
-                notations.tag(xml, None);
+                notations.tag_element(xml, None, visible);
                 xml.tag_empty(
                     "non-arpeggiate",
                     &[("type", "bottom"), ("number", &number_text)],
                 );
             }
             if last {
-                notations.tag(xml, None);
+                notations.tag_element(xml, None, visible);
                 xml.tag_empty(
                     "non-arpeggiate",
                     &[("type", "top"), ("number", &number_text)],
@@ -300,40 +303,28 @@ pub(crate) fn slurs(
             let Some(SpannerNotation::Slur(slur)) = &score.spanners[index].notation else {
                 continue;
             };
-            let slot = state.slur_number(index);
-            let Some(slot) = slot else {
-                continue;
-            };
-            let already_started = state.slur_started[slot];
             if starting {
-                if already_started {
-                    // Une liaison qui a déjà écrit son départ ne l'écrit pas
-                    // deux fois.
-                    continue;
+                if let Some(slot) = state.slur_slot(index) {
+                    // La fin a déjà été rencontrée (voix traitées dans un ordre
+                    // différent) : le départ réutilise son numéro.
+                    state.slur_slots[slot] = None;
+                    state.slur_started[slot] = false;
+                    write_slur_start(xml, slur, slot, notations);
+                } else if let Some(slot) = state.allocate_slur(index) {
+                    state.slur_started[slot] = true;
+                    write_slur_start(xml, slur, slot, notations);
                 }
-                state.slur_started[slot] = false;
+            } else if let Some(slot) = state.slur_slot(index) {
                 notations.tag_element(xml, None, slur.visible);
                 let number = (slot + 1).to_string();
-                let mut attributes: Vec<(&str, String)> =
-                    vec![("type", "start".to_owned()), ("number", number)];
-                if let Some(placement) = slur.placement {
-                    attributes.push((
-                        "orientation",
-                        if placement == Placement::Above {
-                            "over".to_owned()
-                        } else {
-                            "under".to_owned()
-                        },
-                    ));
-                    attributes.push(("placement", placement_name(placement).to_owned()));
+                xml.tag_empty("slur", &[("type", "stop"), ("number", &number)]);
+                if state.slur_started[slot] {
+                    state.slur_slots[slot] = None;
+                    state.slur_started[slot] = false;
                 }
-                let borrowed: Vec<(&str, &str)> = attributes
-                    .iter()
-                    .map(|(name, value)| (*name, value.as_str()))
-                    .collect();
-                xml.tag_empty("slur", &borrowed);
-            } else {
-                state.slur_slots[slot] = None;
+            } else if let Some(slot) = state.allocate_slur(index) {
+                // Arrêt avant le départ : le numéro reste réservé pour le
+                // départ à venir.
                 state.slur_started[slot] = false;
                 notations.tag_element(xml, None, slur.visible);
                 let number = (slot + 1).to_string();
@@ -343,8 +334,38 @@ pub(crate) fn slurs(
     }
 }
 
+/// Écrit le départ d'une liaison (`doSlurStart`).
+fn write_slur_start(
+    xml: &mut XmlWriter,
+    slur: &crate::model::Slur,
+    slot: usize,
+    notations: &mut Notations,
+) {
+    notations.tag_element(xml, None, slur.visible);
+    let number = (slot + 1).to_string();
+    let mut attributes: Vec<(&str, String)> = vec![("type", "start".to_owned())];
+    if let Some(placement) = slur.placement {
+        attributes.push((
+            "orientation",
+            if placement == Placement::Above {
+                "over".to_owned()
+            } else {
+                "under".to_owned()
+            },
+        ));
+        attributes.push(("placement", placement_name(placement).to_owned()));
+    }
+    attributes.push(("number", number));
+    let borrowed: Vec<(&str, &str)> = attributes
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    xml.tag_empty("slur", &borrowed);
+}
+
 /// Écrit les notations d'un silence : points d'orgue, respiration, trilles et
 /// liaisons.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn rest_notations(
     score: &Score,
     xml: &mut XmlWriter,
@@ -577,11 +598,7 @@ fn write_articulation(xml: &mut XmlWriter, articulation: &Articulation, notation
     notations.tag_element(xml, Some("articulations"), articulation.visible);
     for name in names {
         if marcatto && name == "strong-accent" {
-            let direction = if articulation.anchor == ArticulationAnchor::Down {
-                "down"
-            } else {
-                "up"
-            };
+            let direction = if articulation.up { "up" } else { "down" };
             xml.tag_empty(name, &[("type", direction)]);
         } else if let Some(placement) = placement {
             xml.tag_empty(name, &[("placement", placement)]);
@@ -623,7 +640,7 @@ fn write_breath(xml: &mut XmlWriter, breath: &Breath, notations: &mut Notations)
 }
 
 /// Respiration attachée à un accord ou un silence (`ChordRest::hasBreathMark`).
-fn breath_at<'a>(measure: &'a Measure, track: Track, end_tick: Tick) -> Option<&'a Breath> {
+fn breath_at(measure: &Measure, track: Track, end_tick: Tick) -> Option<&Breath> {
     let segment = measure.segments.iter().find(|segment| {
         segment.kind == crate::model::SegmentType::Breath && segment.tick == end_tick
     })?;
@@ -777,7 +794,7 @@ fn write_glissando(
         GlissandoType::Wavy => ("glissando", "wavy"),
     };
     let kind = if start { "start" } else { "stop" };
-    notations.tag(xml, None);
+    notations.tag_element(xml, None, glissando.visible);
     let attributes = [
         ("line-type", line_type),
         ("number", number_text.as_str()),
@@ -795,5 +812,268 @@ fn placement_name(placement: Placement) -> &'static str {
     match placement {
         Placement::Above => "above",
         Placement::Below => "below",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::export_musicxml;
+    use crate::model::{
+        tpc, Annotation, Arpeggio, ArpeggioType, Articulation, ArticulationAnchor,
+        ArticulationType, Breath, BreathType, Chord, ChordLineType, ChordRest, Duration, Fermata,
+        FermataType, Fingering, Glissando, GlissandoType, LineStyle, Measure, Note, Ornament,
+        OrnamentAccidental, OrnamentType, Part, Placement, Score, Segment, SegmentItem,
+        SegmentType, Slur, Spanner, SpannerAnchor, SpannerNotation, SpannerType, StaffId, Tick,
+        Track, Tremolo, TremoloKind, Trill, TrillType,
+    };
+
+    /// Partition à une portée et une mesure 4/4 de quatre noires.
+    fn partition() -> (Score, StaffId) {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno."));
+        let staff = score.add_staff(part);
+        let mut measure = Measure::new(0, Tick::ZERO, Duration::measure().ticks());
+        measure.len = Duration::measure().ticks();
+        for index in 0..4 {
+            let mut chord_rest = ChordRest::chord(Duration::quarter());
+            let note = score.add_note(Note::new(60 + index as u8, tpc::C));
+            chord_rest.chord_mut().expect("accord").notes.push(note);
+            let mut segment = Segment::new(
+                SegmentType::ChordRest,
+                Tick::new(i64::from(index), 4),
+                score.staves.len(),
+            );
+            segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord_rest));
+            measure.add_segment(segment);
+        }
+        score.add_measure(measure);
+        (score, staff)
+    }
+
+    fn accord(score: &mut Score, index: usize) -> &mut Chord {
+        score.measures[0].segments[index]
+            .chord_rest_mut(Track::new(StaffId::from_index(0), 0))
+            .and_then(ChordRest::chord_mut)
+            .expect("accord")
+    }
+
+    fn segment(score: &mut Score, index: usize) -> &mut Segment {
+        &mut score.measures[0].segments[index]
+    }
+
+    fn exporter(score: &Score) -> String {
+        export_musicxml(score).expect("export")
+    }
+
+    #[test]
+    fn articulations_et_point_d_orgue() {
+        let (mut score, _) = partition();
+        {
+            let chord = accord(&mut score, 0);
+            let mut staccato = Articulation::new(ArticulationType::Staccato);
+            staccato.anchor = ArticulationAnchor::Up;
+            chord.articulations.push(staccato);
+            chord
+                .articulations
+                .push(Articulation::new(ArticulationType::Marcato));
+            chord
+                .articulations
+                .push(Articulation::new(ArticulationType::Portato));
+            chord
+                .articulations
+                .push(Articulation::new(ArticulationType::Other(
+                    "articStressAbove".to_owned(),
+                )));
+        }
+        segment(&mut score, 0).add_annotation(
+            Track::new(StaffId::from_index(0), 0),
+            Annotation::Fermata(Fermata::new(FermataType::Long)),
+        );
+
+        let xml = exporter(&score);
+        assert!(
+            xml.contains("<fermata type=\"upright\">square</fermata>"),
+            "{xml}"
+        );
+        assert!(xml.contains("<staccato placement=\"above\"/>"), "{xml}");
+        assert!(xml.contains("<strong-accent type=\"up\"/>"), "{xml}");
+        assert!(xml.contains("<detached-legato/>"), "{xml}");
+        assert!(
+            xml.contains("<other-articulation smufl=\"articStressAbove\"/>"),
+            "{xml}"
+        );
+    }
+
+    #[test]
+    fn ornements_avec_alterations() {
+        let (mut score, _) = partition();
+        let mut ornament = Ornament::new(OrnamentType::Turn);
+        ornament.accidentals.push(OrnamentAccidental {
+            accidental: crate::model::Accidental::new(crate::model::AccidentalType::Sharp),
+            placement: Placement::Above,
+        });
+        ornament.accidentals.push(OrnamentAccidental {
+            accidental: crate::model::Accidental::new(crate::model::AccidentalType::Flat),
+            placement: Placement::Below,
+        });
+        accord(&mut score, 0).ornaments.push(ornament);
+
+        let xml = exporter(&score);
+        assert!(xml.contains("<ornaments>\n            <turn/>"), "{xml}");
+        assert!(
+            xml.contains("<accidental-mark placement=\"above\">sharp</accidental-mark>"),
+            "{xml}"
+        );
+        assert!(
+            xml.contains("<accidental-mark placement=\"below\">flat</accidental-mark>"),
+            "{xml}"
+        );
+    }
+
+    #[test]
+    fn tremolos_simple_et_double() {
+        let (mut score, _) = partition();
+        accord(&mut score, 0).tremolo = Some(Tremolo {
+            kind: TremoloKind::Single,
+            count: 2,
+        });
+        accord(&mut score, 1).tremolo = Some(Tremolo {
+            kind: TremoloKind::Start,
+            count: 3,
+        });
+        accord(&mut score, 2).tremolo = Some(Tremolo {
+            kind: TremoloKind::Stop,
+            count: 3,
+        });
+
+        let xml = exporter(&score);
+        assert!(
+            xml.contains("<tremolo type=\"single\">2</tremolo>"),
+            "{xml}"
+        );
+        assert!(xml.contains("<tremolo type=\"start\">3</tremolo>"), "{xml}");
+        assert!(xml.contains("<tremolo type=\"stop\">3</tremolo>"), "{xml}");
+    }
+
+    #[test]
+    fn arpeges_simple_et_crochet() {
+        let (mut score, _) = partition();
+        accord(&mut score, 0).arpeggio = Some(Arpeggio::new(ArpeggioType::Up));
+        // Une deuxième note dans le même accord.
+        let note = score.add_note(Note::new(64, tpc::E));
+        accord(&mut score, 0).notes.push(note);
+
+        let xml = exporter(&score);
+        assert_eq!(
+            xml.matches("<arpeggiate direction=\"up\" number=\"1\"/>")
+                .count(),
+            2,
+            "{xml}"
+        );
+
+        accord(&mut score, 1).arpeggio = Some(Arpeggio::new(ArpeggioType::Bracket));
+        let note = score.add_note(Note::new(67, tpc::G));
+        accord(&mut score, 1).notes.push(note);
+        let xml = exporter(&score);
+        assert!(
+            xml.contains("<non-arpeggiate type=\"bottom\" number=\"1\"/>"),
+            "{xml}"
+        );
+        assert!(
+            xml.contains("<non-arpeggiate type=\"top\" number=\"1\"/>"),
+            "{xml}"
+        );
+    }
+
+    #[test]
+    fn liaisons_et_glissandos() {
+        let (mut score, _) = partition();
+        let mut slur = Spanner::new(
+            SpannerType::Slur,
+            SpannerAnchor::new(Tick::ZERO, Track::new(StaffId::from_index(0), 0)),
+            SpannerAnchor::new(Tick::new(1, 4), Track::new(StaffId::from_index(0), 0)),
+        );
+        slur.notation = Some(SpannerNotation::Slur(Slur {
+            placement: Some(Placement::Below),
+            visible: true,
+        }));
+        score.add_spanner(slur);
+
+        let mut glissando = Glissando::new(GlissandoType::Straight(LineStyle::Dashed));
+        glissando.text = "gliss.".to_owned();
+        let mut spanner = Spanner::new(
+            SpannerType::Glissando,
+            SpannerAnchor::new(Tick::ZERO, Track::new(StaffId::from_index(0), 0)),
+            SpannerAnchor::new(Tick::new(1, 4), Track::new(StaffId::from_index(0), 0)),
+        );
+        spanner.notation = Some(SpannerNotation::Glissando(glissando));
+        score.add_spanner(spanner);
+
+        let xml = exporter(&score);
+        assert!(
+            xml.contains(
+                "<slur type=\"start\" orientation=\"under\" placement=\"below\" number=\"1\"/>"
+            ),
+            "{xml}"
+        );
+        assert!(xml.contains("<slur type=\"stop\" number=\"1\"/>"), "{xml}");
+        assert!(
+            xml.contains("<slide line-type=\"dashed\" number=\"1\" type=\"start\">gliss.</slide>"),
+            "{xml}"
+        );
+        assert!(
+            xml.contains("<slide line-type=\"dashed\" number=\"1\" type=\"stop\"/>"),
+            "{xml}"
+        );
+    }
+
+    #[test]
+    fn trille_et_doigtes() {
+        let (mut score, _) = partition();
+        let mut trill = Spanner::new(
+            SpannerType::Trill,
+            SpannerAnchor::new(Tick::ZERO, Track::new(StaffId::from_index(0), 0)),
+            SpannerAnchor::new(Tick::new(1, 4), Track::new(StaffId::from_index(0), 0)),
+        );
+        trill.notation = Some(SpannerNotation::Trill(Trill::new(TrillType::TrillLine)));
+        score.add_spanner(trill);
+
+        let note_id = *accord(&mut score, 0).notes.first().expect("note");
+        score.note_mut(note_id).fingerings = vec![Fingering::new("2"), Fingering::new("p")];
+
+        let xml = exporter(&score);
+        assert!(xml.contains("<trill-mark/>"), "{xml}");
+        assert!(
+            xml.contains("<wavy-line type=\"start\" number=\"1\"/>"),
+            "{xml}"
+        );
+        assert!(
+            xml.contains("<wavy-line type=\"stop\" number=\"1\"/>"),
+            "{xml}"
+        );
+        assert!(xml.contains("<fingering>2</fingering>"), "{xml}");
+        assert!(xml.contains("<pluck>p</pluck>"), "{xml}");
+    }
+
+    #[test]
+    fn respirations_et_lignes_d_accord() {
+        let (mut score, _) = partition();
+        let mut segment = Segment::new(SegmentType::Breath, Tick::new(1, 4), score.staves.len());
+        segment.set_element(
+            Track::new(StaffId::from_index(0), 0),
+            SegmentItem::Breath(Breath {
+                kind: BreathType::CaesuraCurved,
+                placement: Placement::Below,
+            }),
+        );
+        score.measures[0].add_segment(segment);
+        accord(&mut score, 0).chord_line = Some(ChordLineType::Fall);
+
+        let xml = exporter(&score);
+        assert!(
+            xml.contains("<caesura placement=\"below\">curved</caesura>"),
+            "{xml}"
+        );
+        assert!(xml.contains("<falloff/>"), "{xml}");
     }
 }
