@@ -21,7 +21,10 @@ fn main() -> ExitCode {
     let bytes = match std::fs::read(&cli.input) {
         Ok(bytes) => bytes,
         Err(e) => {
-            eprintln!("mscz2xml : lecture de {} impossible : {e}", cli.input.display());
+            eprintln!(
+                "mscz2xml : lecture de {} impossible : {e}",
+                cli.input.display()
+            );
             return ExitCode::FAILURE;
         }
     };
