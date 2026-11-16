@@ -66,6 +66,7 @@ const EXPECTED_CONFORMANT: &[&str] = &[
 /// Fichiers du corpus 3.x dont la conversion est identique à la référence
 /// après normalisation (voir `docs/agents/ecarts-noyau.md`).
 const EXPECTED_CONFORMANT_V3: &[&str] = &[
+    "copypaste_tuplet_01",
     "lyricsline01",
     "repeat01",
     "repeat06",
@@ -75,6 +76,7 @@ const EXPECTED_CONFORMANT_V3: &[&str] = &[
     "repeat39",
     "testBreaksPage",
     "testHairpinDynamics",
+    "testTboxWords1",
     "testTuplets8",
     "testWedge4",
 ];

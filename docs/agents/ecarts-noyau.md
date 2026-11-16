@@ -338,9 +338,9 @@ modèle ne lit pas les sauts de mise en page : repeat66 exporte des mesures 6 à
 
 Le test de bout en bout couvre désormais `v3/` avec la même normalisation. Les
 écarts ci-dessous sont triés par nombre de fichiers touchés ; les fichiers
-conformes constituent `EXPECTED_CONFORMANT_V3` (lyricsline01, repeat01,
-repeat06, repeat07, repeat11, repeat20, repeat39, testBreaksPage,
-testHairpinDynamics, testTuplets8, testWedge4).
+conformes constituent `EXPECTED_CONFORMANT_V3` (copypaste_tuplet_01,
+lyricsline01, repeat01, repeat06, repeat07, repeat11, repeat20, repeat39,
+testBreaksPage, testHairpinDynamics, testTboxWords1, testTuplets8, testWedge4).
 
 1. **`<instrument-sound>` et `<midi-program>` absents — 13 fichiers.**
    `Beam-CrossM1`, `barline01`, `barlinedelete`, `clef-1`, `grace`,
