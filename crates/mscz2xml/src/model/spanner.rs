@@ -7,7 +7,9 @@
 //! `Spanner::endTick()` / `Spanner::endTrack()`.
 
 use super::fraction::Tick;
+use super::hairpin::Hairpin;
 use super::ids::Track;
+use super::repeat::VoltaInfo;
 
 /// Extrémité d'un spanner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -93,9 +95,13 @@ pub struct Spanner {
     pub end: SpannerAnchor,
     /// Texte éventuel (volta, ligne de texte, trille…).
     pub text: Option<String>,
+    /// Propriétés de volta, pour [`SpannerType::Volta`].
+    pub volta: Option<VoltaInfo>,
     /// Numéro d'ordre pour les spanners imbriqués (par exemple les reprises
     /// de slurs).
     pub number: u8,
+    /// Compléments propres aux soufflets.
+    pub hairpin: Option<Hairpin>,
 }
 
 impl Spanner {
@@ -106,7 +112,9 @@ impl Spanner {
             start,
             end,
             text: None,
+            volta: None,
             number: 0,
+            hairpin: None,
         }
     }
 }

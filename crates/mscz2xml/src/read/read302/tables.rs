@@ -9,8 +9,8 @@
 use crate::model::Fraction;
 use crate::model::{
     note::tpc, AccidentalType, ArticulationAnchor, ArticulationType, BarLineType, BeamMode,
-    ClefType, Duration, DurationType, HairpinType, KeyMode, LyricsSyllabic, NoteHeadType,
-    OttavaType, Placement, StemDirection, TimeSigType, Transpose, TupletNumberType,
+    ClefType, Duration, DurationType, KeyMode, LyricsSyllabic, NoteHeadType, OttavaType, Placement,
+    StemDirection, TimeSigType, Transpose, TupletNumberType,
 };
 
 /// Figure de durée à partir du nom écrit dans `<durationType>`.
@@ -275,15 +275,6 @@ pub(crate) fn note_head(value: Option<i32>) -> NoteHeadType {
         Some(9) => NoteHeadType::Square,
         Some(10) => NoteHeadType::X,
         Some(other) => NoteHeadType::Other(other.clamp(0, 255) as u8),
-    }
-}
-
-/// Sens d'un soufflet (`<HairPin><subtype>`).
-pub(crate) fn hairpin_type(node: &super::xml::Node) -> HairpinType {
-    if node.child("subtype").map(|n| n.trimmed_text()) == Some("diminuendo".to_owned()) {
-        HairpinType::Diminuendo
-    } else {
-        HairpinType::Crescendo
     }
 }
 

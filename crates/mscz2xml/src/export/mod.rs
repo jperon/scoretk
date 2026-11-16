@@ -20,7 +20,9 @@ use crate::model::Score;
 use crate::Result;
 
 mod exportmusicxml;
+mod nuances;
 mod pitch;
+mod repeats;
 mod writer;
 
 #[cfg(test)]

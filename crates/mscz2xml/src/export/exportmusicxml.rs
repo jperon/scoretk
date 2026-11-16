@@ -24,14 +24,16 @@ use std::collections::BTreeSet;
 use crate::model::chord::ChordRestKind;
 use crate::model::{
     Accidental, AccidentalType, Annotation, Articulation, ArticulationAnchor, ArticulationType,
-    BarLineType, BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType,
-    Harmony, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup,
-    NoteHeadType, Part, Placement, Score, Segment, SegmentItem, SegmentType, StaffId,
-    StemDirection, Tick, TimeSig, TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
+    BeamMode, Chord, ChordRest, Clef, ClefType, Duration, Fraction, GraceType, Harmony, Key,
+    KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part,
+    Placement, Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, Tick, TimeSig,
+    TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::Result;
 
+use super::nuances::{self, Nuances};
 use super::pitch;
+use super::repeats;
 use super::writer::XmlWriter;
 
 /// Logiciel annoncé dans `<encoding>`, identique à MuseScore 4.7.
@@ -77,7 +79,8 @@ pub fn export_musicxml(score: &Score) -> Result<String> {
 pub fn export_musicxml_with(score: &Score, options: &ExportOptions) -> Result<String> {
     let context = Context::new(score, options);
     let mut out = Out::new();
-    context.write(&mut out);
+    let mut nuances = Nuances::default();
+    context.write(&mut out, &mut nuances);
     Ok(out.xml.finish())
 }
 
@@ -92,8 +95,8 @@ pub fn calc_divisions(score: &Score) -> u32 {
 }
 
 /// État d'écriture : tampon, divisions, position courante et `attributes`.
-struct Out {
-    xml: XmlWriter,
+pub(crate) struct Out {
+    pub(crate) xml: XmlWriter,
     div: u32,
     tick: Tick,
     in_attributes: bool,
@@ -110,7 +113,7 @@ impl Out {
     }
 
     /// Ouvre ou ferme `<attributes>` à la demande, comme `Attributes::doAttr`.
-    fn attr(&mut self, open: bool) {
+    pub(crate) fn attr(&mut self, open: bool) {
         if open && !self.in_attributes {
             self.xml.start_element("attributes", &[]);
             self.in_attributes = true;
@@ -302,8 +305,8 @@ fn rank(element: TupletElement) -> u8 {
 }
 
 /// Contexte immuable de l'export.
-struct Context<'a> {
-    score: &'a Score,
+pub(crate) struct Context<'a> {
+    pub(crate) score: &'a Score,
     options: &'a ExportOptions,
     tuplets: TupletIndex,
 }
@@ -321,7 +324,7 @@ impl<'a> Context<'a> {
     // Haut niveau : write, work, identification, part-list, parties
     // ------------------------------------------------------------------
 
-    fn write(&self, out: &mut Out) {
+    fn write(&self, out: &mut Out, nuances: &mut Nuances) {
         out.div = compute_divisions(self);
 
         out.xml.start_document();
@@ -336,7 +339,7 @@ impl<'a> Context<'a> {
         self.identification(out);
         // TODO(parité): <defaults> et <credit> (style, polices, mise en page).
         self.part_list(out);
-        self.write_parts(out);
+        self.write_parts(out, nuances);
 
         out.xml.end_element();
     }
@@ -488,15 +491,16 @@ impl<'a> Context<'a> {
     }
 
     /// Écrit toutes les parties (`writeParts`).
-    fn write_parts(&self, out: &mut Out) {
+    fn write_parts(&self, out: &mut Out, nuances: &mut Nuances) {
         for part_index in 0..self.score.parts.len() {
             let part_id = format!("P{}", part_index + 1);
             out.tick = Tick::ZERO;
             out.in_attributes = false;
+            nuances.reset_part();
             out.xml.start_element("part", &[("id", &part_id)]);
 
             for measure_index in 0..self.score.measures.len() {
-                self.write_measure(out, measure_index, part_index);
+                self.write_measure(out, measure_index, part_index, nuances);
             }
 
             out.xml.end_element();
@@ -508,7 +512,13 @@ impl<'a> Context<'a> {
     // ------------------------------------------------------------------
 
     /// Écrit une mesure (`writeMeasure`).
-    fn write_measure(&self, out: &mut Out, measure_index: usize, part_index: usize) {
+    fn write_measure(
+        &self,
+        out: &mut Out,
+        measure_index: usize,
+        part_index: usize,
+        nuances: &mut Nuances,
+    ) {
         let measure = &self.score.measures[measure_index];
         let part = &self.score.parts[part_index];
         let staves = part.staves.len();
@@ -524,7 +534,7 @@ impl<'a> Context<'a> {
         // attribut width : la mise en page n'est pas dans le modèle.
 
         // La barre de gauche doit être le premier élément de la mesure.
-        self.barline_left(out, measure);
+        self.barline_left(out, measure, part_index);
 
         // Les attributs ne sont écrits que sur la première mesure réelle.
         if is_first {
@@ -544,24 +554,32 @@ impl<'a> Context<'a> {
         // TODO(parité): <measure-style> (silences multi-mesures, reprises de
         // mesure).
 
-        self.write_measure_staves(out, measure, part);
+        repeats::repeat_at_measure_start(self, out, measure, part_index);
+
+        self.write_measure_staves(out, measure, part, nuances);
         self.annotations_without_note(out, measure, part);
 
         out.move_to_tick(measure.end_tick());
-        // TODO(parité): repeatAtMeasureStop (voltas, marqueurs, sauts).
-        self.barline_right(out, measure);
+        repeats::repeat_at_measure_stop(self, out, measure, part_index);
+        self.barline_right(out, measure, part_index, measure_index);
         out.attr_stop();
 
         out.xml.end_element();
     }
 
     /// Écrit les portées d'une mesure pour une partie (`writeMeasureStaves`).
-    fn write_measure_staves(&self, out: &mut Out, measure: &Measure, part: &Part) {
+    fn write_measure_staves(
+        &self,
+        out: &mut Out,
+        measure: &Measure,
+        part: &Part,
+        nuances: &mut Nuances,
+    ) {
         let staves = part.staves.len();
         for (position, staff_id) in part.staves.iter().enumerate() {
             out.move_to_tick(measure.start_tick);
             let xml_staff = if staves > 1 { position + 1 } else { 0 };
-            self.write_measure_tracks(out, measure, *staff_id, xml_staff);
+            self.write_measure_tracks(out, measure, *staff_id, xml_staff, nuances);
             if position + 1 < staves {
                 // Retour au début de la mesure pour la portée suivante.
                 out.move_to_tick(measure.start_tick);
@@ -576,6 +594,7 @@ impl<'a> Context<'a> {
         measure: &Measure,
         staff_id: StaffId,
         xml_staff: usize,
+        nuances: &mut Nuances,
     ) {
         for voice in 0..VOICES {
             let track = Track::new(staff_id, voice as u8);
@@ -603,10 +622,15 @@ impl<'a> Context<'a> {
                         self.harmonies(out, segment, staff_id);
                         self.annotations(out, segment, staff_id, xml_staff);
                     }
-                    // TODO(parité): figured bass, spannerStart, spannerStop.
+                    nuances.start(self.score, out, segment, staff_id, xml_staff, track);
                 }
+                let is_chord_rest = matches!(item, SegmentItem::ChordRest(_));
 
                 self.write_element(out, segment, item, measure, xml_staff, track);
+
+                if is_chord_rest {
+                    nuances.stop(self.score, out, out.tick, staff_id, xml_staff);
+                }
             }
         }
     }
@@ -637,7 +661,7 @@ impl<'a> Context<'a> {
             },
             SegmentItem::BarLine(barline) => {
                 if segment.tick != measure.start_tick && segment.tick != measure.end_tick() {
-                    self.barline_middle(out, barline.kind);
+                    self.barline_middle(out, barline);
                 }
             }
             // Armures, indications de mesure et respirations sont écrites
@@ -1459,46 +1483,25 @@ impl Context<'_> {
 // ----------------------------------------------------------------------
 
 impl Context<'_> {
-    /// Écrit une reprise au début de la mesure (`barlineLeft`).
-    fn barline_left(&self, out: &mut Out, measure: &Measure) {
-        if !measure.start_bar_line.is_repeat_start() {
-            return;
-        }
-        // TODO(parité): volta et ailes de reprise (style).
-        out.attr(false);
-        out.xml.start_element("barline", &[("location", "left")]);
-        out.xml.tag("bar-style", "heavy-light");
-        out.xml.tag_empty("repeat", &[("direction", "forward")]);
-        out.xml.end_element();
+    /// Écrit une reprise ou une volta au début de la mesure (`barlineLeft`).
+    fn barline_left(&self, out: &mut Out, measure: &Measure, part_index: usize) {
+        repeats::barline_left(self, out, measure, part_index);
     }
 
     /// Écrit une barre de milieu de mesure (`barlineMiddle`).
-    fn barline_middle(&self, out: &mut Out, kind: BarLineType) {
-        if let Some(style) = barline_style(kind) {
-            out.attr(false);
-            out.xml.start_element("barline", &[("location", "middle")]);
-            out.xml.tag("bar-style", style);
-            out.xml.end_element();
-        }
+    fn barline_middle(&self, out: &mut Out, bar_line: &crate::model::BarLine) {
+        repeats::barline_middle(out, bar_line);
     }
 
     /// Écrit la barre de fin de mesure (`barlineRight`).
-    fn barline_right(&self, out: &mut Out, measure: &Measure) {
-        let kind = measure.end_bar_line;
-        if kind == BarLineType::Normal || kind == BarLineType::StartRepeat {
-            return;
-        }
-        // TODO(parité): volta, fermata sur la barre, ailes et reprises
-        // comptées (`times`).
-        out.attr(false);
-        out.xml.start_element("barline", &[("location", "right")]);
-        if let Some(style) = barline_style(kind) {
-            out.xml.tag("bar-style", style);
-        }
-        if kind.is_repeat_end() {
-            out.xml.tag_empty("repeat", &[("direction", "backward")]);
-        }
-        out.xml.end_element();
+    fn barline_right(
+        &self,
+        out: &mut Out,
+        measure: &Measure,
+        part_index: usize,
+        measure_index: usize,
+    ) {
+        repeats::barline_right(self, out, measure, part_index, measure_index);
     }
 }
 
@@ -1530,7 +1533,7 @@ impl Context<'_> {
             }
             match &entry.annotation {
                 Annotation::Harmony(_) => {}
-                Annotation::Dynamic(dynamic) => write_dynamic(out, dynamic, xml_staff),
+                Annotation::Dynamic(dynamic) => nuances::write_dynamic(out, dynamic, xml_staff),
                 Annotation::StaffText(text) => {
                     write_words(out, &text.text, text.placement, false, xml_staff);
                 }
@@ -2065,37 +2068,6 @@ fn harmony_root(out: &mut Out, name: &str, tpc: i8) {
     out.xml.end_element();
 }
 
-/// Écrit une nuance (`dynamic`).
-fn write_dynamic(out: &mut Out, dynamic: &crate::model::Dynamic, xml_staff: usize) {
-    if dynamic.text.is_empty() {
-        return;
-    }
-    out.attr(false);
-    let placement = placement_name(dynamic.placement);
-    out.xml
-        .start_element("direction", &[("placement", placement)]);
-    out.xml.start_element("direction-type", &[]);
-    out.xml.start_element("dynamics", &[]);
-    if is_musicxml_dynamic(&dynamic.text) {
-        out.xml.tag_empty(&dynamic.text, &[]);
-    } else {
-        out.xml.tag("other-dynamics", &dynamic.text);
-    }
-    out.xml.end_element();
-    out.xml.end_element();
-    if let Some(velocity) = dynamic.velocity {
-        if velocity > 0 {
-            let value = f64::from(velocity) * 100.0 / 90.0;
-            out.xml
-                .tag_empty("sound", &[("dynamics", &format_number(value, 2))]);
-        }
-    }
-    if xml_staff > 0 {
-        out.xml.tag("staff", &xml_staff.to_string());
-    }
-    out.xml.end_element();
-}
-
 /// Écrit un texte de portée ou système (`words`).
 fn write_words(out: &mut Out, text: &str, placement: Placement, system: bool, xml_staff: usize) {
     if text.is_empty() {
@@ -2175,7 +2147,7 @@ fn borrow_attributes<'a>(attributes: &'a [(&'a str, String)]) -> Vec<(&'a str, &
 }
 
 /// Première valeur occupée d'une portée dans un segment.
-fn annotation_track(segment: &Segment, staff_id: StaffId) -> Option<Track> {
+pub(super) fn annotation_track(segment: &Segment, staff_id: StaffId) -> Option<Track> {
     (0..VOICES)
         .map(|voice| Track::new(staff_id, voice as u8))
         .find(|track| segment.element(*track).is_some())
@@ -2217,56 +2189,6 @@ fn placement_name(placement: Placement) -> &'static str {
         Placement::Above => "above",
         Placement::Below => "below",
     }
-}
-
-/// Style de barre MusicXML (`normalBarlineStyle`).
-fn barline_style(kind: BarLineType) -> Option<&'static str> {
-    match kind {
-        BarLineType::Normal => Some("regular"),
-        BarLineType::Double => Some("light-light"),
-        BarLineType::Broken | BarLineType::Dashed => Some("dashed"),
-        BarLineType::End | BarLineType::EndRepeat | BarLineType::EndStartRepeat => {
-            Some("light-heavy")
-        }
-        BarLineType::Dotted => Some("dotted"),
-        // MuseScore ne produit pas de style pour cette variante.
-        BarLineType::DoubleDotted => None,
-        BarLineType::Short | BarLineType::DoubleShort => Some("short"),
-        BarLineType::Tick => Some("tick"),
-        BarLineType::StartRepeat => None,
-    }
-}
-
-/// Vrai pour une nuance reconnue par MusicXML (`validMusicXmlDynamics`).
-fn is_musicxml_dynamic(text: &str) -> bool {
-    matches!(
-        text,
-        "p" | "pp"
-            | "ppp"
-            | "pppp"
-            | "ppppp"
-            | "pppppp"
-            | "f"
-            | "ff"
-            | "fff"
-            | "ffff"
-            | "fffff"
-            | "ffffff"
-            | "mp"
-            | "mf"
-            | "sf"
-            | "sfp"
-            | "sfpp"
-            | "fp"
-            | "rf"
-            | "rfz"
-            | "sfz"
-            | "sffz"
-            | "fz"
-            | "n"
-            | "pf"
-            | "sfzp"
-    )
 }
 
 /// Correspondance minimale entre nom interne d'accord et valeur MusicXML.

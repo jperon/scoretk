@@ -7,7 +7,7 @@
 use super::tables;
 use super::xml::Node;
 use crate::model::{
-    tpc, Annotation, Dynamic, Harmony, Placement, RehearsalMark, StaffText, SystemText, Tempo,
+    tpc, Annotation, Harmony, Placement, RehearsalMark, StaffText, SystemText, Tempo,
 };
 
 /// Lit une annotation de segment, ou `None` si l'élément n'en est pas une.
@@ -18,20 +18,7 @@ pub(crate) fn read(node: &Node) -> Option<Annotation> {
 
     let annotation = match node.name() {
         "Dynamic" => {
-            let mut dynamic = Dynamic::new(text_of(node, "text"));
-            if dynamic.text.is_empty() {
-                // `<subtype>other-dynamics</subtype>` sans texte : MuseScore
-                // affiche alors le nom du sous-type.
-                dynamic.text = node
-                    .child("subtype")
-                    .map(Node::trimmed_text)
-                    .unwrap_or_default();
-            }
-            dynamic.velocity = node
-                .child("velocity")
-                .and_then(Node::int_text)
-                .and_then(|value| u8::try_from(value.clamp(0, 127)).ok());
-            dynamic.placement = placement.unwrap_or(Placement::Below);
+            let dynamic = super::nuances::read_dynamic(node);
             Annotation::Dynamic(dynamic)
         }
         "StaffText" | "Text" => Annotation::StaffText(StaffText {
