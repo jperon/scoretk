@@ -71,3 +71,41 @@ fn visible(node: &Node) -> bool {
         .and_then(Node::int_text)
         .is_some_and(|value| value == 0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{CreditJustify, Placement};
+
+    #[test]
+    fn style_et_lyrics_placement_3x() {
+        let node = super::super::xml::parse(
+            b"<Style><lyricsPlacement>above</lyricsPlacement><pageHeight>11</pageHeight></Style>",
+        )
+        .expect("XML");
+        let style = read_style(&node, MscVersion::from_raw(302));
+        assert_eq!(style.lyrics_placement, Placement::Above);
+        assert!((style.page_height_in - 11.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn saut_de_page_et_credit_de_vbox() {
+        let node = super::super::xml::parse(
+            b"<VBox><height>18</height><Text><style>composer</style>\
+              <text>Compositrice</text></Text></VBox>",
+        )
+        .expect("XML");
+        let mut score = Score::new();
+        read_vbox(&mut score, &node, 2);
+        assert_eq!(score.credits.len(), 1);
+        assert_eq!(score.credits[0].page, 2);
+        assert!((score.credits[0].vbox_height - 18.0).abs() < 1e-9);
+        assert_eq!(score.credits[0].justify, CreditJustify::Right);
+
+        let break_node = super::super::xml::parse(
+            b"<VBox><LayoutBreak><subtype>page</subtype></LayoutBreak></VBox>",
+        )
+        .expect("XML");
+        assert!(page_break(&break_node));
+    }
+}

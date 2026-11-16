@@ -371,10 +371,6 @@ impl Reader {
         // qui le porte sur la page suivante.
         let mut page = 1u32;
         for child in &element.children {
-            if staff_index == 0 && page_break(child) {
-                page += 1;
-                self.score.style.page_count = self.score.style.page_count.max(page);
-            }
             match child.name.as_str() {
                 "Measure" => {
                     // Une mesure de multi-repos est un marqueur de mise en
@@ -400,6 +396,13 @@ impl Reader {
                 }
                 "tick" => {}
                 _ => {}
+            }
+            // Un saut de page s'applique *après* l'élément qui le porte :
+            // le cadre ou la mesure reste sur la page courante, le suivant
+            // commence la page d'après (mise en page de MuseScore).
+            if staff_index == 0 && page_break(child) {
+                page += 1;
+                self.score.style.page_count = self.score.style.page_count.max(page);
             }
         }
         Ok(())

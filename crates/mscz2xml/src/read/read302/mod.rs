@@ -193,10 +193,6 @@ impl Reader {
         // de type `page` place l'élément qui le porte sur la page suivante.
         let mut page = 1u32;
         for child in node.children() {
-            if staff == 0 && credits::page_break(child) {
-                page += 1;
-                self.score.style.page_count = self.score.style.page_count.max(page);
-            }
             match child.name() {
                 "Measure" => {
                     // Une mesure de multi-repos est un marqueur de mise en
@@ -228,6 +224,11 @@ impl Reader {
                 // quand le `metaTag` correspondant est vide (voir
                 // `moonlight.mscx`).
                 _ => {}
+            }
+            // Un saut de page s'applique après l'élément qui le porte.
+            if staff == 0 && credits::page_break(child) {
+                page += 1;
+                self.score.style.page_count = self.score.style.page_count.max(page);
             }
         }
     }

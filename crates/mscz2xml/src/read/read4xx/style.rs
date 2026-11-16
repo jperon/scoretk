@@ -18,3 +18,31 @@ pub(super) fn read(element: &Element, version: MscVersion) -> StyleSettings {
     }
     style
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Placement;
+    use crate::read::read4xx::dom;
+
+    #[test]
+    fn lyrics_placement_du_style_ou_defaut() {
+        let without = dom::parse(b"<Score></Score>").expect("XML");
+        assert_eq!(
+            read(&without, MscVersion::from_raw(400)).lyrics_placement,
+            Placement::Below
+        );
+
+        let with = dom::parse(
+            b"<Score><Style><lyricsPlacement>above</lyricsPlacement>\
+              <pageWidth>8.5</pageWidth></Style></Score>",
+        )
+        .expect("XML");
+        let style = read(
+            with.child("Style").expect("Style"),
+            MscVersion::from_raw(400),
+        );
+        assert_eq!(style.lyrics_placement, Placement::Above);
+        assert!((style.page_width_in - 8.5).abs() < 1e-9);
+    }
+}

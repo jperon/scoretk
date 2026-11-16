@@ -258,6 +258,9 @@ mod tests {
         assert!((v4.tenths_from_inches(v4.page_odd_top_margin_in) - 85.71).abs() < 0.01);
         assert_eq!(v4.title_font_size, 22.0);
         assert_eq!(v3.title_font_size, 24.0);
+        // `lyricsPlacement` par défaut : below, dans les deux versions.
+        assert_eq!(v3.lyrics_placement, Placement::Below);
+        assert_eq!(v4.lyrics_placement, Placement::Below);
     }
 
     #[test]
