@@ -384,6 +384,33 @@ pub fn symbol_character(name: &str) -> Option<char> {
     Some(character)
 }
 
+/// Texte d'un cadre `TBox`, exporté en `<words>` de direction.
+///
+/// Correspond à `TBox::text()` (`engraving/dom/tbox.h`) : MuseScore l'écrit au
+/// début de la première mesure du système qui porte le cadre
+/// (`ExportMusicXml::tboxTextAsWords`). Le modèle n'a qu'une page et pas de
+/// systèmes : le texte est rattaché à l'indice de la mesure qui suit le cadre.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TboxText {
+    /// Texte du cadre.
+    pub text: RichText,
+    /// Indice de la mesure devant laquelle le texte est écrit.
+    pub measure: usize,
+    /// Placement (`above` si le cadre est au-dessus de la mesure).
+    pub placement: super::annotation::Placement,
+}
+
+impl TboxText {
+    /// Construit le texte d'un cadre rattaché à une mesure.
+    pub fn new(text: RichText, measure: usize) -> Self {
+        Self {
+            text,
+            measure,
+            placement: super::annotation::Placement::Above,
+        }
+    }
+}
+
 /// Style d'un texte de cadre de titre.
 ///
 /// Correspond à `TextStyleType` (`engraving/dom/textstyle.h`) réduit aux styles

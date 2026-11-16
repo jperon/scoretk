@@ -21,6 +21,7 @@ mod dom;
 mod names;
 mod nuances;
 mod repeats;
+mod textlines;
 
 use dom::Element;
 
@@ -93,6 +94,8 @@ struct Reader {
     voltas: Vec<repeats::VoltaHalf>,
     /// Moitiés de soufflets lues mais pas encore appariées.
     spanner_halves: Vec<nuances::Half>,
+    /// Moitiés de lignes de texte lues mais pas encore appariées.
+    text_lines: Vec<textlines::TextLineHalf>,
 }
 
 impl Reader {
@@ -109,6 +112,7 @@ impl Reader {
             ties: Vec::new(),
             voltas: Vec::new(),
             spanner_halves: Vec::new(),
+            text_lines: Vec::new(),
         }
     }
 
@@ -158,6 +162,7 @@ impl Reader {
         self.resolve_ties();
         self.resolve_ties();
         repeats::resolve(self);
+        textlines::resolve(self);
         nuances::resolve(&mut self.score, &self.spanner_halves);
         Ok(())
     }
@@ -382,6 +387,15 @@ impl Reader {
                     // écrit sous la première portée (`StaffRead::readStaff`).
                     if staff_index == 0 {
                         self.read_vbox(child);
+                    }
+                }
+                "TBox" => {
+                    // Texte de cadre exporté en `<words>` au début de la mesure
+                    // qui suit (`tboxTextAsWords`).
+                    if staff_index == 0 {
+                        if let Some(text) = textlines::read_tbox(child, measure_index) {
+                            self.score.add_tbox_text(text);
+                        }
                     }
                 }
                 "tick" => {}
@@ -774,6 +788,7 @@ impl Reader {
                             text: text.text,
                             placement: text.placement,
                             visible: text.visible,
+                            swing: textlines::read_swing(child),
                         }),
                     );
                 }
@@ -793,6 +808,7 @@ impl Reader {
                         follow_text: child.has_child("followText"),
                         placement: text.placement,
                         visible: text.visible,
+                        kind: textlines::read_tempo_kind(child),
                     };
                     // `TRead::read(TempoText*)` : un tempo sans texte reçoit le
                     // texte « ♩ = N » et devient invisible.
@@ -828,6 +844,18 @@ impl Reader {
                 }
                 "InstrumentChange" => {
                     let text = read_text_base(child);
+                    let instrument = child.child("Instrument").map(|instrument| {
+                        let mut instrument = self.read_instrument(instrument);
+                        if instrument.id.is_empty() {
+                            if let Some(id) = crate::model::recognize_musicxml_id(
+                                &instrument.track_name,
+                                instrument.midi_program,
+                            ) {
+                                instrument.id = id.to_owned();
+                            }
+                        }
+                        instrument
+                    });
                     self.add_annotation(
                         measure_index,
                         tick,
@@ -836,6 +864,7 @@ impl Reader {
                             text: text.text,
                             placement: text.placement,
                             visible: text.visible,
+                            instrument,
                         }),
                     );
                 }
@@ -881,6 +910,7 @@ impl Reader {
                 // traitées dans <Note>.
                 "Spanner" => {
                     repeats::read_spanner(self, child, tick, track, measure_index);
+                    textlines::read_spanner(self, child, tick, track, measure_index);
                     if let Some(half) = nuances::read_half(child, measure_index, tick, track) {
                         self.spanner_halves.push(half);
                     }

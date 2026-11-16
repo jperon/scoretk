@@ -1582,7 +1582,11 @@ fn textes_de_portee_et_de_systeme() {
     // Un texte invisible n'est pas exporté (`canWrite`).
     assert!(!xml.contains("caché"));
     assert!(xml.contains("<words>espressivo</words>"));
-    assert!(xml.contains("<words>pizz.</words>"));
+    // Le changement d'instrument reprend le style « Instrument Name » :
+    // gras, taille 12.
+    assert!(xml.contains(
+        "<words font-weight=\"bold\" font-size=\"12\">pizz.</words>"
+    ));
 }
 
 #[test]

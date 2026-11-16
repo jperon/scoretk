@@ -32,6 +32,7 @@ mod part;
 mod repeats;
 mod spanner;
 mod tables;
+mod textlines;
 mod xml;
 
 use crate::container::MscVersion;
@@ -202,6 +203,13 @@ impl Reader {
                 "tick" => {
                     if let Some(value) = child.int_text() {
                         tick = self.file_tick(value);
+                    }
+                }
+                // Texte de cadre exporté en `<words>` au début de la mesure
+                // qui suit (`tboxTextAsWords`).
+                "TBox" => {
+                    if let Some(text) = textlines::read_tbox(child, index) {
+                        self.score.add_tbox_text(text);
                     }
                 }
                 // TODO(parité): `<HBox>`, `<VBox>`, `<TBox>` et `<FBox>` sont

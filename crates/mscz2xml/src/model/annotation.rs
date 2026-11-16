@@ -12,6 +12,7 @@
 //! Seuls les champs utiles à l'export MusicXML sont conservés ; les variantes
 //! peuvent être enrichies sans changer la structure du modèle.
 
+use super::part::Instrument;
 use super::text::{RichText, TextFormat};
 
 /// Placement vertical d'un élément.
@@ -202,6 +203,43 @@ impl StaffText {
     }
 }
 
+/// Unité de swing d'un texte système.
+///
+/// Correspond à la valeur de `swingParameters().swingUnit` dans
+/// `engraving/dom/stafftextbase.h` : `0` (droit), `DIVISION/2` (croche) ou
+/// `DIVISION/4` (double croche).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SwingUnit {
+    /// Aucun swing (`<straight/>`).
+    #[default]
+    Straight,
+    /// Swing à la croche.
+    Eighth,
+    /// Swing à la double croche.
+    Sixteenth,
+}
+
+/// Paramètres de swing d'un texte système.
+///
+/// Correspond à `SwingParameters` (`engraving/dom/stafftextbase.h`) ; l'export
+/// les écrit en `<sound><swing>` (`ExportMusicXml::swingSound`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SwingParameters {
+    /// Unité de swing.
+    pub unit: SwingUnit,
+    /// Rapport du swing en pourcentage (60 par défaut dans MuseScore).
+    pub ratio: u8,
+}
+
+impl Default for SwingParameters {
+    fn default() -> Self {
+        Self {
+            unit: SwingUnit::Straight,
+            ratio: 60,
+        }
+    }
+}
+
 /// Texte système.
 ///
 /// Correspond à `SystemText` dans `engraving/dom/systemtext.h`.
@@ -213,6 +251,9 @@ pub struct SystemText {
     pub placement: Placement,
     /// Vrai si le texte est visible.
     pub visible: bool,
+    /// Paramètres de swing (`<swing unit="…" ratio="…"/>`), si le texte en
+    /// porte.
+    pub swing: Option<SwingParameters>,
 }
 
 impl SystemText {
@@ -222,8 +263,25 @@ impl SystemText {
             text: RichText::new(text),
             placement: Placement::Above,
             visible: true,
+            swing: None,
         }
     }
+}
+
+/// Type d'une indication de tempo.
+///
+/// Correspond à `TempoTextType` (`engraving/dom/tempotext.h`) : « a tempo » et
+/// « Tempo I » reprennent le tempo en vigueur au lieu du leur
+/// (`ExportMusicXml::tempoSound`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TempoKind {
+    /// Tempo explicite.
+    #[default]
+    Normal,
+    /// « a tempo » (`<type>aTempo</type>`).
+    ATempo,
+    /// « Tempo I » (`<type>tempoPrimo</type>`).
+    TempoPrimo,
 }
 
 /// Indication de tempo.
@@ -242,6 +300,8 @@ pub struct Tempo {
     /// Vrai si le tempo est visible (un tempo invisible n'exporte que son
     /// `<sound tempo>`).
     pub visible: bool,
+    /// Type de tempo (« a tempo », « Tempo I »).
+    pub kind: TempoKind,
 }
 
 impl Tempo {
@@ -253,6 +313,7 @@ impl Tempo {
             follow_text: false,
             placement: Placement::Above,
             visible: true,
+            kind: TempoKind::Normal,
         }
     }
 }
@@ -288,8 +349,8 @@ impl RehearsalMark {
 ///
 /// Correspond à `InstrumentChange` dans `engraving/dom/instrumentchange.h`.
 /// MuseScore exporte son texte comme un `<words>` (`ExportMusicXml::words`),
-/// puis les détails de l'instrument (`writeInstrumentChange`), que le modèle
-/// ne porte pas encore.
+/// puis les détails de l'instrument (`writeInstrumentChange` : noms affichés,
+/// transposition et `<sound><instrument-change>`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct InstrumentChange {
     /// Texte affiché, avec son balisage.
@@ -298,6 +359,8 @@ pub struct InstrumentChange {
     pub placement: Placement,
     /// Vrai si le changement est visible.
     pub visible: bool,
+    /// Instrument introduit par le changement (`InstrumentChange::instrument`).
+    pub instrument: Option<Instrument>,
 }
 
 impl InstrumentChange {
@@ -307,6 +370,7 @@ impl InstrumentChange {
             text: RichText::new(text),
             placement: Placement::Above,
             visible: true,
+            instrument: None,
         }
     }
 }

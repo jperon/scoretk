@@ -12,7 +12,7 @@ use super::measure::Measure;
 use super::note::Note;
 use super::part::{Part, Staff};
 use super::spanner::Spanner;
-use super::text::Credit;
+use super::text::{Credit, TboxText};
 use super::tuplet::Tuplet;
 
 /// Nombre de divisions MusicXML par noire utilisé quand aucune valeur n'est
@@ -67,6 +67,8 @@ pub struct Score {
     pub measures: Vec<Measure>,
     /// Textes de cadre de titre, exportés en `<credit>`.
     pub credits: Vec<Credit>,
+    /// Textes de cadres `TBox`, exportés en `<words>` de direction.
+    pub tbox_texts: Vec<TboxText>,
     /// Arène des notes.
     pub notes: Vec<Note>,
     /// Arène des n-olets.
@@ -98,6 +100,7 @@ impl Score {
             staves: Vec::new(),
             measures: Vec::new(),
             credits: Vec::new(),
+            tbox_texts: Vec::new(),
             notes: Vec::new(),
             tuplets: Vec::new(),
             spanners: Vec::new(),
@@ -145,6 +148,12 @@ impl Score {
     pub fn add_credit(&mut self, credit: Credit) -> usize {
         self.credits.push(credit);
         self.credits.len() - 1
+    }
+
+    /// Ajoute un texte de cadre `TBox` (`<words>` à l'export).
+    pub fn add_tbox_text(&mut self, text: TboxText) -> usize {
+        self.tbox_texts.push(text);
+        self.tbox_texts.len() - 1
     }
 
     /// Ajoute une note dans l'arène.
