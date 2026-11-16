@@ -105,6 +105,11 @@ pub struct Spanner {
     pub hairpin: Option<Hairpin>,
     /// Complément propre aux liaisons d'expression, glissandos et trilles.
     pub notation: Option<SpannerNotation>,
+    /// Vrai si le spanner et ses traits sont affichés (`<visible>`).
+    ///
+    /// Une ottava invisible décale quand même la hauteur écrite ; seul son
+    /// `<octave-shift>` est omis.
+    pub visible: bool,
 }
 
 impl Spanner {
@@ -119,6 +124,7 @@ impl Spanner {
             number: 0,
             hairpin: None,
             notation: None,
+            visible: true,
         }
     }
 }
