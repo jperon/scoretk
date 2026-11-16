@@ -1761,12 +1761,17 @@ fn credits_et_metadonnees_de_page_de_titre() {
     assert!(xml.contains("<creator type=\"lyricist\">Parolier</creator>"));
     assert!(xml.contains(
         "<credit page=\"1\">\n    <credit-type>title</credit-type>\n    \
-         <credit-words justify=\"center\" valign=\"top\" font-size=\"22\">Titre</credit-words>"
+         <credit-words default-x=\"600.17\" default-y=\"1611.01\" justify=\"center\" \
+         valign=\"top\" font-size=\"22\">Titre</credit-words>"
     ));
     assert!(xml.contains("<credit-type>subtitle</credit-type>"));
-    assert!(xml.contains("<credit-words justify=\"center\" valign=\"top\" font-weight=\"bold\" font-size=\"14\">Sous-titre</credit-words>"));
+    assert!(xml.contains(
+        "<credit-words default-x=\"600.17\" default-y=\"1553.86\" justify=\"center\" \
+         valign=\"top\" font-weight=\"bold\" font-size=\"14\">Sous-titre</credit-words>"
+    ));
     assert!(xml.contains("<credit-type>rights</credit-type>"));
-    assert!(
-        xml.contains("<credit-words justify=\"center\" valign=\"bottom\">© 2026</credit-words>")
-    );
+    assert!(xml.contains(
+        "<credit-words default-x=\"600.17\" default-y=\"85.71\" justify=\"center\" \
+         valign=\"bottom\" font-size=\"8\">© 2026</credit-words>"
+    ));
 }

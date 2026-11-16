@@ -538,6 +538,12 @@ pub struct Credit {
     pub valign: CreditValign,
     /// Page (1-based).
     pub page: u32,
+    /// Hauteur du cadre vertical qui contient le texte, en spatiums.
+    ///
+    /// `ExportMusicXml::credits` passe `parentHeight(text)` à
+    /// `getTenthsFromDots` : un crédit aligné en bas est décalé de la hauteur
+    /// du `VBox`. La valeur par défaut est celle du style (`10 sp`).
+    pub vbox_height: f64,
 }
 
 impl Credit {
@@ -551,6 +557,7 @@ impl Credit {
             justify,
             valign,
             page: 1,
+            vbox_height: 10.0,
         }
     }
 }
