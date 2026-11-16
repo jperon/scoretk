@@ -10,11 +10,12 @@
 //! pas écrits.
 
 use crate::model::{
-    BarLine, BarLineType, Jump, Marker, MarkerType, Measure, Placement, RepeatMark, Score, Spanner,
-    SpannerType, StaffId, Track,
+    Annotation, BarLine, BarLineType, Fermata, Jump, Marker, MarkerType, Measure, Placement,
+    RepeatMark, Score, Spanner, SpannerType, StaffId, Track,
 };
 
 use super::exportmusicxml::{Context, Out};
+use super::notations;
 
 /// Style de barre pour une barre de fin (`normalBarlineStyle` côté C++).
 fn barline_style(kind: BarLineType) -> Option<&'static str> {
@@ -168,6 +169,36 @@ fn end_bar_line_type(
     }
 }
 
+/// Points d'orgue posés sur la barre de fin (`barlineHasFermata`).
+///
+/// Le lecteur range un point d'orgue situé à la fin de la mesure sur le
+/// segment `EndBarLine` ; MuseScore ne l'exporte pas dans les notations de la
+/// note mais dans `<barline location="right">`.
+fn barline_fermatas<'a>(
+    context: &'a Context<'a>,
+    measure: &'a Measure,
+    part_index: usize,
+) -> Vec<&'a Fermata> {
+    let Some(part) = context.score.parts.get(part_index) else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    for segment in &measure.segments {
+        if segment.tick != measure.end_tick() {
+            continue;
+        }
+        for entry in &segment.annotations {
+            if !part.staves.contains(&entry.track.staff()) {
+                continue;
+            }
+            if let Annotation::Fermata(fermata) = &entry.annotation {
+                result.push(fermata);
+            }
+        }
+    }
+    result
+}
+
 /// Barre de fin portée par la mesure, si le `.mscx` en déclare une.
 fn end_bar_line(measure: &Measure) -> Option<&BarLine> {
     let tick = measure.end_tick();
@@ -198,8 +229,9 @@ pub(super) fn barline_right(
         .and_then(|staff| find_volta(context, measure, false, staff));
     let bar_line = end_bar_line(measure);
     let special = bar_line.and_then(short_barline_style);
+    let fermatas = barline_fermatas(context, measure, part_index);
 
-    if !need_style && volta.is_none() && special.is_none() {
+    if !need_style && volta.is_none() && special.is_none() && fermatas.is_empty() {
         return;
     }
 
@@ -211,6 +243,9 @@ pub(super) fn barline_right(
         }
     } else if let Some(style) = special {
         out.xml.tag("bar-style", style);
+    }
+    for fermata in fermatas {
+        notations::write_fermata(&mut out.xml, fermata);
     }
     if let Some(volta) = volta {
         ending(out, volta, false);

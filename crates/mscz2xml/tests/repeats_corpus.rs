@@ -49,11 +49,7 @@ const FICHIERS: &[(&str, &str)] = &[
 
 /// Écarts connus, avec leur justification. Un fichier listé ici est autorisé à
 /// différer ; s'il ne diffère plus, le test échoue pour forcer la mise à jour.
-const ECARTS_ATTENDUS: &[(&str, &str)] = &[(
-    "v3/barlinedelete",
-    "mesure 6 : fermata posée sur la barre de fin ; le modèle ne porte pas les \n\
-     fermates de barre (famille « nuances »), donc la barre n'est pas écrite",
-)];
+const ECARTS_ATTENDUS: &[(&str, &str)] = &[];
 
 /// Attributs de mise en page absents du modèle.
 const ATTRIBUTS_IGNORES: &[&str] = &[
