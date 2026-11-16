@@ -8,9 +8,14 @@
 //! Point d'entrée de cette première étape : [`MsczContainer`], qui extrait le
 //! fichier `.mscx` principal d'un conteneur `.mscz` (ou accepte un `.mscx` nu),
 //! et [`detect_version`], qui lit la version du format MuseScore.
+//!
+//! Le module [`model`] contient le modèle de partition en mémoire, sans aucune
+//! lecture ni écriture XML : il est rempli par les lecteurs `.mscx` et parcouru
+//! par l'export MusicXML.
 
 mod container;
 mod error;
+pub mod model;
 
 pub use container::{detect_version, MscVersion, MsczContainer};
 pub use error::Error;
