@@ -39,8 +39,8 @@ pub(crate) fn read_chord_rest(
     for child in node.children() {
         match child.name() {
             "durationType" => {
-                duration_kind = tables::duration_type(&child.trimmed_text())
-                    .unwrap_or(DurationType::Quarter);
+                duration_kind =
+                    tables::duration_type(&child.trimmed_text()).unwrap_or(DurationType::Quarter);
             }
             "dots" => dots = child.int_text().unwrap_or(0).clamp(0, 4) as u8,
             "duration" => explicit = child.fraction(),

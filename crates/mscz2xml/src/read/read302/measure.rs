@@ -68,9 +68,7 @@ fn read_voice(
     irregular: bool,
 ) {
     let measure_start = reader.score.measures[index].start_tick;
-    let track = Track::from_raw(
-        (staff * VOICES + usize::from(voice.min(VOICES as u8 - 1))) as u32,
-    );
+    let track = Track::from_raw((staff * VOICES + usize::from(voice.min(VOICES as u8 - 1))) as u32);
     let mut ctx = VoiceCtx {
         tick: measure_start,
         measure: index,
@@ -163,11 +161,11 @@ fn read_voice(
 ///
 /// Équivalent de `Measure::getSegment(type, tick)` : deux éléments de même type
 /// au même tick partagent le segment.
-pub(crate) fn segment_mut<'a>(
-    measure: &'a mut Measure,
+pub(crate) fn segment_mut(
+    measure: &mut Measure,
     kind: SegmentType,
     tick: Fraction,
-) -> &'a mut Segment {
+) -> &mut Segment {
     if let Some(position) = measure
         .segments
         .iter()
@@ -202,9 +200,7 @@ fn apply_location(ctx: &mut VoiceCtx, node: &Node) {
             _ => {}
         }
     }
-    let raw = i64::from(ctx.track.raw())
-        + i64::from(voices)
-        + i64::from(staves) * VOICES as i64;
+    let raw = i64::from(ctx.track.raw()) + i64::from(voices) + i64::from(staves) * VOICES as i64;
     ctx.track = Track::from_raw(raw.max(0) as u32);
 }
 

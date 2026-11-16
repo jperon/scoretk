@@ -198,7 +198,7 @@ fn element(start: &BytesStart<'_>) -> Result<Node> {
     })
 }
 
-fn attach(stack: &mut Vec<Node>, root: &mut Option<Node>, node: Node) {
+fn attach(stack: &mut [Node], root: &mut Option<Node>, node: Node) {
     match stack.last_mut() {
         Some(parent) => parent.content.push(Content::Element(node)),
         None => {
@@ -209,7 +209,7 @@ fn attach(stack: &mut Vec<Node>, root: &mut Option<Node>, node: Node) {
     }
 }
 
-fn push_text(stack: &mut Vec<Node>, text: &str) {
+fn push_text(stack: &mut [Node], text: &str) {
     if let Some(node) = stack.last_mut() {
         node.content.push(Content::Text(text.to_owned()));
     }
@@ -218,7 +218,10 @@ fn push_text(stack: &mut Vec<Node>, text: &str) {
 /// Résout une référence d'entité (`&amp;`, `&#38;`, `&#x26;`).
 fn resolve_reference(name: &str) -> Option<String> {
     if let Some(number) = name.strip_prefix('#') {
-        let code = match number.strip_prefix('x').or_else(|| number.strip_prefix('X')) {
+        let code = match number
+            .strip_prefix('x')
+            .or_else(|| number.strip_prefix('X'))
+        {
             Some(hexadecimal) => u32::from_str_radix(hexadecimal, 16).ok()?,
             None => number.parse().ok()?,
         };

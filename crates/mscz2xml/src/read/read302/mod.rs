@@ -34,8 +34,8 @@ mod xml;
 
 use crate::container::MscVersion;
 use crate::model::{
-    ChordRestKind, Fraction, Measure, NoteId, Score, SegmentItem, SegmentType, Transpose, Track,
-    TupletId,
+    ChordRestKind, Clef, ClefType, Fraction, Measure, NoteId, Score, SegmentItem, SegmentType,
+    Track, Transpose, TupletId, VOICES,
 };
 use crate::Result;
 
@@ -72,6 +72,9 @@ pub(crate) struct Reader {
     pub(crate) connectors: Vec<spanner::Connector>,
     /// Mesures à répéter, développées en fin de lecture.
     pub(crate) measure_repeats: Vec<MeasureRepeat>,
+    /// Clef initiale déclarée par chaque portée (`<defaultClef>`, groupe de
+    /// `StaffType`), appliquée en fin de lecture.
+    pub(crate) staff_clefs: Vec<Option<ClefType>>,
 }
 
 /// Mesure marquée `<RepeatMeasure>` : son contenu est celui de la précédente.
@@ -104,10 +107,12 @@ impl Reader {
             file_division: crate::model::DEFAULT_DIVISION,
             connectors: Vec::new(),
             measure_repeats: Vec::new(),
+            staff_clefs: Vec::new(),
         }
     }
 
     fn finish(mut self) -> Score {
+        self.apply_default_clefs();
         self.expand_measure_repeats();
         spanner::resolve(&mut self);
         self.score
@@ -168,9 +173,7 @@ impl Reader {
 
     /// Lit le contenu d'une `<Staff id="…">`.
     fn read_staff(&mut self, node: &Node) {
-        let staff = node
-            .attr_i32("id")
-            .map_or(0, |id| id.max(1) as usize - 1);
+        let staff = node.attr_i32("id").map_or(0, |id| id.max(1) as usize - 1);
         if staff >= self.score.staves.len() {
             return;
         }
@@ -190,8 +193,10 @@ impl Reader {
                     }
                 }
                 // TODO(parité): `<HBox>`, `<VBox>`, `<TBox>` et `<FBox>` sont
-                // des cadres sans durée musicale ; l'export en tire des textes
-                // et des sauts de page, hors noyau.
+                // des cadres sans durée musicale ; l'export en tire des textes,
+                // des sauts de page et, pour un texte de style « title »,
+                // `<work-title>` quand le `metaTag` correspondant est vide
+                // (voir `moonlight.mscx`).
                 _ => {}
             }
         }
@@ -217,10 +222,42 @@ impl Reader {
     /// `Constants::DIVISION` quand `<Division>` diffère de 480.
     fn file_tick(&self, ticks: i32) -> Fraction {
         let division = i64::from(self.file_division.max(1));
-        let scaled = (i64::from(ticks) * i64::from(crate::model::DEFAULT_DIVISION)
-            + division / 2)
+        let scaled = (i64::from(ticks) * i64::from(crate::model::DEFAULT_DIVISION) + division / 2)
             / division;
         Fraction::from_ticks(scaled, xml::TICKS_PER_WHOLE)
+    }
+
+    /// Donne une clef explicite aux portées dont la première mesure n'en a pas.
+    ///
+    /// MuseScore n'écrit ni `<Clef>` dans la première mesure ni l'information
+    /// équivalente dans le modèle : la clef par défaut de la portée (déclarée
+    /// par `<defaultClef>` ou le groupe de `StaffType`, sinon sol) est celle que
+    /// l'export MusicXML écrit dans `<attributes>`. On la matérialise par un
+    /// segment `HeaderClef`, seul endroit où le modèle sait ranger une clef.
+    fn apply_default_clefs(&mut self) {
+        if self.score.measures.is_empty() {
+            return;
+        }
+        let start = self.score.measures[0].start_tick;
+        for staff in 0..self.score.staves.len() {
+            let clef = self
+                .staff_clefs
+                .get(staff)
+                .copied()
+                .flatten()
+                .unwrap_or(ClefType::G);
+            let track = Track::from_raw((staff * VOICES) as u32);
+            let has_clef = self.score.measures[0].segments.iter().any(|segment| {
+                segment.kind.is_clef_type()
+                    && segment.tick == start
+                    && segment.element(track).is_some()
+            });
+            if has_clef {
+                continue;
+            }
+            measure::segment_mut(&mut self.score.measures[0], SegmentType::HeaderClef, start)
+                .set_element(track, SegmentItem::Clef(Clef::new(clef)));
+        }
     }
 
     /// Développe les mesures `<RepeatMeasure>`.

@@ -47,7 +47,11 @@ pub(crate) fn read(node: &Node) -> Option<Annotation> {
             tempo.beats_per_second = node
                 .child("tempo")
                 .and_then(|child| child.trimmed_text().parse::<f64>().ok());
-            tempo.follow_text = node.child("followText").and_then(Node::int_text).unwrap_or(0) != 0;
+            tempo.follow_text = node
+                .child("followText")
+                .and_then(Node::int_text)
+                .unwrap_or(0)
+                != 0;
             tempo.placement = placement.unwrap_or(Placement::Above);
             Annotation::Tempo(tempo)
         }
@@ -75,7 +79,11 @@ pub(crate) fn read(node: &Node) -> Option<Annotation> {
 }
 
 fn text_of(node: &Node, child: &str) -> String {
-    node.child(child).map(Node::text).unwrap_or_default().trim().to_owned()
+    node.child(child)
+        .map(Node::text)
+        .unwrap_or_default()
+        .trim()
+        .to_owned()
 }
 
 /// Lit un `<Harmony>`.

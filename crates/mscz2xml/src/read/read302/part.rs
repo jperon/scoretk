@@ -4,9 +4,10 @@
 //! (`engraving/rw/read400/tread.cpp`) ainsi que de `Read302::fixInstrumentId`
 //! (`engraving/rw/read302/read302.cpp`).
 
+use super::tables;
 use super::xml::Node;
 use super::Reader;
-use crate::model::{Instrument, Part, Staff, Transpose};
+use crate::model::{ClefType, Instrument, Part, Staff, Transpose};
 
 /// Lit un `<Part>` : portées déclarées, noms et instrument principal.
 pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
@@ -48,19 +49,41 @@ pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
 
     for staff_node in node.children_named("Staff") {
         let mut staff = Staff::new(part_id);
+        let mut clef = None;
         if let Some(staff_type) = staff_node.child("StaffType") {
             if let Some(lines) = staff_type.child("lines").and_then(Node::int_text) {
                 staff.lines = lines.clamp(1, 32) as u8;
             }
-            staff.small = staff_type.child("small").and_then(Node::int_text).unwrap_or(0) != 0;
+            staff.small = staff_type
+                .child("small")
+                .and_then(Node::int_text)
+                .unwrap_or(0)
+                != 0;
+            clef = match staff_type.attr("group") {
+                Some("tab") => Some(ClefType::Tab),
+                Some("percussion") => Some(ClefType::Perc),
+                _ => None,
+            };
         }
-        if staff_node.child("small").and_then(Node::int_text).unwrap_or(0) != 0 {
+        if staff_node
+            .child("small")
+            .and_then(Node::int_text)
+            .unwrap_or(0)
+            != 0
+        {
             staff.small = true;
         }
+        for tag in ["defaultClef", "defaultConcertClef"] {
+            if let Some(value) = staff_node.child(tag) {
+                if let Some(clef_type) = tables::clef_type(&value.trimmed_text()) {
+                    clef = Some(clef_type);
+                }
+            }
+        }
+        reader.staff_clefs.push(clef);
         reader.score.add_staff_with(part_id, staff);
     }
-    // TODO(parité): `<bracket>`, `<barLineSpan>`, `<defaultClef>`,
-    // `<StaffType group="tab">` et les instruments secondaires
+    // TODO(parité): `<bracket>`, `<barLineSpan>` et les instruments secondaires
     // (`<Instrument>` successifs / `<InstrumentChange>`) ne sont pas modélisés.
 }
 
@@ -111,9 +134,7 @@ fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
     // Programme MIDI du premier canal sonore (`<Channel><program value>`).
     for channel in node.children_named("Channel") {
         if let Some(program) = channel.child("program") {
-            let value = program
-                .attr_i32("value")
-                .or_else(|| program.int_text());
+            let value = program.attr_i32("value").or_else(|| program.int_text());
             if let Some(value) = value {
                 if (0..=127).contains(&value) {
                     instrument.midi_program = Some(value as u8);

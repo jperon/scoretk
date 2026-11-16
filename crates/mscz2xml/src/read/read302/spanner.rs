@@ -250,8 +250,8 @@ pub(crate) fn resolve(reader: &mut Reader) {
     for index in 0..reader.connectors.len() {
         active.push(index);
         let mut linked = false;
-        for position in 0..active.len().saturating_sub(1) {
-            if connect(&mut reader.connectors, active[position], index) {
+        for &other in active.iter().take(active.len().saturating_sub(1)) {
+            if connect(&mut reader.connectors, other, index) {
                 linked = true;
                 break;
             }
@@ -261,8 +261,8 @@ pub(crate) fn resolve(reader: &mut Reader) {
         }
         let first = chain_first(&reader.connectors, index);
         let last = chain_last(&reader.connectors, index);
-        let finished = reader.connectors[first].prev.is_none()
-            && reader.connectors[last].next.is_none();
+        let finished =
+            reader.connectors[first].prev.is_none() && reader.connectors[last].next.is_none();
         if finished {
             let chain = chain_of(&reader.connectors, first);
             emit(reader, &chain);

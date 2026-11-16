@@ -6,12 +6,12 @@
 //! la copie de référence) sont reconstituées à partir des valeurs rencontrées
 //! dans le corpus et de `engraving/types/types.h`.
 
+use crate::model::Fraction;
 use crate::model::{
     note::tpc, AccidentalType, ArticulationAnchor, ArticulationType, BarLineType, BeamMode,
     ClefType, Duration, DurationType, HairpinType, KeyMode, LyricsSyllabic, NoteHeadType,
     OttavaType, Placement, StemDirection, TimeSigType, Transpose, TupletNumberType,
 };
-use crate::model::Fraction;
 
 /// Figure de durée à partir du nom écrit dans `<durationType>`.
 pub(crate) fn duration_type(name: &str) -> Option<DurationType> {
@@ -297,6 +297,12 @@ pub(crate) fn ottava_type(node: &super::xml::Node) -> OttavaType {
     }
 }
 
+/// Plus petit `tpc` valide (`TPC_MIN`, `Fbbb`).
+pub(crate) const TPC_MIN: i8 = -8;
+
+/// Plus grand `tpc` valide (`TPC_MAX`, `B###`).
+pub(crate) const TPC_MAX: i8 = 40;
+
 /// Nom de la note désignée par un `tpc`.
 ///
 /// Sert au texte des symboles d'accord : `11` donne `Eb`, `21` donne `C#`.
@@ -305,7 +311,7 @@ pub(crate) fn tpc_name(tpc: i8) -> String {
         return String::new();
     }
     const STEPS: [char; 7] = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
-    let offset = i32::from(tpc) - i32::from(tpc::INVALID);
+    let offset = i32::from(tpc) - i32::from(TPC_MIN);
     let step = STEPS[(offset.rem_euclid(7)) as usize];
     let alteration = offset.div_euclid(7) - 3;
     let suffix = match alteration {
@@ -345,13 +351,11 @@ pub(crate) fn pitch_to_tpc(pitch: u8, fifths: i8) -> i8 {
 /// sort de `-8..=40` (`Fbbb`…`B###`).
 pub(crate) fn transpose_tpc(value: i8, interval: Transpose) -> i8 {
     const STEP_SEMITONES: [i32; 7] = [5, 0, 7, 2, 9, 4, 11];
-    const TPC_MIN: i32 = -8;
-    const TPC_MAX: i32 = 40;
 
     if value == tpc::INVALID {
         return value;
     }
-    let offset = i32::from(value) - i32::from(tpc::INVALID);
+    let offset = i32::from(value) - i32::from(TPC_MIN);
     let step = offset.rem_euclid(7) as usize;
     let alteration = offset.div_euclid(7) - 3;
     let new_step = (step as i32 + 2 * interval.diatonic).rem_euclid(7) as usize;
@@ -360,8 +364,8 @@ pub(crate) fn transpose_tpc(value: i8, interval: Transpose) -> i8 {
     if new_alteration > 6 {
         new_alteration -= 12;
     }
-    let result = i32::from(tpc::INVALID) + (new_alteration + 3) * 7 + new_step as i32;
-    if (TPC_MIN..=TPC_MAX).contains(&result) {
+    let result = i32::from(TPC_MIN) + (new_alteration + 3) * 7 + new_step as i32;
+    if (i32::from(TPC_MIN)..=i32::from(TPC_MAX)).contains(&result) {
         result as i8
     } else {
         tpc::INVALID
