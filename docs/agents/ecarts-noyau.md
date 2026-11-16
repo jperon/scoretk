@@ -364,3 +364,47 @@ n'a qu'une durée de mesure globale (`Measure::len`), calculée à partir de la
 première portée ; sans `<duration>` explicite, le silence « mesure » de la
 seconde portée prendrait encore 9/8 au lieu de 3/4 (durée de mesure par portée
 non modélisée).
+
+## 15. Notations : écarts résiduels d'une famille désormais couverte
+
+La famille des notations (articulations, points d'orgue, liaisons d'expression,
+ornements, trilles, trémolos, techniques, arpèges, glissandos, respirations et
+lignes d'accord) est couverte par un test dédié,
+`crates/mscz2xml/tests/notations_corpus.rs`, qui compare les `<notations>` de
+ces éléments à la référence, mesure par mesure et dans l'ordre. Le test de bout
+en bout ci-dessus continue de retirer `<notations>` sauf `tied`/`tuplet` : les
+écarts ci-dessous n'apparaissent donc pas dans le tableau.
+
+Corrigé dans cette passe :
+
+- **lecteur 3.x et 4.x** : articulations (y compris l'éclatement des
+  articulations composées en `staccato`/`tenuto`/`accent`…), points d'orgue,
+  ornements et leurs altérations, trémolos simples et à deux notes, arpèges,
+  lignes d'accord, doigtés, respirations/césures, et les spanners `Slur`,
+  `Trill`, `Glissando` avec leurs propriétés (sens, texte, style de trait,
+  visibilité) ;
+- **export** : `<articulations>`, `<fermata>`, `<slur>` avec numéro et
+  `orientation`/`placement`, `<ornaments>` (`trill-mark`, `turn`, `mordent`,
+  `wavy-line`, `tremolo`, `accidental-mark`), `<technical>` (`up-bow`,
+  `down-bow`, `harmonic`, `open`, `stopped`, `snap-pizzicato`, `fingering`,
+  `pluck`), `<arpeggiate>`/`<non-arpeggiate>`, `<glissando>`/`<slide>`,
+  `<breath-mark>`/`<caesura>` et `falloff`/`doit`/`plop`/`scoop` ;
+- `print-object="no"` sur un `<notations>` dont l'élément est invisible,
+  régouverture d'un `<notations>` quand la visibilité change.
+
+Écarts restants, déclarés dans `ECARTS_CONNUS` du test dédié :
+
+- **v3/layout_elements** : les `<Bend>` (technique de guitare) ne sont pas
+  modélisés, et la reprise de mesure (`<measure-repeat>`) n'est pas dépliée à
+  l'export ; les deux glissandos de la mesure répétée manquent donc. **Cause :
+  modèle/export.**
+- **v4/copypaste_parts** : pour un trille, MuseScore 4.7 écrit le
+  `wavy-line type="stop"` sur l'accord de départ, alors que le modèle le place
+  sur l'accord de fin (`tick2 = départ + 1/4`). Le contenu est identique, seul
+  le rattachement diffère. **Cause : export** (interprétation de
+  `Trill::endElement`).
+- **v4/testExcludeInvisibleElements** : la visibilité des liaisons de
+  prolongation n'est pas modélisée (écart 13 ci-dessus). Avec un `tied`
+  invisible, MuseScore regroupe les `<notations>` autrement ; le contenu de la
+  famille est identique, seule la répartition des ouvertures
+  `print-object="no"` diffère. **Cause : lecteur/modèle** (tie invisible).
