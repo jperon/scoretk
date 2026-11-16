@@ -34,9 +34,17 @@ use clap::Parser;
 
 use mscz2xml::{convert, ConvertOptions, ExportOptions, OutputFormat};
 
+/// Version affichée par `--version` : en plus du numéro, la licence et
+/// l'absence de garantie (GPL §0, « Appropriate Legal Notices »).
+const VERSION_LINE: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    "\nLicence : GNU GPL version 3 seulement (GPL-3.0-only), sans aucune garantie ;",
+    "\nvoir le fichier LICENSE ou <https://www.gnu.org/licenses/gpl-3.0.html>."
+);
+
 /// Portage Rust de l'export MusicXML de MuseScore.
 #[derive(Debug, Parser)]
-#[command(name = "mscz2xml", version, about)]
+#[command(name = "mscz2xml", version = VERSION_LINE, about)]
 struct Cli {
     /// Fichier d'entrée (.mscz ou .mscx)
     input: std::path::PathBuf,
@@ -198,6 +206,15 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_affiche_la_licence() {
+        use clap::CommandFactory;
+
+        let version = Cli::command().render_version().to_string();
+        assert!(version.contains("GPL-3.0-only"), "{version}");
+        assert!(version.contains("garantie"), "{version}");
+    }
 
     #[test]
     fn dates_civiles_connues() {

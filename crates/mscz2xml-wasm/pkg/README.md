@@ -51,6 +51,22 @@ l'`importScripts`.
 | -------------- | -------- | --------------- | ------------------------------------------ |
 | `encodingDate` | `string` | constante Rust  | contenu de `<encoding-date>` (AAAA-MM-JJ)  |
 
-## Licence
+## Licence et sources
 
-GPL-3.0-or-later, comme la bibliothèque.
+Le paquet est distribué sous **GPL-3.0-only** (GNU General Public License
+version 3 seulement), comme la bibliothèque dont il est issu. Le texte complet
+accompagne ce paquet dans `LICENSE` ; l'origine du code et des données est
+décrite dans `NOTICE`.
+
+Le paquet contient du code porté de **MuseScore Studio**
+(<https://github.com/musescore/MuseScore>), Copyright (C) MuseScore Limited
+and others, réécrit en Rust en 2026, ainsi que du code généré par
+wasm-bindgen. La **source correspondante** au sens de la GPL §6 est le dépôt
+mscz2xml :
+
+- URL : **TODO** — aucun remote git n'est encore défini dans ce dépôt ;
+  renseigner l'URL dans `package.json` (champ `repository`) et ici.
+
+Le programme est distribué **sans aucune garantie**. « MuseScore » est une
+marque de MuseScore Limited ; ce paquet n'est ni affilié à, ni approuvé par
+MuseScore Limited.
