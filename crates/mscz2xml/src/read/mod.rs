@@ -6,8 +6,8 @@
 //!
 //! | Version | Lecteur |
 //! | --- | --- |
-//! | 4.00 – 5.00 | [`read4xx`] (portage de `read400`, `read410`, `read460`, `read500`) |
-//! | 3.00 – 3.99 | [`read302`] (portage de `read302`) |
+//! | 4.00 – 5.00 | `read4xx` (portage de `read400`, `read410`, `read460`, `read500`) |
+//! | 3.00 – 3.99 | `read302` (portage de `read302`) |
 //!
 //! Les versions antérieures ou inconnues renvoient
 //! [`Error::UnsupportedVersion`](crate::Error::UnsupportedVersion).
