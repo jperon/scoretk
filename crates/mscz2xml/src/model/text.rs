@@ -99,6 +99,8 @@ impl RichText {
     ///
     /// Un texte sans balisage donne un unique fragment, comme dans MuseScore ;
     /// `<b>`, `<i>`, `<u>`, `<s>`, `<font>`, `<sym>` et `\n` sont interprétés.
+    /// Le texte est du **balisage** : un `&` qui n'ouvre pas une entité valide
+    /// est perdu, comme dans `TextBase::createBlocks`.
     pub fn new(markup: impl Into<String>) -> Self {
         Self::from_markup(&markup.into())
     }
