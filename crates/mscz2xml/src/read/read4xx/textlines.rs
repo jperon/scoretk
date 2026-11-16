@@ -249,7 +249,7 @@ pub(super) fn read_tempo_kind(element: &Element) -> crate::model::TempoKind {
 ///
 /// MuseScore l'exporte en `<words>` au début de la mesure qui suit le cadre
 /// (`tboxTextAsWords`) ; la mesure de rattachement est l'indice courant.
-pub(super) fn read_tbox(element: &Element, measure_index: usize) -> Option<TboxText> {
+pub(super) fn read_tbox(element: &Element, measure_index: usize, below: bool) -> Option<TboxText> {
     for text_element in element.children_named("Text") {
         let markup = text_element
             .child("text")
@@ -258,9 +258,17 @@ pub(super) fn read_tbox(element: &Element, measure_index: usize) -> Option<TboxT
         if text.is_empty() {
             continue;
         }
-        let mut tbox = TboxText::new(text, measure_index);
+        let target = if below {
+            measure_index.saturating_sub(1)
+        } else {
+            measure_index
+        };
+        let mut tbox = TboxText::new(text, target);
         // `tboxTextAsWords` place le texte au-dessus si sa position relative
         // est négative, au-dessous sinon.
+        if below {
+            tbox.placement = crate::model::Placement::Below;
+        }
         if let Some(offset) = text_element.child("offset") {
             if offset
                 .attr("y")

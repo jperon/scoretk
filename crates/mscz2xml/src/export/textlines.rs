@@ -192,7 +192,7 @@ fn hook_name(
 /// (`writeHairpinText`).
 fn write_line_words(out: &mut Out, text: &str, font: &LineFont) {
     let family = font.family.clone();
-    let size = format_number(font.size, 2);
+    let size = super::text::format_font_size(font.size);
     let weight = if font.bold { Some("bold") } else { None };
     let style = if font.italic { Some("italic") } else { None };
     let mut attributes: Vec<(&str, &str)> = vec![

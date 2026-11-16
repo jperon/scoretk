@@ -38,6 +38,15 @@ use crate::model::{
 };
 use crate::{Error, Result};
 
+/// Vrai si un cadre porte un saut de page (`LayoutBreak` `page`).
+fn has_page_break(element: &Element) -> bool {
+    element.children_named("LayoutBreak").any(|layout_break| {
+        layout_break
+            .child("subtype")
+            .is_some_and(|subtype| subtype.text() == "page")
+    })
+}
+
 /// Lit un `.mscx` 4.x/5.x.
 pub fn read(mscx: &[u8], version: MscVersion) -> Result<Score> {
     let document = dom::parse(mscx)?;
@@ -391,9 +400,11 @@ impl Reader {
                 }
                 "TBox" => {
                     // Texte de cadre exporté en `<words>` au début de la mesure
-                    // qui suit (`tboxTextAsWords`).
+                    // qui suit (`tboxTextAsWords`) ; un cadre suivi d'un saut
+                    // de page est au-dessous du système précédent.
                     if staff_index == 0 {
-                        if let Some(text) = textlines::read_tbox(child, measure_index) {
+                        let below = measure_index > 0 && has_page_break(child);
+                        if let Some(text) = textlines::read_tbox(child, measure_index, below) {
                             self.score.add_tbox_text(text);
                         }
                     }
@@ -1632,6 +1643,17 @@ fn read_text_base(element: &Element) -> ParsedTextBase {
     ] {
         if let Some(flag) = element.child(name).and_then(Element::int) {
             *value = flag != 0;
+        }
+    }
+    if let Some(size) = element
+        .child("size")
+        .and_then(|node| node.text().parse::<f64>().ok())
+    {
+        format.font_size = Some(size);
+    }
+    if let Some(family) = element.child("family").map(Element::text) {
+        if !family.is_empty() {
+            format.font_family = Some(family.to_owned());
         }
     }
     ParsedTextBase {

@@ -35,49 +35,64 @@ struct Frag {
     text: String,
 }
 
-/// Fichiers du corpus v4 : ceux qui n'ont pas de texte n'ajoutent que leurs
-/// `<work>`, `<credit>` et `<creator>` à la comparaison.
-fn fichiers_du_corpus() -> Vec<String> {
-    let mut noms: Vec<String> = fs::read_dir(corpus_dir())
-        .expect("corpus v4")
-        .map(|entree| entree.expect("entrée de répertoire").path())
-        .filter(|chemin| {
-            chemin
-                .extension()
-                .is_some_and(|extension| extension == "mscx")
-        })
-        .map(|chemin| {
-            chemin
-                .file_stem()
-                .expect("nom de fichier")
-                .to_string_lossy()
-                .into_owned()
-        })
-        .collect();
-    noms.sort();
-    noms
+/// Fichiers du corpus v3 et v4, avec leur répertoire. Ceux qui n'ont pas de
+/// texte n'ajoutent que leurs `<work>`, `<credit>` et `<creator>` à la
+/// comparaison.
+fn fichiers_du_corpus() -> Vec<(String, PathBuf)> {
+    let mut fichiers: Vec<(String, PathBuf)> = Vec::new();
+    for version in ["v3", "v4"] {
+        let mut noms: Vec<String> = fs::read_dir(corpus_dir().join(version))
+            .unwrap_or_else(|_| panic!("corpus {version}"))
+            .map(|entree| entree.expect("entrée de répertoire").path())
+            .filter(|chemin| {
+                chemin
+                    .extension()
+                    .is_some_and(|extension| extension == "mscx")
+            })
+            .map(|chemin| {
+                chemin
+                    .file_stem()
+                    .expect("nom de fichier")
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        noms.sort();
+        for nom in noms {
+            fichiers.push((nom, corpus_dir().join(version)));
+        }
+    }
+    fichiers
 }
 
 /// Écarts connus, par fichier : éléments de la référence que l'export ne
 /// produit pas encore (documentés dans le rapport de la tâche).
 const ECARTS_CONNUS: &[(&str, &[&str])] = &[
-    // Les textes de `TBox` sont exportés par MuseScore en `<words>` au début de
-    // la première mesure (`tboxTextAsWords`) ; le modèle ne lit pas les cadres.
-    ("repeat65", &["1,2,3,4"]),
-    // « 3x » est l'`<endText>` d'un `TextLine` : les spanners textuels ne sont
-    // pas modélisés.
-    ("repeat65", &["3x"]),
-    // Texte de `TBox` (voir ci-dessus) : exporté en `<words>` au début de la
-    // première mesure par `tboxTextAsWords`.
-    ("voiceswitching", &["This test goes through each measure"]),
-    // Textes de `TextLine` (spanner) : le `<words>` vient de `beginText`, le
-    // trait et le `<direction-type>` vide de la ligne elle-même.
-    ("mmrest", &["VII"]),
-    ("part-textlines", &["System", "Staff/1", "Staff/2"]),
-    // Mêmes classes pour les fichiers ajoutés avec le corpus 3.x/4.x :
-    // `TextLine` (« 3x ») et textes de `TBox`.
-    ("repeat66", &["3x", "1,2,3,4"]),
-    ("repeat68", &["no playback"]),
+    // `layout_elements` contient une reprise de mesure (`RepeatMeasure`) qui
+    // rejoue les annotations de la mesure répétée : MuseScore ré-exporte le
+    // repère « A » à la mesure répétée. C'est un écart de la famille des
+    // reprises de mesure, pas des textes.
+    (
+        "layout_elements",
+        &["<rehearsal font-size=\"14\" font-weight=\"bold\">A</rehearsal>"],
+    ),
+    // Les `<words>` et `<dashes>` ci-dessous sont les textes de début/fin des
+    // soufflets (`HairPin`), pas des `TextLine` : leur mise en forme relève de
+    // la famille des nuances (`writeHairpinText`). Ils restent listés ici pour
+    // que la comparaison des textes ne les masque pas.
+    (
+        "testHairpinDynamics",
+        &[
+            "cresc. from ",
+            " to ",
+            "to ",
+            "from ",
+            "begin",
+            "end",
+            "dashes number=\"1\" type=\"start\"",
+        ],
+    ),
+    ("voices", &["cresc."]),
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -86,7 +101,6 @@ fn corpus_dir() -> PathBuf {
         .join("..")
         .join("tests")
         .join("corpus")
-        .join("v4")
 }
 
 /// Attributs conservés (les autres sont de la mise en page).
@@ -118,7 +132,10 @@ fn attribut_utile(name: &str, attribute: &str) -> bool {
                 | "valign"
         ),
         "metronome" => matches!(attribute, "parentheses"),
+        "bracket" => matches!(attribute, "type" | "number" | "line-end" | "line-type" | "end-length"),
+        "dashes" => matches!(attribute, "type" | "number"),
         "sound" => attribute == "tempo",
+        "instrument-change" => attribute == "id",
         "offset" => attribute == "sound",
         "credit" => attribute == "page",
         "creator" => attribute == "type",
@@ -138,6 +155,20 @@ fn element_utile(name: &str) -> bool {
             | "beat-unit"
             | "beat-unit-dot"
             | "per-minute"
+            | "bracket"
+            | "dashes"
+            | "swing"
+            | "straight"
+            | "first"
+            | "second"
+            | "swing-type"
+            | "print"
+            | "part-name-display"
+            | "part-abbreviation-display"
+            | "display-text"
+            | "accidental-text"
+            | "instrument-change"
+            | "instrument-sound"
             | "sound"
             | "offset"
             | "staff"
@@ -186,10 +217,27 @@ fn canonique(frag: &Frag) -> String {
     out
 }
 
-/// Vrai si le fragment contient un texte parmi ses descendants.
+/// Vrai si le fragment contient un élément de la famille textes parmi ses
+/// descendants (texte, ligne de texte, changement d'instrument, swing).
 fn contient_texte(frag: &Frag) -> bool {
-    matches!(frag.name.as_str(), "words" | "metronome" | "rehearsal")
-        || frag.children.iter().any(contient_texte)
+    matches!(
+        frag.name.as_str(),
+        "words"
+            | "metronome"
+            | "rehearsal"
+            | "bracket"
+            | "dashes"
+            | "swing"
+            | "straight"
+            | "instrument-change"
+    ) || frag.children.iter().any(contient_texte)
+}
+
+/// Vrai si le fragment est un `<print>` de changement d'instrument.
+fn print_de_changement(frag: &Frag) -> bool {
+    frag.children
+        .iter()
+        .any(|child| matches!(child.name.as_str(), "part-name-display" | "part-abbreviation-display"))
 }
 
 /// Extrait les éléments textuels d'un document MusicXML.
@@ -204,6 +252,8 @@ fn extraire(xml: &str) -> Vec<String> {
     let mut push = |frag: Frag, stack: &mut Vec<Frag>, captures: &mut Vec<String>| {
         let retenu = match frag.name.as_str() {
             "direction" => contient_texte(&frag),
+            "print" => print_de_changement(&frag),
+            "sound" => contient_texte(&frag),
             "credit" | "work" | "movement-number" | "movement-title" | "creator" => true,
             _ => false,
         };
@@ -270,8 +320,8 @@ fn extraire(xml: &str) -> Vec<String> {
 }
 
 /// Éléments textuels d'une partition du corpus, lus puis exportés.
-fn notre_export(nom: &str) -> Vec<String> {
-    let chemin = corpus_dir().join(format!("{nom}.mscx"));
+fn notre_export(nom: &str, dir: &Path) -> Vec<String> {
+    let chemin = dir.join(format!("{nom}.mscx"));
     let data = fs::read(&chemin).expect("lecture du .mscx");
     let container = MsczContainer::from_bytes(&data).expect("conteneur");
     let score = read_score(&container).expect("lecture du .mscx");
@@ -280,8 +330,8 @@ fn notre_export(nom: &str) -> Vec<String> {
 }
 
 /// Éléments textuels de la référence MuseScore.
-fn reference(nom: &str) -> Vec<String> {
-    let chemin = corpus_dir().join(format!("{nom}.ref.musicxml"));
+fn reference(nom: &str, dir: &Path) -> Vec<String> {
+    let chemin = dir.join(format!("{nom}.ref.musicxml"));
     let xml = fs::read_to_string(&chemin).expect("référence du corpus");
     extraire(&xml)
 }
@@ -290,9 +340,9 @@ fn reference(nom: &str) -> Vec<String> {
 fn textes_du_corpus_conformes_aux_references() {
     let mut erreurs: Vec<String> = Vec::new();
 
-    for nom in fichiers_du_corpus() {
-        let attendus = reference(&nom);
-        let obtenus = notre_export(&nom);
+    for (nom, dir) in fichiers_du_corpus() {
+        let attendus = reference(&nom, &dir);
+        let obtenus = notre_export(&nom, &dir);
 
         let mut manquants = BTreeSet::new();
         let mut restants: Vec<String> = obtenus.clone();
@@ -316,8 +366,15 @@ fn textes_du_corpus_conformes_aux_references() {
                 manquants_non_documentes.push(manquant);
             }
         }
+        // Les écarts documentés peuvent aussi laisser un élément « en trop »
+        // (par exemple le `<words>` non formaté d'un soufflet, dont la
+        // référence porte la police de la famille des nuances).
+        let restants_non_documentes: Vec<&String> = restants
+            .iter()
+            .filter(|restant| !connus.iter().any(|motif| restant.contains(motif)))
+            .collect();
 
-        if !manquants_non_documentes.is_empty() || !restants.is_empty() {
+        if !manquants_non_documentes.is_empty() || !restants_non_documentes.is_empty() {
             erreurs.push(format!(
                 "{nom} :\n  manquants :\n    {}\n  en trop :\n    {}",
                 manquants_non_documentes
@@ -325,7 +382,11 @@ fn textes_du_corpus_conformes_aux_references() {
                     .map(|element| element.as_str())
                     .collect::<Vec<_>>()
                     .join("\n    "),
-                restants.join("\n    ")
+                restants_non_documentes
+                    .iter()
+                    .map(|element| element.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n    ")
             ));
         }
     }

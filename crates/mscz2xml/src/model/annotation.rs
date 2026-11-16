@@ -132,7 +132,7 @@ impl Annotation {
 /// annotations exportées sont décrits ; les autres gardent les valeurs par
 /// défaut (au-dessus, format neutre).
 pub fn text_style_defaults(style: &str) -> (Placement, TextFormat) {
-    match style {
+    match style.to_ascii_lowercase().as_str() {
         // `TextStyleType::EXPRESSION`.
         "expression" => (
             Placement::Below,

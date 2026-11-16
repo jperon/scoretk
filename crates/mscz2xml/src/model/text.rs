@@ -398,6 +398,8 @@ pub struct TboxText {
     pub measure: usize,
     /// Placement (`above` si le cadre est au-dessus de la mesure).
     pub placement: super::annotation::Placement,
+    /// Taille de police du style du cadre (défauts du fichier), si connue.
+    pub font_size: Option<f64>,
 }
 
 impl TboxText {
@@ -407,6 +409,7 @@ impl TboxText {
             text,
             measure,
             placement: super::annotation::Placement::Above,
+            font_size: None,
         }
     }
 }
@@ -565,6 +568,8 @@ pub struct Credit {
     pub valign: CreditValign,
     /// Page (1-based).
     pub page: u32,
+    /// Taille de police explicite (défauts de style du fichier), si connue.
+    pub font_size: Option<f64>,
 }
 
 impl Credit {
@@ -578,6 +583,7 @@ impl Credit {
             justify,
             valign,
             page: 1,
+            font_size: None,
         }
     }
 }

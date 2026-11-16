@@ -19,12 +19,15 @@ pub(crate) fn read(reader: &Reader, node: &Node) -> Option<Annotation> {
         .map(|child| tables::placement(&child.trimmed_text()));
     // Le style fixe le placement et la police de départ ; les propriétés
     // `italic`/`bold`/`underline`/`strike` du texte les écrasent ensuite.
-    let (style_placement, style_format) = text_style_defaults(
-        node.child("style")
-            .map(|child| child.trimmed_text())
-            .unwrap_or_default()
-            .as_str(),
-    );
+    let style_name = node
+        .child("style")
+        .map(|child| child.trimmed_text())
+        .unwrap_or_default();
+    let (style_placement, mut style_format) = text_style_defaults(&style_name);
+    // Style « Expression » de MuseScore 3.x : italique 11 points.
+    if style_name.eq_ignore_ascii_case("expression") {
+        style_format.font_size = Some(11.0);
+    }
 
     let annotation = match node.name() {
         "Dynamic" => {
@@ -139,6 +142,17 @@ fn rich_text(node: &Node, style_format: &TextFormat) -> RichText {
     ] {
         if let Some(flag) = node.child(name).and_then(Node::int_text) {
             *value = flag != 0;
+        }
+    }
+    if let Some(size) = node
+        .child("size")
+        .and_then(|child| child.trimmed_text().parse::<f64>().ok())
+    {
+        format.font_size = Some(size);
+    }
+    if let Some(family) = node.child("family").map(Node::trimmed_text) {
+        if !family.is_empty() {
+            format.font_family = Some(family);
         }
     }
     node.child("text")

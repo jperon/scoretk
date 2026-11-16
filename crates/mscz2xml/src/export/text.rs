@@ -111,6 +111,26 @@ fn effective_format(format: &TextFormat, style: &StyleFormat) -> EffectiveFormat
     }
 }
 
+/// Formate une taille de police comme `String::number`/`QString::arg(double)`
+/// (six chiffres significatifs, zéros finaux retirés).
+pub(crate) fn format_font_size(value: f64) -> String {
+    if !value.is_finite() || value == 0.0 {
+        return "0".to_owned();
+    }
+    let magnitude = value.abs().log10().floor() as i32;
+    let decimals = (6 - 1 - magnitude).max(0) as usize;
+    let mut text = format!("{value:.decimals$}");
+    if text.contains('.') {
+        while text.ends_with('0') {
+            text.pop();
+        }
+        if text.ends_with('.') {
+            text.pop();
+        }
+    }
+    text
+}
+
 // ----------------------------------------------------------------------
 // Écriture des fragments
 // ----------------------------------------------------------------------
@@ -168,7 +188,7 @@ fn write_fragments(
         if current.font_size < 0.99 * previous.font_size
             || current.font_size > 1.01 * previous.font_size
         {
-            changes.push(("font-size", format_number(current.font_size, 2)));
+            changes.push(("font-size", format_font_size(current.font_size)));
         }
 
         let mut all: Vec<(&str, &str)> = Vec::new();
@@ -715,12 +735,16 @@ pub(crate) fn write_tbox(out: &mut Out, tbox: &crate::model::TboxText) {
         &[("placement", placement_name(tbox.placement))],
     );
     out.xml.start_element("direction-type", &[]);
+    let mut style = WORDS_STYLE;
+    if let Some(font_size) = tbox.font_size {
+        style.font_size = font_size;
+    }
     write_fragments(
         out,
         "words",
         &[("valign", "top")],
         tbox.text.fragments(),
-        &WORDS_STYLE,
+        &style,
     );
     out.xml.end_element();
     out.xml.end_element();
@@ -772,7 +796,10 @@ pub(crate) fn write_rehearsal(out: &mut Out, mark: &RehearsalMark, xml_staff: us
     out.attr(false);
     out.xml.start_element(
         "direction",
-        &[("placement", placement_name(mark.placement))],
+        &[
+            ("placement", placement_name(mark.placement)),
+            ("system", "only-top"),
+        ],
     );
     out.xml.start_element("direction-type", &[]);
     let mut attributes: Vec<(&str, &str)> = Vec::new();
@@ -815,14 +842,17 @@ pub(crate) fn write_credits(out: &mut Out, score: &Score) {
 
     // MuseScore ajoute le copyright en bas au centre de chaque page.
     if !score.metadata.copyright.is_empty() {
-        let credit = Credit {
-            text: RichText::new(score.metadata.copyright.clone()),
-            style: CreditStyle::Other("rights".to_owned()),
-            justify: CreditJustify::Center,
-            valign: CreditValign::Bottom,
-            page: 1,
-        };
-        write_credit(out, &credit);
+        for page in 1..=score.page_count.max(1) {
+            let credit = Credit {
+                text: RichText::new(score.metadata.copyright.clone()),
+                style: CreditStyle::Other("rights".to_owned()),
+                justify: CreditJustify::Center,
+                valign: CreditValign::Bottom,
+                page,
+                font_size: Some(score.copyright_font_size),
+            };
+            write_credit(out, &credit);
+        }
     }
 }
 
@@ -846,12 +876,16 @@ fn write_credit(out: &mut Out, credit: &Credit) {
         ("justify", credit.justify.musicxml_name()),
         ("valign", credit.valign.musicxml_name()),
     ];
+    let mut style = credit_style(credit);
+    if let Some(font_size) = credit.font_size {
+        style.font_size = font_size;
+    }
     write_fragments(
         out,
         "credit-words",
         &attributes,
         credit.text.fragments(),
-        &credit_style(credit),
+        &style,
     );
     out.xml.end_element();
 }

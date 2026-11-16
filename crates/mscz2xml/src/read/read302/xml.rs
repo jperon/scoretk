@@ -151,49 +151,6 @@ impl Node {
         out.push('>');
     }
 
-    /// Contenu mixte re-sérialisé comme `XmlReader::readXml`, éléments vides
-    /// auto-fermants compris.
-    ///
-    /// Les noms d'instruments de MuseScore 3.x conservent leur balisage
-    /// (`<font size="…"></font>Piano`) ; `Instrument::nameAsPlainText` le rend
-    /// tel quel et `XmlReader::readXml` écrit les éléments vides en
-    /// auto-fermant (`<font size="…"/>`).
-    pub(crate) fn inner_markup_self_closing(&self) -> String {
-        let mut out = String::new();
-        self.write_content_self_closing(&mut out);
-        out
-    }
-
-    fn write_content_self_closing(&self, out: &mut String) {
-        for item in &self.content {
-            match item {
-                Content::Text(text) => escape_markup(out, text),
-                Content::Element(node) => node.write_markup_self_closing(out),
-            }
-        }
-    }
-
-    fn write_markup_self_closing(&self, out: &mut String) {
-        out.push('<');
-        out.push_str(&self.name);
-        for (name, value) in &self.attrs {
-            out.push(' ');
-            out.push_str(name);
-            out.push_str("=\"");
-            escape_markup(out, value);
-            out.push('"');
-        }
-        if self.content.is_empty() {
-            out.push_str("/>");
-            return;
-        }
-        out.push('>');
-        self.write_content_self_closing(out);
-        out.push_str("</");
-        out.push_str(&self.name);
-        out.push('>');
-    }
-
     fn write_content(&self, out: &mut String) {
         for item in &self.content {
             match item {

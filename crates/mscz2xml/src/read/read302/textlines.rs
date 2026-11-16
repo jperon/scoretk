@@ -100,7 +100,7 @@ pub(crate) fn read_swing(node: &Node) -> Option<SwingParameters> {
 }
 
 /// Lit le texte d'un cadre `TBox` (`TBox::text()`).
-pub(crate) fn read_tbox(node: &Node, measure_index: usize) -> Option<TboxText> {
+pub(crate) fn read_tbox(node: &Node, measure_index: usize, below: bool) -> Option<TboxText> {
     for text_node in node.children_named("Text") {
         let markup = text_node
             .child("text")
@@ -109,7 +109,17 @@ pub(crate) fn read_tbox(node: &Node, measure_index: usize) -> Option<TboxText> {
         if text.is_empty() {
             continue;
         }
-        let mut tbox = TboxText::new(text, measure_index);
+        let target = if below {
+            measure_index.saturating_sub(1)
+        } else {
+            measure_index
+        };
+        let mut tbox = TboxText::new(text, target);
+        if below {
+            tbox.placement = crate::model::Placement::Below;
+        }
+        // Style « Frame » de MuseScore 3.x : 12 points.
+        tbox.font_size = Some(12.0);
         if let Some(offset) = text_node.child("offset") {
             if offset
                 .attr("y")

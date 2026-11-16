@@ -69,6 +69,10 @@ pub struct Score {
     pub credits: Vec<Credit>,
     /// Textes de cadres `TBox`, exportés en `<words>` de direction.
     pub tbox_texts: Vec<TboxText>,
+    /// Taille de police des crédits de copyright (défaut de style du fichier).
+    pub copyright_font_size: f64,
+    /// Nombre de pages de la partition (pour répéter le copyright).
+    pub page_count: u32,
     /// Arène des notes.
     pub notes: Vec<Note>,
     /// Arène des n-olets.
@@ -101,6 +105,8 @@ impl Score {
             measures: Vec::new(),
             credits: Vec::new(),
             tbox_texts: Vec::new(),
+            copyright_font_size: super::text::DEFAULT_TEXT_SIZE,
+            page_count: 1,
             notes: Vec::new(),
             tuplets: Vec::new(),
             spanners: Vec::new(),

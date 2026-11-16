@@ -26,6 +26,7 @@
 
 mod annotations;
 mod chord;
+mod frames;
 mod measure;
 mod nuances;
 mod part;
@@ -162,7 +163,9 @@ impl Reader {
         let Some(name) = node.attr("name") else {
             return;
         };
-        let text = node.text().trim().to_owned();
+        // `Score::setMetaTag` conserve le texte tel quel (retours à la ligne
+        // compris).
+        let text = node.text();
         let metadata = &mut self.score.metadata;
         match name {
             "workTitle" => metadata.work_title = text,
@@ -186,6 +189,7 @@ impl Reader {
 
         let mut tick = Fraction::ZERO;
         let mut index = 0usize;
+        let mut page = 1u32;
         for child in node.children() {
             match child.name() {
                 "Measure" => {
@@ -206,19 +210,33 @@ impl Reader {
                     }
                 }
                 // Texte de cadre exporté en `<words>` au début de la mesure
-                // qui suit (`tboxTextAsWords`).
+                // (`tboxTextAsWords`). Un cadre suivi d'un saut de page est
+                // au-dessous du système précédent.
                 "TBox" => {
-                    if let Some(text) = textlines::read_tbox(child, index) {
+                    let below = index > 0 && frames::page_break(child);
+                    if let Some(text) = textlines::read_tbox(child, index, below) {
                         self.score.add_tbox_text(text);
                     }
                 }
-                // TODO(parité): `<HBox>`, `<VBox>`, `<TBox>` et `<FBox>` sont
-                // des cadres sans durée musicale ; l'export en tire des textes,
-                // des sauts de page et, pour un texte de style « title »,
-                // `<work-title>` quand le `metaTag` correspondant est vide
-                // (voir `moonlight.mscx`).
+                "VBox" => {
+                    if staff == 0 {
+                        for credit in frames::read_vbox(child, page) {
+                            self.score.add_credit(credit);
+                        }
+                    }
+                }
+                // TODO(parité): `<HBox>` et `<FBox>` ne portent pas de texte ;
+                // seuls leurs sauts de page comptent (voir plus bas).
                 _ => {}
             }
+            if frames::page_break(child) {
+                page += 1;
+            }
+        }
+        if staff == 0 {
+            self.score.page_count = page;
+            // Style « rights » de MuseScore 3.x : 8 points.
+            self.score.copyright_font_size = 8.0;
         }
     }
 
