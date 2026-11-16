@@ -341,11 +341,11 @@ Fichiers : repeat66 (v4), keysig_78216 (v3).
 
 Le test de bout en bout couvre `v3/` avec la même normalisation. Les fichiers
 conformes constituent `EXPECTED_CONFORMANT_V3` (Beam-CrossM1, barlinedelete,
-clef-1, copypaste_tuplet_01, grace, keysig_78216, lyricsline01, measure-4,
-repeat01, repeat06, repeat07, repeat11, repeat20, repeat39, selectionfilter1,
-testBreaksPage, testChordSymbols, testHairpinDynamics, testHarmony6,
-testTboxWords1, testTuplets8, testWedge4, timesig-05, undoResequenceMeasure,
-voices).
+change, clef-1, copypaste_tuplet_01, grace, keysig_78216, lyricsline01,
+measure-4, repeat01, repeat06, repeat07, repeat11, repeat20, repeat39,
+selectionfilter1, testBreaksPage, testChordSymbols, testHairpinDynamics,
+testHarmony6, testMultiInstrumentPart3, testTboxWords1, testTuplets8,
+testWedge4, timesig-05, undoResequenceMeasure, voices).
 
 Les points 1 à 5 et 9 à 12 sont corrigés ; restent les points 6 à 8 et 13.
 
