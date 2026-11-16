@@ -6,6 +6,7 @@
 //! [`Staff::part`] sont maintenus cohérents par [`super::Score::add_staff`].
 
 use super::ids::{PartId, StaffId};
+use super::segment::{Clef, ClefType};
 
 /// Instrument d'une partie.
 ///
@@ -123,6 +124,12 @@ pub struct Staff {
     pub lines: u8,
     /// Vrai si la portée est en petit format.
     pub small: bool,
+    /// Clef par défaut de la portée (`Staff::defaultClefType()`).
+    ///
+    /// MuseScore s'en sert quand aucun `<Clef>` n'ouvre la partition : la mise
+    /// en page génère alors une clef de ce type au début de la première mesure.
+    /// Par défaut, la paire vaut sol/sol comme `ClefTypeList`.
+    pub default_clef: Clef,
 }
 
 impl Staff {
@@ -133,6 +140,7 @@ impl Staff {
             part,
             lines: 5,
             small: false,
+            default_clef: Clef::new(ClefType::G),
         }
     }
 }

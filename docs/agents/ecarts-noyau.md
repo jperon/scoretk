@@ -38,6 +38,11 @@ aucun de ces écarts n'a été corrigé dans cette tâche.
 
 ## 1. Clef par défaut absente — 14 fichiers
 
+**Corrigé** (lecteur/modèle/export) : `Staff::default_clef` reprend
+`<defaultClef>` (ou ses variantes concert/transposée) et l'export écrit une
+clef du type par défaut de la portée quand aucun `<Clef>` n'ouvre la partition,
+comme la mise en page de MuseScore.
+
 Fichiers : beamStemDir, changevisibility, copypaste_parts, dynamics,
 hairpin_dynamic_inside, linked-ties, mmrest, part-textlines, repeat65,
 tenuto_accent, testExcludeInvisibleElements, testLocalTimesig1, timesig-09,

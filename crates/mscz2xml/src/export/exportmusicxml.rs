@@ -1299,26 +1299,21 @@ impl Context<'_> {
             find_segment(measure, SegmentType::HeaderClef, measure.start_tick)
         };
 
-        if let Some(segment) = segment {
-            for (position, staff_id) in part.staves.iter().enumerate() {
-                let track = Track::new(*staff_id, 0);
-                if let Some(SegmentItem::Clef(clef)) = segment.element(track) {
-                    let xml_staff = if staves > 1 { position + 1 } else { 0 };
+        for (position, staff_id) in part.staves.iter().enumerate() {
+            let track = Track::new(*staff_id, 0);
+            let xml_staff = if staves > 1 { position + 1 } else { 0 };
+            match segment.and_then(|segment| segment.element(track)) {
+                Some(SegmentItem::Clef(clef)) => {
                     self.clef(out, xml_staff, self.active_clef(clef), &[]);
                 }
-            }
-        }
-
-        // Clef par défaut si le segment d'en-tête existe mais n'en porte pas.
-        if measure.start_tick.is_zero() {
-            if let Some(segment) = find_segment(measure, SegmentType::HeaderClef, Tick::ZERO) {
-                for (position, staff_id) in part.staves.iter().enumerate() {
-                    let track = Track::new(*staff_id, 0);
-                    if !matches!(segment.element(track), Some(SegmentItem::Clef(_))) {
-                        let xml_staff = if staves > 1 { position + 1 } else { 0 };
-                        self.clef(out, xml_staff, ClefType::G, &[("print-object", "no")]);
-                    }
+                // Aucune clef n'ouvre la partition : la mise en page en génère
+                // une du type par défaut de la portée (`Staff::clefType`), que
+                // `findAndExportClef` exporte comme une clef ordinaire.
+                _ if measure.start_tick.is_zero() => {
+                    let clef = self.score.staff(*staff_id).default_clef;
+                    self.clef(out, xml_staff, self.active_clef(&clef), &[]);
                 }
+                _ => {}
             }
         }
     }

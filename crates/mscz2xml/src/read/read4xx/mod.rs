@@ -181,6 +181,7 @@ impl Reader {
             if let Some(staff_type) = staff_element.child("StaffType") {
                 staff.lines = staff_lines(staff_type);
             }
+            staff.default_clef = read_default_clef(staff_element);
             self.score.add_staff_with(part_id, staff);
             self.staff_ids
                 .push(staff_element.attr_i64("id").map(|id| id as u32));
@@ -1264,6 +1265,32 @@ fn read_time_sig(element: &Element) -> TimeSig {
         stretch,
         courtesy: false,
     }
+}
+
+/// Clef par défaut d'une portée (`TRead::readProperties(Staff*)`).
+///
+/// `<defaultClef>` fixe les deux clefs, `<defaultConcertClef>` et
+/// `<defaultTransposingClef>` une seule ; sans élément, la paire vaut
+/// sol/sol comme `ClefTypeList`.
+fn read_default_clef(element: &Element) -> Clef {
+    let mut clef = Clef::new(ClefType::G);
+    for child in &element.children {
+        let value = child.text();
+        match child.name.as_str() {
+            "defaultClef" => {
+                let kind = names::clef_type(value).unwrap_or(ClefType::G);
+                clef = Clef::new(kind);
+            }
+            "defaultConcertClef" => {
+                clef.concert = names::clef_type(value).unwrap_or(ClefType::G);
+            }
+            "defaultTransposingClef" => {
+                clef.transposed = names::clef_type(value).unwrap_or(ClefType::G);
+            }
+            _ => {}
+        }
+    }
+    clef
 }
 
 /// Lecture d'une clef.
