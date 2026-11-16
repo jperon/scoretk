@@ -21,6 +21,7 @@ use crate::Result;
 
 mod exportmusicxml;
 mod pitch;
+mod repeats;
 mod writer;
 
 #[cfg(test)]
