@@ -907,6 +907,74 @@ fn divisions_calculees() {
 }
 
 #[test]
+fn deux_parties_et_durees_pointees() {
+    let mut score = Score::new();
+
+    let first_part = score.add_part(Part::new("Piano 1", "Pno. 1"));
+    score.part_mut(first_part).instrument = piano_instrument();
+    let first_staff = score.add_staff(first_part);
+    let first_track = Track::new(first_staff, 0);
+
+    let second_part = score.add_part(Part::new("Piano 2", "Pno. 2"));
+    score.part_mut(second_part).instrument = piano_instrument();
+    let second_staff = score.add_staff(second_part);
+    let second_track = Track::new(second_staff, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, first_track, ClefType::G);
+    ajouter_clef(&mut score, &mut measure, second_track, ClefType::F);
+    ajouter_armure(&mut score, &mut measure, first_track, 0, KeyMode::Unknown);
+    ajouter_armure(&mut score, &mut measure, second_track, -3, KeyMode::Unknown);
+    ajouter_indication_mesure(&mut score, &mut measure, first_track, 4, 4);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        first_track,
+        Fraction::ZERO,
+        Duration::with_dots(DurationType::Quarter, 1),
+        &[(60, tpc::C)],
+    );
+    ajouter_silence(
+        &mut score,
+        &mut measure,
+        first_track,
+        Fraction::new(3, 8),
+        Duration::eighth(),
+    );
+    ajouter_silence(
+        &mut score,
+        &mut measure,
+        first_track,
+        Fraction::HALF,
+        Duration::half(),
+    );
+    ajouter_silence_mesure(&mut score, &mut measure, second_track, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert_eq!(xml.matches("<part id=").count(), 2);
+    assert_eq!(xml.matches("<measure number=\"1\">").count(), 2);
+    assert!(xml.contains("<fifths>-3</fifths>"));
+    // La noire pointée est une noire suivie d'un point.
+    assert!(xml.contains("<type>quarter</type>\n        <dot/>"));
+    // La croche de la seconde partie est aussi une croche.
+    assert_eq!(xml.matches("<type>eighth</type>").count(), 1);
+
+    let first_part_xml = xml
+        .split("<part id=\"P2\">")
+        .next()
+        .expect("première partie");
+    let second_part_xml = xml
+        .split("<part id=\"P2\">")
+        .nth(1)
+        .expect("seconde partie");
+    assert!(first_part_xml.contains("<fifths>0</fifths>"));
+    assert!(!first_part_xml.contains("<fifths>-3</fifths>"));
+    assert!(second_part_xml.contains("<fifths>-3</fifths>"));
+    assert!(second_part_xml.contains("<rest measure=\"yes\"/>"));
+}
+
+#[test]
 fn corpus_linked_ties() {
     let mut score = Score::new();
     let part_id = score.add_part(Part::new("Flute", "Fl."));
