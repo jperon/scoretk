@@ -414,6 +414,9 @@ impl<'a> Context<'a> {
     }
 
     /// Écrit `<part-list>` (`partList`).
+    ///
+    /// TODO(parité): `<part-group>` (accolades, crochets, portées liées), qui
+    /// demande les informations de bracket absentes du modèle.
     fn part_list(&self, out: &mut Out) {
         let hidden_name = self.score.parts.len() == 1;
 
@@ -1153,7 +1156,9 @@ impl Context<'_> {
         if keysigs.is_empty() {
             // MuseScore écrit toujours une armure au tick zéro.
             if measure.start_tick.is_zero() {
-                self.keysig(out, 0, Key::C, KeyMode::Major);
+                // MuseScore crée une armure factice à l'armure inconnue : seul
+                // <fifths> est écrit.
+                self.keysig(out, 0, Key::C, KeyMode::Unknown);
             }
         } else {
             let first = self.active_key(keysigs[0].1);
@@ -2056,7 +2061,9 @@ fn barline_style(kind: BarLineType) -> Option<&'static str> {
         BarLineType::End | BarLineType::EndRepeat | BarLineType::EndStartRepeat => {
             Some("light-heavy")
         }
-        BarLineType::Dotted | BarLineType::DoubleDotted => Some("dotted"),
+        BarLineType::Dotted => Some("dotted"),
+        // MuseScore ne produit pas de style pour cette variante.
+        BarLineType::DoubleDotted => None,
         BarLineType::Short | BarLineType::DoubleShort => Some("short"),
         BarLineType::Tick => Some("tick"),
         BarLineType::StartRepeat => None,

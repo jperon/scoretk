@@ -788,6 +788,125 @@ fn comparer(nom: &str, expected: &str, actual: &str) {
 }
 
 #[test]
+fn armure_par_defaut_et_forward() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    // Aucune armure explicite : MuseScore écrit do majeur au tick zéro, sans
+    // mode. La note commence à la deuxième noire : un <forward> la précède,
+    // et un autre comble la fin de mesure.
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::QUARTER,
+        Duration::quarter(),
+        &[(60, tpc::C)],
+    );
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<fifths>0</fifths>"));
+    assert!(!xml.contains("<mode>"));
+    assert!(xml.contains("<forward>\n        <duration>1</duration>\n        </forward>"));
+    assert!(xml.contains("<forward>\n        <duration>2</duration>\n        </forward>"));
+
+    assert_eq!(super::calc_divisions(&score), 1);
+}
+
+#[test]
+fn reprises_et_barre_mediane() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    measure.start_bar_line = BarLineType::StartRepeat;
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::half(),
+        &[(60, tpc::C)],
+    );
+    let mut segment = Segment::new(SegmentType::BarLine, Fraction::HALF, score.staves.len());
+    segment.set_element(
+        track,
+        SegmentItem::BarLine(crate::model::BarLine::new(BarLineType::Double)),
+    );
+    measure.add_segment(segment);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::HALF,
+        Duration::half(),
+        &[(62, tpc::D)],
+    );
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains(
+        "<barline location=\"left\">\n        <bar-style>heavy-light</bar-style>\n        <repeat direction=\"forward\"/>\n        </barline>"
+    ));
+    assert!(xml.contains(
+        "<barline location=\"middle\">\n        <bar-style>light-light</bar-style>\n        </barline>"
+    ));
+}
+
+#[test]
+fn divisions_calculees() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::half(),
+        &[(60, tpc::C)],
+    );
+    let tuplet = score.add_tuplet(Tuplet::new(
+        Fraction::new(3, 2),
+        Fraction::new(1, 8),
+        Fraction::HALF,
+        Fraction::QUARTER,
+    ));
+    for index in 0..3 {
+        let note = score.add_note(Note::new(64, tpc::E));
+        let mut chord_rest = ChordRest::chord(Duration::eighth());
+        chord_rest.tuplet = Some(tuplet);
+        chord_rest.chord_mut().expect("accord").notes.push(note);
+        ajouter_element(
+            &mut score,
+            &mut measure,
+            track,
+            Fraction::HALF + Fraction::new(index, 12),
+            chord_rest,
+        );
+    }
+    ajouter_silence_mesure(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::HALF + Fraction::QUARTER,
+    );
+    score.add_measure(measure);
+
+    // PPCM(4, 12) / 4 = 3.
+    assert_eq!(super::calc_divisions(&score), 3);
+}
+
+#[test]
 fn corpus_linked_ties() {
     let mut score = Score::new();
     let part_id = score.add_part(Part::new("Flute", "Fl."));
