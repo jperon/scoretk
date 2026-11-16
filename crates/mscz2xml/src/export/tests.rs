@@ -6,10 +6,11 @@
 
 use crate::model::{
     tpc, Accidental, AccidentalType, Annotation, Articulation, ArticulationType, BarLineType,
-    BeamMode, ChordRest, Clef, ClefType, Duration, DurationType, Fraction, GraceChord, GraceType,
-    Harmony, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadType,
-    NoteId, Part, PartId, Score, Segment, SegmentItem, SegmentType, Staff, StaffId, TimeSig, Track,
-    Transpose, Tuplet,
+    BeamMode, ChordRest, Clef, ClefType, Credit, CreditStyle, Duration, DurationType, Fraction,
+    GraceChord, GraceType, Harmony, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
+    Measure, Note, NoteHeadType, NoteId, Part, PartId, Placement, RehearsalFrame, RehearsalMark,
+    RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffId, StaffText, SystemText,
+    Tempo, TimeSig, Track, Transpose, Tuplet,
 };
 
 use super::{export_musicxml, export_musicxml_with, ExportOptions};
@@ -1455,4 +1456,296 @@ fn corpus_paroles() {
     score.measures[7].end_bar_line = BarLineType::End;
 
     comparer_au_corpus("copypastesymbollist-lyrics", &score);
+}
+
+// ----------------------------------------------------------------------
+// Textes : directions, métronome, repères, crédits
+// ----------------------------------------------------------------------
+
+/// Ajoute une annotation au segment d'accords du tick demandé.
+fn ajouter_annotation(
+    measure: &mut Measure,
+    staves: usize,
+    track: Track,
+    tick: Fraction,
+    annotation: Annotation,
+) {
+    // MuseScore partage un segment entre toutes les portées : on le cherche
+    // d'abord avec un élément sur la piste de l'annotation.
+    let index = measure
+        .segments
+        .iter()
+        .position(|segment| {
+            segment.kind == SegmentType::ChordRest
+                && segment.tick == tick
+                && segment.element(track).is_some()
+        })
+        .or_else(|| {
+            measure
+                .segments
+                .iter()
+                .position(|segment| segment.kind == SegmentType::ChordRest && segment.tick == tick)
+        });
+    match index {
+        Some(index) => measure.segments[index].add_annotation(track, annotation),
+        None => {
+            let mut segment = Segment::new(SegmentType::ChordRest, tick, staves);
+            segment.add_annotation(track, annotation);
+            measure.add_segment(segment);
+        }
+    }
+}
+
+#[test]
+fn textes_de_portee_et_de_systeme() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Piano", "Pno."));
+    score.part_mut(part_id).instrument = piano_instrument();
+    let first = score.add_staff(part_id);
+    let second = score.add_staff_with(part_id, Staff::new(part_id));
+    let first_track = Track::new(first, 0);
+    let second_track = Track::new(second, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, first_track, Fraction::ZERO);
+    ajouter_silence_mesure(&mut score, &mut measure, second_track, Fraction::ZERO);
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        first_track,
+        Fraction::ZERO,
+        Annotation::StaffText(StaffText::new("doux")),
+    );
+    let mut below = StaffText::new("pédale");
+    below.placement = Placement::Below;
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        second_track,
+        Fraction::ZERO,
+        Annotation::StaffText(below),
+    );
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        second_track,
+        Fraction::ZERO,
+        Annotation::SystemText(SystemText::new("Chœur")),
+    );
+    let mut invisible = StaffText::new("caché");
+    invisible.visible = false;
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        first_track,
+        Fraction::ZERO,
+        Annotation::StaffText(invisible),
+    );
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+
+    // Portée 1 : texte au-dessus, rattaché à `<staff>1</staff>`.
+    assert!(xml.contains(
+        "<direction placement=\"above\">\n        <direction-type>\n          \
+         <words>doux</words>\n          </direction-type>\n        <staff>1</staff>"
+    ));
+    // Portée 2 : texte au-dessous, rattaché à `<staff>2</staff>`.
+    assert!(xml.contains(
+        "<direction placement=\"below\">\n        <direction-type>\n          \
+         <words>pédale</words>\n          </direction-type>\n        <staff>2</staff>"
+    ));
+    // Texte système : `system="only-top"` sur la direction.
+    assert!(xml.contains(
+        "<direction placement=\"above\" system=\"only-top\">\n        <direction-type>\n          \
+         <words>Chœur</words>"
+    ));
+    // Un texte invisible n'est pas exporté (`canWrite`).
+    assert!(!xml.contains("caché"));
+}
+
+#[test]
+fn tempo_avec_metronome() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+
+    let mut tempo = Tempo::new("<sym>metNoteQuarterUp</sym> = 120");
+    tempo.beats_per_second = Some(2.0);
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        track,
+        Fraction::ZERO,
+        Annotation::Tempo(tempo),
+    );
+
+    // Formule entourée de texte, avec parenthèses.
+    let mut allegro = Tempo::new("Allegro (<sym>metNoteHalfUp</sym> = 60)");
+    allegro.beats_per_second = Some(1.0);
+    allegro.placement = Placement::Below;
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        track,
+        Fraction::ZERO,
+        Annotation::Tempo(allegro),
+    );
+
+    // Tempo invisible : seul le `<sound tempo>` est exporté.
+    let mut invisible = Tempo::new("<sym>metNoteQuarterUp</sym> = 90");
+    invisible.beats_per_second = Some(1.5);
+    invisible.visible = false;
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        track,
+        Fraction::ZERO,
+        Annotation::Tempo(invisible),
+    );
+
+    score.add_measure(measure);
+    let xml = export_musicxml(&score).expect("export");
+
+    assert!(xml.contains(
+        "<direction placement=\"above\" system=\"only-top\">\n        <direction-type>\n          \
+         <metronome parentheses=\"no\">\n            <beat-unit>quarter</beat-unit>\n            \
+         <per-minute>120</per-minute>\n            </metronome>"
+    ));
+    assert!(xml.contains("<sound tempo=\"120\"/>"));
+    // Texte à gauche, parenthèses reconnues.
+    assert!(xml.contains(">Allegro </words>"));
+    assert!(xml.contains("<metronome parentheses=\"yes\">"));
+    assert!(xml.contains("<beat-unit>half</beat-unit>"));
+    assert!(xml.contains("<per-minute>60</per-minute>"));
+    assert!(xml.contains("<sound tempo=\"60\"/>"));
+    assert!(xml.contains("<sound tempo=\"90\"/>"));
+    assert!(!xml.contains("<words>\u{ECA5} = 90"));
+}
+
+#[test]
+fn reperes_de_repetition() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+
+    // Cadre du style (rectangle) : pas d'attribut `enclosure`.
+    let mut encadre = RehearsalMark::new("A");
+    encadre.placement = Placement::Below;
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        track,
+        Fraction::ZERO,
+        Annotation::RehearsalMark(encadre),
+    );
+
+    let mut cercle = RehearsalMark::new("B");
+    cercle.frame = RehearsalFrame::Circle;
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        track,
+        Fraction::ZERO,
+        Annotation::RehearsalMark(cercle),
+    );
+
+    let mut sans_cadre = RehearsalMark::new("C");
+    sans_cadre.frame = RehearsalFrame::NoFrame;
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        track,
+        Fraction::ZERO,
+        Annotation::RehearsalMark(sans_cadre),
+    );
+
+    score.add_measure(measure);
+    let xml = export_musicxml(&score).expect("export");
+
+    assert!(xml.contains(
+        "<direction placement=\"below\">\n        <direction-type>\n          \
+         <rehearsal font-weight=\"bold\" font-size=\"14\">A</rehearsal>"
+    ));
+    assert!(xml.contains("<rehearsal enclosure=\"circle\" font-weight=\"bold\" font-size=\"14\">B"));
+    assert!(xml.contains("<rehearsal enclosure=\"none\" font-weight=\"bold\" font-size=\"14\">C"));
+}
+
+#[test]
+fn formats_de_texte_dans_words() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        track,
+        Fraction::ZERO,
+        Annotation::StaffText(StaffText::new(
+            "a<b>b</b><i>c</i><font face=\"FreeSerif\"><font size=\"16\">d</font></font><u>e</u>",
+        )),
+    );
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+
+    assert!(xml.contains("<words>a</words>"));
+    assert!(xml.contains("<words font-weight=\"bold\">b</words>"));
+    assert!(xml.contains("<words font-weight=\"normal\" font-style=\"italic\">c</words>"));
+    assert!(xml.contains(
+        "<words font-style=\"normal\" font-family=\"FreeSerif\" font-size=\"16\">d</words>"
+    ));
+    // `</font>` ne restaure pas le format précédent (comportement MuseScore).
+    assert!(xml.contains("<words underline=\"1\">e</words>"));
+}
+
+#[test]
+fn credits_et_metadonnees_de_page_de_titre() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    score.metadata.work_title = "Œuvre".to_owned();
+    score.metadata.work_number = "Op. 1".to_owned();
+    score.metadata.movement_title = "Mouvement".to_owned();
+    score.metadata.composer = "Compositrice".to_owned();
+    score.metadata.lyricist = "Parolier".to_owned();
+    score.metadata.copyright = "© 2026".to_owned();
+    score.add_credit(Credit::new(RichText::new("Titre"), CreditStyle::Title));
+    score.add_credit(Credit::new(
+        RichText::new("<b>Sous-titre</b>"),
+        CreditStyle::Subtitle,
+    ));
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+
+    assert!(xml.contains(
+        "<work>\n    <work-number>Op. 1</work-number>\n    <work-title>Œuvre</work-title>\n    </work>"
+    ));
+    assert!(xml.contains("<movement-title>Mouvement</movement-title>"));
+    assert!(xml.contains("<creator type=\"composer\">Compositrice</creator>"));
+    assert!(xml.contains("<creator type=\"lyricist\">Parolier</creator>"));
+    assert!(xml.contains(
+        "<credit page=\"1\">\n    <credit-type>title</credit-type>\n    \
+         <credit-words justify=\"center\" valign=\"top\" font-size=\"22\">Titre</credit-words>"
+    ));
+    assert!(xml.contains("<credit-type>subtitle</credit-type>"));
+    assert!(xml.contains("<credit-words justify=\"center\" valign=\"top\" font-weight=\"bold\" font-size=\"14\">Sous-titre</credit-words>"));
+    assert!(xml.contains("<credit-type>rights</credit-type>"));
+    assert!(
+        xml.contains("<credit-words justify=\"center\" valign=\"bottom\">© 2026</credit-words>")
+    );
 }

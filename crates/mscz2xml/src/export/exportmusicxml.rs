@@ -32,6 +32,7 @@ use crate::model::{
 use crate::Result;
 
 use super::pitch;
+use super::text;
 use super::writer::XmlWriter;
 
 /// Logiciel annoncé dans `<encoding>`, identique à MuseScore 4.7.
@@ -92,11 +93,11 @@ pub fn calc_divisions(score: &Score) -> u32 {
 }
 
 /// État d'écriture : tampon, divisions, position courante et `attributes`.
-struct Out {
-    xml: XmlWriter,
-    div: u32,
-    tick: Tick,
-    in_attributes: bool,
+pub(crate) struct Out {
+    pub(crate) xml: XmlWriter,
+    pub(crate) div: u32,
+    pub(crate) tick: Tick,
+    pub(crate) in_attributes: bool,
 }
 
 impl Out {
@@ -110,7 +111,7 @@ impl Out {
     }
 
     /// Ouvre ou ferme `<attributes>` à la demande, comme `Attributes::doAttr`.
-    fn attr(&mut self, open: bool) {
+    pub(crate) fn attr(&mut self, open: bool) {
         if open && !self.in_attributes {
             self.xml.start_element("attributes", &[]);
             self.in_attributes = true;
@@ -130,7 +131,7 @@ impl Out {
     /// Reproduit `calculateTimeDeltaInDivisions` : le C++ réduit la fraction
     /// puis prend son numérateur, ce qui suppose que le PPCM des divisions
     /// rend le résultat entier.
-    fn duration_in_divisions(&self, delta: Tick) -> i64 {
+    pub(crate) fn duration_in_divisions(&self, delta: Tick) -> i64 {
         (delta * Fraction::from_integer(i64::from(self.div) * 4)).numerator()
     }
 
@@ -334,7 +335,8 @@ impl<'a> Context<'a> {
 
         self.work(out);
         self.identification(out);
-        // TODO(parité): <defaults> et <credit> (style, polices, mise en page).
+        text::write_credits(out, self.score);
+        // TODO(parité): <defaults> (style, polices, mise en page).
         self.part_list(out);
         self.write_parts(out);
 
@@ -353,6 +355,9 @@ impl<'a> Context<'a> {
                 out.xml.tag("work-title", &metadata.work_title);
             }
             out.xml.end_element();
+        }
+        if !metadata.movement_number.is_empty() {
+            out.xml.tag("movement-number", &metadata.movement_number);
         }
         if !metadata.movement_title.is_empty() {
             out.xml.tag("movement-title", &metadata.movement_title);
@@ -1511,17 +1516,42 @@ impl Context<'_> {
             if entry.track.staff() != staff_id {
                 continue;
             }
+            if !entry.annotation.visible() {
+                // `commonAnnotations` : un tempo invisible n'exporte que son
+                // `<sound tempo>`.
+                if let Annotation::Tempo(tempo) = &entry.annotation {
+                    out.attr(false);
+                    text::write_tempo_sound(out, tempo);
+                }
+                continue;
+            }
+            let offset = out.duration_in_divisions(segment.tick - out.tick);
             match &entry.annotation {
                 Annotation::Harmony(_) => {}
                 Annotation::Dynamic(dynamic) => write_dynamic(out, dynamic, xml_staff),
                 Annotation::StaffText(text) => {
-                    write_words(out, &text.text, text.placement, false, xml_staff);
+                    text::write_words(out, &text.text, text.placement, false, xml_staff, offset);
+                }
+                Annotation::Expression(text) => {
+                    text::write_words(out, &text.text, text.placement, false, xml_staff, offset);
                 }
                 Annotation::SystemText(text) => {
-                    write_words(out, &text.text, text.placement, true, xml_staff);
+                    text::write_words(out, &text.text, text.placement, true, xml_staff, offset);
                 }
-                Annotation::Tempo(tempo) => write_tempo(out, tempo, xml_staff),
-                Annotation::RehearsalMark(mark) => write_rehearsal(out, mark, xml_staff),
+                Annotation::Tempo(tempo) => text::write_tempo(out, tempo, xml_staff, offset),
+                Annotation::RehearsalMark(mark) => {
+                    text::write_rehearsal(out, mark, xml_staff, offset);
+                }
+                Annotation::InstrumentChange(change) => {
+                    text::write_words(
+                        out,
+                        &change.text,
+                        change.placement,
+                        false,
+                        xml_staff,
+                        offset,
+                    );
+                }
                 // TODO(parité): annotations non modélisées (doigtés,
                 // symboles, pédales…).
                 Annotation::Other { .. } => {}
@@ -1970,72 +2000,6 @@ fn write_dynamic(out: &mut Out, dynamic: &crate::model::Dynamic, xml_staff: usiz
     out.xml.end_element();
 }
 
-/// Écrit un texte de portée ou système (`words`).
-fn write_words(out: &mut Out, text: &str, placement: Placement, system: bool, xml_staff: usize) {
-    if text.is_empty() {
-        return;
-    }
-    out.attr(false);
-    let mut attributes: Vec<(&str, &str)> = vec![("placement", placement_name(placement))];
-    if system {
-        attributes.push(("system", "only-top"));
-    }
-    out.xml.start_element("direction", &attributes);
-    out.xml.start_element("direction-type", &[]);
-    out.xml.tag("words", text);
-    out.xml.end_element();
-    if xml_staff > 0 {
-        out.xml.tag("staff", &xml_staff.to_string());
-    }
-    out.xml.end_element();
-}
-
-/// Écrit une indication de tempo (`tempoText`, `tempoSound`).
-fn write_tempo(out: &mut Out, tempo: &crate::model::Tempo, xml_staff: usize) {
-    if tempo.text.is_empty() && tempo.beats_per_second.is_none() {
-        return;
-    }
-    out.attr(false);
-    out.xml.start_element(
-        "direction",
-        &[("placement", placement_name(tempo.placement))],
-    );
-    out.xml.start_element("direction-type", &[]);
-    // TODO(parité): <metronome> quand le texte en contient un.
-    if !tempo.text.is_empty() {
-        out.xml.tag("words", &tempo.text);
-    }
-    out.xml.end_element();
-    if xml_staff > 0 {
-        out.xml.tag("staff", &xml_staff.to_string());
-    }
-    if let Some(beats_per_second) = tempo.beats_per_second {
-        let bpm = (beats_per_second * 60.0 * 100.0).round() / 100.0;
-        out.xml
-            .tag_empty("sound", &[("tempo", &format_number(bpm, 2))]);
-    }
-    out.xml.end_element();
-}
-
-/// Écrit un repère de répétition (`rehearsal`).
-fn write_rehearsal(out: &mut Out, mark: &crate::model::RehearsalMark, xml_staff: usize) {
-    if mark.text.is_empty() {
-        return;
-    }
-    out.attr(false);
-    out.xml.start_element(
-        "direction",
-        &[("placement", placement_name(mark.placement))],
-    );
-    out.xml.start_element("direction-type", &[]);
-    out.xml.tag("rehearsal", &mark.text);
-    out.xml.end_element();
-    if xml_staff > 0 {
-        out.xml.tag("staff", &xml_staff.to_string());
-    }
-    out.xml.end_element();
-}
-
 // ----------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------
@@ -2086,7 +2050,7 @@ fn syllabic_name(syllabic: LyricsSyllabic) -> &'static str {
     }
 }
 
-fn placement_name(placement: Placement) -> &'static str {
+pub(crate) fn placement_name(placement: Placement) -> &'static str {
     match placement {
         Placement::Above => "above",
         Placement::Below => "below",
@@ -2212,7 +2176,7 @@ fn plain_text(text: &str) -> String {
 }
 
 /// Nombre formaté comme MuseScore : entier si possible, sinon arrondi.
-fn format_number(value: f64, decimals: usize) -> String {
+pub(crate) fn format_number(value: f64, decimals: usize) -> String {
     let factor = 10_f64.powi(decimals as i32);
     let rounded = (value * factor).round() / factor;
     if rounded.fract() == 0.0 && rounded.abs() < 1e15 {
