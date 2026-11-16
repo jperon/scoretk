@@ -40,6 +40,11 @@ pub struct Measure {
     /// `Measure::mmRestCount()` sur la mesure qui remplace le groupe ; `None`
     /// quand la mesure n'ouvre aucun `<multiple-rest>`.
     pub multi_measure_rest: Option<u16>,
+    /// Vrai quand un saut de section précède la mesure.
+    ///
+    /// MuseScore recommence alors la numérotation affichée à 1 et réécrit les
+    /// `<attributes>` de début de section (`<divisions>` compris).
+    pub section_break_before: bool,
     /// Marqueurs et sauts attachés à la mesure, dans l'ordre du fichier
     /// (`Measure::el()` dans MuseScore).
     pub repeat_marks: Vec<RepeatMark>,
@@ -59,6 +64,7 @@ impl Measure {
             end_bar_line: BarLineType::Normal,
             repeat_count: 0,
             multi_measure_rest: None,
+            section_break_before: false,
             repeat_marks: Vec::new(),
             segments: Vec::new(),
         }

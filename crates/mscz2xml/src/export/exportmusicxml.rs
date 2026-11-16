@@ -25,13 +25,14 @@ use std::collections::BTreeSet;
 use crate::model::chord::ChordRestKind;
 use crate::model::{
     Accidental, AccidentalType, Annotation, BeamMode, Chord, ChordRest, Clef, ClefType, Duration,
-    Fraction, GraceType, Harmony, InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
-    Measure, Note, NoteHeadGroup, NoteHeadType, Part, Placement, Score, Segment, SegmentItem,
-    SegmentType, SpannerType, StaffId, StemDirection, Tempo, TempoKind, Tick, TimeSig, TimeSigType,
-    Track, Tuplet, TupletId, TupletNumberType, VOICES,
+    Fraction, GraceType, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
+    LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part, Placement, Score, Segment,
+    SegmentItem, SegmentType, SpannerType, StaffId, StemDirection, Tempo, TempoKind, Tick, TimeSig,
+    TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::Result;
 
+use super::harmony;
 use super::layout;
 use super::notations;
 use super::nuances::{self, Nuances};
@@ -485,12 +486,38 @@ impl<'a> Context<'a> {
     /// demande les informations de bracket absentes du modèle.
     fn part_list(&self, out: &mut Out) {
         let hidden_name = self.score.parts.len() == 1;
+        // `rebuildMidiMapping` attribue les canaux libres dans l'ordre des
+        // parties, instruments puis canaux. Les canaux écrits dans le fichier
+        // sont réservés d'avance et priment. Le canal 10 (percussion) reste
+        // libre pour les instruments mélodiques.
+        let mut used: BTreeSet<usize> = self
+            .score
+            .parts
+            .iter()
+            .flat_map(Part::instruments)
+            .filter_map(|instrument| instrument.midi_channel.map(usize::from))
+            .collect();
+        let mut next_channel = 0usize;
+        let mut take_free = || {
+            while used.contains(&next_channel) || next_channel == 9 {
+                next_channel += 1;
+            }
+            let channel = next_channel;
+            used.insert(channel);
+            next_channel += 1;
+            channel
+        };
 
         out.xml.start_element("part-list", &[]);
+        // `partList` : groupes de parties ouverts par les accolades du premier
+        // personnel, fermés quand `staffCount` atteint leur fin.
+        let mut part_group_end: Vec<Option<usize>> = vec![None; 32];
+        let mut staff_count = 0usize;
         for (index, part) in self.score.parts.iter().enumerate() {
             let number = index + 1;
             let part_id = format!("P{number}");
-            let instrument_id = format!("P{number}-I1");
+
+            self.part_groups(out, index, part, &mut part_group_end, staff_count);
 
             out.xml.start_element("score-part", &[("id", &part_id)]);
 
@@ -521,44 +548,151 @@ impl<'a> Context<'a> {
                 }
             }
 
-            out.xml
-                .start_element("score-instrument", &[("id", &instrument_id)]);
-            let instrument_name = part.instrument.track_name.clone();
-            out.xml.tag("instrument-name", &instrument_name);
-            if !part.instrument.id.is_empty() {
-                out.xml.tag("instrument-sound", &part.instrument.id);
+            // `scoreInstrument` puis `midiInstrument` pour chaque instrument de
+            // la partie, dans l'ordre de `Part::instruments()`.
+            let instruments: Vec<&Instrument> = part.instruments().collect();
+            for (instrument_index, instrument) in instruments.iter().enumerate() {
+                let instrument_id = format!("P{number}-I{}", instrument_index + 1);
+                out.xml
+                    .start_element("score-instrument", &[("id", &instrument_id)]);
+                out.xml.tag("instrument-name", &instrument.track_name);
+                if !instrument.id.is_empty() {
+                    out.xml.tag("instrument-sound", &instrument.id);
+                }
+                out.xml.end_element();
             }
+            let has_harmony = self.part_has_harmony(part);
+            for (instrument_index, instrument) in instruments.iter().enumerate() {
+                let instrument_id = format!("P{number}-I{}", instrument_index + 1);
+                // MuseScore écrit un élément vide non auto-fermant pour
+                // <midi-device>. Le modèle n'a pas de port MIDI : celui par
+                // défaut de MuseScore vaut 1.
+                out.xml
+                    .tag_with("midi-device", &[("id", &instrument_id), ("port", "1")], "");
+                out.xml
+                    .start_element("midi-instrument", &[("id", &instrument_id)]);
+                let midi_channel = match instrument.midi_channel {
+                    Some(channel) => usize::from(channel),
+                    None => {
+                        let channel = take_free();
+                        // Le canal « harmony » du premier instrument occupe
+                        // aussi un canal, mais n'est pas exporté.
+                        if instrument_index == 0 && has_harmony {
+                            let _ = take_free();
+                        }
+                        channel
+                    }
+                };
+                // MuseScore n'écrit le canal que s'il tient dans 1..=16.
+                if midi_channel < 16 {
+                    out.xml.tag("midi-channel", &(midi_channel + 1).to_string());
+                }
+                if let Some(program) = instrument.midi_program {
+                    if u16::from(program) < 128 {
+                        out.xml
+                            .tag("midi-program", &(u16::from(program) + 1).to_string());
+                    }
+                }
+                // `midiInstrument` : volume et panorama viennent des
+                // contrôleurs du canal, avec les valeurs par défaut de
+                // MuseScore (100/127 et 64).
+                let volume = f64::from(instrument.volume.unwrap_or(100)) / 127.0 * 100.0;
+                out.xml.tag("volume", &format_number(volume, 4));
+                let pan = f64::from(instrument.pan.unwrap_or(64));
+                let pan = ((pan - 63.5) / 63.5 * 90.0) as i32;
+                out.xml.tag("pan", &pan.to_string());
+                out.xml.end_element();
+            }
+
             out.xml.end_element();
 
-            // MuseScore écrit un élément vide non auto-fermant pour
-            // <midi-device>. Le modèle n'a pas de port MIDI : celui par
-            // défaut de MuseScore vaut 1.
-            out.xml
-                .tag_with("midi-device", &[("id", &instrument_id), ("port", "1")], "");
-            out.xml
-                .start_element("midi-instrument", &[("id", &instrument_id)]);
-            // MuseScore n'écrit le canal que s'il tient dans 1..=16.
-            if number <= 16 {
-                out.xml.tag("midi-channel", &number.to_string());
-            }
-            if let Some(program) = part.instrument.midi_program {
-                if u16::from(program) < 128 {
+            staff_count += part.staves.len();
+            for (group, end) in part_group_end.iter_mut().enumerate() {
+                if end.is_some_and(|end| staff_count >= end) {
+                    let group = (group + 1).to_string();
                     out.xml
-                        .tag("midi-program", &(u16::from(program) + 1).to_string());
+                        .tag_empty("part-group", &[("type", "stop"), ("number", &group)]);
+                    *end = None;
                 }
             }
-            // `midiInstrument` : volume et panorama viennent des contrôleurs du
-            // canal, avec les valeurs par défaut de MuseScore (100/127 et 64).
-            let volume = f64::from(part.instrument.volume.unwrap_or(100)) / 127.0 * 100.0;
-            out.xml.tag("volume", &format_number(volume, 4));
-            let pan = f64::from(part.instrument.pan.unwrap_or(64));
-            let pan = ((pan - 63.5) / 63.5 * 90.0) as i32;
-            out.xml.tag("pan", &pan.to_string());
-            out.xml.end_element();
-
-            out.xml.end_element();
         }
         out.xml.end_element();
+    }
+
+    /// Ouvre les `<part-group>` d'une partie (`partList`).
+    fn part_groups(
+        &self,
+        out: &mut Out,
+        index: usize,
+        part: &Part,
+        part_group_end: &mut [Option<usize>],
+        staff_count: usize,
+    ) {
+        let Some(first_staff) = part.staves.first() else {
+            return;
+        };
+        let staff = self.score.staff(*first_staff);
+        let mut bracket_found = false;
+        for bracket in &staff.brackets {
+            if bracket.kind < 0 {
+                continue;
+            }
+            bracket_found = true;
+            // Une accolade qui couvre exactement la partie est implicite : ne
+            // pas l'exporter (MuseScore filtre les accolades « brace »).
+            if bracket.span == part.staves.len() && bracket.kind == 1 {
+                continue;
+            }
+            if index + 1 >= self.score.parts.len() {
+                continue;
+            }
+            if let Some(group) = part_group_end.iter().position(Option::is_none) {
+                self.part_group_start(
+                    out,
+                    group + 1,
+                    bracket_symbol(bracket.kind),
+                    staff.bar_line_span,
+                );
+                part_group_end[group] = Some(staff_count + bracket.span);
+            }
+        }
+        // Partie à plusieurs portées sans accolade : groupe sans symbole, pour
+        // que les portées restent liées dans MusicXML.
+        if !bracket_found && part.staves.len() > 1 {
+            if let Some(group) = part_group_end.iter().position(Option::is_none) {
+                self.part_group_start(out, group + 1, "none", false);
+                part_group_end[group] = Some(staff_count + part.staves.len());
+            }
+        }
+    }
+
+    /// Écrit un `<part-group type="start">`.
+    fn part_group_start(&self, out: &mut Out, number: usize, symbol: &str, barline: bool) {
+        let number = number.to_string();
+        out.xml
+            .start_element("part-group", &[("type", "start"), ("number", &number)]);
+        out.xml.tag("group-symbol", symbol);
+        if barline {
+            out.xml.tag("group-barline", "yes");
+        }
+        out.xml.end_element();
+    }
+
+    /// Vrai si la partie contient un accord chiffré.
+    ///
+    /// `Part::updateHarmonyChannels` ajoute un canal « harmony » à son premier
+    /// instrument, ce qui décale les canaux MIDI des instruments suivants.
+    fn part_has_harmony(&self, part: &Part) -> bool {
+        part.staves.iter().any(|staff_id| {
+            self.score.measures.iter().any(|measure| {
+                measure.segments.iter().any(|segment| {
+                    segment.annotations.iter().any(|entry| {
+                        entry.track.staff() == *staff_id
+                            && matches!(entry.annotation, Annotation::Harmony(_))
+                    })
+                })
+            })
+        })
     }
 
     /// Écrit toutes les parties (`writeParts`).
@@ -602,11 +736,14 @@ impl<'a> Context<'a> {
         let measure = &self.score.measures[measure_index];
         let part = &self.score.parts[part_index];
         let staves = part.staves.len();
-        let is_first = measure_index == 0;
+        // Un saut de section rouvre une section : la numérotation repart à 1
+        // et les `<attributes>` de début de section sont réécrits
+        // (`MeasureNumberStateHandler`).
+        let is_first = measure_index == 0 || measure.section_break_before;
 
         // TODO(parité): numérotation `implicit="yes"` des mesures d'anacrouse
         // (le modèle n'a pas l'équivalent de `excludeFromNumbering`).
-        let number = (measure_index + 1).to_string();
+        let number = self.measure_number(measure_index).to_string();
         out.xml.start_element("measure", &[("number", &number)]);
         out.in_attributes = false;
 
@@ -625,7 +762,12 @@ impl<'a> Context<'a> {
         if is_first && staves > 1 {
             out.xml.tag("staves", &staves.to_string());
         }
-        // TODO(parité): <instruments> pour les parties multi-instruments.
+        if is_first && !part.instrument_changes.is_empty() {
+            out.xml.tag(
+                "instruments",
+                &(part.instrument_changes.len() + 1).to_string(),
+            );
+        }
         self.write_measure_clefs(out, measure, measure_index, part);
         if is_first {
             self.write_staff_details(out, part);
@@ -647,7 +789,7 @@ impl<'a> Context<'a> {
         // Les textes de `TBox` ne sont écrits que par la première partie, au
         // début de la mesure qui suit le cadre (`tboxTextAsWords`).
         if part_index == 0 {
-            out.attr(false);
+            // `write_tbox` ferme les attributs lui-même s'il écrit un texte.
             textlines::write_tboxes(out, self, measure_index);
         }
 
@@ -750,7 +892,7 @@ impl<'a> Context<'a> {
                         }
                     }
                     if annotation_track(segment, staff_id) == Some(track) {
-                        self.harmonies(out, segment, staff_id);
+                        self.harmonies(out, measure, segment, staff_id, track);
                         self.annotations(out, segment, staff_id, xml_staff);
                     }
                     // Débuts de lignes de texte (`spannerStart`).
@@ -897,12 +1039,12 @@ impl<'a> Context<'a> {
     }
 
     /// Transposition chromatique de la portée, en demi-tons.
-    fn transpose_chromatic(&self, staff_id: StaffId) -> i32 {
+    fn transpose_chromatic(&self, staff_id: StaffId, tick: Tick) -> i32 {
         if self.options.concert_pitch {
             return 0;
         }
         let part = self.score.part(self.score.staff(staff_id).part);
-        part.instrument
+        part.instrument_at(tick)
             .transpose
             .map_or(0, |transpose| transpose.chromatic)
     }
@@ -1180,6 +1322,12 @@ impl Context<'_> {
         }
     }
 
+    /// Rang de la partie à laquelle appartient une portée.
+    fn part_index_for_staff(&self, staff: StaffId) -> Option<usize> {
+        let part_id = self.score.staff(staff).part;
+        self.score.parts.iter().position(|part| part.id == part_id)
+    }
+
     /// Écrit un accord (`chord`).
     #[allow(clippy::too_many_arguments)]
     fn chord(
@@ -1205,7 +1353,7 @@ impl Context<'_> {
             |duration| duration.ticks(),
         );
         let voice = voice_number(xml_staff, track.voice());
-        let transpose = self.transpose_chromatic(track.staff());
+        let transpose = self.transpose_chromatic(track.staff(), segment_tick);
         // Hauteur écrite : une ottava décale l'octave exportée.
         let ottava = ottava::shift(self.score, track.staff(), segment_tick);
 
@@ -1251,7 +1399,16 @@ impl Context<'_> {
                 }
             }
 
-            // TODO(parité): <instrument> pour les parties multi-instruments.
+            // `<instrument>` désigne l'instrument en vigueur quand la partie
+            // en change en cours de route (`m_instrMap.size() > 1`).
+            if let Some(part_index) = self.part_index_for_staff(track.staff()) {
+                let part = &self.score.parts[part_index];
+                if !part.instrument_changes.is_empty() {
+                    let index = part.instrument_index_at(segment_tick);
+                    let id = format!("P{}-I{}", part_index + 1, index + 1);
+                    out.xml.tag_empty("instrument", &[("id", &id)]);
+                }
+            }
 
             out.xml.tag("voice", &voice.to_string());
             write_type(out, notated, chord, note, grace);
@@ -1277,7 +1434,10 @@ impl Context<'_> {
             write_notehead(out, note, chord, duration);
 
             if xml_staff > 0 {
-                out.xml.tag("staff", &xml_staff.to_string());
+                // `<staffMove>` place l'accord sur l'autre portée de la partie
+                // (croisement de mains), comme `staff + chord->staffMove()`.
+                let staff = xml_staff as i32 + i32::from(chord.staff_move);
+                out.xml.tag("staff", &staff.to_string());
             }
 
             if first && !grace {
@@ -1461,6 +1621,15 @@ impl Context<'_> {
 // ----------------------------------------------------------------------
 
 impl Context<'_> {
+    /// Numéro affiché d'une mesure, remis à 1 après un saut de section.
+    fn measure_number(&self, index: usize) -> usize {
+        let start = self.score.measures[..=index]
+            .iter()
+            .rposition(|measure| measure.section_break_before)
+            .unwrap_or(0);
+        index - start + 1
+    }
+
     /// Écrit les armures et indications de mesure (`keysigTimesig`).
     fn keysig_timesig(&self, out: &mut Out, measure: &Measure, part: &Part) {
         let mut keysigs: Vec<(usize, &KeySig)> = Vec::new();
@@ -1489,9 +1658,12 @@ impl Context<'_> {
             }
         } else {
             let first = self.active_key(keysigs[0].1);
-            let single = keysigs
-                .iter()
-                .all(|(_, keysig)| self.active_key(keysig) == first);
+            // `keysigTimesig` n'écrit une armure commune que si toutes les
+            // portées en ont une, identique ; sinon chaque armure est numérotée.
+            let single = keysigs.len() == part.staves.len()
+                && keysigs
+                    .iter()
+                    .all(|(_, keysig)| self.active_key(keysig) == first);
             if single {
                 let keysig = keysigs[0].1;
                 self.keysig(out, 0, first, keysig.mode);
@@ -1754,14 +1926,40 @@ impl Context<'_> {
 // ----------------------------------------------------------------------
 
 impl Context<'_> {
-    /// Écrit les accords chiffrés du segment (`harmonies`).
-    fn harmonies(&self, out: &mut Out, segment: &Segment, staff_id: StaffId) {
+    /// Écrit les accords chiffrés du segment (`segmentHarmonies`, `harmonies`).
+    ///
+    /// MuseScore range un accord sans note dans un segment `ChordRest` vide ;
+    /// MusicXML impose de l'écrire avant la note suivante avec un `<offset>`.
+    /// On explore donc les segments suivants jusqu'au prochain élément de la
+    /// piste, comme `harmonies`.
+    fn harmonies(
+        &self,
+        out: &mut Out,
+        measure: &Measure,
+        segment: &Segment,
+        staff_id: StaffId,
+        track: Track,
+    ) {
+        self.segment_harmonies(out, segment, staff_id, Tick::ZERO);
+        for next in &measure.segments {
+            if !next.kind.is_chord_rest_type() || next.tick <= segment.tick {
+                continue;
+            }
+            if next.element(track).is_some() {
+                break;
+            }
+            self.segment_harmonies(out, next, staff_id, next.tick - segment.tick);
+        }
+    }
+
+    /// Écrit les accords d'un segment avec le décalage donné.
+    fn segment_harmonies(&self, out: &mut Out, segment: &Segment, staff_id: StaffId, offset: Tick) {
         for entry in &segment.annotations {
             if entry.track.staff() != staff_id {
                 continue;
             }
             if let Annotation::Harmony(harmony) = &entry.annotation {
-                write_harmony(out, harmony);
+                harmony::write(out, harmony, offset);
             }
         }
     }
@@ -2249,10 +2447,20 @@ fn write_accidental(out: &mut Out, accidental: &Accidental) {
         return;
     };
     let mut attributes: Vec<(&str, &str)> = Vec::new();
+    // `writeAccidental` : le rôle utilisateur rend l'altération d'avertissement.
     if accidental.bracket {
+        if accidental.user {
+            attributes.push(("editorial", "yes"));
+        }
         attributes.push(("bracket", "yes"));
     } else if accidental.parentheses {
+        if accidental.user {
+            attributes.push(("cautionary", "yes"));
+        }
         attributes.push(("parentheses", "yes"));
+    } else if accidental.user {
+        attributes.push(("cautionary", "yes"));
+        attributes.push(("parentheses", "no"));
     }
     // TODO(parité): smufl pour les altérations exotiques, taille, couleur.
     out.xml.tag_with("accidental", &attributes, name);
@@ -2272,66 +2480,6 @@ pub(crate) fn accidental_name(kind: AccidentalType) -> Option<&'static str> {
         AccidentalType::TripleSharp => Some("triple-sharp"),
         AccidentalType::None | AccidentalType::Other(_) => None,
     }
-}
-
-/// Écrit un accord chiffré (`harmony`).
-fn write_harmony(out: &mut Out, harmony: &Harmony) {
-    out.attr(false);
-    let mut attributes: Vec<(&str, String)> = Vec::new();
-    if harmony.placement == Placement::Below {
-        attributes.push(("placement", "below".to_owned()));
-    }
-    attributes.push(("print-frame", "no".to_owned()));
-    let borrowed = borrow_attributes(&attributes);
-
-    out.xml.start_element("harmony", &borrowed);
-
-    let text = if !harmony.text.is_empty() {
-        harmony.text.as_str()
-    } else {
-        harmony.kind.as_str()
-    };
-    let kind = musicxml_kind(&harmony.kind);
-
-    if pitch::tpc_is_valid(harmony.root_tpc) {
-        harmony_root(out, "root", harmony.root_tpc);
-        // TODO(parité): table complète `harmonyXmlKind` de MuseScore. Le
-        // modèle ne garde que le nom interne, sans correspondance MusicXML ;
-        // on retombe sur le texte comme MuseScore pour un accord non reconnu.
-        match kind {
-            Some(kind) if !text.is_empty() => {
-                out.xml.tag_with("kind", &[("text", text)], kind);
-            }
-            Some(kind) => out.xml.tag("kind", kind),
-            None if !text.is_empty() => {
-                out.xml.tag_with("kind", &[("text", text)], "");
-            }
-            None => out.xml.tag("kind", "none"),
-        }
-        if let Some(bass) = harmony.bass_tpc {
-            if pitch::tpc_is_valid(bass) {
-                harmony_root(out, "bass", bass);
-            }
-        }
-    } else if !text.is_empty() {
-        out.xml.tag_with("kind", &[("text", text)], "");
-    } else {
-        out.xml.tag("kind", "none");
-    }
-
-    out.xml.end_element();
-}
-
-/// Écrit `<root>` ou `<bass>` d'un accord chiffré.
-fn harmony_root(out: &mut Out, name: &str, tpc: i8) {
-    let alter = pitch::tpc_alter(tpc);
-    let step = pitch::tpc_step_name(tpc);
-    out.xml.start_element(name, &[]);
-    out.xml.tag(&format!("{name}-step"), &step.to_string());
-    if alter != 0 {
-        out.xml.tag(&format!("{name}-alter"), &alter.to_string());
-    }
-    out.xml.end_element();
 }
 
 // ----------------------------------------------------------------------
@@ -2391,56 +2539,15 @@ pub(crate) fn placement_name(placement: Placement) -> &'static str {
     }
 }
 
-/// Correspondance minimale entre nom interne d'accord et valeur MusicXML.
-///
-/// Le modèle ne conserve pas la sémantique du chiffrage : seuls les noms qui
-/// sont déjà des valeurs MusicXML sont reconnus.
-fn musicxml_kind(kind: &str) -> Option<&'static str> {
-    const KINDS: [&str; 39] = [
-        "major",
-        "minor",
-        "augmented",
-        "diminished",
-        "dominant",
-        "major-seventh",
-        "minor-seventh",
-        "diminished-seventh",
-        "augmented-seventh",
-        "half-diminished",
-        "major-minor",
-        "major-sixth",
-        "minor-sixth",
-        "dominant-ninth",
-        "major-ninth",
-        "minor-ninth",
-        "dominant-11th",
-        "major-11th",
-        "minor-11th",
-        "dominant-13th",
-        "major-13th",
-        "minor-13th",
-        "suspended-second",
-        "suspended-fourth",
-        "Neapolitan",
-        "Italian",
-        "French",
-        "German",
-        "pedal",
-        "power",
-        "Tristan",
-        "other",
-        "none",
-        "major-seventh-flat-five",
-        "major-seventh-sharp-five",
-        "major-seventh-sharp-eleventh",
-        "minor-seventh-flat-five",
-        "minor-seventh-sharp-five",
-        "minor-major",
-    ];
-    KINDS
-        .iter()
-        .find(|candidate| candidate.eq_ignore_ascii_case(kind))
-        .copied()
+/// Symbole MusicXML d'une accolade MuseScore (`partGroupStart`).
+fn bracket_symbol(kind: i8) -> &'static str {
+    match kind {
+        0 => "bracket",
+        1 => "brace",
+        2 => "line",
+        3 => "square",
+        _ => "none",
+    }
 }
 
 /// Texte brut d'un nom de partie, altérations remplacées comme MuseScore.

@@ -17,9 +17,8 @@ après normalisation ; les fichiers marqués **identique** constituent la liste
 
 Écarts triés par fréquence (nombre de fichiers touchés), puis par nombre
 d'occurrences. Les causes sont classées « lecteur », « modèle » ou « export ».
-Les écarts 1 à 14 sont corrigés (voir chaque section) : seul `repeat66` reste
-en écart, à cause de la numérotation après un saut de section (voir la section
-« Écarts v3 » et l'écart 16).
+Les écarts 1 à 14 sont corrigés (voir chaque section), ainsi que les écarts 16
+et ceux du corpus 3.x listés plus bas.
 
 ## Tableau de conformité
 
@@ -41,7 +40,7 @@ en écart, à cause de la numérotation après un saut de section (voir la secti
 | part-textlines | **identique** |
 | partExclusion | **identique** |
 | repeat65 | **identique** |
-| repeat66 | 13 (numérotation par section) |
+| repeat66 | **identique** |
 | repeat68 | **identique** |
 | repeat69 | **identique** |
 | tenuto_accent | **identique** |
@@ -328,65 +327,105 @@ page et paroles des corpus v3 et v4.
   MuseScore ; les marges du corpus v3 diffèrent parfois de 0,0001 dixième
   (`56.6893` au lieu de `56.6894`) par arrondi de la valeur de style.
 
-## 16. Numérotation après un saut de section — 1 fichier v4
+## 16. Numérotation après un saut de section — 2 fichiers (v3 et v4)
 
-**Ouvert** (lecteur/modèle/export) : MuseScore recommence les numéros de mesure
-à `1` après un `<LayoutBreak><subtype>section</subtype></LayoutBreak>`. Le
-modèle ne lit pas les sauts de mise en page : repeat66 exporte des mesures 6 à
-10 au lieu de 1 à 5 dans sa seconde section. Cause : lecteur/modèle.
+**Corrigé** (modèle, lecteurs 3.x et 4.x, export) : `Measure::section_break_before`
+reçoit un `<LayoutBreak><subtype>section</subtype></LayoutBreak>` rencontré dans
+la mesure ou dans un cadre (`HBox`/`VBox`). L'export recommence alors les numéros
+à `1` et réécrit les `<attributes>` de début de section (`<divisions>` compris),
+comme `MeasureNumberStateHandler`.
+
+Fichiers : repeat66 (v4), keysig_78216 (v3).
 
 ## Écarts du corpus v3 relevés par `e2e_corpus.rs`
 
-Le test de bout en bout couvre désormais `v3/` avec la même normalisation. Les
-écarts ci-dessous sont triés par nombre de fichiers touchés ; les fichiers
-conformes constituent `EXPECTED_CONFORMANT_V3` (copypaste_tuplet_01,
-lyricsline01, repeat01, repeat06, repeat07, repeat11, repeat20, repeat39,
-testBreaksPage, testHairpinDynamics, testTboxWords1, testTuplets8, testWedge4).
+Le test de bout en bout couvre `v3/` avec la même normalisation. Les fichiers
+conformes constituent `EXPECTED_CONFORMANT_V3` (Beam-CrossM1, barlinedelete,
+change, clef-1, copypaste_tuplet_01, grace, keysig_78216, lyricsline01,
+measure-4, repeat01, repeat06, repeat07, repeat11, repeat20, repeat39,
+selectionfilter1, testBreaksPage, testChordSymbols, testHairpinDynamics,
+testHarmony6, testMultiInstrumentPart3, testTboxWords1, testTuplets8,
+testWedge4, timesig-05, undoResequenceMeasure, voices).
+
+Les points 1 à 5 et 9 à 12 sont corrigés ; restent les points 6 à 8 et 13.
 
 1. **`<instrument-sound>` et `<midi-program>` absents — 13 fichiers.**
-   `Beam-CrossM1`, `barline01`, `barlinedelete`, `clef-1`, `grace`,
-   `keysig_78216`, `layout_elements`, `measure-4`, `moonlight`,
-   `selectionfilter1`, `testMultiInstrumentPart3`, `timesig-05`,
-   `undoResequenceMeasure`. Les `.mscx` 3.x ne portent pas d'`<instrumentId>`
-   MusicXML : il faut la table MuseScore `piano → keyboard.piano`,
-   `voice → voice.vocals`, `flute → wind.flutes.flute`… **lecteur/modèle.**
-2. **Changements d'instrument — 3 fichiers, en partie corrigé.** `change`,
-   `layout_elements` et `testMultiInstrumentPart3` : le changement exporte
-   désormais `<print><part-name-display>`, `<transpose>` et
-   `<sound><instrument-change><instrument-sound>` (famille textes).
-   Restent ouverts : les `<score-instrument>`/`<midi-instrument>`
-   supplémentaires du `<part-list>`, `<instruments>` de la mesure et
-   `<instrument id>` par note (le modèle n'a pas d'instrument par note).
-   **lecteur/modèle/export.**
-3. **Harmonies 3.x : `<kind>` sémantique perdu — 4 fichiers.** `testHarmony6`
-   (38 lignes), `timesig-05`, `testChordSymbols`, `voices` : le modèle ne garde
-   que le texte (`Cm`, `Eb7`) et n'écrit ni `<root>`/`<kind>`/`<numeral>` ni
-   les `<degree>`. **lecteur/modèle/export** (famille chiffrages, hors noyau).
-4. **Clef de la seconde portée — 2 fichiers.** `clef-1`, `moonlight` : le
-   `<clef staff="2">F</clef>` de l'instrument n'alimente pas la clef par défaut
-   de la portée 2 en 3.x. **lecteur.** (À rapprocher de l'écart 1 v4.)
-5. **Numérotation après saut de section — 1 fichier.** `keysig_78216` : quatre
-   mesures numérotées `1` dans la référence (voir écart 16). **modèle/export.**
-6. **Orientation des liaisons — 1 fichier, 7 occurrences.** `moonlight` :
-   `<tied orientation="over|under">` vient du `TieSegment`, absent du modèle.
-   **lecteur/modèle/export.**
-7. **Détails de portée et de remplissage — 1 fichier.** `moonlight` : `<staff>`
-   d'une note déplacée, `<forward>` scindés, `<accidental cautionary="yes">`.
-   **lecteur/modèle/export.**
-8. **`<measure-repeat>` — 1 fichier.** `layout_elements` : les mesures répétées
-   ne sont pas marquées (`<measure-style><measure-repeat>`), seulement
-   recopiées. **lecteur/modèle/export.**
-9. **`<key number="1">` — 1 fichier.** `voices` : la référence numérote
-   l'armure de la portée 1 dans une partie à deux portées, l'export non.
-   **export.**
-10. **`<part-group>` — 1 fichier.** `barline01` : accolades/crochets de parties
-    absents du modèle, donc pas de `<part-group>`. **modèle/export.**
-Deux portées d'une même partie portent des indications locales différentes
-(9/8 et 3/4 avec `<stretchN>2</stretchN><stretchD>3</stretchD>`). Le modèle
-n'a qu'une durée de mesure globale (`Measure::len`), calculée à partir de la
-première portée ; sans `<duration>` explicite, le silence « mesure » de la
-seconde portée prendrait encore 9/8 au lieu de 3/4 (durée de mesure par portée
-non modélisée).
+   **Corrigé** (lecteur/modèle) : `read/instruments.rs` porte la table des
+   instruments de MuseScore (`share/instruments/instruments.xml`, généré par
+   `scripts/gen-instruments-table.py`). Pour un fichier antérieur à 3.6,
+   `updateInstrumentId` est reproduit : reconnaissance par le nom de piste puis
+   les noms long/court (poids 4/2/1), à défaut par le programme MIDI, sinon
+   `keyboard.piano` ; le programme par défaut vient du même instrument.
+   `<midi-channel>` est lu quand le fichier le fixe.
+2. **Changements d'instrument — 3 fichiers.** **Corrigé** (modèle, lecteurs,
+   export, avec la famille textes) : `Part` porte les instruments successifs,
+   `<InstrumentChange>` enregistre le sien au tick du segment (`Segment::add`),
+   et l'export écrit un `<score-instrument>`/`<midi-instrument>` par instrument,
+   `<instruments>` à la première mesure, `<instrument>` par note, les canaux
+   MIDI dans l'ordre (canal « harmony » compris) et la hauteur écrite avec la
+   transposition en vigueur. `writeInstrumentChange` (famille textes) écrit
+   `<print><part-name-display>`, `<transpose>` et `<sound><instrument-change>`.
+   `change` et `testMultiInstrumentPart3` sont conformes.
+3. **Harmonies 3.x — 4 fichiers.** **Corrigé** (modèle/lecteur/export) :
+   `Harmony` garde le suffixe (`<name>`), le type (`normal`/`roman`/`nashville`),
+   la fonction et les `<degree>`. `export/harmony.rs` analyse le suffixe comme
+   `ParsedChord::parse` (qualités et extensions courantes), écrit
+   `<root>`/`<kind>` (+ texte, symboles, parenthèses, degrés),
+   `<function>`/`<numeral>` des chiffrages romain et Nashville, la basse et
+   `<offset>`. Un accord sans note est rattaché au segment précédent avec son
+   décalage, comme `harmonies()`.
+4. **Clef de la seconde portée — 2 fichiers.** **Corrigé** (lecteur) :
+   `readVoice` place la première clef d'une voix au début de mesure dans un
+   segment `HeaderClef` même si une autre portée a déjà posé la métrique.
+   `clef-1` et `moonlight` sont conformes pour ce point.
+5. **Numérotation après saut de section — 1 fichier.** **Corrigé**, voir
+   l'écart 16.
+6. **Orientation des liaisons — 1 fichier, 7 occurrences.** **Ouvert** :
+   `moonlight` écrit `<tied orientation="over|under">` d'après le `TieSegment`
+   calculé par la mise en page ; le modèle n'a pas cette direction (elle ne
+   figure pas dans le `.mscx`). L'orientation est donc absente de la sortie.
+7. **Détails de portée et de remplissage — 1 fichier.** **Corrigé en partie** :
+   `<staffMove>` place les notes croisées sur l'autre portée (`<staff>` juste)
+   et `<role>` utilisateur d'une altération produit `cautionary="yes"
+   parentheses="no"` (ou `editorial` avec des crochets). **Reste** les
+   `<forward>`/`<backup>` scindés en fin de mesure (`36` au lieu de `12`+`24`),
+   qui viennent du découpage des segments par la mise en page.
+8. **`<measure-repeat>` — 1 fichier.** **Ouvert** : `layout_elements` recopie
+   les mesures répétées au lieu d'écrire
+   `<measure-style><measure-repeat>`.
+9. **`<key number="1">` — 1 fichier.** **Corrigé** (export) : une armure n'est
+   commune (sans `number`) que si toutes les portées de la partie en ont une,
+   identique (`keysigTimesig`).
+10. **`<part-group>` — 1 fichier.** **Corrigé** (modèle/lecteurs/export) :
+    `<bracket>` et `<barLineSpan>` sont lus ; `part-group` ouvre et ferme les
+    groupes comme `partGroupStart`, en filtrant l'accolade implicite d'une
+    partie à plusieurs portées.
+11. **Altérations d'avertissement — `moonlight`.** **Corrigé**, voir point 7.
+12. **Notes croisées de portée — `moonlight`.** **Corrigé**, voir point 7.
+13. **`<staff-details/>` des portées masquées — `barline01`.** **Ouvert** : les
+    mesures 5 et 7 cachent une portée vide (`hideEmptyStaves`), que MuseScore
+    signale par `<staff-details print-object="no"/>`. Le modèle ne lit pas
+    `<hideEmptyStaves>` et la décision dépend de la mise en page (distance
+    nulle entre portées).
+
+Écarts de `layout_elements` restants, hors familles instruments et accords
+(voir écarts 8 et 18) : `<figured-bass>`, `<notehead parentheses="yes">` et
+`<measure-repeat>`.
+
+## Tests dédiés
+
+- `crates/mscz2xml/tests/instruments_corpus.rs` compare, pour chaque fichier
+  des corpus v3 et v4, les `<score-instrument>`/`<midi-instrument>`,
+  `<part-group>`, numéros de mesure, `<attributes>` (`instruments`, `key`,
+  `clef`, `transpose`, `staff-details`), `<harmony>`, `<instrument>` et
+  `<staff>` des notes, et les altérations. Les écarts restants y sont listés
+  (`transpose` du changement d'instrument, `staff-details`) et filtrés.
+- `crates/mscz2xml/src/export/tests.rs` couvre sur des partitions construites à
+  la main les parties multi-instruments, la numérotation après saut de section
+  et les altérations d'avertissement.
+- `crates/mscz2xml/tests/texts_corpus.rs` et
+  `crates/mscz2xml/tests/notations_corpus.rs` couvrent les familles textes et
+  notations (voir écarts 17 et 18).
 
 ## 17. Textes de ligne, cadres `TBox`, changements d'instrument, swing — famille textes
 
@@ -471,4 +510,3 @@ Corrigé dans cette passe :
   invisible, MuseScore regroupe les `<notations>` autrement ; le contenu de la
   famille est identique, seule la répartition des ouvertures
   `print-object="no"` diffère. **Cause : lecteur/modèle** (tie invisible).
-

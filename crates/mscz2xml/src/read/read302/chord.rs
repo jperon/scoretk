@@ -42,6 +42,7 @@ pub(crate) fn read_chord_rest(
     let mut beam = BeamMode::Auto;
     let mut lyrics = Vec::new();
     let mut articulations = Vec::new();
+    let mut staff_move = 0i8;
     let mut ornaments = Vec::new();
     let mut tremolo = None;
     let mut arpeggio = None;
@@ -82,9 +83,13 @@ pub(crate) fn read_chord_rest(
             "Ornament" => ornaments.push(notations::read_ornament(child)),
             "Tremolo" => tremolo = notations::read_tremolo(child),
             "Arpeggio" => arpeggio = Some(notations::read_arpeggio(child)),
-            // TODO(parité): `<staffMove>` (notes sur une autre portée),
-            // `<Stem>`, `<Hook>`, `<StemSlash>`, `<Tempo>`/`<Symbol>`
-            // d'accord ne sont pas modélisés.
+            "staffMove" => {
+                staff_move = child
+                    .int_text()
+                    .map_or(0, |value| value.clamp(-128, 127) as i8);
+            }
+            // TODO(parité): `<Stem>`, `<Hook>`, `<StemSlash>`, `<Tempo>`/
+            // `<Symbol>` d'accord ne sont pas modélisés.
             _ => {}
         }
     }
@@ -117,6 +122,7 @@ pub(crate) fn read_chord_rest(
             grace,
             grace_slash: slash,
             articulations,
+            staff_move,
             ornaments,
             tremolo,
             arpeggio,
@@ -322,8 +328,8 @@ fn read_accidental(node: &Node) -> Accidental {
             }
             "bracket" => accidental.bracket = child.int_text().unwrap_or(0) != 0,
             "parens" | "parentheses" => accidental.parentheses = child.int_text().unwrap_or(0) != 0,
-            // TODO(parité): `<role>` (accidentals d'avertissement, exportés en
-            // `cautionary="yes"`) n'a pas d'équivalent dans le modèle.
+            // `AccidentalRole::USER` vaut 1 ; le rôle par défaut est AUTO.
+            "role" => accidental.user = child.int_text().is_some_and(|value| value == 1),
             "visible" => accidental.visible = child.int_text().unwrap_or(1) != 0,
             _ => {}
         }

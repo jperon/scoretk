@@ -203,6 +203,9 @@ pub struct Accidental {
     pub parentheses: bool,
     /// Vrai si l'altération est visible.
     pub visible: bool,
+    /// Vrai quand l'altération a le rôle « utilisateur » (`AccidentalRole::USER`) :
+    /// MuseScore l'exporte en `cautionary` (ou `editorial` avec des crochets).
+    pub user: bool,
 }
 
 impl Accidental {
@@ -213,6 +216,7 @@ impl Accidental {
             bracket: false,
             parentheses: false,
             visible: true,
+            user: false,
         }
     }
 }

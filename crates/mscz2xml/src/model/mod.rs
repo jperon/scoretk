@@ -71,8 +71,9 @@ pub mod text;
 pub mod tuplet;
 
 pub use annotation::{
-    text_style_defaults, Annotation, Dynamic, Harmony, InstrumentChange, Placement, RehearsalFrame,
-    RehearsalMark, StaffText, SwingParameters, SwingUnit, SystemText, Tempo, TempoKind,
+    text_style_defaults, Annotation, Dynamic, Harmony, HarmonyDegree, HarmonyDegreeKind,
+    InstrumentChange, Placement, RehearsalFrame, RehearsalMark, StaffText, SwingParameters,
+    SwingUnit, SystemText, Tempo, TempoKind,
 };
 pub use chord::{
     Articulation, ArticulationAnchor, ArticulationType, BeamMode, Chord, ChordRest, ChordRestKind,
@@ -90,7 +91,7 @@ pub use notation::{
     Tremolo, TremoloKind, Trill, TrillType,
 };
 pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadGroup, NoteHeadType};
-pub use part::{recognize_musicxml_id, Instrument, Part, Staff, Transpose};
+pub use part::{recognize_musicxml_id, Instrument, Part, Staff, StaffBracket, Transpose};
 pub use repeat::{Jump, JumpType, Marker, MarkerType, RepeatMark, VoltaInfo};
 pub use score::{Score, ScoreMetadata, DEFAULT_DIVISION};
 pub use segment::{

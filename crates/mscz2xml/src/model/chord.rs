@@ -212,6 +212,9 @@ pub struct Chord {
     /// Vrai si l'accord appartient à un trémolo à deux notes
     /// (`Chord::tremoloTwoChord()`).
     pub tremolo_two_chord: bool,
+    /// Décalage de portée (`Chord::staffMove`) : une note posée sur l'autre
+    /// portée de la partie, en croisement de mains.
+    pub staff_move: i8,
     /// Ornements autonomes (`<Ornament>` enfant de `<Chord>`).
     pub ornaments: Vec<Ornament>,
     /// Trémolo de l'accord, si le fichier en donne un.

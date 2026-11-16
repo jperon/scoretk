@@ -52,13 +52,9 @@ const FICHIERS: &[(&str, &str, usize)] = &[
     ("v3", "clef-1", 0),
     ("v3", "copypaste_tuplet_01", 0),
     ("v3", "grace", 0),
-    // Numérotation des mesures : la référence recommence à 1 après chaque
-    // saut de section, non modélisé.
-    ("v3", "keysig_78216", 6),
-    // 2 : second instrument d'une partie multi-instrument (volume/pan) ;
-    // 1 : <part-name-display> d'un changement d'instrument ;
+    ("v3", "keysig_78216", 0),
     // 1 : <measure-style><measure-repeat> non modélisé.
-    ("v3", "layout_elements", 3),
+    ("v3", "layout_elements", 1),
     ("v3", "measure-4", 0),
     // 7 paires <tied> sans l'attribut orientation (porté par le TieSegment).
     ("v3", "moonlight", 14),
@@ -72,9 +68,7 @@ const FICHIERS: &[(&str, &str, usize)] = &[
     ("v3", "testChordSymbols", 0),
     ("v3", "testHairpinDynamics", 0),
     ("v3", "testHarmony6", 0),
-    // 2 : second instrument (volume/pan) ; 2 : noms affichés d'un changement
-    // d'instrument ; 2 : hauteur écrite après changement d'instrument.
-    ("v3", "testMultiInstrumentPart3", 4),
+    ("v3", "testMultiInstrumentPart3", 0),
     ("v3", "testTuplets8", 0),
     ("v3", "testWedge4", 0),
     ("v3", "timesig-05", 0),
