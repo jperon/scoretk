@@ -1,5 +1,7 @@
 //! Erreur publique de la bibliothèque.
 
+use crate::container::MscVersion;
+
 /// Toutes les erreurs pouvant survenir pendant la lecture d'un conteneur.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -34,4 +36,13 @@ pub enum Error {
     /// L'attribut `version` n'est pas un nombre de version reconnu.
     #[error("version MuseScore invalide : « {0} »")]
     InvalidVersion(String),
+
+    /// La version MuseScore du fichier n'est pas prise en charge par un
+    /// lecteur de cette bibliothèque.
+    #[error("version MuseScore non prise en charge : {0}")]
+    UnsupportedVersion(MscVersion),
+
+    /// Le fichier ne contient aucun élément `<Score>` exploitable.
+    #[error("aucun élément <Score> dans le fichier .mscx")]
+    MissingScore,
 }

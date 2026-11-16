@@ -13,3 +13,4 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 zip = { workspace = true }
+quick-xml = { workspace = true }

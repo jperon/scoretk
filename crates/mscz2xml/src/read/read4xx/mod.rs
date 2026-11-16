@@ -1,0 +1,1345 @@
+//! Lecteur `.mscx` 4.x (versions 4.00 à 5.00).
+//!
+//! Portage de `engraving/rw/read400/read400.cpp`, `read410/read410.cpp`,
+//! `read460/read460.cpp` et `read500/read500.cpp`, avec leurs satellites
+//! `staffrw`/`staffread`, `measurerw`/`measureread` et `tread`. Les différences
+//! entre versions sont branchées sur [`Reader::version`] là où le C++ diverge :
+//!
+//! - **4.00** : armure lue dans `<accidental>`, clé d'en-tête devinée par la
+//!   position, `BeamMode` ancien (`begin32`/`begin64`).
+//! - **4.10** : `concertKey`/`actualKey` acceptés en plus d'`<accidental>`,
+//!   `<isHeader>` fait foi, `BeamMode` lu directement.
+//! - **4.50+** : courtoisie par `<isCourtesy>` uniquement.
+//! - **4.60+** : armure lue uniquement dans `concertKey`/`actualKey`.
+//! - **5.00** : `<Part id>` et `<Staff>` positionnel — tolérés dans toutes les
+//!   versions par le lecteur.
+//!
+//! Ce qui n'est pas du noyau musical est ignoré volontairement, avec une note
+//! `TODO(parité)` quand l'export MusicXML en dépendra.
+
+mod dom;
+mod names;
+
+use dom::Element;
+
+use crate::container::MscVersion;
+use crate::model::{ids::StaffId, tpc};
+use crate::model::{
+    Accidental, Annotation, Articulation, BarLine, BarLineType, BeamMode, Breath, BreathType,
+    Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration, DurationType, Dynamic, Fraction,
+    GraceChord, GraceType, Harmony, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
+    Measure, Note, NoteId, Part, Placement, RehearsalMark, Score, Segment, SegmentItem,
+    SegmentType, Staff, StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType,
+    Track, Transpose, Tuplet, TupletId, TupletNumberType, VOICES,
+};
+use crate::{Error, Result};
+
+/// Lit un `.mscx` 4.x/5.x.
+pub fn read(mscx: &[u8], version: MscVersion) -> Result<Score> {
+    let document = dom::parse(mscx)?;
+    let score_element = if document.name == "Score" {
+        &document
+    } else {
+        document.child("Score").ok_or(Error::MissingScore)?
+    };
+
+    let mut reader = Reader::new(version);
+    reader.read_score(score_element)?;
+    Ok(reader.score)
+}
+
+/// État d'une portée pendant la lecture.
+#[derive(Clone, Debug, Default)]
+struct StaffState {
+    /// Étirement temporel courant (`Staff::timeStretch`).
+    time_stretch: Option<Fraction>,
+}
+
+/// Extrémité d'une liaison de prolongation en attente d'appariement.
+#[derive(Clone, Debug)]
+struct TieRecord {
+    note: NoteId,
+    track: Track,
+    tick: Tick,
+    pitch: u8,
+    /// Vrai pour la moitié `<Tie><next>`, faux pour `<prev>`.
+    is_start: bool,
+    /// Position absolue de l'autre extrémité, d'après `<location>`.
+    other_tick: Tick,
+}
+
+/// État complet du lecteur pour un fichier.
+struct Reader {
+    /// Version numérique (`400`, `410`, `460`, `500`).
+    version: u32,
+    score: Score,
+    /// `Score::fileDivision`, en ticks par noire.
+    file_division: u32,
+    staves: Vec<StaffState>,
+    /// Identifiants `id` des `<Staff>` de déclaration, indexés par portée.
+    staff_ids: Vec<Option<u32>>,
+    /// Prochaine portée pour les fichiers 5.0 dont `<Staff>` n'a pas d'`id`.
+    next_music_staff: usize,
+    /// Tick de création de la prochaine mesure (portée 0).
+    global_tick: Tick,
+    /// Dernière durée nominale de mesure (métrique héritée).
+    last_nominal: Fraction,
+    /// Liaisons lues mais pas encore appariées.
+    ties: Vec<TieRecord>,
+}
+
+impl Reader {
+    fn new(version: MscVersion) -> Self {
+        Self {
+            version: version.as_u32(),
+            score: Score::new(),
+            file_division: 480,
+            staves: Vec::new(),
+            staff_ids: Vec::new(),
+            next_music_staff: 0,
+            global_tick: Fraction::ZERO,
+            last_nominal: Fraction::ONE,
+            ties: Vec::new(),
+        }
+    }
+
+    fn stretch(&self, staff_index: usize) -> Fraction {
+        self.staves
+            .get(staff_index)
+            .and_then(|state| state.time_stretch)
+            .unwrap_or(Fraction::ONE)
+    }
+
+    //------------------------------------------------------------------
+    // <Score>
+    //------------------------------------------------------------------
+
+    fn read_score(&mut self, element: &Element) -> Result<()> {
+        // Première passe : parties et métadonnées, pour que les portées
+        // existent avant la lecture de la musique.
+        for child in &element.children {
+            match child.name.as_str() {
+                "Division" => {
+                    if let Some(division) = child.int() {
+                        if division > 0 {
+                            self.file_division = division as u32;
+                        }
+                    }
+                }
+                "Part" => self.read_part(child),
+                "metaTag" => self.read_meta_tag(child),
+                "workTitle" => self.score.metadata.work_title = child.text().to_owned(),
+                "workNumber" => self.score.metadata.work_number = child.text().to_owned(),
+                "movementTitle" => self.score.metadata.movement_title = child.text().to_owned(),
+                "copyright" | "rights" => {
+                    self.score.metadata.copyright = child.text().to_owned();
+                }
+                "source" => self.score.metadata.source = child.text().to_owned(),
+                _ => {}
+            }
+        }
+
+        // Seconde passe : musique des portées, dans l'ordre du fichier.
+        // TODO(parité): <Score> imbriqué (parties liées inline) ; pour l'export
+        // de la partition complète, les ignorer est correct.
+        for child in element.children_named("Staff") {
+            self.read_staff(child)?;
+        }
+
+        self.resolve_ties();
+        Ok(())
+    }
+
+    fn read_meta_tag(&mut self, element: &Element) {
+        let name = element.attr("name").unwrap_or_default();
+        let value = element.text().to_owned();
+        let metadata = &mut self.score.metadata;
+        match name {
+            "workTitle" => metadata.work_title = value,
+            "movementTitle" => metadata.movement_title = value,
+            "workNumber" => metadata.work_number = value,
+            "composer" => metadata.composer = value,
+            "lyricist" | "poet" => metadata.lyricist = value,
+            "arranger" => metadata.arranger = value,
+            "copyright" => metadata.copyright = value,
+            "source" => metadata.source = value,
+            // TODO(parité): subtitle, translator, creationDate, platform.
+            _ => {}
+        }
+    }
+
+    //------------------------------------------------------------------
+    // <Part>
+    //------------------------------------------------------------------
+
+    fn read_part(&mut self, element: &Element) {
+        let part_id = self.score.add_part(Part::new("", ""));
+
+        let mut declared = 0usize;
+        for staff_element in element.children_named("Staff") {
+            let mut staff = Staff::new(part_id);
+            if let Some(staff_type) = staff_element.child("StaffType") {
+                staff.lines = staff_lines(staff_type);
+            }
+            self.score.add_staff_with(part_id, staff);
+            self.staff_ids
+                .push(staff_element.attr_i64("id").map(|id| id as u32));
+            self.staves.push(StaffState::default());
+            declared += 1;
+        }
+        if declared == 0 {
+            // Une partie doit avoir au moins une portée (`Part::nstaves() > 0`).
+            self.score.add_staff(part_id);
+            self.staff_ids.push(None);
+            self.staves.push(StaffState::default());
+        }
+
+        let part_track_name = element
+            .child("trackName")
+            .map(|child| child.text().to_owned())
+            .unwrap_or_default();
+        let part_long_name = element
+            .child("name")
+            .map(|child| child.text().to_owned())
+            .unwrap_or_default();
+        let part_short_name = element
+            .child("shortName")
+            .map(|child| child.text().to_owned())
+            .unwrap_or_default();
+
+        let mut instrument = element
+            .child("Instrument")
+            .map(|child| self.read_instrument(child))
+            .unwrap_or_default();
+
+        let long_name = if instrument.long_name.is_empty() {
+            part_long_name
+        } else {
+            instrument.long_name.clone()
+        };
+        let short_name = if instrument.short_name.is_empty() {
+            part_short_name
+        } else {
+            instrument.short_name.clone()
+        };
+        let name = match (part_track_name.is_empty(), instrument.long_name.is_empty()) {
+            (false, _) => part_track_name,
+            (true, false) => instrument.long_name.clone(),
+            (true, true) => long_name.clone(),
+        };
+        if instrument.long_name.is_empty() {
+            instrument.long_name = long_name.clone();
+        }
+        if instrument.short_name.is_empty() {
+            instrument.short_name = short_name.clone();
+        }
+
+        let part = self.score.part_mut(part_id);
+        part.name = name;
+        part.long_name = long_name;
+        part.short_name = short_name;
+        part.instrument = instrument;
+        // TODO(parité): <preferSharpFlat>, <show>, <soloist>, clef par défaut
+        // de portée (`<clef staff="N">` de l'instrument).
+    }
+
+    fn read_instrument(&self, element: &Element) -> Instrument {
+        let mut instrument = Instrument {
+            id: element
+                .child("instrumentId")
+                .map(|child| child.text().to_owned())
+                .or_else(|| element.attr("id").map(str::to_owned))
+                .unwrap_or_default(),
+            long_name: element
+                .child("longName")
+                .or_else(|| {
+                    // 5.0 déplace les noms dans <InstrumentLabel>.
+                    element
+                        .child("InstrumentLabel")
+                        .and_then(|label| label.child("longName"))
+                })
+                .map(|child| child.text().to_owned())
+                .unwrap_or_default(),
+            short_name: element
+                .child("shortName")
+                .or_else(|| {
+                    element
+                        .child("InstrumentLabel")
+                        .and_then(|label| label.child("shortName"))
+                })
+                .map(|child| child.text().to_owned())
+                .unwrap_or_default(),
+            ..Instrument::default()
+        };
+        // TODO(parité): le nom de piste de l'instrument peut différer du nom
+        // long ; le modèle ne le stocke pas séparément.
+
+        let chromatic = element
+            .child("transposeChromatic")
+            .and_then(Element::int)
+            .unwrap_or(0) as i32;
+        let diatonic = element
+            .child("transposeDiatonic")
+            .and_then(Element::int)
+            .map_or_else(|| chromatic_to_diatonic(chromatic), |value| value as i32);
+        if chromatic != 0 || diatonic != 0 {
+            instrument.transpose = Some(Transpose::new(diatonic, chromatic));
+        }
+
+        instrument.midi_program = element
+            .child("Channel")
+            .and_then(|channel| channel.child("program"))
+            .and_then(|program| program.attr_i64("value"))
+            .and_then(|value| u8::try_from(value).ok());
+
+        // TODO(parité): <useDrumset>, <Drum>, <stringData>, articulations MIDI.
+        instrument
+    }
+
+    //------------------------------------------------------------------
+    // <Staff> (musique)
+    //------------------------------------------------------------------
+
+    fn read_staff(&mut self, element: &Element) -> Result<()> {
+        let staff_index = match element.attr_i64("id") {
+            Some(id) => {
+                let id = id as u32;
+                self.staff_ids
+                    .iter()
+                    .position(|declared| *declared == Some(id))
+                    .unwrap_or_else(|| id.saturating_sub(1) as usize)
+            }
+            None => {
+                let index = self.next_music_staff;
+                self.next_music_staff += 1;
+                index
+            }
+        };
+        if staff_index >= self.score.staves.len() {
+            // Portée sans déclaration `<Part>` : rien à remplir.
+            return Ok(());
+        }
+
+        let mut measure_index = 0usize;
+        for child in &element.children {
+            match child.name.as_str() {
+                "Measure" => {
+                    // Une mesure de multi-repos est un marqueur de mise en
+                    // page : ce n'est pas une mesure musicale, elle ne compte
+                    // donc ni dans la numérotation ni dans le tick.
+                    if child.has_child("multiMeasureRest") {
+                        // TODO(parité): conserver le regroupement de multi-repos.
+                        continue;
+                    }
+                    self.read_measure(child, staff_index, measure_index)?;
+                    measure_index += 1;
+                }
+                // TODO(parité): HBox/VBox/TBox/FBox (cadres : ils changent la
+                // numérotation affichée mais pas le tick musical).
+                "tick" => {}
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    //------------------------------------------------------------------
+    // <Measure>
+    //------------------------------------------------------------------
+
+    fn read_measure(
+        &mut self,
+        element: &Element,
+        staff_index: usize,
+        measure_index: usize,
+    ) -> Result<()> {
+        // Une mesure de multi-repos (marqueur) n'existe pas dans la partition :
+        // `StaffRead::readStaff` ne l'ajoute pas et n'avance pas le tick.
+        if element.has_child("multiMeasureRest") {
+            // TODO(parité): conserver le regroupement de multi-repos.
+            return Ok(());
+        }
+
+        let irregular = element.attr("len").is_some();
+        let model_index = if staff_index == 0 {
+            let mut measure = Measure::new(measure_index, self.global_tick, self.last_nominal);
+            if let Some(len) = element.attr_fraction("len") {
+                if len.is_positive() {
+                    measure.len = len;
+                }
+            }
+            self.score.add_measure(measure).index()
+        } else if measure_index < self.score.measures.len() {
+            measure_index
+        } else {
+            // Mesure absente de la première portée : `readStaff` en crée une
+            // vide (« missing measure! »).
+            let start = self
+                .score
+                .measures
+                .last()
+                .map_or(Fraction::ZERO, Measure::end_tick);
+            self.score
+                .add_measure(Measure::new(measure_index, start, self.last_nominal))
+                .index()
+        };
+
+        {
+            let measure = &mut self.score.measures[model_index];
+            if element.has_child("startRepeat") {
+                measure.start_bar_line = BarLineType::StartRepeat;
+            }
+            if element.has_child("endRepeat") {
+                measure.end_bar_line = BarLineType::EndRepeat;
+            }
+        }
+
+        let mut voice_index = 0u8;
+        for child in &element.children {
+            if child.name == "voice" {
+                self.read_voice(model_index, staff_index, voice_index, child, irregular)?;
+                // TODO(parité): plus de quatre voix par portée n'est pas
+                // représentable dans le modèle (`VOICES`).
+                voice_index = (voice_index + 1).min(VOICES as u8 - 1);
+            }
+            // TODO(parité): <Marker>, <Jump>, <LayoutBreak>, <stretch>,
+            // <noOffset>, <measureRepeatCount>, <MMRestRange>, <visible>.
+        }
+
+        if staff_index == 0 {
+            let measure = &self.score.measures[model_index];
+            self.last_nominal = measure.nominal_len;
+            self.global_tick = measure.end_tick();
+        }
+        Ok(())
+    }
+
+    //------------------------------------------------------------------
+    // <voice>
+    //------------------------------------------------------------------
+
+    #[allow(clippy::too_many_lines)]
+    fn read_voice(
+        &mut self,
+        measure_index: usize,
+        staff_index: usize,
+        voice: u8,
+        element: &Element,
+        irregular: bool,
+    ) -> Result<()> {
+        let track = Track::new(StaffId::from_index(staff_index), voice);
+        let mut tick = self.score.measures[measure_index].start_tick;
+        let mut tuplets: Vec<(TupletId, Fraction)> = Vec::new();
+        let mut grace_chords: Vec<GraceChord> = Vec::new();
+        let mut stretch = self.stretch(staff_index);
+
+        for child in &element.children {
+            match child.name.as_str() {
+                // TODO(parité): <location> complet (mesures, portées, voix) ;
+                // seule la fraction relative est appliquée ici, ce qui suffit
+                // au corpus (aucune <location> au niveau d'une voix).
+                "location" => {
+                    if let Some(fractions) = child.child("fractions").and_then(Element::fraction) {
+                        tick += fractions;
+                    }
+                }
+                "tick" => {
+                    if let Some(raw) = child.int() {
+                        tick = self.file_tick(raw);
+                    }
+                }
+                "Chord" => {
+                    let parsed = self.read_chord(child, tick, track)?;
+                    if let Some(grace) = parsed.grace {
+                        let mut grace_chord = GraceChord::new(grace, parsed.duration);
+                        grace_chord.chord = parsed.into_chord(Vec::new());
+                        grace_chords.push(grace_chord);
+                        // Un ornement ne consomme aucun tick.
+                        continue;
+                    }
+
+                    let tuplet = tuplets.last().map(|(id, _)| *id);
+                    let ticks = parsed.ticks;
+                    let beam = parsed.beam;
+                    let duration = parsed.duration;
+                    let lyrics = parsed.lyrics.clone();
+                    let chord = parsed.into_chord(std::mem::take(&mut grace_chords));
+
+                    let mut chord_rest = ChordRest::chord(duration);
+                    chord_rest.tuplet = tuplet;
+                    chord_rest.beam_mode = beam;
+                    chord_rest.lyrics = lyrics;
+                    chord_rest.kind = ChordRestKind::Chord(chord);
+                    self.insert_item(
+                        measure_index,
+                        SegmentType::ChordRest,
+                        tick,
+                        track,
+                        SegmentItem::ChordRest(chord_rest),
+                    );
+                    tick += actual_ticks(ticks, &tuplets, stretch);
+                }
+                "Rest" => {
+                    let parsed = self.read_rest(child, measure_index, stretch);
+                    let tuplet = tuplets.last().map(|(id, _)| *id);
+                    let ticks = parsed.ticks;
+                    let duration = parsed.duration;
+                    let gap = parsed.gap;
+                    let lyrics = parsed.lyrics;
+
+                    let mut chord_rest = ChordRest::rest(duration);
+                    chord_rest.tuplet = tuplet;
+                    chord_rest.lyrics = lyrics;
+                    if gap {
+                        if let Some(rest) = chord_rest.rest_mut() {
+                            rest.gap = true;
+                        }
+                    }
+                    self.insert_item(
+                        measure_index,
+                        SegmentType::ChordRest,
+                        tick,
+                        track,
+                        SegmentItem::ChordRest(chord_rest),
+                    );
+                    tick += actual_ticks(ticks, &tuplets, stretch);
+                }
+                "Tuplet" => {
+                    let tuplet = self.read_tuplet(child, tick);
+                    if let Some((parent, _)) = tuplets.last() {
+                        let parent = *parent;
+                        self.score.tuplet_mut(tuplet).parent = Some(parent);
+                    }
+                    let ratio = self.score.tuplet(tuplet).ratio;
+                    tuplets.push((tuplet, ratio));
+                }
+                "endTuplet" => {
+                    // `<endTuplet/>` sans ouverture : ignoré, comme le C++.
+                    tuplets.pop();
+                }
+                "TimeSig" => {
+                    let mut time_sig = read_time_sig(child);
+                    let courtesy = if self.version >= 450 {
+                        flag(child, "isCourtesy")
+                    } else {
+                        tick > self.score.measures[measure_index].start_tick
+                    };
+                    time_sig.courtesy = courtesy;
+                    let kind = if courtesy {
+                        SegmentType::TimeSigAnnounce
+                    } else {
+                        SegmentType::TimeSig
+                    };
+                    // La métrique ne change la durée de la mesure que lue à son
+                    // début (`currTick == measure->tick()` dans le C++).
+                    if !courtesy && tick == self.score.measures[measure_index].start_tick {
+                        stretch = if time_sig.stretch.is_positive() {
+                            time_sig.stretch
+                        } else {
+                            Fraction::ONE
+                        };
+                        self.staves[staff_index].time_stretch = Some(stretch);
+                        if staff_index == 0 {
+                            // `TimeSig::stretch` divise la durée réelle : une
+                            // métrique 3/4 étirée 2/3 vaut 9/8.
+                            let nominal = time_sig.measure_len() / stretch;
+                            let measure = &mut self.score.measures[measure_index];
+                            measure.nominal_len = nominal;
+                            if !irregular {
+                                measure.len = nominal;
+                            }
+                        }
+                    }
+                    self.insert_item(
+                        measure_index,
+                        kind,
+                        tick,
+                        track,
+                        SegmentItem::TimeSig(time_sig),
+                    );
+                }
+                "KeySig" => {
+                    let measure_end = self.score.measures[measure_index].end_tick();
+                    let mut key_sig = self.read_key_sig(child);
+                    let courtesy = if self.version >= 450 {
+                        flag(child, "isCourtesy")
+                    } else {
+                        tick == measure_end
+                    };
+                    key_sig.courtesy = courtesy;
+                    let kind = if courtesy {
+                        SegmentType::KeySigAnnounce
+                    } else {
+                        SegmentType::KeySig
+                    };
+                    self.insert_item(
+                        measure_index,
+                        kind,
+                        tick,
+                        track,
+                        SegmentItem::KeySig(key_sig),
+                    );
+                }
+                "Clef" => {
+                    let clef = read_clef(child);
+                    let header = if self.version >= 410 {
+                        flag(child, "isHeader")
+                    } else {
+                        self.guess_header_clef(measure_index, tick)
+                    };
+                    let kind = if header {
+                        SegmentType::HeaderClef
+                    } else {
+                        SegmentType::Clef
+                    };
+                    self.insert_item(measure_index, kind, tick, track, SegmentItem::Clef(clef));
+                }
+                "BarLine" => {
+                    let kind = child
+                        .child("subtype")
+                        .map(Element::text)
+                        .and_then(names::bar_line_type)
+                        .unwrap_or(BarLineType::Normal);
+                    self.read_bar_line(measure_index, tick, track, kind);
+                }
+                "Breath" => {
+                    let kind = match child.child("symbol").map(Element::text) {
+                        Some("caesuraCurved" | "caesura" | "caesuraShort") => BreathType::Caesura,
+                        Some("breathTick") => BreathType::Tick,
+                        Some("stringsUpBow") => BreathType::Upbow,
+                        _ => BreathType::Comma,
+                    };
+                    self.insert_item(
+                        measure_index,
+                        SegmentType::Breath,
+                        tick,
+                        track,
+                        SegmentItem::Breath(Breath { kind }),
+                    );
+                }
+                "Dynamic" => {
+                    let text = child
+                        .child("subtype")
+                        .map(Element::text)
+                        .unwrap_or_default()
+                        .to_owned();
+                    let mut dynamic = Dynamic::new(text);
+                    dynamic.velocity = child
+                        .child("velocity")
+                        .and_then(Element::int)
+                        .and_then(|value| u8::try_from(value).ok());
+                    self.add_annotation(measure_index, tick, track, Annotation::Dynamic(dynamic));
+                }
+                "StaffText" => {
+                    let annotation = Annotation::StaffText(StaffText {
+                        text: child
+                            .child("text")
+                            .map(|node| node.text.clone())
+                            .unwrap_or_default(),
+                        placement: placement(child.child("placement")),
+                    });
+                    self.add_annotation(measure_index, tick, track, annotation);
+                }
+                "SystemText" => {
+                    let annotation = Annotation::SystemText(SystemText {
+                        text: child
+                            .child("text")
+                            .map(|node| node.text.clone())
+                            .unwrap_or_default(),
+                        placement: placement(child.child("placement")),
+                    });
+                    self.add_annotation(measure_index, tick, track, annotation);
+                }
+                "Tempo" => {
+                    let mut tempo = Tempo::new(
+                        child
+                            .child("text")
+                            .map(|node| node.text.clone())
+                            .unwrap_or_default(),
+                    );
+                    tempo.beats_per_second = child
+                        .child("tempo")
+                        .map(Element::text)
+                        .and_then(|value| value.parse().ok());
+                    tempo.follow_text = child.has_child("followText");
+                    tempo.placement = placement(child.child("placement"));
+                    self.add_annotation(measure_index, tick, track, Annotation::Tempo(tempo));
+                }
+                "RehearsalMark" => {
+                    let annotation = RehearsalMark {
+                        text: child
+                            .child("text")
+                            .map(|node| node.text.clone())
+                            .unwrap_or_default(),
+                        placement: placement(child.child("placement")),
+                    };
+                    self.add_annotation(
+                        measure_index,
+                        tick,
+                        track,
+                        Annotation::RehearsalMark(annotation),
+                    );
+                }
+                "Harmony" => {
+                    let name = child
+                        .child("name")
+                        .map(|node| node.text().to_owned())
+                        .unwrap_or_default();
+                    let mut harmony = Harmony::new(name.clone());
+                    harmony.root_tpc = child
+                        .child("root")
+                        .and_then(Element::int)
+                        .and_then(|value| i8::try_from(value).ok())
+                        .unwrap_or(tpc::INVALID);
+                    harmony.bass_tpc = child
+                        .child("bass")
+                        .and_then(Element::int)
+                        .and_then(|value| i8::try_from(value).ok());
+                    harmony.kind = name;
+                    harmony.placement = placement(child.child("placement"));
+                    if let Some(text) = child.child("text") {
+                        harmony.text = text.text.clone();
+                    }
+                    self.add_annotation(measure_index, tick, track, Annotation::Harmony(harmony));
+                }
+                "Fermata" => {
+                    // TODO(parité): `Fermata` a son propre type MuseScore ; le
+                    // modèle n'a qu'une annotation générique.
+                    let annotation = Annotation::Other {
+                        kind: "Fermata".to_owned(),
+                        text: child
+                            .child("subtype")
+                            .map(Element::text)
+                            .unwrap_or_default()
+                            .to_owned(),
+                        placement: placement(child.child("placement")),
+                    };
+                    self.add_annotation(measure_index, tick, track, annotation);
+                }
+                // TODO(parité): <Spanner> autres que Tie (Slur, HairPin, Ottava,
+                // Volta, TextLine, Trill, Pedal, LetRing…) : à modéliser dans
+                // `Score::spanners`. Les liaisons de prolongation sont
+                // traitées dans <Note>.
+                "Spanner" => {}
+                // TODO(parité): <Beam>, <Ambitus>, <Segment>, <MeasureRepeat>,
+                // <Expression>, <Symbol>, <Image>, <FretDiagram>, <TremoloBar>,
+                // <InstrumentChange>, <StaffState>, <PlayTechAnnotation>,
+                // <Sticking>, <FiguredBass>, <HarpPedalDiagram>.
+                _ => {}
+            }
+        }
+
+        // TODO(parité): ornements en fin de voix sans accord principal : le C++
+        // les laisse non rattachés (fichier corrompu) ; ils sont ignorés ici.
+        Ok(())
+    }
+
+    //------------------------------------------------------------------
+    // <Chord>, <Rest>, <Note>
+    //------------------------------------------------------------------
+
+    fn read_chord(&mut self, element: &Element, tick: Tick, track: Track) -> Result<ParsedChord> {
+        let mut duration_type = DurationType::Quarter;
+        let mut dots = 0u8;
+        let mut explicit = None;
+        let mut grace = None;
+        let mut beam = BeamMode::Auto;
+        let mut stem = StemDirection::Auto;
+        let mut small = false;
+        let mut articulations = Vec::new();
+        let mut lyrics = Vec::new();
+        let mut notes = Vec::new();
+
+        for child in &element.children {
+            match child.name.as_str() {
+                "durationType" => {
+                    duration_type =
+                        names::duration_type(child.text()).unwrap_or(DurationType::Quarter);
+                }
+                "dots" => {
+                    dots = child
+                        .int()
+                        .and_then(|value| u8::try_from(value.clamp(0, 4)).ok())
+                        .unwrap_or(0);
+                }
+                "duration" => explicit = child.fraction(),
+                "BeamMode" => {
+                    beam = names::beam_mode(child.text(), self.version).unwrap_or(BeamMode::Auto);
+                }
+                "StemDirection" => {
+                    stem = match child.text() {
+                        "up" => StemDirection::Up,
+                        "down" => StemDirection::Down,
+                        _ => StemDirection::Auto,
+                    };
+                }
+                "small" => small = child.int().unwrap_or(0) != 0,
+                "Note" => notes.push(self.read_note(child, tick, track)?),
+                "Articulation" => {
+                    if let Some(name) = child.child("subtype").map(Element::text) {
+                        if let Some((kind, anchor)) = names::articulation(name) {
+                            articulations.push(Articulation { kind, anchor });
+                        }
+                        // TODO(parité): articulations composées et variantes
+                        // non modélisées.
+                    }
+                }
+                "Lyrics" => lyrics.push(read_lyrics(child)),
+                // TODO(parité): <Ornament> — l'accord qu'il embarque n'est pas
+                // un accord de segment et ne doit pas être compté ;
+                // <Tremolo>, <TremoloTwoChord>, <Arpeggio>, <Stem>, <Hook>,
+                // <ChordLine>, <noStem>, <staffMove>.
+                _ => {}
+            }
+            if let Some(kind) = names::grace_type(child.name.as_str()) {
+                grace = Some(kind);
+            }
+        }
+
+        let duration = Duration::with_dots(duration_type, dots);
+        let mut ticks = duration.ticks();
+        if let Some(value) = explicit {
+            // TODO(parité): `<duration>` peut différer de la figure (tremolo
+            // two-chord) ; le modèle n'a pas de champ « durée réelle ».
+            ticks = value;
+        }
+
+        Ok(ParsedChord {
+            duration,
+            ticks,
+            notes,
+            grace,
+            beam,
+            stem,
+            small,
+            articulations,
+            lyrics,
+        })
+    }
+
+    fn read_rest(
+        &mut self,
+        element: &Element,
+        measure_index: usize,
+        stretch: Fraction,
+    ) -> ParsedRest {
+        let mut duration_type = DurationType::Measure;
+        let mut dots = 0u8;
+        let mut explicit = None;
+        let mut gap = false;
+        let mut lyrics = Vec::new();
+
+        for child in &element.children {
+            match child.name.as_str() {
+                "durationType" => {
+                    duration_type =
+                        names::duration_type(child.text()).unwrap_or(DurationType::Measure);
+                }
+                "dots" => {
+                    dots = child
+                        .int()
+                        .and_then(|value| u8::try_from(value.clamp(0, 4)).ok())
+                        .unwrap_or(0);
+                }
+                "duration" => explicit = child.fraction(),
+                "gap" => gap = child.int().unwrap_or(0) != 0,
+                "Lyrics" => lyrics.push(read_lyrics(child)),
+                _ => {}
+            }
+        }
+
+        // `readVoice` pré-remplit les silences avec la durée de la mesure
+        // divisée par l'étirement ; `<duration>` l'écrase ensuite.
+        let mut ticks = if duration_type == DurationType::Measure {
+            let nominal = self.score.measures[measure_index].nominal_len;
+            if stretch.is_positive() {
+                nominal / stretch
+            } else {
+                nominal
+            }
+        } else {
+            Duration::with_dots(duration_type, dots).ticks()
+        };
+        if let Some(value) = explicit {
+            ticks = value;
+        }
+
+        ParsedRest {
+            duration: Duration::with_dots(duration_type, dots),
+            ticks,
+            gap,
+            lyrics,
+        }
+    }
+
+    fn read_note(&mut self, element: &Element, tick: Tick, track: Track) -> Result<NoteId> {
+        let mut note = Note::new(0, tpc::INVALID);
+
+        for child in &element.children {
+            match child.name.as_str() {
+                "pitch" => {
+                    note.pitch = child
+                        .int()
+                        .map(|value| value.clamp(0, 127) as u8)
+                        .unwrap_or(0);
+                }
+                "tpc" => {
+                    if let Some(value) = child.int().and_then(|value| i8::try_from(value).ok()) {
+                        note.tpc = value;
+                        note.tpc_transposed = value;
+                    }
+                }
+                "tpc2" => {
+                    if let Some(value) = child.int().and_then(|value| i8::try_from(value).ok()) {
+                        note.tpc_transposed = value;
+                    }
+                }
+                "Accidental" => {
+                    if let Some(subtype) = child.child("subtype").map(Element::text) {
+                        if let Some(kind) = names::accidental_type(subtype) {
+                            let mut accidental = Accidental::new(kind);
+                            accidental.bracket = child
+                                .child("bracket")
+                                .and_then(Element::int)
+                                .is_some_and(|value| value != 0);
+                            accidental.visible = !child
+                                .child("visible")
+                                .and_then(Element::int)
+                                .is_some_and(|value| value == 0);
+                            note.accidental = Some(accidental);
+                        }
+                        // TODO(parité): altérations microtonales.
+                    }
+                }
+                "head" => {
+                    if let Some(head) = names::note_head(child.text()) {
+                        note.head = head;
+                    }
+                    // TODO(parité): têtes non modélisées (groupes SMuFL).
+                }
+                "headType" => {
+                    if let Some(head) = names::head_type(child.text()) {
+                        note.head = head;
+                    }
+                }
+                "ghost" | "dead" => note.ghost = child.int().unwrap_or(0) != 0,
+                "play" => note.play = child.int().unwrap_or(1) != 0,
+                "Spanner" if child.attr("type") == Some("Tie") => {
+                    self.register_tie(&note, child, tick, track);
+                }
+                // TODO(parité): autres spanners ancrés sur note (Glissando,
+                // NoteLine).
+                _ => {}
+            }
+        }
+
+        if note.tpc == tpc::INVALID {
+            note.tpc = names::natural_tpc(note.pitch);
+            note.tpc_transposed = note.tpc;
+        }
+
+        Ok(self.score.add_note(note))
+    }
+
+    /// Enregistre une moitié de liaison de prolongation (`<Spanner type="Tie">`).
+    fn register_tie(&mut self, note: &Note, element: &Element, tick: Tick, track: Track) {
+        // La note n'est ajoutée à l'arène qu'après ses enfants : son indice est
+        // donc la taille actuelle de l'arène.
+        let note_id = NoteId::from_index(self.score.notes.len());
+        for child in &element.children {
+            let is_start = match child.name.as_str() {
+                "next" => true,
+                "prev" => false,
+                _ => continue,
+            };
+            let other_tick = child
+                .child("location")
+                .and_then(|location| location.child("fractions"))
+                .and_then(Element::fraction)
+                .map_or(tick, |fractions| tick + fractions);
+            self.ties.push(TieRecord {
+                note: note_id,
+                track,
+                tick,
+                pitch: note.pitch,
+                is_start,
+                other_tick,
+            });
+        }
+    }
+
+    /// Apparie les deux moitiés des liaisons de prolongation.
+    ///
+    /// `ConnectorInfoReader::readAddConnector(Note*)` apparie par type, piste et
+    /// position ; deux notes de même hauteur au même tick sur la même piste sont
+    /// les deux extrémités d'une même liaison.
+    fn resolve_ties(&mut self) {
+        let mut used = vec![false; self.ties.len()];
+        for index in 0..self.ties.len() {
+            if !self.ties[index].is_start || used[index] {
+                continue;
+            }
+            let start = self.ties[index].clone();
+            let partner = (0..self.ties.len()).find(|&other| {
+                !used[other]
+                    && !self.ties[other].is_start
+                    && self.ties[other].track == start.track
+                    && self.ties[other].pitch == start.pitch
+                    && self.ties[other].tick == start.other_tick
+                    && self.ties[other].other_tick == start.tick
+            });
+            if let Some(partner) = partner {
+                used[index] = true;
+                used[partner] = true;
+                let end = self.ties[partner].clone();
+                self.score.notes[start.note.index()].tie_forward = Some(end.note);
+                self.score.notes[end.note.index()].tie_back = Some(start.note);
+            } else {
+                // TODO(parité): demi-liaison orpheline (fichier corrompu) : le
+                // C++ la journalise et la laisse non appariée.
+            }
+        }
+    }
+
+    //------------------------------------------------------------------
+    // <Tuplet>
+    //------------------------------------------------------------------
+
+    fn read_tuplet(&mut self, element: &Element, tick: Tick) -> TupletId {
+        let normal = element
+            .child("normalNotes")
+            .and_then(Element::int)
+            .unwrap_or(2);
+        let actual = element
+            .child("actualNotes")
+            .and_then(Element::int)
+            .unwrap_or(3);
+        let base_type = element
+            .child("baseNote")
+            .map(Element::text)
+            .and_then(names::duration_type)
+            .unwrap_or(DurationType::Eighth);
+        let base_dots = element
+            .child("baseDots")
+            .and_then(Element::int)
+            .and_then(|value| u8::try_from(value.clamp(0, 4)).ok())
+            .unwrap_or(0);
+
+        let ratio = Fraction::try_new(actual.max(1), normal.max(1)).unwrap_or(Fraction::ONE);
+        let base_len = Duration::with_dots(base_type, base_dots).ticks();
+        // `TRead::read(Tuplet*)` : ticks = baseLen * ratio.denominator().
+        let len = base_len * Fraction::from_integer(ratio.denominator());
+
+        let mut tuplet = Tuplet::new(ratio, base_len, tick, len);
+        if let Some(number) = element.child("Number") {
+            let text = number.child("text").map(Element::text).unwrap_or_default();
+            tuplet.number_type = if text.is_empty() {
+                TupletNumberType::None
+            } else if text.contains(':') {
+                TupletNumberType::Ratio
+            } else {
+                TupletNumberType::Number
+            };
+        }
+        // TODO(parité): crochets, points de contrôle, position du nombre.
+        self.score.add_tuplet(tuplet)
+    }
+
+    //------------------------------------------------------------------
+    // <KeySig>
+    //------------------------------------------------------------------
+
+    fn read_key_sig(&self, element: &Element) -> KeySig {
+        let mut concert = 0i8;
+        let mut written = None;
+
+        if self.version < 460 {
+            if let Some(accidental) = element.child("accidental").and_then(Element::int) {
+                // Pas de borne : MuseScore autorise les armures personnalisées.
+                concert = i8::try_from(accidental).unwrap_or(0);
+            }
+        }
+        if self.version >= 410 {
+            if let Some(value) = element.child("concertKey").and_then(Element::int) {
+                concert = i8::try_from(value).unwrap_or(0);
+            }
+            if let Some(value) = element.child("actualKey").and_then(Element::int) {
+                written = Some(i8::try_from(value).unwrap_or(0));
+            }
+        }
+
+        let mut key_sig = KeySig::new(Key::new(concert));
+        key_sig.transposed_key = Key::new(written.unwrap_or(concert));
+        key_sig.mode = element
+            .child("mode")
+            .map(Element::text)
+            .and_then(names::key_mode)
+            .unwrap_or(KeyMode::Unknown);
+        // TODO(parité): <subtype> (ancien encodage), armures personnalisées
+        // (<CustDef>/<KeySym>), <showNaturals>, <forInstrumentChange>.
+        key_sig
+    }
+
+    /// Devine une clé d'en-tête avant 4.1 (`MeasureRead::readVoice`).
+    fn guess_header_clef(&self, measure_index: usize, tick: Tick) -> bool {
+        let measure = &self.score.measures[measure_index];
+        if tick != measure.start_tick {
+            return false;
+        }
+        !measure.segments.iter().any(|segment| {
+            segment.tick == measure.start_tick
+                && (segment.kind.is_key_sig_type() || segment.kind.is_time_sig_type())
+        })
+    }
+
+    fn read_bar_line(&mut self, measure_index: usize, tick: Tick, track: Track, kind: BarLineType) {
+        let (measure_start, measure_len) = {
+            let measure = &self.score.measures[measure_index];
+            (measure.start_tick, measure.len)
+        };
+        let offset = tick - measure_start;
+        let segment_kind = if !offset.is_zero() && offset != measure_len {
+            SegmentType::BarLine
+        } else if kind == BarLineType::StartRepeat && offset.is_zero() {
+            SegmentType::StartRepeatBarLine
+        } else if kind == BarLineType::StartRepeat && offset == measure_len {
+            // Ancienne version : barre de début écrite à la fin, ignorée.
+            return;
+        } else if offset.is_zero() && !self.has_segment_at(measure_index, measure_start) {
+            SegmentType::BeginBarLine
+        } else {
+            SegmentType::EndBarLine
+        };
+
+        let bar_line = BarLine::new(kind);
+        self.insert_item(
+            measure_index,
+            segment_kind,
+            tick,
+            track,
+            SegmentItem::BarLine(bar_line),
+        );
+        if segment_kind == SegmentType::EndBarLine {
+            let measure = &mut self.score.measures[measure_index];
+            measure.end_bar_line = kind;
+        }
+    }
+
+    fn has_segment_at(&self, measure_index: usize, tick: Tick) -> bool {
+        self.score.measures[measure_index]
+            .segments
+            .iter()
+            .any(|segment| segment.tick == tick)
+    }
+
+    //------------------------------------------------------------------
+    // Insertion dans les segments
+    //------------------------------------------------------------------
+
+    fn segment_index(&mut self, measure_index: usize, kind: SegmentType, tick: Tick) -> usize {
+        let staff_count = self.score.staves.len();
+        let measure = &mut self.score.measures[measure_index];
+        if let Some(index) = measure
+            .segments
+            .iter()
+            .position(|segment| segment.kind == kind && segment.tick == tick)
+        {
+            return index;
+        }
+        measure.add_segment(Segment::new(kind, tick, staff_count));
+        measure
+            .segments
+            .iter()
+            .position(|segment| segment.kind == kind && segment.tick == tick)
+            .expect("segment inséré")
+    }
+
+    fn insert_item(
+        &mut self,
+        measure_index: usize,
+        kind: SegmentType,
+        tick: Tick,
+        track: Track,
+        item: SegmentItem,
+    ) {
+        let index = self.segment_index(measure_index, kind, tick);
+        self.score.measures[measure_index].segments[index].set_element(track, item);
+    }
+
+    fn add_annotation(
+        &mut self,
+        measure_index: usize,
+        tick: Tick,
+        track: Track,
+        annotation: Annotation,
+    ) {
+        let index = self.segment_index(measure_index, SegmentType::ChordRest, tick);
+        self.score.measures[measure_index].segments[index].add_annotation(track, annotation);
+    }
+
+    /// Convertit un `<tick>` absolu (ticks de fichier) en fraction de ronde.
+    fn file_tick(&self, raw: i64) -> Tick {
+        let division = i64::from(self.file_division.max(1));
+        let internal = (raw * 480 + division / 2) / division;
+        Fraction::try_from_ticks(internal, 1920).unwrap_or(Fraction::ZERO)
+    }
+}
+
+//----------------------------------------------------------------------
+// Valeurs intermédiaires
+//----------------------------------------------------------------------
+
+/// Accord en cours de lecture, avant insertion dans un segment.
+struct ParsedChord {
+    duration: Duration,
+    ticks: Fraction,
+    notes: Vec<NoteId>,
+    grace: Option<GraceType>,
+    beam: BeamMode,
+    stem: StemDirection,
+    small: bool,
+    articulations: Vec<Articulation>,
+    lyrics: Vec<Lyrics>,
+}
+
+impl ParsedChord {
+    fn into_chord(self, grace_chords: Vec<GraceChord>) -> Chord {
+        Chord {
+            notes: self.notes,
+            grace_chords,
+            stem: self.stem,
+            grace: self.grace,
+            grace_slash: false,
+            articulations: self.articulations,
+            small: self.small,
+        }
+    }
+}
+
+/// Silence en cours de lecture.
+struct ParsedRest {
+    duration: Duration,
+    ticks: Fraction,
+    gap: bool,
+    lyrics: Vec<Lyrics>,
+}
+
+/// Durée réelle d'un accord ou silence, une fois divisée par les n-olets
+/// ouverts et par l'étirement de la portée (`DurationElement::actualTicks`).
+fn actual_ticks(base: Fraction, tuplets: &[(TupletId, Fraction)], stretch: Fraction) -> Fraction {
+    let mut ticks = base;
+    for (_, ratio) in tuplets {
+        if ratio.is_positive() {
+            ticks /= *ratio;
+        }
+    }
+    if stretch.is_positive() {
+        ticks /= stretch;
+    }
+    ticks
+}
+
+/// Lecture d'une indication de mesure (indépendante de la version).
+fn read_time_sig(element: &Element) -> TimeSig {
+    let numerator = element.child("sigN").and_then(Element::int).unwrap_or(4) as i32;
+    let denominator = element.child("sigD").and_then(Element::int).unwrap_or(4) as i32;
+    let kind = element
+        .child("subtype")
+        .and_then(Element::int)
+        .map_or(TimeSigType::Normal, names::time_sig_type);
+    let stretch = match (
+        element.child("stretchN").and_then(Element::int),
+        element.child("stretchD").and_then(Element::int),
+    ) {
+        (Some(numerator), Some(denominator)) if numerator > 0 && denominator > 0 => {
+            Fraction::try_new(numerator, denominator).unwrap_or(Fraction::ONE)
+        }
+        _ => Fraction::ONE,
+    };
+    // TODO(parité): <textN>/<textD>, <Groups>, <showCourtesySig>.
+    TimeSig {
+        numerator,
+        denominator,
+        kind,
+        stretch,
+        courtesy: false,
+    }
+}
+
+/// Lecture d'une clef.
+fn read_clef(element: &Element) -> Clef {
+    let concert = element
+        .child("concertClefType")
+        .map(Element::text)
+        .and_then(names::clef_type);
+    let transposed = element
+        .child("transposingClefType")
+        .map(Element::text)
+        .and_then(names::clef_type);
+    let concert = concert.unwrap_or(ClefType::G);
+    Clef::pair(concert, transposed.unwrap_or(concert))
+}
+
+/// Lecture des `<Lyrics>` d'un accord.
+fn read_lyrics(element: &Element) -> Lyrics {
+    let verse = element
+        .child("no")
+        .and_then(Element::int)
+        .and_then(|value| usize::try_from(value.max(0)).ok())
+        .unwrap_or(0);
+    let syllabic = element
+        .child("syllabic")
+        .map(Element::text)
+        .map_or(LyricsSyllabic::Single, names::syllabic);
+    let text = element
+        .child("text")
+        .map(|node| node.text.clone())
+        .unwrap_or_default();
+    let mut lyrics = Lyrics::new(verse, syllabic, text);
+    lyrics.melisma = element
+        .child("ticks_f")
+        .or_else(|| element.child("ticks"))
+        .and_then(Element::fraction);
+    lyrics.placement = placement(element.child("placement"));
+    lyrics
+}
+
+/// Placement au-dessus ou au-dessous de la portée.
+fn placement(element: Option<&Element>) -> Placement {
+    match element.map(Element::text) {
+        Some("below") => Placement::Below,
+        _ => Placement::Above,
+    }
+}
+
+/// Lit un indicateur booléen (`<isCourtesy>1</isCourtesy>`).
+fn flag(element: &Element, name: &str) -> bool {
+    element
+        .child(name)
+        .and_then(Element::int)
+        .is_some_and(|value| value != 0)
+}
+
+/// Nombre de lignes d'une portée d'après `<StaffType>`.
+fn staff_lines(element: &Element) -> u8 {
+    match element.child("name").map(Element::text) {
+        Some("perc1Line") => 1,
+        Some("perc2Line") => 2,
+        Some("perc3Line") => 3,
+        Some("perc4Line") => 4,
+        _ => 5,
+    }
+    // TODO(parité): tablatures, portées sans ligne, <lines> explicite.
+}
+
+/// Intervalle diatonique approché d'un intervalle chromatique.
+///
+/// Utilisé seulement quand `<transposeDiatonic>` manque : `Interval::chromatic2diatonic`
+/// dans MuseScore est plus fin pour les intervalles composés.
+fn chromatic_to_diatonic(chromatic: i32) -> i32 {
+    let table = [0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6, 7];
+    match usize::try_from(chromatic) {
+        Ok(index) if index < table.len() => table[index],
+        _ => chromatic,
+    }
+}
