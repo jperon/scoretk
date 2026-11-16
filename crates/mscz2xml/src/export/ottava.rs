@@ -85,46 +85,47 @@ fn number(score: &Score, spanner: &Spanner) -> usize {
         .map_or(1, |index| index + 1)
 }
 
-/// Écrit les `<octave-shift>` qui commencent à ce tick sur la portée.
-pub(super) fn write_starts_at(
+/// Écrit le début d'une ottava précise, dans l'ordre des spanners.
+pub(super) fn write_start(
     score: &Score,
     out: &mut super::exportmusicxml::Out,
-    tick: Tick,
-    staff: StaffId,
+    index: usize,
+    xml_staff: usize,
     written: &mut [bool],
 ) {
-    for (index, spanner) in score.spanners.iter().enumerate() {
-        if !matches!(spanner.kind, SpannerType::Ottava(_))
-            || !spanner.visible
-            || spanner.start.track.staff() != staff
-            || spanner.start.tick != tick
-            || written.get(index).copied().unwrap_or(true)
-        {
-            continue;
-        }
-        if let Some(entry) = written.get_mut(index) {
-            *entry = true;
-        }
-        let (Some(kind), Some(size)) =
-            (start_type(spanner.kind.clone()), size(spanner.kind.clone()))
-        else {
-            continue;
-        };
-        out.attr(false);
-        out.xml
-            .start_element("direction", &[("placement", "above")]);
-        out.xml.start_element("direction-type", &[]);
-        out.xml.tag_empty(
-            "octave-shift",
-            &[
-                ("type", kind),
-                ("size", size),
-                ("number", &number(score, spanner).to_string()),
-            ],
-        );
-        out.xml.end_element();
-        out.xml.end_element();
+    let Some(spanner) = score.spanners.get(index) else {
+        return;
+    };
+    if !matches!(spanner.kind, SpannerType::Ottava(_))
+        || !spanner.visible
+        || written.get(index).copied().unwrap_or(true)
+    {
+        return;
     }
+    if let Some(entry) = written.get_mut(index) {
+        *entry = true;
+    }
+    let (Some(kind), Some(size)) = (start_type(spanner.kind.clone()), size(spanner.kind.clone()))
+    else {
+        return;
+    };
+    out.attr(false);
+    out.xml
+        .start_element("direction", &[("placement", "above")]);
+    out.xml.start_element("direction-type", &[]);
+    out.xml.tag_empty(
+        "octave-shift",
+        &[
+            ("type", kind),
+            ("size", size),
+            ("number", &number(score, spanner).to_string()),
+        ],
+    );
+    out.xml.end_element();
+    if xml_staff > 0 {
+        out.xml.tag("staff", &xml_staff.to_string());
+    }
+    out.xml.end_element();
 }
 
 /// Écrit les `<octave-shift type="stop">` qui finissent à ce tick.
@@ -133,6 +134,7 @@ pub(super) fn write_stops_at(
     out: &mut super::exportmusicxml::Out,
     tick: Tick,
     staff: StaffId,
+    xml_staff: usize,
     written: &mut [bool],
 ) {
     for (index, spanner) in score.spanners.iter().enumerate() {
@@ -163,6 +165,9 @@ pub(super) fn write_stops_at(
             ],
         );
         out.xml.end_element();
+        if xml_staff > 0 {
+            out.xml.tag("staff", &xml_staff.to_string());
+        }
         out.xml.end_element();
     }
 }

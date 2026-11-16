@@ -6,6 +6,7 @@
 //! (`tick`, `track`), comme dans `Spanner::tick()` / `Spanner::track()` et
 //! `Spanner::endTick()` / `Spanner::endTrack()`.
 
+use super::annotation::Placement;
 use super::fraction::Tick;
 use super::hairpin::Hairpin;
 use super::ids::Track;
@@ -53,6 +54,37 @@ pub enum OttavaType {
     FifteenthUp,
     /// `15mb`.
     FifteenthDown,
+}
+
+/// Propriétés d'une pédale (`Pedal` dans `engraving/dom/pedal.h`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PedalInfo {
+    /// Vrai si le trait de pédale est affiché (`lineVisible`).
+    pub line_visible: bool,
+    /// Texte de début (le plus souvent `<sym>keyboardPedalPed</sym>`).
+    pub begin_text: String,
+    /// Texte de fin.
+    pub end_text: String,
+    /// Crochet de début.
+    pub begin_hook: HookType,
+    /// Crochet de fin.
+    pub end_hook: HookType,
+    /// Placement au-dessus ou au-dessous.
+    pub placement: Placement,
+}
+
+impl PedalInfo {
+    /// Pédale dessinée par défaut : trait visible, aucun texte, en dessous.
+    pub fn new() -> Self {
+        Self {
+            line_visible: true,
+            begin_text: String::new(),
+            end_text: String::new(),
+            begin_hook: HookType::None,
+            end_hook: HookType::None,
+            placement: Placement::Below,
+        }
+    }
 }
 
 /// Crochet d'extrémité d'une ligne de texte.
@@ -256,6 +288,8 @@ pub struct Spanner {
     pub number: u8,
     /// Compléments propres aux soufflets.
     pub hairpin: Option<Hairpin>,
+    /// Compléments propres aux pédales.
+    pub pedal: Option<PedalInfo>,
     /// Complément propre aux liaisons d'expression, glissandos et trilles.
     pub notation: Option<SpannerNotation>,
     /// Compléments propres aux lignes de texte.
@@ -278,6 +312,7 @@ impl Spanner {
             volta: None,
             number: 0,
             hairpin: None,
+            pedal: None,
             notation: None,
             text_line: None,
             visible: true,

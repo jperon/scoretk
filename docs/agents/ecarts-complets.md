@@ -10,13 +10,13 @@ Ce document est produit par le test `ecarts_complets_document` de `crates/mscz2x
 | --- | ---: |
 | Beam-CrossM1 | **identique** |
 | barline01 | 6 |
-| barlinedelete | 2 |
+| barlinedelete | **identique** |
 | change | **identique** |
 | clef-1 | **identique** |
 | copypaste_tuplet_01 | **identique** |
 | grace | **identique** |
 | keysig_78216 | **identique** |
-| layout_elements | 63 |
+| layout_elements | 44 |
 | lyricsline01 | **identique** |
 | measure-4 | **identique** |
 | moonlight | 70 |
@@ -29,15 +29,15 @@ Ce document est produit par le test `ecarts_complets_document` de `crates/mscz2x
 | selectionfilter1 | **identique** |
 | testBreaksPage | **identique** |
 | testChordSymbols | **identique** |
-| testHairpinDynamics | 12 |
+| testHairpinDynamics | **identique** |
 | testHarmony6 | **identique** |
 | testMultiInstrumentPart3 | **identique** |
 | testTboxWords1 | 10 |
-| testTuplets8 | 6 |
+| testTuplets8 | **identique** |
 | testWedge4 | **identique** |
 | timesig-05 | **identique** |
-| undoResequenceMeasure | 6 |
-| voices | 8 |
+| undoResequenceMeasure | **identique** |
+| voices | 6 |
 
 ### Corpus v4
 
@@ -45,7 +45,7 @@ Ce document est produit par le test `ecarts_complets_document` de `crates/mscz2x
 | --- | ---: |
 | beamStemDir | **identique** |
 | changevisibility | **identique** |
-| copypaste_parts | 12 |
+| copypaste_parts | 2 |
 | copypastesymbollist-lyrics | **identique** |
 | dynamics | **identique** |
 | dynamics_niente | **identique** |
@@ -56,19 +56,19 @@ Ce document est produit par le test `ecarts_complets_document` de `crates/mscz2x
 | hairpins_and_repeats | **identique** |
 | linked-ties | **identique** |
 | mmrest | **identique** |
-| part-textlines | 20 |
+| part-textlines | **identique** |
 | partExclusion | **identique** |
 | repeat65 | **identique** |
 | repeat66 | **identique** |
 | repeat68 | **identique** |
 | repeat69 | **identique** |
 | tenuto_accent | **identique** |
-| testExcludeInvisibleElements | 39 |
+| testExcludeInvisibleElements | 15 |
 | testLocalTimesig1 | **identique** |
 | testNoteheads2 | **identique** |
 | testTempoPrecision | **identique** |
 | timesig-09 | **identique** |
-| voiceswitching | 12 |
+| voiceswitching | **identique** |
 
 ## Écarts groupés par balise
 
@@ -76,174 +76,64 @@ Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; fichie
 
 | Balise | Lignes | Fichiers | Exemples |
 | --- | ---: | ---: | --- |
-| `direction` | 30 | 5 | `<direction placement="below">` `</direction>` `<direction placement="above" system="only-top">` |
-| `direction-type` | 30 | 5 | `<direction-type>` `</direction-type>` |
-| `tuplet` | 18 | 2 | `<tuplet bracket="yes" number="1" placement="above" type="start"/>` `<tuplet bracket="yes" number="1" type="start"/>` `<tuplet bracket="yes" number="1" placement="above" type="start">` |
+| `tied` | 18 | 2 | `<tied orientation="over" placement="above" type="start"/>` `<tied type="start"/>` `<tied orientation="under" placement="below" type="start"/>` |
 | `duration` | 18 | 1 | `<duration>12</duration>` `<duration>24</duration>` `<duration>36</duration>` |
 | `stem` | 18 | 1 | `<stem>down</stem>` `<stem>up</stem>` |
-| `words` | 16 | 3 | `<words font-family="FreeSerif" font-size="12" font-style="italic">begin</words>` `<words>begin</words>` `<words font-family="FreeSerif" font-size="12" font-style="italic">end</words>` |
-| `notations` | 16 | 2 | `<notations>` `</notations>` `<notations print-object="no">` |
-| `tied` | 16 | 2 | `<tied orientation="over" placement="above" type="start"/>` `<tied type="start"/>` `<tied orientation="under" placement="below" type="start"/>` |
 | `forward` | 16 | 1 | `</forward>` `<forward>` |
-| `rehearsal` | 13 | 3 | `<rehearsal font-size="14" font-weight="bold" justify="center">1</rehearsal>` `<rehearsal font-size="14" font-weight="bold">1</rehearsal>` `<rehearsal font-size="14" font-weight="bold" justify="center">A</rehearsal>` |
+| `notations` | 14 | 2 | `<notations>` `</notations>` `<notations print-object="no">` |
 | `barline` | 8 | 3 | `<barline location="right">` `</barline>` |
 | `figure` | 8 | 1 | `<figure>` `</figure>` |
-| `pedal` | 6 | 3 | `<pedal line="yes" sign="yes" type="start"/>` `<pedal line="yes" sign="no" type="stop"/>` |
 | `attributes` | 6 | 2 | `<attributes>` `</attributes>` |
-| `wedge` | 6 | 2 | `<wedge number="1" spread="11.5" type="crescendo"/>` `<wedge number="1" type="diminuendo"/>` `<wedge number="1" type="stop"/>` |
-| `staff` | 5 | 1 | `<staff>2</staff>` `<staff>1</staff>` |
+| `direction` | 6 | 2 | `<direction placement="above" system="only-top">` `</direction>` `<direction placement="below">` |
+| `direction-type` | 6 | 2 | `<direction-type>` `</direction-type>` |
 | `bar-style` | 4 | 3 | `<bar-style>light-light</bar-style>` |
 | `backup` | 4 | 1 | `</backup>` `<backup>` |
 | `figure-number` | 4 | 1 | `<figure-number>5</figure-number>` `<figure-number>3</figure-number>` |
 | `figured-bass` | 4 | 1 | `<figured-bass>` `</figured-bass>` |
 | `bend` | 2 | 1 | `<bend>` `</bend>` |
-| `key` | 2 | 1 | `<key print-object="no">` `<key>` |
 | `measure-style` | 2 | 1 | `<measure-style number="1">` `</measure-style>` |
 | `slide` | 2 | 1 | `<slide line-type="solid" number="1" type="start">gliss.</slide>` `<slide line-type="solid" number="1" type="stop"/>` |
 | `staff-details` | 2 | 1 | `<staff-details print-object="no"/>` |
 | `technical` | 2 | 1 | `<technical>` `</technical>` |
-| `time` | 2 | 1 | `<time print-object="no">` `<time>` |
 | `wavy-line` | 2 | 1 | `<wavy-line number="1" type="stop"/>` |
+| `words` | 2 | 1 | `<words font-size="12" valign="top">Below 2</words>` |
 | `bend-alter` | 1 | 1 | `<bend-alter>-1</bend-alter>` |
 | `measure-repeat` | 1 | 1 | `<measure-repeat type="start">1</measure-repeat>` |
-| `notehead` | 1 | 1 | `<notehead parentheses="yes">normal</notehead>` |
+| `rehearsal` | 1 | 1 | `<rehearsal font-size="14" font-weight="bold" justify="center">A</rehearsal>` |
+| `staff` | 1 | 1 | `<staff>1</staff>` |
 | `with-bar` | 1 | 1 | `<with-bar>dip</with-bar>` |
 
 ## Diffs
 
 ```diff
 
-=== v4/copypaste_parts : 12 lignes d'écart ===
+=== v4/copypaste_parts : 2 lignes d'écart ===
 --- reference
 +++ sortie
-@@ -61,9 +61,4 @@
-         <sound tempo="80"/>
-       </direction>
--      <direction placement="below">
--        <direction-type>
--          <pedal line="yes" sign="yes" type="start"/>
--        </direction-type>
--      </direction>
-       <direction placement="above">
-         <direction-type>
-@@ -147,9 +142,4 @@
-         </notations>
-       </note>
--      <direction placement="below">
--        <direction-type>
--          <pedal line="yes" sign="no" type="stop"/>
--        </direction-type>
--      </direction>
-       <direction placement="above">
-         <direction-type>
-@@ -285,5 +275,4 @@
+@@ -285,5 +285,4 @@
              <trill-mark/>
              <wavy-line number="1" type="start"/>
 -            <wavy-line number="1" type="stop"/>
            </ornaments>
          </notations>
-@@ -305,4 +294,5 @@
+@@ -305,4 +304,5 @@
            <ornaments>
              <tremolo type="start">3</tremolo>
 +            <wavy-line number="1" type="stop"/>
            </ornaments>
          </notations>
 
-=== v4/part-textlines : 20 lignes d'écart ===
+=== v4/testExcludeInvisibleElements : 15 lignes d'écart ===
 --- reference
 +++ sortie
-@@ -80,9 +80,4 @@
-         </clef>
-       </attributes>
--      <direction placement="below">
--        <direction-type>
--          <wedge number="1" spread="11.5" type="crescendo"/>
--        </direction-type>
--      </direction>
-       <direction placement="above">
-         <direction-type>
-@@ -93,4 +88,9 @@
-         </direction-type>
-       </direction>
-+      <direction placement="below">
-+        <direction-type>
-+          <wedge number="1" spread="11.5" type="crescendo"/>
-+        </direction-type>
-+      </direction>
-       <note>
-         <pitch>
-@@ -265,9 +265,4 @@
-     </measure>
-     <measure number="3">
--      <direction placement="below">
--        <direction-type>
--          <wedge number="1" type="diminuendo"/>
--        </direction-type>
--      </direction>
-       <direction placement="above">
-         <direction-type>
-@@ -278,4 +273,9 @@
-         </direction-type>
-       </direction>
-+      <direction placement="below">
-+        <direction-type>
-+          <wedge number="1" type="diminuendo"/>
-+        </direction-type>
-+      </direction>
-       <note>
-         <pitch>
-
-=== v4/testExcludeInvisibleElements : 39 lignes d'écart ===
---- reference
-+++ sortie
-@@ -332,4 +332,9 @@
-     </measure>
-     <measure number="6">
-+      <direction placement="below">
-+        <direction-type>
-+          <wedge number="1" spread="11.5" type="crescendo"/>
-+        </direction-type>
-+      </direction>
-       <note>
-         <pitch>
-@@ -362,4 +367,9 @@
-         <stem>up</stem>
-       </note>
-+      <direction placement="below">
-+        <direction-type>
-+          <wedge number="1" type="stop"/>
-+        </direction-type>
-+      </direction>
-       <note>
-         <pitch>
-@@ -374,9 +384,4 @@
-     </measure>
-     <measure number="7">
--      <direction placement="below">
--        <direction-type>
--          <pedal line="yes" sign="yes" type="start"/>
--        </direction-type>
--      </direction>
-       <note>
-         <pitch>
-@@ -425,9 +430,4 @@
-         </notations>
-       </note>
--      <direction placement="below">
--        <direction-type>
--          <pedal line="yes" sign="no" type="stop"/>
--        </direction-type>
--      </direction>
-     </measure>
-     <measure number="8">
 @@ -771,6 +771,8 @@
          <type>quarter</type>
          <stem>up</stem>
--        <notations print-object="no">
 +        <notations>
-           <tied type="start"/>
++          <tied type="start"/>
 +        </notations>
-+        <notations print-object="no">
+         <notations print-object="no">
+-          <tied type="start"/>
            <technical>
              <fingering>4</fingering>
 @@ -790,5 +792,5 @@
@@ -254,53 +144,30 @@ Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; fichie
            <tied type="stop"/>
          </notations>
 @@ -816,8 +818,6 @@
-… (diff tronqué)
-
-=== v4/voiceswitching : 12 lignes d'écart ===
---- reference
-+++ sortie
-@@ -167,5 +167,5 @@
+         <type>quarter</type>
          <stem>up</stem>
+-        <notations print-object="no">
+-          <tied type="start"/>
+-        </notations>
          <notations>
--          <tuplet bracket="yes" placement="above" type="start"/>
-+          <tuplet bracket="yes" type="start"/>
-         </notations>
-       </note>
-@@ -263,5 +263,5 @@
-         <notehead>x</notehead>
-         <notations>
--          <tuplet bracket="yes" number="1" placement="above" type="start"/>
-+          <tuplet bracket="yes" number="1" type="start"/>
-         </notations>
-       </note>
-@@ -281,5 +281,5 @@
-         <beam number="1">begin</beam>
-         <notations>
--          <tuplet bracket="no" number="2" placement="above" type="start">
-+          <tuplet bracket="no" number="2" type="start">
-             <tuplet-actual>
-               <tuplet-number>3</tuplet-number>
-@@ -442,5 +442,5 @@
-         <notehead>x</notehead>
-         <notations>
--          <tuplet bracket="yes" placement="above" type="start"/>
-+          <tuplet bracket="yes" type="start"/>
-         </notations>
-       </note>
-@@ -517,5 +517,5 @@
-         <notehead>x</notehead>
-         <notations>
--          <tuplet bracket="yes" number="1" placement="above" type="start"/>
-+          <tuplet bracket="yes" number="1" type="start"/>
-         </notations>
-       </note>
-@@ -534,5 +534,5 @@
++          <tied type="start"/>
+           <technical>
+             <fingering>4</fingering>
+@@ -837,5 +837,5 @@
+         <type>quarter</type>
          <stem>up</stem>
-         <notations>
--          <tuplet bracket="yes" number="2" placement="above" type="start">
-+          <tuplet bracket="yes" number="2" type="start">
-             <tuplet-actual>
-               <tuplet-number>3</tuplet-number>
+-        <notations print-object="no">
++        <notations>
+           <tied type="stop"/>
+         </notations>
+@@ -853,7 +853,4 @@
+         <type>half</type>
+       </note>
+-      <barline location="right">
+-        <bar-style>light-light</bar-style>
+-      </barline>
+     </measure>
+     <measure number="16">
 
 === v3/barline01 : 6 lignes d'écart ===
 --- reference
@@ -322,49 +189,10 @@ Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; fichie
        <note>
          <rest measure="yes"/>
 
-=== v3/barlinedelete : 2 lignes d'écart ===
+=== v3/layout_elements : 44 lignes d'écart ===
 --- reference
 +++ sortie
-@@ -149,5 +149,5 @@
-       <direction placement="above" system="only-top">
-         <direction-type>
--          <rehearsal font-size="14" font-weight="bold" justify="center">1</rehearsal>
-+          <rehearsal font-size="14" font-weight="bold">1</rehearsal>
-         </direction-type>
-       </direction>
-
-=== v3/layout_elements : 63 lignes d'écart ===
---- reference
-+++ sortie
-@@ -168,10 +168,4 @@
-         <duration>24</duration>
-       </backup>
--      <direction placement="below">
--        <direction-type>
--          <pedal line="yes" sign="yes" type="start"/>
--        </direction-type>
--        <staff>2</staff>
--      </direction>
-       <note>
-         <grace/>
-@@ -213,10 +207,4 @@
-         <staff>2</staff>
-       </note>
--      <direction placement="below">
--        <direction-type>
--          <pedal line="yes" sign="no" type="stop"/>
--        </direction-type>
--        <staff>2</staff>
--      </direction>
-     </measure>
-     <measure number="2">
-@@ -581,5 +569,4 @@
-         <type>quarter</type>
-         <stem>down</stem>
--        <notehead parentheses="yes">normal</notehead>
-         <staff>1</staff>
-       </note>
-@@ -650,7 +637,4 @@
+@@ -650,7 +650,4 @@
          <staff>2</staff>
        </note>
 -      <barline location="right">
@@ -372,14 +200,7 @@ Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; fichie
 -      </barline>
      </measure>
      <measure number="7">
-@@ -670,5 +654,5 @@
-       <direction placement="above" system="only-top">
-         <direction-type>
--          <rehearsal font-size="14" font-weight="bold" justify="center">A</rehearsal>
-+          <rehearsal font-size="14" font-weight="bold">A</rehearsal>
-         </direction-type>
-         <staff>1</staff>
-@@ -745,12 +729,4 @@
+@@ -745,12 +742,4 @@
          </notations>
        </note>
 -      <figured-bass>
@@ -392,8 +213,43 @@ Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; fichie
 -      </figured-bass>
        <note>
          <pitch>
-@@ -789,5 +765,4 @@
-           <octave-shift number="1" size="8" type="down"/>
+@@ -869,12 +858,4 @@
+         <stem>down</stem>
+         <staff>2</staff>
+-        <notations>
+-          <technical>
+-            <bend>
+-              <bend-alter>-1</bend-alter>
+-              <with-bar>dip</with-bar>
+-            </bend>
+-          </technical>
+-        </notations>
+       </note>
+       <direction placement="above" system="only-top">
+@@ -887,15 +868,4 @@
+     </measure>
+     <measure number="8">
+-      <attributes>
+-        <measure-style number="1">
+-          <measure-repeat type="start">1</measure-repeat>
+-        </measure-style>
+-      </attributes>
+-      <direction placement="above" system="only-top">
+-        <direction-type>
+-          <rehearsal font-size="14" font-weight="bold" justify="center">A</rehearsal>
+-        </direction-type>
+-        <staff>1</staff>
+-      </direction>
+       <note>
+         <pitch>
+@@ -965,16 +935,5 @@
+         <stem>up</stem>
+         <staff>1</staff>
+-        <notations>
+-          <slide line-type="solid" number="1" type="start">gliss.</slide>
+-        </notations>
+       </note>
+-      <figured-bass>
 … (diff tronqué)
 
 === v3/moonlight : 70 lignes d'écart ===
@@ -459,52 +315,6 @@ Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; fichie
          <staff>2</staff>
 … (diff tronqué)
 
-=== v3/testHairpinDynamics : 12 lignes d'écart ===
---- reference
-+++ sortie
-@@ -195,5 +195,5 @@
-       <direction placement="below">
-         <direction-type>
--          <words font-family="FreeSerif" font-size="12" font-style="italic">begin</words>
-+          <words>begin</words>
-         </direction-type>
-         <direction-type>
-@@ -246,5 +246,5 @@
-         </direction-type>
-         <direction-type>
--          <words font-family="FreeSerif" font-size="12" font-style="italic">end</words>
-+          <words>end</words>
-         </direction-type>
-       </direction>
-@@ -253,5 +253,5 @@
-       <direction placement="below">
-         <direction-type>
--          <words font-family="FreeSans" font-size="10" font-style="italic">from</words>
-+          <words>from</words>
-         </direction-type>
-         <direction-type>
-@@ -309,5 +309,5 @@
-         </direction-type>
-         <direction-type>
--          <words font-family="FreeSerif" font-size="12" font-style="italic">to</words>
-+          <words>to</words>
-         </direction-type>
-         <direction-type>
-@@ -321,5 +321,5 @@
-       <direction placement="below">
-         <direction-type>
--          <words font-family="FreeSerif" font-size="12" font-style="italic">cresc. from</words>
-+          <words>cresc. from</words>
-         </direction-type>
-         <direction-type>
-@@ -329,5 +329,5 @@
-         </direction-type>
-         <direction-type>
--          <words font-family="FreeSerif" font-size="12" font-style="italic">to</words>
-+          <words>to</words>
-         </direction-type>
-         <direction-type>
-
 === v3/testTboxWords1 : 10 lignes d'écart ===
 --- reference
 +++ sortie
@@ -529,66 +339,9 @@ Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; fichie
        <note>
          <rest measure="yes"/>
 
-=== v3/testTuplets8 : 6 lignes d'écart ===
+=== v3/voices : 6 lignes d'écart ===
 --- reference
 +++ sortie
-@@ -78,5 +78,5 @@
-         <stem>down</stem>
-         <notations>
--          <tuplet bracket="yes" number="1" placement="above" type="start"/>
-+          <tuplet bracket="yes" number="1" type="start"/>
-         </notations>
-       </note>
-@@ -207,5 +207,5 @@
-         <stem>down</stem>
-         <notations>
--          <tuplet bracket="yes" number="1" placement="above" type="start"/>
-+          <tuplet bracket="yes" number="1" type="start"/>
-         </notations>
-       </note>
-@@ -340,5 +340,5 @@
-         <beam number="2">begin</beam>
-         <notations>
--          <tuplet bracket="yes" number="1" placement="above" type="start">
-+          <tuplet bracket="yes" number="1" type="start">
-             <tuplet-actual>
-               <tuplet-number>3</tuplet-number>
-
-=== v3/undoResequenceMeasure : 6 lignes d'écart ===
---- reference
-+++ sortie
-@@ -93,5 +93,5 @@
-       <direction placement="above" system="only-top">
-         <direction-type>
--          <rehearsal font-size="14" font-weight="bold" justify="center">5</rehearsal>
-+          <rehearsal font-size="14" font-weight="bold">5</rehearsal>
-         </direction-type>
-       </direction>
-@@ -142,5 +142,5 @@
-       <direction placement="above" system="only-top">
-         <direction-type>
--          <rehearsal font-size="14" font-weight="bold" justify="center">QQ</rehearsal>
-+          <rehearsal font-size="14" font-weight="bold">QQ</rehearsal>
-         </direction-type>
-       </direction>
-@@ -191,5 +191,5 @@
-       <direction placement="above" system="only-top">
-         <direction-type>
--          <rehearsal font-size="14" font-weight="bold" justify="center">Foo</rehearsal>
-+          <rehearsal font-size="14" font-weight="bold">Foo</rehearsal>
-         </direction-type>
-       </direction>
-
-=== v3/voices : 8 lignes d'écart ===
---- reference
-+++ sortie
-@@ -196,5 +196,5 @@
-       <direction placement="below">
-         <direction-type>
--          <words font-family="FreeSerif" font-size="12" font-style="italic">cresc.</words>
-+          <words>cresc.</words>
-         </direction-type>
-         <direction-type>
 @@ -554,7 +554,4 @@
          <staff>2</staff>
        </note>

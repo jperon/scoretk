@@ -815,6 +815,9 @@ pub(crate) fn write_rehearsal(out: &mut Out, mark: &RehearsalMark, xml_staff: us
         RehearsalFrame::Circle => attributes.push(("enclosure", "circle")),
         RehearsalFrame::NoFrame => attributes.push(("enclosure", "none")),
     }
+    // `Sid::rehearsalMarkAlign` vaut `HCENTER` par défaut : MuseScore écrit
+    // `justify="center"` pour un repère centré.
+    attributes.push(("justify", "center"));
     write_fragments(
         out,
         "rehearsal",

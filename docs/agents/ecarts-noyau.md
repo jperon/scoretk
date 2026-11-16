@@ -547,11 +547,32 @@ Corrigé dans cette passe :
   comme `MasterScore`).
 - **soufflets** : `spread` vient de `hairpinHeight` (12 en 3.x, 11.5 en 4.x).
 - **silences invisibles** : `<note print-object="no">` pour un silence masqué.
+- **n-olets** : `Tuplet::placement` reprend `<direction>` et écrit
+  `placement="above|below"` sur `<tuplet type="start">` ; les fichiers
+  `testTuplets8` et `voiceswitching` deviennent conformes.
+- **ordre des directions** : les débuts de spanner suivent l'ordre des
+  spanners (`spannerStart`), et non un ordre par famille : soufflet avant
+  ligne de texte, pédale avant ottava (`part-textlines` conforme).
+- **pédales** : nouveau `PedalInfo` (trait, textes, crochets, placement) lu
+  par les deux lecteurs (nouveau `read/read4xx/pedals.rs`) et exporté comme
+  `ExportMusicXml::pedal` (`start`/`stop`, `line`, `sign`, `<staff>`).
+- **textes de soufflet** : la police (`beginFontFace`/`Size`/`Style`, défaut
+  FreeSerif 12 italique) est portée par `Hairpin` et écrite sur les `<words>`.
+- **repères de répétition** : `justify="center"` (style `rehearsalMarkAlign`).
+- **armure et mesure invisibles** : `KeySig::visible` / `TimeSig::visible`
+  écrivent `print-object="no"`.
+- **têtes entre parenthèses** : `Note::parentheses` (symboles
+  `noteheadParenthesisLeft/Right`) écrit `parentheses="yes"`.
+- **soufflets invisibles** : `Spanner::visible` est lu dans `<HairPin>` et un
+  soufflet invisible n'est pas exporté (`canWrite`).
 
 Écarts complets restants (détail et fréquence dans `ecarts-complets.md`) :
-`<wedge>` de `part-textlines`/`testExcludeInvisibleElements` (soufflets
-invisibles ou déplacés), `<direction>` déplacées par un changement
-d'instrument, `<tuplet placement>`, `<tied orientation>`, `figured-bass`,
-`<duration>` de `moonlight`, formes de têtes/altérations, `part-group`,
-`<measure-repeat>`, et les barlines de courtoisie générées par la mise en page
-(avant un changement de tonalité/mesure en fin de système).
+`<tied orientation>` (orientation des liaisons de prolongation non
+modélisée), découpage des `backup`/`forward` et durées de `moonlight`
+(voix à trous et notes croisées), direction de hampe d'une ligature croisée
+(9 notes de `moonlight`), regroupement des `<notations>` autour d'un `tied`
+invisible, `figured-bass`, `<bend>`/`<with-bar>`, `<measure-repeat>`,
+`<staff-details print-object="no">` des portées masquées, `TBox` « below »
+rattaché à la mesure suivante, reprise de mesure, et les barlines de courtoisie
+générées par la mise en page (avant un changement de tonalité/mesure en fin de
+système).

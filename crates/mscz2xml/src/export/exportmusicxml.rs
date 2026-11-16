@@ -38,6 +38,7 @@ use super::layout;
 use super::notations;
 use super::nuances::{self, Nuances};
 use super::ottava;
+use super::pedals;
 use super::pitch;
 use super::repeats;
 use super::stems;
@@ -934,28 +935,32 @@ impl<'a> Context<'a> {
                         self.harmonies(out, measure, segment, staff_id, track);
                         self.annotations(out, segment, staff_id, xml_staff);
                     }
-                    // Débuts de lignes de texte (`spannerStart`).
+                    // `spannerStart` : les directions de spanner suivent
+                    // l'ordre des spanners, comme la `spannerMap` du C++.
                     for (index, spanner) in self.score.spanners.iter().enumerate() {
-                        if spanner.kind != SpannerType::TextLine
-                            || spanner.start.tick != segment.tick
+                        if spanner.start.tick != segment.tick
                             || spanner.start.track.staff() != staff_id
                             || spanners.started.contains(&index)
                         {
                             continue;
                         }
-                        textlines::start(out, spanner, xml_staff);
+                        match spanner.kind {
+                            SpannerType::TextLine => textlines::start(out, spanner, xml_staff),
+                            SpannerType::Hairpin(_) => {
+                                nuances.start_one(self.score, out, index, xml_staff)
+                            }
+                            SpannerType::Ottava(_) => ottava::write_start(
+                                self.score,
+                                out,
+                                index,
+                                xml_staff,
+                                ottava_started,
+                            ),
+                            SpannerType::Pedal => pedals::start(out, spanner, xml_staff),
+                            _ => continue,
+                        }
                         spanners.started.push(index);
                     }
-                    nuances.start(self.score, out, segment, staff_id, xml_staff, track);
-                    // `spannerStart` : l'ottava s'écrit après les annotations du
-                    // segment et avant ses notes.
-                    ottava::write_starts_at(
-                        self.score,
-                        out,
-                        segment.tick,
-                        staff_id,
-                        ottava_started,
-                    );
                 }
                 let is_chord_rest = matches!(item, SegmentItem::ChordRest(_));
 
@@ -975,8 +980,24 @@ impl<'a> Context<'a> {
                         textlines::stop(out, spanner, xml_staff);
                         spanners.stopped.push(index);
                     }
-                    // `spannerStop` : fin d'ottava éventuelle à ce tick.
-                    ottava::write_stops_at(self.score, out, out.tick, staff_id, ottava_stopped);
+                    // `spannerStop` : pédales et ottavas finissant à ce tick.
+                    for spanner in &self.score.spanners {
+                        if spanner.kind == SpannerType::Pedal
+                            && spanner.visible
+                            && spanner.start.track.staff() == staff_id
+                            && spanner.end.tick == out.tick
+                        {
+                            pedals::stop(out, spanner, xml_staff);
+                        }
+                    }
+                    ottava::write_stops_at(
+                        self.score,
+                        out,
+                        out.tick,
+                        staff_id,
+                        xml_staff,
+                        ottava_stopped,
+                    );
                 }
             }
         }
@@ -1221,7 +1242,16 @@ impl Context<'_> {
             TupletNumberType::Ratio => attributes.push(("show-number", "both".to_owned())),
             TupletNumberType::None => attributes.push(("show-number", "none".to_owned())),
         }
-        // TODO(parité): direction/placement du n-olet (absent du modèle).
+        if let Some(placement) = tuplet.placement {
+            attributes.push((
+                "placement",
+                match placement {
+                    Placement::Above => "above",
+                    Placement::Below => "below",
+                }
+                .to_owned(),
+            ));
+        }
 
         let borrowed = borrow_attributes(&attributes);
         notations.tag(&mut out.xml, None);
@@ -1766,7 +1796,7 @@ impl Context<'_> {
             if measure.start_tick.is_zero() {
                 // MuseScore crée une armure factice à l'armure inconnue : seul
                 // <fifths> est écrit.
-                self.keysig(out, 0, Key::C, KeyMode::Unknown);
+                self.keysig(out, 0, Key::C, KeyMode::Unknown, true);
             }
         } else {
             let first = self.active_key(keysigs[0].1);
@@ -1778,10 +1808,16 @@ impl Context<'_> {
                     .all(|(_, keysig)| self.active_key(keysig) == first);
             if single {
                 let keysig = keysigs[0].1;
-                self.keysig(out, 0, first, keysig.mode);
+                self.keysig(out, 0, first, keysig.mode, keysig.visible);
             } else {
                 for (position, keysig) in keysigs {
-                    self.keysig(out, position + 1, self.active_key(keysig), keysig.mode);
+                    self.keysig(
+                        out,
+                        position + 1,
+                        self.active_key(keysig),
+                        keysig.mode,
+                        keysig.visible,
+                    );
                 }
             }
         }
@@ -1811,12 +1847,15 @@ impl Context<'_> {
     }
 
     /// Écrit `<key>` (`keysig`).
-    fn keysig(&self, out: &mut Out, staff: usize, key: Key, mode: KeyMode) {
+    fn keysig(&self, out: &mut Out, staff: usize, key: Key, mode: KeyMode, visible: bool) {
         out.attr(true);
         let number = staff.to_string();
         let mut attributes: Vec<(&str, &str)> = Vec::new();
         if staff > 0 {
             attributes.push(("number", &number));
+        }
+        if !visible {
+            attributes.push(("print-object", "no"));
         }
         out.xml.start_element("key", &attributes);
         // TODO(parité): armures non traditionnelles (key-step/key-alter/
@@ -1846,6 +1885,9 @@ impl Context<'_> {
         }
         // TODO(parité): print-object="no" (mesure non visible ou non affichée
         // sur cette portée) : le modèle n'a pas ces propriétés.
+        if !timesig.visible {
+            attributes.push(("print-object", "no"));
+        }
         out.xml.start_element("time", &attributes);
         out.xml.tag("beats", &timesig.numerator.to_string());
         out.xml.tag("beat-type", &timesig.denominator.to_string());
@@ -2398,6 +2440,9 @@ fn write_lyric(out: &mut Out, lyric: &Lyrics) {
 /// pour les têtes sans équivalent.
 fn write_notehead(out: &mut Out, note: &Note, chord: &Chord, duration: Duration) {
     let mut attributes: Vec<(&str, &str)> = Vec::new();
+    if note.parentheses {
+        attributes.push(("parentheses", "yes"));
+    }
     match note.head {
         NoteHeadType::Quarter => attributes.push(("filled", "yes")),
         NoteHeadType::Half | NoteHeadType::Whole => attributes.push(("filled", "no")),
@@ -2419,7 +2464,7 @@ fn write_notehead(out: &mut Out, note: &Note, chord: &Chord, duration: Duration)
 
     let value = match &note.head_group {
         NoteHeadGroup::Normal => {
-            if note.head == NoteHeadType::Auto {
+            if note.head == NoteHeadType::Auto && !note.parentheses {
                 None
             } else {
                 Some("normal")
