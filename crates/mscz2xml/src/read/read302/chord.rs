@@ -164,7 +164,7 @@ pub(crate) fn read_tuplet(
     let mut base_kind = DurationType::Eighth;
     let mut base_dots = 0u8;
     let mut number_type = TupletNumberType::Number;
-    let mut bracket = false;
+    let mut bracket = None;
 
     for child in node.children() {
         match child.name() {
@@ -176,7 +176,7 @@ pub(crate) fn read_tuplet(
             }
             "baseDots" => base_dots = child.int_text().unwrap_or(0).clamp(0, 4) as u8,
             "numberType" => number_type = tables::tuplet_number_type(child.int_text()),
-            "bracket" => bracket = child.int_text().unwrap_or(0) != 0,
+            "bracket" => bracket = Some(child.int_text().unwrap_or(0) != 0),
             _ => {}
         }
     }
@@ -187,7 +187,15 @@ pub(crate) fn read_tuplet(
     let mut tuplet = Tuplet::new(ratio, base_len, tick, len);
     tuplet.parent = parent;
     tuplet.number_type = number_type;
-    tuplet.bracket = bracket;
+    tuplet.actual_notes = actual;
+    tuplet.normal_notes = normal;
+    // `Tuplet::calcHasBracket` n'est qu'une mise en page ; faute de ligatures
+    // modélisées, on applique la règle du corpus : un n-olet imbriqué de durée
+    // de base plus courte qu'une croche, ou de croches avec un ratio réduit,
+    // se passe de crochet.
+    let short_base = base_len < Fraction::new(1, 8)
+        || (base_len == Fraction::new(1, 8) && ratio != Fraction::ONE);
+    tuplet.bracket = bracket.unwrap_or(!(short_base && parent.is_some()));
     reader.score.add_tuplet(tuplet)
 }
 
