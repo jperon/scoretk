@@ -1885,3 +1885,109 @@ fn credits_et_metadonnees_de_page_de_titre() {
          valign=\"bottom\" font-size=\"8\">© 2026</credit-words>"
     ));
 }
+
+#[test]
+fn parties_multi_instruments() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Flute", "Fl."));
+    let mut flute = piano_instrument();
+    flute.id = "wind.flutes.flute".to_owned();
+    flute.track_name = "Flute".to_owned();
+    flute.midi_program = Some(73);
+    score.part_mut(part_id).instrument = flute.clone();
+    let mut oboe = flute;
+    oboe.id = "wind.reed.oboe".to_owned();
+    oboe.track_name = "Oboe".to_owned();
+    oboe.midi_program = Some(68);
+    score
+        .part_mut(part_id)
+        .set_instrument_at(Fraction::new(1, 2), oboe);
+    let staff = score.add_staff(part_id);
+    let track = Track::new(staff, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::half(),
+        &[(60, tpc::C)],
+    );
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::new(1, 2),
+        Duration::half(),
+        &[(62, tpc::D)],
+    );
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<score-instrument id=\"P1-I2\">"));
+    assert!(xml.contains("<instrument-name>Oboe</instrument-name>"));
+    assert!(xml.contains("<instrument-sound>wind.reed.oboe</instrument-sound>"));
+    assert!(xml.contains("<midi-instrument id=\"P1-I2\">"));
+    assert!(xml.contains("<midi-channel>2</midi-channel>"));
+    assert!(xml.contains("<midi-program>69</midi-program>"));
+    assert!(xml.contains("<instruments>2</instruments>"));
+    assert!(xml.contains("<instrument id=\"P1-I1\"/>"));
+    assert!(xml.contains("<instrument id=\"P1-I2\"/>"));
+}
+
+#[test]
+fn numerotation_apres_saut_de_section() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    for index in 0..3 {
+        let start = Fraction::from_integer(index as i64);
+        let mut measure = ajouter_mesure(index, start, Fraction::ONE, Fraction::ONE);
+        if index == 1 {
+            measure.section_break_before = true;
+        }
+        ajouter_accord(
+            &mut score,
+            &mut measure,
+            track,
+            start,
+            Duration::whole(),
+            &[(60, tpc::C)],
+        );
+        score.add_measure(measure);
+    }
+
+    let xml = export_musicxml(&score).expect("export");
+    // La deuxième mesure rouvre une section : elle repart à 1 et réécrit les
+    // divisions, la troisième suit.
+    assert_eq!(xml.matches("<measure number=\"1\">").count(), 2);
+    assert!(xml.contains("<measure number=\"2\">"));
+    assert_eq!(xml.matches("<divisions>").count(), 2);
+}
+
+#[test]
+fn alteration_d_avertissement() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let ids = ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(61, tpc::C)],
+    );
+    let mut accidental = Accidental::new(AccidentalType::Sharp);
+    accidental.user = true;
+    score.note_mut(ids[0]).accidental = Some(accidental);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<accidental cautionary=\"yes\" parentheses=\"no\">sharp</accidental>"));
+}
