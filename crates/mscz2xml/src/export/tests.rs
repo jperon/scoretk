@@ -126,6 +126,7 @@ fn piano_instrument() -> Instrument {
         id: "keyboard.piano".to_owned(),
         long_name: "Piano".to_owned(),
         short_name: "Pno.".to_owned(),
+        track_name: "Piano".to_owned(),
         transpose: None,
         midi_program: Some(0),
     }
@@ -574,6 +575,7 @@ fn transposition_et_concert_pitch() {
         id: "wind.reed.clarinet.bflat".to_owned(),
         long_name: "B♭ Clarinet".to_owned(),
         short_name: "Bb Cl.".to_owned(),
+        track_name: "B♭ Clarinet".to_owned(),
         transpose: Some(Transpose::new(-1, -2)),
         midi_program: Some(71),
     };
@@ -982,6 +984,7 @@ fn corpus_linked_ties() {
         id: "wind.flutes.flute".to_owned(),
         long_name: "Flute".to_owned(),
         short_name: "Fl.".to_owned(),
+        track_name: "Flute".to_owned(),
         transpose: None,
         midi_program: Some(73),
     };
@@ -1145,6 +1148,7 @@ fn corpus_paroles() {
         id: "voice.vocals".to_owned(),
         long_name: "Voice".to_owned(),
         short_name: String::new(),
+        track_name: "Voice".to_owned(),
         transpose: None,
         midi_program: Some(52),
     };

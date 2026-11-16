@@ -72,6 +72,11 @@ cette clef à la lecture (`read400`).
 
 ## 2. `<instrument-name>` pris dans le nom long au lieu du nom de piste — 3 fichiers
 
+**Corrigé** (lecteur/modèle/export) : `Instrument::track_name` reprend
+`<trackName>` et `<instrument-name>` l'écrit tel quel, comme
+`MScoreTextToMusicXml::toPlainText(instr->trackName())` ; le nom long ne sert
+plus de repli.
+
 Fichiers : hairpin_dynamic_inside, part-textlines, testLocalTimesig1.
 
 Diffs :

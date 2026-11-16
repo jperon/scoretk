@@ -118,6 +118,7 @@ fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
             .child("shortName")
             .map(Node::trimmed_text)
             .unwrap_or_default(),
+        track_name,
         transpose: None,
         midi_program: None,
     };

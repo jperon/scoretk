@@ -452,11 +452,7 @@ impl<'a> Context<'a> {
 
             out.xml
                 .start_element("score-instrument", &[("id", &instrument_id)]);
-            let instrument_name = if part.instrument.long_name.is_empty() {
-                name.clone()
-            } else {
-                plain_text(&part.instrument.long_name)
-            };
+            let instrument_name = part.instrument.track_name.clone();
             out.xml.tag("instrument-name", &instrument_name);
             if !part.instrument.id.is_empty() {
                 out.xml.tag("instrument-sound", &part.instrument.id);

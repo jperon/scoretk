@@ -21,6 +21,9 @@ pub struct Instrument {
     pub long_name: String,
     /// Nom court de l'instrument.
     pub short_name: String,
+    /// Nom de piste (`Instrument::trackName`) : c'est lui que MuseScore écrit
+    /// dans `<instrument-name>`.
+    pub track_name: String,
     /// Transposition écrite, si l'instrument est transpositeur.
     pub transpose: Option<Transpose>,
     /// Numéro de programme MIDI (0-127), si connu.
@@ -34,10 +37,14 @@ impl Instrument {
         long_name: impl Into<String>,
         short_name: impl Into<String>,
     ) -> Self {
+        let id = id.into();
+        let long_name = long_name.into();
+        let short_name = short_name.into();
         Self {
-            id: id.into(),
-            long_name: long_name.into(),
-            short_name: short_name.into(),
+            id,
+            track_name: long_name.clone(),
+            long_name,
+            short_name,
             transpose: None,
             midi_program: None,
         }
@@ -101,6 +108,7 @@ impl Part {
             instrument: Instrument {
                 long_name: long_name.clone(),
                 short_name: short_name.clone(),
+                track_name: long_name.clone(),
                 ..Instrument::default()
             },
             long_name,

@@ -270,10 +270,19 @@ impl Reader {
                 })
                 .map(|child| child.text().to_owned())
                 .unwrap_or_default(),
+            // `Instrument::trackName()`, distinct du nom long : c'est lui que
+            // `<instrument-name>` reprend.
+            track_name: element
+                .child("trackName")
+                .or_else(|| {
+                    element
+                        .child("InstrumentLabel")
+                        .and_then(|label| label.child("trackName"))
+                })
+                .map(|child| child.text().to_owned())
+                .unwrap_or_default(),
             ..Instrument::default()
         };
-        // TODO(parité): le nom de piste de l'instrument peut différer du nom
-        // long ; le modèle ne le stocke pas séparément.
 
         let chromatic = element
             .child("transposeChromatic")
