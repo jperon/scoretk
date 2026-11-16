@@ -26,11 +26,12 @@ use crate::container::MscVersion;
 use crate::model::{ids::StaffId, tpc};
 use crate::model::{
     Accidental, Annotation, Articulation, BarLine, BarLineType, BeamMode, Breath, BreathType,
-    Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration, DurationType, Dynamic, Fraction,
-    GraceChord, GraceType, Harmony, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
-    Measure, Note, NoteId, Part, Placement, RehearsalMark, Score, Segment, SegmentItem,
-    SegmentType, Staff, StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType,
-    Track, Transpose, Tuplet, TupletId, TupletNumberType, VOICES,
+    Chord, ChordRest, ChordRestKind, Clef, ClefType, Credit, CreditJustify, CreditStyle, Duration,
+    DurationType, Dynamic, Fraction, GraceChord, GraceType, Harmony, Instrument, InstrumentChange,
+    Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteId, Part, Placement,
+    RehearsalFrame, RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType, Staff,
+    StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType, Track, Transpose,
+    Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::{Error, Result};
 
@@ -157,6 +158,7 @@ impl Reader {
         match name {
             "workTitle" => metadata.work_title = value,
             "movementTitle" => metadata.movement_title = value,
+            "movementNumber" => metadata.movement_number = value,
             "workNumber" => metadata.work_number = value,
             "composer" => metadata.composer = value,
             "lyricist" | "poet" => metadata.lyricist = value,
@@ -336,11 +338,53 @@ impl Reader {
                 }
                 // TODO(parité): HBox/VBox/TBox/FBox (cadres : ils changent la
                 // numérotation affichée mais pas le tick musical).
+                "VBox" => {
+                    // Les cadres sont des objets de partition : MuseScore les
+                    // écrit sous la première portée (`StaffRead::readStaff`).
+                    if staff_index == 0 {
+                        self.read_vbox(child);
+                    }
+                }
                 "tick" => {}
                 _ => {}
             }
         }
         Ok(())
+    }
+
+    /// Lit les textes d'un cadre vertical (`VBox`), exportés en `<credit>`.
+    ///
+    /// `VBox::el()` (`engraving/dom/vbox.cpp`) contient des `Text` ; l'export
+    /// les parcourt par page (`ExportMusicXml::credits`). Le modèle n'a qu'une
+    /// page, d'où `page = 1`.
+    fn read_vbox(&mut self, element: &Element) {
+        for text_element in element.children_named("Text") {
+            if !visible(text_element) {
+                continue;
+            }
+            let style = text_element
+                .child("style")
+                .map(Element::text)
+                .unwrap_or_default();
+            let markup = text_element
+                .child("text")
+                .map_or("", |node| node.raw_inner.as_str());
+            let text = RichText::from_markup(markup);
+            if text.is_empty() {
+                continue;
+            }
+            let mut credit = Credit::new(text, CreditStyle::from_name(style));
+            // `<align>` ne fixe que l'alignement horizontal (`Pid::POSITION`),
+            // l'alignement vertical reste celui du style.
+            if let Some(align) = text_element.child("align").map(Element::text) {
+                if let Some(horizontal) = align.split(',').next() {
+                    if let Some(justify) = CreditJustify::from_name(horizontal.trim()) {
+                        credit.justify = justify;
+                    }
+                }
+            }
+            self.score.add_credit(credit);
+        }
     }
 
     //------------------------------------------------------------------
@@ -628,56 +672,104 @@ impl Reader {
                         .child("velocity")
                         .and_then(Element::int)
                         .and_then(|value| u8::try_from(value).ok());
+                    dynamic.placement = placement(child.child("placement"));
+                    dynamic.visible = visible(child);
                     self.add_annotation(measure_index, tick, track, Annotation::Dynamic(dynamic));
                 }
                 "StaffText" => {
-                    let annotation = Annotation::StaffText(StaffText {
-                        text: child
-                            .child("text")
-                            .map(|node| node.text.clone())
-                            .unwrap_or_default(),
-                        placement: placement(child.child("placement")),
-                    });
-                    self.add_annotation(measure_index, tick, track, annotation);
+                    let text = read_text_base(child);
+                    self.add_annotation(
+                        measure_index,
+                        tick,
+                        track,
+                        Annotation::StaffText(StaffText {
+                            text: text.text,
+                            placement: text.placement,
+                            visible: text.visible,
+                        }),
+                    );
+                }
+                "Expression" => {
+                    let text = read_text_base(child);
+                    self.add_annotation(
+                        measure_index,
+                        tick,
+                        track,
+                        Annotation::Expression(StaffText {
+                            text: text.text,
+                            placement: text.placement,
+                            visible: text.visible,
+                        }),
+                    );
                 }
                 "SystemText" => {
-                    let annotation = Annotation::SystemText(SystemText {
-                        text: child
-                            .child("text")
-                            .map(|node| node.text.clone())
-                            .unwrap_or_default(),
-                        placement: placement(child.child("placement")),
-                    });
-                    self.add_annotation(measure_index, tick, track, annotation);
+                    let text = read_text_base(child);
+                    self.add_annotation(
+                        measure_index,
+                        tick,
+                        track,
+                        Annotation::SystemText(SystemText {
+                            text: text.text,
+                            placement: text.placement,
+                            visible: text.visible,
+                        }),
+                    );
                 }
                 "Tempo" => {
-                    let mut tempo = Tempo::new(
-                        child
-                            .child("text")
-                            .map(|node| node.text.clone())
-                            .unwrap_or_default(),
-                    );
-                    tempo.beats_per_second = child
-                        .child("tempo")
-                        .map(Element::text)
-                        .and_then(|value| value.parse().ok());
-                    tempo.follow_text = child.has_child("followText");
-                    tempo.placement = placement(child.child("placement"));
+                    let text = read_text_base(child);
+                    let mut tempo = Tempo {
+                        text: text.text,
+                        beats_per_second: child
+                            .child("tempo")
+                            .map(Element::text)
+                            .and_then(|value| value.parse().ok()),
+                        follow_text: child.has_child("followText"),
+                        placement: text.placement,
+                        visible: text.visible,
+                    };
+                    // `TRead::read(TempoText*)` : un tempo sans texte reçoit le
+                    // texte « ♩ = N » et devient invisible.
+                    if tempo.text.is_empty() {
+                        if let Some(beats_per_second) = tempo.beats_per_second {
+                            let bpm = (beats_per_second * 60.0).round();
+                            tempo.text =
+                                RichText::new(format!("<sym>metNoteQuarterUp</sym> = {bpm:.0}"));
+                        }
+                        tempo.visible = false;
+                    }
                     self.add_annotation(measure_index, tick, track, Annotation::Tempo(tempo));
                 }
                 "RehearsalMark" => {
-                    let annotation = RehearsalMark {
-                        text: child
-                            .child("text")
-                            .map(|node| node.text.clone())
-                            .unwrap_or_default(),
-                        placement: placement(child.child("placement")),
+                    let text = read_text_base(child);
+                    let frame = match child.child("frameType").and_then(Element::int) {
+                        Some(0) => RehearsalFrame::NoFrame,
+                        Some(2) => RehearsalFrame::Circle,
+                        // Le style MuseScore 4.7 encadre les repères : rectangle.
+                        _ => RehearsalFrame::Rectangle,
                     };
                     self.add_annotation(
                         measure_index,
                         tick,
                         track,
-                        Annotation::RehearsalMark(annotation),
+                        Annotation::RehearsalMark(RehearsalMark {
+                            text: text.text,
+                            placement: text.placement,
+                            frame,
+                            visible: text.visible,
+                        }),
+                    );
+                }
+                "InstrumentChange" => {
+                    let text = read_text_base(child);
+                    self.add_annotation(
+                        measure_index,
+                        tick,
+                        track,
+                        Annotation::InstrumentChange(InstrumentChange {
+                            text: text.text,
+                            placement: text.placement,
+                            visible: text.visible,
+                        }),
                     );
                 }
                 "Harmony" => {
@@ -1310,6 +1402,36 @@ fn placement(element: Option<&Element>) -> Placement {
         Some("below") => Placement::Below,
         _ => Placement::Above,
     }
+}
+
+/// Propriétés communes des textes MuseScore (`TextBase`).
+struct ParsedTextBase {
+    text: RichText,
+    placement: Placement,
+    visible: bool,
+}
+
+/// Lit un texte MuseScore : balisage, placement et visibilité.
+///
+/// Le balisage est lu dans `Element::raw_inner`, qui re-sérialise le contenu
+/// mixte de `<text>` comme `XmlReader::readXml` le fait pour le lecteur C++.
+fn read_text_base(element: &Element) -> ParsedTextBase {
+    let markup = element
+        .child("text")
+        .map_or("", |node| node.raw_inner.as_str());
+    ParsedTextBase {
+        text: RichText::from_markup(markup),
+        placement: placement(element.child("placement")),
+        visible: visible(element),
+    }
+}
+
+/// Vrai si l'élément n'est pas marqué `<visible>0</visible>`.
+fn visible(element: &Element) -> bool {
+    !element
+        .child("visible")
+        .and_then(Element::int)
+        .is_some_and(|value| value == 0)
 }
 
 /// Lit un indicateur booléen (`<isCourtesy>1</isCourtesy>`).

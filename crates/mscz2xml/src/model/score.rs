@@ -12,6 +12,7 @@ use super::measure::Measure;
 use super::note::Note;
 use super::part::{Part, Staff};
 use super::spanner::Spanner;
+use super::text::Credit;
 use super::tuplet::Tuplet;
 
 /// Nombre de divisions MusicXML par noire utilisé quand aucune valeur n'est
@@ -30,6 +31,8 @@ pub struct ScoreMetadata {
     pub work_title: String,
     /// Titre du mouvement.
     pub movement_title: String,
+    /// Numéro de mouvement.
+    pub movement_number: String,
     /// Numéro d'œuvre.
     pub work_number: String,
     /// Compositeur.
@@ -62,6 +65,8 @@ pub struct Score {
     pub staves: Vec<Staff>,
     /// Mesures, dans l'ordre chronologique.
     pub measures: Vec<Measure>,
+    /// Textes de cadre de titre, exportés en `<credit>`.
+    pub credits: Vec<Credit>,
     /// Arène des notes.
     pub notes: Vec<Note>,
     /// Arène des n-olets.
@@ -92,6 +97,7 @@ impl Score {
             parts: Vec::new(),
             staves: Vec::new(),
             measures: Vec::new(),
+            credits: Vec::new(),
             notes: Vec::new(),
             tuplets: Vec::new(),
             spanners: Vec::new(),
@@ -133,6 +139,12 @@ impl Score {
         let id = MeasureId::from_index(self.measures.len());
         self.measures.push(measure);
         id
+    }
+
+    /// Ajoute un texte de cadre de titre (`<credit>` à l'export).
+    pub fn add_credit(&mut self, credit: Credit) -> usize {
+        self.credits.push(credit);
+        self.credits.len() - 1
     }
 
     /// Ajoute une note dans l'arène.
