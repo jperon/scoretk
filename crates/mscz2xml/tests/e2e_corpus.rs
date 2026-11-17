@@ -92,6 +92,7 @@ const EXPECTED_CONFORMANT_V3: &[&str] = &[
     "copypaste_tuplet_01",
     "grace",
     "keysig_78216",
+    "layout_elements",
     "lyricsline01",
     "measure-4",
     "repeat01",
@@ -737,6 +738,27 @@ fn ecarts_complets_document() {
             examples
         );
     }
+    println!();
+    println!("## Écarts qui dépendent de la mise en page calculée");
+    println!();
+    println!(
+        "Certains écarts ne viennent pas d'une donnée du `.mscx` mais d'un objet \
+         que MuseScore fabrique pendant la mise en page, absente du modèle. \
+         Ils sont irréductibles sans porter le moteur de mise en page :\n\n\
+         - **direction de hampe d'une ligature croisée** (`v3/moonlight`, \
+           9 notes) : `BeamLayout::layout1` fixe la direction de la ligature à \
+           partir de `computeUpForMovedCross` et `isBelowCrossBeam`, donc du \
+           groupement des ligatures et de la géométrie des notes, pas du \
+           `<Beam><StemDirection>` du fichier ;\n\
+         - **barres de courtoisie d'un système coupé par la largeur de page** \
+           (`v3/voices`, 2 barres `light-light`) : `MeasureLayout::createEndBarLines` \
+           ne pose la barre double que si la mesure est la dernière du système \
+           (`isLastMeasureInSystem`) et que la suivante change d'armure. Quand \
+           le saut de système figure dans le fichier (`<LayoutBreak>`), il est \
+           reproduit (voir `export/systems.rs` et `read/measure_repeat.rs`) ; \
+           une coupure automatique dépend de la largeur calculée des mesures, \
+           donc de toute la mise en page horizontale."
+    );
     println!();
     println!("## Diffs");
     println!();

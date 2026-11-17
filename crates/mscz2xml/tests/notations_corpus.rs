@@ -68,43 +68,10 @@ struct EcartConnu {
 }
 
 /// Écarts sémantiques connus, par fichier.
-const ECARTS_CONNUS: &[EcartConnu] = &[
-    EcartConnu {
-        fichier: "layout_elements",
-        raison: "le bend (technique de guitare) n'est pas modélisé et la reprise \
-                 de mesure n'est pas dépliée à l'export (les deux glissandos de la \
-                 mesure répétée manquent donc)",
-        manquants: &[
-            "<notations><technical></technical></notations>",
-            "<notations><slide line-type=\"solid\" number=\"1\" type=\"start\">gliss.</slide></notations>",
-            "<notations><slide line-type=\"solid\" number=\"1\" type=\"stop\"></slide></notations>",
-        ],
-        excedentaires: &[],
-    },
-    EcartConnu {
-        fichier: "copypaste_parts",
-        raison: "MuseScore écrit la fin de trille (wavy-line stop) sur l'accord de \
-                 départ, le modèle la place sur l'accord de fin (tick2) ; le contenu \
-                 est identique, seul le rattachement diffère",
-        manquants: &[
-            "<notations><ornaments><trill-mark></trill-mark><wavy-line type=\"start\" number=\"1\"></wavy-line><wavy-line type=\"stop\" number=\"1\"></wavy-line></ornaments></notations>",
-            "<notations><ornaments><tremolo type=\"start\">3</tremolo></ornaments></notations>",
-        ],
-        excedentaires: &[
-            "<notations><ornaments><trill-mark></trill-mark><wavy-line type=\"start\" number=\"1\"></wavy-line></ornaments></notations>",
-            "<notations><ornaments><tremolo type=\"start\">3</tremolo><wavy-line type=\"stop\" number=\"1\"></wavy-line></ornaments></notations>",
-        ],
-    },
-    EcartConnu {
-        fichier: "testExcludeInvisibleElements",
-        raison: "la visibilité des liaisons de prolongation n'est pas modélisée : \
-                 avec un `tied` invisible, MuseScore regroupe les `<notations>` \
-                 autrement (contenu identique, ordre des ouvertures visible/invisible \
-                 différent)",
-        manquants: &[],
-        excedentaires: &[],
-    },
-];
+///
+/// Tous les fichiers de [`FICHIERS`] sont désormais identiques à leur
+/// référence : la liste reste vide et le test exige une parité exacte.
+const ECARTS_CONNUS: &[EcartConnu] = &[];
 
 /// Élément XML minimal.
 #[derive(Debug, Default)]

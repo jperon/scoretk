@@ -40,6 +40,7 @@
 //! `TODO(parité)` quand l'export MusicXML en dépendra.
 
 mod dom;
+mod figures;
 mod names;
 mod notations;
 mod nuances;
@@ -149,6 +150,8 @@ struct TieRecord {
     other: TieLocation,
     /// Direction explicite lue dans `<Tie><up>` (`Pid::SLUR_DIRECTION`).
     up: Option<bool>,
+    /// Vrai si la liaison est affichée (`<Tie><visible>`).
+    visible: bool,
 }
 
 /// État complet du lecteur pour un fichier.
@@ -180,6 +183,8 @@ struct Reader {
     /// Moitiés d'ottavas lues mais pas encore appariées.
     ottava_halves: Vec<ottava::Half>,
     pedal_halves: Vec<pedals::Half>,
+    /// Mesures à répéter, développées en fin de lecture.
+    measure_repeats: Vec<crate::read::measure_repeat::MeasureRepeat>,
     /// Vrai si le style active les silences multi-mesures
     /// (`<createMultiMeasureRests>`).
     create_multi_measure_rests: bool,
@@ -205,6 +210,7 @@ impl Reader {
             text_lines: Vec::new(),
             ottava_halves: Vec::new(),
             pedal_halves: Vec::new(),
+            measure_repeats: Vec::new(),
             create_multi_measure_rests: false,
         }
     }
@@ -271,6 +277,11 @@ impl Reader {
         pedals::resolve(&mut self.score, &self.pedal_halves);
         notations::resolve(self);
         ottava::resolve(&mut self.score, &self.ottava_halves);
+        // Après les résolutions de spanners : la copie d'une mesure répétée
+        // reprend ceux de la mesure source.
+        for repeat in std::mem::take(&mut self.measure_repeats) {
+            crate::read::measure_repeat::expand(&mut self.score, &repeat);
+        }
         Ok(())
     }
 
@@ -514,8 +525,6 @@ impl Reader {
         let mut page = 1u32;
         // Un saut de section porte sur la mesure suivante.
         let mut section_break = false;
-        // Un saut de ligne ou de page, ou un cadre, ouvre le système suivant.
-        let mut line_break = false;
         for child in &element.children {
             match child.name.as_str() {
                 "Measure" => {
@@ -541,11 +550,7 @@ impl Reader {
                     if section_break {
                         self.score.measures[measure_index].section_break_before = true;
                     }
-                    if line_break {
-                        self.score.measures[measure_index].line_break_before = true;
-                    }
                     section_break = Self::has_section_break(child);
-                    line_break = Self::has_line_break(child);
                     measure_index += 1;
                 }
                 // Les cadres changent la numérotation affichée mais pas le
@@ -554,27 +559,30 @@ impl Reader {
                 // (`StaffRead::readStaff`).
                 "VBox" => {
                     section_break |= Self::has_section_break(child);
-                    line_break = true;
                     if staff_index == 0 {
                         self.read_vbox(child, page);
                     }
                 }
                 "TBox" => {
                     section_break |= Self::has_section_break(child);
-                    line_break = true;
                     // Texte de cadre exporté en `<words>` au début de la mesure
                     // qui suit (`tboxTextAsWords`) ; un cadre suivi d'un saut
                     // de page est au-dessous du système précédent.
                     if staff_index == 0 {
                         let below = measure_index > 0 && has_page_break(child);
-                        if let Some(text) = textlines::read_tbox(child, measure_index, below) {
+                        if let Some(mut text) = textlines::read_tbox(child, measure_index, below) {
+                            if below {
+                                text.measure = crate::read::mmrest_group_start(
+                                    &self.score.measures,
+                                    text.measure,
+                                );
+                            }
                             self.score.add_tbox_text(text);
                         }
                     }
                 }
                 "HBox" | "FBox" => {
                     section_break |= Self::has_section_break(child);
-                    line_break = true;
                 }
                 "tick" => {}
                 _ => {}
@@ -596,15 +604,6 @@ impl Reader {
             .child("LayoutBreak")
             .and_then(|layout_break| layout_break.child("subtype"))
             .is_some_and(|subtype| subtype.text() == "section")
-    }
-
-    /// Vrai si un élément porte un saut de ligne ou de page
-    /// (`<LayoutBreak>` de type `line` ou `page`).
-    fn has_line_break(element: &Element) -> bool {
-        element
-            .child("LayoutBreak")
-            .and_then(|layout_break| layout_break.child("subtype"))
-            .is_some_and(|subtype| matches!(subtype.text(), "line" | "page"))
     }
 
     /// Lit les textes d'un cadre vertical (`VBox`), exportés en `<credit>`.
@@ -759,7 +758,17 @@ impl Reader {
                         .repeat_marks
                         .push(crate::model::RepeatMark::Jump(jump));
                 }
-                // TODO(parité): <LayoutBreak>, <stretch>, <noOffset>,
+                // `<LayoutBreak><subtype>line|page</subtype>` : la mesure
+                // finit un système (voir `line_break`).
+                "LayoutBreak" => {
+                    if matches!(
+                        child.child("subtype").map(Element::text),
+                        Some("line" | "page")
+                    ) {
+                        self.score.measures[model_index].line_break = true;
+                    }
+                }
+                // TODO(parité): <stretch>, <noOffset>,
                 // <measureRepeatCount>, <MMRestRange>, <visible>.
                 _ => {}
             }
@@ -1176,6 +1185,30 @@ impl Reader {
                     let annotation = notations::read_fermata(child);
                     self.add_annotation(measure_index, tick, track, annotation);
                 }
+                "FiguredBass" => {
+                    let bass = figures::read_figured_bass(child);
+                    self.add_annotation(measure_index, tick, track, Annotation::FiguredBass(bass));
+                }
+                "TremoloBar" => {
+                    let bar = figures::read_tremolo_bar(child);
+                    self.add_annotation(measure_index, tick, track, Annotation::TremoloBar(bar));
+                }
+                "MeasureRepeat" | "RepeatMeasure" => {
+                    // `TRead::read(MeasureRepeat*)` : `<subtype>` porte le
+                    // nombre de mesures répétées.
+                    let count = child
+                        .child("subtype")
+                        .and_then(Element::int)
+                        .and_then(|value| u16::try_from(value.clamp(1, i64::from(u16::MAX))).ok())
+                        .unwrap_or(1);
+                    self.measure_repeats
+                        .push(crate::read::measure_repeat::MeasureRepeat {
+                            measure: measure_index,
+                            staff: staff_index,
+                            count,
+                        });
+                    tick += self.score.measures[measure_index].len;
+                }
                 // TODO(parité): <Spanner> autres que Tie (Slur, HairPin, Ottava,
                 // TextLine, Trill, Pedal, LetRing…) : à modéliser dans
                 // `Score::spanners`. Les liaisons de prolongation sont
@@ -1195,9 +1228,8 @@ impl Reader {
                     }
                 }
                 // TODO(parité): <Beam>, <Ambitus>, <Segment>, <MeasureRepeat>,
-                // <Symbol>, <Image>, <FretDiagram>, <TremoloBar>, <StaffState>,
-                // <PlayTechAnnotation>, <Sticking>, <FiguredBass>,
-                // <HarpPedalDiagram>.
+                // <Symbol>, <Image>, <FretDiagram>, <StaffState>,
+                // <PlayTechAnnotation>, <Sticking>, <HarpPedalDiagram>.
                 _ => {}
             }
         }
@@ -1491,6 +1523,13 @@ impl Reader {
         // donc la taille actuelle de l'arène.
         let note_id = NoteId::from_index(self.score.notes.len());
         let up = tie_direction(element);
+        // La visibilité appartient au `Tie` : elle n'est écrite que sur la
+        // moitié de départ.
+        let visible = element
+            .child("Tie")
+            .and_then(|tie| tie.child("visible"))
+            .and_then(Element::int)
+            .is_none_or(|value| value != 0);
         for child in &element.children {
             let is_start = match child.name.as_str() {
                 "next" => true,
@@ -1514,6 +1553,7 @@ impl Reader {
                 is_start,
                 other,
                 up,
+                visible,
             });
         }
     }
@@ -1547,9 +1587,14 @@ impl Reader {
                 used[index] = true;
                 used[partner] = true;
                 let end = self.ties[partner].clone();
-                self.score.notes[start.note.index()].tie_forward = Some(end.note);
-                self.score.notes[start.note.index()].tie_up = start.up;
-                self.score.notes[end.note.index()].tie_back = Some(start.note);
+                let visible = start.visible;
+                let start_note = &mut self.score.notes[start.note.index()];
+                start_note.tie_forward = Some(end.note);
+                start_note.tie_forward_visible = visible;
+                start_note.tie_up = start.up;
+                let end_note = &mut self.score.notes[end.note.index()];
+                end_note.tie_back = Some(start.note);
+                end_note.tie_back_visible = visible;
             } else {
                 // TODO(parité): demi-liaison orpheline (fichier corrompu) : le
                 // C++ la journalise et la laisse non appariée.

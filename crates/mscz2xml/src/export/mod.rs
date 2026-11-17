@@ -42,6 +42,7 @@ use crate::Result;
 
 mod beams;
 mod exportmusicxml;
+mod figured_bass;
 mod harmony;
 mod layout;
 mod notations;

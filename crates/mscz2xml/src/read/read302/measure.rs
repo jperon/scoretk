@@ -84,7 +84,21 @@ pub(crate) fn read_measure(
                     .repeat_marks
                     .push(crate::model::RepeatMark::Jump(jump));
             }
-            // TODO(parité): `<LayoutBreak>`, `<stretch>` (ignoré avant 4.0),
+            // `<LayoutBreak><subtype>line|page</subtype>` : la mesure finit un
+            // système. Un saut de section n'en est pas un pour l'export (pas de
+            // barre de courtoisie).
+            "LayoutBreak" => {
+                if matches!(
+                    child
+                        .child("subtype")
+                        .map(|node| node.trimmed_text())
+                        .as_deref(),
+                    Some("line" | "page")
+                ) {
+                    reader.score.measures[index].line_break = true;
+                }
+            }
+            // TODO(parité): `<stretch>` (ignoré avant 4.0),
             // `<noOffset>`, `<irregular>`, `<measureRepeatCount>`, `<vspacer*>`,
             // `<visible>`, `<SystemDivider>`, `<MeasureNumber>` et
             // `<multiMeasureRest>` ne changent pas le noyau musical lu ici.
@@ -185,14 +199,25 @@ fn read_voice(
             "Breath" => read_breath(reader, &ctx, child),
             "Spanner" => spanner::read_spanner(reader, child, &ctx),
             "MeasureRepeat" | "RepeatMeasure" => {
-                reader.measure_repeats.push(super::MeasureRepeat {
-                    measure: index,
-                    staff,
-                });
+                // `TRead::read(MeasureRepeat*)` : `<subtype>` porte le nombre
+                // de mesures répétées (absent en 3.x).
+                let count = child
+                    .child("subtype")
+                    .and_then(Node::int_text)
+                    .and_then(|value| u16::try_from(value.clamp(1, u16::MAX as i32)).ok())
+                    .unwrap_or(1);
+                reader
+                    .measure_repeats
+                    .push(super::super::measure_repeat::MeasureRepeat {
+                        measure: index,
+                        staff,
+                        count,
+                    });
                 ctx.tick += reader.score.measures[index].len;
             }
             "Dynamic" | "Expression" | "Tempo" | "StaffText" | "SystemText" | "Text"
-            | "RehearsalMark" | "Harmony" | "Fermata" | "InstrumentChange" => {
+            | "RehearsalMark" | "Harmony" | "Fermata" | "InstrumentChange" | "FiguredBass"
+            | "TremoloBar" => {
                 if let Some(annotation) = annotations::read(reader, child) {
                     // `Segment::add` enregistre l'instrument d'un changement au
                     // tick du segment (`part->setInstrument`).
@@ -213,11 +238,10 @@ fn read_voice(
                     .add_annotation(ctx.track, annotation);
                 }
             }
-            // TODO(parité): `<Symbol>`, `<FretDiagram>`, `<FiguredBass>`,
-            // `<TremoloBar>`, `<Arpeggio>`, `<StaffState>`, `<Sticking>`,
-            // `<PlayTechAnnotation>`, `<Image>`, `<Ambitus>`, `<Beam>`,
-            // `<Segment>`, `<LayoutBreak>` : sans effet sur le noyau musical
-            // lu ici (le tick n'avance pas).
+            // TODO(parité): `<Symbol>`, `<FretDiagram>`, `<Arpeggio>`,
+            // `<StaffState>`, `<Sticking>`, `<PlayTechAnnotation>`, `<Image>`,
+            // `<Ambitus>`, `<Beam>`, `<Segment>`, `<LayoutBreak>` : sans effet
+            // sur le noyau musical lu ici (le tick n'avance pas).
             _ => {}
         }
     }

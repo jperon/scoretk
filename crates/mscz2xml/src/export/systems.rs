@@ -2,8 +2,7 @@
 //
 // Copyright (C) 2026 jperon
 //
-// Portage de `engraving/rendering/score/measurelayout.cpp` et
-// `engraving/rendering/score/systemlayout.cpp` de MuseScore Studio,
+// Portage de `engraving/rendering/score/systemlayout.cpp` de MuseScore Studio,
 // Copyright (C) MuseScore Limited and others, modifié (réécrit en Rust) en
 // 2026.
 //
@@ -20,32 +19,25 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Systèmes explicites : portées masquées et barres de courtoisie.
+//! Systèmes explicites : portées masquées (`hideEmptyStaves`).
 //!
 //! Le modèle ne fait pas de mise en page : les systèmes ne sont connus que par
-//! les sauts écrits dans le `.mscx` (`<LayoutBreak>` de type `line` ou `page`,
-//! cadres, sauts de section). Les ruptures automatiques calculées par
-//! MuseScore restent hors de portée ; les écarts correspondants sont
-//! documentés dans `docs/agents/ecarts-complets.md`.
+//! les sauts écrits dans le `.mscx` (`Measure::line_break`, sauts de section et
+//! cadres). Les ruptures automatiques calculées par MuseScore restent hors de
+//! portée ; les écarts correspondants sont documentés dans
+//! `docs/agents/ecarts-complets.md`.
 //!
-//! Deux comportements de la mise en page dépendent de ces systèmes :
-//!
-//! - `SystemLayout::hideEmptyStaves` (`systemlayout.cpp`) masque une portée
-//!   vide sur tout un système (`<staff-details print-object="no"/>`) ;
-//! - `MeasureLayout::createEndBarLines` (`measurelayout.cpp`) transforme la
-//!   barre de fin en barre double (`light-light`) devant une armure de
-//!   courtoisie, c'est-à-dire un changement de tonalité au début du système
-//!   suivant (`keySigCourtesyBarlineMode` vaut `DOUBLE_BEFORE_COURTESY`).
+//! `SystemLayout::hideEmptyStaves` (`systemlayout.cpp`) masque une portée vide
+//! sur tout un système ; l'export la signale par
+//! `<staff-details print-object="no"/>` à la première mesure du système.
 
-use crate::model::{BarLineType, ChordRestKind, Key, Score, SegmentItem, SegmentType, Tick, Track};
+use crate::model::{ChordRestKind, Score, SegmentItem, SegmentType};
 
-/// Découpage en systèmes et portées masquées.
+/// Portées masquées par système.
 pub(crate) struct Systems {
     /// Portées masquées par système, indexées par la mesure qui ouvre le
     /// système (les autres entrées sont vides).
     hidden: Vec<Vec<usize>>,
-    /// Vrai quand la mesure termine un système explicite.
-    ends: Vec<bool>,
 }
 
 impl Systems {
@@ -53,15 +45,14 @@ impl Systems {
     pub(crate) fn new(score: &Score) -> Self {
         let count = score.measures.len();
         let mut starts = vec![false; count];
-        let mut ends = vec![false; count];
         if let Some(first) = starts.first_mut() {
             *first = true;
         }
         for index in 1..count {
-            let measure = &score.measures[index];
-            let breaks = measure.line_break_before || measure.section_break_before;
-            starts[index] = breaks;
-            ends[index - 1] = breaks;
+            // La mesure précédente finit un système (saut de ligne ou de page),
+            // ou celle-ci ouvre une section.
+            starts[index] =
+                score.measures[index - 1].line_break || score.measures[index].section_break_before;
         }
 
         let mut hidden = vec![Vec::new(); count];
@@ -73,22 +64,14 @@ impl Systems {
                 if !*start {
                     continue;
                 }
-                let first_system = begin == 0;
-                let hide = !(first_system && score.style.dont_hide_staves_in_first_system);
-                if hide {
-                    hidden[begin] = hidden_staves(score, begin, index);
-                }
+                hide_system(score, &mut hidden, begin, index);
                 begin = index;
             }
             // Dernier système : jusqu'à la fin de la partition.
-            let first_system = begin == 0;
-            let hide = !(first_system && score.style.dont_hide_staves_in_first_system);
-            if hide {
-                hidden[begin] = hidden_staves(score, begin, count);
-            }
+            hide_system(score, &mut hidden, begin, count);
         }
 
-        Self { hidden, ends }
+        Self { hidden }
     }
 
     /// Portées masquées du système qui ouvre la mesure `measure_index`.
@@ -98,11 +81,15 @@ impl Systems {
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }
+}
 
-    /// Vrai si la mesure termine un système explicite.
-    pub(crate) fn ends_system(&self, measure_index: usize) -> bool {
-        self.ends.get(measure_index).copied().unwrap_or(false)
+/// Calcule les portées masquées d'un système et les range à son début.
+fn hide_system(score: &Score, hidden: &mut [Vec<usize>], begin: usize, end: usize) {
+    let first_system = begin == 0;
+    if first_system && score.style.dont_hide_staves_in_first_system {
+        return;
     }
+    hidden[begin] = hidden_staves(score, begin, end);
 }
 
 /// Portées vides sur tout le système `[begin, end)` (`hideEmptyStaves`).
@@ -158,60 +145,4 @@ fn measure_empty_for(score: &Score, measure_index: usize, staff: usize) -> bool 
         }
     }
     true
-}
-
-/// Vrai si une armure de courtoisie appelle une barre double à la fin de la
-/// mesure `measure_index` (`createEndBarLines`).
-///
-/// La barre est double quand le système se termine là et que la tonalité change
-/// au début du système suivant ; un saut de section masque la courtoisie par
-/// défaut (`LayoutBreak::showCourtesy` vaut faux).
-pub(crate) fn courtesy_key_bar_line(score: &Score, measure_index: usize) -> bool {
-    let Some(measure) = score.measures.get(measure_index) else {
-        return false;
-    };
-    if measure.end_bar_line != BarLineType::Normal {
-        return false;
-    }
-    let Some(next) = score.measures.get(measure_index + 1) else {
-        return false;
-    };
-    if next.section_break_before || !next.line_break_before {
-        // Un saut de section ne crée pas de courtoisie ; sans saut de ligne
-        // explicite, le système est découpé par la mise en page, inconnue ici.
-        return false;
-    }
-    (0..score.staves.len()).any(|staff| {
-        key_at(score, staff, measure.end_tick(), false)
-            != key_at(score, staff, next.start_tick, true)
-    })
-}
-
-/// Tonalité en vigueur pour une portée à un tick (`Staff::key`).
-///
-/// Les segments sont triés ; on retient la dernière armure antérieure au tick,
-/// ou celle du tick quand `inclusive` est vrai.
-fn key_at(score: &Score, staff: usize, tick: Tick, inclusive: bool) -> Key {
-    let mut found = Key::C;
-    let Some(staff_id) = score.staves.get(staff).map(|value| value.id) else {
-        return found;
-    };
-    let track = Track::new(staff_id, 0);
-    for measure in &score.measures {
-        if measure.start_tick > tick {
-            break;
-        }
-        for segment in &measure.segments {
-            if segment.tick > tick || (!inclusive && segment.tick == tick) {
-                break;
-            }
-            if !segment.kind.is_key_sig_type() {
-                continue;
-            }
-            if let Some(SegmentItem::KeySig(key)) = segment.element(track) {
-                found = key.transposed_key;
-            }
-        }
-    }
-    found
 }

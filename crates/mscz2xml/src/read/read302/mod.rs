@@ -60,8 +60,8 @@ mod xml;
 
 use crate::container::MscVersion;
 use crate::model::{
-    BarLineType, ChordRestKind, Clef, ClefType, Fraction, Measure, NoteId, Score, SegmentItem,
-    SegmentType, StyleSettings, Track, Transpose, TupletId, VOICES,
+    BarLineType, Clef, ClefType, Fraction, Measure, Score, SegmentItem, SegmentType, StyleSettings,
+    Track, Transpose, TupletId, VOICES,
 };
 use crate::Result;
 
@@ -97,7 +97,7 @@ pub(crate) struct Reader {
     /// Moitiés de connecteurs en attente d'appariement.
     pub(crate) connectors: Vec<spanner::Connector>,
     /// Mesures à répéter, développées en fin de lecture.
-    pub(crate) measure_repeats: Vec<MeasureRepeat>,
+    pub(crate) measure_repeats: Vec<super::measure_repeat::MeasureRepeat>,
     /// Clef initiale déclarée par chaque portée (`<defaultClef>`, groupe de
     /// `StaffType`, sinon `<clef>` de l'instrument), appliquée en fin de
     /// lecture.
@@ -106,14 +106,6 @@ pub(crate) struct Reader {
     pub(crate) create_multi_measure_rests: bool,
     /// Vrai si le `<bracket>` du n-olet était explicite dans le fichier.
     pub(crate) explicit_tuplet_brackets: Vec<bool>,
-}
-
-/// Mesure marquée `<RepeatMeasure>` : son contenu est celui de la précédente.
-pub(crate) struct MeasureRepeat {
-    /// Index de la mesure qui répète.
-    pub(crate) measure: usize,
-    /// Portée concernée.
-    pub(crate) staff: usize,
 }
 
 /// Position de lecture dans une voix.
@@ -148,10 +140,12 @@ impl Reader {
 
     fn finish(mut self) -> Score {
         self.apply_default_clefs();
-        self.expand_measure_repeats();
         self.assign_multiple_rests();
         self.adjust_tuplet_brackets();
         spanner::resolve(&mut self);
+        // Après `spanner::resolve` : la copie d'une mesure répétée reprend les
+        // spanners (glissandos…) de la mesure source.
+        self.expand_measure_repeats();
         self.score
     }
 
@@ -238,8 +232,6 @@ impl Reader {
         // Un saut de section porte sur la mesure suivante : MuseScore y
         // recommence la numérotation à 1 (et les `<attributes>` MusicXML).
         let mut section_break = false;
-        // Un saut de ligne ou de page, ou un cadre, ouvre le système suivant.
-        let mut line_break = false;
         for child in node.children() {
             match child.name() {
                 "Measure" => {
@@ -260,9 +252,7 @@ impl Reader {
                     }
                     let measure = self.ensure_measure(index, tick);
                     self.score.measures[measure].section_break_before |= section_break;
-                    self.score.measures[measure].line_break_before |= line_break;
                     section_break = Self::has_section_break(child);
-                    line_break = Self::has_line_break(child);
                     tick = measure::read_measure(self, measure, child, staff);
                     index += 1;
                 }
@@ -276,15 +266,17 @@ impl Reader {
                 // au-dessous du système précédent.
                 "TBox" => {
                     section_break |= Self::has_section_break(child);
-                    line_break = true;
                     let below = index > 0 && credits::page_break(child);
-                    if let Some(text) = textlines::read_tbox(child, index, below) {
+                    if let Some(mut text) = textlines::read_tbox(child, index, below) {
+                        if below {
+                            text.measure =
+                                super::mmrest_group_start(&self.score.measures, text.measure);
+                        }
                         self.score.add_tbox_text(text);
                     }
                 }
                 "VBox" => {
                     section_break |= Self::has_section_break(child);
-                    line_break = true;
                     // Les textes d'un `VBox` deviennent des `<credit>` ; les
                     // autres cadres n'en portent pas.
                     if staff == 0 {
@@ -295,7 +287,6 @@ impl Reader {
                 // seuls leurs sauts de page et de section comptent.
                 "HBox" | "FBox" => {
                     section_break |= Self::has_section_break(child);
-                    line_break = true;
                 }
                 _ => {}
             }
@@ -312,14 +303,6 @@ impl Reader {
         node.child("LayoutBreak")
             .and_then(|layout_break| layout_break.child("subtype"))
             .is_some_and(|subtype| subtype.trimmed_text() == "section")
-    }
-
-    /// Vrai si un élément porte un saut de ligne ou de page
-    /// (`<LayoutBreak>` de type `line` ou `page`).
-    fn has_line_break(node: &Node) -> bool {
-        node.child("LayoutBreak")
-            .and_then(|layout_break| layout_break.child("subtype"))
-            .is_some_and(|subtype| matches!(subtype.trimmed_text().as_str(), "line" | "page"))
     }
 
     /// Complète les silences multi-mesures d'un seul tenant.
@@ -442,67 +425,13 @@ impl Reader {
 
     /// Développe les mesures `<RepeatMeasure>`.
     ///
-    /// Le modèle n'a pas d'élément « mesure répétée » : comme l'export
-    /// MusicXML de MuseScore, on recopie le contenu de la mesure précédente
-    /// pour la portée concernée.
+    /// Le contenu de la mesure répétée est recopié depuis la précédente, comme
+    /// le fait l'export de MuseScore en repointant la mesure ; voir
+    /// [`super::measure_repeat::expand`].
     fn expand_measure_repeats(&mut self) {
         for repeat in std::mem::take(&mut self.measure_repeats) {
-            if repeat.measure == 0 || repeat.measure >= self.score.measures.len() {
-                continue;
-            }
-            let source = repeat.measure - 1;
-            let mut copies: Vec<(Track, SegmentItem, Fraction)> = Vec::new();
-            {
-                let previous = &self.score.measures[source];
-                for segment in &previous.segments {
-                    for (track, item) in segment.iter_elements() {
-                        if track.staff().index() != repeat.staff {
-                            continue;
-                        }
-                        if !matches!(item, SegmentItem::ChordRest(_)) {
-                            continue;
-                        }
-                        copies.push((track, item.clone(), segment.tick - previous.start_tick));
-                    }
-                }
-            }
-            let target_start = self.score.measures[repeat.measure].start_tick;
-            for (track, item, offset) in copies {
-                let item = self.duplicate_chord_rest(item);
-                let measure = &mut self.score.measures[repeat.measure];
-                measure::segment_mut(measure, SegmentType::ChordRest, target_start + offset)
-                    .set_element(track, item);
-            }
+            super::measure_repeat::expand(&mut self.score, &repeat);
         }
-    }
-
-    /// Copie un accord ou un silence, notes comprises, pour une mesure répétée.
-    fn duplicate_chord_rest(&mut self, item: SegmentItem) -> SegmentItem {
-        match item {
-            SegmentItem::ChordRest(mut chord_rest) => {
-                if let ChordRestKind::Chord(chord) = &mut chord_rest.kind {
-                    chord.notes = self.duplicate_notes(&chord.notes);
-                    for grace in &mut chord.grace_chords {
-                        grace.chord.notes = self.duplicate_notes(&grace.chord.notes);
-                    }
-                }
-                SegmentItem::ChordRest(chord_rest)
-            }
-            other => other,
-        }
-    }
-
-    fn duplicate_notes(&mut self, notes: &[NoteId]) -> Vec<NoteId> {
-        let mut copies = Vec::with_capacity(notes.len());
-        for &note in notes {
-            let mut copy = self.score.note(note).clone();
-            // TODO(parité): les liaisons de la mesure répétée ne sont pas
-            // dupliquées ; MuseScore les recalcule à l'export.
-            copy.tie_forward = None;
-            copy.tie_back = None;
-            copies.push(self.score.add_note(copy));
-        }
-        copies
     }
 }
 

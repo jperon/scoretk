@@ -267,6 +267,14 @@ pub struct Note {
     /// MuseScore n'exporte `orientation`/`placement` que si la direction est
     /// explicite (`slurTieLineStyle`).
     pub tie_up: Option<bool>,
+    /// Vrai si le départ de liaison est affiché (`Tie::visible()`, lu dans
+    /// `<Tie><visible>`).
+    ///
+    /// Le `<tied type="start">` est alors dans un `<notations
+    /// print-object="no">`.
+    pub tie_forward_visible: bool,
+    /// Vrai si l'arrivée de liaison est affichée.
+    pub tie_back_visible: bool,
     /// Altération affichée, si elle diffère de l'armure.
     pub accidental: Option<Accidental>,
     /// Tête de note demandée.
@@ -296,6 +304,8 @@ impl Note {
             tie_forward: None,
             tie_back: None,
             tie_up: None,
+            tie_forward_visible: true,
+            tie_back_visible: true,
             accidental: None,
             head: NoteHeadType::Auto,
             head_group: NoteHeadGroup::Normal,

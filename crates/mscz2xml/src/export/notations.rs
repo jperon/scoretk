@@ -218,6 +218,54 @@ pub(crate) fn fingering(xml: &mut XmlWriter, note: &Note, notations: &mut Notati
     }
 }
 
+/// Écrit la barre de vibrato d'une note (`writeGuitarBend`, partie
+/// `TremoloBar`).
+///
+/// MuseScore range la barre dans les annotations du segment de l'accord et
+/// l'écrit pour la note de même piste ; `bend-alter` reprend l'amplitude
+/// maximale de la courbe et `with-bar` le type reconnu.
+pub(crate) fn tremolo_bar(
+    xml: &mut XmlWriter,
+    measure: &Measure,
+    note: &Note,
+    tick: Tick,
+    track: Track,
+    notations: &mut Notations,
+) {
+    let Some(segment) = measure
+        .segments
+        .iter()
+        .find(|segment| segment.tick == tick && segment.kind.is_chord_rest_type())
+    else {
+        return;
+    };
+    for entry in &segment.annotations {
+        if entry.track != track {
+            continue;
+        }
+        let Annotation::TremoloBar(bar) = &entry.annotation else {
+            continue;
+        };
+        notations.tag_element(xml, Some("technical"), note.visible);
+        xml.start_element("bend", &[]);
+        xml.tag("bend-alter", &format_bend_alter(bar.bend_alter()));
+        xml.tag("with-bar", bar.kind.musicxml_name());
+        xml.end_element();
+    }
+}
+
+/// Formate une amplitude de bend comme `String::number(value, 2)` : deux
+/// décimales au plus, zéros de fin retirés.
+fn format_bend_alter(value: f64) -> String {
+    let text = format!("{value:.2}");
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    if text == "-0" {
+        "0".to_owned()
+    } else {
+        text.to_owned()
+    }
+}
+
 /// Écrit l'arpège d'un accord sur une note (`arpeggiate`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn arpeggio(
@@ -439,6 +487,14 @@ fn spanner_indices(
 }
 
 /// Écrit les lignes ondulées des trilles actifs (`wavyLineStartStop`).
+///
+/// MuseScore 4.7 remplit `TrillHash` avec `Trill::startElement()` **et**
+/// `Trill::endElement()`. Pour un spanner ancré sur la mesure, cet élément de
+/// fin est calculé une seule fois, au moment où `Score::addSpanner` enregistre
+/// le départ (`tick2 == tick` à cet instant), et n'est plus recalculé : le
+/// `wavy-line type="stop"` sort donc sur l'accord de départ, avec le
+/// `type="start"` (voir `copypaste_parts`, où le trille dure pourtant un
+/// temps). On reproduit ce rattachement.
 fn write_trills(
     score: &Score,
     xml: &mut XmlWriter,
@@ -447,28 +503,20 @@ fn write_trills(
     notations: &mut Notations,
 ) {
     let starting = spanner_indices(score, SpannerType::Trill, tick, track, true);
-    let stopping = spanner_indices(score, SpannerType::Trill, tick, track, false);
-    for (index, spanner) in score.spanners.iter().enumerate() {
-        if !starting.contains(&index) && !stopping.contains(&index) {
-            continue;
-        }
+    for &index in &starting {
+        let spanner = &score.spanners[index];
         let Some(SpannerNotation::Trill(trill)) = &spanner.notation else {
             continue;
         };
         let number = trill_number(score, index);
         let number_text = number.to_string();
-        if starting.contains(&index) {
-            notations.tag(xml, Some("ornaments"));
-            write_trill_symbol(xml, trill);
-            xml.tag_empty("wavy-line", &[("type", "start"), ("number", &number_text)]);
-            if let Some(accidental) = &trill.accidental {
-                write_accidental_mark(xml, accidental, Placement::Above);
-            }
+        notations.tag(xml, Some("ornaments"));
+        write_trill_symbol(xml, trill);
+        xml.tag_empty("wavy-line", &[("type", "start"), ("number", &number_text)]);
+        if let Some(accidental) = &trill.accidental {
+            write_accidental_mark(xml, accidental, Placement::Above);
         }
-        if stopping.contains(&index) {
-            notations.tag(xml, Some("ornaments"));
-            xml.tag_empty("wavy-line", &[("type", "stop"), ("number", &number_text)]);
-        }
+        xml.tag_empty("wavy-line", &[("type", "stop"), ("number", &number_text)]);
     }
 }
 
