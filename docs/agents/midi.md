@@ -105,6 +105,15 @@ Mesurés sur le sous-ensemble de référence (`tests/corpus/midi/`) : **21/21
 fichiers identiques** (notes et changements de tempo effectifs). Les points
 suivants restent hors périmètre, faute d'information dans le modèle :
 
+**Écart connu de déroulement.** Au `RepeatEnd`, le C++ ferme **toute** volta
+encore ouverte (`ref-musescore/src/engraving/dom/repeatlist.cpp:581-588`, idem
+sur un saut, `:525-543`) ; le portage ne la ferme que si elle se termine là
+(`crates/scoretk-midi/src/repeat_list.rs:739-752`). Une volta débordant
+l'`endRepeat` peut donc différer de MuseScore ; non déclenché par le corpus
+(`v3/repeat06`, `v4/repeat65/66/68/69` conformes), gardé par les 21 références
+de `corpus_midi`. Correctif minimal : fermer la volta à la mesure du
+`RepeatEnd`, puis `cargo test -p scoretk-midi --test corpus_midi`.
+
 - **Pauses de fermatas et respirations** : la carte des pauses ne traite que
   les sauts de section (pause par défaut de 3 s). Une fermata jouée ou une
   respiration décalerait la suite du fichier.
