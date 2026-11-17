@@ -70,11 +70,11 @@ Un format absent dans le sens demandé renvoie
 L'écriture `.mxl` réutilise `mscz2xml::export::export_mxl_with` (archive ZIP
 `META-INF/container.xml` + `score.xml`, comme `saveMxl` de MuseScore).
 
-## 3. Brancher les convertisseurs (t34, t35, t36)
+## 3. Brancher les convertisseurs (t34, t35, t36, t38)
 
 Tout le code conditionnel est dans `crates/scoretk/src/hooks.rs`. Les features
 existent déjà, désactivées par défaut ; les variantes d'erreur
-`MusicXmlImport`/`Midi` aussi.
+`MusicXmlImport`, `Midi`, `LilyPond` et `Mscx` aussi.
 
 ### t34 — lecture MusicXML (`crates/scoretk-musicxml`)
 
