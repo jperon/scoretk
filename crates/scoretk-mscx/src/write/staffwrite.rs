@@ -119,9 +119,9 @@ pub(crate) fn write_meta_tags(xml: &mut XmlWriter, metadata: &ScoreMetadata) {
         ("workTitle", metadata.work_title.as_str()),
     ];
     for (name, value) in tags {
-        if value.is_empty() {
-            continue;
-        }
+        // Tous les champs sont écrits, même vides : leur présence fixe la
+        // valeur lue (`platform` par défaut vaut `Linux`, un `<metaTag>`
+        // présent mais vide vaut la chaîne vide).
         xml.tag_with("metaTag", &[("name", name)], value);
     }
 }
@@ -307,12 +307,15 @@ fn write_tboxes(
             continue;
         }
         xml.start_element("TBox", &[]);
+        xml.start_element("Text", &[]);
         if placement == Placement::Below {
             // `readTbox` reconnaît un cadre sous la mesure à son décalage
-            // vertical positif.
+            // vertical positif, dans l'élément `<Text>`.
             xml.tag_empty("offset", &[("x", "0"), ("y", "1")]);
         }
-        xml.start_element("Text", &[]);
+        if let Some(size) = text.font_size {
+            xml.tag("size", &number(size));
+        }
         xml.tag_raw("text", &markup(&text.text));
         xml.end_element();
         xml.end_element();

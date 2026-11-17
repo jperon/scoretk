@@ -206,7 +206,11 @@ fn write_note(
             xml.tag("bracket", "1");
         }
         if accidental.parentheses {
-            xml.tag("parentheses", "1");
+            xml.tag("parens", "1");
+        }
+        if accidental.user {
+            // `AccidentalRole::USER` : l'export écrit `cautionary="yes"`.
+            xml.tag("role", "1");
         }
         if !accidental.visible {
             xml.tag("visible", "0");
@@ -645,8 +649,30 @@ fn write_harmony(xml: &mut XmlWriter, harmony: &Harmony) {
         xml.tag("bass", &bass.to_string());
     }
     xml.tag("name", &harmony.name);
+    if harmony.kind != "normal" {
+        let kind = match harmony.kind.as_str() {
+            "roman" => "1",
+            "nashville" => "2",
+            _ => "0",
+        };
+        xml.tag("harmonyType", kind);
+    }
     if let Some(function) = &harmony.function {
         xml.tag("function", function);
+    }
+    for degree in &harmony.degrees {
+        xml.start_element("degree", &[]);
+        xml.tag("degree-value", &degree.value.to_string());
+        xml.tag("degree-alter", &degree.alter.to_string());
+        xml.tag(
+            "degree-type",
+            match degree.kind {
+                mscz2xml::model::HarmonyDegreeKind::Add => "add",
+                mscz2xml::model::HarmonyDegreeKind::Alter => "alter",
+                mscz2xml::model::HarmonyDegreeKind::Subtract => "subtract",
+            },
+        );
+        xml.end_element();
     }
     xml.tag("placement", placement_name(harmony.placement));
     if !harmony.text.is_empty() {
@@ -751,6 +777,11 @@ pub(crate) fn write_instrument(xml: &mut XmlWriter, instrument: &Instrument) {
         if let Some(program) = instrument.midi_program {
             xml.tag_empty("program", &[("value", &program.to_string())]);
         }
+        if let Some(channel) = instrument.midi_channel {
+            // `Instrument::midiChannel` (base zéro) : l'export en dérive
+            // `<midi-channel>` (base un) et l'attribution des canaux libres.
+            xml.tag("midiChannel", &channel.to_string());
+        }
         if let Some(volume) = instrument.volume {
             xml.tag_empty(
                 "controller",
@@ -816,6 +847,9 @@ pub(crate) fn write_tuplet(xml: &mut XmlWriter, tuplet: &Tuplet) {
             xml.end_element();
         }
     }
+    // `calcHasBracket` n'est qu'une mise en page, mais MuseScore 3 écrivait le
+    // choix dans `<bracket>` et le lecteur le relit : on le conserve.
+    xml.tag("bracket", if tuplet.bracket { "1" } else { "0" });
     xml.end_element();
 }
 

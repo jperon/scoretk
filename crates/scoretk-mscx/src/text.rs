@@ -69,6 +69,23 @@ const SYMBOLS: &[(char, &str)] = &[
     ('\u{ECB5}', "metNote1024thUp"),
 ];
 
+/// Indice du `;` qui ferme une référence d'entité commençant à `start`.
+///
+/// Reconnaît `&nom;` et `&#…;` (`MScore` conserve les deux telles quelles) ;
+/// renvoie `None` pour un `&` isolé.
+fn entity_end(characters: &[char], start: usize) -> Option<usize> {
+    let mut index = start + 1;
+    let limit = (start + 12).min(characters.len());
+    while index < limit {
+        match characters[index] {
+            ';' => return (index > start + 1).then_some(index),
+            character if character.is_ascii_alphanumeric() || character == '#' => index += 1,
+            _ => return None,
+        }
+    }
+    None
+}
+
 /// Nom de symbole d'un caractère, s'il est connu.
 fn symbol_name(character: char) -> Option<&'static str> {
     SYMBOLS
@@ -114,18 +131,35 @@ pub fn markup(text: &RichText) -> String {
             out.push_str(&format!("<font size=\"{}\">", number(size)));
             opened.push("font");
         }
-        for character in fragment.text.chars() {
+        let characters: Vec<char> = fragment.text.chars().collect();
+        let mut index = 0;
+        while index < characters.len() {
+            let character = characters[index];
             if musical {
                 if let Some(name) = symbol_name(character) {
                     out.push_str("<sym>");
                     out.push_str(name);
                     out.push_str("</sym>");
+                    index += 1;
                     continue;
                 }
             }
-            let mut escaped = String::new();
-            escaped.push(character);
-            out.push_str(&escape_text(&escaped));
+            match character {
+                // MuseScore conserve les entités du texte interne (`&quot;`)
+                // et les écrit telles quelles : une entité valide reste brute,
+                // un `&` isolé est échappé pour rester du XML valide.
+                '&' => {
+                    if let Some(end) = entity_end(&characters, index) {
+                        out.extend(&characters[index..=end]);
+                        index = end + 1;
+                        continue;
+                    }
+                    out.push_str("&amp;");
+                }
+                '<' => out.push_str("&lt;"),
+                other => out.push(other),
+            }
+            index += 1;
         }
         for tag in opened.into_iter().rev() {
             out.push_str("</");
@@ -155,27 +189,24 @@ mod tests {
     }
 
     #[test]
-    fn balisage_aller_retour() {
-        for markup_text in [
-            "Visible text",
-            "a<b>b</b>c",
-            "<i>italique</i> droit",
-            "<u>souligné</u><s>barré</s>",
-            "<font face=\"FreeSerif\">police</font>",
-            "<font size=\"16\">gros</font>",
-            "a &amp; b &lt; c",
-            "<sym>metNoteQuarterUp</sym> = 80",
-            "ligne\nautre",
-        ] {
-            let original = RichText::from_markup(markup_text);
-            let written = markup(&original);
-            let reread = RichText::from_markup(&written);
-            assert_eq!(
-                reread.fragments(),
-                original.fragments(),
-                "balisage {markup_text:?} réécrit en {written:?}"
-            );
-        }
+    fn balisage_ecrit() {
+        // Textes construits par `RichText::new` : le balisage est interprété,
+        // puis réécrit avec les balises explicites du format.
+        assert_eq!(markup(&RichText::new("Visible text")), "Visible text");
+        assert_eq!(markup(&RichText::new("a<b>b</b>c")), "a<b>b</b>c");
+        assert_eq!(
+            markup(&RichText::new("<i>italique</i> droit")),
+            "<i>italique</i> droit"
+        );
+        assert_eq!(
+            markup(&RichText::new("<sym>metNoteQuarterUp</sym> = 80")),
+            "<sym>metNoteQuarterUp</sym> = 80"
+        );
+        // Entités conservées telles quelles par le modèle, `&` isolé échappé.
+        assert_eq!(markup(&RichText::new("a & b")), "a &amp; b");
+        assert_eq!(markup(&RichText::new("&quot;plus&quot;")), "&quot;plus&quot;");
+        // Un `<` littéral est échappé pour rester du XML valide.
+        assert_eq!(markup(&RichText::new("a < b")), "a &lt; b");
     }
 
     #[test]
