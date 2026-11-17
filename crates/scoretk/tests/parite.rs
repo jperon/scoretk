@@ -129,17 +129,15 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
     // Seul ABC reste sans écrivain. MuseScore et LilyPond dépendent de
     // features que la CLI active (`mscx`, `lilypond`) : la résolution de
     // features du workspace les active donc aussi ici.
-    for format in [Format::Abc] {
-        match write(&score, format, &options()) {
-            Err(Error::FormatNonPrisEnCharge {
-                format: actual,
-                sens,
-            }) => {
-                assert_eq!(actual, format);
-                assert_eq!(sens, Sens::Ecriture);
-            }
-            other => panic!("écriture {format} : {other:?}"),
+    match write(&score, Format::Abc, &options()) {
+        Err(Error::FormatNonPrisEnCharge {
+            format: actual,
+            sens,
+        }) => {
+            assert_eq!(actual, Format::Abc);
+            assert_eq!(sens, Sens::Ecriture);
         }
+        other => panic!("écriture {} : {other:?}", Format::Abc),
     }
 
     // MuseScore (`.mscx`/`.mscz`) n'est écrit que si la feature `mscx` est
