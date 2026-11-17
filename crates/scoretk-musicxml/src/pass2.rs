@@ -157,6 +157,7 @@ fn instrument(data: &InstrumentData) -> Instrument {
         midi_channel: data.channel,
         volume: data.volume,
         pan: data.pan,
+        midi_articulations: Vec::new(),
     }
 }
 

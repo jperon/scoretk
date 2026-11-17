@@ -151,6 +151,7 @@ fn piano_instrument() -> Instrument {
         midi_program: Some(0),
         volume: None,
         pan: None,
+        midi_articulations: Vec::new(),
     }
 }
 
@@ -694,6 +695,7 @@ fn transposition_et_concert_pitch() {
         midi_program: Some(71),
         volume: None,
         pan: None,
+        midi_articulations: Vec::new(),
     };
     let staff = score.add_staff(part_id);
     let track = Track::new(staff, 0);
@@ -1106,6 +1108,7 @@ fn corpus_linked_ties() {
         midi_program: Some(73),
         volume: None,
         pan: None,
+        midi_articulations: Vec::new(),
     };
     let staff = score.add_staff(part_id);
     let track = Track::new(staff, 0);
@@ -1280,6 +1283,7 @@ fn corpus_paroles() {
         midi_program: Some(52),
         volume: None,
         pan: None,
+        midi_articulations: Vec::new(),
     };
     let staff = score.add_staff(part_id);
     let track = Track::new(staff, 0);

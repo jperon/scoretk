@@ -1,6 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["crates/mscz2xml", "crates/mscz2xml-cli", "crates/mscz2xml-wasm", "crates/scoretk-musicxml"]
+members = [
+    "crates/mscz2xml",
+    "crates/mscz2xml-cli",
+    "crates/mscz2xml-wasm",
+    "crates/scoretk",
+    "crates/scoretk-cli",
+    "crates/scoretk-midi",
+    "crates/scoretk-musicxml",
+]
 
 [workspace.package]
 version = "0.1.0"

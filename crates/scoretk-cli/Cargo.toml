@@ -1,0 +1,21 @@
+[package]
+name = "scoretk-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "CLI scoretk : conversion de partitions entre formats"
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "scoretk"
+path = "src/main.rs"
+
+[dependencies]
+scoretk = { path = "../scoretk" }
+clap = { workspace = true }
+
+[dev-dependencies]
+mscz2xml = { path = "../mscz2xml" }
+zip = { workspace = true }

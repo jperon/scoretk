@@ -185,6 +185,17 @@ chemins Rust y sont relatifs à `crates/scoretk-musicxml/src/`.
 
 Les écarts de cet import sont suivis dans `docs/agents/musicxml-import.md`.
 
+### Écriture MIDI (`crates/scoretk-midi/src/`)
+
+| Rust | C++ amont |
+| --- | --- |
+| `lib.rs` | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/compatmidirender.cpp` |
+| `repeat_list.rs` | `engraving/dom/repeatlist.cpp` |
+| `render.rs` | `engraving/compat/midi/{compatmidirender,compatmidirenderinternal}.cpp` |
+| `velocity.rs` | `engraving/compat/midi/velocitymap.cpp` |
+| `pause_map.rs` | `engraving/compat/midi/pausemap.cpp` |
+| `writer.rs` | écriture `MidiFile` (format SMF, `no_std`) |
+
 ## 4. Suivi d'une nouvelle version amont
 
 Préparer un lot par famille (conteneur, lecteur 3.x, lecteur 4.x, modèle,

@@ -12,11 +12,19 @@ cinq formats de partition ; **mscz2xml** en est le premier convertisseur
 | MusicXML (`.musicxml` / `.mxl`) | fait (noyau, cf. `docs/agents/musicxml-import.md`) | fait |
 | LilyPond (`.ly`) | à faire | à faire |
 | ABC (`.abc`) | à faire | à faire |
-| MIDI (`.mid`) | à faire | à faire |
+| MIDI (`.mid`) | à faire | fait (`scoretk-midi`) |
 
 Toutes les combinaisons doivent fonctionner : mscz ↔ musicxml, musicxml ↔ ly,
 musicxml ↔ abc, musicxml ↔ midi, et donc aussi toutes les paires entre mscz,
 ly, abc et midi.
+
+### État de la phase 1 (un crate par convertisseur)
+
+| Crate | Rôle | État |
+| --- | --- | --- |
+| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : `.mscz`/`.mscx` → MusicXML/`.mxl`, MusicXML → modèle ; features `musicxml-import` et `midi` branchées |
+| `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | fait pour le noyau : 47/56 aller-retours identiques (écarts dans `docs/agents/musicxml-import.md`) |
+| `scoretk-midi` | écrivain MIDI depuis le modèle pivot | en cours (t35) |
 
 MIDI est à part : c'est un format de performance, pas de notation. L'écriture
 MIDI demande de dérouler les reprises et sauts (comme `RepeatList` de
@@ -42,6 +50,16 @@ Pistes :
   - MusicXML ↔ abc : `xml2abc` et `abc2xml` (W. Vree).
   - MIDI : l'export MIDI de MuseScore (`src/importexport/midi`, `engraving/compat/midi`), son import MIDI (quantification), et la crate Rust `midly` (pure Rust, `no_std`) pour le format de fichier.
   - Vérifier les licences de chacune avant tout portage.
+- **LilyPond.** L'écrivain vient avant le lecteur : ses sorties servent de
+  corpus d'aller-retour au lecteur.
+  - Écrivain : les voix sont notées en mode **`\fixed`**, jamais `\relative`,
+    car ce mode résiste mieux aux erreurs de copier-coller et assimilées.
+  - Lecteur : on ne peut pas intégrer le parseur de LilyPond, qui dépend de
+    Guile Scheme. On porte en Rust la grammaire de `parser.yy` et `lexer.ll`
+    pour un sous-ensemble : `\relative`, `\fixed`, `\transpose`, `\tuplet`,
+    `\repeat`, `\key`, `\time`, `\clef`, `\partial`, `\language`, paroles et
+    `\markup` simple. Le Scheme arbitraire est ignoré avec un avertissement,
+    sur le modèle de python-ly (`ly.music`).
 - **Contraintes inchangées.** La bibliothèque reste portable : wasm pour la PWA
   `../cantus`, Android, sans fs ni threads, et sans dépendance C.
 - **Calendrier.** À entreprendre une fois la parité mscz → MusicXML atteinte.

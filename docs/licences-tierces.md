@@ -1,8 +1,9 @@
 # Licences des dépendances tierces
 
 Ce document liste les crates tierces **effectivement liées** dans les binaires
-produits par le workspace (`mscz2xml` + CLI + wasm), avec leur licence, et
-vérifie leur compatibilité avec la licence du projet, **GPL-3.0-only**.
+produits par le workspace (`mscz2xml`, `scoretk` et leurs CLI, plus les crates
+wasm et MIDI), avec leur licence, et vérifie leur compatibilité avec la licence
+du projet, **GPL-3.0-only**.
 
 ## Portée et méthode
 
@@ -14,7 +15,7 @@ $ cargo tree --offline --workspace --edges normal,build --prefix none \
 La commande ne fait aucun accès réseau et n'inclut ni les dépendances de
 développement (`--edges normal,build`), ni les paquets présents dans
 `Cargo.lock` pour d'autres cibles ou pour des fonctionnalités optionnelles
-(voir plus bas). Résultat au 2026-11-17 : **45 crates tierces**, toutes
+(voir plus bas). Résultat au 2026-11-17 : **46 crates tierces**, toutes
 compatibles.
 
 ## Tableau
@@ -46,6 +47,7 @@ compatibles.
 | `js-sys` | 0.3.107 | MIT OR Apache-2.0 | wasm (bindings JS) |
 | `log` | 0.4.35 | MIT OR Apache-2.0 | core et wasm (via zopfli, wasm-bindgen) |
 | `memchr` | 2.8.3 | Unlicense OR MIT | core (via quick-xml, zip) |
+| `midly` | 0.5.3 | Unlicense | MIDI (format de fichier, `scoretk-midi`) |
 | `miniz_oxide` | 0.9.1 | MIT OR Zlib OR Apache-2.0 | core (via flate2) |
 | `pin-project-lite` | 0.2.17 | Apache-2.0 OR MIT | wasm (via futures-util) |
 | `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 | proc-macro |

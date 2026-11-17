@@ -41,6 +41,7 @@ fn piano(score: &mut Score) -> StaffId {
         midi_program: Some(0),
         volume: None,
         pan: None,
+        midi_articulations: Vec::new(),
     };
     score.add_staff(part_id)
 }

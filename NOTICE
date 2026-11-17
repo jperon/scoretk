@@ -3,8 +3,9 @@
 **scoretk** est une boîte à outils de conversion de partitions. Son premier
 convertisseur, **mscz2xml**, est un portage en Rust de l'export MusicXML et des
 lecteurs de partitions (`.mscx` / `.mscz`, formats 3.x et 4.x/5.x) de
-**MuseScore Studio**. Ce fichier récapitule l'origine du code et des données,
-les licences correspondantes et les marques.
+**MuseScore Studio**. Le crate `scoretk-midi` porte son export MIDI et le
+déroulement des reprises (`RepeatList`). Ce fichier récapitule l'origine du
+code et des données, les licences correspondantes et les marques.
 
 ## Licence du projet
 
@@ -44,6 +45,7 @@ Correspondance des grands ensembles :
 | `crates/scoretk-musicxml/src/` | `importexport/musicxml/internal/import/` (`importmusicxmlpass1.cpp`, `importmusicxmlpass2.cpp`, `importmusicxmlnoteduration.cpp`, `importmusicxmlnotepitch.cpp`, `musicxmlpart.cpp`, `musicxmltupletstate.cpp`, `musicxmlvoicedesc.cpp`) |
 | `crates/mscz2xml/src/read/mod.rs` | `engraving/rw/rwregister.cpp` |
 | `crates/mscz2xml/src/export/writer.rs` | forme d'écriture XML de `engraving/rw/xmlwriter.cpp` |
+| `crates/scoretk-midi/src/` | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/` (`compatmidirender*.cpp`, `velocitymap.cpp`, `pausemap.cpp`) et `engraving/dom/repeatlist.cpp` |
 
 Les tables de conversion de noms (`read302/tables.rs`, `read4xx/names.rs`)
 reprennent `TConv::fromXml` de `engraving/rw/types/typesconv.cpp` — fichier
@@ -64,6 +66,9 @@ référence — et les valeurs de `engraving/types/types.h`.
   `scripts/gen-references.sh` avec **MuseScore 4.7.4** (paquet nixpkgs), lancé
   en mode headless. Ce sont des sorties du programme MuseScore, couvertes par
   la même licence.
+- `tests/corpus/midi/**/*.ref.mid` : références MIDI produites localement par
+  `scripts/gen-midi-references.sh` avec la même version de MuseScore. Même
+  licence.
 
 ### Table des instruments
 
