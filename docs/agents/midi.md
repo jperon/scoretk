@@ -266,7 +266,7 @@ les `<duration>` sont ramenées à 480 par noire).
 Résultat mesuré au 2026-11-17 : **4/21 identiques** (`v4/mmrest`,
 `v4/repeat68`, `v4/repeat69`, `v4/testTempoPrecision`, tous des fichiers sans
 note ou presque). Les autres fichiers diffèrent de 1 à 7 lignes (noms de
-parties et abréviations, clef octaviée) sauf `v3/testTuplets8` (205 lignes) et
+parties et abréviations, clef octaviée) sauf `v3/testTuplets8` (224 lignes) et
 `v4/timesig-09` (965 lignes), à cause des n-olets complexes. La liste
 `EXPECTED_IDENTICAL` ne doit pas régresser.
 
