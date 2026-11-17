@@ -494,22 +494,25 @@ Corrigé dans cette passe :
 - `print-object="no"` sur un `<notations>` dont l'élément est invisible,
   réouverture d'un `<notations>` quand la visibilité change.
 
-Écarts restants, déclarés dans `ECARTS_CONNUS` du test dédié :
+Corrigé lors de la passe de parité complète (`ECARTS_CONNUS` est désormais
+vide, le test exige une parité exacte) :
 
-- **v3/layout_elements** : les `<Bend>` (technique de guitare) ne sont pas
-  modélisés, et la reprise de mesure (`<measure-repeat>`) n'est pas dépliée à
-  l'export (voir écart 8 du corpus v3) ; les deux glissandos de la mesure
-  répétée manquent donc. **Cause : modèle/export.**
-- **v4/copypaste_parts** : pour un trille, MuseScore 4.7 écrit le
-  `wavy-line type="stop"` sur l'accord de départ, alors que le modèle le place
-  sur l'accord de fin (`tick2 = départ + 1/4`). Le contenu est identique, seul
-  le rattachement diffère. **Cause : export** (interprétation de
-  `Trill::endElement`).
-- **v4/testExcludeInvisibleElements** : la visibilité des liaisons de
-  prolongation n'est pas modélisée (écart 13 ci-dessus). Avec un `tied`
-  invisible, MuseScore regroupe les `<notations>` autrement ; le contenu de la
-  famille est identique, seule la répartition des ouvertures
-  `print-object="no"` diffère. **Cause : lecteur/modèle** (tie invisible).
+- **v3/layout_elements** : la reprise de mesure est dépliée à la lecture
+  (`read/measure_repeat.rs` : marque `MeasureRepeat`, copie des accords,
+  annotations de segments d'accords et spanners de la mesure source) ;
+  `<measure-repeat>` est écrit par `measureRepeat` à l'export. Les
+  `TremoloBar` (bend de guitare) sont lus dans les deux lecteurs et écrits en
+  `<technical><bend>` par `writeGuitarBend`. **Cause : lecteur/modèle/export.**
+- **v4/copypaste_parts** : MuseScore 4.7 remplit son `TrillHash` avec
+  `Trill::endElement()`, calculé une seule fois par `Score::addSpanner` quand
+  `tick2 == tick` et jamais recalculé : le `wavy-line type="stop"` sort donc
+  sur l'accord de départ, avec le `type="start"`. L'export reproduit ce
+  rattachement (`write_trills`). **Cause : export.**
+- **v4/testExcludeInvisibleElements** : `Note` porte la visibilité du départ et
+  de l'arrivée de liaison (`<Tie><visible>`, lu par les deux lecteurs) ; le
+  `<tied>` invisible ouvre donc un `<notations print-object="no">` et le
+  regroupement des notations redevient celui de MuseScore. **Cause :
+  lecteur/modèle/export.**
 
 ## 19. Parité complète : hampes, ligatures, barres, métadonnées
 
@@ -566,13 +569,33 @@ Corrigé dans cette passe :
 - **soufflets invisibles** : `Spanner::visible` est lu dans `<HairPin>` et un
   soufflet invisible n'est pas exporté (`canWrite`).
 
+Corrigé dans cette passe :
+
+- **chiffrages figurés** : `model/figured_bass.rs` (items, préfixe/suffixe,
+  trait de prolongation, durée), lus par les deux lecteurs
+  (`read4xx/figures.rs`, `read302/annotations.rs`) et exportés comme
+  `ExportMusicXml::figuredBass` (`export/figured_bass.rs` : `<figure>`,
+  `<figure-number>`, `<extend>`, `<duration>`, prolongation sur les accords
+  suivants).
+- **barres de courtoisie** : `Measure::line_break` reprend les
+  `<LayoutBreak>` `line`/`page` des deux lecteurs et `end_bar_line_type`
+  écrit `light-light` avant un changement d'armure ou de métrique en début de
+  système, comme le `BarLine` `DOUBLE` que la mise en page de MuseScore ajoute
+  alors. Sans saut explicite dans le fichier (système coupé par la largeur de
+  page), la règle ne peut pas s'appliquer : c'est le seul cas restant, dans
+  `v3/voices`.
+- **`<measure-repeat>`** : voir écart 18.
+- **`TBox` « below »** : un texte de cadre sous une mesure couverte par un
+  groupe de silences multi-mesures est rattaché à la mesure qui remplace le
+  groupe (`mmrest_group_start`), comme `coveringMMRestOrThis`.
+- **regroupement des `<notations>` autour d'un `tied` invisible** : voir
+  écart 18.
+
 Écarts complets restants (détail et fréquence dans `ecarts-complets.md`) :
-`<tied orientation>` (orientation des liaisons de prolongation non
-modélisée), découpage des `backup`/`forward` et durées de `moonlight`
-(voix à trous et notes croisées), direction de hampe d'une ligature croisée
-(9 notes de `moonlight`), regroupement des `<notations>` autour d'un `tied`
-invisible, `figured-bass`, `<bend>`/`<with-bar>`, `<measure-repeat>`,
-`<staff-details print-object="no">` des portées masquées, `TBox` « below »
-rattaché à la mesure suivante, reprise de mesure, et les barlines de courtoisie
-générées par la mise en page (avant un changement de tonalité/mesure en fin de
-système).
+`<tied orientation>` (orientation des liaisons de prolongation non modélisée,
+portée par le `TieSegment` calculé à la mise en page), découpage des
+`backup`/`forward` et durées de `moonlight` (voix à trous et notes croisées),
+direction de hampe d'une ligature croisée (9 notes de `moonlight`),
+`<staff-details print-object="no">` des portées masquées, et les barlines de
+courtoisie des systèmes coupés automatiquement (sans `<LayoutBreak>` dans le
+fichier : `v3/voices`).

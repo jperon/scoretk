@@ -739,6 +739,26 @@ fn ecarts_complets_document() {
         );
     }
     println!();
+    println!("## Écarts qui dépendent de la mise en page calculée");
+    println!();
+    println!(
+        "Certains écarts ne viennent pas d'une donnée du `.mscx` mais d'un objet \
+         que MuseScore fabrique pendant la mise en page, absente du modèle :\n\n\
+         - **direction de hampe d'une ligature croisée** : `Chord::up()` dépend \
+           des notes de la ligature, elle-même groupée par la mise en page ;\n\
+         - **découpage des `<forward>`/`<backup>` et durées d'une voix à trous** \
+           : la position des segments vient de `Measure::layout`, pas du fichier ;\n\
+         - **`<tied orientation>`** : portée par le `TieSegment` calculé par la \
+           mise en page (la direction n'est pas dans le `.mscx`) ;\n\
+         - **barres de courtoisie** : ajoutées par la mise en page quand un \
+           système commence par un changement d'armure ou de métrique ; \
+           reproductibles seulement si le saut de système figure dans le \
+           fichier (`<LayoutBreak>`), pas quand la largeur de page coupe le \
+           système ;\n\
+         - **`<staff-details print-object=\"no\">` des portées masquées** : \
+           décidé par `hideEmptyStaves` après calcul des hauteurs de systèmes."
+    );
+    println!();
     println!("## Diffs");
     println!();
     println!("```diff");
