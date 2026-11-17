@@ -812,23 +812,31 @@ fn render_chord(
     transpose: i32,
 ) -> String {
     let mut token = String::new();
-    if !chord.grace_chords.is_empty() {
-        token.push('{');
-        for grace in &chord.grace_chords {
-            for note_id in &grace.chord.notes {
-                let note = score.note(*note_id);
-                if !note.visible {
-                    continue;
-                }
-                let (letter, alter, octave) = pitch::note_spelling(note, transpose);
-                token.push_str(&pitch::abc_note(letter, alter, octave, accidental_state));
-                token.push_str(&duration::multiplier(
-                    grace.duration.ticks(),
-                    duration::unit(),
-                ));
-            }
+    for grace in &chord.grace_chords {
+        let mut group = String::new();
+        if matches!(
+            grace.chord.grace,
+            Some(mscz2xml::model::GraceType::Acciaccatura)
+        ) {
+            group.push('/');
         }
-        token.push('}');
+        for note_id in &grace.chord.notes {
+            let note = score.note(*note_id);
+            if !note.visible {
+                continue;
+            }
+            let (letter, alter, octave) = pitch::note_spelling(note, transpose);
+            group.push_str(&pitch::abc_note(letter, alter, octave, accidental_state));
+            group.push_str(&duration::multiplier(
+                grace.duration.ticks(),
+                duration::unit(),
+            ));
+        }
+        if !group.is_empty() && group != "/" {
+            token.push('{');
+            token.push_str(&group);
+            token.push('}');
+        }
     }
 
     let notes: Vec<&Note> = chord
