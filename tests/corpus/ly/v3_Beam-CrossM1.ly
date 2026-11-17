@@ -34,7 +34,7 @@ staffOneVoiceOne = \fixed c' {
 
 \score {
   <<
-    \new Staff = "staffOne" \with {  } <<
+    \new Staff = "staffOne" <<
       \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
     >>
   >>

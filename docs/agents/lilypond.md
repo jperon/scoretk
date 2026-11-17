@@ -63,7 +63,19 @@ staffTwoVoiceTwo = \fixed c' { … }
 
 Le nom sert à la fois de variable et de cible à `\lyricsto`. Les voix d'une
 portée qui en compte plusieurs reçoivent `\voiceOne`, `\voiceTwo`… pour que
-LilyPond gère hampes et collisions.
+LilyPond gère hampes et collisions. Dans le bloc `\score`, une portée à
+plusieurs voix et sans paroles utilise le séparateur idiomatique `\\` :
+
+```lilypond
+\new Staff = "staffOne" <<
+  { \staffOneVoiceOne }
+  \\
+  { \staffOneVoiceTwo }
+>>
+```
+
+Dès qu'une voix porte des paroles, les voix deviennent des `\new Voice`
+nommés, seuls acceptés comme cible par `\lyricsto`.
 
 ### Regroupement des portées
 

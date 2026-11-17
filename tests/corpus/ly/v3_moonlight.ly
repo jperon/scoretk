@@ -1222,12 +1222,14 @@ staffTwoVoiceTwo = \fixed c' {
   <<
     \new PianoStaff \with { instrumentName = "Piano" } <<
       \new Staff = "staffOne" <<
-        \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
-        \new Voice = "staffOneVoiceTwo" { \staffOneVoiceTwo }
+        { \staffOneVoiceOne }
+        \\
+        { \staffOneVoiceTwo }
       >>
       \new Staff = "staffTwo" <<
-        \new Voice = "staffTwoVoiceOne" { \staffTwoVoiceOne }
-        \new Voice = "staffTwoVoiceTwo" { \staffTwoVoiceTwo }
+        { \staffTwoVoiceOne }
+        \\
+        { \staffTwoVoiceTwo }
       >>
     >>
   >>

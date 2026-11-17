@@ -108,19 +108,24 @@ staffThreeVoiceFour = \fixed c' {
   <<
     \new PianoStaff \with { instrumentName = "Piano" shortInstrumentName = "Pno." } <<
       \new Staff = "staffOne" <<
-        \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
-        \new Voice = "staffOneVoiceTwo" { \staffOneVoiceTwo }
-        \new Voice = "staffOneVoiceThree" { \staffOneVoiceThree }
+        { \staffOneVoiceOne }
+        \\
+        { \staffOneVoiceTwo }
+        \\
+        { \staffOneVoiceThree }
       >>
       \new Staff = "staffTwo" <<
         \new Voice = "staffTwoVoiceOne" { \staffTwoVoiceOne }
       >>
     >>
     \new Staff = "staffThree" \with { instrumentName = "Trombone" shortInstrumentName = "Tbn." } <<
-      \new Voice = "staffThreeVoiceOne" { \staffThreeVoiceOne }
-      \new Voice = "staffThreeVoiceTwo" { \staffThreeVoiceTwo }
-      \new Voice = "staffThreeVoiceThree" { \staffThreeVoiceThree }
-      \new Voice = "staffThreeVoiceFour" { \staffThreeVoiceFour }
+      { \staffThreeVoiceOne }
+      \\
+      { \staffThreeVoiceTwo }
+      \\
+      { \staffThreeVoiceThree }
+      \\
+      { \staffThreeVoiceFour }
     >>
   >>
   \layout { }

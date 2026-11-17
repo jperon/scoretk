@@ -23,8 +23,9 @@ staffOneVoiceTwo = \fixed c' {
 \score {
   <<
     \new Staff = "staffOne" \with { instrumentName = "Voice" shortInstrumentName = "Vo." } <<
-      \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
-      \new Voice = "staffOneVoiceTwo" { \staffOneVoiceTwo }
+      { \staffOneVoiceOne }
+      \\
+      { \staffOneVoiceTwo }
     >>
   >>
   \layout { }

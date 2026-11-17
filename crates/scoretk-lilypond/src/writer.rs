@@ -188,11 +188,9 @@ impl<'a> Writer<'a> {
         let indent = if grouped { "      " } else { "    " };
         let staff_data = &self.score.staves[staff_index];
         let part = &self.score.parts[staff_data.part.index()];
-        let with = if first && !grouped {
-            format!(
-                " \\with {{ {} }}",
-                instrument_clause(&part.long_name, &part.short_name)
-            )
+        let clause = instrument_clause(&part.long_name, &part.short_name);
+        let with = if first && !grouped && !clause.is_empty() {
+            format!(" \\with {{ {clause} }}")
         } else {
             String::new()
         };
@@ -203,12 +201,28 @@ impl<'a> Writer<'a> {
         );
 
         let voices = voice::written_voices(self.score, staff_index);
-        for voice_index in 0..voices {
-            let variable = voice::voice_variable(staff_index, voice_index);
-            let _ = writeln!(
-                out,
-                "{indent}  \\new Voice = \"{variable}\" {{ \\{variable} }}"
-            );
+        // Sans paroles, les voix multiples s'écrivent avec le séparateur `\\`
+        // (`<< { … } \\ { … } >>`), forme idiomatique ; avec des paroles, il
+        // faut des voix nommées pour que `\\lyricsto` puisse s'y accrocher.
+        let has_lyrics = (0..voices).any(|voice_index| {
+            !voice::lyrics_verses(self.score, staff_index, voice_index).is_empty()
+        });
+        if voices > 1 && !has_lyrics {
+            for voice_index in 0..voices {
+                if voice_index > 0 {
+                    let _ = writeln!(out, "{indent}  \\\\");
+                }
+                let variable = voice::voice_variable(staff_index, voice_index);
+                let _ = writeln!(out, "{indent}  {{ \\{variable} }}");
+            }
+        } else {
+            for voice_index in 0..voices {
+                let variable = voice::voice_variable(staff_index, voice_index);
+                let _ = writeln!(
+                    out,
+                    "{indent}  \\new Voice = \"{variable}\" {{ \\{variable} }}"
+                );
+            }
         }
 
         for voice_index in 0..voices {

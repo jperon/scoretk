@@ -15,7 +15,7 @@ staffOneVoiceOne = \fixed c' {
 
 \score {
   <<
-    \new Staff = "staffOne" \with {  } <<
+    \new Staff = "staffOne" <<
       \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
       \new Lyrics \lyricsto "staffOneVoiceOne" {
         Nel mez -- zo del cam -- \skip 1
