@@ -51,7 +51,7 @@ compatibles.
 | `miniz_oxide` | 0.9.1 | MIT OR Zlib OR Apache-2.0 | core (via flate2) |
 | `pin-project-lite` | 0.2.17 | Apache-2.0 OR MIT | wasm (via futures-util) |
 | `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 | proc-macro |
-| `quick-xml` | 0.42.0 | MIT | core (lecture XML) |
+| `quick-xml` | 0.42.0 | MIT | core (lecture XML) ; tests de `scoretk-lilypond` (`read_corpus`) |
 | `quote` | 1.0.47 | MIT OR Apache-2.0 | proc-macro |
 | `rustversion` | 1.0.23 | MIT OR Apache-2.0 | wasm (build, via wasm-bindgen) |
 | `simd-adler32` | 0.3.10 | MIT | core (via miniz_oxide, zopfli) |

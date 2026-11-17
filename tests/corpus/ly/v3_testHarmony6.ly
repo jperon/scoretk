@@ -3,7 +3,9 @@
 
 \header {
   title = "Harmony 6"
+  workTitle = "Harmony 6"
   subtitle = "MuseScore testfile Chords using normal, Roman and Nashville notation containing recognized text, unrecognized plaintext and unrecognized text requiring HTML escape"
+  workNumber = "MuseScore testfile Chords using normal, Roman and Nashville notation containing recognized text, unrecognized plaintext and unrecognized text requiring HTML escape"
   composer = "Leon Vinken"
 }
 

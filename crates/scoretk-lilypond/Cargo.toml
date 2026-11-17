@@ -11,3 +11,6 @@ homepage.workspace = true
 [dependencies]
 mscz2xml = { path = "../mscz2xml" }
 thiserror.workspace = true
+
+[dev-dependencies]
+quick-xml = { workspace = true }

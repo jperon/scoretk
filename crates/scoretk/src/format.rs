@@ -56,9 +56,8 @@ impl fmt::Display for Sens {
 
 /// Format de partition manipulé par scoretk.
 ///
-/// `Ly` est reconnu (extension et contenu) et s'écrit avec la feature
-/// `lilypond` ; il n'a pas encore de lecteur. `Abc` n'a ni lecteur ni
-/// écrivain. [`read`](crate::read) et [`write`](crate::write) renvoient alors
+/// `Ly` est reconnu (extension et contenu) et lu avec la feature
+/// `lilypond-import`, écrit avec `lilypond`. `Abc` n'a ni lecteur ni écrivain. [`read`](crate::read) et [`write`](crate::write) renvoient alors
 /// [`Error::FormatNonPrisEnCharge`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Format {
@@ -124,8 +123,9 @@ impl Format {
         match self {
             Self::Mscz | Self::Mscx => true,
             Self::MusicXml => cfg!(feature = "musicxml-import"),
+            Self::Ly => cfg!(feature = "lilypond-import"),
             Self::Midi => cfg!(feature = "midi"),
-            Self::Mxl | Self::Ly | Self::Abc => false,
+            Self::Mxl | Self::Abc => false,
         }
     }
 

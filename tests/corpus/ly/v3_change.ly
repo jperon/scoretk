@@ -3,6 +3,7 @@
 
 \header {
   title = "Instrument Change"
+  workTitle = "Instrument Change"
 }
 
 staffOneVoiceOne = \fixed c' {

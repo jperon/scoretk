@@ -3,6 +3,7 @@
 
 \header {
   title = "voices"
+  workTitle = "voices"
 }
 
 staffOneVoiceOne = \fixed c' {
@@ -36,10 +37,10 @@ staffOneVoiceThree = \fixed c' {
   ef'4 f'4 g'4 af'4 |
   R1 |
   ef'4 ef'4 ef'4 ef'4 |
-  R2 |
-  R2 |
-  R2 |
-  R1 \bar "|."
+  s2 |
+  s2 |
+  s2 |
+  s1 \bar "|."
 }
 
 staffTwoVoiceOne = \fixed c' {
@@ -73,24 +74,24 @@ staffThreeVoiceOne = \fixed c' {
 
 staffThreeVoiceTwo = \fixed c' {
   \voiceTwo
-  R1 |
-  R1 |
-  R1 |
-  R2 |
-  R2 |
-  R2 |
-  R1 \bar "|."
+  s1 |
+  s1 |
+  s1 |
+  s2 |
+  s2 |
+  s2 |
+  s1 \bar "|."
 }
 
 staffThreeVoiceThree = \fixed c' {
   \voiceThree
-  R1 |
-  R1 |
-  R1 |
-  R2 |
-  R2 |
-  R2 |
-  R1 \bar "|."
+  s1 |
+  s1 |
+  s1 |
+  s2 |
+  s2 |
+  s2 |
+  s1 \bar "|."
 }
 
 staffThreeVoiceFour = \fixed c' {

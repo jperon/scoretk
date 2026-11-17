@@ -3,7 +3,9 @@
 
 \header {
   title = "Hairpin Dynamics"
+  workTitle = "Hairpin Dynamics"
   subtitle = "MuseScore testfile"
+  workNumber = "MuseScore testfile"
   composer = "Leon Vinken"
 }
 

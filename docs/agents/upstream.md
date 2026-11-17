@@ -244,6 +244,11 @@ Cette crate n'a **pas** de source MuseScore dédiée : MuseScore 4 n'a pas
 d'export LilyPond. Elle porte la sémantique des objets du modèle et suit, pour
 les correspondances de notation, le comportement de **`musicxml2ly`** du
 paquet LilyPond (GPL-3.0-or-later), cité dans `NOTICE` et dans les en-têtes.
+La **lecture** (t40) porte en plus un sous-ensemble de `lily/parser.yy`,
+`lily/lexer.ll`, `lily/pitch.cc` et `scm/define-note-names.scm` de LilyPond
+2.26.0 (copie hors dépôt) ; les correspondances complètes et les procédures de
+mise à niveau de ces moteurs (LilyPond, `musicxml2ly`, `python-ly`) sont dans
+`docs/agents/lilypond.md` § 8 à § 10.
 
 | Rust | Référence |
 | --- | --- |

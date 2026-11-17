@@ -3,6 +3,7 @@
 
 \header {
   title = "Full range of noteheads"
+  workTitle = "Full range of noteheads"
   composer = "Klaus Rettinghaus"
 }
 
