@@ -37,10 +37,62 @@ use scoretk_musicxml::read_musicxml;
 const ENCODING_DATE: &str = "2026-11-16";
 
 /// Fichiers du corpus 3.x dont l'aller-retour est identique à la référence.
-const EXPECTED_V3: &[&str] = &[];
+///
+/// Toute régression sur cette liste fait échouer le test. Les fichiers absents
+/// sont suivis dans `docs/agents/musicxml-import.md`.
+const EXPECTED_V3: &[&str] = &[
+    "Beam-CrossM1",
+    "barlinedelete",
+    "clef-1",
+    "copypaste_tuplet_01",
+    "grace",
+    "keysig_78216",
+    "lyricsline01",
+    "measure-4",
+    "moonlight",
+    "repeat01",
+    "repeat06",
+    "repeat07",
+    "repeat11",
+    "repeat20",
+    "repeat39",
+    "selectionfilter1",
+    "testBreaksPage",
+    "testHairpinDynamics",
+    "testTboxWords1",
+    "testWedge4",
+    "undoResequenceMeasure",
+];
 
 /// Fichiers du corpus 4.x dont l'aller-retour est identique à la référence.
-const EXPECTED_V4: &[&str] = &[];
+const EXPECTED_V4: &[&str] = &[
+    "beamStemDir",
+    "changevisibility",
+    "copypaste_parts",
+    "copypastesymbollist-lyrics",
+    "dynamics",
+    "dynamics_niente",
+    "expression-1",
+    "hairpin_dynamic_inside",
+    "hairpin_dynamic_jump",
+    "hairpin_simple",
+    "hairpins_and_repeats",
+    "linked-ties",
+    "mmrest",
+    "partExclusion",
+    "part-textlines",
+    "repeat65",
+    "repeat66",
+    "repeat68",
+    "repeat69",
+    "tenuto_accent",
+    "testExcludeInvisibleElements",
+    "testLocalTimesig1",
+    "testNoteheads2",
+    "testTempoPrecision",
+    "timesig-09",
+    "voiceswitching",
+];
 
 /// Résultat d'un aller-retour.
 struct Row {
@@ -67,8 +119,9 @@ fn run(version: &str, expected: &[&str]) {
             .expect("nom de fichier UTF-8")
             .to_owned();
         let reference_path = path.with_file_name(format!("{name}.ref.musicxml"));
-        let reference = fs::read_to_string(&reference_path)
-            .unwrap_or_else(|error| panic!("référence {} illisible : {error}", reference_path.display()));
+        let reference = fs::read_to_string(&reference_path).unwrap_or_else(|error| {
+            panic!("référence {} illisible : {error}", reference_path.display())
+        });
         let expected_lines = common::normalize(&reference);
 
         let input = fs::read(&reference_path).expect("lecture de la référence");

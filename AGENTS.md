@@ -19,6 +19,8 @@ Carte des crates et modules :
   système de fichiers.
 - `crates/mscz2xml-wasm` — enveloppe wasm-bindgen (`convert`, `version`),
   sans logique de conversion.
+- `crates/scoretk-musicxml` — lecteur MusicXML (`read_musicxml`) vers le
+  modèle : `.musicxml`/`.xml`/`.mxl` → `Score`.
 - `tests/corpus/{v3,v4}/` — `.mscx` amont + références `*.ref.musicxml` ;
   `crates/mscz2xml/tests/` — tests par famille et e2e de conformité.
 - `scripts/` — références du corpus, table des instruments, licences ;
@@ -121,3 +123,6 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
   worker cantus) : à lire avant de toucher au crate wasm.
 - `docs/agents/licence.md` — obligations GPL-3.0-only d'un consommateur :
   à lire avant toute distribution ou intégration.
+- `docs/agents/musicxml-import.md` — portage de l'import MusicXML, résultat
+  du test d'aller-retour et écarts restants : à lire avant de toucher au
+  lecteur MusicXML.

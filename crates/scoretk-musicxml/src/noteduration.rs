@@ -140,10 +140,8 @@ pub fn read(note: &Element, divisions: u32) -> NoteTiming {
     let rest = note.has_child("rest");
     let grace = note.has_child("grace");
     let chord = note.has_child("chord");
-    let whole_rest = rest
-        && note.child_text("type") == Some("whole")
-        && spec.is_some()
-        && calc.is_some();
+    let whole_rest =
+        rest && note.child_text("type") == Some("whole") && spec.is_some() && calc.is_some();
     let grace_zero = grace && spec == Some(Fraction::ZERO);
 
     let dura = match (calc, spec) {

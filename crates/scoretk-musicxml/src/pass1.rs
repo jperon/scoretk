@@ -129,14 +129,8 @@ impl TimeSigData {
 pub struct MeasureData {
     /// Durée de la mesure (`determineMeasureLength`), maximum sur les parties.
     pub len: Fraction,
-    /// Indication de mesure déclarée dans cette mesure, si elle en change.
-    pub time_sig: Option<TimeSigData>,
     /// Indication de mesure en vigueur à la fin de la mesure.
     pub time_sig_in_effect: TimeSigData,
-    /// Numéro écrit dans l'attribut `number`, s'il est numérique.
-    pub number: Option<usize>,
-    /// Mesure d'anacrouse ou non numérotée (`implicit="yes"`).
-    pub implicit: bool,
     /// Vrai si un saut de section précède la mesure.
     ///
     /// MusicXML n'a pas d'équivalent direct : MuseScore réécrit la
@@ -144,23 +138,6 @@ pub struct MeasureData {
     /// numéro de mesure qui recule (hors mesure implicite) est donc interprété
     /// comme un saut de section.
     pub section_break: bool,
-}
-
-impl MeasureData {
-    fn new() -> Self {
-        Self {
-            len: Fraction::ZERO,
-            time_sig: None,
-            time_sig_in_effect: TimeSigData {
-                numerator: 4,
-                denominator: 4,
-                kind: TimeSigType::Normal,
-            },
-            number: None,
-            implicit: false,
-            section_break: false,
-        }
-    }
 }
 
 /// Partie du document, telle que relevée en première passe.
@@ -202,11 +179,6 @@ pub struct Analysis {
 }
 
 impl Analysis {
-    /// Table `voix MusicXML -> description` d'une partie.
-    pub fn voices(&self, part_index: usize) -> &BTreeMap<i32, VoiceDesc> {
-        &self.voices[part_index]
-    }
-
     /// Résout la portée, la voix et le décalage de portée d'un élément
     /// (`determineStaffMoveVoice`).
     ///
@@ -240,11 +212,6 @@ impl Analysis {
             voice,
             i8::try_from(staff_move.clamp(-128, 127)).unwrap_or(0),
         )
-    }
-
-    /// Nombre total de portées.
-    pub fn staff_count(&self) -> usize {
-        self.parts.iter().map(|part| part.staves).sum()
     }
 }
 
@@ -318,7 +285,11 @@ pub fn analyse(root: &Element) -> Result<Analysis> {
     }
 
     // Longueur globale de chaque mesure : maximum sur les parties.
-    let measure_count = states.iter().map(|state| state.lengths.len()).max().unwrap_or(0);
+    let measure_count = states
+        .iter()
+        .map(|state| state.lengths.len())
+        .max()
+        .unwrap_or(0);
     if measure_count == 0 {
         return Err(Error::NoParts);
     }
@@ -349,24 +320,16 @@ pub fn analyse(root: &Element) -> Result<Analysis> {
         let implicit = states
             .iter()
             .any(|state| state.implicits.get(index).copied().unwrap_or(false));
-        let section_break = !implicit
-            && number.is_some()
-            && states.iter().any(|state| {
-                let current = state.numbers.get(index).copied().flatten();
-                let previous = index
-                    .checked_sub(1)
-                    .and_then(|previous| state.numbers.get(previous).copied().flatten());
-                matches!((current, previous), (Some(current), Some(previous)) if current <= previous)
-            });
+        let section_break = !implicit && number.is_some() && states.iter().any(|state| {
+            let current = state.numbers.get(index).copied().flatten();
+            let previous = index
+                .checked_sub(1)
+                .and_then(|previous| state.numbers.get(previous).copied().flatten());
+            matches!((current, previous), (Some(current), Some(previous)) if current <= previous)
+        });
         measures.push(MeasureData {
             len,
-            time_sig: states
-                .iter()
-                .filter_map(|state| state.time_sigs.get(index).copied().flatten())
-                .next(),
             time_sig_in_effect: time_sig,
-            number,
-            implicit,
             section_break,
         });
     }
@@ -638,7 +601,9 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
                 .attribute("number")
                 .and_then(|number| number.parse().ok()),
         );
-        state.implicits.push(measure.attribute("implicit") == Some("yes"));
+        state
+            .implicits
+            .push(measure.attribute("implicit") == Some("yes"));
 
         for voice in detector.overlapping_voices() {
             if let Some(desc) = state.voices.get_mut(&voice) {
@@ -655,7 +620,9 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
 
 /// Somme des longueurs déjà relevées, c'est-à-dire tick de début courant.
 fn length_start(lengths: &[Fraction]) -> Fraction {
-    lengths.iter().fold(Fraction::ZERO, |total, length| total + *length)
+    lengths
+        .iter()
+        .fold(Fraction::ZERO, |total, length| total + *length)
 }
 
 /// Répartit les voix MusicXML sur les portées puis les voix MuseScore
@@ -917,7 +884,7 @@ mod tests {
 
     #[test]
     fn positions_de_voix() {
-        let mut voices = BTreeMap::new();
+        let mut voices: BTreeMap<i32, VoiceDesc> = BTreeMap::new();
         voices.entry(1).or_default().incr(0);
         voices.entry(2).or_default().incr(0);
         voices.entry(3).or_default().incr(0);

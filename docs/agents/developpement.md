@@ -15,6 +15,7 @@ détails et les pièges d'outillage.
 | `crates/mscz2xml/src/export/` | modèle → MusicXML `partwise` / `.mxl` |
 | `crates/mscz2xml-cli/` | binaire `mscz2xml` : seule partie qui touche au système de fichiers |
 | `crates/mscz2xml-wasm/` | enveloppe wasm-bindgen (`convert`, `version`), sans logique de conversion |
+| `crates/scoretk-musicxml/` | lecteur MusicXML → modèle (`read_musicxml`), bibliothèque portable |
 | `crates/mscz2xml/tests/` | tests d'intégration par famille + e2e de conformité |
 | `tests/corpus/{v3,v4}/` | `.mscx` et références `*.ref.musicxml` |
 | `scripts/` | génération des références et de la table des instruments, contrôle des licences |

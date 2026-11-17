@@ -130,7 +130,7 @@ pub fn parse(bytes: &[u8]) -> Result<Element> {
     root.ok_or(Error::UnknownRoot(String::new()))
 }
 
-fn attach(stack: &mut Vec<Element>, root: &mut Option<Element>, element: Element) {
+fn attach(stack: &mut [Element], root: &mut Option<Element>, element: Element) {
     match stack.last_mut() {
         Some(parent) => parent.children.push(element),
         None => {
@@ -187,14 +187,14 @@ mod tests {
         let part = root.child("part").unwrap();
         assert_eq!(part.attribute("id"), Some("P1"));
         let note = part.child("measure").unwrap().child("note").unwrap();
-        assert_eq!(note.child_text("pitch").is_none(), true);
+        assert_eq!(note.child_text("pitch"), Some(""));
         assert_eq!(note.child("pitch").unwrap().child_text("step"), Some("C"));
     }
 
     #[test]
     fn namespace_retire() {
-        let root = parse(br#"<x:score-partwise xmlns:x="urn:x"><x:part/></x:score-partwise>"#)
-            .unwrap();
+        let root =
+            parse(br#"<x:score-partwise xmlns:x="urn:x"><x:part/></x:score-partwise>"#).unwrap();
         assert_eq!(root.name, "score-partwise");
         assert_eq!(root.children[0].name, "part");
     }

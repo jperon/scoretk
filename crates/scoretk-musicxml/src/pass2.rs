@@ -165,7 +165,10 @@ fn read_metadata(root: &Element) -> mscz2xml::model::ScoreMetadata {
     let mut metadata = mscz2xml::model::ScoreMetadata::default();
     if let Some(work) = root.child("work") {
         metadata.work_title = work.child_text("work-title").unwrap_or_default().to_owned();
-        metadata.work_number = work.child_text("work-number").unwrap_or_default().to_owned();
+        metadata.work_number = work
+            .child_text("work-number")
+            .unwrap_or_default()
+            .to_owned();
     }
     metadata.movement_title = root
         .child_text("movement-title")
@@ -289,12 +292,9 @@ fn read_measure(
                                 score.parts[part_index].instrument.transpose = Some(transpose);
                             }
                         }
-                        "staff-details" => read_staff_details(
-                            score,
-                            analysis,
-                            part_index,
-                            attribute,
-                        ),
+                        "staff-details" => {
+                            read_staff_details(score, analysis, part_index, attribute)
+                        }
                         "measure-style" => {
                             for style in &attribute.children {
                                 match style.name.as_str() {
@@ -305,13 +305,11 @@ fn read_measure(
                                             }
                                         }
                                     }
-                                    "measure-repeat" => {
-                                        if style.attribute("type") == Some("start") {
-                                            if let Ok(count) =
-                                                style.text_trimmed().parse::<u16>()
-                                            {
-                                                measure_style_repeat = Some(count);
-                                            }
+                                    "measure-repeat"
+                                        if style.attribute("type") == Some("start") =>
+                                    {
+                                        if let Ok(count) = style.text_trimmed().parse::<u16>() {
+                                            measure_style_repeat = Some(count);
                                         }
                                     }
                                     _ => {}
@@ -606,7 +604,12 @@ fn read_note(
 }
 
 /// Écrit un segment à un tick donné, en le créant au besoin.
-fn get_segment(score: &mut Score, measure_index: usize, kind: SegmentType, tick: Fraction) -> usize {
+fn get_segment(
+    score: &mut Score,
+    measure_index: usize,
+    kind: SegmentType,
+    tick: Fraction,
+) -> usize {
     if let Some(position) = score.measures[measure_index]
         .segments
         .iter()
@@ -624,12 +627,12 @@ fn get_segment(score: &mut Score, measure_index: usize, kind: SegmentType, tick:
 }
 
 /// Accès mutable à l'accord ou silence d'un segment.
-fn chord_rest_at_mut<'a>(
-    score: &'a mut Score,
+fn chord_rest_at_mut(
+    score: &mut Score,
     measure_index: usize,
     tick: Fraction,
     track: Track,
-) -> Option<&'a mut ChordRest> {
+) -> Option<&mut ChordRest> {
     score.measures[measure_index]
         .segments
         .iter_mut()
@@ -718,7 +721,8 @@ fn read_time(
         .measures
         .get(measure_index)
         .map_or(Fraction::ZERO, |measure| measure.len);
-    let stretch = if local_len.is_positive() && global_len.is_positive() && local_len != global_len {
+    let stretch = if local_len.is_positive() && global_len.is_positive() && local_len != global_len
+    {
         local_len / global_len
     } else {
         Fraction::ONE
@@ -887,7 +891,10 @@ fn chord_rest_duration(
     dura: Fraction,
 ) -> Duration {
     let rest = note.has_child("rest");
-    let measure_rest = note.child("rest").and_then(|rest| rest.attribute("measure")) == Some("yes");
+    let measure_rest = note
+        .child("rest")
+        .and_then(|rest| rest.attribute("measure"))
+        == Some("yes");
     let kind = note.child_text("type");
     let whole_rest = rest
         && ((kind.is_none() && dura == measure_len)
@@ -957,7 +964,11 @@ fn make_chord_rest(
     if duration.is_measure() {
         // Un silence de mesure entière garde la durée de *sa* partie, qui peut
         // différer de la longueur globale (indications de mesure locales).
-        chord_rest.ticks = Some(if dura.is_positive() { dura } else { measure_len });
+        chord_rest.ticks = Some(if dura.is_positive() {
+            dura
+        } else {
+            measure_len
+        });
     }
     if rest && note.attribute("print-object") == Some("no") {
         if let Some(inner) = chord_rest.rest_mut() {
@@ -1069,27 +1080,31 @@ fn read_accidental(element: &Element) -> Option<Accidental> {
 fn read_notehead(name: &str, smufl: Option<&str>) -> (NoteHeadGroup, NoteHeadType) {
     if let Some(smufl) = smufl {
         let group = match smufl {
-            "noteheadVoidWithX" | "noteheadWholeWithX" | "noteheadHalfWithX"
+            "noteheadVoidWithX"
+            | "noteheadWholeWithX"
+            | "noteheadHalfWithX"
             | "noteheadDoubleWholeWithX" => Some(NoteHeadGroup::WithX),
-            "noteheadDiamondBlackOld" | "noteheadDiamondHalfOld"
-            | "noteheadDiamondWholeOld" | "noteheadDiamondDoubleWholeOld" => {
-                Some(NoteHeadGroup::DiamondOld)
+            "noteheadDiamondBlackOld"
+            | "noteheadDiamondHalfOld"
+            | "noteheadDiamondWholeOld"
+            | "noteheadDiamondDoubleWholeOld" => Some(NoteHeadGroup::DiamondOld),
+            "noteheadCircledBlackLarge"
+            | "noteheadCircledHalfLarge"
+            | "noteheadCircledWholeLarge"
+            | "noteheadCircledDoubleWholeLarge" => Some(NoteHeadGroup::CircledLarge),
+            "noteheadLargeArrowUpBlack"
+            | "noteheadLargeArrowDownBlack"
+            | "noteheadLargeArrowUpHalf"
+            | "noteheadLargeArrowDownHalf"
+            | "noteheadLargeArrowUpWhole"
+            | "noteheadLargeArrowDownWhole" => Some(NoteHeadGroup::LargeArrow),
+            "noteheadBlack" | "noteheadHalf" | "noteheadWhole" | "noteheadDoubleWholeSquare" => {
+                Some(NoteHeadGroup::BrevisAlt)
             }
-            "noteheadCircledBlackLarge" | "noteheadCircledHalfLarge"
-            | "noteheadCircledWholeLarge" | "noteheadCircledDoubleWholeLarge" => {
-                Some(NoteHeadGroup::CircledLarge)
-            }
-            "noteheadLargeArrowUpBlack" | "noteheadLargeArrowDownBlack"
-            | "noteheadLargeArrowUpHalf" | "noteheadLargeArrowDownHalf"
-            | "noteheadLargeArrowUpWhole" | "noteheadLargeArrowDownWhole" => {
-                Some(NoteHeadGroup::LargeArrow)
-            }
-            "noteheadBlack" | "noteheadHalf" | "noteheadWhole"
-            | "noteheadDoubleWholeSquare" => Some(NoteHeadGroup::BrevisAlt),
-            "noteheadSlashWhiteWhole" | "noteheadSlashWhiteDoubleWhole"
-            | "noteheadSlashDiamondWhite" | "noteheadSlashHorizontalEnds" => {
-                Some(NoteHeadGroup::LargeDiamond)
-            }
+            "noteheadSlashWhiteWhole"
+            | "noteheadSlashWhiteDoubleWhole"
+            | "noteheadSlashDiamondWhite"
+            | "noteheadSlashHorizontalEnds" => Some(NoteHeadGroup::LargeDiamond),
             "noteheadHeavyX" => Some(NoteHeadGroup::HeavyCross),
             "noteheadHeavyXHat" => Some(NoteHeadGroup::HeavyCrossHat),
             _ => None,
@@ -1623,10 +1638,7 @@ fn fill_gaps_in_first_voice(score: &mut Score, measure_index: usize, staff_id: S
         let Some(chord_rest) = segment.chord_rest(track) else {
             continue;
         };
-        events.push((
-            segment.tick,
-            actual_ticks(score, chord_rest, measure_index),
-        ));
+        events.push((segment.tick, actual_ticks(score, chord_rest, measure_index)));
     }
 
     let mut end_of_last = measure_start;

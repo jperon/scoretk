@@ -9,7 +9,7 @@ cinq formats de partition ; **mscz2xml** en est le premier convertisseur
 | Format | Lecture | Écriture |
 |---|---|---|
 | MuseScore (`.mscz` / `.mscx`, 3.x et 4.x) | fait | à faire |
-| MusicXML (`.musicxml` / `.mxl`) | à faire | fait |
+| MusicXML (`.musicxml` / `.mxl`) | fait (noyau, cf. `docs/agents/musicxml-import.md`) | fait |
 | LilyPond (`.ly`) | à faire | à faire |
 | ABC (`.abc`) | à faire | à faire |
 | MIDI (`.mid`) | à faire | à faire |

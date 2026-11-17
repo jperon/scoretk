@@ -170,6 +170,21 @@ Chemins amont relatifs à `ref-musescore/src/`. La colonne Rust est relative à
 | `export/textlines.rs` | `…/exportmusicxml.cpp` (`textLine`, `writeHairpinText`) |
 | `export/writer.rs` | `engraving/rw/xmlwriter.cpp` |
 
+### Lecteur MusicXML (`crates/scoretk-musicxml/`)
+
+Cette crate est hors de `crates/mscz2xml` mais porte le même code amont ; les
+chemins Rust y sont relatifs à `crates/scoretk-musicxml/src/`.
+
+| Rust | C++ amont |
+| --- | --- |
+| `pass1.rs` | `importexport/musicxml/internal/import/importmusicxmlpass1.cpp`, `musicxmlpart.cpp`, `musicxmlvoicedesc.cpp` |
+| `pass2.rs` | `importexport/musicxml/internal/import/importmusicxmlpass2.cpp`, `importmusicxmlnotepitch.cpp`, `musicxmltupletstate.cpp` |
+| `noteduration.rs` | `importexport/musicxml/internal/import/importmusicxmlnoteduration.cpp` |
+| `container.rs` | `importexport/musicxml/internal/import/importmusicxml.cpp` (lecture `.mxl`) |
+| `xml.rs` | remplace `muse::XmlStreamReader` par un arbre en mémoire (fichier original) |
+
+Les écarts de cet import sont suivis dans `docs/agents/musicxml-import.md`.
+
 ## 4. Suivi d'une nouvelle version amont
 
 Préparer un lot par famille (conteneur, lecteur 3.x, lecteur 4.x, modèle,

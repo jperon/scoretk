@@ -41,6 +41,7 @@ Correspondance des grands ensembles :
 | `crates/mscz2xml/src/read/read4xx/` | `engraving/rw/read400/`, `read410/`, `read460/`, `read500/` (`read*.cpp`, `staffr*.cpp`, `measurer*.cpp`, `tread.cpp`, `connectorinforeader.cpp`) et `engraving/rw/compat/readstyle.cpp` |
 | `crates/mscz2xml/src/model/` | `engraving/dom/*.h` (partition, segments, notes, accords, spanners, styles de texte…), `engraving/types/`, `engraving/style/style.h` |
 | `crates/mscz2xml/src/container.rs` | `engraving/infrastructure/mscreader.cpp` |
+| `crates/scoretk-musicxml/src/` | `importexport/musicxml/internal/import/` (`importmusicxmlpass1.cpp`, `importmusicxmlpass2.cpp`, `importmusicxmlnoteduration.cpp`, `importmusicxmlnotepitch.cpp`, `musicxmlpart.cpp`, `musicxmltupletstate.cpp`, `musicxmlvoicedesc.cpp`) |
 | `crates/mscz2xml/src/read/mod.rs` | `engraving/rw/rwregister.cpp` |
 | `crates/mscz2xml/src/export/writer.rs` | forme d'écriture XML de `engraving/rw/xmlwriter.cpp` |
 
