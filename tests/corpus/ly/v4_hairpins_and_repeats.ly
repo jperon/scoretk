@@ -3,6 +3,7 @@
 
 \header {
   title = "Idee in Noten no.8"
+  workTitle = "Idee in Noten no.8"
   composer = "Yannis A. Paul"
 }
 

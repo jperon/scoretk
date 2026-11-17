@@ -74,6 +74,30 @@ noms de clés et d'armures, mode `\fixed`) suivent le comportement de
   copiée. L'attribution figure aussi dans l'en-tête des fichiers concernés de
   `crates/scoretk-lilypond/src/`.
 
+### Lecture LilyPond (`crates/scoretk-lilypond/src/read/`)
+
+La lecture porte un sous-ensemble de la grammaire de LilyPond. Les sources de
+référence sont une copie de **LilyPond 2.26.0**, commit
+`3596756be0fac1f81066a99d2054329212172b2d`, conservée hors du dépôt (par
+exemple `../lilypond-ref/`, comme `ref-musescore/`) et jamais distribuée :
+
+| Fichier Rust | Source LilyPond |
+| --- | --- |
+| `read/lexer.rs` | `lily/lexer.ll` (états `notes`, `lyrics`, `markup`, commentaires) |
+| `read/parser.rs` | `lily/parser.yy` (`music_list`, `event_chord`, `chord_body`, `post_events`, `duration`, `repeated_music`, `context_change`, `\score`) |
+| `read/pitch.rs` | `lily/pitch.cc` (`Pitch::to_relative_octave`, `steps`, `up_to`/`down_to`) et `scm/define-note-names.scm` (tables de noms par langue) |
+
+Licence : **GNU GPL version 3 ou ultérieure**, Copyright (C) 1998--2026
+Han-Wen Nienhuys et les autres auteurs de LilyPond. La réécriture Rust ne
+copie aucune ligne et se distribue sous GPL-3.0-only, licence du projet.
+
+**Modèle de lecteur sans Scheme** : `python-ly`
+(<https://github.com/frescobaldi/python-ly>, GPL-3.0-or-later), consulté comme
+référence d'architecture (`ly.music`, `ly.lex`) sans reprise de code. Licence
+compatible avec la distribution du présent projet sous GPL-3.0-only.
+
+Procédure de mise à niveau : `docs/agents/lilypond.md` § 8 à § 10.
+
 ## Code et comportements repris depuis xml2abc et abc2xml
 
 MuseScore Studio n'a pas d'import ni d'export ABC natif. Le crate

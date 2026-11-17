@@ -27,6 +27,8 @@
 //!   `write_midi(&Score) -> Result<Vec<u8>>` ;
 //! - feature `lilypond` : crate `scoretk-lilypond` (t36), fonction
 //!   `write_lilypond(&Score) -> Result<String>` ;
+//! - feature `lilypond-import` : lecture LilyPond (t40), fonction
+//!   `read_lilypond(&str) -> Result<Score>` ;
 //! - feature `mscx` : crate `scoretk-mscx` (t38), fonctions
 //!   `write_mscx(&Score) -> Result<String>` et
 //!   `write_mscz(&Score) -> Result<Vec<u8>>` ;
@@ -41,6 +43,7 @@ use crate::error::Error;
     feature = "musicxml-import",
     feature = "midi",
     feature = "lilypond",
+    feature = "lilypond-import",
     feature = "mscx",
     feature = "abc"
 )))]
@@ -85,6 +88,20 @@ pub(crate) fn write_lilypond(_score: &Score) -> Result<Vec<u8>> {
     Err(Error::FormatNonPrisEnCharge {
         format: Format::Ly,
         sens: Sens::Ecriture,
+    })
+}
+
+#[cfg(feature = "lilypond-import")]
+pub(crate) fn read_lilypond(bytes: &[u8]) -> Result<Score> {
+    let source = std::str::from_utf8(bytes).map_err(|error| Error::LilyPond(error.to_string()))?;
+    scoretk_lilypond::read_lilypond(source).map_err(|error| Error::LilyPond(error.to_string()))
+}
+
+#[cfg(not(feature = "lilypond-import"))]
+pub(crate) fn read_lilypond(_bytes: &[u8]) -> Result<Score> {
+    Err(Error::FormatNonPrisEnCharge {
+        format: Format::Ly,
+        sens: Sens::Lecture,
     })
 }
 

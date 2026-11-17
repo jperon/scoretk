@@ -113,18 +113,35 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
     let mscx = std::fs::read(common::corpus_v4("dynamics.mscx")).expect("corpus");
     let score = read(&mscx, Format::Mscx).expect("lecture .mscx");
 
-    for format in [Format::Ly, Format::Midi] {
-        match read(b"x", format) {
-            Err(Error::FormatNonPrisEnCharge {
-                format: actual,
-                sens,
-            }) => {
-                assert_eq!(actual, format);
-                assert_eq!(sens, Sens::Lecture);
-            }
-            other => panic!("lecture {format} : {other:?}"),
+    // MIDI n'a pas encore de lecteur.
+    match read(b"x", Format::Midi) {
+        Err(Error::FormatNonPrisEnCharge {
+            format: actual,
+            sens,
+        }) => {
+            assert_eq!(actual, Format::Midi);
+            assert_eq!(sens, Sens::Lecture);
         }
+        other => panic!("lecture MIDI : {other:?}"),
     }
+
+    // LilyPond n'est lu qu'avec la feature `lilypond-import` ; sans elle, la
+    // façade renvoie l'erreur explicite. La CLI active la feature, et la
+    // résolution de features du workspace l'active donc aussi quand toute la
+    // workspace est testée.
+    #[cfg(not(feature = "lilypond-import"))]
+    match read(b"x", Format::Ly) {
+        Err(Error::FormatNonPrisEnCharge {
+            format: actual,
+            sens,
+        }) => {
+            assert_eq!(actual, Format::Ly);
+            assert_eq!(sens, Sens::Lecture);
+        }
+        other => panic!("lecture LilyPond : {other:?}"),
+    }
+    #[cfg(feature = "lilypond-import")]
+    assert!(Format::Ly.supports_read());
 
     // ABC n'est lu et écrit qu'avec la feature `abc` ; sans elle, la façade
     // renvoie l'erreur explicite. La CLI active la feature, et la résolution

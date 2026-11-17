@@ -22,8 +22,9 @@ Carte des crates et modules :
   modèle : `.musicxml`/`.xml`/`.mxl` → `Score`.
 - `crates/scoretk-midi` — écriture MIDI (SMF format 1) et déroulement des
   reprises (`repeat_list.rs`), sans I/O.
-- `crates/scoretk-lilypond` — écriture LilyPond (`.ly`) depuis le modèle,
-  voix en mode `\fixed c'`, sans I/O (t36).
+- `crates/scoretk-lilypond` — écriture LilyPond (`.ly`) depuis le modèle (t36,
+  voix en `\fixed c'`) et lecture d'un sous-ensemble de LilyPond par portage
+  de `lily/parser.yy`/`lexer.ll` (t40), sans I/O.
 - `crates/scoretk-abc` — lecture et écriture ABC (`.abc`) depuis le modèle,
   norme 2.1 et comportement de `xml2abc.py`/`abc2xml.py`, sans I/O (t41).
 - `crates/scoretk-mscx` — écrivain MuseScore : `write_mscx` (XML 4.x) et
@@ -31,8 +32,8 @@ Carte des crates et modules :
   feature `mscx` de `scoretk`.
 - `crates/scoretk` — façade multi-formats : `Format`, détection par extension
   ou contenu, `read`/`write` vers le modèle pivot ; features
-  `musicxml-import` (t34), `midi` (t35), `lilypond` (t36), `mscx` (t38) et
-  `abc` (t41) branchées dans `src/hooks.rs`.
+  `musicxml-import` (t34), `midi` (t35), `lilypond` (t36), `mscx` (t38),
+  `lilypond-import` (t40) et `abc` (t41) branchées dans `src/hooks.rs`.
 - `crates/scoretk-cli` — binaire `scoretk` (`entrée -o sortie`, `--from`,
   `--to`, `-` pour stdin/stdout) : I/O disque de la façade.
 - `tests/corpus/{v3,v4}/` — `.mscx` amont + références `*.ref.musicxml` ;
@@ -150,9 +151,10 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
 - `docs/agents/musicxml-import.md` — portage de l'import MusicXML, résultat
   du test d'aller-retour et écarts restants : à lire avant de toucher au
   lecteur MusicXML.
-- `docs/agents/lilypond.md` — écriture LilyPond : correspondance modèle →
-  `.ly`, mode `\fixed`, instantanés et limites : à lire avant de toucher à
-  `scoretk-lilypond`.
+- `docs/agents/lilypond.md` — LilyPond : écriture (correspondance modèle →
+  `.ly`, mode `\fixed`, instantanés), lecture (sous-ensemble de
+  `parser.yy`/`lexer.ll`, aller-retour mesuré), limites et mise à niveau des
+  sources : à lire avant de toucher à `scoretk-lilypond`.
 - `docs/agents/abc.md` — lecture et écriture ABC : sous-ensemble, voix,
   instantanés, aller-retour mesuré, mise à niveau de `xml2abc`/`abc2xml` : à
   lire avant de toucher à `scoretk-abc`.

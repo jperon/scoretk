@@ -378,6 +378,7 @@ name = "scoretk-lilypond"
 version = "0.1.0"
 dependencies = [
  "mscz2xml",
+ "quick-xml",
  "thiserror",
 ]
 

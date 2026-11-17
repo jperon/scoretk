@@ -3,6 +3,7 @@
 
 \header {
   title = "Invisible elements test"
+  workTitle = "Invisible elements test"
 }
 
 staffOneVoiceOne = \fixed c' {
@@ -28,7 +29,7 @@ staffOneVoiceOne = \fixed c' {
   \key e \major \time 3/4
   R2. |
   \key af \major \time 4/4
-  s1 \bar "|."
+  \once \override Rest.transparent = ##t r1 \bar "|."
 }
 
 \score {

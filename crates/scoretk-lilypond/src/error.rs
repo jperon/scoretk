@@ -28,6 +28,9 @@ pub enum Error {
     /// La partition ne contient aucune portée : il n'y a aucune voix à écrire.
     #[error("partition sans portée : rien à écrire en LilyPond")]
     PartitionVide,
+    /// La source LilyPond ne contient pas de musique lisible.
+    #[error("source LilyPond illisible : {0}")]
+    Syntaxe(String),
 }
 
 /// Résultat de l'écriture LilyPond.

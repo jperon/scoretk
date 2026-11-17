@@ -3,6 +3,7 @@
 
 \header {
   title = "Naamloze partituur"
+  workTitle = "Naamloze partituur"
   subtitle = "Ondertitel"
   composer = "Componist / arrangeur"
 }

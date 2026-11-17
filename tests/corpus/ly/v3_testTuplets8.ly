@@ -3,7 +3,9 @@
 
 \header {
   title = "Tuplets 8"
+  workTitle = "Tuplets 8"
   subtitle = "MuseScore testfile"
+  workNumber = "MuseScore testfile"
   composer = "Leon Vinken"
 }
 

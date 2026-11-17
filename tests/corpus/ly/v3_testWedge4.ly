@@ -16,8 +16,11 @@ staffOneVoiceOne = \fixed c' {
 
 staffOneVoiceTwo = \fixed c' {
   \voiceTwo
-  R1 |
-  s4 s4 s4 \< s4 \! \bar "|."
+  s1 |
+  \once \override Rest.transparent = ##t r4
+  \once \override Rest.transparent = ##t r4
+  \once \override Rest.transparent = ##t r4 \<
+  \once \override Rest.transparent = ##t r4 \! \bar "|."
 }
 
 \score {

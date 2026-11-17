@@ -3,6 +3,7 @@
 
 \header {
   title = "selection-filter-dynamics"
+  workTitle = "selection-filter-dynamics"
 }
 
 staffOneVoiceOne = \fixed c' {

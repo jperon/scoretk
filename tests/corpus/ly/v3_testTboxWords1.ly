@@ -3,6 +3,7 @@
 
 \header {
   title = "Title"
+  workTitle = "Title"
   composer = "Composer on page 1"
   poet = "Lyricist on page 1"
   copyright = "Copyright"
