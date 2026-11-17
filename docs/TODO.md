@@ -12,7 +12,7 @@ cinq formats de partition ; **mscz2xml** en est le premier convertisseur
 | MusicXML (`.musicxml` / `.mxl`) | à faire | fait |
 | LilyPond (`.ly`) | à faire | à faire |
 | ABC (`.abc`) | à faire | à faire |
-| MIDI (`.mid`) | à faire | à faire |
+| MIDI (`.mid`) | à faire | fait (`scoretk-midi`) |
 
 Toutes les combinaisons doivent fonctionner : mscz ↔ musicxml, musicxml ↔ ly,
 musicxml ↔ abc, musicxml ↔ midi, et donc aussi toutes les paires entre mscz,

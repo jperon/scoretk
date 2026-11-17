@@ -114,7 +114,9 @@ pub use notation::{
     Tremolo, TremoloKind, Trill, TrillType,
 };
 pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadGroup, NoteHeadType};
-pub use part::{recognize_musicxml_id, Instrument, Part, Staff, StaffBracket, Transpose};
+pub use part::{
+    recognize_musicxml_id, Instrument, MidiArticulation, Part, Staff, StaffBracket, Transpose,
+};
 pub use repeat::{Jump, JumpType, Marker, MarkerType, RepeatMark, VoltaInfo};
 pub use score::{Score, ScoreMetadata, DEFAULT_DIVISION};
 pub use segment::{

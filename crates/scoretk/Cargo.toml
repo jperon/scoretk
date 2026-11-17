@@ -18,10 +18,10 @@ default = []
 #
 # `musicxml-import = ["dep:scoretk-musicxml"]` (crate `scoretk-musicxml`, t34)
 musicxml-import = []
-# `midi = ["dep:scoretk-midi"]` (crate `scoretk-midi`, t35)
-midi = []
+midi = ["dep:scoretk-midi"]
 
 [dependencies]
 mscz2xml = { path = "../mscz2xml" }
+scoretk-midi = { path = "../scoretk-midi", optional = true }
 thiserror = { workspace = true }
 zip = { workspace = true }

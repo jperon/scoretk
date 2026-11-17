@@ -62,7 +62,7 @@ Rien ne correspond → `None` (la CLI demande alors `--from`).
 | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` (t34) | oui |
 | MusicXML `.mxl` | non | oui |
 | LilyPond, ABC | non | non |
-| MIDI | non | feature `midi` (t35) |
+| MIDI | non | oui (feature `midi`, `scoretk-midi`) |
 
 Un format absent dans le sens demandé renvoie
 `Error::FormatNonPrisEnCharge { format, sens }`, jamais une sortie vide.
@@ -87,11 +87,11 @@ existent déjà, désactivées par défaut ; les variantes d'erreur
 
 ### t35 — écriture MIDI (`crates/scoretk-midi`)
 
-1. Dans `crates/scoretk/Cargo.toml`, ajouter
-   `scoretk-midi = { path = "../scoretk-midi", optional = true }` et remplacer
-   `midi = []` par `midi = ["dep:scoretk-midi"]`.
-2. Rien d'autre : `hooks::write_midi` appelle déjà
-   `scoretk_midi::write_midi(score)` et convertit l'erreur en `Error::Midi`.
+**Branché** : la dépendance optionnelle et `midi = ["dep:scoretk-midi"]` sont
+en place ; `hooks::write_midi` appelle `scoretk_midi::write_midi(score)` et
+convertit l'erreur en `Error::Midi`. La feature reste désactivée par défaut :
+l'activer explicitement (`cargo test -p scoretk --features midi`, ou la
+dépendance de la CLI) pour que `scoretk` écrive du MIDI.
 
 La lecture MIDI, LilyPond et ABC n'ont pas encore de point d'accroche : elles
 suivront le même modèle (une variante de feature, une fonction dans `hooks.rs`).

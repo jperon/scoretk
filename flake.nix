@@ -329,7 +329,7 @@
             // {
               cargoArtifacts = wasmCargoArtifacts;
               CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-              cargoExtraArgs = "-p mscz2xml -p scoretk";
+              cargoExtraArgs = "-p mscz2xml -p scoretk -p scoretk-midi";
               doCheck = false;
             });
         };

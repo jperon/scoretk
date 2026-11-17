@@ -28,7 +28,9 @@
 use super::tables;
 use super::xml::Node;
 use super::Reader;
-use crate::model::{Clef, ClefType, Instrument, Part, Staff, StaffBracket, Transpose};
+use crate::model::{
+    Clef, ClefType, Instrument, MidiArticulation, Part, Staff, StaffBracket, Transpose,
+};
 
 /// Lit un `<Part>` : portées déclarées, noms et instrument principal.
 pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
@@ -190,6 +192,7 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         midi_channel: None,
         volume: None,
         pan: None,
+        midi_articulations: Vec::new(),
     };
 
     let diatonic = node.child("transposeDiatonic").and_then(Node::int_text);
@@ -258,6 +261,21 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
                 _ => {}
             }
         }
+    }
+
+    // Table des articulations MIDI (`read(MidiArticulation*)`).
+    for articulation in node.children_named("Articulation") {
+        instrument.midi_articulations.push(MidiArticulation {
+            name: articulation.attr("name").unwrap_or_default().to_owned(),
+            velocity: articulation
+                .child("velocity")
+                .and_then(Node::int_text)
+                .unwrap_or(0) as i16,
+            gate_time: articulation
+                .child("gateTime")
+                .and_then(Node::int_text)
+                .unwrap_or(0) as i16,
+        });
     }
 
     instrument
