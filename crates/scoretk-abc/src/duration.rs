@@ -138,7 +138,9 @@ pub(crate) fn halved(duration: Duration, levels: u32) -> Option<Duration> {
     ];
     let index = KINDS.iter().position(|kind| *kind == duration.kind)?;
     let target = index + levels as usize;
-    KINDS.get(target).map(|kind| Duration::with_dots(*kind, duration.dots))
+    KINDS
+        .get(target)
+        .map(|kind| Duration::with_dots(*kind, duration.dots))
 }
 
 /// Analyse un multiplicateur ABC (`""`, `2`, `/2`, `3/2`, `//`, `/`).
@@ -150,7 +152,10 @@ pub(crate) fn parse_multiplier(text: &str, unit: Fraction) -> Option<Fraction> {
         return Some(unit);
     }
     if let Some(rest) = text.strip_prefix('/') {
-        let extra = rest.chars().take_while(|character| *character == '/').count();
+        let extra = rest
+            .chars()
+            .take_while(|character| *character == '/')
+            .count();
         let digits = &rest[extra..];
         let denominator = if digits.is_empty() {
             2
@@ -211,10 +216,7 @@ mod tests {
 
     #[test]
     fn figures() {
-        assert_eq!(
-            figure_for(Fraction::new(1, 8)),
-            (Duration::eighth(), true)
-        );
+        assert_eq!(figure_for(Fraction::new(1, 8)), (Duration::eighth(), true));
         assert_eq!(
             figure_for(Fraction::new(3, 16)),
             (Duration::with_dots(DurationType::Eighth, 1), true)

@@ -113,7 +113,7 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
     let mscx = std::fs::read(common::corpus_v4("dynamics.mscx")).expect("corpus");
     let score = read(&mscx, Format::Mscx).expect("lecture .mscx");
 
-    for format in [Format::Ly, Format::Abc, Format::Midi] {
+    for format in [Format::Ly, Format::Midi] {
         match read(b"x", format) {
             Err(Error::FormatNonPrisEnCharge {
                 format: actual,
@@ -126,18 +126,29 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
         }
     }
 
-    // Seul ABC reste sans écrivain. MuseScore et LilyPond dépendent de
-    // features que la CLI active (`mscx`, `lilypond`) : la résolution de
-    // features du workspace les active donc aussi ici.
-    match write(&score, Format::Abc, &options()) {
-        Err(Error::FormatNonPrisEnCharge {
-            format: actual,
-            sens,
-        }) => {
-            assert_eq!(actual, Format::Abc);
-            assert_eq!(sens, Sens::Ecriture);
+    // ABC n'est lu et écrit qu'avec la feature `abc` ; sans elle, la façade
+    // renvoie l'erreur explicite. La CLI active la feature, et la résolution
+    // de features du workspace l'active donc aussi quand toute la workspace
+    // est testée.
+    #[cfg(not(feature = "abc"))]
+    {
+        for (format, sens) in [(Format::Abc, Sens::Lecture), (Format::Abc, Sens::Ecriture)] {
+            let resultat = if sens == Sens::Lecture {
+                read(b"x", format)
+            } else {
+                write(&score, format, &options()).map(|_| score.clone())
+            };
+            match resultat {
+                Err(Error::FormatNonPrisEnCharge {
+                    format: actual,
+                    sens: actual_sens,
+                }) => {
+                    assert_eq!(actual, format);
+                    assert_eq!(actual_sens, sens);
+                }
+                other => panic!("{sens} {format} : {other:?}"),
+            }
         }
-        other => panic!("écriture {} : {other:?}", Format::Abc),
     }
 
     // MuseScore (`.mscx`/`.mscz`) n'est écrit que si la feature `mscx` est

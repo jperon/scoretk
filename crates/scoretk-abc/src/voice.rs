@@ -27,12 +27,11 @@
 //! à la note la plus proche, comme le fait `xml2abc.py` pour les directions
 //! MusicXML.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use mscz2xml::model::{
     Annotation, Chord, ChordRest, Fraction, HairpinType, KeySig, LyricsSyllabic, Measure, Note,
-    Score,
-    SpannerType, StaffId, Tick, Track, TupletId,
+    Score, SpannerType, StaffId, Tick, Track, TupletId,
 };
 
 use crate::decorations;
@@ -66,6 +65,7 @@ pub(crate) fn render_voice(
     out.push('\n');
 
     let items = collect_items(score, staff, model_voice);
+    let tuplet_counts = tuplet_counts(score, &items);
     let mut ranges = Vec::with_capacity(score.measures.len());
     let mut cursor = 0usize;
     for measure_index in 0..score.measures.len() {
@@ -135,23 +135,21 @@ pub(crate) fn render_voice(
         }
         if let Some(value) = new_time {
             if value.is_valid()
-                && (value.numerator != time.numerator
-                    || value.denominator != time.denominator)
+                && (value.numerator != time.numerator || value.denominator != time.denominator)
             {
                 time = value;
                 prefixes.push(format!("[M:{}/{}]", time.numerator, time.denominator));
             }
         }
-        let clef_changed = new_clef
-            .is_some_and(|value| Some(value.transposed) != clef);
+        let clef_changed = new_clef.is_some_and(|value| Some(value.transposed) != clef);
         if let Some(value) = new_clef {
             clef = Some(value.transposed);
         }
         if key_changed || clef_changed {
             let mut field = format!("[K:{}", pitch::key_field(&key));
-            if let Some(clef_value) = clef.and_then(|clef| {
-                pitch::clef_name(&mscz2xml::model::Clef::new(clef))
-            }) {
+            if let Some(clef_value) =
+                clef.and_then(|clef| pitch::clef_name(&mscz2xml::model::Clef::new(clef)))
+            {
                 field.push_str(&format!(" clef={clef_value}"));
             }
             field.push(']');
@@ -165,8 +163,7 @@ pub(crate) fn render_voice(
             prefixes.push(volta);
         }
 
-        let mut accidental_state =
-            pitch::AccidentalState::new(key.transposed_key.fifths());
+        let mut accidental_state = pitch::AccidentalState::new(key.transposed_key.fifths());
 
         if range.is_empty() {
             let len = if measure.len.is_positive() {
@@ -186,8 +183,13 @@ pub(crate) fn render_voice(
                 if let Some(id) = item.chord_rest.tuplet {
                     for tuplet_id in tuplet_chain(score, id) {
                         if !open_tuplets.contains(&tuplet_id) {
-                            line.push_str(&tuplet_open(score, tuplet_id));
-                            open_tuplets.push(tuplet_id);
+                            let (nested, notes) =
+                                tuplet_counts.get(&tuplet_id).copied().unwrap_or((0, 0));
+                            let token = tuplet_open(score, tuplet_id, nested, notes);
+                            if !token.is_empty() {
+                                line.push_str(&token);
+                                open_tuplets.push(tuplet_id);
+                            }
                         }
                     }
                 }
@@ -195,12 +197,7 @@ pub(crate) fn render_voice(
                     line.push_str(token);
                 }
                 let transpose = transpose_at(score, staff, item.tick);
-                let token = render_item(
-                    score,
-                    item.chord_rest,
-                    &mut accidental_state,
-                    transpose,
-                );
+                let token = render_item(score, item.chord_rest, &mut accidental_state, transpose);
                 line.push_str(&token);
                 for token in &after[offset] {
                     line.push_str(token);
@@ -359,13 +356,50 @@ fn tuplet_chain(score: &Score, id: TupletId) -> Vec<TupletId> {
     chain
 }
 
-/// Jeton d'ouverture d'un n-olet (`(3`, `(5:4`…).
-fn tuplet_open(score: &Score, id: TupletId) -> String {
+/// Nombre de groupes imbriqués et de notes directes de chaque n-olet.
+fn tuplet_counts(score: &Score, items: &[Item<'_>]) -> BTreeMap<TupletId, (usize, usize)> {
+    let mut counts: BTreeMap<TupletId, (BTreeSet<TupletId>, usize)> = BTreeMap::new();
+    for item in items {
+        let Some(id) = item.chord_rest.tuplet else {
+            continue;
+        };
+        let chain = tuplet_chain(score, id);
+        for (index, tuplet_id) in chain.iter().enumerate() {
+            let entry = counts.entry(*tuplet_id).or_default();
+            if let Some(child) = chain.get(index + 1) {
+                entry.0.insert(*child);
+            } else {
+                entry.1 += 1;
+            }
+        }
+    }
+    counts
+        .into_iter()
+        .map(|(id, (nested, notes))| (id, (nested.len(), notes)))
+        .collect()
+}
+
+/// Jeton d'ouverture d'un n-olet (`(3`, `(5:4`, `(3:2:3`…).
+fn tuplet_open(score: &Score, id: TupletId, nested: usize, notes: usize) -> String {
     let tuplet = score.tuplet(id);
     let (actual, normal) = tuplet.displayed_numbers();
-    let actual = if actual > 0 { actual } else { tuplet.ratio.numerator() };
-    let normal = if normal > 0 { normal } else { tuplet.ratio.denominator() };
-    if normal == 2 {
+    let actual = if actual > 0 {
+        actual
+    } else {
+        tuplet.ratio.numerator()
+    };
+    let normal = if normal > 0 {
+        normal
+    } else {
+        tuplet.ratio.denominator()
+    };
+    if actual == normal {
+        return String::new();
+    }
+    let total = nested + notes;
+    if (nested > 0 || total as i64 != actual) && total > 0 {
+        format!("({actual}:{normal}:{total}")
+    } else if normal == 2 {
         format!("({actual}")
     } else {
         format!("({actual}:{normal}")
@@ -392,8 +426,7 @@ fn volta_label(score: &Score, measure: &Measure, staff: usize) -> Option<String>
         if !matches!(spanner.kind, SpannerType::Volta) || !spanner.visible {
             continue;
         }
-        if spanner.start.tick != measure.start_tick
-            || spanner.start.track.staff().index() != staff
+        if spanner.start.tick != measure.start_tick || spanner.start.track.staff().index() != staff
         {
             continue;
         }
@@ -588,15 +621,12 @@ fn draw_spanners(
                 if spanner.start.tick >= measure.start_tick
                     && spanner.start.tick < measure.end_tick()
                 {
-                    if let Some(offset) =
-                        item_at_or_after(items, range.clone(), spanner.start.tick)
+                    if let Some(offset) = item_at_or_after(items, range.clone(), spanner.start.tick)
                     {
                         before[offset].push("(".to_owned());
                     }
                 }
-                if spanner.end.tick > measure.start_tick
-                    && spanner.end.tick <= measure.end_tick()
-                {
+                if spanner.end.tick > measure.start_tick && spanner.end.tick <= measure.end_tick() {
                     if let Some(offset) = item_at_or_before(items, range.clone(), spanner.end.tick)
                     {
                         after[offset].push(")".to_owned());
@@ -611,15 +641,12 @@ fn draw_spanners(
                 if spanner.start.tick >= measure.start_tick
                     && spanner.start.tick < measure.end_tick()
                 {
-                    if let Some(offset) =
-                        item_at_or_after(items, range.clone(), spanner.start.tick)
+                    if let Some(offset) = item_at_or_after(items, range.clone(), spanner.start.tick)
                     {
                         before[offset].push(start.to_owned());
                     }
                 }
-                if spanner.end.tick > measure.start_tick
-                    && spanner.end.tick <= measure.end_tick()
-                {
+                if spanner.end.tick > measure.start_tick && spanner.end.tick <= measure.end_tick() {
                     if let Some(offset) = item_at_or_before(items, range.clone(), spanner.end.tick)
                     {
                         before[offset].push(end.to_owned());
@@ -647,7 +674,13 @@ fn draw_context_changes(
     range: std::ops::Range<usize>,
     before: &mut [Vec<String>],
 ) {
-    let mut changes: Vec<(Tick, u8, Option<KeySig>, Option<mscz2xml::model::ClefType>, Option<mscz2xml::model::TimeSig>)> = Vec::new();
+    let mut changes: Vec<(
+        Tick,
+        u8,
+        Option<KeySig>,
+        Option<mscz2xml::model::ClefType>,
+        Option<mscz2xml::model::TimeSig>,
+    )> = Vec::new();
     for segment in &measure.segments {
         if segment.tick <= measure.start_tick {
             continue;
@@ -759,10 +792,7 @@ fn render_item(
         }
         let head = if rest.visible { 'z' } else { 'x' };
         let length = duration::chord_rest_length(chord_rest);
-        return format!(
-            "{head}{}",
-            duration::multiplier(length, duration::unit())
-        );
+        return format!("{head}{}", duration::multiplier(length, duration::unit()));
     }
     let Some(chord) = chord_rest.chord_ref() else {
         return String::new();
@@ -788,12 +818,7 @@ fn render_chord(
                     continue;
                 }
                 let (letter, alter, octave) = pitch::note_spelling(note, transpose);
-                token.push_str(&pitch::abc_note(
-                    letter,
-                    alter,
-                    octave,
-                    accidental_state,
-                ));
+                token.push_str(&pitch::abc_note(letter, alter, octave, accidental_state));
                 token.push_str(&duration::multiplier(
                     grace.duration.ticks(),
                     duration::unit(),
@@ -820,22 +845,12 @@ fn render_chord(
     } else if notes.len() == 1 {
         let note = notes[0];
         let (letter, alter, octave) = pitch::note_spelling(note, transpose);
-        token.push_str(&pitch::abc_note(
-            letter,
-            alter,
-            octave,
-            accidental_state,
-        ));
+        token.push_str(&pitch::abc_note(letter, alter, octave, accidental_state));
     } else {
         token.push('[');
         for note in &notes {
             let (letter, alter, octave) = pitch::note_spelling(note, transpose);
-            token.push_str(&pitch::abc_note(
-                letter,
-                alter,
-                octave,
-                accidental_state,
-            ));
+            token.push_str(&pitch::abc_note(letter, alter, octave, accidental_state));
         }
         token.push(']');
     }

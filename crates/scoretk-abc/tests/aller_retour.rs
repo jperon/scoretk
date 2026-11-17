@@ -96,7 +96,10 @@ fn files() -> Vec<PathBuf> {
             .expect("corpus")
             .filter_map(|entry| entry.ok())
             .map(|entry| entry.path())
-            .filter(|path| path.extension().is_some_and(|extension| extension == "mscx"))
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "mscx")
+            })
             .collect();
         entries.sort();
         files.extend(entries);
@@ -117,7 +120,8 @@ fn direct_xml(path: &Path) -> String {
 
 fn roundtrip_xml(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path).map_err(|error| error.to_string())?;
-    let container = mscz2xml::MsczContainer::from_bytes(&bytes).map_err(|error| error.to_string())?;
+    let container =
+        mscz2xml::MsczContainer::from_bytes(&bytes).map_err(|error| error.to_string())?;
     let score = mscz2xml::read::read_score(&container).map_err(|error| error.to_string())?;
     let abc = scoretk_abc::write_abc(&score).map_err(|error| error.to_string())?;
     let read = scoretk_abc::read_abc(&abc).map_err(|error| error.to_string())?;
@@ -250,7 +254,8 @@ fn core(xml: &str) -> Vec<String> {
             Ok(Event::End(event)) => {
                 let name = event.name().as_ref().to_owned();
                 if name == "attributes" {
-                    if let (Some(collected), Some(measure)) = (attributes.take(), measure.as_mut()) {
+                    if let (Some(collected), Some(measure)) = (attributes.take(), measure.as_mut())
+                    {
                         let mut collected: Vec<(String, String)> = collected
                             .into_iter()
                             .filter(|(key, _)| {

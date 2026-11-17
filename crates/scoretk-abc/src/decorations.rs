@@ -31,8 +31,8 @@ use mscz2xml::model::{ArticulationType, HairpinType, OrnamentType};
 
 /// Liste des nuances reconnues par ABC et par MuseScore.
 const DYNAMICS: [&str; 20] = [
-    "pppp", "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff", "ffff", "fp", "pf", "sf", "sfz",
-    "sfp", "fz", "rf", "rfz", "sfpp", "niente",
+    "pppp", "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff", "ffff", "fp", "pf", "sf", "sfz", "sfp",
+    "fz", "rf", "rfz", "sfpp", "niente",
 ];
 
 /// Vrai si un texte est une nuance standard.

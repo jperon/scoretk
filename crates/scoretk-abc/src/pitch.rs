@@ -288,9 +288,7 @@ pub(crate) fn key_field(key: &KeySig) -> String {
     match key.mode {
         KeyMode::None => "none".to_owned(),
         KeyMode::Minor => format!("{}m", tonic(key.transposed_key.fifths(), true)),
-        KeyMode::Major | KeyMode::Unknown => {
-            tonic(key.transposed_key.fifths(), false).to_owned()
-        }
+        KeyMode::Major | KeyMode::Unknown => tonic(key.transposed_key.fifths(), false).to_owned(),
     }
 }
 

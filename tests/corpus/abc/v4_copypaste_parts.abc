@@ -1,0 +1,15 @@
+%abc-2.1
+X:1
+T:Untitled score
+C:Composer / arranger
+M:4/4
+L:1/8
+Q:" = 80" 1/4=80
+K:C clef=treble
+V:1 name="Flute" clef=treble
+!accent!"^ = 80"b2!staccato!(^c'2!tenuto!b2)!fermata!{B/4}b2 ||
+[M:3/4] [K:E clef=bass] [1 !arpeggio!!p!!<(![Bf]2!marcato!B2-!<)![K:C clef=bass]B2 |
+[M:4/4] [K:C clef=treble] B2B2B2[K:E clef=treble]F2 |
+Z |
+Z |
+Z |]

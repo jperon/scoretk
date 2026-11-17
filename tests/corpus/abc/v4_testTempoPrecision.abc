@@ -1,0 +1,11 @@
+%abc-2.1
+X:1
+T:Title
+C:Composer
+M:4/4
+L:1/8
+Q:" = 88" 1/4=88
+K:C clef=treble
+V:1 name="Piano" clef=treble
+"^ = 88"Z |
+"^Andante"Z |]

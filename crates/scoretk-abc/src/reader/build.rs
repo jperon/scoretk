@@ -28,9 +28,9 @@
 //! [`Spanner`].
 
 use mscz2xml::model::{
-    Annotation, BarLineType, Clef, ClefType, Dynamic, Fraction, Harmony,
-    KeySig, Measure, Part, Placement, RichText, Score, Segment, SegmentItem, SegmentType, Spanner,
-    SpannerAnchor, SpannerType, Staff, TimeSig, Track, Tuplet, TupletId, VoltaInfo,
+    Annotation, BarLineType, Clef, ClefType, Dynamic, Fraction, Harmony, KeySig, Measure, Part,
+    Placement, RichText, Score, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor,
+    SpannerType, Staff, TimeSig, Track, Tuplet, TupletId, VoltaInfo,
 };
 
 use crate::error::Result;
@@ -98,11 +98,8 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
             for (change_measure, tick, value) in &voice.time_changes {
                 if *change_measure == index && tick.is_positive() {
                     if let Some(time) = value {
-                        let mut segment = Segment::new(
-                            SegmentType::TimeSig,
-                            starts[index] + *tick,
-                            staff_count,
-                        );
+                        let mut segment =
+                            Segment::new(SegmentType::TimeSig, starts[index] + *tick, staff_count);
                         segment.set_element(track, SegmentItem::TimeSig(time.clone()));
                         measure.add_segment(segment);
                     }
@@ -111,11 +108,8 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
             for (change_measure, tick, value) in &voice.key_changes {
                 if *change_measure == index && tick.is_positive() {
                     if let Some(key) = value {
-                        let mut segment = Segment::new(
-                            SegmentType::KeySig,
-                            starts[index] + *tick,
-                            staff_count,
-                        );
+                        let mut segment =
+                            Segment::new(SegmentType::KeySig, starts[index] + *tick, staff_count);
                         segment.set_element(track, SegmentItem::KeySig(key.clone()));
                         measure.add_segment(segment);
                     }
@@ -124,11 +118,8 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
             for (change_measure, tick, value) in &voice.clef_changes {
                 if *change_measure == index && tick.is_positive() {
                     if let Some(clef) = value {
-                        let mut segment = Segment::new(
-                            SegmentType::Clef,
-                            starts[index] + *tick,
-                            staff_count,
-                        );
+                        let mut segment =
+                            Segment::new(SegmentType::Clef, starts[index] + *tick, staff_count);
                         segment.set_element(track, SegmentItem::Clef(Clef::new(*clef)));
                         measure.add_segment(segment);
                     }
@@ -162,7 +153,9 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
             }
         }
 
-        measure.segments.sort_by_key(|segment| (segment.tick, segment.kind));
+        measure
+            .segments
+            .sort_by_key(|segment| (segment.tick, segment.kind));
         score.add_measure(measure);
     }
 
@@ -182,14 +175,7 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
         let (staff, model_voice) = voice_tracks[voice_index];
         let track = Track::new(staff, model_voice);
         for (start, end) in &voice.slurs {
-            add_spanner(
-                &mut score,
-                SpannerType::Slur,
-                *start,
-                *end,
-                track,
-                &starts,
-            );
+            add_spanner(&mut score, SpannerType::Slur, *start, *end, track, &starts);
         }
         for (start, end, kind) in &voice.hairpins {
             add_spanner(
@@ -542,9 +528,7 @@ fn segment_at<'a>(
 /// Convertit une annotation lue.
 fn annotation_object(spec: &AnnotationSpec) -> Annotation {
     match spec {
-        AnnotationSpec::Dynamic(text) => {
-            Annotation::Dynamic(Dynamic::new(text.clone()))
-        }
+        AnnotationSpec::Dynamic(text) => Annotation::Dynamic(Dynamic::new(text.clone())),
         AnnotationSpec::Text {
             text,
             above,
@@ -596,7 +580,12 @@ fn add_spanner(
 fn starts_of(voices: &[Voice]) -> std::collections::BTreeMap<usize, Fraction> {
     let mut starts = std::collections::BTreeMap::new();
     let mut cursor = Fraction::ZERO;
-    for index in 0..voices.iter().map(|voice| voice.measures.len()).max().unwrap_or(0) {
+    for index in 0..voices
+        .iter()
+        .map(|voice| voice.measures.len())
+        .max()
+        .unwrap_or(0)
+    {
         starts.insert(index, cursor);
         cursor += measure_len(voices, index);
     }
@@ -617,9 +606,24 @@ mod tests {
             clef: None,
         };
         let voices = vec![
-            Voice::new(&fields(1), Fraction::new(1, 8), TimeSig::new(4, 4), KeySig::new(mscz2xml::model::Key::C)),
-            Voice::new(&fields(2), Fraction::new(1, 8), TimeSig::new(4, 4), KeySig::new(mscz2xml::model::Key::C)),
-            Voice::new(&fields(3), Fraction::new(1, 8), TimeSig::new(4, 4), KeySig::new(mscz2xml::model::Key::C)),
+            Voice::new(
+                &fields(1),
+                Fraction::new(1, 8),
+                TimeSig::new(4, 4),
+                KeySig::new(mscz2xml::model::Key::C),
+            ),
+            Voice::new(
+                &fields(2),
+                Fraction::new(1, 8),
+                TimeSig::new(4, 4),
+                KeySig::new(mscz2xml::model::Key::C),
+            ),
+            Voice::new(
+                &fields(3),
+                Fraction::new(1, 8),
+                TimeSig::new(4, 4),
+                KeySig::new(mscz2xml::model::Key::C),
+            ),
         ];
         let groups = groups(&reader, &voices);
         assert_eq!(

@@ -129,7 +129,11 @@ impl fmt::Display for Warning {
         if self.line == 0 {
             write!(f, "avertissement ABC : {}", self.message)
         } else {
-            write!(f, "avertissement ABC ligne {} : {}", self.line, self.message)
+            write!(
+                f,
+                "avertissement ABC ligne {} : {}",
+                self.line, self.message
+            )
         }
     }
 }

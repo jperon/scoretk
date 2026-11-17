@@ -24,13 +24,15 @@ Carte des crates et modules :
   reprises (`repeat_list.rs`), sans I/O.
 - `crates/scoretk-lilypond` — écriture LilyPond (`.ly`) depuis le modèle,
   voix en mode `\fixed c'`, sans I/O (t36).
+- `crates/scoretk-abc` — lecture et écriture ABC (`.abc`) depuis le modèle,
+  norme 2.1 et comportement de `xml2abc.py`/`abc2xml.py`, sans I/O (t41).
 - `crates/scoretk-mscx` — écrivain MuseScore : `write_mscx` (XML 4.x) et
   `write_mscz` (ZIP), portage de `engraving/rw/write/`, brancher par la
   feature `mscx` de `scoretk`.
 - `crates/scoretk` — façade multi-formats : `Format`, détection par extension
   ou contenu, `read`/`write` vers le modèle pivot ; features
-  `musicxml-import` (t34), `midi` (t35), `lilypond` (t36) et `mscx` (t38)
-  branchées dans `src/hooks.rs`.
+  `musicxml-import` (t34), `midi` (t35), `lilypond` (t36), `mscx` (t38) et
+  `abc` (t41) branchées dans `src/hooks.rs`.
 - `crates/scoretk-cli` — binaire `scoretk` (`entrée -o sortie`, `--from`,
   `--to`, `-` pour stdin/stdout) : I/O disque de la façade.
 - `tests/corpus/{v3,v4}/` — `.mscx` amont + références `*.ref.musicxml` ;
@@ -82,6 +84,7 @@ nix develop -c cargo fmt --all -- --check
 nix develop -c cargo build -p mscz2xml --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-midi --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-lilypond --target wasm32-unknown-unknown
+nix develop -c cargo build -p scoretk-abc --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-mscx --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk --target wasm32-unknown-unknown
 nix flake check
@@ -150,6 +153,9 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
 - `docs/agents/lilypond.md` — écriture LilyPond : correspondance modèle →
   `.ly`, mode `\fixed`, instantanés et limites : à lire avant de toucher à
   `scoretk-lilypond`.
+- `docs/agents/abc.md` — lecture et écriture ABC : sous-ensemble, voix,
+  instantanés, aller-retour mesuré, mise à niveau de `xml2abc`/`abc2xml` : à
+  lire avant de toucher à `scoretk-abc`.
 - `docs/agents/mscx-write.md` — écrivain `.mscx`/`.mscz` (`scoretk-mscx`) :
   méthode d'aller-retour, résultats mesurés et limites : à lire avant de
   toucher à l'écriture MuseScore.

@@ -1,0 +1,25 @@
+%abc-2.1
+X:1
+T:Instrument Change
+M:4/4
+L:1/8
+K:C
+%%score 1 2
+V:1 name="Flute" clef=treble
+c4c4 |
+"^Instrument"c4c4 |
+c4c4 |
+c4c4 |
+c4c4 |
+c4c4 |
+c4c4 |
+c4c4 |]
+V:2 name="Oboe" clef=treble
+c4c4 |
+c4c4 |
+c4c4 |
+c4c4 |
+c4c4 |
+c4c4 |
+c4c4 |
+c4c4 |]

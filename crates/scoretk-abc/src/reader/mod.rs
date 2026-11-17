@@ -71,13 +71,7 @@ pub fn read_abc(src: &str) -> Result<Score> {
 
 /// Lit le morceau d'indice `tune` d'une source ABC.
 pub fn read_abc_tune(src: &str, tune: usize) -> Result<Score> {
-    read_abc_with(
-        src,
-        &ReadOptions {
-            tune,
-        },
-    )
-    .map(|output| output.score)
+    read_abc_with(src, &ReadOptions { tune }).map(|output| output.score)
 }
 
 /// Lit un morceau ABC et renvoie aussi les avertissements.
@@ -106,7 +100,12 @@ struct Line {
 fn prepare(src: &str) -> Vec<Line> {
     let mut lines = Vec::new();
     let mut pending: Option<Line> = None;
-    for (index, raw) in src.replace("\r\n", "\n").replace('\r', "\n").split('\n').enumerate() {
+    for (index, raw) in src
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .split('\n')
+        .enumerate()
+    {
         let number = index + 1;
         let mut text = strip_comment(raw).trim_end().to_owned();
         if let Some(mut previous) = pending.take() {
@@ -410,12 +409,7 @@ pub(crate) struct Voice {
 
 impl Voice {
     /// Nouvelle voix avec les états globaux.
-    pub(crate) fn new(
-        fields: &VoiceFields,
-        unit: Fraction,
-        time: TimeSig,
-        key: KeySig,
-    ) -> Self {
+    pub(crate) fn new(fields: &VoiceFields, unit: Fraction, time: TimeSig, key: KeySig) -> Self {
         Self {
             number: fields.number,
             name: fields.name.clone(),
@@ -709,11 +703,10 @@ impl Reader {
                 self.tempo = parse_tempo(value);
             }
             'K' => {
-                let parsed =
-                    pitch::parse_key(value).ok_or_else(|| Error::TonaliteInvalide {
-                        line: number,
-                        text: value.to_owned(),
-                    })?;
+                let parsed = pitch::parse_key(value).ok_or_else(|| Error::TonaliteInvalide {
+                    line: number,
+                    text: value.to_owned(),
+                })?;
                 self.seen_key = true;
                 if !self.header_done {
                     self.header_key = parsed.key.clone();
@@ -774,10 +767,9 @@ impl Reader {
                     self.voices.push(voice);
                 }
             }
-            'P' | 'U' | 'I' => self.warnings.push(Warning::new(
-                number,
-                format!("champ « {letter}: » ignoré"),
-            )),
+            'P' | 'U' | 'I' => self
+                .warnings
+                .push(Warning::new(number, format!("champ « {letter}: » ignoré"))),
             other => self.warnings.push(Warning::new(
                 number,
                 format!("champ inconnu « {other}: » ignoré"),
@@ -845,16 +837,20 @@ fn parse_time(text: &str, line: usize) -> Result<TimeSig> {
     if trimmed.eq_ignore_ascii_case("none") {
         return Ok(TimeSig::new(4, 4));
     }
-    let (numerator, denominator) = trimmed
-        .split_once('/')
-        .ok_or_else(|| Error::MesureInvalide {
+    let (numerator, denominator) =
+        trimmed
+            .split_once('/')
+            .ok_or_else(|| Error::MesureInvalide {
+                line,
+                text: trimmed.to_owned(),
+            })?;
+    let numerator: i32 = numerator
+        .trim()
+        .parse()
+        .map_err(|_| Error::MesureInvalide {
             line,
             text: trimmed.to_owned(),
         })?;
-    let numerator: i32 = numerator.trim().parse().map_err(|_| Error::MesureInvalide {
-        line,
-        text: trimmed.to_owned(),
-    })?;
     let denominator: i32 = denominator
         .trim()
         .parse()
@@ -928,7 +924,13 @@ mod tests {
 
     #[test]
     fn champs() {
-        assert_eq!(field_value(&Line { number: 1, text: "K:G".into() }), Some(('K', "G")));
+        assert_eq!(
+            field_value(&Line {
+                number: 1,
+                text: "K:G".into()
+            }),
+            Some(('K', "G"))
+        );
         assert_eq!(
             parse_voice_fields("1 name=\"Piano\" clef=bass"),
             VoiceFields {
@@ -940,7 +942,10 @@ mod tests {
         let time = parse_time("6/8", 1).expect("6/8");
         assert_eq!(time.measure_len(), Fraction::new(3, 4));
         assert_eq!(parse_unit("1/16", 1), Ok(Fraction::new(1, 16)));
-        assert_eq!(parse_tempo("\"Allegro\" 1/4=120"), Some((2.0, "Allegro".into())));
+        assert_eq!(
+            parse_tempo("\"Allegro\" 1/4=120"),
+            Some((2.0, "Allegro".into()))
+        );
     }
 
     #[test]

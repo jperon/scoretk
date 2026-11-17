@@ -36,17 +36,10 @@ use crate::decorations::{self, Decoration};
 use crate::duration;
 use crate::error::{Error, Result, Warning};
 use crate::pitch;
-use crate::reader::{
-    AnnotationSpec, EventData, GraceData, Position, Reader, TupletSpec, Voice,
-};
+use crate::reader::{AnnotationSpec, EventData, GraceData, Position, Reader, TupletSpec, Voice};
 
 /// Analyse une ligne de musique pour une voix.
-pub(crate) fn parse_line(
-    reader: &mut Reader,
-    voice: usize,
-    text: &str,
-    line: usize,
-) -> Result<()> {
+pub(crate) fn parse_line(reader: &mut Reader, voice: usize, text: &str, line: usize) -> Result<()> {
     reader.voices[voice].last_line_chords.clear();
     reader.voices[voice].next_verse = 0;
     let mut parser = Parser {
@@ -173,9 +166,7 @@ impl Parser<'_> {
     }
 
     fn warn(&mut self, message: impl Into<String>) {
-        self.reader
-            .warnings
-            .push(Warning::new(self.line, message));
+        self.reader.warnings.push(Warning::new(self.line, message));
     }
 
     // --- annotations et décorations --------------------------------------
@@ -203,13 +194,11 @@ impl Parser<'_> {
             return;
         }
         let harmony = looks_like_chord(text);
-        self.voice()
-            .annotations
-            .push(AnnotationSpec::Text {
-                text: text.to_owned(),
-                above,
-                harmony,
-            });
+        self.voice().annotations.push(AnnotationSpec::Text {
+            text: text.to_owned(),
+            above,
+            harmony,
+        });
     }
 
     fn parse_decoration(&mut self) {
@@ -230,7 +219,9 @@ impl Parser<'_> {
                 let position = self.voice().position();
                 let voice = self.voice();
                 voice.hairpins.push((position, position, kind));
-                voice.open_hairpins.push((voice.hairpins.len() - 1, position));
+                voice
+                    .open_hairpins
+                    .push((voice.hairpins.len() - 1, position));
             }
             Decoration::HairpinEnd => {
                 let voice = self.voice();
@@ -361,10 +352,7 @@ impl Parser<'_> {
         let duration = duration::figure_for(nominal);
         let id = self.reader.score.add_note(note);
         if let Some(previous) = self.voice().pending_ties.remove(&pitch) {
-            self.reader
-                .score
-                .note_mut(previous)
-                .tie_forward = Some(id);
+            self.reader.score.note_mut(previous).tie_forward = Some(id);
             self.reader.score.note_mut(id).tie_back = Some(previous);
         }
         if tie {
@@ -574,11 +562,7 @@ impl Parser<'_> {
     // --- événements ------------------------------------------------------
 
     /// Ajoute un événement à la mesure, décorations et paroles comprises.
-    fn push_event(
-        &mut self,
-        mut chord_rest: ChordRest,
-        tick: Fraction,
-    ) {
+    fn push_event(&mut self, mut chord_rest: ChordRest, tick: Fraction) {
         let decorations = std::mem::take(&mut self.voice().decorations);
         let mut annotations = std::mem::take(&mut self.voice().annotations);
         let mut grace = self.voice().grace.take();
@@ -606,10 +590,8 @@ impl Parser<'_> {
                     GraceType::Appoggiatura
                 };
                 for (id, length) in grace_data.notes {
-                    let mut grace_chord = GraceChord::new(
-                        grace_type,
-                        duration::figure_for(length).0,
-                    );
+                    let mut grace_chord =
+                        GraceChord::new(grace_type, duration::figure_for(length).0);
                     grace_chord.chord.notes.push(id);
                     chord.grace_chords.push(grace_chord);
                 }

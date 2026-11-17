@@ -129,8 +129,7 @@ impl<'a> Writer<'a> {
         let mut voices = Vec::new();
         let mut number = 1usize;
         for staff in 0..self.score.staves.len() {
-            let has_content =
-                |voice| voice::voice_has_content(self.score, staff, voice);
+            let has_content = |voice| voice::voice_has_content(self.score, staff, voice);
             let any = (0..VOICES).any(has_content);
             if !any {
                 voices.push(VoiceSpec {
