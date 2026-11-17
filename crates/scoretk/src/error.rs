@@ -63,6 +63,10 @@ pub enum Error {
     #[error("écriture MIDI : {0}")]
     Midi(String),
 
+    /// Erreur renvoyée par la crate de lecture MIDI (feature `midi`).
+    #[error("lecture MIDI : {0}")]
+    MidiImport(String),
+
     /// Erreur renvoyée par la crate d'écriture LilyPond (feature `lilypond`).
     #[error("écriture LilyPond : {0}")]
     LilyPond(String),

@@ -112,19 +112,19 @@ pub fn split_into_left_right_hands(tracks: &mut Vec<MTrack>, splits: &[bool]) {
             let pitches: Vec<i32> = sorted.iter().map(|note| note.pitch).collect();
             let point = split_point(chord, &pitches);
             if point == 0 {
-                right.chords.insert(*on_time, chord.clone());
+                right.chords.insert(on_time, chord.clone());
                 continue;
             }
             if point == sorted.len() {
-                left.chords.insert(*on_time, chord.clone());
+                left.chords.insert(on_time, chord.clone());
                 continue;
             }
             let mut right_chord = chord.clone();
             right_chord.notes = sorted[point..].to_vec();
             let mut left_chord = chord.clone();
             left_chord.notes = sorted[..point].to_vec();
-            right.chords.insert(*on_time, right_chord);
-            left.chords.insert(*on_time, left_chord);
+            right.chords.insert(on_time, right_chord);
+            left.chords.insert(on_time, left_chord);
         }
         right.had_initial_notes = true;
         left.had_initial_notes = true;

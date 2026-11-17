@@ -19,3 +19,5 @@ midly = { version = "0.5.3", default-features = false, features = ["alloc"] }
 [dev-dependencies]
 midly = { version = "0.5.3", default-features = false, features = ["alloc"] }
 scoretk-musicxml = { path = "../scoretk-musicxml" }
+quick-xml = { workspace = true }
+similar = "2"

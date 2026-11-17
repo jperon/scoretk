@@ -81,7 +81,7 @@ use chord::{
 use meter::{meter_to_duration_list, DurationKind};
 use midifile::{meta, EventKind, MidiFile, UNITS_PER_WHOLE};
 use operations::ImportOptions;
-use timesigmap::{fraction_from_ticks, ticks_measure, TimeSigMap};
+use timesigmap::{fraction_from_ticks, TimeSigMap, Timesig};
 
 /// Lit un fichier MIDI et renvoie le modèle pivot, avec les options par défaut
 /// de MuseScore.
@@ -158,9 +158,9 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     drum::set_staff_bracket_for_drums(score, &track_list);
 
     let first_tick = find_first_chord_tick(&track_list);
-    create_measures(score, &sigmap, first_tick, last_tick);
+    let last_tick = create_measures(score, &sigmap, first_tick, last_tick);
     process_non_lyric_meta(score, &mut track_list, midi, &sigmap);
-    set_track_info(&mut track_list);
+    set_track_info(score, &mut track_list);
     create_keys(score, &mut track_list);
     key::recognize_main_key_sig(score, &mut track_list);
     create_notes(score, &mut track_list, last_tick, options);
@@ -184,7 +184,7 @@ fn create_mtrack_list(
     midi: &MidiFile,
     options: &ImportOptions,
 ) -> Vec<MTrack> {
-    sigmap.add(0, Fraction::new(4, 4));
+    sigmap.add(0, Timesig::default());
     let mut tracks = Vec::new();
 
     for (midi_index, midi_track) in midi.tracks.iter().enumerate() {
@@ -259,7 +259,7 @@ fn create_mtrack_list(
 }
 
 /// Indication de mesure d'un méta-évènement (`metaTimeSignature`).
-fn meta_time_signature(data: &[u8]) -> Option<Fraction> {
+fn meta_time_signature(data: &[u8]) -> Option<Timesig> {
     if data.len() < 2 {
         return None;
     }
@@ -268,7 +268,7 @@ fn meta_time_signature(data: &[u8]) -> Option<Fraction> {
     if numerator <= 0 || denominator <= 0 {
         return None;
     }
-    Some(Fraction::new(numerator, denominator))
+    Some(Timesig::new(numerator, denominator))
 }
 
 /// Allonge les notes plus courtes que la durée minimale
@@ -278,8 +278,8 @@ fn lengthen_too_short_notes(tracks: &mut [MTrack]) {
     for track in tracks {
         for (on_time, chord) in track.chords.iter_mut() {
             for note in &mut chord.notes {
-                if note.off_time - *on_time < minimum {
-                    note.off_time = *on_time + minimum;
+                if note.off_time - on_time < minimum {
+                    note.off_time = on_time + minimum;
                 }
             }
         }
@@ -296,7 +296,7 @@ fn detect_human_performance(
     let mut all = MTrack::default();
     for track in tracks {
         for (on_time, chord) in track.chords.iter() {
-            all.chords.insert(*on_time, chord.clone());
+            all.chords.insert(on_time, chord.clone());
         }
     }
     collect_chords(&mut all, Fraction::from_integer(2), Fraction::HALF, false);
@@ -341,8 +341,8 @@ fn find_first_chord_tick(tracks: &[MTrack]) -> Fraction {
     let mut first = Fraction::ZERO;
     for track in tracks {
         if let Some((on_time, _)) = track.chords.iter().next() {
-            if first == Fraction::ZERO || *on_time < first {
-                first = *on_time;
+            if first == Fraction::ZERO || on_time < first {
+                first = on_time;
             }
         }
     }
@@ -380,9 +380,15 @@ fn create_instruments(score: &mut Score, tracks: &mut [MTrack], options: &Import
             && instrument::is_grand_staff(&tracks[index], &tracks[index + 1]);
         let name = instrument::track_instrument_name(&tracks[index]);
         let long_name = instrument::concatenate_with_comma(&name, &tracks[index].name);
-        let mut part = Part::new(long_name, String::new());
-        part.name = long_name.clone();
+        let mut part = Part::new(long_name.clone(), String::new());
+        part.name = long_name;
         part.instrument = Instrument::new(name.clone(), name.clone(), String::new());
+        part.instrument.id = mscz2xml::model::recognize_musicxml_id(
+            &name,
+            Some(tracks[index].program),
+        )
+        .unwrap_or("")
+        .to_owned();
         part.instrument.track_name = name.clone();
         part.instrument.midi_program = Some(if tracks[index].drum_track {
             0
@@ -416,12 +422,14 @@ fn create_instruments(score: &mut Score, tracks: &mut [MTrack], options: &Import
 }
 
 /// Crée les mesures (`createMeasures`).
+/// Crée les mesures et renvoie le nouveau tick de fin de partition
+/// (`createMeasures` met à jour `lastTick` avec la fin de la dernière mesure).
 fn create_measures(
     score: &mut Score,
     sigmap: &TimeSigMap,
     first_tick: Fraction,
     last_tick: Fraction,
-) {
+) -> Fraction {
     let (mut bar_count, beat, tick) =
         sigmap.tick_values(last_tick.ticks(UNITS_PER_WHOLE as u32));
     if beat > 0 || tick > 0 {
@@ -431,14 +439,15 @@ fn create_measures(
 
     let first_bar_start = sigmap.bar2tick(0, 0);
     let second_bar_start = sigmap.bar2tick(1, 0);
-    let first_timesig = sigmap.timesig(first_bar_start);
-    let second_timesig = sigmap.timesig(second_bar_start);
+    let first_timesig = sigmap.timesig(first_bar_start).measure_len();
+    let second_timesig = sigmap.timesig(second_bar_start).measure_len();
 
     let mut begin = 0;
     // `isPickupWithLessTimeSig` : première mesure plus courte que la suivante.
-    if bar_count > 1 && first_timesig < second_timesig && !first_tick.is_zero() {
-        let mut measure = Measure::new(0, Fraction::ZERO, second_timesig.measure_len());
-        measure.len = first_timesig.measure_len();
+    let _ = first_tick;
+    if bar_count > 1 && first_timesig < second_timesig {
+        let mut measure = Measure::new(0, Fraction::ZERO, second_timesig);
+        measure.len = first_timesig;
         score.add_measure(measure);
         begin = 1;
     }
@@ -446,13 +455,10 @@ fn create_measures(
     for index in begin..bar_count {
         let start_ticks = sigmap.bar2tick(index as i64, 0);
         let timesig = sigmap.timesig(start_ticks);
-        let measure = Measure::new(
-            index,
-            fraction_from_ticks(start_ticks),
-            timesig.measure_len(),
-        );
+        let measure = Measure::new(index, fraction_from_ticks(start_ticks), timesig.measure_len());
         score.add_measure(measure);
     }
+    score.end_tick()
 }
 
 /// Indication de mesure d'une mesure (nominale), pour un tick donné.
@@ -546,12 +552,37 @@ fn process_non_lyric_meta(
 }
 
 /// Renseigne le nom affiché (`setTrackInfo`).
-fn set_track_info(tracks: &mut [MTrack]) {
+///
+/// Le nom de partie est `concaténation(nom d'instrument, nom de piste)`, comme
+/// `Part::setLongName(XmlWriter::xmlString(MidiInstr::concatenateWithComma(...)))`.
+fn set_track_info(score: &mut Score, tracks: &mut [MTrack]) {
     for track in tracks.iter_mut() {
         let name = instrument::track_instrument_name(track);
         if track.name.is_empty() && !name.is_empty() {
             track.name = name;
         }
+        let Some(staff) = track.staff else {
+            continue;
+        };
+        let Some(part_id) = score.staves.get(staff.index()).map(|staff| staff.part) else {
+            continue;
+        };
+        // Seule la portée du haut nomme la partie.
+        let is_top = score.parts[part_id.index()]
+            .staves
+            .first()
+            .is_some_and(|first| *first == staff);
+        if !is_top {
+            continue;
+        }
+        let long_name = instrument::concatenate_with_comma(
+            &instrument::track_instrument_name(track),
+            &track.name,
+        );
+        let part = &mut score.parts[part_id.index()];
+        part.long_name = long_name.clone();
+        part.name = long_name;
+        part.instrument.track_name = instrument::track_instrument_name(track);
     }
 }
 
@@ -964,7 +995,7 @@ fn duration_list(
 
 /// Crée les indications de mesure (`createTimeSignatures`).
 fn create_time_signatures(score: &mut Score, sigmap: &TimeSigMap) {
-    let events: Vec<(i64, Fraction)> = sigmap.iter().map(|(tick, event)| (tick, event.timesig)).collect();
+    let events: Vec<(i64, Timesig)> = sigmap.iter().map(|(tick, event)| (tick, event.timesig)).collect();
     for (tick, timesig) in events {
         let tick = fraction_from_ticks(tick);
         let Some(measure_index) = measure_index_for_tick(score, tick) else {
@@ -994,10 +1025,13 @@ fn create_time_signatures(score: &mut Score, sigmap: &TimeSigMap) {
         for staff in 0..score.staves.len() {
             let staff_id = mscz2xml::model::StaffId::from_index(staff);
             let track_id = Track::new(staff_id, 0);
-            segment.set_element(track_id, SegmentItem::TimeSig(TimeSig::new(
-                timesig.numerator() as i32,
-                timesig.denominator() as i32,
-            )));
+            segment.set_element(
+                track_id,
+                SegmentItem::TimeSig(TimeSig::new(
+                    timesig.numerator as i32,
+                    timesig.denominator as i32,
+                )),
+            );
         }
     }
 }

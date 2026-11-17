@@ -345,7 +345,7 @@ pub fn is_simple_note_duration(duration: Fraction) -> bool {
     }
     let min_val = div.numerator().min(div.denominator());
     let max_val = div.numerator().max(div.denominator());
-    min_val == 1 && max_val.is_power_of_two()
+    min_val == 1 && max_val > 0 && (max_val & (max_val - 1)) == 0
 }
 
 /// Vrai si la fin des deux tiers d'un temps composé est un silence

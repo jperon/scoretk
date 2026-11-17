@@ -108,13 +108,14 @@ pub fn find_tuplets_in_bar_for_duration(
 ) -> Vec<TupletData> {
     let mut result = Vec::new();
     for (on_time, tuplet) in &track.tuplets {
-        if *on_time < bar_start {
+        let on_time = on_time.0;
+        if on_time < bar_start {
             continue;
         }
-        if *on_time >= duration_on_time + duration_len {
+        if on_time >= duration_on_time + duration_len {
             break;
         }
-        if tuplet.voice == voice && duration_on_time < *on_time + tuplet.len {
+        if tuplet.voice == voice && duration_on_time < on_time + tuplet.len {
             let mut local = tuplet.clone();
             local.on_time -= bar_start;
             result.push(local);
@@ -191,7 +192,9 @@ pub fn find_all_tuplets(track: &mut MTrack, sigmap: &TimeSigMap, basic_quant: Fr
     for bar_index in 0..bar_count {
         let bar_start =
             super::timesigmap::fraction_from_ticks(sigmap.bar2tick(i64::from(bar_index), 0));
-        let bar_len = sigmap.timesig(sigmap.bar2tick(i64::from(bar_index), 0));
+        let bar_len = sigmap
+            .timesig(sigmap.bar2tick(i64::from(bar_index), 0))
+            .measure_len();
         let bar_len = bar_len;
         let mut spans = divisions_of_bar_for_tuplets(bar_len);
         spans.retain(|span| !span.is_zero());
@@ -209,8 +212,8 @@ pub fn find_all_tuplets(track: &mut MTrack, sigmap: &TimeSigMap, basic_quant: Fr
                         .chords
                         .iter()
                         .find(|(on_time, chord)| {
-                            **on_time >= start
-                                && **on_time < start + span
+                            *on_time >= start
+                                && *on_time < start + span
                                 && chord.bar_index == bar_index
                         })
                         .map(|(_, chord)| chord.voice)
@@ -250,9 +253,9 @@ fn detect_tuplet(
         .chords
         .iter()
         .filter(|(on_time, chord)| {
-            **on_time >= start && **on_time < start + span && chord.bar_index == bar_index
+            *on_time >= start && *on_time < start + span && chord.bar_index == bar_index
         })
-        .map(|(on_time, chord)| (*on_time, chord.voice, MTrack::max_off_time(chord)))
+        .map(|(on_time, chord)| (on_time, chord.voice, MTrack::max_off_time(chord)))
         .collect();
     if chords.len() < 3 {
         return None;
@@ -293,8 +296,8 @@ fn detect_tuplet(
         }
         // Ne pas réutiliser un accord déjà pris par un autre n-olet.
         let already_used = track.chords.iter().any(|(on_time, chord)| {
-            *on_time >= start
-                && *on_time < start + span
+            on_time >= start
+                && on_time < start + span
                 && (chord.is_in_tuplet
                     || chord.notes.iter().any(|note| note.is_in_tuplet))
         });
@@ -315,6 +318,7 @@ fn mark_tuplet(track: &mut MTrack, key: TupletKey, start: Fraction, span: Fracti
         .into_iter()
         .filter(|(on_time, _)| *on_time >= start && *on_time < start + span)
         .collect();
+    let key_count = keys.len();
     for chord_key in keys {
         if let Some(chord) = track.chords.get_mut(chord_key) {
             chord.is_in_tuplet = true;
@@ -328,7 +332,7 @@ fn mark_tuplet(track: &mut MTrack, key: TupletKey, start: Fraction, span: Fracti
         }
     }
     if let Some(tuplet) = track.tuplets.get_mut(&key) {
-        tuplet.element_count = keys.len();
+        tuplet.element_count = key_count;
     }
 }
 

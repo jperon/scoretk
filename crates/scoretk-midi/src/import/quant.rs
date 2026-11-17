@@ -42,14 +42,14 @@ pub fn quant_value_to_fraction(quant_value: QuantValue) -> Fraction {
     let division = Fraction::from_ticks(DIVISION, UNITS_PER_WHOLE as u32);
     match quant_value {
         QuantValue::Q4 => division,
-        QuantValue::Q8 => division / 2,
-        QuantValue::Q16 => division / 4,
-        QuantValue::Q32 => division / 8,
-        QuantValue::Q64 => division / 16,
-        QuantValue::Q128 => division / 32,
-        QuantValue::Q256 => division / 64,
-        QuantValue::Q512 => division / 128,
-        QuantValue::Q1024 => division / 256,
+        QuantValue::Q8 => division * Fraction::HALF,
+        QuantValue::Q16 => division * Fraction::new(1, 4),
+        QuantValue::Q32 => division * Fraction::new(1, 8),
+        QuantValue::Q64 => division * Fraction::new(1, 16),
+        QuantValue::Q128 => division * Fraction::new(1, 32),
+        QuantValue::Q256 => division * Fraction::new(1, 64),
+        QuantValue::Q512 => division * Fraction::new(1, 128),
+        QuantValue::Q1024 => division * Fraction::new(1, 256),
     }
 }
 
@@ -228,7 +228,7 @@ pub fn find_max_quantized_off_time(
 ) -> Fraction {
     let mut max_off = Fraction::ZERO;
     for note in &chord.notes {
-        let off = find_quantized_note_off_time(on_time, note.off_time, basic_quant).first;
+        let off = find_quantized_note_off_time(on_time, note.off_time, basic_quant).0;
         if off > max_off {
             max_off = off;
         }
@@ -275,15 +275,16 @@ pub fn is_human_performance(track: &MTrack, sigmap: &super::timesigmap::TimeSigM
     let mut count = 0_i32;
     let mut used_on_times: Vec<Fraction> = Vec::new();
 
-    for (key, chord) in track.chords.iter() {
+    for (on_time, chord) in track.chords.iter() {
         let quant = basic_quant.min(quant_for_len(
-            super::chord::max_note_len(key.0, chord),
+            super::chord::max_note_len(on_time, chord),
             basic_quant,
         ));
-        let on_time = quantize_value(key.0, quant);
+        let original_on_time = on_time;
+        let on_time = quantize_value(on_time, quant);
         let (bar_index, _, _) = sigmap.tick_values(on_time.ticks(UNITS_PER_WHOLE as u32));
         let bar_start = super::timesigmap::fraction_from_ticks(sigmap.bar2tick(bar_index, 0));
-        let bar_fraction = sigmap.timesig(bar_start.ticks(UNITS_PER_WHOLE as u32));
+        let bar_fraction = sigmap.timesig(bar_start.ticks(UNITS_PER_WHOLE as u32)).measure_len();
         let beat_len = super::meter::beat_length(bar_fraction);
         if beat_len.is_zero() {
             continue;
@@ -292,7 +293,7 @@ pub fn is_human_performance(track: &MTrack, sigmap: &super::timesigmap::TimeSigM
         if ratio.denominator() == 1 && !used_on_times.contains(&on_time) {
             used_on_times.push(on_time);
             count += 1;
-            if (on_time - key.0).abs() < min_allowed_duration() {
+            if (on_time - original_on_time).abs() < min_allowed_duration() {
                 matches += 1;
             }
         }
@@ -418,11 +419,13 @@ fn merge_same_on_time_and_voice(mut chords: ChordMap) -> ChordMap {
         };
         let existing = result
             .iter()
-            .find(|((on_time, _), other)| *on_time == key.0 && other.voice == chord.voice)
-            .map(|(existing_key, _)| *existing_key);
+            .find(|(on_time, other)| *on_time == key.0 && other.voice == chord.voice)
+            .map(|(on_time, _)| on_time);
         match existing {
-            Some(existing_key) => {
-                if let Some(target) = result.get_mut(existing_key) {
+            Some(existing_on_time) => {
+                if let Some(target) = result.iter_mut().find_map(|(on_time, other)| {
+                    (on_time == existing_on_time && other.voice == chord.voice).then_some(other)
+                }) {
                     target.notes.extend(chord.notes);
                 }
             }
@@ -443,7 +446,7 @@ fn remove_useless_tuplet_references(
     for (on_time, chord) in chords.iter_mut() {
         if chord.is_in_tuplet {
             match chord.tuplet.and_then(|key| tuplets.get(&key)) {
-                Some(tuplet) if *on_time >= tuplet.on_time + tuplet.len => {
+                Some(tuplet) if on_time >= tuplet.on_time + tuplet.len => {
                     chord.is_in_tuplet = false;
                     chord.tuplet = None;
                 }

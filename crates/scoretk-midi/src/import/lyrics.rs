@@ -75,14 +75,14 @@ pub fn set_lyrics(score: &mut Score, track: &MTrack, lyrics: &[(Fraction, String
         let Some(measure_index) = score
             .measures
             .iter()
-            .position(|measure| measure.start_tick <= *on_time && *on_time < measure.end_tick())
+            .position(|measure| measure.start_tick <= on_time && on_time < measure.end_tick())
         else {
             continue;
         };
         let track_id = Track::new(staff, voice as u8);
         let text = remove_slashes(text);
         for segment in &mut score.measures[measure_index].segments {
-            if segment.tick != *on_time {
+            if segment.tick != on_time {
                 continue;
             }
             let Some(SegmentItem::ChordRest(chord_rest)) = segment.element_mut(track_id) else {

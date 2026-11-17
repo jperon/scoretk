@@ -139,7 +139,7 @@ pub fn separate_voices(
                     .chords
                     .iter()
                     .find(|(on_time, _)| {
-                        **on_time >= key.0 && **on_time < key.0 + Fraction::new(1, 64)
+                        *on_time >= key.0 && *on_time < key.0 + Fraction::new(1, 64)
                     })
                     .map(|(_, chord)| chord.voice)
                     .unwrap_or(0);

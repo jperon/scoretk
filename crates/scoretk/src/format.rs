@@ -118,13 +118,14 @@ impl Format {
 
     /// Vrai si [`read`](crate::read) sait lire ce format aujourd'hui.
     ///
-    /// MusicXML dépend de la feature `musicxml-import`, MIDI n'a pas encore de
-    /// lecteur.
+    /// MusicXML dépend de la feature `musicxml-import`, MIDI de la feature
+    /// `midi`.
     pub const fn supports_read(self) -> bool {
         match self {
             Self::Mscz | Self::Mscx => true,
             Self::MusicXml => cfg!(feature = "musicxml-import"),
-            Self::Mxl | Self::Ly | Self::Abc | Self::Midi => false,
+            Self::Midi => cfg!(feature = "midi"),
+            Self::Mxl | Self::Ly | Self::Abc => false,
         }
     }
 

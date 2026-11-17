@@ -25,42 +25,72 @@
 //! exprimés en unités de 1/480 de noire, comme `Constants::DIVISION`. La carte
 //! précalcule le numéro de mesure de chaque changement (`normalize`), ce qui
 //! rend `bar2tick` et `tickValues` immédiats.
+//!
+//! Contrairement à [`Fraction`] du modèle, une indication de mesure n'est
+//! **pas** réduite : 4/4 et 1/1 ont la même durée mais pas le même affichage,
+//! et MuseScore conserve les deux nombres.
 
 use std::collections::BTreeMap;
 
 use mscz2xml::model::Fraction;
 
-use super::midifile::{DIVISION, UNITS_PER_WHOLE};
-
-/// Convertit des ticks MuseScore (480 par noire) en fraction de ronde.
-pub fn fraction_from_ticks(ticks: i64) -> Fraction {
-    Fraction::from_ticks(ticks, UNITS_PER_WHOLE as u32)
-}
+use super::midifile::UNITS_PER_WHOLE;
 
 /// Ticks par temps pour un dénominateur d'indication de mesure.
 ///
 /// `ticks_beat` de `sig.cpp` : `DIVISION * 4 / n`.
-pub fn ticks_beat(denominator: i32) -> i64 {
-    let denominator = i64::from(denominator);
+pub fn ticks_beat(denominator: i64) -> i64 {
     if denominator <= 0 {
         return 0;
     }
     UNITS_PER_WHOLE / denominator
 }
 
-/// Ticks d'une mesure de l'indication donnée (`ticks_measure`).
-pub fn ticks_measure(timesig: Fraction) -> i64 {
-    if timesig.denominator() <= 0 {
-        return 0;
+/// Indication de mesure non réduite.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Timesig {
+    /// Numérateur (nombre de temps).
+    pub numerator: i64,
+    /// Dénominataur (figure du temps).
+    pub denominator: i64,
+}
+
+impl Timesig {
+    /// Construit une indication de mesure.
+    pub const fn new(numerator: i64, denominator: i64) -> Self {
+        Self {
+            numerator,
+            denominator,
+        }
     }
-    UNITS_PER_WHOLE * timesig.numerator() / timesig.denominator()
+
+    /// Longueur de la mesure en fraction de ronde (réduite, pour les calculs).
+    pub fn measure_len(self) -> Fraction {
+        Fraction::try_new(self.numerator, self.denominator).unwrap_or(Fraction::ZERO)
+    }
+
+    /// Nombre de ticks de la mesure (`ticks_measure`).
+    pub fn ticks_measure(self) -> i64 {
+        ticks_beat(self.denominator) * self.numerator
+    }
+}
+
+impl Default for Timesig {
+    fn default() -> Self {
+        Self::new(4, 4)
+    }
+}
+
+/// Ticks d'une mesure de l'indication donnée (`ticks_measure`).
+pub fn ticks_measure(timesig: Timesig) -> i64 {
+    timesig.ticks_measure()
 }
 
 /// Indication de mesure enregistrée à un tick.
 #[derive(Clone, Copy, Debug)]
 pub struct SigEvent {
-    /// Indication de mesure (fraction de ronde).
-    pub timesig: Fraction,
+    /// Indication de mesure.
+    pub timesig: Timesig,
     /// Numéro de mesure de ce changement, précalculé par `normalize`.
     pub bar: i64,
 }
@@ -83,17 +113,11 @@ impl TimeSigMap {
     }
 
     /// Enregistre une indication de mesure au tick donné (`TimeSigMap::add`).
-    pub fn add(&mut self, tick: i64, timesig: Fraction) {
-        if timesig.numerator() <= 0 || timesig.denominator() <= 0 {
+    pub fn add(&mut self, tick: i64, timesig: Timesig) {
+        if timesig.numerator <= 0 || timesig.denominator <= 0 {
             return;
         }
-        self.events.insert(
-            tick,
-            SigEvent {
-                timesig,
-                bar: 0,
-            },
-        );
+        self.events.insert(tick, SigEvent { timesig, bar: 0 });
         self.normalize();
     }
 
@@ -101,7 +125,7 @@ impl TimeSigMap {
     fn normalize(&mut self) {
         let mut tick = 0_i64;
         let mut bar = Fraction::ZERO;
-        let mut tm = ticks_measure(Fraction::new(4, 4));
+        let mut tm = Timesig::default().ticks_measure();
         let ticks: Vec<i64> = self.events.keys().copied().collect();
         for event_tick in ticks {
             let delta = event_tick - tick;
@@ -111,7 +135,7 @@ impl TimeSigMap {
             let bar_number = bar.numerator() / bar.denominator();
             if let Some(event) = self.events.get_mut(&event_tick) {
                 event.bar = bar_number;
-                tm = ticks_measure(event.timesig);
+                tm = event.timesig.ticks_measure();
             }
             tick = event_tick;
         }
@@ -121,24 +145,24 @@ impl TimeSigMap {
     ///
     /// Renvoie 4/4 quand la carte est vide, comme la valeur par défaut posée
     /// par `createMTrackList`.
-    pub fn timesig(&self, tick: i64) -> Fraction {
+    pub fn timesig(&self, tick: i64) -> Timesig {
         self.events
             .range(..=tick)
             .next_back()
             .map(|(_, event)| event.timesig)
-            .unwrap_or_else(|| Fraction::new(4, 4))
+            .unwrap_or_default()
     }
 
     /// Indication de mesure en vigueur et numéro de mesure au tick donné.
-    pub fn timesig_and_bar(&self, tick: i64) -> (Fraction, i64) {
+    pub fn timesig_and_bar(&self, tick: i64) -> (Timesig, i64) {
         match self.events.range(..=tick).next_back() {
             Some((event_tick, event)) => {
                 let delta = tick - event_tick;
-                let tm = ticks_measure(event.timesig);
+                let tm = event.timesig.ticks_measure();
                 let bar = if tm > 0 { event.bar + delta / tm } else { event.bar };
                 (event.timesig, bar)
             }
-            None => (Fraction::new(4, 4), 0),
+            None => (Timesig::default(), 0),
         }
     }
 
@@ -153,8 +177,8 @@ impl TimeSigMap {
             return (0, 0, 0);
         };
         let delta = tick - event_tick;
-        let ticks_b = ticks_beat(event.timesig.denominator() as i32);
-        let ticks_m = ticks_b * event.timesig.numerator();
+        let ticks_b = ticks_beat(event.timesig.denominator);
+        let ticks_m = event.timesig.ticks_measure();
         if ticks_m == 0 {
             return (0, 0, 0);
         }
@@ -175,8 +199,8 @@ impl TimeSigMap {
         let Some((event_tick, event)) = current else {
             return 0;
         };
-        let ticks_b = ticks_beat(event.timesig.denominator() as i32);
-        let ticks_m = ticks_b * event.timesig.numerator();
+        let ticks_b = ticks_beat(event.timesig.denominator);
+        let ticks_m = event.timesig.ticks_measure();
         event_tick + (bar - event.bar) * ticks_m + ticks_b * beat
     }
 
@@ -184,4 +208,9 @@ impl TimeSigMap {
     pub fn iter(&self) -> impl Iterator<Item = (i64, SigEvent)> + '_ {
         self.events.iter().map(|(tick, event)| (*tick, *event))
     }
+}
+
+/// Convertit des ticks MuseScore (480 par noire) en fraction de ronde.
+pub fn fraction_from_ticks(ticks: i64) -> Fraction {
+    Fraction::from_ticks(ticks, UNITS_PER_WHOLE as u32)
 }

@@ -42,6 +42,7 @@
 //! ```
 
 mod error;
+pub mod import;
 mod pause_map;
 mod render;
 pub mod repeat_list;
@@ -49,6 +50,7 @@ mod velocity;
 mod writer;
 
 pub use error::Error;
+pub use import::{read_midi, read_midi_with};
 pub use repeat_list::{RepeatList, RepeatSegment, DIVISION, UNITS_PER_WHOLE};
 
 use mscz2xml::model::Score;

@@ -214,7 +214,7 @@ impl MidiFile {
                     midly::Fps::Fps29 => 29.97,
                     midly::Fps::Fps30 => 30.0,
                 };
-                let division = (frames * f64::from(subframe.as_int())).round() as i64;
+                let division = (frames * f64::from(u8::from(subframe))).round() as i64;
                 (division, true)
             }
         };
@@ -306,7 +306,7 @@ impl MidiFile {
             tracks,
             division,
             is_division_in_tps,
-            format: smf.header.format.as_int(),
+            format: u16::from(smf.header.format as u8),
         })
     }
 
@@ -386,7 +386,7 @@ impl MidiFile {
                 }
                 match event.kind {
                     EventKind::NoteOn {
-                        pitch,
+                        pitch: _,
                         velocity: 0,
                     } => {}
                     EventKind::NoteOn { pitch, velocity } => {

@@ -23,8 +23,9 @@
 //!
 //! - feature `musicxml-import` : crate `scoretk-musicxml` (t34), fonction
 //!   `read_musicxml(&[u8]) -> Result<Score>` ;
-//! - feature `midi` : crate `scoretk-midi` (t35), fonction
-//!   `write_midi(&Score) -> Result<Vec<u8>>` ;
+//! - feature `midi` : crate `scoretk-midi` (t35, t42), fonctions
+//!   `write_midi(&Score) -> Result<Vec<u8>>` et
+//!   `read_midi(&[u8]) -> Result<Score>` ;
 //! - feature `lilypond` : crate `scoretk-lilypond` (t36), fonction
 //!   `write_lilypond(&Score) -> Result<String>` ;
 //! - feature `mscx` : crate `scoretk-mscx` (t38), fonctions
@@ -66,6 +67,19 @@ pub(crate) fn write_midi(_score: &Score) -> Result<Vec<u8>> {
     Err(Error::FormatNonPrisEnCharge {
         format: Format::Midi,
         sens: Sens::Ecriture,
+    })
+}
+
+#[cfg(feature = "midi")]
+pub(crate) fn read_midi(bytes: &[u8]) -> Result<Score> {
+    scoretk_midi::read_midi(bytes).map_err(|error| Error::MidiImport(error.to_string()))
+}
+
+#[cfg(not(feature = "midi"))]
+pub(crate) fn read_midi(_bytes: &[u8]) -> Result<Score> {
+    Err(Error::FormatNonPrisEnCharge {
+        format: Format::Midi,
+        sens: Sens::Lecture,
     })
 }
 

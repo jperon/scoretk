@@ -165,14 +165,21 @@ impl ChordMap {
         self.entries.remove(&key)
     }
 
-    /// Itère sur les accords dans l'ordre `(date, rang)`.
-    pub fn iter(&self) -> impl Iterator<Item = (&ChordKey, &MidiChord)> {
+    /// Itère sur les accords dans l'ordre `(date, rang)`, avec leur date.
+    pub fn iter(&self) -> impl Iterator<Item = (Fraction, &MidiChord)> {
+        self.entries.iter().map(|((on_time, _), chord)| (*on_time, chord))
+    }
+
+    /// Itère sur les accords avec leur clé complète et leur date.
+    pub fn iter_with_keys(&self) -> impl Iterator<Item = (&ChordKey, &MidiChord)> {
         self.entries.iter()
     }
 
-    /// Itère mutablement sur les accords.
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&ChordKey, &mut MidiChord)> {
-        self.entries.iter_mut()
+    /// Itère mutablement sur les accords, avec leur date.
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Fraction, &mut MidiChord)> {
+        self.entries
+            .iter_mut()
+            .map(|((on_time, _), chord)| (*on_time, chord))
     }
 
     /// Clés des accords, dans l'ordre.
@@ -655,8 +662,8 @@ pub fn chord_average_pitch(chord: &MidiChord) -> i32 {
 /// Durée du plus long accord (`MChord::findMaxChordLength`).
 pub fn find_max_chord_length(track: &MTrack) -> Fraction {
     let mut max = Fraction::ZERO;
-    for (key, chord) in track.chords.iter() {
-        let length = MTrack::max_off_time(chord) - key.0;
+    for (on_time, chord) in track.chords.iter() {
+        let length = MTrack::max_off_time(chord) - on_time;
         if length > max {
             max = length;
         }
@@ -674,7 +681,10 @@ pub fn find_chords_for_time_range(
     max_chord_length: Fraction,
 ) -> Vec<ChordKey> {
     let mut result = Vec::new();
-    for (key, chord) in track.chords.iter().rev() {
+    for key in track.chords.keys().into_iter().rev() {
+        let Some(chord) = track.chords.get(key) else {
+            continue;
+        };
         if key.0 >= off_time {
             continue;
         }
@@ -686,7 +696,7 @@ pub fn find_chords_for_time_range(
         }
         let chord_off = MTrack::max_off_time(chord);
         if chord_off > on_time && key.0 < off_time {
-            result.push(*key);
+            result.push(key);
         }
     }
     result
@@ -720,6 +730,7 @@ pub fn set_bar_indexes(
         while position < keys.len() {
             let key = keys[position];
             let on_time = super::quant::find_quantized_chord_on_time(
+                key.0,
                 track.chords.get(key).expect("accord présent"),
                 basic_quant,
             );
