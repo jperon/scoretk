@@ -29,7 +29,7 @@
 
 use mscz2xml::model::{Annotation, FermataType, Placement, Tick};
 
-use crate::event::{Event, after, before};
+use crate::event::{after, before, Event};
 use crate::text;
 
 /// Nuances prédéfinies de LilyPond (`dynamics`), reprises de `musicxml2ly`.
@@ -57,10 +57,7 @@ pub(crate) fn events(annotation: &Annotation, tick: Tick) -> Vec<Event> {
             let rendered = if PREDEFINED_DYNAMICS.contains(&name) {
                 format!("{direction}\\{name}")
             } else {
-                format!(
-                    "{direction}{}",
-                    text::markup(&text::escape(name))
-                )
+                format!("{direction}{}", text::markup(&text::escape(name)))
             };
             vec![Event::new(tick, after::DYNAMIC, rendered)]
         }
@@ -87,21 +84,27 @@ pub(crate) fn events(annotation: &Annotation, tick: Tick) -> Vec<Event> {
             vec![Event::new(tick, before::TEMPO, command)]
         }
         Annotation::StaffText(staff_text) => {
-            vec![text_event(staff_text.text.plain(), staff_text.placement, tick)]
+            vec![text_event(
+                staff_text.text.plain(),
+                staff_text.placement,
+                tick,
+            )]
         }
         Annotation::Expression(staff_text) => {
-            vec![text_event(staff_text.text.plain(), staff_text.placement, tick)]
+            vec![text_event(
+                staff_text.text.plain(),
+                staff_text.placement,
+                tick,
+            )]
         }
         Annotation::SystemText(system_text) => vec![text_event(
             system_text.text.plain(),
             system_text.placement,
             tick,
         )],
-        Annotation::InstrumentChange(change) => vec![text_event(
-            change.text.plain(),
-            change.placement,
-            tick,
-        )],
+        Annotation::InstrumentChange(change) => {
+            vec![text_event(change.text.plain(), change.placement, tick)]
+        }
         Annotation::RehearsalMark(mark) => {
             let plain = mark.text.plain().trim();
             if plain.is_empty() {
@@ -187,7 +190,10 @@ mod tests {
 
     #[test]
     fn repere_de_repetition() {
-        let events = events(&Annotation::RehearsalMark(RehearsalMark::new("A")), Tick::ZERO);
+        let events = events(
+            &Annotation::RehearsalMark(RehearsalMark::new("A")),
+            Tick::ZERO,
+        );
         assert_eq!(events[0].text, "\\mark \\markup { \"A\" }");
     }
 }

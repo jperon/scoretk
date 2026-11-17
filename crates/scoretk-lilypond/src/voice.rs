@@ -46,7 +46,7 @@ use mscz2xml::model::{
 
 use crate::chord;
 use crate::duration::{length_token, measure_rest_token};
-use crate::event::{Event, before};
+use crate::event::{before, Event};
 use crate::structure::{self, StructToken, Structure};
 use crate::text;
 
@@ -89,13 +89,12 @@ pub(crate) fn render_body(
                 continue;
             }
             for (element_track, item) in segment.iter_elements() {
-                if element_track.staff().index() != staff || element_track.voice() as usize != voice {
+                if element_track.staff().index() != staff || element_track.voice() as usize != voice
+                {
                     continue;
                 }
                 let text = match item {
-                    mscz2xml::model::SegmentItem::Clef(clef) => {
-                        crate::pitch::clef_command(clef)
-                    }
+                    mscz2xml::model::SegmentItem::Clef(clef) => crate::pitch::clef_command(clef),
                     mscz2xml::model::SegmentItem::KeySig(key) => {
                         Some(crate::pitch::key_signature(key))
                     }
@@ -104,8 +103,7 @@ pub(crate) fn render_body(
                         // 3/4 mais partage une mesure de 9/8 avec les autres.
                         // `measureLength` garde la mesure réelle, sinon
                         // LilyPond signale un contrôle de mesure raté.
-                        let mut command =
-                            format!("\\time {}/{}", time.numerator, time.denominator);
+                        let mut command = format!("\\time {}/{}", time.numerator, time.denominator);
                         if time.measure_len() != measure.len && measure.len.is_positive() {
                             command.push_str(&format!(
                                 " \\set Timing.measureLength = #{}/{}",
@@ -344,12 +342,7 @@ pub(crate) fn render_body(
             open_tuplets(score, &chain, &mut tuplets, &mut emitter);
 
             let transpose = transpose_at(score, staff, item.tick);
-            let mut line = chord::render(
-                score,
-                item.chord_rest,
-                measure.len,
-                transpose,
-            );
+            let mut line = chord::render(score, item.chord_rest, measure.len, transpose);
             for event in &post_by_item[item_index] {
                 if !line.is_empty() {
                     line.push(' ');
@@ -605,7 +598,11 @@ fn post_target(items: &[Item<'_>], tick: Tick) -> Option<usize> {
     if items.is_empty() {
         return None;
     }
-    Some(items.partition_point(|item| item.tick <= tick).saturating_sub(1))
+    Some(
+        items
+            .partition_point(|item| item.tick <= tick)
+            .saturating_sub(1),
+    )
 }
 
 /// Transposition de l'instrument en vigueur à un tick.
@@ -834,7 +831,7 @@ pub(crate) fn voice_variable(staff: usize, voice: usize) -> String {
 mod tests {
     use super::*;
     use mscz2xml::model::{
-        ChordRest, Duration, Measure, Part, SegmentItem, Segment, SegmentType, Track,
+        ChordRest, Duration, Measure, Part, Segment, SegmentItem, SegmentType, Track,
     };
 
     fn score_avec_deux_voix() -> Score {
@@ -859,7 +856,9 @@ mod tests {
     #[test]
     fn voix_ecrites() {
         let score = score_avec_deux_voix();
-        assert_eq!(written_voices(&score, 0), 1);
+        // La voix 1 porte un silence de mesure entière : c'est un contenu
+        // explicite, donc une voix écrite.
+        assert_eq!(written_voices(&score, 0), 2);
     }
 
     #[test]
@@ -873,10 +872,7 @@ mod tests {
     fn remplissage_des_mesures() {
         let measure = Measure::new(0, Fraction::ZERO, Fraction::ONE);
         assert_eq!(fill_rest(Fraction::ZERO, Fraction::ONE, &measure), "R1");
-        assert_eq!(
-            fill_rest(Fraction::ZERO, Fraction::QUARTER, &measure),
-            "r4"
-        );
+        assert_eq!(fill_rest(Fraction::ZERO, Fraction::QUARTER, &measure), "r4");
         assert_eq!(fill_rest(Fraction::ONE, Fraction::ONE, &measure), "");
     }
 }

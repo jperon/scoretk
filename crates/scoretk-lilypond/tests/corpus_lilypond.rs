@@ -53,7 +53,11 @@ fn fichiers() -> Vec<PathBuf> {
             .unwrap_or_else(|error| panic!("lecture de {dossier:?} : {error}"))
             .filter_map(|entree| entree.ok())
             .map(|entree| entree.path())
-            .filter(|chemin| chemin.extension().is_some_and(|extension| extension == "mscx"))
+            .filter(|chemin| {
+                chemin
+                    .extension()
+                    .is_some_and(|extension| extension == "mscx")
+            })
             .collect();
         entrees.sort();
         fichiers.extend(entrees);

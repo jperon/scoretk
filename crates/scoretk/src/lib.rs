@@ -137,11 +137,9 @@ pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>
         )?),
         Format::Midi => hooks::write_midi(score),
         Format::Ly => hooks::write_lilypond(score),
-        Format::Mscz | Format::Mscx | Format::Abc => {
-            Err(Error::FormatNonPrisEnCharge {
-                format,
-                sens: Sens::Ecriture,
-            })
-        }
+        Format::Mscz | Format::Mscx | Format::Abc => Err(Error::FormatNonPrisEnCharge {
+            format,
+            sens: Sens::Ecriture,
+        }),
     }
 }

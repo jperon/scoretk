@@ -31,11 +31,7 @@
 use mscz2xml::model::Score;
 
 use crate::error::Error;
-#[cfg(not(all(
-    feature = "musicxml-import",
-    feature = "midi",
-    feature = "lilypond"
-)))]
+#[cfg(not(all(feature = "musicxml-import", feature = "midi", feature = "lilypond")))]
 use crate::format::{Format, Sens};
 use crate::Result;
 

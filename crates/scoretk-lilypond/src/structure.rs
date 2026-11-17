@@ -162,9 +162,7 @@ fn build_section(
         cursor = volta.end + 1;
     }
 
-    let body_follows = first_alt
-        .as_ref()
-        .is_some_and(|volta| volta.start > start);
+    let body_follows = first_alt.as_ref().is_some_and(|volta| volta.start > start);
     let mut endings: Vec<Volta> = Vec::new();
     if let Some(first) = &first_alt {
         if body_follows {
@@ -252,7 +250,8 @@ mod tests {
         let part = score.add_part(Part::new("Piano", "Pno."));
         score.add_staff(part);
         for index in 0..mesures {
-            let mut measure = Measure::new(index, Fraction::from_integer(index as i64), Fraction::ONE);
+            let mut measure =
+                Measure::new(index, Fraction::from_integer(index as i64), Fraction::ONE);
             for (start, end, count) in reprises {
                 if index == *start {
                     measure.start_bar_line = BarLineType::StartRepeat;
@@ -271,14 +270,8 @@ mod tests {
     fn reprise_simple() {
         let score = partition(4, &[(1, 3, 2)]);
         let structure = build(&score);
-        assert_eq!(
-            structure.before_measure(1),
-            &[StructToken::OpenRepeat(2)]
-        );
-        assert_eq!(
-            structure.after_measure(3),
-            &[StructToken::CloseRepeatBody]
-        );
+        assert_eq!(structure.before_measure(1), &[StructToken::OpenRepeat(2)]);
+        assert_eq!(structure.after_measure(3), &[StructToken::CloseRepeatBody]);
         assert!(structure.before_measure(0).is_empty());
     }
 
@@ -321,10 +314,7 @@ mod tests {
         );
         assert_eq!(
             structure.after_measure(3),
-            &[
-                StructToken::CloseEnding,
-                StructToken::CloseAlternative
-            ]
+            &[StructToken::CloseEnding, StructToken::CloseAlternative]
         );
     }
 }

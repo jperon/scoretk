@@ -28,7 +28,7 @@ staffOneVoiceOne = \fixed c' {
   \key e \major \time 3/4
   R2. |
   \key af \major \time 4/4
-  s4 \bar "|."
+  s1 \bar "|."
 }
 
 \score {

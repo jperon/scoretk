@@ -117,10 +117,7 @@ pub(crate) fn render(
             ));
             graces.push(' ');
         }
-        parts.push(format!(
-            "\\afterGrace {core} {{ {} }}",
-            graces.trim_end()
-        ));
+        parts.push(format!("\\afterGrace {core} {{ {} }}", graces.trim_end()));
     }
 
     token.push_str(&parts.join(" "));
@@ -325,9 +322,9 @@ fn articulation_token(kind: &ArticulationType) -> Option<String> {
         ArticulationType::Open => "\\open",
         ArticulationType::Stopped => "\\stopped",
         ArticulationType::SnapPizzicato => "\\snappizzicato",
-        ArticulationType::Stress
-        | ArticulationType::Unstress
-        | ArticulationType::Other(_) => return None,
+        ArticulationType::Stress | ArticulationType::Unstress | ArticulationType::Other(_) => {
+            return None
+        }
     };
     Some(token.to_owned())
 }
@@ -384,7 +381,10 @@ fn fingering(notes: &[&Note]) -> String {
             if text_value.is_empty() {
                 continue;
             }
-            if text_value.chars().all(|character| character.is_ascii_digit()) {
+            if text_value
+                .chars()
+                .all(|character| character.is_ascii_digit())
+            {
                 result.push('-');
                 result.push_str(text_value);
             } else {
@@ -421,7 +421,7 @@ pub(crate) fn tuplet_ratio(tuplet: &Tuplet) -> (i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{Measure, Part, Segment, SegmentItem, SegmentType, Track, tpc};
+    use mscz2xml::model::{tpc, Measure, Part, Segment, SegmentItem, SegmentType, Track};
 
     fn score_avec_accord(chord_rest: ChordRest) -> Score {
         let mut score = Score::new();
@@ -464,10 +464,7 @@ mod tests {
         let chord_rest = ChordRest::full_measure_rest();
         let score = score_avec_accord(chord_rest.clone());
         assert_eq!(render(&score, &chord_rest, Fraction::ONE, 0), "R1");
-        assert_eq!(
-            render(&score, &chord_rest, Fraction::new(3, 4), 0),
-            "R2."
-        );
+        assert_eq!(render(&score, &chord_rest, Fraction::new(3, 4), 0), "R2.");
     }
 
     #[test]

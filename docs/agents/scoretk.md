@@ -61,7 +61,8 @@ Rien ne correspond → `None` (la CLI demande alors `--from`).
 | `.mscz` / `.mscx` | oui (`mscz2xml`) | non |
 | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` (t34) | oui |
 | MusicXML `.mxl` | non | oui |
-| LilyPond, ABC | non | non |
+| LilyPond `.ly` | non | oui (feature `lilypond`, `scoretk-lilypond`) |
+| ABC | non | non |
 | MIDI | non | oui (feature `midi`, `scoretk-midi`) |
 
 Un format absent dans le sens demandé renvoie
@@ -69,7 +70,7 @@ Un format absent dans le sens demandé renvoie
 L'écriture `.mxl` réutilise `mscz2xml::export::export_mxl_with` (archive ZIP
 `META-INF/container.xml` + `score.xml`, comme `saveMxl` de MuseScore).
 
-## 3. Brancher les convertisseurs (t34, t35)
+## 3. Brancher les convertisseurs (t34, t35, t36)
 
 Tout le code conditionnel est dans `crates/scoretk/src/hooks.rs`. Les features
 existent déjà, désactivées par défaut ; les variantes d'erreur
@@ -92,6 +93,14 @@ en place ; `hooks::write_midi` appelle `scoretk_midi::write_midi(score)` et
 convertit l'erreur en `Error::Midi`. La feature reste désactivée par défaut :
 l'activer explicitement (`cargo test -p scoretk --features midi`, ou la
 dépendance de la CLI) pour que `scoretk` écrive du MIDI.
+
+### t36 — écriture LilyPond (`crates/scoretk-lilypond`)
+
+**Branché** : dépendance optionnelle, `lilypond = ["dep:scoretk-lilypond"]`,
+`hooks::write_lilypond` appelle `scoretk_lilypond::write_lilypond(score)` et
+convertit l'erreur en `Error::LilyPond`. La CLI active la feature : `scoretk
+entrée.mscx -o sortie.ly` fonctionne. Détail de la correspondance et limites :
+`docs/agents/lilypond.md`.
 
 La lecture MIDI, LilyPond et ABC n'ont pas encore de point d'accroche : elles
 suivront le même modèle (une variante de feature, une fonction dans `hooks.rs`).
@@ -132,8 +141,8 @@ scoretk --version                           # version + licence (GPL-3.0-only)
   des formats non branchés.
 - `crates/scoretk-cli/tests/cli.rs` : binaire réel (`CARGO_BIN_EXE_scoretk`),
   `--list-formats`, `--version`, stdin/stdout, `.mscz` → MusicXML comparé à
-  `mscz2xml`, sortie `.mxl`, erreurs de `--from`/`--to` manquants et de format
-  non branché.
+  `mscz2xml`, sortie `.mxl`, `.mscx` → `.ly`, erreurs de `--from`/`--to`
+  manquants et de format non branché.
 - Le corpus est lu via `CARGO_MANIFEST_DIR/../../tests/corpus` ; il doit rester
   dans le filtre de `flake.nix` (voir `docs/agents/developpement.md`).
 

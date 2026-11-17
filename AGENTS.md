@@ -22,6 +22,8 @@ Carte des crates et modules :
   modèle : `.musicxml`/`.xml`/`.mxl` → `Score`.
 - `crates/scoretk-midi` — écriture MIDI (SMF format 1) et déroulement des
   reprises (`repeat_list.rs`), sans I/O.
+- `crates/scoretk-lilypond` — écriture LilyPond (`.ly`) depuis le modèle,
+  voix en mode `\fixed c'`, sans I/O (t36).
 - `crates/scoretk` — façade multi-formats : `Format`, détection par extension
   ou contenu, `read`/`write` vers le modèle pivot ; features
   `musicxml-import` (t34) et `midi` (t35) à brancher dans `src/hooks.rs`.
@@ -75,6 +77,7 @@ nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 nix develop -c cargo fmt --all -- --check
 nix develop -c cargo build -p mscz2xml --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-midi --target wasm32-unknown-unknown
+nix develop -c cargo build -p scoretk-lilypond --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk --target wasm32-unknown-unknown
 nix flake check
 nix build .#wasm
@@ -139,3 +142,6 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
 - `docs/agents/musicxml-import.md` — portage de l'import MusicXML, résultat
   du test d'aller-retour et écarts restants : à lire avant de toucher au
   lecteur MusicXML.
+- `docs/agents/lilypond.md` — écriture LilyPond : correspondance modèle →
+  `.ly`, mode `\fixed`, instantanés et limites : à lire avant de toucher à
+  `scoretk-lilypond`.

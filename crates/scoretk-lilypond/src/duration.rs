@@ -33,7 +33,7 @@ fn base_token(kind: DurationType) -> Option<&'static str> {
     match kind {
         DurationType::Long => Some("\\longa"),
         DurationType::Breve => Some("\\breve"),
-        DurationType::Whole => Some("1"),
+        DurationType::Whole | DurationType::Measure => Some("1"),
         DurationType::Half => Some("2"),
         DurationType::Quarter => Some("4"),
         DurationType::Eighth => Some("8"),
@@ -44,15 +44,15 @@ fn base_token(kind: DurationType) -> Option<&'static str> {
         DurationType::TwoHundredFiftySixth => Some("256"),
         DurationType::FiveHundredTwelfth => Some("512"),
         DurationType::OneThousandTwentyFourth => Some("1024"),
-        DurationType::Measure | DurationType::Zero | DurationType::Invalid => None,
+        DurationType::Zero | DurationType::Invalid => None,
     }
 }
 
 /// Figure LilyPond d'une durée, points compris.
 ///
-/// Une durée de mesure (`DurationType::Measure`) vaut `1` : c'est l'appelant
-/// qui choisit `R` et la longueur réelle de la mesure. `Invalid` et `Zero`
-/// retombent sur une noire, pour ne jamais produire de jeton vide.
+/// Une durée de mesure (`DurationType::Measure`) vaut `1` : l'appelant écrit
+/// `R` avec la longueur réelle de la mesure. `Invalid` et `Zero` retombent sur
+/// une noire, pour ne jamais produire de jeton vide.
 pub(crate) fn duration_token(duration: Duration) -> String {
     let Some(token) = base_token(duration.kind) else {
         return "4".to_owned();
@@ -92,7 +92,11 @@ pub(crate) fn length_token(len: Fraction) -> String {
             }
         }
     }
-    format!("1*{}/{}", len.numerator(), len.denominator())
+    if len.denominator() == 1 {
+        format!("1*{}", len.numerator())
+    } else {
+        format!("1*{}/{}", len.numerator(), len.denominator())
+    }
 }
 
 /// Ajoute un multiplicateur `*num/den` quand la durée réelle d'un élément
@@ -127,7 +131,10 @@ mod tests {
             duration_token(Duration::with_dots(DurationType::Half, 2)),
             "2.."
         );
-        assert_eq!(duration_token(Duration::new(DurationType::Breve)), "\\breve");
+        assert_eq!(
+            duration_token(Duration::new(DurationType::Breve)),
+            "\\breve"
+        );
         assert_eq!(duration_token(Duration::measure()), "1");
     }
 

@@ -31,7 +31,7 @@
 
 use mscz2xml::model::{HairpinType, OttavaType, Spanner, SpannerType};
 
-use crate::event::{Event, after, before};
+use crate::event::{after, before, Event};
 use crate::text;
 
 /// Événements LilyPond d'un spanner.
@@ -48,11 +48,7 @@ pub(crate) fn events(spanner: &Spanner, number: usize) -> Vec<Event> {
                 after::SLUR_START,
                 format!("\\={number}("),
             ),
-            Event::new(
-                spanner.end.tick,
-                after::SLUR_STOP,
-                format!("\\={number})"),
-            ),
+            Event::new(spanner.end.tick, after::SLUR_STOP, format!("\\={number})")),
         ],
         SpannerType::Hairpin(kind) => {
             let start = match (kind, spanner.hairpin.as_ref()) {
@@ -77,7 +73,11 @@ pub(crate) fn events(spanner: &Spanner, number: usize) -> Vec<Event> {
                 OttavaType::FifteenthDown => -2,
             };
             vec![
-                Event::new(spanner.start.tick, before::OTTAVA, format!("\\ottava {shift}")),
+                Event::new(
+                    spanner.start.tick,
+                    before::OTTAVA,
+                    format!("\\ottava {shift}"),
+                ),
                 Event::new(spanner.end.tick, before::OTTAVA, "\\ottava 0"),
             ]
         }
@@ -140,7 +140,7 @@ pub(crate) fn is_staff_level(kind: &SpannerType) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{SpannerAnchor, Track};
+    use mscz2xml::model::{SpannerAnchor, Tick, Track};
 
     fn spanner(kind: SpannerType) -> Spanner {
         Spanner::new(
@@ -152,12 +152,12 @@ mod tests {
 
     #[test]
     fn liaison_et_soufflet() {
-        let events = events(&spanner(SpannerType::Slur), 1);
-        assert_eq!(events[0].text, "\\=1(");
-        assert_eq!(events[1].text, "\\=1)");
-        let events = events(&spanner(SpannerType::Hairpin(HairpinType::Crescendo)), 1);
-        assert_eq!(events[0].text, "\\<");
-        assert_eq!(events[1].text, "\\!");
+        let slur = events(&spanner(SpannerType::Slur), 1);
+        assert_eq!(slur[0].text, "\\=1(");
+        assert_eq!(slur[1].text, "\\=1)");
+        let hairpin = events(&spanner(SpannerType::Hairpin(HairpinType::Crescendo)), 1);
+        assert_eq!(hairpin[0].text, "\\<");
+        assert_eq!(hairpin[1].text, "\\!");
     }
 
     #[test]

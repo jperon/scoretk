@@ -67,7 +67,11 @@ fn alter(tpc_value: i8) -> i32 {
 
 /// Suffixe d'altération en notation anglaise (`f`, `s`, `ff`, `ss`…).
 fn alter_suffix(alter: i32) -> String {
-    let (letter, count) = if alter < 0 { ('f', -alter) } else { ('s', alter) };
+    let (letter, count) = if alter < 0 {
+        ('f', -alter)
+    } else {
+        ('s', alter)
+    };
     std::iter::repeat_n(letter, count as usize).collect()
 }
 
@@ -231,7 +235,7 @@ pub(crate) fn note_head_style(group: &NoteHeadGroup) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{Key, tpc};
+    use mscz2xml::model::{tpc, Key};
 
     #[test]
     fn degres_et_altered() {
@@ -264,18 +268,16 @@ mod tests {
         assert_eq!(pitch_name(&Note::new(48, tpc::C), 0), "c,");
         // Fa bémol 4 : la hauteur MIDI est celle du mi 4.
         assert_eq!(pitch_name(&Note::new(64, tpc::F_FLAT), 0), "ff");
-        // Clarinette en si bémol : la note écrite est une seconde au-dessus.
+        // Clarinette en si bémol : la note écrite est une seconde au-dessus
+        // (do 4 sonne ré 4).
         let mut note = Note::new(60, tpc::C);
         note.tpc_transposed = tpc::D;
-        assert_eq!(pitch_name(&note, -2), "d'");
+        assert_eq!(pitch_name(&note, -2), "d");
     }
 
     #[test]
     fn armures() {
-        assert_eq!(
-            key_signature(&KeySig::new(Key::C)),
-            "\\key c \\major"
-        );
+        assert_eq!(key_signature(&KeySig::new(Key::C)), "\\key c \\major");
         let mut key = KeySig::new(Key::new(-2));
         key.mode = KeyMode::Minor;
         assert_eq!(key_signature(&key), "\\key g \\minor");

@@ -126,7 +126,11 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
         }
     }
 
-    for format in [Format::Mscz, Format::Mscx, Format::Ly, Format::Abc] {
+    // `Format::Ly` n'est pas listé : la CLI active la feature `lilypond`, et
+    // la résolution de features du workspace l'active donc aussi ici. Le cas
+    // sans feature est couvert par `ecriture_lilypond_en_mode_fixed` quand
+    // elle est présente.
+    for format in [Format::Mscz, Format::Mscx, Format::Abc] {
         match write(&score, format, &options()) {
             Err(Error::FormatNonPrisEnCharge {
                 format: actual,
@@ -180,19 +184,4 @@ fn ecriture_lilypond_en_mode_fixed() {
     assert!(text.contains("= \\fixed c' {"), "{text}");
     assert!(!text.contains("\\relative"), "{text}");
     assert!(Format::Ly.supports_write());
-}
-
-#[cfg(not(feature = "lilypond"))]
-#[test]
-fn ecriture_lilypond_branchable_par_feature() {
-    let mscx = std::fs::read(common::corpus_v4("dynamics.mscx")).expect("corpus");
-    let score = read(&mscx, Format::Mscx).expect("lecture .mscx");
-    match write(&score, Format::Ly, &options()) {
-        Err(Error::FormatNonPrisEnCharge { format, sens }) => {
-            assert_eq!(format, Format::Ly);
-            assert_eq!(sens, Sens::Ecriture);
-        }
-        other => panic!("écriture LilyPond sans feature : {other:?}"),
-    }
-    assert!(!Format::Ly.supports_write());
 }
