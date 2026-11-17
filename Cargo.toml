@@ -6,8 +6,10 @@ members = ["crates/mscz2xml", "crates/mscz2xml-cli", "crates/mscz2xml-wasm"]
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-only"
-authors = ["mscz2xml contributors"]
+authors = ["les auteurs de scoretk"]
 description = "Portage Rust de l'export MusicXML de MuseScore"
+repository = "https://github.com/jperon/scoretk"
+homepage = "https://github.com/jperon/scoretk"
 
 [workspace.dependencies]
 zip = { version = "2.6.1", default-features = false, features = ["deflate"] }

@@ -1,5 +1,5 @@
 {
-  description = "mscz2xml — conversion MuseScore (.mscz) vers MusicXML : bibliothèque portable (wasm32, Android, iOS) et CLI";
+  description = "scoretk — boîte à outils de conversion de partitions (MuseScore, MusicXML, LilyPond, ABC, MIDI) ; premier convertisseur : mscz2xml (MuseScore → MusicXML), bibliothèque portable (wasm32, Android, iOS) et CLI";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -123,10 +123,14 @@
         # `package.json` généré depuis la version du workspace : pas de
         # deuxième numéro de version à maintenir.
         wasmPackageJson = pkgs.writeText "mscz2xml-package.json" (builtins.toJSON {
-          name = "mscz2xml";
+          name = "scoretk";
           inherit version;
           description = "Conversion MuseScore (.mscz/.mscx) vers MusicXML, dans le navigateur (WebAssembly)";
           license = "GPL-3.0-only";
+          repository = {
+            type = "git";
+            url = "https://github.com/jperon/scoretk";
+          };
           type = "module";
           main = "./esm/mscz2xml_wasm.js";
           types = "./esm/mscz2xml_wasm.d.ts";

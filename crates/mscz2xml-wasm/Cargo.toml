@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 description.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [lib]
 # cdylib : le .wasm consommé par wasm-bindgen ; rlib : pour les tests hôte
