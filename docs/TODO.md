@@ -10,7 +10,7 @@ cinq formats de partition ; **mscz2xml** en est le premier convertisseur
 |---|---|---|
 | MuseScore (`.mscz` / `.mscx`, 3.x et 4.x) | fait | fait (`scoretk-mscx`) |
 | MusicXML (`.musicxml` / `.mxl`) | fait (noyau, cf. `docs/agents/musicxml-import.md`) | fait |
-| LilyPond (`.ly`) | à faire | fait (`scoretk-lilypond`, t36) |
+| LilyPond (`.ly`) | fait (sous-ensemble, t40) | fait (`scoretk-lilypond`, t36) |
 | ABC (`.abc`) | à faire | à faire |
 | MIDI (`.mid`) | à faire | fait (`scoretk-midi`) |
 
@@ -25,7 +25,7 @@ ly, abc et midi.
 | `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : `.mscz`/`.mscx` → MusicXML/`.mxl`/`.ly`, MusicXML → modèle ; features `musicxml-import`, `midi`, `lilypond` et `mscx` branchées |
 | `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | en cours (t34, t37) : noyau 26/30 v3 et 26/26 v4, parité complète 23/30 et 21/26 (écarts dans `docs/agents/musicxml-import.md`) |
 | `scoretk-midi` | écrivain MIDI depuis le modèle pivot | en cours (t35) |
-| `scoretk-lilypond` | écrivain LilyPond depuis le modèle pivot | fait (t36) : 56/56 fichiers du corpus compilent |
+| `scoretk-lilypond` | écrivain et lecteur LilyPond depuis/vers le modèle pivot | fait (t36, t40) : 56/56 fichiers compilent, aller-retour noyau 24/56 (t40) |
 | `scoretk-mscx` | écrivain MuseScore (`.mscx` 4.x, `.mscz`) | fait (t38) : aller-retour identique sur tout le corpus |
 
 MIDI est à part : c'est un format de performance, pas de notation. L'écriture
@@ -52,17 +52,22 @@ Pistes :
   - MusicXML ↔ abc : `xml2abc` et `abc2xml` (W. Vree).
   - MIDI : l'export MIDI de MuseScore (`src/importexport/midi`, `engraving/compat/midi`), son import MIDI (quantification), et la crate Rust `midly` (pure Rust, `no_std`) pour le format de fichier.
   - Vérifier les licences de chacune avant tout portage.
-- **LilyPond.** L'écrivain vient avant le lecteur : ses sorties servent de
-  corpus d'aller-retour au lecteur. L'écrivain est fait (`scoretk-lilypond`,
-  feature `lilypond` de la façade) ; voir `docs/agents/lilypond.md`.
+- **LilyPond.** Écrivain et lecteur sont faits (`scoretk-lilypond`, features
+  `lilypond` et `lilypond-import` de la façade) ; voir
+  `docs/agents/lilypond.md`.
   - Écrivain : les voix sont notées en mode **`\fixed`**, jamais `\relative`,
     car ce mode résiste mieux aux erreurs de copier-coller et assimilées.
-  - Lecteur : on ne peut pas intégrer le parseur de LilyPond, qui dépend de
-    Guile Scheme. On porte en Rust la grammaire de `parser.yy` et `lexer.ll`
-    pour un sous-ensemble : `\relative`, `\fixed`, `\transpose`, `\tuplet`,
-    `\repeat`, `\key`, `\time`, `\clef`, `\partial`, `\language`, paroles et
-    `\markup` simple. Le Scheme arbitraire est ignoré avec un avertissement,
-    sur le modèle de python-ly (`ly.music`).
+  - Lecteur (t40) : le parseur de LilyPond dépend de Guile Scheme ; on porte en
+    Rust la grammaire de `parser.yy` et `lexer.ll` pour un sous-ensemble
+    (`\relative`, `\fixed`, `\transpose`, `\tuplet`, `\repeat`, `\key`,
+    `\time`, `\clef`, `\partial`, `\language`, paroles, `\markup` simple).
+    Le Scheme arbitraire et les commandes inconnues sont ignorés avec un
+    avertissement collecté, sur le modèle de python-ly (`ly.music`).
+    Aller-retour du corpus : 24/56 fichiers identiques au noyau musical,
+    3/56 à parité complète ; les écarts restants viennent surtout
+    d'informations que l'écrivain ne peut pas représenter (sous-types de
+    mesure, endings, canaux MIDI, accords chiffrés). Détail et procédure de
+    mise à niveau : `docs/agents/lilypond.md`.
 - **Contraintes inchangées.** La bibliothèque reste portable : wasm pour la PWA
   `../cantus`, Android, sans fs ni threads, et sans dépendance C.
 - **Calendrier.** À entreprendre une fois la parité mscz → MusicXML atteinte.
