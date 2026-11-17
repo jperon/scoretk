@@ -41,7 +41,7 @@
 //! | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` | oui |
 //! | MusicXML `.mxl` | non | oui |
 //! | LilyPond `.ly` | feature `lilypond-import` | feature `lilypond` |
-//! | ABC | non | non |
+//! | ABC `.abc` | feature `abc` | feature `abc` |
 //! | MIDI | feature `midi` | feature `midi` |
 //!
 //! Un format sans convertisseur dans le sens demandé renvoie
@@ -99,7 +99,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Lit un fichier en mémoire et renvoie le modèle pivot.
 ///
 /// `mscz` et `mscx` passent par le lecteur de `mscz2xml`. MusicXML est lu si
-/// la feature `musicxml-import` est active ; les autres formats renvoient
+/// la feature `musicxml-import` est active, LilyPond avec `lilypond-import`,
+/// ABC avec `abc` ; les autres formats renvoient
 /// [`Error::FormatNonPrisEnCharge`].
 pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
     match format {
@@ -109,8 +110,9 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
         }
         Format::MusicXml => hooks::read_musicxml(bytes),
         Format::Ly => hooks::read_lilypond(bytes),
+        Format::Abc => hooks::read_abc(bytes),
         Format::Midi => hooks::read_midi(bytes),
-        Format::Mxl | Format::Abc => Err(Error::FormatNonPrisEnCharge {
+        Format::Mxl => Err(Error::FormatNonPrisEnCharge {
             format,
             sens: Sens::Lecture,
         }),
@@ -123,8 +125,9 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
 /// ZIP (`META-INF/container.xml` + `score.xml`), identique à `saveMxl` de
 /// MuseScore. MuseScore (`.mscx`/`.mscz`) passe par `scoretk-mscx` si la
 /// feature `mscx` est active, MIDI par `scoretk-midi` si la feature `midi`
-/// l'est, LilyPond par `scoretk-lilypond` si la feature `lilypond` l'est ; les
-/// autres formats renvoient [`Error::FormatNonPrisEnCharge`].
+/// l'est, LilyPond par `scoretk-lilypond` si la feature `lilypond` l'est, ABC
+/// par `scoretk-abc` si la feature `abc` l'est ; les autres formats renvoient
+/// [`Error::FormatNonPrisEnCharge`].
 pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>> {
     match format {
         Format::MusicXml => Ok(mscz2xml::export::export_musicxml_with(
@@ -140,9 +143,6 @@ pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>
         Format::Mscx => hooks::write_mscx(score),
         Format::Mscz => hooks::write_mscz(score),
         Format::Ly => hooks::write_lilypond(score),
-        Format::Abc => Err(Error::FormatNonPrisEnCharge {
-            format,
-            sens: Sens::Ecriture,
-        }),
+        Format::Abc => hooks::write_abc(score),
     }
 }

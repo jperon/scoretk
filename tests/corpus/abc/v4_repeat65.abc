@@ -1,0 +1,13 @@
+%abc-2.1
+X:1
+T:Repeat Test
+M:4/4
+L:1/8
+Q:" = 400" 1/4=400
+K:C clef=treble
+V:1 name="Piano" clef=treble
+"^ = 400"C8 |
+|: D8 |
+[1,2 E8 |
+F8 :|
+[3 G8 |]

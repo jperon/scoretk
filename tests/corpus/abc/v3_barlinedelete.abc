@@ -1,0 +1,19 @@
+%abc-2.1
+X:1
+T:Title
+C:Composer
+M:4/4
+L:1/8
+Q:"Tempo text" 1/4=120
+K:C clef=treble
+V:1 name="Piano" clef=treble
+"^Tempo text"c2e2g2e2 ||
+c2G2c2e2 |
+"^1"g2z2z4 |
+Z |
+Z ||
+"^Staff text"!fermata!Z |
+Z |
+"^System text"Z |
+[M:3/4] Z |
+Z |]

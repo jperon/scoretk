@@ -75,16 +75,17 @@ fn list_formats() {
     assert!(text.contains("LECTURE"));
     assert!(text.contains("ÉCRITURE"));
 
-    // État réel des features activées par la CLI : MusicXML et MIDI se
-    // lisent, MIDI s'écrit ; `.mxl`, LilyPond et ABC restent sans lecteur.
+    // État réel des features activées par la CLI : MusicXML, LilyPond, ABC
+    // et MIDI se lisent ; MIDI, LilyPond et ABC s'écrivent ; seul `.mxl`
+    // reste sans lecteur.
     let oui = ("oui".to_owned(), "oui".to_owned());
     let non = "non".to_owned();
     assert_eq!(sens_format(&text, "mscz"), oui, "{text}");
     assert_eq!(sens_format(&text, "musicxml"), oui, "{text}");
     assert_eq!(sens_format(&text, "midi"), oui, "{text}");
     assert_eq!(sens_format(&text, "mxl"), (non.clone(), "oui".to_owned()));
-    assert_eq!(sens_format(&text, "ly"), (non.clone(), "oui".to_owned()));
-    assert_eq!(sens_format(&text, "abc"), (non.clone(), non), "{text}");
+    assert_eq!(sens_format(&text, "ly"), oui, "{text}");
+    assert_eq!(sens_format(&text, "abc"), oui, "{text}");
 }
 
 #[test]
@@ -217,8 +218,11 @@ fn extension_de_sortie_inconnue_echoue() {
 
 #[test]
 fn format_non_branche_echoue_explicitement() {
+    // `.mxl` n'a pas de lecteur dans la façade : la conversion doit échouer
+    // explicitement au lieu de produire une sortie vide.
     let output = binary()
         .arg(corpus("dynamics.mscx"))
+        .args(["--from", "mxl"])
         .arg("-o")
         .arg(Path::new("/tmp/scoretk-sortie.abc"))
         .output()

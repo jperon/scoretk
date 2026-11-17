@@ -1,0 +1,25 @@
+%abc-2.1
+X:1
+T:Invisible elements test
+M:4/4
+L:1/8
+Q:" = 80" 1/4=80
+K:C clef=treble
+V:1 name="Piano" clef=treble
+!fermata!C2!fermata!C2!staccato!D2D2 |
+"^Visible text"C2C2C2C2 |
+"^ = 80"D2D2D2D2 |
+!invertedturn!C2!turn!C2C2C2 |
+!p!!<(!E2E2E2!f!!<)!E2 |
+E2E2E2E2 |
+(C2D2E2F2) |
+(C2D2E2F2) |
+f2f2f2f2 |
+f2f2f2f2 |
+C2A2C2A2 |
+!arpeggio![CEG]2[CEG]2z2!4!A2- |
+A2z2z2A2- |
+A2z2z2!4!A2- |
+A2z2z4 |
+[M:3/4] [K:E clef=treble] Z |
+[M:4/4] [K:Ab clef=treble] Z |]
