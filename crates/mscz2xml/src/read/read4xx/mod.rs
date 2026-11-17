@@ -1585,7 +1585,7 @@ impl Reader {
         let base_len = Duration::with_dots(base_type, base_dots).ticks();
         // `TRead::read(Tuplet*)` : ticks = baseLen * ratio.denominator(), avec
         // le ratio **non réduit** (`normalNotes`).
-        let len = base_len * Fraction::from_integer(i64::from(normal.max(1)));
+        let len = base_len * Fraction::from_integer(normal.max(1));
 
         let mut tuplet = Tuplet::new(ratio, base_len, tick, len);
         tuplet.placement =

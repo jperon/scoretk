@@ -99,16 +99,6 @@ impl Sig {
         self.d_unit_ticks() >> level
     }
 
-    fn max_subbeat_level(self) -> i64 {
-        let mut level = 0;
-        let mut ticks = self.d_unit_ticks();
-        while ticks % 2 == 0 {
-            ticks /= 2;
-            level += 1;
-        }
-        level
-    }
-
     fn ticks_past_d_unit(self, rtick: i64) -> i64 {
         rtick % self.d_unit_ticks()
     }

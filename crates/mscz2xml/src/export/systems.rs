@@ -69,8 +69,8 @@ impl Systems {
             // `SystemLayout::hideEmptyStaves` : le premier système n'est pas
             // concerné quand `dontHideStavesInFirstSystem` est actif.
             let mut begin = 0usize;
-            for index in 1..=count {
-                if index < count && !starts[index] {
+            for (index, start) in starts.iter().enumerate().skip(1) {
+                if !*start {
                     continue;
                 }
                 let first_system = begin == 0;
@@ -79,6 +79,12 @@ impl Systems {
                     hidden[begin] = hidden_staves(score, begin, index);
                 }
                 begin = index;
+            }
+            // Dernier système : jusqu'à la fin de la partition.
+            let first_system = begin == 0;
+            let hide = !(first_system && score.style.dont_hide_staves_in_first_system);
+            if hide {
+                hidden[begin] = hidden_staves(score, begin, count);
             }
         }
 

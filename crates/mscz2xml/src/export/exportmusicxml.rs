@@ -378,11 +378,6 @@ impl<'a> Context<'a> {
         self.options.concert_pitch
     }
 
-    /// Vrai si la mesure termine un système explicite.
-    pub(crate) fn ends_system(&self, measure_index: usize) -> bool {
-        self.systems.ends_system(measure_index)
-    }
-
     /// Vrai si une armure de courtoisie impose une barre double
     /// (`createEndBarLines`).
     pub(crate) fn courtesy_key_bar_line(&self, measure_index: usize) -> bool {
