@@ -40,6 +40,7 @@
 //! `TODO(parité)` quand l'export MusicXML en dépendra.
 
 mod dom;
+mod figures;
 mod names;
 mod notations;
 mod nuances;
@@ -178,6 +179,8 @@ struct Reader {
     /// Moitiés d'ottavas lues mais pas encore appariées.
     ottava_halves: Vec<ottava::Half>,
     pedal_halves: Vec<pedals::Half>,
+    /// Mesures à répéter, développées en fin de lecture.
+    measure_repeats: Vec<crate::read::measure_repeat::MeasureRepeat>,
     /// Vrai si le style active les silences multi-mesures
     /// (`<createMultiMeasureRests>`).
     create_multi_measure_rests: bool,
@@ -203,6 +206,7 @@ impl Reader {
             text_lines: Vec::new(),
             ottava_halves: Vec::new(),
             pedal_halves: Vec::new(),
+            measure_repeats: Vec::new(),
             create_multi_measure_rests: false,
         }
     }
@@ -258,6 +262,9 @@ impl Reader {
         }
 
         self.assign_multiple_rests();
+        for repeat in std::mem::take(&mut self.measure_repeats) {
+            crate::read::measure_repeat::expand(&mut self.score, &repeat);
+        }
         self.resolve_ties();
         self.resolve_ties();
         repeats::resolve(self);
@@ -557,7 +564,11 @@ impl Reader {
                     // de page est au-dessous du système précédent.
                     if staff_index == 0 {
                         let below = measure_index > 0 && has_page_break(child);
-                        if let Some(text) = textlines::read_tbox(child, measure_index, below) {
+                        if let Some(mut text) = textlines::read_tbox(child, measure_index, below) {
+                            if below {
+                                text.measure =
+                                    crate::read::mmrest_group_start(&self.score.measures, text.measure);
+                            }
                             self.score.add_tbox_text(text);
                         }
                     }
@@ -739,7 +750,17 @@ impl Reader {
                         .repeat_marks
                         .push(crate::model::RepeatMark::Jump(jump));
                 }
-                // TODO(parité): <LayoutBreak>, <stretch>, <noOffset>,
+                // `<LayoutBreak><subtype>line|page</subtype>` : la mesure
+                // finit un système (voir `line_break`).
+                "LayoutBreak" => {
+                    if matches!(
+                        child.child("subtype").map(Element::text),
+                        Some("line" | "page")
+                    ) {
+                        self.score.measures[model_index].line_break = true;
+                    }
+                }
+                // TODO(parité): <stretch>, <noOffset>,
                 // <measureRepeatCount>, <MMRestRange>, <visible>.
                 _ => {}
             }
@@ -1156,6 +1177,30 @@ impl Reader {
                     let annotation = notations::read_fermata(child);
                     self.add_annotation(measure_index, tick, track, annotation);
                 }
+                "FiguredBass" => {
+                    let bass = figures::read_figured_bass(child);
+                    self.add_annotation(measure_index, tick, track, Annotation::FiguredBass(bass));
+                }
+                "TremoloBar" => {
+                    let bar = figures::read_tremolo_bar(child);
+                    self.add_annotation(measure_index, tick, track, Annotation::TremoloBar(bar));
+                }
+                "MeasureRepeat" | "RepeatMeasure" => {
+                    // `TRead::read(MeasureRepeat*)` : `<subtype>` porte le
+                    // nombre de mesures répétées.
+                    let count = child
+                        .child("subtype")
+                        .and_then(Element::int)
+                        .and_then(|value| u16::try_from(value.clamp(1, i64::from(u16::MAX))).ok())
+                        .unwrap_or(1);
+                    self.measure_repeats
+                        .push(crate::read::measure_repeat::MeasureRepeat {
+                            measure: measure_index,
+                            staff: staff_index,
+                            count,
+                        });
+                    tick += self.score.measures[measure_index].len;
+                }
                 // TODO(parité): <Spanner> autres que Tie (Slur, HairPin, Ottava,
                 // TextLine, Trill, Pedal, LetRing…) : à modéliser dans
                 // `Score::spanners`. Les liaisons de prolongation sont
@@ -1175,9 +1220,8 @@ impl Reader {
                     }
                 }
                 // TODO(parité): <Beam>, <Ambitus>, <Segment>, <MeasureRepeat>,
-                // <Symbol>, <Image>, <FretDiagram>, <TremoloBar>, <StaffState>,
-                // <PlayTechAnnotation>, <Sticking>, <FiguredBass>,
-                // <HarpPedalDiagram>.
+                // <Symbol>, <Image>, <FretDiagram>, <StaffState>,
+                // <PlayTechAnnotation>, <Sticking>, <HarpPedalDiagram>.
                 _ => {}
             }
         }

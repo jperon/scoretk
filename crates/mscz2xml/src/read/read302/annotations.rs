@@ -28,8 +28,9 @@ use super::tables;
 use super::xml::Node;
 use super::Reader;
 use crate::model::{
-    text_style_defaults, tpc, Annotation, Harmony, InstrumentChange, Placement, RehearsalFrame,
-    RehearsalMark, RichText, StaffText, SystemText, Tempo, TempoKind, TextFormat,
+    text_style_defaults, tpc, Annotation, FiguredBass, FiguredBassContLine, FiguredBassItem,
+    FiguredBassModifier, Harmony, InstrumentChange, Placement, RehearsalFrame, RehearsalMark,
+    RichText, StaffText, SystemText, Tempo, TempoKind, TextFormat, TremoloBar, TremoloBarPoint,
 };
 
 /// Lit une annotation de segment, ou `None` si l'élément n'en est pas une.
@@ -103,6 +104,8 @@ pub(crate) fn read(reader: &Reader, node: &Node) -> Option<Annotation> {
         }),
         "Harmony" => Annotation::Harmony(read_harmony(node, placement)),
         "Fermata" => super::notations::read_fermata(node),
+        "FiguredBass" => Annotation::FiguredBass(read_figured_bass(node)),
+        "TremoloBar" => Annotation::TremoloBar(read_tremolo_bar(node)),
         "Expression" => Annotation::Expression(StaffText {
             text: rich_text(node, &style_format),
             placement: placement.unwrap_or(style_placement),
@@ -174,6 +177,84 @@ pub(super) fn rich_text(node: &Node, style_format: &TextFormat) -> RichText {
     node.child("text")
         .map(|child| RichText::from_markup_with(&child.inner_markup(), &format))
         .unwrap_or_default()
+}
+
+/// Lit un `<FiguredBass>` (`TRead::read(FiguredBass*)`).
+fn read_figured_bass(node: &Node) -> FiguredBass {
+    let mut bass = FiguredBass::new();
+    for child in node.children() {
+        match child.name() {
+            "ticks" => {
+                bass.ticks = child.fraction().unwrap_or_default();
+            }
+            "FiguredBassItem" => {
+                let mut item = FiguredBassItem::default();
+                for field in child.children() {
+                    match field.name() {
+                        "prefix" => {
+                            item.prefix = Some(FiguredBassModifier::from_mcsx(
+                                field.int_text().unwrap_or(0),
+                            ));
+                        }
+                        "digit" => {
+                            item.digit = field
+                                .int_text()
+                                .and_then(|value| u8::try_from(value.clamp(0, 9)).ok());
+                        }
+                        "suffix" => {
+                            item.suffix = Some(FiguredBassModifier::from_mcsx(
+                                field.int_text().unwrap_or(0),
+                            ));
+                        }
+                        "continuationLine" => {
+                            item.cont_line =
+                                FiguredBassContLine::from_mcsx(field.int_text().unwrap_or(0));
+                        }
+                        _ => {}
+                    }
+                }
+                bass.items.push(item);
+            }
+            _ => {}
+        }
+    }
+    bass.place_above = matches!(
+        node.child("placement").map(Node::trimmed_text).as_deref(),
+        Some("above")
+    );
+    bass.parentheses = node
+        .child("parentheses")
+        .and_then(Node::int_text)
+        .is_some_and(|value| value != 0);
+    bass.visible = visible(node);
+    bass
+}
+
+/// Lit un `<TremoloBar>` (`TRead::read(TremoloBar*)`).
+fn read_tremolo_bar(node: &Node) -> TremoloBar {
+    let mut points = Vec::new();
+    for child in node.children_named("point") {
+        points.push(TremoloBarPoint {
+            time: child.attr("time").and_then(|value| value.parse().ok()).unwrap_or(0),
+            pitch: child
+                .attr("pitch")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0),
+        });
+    }
+    let mut bar = TremoloBar::from_points(points);
+    if let Some(kind) = node.child("type").and_then(Node::int_text) {
+        bar.kind = match kind {
+            1 => crate::model::TremoloBarType::Dive,
+            2 => crate::model::TremoloBarType::ReleaseUp,
+            3 => crate::model::TremoloBarType::InvertedDip,
+            4 => crate::model::TremoloBarType::Return,
+            5 => crate::model::TremoloBarType::ReleaseDown,
+            6 => crate::model::TremoloBarType::Custom,
+            _ => bar.kind,
+        };
+    }
+    bar
 }
 
 /// Vrai si l'annotation n'est pas marquée `<visible>0</visible>`.

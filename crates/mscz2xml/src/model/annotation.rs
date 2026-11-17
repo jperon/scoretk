@@ -36,9 +36,11 @@
 //! Seuls les champs utiles à l'export MusicXML sont conservés ; les variantes
 //! peuvent être enrichies sans changer la structure du modèle.
 
+use super::figured_bass::FiguredBass;
 use super::notation::Fermata;
 use super::part::Instrument;
 use super::text::{RichText, TextFormat};
+use super::tremolo_bar::TremoloBar;
 
 /// Placement vertical d'un élément.
 ///
@@ -97,6 +99,10 @@ pub enum Annotation {
     Harmony(Harmony),
     /// Point d'orgue (`Fermata` dans `engraving/dom/fermata.h`).
     Fermata(Fermata),
+    /// Chiffrage figuré (`FiguredBass` dans `engraving/dom/figuredbass.h`).
+    FiguredBass(FiguredBass),
+    /// Barre de vibrato (`TremoloBar` dans `engraving/dom/tremolobar.h`).
+    TremoloBar(TremoloBar),
     /// Annotation non encore modélisée.
     Other {
         /// Nom du type MuseScore (par exemple `"Fermata"`).
@@ -120,6 +126,14 @@ impl Annotation {
             Self::InstrumentChange(value) => value.placement,
             Self::Harmony(value) => value.placement,
             Self::Fermata(value) => value.placement,
+            Self::FiguredBass(value) => {
+                if value.place_above {
+                    Placement::Above
+                } else {
+                    Placement::Below
+                }
+            }
+            Self::TremoloBar(_) => Placement::Above,
             Self::Other { placement, .. } => *placement,
         }
     }
@@ -133,7 +147,9 @@ impl Annotation {
             Self::Tempo(value) => value.visible,
             Self::RehearsalMark(value) => value.visible,
             Self::InstrumentChange(value) => value.visible,
-            Self::Harmony(_) | Self::Fermata(_) | Self::Other { .. } => true,
+            Self::Fermata(_) | Self::TremoloBar(_) => true,
+            Self::FiguredBass(value) => value.visible,
+            Self::Harmony(_) | Self::Other { .. } => true,
         }
     }
 
@@ -147,7 +163,7 @@ impl Annotation {
             Self::RehearsalMark(value) => value.text.plain(),
             Self::InstrumentChange(value) => value.text.plain(),
             Self::Harmony(value) => &value.text,
-            Self::Fermata(_) => "",
+            Self::Fermata(_) | Self::FiguredBass(_) | Self::TremoloBar(_) => "",
             Self::Other { text, .. } => text,
         }
     }

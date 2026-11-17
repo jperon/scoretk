@@ -32,7 +32,7 @@
 
 use crate::model::{
     Annotation, BarLine, BarLineType, Fermata, Jump, Marker, MarkerType, Measure, Placement,
-    RepeatMark, Score, Spanner, SpannerType, StaffId, Track,
+    RepeatMark, Score, SegmentItem, Spanner, SpannerType, StaffId, Track,
 };
 
 use super::exportmusicxml::{Context, Out};
@@ -133,6 +133,71 @@ fn ending(out: &mut Out, volta: &Spanner, left: bool) {
     }
 }
 
+/// Écrit `<measure-style><measure-repeat>` (`measureRepeat`).
+///
+/// Une mesure répétée ouvre le groupe quand la précédente ne le faisait pas
+/// (ou avec un autre nombre de mesures) ; la première mesure qui n'est plus
+/// répétée ferme le groupe. Le groupe est propre à une portée de la partie,
+/// d'où l'attribut `number` quand la partie en a plusieurs.
+pub(super) fn measure_style(
+    context: &Context<'_>,
+    out: &mut Out,
+    measure: &Measure,
+    measure_index: usize,
+    part_index: usize,
+) {
+    let Some(part) = context.score.parts.get(part_index) else {
+        return;
+    };
+    let previous = measure_index
+        .checked_sub(1)
+        .and_then(|index| context.score.measures.get(index))
+        .and_then(|previous| previous.measure_repeat);
+    let Some(mark) = measure.measure_repeat else {
+        // Sortie d'un groupe : la mesure précédente répétait sur une portée de
+        // cette partie.
+        if previous.is_some_and(|mark| part.staves.contains(&mark.staff)) {
+            write_measure_repeat(out, part.staves.len(), Some(0), None);
+        }
+        return;
+    };
+    let Some(position) = part.staves.iter().position(|staff| *staff == mark.staff) else {
+        return;
+    };
+    if previous.is_some_and(|previous| previous.staff == mark.staff && previous.count == mark.count) {
+        return;
+    }
+    write_measure_repeat(out, part.staves.len(), Some(position + 1), Some(mark.count));
+}
+
+/// Écrit un `<attributes><measure-style><measure-repeat>` (ou sa fin).
+fn write_measure_repeat(out: &mut Out, staves: usize, position: Option<usize>, count: Option<u16>) {
+    out.attr(true);
+    let number = position.filter(|_| staves > 1).map(|position| position.to_string());
+    let attributes: Vec<(&str, &str)> = number
+        .as_deref()
+        .map(|number| vec![("number", number)])
+        .unwrap_or_default();
+    out.xml.start_element("measure-style", &attributes);
+    match count {
+        Some(count) => {
+            let count_text = count.to_string();
+            if count > 1 {
+                out.xml.tag_with(
+                    "measure-repeat",
+                    &[("slashes", &count_text), ("type", "start")],
+                    &count_text,
+                );
+            } else {
+                out.xml
+                    .tag_with("measure-repeat", &[("type", "start")], &count_text);
+            }
+        }
+        None => out.xml.tag_with("measure-repeat", &[("type", "stop")], ""),
+    }
+    out.xml.end_element();
+}
+
 /// Écrit la barre de gauche (`barlineLeft`).
 pub(super) fn barline_left(
     context: &Context<'_>,
@@ -175,11 +240,21 @@ pub(super) fn barline_middle(out: &mut Out, bar_line: &BarLine) {
 ///
 /// MuseScore termine toujours la dernière mesure du score par une barre
 /// finale (`light-heavy`), même quand le `.mscx` ne contient aucun `<BarLine>`.
+/// Une mesure qui finit un système par un `<LayoutBreak>` explicite et dont la
+/// suivante change d'armure ou de métrique reçoit en outre la barre de
+/// courtoisie `light-light` que la mise en page de MuseScore ajoute à cet
+/// endroit (`barlineRight` écrit alors le `BarLine` généré de type `DOUBLE`).
 fn end_bar_line_type(
     context: &Context<'_>,
     measure: &Measure,
     measure_index: usize,
 ) -> BarLineType {
+    if measure.end_bar_line == BarLineType::Normal
+        && measure.line_break
+        && next_measure_starts_with_signature(context.score, measure_index)
+    {
+        return BarLineType::Double;
+    }
     if measure.end_bar_line == BarLineType::Normal
         && measure_index + 1 == context.score.measures.len()
         && end_bar_line(measure).is_none()
@@ -188,6 +263,26 @@ fn end_bar_line_type(
     } else {
         measure.end_bar_line
     }
+}
+
+/// Vrai si la mesure suivante ouvre un système par un changement d'armure ou
+/// de métrique (`keysigTimesig` écrit alors `<key>`/`<time>`).
+///
+/// Un saut de section ne compte pas : MuseScore n'y ajoute pas de barre de
+/// courtoisie (`keysig_78216`).
+fn next_measure_starts_with_signature(score: &Score, measure_index: usize) -> bool {
+    let Some(next) = score.measures.get(measure_index + 1) else {
+        return false;
+    };
+    if next.section_break_before {
+        return false;
+    }
+    next.segments.iter().any(|segment| {
+        segment.tick == next.start_tick
+            && segment
+                .iter_elements()
+                .any(|(_, item)| matches!(item, SegmentItem::KeySig(_) | SegmentItem::TimeSig(_)))
+    })
 }
 
 /// Points d'orgue posés sur la barre de fin (`barlineHasFermata`).

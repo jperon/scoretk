@@ -74,6 +74,7 @@
 pub mod annotation;
 pub mod chord;
 pub mod duration;
+pub mod figured_bass;
 pub mod fraction;
 pub mod hairpin;
 pub mod ids;
@@ -88,6 +89,7 @@ pub mod segment;
 pub mod spanner;
 pub mod style;
 pub mod text;
+pub mod tremolo_bar;
 pub mod tuplet;
 
 pub use annotation::{
@@ -100,11 +102,14 @@ pub use chord::{
     GraceChord, GraceType, Rest, StemDirection,
 };
 pub use duration::{Duration, DurationType};
+pub use figured_bass::{
+    FiguredBass, FiguredBassContLine, FiguredBassItem, FiguredBassModifier,
+};
 pub use fraction::{Fraction, Tick};
 pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use lyrics::{Lyrics, LyricsSyllabic};
-pub use measure::Measure;
+pub use measure::{Measure, MeasureRepeatMark};
 pub use notation::{
     Arpeggio, ArpeggioType, ChordLineType, Fermata, FermataType, Fingering, Glissando,
     GlissandoType, LineStyle, Ornament, OrnamentAccidental, OrnamentType, Slur, SpannerNotation,
@@ -127,6 +132,7 @@ pub use text::{
     symbol_character, Credit, CreditJustify, CreditStyle, CreditValign, RichText, TboxText,
     TextFormat, TextFragment, DEFAULT_TEXT_FONT, DEFAULT_TEXT_SIZE, MUSICAL_TEXT_FONT,
 };
+pub use tremolo_bar::{TremoloBar, TremoloBarPoint, TremoloBarType};
 pub use tuplet::{Tuplet, TupletNumberType};
 
 #[cfg(test)]

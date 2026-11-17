@@ -218,8 +218,55 @@ pub(crate) fn fingering(xml: &mut XmlWriter, note: &Note, notations: &mut Notati
     }
 }
 
-/// Écrit l'arpège d'un accord sur une note (`arpeggiate`).
-#[allow(clippy::too_many_arguments)]
+/// Écrit la barre de vibrato d'une note (`writeGuitarBend`, partie
+/// `TremoloBar`).
+///
+/// MuseScore range la barre dans les annotations du segment de l'accord et
+/// l'écrit pour la note de même piste ; `bend-alter` reprend l'amplitude
+/// maximale de la courbe et `with-bar` le type reconnu.
+pub(crate) fn tremolo_bar(
+    xml: &mut XmlWriter,
+    measure: &Measure,
+    note: &Note,
+    tick: Tick,
+    track: Track,
+    notations: &mut Notations,
+) {
+    let Some(segment) = measure
+        .segments
+        .iter()
+        .find(|segment| segment.tick == tick && segment.kind.is_chord_rest_type())
+    else {
+        return;
+    };
+    for entry in &segment.annotations {
+        if entry.track != track {
+            continue;
+        }
+        let Annotation::TremoloBar(bar) = &entry.annotation else {
+            continue;
+        };
+        notations.tag_element(xml, Some("technical"), note.visible);
+        xml.start_element("bend", &[]);
+        xml.tag("bend-alter", &format_bend_alter(bar.bend_alter()));
+        xml.tag("with-bar", bar.kind.musicxml_name());
+        xml.end_element();
+    }
+}
+
+/// Formate une amplitude de bend comme `String::number(value, 2)` : deux
+/// décimales au plus, zéros de fin retirés.
+fn format_bend_alter(value: f64) -> String {
+    let text = format!("{value:.2}");
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    if text == "-0" {
+        "0".to_owned()
+    } else {
+        text.to_owned()
+    }
+}
+
+/// Écrit l'arpège d'un accord sur une note (`arpeggiate`).#[allow(clippy::too_many_arguments)]
 pub(crate) fn arpeggio(
     xml: &mut XmlWriter,
     state: &mut NotationsState,

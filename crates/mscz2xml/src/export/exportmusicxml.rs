@@ -54,6 +54,7 @@ use crate::model::{
 use crate::Result;
 
 use super::beams;
+use super::figured_bass;
 use super::harmony;
 use super::layout;
 use super::notations;
@@ -357,6 +358,8 @@ struct PartSpanners {
     stopped: Vec<usize>,
     /// Numéro du prochain instrument introduit (`I1` étant le principal).
     next_instrument: usize,
+    /// Chiffrages figurés en cours de prolongation (`FigBassMap`).
+    fig_bass: figured_bass::Pending,
 }
 
 impl<'a> Context<'a> {
@@ -770,6 +773,7 @@ impl<'a> Context<'a> {
                 started: Vec::new(),
                 stopped: Vec::new(),
                 next_instrument: 2,
+                fig_bass: figured_bass::Pending::default(),
             };
             out.xml.start_element("part", &[("id", &part_id)]);
 
@@ -842,8 +846,9 @@ impl<'a> Context<'a> {
             out.xml.tag("multiple-rest", &count.to_string());
             out.xml.end_element();
         }
-        // TODO(parité): <measure-style> des mesures répétées
-        // (`<measure-repeat>`), qui demande le compteur de `<RepeatMeasure>`.
+        // `measureStyle` : une mesure répétée ouvre un groupe
+        // `<measure-style><measure-repeat>`.
+        repeats::measure_style(self, out, measure, measure_index, part_index);
 
         repeats::repeat_at_measure_start(self, out, measure, part_index);
 
@@ -955,6 +960,17 @@ impl<'a> Context<'a> {
                     if annotation_track(segment, staff_id) == Some(track) {
                         self.harmonies(out, measure, segment, staff_id, track);
                         self.annotations(out, segment, staff_id, xml_staff);
+                        if let SegmentItem::ChordRest(chord_rest) = item {
+                            figured_bass::write(
+                                self,
+                                out,
+                                measure,
+                                segment,
+                                chord_rest,
+                                staff_id,
+                                &mut spanners.fig_bass,
+                            );
+                        }
                     }
                     // `spannerStart` : les directions de spanner suivent
                     // l'ordre des spanners, comme la `spannerMap` du C++.
@@ -1104,7 +1120,7 @@ impl<'a> Context<'a> {
     ///
     /// C'est la durée réelle divisée par l'étirement de la portée ; la valeur
     /// exportée dans `<duration>` reste [`Context::global_ticks`].
-    fn actual_ticks(
+    pub(crate) fn actual_ticks(
         &self,
         chord_rest: &ChordRest,
         measure: &Measure,
@@ -1613,6 +1629,14 @@ impl Context<'_> {
                 );
             }
             notations::fingering(&mut out.xml, note, &mut notations);
+            notations::tremolo_bar(
+                &mut out.xml,
+                measure,
+                note,
+                segment_tick,
+                track,
+                &mut notations,
+            );
             let last = index + 1 == chord.notes.len();
             notations::arpeggio(
                 &mut out.xml,
@@ -2172,6 +2196,10 @@ impl Context<'_> {
             let offset = out.duration_in_divisions(segment.tick - out.tick);
             match &entry.annotation {
                 Annotation::Harmony(_) => {}
+                // Les chiffrages figurés (`figuredBass`) et les barres de
+                // vibrato (`writeGuitarBend`) sont écrits avec l'accord, pas
+                // avec les annotations.
+                Annotation::FiguredBass(_) | Annotation::TremoloBar(_) => {}
                 Annotation::Dynamic(dynamic) => nuances::write_dynamic(out, dynamic, xml_staff),
                 Annotation::StaffText(text) => {
                     text::write_words(out, &text.text, text.placement, false, xml_staff, offset);
