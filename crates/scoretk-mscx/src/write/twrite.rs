@@ -31,9 +31,9 @@ use mscz2xml::model::{
     Annotation, Arpeggio, Articulation, BarLine, BarLineType, BeamMode, Breath, Chord, ChordRest,
     Clef, ClefType, Duration, DurationType, Fermata, FiguredBass, Fingering, Fraction, GraceChord,
     Hairpin, HairpinType, Harmony, Instrument, KeyMode, KeySig, Lyrics, Note, NoteHeadGroup,
-    NoteHeadType, Ornament, PedalInfo, Placement, RehearsalFrame, RichText, SegmentItem,
-    SpannerNotation, StaffText, StemDirection, SwingUnit, Tempo, TempoKind, TextLineInfo, TimeSig,
-    TimeSigType, Tremolo, TremoloBar, TremoloKind, Tuplet, TupletNumberType, VoltaInfo,
+    NoteHeadType, Ornament, PedalInfo, Placement, RehearsalFrame, SegmentItem, SpannerNotation,
+    StaffText, StemDirection, SwingUnit, Tempo, TempoKind, TextLineInfo, TimeSig, TimeSigType,
+    Tremolo, TremoloBar, TremoloKind, Tuplet, TupletNumberType, VoltaInfo,
 };
 
 use crate::names;
