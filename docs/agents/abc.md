@@ -76,8 +76,10 @@ sont écrites une par `V:`.
 - **Barres** : `|`, `||`, `|]`, `|:`/`:|`/`::`, volatas `[1`, `[1,2`.
 - **N-olets** : `(p`, `(p:q`, `(p:q:r` ; `r` est explicite dès qu'un n-olet
   contient des n-olets imbriqués ou un nombre de notes différent de `p`.
-- **Accords** `[CEG]`, liaisons `-`, phrasés `( )`, agréments `{…}`,
-  appoggiatures, acciaccaturas (`{/…}` à la lecture).
+- **Accords** `[CEG]`, liaisons `-`, phrasés `( )`, agréments `{…}` : un
+  seul groupe par accord, `/` devant chaque note d'acciaccatura (`{/g}`,
+  `{g /a}`, l'espace évitant que la barre soit lue comme une fraction de
+  durée) ; les groupes d'agréments consécutifs du modèle sont fusionnés.
 - **Décorations** : nuances `!p!`, articulations `!staccato!`, `!accent!`,
   `!tenuto!`, `!fermata!`, `!trill!`, `!mordent!`, `!arpeggio!`, soufflets
   `!<(!`/`!<)!` et `!>(!`/`!>)!`, doigtés `!1!`.
