@@ -148,6 +148,8 @@ struct TieRecord {
     is_start: bool,
     /// Position de l'autre extrémité, d'après `<location>`.
     other: TieLocation,
+    /// Direction explicite lue dans `<Tie><up>` (`Pid::SLUR_DIRECTION`).
+    up: Option<bool>,
     /// Vrai si la liaison est affichée (`<Tie><visible>`).
     visible: bool,
 }
@@ -1520,6 +1522,7 @@ impl Reader {
         // La note n'est ajoutée à l'arène qu'après ses enfants : son indice est
         // donc la taille actuelle de l'arène.
         let note_id = NoteId::from_index(self.score.notes.len());
+        let up = tie_direction(element);
         // La visibilité appartient au `Tie` : elle n'est écrite que sur la
         // moitié de départ.
         let visible = element
@@ -1549,6 +1552,7 @@ impl Reader {
                 pitch: note.pitch,
                 is_start,
                 other,
+                up,
                 visible,
             });
         }
@@ -1587,6 +1591,7 @@ impl Reader {
                 let start_note = &mut self.score.notes[start.note.index()];
                 start_note.tie_forward = Some(end.note);
                 start_note.tie_forward_visible = visible;
+                start_note.tie_up = start.up;
                 let end_note = &mut self.score.notes[end.note.index()];
                 end_note.tie_back = Some(start.note);
                 end_note.tie_back_visible = visible;
@@ -1623,8 +1628,9 @@ impl Reader {
 
         let ratio = Fraction::try_new(actual.max(1), normal.max(1)).unwrap_or(Fraction::ONE);
         let base_len = Duration::with_dots(base_type, base_dots).ticks();
-        // `TRead::read(Tuplet*)` : ticks = baseLen * ratio.denominator().
-        let len = base_len * Fraction::from_integer(ratio.denominator());
+        // `TRead::read(Tuplet*)` : ticks = baseLen * ratio.denominator(), avec
+        // le ratio **non réduit** (`normalNotes`).
+        let len = base_len * Fraction::from_integer(normal.max(1));
 
         let mut tuplet = Tuplet::new(ratio, base_len, tick, len);
         tuplet.placement =
@@ -2119,6 +2125,18 @@ fn staff_lines(element: &Element) -> u8 {
         _ => 5,
     }
     // TODO(parité): tablatures, portées sans ligne, <lines> explicite.
+}
+
+/// Lit la direction explicite d'une liaison (`<Tie><up>up|down</up>`).
+fn tie_direction(element: &Element) -> Option<bool> {
+    element
+        .child("Tie")
+        .and_then(|tie| tie.child("up"))
+        .and_then(|up| match up.text() {
+            "up" => Some(true),
+            "down" => Some(false),
+            _ => None,
+        })
 }
 
 /// Lit une `<location>` de liaison.

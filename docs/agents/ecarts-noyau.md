@@ -591,11 +591,31 @@ Corrigé dans cette passe :
 - **regroupement des `<notations>` autour d'un `tied` invisible** : voir
   écart 18.
 
+Corrigé dans la passe de parité `t31` :
+
+- **silences « gap »** : `read/gap_rests.rs` porte `Measure::checkMeasure` et
+  `Measure::fillGap` (`check.cpp`), ainsi que la découpe rythmique de
+  `toRhythmicDurationList` (`durationtype.cpp`, `sig.cpp`). Les trous d'une
+  voix deviennent des silences invisibles dont la position fait avancer le
+  curseur d'export : c'est l'origine des `<forward>`/`<backup>` scindés de
+  MuseScore (`moonlight`).
+- **orientation des liaisons de prolongation** : le `.mscx` porte la direction
+  explicite dans `<Tie><up>up|down</up>` (`Pid::SLUR_DIRECTION`) ; les deux
+  lecteurs la conservent (`Note::tie_up`) et l'export écrit
+  `orientation`/`placement` comme `slurTieLineStyle` (`moonlight`).
+- **portées masquées** : `Measure::line_break`/`section_break_before` donnent
+  les systèmes explicites ; `export/systems.rs` applique
+  `SystemLayout::hideEmptyStaves` et l'export écrit
+  `<staff-details print-object="no"/>` à la première mesure du système
+  (`barline01`).
+- **durée totale des n-olets** : `TRead::read(Tuplet*)` calcule
+  `baseLen * normalNotes` avec le ratio **non réduit** ; les deux lecteurs
+  utilisaient le dénominateur réduit (un `4:4` durait une figure au lieu de
+  quatre).
+
 Écarts complets restants (détail et fréquence dans `ecarts-complets.md`) :
-`<tied orientation>` (orientation des liaisons de prolongation non modélisée,
-portée par le `TieSegment` calculé à la mise en page), découpage des
-`backup`/`forward` et durées de `moonlight` (voix à trous et notes croisées),
-direction de hampe d'une ligature croisée (9 notes de `moonlight`),
-`<staff-details print-object="no">` des portées masquées, et les barlines de
-courtoisie des systèmes coupés automatiquement (sans `<LayoutBreak>` dans le
-fichier : `v3/voices`).
+direction de hampe d'une ligature croisée (9 notes de `moonlight`, calculée
+par `BeamLayout::layout1` à partir du groupement et de la géométrie des
+ligatures) et barres de courtoisie des systèmes coupés automatiquement par la
+largeur de page (2 barres de `v3/voices`, sans `<LayoutBreak>` dans le
+fichier).

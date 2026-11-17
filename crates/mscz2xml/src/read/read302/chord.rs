@@ -241,7 +241,9 @@ pub(crate) fn read_tuplet(
 
     let ratio = Fraction::new(actual, normal);
     let base_len = Duration::with_dots(base_kind, base_dots).ticks();
-    let len = base_len * Fraction::from_integer(ratio.denominator());
+    // `TRead::read(Tuplet*)` : ticks = baseLen * ratio.denominator(), avec le
+    // ratio **non réduit** (`normalNotes`).
+    let len = base_len * Fraction::from_integer(normal);
     let mut tuplet = Tuplet::new(ratio, base_len, tick, len);
     tuplet.parent = parent;
     tuplet.number_type = number_type;

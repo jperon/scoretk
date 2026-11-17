@@ -117,8 +117,12 @@ enum Receiver {
 /// Contenu lu dans l'enfant du `<Spanner>` portant le même nom que son `type`.
 #[derive(Clone)]
 enum Payload {
-    /// Liaison de prolongation, avec sa visibilité (`<Tie><visible>`).
-    Tie(bool),
+    /// Liaison de prolongation, avec sa visibilité (`<Tie><visible>`) et sa
+    /// direction explicite éventuelle (`<Tie><up>`).
+    Tie {
+        visible: bool,
+        up: Option<bool>,
+    },
     Slur(crate::model::Slur),
     Spanner(SpannerType, Option<String>, Option<VoltaInfo>),
     /// Glissando, avec son texte et son style de trait.
@@ -232,11 +236,13 @@ fn read_rel(node: &Node) -> Rel {
 
 fn read_payload(node: &Node) -> Option<Payload> {
     let payload = match node.name() {
-        "Tie" => Payload::Tie(
-            node.child("visible")
+        "Tie" => Payload::Tie {
+            visible: node
+                .child("visible")
                 .and_then(Node::int_text)
                 .is_none_or(|value| value != 0),
-        ),
+            up: tie_direction(node),
+        },
         "Slur" => Payload::Slur(super::notations::read_slur(node)),
         "HairPin" => {
             let (kind, hairpin) = super::nuances::read_hairpin(node);
@@ -255,6 +261,15 @@ fn read_payload(node: &Node) -> Option<Payload> {
         other => Payload::Spanner(SpannerType::Other(other.to_owned()), text_of(node), None),
     };
     Some(payload)
+}
+
+/// Lit la direction explicite d'une liaison (`<Tie><up>up|down</up>`).
+fn tie_direction(node: &Node) -> Option<bool> {
+    match node.child("up").map(|up| up.trimmed_text()).as_deref() {
+        Some("up") => Some(true),
+        Some("down") => Some(false),
+        _ => None,
+    }
 }
 
 /// Lit les propriétés d'un `<Pedal>`.
@@ -378,11 +393,11 @@ pub(crate) fn resolve(reader: &mut Reader) {
         .filter(|connector| {
             connector.next.is_some()
                 && connector.next_link.is_none()
-                && matches!(connector.payload, Some(Payload::Tie(_)))
+                && matches!(connector.payload, Some(Payload::Tie { .. }))
         })
         .filter_map(
             |connector| match (connector.receiver, connector.payload.as_ref()) {
-                (Receiver::Note(note), Some(Payload::Tie(visible))) => {
+                (Receiver::Note(note), Some(Payload::Tie { visible, .. })) => {
                     Some((note, connector.anchor, *visible))
                 }
                 _ => None,
@@ -486,12 +501,13 @@ fn emit(reader: &mut Reader, chain: &[usize]) {
         .collect();
 
     match payload {
-        Some(Payload::Tie(visible)) => {
+        Some(Payload::Tie { visible, up }) => {
             for pair in notes.windows(2) {
                 let (start_note, end_note) = (pair[0], pair[1]);
                 let start = reader.score.note_mut(start_note);
                 start.tie_forward = Some(end_note);
                 start.tie_forward_visible = visible;
+                start.tie_up = up;
                 let end = reader.score.note_mut(end_note);
                 end.tie_back = Some(start_note);
                 end.tie_back_visible = visible;

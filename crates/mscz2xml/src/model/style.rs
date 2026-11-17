@@ -93,6 +93,11 @@ pub struct StyleSettings {
     /// Hauteur d'un soufflet en espaces (`hairpinHeight`), exportée en
     /// `spread` (dixièmes) sur les `<wedge>`.
     pub hairpin_height_sp: f64,
+    /// Masquer les portées vides (`hideEmptyStaves`).
+    pub hide_empty_staves: bool,
+    /// Ne pas masquer les portées vides du premier système
+    /// (`dontHideStavesInFirstSystem`, vrai par défaut).
+    pub dont_hide_staves_in_first_system: bool,
 }
 
 impl StyleSettings {
@@ -135,6 +140,8 @@ impl StyleSettings {
             instrument_excerpt_font_size: 18.0,
             footer_font_size: 8.0,
             hairpin_height_sp: hairpin_height,
+            hide_empty_staves: false,
+            dont_hide_staves_in_first_system: true,
         }
     }
 
@@ -174,6 +181,10 @@ impl StyleSettings {
             }
             "footerFontSize" => Self::set_number(&mut self.footer_font_size, value),
             "hairpinHeight" => Self::set_positive(&mut self.hairpin_height_sp, value),
+            "hideEmptyStaves" => self.hide_empty_staves = flag(value),
+            "dontHideStavesInFirstSystem" => {
+                self.dont_hide_staves_in_first_system = flag(value);
+            }
             _ => {}
         }
     }

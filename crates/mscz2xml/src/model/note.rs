@@ -260,6 +260,13 @@ pub struct Note {
     /// Note précédente d'une liaison de prolongation, si cette note en termine
     /// une.
     pub tie_back: Option<NoteId>,
+    /// Direction explicite de la liaison de prolongation (`Pid::SLUR_DIRECTION`
+    /// du `<Tie>`) : `Some(true)` pour `<up>up</up>`, `Some(false)` pour
+    /// `<up>down</up>`, `None` quand la direction est automatique.
+    ///
+    /// MuseScore n'exporte `orientation`/`placement` que si la direction est
+    /// explicite (`slurTieLineStyle`).
+    pub tie_up: Option<bool>,
     /// Vrai si le départ de liaison est affiché (`Tie::visible()`, lu dans
     /// `<Tie><visible>`).
     ///
@@ -296,6 +303,7 @@ impl Note {
             tpc_transposed: tpc,
             tie_forward: None,
             tie_back: None,
+            tie_up: None,
             tie_forward_visible: true,
             tie_back_visible: true,
             accidental: None,

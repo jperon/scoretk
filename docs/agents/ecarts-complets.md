@@ -9,7 +9,7 @@ Ce document est produit par le test `ecarts_complets_document` de `crates/mscz2x
 | Fichier | Lignes d'écart |
 | --- | ---: |
 | Beam-CrossM1 | **identique** |
-| barline01 | 6 |
+| barline01 | **identique** |
 | barlinedelete | **identique** |
 | change | **identique** |
 | clef-1 | **identique** |
@@ -19,7 +19,7 @@ Ce document est produit par le test `ecarts_complets_document` de `crates/mscz2x
 | layout_elements | **identique** |
 | lyricsline01 | **identique** |
 | measure-4 | **identique** |
-| moonlight | 70 |
+| moonlight | 18 |
 | repeat01 | **identique** |
 | repeat06 | **identique** |
 | repeat07 | **identique** |
@@ -76,111 +76,82 @@ Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; fichie
 
 | Balise | Lignes | Fichiers | Exemples |
 | --- | ---: | ---: | --- |
-| `duration` | 18 | 1 | `<duration>12</duration>` `<duration>24</duration>` `<duration>36</duration>` |
 | `stem` | 18 | 1 | `<stem>down</stem>` `<stem>up</stem>` |
-| `forward` | 16 | 1 | `</forward>` `<forward>` |
-| `tied` | 14 | 1 | `<tied orientation="over" placement="above" type="start"/>` `<tied type="start"/>` `<tied orientation="under" placement="below" type="start"/>` |
-| `attributes` | 4 | 1 | `<attributes>` `</attributes>` |
-| `backup` | 4 | 1 | `</backup>` `<backup>` |
 | `barline` | 4 | 1 | `<barline location="right">` `</barline>` |
 | `bar-style` | 2 | 1 | `<bar-style>light-light</bar-style>` |
-| `staff-details` | 2 | 1 | `<staff-details print-object="no"/>` |
 
 ## Écarts qui dépendent de la mise en page calculée
 
-Certains écarts ne viennent pas d'une donnée du `.mscx` mais d'un objet que MuseScore fabrique pendant la mise en page, absente du modèle :
+Certains écarts ne viennent pas d'une donnée du `.mscx` mais d'un objet que MuseScore fabrique pendant la mise en page, absente du modèle. Ils sont irréductibles sans porter le moteur de mise en page :
 
-- **direction de hampe d'une ligature croisée** : `Chord::up()` dépend des notes de la ligature, elle-même groupée par la mise en page ;
-- **découpage des `<forward>`/`<backup>` et durées d'une voix à trous** : la position des segments vient de `Measure::layout`, pas du fichier ;
-- **`<tied orientation>`** : portée par le `TieSegment` calculé par la mise en page (la direction n'est pas dans le `.mscx`) ;
-- **barres de courtoisie** : ajoutées par la mise en page quand un système commence par un changement d'armure ou de métrique ; reproductibles seulement si le saut de système figure dans le fichier (`<LayoutBreak>`), pas quand la largeur de page coupe le système ;
-- **`<staff-details print-object="no">` des portées masquées** : décidé par `hideEmptyStaves` après calcul des hauteurs de systèmes.
+- **direction de hampe d'une ligature croisée** (`v3/moonlight`, 9 notes) : `BeamLayout::layout1` fixe la direction de la ligature à partir de `computeUpForMovedCross` et `isBelowCrossBeam`, donc du groupement des ligatures et de la géométrie des notes, pas du `<Beam><StemDirection>` du fichier ;
+- **barres de courtoisie d'un système coupé par la largeur de page** (`v3/voices`, 2 barres `light-light`) : `MeasureLayout::createEndBarLines` ne pose la barre double que si la mesure est la dernière du système (`isLastMeasureInSystem`) et que la suivante change d'armure. Quand le saut de système figure dans le fichier (`<LayoutBreak>`), il est reproduit (voir `export/systems.rs` et `read/measure_repeat.rs`) ; une coupure automatique dépend de la largeur calculée des mesures, donc de toute la mise en page horizontale.
 
 ## Diffs
 
 ```diff
 
-=== v3/barline01 : 6 lignes d'écart ===
+=== v3/moonlight : 18 lignes d'écart ===
 --- reference
 +++ sortie
-@@ -225,7 +225,4 @@
-     </measure>
-     <measure number="5">
--      <attributes>
--        <staff-details print-object="no"/>
--      </attributes>
-       <note>
-         <rest measure="yes"/>
-@@ -349,7 +346,4 @@
-     </measure>
-     <measure number="7">
--      <attributes>
--        <staff-details print-object="no"/>
--      </attributes>
-       <note>
-         <rest measure="yes"/>
-
-=== v3/moonlight : 70 lignes d'écart ===
---- reference
-+++ sortie
-@@ -1487,8 +1487,5 @@
-       </note>
-       <forward>
--        <duration>12</duration>
--      </forward>
--      <forward>
--        <duration>24</duration>
-+        <duration>36</duration>
-       </forward>
-     </measure>
-@@ -3465,5 +3462,5 @@
+@@ -3465,5 +3465,5 @@
            <normal-notes>2</normal-notes>
          </time-modification>
 -        <stem>down</stem>
 +        <stem>up</stem>
          <staff>2</staff>
          <beam number="1">begin</beam>
-@@ -3485,5 +3482,5 @@
+@@ -3485,5 +3485,5 @@
            <normal-notes>2</normal-notes>
          </time-modification>
 -        <stem>down</stem>
 +        <stem>up</stem>
          <staff>2</staff>
          <beam number="1">continue</beam>
-@@ -3501,5 +3498,5 @@
+@@ -3501,5 +3501,5 @@
            <normal-notes>2</normal-notes>
          </time-modification>
 -        <stem>down</stem>
 +        <stem>up</stem>
          <staff>2</staff>
          <beam number="1">end</beam>
-@@ -4542,5 +4539,5 @@
-         <staff>2</staff>
-         <notations>
--          <tied orientation="over" placement="above" type="start"/>
-+          <tied type="start"/>
-         </notations>
-       </note>
-@@ -5214,5 +5211,5 @@
-         <staff>2</staff>
-         <notations>
--          <tied orientation="over" placement="above" type="start"/>
-+          <tied type="start"/>
-         </notations>
-       </note>
-@@ -6896,5 +6893,5 @@
+@@ -6896,5 +6896,5 @@
            <normal-notes>2</normal-notes>
          </time-modification>
 -        <stem>up</stem>
 +        <stem>down</stem>
          <staff>2</staff>
          <beam number="1">begin</beam>
-@@ -6916,5 +6913,5 @@
+@@ -6916,5 +6916,5 @@
            <normal-notes>2</normal-notes>
          </time-modification>
 -        <stem>up</stem>
 +        <stem>down</stem>
          <staff>2</staff>
+         <beam number="1">continue</beam>
+@@ -9198,5 +9198,5 @@
+           <normal-notes>2</normal-notes>
+         </time-modification>
+-        <stem>up</stem>
++        <stem>down</stem>
+         <staff>2</staff>
+         <beam number="1">begin</beam>
+@@ -10084,5 +10084,5 @@
+           <normal-notes>2</normal-notes>
+         </time-modification>
+-        <stem>up</stem>
++        <stem>down</stem>
+         <staff>2</staff>
+         <beam number="1">begin</beam>
+@@ -10105,5 +10105,5 @@
+           <normal-notes>2</normal-notes>
+         </time-modification>
+-        <stem>up</stem>
++        <stem>down</stem>
+         <staff>2</staff>
+         <beam number="1">continue</beam>
+@@ -10122,5 +10122,5 @@
+           <normal-notes>2</normal-notes>
 … (diff tronqué)
 
 === v3/voices : 6 lignes d'écart ===

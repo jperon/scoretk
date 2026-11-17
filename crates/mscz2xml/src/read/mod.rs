@@ -36,6 +36,9 @@
 /// identifiant MusicXML.
 pub(crate) mod instruments;
 
+/// Remplissage des trous de voix par des silences « gap » (`Measure::checkMeasure`).
+mod gap_rests;
+
 /// Lecteur des partitions MuseScore 3.00 à 3.99 (portage de `read302`).
 pub mod read302;
 /// Lecteur des partitions MuseScore 4.00 à 5.00 (portage de `read4xx`).
@@ -71,11 +74,16 @@ pub(crate) fn mmrest_group_start(measures: &[Measure], target: usize) -> usize {
 /// `<programVersion>`.
 pub fn read_score(container: &MsczContainer) -> Result<Score> {
     let version = container.version()?;
-    match version.as_u32() {
-        400..=500 => read4xx::read(container.main_mscx(), version),
-        300..=399 => read302::read(container.main_mscx(), version),
-        _ => Err(Error::UnsupportedVersion(version)),
-    }
+    let mut score = match version.as_u32() {
+        400..=500 => read4xx::read(container.main_mscx(), version)?,
+        300..=399 => read302::read(container.main_mscx(), version)?,
+        _ => return Err(Error::UnsupportedVersion(version)),
+    };
+    // `Measure::checkMeasure` est appelé juste après la lecture de chaque
+    // mesure par MuseScore ; les silences « gap » qui en résultent font
+    // avancer le curseur d'export (`<forward>`/`<backup>`).
+    gap_rests::fill(&mut score);
+    Ok(score)
 }
 
 #[cfg(test)]

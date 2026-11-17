@@ -64,6 +64,7 @@ use super::pedals;
 use super::pitch;
 use super::repeats;
 use super::stems;
+use super::systems;
 use super::text;
 use super::textlines;
 use super::writer::XmlWriter;
@@ -346,6 +347,8 @@ pub(crate) struct Context<'a> {
     tuplets: TupletIndex,
     /// Ligatures reconstituées, comme les `Beam` de la mise en page.
     beams: beams::Beams,
+    /// Systèmes explicites : portées masquées et barres de courtoisie.
+    systems: systems::Systems,
 }
 
 /// État des spanners d'une partie (`spannersStopped` et compteur d'instruments
@@ -369,6 +372,7 @@ impl<'a> Context<'a> {
             options,
             tuplets: TupletIndex::new(score),
             beams: beams::Beams::new(score, options.concert_pitch),
+            systems: systems::Systems::new(score),
         }
     }
 
@@ -837,6 +841,34 @@ impl<'a> Context<'a> {
         if is_first {
             self.write_staff_details(out, part);
             self.write_instrument_details(out, part);
+        } else {
+            // Portées masquées du système (`hideEmptyStaves`) : MuseScore les
+            // signale à la première mesure du système, une `<attributes>` par
+            // portée (`writeMeasure`).
+            for &hidden in self.systems.hidden_at(measure_index) {
+                // La première portée du score n'est jamais signalée :
+                // `print()` ne calcule les distances qu'à partir de la
+                // deuxième portée de la première partie.
+                if hidden == 0 {
+                    continue;
+                }
+                let Some(position) = part
+                    .staves
+                    .iter()
+                    .position(|staff_id| staff_id.raw() as usize == hidden)
+                else {
+                    continue;
+                };
+                let number = (position + 1).to_string();
+                let mut attributes: Vec<(&str, &str)> = Vec::new();
+                if staves > 1 {
+                    attributes.push(("number", &number));
+                }
+                attributes.push(("print-object", "no"));
+                out.attr(true);
+                out.xml.tag_empty("staff-details", &attributes);
+                out.attr(false);
+            }
         }
         // `measureStyle` : un `<measure-style>` ouvre le groupe de silences
         // multi-mesures, sur la première mesure du groupe.
@@ -1612,7 +1644,26 @@ impl Context<'_> {
             }
             if note.tie_forward.is_some() {
                 notations.tag_element(&mut out.xml, None, note.tie_forward_visible);
-                out.xml.tag_empty("tied", &[("type", "start")]);
+                // `slurTieLineStyle` : la direction explicite du `<Tie>` est
+                // exportée en `orientation` et `placement`.
+                match note.tie_up {
+                    Some(up) => {
+                        let (orientation, placement) = if up {
+                            ("over", "above")
+                        } else {
+                            ("under", "below")
+                        };
+                        out.xml.tag_empty(
+                            "tied",
+                            &[
+                                ("orientation", orientation),
+                                ("placement", placement),
+                                ("type", "start"),
+                            ],
+                        );
+                    }
+                    None => out.xml.tag_empty("tied", &[("type", "start")]),
+                }
             }
             if first && !grace {
                 self.tuplet_start_stop(out, chord_rest, segment_tick, track, &mut notations);

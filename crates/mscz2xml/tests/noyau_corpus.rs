@@ -72,8 +72,7 @@ const FICHIERS: &[(&str, &str, usize)] = &[
     ("v3", "keysig_78216", 0),
     ("v3", "layout_elements", 0),
     ("v3", "measure-4", 0),
-    // 7 paires <tied> sans l'attribut orientation (porté par le TieSegment).
-    ("v3", "moonlight", 14),
+    ("v3", "moonlight", 0),
     ("v3", "repeat01", 0),
     ("v3", "repeat06", 0),
     ("v3", "repeat07", 0),
