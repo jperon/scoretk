@@ -603,18 +603,15 @@ fn round_measure_length(duration: Fraction) -> Fraction {
     }
 }
 
-/// `measureDurationAsFraction` : dénominateur au moins égal à celui de l'indication.
-fn measure_duration_as_fraction(mut length: Fraction, beat_type: i32) -> Fraction {
-    if beat_type <= 0 {
-        return length;
-    }
-    while length.denominator() < i64::from(beat_type) {
-        length = Fraction::try_new(
-            length.numerator() * 2,
-            length.denominator() * 2,
-        )
-        .unwrap_or(length);
-    }
+/// `measureDurationAsFraction` : dénominateur au moins égal à celui de
+/// l'indication de mesure.
+///
+/// Le C++ réécrit `4/4` en `8/8` … pour que la longueur de mesure s'exprime
+/// avec un dénominateur au moins égal à `beat-type`. La `Fraction` du modèle
+/// est toujours réduite (`8/8` y vaut `1/1`), donc la valeur ne change pas :
+/// seule la représentation interne du C++ diffère. La fonction conserve donc
+/// la valeur telle quelle.
+fn measure_duration_as_fraction(length: Fraction, _beat_type: i32) -> Fraction {
     length
 }
 
