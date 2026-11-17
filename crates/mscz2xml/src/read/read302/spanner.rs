@@ -117,7 +117,8 @@ enum Receiver {
 /// Contenu lu dans l'enfant du `<Spanner>` portant le même nom que son `type`.
 #[derive(Clone)]
 enum Payload {
-    Tie,
+    /// Liaison de prolongation, avec sa direction explicite éventuelle.
+    Tie(Option<bool>),
     Slur(crate::model::Slur),
     Spanner(SpannerType, Option<String>, Option<VoltaInfo>),
     /// Glissando, avec son texte et son style de trait.
@@ -231,7 +232,7 @@ fn read_rel(node: &Node) -> Rel {
 
 fn read_payload(node: &Node) -> Option<Payload> {
     let payload = match node.name() {
-        "Tie" => Payload::Tie,
+        "Tie" => Payload::Tie(tie_direction(node)),
         "Slur" => Payload::Slur(super::notations::read_slur(node)),
         "HairPin" => {
             let (kind, hairpin) = super::nuances::read_hairpin(node);
@@ -250,6 +251,15 @@ fn read_payload(node: &Node) -> Option<Payload> {
         other => Payload::Spanner(SpannerType::Other(other.to_owned()), text_of(node), None),
     };
     Some(payload)
+}
+
+/// Lit la direction explicite d'une liaison (`<Tie><up>up|down</up>`).
+fn tie_direction(node: &Node) -> Option<bool> {
+    match node.child("up").map(|up| up.trimmed_text()).as_deref() {
+        Some("up") => Some(true),
+        Some("down") => Some(false),
+        _ => None,
+    }
 }
 
 /// Lit les propriétés d'un `<Pedal>`.
@@ -373,7 +383,7 @@ pub(crate) fn resolve(reader: &mut Reader) {
         .filter(|connector| {
             connector.next.is_some()
                 && connector.next_link.is_none()
-                && matches!(connector.payload, Some(Payload::Tie))
+                && matches!(connector.payload, Some(Payload::Tie(_)))
         })
         .filter_map(|connector| match connector.receiver {
             Receiver::Note(note) => Some((note, connector.anchor)),
@@ -477,10 +487,11 @@ fn emit(reader: &mut Reader, chain: &[usize]) {
         .collect();
 
     match payload {
-        Some(Payload::Tie) => {
+        Some(Payload::Tie(up)) => {
             for pair in notes.windows(2) {
                 let (start_note, end_note) = (pair[0], pair[1]);
                 reader.score.note_mut(start_note).tie_forward = Some(end_note);
+                reader.score.note_mut(start_note).tie_up = up;
                 reader.score.note_mut(end_note).tie_back = Some(start_note);
             }
         }

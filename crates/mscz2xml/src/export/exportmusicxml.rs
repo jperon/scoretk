@@ -1640,7 +1640,26 @@ impl Context<'_> {
             }
             if note.tie_forward.is_some() {
                 notations.tag(&mut out.xml, None);
-                out.xml.tag_empty("tied", &[("type", "start")]);
+                // `slurTieLineStyle` : la direction explicite du `<Tie>` est
+                // exportée en `orientation` et `placement`.
+                match note.tie_up {
+                    Some(up) => {
+                        let (orientation, placement) = if up {
+                            ("over", "above")
+                        } else {
+                            ("under", "below")
+                        };
+                        out.xml.tag_empty(
+                            "tied",
+                            &[
+                                ("orientation", orientation),
+                                ("placement", placement),
+                                ("type", "start"),
+                            ],
+                        );
+                    }
+                    None => out.xml.tag_empty("tied", &[("type", "start")]),
+                }
             }
             if first && !grace {
                 self.tuplet_start_stop(out, chord_rest, segment_tick, track, &mut notations);

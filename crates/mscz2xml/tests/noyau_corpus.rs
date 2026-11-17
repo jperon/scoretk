@@ -73,8 +73,7 @@ const FICHIERS: &[(&str, &str, usize)] = &[
     // 1 : <measure-style><measure-repeat> non modélisé.
     ("v3", "layout_elements", 1),
     ("v3", "measure-4", 0),
-    // 7 paires <tied> sans l'attribut orientation (porté par le TieSegment).
-    ("v3", "moonlight", 14),
+    ("v3", "moonlight", 0),
     ("v3", "repeat01", 0),
     ("v3", "repeat06", 0),
     ("v3", "repeat07", 0),

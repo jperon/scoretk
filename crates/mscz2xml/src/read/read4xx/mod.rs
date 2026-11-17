@@ -147,6 +147,8 @@ struct TieRecord {
     is_start: bool,
     /// Position de l'autre extrémité, d'après `<location>`.
     other: TieLocation,
+    /// Direction explicite lue dans `<Tie><up>` (`Pid::SLUR_DIRECTION`).
+    up: Option<bool>,
 }
 
 /// État complet du lecteur pour un fichier.
@@ -1488,6 +1490,7 @@ impl Reader {
         // La note n'est ajoutée à l'arène qu'après ses enfants : son indice est
         // donc la taille actuelle de l'arène.
         let note_id = NoteId::from_index(self.score.notes.len());
+        let up = tie_direction(element);
         for child in &element.children {
             let is_start = match child.name.as_str() {
                 "next" => true,
@@ -1510,6 +1513,7 @@ impl Reader {
                 pitch: note.pitch,
                 is_start,
                 other,
+                up,
             });
         }
     }
@@ -1544,6 +1548,7 @@ impl Reader {
                 used[partner] = true;
                 let end = self.ties[partner].clone();
                 self.score.notes[start.note.index()].tie_forward = Some(end.note);
+                self.score.notes[start.note.index()].tie_up = start.up;
                 self.score.notes[end.note.index()].tie_back = Some(start.note);
             } else {
                 // TODO(parité): demi-liaison orpheline (fichier corrompu) : le
@@ -2075,6 +2080,18 @@ fn staff_lines(element: &Element) -> u8 {
         _ => 5,
     }
     // TODO(parité): tablatures, portées sans ligne, <lines> explicite.
+}
+
+/// Lit la direction explicite d'une liaison (`<Tie><up>up|down</up>`).
+fn tie_direction(element: &Element) -> Option<bool> {
+    element
+        .child("Tie")
+        .and_then(|tie| tie.child("up"))
+        .and_then(|up| match up.text() {
+            "up" => Some(true),
+            "down" => Some(false),
+            _ => None,
+        })
 }
 
 /// Lit une `<location>` de liaison.
