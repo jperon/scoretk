@@ -58,10 +58,10 @@ use crate::model::{
     text_style_defaults, Accidental, Annotation, Articulation, BarLine, BarLineType, BeamMode,
     Breath, BreathType, Chord, ChordRest, ChordRestKind, Clef, ClefType, Credit, CreditJustify,
     CreditStyle, Duration, DurationType, Fraction, GraceChord, GraceType, Harmony, Instrument,
-    InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteId, Part,
-    Placement, RehearsalFrame, RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType,
-    Staff, StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType, Track,
-    Transpose, TremoloKind, Tuplet, TupletId, TupletNumberType, VOICES,
+    InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, MidiArticulation, Note,
+    NoteId, Part, Placement, RehearsalFrame, RehearsalMark, RichText, Score, Segment, SegmentItem,
+    SegmentType, Staff, StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType,
+    Track, Transpose, TremoloKind, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::{Error, Result};
 
@@ -490,7 +490,24 @@ impl Reader {
             }
         }
 
-        // TODO(parité): <useDrumset>, <Drum>, <stringData>, articulations MIDI.
+        // Table des articulations MIDI (`read(MidiArticulation*)`) : une
+        // entrée sans attribut `name` donne la durée de tenue par défaut de
+        // l'instrument, les autres modifient vélocité et tenue.
+        for articulation in element.children_named("Articulation") {
+            instrument.midi_articulations.push(MidiArticulation {
+                name: articulation.attr("name").unwrap_or_default().to_owned(),
+                velocity: articulation
+                    .child("velocity")
+                    .and_then(Element::int)
+                    .unwrap_or(0) as i16,
+                gate_time: articulation
+                    .child("gateTime")
+                    .and_then(Element::int)
+                    .unwrap_or(0) as i16,
+            });
+        }
+
+        // TODO(parité): <useDrumset>, <Drum>, <stringData>.
         instrument
     }
 

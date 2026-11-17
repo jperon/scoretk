@@ -30,6 +30,25 @@ use super::fraction::Fraction;
 use super::ids::{PartId, StaffId};
 use super::segment::{Clef, ClefType};
 
+/// Articulation MIDI d'un instrument.
+///
+/// Correspond à `MidiArticulation` dans `engraving/dom/instrument.h` : la
+/// table lue dans `<Instrument><Articulation>` du `.mscx`. L'entrée sans nom
+/// donne la durée de tenue par défaut de l'instrument (`gateTime`), et les
+/// entrées nommées (`staccato`, `accent`…) modifient vélocité et durée des
+/// notes qui portent l'articulation correspondante. L'export MIDI s'en sert
+/// (`Instrument::getVelocityMultiplier`, `Instrument::updateGateTime`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MidiArticulation {
+    /// Nom MuseScore de l'articulation (`"staccato"`, `"accent"`…) ; vide
+    /// pour l'articulation par défaut de l'instrument.
+    pub name: String,
+    /// Vélocité relative en pourcentage (`100` = inchangée).
+    pub velocity: i16,
+    /// Durée de tenue en pourcentage (`95` = 95 % de la durée notée).
+    pub gate_time: i16,
+}
+
 /// Instrument d'une partie.
 ///
 /// Version minimale de `Instrument` dans `engraving/dom/instrument.h`, limitée
@@ -63,6 +82,9 @@ pub struct Instrument {
     pub volume: Option<u8>,
     /// Panoramique du canal MIDI (`Channel::controller` 10), 0-127.
     pub pan: Option<u8>,
+    /// Table des articulations MIDI de l'instrument
+    /// (`<Instrument><Articulation>`), dans l'ordre du fichier.
+    pub midi_articulations: Vec<MidiArticulation>,
 }
 
 impl Instrument {
@@ -85,6 +107,7 @@ impl Instrument {
             midi_channel: None,
             volume: None,
             pan: None,
+            midi_articulations: Vec::new(),
         }
     }
 }
