@@ -570,8 +570,11 @@ fn read_note(
     let notation_info = notations::parse(element);
 
     if grace {
+        let grace_transpose = score.parts[part_index]
+            .instrument_at(measure_start + *m_time)
+            .transpose;
         if chord && !grace_chords.is_empty() {
-            let note = build_note(element, analysis, part_index, octave_shift);
+            let note = build_note(element, grace_transpose, octave_shift);
             let id = score.add_note(note);
             if let Some(pending) = grace_chords.last_mut() {
                 pending.notes.push(id);
@@ -588,7 +591,7 @@ fn read_note(
                 notes: Vec::new(),
                 staff_move,
             };
-            let note = build_note(element, analysis, part_index, octave_shift);
+            let note = build_note(element, grace_transpose, octave_shift);
             let id = score.add_note(note);
             apply_ties(element, id, track, score, ties);
             pending.notes.push(id);
@@ -608,7 +611,8 @@ fn read_note(
 
     if chord {
         let tick = measure_start + *prev_time;
-        let note = build_note(element, analysis, part_index, octave_shift);
+        let chord_transpose = score.parts[part_index].instrument_at(tick).transpose;
+        let note = build_note(element, chord_transpose, octave_shift);
         let id = score.add_note(note);
         if let Some(chord_rest) = chord_rest_at_mut(score, measure_index, tick, track) {
             if let Some(chord) = chord_rest.chord_mut() {
@@ -668,7 +672,8 @@ fn read_note(
     }
 
     if !rest {
-        let note = build_note(element, analysis, part_index, octave_shift);
+        let note_transpose = score.parts[part_index].instrument_at(cr_tick).transpose;
+        let note = build_note(element, note_transpose, octave_shift);
         let id = score.add_note(note);
         if let Some(chord) = score.measures[measure_index].segments[index]
             .element_mut(track)
@@ -1095,14 +1100,11 @@ fn make_chord_rest(
 /// Construit une note (`xmlSetPitch`).
 fn build_note(
     element: &Element,
-    analysis: &Analysis,
-    part_index: usize,
+    transpose: Option<mscz2xml::model::Transpose>,
     octave_shift: i32,
 ) -> Note {
     let (step, alter, octave) = read_pitch(element);
-    let transpose = analysis.parts[part_index]
-        .transpose
-        .map_or(0, |transpose| transpose.chromatic);
+    let transpose = transpose.map_or(0, |transpose| transpose.chromatic);
     let step_index = step.unwrap_or(0);
     let octave = octave.unwrap_or(4);
     let mut pitch =
