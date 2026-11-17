@@ -40,7 +40,7 @@
 //! | MuseScore `.mscz` / `.mscx` | oui | feature `mscx` |
 //! | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` | oui |
 //! | MusicXML `.mxl` | non | oui |
-//! | LilyPond `.ly` | non | feature `lilypond` |
+//! | LilyPond `.ly` | feature `lilypond-import` | feature `lilypond` |
 //! | ABC | non | non |
 //! | MIDI | non | feature `midi` |
 //!
@@ -108,12 +108,11 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
             Ok(mscz2xml::read::read_score(&container)?)
         }
         Format::MusicXml => hooks::read_musicxml(bytes),
-        Format::Mxl | Format::Ly | Format::Abc | Format::Midi => {
-            Err(Error::FormatNonPrisEnCharge {
-                format,
-                sens: Sens::Lecture,
-            })
-        }
+        Format::Ly => hooks::read_lilypond(bytes),
+        Format::Mxl | Format::Abc | Format::Midi => Err(Error::FormatNonPrisEnCharge {
+            format,
+            sens: Sens::Lecture,
+        }),
     }
 }
 

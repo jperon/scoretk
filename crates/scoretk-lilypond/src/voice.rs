@@ -408,7 +408,8 @@ pub(crate) fn render_body(
                 measure.nominal_len
             };
             if len.is_positive() {
-                emitter.token(&measure_rest_token(len));
+                // Aucun élément dans cette voix : trou, non silence.
+                emitter.token(&format!("s{}", length_token(len)));
             }
         } else if cursor < measure.end_tick() {
             let end = measure.end_tick();
@@ -441,6 +442,9 @@ pub(crate) fn render_body(
 /// N-olet ouvert.
 struct OpenTuplet {
     id: TupletId,
+    /// Commande `\revert` à écrire à la fermeture, si le nombre est masqué ou
+    /// affiché en fraction.
+    revert: Option<&'static str>,
 }
 
 /// Ouvre les n-olets de la chaîne qui ne le sont pas encore.
@@ -456,9 +460,26 @@ fn open_tuplets(
         }
         let tuplet = score.tuplet(*tuplet_id);
         let (actual, normal) = chord::tuplet_ratio(tuplet);
+        // L'affichage du nombre n'a pas de syntaxe propre dans `\tuplet` :
+        // on l'encode par les propriétés de `TupletNumber`, que la lecture
+        // reconnaît (`docs/agents/lilypond.md`).
+        let revert = match tuplet.number_type {
+            mscz2xml::model::TupletNumberType::Number => None,
+            mscz2xml::model::TupletNumberType::Ratio => {
+                emitter.line("\\override TupletNumber.text = #tuplet-number::calc-fraction-text");
+                Some("\\revert TupletNumber.text")
+            }
+            mscz2xml::model::TupletNumberType::None => {
+                emitter.line("\\override TupletNumber.stencil = ##f");
+                Some("\\revert TupletNumber.stencil")
+            }
+        };
         emitter.line(&format!("\\tuplet {actual}/{normal} {{"));
         emitter.depth += 1;
-        open.push(OpenTuplet { id: *tuplet_id });
+        open.push(OpenTuplet {
+            id: *tuplet_id,
+            revert,
+        });
     }
 }
 
@@ -468,9 +489,12 @@ fn close_tuplets_until(chain: &[TupletId], open: &mut Vec<OpenTuplet>, emitter: 
         if chain.contains(&entry.id) {
             break;
         }
-        open.pop();
+        let entry = open.pop().expect("n-olet ouvert");
         emitter.depth = emitter.depth.saturating_sub(1);
         emitter.line("}");
+        if let Some(revert) = entry.revert {
+            emitter.line(revert);
+        }
     }
 }
 
@@ -491,17 +515,18 @@ fn tuplet_chain(score: &Score, id: TupletId) -> Vec<TupletId> {
     chain
 }
 
-/// Remplit un trou par un silence de la bonne longueur.
-fn fill_rest(start: Tick, end: Tick, measure: &Measure) -> String {
+/// Remplit un trou par un silence invisible de la bonne longueur.
+///
+/// Le modèle MuseScore ne note pas toujours les silences de ses voix : le
+/// trou n'est pas un silence affiché. `s` (spacer) occupe le temps sans rien
+/// dessiner, et la lecture le reconnaît (`Rest::visible = false`), alors que
+/// `r` créerait un silence absent du fichier d'origine.
+fn fill_rest(start: Tick, end: Tick, _measure: &Measure) -> String {
     let len = end - start;
     if len <= Fraction::ZERO {
         return String::new();
     }
-    if start == measure.start_tick && len == measure.len {
-        measure_rest_token(len)
-    } else {
-        format!("r{}", length_token(len))
-    }
+    format!("s{}", length_token(len))
 }
 
 /// Barre de fin de mesure.
@@ -948,8 +973,8 @@ mod tests {
     #[test]
     fn remplissage_des_mesures() {
         let measure = Measure::new(0, Fraction::ZERO, Fraction::ONE);
-        assert_eq!(fill_rest(Fraction::ZERO, Fraction::ONE, &measure), "R1");
-        assert_eq!(fill_rest(Fraction::ZERO, Fraction::QUARTER, &measure), "r4");
+        assert_eq!(fill_rest(Fraction::ZERO, Fraction::ONE, &measure), "s1");
+        assert_eq!(fill_rest(Fraction::ZERO, Fraction::QUARTER, &measure), "s4");
         assert_eq!(fill_rest(Fraction::ONE, Fraction::ONE, &measure), "");
     }
 }

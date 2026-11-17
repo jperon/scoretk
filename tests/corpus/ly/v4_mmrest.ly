@@ -3,6 +3,7 @@
 
 \header {
   title = "Title"
+  workTitle = "Title"
   composer = "Composer"
 }
 

@@ -54,8 +54,20 @@ pub(crate) fn render(
     transpose_chromatic: i32,
 ) -> String {
     if let Some(rest) = chord_rest.rest_ref() {
-        if !rest.visible {
+        // Silence « gap » de `Measure::fillGap` : il ne s'exporte pas, il ne
+        // sert qu'à faire avancer le curseur d'export. `s` le représente
+        // exactement et la lecture n'en crée aucun élément.
+        if rest.gap {
             return format!("s{}", rest_duration(chord_rest));
+        }
+        if !rest.visible {
+            // Silence invisible : `s` sert déjà aux trous que l'écrivain
+            // comble ; un `Rest` transparent garde la distinction, que la
+            // lecture reconnaît (`Rest::visible`).
+            return format!(
+                "\\once \\override Rest.transparent = ##t r{}",
+                rest_duration(chord_rest)
+            );
         }
         if chord_rest.is_full_measure_rest() {
             return format!(

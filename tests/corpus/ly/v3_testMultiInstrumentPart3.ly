@@ -3,6 +3,7 @@
 
 \header {
   title = "clarinet scales"
+  workTitle = "clarinet scales"
 }
 
 staffOneVoiceOne = \fixed c' {

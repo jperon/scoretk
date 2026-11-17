@@ -3,6 +3,7 @@
 
 \header {
   title = "Repeat Test"
+  workTitle = "Repeat Test"
   subtitle = "Force Final Repeat should reset when crossing to next section."
 }
 

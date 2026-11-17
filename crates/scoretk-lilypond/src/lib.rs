@@ -20,8 +20,10 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! **scoretk-lilypond** : écriture d'une [`Score`] du modèle pivot au format
-//! LilyPond (`.ly`).
+//! **scoretk-lilypond** : lecture et écriture LilyPond (`.ly`) du modèle pivot.
+//! L'écriture ([`write_lilypond`]) est décrite ci-dessous ; la lecture
+//! ([`read_lilypond`]) porte un sous-ensemble de la grammaire de LilyPond, cf.
+//! `docs/agents/lilypond.md`.
 //!
 //! Le crate ne fait aucune entrée/sortie : [`write_lilypond`] renvoie le texte
 //! en mémoire, ce qui le garde compilable pour `wasm32-unknown-unknown`,
@@ -79,6 +81,7 @@ mod duration;
 mod error;
 mod event;
 mod pitch;
+mod read;
 mod spanners;
 mod structure;
 mod text;
@@ -87,6 +90,7 @@ mod writer;
 
 pub use error::{Error, Result};
 pub use mscz2xml::model::Fraction;
+pub use read::{read_lilypond, read_lilypond_reporting, Warning};
 
 use mscz2xml::model::Score;
 

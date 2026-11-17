@@ -19,6 +19,8 @@ default = []
 musicxml-import = ["dep:scoretk-musicxml"]
 midi = ["dep:scoretk-midi"]
 lilypond = ["dep:scoretk-lilypond"]
+# Lecture LilyPond (t40) : même crate, sens inverse.
+lilypond-import = ["dep:scoretk-lilypond"]
 mscx = ["dep:scoretk-mscx"]
 
 [dependencies]
