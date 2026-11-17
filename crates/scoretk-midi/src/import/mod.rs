@@ -1059,11 +1059,3 @@ fn process_lyric_meta(
         lyrics::set_lyrics(score, track, &lyrics);
     }
 }
-
-/// Vrai si un tick est le début d'une mesure (`barFromIndex`).
-pub fn bar_start(score: &Score, index: usize) -> Fraction {
-    score
-        .measures
-        .get(index)
-        .map_or(Fraction::ZERO, |measure| measure.start_tick)
-}

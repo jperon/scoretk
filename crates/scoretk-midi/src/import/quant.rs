@@ -32,7 +32,7 @@
 
 use mscz2xml::model::Fraction;
 
-use super::chord::{min_allowed_duration, ChordKey, ChordMap, MTrack};
+use super::chord::{min_allowed_duration, ChordMap, MTrack};
 use super::midifile::{DIVISION, UNITS_PER_WHOLE};
 use super::operations::QuantValue;
 use super::tuplet::{tuplet_limits, TupletData};
@@ -480,9 +480,4 @@ fn remove_useless_tuplet_references(
             }
         }
     }
-}
-
-/// Clés d'accords d'une piste, dans l'ordre.
-pub fn chord_keys(track: &MTrack) -> Vec<ChordKey> {
-    track.chords.keys()
 }

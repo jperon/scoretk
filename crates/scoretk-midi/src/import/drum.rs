@@ -32,7 +32,7 @@
 
 use mscz2xml::model::{Score, StaffBracket};
 
-use super::chord::{min_allowed_duration, MTrack, MidiChord};
+use super::chord::{min_allowed_duration, MTrack};
 
 /// Hauteurs jouées en voix 1 (hampe vers le bas) du kit standard de MuseScore.
 ///
@@ -168,9 +168,4 @@ pub fn set_staff_bracket_for_drums(score: &mut Score, tracks: &[MTrack]) {
         }
     }
     flush(score, start, count);
-}
-
-/// Compte les notes d'un accord (utilitaire de test).
-pub fn note_count(chord: &MidiChord) -> usize {
-    chord.notes.len()
 }

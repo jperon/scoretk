@@ -29,7 +29,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{Fraction, Key, StaffId};
+use mscz2xml::model::{Fraction, StaffId};
 
 use super::key::KeyList;
 use super::midifile::{DIVISION, UNITS_PER_WHOLE};
@@ -751,13 +751,4 @@ pub fn set_bar_indexes(
         }
         bar_index += 1;
     }
-}
-
-/// Armure lue dans une piste.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TrackKey {
-    /// Armure concert.
-    pub concert_key: Key,
-    /// Armure écrite (identique ici : l'import MIDI ne transpose pas).
-    pub key: Key,
 }

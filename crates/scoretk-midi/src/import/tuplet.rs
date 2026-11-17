@@ -27,13 +27,10 @@
 //! détection par mesure (`detectTuplets`, simplifiée) et les fonctions de
 //! recherche utilisées par la quantification et la création des notes.
 
-use std::collections::BTreeMap;
-
 use mscz2xml::model::Fraction;
 
 use super::chord::{min_allowed_duration, MTrack};
 use super::meter::{divisions_of_bar_for_tuplets, is_simple_note_duration};
-use super::midifile::UNITS_PER_WHOLE;
 use super::timesigmap::TimeSigMap;
 
 /// Clé d'un n-olet dans [`MTrack::tuplets`] : date et rang.
@@ -125,25 +122,6 @@ pub fn find_tuplets_in_bar_for_duration(
     // durées.
     result.sort_by_key(|tuplet| std::cmp::Reverse(tuplet.len));
     result
-}
-
-/// N-olet qui contient entièrement une durée (`findTupletsForTimeRange`
-/// avec comparaison stricte).
-pub fn find_tuplet_for_time_range(
-    track: &MTrack,
-    voice: usize,
-    on_time: Fraction,
-    len: Fraction,
-) -> Option<TupletKey> {
-    track
-        .tuplets
-        .iter()
-        .find(|(_, tuplet)| {
-            tuplet.voice == voice
-                && on_time + len > tuplet.on_time
-                && on_time < tuplet.on_time + tuplet.len
-        })
-        .map(|(key, _)| *key)
 }
 
 /// Retire les n-olets sans accord (`removeEmptyTuplets`).
@@ -425,17 +403,4 @@ pub fn tuplet_for_element(
                 && on_time + len <= tuplet.on_time + tuplet.len
         })
         .map(|(key, _)| *key)
-}
-
-/// Ratio d'un n-olet par sa clé.
-pub fn ratio_for_key(tuplets: &BTreeMap<TupletKey, TupletData>, key: TupletKey) -> Fraction {
-    tuplets
-        .get(&key)
-        .map(|tuplet| tuplet_limits(tuplet.tuplet_number).ratio)
-        .unwrap_or(Fraction::ONE)
-}
-
-/// Ticks (`Fraction`) d'un nombre de ticks MuseScore.
-pub fn ticks_fraction(ticks: i64) -> Fraction {
-    Fraction::from_ticks(ticks, UNITS_PER_WHOLE as u32)
 }
