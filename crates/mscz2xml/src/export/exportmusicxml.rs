@@ -63,6 +63,7 @@ use super::pedals;
 use super::pitch;
 use super::repeats;
 use super::stems;
+use super::systems;
 use super::text;
 use super::textlines;
 use super::writer::XmlWriter;
@@ -345,6 +346,8 @@ pub(crate) struct Context<'a> {
     tuplets: TupletIndex,
     /// Ligatures reconstituées, comme les `Beam` de la mise en page.
     beams: beams::Beams,
+    /// Systèmes explicites : portées masquées et barres de courtoisie.
+    systems: systems::Systems,
 }
 
 /// État des spanners d'une partie (`spannersStopped` et compteur d'instruments
@@ -366,12 +369,25 @@ impl<'a> Context<'a> {
             options,
             tuplets: TupletIndex::new(score),
             beams: beams::Beams::new(score, options.concert_pitch),
+            systems: systems::Systems::new(score),
         }
     }
 
     /// Vrai si l'export écrit les hauteurs en sons réels (`concertPitch`).
     pub(crate) fn concert_pitch(&self) -> bool {
         self.options.concert_pitch
+    }
+
+    /// Vrai si la mesure termine un système explicite.
+    pub(crate) fn ends_system(&self, measure_index: usize) -> bool {
+        self.systems.ends_system(measure_index)
+    }
+
+    /// Vrai si une armure de courtoisie impose une barre double
+    /// (`createEndBarLines`).
+    pub(crate) fn courtesy_key_bar_line(&self, measure_index: usize) -> bool {
+        self.systems.ends_system(measure_index)
+            && systems::courtesy_key_bar_line(self.score, measure_index)
     }
 
     /// Tempo en battements par seconde en vigueur à un tick
@@ -833,6 +849,34 @@ impl<'a> Context<'a> {
         if is_first {
             self.write_staff_details(out, part);
             self.write_instrument_details(out, part);
+        } else {
+            // Portées masquées du système (`hideEmptyStaves`) : MuseScore les
+            // signale à la première mesure du système, une `<attributes>` par
+            // portée (`writeMeasure`).
+            for &hidden in self.systems.hidden_at(measure_index) {
+                // La première portée du score n'est jamais signalée :
+                // `print()` ne calcule les distances qu'à partir de la
+                // deuxième portée de la première partie.
+                if hidden == 0 {
+                    continue;
+                }
+                let Some(position) = part
+                    .staves
+                    .iter()
+                    .position(|staff_id| staff_id.raw() as usize == hidden)
+                else {
+                    continue;
+                };
+                let number = (position + 1).to_string();
+                let mut attributes: Vec<(&str, &str)> = Vec::new();
+                if staves > 1 {
+                    attributes.push(("number", &number));
+                }
+                attributes.push(("print-object", "no"));
+                out.attr(true);
+                out.xml.tag_empty("staff-details", &attributes);
+                out.attr(false);
+            }
         }
         // `measureStyle` : un `<measure-style>` ouvre le groupe de silences
         // multi-mesures, sur la première mesure du groupe.

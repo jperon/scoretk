@@ -238,6 +238,8 @@ impl Reader {
         // Un saut de section porte sur la mesure suivante : MuseScore y
         // recommence la numérotation à 1 (et les `<attributes>` MusicXML).
         let mut section_break = false;
+        // Un saut de ligne ou de page, ou un cadre, ouvre le système suivant.
+        let mut line_break = false;
         for child in node.children() {
             match child.name() {
                 "Measure" => {
@@ -258,7 +260,9 @@ impl Reader {
                     }
                     let measure = self.ensure_measure(index, tick);
                     self.score.measures[measure].section_break_before |= section_break;
+                    self.score.measures[measure].line_break_before |= line_break;
                     section_break = Self::has_section_break(child);
+                    line_break = Self::has_line_break(child);
                     tick = measure::read_measure(self, measure, child, staff);
                     index += 1;
                 }
@@ -272,6 +276,7 @@ impl Reader {
                 // au-dessous du système précédent.
                 "TBox" => {
                     section_break |= Self::has_section_break(child);
+                    line_break = true;
                     let below = index > 0 && credits::page_break(child);
                     if let Some(text) = textlines::read_tbox(child, index, below) {
                         self.score.add_tbox_text(text);
@@ -279,6 +284,7 @@ impl Reader {
                 }
                 "VBox" => {
                     section_break |= Self::has_section_break(child);
+                    line_break = true;
                     // Les textes d'un `VBox` deviennent des `<credit>` ; les
                     // autres cadres n'en portent pas.
                     if staff == 0 {
@@ -289,6 +295,7 @@ impl Reader {
                 // seuls leurs sauts de page et de section comptent.
                 "HBox" | "FBox" => {
                     section_break |= Self::has_section_break(child);
+                    line_break = true;
                 }
                 _ => {}
             }
@@ -305,6 +312,14 @@ impl Reader {
         node.child("LayoutBreak")
             .and_then(|layout_break| layout_break.child("subtype"))
             .is_some_and(|subtype| subtype.trimmed_text() == "section")
+    }
+
+    /// Vrai si un élément porte un saut de ligne ou de page
+    /// (`<LayoutBreak>` de type `line` ou `page`).
+    fn has_line_break(node: &Node) -> bool {
+        node.child("LayoutBreak")
+            .and_then(|layout_break| layout_break.child("subtype"))
+            .is_some_and(|subtype| matches!(subtype.trimmed_text().as_str(), "line" | "page"))
     }
 
     /// Complète les silences multi-mesures d'un seul tenant.

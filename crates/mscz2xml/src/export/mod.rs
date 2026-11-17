@@ -51,6 +51,7 @@ mod pedals;
 mod pitch;
 mod repeats;
 mod stems;
+mod systems;
 mod text;
 mod textlines;
 mod writer;

@@ -512,6 +512,8 @@ impl Reader {
         let mut page = 1u32;
         // Un saut de section porte sur la mesure suivante.
         let mut section_break = false;
+        // Un saut de ligne ou de page, ou un cadre, ouvre le système suivant.
+        let mut line_break = false;
         for child in &element.children {
             match child.name.as_str() {
                 "Measure" => {
@@ -537,7 +539,11 @@ impl Reader {
                     if section_break {
                         self.score.measures[measure_index].section_break_before = true;
                     }
+                    if line_break {
+                        self.score.measures[measure_index].line_break_before = true;
+                    }
                     section_break = Self::has_section_break(child);
+                    line_break = Self::has_line_break(child);
                     measure_index += 1;
                 }
                 // Les cadres changent la numérotation affichée mais pas le
@@ -546,12 +552,14 @@ impl Reader {
                 // (`StaffRead::readStaff`).
                 "VBox" => {
                     section_break |= Self::has_section_break(child);
+                    line_break = true;
                     if staff_index == 0 {
                         self.read_vbox(child, page);
                     }
                 }
                 "TBox" => {
                     section_break |= Self::has_section_break(child);
+                    line_break = true;
                     // Texte de cadre exporté en `<words>` au début de la mesure
                     // qui suit (`tboxTextAsWords`) ; un cadre suivi d'un saut
                     // de page est au-dessous du système précédent.
@@ -564,6 +572,7 @@ impl Reader {
                 }
                 "HBox" | "FBox" => {
                     section_break |= Self::has_section_break(child);
+                    line_break = true;
                 }
                 "tick" => {}
                 _ => {}
@@ -585,6 +594,15 @@ impl Reader {
             .child("LayoutBreak")
             .and_then(|layout_break| layout_break.child("subtype"))
             .is_some_and(|subtype| subtype.text() == "section")
+    }
+
+    /// Vrai si un élément porte un saut de ligne ou de page
+    /// (`<LayoutBreak>` de type `line` ou `page`).
+    fn has_line_break(element: &Element) -> bool {
+        element
+            .child("LayoutBreak")
+            .and_then(|layout_break| layout_break.child("subtype"))
+            .is_some_and(|subtype| matches!(subtype.text(), "line" | "page"))
     }
 
     /// Lit les textes d'un cadre vertical (`VBox`), exportés en `<credit>`.

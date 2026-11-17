@@ -65,6 +65,12 @@ pub struct Measure {
     /// MuseScore recommence alors la numérotation affichée à 1 et réécrit les
     /// `<attributes>` de début de section (`<divisions>` compris).
     pub section_break_before: bool,
+    /// Vrai quand la mesure ouvre un système d'après les sauts explicites du
+    /// fichier (`<LayoutBreak>` de type `line` ou `page`, ou cadre).
+    ///
+    /// La mise en page automatique de MuseScore n'est pas reproduite : seuls
+    /// les sauts écrits dans le `.mscx` sont connus du modèle.
+    pub line_break_before: bool,
     /// Marqueurs et sauts attachés à la mesure, dans l'ordre du fichier
     /// (`Measure::el()` dans MuseScore).
     pub repeat_marks: Vec<RepeatMark>,
@@ -85,6 +91,7 @@ impl Measure {
             repeat_count: 0,
             multi_measure_rest: None,
             section_break_before: false,
+            line_break_before: false,
             repeat_marks: Vec::new(),
             segments: Vec::new(),
         }

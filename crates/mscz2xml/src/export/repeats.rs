@@ -244,7 +244,11 @@ pub(super) fn barline_right(
     part_index: usize,
     measure_index: usize,
 ) {
-    let kind = end_bar_line_type(context, measure, measure_index);
+    let mut kind = end_bar_line_type(context, measure, measure_index);
+    // Armure de courtoisie en fin de système (`createEndBarLines`).
+    if kind == BarLineType::Normal && context.courtesy_key_bar_line(measure_index) {
+        kind = BarLineType::Double;
+    }
     let need_style = kind != BarLineType::Normal && kind != BarLineType::StartRepeat;
     let volta = first_staff(context, part_index)
         .and_then(|staff| find_volta(context, measure, false, staff));
