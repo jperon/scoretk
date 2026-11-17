@@ -401,10 +401,14 @@ pub(crate) fn read_direction(
         }
         if let Some(hairpin) = start.hairpin.as_mut() {
             if !dynamics.is_empty() {
-                hairpin.begin_text = dynamics
+                let dynamics_markup = dynamics
                     .iter()
                     .map(|(name, _)| dynamic_markup(name))
                     .collect::<String>();
+                hairpin.begin_text = format!("{}{}", words, dynamics_markup);
+                if let Some(font) = &words_font {
+                    hairpin.begin_font = font.clone();
+                }
                 dynamics_for_hairpin = true;
             } else if !words.is_empty() && !words_for_line {
                 hairpin.begin_text = words.clone();
@@ -536,10 +540,14 @@ pub(crate) fn read_direction(
             if stop.0 == SpannerTag::Wedge {
                 if let Some(hairpin) = score.spanners[index].hairpin.as_mut() {
                     if !dynamics.is_empty() {
-                        hairpin.end_text = dynamics
+                        let dynamics_markup = dynamics
                             .iter()
                             .map(|(name, _)| dynamic_markup(name))
                             .collect::<String>();
+                        hairpin.end_text = format!("{}{}", words, dynamics_markup);
+                        if let Some(font) = &words_font {
+                            hairpin.end_font = font.clone();
+                        }
                     } else if !words.is_empty() {
                         hairpin.end_text = words.clone();
                         if let Some(font) = &words_font {
