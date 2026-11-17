@@ -53,10 +53,8 @@ fn mscz_vers_musicxml_identique_a_mscz2xml() {
         "hairpins_and_repeats.mscx",
     ] {
         let path = common::corpus_v4(name);
-        if !path.is_file() {
-            continue;
-        }
-        let mscx = std::fs::read(&path).expect("lecture du corpus");
+        let mscx =
+            std::fs::read(&path).unwrap_or_else(|error| panic!("{} : {error}", path.display()));
         let mscz = common::mscz_from_mscx(&mscx);
 
         assert_eq!(Format::detect(&mscz), Some(Format::Mscz), "{name}");
