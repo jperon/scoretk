@@ -1532,9 +1532,10 @@ impl Context<'_> {
 
             out.attr(false);
             // Vélocité utilisateur (import MIDI) : MuseScore l'écrit en
-            // `dynamics`, avec son échelle 90 = 100 %.
+            // `dynamics`, avec son échelle 90 = 100 % et rien pour zéro.
             let dynamics = note
                 .velocity
+                .filter(|velocity| *velocity != 0)
                 .map(|velocity| format_dynamics(f64::from(velocity) * 100.0 / 90.0));
             match &dynamics {
                 Some(value) => out.xml.start_element("note", &[("dynamics", value)]),
@@ -2854,14 +2855,6 @@ fn plain_text(text: &str) -> String {
 }
 
 /// Nombre formaté comme MuseScore : entier si possible, sinon arrondi.
-/// Écrit une dynamique de note comme MuseScore : deux décimales, zéros de
-/// queue retirés (`dynamics=\"80\"`, `dynamics=\"54.44\"`).
-fn format_dynamics(value: f64) -> String {
-    let text = format!("{value:.2}");
-    let trimmed = text.trim_end_matches('0').trim_end_matches('.');
-    trimmed.to_owned()
-}
-
 pub(crate) fn format_number(value: f64, decimals: usize) -> String {
     let factor = 10_f64.powi(decimals as i32);
     let rounded = (value * factor).round() / factor;
@@ -2870,6 +2863,17 @@ pub(crate) fn format_number(value: f64, decimals: usize) -> String {
     } else {
         format!("{rounded}")
     }
+}
+
+/// Dynamique d'une note, comme `ExportMusicXml::chord`
+/// (`importexport/musicxml/internal/export/exportmusicxml.cpp`) : l'attribut
+/// `dynamics` vaut `velo * 100.0 / 90.0`, écrit avec deux décimales puis sans
+/// zéros de queue (`dynamics="80"`, `dynamics="54.44"`). MuseScore n'écrit
+/// rien quand la vélocité utilisateur vaut zéro.
+fn format_dynamics(value: f64) -> String {
+    let text = format!("{value:.2}");
+    let trimmed = text.trim_end_matches('0').trim_end_matches('.');
+    trimmed.to_owned()
 }
 
 /// Cherche un segment d'un type et d'un tick donnés.
