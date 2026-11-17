@@ -647,6 +647,17 @@ fn read_note(
         }
     }
     chord_rest.lyrics = read_lyrics(element);
+    if let Some(mode) = read_beam(element) {
+        chord_rest.beam_mode = mode;
+        if matches!(
+            mode,
+            mscz2xml::model::BeamMode::Begin
+                | mscz2xml::model::BeamMode::Begin16
+                | mscz2xml::model::BeamMode::Begin32
+        ) {
+            chord_rest.beam_direction = read_stem(element);
+        }
+    }
     if let Some(chord) = chord_rest.chord_mut() {
         chord.staff_move = staff_move;
         if let Some(stem) = read_stem(element) {
@@ -1286,6 +1297,32 @@ fn read_lyrics(element: &Element) -> Vec<Lyrics> {
         result.push(entry);
     }
     result
+}
+
+/// Mode de ligature écrit dans `<beam>` (`MusicXmlParserPass2::beam`).
+fn read_beam(element: &Element) -> Option<mscz2xml::model::BeamMode> {
+    use mscz2xml::model::BeamMode;
+    for beam in element.children_named("beam") {
+        let number = beam
+            .attribute("number")
+            .and_then(|number| number.parse::<usize>().ok())
+            .unwrap_or(1);
+        let begin = match number {
+            2 => BeamMode::Begin16,
+            3 => BeamMode::Begin32,
+            _ => BeamMode::Begin,
+        };
+        let mode = match beam.text_trimmed() {
+            "begin" => begin,
+            "continue" => BeamMode::Mid,
+            "end" => BeamMode::End,
+            "forward hook" => BeamMode::ForwardHook,
+            "backward hook" => BeamMode::BackwardHook,
+            _ => continue,
+        };
+        return Some(mode);
+    }
+    None
 }
 
 /// Direction de hampe écrite dans `<stem>`.

@@ -168,6 +168,7 @@ pub(crate) fn read_direction(
     let mut words_markup = String::new();
     let mut rehearsal_text = String::new();
     let mut dynamics: Vec<(String, bool)> = Vec::new();
+    let mut has_dynamics_element = false;
     let mut dynamic_placement: Option<Placement> = None;
     let mut metronome: Option<Metronome> = None;
     let mut starts: Vec<SpannerStart> = Vec::new();
@@ -196,6 +197,7 @@ pub(crate) fn read_direction(
                         .map_or(0, |number| number.saturating_sub(1));
                     match kind.name.as_str() {
                         "dynamics" => {
+                            has_dynamics_element = true;
                             dynamic_placement = placement(kind.attribute("placement"));
                             read_dynamics(kind, &mut dynamics);
                         }
@@ -488,6 +490,10 @@ pub(crate) fn read_direction(
                 Annotation::StaffText(text),
             );
         }
+    }
+
+    if dynamics.is_empty() && has_dynamics_element && sound_dynamics.is_some() {
+        dynamics.push((String::new(), false));
     }
 
     // Nuances.
