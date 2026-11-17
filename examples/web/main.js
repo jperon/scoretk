@@ -25,7 +25,7 @@
 // Le chemin d'import pointe vers `result/esm/` ; adapter la ligne suivante si
 // le paquet est servi depuis un autre dossier.
 
-import init, { convert, version } from '../../result/esm/mscz2xml_wasm.js';
+import init, { convert, version } from '../../result/esm/scoretk_wasm.js';
 
 const versionLabel = document.querySelector('#version');
 const fileInput = document.querySelector('#file');
@@ -61,7 +61,7 @@ async function handleFile(file) {
   }
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const xml = convert(bytes, { encodingDate: today() });
+    const xml = new TextDecoder().decode(convert(bytes, { encodingDate: today() }));
     showMusicXml(xml, file.name);
   } catch (error) {
     output.hidden = true;
@@ -72,7 +72,7 @@ async function handleFile(file) {
 
 try {
   await init();
-  versionLabel.textContent = `mscz2xml ${version()} — module ESM chargé`;
+  versionLabel.textContent = `scoretk ${version()} — module ESM chargé`;
 } catch (error) {
   versionLabel.textContent = 'échec du chargement du module';
   showError(error);

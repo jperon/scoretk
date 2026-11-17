@@ -1,0 +1,31 @@
+[package]
+name = "scoretk-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Bindings WebAssembly de la façade scoretk (MuseScore, MusicXML, LilyPond, ABC, MIDI)"
+repository.workspace = true
+homepage.workspace = true
+
+[lib]
+# cdylib : le .wasm consommé par wasm-bindgen ; rlib : pour que
+# `cargo test/clippy --workspace` compile le crate sur l'hôte.
+name = "scoretk_wasm"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Toutes les features : le paquet navigateur est la façade complète, comme la
+# CLI scoretk (cf. crates/scoretk-cli/Cargo.toml).
+scoretk = { path = "../scoretk", features = [
+    "musicxml-import",
+    "midi",
+    "lilypond",
+    "lilypond-import",
+    "mscx",
+    "abc",
+] }
+# Doit être ÉGALE à la version de wasm-bindgen-cli du shell nix (sinon
+# « schema version mismatch » au moment de `wasm-bindgen`).
+wasm-bindgen = "=0.2.130"
+js-sys = "0.3"

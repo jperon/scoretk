@@ -287,15 +287,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mscz2xml-wasm"
-version = "0.1.0"
-dependencies = [
- "js-sys",
- "mscz2xml",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -414,6 +405,15 @@ dependencies = [
  "similar 3.2.1",
  "thiserror",
  "zip",
+]
+
+[[package]]
+name = "scoretk-wasm"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "scoretk",
+ "wasm-bindgen",
 ]
 
 [[package]]

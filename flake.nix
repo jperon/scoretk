@@ -99,62 +99,49 @@
 
         # --- Paquet navigateur (`nix build .#wasm`) ----------------------
         #
-        # Deux étapes : (1) compiler le cdylib wasm avec crane, en réutilisant
-        # les dépendances déjà compilées pour wasm32 ; (2) passer le .wasm à
-        # wasm-bindgen (deux cibles) et wasm-opt dans une dérivation séparée.
-        # Aucune des deux ne demande le réseau : les sources des dépendances
-        # sont vendues par crane à partir de Cargo.lock.
-        #
-        # `doInstallCargoArtifacts = false` : on ne veut pas l'archive des
-        # artefacts cargo, seulement le .wasm.
+        # Compilation wasm32 de l'enveloppe de la façade (crate scoretk-wasm)
+        # avec les dépendances déjà compilées (wasmCargoArtifacts), puis
+        # wasm-bindgen et wasm-opt. C'est le seul paquet wasm du dépôt.
         wasm32Build = craneLib.cargoBuild (commonArgs
           // {
             cargoArtifacts = wasmCargoArtifacts;
             CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-            cargoExtraArgs = "--locked -p mscz2xml-wasm";
+            cargoExtraArgs = "--locked -p scoretk-wasm";
             doCheck = false;
             doInstallCargoArtifacts = false;
             installPhaseCommand = ''
               mkdir -p $out
-              cp target/wasm32-unknown-unknown/release/mscz2xml_wasm.wasm $out/
+              cp target/wasm32-unknown-unknown/release/scoretk_wasm.wasm $out/
             '';
           });
 
-        # `package.json` généré depuis la version du workspace : pas de
-        # deuxième numéro de version à maintenir.
-        wasmPackageJson = pkgs.writeText "mscz2xml-package.json" (builtins.toJSON {
+        wasmPackageJson = pkgs.writeText "scoretk-package.json" (builtins.toJSON {
           name = "scoretk";
           inherit version;
-          description = "Conversion MuseScore (.mscz/.mscx) vers MusicXML, dans le navigateur (WebAssembly)";
+          description = "Conversion de partitions (MuseScore, MusicXML, LilyPond, ABC, MIDI) dans le navigateur, WebAssembly";
           license = "GPL-3.0-only";
-          # GPL §6 : où obtenir la source correspondante.
           repository = {
             type = "git";
             url = "https://github.com/jperon/scoretk";
           };
           type = "module";
-          main = "./esm/mscz2xml_wasm.js";
-          types = "./esm/mscz2xml_wasm.d.ts";
+          main = "./esm/scoretk_wasm.js";
+          types = "./esm/scoretk_wasm.d.ts";
           exports = {
             "." = {
-              types = "./esm/mscz2xml_wasm.d.ts";
-              default = "./esm/mscz2xml_wasm.js";
+              types = "./esm/scoretk_wasm.d.ts";
+              default = "./esm/scoretk_wasm.js";
             };
-            "./classic/mscz2xml.js" = "./classic/mscz2xml.js";
+            "./classic/scoretk.js" = "./classic/scoretk.js";
             "./classic/*" = "./classic/*";
             "./package.json" = "./package.json";
           };
           files = ["esm" "classic" "README.md" "LICENSE" "NOTICE"];
-          # La variante classic s'auto-installe sur `self.mscz2xml` au chargement.
-          sideEffects = ["./classic/mscz2xml.js"];
+          sideEffects = ["./classic/scoretk.js"];
         });
 
-        # Bandeau de licence ajouté en tête de chaque fichier JS généré par
-        # wasm-bindgen. Le `/*!` est conservé par esbuild et les minificateurs
-        # usuels, contrairement aux commentaires ordinaires : la mention de
-        # licence survit donc à la minification (§5a et §6 de la GPL).
-        wasmLicenseBanner = pkgs.writeText "mscz2xml-license-banner.js" ''
-          /*! @license GPL-3.0-only — scoretk (WebAssembly)
+        wasmLicenseBanner = pkgs.writeText "scoretk-wasm-license-banner.js" ''
+          /*! @license GPL-3.0-only — scoretk (façade multi-formats, WebAssembly)
            * Copyright (C) 2026 jperon
            * Portage de MuseScore Studio, Copyright (C) MuseScore Limited and others,
            * modifié (réécrit en Rust) en 2026.
@@ -163,59 +150,50 @@
            */
         '';
 
-        wasm = pkgs.runCommand "mscz2xml-wasm-${version}" {
-          nativeBuildInputs = [pkgs.wasm-bindgen-cli pkgs.binaryen];
+        wasm = pkgs.runCommand "scoretk-wasm-${version}" {
+          nativeBuildInputs = [pkgs.wasm-bindgen-cli pkgs.binaryen pkgs.gzip];
         } ''
           mkdir -p $out/esm $out/classic
 
-          # Variante module ES (page, bundler) : init() par défaut charge le
-          # .wasm voisin du module.
           wasm-bindgen --target web \
-            --out-dir $out/esm --out-name mscz2xml_wasm \
-            ${wasm32Build}/mscz2xml_wasm.wasm
+            --out-dir $out/esm --out-name scoretk_wasm \
+            ${wasm32Build}/scoretk_wasm.wasm
 
-          # Variante script classique (importScripts dans un Web Worker) :
-          # expose le global `wasm_bindgen`, initialisé avec une URL explicite.
           wasm-bindgen --target no-modules \
-            --out-dir $out/classic --out-name mscz2xml_wasm \
-            ${wasm32Build}/mscz2xml_wasm.wasm
+            --out-dir $out/classic --out-name scoretk_wasm \
+            ${wasm32Build}/scoretk_wasm.wasm
 
-          # wasm-bindgen ne compacte pas ; wasm-opt (binaryen) retire le code
-          # mort restant et les noms de débogage. Chaque variante a son propre
-          # exemplaire du .wasm, optimisé séparément.
-          for module in $out/esm/mscz2xml_wasm_bg.wasm $out/classic/mscz2xml_wasm_bg.wasm; do
+          for module in $out/esm/scoretk_wasm_bg.wasm $out/classic/scoretk_wasm_bg.wasm; do
+            echo "avant wasm-opt : $(stat -c%s "$module") octets ($module)"
             wasm-opt -Oz --strip-debug "$module" -o "$module.opt"
             mv "$module.opt" "$module"
           done
 
-          # Wrapper de confort `self.mscz2xml = { ready, convert, version }`.
-          install -m 0644 ${./crates/mscz2xml-wasm/pkg/classic/mscz2xml.js} \
-            $out/classic/mscz2xml.js
+          raw=$(stat -c%s $out/esm/scoretk_wasm_bg.wasm)
+          gz=$(gzip -9 -c $out/esm/scoretk_wasm_bg.wasm | wc -c)
+          echo "scoretk : $raw octets ($gz octets gzip)"
+          echo "$raw octets ($gz gzip)" > $out/SIZE
 
-          # Bandeau `/*! @license … */` en tête des fichiers générés par
-          # wasm-bindgen : il porte la licence et l'indication de la source
-          # correspondante, et survit à la minification.
-          for module in $out/esm/mscz2xml_wasm.js $out/classic/mscz2xml_wasm.js; do
+          install -m 0644 ${./crates/scoretk-wasm/pkg/classic/scoretk.js} \
+            $out/classic/scoretk.js
+
+          for module in $out/esm/scoretk_wasm.js $out/classic/scoretk_wasm.js; do
             cat ${wasmLicenseBanner} "$module" > "$module.banner"
             mv "$module.banner" "$module"
           done
 
           install -m 0644 ${wasmPackageJson} $out/package.json
-          install -m 0644 ${./crates/mscz2xml-wasm/pkg/README.md} $out/README.md
-          # GPL §6 : le paquet doit permettre d'obtenir la source
-          # correspondante ; licence et NOTICE accompagnent la distribution.
+          install -m 0644 ${./crates/scoretk-wasm/pkg/README.md} $out/README.md
           install -m 0644 ${./LICENSE} $out/LICENSE
           install -m 0644 ${./NOTICE} $out/NOTICE
         '';
 
-        # Test Node de la variante ESM, sur le paquet tel que `nix build` le
-        # produit (même chemin de code que le navigateur, sans navigateur).
-        wasmNodeSmoke = pkgs.runCommand "mscz2xml-wasm-node-smoke" {
+        wasmNodeSmoke = pkgs.runCommand "scoretk-wasm-node-smoke" {
           nativeBuildInputs = [pkgs.nodejs];
         } ''
-          export MSCZ2XML_PKG_DIR=${wasm}
-          export MSCZ2XML_CORPUS=${./tests/corpus/v4/dynamics.mscx}
-          node ${./crates/mscz2xml-wasm/tests/node-smoke.mjs}
+          export SCORETK_PKG_DIR=${wasm}
+          export SCORETK_CORPUS=${./tests/corpus}
+          node ${./crates/scoretk-wasm/tests/node-smoke.mjs}
           touch $out
         '';
 
@@ -318,10 +296,10 @@
             '';
           };
 
-          # Test Node du paquet était bâti par `packages.wasm` : il vérifie la
+          # Test Node du paquet produit par `packages.wasm` : il vérifie la
           # variante ESM telle que livrée (initSync, conversion du corpus,
           # entrée invalide).
-          nodeSmoke = wasmNodeSmoke;
+          wasm-node-smoke = wasmNodeSmoke;
 
           # La librairie doit au moins compiler pour wasm32 ; pas de tests ici
           # (doCheck = false) puisqu'on ne peut pas les exécuter sur cette cible.
@@ -329,7 +307,7 @@
             // {
               cargoArtifacts = wasmCargoArtifacts;
               CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-              cargoExtraArgs = "-p mscz2xml -p scoretk -p scoretk-abc -p scoretk-midi -p scoretk-lilypond -p scoretk-musicxml -p scoretk-mscx";
+              cargoExtraArgs = "-p mscz2xml -p scoretk -p scoretk-abc -p scoretk-midi -p scoretk-lilypond -p scoretk-musicxml -p scoretk-mscx -p scoretk-wasm";
               doCheck = false;
             });
         };

@@ -59,14 +59,35 @@ $ cargo test --workspace
 $ rustup target add wasm32-unknown-unknown
 $ cargo build -p mscz2xml --target wasm32-unknown-unknown
 $ cargo build -p scoretk-midi --target wasm32-unknown-unknown
+$ cargo build -p scoretk-wasm --target wasm32-unknown-unknown
 ```
+
+## Paquet WebAssembly
+
+`nix build .#wasm` produit le paquet navigateur de la façade (module ES et
+script classique) dans `result/` : `package.json` `name: "scoretk"`,
+`esm/scoretk_wasm.*`, `classic/scoretk.js`. Son API est documentée dans
+[`docs/agents/wasm.md`](docs/agents/wasm.md) :
+
+```js
+import init, { convert } from 'scoretk';
+
+await init();
+const xml = new TextDecoder().decode(convert(bytes)); // musicxml par défaut
+const midi = convert(bytes, { to: 'midi' });          // Uint8Array
+```
+
+Il succède à l'ancien paquet mono-format `mscz2xml` : `convert` renvoie
+désormais un `Uint8Array` et expose `detect`/`formats` (voir la section
+« Migration » du document wasm).
 
 ## Structure
 
 - `crates/mscz2xml` : bibliothèque portable (aucune I/O).
 - `crates/mscz2xml-cli` : binaire `mscz2xml`, lecture du fichier et
   affichage des informations de conteneur.
-- `crates/mscz2xml-wasm` : enveloppe WebAssembly (`convert`, `version`).
+- `crates/scoretk-wasm` : enveloppe WebAssembly de la façade (`convert`,
+  `detect`, `formats`, `version`), unique paquet wasm.
 - `crates/scoretk-midi` : écriture MIDI (Standard MIDI File format 1) et
   déroulement des reprises, sans I/O.
 - `crates/scoretk` et `crates/scoretk-cli` : façade multi-formats et binaire

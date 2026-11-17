@@ -43,6 +43,20 @@ struct Pause {
     seconds: f64,
 }
 
+/// Pause de section insérée dans la performance.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct PauseSpan {
+    /// Tick d'exécution du début de pause **avant** décalage (tick déroulé,
+    /// sans les pauses).
+    pub base_utick: i64,
+    /// Tick d'exécution du début de la pause, pauses précédentes comprises.
+    pub paused_utick: i64,
+    /// Ticks insérés par cette pause.
+    pub inserted: i64,
+    /// Durée de la pause, en secondes.
+    pub seconds: f64,
+}
+
 /// Carte des ticks insérés et des changements de tempo associés.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PauseMap {
@@ -51,6 +65,8 @@ pub(crate) struct PauseMap {
     /// Changements de tempo (tick d'exécution, battements par seconde) dus aux
     /// pauses.
     pub(crate) tempo_events: Vec<(i64, f64)>,
+    /// Pauses insérées, dans l'ordre de construction.
+    spans: Vec<PauseSpan>,
 }
 
 impl PauseMap {
@@ -64,6 +80,7 @@ impl PauseMap {
         let mut map = Self {
             offsets: BTreeMap::from([(0, 0)]),
             tempo_events: Vec::new(),
+            spans: Vec::new(),
         };
         if pauses.is_empty() {
             return map;
@@ -81,6 +98,12 @@ impl PauseMap {
                 let quarter_notes = quarter_notes_per_measure(time_signatures, pause.tick);
                 let extra = (quarter_notes * f64::from(DIVISION)).round() as i64 + before;
                 map.offsets.insert(utick, extra);
+                map.spans.push(PauseSpan {
+                    base_utick: utick,
+                    paused_utick: utick + before,
+                    inserted: extra - before,
+                    seconds: pause.seconds,
+                });
 
                 // Tempo de la pause, puis retour au tempo en vigueur.
                 let pause_tempo = quarter_notes / pause.seconds.max(f64::EPSILON);
@@ -103,6 +126,28 @@ impl PauseMap {
     /// Tick d'exécution réel (`PauseMap::tickWithPauses`).
     pub(crate) fn tick_with_pauses(&self, utick: i64) -> i64 {
         utick + self.offset_at(utick)
+    }
+
+    /// Tick d'exécution réel, pauses **strictement** antérieures seulement.
+    ///
+    /// Sert aux fins de mesures : une pause qui ouvre la mesure suivante n'est
+    /// pas comptée dans la fin de la mesure courante, ce qui évite de compter
+    /// deux fois la pause à la frontière.
+    pub(crate) fn tick_with_pauses_before(&self, utick: i64) -> i64 {
+        utick + self.offset_at_before(utick)
+    }
+
+    /// Pauses de section insérées, dans l'ordre de construction.
+    pub(crate) fn spans(&self) -> &[PauseSpan] {
+        &self.spans
+    }
+
+    /// Total des ticks insérés strictement avant `utick`.
+    fn offset_at_before(&self, utick: i64) -> i64 {
+        self.offsets
+            .range(..utick)
+            .next_back()
+            .map_or(0, |(_, offset)| *offset)
     }
 }
 

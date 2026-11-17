@@ -2,9 +2,10 @@
 //
 // Copyright (C) 2026 jperon
 //
-// Portage de `engraving/dom/note.h`, `engraving/dom/tie.h` et
-// `engraving/dom/pitchspelling.h` de MuseScore Studio, Copyright (C) MuseScore
-// Limited and others, modifié (réécrit en Rust) en 2026.
+// Portage de `engraving/dom/note.h`, `engraving/dom/note.cpp`
+// (`customizeVelocity`), `engraving/dom/tie.h`, `engraving/dom/pitchspelling.h`
+// et `engraving/types/types.h` (`VeloType`) de MuseScore Studio, Copyright (C)
+// MuseScore Limited and others, modifié (réécrit en Rust) en 2026.
 //
 // This program is free software: you can redistribute it and/or modify it
 // under the terms of the GNU General Public License version 3 as published by
@@ -113,6 +114,19 @@ pub enum NoteHeadType {
     X,
     /// Autre tête, valeur brute du type MuseScore.
     Other(u8),
+}
+
+/// Type de vélocité de note (`VeloType` de `engraving/types/types.h`).
+///
+/// Le sens de [`Note::user_velocity`] dépend de cette valeur :
+/// `Pid::VELO_TYPE` (`<veloType>` du `.mscx`) vaut `USER_VAL` par défaut, comme
+/// `Note::m_veloType` dans `engraving/dom/note.h`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum VeloType {
+    /// Pourcentage ajouté à la vélocité calculée (`OFFSET_VAL`, XML `offset`).
+    OffsetVal,
+    /// Vélocité absolue (`USER_VAL`, XML `user`).
+    UserVal,
 }
 
 /// Groupe de tête de note.
@@ -289,12 +303,32 @@ pub struct Note {
     pub ghost: bool,
     /// Vrai si la note est jouée.
     pub play: bool,
-    /// Vélocité utilisateur (`Note::userVelocity` de MuseScore), 1-127.
+    /// Vélocité importée du MIDI, valeur absolue 1-127.
     ///
     /// Renseignée par l'import MIDI ; l'export MusicXML en tire l'attribut
     /// `dynamics` de la note (`velo * 100 / 90`, échelle de MuseScore).
     /// `None` quand la note suit les nuances de la partition.
+    ///
+    /// Ce champ est **distinct** de [`Note::user_velocity`] : il ne provient
+    /// pas de la propriété MuseScore `Pid::USER_VELOCITY` (`<velocity>` du
+    /// `.mscx`) et n'est pas interprété via [`Note::velo_type`]. Le rendu MIDI
+    /// utilise `user_velocity` ; l'export MusicXML conserve `velocity`.
     pub velocity: Option<u8>,
+    /// `Pid::USER_VELOCITY` de la note (`<velocity>` du `.mscx`, `Note::userVelocity()`),
+    /// entier **signé** : pourcentage d'écart en mode [`VeloType::OffsetVal`],
+    /// vélocité absolue en mode [`VeloType::UserVal`].
+    ///
+    /// `None` quand la balise est absente, c'est-à-dire `m_userVelocity = 0`
+    /// (aucun effet, cf. `compatmidirenderinternal.cpp` : `if
+    /// (note->userVelocity() != 0)`).
+    pub user_velocity: Option<i32>,
+    /// Interprétation de [`Note::user_velocity`] (`Pid::VELO_TYPE`,
+    /// `<veloType>` du `.mscx`).
+    ///
+    /// `None` correspond à la valeur par défaut `VeloType::UserVal`
+    /// (`Note::m_veloType`). Le C++ n'écrit `<veloType>` que lorsqu'il vaut
+    /// `offset`.
+    pub velo_type: Option<VeloType>,
     /// Doigtés attachés à la note (`<Fingering>`), exportés en
     /// `<technical><fingering>`.
     pub fingerings: Vec<Fingering>,
@@ -320,6 +354,8 @@ impl Note {
             ghost: false,
             play: true,
             velocity: None,
+            user_velocity: None,
+            velo_type: None,
             fingerings: Vec::new(),
         }
     }

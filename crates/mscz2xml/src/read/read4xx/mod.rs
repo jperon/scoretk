@@ -62,7 +62,7 @@ use crate::model::{
     Measure, MidiArticulation, Note, NoteId, Part, Placement, RehearsalFrame, RehearsalMark,
     RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffText, StemDirection,
     SystemText, Tempo, Tick, TimeSig, TimeSigType, Track, Transpose, TremoloKind, Tuplet, TupletId,
-    TupletNumberType, VOICES,
+    TupletNumberType, VeloType, VOICES,
 };
 use crate::{Error, Result};
 
@@ -1554,6 +1554,25 @@ impl Reader {
                 }
                 "ghost" | "dead" => note.ghost = child.int().unwrap_or(0) != 0,
                 "play" => note.play = child.int().unwrap_or(1) != 0,
+                "velocity" => {
+                    // `rw/read410/tread.cpp:3174-3175` (identique en 4.60 et
+                    // 5.00) : `n->setUserVelocity(e.readInt())`.
+                    // `Pid::USER_VELOCITY` est un INT signé (`dom/property.cpp:87`) :
+                    // en mode offset, une valeur négative réduit la vélocité.
+                    note.user_velocity = child.int().and_then(|value| i32::try_from(value).ok());
+                }
+                "veloType" => {
+                    // `rw/read410/tread.cpp:3190-3191` : `TRead::readProperty(n,
+                    // e, ctx, Pid::VELO_TYPE)`. `TConv::fromXml`
+                    // (`typesconv.cpp:2499-2500`) lit `offset`/`user` et retombe
+                    // sur `OFFSET_VAL` pour une valeur inconnue ; la valeur par
+                    // défaut de la propriété est `USER_VAL`
+                    // (`dom/note.cpp:3316-3317`).
+                    note.velo_type = Some(match child.text() {
+                        "user" => VeloType::UserVal,
+                        _ => VeloType::OffsetVal,
+                    });
+                }
                 "Spanner" if child.attr("type") == Some("Tie") => {
                     self.register_tie(&note, child, tick, track);
                 }

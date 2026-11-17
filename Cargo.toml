@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "crates/mscz2xml",
     "crates/mscz2xml-cli",
-    "crates/mscz2xml-wasm",
     "crates/scoretk",
     "crates/scoretk-abc",
     "crates/scoretk-cli",
@@ -11,6 +10,7 @@ members = [
     "crates/scoretk-midi",
     "crates/scoretk-musicxml",
     "crates/scoretk-mscx",
+    "crates/scoretk-wasm",
 ]
 
 [workspace.package]

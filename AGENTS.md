@@ -16,13 +16,11 @@ Carte des crates et modules :
   (ZIP `.mscz` → `.mscx`, version), `read/read302` (3.x) et `read/read4xx`
   (4.x/5.x) → modèle, `model/` (modèle en mémoire), `export/` (MusicXML).
 - `crates/mscz2xml-cli` — binaire `mscz2xml` : lecture/écriture des fichiers.
-- `crates/mscz2xml-wasm` — enveloppe wasm-bindgen (`convert`, `version`),
-  sans logique de conversion.
 - `crates/scoretk-musicxml` — lecteur MusicXML (`read_musicxml`) vers le
   modèle : `.musicxml`/`.xml`/`.mxl` → `Score`.
 - `crates/scoretk-midi` — lecture MIDI (`read_midi`, portage de l'import de
   MuseScore, `import/`) et écriture (SMF format 1) avec déroulement des
-  reprises (`repeat_list.rs`), sans I/O.
+  reprises (`repeat_list.rs`) et carte des temps (`timemap.rs`), sans I/O.
 - `crates/scoretk-lilypond` — écriture LilyPond (`.ly`) depuis le modèle (t36,
   voix en `\fixed c'`) et lecture d'un sous-ensemble de LilyPond par portage
   de `lily/parser.yy`/`lexer.ll` (t40), sans I/O.
@@ -37,6 +35,9 @@ Carte des crates et modules :
   `lilypond-import` (t40) et `abc` (t41) branchées dans `src/hooks.rs`.
 - `crates/scoretk-cli` — binaire `scoretk` (`entrée -o sortie`, `--from`,
   `--to`, `-` pour stdin/stdout) : I/O disque de la façade.
+- `crates/scoretk-wasm` — enveloppe wasm-bindgen de la façade (`convert`,
+  `detect`, `formats`, `version`) ; unique paquet wasm du dépôt
+  (`nix build .#wasm`).
 - `tests/corpus/{v3,v4}/` — `.mscx` amont + références `*.ref.musicxml` ;
   `tests/corpus/midi/` — références `*.ref.mid` ; `crates/mscz2xml/tests/` et
   `crates/scoretk-midi/tests/` — tests par famille et e2e de conformité.
@@ -70,10 +71,23 @@ Carte des crates et modules :
    (vérifiée par `scripts/check-licences.py`). Modèle d'en-tête :
    `docs/agents/developpement.md`.
 5. **Contrat wasm stable pour cantus.** Ne pas changer sans coordination :
-   paquet `package.json` `name: "scoretk"` ; `esm/mscz2xml_wasm.js` +
-   `mscz2xml_wasm_bg.wasm` + `.d.ts` ; `classic/mscz2xml.js` exposant
-   `self.mscz2xml = { ready, convert, version, baseUrl }` ;
-   `convert(bytes, { encodingDate? }) → string` ; `version() → string`.
+   paquet `package.json` `name: "scoretk"` ; `esm/scoretk_wasm.js` +
+   `esm/scoretk_wasm_bg.wasm` + `esm/scoretk_wasm.d.ts` ;
+   `classic/scoretk.js` exposant
+   `self.scoretk = { ready, convert, convertWithTimeline, version, detect,
+   formats, baseUrl }` ;
+   `convert(Uint8Array, { from?, to?, encodingDate?, software?, concertPitch?,
+   expandRepeats? }) → Uint8Array` (`to` vaut `"musicxml"` par défaut) ;
+   `detect(bytes) → string | null` ; `formats() → FormatInfo[]` ;
+   `version() → string` ; `convertWithTimeline(bytes, options?) →
+   { musicxml, midi, timeline }` (additif : MusicXML identifié et carte des
+   temps, voir `docs/agents/timemap.md` ; `timeline.measures[].ordinal` est
+   l'indice 0-basé de la mesure et la seule clé d'ancrage, `timeline.notes`
+   est trié par `tick` croissant puis par clé stable). C'est une **rupture assumée** par
+   rapport à l'ancien
+   contrat `mscz2xml_wasm` (qui renvoyait du texte) : plus de paquet
+   `mscz2xml-wasm`, Cantus s'adapte en décodant le `Uint8Array` avec
+   `TextDecoder` (voir `docs/agents/wasm.md` § 9).
 6. **Pas de C++ amont distribué.** Le portage est une réécriture ; la copie de
    référence `ref-musescore/` est en lecture seule et non versionnée.
 
@@ -91,6 +105,7 @@ nix develop -c cargo build -p scoretk-mscx --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk --target wasm32-unknown-unknown
 nix flake check
 nix build .#wasm
+nix develop -c cargo build -p scoretk-wasm --target wasm32-unknown-unknown
 
 # Conformité, deux niveaux (noyau musical, puis parité complète)
 nix develop -c cargo test -p mscz2xml --test e2e_corpus -- --nocapture
@@ -98,7 +113,7 @@ nix develop -c cargo test -p mscz2xml --test e2e_corpus -- --nocapture
 
 Les données dérivées se régénèrent avec `scripts/gen-references.sh` et
 `scripts/gen-instruments-table.py` ; le paquet wasm se teste avec
-`crates/mscz2xml-wasm/tests/node-smoke.mjs` (après `nix build .#wasm`).
+`crates/scoretk-wasm/tests/node-smoke.mjs` (après `nix build .#wasm`).
 
 ## Pièges qui cassent en silence
 
@@ -141,11 +156,17 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
   fichier et causes : à lire pour choisir la prochaine correction.
 - `docs/agents/ecarts-complets.md` — rapport **généré** de parité complète :
   à lire pour mesurer, pas pour décider seul d'un correctif.
-- `docs/agents/wasm.md` — construction, API et usage du paquet wasm (ESM,
-  worker cantus) : à lire avant de toucher au crate wasm.
+- `docs/agents/wasm.md` — unique paquet wasm (façade scoretk) : construction,
+  tailles, API (convert/detect/formats/version), options, usage ESM/classic,
+  tests Node et migration depuis `mscz2xml` : à lire avant de toucher au
+  crate `scoretk-wasm`.
 - `docs/agents/midi.md` — lecture et écriture MIDI, `RepeatList`, pauses,
   vélocités, références et écarts : à lire avant de toucher au crate
   `scoretk-midi`.
+- `docs/agents/timemap.md` — carte des temps (`Timemap`) : structure Rust et
+  JS, identifiants MusicXML stables, passages de reprises, pauses, usage côté
+  client et limites : à lire avant de toucher à `write_playback` ou
+  `convertWithTimeline`.
 - `docs/agents/scoretk.md` — façade multi-formats : API, détection, points de
   branchement t34/t35/t36/t38, CLI et tests : à lire avant de toucher à `scoretk`.
 - `docs/agents/licence.md` — obligations GPL-3.0-only d'un consommateur :

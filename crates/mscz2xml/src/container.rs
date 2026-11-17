@@ -43,6 +43,14 @@ use crate::{Error, Result};
 pub const DEFAULT_MSCX_NAME: &str = "score.mscx";
 const CONTAINER_XML: &str = "META-INF/container.xml";
 
+/// Plafond de pré-allocation pour une entrée ZIP, en octets.
+///
+/// La taille annoncée par l'en-tête ZIP n'est pas fiable : une archive peut
+/// déclarer des téraoctets pour une entrée minuscule. Réserver cette taille
+/// telle quelle mène à un abort d'allocation (non rattrapable en wasm) ; on
+/// borne donc la capacité, la lecture réelle s'étendant au besoin.
+const MAX_ENTRY_CAPACITY: u64 = 16 * 1024 * 1024;
+
 /// Version du format de fichier MuseScore.
 ///
 /// Encodée comme dans le lecteur C++ (`mscloader.cpp`) : partie majeure
@@ -210,7 +218,8 @@ fn looks_like_xml(bytes: &[u8]) -> bool {
 fn read_zip_entry(archive: &mut ZipArchive<Cursor<&[u8]>>, name: &str) -> Result<Option<Vec<u8>>> {
     match archive.by_name(name) {
         Ok(mut entry) => {
-            let mut data = Vec::with_capacity(entry.size() as usize);
+            let capacity = entry.size().min(MAX_ENTRY_CAPACITY);
+            let mut data = Vec::with_capacity(capacity as usize);
             entry
                 .read_to_end(&mut data)
                 .map_err(zip::result::ZipError::Io)?;

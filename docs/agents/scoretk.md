@@ -33,7 +33,25 @@ pub enum Sens { Lecture, Ecriture }
 
 pub fn read(bytes: &[u8], format: Format) -> Result<Score>;
 pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>>;
+
+#[cfg(feature = "midi")]
+pub fn write_playback(score: &Score, options: &Options) -> Result<PlaybackOutput>;
 ```
+
+`Options` contient `software`, `encoding_date`, `concert_pitch` et `midi`.
+`MidiOptions { expand_repeats: bool }` (défaut `true`) règle le déroulement
+des reprises de la sortie MIDI ; la CLI l'expose par `--no-expand-repeats`.
+L'export MusicXML ordinaire ne pose aucun identifiant (`stable_ids: false`) :
+il reste identique aux références MuseScore 4.7.4.
+
+`write_playback` (feature `midi`) renvoie
+`PlaybackOutput { musicxml: Vec<u8>, midi: Vec<u8>, timemap: scoretk::Timemap }`.
+Le MusicXML y est exporté avec `stable_ids` forcé : chaque `<measure>` et
+chaque `<note>` porte `id` **et** `xml:id` (même valeur), exactement les
+`xmlId` de la carte des temps. Le MIDI est identique à celui de `write(...,
+Format::Midi, ...)` avec les mêmes options. La carte, ses formules
+d'identifiants et son usage côté client sont décrits dans
+`docs/agents/timemap.md`.
 
 `Format` fournit `from_extension`, `from_path` (extension seule, pas d'accès
 disque), `detect` (contenu), `supports_read`/`supports_write` (état réel,
@@ -185,6 +203,8 @@ scoretk --version                           # version + licence (GPL-3.0-only)
 - `-o` absent ou `-` → sortie standard ; entrée `-` → entrée standard.
 - `--encoding-date AAAA-MM-JJ` fige `<encoding-date>` (défaut : date du jour en
   UTC, comme `mscz2xml`).
+- `--no-expand-repeats` ne déroule pas les reprises dans la sortie MIDI
+  (`Options::midi.expand_repeats = false`) ; la sortie est alors « à plat ».
 - La CLI `mscz2xml` reste inchangée.
 
 ## 5. Flake
@@ -193,7 +213,11 @@ scoretk --version                           # version + licence (GPL-3.0-only)
 - `apps.scoretk` la rend exécutable par `nix run .#scoretk -- …`.
 - `packages.default` reste `mscz2xml` (pas de changement de défaut).
 - Le check `wasm32-unknown-unknown` compile `-p mscz2xml -p scoretk -p
-  scoretk-abc -p scoretk-midi -p scoretk-lilypond -p scoretk-mscx`.
+  scoretk-abc -p scoretk-midi -p scoretk-lilypond -p scoretk-mscx -p
+  scoretk-wasm`.
+- `packages.wasm` est le paquet navigateur de la façade (crate
+  `scoretk-wasm`) ; voir `docs/agents/wasm.md`.
+- `checks.wasm-node-smoke` vérifie ce paquet sous Node.
 
 ## 6. Tests
 

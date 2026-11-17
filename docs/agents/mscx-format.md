@@ -258,6 +258,14 @@ Notes :
 - `<track>`, `<velocity>`, `<play>`, `<tuning>`, `<fret>`, `<string>`,
   `<ghost>`, `<dead>`, `<head>`, `<line>` : lecture/jeu. `<NoteDot>` : points
   graphiques ; les points de durée sont dans `<dots>` du ChordRest.
+- **4.x** : `<velocity>` sur `<Note>` est `Pid::USER_VELOCITY`, un entier
+  **signé** (pourcentage d'écart en mode offset, absolu en mode user), et
+  `<veloType>` vaut `offset` ou `user` (`typesconv.cpp:2499-2500`). La
+  propriété est `USER_VAL` par défaut (`dom/note.cpp:3316-3317`) : le C++
+  n'écrit `<veloType>` que pour `offset`. Une balise `<veloType>` inconnue est
+  lue comme `OFFSET_VAL` (`rw/read410/tread.cpp:401-402`). Le rendu MIDI
+  applique `Note::customizeVelocity` par note. En 3.x, `<velocity>` de note est
+  ignoré (`read302`), comme dans le C++.
 
 `Note::setupAfterRead` (`dom/note.cpp:1651-1712`) dérive un `tpc` manquant de
 la tonalité et de `pitch`, dérive l'autre orthographe par transposition, et

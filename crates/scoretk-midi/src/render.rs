@@ -4,10 +4,11 @@
 //
 // Portage de `engraving/compat/midi/compatmidirender.cpp`,
 // `engraving/compat/midi/compatmidirenderinternal.cpp`,
-// `engraving/compat/midi/velocitymap.cpp` et
-// `importexport/midi/internal/midiexport/exportmidi.cpp` de MuseScore Studio,
-// Copyright (C) MuseScore Limited and others, modifié (réécrit en Rust) en
-// 2026.
+// `engraving/compat/midi/velocitymap.cpp`,
+// `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/dom/note.cpp`
+// (`customizeVelocity`) et `engraving/types/types.h` (`VeloType`) de MuseScore
+// Studio, Copyright (C) MuseScore Limited and others, modifié (réécrit en Rust)
+// en 2026.
 //
 // This program is free software: you can redistribute it and/or modify it
 // under the terms of the GNU General Public License version 3 as published by
@@ -37,12 +38,13 @@ use std::collections::BTreeMap;
 use mscz2xml::model::{
     Annotation, ArticulationType, Chord, ChordRest, ChordRestKind, Fraction, GraceType, Instrument,
     KeySig, Measure, Note, PartId, Score, SegmentType, SpannerType, StaffId, TimeSig, Track,
-    TremoloKind, VOICES,
+    TremoloKind, VeloType, VOICES,
 };
 
 use super::error::Result;
 use super::pause_map::PauseMap;
 use super::repeat_list::{RepeatList, DIVISION, UNITS_PER_WHOLE};
+use super::timemap::{Attack, Builder, Timemap};
 use super::velocity::{ChangeDirection, ChangeMethod, VelocityMaps};
 
 /// Valeurs des articulations intégrées (`s_builtInArticulationsValues`).
@@ -104,15 +106,36 @@ pub(crate) struct Performance {
     pub tracks: Vec<TrackData>,
 }
 
+/// Résultat du rendu : la performance et sa carte des temps.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Rendered {
+    pub performance: Performance,
+    pub timemap: Timemap,
+}
+
 /// Rend la partition en évènements MIDI (`CompatMidiRender::renderScore` puis
 /// `ExportMidi::writeHeader`).
-pub(crate) fn render(score: &Score, repeat_list: &RepeatList) -> Result<Performance> {
+///
+/// `capture_timemap` faux évite de construire la carte des temps (et les
+/// allocations de mesures/attaques) quand seul le MIDI est demandé.
+pub(crate) fn render(
+    score: &Score,
+    repeat_list: &RepeatList,
+    capture_timemap: bool,
+) -> Result<Rendered> {
     let channels = channels(score);
     let velocities = build_velocities(score);
     let time_sigs = time_signature_events(score);
     let key_sigs = key_signature_events(score);
     let pause_map = PauseMap::build(score, repeat_list, &time_sigs);
     let tempo = tempo_events(score, repeat_list, &pause_map);
+    // La carte est remplie aux mêmes points que les évènements MIDI : les ticks
+    // qu'elle contient sont exactement ceux du fichier écrit.
+    let mut timemap = if capture_timemap {
+        Builder::new(score, repeat_list, &pause_map, &tempo)
+    } else {
+        Builder::disabled(score, repeat_list, &pause_map)
+    };
     let mut performance = Performance {
         tracks: vec![TrackData::default(); score.staves.len()],
     };
@@ -198,13 +221,38 @@ pub(crate) fn render(score: &Score, repeat_list: &RepeatList) -> Result<Performa
         // Note events.
         let mut notes = Vec::new();
         let mut prev_chords = [0i64; VOICES];
-        for segment in &repeat_list.segments {
+        for (segment_index, segment) in repeat_list.segments.iter().enumerate() {
             let offset = segment.utick - segment.tick;
             for measure_index in &segment.measures {
+                // Les mesures sont communes aux portées : une seule occurrence
+                // par passage, enregistrée sur la première portée. Les bornes
+                // sont figées ici, au moment où la mesure est parcourue.
+                if staff_index == 0 {
+                    let start_utick = repeat_list.measure_start(*measure_index) + offset;
+                    let end_utick = repeat_list.measure_end(*measure_index) + offset;
+                    let tick = pause_map.tick_with_pauses(start_utick);
+                    // Variante non inclusive : la pause qui ouvre la mesure
+                    // suivante n'est pas comptée dans la fin de celle-ci.
+                    let end_tick = pause_map.tick_with_pauses_before(end_utick);
+                    let pause_before = pause_map
+                        .spans()
+                        .iter()
+                        .any(|span| span.base_utick == start_utick);
+                    timemap.measure(
+                        tick,
+                        end_tick,
+                        *measure_index,
+                        segment_index,
+                        segment.playback_count,
+                        pause_before,
+                    );
+                }
                 let measure = &score.measures[*measure_index];
                 render_measure(
                     score,
                     measure,
+                    *measure_index,
+                    segment.playback_count,
                     staff,
                     channel,
                     offset,
@@ -212,13 +260,17 @@ pub(crate) fn render(score: &Score, repeat_list: &RepeatList) -> Result<Performa
                     &velocities,
                     &mut notes,
                     &mut prev_chords,
+                    &mut timemap,
                 );
             }
         }
         track.events.extend(notes);
     }
 
-    Ok(performance)
+    Ok(Rendered {
+        performance,
+        timemap: timemap.finish(),
+    })
 }
 
 /// Canal MIDI de chaque partie : canal déclaré, sinon rang de la partie.
@@ -464,6 +516,8 @@ fn track_raw(staff: StaffId, voice: usize) -> u32 {
 fn render_measure(
     score: &Score,
     measure: &Measure,
+    measure_index: usize,
+    pass: i32,
     staff: &mscz2xml::model::Staff,
     channel: u8,
     offset: i64,
@@ -471,7 +525,11 @@ fn render_measure(
     velocities: &VelocityMaps,
     out: &mut Vec<Event>,
     prev_chords: &mut [i64; VOICES],
+    timemap: &mut Builder<'_>,
 ) {
+    // Rang du `ChordRest` dans la voix et la mesure, silences compris : il
+    // identifie l'élément du modèle, pas l'attaque.
+    let mut ranks = [0usize; VOICES];
     for (segment_index, segment) in measure.segments.iter().enumerate() {
         if !segment.kind.is_chord_rest_type() {
             continue;
@@ -482,6 +540,8 @@ fn render_measure(
                 *previous = 0;
                 continue;
             };
+            let chord_rank = ranks[voice];
+            ranks[voice] += 1;
             let ChordRestKind::Chord(chord) = &chord_rest.kind else {
                 *previous = 0;
                 continue;
@@ -498,17 +558,24 @@ fn render_measure(
             if chord.tremolo_two_chord {
                 match chord.tremolo.map(|tremolo| tremolo.kind) {
                     Some(TremoloKind::Start) => {
-                        let next =
-                            measure.segments[segment_index + 1..]
-                                .iter()
-                                .find_map(|segment| {
-                                    segment.chord_rest(track).and_then(|chord_rest| {
-                                        matches!(chord_rest.kind, ChordRestKind::Chord(_))
-                                            .then_some(chord_rest)
-                                    })
-                                });
-                        if let Some(next) = next {
+                        let next = measure.segments[segment_index + 1..]
+                            .iter()
+                            .enumerate()
+                            .find_map(|(offset, segment)| {
+                                segment.chord_rest(track).and_then(|chord_rest| {
+                                    matches!(chord_rest.kind, ChordRestKind::Chord(_))
+                                        .then_some((segment_index + 1 + offset, chord_rest))
+                                })
+                            });
+                        if let Some((next_segment, next)) = next {
                             let next_ticks = actual_ticks(score, staff, next, measure);
+                            // Rang du second accord : les `ChordRest` présents
+                            // pour cette voix entre les deux segments.
+                            let second_rank = ranks[voice]
+                                + measure.segments[segment_index + 1..next_segment]
+                                    .iter()
+                                    .filter(|segment| segment.chord_rest(track).is_some())
+                                    .count();
                             render_two_chord_tremolo(
                                 score,
                                 staff,
@@ -523,6 +590,15 @@ fn render_measure(
                                 source_tick,
                                 velocities,
                                 out,
+                                &mut AttackContext {
+                                    measure: measure_index,
+                                    staff: staff.id.raw(),
+                                    voice: voice as u8,
+                                    chord: chord_rank,
+                                    second_chord: second_rank,
+                                    pass,
+                                    timemap,
+                                },
                             );
                         }
                     }
@@ -547,9 +623,65 @@ fn render_measure(
                 source_tick,
                 velocities,
                 out,
+                &mut AttackContext {
+                    measure: measure_index,
+                    staff: staff.id.raw(),
+                    voice: voice as u8,
+                    chord: chord_rank,
+                    second_chord: chord_rank,
+                    pass,
+                    timemap,
+                },
             );
             *previous = ticks;
         }
+    }
+}
+
+/// Contexte d'enregistrement des attaques dans la carte des temps.
+struct AttackContext<'a, 'b> {
+    measure: usize,
+    staff: u32,
+    voice: u8,
+    /// Rang du `ChordRest` principal.
+    chord: usize,
+    /// Rang du second accord d'un trémolo à deux notes.
+    second_chord: usize,
+    pass: i32,
+    timemap: &'a mut Builder<'b>,
+}
+
+/// Note visée par une attaque.
+#[derive(Clone, Copy, Debug)]
+struct AttackNote {
+    chord: usize,
+    note: usize,
+    pitch: u8,
+    grace: bool,
+    /// Position dans `Chord::grace_chords` (`None` hors ornement).
+    grace_index: Option<usize>,
+    /// Vrai quand l'ornement précède l'accord principal.
+    grace_before: bool,
+    tremolo: bool,
+}
+
+impl AttackContext<'_, '_> {
+    fn attack(&mut self, tick: i64, duration_ticks: i64, note: AttackNote) {
+        self.timemap.attack(Attack {
+            tick,
+            duration_ticks,
+            measure: self.measure,
+            staff: self.staff,
+            voice: self.voice,
+            chord: note.chord,
+            note: note.note,
+            pitch: note.pitch,
+            pass: self.pass,
+            grace: note.grace,
+            grace_index: note.grace_index,
+            grace_before: note.grace_before,
+            tremolo: note.tremolo,
+        });
     }
 }
 
@@ -569,6 +701,7 @@ fn render_two_chord_tremolo(
     source_tick: i64,
     velocities: &VelocityMaps,
     out: &mut Vec<Event>,
+    context: &mut AttackContext<'_, '_>,
 ) {
     let _ = second_ticks;
     let Some(tremolo) = first.tremolo else {
@@ -591,8 +724,15 @@ fn render_two_chord_tremolo(
         return;
     }
     let length = 2000 * step / total_ticks;
-    let velocity_base = velocities.val(track, source_tick) as f64 * chord_velocity;
-    let velocity = (velocity_base.round() as i32).clamp(1, 127) as u8;
+    let velocity_base = (velocities.val(track, source_tick) as f64 * chord_velocity).round() as i32;
+    // `playNote` applique `customizeVelocity` par note, après le clamp de la
+    // vélocité calculée (`compatmidirenderinternal.cpp:227-229`). Le trémolo à
+    // deux accords n'attaque que la première note de chaque accord : c'est
+    // donc sa vélocité utilisateur qui s'applique.
+    let velocity = match first.notes.first() {
+        Some(id) => customize_velocity(velocity_base.clamp(1, 127), &score.notes[id.index()]),
+        None => velocity_base.clamp(1, 127),
+    } as u8;
 
     for index in 0..events {
         let ontime = length * index * 2;
@@ -606,21 +746,37 @@ fn render_two_chord_tremolo(
             continue;
         };
         let key = first_key.min(127);
+        let first_on = utick + ticks * ontime / 1000;
+        let first_off = first_on + ticks * (length * gate / 100) / 1000 - 1;
         out.push(Event {
-            tick: utick + ticks * ontime / 1000,
+            tick: first_on,
             kind: EventKind::NoteOn {
                 channel,
                 key,
                 velocity,
             },
         });
+        context.attack(
+            first_on,
+            first_off - first_on,
+            AttackNote {
+                chord: context.chord,
+                note: 0,
+                pitch: key,
+                grace: false,
+                grace_index: None,
+                grace_before: false,
+                tremolo: true,
+            },
+        );
         out.push(Event {
-            tick: utick + ticks * ontime / 1000 + ticks * (length * gate / 100) / 1000 - 1,
+            tick: first_off,
             kind: EventKind::NoteOff { channel, key },
         });
         if let Some(second_key) = second_key {
             let key = second_key.min(127);
             let start = utick + ticks * second_ontime / 1000;
+            let end = start + ticks * (length * gate / 100) / 1000 - 1;
             out.push(Event {
                 tick: start,
                 kind: EventKind::NoteOn {
@@ -629,8 +785,21 @@ fn render_two_chord_tremolo(
                     velocity,
                 },
             });
+            context.attack(
+                start,
+                end - start,
+                AttackNote {
+                    chord: context.second_chord,
+                    note: 0,
+                    pitch: key,
+                    grace: false,
+                    grace_index: None,
+                    grace_before: false,
+                    tremolo: true,
+                },
+            );
             out.push(Event {
-                tick: start + ticks * (length * gate / 100) / 1000 - 1,
+                tick: end,
                 kind: EventKind::NoteOff { channel, key },
             });
         }
@@ -684,48 +853,56 @@ fn render_chord(
     source_tick: i64,
     velocities: &VelocityMaps,
     out: &mut Vec<Event>,
+    context: &mut AttackContext<'_, '_>,
 ) {
     let instrument = instrument_for(score, staff.part, source_tick);
     let chord_velocity = chord_velocity_multiplier(chord, instrument);
     let gate = gate_time(score, staff, instrument, chord, source_tick);
 
-    let mut before = Vec::new();
-    let mut after = Vec::new();
-    for grace in &chord.grace_chords {
+    // Indices dans `Chord::grace_chords` : l'identifiant MusicXML d'un
+    // ornement dépend de cette position, pas de son rang dans le groupe.
+    let mut before: Vec<usize> = Vec::new();
+    let mut after: Vec<usize> = Vec::new();
+    for (index, grace) in chord.grace_chords.iter().enumerate() {
         match grace.chord.grace {
             Some(GraceType::Grace8After | GraceType::Grace16After | GraceType::Grace32After) => {
-                after.push(grace)
+                after.push(index)
             }
-            _ => before.push(grace),
+            _ => before.push(index),
         }
     }
 
     let mut ontime = 0i64;
     let mut trailtime = 0i64;
 
-    let acciaccatura = before
-        .first()
-        .is_some_and(|grace| grace.chord.grace == Some(GraceType::Acciaccatura));
+    let acciaccatura = before.first().is_some_and(|index| {
+        chord.grace_chords[*index].chord.grace == Some(GraceType::Acciaccatura)
+    });
     if acciaccatura {
         // `collectGraceBeforeChordEvents` : les acciaccaturas occupent au plus
         // la moitié de l'accord précédent, avant le temps.
-        let grace_ticks = before
-            .first()
-            .map_or(0, |grace| grace.duration.ticks().ticks(UNITS_PER_WHOLE));
+        let grace_ticks = before.first().map_or(0, |index| {
+            chord.grace_chords[*index]
+                .duration
+                .ticks()
+                .ticks(UNITS_PER_WHOLE)
+        });
         let mut sum = grace_ticks;
         if previous_chord_ticks > 0 {
             sum = sum.min(previous_chord_ticks / 2);
         }
         let offset = sum / before.len().max(1) as i64;
-        for (index, grace) in before.iter().enumerate() {
-            let offset_on = sum - offset * index as i64;
-            let offset_off = sum - offset * (index as i64 + 1);
+        for (position, index) in before.iter().enumerate() {
+            let offset_on = sum - offset * position as i64;
+            let offset_off = sum - offset * (position as i64 + 1);
             let on = utick - offset_on;
             let off = utick - 1 - offset_off;
             render_grace_notes(
                 score,
                 staff,
-                &grace.chord,
+                &chord.grace_chords[*index].chord,
+                *index,
+                true,
                 on,
                 off,
                 channel,
@@ -734,24 +911,30 @@ fn render_chord(
                 velocities,
                 source_tick,
                 out,
+                context,
             );
         }
     } else if !before.is_empty() {
         // Appoggiatures : au plus la moitié de l'accord principal, les unes
         // après les autres en prenant le temps de l'accord.
-        let grace_ticks = before
-            .first()
-            .map_or(0, |grace| grace.duration.ticks().ticks(UNITS_PER_WHOLE));
+        let grace_ticks = before.first().map_or(0, |index| {
+            chord.grace_chords[*index]
+                .duration
+                .ticks()
+                .ticks(UNITS_PER_WHOLE)
+        });
         ontime = (grace_ticks * 1000 / ticks.max(1)).min(500);
         trailtime += ontime;
         let each = ontime / before.len().max(1) as i64;
-        for (index, grace) in before.iter().enumerate() {
-            let on = utick + ticks * each * index as i64 / 1000;
+        for (position, index) in before.iter().enumerate() {
+            let on = utick + ticks * each * position as i64 / 1000;
             let off = on + ticks * each / 1000 - 1;
             render_grace_notes(
                 score,
                 staff,
-                &grace.chord,
+                &chord.grace_chords[*index].chord,
+                *index,
+                true,
                 on,
                 off,
                 channel,
@@ -760,6 +943,7 @@ fn render_chord(
                 velocities,
                 source_tick,
                 out,
+                context,
             );
         }
     }
@@ -774,13 +958,15 @@ fn render_chord(
         };
         let each = trailtime / after.len() as i64;
         let mut on = 1000 - trailtime;
-        for grace in &after {
+        for index in &after {
             let start = utick + ticks * on / 1000;
             let off = start + ticks * each / 1000 - 1;
             render_grace_notes(
                 score,
                 staff,
-                &grace.chord,
+                &chord.grace_chords[*index].chord,
+                *index,
+                false,
                 start,
                 off,
                 channel,
@@ -789,6 +975,7 @@ fn render_chord(
                 velocities,
                 source_tick,
                 out,
+                context,
             );
             on += each;
         }
@@ -810,7 +997,7 @@ fn render_chord(
         _ => None,
     };
 
-    for note in &chord.notes {
+    for (note_index, note) in chord.notes.iter().enumerate() {
         let note = &score.notes[note.index()];
         if !note.play {
             continue;
@@ -824,7 +1011,9 @@ fn render_chord(
         if note.ghost {
             velocity *= 0.6;
         }
-        let velocity = (velocity.round() as i32).clamp(1, 127) as u8;
+        // Le C++ clampe la vélocité calculée avant de la personnaliser par
+        // note (`compatmidirenderinternal.cpp:887-893`, puis `playNote`).
+        let velocity = customize_velocity((velocity.round() as i32).clamp(1, 127), note) as u8;
         let key = note.pitch.min(127);
         if let Some((events, step)) = tremolo {
             for index in 0..events {
@@ -838,8 +1027,22 @@ fn render_chord(
                         velocity,
                     },
                 });
+                let end = end.max(start + 1);
+                context.attack(
+                    start,
+                    end - start,
+                    AttackNote {
+                        chord: context.chord,
+                        note: note_index,
+                        pitch: key,
+                        grace: false,
+                        grace_index: None,
+                        grace_before: false,
+                        tremolo: true,
+                    },
+                );
                 out.push(Event {
-                    tick: end.max(start + 1),
+                    tick: end,
                     kind: EventKind::NoteOff { channel, key },
                 });
             }
@@ -856,8 +1059,22 @@ fn render_chord(
                 velocity,
             },
         });
+        let end = off.max(on + 1);
+        context.attack(
+            on,
+            end - on,
+            AttackNote {
+                chord: context.chord,
+                note: note_index,
+                pitch: key,
+                grace: false,
+                grace_index: None,
+                grace_before: false,
+                tremolo: false,
+            },
+        );
         out.push(Event {
-            tick: off.max(on + 1),
+            tick: end,
             kind: EventKind::NoteOff { channel, key },
         });
     }
@@ -869,6 +1086,8 @@ fn render_grace_notes(
     score: &Score,
     staff: &mscz2xml::model::Staff,
     chord: &Chord,
+    grace_index: usize,
+    grace_before: bool,
     on: i64,
     off: i64,
     channel: u8,
@@ -877,27 +1096,47 @@ fn render_grace_notes(
     velocities: &VelocityMaps,
     source_tick: i64,
     out: &mut Vec<Event>,
+    context: &mut AttackContext<'_, '_>,
 ) {
-    let velocity_base = velocities.val(track, source_tick) as f64 * velocity_multiplier;
-    let velocity = (velocity_base.round() as i32).clamp(1, 127) as u8;
-    for note_id in &chord.notes {
+    let velocity_base =
+        (velocities.val(track, source_tick) as f64 * velocity_multiplier).round() as i32;
+    for (note_index, note_id) in chord.notes.iter().enumerate() {
         let note = &score.notes[note_id.index()];
         if !note.play || note.tie_back.is_some() {
             // Note tenue par la note précédente : pas de nouvelle attaque.
             continue;
         }
+        // La personnalisation est par note, comme `playNote` dans le C++.
+        let velocity = customize_velocity(velocity_base.clamp(1, 127), note) as u8;
         let key = note.pitch.min(127);
         let end = off + tie_length(score, staff, note);
+        let start = on.max(0);
+        // Un ornement placé avant le tout début peut avoir `on < 0` : la fin
+        // reste alors strictement après le début effectif.
+        let end_tick = end.max(start + 1);
         out.push(Event {
-            tick: on.max(0),
+            tick: start,
             kind: EventKind::NoteOn {
                 channel,
                 key,
                 velocity,
             },
         });
+        context.attack(
+            start,
+            end_tick - start,
+            AttackNote {
+                chord: context.chord,
+                note: note_index,
+                pitch: key,
+                grace: true,
+                grace_index: Some(grace_index),
+                grace_before,
+                tremolo: false,
+            },
+        );
         out.push(Event {
-            tick: end.max(on + 1),
+            tick: end_tick,
             kind: EventKind::NoteOff { channel, key },
         });
     }
@@ -1074,6 +1313,36 @@ fn gate_time(
         }
     }
     gate
+}
+
+/// Vélocité effective d'une note (`Note::customizeVelocity`).
+///
+/// Portage de `engraving/dom/note.cpp:2753-2760` : en mode `OFFSET_VAL`,
+/// `velo = velo + (velo * userVelocity()) / 100` ; en mode `USER_VAL`,
+/// `velo = userVelocity()` ; puis `clamp(velo, 1, 127)`. La division entière
+/// de Rust tronque vers zéro comme celle du C++.
+///
+/// Appelée par note avec la vélocité déjà calculée (nuances, soufflets,
+/// articulations, note fantôme) et déjà clampée, exactement comme
+/// `playNote` (`compatmidirenderinternal.cpp:227-229`) reçoit `params.velo`.
+fn customize_velocity(velocity: i32, note: &Note) -> i32 {
+    let Some(user_velocity) = note.user_velocity else {
+        return velocity.clamp(1, 127);
+    };
+    // `playNote` ne personnalise que si `userVelocity() != 0`
+    // (`compatmidirenderinternal.cpp:227`).
+    if user_velocity == 0 {
+        return velocity.clamp(1, 127);
+    }
+    // Calcul en `i64` : une valeur `<velocity>` extrême ne doit pas déborder
+    // en `i32` avant le clamp final.
+    let customized: i64 = match note.velo_type.unwrap_or(VeloType::UserVal) {
+        VeloType::OffsetVal => {
+            i64::from(velocity) + (i64::from(velocity) * i64::from(user_velocity)) / 100
+        }
+        VeloType::UserVal => i64::from(user_velocity),
+    };
+    customized.clamp(1, 127) as i32
 }
 
 /// Multiplicateur de vélocité d'une articulation nommée

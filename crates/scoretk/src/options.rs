@@ -19,6 +19,26 @@
 
 use mscz2xml::ExportOptions;
 
+/// Options d'écriture MIDI.
+///
+/// Reprend les réglages utiles de [`scoretk_midi::MidiOptions`] sans exposer
+/// la crate optionnelle : la façade reste utilisable avec les features
+/// désactivées.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MidiOptions {
+    /// Déroule les reprises, voltas et sauts dans la sortie MIDI. Vrai par
+    /// défaut, comme l'option `io/midi/expandRepeats` de MuseScore.
+    pub expand_repeats: bool,
+}
+
+impl Default for MidiOptions {
+    fn default() -> Self {
+        Self {
+            expand_repeats: true,
+        }
+    }
+}
+
 /// Options transmises à [`write`](crate::write).
 ///
 /// Les valeurs par défaut sont celles de l'export MusicXML de `mscz2xml` :
@@ -33,6 +53,8 @@ pub struct Options {
     pub encoding_date: String,
     /// Exporter les hauteurs en sons réels (MusicXML).
     pub concert_pitch: bool,
+    /// Réglages de la sortie MIDI (reprises).
+    pub midi: MidiOptions,
 }
 
 impl Default for Options {
@@ -42,6 +64,7 @@ impl Default for Options {
             software: export.software,
             encoding_date: export.encoding_date,
             concert_pitch: export.concert_pitch,
+            midi: MidiOptions::default(),
         }
     }
 }
@@ -53,6 +76,10 @@ impl Options {
             software: self.software.clone(),
             encoding_date: self.encoding_date.clone(),
             concert_pitch: self.concert_pitch,
+            // L'export MusicXML ordinaire ne pose aucun identifiant : les
+            // références MuseScore 4.7.4 n'en contiennent pas. Seul
+            // `write_playback` force `stable_ids`.
+            stable_ids: false,
         }
     }
 }

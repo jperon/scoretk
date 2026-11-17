@@ -21,9 +21,19 @@ let midi: Vec<u8> = write_midi(&score)?;
   MuseScore (reprises déroulées).
 - `write_midi_with(&Score, MidiOptions)` : `expand_repeats: false` produit un
   fichier « à plat », sans dérouler les reprises (`RepeatList::flatten`).
+  L'option est exposée par la façade (`Options::midi.expand_repeats`) et par
+  la CLI (`--no-expand-repeats`).
+- `write_midi_with_timemap(&Score)` et
+  `write_midi_with_timemap_and(&Score, MidiOptions)` renvoient en plus la
+  carte des temps du même rendu : `(Vec<u8>, Timemap)`. Les octets MIDI sont
+  identiques à ceux de `write_midi`/`write_midi_with`.
 - `RepeatList` / `RepeatSegment` sont publics : le déroulement des reprises,
   voltas et sauts est réutilisable par un futur lecteur MIDI ou un export
   LilyPond/ABC.
+- `Timemap` (`timemap.rs`) : `division`, `ticks`, `tempo`, `measures`, `notes`,
+  `pauses`, `time_us_at`, `measure_at`. Les identifiants `xml_id()` viennent de
+  `mscz2xml::model::xmlid`, comme l'export MusicXML. Structure complète,
+  sémantique des passages et limites : `docs/agents/timemap.md`.
 
 La crate est portable comme `mscz2xml` : aucun accès disque, aucun thread,
 aucune horloge ; elle compile pour `wasm32-unknown-unknown`. Seule dépendance
@@ -40,6 +50,7 @@ format de fichier.
 | `velocity.rs` | vélocités des nuances et soufflets | `engraving/compat/midi/velocitymap.cpp` |
 | `pause_map.rs` | pauses de section (ticks + tempo) | `engraving/compat/midi/pausemap.cpp` |
 | `writer.rs` | assemblage SMF via `midly` | écriture `MidiFile` |
+| `timemap.rs` | carte ticks ↔ temps, mesures, notes, pauses | sous-produit du rendu (pas de C++ dédié) |
 
 Division : **480 ticks par noire** (`Constants::DIVISION`), comme MuseScore. Les
 ticks internes du modèle (`Fraction` de ronde) sont convertis en
@@ -62,8 +73,14 @@ ticks internes du modèle (`Fraction` de ronde) sont convertis en
   écrites en méta-évènements, également déroulées.
 - **Vélocités** : `VelocityMap` complet (nuances, soufflets, collisions,
   interpolation), valeur par défaut 80.
-- **Notes** : hauteur concert, vélocité × multiplicateurs d'articulations
-  (0,6 pour une note fantôme), durée effective divisée par `timeStretch` et les
+- **Notes** : hauteur concert, vélocité issue de la carte des nuances et des
+  soufflets, × multiplicateurs d'articulations (0,6 pour une note fantôme),
+  puis **`Note::customizeVelocity` par note** : en mode `offset`
+  (`<veloType>offset</veloType>`) la vélocité calculée est augmentée de
+  `userVelocity` pour cent (`velo + velo * pct / 100`) ; en mode `user` (valeur
+  par défaut) `<velocity>` est la vélocité absolue ; le résultat est borné à
+  1–127 (`compatmidirenderinternal.cpp:227-229`,
+  `dom/note.cpp:2753-2760`). Durée effective divisée par `timeStretch` et les
   ratios de n-olets (`DurationElement::actualTicks`), note-off à
   `début + durée - 1`.
 - **Liaisons de prolongation fusionnées** : une seule attaque, la durée somme
@@ -99,6 +116,16 @@ suivants restent hors périmètre, faute d'information dans le modèle :
 - **Soufflets avec `<veloChange>` explicite** : la valeur est ignorée (le
   modèle ne la stocke pas) ; les soufflets du corpus s'en remettent à la
   nuance suivante.
+- **`Note::velocity` (import MIDI) non appliquée** : le rendu MIDI utilise les
+  vélocités des nuances et des soufflets, puis la vélocité utilisateur
+  MuseScore (`Note::user_velocity`, `<velocity>`/`<veloType>` du `.mscx`), pas
+  la vélocité brute de l'import MIDI, qui sert à l'export MusicXML. La carte
+  des temps ne porte pas de vélocité.
+- **Trémolo à deux accords** : dans `compatmidirender.cpp:364-440`, les
+  évènements de la seconde hauteur sont placés dans la liste du **premier**
+  accord et `playNote` reçoit la note du premier accord. Seule la vélocité de
+  la **première note du premier accord** pilote les deux attaques ; la seconde
+  n'est jamais lue. Le portage est fidèle à ce comportement.
 - **Changements d'instrument, paroles, repères de répétition, pédales** : non
   exportés (`exportmidi.cpp` écrit aussi des méta-évènements de paroles et de
   marqueurs).
@@ -170,7 +197,7 @@ let score = scoretk_midi::read_midi_with(&bytes, &options)?; // options explicit
 
 La façade `scoretk` la branche avec la feature `midi` :
 `read(bytes, Format::Midi)` et `scoretk entrée.mid -o sortie.musicxml`
-fonctionnent. Le contrat wasm de `mscz2xml-wasm` n'est pas touché.
+fonctionnent. Le paquet wasm de la façade les expose aussi.
 
 ### Modules
 

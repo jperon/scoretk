@@ -25,7 +25,8 @@
 //!   `read_musicxml(&[u8]) -> Result<Score>` et
 //!   `read_mxl(&[u8]) -> Result<Score>` ;
 //! - feature `midi` : crate `scoretk-midi` (t35, t42), fonctions
-//!   `write_midi(&Score) -> Result<Vec<u8>>` et
+//!   `write_midi(&Score, &Options) -> Result<Vec<u8>>`,
+//!   `write_playback(&Score, &Options) -> Result<(Vec<u8>, Timemap)>` et
 //!   `read_midi(&[u8]) -> Result<Score>` ;
 //! - feature `lilypond` : crate `scoretk-lilypond` (t36), fonction
 //!   `write_lilypond(&Score) -> Result<String>` ;
@@ -50,6 +51,7 @@ use crate::error::Error;
     feature = "abc"
 )))]
 use crate::format::{Format, Sens};
+use crate::options::Options;
 use crate::Result;
 
 #[cfg(feature = "musicxml-import")]
@@ -79,16 +81,40 @@ pub(crate) fn read_mxl(_bytes: &[u8]) -> Result<Score> {
 }
 
 #[cfg(feature = "midi")]
-pub(crate) fn write_midi(score: &Score) -> Result<Vec<u8>> {
-    scoretk_midi::write_midi(score).map_err(|error| Error::Midi(error.to_string()))
+pub(crate) fn write_midi(score: &Score, options: &Options) -> Result<Vec<u8>> {
+    scoretk_midi::write_midi_with(
+        score,
+        scoretk_midi::MidiOptions {
+            expand_repeats: options.midi.expand_repeats,
+        },
+    )
+    .map_err(|error| Error::Midi(error.to_string()))
 }
 
 #[cfg(not(feature = "midi"))]
-pub(crate) fn write_midi(_score: &Score) -> Result<Vec<u8>> {
+pub(crate) fn write_midi(_score: &Score, _options: &Options) -> Result<Vec<u8>> {
     Err(Error::FormatNonPrisEnCharge {
         format: Format::Midi,
         sens: Sens::Ecriture,
     })
+}
+
+/// Écrit la sortie MIDI et renvoie aussi la carte des temps de la performance.
+///
+/// Sous-produit du même rendu : les octets MIDI sont identiques à ceux de
+/// [`write_midi`] pour les mêmes options.
+#[cfg(feature = "midi")]
+pub(crate) fn write_playback(
+    score: &Score,
+    options: &Options,
+) -> Result<(Vec<u8>, scoretk_midi::Timemap)> {
+    scoretk_midi::write_midi_with_timemap_and(
+        score,
+        scoretk_midi::MidiOptions {
+            expand_repeats: options.midi.expand_repeats,
+        },
+    )
+    .map_err(|error| Error::Midi(error.to_string()))
 }
 
 #[cfg(feature = "midi")]

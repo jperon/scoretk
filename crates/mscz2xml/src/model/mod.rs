@@ -91,6 +91,7 @@ pub mod style;
 pub mod text;
 pub mod tremolo_bar;
 pub mod tuplet;
+pub mod xmlid;
 
 pub use annotation::{
     text_style_defaults, Annotation, Dynamic, Harmony, HarmonyDegree, HarmonyDegreeKind,
@@ -113,7 +114,7 @@ pub use notation::{
     GlissandoType, LineStyle, Ornament, OrnamentAccidental, OrnamentType, Slur, SpannerNotation,
     Tremolo, TremoloKind, Trill, TrillType,
 };
-pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadGroup, NoteHeadType};
+pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadGroup, NoteHeadType, VeloType};
 pub use part::{
     recognize_musicxml_id, Instrument, MidiArticulation, Part, Staff, StaffBracket, Transpose,
 };
@@ -134,6 +135,7 @@ pub use text::{
 };
 pub use tremolo_bar::{TremoloBar, TremoloBarPoint, TremoloBarType};
 pub use tuplet::{Tuplet, TupletNumberType};
+pub use xmlid::{grace_note_xml_id, measure_xml_id, note_xml_id};
 
 #[cfg(test)]
 mod tests;

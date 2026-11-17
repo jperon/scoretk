@@ -56,7 +56,7 @@ worker.addEventListener('message', (event) => {
   if (message.type === 'ready') {
     ready = true;
     fileInput.disabled = false;
-    versionLabel.textContent = `mscz2xml ${message.version} — worker prêt (variante classic)`;
+    versionLabel.textContent = `scoretk ${message.version} — worker prêt (variante classic)`;
     return;
   }
   if (message.type === 'error' && message.id === undefined) {

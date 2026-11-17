@@ -46,12 +46,14 @@ pub mod import;
 mod pause_map;
 mod render;
 pub mod repeat_list;
+pub mod timemap;
 mod velocity;
 mod writer;
 
 pub use error::Error;
 pub use import::{read_midi, read_midi_with};
 pub use repeat_list::{RepeatList, RepeatSegment, DIVISION, UNITS_PER_WHOLE};
+pub use timemap::{MeasureSync, NoteSync, PauseSync, TempoChange, Timemap};
 
 use mscz2xml::model::Score;
 
@@ -88,11 +90,41 @@ pub fn write_midi(score: &Score) -> Result<Vec<u8>, Error> {
 
 /// Écrit une partition en MIDI avec des options explicites.
 pub fn write_midi_with(score: &Score, options: MidiOptions) -> Result<Vec<u8>, Error> {
+    write_midi_impl(score, options, false).map(|(bytes, _)| bytes)
+}
+
+/// Écrit une partition en MIDI et renvoie la carte des temps de la performance.
+///
+/// Le fichier produit est identique à l'octet près à celui de [`write_midi`] :
+/// la carte est un sous-produit du même rendu.
+pub fn write_midi_with_timemap(score: &Score) -> Result<(Vec<u8>, Timemap), Error> {
+    write_midi_with_timemap_and(score, MidiOptions::default())
+}
+
+/// Écrit une partition en MIDI avec des options explicites et renvoie la carte
+/// des temps.
+pub fn write_midi_with_timemap_and(
+    score: &Score,
+    options: MidiOptions,
+) -> Result<(Vec<u8>, Timemap), Error> {
+    write_midi_impl(score, options, true)
+}
+
+/// Rend la partition, avec ou sans construction de la carte des temps.
+///
+/// `capture` faux court-circuite l'enregistrement des mesures et des attaques
+/// (voir [`render::render`]) : le MIDI produit est identique à l'octet près.
+fn write_midi_impl(
+    score: &Score,
+    options: MidiOptions,
+    capture: bool,
+) -> Result<(Vec<u8>, Timemap), Error> {
     let repeat_list = if options.expand_repeats {
         RepeatList::unwind(score)
     } else {
         RepeatList::flatten(score)
     };
-    let performance = render::render(score, &repeat_list)?;
-    writer::write_smf(&performance)
+    let rendered = render::render(score, &repeat_list, capture)?;
+    let bytes = writer::write_smf(&rendered.performance)?;
+    Ok((bytes, rendered.timemap))
 }

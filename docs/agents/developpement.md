@@ -14,7 +14,7 @@ détails et les pièges d'outillage.
 | `crates/mscz2xml/src/model/` | modèle de partition en mémoire, pivot des lecteurs et de l'export |
 | `crates/mscz2xml/src/export/` | modèle → MusicXML `partwise` / `.mxl` |
 | `crates/mscz2xml-cli/` | binaire `mscz2xml` : lecture/écriture des fichiers |
-| `crates/mscz2xml-wasm/` | enveloppe wasm-bindgen (`convert`, `version`), sans logique de conversion |
+| `crates/scoretk-wasm/` | enveloppe wasm-bindgen de la façade (`convert`, `detect`, `formats`, `version`), unique paquet wasm (`nix build .#wasm`) |
 | `crates/scoretk-musicxml/` | lecteur MusicXML → modèle (`read_musicxml`), bibliothèque portable |
 | `crates/scoretk-midi/` | écriture SMF format 1 et déroulement des reprises, sans I/O |
 | `crates/scoretk-lilypond/` | écriture LilyPond depuis le modèle (voix en `\fixed c'`), sans I/O |
@@ -123,16 +123,23 @@ signatures :
 | Élément | Valeur stable |
 | --- | --- |
 | Paquet | `package.json` `name: "scoretk"`, `type: "module"` |
-| ESM | `esm/mscz2xml_wasm.js`, `esm/mscz2xml_wasm_bg.wasm`, `esm/mscz2xml_wasm.d.ts` |
-| Script classique | `classic/mscz2xml_wasm.js`, `classic/mscz2xml_wasm_bg.wasm`, `classic/mscz2xml_wasm.d.ts` |
-| Wrapper worker | `classic/mscz2xml.js` → `self.mscz2xml = { ready, convert, version, baseUrl }` |
-| Conversion | `convert(bytes: Uint8Array, options?: { encodingDate?: string }) => string` (MusicXML UTF-8) |
+| ESM | `esm/scoretk_wasm.js`, `esm/scoretk_wasm_bg.wasm`, `esm/scoretk_wasm.d.ts` |
+| Script classique | `classic/scoretk_wasm.js`, `classic/scoretk_wasm_bg.wasm`, `classic/scoretk_wasm.d.ts` |
+| Wrapper worker | `classic/scoretk.js` → `self.scoretk = { ready, convert, convertWithTimeline, version, detect, formats, baseUrl }` |
+| Conversion | `convert(bytes: Uint8Array, options?: { from?, to?, encodingDate?, software?, concertPitch?, expandRepeats? }) => Uint8Array` (`to` = `"musicxml"` par défaut) |
+| Lecture + timeline | `convertWithTimeline(bytes, options?) => { musicxml: Uint8Array, midi: Uint8Array, timeline: Timeline }` (additif, `to` ignoré) |
+| Détection | `detect(bytes: Uint8Array) => string \| null` |
+| Formats | `formats() => FormatInfo[]` |
 | Version | `version() => string` |
 
-`convert` et `version` du wrapper sont synchrones une fois `ready` résolue et
-lèvent une `Error` sinon. Les erreurs Rust deviennent des `Error` JavaScript.
-Le détail (initialisation, base URL, taille, exemples web, test Node) est dans
-`docs/agents/wasm.md`.
+`convert`, `convertWithTimeline`, `detect`, `formats` et `version` du wrapper
+sont synchrones une fois `ready` résolue et lèvent une `Error` sinon. Les erreurs Rust deviennent
+des `Error` JavaScript. Le détail (initialisation, base URL, taille, exemples
+web, test Node, migration) est dans `docs/agents/wasm.md`.
+
+C'est une rupture assumée avec l'ancien contrat mono-format (qui renvoyait
+du texte et exposait un global dédié) : Cantus décode désormais le
+`Uint8Array` avec `TextDecoder` (détail : `docs/agents/wasm.md` § 9).
 
 ## 6. Commandes
 
@@ -159,7 +166,7 @@ python3 scripts/gen-instruments-table.py \
   crates/mscz2xml/src/read/instruments.rs
 
 # Paquet wasm déjà construit
-nix develop -c node crates/mscz2xml-wasm/tests/node-smoke.mjs
+nix develop -c node crates/scoretk-wasm/tests/node-smoke.mjs
 ```
 
 `nix flake check` travaille hors réseau (crane vend les crates depuis
@@ -203,7 +210,7 @@ Ceux qui ne produisent aucune erreur visible :
   `CARGO_MANIFEST_DIR/../../tests/corpus`. Lancer les tests depuis n'importe
   quel répertoire fonctionne, mais le corpus doit être présent (voir § 1).
 - **Smoke Node** : il charge `result/esm` ; lancer `nix build .#wasm` avant,
-  ou pointer `MSCZ2XML_PKG_DIR` / `MSCZ2XML_CORPUS` ailleurs.
+  ou pointer `SCORETK_PKG_DIR` / `SCORETK_CORPUS` ailleurs.
 - **`ref-musescore/` absent** : le dépôt ne le versionne pas. Les en-têtes
   citent des chemins qui n'existent pas dans une extraction fraîche ; recréer
   la copie avec `docs/agents/upstream.md`.

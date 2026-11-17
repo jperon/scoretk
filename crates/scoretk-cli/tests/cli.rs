@@ -458,3 +458,42 @@ fn musicxml_vers_midi() {
     assert_eq!(bytes.get(..4), Some(b"MThd".as_slice()));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn no_expand_repeats_raccourcit_le_midi() {
+    // `repeat65` porte de vraies reprises (deux voltas et un saut) : le MIDI
+    // déroulé est nécessairement plus long que le MIDI « à plat ».
+    let with_repeats = binary()
+        .arg(corpus("repeat65.mscx"))
+        .args(["--to", "midi"])
+        .output()
+        .expect("exécution");
+    assert!(
+        with_repeats.status.success(),
+        "{}",
+        String::from_utf8_lossy(&with_repeats.stderr)
+    );
+
+    let without_repeats = binary()
+        .arg(corpus("repeat65.mscx"))
+        .args(["--to", "midi", "--no-expand-repeats"])
+        .output()
+        .expect("exécution");
+    assert!(
+        without_repeats.status.success(),
+        "{}",
+        String::from_utf8_lossy(&without_repeats.stderr)
+    );
+
+    assert_eq!(
+        with_repeats.stdout.get(..4),
+        Some(b"MThd".as_slice()),
+        "sortie MIDI attendue"
+    );
+    assert!(
+        with_repeats.stdout.len() > without_repeats.stdout.len(),
+        "--no-expand-repeats devrait raccourcir le MIDI ({} vs {} octets)",
+        without_repeats.stdout.len(),
+        with_repeats.stdout.len()
+    );
+}

@@ -44,6 +44,7 @@
 use std::collections::BTreeSet;
 
 use crate::model::chord::ChordRestKind;
+use crate::model::xmlid::{grace_note_xml_id, measure_xml_id, note_xml_id};
 use crate::model::{
     Accidental, AccidentalType, Annotation, Chord, ChordRest, Clef, ClefType, Duration, Fraction,
     GraceType, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure,
@@ -91,6 +92,13 @@ pub struct ExportOptions {
     /// MuseScore exporte par défaut les hauteurs écrites (`false`), en
     /// utilisant `Note::tpc_transposed` et la transposition de l'instrument.
     pub concert_pitch: bool,
+    /// Vrai pour émettre un `id` sur `<measure>` et `<note>`.
+    ///
+    /// Les identifiants sont calculés par [`crate::model::xmlid`] à partir des
+    /// seuls indices du modèle et restent donc stables d'un export à l'autre.
+    /// Désactivé par défaut pour ne pas diverger des références MuseScore
+    /// 4.7.4, qui n'écrivent aucun `id` sur ces éléments.
+    pub stable_ids: bool,
 }
 
 impl Default for ExportOptions {
@@ -99,6 +107,7 @@ impl Default for ExportOptions {
             software: DEFAULT_SOFTWARE.to_owned(),
             encoding_date: DEFAULT_ENCODING_DATE.to_owned(),
             concert_pitch: false,
+            stable_ids: false,
         }
     }
 }
@@ -363,6 +372,32 @@ struct PartSpanners {
     next_instrument: usize,
     /// Chiffrages figurés en cours de prolongation (`FigBassMap`).
     fig_bass: figured_bass::Pending,
+}
+
+/// Index nécessaires aux identifiants stables d'un `ChordRest`.
+///
+/// Le rang est calculé par [`Context::write_measure_tracks`], dans l'ordre
+/// exact du parcours d'écriture (silences compris), et transmis jusqu'à
+/// [`Context::chord`] et [`Context::rest`].
+#[derive(Clone, Copy)]
+struct StableIds {
+    /// Index de la mesure dans `Score::measures`.
+    measure_index: usize,
+    /// Rang du `ChordRest` dans sa voix, silences compris.
+    chord_rank: usize,
+}
+
+/// Accord d'agrément en cours d'écriture (`Chord::grace_chords`).
+#[derive(Clone, Copy)]
+struct GraceRef<'a> {
+    /// Durée notée de l'ornement.
+    duration: &'a Duration,
+    /// Position dans `Chord::grace_chords`.
+    index: usize,
+    /// Vrai si l'ornement précède l'accord principal.
+    before: bool,
+    /// Ligature calculée pour cet ornement.
+    beam: Option<&'a beams::GraceBeam>,
 }
 
 impl<'a> Context<'a> {
@@ -813,7 +848,19 @@ impl<'a> Context<'a> {
         // TODO(parité): numérotation `implicit="yes"` des mesures d'anacrouse
         // (le modèle n'a pas l'équivalent de `excludeFromNumbering`).
         let number = self.measure_number(measure_index).to_string();
-        out.xml.start_element("measure", &[("number", &number)]);
+        // `stable_ids` ajoute `id` et `xml:id` de mesure (même valeur),
+        // uniques par partie ; sans lui, la sortie reste identique aux
+        // références MuseScore 4.7.4.
+        let measure_id = self
+            .options
+            .stable_ids
+            .then(|| measure_xml_id(part_index, measure_index));
+        let mut measure_attributes: Vec<(&str, &str)> = vec![("number", &number)];
+        if let Some(id) = &measure_id {
+            measure_attributes.push(("id", id));
+            measure_attributes.push(("xml:id", id));
+        }
+        out.xml.start_element("measure", &measure_attributes);
         out.in_attributes = false;
 
         // TODO(parité): <print> (sauts de page/système, numéro de page) et
@@ -891,7 +938,15 @@ impl<'a> Context<'a> {
             textlines::write_tboxes(out, self, measure_index);
         }
 
-        self.write_measure_staves(out, measure, part, nuances, part_index, spanners);
+        self.write_measure_staves(
+            out,
+            measure,
+            part,
+            nuances,
+            part_index,
+            measure_index,
+            spanners,
+        );
         self.annotations_without_note(out, measure, part);
 
         out.move_to_tick(measure.end_tick());
@@ -903,6 +958,7 @@ impl<'a> Context<'a> {
     }
 
     /// Écrit les portées d'une mesure pour une partie (`writeMeasureStaves`).
+    #[allow(clippy::too_many_arguments)]
     fn write_measure_staves(
         &self,
         out: &mut Out,
@@ -910,6 +966,7 @@ impl<'a> Context<'a> {
         part: &Part,
         nuances: &mut Nuances,
         part_index: usize,
+        measure_index: usize,
         spanners: &mut PartSpanners,
     ) {
         let staves = part.staves.len();
@@ -926,6 +983,7 @@ impl<'a> Context<'a> {
                 xml_staff,
                 nuances,
                 part_index,
+                measure_index,
                 position,
                 spanners,
                 &mut started,
@@ -948,6 +1006,7 @@ impl<'a> Context<'a> {
         xml_staff: usize,
         nuances: &mut Nuances,
         part_index: usize,
+        measure_index: usize,
         staff_position: usize,
         spanners: &mut PartSpanners,
         ottava_started: &mut [bool],
@@ -955,6 +1014,10 @@ impl<'a> Context<'a> {
     ) {
         for voice in 0..VOICES {
             let track = Track::new(staff_id, voice as u8);
+            // Rang du `ChordRest` dans la voix (`ids.chord_rank`), silences
+            // compris : c'est l'ordre même de ce parcours, comme
+            // `writeMeasureTracks` dans le C++.
+            let mut chord_rank = 0usize;
             for segment in &measure.segments {
                 // TODO(parité): spanners et annotations des segments TimeTick.
                 if segment.kind.is_time_tick_type() {
@@ -1032,10 +1095,18 @@ impl<'a> Context<'a> {
                     }
                 }
                 let is_chord_rest = matches!(item, SegmentItem::ChordRest(_));
+                let ids = StableIds {
+                    measure_index,
+                    chord_rank,
+                };
 
-                self.write_element(out, segment, item, measure, xml_staff, track);
+                self.write_element(out, segment, item, measure, xml_staff, track, ids);
 
                 if is_chord_rest {
+                    // Le rang avance après chaque `ChordRest`, silences et
+                    // silences de portée (`gap`) compris, pour rester aligné
+                    // sur le parcours d'écriture.
+                    chord_rank += 1;
                     nuances.stop(self.score, out, out.tick, staff_id, xml_staff);
                     // Fins de lignes de texte (`spannerStop`), une seule fois.
                     for (index, spanner) in self.score.spanners.iter().enumerate() {
@@ -1073,6 +1144,7 @@ impl<'a> Context<'a> {
     }
 
     /// Écrit un élément de segment (`writeElement`).
+    #[allow(clippy::too_many_arguments)]
     fn write_element(
         &self,
         out: &mut Out,
@@ -1081,6 +1153,7 @@ impl<'a> Context<'a> {
         measure: &Measure,
         xml_staff: usize,
         track: Track,
+        ids: StableIds,
     ) {
         match item {
             SegmentItem::Clef(clef) => {
@@ -1088,11 +1161,11 @@ impl<'a> Context<'a> {
             }
             SegmentItem::ChordRest(chord_rest) => match &chord_rest.kind {
                 ChordRestKind::Chord(chord) => {
-                    self.chord_entry(out, chord_rest, chord, measure, xml_staff, track);
+                    self.chord_entry(out, chord_rest, chord, measure, xml_staff, track, ids);
                 }
                 ChordRestKind::Rest(rest) => {
                     if !rest.gap {
-                        self.rest(out, chord_rest, measure, xml_staff, track);
+                        self.rest(out, chord_rest, measure, xml_staff, track, ids);
                     }
                 }
             },
@@ -1416,6 +1489,7 @@ impl Context<'_> {
 
 impl Context<'_> {
     /// Écrit un accord principal et ses accords d'agrément (`writeElement`).
+    #[allow(clippy::too_many_arguments)]
     fn chord_entry(
         &self,
         out: &mut Out,
@@ -1424,6 +1498,7 @@ impl Context<'_> {
         measure: &Measure,
         xml_staff: usize,
         track: Track,
+        ids: StableIds,
     ) {
         let before: Vec<usize> = (0..chord.grace_chords.len())
             .filter(|index| {
@@ -1459,33 +1534,41 @@ impl Context<'_> {
 
         for (position, index) in before.iter().enumerate() {
             let grace = &chord.grace_chords[*index];
+            let grace_ref = GraceRef {
+                duration: &grace.duration,
+                index: *index,
+                before: true,
+                beam: before_beams[position].as_ref(),
+            };
             self.chord(
                 out,
                 &grace.chord,
-                Some(&grace.duration),
+                Some(&grace_ref),
                 chord_rest,
                 measure,
                 xml_staff,
                 track,
-                before_beams[position].as_ref(),
-                true,
+                ids,
             );
         }
-        self.chord(
-            out, chord, None, chord_rest, measure, xml_staff, track, None, false,
-        );
+        self.chord(out, chord, None, chord_rest, measure, xml_staff, track, ids);
         for (position, index) in after.iter().enumerate() {
             let grace = &chord.grace_chords[*index];
+            let grace_ref = GraceRef {
+                duration: &grace.duration,
+                index: *index,
+                before: false,
+                beam: after_beams[position].as_ref(),
+            };
             self.chord(
                 out,
                 &grace.chord,
-                Some(&grace.duration),
+                Some(&grace_ref),
                 chord_rest,
                 measure,
                 xml_staff,
                 track,
-                after_beams[position].as_ref(),
-                true,
+                ids,
             );
         }
     }
@@ -1502,20 +1585,20 @@ impl Context<'_> {
         &self,
         out: &mut Out,
         chord: &Chord,
-        grace_duration: Option<&Duration>,
+        grace: Option<&GraceRef<'_>>,
         chord_rest: &ChordRest,
         measure: &Measure,
         xml_staff: usize,
         track: Track,
-        grace_beam: Option<&beams::GraceBeam>,
-        grace: bool,
+        ids: StableIds,
     ) {
         let segment_tick = out.tick;
         let global_ticks = self.global_ticks(chord_rest, measure);
-        if !grace {
+        if grace.is_none() {
             out.tick += self.actual_ticks(chord_rest, measure, track.staff());
         }
 
+        let grace_duration = grace.map(|grace| grace.duration);
         let duration = grace_duration.copied().unwrap_or(chord_rest.duration);
         let notated = grace_duration.map_or_else(
             || self.notated_ticks(chord_rest, measure),
@@ -1537,12 +1620,38 @@ impl Context<'_> {
                 .velocity
                 .filter(|velocity| *velocity != 0)
                 .map(|velocity| format_dynamics(f64::from(velocity) * 100.0 / 90.0));
-            match &dynamics {
-                Some(value) => out.xml.start_element("note", &[("dynamics", value)]),
-                None => out.xml.start_element("note", &[]),
+            // `stable_ids` : identifiant de note calculé à partir du rang réel
+            // du `ChordRest` dans la voix, du côté de l'ornement et de l'index
+            // de la note dans l'accord.
+            let note_id = self.options.stable_ids.then(|| match grace {
+                Some(grace) => grace_note_xml_id(
+                    ids.measure_index,
+                    track.staff().raw(),
+                    track.voice(),
+                    ids.chord_rank,
+                    grace.index,
+                    index,
+                    grace.before,
+                ),
+                None => note_xml_id(
+                    ids.measure_index,
+                    track.staff().raw(),
+                    track.voice(),
+                    ids.chord_rank,
+                    index,
+                ),
+            });
+            let mut note_attributes: Vec<(&str, &str)> = Vec::new();
+            if let Some(value) = &dynamics {
+                note_attributes.push(("dynamics", value));
             }
+            if let Some(id) = &note_id {
+                note_attributes.push(("id", id));
+                note_attributes.push(("xml:id", id));
+            }
+            out.xml.start_element("note", &note_attributes);
 
-            if grace {
+            if grace.is_some() {
                 // MuseScore affiche la barre oblique pour une acciaccatura,
                 // même quand le fichier ne stocke pas le drapeau.
                 if chord.grace_slash || chord.grace == Some(GraceType::Acciaccatura) {
@@ -1561,7 +1670,7 @@ impl Context<'_> {
 
             write_pitch(out, note, self.options.concert_pitch, transpose, ottava);
 
-            if !grace {
+            if grace.is_none() {
                 out.xml.tag(
                     "duration",
                     &out.duration_in_divisions(global_ticks).to_string(),
@@ -1589,12 +1698,12 @@ impl Context<'_> {
             }
 
             out.xml.tag("voice", &voice.to_string());
-            write_type(out, notated, chord, note, grace);
+            write_type(out, notated, chord, note, grace.is_some());
             if let Some(accidental) = &note.accidental {
                 write_accidental(out, accidental);
             }
             // Un accord d'agrément n'appartient à aucun n-olet.
-            if !grace {
+            if grace.is_none() {
                 self.write_time_modification(out, chord_rest);
             }
 
@@ -1602,7 +1711,7 @@ impl Context<'_> {
             // MuseScore écrit toujours une hampe dès qu'il y en a une ; la
             // direction automatique se calcule comme `Chord::up()`.
             if duration.kind.has_stem() {
-                let actual = if grace {
+                let actual = if grace.is_some() {
                     Fraction::ZERO
                 } else {
                     self.actual_ticks(chord_rest, measure, track.staff())
@@ -1616,7 +1725,7 @@ impl Context<'_> {
                     actual,
                     self.options.concert_pitch,
                     transpose,
-                    grace_beam.map_or_else(
+                    grace.and_then(|grace| grace.beam).map_or_else(
                         || self.beams.up(measure.number, track, segment_tick),
                         |beam| Some(beam.up),
                     ),
@@ -1634,8 +1743,8 @@ impl Context<'_> {
             }
 
             if first {
-                if grace {
-                    if let Some(beam) = grace_beam {
+                if let Some(grace) = grace {
+                    if let Some(beam) = grace.beam {
                         for (level, text) in beam.texts.iter().enumerate() {
                             let number = (level + 1).to_string();
                             out.xml.tag_with("beam", &[("number", &number)], text);
@@ -1674,14 +1783,14 @@ impl Context<'_> {
                     None => out.xml.tag_empty("tied", &[("type", "start")]),
                 }
             }
-            if first && !grace {
+            if first && grace.is_none() {
                 self.tuplet_start_stop(out, chord_rest, segment_tick, track, &mut notations);
             }
             if first {
                 self.chord_attributes(
                     out,
                     chord,
-                    grace,
+                    grace.is_some(),
                     measure,
                     segment_tick,
                     track,
@@ -1718,7 +1827,7 @@ impl Context<'_> {
             );
             notations.finish(&mut out.xml);
 
-            if first && !grace {
+            if first && grace.is_none() {
                 for lyric in &chord_rest.lyrics {
                     write_lyric(out, lyric);
                 }
@@ -1749,16 +1858,32 @@ impl Context<'_> {
         measure: &Measure,
         xml_staff: usize,
         track: Track,
+        ids: StableIds,
     ) {
         let segment_tick = out.tick;
         out.attr(false);
 
         let visible = chord_rest.rest_ref().is_none_or(|rest| rest.visible);
-        if visible {
-            out.xml.start_element("note", &[]);
-        } else {
-            out.xml.start_element("note", &[("print-object", "no")]);
+        // Un silence est une `<note>` : `stable_ids` lui donne le même schéma
+        // d'identifiant, avec `n0` puisqu'il n'a pas de note.
+        let note_id = self.options.stable_ids.then(|| {
+            note_xml_id(
+                ids.measure_index,
+                track.staff().raw(),
+                track.voice(),
+                ids.chord_rank,
+                0,
+            )
+        });
+        let mut attributes: Vec<(&str, &str)> = Vec::new();
+        if !visible {
+            attributes.push(("print-object", "no"));
         }
+        if let Some(id) = &note_id {
+            attributes.push(("id", id));
+            attributes.push(("xml:id", id));
+        }
+        out.xml.start_element("note", &attributes);
 
         if chord_rest.is_full_measure_rest() {
             out.xml.tag_empty("rest", &[("measure", "yes")]);

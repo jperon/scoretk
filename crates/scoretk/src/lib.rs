@@ -93,10 +93,31 @@ mod options;
 pub use error::Error;
 pub use format::{Format, Sens};
 pub use mscz2xml::model::Score;
-pub use options::Options;
+pub use options::{MidiOptions, Options};
+/// Types de la carte des temps, réexportés pour les consommateurs de
+/// [`write_playback`] (wasm, CLI) sans dépendre directement de `scoretk-midi`.
+#[cfg(feature = "midi")]
+pub use scoretk_midi::{MeasureSync, NoteSync, PauseSync, TempoChange, Timemap};
 
 /// Résultat de la façade.
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// Résultat de [`write_playback`] : MusicXML identifié, MIDI et carte des temps.
+///
+/// Le MusicXML est exporté avec `ExportOptions::stable_ids` forcé : ses
+/// attributs `id`/`xml:id` de mesure et de note sont exactement les
+/// identifiants [`scoretk_midi::NoteSync::xml_id`] et
+/// [`scoretk_midi::MeasureSync::xml_id`] de la carte des temps.
+#[cfg(feature = "midi")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlaybackOutput {
+    /// MusicXML partwise, avec identifiants stables (`id` et `xml:id`).
+    pub musicxml: Vec<u8>,
+    /// Standard MIDI File format 1.
+    pub midi: Vec<u8>,
+    /// Carte des temps du même rendu MIDI.
+    pub timemap: scoretk_midi::Timemap,
+}
 
 /// Lit un fichier en mémoire et renvoie le modèle pivot.
 ///
@@ -138,10 +159,39 @@ pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>
             score,
             &options.export_options(),
         )?),
-        Format::Midi => hooks::write_midi(score),
+        Format::Midi => hooks::write_midi(score, options),
         Format::Mscx => hooks::write_mscx(score),
         Format::Mscz => hooks::write_mscz(score),
         Format::Ly => hooks::write_lilypond(score),
         Format::Abc => hooks::write_abc(score),
     }
+}
+
+/// Écrit une partition en MusicXML et en MIDI, avec la carte des temps du
+/// rendu MIDI.
+///
+/// Le MusicXML est le même que [`write`] avec [`Options::default`], à une
+/// exception près : `ExportOptions::stable_ids` est forcé, donc chaque
+/// `<measure>` et chaque `<note>` porte un attribut `id` **et** `xml:id`
+/// (même valeur). Ces identifiants correspondent exactement à
+/// [`scoretk_midi::MeasureSync::xml_id`] et
+/// [`scoretk_midi::NoteSync::xml_id`], ce qui permet d'associer un évènement
+/// de la carte des temps à un élément du MusicXML.
+///
+/// Les reprises suivent `options.midi.expand_repeats`. La carte et le MIDI
+/// sont produits par le même rendu : les ticks de la carte sont ceux du
+/// fichier, pauses de section comprises. Voir `docs/agents/timemap.md`.
+#[cfg(feature = "midi")]
+pub fn write_playback(score: &Score, options: &Options) -> Result<PlaybackOutput> {
+    let export = mscz2xml::ExportOptions {
+        stable_ids: true,
+        ..options.export_options()
+    };
+    let musicxml = mscz2xml::export::export_musicxml_with(score, &export)?.into_bytes();
+    let (midi, timemap) = hooks::write_playback(score, options)?;
+    Ok(PlaybackOutput {
+        musicxml,
+        midi,
+        timemap,
+    })
 }

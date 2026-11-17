@@ -31,7 +31,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 
-use scoretk::{Format, Options};
+use scoretk::{Format, MidiOptions, Options};
 
 /// Version affichée par `--version` : en plus du numéro, la licence et
 /// l'absence de garantie (GPL §0, « Appropriate Legal Notices »).
@@ -70,6 +70,10 @@ struct Cli {
     /// en UTC)
     #[arg(long, value_name = "AAAA-MM-JJ", value_parser = parse_encoding_date)]
     encoding_date: Option<String>,
+
+    /// Ne pas dérouler les reprises dans la sortie MIDI
+    #[arg(long)]
+    no_expand_repeats: bool,
 }
 
 fn main() -> ExitCode {
@@ -103,6 +107,9 @@ fn main() -> ExitCode {
 
     let options = Options {
         encoding_date: cli.encoding_date.unwrap_or_else(today_utc),
+        midi: MidiOptions {
+            expand_repeats: !cli.no_expand_repeats,
+        },
         ..Options::default()
     };
 
