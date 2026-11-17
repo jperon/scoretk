@@ -41,7 +41,7 @@
 //! | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` | oui |
 //! | MusicXML `.mxl` | non | oui |
 //! | LilyPond `.ly` | non | feature `lilypond` |
-//! | ABC | non | non |
+//! | ABC `.abc` | feature `abc` | feature `abc` |
 //! | MIDI | non | feature `midi` |
 //!
 //! Un format sans convertisseur dans le sens demandé renvoie
@@ -108,7 +108,8 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
             Ok(mscz2xml::read::read_score(&container)?)
         }
         Format::MusicXml => hooks::read_musicxml(bytes),
-        Format::Mxl | Format::Ly | Format::Abc | Format::Midi => {
+        Format::Abc => hooks::read_abc(bytes),
+        Format::Mxl | Format::Ly | Format::Midi => {
             Err(Error::FormatNonPrisEnCharge {
                 format,
                 sens: Sens::Lecture,
@@ -140,9 +141,6 @@ pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>
         Format::Mscx => hooks::write_mscx(score),
         Format::Mscz => hooks::write_mscz(score),
         Format::Ly => hooks::write_lilypond(score),
-        Format::Abc => Err(Error::FormatNonPrisEnCharge {
-            format,
-            sens: Sens::Ecriture,
-        }),
+        Format::Abc => hooks::write_abc(score),
     }
 }

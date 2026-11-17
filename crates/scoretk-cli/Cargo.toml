@@ -17,7 +17,7 @@ path = "src/main.rs"
 # défaut dans la CLI : `scoretk entrée.mscz -o sortie.ly` et
 # `scoretk entrée.musicxml -o sortie.mscx` fonctionnent sans option de
 # compilation.
-scoretk = { path = "../scoretk", features = ["lilypond", "mscx"] }
+scoretk = { path = "../scoretk", features = ["lilypond", "mscx", "abc"] }
 clap = { workspace = true }
 
 [dev-dependencies]

@@ -29,7 +29,10 @@
 //!   `write_lilypond(&Score) -> Result<String>` ;
 //! - feature `mscx` : crate `scoretk-mscx` (t38), fonctions
 //!   `write_mscx(&Score) -> Result<String>` et
-//!   `write_mscz(&Score) -> Result<Vec<u8>>`.
+//!   `write_mscz(&Score) -> Result<Vec<u8>>` ;
+//! - feature `abc` : crate `scoretk-abc` (t41), fonctions
+//!   `read_abc(&str) -> Result<Score>` et
+//!   `write_abc(&Score) -> Result<String>`.
 
 use mscz2xml::model::Score;
 
@@ -38,7 +41,8 @@ use crate::error::Error;
     feature = "musicxml-import",
     feature = "midi",
     feature = "lilypond",
-    feature = "mscx"
+    feature = "mscx",
+    feature = "abc"
 )))]
 use crate::format::{Format, Sens};
 use crate::Result;
@@ -108,6 +112,35 @@ pub(crate) fn write_mscz(score: &Score) -> Result<Vec<u8>> {
 pub(crate) fn write_mscz(_score: &Score) -> Result<Vec<u8>> {
     Err(Error::FormatNonPrisEnCharge {
         format: Format::Mscz,
+        sens: Sens::Ecriture,
+    })
+}
+
+#[cfg(feature = "abc")]
+pub(crate) fn read_abc(bytes: &[u8]) -> Result<Score> {
+    let text = std::str::from_utf8(bytes).map_err(|error| Error::Abc(error.to_string()))?;
+    scoretk_abc::read_abc(text).map_err(|error| Error::Abc(error.to_string()))
+}
+
+#[cfg(not(feature = "abc"))]
+pub(crate) fn read_abc(_bytes: &[u8]) -> Result<Score> {
+    Err(Error::FormatNonPrisEnCharge {
+        format: Format::Abc,
+        sens: Sens::Lecture,
+    })
+}
+
+#[cfg(feature = "abc")]
+pub(crate) fn write_abc(score: &Score) -> Result<Vec<u8>> {
+    scoretk_abc::write_abc(score)
+        .map(String::into_bytes)
+        .map_err(|error| Error::Abc(error.to_string()))
+}
+
+#[cfg(not(feature = "abc"))]
+pub(crate) fn write_abc(_score: &Score) -> Result<Vec<u8>> {
+    Err(Error::FormatNonPrisEnCharge {
+        format: Format::Abc,
         sens: Sens::Ecriture,
     })
 }

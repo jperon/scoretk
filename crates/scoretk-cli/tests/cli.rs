@@ -183,8 +183,11 @@ fn extension_de_sortie_inconnue_echoue() {
 
 #[test]
 fn format_non_branche_echoue_explicitement() {
+    // `.mxl` n'a pas de lecteur dans la façade : la conversion doit échouer
+    // explicitement au lieu de produire une sortie vide.
     let output = binary()
         .arg(corpus("dynamics.mscx"))
+        .args(["--from", "mxl"])
         .arg("-o")
         .arg(Path::new("/tmp/scoretk-sortie.abc"))
         .output()

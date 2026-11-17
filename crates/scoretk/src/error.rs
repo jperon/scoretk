@@ -70,4 +70,8 @@ pub enum Error {
     /// Erreur renvoyée par la crate d'écriture MuseScore (feature `mscx`).
     #[error("écriture MuseScore : {0}")]
     Mscx(String),
+
+    /// Erreur renvoyée par la crate ABC (feature `abc`).
+    #[error("ABC : {0}")]
+    Abc(String),
 }

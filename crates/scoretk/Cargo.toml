@@ -20,9 +20,11 @@ musicxml-import = ["dep:scoretk-musicxml"]
 midi = ["dep:scoretk-midi"]
 lilypond = ["dep:scoretk-lilypond"]
 mscx = ["dep:scoretk-mscx"]
+abc = ["dep:scoretk-abc"]
 
 [dependencies]
 mscz2xml = { path = "../mscz2xml" }
+scoretk-abc = { path = "../scoretk-abc", optional = true }
 scoretk-lilypond = { path = "../scoretk-lilypond", optional = true }
 scoretk-mscx = { path = "../scoretk-mscx", optional = true }
 scoretk-midi = { path = "../scoretk-midi", optional = true }

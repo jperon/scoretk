@@ -345,12 +345,21 @@ name = "scoretk"
 version = "0.1.0"
 dependencies = [
  "mscz2xml",
+ "scoretk-abc",
  "scoretk-lilypond",
  "scoretk-midi",
  "scoretk-mscx",
  "scoretk-musicxml",
  "thiserror",
  "zip",
+]
+
+[[package]]
+name = "scoretk-abc"
+version = "0.1.0"
+dependencies = [
+ "mscz2xml",
+ "thiserror",
 ]
 
 [[package]]
