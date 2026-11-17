@@ -330,19 +330,13 @@ pub(crate) fn measure_context(
             }
             match item {
                 SegmentItem::Clef(value) => {
-                    if clef.is_none() {
-                        clef = Some(*value);
-                    }
+                    clef.get_or_insert(*value);
                 }
                 SegmentItem::KeySig(value) => {
-                    if key.is_none() {
-                        key = Some(value.clone());
-                    }
+                    key.get_or_insert_with(|| value.clone());
                 }
                 SegmentItem::TimeSig(value) => {
-                    if time.is_none() {
-                        time = Some(value.clone());
-                    }
+                    time.get_or_insert_with(|| value.clone());
                 }
                 _ => {}
             }

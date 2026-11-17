@@ -221,9 +221,8 @@ mod tests {
             figure_for(Fraction::new(3, 16)),
             (Duration::with_dots(DurationType::Eighth, 1), true)
         );
-        assert_eq!(
-            figure_for(Fraction::new(1, 12)).1,
-            false,
+        assert!(
+            !figure_for(Fraction::new(1, 12)).1,
             "un triolet ne s'écrit pas avec une figure pointée"
         );
         assert_eq!(

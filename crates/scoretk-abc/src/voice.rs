@@ -40,6 +40,15 @@ use crate::pitch;
 use crate::text;
 use crate::writer;
 
+/// Changement de contexte en cours de mesure.
+type ContextChange = (
+    Tick,
+    u8,
+    Option<KeySig>,
+    Option<mscz2xml::model::ClefType>,
+    Option<mscz2xml::model::TimeSig>,
+);
+
 /// Un accord ou silence de la trame d'une voix.
 struct Item<'a> {
     /// Mesure d'appartenance.
@@ -674,13 +683,7 @@ fn draw_context_changes(
     range: std::ops::Range<usize>,
     before: &mut [Vec<String>],
 ) {
-    let mut changes: Vec<(
-        Tick,
-        u8,
-        Option<KeySig>,
-        Option<mscz2xml::model::ClefType>,
-        Option<mscz2xml::model::TimeSig>,
-    )> = Vec::new();
+    let mut changes: Vec<ContextChange> = Vec::new();
     for segment in &measure.segments {
         if segment.tick <= measure.start_tick {
             continue;

@@ -64,10 +64,10 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
 
     let tuplet_ids = create_tuplets(&mut score, &voices, &starts);
 
-    for index in 0..measure_count {
+    for (index, &start) in starts.iter().enumerate() {
         let nominal = nominal_len(&voices, index);
         let len = measure_len(&voices, index);
-        let mut measure = Measure::new(index, starts[index], nominal).with_len(len);
+        let mut measure = Measure::new(index, start, nominal).with_len(len);
         measure.start_bar_line = measure_start_bar(&voices, index);
         measure.end_bar_line = measure_end_bar(&voices, index);
         measure.repeat_count = 0;
@@ -77,19 +77,18 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
             let (staff, model_voice) = voice_tracks[voice_index];
             let track = Track::new(staff, model_voice);
             if index == 0 || time_at(voice, index) != time_at(voice, index - 1) {
-                let mut segment = Segment::new(SegmentType::TimeSig, starts[index], staff_count);
+                let mut segment = Segment::new(SegmentType::TimeSig, start, staff_count);
                 segment.set_element(track, SegmentItem::TimeSig(time_at(voice, index)));
                 measure.add_segment(segment);
             }
             if index == 0 || key_at(voice, index) != key_at(voice, index - 1) {
-                let mut segment = Segment::new(SegmentType::KeySig, starts[index], staff_count);
+                let mut segment = Segment::new(SegmentType::KeySig, start, staff_count);
                 segment.set_element(track, SegmentItem::KeySig(key_at(voice, index)));
                 measure.add_segment(segment);
             }
             if index == 0 || clef_at(voice, index) != clef_at(voice, index - 1) {
                 if let Some(clef) = clef_at(voice, index) {
-                    let mut segment =
-                        Segment::new(SegmentType::HeaderClef, starts[index], staff_count);
+                    let mut segment = Segment::new(SegmentType::HeaderClef, start, staff_count);
                     segment.set_element(track, SegmentItem::Clef(Clef::new(clef)));
                     measure.add_segment(segment);
                 }
@@ -99,7 +98,7 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
                 if *change_measure == index && tick.is_positive() {
                     if let Some(time) = value {
                         let mut segment =
-                            Segment::new(SegmentType::TimeSig, starts[index] + *tick, staff_count);
+                            Segment::new(SegmentType::TimeSig, start + *tick, staff_count);
                         segment.set_element(track, SegmentItem::TimeSig(time.clone()));
                         measure.add_segment(segment);
                     }
@@ -109,7 +108,7 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
                 if *change_measure == index && tick.is_positive() {
                     if let Some(key) = value {
                         let mut segment =
-                            Segment::new(SegmentType::KeySig, starts[index] + *tick, staff_count);
+                            Segment::new(SegmentType::KeySig, start + *tick, staff_count);
                         segment.set_element(track, SegmentItem::KeySig(key.clone()));
                         measure.add_segment(segment);
                     }
@@ -119,7 +118,7 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
                 if *change_measure == index && tick.is_positive() {
                     if let Some(clef) = value {
                         let mut segment =
-                            Segment::new(SegmentType::Clef, starts[index] + *tick, staff_count);
+                            Segment::new(SegmentType::Clef, start + *tick, staff_count);
                         segment.set_element(track, SegmentItem::Clef(Clef::new(*clef)));
                         measure.add_segment(segment);
                     }
@@ -135,7 +134,7 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
                 continue;
             };
             for event in &data.events {
-                let tick = starts[index] + event.tick;
+                let tick = start + event.tick;
                 let mut chord_rest = event.chord_rest.clone();
                 if let Some(tuplet) = event.tuplet {
                     chord_rest.tuplet = tuplet_ids
@@ -415,7 +414,7 @@ fn nominal_len(voices: &[Voice], index: usize) -> Fraction {
         .filter_map(|voice| voice.measures.get(index))
         .map(|measure| measure.nominal_len)
         .find(|len| len.is_positive())
-        .unwrap_or_else(|| Fraction::ONE)
+        .unwrap_or(Fraction::ONE)
 }
 
 /// Barre de début commune.
@@ -499,12 +498,12 @@ fn create_tuplets(
 }
 
 /// Événement de segment à un tick donné, créé au besoin.
-fn segment_at<'a>(
-    measure: &'a mut Measure,
+fn segment_at(
+    measure: &mut Measure,
     kind: SegmentType,
     tick: Fraction,
     staff_count: usize,
-) -> &'a mut Segment {
+) -> &mut Segment {
     let position = measure
         .segments
         .iter()
@@ -598,8 +597,10 @@ mod tests {
 
     #[test]
     fn groupes_de_voix() {
-        let mut reader = Reader::default();
-        reader.score_spec = Some("(1 2) 3".to_owned());
+        let reader = Reader {
+            score_spec: Some("(1 2) 3".to_owned()),
+            ..Default::default()
+        };
         let fields = |number| crate::reader::VoiceFields {
             number,
             name: String::new(),

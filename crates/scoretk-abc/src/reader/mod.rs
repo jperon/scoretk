@@ -171,10 +171,8 @@ fn split_tunes(lines: &[Line]) -> Vec<Vec<Line>> {
     let mut tunes: Vec<Vec<Line>> = Vec::new();
     let mut current: Vec<Line> = Vec::new();
     for line in lines {
-        if is_field(line, 'X') {
-            if !current.is_empty() {
-                tunes.push(std::mem::take(&mut current));
-            }
+        if is_field(line, 'X') && !current.is_empty() {
+            tunes.push(std::mem::take(&mut current));
         }
         current.push(line.clone());
     }
