@@ -32,7 +32,7 @@ use std::collections::BTreeMap;
 
 use mscz2xml::model::{
     ArpeggioType, ArticulationType, Duration, DurationType, Fraction, GraceType, KeyMode,
-    NoteHeadGroup, OrnamentType, Placement, StemDirection, TremoloKind,
+    NoteHeadGroup, OrnamentType, Placement, StemDirection, TremoloKind, TupletNumberType,
 };
 
 use super::ast::{
@@ -61,6 +61,10 @@ pub(crate) struct Parser<'a> {
     warnings: &'a mut Warnings,
     /// Groupe de tête posé par `\tweak style`.
     pending_head: NoteHeadGroup,
+    /// Affichage du nombre du prochain n-olet (`\override TupletNumber…`).
+    pending_tuplet_number: Option<TupletNumberType>,
+    /// Silence invisible demandé par `\once \override Rest.transparent`.
+    pending_invisible_rest: bool,
 }
 
 /// Résultat de l'analyse.
@@ -75,6 +79,8 @@ pub(crate) fn parse(source: &str, warnings: &mut Warnings) -> Document {
         default_duration: Duration::quarter(),
         warnings,
         pending_head: NoteHeadGroup::Normal,
+        pending_tuplet_number: None,
+        pending_invisible_rest: false,
     };
     parser.document()
 }
@@ -160,8 +166,10 @@ impl<'a> Parser<'a> {
 
     /// Analyse un document complet.
     fn document(&mut self) -> Document {
-        let mut document = Document::default();
-        document.language = "nederlands".to_owned();
+        let mut document = Document {
+            language: "nederlands".to_owned(),
+            ..Document::default()
+        };
 
         while !self.at_end() {
             let Some(token) = self.peek().cloned() else {
@@ -221,10 +229,7 @@ impl<'a> Parser<'a> {
                 }
                 Kind::Word => {
                     // Assignation `nom = musique` ou mot isolé.
-                    if self
-                        .peek_at(1)
-                        .is_some_and(|next| next.is_punct('='))
-                    {
+                    if self.peek_at(1).is_some_and(|next| next.is_punct('=')) {
                         let name = token.text.clone();
                         self.position += 2;
                         let music = self.parse_music();
@@ -260,12 +265,12 @@ impl<'a> Parser<'a> {
             let Some(token) = self.bump() else {
                 break;
             };
-            if !token.is_punct('=') {
-                continue;
-            }
             let Some(name) = token_text(&token) else {
                 continue;
             };
+            if !self.eat_punct('=') {
+                continue;
+            }
             let value = self.parse_header_value();
             if !name.is_empty() {
                 header.entries.push((name, value));
@@ -333,11 +338,9 @@ impl<'a> Parser<'a> {
                 if let Some(group) = self.parse_new() {
                     elements.push(group);
                 }
-            } else if self
-                .peek()
-                .is_some_and(|token| token.is_command("layout") || token.is_command("midi")
-                    || token.is_command("paper"))
-            {
+            } else if self.peek().is_some_and(|token| {
+                token.is_command("layout") || token.is_command("midi") || token.is_command("paper")
+            }) {
                 self.position += 1;
                 self.skip_braced();
             } else if self.peek().is_some_and(|token| token.is_command("header")) {
@@ -348,10 +351,7 @@ impl<'a> Parser<'a> {
                 let music = self.parse_music();
                 if !music.is_empty() {
                     let mut staff = StaffBlock::new();
-                    staff.voices.push(VoiceBlock {
-                        name: None,
-                        music,
-                    });
+                    staff.voices.push(VoiceBlock { name: None, music });
                     elements.push(GroupBlock {
                         kind: GroupKind::Staff,
                         instrument_name: None,
@@ -378,10 +378,7 @@ impl<'a> Parser<'a> {
                 let music = self.parse_music();
                 if !music.is_empty() {
                     let mut staff = StaffBlock::new();
-                    staff.voices.push(VoiceBlock {
-                        name: None,
-                        music,
-                    });
+                    staff.voices.push(VoiceBlock { name: None, music });
                     groups.push(GroupBlock {
                         kind: GroupKind::Staff,
                         instrument_name: None,
@@ -698,9 +695,7 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 self.parse_scheme_atom()
             }
-            Some(token) if token.is_punct('{') => {
-                self.parse_markup_text()
-            }
+            Some(token) if token.is_punct('{') => self.parse_markup_text(),
             _ => {
                 self.bump();
                 String::new()
@@ -728,10 +723,7 @@ impl<'a> Parser<'a> {
                 Some(token) if token.is_command("skip") => {
                     self.position += 1;
                     // La durée de `\skip` est consommée.
-                    if self
-                        .peek()
-                        .is_some_and(|token| token.kind == Kind::Number)
-                    {
+                    if self.peek().is_some_and(|token| token.kind == Kind::Number) {
                         self.position += 1;
                     }
                     syllables.push(Syllable {
@@ -743,9 +735,7 @@ impl<'a> Parser<'a> {
                 }
                 Some(token) if token.is_command("set") => {
                     self.position += 1;
-                    while !self.at_end()
-                        && !self.peek().is_some_and(|token| token.is_punct('='))
-                    {
+                    while !self.at_end() && !self.peek().is_some_and(|token| token.is_punct('=')) {
                         self.position += 1;
                     }
                     self.bump();
@@ -772,9 +762,17 @@ impl<'a> Parser<'a> {
                     while let Some(next) = self.peek().cloned() {
                         if next.line == self.tokens[self.position - 1].line
                             && next.column == self.tokens[self.position - 1].column + 1
-                            && matches!(next.kind, Kind::Punct('.') | Kind::Punct(',')
-                                | Kind::Punct('!') | Kind::Punct('?') | Kind::Punct(':')
-                                | Kind::Punct(';') | Kind::Punct('\'') | Kind::Punct('-'))
+                            && matches!(
+                                next.kind,
+                                Kind::Punct('.')
+                                    | Kind::Punct(',')
+                                    | Kind::Punct('!')
+                                    | Kind::Punct('?')
+                                    | Kind::Punct(':')
+                                    | Kind::Punct(';')
+                                    | Kind::Punct('\'')
+                                    | Kind::Punct('-')
+                            )
                         {
                             text.push_str(&next.text);
                             self.position += 1;
@@ -867,6 +865,14 @@ impl<'a> Parser<'a> {
         let Some(token) = self.peek().cloned() else {
             return Music::Empty;
         };
+        // Assignation dans un flux musical (`m = { … }`).
+        if token.kind == Kind::Word && self.peek_at(1).is_some_and(|next| next.is_punct('=')) {
+            let name = token.text.clone();
+            self.position += 2;
+            let music = self.parse_music();
+            self.variables.insert(name, music);
+            return Music::Empty;
+        }
         match &token.kind {
             Kind::Punct('{') => {
                 self.position += 1;
@@ -904,6 +910,11 @@ impl<'a> Parser<'a> {
             return Music::Empty;
         };
         self.position += 1;
+        // Une variable musicale masque les commandes intégrées, comme dans
+        // LilyPond (`identifiant = { … }` puis `\identifiant`).
+        if let Some(music) = self.variables.get(&name).cloned() {
+            return music;
+        }
         let context = |context| Music::Context(context);
         match name.as_str() {
             "fixed" => {
@@ -939,18 +950,22 @@ impl<'a> Parser<'a> {
             }
             "tuplet" => {
                 let (numerator, denominator) = self.parse_ratio().unwrap_or((3, 2));
+                let number_type = self.pending_tuplet_number.take().unwrap_or_default();
                 Music::Context(Context::Tuplet {
                     numerator,
                     denominator,
+                    number_type,
                     music: Box::new(self.parse_music()),
                 })
             }
             "times" => {
                 // `\times n/d` multiplie les durées : c'est un n-olet d/n.
                 let (numerator, denominator) = self.parse_ratio().unwrap_or((2, 3));
+                let number_type = self.pending_tuplet_number.take().unwrap_or_default();
                 Music::Context(Context::Tuplet {
                     numerator: denominator,
                     denominator: numerator,
+                    number_type,
                     music: Box::new(self.parse_music()),
                 })
             }
@@ -1086,7 +1101,10 @@ impl<'a> Parser<'a> {
             }
             "override" => self.parse_override(false),
             "revert" => {
-                self.skip_property_path();
+                let path = self.skip_property_path();
+                if path.iter().any(|part| part == "TupletNumber") {
+                    self.pending_tuplet_number = None;
+                }
                 if self.peek().is_some_and(|token| token.is_punct('=')) {
                     self.position += 1;
                     self.skip_scheme_value();
@@ -1114,23 +1132,28 @@ impl<'a> Parser<'a> {
                 Music::Empty
             }
             "lyricsto" | "addlyrics" | "lyricmode" => {
-                // `\lyricmode { … }` isolé : rien à aligner.
-                if self.eat_punct('{') {
-                    let mut depth = 1usize;
-                    while !self.at_end() && depth > 0 {
-                        let Some(token) = self.bump() else {
-                            break;
-                        };
-                        if token.is_punct('{') {
-                            depth += 1;
-                        } else if token.is_punct('}') {
-                            depth -= 1;
-                        }
+                let target = if name == "lyricsto" {
+                    match self.bump() {
+                        Some(Token {
+                            kind: Kind::Str,
+                            text,
+                            ..
+                        }) => text,
+                        _ => String::new(),
                     }
                 } else {
-                    self.bump();
+                    String::new()
+                };
+                let syllables = self.parse_lyric_music();
+                if syllables.is_empty() {
+                    Music::Empty
+                } else {
+                    Music::Lyrics(Box::new(super::ast::LyricsBlock {
+                        target,
+                        syllables,
+                        verse: 0,
+                    }))
                 }
-                Music::Empty
             }
             "skip" => {
                 let (duration, multiplier) = self.parse_optional_duration_spec();
@@ -1139,6 +1162,7 @@ impl<'a> Parser<'a> {
                     duration: Some(duration.unwrap_or(self.default_duration)),
                     multiplier,
                     posts: Vec::new(),
+                    invisible: true,
                 })
             }
             "fermata" | "shortfermata" | "longfermata" | "verylongfermata" => Music::Empty,
@@ -1240,6 +1264,25 @@ impl<'a> Parser<'a> {
     /// `\override` et `\once \override`.
     fn parse_override(&mut self, once: bool) -> Music {
         let path = self.skip_property_path();
+        if path.iter().any(|part| part == "Rest") && path.iter().any(|part| part == "transparent") {
+            // `\once \override Rest.transparent = ##t` : silence invisible.
+            self.eat_punct('=');
+            self.skip_scheme_value();
+            self.pending_invisible_rest = true;
+            return Music::Empty;
+        }
+        if path.iter().any(|part| part == "TupletNumber") {
+            self.eat_punct('=');
+            if path.iter().any(|part| part == "stencil") {
+                self.pending_tuplet_number = Some(TupletNumberType::None);
+            } else if path.iter().any(|part| part == "text") {
+                self.pending_tuplet_number = Some(TupletNumberType::Ratio);
+            } else {
+                self.pending_tuplet_number = Some(TupletNumberType::Number);
+            }
+            self.skip_scheme_value();
+            return Music::Empty;
+        }
         let mut direction = None;
         if self.eat_punct('=') {
             let value_start = self.position;
@@ -1305,6 +1348,7 @@ impl<'a> Parser<'a> {
                     self.position += 1;
                     let (duration, multiplier) = self.parse_optional_duration_spec();
                     let posts = self.parse_posts();
+                    let invisible = std::mem::take(&mut self.pending_invisible_rest);
                     return Music::Chord(Chord {
                         kind: match text.as_str() {
                             "R" => ChordKind::MultiRest,
@@ -1314,6 +1358,7 @@ impl<'a> Parser<'a> {
                         duration,
                         multiplier,
                         posts,
+                        invisible,
                     });
                 }
                 "q" => {
@@ -1325,6 +1370,7 @@ impl<'a> Parser<'a> {
                         duration,
                         multiplier,
                         posts,
+                        invisible: false,
                     });
                 }
                 _ => {}
@@ -1360,6 +1406,7 @@ impl<'a> Parser<'a> {
             duration,
             multiplier,
             posts,
+            invisible: false,
         })
     }
 
@@ -1397,16 +1444,14 @@ impl<'a> Parser<'a> {
             duration,
             multiplier,
             posts,
+            invisible: false,
         })
     }
 
     /// Post-événements internes à un accord, jusqu'à la note suivante.
     fn parse_posts_until_note_end(&mut self) -> Vec<PostEvent> {
         let mut posts = Vec::new();
-        loop {
-            let Some(token) = self.peek().cloned() else {
-                break;
-            };
+        while let Some(token) = self.peek().cloned() {
             if !starts_post_event(&token) {
                 break;
             }
@@ -1423,10 +1468,7 @@ impl<'a> Parser<'a> {
     /// Post-événements après un accord.
     fn parse_posts(&mut self) -> Vec<PostEvent> {
         let mut posts = Vec::new();
-        loop {
-            let Some(token) = self.peek().cloned() else {
-                break;
-            };
+        while let Some(token) = self.peek().cloned() {
             if !starts_post_event(&token) {
                 break;
             }
@@ -1711,9 +1753,7 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let Some(mut duration) = duration.take() else {
-            return None;
-        };
+        let mut duration = duration.take()?;
         while self.eat_punct('.') {
             duration.dots = duration.dots.saturating_add(1);
         }
@@ -1804,8 +1844,7 @@ impl<'a> Parser<'a> {
                 pieces.push(text);
             }
             Some(Token {
-                kind: Kind::Number,
-                ..
+                kind: Kind::Number, ..
             }) => {
                 self.position += 1;
             }
@@ -1850,9 +1889,7 @@ impl<'a> Parser<'a> {
             return pieces.join(" ");
         }
         if self.eat_punct('\'') {
-            return self
-                .bump()
-                .map_or_else(String::new, |token| token.text);
+            return self.bump().map_or_else(String::new, |token| token.text);
         }
         if self.eat_punct('-') {
             return format!(
@@ -1887,11 +1924,43 @@ impl<'a> Parser<'a> {
     }
 
     /// Saute une valeur Scheme complète.
+    ///
+    /// Gère `##f`, `#UP`, `#tuplet-number::calc-fraction-text` et les listes
+    /// entre parenthèses : on consomme jusqu'au prochain jeton qui ne peut pas
+    /// appartenir à un atome Scheme (mot musical, accolade, durée).
     fn skip_scheme_value(&mut self) {
+        if self.peek().is_some_and(|token| token.is_punct('(')) {
+            let _ = self.parse_scheme_atom();
+            return;
+        }
         if self.eat_punct('#') || self.eat_punct('$') {
-            let _ = self.parse_scheme_atom();
-        } else if self.peek().is_some_and(|token| token.is_punct('(')) {
-            let _ = self.parse_scheme_atom();
+            // `##f`, `##t` : booléen Scheme, le jeton suivant est la valeur
+            // même s'il ressemble à une hauteur (`f`).
+            if self.eat_punct('#') {
+                if self.peek().is_some_and(|token| token.is_punct('(')) {
+                    let _ = self.parse_scheme_atom();
+                } else {
+                    self.bump();
+                }
+                return;
+            }
+            loop {
+                let Some(token) = self.peek().cloned() else {
+                    return;
+                };
+                match &token.kind {
+                    Kind::Word => {
+                        if self.is_pitch_word(&token.text) {
+                            return;
+                        }
+                        self.position += 1;
+                    }
+                    Kind::Number | Kind::Str => self.position += 1,
+                    Kind::Punct('-') | Kind::Punct(':') | Kind::Punct('.') => self.position += 1,
+                    Kind::Punct('\'') => self.position += 1,
+                    _ => return,
+                }
+            }
         } else {
             self.bump();
         }
@@ -1987,9 +2056,7 @@ impl<'a> Parser<'a> {
 
     /// Saute un unique jeton de musique.
     fn skip_music_token(&mut self) {
-        if self.at_double_angle_open() {
-            self.skip_braced();
-        } else if self.peek().is_some_and(|token| token.is_punct('{')) {
+        if self.at_double_angle_open() || self.peek().is_some_and(|token| token.is_punct('{')) {
             self.skip_braced();
         } else {
             self.bump();
@@ -2000,7 +2067,10 @@ impl<'a> Parser<'a> {
 /// Vrai si le jeton commence un post-événement (`post_events`).
 fn starts_post_event(token: &Token) -> bool {
     match &token.kind {
-        Kind::Punct(character) => matches!(character, '~' | '(' | ')' | '[' | ']' | ':' | '^' | '_' | '-'),
+        Kind::Punct(character) => matches!(
+            character,
+            '~' | '(' | ')' | '[' | ']' | ':' | '^' | '_' | '-'
+        ),
         Kind::Command => {
             token.text == "="
                 || token.text == "<"
@@ -2225,6 +2295,8 @@ mod tests {
             default_duration: Duration::quarter(),
             warnings: &mut warnings,
             pending_head: NoteHeadGroup::Normal,
+            pending_tuplet_number: None,
+            pending_invisible_rest: false,
         };
         parser.parse_music()
     }
@@ -2263,10 +2335,15 @@ mod tests {
 
     #[test]
     fn commandes_de_contexte() {
-        let items = items(parse_music_only("{ \\key g \\major \\time 3/4 \\clef bass }"));
+        let items = items(parse_music_only(
+            "{ \\key g \\major \\time 3/4 \\clef bass }",
+        ));
         assert!(items.iter().any(|item| matches!(
             item,
-            Music::Context(Context::Key { fifths: 1, mode: KeyMode::Major })
+            Music::Context(Context::Key {
+                fifths: 1,
+                mode: KeyMode::Unknown
+            })
         )));
         assert!(items.iter().any(|item| matches!(
             item,

@@ -82,32 +82,46 @@ impl<'a> Writer<'a> {
                 .map(|credit| credit.text.plain().trim().to_owned())
                 .filter(|text| !text.is_empty())
         };
-        let entries = [
-            ("title", metadata.work_title.clone(), CreditStyle::Title),
-            ("subtitle", metadata.subtitle.clone(), CreditStyle::Subtitle),
-            ("composer", metadata.composer.clone(), CreditStyle::Composer),
-            ("poet", metadata.lyricist.clone(), CreditStyle::Lyricist),
-            (
-                "arranger",
-                metadata.arranger.clone(),
-                CreditStyle::Other("arranger".to_owned()),
-            ),
-            (
-                "copyright",
-                metadata.copyright.clone(),
-                CreditStyle::Other("copyright".to_owned()),
-            ),
+        // Les champs de `\header` couvrent les métadonnées du modèle ; les
+        // crédits servent de repli pour les trois textes de titre, comme
+        // `write_header` s'appuie sur les cadres de MuseScore. Les champs
+        // absents de la norme LilyPond (`workTitle`, `movementTitle`…) sont
+        // acceptés sans avertissement et permettent à la lecture de retrouver
+        // exactement les métadonnées du `.mscx`.
+        let mut entries: Vec<(&str, String)> = vec![
+            ("title", metadata.work_title.clone()),
+            ("workTitle", metadata.work_title.clone()),
+            ("subtitle", metadata.subtitle.clone()),
+            ("movementTitle", metadata.movement_title.clone()),
+            ("movementNumber", metadata.movement_number.clone()),
+            ("workNumber", metadata.work_number.clone()),
+            ("composer", metadata.composer.clone()),
+            ("poet", metadata.lyricist.clone()),
+            ("arranger", metadata.arranger.clone()),
+            ("copyright", metadata.copyright.clone()),
+            ("source", metadata.source.clone()),
         ];
+        let fallbacks = [
+            ("title", CreditStyle::Title),
+            ("subtitle", CreditStyle::Subtitle),
+            ("composer", CreditStyle::Composer),
+            ("poet", CreditStyle::Lyricist),
+            ("arranger", CreditStyle::Other("arranger".to_owned())),
+            ("copyright", CreditStyle::Other("copyright".to_owned())),
+        ];
+        for (field, style) in fallbacks {
+            if let Some(entry) = entries.iter_mut().find(|(name, _)| *name == field) {
+                if entry.1.trim().is_empty() {
+                    entry.1 = credit(style).unwrap_or_default();
+                }
+            }
+        }
 
         let mut lines = Vec::new();
-        for (field, value, style) in entries {
-            let value = if value.trim().is_empty() {
-                credit(style).unwrap_or_default()
-            } else {
-                value.trim().to_owned()
-            };
+        for (field, value) in entries {
+            let value = value.trim();
             if !value.is_empty() {
-                lines.push(format!("  {field} = \"{}\"", text::escape(&value)));
+                lines.push(format!("  {field} = \"{}\"", text::escape(value)));
             }
         }
         if lines.is_empty() {
@@ -156,7 +170,7 @@ impl<'a> Writer<'a> {
             }
             let group = group_of(&self.score.staves[staves[0]], staves.len());
             if let Some(group) = group {
-                let clause = instrument_clause(&part.long_name, &part.short_name);
+                let clause = instrument_clause(part);
                 let with = if clause.is_empty() {
                     String::new()
                 } else {
@@ -188,7 +202,7 @@ impl<'a> Writer<'a> {
         let indent = if grouped { "      " } else { "    " };
         let staff_data = &self.score.staves[staff_index];
         let part = &self.score.parts[staff_data.part.index()];
-        let clause = instrument_clause(&part.long_name, &part.short_name);
+        let clause = instrument_clause(part);
         let with = if first && !grouped && !clause.is_empty() {
             format!(" \\with {{ {clause} }}")
         } else {
@@ -275,7 +289,20 @@ fn group_of(staff: &Staff, count: usize) -> Option<&'static str> {
 }
 
 /// Clause `\with` des noms d'instrument.
-fn instrument_clause(long_name: &str, short_name: &str) -> String {
+///
+/// Les parties 3.x n'ont pas toujours de nom long : le nom de piste de
+/// l'instrument sert alors de repli, comme `plain_part_name` à l'export.
+fn instrument_clause(part: &mscz2xml::model::Part) -> String {
+    let long_name = if part.long_name.trim().is_empty() {
+        part.instrument.track_name.trim()
+    } else {
+        part.long_name.trim()
+    };
+    let short_name = if part.short_name.trim().is_empty() {
+        part.instrument.short_name.trim()
+    } else {
+        part.short_name.trim()
+    };
     let mut clauses = Vec::new();
     if !long_name.trim().is_empty() {
         clauses.push(format!(

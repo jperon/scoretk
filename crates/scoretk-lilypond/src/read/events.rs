@@ -36,8 +36,8 @@
 
 use mscz2xml::model::{
     Arpeggio, ArpeggioType, Articulation, ArticulationType, BarLineType, Breath, BreathType,
-    ChordLineType, Duration, Fraction, GraceType, HairpinType, Key, KeySig, NoteHeadGroup, Ornament,
-    OrnamentType, OttavaType, Placement, StemDirection, Tremolo,
+    ChordLineType, Duration, Fraction, GraceType, HairpinType, Key, KeySig, NoteHeadGroup,
+    Ornament, OrnamentType, OttavaType, Placement, StemDirection, Tremolo,
 };
 
 use super::ast::{Chord, ChordKind, Context, Music, NoteSpec, PitchSpec, PostEvent, RepeatKind};
@@ -142,11 +142,13 @@ pub(crate) enum AnnotationEvent {
 pub(crate) enum ChordContent {
     /// Notes de l'accord.
     Notes(Vec<NoteEvent>),
-    /// Silence, visible ou non.
+    /// Silence, visible ou invisible.
     Rest {
         /// Vrai si le silence est affiché.
         visible: bool,
     },
+    /// Temps réservé sans élément (`s`).
+    Skip,
     /// Silence de mesure entière ou multi-mesures.
     MultiRest,
 }
@@ -234,6 +236,8 @@ pub(crate) struct TupletBuild {
     pub actual_notes: i64,
     /// Nombre de notes normales.
     pub normal_notes: i64,
+    /// Affichage du nombre.
+    pub number_type: mscz2xml::model::TupletNumberType,
 }
 
 /// Section de reprise.
@@ -407,18 +411,23 @@ impl<'a> Interpreter<'a> {
             Context::Tuplet {
                 numerator,
                 denominator,
+                number_type,
                 music,
-            } => self.tuplet(*numerator, *denominator, music),
+            } => self.tuplet(*numerator, *denominator, *number_type, music),
             Context::Grace { kind, slash, music } => self.grace_scope(*kind, *slash, music),
             Context::AfterGrace { main, grace } => {
                 self.walk(main);
-                let target = self.voice.events.iter().rposition(|event| {
-                    matches!(event.kind, EventKind::Chord(_))
-                });
+                let target = self
+                    .voice
+                    .events
+                    .iter()
+                    .rposition(|event| matches!(event.kind, EventKind::Chord(_)));
                 if let Some(target) = target {
                     let saved = self.grace_after_target.replace(target);
                     self.grace = Some(GraceFrame {
-                        kind: GraceType::Appoggiatura,
+                        // Seul un type « After » place l'ornement après la
+                        // note à l'export.
+                        kind: GraceType::Grace8After,
                         slash: false,
                     });
                     self.walk(grace);
@@ -468,7 +477,13 @@ impl<'a> Interpreter<'a> {
     }
 
     /// `\tuplet n/d { … }`.
-    fn tuplet(&mut self, numerator: u32, denominator: u32, music: &Music) {
+    fn tuplet(
+        &mut self,
+        numerator: u32,
+        denominator: u32,
+        number_type: mscz2xml::model::TupletNumberType,
+        music: &Music,
+    ) {
         if numerator == 0 || denominator == 0 {
             self.walk(music);
             return;
@@ -486,6 +501,7 @@ impl<'a> Interpreter<'a> {
             parent,
             actual_notes: i64::from(numerator),
             normal_notes: i64::from(denominator),
+            number_type,
         });
         self.tuplets.push(index);
         let first_chord = self.voice.events.len();
@@ -621,8 +637,10 @@ impl<'a> Interpreter<'a> {
                     .filter_map(|note| self.note_event(note))
                     .collect(),
             ),
-            ChordKind::Rest => ChordContent::Rest { visible: true },
-            ChordKind::Skip => ChordContent::Rest { visible: false },
+            ChordKind::Rest => ChordContent::Rest {
+                visible: !chord.invisible,
+            },
+            ChordKind::Skip => ChordContent::Skip,
             ChordKind::MultiRest => ChordContent::MultiRest,
         };
 
@@ -663,6 +681,14 @@ impl<'a> Interpreter<'a> {
             }
         }
 
+        // `s` réserve du temps sans rien afficher : on ne crée aucun élément
+        // (l'export écrit `<forward>`). Un silence transparent reste un
+        // `Rest` invisible, distinct.
+        if matches!(content, ChordContent::Skip) {
+            self.cursor += actual;
+            self.default_duration = written;
+            return;
+        }
         let stem = self.stem_override.take().unwrap_or(StemDirection::Auto);
         let grace_before = std::mem::take(&mut self.pending_grace);
         // Seul un multiplicateur explicite devient `ticks` dans le modèle :
@@ -750,11 +776,13 @@ impl<'a> Interpreter<'a> {
                 }
             }
             PostEvent::Fingering(text) => fingerings.push(text.clone()),
-            PostEvent::HairpinStart(crescendo) => self.event(EventKind::HairpinStart(if *crescendo {
-                HairpinType::Crescendo
-            } else {
-                HairpinType::Diminuendo
-            })),
+            PostEvent::HairpinStart(crescendo) => {
+                self.event(EventKind::HairpinStart(if *crescendo {
+                    HairpinType::Crescendo
+                } else {
+                    HairpinType::Diminuendo
+                }))
+            }
             PostEvent::HairpinStop => self.event(EventKind::HairpinStop),
             PostEvent::TrillStart => self.event(EventKind::TrillStart),
             PostEvent::TrillStop => self.event(EventKind::TrillStop),
@@ -762,10 +790,7 @@ impl<'a> Interpreter<'a> {
             PostEvent::Arpeggio(kind) => *arpeggio = Some(*kind),
             PostEvent::Tremolo(kind, value) => {
                 let count = tremolo_count(*value);
-                *tremolo = Some(Tremolo {
-                    kind: *kind,
-                    count,
-                });
+                *tremolo = Some(Tremolo { kind: *kind, count });
             }
             PostEvent::BendAfter(value) => {
                 *chord_line = Some(if *value < 0 {
@@ -797,7 +822,10 @@ impl<'a> Interpreter<'a> {
         let tie = note.posts.iter().any(|post| matches!(post, PostEvent::Tie));
         Some(NoteEvent {
             pitch,
-            tpc: super::pitch::tpc_of(u8::try_from(step).unwrap_or(0), i8::try_from(alter.clamp(-2, 2)).unwrap_or(0)),
+            tpc: super::pitch::tpc_of(
+                u8::try_from(step).unwrap_or(0),
+                i8::try_from(alter.clamp(-2, 2)).unwrap_or(0),
+            ),
             tpc_transposed: super::pitch::tpc_of(note.pitch.step, note.pitch.alter),
             tie,
             cautionary: note.pitch.cautionary,
@@ -855,7 +883,8 @@ fn transpose_delta(from: &PitchSpec, to: &PitchSpec) -> (i32, i32) {
     let semitones = |pitch: &PitchSpec| {
         [0, 2, 4, 5, 7, 9, 11][usize::from(pitch.step.min(6))] + i32::from(pitch.alter)
     };
-    let chromatic = semitones(to) - semitones(from) + 12 * (i32::from(to.octave) - i32::from(from.octave));
+    let chromatic =
+        semitones(to) - semitones(from) + 12 * (i32::from(to.octave) - i32::from(from.octave));
     (diatonic, chromatic)
 }
 
@@ -904,20 +933,6 @@ fn is_predefined_dynamic(text: &str) -> bool {
     )
 }
 
-/// Articulation correspondant à un point d'orgue.
-fn fermata_articulation(kind: mscz2xml::model::FermataType) -> ArticulationType {
-    use mscz2xml::model::FermataType;
-    match kind {
-        FermataType::Normal => ArticulationType::Fermata,
-        FermataType::Short | FermataType::VeryShort => ArticulationType::FermataShort,
-        FermataType::Long => ArticulationType::FermataLong,
-        FermataType::VeryLong => ArticulationType::FermataVeryLong,
-        FermataType::LongHenze | FermataType::ShortHenze | FermataType::Curlew => {
-            ArticulationType::Fermata
-        }
-    }
-}
-
 /// Type de barre de mesure d'une chaîne `\bar`.
 pub(crate) fn bar_line_type(text: &str) -> Option<BarLineType> {
     let kind = match text.trim() {
@@ -957,7 +972,10 @@ pub(crate) fn articulation_objects(kinds: &[ArticulationType]) -> Vec<Articulati
 
 /// Construit les objets d'ornement d'un accord.
 pub(crate) fn ornament_objects(kinds: &[OrnamentType]) -> Vec<Ornament> {
-    kinds.iter().map(|kind| Ornament::new(kind.clone())).collect()
+    kinds
+        .iter()
+        .map(|kind| Ornament::new(kind.clone()))
+        .collect()
 }
 
 /// Construit l'arpège d'un accord.

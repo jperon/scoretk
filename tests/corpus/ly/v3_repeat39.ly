@@ -3,6 +3,7 @@
 
 \header {
   title = "Repeat Test"
+  workTitle = "Repeat Test"
   subtitle = "Alternating Volta"
 }
 

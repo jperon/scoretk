@@ -32,9 +32,9 @@ use std::collections::BTreeMap;
 
 use mscz2xml::model::{
     Accidental, AccidentalType, Annotation, BarLineType, Chord, ChordRest, ChordRestKind, Clef,
-    Credit, CreditStyle, Dynamic, Duration, Fingering, Fraction, Glissando, GlissandoType,
-    GraceChord, Hairpin, HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic, Measure,
-    Note, NoteId, Part, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score, ScoreMetadata,
+    Credit, CreditStyle, Duration, Dynamic, Fingering, Fraction, Glissando, GlissandoType,
+    GraceChord, Hairpin, HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic, Measure, Note,
+    NoteId, Part, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score, ScoreMetadata,
     Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff,
     StaffBracket, StaffId, Tempo, Track, Trill, TrillType, Tuplet, TupletId, VOICES,
 };
@@ -130,11 +130,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
             }
             let staff_id = score.add_staff_with(part_id, staff);
             let voices = build_voices(&mut score, staff_id, staff_block, warnings);
-            let lyrics = staff_block
-                .lyrics
-                .iter()
-                .map(lyrics_build)
-                .collect();
+            let lyrics = staff_block.lyrics.iter().map(lyrics_build).collect();
             staves.push(StaffBuild {
                 staff: staff_id,
                 voices,
@@ -159,6 +155,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     let slots = plan_measures(&staves, warnings);
     create_measures(&mut score, &slots);
     place_measures(&mut score, &staves, &slots, warnings);
+    apply_accidentals(&mut score);
     place_spanners(&mut score, &staves);
     place_repeats(&mut score, &staves);
     place_lyrics(&mut score, &staves);
@@ -198,6 +195,12 @@ fn build_voices(
             let mut value = Tuplet::new(tuplet.ratio, tuplet.base_len, tuplet.tick, tuplet.len);
             value.actual_notes = tuplet.actual_notes;
             value.normal_notes = tuplet.normal_notes;
+            value.number_type = tuplet.number_type;
+            // `Tuplet::calcHasBracket` (lecteur `.mscx`) : un n-olet dont la
+            // durée de base tient dans une croche se passe de crochet ; sinon
+            // MuseScore dessine le crochet.
+            value.bracket = !(tuplet.base_len < Fraction::new(1, 8)
+                || (tuplet.base_len == Fraction::new(1, 8) && tuplet.ratio != Fraction::ONE));
             if let Some(parent) = tuplet.parent {
                 value.parent = tuplets.get(parent).copied();
             }
@@ -240,44 +243,48 @@ fn instrument_for(long_name: &str, short_name: &str) -> Instrument {
     let mut instrument = Instrument::new(long_name, long_name, short_name);
     instrument.track_name = long_name.to_owned();
     let name = long_name.to_lowercase();
-    let table: [(&str, &str, u8); 30] = [
-        ("piccolo", "wind.flutes.piccolo", 72),
-        ("flute", "wind.flutes.flute", 73),
-        ("oboe", "wind.reed.oboe", 68),
-        ("english horn", "wind.reed.english-horn", 69),
-        ("bassoon", "wind.reed.bassoon", 70),
-        ("clarinet", "wind.reed.clarinet.bflat", 71),
-        ("sax", "wind.reed.saxophone", 65),
-        ("horn", "brass.french-horn", 60),
-        ("trumpet", "brass.trumpet", 56),
-        ("trombone", "brass.trombone", 57),
-        ("tuba", "brass.tuba", 58),
-        ("timpani", "percussion.timpani", 47),
-        ("violin", "strings.violin", 40),
-        ("viola", "strings.viola", 41),
-        ("violoncello", "strings.cello", 42),
-        ("cello", "strings.cello", 42),
-        ("contrabass", "strings.contrabass", 43),
-        ("double bass", "strings.contrabass", 43),
-        ("guitar", "pluck.guitar", 24),
-        ("harp", "pluck.harp", 46),
-        ("harpsichord", "keyboard.harpsichord", 6),
-        ("organ", "keyboard.organ", 19),
-        ("piano", "keyboard.piano", 0),
-        ("voice", "voice", 53),
-        ("choir", "voice", 52),
-        ("soprano", "voice", 53),
-        ("alto", "voice", 53),
-        ("tenor", "voice", 53),
-        ("bass", "voice", 53),
-        ("drum", "percussion.drumset", 0),
+    // (motif, identifiant MusicXML, programme MIDI base zéro, nom de piste).
+    let table: [(&str, &str, u8, &str); 31] = [
+        ("piccolo", "wind.flutes.piccolo", 72, "Piccolo"),
+        ("flute", "wind.flutes.flute", 73, "Flute"),
+        ("oboe", "wind.reed.oboe", 68, "Oboe"),
+        ("english horn", "wind.reed.english-horn", 69, "English Horn"),
+        ("bassoon", "wind.reed.bassoon", 70, "Bassoon"),
+        ("clarinet", "wind.reed.clarinet.bflat", 71, "Clarinet"),
+        ("sax", "wind.reed.saxophone", 65, "Saxophone"),
+        ("horn", "brass.french-horn", 60, "Horn"),
+        ("trumpet", "brass.trumpet", 56, "Trumpet"),
+        ("trombone", "brass.trombone", 57, "Trombone"),
+        ("tuba", "brass.tuba", 58, "Tuba"),
+        ("timpani", "percussion.timpani", 47, "Timpani"),
+        ("violin", "strings.violin", 40, "Violin"),
+        ("viola", "strings.viola", 41, "Viola"),
+        ("violoncello", "strings.cello", 42, "Violoncello"),
+        ("cello", "strings.cello", 42, "Violoncello"),
+        ("contrabass", "strings.contrabass", 43, "Contrabass"),
+        ("double bass", "strings.contrabass", 43, "Contrabass"),
+        ("guitar", "pluck.guitar", 24, "Guitar"),
+        ("harp", "pluck.harp", 46, "Harp"),
+        ("harpsichord", "keyboard.harpsichord", 6, "Harpsichord"),
+        ("organ", "keyboard.organ", 19, "Organ"),
+        ("piano", "keyboard.piano", 0, "Piano"),
+        ("voice", "voice.vocals", 52, "Voice"),
+        ("choir", "voice.vocals", 52, "Choir"),
+        ("soprano", "voice.vocals", 52, "Soprano"),
+        ("alto", "voice.vocals", 52, "Alto"),
+        ("tenor", "voice.vocals", 52, "Tenor"),
+        ("bass", "voice.vocals", 52, "Bass"),
+        ("drum", "percussion.drumset", 0, "Drumset"),
+        ("", "", 0, ""),
     ];
-    if let Some((_, id, program)) = table
+    if let Some((_, id, program, track_name)) = table
         .iter()
-        .find(|(needle, _, _)| name.contains(needle))
+        .take(table.len() - 1)
+        .find(|(needle, _, _, _)| name.contains(needle))
     {
         instrument.id = (*id).to_owned();
         instrument.midi_program = Some(*program);
+        instrument.track_name = (*track_name).to_owned();
     }
     instrument
 }
@@ -286,8 +293,10 @@ fn instrument_for(long_name: &str, short_name: &str) -> Instrument {
 fn write_metadata(score: &mut Score, document: &Document) {
     let header = &document.header;
     let field = |name: &str| header.get(name).map(str::trim).unwrap_or_default();
+    // `workTitle` n'est écrit par l'écrivain que si le modèle a un titre
+    // d'œuvre ; un simple crédit de titre ne doit pas créer `<work>`.
     let metadata = ScoreMetadata {
-        work_title: field("title").to_owned(),
+        work_title: field("workTitle").to_owned(),
         movement_title: field("movementTitle").to_owned(),
         movement_number: field("movementNumber").to_owned(),
         work_number: field("workNumber").to_owned(),
@@ -436,7 +445,8 @@ fn merge_multi_rests(slots: &mut Vec<MeasureSlot>, staves: &[StaffBuild]) {
     while index < slots.len() {
         let start = slots[index].start;
         let mut count = 1usize;
-        if let Some(length) = multi_rest_length(staves, start).filter(|length| length.is_positive()) {
+        if let Some(length) = multi_rest_length(staves, start).filter(|length| length.is_positive())
+        {
             let mut covered = Fraction::ZERO;
             let mut candidate = 0usize;
             while index + candidate < slots.len() {
@@ -542,18 +552,29 @@ fn place_measures(
 ) {
     for staff in staves {
         for voice_index in 0..staff.voices.len() {
-            let mut events: Vec<VoiceEvent> = staff.voices[voice_index]
-                .interpreted
-                .events
-                .clone();
+            let mut events: Vec<VoiceEvent> = staff.voices[voice_index].interpreted.events.clone();
             events.sort_by_key(|event| (event.tick, event.order));
             for event in &events {
                 match &event.kind {
                     EventKind::Chord(chord) => {
-                        place_chord(score, slots, staff, voice_index, event.tick, chord, warnings);
+                        place_chord(
+                            score,
+                            slots,
+                            staff,
+                            voice_index,
+                            event.tick,
+                            chord,
+                            warnings,
+                        );
                     }
                     EventKind::Meta(meta) => {
-                        place_meta(score, slots, staff.voices[voice_index].track, event.tick, meta);
+                        place_meta(
+                            score,
+                            slots,
+                            staff.voices[voice_index].track,
+                            event.tick,
+                            meta,
+                        );
                     }
                     _ => {}
                 }
@@ -574,6 +595,13 @@ fn place_chord(
 ) {
     let voice_track = staff.voices[voice_index].track;
     let tuplets = &staff.voices[voice_index].tuplets;
+    // L'écrivain comble les trous d'une voix secondaire par des silences de
+    // mesure entière : ces silences ne sont pas dans le modèle d'origine.
+    // Les relire créerait des `<rest measure="yes"/>` que la référence
+    // n'a pas. On les ignore pour les voix autres que la première.
+    if matches!(event.content, ChordContent::MultiRest) && voice_index > 0 {
+        return;
+    }
     let Some(measure_index) = measure_at(slots, tick) else {
         warnings.push(0, 0, "événement hors mesure ignoré".to_owned());
         return;
@@ -581,13 +609,15 @@ fn place_chord(
     let segment_index = ensure_segment(score, measure_index, SegmentType::ChordRest, tick);
     let mut chord_rest = match &event.content {
         ChordContent::Notes(notes) => {
-            let mut chord = Chord::default();
-            chord.stem = event.stem;
-            chord.articulations = articulation_objects(&event.articulations);
-            chord.ornaments = ornament_objects(&event.ornaments);
-            chord.arpeggio = event.arpeggio.map(arpeggio_object);
-            chord.tremolo = event.tremolo.clone();
-            chord.chord_line = event.chord_line;
+            let mut chord = Chord {
+                stem: event.stem,
+                articulations: articulation_objects(&event.articulations),
+                ornaments: ornament_objects(&event.ornaments),
+                arpeggio: event.arpeggio.map(arpeggio_object),
+                tremolo: event.tremolo,
+                chord_line: event.chord_line,
+                ..Chord::default()
+            };
             for note in notes {
                 let id = score.add_note(build_note(note, &event.fingerings));
                 chord.notes.push(id);
@@ -621,6 +651,7 @@ fn place_chord(
                 visible: *visible,
             }),
         },
+        ChordContent::Skip => return,
         ChordContent::MultiRest => ChordRest {
             duration: Duration::measure(),
             ticks: None,
@@ -858,7 +889,11 @@ fn place_spanners(score: &mut Score, staves: &[StaffBuild]) {
                                     start,
                                     tick,
                                     voice.track,
-                                    |_| {},
+                                    |spanner| {
+                                        spanner.notation = Some(SpannerNotation::Slur(
+                                            mscz2xml::model::Slur::default(),
+                                        ));
+                                    },
                                 );
                             }
                         }
@@ -1058,14 +1093,32 @@ fn place_repeats(score: &mut Score, staves: &[StaffBuild]) {
                 measure.repeat_count = section.count;
             }
         }
-        for alternative in &section.alternatives {
+        // LilyPond rejoue chaque bloc `\alternative` aux passes qui lui
+        // reviennent : avec N lectures et k blocs, le bloc i (à partir de 1) se
+        // joue aux passes i, i+k, i+2k… tant qu'elles ne dépassent pas N.
+        // C'est la règle que MuseScore stocke dans `<endings>` (par exemple
+        // `1, 3` pour le premier bloc d'un `\repeat volta 3` à deux blocs).
+        let blocks = u32::try_from(section.alternatives.len())
+            .unwrap_or(1)
+            .max(1);
+        let plays = u32::from(section.count);
+        for (index, alternative) in section.alternatives.iter().enumerate() {
+            let mut endings = Vec::new();
+            let mut pass = u32::try_from(index).unwrap_or(0) + 1;
+            while pass <= plays {
+                endings.push(u8::try_from(pass).unwrap_or(u8::MAX));
+                pass += blocks;
+            }
+            if endings.is_empty() {
+                endings.push(alternative.number);
+            }
             let mut volta = Spanner::new(
                 SpannerType::Volta,
                 SpannerAnchor::new(alternative.start, Track::from_raw(0)),
                 SpannerAnchor::new(alternative.end, Track::from_raw(0)),
             );
             volta.volta = Some(mscz2xml::model::VoltaInfo {
-                endings: vec![alternative.number],
+                endings,
                 closed: true,
             });
             score.add_spanner(volta);
@@ -1155,6 +1208,113 @@ fn attach_lyrics(
     }
 }
 
+/// Ajoute les altérations affichées d'après l'armure et la mesure.
+///
+/// MuseScore stocke un objet `Accidental` pour chaque altération affichée ;
+/// LilyPond, lui, laisse l'éditeur décider. On applique donc la règle de
+/// gravure : une note porte une altération quand son `tpc` écrit diffère de
+/// l'altération en vigueur pour ce degré et cette octave (armure au début de
+/// la mesure, dernière altération affichée ensuite).
+fn apply_accidentals(score: &mut Score) {
+    let staff_count = score.staves.len();
+    for staff_index in 0..staff_count {
+        let staff = StaffId::from_index(staff_index);
+        let track = Track::new(staff, 0);
+        let mut key_fifths = 0i8;
+        for measure_index in 0..score.measures.len() {
+            // Armure en vigueur au début de la mesure.
+            for segment in &score.measures[measure_index].segments {
+                if !segment.kind.is_key_sig_type()
+                    || segment.tick > score.measures[measure_index].start_tick
+                {
+                    continue;
+                }
+                if let Some(SegmentItem::KeySig(key)) = segment.element(track) {
+                    key_fifths = key.transposed_key.fifths();
+                }
+            }
+            let mut state: BTreeMap<(u8, i8), i8> = BTreeMap::new();
+            let mut positions: Vec<(Fraction, usize)> = score.measures[measure_index]
+                .segments
+                .iter()
+                .enumerate()
+                .filter(|(_, segment)| segment.kind == SegmentType::ChordRest)
+                .map(|(index, segment)| (segment.tick, index))
+                .collect();
+            positions.sort();
+            for (_, segment_index) in positions {
+                for voice in 0..VOICES {
+                    let note_ids: Vec<NoteId> = score.measures[measure_index].segments
+                        [segment_index]
+                        .chord_rest(Track::new(staff, u8::try_from(voice).unwrap_or(0)))
+                        .and_then(ChordRest::chord_ref)
+                        .map(|chord| chord.notes.clone())
+                        .unwrap_or_default();
+                    for id in note_ids {
+                        let note = score.note(id);
+                        let tpc = note.tpc_transposed;
+                        if !(0..=40).contains(&tpc) {
+                            continue;
+                        }
+                        // `tpc2step` de MuseScore : la spirale des quintes
+                        // parcourt fa, do, sol, ré, la, mi, si.
+                        let index =
+                            usize::try_from((i32::from(tpc) + 8).rem_euclid(7)).unwrap_or(0);
+                        let step = [3u8, 0, 4, 1, 5, 2, 6][index];
+                        let alter = ((i32::from(tpc) + 8) / 7 - 3) as i8;
+                        let octave = (i32::from(note.pitch) - i32::from(alter)).div_euclid(12) - 1;
+                        let octave = i8::try_from(octave).unwrap_or(4);
+                        let current = state
+                            .get(&(step, octave))
+                            .copied()
+                            .unwrap_or_else(|| key_alter(key_fifths, step));
+                        if alter == current {
+                            continue;
+                        }
+                        state.insert((step, octave), alter);
+                        if note.accidental.is_some() {
+                            continue;
+                        }
+                        let kind = match alter {
+                            -2 => AccidentalType::DoubleFlat,
+                            -1 => AccidentalType::Flat,
+                            0 => AccidentalType::Natural,
+                            1 => AccidentalType::Sharp,
+                            2 => AccidentalType::DoubleSharp,
+                            _ => continue,
+                        };
+                        score.note_mut(id).accidental = Some(Accidental {
+                            kind,
+                            bracket: false,
+                            parentheses: false,
+                            visible: true,
+                            user: false,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Altération d'un degré naturel donnée par une armure.
+fn key_alter(fifths: i8, step: u8) -> i8 {
+    let sharps = [3u8, 0, 4, 1, 5, 2, 6];
+    let flats = [6u8, 2, 5, 1, 4, 0, 3];
+    if fifths > 0 {
+        let count = usize::try_from(fifths).unwrap_or(0).min(7);
+        if sharps[..count].contains(&step) {
+            return 1;
+        }
+    } else if fifths < 0 {
+        let count = usize::try_from(-fifths).unwrap_or(0).min(7);
+        if flats[..count].contains(&step) {
+            return -1;
+        }
+    }
+    0
+}
+
 /// Relie les notes de prolongation.
 fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
     for staff in staves {
@@ -1171,16 +1331,13 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     .measures
                     .iter()
                     .find(|measure| {
-                        measure.start_tick <= event.tick && event.tick < measure.start_tick + measure.len
+                        measure.start_tick <= event.tick
+                            && event.tick < measure.start_tick + measure.len
                     })
                     .and_then(|measure| {
-                        measure
-                            .segments
-                            .iter()
-                            .find(|segment| {
-                                segment.tick == event.tick
-                                    && segment.kind == SegmentType::ChordRest
-                            })
+                        measure.segments.iter().find(|segment| {
+                            segment.tick == event.tick && segment.kind == SegmentType::ChordRest
+                        })
                     })
                 else {
                     continue;

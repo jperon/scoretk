@@ -51,7 +51,7 @@ staffOneVoiceOne = \fixed c' {
 staffOneVoiceTwo = \fixed c' {
   \voiceTwo
   f2 \tweak style #'cross f2 |
-  R1 |
+  s1 |
   \tweak style #'cross f4 f2 f4 |
   f4 f2 f4 |
   \once \override Stem.direction = #UP c'2

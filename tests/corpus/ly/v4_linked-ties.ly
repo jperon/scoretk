@@ -3,6 +3,7 @@
 
 \header {
   title = "Untitled score"
+  workTitle = "Untitled score"
   subtitle = "Subtitle"
   composer = "Composer / arranger"
 }

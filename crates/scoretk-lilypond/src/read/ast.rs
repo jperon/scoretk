@@ -29,7 +29,7 @@
 
 use mscz2xml::model::{
     ArpeggioType, ArticulationType, ClefType, GraceType, KeyMode, NoteHeadGroup, OrnamentType,
-    Placement, TremoloKind,
+    Placement, TremoloKind, TupletNumberType,
 };
 
 /// Classe d'octave d'une hauteur écrite.
@@ -121,6 +121,8 @@ pub(crate) struct Chord {
     pub multiplier: Option<mscz2xml::model::Fraction>,
     /// Événements attachés à l'accord.
     pub posts: Vec<PostEvent>,
+    /// Vrai pour un silence rendu invisible (`Rest.transparent`).
+    pub invisible: bool,
 }
 
 /// Commande qui change le contexte ou la trame.
@@ -159,10 +161,11 @@ pub(crate) enum Context {
     Stem(mscz2xml::model::StemDirection),
     /// `\once \override Stem.direction = #UP`.
     StemOverride(mscz2xml::model::StemDirection),
-    /// `\tuplet` : ratio et musique.
+    /// `\tuplet` : ratio, affichage du nombre et musique.
     Tuplet {
         numerator: u32,
         denominator: u32,
+        number_type: TupletNumberType,
         music: Box<Music>,
     },
     /// `\grace` et variantes.
@@ -172,10 +175,7 @@ pub(crate) enum Context {
         music: Box<Music>,
     },
     /// `\afterGrace` : accord principal puis ornements.
-    AfterGrace {
-        main: Box<Music>,
-        grace: Box<Music>,
-    },
+    AfterGrace { main: Box<Music>, grace: Box<Music> },
     /// `\repeat`.
     Repeat {
         kind: RepeatKind,

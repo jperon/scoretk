@@ -223,7 +223,10 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             index += 1;
             column += 1;
             let start = index;
-            if characters.get(index).is_some_and(|character| character.is_alphabetic()) {
+            if characters
+                .get(index)
+                .is_some_and(|character| character.is_alphabetic())
+            {
                 while index < characters.len() && is_symbol_continue(&characters, index) {
                     index += 1;
                     column += 1;
@@ -348,26 +351,14 @@ mod tests {
 
     #[test]
     fn notes_et_durees() {
-        assert_eq!(
-            texts("c'4. d8~"),
-            vec!["c", "'", "4", ".", "d", "8", "~"]
-        );
+        assert_eq!(texts("c'4. d8~"), vec!["c", "'", "4", ".", "d", "8", "~"]);
     }
 
     #[test]
     fn fractions_et_commandes() {
         assert_eq!(
             texts("\\tuplet 3/2 { c8 } \\time 6/8"),
-            vec![
-                "\\tuplet",
-                "3/2",
-                "{",
-                "c",
-                "8",
-                "}",
-                "\\time",
-                "6/8"
-            ]
+            vec!["\\tuplet", "3/2", "{", "c", "8", "}", "\\time", "6/8"]
         );
     }
 
@@ -383,16 +374,7 @@ mod tests {
     fn chaines_et_ponctuations() {
         assert_eq!(
             texts("\\markup { \"a \\\"b\\\"\" } ^ _ -."),
-            vec![
-                "\\markup",
-                "{",
-                "\"a \"b\"\"",
-                "}",
-                "^",
-                "_",
-                "-",
-                "."
-            ]
+            vec!["\\markup", "{", "\"a \"b\"\"", "}", "^", "_", "-", "."]
         );
     }
 

@@ -324,8 +324,8 @@ pub(crate) fn tpc_of(step: u8, alter: i8) -> i8 {
 
 /// Hauteur MIDI d'une hauteur écrite, l'octave 4 contenant le do central.
 pub(crate) fn midi_of(step: u8, alter: i8, octave: i8) -> Option<u8> {
-    let value = i32::from(octave) * 12 + i32::from(SEMITONES[usize::from(step)]) + i32::from(alter)
-        + 12;
+    let value =
+        i32::from(octave) * 12 + i32::from(SEMITONES[usize::from(step)]) + i32::from(alter) + 12;
     u8::try_from(value).ok().filter(|pitch| *pitch <= 127)
 }
 
@@ -337,11 +337,12 @@ pub(crate) fn fifths_of(step: u8, alter: i8) -> i8 {
 /// Mode d'armure d'un mot de `\key`.
 pub(crate) fn key_mode(word: &str) -> KeyMode {
     match word {
-        "major" | "ionian" => KeyMode::Major,
+        // MuseScore ne stocke un mode que s'il est explicite dans le fichier
+        // `.mscx` ; l'écrivain écrit `\major` aussi bien pour un majeur
+        // explicite que pour une armure sans mode. Pour que l'aller-retour
+        // retrouve l'absence de `<mode>`, `\major` est lu comme inconnu ;
+        // `\minor` reste mineur, seul mode que MuseScore distingue vraiment.
         "minor" | "aeolian" => KeyMode::Minor,
-        "neapolitan" | "dorian" | "phrygian" | "lydian" | "mixolydian" | "locrian" => {
-            KeyMode::Unknown
-        }
         _ => KeyMode::Unknown,
     }
 }

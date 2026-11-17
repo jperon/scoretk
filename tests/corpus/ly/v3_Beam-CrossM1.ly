@@ -3,6 +3,7 @@
 
 \header {
   title = "Beam Test Cross Measure"
+  workTitle = "Beam Test Cross Measure"
   subtitle = "Recreation of beam"
 }
 
@@ -34,7 +35,7 @@ staffOneVoiceOne = \fixed c' {
 
 \score {
   <<
-    \new Staff = "staffOne" <<
+    \new Staff = "staffOne" \with { instrumentName = "Voice" } <<
       \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
     >>
   >>
