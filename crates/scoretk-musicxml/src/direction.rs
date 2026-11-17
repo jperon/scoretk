@@ -263,7 +263,7 @@ pub(crate) fn read_direction(
                 }
             }
             "offset" => {
-                if let Some(value) = child.text_trimmed().parse::<i64>().ok() {
+                if let Ok(value) = child.text_trimmed().parse::<i64>() {
                     offset = Fraction::from_ticks(value, divisions * 4);
                 }
             }
@@ -872,10 +872,7 @@ fn read_text_line(
     let placement = placement(element.attribute("placement")).unwrap_or(Placement::Above);
     match kind {
         "start" => {
-            let mut info = TextLineInfo::default();
-            info.placement = placement;
-            info.line_visible = true;
-            info.line_style = match element.attribute("line-type") {
+            let line_style = match element.attribute("line-type") {
                 Some("dashed") => TextLineStyle::Dashed,
                 Some("dotted") => TextLineStyle::Dotted,
                 _ => {
@@ -886,18 +883,24 @@ fn read_text_line(
                     }
                 }
             };
-            info.begin_hook = match element.attribute("line-end") {
+            let begin_hook = match element.attribute("line-end") {
                 Some("up") | Some("down") => HookType::Hook90,
                 Some("both") => HookType::Hook90T,
                 Some("arrow") => HookType::Arrow,
                 _ => HookType::None,
             };
-            if let Some(length) = element
+            let begin_hook_height = element
                 .attribute("end-length")
                 .and_then(|value| value.parse::<f64>().ok())
-            {
-                info.begin_hook_height = length / 10.0;
-            }
+                .map_or(1.5, |length| length / 10.0);
+            let info = TextLineInfo {
+                placement,
+                line_visible: true,
+                line_style,
+                begin_hook,
+                begin_hook_height,
+                ..TextLineInfo::default()
+            };
             starts.push(SpannerStart {
                 tag,
                 number,
@@ -953,9 +956,7 @@ fn close_spanner(
     track: Track,
 ) -> Option<usize> {
     let index = state.open.remove(&(stop.0, stop.1))?;
-    let Some(spanner) = score.spanners.get_mut(index) else {
-        return None;
-    };
+    let spanner = score.spanners.get_mut(index)?;
     spanner.end = SpannerAnchor::new(tick, track);
     if stop.2 {
         if let Some(hairpin) = spanner.hairpin.as_mut() {

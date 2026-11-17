@@ -194,6 +194,7 @@ pub(crate) fn apply_chord(parsed: &ParsedNotations, chord: &mut Chord) {
 }
 
 /// Applique les notations attachées à la note et au segment.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_score(
     score: &mut Score,
     parsed: &ParsedNotations,

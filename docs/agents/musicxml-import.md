@@ -23,6 +23,11 @@ let xml = mscz2xml::export::export_musicxml(&score)?;
 | `src/xml.rs` | arbre XML minimal (nom local, attributs dé-échappés, texte) |
 | `src/pass1.rs` | structure : `part-list`, longueurs de mesures, voix, chevauchements |
 | `src/pass2.rs` | modèle : segments, notes, n-olets, liaisons, barres, ornements |
+| `src/direction.rs` | `<direction>` : nuances, soufflets, textes, tempos, reprises |
+| `src/barline.rs` | `<barline>` : styles, `<repeat>`, voltas, points d'orgue de barre |
+| `src/harmony.rs` | `<harmony>` et `<figured-bass>` |
+| `src/notations.rs` | articulations, ornements, fermates, arpèges, slurs, glissandos, trilles, doigtés |
+| `src/credits.rs` | `<credit>` : titre, sous-titre, compositeur, droits |
 | `src/noteduration.rs` | `<type>`/`<dot>`/`<duration>`/`<time-modification>` |
 | `src/error.rs` | `Error` (XML, ZIP, racine inconnue, `part-list` absent) |
 
@@ -34,21 +39,40 @@ en Rust pur (`zip` sans fonctionnalités par défaut).
 
 `crates/scoretk-musicxml/tests/aller_retour.rs` lit chaque
 `tests/corpus/{v3,v4}/*.ref.musicxml`, le réexporte avec l'export de
-`mscz2xml`, et compare les deux documents avec la normalisation « noyau
-musical » de `crates/mscz2xml/tests/e2e_corpus.rs` (dupliquée dans
-`tests/common/mod.rs`). Les deux niveaux de comparaison sont donc exactement
-ceux de la conformité `mscx → MusicXML`.
+`mscz2xml`, et compare les deux documents avec la normalisation de
+`crates/mscz2xml/tests/e2e_corpus.rs`, aux **deux niveaux** :
+
+- **noyau musical** (`Level::Core`) : niveau bloquant, identique à la
+  conformité `mscx → MusicXML` ;
+- **parité complète** (`Level::Full`) : directions, articulations, spanners et
+  crédits sont comparés aussi ; il mesure la couverture du lecteur et n'échoue
+  que sur `EXPECTED_FULL_V3` / `EXPECTED_FULL_V4`.
 
 ```sh
 nix develop -c cargo test -p scoretk-musicxml --test aller_retour -- --nocapture
 ```
 
-Résultat au 2026-11-17 : **47/56 identiques** — **26/26 pour le corpus v4**,
-**21/30 pour le corpus v3**. Les fichiers identiques sont listés dans
-`EXPECTED_V3` / `EXPECTED_V4` ; toute régression sur un fichier listé fait
-échouer le test.
+Résultat au 2026-11-17 :
 
-## 3. Ce qui est lu (noyau)
+| Niveau | v3 | v4 |
+| --- | ---: | ---: |
+| noyau musical | **26/30** | **26/26** |
+| parité complète | **23/30** | **21/26** |
+
+Toute régression sur un fichier listé dans `EXPECTED_V3`, `EXPECTED_V4`,
+`EXPECTED_FULL_V3` ou `EXPECTED_FULL_V4` fait échouer le test.
+
+### Chaîne MusicXML → MIDI
+
+`crates/scoretk-midi/tests/musicxml_midi.rs` lit les références
+`tests/corpus/{v3,v4}/X.ref.musicxml`, écrit le MIDI avec `write_midi` et
+compare notes (piste, canal, hauteur, début, fin, vélocité) et tempos à
+`tests/corpus/midi/{v3,v4}/X.ref.mid`, comme `corpus_midi.rs`. Résultat :
+**7/21 identiques** (`v4/dynamics`, `hairpin_simple`, `linked-ties`, `mmrest`,
+`repeat68`, `repeat69`, `tenuto_accent`). C'est la vérification que les
+nuances et tempos lus depuis `<direction>` produisent les bonnes vélocités.
+
+## 3. Ce qui est lu
 
 - parties (`part-list` : nom, abréviation, variantes `-display`,
   `score-instrument`, `instrument-sound`, canal/programme/volume/pan MIDI),
@@ -72,60 +96,67 @@ Résultat au 2026-11-17 : **47/56 identiques** — **26/26 pour le corpus v4**,
   `<time-modification>` (combiné pour l'imbrication), durée de base lue dans
   `<tuplet-type>`, longueur `baseLen × normalNotes` comme
   `TRead::read(Tuplet*)` ;
+- ligatures : `<beam>` (`begin`/`continue`/`end`/crochets), direction de hampe
+  du groupe reprise du `<stem>` du premier accord ;
 - liaisons de prolongation (`<tie>`, `<tied>`, orientation) ;
 - paroles (`<lyric>` : couplet, syllabisation, placement, extension) ;
 - ornements : accords d'agrément avant **et après** l'accord
   (`Chord::toGraceAfter`), appoggiature/acciaccatura ;
-- reprises (`<repeat>` avant/arrière, `times`), silences multi-mesures
-  (`<multiple-rest>`), mesures répétées (`<measure-repeat>`), tempos
-  invisibles (`<sound tempo>` hors direction) ;
+- directions (`<direction>`) : nuances `<dynamics>` (vélocité depuis
+  `<sound dynamics>`), soufflets `<wedge>` (début/arrêt, niente, textes de
+  début et de fin, y compris nuances insérées), `<words>` (texte de portée ou
+  système, formats italique/gras/souligné/police), `<rehearsal>`, métronome
+  `<metronome>` et `<sound tempo>` (tempos visibles et invisibles), `<offset>`,
+  `<staff>`, pédales, ottavas, lignes `<dashes>`/`<bracket>`, segno/coda/fine
+  et sauts D.C./D.S. ;
+- notations (`<notations>`) : articulations, ornements (`<turn>`, mordants,
+  `trill-mark`, `wavy-line`), fermates, arpèges (`arpeggiate`,
+  `non-arpeggiate`), `<slur>` (numéros, orientation), `<slide>`/`<glissando>`,
+  doigtés `<technical><fingering>`, lignes d'accord (`falloff`, `doit`,
+  `plop`, `scoop`) et respirations/césures ;
+- reprises (`<repeat>` avant/arrière, `times`), voltas (`<ending>`), silences
+  multi-mesures (`<multiple-rest>`), mesures répétées (`<measure-repeat>`) ;
+- harmonies (`<harmony>` : `root`, `kind`/`text`, `bass`, `numeral`,
+  `function`, `degree`, `offset`) et chiffrage figuré (`<figured-bass>`) ;
+- changements d'instrument (`<sound><instrument-change>`, `<transpose>` au
+  tick du changement, texte `<words>` associé) ;
+- crédits (`<credit>` : plusieurs `<credit-words>`, type, page, alignements,
+  police), copyright déduit de `<rights>` ou du crédit `rights` ;
 - silences de remplissage : trous de la première voix (`fillGapsInFirstVoices`
   de la passe 2) puis trous de toutes les voix par `gap_rests::fill`
   (`Measure::checkMeasure` de MuseScore) — c'est l'origine des
   `<forward>`/`<backup>` scindés de MuseScore.
 
-## 4. Écarts restants (9 fichiers v3)
-
-Ces écarts sont mesurés par le test d'aller-retour ; ils ne portent pas sur le
-noyau musical déjà couvert.
+## 4. Écarts restants au niveau noyau (4 fichiers v3, 0 en v4)
 
 | Fichier | Lignes | Cause |
 | --- | ---: | --- |
-| `v3/change` | 33 | changements d'instrument (`<instrument id>`, `<instruments>`) : non lus |
-| `v3/testMultiInstrumentPart3` | 43 | idem, plus les transpositions par changement d'instrument |
-| `v3/layout_elements` | 91 | changements d'instrument (45) et chiffrage figuré (`<figured-bass>`, 12) : non lus |
-| `v3/testHarmony6` | 50 | harmonies (`<harmony>`) : non lues |
-| `v3/testChordSymbols` | 15 | harmonies : non lues |
-| `v3/timesig-05` | 13 | harmonies : non lues |
-| `v3/voices` | 49 | harmonies (2) et **numérotation des voix** : MuseScore renumérote les voix MusicXML (1,2,3,5 → 1,2,3,4), le `.mscx` d'origine gardait 1,2,3,4 ; l'aller-retour par MusicXML perd cette numérotation |
-| `v3/testTuplets8` | 31 | fichier de **n-olets incomplets** : MuseScore y stocke des durées réelles (`<duration>` du `.mscx`) que MusicXML ne transmet pas ; le `<type>` seul ne suffit pas à reconstituer 5/6 |
 | `v3/barline01` | 6 | `<staff-details print-object="no"/>` de portées masquées : information de **mise en page** absente de MusicXML (MuseScore la recalcule) |
+| `v3/layout_elements` | 26 | harmonies rattachées à une autre voix que MuseScore (ordre des `<direction>`/`<harmony>` après `backup`), bend `<technical><bend>` non modélisé |
+| `v3/testTuplets8` | 31 | fichier de **n-olets incomplets** : MuseScore insère des silences de complément (`MusicXmlTupletState::missingTupletDuration`) que `<type>` seul ne permet pas de reconstituer ; `<normal-type>` en trop et `<duration>` calculées |
+| `v3/voices` | 42 | **numérotation des voix** : MuseScore renumérote les voix MusicXML (1,2,3,5 → 1,2,3,4), le `.mscx` d'origine gardait 1,2,3,4 ; l'aller-retour par MusicXML perd cette numérotation |
 
-Deux de ces écarts sont **irréductibles** sans informations absentes du
-format : la renumérotation des voix (MuseScore la fait aussi à l'import) et
-les portées masquées (mise en page). Les autres sont des fonctions non encore
-portées, par ordre d'intérêt :
+Deux écarts sont **irréductibles** sans informations absentes du format : les
+portées masquées (mise en page) et la renumérotation des voix (MuseScore la
+fait aussi à l'import). Les deux autres sont des fonctions non portées.
 
-1. **harmonies** (`<harmony>` : `root`, `kind`, `degree`, `bass`) — 3 fichiers.
-   Le modèle attend le suffixe (`Harmony::name`) analysé à l'export par
-   `export/harmony.rs` ; l'import doit reconstruire ce suffixe depuis
-   `<kind text="…">`.
-2. **changements d'instrument** (`<instrument>`, `<instruments>`) — 3 fichiers,
-   via `Part::instrument_changes`.
-3. **chiffrage figuré** (`<figured-bass>`) — `layout_elements`.
-4. **fichiers à n-olets incomplets** : nécessiterait de déduire la durée réelle
-   d'un n-olet non rempli, ce que le C++ fait par des corrections
-   heuristiques (`MusicXmlTupletState::missingTupletDuration`).
+## 5. Écarts restants au niveau complet (7 fichiers v3, 5 en v4)
 
-## 5. Hors périmètre de cette première version
+v3 : `barline01`, `layout_elements`, `moonlight` (6 `<stem>` de ligatures
+croisées, 3 `<credit-words>` multi-lignes), `testTuplets8`, `testWedge4`
+(soufflets simultanés numérotés 1/2), `voices` (voix), et les fichiers
+ci-dessus.
 
-Les éléments suivants ne sont pas lus du tout (ils ne comptent pas dans les
-écarts du § 4, la normalisation du noyau les retire) : `<direction>` (nuances,
-soufflets, tempos visibles, textes, pédales, ottavas), `<notations>` autres que
-`tied`/`tuplet` (articulations, ornements, liaisons de trait, trémolos de
-notation), `<slur>`, `<credit>`, `<defaults>`/`<print>` (mise en page),
-`<barline>` hors reprise. Les implémenter fera passer d'éventuels tests de
-parité complète, pas le test d'aller-retour en niveau noyau.
+v4 : `expression-1` (`font-style="normal"` de réinitialisation entre deux
+`<words>`), `repeat65`, `repeat66`, `repeat68` (`<words></words>` vide d'un
+cadre sans texte, `font-family`/`font-size` explicites égaux au style),
+`voiceswitching` (paroles multi-blocs, hampes).
+
+Ne sont pas lus (ou sans équivalent dans le modèle) : `<technical><bend>` et
+autres techniques non listées, `<harmony><frame>` (diagrammes de manche),
+formats de `<lyric>` étendus, `<defaults>`/`<print>` (mise en page),
+`<barline>` `ending` multiples sur une même mesure, `<sound><swing>`
+(partiellement).
 
 ## 6. Pièges rencontrés
 
@@ -144,3 +175,19 @@ parité complète, pas le test d'aller-retour en niveau noyau.
 - **Ornements après l'accord** : un ornement portant `<slur type="stop">` sans
   départ est un ornement *après* (`mustStopGraceAfter`) ; son type de note
   devient `GRACE8_AFTER`/`GRACE16_AFTER`/`GRACE32_AFTER` à l'attachement.
+- **Ottava** : les hauteurs MusicXML sont **écrites** (décalées par
+  `octave-shift`) ; l'import retire le décalage (`xmlSetPitch`, `pitch += 12 ×
+  octaveShift`) pour stocker la hauteur sonore, l'export le réapplique.
+- **Transposition** : un `<transpose>` qui suit un changement d'instrument
+  appartient à ce changement ; la hauteur de chaque note se calcule avec
+  l'instrument en vigueur à **son tick** (`Part::instrument_at`), pas avec le
+  dernier `<transpose>` lu.
+- **Direction de hampe d'une ligature** : MusicXML ne porte pas la direction
+  du groupe ; elle se reprend du `<stem>` du premier accord (`beam_direction`),
+  sinon l'export recalcule et se trompe sur les ligatures croisées.
+- **Groupes `<notations>` multiples** : une même note peut avoir plusieurs
+  `<notations>` (tied invisible puis fingering visible) ; il faut les parcourir
+  tous, et `print-object="no"` s'hérite sur chacun de leurs enfants.
+- **Ordre des annotations** : les harmonies, directions et spanners sont
+  écrits dans l'ordre du fichier ; l'ordre des voix traitées par l'export peut
+  déplacer une annotation d'une voix à l'autre (`v3/layout_elements`).

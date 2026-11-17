@@ -51,6 +51,7 @@ const ENCODING_DATE: &str = "2026-11-16";
 const EXPECTED_V3: &[&str] = &[
     "Beam-CrossM1",
     "barlinedelete",
+    "change",
     "clef-1",
     "copypaste_tuplet_01",
     "grace",
@@ -66,9 +67,13 @@ const EXPECTED_V3: &[&str] = &[
     "repeat39",
     "selectionfilter1",
     "testBreaksPage",
+    "testChordSymbols",
     "testHairpinDynamics",
+    "testHarmony6",
+    "testMultiInstrumentPart3",
     "testTboxWords1",
     "testWedge4",
+    "timesig-05",
     "undoResequenceMeasure",
 ];
 
@@ -106,10 +111,56 @@ const EXPECTED_V4: &[&str] = &[
 ///
 /// Liste vide tant que le lecteur ne couvre pas les directions et annotations ;
 /// elle ne doit que s'allonger.
-const EXPECTED_FULL_V3: &[&str] = &[];
+const EXPECTED_FULL_V3: &[&str] = &[
+    "Beam-CrossM1",
+    "barlinedelete",
+    "change",
+    "clef-1",
+    "copypaste_tuplet_01",
+    "grace",
+    "keysig_78216",
+    "lyricsline01",
+    "measure-4",
+    "repeat01",
+    "repeat06",
+    "repeat07",
+    "repeat11",
+    "repeat20",
+    "repeat39",
+    "selectionfilter1",
+    "testBreaksPage",
+    "testChordSymbols",
+    "testHarmony6",
+    "testMultiInstrumentPart3",
+    "testTboxWords1",
+    "timesig-05",
+    "undoResequenceMeasure",
+];
 
 /// Fichiers du corpus 4.x identiques au niveau **parité complète**.
-const EXPECTED_FULL_V4: &[&str] = &[];
+const EXPECTED_FULL_V4: &[&str] = &[
+    "beamStemDir",
+    "changevisibility",
+    "copypaste_parts",
+    "copypastesymbollist-lyrics",
+    "dynamics",
+    "dynamics_niente",
+    "hairpin_dynamic_inside",
+    "hairpin_dynamic_jump",
+    "hairpin_simple",
+    "hairpins_and_repeats",
+    "linked-ties",
+    "mmrest",
+    "partExclusion",
+    "part-textlines",
+    "repeat69",
+    "tenuto_accent",
+    "testExcludeInvisibleElements",
+    "testLocalTimesig1",
+    "testNoteheads2",
+    "testTempoPrecision",
+    "timesig-09",
+];
 
 /// Résultat d'un aller-retour.
 struct Row {

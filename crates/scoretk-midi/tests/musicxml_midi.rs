@@ -38,7 +38,15 @@ use scoretk_midi::write_midi;
 use scoretk_musicxml::read_musicxml;
 
 /// Fichiers dont la conversion MusicXML → MIDI est identique à la référence.
-const EXPECTED_IDENTICAL: &[&str] = &["v4/dynamics"];
+const EXPECTED_IDENTICAL: &[&str] = &[
+    "v4/dynamics",
+    "v4/hairpin_simple",
+    "v4/linked-ties",
+    "v4/mmrest",
+    "v4/repeat68",
+    "v4/repeat69",
+    "v4/tenuto_accent",
+];
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct NoteEvent {
@@ -204,7 +212,7 @@ fn names(corpus: &Path) -> Vec<(String, String, String)> {
                     .expect("nom de référence invalide")
                     .trim_end_matches(".ref")
                     .to_owned();
-                let musicxml = corpus.join(&version).join(format!("{stem}.ref.musicxml"));
+                let musicxml = corpus.join(version).join(format!("{stem}.ref.musicxml"));
                 if musicxml.is_file() {
                     names.push((format!("{version}/{stem}"), version.to_owned(), stem));
                 }

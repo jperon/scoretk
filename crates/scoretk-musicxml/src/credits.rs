@@ -56,10 +56,12 @@ pub(crate) fn read_credits(root: &Element) -> Vec<Credit> {
             if text.is_empty() {
                 continue;
             }
-            let mut format = TextFormat::default();
-            format.font_family = first.attribute("font-family").map(str::to_owned);
-            format.bold = first.attribute("font-weight") == Some("bold");
-            format.italic = first.attribute("font-style") == Some("italic");
+            let format = TextFormat {
+                font_family: first.attribute("font-family").map(str::to_owned),
+                bold: first.attribute("font-weight") == Some("bold"),
+                italic: first.attribute("font-style") == Some("italic"),
+                ..TextFormat::default()
+            };
             let mut credit = Credit::new(RichText::from_markup_with(text, &format), style.clone());
             credit.page = page;
             if let Some(justify) = first

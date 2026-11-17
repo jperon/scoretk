@@ -114,7 +114,7 @@ pub(crate) fn read_harmony(
                 }
             }
             "offset" => {
-                if let Some(value) = child.text_trimmed().parse::<i64>().ok() {
+                if let Ok(value) = child.text_trimmed().parse::<i64>() {
                     offset = Fraction::from_ticks(value, divisions * 4);
                 }
             }
