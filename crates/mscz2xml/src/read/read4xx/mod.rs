@@ -264,9 +264,6 @@ impl Reader {
         }
 
         self.assign_multiple_rests();
-        for repeat in std::mem::take(&mut self.measure_repeats) {
-            crate::read::measure_repeat::expand(&mut self.score, &repeat);
-        }
         self.resolve_ties();
         self.resolve_ties();
         repeats::resolve(self);
@@ -278,6 +275,11 @@ impl Reader {
         pedals::resolve(&mut self.score, &self.pedal_halves);
         notations::resolve(self);
         ottava::resolve(&mut self.score, &self.ottava_halves);
+        // Après les résolutions de spanners : la copie d'une mesure répétée
+        // reprend ceux de la mesure source.
+        for repeat in std::mem::take(&mut self.measure_repeats) {
+            crate::read::measure_repeat::expand(&mut self.score, &repeat);
+        }
         Ok(())
     }
 
