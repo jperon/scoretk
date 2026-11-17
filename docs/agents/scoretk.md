@@ -56,6 +56,10 @@ Rien ne correspond → `None` (la CLI demande alors `--from`).
 
 ### Limites actuelles
 
+État de la **bibliothèque** selon les features ; la CLI `scoretk` active les
+quatre (`musicxml-import`, `midi`, `lilypond`, `mscx`), et c'est cet état que
+montre son `--list-formats`.
+
 | Format | Lecture | Écriture |
 | --- | --- | --- |
 | `.mscz` / `.mscx` | oui (`mscz2xml`) | oui (feature `mscx`, `scoretk-mscx`) |
@@ -86,6 +90,10 @@ existent déjà, désactivées par défaut ; les variantes d'erreur
    `scoretk_musicxml::read_musicxml(bytes)` et convertit l'erreur en
    `Error::MusicXmlImport` (l'erreur de la crate doit implémenter `Display`).
 
+**Branché** : la CLI active la feature ; `scoretk entrée.musicxml -o sortie.mscx`
+(ou `.ly`, `.mid`) fonctionne. Le `.mxl` en entrée reste refusé : seule
+l'écriture compressée est branchée.
+
 ### t38 — écriture MuseScore (`crates/scoretk-mscx`)
 
 **Branché** : dépendance optionnelle `scoretk-mscx`, feature
@@ -98,9 +106,10 @@ feature : `scoretk entrée.mscx -o sortie.mscx` et `… -o sortie.mscz`.
 
 **Branché** : la dépendance optionnelle et `midi = ["dep:scoretk-midi"]` sont
 en place ; `hooks::write_midi` appelle `scoretk_midi::write_midi(score)` et
-convertit l'erreur en `Error::Midi`. La feature reste désactivée par défaut :
-l'activer explicitement (`cargo test -p scoretk --features midi`, ou la
-dépendance de la CLI) pour que `scoretk` écrive du MIDI.
+convertit l'erreur en `Error::Midi`. La CLI active la feature : `scoretk
+entrée.mscx -o sortie.mid` et `scoretk entrée.musicxml -o sortie.mid`
+fonctionnent. Pour un test de la bibliothèque seule, activer explicitement la
+feature (`cargo test -p scoretk --features midi`).
 
 ### t36 — écriture LilyPond (`crates/scoretk-lilypond`)
 
@@ -120,6 +129,10 @@ scoretk entrée.mscz -o sortie.musicxml      # formats déduits des extensions
 scoretk entrée.mscx --to mxl -o -           # sortie standard
 scoretk entrée.mscx -o copie.mscx           # réécriture MuseScore 4.70
 scoretk entrée.mscx -o copie.mscz           # conteneur MuseScore
+scoretk entrée.musicxml -o sortie.mscx      # lecture MusicXML (feature)
+scoretk entrée.musicxml -o sortie.ly        # MusicXML → LilyPond
+scoretk entrée.musicxml -o sortie.mid       # MusicXML → MIDI
+scoretk entrée.mscx -o sortie.mid           # MuseScore → MIDI
 cat entrée.mscx | scoretk - --from mscx --to musicxml
 scoretk --list-formats                      # formats et sens pris en charge
 scoretk --version                           # version + licence (GPL-3.0-only)
@@ -153,9 +166,11 @@ scoretk --version                           # version + licence (GPL-3.0-only)
   avec un modèle identique, sortie MusicXML identique, `.mscz` détecté et relu,
   version `4.70`.
 - `crates/scoretk-cli/tests/cli.rs` : binaire réel (`CARGO_BIN_EXE_scoretk`),
-  `--list-formats`, `--version`, stdin/stdout, `.mscz` → MusicXML comparé à
-  `mscz2xml`, sortie `.mxl`, `.mscx`/`.mscz` écrits et relus, `.mscx` →
-  `.ly`, erreurs de `--from`/`--to` manquants et de format non branché.
+  `--list-formats` (état des features : MusicXML lecture, MIDI écriture),
+  `--version`, stdin/stdout, `.mscz` → MusicXML comparé à `mscz2xml`, sortie
+  `.mxl`, `.mscx`/`.mscz` écrits et relus, `.mscx` → `.ly`, `.musicxml` →
+  `.mscx`/`.ly`/`.mid`, `.mscx` → `.mid`, entrée `.mxl` refusée (pas de
+  lecteur), erreurs de `--from`/`--to` manquants et de format non branché.
 - Le corpus est lu via `CARGO_MANIFEST_DIR/../../tests/corpus` ; il doit rester
   dans le filtre de `flake.nix` (voir `docs/agents/developpement.md`).
 
