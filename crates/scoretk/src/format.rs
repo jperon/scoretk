@@ -56,9 +56,10 @@ impl fmt::Display for Sens {
 
 /// Format de partition manipulé par scoretk.
 ///
-/// `Ly` et `Abc` sont reconnus (extension et contenu) mais n'ont encore ni
-/// lecteur ni écrivain : [`read`](crate::read) et [`write`](crate::write)
-/// renvoient alors [`Error::FormatNonPrisEnCharge`].
+/// `Ly` est reconnu (extension et contenu) et s'écrit avec la feature
+/// `lilypond` ; il n'a pas encore de lecteur. `Abc` n'a ni lecteur ni
+/// écrivain. [`read`](crate::read) et [`write`](crate::write) renvoient alors
+/// [`Error::FormatNonPrisEnCharge`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Format {
     /// Conteneur MuseScore compressé (`.mscz`, archive ZIP avec un `.mscx`).
@@ -130,13 +131,14 @@ impl Format {
     /// Vrai si [`write`](crate::write) sait écrire ce format aujourd'hui.
     ///
     /// MuseScore (`.mscx`, `.mscz`) dépend de la feature `mscx`, MIDI de la
-    /// feature `midi`.
+    /// feature `midi`, LilyPond de la feature `lilypond`.
     pub const fn supports_write(self) -> bool {
         match self {
             Self::MusicXml | Self::Mxl => true,
             Self::Mscz | Self::Mscx => cfg!(feature = "mscx"),
             Self::Midi => cfg!(feature = "midi"),
-            Self::Ly | Self::Abc => false,
+            Self::Ly => cfg!(feature = "lilypond"),
+            Self::Abc => false,
         }
     }
 

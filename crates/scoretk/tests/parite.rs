@@ -126,17 +126,18 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
         }
     }
 
-    for format in [Format::Ly, Format::Abc] {
-        match write(&score, format, &options()) {
-            Err(Error::FormatNonPrisEnCharge {
-                format: actual,
-                sens,
-            }) => {
-                assert_eq!(actual, format);
-                assert_eq!(sens, Sens::Ecriture);
-            }
-            other => panic!("écriture {format} : {other:?}"),
+    // Seul ABC reste sans écrivain. MuseScore et LilyPond dépendent de
+    // features que la CLI active (`mscx`, `lilypond`) : la résolution de
+    // features du workspace les active donc aussi ici.
+    match write(&score, Format::Abc, &options()) {
+        Err(Error::FormatNonPrisEnCharge {
+            format: actual,
+            sens,
+        }) => {
+            assert_eq!(actual, Format::Abc);
+            assert_eq!(sens, Sens::Ecriture);
         }
+        other => panic!("écriture {} : {other:?}", Format::Abc),
     }
 
     // MuseScore (`.mscx`/`.mscz`) n'est écrit que si la feature `mscx` est
@@ -188,4 +189,17 @@ fn ecriture_midi_branchable_par_feature() {
         other => panic!("écriture MIDI sans feature : {other:?}"),
     }
     assert!(!Format::Midi.supports_write());
+}
+
+#[cfg(feature = "lilypond")]
+#[test]
+fn ecriture_lilypond_en_mode_fixed() {
+    let mscx = std::fs::read(common::corpus_v4("dynamics.mscx")).expect("corpus");
+    let score = read(&mscx, Format::Mscx).expect("lecture .mscx");
+    let lilypond = write(&score, Format::Ly, &options()).expect("écriture LilyPond");
+    let text = String::from_utf8(lilypond).expect("UTF-8");
+    assert!(text.starts_with("\\version \"2.24.0\"\n"), "{text}");
+    assert!(text.contains("= \\fixed c' {"), "{text}");
+    assert!(!text.contains("\\relative"), "{text}");
+    assert!(Format::Ly.supports_write());
 }

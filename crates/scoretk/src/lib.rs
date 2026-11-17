@@ -40,7 +40,8 @@
 //! | MuseScore `.mscz` / `.mscx` | oui | feature `mscx` |
 //! | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` | oui |
 //! | MusicXML `.mxl` | non | oui |
-//! | LilyPond, ABC | non | non |
+//! | LilyPond `.ly` | non | feature `lilypond` |
+//! | ABC | non | non |
 //! | MIDI | non | feature `midi` |
 //!
 //! Un format sans convertisseur dans le sens demandé renvoie
@@ -120,8 +121,10 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
 ///
 /// MusicXML passe par l'export de `mscz2xml` ; `.mxl` réutilise son archive
 /// ZIP (`META-INF/container.xml` + `score.xml`), identique à `saveMxl` de
-/// MuseScore. MIDI passe par la crate `scoretk-midi` si la feature `midi` est
-/// active ; les autres formats renvoient [`Error::FormatNonPrisEnCharge`].
+/// MuseScore. MuseScore (`.mscx`/`.mscz`) passe par `scoretk-mscx` si la
+/// feature `mscx` est active, MIDI par `scoretk-midi` si la feature `midi`
+/// l'est, LilyPond par `scoretk-lilypond` si la feature `lilypond` l'est ; les
+/// autres formats renvoient [`Error::FormatNonPrisEnCharge`].
 pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>> {
     match format {
         Format::MusicXml => Ok(mscz2xml::export::export_musicxml_with(
@@ -136,7 +139,8 @@ pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>
         Format::Midi => hooks::write_midi(score),
         Format::Mscx => hooks::write_mscx(score),
         Format::Mscz => hooks::write_mscz(score),
-        Format::Ly | Format::Abc => Err(Error::FormatNonPrisEnCharge {
+        Format::Ly => hooks::write_lilypond(score),
+        Format::Abc => Err(Error::FormatNonPrisEnCharge {
             format,
             sens: Sens::Ecriture,
         }),

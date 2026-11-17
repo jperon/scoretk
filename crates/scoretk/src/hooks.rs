@@ -25,6 +25,8 @@
 //!   `read_musicxml(&[u8]) -> Result<Score>` ;
 //! - feature `midi` : crate `scoretk-midi` (t35), fonction
 //!   `write_midi(&Score) -> Result<Vec<u8>>` ;
+//! - feature `lilypond` : crate `scoretk-lilypond` (t36), fonction
+//!   `write_lilypond(&Score) -> Result<String>` ;
 //! - feature `mscx` : crate `scoretk-mscx` (t38), fonctions
 //!   `write_mscx(&Score) -> Result<String>` et
 //!   `write_mscz(&Score) -> Result<Vec<u8>>`.
@@ -32,7 +34,12 @@
 use mscz2xml::model::Score;
 
 use crate::error::Error;
-#[cfg(not(all(feature = "musicxml-import", feature = "midi")))]
+#[cfg(not(all(
+    feature = "musicxml-import",
+    feature = "midi",
+    feature = "lilypond",
+    feature = "mscx"
+)))]
 use crate::format::{Format, Sens};
 use crate::Result;
 
@@ -58,6 +65,21 @@ pub(crate) fn write_midi(score: &Score) -> Result<Vec<u8>> {
 pub(crate) fn write_midi(_score: &Score) -> Result<Vec<u8>> {
     Err(Error::FormatNonPrisEnCharge {
         format: Format::Midi,
+        sens: Sens::Ecriture,
+    })
+}
+
+#[cfg(feature = "lilypond")]
+pub(crate) fn write_lilypond(score: &Score) -> Result<Vec<u8>> {
+    scoretk_lilypond::write_lilypond(score)
+        .map(String::into_bytes)
+        .map_err(|error| Error::LilyPond(error.to_string()))
+}
+
+#[cfg(not(feature = "lilypond"))]
+pub(crate) fn write_lilypond(_score: &Score) -> Result<Vec<u8>> {
+    Err(Error::FormatNonPrisEnCharge {
+        format: Format::Ly,
         sens: Sens::Ecriture,
     })
 }

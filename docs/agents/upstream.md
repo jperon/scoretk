@@ -214,6 +214,21 @@ chemins Rust y sont relatifs à `crates/scoretk-mscx/src/`.
 | `pause_map.rs` | `engraving/compat/midi/pausemap.cpp` |
 | `writer.rs` | écriture `MidiFile` (format SMF, `no_std`) |
 
+### Écriture LilyPond (`crates/scoretk-lilypond/src/`)
+
+Cette crate n'a **pas** de source MuseScore dédiée : MuseScore 4 n'a pas
+d'export LilyPond. Elle porte la sémantique des objets du modèle et suit, pour
+les correspondances de notation, le comportement de **`musicxml2ly`** du
+paquet LilyPond (GPL-3.0-or-later), cité dans `NOTICE` et dans les en-têtes.
+
+| Rust | Référence |
+| --- | --- |
+| `chord.rs` | `engraving/dom/{chordrest,chord,rest,articulation}.h` ; table d'articulations et d'ornements de `musicxml2ly` |
+| `structure.rs` | `engraving/dom/{volta,measure}.h`, `ExportMusicXml::barlineRight` |
+| `pitch.rs` | `engraving/dom/pitchspelling.cpp` (`tpc2stepName`, `tpc2alter`), `engraving/dom/clef.h` |
+| `voice.rs` | `engraving/dom/{segment,measure,chordrest}.h` (parcours d'une voix) |
+| `writer.rs` | `engraving/dom/{part,staff,score}.h` (regroupements et en-tête) |
+
 ## 4. Suivi d'une nouvelle version amont
 
 Préparer un lot par famille (conteneur, lecteur 3.x, lecteur 4.x, modèle,

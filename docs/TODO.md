@@ -10,7 +10,7 @@ cinq formats de partition ; **mscz2xml** en est le premier convertisseur
 |---|---|---|
 | MuseScore (`.mscz` / `.mscx`, 3.x et 4.x) | fait | fait (`scoretk-mscx`) |
 | MusicXML (`.musicxml` / `.mxl`) | fait (noyau, cf. `docs/agents/musicxml-import.md`) | fait |
-| LilyPond (`.ly`) | à faire | à faire |
+| LilyPond (`.ly`) | à faire | fait (`scoretk-lilypond`, t36) |
 | ABC (`.abc`) | à faire | à faire |
 | MIDI (`.mid`) | à faire | fait (`scoretk-midi`) |
 
@@ -22,9 +22,10 @@ ly, abc et midi.
 
 | Crate | Rôle | État |
 | --- | --- | --- |
-| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : `.mscz`/`.mscx` → MusicXML/`.mxl`, MusicXML → modèle ; features `musicxml-import`, `midi` et `mscx` branchées |
+| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : `.mscz`/`.mscx` → MusicXML/`.mxl`/`.ly`, MusicXML → modèle ; features `musicxml-import`, `midi`, `lilypond` et `mscx` branchées |
 | `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | en cours (t34, t37) : noyau 26/30 v3 et 26/26 v4, parité complète 23/30 et 21/26 (écarts dans `docs/agents/musicxml-import.md`) |
 | `scoretk-midi` | écrivain MIDI depuis le modèle pivot | en cours (t35) |
+| `scoretk-lilypond` | écrivain LilyPond depuis le modèle pivot | fait (t36) : 56/56 fichiers du corpus compilent |
 | `scoretk-mscx` | écrivain MuseScore (`.mscx` 4.x, `.mscz`) | fait (t38) : aller-retour identique sur tout le corpus |
 
 MIDI est à part : c'est un format de performance, pas de notation. L'écriture
@@ -52,7 +53,8 @@ Pistes :
   - MIDI : l'export MIDI de MuseScore (`src/importexport/midi`, `engraving/compat/midi`), son import MIDI (quantification), et la crate Rust `midly` (pure Rust, `no_std`) pour le format de fichier.
   - Vérifier les licences de chacune avant tout portage.
 - **LilyPond.** L'écrivain vient avant le lecteur : ses sorties servent de
-  corpus d'aller-retour au lecteur.
+  corpus d'aller-retour au lecteur. L'écrivain est fait (`scoretk-lilypond`,
+  feature `lilypond` de la façade) ; voir `docs/agents/lilypond.md`.
   - Écrivain : les voix sont notées en mode **`\fixed`**, jamais `\relative`,
     car ce mode résiste mieux aux erreurs de copier-coller et assimilées.
   - Lecteur : on ne peut pas intégrer le parseur de LilyPond, qui dépend de

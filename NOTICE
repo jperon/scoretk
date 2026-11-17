@@ -46,12 +46,32 @@ Correspondance des grands ensembles :
 | `crates/mscz2xml/src/read/mod.rs` | `engraving/rw/rwregister.cpp` |
 | `crates/mscz2xml/src/export/writer.rs` | forme d'écriture XML de `engraving/rw/xmlwriter.cpp` |
 | `crates/scoretk-midi/src/` | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/` (`compatmidirender*.cpp`, `velocitymap.cpp`, `pausemap.cpp`) et `engraving/dom/repeatlist.cpp` |
+| `crates/scoretk-lilypond/src/` | sémantique de `engraving/dom/` (accords, mesures, volatas, spanners) ; tables de notation de `musicxml2ly` (voir ci-dessous) |
 | `crates/scoretk-mscx/src/` | `engraving/rw/write/` (`writer.cpp`, `staffwrite.cpp`, `measurewrite.cpp`, `twrite.cpp`, `connectorinfowriter.cpp`), `engraving/rw/xmlwriter.cpp` et `engraving/infrastructure/mscwriter.cpp` |
 
 Les tables de conversion de noms (`read302/tables.rs`, `read4xx/names.rs`)
 reprennent `TConv::fromXml` de `engraving/rw/types/typesconv.cpp` — fichier
 **généré** à la construction chez MuseScore et donc absent de la copie de
 référence — et les valeurs de `engraving/types/types.h`.
+
+## Code et comportements repris depuis LilyPond
+
+MuseScore 4 n'a pas d'export LilyPond : l'écrivain de `scoretk-lilypond` ne
+porte donc pas de fichier C++ de MuseScore pour la sortie elle-même. Ses
+correspondances de notation (articulations, ornements, nuances, figures,
+noms de clés et d'armures, mode `\fixed`) suivent le comportement de
+**`musicxml2ly`**, livré avec LilyPond.
+
+- Projet d'origine : **LilyPond**, <https://gitlab.com/lilypond/lilypond>.
+- Licence : **GNU GPL version 3 ou ultérieure** (GPL-3.0-or-later), Copyright
+  (C) 2016--2026 John Gourlay, Werner Lemberg et les autres auteurs de
+  LilyPond. La GPL-3.0-or-later autorise la distribution sous GPL-3.0-only,
+  licence du présent projet.
+- Nature de la reprise : **réécriture en Rust** des tables et du comportement
+  observés (`musicxml2ly` et `musicxml2ly_definitions.py`) ; aucun fichier de
+  LilyPond n'est distribué dans ce dépôt et aucune ligne de code n'est
+  copiée. L'attribution figure aussi dans l'en-tête des fichiers concernés de
+  `crates/scoretk-lilypond/src/`.
 
 ## Données reprises
 
@@ -70,6 +90,10 @@ référence — et les valeurs de `engraving/types/types.h`.
 - `tests/corpus/midi/**/*.ref.mid` : références MIDI produites localement par
   `scripts/gen-midi-references.sh` avec la même version de MuseScore. Même
   licence.
+- `tests/corpus/ly/**/*.ly` : instantanés de la sortie de `scoretk-lilypond`
+  sur le corpus, produits par la crate elle-même (commande
+  `UPDATE_LILYPOND_SNAPSHOTS=1 cargo test -p scoretk-lilypond`). Œuvre du
+  projet, licence GPL-3.0-only.
 
 ### Table des instruments
 

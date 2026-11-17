@@ -186,7 +186,7 @@ fn format_non_branche_echoue_explicitement() {
     let output = binary()
         .arg(corpus("dynamics.mscx"))
         .arg("-o")
-        .arg(Path::new("/tmp/scoretk-sortie.ly"))
+        .arg(Path::new("/tmp/scoretk-sortie.abc"))
         .output()
         .expect("exécution");
     assert!(!output.status.success());
@@ -215,6 +215,27 @@ fn mscz_from_mscx(mscx: &[u8]) -> Vec<u8> {
         .expect("score.mscx");
     writer.write_all(mscx).expect("contenu .mscx");
     writer.finish().expect("archive").into_inner()
+}
+
+#[test]
+fn mscx_vers_lilypond() {
+    let sortie = Path::new("/tmp/scoretk-cli-sortie.ly");
+    let output = binary()
+        .arg(corpus("dynamics.mscx"))
+        .arg("-o")
+        .arg(sortie)
+        .output()
+        .expect("exécution");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let texte = std::fs::read_to_string(sortie).expect("sortie LilyPond");
+    assert!(texte.starts_with("\\version \"2.24.0\"\n"), "{texte}");
+    assert!(texte.contains("= \\fixed c' {"), "{texte}");
+    assert!(!texte.contains("\\relative"), "{texte}");
+    let _ = std::fs::remove_file(sortie);
 }
 
 #[test]
