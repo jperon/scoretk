@@ -1,0 +1,27 @@
+[package]
+name = "scoretk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Façade de conversion de partitions : lecture et écriture par format"
+repository.workspace = true
+homepage.workspace = true
+
+[features]
+default = []
+
+# Points d'accroche des convertisseurs optionnels. Tant qu'ils sont désactivés,
+# le format correspondant renvoie `Error::FormatNonPrisEnCharge`. Pour brancher
+# une crate, voir `docs/agents/scoretk.md` § 3 : ajouter la dépendance
+# optionnelle et remplacer la valeur du feature ci-dessous.
+#
+# `musicxml-import = ["dep:scoretk-musicxml"]` (crate `scoretk-musicxml`, t34)
+musicxml-import = []
+# `midi = ["dep:scoretk-midi"]` (crate `scoretk-midi`, t35)
+midi = []
+
+[dependencies]
+mscz2xml = { path = "../mscz2xml" }
+thiserror = { workspace = true }
+zip = { workspace = true }

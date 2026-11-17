@@ -1,0 +1,218 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//
+// Copyright (C) 2026 jperon
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License version 3 as published by
+// the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+// more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// this program. If not, see the LICENSE file at the root of this repository or
+// <https://www.gnu.org/licenses/gpl-3.0.html>.
+
+//! Tests de la CLI `scoretk` lancée comme un vrai processus.
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn binary() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_scoretk"))
+}
+
+fn corpus(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/corpus/v4")
+        .join(name)
+}
+
+fn temp_dir() -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("scoretk-cli-{}-{unique}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("répertoire temporaire");
+    dir
+}
+
+#[test]
+fn list_formats() {
+    let output = binary().arg("--list-formats").output().expect("exécution");
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).expect("UTF-8");
+    for format in ["mscz", "mscx", "musicxml", "mxl", "ly", "abc", "midi"] {
+        assert!(text.contains(format), "tableau sans {format} : {text}");
+    }
+    assert!(text.contains("LECTURE"));
+    assert!(text.contains("ÉCRITURE"));
+}
+
+#[test]
+fn version_porte_la_licence() {
+    let output = binary().arg("--version").output().expect("exécution");
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).expect("UTF-8");
+    assert!(text.contains("GPL-3.0-only"), "{text}");
+    assert!(text.contains("sans aucune garantie"), "{text}");
+}
+
+#[test]
+fn mscx_vers_musicxml_sur_la_sortie_standard() {
+    let output = binary()
+        .arg(corpus("dynamics.mscx"))
+        .args(["--to", "musicxml", "--encoding-date", "2026-11-17"])
+        .output()
+        .expect("exécution");
+    assert!(output.status.success(), "{:?}", output.stderr);
+    let text = String::from_utf8(output.stdout).expect("UTF-8");
+    assert!(text.contains("<score-partwise"));
+    assert!(text.contains("<encoding-date>2026-11-17</encoding-date>"));
+}
+
+#[test]
+fn mscz_vers_musicxml_identique_a_mscz2xml() {
+    let mscx = std::fs::read(corpus("dynamics.mscx")).expect("corpus");
+    let mscz = mscz_from_mscx(&mscx);
+
+    let dir = temp_dir();
+    let input = dir.join("partition.mscz");
+    std::fs::write(&input, &mscz).expect("écriture du .mscz");
+
+    let output = binary()
+        .arg(&input)
+        .args(["--to", "musicxml", "--encoding-date", "2026-11-17"])
+        .output()
+        .expect("exécution");
+    assert!(output.status.success(), "{:?}", output.stderr);
+
+    let options = mscz2xml::ConvertOptions {
+        format: mscz2xml::OutputFormat::MusicXml,
+        export: mscz2xml::ExportOptions {
+            encoding_date: "2026-11-17".to_owned(),
+            ..mscz2xml::ExportOptions::default()
+        },
+    };
+    let reference = mscz2xml::convert(&mscx, &options).expect("mscz2xml");
+
+    assert_eq!(output.stdout, reference);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn entree_et_sortie_standard_avec_from_et_to() {
+    let mscx = std::fs::read(corpus("dynamics.mscx")).expect("corpus");
+
+    let mut child = binary()
+        .args(["-", "--from", "mscx", "--to", "musicxml"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("lancement");
+    std::io::Write::write_all(child.stdin.as_mut().expect("stdin"), &mscx).expect("écriture stdin");
+    let output = child.wait_with_output().expect("attente");
+
+    assert!(output.status.success(), "{:?}", output.stderr);
+    let text = String::from_utf8(output.stdout).expect("UTF-8");
+    assert!(text.contains("<score-partwise"));
+}
+
+#[test]
+fn sortie_mxl_par_extension() {
+    let dir = temp_dir();
+    let output_path = dir.join("partition.mxl");
+    let output = binary()
+        .arg(corpus("dynamics.mscx"))
+        .arg("-o")
+        .arg(&output_path)
+        .args(["--encoding-date", "2026-11-17"])
+        .output()
+        .expect("exécution");
+    assert!(output.status.success(), "{:?}", output.stderr);
+
+    let bytes = std::fs::read(&output_path).expect(".mxl");
+    assert_eq!(bytes.get(..4), Some(b"PK\x03\x04".as_slice()));
+
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("archive");
+    assert!(archive.by_name("META-INF/container.xml").is_ok());
+    assert!(archive.by_name("score.xml").is_ok());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn entree_standard_sans_from_echoue() {
+    let output = binary()
+        .args(["-", "--to", "musicxml"])
+        .stdin(Stdio::null())
+        .output()
+        .expect("exécution");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("UTF-8");
+    assert!(stderr.contains("--from"), "{stderr}");
+}
+
+#[test]
+fn sortie_standard_sans_to_echoue() {
+    let output = binary()
+        .arg(corpus("dynamics.mscx"))
+        .output()
+        .expect("exécution");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("UTF-8");
+    assert!(stderr.contains("--to"), "{stderr}");
+}
+
+#[test]
+fn extension_de_sortie_inconnue_echoue() {
+    let output = binary()
+        .arg(corpus("dynamics.mscx"))
+        .arg("-o")
+        .arg(Path::new("/tmp/scoretk-sortie.pdf"))
+        .output()
+        .expect("exécution");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("UTF-8");
+    assert!(stderr.contains("extension de sortie"), "{stderr}");
+}
+
+#[test]
+fn format_non_branche_echoue_explicitement() {
+    let output = binary()
+        .arg(corpus("dynamics.mscx"))
+        .arg("-o")
+        .arg(Path::new("/tmp/scoretk-sortie.ly"))
+        .output()
+        .expect("exécution");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("UTF-8");
+    assert!(stderr.contains("non pris en charge"), "{stderr}");
+}
+
+fn mscz_from_mscx(mscx: &[u8]) -> Vec<u8> {
+    use std::io::{Cursor, Write};
+
+    use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
+
+    let options = SimpleFileOptions::default().last_modified_time(zip::DateTime::default());
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .start_file("META-INF/container.xml", options)
+        .expect("container.xml");
+    writer
+        .write_all(
+            br#"<container><rootfiles><rootfile full-path="score.mscx"/></rootfiles></container>"#,
+        )
+        .expect("contenu container.xml");
+    writer
+        .start_file("score.mscx", options)
+        .expect("score.mscx");
+    writer.write_all(mscx).expect("contenu .mscx");
+    writer.finish().expect("archive").into_inner()
+}

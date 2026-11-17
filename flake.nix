@@ -268,6 +268,23 @@
         # Paquet navigateur : `nix build .#wasm` → result/{esm,classic,package.json,README.md}.
         packages.wasm = wasm;
 
+        # Façade multi-formats et sa CLI (`nix build .#scoretk`).
+        packages.scoretk = craneLib.buildPackage (commonArgs
+          // {
+            inherit cargoArtifacts;
+            pname = "scoretk";
+            cargoExtraArgs = "-p scoretk-cli";
+          });
+
+        # `nix run .#scoretk -- entrée.mscz -o sortie.musicxml` ; le paquet par
+        # défaut reste `mscz2xml`.
+        apps.scoretk = flake-utils.lib.mkApp {
+          drv = self.packages.${system}.scoretk;
+          name = "scoretk";
+        } // {
+          meta.description = "Conversion de partitions entre formats (MuseScore, MusicXML, MIDI, …)";
+        };
+
         checks = {
           # `-D warnings` : un warning casse le check, comme en CI.
           clippy = craneLib.cargoClippy (commonArgs
@@ -312,7 +329,7 @@
             // {
               cargoArtifacts = wasmCargoArtifacts;
               CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-              cargoExtraArgs = "-p mscz2xml";
+              cargoExtraArgs = "-p mscz2xml -p scoretk";
               doCheck = false;
             });
         };
