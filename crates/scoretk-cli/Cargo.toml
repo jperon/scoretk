@@ -13,7 +13,9 @@ name = "scoretk"
 path = "src/main.rs"
 
 [dependencies]
-scoretk = { path = "../scoretk" }
+# L'écriture LilyPond est branchée par défaut dans la CLI : `scoretk
+# entrée.mscz -o sortie.ly` fonctionne sans option de compilation.
+scoretk = { path = "../scoretk", features = ["lilypond"] }
 clap = { workspace = true }
 
 [dev-dependencies]

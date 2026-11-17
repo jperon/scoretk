@@ -68,7 +68,7 @@ pub(crate) fn events(annotation: &Annotation, tick: Tick) -> Vec<Event> {
             // Un texte réduit à un symbole musical (`♩ = 80`) ne laisse rien
             // après nettoyage : seule la valeur métronomique est écrite.
             let plain = text::rich_text(&tempo.text);
-            let label = if plain.chars().any(char::is_alphanumeric) {
+            let label = if plain.chars().any(char::is_alphabetic) {
                 format!("\"{}\"", plain.trim())
             } else {
                 String::new()

@@ -168,3 +168,31 @@ fn ecriture_midi_branchable_par_feature() {
     }
     assert!(!Format::Midi.supports_write());
 }
+
+#[cfg(feature = "lilypond")]
+#[test]
+fn ecriture_lilypond_en_mode_fixed() {
+    let mscx = std::fs::read(common::corpus_v4("dynamics.mscx")).expect("corpus");
+    let score = read(&mscx, Format::Mscx).expect("lecture .mscx");
+    let lilypond = write(&score, Format::Ly, &options()).expect("écriture LilyPond");
+    let text = String::from_utf8(lilypond).expect("UTF-8");
+    assert!(text.starts_with("\\version \"2.24.0\"\n"), "{text}");
+    assert!(text.contains("= \\fixed c' {"), "{text}");
+    assert!(!text.contains("\\relative"), "{text}");
+    assert!(Format::Ly.supports_write());
+}
+
+#[cfg(not(feature = "lilypond"))]
+#[test]
+fn ecriture_lilypond_branchable_par_feature() {
+    let mscx = std::fs::read(common::corpus_v4("dynamics.mscx")).expect("corpus");
+    let score = read(&mscx, Format::Mscx).expect("lecture .mscx");
+    match write(&score, Format::Ly, &options()) {
+        Err(Error::FormatNonPrisEnCharge { format, sens }) => {
+            assert_eq!(format, Format::Ly);
+            assert_eq!(sens, Sens::Ecriture);
+        }
+        other => panic!("écriture LilyPond sans feature : {other:?}"),
+    }
+    assert!(!Format::Ly.supports_write());
+}

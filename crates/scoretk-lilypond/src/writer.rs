@@ -156,11 +156,13 @@ impl<'a> Writer<'a> {
             }
             let group = group_of(&self.score.staves[staves[0]], staves.len());
             if let Some(group) = group {
-                let _ = writeln!(
-                    out,
-                    "    \\new {group} \\with {{ {} }} <<",
-                    instrument_clause(&part.long_name, &part.short_name)
-                );
+                let clause = instrument_clause(&part.long_name, &part.short_name);
+                let with = if clause.is_empty() {
+                    String::new()
+                } else {
+                    format!(" \\with {{ {clause} }}")
+                };
+                let _ = writeln!(out, "    \\new {group}{with} <<");
             }
             for (position, index) in staves.iter().enumerate() {
                 self.write_staff(out, *index, position == 0, group.is_some());

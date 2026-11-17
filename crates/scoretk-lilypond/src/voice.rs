@@ -299,6 +299,35 @@ pub(crate) fn render_body(
         let mut cursor = measure.start_tick;
         let measure_items_start = item_index;
         let mut tuplets: Vec<OpenTuplet> = Vec::new();
+
+        // Silence multi-mesures : le marqueur est posé sur la première mesure
+        // du groupe et les suivantes n'existent pas dans le modèle. On écrit
+        // `R` avec le multiplicateur, à condition que la voix n'y ait que des
+        // silences.
+        let mut multi_rest_done = false;
+        if let Some(count) = measure.multi_measure_rest.filter(|count| *count > 1) {
+            let end_of_measure = item_index
+                + items[item_index..]
+                    .iter()
+                    .take_while(|item| item.measure == measure_index)
+                    .count();
+            let all_rests = items[item_index..end_of_measure]
+                .iter()
+                .all(|item| item.chord_rest.is_rest());
+            if all_rests {
+                let len = if measure.len.is_positive() {
+                    measure.len
+                } else {
+                    measure.nominal_len
+                };
+                if len.is_positive() {
+                    emitter.token(&format!("{}*{count}", measure_rest_token(len)));
+                }
+                item_index = end_of_measure;
+                multi_rest_done = true;
+            }
+        }
+
         while item_index < items.len() && items[item_index].measure == measure_index {
             let item = &items[item_index];
             let chain = match item.chord_rest.tuplet {
@@ -333,7 +362,9 @@ pub(crate) fn render_body(
             item_index += 1;
         }
 
-        if item_index == measure_items_start {
+        if multi_rest_done {
+            // Rien : le silence multi-mesures couvre déjà la mesure.
+        } else if item_index == measure_items_start {
             let len = if measure.len.is_positive() {
                 measure.len
             } else {
@@ -353,15 +384,15 @@ pub(crate) fn render_body(
         // tick de fin incohérent.
         close_tuplets_until(&[], &mut tuplets, &mut emitter);
 
-        if voice == 0 && measure.line_break {
-            emitter.line("\\break");
-        }
         emitter.token(&bar_line_token(
             measure,
             measure_index + 1 == score.measures.len(),
             bar_check,
         ));
         emitter.flush_line();
+        if voice == 0 && measure.line_break && measure_index + 1 < score.measures.len() {
+            emitter.line("\\break");
+        }
         for token in structure.after_measure(measure_index) {
             emitter.structure(*token);
         }
