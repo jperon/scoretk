@@ -96,6 +96,15 @@ pub fn build(root: &Element, analysis: &Analysis) -> Result<Score> {
     let mut score = Score::with_division(analysis.divisions.max(1));
     score.metadata = read_metadata(root);
     score.credits = crate::credits::read_credits(root);
+    // Le nombre de pages conditionne la répétition du copyright à l'export
+    // (`credits`) : il se déduit des crédits, seule information lisible.
+    score.style.page_count = root
+        .children_named("credit")
+        .filter_map(|credit| credit.attribute("page"))
+        .filter_map(|page| page.parse::<u32>().ok())
+        .max()
+        .unwrap_or(1)
+        .max(1);
 
     // Parties et portées.
     for part_data in &analysis.parts {
@@ -221,6 +230,16 @@ fn read_metadata(root: &Element) -> mscz2xml::model::ScoreMetadata {
                     Some("mscVersion") => metadata.msc_version = value,
                     _ => {}
                 }
+            }
+        }
+    }
+    if metadata.copyright.is_empty() {
+        for credit in root.children_named("credit") {
+            if credit.child_text("credit-type") != Some("rights") {
+                continue;
+            }
+            if let Some(words) = credit.child_text("credit-words") {
+                metadata.copyright = words.to_owned();
             }
         }
     }

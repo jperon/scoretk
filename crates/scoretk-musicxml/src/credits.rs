@@ -43,35 +43,42 @@ pub(crate) fn read_credits(root: &Element) -> Vec<Credit> {
             "subtitle" => CreditStyle::Subtitle,
             "composer" => CreditStyle::Composer,
             "lyricist" | "poet" => CreditStyle::Lyricist,
-            "rights" => CreditStyle::Other("rights".to_owned()),
+            "rights" => continue,
             "" => CreditStyle::Other(String::new()),
             other => CreditStyle::Other(other.to_owned()),
         };
-        for words in element.children_named("credit-words") {
-            let text = words.text_trimmed();
+        let words: Vec<&Element> = element.children_named("credit-words").collect();
+        let Some(first) = words.first() else {
+            continue;
+        };
+        {
+            let text = first.text_trimmed();
             if text.is_empty() {
                 continue;
             }
             let mut format = TextFormat::default();
-            format.font_family = words.attribute("font-family").map(str::to_owned);
-            format.bold = words.attribute("font-weight") == Some("bold");
-            format.italic = words.attribute("font-style") == Some("italic");
+            format.font_family = first.attribute("font-family").map(str::to_owned);
+            format.bold = first.attribute("font-weight") == Some("bold");
+            format.italic = first.attribute("font-style") == Some("italic");
             let mut credit = Credit::new(RichText::from_markup_with(text, &format), style.clone());
             credit.page = page;
-            if let Some(justify) = words
+            if let Some(justify) = first
                 .attribute("justify")
                 .and_then(CreditJustify::from_name)
             {
                 credit.justify = justify;
             }
-            if let Some(valign) = words.attribute("valign").and_then(CreditValign::from_name) {
+            if let Some(valign) = first.attribute("valign").and_then(CreditValign::from_name) {
                 credit.valign = valign;
             }
-            if let Some(size) = words
+            if let Some(size) = first
                 .attribute("font-size")
                 .and_then(|size| size.parse::<f64>().ok())
             {
                 credit.font_size = Some(size);
+            }
+            for extra in &words[1..] {
+                credit.extra_words.push(RichText::new(extra.text_trimmed()));
             }
             credits.push(credit);
         }

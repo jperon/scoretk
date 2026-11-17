@@ -602,6 +602,11 @@ pub struct Credit {
     /// `getTenthsFromDots` : un crédit aligné en bas est décalé de la hauteur
     /// du `VBox`. La valeur par défaut est celle du style (`10 sp`).
     pub vbox_height: f64,
+    /// Textes supplémentaires du même `<credit>` (un `<credit-words>` chacun).
+    ///
+    /// MusicXML autorise plusieurs `<credit-words>` dans un crédit ; MuseScore
+    /// les écrit sans attributs de position après le premier.
+    pub extra_words: Vec<RichText>,
 }
 
 impl Credit {
@@ -617,6 +622,7 @@ impl Credit {
             page: 1,
             font_size: None,
             vbox_height: 10.0,
+            extra_words: Vec::new(),
         }
     }
 }
