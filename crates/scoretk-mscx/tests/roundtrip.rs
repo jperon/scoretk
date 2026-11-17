@@ -443,17 +443,31 @@ fn roundtrip(score: &Score) -> Result<Roundtrip, String> {
     })
 }
 
-/// Vérifie aussi l'archive `.mscz`.
-fn roundtrip_mscz(score: &Score) -> Result<(), String> {
+/// Rejoue l'aller-retour par l'archive `.mscz`.
+fn roundtrip_mscz(score: &Score) -> Result<Roundtrip, String> {
     let archive = scoretk_mscx::write_mscz(score).map_err(|error| error.to_string())?;
     let reread = read(&archive)?;
-    let direct = normalize(&export(score), Level::Core);
-    let round = normalize(&export(&reread), Level::Core);
-    if direct == round {
-        Ok(())
-    } else {
-        Err(diff(&direct, &round))
-    }
+    let direct = export(score);
+    let round = export(&reread);
+    let direct_core = normalize(&direct, Level::Core);
+    let round_core = normalize(&round, Level::Core);
+    let direct_full = normalize(&direct, Level::Full);
+    let round_full = normalize(&round, Level::Full);
+    let core = changed(&direct_core, &round_core);
+    let full = changed(&direct_full, &round_full);
+    Ok(Roundtrip {
+        core,
+        full,
+        diff: if core == 0 && full == 0 {
+            String::new()
+        } else {
+            format!(
+                "noyau :\n{}\ncomplet :\n{}",
+                diff(&direct_core, &round_core),
+                diff(&direct_full, &round_full)
+            )
+        },
+    })
 }
 
 fn run_corpus(version: &str, expected: &[&str]) {
@@ -490,22 +504,33 @@ fn run_corpus(version: &str, expected: &[&str]) {
                 continue;
             }
         };
-        match roundtrip(&score) {
-            Ok(result) if result.core == 0 && result.full == 0 => {
+        match (roundtrip(&score), roundtrip_mscz(&score)) {
+            (Ok(result), Ok(archive))
+                if result.core == 0
+                    && result.full == 0
+                    && archive.core == 0
+                    && archive.full == 0 =>
+            {
                 identical.insert(name.clone());
-                rows.push(format!("{name} : identique"));
+                rows.push(format!("{name} : identique (.mscx et .mscz)"));
             }
-            Ok(result) => {
+            (Ok(result), Ok(archive)) => {
                 rows.push(format!(
-                    "{name} : {} lignes (noyau), {} lignes (complet)",
-                    result.core, result.full
+                    "{name} : {} lignes (noyau), {} lignes (complet),                      .mscz {} / {}",
+                    result.core, result.full, archive.core, archive.full
                 ));
                 diffs.push_str(&format!(
                     "\n=== {version}/{name} : {} noyau / {} complet ===\n{}\n",
                     result.core, result.full, result.diff
                 ));
+                if archive.core != 0 || archive.full != 0 {
+                    diffs.push_str(&format!(
+                        "\n=== {version}/{name} (.mscz) : {} noyau / {} complet ===\n{}\n",
+                        archive.core, archive.full, archive.diff
+                    ));
+                }
             }
-            Err(error) => {
+            (Err(error), _) | (_, Err(error)) => {
                 rows.push(format!("{name} : ERREUR ({error})"));
             }
         }
@@ -548,5 +573,6 @@ fn aller_retour_v3() {
 fn archive_mscz_relue() {
     let input = fs::read(corpus_dir("v4").join("dynamics.mscx")).expect("corpus");
     let score = read(&input).expect("lecture");
-    roundtrip_mscz(&score).expect("archive .mscz relue à l'identique");
+    let result = roundtrip_mscz(&score).expect("archive .mscz relue");
+    assert_eq!((result.core, result.full), (0, 0), "{}", result.diff);
 }

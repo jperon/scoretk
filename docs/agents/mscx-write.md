@@ -53,17 +53,20 @@ et compare le MusicXML obtenu à l'export **direct** du modèle d'origine, avec 
 normalisation exacte de `crates/mscz2xml/tests/e2e_corpus.rs`, aux deux niveaux
 (noyau musical et parité complète). Résultat au 2026-11-17 :
 
-| Corpus | Aller-retour identique (noyau et complet) |
-| --- | --- |
-| `tests/corpus/v4` | **26/26** |
-| `tests/corpus/v3` (lu en 3.x, écrit en 4.x) | **30/30** |
+| Corpus | Aller-retour `.mscx` identique | Aller-retour `.mscz` identique |
+| --- | --- | --- |
+| `tests/corpus/v4` | **26/26** (noyau et complet) | **26/26** |
+| `tests/corpus/v3` (lu en 3.x, écrit en 4.x) | **30/30** | **30/30** |
+
+Les deux conteneurs sont mesurés pour chaque fichier.
 
 Tous ces fichiers sont listés dans `EXPECTED_ROUNDTRIP_V4` et
 `EXPECTED_ROUNDTRIP_V3` : l'un d'eux qui cesse d'être identique fait échouer le
 test. La liste est donc non régressive, comme `EXPECTED_CONFORMANT` du test e2e.
 
-Un second test (`archive_mscz_relue`) vérifie le conteneur `.mscz` ; la CLI
-`scoretk` a ses propres tests (`.mscx` et `.mscz` écrits puis relus).
+Le test `archive_mscz_relue` vérifie en plus le conteneur `.mscz` sur un
+fichier ; la CLI `scoretk` a ses propres tests (`.mscx` et `.mscz` écrits puis
+relus).
 
 ## 4. Ce qui est conservé, et comment
 

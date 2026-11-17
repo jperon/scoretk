@@ -26,8 +26,7 @@
 //! (`<TBox>`) sont des enfants de la première portée.
 
 use mscz2xml::model::{
-    Clef, Credit, CreditStyle, Part, Placement, RichText, ScoreMetadata, StaffBracket,
-    StyleSettings,
+    Clef, Credit, CreditStyle, Part, Placement, ScoreMetadata, StaffBracket, StyleSettings,
 };
 
 use crate::text::{markup, number};
@@ -345,11 +344,4 @@ fn write_page_count(xml: &mut XmlWriter, ctx: &WriteContext<'_>, page_count: u32
     for _ in credited_pages..page_count {
         write_page_break(xml);
     }
-}
-
-/// Texte brut d'un [`RichText`] (utilisé par les cadres qui n'ont pas de
-/// balisage).
-#[allow(dead_code)]
-fn plain(text: &RichText) -> &str {
-    text.plain()
 }

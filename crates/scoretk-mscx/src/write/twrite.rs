@@ -1090,9 +1090,3 @@ pub(crate) fn spanner_type_name(spanner: &mscz2xml::model::Spanner) -> Option<&'
         SpannerType::Other(_) => return None,
     })
 }
-
-/// Texte brut d'un [`RichText`], pour les appels qui n'écrivent pas de balisage.
-#[allow(dead_code)]
-pub(crate) fn plain_text(rich: &RichText) -> String {
-    rich.plain().to_owned()
-}
