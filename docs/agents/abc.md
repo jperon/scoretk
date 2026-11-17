@@ -160,6 +160,10 @@ ignorées, pour ne pas perdre un air entier.
 - **Façade et CLI** : `crates/scoretk/tests/abc.rs` et
   `crates/scoretk-cli/tests/abc.rs` vérifient lecture, écriture, stdin/stdout
   et `--list-formats`.
+- **Comparaison à `xml2abc.py`** (2026-11-17, `dynamics`) : mêmes hauteurs,
+  durées, voix et nuances ; les écarts sont la mise en page et les choix
+  propres aux scripts (`L:1/4` au lieu de `L:1/8`, `I:linebreak`, `nm`/`snm`),
+  sans effet sur le noyau musical.
 
 ## 7. Limites connues
 
@@ -225,14 +229,16 @@ hors dépôt (par exemple `/tmp/abcchk/`) pour les consulter.
    Les fichiers Rust correspondants sont `decorations.rs`, `pitch.rs`,
    `duration.rs`, `writer.rs`/`voice.rs` (écriture) et `reader/music.rs`,
    `reader/build.rs` (lecture).
-4. **Comparer les sorties.** Pour un échantillon du corpus :
+4. **Comparer les sorties.** Pour un échantillon du corpus (`xml2abc`
+   attend du MusicXML, `abc2xml` de l'ABC) :
    ```sh
-   python3 /tmp/abcchk/xml2abc_177/xml2abc.py tests/corpus/v4/dynamics.mscx -o /tmp >/dev/null 2>&1 || true
-   nix develop -c cargo run -q -p scoretk-cli -- tests/corpus/v4/dynamics.mscx -o /tmp/dynamics.abc
-   python3 /tmp/abcchk/abc2xml_269/abc2xml.py tests/corpus/abc/v4_dynamics.abc -o /tmp
+   nix develop -c cargo run -q -p scoretk-cli -- tests/corpus/v4/dynamics.mscx -o /tmp/dynamics.musicxml
+   python3 /tmp/abcchk/xml2abc_177/xml2abc.py /tmp/dynamics.musicxml -o /tmp/abc-ref
+   diff -u /tmp/abc-ref/dynamics.abc tests/corpus/abc/v4_dynamics.abc
+   python3 /tmp/abcchk/abc2xml_269/abc2xml.py tests/corpus/abc/v4_dynamics.abc -o /tmp/xml-ref
    ```
    Comparer les différences qui changent le **noyau musical**, pas la mise en
-   page.
+   page (`L:`, espacement, `I:linebreak`, `nm`/`snm` sont propres aux scripts).
 5. **Régénérer et revalider.**
    ```sh
    UPDATE_ABC_SNAPSHOTS=1 nix develop -c cargo test -p scoretk-abc --test corpus_abc
