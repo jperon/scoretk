@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/mscz2xml", "crates/mscz2xml-cli", "crates/mscz2xml-wasm"]
+members = [
+    "crates/mscz2xml",
+    "crates/mscz2xml-cli",
+    "crates/mscz2xml-wasm",
+    "crates/scoretk",
+    "crates/scoretk-cli",
+]
 
 [workspace.package]
 version = "0.1.0"

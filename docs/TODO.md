@@ -18,6 +18,14 @@ Toutes les combinaisons doivent fonctionner : mscz ↔ musicxml, musicxml ↔ ly
 musicxml ↔ abc, musicxml ↔ midi, et donc aussi toutes les paires entre mscz,
 ly, abc et midi.
 
+### État de la phase 1 (un crate par convertisseur)
+
+| Crate | Rôle | État |
+| --- | --- | --- |
+| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : `.mscz`/`.mscx` → MusicXML/`.mxl` ; features `musicxml-import` et `midi` prêtes pour t34/t35 |
+| `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | en cours (t34) |
+| `scoretk-midi` | écrivain MIDI depuis le modèle pivot | en cours (t35) |
+
 MIDI est à part : c'est un format de performance, pas de notation. L'écriture
 MIDI demande de dérouler les reprises et sauts (comme `RepeatList` de
 MuseScore), d'appliquer nuances, articulations et tempo. La lecture MIDI
