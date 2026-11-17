@@ -331,14 +331,20 @@ fn preserve_legato(
 }
 
 /// Quantifie tous les accords d'une piste (`Quantize::quantizeChords`).
+///
+/// Deux passes, comme le C++ : les attaques sont d'abord toutes quantifiées
+/// (et fusionnées), puis les fins de notes sont quantifiées en tenant compte
+/// des attaques déjà quantifiées (`preserveLegato` lit `quantizedChords`).
 pub fn quantize_chords(track: &mut MTrack, basic_quant: Fraction) {
     if track.chords.is_empty() {
         return;
     }
     let keys = track.chords.keys();
-    let mut quantized = ChordMap::new();
+    let mut entries: Vec<(crate::import::chord::ChordKey, Fraction, super::chord::MidiChord)> =
+        Vec::with_capacity(keys.len());
 
-    for (position, key) in keys.iter().enumerate() {
+    // Première passe : attaques.
+    for key in &keys {
         let Some(chord) = track.chords.get(*key) else {
             continue;
         };
@@ -357,29 +363,29 @@ pub fn quantize_chords(track: &mut MTrack, basic_quant: Fraction) {
         } else {
             find_quantized_chord_on_time(on_time, chord, basic_quant)
         };
+        entries.push((*key, q_on, chord.clone()));
+    }
 
-        // Prochain accord de la même voix, pour le legato.
-        let next = keys.iter().skip(position + 1).find_map(|next_key| {
-            track
-                .chords
-                .get(*next_key)
-                .filter(|next_chord| next_chord.voice == chord.voice)
-                .map(|next_chord| (next_key.0, next_chord.is_in_tuplet))
-        });
-
+    // Seconde passe : fins de notes, sur les attaques quantifiées.
+    let mut quantized = ChordMap::new();
+    for (position, (_, q_on, chord)) in entries.iter().enumerate() {
+        let q_on = *q_on;
         let mut new_chord = chord.clone();
+        // Prochain accord de la même voix, au sens de `quantizedChords`.
+        let next = entries
+            .iter()
+            .skip(position + 1)
+            .find(|(_, _, other)| other.voice == chord.voice)
+            .map(|(_, next_q_on, next_chord)| (*next_q_on, next_chord.is_in_tuplet));
         for note in &mut new_chord.notes {
-            note.orig_on_time = q_on;
             let (mut q_off, quant) = if note.is_in_tuplet {
-                match note.tuplet.and_then(|tuplet_key| track.tuplets.get(&tuplet_key)) {
+                match note
+                    .tuplet
+                    .and_then(|tuplet_key| track.tuplets.get(&tuplet_key))
+                {
                     Some(tuplet) => {
                         let ratio = tuplet_limits(tuplet.tuplet_number).ratio;
-                        find_quantized_tuplet_note_off_time(
-                            q_on,
-                            note.off_time,
-                            tuplet,
-                            ratio,
-                        )
+                        find_quantized_tuplet_note_off_time(q_on, note.off_time, tuplet, ratio)
                     }
                     None => find_quantized_note_off_time(q_on, note.off_time, basic_quant),
                 }
@@ -387,17 +393,12 @@ pub fn quantize_chords(track: &mut MTrack, basic_quant: Fraction) {
                 find_quantized_note_off_time(q_on, note.off_time, basic_quant)
             };
             if !note.is_in_tuplet {
-                preserve_legato(
-                    &mut q_off,
-                    q_on,
-                    new_chord.voice,
-                    next,
-                    basic_quant,
-                );
+                preserve_legato(&mut q_off, q_on, new_chord.voice, next, basic_quant);
             }
             if q_off - q_on < min_allowed_duration() {
                 q_off = q_on + min_allowed_duration();
             }
+            note.orig_on_time = q_on;
             note.off_time = q_off;
             note.off_time_quant = Some(quant);
         }

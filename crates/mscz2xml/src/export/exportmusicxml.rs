@@ -1531,7 +1531,15 @@ impl Context<'_> {
             let first = index == 0;
 
             out.attr(false);
-            out.xml.start_element("note", &[]);
+            // Vélocité utilisateur (import MIDI) : MuseScore l'écrit en
+            // `dynamics`, avec son échelle 90 = 100 %.
+            let dynamics = note
+                .velocity
+                .map(|velocity| format_dynamics(f64::from(velocity) * 100.0 / 90.0));
+            match &dynamics {
+                Some(value) => out.xml.start_element("note", &[("dynamics", value)]),
+                None => out.xml.start_element("note", &[]),
+            }
 
             if grace {
                 // MuseScore affiche la barre oblique pour une acciaccatura,
@@ -2846,6 +2854,14 @@ fn plain_text(text: &str) -> String {
 }
 
 /// Nombre formaté comme MuseScore : entier si possible, sinon arrondi.
+/// Écrit une dynamique de note comme MuseScore : deux décimales, zéros de
+/// queue retirés (`dynamics=\"80\"`, `dynamics=\"54.44\"`).
+fn format_dynamics(value: f64) -> String {
+    let text = format!("{value:.2}");
+    let trimmed = text.trim_end_matches('0').trim_end_matches('.');
+    trimmed.to_owned()
+}
+
 pub(crate) fn format_number(value: f64, decimals: usize) -> String {
     let factor = 10_f64.powi(decimals as i32);
     let rounded = (value * factor).round() / factor;

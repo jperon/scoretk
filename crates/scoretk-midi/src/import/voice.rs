@@ -33,6 +33,39 @@ use mscz2xml::model::{Fraction, VOICES};
 use super::chord::MTrack;
 use super::timesigmap::TimeSigMap;
 
+/// Répartit les accords bruts en voix par chevauchement.
+///
+/// Équivalent de la répartition que `MidiTuplet::assignVoices` fait pendant la
+/// détection des n-olets : la première voix libre (fin de note antérieure à
+/// l'attaque) reçoit l'accord, sinon celle qui se libère le plus tôt. Sans
+/// cette étape, toutes les couches rythmiques partageraient la voix 0 et la
+/// détection des n-olets serait impossible.
+pub fn assign_initial_voices(track: &mut MTrack, limit: usize) {
+    if track.drum_track || track.chords.is_empty() {
+        return;
+    }
+    let limit = limit.max(1).min(VOICES);
+    let keys = track.chords.keys();
+    let mut voice_ends: Vec<Option<Fraction>> = vec![None; limit];
+    for key in keys {
+        let Some(chord) = track.chords.get(key) else {
+            continue;
+        };
+        let on_time = key.0;
+        let chord_end = MTrack::max_off_time(chord);
+        let free = (0..limit).find(|voice| voice_ends[*voice].map_or(true, |end| end <= on_time));
+        let voice = free.unwrap_or_else(|| {
+            (0..limit)
+                .min_by_key(|index| voice_ends[*index].unwrap_or(Fraction::ZERO))
+                .unwrap_or(0)
+        });
+        voice_ends[voice] = Some(voice_ends[voice].map_or(chord_end, |end| end.max(chord_end)));
+        if let Some(chord) = track.chords.get_mut(key) {
+            chord.voice = voice;
+        }
+    }
+}
+
 /// Sépare les accords en voix (`MidiVoice::separateVoices`).
 ///
 /// Renvoie vrai si au moins une voix a changé, ce qui déclenche la seconde

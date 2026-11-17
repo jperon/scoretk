@@ -289,6 +289,12 @@ pub struct Note {
     pub ghost: bool,
     /// Vrai si la note est jouée.
     pub play: bool,
+    /// Vélocité utilisateur (`Note::userVelocity` de MuseScore), 1-127.
+    ///
+    /// Renseignée par l'import MIDI ; l'export MusicXML en tire l'attribut
+    /// `dynamics` de la note (`velo * 100 / 90`, échelle de MuseScore).
+    /// `None` quand la note suit les nuances de la partition.
+    pub velocity: Option<u8>,
     /// Doigtés attachés à la note (`<Fingering>`), exportés en
     /// `<technical><fingering>`.
     pub fingerings: Vec<Fingering>,
@@ -313,6 +319,7 @@ impl Note {
             parentheses: false,
             ghost: false,
             play: true,
+            velocity: None,
             fingerings: Vec::new(),
         }
     }

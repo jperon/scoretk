@@ -75,13 +75,13 @@ fn list_formats() {
     assert!(text.contains("LECTURE"));
     assert!(text.contains("ÉCRITURE"));
 
-    // État réel des features activées par la CLI : MusicXML se lit et MIDI
-    // s'écrit ; `.mxl`, LilyPond, ABC et MIDI restent sans lecteur.
+    // État réel des features activées par la CLI : MusicXML et MIDI se
+    // lisent, MIDI s'écrit ; `.mxl`, LilyPond et ABC restent sans lecteur.
     let oui = ("oui".to_owned(), "oui".to_owned());
     let non = "non".to_owned();
     assert_eq!(sens_format(&text, "mscz"), oui, "{text}");
     assert_eq!(sens_format(&text, "musicxml"), oui, "{text}");
-    assert_eq!(sens_format(&text, "midi"), (non.clone(), "oui".to_owned()));
+    assert_eq!(sens_format(&text, "midi"), oui, "{text}");
     assert_eq!(sens_format(&text, "mxl"), (non.clone(), "oui".to_owned()));
     assert_eq!(sens_format(&text, "ly"), (non.clone(), "oui".to_owned()));
     assert_eq!(sens_format(&text, "abc"), (non.clone(), non), "{text}");

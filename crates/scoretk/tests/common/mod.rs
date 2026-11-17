@@ -20,7 +20,7 @@
 #![allow(dead_code)]
 
 use std::io::{Cursor, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
@@ -77,4 +77,15 @@ pub fn mxl_from_musicxml(xml: &[u8]) -> Vec<u8> {
         .expect("entrée score.xml");
     writer.write_all(xml).expect("contenu MusicXML");
     writer.finish().expect("archive .mxl").into_inner()
+}
+
+/// Référence MIDI du corpus (`tests/corpus/midi/<version>/<nom>`).
+pub fn corpus_midi(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("corpus")
+        .join("midi")
+        .join(name)
 }

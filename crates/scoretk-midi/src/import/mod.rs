@@ -59,6 +59,7 @@ pub mod meter;
 pub mod midifile;
 pub mod operations;
 pub mod quant;
+pub mod simplify;
 pub mod tempo;
 pub mod timesigmap;
 pub mod tuplet;
@@ -140,13 +141,11 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     for track in &mut tracks {
         merge_chords_with_equal_on_time_and_voice(track);
     }
-    // `Simplify::simplifyDurationsNotDrums` ne change pas les durées déjà
-    // quantifiées hors percussion : la simplification des silences est faite à
-    // la création des notes (`fill_gap_with_rests`).
+    simplify::simplify_durations_not_drums(&mut tracks, &sigmap, options.use_dots);
     if voice::separate_voices(&mut tracks, &sigmap, max_voice_count) {
-        // `Simplify::simplifyDurationsNotDrums` une seconde fois : sans effet
-        // ici, la simplification étant structurelle.
+        simplify::simplify_durations_not_drums(&mut tracks, &sigmap, options.use_dots);
     }
+    simplify::simplify_durations_for_drums(&mut tracks, &sigmap, options.use_dots);
     drum::split_unequal_drum_chords(&mut tracks);
     for track in &mut tracks {
         split_unequal_chords(track);
@@ -326,6 +325,7 @@ fn quantize_all_tracks(
             continue;
         }
         chord::set_bar_indexes(track, basic_quant, last_tick, sigmap);
+        voice::assign_initial_voices(track, options.max_voice_count.limit());
         if track.drum_track {
             drum::find_all_tuplets_for_drums(track, sigmap, basic_quant);
         } else if options.search_tuplets {
@@ -814,6 +814,7 @@ fn add_note(
     let key = chord_key_at(score, tick);
     let tpc = pitch_to_tpc(midi_note.pitch, key);
     let mut note = Note::new(midi_note.pitch.clamp(0, 127) as u8, tpc);
+    note.velocity = u8::try_from(midi_note.velocity.clamp(0, 127)).ok();
     note.tie_back = midi_note.tie.map(mscz2xml::model::NoteId::from_index);
     let note_id = score.add_note(note);
     if let Some(previous) = midi_note.tie {
@@ -996,7 +997,14 @@ fn duration_list(
 /// Crée les indications de mesure (`createTimeSignatures`).
 fn create_time_signatures(score: &mut Score, sigmap: &TimeSigMap) {
     let events: Vec<(i64, Timesig)> = sigmap.iter().map(|(tick, event)| (tick, event.timesig)).collect();
+    let mut previous: Option<Timesig> = None;
     for (tick, timesig) in events {
+        // MuseScore n'écrit pas un changement d'indication de mesure identique
+        // au précédent ; le fichier MIDI peut en contenir plusieurs.
+        if previous == Some(timesig) {
+            continue;
+        }
+        previous = Some(timesig);
         let tick = fraction_from_ticks(tick);
         let Some(measure_index) = measure_index_for_tick(score, tick) else {
             continue;

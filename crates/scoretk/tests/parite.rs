@@ -113,7 +113,10 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
     let mscx = std::fs::read(common::corpus_v4("dynamics.mscx")).expect("corpus");
     let score = read(&mscx, Format::Mscx).expect("lecture .mscx");
 
-    for format in [Format::Ly, Format::Abc, Format::Midi] {
+    let mut sans_lecteur = vec![Format::Ly, Format::Abc];
+    #[cfg(not(feature = "midi"))]
+    sans_lecteur.push(Format::Midi);
+    for format in sans_lecteur {
         match read(b"x", format) {
             Err(Error::FormatNonPrisEnCharge {
                 format: actual,
@@ -189,6 +192,31 @@ fn ecriture_midi_branchable_par_feature() {
         other => panic!("écriture MIDI sans feature : {other:?}"),
     }
     assert!(!Format::Midi.supports_write());
+}
+
+#[cfg(feature = "midi")]
+#[test]
+fn lecture_midi_vers_musicxml() {
+    let bytes =
+        std::fs::read(common::corpus_midi("v4/dynamics.ref.mid")).expect("référence MIDI");
+    let score = read(&bytes, Format::Midi).expect("lecture MIDI");
+    assert!(!score.notes.is_empty());
+    let musicxml = write(&score, Format::MusicXml, &options()).expect("export");
+    let text = String::from_utf8(musicxml).expect("UTF-8");
+    assert!(text.contains("<score-partwise"), "{text}");
+}
+
+#[cfg(not(feature = "midi"))]
+#[test]
+fn lecture_midi_branchable_par_feature() {
+    match read(b"MThd", Format::Midi) {
+        Err(Error::FormatNonPrisEnCharge { format, sens }) => {
+            assert_eq!(format, Format::Midi);
+            assert_eq!(sens, Sens::Lecture);
+        }
+        other => panic!("lecture MIDI sans feature : {other:?}"),
+    }
+    assert!(!Format::Midi.supports_read());
 }
 
 #[cfg(feature = "lilypond")]
