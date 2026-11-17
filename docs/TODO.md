@@ -47,6 +47,9 @@ Pistes :
     (`src/importexport/musicxml/internal/import`).
   - MusicXML → ly : `musicxml2ly` (LilyPond).
   - ly → MusicXML : `python-ly`.
+  - MusicXML ↔ abc : `xml2abc` et `abc2xml` (W. Vree).
+  - MIDI : l'export MIDI de MuseScore (`src/importexport/midi`, `engraving/compat/midi`), son import MIDI (quantification), et la crate Rust `midly` (pure Rust, `no_std`) pour le format de fichier.
+  - Vérifier les licences de chacune avant tout portage.
 - **LilyPond.** L'écrivain vient avant le lecteur : ses sorties servent de
   corpus d'aller-retour au lecteur.
   - Écrivain : les voix sont notées en mode **`\fixed`**, jamais `\relative`,
@@ -57,9 +60,6 @@ Pistes :
     `\repeat`, `\key`, `\time`, `\clef`, `\partial`, `\language`, paroles et
     `\markup` simple. Le Scheme arbitraire est ignoré avec un avertissement,
     sur le modèle de python-ly (`ly.music`).
-  - MusicXML ↔ abc : `xml2abc` et `abc2xml` (W. Vree).
-  - MIDI : l'export MIDI de MuseScore (`src/importexport/midi`, `engraving/compat/midi`), son import MIDI (quantification), et la crate Rust `midly` (pure Rust, `no_std`) pour le format de fichier.
-  - Vérifier les licences de chacune avant tout portage.
 - **Contraintes inchangées.** La bibliothèque reste portable : wasm pour la PWA
   `../cantus`, Android, sans fs ni threads, et sans dépendance C.
 - **Calendrier.** À entreprendre une fois la parité mscz → MusicXML atteinte.
