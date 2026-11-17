@@ -45,7 +45,7 @@ features comprises) et `FromStr` (`mscz`, `mscx`, `musicxml`/`xml`, `mxl`,
 Ordre de `Format::detect` :
 
 1. signature ZIP (`.mscz` s'il contient un `.mscx`, sinon `.mxl` s'il contient
-   un `.xml`/`.musicxml`) ;
+   `META-INF/container.xml` ou un `.xml`/`.musicxml`) ;
 2. `MThd` → MIDI ;
 3. `<museScore` → `.mscx` ;
 4. `<score-partwise`/`<score-timewise`, ou `<?xml` seul → MusicXML ;
@@ -64,7 +64,7 @@ et c'est cet état que montre son `--list-formats`.
 | --- | --- | --- |
 | `.mscz` / `.mscx` | oui (`mscz2xml`) | oui (feature `mscx`, `scoretk-mscx`) |
 | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` (t34) | oui |
-| MusicXML `.mxl` | non | oui |
+| MusicXML `.mxl` | feature `musicxml-import` (t43) | oui |
 | LilyPond `.ly` | oui (feature `lilypond-import`, t40) | oui (feature `lilypond`, `scoretk-lilypond`) |
 | ABC `.abc` | oui (feature `abc`, `scoretk-abc`, t41) | oui (feature `abc`, `scoretk-abc`, t41) |
 | MIDI `.mid` | oui (feature `midi`, `scoretk-midi`, t42) | oui (feature `midi`, `scoretk-midi`) |
@@ -91,8 +91,16 @@ existent déjà, désactivées par défaut ; les variantes d'erreur
    `Error::MusicXmlImport` (l'erreur de la crate doit implémenter `Display`).
 
 **Branché** : la CLI active la feature ; `scoretk entrée.musicxml -o sortie.mscx`
-(ou `.ly`, `.mid`) fonctionne. Le `.mxl` en entrée reste refusé : seule
-l'écriture compressée est branchée.
+(ou `.ly`, `.mid`) fonctionne, et le `.mxl` en entrée aussi depuis t43.
+
+### t43 — lecture MusicXML compressé (`.mxl`)
+
+**Branché** : `hooks::read_mxl` appelle `scoretk_musicxml::read_mxl(bytes)` et
+convertit l'erreur en `Error::MusicXmlImport`. `Format::Mxl` répond oui à
+`supports_read` quand `musicxml-import` est active, et
+`scoretk read(bytes, Format::Mxl)` comme `scoretk entrée.mxl -o sortie.mscx`
+fonctionnent. L'extraction du conteneur, le repli sans `container.xml` et les
+erreurs sont décrits dans `docs/agents/musicxml-import.md`.
 
 ### t38 — écriture MuseScore (`crates/scoretk-mscx`)
 
@@ -157,6 +165,7 @@ scoretk entrée.mscx --to mxl -o -           # sortie standard
 scoretk entrée.mscx -o copie.mscx           # réécriture MuseScore 4.70
 scoretk entrée.mscx -o copie.mscz           # conteneur MuseScore
 scoretk entrée.musicxml -o sortie.mscx      # lecture MusicXML (feature)
+scoretk entrée.mxl -o sortie.mscx           # MusicXML compressé → MuseScore
 scoretk entrée.musicxml -o sortie.ly        # MusicXML → LilyPond
 scoretk entrée.musicxml -o sortie.mid       # MusicXML → MIDI
 scoretk entrée.mscx -o sortie.mid           # MuseScore → MIDI
@@ -194,6 +203,10 @@ scoretk --version                           # version + licence (GPL-3.0-only)
   octet** à `mscz2xml::convert` sur le corpus (`dynamics`, `hairpin_simple`,
   `hairpins_and_repeats`), `.mxl` (container + `score.xml`), lecture MIDI vers
   MusicXML avec la feature, erreurs explicites des formats non branchés.
+- `crates/scoretk/tests/mxl.rs` (feature `musicxml-import`) : `.mxl` lu comme
+  le `.musicxml` équivalent, repli sans `container.xml`, ZIP invalide.
+- `crates/scoretk-cli/tests/mxl.rs` : `.mxl` → `.mscx` et `--list-formats`
+  avec la lecture `.mxl` active.
 - `crates/scoretk/tests/abc.rs` (feature `abc`) : lecture ABC, écriture,
   relecture et nombre de notes stable ; `crates/scoretk-cli/tests/abc.rs` :
   `.mscx` → `.abc`, `.abc` → MusicXML, stdin/stdout, `--list-formats`.
@@ -220,8 +233,9 @@ scoretk --version                           # version + licence (GPL-3.0-only)
 
 - `MsczContainer::from_bytes` accepte un `.mscx` nu : `read(..., Format::Mscx)`
   et `read(..., Format::Mscz)` suivent donc le même chemin.
-- `detect` classe tout ZIP sans `.mscx` mais avec un `.xml` comme `.mxl` ; un
-  ZIP quelconque sans XML ni `.mscx` n'est pas reconnu.
+- `detect` classe tout ZIP sans `.mscx` mais avec `META-INF/container.xml` (ou
+  un `.xml`/`.musicxml`) comme `.mxl` ; un ZIP quelconque sans XML, sans
+  conteneur ni `.mscx` n'est pas reconnu.
 - Un XML inconnu est supposé MusicXML (`<?xml` seul) : c'est le seul format XML
   de scoretk aujourd'hui ; `--from` reste prioritaire.
 - Aucun écart mesuré avec `mscz2xml` : la façade appelle ses fonctions, la

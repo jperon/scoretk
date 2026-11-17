@@ -85,6 +85,15 @@ fn contenu_zip_mscz_et_mxl() {
 
     let mxl = common::mxl_from_musicxml(br#"<score-partwise version="4.0"/>"#);
     assert_eq!(Format::detect(&mxl), Some(Format::Mxl));
+
+    // `META-INF/container.xml` seul suffit à reconnaître un `.mxl` : c'est la
+    // marque de la spécification MusicXML compressé. Un `.mscz` en contient un
+    // aussi, mais le `.mscx` qu'il référence le classe en premier.
+    let container_seul = common::zip_from_entries(&[(
+        "META-INF/container.xml",
+        br#"<container><rootfiles/></container>"#,
+    )]);
+    assert_eq!(Format::detect(&container_seul), Some(Format::Mxl));
 }
 
 #[test]
