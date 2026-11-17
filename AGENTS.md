@@ -20,7 +20,8 @@ Carte des crates et modules :
   sans logique de conversion.
 - `crates/scoretk-musicxml` — lecteur MusicXML (`read_musicxml`) vers le
   modèle : `.musicxml`/`.xml`/`.mxl` → `Score`.
-- `crates/scoretk-midi` — écriture MIDI (SMF format 1) et déroulement des
+- `crates/scoretk-midi` — lecture MIDI (`read_midi`, portage de l'import de
+  MuseScore, `import/`) et écriture (SMF format 1) avec déroulement des
   reprises (`repeat_list.rs`), sans I/O.
 - `crates/scoretk-lilypond` — écriture LilyPond (`.ly`) depuis le modèle (t36,
   voix en `\fixed c'`) et lecture d'un sous-ensemble de LilyPond par portage
@@ -142,8 +143,9 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
   à lire pour mesurer, pas pour décider seul d'un correctif.
 - `docs/agents/wasm.md` — construction, API et usage du paquet wasm (ESM,
   worker cantus) : à lire avant de toucher au crate wasm.
-- `docs/agents/midi.md` — écriture MIDI, `RepeatList`, pauses et vélocités,
-  références et écarts : à lire avant de toucher au crate `scoretk-midi`.
+- `docs/agents/midi.md` — lecture et écriture MIDI, `RepeatList`, pauses,
+  vélocités, références et écarts : à lire avant de toucher au crate
+  `scoretk-midi`.
 - `docs/agents/scoretk.md` — façade multi-formats : API, détection, points de
   branchement t34/t35/t36/t38, CLI et tests : à lire avant de toucher à `scoretk`.
 - `docs/agents/licence.md` — obligations GPL-3.0-only d'un consommateur :

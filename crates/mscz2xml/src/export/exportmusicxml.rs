@@ -1531,7 +1531,16 @@ impl Context<'_> {
             let first = index == 0;
 
             out.attr(false);
-            out.xml.start_element("note", &[]);
+            // Vélocité utilisateur (import MIDI) : MuseScore l'écrit en
+            // `dynamics`, avec son échelle 90 = 100 % et rien pour zéro.
+            let dynamics = note
+                .velocity
+                .filter(|velocity| *velocity != 0)
+                .map(|velocity| format_dynamics(f64::from(velocity) * 100.0 / 90.0));
+            match &dynamics {
+                Some(value) => out.xml.start_element("note", &[("dynamics", value)]),
+                None => out.xml.start_element("note", &[]),
+            }
 
             if grace {
                 // MuseScore affiche la barre oblique pour une acciaccatura,
@@ -2854,6 +2863,17 @@ pub(crate) fn format_number(value: f64, decimals: usize) -> String {
     } else {
         format!("{rounded}")
     }
+}
+
+/// Dynamique d'une note, comme `ExportMusicXml::chord`
+/// (`importexport/musicxml/internal/export/exportmusicxml.cpp`) : l'attribut
+/// `dynamics` vaut `velo * 100.0 / 90.0`, écrit avec deux décimales puis sans
+/// zéros de queue (`dynamics="80"`, `dynamics="54.44"`). MuseScore n'écrit
+/// rien quand la vélocité utilisateur vaut zéro.
+fn format_dynamics(value: f64) -> String {
+    let text = format!("{value:.2}");
+    let trimmed = text.trim_end_matches('0').trim_end_matches('.');
+    trimmed.to_owned()
 }
 
 /// Cherche un segment d'un type et d'un tick donnés.

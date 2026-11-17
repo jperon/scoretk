@@ -75,14 +75,14 @@ fn list_formats() {
     assert!(text.contains("LECTURE"));
     assert!(text.contains("ÉCRITURE"));
 
-    // État réel des features activées par la CLI : MusicXML, LilyPond et ABC
-    // se lisent, MIDI, LilyPond et ABC s'écrivent ; `.mxl` et MIDI restent
-    // sans lecteur.
+    // État réel des features activées par la CLI : MusicXML, LilyPond, ABC
+    // et MIDI se lisent ; MIDI, LilyPond et ABC s'écrivent ; seul `.mxl`
+    // reste sans lecteur.
     let oui = ("oui".to_owned(), "oui".to_owned());
     let non = "non".to_owned();
     assert_eq!(sens_format(&text, "mscz"), oui, "{text}");
     assert_eq!(sens_format(&text, "musicxml"), oui, "{text}");
-    assert_eq!(sens_format(&text, "midi"), (non.clone(), "oui".to_owned()));
+    assert_eq!(sens_format(&text, "midi"), oui, "{text}");
     assert_eq!(sens_format(&text, "mxl"), (non.clone(), "oui".to_owned()));
     assert_eq!(sens_format(&text, "ly"), oui, "{text}");
     assert_eq!(sens_format(&text, "abc"), oui, "{text}");
@@ -441,6 +441,29 @@ fn mscx_vers_midi() {
 
     let bytes = std::fs::read(&written).expect("sortie MIDI");
     assert_eq!(bytes.get(..4), Some(b"MThd".as_slice()));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn midi_vers_musicxml() {
+    let dir = temp_dir();
+    let written = dir.join("depuis-midi.musicxml");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/corpus/midi/v4/dynamics.ref.mid");
+    let output = binary()
+        .arg(&source)
+        .arg("-o")
+        .arg(&written)
+        .output()
+        .expect("exécution");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = std::fs::read_to_string(&written).expect("sortie MusicXML");
+    assert!(text.contains("<score-partwise"), "{text}");
+    assert!(text.contains("<step>D</step>"), "{text}");
     let _ = std::fs::remove_dir_all(dir);
 }
 

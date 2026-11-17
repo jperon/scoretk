@@ -114,3 +114,13 @@ Export test run on 2026-11-16 with MuseScore 4.7.4 : les 56 fichiers
 ci-dessus (dont les 24 ajouts) ont tous été exportés correctement
 (`scripts/gen-references.sh`, code de sortie 0). Aucun fichier n'a dû être
 retiré.
+
+## MIDI references
+
+Les fichiers `midi/{v3,v4}/<nom>.ref.mid` sont produits par
+`scripts/gen-midi-references.sh` (MuseScore **4.7.4**, headless) à partir des
+`.mscx` ci-dessus. Les fichiers `midi/import/{v3,v4}/<nom>.ref.musicxml` sont
+produits par `scripts/gen-midi-import-references.sh` : MuseScore importe chaque
+`.ref.mid` avec ses options par défaut et exporte le résultat en MusicXML. Ce
+sont des sorties du programme MuseScore, couvertes par la même licence
+(GPL-3.0, Copyright (C) MuseScore Limited and others).

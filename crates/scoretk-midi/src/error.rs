@@ -39,6 +39,9 @@ pub enum Error {
     /// L'encodage du fichier a échoué.
     #[error("écriture du fichier MIDI impossible : {0}")]
     Write(&'static str),
+    /// Le fichier MIDI est illisible (octets SMF invalides).
+    #[error("fichier MIDI invalide : {0}")]
+    MidiParse(String),
 }
 
 /// Résultat de l'écriture MIDI.

@@ -42,7 +42,7 @@
 //! | MusicXML `.mxl` | non | oui |
 //! | LilyPond `.ly` | feature `lilypond-import` | feature `lilypond` |
 //! | ABC `.abc` | feature `abc` | feature `abc` |
-//! | MIDI | non | feature `midi` |
+//! | MIDI | feature `midi` | feature `midi` |
 //!
 //! Un format sans convertisseur dans le sens demandé renvoie
 //! [`Error::FormatNonPrisEnCharge`] : la façade ne produit jamais de sortie
@@ -111,7 +111,8 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
         Format::MusicXml => hooks::read_musicxml(bytes),
         Format::Ly => hooks::read_lilypond(bytes),
         Format::Abc => hooks::read_abc(bytes),
-        Format::Mxl | Format::Midi => Err(Error::FormatNonPrisEnCharge {
+        Format::Midi => hooks::read_midi(bytes),
+        Format::Mxl => Err(Error::FormatNonPrisEnCharge {
             format,
             sens: Sens::Lecture,
         }),

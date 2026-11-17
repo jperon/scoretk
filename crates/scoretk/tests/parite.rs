@@ -23,6 +23,7 @@ mod common;
 use std::io::Read;
 
 use mscz2xml::{ConvertOptions, ExportOptions, OutputFormat};
+#[allow(unused_imports)]
 use scoretk::{read, write, Error, Format, Options, Sens};
 
 const ENCODING_DATE: &str = "2026-11-17";
@@ -113,7 +114,11 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
     let mscx = std::fs::read(common::corpus_v4("dynamics.mscx")).expect("corpus");
     let score = read(&mscx, Format::Mscx).expect("lecture .mscx");
 
-    // MIDI n'a pas encore de lecteur.
+    // MIDI n'est lu qu'avec la feature `midi` ; sans elle, la façade renvoie
+    // l'erreur explicite. La CLI active la feature, et la résolution de
+    // features du workspace l'active donc aussi quand toute la workspace est
+    // testée.
+    #[cfg(not(feature = "midi"))]
     match read(b"x", Format::Midi) {
         Err(Error::FormatNonPrisEnCharge {
             format: actual,
@@ -124,6 +129,8 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
         }
         other => panic!("lecture MIDI : {other:?}"),
     }
+    #[cfg(feature = "midi")]
+    assert!(Format::Midi.supports_read());
 
     // LilyPond n'est lu qu'avec la feature `lilypond-import` ; sans elle, la
     // façade renvoie l'erreur explicite. La CLI active la feature, et la
@@ -217,6 +224,30 @@ fn ecriture_midi_branchable_par_feature() {
         other => panic!("écriture MIDI sans feature : {other:?}"),
     }
     assert!(!Format::Midi.supports_write());
+}
+
+#[cfg(feature = "midi")]
+#[test]
+fn lecture_midi_vers_musicxml() {
+    let bytes = std::fs::read(common::corpus_midi("v4/dynamics.ref.mid")).expect("référence MIDI");
+    let score = read(&bytes, Format::Midi).expect("lecture MIDI");
+    assert!(!score.notes.is_empty());
+    let musicxml = write(&score, Format::MusicXml, &options()).expect("export");
+    let text = String::from_utf8(musicxml).expect("UTF-8");
+    assert!(text.contains("<score-partwise"), "{text}");
+}
+
+#[cfg(not(feature = "midi"))]
+#[test]
+fn lecture_midi_branchable_par_feature() {
+    match read(b"MThd", Format::Midi) {
+        Err(Error::FormatNonPrisEnCharge { format, sens }) => {
+            assert_eq!(format, Format::Midi);
+            assert_eq!(sens, Sens::Lecture);
+        }
+        other => panic!("lecture MIDI sans feature : {other:?}"),
+    }
+    assert!(!Format::Midi.supports_read());
 }
 
 #[cfg(feature = "lilypond")]

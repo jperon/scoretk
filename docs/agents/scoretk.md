@@ -66,8 +66,8 @@ et c'est cet état que montre son `--list-formats`.
 | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` (t34) | oui |
 | MusicXML `.mxl` | non | oui |
 | LilyPond `.ly` | oui (feature `lilypond-import`, t40) | oui (feature `lilypond`, `scoretk-lilypond`) |
-| ABC `.abc` | oui (feature `abc`, `scoretk-abc`) | oui (feature `abc`, `scoretk-abc`) |
-| MIDI | non | oui (feature `midi`, `scoretk-midi`) |
+| ABC `.abc` | oui (feature `abc`, `scoretk-abc`, t41) | oui (feature `abc`, `scoretk-abc`, t41) |
+| MIDI `.mid` | oui (feature `midi`, `scoretk-midi`, t42) | oui (feature `midi`, `scoretk-midi`) |
 
 Un format absent dans le sens demandé renvoie
 `Error::FormatNonPrisEnCharge { format, sens }`, jamais une sortie vide.
@@ -111,6 +111,15 @@ entrée.mscx -o sortie.mid` et `scoretk entrée.musicxml -o sortie.mid`
 fonctionnent. Pour un test de la bibliothèque seule, activer explicitement la
 feature (`cargo test -p scoretk --features midi`).
 
+### t42 — lecture MIDI (`crates/scoretk-midi`)
+
+**Branché** : la même feature `midi` porte la lecture ; `hooks::read_midi`
+appelle `scoretk_midi::read_midi(bytes)` et convertit l'erreur en
+`Error::MidiImport`. `Format::Midi.supports_read()` vaut vrai avec la feature,
+et `scoretk read(bytes, Format::Midi)` comme `scoretk entrée.mid -o
+sortie.musicxml` (ou `.mscx`, `.ly`) fonctionnent. L'import et ses limites sont
+décrits dans `docs/agents/midi.md` (§ « Lecture MIDI »).
+
 ### t40 — lecture LilyPond (`crates/scoretk-lilypond`)
 
 **Branché** : feature `lilypond-import = ["dep:scoretk-lilypond"]` (même crate
@@ -151,6 +160,7 @@ scoretk entrée.musicxml -o sortie.mscx      # lecture MusicXML (feature)
 scoretk entrée.musicxml -o sortie.ly        # MusicXML → LilyPond
 scoretk entrée.musicxml -o sortie.mid       # MusicXML → MIDI
 scoretk entrée.mscx -o sortie.mid           # MuseScore → MIDI
+scoretk entrée.mid -o sortie.musicxml       # MIDI → MusicXML (import)
 scoretk entrée.ly -o sortie.musicxml        # LilyPond (sous-ensemble) → MusicXML
 scoretk entrée.mscx -o sortie.abc           # MuseScore → ABC
 scoretk entrée.abc -o sortie.musicxml       # ABC → MusicXML
@@ -182,8 +192,8 @@ scoretk --version                           # version + licence (GPL-3.0-only)
   par contenu (XML, ZIP `.mscz`/`.mxl`, MIDI, LilyPond, ABC, inconnu).
 - `crates/scoretk/tests/parite.rs` : `.mscz` → MusicXML **identique octet pour
   octet** à `mscz2xml::convert` sur le corpus (`dynamics`, `hairpin_simple`,
-  `hairpins_and_repeats`), `.mxl` (container + `score.xml`), erreurs explicites
-  des formats non branchés.
+  `hairpins_and_repeats`), `.mxl` (container + `score.xml`), lecture MIDI vers
+  MusicXML avec la feature, erreurs explicites des formats non branchés.
 - `crates/scoretk/tests/abc.rs` (feature `abc`) : lecture ABC, écriture,
   relecture et nombre de notes stable ; `crates/scoretk-cli/tests/abc.rs` :
   `.mscx` → `.abc`, `.abc` → MusicXML, stdin/stdout, `--list-formats`.

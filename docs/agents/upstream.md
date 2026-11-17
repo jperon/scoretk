@@ -203,7 +203,9 @@ chemins Rust y sont relatifs à `crates/scoretk-mscx/src/`.
 | `text.rs` | `engraving/dom/textbase.cpp` (écriture du balisage) |
 | `container.rs` | `engraving/infrastructure/mscwriter.cpp` |
 
-### Écriture MIDI (`crates/scoretk-midi/src/`)
+### MIDI (`crates/scoretk-midi/src/`)
+
+Écriture (t35) :
 
 | Rust | C++ amont |
 | --- | --- |
@@ -213,6 +215,28 @@ chemins Rust y sont relatifs à `crates/scoretk-mscx/src/`.
 | `velocity.rs` | `engraving/compat/midi/velocitymap.cpp` |
 | `pause_map.rs` | `engraving/compat/midi/pausemap.cpp` |
 | `writer.rs` | écriture `MidiFile` (format SMF, `no_std`) |
+
+Lecture (t42, `import/`) :
+
+| Rust | C++ amont |
+| --- | --- |
+| `import/mod.rs` | `importexport/midi/internal/midiimport/importmidi.cpp` |
+| `import/midifile.rs` | `importexport/midi/internal/midishared/{midifile,midievent}.cpp` |
+| `import/timesigmap.rs` | `engraving/dom/sig.cpp` |
+| `import/chord.rs` | `importexport/midi/internal/midiimport/importmidi_chord.cpp` |
+| `import/quant.rs` | `importexport/midi/internal/midiimport/importmidi_quant.cpp` |
+| `import/meter.rs` | `importexport/midi/internal/midiimport/importmidi_meter.cpp`, `engraving/dom/durationtype.cpp` |
+| `import/simplify.rs` | `importexport/midi/internal/midiimport/importmidi_simplify.cpp` |
+| `import/tuplet.rs` | `importexport/midi/internal/midiimport/importmidi_tuplet*.cpp` |
+| `import/voice.rs` | `importexport/midi/internal/midiimport/importmidi_voice.cpp` |
+| `import/key.rs` | `importexport/midi/internal/midiimport/importmidi_key.cpp` |
+| `import/clef.rs` | `importexport/midi/internal/midiimport/importmidi_clef.cpp` |
+| `import/lrhand.rs` | `importexport/midi/internal/midiimport/importmidi_lrhand.cpp` |
+| `import/drum.rs` | `importexport/midi/internal/midiimport/importmidi_drum.cpp` |
+| `import/lyrics.rs` | `importexport/midi/internal/midiimport/importmidi_lyrics.cpp` |
+| `import/tempo.rs` | `importexport/midi/internal/midiimport/importmidi_tempo.cpp` |
+| `import/instrument.rs` | `importexport/midi/internal/midiimport/importmidi_instrument.cpp`, `midishared/generalmidi.cpp` |
+| `import/operations.rs` | `importexport/midi/internal/midiimport/importmidi_operations.h` |
 
 ### Écriture LilyPond (`crates/scoretk-lilypond/src/`)
 

@@ -3,8 +3,9 @@
 **scoretk** est une boîte à outils de conversion de partitions. Son premier
 convertisseur, **mscz2xml**, est un portage en Rust de l'export MusicXML et des
 lecteurs de partitions (`.mscx` / `.mscz`, formats 3.x et 4.x/5.x) de
-**MuseScore Studio**. Le crate `scoretk-midi` porte son export MIDI et le
-déroulement des reprises (`RepeatList`). Ce fichier récapitule l'origine du
+**MuseScore Studio**. Le crate `scoretk-midi` porte son export MIDI, son import
+MIDI (lecture d'un SMF vers le modèle) et le déroulement des reprises
+(`RepeatList`). Ce fichier récapitule l'origine du
 code et des données, les licences correspondantes et les marques.
 
 ## Licence du projet
@@ -45,7 +46,8 @@ Correspondance des grands ensembles :
 | `crates/scoretk-musicxml/src/` | `importexport/musicxml/internal/import/` (`importmusicxmlpass1.cpp`, `importmusicxmlpass2.cpp`, `importmusicxmlnoteduration.cpp`, `importmusicxmlnotepitch.cpp`, `musicxmlpart.cpp`, `musicxmltupletstate.cpp`, `musicxmlvoicedesc.cpp`) |
 | `crates/mscz2xml/src/read/mod.rs` | `engraving/rw/rwregister.cpp` |
 | `crates/mscz2xml/src/export/writer.rs` | forme d'écriture XML de `engraving/rw/xmlwriter.cpp` |
-| `crates/scoretk-midi/src/` | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/` (`compatmidirender*.cpp`, `velocitymap.cpp`, `pausemap.cpp`) et `engraving/dom/repeatlist.cpp` |
+| `crates/scoretk-midi/src/` (écriture) | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/` (`compatmidirender*.cpp`, `velocitymap.cpp`, `pausemap.cpp`) et `engraving/dom/repeatlist.cpp` |
+| `crates/scoretk-midi/src/import/` (lecture) | `importexport/midi/internal/midiimport/` (`importmidi.cpp`, `importmidi_chord.cpp`, `importmidi_quant.cpp`, `importmidi_simplify.cpp`, `importmidi_meter.cpp`, `importmidi_tuplet*.cpp`, `importmidi_voice.cpp`, `importmidi_key.cpp`, `importmidi_clef.cpp`, `importmidi_lrhand.cpp`, `importmidi_drum.cpp`, `importmidi_lyrics.cpp`, `importmidi_tempo.cpp`, `importmidi_instrument.cpp`, `importmidi_operations.h`), `importexport/midi/internal/midishared/{midifile,midievent,generalmidi}.cpp` et `engraving/dom/{sig,durationtype}.cpp` |
 | `crates/scoretk-lilypond/src/` | sémantique de `engraving/dom/` (accords, mesures, volatas, spanners) ; tables de notation de `musicxml2ly` (voir ci-dessous) |
 | `crates/scoretk-mscx/src/` | `engraving/rw/write/` (`writer.cpp`, `staffwrite.cpp`, `measurewrite.cpp`, `twrite.cpp`, `connectorinfowriter.cpp`), `engraving/rw/xmlwriter.cpp` et `engraving/infrastructure/mscwriter.cpp` |
 | `crates/scoretk-abc/src/` | sémantique du modèle `engraving/dom/` ; pas de source MuseScore pour ABC (MuseScore n'a ni import ni export ABC) ; comportement de `xml2abc.py`/`abc2xml.py` (voir ci-dessous) |
@@ -139,6 +141,10 @@ scripts de **Willem Vree** :
 - `tests/corpus/midi/**/*.ref.mid` : références MIDI produites localement par
   `scripts/gen-midi-references.sh` avec la même version de MuseScore. Même
   licence.
+- `tests/corpus/midi/import/**/*.ref.musicxml` : références d'import MIDI
+  produites localement par `scripts/gen-midi-import-references.sh` (MuseScore
+  4.7.4 importe chaque `.ref.mid` et exporte en MusicXML). Sorties du programme
+  MuseScore, même licence.
 - `tests/corpus/ly/**/*.ly` : instantanés de la sortie de `scoretk-lilypond`
   sur le corpus, produits par la crate elle-même (commande
   `UPDATE_LILYPOND_SNAPSHOTS=1 cargo test -p scoretk-lilypond`). Œuvre du
@@ -156,6 +162,13 @@ scripts de **Willem Vree** :
 GPL-3.0, Copyright (C) MuseScore Limited and others. La table est une donnée
 dérivée (identifiants MuseScore, noms, identifiants MusicXML, programmes MIDI),
 convertie en Rust en 2026.
+
+### Noms des programmes General MIDI
+
+`crates/scoretk-midi/src/import/instrument/gm_names.rs` est une table dérivée
+de `importexport/midi/internal/midishared/generalmidi.cpp` de MuseScore
+(`GM1_PROGRAM_DATA`, 128 entrées) par extraction automatique, convertie en Rust
+en 2026. Licence GPL-3.0, Copyright (C) MuseScore Limited and others.
 
 ## Marques
 
