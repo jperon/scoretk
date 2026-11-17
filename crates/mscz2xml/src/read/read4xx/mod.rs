@@ -148,6 +148,8 @@ struct TieRecord {
     is_start: bool,
     /// Position de l'autre extrémité, d'après `<location>`.
     other: TieLocation,
+    /// Vrai si la liaison est affichée (`<Tie><visible>`).
+    visible: bool,
 }
 
 /// État complet du lecteur pour un fichier.
@@ -1514,6 +1516,13 @@ impl Reader {
         // La note n'est ajoutée à l'arène qu'après ses enfants : son indice est
         // donc la taille actuelle de l'arène.
         let note_id = NoteId::from_index(self.score.notes.len());
+        // La visibilité appartient au `Tie` : elle n'est écrite que sur la
+        // moitié de départ.
+        let visible = element
+            .child("Tie")
+            .and_then(|tie| tie.child("visible"))
+            .and_then(Element::int)
+            .is_none_or(|value| value != 0);
         for child in &element.children {
             let is_start = match child.name.as_str() {
                 "next" => true,
@@ -1536,6 +1545,7 @@ impl Reader {
                 pitch: note.pitch,
                 is_start,
                 other,
+                visible,
             });
         }
     }
@@ -1569,8 +1579,13 @@ impl Reader {
                 used[index] = true;
                 used[partner] = true;
                 let end = self.ties[partner].clone();
-                self.score.notes[start.note.index()].tie_forward = Some(end.note);
-                self.score.notes[end.note.index()].tie_back = Some(start.note);
+                let visible = start.visible;
+                let start_note = &mut self.score.notes[start.note.index()];
+                start_note.tie_forward = Some(end.note);
+                start_note.tie_forward_visible = visible;
+                let end_note = &mut self.score.notes[end.note.index()];
+                end_note.tie_back = Some(start.note);
+                end_note.tie_back_visible = visible;
             } else {
                 // TODO(parité): demi-liaison orpheline (fichier corrompu) : le
                 // C++ la journalise et la laisse non appariée.

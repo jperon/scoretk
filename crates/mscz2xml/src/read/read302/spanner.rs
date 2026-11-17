@@ -117,7 +117,8 @@ enum Receiver {
 /// Contenu lu dans l'enfant du `<Spanner>` portant le même nom que son `type`.
 #[derive(Clone)]
 enum Payload {
-    Tie,
+    /// Liaison de prolongation, avec sa visibilité (`<Tie><visible>`).
+    Tie(bool),
     Slur(crate::model::Slur),
     Spanner(SpannerType, Option<String>, Option<VoltaInfo>),
     /// Glissando, avec son texte et son style de trait.
@@ -231,7 +232,11 @@ fn read_rel(node: &Node) -> Rel {
 
 fn read_payload(node: &Node) -> Option<Payload> {
     let payload = match node.name() {
-        "Tie" => Payload::Tie,
+        "Tie" => Payload::Tie(
+            node.child("visible")
+                .and_then(Node::int_text)
+                .is_none_or(|value| value != 0),
+        ),
         "Slur" => Payload::Slur(super::notations::read_slur(node)),
         "HairPin" => {
             let (kind, hairpin) = super::nuances::read_hairpin(node);
@@ -367,21 +372,23 @@ pub(crate) fn resolve(reader: &mut Reader) {
 
     // Liaisons de prolongation sans extrémité : `Score::connectTies` cherche la
     // note suivante de même hauteur sur la même piste.
-    let dangling: Vec<(NoteId, Anchor)> = reader
+    let dangling: Vec<(NoteId, Anchor, bool)> = reader
         .connectors
         .iter()
         .filter(|connector| {
             connector.next.is_some()
                 && connector.next_link.is_none()
-                && matches!(connector.payload, Some(Payload::Tie))
+                && matches!(connector.payload, Some(Payload::Tie(_)))
         })
-        .filter_map(|connector| match connector.receiver {
-            Receiver::Note(note) => Some((note, connector.anchor)),
-            Receiver::Other => None,
+        .filter_map(|connector| match (connector.receiver, connector.payload.as_ref()) {
+            (Receiver::Note(note), Some(Payload::Tie(visible))) => {
+                Some((note, connector.anchor, *visible))
+            }
+            _ => None,
         })
         .collect();
-    for (note, anchor) in dangling {
-        search_tie_note(reader, note, anchor);
+    for (note, anchor, visible) in dangling {
+        search_tie_note(reader, note, anchor, visible);
     }
 }
 
@@ -477,11 +484,15 @@ fn emit(reader: &mut Reader, chain: &[usize]) {
         .collect();
 
     match payload {
-        Some(Payload::Tie) => {
+        Some(Payload::Tie(visible)) => {
             for pair in notes.windows(2) {
                 let (start_note, end_note) = (pair[0], pair[1]);
-                reader.score.note_mut(start_note).tie_forward = Some(end_note);
-                reader.score.note_mut(end_note).tie_back = Some(start_note);
+                let start = reader.score.note_mut(start_note);
+                start.tie_forward = Some(end_note);
+                start.tie_forward_visible = visible;
+                let end = reader.score.note_mut(end_note);
+                end.tie_back = Some(start_note);
+                end.tie_back_visible = visible;
             }
         }
         Some(Payload::Slur(slur)) => {
@@ -566,7 +577,7 @@ fn push_spanner(
     reader.score.add_spanner(spanner);
 }
 
-fn search_tie_note(reader: &mut Reader, note: NoteId, from: Anchor) {
+fn search_tie_note(reader: &mut Reader, note: NoteId, from: Anchor, visible: bool) {
     let pitch = reader.score.note(note).pitch;
     let mut found = None;
     'measures: for index in from.measure..reader.score.measures.len() {
@@ -596,7 +607,11 @@ fn search_tie_note(reader: &mut Reader, note: NoteId, from: Anchor) {
     }
 
     if let Some(end) = found {
-        reader.score.note_mut(note).tie_forward = Some(end);
-        reader.score.note_mut(end).tie_back = Some(note);
+        let start = reader.score.note_mut(note);
+        start.tie_forward = Some(end);
+        start.tie_forward_visible = visible;
+        let end_note = reader.score.note_mut(end);
+        end_note.tie_back = Some(note);
+        end_note.tie_back_visible = visible;
     }
 }

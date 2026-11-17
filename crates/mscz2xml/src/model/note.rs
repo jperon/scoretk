@@ -260,6 +260,14 @@ pub struct Note {
     /// Note précédente d'une liaison de prolongation, si cette note en termine
     /// une.
     pub tie_back: Option<NoteId>,
+    /// Vrai si le départ de liaison est affiché (`Tie::visible()`, lu dans
+    /// `<Tie><visible>`).
+    ///
+    /// Le `<tied type="start">` est alors dans un `<notations
+    /// print-object="no">`.
+    pub tie_forward_visible: bool,
+    /// Vrai si l'arrivée de liaison est affichée.
+    pub tie_back_visible: bool,
     /// Altération affichée, si elle diffère de l'armure.
     pub accidental: Option<Accidental>,
     /// Tête de note demandée.
@@ -288,6 +296,8 @@ impl Note {
             tpc_transposed: tpc,
             tie_forward: None,
             tie_back: None,
+            tie_forward_visible: true,
+            tie_back_visible: true,
             accidental: None,
             head: NoteHeadType::Auto,
             head_group: NoteHeadGroup::Normal,

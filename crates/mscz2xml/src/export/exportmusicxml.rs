@@ -1607,11 +1607,11 @@ impl Context<'_> {
 
             let mut notations = Notations::new();
             if note.tie_back.is_some() {
-                notations.tag(&mut out.xml, None);
+                notations.tag_element(&mut out.xml, None, note.tie_back_visible);
                 out.xml.tag_empty("tied", &[("type", "stop")]);
             }
             if note.tie_forward.is_some() {
-                notations.tag(&mut out.xml, None);
+                notations.tag_element(&mut out.xml, None, note.tie_forward_visible);
                 out.xml.tag_empty("tied", &[("type", "start")]);
             }
             if first && !grace {

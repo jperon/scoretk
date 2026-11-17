@@ -486,6 +486,14 @@ fn spanner_indices(
 }
 
 /// Écrit les lignes ondulées des trilles actifs (`wavyLineStartStop`).
+///
+/// MuseScore 4.7 remplit `TrillHash` avec `Trill::startElement()` **et**
+/// `Trill::endElement()`. Pour un spanner ancré sur la mesure, cet élément de
+/// fin est calculé une seule fois, au moment où `Score::addSpanner` enregistre
+/// le départ (`tick2 == tick` à cet instant), et n'est plus recalculé : le
+/// `wavy-line type="stop"` sort donc sur l'accord de départ, avec le
+/// `type="start"` (voir `copypaste_parts`, où le trille dure pourtant un
+/// temps). On reproduit ce rattachement.
 fn write_trills(
     score: &Score,
     xml: &mut XmlWriter,
@@ -494,28 +502,20 @@ fn write_trills(
     notations: &mut Notations,
 ) {
     let starting = spanner_indices(score, SpannerType::Trill, tick, track, true);
-    let stopping = spanner_indices(score, SpannerType::Trill, tick, track, false);
-    for (index, spanner) in score.spanners.iter().enumerate() {
-        if !starting.contains(&index) && !stopping.contains(&index) {
-            continue;
-        }
+    for &index in &starting {
+        let spanner = &score.spanners[index];
         let Some(SpannerNotation::Trill(trill)) = &spanner.notation else {
             continue;
         };
         let number = trill_number(score, index);
         let number_text = number.to_string();
-        if starting.contains(&index) {
-            notations.tag(xml, Some("ornaments"));
-            write_trill_symbol(xml, trill);
-            xml.tag_empty("wavy-line", &[("type", "start"), ("number", &number_text)]);
-            if let Some(accidental) = &trill.accidental {
-                write_accidental_mark(xml, accidental, Placement::Above);
-            }
+        notations.tag(xml, Some("ornaments"));
+        write_trill_symbol(xml, trill);
+        xml.tag_empty("wavy-line", &[("type", "start"), ("number", &number_text)]);
+        if let Some(accidental) = &trill.accidental {
+            write_accidental_mark(xml, accidental, Placement::Above);
         }
-        if stopping.contains(&index) {
-            notations.tag(xml, Some("ornaments"));
-            xml.tag_empty("wavy-line", &[("type", "stop"), ("number", &number_text)]);
-        }
+        xml.tag_empty("wavy-line", &[("type", "stop"), ("number", &number_text)]);
     }
 }
 
