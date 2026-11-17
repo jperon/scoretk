@@ -18,9 +18,11 @@ default = []
 #
 musicxml-import = ["dep:scoretk-musicxml"]
 midi = ["dep:scoretk-midi"]
+mscx = ["dep:scoretk-mscx"]
 
 [dependencies]
 mscz2xml = { path = "../mscz2xml" }
+scoretk-mscx = { path = "../scoretk-mscx", optional = true }
 scoretk-midi = { path = "../scoretk-midi", optional = true }
 scoretk-musicxml = { path = "../scoretk-musicxml", optional = true }
 thiserror = { workspace = true }

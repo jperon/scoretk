@@ -8,6 +8,7 @@ members = [
     "crates/scoretk-cli",
     "crates/scoretk-midi",
     "crates/scoretk-musicxml",
+    "crates/scoretk-mscx",
 ]
 
 [workspace.package]

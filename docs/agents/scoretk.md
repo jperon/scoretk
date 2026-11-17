@@ -58,7 +58,7 @@ Rien ne correspond → `None` (la CLI demande alors `--from`).
 
 | Format | Lecture | Écriture |
 | --- | --- | --- |
-| `.mscz` / `.mscx` | oui (`mscz2xml`) | non |
+| `.mscz` / `.mscx` | oui (`mscz2xml`) | oui (feature `mscx`, `scoretk-mscx`) |
 | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` (t34) | oui |
 | MusicXML `.mxl` | non | oui |
 | LilyPond, ABC | non | non |
@@ -85,6 +85,14 @@ existent déjà, désactivées par défaut ; les variantes d'erreur
    `scoretk_musicxml::read_musicxml(bytes)` et convertit l'erreur en
    `Error::MusicXmlImport` (l'erreur de la crate doit implémenter `Display`).
 
+### t38 — écriture MuseScore (`crates/scoretk-mscx`)
+
+**Branché** : dépendance optionnelle `scoretk-mscx`, feature
+`mscx = ["dep:scoretk-mscx"]`, variante d'erreur `Mscx`, et fonctions
+`hooks::write_mscx`/`write_mscz` (`.mscx` texte, `.mscz` archive ZIP avec
+`META-INF/container.xml`, `score.mscx` et `score_style.mss`). La CLI active la
+feature : `scoretk entrée.mscx -o sortie.mscx` et `… -o sortie.mscz`.
+
 ### t35 — écriture MIDI (`crates/scoretk-midi`)
 
 **Branché** : la dépendance optionnelle et `midi = ["dep:scoretk-midi"]` sont
@@ -101,6 +109,8 @@ suivront le même modèle (une variante de feature, une fonction dans `hooks.rs`
 ```sh
 scoretk entrée.mscz -o sortie.musicxml      # formats déduits des extensions
 scoretk entrée.mscx --to mxl -o -           # sortie standard
+scoretk entrée.mscx -o copie.mscx           # réécriture MuseScore 4.70
+scoretk entrée.mscx -o copie.mscz           # conteneur MuseScore
 cat entrée.mscx | scoretk - --from mscx --to musicxml
 scoretk --list-formats                      # formats et sens pris en charge
 scoretk --version                           # version + licence (GPL-3.0-only)
@@ -130,10 +140,13 @@ scoretk --version                           # version + licence (GPL-3.0-only)
   octet** à `mscz2xml::convert` sur le corpus (`dynamics`, `hairpin_simple`,
   `hairpins_and_repeats`), `.mxl` (container + `score.xml`), erreurs explicites
   des formats non branchés.
+- `crates/scoretk/tests/mscx.rs` (feature `mscx`) : écriture `.mscx` relue
+  avec un modèle identique, sortie MusicXML identique, `.mscz` détecté et relu,
+  version `4.70`.
 - `crates/scoretk-cli/tests/cli.rs` : binaire réel (`CARGO_BIN_EXE_scoretk`),
   `--list-formats`, `--version`, stdin/stdout, `.mscz` → MusicXML comparé à
-  `mscz2xml`, sortie `.mxl`, erreurs de `--from`/`--to` manquants et de format
-  non branché.
+  `mscz2xml`, sortie `.mxl`, `.mscx`/`.mscz` écrits et relus, erreurs de
+  `--from`/`--to` manquants et de format non branché.
 - Le corpus est lu via `CARGO_MANIFEST_DIR/../../tests/corpus` ; il doit rester
   dans le filtre de `flake.nix` (voir `docs/agents/developpement.md`).
 

@@ -13,7 +13,7 @@ name = "scoretk"
 path = "src/main.rs"
 
 [dependencies]
-scoretk = { path = "../scoretk" }
+scoretk = { path = "../scoretk", features = ["mscx"] }
 clap = { workspace = true }
 
 [dev-dependencies]

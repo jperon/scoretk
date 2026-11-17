@@ -346,6 +346,7 @@ version = "0.1.0"
 dependencies = [
  "mscz2xml",
  "scoretk-midi",
+ "scoretk-mscx",
  "scoretk-musicxml",
  "thiserror",
  "zip",
@@ -369,6 +370,17 @@ dependencies = [
  "mscz2xml",
  "scoretk-musicxml",
  "thiserror",
+]
+
+[[package]]
+name = "scoretk-mscx"
+version = "0.1.0"
+dependencies = [
+ "mscz2xml",
+ "quick-xml",
+ "similar",
+ "thiserror",
+ "zip",
 ]
 
 [[package]]

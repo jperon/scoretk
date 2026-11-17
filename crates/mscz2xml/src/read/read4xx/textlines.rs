@@ -276,26 +276,28 @@ pub(super) fn read_tbox(element: &Element, measure_index: usize, below: bool) ->
         if text.is_empty() {
             continue;
         }
+        // `tboxTextAsWords` place le texte au-dessus si sa position relative
+        // est négative, au-dessous sinon : un décalage vertical positif range
+        // le cadre après la mesure précédente, comme un saut de page.
+        let offset_below = text_element.child("offset").is_some_and(|offset| {
+            offset
+                .attr("y")
+                .and_then(|value| value.trim().parse::<f64>().ok())
+                .is_some_and(|y| y > 0.0)
+        });
+        let below = below || offset_below;
         let target = if below {
             measure_index.saturating_sub(1)
         } else {
             measure_index
         };
         let mut tbox = TboxText::new(text, target);
-        // `tboxTextAsWords` place le texte au-dessus si sa position relative
-        // est négative, au-dessous sinon.
         if below {
             tbox.placement = crate::model::Placement::Below;
         }
-        if let Some(offset) = text_element.child("offset") {
-            if offset
-                .attr("y")
-                .and_then(|value| value.trim().parse::<f64>().ok())
-                .is_some_and(|y| y > 0.0)
-            {
-                tbox.placement = crate::model::Placement::Below;
-            }
-        }
+        tbox.font_size = text_element
+            .child("size")
+            .and_then(|node| node.text().parse::<f64>().ok());
         return Some(tbox);
     }
     None

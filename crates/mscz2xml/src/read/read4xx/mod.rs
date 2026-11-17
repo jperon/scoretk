@@ -57,11 +57,12 @@ use crate::model::{ids::StaffId, tpc};
 use crate::model::{
     text_style_defaults, Accidental, Annotation, Articulation, BarLine, BarLineType, BeamMode,
     Breath, BreathType, Chord, ChordRest, ChordRestKind, Clef, ClefType, Credit, CreditJustify,
-    CreditStyle, Duration, DurationType, Fraction, GraceChord, GraceType, Harmony, Instrument,
-    InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, MidiArticulation,
-    Note, NoteId, Part, Placement, RehearsalFrame, RehearsalMark, RichText, Score, Segment,
-    SegmentItem, SegmentType, Staff, StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig,
-    TimeSigType, Track, Transpose, TremoloKind, Tuplet, TupletId, TupletNumberType, VOICES,
+    CreditStyle, Duration, DurationType, Fraction, GraceChord, GraceType, Harmony, HarmonyDegree,
+    HarmonyDegreeKind, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
+    Measure, MidiArticulation, Note, NoteId, Part, Placement, RehearsalFrame, RehearsalMark,
+    RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffText, StemDirection,
+    SystemText, Tempo, Tick, TimeSig, TimeSigType, Track, Transpose, TremoloKind, Tuplet, TupletId,
+    TupletNumberType, VOICES,
 };
 use crate::{Error, Result};
 
@@ -488,6 +489,12 @@ impl Reader {
                     _ => {}
                 }
             }
+            // Canal MIDI du premier canal sonore (`<Channel><midiChannel>`,
+            // base zéro), comme le lit `read302` et comme `TRead` le stocke.
+            instrument.midi_channel = channel
+                .child("midiChannel")
+                .and_then(Element::int)
+                .and_then(|value| u8::try_from(value.clamp(0, 127)).ok());
         }
 
         // Table des articulations MIDI (`read(MidiArticulation*)`) : une
@@ -919,7 +926,7 @@ impl Reader {
                     });
                 }
                 "Tuplet" => {
-                    let tuplet = self.read_tuplet(child, tick);
+                    let (tuplet, explicit_bracket) = self.read_tuplet(child, tick);
                     if let Some((parent, _)) = tuplets.last() {
                         let parent = *parent;
                         self.score.tuplet_mut(tuplet).parent = Some(parent);
@@ -927,13 +934,15 @@ impl Reader {
                         // croche est groupé par les ligatures : MuseScore ne
                         // dessine alors pas de crochet (`Tuplet::calcHasBracket`).
                         // Un ratio non réduit de croches (`4:4`) reste affiché
-                        // avec crochet.
-                        let base = self.score.tuplet(tuplet).base_len;
-                        let ratio = self.score.tuplet(tuplet).ratio;
-                        if base < Fraction::new(1, 8)
-                            || (base == Fraction::new(1, 8) && ratio != Fraction::ONE)
-                        {
-                            self.score.tuplet_mut(tuplet).bracket = false;
+                        // avec crochet. Un `<bracket>` explicite fait foi.
+                        if !explicit_bracket {
+                            let base = self.score.tuplet(tuplet).base_len;
+                            let ratio = self.score.tuplet(tuplet).ratio;
+                            if base < Fraction::new(1, 8)
+                                || (base == Fraction::new(1, 8) && ratio != Fraction::ONE)
+                            {
+                                self.score.tuplet_mut(tuplet).bracket = false;
+                            }
                         }
                     }
                     let ratio = self.score.tuplet(tuplet).ratio;
@@ -1163,6 +1172,16 @@ impl Reader {
                         }
                         instrument
                     });
+                    // `Segment::add` enregistre l'instrument d'un changement au
+                    // tick du segment (`part->setInstrument`) : la liste
+                    // `Part::instruments()` de l'export en dépend (identifiants
+                    // `P<n>-I<r>`, canaux MIDI).
+                    if let Some(instrument) = &instrument {
+                        let part_id = self.score.staves[staff_index].part;
+                        self.score
+                            .part_mut(part_id)
+                            .set_instrument_at(tick, instrument.clone());
+                    }
                     self.add_annotation(
                         measure_index,
                         tick,
@@ -1193,6 +1212,22 @@ impl Reader {
                     harmony.name = name;
                     harmony.function = child.child("function").map(|node| node.text().to_owned());
                     harmony.placement = placement(child.child("placement"));
+                    // `TRead::read(Harmony*)` : `<harmonyType>` conserve
+                    // l'écriture (standard, romaine, Nashville), dont dépend
+                    // toute la branche d'export MusicXML.
+                    if let Some(kind) = child.child("harmonyType").and_then(Element::int) {
+                        harmony.kind = match kind {
+                            1 => "roman",
+                            2 => "nashville",
+                            _ => "normal",
+                        }
+                        .to_owned();
+                    }
+                    for degree in child.children_named("degree") {
+                        if let Some(degree) = read_harmony_degree(degree) {
+                            harmony.degrees.push(degree);
+                        }
+                    }
                     if let Some(text) = child.child("text") {
                         harmony.text = text.text.clone();
                     }
@@ -1478,6 +1513,18 @@ impl Reader {
                                 .child("bracket")
                                 .and_then(Element::int)
                                 .is_some_and(|value| value != 0);
+                            // `AccidentalRole::USER` vaut 1 ; le rôle par défaut
+                            // est AUTO. Les fichiers 3.x écrivent `parens`, les
+                            // 4.x `parentheses`.
+                            accidental.user = child
+                                .child("role")
+                                .and_then(Element::int)
+                                .is_some_and(|value| value == 1);
+                            accidental.parentheses = child
+                                .child("parens")
+                                .or_else(|| child.child("parentheses"))
+                                .and_then(Element::int)
+                                .is_some_and(|value| value != 0);
                             accidental.visible = !child
                                 .child("visible")
                                 .and_then(Element::int)
@@ -1623,7 +1670,7 @@ impl Reader {
     // <Tuplet>
     //------------------------------------------------------------------
 
-    fn read_tuplet(&mut self, element: &Element, tick: Tick) -> TupletId {
+    fn read_tuplet(&mut self, element: &Element, tick: Tick) -> (TupletId, bool) {
         let normal = element
             .child("normalNotes")
             .and_then(Element::int)
@@ -1674,9 +1721,15 @@ impl Reader {
         }
         // `Tuplet::calcHasBracket` n'est qu'une mise en page ; faute de ligatures
         // modélisées, on applique la règle du corpus : un n-olet de croches ou
-        // plus court, imbriqué, se passe de crochet.
-        tuplet.bracket = true;
-        self.score.add_tuplet(tuplet)
+        // plus court, imbriqué, se passe de crochet. Un `<bracket>` explicite
+        // (écrit par MuseScore 3, et par l'écrivain de scoretk) fait foi.
+        let explicit_bracket = element.child("bracket").is_some();
+        tuplet.bracket = element
+            .child("bracket")
+            .and_then(Element::int)
+            .is_none_or(|value| value != 0);
+        let id = self.score.add_tuplet(tuplet);
+        (id, explicit_bracket)
     }
 
     //------------------------------------------------------------------
@@ -1933,6 +1986,31 @@ fn has_default_clef(element: &Element) -> bool {
             "defaultClef" | "defaultConcertClef" | "defaultTransposingClef"
         )
     })
+}
+
+/// Lit un degré de chiffrage (`<degree>` d'un `<Harmony>`).
+///
+/// Reproduit les bornes de `TRead::read(Harmony*)` : un degré hors de `1..=13`,
+/// une altération hors de `-2..=2` ou un type inconnu est ignoré.
+fn read_harmony_degree(element: &Element) -> Option<HarmonyDegree> {
+    let value = element
+        .child("degree-value")
+        .and_then(Element::int)
+        .and_then(|value| u8::try_from(value).ok())
+        .filter(|value| (1..=13).contains(value))?;
+    let alter = element
+        .child("degree-alter")
+        .and_then(Element::int)
+        .and_then(|value| i8::try_from(value).ok())
+        .filter(|value| (-2..=2).contains(value))
+        .unwrap_or(0);
+    let kind = match element.child("degree-type").map(Element::text) {
+        Some("add") => HarmonyDegreeKind::Add,
+        Some("alter") => HarmonyDegreeKind::Alter,
+        Some("subtract") => HarmonyDegreeKind::Subtract,
+        _ => return None,
+    };
+    Some(HarmonyDegree { value, alter, kind })
 }
 
 /// Moitié de `ClefTypeList` modifiée par une balise de clef d'instrument.
