@@ -211,9 +211,10 @@ hors dépôt (par exemple `/tmp/abcchk/`) pour les consulter.
 2. **Récupérer une nouvelle version.** Télécharger `xml2abc.py-NNN.zip` et
    `abc2xml.py-NNN.zip` depuis <https://wim.vree.org/svgParse/xml2abc.html>
    et <https://wim.vree.org/svgParse/abc2xml.html>, puis `unzip` dans un
-   répertoire temporaire. Vérifier l'en-tête de licence : une version
-   explicitement LGPL-3.0-only ou GPL-incompatible imposerait de s'en tenir à
-   la norme ABC 2.1 seule (voir `NOTICE`).
+   répertoire temporaire. Vérifier l'en-tête de licence : une LGPL 2.1 ou 3,
+   même « only », reste convertible en GPL-3.0 (LGPL 2.1 § 3, LGPL 3 § 3) ;
+   seule une licence explicitement incompatible (propriétaire, CC-BY-NC…)
+   imposerait de s'en tenir à la norme ABC 2.1 seule (voir `NOTICE`).
 3. **Repérer les changements pertinents.** Comparer les fichiers
    (`diff -u ancien/xml2abc.py nouveau/xml2abc.py`) et surveiller :
    - `VERSION`, les tables `note_ornamentation_map`, les décorations
