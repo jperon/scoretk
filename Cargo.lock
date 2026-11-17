@@ -362,6 +362,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "scoretk-lilypond"
+version = "0.1.0"
+dependencies = [
+ "mscz2xml",
+ "thiserror",
+]
+
+[[package]]
 name = "scoretk-midi"
 version = "0.1.0"
 dependencies = [
