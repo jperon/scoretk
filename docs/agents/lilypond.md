@@ -254,7 +254,13 @@ Seul `v3/moonlight.mscx` produit des avertissements de mise en page
   pas encore.
 - **Texte** : le balisage (`<b>`, `<font>`, symboles `<sym>`) est perdu ; les
   caractères de la zone à usage privé (symboles MuseScore) sont retirés pour
-  éviter des glyphes manquants.
+  éviter des glyphes manquants. Un tempo dont le texte n'est qu'un symbole
+  métronomique (`♩ = 80`) perd son libellé et garde `4 = 80`.
+- **Unité du tempo** : `\tempo` est toujours écrit avec la noire
+  (`4 = bpm`), faute d'unité de battement dans le modèle ; un tempo à la
+  blanche ou à la blanche pointée est donc noté avec la noire.
+- **Tempo invisible** : une indication de tempo `print-object="no"` n'est pas
+  écrite du tout (MuseScore en conserve pourtant l'effet sur la lecture).
 - **Paroles** : pas de `\addlyrics`, seulement `\lyricsto` ; les syllabes
   d'un accord qui en porte plusieurs pour le même couplet sont réduites à la
   première.
