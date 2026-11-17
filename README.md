@@ -58,6 +58,7 @@ $ cargo build --workspace
 $ cargo test --workspace
 $ rustup target add wasm32-unknown-unknown
 $ cargo build -p mscz2xml --target wasm32-unknown-unknown
+$ cargo build -p scoretk-midi --target wasm32-unknown-unknown
 ```
 
 ## Structure
@@ -65,6 +66,11 @@ $ cargo build -p mscz2xml --target wasm32-unknown-unknown
 - `crates/mscz2xml` : bibliothèque portable (aucune I/O).
 - `crates/mscz2xml-cli` : binaire `mscz2xml`, lecture du fichier et
   affichage des informations de conteneur.
+- `crates/mscz2xml-wasm` : enveloppe WebAssembly (`convert`, `version`).
+- `crates/scoretk-midi` : écriture MIDI (Standard MIDI File format 1) et
+  déroulement des reprises, sans I/O.
+- `crates/scoretk` et `crates/scoretk-cli` : façade multi-formats et binaire
+  `scoretk` (convertisseurs optionnels par features).
 
 ## Licence
 
