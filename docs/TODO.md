@@ -27,7 +27,7 @@ ly, abc et midi.
 | `scoretk-midi` | écrivain MIDI depuis le modèle pivot | fait (t35) |
 | `scoretk-lilypond` | écrivain LilyPond depuis le modèle pivot | fait (t36) : 56/56 fichiers du corpus compilent |
 | `scoretk-mscx` | écrivain MuseScore (`.mscx` 4.x, `.mscz`) | fait (t38) : aller-retour identique sur tout le corpus |
-| `scoretk-abc` | lecteur et écrivain ABC (`.abc`) | en cours (t41) : 56/56 instantanés, aller-retour noyau 46/56, écarts dans `docs/agents/abc.md` |
+| `scoretk-abc` | lecteur et écrivain ABC (`.abc`) | fait (t41) : 56/56 instantanés, aller-retour noyau 46/56, écarts dans `docs/agents/abc.md` |
 
 MIDI est à part : c'est un format de performance, pas de notation. L'écriture
 MIDI demande de dérouler les reprises et sauts (comme `RepeatList` de

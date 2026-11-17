@@ -254,3 +254,56 @@ MuseScore suit donc `docs/agents/upstream.md` (commit, version, régénération
 du corpus, validation e2e). Vérifier à cette occasion que `ref-musescore/`
 n'a toujours pas d'export ABC natif ; s'il en apparaissait un, ce serait une
 nouvelle source de comportement à déclarer dans `NOTICE`.
+
+## 11. Mise à niveau de la norme ABC 2.1
+
+Le crate suit la **norme ABC 2.1** (version stable publiée par la communauté
+ABC, <https://abcnotation.com/wiki/abc:standard:v2.1>), et non une
+implémentation de référence. Il n'y a donc pas de code amont à comparer,
+mais une spécification à relire et à revalider.
+
+1. **Version suivie.** ABC 2.1, sans sous-version : c'est la version citée
+   dans les en-têtes des fichiers de `crates/scoretk-abc/src/` et dans
+   `NOTICE`. Le préfixe `%abc-2.1` écrit par `writer.rs` en découle.
+2. **Où récupérer la spécification.** La page du § 1 (wiki abcnotation.com),
+   ou son archive hors ligne. Les changements de version sont annoncés sur le
+   forum/la liste ABC de abcnotation.com ; conserver une copie datée hors
+   dépôt (par exemple `/tmp/abcstd/`) pour le diff.
+3. **Repérer les changements pertinents.** Comparer la nouvelle version à
+   2.1 et surveiller les sections qui correspondent aux fichiers Rust :
+   - hauteurs, armures, modes, clefs : `pitch.rs` ;
+   - `L:`, `M:`, durées, n-olets, rythme brisé : `duration.rs` ;
+   - décorations, nuances, articulations : `decorations.rs` ;
+   - champs d'en-tête, lignes `w:`, directives `%%` : `writer.rs`,
+     `reader/mod.rs` ;
+   - syntaxe de la musique (liaisons, phrasés, accords, agréments, barres,
+     reprises) : `reader/music.rs` et `voice.rs`.
+   Une nouveauté n'est à implémenter que si elle change le **noyau musical**
+   ou débloque un fichier réel ; la mise en page reste hors périmètre.
+4. **Revalider.**
+   ```sh
+   nix develop -c cargo test -p scoretk-abc
+   nix develop -c cargo test -p scoretk-abc --test aller_retour -- --nocapture
+   UPDATE_ABC_SNAPSHOTS=1 nix develop -c cargo test -p scoretk-abc --test corpus_abc
+   scripts/check-abc-external.sh
+   nix develop -c cargo test --workspace
+   nix flake check
+   ```
+   Relire le diff des instantanés : une extension de la norme ne doit pas
+   changer la sortie des fichiers déjà conformes.
+5. **Quand le faire.** Quand une version 2.2 (ou suivante) devient la norme
+   stable, ou quand `abcm2ps`/`abc2midi` acceptent une syntaxe que le lecteur
+   refuse sur un fichier réel. Ne pas suivre les brouillons : la référence
+   reste 2.1 tant qu'aucune décision explicite n'est prise (mise à jour de
+   `NOTICE`, du préfixe `%abc-2.1` et de ce document).
+
+## 12. Outils de vérification externes
+
+`abcm2ps` et `abc2midi` (paquet nixpkgs `abcm2ps` et `abcmidi`) servent de
+contrôle d'acceptabilité, pas de source de comportement : aucune ligne de
+leur code n'est suivie. Leurs versions ne sont **pas épinglées** (le script
+`scripts/check-abc-external.sh` les prend dans le nixpkgs du moment), car ils
+ne déterminent ni la sortie ni les instantanés. Si un fichier de `IGNORED`
+devient accepté, le retirer de la liste ; si un fichier conforme devient
+refusé, vérifier d'abord que la sortie reste lisible par le lecteur interne
+avant de conclure à une régression.

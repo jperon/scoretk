@@ -33,9 +33,12 @@
 //! - `L:1/8` est l'unité fixe : les multiplicateurs sont des entiers pour les
 //!   valeurs courantes (`2`, `4`, `3`) et des fractions pour les autres
 //!   (`3/2`, `2/3`), ce qui accepte exactement toute durée du modèle.
-//! - Les hauteurs sont écrites en **hauteur concert** : ABC n'a pas de champ
-//!   de transposition standard, et une partition transposée pour un instrument
-//!   garderait sinon une armure fausse.
+//! - Les hauteurs sont écrites en **hauteur écrite** (`pitch - transpose`),
+//!   comme l'export MusicXML (`pitch2xml`) : une partition pour instrument
+//!   transpositeur garde ainsi la même armure et les mêmes doigtés qu'à
+//!   l'écran. ABC n'ayant pas de champ de transposition standard, le lecteur
+//!   la conserve comme hauteur concert : l'aller-retour ne restitue pas
+//!   `<transpose>` (limite documentée).
 //! - Une mesure par ligne, pour des instantanés stables et des diffs lisibles.
 //! - Les altérations explicites ne sont écrites que lorsqu'elles diffèrent de
 //!   l'armure ou de l'état de la mesure, ABC mémorisant les altérations
