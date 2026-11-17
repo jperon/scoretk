@@ -31,9 +31,10 @@ use std::collections::BTreeMap;
 
 use mscz2xml::model::{
     Accidental, AccidentalType, Annotation, Arpeggio, ArpeggioType, Articulation,
-    ArticulationAnchor, ArticulationType, Chord, Fermata, FermataType, Fingering, Glissando,
-    GlissandoType, LineStyle, NoteId, Ornament, OrnamentAccidental, OrnamentType, Placement, Score,
-    SegmentType, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Track, Trill, TrillType,
+    ArticulationAnchor, ArticulationType, Breath, BreathType, Chord, Fermata, FermataType,
+    Fingering, Glissando, GlissandoType, LineStyle, NoteId, Ornament, OrnamentAccidental,
+    OrnamentType, Placement, Score, SegmentType, Spanner, SpannerAnchor, SpannerNotation,
+    SpannerType, Track, Trill, TrillType,
 };
 
 use crate::pass2;
@@ -60,6 +61,8 @@ pub(crate) struct ParsedNotations {
     glissandi: Vec<(usize, bool, Glissando)>,
     trill: Option<(usize, Trill, bool, bool)>,
     trill_mark: bool,
+    breath: Option<Breath>,
+    visible: bool,
 }
 
 /// Lit les `<notations>` d'une note.
@@ -69,26 +72,35 @@ pub(crate) fn parse(element: &Element) -> ParsedNotations {
         return parsed;
     };
     let visible = notations.attribute("print-object") != Some("no");
+    parsed.visible = visible;
     for child in &notations.children {
         match child.name.as_str() {
-            "articulations" => parse_articulations(child, &mut parsed),
-            "ornaments" => parse_ornaments(child, &mut parsed),
-            "fermata" => parsed.fermata = Some(fermata(child)),
+            "articulations" => parse_articulations(child, visible, &mut parsed),
+            "ornaments" => parse_ornaments(child, visible, &mut parsed),
+            "fermata" => {
+                let mut value = fermata(child);
+                value.visible = value.visible && visible;
+                parsed.fermata = Some(value);
+            }
             "arpeggiate" => {
-                parsed.arpeggio = Some(Arpeggio::new(match child.attribute("direction") {
+                let mut arpeggio = Arpeggio::new(match child.attribute("direction") {
                     Some("up") => ArpeggioType::Up,
                     Some("down") => ArpeggioType::Down,
                     _ => ArpeggioType::Normal,
-                }));
+                });
+                arpeggio.visible = visible && child.attribute("print-object") != Some("no");
+                parsed.arpeggio = Some(arpeggio);
             }
             "non-arpeggiate" => {
-                parsed.arpeggio = Some(Arpeggio::new(ArpeggioType::Bracket));
+                let mut arpeggio = Arpeggio::new(ArpeggioType::Bracket);
+                arpeggio.visible = visible && child.attribute("print-object") != Some("no");
+                parsed.arpeggio = Some(arpeggio);
             }
             "technical" => {
                 for fingering in child.children_named("fingering") {
                     let mut value = Fingering::new(fingering.text_trimmed());
                     value.placement = placement(fingering.attribute("placement"));
-                    value.visible = fingering.attribute("print-object") != Some("no");
+                    value.visible = visible && fingering.attribute("print-object") != Some("no");
                     parsed.fingerings.push(value);
                 }
             }
@@ -122,7 +134,7 @@ pub(crate) fn parse(element: &Element) -> ParsedNotations {
                 });
                 glissando.text = child.text_trimmed().to_owned();
                 glissando.show_text = !glissando.text.is_empty();
-                glissando.visible = child.attribute("print-object") != Some("no");
+                glissando.visible = visible && child.attribute("print-object") != Some("no");
                 match child.attribute("type") {
                     Some("start") => parsed.glissandi.push((number, true, glissando)),
                     Some("stop") => {
@@ -188,6 +200,7 @@ pub(crate) fn apply_score(
     note: Option<NoteId>,
     measure_index: usize,
     tick: mscz2xml::model::Fraction,
+    end_tick: mscz2xml::model::Fraction,
     track: Track,
     state: &mut NotationState,
 ) {
@@ -256,6 +269,14 @@ pub(crate) fn apply_score(
         }
     }
 
+    if let Some(breath) = parsed.breath {
+        if end_tick > tick {
+            let index = pass2::get_segment(score, measure_index, SegmentType::Breath, end_tick);
+            score.measures[measure_index].segments[index]
+                .set_element(track, mscz2xml::model::SegmentItem::Breath(breath));
+        }
+    }
+
     if let Some(fermata) = parsed.fermata {
         let index = pass2::get_segment(score, measure_index, SegmentType::ChordRest, tick);
         score.measures[measure_index].segments[index]
@@ -290,8 +311,8 @@ fn anchor(element: &Element) -> ArticulationAnchor {
 }
 
 /// Articulations d'un `<articulations>`.
-fn parse_articulations(element: &Element, parsed: &mut ParsedNotations) {
-    let visible = element.attribute("print-object") != Some("no");
+fn parse_articulations(element: &Element, notations_visible: bool, parsed: &mut ParsedNotations) {
+    let visible = notations_visible && element.attribute("print-object") != Some("no");
     for child in &element.children {
         let kind = match child.name.as_str() {
             "staccato" => ArticulationType::Staccato,
@@ -304,8 +325,56 @@ fn parse_articulations(element: &Element, parsed: &mut ParsedNotations) {
             "stress" => ArticulationType::Stress,
             "unstress" => ArticulationType::Unstress,
             "spiccato" => ArticulationType::Spiccato,
-            "breath-mark" => ArticulationType::BreathMark,
-            "caesura" => ArticulationType::Caesura,
+            "caesura" => {
+                let kind = match child.text_trimmed() {
+                    "curved" => BreathType::CaesuraCurved,
+                    "short" => BreathType::CaesuraShort,
+                    "thick" => BreathType::CaesuraThick,
+                    "single" => BreathType::CaesuraSingle,
+                    _ => BreathType::Caesura,
+                };
+                parsed.breath = Some(Breath {
+                    kind,
+                    placement: if child.attribute("placement") == Some("below") {
+                        Placement::Below
+                    } else {
+                        Placement::Above
+                    },
+                });
+                continue;
+            }
+            "breath-mark" => {
+                let kind = match child.text_trimmed() {
+                    "tick" => BreathType::Tick,
+                    "upbow" => BreathType::Upbow,
+                    _ => BreathType::Comma,
+                };
+                parsed.breath = Some(Breath {
+                    kind,
+                    placement: if child.attribute("placement") == Some("below") {
+                        Placement::Below
+                    } else {
+                        Placement::Above
+                    },
+                });
+                continue;
+            }
+            "falloff" => {
+                parsed.chord_line = Some(mscz2xml::model::ChordLineType::Fall);
+                continue;
+            }
+            "doit" => {
+                parsed.chord_line = Some(mscz2xml::model::ChordLineType::Doit);
+                continue;
+            }
+            "plop" => {
+                parsed.chord_line = Some(mscz2xml::model::ChordLineType::Plop);
+                continue;
+            }
+            "scoop" => {
+                parsed.chord_line = Some(mscz2xml::model::ChordLineType::Scoop);
+                continue;
+            }
             "other-articulation" => {
                 ArticulationType::Other(child.attribute("smufl").unwrap_or_default().to_owned())
             }
@@ -322,7 +391,8 @@ fn parse_articulations(element: &Element, parsed: &mut ParsedNotations) {
 }
 
 /// Ornements d'un `<ornaments>`.
-fn parse_ornaments(element: &Element, parsed: &mut ParsedNotations) {
+fn parse_ornaments(element: &Element, notations_visible: bool, parsed: &mut ParsedNotations) {
+    let visible = notations_visible && element.attribute("print-object") != Some("no");
     let mut accidentals = Vec::new();
     for child in element.children_named("accidental-mark") {
         if let Some(accidental) = accidental_mark(child) {
@@ -381,13 +451,28 @@ fn parse_ornaments(element: &Element, parsed: &mut ParsedNotations) {
             "other-ornament" => {
                 OrnamentType::Other(child.attribute("smufl").unwrap_or_default().to_owned())
             }
-            "wavy-line" | "accidental-mark" | "tremolo" => continue,
+            "wavy-line" => {
+                let number = number(child);
+                let start = child.attribute("type") == Some("start");
+                let stop = child.attribute("type") == Some("stop");
+                if start {
+                    let mut trill = Trill::new(TrillType::TrillLine);
+                    trill.accidental = accidentals.first().map(|entry| entry.accidental);
+                    if let Some((_, _, _, existing)) = parsed.trill.as_mut() {
+                        *existing = *existing || stop;
+                    } else {
+                        parsed.trill = Some((number, trill, true, stop));
+                    }
+                }
+                continue;
+            }
+            "accidental-mark" | "tremolo" => continue,
             _ => continue,
         };
         let mut ornament = Ornament::new(kind);
         ornament.placement = placement(child.attribute("placement"));
         ornament.accidentals = accidentals.clone();
-        ornament.visible = element.attribute("print-object") != Some("no");
+        ornament.visible = visible;
         parsed.ornaments.push(ornament);
     }
 }

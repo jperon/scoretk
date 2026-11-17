@@ -165,6 +165,7 @@ pub(crate) fn read_direction(
     let mut staff_position = 0usize;
 
     let mut words = String::new();
+    let mut words_markup = String::new();
     let mut rehearsal_text = String::new();
     let mut dynamics: Vec<(String, bool)> = Vec::new();
     let mut dynamic_placement: Option<Placement> = None;
@@ -229,6 +230,7 @@ pub(crate) fn read_direction(
                                 tbox_words = Some((kind.text_trimmed().to_owned(), size));
                             } else {
                                 words.push_str(kind.text_trimmed());
+                                words_markup.push_str(&formatted_words(kind));
                             }
                         }
                         "rehearsal" => {
@@ -342,7 +344,7 @@ pub(crate) fn read_direction(
         add_annotation(score, measure_index, tick, track, Annotation::Tempo(tempo));
         tempo_added = true;
     } else if !words.is_empty() && sound_tempo.is_some() {
-        let mut tempo = Tempo::new(words.clone());
+        let mut tempo = Tempo::new(words_markup.clone());
         tempo.beats_per_second = metronome_tempo;
         tempo.placement = Placement::Above;
         tempo.visible = visible;
@@ -381,7 +383,7 @@ pub(crate) fn read_direction(
                 state.pending_instrument.clone()
             {
                 if change_tick == tick {
-                    let mut change = mscz2xml::model::InstrumentChange::new(words.clone());
+                    let mut change = mscz2xml::model::InstrumentChange::new(words_markup.clone());
                     change.placement = change_placement;
                     change.visible = visible;
                     change.instrument = Some(instrument);
@@ -395,7 +397,7 @@ pub(crate) fn read_direction(
                     state.pending_instrument = None;
                 }
             } else if system {
-                let mut text = SystemText::new(words.clone());
+                let mut text = SystemText::new(words_markup.clone());
                 text.placement = default_placement.unwrap_or(Placement::Above);
                 text.visible = visible;
                 add_annotation(
@@ -406,7 +408,7 @@ pub(crate) fn read_direction(
                     Annotation::SystemText(text),
                 );
             } else {
-                let mut text = mscz2xml::model::StaffText::new(words.clone());
+                let mut text = mscz2xml::model::StaffText::new(words_markup.clone());
                 text.placement = default_placement.unwrap_or(Placement::Above);
                 text.visible = visible;
                 add_annotation(
@@ -492,6 +494,41 @@ fn add_annotation(
         tick,
     );
     score.measures[measure_index].segments[index].add_annotation(track, annotation);
+}
+
+/// Balisage MuseScore d'un `<words>` d'après ses attributs de format.
+///
+/// Le modèle de texte ne stocke que du balisage : on rouvre donc `<i>`,
+/// `<b>`, `<u>` et `<font>` pour que l'export réécrive les mêmes attributs.
+fn formatted_words(element: &Element) -> String {
+    let text = element.text_trimmed();
+    let mut open = String::new();
+    let mut close = String::new();
+    if element.attribute("font-style") == Some("italic") {
+        open.push_str("<i>");
+        close.insert_str(0, "</i>");
+    }
+    if element.attribute("font-weight") == Some("bold") {
+        open.push_str("<b>");
+        close.insert_str(0, "</b>");
+    }
+    if element.attribute("underline") == Some("1") {
+        open.push_str("<u>");
+        close.insert_str(0, "</u>");
+    }
+    if element.attribute("line-through") == Some("1") {
+        open.push_str("<s>");
+        close.insert_str(0, "</s>");
+    }
+    if let Some(family) = element.attribute("font-family") {
+        open.push_str(&format!("<font face=\"{family}\">"));
+        close.insert_str(0, "</font>");
+    }
+    if let Some(size) = element.attribute("font-size") {
+        open.push_str(&format!("<font size=\"{size}\">"));
+        close.insert_str(0, "</font>");
+    }
+    format!("{open}{text}{close}")
 }
 
 /// Placement depuis un attribut MusicXML.
@@ -678,7 +715,8 @@ fn read_pedal(
                 hairpin: None,
             });
         }
-        "stop" | "discontinue" => stops.push((SpannerTag::Pedal, number, false)),
+        "stop" => stops.push((SpannerTag::Pedal, number, true)),
+        "discontinue" => stops.push((SpannerTag::Pedal, number, false)),
         _ => {}
     }
 }
@@ -771,6 +809,11 @@ fn close_spanner(
     if stop.2 {
         if let Some(hairpin) = spanner.hairpin.as_mut() {
             hairpin.niente = true;
+        }
+        if stop.0 == SpannerTag::Pedal {
+            if let Some(pedal) = spanner.pedal.as_mut() {
+                pedal.end_hook = HookType::Hook90;
+            }
         }
     }
 }

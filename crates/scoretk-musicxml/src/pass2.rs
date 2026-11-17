@@ -625,6 +625,7 @@ fn read_note(
             Some(id),
             measure_index,
             tick,
+            tick,
             track,
             &mut directions.notations,
         );
@@ -660,6 +661,7 @@ fn read_note(
             None,
             measure_index,
             cr_tick,
+            cr_tick + timing.dura,
             track,
             &mut directions.notations,
         );
@@ -684,6 +686,7 @@ fn read_note(
             Some(id),
             measure_index,
             cr_tick,
+            cr_tick + timing.dura,
             track,
             &mut directions.notations,
         );
