@@ -22,9 +22,9 @@ ly, abc et midi.
 
 | Crate | Rôle | État |
 | --- | --- | --- |
-| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : `.mscz`/`.mscx` → MusicXML/`.mxl`/`.ly`, MusicXML → modèle ; features `musicxml-import`, `midi`, `lilypond` et `mscx` branchées |
-| `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | en cours (t34, t37) : noyau 26/30 v3 et 26/26 v4, parité complète 23/30 et 21/26 (écarts dans `docs/agents/musicxml-import.md`) |
-| `scoretk-midi` | écrivain MIDI depuis le modèle pivot | en cours (t35) |
+| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : lecture `.mscz`/`.mscx`/MusicXML, écriture MusicXML/`.mxl`/`.mscx`/`.mscz`/`.ly`/`.mid` ; les quatre features (`musicxml-import`, `midi`, `lilypond`, `mscx`) sont activées par la CLI ; lecture `.ly` par `lilypond-import` (t40), pas encore activée par la CLI |
+| `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | fait (t34, t37) : noyau 26/30 v3 et 26/26 v4, parité complète 23/30 et 21/26 (écarts dans `docs/agents/musicxml-import.md`) |
+| `scoretk-midi` | écrivain MIDI depuis le modèle pivot | fait (t35) |
 | `scoretk-lilypond` | écrivain et lecteur LilyPond depuis/vers le modèle pivot | fait (t36, t40) : 56/56 fichiers compilent, aller-retour noyau 24/56 (t40) |
 | `scoretk-mscx` | écrivain MuseScore (`.mscx` 4.x, `.mscz`) | fait (t38) : aller-retour identique sur tout le corpus |
 
