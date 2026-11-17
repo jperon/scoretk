@@ -53,6 +53,11 @@ pub enum Error {
     #[error("fichier racine « {0} » introuvable dans le conteneur .mxl")]
     RootFileNotFound(String),
 
+    /// L'archive `.mxl` ne contient ni `META-INF/container.xml` ni aucun
+    /// document `.musicxml`/`.xml` hors `META-INF`.
+    #[error("aucun fichier MusicXML dans l'archive .mxl (ni META-INF/container.xml ni *.xml)")]
+    NoMusicXmlInMxl,
+
     /// Aucun `<part-list>` exploitable.
     #[error("aucun élément <part-list> dans le document")]
     MissingPartList,

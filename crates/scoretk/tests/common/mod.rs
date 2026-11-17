@@ -79,6 +79,17 @@ pub fn mxl_from_musicxml(xml: &[u8]) -> Vec<u8> {
     writer.finish().expect("archive .mxl").into_inner()
 }
 
+/// Archive ZIP minimale à partir d'entrées nommées (ordre conservé).
+pub fn zip_from_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let options = SimpleFileOptions::default().last_modified_time(zip::DateTime::default());
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, data) in entries {
+        writer.start_file(*name, options).expect("entrée ZIP");
+        writer.write_all(data).expect("contenu ZIP");
+    }
+    writer.finish().expect("archive ZIP").into_inner()
+}
+
 /// Référence MIDI du corpus (`tests/corpus/midi/<version>/<nom>`).
 pub fn corpus_midi(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -2,10 +2,12 @@
 //
 // Copyright (C) 2026 jperon
 //
-// Portage partiel de `importexport/musicxml/internal/musicxmlreader.cpp` de
-// MuseScore Studio, Copyright (C) MuseScore Limited and others, modifié
-// (réécrit en Rust) en 2026 : reconnaissance du format par suffixe, comme
-// `MusicXmlReader::read` (`xml`/`musicxml` contre `mxl`).
+// Portage partiel de `importexport/musicxml/internal/musicxmlreader.cpp` et de
+// `importexport/musicxml/internal/import/importmusicxml.cpp`
+// (`importCompressedMusicXml`) de MuseScore Studio, Copyright (C) MuseScore
+// Limited and others, modifié (réécrit en Rust) en 2026 : reconnaissance du
+// format par suffixe, comme `MusicXmlReader::read` (`xml`/`musicxml` contre
+// `mxl`), et détection d'un `.mxl` par `META-INF/container.xml`.
 //
 // This program is free software: you can redistribute it and/or modify it
 // under the terms of the GNU General Public License version 3 as published by
@@ -118,17 +120,16 @@ impl Format {
 
     /// Vrai si [`read`](crate::read) sait lire ce format aujourd'hui.
     ///
-    /// MusicXML dépend de la feature `musicxml-import`, LilyPond de la
-    /// feature `lilypond-import`, ABC de la feature `abc`, MIDI de la feature
-    /// `midi`.
+    /// MusicXML et `.mxl` dépendent de la feature `musicxml-import`,
+    /// LilyPond de la feature `lilypond-import`, ABC de la feature `abc`,
+    /// MIDI de la feature `midi`.
     pub const fn supports_read(self) -> bool {
         match self {
             Self::Mscz | Self::Mscx => true,
-            Self::MusicXml => cfg!(feature = "musicxml-import"),
+            Self::MusicXml | Self::Mxl => cfg!(feature = "musicxml-import"),
             Self::Ly => cfg!(feature = "lilypond-import"),
             Self::Abc => cfg!(feature = "abc"),
             Self::Midi => cfg!(feature = "midi"),
-            Self::Mxl => false,
         }
     }
 
@@ -179,7 +180,8 @@ impl Format {
     /// Ordre des tests :
     ///
     /// 1. signature ZIP (`PK\x03\x04`) : `.mscz` s'il contient un `.mscx`,
-    ///    sinon `.mxl` s'il contient un `.xml`/`.musicxml` ;
+    ///    sinon `.mxl` s'il contient `META-INF/container.xml` ou un
+    ///    `.xml`/`.musicxml` ;
     /// 2. `MThd` : MIDI ;
     /// 3. `<museScore` : `.mscx` ;
     /// 4. `<score-partwise`/`<score-timewise` ou `<?xml` : MusicXML ;
@@ -240,20 +242,27 @@ fn is_zip(bytes: &[u8]) -> bool {
 }
 
 /// Distingue un `.mscz` d'un `.mxl` par le nom des entrées de l'archive.
+///
+/// Un `.mscz` est reconnu au premier `.mscx` rencontré : il contient lui aussi
+/// un `META-INF/container.xml`, d'où l'ordre des tests. Un `.mxl` est reconnu
+/// à son `META-INF/container.xml`, ou à défaut à un `.xml`/`.musicxml` hors du
+/// conteneur.
 fn detect_zip(bytes: &[u8]) -> Option<Format> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
     let mut has_mscx = false;
+    let mut has_container = false;
     let mut has_xml = false;
 
     for index in 0..archive.len() {
         let name = archive.by_index(index).ok()?.name().to_ascii_lowercase();
         has_mscx |= name.ends_with(".mscx");
+        has_container |= name == "meta-inf/container.xml";
         has_xml |= name.ends_with(".xml") || name.ends_with(".musicxml");
     }
 
     if has_mscx {
         Some(Format::Mscz)
-    } else if has_xml {
+    } else if has_container || has_xml {
         Some(Format::Mxl)
     } else {
         None

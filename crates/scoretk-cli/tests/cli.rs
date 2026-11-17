@@ -75,15 +75,13 @@ fn list_formats() {
     assert!(text.contains("LECTURE"));
     assert!(text.contains("ÉCRITURE"));
 
-    // État réel des features activées par la CLI : MusicXML, LilyPond, ABC
-    // et MIDI se lisent ; MIDI, LilyPond et ABC s'écrivent ; seul `.mxl`
-    // reste sans lecteur.
+    // État réel des features activées par la CLI : les sept formats se lisent
+    // et s'écrivent (`.mxl` en lecture depuis t43).
     let oui = ("oui".to_owned(), "oui".to_owned());
-    let non = "non".to_owned();
     assert_eq!(sens_format(&text, "mscz"), oui, "{text}");
     assert_eq!(sens_format(&text, "musicxml"), oui, "{text}");
     assert_eq!(sens_format(&text, "midi"), oui, "{text}");
-    assert_eq!(sens_format(&text, "mxl"), (non.clone(), "oui".to_owned()));
+    assert_eq!(sens_format(&text, "mxl"), oui, "{text}");
     assert_eq!(sens_format(&text, "ly"), oui, "{text}");
     assert_eq!(sens_format(&text, "abc"), oui, "{text}");
 }
@@ -217,9 +215,9 @@ fn extension_de_sortie_inconnue_echoue() {
 }
 
 #[test]
-fn format_non_branche_echoue_explicitement() {
-    // `.mxl` n'a pas de lecteur dans la façade : la conversion doit échouer
-    // explicitement au lieu de produire une sortie vide.
+fn entree_mxl_invalide_echoue_explicitement() {
+    // Contenu `.mscx` déclaré `.mxl` : l'archive est invalide et la conversion
+    // doit échouer explicitement au lieu de produire une sortie vide.
     let output = binary()
         .arg(corpus("dynamics.mscx"))
         .args(["--from", "mxl"])
@@ -229,7 +227,7 @@ fn format_non_branche_echoue_explicitement() {
         .expect("exécution");
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("UTF-8");
-    assert!(stderr.contains("non pris en charge"), "{stderr}");
+    assert!(stderr.contains("conteneur .mxl"), "{stderr}");
 }
 
 fn mscz_from_mscx(mscx: &[u8]) -> Vec<u8> {
@@ -393,33 +391,6 @@ fn musicxml_vers_lilypond() {
     let texte = std::fs::read_to_string(&written).expect("sortie LilyPond");
     assert!(texte.starts_with("\\version \"2.24.0\"\n"), "{texte}");
     assert!(texte.contains("= \\fixed c' {"), "{texte}");
-    let _ = std::fs::remove_dir_all(dir);
-}
-
-#[test]
-fn entree_mxl_non_prise_en_charge() {
-    let dir = temp_dir();
-    let mxl = dir.join("partition.mxl");
-    let status = binary()
-        .arg(corpus("dynamics.mscx"))
-        .args(["--to", "mxl", "--encoding-date", "2026-11-17"])
-        .arg("-o")
-        .arg(&mxl)
-        .status()
-        .expect("exécution");
-    assert!(status.success());
-
-    // Limite de la façade : `Format::Mxl` n'a pas de lecteur, même quand
-    // l'écriture MusicXML compressée est disponible.
-    let output = binary()
-        .arg(&mxl)
-        .arg("-o")
-        .arg(dir.join("sortie.mscx"))
-        .output()
-        .expect("exécution");
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("UTF-8");
-    assert!(stderr.contains("non pris en charge"), "{stderr}");
     let _ = std::fs::remove_dir_all(dir);
 }
 

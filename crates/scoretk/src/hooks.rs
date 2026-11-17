@@ -21,8 +21,9 @@
 //! Le point de branchement est ici, et nulle part ailleurs ; la procédure
 //! complète est dans `docs/agents/scoretk.md` § 3.
 //!
-//! - feature `musicxml-import` : crate `scoretk-musicxml` (t34), fonction
-//!   `read_musicxml(&[u8]) -> Result<Score>` ;
+//! - feature `musicxml-import` : crate `scoretk-musicxml` (t34, t43), fonctions
+//!   `read_musicxml(&[u8]) -> Result<Score>` et
+//!   `read_mxl(&[u8]) -> Result<Score>` ;
 //! - feature `midi` : crate `scoretk-midi` (t35, t42), fonctions
 //!   `write_midi(&Score) -> Result<Vec<u8>>` et
 //!   `read_midi(&[u8]) -> Result<Score>` ;
@@ -60,6 +61,19 @@ pub(crate) fn read_musicxml(bytes: &[u8]) -> Result<Score> {
 pub(crate) fn read_musicxml(_bytes: &[u8]) -> Result<Score> {
     Err(Error::FormatNonPrisEnCharge {
         format: Format::MusicXml,
+        sens: Sens::Lecture,
+    })
+}
+
+#[cfg(feature = "musicxml-import")]
+pub(crate) fn read_mxl(bytes: &[u8]) -> Result<Score> {
+    scoretk_musicxml::read_mxl(bytes).map_err(|error| Error::MusicXmlImport(error.to_string()))
+}
+
+#[cfg(not(feature = "musicxml-import"))]
+pub(crate) fn read_mxl(_bytes: &[u8]) -> Result<Score> {
+    Err(Error::FormatNonPrisEnCharge {
+        format: Format::Mxl,
         sens: Sens::Lecture,
     })
 }

@@ -9,7 +9,7 @@ cinq formats de partition ; **mscz2xml** en est le premier convertisseur
 | Format | Lecture | Écriture |
 |---|---|---|
 | MuseScore (`.mscz` / `.mscx`, 3.x et 4.x) | fait | fait (`scoretk-mscx`) |
-| MusicXML (`.musicxml` / `.mxl`) | fait (noyau, cf. `docs/agents/musicxml-import.md`) | fait |
+| MusicXML (`.musicxml` / `.mxl`) | fait (noyau, `.mxl` en t43, cf. `docs/agents/musicxml-import.md`) | fait |
 | LilyPond (`.ly`) | fait (sous-ensemble, t40) | fait (`scoretk-lilypond`, t36) |
 | ABC (`.abc`) | fait (`scoretk-abc`, t41) | fait (`scoretk-abc`, t41) |
 | MIDI (`.mid`) | fait (import porté de MuseScore, t42) | fait (`scoretk-midi`) |
@@ -22,8 +22,8 @@ ly, abc et midi.
 
 | Crate | Rôle | État |
 | --- | --- | --- |
-| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : lecture `.mscz`/`.mscx`/MusicXML/`.ly`/ABC, écriture MusicXML/`.mxl`/`.mscx`/`.mscz`/`.ly`/`.mid`/`.abc` ; les six features (`musicxml-import`, `midi`, `lilypond`, `lilypond-import`, `mscx`, `abc`) sont activées par la CLI |
-| `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | fait (t34, t37) : noyau 26/30 v3 et 26/26 v4, parité complète 23/30 et 21/26 (écarts dans `docs/agents/musicxml-import.md`) |
+| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : lecture `.mscz`/`.mscx`/MusicXML/`.mxl`/`.ly`/ABC/MIDI, écriture MusicXML/`.mxl`/`.mscx`/`.mscz`/`.ly`/`.mid`/`.abc` ; les six features (`musicxml-import`, `midi`, `lilypond`, `lilypond-import`, `mscx`, `abc`) sont activées par la CLI |
+| `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | fait (t34, t37, t43) : noyau 26/30 v3 et 26/26 v4, parité complète 23/30 et 21/26, `.mxl` relu à l'identique sur tout le corpus (écarts dans `docs/agents/musicxml-import.md`) |
 | `scoretk-midi` | lecteur et écrivain MIDI depuis/vers le modèle pivot | fait (t35 écriture, t42 lecture) : aller-retour 21/21 à la quantification près ; import 4/21 identique au noyau MuseScore, écarts de noms d'instruments et de n-olets complexes (`docs/agents/midi.md`) |
 | `scoretk-lilypond` | écrivain et lecteur LilyPond depuis/vers le modèle pivot | fait (t36, t40) : 56/56 fichiers compilent, aller-retour noyau 24/56 (t40) |
 | `scoretk-mscx` | écrivain MuseScore (`.mscx` 4.x, `.mscz`) | fait (t38) : aller-retour identique sur tout le corpus |

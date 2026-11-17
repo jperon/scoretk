@@ -5,7 +5,9 @@
 // Portage partiel de `importexport/musicxml/internal/musicxmlwriter.cpp` et
 // `importexport/musicxml/internal/mxlwriter.cpp` de MuseScore Studio,
 // Copyright (C) MuseScore Limited and others, modifié (réécrit en Rust) en
-// 2026 : aiguillage de l'écriture MusicXML et `.mxl`.
+// 2026 : aiguillage de l'écriture MusicXML et `.mxl`, et, pour la lecture,
+// `importexport/musicxml/internal/import/importmusicxml.cpp`
+// (`importCompressedMusicXml`).
 //
 // This program is free software: you can redistribute it and/or modify it
 // under the terms of the GNU General Public License version 3 as published by
@@ -39,7 +41,7 @@
 //! | --- | --- | --- |
 //! | MuseScore `.mscz` / `.mscx` | oui | feature `mscx` |
 //! | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` | oui |
-//! | MusicXML `.mxl` | non | oui |
+//! | MusicXML `.mxl` | feature `musicxml-import` | oui |
 //! | LilyPond `.ly` | feature `lilypond-import` | feature `lilypond` |
 //! | ABC `.abc` | feature `abc` | feature `abc` |
 //! | MIDI | feature `midi` | feature `midi` |
@@ -98,10 +100,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// Lit un fichier en mémoire et renvoie le modèle pivot.
 ///
-/// `mscz` et `mscx` passent par le lecteur de `mscz2xml`. MusicXML est lu si
-/// la feature `musicxml-import` est active, LilyPond avec `lilypond-import`,
-/// ABC avec `abc` ; les autres formats renvoient
-/// [`Error::FormatNonPrisEnCharge`].
+/// `mscz` et `mscx` passent par le lecteur de `mscz2xml`. MusicXML (`.musicxml`
+/// nu comme archive `.mxl`) est lu si la feature `musicxml-import` est active,
+/// LilyPond avec `lilypond-import`, ABC avec `abc` ; les autres formats
+/// renvoient [`Error::FormatNonPrisEnCharge`].
 pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
     match format {
         Format::Mscz | Format::Mscx => {
@@ -109,13 +111,10 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
             Ok(mscz2xml::read::read_score(&container)?)
         }
         Format::MusicXml => hooks::read_musicxml(bytes),
+        Format::Mxl => hooks::read_mxl(bytes),
         Format::Ly => hooks::read_lilypond(bytes),
         Format::Abc => hooks::read_abc(bytes),
         Format::Midi => hooks::read_midi(bytes),
-        Format::Mxl => Err(Error::FormatNonPrisEnCharge {
-            format,
-            sens: Sens::Lecture,
-        }),
     }
 }
 

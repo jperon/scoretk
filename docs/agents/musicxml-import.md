@@ -11,15 +11,17 @@ Studio, `src/importexport/musicxml/internal/import/`
 ## 1. Point d'entrée et organisation
 
 ```rust
-use scoretk_musicxml::read_musicxml;
+use scoretk_musicxml::{read_musicxml, read_mxl};
 let score = read_musicxml(bytes)?;            // bytes = .musicxml, .xml ou .mxl
+let score = read_mxl(bytes)?;                 // bytes = archive .mxl uniquement
 let xml = mscz2xml::export::export_musicxml(&score)?;
 ```
 
 | Fichier | Rôle |
 | --- | --- |
-| `src/lib.rs` | `read_musicxml`, extraction du conteneur, passes 1 et 2, `gap_rests::fill` |
-| `src/container.rs` | `.mxl` (ZIP) → fichier racine via `META-INF/container.xml` |
+| `src/lib.rs` | `read_musicxml`, `read_mxl`, passes 1 et 2, `gap_rests::fill` |
+| `src/container.rs` | choix entre document XML nu et archive (`.mxl`) |
+| `src/mxl.rs` | `.mxl` (ZIP) → fichier racine via `META-INF/container.xml` |
 | `src/xml.rs` | arbre XML minimal (nom local, attributs dé-échappés, texte) |
 | `src/pass1.rs` | structure : `part-list`, longueurs de mesures, voix, chevauchements |
 | `src/pass2.rs` | modèle : segments, notes, n-olets, liaisons, barres, ornements |
@@ -34,6 +36,29 @@ let xml = mscz2xml::export::export_musicxml(&score)?;
 La bibliothèque reste portable : aucun accès disque, aucune horloge, aucun
 thread ; elle compile pour `wasm32-unknown-unknown`. Le ZIP `.mxl` est décodé
 en Rust pur (`zip` sans fonctionnalités par défaut).
+
+### Conteneur `.mxl` (t43)
+
+`src/mxl.rs` porte `extractRootfile` de `importmusicxml.cpp` :
+
+1. lire `META-INF/container.xml` et prendre le premier `<rootfile full-path>`
+   (la descente `container` → `rootfiles` → `rootfile` du C++, avec tolérance
+   d'un préfixe d'espace de noms) ;
+2. lire l'entrée ainsi désignée ; absente → `Error::RootFileNotFound`.
+
+Deux écarts au C++, volontaires :
+
+- **repli** quand `container.xml` manque : premier `.musicxml`/`.xml` hors
+  `META-INF`, dans l'ordre de l'archive (sinon `Error::NoMusicXmlInMxl`) ;
+  MuseScore, lui, échoue avec un fichier racine vide ;
+- **erreurs explicites** au lieu d'un import silencieusement vide pour une
+  entrée absente.
+
+`read_mxl` refuse un document MusicXML nu (`Error::Zip`) : c'est
+`read_musicxml` qui accepte les deux. Côté façade, `Format::Mxl` est lu avec la
+feature `musicxml-import` (`hooks::read_mxl`), et la détection par contenu
+reconnaît un ZIP contenant `META-INF/container.xml` **après** avoir écarté un
+`.mscz` (un `.mscz` contient aussi un `container.xml`).
 
 ## 2. Mesure de fidélité : test d'aller-retour
 
@@ -61,6 +86,19 @@ Résultat au 2026-11-17 :
 
 Toute régression sur un fichier listé dans `EXPECTED_V3`, `EXPECTED_V4`,
 `EXPECTED_FULL_V3` ou `EXPECTED_FULL_V4` fait échouer le test.
+
+### Aller-retour `.mxl`
+
+`crates/scoretk-musicxml/tests/mxl.rs` vérifie sur tout le corpus que
+`.mscx` → `export_mxl` → `read_mxl` → export MusicXML est **identique octet
+pour octet** au `.musicxml` équivalent exporté puis relu (détection du
+conteneur, donc indépendamment du lecteur). Il couvre aussi le repli sans
+`container.xml`, l'archive ZIP invalide, l'archive sans MusicXML et le
+`rootfile` absent. Résultat : **56/56** fichiers identiques.
+
+```sh
+nix develop -c cargo test -p scoretk-musicxml --test mxl -- --nocapture
+```
 
 ### Chaîne MusicXML → MIDI
 
