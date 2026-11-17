@@ -41,6 +41,29 @@ fn temp_dir() -> PathBuf {
     dir
 }
 
+/// Ligne de `--list-formats` d'un format donné.
+fn ligne_format(tableau: &str, format: &str) -> String {
+    tableau
+        .lines()
+        .find(|ligne| {
+            ligne
+                .split_whitespace()
+                .next()
+                .is_some_and(|nom| nom == format)
+        })
+        .unwrap_or_else(|| panic!("tableau sans {format} : {tableau}"))
+        .to_owned()
+}
+
+/// Sens (lecture, écriture) annoncés par la ligne d'un format.
+fn sens_format(tableau: &str, format: &str) -> (String, String) {
+    let ligne = ligne_format(tableau, format);
+    let mut jetons = ligne.split_whitespace().rev();
+    let ecriture = jetons.next().unwrap_or_default().to_owned();
+    let lecture = jetons.next().unwrap_or_default().to_owned();
+    (lecture, ecriture)
+}
+
 #[test]
 fn list_formats() {
     let output = binary().arg("--list-formats").output().expect("exécution");
@@ -51,6 +74,17 @@ fn list_formats() {
     }
     assert!(text.contains("LECTURE"));
     assert!(text.contains("ÉCRITURE"));
+
+    // État réel des features activées par la CLI : MusicXML se lit et MIDI
+    // s'écrit ; `.mxl`, LilyPond, ABC et MIDI restent sans lecteur.
+    let oui = ("oui".to_owned(), "oui".to_owned());
+    let non = "non".to_owned();
+    assert_eq!(sens_format(&text, "mscz"), oui, "{text}");
+    assert_eq!(sens_format(&text, "musicxml"), oui, "{text}");
+    assert_eq!(sens_format(&text, "midi"), (non.clone(), "oui".to_owned()));
+    assert_eq!(sens_format(&text, "mxl"), (non.clone(), "oui".to_owned()));
+    assert_eq!(sens_format(&text, "ly"), (non.clone(), "oui".to_owned()));
+    assert_eq!(sens_format(&text, "abc"), (non.clone(), non), "{text}");
 }
 
 #[test]
@@ -301,5 +335,131 @@ fn mscz_ecrit_et_relu_par_mscz2xml() {
     };
     let xml = mscz2xml::export::export_musicxml_with(&score, &options).expect("export");
     assert!(xml.contains("<score-partwise"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn musicxml_vers_mscx() {
+    let dir = temp_dir();
+    let written = dir.join("depuis-musicxml.mscx");
+    let output = binary()
+        .arg(corpus("dynamics.ref.musicxml"))
+        .arg("-o")
+        .arg(&written)
+        .output()
+        .expect("exécution");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let text = std::fs::read_to_string(&written).expect("sortie .mscx");
+    assert!(text.contains("<museScore version=\"4.70\">"), "{text}");
+    assert!(text.contains("<Note>"), "{text}");
+
+    // Le `.mscx` écrit se relit et s'exporte en MusicXML.
+    let exporte = dir.join("relu.musicxml");
+    let status = binary()
+        .arg(&written)
+        .args(["--to", "musicxml", "--encoding-date", "2026-11-17"])
+        .arg("-o")
+        .arg(&exporte)
+        .status()
+        .expect("exécution");
+    assert!(status.success());
+    let xml = std::fs::read_to_string(&exporte).expect("sortie MusicXML");
+    assert!(xml.contains("<score-partwise"), "{xml}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn musicxml_vers_lilypond() {
+    let dir = temp_dir();
+    let written = dir.join("depuis-musicxml.ly");
+    let output = binary()
+        .arg(corpus("dynamics.ref.musicxml"))
+        .arg("-o")
+        .arg(&written)
+        .output()
+        .expect("exécution");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let texte = std::fs::read_to_string(&written).expect("sortie LilyPond");
+    assert!(texte.starts_with("\\version \"2.24.0\"\n"), "{texte}");
+    assert!(texte.contains("= \\fixed c' {"), "{texte}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn entree_mxl_non_prise_en_charge() {
+    let dir = temp_dir();
+    let mxl = dir.join("partition.mxl");
+    let status = binary()
+        .arg(corpus("dynamics.mscx"))
+        .args(["--to", "mxl", "--encoding-date", "2026-11-17"])
+        .arg("-o")
+        .arg(&mxl)
+        .status()
+        .expect("exécution");
+    assert!(status.success());
+
+    // Limite de la façade : `Format::Mxl` n'a pas de lecteur, même quand
+    // l'écriture MusicXML compressée est disponible.
+    let output = binary()
+        .arg(&mxl)
+        .arg("-o")
+        .arg(dir.join("sortie.mscx"))
+        .output()
+        .expect("exécution");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("UTF-8");
+    assert!(stderr.contains("non pris en charge"), "{stderr}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn mscx_vers_midi() {
+    let dir = temp_dir();
+    let written = dir.join("depuis-mscx.mid");
+    let output = binary()
+        .arg(corpus("dynamics.mscx"))
+        .arg("-o")
+        .arg(&written)
+        .output()
+        .expect("exécution");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let bytes = std::fs::read(&written).expect("sortie MIDI");
+    assert_eq!(bytes.get(..4), Some(b"MThd".as_slice()));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn musicxml_vers_midi() {
+    let dir = temp_dir();
+    let written = dir.join("depuis-musicxml.mid");
+    let output = binary()
+        .arg(corpus("dynamics.ref.musicxml"))
+        .arg("-o")
+        .arg(&written)
+        .output()
+        .expect("exécution");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let bytes = std::fs::read(&written).expect("sortie MIDI");
+    assert_eq!(bytes.get(..4), Some(b"MThd".as_slice()));
     let _ = std::fs::remove_dir_all(dir);
 }
