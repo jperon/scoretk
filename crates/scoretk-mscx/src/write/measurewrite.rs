@@ -52,13 +52,17 @@ pub(crate) fn write_measure(
     let measure = &ctx.score.measures[measure_index];
 
     // Mesure répétée : son contenu est recopié par le lecteur à partir de la
-    // mesure source (`MeasureRepeat`). On n'écrit donc que la marque.
+    // mesure source (`MeasureRepeat`). On n'écrit donc que la marque, avec sa
+    // durée de mesure comme MuseScore (`<durationType>measure</durationType>`).
     if let Some(target) = ctx.repeat_target(measure_index) {
         if target.staff == staff_index {
             xml.start_element("Measure", &[]);
+            xml.tag("measureRepeatCount", &target.count.to_string());
             xml.start_element("voice", &[]);
             xml.start_element("MeasureRepeat", &[]);
             xml.tag("subtype", &target.count.to_string());
+            xml.tag("durationType", "measure");
+            xml.tag("duration", &fraction(measure.len));
             xml.end_element();
             xml.end_element();
             xml.end_element();

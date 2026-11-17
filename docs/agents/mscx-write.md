@@ -80,8 +80,10 @@ les éléments que le lecteur relit pour reconstruire ce même modèle :
 - **mesures** : `len` des mesures irrégulières, `<startRepeat>`/`<endRepeat>`,
   `<multiMeasureRest>` (mesure de mise en page après celle qui ouvre le
   groupe), `<LayoutBreak>` (`section` sur la précédente, `line` sur celle qui
-  finit le système), `<Marker>`/`<Jump>`, `MeasureRepeat` (contenu recopié par
-  le lecteur, non réécrit) ;
+  finit le système), `<Marker>`/`<Jump>`, `MeasureRepeat` (avec
+  `measureRepeatCount`, `<durationType>measure</durationType>` et sa durée :
+  MuseScore 4.7 refuse le fichier sans ces deux enfants ; le contenu est
+  recopié par le lecteur, non réécrit) ;
 - **voix et rythme** : `<voice>` positionnelles, positions exactes par
   `<location><fractions>` (aucun arrondi), `<durationType>`, `<dots>`,
   `<duration>` explicite, `<Beam>`/`<BeamMode>`, `<Tuplet>` (avec `<bracket>`),
@@ -134,4 +136,6 @@ scripts/check-mscx-rewrite.sh
 
 `scripts/check-mscx-rewrite.sh` réécrit chaque fichier du corpus en `.mscx` et
 `.mscz`, puis demande à MuseScore 4.7.4 (`QT_QPA_PLATFORM=offscreen`) de
-l'ouvrir et de l'exporter. Il vérifie l'ouverture, pas la parité graphique.
+l'ouvrir et de l'exporter. Il vérifie l'ouverture, pas la parité graphique :
+au 2026-11-17, **56/56 fichiers** (les 26 v4 et les 30 v3, en `.mscx` et en
+`.mscz`) sont rouverts sans `--force`.

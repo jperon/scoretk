@@ -87,10 +87,12 @@ fn write_payload(xml: &mut XmlWriter, spanner: &mscz2xml::model::Spanner) {
             xml.end_element();
         }
         SpannerType::Pedal => {
-            let pedal = spanner
-                .pedal
-                .clone()
-                .unwrap_or_default();
+            // `PedalInfo::default` n'a pas le trait visible : `PedalInfo::new`
+            // est la pédale dessinée par défaut de MuseScore.
+            let pedal = match &spanner.pedal {
+                Some(pedal) => pedal.clone(),
+                None => mscz2xml::model::PedalInfo::new(),
+            };
             write_pedal(xml, &pedal, spanner.visible);
         }
         SpannerType::Volta => {
