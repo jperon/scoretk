@@ -40,8 +40,8 @@
 use std::collections::BTreeMap;
 
 use mscz2xml::model::{
-    Annotation, BarLineType, ChordRest, Fraction, Measure, Score, SegmentType, StaffId, Tick,
-    Track, TupletId, VOICES,
+    Annotation, BarLineType, ChordRest, Fraction, Measure, Score, SegmentType, SpannerType,
+    StaffId, Tick, Track, TupletId, VOICES,
 };
 
 use crate::chord;
@@ -77,6 +77,7 @@ pub(crate) fn render_body(
 ) -> String {
     let items = collect_items(score, staff, voice);
     let mut pre_by_measure: Vec<Vec<Event>> = vec![Vec::new(); score.measures.len()];
+    let mut pre_by_item: Vec<Vec<Event>> = vec![Vec::new(); items.len()];
     let mut post_by_item: Vec<Vec<Event>> = vec![Vec::new(); items.len()];
     let has_voice = |candidate: usize| voice_has_content(score, staff, candidate);
 
@@ -99,7 +100,20 @@ pub(crate) fn render_body(
                         Some(crate::pitch::key_signature(key))
                     }
                     mscz2xml::model::SegmentItem::TimeSig(time) => {
-                        Some(format!("\\time {}/{}", time.numerator, time.denominator))
+                        // Indication locale de MuseScore : la portée affiche
+                        // 3/4 mais partage une mesure de 9/8 avec les autres.
+                        // `measureLength` garde la mesure réelle, sinon
+                        // LilyPond signale un contrôle de mesure raté.
+                        let mut command =
+                            format!("\\time {}/{}", time.numerator, time.denominator);
+                        if time.measure_len() != measure.len && measure.len.is_positive() {
+                            command.push_str(&format!(
+                                " \\set Timing.measureLength = #{}/{}",
+                                measure.len.numerator(),
+                                measure.len.denominator()
+                            ));
+                        }
+                        Some(command)
                     }
                     _ => None,
                 };
@@ -145,18 +159,24 @@ pub(crate) fn render_body(
     }
 
     // Textes de cadre (`TBox`) : accrochés à la première voix de la première
-    // portée, à la mesure qu'ils précèdent.
+    // portée, à la mesure qu'ils précèdent. Un `\mark` y serait rejeté quand
+    // un repère de répétition tombe au même endroit : le texte passe donc par
+    // un `\markup` attaché à la note.
     if staff == 0 && voice == 0 {
         for tbox in &score.tbox_texts {
             let measure_index = tbox.measure.min(score.measures.len().saturating_sub(1));
             if let Some(measure) = score.measures.get(measure_index) {
                 let plain = tbox.text.plain().trim();
                 if !plain.is_empty() {
-                    pre_by_measure[measure_index].push(Event::new(
-                        measure.start_tick,
-                        before::MARK,
-                        format!("\\mark {}", text::markup(&text::escape(plain))),
-                    ));
+                    attach_post(
+                        &mut post_by_item,
+                        &items,
+                        Event::new(
+                            measure.start_tick,
+                            crate::event::after::TEXT,
+                            text::attach_markup(plain, tbox.placement),
+                        ),
+                    );
                 }
             }
         }
@@ -178,26 +198,35 @@ pub(crate) fn render_body(
                 if target != voice {
                     continue;
                 }
+                // Tempo et repères de répétition sont des événements de
+                // système : seule la première voix de la portée les écrit.
+                let system_level = matches!(
+                    &annotation.annotation,
+                    Annotation::Tempo(_) | Annotation::RehearsalMark(_)
+                );
+                if system_level && voice != 0 {
+                    continue;
+                }
                 let mut events = crate::annotations::events(&annotation.annotation, segment.tick);
                 if events.is_empty() {
                     continue;
                 }
                 let measure_index = structure::measure_at(&score.measures, segment.tick);
                 for event in events.drain(..) {
-                    if matches!(
-                        &annotation.annotation,
-                        Annotation::Dynamic(_)
-                            | Annotation::StaffText(_)
-                            | Annotation::Expression(_)
-                            | Annotation::SystemText(_)
-                            | Annotation::InstrumentChange(_)
-                            | Annotation::Harmony(_)
-                            | Annotation::Fermata(_)
-                            | Annotation::Other { .. }
-                    ) {
-                        attach_post(&mut post_by_item, &items, event);
+                    if system_level {
+                        // Posé au tick réel : deux repères d'une même mesure
+                        // resteraient sinon sur le même temps, ce que
+                        // LilyPond refuse.
+                        let attached = if event.text.starts_with("\\mark ") {
+                            attach_mark(&mut pre_by_item, &mut post_by_item, &items, event.clone())
+                        } else {
+                            attach_pre(&mut pre_by_item, &items, event.clone())
+                        };
+                        if !attached {
+                            pre_by_measure[measure_index].push(event);
+                        }
                     } else {
-                        pre_by_measure[measure_index].push(event);
+                        attach_post(&mut post_by_item, &items, event);
                     }
                 }
             }
@@ -205,7 +234,7 @@ pub(crate) fn render_body(
     }
 
     // Spanners.
-    for spanner in &score.spanners {
+    for (spanner_index, spanner) in score.spanners.iter().enumerate() {
         if spanner.start.track.staff().index() != staff {
             continue;
         }
@@ -221,13 +250,30 @@ pub(crate) fn render_body(
         if target != voice {
             continue;
         }
-        for event in crate::spanners::events(spanner) {
+        // Un soufflet dont le départ et l'arrivée tombent sur le même silence
+        // n'a pas de longueur : LilyPond le refuse (« crescendo non
+        // terminé ») et il ne s'entend pas. On l'omet.
+        if matches!(spanner.kind, SpannerType::Hairpin(_)) {
+            let start = post_target(&items, spanner.start.tick);
+            let end = post_target(&items, spanner.end.tick);
+            if start.is_some() && start == end {
+                if let Some(index) = start {
+                    if items[index].chord_rest.is_rest() {
+                        continue;
+                    }
+                }
+            }
+        }
+        for event in crate::spanners::events(spanner, spanner_index + 1) {
             attach_post(&mut post_by_item, &items, event);
         }
     }
 
     // Tri des événements et écriture.
     for events in &mut pre_by_measure {
+        events.sort_by_key(|event| (event.tick, event.order));
+    }
+    for events in &mut pre_by_item {
         events.sort_by_key(|event| (event.tick, event.order));
     }
     for events in &mut post_by_item {
@@ -249,6 +295,7 @@ pub(crate) fn render_body(
         }
         emitter.flush_line();
 
+        let bar_check = time_signature_matches(measure, staff);
         let mut cursor = measure.start_tick;
         let measure_items_start = item_index;
         let mut tuplets: Vec<OpenTuplet> = Vec::new();
@@ -262,7 +309,10 @@ pub(crate) fn render_body(
             if item.tick > cursor {
                 emitter.token(&fill_rest(cursor, item.tick, measure));
             }
-            open_tuplets(score, &chain, item.tick, &mut tuplets, &mut emitter);
+            for event in &pre_by_item[item_index] {
+                emitter.token(&event.text);
+            }
+            open_tuplets(score, &chain, &mut tuplets, &mut emitter);
 
             let transpose = transpose_at(score, staff, item.tick);
             let mut line = chord::render(
@@ -309,6 +359,7 @@ pub(crate) fn render_body(
         emitter.token(&bar_line_token(
             measure,
             measure_index + 1 == score.measures.len(),
+            bar_check,
         ));
         emitter.flush_line();
         for token in structure.after_measure(measure_index) {
@@ -319,17 +370,15 @@ pub(crate) fn render_body(
     emitter.finish()
 }
 
-/// N-olet ouvert, avec son tick de début.
+/// N-olet ouvert.
 struct OpenTuplet {
     id: TupletId,
-    start_tick: Tick,
 }
 
 /// Ouvre les n-olets de la chaîne qui ne le sont pas encore.
 fn open_tuplets(
     score: &Score,
     chain: &[TupletId],
-    tick: Tick,
     open: &mut Vec<OpenTuplet>,
     emitter: &mut Emitter,
 ) {
@@ -341,10 +390,7 @@ fn open_tuplets(
         let (actual, normal) = chord::tuplet_ratio(tuplet);
         emitter.line(&format!("\\tuplet {actual}/{normal} {{"));
         emitter.depth += 1;
-        open.push(OpenTuplet {
-            id: *tuplet_id,
-            start_tick: tick,
-        });
+        open.push(OpenTuplet { id: *tuplet_id });
     }
 }
 
@@ -391,79 +437,47 @@ fn fill_rest(start: Tick, end: Tick, measure: &Measure) -> String {
 }
 
 /// Barre de fin de mesure.
-fn bar_line_token(measure: &Measure, last: bool) -> String {
-    match measure.end_bar_line {
-        BarLineType::End => "\\bar \"|.\"".to_owned(),
-        BarLineType::Double => "\\bar \"||\"".to_owned(),
-        BarLineType::Dotted | BarLineType::DoubleDotted => "\\bar \";\"".to_owned(),
-        _ if last => "\\bar \"|.\"".to_owned(),
-        _ => "|".to_owned(),
+///
+/// Le contrôle de mesure (`|`) est omis quand l'indication de mesure de la
+/// portée ne correspond pas à la longueur réelle de la mesure : c'est le cas
+/// des indications locales de MuseScore, où une portée en 3/4 partage une
+/// mesure de 9/8 avec les autres. LilyPond signalerait alors un échec de
+/// contrôle à chaque barre sans que la musique soit fausse.
+fn bar_line_token(measure: &Measure, last: bool, bar_check: bool) -> String {
+    let explicit = match measure.end_bar_line {
+        BarLineType::End => Some("\\bar \"|.\""),
+        BarLineType::Double => Some("\\bar \"||\""),
+        BarLineType::Dotted | BarLineType::DoubleDotted => Some("\\bar \";\""),
+        _ => None,
+    };
+    if let Some(token) = explicit {
+        return token.to_owned();
+    }
+    if last {
+        return "\\bar \"|.\"".to_owned();
+    }
+    if bar_check {
+        "|".to_owned()
+    } else {
+        String::new()
     }
 }
 
-/// Nom de voix LilyPond (`One`, `Two`…).
-pub(crate) fn voice_name(voice: usize) -> &'static str {
-    match voice {
-        0 => "One",
-        1 => "Two",
-        2 => "Three",
-        _ => "Four",
-    }
-}
-
-/// Numéral anglais utilisé dans les noms de variables (`One`, `Two`…).
-fn number_word(index: usize) -> String {
-    const WORDS: [&str; 10] = [
-        "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
-    ];
-    WORDS
-        .get(index)
-        .map_or_else(|| (index + 1).to_string(), |word| (*word).to_owned())
-}
-
-/// Nom de variable d'une portée (`staffOne`, `staffTwo`…).
-pub(crate) fn staff_variable(staff: usize) -> String {
-    format!("staff{}", number_word(staff))
-}
-
-/// Nombre de voix écrites pour une portée.
-pub(crate) fn written_voices(score: &Score, staff: usize) -> usize {
-    let mut count = 1;
-    for voice in 1..VOICES {
-        if voice_has_content(score, staff, voice) {
-            count = voice + 1;
+/// Vrai si l'indication de mesure de la portée correspond à la mesure.
+fn time_signature_matches(measure: &Measure, staff: usize) -> bool {
+    for segment in &measure.segments {
+        for (track, item) in segment.iter_elements() {
+            if track.staff().index() != staff {
+                continue;
+            }
+            if let mscz2xml::model::SegmentItem::TimeSig(time) = item {
+                if time.measure_len() != measure.len {
+                    return false;
+                }
+            }
         }
     }
-    count
-}
-
-/// Nom de variable d'une voix (`staffOneVoiceTwo`…).
-///
-/// La même chaîne sert de `\new Voice = "…"` et de cible à `\lyricsto`.
-pub(crate) fn voice_variable(staff: usize, voice: usize) -> String {
-    format!("staff{}Voice{}", number_word(staff), number_word(voice))
-}
-
-/// Transposition de l'instrument en vigueur à un tick.
-pub(crate) fn transpose_at(score: &Score, staff: usize, tick: Tick) -> i32 {
-    let Some(staff_data) = score.staves.get(staff) else {
-        return 0;
-    };
-    let part = score.part(staff_data.part);
-    part.instrument_at(tick)
-        .transpose
-        .map_or(0, |transpose| transpose.chromatic)
-}
-
-/// Vrai si une voix contient au moins un accord ou un silence.
-pub(crate) fn voice_has_content(score: &Score, staff: usize, voice: usize) -> bool {
-    let track = Track::new(StaffId::from_index(staff), voice as u8);
-    score.measures.iter().any(|measure| {
-        measure
-            .segments
-            .iter()
-            .any(|segment| segment.chord_rest(track).is_some())
-    })
+    true
 }
 
 /// Accords et silences d'une voix, dans l'ordre.
@@ -495,12 +509,94 @@ fn collect_items(score: &Score, staff: usize, voice: usize) -> Vec<Item<'_>> {
 /// Rattache un événement « après la note » à la dernière note au plus tard au
 /// tick de l'événement.
 fn attach_post(post_by_item: &mut [Vec<Event>], items: &[Item<'_>], event: Event) {
-    if items.is_empty() {
-        return;
+    if let Some(index) = post_target(items, event.tick) {
+        post_by_item[index].push(event);
     }
-    let position = items.partition_point(|item| item.tick <= event.tick);
-    let index = position.saturating_sub(1);
-    post_by_item[index].push(event);
+}
+
+/// Rattache un repère de répétition (`\mark`).
+///
+/// LilyPond n'accepte qu'un seul repère par instant : un repère identique est
+/// ignoré, un repère différent au même endroit devient un `\markup` au-dessus
+/// de la note.
+fn attach_mark(
+    pre_by_item: &mut [Vec<Event>],
+    post_by_item: &mut [Vec<Event>],
+    items: &[Item<'_>],
+    event: Event,
+) -> bool {
+    if items.is_empty() {
+        return false;
+    }
+    let index = items
+        .partition_point(|item| item.tick < event.tick)
+        .min(items.len() - 1);
+    if let Some(existing) = pre_by_item[index]
+        .iter()
+        .find(|existing| existing.order == before::MARK)
+    {
+        if existing.text == event.text {
+            return true;
+        }
+        let markup = event.text.trim_start_matches("\\mark ").to_owned();
+        post_by_item[index].push(Event::new(
+            event.tick,
+            crate::event::after::TEXT,
+            format!("^{markup}"),
+        ));
+        return true;
+    }
+    pre_by_item[index].push(event);
+    true
+}
+
+/// Rattache un événement « avant la note » à la première note au tick de
+/// l'événement ou, à défaut, à la suivante. Renvoie faux s'il n'y a aucune
+/// note.
+fn attach_pre(pre_by_item: &mut [Vec<Event>], items: &[Item<'_>], event: Event) -> bool {
+    let position = items.partition_point(|item| item.tick < event.tick);
+    let Some(index) = items.get(position).map(|_| position).or_else(|| {
+        if items.is_empty() {
+            None
+        } else {
+            Some(items.len() - 1)
+        }
+    }) else {
+        return false;
+    };
+    pre_by_item[index].push(event);
+    true
+}
+
+/// Indice de la note à laquelle s'attache un événement au tick donné : la
+/// dernière note au plus tard à ce tick.
+fn post_target(items: &[Item<'_>], tick: Tick) -> Option<usize> {
+    if items.is_empty() {
+        return None;
+    }
+    Some(items.partition_point(|item| item.tick <= tick).saturating_sub(1))
+}
+
+/// Transposition de l'instrument en vigueur à un tick.
+pub(crate) fn transpose_at(score: &Score, staff: usize, tick: Tick) -> i32 {
+    let Some(staff_data) = score.staves.get(staff) else {
+        return 0;
+    };
+    let part = score.part(staff_data.part);
+    part.instrument_at(tick)
+        .transpose
+        .map_or(0, |transpose| transpose.chromatic)
+}
+
+/// Vrai si une voix contient au moins un accord ou un silence.
+pub(crate) fn voice_has_content(score: &Score, staff: usize, voice: usize) -> bool {
+    let track = Track::new(StaffId::from_index(staff), voice as u8);
+    score.measures.iter().any(|measure| {
+        measure
+            .segments
+            .iter()
+            .any(|segment| segment.chord_rest(track).is_some())
+    })
 }
 
 /// Construit le texte d'une variable de voix, avec indentation.
@@ -618,7 +714,6 @@ pub(crate) fn lyrics_verses(
 ) -> BTreeMap<usize, Vec<String>> {
     let items = collect_items(score, staff, voice);
     let mut verses: BTreeMap<usize, Vec<String>> = BTreeMap::new();
-    // Premier passage : repérer les couplets présents.
     for item in &items {
         for lyrics in &item.chord_rest.lyrics {
             verses.entry(lyrics.verse).or_default();
@@ -659,6 +754,49 @@ fn syllable(lyrics: &mscz2xml::model::Lyrics) -> String {
         text_value.push_str(" __");
     }
     text_value
+}
+
+/// Nom de voix LilyPond (`One`, `Two`…).
+pub(crate) fn voice_name(voice: usize) -> &'static str {
+    match voice {
+        0 => "One",
+        1 => "Two",
+        2 => "Three",
+        _ => "Four",
+    }
+}
+
+/// Nombre de voix écrites pour une portée.
+pub(crate) fn written_voices(score: &Score, staff: usize) -> usize {
+    let mut count = 1;
+    for voice in 1..VOICES {
+        if voice_has_content(score, staff, voice) {
+            count = voice + 1;
+        }
+    }
+    count
+}
+
+/// Numéral anglais utilisé dans les noms de variables (`One`, `Two`…).
+fn number_word(index: usize) -> String {
+    const WORDS: [&str; 10] = [
+        "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+    ];
+    WORDS
+        .get(index)
+        .map_or_else(|| (index + 1).to_string(), |word| (*word).to_owned())
+}
+
+/// Nom de variable d'une portée (`staffOne`, `staffTwo`…).
+pub(crate) fn staff_variable(staff: usize) -> String {
+    format!("staff{}", number_word(staff))
+}
+
+/// Nom de variable d'une voix (`staffOneVoiceTwo`…).
+///
+/// La même chaîne sert de `\new Voice = "…"` et de cible à `\lyricsto`.
+pub(crate) fn voice_variable(staff: usize, voice: usize) -> String {
+    format!("staff{}Voice{}", number_word(staff), number_word(voice))
 }
 
 #[cfg(test)]

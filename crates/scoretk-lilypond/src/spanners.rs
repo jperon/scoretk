@@ -38,11 +38,21 @@ use crate::text;
 ///
 /// Les extrémités sont rendues telles quelles : c'est [`crate::voice`] qui
 /// décide à quelle voix les rattacher et sur quelle note les poser.
-pub(crate) fn events(spanner: &Spanner) -> Vec<Event> {
+pub(crate) fn events(spanner: &Spanner, number: usize) -> Vec<Event> {
     match &spanner.kind {
+        // Les liaisons d'expression sont numérotées (`\=1(`) : c'est la seule
+        // façon pour LilyPond de distinguer deux liaisons qui se chevauchent.
         SpannerType::Slur => vec![
-            Event::new(spanner.start.tick, after::SLUR_START, "("),
-            Event::new(spanner.end.tick, after::SLUR_STOP, ")"),
+            Event::new(
+                spanner.start.tick,
+                after::SLUR_START,
+                format!("\\={number}("),
+            ),
+            Event::new(
+                spanner.end.tick,
+                after::SLUR_STOP,
+                format!("\\={number})"),
+            ),
         ],
         SpannerType::Hairpin(kind) => {
             let start = match (kind, spanner.hairpin.as_ref()) {
@@ -72,8 +82,8 @@ pub(crate) fn events(spanner: &Spanner) -> Vec<Event> {
             ]
         }
         SpannerType::Pedal => vec![
-            Event::new(spanner.start.tick, before::PEDAL, "\\sustainOn"),
-            Event::new(spanner.end.tick, before::PEDAL, "\\sustainOff"),
+            Event::new(spanner.start.tick, after::PEDAL, "\\sustainOn"),
+            Event::new(spanner.end.tick, after::PEDAL, "\\sustainOff"),
         ],
         SpannerType::Trill => vec![
             Event::new(spanner.start.tick, after::TRILL_START, "\\startTrillSpan"),
@@ -142,17 +152,17 @@ mod tests {
 
     #[test]
     fn liaison_et_soufflet() {
-        let events = events(&spanner(SpannerType::Slur));
-        assert_eq!(events[0].text, "(");
-        assert_eq!(events[1].text, ")");
-        let events = events(&spanner(SpannerType::Hairpin(HairpinType::Crescendo)));
+        let events = events(&spanner(SpannerType::Slur), 1);
+        assert_eq!(events[0].text, "\\=1(");
+        assert_eq!(events[1].text, "\\=1)");
+        let events = events(&spanner(SpannerType::Hairpin(HairpinType::Crescendo)), 1);
         assert_eq!(events[0].text, "\\<");
         assert_eq!(events[1].text, "\\!");
     }
 
     #[test]
     fn ottava() {
-        let events = events(&spanner(SpannerType::Ottava(OttavaType::OctaveDown)));
+        let events = events(&spanner(SpannerType::Ottava(OttavaType::OctaveDown)), 1);
         assert_eq!(events[0].text, "\\ottava -1");
         assert_eq!(events[1].text, "\\ottava 0");
     }

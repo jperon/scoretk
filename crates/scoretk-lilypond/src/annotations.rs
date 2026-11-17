@@ -65,10 +65,13 @@ pub(crate) fn events(annotation: &Annotation, tick: Tick) -> Vec<Event> {
             vec![Event::new(tick, after::DYNAMIC, rendered)]
         }
         Annotation::Tempo(tempo) => {
-            let label = if tempo.text.plain().trim().is_empty() {
-                String::new()
+            // Un texte réduit à un symbole musical (`♩ = 80`) ne laisse rien
+            // après nettoyage : seule la valeur métronomique est écrite.
+            let plain = text::rich_text(&tempo.text);
+            let label = if plain.chars().any(char::is_alphanumeric) {
+                format!("\"{}\"", plain.trim())
             } else {
-                format!("\"{}\"", text::rich_text(&tempo.text))
+                String::new()
             };
             let metronome = tempo
                 .beats_per_second

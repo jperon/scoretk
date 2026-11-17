@@ -31,6 +31,10 @@ pub(crate) fn escape(text: &str) -> String {
             '\\' => escaped.push_str("\\\\"),
             '"' => escaped.push_str("\\\""),
             '\n' | '\r' | '\t' => escaped.push(' '),
+            // Zone à usage privé : MuseScore y range ses symboles musicaux
+            // (`<sym>`), que la fonte de LilyPond ne connaît pas. Les laisser
+            // produirait un avertissement de glyphe manquant.
+            '\u{E000}'..='\u{F8FF}' => {}
             _ => escaped.push(character),
         }
     }

@@ -65,8 +65,6 @@ pub(crate) mod before {
     pub(crate) const PARTIAL: u8 = 45;
     /// `\ottava`.
     pub(crate) const OTTAVA: u8 = 50;
-    /// `\sustainOn`/`\sustainOff`.
-    pub(crate) const PEDAL: u8 = 60;
     /// `\tempo`.
     pub(crate) const TEMPO: u8 = 70;
     /// `\mark` (repères de répétition).
@@ -75,22 +73,25 @@ pub(crate) mod before {
 
 /// Ordres d'insertion après la note.
 pub(crate) mod after {
+    /// Pédale (`\sustainOn`, `\sustainOff`), au plus près de la note.
+    pub(crate) const PEDAL: u8 = 5;
+    /// Fermeture de liaison d'expression (`)`), avant une éventuelle
+    /// ouverture au même tick.
+    pub(crate) const SLUR_STOP: u8 = 19;
     /// Ouverture de liaison d'expression (`(`).
     pub(crate) const SLUR_START: u8 = 20;
-    /// Fermeture de liaison d'expression (`)`).
-    pub(crate) const SLUR_STOP: u8 = 21;
+    /// Fin de soufflet (`\!`), avant un éventuel départ au même tick.
+    pub(crate) const HAIRPIN_STOP: u8 = 29;
     /// Soufflet (`\<`, `\>`).
     pub(crate) const HAIRPIN_START: u8 = 30;
-    /// Fin de soufflet (`\!`).
-    pub(crate) const HAIRPIN_STOP: u8 = 31;
+    /// Fin de trille (`\stopTrillSpan`).
+    pub(crate) const TRILL_STOP: u8 = 39;
     /// Trille (`\startTrillSpan`).
     pub(crate) const TRILL_START: u8 = 40;
-    /// Fin de trille (`\stopTrillSpan`).
-    pub(crate) const TRILL_STOP: u8 = 41;
     /// Glissando (`\glissando`).
     pub(crate) const GLISSANDO: u8 = 50;
-    /// Nuance (`\p`), texte attaché (`^\markup`).
-    pub(crate) const DYNAMIC: u8 = 55;
+    /// Nuance (`\p`), au plus près de la note pour que `_`/`^` s'y accroche.
+    pub(crate) const DYNAMIC: u8 = 6;
     /// Texte de portée (`^\markup`), accords chiffrés.
     pub(crate) const TEXT: u8 = 56;
     /// Point d'orgue (`\fermata`).

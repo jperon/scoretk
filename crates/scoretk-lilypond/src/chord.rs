@@ -256,7 +256,9 @@ fn cautionary(note: &Note) -> bool {
 fn tremolo_token(tremolo: &Tremolo) -> String {
     let value = match tremolo.kind {
         TremoloKind::Single | TremoloKind::Start | TremoloKind::Stop => {
-            1u32 << u32::from(tremolo.count.clamp(1, 4))
+            // `count` est un nombre de barres MusicXML : 1 = croche (8),
+            // 2 = double croche (16), 3 = triple (32), 4 = quadruple (64).
+            8u32 << u32::from(tremolo.count.clamp(1, 4) - 1)
         }
         TremoloKind::Unmeasured => 32,
     };
