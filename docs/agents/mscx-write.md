@@ -142,3 +142,27 @@ scripts/check-mscx-rewrite.sh
 l'ouvrir et de l'exporter. Il vérifie l'ouverture, pas la parité graphique :
 au 2026-11-17, **56/56 fichiers** (les 26 v4 et les 30 v3, en `.mscx` et en
 `.mscz`) sont rouverts sans `--force`.
+
+## 7. Ajustements du lecteur 4.x faits pour l'aller-retour
+
+Quelques propriétés que l'écrivain doit conserver n'étaient pas relues par le
+lecteur 4.x (elles ne changeaient pas les références du corpus, qui ne les
+contient pas) ; elles ont été ajoutées dans `read4xx`, avec la même sémantique
+que `read302` et `TRead` :
+
+| Propriété | Élément `.mscx` | Effet sur l'export |
+| --- | --- | --- |
+| crochet de n-olet | `<Tuplet><bracket>` | `<tuplet bracket="no">` |
+| écriture d'accord | `<Harmony><harmonyType>` | branche `<numeral>`/`<function>` au lieu de `<root>` |
+| degrés d'accord | `<Harmony><degree>` | `<degree>` MusicXML |
+| rôle d'altération | `<Accidental><role>` | `cautionary="yes"` |
+| parenthèses d'altération | `<Accidental><parens>` | `parentheses="yes"` |
+| canal MIDI | `<Channel><midiChannel>` | `<midi-channel>` et canaux libres |
+| changement d'instrument | `<InstrumentChange><Instrument>` | `Part::instruments()`, `<score-instrument>` |
+| cadre sous la mesure | `<TBox><Text><offset y>` | cible et placement du texte |
+| taille de police de cadre | `<TBox><Text><size>` | `font-size` des `<words>` |
+
+Le test e2e du corpus (références 4.7.4) reste inchangé par ces ajouts : seuls
+`v3/moonlight` (18 lignes) et `v3/voices` (6 lignes) diffèrent encore des
+références, pour les raisons de mise en page déjà documentées dans
+`docs/agents/ecarts-noyau.md`.
