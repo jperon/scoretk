@@ -28,8 +28,22 @@
 //! dans MuseScore, elle se déduit de `len != nominal_len`.
 
 use super::fraction::{Fraction, Tick};
+use super::ids::StaffId;
 use super::repeat::RepeatMark;
 use super::segment::{BarLineType, Segment, SegmentType};
+
+/// Marque de répétition de mesure.
+///
+/// Correspond au `MeasureRepeat` de MuseScore (`engraving/dom/measurerepeat.h`)
+/// et aux compteurs `Measure::measureRepeatNumMeasures()` /
+/// `Measure::isMeasureRepeatGroup()` qu'utilise `ExportMusicXml::measureRepeat`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MeasureRepeatMark {
+    /// Portée qui répète.
+    pub staff: StaffId,
+    /// Nombre de mesures répétées (`numMeasures`).
+    pub count: u16,
+}
 
 /// Mesure.
 ///
@@ -65,6 +79,20 @@ pub struct Measure {
     /// MuseScore recommence alors la numérotation affichée à 1 et réécrit les
     /// `<attributes>` de début de section (`<divisions>` compris).
     pub section_break_before: bool,
+    /// Mesure répétée (`<RepeatMeasure>`/`<MeasureRepeat>`), avec la portée
+    /// concernée et le nombre de mesures répétées.
+    ///
+    /// Le contenu de la mesure a été recopié depuis la source ; l'export écrit
+    /// en plus `<measure-style><measure-repeat>` (`measureRepeat`).
+    pub measure_repeat: Option<MeasureRepeatMark>,
+    /// Vrai quand la mesure finit un système (`<LayoutBreak>` `line` ou
+    /// `page`).
+    ///
+    /// Sans moteur de mise en page, ce saut explicite est la seule façon de
+    /// savoir qu'une mesure ouvre un nouveau système : MuseScore y place alors
+    /// une barre de courtoisie (`light-light`) quand la mesure suivante change
+    /// d'armure ou d'indication de mesure.
+    pub line_break: bool,
     /// Marqueurs et sauts attachés à la mesure, dans l'ordre du fichier
     /// (`Measure::el()` dans MuseScore).
     pub repeat_marks: Vec<RepeatMark>,
@@ -85,6 +113,8 @@ impl Measure {
             repeat_count: 0,
             multi_measure_rest: None,
             section_break_before: false,
+            measure_repeat: None,
+            line_break: false,
             repeat_marks: Vec::new(),
             segments: Vec::new(),
         }

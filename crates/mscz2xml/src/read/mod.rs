@@ -41,11 +41,29 @@ pub mod read302;
 /// Lecteur des partitions MuseScore 4.00 à 5.00 (portage de `read4xx`).
 pub mod read4xx;
 
+mod measure_repeat;
 mod notation_names;
 
 use crate::container::MsczContainer;
-use crate::model::Score;
+use crate::model::{Measure, Score};
 use crate::{Error, Result};
+
+/// Mesure de départ du groupe de silences multi-mesures qui couvre `target`.
+///
+/// Le modèle porte le compteur du groupe sur sa première mesure
+/// (`Measure::multi_measure_rest`) : un texte de cadre placé sous une mesure
+/// couverte par le groupe appartient en réalité à la mesure qui remplace le
+/// groupe (`findTextFramesToWriteAsWordsBelow` et `coveringMMRestOrThis`).
+pub(crate) fn mmrest_group_start(measures: &[Measure], target: usize) -> usize {
+    for (index, measure) in measures.iter().enumerate().take(target) {
+        if let Some(count) = measure.multi_measure_rest {
+            if target < index + usize::from(count) {
+                return index;
+            }
+        }
+    }
+    target
+}
 
 /// Lit un conteneur `.mscz` ou un `.mscx` nu et renvoie la partition.
 ///

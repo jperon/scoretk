@@ -70,8 +70,7 @@ const FICHIERS: &[(&str, &str, usize)] = &[
     ("v3", "copypaste_tuplet_01", 0),
     ("v3", "grace", 0),
     ("v3", "keysig_78216", 0),
-    // 1 : <measure-style><measure-repeat> non modélisé.
-    ("v3", "layout_elements", 1),
+    ("v3", "layout_elements", 0),
     ("v3", "measure-4", 0),
     // 7 paires <tied> sans l'attribut orientation (porté par le TieSegment).
     ("v3", "moonlight", 14),

@@ -16,7 +16,7 @@ Ce document est produit par le test `ecarts_complets_document` de `crates/mscz2x
 | copypaste_tuplet_01 | **identique** |
 | grace | **identique** |
 | keysig_78216 | **identique** |
-| layout_elements | 44 |
+| layout_elements | **identique** |
 | lyricsline01 | **identique** |
 | measure-4 | **identique** |
 | moonlight | 70 |
@@ -32,7 +32,7 @@ Ce document est produit par le test `ecarts_complets_document` de `crates/mscz2x
 | testHairpinDynamics | **identique** |
 | testHarmony6 | **identique** |
 | testMultiInstrumentPart3 | **identique** |
-| testTboxWords1 | 10 |
+| testTboxWords1 | **identique** |
 | testTuplets8 | **identique** |
 | testWedge4 | **identique** |
 | timesig-05 | **identique** |
@@ -45,7 +45,7 @@ Ce document est produit par le test `ecarts_complets_document` de `crates/mscz2x
 | --- | ---: |
 | beamStemDir | **identique** |
 | changevisibility | **identique** |
-| copypaste_parts | 2 |
+| copypaste_parts | **identique** |
 | copypastesymbollist-lyrics | **identique** |
 | dynamics | **identique** |
 | dynamics_niente | **identique** |
@@ -63,7 +63,7 @@ Ce document est produit par le test `ecarts_complets_document` de `crates/mscz2x
 | repeat68 | **identique** |
 | repeat69 | **identique** |
 | tenuto_accent | **identique** |
-| testExcludeInvisibleElements | 15 |
+| testExcludeInvisibleElements | **identique** |
 | testLocalTimesig1 | **identique** |
 | testNoteheads2 | **identique** |
 | testTempoPrecision | **identique** |
@@ -76,98 +76,29 @@ Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; fichie
 
 | Balise | Lignes | Fichiers | Exemples |
 | --- | ---: | ---: | --- |
-| `tied` | 18 | 2 | `<tied orientation="over" placement="above" type="start"/>` `<tied type="start"/>` `<tied orientation="under" placement="below" type="start"/>` |
 | `duration` | 18 | 1 | `<duration>12</duration>` `<duration>24</duration>` `<duration>36</duration>` |
 | `stem` | 18 | 1 | `<stem>down</stem>` `<stem>up</stem>` |
 | `forward` | 16 | 1 | `</forward>` `<forward>` |
-| `notations` | 14 | 2 | `<notations>` `</notations>` `<notations print-object="no">` |
-| `barline` | 8 | 3 | `<barline location="right">` `</barline>` |
-| `figure` | 8 | 1 | `<figure>` `</figure>` |
-| `attributes` | 6 | 2 | `<attributes>` `</attributes>` |
-| `direction` | 6 | 2 | `<direction placement="above" system="only-top">` `</direction>` `<direction placement="below">` |
-| `direction-type` | 6 | 2 | `<direction-type>` `</direction-type>` |
-| `bar-style` | 4 | 3 | `<bar-style>light-light</bar-style>` |
+| `tied` | 14 | 1 | `<tied orientation="over" placement="above" type="start"/>` `<tied type="start"/>` `<tied orientation="under" placement="below" type="start"/>` |
+| `attributes` | 4 | 1 | `<attributes>` `</attributes>` |
 | `backup` | 4 | 1 | `</backup>` `<backup>` |
-| `figure-number` | 4 | 1 | `<figure-number>5</figure-number>` `<figure-number>3</figure-number>` |
-| `figured-bass` | 4 | 1 | `<figured-bass>` `</figured-bass>` |
-| `bend` | 2 | 1 | `<bend>` `</bend>` |
-| `measure-style` | 2 | 1 | `<measure-style number="1">` `</measure-style>` |
-| `slide` | 2 | 1 | `<slide line-type="solid" number="1" type="start">gliss.</slide>` `<slide line-type="solid" number="1" type="stop"/>` |
+| `barline` | 4 | 1 | `<barline location="right">` `</barline>` |
+| `bar-style` | 2 | 1 | `<bar-style>light-light</bar-style>` |
 | `staff-details` | 2 | 1 | `<staff-details print-object="no"/>` |
-| `technical` | 2 | 1 | `<technical>` `</technical>` |
-| `wavy-line` | 2 | 1 | `<wavy-line number="1" type="stop"/>` |
-| `words` | 2 | 1 | `<words font-size="12" valign="top">Below 2</words>` |
-| `bend-alter` | 1 | 1 | `<bend-alter>-1</bend-alter>` |
-| `measure-repeat` | 1 | 1 | `<measure-repeat type="start">1</measure-repeat>` |
-| `rehearsal` | 1 | 1 | `<rehearsal font-size="14" font-weight="bold" justify="center">A</rehearsal>` |
-| `staff` | 1 | 1 | `<staff>1</staff>` |
-| `with-bar` | 1 | 1 | `<with-bar>dip</with-bar>` |
+
+## Écarts qui dépendent de la mise en page calculée
+
+Certains écarts ne viennent pas d'une donnée du `.mscx` mais d'un objet que MuseScore fabrique pendant la mise en page, absente du modèle :
+
+- **direction de hampe d'une ligature croisée** : `Chord::up()` dépend des notes de la ligature, elle-même groupée par la mise en page ;
+- **découpage des `<forward>`/`<backup>` et durées d'une voix à trous** : la position des segments vient de `Measure::layout`, pas du fichier ;
+- **`<tied orientation>`** : portée par le `TieSegment` calculé par la mise en page (la direction n'est pas dans le `.mscx`) ;
+- **barres de courtoisie** : ajoutées par la mise en page quand un système commence par un changement d'armure ou de métrique ; reproductibles seulement si le saut de système figure dans le fichier (`<LayoutBreak>`), pas quand la largeur de page coupe le système ;
+- **`<staff-details print-object="no">` des portées masquées** : décidé par `hideEmptyStaves` après calcul des hauteurs de systèmes.
 
 ## Diffs
 
 ```diff
-
-=== v4/copypaste_parts : 2 lignes d'écart ===
---- reference
-+++ sortie
-@@ -285,5 +285,4 @@
-             <trill-mark/>
-             <wavy-line number="1" type="start"/>
--            <wavy-line number="1" type="stop"/>
-           </ornaments>
-         </notations>
-@@ -305,4 +304,5 @@
-           <ornaments>
-             <tremolo type="start">3</tremolo>
-+            <wavy-line number="1" type="stop"/>
-           </ornaments>
-         </notations>
-
-=== v4/testExcludeInvisibleElements : 15 lignes d'écart ===
---- reference
-+++ sortie
-@@ -771,6 +771,8 @@
-         <type>quarter</type>
-         <stem>up</stem>
-+        <notations>
-+          <tied type="start"/>
-+        </notations>
-         <notations print-object="no">
--          <tied type="start"/>
-           <technical>
-             <fingering>4</fingering>
-@@ -790,5 +792,5 @@
-         <type>quarter</type>
-         <stem>up</stem>
--        <notations print-object="no">
-+        <notations>
-           <tied type="stop"/>
-         </notations>
-@@ -816,8 +818,6 @@
-         <type>quarter</type>
-         <stem>up</stem>
--        <notations print-object="no">
--          <tied type="start"/>
--        </notations>
-         <notations>
-+          <tied type="start"/>
-           <technical>
-             <fingering>4</fingering>
-@@ -837,5 +837,5 @@
-         <type>quarter</type>
-         <stem>up</stem>
--        <notations print-object="no">
-+        <notations>
-           <tied type="stop"/>
-         </notations>
-@@ -853,7 +853,4 @@
-         <type>half</type>
-       </note>
--      <barline location="right">
--        <bar-style>light-light</bar-style>
--      </barline>
-     </measure>
-     <measure number="16">
 
 === v3/barline01 : 6 lignes d'écart ===
 --- reference
@@ -188,69 +119,6 @@ Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; fichie
 -      </attributes>
        <note>
          <rest measure="yes"/>
-
-=== v3/layout_elements : 44 lignes d'écart ===
---- reference
-+++ sortie
-@@ -650,7 +650,4 @@
-         <staff>2</staff>
-       </note>
--      <barline location="right">
--        <bar-style>light-light</bar-style>
--      </barline>
-     </measure>
-     <measure number="7">
-@@ -745,12 +742,4 @@
-         </notations>
-       </note>
--      <figured-bass>
--        <figure>
--          <figure-number>5</figure-number>
--        </figure>
--        <figure>
--          <figure-number>3</figure-number>
--        </figure>
--      </figured-bass>
-       <note>
-         <pitch>
-@@ -869,12 +858,4 @@
-         <stem>down</stem>
-         <staff>2</staff>
--        <notations>
--          <technical>
--            <bend>
--              <bend-alter>-1</bend-alter>
--              <with-bar>dip</with-bar>
--            </bend>
--          </technical>
--        </notations>
-       </note>
-       <direction placement="above" system="only-top">
-@@ -887,15 +868,4 @@
-     </measure>
-     <measure number="8">
--      <attributes>
--        <measure-style number="1">
--          <measure-repeat type="start">1</measure-repeat>
--        </measure-style>
--      </attributes>
--      <direction placement="above" system="only-top">
--        <direction-type>
--          <rehearsal font-size="14" font-weight="bold" justify="center">A</rehearsal>
--        </direction-type>
--        <staff>1</staff>
--      </direction>
-       <note>
-         <pitch>
-@@ -965,16 +935,5 @@
-         <stem>up</stem>
-         <staff>1</staff>
--        <notations>
--          <slide line-type="solid" number="1" type="start">gliss.</slide>
--        </notations>
-       </note>
--      <figured-bass>
-… (diff tronqué)
 
 === v3/moonlight : 70 lignes d'écart ===
 --- reference
@@ -314,30 +182,6 @@ Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; fichie
 +        <stem>down</stem>
          <staff>2</staff>
 … (diff tronqué)
-
-=== v3/testTboxWords1 : 10 lignes d'écart ===
---- reference
-+++ sortie
-@@ -116,9 +116,4 @@
-         </direction-type>
-       </direction>
--      <direction placement="below">
--        <direction-type>
--          <words font-size="12" valign="top">Below 2</words>
--        </direction-type>
--      </direction>
-       <note>
-         <rest measure="yes"/>
-@@ -128,4 +123,9 @@
-     </measure>
-     <measure number="3">
-+      <direction placement="below">
-+        <direction-type>
-+          <words font-size="12" valign="top">Below 2</words>
-+        </direction-type>
-+      </direction>
-       <note>
-         <rest measure="yes"/>
 
 === v3/voices : 6 lignes d'écart ===
 --- reference

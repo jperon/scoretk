@@ -40,6 +40,7 @@
 //! `TODO(parité)` quand l'export MusicXML en dépendra.
 
 mod dom;
+mod figures;
 mod names;
 mod notations;
 mod nuances;
@@ -147,6 +148,8 @@ struct TieRecord {
     is_start: bool,
     /// Position de l'autre extrémité, d'après `<location>`.
     other: TieLocation,
+    /// Vrai si la liaison est affichée (`<Tie><visible>`).
+    visible: bool,
 }
 
 /// État complet du lecteur pour un fichier.
@@ -178,6 +181,8 @@ struct Reader {
     /// Moitiés d'ottavas lues mais pas encore appariées.
     ottava_halves: Vec<ottava::Half>,
     pedal_halves: Vec<pedals::Half>,
+    /// Mesures à répéter, développées en fin de lecture.
+    measure_repeats: Vec<crate::read::measure_repeat::MeasureRepeat>,
     /// Vrai si le style active les silences multi-mesures
     /// (`<createMultiMeasureRests>`).
     create_multi_measure_rests: bool,
@@ -203,6 +208,7 @@ impl Reader {
             text_lines: Vec::new(),
             ottava_halves: Vec::new(),
             pedal_halves: Vec::new(),
+            measure_repeats: Vec::new(),
             create_multi_measure_rests: false,
         }
     }
@@ -269,6 +275,11 @@ impl Reader {
         pedals::resolve(&mut self.score, &self.pedal_halves);
         notations::resolve(self);
         ottava::resolve(&mut self.score, &self.ottava_halves);
+        // Après les résolutions de spanners : la copie d'une mesure répétée
+        // reprend ceux de la mesure source.
+        for repeat in std::mem::take(&mut self.measure_repeats) {
+            crate::read::measure_repeat::expand(&mut self.score, &repeat);
+        }
         Ok(())
     }
 
@@ -557,7 +568,13 @@ impl Reader {
                     // de page est au-dessous du système précédent.
                     if staff_index == 0 {
                         let below = measure_index > 0 && has_page_break(child);
-                        if let Some(text) = textlines::read_tbox(child, measure_index, below) {
+                        if let Some(mut text) = textlines::read_tbox(child, measure_index, below) {
+                            if below {
+                                text.measure = crate::read::mmrest_group_start(
+                                    &self.score.measures,
+                                    text.measure,
+                                );
+                            }
                             self.score.add_tbox_text(text);
                         }
                     }
@@ -739,7 +756,17 @@ impl Reader {
                         .repeat_marks
                         .push(crate::model::RepeatMark::Jump(jump));
                 }
-                // TODO(parité): <LayoutBreak>, <stretch>, <noOffset>,
+                // `<LayoutBreak><subtype>line|page</subtype>` : la mesure
+                // finit un système (voir `line_break`).
+                "LayoutBreak" => {
+                    if matches!(
+                        child.child("subtype").map(Element::text),
+                        Some("line" | "page")
+                    ) {
+                        self.score.measures[model_index].line_break = true;
+                    }
+                }
+                // TODO(parité): <stretch>, <noOffset>,
                 // <measureRepeatCount>, <MMRestRange>, <visible>.
                 _ => {}
             }
@@ -1156,6 +1183,30 @@ impl Reader {
                     let annotation = notations::read_fermata(child);
                     self.add_annotation(measure_index, tick, track, annotation);
                 }
+                "FiguredBass" => {
+                    let bass = figures::read_figured_bass(child);
+                    self.add_annotation(measure_index, tick, track, Annotation::FiguredBass(bass));
+                }
+                "TremoloBar" => {
+                    let bar = figures::read_tremolo_bar(child);
+                    self.add_annotation(measure_index, tick, track, Annotation::TremoloBar(bar));
+                }
+                "MeasureRepeat" | "RepeatMeasure" => {
+                    // `TRead::read(MeasureRepeat*)` : `<subtype>` porte le
+                    // nombre de mesures répétées.
+                    let count = child
+                        .child("subtype")
+                        .and_then(Element::int)
+                        .and_then(|value| u16::try_from(value.clamp(1, i64::from(u16::MAX))).ok())
+                        .unwrap_or(1);
+                    self.measure_repeats
+                        .push(crate::read::measure_repeat::MeasureRepeat {
+                            measure: measure_index,
+                            staff: staff_index,
+                            count,
+                        });
+                    tick += self.score.measures[measure_index].len;
+                }
                 // TODO(parité): <Spanner> autres que Tie (Slur, HairPin, Ottava,
                 // TextLine, Trill, Pedal, LetRing…) : à modéliser dans
                 // `Score::spanners`. Les liaisons de prolongation sont
@@ -1175,9 +1226,8 @@ impl Reader {
                     }
                 }
                 // TODO(parité): <Beam>, <Ambitus>, <Segment>, <MeasureRepeat>,
-                // <Symbol>, <Image>, <FretDiagram>, <TremoloBar>, <StaffState>,
-                // <PlayTechAnnotation>, <Sticking>, <FiguredBass>,
-                // <HarpPedalDiagram>.
+                // <Symbol>, <Image>, <FretDiagram>, <StaffState>,
+                // <PlayTechAnnotation>, <Sticking>, <HarpPedalDiagram>.
                 _ => {}
             }
         }
@@ -1470,6 +1520,13 @@ impl Reader {
         // La note n'est ajoutée à l'arène qu'après ses enfants : son indice est
         // donc la taille actuelle de l'arène.
         let note_id = NoteId::from_index(self.score.notes.len());
+        // La visibilité appartient au `Tie` : elle n'est écrite que sur la
+        // moitié de départ.
+        let visible = element
+            .child("Tie")
+            .and_then(|tie| tie.child("visible"))
+            .and_then(Element::int)
+            .is_none_or(|value| value != 0);
         for child in &element.children {
             let is_start = match child.name.as_str() {
                 "next" => true,
@@ -1492,6 +1549,7 @@ impl Reader {
                 pitch: note.pitch,
                 is_start,
                 other,
+                visible,
             });
         }
     }
@@ -1525,8 +1583,13 @@ impl Reader {
                 used[index] = true;
                 used[partner] = true;
                 let end = self.ties[partner].clone();
-                self.score.notes[start.note.index()].tie_forward = Some(end.note);
-                self.score.notes[end.note.index()].tie_back = Some(start.note);
+                let visible = start.visible;
+                let start_note = &mut self.score.notes[start.note.index()];
+                start_note.tie_forward = Some(end.note);
+                start_note.tie_forward_visible = visible;
+                let end_note = &mut self.score.notes[end.note.index()];
+                end_note.tie_back = Some(start.note);
+                end_note.tie_back_visible = visible;
             } else {
                 // TODO(parité): demi-liaison orpheline (fichier corrompu) : le
                 // C++ la journalise et la laisse non appariée.
