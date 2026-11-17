@@ -233,11 +233,12 @@ pub fn find_all_tuplets(track: &mut MTrack, sigmap: &TimeSigMap, basic_quant: Fr
 /// Cherche un n-olet de `n` notes également réparties dans un intervalle.
 ///
 /// Renvoie la voix, le nombre de notes et la tolérance retenue pour le
-/// marquage. Les accords sont regroupés par voix : la séparation préalable des
-/// voix (`assignInitialVoices`) isole les couches rythmiques, comme
-/// `MidiTuplet::assignVoices` le fait dans le C++. Une note finale plus courte
-/// que sa case (n-olet piqué) est acceptée et sera allongée au marquage,
-/// comme `applyTupletStaccato`.
+/// marquage. La détection cherche un accord sur chacun des `n` points d'une
+/// grille `span / n` ; les accords étrangers au n-olet peuvent s'intercaler
+/// (couche rythmique suivante, note piquée) à condition d'être plus courts que
+/// la case — c'est le cas de `MidiTuplet::detectTuplets`, qui accepte les
+/// notes de n-olet piquées et les sépare ensuite en voix. Une note finale plus
+/// courte que sa case est allongée au marquage (`applyTupletStaccato`).
 fn detect_tuplet(
     track: &MTrack,
     bar_index: i32,
@@ -246,54 +247,108 @@ fn detect_tuplet(
     basic_quant: Fraction,
 ) -> Option<(usize, i32, Fraction)> {
     let _ = basic_quant;
-    let mut voices: Vec<usize> = Vec::new();
-    for (on_time, chord) in track.chords.iter() {
-        if on_time >= start && on_time < start + span && chord.bar_index == bar_index {
-            if !voices.contains(&chord.voice) {
-                voices.push(chord.voice);
-            }
-        }
+    let chords: Vec<(Fraction, usize, Fraction, bool)> = track
+        .chords
+        .iter()
+        .filter(|(on_time, chord)| {
+            *on_time >= start && *on_time < start + span && chord.bar_index == bar_index
+        })
+        .map(|(on_time, chord)| {
+            (
+                on_time,
+                chord.voice,
+                MTrack::max_off_time(chord),
+                chord.is_in_tuplet,
+            )
+        })
+        .collect();
+    if chords.len() < 3 {
+        return None;
     }
-    voices.sort_unstable();
 
-    for voice in voices {
-        let chords: Vec<Fraction> = track
-            .chords
-            .iter()
-            .filter(|(on_time, chord)| {
-                *on_time >= start
-                    && *on_time < start + span
-                    && chord.bar_index == bar_index
-                    && chord.voice == voice
-            })
-            .map(|(on_time, _)| on_time)
-            .collect();
-        if chords.len() < 3 {
+    for tuplet_number in [3, 5, 7, 9] {
+        let n = tuplet_number as usize;
+        let grid = span / Fraction::from_integer(i64::from(tuplet_number));
+        if is_simple_note_duration(grid) {
             continue;
         }
-        for tuplet_number in [3, 5, 7, 9] {
-            if chords.len() != tuplet_number as usize {
-                continue;
-            }
-            let grid = span / Fraction::from_integer(i64::from(tuplet_number));
-            if is_simple_note_duration(grid) {
-                continue;
-            }
-            let tolerance = (grid * Fraction::new(1, 8))
-                .min(min_allowed_duration() * Fraction::from_integer(2));
-            let mut aligned = true;
-            for (index, on_time) in chords.iter().enumerate() {
-                let expected = start + grid * Fraction::from_integer(index as i64);
-                if (*on_time - expected).abs() > tolerance {
-                    aligned = false;
+        let tolerance = (grid * Fraction::new(1, 8))
+            .min(min_allowed_duration() * Fraction::from_integer(2));
+
+        let mut matched: Vec<usize> = Vec::with_capacity(n);
+        let mut ok = true;
+        for k in 0..n {
+            let expected = start + grid * Fraction::from_integer(k as i64);
+            let found = chords
+                .iter()
+                .enumerate()
+                .filter(|(_, (on_time, _, _, is_in_tuplet))| {
+                    !*is_in_tuplet && (*on_time - expected).abs() <= tolerance
+                })
+                .min_by(|left, right| {
+                    (left.1 .0 - expected)
+                        .abs()
+                        .cmp(&(right.1 .0 - expected).abs())
+                })
+                .map(|(index, _)| index);
+            match found {
+                Some(index) if !matched.contains(&index) => matched.push(index),
+                _ => {
+                    ok = false;
                     break;
                 }
             }
-            if !aligned {
-                continue;
-            }
-            return Some((voice, tuplet_number, tolerance));
         }
+        if !ok {
+            continue;
+        }
+
+        // Les notes du n-olet ne dépassent pas leur case (à la tolérance près) ;
+        // les accords étrangers sont plus courts qu'une case.
+        let main_line = matched.iter().all(|index| {
+            let (on_time, _, off_time, _) = chords[*index];
+            off_time - on_time <= grid + tolerance
+        });
+        let foreign_are_short = chords
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !matched.contains(index))
+            .all(|(_, (on_time, _, off_time, _))| *off_time - *on_time < grid - tolerance);
+        if !main_line || !foreign_are_short {
+            continue;
+        }
+        // Aucun accord étranger entre deux attaques du n-olet : une couche
+        // rythmique intercalée entre les notes rendrait la grille ambiguë
+        // (c'est le cas d'une suite de 32e qui contient les points d'un
+        // triolet). Les accords étrangers ne peuvent apparaître qu'après la
+        // dernière attaque, comme la couche suivante de `testTuplets8`.
+        let mut onsets: Vec<Fraction> = matched
+            .iter()
+            .map(|index| chords[*index].0)
+            .collect();
+        onsets.sort();
+        let foreign_between = chords.iter().enumerate().any(|(index, (on_time, _, _, _))| {
+            if matched.contains(&index) {
+                return false;
+            }
+            onsets.windows(2).any(|window| {
+                *on_time > window[0] + tolerance && *on_time < window[1] - tolerance
+            })
+        });
+        if foreign_between {
+            continue;
+        }
+        let voice = matched
+            .first()
+            .map(|index| chords[*index].1)
+            .unwrap_or(0);
+        let same_voice = matched
+            .iter()
+            .all(|index| chords[*index].1 == voice);
+        if !same_voice {
+            continue;
+        }
+        return Some((voice, tuplet_number, tolerance));
     }
     None
 }
