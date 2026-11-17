@@ -182,6 +182,7 @@ pub(crate) fn read_direction(
     let mut sound_dal_segno: Option<String> = None;
     let mut symbol_words = String::new();
     let mut tbox_words: Option<(String, Option<f64>)> = None;
+    let mut line_stops: BTreeMap<(SpannerTag, usize), (HookType, f64)> = BTreeMap::new();
     let mut wedge_spread: Option<f64> = None;
 
     for child in &element.children {
@@ -208,20 +209,28 @@ pub(crate) fn read_direction(
                         }
                         "octave-shift" => read_octave_shift(kind, number, &mut starts, &mut stops),
                         "pedal" => read_pedal(kind, number, &mut starts, &mut stops),
-                        "dashes" => read_text_line(
-                            kind,
-                            number,
-                            SpannerTag::Dashes,
-                            &mut starts,
-                            &mut stops,
-                        ),
-                        "bracket" => read_text_line(
-                            kind,
-                            number,
-                            SpannerTag::Bracket,
-                            &mut starts,
-                            &mut stops,
-                        ),
+                        "dashes" => {
+                            if let Some((hook, height)) = read_text_line(
+                                kind,
+                                number,
+                                SpannerTag::Dashes,
+                                &mut starts,
+                                &mut stops,
+                            ) {
+                                line_stops.insert((SpannerTag::Dashes, number), (hook, height));
+                            }
+                        }
+                        "bracket" => {
+                            if let Some((hook, height)) = read_text_line(
+                                kind,
+                                number,
+                                SpannerTag::Bracket,
+                                &mut starts,
+                                &mut stops,
+                            ) {
+                                line_stops.insert((SpannerTag::Bracket, number), (hook, height));
+                            }
+                        }
                         "words" => {
                             if kind.attribute("valign") == Some("top") {
                                 let size = kind
@@ -366,8 +375,22 @@ pub(crate) fn read_direction(
         tempo_added = true;
     }
 
+    // Un texte de direction qui accompagne une ligne (`<dashes>`/`<bracket>`)
+    // est le texte de début de cette ligne, pas un texte de portée.
+    let mut words_for_line = false;
+    if !words.is_empty() {
+        for start in starts.iter_mut() {
+            if matches!(start.tag, SpannerTag::Dashes | SpannerTag::Bracket) {
+                if let Some(info) = start.text_line.as_mut() {
+                    info.begin_text = Some(mscz2xml::model::RichText::new(words_markup.clone()));
+                    words_for_line = true;
+                }
+            }
+        }
+    }
+
     // Texte de portée, système ou repère de répétition.
-    if !repeat_consumed && !tempo_added {
+    if !repeat_consumed && !tempo_added && !words_for_line {
         if !rehearsal_text.is_empty() {
             let mut mark = RehearsalMark::new(rehearsal_text);
             mark.placement = default_placement.unwrap_or(Placement::Above);
@@ -460,7 +483,14 @@ pub(crate) fn read_direction(
         if stop.0 == SpannerTag::Ottava {
             state.active_ottava.remove(&(staff_position, stop.1));
         }
-        close_spanner(score, state, stop, tick, track);
+        if let Some(index) = close_spanner(score, state, stop, tick, track) {
+            if let Some((hook, height)) = line_stops.get(&(stop.0, stop.1)) {
+                if let Some(info) = score.spanners[index].text_line.as_mut() {
+                    info.end_hook = *hook;
+                    info.end_hook_height = *height;
+                }
+            }
+        }
     }
     for start in starts {
         if start.tag == SpannerTag::Ottava {
@@ -728,7 +758,7 @@ fn read_text_line(
     tag: SpannerTag,
     starts: &mut Vec<SpannerStart>,
     stops: &mut Vec<(SpannerTag, usize, bool)>,
-) {
+) -> Option<(HookType, f64)> {
     let kind = element.attribute("type").unwrap_or("");
     let placement = placement(element.attribute("placement")).unwrap_or(Placement::Above);
     match kind {
@@ -768,9 +798,23 @@ fn read_text_line(
                 hairpin: None,
             });
         }
-        "stop" => stops.push((tag, number, false)),
+        "stop" => {
+            stops.push((tag, number, false));
+            let hook = match element.attribute("line-end") {
+                Some("up") | Some("down") => HookType::Hook90,
+                Some("both") => HookType::Hook90T,
+                Some("arrow") => HookType::Arrow,
+                _ => HookType::None,
+            };
+            let height = element
+                .attribute("end-length")
+                .and_then(|length| length.parse::<f64>().ok())
+                .map_or(1.5, |length| length / 10.0);
+            return Some((hook, height));
+        }
         _ => {}
     }
+    None
 }
 
 /// Ouvre un spanner et le mémorise par type et numéro.
@@ -798,12 +842,10 @@ fn close_spanner(
     stop: (SpannerTag, usize, bool),
     tick: Fraction,
     track: Track,
-) {
-    let Some(index) = state.open.remove(&(stop.0, stop.1)) else {
-        return;
-    };
+) -> Option<usize> {
+    let index = state.open.remove(&(stop.0, stop.1))?;
     let Some(spanner) = score.spanners.get_mut(index) else {
-        return;
+        return None;
     };
     spanner.end = SpannerAnchor::new(tick, track);
     if stop.2 {
@@ -816,6 +858,7 @@ fn close_spanner(
             }
         }
     }
+    Some(index)
 }
 
 /// Lit `<sound><instrument-change>` et enregistre le changement.
