@@ -25,7 +25,8 @@
 //! (`src/importexport/musicxml/internal/import/`). Le lecteur accepte un
 //! document `score-partwise` nu (`.musicxml`, `.xml`) ou une archive `.mxl`,
 //! et renvoie un [`mscz2xml::model::Score`], le modèle pivot commun aux
-//! formats de scoretk.
+//! formats de scoretk. `read_musicxml` accepte les deux ; `read_mxl` exige une
+//! archive et porte `importCompressedMusicXml`.
 //!
 //! # Portée
 //!
@@ -71,6 +72,7 @@ mod credits;
 mod direction;
 mod error;
 mod harmony;
+mod mxl;
 mod notations;
 mod noteduration;
 mod pass1;
@@ -88,7 +90,21 @@ use mscz2xml::model::Score;
 /// MusicXML ou convertible vers un autre format.
 pub fn read_musicxml(bytes: &[u8]) -> Result<Score> {
     let document = container::extract(bytes)?;
-    let root = xml::parse(&document)?;
+    parse_document(&document)
+}
+
+/// Lit un fichier MusicXML compressé (`.mxl`) et renvoie le modèle pivot.
+///
+/// Équivalent de `importCompressedMusicXml` de MuseScore : le document est
+/// extrait de l'archive (voir [`mxl`]), puis passé au lecteur commun. Un
+/// document MusicXML nu est refusé ; c'est le rôle de [`read_musicxml`].
+pub fn read_mxl(bytes: &[u8]) -> Result<Score> {
+    mxl::read_mxl(bytes)
+}
+
+/// Passe le document MusicXML extrait au lecteur (`importMusicXmlfromBuffer`).
+pub(crate) fn parse_document(document: &[u8]) -> Result<Score> {
+    let root = xml::parse(document)?;
     if root.name == "score-timewise" {
         return Err(Error::UnknownRoot(root.name));
     }
