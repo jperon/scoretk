@@ -45,7 +45,7 @@ const CONTAINER_XML: &str = "META-INF/container.xml";
 /// Lit un fichier MusicXML compressé (`.mxl`) et renvoie le modèle pivot.
 ///
 /// Équivalent de `importCompressedMusicXml` : extrait le fichier racine de
-/// l'archive ([`extract_rootfile`]) puis le fait passer par le lecteur
+/// l'archive (`extract_rootfile`) puis le fait passer par le lecteur
 /// MusicXML commun. Un document MusicXML nu n'est pas accepté ici : c'est le
 /// rôle de [`read_musicxml`](crate::read_musicxml).
 pub fn read_mxl(bytes: &[u8]) -> Result<Score> {

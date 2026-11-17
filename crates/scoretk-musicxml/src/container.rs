@@ -24,7 +24,7 @@
 //! Choix entre document MusicXML nu et conteneur `.mxl`.
 //!
 //! Un `.musicxml` ou `.xml` nu est accepté tel quel ; tout le reste est
-//! traité comme une archive `.mxl` par [`crate::mxl::extract_rootfile`].
+//! traité comme une archive `.mxl` par `crate::mxl::extract_rootfile`.
 
 use crate::error::Result;
 

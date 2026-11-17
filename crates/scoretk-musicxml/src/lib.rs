@@ -96,7 +96,7 @@ pub fn read_musicxml(bytes: &[u8]) -> Result<Score> {
 /// Lit un fichier MusicXML compressé (`.mxl`) et renvoie le modèle pivot.
 ///
 /// Équivalent de `importCompressedMusicXml` de MuseScore : le document est
-/// extrait de l'archive (voir [`mxl`]), puis passé au lecteur commun. Un
+/// extrait de l'archive (voir `mxl.rs`), puis passé au lecteur commun. Un
 /// document MusicXML nu est refusé ; c'est le rôle de [`read_musicxml`].
 pub fn read_mxl(bytes: &[u8]) -> Result<Score> {
     mxl::read_mxl(bytes)
