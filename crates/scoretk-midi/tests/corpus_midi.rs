@@ -36,8 +36,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
-use mscz2xml::model::Score;
-use mscz2xml::{read, MsczContainer};
+use scoretk_core::model::Score;
+use scoretk_core::{read, MsczContainer};
 
 use scoretk_midi::write_midi;
 

@@ -23,7 +23,7 @@
 //! auquel il s'applique et un rang qui fixe son ordre parmi les autres
 //! événements du même tick.
 
-use mscz2xml::model::Tick;
+use scoretk_core::model::Tick;
 
 /// Événement daté à insérer dans une voix.
 #[derive(Clone, Debug, PartialEq, Eq)]

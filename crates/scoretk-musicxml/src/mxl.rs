@@ -32,9 +32,9 @@
 
 use std::io::{Cursor, Read};
 
-use mscz2xml::model::Score;
 use quick_xml::events::Event;
 use quick_xml::Reader;
+use scoretk_core::model::Score;
 use zip::ZipArchive;
 
 use crate::error::{Error, Result};

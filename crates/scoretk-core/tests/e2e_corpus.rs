@@ -18,7 +18,7 @@
 //! Test de bout en bout sur le corpus MuseScore 4.
 //!
 //! Pour chaque `tests/corpus/v4/X.mscx`, on convertit le fichier avec
-//! [`mscz2xml::convert`] et on compare le MusicXML obtenu à la référence
+//! [`scoretk_core::convert`] et on compare le MusicXML obtenu à la référence
 //! `X.ref.musicxml` exportée par MuseScore 4.7.4.
 //!
 //! La comparaison porte sur le **noyau musical** : les deux documents sont
@@ -44,7 +44,7 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, XmlVersion};
 use similar::{ChangeTag, TextDiff};
 
-use mscz2xml::{convert, ConvertOptions, ExportOptions, OutputFormat};
+use scoretk_core::{convert, ConvertOptions, ExportOptions, OutputFormat};
 
 /// Date d'encodage figée : `<identification>` est normalisé de toute façon,
 /// mais la sortie reste ainsi entièrement reproductible.
@@ -666,7 +666,7 @@ fn ecarts_complets_document() {
     println!();
     println!(
         "Ce document est produit par le test `ecarts_complets_document` de \
-         `crates/mscz2xml/tests/e2e_corpus.rs`. Il compare chaque `.mscx` à sa \
+         `crates/scoretk-core/tests/e2e_corpus.rs`. Il compare chaque `.mscx` à sa \
          référence `X.ref.musicxml` après retrait de la **mise en page pure** \
          uniquement : attributs `default-x`, `default-y`, `relative-x`, \
          `relative-y`, `width`, blocs `<defaults>`, `<print>` (et leurs \

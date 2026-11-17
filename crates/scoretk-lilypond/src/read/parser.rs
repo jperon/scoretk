@@ -30,7 +30,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     ArpeggioType, ArticulationType, Duration, DurationType, Fraction, GraceType, KeyMode,
     NoteHeadGroup, OrnamentType, Placement, StemDirection, TremoloKind, TupletNumberType,
 };

@@ -22,12 +22,12 @@
 //! Écriture des objets d'un segment et de leurs notations.
 //!
 //! Les noms d'éléments et de propriétés sont ceux du `.mscx` lus par
-//! `mscz2xml::read` : `TWrite::writeItem(BarLine*)`,
+//! `scoretk_core::read` : `TWrite::writeItem(BarLine*)`,
 //! `TWrite::writeItem(Chord*)`, `TWrite::writeItem(Note*)`,
 //! `TWrite::writeProperties` pour les annotations.
 
-use mscz2xml::model::tpc;
-use mscz2xml::model::{
+use scoretk_core::model::tpc;
+use scoretk_core::model::{
     Annotation, Arpeggio, Articulation, BarLine, BarLineType, BeamMode, Breath, Chord, ChordRest,
     Clef, ClefType, Duration, DurationType, Fermata, FiguredBass, Fingering, Fraction, GraceChord,
     Hairpin, HairpinType, Harmony, Instrument, KeyMode, KeySig, Lyrics, Note, NoteHeadGroup,
@@ -41,7 +41,7 @@ use crate::text::{fraction, markup, number};
 use crate::write::context::WriteContext;
 use crate::xmlwriter::XmlWriter;
 
-use mscz2xml::model::{NoteId, Tick, Track};
+use scoretk_core::model::{NoteId, Tick, Track};
 
 /// Écrit le contenu d'un élément de segment de système.
 ///
@@ -662,9 +662,9 @@ fn write_harmony(xml: &mut XmlWriter, harmony: &Harmony) {
         xml.tag(
             "degree-type",
             match degree.kind {
-                mscz2xml::model::HarmonyDegreeKind::Add => "add",
-                mscz2xml::model::HarmonyDegreeKind::Alter => "alter",
-                mscz2xml::model::HarmonyDegreeKind::Subtract => "subtract",
+                scoretk_core::model::HarmonyDegreeKind::Add => "add",
+                scoretk_core::model::HarmonyDegreeKind::Alter => "alter",
+                scoretk_core::model::HarmonyDegreeKind::Subtract => "subtract",
             },
         );
         xml.end_element();
@@ -921,7 +921,7 @@ pub(crate) fn write_text_line(xml: &mut XmlWriter, info: &TextLineInfo) {
 
 /// Bits d'un `FontStyle` MuseScore (`Bold` 1, `Italic` 2, `Underline` 4,
 /// `Strike` 8).
-fn font_style(font: &mscz2xml::model::LineFont) -> i32 {
+fn font_style(font: &scoretk_core::model::LineFont) -> i32 {
     i32::from(font.bold)
         + 2 * i32::from(font.italic)
         + 4 * i32::from(font.underline)
@@ -1059,8 +1059,8 @@ pub(crate) fn write_notation(xml: &mut XmlWriter, notation: &SpannerNotation) {
             xml.start_element("Glissando", &[]);
             xml.tag("subtype", names::glissando_type(glissando.kind));
             let style = match glissando.kind {
-                mscz2xml::model::GlissandoType::Straight(style) => style,
-                mscz2xml::model::GlissandoType::Wavy => mscz2xml::model::LineStyle::Solid,
+                scoretk_core::model::GlissandoType::Straight(style) => style,
+                scoretk_core::model::GlissandoType::Wavy => scoretk_core::model::LineStyle::Solid,
             };
             xml.tag("lineStyle", names::line_style(style));
             xml.tag("text", &glissando.text);
@@ -1076,8 +1076,8 @@ pub(crate) fn write_notation(xml: &mut XmlWriter, notation: &SpannerNotation) {
 }
 
 /// Nom MuseScore du type de spanner (`<Spanner type="…">`).
-pub(crate) fn spanner_type_name(spanner: &mscz2xml::model::Spanner) -> Option<&'static str> {
-    use mscz2xml::model::SpannerType;
+pub(crate) fn spanner_type_name(spanner: &scoretk_core::model::Spanner) -> Option<&'static str> {
+    use scoretk_core::model::SpannerType;
     Some(match &spanner.kind {
         SpannerType::Slur => "Slur",
         SpannerType::Hairpin(_) => "HairPin",

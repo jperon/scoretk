@@ -29,7 +29,7 @@
 //! `Pitch::to_relative_octave` (`lily/pitch.cc`) : la hauteur non marquée est
 //! placée à l'octave la plus proche de la précédente.
 
-use mscz2xml::model::{tpc, ClefType, KeyMode};
+use scoretk_core::model::{tpc, ClefType, KeyMode};
 
 use super::ast::PitchSpec;
 

@@ -18,8 +18,8 @@
 //! Tests d'export des nuances et soufflets sur des partitions construites à la
 //! main.
 
-use mscz2xml::export::export_musicxml;
-use mscz2xml::model::{
+use scoretk_core::export::export_musicxml;
+use scoretk_core::model::{
     tpc, Annotation, ChordRest, Duration, Dynamic, Fraction, Hairpin, HairpinType, Measure, Note,
     Part, Placement, Score, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerType,
     StaffId, Tick, Track,

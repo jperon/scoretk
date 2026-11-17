@@ -27,7 +27,7 @@
 //! (`rehearsalmark.h`), accords chiffrés (`harmony.h`) et points d'orgue
 //! (`fermata.h`).
 
-use mscz2xml::model::{Annotation, FermataType, Placement, Tick};
+use scoretk_core::model::{Annotation, FermataType, Placement, Tick};
 
 use crate::event::{after, before, Event};
 use crate::text;
@@ -165,7 +165,7 @@ fn fermata_command(kind: FermataType) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{Dynamic, RehearsalMark, Tempo};
+    use scoretk_core::model::{Dynamic, RehearsalMark, Tempo};
 
     #[test]
     fn nuance_predefinie() {

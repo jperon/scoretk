@@ -27,7 +27,7 @@
 //! `<location>` relative de l'autre extrémité, ce qui permet au lecteur de les
 //! apparier (`ConnectorInfoReader::connect`).
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Glissando, GlissandoType, LineStyle, SpannerNotation, SpannerType, Trill, TrillType,
 };
 
@@ -65,7 +65,7 @@ pub(crate) fn write_spanner_half(xml: &mut XmlWriter, half: &Half<'_>) {
 }
 
 /// Écrit la charge propre au type de spanner.
-fn write_payload(xml: &mut XmlWriter, spanner: &mscz2xml::model::Spanner) {
+fn write_payload(xml: &mut XmlWriter, spanner: &scoretk_core::model::Spanner) {
     match &spanner.kind {
         SpannerType::Slur => {
             let notation = spanner
@@ -91,7 +91,7 @@ fn write_payload(xml: &mut XmlWriter, spanner: &mscz2xml::model::Spanner) {
             // est la pédale dessinée par défaut de MuseScore.
             let pedal = match &spanner.pedal {
                 Some(pedal) => pedal.clone(),
-                None => mscz2xml::model::PedalInfo::new(),
+                None => scoretk_core::model::PedalInfo::new(),
             };
             write_pedal(xml, &pedal, spanner.visible);
         }

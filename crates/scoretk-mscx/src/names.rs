@@ -21,13 +21,13 @@
 
 //! Conversions du modèle vers les noms MuseScore.
 //!
-//! Miroir des tables de `mscz2xml::read` : les valeurs écrites sont exactement
+//! Miroir des tables de `scoretk_core::read` : les valeurs écrites sont exactement
 //! celles que `TConv::toXml` produit dans MuseScore, afin qu'un fichier relu
 //! redonne le même modèle. Les fonctions sont totales : une valeur inconnue
 //! garde son nom MuseScore quand le modèle le porte (`Other`), sinon elle
 //! retombe sur la valeur par défaut du lecteur.
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     AccidentalType, ArpeggioType, ArticulationAnchor, ArticulationType, BarLineType, BeamMode,
     BreathType, ChordLineType, ClefType, DurationType, FermataType, FiguredBassContLine,
     FiguredBassModifier, GlissandoType, GraceType, HairpinType, HookType, KeyMode, LineStyle,

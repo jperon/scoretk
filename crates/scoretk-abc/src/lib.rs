@@ -70,7 +70,7 @@ mod writer;
 pub use error::{Error, Result, Warning};
 pub use reader::{read_abc, read_abc_tune, read_abc_with, ReadOptions, ReadOutput};
 
-use mscz2xml::model::Score;
+use scoretk_core::model::Score;
 
 /// Écrit une partition du modèle pivot au format ABC.
 ///

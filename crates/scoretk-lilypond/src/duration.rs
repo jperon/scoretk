@@ -26,7 +26,7 @@
 //! existe, et retombe sinon sur `1*num/den`, qui accepte toute fraction
 //! positive.
 
-use mscz2xml::model::{Duration, DurationType, Fraction};
+use scoretk_core::model::{Duration, DurationType, Fraction};
 
 /// Commandes LilyPond des figures sans chiffre.
 fn base_token(kind: DurationType) -> Option<&'static str> {

@@ -6,7 +6,7 @@ convertisseurs à venir et les tests. Le noyau du projet reste dans `AGENTS.md`.
 
 ## 1. Rôle
 
-Le modèle de `crates/mscz2xml/src/model` est le **pivot commun** : chaque format
+Le modèle de `crates/scoretk-core/src/model` est le **pivot commun** : chaque format
 fournit un lecteur vers ce modèle et un écrivain depuis ce modèle, ce qui évite
 N×N convertisseurs. `scoretk` choisit simplement le lecteur ou l'écrivain en
 fonction du `Format`.
@@ -80,7 +80,7 @@ et c'est cet état que montre son `--list-formats`.
 
 | Format | Lecture | Écriture |
 | --- | --- | --- |
-| `.mscz` / `.mscx` | oui (`mscz2xml`) | oui (feature `mscx`, `scoretk-mscx`) |
+| `.mscz` / `.mscx` | oui (`scoretk-core`) | oui (feature `mscx`, `scoretk-mscx`) |
 | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` (t34) | oui |
 | MusicXML `.mxl` | feature `musicxml-import` (t43) | oui |
 | LilyPond `.ly` | oui (feature `lilypond-import`, t40) | oui (feature `lilypond`, `scoretk-lilypond`) |
@@ -89,7 +89,7 @@ et c'est cet état que montre son `--list-formats`.
 
 Un format absent dans le sens demandé renvoie
 `Error::FormatNonPrisEnCharge { format, sens }`, jamais une sortie vide.
-L'écriture `.mxl` réutilise `mscz2xml::export::export_mxl_with` (archive ZIP
+L'écriture `.mxl` réutilise `scoretk_core::export::export_mxl_with` (archive ZIP
 `META-INF/container.xml` + `score.xml`, comme `saveMxl` de MuseScore).
 
 ## 3. Brancher les convertisseurs (t34, t35, t36, t38)
@@ -202,17 +202,16 @@ scoretk --version                           # version + licence (GPL-3.0-only)
   sortie est `-`.
 - `-o` absent ou `-` → sortie standard ; entrée `-` → entrée standard.
 - `--encoding-date AAAA-MM-JJ` fige `<encoding-date>` (défaut : date du jour en
-  UTC, comme `mscz2xml`).
+  UTC, comme `scoretk-core`).
 - `--no-expand-repeats` ne déroule pas les reprises dans la sortie MIDI
   (`Options::midi.expand_repeats = false`) ; la sortie est alors « à plat ».
-- La CLI `mscz2xml` reste inchangée.
 
 ## 5. Flake
 
 - `packages.scoretk` construit la CLI (`cargoExtraArgs = "-p scoretk-cli"`).
 - `apps.scoretk` la rend exécutable par `nix run .#scoretk -- …`.
-- `packages.default` reste `mscz2xml` (pas de changement de défaut).
-- Le check `wasm32-unknown-unknown` compile `-p mscz2xml -p scoretk -p
+- `packages.default` construit lui aussi la CLI `scoretk`.
+- Le check `wasm32-unknown-unknown` compile `-p scoretk-core -p scoretk -p
   scoretk-abc -p scoretk-midi -p scoretk-lilypond -p scoretk-mscx -p
   scoretk-wasm`.
 - `packages.wasm` est le paquet navigateur de la façade (crate
@@ -224,7 +223,7 @@ scoretk --version                           # version + licence (GPL-3.0-only)
 - `crates/scoretk/tests/formats.rs` : extensions, chemins, `FromStr`, détection
   par contenu (XML, ZIP `.mscz`/`.mxl`, MIDI, LilyPond, ABC, inconnu).
 - `crates/scoretk/tests/parite.rs` : `.mscz` → MusicXML **identique octet pour
-  octet** à `mscz2xml::convert` sur le corpus (`dynamics`, `hairpin_simple`,
+  octet** à `scoretk_core::convert` sur le corpus (`dynamics`, `hairpin_simple`,
   `hairpins_and_repeats`), `.mxl` (container + `score.xml`), lecture MIDI vers
   MusicXML avec la feature, erreurs explicites des formats non branchés.
 - `crates/scoretk/tests/mxl.rs` (feature `musicxml-import`) : `.mxl` lu comme
@@ -246,7 +245,7 @@ scoretk --version                           # version + licence (GPL-3.0-only)
   `\score` est une erreur.
 - `crates/scoretk-cli/tests/cli.rs` : binaire réel (`CARGO_BIN_EXE_scoretk`),
   `--list-formats` (état des features : MusicXML lecture, MIDI écriture),
-  `--version`, stdin/stdout, `.mscz` → MusicXML comparé à `mscz2xml`, sortie
+  `--version`, stdin/stdout, `.mscz` → MusicXML comparé à `scoretk-core`, sortie
   `.mxl`, `.mscx`/`.mscz` écrits et relus, `.mscx` → `.ly`, `.musicxml` →
   `.mscx`/`.ly`/`.mid`, `.mscx` → `.mid`, entrée `.mxl` refusée (pas de
   lecteur), erreurs de `--from`/`--to` manquants et de format non branché.
@@ -262,5 +261,5 @@ scoretk --version                           # version + licence (GPL-3.0-only)
   conteneur ni `.mscx` n'est pas reconnu.
 - Un XML inconnu est supposé MusicXML (`<?xml` seul) : c'est le seul format XML
   de scoretk aujourd'hui ; `--from` reste prioritaire.
-- Aucun écart mesuré avec `mscz2xml` : la façade appelle ses fonctions, la
+- Aucun écart mesuré avec `scoretk-core` : la façade appelle ses fonctions, la
   comparaison du test est une égalité stricte.

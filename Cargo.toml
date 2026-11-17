@@ -1,8 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/mscz2xml",
-    "crates/mscz2xml-cli",
+    "crates/scoretk-core",
     "crates/scoretk",
     "crates/scoretk-abc",
     "crates/scoretk-cli",

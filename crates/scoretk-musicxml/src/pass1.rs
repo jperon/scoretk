@@ -32,7 +32,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{Fraction, TimeSigType, Transpose};
+use scoretk_core::model::{Fraction, TimeSigType, Transpose};
 
 use crate::error::{Error, Result};
 use crate::noteduration::{self, NoteTiming};

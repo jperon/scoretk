@@ -47,24 +47,24 @@
 //! # Exemple
 //!
 //! ```
-//! use mscz2xml::model::{Duration, Measure, Note, Score, tpc};
+//! use scoretk_core::model::{Duration, Measure, Note, Score, tpc};
 //! use scoretk_lilypond::write_lilypond;
 //!
 //! let mut score = Score::new();
-//! let part = score.add_part(mscz2xml::model::Part::new("Piano", "Pno."));
+//! let part = score.add_part(scoretk_core::model::Part::new("Piano", "Pno."));
 //! let staff = score.add_staff(part);
 //! let mut measure = Measure::new(0, scoretk_lilypond::Fraction::ZERO, Duration::whole().ticks());
-//! let mut segment = mscz2xml::model::Segment::new(
-//!     mscz2xml::model::SegmentType::ChordRest,
+//! let mut segment = scoretk_core::model::Segment::new(
+//!     scoretk_core::model::SegmentType::ChordRest,
 //!     scoretk_lilypond::Fraction::ZERO,
 //!     1,
 //! );
-//! let mut chord = mscz2xml::model::ChordRest::chord(Duration::whole());
+//! let mut chord = scoretk_core::model::ChordRest::chord(Duration::whole());
 //! let note = score.add_note(Note::new(60, tpc::C));
 //! chord.chord_mut().expect("accord").notes.push(note);
 //! segment.set_element(
-//!     mscz2xml::model::Track::new(staff, 0),
-//!     mscz2xml::model::SegmentItem::ChordRest(chord),
+//!     scoretk_core::model::Track::new(staff, 0),
+//!     scoretk_core::model::SegmentItem::ChordRest(chord),
 //! );
 //! measure.add_segment(segment);
 //! score.add_measure(measure);
@@ -89,10 +89,10 @@ mod voice;
 mod writer;
 
 pub use error::{Error, Result};
-pub use mscz2xml::model::Fraction;
 pub use read::{read_lilypond, read_lilypond_reporting, Warning};
+pub use scoretk_core::model::Fraction;
 
-use mscz2xml::model::Score;
+use scoretk_core::model::Score;
 
 /// Écrit une partition du modèle pivot au format LilyPond.
 ///

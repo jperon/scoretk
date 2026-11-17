@@ -26,7 +26,7 @@
 //! prolonge la syllabe précédente, un tiret final marque la césure. Un tiret
 //! littéral s'écrit `\-`.
 
-use mscz2xml::model::{ChordRest, Fraction, Lyrics, LyricsSyllabic};
+use scoretk_core::model::{ChordRest, Fraction, Lyrics, LyricsSyllabic};
 
 use crate::error::Warning;
 use crate::reader::Voice;

@@ -29,10 +29,10 @@ use std::path::{Path, PathBuf};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
-use mscz2xml::export::{export_musicxml, export_musicxml_with, ExportOptions};
-use mscz2xml::model::Score;
-use mscz2xml::read::read_score;
-use mscz2xml::MsczContainer;
+use scoretk_core::export::{export_musicxml, export_musicxml_with, ExportOptions};
+use scoretk_core::model::Score;
+use scoretk_core::read::read_score;
+use scoretk_core::MsczContainer;
 
 /// Fichiers du corpus utilisés : ornements, plusieurs voix, silences.
 const FICHIERS: &[(&str, &str)] = &[

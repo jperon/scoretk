@@ -22,7 +22,7 @@
 //! mesure du C++ réécrit `4/4` en `8/8`, ce que la `Fraction` toujours réduite
 //! du modèle ne peut pas représenter ; l'implémentation doit donc avancer).
 
-use mscz2xml::model::{BarLineType, Fraction};
+use scoretk_core::model::{BarLineType, Fraction};
 use scoretk_musicxml::read_musicxml;
 
 /// Document minimal d'une mesure 4/4 avec une ronde.
@@ -90,11 +90,11 @@ fn reprise_et_liaison() {
     assert_eq!(score.notes.len(), 2);
     assert_eq!(
         score.notes[0].tie_forward,
-        Some(mscz2xml::model::NoteId::from_index(1))
+        Some(scoretk_core::model::NoteId::from_index(1))
     );
     assert_eq!(
         score.notes[1].tie_back,
-        Some(mscz2xml::model::NoteId::from_index(0))
+        Some(scoretk_core::model::NoteId::from_index(0))
     );
 }
 

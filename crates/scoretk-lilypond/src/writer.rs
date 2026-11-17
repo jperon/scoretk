@@ -29,7 +29,7 @@
 
 use std::fmt::Write as _;
 
-use mscz2xml::model::{CreditStyle, Score, Staff};
+use scoretk_core::model::{CreditStyle, Score, Staff};
 
 use crate::error::{Error, Result};
 use crate::structure;
@@ -292,7 +292,7 @@ fn group_of(staff: &Staff, count: usize) -> Option<&'static str> {
 ///
 /// Les parties 3.x n'ont pas toujours de nom long : le nom de piste de
 /// l'instrument sert alors de repli, comme `plain_part_name` à l'export.
-fn instrument_clause(part: &mscz2xml::model::Part) -> String {
+fn instrument_clause(part: &scoretk_core::model::Part) -> String {
     let long_name = if part.long_name.trim().is_empty() {
         part.instrument.track_name.trim()
     } else {
@@ -322,7 +322,7 @@ fn instrument_clause(part: &mscz2xml::model::Part) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{Part, PartId, StaffBracket};
+    use scoretk_core::model::{Part, PartId, StaffBracket};
 
     #[test]
     fn parties_sans_portee() {

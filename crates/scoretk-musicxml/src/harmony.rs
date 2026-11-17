@@ -28,7 +28,7 @@
 //! (`export/harmony.rs`). L'import reconstruit donc le nom à partir de
 //! `<kind text>` et des `<degree>`.
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Annotation, FiguredBass, FiguredBassContLine, FiguredBassItem, FiguredBassModifier, Fraction,
     Harmony, Placement, Score, SegmentType, Track,
 };
@@ -48,7 +48,7 @@ pub(crate) fn read_harmony(
     let divisions = score.division.max(1);
     let mut offset = Fraction::ZERO;
     let mut staff_position = 0usize;
-    let mut root_tpc = mscz2xml::model::tpc::INVALID;
+    let mut root_tpc = scoretk_core::model::tpc::INVALID;
     let mut bass_tpc = None;
     let mut kind = String::new();
     let mut kind_text = String::new();
@@ -71,7 +71,7 @@ pub(crate) fn read_harmony(
                     .child("root-step")
                     .is_some_and(|step| step.attribute("text") == Some(""))
                 {
-                    root_tpc = mscz2xml::model::tpc::INVALID;
+                    root_tpc = scoretk_core::model::tpc::INVALID;
                 } else if let Some(index) = "CDEFGAB".find(step.chars().next().unwrap_or('C')) {
                     root_tpc = tpc_from_step(index as u8, alter);
                 }

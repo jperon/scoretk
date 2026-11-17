@@ -22,7 +22,7 @@
 //! notation relative, langue néerlandaise par défaut, variables, reprises,
 //! transposition, paroles et commandes ignorées.
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     ArticulationType, BarLineType, ChordRestKind, ClefType, DurationType, GraceType, KeyMode,
     LyricsSyllabic, SegmentItem, SegmentType, Track,
 };
@@ -32,7 +32,7 @@ use scoretk_lilypond::{read_lilypond, read_lilypond_reporting};
 ///
 /// Le mode fixe place les noms non marqués au do central, comme le corpus ;
 /// les tests d'octave pure appellent [`read_lilypond`] directement.
-fn lire(music: &str) -> mscz2xml::model::Score {
+fn lire(music: &str) -> scoretk_core::model::Score {
     let source = format!(
         "\\version \"2.24.0\"\n\
          \\language \"english\"\n\
@@ -42,7 +42,7 @@ fn lire(music: &str) -> mscz2xml::model::Score {
 }
 
 /// Hauteurs des notes de l'arène, dans l'ordre.
-fn hauteurs(score: &mscz2xml::model::Score) -> Vec<u8> {
+fn hauteurs(score: &scoretk_core::model::Score) -> Vec<u8> {
     score.notes.iter().map(|note| note.pitch).collect()
 }
 
@@ -72,9 +72,9 @@ fn notation_neerlandaise_par_defaut() {
     assert_eq!(
         tpc,
         vec![
-            mscz2xml::model::tpc::C_SHARP,
-            mscz2xml::model::tpc::D_FLAT,
-            mscz2xml::model::tpc::E_FLAT
+            scoretk_core::model::tpc::C_SHARP,
+            scoretk_core::model::tpc::D_FLAT,
+            scoretk_core::model::tpc::E_FLAT
         ]
     );
 }
@@ -139,8 +139,8 @@ fn transposition() {
     let score = lire("\\transpose c d { c4 }");
     let note = &score.notes[0];
     assert_eq!(note.pitch, 62);
-    assert_eq!(note.tpc, mscz2xml::model::tpc::D);
-    assert_eq!(note.tpc_transposed, mscz2xml::model::tpc::C);
+    assert_eq!(note.tpc, scoretk_core::model::tpc::D);
+    assert_eq!(note.tpc_transposed, scoretk_core::model::tpc::C);
 }
 
 #[test]

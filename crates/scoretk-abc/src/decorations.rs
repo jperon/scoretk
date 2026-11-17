@@ -27,7 +27,7 @@
 //! reconnues à la lecture, mais l'écriture emploie toujours la forme longue,
 //! plus lisible et sans ambiguïté avec les hauteurs.
 
-use mscz2xml::model::{ArticulationType, HairpinType, OrnamentType};
+use scoretk_core::model::{ArticulationType, HairpinType, OrnamentType};
 
 /// Liste des nuances reconnues par ABC et par MuseScore.
 const DYNAMICS: [&str; 20] = [

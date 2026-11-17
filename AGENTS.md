@@ -6,16 +6,15 @@ détails vont dans `docs/agents/` (index en fin de fichier).
 ## Le projet
 
 **scoretk** (GPL-3.0-only) est une boîte à outils de conversion de partitions.
-Premier convertisseur : **mscz2xml**, portage en Rust de l'export MusicXML de
+Premier convertisseur : **scoretk-core**, portage en Rust de l'export MusicXML de
 **MuseScore Studio** (`.mscz`/`.mscx` → MusicXML `partwise`). Objectif à
 terme : MuseScore, MusicXML, LilyPond, ABC et MIDI (voir `docs/TODO.md`).
 
 Carte des crates et modules :
 
-- `crates/mscz2xml` — bibliothèque portable, sans I/O : `container.rs`
+- `crates/scoretk-core` — bibliothèque portable, sans I/O : `container.rs`
   (ZIP `.mscz` → `.mscx`, version), `read/read302` (3.x) et `read/read4xx`
   (4.x/5.x) → modèle, `model/` (modèle en mémoire), `export/` (MusicXML).
-- `crates/mscz2xml-cli` — binaire `mscz2xml` : lecture/écriture des fichiers.
 - `crates/scoretk-musicxml` — lecteur MusicXML (`read_musicxml`) vers le
   modèle : `.musicxml`/`.xml`/`.mxl` → `Score`.
 - `crates/scoretk-midi` — lecture MIDI (`read_midi`, portage de l'import de
@@ -39,7 +38,7 @@ Carte des crates et modules :
   `detect`, `formats`, `version`) ; unique paquet wasm du dépôt
   (`nix build .#wasm`).
 - `tests/corpus/{v3,v4}/` — `.mscx` amont + références `*.ref.musicxml` ;
-  `tests/corpus/midi/` — références `*.ref.mid` ; `crates/mscz2xml/tests/` et
+  `tests/corpus/midi/` — références `*.ref.mid` ; `crates/scoretk-core/tests/` et
   `crates/scoretk-midi/tests/` — tests par famille et e2e de conformité.
 - `scripts/` — références du corpus, table des instruments, licences ;
   `flake.nix` — shell, checks, paquet wasm.
@@ -47,7 +46,7 @@ Carte des crates et modules :
 ## Invariants
 
 1. **Bibliothèque portable.** Aucun `std::fs`/`env`/`net`/`process`, aucun
-   thread, aucune horloge, aucune dépendance C dans `crates/mscz2xml` : elle
+   thread, aucune horloge, aucune dépendance C dans `crates/scoretk-core` : elle
    doit compiler pour `wasm32-unknown-unknown` (sans WASI), Android et iOS.
    Entrées/sorties en octets en mémoire. La CLI et les tests, eux, peuvent
    utiliser le disque.
@@ -83,11 +82,9 @@ Carte des crates et modules :
    { musicxml, midi, timeline }` (additif : MusicXML identifié et carte des
    temps, voir `docs/agents/timemap.md` ; `timeline.measures[].ordinal` est
    l'indice 0-basé de la mesure et la seule clé d'ancrage, `timeline.notes`
-   est trié par `tick` croissant puis par clé stable). C'est une **rupture assumée** par
-   rapport à l'ancien
-   contrat `mscz2xml_wasm` (qui renvoyait du texte) : plus de paquet
-   `mscz2xml-wasm`, Cantus s'adapte en décodant le `Uint8Array` avec
-   `TextDecoder` (voir `docs/agents/wasm.md` § 9).
+   est trié par `tick` croissant puis par clé stable). `convert` renvoie des
+   `Uint8Array` que le consommateur décode avec `TextDecoder`
+   (voir `docs/agents/wasm.md`).
 6. **Pas de C++ amont distribué.** Le portage est une réécriture ; la copie de
    référence `ref-musescore/` est en lecture seule et non versionnée.
 
@@ -97,7 +94,7 @@ Carte des crates et modules :
 nix develop -c cargo test --workspace
 nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 nix develop -c cargo fmt --all -- --check
-nix develop -c cargo build -p mscz2xml --target wasm32-unknown-unknown
+nix develop -c cargo build -p scoretk-core --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-midi --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-lilypond --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-abc --target wasm32-unknown-unknown
@@ -108,7 +105,7 @@ nix build .#wasm
 nix develop -c cargo build -p scoretk-wasm --target wasm32-unknown-unknown
 
 # Conformité, deux niveaux (noyau musical, puis parité complète)
-nix develop -c cargo test -p mscz2xml --test e2e_corpus -- --nocapture
+nix develop -c cargo test -p scoretk-core --test e2e_corpus -- --nocapture
 ```
 
 Les données dérivées se régénèrent avec `scripts/gen-references.sh` et
@@ -158,7 +155,7 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
   à lire pour mesurer, pas pour décider seul d'un correctif.
 - `docs/agents/wasm.md` — unique paquet wasm (façade scoretk) : construction,
   tailles, API (convert/detect/formats/version), options, usage ESM/classic,
-  tests Node et migration depuis `mscz2xml` : à lire avant de toucher au
+  tests Node : à lire avant de toucher au
   crate `scoretk-wasm`.
 - `docs/agents/midi.md` — lecture et écriture MIDI, `RepeatList`, pauses,
   vélocités, références et écarts : à lire avant de toucher au crate

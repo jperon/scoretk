@@ -17,7 +17,7 @@
 
 //! Options d'écriture communes à tous les formats.
 
-use mscz2xml::ExportOptions;
+use scoretk_core::ExportOptions;
 
 /// Options d'écriture MIDI.
 ///
@@ -41,7 +41,7 @@ impl Default for MidiOptions {
 
 /// Options transmises à [`write`](crate::write).
 ///
-/// Les valeurs par défaut sont celles de l'export MusicXML de `mscz2xml` :
+/// Les valeurs par défaut sont celles de l'export MusicXML de `scoretk_core` :
 /// logiciel annoncé et date d'encodage constantes (sortie reproductible). La
 /// CLI substitue la date du jour à `encoding_date` si l'utilisateur ne la fige
 /// pas.

@@ -2,7 +2,7 @@
 
 `crates/scoretk-musicxml` lit un document MusicXML `partwise`
 (`.musicxml`, `.xml`, ou archive `.mxl`) et renvoie le modèle pivot de
-`mscz2xml` (`mscz2xml::model::Score`). Le portage suit l'import de MuseScore
+`scoretk-core` (`scoretk_core::model::Score`). Le portage suit l'import de MuseScore
 Studio, `src/importexport/musicxml/internal/import/`
 (`importmusicxmlpass1.cpp`, `importmusicxmlpass2.cpp`,
 `importmusicxmlnoteduration.cpp`, `importmusicxmlnotepitch.cpp`,
@@ -14,7 +14,7 @@ Studio, `src/importexport/musicxml/internal/import/`
 use scoretk_musicxml::{read_musicxml, read_mxl};
 let score = read_musicxml(bytes)?;            // bytes = .musicxml, .xml ou .mxl
 let score = read_mxl(bytes)?;                 // bytes = archive .mxl uniquement
-let xml = mscz2xml::export::export_musicxml(&score)?;
+let xml = scoretk_core::export::export_musicxml(&score)?;
 ```
 
 | Fichier | Rôle |
@@ -64,8 +64,8 @@ reconnaît un ZIP contenant `META-INF/container.xml` **après** avoir écarté u
 
 `crates/scoretk-musicxml/tests/aller_retour.rs` lit chaque
 `tests/corpus/{v3,v4}/*.ref.musicxml`, le réexporte avec l'export de
-`mscz2xml`, et compare les deux documents avec la normalisation de
-`crates/mscz2xml/tests/e2e_corpus.rs`, aux **deux niveaux** :
+`scoretk-core`, et compare les deux documents avec la normalisation de
+`crates/scoretk-core/tests/e2e_corpus.rs`, aux **deux niveaux** :
 
 - **noyau musical** (`Level::Core`) : niveau bloquant, identique à la
   conformité `mscx → MusicXML` ;

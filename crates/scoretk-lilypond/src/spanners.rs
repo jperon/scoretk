@@ -29,7 +29,7 @@
 //! [`crate::structure`] : elles changent la structure des reprises, pas la
 //! suite des notes.
 
-use mscz2xml::model::{HairpinType, OttavaType, Spanner, SpannerType};
+use scoretk_core::model::{HairpinType, OttavaType, Spanner, SpannerType};
 
 use crate::event::{after, before, Event};
 use crate::text;
@@ -140,7 +140,7 @@ pub(crate) fn is_staff_level(kind: &SpannerType) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{SpannerAnchor, Tick, Track};
+    use scoretk_core::model::{SpannerAnchor, Tick, Track};
 
     fn spanner(kind: SpannerType) -> Spanner {
         Spanner::new(

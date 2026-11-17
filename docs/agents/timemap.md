@@ -77,7 +77,7 @@ non décroissant.
 
 ## 3. Identifiants MusicXML
 
-Les formules viennent de `mscz2xml::model::xmlid`, partagées avec l'export :
+Les formules viennent de `scoretk_core::model::xmlid`, partagées avec l'export :
 aucune recopie, donc égalité exacte entre la carte et le MusicXML.
 
 | Élément | Fonction | Forme |

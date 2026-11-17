@@ -50,7 +50,7 @@ lire (.mscx 3.x ou 4.x) → écrire .mscx → relire avec le lecteur 4.x
 ```
 
 et compare le MusicXML obtenu à l'export **direct** du modèle d'origine, avec la
-normalisation exacte de `crates/mscz2xml/tests/e2e_corpus.rs`, aux deux niveaux
+normalisation exacte de `crates/scoretk-core/tests/e2e_corpus.rs`, aux deux niveaux
 (noyau musical et parité complète). Résultat au 2026-11-17 :
 
 | Corpus | Aller-retour `.mscx` identique | Aller-retour `.mscz` identique |

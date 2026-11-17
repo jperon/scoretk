@@ -38,7 +38,7 @@
 //! mesure, les jetons de structure à écrire avant et après elle ; toutes les
 //! voix d'une portée doivent les recevoir pour rester alignées.
 
-use mscz2xml::model::{Measure, Score, SpannerType, Tick};
+use scoretk_core::model::{Measure, Score, SpannerType, Tick};
 
 /// Jeton de structure placé avant ou après une mesure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -241,7 +241,7 @@ fn measure_before(measures: &[Measure], tick: Tick) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{
+    use scoretk_core::model::{
         BarLineType, Fraction, Part, SpannerAnchor, SpannerType, Track, VoltaInfo,
     };
 
@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn reprise_avec_deux_endings() {
         let mut score = partition(4, &[(0, 2, 2)]);
-        let mut premiere = mscz2xml::model::Spanner::new(
+        let mut premiere = scoretk_core::model::Spanner::new(
             SpannerType::Volta,
             SpannerAnchor::new(Fraction::from_integer(1), Track::from_raw(0)),
             SpannerAnchor::new(Fraction::from_integer(3), Track::from_raw(0)),
@@ -288,7 +288,7 @@ mod tests {
             closed: true,
         });
         score.add_spanner(premiere);
-        let mut seconde = mscz2xml::model::Spanner::new(
+        let mut seconde = scoretk_core::model::Spanner::new(
             SpannerType::Volta,
             SpannerAnchor::new(Fraction::from_integer(3), Track::from_raw(0)),
             SpannerAnchor::new(Fraction::from_integer(4), Track::from_raw(0)),

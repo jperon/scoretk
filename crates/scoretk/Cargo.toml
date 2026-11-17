@@ -25,7 +25,7 @@ mscx = ["dep:scoretk-mscx"]
 abc = ["dep:scoretk-abc"]
 
 [dependencies]
-mscz2xml = { path = "../mscz2xml" }
+scoretk-core = { path = "../scoretk-core" }
 scoretk-abc = { path = "../scoretk-abc", optional = true }
 scoretk-lilypond = { path = "../scoretk-lilypond", optional = true }
 scoretk-mscx = { path = "../scoretk-mscx", optional = true }

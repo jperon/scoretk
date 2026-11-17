@@ -41,7 +41,7 @@
 //! (`engraving/dom/pitchspelling.cpp`). Les altérations s'écrivent en anglais :
 //! `f` (bémol), `s` (dièse), répétés pour les altérations doubles et triples.
 
-use mscz2xml::model::{Clef, ClefType, KeyMode, KeySig, Note, NoteHeadGroup};
+use scoretk_core::model::{Clef, ClefType, KeyMode, KeySig, Note, NoteHeadGroup};
 
 /// Plus petite valeur de `tpc` valide (`Tpc::TPC_MIN`, fa triple bémol).
 const TPC_MIN: i32 = -8;
@@ -235,7 +235,7 @@ pub(crate) fn note_head_style(group: &NoteHeadGroup) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{tpc, Key};
+    use scoretk_core::model::{tpc, Key};
 
     #[test]
     fn degres_et_altered() {

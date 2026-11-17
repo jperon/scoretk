@@ -39,7 +39,7 @@ mod music;
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     BarLineType, ClefType, Fraction, HairpinType, Key, KeySig, NoteId, Score, TimeSig,
 };
 
@@ -297,7 +297,7 @@ pub(crate) struct EventData {
     /// Tick dans la mesure.
     pub tick: Fraction,
     /// Accord ou silence.
-    pub chord_rest: mscz2xml::model::ChordRest,
+    pub chord_rest: scoretk_core::model::ChordRest,
     /// N-olet éventuel.
     pub tuplet: Option<usize>,
     /// Annotations lues avant l'événement.

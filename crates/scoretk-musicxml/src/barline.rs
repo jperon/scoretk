@@ -25,7 +25,7 @@
 //! `end_bar_line`), les reprises dans les mêmes champs et les voltas dans les
 //! spanners. L'export les réécrit dans `<barline location="left|right">`.
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Annotation, BarLineType, Fermata, FermataType, Placement, Score, Spanner, SpannerAnchor,
     SpannerType, Track, VoltaInfo,
 };
@@ -95,7 +95,7 @@ pub(crate) fn read_barline(
         let index = pass2::get_segment(
             score,
             measure_index,
-            mscz2xml::model::SegmentType::ChordRest,
+            scoretk_core::model::SegmentType::ChordRest,
             measure_end,
         );
         score.measures[measure_index].segments[index]

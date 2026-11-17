@@ -44,7 +44,7 @@
 //!   l'armure ou de l'état de la mesure, ABC mémorisant les altérations
 //!   jusqu'à la barre suivante.
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Annotation, Clef, ClefType, Key, KeySig, Score, SegmentItem, TimeSig, VOICES,
 };
 

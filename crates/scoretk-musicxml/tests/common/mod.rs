@@ -17,7 +17,7 @@
 
 //! Normalisation MusicXML partagée par les tests d'aller-retour.
 //!
-//! Reprise de `crates/mscz2xml/tests/e2e_corpus.rs` : les deux documents sont
+//! Reprise de `crates/scoretk-core/tests/e2e_corpus.rs` : les deux documents sont
 //! réduits à une suite de lignes canoniques avant comparaison. Deux niveaux,
 //! identiques à ceux de la conformité `mscx → MusicXML` :
 //!

@@ -17,7 +17,7 @@ pub fn read_lilypond_reporting(src: &str) -> Result<(Score, Vec<Warning>), Error
 
 La crate ne fait aucune entrée/sortie : elle renvoie le texte en mémoire, ce
 qui la garde compilable pour `wasm32-unknown-unknown`, Android et iOS. Elle ne
-dépend que de `mscz2xml` (modèle pivot) et `thiserror` ; aucune crate tierce
+dépend que de `scoretk-core` (modèle pivot) et `thiserror` ; aucune crate tierce
 nouvelle, donc rien à ajouter à `docs/licences-tierces.md`.
 
 | Élément | Emplacement |

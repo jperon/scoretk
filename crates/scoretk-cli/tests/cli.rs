@@ -109,7 +109,7 @@ fn mscx_vers_musicxml_sur_la_sortie_standard() {
 }
 
 #[test]
-fn mscz_vers_musicxml_identique_a_mscz2xml() {
+fn mscz_vers_musicxml_identique_a_scoretk_core() {
     let mscx = std::fs::read(corpus("dynamics.mscx")).expect("corpus");
     let mscz = mscz_from_mscx(&mscx);
 
@@ -124,14 +124,14 @@ fn mscz_vers_musicxml_identique_a_mscz2xml() {
         .expect("exécution");
     assert!(output.status.success(), "{:?}", output.stderr);
 
-    let options = mscz2xml::ConvertOptions {
-        format: mscz2xml::OutputFormat::MusicXml,
-        export: mscz2xml::ExportOptions {
+    let options = scoretk_core::ConvertOptions {
+        format: scoretk_core::OutputFormat::MusicXml,
+        export: scoretk_core::ExportOptions {
             encoding_date: "2026-11-17".to_owned(),
-            ..mscz2xml::ExportOptions::default()
+            ..scoretk_core::ExportOptions::default()
         },
     };
-    let reference = mscz2xml::convert(&mscx, &options).expect("mscz2xml");
+    let reference = scoretk_core::convert(&mscx, &options).expect("scoretk_core");
 
     assert_eq!(output.stdout, reference);
     std::fs::remove_dir_all(&dir).ok();
@@ -312,7 +312,7 @@ fn mscx_ecrit_et_relu_donne_le_meme_musicxml() {
 }
 
 #[test]
-fn mscz_ecrit_et_relu_par_mscz2xml() {
+fn mscz_ecrit_et_relu_par_scoretk_core() {
     let dir = temp_dir();
     let written = dir.join("copie.mscz");
     let output = binary()
@@ -324,15 +324,15 @@ fn mscz_ecrit_et_relu_par_mscz2xml() {
     assert!(output.status.success(), "{:?}", output.stderr);
 
     let archive = std::fs::read(&written).expect("sortie .mscz");
-    let container = mscz2xml::MsczContainer::from_bytes(&archive).expect("conteneur .mscz");
+    let container = scoretk_core::MsczContainer::from_bytes(&archive).expect("conteneur .mscz");
     assert_eq!(container.version().expect("version").to_string(), "4.70");
     assert_eq!(container.main_mscx_name(), "score.mscx");
-    let score = mscz2xml::read::read_score(&container).expect("relecture");
-    let options = mscz2xml::ExportOptions {
+    let score = scoretk_core::read::read_score(&container).expect("relecture");
+    let options = scoretk_core::ExportOptions {
         encoding_date: "2026-11-17".to_owned(),
-        ..mscz2xml::ExportOptions::default()
+        ..scoretk_core::ExportOptions::default()
     };
-    let xml = mscz2xml::export::export_musicxml_with(&score, &options).expect("export");
+    let xml = scoretk_core::export::export_musicxml_with(&score, &options).expect("export");
     assert!(xml.contains("<score-partwise"));
     let _ = std::fs::remove_dir_all(dir);
 }

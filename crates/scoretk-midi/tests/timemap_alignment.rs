@@ -34,8 +34,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
-use mscz2xml::model::Score;
-use mscz2xml::{read, MsczContainer};
+use scoretk_core::model::Score;
+use scoretk_core::{read, MsczContainer};
 
 use scoretk_midi::{
     write_midi, write_midi_with, write_midi_with_timemap, write_midi_with_timemap_and, MidiOptions,
@@ -491,11 +491,11 @@ fn note_ids_match_stable_musicxml() {
         let score = load(name);
         let (_bytes, timemap) = write_midi_with_timemap(&score)
             .unwrap_or_else(|error| panic!("{name} : écriture MIDI impossible : {error}"));
-        let xml = mscz2xml::export::export_musicxml_with(
+        let xml = scoretk_core::export::export_musicxml_with(
             &score,
-            &mscz2xml::export::ExportOptions {
+            &scoretk_core::export::ExportOptions {
                 stable_ids: true,
-                ..mscz2xml::export::ExportOptions::default()
+                ..scoretk_core::export::ExportOptions::default()
             },
         )
         .unwrap_or_else(|error| panic!("{name} : export MusicXML impossible : {error}"));

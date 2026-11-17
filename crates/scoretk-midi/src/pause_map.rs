@@ -29,7 +29,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{Score, TimeSig};
+use scoretk_core::model::{Score, TimeSig};
 
 use super::repeat_list::{RepeatList, DIVISION};
 
@@ -199,7 +199,7 @@ fn tempo_at(score: &Score, tick: i64) -> f64 {
                 continue;
             }
             for entry in &segment.annotations {
-                if let mscz2xml::model::Annotation::Tempo(tempo) = &entry.annotation {
+                if let scoretk_core::model::Annotation::Tempo(tempo) = &entry.annotation {
                     if let Some(beats_per_second) = tempo.beats_per_second {
                         value = beats_per_second;
                     }

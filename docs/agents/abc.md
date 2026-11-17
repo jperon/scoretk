@@ -258,7 +258,7 @@ hors dépôt (par exemple `/tmp/abcchk/`) pour les consulter.
 ## 10. Mise à niveau de MuseScore
 
 Le crate ne porte pas de fichier C++ de MuseScore : il dépend du **modèle
-pivot** (`crates/mscz2xml/src/model`) et de ses lecteurs. Une mise à niveau de
+pivot** (`crates/scoretk-core/src/model`) et de ses lecteurs. Une mise à niveau de
 MuseScore suit donc `docs/agents/upstream.md` (commit, version, régénération
 du corpus, validation e2e). Vérifier à cette occasion que `ref-musescore/`
 n'a toujours pas d'export ABC natif ; s'il en apparaissait un, ce serait une

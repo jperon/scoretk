@@ -27,7 +27,7 @@
 //! produisent un avertissement et sont ignorées plutôt que de faire échouer la
 //! lecture d'un air entier.
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Accidental, AccidentalType, Articulation, ArticulationType, BarLineType, ChordRest, Duration,
     DurationType, Fraction, GraceChord, GraceType, Note, NoteId, Ornament, OrnamentType,
 };
@@ -1008,7 +1008,7 @@ fn looks_like_chord(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{StaffId, Track};
+    use scoretk_core::model::{StaffId, Track};
 
     fn parse(music: &str) -> crate::reader::ReadOutput {
         let source = format!("X:1\nT:Test\nM:4/4\nL:1/8\nK:C\n{music}\n");
@@ -1016,7 +1016,7 @@ mod tests {
             .expect("lecture")
     }
 
-    fn chord_rest(score: &mscz2xml::model::Score, measure: usize, index: usize) -> &ChordRest {
+    fn chord_rest(score: &scoretk_core::model::Score, measure: usize, index: usize) -> &ChordRest {
         score.measures[measure]
             .segments
             .iter()

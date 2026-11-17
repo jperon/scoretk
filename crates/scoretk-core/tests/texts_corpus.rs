@@ -40,8 +40,8 @@ use std::path::{Path, PathBuf};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
-use mscz2xml::read::read_score;
-use mscz2xml::MsczContainer;
+use scoretk_core::read::read_score;
+use scoretk_core::MsczContainer;
 
 /// Élément retenu de la comparaison : nom, attributs utiles, enfants et texte.
 #[derive(Debug, Default)]
@@ -348,7 +348,7 @@ fn notre_export(nom: &str, dir: &Path) -> Vec<String> {
     let data = fs::read(&chemin).expect("lecture du .mscx");
     let container = MsczContainer::from_bytes(&data).expect("conteneur");
     let score = read_score(&container).expect("lecture du .mscx");
-    let xml = mscz2xml::export::export_musicxml(&score).expect("export");
+    let xml = scoretk_core::export::export_musicxml(&score).expect("export");
     extraire(&xml)
 }
 

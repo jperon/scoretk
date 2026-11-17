@@ -30,7 +30,7 @@
 //! hampes en bas, et la découpe par hauteur (`splitDrumTracks`) n'est exercée
 //! que si l'option `doStaffSplit` est demandée (elle ne l'est pas par défaut).
 
-use mscz2xml::model::{Score, StaffBracket};
+use scoretk_core::model::{Score, StaffBracket};
 
 use super::chord::{min_allowed_duration, MTrack};
 
@@ -123,7 +123,7 @@ pub fn split_drum_tracks(tracks: &mut [MTrack]) {
 pub fn find_all_tuplets_for_drums(
     track: &mut MTrack,
     sigmap: &super::timesigmap::TimeSigMap,
-    basic_quant: mscz2xml::model::Fraction,
+    basic_quant: scoretk_core::model::Fraction,
 ) {
     super::tuplet::find_all_tuplets(track, sigmap, basic_quant);
     let _ = min_allowed_duration();

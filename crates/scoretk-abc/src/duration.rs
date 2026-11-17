@@ -28,7 +28,7 @@
 //! multiplicateurs fractionnaires (`3/2`, `2/3`) couvrent les durées que la
 //! notation pointée ne représente pas, en particulier les n-olets.
 
-use mscz2xml::model::{ChordRest, Duration, DurationType, Fraction};
+use scoretk_core::model::{ChordRest, Duration, DurationType, Fraction};
 
 /// Unité d'écriture par défaut (`L:1/8`).
 pub(crate) fn unit() -> Fraction {

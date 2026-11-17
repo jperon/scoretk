@@ -28,7 +28,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     BarLine, BarLineType, ChordRest, Fraction, RepeatMark, SegmentAnnotation, SegmentItem,
     SegmentType, StemDirection, Tick, Track, TupletId, VOICES,
 };
@@ -198,7 +198,7 @@ fn write_voices(
     measure_index: usize,
     staff_index: usize,
 ) {
-    let staff = mscz2xml::model::StaffId::from_index(staff_index);
+    let staff = scoretk_core::model::StaffId::from_index(staff_index);
     let mut last = None;
     for voice in 0..VOICES as u8 {
         let track = Track::new(staff, voice);

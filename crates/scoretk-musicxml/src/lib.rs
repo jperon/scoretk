@@ -19,12 +19,12 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Lecture MusicXML vers le modèle de `mscz2xml`.
+//! Lecture MusicXML vers le modèle de `scoretk_core`.
 //!
 //! Portage de l'import MusicXML de MuseScore Studio
 //! (`src/importexport/musicxml/internal/import/`). Le lecteur accepte un
 //! document `score-partwise` nu (`.musicxml`, `.xml`) ou une archive `.mxl`,
-//! et renvoie un [`mscz2xml::model::Score`], le modèle pivot commun aux
+//! et renvoie un [`scoretk_core::model::Score`], le modèle pivot commun aux
 //! formats de scoretk. `read_musicxml` accepte les deux ; `read_mxl` exige une
 //! archive et porte `importCompressedMusicXml`.
 //!
@@ -81,12 +81,12 @@ mod xml;
 
 pub use error::{Error, Result};
 
-use mscz2xml::model::Score;
+use scoretk_core::model::Score;
 
 /// Lit un document MusicXML `partwise` (`.musicxml`, `.xml` ou `.mxl`).
 ///
 /// Tout se passe en mémoire : aucun fichier n'est ouvert, aucune horloge n'est
-/// lue. Le résultat est un [`Score`] du modèle de `mscz2xml`, exportable en
+/// lue. Le résultat est un [`Score`] du modèle de `scoretk_core`, exportable en
 /// MusicXML ou convertible vers un autre format.
 pub fn read_musicxml(bytes: &[u8]) -> Result<Score> {
     let document = container::extract(bytes)?;
@@ -113,6 +113,6 @@ pub(crate) fn parse_document(document: &[u8]) -> Result<Score> {
     // `Measure::checkMeasure` : les trous des voix sont comblés par des
     // silences « gap », qui ne sont pas exportés mais font avancer le curseur
     // (origine des `<forward>`/`<backup>` scindés de MuseScore).
-    mscz2xml::read::gap_rests::fill(&mut score);
+    scoretk_core::read::gap_rests::fill(&mut score);
     Ok(score)
 }

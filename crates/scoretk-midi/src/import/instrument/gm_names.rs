@@ -24,7 +24,7 @@
 //!
 //! Fichier **généré** à partir de `generalmidi.cpp` de MuseScore Studio
 //! (`GM1_PROGRAM_DATA`, 128 entrées), comme la table des instruments de
-//! `mscz2xml`. Ne pas éditer à la main.
+//! `scoretk_core`. Ne pas éditer à la main.
 
 /// Nom de programme General MIDI (`getMidiName`), indexé par programme 0-127.
 pub const GM1_NAMES: [&str; 128] = [

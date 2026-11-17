@@ -31,7 +31,7 @@
 //! ici ne contient que ce qui est solidaire de l'accord : hauteurs, durée,
 //! articulations, ornements, arpège, trémolo et accords d'agrément.
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     AccidentalType, Articulation, ArticulationType, Chord, ChordLineType, ChordRest, Duration,
     Fraction, GraceChord, GraceType, Note, Ornament, OrnamentType, Score, StemDirection, Tremolo,
     TremoloKind, Tuplet,
@@ -167,10 +167,10 @@ fn arpeggio_prefix(chord: &Chord) -> Option<String> {
         return None;
     }
     match arpeggio.kind {
-        mscz2xml::model::ArpeggioType::Up => Some("\\arpeggioArrowUp".to_owned()),
-        mscz2xml::model::ArpeggioType::Down => Some("\\arpeggioArrowDown".to_owned()),
-        mscz2xml::model::ArpeggioType::Bracket => Some("\\arpeggioBracket".to_owned()),
-        mscz2xml::model::ArpeggioType::Normal => None,
+        scoretk_core::model::ArpeggioType::Up => Some("\\arpeggioArrowUp".to_owned()),
+        scoretk_core::model::ArpeggioType::Down => Some("\\arpeggioArrowDown".to_owned()),
+        scoretk_core::model::ArpeggioType::Bracket => Some("\\arpeggioBracket".to_owned()),
+        scoretk_core::model::ArpeggioType::Normal => None,
     }
 }
 
@@ -433,7 +433,7 @@ pub(crate) fn tuplet_ratio(tuplet: &Tuplet) -> (i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{tpc, Measure, Part, Segment, SegmentItem, SegmentType, Track};
+    use scoretk_core::model::{tpc, Measure, Part, Segment, SegmentItem, SegmentType, Track};
 
     fn score_avec_accord(chord_rest: ChordRest) -> Score {
         let mut score = Score::new();

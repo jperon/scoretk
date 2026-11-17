@@ -9,7 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-mscz2xml = { path = "../mscz2xml" }
+scoretk-core = { path = "../scoretk-core" }
 thiserror.workspace = true
 # `alloc` seulement : la crate reste `no_std`-compatible et compile pour
 # wasm32-unknown-unknown. L'écriture se fait dans un `Vec<u8>` via l'implémentation

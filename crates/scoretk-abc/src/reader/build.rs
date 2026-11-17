@@ -27,7 +27,7 @@
 //! mesure concernée. Les slurs, soufflets et volatas deviennent des
 //! [`Spanner`].
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Annotation, BarLineType, Clef, ClefType, Dynamic, Fraction, Harmony, KeySig, Measure, Part,
     Placement, RichText, Score, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor,
     SpannerType, Staff, TimeSig, Track, Tuplet, TupletId, VoltaInfo,
@@ -161,10 +161,10 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
     // Tempo global sur la première mesure.
     if let Some((bps, text)) = &reader.tempo {
         if let Some(measure) = score.measures.first_mut() {
-            let mut tempo = mscz2xml::model::Tempo::new(text.clone());
+            let mut tempo = scoretk_core::model::Tempo::new(text.clone());
             tempo.beats_per_second = Some(*bps);
             let segment = segment_at(measure, SegmentType::TimeTick, Fraction::ZERO, staff_count);
-            let track = Track::new(mscz2xml::model::StaffId::from_index(0), 0);
+            let track = Track::new(scoretk_core::model::StaffId::from_index(0), 0);
             segment.add_annotation(track, Annotation::Tempo(tempo));
         }
     }
@@ -360,8 +360,8 @@ fn create_parts(
     score: &mut Score,
     voices: &[Voice],
     groups: &[PartSpec],
-) -> Vec<(mscz2xml::model::StaffId, u8)> {
-    let mut tracks = vec![(mscz2xml::model::StaffId::from_index(0), 0u8); voices.len()];
+) -> Vec<(scoretk_core::model::StaffId, u8)> {
+    let mut tracks = vec![(scoretk_core::model::StaffId::from_index(0), 0u8); voices.len()];
     for group in groups {
         let first_voice = group
             .staves
@@ -542,7 +542,7 @@ fn annotation_object(spec: &AnnotationSpec) -> Annotation {
                 };
                 Annotation::Harmony(harmony)
             } else {
-                let mut staff_text = mscz2xml::model::StaffText::new(text.clone());
+                let mut staff_text = scoretk_core::model::StaffText::new(text.clone());
                 staff_text.text = RichText::new(text.clone());
                 staff_text.placement = if *above {
                     Placement::Above
@@ -611,19 +611,19 @@ mod tests {
                 &fields(1),
                 Fraction::new(1, 8),
                 TimeSig::new(4, 4),
-                KeySig::new(mscz2xml::model::Key::C),
+                KeySig::new(scoretk_core::model::Key::C),
             ),
             Voice::new(
                 &fields(2),
                 Fraction::new(1, 8),
                 TimeSig::new(4, 4),
-                KeySig::new(mscz2xml::model::Key::C),
+                KeySig::new(scoretk_core::model::Key::C),
             ),
             Voice::new(
                 &fields(3),
                 Fraction::new(1, 8),
                 TimeSig::new(4, 4),
-                KeySig::new(mscz2xml::model::Key::C),
+                KeySig::new(scoretk_core::model::Key::C),
             ),
         ];
         let groups = groups(&reader, &voices);
@@ -651,7 +651,7 @@ mod tests {
             &fields,
             Fraction::new(1, 8),
             TimeSig::new(4, 4),
-            KeySig::new(mscz2xml::model::Key::C),
+            KeySig::new(scoretk_core::model::Key::C),
         );
         voice.finish_measure(BarLineType::Normal);
         let voices = vec![voice];

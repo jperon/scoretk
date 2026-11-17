@@ -61,11 +61,11 @@
 //!   qu'elles décrivent.
 //!
 //! Les formules d'identifiants MusicXML viennent de
-//! `mscz2xml::model::xmlid` : la carte et l'export MusicXML produisent donc
+//! `scoretk_core::model::xmlid` : la carte et l'export MusicXML produisent donc
 //! exactement les mêmes chaînes, sans recopie. Voir `docs/agents/timemap.md`.
 
-use mscz2xml::model::xmlid::{grace_note_xml_id, measure_xml_id, note_xml_id};
-use mscz2xml::model::Score;
+use scoretk_core::model::xmlid::{grace_note_xml_id, measure_xml_id, note_xml_id};
+use scoretk_core::model::Score;
 
 use super::pause_map::PauseMap;
 use super::repeat_list::{RepeatList, DIVISION};
@@ -107,7 +107,7 @@ pub struct MeasureSync {
 impl MeasureSync {
     /// Identifiant MusicXML de la mesure pour une partie : `p{part}-m{measure}`.
     ///
-    /// Délègue à [`mscz2xml::model::measure_xml_id`] ; `measure` est l'indice
+    /// Délègue à [`scoretk_core::model::measure_xml_id`] ; `measure` est l'indice
     /// de la mesure dans `Score::measures` (base zéro), pas le numéro affiché
     /// ni l'indice du passage.
     pub fn xml_id(&self, part: usize) -> String {
@@ -153,8 +153,8 @@ pub struct NoteSync {
 impl NoteSync {
     /// Identifiant MusicXML de la note, identique à celui de l'export.
     ///
-    /// Délègue à [`mscz2xml::model::note_xml_id`] pour une note ou un silence
-    /// et à [`mscz2xml::model::grace_note_xml_id`] pour un ornement (position
+    /// Délègue à [`scoretk_core::model::note_xml_id`] pour une note ou un silence
+    /// et à [`scoretk_core::model::grace_note_xml_id`] pour un ornement (position
     /// dans `Chord::grace_chords` et côté avant/après).
     pub fn xml_id(&self) -> String {
         match self.grace_index {

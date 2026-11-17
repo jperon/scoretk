@@ -46,7 +46,7 @@ use std::path::{Path, PathBuf};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, XmlVersion};
 
-use mscz2xml::{convert, ConvertOptions, ExportOptions, OutputFormat};
+use scoretk_core::{convert, ConvertOptions, ExportOptions, OutputFormat};
 
 const ENCODING_DATE: &str = "2026-01-01";
 

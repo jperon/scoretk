@@ -24,7 +24,7 @@
 //! `Writer::writeScore` ouvre `<museScore>`, écrit `<Score>` (division, style,
 //! métadonnées, parties, portées) et referme le document.
 
-use mscz2xml::model::Score;
+use scoretk_core::model::Score;
 
 use crate::write::context::WriteContext;
 use crate::write::staffwrite::{write_meta_tags, write_parts, write_staff_music, write_style};

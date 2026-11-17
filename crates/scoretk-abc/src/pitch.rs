@@ -44,7 +44,7 @@
 //! ABC (dorian, phrygien, lydien, mixolydien, éolien, locrien) sont donc
 //! ramenés à l'armure correspondante, avec un avertissement à la lecture.
 
-use mscz2xml::model::{Clef, ClefType, Key, KeyMode, KeySig, Note};
+use scoretk_core::model::{Clef, ClefType, Key, KeyMode, KeySig, Note};
 
 /// Plus petite valeur de `tpc` valide (`Tpc::TPC_MIN`, fa triple bémol).
 const TPC_MIN: i32 = -8;
@@ -548,7 +548,7 @@ pub(crate) fn parse_clef(text: &str) -> Option<ClefType> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{tpc, Note};
+    use scoretk_core::model::{tpc, Note};
 
     #[test]
     fn degres_et_altered() {

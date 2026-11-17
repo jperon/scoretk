@@ -39,7 +39,7 @@
 //!   `read_abc(&str) -> Result<Score>` et
 //!   `write_abc(&Score) -> Result<String>`.
 
-use mscz2xml::model::Score;
+use scoretk_core::model::Score;
 
 use crate::error::Error;
 #[cfg(not(all(

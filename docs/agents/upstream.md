@@ -39,7 +39,7 @@ changer de version de référence (voir § 4).
   Les sources `.mscx` viennent du même commit amont (voir
   `tests/corpus/SOURCES.md`), principalement de
   `src/importexport/musicxml/tests/data/` et `src/engraving/tests/`.
-- **Table des instruments** — `crates/mscz2xml/src/read/instruments.rs`,
+- **Table des instruments** — `crates/scoretk-core/src/read/instruments.rs`,
   **fichier généré** par `scripts/gen-instruments-table.py` à partir de
   `share/instruments/instruments.xml`. Le fichier généré et `NOTICE`
   mentionnent la version **4.4** du catalogue ; ne pas modifier la table à la
@@ -82,7 +82,7 @@ réécriture, voir `NOTICE`).
 ## 3. Correspondance C++ → Rust
 
 Chemins amont relatifs à `ref-musescore/src/`. La colonne Rust est relative à
-`crates/mscz2xml/src/`. Cette table est dressée à partir des en-têtes
+`crates/scoretk-core/src/`. Cette table est dressée à partir des en-têtes
 « Portage de … » des fichiers Rust : **mettre à jour l'en-tête et cette table**
 à chaque nouveau portage.
 
@@ -172,7 +172,7 @@ Chemins amont relatifs à `ref-musescore/src/`. La colonne Rust est relative à
 
 ### Lecteur MusicXML (`crates/scoretk-musicxml/`)
 
-Cette crate est hors de `crates/mscz2xml` mais porte le même code amont ; les
+Cette crate est hors de `crates/scoretk-core` mais porte le même code amont ; les
 chemins Rust y sont relatifs à `crates/scoretk-musicxml/src/`.
 
 | Rust | C++ amont |
@@ -187,7 +187,7 @@ Les écarts de cet import sont suivis dans `docs/agents/musicxml-import.md`.
 
 ### Écriture MuseScore (`crates/scoretk-mscx/src/`)
 
-Cette crate est hors de `crates/mscz2xml` mais porte le même code amont ; les
+Cette crate est hors de `crates/scoretk-core` mais porte le même code amont ; les
 chemins Rust y sont relatifs à `crates/scoretk-mscx/src/`.
 
 | Rust | C++ amont |
@@ -305,7 +305,7 @@ avec une correction de parité indépendante.
    # Table des instruments (depuis la copie amont)
    python3 scripts/gen-instruments-table.py \
      ref-musescore/share/instruments/instruments.xml \
-     crates/mscz2xml/src/read/instruments.rs
+     crates/scoretk-core/src/read/instruments.rs
 
    # Références du corpus (MuseScore 4.7.4 par défaut, headless)
    scripts/gen-references.sh            # tout le corpus
@@ -328,7 +328,7 @@ avec une correction de parité indépendante.
 
    ```sh
    nix develop -c cargo test --workspace
-   nix develop -c cargo test -p mscz2xml --test e2e_corpus -- --nocapture
+   nix develop -c cargo test -p scoretk-core --test e2e_corpus -- --nocapture
    nix flake check
    ```
 

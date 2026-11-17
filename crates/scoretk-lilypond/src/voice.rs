@@ -39,7 +39,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Annotation, BarLineType, ChordRest, Fraction, JumpType, MarkerType, Measure, RepeatMark, Score,
     SegmentType, SpannerType, StaffId, Tick, Track, TupletId, VOICES,
 };
@@ -94,11 +94,13 @@ pub(crate) fn render_body(
                     continue;
                 }
                 let text = match item {
-                    mscz2xml::model::SegmentItem::Clef(clef) => crate::pitch::clef_command(clef),
-                    mscz2xml::model::SegmentItem::KeySig(key) => {
+                    scoretk_core::model::SegmentItem::Clef(clef) => {
+                        crate::pitch::clef_command(clef)
+                    }
+                    scoretk_core::model::SegmentItem::KeySig(key) => {
                         Some(crate::pitch::key_signature(key))
                     }
-                    mscz2xml::model::SegmentItem::TimeSig(time) => {
+                    scoretk_core::model::SegmentItem::TimeSig(time) => {
                         // Indication locale de MuseScore : la portée affiche
                         // 3/4 mais partage une mesure de 9/8 avec les autres.
                         // `measureLength` garde la mesure réelle, sinon
@@ -119,8 +121,8 @@ pub(crate) fn render_body(
                     pre_by_measure[measure_index].push(Event::new(
                         segment.tick,
                         match item {
-                            mscz2xml::model::SegmentItem::Clef(_) => before::CLEF,
-                            mscz2xml::model::SegmentItem::KeySig(_) => before::KEY,
+                            scoretk_core::model::SegmentItem::Clef(_) => before::CLEF,
+                            scoretk_core::model::SegmentItem::KeySig(_) => before::KEY,
                             _ => before::TIME,
                         },
                         text,
@@ -464,12 +466,12 @@ fn open_tuplets(
         // on l'encode par les propriétés de `TupletNumber`, que la lecture
         // reconnaît (`docs/agents/lilypond.md`).
         let revert = match tuplet.number_type {
-            mscz2xml::model::TupletNumberType::Number => None,
-            mscz2xml::model::TupletNumberType::Ratio => {
+            scoretk_core::model::TupletNumberType::Number => None,
+            scoretk_core::model::TupletNumberType::Ratio => {
                 emitter.line("\\override TupletNumber.text = #tuplet-number::calc-fraction-text");
                 Some("\\revert TupletNumber.text")
             }
-            mscz2xml::model::TupletNumberType::None => {
+            scoretk_core::model::TupletNumberType::None => {
                 emitter.line("\\override TupletNumber.stencil = ##f");
                 Some("\\revert TupletNumber.stencil")
             }
@@ -563,7 +565,7 @@ fn time_signature_matches(measure: &Measure, staff: usize) -> bool {
             if track.staff().index() != staff {
                 continue;
             }
-            if let mscz2xml::model::SegmentItem::TimeSig(time) = item {
+            if let scoretk_core::model::SegmentItem::TimeSig(time) = item {
                 if time.measure_len() != measure.len {
                     return false;
                 }
@@ -872,13 +874,14 @@ pub(crate) fn lyrics_verses(
 }
 
 /// Syllabe LilyPond d'une entrée de paroles.
-fn syllable(lyrics: &mscz2xml::model::Lyrics) -> String {
+fn syllable(lyrics: &scoretk_core::model::Lyrics) -> String {
     let mut text_value = text::escape(&lyrics.text);
     match lyrics.syllabic {
-        mscz2xml::model::LyricsSyllabic::Begin | mscz2xml::model::LyricsSyllabic::Middle => {
+        scoretk_core::model::LyricsSyllabic::Begin
+        | scoretk_core::model::LyricsSyllabic::Middle => {
             text_value.push_str(" --");
         }
-        mscz2xml::model::LyricsSyllabic::Single | mscz2xml::model::LyricsSyllabic::End => {}
+        scoretk_core::model::LyricsSyllabic::Single | scoretk_core::model::LyricsSyllabic::End => {}
     }
     if lyrics.melisma.is_some() {
         text_value.push_str(" __");
@@ -932,7 +935,7 @@ pub(crate) fn voice_variable(staff: usize, voice: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{
+    use scoretk_core::model::{
         ChordRest, Duration, Measure, Part, Segment, SegmentItem, SegmentType, Track,
     };
 

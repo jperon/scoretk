@@ -167,7 +167,7 @@ de la bibliothèque Rust :
 - format reconnu mais non pris en charge dans le sens demandé
   (`Error::FormatNonPrisEnCharge`) — impossible dans ce paquet, qui active
   toutes les features, mais le garde-fou reste ;
-- erreurs de conversion : `Error::Mscz2xml`, `MusicXmlImport`, `Midi`,
+- erreurs de conversion : `Error::Core`, `MusicXmlImport`, `Midi`,
   `MidiImport`, `LilyPond`, `Mscx`, `Abc`, `Zip`.
 
 Aucun `console_error_panic_hook` n'est installé : une panique Rust apparaît
@@ -255,22 +255,3 @@ python3 -m http.server 8000        # à la racine du dépôt
 Le worker de la démo charge le paquet par
 `importScripts('../../result/classic/scoretk.js')`.
 
-## 9. Migration depuis mscz2xml
-
-La bascule est **assumée** : `packages.wasm` est désormais la façade, le
-paquet `mscz2xml-wasm` et son contrat ont disparu. Les changements pour un
-consommateur (cantus) sont les suivants.
-
-| Ancien contrat (`mscz2xml_wasm`) | Nouveau contrat (`scoretk_wasm`) |
-| --- | --- |
-| `convert(bytes, { encodingDate }).toString()` renvoyait une chaîne MusicXML | `new TextDecoder().decode(convert(bytes, { encodingDate }))` : `convert` renvoie un `Uint8Array` |
-| `self.mscz2xml` | `self.scoretk` |
-| `classic/mscz2xml.js` | `classic/scoretk.js` |
-| `MSCZ2XML_BASE_URL` | `SCORETK_BASE_URL` |
-| `esm/mscz2xml_wasm.js`, `esm/mscz2xml_wasm_bg.wasm` | `esm/scoretk_wasm.js`, `esm/scoretk_wasm_bg.wasm` |
-| `convert(bytes, { encodingDate? })` seulement | nouvelles options `to` (défaut `"musicxml"`), `from`, `software`, `concertPitch` |
-| — | nouvelles fonctions `detect(bytes)` et `formats()` |
-| — | nouvelle fonction `convertWithTimeline(bytes, options?)` : `{ musicxml, midi, timeline }`, identifiants stables et carte des temps |
-
-`convert` reste synchrone une fois `ready` résolue ; les erreurs restent des
-`Error` JavaScript portant le message Rust.

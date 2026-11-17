@@ -28,8 +28,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use mscz2xml::model::Score;
-use mscz2xml::MsczContainer;
+use scoretk_core::model::Score;
+use scoretk_core::MsczContainer;
 
 /// Tolérance de durée, en ticks MIDI (double croche = 120 ticks à 480/noire).
 const DURATION_TOLERANCE: i64 = 120;
@@ -155,7 +155,7 @@ fn note_mismatches(left: &[NoteEvent], right: &[NoteEvent]) -> usize {
 fn original_sample(version: &str, name: &str) -> Vec<(NoteEvent, NoteEvent)> {
     let mscx = std::fs::read(corpus(version, &format!("{name}.mscx"))).expect("source .mscx");
     let container = MsczContainer::from_bytes(&mscx).expect("conteneur");
-    let score: Score = mscz2xml::read::read_score(&container).expect("lecture .mscx");
+    let score: Score = scoretk_core::read::read_score(&container).expect("lecture .mscx");
     let first = scoretk_midi::write_midi(&score).expect("écriture MIDI");
     let reread = scoretk_midi::read_midi(&first).expect("lecture MIDI");
     let second = scoretk_midi::write_midi(&reread).expect("réécriture MIDI");
@@ -177,7 +177,7 @@ fn original_sample(version: &str, name: &str) -> Vec<(NoteEvent, NoteEvent)> {
 fn roundtrip(version: &str, name: &str) -> (bool, usize, usize) {
     let mscx = std::fs::read(corpus(version, &format!("{name}.mscx"))).expect("source .mscx");
     let container = MsczContainer::from_bytes(&mscx).expect("conteneur");
-    let score: Score = mscz2xml::read::read_score(&container).expect("lecture .mscx");
+    let score: Score = scoretk_core::read::read_score(&container).expect("lecture .mscx");
     let first = scoretk_midi::write_midi(&score).expect("écriture MIDI");
     let reread = scoretk_midi::read_midi(&first).expect("lecture MIDI");
     let second = scoretk_midi::write_midi(&reread).expect("réécriture MIDI");

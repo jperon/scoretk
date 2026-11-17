@@ -25,7 +25,7 @@
 //! Les deux lecteurs (3.x et 4.x) sont couverts, y compris le repli sur la
 //! clef de l'instrument et les clefs concert/transposées.
 
-use mscz2xml::{convert, ConvertOptions, ExportOptions, OutputFormat};
+use scoretk_core::{convert, ConvertOptions, ExportOptions, OutputFormat};
 
 /// Date d'encodage figée pour une sortie reproductible.
 const ENCODING_DATE: &str = "2026-01-01";

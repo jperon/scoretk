@@ -28,7 +28,7 @@
 //! sont renumérotées par hauteur moyenne décroissante (voix 1 = la plus aiguë),
 //! comme `sortVoicesByPitch`.
 
-use mscz2xml::model::{Fraction, VOICES};
+use scoretk_core::model::{Fraction, VOICES};
 
 use super::chord::MTrack;
 use super::timesigmap::TimeSigMap;

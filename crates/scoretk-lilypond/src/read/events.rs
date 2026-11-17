@@ -34,7 +34,7 @@
 //! - les n-olets et les sections de reprise, que le constructeur transforme en
 //!   objets du modèle.
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Arpeggio, ArpeggioType, Articulation, ArticulationType, BarLineType, Breath, BreathType,
     ChordLineType, Duration, Fraction, GraceType, HairpinType, Key, KeySig, NoteHeadGroup,
     Ornament, OrnamentType, OttavaType, Placement, StemDirection, Tremolo,
@@ -90,7 +90,7 @@ pub(crate) enum EventKind {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum MetaEvent {
     /// `\clef`.
-    Clef(mscz2xml::model::ClefType),
+    Clef(scoretk_core::model::ClefType),
     /// `\key`.
     Key(KeySig),
     /// `\time`.
@@ -237,7 +237,7 @@ pub(crate) struct TupletBuild {
     /// Nombre de notes normales.
     pub normal_notes: i64,
     /// Affichage du nombre.
-    pub number_type: mscz2xml::model::TupletNumberType,
+    pub number_type: scoretk_core::model::TupletNumberType,
 }
 
 /// Section de reprise.
@@ -481,7 +481,7 @@ impl<'a> Interpreter<'a> {
         &mut self,
         numerator: u32,
         denominator: u32,
-        number_type: mscz2xml::model::TupletNumberType,
+        number_type: scoretk_core::model::TupletNumberType,
         music: &Music,
     ) {
         if numerator == 0 || denominator == 0 {

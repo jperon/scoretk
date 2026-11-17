@@ -1,10 +1,10 @@
 [package]
-name = "mscz2xml"
+name = "scoretk-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description.workspace = true
+description = "Modèle pivot, lecteurs MuseScore et export MusicXML de scoretk"
 repository.workspace = true
 homepage.workspace = true
 

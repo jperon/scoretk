@@ -25,7 +25,7 @@
 //! dans un `.mscx` de MuseScore ; les cadres de titre (`<VBox>`) et de texte
 //! (`<TBox>`) sont des enfants de la première portée.
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Clef, Credit, CreditStyle, Part, Placement, ScoreMetadata, StaffBracket, StyleSettings,
 };
 
@@ -279,9 +279,9 @@ fn write_credit(xml: &mut XmlWriter, credit: &Credit) {
 /// Nom MuseScore d'un alignement horizontal de crédit (`<align>`).
 fn credit_justify_name(credit: &Credit) -> &'static str {
     match credit.justify {
-        mscz2xml::model::CreditJustify::Left => "left",
-        mscz2xml::model::CreditJustify::Center => "hcenter",
-        mscz2xml::model::CreditJustify::Right => "right",
+        scoretk_core::model::CreditJustify::Left => "left",
+        scoretk_core::model::CreditJustify::Center => "hcenter",
+        scoretk_core::model::CreditJustify::Right => "right",
     }
 }
 

@@ -18,22 +18,22 @@
 //! Lecture du MusicXML compressé (`.mxl`).
 //!
 //! Le contrat vérifié ici est celui de la façade : le `.mxl` produit par
-//! l'écrivain de `mscz2xml` doit se relire exactement comme le `.musicxml`
+//! l'écrivain de `scoretk_core` doit se relire exactement comme le `.musicxml`
 //! qu'il contient. Le test parcourt tout le corpus `tests/corpus/{v3,v4}`.
 
 mod common;
 
 use std::io::{Cursor, Write};
 
-use mscz2xml::export::{export_musicxml_with, export_mxl_with, ExportOptions};
-use mscz2xml::MsczContainer;
+use scoretk_core::export::{export_musicxml_with, export_mxl_with, ExportOptions};
+use scoretk_core::MsczContainer;
 use scoretk_musicxml::{read_musicxml, read_mxl};
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
-fn score_from_mscx(mscx: &[u8]) -> mscz2xml::model::Score {
+fn score_from_mscx(mscx: &[u8]) -> scoretk_core::model::Score {
     let container = MsczContainer::from_bytes(mscx).expect("conteneur .mscx");
-    mscz2xml::read::read_score(&container).expect("lecture .mscx")
+    scoretk_core::read::read_score(&container).expect("lecture .mscx")
 }
 
 /// Emballe un MusicXML dans une archive `.mxl` donnée.

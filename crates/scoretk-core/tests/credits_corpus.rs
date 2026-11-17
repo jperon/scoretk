@@ -33,7 +33,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use mscz2xml::{convert, ConvertOptions, ExportOptions, OutputFormat};
+use scoretk_core::{convert, ConvertOptions, ExportOptions, OutputFormat};
 
 /// Date d'encodage figée pour une sortie reproductible.
 const ENCODING_DATE: &str = "2026-01-01";

@@ -28,7 +28,7 @@
 //! battement par minute, les répétitions sont ignorées, et le tick 0 reçoit
 //! toujours son indication.
 
-use mscz2xml::model::{Annotation, Fraction, Score, Segment, SegmentType, Tempo, Track};
+use scoretk_core::model::{Annotation, Fraction, Score, Segment, SegmentType, Tempo, Track};
 
 use super::midifile::{meta, to_muse_score_ticks, EventKind, MidiFile, UNITS_PER_WHOLE};
 use super::operations::ImportOptions;
@@ -136,7 +136,7 @@ fn add_tempo(score: &mut Score, tick: Fraction, beats_per_second: f64, visible: 
     tempo.beats_per_second = Some(beats_per_second);
     tempo.visible = visible;
     let segment = &mut score.measures[measure_index].segments[position];
-    let staff_id = mscz2xml::model::StaffId::from_index(0);
+    let staff_id = scoretk_core::model::StaffId::from_index(0);
     segment.add_annotation(Track::new(staff_id, 0), Annotation::Tempo(tempo));
     let _ = UNITS_PER_WHOLE;
     true

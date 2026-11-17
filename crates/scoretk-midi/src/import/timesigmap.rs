@@ -32,7 +32,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::Fraction;
+use scoretk_core::model::Fraction;
 
 use super::midifile::UNITS_PER_WHOLE;
 

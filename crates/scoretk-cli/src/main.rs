@@ -21,8 +21,8 @@
 //! sortie `.musicxml`/`.mxl`/…. `--from` et `--to` forcent le choix, ce qui
 //! est nécessaire quand l'entrée ou la sortie est `-` (stdin/stdout).
 //!
-//! La date d'encodage MusicXML est celle du jour en UTC, comme dans la CLI
-//! `mscz2xml` ; `--encoding-date` la fige pour des sorties reproductibles.
+//! La date d'encodage MusicXML est celle du jour en UTC, comme dans l'export
+//! de `scoretk-core` ; `--encoding-date` la fige pour des sorties reproductibles.
 //! Seule cette CLI touche au système de fichiers.
 
 use std::io::{Read, Write};

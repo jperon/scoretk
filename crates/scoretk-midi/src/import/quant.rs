@@ -30,7 +30,7 @@
 //! résultat sur une performance déjà quantifiée et un résultat plus proche de
 //! la grille binaire sur une performance humaine (écart documenté).
 
-use mscz2xml::model::Fraction;
+use scoretk_core::model::Fraction;
 
 use super::chord::{min_allowed_duration, ChordMap, MTrack};
 use super::midifile::{DIVISION, UNITS_PER_WHOLE};

@@ -19,7 +19,7 @@
 //!
 //! Pour chaque fichier du corpus, la sortie MusicXML du modèle relu doit être
 //! identique à celle du modèle d'origine, aux **deux niveaux** du test e2e de
-//! `mscz2xml` (noyau musical et parité complète). Les fichiers de
+//! `scoretk_core` (noyau musical et parité complète). Les fichiers de
 //! `EXPECTED_ROUNDTRIP_*` sont bloquants ; les autres sont mesurés et leurs
 //! écarts sont documentés dans `docs/agents/mscx-write.md`.
 
@@ -27,10 +27,10 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use mscz2xml::model::Score;
-use mscz2xml::{ExportOptions, MsczContainer};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, XmlVersion};
+use scoretk_core::model::Score;
+use scoretk_core::{ExportOptions, MsczContainer};
 use similar::{ChangeTag, TextDiff};
 
 /// Date d'encodage figée, comme dans `e2e_corpus.rs`.
@@ -395,13 +395,13 @@ fn export(score: &Score) -> String {
         encoding_date: ENCODING_DATE.to_owned(),
         ..ExportOptions::default()
     };
-    mscz2xml::export::export_musicxml_with(score, &options).expect("export MusicXML")
+    scoretk_core::export::export_musicxml_with(score, &options).expect("export MusicXML")
 }
 
 /// Lit un `.mscx` en mémoire.
 fn read(mscx: &[u8]) -> Result<Score, String> {
     let container = MsczContainer::from_bytes(mscx).map_err(|error| error.to_string())?;
-    mscz2xml::read::read_score(&container).map_err(|error| error.to_string())
+    scoretk_core::read::read_score(&container).map_err(|error| error.to_string())
 }
 
 /// Résultat de l'aller-retour d'un fichier.

@@ -1,5 +1,5 @@
 {
-  description = "scoretk — boîte à outils de conversion de partitions (MuseScore, MusicXML, LilyPond, ABC, MIDI) ; premier convertisseur : mscz2xml (MuseScore → MusicXML), bibliothèque portable (wasm32, Android, iOS) et CLI";
+  description = "scoretk — boîte à outils de conversion de partitions (MuseScore, MusicXML, LilyPond, ABC, MIDI), bibliothèque portable (wasm32, Android, iOS) et CLI";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -60,7 +60,7 @@
           filter = path: type:
             craneLib.filterCargoSources path type
             || pkgs.lib.hasPrefix (toString ./tests/corpus + "/") (toString path);
-          name = "mscz2xml-source";
+          name = "scoretk-source";
         };
 
         # Une seule source de vérité pour la version, partagée par les
@@ -74,7 +74,7 @@
           # Le Cargo.toml racine sera un manifeste de workspace (pas de
           # [package]), donc crane ne peut pas en déduire nom et version :
           # on les fixe ici. Ils ne servent qu'à nommer les dérivations.
-          pname = "mscz2xml";
+          pname = "scoretk";
         };
 
         # Dépendances compilées une seule fois et partagées par la CLI et par
@@ -239,8 +239,8 @@
         packages.default = craneLib.buildPackage (commonArgs
           // {
             inherit cargoArtifacts;
-            # Le binaire vit dans crates/mscz2xml-cli.
-            cargoExtraArgs = "-p mscz2xml-cli";
+            # Le binaire vit dans crates/scoretk-cli.
+            cargoExtraArgs = "-p scoretk-cli";
           });
 
         # Paquet navigateur : `nix build .#wasm` → result/{esm,classic,package.json,README.md}.
@@ -254,8 +254,7 @@
             cargoExtraArgs = "-p scoretk-cli";
           });
 
-        # `nix run .#scoretk -- entrée.mscz -o sortie.musicxml` ; le paquet par
-        # défaut reste `mscz2xml`.
+        # `nix run .#scoretk -- entrée.mscz -o sortie.musicxml`.
         apps.scoretk = flake-utils.lib.mkApp {
           drv = self.packages.${system}.scoretk;
           name = "scoretk";
@@ -283,7 +282,7 @@
           # dépendances et pose CARGO_NET_OFFLINE : `cargo tree --offline` ne
           # fait aucun accès réseau pendant le check.
           licences = craneLib.mkCargoDerivation {
-            pname = "mscz2xml-licences";
+            pname = "scoretk-licences";
             inherit version;
             src = pkgs.lib.cleanSource ./.;
             cargoArtifacts = null;
@@ -307,7 +306,7 @@
             // {
               cargoArtifacts = wasmCargoArtifacts;
               CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-              cargoExtraArgs = "-p mscz2xml -p scoretk -p scoretk-abc -p scoretk-midi -p scoretk-lilypond -p scoretk-musicxml -p scoretk-mscx -p scoretk-wasm";
+              cargoExtraArgs = "-p scoretk-core -p scoretk -p scoretk-abc -p scoretk-midi -p scoretk-lilypond -p scoretk-musicxml -p scoretk-mscx -p scoretk-wasm";
               doCheck = false;
             });
         };

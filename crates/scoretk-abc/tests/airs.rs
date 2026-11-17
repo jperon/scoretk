@@ -25,7 +25,7 @@
 //! sous-ensemble ABC sur des airs courts, avec paroles, reprises, modes,
 //! liaisons, phrasés, accords, agréments, nuances et annotations.
 
-use mscz2xml::model::{GraceType, KeyMode, SpannerType, Track};
+use scoretk_core::model::{GraceType, KeyMode, SpannerType, Track};
 
 const AU_CLAIR: &str = "\
 %abc-2.1
@@ -87,7 +87,7 @@ K:D
 !p!\"D\" (A2B2) [DFA]2 {=c}B2- | B4 z4 |]
 ";
 
-fn pitches(score: &mscz2xml::model::Score) -> Vec<u8> {
+fn pitches(score: &scoretk_core::model::Score) -> Vec<u8> {
     score.notes.iter().map(|note| note.pitch).collect()
 }
 
@@ -101,7 +101,7 @@ fn au_clair_de_la_lune() {
     let first: Vec<u8> = score.measures[0]
         .segments
         .iter()
-        .filter_map(|segment| segment.chord_rest(mscz2xml::model::Track::from_raw(0)))
+        .filter_map(|segment| segment.chord_rest(scoretk_core::model::Track::from_raw(0)))
         .filter_map(|chord_rest| chord_rest.chord_ref())
         .filter_map(|chord| chord.notes.first().copied())
         .map(|id| score.note(id).pitch)
@@ -111,7 +111,7 @@ fn au_clair_de_la_lune() {
     let lyrics: Vec<String> = score.measures[0]
         .segments
         .iter()
-        .filter_map(|segment| segment.chord_rest(mscz2xml::model::Track::from_raw(0)))
+        .filter_map(|segment| segment.chord_rest(scoretk_core::model::Track::from_raw(0)))
         .flat_map(|chord_rest| chord_rest.lyrics.iter().map(|lyrics| lyrics.text.clone()))
         .collect();
     assert_eq!(lyrics, ["Au", "clair", "de", "la"]);
@@ -125,7 +125,7 @@ fn greensleeves_en_la_mineur() {
     for measure in &score.measures {
         for segment in &measure.segments {
             for (_, item) in segment.iter_elements() {
-                if let mscz2xml::model::SegmentItem::KeySig(key) = item {
+                if let scoretk_core::model::SegmentItem::KeySig(key) = item {
                     assert_eq!(key.concert_key.fifths(), 0);
                     assert_eq!(key.mode, KeyMode::Minor);
                     found_minor = true;
@@ -177,7 +177,7 @@ fn ornements_annotations_et_liaisons() {
     let score = scoretk_abc::read_abc(ORNEMENTS).expect("lecture");
     let mut chord = None;
     for segment in &score.measures[0].segments {
-        if let Some(chord_rest) = segment.chord_rest(mscz2xml::model::Track::from_raw(0)) {
+        if let Some(chord_rest) = segment.chord_rest(scoretk_core::model::Track::from_raw(0)) {
             if chord_rest.is_chord() {
                 chord = Some(chord_rest);
                 break;
@@ -194,7 +194,7 @@ fn ornements_annotations_et_liaisons() {
         .any(
             |segment| segment.annotations.iter().any(|annotation| matches!(
                 annotation.annotation,
-                mscz2xml::model::Annotation::Harmony(_)
+                scoretk_core::model::Annotation::Harmony(_)
             ))
         ));
     assert!(score

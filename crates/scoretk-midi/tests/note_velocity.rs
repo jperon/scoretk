@@ -23,7 +23,7 @@
 //! (`dom/note.cpp:2753-2760`). Le SMF produit est réanalysé avec `midly`.
 
 use midly::{MidiMessage, Smf, TrackEventKind};
-use mscz2xml::MsczContainer;
+use scoretk_core::MsczContainer;
 
 /// `.mscx` 4.10 minimal, avec le contenu de `<voice>` fourni.
 fn mscx(voice: &str) -> String {
@@ -71,7 +71,7 @@ fn note(pitch: u8, tpc: i8, extra: &str) -> String {
 fn velocities(voice: &str) -> Vec<(u8, u8)> {
     let source = mscx(voice);
     let container = MsczContainer::from_bytes(source.as_bytes()).expect("conteneur");
-    let score = mscz2xml::read::read_score(&container).expect("lecture .mscx");
+    let score = scoretk_core::read::read_score(&container).expect("lecture .mscx");
     let bytes = scoretk_midi::write_midi(&score).expect("écriture MIDI");
     let smf = Smf::parse(&bytes).expect("SMF valide");
     let mut notes = Vec::new();

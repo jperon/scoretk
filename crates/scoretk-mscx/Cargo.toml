@@ -9,7 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-mscz2xml = { path = "../mscz2xml" }
+scoretk-core = { path = "../scoretk-core" }
 thiserror.workspace = true
 zip = { workspace = true }
 

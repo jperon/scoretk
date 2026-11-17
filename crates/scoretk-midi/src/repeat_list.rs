@@ -46,7 +46,7 @@
 
 use std::collections::BTreeSet;
 
-use mscz2xml::model::{Fraction, Jump, RepeatMark, Score, SpannerType};
+use scoretk_core::model::{Fraction, Jump, RepeatMark, Score, SpannerType};
 
 /// Unités par ronde dans un fichier MIDI de MuseScore
 /// (`Constants::DIVISION * 4`).
@@ -912,7 +912,7 @@ fn reevaluate_volta_repeat(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::{BarLineType, Measure};
+    use scoretk_core::model::{BarLineType, Measure};
 
     fn measure(number: usize, tick: Fraction, len: Fraction) -> Measure {
         Measure::new(number, tick, len)

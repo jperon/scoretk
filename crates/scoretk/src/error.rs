@@ -24,7 +24,7 @@ use crate::format::{Format, Sens};
 pub enum Error {
     /// Erreur du convertisseur MuseScore → modèle.
     #[error(transparent)]
-    Mscz2xml(#[from] mscz2xml::Error),
+    Core(#[from] scoretk_core::Error),
 
     /// Le format demandé n'a pas encore de convertisseur dans ce sens.
     ///

@@ -26,7 +26,7 @@
 //! des `<dot>` et du `<time-modification>`. La durée calculée l'emporte quand
 //! elle est valide ; c'est elle que MuseScore stocke dans `TDuration`.
 
-use mscz2xml::model::{Duration, DurationType, Fraction};
+use scoretk_core::model::{Duration, DurationType, Fraction};
 
 use crate::xml::Element;
 

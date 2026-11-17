@@ -28,7 +28,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     ChordRestKind, Fraction, Measure, NoteId, Score, SegmentItem, SegmentType, Spanner,
     SpannerType, Tick, Track,
 };

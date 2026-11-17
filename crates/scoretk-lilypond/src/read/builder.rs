@@ -30,7 +30,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, BarLineType, Chord, ChordRest, ChordRestKind, Clef,
     Credit, CreditStyle, Duration, Dynamic, Fingering, Fraction, Glissando, GlissandoType,
     GraceChord, Hairpin, HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic, Measure, Note,
@@ -731,7 +731,7 @@ fn place_breath(
     slots: &[MeasureSlot],
     track: Track,
     tick: Fraction,
-    kind: mscz2xml::model::BreathType,
+    kind: scoretk_core::model::BreathType,
 ) {
     let Some(measure_index) = measure_at(slots, tick) else {
         return;
@@ -797,7 +797,10 @@ fn place_meta(
             {
                 segment.set_element(
                     track,
-                    SegmentItem::TimeSig(mscz2xml::model::TimeSig::new(*numerator, *denominator)),
+                    SegmentItem::TimeSig(scoretk_core::model::TimeSig::new(
+                        *numerator,
+                        *denominator,
+                    )),
                 );
             }
         }
@@ -891,7 +894,7 @@ fn place_spanners(score: &mut Score, staves: &[StaffBuild]) {
                                     voice.track,
                                     |spanner| {
                                         spanner.notation = Some(SpannerNotation::Slur(
-                                            mscz2xml::model::Slur::default(),
+                                            scoretk_core::model::Slur::default(),
                                         ));
                                     },
                                 );
@@ -1034,7 +1037,7 @@ fn place_annotation(score: &mut Score, tick: Fraction, track: Track, annotation:
         }),
         AnnotationEvent::Mark(text) => Annotation::RehearsalMark(RehearsalMark::new(text.clone())),
         AnnotationEvent::Text { text, placement } => {
-            let mut staff_text = mscz2xml::model::StaffText::new(text.clone());
+            let mut staff_text = scoretk_core::model::StaffText::new(text.clone());
             staff_text.placement = *placement;
             Annotation::StaffText(staff_text)
         }
@@ -1117,7 +1120,7 @@ fn place_repeats(score: &mut Score, staves: &[StaffBuild]) {
                 SpannerAnchor::new(alternative.start, Track::from_raw(0)),
                 SpannerAnchor::new(alternative.end, Track::from_raw(0)),
             );
-            volta.volta = Some(mscz2xml::model::VoltaInfo {
+            volta.volta = Some(scoretk_core::model::VoltaInfo {
                 endings,
                 closed: true,
             });

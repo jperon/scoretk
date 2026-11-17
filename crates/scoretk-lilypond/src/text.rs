@@ -17,7 +17,7 @@
 
 //! Textes et chaînes LilyPond.
 
-use mscz2xml::model::{Placement, RichText};
+use scoretk_core::model::{Placement, RichText};
 
 /// Échappe une chaîne pour un littéral LilyPond entre guillemets.
 ///

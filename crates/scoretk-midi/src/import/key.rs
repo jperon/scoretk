@@ -29,7 +29,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Fraction, Key, KeyMode, KeySig, Score, Segment, SegmentItem, SegmentType, StaffId, Track,
 };
 

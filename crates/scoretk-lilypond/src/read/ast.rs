@@ -27,7 +27,7 @@
 //! (`\key`, `\time`, `\clef`…) restent des commandes du flux musical, comme
 //! dans le langage : c'est l'interpréteur qui les replace sur la trame.
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     ArpeggioType, ArticulationType, ClefType, GraceType, KeyMode, NoteHeadGroup, OrnamentType,
     Placement, TremoloKind, TupletNumberType,
 };
@@ -116,9 +116,9 @@ pub(crate) struct Chord {
     /// Notes ou silence.
     pub kind: ChordKind,
     /// Figure écrite, points compris.
-    pub duration: Option<mscz2xml::model::Duration>,
+    pub duration: Option<scoretk_core::model::Duration>,
     /// Durée réelle quand un multiplicateur `*n/d` l'allonge.
-    pub multiplier: Option<mscz2xml::model::Fraction>,
+    pub multiplier: Option<scoretk_core::model::Fraction>,
     /// Événements attachés à l'accord.
     pub posts: Vec<PostEvent>,
     /// Vrai pour un silence rendu invisible (`Rest.transparent`).
@@ -135,9 +135,9 @@ pub(crate) enum Context {
     /// `\time`.
     Time { numerator: i32, denominator: i32 },
     /// `\partial`.
-    Partial(mscz2xml::model::Duration),
+    Partial(scoretk_core::model::Duration),
     /// `\set Timing.measureLength = #n/d`.
-    MeasureLength(mscz2xml::model::Fraction),
+    MeasureLength(scoretk_core::model::Fraction),
     /// `\bar "…"`.
     Bar(String),
     /// `\section`.
@@ -158,9 +158,9 @@ pub(crate) enum Context {
     /// `\voiceOne` … `\voiceFour`.
     Voice(u8),
     /// `\stemUp` / `\stemDown`.
-    Stem(mscz2xml::model::StemDirection),
+    Stem(scoretk_core::model::StemDirection),
     /// `\once \override Stem.direction = #UP`.
-    StemOverride(mscz2xml::model::StemDirection),
+    StemOverride(scoretk_core::model::StemDirection),
     /// `\tuplet` : ratio, affichage du nombre et musique.
     Tuplet {
         numerator: u32,

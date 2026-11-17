@@ -35,9 +35,9 @@ use std::path::{Path, PathBuf};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
-use mscz2xml::model::{Annotation, CreditStyle, Placement, RehearsalFrame};
-use mscz2xml::read::read_score;
-use mscz2xml::MsczContainer;
+use scoretk_core::model::{Annotation, CreditStyle, Placement, RehearsalFrame};
+use scoretk_core::read::read_score;
+use scoretk_core::MsczContainer;
 
 /// Nombres extraits d'une référence MusicXML.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -265,15 +265,15 @@ fn lit_un_mscx_5_00_synthetique() {
     assert_eq!(score.tuplets[0].ratio.to_string(), "3/2");
     assert_eq!(
         score.notes[0].tie_forward,
-        Some(mscz2xml::model::NoteId::from_index(1))
+        Some(scoretk_core::model::NoteId::from_index(1))
     );
     assert_eq!(
         score.notes[1].tie_back,
-        Some(mscz2xml::model::NoteId::from_index(0))
+        Some(scoretk_core::model::NoteId::from_index(0))
     );
 }
 
-fn lire_du_corpus(name: &str) -> mscz2xml::model::Score {
+fn lire_du_corpus(name: &str) -> scoretk_core::model::Score {
     let path = corpus_dir().join(name);
     let data =
         fs::read(&path).unwrap_or_else(|error| panic!("lecture de {} : {error}", path.display()));
@@ -292,7 +292,7 @@ fn liaisons_tuplets_et_paroles() {
             forward += 1;
             assert_eq!(
                 ties.note(target).tie_back,
-                Some(mscz2xml::model::NoteId::from_index(index)),
+                Some(scoretk_core::model::NoteId::from_index(index)),
                 "liaison {index} mal appariée"
             );
         }
@@ -318,7 +318,7 @@ fn liaisons_tuplets_et_paroles() {
     for measure in &tuplets.measures {
         for segment in &measure.segments {
             for (_, item) in segment.iter_elements() {
-                if let mscz2xml::model::SegmentItem::ChordRest(chord_rest) = item {
+                if let scoretk_core::model::SegmentItem::ChordRest(chord_rest) = item {
                     if chord_rest.tuplet.is_some() {
                         chords_in_tuplets += 1;
                     }
@@ -336,7 +336,7 @@ fn liaisons_tuplets_et_paroles() {
     for measure in &lyrics.measures {
         for segment in &measure.segments {
             for (_, item) in segment.iter_elements() {
-                if let mscz2xml::model::SegmentItem::ChordRest(chord_rest) = item {
+                if let scoretk_core::model::SegmentItem::ChordRest(chord_rest) = item {
                     for lyric in &chord_rest.lyrics {
                         syllables.push((lyric.text.clone(), lyric.syllabic, lyric.number()));
                         melisma = melisma.or(lyric.melisma);
@@ -351,11 +351,15 @@ fn liaisons_tuplets_et_paroles() {
     );
     assert_eq!(
         syllables.get(1),
-        Some(&("mez".to_owned(), mscz2xml::model::LyricsSyllabic::Begin, 1))
+        Some(&(
+            "mez".to_owned(),
+            scoretk_core::model::LyricsSyllabic::Begin,
+            1
+        ))
     );
     assert_eq!(
         syllables.get(2).map(|(_, syllabic, _)| *syllabic),
-        Some(mscz2xml::model::LyricsSyllabic::End)
+        Some(scoretk_core::model::LyricsSyllabic::End)
     );
     assert_eq!(
         melisma.map(|value| value.to_string()),

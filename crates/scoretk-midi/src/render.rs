@@ -35,7 +35,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Annotation, ArticulationType, Chord, ChordRest, ChordRestKind, Fraction, GraceType, Instrument,
     KeySig, Measure, Note, PartId, Score, SegmentType, SpannerType, StaffId, TimeSig, Track,
     TremoloKind, VeloType, VOICES,
@@ -364,7 +364,7 @@ fn time_signature_events(score: &Score) -> Vec<(i64, TimeSig)> {
                 continue;
             }
             for (_, item) in segment.iter_elements() {
-                if let mscz2xml::model::SegmentItem::TimeSig(time_sig) = item {
+                if let scoretk_core::model::SegmentItem::TimeSig(time_sig) = item {
                     events.insert(segment_tick(segment.tick), time_sig.clone());
                     break;
                 }
@@ -388,7 +388,10 @@ fn key_signature_events(score: &Score) -> Vec<Option<Vec<(i64, i8)>>> {
                     if track.staff() != staff.id {
                         continue;
                     }
-                    if let mscz2xml::model::SegmentItem::KeySig(KeySig { concert_key, .. }) = item {
+                    if let scoretk_core::model::SegmentItem::KeySig(KeySig {
+                        concert_key, ..
+                    }) = item
+                    {
                         events.insert(segment_tick(segment.tick), concert_key.fifths());
                     }
                 }
@@ -483,8 +486,8 @@ fn build_velocities(score: &Score) -> VelocityMaps {
             continue;
         };
         let direction = match kind {
-            mscz2xml::model::HairpinType::Crescendo => ChangeDirection::Increasing,
-            mscz2xml::model::HairpinType::Diminuendo => ChangeDirection::Decreasing,
+            scoretk_core::model::HairpinType::Crescendo => ChangeDirection::Increasing,
+            scoretk_core::model::HairpinType::Diminuendo => ChangeDirection::Decreasing,
         };
         let start = segment_tick(spanner.start.tick);
         let end = segment_tick(spanner.end.tick);
@@ -518,7 +521,7 @@ fn render_measure(
     measure: &Measure,
     measure_index: usize,
     pass: i32,
-    staff: &mscz2xml::model::Staff,
+    staff: &scoretk_core::model::Staff,
     channel: u8,
     offset: i64,
     pause_map: &PauseMap,
@@ -689,9 +692,9 @@ impl AttackContext<'_, '_> {
 #[allow(clippy::too_many_arguments)]
 fn render_two_chord_tremolo(
     score: &Score,
-    staff: &mscz2xml::model::Staff,
+    staff: &scoretk_core::model::Staff,
     first: &Chord,
-    duration: mscz2xml::model::Duration,
+    duration: scoretk_core::model::Duration,
     second: &ChordRest,
     second_ticks: i64,
     utick: i64,
@@ -810,7 +813,7 @@ fn render_two_chord_tremolo(
 /// (`DurationElement::actualTicks`).
 fn actual_ticks(
     score: &Score,
-    staff: &mscz2xml::model::Staff,
+    staff: &scoretk_core::model::Staff,
     chord_rest: &ChordRest,
     measure: &Measure,
 ) -> i64 {
@@ -842,9 +845,9 @@ fn actual_ticks(
 #[allow(clippy::too_many_arguments)]
 fn render_chord(
     score: &Score,
-    staff: &mscz2xml::model::Staff,
+    staff: &scoretk_core::model::Staff,
     chord: &Chord,
-    duration: mscz2xml::model::Duration,
+    duration: scoretk_core::model::Duration,
     utick: i64,
     ticks: i64,
     previous_chord_ticks: i64,
@@ -1084,7 +1087,7 @@ fn render_chord(
 #[allow(clippy::too_many_arguments)]
 fn render_grace_notes(
     score: &Score,
-    staff: &mscz2xml::model::Staff,
+    staff: &scoretk_core::model::Staff,
     chord: &Chord,
     grace_index: usize,
     grace_before: bool,
@@ -1144,7 +1147,7 @@ fn render_grace_notes(
 
 /// Durée ajoutée par une chaîne de liaisons de prolongation
 /// (`calculateTieLength`).
-fn tie_length(score: &Score, staff: &mscz2xml::model::Staff, note: &Note) -> i64 {
+fn tie_length(score: &Score, staff: &scoretk_core::model::Staff, note: &Note) -> i64 {
     let mut total = 0;
     let mut tie = note.tie_forward;
     let mut guard = 0;
@@ -1176,7 +1179,7 @@ fn tie_length(score: &Score, staff: &mscz2xml::model::Staff, note: &Note) -> i64
 
 /// Temps de fin réservé aux notes d'ornement après l'accord, en millièmes de
 /// la durée de l'accord (`createGraceNotesPlayEvents`).
-fn trail_time(chord: &Chord, duration: mscz2xml::model::Duration, ticks: i64) -> i64 {
+fn trail_time(chord: &Chord, duration: scoretk_core::model::Duration, ticks: i64) -> i64 {
     let mut before = 0;
     let mut after = 0;
     for grace in &chord.grace_chords {
@@ -1219,11 +1222,11 @@ fn instrument_for(score: &Score, part: PartId, source_tick: i64) -> &Instrument 
 
 /// Accord ou silence qui porte une note (recherche linéaire : les chaînes de
 /// liaisons sont courtes).
-fn find_chord_rest_of_note(score: &Score, note: mscz2xml::model::NoteId) -> Option<&ChordRest> {
+fn find_chord_rest_of_note(score: &Score, note: scoretk_core::model::NoteId) -> Option<&ChordRest> {
     for measure in &score.measures {
         for segment in &measure.segments {
             for (_, item) in segment.iter_elements() {
-                if let mscz2xml::model::SegmentItem::ChordRest(chord_rest) = item {
+                if let scoretk_core::model::SegmentItem::ChordRest(chord_rest) = item {
                     if let ChordRestKind::Chord(chord) = &chord_rest.kind {
                         if chord.notes.contains(&note) {
                             return Some(chord_rest);
@@ -1239,7 +1242,7 @@ fn find_chord_rest_of_note(score: &Score, note: mscz2xml::model::NoteId) -> Opti
 /// Durée effective d'un accord isolé.
 fn actual_ticks_of_chord(
     score: &Score,
-    staff: &mscz2xml::model::Staff,
+    staff: &scoretk_core::model::Staff,
     chord_rest: &ChordRest,
 ) -> i64 {
     let mut ticks = chord_rest
@@ -1273,7 +1276,7 @@ fn chord_velocity_multiplier(chord: &Chord, instrument: &Instrument) -> f64 {
 /// Durée de tenue de l'accord (`gateTime`, `updateGateTime`).
 fn gate_time(
     score: &Score,
-    staff: &mscz2xml::model::Staff,
+    staff: &scoretk_core::model::Staff,
     instrument: &Instrument,
     chord: &Chord,
     source_tick: i64,

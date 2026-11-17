@@ -17,7 +17,7 @@
 
 //! Comparaison des éléments du noyau musical sur le corpus 3.x et 4.x.
 //!
-//! Le test extrait des deux documents (sortie de `mscz2xml` et référence
+//! Le test extrait des deux documents (sortie de `scoretk_core` et référence
 //! `X.ref.musicxml`) uniquement les éléments de la famille noyau, mesure par
 //! mesure, et compare les suites de lignes canoniques :
 //!
@@ -43,7 +43,7 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, XmlVersion};
 use similar::{ChangeTag, TextDiff};
 
-use mscz2xml::{convert, ConvertOptions, ExportOptions, OutputFormat};
+use scoretk_core::{convert, ConvertOptions, ExportOptions, OutputFormat};
 
 const ENCODING_DATE: &str = "2026-01-01";
 

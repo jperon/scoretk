@@ -28,7 +28,7 @@
 //! changements de clef (programmation dynamique `makeDynamicProgrammingStep`)
 //! restent hors périmètre.
 
-use mscz2xml::model::{Clef, ClefType, Score};
+use scoretk_core::model::{Clef, ClefType, Score};
 
 use super::chord::MTrack;
 use super::operations::ImportOptions;

@@ -29,7 +29,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Annotation, Chord, ChordRest, Fraction, HairpinType, KeySig, LyricsSyllabic, Measure, Note,
     Score, SpannerType, StaffId, Tick, Track, TupletId,
 };
@@ -45,8 +45,8 @@ type ContextChange = (
     Tick,
     u8,
     Option<KeySig>,
-    Option<mscz2xml::model::ClefType>,
-    Option<mscz2xml::model::TimeSig>,
+    Option<scoretk_core::model::ClefType>,
+    Option<scoretk_core::model::TimeSig>,
 );
 
 /// Un accord ou silence de la trame d'une voix.
@@ -157,7 +157,7 @@ pub(crate) fn render_voice(
         if key_changed || clef_changed {
             let mut field = format!("[K:{}", pitch::key_field(&key));
             if let Some(clef_value) =
-                clef.and_then(|clef| pitch::clef_name(&mscz2xml::model::Clef::new(clef)))
+                clef.and_then(|clef| pitch::clef_name(&scoretk_core::model::Clef::new(clef)))
             {
                 field.push_str(&format!(" clef={clef_value}"));
             }
@@ -256,7 +256,7 @@ fn voice_header(score: &Score, spec: writer::VoiceSpec) -> String {
         header.push_str(&format!(" name=\"{}\"", text::escape_annotation(&name)));
     }
     if let Some(clef) = writer::initial_clef(score, staff) {
-        if let Some(name) = pitch::clef_name(&mscz2xml::model::Clef::new(clef)) {
+        if let Some(name) = pitch::clef_name(&scoretk_core::model::Clef::new(clef)) {
             header.push_str(&format!(" clef={name}"));
         }
     }
@@ -313,10 +313,10 @@ fn transpose_at(score: &Score, staff: usize, tick: Tick) -> i32 {
                 && tick < spanner.end.tick
         })
         .map(|spanner| match spanner.kind {
-            SpannerType::Ottava(mscz2xml::model::OttavaType::OctaveUp) => 1,
-            SpannerType::Ottava(mscz2xml::model::OttavaType::OctaveDown) => -1,
-            SpannerType::Ottava(mscz2xml::model::OttavaType::FifteenthUp) => 2,
-            SpannerType::Ottava(mscz2xml::model::OttavaType::FifteenthDown) => -2,
+            SpannerType::Ottava(scoretk_core::model::OttavaType::OctaveUp) => 1,
+            SpannerType::Ottava(scoretk_core::model::OttavaType::OctaveDown) => -1,
+            SpannerType::Ottava(scoretk_core::model::OttavaType::FifteenthUp) => 2,
+            SpannerType::Ottava(scoretk_core::model::OttavaType::FifteenthDown) => -2,
             _ => 0,
         })
         .sum::<i32>();
@@ -417,7 +417,7 @@ fn tuplet_open(score: &Score, id: TupletId, nested: usize, notes: usize) -> Stri
 
 /// Barre de fin de mesure.
 fn end_bar_line(measure: &Measure, last: bool) -> String {
-    use mscz2xml::model::BarLineType;
+    use scoretk_core::model::BarLineType;
     match measure.end_bar_line {
         BarLineType::EndStartRepeat => "::".to_owned(),
         BarLineType::EndRepeat => ":|".to_owned(),
@@ -578,8 +578,8 @@ fn annotation_token(annotation: &Annotation) -> Option<String> {
                 return None;
             }
             let marker = match annotation.placement() {
-                mscz2xml::model::Placement::Above => '^',
-                mscz2xml::model::Placement::Below => '_',
+                scoretk_core::model::Placement::Above => '^',
+                scoretk_core::model::Placement::Below => '_',
             };
             return Some(format!("\"{marker}{plain}\""));
         }
@@ -678,7 +678,7 @@ fn draw_context_changes(
     staff: usize,
     context_staff: usize,
     key: &mut KeySig,
-    clef: &mut Option<mscz2xml::model::ClefType>,
+    clef: &mut Option<scoretk_core::model::ClefType>,
     items: &[Item<'_>],
     range: std::ops::Range<usize>,
     before: &mut [Vec<String>],
@@ -690,9 +690,9 @@ fn draw_context_changes(
         }
         for (track, item) in segment.iter_elements() {
             let kind = match item {
-                mscz2xml::model::SegmentItem::KeySig(_) => 0u8,
-                mscz2xml::model::SegmentItem::TimeSig(_) => 1,
-                mscz2xml::model::SegmentItem::Clef(_) => 2,
+                scoretk_core::model::SegmentItem::KeySig(_) => 0u8,
+                scoretk_core::model::SegmentItem::TimeSig(_) => 1,
+                scoretk_core::model::SegmentItem::Clef(_) => 2,
                 _ => continue,
             };
             if (kind == 2 && track.staff().index() != staff)
@@ -707,13 +707,13 @@ fn draw_context_changes(
                 continue;
             }
             match item {
-                mscz2xml::model::SegmentItem::KeySig(value) => {
+                scoretk_core::model::SegmentItem::KeySig(value) => {
                     changes.push((segment.tick, kind, Some(value.clone()), None, None));
                 }
-                mscz2xml::model::SegmentItem::TimeSig(value) => {
+                scoretk_core::model::SegmentItem::TimeSig(value) => {
                     changes.push((segment.tick, kind, None, None, Some(value.clone())));
                 }
-                mscz2xml::model::SegmentItem::Clef(value) => {
+                scoretk_core::model::SegmentItem::Clef(value) => {
                     changes.push((segment.tick, kind, None, Some(value.transposed), None));
                 }
                 _ => {}
@@ -742,7 +742,7 @@ fn draw_context_changes(
                     *clef = Some(value);
                 }
                 let clef_name = clef
-                    .and_then(|value| pitch::clef_name(&mscz2xml::model::Clef::new(value)))
+                    .and_then(|value| pitch::clef_name(&scoretk_core::model::Clef::new(value)))
                     .unwrap_or_else(|| "treble".to_owned());
                 format!("[K:{} clef={clef_name}]", pitch::key_field(key))
             }
@@ -816,7 +816,7 @@ fn render_chord(
     for grace in &chord.grace_chords {
         let acciaccatura = matches!(
             grace.chord.grace,
-            Some(mscz2xml::model::GraceType::Acciaccatura)
+            Some(scoretk_core::model::GraceType::Acciaccatura)
         );
         for note_id in &grace.chord.notes {
             let note = score.note(*note_id);
@@ -953,19 +953,19 @@ mod tests {
 
     #[test]
     fn barres_de_mesure() {
-        use mscz2xml::model::Fraction;
+        use scoretk_core::model::Fraction;
         let mut measure = Measure::new(0, Fraction::ZERO, Fraction::ONE);
         assert_eq!(end_bar_line(&measure, false), "|");
         assert_eq!(end_bar_line(&measure, true), "|]");
-        measure.end_bar_line = mscz2xml::model::BarLineType::EndRepeat;
+        measure.end_bar_line = scoretk_core::model::BarLineType::EndRepeat;
         assert_eq!(end_bar_line(&measure, false), ":|");
-        measure.end_bar_line = mscz2xml::model::BarLineType::Double;
+        measure.end_bar_line = scoretk_core::model::BarLineType::Double;
         assert_eq!(end_bar_line(&measure, false), "||");
     }
 
     #[test]
     fn remplissage_de_mesure() {
-        use mscz2xml::model::Fraction;
+        use scoretk_core::model::Fraction;
         let measure = Measure::new(0, Fraction::ZERO, Fraction::ONE);
         let mut line = String::new();
         push_fill_rest(&mut line, Fraction::ZERO, Fraction::ONE, &measure);

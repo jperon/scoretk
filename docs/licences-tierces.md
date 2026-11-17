@@ -1,7 +1,7 @@
 # Licences des dépendances tierces
 
 Ce document liste les crates tierces **effectivement liées** dans les binaires
-produits par le workspace (`mscz2xml`, `scoretk` et leurs CLI, plus les crates
+produits par le workspace (`scoretk-core`, `scoretk` et sa CLI, plus les crates
 wasm et MIDI), avec leur licence, et vérifie leur compatibilité avec la licence
 du projet, **GPL-3.0-only**.
 
@@ -99,7 +99,7 @@ Ces paquets n'apparaissent pas dans le graphe `normal,build` ci-dessus :
 
 | Paquet | Raison | Licence connue |
 | --- | --- | --- |
-| `similar` | dépendance de **développement** de `mscz2xml` et `scoretk-midi` (tests) | Apache-2.0 |
+| `similar` | dépendance de **développement** de `scoretk-core` et `scoretk-midi` (tests) | Apache-2.0 |
 | `arbitrary`, `derive_arbitrary` | fonctionnalité optionnelle de `zip`, non activée | MIT OR Apache-2.0 |
 | `anstyle-wincon`, `windows-sys`, `windows-link` | uniquement pour la cible Windows (couleurs du terminal) | MIT OR Apache-2.0 |
 | `once_cell_polyfill` | chaîne Windows de `clap`/`anstream` | MIT OR Apache-2.0 |

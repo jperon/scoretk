@@ -30,7 +30,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use mscz2xml::model::{Duration, DurationType, Fraction};
+use scoretk_core::model::{Duration, DurationType, Fraction};
 
 use super::chord::min_allowed_duration;
 use super::midifile::{DIVISION, UNITS_PER_WHOLE};

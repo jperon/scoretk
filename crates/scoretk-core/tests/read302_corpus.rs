@@ -38,10 +38,10 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use mscz2xml::model::{tpc, ChordRestKind, Fraction, NoteId, Score, SegmentItem, SpannerType};
-use mscz2xml::read::read302;
 use quick_xml::events::Event;
 use quick_xml::Reader;
+use scoretk_core::model::{tpc, ChordRestKind, Fraction, NoteId, Score, SegmentItem, SpannerType};
+use scoretk_core::read::read302;
 
 /// Compteurs extraits d'une référence MusicXML.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -98,7 +98,7 @@ fn load_corpus() -> Vec<CorpusEntry> {
                 .to_string_lossy()
                 .into_owned();
             let bytes = fs::read(&path).unwrap_or_else(|error| panic!("{name} : {error}"));
-            let version = mscz2xml::detect_version(&bytes)
+            let version = scoretk_core::detect_version(&bytes)
                 .unwrap_or_else(|error| panic!("{name} : version illisible : {error}"));
             let score = read302::read(&bytes, version)
                 .unwrap_or_else(|error| panic!("{name} : lecture impossible : {error}"));

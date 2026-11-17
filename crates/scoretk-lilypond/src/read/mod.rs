@@ -54,7 +54,7 @@ mod warnings;
 
 pub use warnings::Warning;
 
-use mscz2xml::model::Score;
+use scoretk_core::model::Score;
 
 use crate::error::{Error, Result};
 

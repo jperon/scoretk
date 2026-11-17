@@ -23,7 +23,7 @@
 //!
 //! Portage de l'export MIDI de MuseScore Studio
 //! (`importexport/midi/internal/midiexport/exportmidi.cpp`,
-//! `engraving/compat/midi/`) : le modèle de [`mscz2xml`] est rendu en
+//! `engraving/compat/midi/`) : le modèle de [`scoretk_core`] est rendu en
 //! performance, puis écrit en Standard MIDI File format 1 (une piste par
 //! portée, division [`repeat_list::DIVISION`] unités par noire).
 //!
@@ -32,7 +32,7 @@
 //! `wasm32-unknown-unknown`.
 //!
 //! ```
-//! use mscz2xml::model::Score;
+//! use scoretk_core::model::Score;
 //! use scoretk_midi::write_midi;
 //!
 //! let score = Score::new();
@@ -55,7 +55,7 @@ pub use import::{read_midi, read_midi_with};
 pub use repeat_list::{RepeatList, RepeatSegment, DIVISION, UNITS_PER_WHOLE};
 pub use timemap::{MeasureSync, NoteSync, PauseSync, TempoChange, Timemap};
 
-use mscz2xml::model::Score;
+use scoretk_core::model::Score;
 
 /// Options d'écriture MIDI.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

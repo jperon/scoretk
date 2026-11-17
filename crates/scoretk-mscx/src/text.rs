@@ -26,7 +26,7 @@
 //! sous forme de fragments formatés ([`RichText`]) ; [`markup`] reconstruit un
 //! balisage que `RichText::from_markup` relit à l'identique.
 
-use mscz2xml::model::{Fraction, RichText, MUSICAL_TEXT_FONT};
+use scoretk_core::model::{Fraction, RichText, MUSICAL_TEXT_FONT};
 
 use crate::xmlwriter::escape_text;
 
@@ -49,7 +49,7 @@ pub fn fraction(value: Fraction) -> String {
 
 /// Noms de symboles connus du modèle, indexés par point de code.
 ///
-/// Inverse de `mscz2xml::model::symbol_character` : seuls les symboles que le
+/// Inverse de `scoretk_core::model::symbol_character` : seuls les symboles que le
 /// lecteur sait convertir peuvent apparaître dans un [`RichText`].
 const SYMBOLS: &[(char, &str)] = &[
     (' ', "space"),
@@ -175,7 +175,7 @@ pub fn markup(text: &RichText) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mscz2xml::model::symbol_character;
+    use scoretk_core::model::symbol_character;
 
     #[test]
     fn symboles_inverses() {

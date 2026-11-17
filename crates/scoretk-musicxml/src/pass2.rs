@@ -36,7 +36,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Accidental, AccidentalType, Chord, ChordRest, Clef, ClefType, Duration, DurationType, Fraction,
     GraceChord, GraceType, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure,
     MeasureRepeatMark, Note, NoteHeadGroup, NoteHeadType, NoteId, Part, Placement, Score, Segment,
@@ -122,7 +122,7 @@ pub fn build(root: &Element, analysis: &Analysis) -> Result<Score> {
         staff.brackets = part_data
             .brackets
             .iter()
-            .map(|(kind, span)| mscz2xml::model::StaffBracket {
+            .map(|(kind, span)| scoretk_core::model::StaffBracket {
                 kind: *kind,
                 span: *span,
                 visible: true,
@@ -184,8 +184,8 @@ fn instrument(data: &InstrumentData) -> Instrument {
 }
 
 /// Métadonnées d'œuvre (`<work>`, `<movement-*>`, `<identification>`).
-fn read_metadata(root: &Element) -> mscz2xml::model::ScoreMetadata {
-    let mut metadata = mscz2xml::model::ScoreMetadata::default();
+fn read_metadata(root: &Element) -> scoretk_core::model::ScoreMetadata {
+    let mut metadata = scoretk_core::model::ScoreMetadata::default();
     if let Some(work) = root.child("work") {
         metadata.work_title = work.child_text("work-title").unwrap_or_default().to_owned();
         metadata.work_number = work
@@ -303,7 +303,7 @@ fn read_measure(
     let mut prev_chord: Option<(Fraction, Track)> = None;
     let mut multi_rest: Option<u16> = None;
     let mut measure_style_repeat: Option<u16> = None;
-    let mut figured_bass: Vec<(Fraction, Track, mscz2xml::model::FiguredBass)> = Vec::new();
+    let mut figured_bass: Vec<(Fraction, Track, scoretk_core::model::FiguredBass)> = Vec::new();
 
     for child in &element.children {
         match child.name.as_str() {
@@ -457,11 +457,11 @@ fn read_measure(
                     let tick = measure_start + m_time;
                     let index = get_segment(score, measure_index, SegmentType::ChordRest, tick);
                     let track = Track::new(score.parts[part_index].staves[0], 0);
-                    let mut annotation = mscz2xml::model::Tempo::new("");
+                    let mut annotation = scoretk_core::model::Tempo::new("");
                     annotation.beats_per_second = Some(tempo / 60.0);
                     annotation.visible = false;
                     score.measures[measure_index].segments[index]
-                        .add_annotation(track, mscz2xml::model::Annotation::Tempo(annotation));
+                        .add_annotation(track, scoretk_core::model::Annotation::Tempo(annotation));
                 }
                 if let Some(change) = child.child("instrument-change") {
                     direction::read_standalone_instrument_change(
@@ -541,7 +541,7 @@ fn read_measure(
         }
         let index = get_segment(score, measure_index, SegmentType::ChordRest, tick);
         score.measures[measure_index].segments[index]
-            .add_annotation(track, mscz2xml::model::Annotation::FiguredBass(bass));
+            .add_annotation(track, scoretk_core::model::Annotation::FiguredBass(bass));
     }
 
     direction::flush_pending_instrument(score, part_index, measure_index, directions);
@@ -670,9 +670,9 @@ fn read_note(
         chord_rest.beam_mode = mode;
         if matches!(
             mode,
-            mscz2xml::model::BeamMode::Begin
-                | mscz2xml::model::BeamMode::Begin16
-                | mscz2xml::model::BeamMode::Begin32
+            scoretk_core::model::BeamMode::Begin
+                | scoretk_core::model::BeamMode::Begin16
+                | scoretk_core::model::BeamMode::Begin32
         ) {
             chord_rest.beam_direction = read_stem(element);
         }
@@ -1130,7 +1130,7 @@ fn make_chord_rest(
 /// Construit une note (`xmlSetPitch`).
 fn build_note(
     element: &Element,
-    transpose: Option<mscz2xml::model::Transpose>,
+    transpose: Option<scoretk_core::model::Transpose>,
     octave_shift: i32,
 ) -> Note {
     let (step, alter, octave) = read_pitch(element);
@@ -1200,7 +1200,7 @@ pub(crate) fn tpc_from_step(step: u8, alter: i32) -> i8 {
     const BASE: [i8; 7] = [14, 16, 18, 13, 15, 17, 19];
     let base = BASE[usize::from(step).min(6)];
     let value = i32::from(base) + 7 * alter;
-    i8::try_from(value).unwrap_or(mscz2xml::model::tpc::INVALID)
+    i8::try_from(value).unwrap_or(scoretk_core::model::tpc::INVALID)
 }
 
 /// Altération affichée (`importmusicxmlnotepitch.cpp`).
@@ -1319,8 +1319,8 @@ fn read_lyrics(element: &Element) -> Vec<Lyrics> {
 }
 
 /// Mode de ligature écrit dans `<beam>` (`MusicXmlParserPass2::beam`).
-fn read_beam(element: &Element) -> Option<mscz2xml::model::BeamMode> {
-    use mscz2xml::model::BeamMode;
+fn read_beam(element: &Element) -> Option<scoretk_core::model::BeamMode> {
+    use scoretk_core::model::BeamMode;
     for beam in element.children_named("beam") {
         let number = beam
             .attribute("number")
@@ -1368,13 +1368,13 @@ fn apply_chord_attributes(element: &Element, chord: &mut Chord) {
         .and_then(|ornaments| ornaments.child("tremolo"))
     {
         let kind = match tremolo.attribute("type") {
-            Some("single") => mscz2xml::model::TremoloKind::Single,
-            Some("start") => mscz2xml::model::TremoloKind::Start,
-            Some("stop") => mscz2xml::model::TremoloKind::Stop,
-            Some("unmeasured") => mscz2xml::model::TremoloKind::Unmeasured,
-            _ => mscz2xml::model::TremoloKind::Single,
+            Some("single") => scoretk_core::model::TremoloKind::Single,
+            Some("start") => scoretk_core::model::TremoloKind::Start,
+            Some("stop") => scoretk_core::model::TremoloKind::Stop,
+            Some("unmeasured") => scoretk_core::model::TremoloKind::Unmeasured,
+            _ => scoretk_core::model::TremoloKind::Single,
         };
-        chord.tremolo = Some(mscz2xml::model::Tremolo {
+        chord.tremolo = Some(scoretk_core::model::Tremolo {
             kind,
             count: tremolo.text_trimmed().parse().unwrap_or(1),
         });
@@ -1382,7 +1382,7 @@ fn apply_chord_attributes(element: &Element, chord: &mut Chord) {
         // (`Chord::tremoloTwoChord`).
         chord.tremolo_two_chord = matches!(
             kind,
-            mscz2xml::model::TremoloKind::Start | mscz2xml::model::TremoloKind::Stop
+            scoretk_core::model::TremoloKind::Start | scoretk_core::model::TremoloKind::Stop
         );
     }
 }

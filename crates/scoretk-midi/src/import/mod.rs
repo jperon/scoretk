@@ -20,7 +20,7 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Lecture MIDI : d'un Standard MIDI File au modèle de `mscz2xml`.
+//! Lecture MIDI : d'un Standard MIDI File au modèle de `scoretk_core`.
 //!
 //! Portage de `convertMidi` (`importmidi.cpp`) et de ses modules : pistes,
 //! accords, quantification, mesure, n-olets, voix, armures, clefs, tempo,
@@ -67,7 +67,7 @@ pub mod voice;
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Chord, ChordRest, Duration, Fraction, Instrument, Key, Measure, Note, Part, Score, Segment,
     SegmentItem, SegmentType, TimeSig, Track, Tuplet, VOICES,
 };
@@ -380,7 +380,7 @@ fn create_instruments(score: &mut Score, tracks: &mut [MTrack], options: &Import
         part.name = long_name;
         part.instrument = Instrument::new(name.clone(), name.clone(), String::new());
         part.instrument.id =
-            mscz2xml::model::recognize_musicxml_id(&name, Some(tracks[index].program))
+            scoretk_core::model::recognize_musicxml_id(&name, Some(tracks[index].program))
                 .unwrap_or("")
                 .to_owned();
         part.instrument.track_name = name.clone();
@@ -638,7 +638,8 @@ fn create_track_notes(
 ) {
     let staff = track.staff.expect("portée créée");
     // N-olets du modèle, créés avant les notes.
-    let mut tuplet_ids: BTreeMap<tuplet::TupletKey, mscz2xml::model::TupletId> = BTreeMap::new();
+    let mut tuplet_ids: BTreeMap<tuplet::TupletKey, scoretk_core::model::TupletId> =
+        BTreeMap::new();
     for (key, data) in track.tuplets.iter() {
         let ratio = tuplet::tuplet_limits(data.tuplet_number).ratio;
         let base_len = data.len / Fraction::from_integer(ratio.denominator());
@@ -703,12 +704,12 @@ fn create_track_notes(
 fn process_pending_notes(
     score: &mut Score,
     track: &MTrack,
-    staff: mscz2xml::model::StaffId,
+    staff: scoretk_core::model::StaffId,
     voice: usize,
     pending: &mut Vec<MidiChord>,
     start_tick: Fraction,
     next_chord_tick: Fraction,
-    tuplet_ids: &BTreeMap<tuplet::TupletKey, mscz2xml::model::TupletId>,
+    tuplet_ids: &BTreeMap<tuplet::TupletKey, scoretk_core::model::TupletId>,
     options: &ImportOptions,
 ) {
     let track_id = Track::new(staff, voice as u8);
@@ -750,9 +751,11 @@ fn process_pending_notes(
             && pending.first().is_some_and(MidiChord::is_staccato)
         {
             if let Some(chord) = chord_rest.chord_mut() {
-                chord.articulations.push(mscz2xml::model::Articulation::new(
-                    mscz2xml::model::ArticulationType::Staccato,
-                ));
+                chord
+                    .articulations
+                    .push(scoretk_core::model::Articulation::new(
+                        scoretk_core::model::ArticulationType::Staccato,
+                    ));
             }
         }
         {
@@ -802,15 +805,15 @@ fn add_note(
     chord: &mut Chord,
     midi_note: &MidiNote,
     tick: Fraction,
-) -> mscz2xml::model::NoteId {
+) -> scoretk_core::model::NoteId {
     let key = chord_key_at(score, tick);
     let tpc = pitch_to_tpc(midi_note.pitch, key);
     let mut note = Note::new(midi_note.pitch.clamp(0, 127) as u8, tpc);
     note.velocity = u8::try_from(midi_note.velocity.clamp(0, 127)).ok();
-    note.tie_back = midi_note.tie.map(mscz2xml::model::NoteId::from_index);
+    note.tie_back = midi_note.tie.map(scoretk_core::model::NoteId::from_index);
     let note_id = score.add_note(note);
     if let Some(previous) = midi_note.tie {
-        let previous = mscz2xml::model::NoteId::from_index(previous);
+        let previous = scoretk_core::model::NoteId::from_index(previous);
         if let Some(previous_note) = score.notes.get_mut(previous.index()) {
             previous_note.tie_forward = Some(note_id);
         }
@@ -885,11 +888,11 @@ pub(crate) fn get_or_create_chord_rest_segment(
 fn fill_gap_with_rests(
     score: &mut Score,
     track: &MTrack,
-    staff: mscz2xml::model::StaffId,
+    staff: scoretk_core::model::StaffId,
     voice: usize,
     start_tick: Fraction,
     rest_len: Fraction,
-    tuplet_ids: &BTreeMap<tuplet::TupletKey, mscz2xml::model::TupletId>,
+    tuplet_ids: &BTreeMap<tuplet::TupletKey, scoretk_core::model::TupletId>,
     options: &ImportOptions,
 ) {
     let track_id = Track::new(staff, voice as u8);
@@ -1019,7 +1022,7 @@ fn create_time_signatures(score: &mut Score, sigmap: &TimeSigMap) {
             &mut score.measures[measure_index].segments[position]
         };
         for staff in 0..score.staves.len() {
-            let staff_id = mscz2xml::model::StaffId::from_index(staff);
+            let staff_id = scoretk_core::model::StaffId::from_index(staff);
             let track_id = Track::new(staff_id, 0);
             segment.set_element(
                 track_id,

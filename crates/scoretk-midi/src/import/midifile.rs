@@ -29,7 +29,7 @@
 //! `ME_NOTE` (attaque + durée), et une piste contenant plusieurs canaux est
 //! scindée en autant de pistes.
 
-use mscz2xml::model::Fraction;
+use scoretk_core::model::Fraction;
 
 /// Division MuseScore : 480 ticks par noire (`Constants::DIVISION`).
 pub const DIVISION: i64 = 480;

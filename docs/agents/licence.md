@@ -1,8 +1,8 @@
 # Licence : obligations d'un consommateur
 
 Ce document décrit les obligations de quiconque **utilise ou distribue**
-`mscz2xml` — la bibliothèque Rust, le binaire `mscz2xml` ou le paquet
-WebAssembly (`nix build .#wasm`) — et non celles du projet lui-même (voir
+`scoretk-core` — la bibliothèque Rust ou le paquet `scoretk` (CLI et
+WebAssembly, `nix build .#wasm`) — et non celles du projet lui-même (voir
 `NOTICE`). Le projet est sous **GPL-3.0-only** ; il n'existe **aucune licence
 plus permissive** pour la bibliothèque, y compris pour le wasm.
 
@@ -12,7 +12,7 @@ plus permissive** pour la bibliothèque, y compris pour le wasm.
 ## Utilisation simple : aucune obligation
 
 La GPL v3 ne restreint ni l'usage privé, ni l'usage interne en entreprise, ni
-l'exécution : utiliser `mscz2xml` pour convertir ses propres partitions ne
+l'exécution : utiliser `scoretk-core` pour convertir ses propres partitions ne
 déclenche rien. De même, un service en ligne qui **exécute** le binaire ou le
 wasm à la demande n'est pas, en soi, une distribution : la GPL v3, contrairement
 à l'AGPL, ne comporte pas de clause « usage par réseau ». (La situation change
@@ -42,7 +42,7 @@ Conséquences pour une telle application **distribuée** :
 2. **Source correspondante.** Fournir la « Corresponding Source » de
    l'ensemble : le code de l'application, la version exacte du wasm utilisée,
    et tout ce qui est nécessaire pour le reconstruire à partir de cette
-   source (le crate `mscz2xml`, le `Cargo.lock`, la recette de construction —
+   source (le crate `scoretk-core`, le `Cargo.lock`, la recette de construction —
    ici `flake.nix`, les scripts et la version de wasm-bindgen). La source doit
    être livrée avec le binaire ou proposée par écrit (§6), et rester
    accessible aussi longtemps que le binaire est distribué.

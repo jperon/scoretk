@@ -26,7 +26,7 @@
 //! une valeur légèrement courte ; l'allongement au tick suivant qui demande
 //! moins de figures et de silence est le comportement de MuseScore.
 
-use mscz2xml::model::Fraction;
+use scoretk_core::model::Fraction;
 
 use super::chord::{max_note_off_time, MTrack, MidiNote};
 use super::meter::{beat_length, meter_to_duration_list, DurationKind};
@@ -37,7 +37,7 @@ use super::tuplet::{find_tuplets_in_bar_for_duration, TupletData};
 
 /// Nombre de figures d'une liste, un demi-point par figure pointée
 /// (`MidiDuration::durationCount`).
-fn duration_count(durations: &[(Fraction, mscz2xml::model::Duration)]) -> f64 {
+fn duration_count(durations: &[(Fraction, scoretk_core::model::Duration)]) -> f64 {
     let mut count = durations.len() as f64;
     for (_, duration) in durations {
         if duration.dots > 0 {
@@ -55,7 +55,7 @@ fn find_bar_start(sigmap: &TimeSigMap, time: Fraction) -> Fraction {
 
 /// Vrai si la liste contient une figure à crochets multiples
 /// (`hasComplexBeamedDurations`).
-fn has_complex_beamed_durations(durations: &[(Fraction, mscz2xml::model::Duration)]) -> bool {
+fn has_complex_beamed_durations(durations: &[(Fraction, scoretk_core::model::Duration)]) -> bool {
     durations
         .iter()
         .any(|(_, duration)| duration.kind.hooks() >= 2)

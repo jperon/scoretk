@@ -21,9 +21,9 @@
 //! `setUserVelocity`) et `:3189-3190` (`veloType` → `Pid::VELO_TYPE`). En 3.x,
 //! ces balises ne sont pas lues, parité avec le C++ (`read302`).
 
-use mscz2xml::model::{Note, VeloType};
-use mscz2xml::read::read_score;
-use mscz2xml::MsczContainer;
+use scoretk_core::model::{Note, VeloType};
+use scoretk_core::read::read_score;
+use scoretk_core::MsczContainer;
 
 /// `.mscx` minimal d'une partie de piano, avec le contenu de `<voice>` fourni.
 fn mscx(version: &str, voice: &str) -> String {

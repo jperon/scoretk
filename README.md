@@ -5,12 +5,12 @@ vise les allers-retours entre MuseScore (`.mscz` / `.mscx`), MusicXML,
 LilyPond, ABC et MIDI ; la feuille de route est dans
 [`docs/TODO.md`](docs/TODO.md).
 
-Le premier convertisseur, **mscz2xml**, est un portage en Rust de l'export
-MusicXML de MuseScore (MuseScore → MusicXML).
+Le convertisseur MuseScore → MusicXML, **scoretk-core**, est un portage en Rust
+de l'export MusicXML de MuseScore Studio.
 
 ## Objectifs de portabilité
 
-La bibliothèque `mscz2xml` est conçue pour tourner partout où Rust compile :
+La bibliothèque `scoretk-core` est conçue pour tourner partout où Rust compile :
 
 - **wasm32-unknown-unknown** (navigateur, sans WASI) ;
 - **Android** et **iOS** ;
@@ -24,7 +24,7 @@ Pour cela, elle respecte des contraintes strictes :
   `default-features = false`, décompression `deflate` via `miniz_oxide`) ;
 - pas de `std::fs`, pas de `std::env` dans la bibliothèque.
 
-Le crate `mscz2xml-cli` est la seule partie qui touche au système de
+Le crate `scoretk-cli` est la seule partie qui touche au système de
 fichiers ; il n'est pas destiné au wasm.
 
 ## État actuel (étape 1)
@@ -41,14 +41,8 @@ L'export MusicXML lui-même viendra dans les étapes suivantes.
 ## Utilisation
 
 ```console
-$ mscz2xml partition.mscz
-fichier principal : score.mscx
-version mscx     : 4.60 (460)
-
-$ mscz2xml partition.mscz -o partition.musicxml
-fichier principal : score.mscx
-version mscx     : 4.60 (460)
-sortie demandée  : partition.musicxml (export MusicXML non implémenté à cette étape)
+$ scoretk partition.mscz -o partition.musicxml
+$ scoretk partition.musicxml -o partition.mscz
 ```
 
 ## Compilation et tests
@@ -57,7 +51,7 @@ sortie demandée  : partition.musicxml (export MusicXML non implémenté à cett
 $ cargo build --workspace
 $ cargo test --workspace
 $ rustup target add wasm32-unknown-unknown
-$ cargo build -p mscz2xml --target wasm32-unknown-unknown
+$ cargo build -p scoretk-core --target wasm32-unknown-unknown
 $ cargo build -p scoretk-midi --target wasm32-unknown-unknown
 $ cargo build -p scoretk-wasm --target wasm32-unknown-unknown
 ```
@@ -77,19 +71,19 @@ const xml = new TextDecoder().decode(convert(bytes)); // musicxml par défaut
 const midi = convert(bytes, { to: 'midi' });          // Uint8Array
 ```
 
-Il succède à l'ancien paquet mono-format `mscz2xml` : `convert` renvoie
-désormais un `Uint8Array` et expose `detect`/`formats` (voir la section
-« Migration » du document wasm).
+`convert` renvoie un `Uint8Array` et expose `detect`, `formats` et
+`convertWithTimeline` (voir [`docs/agents/wasm.md`](docs/agents/wasm.md)).
 
 ## Structure
 
-- `crates/mscz2xml` : bibliothèque portable (aucune I/O).
-- `crates/mscz2xml-cli` : binaire `mscz2xml`, lecture du fichier et
-  affichage des informations de conteneur.
+- `crates/scoretk-core` : bibliothèque portable (aucune I/O) — modèle pivot,
+  lecteurs MuseScore et export MusicXML.
 - `crates/scoretk-wasm` : enveloppe WebAssembly de la façade (`convert`,
   `detect`, `formats`, `version`), unique paquet wasm.
-- `crates/scoretk-midi` : écriture MIDI (Standard MIDI File format 1) et
-  déroulement des reprises, sans I/O.
+- `crates/scoretk-midi` : lecture et écriture MIDI, déroulement des reprises,
+  sans I/O.
+- `crates/scoretk-musicxml`, `crates/scoretk-lilypond`, `crates/scoretk-abc`,
+  `crates/scoretk-mscx` : lecteurs et écrivains des autres formats.
 - `crates/scoretk` et `crates/scoretk-cli` : façade multi-formats et binaire
   `scoretk` (convertisseurs optionnels par features).
 

@@ -22,10 +22,10 @@
 //! Crédits (`<credit>` : titre, sous-titre, compositeur, parolier, droits).
 //!
 //! L'import de MuseScore passe par un cadre vertical par page ; le modèle de
-//! `mscz2xml` ne garde que ce que l'export écrit : le texte, son style
+//! `scoretk_core` ne garde que ce que l'export écrit : le texte, son style
 //! (`<credit-type>`), ses alignements et sa taille de police.
 
-use mscz2xml::model::{Credit, CreditJustify, CreditStyle, CreditValign, RichText, TextFormat};
+use scoretk_core::model::{Credit, CreditJustify, CreditStyle, CreditValign, RichText, TextFormat};
 
 use crate::xml::Element;
 

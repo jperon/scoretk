@@ -15,16 +15,16 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Aiguillage de la façade : parité avec `mscz2xml`, `.mxl` et erreurs des
+//! Aiguillage de la façade : parité avec `scoretk_core`, `.mxl` et erreurs des
 //! formats non branchés.
 
 mod common;
 
 use std::io::Read;
 
-use mscz2xml::{ConvertOptions, ExportOptions, OutputFormat};
 #[allow(unused_imports)]
 use scoretk::{read, write, Error, Format, Options, Sens};
+use scoretk_core::{ConvertOptions, ExportOptions, OutputFormat};
 
 const ENCODING_DATE: &str = "2026-11-17";
 
@@ -43,11 +43,11 @@ fn direct_convert(mscx: &[u8]) -> Vec<u8> {
             ..ExportOptions::default()
         },
     };
-    mscz2xml::convert(mscx, &options).expect("conversion mscz2xml")
+    scoretk_core::convert(mscx, &options).expect("conversion scoretk_core")
 }
 
 #[test]
-fn mscz_vers_musicxml_identique_a_mscz2xml() {
+fn mscz_vers_musicxml_identique_a_scoretk_core() {
     for name in [
         "dynamics.mscx",
         "hairpin_simple.mscx",
@@ -65,7 +65,7 @@ fn mscz_vers_musicxml_identique_a_mscz2xml() {
         assert_eq!(
             via_facade,
             direct_convert(&mscx),
-            "{name} : la façade doit produire exactement la sortie de mscz2xml"
+            "{name} : la façade doit produire exactement la sortie de scoretk_core"
         );
     }
 }

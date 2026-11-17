@@ -29,7 +29,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, Arpeggio, ArpeggioType, Articulation,
     ArticulationAnchor, ArticulationType, Breath, BreathType, Chord, Fermata, FermataType,
     Fingering, Glissando, GlissandoType, LineStyle, NoteId, Ornament, OrnamentAccidental,
@@ -55,7 +55,7 @@ pub(crate) struct ParsedNotations {
     ornaments: Vec<Ornament>,
     fermata: Option<Fermata>,
     arpeggio: Option<Arpeggio>,
-    chord_line: Option<mscz2xml::model::ChordLineType>,
+    chord_line: Option<scoretk_core::model::ChordLineType>,
     fingerings: Vec<Fingering>,
     slurs: Vec<(usize, bool, Option<Placement>, bool)>,
     glissandi: Vec<(usize, bool, Glissando)>,
@@ -200,8 +200,8 @@ pub(crate) fn apply_score(
     parsed: &ParsedNotations,
     note: Option<NoteId>,
     measure_index: usize,
-    tick: mscz2xml::model::Fraction,
-    end_tick: mscz2xml::model::Fraction,
+    tick: scoretk_core::model::Fraction,
+    end_tick: scoretk_core::model::Fraction,
     track: Track,
     state: &mut NotationState,
 ) {
@@ -216,7 +216,7 @@ pub(crate) fn apply_score(
         if *start {
             let anchor = SpannerAnchor::new(tick, track);
             let mut spanner = Spanner::new(SpannerType::Slur, anchor, anchor);
-            let mut slur = mscz2xml::model::Slur::new();
+            let mut slur = scoretk_core::model::Slur::new();
             slur.placement = *place;
             slur.visible = *visible;
             spanner.notation = Some(SpannerNotation::Slur(slur));
@@ -274,7 +274,7 @@ pub(crate) fn apply_score(
         if end_tick > tick {
             let index = pass2::get_segment(score, measure_index, SegmentType::Breath, end_tick);
             score.measures[measure_index].segments[index]
-                .set_element(track, mscz2xml::model::SegmentItem::Breath(breath));
+                .set_element(track, scoretk_core::model::SegmentItem::Breath(breath));
         }
     }
 
@@ -361,19 +361,19 @@ fn parse_articulations(element: &Element, notations_visible: bool, parsed: &mut 
                 continue;
             }
             "falloff" => {
-                parsed.chord_line = Some(mscz2xml::model::ChordLineType::Fall);
+                parsed.chord_line = Some(scoretk_core::model::ChordLineType::Fall);
                 continue;
             }
             "doit" => {
-                parsed.chord_line = Some(mscz2xml::model::ChordLineType::Doit);
+                parsed.chord_line = Some(scoretk_core::model::ChordLineType::Doit);
                 continue;
             }
             "plop" => {
-                parsed.chord_line = Some(mscz2xml::model::ChordLineType::Plop);
+                parsed.chord_line = Some(scoretk_core::model::ChordLineType::Plop);
                 continue;
             }
             "scoop" => {
-                parsed.chord_line = Some(mscz2xml::model::ChordLineType::Scoop);
+                parsed.chord_line = Some(scoretk_core::model::ChordLineType::Scoop);
                 continue;
             }
             "other-articulation" => {

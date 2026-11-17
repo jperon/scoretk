@@ -29,7 +29,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{Fraction, StaffId};
+use scoretk_core::model::{Fraction, StaffId};
 
 use super::key::KeyList;
 use super::midifile::{DIVISION, UNITS_PER_WHOLE};

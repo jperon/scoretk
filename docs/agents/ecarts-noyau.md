@@ -1,13 +1,13 @@
 # Écarts du noyau musical sur le corpus v4
 
 Ce document inventorie les écarts constatés par le test de bout en bout
-`crates/mscz2xml/tests/e2e_corpus.rs` entre la conversion `X.mscx` →
+`crates/scoretk-core/tests/e2e_corpus.rs` entre la conversion `X.mscx` →
 MusicXML et la référence `X.ref.musicxml` exportée par MuseScore 4.7.4.
 
 Méthode : les deux documents sont normalisés (métadonnées, mise en page,
 `<direction>`, `<stem>`, `<beam>`, `<print>`, `<notations>` hors `tied`/`tuplet`,
 `<barline>` hors `<repeat>` retirés), puis comparés ligne à ligne avec `similar`.
-Le test `crates/mscz2xml/tests/noyau_corpus.rs` compare en plus, fichier par
+Le test `crates/scoretk-core/tests/noyau_corpus.rs` compare en plus, fichier par
 fichier et mesure par mesure, les seuls éléments de la famille noyau (hauteurs,
 `octave-shift`, n-olets, `measure-style`, noms de partie, volume/pan, liaisons,
 `sound tempo`, `repeat times`), avec un nombre d'écarts attendu explicite.
@@ -309,7 +309,7 @@ Fichiers : testExcludeInvisibleElements, dynamics_niente (conformes).
   hauteur du `VBox` pour les alignements bas. Le copyright est répété sur
   chaque page déduite des `<LayoutBreak>` de type `page`.
 
-Tests : `crates/mscz2xml/tests/credits_corpus.rs` compare crédits, format de
+Tests : `crates/scoretk-core/tests/credits_corpus.rs` compare crédits, format de
 page et paroles des corpus v3 et v4.
 
 Écarts restants, listés dans ce test :
@@ -414,23 +414,23 @@ Les points 1 à 5 et 9 à 12 sont corrigés ; restent les points 6 à 8 et 13.
 
 ## Tests dédiés
 
-- `crates/mscz2xml/tests/instruments_corpus.rs` compare, pour chaque fichier
+- `crates/scoretk-core/tests/instruments_corpus.rs` compare, pour chaque fichier
   des corpus v3 et v4, les `<score-instrument>`/`<midi-instrument>`,
   `<part-group>`, numéros de mesure, `<attributes>` (`instruments`, `key`,
   `clef`, `transpose`, `staff-details`), `<harmony>`, `<instrument>` et
   `<staff>` des notes, et les altérations. Les écarts restants y sont listés
   (`transpose` du changement d'instrument, `staff-details`) et filtrés.
-- `crates/mscz2xml/src/export/tests.rs` couvre sur des partitions construites à
+- `crates/scoretk-core/src/export/tests.rs` couvre sur des partitions construites à
   la main les parties multi-instruments, la numérotation après saut de section
   et les altérations d'avertissement.
-- `crates/mscz2xml/tests/texts_corpus.rs` et
-  `crates/mscz2xml/tests/notations_corpus.rs` couvrent les familles textes et
+- `crates/scoretk-core/tests/texts_corpus.rs` et
+  `crates/scoretk-core/tests/notations_corpus.rs` couvrent les familles textes et
   notations (voir écarts 17 et 18).
 
 ## 17. Textes de ligne, cadres `TBox`, changements d'instrument, swing — famille textes
 
 **Corrigé** (lecteur/modèle/export) et couvert par
-`crates/mscz2xml/tests/texts_corpus.rs` sur le corpus **v3 et v4** (l'e2e v4
+`crates/scoretk-core/tests/texts_corpus.rs` sur le corpus **v3 et v4** (l'e2e v4
 ignore les `<direction>` et `<print>`) :
 
 - **lignes de texte** (`<Spanner type="TextLine">`) : `TextLineInfo` porte
@@ -472,7 +472,7 @@ famille textes.
 La famille des notations (articulations, points d'orgue, liaisons d'expression,
 ornements, trilles, trémolos, techniques, arpèges, glissandos, respirations et
 lignes d'accord) est couverte par un test dédié,
-`crates/mscz2xml/tests/notations_corpus.rs`, qui compare les `<notations>` de
+`crates/scoretk-core/tests/notations_corpus.rs`, qui compare les `<notations>` de
 ces éléments à la référence, mesure par mesure et dans l'ordre. Les tests de
 bout en bout ci-dessus continuent de retirer `<notations>` sauf `tied`/`tuplet` :
 les écarts ci-dessous n'apparaissent donc pas dans leurs tableaux.

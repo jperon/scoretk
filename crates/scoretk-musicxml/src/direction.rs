@@ -24,7 +24,7 @@
 //! Directions MusicXML : nuances, soufflets, textes, tempos et reprises.
 //!
 //! Portage de `MusicXmlParserDirection` (`importmusicxmlpass2.cpp`) réduit à
-//! ce que le modèle de `mscz2xml` sait représenter : [`Annotation`] pour les
+//! ce que le modèle de `scoretk_core` sait représenter : [`Annotation`] pour les
 //! nuances, tempos, textes et repères, [`Spanner`] pour les soufflets,
 //! ottavas, pédales et lignes de texte, [`RepeatMark`] pour les segnos, codas,
 //! fines et sauts.
@@ -34,7 +34,7 @@
 
 use std::collections::BTreeMap;
 
-use mscz2xml::model::{
+use scoretk_core::model::{
     Annotation, Dynamic, Fraction, Hairpin, HairpinType, HookType, Instrument, Jump, Marker,
     MarkerType, OttavaType, PedalInfo, Placement, RehearsalMark, RepeatMark, Score, Spanner,
     SpannerAnchor, SpannerType, SystemText, Tempo, TextLineInfo, TextLineStyle, Track, Transpose,
@@ -85,7 +85,7 @@ pub(crate) fn flush_pending_instrument(
         return;
     };
     let track = Track::new(staff_id, 0);
-    let mut change = mscz2xml::model::InstrumentChange::new(instrument.track_name.clone());
+    let mut change = scoretk_core::model::InstrumentChange::new(instrument.track_name.clone());
     change.placement = placement;
     change.visible = false;
     change.instrument = Some(instrument);
@@ -183,7 +183,7 @@ pub(crate) fn read_direction(
     let mut sound_dal_segno: Option<String> = None;
     let mut symbol_words = String::new();
     let mut tbox_words: Option<(String, Option<f64>)> = None;
-    let mut words_font: Option<mscz2xml::model::LineFont> = None;
+    let mut words_font: Option<scoretk_core::model::LineFont> = None;
     let mut line_stops: BTreeMap<(SpannerTag, usize), (HookType, f64)> = BTreeMap::new();
     let mut wedge_spread: Option<f64> = None;
 
@@ -318,8 +318,10 @@ pub(crate) fn read_direction(
 
     if let Some((text, font_size)) = tbox_words {
         if !text.is_empty() {
-            let mut tbox =
-                mscz2xml::model::TboxText::new(mscz2xml::model::RichText::new(text), measure_index);
+            let mut tbox = scoretk_core::model::TboxText::new(
+                scoretk_core::model::RichText::new(text),
+                measure_index,
+            );
             tbox.placement = default_placement.unwrap_or(Placement::Above);
             tbox.font_size = font_size;
             score.add_tbox_text(tbox);
@@ -389,7 +391,8 @@ pub(crate) fn read_direction(
             if matches!(start.tag, SpannerTag::Dashes | SpannerTag::Bracket) {
                 if let Some(info) = start.text_line.as_mut() {
                     info.system = system;
-                    info.begin_text = Some(mscz2xml::model::RichText::new(words_markup.clone()));
+                    info.begin_text =
+                        Some(scoretk_core::model::RichText::new(words_markup.clone()));
                     words_for_line = true;
                 }
             }
@@ -444,7 +447,8 @@ pub(crate) fn read_direction(
                 state.pending_instrument.clone()
             {
                 if change_tick == tick {
-                    let mut change = mscz2xml::model::InstrumentChange::new(words_markup.clone());
+                    let mut change =
+                        scoretk_core::model::InstrumentChange::new(words_markup.clone());
                     change.placement = change_placement;
                     change.visible = visible;
                     change.instrument = Some(instrument);
@@ -469,7 +473,7 @@ pub(crate) fn read_direction(
                     Annotation::SystemText(text),
                 );
             } else {
-                let mut text = mscz2xml::model::StaffText::new(words_markup.clone());
+                let mut text = scoretk_core::model::StaffText::new(words_markup.clone());
                 text.placement = default_placement.unwrap_or(Placement::Above);
                 text.visible = visible;
                 add_annotation(
@@ -483,7 +487,7 @@ pub(crate) fn read_direction(
         } else if !symbol_words.is_empty() {
             // Direction qui ne porte qu'un symbole (segno, coda) sans
             // `<sound>` : MuseScore en fait un texte de portée.
-            let mut text = mscz2xml::model::StaffText::new(symbol_words.clone());
+            let mut text = scoretk_core::model::StaffText::new(symbol_words.clone());
             text.placement = default_placement.unwrap_or(Placement::Above);
             text.visible = visible;
             add_annotation(
@@ -586,15 +590,15 @@ fn add_annotation(
     let index = pass2::get_segment(
         score,
         measure_index,
-        mscz2xml::model::SegmentType::ChordRest,
+        scoretk_core::model::SegmentType::ChordRest,
         tick,
     );
     score.measures[measure_index].segments[index].add_annotation(track, annotation);
 }
 
 /// Police d'un `<words>` (`LineFont`), pour les textes de soufflet.
-fn line_font(element: &Element) -> mscz2xml::model::LineFont {
-    let mut font = mscz2xml::model::LineFont::default();
+fn line_font(element: &Element) -> scoretk_core::model::LineFont {
+    let mut font = scoretk_core::model::LineFont::default();
     if let Some(family) = element.attribute("font-family") {
         font.family = family.to_owned();
     }
@@ -1083,7 +1087,7 @@ fn read_repeats(
             text.clone(),
             "start",
             play_until,
-            if kind == mscz2xml::model::JumpType::DcAlCoda {
+            if kind == scoretk_core::model::JumpType::DcAlCoda {
                 "codab"
             } else {
                 ""
@@ -1099,7 +1103,7 @@ fn read_repeats(
             text.clone(),
             target.to_owned(),
             play_until,
-            if kind == mscz2xml::model::JumpType::DsAlCoda {
+            if kind == scoretk_core::model::JumpType::DsAlCoda {
                 "codab"
             } else {
                 ""
@@ -1118,23 +1122,23 @@ fn read_repeats(
 }
 
 /// Type de saut et cible d'arrêt d'après le texte (`matchRepeat`).
-fn jump_kind(text: &str, da_capo: bool) -> (mscz2xml::model::JumpType, String) {
+fn jump_kind(text: &str, da_capo: bool) -> (scoretk_core::model::JumpType, String) {
     let lower = text.to_lowercase();
     let al_fine = lower.contains("al fine");
     let al_coda = lower.contains("al coda");
     if da_capo {
         if al_coda {
-            (mscz2xml::model::JumpType::DcAlCoda, "codab".to_owned())
+            (scoretk_core::model::JumpType::DcAlCoda, "codab".to_owned())
         } else if al_fine {
-            (mscz2xml::model::JumpType::DcAlFine, "fine".to_owned())
+            (scoretk_core::model::JumpType::DcAlFine, "fine".to_owned())
         } else {
-            (mscz2xml::model::JumpType::Dc, "end".to_owned())
+            (scoretk_core::model::JumpType::Dc, "end".to_owned())
         }
     } else if al_coda {
-        (mscz2xml::model::JumpType::DsAlCoda, "codab".to_owned())
+        (scoretk_core::model::JumpType::DsAlCoda, "codab".to_owned())
     } else if al_fine {
-        (mscz2xml::model::JumpType::DsAlFine, "fine".to_owned())
+        (scoretk_core::model::JumpType::DsAlFine, "fine".to_owned())
     } else {
-        (mscz2xml::model::JumpType::Ds, "end".to_owned())
+        (scoretk_core::model::JumpType::Ds, "end".to_owned())
     }
 }

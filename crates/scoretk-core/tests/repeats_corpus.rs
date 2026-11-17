@@ -40,9 +40,9 @@ use std::path::{Path, PathBuf};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
-use mscz2xml::export::export_musicxml;
-use mscz2xml::read::read_score;
-use mscz2xml::MsczContainer;
+use scoretk_core::export::export_musicxml;
+use scoretk_core::read::read_score;
+use scoretk_core::MsczContainer;
 
 /// Fichiers du corpus couverts par la famille reprises.
 const FICHIERS: &[(&str, &str)] = &[

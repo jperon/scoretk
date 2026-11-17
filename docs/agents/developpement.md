@@ -8,12 +8,11 @@ détails et les pièges d'outillage.
 
 | Chemin | Rôle |
 | --- | --- |
-| `crates/mscz2xml/` | bibliothèque portable : conteneur, lecteurs `.mscx`, modèle, export MusicXML. **Aucune I/O, aucun thread, aucune horloge.** |
-| `crates/mscz2xml/src/container.rs` | `.mscz` (ZIP) → `.mscx`, détection de version |
-| `crates/mscz2xml/src/read/` | `read302` (3.x) et `read4xx` (4.x/5.x) → modèle |
-| `crates/mscz2xml/src/model/` | modèle de partition en mémoire, pivot des lecteurs et de l'export |
-| `crates/mscz2xml/src/export/` | modèle → MusicXML `partwise` / `.mxl` |
-| `crates/mscz2xml-cli/` | binaire `mscz2xml` : lecture/écriture des fichiers |
+| `crates/scoretk-core/` | bibliothèque portable : conteneur, lecteurs `.mscx`, modèle, export MusicXML. **Aucune I/O, aucun thread, aucune horloge.** |
+| `crates/scoretk-core/src/container.rs` | `.mscz` (ZIP) → `.mscx`, détection de version |
+| `crates/scoretk-core/src/read/` | `read302` (3.x) et `read4xx` (4.x/5.x) → modèle |
+| `crates/scoretk-core/src/model/` | modèle de partition en mémoire, pivot des lecteurs et de l'export |
+| `crates/scoretk-core/src/export/` | modèle → MusicXML `partwise` / `.mxl` |
 | `crates/scoretk-wasm/` | enveloppe wasm-bindgen de la façade (`convert`, `detect`, `formats`, `version`), unique paquet wasm (`nix build .#wasm`) |
 | `crates/scoretk-musicxml/` | lecteur MusicXML → modèle (`read_musicxml`), bibliothèque portable |
 | `crates/scoretk-midi/` | écriture SMF format 1 et déroulement des reprises, sans I/O |
@@ -21,7 +20,7 @@ détails et les pièges d'outillage.
 | `crates/scoretk-mscx/` | écriture MuseScore (`.mscx` 4.x, `.mscz`), sans I/O |
 | `crates/scoretk/` | façade multi-formats : `Format`, détection, `read`/`write` vers le modèle pivot ; features `musicxml-import`, `midi`, `lilypond` et `mscx` |
 | `crates/scoretk-cli/` | binaire `scoretk` : I/O disque de la façade, formats déduits des extensions |
-| `crates/mscz2xml/tests/` | tests d'intégration par famille + e2e de conformité |
+| `crates/scoretk-core/tests/` | tests d'intégration par famille + e2e de conformité |
 | `tests/corpus/{v3,v4}/` | `.mscx` et références `*.ref.musicxml` |
 | `scripts/` | génération des références et de la table des instruments, contrôle des licences |
 | `flake.nix` | shell de dev, checks, paquet wasm |
@@ -53,7 +52,7 @@ Ne pas retirer cette règle.
   tests unitaires dans le module. Un correctif de parité met à jour
   `EXPECTED_CONFORMANT` et le document d'écarts correspondant.
 - **Fichiers générés, ne pas éditer à la main** :
-  `crates/mscz2xml/src/read/instruments.rs` (par
+  `crates/scoretk-core/src/read/instruments.rs` (par
   `scripts/gen-instruments-table.py`) et `docs/agents/ecarts-complets.md`
   (sortie du test `ecarts_complets_document`). Régénérer, puis relire le diff.
 
@@ -97,7 +96,7 @@ refuse toute licence absente de sa liste blanche.
 
 La bibliothèque doit compiler et tourner sur `wasm32-unknown-unknown` (sans
 WASI), Android, iOS, Linux, macOS et Windows. Checklist avant d'ajouter du
-code dans `crates/mscz2xml` :
+code dans `crates/scoretk-core` :
 
 - pas de `std::fs`, `std::env`, `std::net`, `std::process` ;
 - pas de `std::thread`, `std::sync::mpsc`, `rayon` ;
@@ -108,7 +107,7 @@ code dans `crates/mscz2xml` :
   décodé en Rust pur (`zip` sans fonctionnalités par défaut, `miniz_oxide`) ;
 - les tests peuvent utiliser le système de fichiers (ils tournent sur l'hôte),
   pas la bibliothèque ;
-- vérifier la cible : `nix develop -c cargo build -p mscz2xml --target
+- vérifier la cible : `nix develop -c cargo build -p scoretk-core --target
   wasm32-unknown-unknown`.
 
 Les CLI sont les seules à lire et écrire des fichiers ; le crate wasm ne fait
@@ -151,19 +150,19 @@ environnement (`detected conflict: lib/rustlib/manifest-rust-std-…`).
 nix develop -c cargo test --workspace
 nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 nix develop -c cargo fmt --all -- --check
-nix develop -c cargo build -p mscz2xml --target wasm32-unknown-unknown
+nix develop -c cargo build -p scoretk-core --target wasm32-unknown-unknown
 
 nix flake check          # clippy, tests, fmt, licences, wasm32, smoke Node
 nix build .#wasm         # result/{esm,classic,package.json,…}
 
 # Conformité : les deux niveaux (noyau, puis parité complète)
-nix develop -c cargo test -p mscz2xml --test e2e_corpus -- --nocapture
+nix develop -c cargo test -p scoretk-core --test e2e_corpus -- --nocapture
 
 # Données dérivées
 scripts/gen-references.sh
 python3 scripts/gen-instruments-table.py \
   ref-musescore/share/instruments/instruments.xml \
-  crates/mscz2xml/src/read/instruments.rs
+  crates/scoretk-core/src/read/instruments.rs
 
 # Paquet wasm déjà construit
 nix develop -c node crates/scoretk-wasm/tests/node-smoke.mjs
@@ -175,7 +174,7 @@ nix develop -c node crates/scoretk-wasm/tests/node-smoke.mjs
 
 ## 7. Tests de conformité : deux niveaux
 
-`crates/mscz2xml/tests/e2e_corpus.rs` compare chaque `.mscx` à sa référence
+`crates/scoretk-core/tests/e2e_corpus.rs` compare chaque `.mscx` à sa référence
 4.7.4 après normalisation, à deux niveaux :
 
 1. **Noyau musical** (`Level::Core`) : retire `<identification>`, `<defaults>`,

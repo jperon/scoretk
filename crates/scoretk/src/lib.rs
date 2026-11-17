@@ -24,7 +24,7 @@
 
 //! **scoretk** : façade de conversion de partitions.
 //!
-//! Le modèle de partition de `mscz2xml` est le pivot commun : chaque format
+//! Le modèle de partition de `scoretk_core` est le pivot commun : chaque format
 //! fournit un lecteur vers ce modèle ([`read`]) et un écrivain depuis ce
 //! modèle ([`write`]), ce qui évite des convertisseurs N×N. La bibliothèque
 //! reste portable : aucun accès au disque, aucun thread, aucune horloge ; tout
@@ -92,8 +92,8 @@ mod options;
 
 pub use error::Error;
 pub use format::{Format, Sens};
-pub use mscz2xml::model::Score;
 pub use options::{MidiOptions, Options};
+pub use scoretk_core::model::Score;
 /// Types de la carte des temps, réexportés pour les consommateurs de
 /// [`write_playback`] (wasm, CLI) sans dépendre directement de `scoretk-midi`.
 #[cfg(feature = "midi")]
@@ -121,15 +121,15 @@ pub struct PlaybackOutput {
 
 /// Lit un fichier en mémoire et renvoie le modèle pivot.
 ///
-/// `mscz` et `mscx` passent par le lecteur de `mscz2xml`. MusicXML (`.musicxml`
+/// `mscz` et `mscx` passent par le lecteur de `scoretk_core`. MusicXML (`.musicxml`
 /// nu comme archive `.mxl`) est lu si la feature `musicxml-import` est active,
 /// LilyPond avec `lilypond-import`, ABC avec `abc` ; les autres formats
 /// renvoient [`Error::FormatNonPrisEnCharge`].
 pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
     match format {
         Format::Mscz | Format::Mscx => {
-            let container = mscz2xml::MsczContainer::from_bytes(bytes)?;
-            Ok(mscz2xml::read::read_score(&container)?)
+            let container = scoretk_core::MsczContainer::from_bytes(bytes)?;
+            Ok(scoretk_core::read::read_score(&container)?)
         }
         Format::MusicXml => hooks::read_musicxml(bytes),
         Format::Mxl => hooks::read_mxl(bytes),
@@ -141,7 +141,7 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
 
 /// Écrit le modèle pivot dans le format demandé.
 ///
-/// MusicXML passe par l'export de `mscz2xml` ; `.mxl` réutilise son archive
+/// MusicXML passe par l'export de `scoretk_core` ; `.mxl` réutilise son archive
 /// ZIP (`META-INF/container.xml` + `score.xml`), identique à `saveMxl` de
 /// MuseScore. MuseScore (`.mscx`/`.mscz`) passe par `scoretk-mscx` si la
 /// feature `mscx` est active, MIDI par `scoretk-midi` si la feature `midi`
@@ -150,12 +150,12 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
 /// [`Error::FormatNonPrisEnCharge`].
 pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>> {
     match format {
-        Format::MusicXml => Ok(mscz2xml::export::export_musicxml_with(
+        Format::MusicXml => Ok(scoretk_core::export::export_musicxml_with(
             score,
             &options.export_options(),
         )?
         .into_bytes()),
-        Format::Mxl => Ok(mscz2xml::export::export_mxl_with(
+        Format::Mxl => Ok(scoretk_core::export::export_mxl_with(
             score,
             &options.export_options(),
         )?),
@@ -183,11 +183,11 @@ pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>
 /// fichier, pauses de section comprises. Voir `docs/agents/timemap.md`.
 #[cfg(feature = "midi")]
 pub fn write_playback(score: &Score, options: &Options) -> Result<PlaybackOutput> {
-    let export = mscz2xml::ExportOptions {
+    let export = scoretk_core::ExportOptions {
         stable_ids: true,
         ..options.export_options()
     };
-    let musicxml = mscz2xml::export::export_musicxml_with(score, &export)?.into_bytes();
+    let musicxml = scoretk_core::export::export_musicxml_with(score, &export)?.into_bytes();
     let (midi, timemap) = hooks::write_playback(score, options)?;
     Ok(PlaybackOutput {
         musicxml,

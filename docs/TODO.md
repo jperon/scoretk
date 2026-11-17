@@ -3,7 +3,7 @@
 ## Feuille de route : les autres formats de scoretk
 
 **scoretk** est une boîte à outils de conversion **bidirectionnelle** entre
-cinq formats de partition ; **mscz2xml** en est le premier convertisseur
+cinq formats de partition ; **scoretk-core** en est le premier convertisseur
 (MuseScore → MusicXML).
 
 | Format | Lecture | Écriture |
@@ -39,7 +39,7 @@ catalogue d'instruments, clefs octaviées) sont dans `docs/agents/midi.md`.
 
 Pistes :
 
-- **Modèle pivot.** Le modèle interne (`crates/mscz2xml/src/model`) devient le
+- **Modèle pivot.** Le modèle interne (`crates/scoretk-core/src/model`) devient le
   pivot commun. Chaque format fournit un lecteur vers le modèle et un écrivain
   depuis le modèle, ce qui évite N×N convertisseurs. Il faudra sans doute le
   rendre moins spécifique à MuseScore. On peut aussi convertir via MusicXML
@@ -74,4 +74,4 @@ Pistes :
 - **Contraintes inchangées.** La bibliothèque reste portable : wasm pour la PWA
   `../cantus`, Android, sans fs ni threads, et sans dépendance C.
 - **Calendrier.** À entreprendre une fois la parité mscz → MusicXML atteinte.
-  Le premier livrable reste mscz2xml en wasm pour cantus.
+  Le premier livrable reste la façade scoretk en wasm pour cantus.

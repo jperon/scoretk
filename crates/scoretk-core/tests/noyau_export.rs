@@ -22,8 +22,8 @@
 //! `<octave-shift>`), nombres affichés des n-olets, silences multi-mesures,
 //! noms de partie décomposés, canaux MIDI et compteur de reprise.
 
-use mscz2xml::export::export_musicxml;
-use mscz2xml::model::{
+use scoretk_core::export::export_musicxml;
+use scoretk_core::model::{
     BarLineType, ChordRest, Duration, DurationType, Fraction, Instrument, Key, KeySig, Measure,
     Note, OttavaType, Part, Score, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor,
     SpannerType, StaffId, TimeSig, Track, Tuplet,
@@ -66,7 +66,7 @@ fn add_chord(
     duration: Duration,
     pitch: u8,
     tpc: i8,
-) -> mscz2xml::model::NoteId {
+) -> scoretk_core::model::NoteId {
     let note = score.add_note(Note::new(pitch, tpc));
     let mut chord_rest = ChordRest::chord(duration);
     chord_rest.chord_mut().expect("accord").notes.push(note);

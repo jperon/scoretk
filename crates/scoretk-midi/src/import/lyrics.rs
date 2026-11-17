@@ -26,7 +26,7 @@
 //! l'accord quantifié. Les titres `@T` (fichiers karaoké) ne sont pas repris :
 //! les métadonnées d'œuvre passent par `processMeta`.
 
-use mscz2xml::model::{Fraction, Lyrics, LyricsSyllabic, Score, SegmentItem, Track};
+use scoretk_core::model::{Fraction, Lyrics, LyricsSyllabic, Score, SegmentItem, Track};
 
 use super::chord::MTrack;
 

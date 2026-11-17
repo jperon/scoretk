@@ -34,7 +34,7 @@ fn lit_dynamics() {
     assert_eq!(score.measures.len(), 5, "mesures");
     assert_eq!(score.notes.len(), 20, "notes");
     assert!(score.notes.iter().all(|note| note.velocity.is_some()));
-    let xml = mscz2xml::export::export_musicxml(&score).expect("export");
+    let xml = scoretk_core::export::export_musicxml(&score).expect("export");
     assert!(xml.contains("<score-partwise"), "{xml}");
     assert!(xml.contains("<step>D</step>"), "{xml}");
 }
@@ -44,6 +44,6 @@ fn lit_tuplets_et_voix() {
     let bytes = std::fs::read(corpus("v3/testTuplets8.ref.mid")).expect("corpus MIDI");
     let score = scoretk_midi::read_midi(&bytes).expect("lecture MIDI");
     assert!(!score.notes.is_empty(), "aucune note");
-    let xml = mscz2xml::export::export_musicxml(&score).expect("export");
+    let xml = scoretk_core::export::export_musicxml(&score).expect("export");
     assert!(xml.contains("<score-partwise"), "{xml}");
 }

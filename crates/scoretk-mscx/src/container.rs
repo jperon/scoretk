@@ -30,7 +30,7 @@
 
 use std::io::{Cursor, Write};
 
-use mscz2xml::model::Score;
+use scoretk_core::model::Score;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 

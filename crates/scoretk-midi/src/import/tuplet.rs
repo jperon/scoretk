@@ -27,7 +27,7 @@
 //! détection par mesure (`detectTuplets`, simplifiée) et les fonctions de
 //! recherche utilisées par la quantification et la création des notes.
 
-use mscz2xml::model::Fraction;
+use scoretk_core::model::Fraction;
 
 use super::chord::{min_allowed_duration, MTrack};
 use super::meter::{divisions_of_bar_for_tuplets, is_simple_note_duration};

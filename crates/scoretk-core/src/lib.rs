@@ -67,7 +67,7 @@ pub enum OutputFormat {
 /// réels).
 ///
 /// ```
-/// use mscz2xml::{ConvertOptions, ExportOptions, OutputFormat};
+/// use scoretk_core::{ConvertOptions, ExportOptions, OutputFormat};
 ///
 /// let options = ConvertOptions {
 ///     format: OutputFormat::Mxl,
@@ -101,7 +101,7 @@ pub struct ConvertOptions {
 /// # Exemple
 ///
 /// ```
-/// use mscz2xml::{convert, ConvertOptions, ExportOptions, OutputFormat};
+/// use scoretk_core::{convert, ConvertOptions, ExportOptions, OutputFormat};
 ///
 /// let mscx = br#"<museScore version="4.60">
 ///   <Score>

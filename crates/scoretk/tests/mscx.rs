@@ -68,7 +68,7 @@ fn mscz_est_un_conteneur_musescore() {
     let score = read(&input, Format::Mscx).expect("lecture");
     let archive = write(&score, Format::Mscz, &options()).expect("écriture .mscz");
 
-    let container = mscz2xml::MsczContainer::from_bytes(&archive).expect("conteneur");
+    let container = scoretk_core::MsczContainer::from_bytes(&archive).expect("conteneur");
     assert_eq!(container.version().expect("version").to_string(), "4.70");
     assert_eq!(container.main_mscx_name(), "score.mscx");
     assert_eq!(Format::detect(&archive), Some(Format::Mscz));
