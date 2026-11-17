@@ -37,14 +37,17 @@
 use std::collections::BTreeMap;
 
 use mscz2xml::model::{
-    Accidental, AccidentalType, BarLineType, Chord, ChordRest, Clef, ClefType, Duration,
-    DurationType, Fraction, GraceChord, GraceType, Instrument, Key, KeyMode, KeySig, Lyrics,
-    LyricsSyllabic, Measure, MeasureRepeatMark, Note, NoteHeadGroup, NoteHeadType, NoteId, Part,
-    Placement, Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, TimeSig, Track,
-    Tuplet, TupletId, TupletNumberType, VOICES,
+    Accidental, AccidentalType, Chord, ChordRest, Clef, ClefType, Duration, DurationType, Fraction,
+    GraceChord, GraceType, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure,
+    MeasureRepeatMark, Note, NoteHeadGroup, NoteHeadType, NoteId, Part, Placement, Score, Segment,
+    SegmentItem, SegmentType, StaffId, StemDirection, TimeSig, Track, Tuplet, TupletId,
+    TupletNumberType, VOICES,
 };
 
+use crate::direction;
 use crate::error::Result;
+use crate::harmony;
+use crate::notations;
 use crate::noteduration::{self, duration_type};
 use crate::pass1::{self, Analysis, InstrumentData, TimeSigData};
 use crate::xml::Element;
@@ -92,6 +95,16 @@ struct PendingGrace {
 pub fn build(root: &Element, analysis: &Analysis) -> Result<Score> {
     let mut score = Score::with_division(analysis.divisions.max(1));
     score.metadata = read_metadata(root);
+    score.credits = crate::credits::read_credits(root);
+    // Le nombre de pages conditionne la répétition du copyright à l'export
+    // (`credits`) : il se déduit des crédits, seule information lisible.
+    score.style.page_count = root
+        .children_named("credit")
+        .filter_map(|credit| credit.attribute("page"))
+        .filter_map(|page| page.parse::<u32>().ok())
+        .max()
+        .unwrap_or(1)
+        .max(1);
 
     // Parties et portées.
     for part_data in &analysis.parts {
@@ -135,11 +148,20 @@ pub fn build(root: &Element, analysis: &Analysis) -> Result<Score> {
         .collect();
 
     let mut ties = TieMap::default();
+    let mut direction_state = direction::DirectionState::default();
     for (part_index, part_data) in analysis.parts.iter().enumerate() {
         let Some(part_element) = elements.get(part_data.id.as_str()).copied() else {
             continue;
         };
-        read_part(&mut score, analysis, part_index, part_element, &mut ties);
+        direction_state.start_part();
+        read_part(
+            &mut score,
+            analysis,
+            part_index,
+            part_element,
+            &mut ties,
+            &mut direction_state,
+        );
     }
 
     Ok(score)
@@ -179,6 +201,9 @@ fn read_metadata(root: &Element) -> mscz2xml::model::ScoreMetadata {
         .child_text("movement-number")
         .unwrap_or_default()
         .to_owned();
+    // Le modèle suppose `Linux` par défaut ; un fichier sans
+    // `<miscellaneous-field name="platform">` n'en écrit pas.
+    metadata.platform = String::new();
     if let Some(identification) = root.child("identification") {
         for creator in identification.children_named("creator") {
             let value = creator.text_trimmed().to_owned();
@@ -208,6 +233,16 @@ fn read_metadata(root: &Element) -> mscz2xml::model::ScoreMetadata {
             }
         }
     }
+    if metadata.copyright.is_empty() {
+        for credit in root.children_named("credit") {
+            if credit.child_text("credit-type") != Some("rights") {
+                continue;
+            }
+            if let Some(words) = credit.child_text("credit-words") {
+                metadata.copyright = words.to_owned();
+            }
+        }
+    }
     metadata
 }
 
@@ -222,12 +257,21 @@ fn read_part(
     part_index: usize,
     element: &Element,
     ties: &mut TieMap,
+    directions: &mut direction::DirectionState,
 ) {
     for (measure_index, measure) in element.children_named("measure").enumerate() {
         if measure_index >= score.measures.len() {
             break;
         }
-        read_measure(score, analysis, part_index, measure_index, measure, ties);
+        read_measure(
+            score,
+            analysis,
+            part_index,
+            measure_index,
+            measure,
+            ties,
+            directions,
+        );
     }
 }
 
@@ -244,6 +288,7 @@ fn read_measure(
     measure_index: usize,
     element: &Element,
     ties: &mut TieMap,
+    directions: &mut direction::DirectionState,
 ) {
     let measure_start = score.measures[measure_index].start_tick;
     let measure_len = score.measures[measure_index].len;
@@ -258,6 +303,7 @@ fn read_measure(
     let mut prev_chord: Option<(Fraction, Track)> = None;
     let mut multi_rest: Option<u16> = None;
     let mut measure_style_repeat: Option<u16> = None;
+    let mut figured_bass: Vec<(Fraction, Track, mscz2xml::model::FiguredBass)> = Vec::new();
 
     for child in &element.children {
         match child.name.as_str() {
@@ -290,7 +336,16 @@ fn read_measure(
                         ),
                         "transpose" => {
                             if let Some(transpose) = pass1::read_transpose(attribute) {
-                                score.parts[part_index].instrument.transpose = Some(transpose);
+                                // Une transposition qui suit un changement
+                                // d'instrument appartient à ce changement : le
+                                // C++ la porte dans `<transpose>` de son
+                                // `<attributes>`, pas dans l'instrument
+                                // principal.
+                                if measure_index == 0 && directions.last_transpose.is_none() {
+                                    score.parts[part_index].instrument.transpose = Some(transpose);
+                                } else {
+                                    directions.last_transpose = Some(transpose);
+                                }
                             }
                         }
                         "staff-details" => {
@@ -339,6 +394,7 @@ fn read_measure(
                     &mut grace_after,
                     &mut prev_chord,
                     ties,
+                    directions,
                 );
             }
             "forward" => {
@@ -366,7 +422,31 @@ fn read_measure(
                     }
                 }
             }
-            "barline" => read_barline(score, measure_index, child),
+            "barline" => crate::barline::read_barline(score, part_index, measure_index, child),
+            "harmony" => harmony::read_harmony(
+                score,
+                part_index,
+                measure_index,
+                child,
+                measure_start,
+                m_time,
+            ),
+            "figured-bass" => {
+                let bass = harmony::read_figured_bass(child, divisions);
+                let Some(staff_id) = score.parts[part_index].staves.first().copied() else {
+                    continue;
+                };
+                figured_bass.push((measure_start + m_time, Track::new(staff_id, 0), bass));
+            }
+            "direction" => direction::read_direction(
+                score,
+                analysis,
+                part_index,
+                measure_index,
+                child,
+                m_time,
+                directions,
+            ),
             "sound" => {
                 // `<sound tempo>` hors `<direction>` : MuseScore y voit un
                 // tempo invisible qui n'exporte que sa valeur sonore.
@@ -382,6 +462,17 @@ fn read_measure(
                     annotation.visible = false;
                     score.measures[measure_index].segments[index]
                         .add_annotation(track, mscz2xml::model::Annotation::Tempo(annotation));
+                }
+                if let Some(change) = child.child("instrument-change") {
+                    direction::read_standalone_instrument_change(
+                        score,
+                        analysis,
+                        part_index,
+                        measure_index,
+                        change,
+                        m_time,
+                        directions,
+                    );
                 }
             }
             _ => {}
@@ -429,6 +520,31 @@ fn read_measure(
             count,
         });
     }
+
+    // Chiffrage figuré : la durée vaut celle de l'accord qu'il accompagne
+    // (`addFiguredBassElements`).
+    for (tick, track, mut bass) in figured_bass {
+        if !bass.ticks.is_positive() {
+            let actual = score.measures[measure_index]
+                .segments
+                .iter()
+                .find(|segment| segment.kind == SegmentType::ChordRest && segment.tick == tick)
+                .and_then(|segment| segment.chord_rest(track))
+                .map_or(Fraction::ZERO, |chord_rest| {
+                    actual_ticks(score, chord_rest, measure_index)
+                });
+            bass.ticks = if actual.is_positive() {
+                actual
+            } else {
+                measure_len
+            };
+        }
+        let index = get_segment(score, measure_index, SegmentType::ChordRest, tick);
+        score.measures[measure_index].segments[index]
+            .add_annotation(track, mscz2xml::model::Annotation::FiguredBass(bass));
+    }
+
+    direction::flush_pending_instrument(score, part_index, measure_index, directions);
 }
 
 /// Lit une note ou un silence (`MusicXmlParserPass2::note`).
@@ -450,6 +566,7 @@ fn read_note(
     grace_after: &mut usize,
     prev_chord: &mut Option<(Fraction, Track)>,
     ties: &mut TieMap,
+    directions: &mut direction::DirectionState,
 ) {
     let timing = noteduration::read(element, divisions);
     let (voice_key, staff_xml, _) = pass1::read_note_identity(element);
@@ -466,10 +583,17 @@ fn read_note(
         return;
     };
     let track = Track::new(staff_id, (voice.min(VOICES - 1)) as u8);
+    // Une ottava décale la hauteur écrite : le modèle stocke la hauteur
+    // sonore, comme `xmlSetPitch` à l'import.
+    let octave_shift = directions.octave_shift(staff);
+    let notation_info = notations::parse(element);
 
     if grace {
+        let grace_transpose = score.parts[part_index]
+            .instrument_at(measure_start + *m_time)
+            .transpose;
         if chord && !grace_chords.is_empty() {
-            let note = build_note(element, analysis, part_index);
+            let note = build_note(element, grace_transpose, octave_shift);
             let id = score.add_note(note);
             if let Some(pending) = grace_chords.last_mut() {
                 pending.notes.push(id);
@@ -486,7 +610,7 @@ fn read_note(
                 notes: Vec::new(),
                 staff_move,
             };
-            let note = build_note(element, analysis, part_index);
+            let note = build_note(element, grace_transpose, octave_shift);
             let id = score.add_note(note);
             apply_ties(element, id, track, score, ties);
             pending.notes.push(id);
@@ -506,16 +630,28 @@ fn read_note(
 
     if chord {
         let tick = measure_start + *prev_time;
-        let note = build_note(element, analysis, part_index);
+        let chord_transpose = score.parts[part_index].instrument_at(tick).transpose;
+        let note = build_note(element, chord_transpose, octave_shift);
         let id = score.add_note(note);
         if let Some(chord_rest) = chord_rest_at_mut(score, measure_index, tick, track) {
             if let Some(chord) = chord_rest.chord_mut() {
                 chord.notes.push(id);
                 chord.staff_move = staff_move;
                 apply_chord_attributes(element, chord);
+                notations::apply_chord(&notation_info, chord);
             }
         }
         apply_ties(element, id, track, score, ties);
+        notations::apply_score(
+            score,
+            &notation_info,
+            Some(id),
+            measure_index,
+            tick,
+            tick,
+            track,
+            &mut directions.notations,
+        );
         return;
     }
 
@@ -530,6 +666,17 @@ fn read_note(
         }
     }
     chord_rest.lyrics = read_lyrics(element);
+    if let Some(mode) = read_beam(element) {
+        chord_rest.beam_mode = mode;
+        if matches!(
+            mode,
+            mscz2xml::model::BeamMode::Begin
+                | mscz2xml::model::BeamMode::Begin16
+                | mscz2xml::model::BeamMode::Begin32
+        ) {
+            chord_rest.beam_direction = read_stem(element);
+        }
+    }
     if let Some(chord) = chord_rest.chord_mut() {
         chord.staff_move = staff_move;
         if let Some(stem) = read_stem(element) {
@@ -541,8 +688,22 @@ fn read_note(
     score.measures[measure_index].segments[index]
         .set_element(track, SegmentItem::ChordRest(chord_rest));
 
+    if rest {
+        notations::apply_score(
+            score,
+            &notation_info,
+            None,
+            measure_index,
+            cr_tick,
+            cr_tick + timing.dura,
+            track,
+            &mut directions.notations,
+        );
+    }
+
     if !rest {
-        let note = build_note(element, analysis, part_index);
+        let note_transpose = score.parts[part_index].instrument_at(cr_tick).transpose;
+        let note = build_note(element, note_transpose, octave_shift);
         let id = score.add_note(note);
         if let Some(chord) = score.measures[measure_index].segments[index]
             .element_mut(track)
@@ -551,8 +712,19 @@ fn read_note(
         {
             chord.notes.push(id);
             apply_chord_attributes(element, chord);
+            notations::apply_chord(&notation_info, chord);
         }
         apply_ties(element, id, track, score, ties);
+        notations::apply_score(
+            score,
+            &notation_info,
+            Some(id),
+            measure_index,
+            cr_tick,
+            cr_tick + timing.dura,
+            track,
+            &mut directions.notations,
+        );
     }
 
     // N-olets : l'accord appartient au n-olet le plus interne.
@@ -605,7 +777,7 @@ fn read_note(
 }
 
 /// Écrit un segment à un tick donné, en le créant au besoin.
-fn get_segment(
+pub(crate) fn get_segment(
     score: &mut Score,
     measure_index: usize,
     kind: SegmentType,
@@ -856,30 +1028,6 @@ fn clef_type(sign: &str, octave: i8, line: i8) -> ClefType {
     }
 }
 
-/// Reprise (`MusicXmlParserPass2::barline`), réduite aux `<repeat>`.
-fn read_barline(score: &mut Score, measure_index: usize, element: &Element) {
-    let location = element.attribute("location").unwrap_or("right");
-    let Some(repeat) = element.children_named("repeat").next() else {
-        return;
-    };
-    let times = repeat
-        .attribute("times")
-        .and_then(|times| times.parse::<u8>().ok())
-        .filter(|times| *times > 0)
-        .unwrap_or(2);
-    match repeat.attribute("direction") {
-        Some("forward") => {
-            score.measures[measure_index].start_bar_line = BarLineType::StartRepeat;
-        }
-        Some("backward") => {
-            score.measures[measure_index].end_bar_line = BarLineType::EndRepeat;
-            score.measures[measure_index].repeat_count = times;
-        }
-        _ => {}
-    }
-    let _ = location;
-}
-
 // ----------------------------------------------------------------------
 // Accords, silences et notes
 // ----------------------------------------------------------------------
@@ -980,16 +1128,19 @@ fn make_chord_rest(
 }
 
 /// Construit une note (`xmlSetPitch`).
-fn build_note(element: &Element, analysis: &Analysis, part_index: usize) -> Note {
+fn build_note(
+    element: &Element,
+    transpose: Option<mscz2xml::model::Transpose>,
+    octave_shift: i32,
+) -> Note {
     let (step, alter, octave) = read_pitch(element);
-    let transpose = analysis.parts[part_index]
-        .transpose
-        .map_or(0, |transpose| transpose.chromatic);
+    let transpose = transpose.map_or(0, |transpose| transpose.chromatic);
     let step_index = step.unwrap_or(0);
     let octave = octave.unwrap_or(4);
     let mut pitch =
         [0, 2, 4, 5, 7, 9, 11][usize::from(step_index).min(6)] + alter + (octave + 1) * 12;
     pitch += transpose;
+    pitch -= 12 * octave_shift;
     let pitch = pitch.clamp(0, 127) as u8;
     let tpc = tpc_from_step(step_index, alter);
     let mut note = Note::new(pitch, tpc);
@@ -1044,7 +1195,7 @@ fn read_pitch(element: &Element) -> (Option<u8>, i32, Option<i32>) {
 }
 
 /// `Tpc` d'un degré et de son altération (`step2tpc`).
-fn tpc_from_step(step: u8, alter: i32) -> i8 {
+pub(crate) fn tpc_from_step(step: u8, alter: i32) -> i8 {
     // C, D, E, F, G, A, B dans `engraving/dom/pitchspelling.h`.
     const BASE: [i8; 7] = [14, 16, 18, 13, 15, 17, 19];
     let base = BASE[usize::from(step).min(6)];
@@ -1165,6 +1316,32 @@ fn read_lyrics(element: &Element) -> Vec<Lyrics> {
         result.push(entry);
     }
     result
+}
+
+/// Mode de ligature écrit dans `<beam>` (`MusicXmlParserPass2::beam`).
+fn read_beam(element: &Element) -> Option<mscz2xml::model::BeamMode> {
+    use mscz2xml::model::BeamMode;
+    for beam in element.children_named("beam") {
+        let number = beam
+            .attribute("number")
+            .and_then(|number| number.parse::<usize>().ok())
+            .unwrap_or(1);
+        let begin = match number {
+            2 => BeamMode::Begin16,
+            3 => BeamMode::Begin32,
+            _ => BeamMode::Begin,
+        };
+        let mode = match beam.text_trimmed() {
+            "begin" => begin,
+            "continue" => BeamMode::Mid,
+            "end" => BeamMode::End,
+            "forward hook" => BeamMode::ForwardHook,
+            "backward hook" => BeamMode::BackwardHook,
+            _ => continue,
+        };
+        return Some(mode);
+    }
+    None
 }
 
 /// Direction de hampe écrite dans `<stem>`.

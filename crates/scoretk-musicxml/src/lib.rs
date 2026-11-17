@@ -65,8 +65,13 @@
 //! Renvoie une [`Error`] si le conteneur `.mxl` est illisible, si le XML est
 //! mal formé ou si la racine n'est pas `score-partwise`.
 
+mod barline;
 mod container;
+mod credits;
+mod direction;
 mod error;
+mod harmony;
+mod notations;
 mod noteduration;
 mod pass1;
 mod pass2;

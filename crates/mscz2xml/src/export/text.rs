@@ -881,6 +881,7 @@ pub(crate) fn write_credits(out: &mut Out, score: &Score) {
                 page,
                 font_size: None,
                 vbox_height: 10.0,
+                extra_words: Vec::new(),
             };
             write_credit(out, &credit, &score.style);
         }
@@ -934,6 +935,9 @@ fn write_credit(out: &mut Out, credit: &Credit, settings: &StyleSettings) {
         credit.text.fragments(),
         &style,
     );
+    for extra in &credit.extra_words {
+        out.xml.tag("credit-words", extra.plain());
+    }
     out.xml.end_element();
 }
 
