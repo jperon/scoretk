@@ -37,7 +37,7 @@
 //!
 //! | Format | Lecture | Écriture |
 //! | --- | --- | --- |
-//! | MuseScore `.mscz` / `.mscx` | oui | non |
+//! | MuseScore `.mscz` / `.mscx` | oui | feature `mscx` |
 //! | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` | oui |
 //! | MusicXML `.mxl` | non | oui |
 //! | LilyPond, ABC | non | non |
@@ -134,11 +134,11 @@ pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>
             &options.export_options(),
         )?),
         Format::Midi => hooks::write_midi(score),
-        Format::Mscz | Format::Mscx | Format::Ly | Format::Abc => {
-            Err(Error::FormatNonPrisEnCharge {
-                format,
-                sens: Sens::Ecriture,
-            })
-        }
+        Format::Mscx => hooks::write_mscx(score),
+        Format::Mscz => hooks::write_mscz(score),
+        Format::Ly | Format::Abc => Err(Error::FormatNonPrisEnCharge {
+            format,
+            sens: Sens::Ecriture,
+        }),
     }
 }

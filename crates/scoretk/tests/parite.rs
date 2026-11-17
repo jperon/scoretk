@@ -126,7 +126,7 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
         }
     }
 
-    for format in [Format::Mscz, Format::Mscx, Format::Ly, Format::Abc] {
+    for format in [Format::Ly, Format::Abc] {
         match write(&score, format, &options()) {
             Err(Error::FormatNonPrisEnCharge {
                 format: actual,
@@ -137,6 +137,27 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
             }
             other => panic!("écriture {format} : {other:?}"),
         }
+    }
+
+    // MuseScore (`.mscx`/`.mscz`) n'est écrit que si la feature `mscx` est
+    // active ; sans elle, la façade renvoie l'erreur explicite.
+    #[cfg(not(feature = "mscx"))]
+    for format in [Format::Mscz, Format::Mscx] {
+        match write(&score, format, &options()) {
+            Err(Error::FormatNonPrisEnCharge {
+                format: actual,
+                sens,
+            }) => {
+                assert_eq!(actual, format);
+                assert_eq!(sens, Sens::Ecriture);
+            }
+            other => panic!("écriture {format} : {other:?}"),
+        }
+    }
+    #[cfg(feature = "mscx")]
+    for format in [Format::Mscz, Format::Mscx] {
+        assert!(write(&score, format, &options()).is_ok(), "{format}");
+        assert!(format.supports_write());
     }
 }
 

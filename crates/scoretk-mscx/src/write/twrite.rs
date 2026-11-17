@@ -26,15 +26,15 @@
 //! `TWrite::writeItem(Chord*)`, `TWrite::writeItem(Note*)`,
 //! `TWrite::writeProperties` pour les annotations.
 
+use mscz2xml::model::tpc;
 use mscz2xml::model::{
     Annotation, Arpeggio, Articulation, BarLine, BarLineType, BeamMode, Breath, Chord, ChordRest,
     Clef, ClefType, Duration, DurationType, Fermata, FiguredBass, Fingering, Fraction, GraceChord,
-    Hairpin, HairpinType, Harmony, Instrument, KeySig, KeyMode, Lyrics, Note, NoteHeadGroup,
+    Hairpin, HairpinType, Harmony, Instrument, KeyMode, KeySig, Lyrics, Note, NoteHeadGroup,
     NoteHeadType, Ornament, PedalInfo, Placement, RehearsalFrame, RichText, SegmentItem,
     SpannerNotation, StaffText, StemDirection, SwingUnit, Tempo, TempoKind, TextLineInfo, TimeSig,
     TimeSigType, Tremolo, TremoloBar, TremoloKind, Tuplet, TupletNumberType, VoltaInfo,
 };
-use mscz2xml::model::tpc;
 
 use crate::names;
 use crate::text::{fraction, markup, number};
@@ -189,13 +189,7 @@ fn write_chord_contents(
 }
 
 /// Écrit une note et ses notations.
-fn write_note(
-    xml: &mut XmlWriter,
-    ctx: &WriteContext<'_>,
-    note: &Note,
-    tick: Tick,
-    track: Track,
-) {
+fn write_note(xml: &mut XmlWriter, ctx: &WriteContext<'_>, note: &Note, tick: Tick, track: Track) {
     xml.start_element("Note", &[]);
     if let Some(accidental) = &note.accidental {
         xml.start_element("Accidental", &[]);
@@ -250,7 +244,7 @@ fn write_note(
         write_fingering(xml, fingering);
     }
     if let Some(start) = note.tie_back {
-        write_tie_half(xml, ctx, start, tick, track, false, None, true);
+        write_tie_half(xml, ctx, start, tick, track, false, (None, true));
     }
     if let Some(end) = note.tie_forward {
         write_tie_half(
@@ -260,8 +254,7 @@ fn write_note(
             tick,
             track,
             true,
-            note.tie_up,
-            note.tie_forward_visible,
+            (note.tie_up, note.tie_forward_visible),
         );
     }
     xml.end_element();
@@ -279,8 +272,7 @@ fn write_tie_half(
     tick: Tick,
     track: Track,
     forward: bool,
-    tie_up: Option<bool>,
-    visible: bool,
+    (tie_up, visible): (Option<bool>, bool),
 ) {
     let Some((other_tick, other_track)) = ctx.note_position(other) else {
         return;
@@ -455,7 +447,10 @@ fn write_key_sig(xml: &mut XmlWriter, key_sig: &KeySig) {
 fn write_time_sig(xml: &mut XmlWriter, time_sig: &TimeSig) {
     xml.start_element("TimeSig", &[]);
     if time_sig.kind != TimeSigType::Normal {
-        xml.tag("subtype", &names::time_sig_subtype(time_sig.kind).to_string());
+        xml.tag(
+            "subtype",
+            &names::time_sig_subtype(time_sig.kind).to_string(),
+        );
     }
     xml.tag("sigN", &time_sig.numerator.to_string());
     xml.tag("sigD", &time_sig.denominator.to_string());
@@ -789,10 +784,7 @@ pub(crate) fn write_instrument(xml: &mut XmlWriter, instrument: &Instrument) {
             );
         }
         if let Some(pan) = instrument.pan {
-            xml.tag_empty(
-                "controller",
-                &[("ctrl", "10"), ("value", &pan.to_string())],
-            );
+            xml.tag_empty("controller", &[("ctrl", "10"), ("value", &pan.to_string())]);
         }
         xml.end_element();
     }
@@ -837,7 +829,11 @@ pub(crate) fn write_tuplet(xml: &mut XmlWriter, tuplet: &Tuplet) {
             xml.start_element("Number", &[]);
             xml.tag(
                 "text",
-                &format!("{}:{}", tuplet.normal_notes.max(1), tuplet.ratio.numerator().max(1)),
+                &format!(
+                    "{}:{}",
+                    tuplet.normal_notes.max(1),
+                    tuplet.ratio.numerator().max(1)
+                ),
             );
             xml.end_element();
         }
@@ -915,10 +911,7 @@ pub(crate) fn write_text_line(xml: &mut XmlWriter, info: &TextLineInfo) {
     }
     xml.tag("beginFontFace", &info.begin_font.family);
     xml.tag("beginFontSize", &number(info.begin_font.size));
-    xml.tag(
-        "beginFontStyle",
-        &font_style(&info.begin_font).to_string(),
-    );
+    xml.tag("beginFontStyle", &font_style(&info.begin_font).to_string());
     xml.tag("endFontFace", &info.end_font.family);
     xml.tag("endFontSize", &number(info.end_font.size));
     xml.tag("endFontStyle", &font_style(&info.end_font).to_string());

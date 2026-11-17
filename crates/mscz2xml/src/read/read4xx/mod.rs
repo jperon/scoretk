@@ -60,8 +60,8 @@ use crate::model::{
     CreditStyle, Duration, DurationType, Fraction, GraceChord, GraceType, Harmony, HarmonyDegree,
     HarmonyDegreeKind, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
     Measure, MidiArticulation, Note, NoteId, Part, Placement, RehearsalFrame, RehearsalMark,
-    RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffText, StemDirection, SystemText,
-    Tempo, Tick, TimeSig, TimeSigType, Track, Transpose, TremoloKind, Tuplet, TupletId,
+    RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffText, StemDirection,
+    SystemText, Tempo, Tick, TimeSig, TimeSigType, Track, Transpose, TremoloKind, Tuplet, TupletId,
     TupletNumberType, VOICES,
 };
 use crate::{Error, Result};
@@ -1727,7 +1727,7 @@ impl Reader {
         tuplet.bracket = element
             .child("bracket")
             .and_then(Element::int)
-            .map_or(true, |value| value != 0);
+            .is_none_or(|value| value != 0);
         let id = self.score.add_tuplet(tuplet);
         (id, explicit_bracket)
     }

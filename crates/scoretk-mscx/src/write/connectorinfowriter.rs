@@ -27,7 +27,9 @@
 //! `<location>` relative de l'autre extrémité, ce qui permet au lecteur de les
 //! apparier (`ConnectorInfoReader::connect`).
 
-use mscz2xml::model::{Glissando, GlissandoType, LineStyle, SpannerNotation, SpannerType, Trill, TrillType};
+use mscz2xml::model::{
+    Glissando, GlissandoType, LineStyle, SpannerNotation, SpannerType, Trill, TrillType,
+};
 
 use crate::write::context::Half;
 use crate::write::twrite::{
@@ -85,7 +87,10 @@ fn write_payload(xml: &mut XmlWriter, spanner: &mscz2xml::model::Spanner) {
             xml.end_element();
         }
         SpannerType::Pedal => {
-            let pedal = spanner.pedal.clone().unwrap_or_else(mscz2xml::model::PedalInfo::new);
+            let pedal = spanner
+                .pedal
+                .clone()
+                .unwrap_or_default();
             write_pedal(xml, &pedal, spanner.visible);
         }
         SpannerType::Volta => {
@@ -97,9 +102,10 @@ fn write_payload(xml: &mut XmlWriter, spanner: &mscz2xml::model::Spanner) {
             write_text_line(xml, &info);
         }
         SpannerType::Trill => {
-            let notation = spanner.notation.clone().unwrap_or_else(|| {
-                SpannerNotation::Trill(Trill::new(TrillType::TrillLine))
-            });
+            let notation = spanner
+                .notation
+                .clone()
+                .unwrap_or_else(|| SpannerNotation::Trill(Trill::new(TrillType::TrillLine)));
             write_notation(xml, &notation);
         }
         SpannerType::Glissando => match &spanner.notation {

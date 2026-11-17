@@ -16,7 +16,7 @@
 // more details.
 //
 // You should have received a copy of the GNU General Public License along with
-// this program. If not, see the LICENSE file at this root of this repository or
+// this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
 //! Parties, portées, cadres et crédits.
@@ -78,7 +78,10 @@ pub(crate) fn write_style(xml: &mut XmlWriter, style: &StyleSettings) {
     );
     xml.tag("footerFontSize", &number(style.footer_font_size));
     xml.tag("hairpinHeight", &number(style.hairpin_height_sp));
-    xml.tag("hideEmptyStaves", if style.hide_empty_staves { "1" } else { "0" });
+    xml.tag(
+        "hideEmptyStaves",
+        if style.hide_empty_staves { "1" } else { "0" },
+    );
     xml.tag(
         "dontHideStavesInFirstSystem",
         if style.dont_hide_staves_in_first_system {
@@ -183,7 +186,10 @@ fn write_default_clef(xml: &mut XmlWriter, clef: Clef) {
         xml.tag("defaultClef", crate::names::clef_type(clef.concert));
     } else {
         xml.tag("defaultConcertClef", crate::names::clef_type(clef.concert));
-        xml.tag("defaultTransposingClef", crate::names::clef_type(clef.transposed));
+        xml.tag(
+            "defaultTransposingClef",
+            crate::names::clef_type(clef.transposed),
+        );
     }
 }
 
@@ -199,11 +205,7 @@ fn write_bracket(xml: &mut XmlWriter, bracket: &StaffBracket) {
 }
 
 /// Écrit la musique d'une portée : cadres (première portée), puis mesures.
-pub(crate) fn write_staff_music(
-    xml: &mut XmlWriter,
-    ctx: &WriteContext<'_>,
-    staff_index: usize,
-) {
+pub(crate) fn write_staff_music(xml: &mut XmlWriter, ctx: &WriteContext<'_>, staff_index: usize) {
     let id = (staff_index + 1).to_string();
     xml.start_element("Staff", &[("id", &id)]);
     if staff_index == 0 {

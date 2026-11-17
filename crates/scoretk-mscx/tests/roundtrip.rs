@@ -37,10 +37,68 @@ use similar::{ChangeTag, TextDiff};
 const ENCODING_DATE: &str = "2026-11-17";
 
 /// Fichiers 4.x dont l'aller-retour est identique aux deux niveaux.
-const EXPECTED_ROUNDTRIP_V4: &[&str] = &[];
+const EXPECTED_ROUNDTRIP_V4: &[&str] = &[
+    "beamStemDir",
+    "changevisibility",
+    "copypaste_parts",
+    "copypastesymbollist-lyrics",
+    "dynamics",
+    "dynamics_niente",
+    "expression-1",
+    "hairpin_dynamic_inside",
+    "hairpin_dynamic_jump",
+    "hairpin_simple",
+    "hairpins_and_repeats",
+    "linked-ties",
+    "mmrest",
+    "part-textlines",
+    "partExclusion",
+    "repeat65",
+    "repeat66",
+    "repeat68",
+    "repeat69",
+    "tenuto_accent",
+    "testExcludeInvisibleElements",
+    "testLocalTimesig1",
+    "testNoteheads2",
+    "testTempoPrecision",
+    "timesig-09",
+    "voiceswitching",
+];
 
 /// Fichiers 3.x dont l'aller-retour (lu en 3.x, écrit en 4.x) est identique.
-const EXPECTED_ROUNDTRIP_V3: &[&str] = &[];
+const EXPECTED_ROUNDTRIP_V3: &[&str] = &[
+    "Beam-CrossM1",
+    "barline01",
+    "barlinedelete",
+    "change",
+    "clef-1",
+    "copypaste_tuplet_01",
+    "grace",
+    "keysig_78216",
+    "layout_elements",
+    "lyricsline01",
+    "measure-4",
+    "moonlight",
+    "repeat01",
+    "repeat06",
+    "repeat07",
+    "repeat11",
+    "repeat20",
+    "repeat39",
+    "selectionfilter1",
+    "testBreaksPage",
+    "testChordSymbols",
+    "testHairpinDynamics",
+    "testHarmony6",
+    "testMultiInstrumentPart3",
+    "testTboxWords1",
+    "testTuplets8",
+    "testWedge4",
+    "timesig-05",
+    "undoResequenceMeasure",
+    "voices",
+];
 
 /// Éléments ignorés au niveau noyau (copie de `e2e_corpus.rs`).
 const IGNORED_ELEMENTS: &[&str] = &[
@@ -409,7 +467,10 @@ fn run_corpus(version: &str, expected: &[&str]) {
         })
         .collect();
     files.sort();
-    assert!(!files.is_empty(), "aucun fichier .mscx dans le corpus {version}");
+    assert!(
+        !files.is_empty(),
+        "aucun fichier .mscx dans le corpus {version}"
+    );
 
     let mut identical = BTreeSet::new();
     let mut rows = Vec::new();

@@ -129,12 +129,14 @@ impl Format {
 
     /// Vrai si [`write`](crate::write) sait écrire ce format aujourd'hui.
     ///
-    /// MIDI dépend de la feature `midi`.
+    /// MuseScore (`.mscx`, `.mscz`) dépend de la feature `mscx`, MIDI de la
+    /// feature `midi`.
     pub const fn supports_write(self) -> bool {
         match self {
             Self::MusicXml | Self::Mxl => true,
+            Self::Mscz | Self::Mscx => cfg!(feature = "mscx"),
             Self::Midi => cfg!(feature = "midi"),
-            Self::Mscz | Self::Mscx | Self::Ly | Self::Abc => false,
+            Self::Ly | Self::Abc => false,
         }
     }
 

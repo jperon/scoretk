@@ -346,6 +346,7 @@ version = "0.1.0"
 dependencies = [
  "mscz2xml",
  "scoretk-midi",
+ "scoretk-mscx",
  "scoretk-musicxml",
  "thiserror",
  "zip",

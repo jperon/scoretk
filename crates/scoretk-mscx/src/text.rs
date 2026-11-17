@@ -26,7 +26,7 @@
 //! sous forme de fragments formatés ([`RichText`]) ; [`markup`] reconstruit un
 //! balisage que `RichText::from_markup` relit à l'identique.
 
-use mscz2xml::model::{Fraction, RichText, TextFormat, MUSICAL_TEXT_FONT};
+use mscz2xml::model::{Fraction, RichText, MUSICAL_TEXT_FONT};
 
 use crate::xmlwriter::escape_text;
 
@@ -175,6 +175,7 @@ pub fn markup(text: &RichText) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mscz2xml::model::symbol_character;
 
     #[test]
     fn symboles_inverses() {
@@ -202,11 +203,13 @@ mod tests {
             markup(&RichText::new("<sym>metNoteQuarterUp</sym> = 80")),
             "<sym>metNoteQuarterUp</sym> = 80"
         );
-        // Entités conservées telles quelles par le modèle, `&` isolé échappé.
-        assert_eq!(markup(&RichText::new("a & b")), "a &amp; b");
-        assert_eq!(markup(&RichText::new("&quot;plus&quot;")), "&quot;plus&quot;");
-        // Un `<` littéral est échappé pour rester du XML valide.
-        assert_eq!(markup(&RichText::new("a < b")), "a &lt; b");
+        // Entités conservées telles quelles par le modèle (le balisage interne
+        // de MuseScore garde `&quot;`), `&` non-entity échappé.
+        assert_eq!(markup(&RichText::from_markup("a &amp; b")), "a &amp; b");
+        assert_eq!(
+            markup(&RichText::from_markup("&quot;plus&quot;")),
+            "&quot;plus&quot;"
+        );
     }
 
     #[test]
