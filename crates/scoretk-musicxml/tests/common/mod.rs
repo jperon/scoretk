@@ -17,12 +17,20 @@
 
 //! Normalisation MusicXML partagée par les tests d'aller-retour.
 //!
-//! Reprise de `crates/mscz2xml/tests/e2e_corpus.rs` (niveau `Core`) : les deux
-//! documents sont réduits à une suite de lignes canoniques avant comparaison.
-//! Sont retirés les métadonnées et la mise en page (`<identification>`,
-//! `<defaults>`, `<credit>`, `<direction>`, `<stem>`, `<beam>`, `<print>`),
-//! les attributs de position et de police, `<barline>` sauf ses `<repeat>` et
-//! `<notations>` sauf `tied`/`tuplet`.
+//! Reprise de `crates/mscz2xml/tests/e2e_corpus.rs` : les deux documents sont
+//! réduits à une suite de lignes canoniques avant comparaison. Deux niveaux,
+//! identiques à ceux de la conformité `mscx → MusicXML` :
+//!
+//! - [`Level::Core`] (niveau « noyau musical ») retire les métadonnées et la
+//!   mise en page (`<identification>`, `<defaults>`, `<credit>`,
+//!   `<direction>`, `<stem>`, `<beam>`, `<print>`), les attributs de position
+//!   et de police, `<barline>` sauf ses `<repeat>` et `<notations>` sauf
+//!   `tied`/`tuplet` ;
+//! - [`Level::Full`] (niveau « parité complète ») ne retire que la mise en page
+//!   pure (`default-x/y`, `relative-x/y`, `width`, `bezier-x/y`,
+//!   `<defaults>`, `<print>`, `<system-layout>`, `<staff-layout>`,
+//!   `<encoding-date>`) : directions, articulations, spanners et crédits sont
+//!   comparés.
 
 #![allow(dead_code)]
 
@@ -67,6 +75,35 @@ const IGNORED_ATTRIBUTES: &[&str] = &[
 /// Enfants conservés d'un élément filtré sélectivement.
 const BARLINE_KEPT: &[&str] = &["repeat"];
 const NOTATIONS_KEPT: &[&str] = &["tied", "tuplet"];
+
+/// Niveau de normalisation, comme `Level` dans `e2e_corpus.rs`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Level {
+    /// Noyau musical.
+    Core,
+    /// Parité complète : seule la mise en page pure est retirée.
+    Full,
+}
+
+/// Éléments de mise en page retirés au niveau [`Level::Full`].
+const FULL_PAGE_ELEMENTS: &[&str] = &[
+    "defaults",
+    "print",
+    "system-layout",
+    "staff-layout",
+    "encoding-date",
+];
+
+/// Attributs de mise en page pure retirés au niveau [`Level::Full`].
+const FULL_PAGE_ATTRIBUTES: &[&str] = &[
+    "default-x",
+    "default-y",
+    "relative-x",
+    "relative-y",
+    "width",
+    "bezier-x",
+    "bezier-y",
+];
 
 /// Décision de filtrage pour un élément.
 #[derive(Clone, Copy)]
@@ -113,7 +150,7 @@ pub fn corpus_files(version: &str) -> Vec<PathBuf> {
     files
 }
 
-fn filter_for(parent: Option<Filter>, name: &str) -> Filter {
+fn filter_for(parent: Option<Filter>, name: &str, level: Level) -> Filter {
     match parent {
         Some(Filter::Drop) => Filter::Drop,
         Some(Filter::Only(kept)) => {
@@ -123,17 +160,36 @@ fn filter_for(parent: Option<Filter>, name: &str) -> Filter {
                 Filter::Drop
             }
         }
-        Some(Filter::Keep) | None => match name {
-            _ if IGNORED_ELEMENTS.contains(&name) => Filter::Drop,
-            "barline" => Filter::Only(BARLINE_KEPT),
-            "notations" => Filter::Only(NOTATIONS_KEPT),
-            _ => Filter::Keep,
+        Some(Filter::Keep) | None => match level {
+            Level::Full => {
+                if FULL_PAGE_ELEMENTS.contains(&name) {
+                    Filter::Drop
+                } else {
+                    Filter::Keep
+                }
+            }
+            Level::Core => match name {
+                _ if IGNORED_ELEMENTS.contains(&name) => Filter::Drop,
+                "barline" => Filter::Only(BARLINE_KEPT),
+                "notations" => Filter::Only(NOTATIONS_KEPT),
+                _ => Filter::Keep,
+            },
         },
     }
 }
 
-/// Réduit un document MusicXML à ses lignes canoniques.
+/// Réduit un document MusicXML à ses lignes canoniques (niveau noyau).
 pub fn normalize(xml: &str) -> Vec<String> {
+    normalize_with(xml, Level::Core)
+}
+
+/// Réduit un document MusicXML en ne retirant que la mise en page pure.
+pub fn normalize_full(xml: &str) -> Vec<String> {
+    normalize_with(xml, Level::Full)
+}
+
+/// Réduit un document MusicXML à ses lignes canoniques.
+pub fn normalize_with(xml: &str, level: Level) -> Vec<String> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
 
@@ -144,9 +200,9 @@ pub fn normalize(xml: &str) -> Vec<String> {
         match reader.read_event() {
             Ok(Event::Start(event)) => {
                 let name = local_name(&event);
-                let filter = filter_for(stack.last().map(|(filter, _)| *filter), &name);
+                let filter = filter_for(stack.last().map(|(filter, _)| *filter), &name, level);
                 let node = matches!(filter, Filter::Keep).then(|| Node {
-                    head: format_head(&event),
+                    head: format_head(&event, level),
                     name,
                     self_closing: false,
                     children: Vec::new(),
@@ -155,10 +211,10 @@ pub fn normalize(xml: &str) -> Vec<String> {
             }
             Ok(Event::Empty(event)) => {
                 let name = local_name(&event);
-                let filter = filter_for(stack.last().map(|(filter, _)| *filter), &name);
+                let filter = filter_for(stack.last().map(|(filter, _)| *filter), &name, level);
                 if let Filter::Keep = filter {
                     let node = Node {
-                        head: format_head(&event),
+                        head: format_head(&event, level),
                         name,
                         self_closing: true,
                         children: Vec::new(),
@@ -255,13 +311,17 @@ fn text_content(event: &quick_xml::events::BytesText<'_>) -> String {
         .unwrap_or_else(|_| raw.into_owned())
 }
 
-fn format_head(event: &BytesStart<'_>) -> String {
+fn format_head(event: &BytesStart<'_>, level: Level) -> String {
+    let ignored = match level {
+        Level::Core => IGNORED_ATTRIBUTES,
+        Level::Full => FULL_PAGE_ATTRIBUTES,
+    };
     let mut attributes: Vec<(String, String)> = event
         .attributes()
         .filter_map(|attribute| {
             let attribute = attribute.ok()?;
             let key = attribute.key.0.to_owned();
-            if IGNORED_ATTRIBUTES.contains(&key.as_str()) {
+            if ignored.contains(&key.as_str()) {
                 return None;
             }
             let value = attribute

@@ -137,3 +137,24 @@ nix develop -c cargo test -p scoretk-midi --test corpus_midi -- --nocapture
 Ne pas régénérer avec une autre version de MuseScore sans décision explicite :
 la cible de conformité changerait en silence (même règle que les références
 MusicXML, voir `upstream.md`).
+
+## Chaîne MusicXML → MIDI
+
+`crates/scoretk-midi/tests/musicxml_midi.rs` vérifie la chaîne complète
+MusicXML → modèle (`scoretk_musicxml::read_musicxml`) → MIDI : pour chaque
+`tests/corpus/{v3,v4}/X.ref.musicxml`, il écrit le MIDI et le compare à
+`tests/corpus/midi/{v3,v4}/X.ref.mid` avec la même normalisation que
+`corpus_midi.rs` (notes et tempos effectifs). C'est la garantie que les
+nuances et tempos lus depuis `<direction>` produisent les vélocités et
+changements de tempo de MuseScore.
+
+```sh
+nix develop -c cargo test -p scoretk-midi --test musicxml_midi -- --nocapture
+```
+
+Résultat au 2026-11-17 : **7/21 identiques** (`v4/dynamics`,
+`hairpin_simple`, `linked-ties`, `mmrest`, `repeat68`, `repeat69`,
+`tenuto_accent`). Les écarts restants viennent de la durée de tenue
+(`gateTime`) des instruments, que MusicXML ne transmet pas, et des
+articulations non lues pour certains fichiers.
+

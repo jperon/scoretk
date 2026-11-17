@@ -23,7 +23,7 @@ ly, abc et midi.
 | Crate | Rôle | État |
 | --- | --- | --- |
 | `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : `.mscz`/`.mscx` → MusicXML/`.mxl`, MusicXML → modèle ; features `musicxml-import` et `midi` branchées |
-| `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | fait pour le noyau : 47/56 aller-retours identiques (écarts dans `docs/agents/musicxml-import.md`) |
+| `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | en cours (t34, t37) : noyau 26/30 v3 et 26/26 v4, parité complète 23/30 et 21/26 (écarts dans `docs/agents/musicxml-import.md`) |
 | `scoretk-midi` | écrivain MIDI depuis le modèle pivot | en cours (t35) |
 | `scoretk-lilypond` | écrivain LilyPond depuis le modèle pivot | fait (t36) : 56/56 fichiers du corpus compilent |
 
