@@ -60,6 +60,7 @@ struct TupletNotation {
     number_type: TupletNumberType,
     actual: Option<i64>,
     normal: Option<i64>,
+    base_len: Option<Fraction>,
 }
 
 /// N-olet ouvert dans une voix.
@@ -68,6 +69,8 @@ struct OpenTuplet {
     number: usize,
     ratio: Fraction,
     normal_notes: i64,
+    /// Vrai quand le `<tuplet-type>` du fichier fixe déjà la durée de base.
+    explicit_base: bool,
     /// Somme des durées notées des enfants, pour `determineTupletBaseLen`.
     notated: Fraction,
     start: Fraction,
@@ -79,6 +82,9 @@ struct PendingGrace {
     duration: Duration,
     slash: bool,
     notes: Vec<NoteId>,
+    staff_move: i8,
+    /// Vrai pour un ornement « après l'accord » (`mustStopGraceAfter`).
+    after: bool,
 }
 
 /// Construit le modèle à partir du document et de l'analyse de première passe.
@@ -97,6 +103,18 @@ pub fn build(root: &Element, analysis: &Analysis) -> Result<Score> {
         for _ in 0..part_data.staves {
             score.add_staff(id);
         }
+        let first = score.parts[id.index()].staves[0];
+        let staff = score.staff_mut(first);
+        staff.brackets = part_data
+            .brackets
+            .iter()
+            .map(|(kind, span)| mscz2xml::model::StaffBracket {
+                kind: *kind,
+                span: *span,
+                visible: true,
+            })
+            .collect();
+        staff.bar_line_span = part_data.bar_line_span;
     }
 
     // Mesures.
@@ -105,6 +123,7 @@ pub fn build(root: &Element, analysis: &Analysis) -> Result<Score> {
         let mut measure = Measure::new(index, start, data.len);
         measure.nominal_len = data.time_sig_in_effect.measure_len();
         measure.len = data.len;
+        measure.section_break_before = data.section_break;
         score.add_measure(measure);
         start += data.len;
     }
@@ -230,6 +249,8 @@ fn read_measure(
     let mut prev_time = Fraction::ZERO;
     let mut voice_states: BTreeMap<i32, VoiceState> = BTreeMap::new();
     let mut grace_chords: Vec<PendingGrace> = Vec::new();
+    let mut grace_after: Option<usize> = None;
+    let mut prev_chord: Option<(Fraction, Track)> = None;
     let mut multi_rest: Option<u16> = None;
     let mut measure_style_repeat: Option<u16> = None;
 
@@ -267,12 +288,18 @@ fn read_measure(
                                 score.parts[part_index].instrument.transpose = Some(transpose);
                             }
                         }
+                        "staff-details" => read_staff_details(
+                            score,
+                            analysis,
+                            part_index,
+                            attribute,
+                        ),
                         "measure-style" => {
                             for style in &attribute.children {
                                 match style.name.as_str() {
                                     "multiple-rest" => {
                                         if let Ok(count) = style.text_trimmed().parse::<u16>() {
-                                            if count > 1 {
+                                            if count >= 1 {
                                                 multi_rest = Some(count);
                                             }
                                         }
@@ -309,6 +336,8 @@ fn read_measure(
                     &mut prev_time,
                     &mut voice_states,
                     &mut grace_chords,
+                    &mut grace_after,
+                    &mut prev_chord,
                     ties,
                 );
             }
@@ -338,6 +367,23 @@ fn read_measure(
                 }
             }
             "barline" => read_barline(score, measure_index, child),
+            "sound" => {
+                // `<sound tempo>` hors `<direction>` : MuseScore y voit un
+                // tempo invisible qui n'exporte que sa valeur sonore.
+                if let Some(tempo) = child
+                    .attribute("tempo")
+                    .and_then(|tempo| tempo.parse::<f64>().ok())
+                {
+                    let tick = measure_start + m_time;
+                    let index = get_segment(score, measure_index, SegmentType::ChordRest, tick);
+                    let track = Track::new(score.parts[part_index].staves[0], 0);
+                    let mut annotation = mscz2xml::model::Tempo::new("");
+                    annotation.beats_per_second = Some(tempo / 60.0);
+                    annotation.visible = false;
+                    score.measures[measure_index].segments[index]
+                        .add_annotation(track, mscz2xml::model::Annotation::Tempo(annotation));
+                }
+            }
             _ => {}
         }
     }
@@ -388,23 +434,25 @@ fn read_note(
     prev_time: &mut Fraction,
     voice_states: &mut BTreeMap<i32, VoiceState>,
     grace_chords: &mut Vec<PendingGrace>,
+    grace_after: &mut Option<usize>,
+    prev_chord: &mut Option<(Fraction, Track)>,
     ties: &mut TieMap,
 ) {
     let timing = noteduration::read(element, divisions);
-    let (voice_key, _staff_xml, _) = pass1::read_note_identity(element);
+    let (voice_key, staff_xml, _) = pass1::read_note_identity(element);
     let chord = element.has_child("chord");
     let grace = element.has_child("grace");
     let rest = element.has_child("rest");
 
-    let desc = analysis.voice(part_index, voice_key);
+    let (staff, voice, staff_move) = analysis.resolve_voice(part_index, voice_key, staff_xml);
     let Some(staff_id) = score.parts[part_index]
         .staves
-        .get(desc.staff.min(staves.saturating_sub(1)))
+        .get(staff.min(staves.saturating_sub(1)))
         .copied()
     else {
         return;
     };
-    let track = Track::new(staff_id, (desc.voice.min(VOICES - 1)) as u8);
+    let track = Track::new(staff_id, (voice.min(VOICES - 1)) as u8);
 
     if grace {
         if chord && !grace_chords.is_empty() {
@@ -423,10 +471,18 @@ fn read_note(
                     .and_then(|grace| grace.attribute("slash"))
                     == Some("yes"),
                 notes: Vec::new(),
+                staff_move,
+                after: slur_stop_without_start(element),
             };
             let note = build_note(element, analysis, part_index);
             let id = score.add_note(note);
+            apply_ties(element, id, track, score, ties);
             pending.notes.push(id);
+            // Une note d'ornement portant un `<slur type="stop">` sans départ
+            // ouvre les ornements « après l'accord » (`mustStopGraceAfter`).
+            if pending.after && grace_after.is_none() {
+                *grace_after = Some(grace_chords.len());
+            }
             grace_chords.push(pending);
         }
         return;
@@ -442,6 +498,7 @@ fn read_note(
         if let Some(chord_rest) = chord_rest_at_mut(score, measure_index, tick, track) {
             if let Some(chord) = chord_rest.chord_mut() {
                 chord.notes.push(id);
+                chord.staff_move = staff_move;
                 apply_chord_attributes(element, chord);
             }
         }
@@ -453,8 +510,9 @@ fn read_note(
     let duration = chord_rest_duration(element, timing.dots, measure_len, timing.dura);
     let mut chord_rest = make_chord_rest(element, duration, timing.dura, measure_len);
     chord_rest.lyrics = read_lyrics(element);
-    if let Some(stem) = read_stem(element) {
-        if let Some(chord) = chord_rest.chord_mut() {
+    if let Some(chord) = chord_rest.chord_mut() {
+        chord.staff_move = staff_move;
+        if let Some(stem) = read_stem(element) {
             chord.stem = stem;
         }
     }
@@ -495,9 +553,25 @@ fn read_note(
     *prev_time = *m_time;
     *m_time += timing.dura;
 
-    // Rattache les accords d'agrément en attente à cet accord.
+    // Rattache les accords d'agrément : ceux marqués « après » vont au accord
+    // précédent (`addGraceChordsAfter`), les autres à celui-ci.
     if !grace_chords.is_empty() {
+        if let Some(from) = grace_after.take() {
+            if let Some((previous_tick, previous_track)) = *prev_chord {
+                attach_grace_after(
+                    score,
+                    measure_index,
+                    previous_tick,
+                    previous_track,
+                    grace_chords,
+                    from,
+                );
+            }
+        }
         attach_grace_chords(score, measure_index, cr_tick, track, grace_chords);
+        *prev_chord = Some((cr_tick, track));
+    } else {
+        *prev_chord = Some((cr_tick, track));
     }
 }
 
@@ -537,6 +611,28 @@ fn chord_rest_at_mut<'a>(
 // ----------------------------------------------------------------------
 // Attributs de mesure
 // ----------------------------------------------------------------------
+
+/// Nombre de lignes d'une portée (`setStaffLines`).
+fn read_staff_details(
+    score: &mut Score,
+    analysis: &Analysis,
+    part_index: usize,
+    element: &Element,
+) {
+    let Some(lines) = element.child_int("staff-lines") else {
+        return;
+    };
+    let position = element
+        .attribute("number")
+        .and_then(|number| number.parse::<usize>().ok())
+        .map_or(0, |number| number.saturating_sub(1));
+    let _ = analysis;
+    if let Some(staff_id) = score.parts[part_index].staves.get(position).copied() {
+        if let Ok(lines) = u8::try_from(lines) {
+            score.staff_mut(staff_id).lines = lines;
+        }
+    }
+}
 
 /// Armure (`MusicXmlParserPass2::key`).
 fn read_key(
@@ -578,12 +674,35 @@ fn read_time(
     let Some(signature) = pass1::read_time(element) else {
         return;
     };
-    let time = time_sig(signature, element);
-    for staff_id in staff_ids_all(score, analysis, part_index) {
+    let mut time = time_sig(signature, element);
+    // Indication de mesure locale : sa longueur diffère de la longueur
+    // globale de la mesure, et l'étirement de portée vaut leur rapport
+    // (`TimeSig::stretch`, `Staff::timeStretch`).
+    let local_len = analysis
+        .parts
+        .get(part_index)
+        .and_then(|part| part.measures.get(measure_index))
+        .copied()
+        .unwrap_or(Fraction::ZERO);
+    let global_len = analysis
+        .measures
+        .get(measure_index)
+        .map_or(Fraction::ZERO, |measure| measure.len);
+    let stretch = if local_len.is_positive() && global_len.is_positive() && local_len != global_len {
+        local_len / global_len
+    } else {
+        Fraction::ONE
+    };
+    time.stretch = stretch;
+
+    for staff_id in staff_ids(score, analysis, part_index, element) {
         let track = Track::new(staff_id, 0);
         let index = get_segment(score, measure_index, SegmentType::TimeSig, tick);
         score.measures[measure_index].segments[index]
             .set_element(track, SegmentItem::TimeSig(time.clone()));
+        if stretch != Fraction::ONE {
+            score.staff_mut(staff_id).time_stretch = stretch;
+        }
     }
 }
 
@@ -660,7 +779,17 @@ fn read_clef(
 
     for staff_id in staff_ids(score, analysis, part_index, element) {
         let track = Track::new(staff_id, 0);
-        let index = get_segment(score, target_measure, kind, tick);
+        let mut index = get_segment(score, target_measure, kind, tick);
+        // Une clef d'en-tête déjà posée au même tick n'est pas écrasée : la
+        // seconde devient un changement après la barre, que l'export réécrit
+        // séparément (`midMeasureClef`).
+        if kind == SegmentType::HeaderClef
+            && score.measures[target_measure].segments[index]
+                .element(track)
+                .is_some()
+        {
+            index = get_segment(score, target_measure, SegmentType::Clef, tick);
+        }
         score.measures[target_measure].segments[index].set_element(track, SegmentItem::Clef(clef));
     }
 }
@@ -796,9 +925,9 @@ fn make_chord_rest(
         ChordRest::chord(duration)
     };
     if duration.is_measure() {
-        chord_rest.ticks = Some(measure_len);
-    } else if duration.ticks() != dura {
-        chord_rest.ticks = Some(dura);
+        // Un silence de mesure entière garde la durée de *sa* partie, qui peut
+        // différer de la longueur globale (indications de mesure locales).
+        chord_rest.ticks = Some(if dura.is_positive() { dura } else { measure_len });
     }
     if rest && note.attribute("print-object") == Some("no") {
         if let Some(inner) = chord_rest.rest_mut() {
@@ -827,11 +956,12 @@ fn build_note(element: &Element, analysis: &Analysis, part_index: usize) -> Note
     if let Some(accidental) = read_accidental(element) {
         note.accidental = Some(accidental);
     }
-    if let Some(head) = element.child_text("notehead") {
-        let (group, kind) = read_notehead(head);
+    if let Some(head) = element.child("notehead") {
+        let value = head.text_trimmed();
+        let (group, kind) = read_notehead(value, head.attribute("smufl"));
         note.head_group = group;
         note.head = kind;
-        if head == "none" {
+        if value == "none" {
             note.visible = false;
         }
     }
@@ -905,8 +1035,39 @@ fn read_accidental(element: &Element) -> Option<Accidental> {
     Some(result)
 }
 
-/// Groupe et type de tête (`convertNotehead`).
-fn read_notehead(name: &str) -> (NoteHeadGroup, NoteHeadType) {
+/// Groupe et type de tête (`convertNotehead`), y compris les têtes SMuFL.
+fn read_notehead(name: &str, smufl: Option<&str>) -> (NoteHeadGroup, NoteHeadType) {
+    if let Some(smufl) = smufl {
+        let group = match smufl {
+            "noteheadVoidWithX" | "noteheadWholeWithX" | "noteheadHalfWithX"
+            | "noteheadDoubleWholeWithX" => Some(NoteHeadGroup::WithX),
+            "noteheadDiamondBlackOld" | "noteheadDiamondHalfOld"
+            | "noteheadDiamondWholeOld" | "noteheadDiamondDoubleWholeOld" => {
+                Some(NoteHeadGroup::DiamondOld)
+            }
+            "noteheadCircledBlackLarge" | "noteheadCircledHalfLarge"
+            | "noteheadCircledWholeLarge" | "noteheadCircledDoubleWholeLarge" => {
+                Some(NoteHeadGroup::CircledLarge)
+            }
+            "noteheadLargeArrowUpBlack" | "noteheadLargeArrowDownBlack"
+            | "noteheadLargeArrowUpHalf" | "noteheadLargeArrowDownHalf"
+            | "noteheadLargeArrowUpWhole" | "noteheadLargeArrowDownWhole" => {
+                Some(NoteHeadGroup::LargeArrow)
+            }
+            "noteheadBlack" | "noteheadHalf" | "noteheadWhole"
+            | "noteheadDoubleWholeSquare" => Some(NoteHeadGroup::BrevisAlt),
+            "noteheadSlashWhiteWhole" | "noteheadSlashWhiteDoubleWhole"
+            | "noteheadSlashDiamondWhite" | "noteheadSlashHorizontalEnds" => {
+                Some(NoteHeadGroup::LargeDiamond)
+            }
+            "noteheadHeavyX" => Some(NoteHeadGroup::HeavyCross),
+            "noteheadHeavyXHat" => Some(NoteHeadGroup::HeavyCrossHat),
+            _ => None,
+        };
+        if let Some(group) = group {
+            return (group, NoteHeadType::Auto);
+        }
+    }
     match name {
         "normal" => (NoteHeadGroup::Normal, NoteHeadType::Auto),
         "x" => (NoteHeadGroup::Cross, NoteHeadType::Auto),
@@ -1019,8 +1180,54 @@ fn attach_grace_chords(
         let mut grace = GraceChord::new(pending.grace, pending.duration);
         grace.chord.grace_slash = pending.slash;
         grace.chord.notes = pending.notes;
+        grace.chord.staff_move = pending.staff_move;
         chord.grace_chords.push(grace);
     }
+}
+
+/// Rattache les ornements « après l'accord » (`addGraceChordsAfter`).
+fn attach_grace_after(
+    score: &mut Score,
+    measure_index: usize,
+    tick: Fraction,
+    track: Track,
+    grace_chords: &mut Vec<PendingGrace>,
+    from: usize,
+) {
+    if from >= grace_chords.len() {
+        return;
+    }
+    let after: Vec<PendingGrace> = grace_chords.split_off(from);
+    let Some(chord_rest) = chord_rest_at_mut(score, measure_index, tick, track) else {
+        return;
+    };
+    let Some(chord) = chord_rest.chord_mut() else {
+        return;
+    };
+    for pending in after {
+        let mut grace = GraceChord::new(pending.grace, pending.duration);
+        grace.chord.grace_slash = pending.slash;
+        grace.chord.notes = pending.notes;
+        grace.chord.staff_move = pending.staff_move;
+        chord.grace_chords.push(grace);
+    }
+}
+
+/// Vrai si la note porte un `<slur type="stop">` sans départ.
+fn slur_stop_without_start(element: &Element) -> bool {
+    let Some(notations) = element.child("notations") else {
+        return false;
+    };
+    let mut stop = false;
+    let mut start = false;
+    for slur in notations.children_named("slur") {
+        match slur.attribute("type") {
+            Some("stop") => stop = true,
+            Some("start") => start = true,
+            _ => {}
+        }
+    }
+    stop && !start
 }
 
 /// Rattache les ornements restants au dernier accord de la mesure.
@@ -1056,6 +1263,7 @@ fn attach_orphan_graces(
         let mut grace = GraceChord::new(pending.grace, pending.duration);
         grace.chord.grace_slash = pending.slash;
         grace.chord.notes = pending.notes;
+        grace.chord.staff_move = pending.staff_move;
         chord.grace_chords.push(grace);
     }
 }
@@ -1096,6 +1304,20 @@ fn tuplet_notations(element: &Element) -> Vec<TupletNotation> {
         }
         if let Some(actual) = tuplet.child("tuplet-actual") {
             notation.actual = actual.child_int("tuplet-number");
+            notation.base_len = actual.child_text("tuplet-type").and_then(|name| {
+                let mut figure = noteduration::type_fraction(name)?;
+                let dots = actual
+                    .children
+                    .iter()
+                    .filter(|child| child.name == "tuplet-dot")
+                    .count() as u32;
+                let mut increment = figure * Fraction::HALF;
+                for _ in 0..dots {
+                    figure += increment;
+                    increment *= Fraction::HALF;
+                }
+                Some(figure)
+            });
         }
         if let Some(normal) = tuplet.child("tuplet-normal") {
             notation.normal = normal.child_int("tuplet-number");
@@ -1133,7 +1355,8 @@ fn start_tuplets(
         };
         let actual_notes = notation.actual.unwrap_or(ratio.numerator());
         let normal_notes = notation.normal.unwrap_or(ratio.denominator());
-        let mut tuplet = Tuplet::new(ratio, duration.ticks(), tick, Fraction::ZERO);
+        let base_len = notation.base_len.unwrap_or_else(|| duration.ticks());
+        let mut tuplet = Tuplet::new(ratio, base_len, tick, Fraction::ZERO);
         tuplet.parent = state.tuplets.last().map(|open| open.id);
         tuplet.bracket = notation.bracket;
         tuplet.number_type = notation.number_type;
@@ -1147,14 +1370,12 @@ fn start_tuplets(
             number: notation.number.max(1),
             ratio,
             normal_notes,
+            explicit_base: notation.base_len.is_some(),
             notated: Fraction::ZERO,
             start: tick,
         });
     }
 
-    if let Some(open) = state.tuplets.last_mut() {
-        open.notated += duration.ticks();
-    }
     state.tuplets.last().map(|open| open.id)
 }
 
@@ -1184,7 +1405,12 @@ fn finish_tuplet(score: &mut Score, open: &OpenTuplet) {
     }
     let total = open.notated / open.ratio;
     let (_, full) = fraction_and_full_duration(total);
-    let base_len = full / Fraction::from_integer(open.ratio.denominator());
+    let computed_base = full / Fraction::from_integer(open.ratio.denominator());
+    let base_len = if open.explicit_base {
+        tuplet.base_len
+    } else {
+        computed_base
+    };
     let len = Fraction::try_new(open.normal_notes, base_len.denominator()).unwrap_or(total);
     tuplet.base_len = base_len;
     tuplet.tick = open.start;

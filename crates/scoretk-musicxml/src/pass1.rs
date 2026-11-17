@@ -65,9 +65,15 @@ pub struct InstrumentData {
 pub struct VoiceDesc {
     /// Nombre d'accords ou silences par portée de la partie.
     pub counts: Vec<usize>,
-    /// Portée préférée (`preferredStaff`).
-    pub staff: usize,
-    /// Voix MuseScore attribuée (0-3).
+    /// Vrai si la voix chevauche plusieurs portées (`VoiceOverlapDetector`).
+    pub overlaps: bool,
+    /// Portée attribuée à une voix non chevauchante (`None` si aucune).
+    pub staff: Option<usize>,
+    /// Portées sur lesquelles une voix chevauchante est présente.
+    pub staff_alloc: Vec<bool>,
+    /// Voix MuseScore par portée, pour une voix chevauchante.
+    pub voices: Vec<usize>,
+    /// Voix MuseScore attribuée à une voix non chevauchante (0-3).
     pub voice: usize,
 }
 
@@ -79,6 +85,11 @@ impl VoiceDesc {
             }
             self.counts[staff] += 1;
         }
+    }
+
+    /// Nombre total d'accords et silences de la voix.
+    fn total(&self) -> usize {
+        self.counts.iter().sum()
     }
 
     fn preferred_staff(&self) -> usize {
@@ -126,6 +137,13 @@ pub struct MeasureData {
     pub number: Option<usize>,
     /// Mesure d'anacrouse ou non numérotée (`implicit="yes"`).
     pub implicit: bool,
+    /// Vrai si un saut de section précède la mesure.
+    ///
+    /// MusicXML n'a pas d'équivalent direct : MuseScore réécrit la
+    /// numérotation à 1 et répète `<attributes>` au début d'une section. Un
+    /// numéro de mesure qui recule (hors mesure implicite) est donc interprété
+    /// comme un saut de section.
+    pub section_break: bool,
 }
 
 impl MeasureData {
@@ -140,6 +158,7 @@ impl MeasureData {
             },
             number: None,
             implicit: false,
+            section_break: false,
         }
     }
 }
@@ -159,6 +178,12 @@ pub struct PartData {
     pub transpose: Option<Transpose>,
     /// Nombre de portées.
     pub staves: usize,
+    /// Accolades et crochets déclarés par `<part-group>` (type, portées
+    /// couvertes), posés sur la première portée de la partie.
+    pub brackets: Vec<(i8, usize)>,
+    /// Vrai si la barre de mesure est commune aux portées du groupe
+    /// (`<group-barline>yes</group-barline>`).
+    pub bar_line_span: bool,
     /// Longueur calculée de chaque mesure, dans l'ordre du document.
     pub measures: Vec<Fraction>,
 }
@@ -182,16 +207,39 @@ impl Analysis {
         &self.voices[part_index]
     }
 
-    /// Décrit la voix d'un élément.
-    pub fn voice(&self, part_index: usize, musicxml_voice: i32) -> VoiceDesc {
-        self.voices[part_index]
-            .get(&musicxml_voice)
-            .cloned()
-            .unwrap_or(VoiceDesc {
-                counts: vec![0],
-                staff: 0,
-                voice: 0,
-            })
+    /// Résout la portée, la voix et le décalage de portée d'un élément
+    /// (`determineStaffMoveVoice`).
+    ///
+    /// Renvoie `(portée, voix, décalage)` : la portée et la voix MuseScore, et
+    /// `staffMove` (portée MusicXML moins portée attribuée).
+    pub fn resolve_voice(
+        &self,
+        part_index: usize,
+        musicxml_voice: i32,
+        musicxml_staff: usize,
+    ) -> (usize, usize, i8) {
+        let Some(desc) = self.voices[part_index].get(&musicxml_voice) else {
+            return (musicxml_staff, 0, 0);
+        };
+        let (staff, voice) = if desc.overlaps {
+            // Une voix chevauchante reste sur la portée écrite ; sa voix
+            // dépend de la portée (`VoiceDesc::voice(staff)`).
+            (
+                musicxml_staff,
+                desc.voices.get(musicxml_staff).copied().unwrap_or(0),
+            )
+        } else {
+            (
+                desc.staff.unwrap_or_else(|| desc.preferred_staff()),
+                desc.voice,
+            )
+        };
+        let staff_move = musicxml_staff as i64 - staff as i64;
+        (
+            staff,
+            voice,
+            i8::try_from(staff_move.clamp(-128, 127)).unwrap_or(0),
+        )
     }
 
     /// Nombre total de portées.
@@ -208,9 +256,43 @@ pub fn analyse(root: &Element) -> Result<Analysis> {
 
     let part_list = root.child("part-list").ok_or(Error::MissingPartList)?;
     let mut declared: Vec<PartData> = Vec::new();
-    for score_part in part_list.children_named("score-part") {
-        let id = score_part.attribute("id").unwrap_or_default().to_owned();
-        declared.push(part_data(score_part, &id));
+    // Groupes de parties ouverts (`<part-group>`) : symbole, barre commune et
+    // index de la partie qui les ouvre.
+    let mut open_groups: Vec<(i8, bool, usize)> = Vec::new();
+    for child in &part_list.children {
+        match child.name.as_str() {
+            "score-part" => {
+                let id = child.attribute("id").unwrap_or_default().to_owned();
+                declared.push(part_data(child, &id));
+            }
+            "part-group" => match child.attribute("type") {
+                Some("start") => {
+                    let symbol = match child.child_text("group-symbol") {
+                        Some("brace") => 1,
+                        Some("bracket") => 0,
+                        Some("square") => 3,
+                        Some("line") => 2,
+                        Some("none") | None => -1,
+                        Some(_) => -1,
+                    };
+                    let barline = child.child_text("group-barline") == Some("yes");
+                    open_groups.push((symbol, barline, declared.len()));
+                }
+                Some("stop") => {
+                    if let Some((symbol, barline, start)) = open_groups.pop() {
+                        let span = declared.len() - start;
+                        if let Some(part) = declared.get_mut(start) {
+                            if symbol >= 0 {
+                                part.brackets.push((symbol, span));
+                            }
+                            part.bar_line_span = part.bar_line_span || barline;
+                        }
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
     }
     if declared.is_empty() {
         return Err(Error::NoParts);
@@ -228,6 +310,11 @@ pub fn analyse(root: &Element) -> Result<Analysis> {
     for part in &mut declared {
         let element = parts_elements.get(part.id.as_str()).copied();
         states.push(measure_part(part, element)?);
+        // Une partie à plusieurs portées sans `<part-group>` reçoit une
+        // accolade implicite, que l'export ne réécrit pas (`partList`).
+        if part.staves > 1 && part.brackets.is_empty() {
+            part.brackets.push((1, part.staves));
+        }
     }
 
     // Longueur globale de chaque mesure : maximum sur les parties.
@@ -256,6 +343,21 @@ pub fn analyse(root: &Element) -> Result<Analysis> {
         {
             time_sig = declared;
         }
+        let number = states
+            .iter()
+            .find_map(|state| state.numbers.get(index).copied().flatten());
+        let implicit = states
+            .iter()
+            .any(|state| state.implicits.get(index).copied().unwrap_or(false));
+        let section_break = !implicit
+            && number.is_some()
+            && states.iter().any(|state| {
+                let current = state.numbers.get(index).copied().flatten();
+                let previous = index
+                    .checked_sub(1)
+                    .and_then(|previous| state.numbers.get(previous).copied().flatten());
+                matches!((current, previous), (Some(current), Some(previous)) if current <= previous)
+            });
         measures.push(MeasureData {
             len,
             time_sig: states
@@ -263,12 +365,9 @@ pub fn analyse(root: &Element) -> Result<Analysis> {
                 .filter_map(|state| state.time_sigs.get(index).copied().flatten())
                 .next(),
             time_sig_in_effect: time_sig,
-            number: states
-                .iter()
-                .find_map(|state| state.numbers.get(index).copied().flatten()),
-            implicit: states
-                .iter()
-                .any(|state| state.implicits.get(index).copied().unwrap_or(false)),
+            number,
+            implicit,
+            section_break,
         });
     }
 
@@ -292,18 +391,60 @@ struct PartState {
     max_staff: usize,
 }
 
+/// Intervalles d'une voix dans la mesure courante (détection de chevauchement).
+#[derive(Default)]
+struct OverlapDetector {
+    /// Par voix, puis par portée : intervalles `(début, fin)`.
+    lists: BTreeMap<i32, Vec<Vec<(Fraction, Fraction)>>>,
+}
+
+impl OverlapDetector {
+    fn new_measure(&mut self) {
+        self.lists.clear();
+    }
+
+    fn add(&mut self, start: Fraction, end: Fraction, voice: i32, staff: usize) {
+        if staff >= MAX_STAVES {
+            return;
+        }
+        let entry = self.lists.entry(voice).or_default();
+        if entry.len() <= staff {
+            entry.resize(staff + 1, Vec::new());
+        }
+        entry[staff].push((start, end));
+    }
+
+    /// Portées en chevauchement (`NoteList::anyStaffOverlaps`).
+    fn overlapping_voices(&self) -> Vec<i32> {
+        let mut result = Vec::new();
+        for (voice, staves) in &self.lists {
+            let mut overlaps = false;
+            for first in 0..staves.len() {
+                for second in first + 1..staves.len() {
+                    for (start1, end1) in &staves[first] {
+                        for (start2, end2) in &staves[second] {
+                            if !(start1 >= end2 || end1 <= start2) {
+                                overlaps = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if overlaps {
+                result.push(*voice);
+            }
+        }
+        result
+    }
+}
+
 /// Métadonnées d'une `score-part`.
 fn part_data(score_part: &Element, id: &str) -> PartData {
-    let name = score_part
-        .child_text("part-name")
-        .unwrap_or_default()
-        .trim()
-        .to_owned();
-    let abbreviation = score_part
-        .child_text("part-abbreviation")
-        .unwrap_or_default()
-        .trim()
-        .to_owned();
+    // Le nom long peut porter des bémols et dièses typographiques : MusicXML
+    // les décompose en `<display-text>`/`<accidental-text>`, et MuseScore les
+    // recompose dans `Part::longName` (`writeDisplayName`).
+    let name = display_name(score_part, "part-name");
+    let abbreviation = display_name(score_part, "part-abbreviation");
 
     let mut instruments: Vec<InstrumentData> = Vec::new();
     for score_instrument in score_part.children_named("score-instrument") {
@@ -363,8 +504,36 @@ fn part_data(score_part: &Element, id: &str) -> PartData {
         instruments,
         transpose: None,
         staves: 1,
+        brackets: Vec::new(),
+        bar_line_span: false,
         measures: Vec::new(),
     }
+}
+
+/// Nom d'une partie, reconstitué depuis sa variante `-display` si elle existe.
+fn display_name(score_part: &Element, name: &str) -> String {
+    if let Some(display) = score_part.child(&format!("{name}-display")) {
+        let mut text = String::new();
+        for child in &display.children {
+            match child.name.as_str() {
+                "display-text" => text.push_str(child.text_trimmed()),
+                "accidental-text" => match child.text_trimmed() {
+                    "flat" => text.push('♭'),
+                    "sharp" => text.push('♯'),
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+        if !text.is_empty() {
+            return text.trim().to_owned();
+        }
+    }
+    score_part
+        .child_text(name)
+        .unwrap_or_default()
+        .trim()
+        .to_owned()
 }
 
 /// Parcourt les mesures d'une partie (`MusicXmlParserPass1::part`).
@@ -384,10 +553,13 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
     };
 
     let mut time_sig: Option<TimeSigData> = None;
+    let mut detector = OverlapDetector::default();
 
     for measure in element.children_named("measure") {
+        detector.new_measure();
         let mut measure_time = Fraction::ZERO;
         let mut duration = Fraction::ZERO;
+        let measure_start = length_start(&state.lengths);
 
         for child in &measure.children {
             match child.name.as_str() {
@@ -406,6 +578,12 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
                     if !chord_or_grace && timing.dura.is_positive() {
                         let desc = state.voices.entry(voice).or_default();
                         desc.incr(staff);
+                        detector.add(
+                            measure_start + measure_time,
+                            measure_start + measure_time + timing.dura,
+                            voice,
+                            staff,
+                        );
                     }
                     measure_time += timing.dura;
                     duration = duration.max(measure_time);
@@ -444,6 +622,12 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
                 .and_then(|number| number.parse().ok()),
         );
         state.implicits.push(measure.attribute("implicit") == Some("yes"));
+
+        for voice in detector.overlapping_voices() {
+            if let Some(desc) = state.voices.get_mut(&voice) {
+                desc.overlaps = true;
+            }
+        }
     }
 
     part.staves = state.max_staff.max(1);
@@ -452,16 +636,111 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
     Ok(state)
 }
 
-/// Répartit les voix MusicXML sur les voix MuseScore (`allocateVoices`).
+/// Somme des longueurs déjà relevées, c'est-à-dire tick de début courant.
+fn length_start(lengths: &[Fraction]) -> Fraction {
+    lengths.iter().fold(Fraction::ZERO, |total, length| total + *length)
+}
+
+/// Répartit les voix MusicXML sur les portées puis les voix MuseScore
+/// (`allocateStaves` puis `allocateVoices`).
 fn allocate_voices(voices: &mut BTreeMap<i32, VoiceDesc>) {
-    for desc in voices.values_mut() {
-        desc.staff = desc.preferred_staff();
+    let mut allocated = [0usize; MAX_STAVES];
+
+    // Voix régulières : de la plus fournie à la moins fournie.
+    loop {
+        let mut chosen: Option<(i32, usize)> = None;
+        for (key, desc) in voices.iter() {
+            if desc.overlaps || desc.staff.is_some() {
+                continue;
+            }
+            let total = desc.total();
+            if total == 0 {
+                continue;
+            }
+            if chosen.is_none_or(|(_, best)| total > best) {
+                chosen = Some((*key, total));
+            }
+        }
+        let Some((key, _)) = chosen else {
+            break;
+        };
+        let preferred = voices[&key].preferred_staff();
+        let desc = voices.get_mut(&key).expect("voix présente");
+        if preferred < MAX_STAVES && allocated[preferred] < 4 {
+            desc.staff = Some(preferred);
+            allocated[preferred] += 1;
+        } else {
+            // Plus de voix libre : la voix n'est pas attribuée.
+            desc.staff = None;
+        }
     }
+
+    // Voix chevauchantes : présentes sur chaque portée où elles apparaissent,
+    // de la plus fournie à la moins fournie.
+    for staff in 0..MAX_STAVES {
+        loop {
+            let mut chosen: Option<(i32, usize)> = None;
+            for (key, desc) in voices.iter() {
+                if !desc.overlaps {
+                    continue;
+                }
+                let count = desc.counts.get(staff).copied().unwrap_or(0);
+                if count == 0 {
+                    continue;
+                }
+                if desc.staff_alloc.get(staff).copied().unwrap_or(false) {
+                    continue;
+                }
+                if chosen.is_none_or(|(_, best)| count > best) {
+                    chosen = Some((*key, count));
+                }
+            }
+            let Some((key, _)) = chosen else {
+                break;
+            };
+            let desc = voices.get_mut(&key).expect("voix présente");
+            if desc.staff_alloc.len() <= staff {
+                desc.staff_alloc.resize(staff + 1, false);
+            }
+            if allocated[staff] < 4 {
+                desc.staff_alloc[staff] = true;
+                allocated[staff] += 1;
+            } else {
+                desc.staff_alloc[staff] = false;
+                // Marquer comme traité pour ne pas boucler.
+                desc.staff_alloc.resize(staff + 1, false);
+                desc.staff_alloc[staff] = false;
+                break;
+            }
+        }
+    }
+
+    // Numérotation : voix régulières d'abord, dans l'ordre des numéros
+    // MusicXML, puis voix chevauchantes par portée.
     let mut next_voice = [0usize; MAX_STAVES];
     for desc in voices.values_mut() {
-        let staff = desc.staff.min(MAX_STAVES - 1);
-        desc.voice = next_voice[staff];
-        next_voice[staff] += 1;
+        if desc.overlaps {
+            continue;
+        }
+        if let Some(staff) = desc.staff {
+            let staff = staff.min(MAX_STAVES - 1);
+            desc.voice = next_voice[staff];
+            next_voice[staff] += 1;
+        }
+    }
+    for desc in voices.values_mut() {
+        if !desc.overlaps {
+            continue;
+        }
+        if desc.voices.len() < MAX_STAVES {
+            desc.voices.resize(MAX_STAVES, 0);
+        }
+        for staff in 0..MAX_STAVES {
+            if desc.staff_alloc.get(staff).copied().unwrap_or(false) {
+                desc.voices[staff] = next_voice[staff];
+                next_voice[staff] += 1;
+            }
+        }
     }
 }
 

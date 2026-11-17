@@ -88,5 +88,10 @@ pub fn read_musicxml(bytes: &[u8]) -> Result<Score> {
         return Err(Error::UnknownRoot(root.name));
     }
     let analysis = pass1::analyse(&root)?;
-    pass2::build(&root, &analysis)
+    let mut score = pass2::build(&root, &analysis)?;
+    // `Measure::checkMeasure` : les trous des voix sont comblés par des
+    // silences « gap », qui ne sont pas exportés mais font avancer le curseur
+    // (origine des `<forward>`/`<backup>` scindés de MuseScore).
+    mscz2xml::read::gap_rests::fill(&mut score);
+    Ok(score)
 }
