@@ -15,7 +15,8 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Test de fumée de la lecture MIDI : un fichier du corpus doit se relire.
+//! Tests de fumée de la lecture MIDI : un fichier du corpus doit se relire et
+//! s'exporter en MusicXML.
 
 use std::path::PathBuf;
 
@@ -30,46 +31,19 @@ fn lit_dynamics() {
     let bytes = std::fs::read(corpus("v4/dynamics.ref.mid")).expect("corpus MIDI");
     let score = scoretk_midi::read_midi(&bytes).expect("lecture MIDI");
     assert!(!score.parts.is_empty(), "aucune partie");
-    assert!(!score.measures.is_empty(), "aucune mesure");
-    assert!(!score.notes.is_empty(), "aucune note");
-    for measure in &score.measures {
-        eprintln!(
-            "mesure {} tick {:?} len {:?} nominal {:?} segments {}",
-            measure.number,
-            measure.start_tick,
-            measure.len,
-            measure.nominal_len,
-            measure.segments.len()
-        );
-        for segment in &measure.segments {
-            for (_, item) in segment.iter_elements() {
-                if let mscz2xml::model::SegmentItem::TimeSig(ts) = item {
-                    eprintln!(
-                        "  sig {} {:?} {}",
-                        segment.kind as u8, segment.tick, ts.numerator
-                    );
-                }
-            }
-        }
-    }
+    assert_eq!(score.measures.len(), 5, "mesures");
+    assert_eq!(score.notes.len(), 20, "notes");
+    assert!(score.notes.iter().all(|note| note.velocity.is_some()));
     let xml = mscz2xml::export::export_musicxml(&score).expect("export");
-    std::fs::write(
-        std::env::temp_dir().join("t42_import_dynamics.musicxml"),
-        &xml,
-    )
-    .ok();
-    eprintln!("{}", &xml[..xml.len().min(6000)]);
+    assert!(xml.contains("<score-partwise"), "{xml}");
+    assert!(xml.contains("<step>D</step>"), "{xml}");
 }
 
 #[test]
-fn lit_tuplets() {
+fn lit_tuplets_et_voix() {
     let bytes = std::fs::read(corpus("v3/testTuplets8.ref.mid")).expect("corpus MIDI");
     let score = scoretk_midi::read_midi(&bytes).expect("lecture MIDI");
+    assert!(!score.notes.is_empty(), "aucune note");
     let xml = mscz2xml::export::export_musicxml(&score).expect("export");
-    std::fs::write(
-        std::env::temp_dir().join("t42_import_tuplets.musicxml"),
-        &xml,
-    )
-    .ok();
-    eprintln!("{}", &xml[..xml.len().min(6000)]);
+    assert!(xml.contains("<score-partwise"), "{xml}");
 }
