@@ -22,8 +22,10 @@ classic/mscz2xml_wasm.js      script classique (--target no-modules)
 classic/mscz2xml_wasm_bg.wasm même binaire, optimisé séparément
 classic/mscz2xml.js           wrapper : self.mscz2xml = { ready, convert, version }
 classic/mscz2xml_wasm.d.ts    types
-package.json                  name "scoretk", type "module", exports/types
+package.json                  name "scoretk", type "module", exports/types, repository
 README.md                     mode d'emploi court du paquet
+LICENSE                       texte de la GPL-3.0-only
+NOTICE                        origine MuseScore Studio, données reprises, marque
 ```
 
 Taille obtenue (wasm-bindgen 0.2.130, `opt-level = "z"`, `lto`, `wasm-opt -Oz`) :
