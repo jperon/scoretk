@@ -1,8 +1,9 @@
-# mscz2xml (WebAssembly)
+# scoretk (WebAssembly)
 
-Conversion hors ligne d'un fichier MuseScore (`.mscz` ou `.mscx`) en MusicXML,
-dans le navigateur. Construit depuis le crate Rust
-[`mscz2xml`](../../README.md) ; aucune donnée ne quitte la page.
+Premier convertisseur de **scoretk** : conversion hors ligne d'un fichier
+MuseScore (`.mscz` ou `.mscx`) en MusicXML, dans le navigateur. Construit
+depuis le crate Rust [`mscz2xml`](../../README.md) ; aucune donnée ne quitte
+la page.
 
 Le paquet contient deux variantes du même binaire :
 
@@ -14,10 +15,10 @@ Le paquet contient deux variantes du même binaire :
 ## Variante ESM (page, module, bundler)
 
 ```js
-import init, { convert, version } from 'mscz2xml';
+import init, { convert, version } from 'scoretk';
 
 await init(); // charge mscz2xml_wasm_bg.wasm à côté du module
-console.log('mscz2xml', version());
+console.log('scoretk', version());
 
 const bytes = new Uint8Array(await file.arrayBuffer());
 const xml = convert(bytes, { encodingDate: '2026-01-01' }); // -> string
@@ -30,7 +31,7 @@ quand l'entrée n'est pas un fichier MuseScore lisible.
 
 ```js
 // worker.js (script classique)
-importScripts('mscz2xml/classic/mscz2xml.js');
+importScripts('scoretk/classic/mscz2xml.js');
 
 await self.mscz2xml.ready;
 self.onmessage = (event) => {
