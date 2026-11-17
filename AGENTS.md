@@ -138,7 +138,7 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
 - `docs/agents/midi.md` — écriture MIDI, `RepeatList`, pauses et vélocités,
   références et écarts : à lire avant de toucher au crate `scoretk-midi`.
 - `docs/agents/scoretk.md` — façade multi-formats : API, détection, points de
-  branchement t34/t35, CLI et tests : à lire avant de toucher à `scoretk`.
+  branchement t34/t35/t38, CLI et tests : à lire avant de toucher à `scoretk`.
 - `docs/agents/licence.md` — obligations GPL-3.0-only d'un consommateur :
   à lire avant toute distribution ou intégration.
 - `docs/agents/musicxml-import.md` — portage de l'import MusicXML, résultat
