@@ -86,8 +86,6 @@ struct PendingGrace {
     slash: bool,
     notes: Vec<NoteId>,
     staff_move: i8,
-    /// Vrai pour un ornement « après l'accord » (`mustStopGraceAfter`).
-    after: bool,
 }
 
 /// Construit le modèle à partir du document et de l'analyse de première passe.
@@ -252,7 +250,7 @@ fn read_measure(
     let mut prev_time = Fraction::ZERO;
     let mut voice_states: BTreeMap<i32, VoiceState> = BTreeMap::new();
     let mut grace_chords: Vec<PendingGrace> = Vec::new();
-    let mut grace_after: Option<usize> = None;
+    let mut grace_after: usize = 0;
     let mut prev_chord: Option<(Fraction, Track)> = None;
     let mut multi_rest: Option<u16> = None;
     let mut measure_style_repeat: Option<u16> = None;
@@ -404,9 +402,16 @@ fn read_measure(
         }
     }
 
-    // Ornements restants : rattachés au dernier accord de la mesure.
+    // Ornements restants : `gac = gcl.size()` puis `addGraceChordsAfter`,
+    // c'est-à-dire rattachés à l'accord précédent comme ornements « après ».
     if !grace_chords.is_empty() {
-        attach_orphan_graces(score, measure_index, &mut grace_chords);
+        if let Some((tick, track)) = prev_chord {
+            let count = grace_chords.len();
+            attach_grace_after(score, measure_index, tick, track, &mut grace_chords, count);
+        }
+        if !grace_chords.is_empty() {
+            attach_orphan_graces(score, measure_index, &mut grace_chords);
+        }
     }
 
     // Silences de remplissage de la première voix.
@@ -443,7 +448,7 @@ fn read_note(
     prev_time: &mut Fraction,
     voice_states: &mut BTreeMap<i32, VoiceState>,
     grace_chords: &mut Vec<PendingGrace>,
-    grace_after: &mut Option<usize>,
+    grace_after: &mut usize,
     prev_chord: &mut Option<(Fraction, Track)>,
     ties: &mut TieMap,
 ) {
@@ -481,18 +486,18 @@ fn read_note(
                     == Some("yes"),
                 notes: Vec::new(),
                 staff_move,
-                after: slur_stop_without_start(element),
             };
             let note = build_note(element, analysis, part_index);
             let id = score.add_note(note);
             apply_ties(element, id, track, score, ties);
             pending.notes.push(id);
-            // Une note d'ornement portant un `<slur type="stop">` sans départ
-            // ouvre les ornements « après l'accord » (`mustStopGraceAfter`).
-            if pending.after && grace_after.is_none() {
-                *grace_after = Some(grace_chords.len());
-            }
             grace_chords.push(pending);
+            // Un ornement portant un `<slur type="stop">` sans départ marque
+            // tous les ornements déjà collectés comme « après l'accord »
+            // (`mustStopGraceAfter`, `gac = gcl.size()`).
+            if slur_stop_without_start(element) {
+                *grace_after = grace_chords.len();
+            }
         }
         return;
     }
@@ -574,10 +579,14 @@ fn read_note(
     *prev_time = *m_time;
     *m_time += timing.dura;
 
-    // Rattache les accords d'agrément : ceux marqués « après » vont au accord
-    // précédent (`addGraceChordsAfter`), les autres à celui-ci.
-    if !grace_chords.is_empty() {
-        if let Some(from) = grace_after.take() {
+    // Rattache les ornements : ceux marqués « après » vont à l'accord
+    // précédent (`addGraceChordsAfter`), les autres à celui-ci
+    // (`addGraceChordsBefore`). Comme le C++, rien n'est rattaché à un
+    // silence : les ornements en attente passent à l'accord suivant.
+    if !grace_chords.is_empty() && !rest {
+        let count = (*grace_after).min(grace_chords.len());
+        *grace_after = 0;
+        if count > 0 {
             if let Some((previous_tick, previous_track)) = *prev_chord {
                 attach_grace_after(
                     score,
@@ -585,13 +594,13 @@ fn read_note(
                     previous_tick,
                     previous_track,
                     grace_chords,
-                    from,
+                    count,
                 );
             }
         }
-        attach_grace_chords(score, measure_index, cr_tick, track, grace_chords);
-        *prev_chord = Some((cr_tick, track));
-    } else {
+        attach_grace_chords(score, measure_index, cr_tick, track, grace_chords, count);
+    }
+    if !rest {
         *prev_chord = Some((cr_tick, track));
     }
 }
@@ -1209,18 +1218,20 @@ fn attach_grace_chords(
     tick: Fraction,
     track: Track,
     grace_chords: &mut Vec<PendingGrace>,
+    from: usize,
 ) {
-    if grace_chords.is_empty() {
+    if from >= grace_chords.len() {
         return;
     }
+    let pending: Vec<PendingGrace> = grace_chords.split_off(from);
+    grace_chords.clear();
     let Some(chord_rest) = chord_rest_at_mut(score, measure_index, tick, track) else {
         return;
     };
     let Some(chord) = chord_rest.chord_mut() else {
-        grace_chords.clear();
         return;
     };
-    for pending in grace_chords.drain(..) {
+    for pending in pending {
         let mut grace = GraceChord::new(pending.grace, pending.duration);
         grace.chord.grace_slash = pending.slash;
         grace.chord.notes = pending.notes;
@@ -1236,12 +1247,12 @@ fn attach_grace_after(
     tick: Fraction,
     track: Track,
     grace_chords: &mut Vec<PendingGrace>,
-    from: usize,
+    count: usize,
 ) {
-    if from >= grace_chords.len() {
+    if count == 0 || count > grace_chords.len() {
         return;
     }
-    let after: Vec<PendingGrace> = grace_chords.split_off(from);
+    let after: Vec<PendingGrace> = grace_chords.drain(..count).collect();
     let Some(chord_rest) = chord_rest_at_mut(score, measure_index, tick, track) else {
         return;
     };
@@ -1249,7 +1260,14 @@ fn attach_grace_after(
         return;
     };
     for pending in after {
-        let mut grace = GraceChord::new(pending.grace, pending.duration);
+        // `Chord::toGraceAfter` : un ornement « après » change de type.
+        let kind = match pending.grace {
+            GraceType::Appoggiatura => GraceType::Grace8After,
+            GraceType::Grace16 => GraceType::Grace16After,
+            GraceType::Grace32 => GraceType::Grace32After,
+            other => other,
+        };
+        let mut grace = GraceChord::new(kind, pending.duration);
         grace.chord.grace_slash = pending.slash;
         grace.chord.notes = pending.notes;
         grace.chord.staff_move = pending.staff_move;

@@ -37,13 +37,16 @@ fn main() {
         for (track, item) in segment.iter_elements() {
             if let SegmentItem::ChordRest(chord_rest) = item {
                 println!(
-                    "{track} tick {} rest {} ticks {:?} dur {:?} tuplet {:?} gap {}",
+                    "{track} tick {} rest {} ticks {:?} dur {:?} tuplet {:?} gap {} graces {}",
                     segment.tick,
                     chord_rest.is_rest(),
                     chord_rest.ticks,
                     chord_rest.duration,
                     chord_rest.tuplet,
-                    chord_rest.rest_ref().is_some_and(|rest| rest.gap)
+                    chord_rest.rest_ref().is_some_and(|rest| rest.gap),
+                    chord_rest
+                        .chord_ref()
+                        .map_or(0, |chord| chord.grace_chords.len())
                 );
             }
         }
