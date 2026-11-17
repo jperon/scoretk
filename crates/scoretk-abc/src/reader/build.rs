@@ -45,7 +45,7 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
     score.metadata.source = reader.source.clone();
 
     let groups = groups(reader, &voices);
-    let staff_of_voice = create_parts(&mut score, &voices, &groups);
+    let voice_tracks = create_parts(&mut score, &voices, &groups);
     let staff_count = score.staves.len().max(1);
 
     let measure_count = voices
@@ -74,8 +74,8 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
 
         // Segments de contexte, sur chaque portée.
         for (voice_index, voice) in voices.iter().enumerate() {
-            let staff = staff_of_voice[voice_index];
-            let track = Track::new(staff, 0);
+            let (staff, model_voice) = voice_tracks[voice_index];
+            let track = Track::new(staff, model_voice);
             if index == 0 || time_at(voice, index) != time_at(voice, index - 1) {
                 let mut segment = Segment::new(SegmentType::TimeSig, starts[index], staff_count);
                 segment.set_element(track, SegmentItem::TimeSig(time_at(voice, index)));
@@ -90,27 +90,59 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
                 if let Some(clef) = clef_at(voice, index) {
                     let mut segment =
                         Segment::new(SegmentType::HeaderClef, starts[index], staff_count);
-                    segment.set_element(
-                        track,
-                        SegmentItem::Clef(Clef::new(clef)),
-                    );
+                    segment.set_element(track, SegmentItem::Clef(Clef::new(clef)));
                     measure.add_segment(segment);
+                }
+            }
+            // Changements en cours de mesure.
+            for (change_measure, tick, value) in &voice.time_changes {
+                if *change_measure == index && tick.is_positive() {
+                    if let Some(time) = value {
+                        let mut segment = Segment::new(
+                            SegmentType::TimeSig,
+                            starts[index] + *tick,
+                            staff_count,
+                        );
+                        segment.set_element(track, SegmentItem::TimeSig(time.clone()));
+                        measure.add_segment(segment);
+                    }
+                }
+            }
+            for (change_measure, tick, value) in &voice.key_changes {
+                if *change_measure == index && tick.is_positive() {
+                    if let Some(key) = value {
+                        let mut segment = Segment::new(
+                            SegmentType::KeySig,
+                            starts[index] + *tick,
+                            staff_count,
+                        );
+                        segment.set_element(track, SegmentItem::KeySig(key.clone()));
+                        measure.add_segment(segment);
+                    }
+                }
+            }
+            for (change_measure, tick, value) in &voice.clef_changes {
+                if *change_measure == index && tick.is_positive() {
+                    if let Some(clef) = value {
+                        let mut segment = Segment::new(
+                            SegmentType::Clef,
+                            starts[index] + *tick,
+                            staff_count,
+                        );
+                        segment.set_element(track, SegmentItem::Clef(Clef::new(*clef)));
+                        measure.add_segment(segment);
+                    }
                 }
             }
         }
 
         // Événements de chaque voix.
         for (voice_index, voice) in voices.iter().enumerate() {
-            let staff = staff_of_voice[voice_index];
-            let track = Track::new(staff, 0);
+            let (staff, model_voice) = voice_tracks[voice_index];
+            let track = Track::new(staff, model_voice);
             let Some(data) = voice.measures.get(index) else {
-                add_full_measure_rest(&mut measure, starts[index], track, staff_count);
                 continue;
             };
-            if data.events.is_empty() {
-                add_full_measure_rest(&mut measure, starts[index], track, staff_count);
-                continue;
-            }
             for event in &data.events {
                 let tick = starts[index] + event.tick;
                 let mut chord_rest = event.chord_rest.clone();
@@ -147,8 +179,8 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
 
     // Slurs, soufflets et volatas.
     for (voice_index, voice) in voices.iter().enumerate() {
-        let staff = staff_of_voice[voice_index];
-        let track = Track::new(staff, 0);
+        let (staff, model_voice) = voice_tracks[voice_index];
+        let track = Track::new(staff, model_voice);
         for (start, end) in &voice.slurs {
             add_spanner(
                 &mut score,
@@ -193,92 +225,192 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
     Ok(score)
 }
 
-/// Groupes de voix : un groupe par partie.
-fn groups(reader: &Reader, voices: &[Voice]) -> Vec<Vec<usize>> {
-    let mut groups = Vec::new();
-    let mut used = vec![false; voices.len()];
-    if let Some(spec) = &reader.score_spec {
-        let mut current: Vec<usize> = Vec::new();
-        let mut open = false;
-        for token in spec.split_whitespace() {
-            let token = token.trim();
-            let starts_group = token.starts_with('(') || token.starts_with('[') || token.starts_with('{');
-            let ends_group = token.ends_with(')') || token.ends_with(']') || token.ends_with('}');
-            let mut number_text = token
-                .trim_start_matches(['(', '[', '{'])
-                .trim_end_matches([')', ']', '}'])
-                .to_owned();
-            if starts_group {
-                open = true;
-                current.clear();
+/// Partie ABC : une ou plusieurs portées, chacune avec ses voix.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PartSpec {
+    /// Portées, chacune donnant les numéros des voix qui la partagent.
+    pub staves: Vec<Vec<usize>>,
+}
+
+/// Analyse `%%score` selon la grammaire d'`abc2xml` : un numéro seul est une
+/// portée isolée, `(1 2)` regroupe des voix sur une portée, `{…}` et `[…]`
+/// encadrent une partie à accolade ou à crochet.
+fn parse_score_spec(spec: &str) -> Vec<PartSpec> {
+    let mut parser = ScoreSpecParser {
+        chars: spec.chars().collect(),
+        pos: 0,
+    };
+    parser.sequence(None)
+}
+
+struct ScoreSpecParser {
+    chars: Vec<char>,
+    pos: usize,
+}
+
+impl ScoreSpecParser {
+    fn sequence(&mut self, terminator: Option<char>) -> Vec<PartSpec> {
+        let mut parts = Vec::new();
+        loop {
+            while self
+                .chars
+                .get(self.pos)
+                .is_some_and(|character| character.is_whitespace() || *character == '|')
+            {
+                self.pos += 1;
             }
-            if number_text.contains('+') {
-                number_text = number_text.replace('+', " ");
+            let Some(character) = self.chars.get(self.pos).copied() else {
+                break;
+            };
+            if Some(character) == terminator {
+                self.pos += 1;
+                break;
             }
-            for part in number_text.split([' ', '+']) {
-                if let Ok(number) = part.parse::<usize>() {
-                    if let Some(voice_index) =
-                        voices.iter().position(|voice| voice.number == number)
-                    {
-                        used[voice_index] = true;
-                        current.push(voice_index);
+            match character {
+                '(' => {
+                    self.pos += 1;
+                    let mut voices = Vec::new();
+                    while let Some(value) = self.chars.get(self.pos).copied() {
+                        if value == ')' {
+                            self.pos += 1;
+                            break;
+                        }
+                        if value.is_ascii_digit() {
+                            let mut number = String::new();
+                            while self
+                                .chars
+                                .get(self.pos)
+                                .is_some_and(|digit| digit.is_ascii_digit())
+                            {
+                                number.push(self.chars[self.pos]);
+                                self.pos += 1;
+                            }
+                            if let Ok(number) = number.parse() {
+                                voices.push(number);
+                            }
+                        } else {
+                            self.pos += 1;
+                        }
+                    }
+                    if !voices.is_empty() {
+                        parts.push(PartSpec {
+                            staves: vec![voices],
+                        });
                     }
                 }
-            }
-            if ends_group || !open {
-                if !current.is_empty() {
-                    groups.push(std::mem::take(&mut current));
+                '{' | '[' => {
+                    let close = if character == '{' { '}' } else { ']' };
+                    self.pos += 1;
+                    let inner = self.sequence(Some(close));
+                    let mut staves = Vec::new();
+                    for part in inner {
+                        staves.extend(part.staves);
+                    }
+                    if !staves.is_empty() {
+                        parts.push(PartSpec { staves });
+                    }
                 }
-                open = false;
+                value if value.is_ascii_digit() => {
+                    let mut number = String::new();
+                    while self
+                        .chars
+                        .get(self.pos)
+                        .is_some_and(|digit| digit.is_ascii_digit())
+                    {
+                        number.push(self.chars[self.pos]);
+                        self.pos += 1;
+                    }
+                    if let Ok(number) = number.parse() {
+                        parts.push(PartSpec {
+                            staves: vec![vec![number]],
+                        });
+                    }
+                }
+                _ => self.pos += 1,
             }
         }
-        if !current.is_empty() {
-            groups.push(current);
+        parts
+    }
+}
+
+/// Groupes de voix : un groupe par partie.
+fn groups(reader: &Reader, voices: &[Voice]) -> Vec<PartSpec> {
+    let mut groups = if let Some(spec) = &reader.score_spec {
+        parse_score_spec(spec)
+    } else {
+        Vec::new()
+    };
+    if groups.is_empty() {
+        groups = voices
+            .iter()
+            .map(|voice| PartSpec {
+                staves: vec![vec![voice.number]],
+            })
+            .collect();
+    }
+    // Ajoute les voix absentes de `%%score` comme portées isolées.
+    let mut present = std::collections::BTreeSet::new();
+    for part in &groups {
+        for staff in &part.staves {
+            present.extend(staff.iter().copied());
         }
     }
-    for (index, used) in used.iter().enumerate() {
-        if !used {
-            groups.push(vec![index]);
+    for voice in voices {
+        if !present.contains(&voice.number) {
+            groups.push(PartSpec {
+                staves: vec![vec![voice.number]],
+            });
         }
     }
     if groups.is_empty() {
-        groups.push((0..voices.len()).collect());
+        groups.push(PartSpec {
+            staves: vec![vec![1]],
+        });
     }
     groups
 }
 
-/// Crée les parties et les portées, et renvoie la portée de chaque voix.
+/// Crée les parties et les portées ; renvoie `(portée, voix modèle)` par voix.
 fn create_parts(
     score: &mut Score,
     voices: &[Voice],
-    groups: &[Vec<usize>],
-) -> Vec<mscz2xml::model::StaffId> {
-    let mut staff_of_voice = Vec::with_capacity(voices.len());
-    staff_of_voice.resize(voices.len(), mscz2xml::model::StaffId::from_index(0));
-    let mut staff_index = 0usize;
+    groups: &[PartSpec],
+) -> Vec<(mscz2xml::model::StaffId, u8)> {
+    let mut tracks = vec![(mscz2xml::model::StaffId::from_index(0), 0u8); voices.len()];
     for group in groups {
-        let name = group
+        let first_voice = group
+            .staves
             .first()
-            .and_then(|index| voices.get(*index))
+            .and_then(|staff| staff.first())
+            .copied();
+        let name = first_voice
+            .and_then(|number| voices.iter().position(|voice| voice.number == number))
+            .and_then(|index| voices.get(index))
             .map(|voice| voice.name.clone())
             .filter(|name| !name.trim().is_empty())
-            .unwrap_or_else(|| format!("Voix {}", staff_index + 1));
+            .unwrap_or_else(|| {
+                let number = first_voice.unwrap_or(1);
+                format!("Voix {number}")
+            });
         let part = score.add_part(Part::new(name.clone(), name));
-        for voice_index in group {
+        for staff_voices in &group.staves {
             let mut staff = Staff::new(part);
-            if let Some(voice) = voices.get(*voice_index) {
-                if let Some(clef) = voice.initial_clef {
-                    staff.default_clef = Clef::new(clef);
+            if let Some(number) = staff_voices.first() {
+                if let Some(voice) = voices.iter().find(|voice| voice.number == *number) {
+                    if let Some(clef) = voice.initial_clef {
+                        staff.default_clef = Clef::new(clef);
+                    }
                 }
             }
             let id = score.add_staff_with(part, staff);
-            if let Some(slot) = staff_of_voice.get_mut(*voice_index) {
-                *slot = id;
+            for (voice_index, number) in staff_voices.iter().enumerate() {
+                if let Some(index) = voices.iter().position(|voice| voice.number == *number) {
+                    tracks[index] = (id, voice_index.min(3) as u8);
+                }
             }
-            staff_index += 1;
         }
     }
-    staff_of_voice
+    tracks
 }
 
 /// Durée d'une mesure, toutes voix confondues.
@@ -326,8 +458,8 @@ fn time_at(voice: &Voice, index: usize) -> TimeSig {
         .time_changes
         .iter()
         .rev()
-        .find(|(measure, value)| *measure <= index && value.is_some())
-        .and_then(|(_, value)| value.clone())
+        .find(|(measure, tick, value)| *measure <= index && tick.is_zero() && value.is_some())
+        .and_then(|(_, _, value)| value.clone())
         .unwrap_or_else(|| voice.initial_time.clone())
 }
 
@@ -337,8 +469,8 @@ fn key_at(voice: &Voice, index: usize) -> KeySig {
         .key_changes
         .iter()
         .rev()
-        .find(|(measure, value)| *measure <= index && value.is_some())
-        .and_then(|(_, value)| value.clone())
+        .find(|(measure, tick, value)| *measure <= index && tick.is_zero() && value.is_some())
+        .and_then(|(_, _, value)| value.clone())
         .unwrap_or_else(|| voice.initial_key.clone())
 }
 
@@ -348,8 +480,8 @@ fn clef_at(voice: &Voice, index: usize) -> Option<ClefType> {
         .clef_changes
         .iter()
         .rev()
-        .find(|(measure, value)| *measure <= index && value.is_some())
-        .and_then(|(_, value)| *value)
+        .find(|(measure, tick, value)| *measure <= index && tick.is_zero() && value.is_some())
+        .and_then(|(_, _, value)| *value)
         .or(voice.initial_clef)
 }
 
@@ -405,20 +537,6 @@ fn segment_at<'a>(
             &mut measure.segments[index]
         }
     }
-}
-
-/// Silence de mesure entière sur une portée.
-fn add_full_measure_rest(
-    measure: &mut Measure,
-    tick: Fraction,
-    track: Track,
-    staff_count: usize,
-) {
-    let segment = segment_at(measure, SegmentType::ChordRest, tick, staff_count);
-    segment.set_element(
-        track,
-        SegmentItem::ChordRest(mscz2xml::model::ChordRest::full_measure_rest()),
-    );
 }
 
 /// Convertit une annotation lue.
@@ -504,7 +622,17 @@ mod tests {
             Voice::new(&fields(3), Fraction::new(1, 8), TimeSig::new(4, 4), KeySig::new(mscz2xml::model::Key::C)),
         ];
         let groups = groups(&reader, &voices);
-        assert_eq!(groups, vec![vec![0, 1], vec![2]]);
+        assert_eq!(
+            groups,
+            vec![
+                PartSpec {
+                    staves: vec![vec![1, 2]]
+                },
+                PartSpec {
+                    staves: vec![vec![3]]
+                },
+            ]
+        );
     }
 
     #[test]

@@ -30,8 +30,9 @@
 use std::collections::BTreeSet;
 
 use mscz2xml::model::{
-    Annotation, Chord, ChordRest, HairpinType, KeySig, LyricsSyllabic, Measure, Note, Score,
-    SpannerType, StaffId, Tick, Track,
+    Annotation, Chord, ChordRest, Fraction, HairpinType, KeySig, LyricsSyllabic, Measure, Note,
+    Score,
+    SpannerType, StaffId, Tick, Track, TupletId,
 };
 
 use crate::decorations;
@@ -53,11 +54,18 @@ struct Item<'a> {
 }
 
 /// Écrit une voix complète, en-tête `V:` compris.
-pub(crate) fn render_voice(score: &Score, staff: usize, initial_key: &KeySig, out: &mut String) {
-    out.push_str(&voice_header(score, staff));
+pub(crate) fn render_voice(
+    score: &Score,
+    spec: writer::VoiceSpec,
+    initial_key: &KeySig,
+    out: &mut String,
+) {
+    let staff = spec.staff;
+    let model_voice = spec.voice;
+    out.push_str(&voice_header(score, spec));
     out.push('\n');
 
-    let items = collect_items(score, staff);
+    let items = collect_items(score, staff, model_voice);
     let mut ranges = Vec::with_capacity(score.measures.len());
     let mut cursor = 0usize;
     for measure_index in 0..score.measures.len() {
@@ -68,32 +76,56 @@ pub(crate) fn render_voice(score: &Score, staff: usize, initial_key: &KeySig, ou
         ranges.push(start..cursor);
     }
 
+    let context_staff = writer::context_staff(score, staff);
     let mut key = initial_key.clone();
     let mut time = writer::initial_time(score);
-    let mut clef = writer::staff_clef(score, staff).map(|clef| clef.transposed);
+    let mut clef = writer::initial_clef(score, staff);
 
+    let mut open_tuplets: Vec<TupletId> = Vec::new();
+    let mut pending_word = false;
     for (measure_index, measure) in score.measures.iter().enumerate() {
         let range = ranges[measure_index].clone();
         let mut before: Vec<Vec<String>> = vec![Vec::new(); range.len()];
         let mut after: Vec<Vec<String>> = vec![Vec::new(); range.len()];
 
         draw_chords(score, &items, range.clone(), &mut before, &mut after);
-        draw_annotations(measure, staff, &items, range.clone(), &mut before);
+        draw_annotations(
+            measure,
+            staff,
+            model_voice,
+            score,
+            &items,
+            range.clone(),
+            &mut before,
+        );
         draw_spanners(
             score,
             measure,
             staff,
+            model_voice,
             &items,
             range.clone(),
             &mut before,
             &mut after,
         );
+        draw_context_changes(
+            score,
+            measure,
+            staff,
+            context_staff,
+            &mut key,
+            &mut clef,
+            &items,
+            range.clone(),
+            &mut before,
+        );
 
         let mut line = String::new();
         let mut prefixes: Vec<String> = Vec::new();
 
-        let (new_clef, new_key, new_time) =
-            writer::measure_context(score, measure_index, staff);
+        let (new_clef, _, _) = writer::measure_context(score, measure_index, Some(staff));
+        let (_, new_key, new_time) =
+            writer::measure_context(score, measure_index, Some(context_staff));
         let mut key_changed = false;
         if let Some(value) = new_key {
             if value.concert_key != key.concert_key || value.mode != key.mode {
@@ -133,7 +165,8 @@ pub(crate) fn render_voice(score: &Score, staff: usize, initial_key: &KeySig, ou
             prefixes.push(volta);
         }
 
-        let mut accidental_state = pitch::AccidentalState::new(key.concert_key.fifths());
+        let mut accidental_state =
+            pitch::AccidentalState::new(key.transposed_key.fifths());
 
         if range.is_empty() {
             let len = if measure.len.is_positive() {
@@ -150,10 +183,24 @@ pub(crate) fn render_voice(score: &Score, staff: usize, initial_key: &KeySig, ou
                 if item.tick > cursor_tick {
                     push_fill_rest(&mut line, cursor_tick, item.tick, measure);
                 }
+                if let Some(id) = item.chord_rest.tuplet {
+                    for tuplet_id in tuplet_chain(score, id) {
+                        if !open_tuplets.contains(&tuplet_id) {
+                            line.push_str(&tuplet_open(score, tuplet_id));
+                            open_tuplets.push(tuplet_id);
+                        }
+                    }
+                }
                 for token in &before[offset] {
                     line.push_str(token);
                 }
-                let token = render_item(score, item.chord_rest, &mut accidental_state);
+                let transpose = transpose_at(score, staff, item.tick);
+                let token = render_item(
+                    score,
+                    item.chord_rest,
+                    &mut accidental_state,
+                    transpose,
+                );
                 line.push_str(&token);
                 for token in &after[offset] {
                     line.push_str(token);
@@ -176,7 +223,7 @@ pub(crate) fn render_voice(score: &Score, staff: usize, initial_key: &KeySig, ou
         out.push_str(&full_line.join(" "));
         out.push('\n');
 
-        for lyric_line in lyrics_lines(score, &items, measure, range.clone()) {
+        for lyric_line in lyrics_lines(score, &items, measure, range.clone(), &mut pending_word) {
             out.push_str(&lyric_line);
             out.push('\n');
         }
@@ -184,7 +231,8 @@ pub(crate) fn render_voice(score: &Score, staff: usize, initial_key: &KeySig, ou
 }
 
 /// En-tête `V:` d'une voix.
-fn voice_header(score: &Score, staff: usize) -> String {
+fn voice_header(score: &Score, spec: writer::VoiceSpec) -> String {
+    let staff = spec.staff;
     let name = score
         .staves
         .get(staff)
@@ -197,12 +245,12 @@ fn voice_header(score: &Score, staff: usize) -> String {
             }
         })
         .unwrap_or_default();
-    let mut header = format!("V:{}", staff + 1);
+    let mut header = format!("V:{}", spec.number);
     if !name.trim().is_empty() {
         header.push_str(&format!(" name=\"{}\"", text::escape_annotation(&name)));
     }
-    if let Some(clef) = writer::staff_clef(score, staff) {
-        if let Some(name) = pitch::clef_name(&clef) {
+    if let Some(clef) = writer::initial_clef(score, staff) {
+        if let Some(name) = pitch::clef_name(&mscz2xml::model::Clef::new(clef)) {
             header.push_str(&format!(" clef={name}"));
         }
     }
@@ -210,8 +258,8 @@ fn voice_header(score: &Score, staff: usize) -> String {
 }
 
 /// Accords et silences d'une voix, dans l'ordre.
-fn collect_items(score: &Score, staff: usize) -> Vec<Item<'_>> {
-    let track = Track::new(StaffId::from_index(staff), 0);
+fn collect_items(score: &Score, staff: usize, voice: usize) -> Vec<Item<'_>> {
+    let track = Track::new(StaffId::from_index(staff), voice as u8);
     let mut items = Vec::new();
     for (measure_index, measure) in score.measures.iter().enumerate() {
         let mut last_tick: Option<Tick> = None;
@@ -239,8 +287,38 @@ fn collect_items(score: &Score, staff: usize) -> Vec<Item<'_>> {
     items
 }
 
+/// Transposition de l'instrument en vigueur à un tick.
+fn transpose_at(score: &Score, staff: usize, tick: Tick) -> i32 {
+    let Some(staff_data) = score.staves.get(staff) else {
+        return 0;
+    };
+    let part = score.part(staff_data.part);
+    let instrument = part
+        .instrument_at(tick)
+        .transpose
+        .map_or(0, |transpose| transpose.chromatic);
+    // `pitch2xml` ajoute le décalage d'ottava à l'octave écrite.
+    let ottava = score
+        .spanners
+        .iter()
+        .filter(|spanner| {
+            spanner.start.track.staff().index() == staff
+                && spanner.start.tick <= tick
+                && tick < spanner.end.tick
+        })
+        .map(|spanner| match spanner.kind {
+            SpannerType::Ottava(mscz2xml::model::OttavaType::OctaveUp) => 1,
+            SpannerType::Ottava(mscz2xml::model::OttavaType::OctaveDown) => -1,
+            SpannerType::Ottava(mscz2xml::model::OttavaType::FifteenthUp) => 2,
+            SpannerType::Ottava(mscz2xml::model::OttavaType::FifteenthDown) => -2,
+            _ => 0,
+        })
+        .sum::<i32>();
+    instrument - 12 * ottava
+}
+
 /// Vrai si une voix de la portée contient des accords ou silences.
-fn voice_has_content(score: &Score, staff: usize, voice: usize) -> bool {
+pub(crate) fn voice_has_content(score: &Score, staff: usize, voice: usize) -> bool {
     let track = Track::new(StaffId::from_index(staff), voice as u8);
     score.measures.iter().any(|measure| {
         measure
@@ -261,6 +339,36 @@ fn push_fill_rest(line: &mut String, start: Tick, end: Tick, measure: &Measure) 
     } else {
         line.push('z');
         line.push_str(&duration::multiplier(len, duration::unit()));
+    }
+}
+
+/// Chaîne des n-olets d'un accord, du plus externe au plus interne.
+fn tuplet_chain(score: &Score, id: TupletId) -> Vec<TupletId> {
+    let mut chain = Vec::new();
+    let mut current = Some(id);
+    let mut guard = 0;
+    while let Some(tuplet_id) = current {
+        chain.push(tuplet_id);
+        current = score.tuplet(tuplet_id).parent;
+        guard += 1;
+        if guard > 8 {
+            break;
+        }
+    }
+    chain.reverse();
+    chain
+}
+
+/// Jeton d'ouverture d'un n-olet (`(3`, `(5:4`…).
+fn tuplet_open(score: &Score, id: TupletId) -> String {
+    let tuplet = score.tuplet(id);
+    let (actual, normal) = tuplet.displayed_numbers();
+    let actual = if actual > 0 { actual } else { tuplet.ratio.numerator() };
+    let normal = if normal > 0 { normal } else { tuplet.ratio.denominator() };
+    if normal == 2 {
+        format!("({actual}")
+    } else {
+        format!("({actual}:{normal}")
     }
 }
 
@@ -357,6 +465,8 @@ fn draw_chords(
 fn draw_annotations(
     measure: &Measure,
     staff: usize,
+    voice: usize,
+    score: &Score,
     items: &[Item<'_>],
     range: std::ops::Range<usize>,
     before: &mut [Vec<String>],
@@ -364,6 +474,22 @@ fn draw_annotations(
     for segment in &measure.segments {
         for entry in &segment.annotations {
             if entry.track.staff().index() != staff {
+                continue;
+            }
+            let declared = entry.track.voice() as usize;
+            let target = if declared != 0 && voice_has_content(score, staff, declared) {
+                declared
+            } else {
+                0
+            };
+            if target != voice {
+                continue;
+            }
+            let system_level = matches!(
+                &entry.annotation,
+                Annotation::Tempo(_) | Annotation::RehearsalMark(_)
+            );
+            if system_level && voice != 0 {
                 continue;
             }
             let Some(token) = annotation_token(&entry.annotation) else {
@@ -433,10 +559,12 @@ fn annotation_token(annotation: &Annotation) -> Option<String> {
 }
 
 /// Ajoute les spanners (slurs et soufflets) rattachés à leurs notes.
+#[allow(clippy::too_many_arguments)]
 fn draw_spanners(
     score: &Score,
     measure: &Measure,
     staff: usize,
+    voice: usize,
     items: &[Item<'_>],
     range: std::ops::Range<usize>,
     before: &mut [Vec<String>],
@@ -447,7 +575,12 @@ fn draw_spanners(
             continue;
         }
         let declared = spanner.start.track.voice() as usize;
-        if declared != 0 && voice_has_content(score, staff, declared) {
+        let target = if declared != 0 && voice_has_content(score, staff, declared) {
+            declared
+        } else {
+            0
+        };
+        if target != voice {
             continue;
         }
         match spanner.kind {
@@ -498,6 +631,93 @@ fn draw_spanners(
     }
 }
 
+/// Changements d'armure, de mesure et de clef en cours de mesure.
+///
+/// MuseScore écrit ces changements dans des `<attributes>` au milieu de la
+/// mesure ; ABC les rend par des champs en ligne `[K:…]` et `[M:…]`.
+#[allow(clippy::too_many_arguments)]
+fn draw_context_changes(
+    score: &Score,
+    measure: &Measure,
+    staff: usize,
+    context_staff: usize,
+    key: &mut KeySig,
+    clef: &mut Option<mscz2xml::model::ClefType>,
+    items: &[Item<'_>],
+    range: std::ops::Range<usize>,
+    before: &mut [Vec<String>],
+) {
+    let mut changes: Vec<(Tick, u8, Option<KeySig>, Option<mscz2xml::model::ClefType>, Option<mscz2xml::model::TimeSig>)> = Vec::new();
+    for segment in &measure.segments {
+        if segment.tick <= measure.start_tick {
+            continue;
+        }
+        for (track, item) in segment.iter_elements() {
+            let kind = match item {
+                mscz2xml::model::SegmentItem::KeySig(_) => 0u8,
+                mscz2xml::model::SegmentItem::TimeSig(_) => 1,
+                mscz2xml::model::SegmentItem::Clef(_) => 2,
+                _ => continue,
+            };
+            if (kind == 2 && track.staff().index() != staff)
+                || (kind != 2 && track.staff().index() != context_staff)
+            {
+                continue;
+            }
+            if changes
+                .iter()
+                .any(|(tick, existing, ..)| *tick == segment.tick && *existing == kind)
+            {
+                continue;
+            }
+            match item {
+                mscz2xml::model::SegmentItem::KeySig(value) => {
+                    changes.push((segment.tick, kind, Some(value.clone()), None, None));
+                }
+                mscz2xml::model::SegmentItem::TimeSig(value) => {
+                    changes.push((segment.tick, kind, None, None, Some(value.clone())));
+                }
+                mscz2xml::model::SegmentItem::Clef(value) => {
+                    changes.push((segment.tick, kind, None, Some(value.transposed), None));
+                }
+                _ => {}
+            }
+        }
+    }
+    changes.sort_by_key(|(tick, kind, ..)| (*tick, *kind));
+    let _ = score;
+    for (tick, kind, new_key, new_clef, new_time) in changes {
+        let token = match kind {
+            0 => {
+                if let Some(value) = new_key {
+                    *key = value;
+                }
+                format!("[K:{}]", pitch::key_field(key))
+            }
+            1 => {
+                if let Some(value) = new_time {
+                    format!("[M:{}/{}]", value.numerator, value.denominator)
+                } else {
+                    continue;
+                }
+            }
+            _ => {
+                if let Some(value) = new_clef {
+                    *clef = Some(value);
+                }
+                let clef_name = clef
+                    .and_then(|value| pitch::clef_name(&mscz2xml::model::Clef::new(value)))
+                    .unwrap_or_else(|| "treble".to_owned());
+                format!("[K:{} clef={clef_name}]", pitch::key_field(key))
+            }
+        };
+        let Some(offset) = item_at_or_after(items, range.clone(), tick) else {
+            continue;
+        };
+        before[offset].push(token);
+    }
+}
+
 /// Indice du premier élément au tick donné ou après.
 fn item_at_or_after(
     items: &[Item<'_>],
@@ -531,6 +751,7 @@ fn render_item(
     score: &Score,
     chord_rest: &ChordRest,
     accidental_state: &mut pitch::AccidentalState,
+    transpose: i32,
 ) -> String {
     if let Some(rest) = chord_rest.rest_ref() {
         if chord_rest.is_full_measure_rest() {
@@ -546,7 +767,7 @@ fn render_item(
     let Some(chord) = chord_rest.chord_ref() else {
         return String::new();
     };
-    render_chord(score, chord_rest, chord, accidental_state)
+    render_chord(score, chord_rest, chord, accidental_state, transpose)
 }
 
 /// Rend un accord : agréments, hauteurs, durée, liaison.
@@ -555,6 +776,7 @@ fn render_chord(
     chord_rest: &ChordRest,
     chord: &Chord,
     accidental_state: &mut pitch::AccidentalState,
+    transpose: i32,
 ) -> String {
     let mut token = String::new();
     if !chord.grace_chords.is_empty() {
@@ -565,7 +787,7 @@ fn render_chord(
                 if !note.visible {
                     continue;
                 }
-                let (letter, alter, octave) = pitch::note_spelling(note);
+                let (letter, alter, octave) = pitch::note_spelling(note, transpose);
                 token.push_str(&pitch::abc_note(
                     letter,
                     alter,
@@ -597,7 +819,7 @@ fn render_chord(
         token.push('z');
     } else if notes.len() == 1 {
         let note = notes[0];
-        let (letter, alter, octave) = pitch::note_spelling(note);
+        let (letter, alter, octave) = pitch::note_spelling(note, transpose);
         token.push_str(&pitch::abc_note(
             letter,
             alter,
@@ -607,7 +829,7 @@ fn render_chord(
     } else {
         token.push('[');
         for note in &notes {
-            let (letter, alter, octave) = pitch::note_spelling(note);
+            let (letter, alter, octave) = pitch::note_spelling(note, transpose);
             token.push_str(&pitch::abc_note(
                 letter,
                 alter,
@@ -634,6 +856,7 @@ fn lyrics_lines(
     items: &[Item<'_>],
     _measure: &Measure,
     range: std::ops::Range<usize>,
+    pending_word: &mut bool,
 ) -> Vec<String> {
     let mut verses: BTreeSet<usize> = BTreeSet::new();
     for item in &items[range.clone()] {
@@ -644,7 +867,7 @@ fn lyrics_lines(
     let mut lines = Vec::new();
     for verse in verses {
         let mut tokens: Vec<String> = Vec::new();
-        let mut extend = false;
+        let mut extend = Fraction::ZERO;
         for item in &items[range.clone()] {
             if !item.chord_rest.is_chord() {
                 continue;
@@ -656,24 +879,26 @@ fn lyrics_lines(
                 .find(|lyrics| lyrics.verse == verse);
             match lyrics {
                 Some(lyrics) => {
-                    extend = false;
+                    extend = Fraction::ZERO;
                     let mut syllable = text::escape_lyric(&lyrics.text);
                     if matches!(
                         lyrics.syllabic,
                         LyricsSyllabic::Begin | LyricsSyllabic::Middle
                     ) {
                         syllable.push('-');
+                        *pending_word = true;
+                    } else if lyrics.syllabic == LyricsSyllabic::End {
+                        *pending_word = false;
                     }
                     tokens.push(syllable);
-                    if lyrics.melisma.is_some() {
-                        tokens.push("_".to_owned());
-                        extend = true;
+                    if let Some(melisma) = lyrics.melisma {
+                        extend = melisma;
                     }
                 }
                 None => {
-                    if extend {
+                    if extend.is_positive() {
                         tokens.push("_".to_owned());
-                        extend = false;
+                        extend -= item.chord_rest.ticks();
                     } else {
                         tokens.push("*".to_owned());
                     }

@@ -660,25 +660,37 @@ impl Parser<'_> {
     fn assign_tuplet(&mut self, base_len: Fraction) -> Option<usize> {
         let voice = &mut self.reader.voices[self.voice];
         let inner = voice.open_tuplets.last().copied()?;
-        if let Some(spec) = voice.tuplets.get_mut(inner) {
-            if spec.base_len.is_zero() {
-                spec.base_len = base_len;
-                spec.len = spec.base_len * Fraction::new(spec.ratio.denominator(), 1);
-            }
-        }
-        // Décrémente du plus interne au plus externe.
-        let mut finished = Vec::new();
+        // Tous les n-olets ouverts dont la durée de base n'est pas encore
+        // connue prennent celle de cette première note.
         for index in &voice.open_tuplets {
             if let Some(spec) = voice.tuplets.get_mut(*index) {
-                spec.remaining -= 1;
-                if spec.remaining <= 0 {
-                    finished.push(*index);
+                if spec.base_len.is_zero() {
+                    spec.base_len = base_len;
+                    spec.len = spec.base_len * Fraction::new(spec.ratio.denominator(), 1);
                 }
             }
         }
-        for index in finished {
-            if let Some(position) = voice.open_tuplets.iter().position(|id| *id == index) {
-                voice.open_tuplets.remove(position);
+        // Seul le n-olet le plus interne compte chaque note ; un n-olet
+        // englobant compte les groupes internes, pas leurs notes.
+        let mut current = Some(inner);
+        while let Some(index) = current {
+            let parent = if let Some(spec) = voice.tuplets.get_mut(index) {
+                spec.remaining -= 1;
+                spec.parent
+            } else {
+                None
+            };
+            if voice
+                .tuplets
+                .get(index)
+                .is_some_and(|spec| spec.remaining <= 0)
+            {
+                if let Some(position) = voice.open_tuplets.iter().position(|id| *id == index) {
+                    voice.open_tuplets.remove(position);
+                }
+                current = parent;
+            } else {
+                break;
             }
         }
         Some(inner)

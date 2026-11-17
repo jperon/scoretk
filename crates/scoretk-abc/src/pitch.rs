@@ -138,35 +138,32 @@ fn octave_case(octave: i32) -> bool {
 ///
 /// Renvoie la lettre, l'octave et l'altération absolue lue dans le `tpc` (ou
 /// déduite de la hauteur MIDI quand aucun `tpc` n'est valide).
-pub(crate) fn note_spelling(note: &Note) -> (char, i32, i32) {
-    if valid_tpc(note.tpc) {
-        (
-            letter(note.tpc),
-            alter(note.tpc),
-            octave_of(i32::from(note.pitch), alter(note.tpc)),
-        )
-    } else if valid_tpc(note.tpc_transposed) {
+pub(crate) fn note_spelling(note: &Note, transpose_chromatic: i32) -> (char, i32, i32) {
+    let written = i32::from(note.pitch) - transpose_chromatic;
+    if valid_tpc(note.tpc_transposed) {
         (
             letter(note.tpc_transposed),
             alter(note.tpc_transposed),
-            octave_of(i32::from(note.pitch), alter(note.tpc_transposed)),
+            octave_of(written, alter(note.tpc_transposed)),
+        )
+    } else if valid_tpc(note.tpc) {
+        (
+            letter(note.tpc),
+            alter(note.tpc),
+            octave_of(written, alter(note.tpc)),
         )
     } else {
-        midi_spelling(note.pitch)
+        midi_spelling(written)
     }
 }
 
 /// Orthographe de repli déduite de la hauteur MIDI (dièses).
-fn midi_spelling(pitch: u8) -> (char, i32, i32) {
+fn midi_spelling(pitch: i32) -> (char, i32, i32) {
     const LETTERS: [char; 12] = ['C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B'];
     const ALTERS: [i32; 12] = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
-    let index = usize::from(pitch % 12);
+    let index = pitch.rem_euclid(12) as usize;
     let alter = ALTERS[index];
-    (
-        LETTERS[index],
-        alter,
-        octave_of(i32::from(pitch), alter),
-    )
+    (LETTERS[index], alter, octave_of(pitch, alter))
 }
 
 /// Nom ABC d'une note, altération explicite comprise.
@@ -290,8 +287,10 @@ fn tonic(fifths: i8, minor: bool) -> &'static str {
 pub(crate) fn key_field(key: &KeySig) -> String {
     match key.mode {
         KeyMode::None => "none".to_owned(),
-        KeyMode::Minor => format!("{}m", tonic(key.concert_key.fifths(), true)),
-        KeyMode::Major | KeyMode::Unknown => tonic(key.concert_key.fifths(), false).to_owned(),
+        KeyMode::Minor => format!("{}m", tonic(key.transposed_key.fifths(), true)),
+        KeyMode::Major | KeyMode::Unknown => {
+            tonic(key.transposed_key.fifths(), false).to_owned()
+        }
     }
 }
 
@@ -645,6 +644,6 @@ mod tests {
     fn note_sans_tpc() {
         let mut note = Note::new(61, tpc::INVALID);
         note.tpc_transposed = tpc::INVALID;
-        assert_eq!(note_spelling(&note), ('C', 1, 4));
+        assert_eq!(note_spelling(&note, 0), ('C', 1, 4));
     }
 }

@@ -392,16 +392,18 @@ pub(crate) struct Voice {
     pub last_line_chords: Vec<(usize, usize)>,
     /// Numéro de couplet de la prochaine ligne `w:`.
     pub next_verse: usize,
+    /// Vrai si un mot de paroles est ouvert (césure `-` en attente).
+    pub lyric_word_open: bool,
     /// Barre de début de la prochaine mesure.
     pub next_start_bar: BarLineType,
     /// Facteur de rythme brisé appliqué à la prochaine note.
     pub pending_rhythm: Option<Fraction>,
-    /// Changements d'armure planifiés, par indice de mesure.
-    pub key_changes: Vec<(usize, Option<KeySig>)>,
-    /// Changements de mesure planifiés.
-    pub time_changes: Vec<(usize, Option<TimeSig>)>,
-    /// Changements de clef planifiés.
-    pub clef_changes: Vec<(usize, Option<ClefType>)>,
+    /// Changements d'armure `(mesure, tick, armure)`.
+    pub key_changes: Vec<(usize, Fraction, Option<KeySig>)>,
+    /// Changements de mesure `(mesure, tick, mesure)`.
+    pub time_changes: Vec<(usize, Fraction, Option<TimeSig>)>,
+    /// Changements de clef `(mesure, tick, clef)`.
+    pub clef_changes: Vec<(usize, Fraction, Option<ClefType>)>,
     /// Voltas `(mesure de début, mesure de fin, numéros)`.
     pub voltas: Vec<(usize, usize, Vec<u8>)>,
 }
@@ -440,6 +442,7 @@ impl Voice {
             annotations: Vec::new(),
             last_line_chords: Vec::new(),
             next_verse: 0,
+            lyric_word_open: false,
             next_start_bar: BarLineType::Normal,
             pending_rhythm: None,
             key_changes: Vec::new(),
@@ -462,32 +465,29 @@ impl Voice {
         }
     }
 
-    /// Planifie un changement d'armure.
+    /// Enregistre un changement d'armure à la position courante.
     pub(crate) fn schedule_key(&mut self, key: KeySig) {
-        let measure = self.measure_index() + usize::from(!self.tick.is_zero());
-        self.key_changes.push((measure, Some(key.clone())));
-        if self.tick.is_zero() {
-            self.key = key.clone();
-            self.accidental = pitch::AccidentalState::new(key.concert_key.fifths());
-        }
+        let measure = self.measure_index();
+        let tick = self.tick;
+        self.key = key.clone();
+        self.accidental = pitch::AccidentalState::new(key.transposed_key.fifths());
+        self.key_changes.push((measure, tick, Some(key)));
     }
 
-    /// Planifie un changement de mesure.
+    /// Enregistre un changement de mesure à la position courante.
     pub(crate) fn schedule_time(&mut self, time: TimeSig) {
-        let measure = self.measure_index() + usize::from(!self.tick.is_zero());
-        self.time_changes.push((measure, Some(time.clone())));
-        if self.tick.is_zero() {
-            self.time = time;
-        }
+        let measure = self.measure_index();
+        let tick = self.tick;
+        self.time = time.clone();
+        self.time_changes.push((measure, tick, Some(time)));
     }
 
-    /// Planifie un changement de clef.
+    /// Enregistre un changement de clef à la position courante.
     pub(crate) fn schedule_clef(&mut self, clef: ClefType) {
-        let measure = self.measure_index() + usize::from(!self.tick.is_zero());
-        self.clef_changes.push((measure, Some(clef)));
-        if self.tick.is_zero() {
-            self.clef = Some(clef);
-        }
+        let measure = self.measure_index();
+        let tick = self.tick;
+        self.clef = Some(clef);
+        self.clef_changes.push((measure, tick, Some(clef)));
     }
 
     /// Termine la mesure en cours et en ouvre une nouvelle.
@@ -509,18 +509,6 @@ impl Voice {
         if !len.is_positive() {
             len = Fraction::from_integer(1);
         }
-        if actual.is_positive() && actual < len {
-            let mut rest = mscz2xml::model::ChordRest::rest(
-                mscz2xml::model::Duration::new(mscz2xml::model::DurationType::Whole),
-            );
-            rest.ticks = Some(len - actual);
-            self.current.events.push(EventData {
-                tick: actual,
-                chord_rest: rest,
-                tuplet: None,
-                annotations: Vec::new(),
-            });
-        }
         let mut measure = std::mem::replace(&mut self.current, MeasureData::new());
         measure.len = len;
         measure.nominal_len = nominal;
@@ -534,25 +522,6 @@ impl Voice {
         self.measures.push(measure);
         self.tick = Fraction::ZERO;
         self.accidental = pitch::AccidentalState::new(self.key.concert_key.fifths());
-        // Applique les changements planifiés pour la mesure suivante.
-        let index = self.measures.len();
-        if let Some(position) = self.key_changes.iter().rposition(|(m, _)| *m == index) {
-            if let Some(Some(key)) = self.key_changes.get(position).map(|(_, key)| key.clone()) {
-                self.key = key.clone();
-                self.accidental = pitch::AccidentalState::new(key.concert_key.fifths());
-            }
-        }
-        if let Some(position) = self.time_changes.iter().rposition(|(m, _)| *m == index) {
-            if let Some(Some(time)) = self.time_changes.get(position).map(|(_, time)| time.clone())
-            {
-                self.time = time;
-            }
-        }
-        if let Some(position) = self.clef_changes.iter().rposition(|(m, _)| *m == index) {
-            if let Some(Some(clef)) = self.clef_changes.get(position).map(|(_, clef)| clef) {
-                self.clef = Some(*clef);
-            }
-        }
     }
 }
 
@@ -584,6 +553,16 @@ pub(crate) struct Reader {
     pub source: String,
     /// Vrai si un champ `K:` a été lu.
     pub seen_key: bool,
+    /// Clef par défaut issue des paramètres de `K:`.
+    pub default_clef: Option<ClefType>,
+    /// Armure initiale de l'en-tête.
+    pub header_key: KeySig,
+    /// Indication de mesure initiale de l'en-tête.
+    pub header_time: TimeSig,
+    /// Unité `L:` initiale de l'en-tête.
+    pub header_unit: Fraction,
+    /// Vrai dès la première ligne de musique.
+    pub header_done: bool,
 }
 
 impl Default for Reader {
@@ -602,6 +581,11 @@ impl Default for Reader {
             composer: String::new(),
             source: String::new(),
             seen_key: false,
+            default_clef: None,
+            header_key: KeySig::new(Key::C),
+            header_time: TimeSig::new(4, 4),
+            header_unit: Fraction::new(1, 8),
+            header_done: false,
         }
     }
 }
@@ -635,14 +619,20 @@ impl Reader {
                 let fields = VoiceFields {
                     number: 1,
                     name: String::new(),
-                    clef: None,
+                    clef: self.default_clef,
                 };
-                let voice = Voice::new(&fields, self.unit, self.time.clone(), self.key.clone());
+                let voice = Voice::new(
+                    &fields,
+                    self.header_unit,
+                    self.header_time.clone(),
+                    self.header_key.clone(),
+                );
                 self.voices.push(voice);
             }
             if !self.seen_key {
                 return Err(Error::EnTeteIncomplet("K:"));
             }
+            self.header_done = true;
             let current = self.current;
             music::parse_line(self, current, text, line.number)?;
         }
@@ -694,13 +684,23 @@ impl Reader {
             }
             'M' => {
                 let time = parse_time(value, number)?;
+                if !self.header_done {
+                    self.header_time = time.clone();
+                }
                 self.time = time.clone();
                 for voice in &mut self.voices {
-                    voice.schedule_time(time.clone());
+                    if voice.time.numerator != time.numerator
+                        || voice.time.denominator != time.denominator
+                    {
+                        voice.schedule_time(time.clone());
+                    }
                 }
             }
             'L' => {
                 self.unit = parse_unit(value, number)?;
+                if !self.header_done {
+                    self.header_unit = self.unit;
+                }
                 for voice in &mut self.voices {
                     voice.unit = self.unit;
                 }
@@ -715,6 +715,9 @@ impl Reader {
                         text: value.to_owned(),
                     })?;
                 self.seen_key = true;
+                if !self.header_done {
+                    self.header_key = parsed.key.clone();
+                }
                 self.key = parsed.key.clone();
                 if let Some(mode) = parsed.exotic_mode {
                     self.warnings.push(Warning::new(
@@ -723,13 +726,20 @@ impl Reader {
                     ));
                 }
                 for voice in &mut self.voices {
-                    voice.schedule_key(parsed.key.clone());
+                    if voice.key.transposed_key != parsed.key.transposed_key
+                        || voice.key.mode != parsed.key.mode
+                    {
+                        voice.schedule_key(parsed.key.clone());
+                    }
                 }
                 for (name, value) in &parsed.parameters {
                     if name == "clef" {
                         if let Some(clef) = pitch::parse_clef(value) {
+                            self.default_clef = Some(clef);
                             for voice in &mut self.voices {
-                                voice.schedule_clef(clef);
+                                if voice.clef != Some(clef) {
+                                    voice.schedule_clef(clef);
+                                }
                             }
                         }
                     }
@@ -750,7 +760,16 @@ impl Reader {
                         self.voices[index].clef = Some(clef);
                     }
                 } else {
-                    let voice = Voice::new(&fields, self.unit, self.time.clone(), self.key.clone());
+                    let fields = VoiceFields {
+                        clef: fields.clef.or(self.default_clef),
+                        ..fields
+                    };
+                    let voice = Voice::new(
+                        &fields,
+                        self.header_unit,
+                        self.header_time.clone(),
+                        self.header_key.clone(),
+                    );
                     self.current = self.voices.len();
                     self.voices.push(voice);
                 }
@@ -775,7 +794,12 @@ impl Reader {
                 name: String::new(),
                 clef: None,
             };
-            let voice = Voice::new(&fields, self.unit, self.time.clone(), self.key.clone());
+            let voice = Voice::new(
+                &fields,
+                self.header_unit,
+                self.header_time.clone(),
+                self.header_key.clone(),
+            );
             self.voices.push(voice);
         }
         for voice in &mut self.voices {

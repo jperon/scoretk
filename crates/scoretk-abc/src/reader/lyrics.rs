@@ -42,7 +42,7 @@ pub(crate) fn apply(voice: &mut Voice, value: &str, line: usize, warnings: &mut 
     voice.next_verse += 1;
     let chords = voice.last_line_chords.clone();
     let mut token_index = 0usize;
-    let mut pending_word = false;
+    let mut pending_word = voice.lyric_word_open;
 
     for (measure, event) in chords {
         let Some(chord_rest) = event_mut(voice, measure, event) else {
@@ -93,6 +93,7 @@ pub(crate) fn apply(voice: &mut Voice, value: &str, line: usize, warnings: &mut 
         chord_rest.lyrics.push(lyrics);
     }
 
+    voice.lyric_word_open = pending_word;
     if token_index < tokens.len() {
         warnings.push(Warning::new(
             line,

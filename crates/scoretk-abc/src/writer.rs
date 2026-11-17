@@ -42,12 +42,23 @@
 //!   jusqu'à la barre suivante.
 
 use mscz2xml::model::{
-    Annotation, Clef, ClefType, Key, KeySig, Score, SegmentItem, TimeSig,
+    Annotation, Clef, ClefType, Key, KeySig, Score, SegmentItem, TimeSig, VOICES,
 };
 
 use crate::error::{Error, Result};
 use crate::pitch;
 use crate::voice;
+
+/// Voix ABC : une voix du modèle, ou la voix 0 muette d'une portée vide.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct VoiceSpec {
+    /// Portée du modèle.
+    pub staff: usize,
+    /// Voix du modèle (0 à [`VOICES`] - 1).
+    pub voice: usize,
+    /// Numéro ABC (base un).
+    pub number: usize,
+}
 
 /// Écrivain ABC.
 pub(crate) struct Writer<'a> {
@@ -84,10 +95,12 @@ impl<'a> Writer<'a> {
             out.push('\n');
         }
         let key = self.initial_key_signature();
+        let voices = self.voices();
         let mut key_line = format!("K:{}", pitch::key_field(&key));
-        if self.score.staves.len() == 1 {
+        if voices.len() == 1 {
+            let spec = voices[0];
             if let Some(clef) = self
-                .initial_clef(0)
+                .initial_clef(spec.staff)
                 .and_then(|clef| pitch::clef_name(&Clef::new(clef)))
             {
                 key_line.push_str(&format!(" clef={clef}"));
@@ -96,18 +109,50 @@ impl<'a> Writer<'a> {
         out.push_str(&key_line);
         out.push('\n');
 
-        if self.score.staves.len() > 1 {
-            if let Some(score_line) = self.score_line() {
+        if voices.len() > 1 {
+            if let Some(score_line) = self.score_line(&voices) {
                 out.push_str(&score_line);
                 out.push('\n');
             }
         }
 
-        for (index, _) in self.score.staves.iter().enumerate() {
-            voice::render_voice(self.score, index, &key, &mut out);
+        for spec in &voices {
+            voice::render_voice(self.score, *spec, &key, &mut out);
         }
 
         Ok(out)
+    }
+
+    /// Voix ABC à écrire : les voix 0 à `n` de chaque portée qui ont du
+    /// contenu, plus la voix 0 d'une portée vide.
+    fn voices(&self) -> Vec<VoiceSpec> {
+        let mut voices = Vec::new();
+        let mut number = 1usize;
+        for staff in 0..self.score.staves.len() {
+            let has_content =
+                |voice| voice::voice_has_content(self.score, staff, voice);
+            let any = (0..VOICES).any(has_content);
+            if !any {
+                voices.push(VoiceSpec {
+                    staff,
+                    voice: 0,
+                    number,
+                });
+                number += 1;
+                continue;
+            }
+            for voice in 0..VOICES {
+                if has_content(voice) {
+                    voices.push(VoiceSpec {
+                        staff,
+                        voice,
+                        number,
+                    });
+                    number += 1;
+                }
+            }
+        }
+        voices
     }
 
     /// Titre : titre d'œuvre, à défaut titre de mouvement.
@@ -120,53 +165,29 @@ impl<'a> Writer<'a> {
         crate::text::escape_annotation(title)
     }
 
-    /// Première indication de mesure de la partition, ou 4/4.
+    /// Indication de mesure au début de la partition, ou 4/4.
     fn initial_time_signature(&self) -> TimeSig {
         initial_time(self.score)
     }
 
-    /// Première armure de la partition, ou do majeur.
+    /// Armure au début de la partition, ou do majeur.
     fn initial_key_signature(&self) -> KeySig {
-        for measure in &self.score.measures {
-            for segment in &measure.segments {
-                if !segment.kind.is_key_sig_type() {
-                    continue;
-                }
-                for (_, item) in segment.iter_elements() {
-                    if let SegmentItem::KeySig(key) = item {
-                        return key.clone();
-                    }
-                }
-            }
-        }
-        KeySig::new(Key::C)
+        measure_context(self.score, 0, Some(0))
+            .1
+            .unwrap_or(KeySig::new(Key::C))
     }
 
-    /// Première clef d'une portée.
+    /// Clef d'une portée au début de la partition.
     fn initial_clef(&self, staff: usize) -> Option<ClefType> {
-        for measure in &self.score.measures {
-            for segment in &measure.segments {
-                if !segment.kind.is_clef_type() {
-                    continue;
-                }
-                for (track, item) in segment.iter_elements() {
-                    if track.staff().index() != staff {
-                        continue;
-                    }
-                    if let SegmentItem::Clef(clef) = item {
-                        return Some(clef.transposed);
-                    }
-                }
-            }
-        }
-        self.score
-            .staves
-            .get(staff)
-            .map(|staff| staff.default_clef.transposed)
+        initial_clef(self.score, staff)
     }
 
     /// `%%score` des regroupements de portées.
-    fn score_line(&self) -> Option<String> {
+    ///
+    /// La grammaire est celle d'`abc2xml` : `(1 2)` regroupe des voix sur une
+    /// même portée, `{…}` encadre une partie à accolade et `[…]` une partie à
+    /// crochet. Un numéro seul est une portée isolée.
+    fn score_line(&self, voices: &[VoiceSpec]) -> Option<String> {
         if self.score.parts.is_empty() {
             return None;
         }
@@ -175,32 +196,45 @@ impl<'a> Writer<'a> {
             if part.staves.is_empty() {
                 continue;
             }
-            let numbers: Vec<String> = part
+            let mut staves = Vec::new();
+            for staff in &part.staves {
+                let numbers: Vec<String> = voices
+                    .iter()
+                    .filter(|spec| spec.staff == staff.index())
+                    .map(|spec| spec.number.to_string())
+                    .collect();
+                if numbers.is_empty() {
+                    continue;
+                }
+                staves.push(if numbers.len() == 1 {
+                    numbers[0].clone()
+                } else {
+                    format!("({})", numbers.join(" "))
+                });
+            }
+            if staves.is_empty() {
+                continue;
+            }
+            if staves.len() == 1 {
+                groups.push(staves[0].clone());
+                continue;
+            }
+            let bracket = part
                 .staves
                 .iter()
-                .map(|staff| (staff.index() + 1).to_string())
-                .collect();
-            let line = if numbers.len() == 1 {
-                numbers[0].clone()
-            } else {
-                let bracket = part
-                    .staves
-                    .iter()
-                    .find_map(|staff| {
-                        self.score
-                            .staves
-                            .get(staff.index())
-                            .and_then(|staff| staff.brackets.first())
-                    })
-                    .map_or(-1, |bracket| i32::from(bracket.kind));
-                let (open, close) = match bracket {
-                    1 => ('(', ')'),
-                    0 | 3 => ('[', ']'),
-                    _ => (' ', ' '),
-                };
-                format!("{open}{}{close}", numbers.join(" "))
+                .find_map(|staff| {
+                    self.score
+                        .staves
+                        .get(staff.index())
+                        .and_then(|staff| staff.brackets.first())
+                })
+                .map_or(-1, |bracket| i32::from(bracket.kind));
+            let (open, close) = match bracket {
+                1 => ('{', '}'),
+                0 | 3 => ('[', ']'),
+                _ => (' ', ' '),
             };
-            groups.push(line);
+            groups.push(format!("{open}{}{close}", staves.join(" ")));
         }
         (!groups.is_empty()).then(|| format!("%%score {}", groups.join(" ")))
     }
@@ -230,43 +264,40 @@ impl<'a> Writer<'a> {
     }
 }
 
-/// Première indication de mesure de la partition, ou 4/4.
+/// Indication de mesure au début de la partition, ou 4/4.
 pub(crate) fn initial_time(score: &Score) -> TimeSig {
-    for measure in &score.measures {
-        for segment in &measure.segments {
-            if !segment.kind.is_time_sig_type() {
-                continue;
-            }
-            for (_, item) in segment.iter_elements() {
-                if let SegmentItem::TimeSig(time) = item {
-                    if time.is_valid() {
-                        return time.clone();
-                    }
-                }
-            }
-        }
-    }
-    TimeSig::new(4, 4)
+    measure_context(score, 0, Some(0))
+        .2
+        .filter(TimeSig::is_valid)
+        .unwrap_or_else(|| TimeSig::new(4, 4))
 }
 
-/// Clef initiale d'une portée, pour les en-têtes `V:`.
-pub(crate) fn staff_clef(score: &Score, staff: usize) -> Option<Clef> {
-    for measure in &score.measures {
-        for segment in &measure.segments {
-            if !segment.kind.is_clef_type() {
-                continue;
-            }
-            for (track, item) in segment.iter_elements() {
-                if track.staff().index() != staff {
-                    continue;
-                }
-                if let SegmentItem::Clef(clef) = item {
-                    return Some(*clef);
-                }
-            }
-        }
-    }
-    score.staves.get(staff).map(|staff| staff.default_clef)
+/// Portée de référence d'une partie pour l'armure et la mesure.
+///
+/// ABC n'a qu'une armure et qu'une indication de mesure par morceau : les
+/// indications locales de MuseScore sont ramenées à celles de la première
+/// portée de la partie.
+pub(crate) fn context_staff(score: &Score, staff: usize) -> usize {
+    score
+        .staves
+        .get(staff)
+        .and_then(|staff| score.parts.get(staff.part.index()))
+        .and_then(|part| part.staves.first())
+        .map(|staff| staff.index())
+        .unwrap_or(0)
+}
+
+/// Clef d'une portée au début de la partition, pour les en-têtes `V:`.
+pub(crate) fn initial_clef(score: &Score, staff: usize) -> Option<ClefType> {
+    measure_context(score, 0, Some(staff))
+        .0
+        .map(|clef| clef.transposed)
+        .or_else(|| {
+            score
+                .staves
+                .get(staff)
+                .map(|staff| staff.default_clef.transposed)
+        })
 }
 
 /// Clef et armure portées par les segments au début d'une mesure.
@@ -276,7 +307,7 @@ pub(crate) fn staff_clef(score: &Score, staff: usize) -> Option<Clef> {
 pub(crate) fn measure_context(
     score: &Score,
     measure_index: usize,
-    staff: usize,
+    staff: Option<usize>,
 ) -> (Option<Clef>, Option<KeySig>, Option<TimeSig>) {
     let mut clef = None;
     let mut key = None;
@@ -295,13 +326,25 @@ pub(crate) fn measure_context(
             continue;
         }
         for (track, item) in segment.iter_elements() {
-            if track.staff().index() != staff {
+            if staff.is_some_and(|staff| track.staff().index() != staff) {
                 continue;
             }
             match item {
-                SegmentItem::Clef(value) => clef = Some(*value),
-                SegmentItem::KeySig(value) => key = Some(value.clone()),
-                SegmentItem::TimeSig(value) => time = Some(value.clone()),
+                SegmentItem::Clef(value) => {
+                    if clef.is_none() {
+                        clef = Some(*value);
+                    }
+                }
+                SegmentItem::KeySig(value) => {
+                    if key.is_none() {
+                        key = Some(value.clone());
+                    }
+                }
+                SegmentItem::TimeSig(value) => {
+                    if time.is_none() {
+                        time = Some(value.clone());
+                    }
+                }
                 _ => {}
             }
         }
