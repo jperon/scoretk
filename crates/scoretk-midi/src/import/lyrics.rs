@@ -64,11 +64,12 @@ pub fn set_lyrics(score: &mut Score, track: &MTrack, lyrics: &[(Fraction, String
         if !is_lyric_text(text) {
             continue;
         }
-        let Some((on_time, chord)) = track
-            .chords
-            .iter()
-            .find(|(_, chord)| chord.notes.iter().any(|note| note.orig_on_time == *orig_tick))
-        else {
+        let Some((on_time, chord)) = track.chords.iter().find(|(_, chord)| {
+            chord
+                .notes
+                .iter()
+                .any(|note| note.orig_on_time == *orig_tick)
+        }) else {
             continue;
         };
         let voice = chord.voice;
@@ -88,11 +89,9 @@ pub fn set_lyrics(score: &mut Score, track: &MTrack, lyrics: &[(Fraction, String
             let Some(SegmentItem::ChordRest(chord_rest)) = segment.element_mut(track_id) else {
                 continue;
             };
-            chord_rest.lyrics.push(Lyrics::new(
-                0,
-                LyricsSyllabic::Single,
-                text.clone(),
-            ));
+            chord_rest
+                .lyrics
+                .push(Lyrics::new(0, LyricsSyllabic::Single, text.clone()));
             break;
         }
     }

@@ -441,6 +441,29 @@ fn mscx_vers_midi() {
 }
 
 #[test]
+fn midi_vers_musicxml() {
+    let dir = temp_dir();
+    let written = dir.join("depuis-midi.musicxml");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/corpus/midi/v4/dynamics.ref.mid");
+    let output = binary()
+        .arg(&source)
+        .arg("-o")
+        .arg(&written)
+        .output()
+        .expect("exécution");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = std::fs::read_to_string(&written).expect("sortie MusicXML");
+    assert!(text.contains("<score-partwise"), "{text}");
+    assert!(text.contains("<step>D</step>"), "{text}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn musicxml_vers_midi() {
     let dir = temp_dir();
     let written = dir.join("depuis-musicxml.mid");

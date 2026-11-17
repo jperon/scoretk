@@ -167,7 +167,9 @@ impl ChordMap {
 
     /// Itère sur les accords dans l'ordre `(date, rang)`, avec leur date.
     pub fn iter(&self) -> impl Iterator<Item = (Fraction, &MidiChord)> {
-        self.entries.iter().map(|((on_time, _), chord)| (*on_time, chord))
+        self.entries
+            .iter()
+            .map(|((on_time, _), chord)| (*on_time, chord))
     }
 
     /// Itère sur les accords avec leur clé complète et leur date.
@@ -326,7 +328,7 @@ pub fn is_grand_staff_program(program: u8) -> bool {
 /// (`removeOverlappingNotes(QList<MidiNote>&)`).
 fn remove_overlapping_notes_in_chord(notes: &mut Vec<MidiNote>) {
     let mut kept: Vec<MidiNote> = Vec::with_capacity(notes.len());
-    for mut note in notes.drain(..) {
+    for note in notes.drain(..) {
         let mut merged = false;
         for existing in &mut kept {
             if existing.pitch == note.pitch {
@@ -431,7 +433,7 @@ pub fn remove_overlapping_notes(track: &mut MTrack) {
         let empty = track
             .chords
             .get(*key)
-            .map_or(true, |chord1| chord1.notes.is_empty());
+            .is_none_or(|chord1| chord1.notes.is_empty());
         if empty {
             track.chords.remove(*key);
         }
@@ -452,12 +454,22 @@ fn has_notes_with_equal_pitch(chord1: &MidiChord, chord2: &MidiChord) -> bool {
 ///
 /// `human_tol_coeff` et `non_human_tol_coeff` s'appliquent à
 /// [`min_allowed_duration`] selon `is_human_performance`.
-pub fn collect_chords(track: &mut MTrack, human_tol_coeff: Fraction, non_human_tol_coeff: Fraction, is_human: bool) {
+pub fn collect_chords(
+    track: &mut MTrack,
+    human_tol_coeff: Fraction,
+    non_human_tol_coeff: Fraction,
+    is_human: bool,
+) {
     if track.chords.is_empty() {
         return;
     }
     let min_allowed = min_allowed_duration();
-    let thresh_time = min_allowed * if is_human { human_tol_coeff } else { non_human_tol_coeff };
+    let thresh_time = min_allowed
+        * if is_human {
+            human_tol_coeff
+        } else {
+            non_human_tol_coeff
+        };
     let fudge_time = thresh_time * Fraction::new(1, 4);
     let thresh_ext_time = thresh_time * Fraction::HALF;
 
@@ -470,13 +482,11 @@ pub fn collect_chords(track: &mut MTrack, human_tol_coeff: Fraction, non_human_t
 
     for key in keys {
         let (on_time, _) = key;
-        let Some((is_in_tuplet, chord_max_off, voice)) = track.chords.get(key).map(|chord| {
-            (
-                chord.is_in_tuplet,
-                MTrack::max_off_time(chord),
-                chord.voice,
-            )
-        }) else {
+        let Some((is_in_tuplet, chord_max_off, voice)) = track
+            .chords
+            .get(key)
+            .map(|chord| (chord.is_in_tuplet, MTrack::max_off_time(chord), chord.voice))
+        else {
             continue;
         };
         if is_in_tuplet {
@@ -486,46 +496,42 @@ pub fn collect_chords(track: &mut MTrack, human_tol_coeff: Fraction, non_human_t
         }
 
         if let Some(start) = current_chord_start {
-            if on_time < start + current_thresh {
-                if on_time <= max_off_time - min_allowed {
-                    if let Some(previous) = previous_key {
-                        let previous_voice = track
-                            .chords
-                            .get(previous)
-                            .map_or(voice, |chord| chord.voice);
-                        if voice != previous_voice {
-                            current_chord_start = None;
-                            previous_key = Some(key);
-                            continue;
-                        }
-                        let add = match (track.chords.get(previous), track.chords.get(key)) {
-                            (Some(previous_chord), Some(current_chord)) => {
-                                !has_notes_with_equal_pitch(previous_chord, current_chord)
-                            }
-                            _ => false,
-                        };
-                        if add {
-                            let notes = track
-                                .chords
-                                .get(key)
-                                .map(|chord| chord.notes.clone())
-                                .unwrap_or_default();
-                            if let Some(previous_chord) = track.chords.get_mut(previous) {
-                                previous_chord.notes.extend(notes);
-                            }
-                            if chord_max_off > max_off_time {
-                                max_off_time = chord_max_off;
-                            }
-                        }
-                        if on_time >= start + current_thresh - fudge_time
-                            && current_thresh == thresh_time
-                        {
-                            current_thresh += thresh_ext_time;
-                        }
-                        removed.push(key);
-                        continue;
+            let is_close =
+                on_time < start + current_thresh && on_time <= max_off_time - min_allowed;
+            if let Some(previous) = previous_key.filter(|_| is_close) {
+                let previous_voice = track
+                    .chords
+                    .get(previous)
+                    .map_or(voice, |chord| chord.voice);
+                if voice != previous_voice {
+                    current_chord_start = None;
+                    previous_key = Some(key);
+                    continue;
+                }
+                let add = match (track.chords.get(previous), track.chords.get(key)) {
+                    (Some(previous_chord), Some(current_chord)) => {
+                        !has_notes_with_equal_pitch(previous_chord, current_chord)
+                    }
+                    _ => false,
+                };
+                if add {
+                    let notes = track
+                        .chords
+                        .get(key)
+                        .map(|chord| chord.notes.clone())
+                        .unwrap_or_default();
+                    if let Some(previous_chord) = track.chords.get_mut(previous) {
+                        previous_chord.notes.extend(notes);
+                    }
+                    if chord_max_off > max_off_time {
+                        max_off_time = chord_max_off;
                     }
                 }
+                if on_time >= start + current_thresh - fudge_time && current_thresh == thresh_time {
+                    current_thresh += thresh_ext_time;
+                }
+                removed.push(key);
+                continue;
             }
         }
 
@@ -550,7 +556,7 @@ pub fn sort_notes_by_pitch(track: &mut MTrack) {
 /// Trie les notes de chaque accord par durée (`sortNotesByLength`).
 pub fn sort_notes_by_length(track: &mut MTrack) {
     for (_, chord) in track.chords.iter_mut() {
-        chord.notes.sort_by(|left, right| left.off_time.cmp(&right.off_time));
+        chord.notes.sort_by_key(|note| note.off_time);
     }
 }
 
@@ -716,10 +722,8 @@ pub fn set_bar_indexes(
     let mut position = 0;
     let mut bar_index: i64 = 0;
     loop {
-        let end_bar_tick = Fraction::from_ticks(
-            sigmap.bar2tick(bar_index + 1, 0),
-            UNITS_PER_WHOLE as u32,
-        );
+        let end_bar_tick =
+            Fraction::from_ticks(sigmap.bar2tick(bar_index + 1, 0), UNITS_PER_WHOLE as u32);
         if position >= keys.len() {
             break;
         }

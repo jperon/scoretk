@@ -28,7 +28,7 @@
 
 use mscz2xml::model::Fraction;
 
-use super::chord::{max_note_off_time, MidiNote, MTrack};
+use super::chord::{max_note_off_time, MTrack, MidiNote};
 use super::meter::{beat_length, meter_to_duration_list, DurationKind};
 use super::midifile::UNITS_PER_WHOLE;
 use super::quant::quantize_to_large;
@@ -56,9 +56,9 @@ fn find_bar_start(sigmap: &TimeSigMap, time: Fraction) -> Fraction {
 /// Vrai si la liste contient une figure à crochets multiples
 /// (`hasComplexBeamedDurations`).
 fn has_complex_beamed_durations(durations: &[(Fraction, mscz2xml::model::Duration)]) -> bool {
-    durations.iter().any(|(_, duration)| {
-        duration.kind.hooks() >= 2
-    })
+    durations
+        .iter()
+        .any(|(_, duration)| duration.kind.hooks() >= 2)
 }
 
 /// Allonge une note jusqu'à la fin qui minimise le nombre de figures et de
@@ -83,8 +83,13 @@ fn lengthen_note(
     let Some(quant) = note.off_time_quant else {
         return;
     };
-    let tuplets_for_duration =
-        find_tuplets_in_bar_for_duration(track, voice, bar_start, note.off_time, end_time - note.off_time);
+    let tuplets_for_duration = find_tuplets_in_bar_for_duration(
+        track,
+        voice,
+        bar_start,
+        note.off_time,
+        end_time - note.off_time,
+    );
 
     let orig_note_durations = meter_to_duration_list(
         duration_start - bar_start,
@@ -107,7 +112,11 @@ fn lengthen_note(
     let mut min_rest_duration_count = duration_count(&orig_rest_durations);
     let mut best_off_time: Option<Fraction> = None;
 
-    let step = if quant.is_positive() { quant } else { Fraction::new(1, 16) };
+    let step = if quant.is_positive() {
+        quant
+    } else {
+        Fraction::new(1, 16)
+    };
     let mut off_time = note.off_time + step;
     while off_time <= end_time {
         let note_durations = meter_to_duration_list(
@@ -220,7 +229,12 @@ fn shorten_drum_note(
 
 /// Réduit le nombre de silences en allongeant les notes
 /// (`minimizeNumberOfRests`).
-fn minimize_number_of_rests(track: &mut MTrack, sigmap: &TimeSigMap, is_drum_track: bool, use_dots: bool) {
+fn minimize_number_of_rests(
+    track: &mut MTrack,
+    sigmap: &TimeSigMap,
+    is_drum_track: bool,
+    use_dots: bool,
+) {
     let keys = track.chords.keys();
     for key in keys {
         let Some(chord) = track.chords.get(key) else {
@@ -235,9 +249,7 @@ fn minimize_number_of_rests(track: &mut MTrack, sigmap: &TimeSigMap, is_drum_tra
         let next = track
             .chords
             .iter()
-            .filter(|(next_on_time, next_chord)| {
-                *next_on_time > key.0 && next_chord.voice == voice
-            })
+            .filter(|(next_on_time, next_chord)| *next_on_time > key.0 && next_chord.voice == voice)
             .min_by(|left, right| left.0.cmp(&right.0))
             .map(|(next_on_time, next_chord)| {
                 (
@@ -297,7 +309,8 @@ fn minimize_number_of_rests(track: &mut MTrack, sigmap: &TimeSigMap, is_drum_tra
                             end_time = bar_start
                                 + quantize_to_large(
                                     note.off_time - bar_start,
-                                    tuplet.len / Fraction::from_integer(i64::from(tuplet.tuplet_number)),
+                                    tuplet.len
+                                        / Fraction::from_integer(i64::from(tuplet.tuplet_number)),
                                 );
                         }
                     }

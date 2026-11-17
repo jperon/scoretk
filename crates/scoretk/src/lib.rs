@@ -109,12 +109,10 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
         }
         Format::MusicXml => hooks::read_musicxml(bytes),
         Format::Midi => hooks::read_midi(bytes),
-        Format::Mxl | Format::Ly | Format::Abc => {
-            Err(Error::FormatNonPrisEnCharge {
-                format,
-                sens: Sens::Lecture,
-            })
-        }
+        Format::Mxl | Format::Ly | Format::Abc => Err(Error::FormatNonPrisEnCharge {
+            format,
+            sens: Sens::Lecture,
+        }),
     }
 }
 

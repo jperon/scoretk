@@ -33,12 +33,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Fichiers dont l'import est identique à MuseScore au niveau du noyau.
-const EXPECTED_IDENTICAL: &[&str] = &[
-    "mmrest",
-    "repeat68",
-    "repeat69",
-    "testTempoPrecision",
-];
+const EXPECTED_IDENTICAL: &[&str] = &["mmrest", "repeat68", "repeat69", "testTempoPrecision"];
 
 fn midi_corpus(version: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

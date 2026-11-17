@@ -214,7 +214,7 @@ impl MidiFile {
                     midly::Fps::Fps29 => 29.97,
                     midly::Fps::Fps30 => 30.0,
                 };
-                let division = (frames * f64::from(u8::from(subframe))).round() as i64;
+                let division = (frames * f64::from(subframe)).round() as i64;
                 (division, true)
             }
         };
@@ -254,7 +254,9 @@ impl MidiFile {
                     }
                     midly::TrackEventKind::Meta(message) => {
                         let (kind, data) = match message {
-                            midly::MetaMessage::TrackName(data) => (meta::TRACK_NAME, data.to_vec()),
+                            midly::MetaMessage::TrackName(data) => {
+                                (meta::TRACK_NAME, data.to_vec())
+                            }
                             midly::MetaMessage::InstrumentName(data) => {
                                 (meta::INSTRUMENT_NAME, data.to_vec())
                             }
@@ -282,10 +284,9 @@ impl MidiFile {
                                 meta::TIME_SIGNATURE,
                                 vec![numerator, denominator, clocks, thirty_seconds],
                             ),
-                            midly::MetaMessage::KeySignature(sharps, minor) => (
-                                meta::KEY_SIGNATURE,
-                                vec![sharps as u8, u8::from(minor)],
-                            ),
+                            midly::MetaMessage::KeySignature(sharps, minor) => {
+                                (meta::KEY_SIGNATURE, vec![sharps as u8, u8::from(minor)])
+                            }
                             _ => continue,
                         };
                         (0, EventKind::Meta { kind, data })
@@ -330,14 +331,18 @@ impl MidiFile {
                 continue;
             }
             channels.sort_unstable();
-            for offset in 1..channels.len() {
+            for channel in channels.iter().skip(1) {
                 self.tracks.insert(
-                    index + offset,
+                    index
+                        + channels
+                            .iter()
+                            .position(|candidate| candidate == channel)
+                            .unwrap_or(0),
                     MidiTrack {
                         events: Vec::new(),
-                        out_channel: i32::from(channels[offset]),
+                        out_channel: i32::from(*channel),
                         out_port: 0,
-                        drum_track: channels[offset] == 9,
+                        drum_track: *channel == 9,
                     },
                 );
             }

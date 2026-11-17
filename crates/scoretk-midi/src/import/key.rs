@@ -204,7 +204,9 @@ pub fn recognize_main_key_sig(score: &mut Score, tracks: &mut [MTrack]) {
         if track.has_key {
             continue;
         }
-        let staff = track.staff.expect("portée créée avant la détection d'armure");
+        let staff = track
+            .staff
+            .expect("portée créée avant la détection d'armure");
         let mut key_list = track.key_list.clone();
         key_list.set_key(
             Fraction::ZERO,

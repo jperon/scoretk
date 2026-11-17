@@ -32,7 +32,7 @@
 
 use mscz2xml::model::{Score, StaffBracket};
 
-use super::chord::{min_allowed_duration, MidiChord, MTrack};
+use super::chord::{min_allowed_duration, MTrack, MidiChord};
 
 /// Hauteurs jouées en voix 1 (hampe vers le bas) du kit standard de MuseScore.
 ///
@@ -142,7 +142,7 @@ pub fn split_unequal_drum_chords(tracks: &mut [MTrack]) {
 pub fn set_staff_bracket_for_drums(score: &mut Score, tracks: &[MTrack]) {
     let mut start: Option<usize> = None;
     let mut count = 0;
-    let mut flush = |score: &mut Score, start: Option<usize>, count: usize| {
+    let flush = |score: &mut Score, start: Option<usize>, count: usize| {
         if let Some(staff) = start {
             if count > 1 {
                 if let Some(model_staff) = score.staves.get_mut(staff) {

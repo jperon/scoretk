@@ -33,11 +33,21 @@ fn lit_dynamics() {
     assert!(!score.measures.is_empty(), "aucune mesure");
     assert!(!score.notes.is_empty(), "aucune note");
     for measure in &score.measures {
-        eprintln!("mesure {} tick {:?} len {:?} nominal {:?} segments {}", measure.number, measure.start_tick, measure.len, measure.nominal_len, measure.segments.len());
+        eprintln!(
+            "mesure {} tick {:?} len {:?} nominal {:?} segments {}",
+            measure.number,
+            measure.start_tick,
+            measure.len,
+            measure.nominal_len,
+            measure.segments.len()
+        );
         for segment in &measure.segments {
             for (_, item) in segment.iter_elements() {
                 if let mscz2xml::model::SegmentItem::TimeSig(ts) = item {
-                    eprintln!("  sig {} {:?} {}", segment.kind as u8, segment.tick, ts.numerator);
+                    eprintln!(
+                        "  sig {} {:?} {}",
+                        segment.kind as u8, segment.tick, ts.numerator
+                    );
                 }
             }
         }

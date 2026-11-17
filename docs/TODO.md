@@ -12,7 +12,7 @@ cinq formats de partition ; **mscz2xml** en est le premier convertisseur
 | MusicXML (`.musicxml` / `.mxl`) | fait (noyau, cf. `docs/agents/musicxml-import.md`) | fait |
 | LilyPond (`.ly`) | à faire | fait (`scoretk-lilypond`, t36) |
 | ABC (`.abc`) | à faire | à faire |
-| MIDI (`.mid`) | à faire | fait (`scoretk-midi`) |
+| MIDI (`.mid`) | fait (t42, noyau : quantification, n-olets simples) | fait (`scoretk-midi`) |
 
 Toutes les combinaisons doivent fonctionner : mscz ↔ musicxml, musicxml ↔ ly,
 musicxml ↔ abc, musicxml ↔ midi, et donc aussi toutes les paires entre mscz,
@@ -24,7 +24,7 @@ ly, abc et midi.
 | --- | --- | --- |
 | `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : lecture `.mscz`/`.mscx`/MusicXML, écriture MusicXML/`.mxl`/`.mscx`/`.mscz`/`.ly`/`.mid` ; les quatre features (`musicxml-import`, `midi`, `lilypond`, `mscx`) sont activées par la CLI |
 | `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | fait (t34, t37) : noyau 26/30 v3 et 26/26 v4, parité complète 23/30 et 21/26 (écarts dans `docs/agents/musicxml-import.md`) |
-| `scoretk-midi` | écrivain MIDI depuis le modèle pivot | fait (t35) |
+| `scoretk-midi` | lecteur et écrivain MIDI depuis le modèle pivot | fait (t35 écriture, t42 lecture) : aller-retour 21/21 à la quantification près ; import 4/21 identique au noyau MuseScore, écarts de noms d'instruments et de n-olets complexes (`docs/agents/midi.md`) |
 | `scoretk-lilypond` | écrivain LilyPond depuis le modèle pivot | fait (t36) : 56/56 fichiers du corpus compilent |
 | `scoretk-mscx` | écrivain MuseScore (`.mscx` 4.x, `.mscz`) | fait (t38) : aller-retour identique sur tout le corpus |
 
@@ -32,7 +32,9 @@ MIDI est à part : c'est un format de performance, pas de notation. L'écriture
 MIDI demande de dérouler les reprises et sauts (comme `RepeatList` de
 MuseScore), d'appliquer nuances, articulations et tempo. La lecture MIDI
 demande une quantification (durées, voix, mesures, armure déduite), donc une
-conversion approximative.
+conversion approximative : elle est faite (t42) en portant l'import de
+MuseScore, avec ses options par défaut ; les limites (n-olets imbriqués,
+catalogue d'instruments, clefs octaviées) sont dans `docs/agents/midi.md`.
 
 Pistes :
 

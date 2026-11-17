@@ -106,11 +106,7 @@ fn midi_notes(bytes: &[u8]) -> Vec<NoteEvent> {
             }
         }
         for (pitch, on) in active {
-            notes.push(NoteEvent {
-                pitch,
-                on,
-                len: 1,
-            });
+            notes.push(NoteEvent { pitch, on, len: 1 });
         }
     }
     notes.sort();

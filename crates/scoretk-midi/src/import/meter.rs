@@ -155,12 +155,22 @@ pub fn metric_divisions_of_bar(bar_fraction: Fraction) -> DivisionInfo {
     }
     if is_compound(bar_fraction) {
         level -= 1;
-        let last = info.div_lengths.last().map(|(len, _)| *len).unwrap_or(bar_fraction);
+        let last = info
+            .div_lengths
+            .last()
+            .map(|(len, _)| *len)
+            .unwrap_or(bar_fraction);
         level -= 1;
         push(&mut info, last / Fraction::from_integer(3), level);
     }
-    while info.div_lengths.last().map(|(len, _)| *len) >= Some(min_allowed_duration() * Fraction::from_integer(2)) {
-        let last = info.div_lengths.last().map(|(len, _)| *len).unwrap_or(Fraction::ZERO);
+    while info.div_lengths.last().map(|(len, _)| *len)
+        >= Some(min_allowed_duration() * Fraction::from_integer(2))
+    {
+        let last = info
+            .div_lengths
+            .last()
+            .map(|(len, _)| *len)
+            .unwrap_or(Fraction::ZERO);
         level -= 1;
         push(&mut info, last * Fraction::HALF, level);
     }
@@ -168,7 +178,10 @@ pub fn metric_divisions_of_bar(bar_fraction: Fraction) -> DivisionInfo {
 }
 
 /// Découpage métrique d'un n-olet (`metricDivisionsOfTuplet`).
-pub fn metric_divisions_of_tuplet(tuplet: &TupletData, mut tuplet_start_level: i32) -> DivisionInfo {
+pub fn metric_divisions_of_tuplet(
+    tuplet: &TupletData,
+    mut tuplet_start_level: i32,
+) -> DivisionInfo {
     let mut info = DivisionInfo {
         on_time: tuplet.on_time,
         len: tuplet.len,
@@ -249,7 +262,11 @@ struct MaxLevel {
 }
 
 /// Niveau maximal entre deux ticks dans un intervalle (`maxLevelBetween`).
-fn max_level_between(start_tick: Fraction, end_tick: Fraction, div_info: &DivisionInfo) -> MaxLevel {
+fn max_level_between(
+    start_tick: Fraction,
+    end_tick: Fraction,
+    div_info: &DivisionInfo,
+) -> MaxLevel {
     let mut level = MaxLevel {
         pos: None,
         level: 0,
@@ -257,10 +274,7 @@ fn max_level_between(start_tick: Fraction, end_tick: Fraction, div_info: &Divisi
     };
     let start_in_div = start_tick - div_info.on_time;
     let end_in_div = end_tick - div_info.on_time;
-    if start_in_div >= end_in_div
-        || start_in_div < Fraction::ZERO
-        || end_in_div > div_info.len
-    {
+    if start_in_div >= end_in_div || start_in_div < Fraction::ZERO || end_in_div > div_info.len {
         return level;
     }
     for (div_len, div_level) in &div_info.div_lengths {
@@ -275,8 +289,8 @@ fn max_level_between(start_tick: Fraction, end_tick: Fraction, div_info: &Divisi
         }
         if start_in_div < max_end_raster {
             let start_ratio = start_in_div / *div_len;
-            let max_start_raster =
-                *div_len * Fraction::from_integer(start_ratio.numerator() / start_ratio.denominator());
+            let max_start_raster = *div_len
+                * Fraction::from_integer(start_ratio.numerator() / start_ratio.denominator());
             let count = (max_end_raster - max_start_raster) / *div_len;
             level.pos = Some(max_start_raster + *div_len + div_info.on_time);
             level.level_count = count.numerator() / count.denominator();
@@ -364,10 +378,7 @@ fn is_23_end_of_beat_in_compound_meter(
     let ratio2 = end_tick / beat_len;
     (start_tick - beat_len * Fraction::from_integer(ratio1.numerator() / ratio1.denominator())
         == div_len)
-        && ratio2
-            .numerator()
-            .rem_euclid(ratio2.denominator())
-            == 0
+        && ratio2.numerator().rem_euclid(ratio2.denominator()) == 0
 }
 
 /// Vrai si un silence occupe deux tiers d'une mesure ternaire
@@ -382,7 +393,8 @@ fn is_2of3_rest_in_triple_meter(
     }
     is_triple(bar_fraction)
         && (start_tick == Fraction::ZERO || end_tick == bar_fraction)
-        && end_tick - start_tick == (bar_fraction * Fraction::from_integer(2)) / Fraction::from_integer(3)
+        && end_tick - start_tick
+            == (bar_fraction * Fraction::from_integer(2)) / Fraction::from_integer(3)
 }
 
 /// Nœud du découpage (`Node`).
@@ -488,14 +500,16 @@ fn exclude_nodes(nodes: &mut BTreeMap<Fraction, Node>, tol: i32, use_dots: bool)
             let p1 = nodes[&positions[index]];
             let p2 = nodes[&positions[index + 1]];
             let p3 = nodes[&positions[index + 2]];
-            if !bad_level_condition(p2.mid_level - p1.edge_level, p2.mid_level - p3.edge_level, tol)
-                && is_less_note_count(
-                    positions[index],
-                    positions[index + 1],
-                    positions[index + 2],
-                    use_dots,
-                )
-            {
+            if !bad_level_condition(
+                p2.mid_level - p1.edge_level,
+                p2.mid_level - p3.edge_level,
+                tol,
+            ) && is_less_note_count(
+                positions[index],
+                positions[index + 1],
+                positions[index + 2],
+                use_dots,
+            ) {
                 nodes.remove(&positions[index + 1]);
                 removed = true;
                 break;
@@ -578,8 +592,11 @@ pub fn meter_to_duration_list(
         let Some(end_node) = nodes.get(&second).copied() else {
             continue;
         };
-        if bad_level_condition(effective_level - start_node.edge_level, effective_level - end_node.edge_level, 0)
-            || is_2of3_rest_in_triple_meter(first, second, bar_fraction)
+        if bad_level_condition(
+            effective_level - start_node.edge_level,
+            effective_level - end_node.edge_level,
+            0,
+        ) || is_2of3_rest_in_triple_meter(first, second, bar_fraction)
             || (kind == DurationKind::Rest
                 && is_23_end_of_beat_in_compound_meter(first, second, bar_fraction))
         {

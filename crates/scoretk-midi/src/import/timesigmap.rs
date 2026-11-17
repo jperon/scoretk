@@ -159,7 +159,11 @@ impl TimeSigMap {
             Some((event_tick, event)) => {
                 let delta = tick - event_tick;
                 let tm = event.timesig.ticks_measure();
-                let bar = if tm > 0 { event.bar + delta / tm } else { event.bar };
+                let bar = if tm > 0 {
+                    event.bar + delta / tm
+                } else {
+                    event.bar
+                };
                 (event.timesig, bar)
             }
             None => (Timesig::default(), 0),

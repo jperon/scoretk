@@ -43,9 +43,8 @@ pub fn find_basic_tempo(midi: &MidiFile) -> f64 {
         for (_, raw) in &track.events {
             if let EventKind::Meta { kind, data } = &raw.kind {
                 if *kind == meta::TEMPO && data.len() >= 3 {
-                    let tempo = (u32::from(data[0]) << 16)
-                        | (u32::from(data[1]) << 8)
-                        | u32::from(data[2]);
+                    let tempo =
+                        (u32::from(data[0]) << 16) | (u32::from(data[1]) << 8) | u32::from(data[2]);
                     if tempo > 0 {
                         return 1_000_000.0 / f64::from(tempo);
                     }
@@ -77,9 +76,7 @@ pub fn set_tempo(
             if *kind != meta::TEMPO || data.len() < 3 {
                 continue;
             }
-            let tempo = (u32::from(data[0]) << 16)
-                | (u32::from(data[1]) << 8)
-                | u32::from(data[2]);
+            let tempo = (u32::from(data[0]) << 16) | (u32::from(data[1]) << 8) | u32::from(data[2]);
             if tempo == 0 {
                 continue;
             }
@@ -87,7 +84,7 @@ pub fn set_tempo(
             tempo_events.push((tick, 1_000_000.0 / f64::from(tempo)));
         }
     }
-    tempo_events.sort_by(|left, right| left.0.cmp(&right.0));
+    tempo_events.sort_by_key(|event| event.0);
 
     let mut last_tempo = DEFAULT_TEMPO;
     for (tick, beats_per_second) in tempo_events {

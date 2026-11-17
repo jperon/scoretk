@@ -44,7 +44,7 @@ pub fn assign_initial_voices(track: &mut MTrack, limit: usize) {
     if track.drum_track || track.chords.is_empty() {
         return;
     }
-    let limit = limit.max(1).min(VOICES);
+    let limit = limit.clamp(1, VOICES);
     let keys = track.chords.keys();
     let mut voice_ends: Vec<Option<Fraction>> = vec![None; limit];
     for key in keys {
@@ -53,7 +53,7 @@ pub fn assign_initial_voices(track: &mut MTrack, limit: usize) {
         };
         let on_time = key.0;
         let chord_end = MTrack::max_off_time(chord);
-        let free = (0..limit).find(|voice| voice_ends[*voice].map_or(true, |end| end <= on_time));
+        let free = (0..limit).find(|voice| voice_ends[*voice].is_none_or(|end| end <= on_time));
         let voice = free.unwrap_or_else(|| {
             (0..limit)
                 .min_by_key(|index| voice_ends[*index].unwrap_or(Fraction::ZERO))
@@ -115,9 +115,8 @@ pub fn separate_voices(
                 };
                 let chord_end = MTrack::max_off_time(chord);
                 let on_time = key.0;
-                let free = (0..limit).find(|voice| {
-                    voice_ends[*voice].map_or(true, |end| end <= on_time)
-                });
+                let free =
+                    (0..limit).find(|voice| voice_ends[*voice].is_none_or(|end| end <= on_time));
                 let voice = free.unwrap_or_else(|| {
                     (0..limit)
                         .min_by_key(|index| voice_ends[*index].unwrap_or(Fraction::ZERO))
@@ -132,10 +131,8 @@ pub fn separate_voices(
                     .unwrap_or(0);
                 voice_pitches[voice].0 += average * chord.notes.len() as i64;
                 voice_pitches[voice].1 += chord.notes.len() as i64;
-                voice_ends[voice] = Some(
-                    voice_ends[voice]
-                        .map_or(chord_end, |end| end.max(chord_end)),
-                );
+                voice_ends[voice] =
+                    Some(voice_ends[voice].map_or(chord_end, |end| end.max(chord_end)));
                 if let Some(chord) = track.chords.get_mut(*key) {
                     if chord.voice != voice {
                         changed = true;

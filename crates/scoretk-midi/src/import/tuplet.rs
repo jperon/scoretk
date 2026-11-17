@@ -123,7 +123,7 @@ pub fn find_tuplets_in_bar_for_duration(
     }
     // Le C++ trie par longueur décroissante avant de construire la liste de
     // durées.
-    result.sort_by(|left, right| right.len.cmp(&left.len));
+    result.sort_by_key(|tuplet| std::cmp::Reverse(tuplet.len));
     result
 }
 
@@ -164,9 +164,7 @@ pub fn remove_empty_tuplets(track: &mut MTrack) {
             keys
         })
         .collect();
-    track
-        .tuplets
-        .retain(|key, _| referenced.contains(key));
+    track.tuplets.retain(|key, _| referenced.contains(key));
 }
 
 /// Cherche les n-olets d'une piste (`MidiTuplet::findAllTuplets`).
@@ -195,14 +193,17 @@ pub fn find_all_tuplets(track: &mut MTrack, sigmap: &TimeSigMap, basic_quant: Fr
         let bar_len = sigmap
             .timesig(sigmap.bar2tick(i64::from(bar_index), 0))
             .measure_len();
-        let bar_len = bar_len;
         let mut spans = divisions_of_bar_for_tuplets(bar_len);
         spans.retain(|span| !span.is_zero());
         spans.sort_by(|left, right| right.cmp(left));
 
         for span in spans {
             let beat = super::meter::beat_length(bar_len);
-            let step = if beat.is_positive() { span.min(beat) } else { span };
+            let step = if beat.is_positive() {
+                span.min(beat)
+            } else {
+                span
+            };
             let mut start = bar_start;
             while start + span <= bar_start + bar_len {
                 if let Some((voice, tuplet_number, tolerance)) =
@@ -272,8 +273,8 @@ fn detect_tuplet(
         if is_simple_note_duration(grid) {
             continue;
         }
-        let tolerance = (grid * Fraction::new(1, 8))
-            .min(min_allowed_duration() * Fraction::from_integer(2));
+        let tolerance =
+            (grid * Fraction::new(1, 8)).min(min_allowed_duration() * Fraction::from_integer(2));
 
         let mut matched: Vec<usize> = Vec::with_capacity(n);
         let mut ok = true;
@@ -322,29 +323,24 @@ fn detect_tuplet(
         // (c'est le cas d'une suite de 32e qui contient les points d'un
         // triolet). Les accords étrangers ne peuvent apparaître qu'après la
         // dernière attaque, comme la couche suivante de `testTuplets8`.
-        let mut onsets: Vec<Fraction> = matched
-            .iter()
-            .map(|index| chords[*index].0)
-            .collect();
+        let mut onsets: Vec<Fraction> = matched.iter().map(|index| chords[*index].0).collect();
         onsets.sort();
-        let foreign_between = chords.iter().enumerate().any(|(index, (on_time, _, _, _))| {
-            if matched.contains(&index) {
-                return false;
-            }
-            onsets.windows(2).any(|window| {
-                *on_time > window[0] + tolerance && *on_time < window[1] - tolerance
-            })
-        });
+        let foreign_between = chords
+            .iter()
+            .enumerate()
+            .any(|(index, (on_time, _, _, _))| {
+                if matched.contains(&index) {
+                    return false;
+                }
+                onsets.windows(2).any(|window| {
+                    *on_time > window[0] + tolerance && *on_time < window[1] - tolerance
+                })
+            });
         if foreign_between {
             continue;
         }
-        let voice = matched
-            .first()
-            .map(|index| chords[*index].1)
-            .unwrap_or(0);
-        let same_voice = matched
-            .iter()
-            .all(|index| chords[*index].1 == voice);
+        let voice = matched.first().map(|index| chords[*index].1).unwrap_or(0);
+        let same_voice = matched.iter().all(|index| chords[*index].1 == voice);
         if !same_voice {
             continue;
         }
@@ -354,7 +350,13 @@ fn detect_tuplet(
 }
 
 /// Marque les accords et notes d'un n-olet.
-fn mark_tuplet(track: &mut MTrack, key: TupletKey, start: Fraction, span: Fraction, tolerance: Fraction) {
+fn mark_tuplet(
+    track: &mut MTrack,
+    key: TupletKey,
+    start: Fraction,
+    span: Fraction,
+    tolerance: Fraction,
+) {
     let Some(tuplet) = track.tuplets.get(&key).cloned() else {
         return;
     };
@@ -374,9 +376,7 @@ fn mark_tuplet(track: &mut MTrack, key: TupletKey, start: Fraction, span: Fracti
                         .get(*chord_key)
                         .is_some_and(|chord| chord.voice == tuplet.voice && !chord.is_in_tuplet)
             })
-            .min_by(|left, right| {
-                (left.0 - expected).abs().cmp(&(right.0 - expected).abs())
-            });
+            .min_by(|left, right| (left.0 - expected).abs().cmp(&(right.0 - expected).abs()));
         if let Some(found) = found {
             if !matched.contains(&found) {
                 matched.push(found);
@@ -385,8 +385,8 @@ fn mark_tuplet(track: &mut MTrack, key: TupletKey, start: Fraction, span: Fracti
     }
     let count = matched.len();
     for chord_key in matched {
-        let cell_end = start
-            + grid * Fraction::from_integer(((chord_key.0 - start) / grid).numerator() + 1);
+        let cell_end =
+            start + grid * Fraction::from_integer(((chord_key.0 - start) / grid).numerator() + 1);
         if let Some(chord) = track.chords.get_mut(chord_key) {
             chord.is_in_tuplet = true;
             chord.tuplet = Some(key);

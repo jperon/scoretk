@@ -99,7 +99,7 @@ Ces paquets n'apparaissent pas dans le graphe `normal,build` ci-dessus :
 
 | Paquet | Raison | Licence connue |
 | --- | --- | --- |
-| `similar` | dépendance de **développement** de `mscz2xml` (tests) | Apache-2.0 |
+| `similar` | dépendance de **développement** de `mscz2xml` et `scoretk-midi` (tests) | Apache-2.0 |
 | `arbitrary`, `derive_arbitrary` | fonctionnalité optionnelle de `zip`, non activée | MIT OR Apache-2.0 |
 | `anstyle-wincon`, `windows-sys`, `windows-link` | uniquement pour la cible Windows (couleurs du terminal) | MIT OR Apache-2.0 |
 | `once_cell_polyfill` | chaîne Windows de `clap`/`anstream` | MIT OR Apache-2.0 |

@@ -68,16 +68,16 @@ pub mod voice;
 use std::collections::BTreeMap;
 
 use mscz2xml::model::{
-    Annotation, Chord, ChordRest, Duration, Fraction, Instrument, Key, KeySig, KeyMode, Lyrics,
-    LyricsSyllabic, Measure, Note, Part, Score, Segment, SegmentItem, SegmentType, TimeSig, Track,
-    Tuplet, VOICES,
+    Chord, ChordRest, Duration, Fraction, Instrument, Key, Measure, Note, Part, Score, Segment,
+    SegmentItem, SegmentType, TimeSig, Track, Tuplet, VOICES,
 };
 
 use crate::error::Error;
 
 use chord::{
-    collect_chords, find_min_duration, max_note_off_time, merge_chords_with_equal_on_time_and_voice,
-    remove_overlapping_notes, split_unequal_chords, ChordMap, MTrack, MidiChord, MidiNote,
+    collect_chords, find_min_duration, max_note_off_time,
+    merge_chords_with_equal_on_time_and_voice, remove_overlapping_notes, split_unequal_chords,
+    MTrack, MidiChord, MidiNote,
 };
 use meter::{meter_to_duration_list, DurationKind};
 use midifile::{meta, EventKind, MidiFile, UNITS_PER_WHOLE};
@@ -112,7 +112,8 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     lengthen_too_short_notes(&mut tracks);
 
     // Détection d'une performance humaine, comme `Quantize::setIfHumanPerformance`.
-    let (is_human, quant_value, max_voice_count) = detect_human_performance(&tracks, &sigmap, options);
+    let (is_human, quant_value, max_voice_count) =
+        detect_human_performance(&tracks, &sigmap, options);
 
     for track in &mut tracks {
         collect_chords(
@@ -218,12 +219,8 @@ fn create_mtrack_list(
                     has_notes = true;
                     let length =
                         midifile::to_muse_score_ticks(*len, midi.division, midi.is_division_in_tps);
-                    let note = MidiNote::new(
-                        i32::from(*pitch),
-                        i32::from(*velocity),
-                        tick + length,
-                        tick,
-                    );
+                    let note =
+                        MidiNote::new(i32::from(*pitch), i32::from(*velocity), tick + length, tick);
                     let chord = MidiChord {
                         notes: vec![note],
                         ..MidiChord::default()
@@ -301,11 +298,7 @@ fn detect_human_performance(
     collect_chords(&mut all, Fraction::from_integer(2), Fraction::HALF, false);
     let is_human = quant::is_human_performance(&all, sigmap);
     if is_human {
-        (
-            true,
-            operations::QuantValue::Q8,
-            operations::VoiceCount::V2,
-        )
+        (true, operations::QuantValue::Q8, operations::VoiceCount::V2)
     } else {
         (false, options.quant_value, options.max_voice_count)
     }
@@ -365,7 +358,10 @@ fn find_last_chord_tick(tracks: &[MTrack]) -> Fraction {
 
 /// Pistes à importer (`prepareTrackList`).
 fn prepare_track_list(tracks: Vec<MTrack>) -> Vec<MTrack> {
-    tracks.into_iter().filter(|track| track.had_initial_notes).collect()
+    tracks
+        .into_iter()
+        .filter(|track| track.had_initial_notes)
+        .collect()
 }
 
 /// Crée les parties et portées (`MidiInstr::createInstruments`).
@@ -383,12 +379,10 @@ fn create_instruments(score: &mut Score, tracks: &mut [MTrack], options: &Import
         let mut part = Part::new(long_name.clone(), String::new());
         part.name = long_name;
         part.instrument = Instrument::new(name.clone(), name.clone(), String::new());
-        part.instrument.id = mscz2xml::model::recognize_musicxml_id(
-            &name,
-            Some(tracks[index].program),
-        )
-        .unwrap_or("")
-        .to_owned();
+        part.instrument.id =
+            mscz2xml::model::recognize_musicxml_id(&name, Some(tracks[index].program))
+                .unwrap_or("")
+                .to_owned();
         part.instrument.track_name = name.clone();
         part.instrument.midi_program = Some(if tracks[index].drum_track {
             0
@@ -430,8 +424,7 @@ fn create_measures(
     first_tick: Fraction,
     last_tick: Fraction,
 ) -> Fraction {
-    let (mut bar_count, beat, tick) =
-        sigmap.tick_values(last_tick.ticks(UNITS_PER_WHOLE as u32));
+    let (mut bar_count, beat, tick) = sigmap.tick_values(last_tick.ticks(UNITS_PER_WHOLE as u32));
     if beat > 0 || tick > 0 {
         bar_count += 1;
     }
@@ -455,7 +448,11 @@ fn create_measures(
     for index in begin..bar_count {
         let start_ticks = sigmap.bar2tick(index as i64, 0);
         let timesig = sigmap.timesig(start_ticks);
-        let measure = Measure::new(index, fraction_from_ticks(start_ticks), timesig.measure_len());
+        let measure = Measure::new(
+            index,
+            fraction_from_ticks(start_ticks),
+            timesig.measure_len(),
+        );
         score.add_measure(measure);
     }
     score.end_tick()
@@ -490,11 +487,8 @@ fn process_non_lyric_meta(
         let events = track.events.clone();
         let mut key_list = key::KeyList::new();
         for (raw_tick, raw) in &events {
-            let tick = midifile::to_muse_score_ticks(
-                *raw_tick,
-                track.division,
-                track.is_division_in_tps,
-            );
+            let tick =
+                midifile::to_muse_score_ticks(*raw_tick, track.division, track.is_division_in_tps);
             let EventKind::Meta { kind, data } = &raw.kind else {
                 continue;
             };
@@ -756,11 +750,9 @@ fn process_pending_notes(
             && pending.first().is_some_and(MidiChord::is_staccato)
         {
             if let Some(chord) = chord_rest.chord_mut() {
-                chord
-                    .articulations
-                    .push(mscz2xml::model::Articulation::new(
-                        mscz2xml::model::ArticulationType::Staccato,
-                    ));
+                chord.articulations.push(mscz2xml::model::Articulation::new(
+                    mscz2xml::model::ArticulationType::Staccato,
+                ));
             }
         }
         {
@@ -856,8 +848,7 @@ fn chord_key_at(score: &Score, tick: Fraction) -> Key {
 /// `Prefer::NEAREST` (11).
 pub fn pitch_to_tpc(pitch: i32, key: Key) -> i8 {
     let prefer = 11_i32;
-    let value = (pitch * 7 + 26 - (prefer + i32::from(key.fifths())))
-        .rem_euclid(12)
+    let value = (pitch * 7 + 26 - (prefer + i32::from(key.fifths()))).rem_euclid(12)
         + (prefer + i32::from(key.fifths()));
     value.clamp(i8::MIN as i32, i8::MAX as i32) as i8
 }
@@ -871,9 +862,10 @@ pub(crate) fn get_or_create_chord_rest_segment(
 ) -> &mut Segment {
     let staff_count = score.staves.len();
     let measure = &mut score.measures[measure_index];
-    let position = measure.segments.iter().position(|segment| {
-        segment.kind == SegmentType::ChordRest && segment.tick == tick
-    });
+    let position = measure
+        .segments
+        .iter()
+        .position(|segment| segment.kind == SegmentType::ChordRest && segment.tick == tick);
     let position = match position {
         Some(position) => position,
         None => {
@@ -881,9 +873,7 @@ pub(crate) fn get_or_create_chord_rest_segment(
             measure
                 .segments
                 .iter()
-                .position(|segment| {
-                    segment.kind == SegmentType::ChordRest && segment.tick == tick
-                })
+                .position(|segment| segment.kind == SegmentType::ChordRest && segment.tick == tick)
                 .expect("segment créé")
         }
     };
@@ -977,13 +967,7 @@ fn duration_list(
 ) -> Vec<(Fraction, Duration)> {
     let measure = &score.measures[measure_index];
     let bar_tick = measure.start_tick;
-    let tuplets = tuplet::find_tuplets_in_bar_for_duration(
-        track,
-        voice,
-        bar_tick,
-        start_tick,
-        len,
-    );
+    let tuplets = tuplet::find_tuplets_in_bar_for_duration(track, voice, bar_tick, start_tick, len);
     meter_to_duration_list(
         start_tick - bar_tick,
         start_tick - bar_tick + len,
@@ -996,7 +980,10 @@ fn duration_list(
 
 /// Crée les indications de mesure (`createTimeSignatures`).
 fn create_time_signatures(score: &mut Score, sigmap: &TimeSigMap) {
-    let events: Vec<(i64, Timesig)> = sigmap.iter().map(|(tick, event)| (tick, event.timesig)).collect();
+    let events: Vec<(i64, Timesig)> = sigmap
+        .iter()
+        .map(|(tick, event)| (tick, event.timesig))
+        .collect();
     let mut previous: Option<Timesig> = None;
     for (tick, timesig) in events {
         // MuseScore n'écrit pas un changement d'indication de mesure identique
@@ -1012,9 +999,10 @@ fn create_time_signatures(score: &mut Score, sigmap: &TimeSigMap) {
         let segment = {
             let staff_count = score.staves.len();
             let measure = &mut score.measures[measure_index];
-            let position = measure.segments.iter().position(|segment| {
-                segment.kind == SegmentType::TimeSig && segment.tick == tick
-            });
+            let position = measure
+                .segments
+                .iter()
+                .position(|segment| segment.kind == SegmentType::TimeSig && segment.tick == tick);
             let position = match position {
                 Some(position) => position,
                 None => {

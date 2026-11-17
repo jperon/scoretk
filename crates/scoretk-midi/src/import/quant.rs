@@ -89,7 +89,7 @@ pub fn quant_for_len(note_len: Fraction, basic_quant: Fraction) -> Fraction {
     let mut quant = basic_quant;
     let minimum = min_allowed_duration() * Fraction::from_integer(2);
     while quant > note_len && quant >= minimum {
-        quant = quant * Fraction::HALF;
+        quant *= Fraction::HALF;
     }
     if quant >= minimum {
         quant = reduce_quant_if_dotted(note_len, quant);
@@ -284,7 +284,9 @@ pub fn is_human_performance(track: &MTrack, sigmap: &super::timesigmap::TimeSigM
         let on_time = quantize_value(on_time, quant);
         let (bar_index, _, _) = sigmap.tick_values(on_time.ticks(UNITS_PER_WHOLE as u32));
         let bar_start = super::timesigmap::fraction_from_ticks(sigmap.bar2tick(bar_index, 0));
-        let bar_fraction = sigmap.timesig(bar_start.ticks(UNITS_PER_WHOLE as u32)).measure_len();
+        let bar_fraction = sigmap
+            .timesig(bar_start.ticks(UNITS_PER_WHOLE as u32))
+            .measure_len();
         let beat_len = super::meter::beat_length(bar_fraction);
         if beat_len.is_zero() {
             continue;
@@ -340,8 +342,11 @@ pub fn quantize_chords(track: &mut MTrack, basic_quant: Fraction) {
         return;
     }
     let keys = track.chords.keys();
-    let mut entries: Vec<(crate::import::chord::ChordKey, Fraction, super::chord::MidiChord)> =
-        Vec::with_capacity(keys.len());
+    let mut entries: Vec<(
+        crate::import::chord::ChordKey,
+        Fraction,
+        super::chord::MidiChord,
+    )> = Vec::with_capacity(keys.len());
 
     // Première passe : attaques.
     for key in &keys {

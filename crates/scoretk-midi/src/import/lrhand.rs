@@ -29,7 +29,7 @@
 //! est simplifiée : les notes sous la médiane du plus grand écart de hauteur de
 //! l'accord vont à la main gauche.
 
-use super::chord::{is_grand_staff_program, MidiChord, MTrack};
+use super::chord::{is_grand_staff_program, MTrack, MidiChord};
 use super::instrument::is_grand_staff;
 use super::operations::ImportOptions;
 
@@ -56,7 +56,8 @@ pub fn need_to_split(track: &MTrack) -> bool {
 pub fn find_splits(tracks: &[MTrack], _options: &ImportOptions) -> Vec<bool> {
     let mut result = Vec::with_capacity(tracks.len());
     for (index, track) in tracks.iter().enumerate() {
-        let already_grand_staff = index + 1 < tracks.len() && is_grand_staff(track, &tracks[index + 1]);
+        let already_grand_staff =
+            index + 1 < tracks.len() && is_grand_staff(track, &tracks[index + 1]);
         result.push(!already_grand_staff && need_to_split(track));
     }
     result
@@ -96,7 +97,8 @@ fn split_point(chord: &MidiChord, notes: &[i32]) -> usize {
 /// Scinde une piste en main gauche et main droite
 /// (`LRHand::splitIntoLeftRightHands`).
 pub fn split_into_left_right_hands(tracks: &mut Vec<MTrack>, splits: &[bool]) {
-    let mut result: Vec<MTrack> = Vec::with_capacity(tracks.len() + splits.iter().filter(|flag| **flag).count());
+    let mut result: Vec<MTrack> =
+        Vec::with_capacity(tracks.len() + splits.iter().filter(|flag| **flag).count());
     for (index, track) in tracks.drain(..).enumerate() {
         if !splits.get(index).copied().unwrap_or(false) || track.chords.is_empty() {
             result.push(track);

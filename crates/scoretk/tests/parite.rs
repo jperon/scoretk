@@ -113,6 +113,7 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
     let mscx = std::fs::read(common::corpus_v4("dynamics.mscx")).expect("corpus");
     let score = read(&mscx, Format::Mscx).expect("lecture .mscx");
 
+    #[allow(unused_mut)]
     let mut sans_lecteur = vec![Format::Ly, Format::Abc];
     #[cfg(not(feature = "midi"))]
     sans_lecteur.push(Format::Midi);
@@ -197,8 +198,7 @@ fn ecriture_midi_branchable_par_feature() {
 #[cfg(feature = "midi")]
 #[test]
 fn lecture_midi_vers_musicxml() {
-    let bytes =
-        std::fs::read(common::corpus_midi("v4/dynamics.ref.mid")).expect("référence MIDI");
+    let bytes = std::fs::read(common::corpus_midi("v4/dynamics.ref.mid")).expect("référence MIDI");
     let score = read(&bytes, Format::Midi).expect("lecture MIDI");
     assert!(!score.notes.is_empty());
     let musicxml = write(&score, Format::MusicXml, &options()).expect("export");
