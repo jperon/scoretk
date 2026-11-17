@@ -68,103 +68,103 @@ pub(crate) struct ParsedNotations {
 /// Lit les `<notations>` d'une note.
 pub(crate) fn parse(element: &Element) -> ParsedNotations {
     let mut parsed = ParsedNotations::default();
-    let Some(notations) = element.child("notations") else {
-        return parsed;
-    };
-    let visible = notations.attribute("print-object") != Some("no");
-    parsed.visible = visible;
-    for child in &notations.children {
-        match child.name.as_str() {
-            "articulations" => parse_articulations(child, visible, &mut parsed),
-            "ornaments" => parse_ornaments(child, visible, &mut parsed),
-            "fermata" => {
-                let mut value = fermata(child);
-                value.visible = value.visible && visible;
-                parsed.fermata = Some(value);
-            }
-            "arpeggiate" => {
-                let mut arpeggio = Arpeggio::new(match child.attribute("direction") {
-                    Some("up") => ArpeggioType::Up,
-                    Some("down") => ArpeggioType::Down,
-                    _ => ArpeggioType::Normal,
-                });
-                arpeggio.visible = visible && child.attribute("print-object") != Some("no");
-                parsed.arpeggio = Some(arpeggio);
-            }
-            "non-arpeggiate" => {
-                let mut arpeggio = Arpeggio::new(ArpeggioType::Bracket);
-                arpeggio.visible = visible && child.attribute("print-object") != Some("no");
-                parsed.arpeggio = Some(arpeggio);
-            }
-            "technical" => {
-                for fingering in child.children_named("fingering") {
-                    let mut value = Fingering::new(fingering.text_trimmed());
-                    value.placement = placement(fingering.attribute("placement"));
-                    value.visible = visible && fingering.attribute("print-object") != Some("no");
-                    parsed.fingerings.push(value);
+    for notations in element.children_named("notations") {
+        let visible = notations.attribute("print-object") != Some("no");
+        parsed.visible = visible;
+        for child in &notations.children {
+            match child.name.as_str() {
+                "articulations" => parse_articulations(child, visible, &mut parsed),
+                "ornaments" => parse_ornaments(child, visible, &mut parsed),
+                "fermata" => {
+                    let mut value = fermata(child);
+                    value.visible = value.visible && visible;
+                    parsed.fermata = Some(value);
                 }
-            }
-            "slur" => {
-                let number = number(child);
-                let place = placement(child.attribute("placement")).or_else(|| {
-                    match child.attribute("orientation") {
-                        Some("over") => Some(Placement::Above),
-                        Some("under") => Some(Placement::Below),
-                        _ => None,
+                "arpeggiate" => {
+                    let mut arpeggio = Arpeggio::new(match child.attribute("direction") {
+                        Some("up") => ArpeggioType::Up,
+                        Some("down") => ArpeggioType::Down,
+                        _ => ArpeggioType::Normal,
+                    });
+                    arpeggio.visible = visible && child.attribute("print-object") != Some("no");
+                    parsed.arpeggio = Some(arpeggio);
+                }
+                "non-arpeggiate" => {
+                    let mut arpeggio = Arpeggio::new(ArpeggioType::Bracket);
+                    arpeggio.visible = visible && child.attribute("print-object") != Some("no");
+                    parsed.arpeggio = Some(arpeggio);
+                }
+                "technical" => {
+                    for fingering in child.children_named("fingering") {
+                        let mut value = Fingering::new(fingering.text_trimmed());
+                        value.placement = placement(fingering.attribute("placement"));
+                        value.visible =
+                            visible && fingering.attribute("print-object") != Some("no");
+                        parsed.fingerings.push(value);
                     }
-                });
-                match child.attribute("type") {
-                    Some("start") => parsed.slurs.push((number, true, place, visible)),
-                    Some("stop") => parsed.slurs.push((number, false, place, visible)),
-                    _ => {}
                 }
-            }
-            "slide" | "glissando" => {
-                let number = number(child);
-                let wavy = child.name == "glissando";
-                let style = match child.attribute("line-type") {
-                    Some("dashed") => LineStyle::Dashed,
-                    Some("dotted") => LineStyle::Dotted,
-                    _ => LineStyle::Solid,
-                };
-                let mut glissando = Glissando::new(if wavy {
-                    GlissandoType::Wavy
-                } else {
-                    GlissandoType::Straight(style)
-                });
-                glissando.text = child.text_trimmed().to_owned();
-                glissando.show_text = !glissando.text.is_empty();
-                glissando.visible = visible && child.attribute("print-object") != Some("no");
-                match child.attribute("type") {
-                    Some("start") => parsed.glissandi.push((number, true, glissando)),
-                    Some("stop") => {
-                        let mut value = glissando;
-                        value.text.clear();
-                        value.show_text = false;
-                        parsed.glissandi.push((number, false, value));
+                "slur" => {
+                    let number = number(child);
+                    let place = placement(child.attribute("placement")).or_else(|| {
+                        match child.attribute("orientation") {
+                            Some("over") => Some(Placement::Above),
+                            Some("under") => Some(Placement::Below),
+                            _ => None,
+                        }
+                    });
+                    match child.attribute("type") {
+                        Some("start") => parsed.slurs.push((number, true, place, visible)),
+                        Some("stop") => parsed.slurs.push((number, false, place, visible)),
+                        _ => {}
                     }
-                    _ => {}
                 }
-            }
-            "wavy-line" => {
-                let number = number(child);
-                let start = child.attribute("type") == Some("start");
-                let stop = child.attribute("type") == Some("stop");
-                if start {
-                    let kind = TrillType::TrillLine;
-                    let mut trill = Trill::new(kind);
-                    trill.accidental = notations
-                        .children_named("accidental-mark")
-                        .next()
-                        .and_then(accidental_mark);
-                    if let Some((_, _, _, existing)) = parsed.trill.as_mut() {
-                        *existing = *existing || stop;
+                "slide" | "glissando" => {
+                    let number = number(child);
+                    let wavy = child.name == "glissando";
+                    let style = match child.attribute("line-type") {
+                        Some("dashed") => LineStyle::Dashed,
+                        Some("dotted") => LineStyle::Dotted,
+                        _ => LineStyle::Solid,
+                    };
+                    let mut glissando = Glissando::new(if wavy {
+                        GlissandoType::Wavy
                     } else {
-                        parsed.trill = Some((number, trill, true, stop));
+                        GlissandoType::Straight(style)
+                    });
+                    glissando.text = child.text_trimmed().to_owned();
+                    glissando.show_text = !glissando.text.is_empty();
+                    glissando.visible = visible && child.attribute("print-object") != Some("no");
+                    match child.attribute("type") {
+                        Some("start") => parsed.glissandi.push((number, true, glissando)),
+                        Some("stop") => {
+                            let mut value = glissando;
+                            value.text.clear();
+                            value.show_text = false;
+                            parsed.glissandi.push((number, false, value));
+                        }
+                        _ => {}
                     }
                 }
+                "wavy-line" => {
+                    let number = number(child);
+                    let start = child.attribute("type") == Some("start");
+                    let stop = child.attribute("type") == Some("stop");
+                    if start {
+                        let kind = TrillType::TrillLine;
+                        let mut trill = Trill::new(kind);
+                        trill.accidental = notations
+                            .children_named("accidental-mark")
+                            .next()
+                            .and_then(accidental_mark);
+                        if let Some((_, _, _, existing)) = parsed.trill.as_mut() {
+                            *existing = *existing || stop;
+                        } else {
+                            parsed.trill = Some((number, trill, true, stop));
+                        }
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
     if parsed.trill.is_none() && parsed.trill_mark {

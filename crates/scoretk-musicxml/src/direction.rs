@@ -182,6 +182,7 @@ pub(crate) fn read_direction(
     let mut sound_dal_segno: Option<String> = None;
     let mut symbol_words = String::new();
     let mut tbox_words: Option<(String, Option<f64>)> = None;
+    let mut words_font: Option<mscz2xml::model::LineFont> = None;
     let mut line_stops: BTreeMap<(SpannerTag, usize), (HookType, f64)> = BTreeMap::new();
     let mut wedge_spread: Option<f64> = None;
 
@@ -240,6 +241,7 @@ pub(crate) fn read_direction(
                             } else {
                                 words.push_str(kind.text_trimmed());
                                 words_markup.push_str(&formatted_words(kind));
+                                words_font = Some(line_font(kind));
                             }
                         }
                         "rehearsal" => {
@@ -378,19 +380,49 @@ pub(crate) fn read_direction(
     // Un texte de direction qui accompagne une ligne (`<dashes>`/`<bracket>`)
     // est le texte de début de cette ligne, pas un texte de portée.
     let mut words_for_line = false;
+    let mut dynamics_for_hairpin = false;
+    let mut words_for_hairpin = false;
     if !words.is_empty() {
         for start in starts.iter_mut() {
             if matches!(start.tag, SpannerTag::Dashes | SpannerTag::Bracket) {
                 if let Some(info) = start.text_line.as_mut() {
+                    info.system = system;
                     info.begin_text = Some(mscz2xml::model::RichText::new(words_markup.clone()));
                     words_for_line = true;
                 }
             }
         }
     }
+    for start in starts.iter_mut() {
+        if start.tag != SpannerTag::Wedge {
+            continue;
+        }
+        if let Some(hairpin) = start.hairpin.as_mut() {
+            if !dynamics.is_empty() {
+                hairpin.begin_text = dynamics
+                    .iter()
+                    .map(|(name, _)| dynamic_markup(name))
+                    .collect::<String>();
+                dynamics_for_hairpin = true;
+            } else if !words.is_empty() && !words_for_line {
+                hairpin.begin_text = words.clone();
+                if let Some(font) = &words_font {
+                    hairpin.begin_font = font.clone();
+                }
+                words_for_hairpin = true;
+            }
+        }
+    }
+    if stops.iter().any(|stop| stop.0 == SpannerTag::Wedge) {
+        if !dynamics.is_empty() {
+            dynamics_for_hairpin = true;
+        } else if !words.is_empty() {
+            words_for_hairpin = true;
+        }
+    }
 
     // Texte de portée, système ou repère de répétition.
-    if !repeat_consumed && !tempo_added && !words_for_line {
+    if !repeat_consumed && !tempo_added && !words_for_line && !words_for_hairpin {
         if !rehearsal_text.is_empty() {
             let mut mark = RehearsalMark::new(rehearsal_text);
             mark.placement = default_placement.unwrap_or(Placement::Above);
@@ -459,7 +491,11 @@ pub(crate) fn read_direction(
     }
 
     // Nuances.
-    for (text, custom) in dynamics {
+    for (text, custom) in if dynamics_for_hairpin {
+        Vec::new()
+    } else {
+        dynamics.clone()
+    } {
         let mut dynamic = Dynamic::new(text);
         dynamic.custom = custom;
         dynamic.placement = dynamic_placement
@@ -488,6 +524,22 @@ pub(crate) fn read_direction(
                 if let Some(info) = score.spanners[index].text_line.as_mut() {
                     info.end_hook = *hook;
                     info.end_hook_height = *height;
+                    info.system = system;
+                }
+            }
+            if stop.0 == SpannerTag::Wedge {
+                if let Some(hairpin) = score.spanners[index].hairpin.as_mut() {
+                    if !dynamics.is_empty() {
+                        hairpin.end_text = dynamics
+                            .iter()
+                            .map(|(name, _)| dynamic_markup(name))
+                            .collect::<String>();
+                    } else if !words.is_empty() {
+                        hairpin.end_text = words.clone();
+                        if let Some(font) = &words_font {
+                            hairpin.end_font = font.clone();
+                        }
+                    }
                 }
             }
         }
@@ -526,6 +578,22 @@ fn add_annotation(
     score.measures[measure_index].segments[index].add_annotation(track, annotation);
 }
 
+/// Police d'un `<words>` (`LineFont`), pour les textes de soufflet.
+fn line_font(element: &Element) -> mscz2xml::model::LineFont {
+    let mut font = mscz2xml::model::LineFont::default();
+    if let Some(family) = element.attribute("font-family") {
+        font.family = family.to_owned();
+    }
+    if let Some(size) = element.attribute("font-size") {
+        if let Ok(size) = size.parse::<f64>() {
+            font.size = size;
+        }
+    }
+    font.italic = element.attribute("font-style") == Some("italic");
+    font.bold = element.attribute("font-weight") == Some("bold");
+    font
+}
+
 /// Balisage MuseScore d'un `<words>` d'après ses attributs de format.
 ///
 /// Le modèle de texte ne stocke que du balisage : on rouvre donc `<i>`,
@@ -559,6 +627,33 @@ fn formatted_words(element: &Element) -> String {
         close.insert_str(0, "</font>");
     }
     format!("{open}{text}{close}")
+}
+
+/// Balisage MuseScore d'une nuance, pour le texte d'un soufflet.
+fn dynamic_markup(name: &str) -> String {
+    let p = "<sym>dynamicPiano</sym>";
+    let f = "<sym>dynamicForte</sym>";
+    let m = "<sym>dynamicMezzo</sym>";
+    let s = "<sym>dynamicSforzando</sym>";
+    let z = "<sym>dynamicZ</sym>";
+    match name {
+        "pppppp" => p.repeat(6),
+        "ppppp" => p.repeat(5),
+        "pppp" => p.repeat(4),
+        "ppp" => p.repeat(3),
+        "pp" => p.repeat(2),
+        "p" => p.to_owned(),
+        "mp" => format!("{m}{p}"),
+        "mf" => format!("{m}{f}"),
+        "f" => f.to_owned(),
+        "ff" => f.repeat(2),
+        "fff" => f.repeat(3),
+        "ffff" => f.repeat(4),
+        "fp" => format!("{f}{p}"),
+        "sfz" => format!("{s}{f}{z}"),
+        "sf" => format!("{s}{f}"),
+        other => other.to_owned(),
+    }
 }
 
 /// Placement depuis un attribut MusicXML.
