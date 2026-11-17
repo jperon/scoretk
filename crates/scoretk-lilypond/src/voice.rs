@@ -40,8 +40,8 @@
 use std::collections::BTreeMap;
 
 use mscz2xml::model::{
-    Annotation, BarLineType, ChordRest, Fraction, Measure, Score, SegmentType, SpannerType,
-    StaffId, Tick, Track, TupletId, VOICES,
+    Annotation, BarLineType, ChordRest, Fraction, JumpType, MarkerType, Measure, RepeatMark, Score,
+    SegmentType, SpannerType, StaffId, Tick, Track, TupletId, VOICES,
 };
 
 use crate::chord;
@@ -227,6 +227,50 @@ pub(crate) fn render_body(
                         attach_post(&mut post_by_item, &items, event);
                     }
                 }
+            }
+        }
+    }
+
+    // Marqueurs et sauts de reprise (`Measure::el()`) : MuseScore les range
+    // dans la première partie, et LilyPond n'a qu'un `\mark` par instant.
+    if voice == 0 && staff == 0 {
+        for measure in &score.measures {
+            for mark in &measure.repeat_marks {
+                let event = match mark {
+                    RepeatMark::Marker(marker) => {
+                        let plain = if marker.text.trim().is_empty() {
+                            marker_name(marker.kind).to_owned()
+                        } else {
+                            marker.text.trim().to_owned()
+                        };
+                        let tick = if marker.kind.is_start_marker() {
+                            measure.start_tick
+                        } else {
+                            measure.end_tick()
+                        };
+                        Event::new(
+                            tick,
+                            before::MARK,
+                            format!("\\mark {}", text::markup(&text::escape(&plain))),
+                        )
+                    }
+                    RepeatMark::Jump(jump) => {
+                        let plain = if jump.text.trim().is_empty() {
+                            jump_name(jump.kind).to_owned()
+                        } else {
+                            jump.text.trim().to_owned()
+                        };
+                        Event::new(
+                            measure.end_tick(),
+                            before::MARK,
+                            format!("\\mark {}", text::markup(&text::escape(&plain))),
+                        )
+                    }
+                };
+                if event.text == "\\mark \\markup { \"\" }" {
+                    continue;
+                }
+                attach_mark(&mut pre_by_item, &mut post_by_item, &items, event);
             }
         }
     }
@@ -535,6 +579,39 @@ fn collect_items(score: &Score, staff: usize, voice: usize) -> Vec<Item<'_>> {
 fn attach_post(post_by_item: &mut [Vec<Event>], items: &[Item<'_>], event: Event) {
     if let Some(index) = post_target(items, event.tick) {
         post_by_item[index].push(event);
+    }
+}
+
+/// Nom affichable d'un marqueur quand le fichier n'en donne pas.
+fn marker_name(kind: MarkerType) -> &'static str {
+    match kind {
+        MarkerType::Segno | MarkerType::VarSegno => "Segno",
+        MarkerType::Coda | MarkerType::VarCoda => "Coda",
+        MarkerType::Codetta => "Codetta",
+        MarkerType::Fine => "Fine",
+        MarkerType::ToCoda | MarkerType::ToCodaSym => "To Coda",
+        MarkerType::DaCoda => "Da Coda",
+        MarkerType::DaDoubleCoda => "Da Double Coda",
+        MarkerType::User => "",
+    }
+}
+
+/// Nom affichable d'un saut quand le fichier n'en donne pas.
+fn jump_name(kind: JumpType) -> &'static str {
+    match kind {
+        JumpType::Dc => "D.C.",
+        JumpType::DcAlFine => "D.C. al Fine",
+        JumpType::DcAlCoda => "D.C. al Coda",
+        JumpType::DsAlCoda => "D.S. al Coda",
+        JumpType::DsAlFine => "D.S. al Fine",
+        JumpType::Ds => "D.S.",
+        JumpType::DcAlDoubleCoda => "D.C. al Double Coda",
+        JumpType::DsAlDoubleCoda => "D.S. al Double Coda",
+        JumpType::Dss => "D.S.S.",
+        JumpType::DssAlCoda => "D.S.S. al Coda",
+        JumpType::DssAlDoubleCoda => "D.S.S. al Double Coda",
+        JumpType::DssAlFine => "D.S.S. al Fine",
+        JumpType::User => "",
     }
 }
 

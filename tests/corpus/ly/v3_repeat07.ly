@@ -11,9 +11,9 @@ staffOneVoiceOne = \fixed c' {
   \tempo 4 = 400 c1 ^\markup { "1,2,3,4,5,6   1,2,3" } |
   d1 |
   e1 |
-  f1 |
+  \mark \markup { "Fine" } f1 |
   g1 |
-  c'1 \bar "|."
+  \mark \markup { "D.C. al Fine" } c'1 \bar "|."
 }
 
 \score {

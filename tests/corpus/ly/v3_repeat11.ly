@@ -10,8 +10,8 @@ staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
   \tempo 4 = 400 c'1 ^\markup { "1,2,3,4   2,3   5,6,7,8   2   9,10" } |
   \repeat volta 2 {
-    b1 |
-    a1 |
+    \mark \markup { "segno" } b1 |
+    \mark \markup { "To Coda" } a1 |
   }
   \alternative {
     {
@@ -25,7 +25,7 @@ staffOneVoiceOne = \fixed c' {
   d1 |
   c1 |
   \break
-  d'1 |
+  \mark \markup { "D.S. al Coda" } d'1 ^\markup { "coda" } |
   c'1 \bar "|."
 }
 

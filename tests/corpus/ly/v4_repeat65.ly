@@ -18,7 +18,7 @@ staffOneVoiceOne = \fixed c' {
       f1 |
     }
     {
-      g1 ^\markup { "3x" } \bar "|."
+      \mark \markup { "D.C." } g1 ^\markup { "3x" } \bar "|."
     }
   }
 }

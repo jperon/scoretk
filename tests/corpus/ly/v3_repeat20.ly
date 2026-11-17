@@ -8,15 +8,16 @@
 
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
-  \tempo 4 = 400 c1 ^\markup { "1,2,3   1   4,5,6,7,8   5,6" } |
-  d1 |
+  \tempo 4 = 400 \mark \markup { "segno" }
+  c1 ^\markup { "1,2,3   1   4,5,6,7,8   5,6" } |
+  \mark \markup { "To Coda" } d1 |
   e1 |
-  f1 |
+  \mark \markup { "D.S. al Coda" } f1 ^\markup { "coda" } |
   \break
   g1 |
-  a1 |
-  b1 |
-  c'1 \bar "|."
+  \mark \markup { "segno1" } a1 |
+  \mark \markup { "Fine" } b1 |
+  \mark \markup { "D.S.1 al Fine" } c'1 \bar "|."
 }
 
 \score {
