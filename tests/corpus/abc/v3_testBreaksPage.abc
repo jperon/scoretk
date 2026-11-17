@@ -1,0 +1,12 @@
+%abc-2.1
+X:1
+T:
+M:4/4
+L:1/8
+K:C clef=treble
+V:1 name="Voice" clef=treble
+"^First system (no frames above)"Z |
+"^After page break"Z |
+"^After page break in vframe"Z |
+"^After page break in tframe"Z |
+"^After page break in hframe"Z |]

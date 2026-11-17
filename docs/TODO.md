@@ -11,7 +11,7 @@ cinq formats de partition ; **mscz2xml** en est le premier convertisseur
 | MuseScore (`.mscz` / `.mscx`, 3.x et 4.x) | fait | fait (`scoretk-mscx`) |
 | MusicXML (`.musicxml` / `.mxl`) | fait (noyau, cf. `docs/agents/musicxml-import.md`) | fait |
 | LilyPond (`.ly`) | fait (sous-ensemble, t40) | fait (`scoretk-lilypond`, t36) |
-| ABC (`.abc`) | à faire | à faire |
+| ABC (`.abc`) | fait (`scoretk-abc`, t41) | fait (`scoretk-abc`, t41) |
 | MIDI (`.mid`) | à faire | fait (`scoretk-midi`) |
 
 Toutes les combinaisons doivent fonctionner : mscz ↔ musicxml, musicxml ↔ ly,
@@ -22,11 +22,12 @@ ly, abc et midi.
 
 | Crate | Rôle | État |
 | --- | --- | --- |
-| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : lecture `.mscz`/`.mscx`/MusicXML, écriture MusicXML/`.mxl`/`.mscx`/`.mscz`/`.ly`/`.mid` ; les quatre features (`musicxml-import`, `midi`, `lilypond`, `mscx`) sont activées par la CLI ; lecture `.ly` par `lilypond-import` (t40), pas encore activée par la CLI |
+| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : lecture `.mscz`/`.mscx`/MusicXML/`.ly`/ABC, écriture MusicXML/`.mxl`/`.mscx`/`.mscz`/`.ly`/`.mid`/`.abc` ; les six features (`musicxml-import`, `midi`, `lilypond`, `lilypond-import`, `mscx`, `abc`) sont activées par la CLI |
 | `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | fait (t34, t37) : noyau 26/30 v3 et 26/26 v4, parité complète 23/30 et 21/26 (écarts dans `docs/agents/musicxml-import.md`) |
 | `scoretk-midi` | écrivain MIDI depuis le modèle pivot | fait (t35) |
 | `scoretk-lilypond` | écrivain et lecteur LilyPond depuis/vers le modèle pivot | fait (t36, t40) : 56/56 fichiers compilent, aller-retour noyau 24/56 (t40) |
 | `scoretk-mscx` | écrivain MuseScore (`.mscx` 4.x, `.mscz`) | fait (t38) : aller-retour identique sur tout le corpus |
+| `scoretk-abc` | lecteur et écrivain ABC (`.abc`) | fait (t41) : 56/56 instantanés, aller-retour noyau 46/56, écarts dans `docs/agents/abc.md` |
 
 MIDI est à part : c'est un format de performance, pas de notation. L'écriture
 MIDI demande de dérouler les reprises et sauts (comme `RepeatList` de

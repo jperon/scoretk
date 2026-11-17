@@ -1,0 +1,11 @@
+%abc-2.1
+X:1
+T:selection-filter-dynamics
+M:4/4
+L:1/8
+K:C clef=treble
+V:1 name="Violin" clef=treble
+!f!c2!<(!d2e2!<)!f2 |
+Z |
+Z |
+Z |]

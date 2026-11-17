@@ -1,0 +1,25 @@
+%abc-2.1
+X:1
+T:
+M:4/4
+L:1/8
+K:C
+%%score 1 2
+V:1 name="Flute" clef=treble
+|: !<(!E8 |
+!<)!G8 |
+A8 |
+F8 |
+G8 |
+D8 |
+[1 G8 :|
+[2 B8 |]
+V:2 name="B♭ Clarinet" clef=treble
+[K:D clef=treble] |: B8 |
+E8 |
+!>(!G8 |
+!>)!E8 |
+F8 |
+B8 |
+F8 :|
+G8 |]

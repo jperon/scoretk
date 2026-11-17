@@ -56,9 +56,10 @@ impl fmt::Display for Sens {
 
 /// Format de partition manipulé par scoretk.
 ///
-/// `Ly` est reconnu (extension et contenu) et lu avec la feature
-/// `lilypond-import`, écrit avec `lilypond`. `Abc` n'a ni lecteur ni écrivain. [`read`](crate::read) et [`write`](crate::write) renvoient alors
-/// [`Error::FormatNonPrisEnCharge`].
+/// `Ly` est reconnu (extension et contenu), lu avec la feature
+/// `lilypond-import` et écrit avec `lilypond`. `Abc` se lit et s'écrit avec
+/// la feature `abc`. [`read`](crate::read) et [`write`](crate::write)
+/// renvoient [`Error::FormatNonPrisEnCharge`] quand la feature manque.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Format {
     /// Conteneur MuseScore compressé (`.mscz`, archive ZIP avec un `.mscx`).
@@ -117,28 +118,31 @@ impl Format {
 
     /// Vrai si [`read`](crate::read) sait lire ce format aujourd'hui.
     ///
-    /// MusicXML dépend de la feature `musicxml-import`, MIDI n'a pas encore de
-    /// lecteur.
+    /// MusicXML dépend de la feature `musicxml-import`, LilyPond de la
+    /// feature `lilypond-import`, ABC de la feature `abc`, MIDI n'a pas
+    /// encore de lecteur.
     pub const fn supports_read(self) -> bool {
         match self {
             Self::Mscz | Self::Mscx => true,
             Self::MusicXml => cfg!(feature = "musicxml-import"),
             Self::Ly => cfg!(feature = "lilypond-import"),
-            Self::Mxl | Self::Abc | Self::Midi => false,
+            Self::Abc => cfg!(feature = "abc"),
+            Self::Mxl | Self::Midi => false,
         }
     }
 
     /// Vrai si [`write`](crate::write) sait écrire ce format aujourd'hui.
     ///
     /// MuseScore (`.mscx`, `.mscz`) dépend de la feature `mscx`, MIDI de la
-    /// feature `midi`, LilyPond de la feature `lilypond`.
+    /// feature `midi`, LilyPond de la feature `lilypond`, ABC de la feature
+    /// `abc`.
     pub const fn supports_write(self) -> bool {
         match self {
             Self::MusicXml | Self::Mxl => true,
             Self::Mscz | Self::Mscx => cfg!(feature = "mscx"),
             Self::Midi => cfg!(feature = "midi"),
             Self::Ly => cfg!(feature = "lilypond"),
-            Self::Abc => false,
+            Self::Abc => cfg!(feature = "abc"),
         }
     }
 

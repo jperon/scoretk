@@ -1,0 +1,18 @@
+%abc-2.1
+X:1
+T:
+M:4/4
+L:1/8
+Q:" = 400" 1/4=400
+K:C clef=treble
+V:1 name="Piano" clef=treble
+"^ = 400"c8 |
+|: B8 |
+A8 |
+[1 G8 :|
+[2 F8 |
+E8 |
+D8 |
+C8 |
+d8 |
+c8 |]

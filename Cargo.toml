@@ -5,6 +5,7 @@ members = [
     "crates/mscz2xml-cli",
     "crates/mscz2xml-wasm",
     "crates/scoretk",
+    "crates/scoretk-abc",
     "crates/scoretk-cli",
     "crates/scoretk-lilypond",
     "crates/scoretk-midi",

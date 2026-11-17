@@ -1,0 +1,55 @@
+%abc-2.1
+X:1
+T:voices
+M:4/4
+L:1/8
+K:Ab
+%%score {(1 2 3) 4} (5 6)
+V:1 name="Piano" clef=treble
+!pp!Z |
+!<(!!<)!Z |
+"Eb7"Z |
+[M:2/4] Z |
+Z |
+[K:G clef=treble] Z |
+[M:4/4] [K:Eb clef=treble] Z |]
+V:2 name="Piano" clef=treble
+A2B2c2z2 |
+E2E2!2!E2!accent!E2 |
+E2E2E2E2 |
+[M:2/4] (E2E2 |
+E2E2) |
+[K:G clef=treble] _E2-E2 |
+[M:4/4] [K:Eb clef=treble] E2z4z2 |]
+V:3 name="Piano" clef=treble
+e2f2g2a2 |
+Z |
+e2e2e2e2 |
+[M:2/4] Z |
+Z |
+[K:G clef=treble] Z |
+[M:4/4] [K:Eb clef=treble] Z |]
+V:4 name="Piano" clef=bass
+Z |
+Z |
+G,2=A,2=B,2z2 |
+[M:2/4] Z |
+Z |
+[K:G clef=bass] Z |
+[M:4/4] [K:Eb clef=bass] Z |]
+V:5 name="Trombone" clef=bass
+Z |
+Z |
+G,4G,4 |
+[M:2/4] =B,4 |
+Z |
+[K:G clef=bass] Z |
+[M:4/4] [K:Eb clef=bass] Z |]
+V:6 name="Trombone" clef=bass
+C,2=D,2=E,2z2 |
+G,,2G,,2!2!G,,2!accent!G,,2 |
+G,,2G,,2G,,2G,,2 |
+[M:2/4] (G,,2G,,2 |
+G,,2G,,2) |
+[K:G clef=bass] G,,2-G,,2 |
+[M:4/4] [K:Eb clef=bass] G,,2z4z2 |]

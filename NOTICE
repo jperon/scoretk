@@ -48,6 +48,7 @@ Correspondance des grands ensembles :
 | `crates/scoretk-midi/src/` | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/` (`compatmidirender*.cpp`, `velocitymap.cpp`, `pausemap.cpp`) et `engraving/dom/repeatlist.cpp` |
 | `crates/scoretk-lilypond/src/` | sémantique de `engraving/dom/` (accords, mesures, volatas, spanners) ; tables de notation de `musicxml2ly` (voir ci-dessous) |
 | `crates/scoretk-mscx/src/` | `engraving/rw/write/` (`writer.cpp`, `staffwrite.cpp`, `measurewrite.cpp`, `twrite.cpp`, `connectorinfowriter.cpp`), `engraving/rw/xmlwriter.cpp` et `engraving/infrastructure/mscwriter.cpp` |
+| `crates/scoretk-abc/src/` | sémantique du modèle `engraving/dom/` ; pas de source MuseScore pour ABC (MuseScore n'a ni import ni export ABC) ; comportement de `xml2abc.py`/`abc2xml.py` (voir ci-dessous) |
 
 Les tables de conversion de noms (`read302/tables.rs`, `read4xx/names.rs`)
 reprennent `TConv::fromXml` de `engraving/rw/types/typesconv.cpp` — fichier
@@ -97,6 +98,30 @@ compatible avec la distribution du présent projet sous GPL-3.0-only.
 
 Procédure de mise à niveau : `docs/agents/lilypond.md` § 8 à § 10.
 
+## Code et comportements repris depuis xml2abc et abc2xml
+
+MuseScore Studio n'a pas d'import ni d'export ABC natif. Le crate
+`scoretk-abc` suit la norme **ABC 2.1**
+(<https://abcnotation.com/wiki/abc:standard:v2.1>) et le comportement des
+scripts de **Willem Vree** :
+
+- `xml2abc.py` (MusicXML → ABC), version **177**, `Copyright (C) 2012-2025:
+  W.G. Vree`, téléchargé le 2026-11-17 depuis
+  <https://wim.vree.org/svgParse/xml2abc.html> ;
+- `abc2xml.py` (ABC → MusicXML), version **269**, `Copyright (C) 2012-2026:
+  Willem G. Vree`, téléchargé le 2026-11-17 depuis
+  <https://wim.vree.org/svgParse/abc2xml.html> ;
+- leurs en-têtes déclarent la « Lesser GNU General Public License as published
+  by the Free Software Foundation », **sans numéro de version**. La LGPL 2.1
+  § 3 autorise la conversion en GPL ; la distribution reste en
+  **GPL-3.0-only**.
+- Nature de la reprise : **réécriture en Rust** du comportement observé
+  (grammaire `%%score`, décorations, n-olets, paroles, modes de `K:`), sans
+  copie de ligne. Aucun script de Willem Vree n'est distribué dans ce dépôt.
+  L'attribution figure aussi dans l'en-tête des fichiers de
+  `crates/scoretk-abc/src/` et dans `docs/agents/abc.md` (§ 9 pour la mise à
+  niveau).
+
 ## Données reprises
 
 ### Corpus de tests
@@ -118,6 +143,10 @@ Procédure de mise à niveau : `docs/agents/lilypond.md` § 8 à § 10.
   sur le corpus, produits par la crate elle-même (commande
   `UPDATE_LILYPOND_SNAPSHOTS=1 cargo test -p scoretk-lilypond`). Œuvre du
   projet, licence GPL-3.0-only.
+- `tests/corpus/abc/**/*.abc` : instantanés de la sortie de `scoretk-abc`
+  sur le corpus, produits par la crate elle-même (commande
+  `UPDATE_ABC_SNAPSHOTS=1 cargo test -p scoretk-abc --test corpus_abc`).
+  Œuvre du projet, licence GPL-3.0-only.
 
 ### Table des instruments
 

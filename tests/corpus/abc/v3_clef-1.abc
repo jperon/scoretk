@@ -1,0 +1,23 @@
+%abc-2.1
+X:1
+T:
+M:3/4
+L:1/8
+K:C
+%%score {1 2}
+V:1 name="Piano" clef=treble
+C,2D,2E,2 |
+E,2z4 |
+Z |
+Z |
+Z |
+Z |
+Z |]
+V:2 name="Piano" clef=bass
+c2d2e2 |
+Z |
+Z |
+Z |
+Z |
+Z |
+Z |]

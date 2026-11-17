@@ -57,8 +57,8 @@ Rien ne correspond → `None` (la CLI demande alors `--from`).
 ### Limites actuelles
 
 État de la **bibliothèque** selon les features ; la CLI `scoretk` active les
-quatre (`musicxml-import`, `midi`, `lilypond`, `mscx`), et c'est cet état que
-montre son `--list-formats`.
+six (`musicxml-import`, `midi`, `lilypond`, `lilypond-import`, `mscx`, `abc`),
+et c'est cet état que montre son `--list-formats`.
 
 | Format | Lecture | Écriture |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ montre son `--list-formats`.
 | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` (t34) | oui |
 | MusicXML `.mxl` | non | oui |
 | LilyPond `.ly` | oui (feature `lilypond-import`, t40) | oui (feature `lilypond`, `scoretk-lilypond`) |
-| ABC | non | non |
+| ABC `.abc` | oui (feature `abc`, `scoretk-abc`) | oui (feature `abc`, `scoretk-abc`) |
 | MIDI | non | oui (feature `midi`, `scoretk-midi`) |
 
 Un format absent dans le sens demandé renvoie
@@ -120,6 +120,15 @@ que l'écriture), `hooks::read_lilypond(bytes)` décode l'UTF-8 puis appelle
 feature est active. Le sous-ensemble lu, ses limites et l'aller-retour mesuré
 sont dans `docs/agents/lilypond.md`.
 
+### t41 — lecture et écriture ABC (`crates/scoretk-abc`)
+
+**Branché** : dépendance optionnelle `scoretk-abc`, feature
+`abc = ["dep:scoretk-abc"]`, variante d'erreur `Abc`, et fonctions
+`hooks::read_abc`/`hooks::write_abc` (conversion UTF-8 et erreurs). La CLI
+active la feature : `scoretk entrée.mscx -o sortie.abc` et
+`scoretk entrée.abc -o sortie.musicxml` fonctionnent. Détail du sous-ensemble,
+des limites et de l'aller-retour mesuré : `docs/agents/abc.md`.
+
 ### t36 — écriture LilyPond (`crates/scoretk-lilypond`)
 
 **Branché** : dépendance optionnelle, `lilypond = ["dep:scoretk-lilypond"]`,
@@ -128,8 +137,8 @@ convertit l'erreur en `Error::LilyPond`. La CLI active la feature : `scoretk
 entrée.mscx -o sortie.ly` fonctionne. Détail de la correspondance et limites :
 `docs/agents/lilypond.md`.
 
-La lecture MIDI et ABC n'ont pas encore de point d'accroche : elles suivront
-le même modèle (une variante de feature, une fonction dans `hooks.rs`).
+La lecture MIDI n'a pas encore de point d'accroche : elle suivra le même
+modèle (une variante de feature, une fonction dans `hooks.rs`).
 
 ## 4. CLI
 
@@ -142,6 +151,9 @@ scoretk entrée.musicxml -o sortie.mscx      # lecture MusicXML (feature)
 scoretk entrée.musicxml -o sortie.ly        # MusicXML → LilyPond
 scoretk entrée.musicxml -o sortie.mid       # MusicXML → MIDI
 scoretk entrée.mscx -o sortie.mid           # MuseScore → MIDI
+scoretk entrée.ly -o sortie.musicxml        # LilyPond (sous-ensemble) → MusicXML
+scoretk entrée.mscx -o sortie.abc           # MuseScore → ABC
+scoretk entrée.abc -o sortie.musicxml       # ABC → MusicXML
 cat entrée.mscx | scoretk - --from mscx --to musicxml
 scoretk --list-formats                      # formats et sens pris en charge
 scoretk --version                           # version + licence (GPL-3.0-only)
@@ -161,7 +173,8 @@ scoretk --version                           # version + licence (GPL-3.0-only)
 - `packages.scoretk` construit la CLI (`cargoExtraArgs = "-p scoretk-cli"`).
 - `apps.scoretk` la rend exécutable par `nix run .#scoretk -- …`.
 - `packages.default` reste `mscz2xml` (pas de changement de défaut).
-- Le check `wasm32-unknown-unknown` compile `-p mscz2xml -p scoretk`.
+- Le check `wasm32-unknown-unknown` compile `-p mscz2xml -p scoretk -p
+  scoretk-abc -p scoretk-midi -p scoretk-lilypond -p scoretk-mscx`.
 
 ## 6. Tests
 
@@ -171,6 +184,13 @@ scoretk --version                           # version + licence (GPL-3.0-only)
   octet** à `mscz2xml::convert` sur le corpus (`dynamics`, `hairpin_simple`,
   `hairpins_and_repeats`), `.mxl` (container + `score.xml`), erreurs explicites
   des formats non branchés.
+- `crates/scoretk/tests/abc.rs` (feature `abc`) : lecture ABC, écriture,
+  relecture et nombre de notes stable ; `crates/scoretk-cli/tests/abc.rs` :
+  `.mscx` → `.abc`, `.abc` → MusicXML, stdin/stdout, `--list-formats`.
+- `crates/scoretk-cli/tests/lilypond.rs` : `.ly` en `\relative` → MusicXML et
+  `--list-formats` avec la lecture LilyPond active.
+- `crates/scoretk-abc/tests/` : airs écrits à la main, instantanés du corpus,
+  aller-retour noyau (`EXPECTED_ROUNDTRIP`), outils externes.
 - `crates/scoretk/tests/mscx.rs` (feature `mscx`) : écriture `.mscx` relue
   avec un modèle identique, sortie MusicXML identique, `.mscz` détecté et relu,
   version `4.70`.
