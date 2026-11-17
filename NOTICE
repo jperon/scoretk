@@ -47,6 +47,7 @@ Correspondance des grands ensembles :
 | `crates/mscz2xml/src/export/writer.rs` | forme d'écriture XML de `engraving/rw/xmlwriter.cpp` |
 | `crates/scoretk-midi/src/` | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/` (`compatmidirender*.cpp`, `velocitymap.cpp`, `pausemap.cpp`) et `engraving/dom/repeatlist.cpp` |
 | `crates/scoretk-lilypond/src/` | sémantique de `engraving/dom/` (accords, mesures, volatas, spanners) ; tables de notation de `musicxml2ly` (voir ci-dessous) |
+| `crates/scoretk-mscx/src/` | `engraving/rw/write/` (`writer.cpp`, `staffwrite.cpp`, `measurewrite.cpp`, `twrite.cpp`, `connectorinfowriter.cpp`), `engraving/rw/xmlwriter.cpp` et `engraving/infrastructure/mscwriter.cpp` |
 
 Les tables de conversion de noms (`read302/tables.rs`, `read4xx/names.rs`)
 reprennent `TConv::fromXml` de `engraving/rw/types/typesconv.cpp` — fichier

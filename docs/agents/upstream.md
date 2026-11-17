@@ -185,6 +185,24 @@ chemins Rust y sont relatifs à `crates/scoretk-musicxml/src/`.
 
 Les écarts de cet import sont suivis dans `docs/agents/musicxml-import.md`.
 
+### Écriture MuseScore (`crates/scoretk-mscx/src/`)
+
+Cette crate est hors de `crates/mscz2xml` mais porte le même code amont ; les
+chemins Rust y sont relatifs à `crates/scoretk-mscx/src/`.
+
+| Rust | C++ amont |
+| --- | --- |
+| `write/writer.rs` | `engraving/rw/write/writer.cpp` (`Writer::writeScore`) |
+| `write/staffwrite.rs` | `engraving/rw/write/staffwrite.cpp`, `engraving/dom/` (parties, portées, cadres, crédits) |
+| `write/measurewrite.rs` | `engraving/rw/write/measurewrite.cpp` (`MeasureWrite::writeMeasure`) |
+| `write/twrite.rs` | `engraving/rw/write/twrite.cpp` (`TWrite::writeItem`, `writeProperties`) |
+| `write/connectorinfowriter.rs` | `engraving/rw/write/connectorinfowriter.cpp` |
+| `write/context.rs` | `engraving/rw/write/writecontext.h` |
+| `xmlwriter.rs` | `engraving/rw/xmlwriter.cpp` |
+| `names.rs` | `engraving/types/types.h`, `engraving/rw/` (tables `TConv::toXml`) |
+| `text.rs` | `engraving/dom/textbase.cpp` (écriture du balisage) |
+| `container.rs` | `engraving/infrastructure/mscwriter.cpp` |
+
 ### Écriture MIDI (`crates/scoretk-midi/src/`)
 
 | Rust | C++ amont |

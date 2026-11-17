@@ -126,11 +126,10 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
         }
     }
 
-    // `Format::Ly` n'est pas listé : la CLI active la feature `lilypond`, et
-    // la résolution de features du workspace l'active donc aussi ici. Le cas
-    // sans feature est couvert par `ecriture_lilypond_en_mode_fixed` quand
-    // elle est présente.
-    for format in [Format::Mscz, Format::Mscx, Format::Abc] {
+    // Seul ABC reste sans écrivain. MuseScore et LilyPond dépendent de
+    // features que la CLI active (`mscx`, `lilypond`) : la résolution de
+    // features du workspace les active donc aussi ici.
+    for format in [Format::Abc] {
         match write(&score, format, &options()) {
             Err(Error::FormatNonPrisEnCharge {
                 format: actual,
@@ -141,6 +140,27 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
             }
             other => panic!("écriture {format} : {other:?}"),
         }
+    }
+
+    // MuseScore (`.mscx`/`.mscz`) n'est écrit que si la feature `mscx` est
+    // active ; sans elle, la façade renvoie l'erreur explicite.
+    #[cfg(not(feature = "mscx"))]
+    for format in [Format::Mscz, Format::Mscx] {
+        match write(&score, format, &options()) {
+            Err(Error::FormatNonPrisEnCharge {
+                format: actual,
+                sens,
+            }) => {
+                assert_eq!(actual, format);
+                assert_eq!(sens, Sens::Ecriture);
+            }
+            other => panic!("écriture {format} : {other:?}"),
+        }
+    }
+    #[cfg(feature = "mscx")]
+    for format in [Format::Mscz, Format::Mscx] {
+        assert!(write(&score, format, &options()).is_ok(), "{format}");
+        assert!(format.supports_write());
     }
 }
 

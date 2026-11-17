@@ -237,3 +237,66 @@ fn mscx_vers_lilypond() {
     assert!(!texte.contains("\\relative"), "{texte}");
     let _ = std::fs::remove_file(sortie);
 }
+
+#[test]
+fn mscx_ecrit_et_relu_donne_le_meme_musicxml() {
+    let dir = temp_dir();
+    let written = dir.join("copie.mscx");
+    let direct = dir.join("direct.musicxml");
+    let relu = dir.join("relu.musicxml");
+
+    let output = binary()
+        .arg(corpus("dynamics.mscx"))
+        .arg("-o")
+        .arg(&written)
+        .output()
+        .expect("exécution");
+    assert!(output.status.success(), "{:?}", output.stderr);
+    let text = std::fs::read_to_string(&written).expect("sortie .mscx");
+    assert!(text.contains("<museScore version=\"4.70\">"), "{text}");
+
+    let export = |input: &Path, output: &Path| {
+        let status = binary()
+            .arg(input)
+            .args(["--to", "musicxml", "--encoding-date", "2026-11-17"])
+            .arg("-o")
+            .arg(output)
+            .status()
+            .expect("exécution");
+        assert!(status.success());
+        std::fs::read(output).expect("sortie MusicXML")
+    };
+    let expected = export(&corpus("dynamics.mscx"), &direct);
+    let actual = export(&written, &relu);
+    assert_eq!(
+        expected, actual,
+        "l'aller-retour .mscx doit donner le même MusicXML"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn mscz_ecrit_et_relu_par_mscz2xml() {
+    let dir = temp_dir();
+    let written = dir.join("copie.mscz");
+    let output = binary()
+        .arg(corpus("hairpin_simple.mscx"))
+        .arg("-o")
+        .arg(&written)
+        .output()
+        .expect("exécution");
+    assert!(output.status.success(), "{:?}", output.stderr);
+
+    let archive = std::fs::read(&written).expect("sortie .mscz");
+    let container = mscz2xml::MsczContainer::from_bytes(&archive).expect("conteneur .mscz");
+    assert_eq!(container.version().expect("version").to_string(), "4.70");
+    assert_eq!(container.main_mscx_name(), "score.mscx");
+    let score = mscz2xml::read::read_score(&container).expect("relecture");
+    let options = mscz2xml::ExportOptions {
+        encoding_date: "2026-11-17".to_owned(),
+        ..mscz2xml::ExportOptions::default()
+    };
+    let xml = mscz2xml::export::export_musicxml_with(&score, &options).expect("export");
+    assert!(xml.contains("<score-partwise"));
+    let _ = std::fs::remove_dir_all(dir);
+}

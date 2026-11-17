@@ -9,6 +9,7 @@ members = [
     "crates/scoretk-lilypond",
     "crates/scoretk-midi",
     "crates/scoretk-musicxml",
+    "crates/scoretk-mscx",
 ]
 
 [workspace.package]

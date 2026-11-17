@@ -13,9 +13,11 @@ name = "scoretk"
 path = "src/main.rs"
 
 [dependencies]
-# L'écriture LilyPond est branchée par défaut dans la CLI : `scoretk
-# entrée.mscz -o sortie.ly` fonctionne sans option de compilation.
-scoretk = { path = "../scoretk", features = ["lilypond"] }
+# Les écrivains MuseScore (`.mscx`/`.mscz`) et LilyPond sont branchés par
+# défaut dans la CLI : `scoretk entrée.mscz -o sortie.ly` et
+# `scoretk entrée.musicxml -o sortie.mscx` fonctionnent sans option de
+# compilation.
+scoretk = { path = "../scoretk", features = ["lilypond", "mscx"] }
 clap = { workspace = true }
 
 [dev-dependencies]

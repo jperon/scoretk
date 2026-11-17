@@ -66,4 +66,8 @@ pub enum Error {
     /// Erreur renvoyée par la crate d'écriture LilyPond (feature `lilypond`).
     #[error("écriture LilyPond : {0}")]
     LilyPond(String),
+
+    /// Erreur renvoyée par la crate d'écriture MuseScore (feature `mscx`).
+    #[error("écriture MuseScore : {0}")]
+    Mscx(String),
 }

@@ -26,12 +26,20 @@
 //! - feature `midi` : crate `scoretk-midi` (t35), fonction
 //!   `write_midi(&Score) -> Result<Vec<u8>>` ;
 //! - feature `lilypond` : crate `scoretk-lilypond` (t36), fonction
-//!   `write_lilypond(&Score) -> Result<String>`.
+//!   `write_lilypond(&Score) -> Result<String>` ;
+//! - feature `mscx` : crate `scoretk-mscx` (t38), fonctions
+//!   `write_mscx(&Score) -> Result<String>` et
+//!   `write_mscz(&Score) -> Result<Vec<u8>>`.
 
 use mscz2xml::model::Score;
 
 use crate::error::Error;
-#[cfg(not(all(feature = "musicxml-import", feature = "midi", feature = "lilypond")))]
+#[cfg(not(all(
+    feature = "musicxml-import",
+    feature = "midi",
+    feature = "lilypond",
+    feature = "mscx"
+)))]
 use crate::format::{Format, Sens};
 use crate::Result;
 
@@ -72,6 +80,34 @@ pub(crate) fn write_lilypond(score: &Score) -> Result<Vec<u8>> {
 pub(crate) fn write_lilypond(_score: &Score) -> Result<Vec<u8>> {
     Err(Error::FormatNonPrisEnCharge {
         format: Format::Ly,
+        sens: Sens::Ecriture,
+    })
+}
+
+#[cfg(feature = "mscx")]
+pub(crate) fn write_mscx(score: &Score) -> Result<Vec<u8>> {
+    scoretk_mscx::write_mscx(score)
+        .map(String::into_bytes)
+        .map_err(|error| Error::Mscx(error.to_string()))
+}
+
+#[cfg(not(feature = "mscx"))]
+pub(crate) fn write_mscx(_score: &Score) -> Result<Vec<u8>> {
+    Err(Error::FormatNonPrisEnCharge {
+        format: Format::Mscx,
+        sens: Sens::Ecriture,
+    })
+}
+
+#[cfg(feature = "mscx")]
+pub(crate) fn write_mscz(score: &Score) -> Result<Vec<u8>> {
+    scoretk_mscx::write_mscz(score).map_err(|error| Error::Mscx(error.to_string()))
+}
+
+#[cfg(not(feature = "mscx"))]
+pub(crate) fn write_mscz(_score: &Score) -> Result<Vec<u8>> {
+    Err(Error::FormatNonPrisEnCharge {
+        format: Format::Mscz,
         sens: Sens::Ecriture,
     })
 }
