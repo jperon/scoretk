@@ -28,8 +28,8 @@
 //! dans le langage : c'est l'interpréteur qui les replace sur la trame.
 
 use mscz2xml::model::{
-    ArpeggioType, ArticulationType, ClefType, FermataType, GraceType, KeyMode, NoteHeadGroup,
-    OrnamentType, Placement, TremoloKind,
+    ArpeggioType, ArticulationType, ClefType, GraceType, KeyMode, NoteHeadGroup, OrnamentType,
+    Placement, TremoloKind,
 };
 
 /// Classe d'octave d'une hauteur écrite.
@@ -62,8 +62,6 @@ pub(crate) enum PostEvent {
     Articulation(ArticulationType),
     /// Ornement (`\trill`, `\mordent`…).
     Ornament(OrnamentType),
-    /// Point d'orgue (`\fermata` et variantes).
-    Fermata(FermataType),
     /// Nuance (`\p`, `\mf`).
     Dynamic(String, Placement),
     /// Texte (`^\markup { … }`, `_\markup`).
@@ -86,10 +84,6 @@ pub(crate) enum PostEvent {
     Tremolo(TremoloKind, u8),
     /// Chute ou montée (`\bendAfter`).
     BendAfter(i8),
-    /// Respiration (`\breathe`, `\caesura`).
-    Breath(mscz2xml::model::BreathType),
-    /// Ornement d'après l'accord (`\afterGrace`).
-    AfterGrace,
 }
 
 /// Note d'un accord.
@@ -242,8 +236,6 @@ pub(crate) enum Music {
     Sim(Vec<Music>),
     /// Accord, silence ou silence multi-mesures.
     Chord(Chord),
-    /// Référence à une variable (`\nom`).
-    Variable(String),
     /// Bloc `\new …` rencontré dans le flux musical.
     New(Box<GroupBlock>),
     /// Bloc de paroles `\new Lyrics …`.
@@ -289,11 +281,6 @@ impl GroupKind {
             "Voice" => Self::Voice,
             _ => Self::Other,
         }
-    }
-
-    /// Vrai pour un regroupement de plusieurs portées.
-    pub(crate) const fn is_group(self) -> bool {
-        matches!(self, Self::PianoStaff | Self::ChoirStaff | Self::StaffGroup)
     }
 }
 

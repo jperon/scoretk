@@ -302,8 +302,8 @@ const FRANCAIS: &[(&str, u8, i8)] = &[
 /// Demi-tons d'un degré diatonique.
 const SEMITONES: [i8; 7] = [0, 2, 4, 5, 7, 9, 11];
 
-/// Décalage de quinte d'un degré naturel (`F` en tête de spirale).
-const FIFTH_OFFSETS: [i8; 7] = [-1, 0, 1, 2, 3, 4, 5];
+/// Décalage de quinte d'un degré naturel (do, ré, mi, fa, sol, la, si).
+const FIFTH_OFFSETS: [i8; 7] = [0, 2, 4, -1, 1, 3, 5];
 
 /// Classe de hauteur tonale (`tpc`) d'un degré et d'une altération.
 ///
@@ -354,14 +354,14 @@ pub(crate) fn key_mode(word: &str) -> KeyMode {
 /// `baritone`).
 pub(crate) fn clef_from_name(name: &str) -> Option<ClefType> {
     let (base, octave) = match name.split_once('^') {
-        Some((base, shift)) => (base, shift.parse::<i8>().ok()?),
+        Some((base, shift)) => (base, octave_shift(shift)?),
         None => match name.split_once('_') {
-            Some((base, shift)) => (base, -shift.parse::<i8>().ok()?),
+            Some((base, shift)) => (base, -octave_shift(shift)?),
             None => (name, 0),
         },
     };
     let clef = match (base, octave) {
-        ("treble" | "violin" | "G", 0) | ("violin", 0) => ClefType::G,
+        ("treble" | "violin" | "G", 0) => ClefType::G,
         ("treble", -1) | ("G", -1) => ClefType::G8Vb,
         ("treble", 1) | ("G", 1) => ClefType::G8Va,
         ("treble", -2) | ("G", -2) => ClefType::G15Mb,
@@ -384,6 +384,15 @@ pub(crate) fn clef_from_name(name: &str) -> Option<ClefType> {
         _ => return None,
     };
     Some(clef)
+}
+
+/// Nombre d'octaves d'une marque de clef (`8` → 1, `15` → 2).
+fn octave_shift(shift: &str) -> Option<i8> {
+    match shift.parse::<i8>().ok()? {
+        8 => Some(1),
+        15 => Some(2),
+        _ => None,
+    }
 }
 
 /// Résolution d'octave d'une hauteur écrite.

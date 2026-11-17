@@ -61,11 +61,6 @@ pub(crate) struct Token {
 }
 
 impl Token {
-    /// Vrai pour un mot nu égal au texte donné.
-    pub(crate) fn is_word(&self, word: &str) -> bool {
-        self.kind == Kind::Word && self.text == word
-    }
-
     /// Vrai pour une commande égale au nom donné (sans l'antislash).
     pub(crate) fn is_command(&self, name: &str) -> bool {
         self.kind == Kind::Command && self.text == name
@@ -228,7 +223,7 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             index += 1;
             column += 1;
             let start = index;
-            if characters.get(index).is_some_and(char::is_alphabetic) {
+            if characters.get(index).is_some_and(|character| character.is_alphabetic()) {
                 while index < characters.len() && is_symbol_continue(&characters, index) {
                     index += 1;
                     column += 1;
@@ -270,7 +265,11 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
                     index = slash;
                     column -= 1;
                 }
-            } else if index < characters.len() && characters[index] == '.' {
+            } else if index + 1 < characters.len()
+                && characters[index] == '.'
+                && characters[index + 1].is_ascii_digit()
+            {
+                // Décimale `1.5` seulement : `4.` est une durée pointée.
                 index += 1;
                 column += 1;
                 while index < characters.len() && characters[index].is_ascii_digit() {
@@ -328,7 +327,7 @@ fn is_symbol_continue(characters: &[char], index: usize) -> bool {
     let Some(character) = characters.get(index) else {
         return false;
     };
-    if character.is_alphabetic() || character.is_ascii_digit() {
+    if character.is_alphabetic() {
         return true;
     }
     if *character == '-' || *character == '_' {

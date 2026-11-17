@@ -36,9 +36,8 @@
 
 use mscz2xml::model::{
     Arpeggio, ArpeggioType, Articulation, ArticulationType, BarLineType, Breath, BreathType,
-    ChordLineType, Duration, FernataAlias as _, Fraction, GraceType, HairpinType, Key, KeyMode,
-    KeySig, NoteHeadGroup, Ornament, OrnamentType, OttavaType, Placement, StemDirection, Tremolo,
-    TremoloKind,
+    ChordLineType, Duration, Fraction, GraceType, HairpinType, Key, KeySig, NoteHeadGroup, Ornament,
+    OrnamentType, OttavaType, Placement, StemDirection, Tremolo,
 };
 
 use super::ast::{Chord, ChordKind, Context, Music, NoteSpec, PitchSpec, PostEvent, RepeatKind};
@@ -189,9 +188,10 @@ pub(crate) struct ChordEvent {
     pub content: ChordContent,
     /// Figure écrite.
     pub written: Duration,
-    /// Durée réelle (`ticks` du modèle), `None` si égale à la figure.
-    pub ticks: Option<Fraction>,
-    /// Durée réelle en fractions de ronde.
+    /// Durée réelle explicite (`ticks` du modèle), quand un multiplicateur
+    /// `*n/d` l'allonge.
+    pub explicit_ticks: Option<Fraction>,
+    /// Durée réelle en fractions de ronde (n-olet compris).
     pub actual: Fraction,
     /// N-olet le plus interne, index local dans [`InterpretedVoice::tuplets`].
     pub tuplet: Option<usize>,
@@ -305,17 +305,11 @@ pub(crate) struct Interpreter<'a> {
     order: usize,
     /// Avertissements.
     warnings: &'a mut Warnings,
-    /// Langue des hauteurs.
-    language: super::pitch::Language,
 }
 
 impl<'a> Interpreter<'a> {
     /// Interprète une voix.
-    pub(crate) fn run(
-        music: &Music,
-        language: super::pitch::Language,
-        warnings: &'a mut Warnings,
-    ) -> InterpretedVoice {
+    pub(crate) fn run(music: &Music, warnings: &'a mut Warnings) -> InterpretedVoice {
         let mut interpreter = Self {
             voice: InterpretedVoice::default(),
             cursor: Fraction::ZERO,
@@ -329,7 +323,6 @@ impl<'a> Interpreter<'a> {
             stem_override: None,
             order: 0,
             warnings,
-            language,
         };
         interpreter.walk(music);
         interpreter.voice.end = interpreter.cursor;
@@ -339,7 +332,7 @@ impl<'a> Interpreter<'a> {
     /// Parcourt une expression musicale.
     fn walk(&mut self, music: &Music) {
         match music {
-            Music::Empty | Music::Variable(_) | Music::Lyrics(_) => {}
+            Music::Empty | Music::Lyrics(_) => {}
             Music::New(_) => {
                 self.warn("contexte imbriqué ignoré dans une voix");
             }
@@ -425,7 +418,7 @@ impl<'a> Interpreter<'a> {
                 if let Some(target) = target {
                     let saved = self.grace_after_target.replace(target);
                     self.grace = Some(GraceFrame {
-                        kind: GraceType::Grace8,
+                        kind: GraceType::Appoggiatura,
                         slash: false,
                     });
                     self.walk(grace);
@@ -588,7 +581,7 @@ impl<'a> Interpreter<'a> {
         let mut actual = written.ticks() * multiplier * tuplet_factor;
 
         // Un ornement ne prend pas de temps dans la mesure.
-        if let Some(frame) = &self.grace {
+        if let Some((kind, slash)) = self.grace.as_ref().map(|frame| (frame.kind, frame.slash)) {
             let notes = match &chord.kind {
                 ChordKind::Notes(notes) => notes
                     .iter()
@@ -600,8 +593,8 @@ impl<'a> Interpreter<'a> {
                 let grace = GraceEvent {
                     notes,
                     duration: written,
-                    kind: frame.kind,
-                    slash: frame.slash,
+                    kind,
+                    slash,
                 };
                 if let Some(target) = self.grace_after_target {
                     if let Some(VoiceEvent {
@@ -638,7 +631,7 @@ impl<'a> Interpreter<'a> {
         let mut arpeggio = None;
         let mut tremolo = None;
         let mut chord_line = None;
-        let mut breaths = Vec::new();
+        let mut breaths: Vec<BreathType> = Vec::new();
         let mut fingerings = Vec::new();
         for post in &chord.posts {
             self.apply_post(
@@ -672,11 +665,9 @@ impl<'a> Interpreter<'a> {
 
         let stem = self.stem_override.take().unwrap_or(StemDirection::Auto);
         let grace_before = std::mem::take(&mut self.pending_grace);
-        let ticks = if actual == written.ticks() {
-            None
-        } else {
-            Some(actual)
-        };
+        // Seul un multiplicateur explicite devient `ticks` dans le modèle :
+        // la mise à l'échelle d'un n-olet est portée par le `Tuplet`.
+        let explicit_ticks = chord.multiplier.map(|_| actual);
         if !actual.is_positive() {
             actual = Fraction::ZERO;
         }
@@ -684,7 +675,7 @@ impl<'a> Interpreter<'a> {
         let event = ChordEvent {
             content,
             written,
-            ticks,
+            explicit_ticks,
             actual,
             tuplet: self.tuplets.last().copied(),
             articulations,
@@ -737,11 +728,12 @@ impl<'a> Interpreter<'a> {
             PostEvent::SlurStop(number) => {
                 self.event(EventKind::SlurStop(*number));
             }
-            PostEvent::Articulation(kind) => articulations.push(kind.clone()),
+            PostEvent::Articulation(kind) => match kind {
+                ArticulationType::BreathMark => breaths.push(BreathType::Comma),
+                ArticulationType::Caesura => breaths.push(BreathType::Caesura),
+                other => articulations.push(other.clone()),
+            },
             PostEvent::Ornament(kind) => ornaments.push(kind.clone()),
-            PostEvent::Fermata(kind) => {
-                articulations.push(fermata_articulation(*kind));
-            }
             PostEvent::Dynamic(text, placement) => {
                 self.annotation(AnnotationEvent::Dynamic {
                     text: dynamic_text(text),
@@ -782,8 +774,6 @@ impl<'a> Interpreter<'a> {
                     ChordLineType::Doit
                 });
             }
-            PostEvent::Breath(kind) => breaths.push(*kind),
-            PostEvent::AfterGrace => {}
         }
     }
 

@@ -31,8 +31,8 @@
 use std::collections::BTreeMap;
 
 use mscz2xml::model::{
-    ArpeggioType, ArticulationType, BreathType, Duration, DurationType, FermataType, Fraction,
-    GraceType, KeyMode, NoteHeadGroup, OrnamentType, Placement, StemDirection, TremoloKind,
+    ArpeggioType, ArticulationType, Duration, DurationType, Fraction, GraceType, KeyMode,
+    NoteHeadGroup, OrnamentType, Placement, StemDirection, TremoloKind,
 };
 
 use super::ast::{
@@ -152,11 +152,6 @@ impl<'a> Parser<'a> {
             .peek()
             .map_or((0, 0), |token| (token.line, token.column));
         self.warnings.push(line, column, message);
-    }
-
-    /// Texte du jeton courant, pour les messages.
-    fn current_text(&self) -> String {
-        self.peek().map_or_else(String::new, ToString::to_string)
     }
 
     //------------------------------------------------------------------
@@ -960,7 +955,7 @@ impl<'a> Parser<'a> {
                 })
             }
             "grace" | "slashedGrace" => Music::Context(Context::Grace {
-                kind: GraceType::Grace8,
+                kind: GraceType::Appoggiatura,
                 slash: false,
                 music: Box::new(self.parse_music()),
             }),
@@ -1036,7 +1031,7 @@ impl<'a> Parser<'a> {
                 }
             }
             "partial" => match self.parse_duration() {
-                Some(duration) => context(Context::Partial(duration)),
+                Some((duration, _)) => context(Context::Partial(duration)),
                 None => Music::Empty,
             },
             "bar" => {
@@ -1104,6 +1099,9 @@ impl<'a> Parser<'a> {
                 self.parse_music()
             }
             "new" => match self.parse_new() {
+                Some(group) if group.staves.is_empty() && !group.lyrics.is_empty() => {
+                    Music::Lyrics(Box::new(group.lyrics[0].clone()))
+                }
                 Some(group) => Music::New(Box::new(group)),
                 None => Music::Empty,
             },
@@ -1687,11 +1685,6 @@ impl<'a> Parser<'a> {
         self.language.parse(word).is_some()
     }
 
-    /// Durée, si le jeton courant en porte une.
-    fn parse_optional_duration(&mut self) -> Option<Duration> {
-        self.parse_duration().map(|(duration, _)| duration)
-    }
-
     /// Durée et multiplicateur, si le jeton courant en porte une.
     fn parse_optional_duration_spec(&mut self) -> (Option<Duration>, Option<Fraction>) {
         match self.parse_duration() {
@@ -1729,7 +1722,7 @@ impl<'a> Parser<'a> {
         let mut multiplier = None;
         if self.eat_punct('*') {
             if let Some((numerator, denominator)) = self.parse_ratio() {
-                multiplier = Fraction::try_new(i64::from(numerator), i64::from(denominator)).ok();
+                multiplier = Fraction::try_new(i64::from(numerator), i64::from(denominator));
             }
         }
         Some((duration, multiplier))
@@ -2052,18 +2045,16 @@ fn duration_from_value(value: i64) -> Option<Duration> {
 /// Fraction d'un jeton numérique.
 fn fraction_from_token(token: &Token) -> Option<Fraction> {
     let (numerator, denominator) = token.as_fraction()?;
-    Fraction::try_new(numerator, denominator).ok()
+    Fraction::try_new(numerator, denominator)
 }
 
 /// Fraction d'un texte `n/d` ou `n`.
 fn parse_fraction_text(text: &str) -> Option<Fraction> {
     match text.split_once('/') {
-        Some((numerator, denominator)) => Fraction::try_new(
-            numerator.parse().ok()?,
-            denominator.parse().ok()?,
-        )
-        .ok(),
-        None => Fraction::try_new(text.parse().ok()?, 1).ok(),
+        Some((numerator, denominator)) => {
+            Fraction::try_new(numerator.parse().ok()?, denominator.parse().ok()?)
+        }
+        None => Fraction::try_new(text.parse().ok()?, 1),
     }
 }
 
@@ -2238,12 +2229,17 @@ mod tests {
         parser.parse_music()
     }
 
+    /// Items d'une expression, une expression seule comptant pour un.
+    fn items(music: Music) -> Vec<Music> {
+        match music {
+            Music::Seq(items) => items,
+            other => vec![other],
+        }
+    }
+
     #[test]
     fn accord_avec_duree_et_liaison() {
-        let music = parse_music_only("c'4~ d8.");
-        let Music::Seq(items) = music else {
-            panic!("séquence attendue");
-        };
+        let items = items(parse_music_only("{ c'4~ d8. }"));
         assert_eq!(items.len(), 2);
         let Music::Chord(first) = &items[0] else {
             panic!("accord attendu");
@@ -2267,10 +2263,7 @@ mod tests {
 
     #[test]
     fn commandes_de_contexte() {
-        let music = parse_music_only("\\key g \\major \\time 3/4 \\clef bass");
-        let Music::Seq(items) = music else {
-            panic!("séquence attendue");
-        };
+        let items = items(parse_music_only("{ \\key g \\major \\time 3/4 \\clef bass }"));
         assert!(items.iter().any(|item| matches!(
             item,
             Music::Context(Context::Key { fifths: 1, mode: KeyMode::Major })
@@ -2286,10 +2279,9 @@ mod tests {
 
     #[test]
     fn n_olet_et_reprise() {
-        let music = parse_music_only("\\tuplet 3/2 { c8 d8 e8 } \\repeat volta 2 { f4 g4 }");
-        let Music::Seq(items) = music else {
-            panic!("séquence attendue");
-        };
+        let items = items(parse_music_only(
+            "{ \\tuplet 3/2 { c8 d8 e8 } \\repeat volta 2 { f4 g4 } }",
+        ));
         assert!(matches!(items[0], Music::Context(Context::Tuplet { .. })));
         assert!(matches!(
             items[1],
