@@ -19,12 +19,18 @@
 //!
 //! Pour chaque `tests/corpus/{v3,v4}/*.ref.musicxml`, on lit la référence avec
 //! [`read_musicxml`], on la réexporte avec l'export de `mscz2xml`, et on
-//! compare les deux documents après la même normalisation que
-//! `crates/mscz2xml/tests/e2e_corpus.rs` (niveaux « noyau musical »).
+//! compare les deux documents après la normalisation de
+//! `crates/mscz2xml/tests/e2e_corpus.rs`, aux deux niveaux :
+//!
+//! - **noyau musical** (`Level::Core`) : c'est le niveau bloquant, celui de la
+//!   conformité `mscx → MusicXML` ;
+//! - **parité complète** (`Level::Full`) : directions, articulations, spanners
+//!   et crédits sont comparés aussi ; il mesure la couverture du lecteur et
+//!   n'échoue que sur [`EXPECTED_FULL_V3`] / [`EXPECTED_FULL_V4`].
 //!
 //! Le test imprime « aller-retour v3 : N/30 identiques » et la liste des
 //! écarts. Seuls les fichiers de [`EXPECTED_V3`] / [`EXPECTED_V4`] doivent
-//! rester identiques : toute régression fait échouer la suite.
+//! rester identiques au niveau noyau : toute régression fait échouer la suite.
 
 mod common;
 
@@ -32,6 +38,8 @@ use std::fs;
 
 use mscz2xml::export::{export_musicxml_with, ExportOptions};
 use scoretk_musicxml::read_musicxml;
+
+use common::Level;
 
 /// Date d'encodage figée (le `<identification>` est normalisé de toute façon).
 const ENCODING_DATE: &str = "2026-11-16";
@@ -94,6 +102,15 @@ const EXPECTED_V4: &[&str] = &[
     "voiceswitching",
 ];
 
+/// Fichiers du corpus 3.x identiques au niveau **parité complète**.
+///
+/// Liste vide tant que le lecteur ne couvre pas les directions et annotations ;
+/// elle ne doit que s'allonger.
+const EXPECTED_FULL_V3: &[&str] = &[];
+
+/// Fichiers du corpus 4.x identiques au niveau **parité complète**.
+const EXPECTED_FULL_V4: &[&str] = &[];
+
 /// Résultat d'un aller-retour.
 struct Row {
     name: String,
@@ -103,7 +120,7 @@ struct Row {
     error: Option<String>,
 }
 
-fn run(version: &str, expected: &[&str]) {
+fn run(version: &str, level: Level, expected: &[&str]) {
     let files = common::corpus_files(version);
     let mut rows: Vec<Row> = Vec::new();
 
@@ -122,13 +139,13 @@ fn run(version: &str, expected: &[&str]) {
         let reference = fs::read_to_string(&reference_path).unwrap_or_else(|error| {
             panic!("référence {} illisible : {error}", reference_path.display())
         });
-        let expected_lines = common::normalize(&reference);
+        let expected_lines = common::normalize_with(&reference, level);
 
         let input = fs::read(&reference_path).expect("lecture de la référence");
         match read_musicxml(&input) {
             Ok(score) => match export_musicxml_with(&score, &options) {
                 Ok(xml) => {
-                    let actual = common::normalize(&xml);
+                    let actual = common::normalize_with(&xml, level);
                     let (changed, diff) = common::diff(&expected_lines, &actual);
                     rows.push(Row {
                         name,
@@ -161,8 +178,12 @@ fn run(version: &str, expected: &[&str]) {
         .filter(|row| row.changed == 0)
         .map(|row| row.name.as_str())
         .collect();
+    let label = match level {
+        Level::Core => "noyau",
+        Level::Full => "complet",
+    };
     println!(
-        "aller-retour {version} : {}/{} identiques",
+        "aller-retour {version} ({label}) : {}/{} identiques",
         identical.len(),
         rows.len()
     );
@@ -204,17 +225,27 @@ fn run(version: &str, expected: &[&str]) {
     for name in expected {
         assert!(
             identical.contains(name),
-            "{name} est attendu identique en aller-retour mais diffère"
+            "{name} est attendu identique en aller-retour ({label}) mais diffère"
         );
     }
 }
 
 #[test]
 fn aller_retour_v3() {
-    run("v3", EXPECTED_V3);
+    run("v3", Level::Core, EXPECTED_V3);
 }
 
 #[test]
 fn aller_retour_v4() {
-    run("v4", EXPECTED_V4);
+    run("v4", Level::Core, EXPECTED_V4);
+}
+
+#[test]
+fn aller_retour_complet_v3() {
+    run("v3", Level::Full, EXPECTED_FULL_V3);
+}
+
+#[test]
+fn aller_retour_complet_v4() {
+    run("v4", Level::Full, EXPECTED_FULL_V4);
 }
