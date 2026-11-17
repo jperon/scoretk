@@ -435,7 +435,7 @@ Le lecteur suit la grammaire de **LilyPond 2.26.0**, commit
 **Récupérer la copie** (clone partiel, suffisant pour les fichiers portés) :
 
 ```sh
-git clone --depth 1 --filter=blob:none --sparse \
+git clone --filter=blob:none --sparse \
     --branch v2.26.0 https://github.com/lilypond/lilypond.git ../lilypond-ref
 git -C ../lilypond-ref sparse-checkout set --no-cone \
     '/lily/parser.yy' '/lily/lexer.ll' '/lily/pitch.cc' '/lily/pitch.hh' \
