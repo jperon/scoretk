@@ -1131,13 +1131,36 @@ fn read_stem(element: &Element) -> Option<StemDirection> {
     }
 }
 
-/// Attributs portés par l'accord (hampe, ornement barré).
+/// Attributs portés par l'accord (hampe, ornement barré, trémolo).
 fn apply_chord_attributes(element: &Element, chord: &mut Chord) {
     if let Some(stem) = read_stem(element) {
         chord.stem = stem;
     }
     if let Some(grace) = element.child("grace") {
         chord.grace_slash = grace.attribute("slash") == Some("yes");
+    }
+    if let Some(tremolo) = element
+        .child("notations")
+        .and_then(|notations| notations.child("ornaments"))
+        .and_then(|ornaments| ornaments.child("tremolo"))
+    {
+        let kind = match tremolo.attribute("type") {
+            Some("single") => mscz2xml::model::TremoloKind::Single,
+            Some("start") => mscz2xml::model::TremoloKind::Start,
+            Some("stop") => mscz2xml::model::TremoloKind::Stop,
+            Some("unmeasured") => mscz2xml::model::TremoloKind::Unmeasured,
+            _ => mscz2xml::model::TremoloKind::Single,
+        };
+        chord.tremolo = Some(mscz2xml::model::Tremolo {
+            kind,
+            count: tremolo.text_trimmed().parse().unwrap_or(1),
+        });
+        // Un trémolo à deux notes fait durer chaque accord la moitié du total
+        // (`Chord::tremoloTwoChord`).
+        chord.tremolo_two_chord = matches!(
+            kind,
+            mscz2xml::model::TremoloKind::Start | mscz2xml::model::TremoloKind::Stop
+        );
     }
 }
 

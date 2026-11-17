@@ -514,14 +514,31 @@ fn part_data(score_part: &Element, id: &str) -> PartData {
 fn display_name(score_part: &Element, name: &str) -> String {
     if let Some(display) = score_part.child(&format!("{name}-display")) {
         let mut text = String::new();
+        let mut after_accidental = false;
         for child in &display.children {
             match child.name.as_str() {
-                "display-text" => text.push_str(child.text_trimmed()),
-                "accidental-text" => match child.text_trimmed() {
-                    "flat" => text.push('♭'),
-                    "sharp" => text.push('♯'),
-                    _ => {}
-                },
+                "display-text" => {
+                    let fragment = child.text_trimmed();
+                    // L'export C++ perd l'espace qui suit l'altération ; on le
+                    // rétablit pour que `<part-name>` reste « Bb Clarinet ».
+                    if after_accidental
+                        && !fragment.is_empty()
+                        && !fragment.starts_with(' ')
+                        && !text.ends_with(' ')
+                    {
+                        text.push(' ');
+                    }
+                    text.push_str(fragment);
+                    after_accidental = false;
+                }
+                "accidental-text" => {
+                    match child.text_trimmed() {
+                        "flat" => text.push('♭'),
+                        "sharp" => text.push('♯'),
+                        _ => {}
+                    }
+                    after_accidental = true;
+                }
                 _ => {}
             }
         }
