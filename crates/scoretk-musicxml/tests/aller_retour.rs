@@ -1,0 +1,167 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//
+// Copyright (C) 2026 jperon
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License version 3 as published by
+// the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+// more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// this program. If not, see the LICENSE file at the root of this repository or
+// <https://www.gnu.org/licenses/gpl-3.0.html>.
+
+//! Aller-retour MusicXML → modèle → MusicXML sur le corpus.
+//!
+//! Pour chaque `tests/corpus/{v3,v4}/*.ref.musicxml`, on lit la référence avec
+//! [`read_musicxml`], on la réexporte avec l'export de `mscz2xml`, et on
+//! compare les deux documents après la même normalisation que
+//! `crates/mscz2xml/tests/e2e_corpus.rs` (niveaux « noyau musical »).
+//!
+//! Le test imprime « aller-retour v3 : N/30 identiques » et la liste des
+//! écarts. Seuls les fichiers de [`EXPECTED_V3`] / [`EXPECTED_V4`] doivent
+//! rester identiques : toute régression fait échouer la suite.
+
+mod common;
+
+use std::fs;
+
+use mscz2xml::export::{export_musicxml_with, ExportOptions};
+use scoretk_musicxml::read_musicxml;
+
+/// Date d'encodage figée (le `<identification>` est normalisé de toute façon).
+const ENCODING_DATE: &str = "2026-11-16";
+
+/// Fichiers du corpus 3.x dont l'aller-retour est identique à la référence.
+const EXPECTED_V3: &[&str] = &[];
+
+/// Fichiers du corpus 4.x dont l'aller-retour est identique à la référence.
+const EXPECTED_V4: &[&str] = &[];
+
+/// Résultat d'un aller-retour.
+struct Row {
+    name: String,
+    changed: usize,
+    tags: Vec<(String, usize)>,
+    diff: String,
+    error: Option<String>,
+}
+
+fn run(version: &str, expected: &[&str]) {
+    let files = common::corpus_files(version);
+    let mut rows: Vec<Row> = Vec::new();
+
+    let options = ExportOptions {
+        encoding_date: ENCODING_DATE.to_owned(),
+        ..ExportOptions::default()
+    };
+
+    for path in &files {
+        let name = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .expect("nom de fichier UTF-8")
+            .to_owned();
+        let reference_path = path.with_file_name(format!("{name}.ref.musicxml"));
+        let reference = fs::read_to_string(&reference_path)
+            .unwrap_or_else(|error| panic!("référence {} illisible : {error}", reference_path.display()));
+        let expected_lines = common::normalize(&reference);
+
+        let input = fs::read(&reference_path).expect("lecture de la référence");
+        match read_musicxml(&input) {
+            Ok(score) => match export_musicxml_with(&score, &options) {
+                Ok(xml) => {
+                    let actual = common::normalize(&xml);
+                    let (changed, diff) = common::diff(&expected_lines, &actual);
+                    rows.push(Row {
+                        name,
+                        changed,
+                        tags: common::changed_tags(&expected_lines, &actual),
+                        diff: common::truncate(&diff, 40),
+                        error: None,
+                    });
+                }
+                Err(error) => rows.push(Row {
+                    name,
+                    changed: usize::MAX,
+                    tags: Vec::new(),
+                    diff: String::new(),
+                    error: Some(format!("export : {error}")),
+                }),
+            },
+            Err(error) => rows.push(Row {
+                name,
+                changed: usize::MAX,
+                tags: Vec::new(),
+                diff: String::new(),
+                error: Some(format!("lecture : {error}")),
+            }),
+        }
+    }
+
+    let identical: Vec<&str> = rows
+        .iter()
+        .filter(|row| row.changed == 0)
+        .map(|row| row.name.as_str())
+        .collect();
+    println!(
+        "aller-retour {version} : {}/{} identiques",
+        identical.len(),
+        rows.len()
+    );
+    for row in &rows {
+        if let Some(error) = &row.error {
+            println!("  {} : ERREUR ({error})", row.name);
+        } else if row.changed == 0 {
+            println!("  {} : identique", row.name);
+        } else {
+            let tags: Vec<String> = row
+                .tags
+                .iter()
+                .take(4)
+                .map(|(tag, count)| format!("{tag}×{count}"))
+                .collect();
+            println!(
+                "  {} : {} lignes d'écart [{}]",
+                row.name,
+                row.changed,
+                tags.join(", ")
+            );
+        }
+    }
+    for row in &rows {
+        if row.changed > 0 {
+            println!(
+                "\n=== {version}/{} : {} ===\n{}",
+                row.name,
+                if row.changed == usize::MAX {
+                    "ERREUR".to_owned()
+                } else {
+                    format!("{} lignes d'écart", row.changed)
+                },
+                row.diff
+            );
+        }
+    }
+
+    for name in expected {
+        assert!(
+            identical.contains(name),
+            "{name} est attendu identique en aller-retour mais diffère"
+        );
+    }
+}
+
+#[test]
+fn aller_retour_v3() {
+    run("v3", EXPECTED_V3);
+}
+
+#[test]
+fn aller_retour_v4() {
+    run("v4", EXPECTED_V4);
+}
