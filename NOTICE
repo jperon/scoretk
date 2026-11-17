@@ -8,6 +8,8 @@ les licences correspondantes et les marques.
 
 ## Licence du projet
 
+Copyright (C) 2026 jperon.
+
 Le projet est distribué sous **GNU General Public License version 3 seulement
 (GPL-3.0-only)**. Le texte complet est dans [`LICENSE`](LICENSE) ; chaque
 fichier source porte l'identifiant SPDX `GPL-3.0-only` et l'avis de modification

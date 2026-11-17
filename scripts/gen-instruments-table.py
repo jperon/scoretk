@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 #
-# Copyright (C) 2026 les auteurs de scoretk
+# Copyright (C) 2026 jperon
 #
 # Données de `share/instruments/instruments.xml` de MuseScore Studio,
 # Copyright (C) MuseScore Limited and others, converties en 2026.

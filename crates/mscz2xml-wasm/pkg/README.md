@@ -63,10 +63,10 @@ Le paquet contient du code porté de **MuseScore Studio**
 (<https://github.com/musescore/MuseScore>), Copyright (C) MuseScore Limited
 and others, réécrit en Rust en 2026, ainsi que du code généré par
 wasm-bindgen. La **source correspondante** au sens de la GPL §6 est le dépôt
-mscz2xml :
+scoretk :
 
-- URL : **TODO** — aucun remote git n'est encore défini dans ce dépôt ;
-  renseigner l'URL dans `package.json` (champ `repository`) et ici.
+- URL : <https://github.com/jperon/scoretk> (champ `repository` du
+  `package.json`).
 
 Le programme est distribué **sans aucune garantie**. « MuseScore » est une
 marque de MuseScore Limited ; ce paquet n'est ni affilié à, ni approuvé par

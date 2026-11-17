@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Copyright (C) 2026 les auteurs de scoretk
+// Copyright (C) 2026 jperon
 //
 // Portage de `engraving/dom/segment.h`, `engraving/dom/keysig.h`,
 // `engraving/dom/timesig.h`, `engraving/dom/clef.h` et

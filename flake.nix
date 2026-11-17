@@ -155,7 +155,7 @@
         # licence survit donc à la minification (§5a et §6 de la GPL).
         wasmLicenseBanner = pkgs.writeText "mscz2xml-license-banner.js" ''
           /*! @license GPL-3.0-only — scoretk (WebAssembly)
-           * Copyright (C) 2026 les auteurs de scoretk
+           * Copyright (C) 2026 jperon
            * Portage de MuseScore Studio, Copyright (C) MuseScore Limited and others,
            * modifié (réécrit en Rust) en 2026.
            * source : https://github.com/jperon/scoretk

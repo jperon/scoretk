@@ -1,13 +1,12 @@
 /*! @license GPL-3.0-only — mscz2xml, conversion MuseScore vers MusicXML
  *
- * Copyright (C) 2026 les auteurs de scoretk
+ * Copyright (C) 2026 jperon
  *
  * Portage de l'export MusicXML de MuseScore Studio (dépôt
  * <https://github.com/musescore/MuseScore>), Copyright (C) MuseScore Limited
  * and others, modifié (réécrit en Rust) en 2026.
  *
- * source : URL du dépôt à renseigner (TODO : aucun remote git n'est défini
- * dans ce dépôt).
+ * source : https://github.com/jperon/scoretk
  *
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 3 as published by

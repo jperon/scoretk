@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Copyright (C) 2026 les auteurs de scoretk
+// Copyright (C) 2026 jperon
 //
 // Portage de `engraving/dom/fermata.h`, `engraving/dom/ornament.h`,
 // `engraving/dom/tremolosinglechord.h`, `engraving/dom/tremolotwochord.h`,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Copyright (C) 2026 les auteurs de scoretk
+// Copyright (C) 2026 jperon
 //
 // Portage de `engraving/rw/read400/read400.cpp`,
 // `engraving/rw/read410/read410.cpp`, `engraving/rw/read460/read460.cpp` et

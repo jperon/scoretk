@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Copyright (C) 2026 les auteurs de scoretk
+// Copyright (C) 2026 jperon
 //
 // Portage de `engraving/dom/note.h`, `engraving/dom/tie.h` et
 // `engraving/dom/pitchspelling.h` de MuseScore Studio, Copyright (C) MuseScore
