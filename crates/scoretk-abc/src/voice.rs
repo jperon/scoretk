@@ -812,31 +812,40 @@ fn render_chord(
     transpose: i32,
 ) -> String {
     let mut token = String::new();
+    let mut grace_group = String::new();
     for grace in &chord.grace_chords {
-        let mut group = String::new();
-        if matches!(
+        let acciaccatura = matches!(
             grace.chord.grace,
             Some(mscz2xml::model::GraceType::Acciaccatura)
-        ) {
-            group.push('/');
-        }
+        );
         for note_id in &grace.chord.notes {
             let note = score.note(*note_id);
             if !note.visible {
                 continue;
             }
+            // Une seule paire d'accolades par accord : la norme interdit deux
+            // groupes d'agréments consécutifs sans note intermédiaire. La
+            // barre oblique, elle, peut précéder chaque note ; l'espace évite
+            // qu'elle soit lue comme une fraction de la durée précédente
+            // (`{g/a}` vaut `g`/2 puis `a`, sans acciaccatura).
+            if acciaccatura {
+                if !grace_group.is_empty() {
+                    grace_group.push(' ');
+                }
+                grace_group.push('/');
+            }
             let (letter, alter, octave) = pitch::note_spelling(note, transpose);
-            group.push_str(&pitch::abc_note(letter, alter, octave, accidental_state));
-            group.push_str(&duration::multiplier(
+            grace_group.push_str(&pitch::abc_note(letter, alter, octave, accidental_state));
+            grace_group.push_str(&duration::multiplier(
                 grace.duration.ticks(),
                 duration::unit(),
             ));
         }
-        if !group.is_empty() && group != "/" {
-            token.push('{');
-            token.push_str(&group);
-            token.push('}');
-        }
+    }
+    if !grace_group.is_empty() {
+        token.push('{');
+        token.push_str(&grace_group);
+        token.push('}');
     }
 
     let notes: Vec<&Note> = chord

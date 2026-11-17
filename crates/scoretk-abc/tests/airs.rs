@@ -25,7 +25,7 @@
 //! sous-ensemble ABC sur des airs courts, avec paroles, reprises, modes,
 //! liaisons, phrasés, accords, agréments, nuances et annotations.
 
-use mscz2xml::model::{KeyMode, SpannerType};
+use mscz2xml::model::{GraceType, KeyMode, SpannerType, Track};
 
 const AU_CLAIR: &str = "\
 %abc-2.1
@@ -202,6 +202,58 @@ fn ornements_annotations_et_liaisons() {
         .iter()
         .any(|spanner| matches!(spanner.kind, SpannerType::Slur)));
     assert!(score.notes.iter().any(|note| note.tie_forward.is_some()));
+}
+
+#[test]
+fn agrements_par_note_et_groupe_unique() {
+    // Deux groupes `{}` consécutifs sont interdits par la norme : le lecteur
+    // les fusionne, et l'écriture doit produire une seule paire d'accolades
+    // avec la barre oblique devant chaque acciaccatura.
+    let source = "\
+X:1
+T:Agréments
+M:4/4
+L:1/8
+K:C
+{g}{/a}b2 {/g}G4 |]
+";
+    let score = scoretk_abc::read_abc(source).expect("lecture");
+    let kinds: Vec<Option<GraceType>> = score.measures[0]
+        .segments
+        .iter()
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .filter_map(|chord_rest| chord_rest.chord_ref())
+        .flat_map(|chord| chord.grace_chords.iter().map(|grace| grace.chord.grace))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            Some(GraceType::Appoggiatura),
+            Some(GraceType::Acciaccatura),
+            Some(GraceType::Acciaccatura)
+        ]
+    );
+
+    let abc = scoretk_abc::write_abc(&score).expect("écriture");
+    assert!(abc.contains("{g /a}"), "{abc}");
+    assert!(abc.contains("{/g}"), "{abc}");
+
+    let again = scoretk_abc::read_abc(&abc).expect("relecture");
+    let kinds: Vec<Option<GraceType>> = again.measures[0]
+        .segments
+        .iter()
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .filter_map(|chord_rest| chord_rest.chord_ref())
+        .flat_map(|chord| chord.grace_chords.iter().map(|grace| grace.chord.grace))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            Some(GraceType::Appoggiatura),
+            Some(GraceType::Acciaccatura),
+            Some(GraceType::Acciaccatura)
+        ]
+    );
 }
 
 #[test]

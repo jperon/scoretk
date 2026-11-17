@@ -584,12 +584,12 @@ impl Parser<'_> {
         }
         if let Some(grace_data) = grace.take() {
             if let Some(chord) = chord_rest.chord_mut() {
-                let grace_type = if grace_data.acciaccatura {
-                    GraceType::Acciaccatura
-                } else {
-                    GraceType::Appoggiatura
-                };
-                for (id, length) in grace_data.notes {
+                for (id, length, acciaccatura) in grace_data.notes {
+                    let grace_type = if acciaccatura {
+                        GraceType::Acciaccatura
+                    } else {
+                        GraceType::Appoggiatura
+                    };
                     let mut grace_chord =
                         GraceChord::new(grace_type, duration::figure_for(length).0);
                     grace_chord.chord.notes.push(id);
@@ -918,14 +918,17 @@ impl Parser<'_> {
 
     fn parse_grace(&mut self) -> Result<()> {
         self.pos += 1;
-        let mut acciaccatura = false;
-        if self.peek() == Some('/') {
-            acciaccatura = true;
-            self.pos += 1;
-        }
         let mut notes = Vec::new();
         loop {
             self.skip_spaces();
+            // La barre oblique marque une acciaccatura ; elle peut précéder
+            // chaque note du groupe, la norme ne la réservant pas à la
+            // première.
+            let mut acciaccatura = false;
+            if self.peek() == Some('/') {
+                acciaccatura = true;
+                self.pos += 1;
+            }
             match self.peek() {
                 Some('}') => {
                     self.bump();
@@ -942,22 +945,13 @@ impl Parser<'_> {
                     let length_text = self.last_length.clone();
                     let length = self.parse_length(&length_text)?;
                     let id = self.reader.score.add_note(note);
-                    notes.push((id, length));
+                    notes.push((id, length, acciaccatura));
                 }
             }
         }
-        let voice = self.voice();
-        match &mut voice.grace {
-            Some(existing) => {
-                existing.notes.extend(notes);
-                existing.acciaccatura |= acciaccatura;
-            }
-            None => {
-                voice.grace = Some(GraceData {
-                    notes,
-                    acciaccatura,
-                });
-            }
+        match &mut self.voice().grace {
+            Some(existing) => existing.notes.extend(notes),
+            None => self.voice().grace = Some(GraceData { notes }),
         }
         Ok(())
     }

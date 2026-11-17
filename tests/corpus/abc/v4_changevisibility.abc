@@ -6,7 +6,7 @@ M:4/4
 L:1/8
 K:C clef=treble
 V:1 name="Piano" clef=treble
-!accent!^G3/2z/2z3({G}{G}{G}Gz)G |
+!accent!^G3/2z/2z3({GGG}Gz)G |
 w: * lyric *
 !accent![^FAc]3/2z/2z2z4 |
 !accent![G^B]GGGz4 |

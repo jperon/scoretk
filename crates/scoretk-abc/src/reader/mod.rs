@@ -269,10 +269,9 @@ pub(crate) enum AnnotationSpec {
 /// Accord d'agrément en attente.
 #[derive(Clone, Debug)]
 pub(crate) struct GraceData {
-    /// Notes et durées des agréments.
-    pub notes: Vec<(NoteId, Fraction)>,
-    /// Vrai pour une acciaccatura (barre oblique).
-    pub acciaccatura: bool,
+    /// Notes et durées des agréments, avec l'indicateur d'acciaccatura
+    /// (`/` devant la note).
+    pub notes: Vec<(NoteId, Fraction, bool)>,
 }
 
 /// Spécification de n-olet, résolue à la construction.
