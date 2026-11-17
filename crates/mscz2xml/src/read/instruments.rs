@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Copyright (C) 2026 les auteurs de mscz2xml
+// Copyright (C) 2026 jperon
 //
 // Table dérivée de `share/instruments/instruments.xml` et
 // `engraving/dom/instrument.cpp` de MuseScore Studio, Copyright (C) MuseScore

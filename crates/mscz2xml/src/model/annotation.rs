@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Copyright (C) 2026 les auteurs de mscz2xml
+// Copyright (C) 2026 jperon
 //
 // Portage de `engraving/dom/segment.h`, `engraving/dom/dynamic.h`,
 // `engraving/dom/stafftext.h`, `engraving/dom/systemtext.h`,

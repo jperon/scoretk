@@ -1,11 +1,14 @@
 # NOTICE
 
-mscz2xml est un portage en Rust de l'export MusicXML et des lecteurs de
-partitions (`.mscx` / `.mscz`, formats 3.x et 4.x/5.x) de **MuseScore Studio**.
-Ce fichier récapitule l'origine du code et des données, les licences
-correspondantes et les marques.
+**scoretk** est une boîte à outils de conversion de partitions. Son premier
+convertisseur, **mscz2xml**, est un portage en Rust de l'export MusicXML et des
+lecteurs de partitions (`.mscx` / `.mscz`, formats 3.x et 4.x/5.x) de
+**MuseScore Studio**. Ce fichier récapitule l'origine du code et des données,
+les licences correspondantes et les marques.
 
 ## Licence du projet
+
+Copyright (C) 2026 jperon.
 
 Le projet est distribué sous **GNU General Public License version 3 seulement
 (GPL-3.0-only)**. Le texte complet est dans [`LICENSE`](LICENSE) ; chaque

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Copyright (C) 2026 les auteurs de mscz2xml
+// Copyright (C) 2026 jperon
 //
 // Portage de `engraving/types/types.h` et `engraving/rw/` de MuseScore Studio,
 // Copyright (C) MuseScore Limited and others, modifié (réécrit en Rust) en

@@ -22,7 +22,7 @@ classic/mscz2xml_wasm.js      script classique (--target no-modules)
 classic/mscz2xml_wasm_bg.wasm même binaire, optimisé séparément
 classic/mscz2xml.js           wrapper : self.mscz2xml = { ready, convert, version }
 classic/mscz2xml_wasm.d.ts    types
-package.json                  name "mscz2xml", type "module", exports/types, repository
+package.json                  name "scoretk", type "module", exports/types, repository
 README.md                     mode d'emploi court du paquet
 LICENSE                       texte de la GPL-3.0-only
 NOTICE                        origine MuseScore Studio, données reprises, marque
@@ -75,7 +75,7 @@ arriver que sur un bug interne.
 ## Usage ESM (page, module, bundler)
 
 ```js
-import init, { convert, version } from 'mscz2xml';
+import init, { convert, version } from 'scoretk';
 
 await init(); // charge mscz2xml_wasm_bg.wasm à côté du module
 const bytes = new Uint8Array(await file.arrayBuffer());
@@ -83,18 +83,18 @@ const xml = convert(bytes, { encodingDate: '2026-01-01' });
 ```
 
 Le `package.json` du paquet déclare `"type": "module"`, `exports` (racine →
-`esm/`) et `types`. Pour un bundler, `import init from 'mscz2xml'` suffit ; le
+`esm/`) et `types`. Pour un bundler, `import init from 'scoretk'` suffit ; le
 `.wasm` doit être servi par le serveur (ou traité comme asset par le bundler).
 
 ## Usage Web Worker classique (PWA cantus)
 
 Cantus charge ses scripts en classiques et convertit dans un worker via
-`importScripts`. Servir le dossier `result/` sous `mscz2xml/` (copie dans
+`importScripts`. Servir le dossier `result/` sous `scoretk/` (copie dans
 `dist/` ou alias), puis :
 
 ```js
 // worker.js (script classique)
-importScripts('mscz2xml/classic/mscz2xml.js');
+importScripts('scoretk/classic/mscz2xml.js');
 
 await self.mscz2xml.ready; // wasm instancié
 
@@ -115,7 +115,7 @@ l'emplacement du script worker. Si aucun de ces moyens ne donne le bon chemin
 (par exemple worker servi depuis un blob), définir avant l'import :
 
 ```js
-self.MSCZ2XML_BASE_URL = 'https://exemple/mscz2xml/classic/';
+self.MSCZ2XML_BASE_URL = 'https://exemple/scoretk/classic/';
 importScripts(self.MSCZ2XML_BASE_URL + 'mscz2xml.js');
 ```
 

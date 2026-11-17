@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Copyright (C) 2026 les auteurs de mscz2xml
+// Copyright (C) 2026 jperon
 //
 // Portage de `importexport/musicxml/internal/export/exportmusicxml.cpp` et
 // `importexport/musicxml/internal/shared/` de MuseScore Studio, Copyright (C)

@@ -1,7 +1,12 @@
-# mscz2xml
+# scoretk
 
-Portage en Rust de l'export MusicXML de MuseScore, sous licence
-GPL-3.0-only.
+Boîte à outils de conversion de partitions, sous licence GPL-3.0-only. Elle
+vise les allers-retours entre MuseScore (`.mscz` / `.mscx`), MusicXML,
+LilyPond, ABC et MIDI ; la feuille de route est dans
+[`docs/TODO.md`](docs/TODO.md).
+
+Le premier convertisseur, **mscz2xml**, est un portage en Rust de l'export
+MusicXML de MuseScore (MuseScore → MusicXML).
 
 ## Objectifs de portabilité
 

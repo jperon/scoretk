@@ -1,9 +1,10 @@
 # TODO
 
-## Évolution de mscz2xml vers scoretk
+## Feuille de route : les autres formats de scoretk
 
-Faire évoluer mscz2xml en **scoretk**, une boîte à outils de conversion
-**bidirectionnelle** entre cinq formats de partition :
+**scoretk** est une boîte à outils de conversion **bidirectionnelle** entre
+cinq formats de partition ; **mscz2xml** en est le premier convertisseur
+(MuseScore → MusicXML).
 
 | Format | Lecture | Écriture |
 |---|---|---|

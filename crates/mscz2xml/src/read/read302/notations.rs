@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Copyright (C) 2026 les auteurs de mscz2xml
+// Copyright (C) 2026 jperon
 //
 // Portage de `engraving/rw/read400/tread.cpp` de MuseScore Studio, Copyright
 // (C) MuseScore Limited and others, modifié (réécrit en Rust) en 2026.

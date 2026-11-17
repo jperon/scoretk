@@ -1,5 +1,5 @@
 {
-  description = "mscz2xml — conversion MuseScore (.mscz) vers MusicXML : bibliothèque portable (wasm32, Android, iOS) et CLI";
+  description = "scoretk — boîte à outils de conversion de partitions (MuseScore, MusicXML, LilyPond, ABC, MIDI) ; premier convertisseur : mscz2xml (MuseScore → MusicXML), bibliothèque portable (wasm32, Android, iOS) et CLI";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -123,19 +123,18 @@
         # `package.json` généré depuis la version du workspace : pas de
         # deuxième numéro de version à maintenir.
         wasmPackageJson = pkgs.writeText "mscz2xml-package.json" (builtins.toJSON {
-          name = "mscz2xml";
+          name = "scoretk";
           inherit version;
           description = "Conversion MuseScore (.mscz/.mscx) vers MusicXML, dans le navigateur (WebAssembly)";
           license = "GPL-3.0-only";
+          # GPL §6 : où obtenir la source correspondante.
+          repository = {
+            type = "git";
+            url = "https://github.com/jperon/scoretk";
+          };
           type = "module";
           main = "./esm/mscz2xml_wasm.js";
           types = "./esm/mscz2xml_wasm.d.ts";
-          # GPL §6 : indiquer où obtenir la source correspondante. Aucun remote
-          # git n'existe encore dans ce dépôt ; à remplacer par l'URL réelle.
-          repository = {
-            type = "git";
-            url = "TODO: URL du dépôt à renseigner (aucun remote git n'est défini dans ce dépôt)";
-          };
           exports = {
             "." = {
               types = "./esm/mscz2xml_wasm.d.ts";
@@ -155,11 +154,11 @@
         # usuels, contrairement aux commentaires ordinaires : la mention de
         # licence survit donc à la minification (§5a et §6 de la GPL).
         wasmLicenseBanner = pkgs.writeText "mscz2xml-license-banner.js" ''
-          /*! @license GPL-3.0-only — mscz2xml (WebAssembly)
-           * Copyright (C) 2026 les auteurs de mscz2xml
+          /*! @license GPL-3.0-only — scoretk (WebAssembly)
+           * Copyright (C) 2026 jperon
            * Portage de MuseScore Studio, Copyright (C) MuseScore Limited and others,
            * modifié (réécrit en Rust) en 2026.
-           * source : URL du dépôt à renseigner (TODO : aucun remote git défini).
+           * source : https://github.com/jperon/scoretk
            * Distribué SANS AUCUNE GARANTIE ; licence complète dans LICENSE.
            */
         '';
