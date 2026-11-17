@@ -68,12 +68,15 @@ struct OpenTuplet {
     id: TupletId,
     number: usize,
     ratio: Fraction,
+    /// Nombre de notes normales (affiché, non réduit).
     normal_notes: i64,
     /// Vrai quand le `<tuplet-type>` du fichier fixe déjà la durée de base.
     explicit_base: bool,
     /// Somme des durées notées des enfants, pour `determineTupletBaseLen`.
     notated: Fraction,
     start: Fraction,
+    /// Fin réelle du dernier enfant (n-olets imbriqués compris).
+    max_end: Fraction,
 }
 
 /// Accord d'agrément en attente de rattachement.
@@ -392,6 +395,12 @@ fn read_measure(
     for state in voice_states.values_mut() {
         while let Some(open) = state.tuplets.pop() {
             finish_tuplet(score, &open);
+            if let Some(parent) = state.tuplets.last_mut() {
+                let end = open.max_end;
+                if end > parent.max_end {
+                    parent.max_end = end;
+                }
+            }
         }
     }
 
@@ -509,6 +518,13 @@ fn read_note(
     let cr_tick = measure_start + *m_time;
     let duration = chord_rest_duration(element, timing.dots, measure_len, timing.dura);
     let mut chord_rest = make_chord_rest(element, duration, timing.dura, measure_len);
+    // Un trémolo à deux notes vaut la moitié de sa figure : la durée spécifiée
+    // fait foi (`Chord::tremoloTwoChord`).
+    if is_tremolo_two(element) {
+        if let Some(spec) = timing.spec.filter(|spec| spec.is_positive()) {
+            chord_rest.ticks = Some(spec);
+        }
+    }
     chord_rest.lyrics = read_lyrics(element);
     if let Some(chord) = chord_rest.chord_mut() {
         chord.staff_move = staff_move;
@@ -546,6 +562,11 @@ fn read_note(
         }
         if let Some(open) = state.tuplets.last_mut() {
             open.notated += duration.ticks();
+            // La durée réelle de la note inclut tous les n-olets parents.
+            let end = cr_tick + timing.dura;
+            if end > open.max_end {
+                open.max_end = end;
+            }
         }
     }
     stop_tuplets(score, state, &notations);
@@ -1236,6 +1257,16 @@ fn attach_grace_after(
     }
 }
 
+/// Vrai si la note porte un trémolo à deux notes (`type="start"` ou `"stop"`).
+fn is_tremolo_two(element: &Element) -> bool {
+    element
+        .child("notations")
+        .and_then(|notations| notations.child("ornaments"))
+        .and_then(|ornaments| ornaments.child("tremolo"))
+        .and_then(|tremolo| tremolo.attribute("type"))
+        .is_some_and(|kind| kind == "start" || kind == "stop")
+}
+
 /// Vrai si la note porte un `<slur type="stop">` sans départ.
 fn slur_stop_without_start(element: &Element) -> bool {
     let Some(notations) = element.child("notations") else {
@@ -1396,6 +1427,7 @@ fn start_tuplets(
             explicit_base: notation.base_len.is_some(),
             notated: Fraction::ZERO,
             start: tick,
+            max_end: tick,
         });
     }
 
@@ -1411,6 +1443,12 @@ fn stop_tuplets(score: &mut Score, state: &mut VoiceState, notations: &[TupletNo
         let target = notation.number.max(1);
         while let Some(open) = state.tuplets.pop() {
             finish_tuplet(score, &open);
+            if let Some(parent) = state.tuplets.last_mut() {
+                let end = open.max_end;
+                if end > parent.max_end {
+                    parent.max_end = end;
+                }
+            }
             if open.number == target {
                 break;
             }
@@ -1429,15 +1467,22 @@ fn finish_tuplet(score: &mut Score, open: &OpenTuplet) {
     let total = open.notated / open.ratio;
     let (_, full) = fraction_and_full_duration(total);
     let computed_base = full / Fraction::from_integer(open.ratio.denominator());
-    let base_len = if open.explicit_base {
-        tuplet.base_len
+    let span = open.max_end - open.start;
+    let normal = Fraction::from_integer(open.normal_notes.max(1));
+    // MuseScore calcule la longueur d'un n-olet comme `baseLen * normalNotes`
+    // (`TRead::read(Tuplet*)`). Quand le fichier donne le `<tuplet-type>`, il
+    // fait foi ; sinon la base est déduite de l'étendue réelle des enfants.
+    let (base_len, len) = if open.explicit_base {
+        let base = tuplet.base_len;
+        (base, base * normal)
+    } else if span.is_positive() {
+        (span / normal, span)
     } else {
-        computed_base
+        (computed_base, total)
     };
-    let len = Fraction::try_new(open.normal_notes, base_len.denominator()).unwrap_or(total);
     tuplet.base_len = base_len;
     tuplet.tick = open.start;
-    tuplet.len = if len.is_positive() { len } else { total };
+    tuplet.len = if len.is_positive() { len } else { span };
 }
 
 /// `determineTupletFractionAndFullDuration`.
