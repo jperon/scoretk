@@ -15,12 +15,16 @@ Carte des crates et modules :
 - `crates/mscz2xml` — bibliothèque portable, sans I/O : `container.rs`
   (ZIP `.mscz` → `.mscx`, version), `read/read302` (3.x) et `read/read4xx`
   (4.x/5.x) → modèle, `model/` (modèle en mémoire), `export/` (MusicXML).
-- `crates/mscz2xml-cli` — binaire `mscz2xml`, seule partie qui touche au
-  système de fichiers.
+- `crates/mscz2xml-cli` — binaire `mscz2xml` : lecture/écriture des fichiers.
 - `crates/mscz2xml-wasm` — enveloppe wasm-bindgen (`convert`, `version`),
   sans logique de conversion.
 - `crates/scoretk-midi` — écriture MIDI (SMF format 1) et déroulement des
   reprises (`repeat_list.rs`), sans I/O.
+- `crates/scoretk` — façade multi-formats : `Format`, détection par extension
+  ou contenu, `read`/`write` vers le modèle pivot ; features
+  `musicxml-import` (t34) et `midi` (t35) à brancher dans `src/hooks.rs`.
+- `crates/scoretk-cli` — binaire `scoretk` (`entrée -o sortie`, `--from`,
+  `--to`, `-` pour stdin/stdout) : I/O disque de la façade.
 - `tests/corpus/{v3,v4}/` — `.mscx` amont + références `*.ref.musicxml` ;
   `tests/corpus/midi/` — références `*.ref.mid` ; `crates/mscz2xml/tests/` et
   `crates/scoretk-midi/tests/` — tests par famille et e2e de conformité.
@@ -69,6 +73,7 @@ nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 nix develop -c cargo fmt --all -- --check
 nix develop -c cargo build -p mscz2xml --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-midi --target wasm32-unknown-unknown
+nix develop -c cargo build -p scoretk --target wasm32-unknown-unknown
 nix flake check
 nix build .#wasm
 
@@ -125,5 +130,7 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
   worker cantus) : à lire avant de toucher au crate wasm.
 - `docs/agents/midi.md` — écriture MIDI, `RepeatList`, pauses et vélocités,
   références et écarts : à lire avant de toucher au crate `scoretk-midi`.
+- `docs/agents/scoretk.md` — façade multi-formats : API, détection, points de
+  branchement t34/t35, CLI et tests : à lire avant de toucher à `scoretk`.
 - `docs/agents/licence.md` — obligations GPL-3.0-only d'un consommateur :
   à lire avant toute distribution ou intégration.

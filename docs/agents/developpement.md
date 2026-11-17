@@ -13,9 +13,11 @@ détails et les pièges d'outillage.
 | `crates/mscz2xml/src/read/` | `read302` (3.x) et `read4xx` (4.x/5.x) → modèle |
 | `crates/mscz2xml/src/model/` | modèle de partition en mémoire, pivot des lecteurs et de l'export |
 | `crates/mscz2xml/src/export/` | modèle → MusicXML `partwise` / `.mxl` |
-| `crates/mscz2xml-cli/` | binaire `mscz2xml` : seule partie qui touche au système de fichiers |
+| `crates/mscz2xml-cli/` | binaire `mscz2xml` : lecture/écriture des fichiers |
 | `crates/mscz2xml-wasm/` | enveloppe wasm-bindgen (`convert`, `version`), sans logique de conversion |
 | `crates/scoretk-midi/` | écriture SMF format 1 et déroulement des reprises, sans I/O |
+| `crates/scoretk/` | façade multi-formats : `Format`, détection, `read`/`write` vers le modèle pivot ; features `musicxml-import` et `midi` |
+| `crates/scoretk-cli/` | binaire `scoretk` : I/O disque de la façade, formats déduits des extensions |
 | `crates/mscz2xml/tests/` | tests d'intégration par famille + e2e de conformité |
 | `tests/corpus/{v3,v4}/` | `.mscx` et références `*.ref.musicxml` |
 | `scripts/` | génération des références et de la table des instruments, contrôle des licences |
@@ -106,7 +108,7 @@ code dans `crates/mscz2xml` :
 - vérifier la cible : `nix develop -c cargo build -p mscz2xml --target
   wasm32-unknown-unknown`.
 
-La CLI est la seule à lire et écrire des fichiers ; le crate wasm ne fait
+Les CLI sont les seules à lire et écrire des fichiers ; le crate wasm ne fait
 qu'envelopper l'API de la bibliothèque.
 
 ## 5. Contrat wasm stable (cantus)

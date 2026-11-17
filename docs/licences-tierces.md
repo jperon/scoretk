@@ -1,8 +1,9 @@
 # Licences des dépendances tierces
 
 Ce document liste les crates tierces **effectivement liées** dans les binaires
-produits par le workspace (`mscz2xml` + CLI + wasm + `scoretk-midi`), avec leur licence, et
-vérifie leur compatibilité avec la licence du projet, **GPL-3.0-only**.
+produits par le workspace (`mscz2xml`, `scoretk` et leurs CLI, plus les crates
+wasm et MIDI), avec leur licence, et vérifie leur compatibilité avec la licence
+du projet, **GPL-3.0-only**.
 
 ## Portée et méthode
 
