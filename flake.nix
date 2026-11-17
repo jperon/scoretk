@@ -281,6 +281,8 @@
         apps.scoretk = flake-utils.lib.mkApp {
           drv = self.packages.${system}.scoretk;
           name = "scoretk";
+        } // {
+          meta.description = "Conversion de partitions entre formats (MuseScore, MusicXML, MIDI, …)";
         };
 
         checks = {
