@@ -472,7 +472,7 @@ fn units_fraction(units: i64) -> Fraction {
 }
 
 /// Remplit les trous de toutes les voix de toutes les mesures.
-pub(crate) fn fill(score: &mut Score) {
+pub fn fill(score: &mut Score) {
     let count = score.measures.len();
     for index in 0..count {
         if score

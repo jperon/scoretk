@@ -15,6 +15,7 @@ détails et les pièges d'outillage.
 | `crates/mscz2xml/src/export/` | modèle → MusicXML `partwise` / `.mxl` |
 | `crates/mscz2xml-cli/` | binaire `mscz2xml` : lecture/écriture des fichiers |
 | `crates/mscz2xml-wasm/` | enveloppe wasm-bindgen (`convert`, `version`), sans logique de conversion |
+| `crates/scoretk-musicxml/` | lecteur MusicXML → modèle (`read_musicxml`), bibliothèque portable |
 | `crates/scoretk-midi/` | écriture SMF format 1 et déroulement des reprises, sans I/O |
 | `crates/scoretk/` | façade multi-formats : `Format`, détection, `read`/`write` vers le modèle pivot ; features `musicxml-import` et `midi` |
 | `crates/scoretk-cli/` | binaire `scoretk` : I/O disque de la façade, formats déduits des extensions |

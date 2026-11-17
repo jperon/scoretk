@@ -37,7 +37,7 @@
 pub(crate) mod instruments;
 
 /// Remplissage des trous de voix par des silences « gap » (`Measure::checkMeasure`).
-mod gap_rests;
+pub mod gap_rests;
 
 /// Lecteur des partitions MuseScore 3.00 à 3.99 (portage de `read302`).
 pub mod read302;

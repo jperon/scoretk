@@ -18,6 +18,8 @@ Carte des crates et modules :
 - `crates/mscz2xml-cli` — binaire `mscz2xml` : lecture/écriture des fichiers.
 - `crates/mscz2xml-wasm` — enveloppe wasm-bindgen (`convert`, `version`),
   sans logique de conversion.
+- `crates/scoretk-musicxml` — lecteur MusicXML (`read_musicxml`) vers le
+  modèle : `.musicxml`/`.xml`/`.mxl` → `Score`.
 - `crates/scoretk-midi` — écriture MIDI (SMF format 1) et déroulement des
   reprises (`repeat_list.rs`), sans I/O.
 - `crates/scoretk` — façade multi-formats : `Format`, détection par extension
@@ -134,3 +136,6 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
   branchement t34/t35, CLI et tests : à lire avant de toucher à `scoretk`.
 - `docs/agents/licence.md` — obligations GPL-3.0-only d'un consommateur :
   à lire avant toute distribution ou intégration.
+- `docs/agents/musicxml-import.md` — portage de l'import MusicXML, résultat
+  du test d'aller-retour et écarts restants : à lire avant de toucher au
+  lecteur MusicXML.

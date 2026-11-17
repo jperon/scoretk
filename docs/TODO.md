@@ -9,7 +9,7 @@ cinq formats de partition ; **mscz2xml** en est le premier convertisseur
 | Format | Lecture | Écriture |
 |---|---|---|
 | MuseScore (`.mscz` / `.mscx`, 3.x et 4.x) | fait | à faire |
-| MusicXML (`.musicxml` / `.mxl`) | à faire | fait |
+| MusicXML (`.musicxml` / `.mxl`) | fait (noyau, cf. `docs/agents/musicxml-import.md`) | fait |
 | LilyPond (`.ly`) | à faire | à faire |
 | ABC (`.abc`) | à faire | à faire |
 | MIDI (`.mid`) | à faire | fait (`scoretk-midi`) |
@@ -22,8 +22,8 @@ ly, abc et midi.
 
 | Crate | Rôle | État |
 | --- | --- | --- |
-| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : `.mscz`/`.mscx` → MusicXML/`.mxl` ; features `musicxml-import` et `midi` prêtes pour t34/t35 |
-| `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | en cours (t34) |
+| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : `.mscz`/`.mscx` → MusicXML/`.mxl`, MusicXML → modèle ; features `musicxml-import` et `midi` branchées |
+| `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | fait pour le noyau : 47/56 aller-retours identiques (écarts dans `docs/agents/musicxml-import.md`) |
 | `scoretk-midi` | écrivain MIDI depuis le modèle pivot | en cours (t35) |
 
 MIDI est à part : c'est un format de performance, pas de notation. L'écriture

@@ -29,6 +29,7 @@
 use mscz2xml::model::Score;
 
 use crate::error::Error;
+#[cfg(not(all(feature = "musicxml-import", feature = "midi")))]
 use crate::format::{Format, Sens};
 use crate::Result;
 

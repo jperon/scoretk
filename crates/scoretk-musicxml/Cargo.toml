@@ -1,0 +1,19 @@
+[package]
+name = "scoretk-musicxml"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Lecture MusicXML (partwise, .musicxml/.xml/.mxl) vers le modèle de scoretk"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+mscz2xml = { path = "../mscz2xml" }
+quick-xml = { workspace = true }
+thiserror = { workspace = true }
+zip = { workspace = true }
+
+[dev-dependencies]
+similar = "3"
+quick-xml = { workspace = true }
