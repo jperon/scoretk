@@ -568,8 +568,10 @@ impl Reader {
                         let below = measure_index > 0 && has_page_break(child);
                         if let Some(mut text) = textlines::read_tbox(child, measure_index, below) {
                             if below {
-                                text.measure =
-                                    crate::read::mmrest_group_start(&self.score.measures, text.measure);
+                                text.measure = crate::read::mmrest_group_start(
+                                    &self.score.measures,
+                                    text.measure,
+                                );
                             }
                             self.score.add_tbox_text(text);
                         }

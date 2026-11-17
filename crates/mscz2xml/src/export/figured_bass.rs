@@ -145,7 +145,13 @@ fn write_musicxml(
 }
 
 /// Écrit un `<figure>` (`writeMusicXml(const FiguredBassItem*)`).
-fn write_item(out: &mut Out, item: &FiguredBassItem, is_original: bool, chord_end: Tick, bass_end: Tick) {
+fn write_item(
+    out: &mut Out,
+    item: &FiguredBassItem,
+    is_original: bool,
+    chord_end: Tick,
+    bass_end: Tick,
+) {
     out.xml.start_element("figure", &[]);
     if is_original {
         write_modifier(out, "prefix", item.prefix);
@@ -153,9 +159,13 @@ fn write_item(out: &mut Out, item: &FiguredBassItem, is_original: bool, chord_en
             out.xml.tag("figure-number", &digit.to_string());
         }
         write_modifier(out, "suffix", item.suffix);
-        let has_figure = item.prefix.is_some_and(|modifier| modifier.musicxml_name().is_some())
+        let has_figure = item
+            .prefix
+            .is_some_and(|modifier| modifier.musicxml_name().is_some())
             || item.digit.is_some()
-            || item.suffix.is_some_and(|modifier| modifier.musicxml_name().is_some());
+            || item
+                .suffix
+                .is_some_and(|modifier| modifier.musicxml_name().is_some());
         if bass_end <= chord_end {
             match item.cont_line {
                 FiguredBassContLine::Simple => {

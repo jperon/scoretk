@@ -37,7 +37,6 @@ use crate::model::{
     SegmentType, StaffId, Tick, Track,
 };
 
-
 /// Mesure marquée `<RepeatMeasure>` : son contenu est celui des mesures
 /// précédentes.
 pub(crate) struct MeasureRepeat {
@@ -163,11 +162,7 @@ fn segment_mut(measure: &mut crate::model::Measure, tick: Tick) -> &mut crate::m
     {
         return &mut measure.segments[position];
     }
-    measure.add_segment(crate::model::Segment::new(
-        SegmentType::ChordRest,
-        tick,
-        1,
-    ));
+    measure.add_segment(crate::model::Segment::new(SegmentType::ChordRest, tick, 1));
     let position = measure
         .segments
         .iter()

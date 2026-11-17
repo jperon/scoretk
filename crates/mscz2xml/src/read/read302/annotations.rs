@@ -235,7 +235,10 @@ fn read_tremolo_bar(node: &Node) -> TremoloBar {
     let mut points = Vec::new();
     for child in node.children_named("point") {
         points.push(TremoloBarPoint {
-            time: child.attr("time").and_then(|value| value.parse().ok()).unwrap_or(0),
+            time: child
+                .attr("time")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0),
             pitch: child
                 .attr("pitch")
                 .and_then(|value| value.parse().ok())

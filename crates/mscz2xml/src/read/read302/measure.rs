@@ -89,7 +89,10 @@ pub(crate) fn read_measure(
             // barre de courtoisie).
             "LayoutBreak" => {
                 if matches!(
-                    child.child("subtype").map(|node| node.trimmed_text()).as_deref(),
+                    child
+                        .child("subtype")
+                        .map(|node| node.trimmed_text())
+                        .as_deref(),
                     Some("line" | "page")
                 ) {
                     reader.score.measures[index].line_break = true;
@@ -203,13 +206,13 @@ fn read_voice(
                     .and_then(Node::int_text)
                     .and_then(|value| u16::try_from(value.clamp(1, u16::MAX as i32)).ok())
                     .unwrap_or(1);
-                reader.measure_repeats.push(
-                    super::super::measure_repeat::MeasureRepeat {
+                reader
+                    .measure_repeats
+                    .push(super::super::measure_repeat::MeasureRepeat {
                         measure: index,
                         staff,
                         count,
-                    },
-                );
+                    });
                 ctx.tick += reader.score.measures[index].len;
             }
             "Dynamic" | "Expression" | "Tempo" | "StaffText" | "SystemText" | "Text"

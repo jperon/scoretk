@@ -102,9 +102,7 @@ pub use chord::{
     GraceChord, GraceType, Rest, StemDirection,
 };
 pub use duration::{Duration, DurationType};
-pub use figured_bass::{
-    FiguredBass, FiguredBassContLine, FiguredBassItem, FiguredBassModifier,
-};
+pub use figured_bass::{FiguredBass, FiguredBassContLine, FiguredBassItem, FiguredBassModifier};
 pub use fraction::{Fraction, Tick};
 pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};

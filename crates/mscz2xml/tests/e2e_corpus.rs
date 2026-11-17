@@ -92,6 +92,7 @@ const EXPECTED_CONFORMANT_V3: &[&str] = &[
     "copypaste_tuplet_01",
     "grace",
     "keysig_78216",
+    "layout_elements",
     "lyricsline01",
     "measure-4",
     "repeat01",

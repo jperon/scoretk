@@ -43,8 +43,9 @@ pub(super) fn read_figured_bass(element: &Element) -> FiguredBass {
                 for field in &child.children {
                     match field.name.as_str() {
                         "prefix" => {
-                            item.prefix =
-                                Some(FiguredBassModifier::from_mcsx(field.int().unwrap_or(0) as i32));
+                            item.prefix = Some(FiguredBassModifier::from_mcsx(
+                                field.int().unwrap_or(0) as i32,
+                            ));
                         }
                         "digit" => {
                             item.digit = field
@@ -52,8 +53,9 @@ pub(super) fn read_figured_bass(element: &Element) -> FiguredBass {
                                 .and_then(|value| u8::try_from(value.clamp(0, 9)).ok());
                         }
                         "suffix" => {
-                            item.suffix =
-                                Some(FiguredBassModifier::from_mcsx(field.int().unwrap_or(0) as i32));
+                            item.suffix = Some(FiguredBassModifier::from_mcsx(
+                                field.int().unwrap_or(0) as i32,
+                            ));
                         }
                         "continuationLine" => {
                             item.cont_line =
@@ -67,7 +69,9 @@ pub(super) fn read_figured_bass(element: &Element) -> FiguredBass {
             _ => {}
         }
     }
-    bass.place_above = element.child("placement").is_some_and(|child| child.text() == "above");
+    bass.place_above = element
+        .child("placement")
+        .is_some_and(|child| child.text() == "above");
     bass.parentheses = element
         .child("parentheses")
         .and_then(Element::int)

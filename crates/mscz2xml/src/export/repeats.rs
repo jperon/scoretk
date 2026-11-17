@@ -164,7 +164,8 @@ pub(super) fn measure_style(
     let Some(position) = part.staves.iter().position(|staff| *staff == mark.staff) else {
         return;
     };
-    if previous.is_some_and(|previous| previous.staff == mark.staff && previous.count == mark.count) {
+    if previous.is_some_and(|previous| previous.staff == mark.staff && previous.count == mark.count)
+    {
         return;
     }
     write_measure_repeat(out, part.staves.len(), Some(position + 1), Some(mark.count));
@@ -173,7 +174,9 @@ pub(super) fn measure_style(
 /// Écrit un `<attributes><measure-style><measure-repeat>` (ou sa fin).
 fn write_measure_repeat(out: &mut Out, staves: usize, position: Option<usize>, count: Option<u16>) {
     out.attr(true);
-    let number = position.filter(|_| staves > 1).map(|position| position.to_string());
+    let number = position
+        .filter(|_| staves > 1)
+        .map(|position| position.to_string());
     let attributes: Vec<(&str, &str)> = number
         .as_deref()
         .map(|number| vec![("number", number)])

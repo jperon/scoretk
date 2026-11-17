@@ -380,12 +380,14 @@ pub(crate) fn resolve(reader: &mut Reader) {
                 && connector.next_link.is_none()
                 && matches!(connector.payload, Some(Payload::Tie(_)))
         })
-        .filter_map(|connector| match (connector.receiver, connector.payload.as_ref()) {
-            (Receiver::Note(note), Some(Payload::Tie(visible))) => {
-                Some((note, connector.anchor, *visible))
-            }
-            _ => None,
-        })
+        .filter_map(
+            |connector| match (connector.receiver, connector.payload.as_ref()) {
+                (Receiver::Note(note), Some(Payload::Tie(visible))) => {
+                    Some((note, connector.anchor, *visible))
+                }
+                _ => None,
+            },
+        )
         .collect();
     for (note, anchor, visible) in dangling {
         search_tie_note(reader, note, anchor, visible);

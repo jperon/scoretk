@@ -266,7 +266,8 @@ fn format_bend_alter(value: f64) -> String {
     }
 }
 
-/// Écrit l'arpège d'un accord sur une note (`arpeggiate`).#[allow(clippy::too_many_arguments)]
+/// Écrit l'arpège d'un accord sur une note (`arpeggiate`).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn arpeggio(
     xml: &mut XmlWriter,
     state: &mut NotationsState,

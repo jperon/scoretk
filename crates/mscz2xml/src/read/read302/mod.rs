@@ -60,8 +60,8 @@ mod xml;
 
 use crate::container::MscVersion;
 use crate::model::{
-    BarLineType, Clef, ClefType, Fraction, Measure, Score, SegmentItem,
-    SegmentType, StyleSettings, Track, Transpose, TupletId, VOICES,
+    BarLineType, Clef, ClefType, Fraction, Measure, Score, SegmentItem, SegmentType, StyleSettings,
+    Track, Transpose, TupletId, VOICES,
 };
 use crate::Result;
 
@@ -269,7 +269,8 @@ impl Reader {
                     let below = index > 0 && credits::page_break(child);
                     if let Some(mut text) = textlines::read_tbox(child, index, below) {
                         if below {
-                            text.measure = super::mmrest_group_start(&self.score.measures, text.measure);
+                            text.measure =
+                                super::mmrest_group_start(&self.score.measures, text.measure);
                         }
                         self.score.add_tbox_text(text);
                     }
