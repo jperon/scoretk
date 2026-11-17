@@ -371,6 +371,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "scoretk-mscx"
+version = "0.1.0"
+dependencies = [
+ "mscz2xml",
+ "quick-xml",
+ "similar",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
 name = "scoretk-musicxml"
 version = "0.1.0"
 dependencies = [

@@ -1163,6 +1163,16 @@ impl Reader {
                         }
                         instrument
                     });
+                    // `Segment::add` enregistre l'instrument d'un changement au
+                    // tick du segment (`part->setInstrument`) : la liste
+                    // `Part::instruments()` de l'export en dépend (identifiants
+                    // `P<n>-I<r>`, canaux MIDI).
+                    if let Some(instrument) = &instrument {
+                        let part_id = self.score.staves[staff_index].part;
+                        self.score
+                            .part_mut(part_id)
+                            .set_instrument_at(tick, instrument.clone());
+                    }
                     self.add_annotation(
                         measure_index,
                         tick,
