@@ -1,0 +1,20 @@
+[package]
+name = "scoretk-midi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Écriture MIDI (Standard MIDI File format 1) depuis le modèle scoretk"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+mscz2xml = { path = "../mscz2xml" }
+thiserror.workspace = true
+# `alloc` seulement : la crate reste `no_std`-compatible et compile pour
+# wasm32-unknown-unknown. L'écriture se fait dans un `Vec<u8>` via l'implémentation
+# `midly::io::Write` de `Vec`.
+midly = { version = "0.5.3", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+midly = { version = "0.5.3", default-features = false, features = ["alloc"] }

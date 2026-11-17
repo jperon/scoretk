@@ -16,6 +16,12 @@ sources by `scripts/gen-references.sh` using MuseScore:
 - MuseScore 4.7.4 (`mscore`, nixpkgs), run headless
   (`QT_QPA_PLATFORM=offscreen`).
 
+The reference MIDI files (`midi/<version>/*.ref.mid`) are produced from the
+same sources by `scripts/gen-midi-references.sh`, with the same MuseScore
+version and the same headless mode; only a small subset of the corpus is
+exported (short scores covering repeats, voltas, jumps, dynamics, hairpins,
+tuplets, ties, grace notes, articulations and tremolos).
+
 ## Format 3.x (`v3/`, `museScore version="3.01"`)
 
 | File | Upstream path |

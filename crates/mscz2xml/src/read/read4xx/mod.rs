@@ -58,10 +58,10 @@ use crate::model::{
     text_style_defaults, Accidental, Annotation, Articulation, BarLine, BarLineType, BeamMode,
     Breath, BreathType, Chord, ChordRest, ChordRestKind, Clef, ClefType, Credit, CreditJustify,
     CreditStyle, Duration, DurationType, Fraction, GraceChord, GraceType, Harmony, Instrument,
-    InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, MidiArticulation, Note,
-    NoteId, Part, Placement, RehearsalFrame, RehearsalMark, RichText, Score, Segment, SegmentItem,
-    SegmentType, Staff, StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType,
-    Track, Transpose, TremoloKind, Tuplet, TupletId, TupletNumberType, VOICES,
+    InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, MidiArticulation,
+    Note, NoteId, Part, Placement, RehearsalFrame, RehearsalMark, RichText, Score, Segment,
+    SegmentItem, SegmentType, Staff, StaffText, StemDirection, SystemText, Tempo, Tick, TimeSig,
+    TimeSigType, Track, Transpose, TremoloKind, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 use crate::{Error, Result};
 

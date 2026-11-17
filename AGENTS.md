@@ -19,8 +19,11 @@ Carte des crates et modules :
   système de fichiers.
 - `crates/mscz2xml-wasm` — enveloppe wasm-bindgen (`convert`, `version`),
   sans logique de conversion.
+- `crates/scoretk-midi` — écriture MIDI (SMF format 1) et déroulement des
+  reprises (`repeat_list.rs`), sans I/O.
 - `tests/corpus/{v3,v4}/` — `.mscx` amont + références `*.ref.musicxml` ;
-  `crates/mscz2xml/tests/` — tests par famille et e2e de conformité.
+  `tests/corpus/midi/` — références `*.ref.mid` ; `crates/mscz2xml/tests/` et
+  `crates/scoretk-midi/tests/` — tests par famille et e2e de conformité.
 - `scripts/` — références du corpus, table des instruments, licences ;
   `flake.nix` — shell, checks, paquet wasm.
 
@@ -65,6 +68,7 @@ nix develop -c cargo test --workspace
 nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 nix develop -c cargo fmt --all -- --check
 nix develop -c cargo build -p mscz2xml --target wasm32-unknown-unknown
+nix develop -c cargo build -p scoretk-midi --target wasm32-unknown-unknown
 nix flake check
 nix build .#wasm
 
@@ -119,5 +123,7 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
   à lire pour mesurer, pas pour décider seul d'un correctif.
 - `docs/agents/wasm.md` — construction, API et usage du paquet wasm (ESM,
   worker cantus) : à lire avant de toucher au crate wasm.
+- `docs/agents/midi.md` — écriture MIDI, `RepeatList`, pauses et vélocités,
+  références et écarts : à lire avant de toucher au crate `scoretk-midi`.
 - `docs/agents/licence.md` — obligations GPL-3.0-only d'un consommateur :
   à lire avant toute distribution ou intégration.
