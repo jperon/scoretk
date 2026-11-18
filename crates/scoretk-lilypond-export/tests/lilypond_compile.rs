@@ -29,7 +29,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 /// Avertissements qui signalent un défaut musical ou syntaxique de la sortie.
 const AVERTISSEMENTS_INTERDITS: &[&str] = &[
@@ -88,62 +88,87 @@ fn le_corpus_compile_sans_erreur() {
     }
     let dossier = std::env::temp_dir().join(format!("scoretk-lilypond-{}", std::process::id()));
     fs::create_dir_all(&dossier).expect("répertoire temporaire");
-    let mut compiles = 0usize;
 
-    for path in fichiers() {
-        let bytes = fs::read(&path).unwrap_or_else(|error| panic!("lecture {path:?} : {error}"));
-        let container = scoretk_musescore_import::MsczContainer::from_bytes(&bytes)
-            .unwrap_or_else(|error| panic!("conteneur {path:?} : {error}"));
-        let score = scoretk_musescore_import::read::read_score(&container)
-            .unwrap_or_else(|error| panic!("lecture {path:?} : {error}"));
-        let produit = scoretk_lilypond_export::write_lilypond(&score)
-            .unwrap_or_else(|error| panic!("écriture {path:?} : {error}"));
-        let tige = path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .expect("nom de fichier");
-        let source = dossier.join(format!("{tige}.ly"));
-        fs::write(&source, produit).expect("écriture de la source");
-        let sortie = Command::new("lilypond")
-            .current_dir(&dossier)
-            .args(["-dno-point-and-click", "--pdf", "-o"])
-            .arg(&dossier)
-            .arg(&source)
-            .output()
-            .expect("exécution de lilypond");
-        let journal = format!(
-            "{}{}",
-            String::from_utf8_lossy(&sortie.stdout),
-            String::from_utf8_lossy(&sortie.stderr)
-        );
-        assert!(
-            sortie.status.success(),
-            "LilyPond échoue sur {path:?} :\n{journal}"
-        );
-        assert!(
-            !journal.contains("erreur fatale") && !journal.contains("Erreur :"),
-            "LilyPond signale une erreur sur {path:?} :\n{journal}"
-        );
-        for motif in AVERTISSEMENTS_INTERDITS {
-            assert!(
-                !journal.contains(motif),
-                "LilyPond signale « {motif} » sur {path:?} :\n{journal}"
-            );
+    // 1. Production de toutes les sources .ly en séquence.
+    let taches: Vec<(PathBuf, PathBuf)> = fichiers()
+        .into_iter()
+        .map(|path| {
+            let bytes =
+                fs::read(&path).unwrap_or_else(|error| panic!("lecture {path:?} : {error}"));
+            let container = scoretk_musescore_import::MsczContainer::from_bytes(&bytes)
+                .unwrap_or_else(|error| panic!("conteneur {path:?} : {error}"));
+            let score = scoretk_musescore_import::read::read_score(&container)
+                .unwrap_or_else(|error| panic!("lecture {path:?} : {error}"));
+            let produit = scoretk_lilypond_export::write_lilypond(&score)
+                .unwrap_or_else(|error| panic!("écriture {path:?} : {error}"));
+            let tige = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .expect("nom de fichier");
+            let source = dossier.join(format!("{tige}.ly"));
+            fs::write(&source, produit).expect("écriture de la source");
+            (path, source)
+        })
+        .collect();
+
+    // 2. LilyPond par lots de `available_parallelism()` processus (repli 4).
+    // Les tiges de corpus sont uniques, donc les noms de sortie le sont aussi.
+    let parallelisme = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let mut compiles = 0usize;
+    for lot in taches.chunks(parallelisme) {
+        let mut enfants: Vec<(std::process::Child, PathBuf)> = Vec::with_capacity(lot.len());
+        for (path, source) in lot {
+            let enfant = Command::new("lilypond")
+                .current_dir(&dossier)
+                .args(["-dno-point-and-click", "--pdf", "-o"])
+                .arg(&dossier)
+                .arg(source)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("exécution de lilypond");
+            enfants.push((enfant, path.clone()));
         }
-        // Seuls les avertissements de mise en page du corpus sont tolérés ;
-        // tout autre avertissement est considéré comme bruyant.
-        for line in journal.lines() {
-            if !line.contains("Avertissement") {
-                continue;
+        for (enfant, path) in enfants {
+            let sortie = enfant
+                .wait_with_output()
+                .unwrap_or_else(|error| panic!("attente de lilypond sur {path:?} : {error}"));
+            let journal = format!(
+                "{}{}",
+                String::from_utf8_lossy(&sortie.stdout),
+                String::from_utf8_lossy(&sortie.stderr)
+            );
+            assert!(
+                sortie.status.success(),
+                "LilyPond échoue sur {path:?} :\n{journal}"
+            );
+            assert!(
+                !journal.contains("erreur fatale") && !journal.contains("Erreur :"),
+                "LilyPond signale une erreur sur {path:?} :\n{journal}"
+            );
+            for motif in AVERTISSEMENTS_INTERDITS {
+                assert!(
+                    !journal.contains(motif),
+                    "LilyPond signale « {motif} » sur {path:?} :\n{journal}"
+                );
             }
-            assert!(
-                AVERTISSEMENTS_TOLERES
-                    .iter()
-                    .any(|motif| line.contains(motif)),
-                "avertissement LilyPond non toléré sur {path:?} : {line}"
-            );
+            // Seuls les avertissements de mise en page du corpus sont tolérés ;
+            // tout autre avertissement est considéré comme bruyant.
+            for line in journal.lines() {
+                if !line.contains("Avertissement") {
+                    continue;
+                }
+                assert!(
+                    AVERTISSEMENTS_TOLERES
+                        .iter()
+                        .any(|motif| line.contains(motif)),
+                    "avertissement LilyPond non toléré sur {path:?} : {line}"
+                );
+            }
+            compiles += 1;
         }
-        compiles += 1;
     }
 
     eprintln!("{compiles} fichiers du corpus compilés par LilyPond");
