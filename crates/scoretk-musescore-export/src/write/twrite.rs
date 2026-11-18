@@ -501,11 +501,20 @@ pub(crate) fn write_bar_line(xml: &mut XmlWriter, bar_line: &BarLine) {
     xml.end_element();
 }
 
-/// Écrit une respiration.
+/// Écrit une respiration (`TWrite::write(const Breath*)`,
+/// `rw/write/twrite.cpp:1043-1052`).
+///
+/// La propriété `Pid::SYMBOL` et la propriété `Pid::PAUSE` sont écrites si
+/// elles diffèrent de leur défaut ; le modèle ne porte pas la pause, qui n'a
+/// aucun effet dans `engraving` (seul le module *playback*, absent du
+/// snapshot, la consomme).
 fn write_breath(xml: &mut XmlWriter, breath: &Breath) {
     xml.start_element("Breath", &[]);
     if let Some(symbol) = names::breath_symbol(breath.kind) {
         xml.tag("symbol", symbol);
+    }
+    if breath.placement == Placement::Below {
+        xml.tag("placement", placement_name(breath.placement));
     }
     xml.end_element();
 }

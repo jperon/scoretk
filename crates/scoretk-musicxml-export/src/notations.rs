@@ -688,6 +688,7 @@ fn write_breath(xml: &mut XmlWriter, breath: &Breath, notations: &mut Notations)
         BreathType::CaesuraSingle => ("caesura", Some("single")),
         BreathType::Tick => ("breath-mark", Some("tick")),
         BreathType::Upbow => ("breath-mark", Some("upbow")),
+        BreathType::Salzedo => ("breath-mark", Some("salzedo")),
         BreathType::Comma => ("breath-mark", Some("comma")),
     };
     let placement = if breath.placement == Placement::Below {

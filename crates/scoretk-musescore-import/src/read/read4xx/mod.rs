@@ -1039,22 +1039,25 @@ impl Reader {
                     self.read_bar_line(measure_index, tick, track, bar_line);
                 }
                 "Breath" => {
+                    // Symboles de `SymNames` (`engraving/types/symnames.cpp:798-822`).
                     let kind = match child.child("symbol").map(Element::text) {
                         Some("caesura") => BreathType::Caesura,
                         Some("caesuraCurved") => BreathType::CaesuraCurved,
                         Some("caesuraShort") => BreathType::CaesuraShort,
                         Some("caesuraThick") => BreathType::CaesuraThick,
                         Some("caesuraSingleStroke" | "chantCaesura") => BreathType::CaesuraSingle,
-                        Some("breathTick") => BreathType::Tick,
-                        Some("stringsUpBow") => BreathType::Upbow,
+                        Some("breathMarkTick") => BreathType::Tick,
+                        Some("breathMarkUpbow") => BreathType::Upbow,
+                        Some("breathMarkSalzedo") => BreathType::Salzedo,
                         _ => BreathType::Comma,
                     };
                     // `MeasureRead::readVoice` place la respiration au-dessus
-                    // pour la voix 0 et au-dessous pour la voix 1.
-                    let placement = if track.voice() % 2 == 1 {
-                        scoretk_core::model::Placement::Below
-                    } else {
-                        scoretk_core::model::Placement::Above
+                    // pour la voix 0 et au-dessous pour la voix 1, puis
+                    // `TRead::read` applique `<placement>` s'il est présent.
+                    let placement = match child.child("placement") {
+                        Some(node) => placement(Some(node)),
+                        None if track.voice() % 2 == 1 => Placement::Below,
+                        None => Placement::Above,
                     };
                     self.insert_item(
                         measure_index,
@@ -1234,7 +1237,15 @@ impl Reader {
                     self.add_annotation(measure_index, tick, track, Annotation::Harmony(harmony));
                 }
                 "Fermata" => {
-                    let annotation = notations::read_fermata(child);
+                    let mut annotation = notations::read_fermata(child);
+                    // `MeasureRead::readVoice` place le point d'orgue
+                    // au-dessous pour la voix 1 ; `<placement>` l'écrase
+                    // ensuite (`rw/read410/measureread.cpp:534-539`).
+                    if let Annotation::Fermata(fermata) = &mut annotation {
+                        if !child.has_child("placement") && track.voice() % 2 == 1 {
+                            fermata.placement = Placement::Below;
+                        }
+                    }
                     self.add_annotation(measure_index, tick, track, annotation);
                 }
                 "FiguredBass" => {

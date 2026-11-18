@@ -410,6 +410,11 @@ pub fn marker_label(value: MarkerType) -> &'static str {
 }
 
 /// Symbole d'une respiration (`Breath/symbol`), `None` pour la virgule.
+///
+/// Les noms sont ceux de `SymNames` (`engraving/types/symnames.cpp:798-822`),
+/// écrits par `TWrite::write(const Breath*)` via la propriété `Pid::SYMBOL`
+/// (`rw/write/twrite.cpp:1043-1052`). La virgule est la valeur par défaut :
+/// elle n'est pas écrite.
 pub fn breath_symbol(value: BreathType) -> Option<&'static str> {
     match value {
         BreathType::Comma => None,
@@ -418,8 +423,9 @@ pub fn breath_symbol(value: BreathType) -> Option<&'static str> {
         BreathType::CaesuraShort => Some("caesuraShort"),
         BreathType::CaesuraThick => Some("caesuraThick"),
         BreathType::CaesuraSingle => Some("caesuraSingleStroke"),
-        BreathType::Tick => Some("breathTick"),
-        BreathType::Upbow => Some("stringsUpBow"),
+        BreathType::Tick => Some("breathMarkTick"),
+        BreathType::Upbow => Some("breathMarkUpbow"),
+        BreathType::Salzedo => Some("breathMarkSalzedo"),
     }
 }
 

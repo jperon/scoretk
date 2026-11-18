@@ -126,21 +126,25 @@ ticks internes du modèle (`Fraction` de ronde) sont convertis en
 ## Écarts et limites connus
 
 Mesurés sur le sous-ensemble de référence (`tests/corpus/midi/`) : **21/21
-fichiers identiques** (notes et changements de tempo effectifs). Les points
-suivants restent hors périmètre, faute d'information dans le modèle :
+fichiers identiques** (notes et changements de tempo effectifs ; `v3/repeat06`
+et `v4/repeat65/66/68/69`, voltas et sauts compris). Les points suivants
+restent hors périmètre, faute d'information dans le modèle :
 
-**Écart connu de déroulement.** Au `RepeatEnd`, le C++ ferme **toute** volta
-encore ouverte (`ref-musescore/src/engraving/dom/repeatlist.cpp:581-588`, idem
-sur un saut, `:525-543`) ; le portage ne la ferme que si elle se termine là
-(`crates/scoretk-midi-export/src/repeat_list.rs:739-752`). Une volta débordant
-l'`endRepeat` peut donc différer de MuseScore ; non déclenché par le corpus
-(`v3/repeat06`, `v4/repeat65/66/68/69` conformes), gardé par les 21 références
-de `corpus_midi`. Correctif minimal : fermer la volta à la mesure du
-`RepeatEnd`, puis `cargo test -p scoretk-midi-export --test corpus_midi`.
-
-- **Pauses de fermatas et respirations** : la carte des pauses ne traite que
-  les sauts de section (pause par défaut de 3 s). Une fermata jouée ou une
-  respiration décalerait la suite du fichier.
+- **Fermeture des voltas** : au `RepeatEnd`, le portage ferme désormais **toute**
+  volta encore ouverte, sans condition sur sa mesure de fin, et un saut ferme
+  la volta qui s'achève avant lui (`repeatlist.cpp:581-588` et `:525-543`) :
+  une volta qui déborde l'`endRepeat` se termine sur cette mesure, comme dans
+  le C++. Couvert par `repeat_list::tests::volta_debordant_le_repeat_end`.
+- **Pauses de fermatas et respirations** : aucune n'est appliquée, ce qui est
+  fidèle. `engraving/compat/midi/` ne mentionne aucune fermata (seul
+  `CTRL_BREATH` y apparaît, `compatmidirender.cpp:55`), et
+  `Breath::BREATH_LIST` (`breath.cpp:33-44`) ne sert qu'à `isCaesura()`
+  (`breath.cpp:64-74`) : les secondes de césure vivent dans le `PausesMap`
+  (`tempotimeline.h:33`) rempli par le module *playback*, absent de
+  `ref-musescore/`. `PauseMap` ne traite donc que les sauts de section (pause
+  par défaut de 3 s). Gardé par
+  `pause_map::tests::points_d_orgue_et_respirations_n_allongent_pas_le_rendu`,
+  à reconfirmer sur 4.7.4 si le module *playback* devient disponible.
 - **Dynamique progressive intégrée aux nuances** (`fp`, `sfz`…) : la baisse de
   vélocité après l'attaque n'est pas modélisée ; la vélocité initiale, elle,
   est juste.

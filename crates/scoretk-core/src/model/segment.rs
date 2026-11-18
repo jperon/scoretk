@@ -481,7 +481,9 @@ impl BarLine {
 
 /// Type de respiration.
 ///
-/// Correspond à `BreathType` dans `engraving/dom/breath.h`.
+/// Correspond aux `SymId` de `Breath::BREATH_LIST`
+/// (`engraving/dom/breath.cpp:33-44`) : six césures (`isCaesura`) et quatre
+/// respirations.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum BreathType {
     /// Virgule.
@@ -497,10 +499,12 @@ pub enum BreathType {
     CaesuraThick,
     /// Césure simple trait (`caesuraSingleStroke`).
     CaesuraSingle,
-    /// Respiration en tick.
+    /// Respiration en tick (`breathMarkTick`).
     Tick,
-    /// Coup d'archet.
+    /// Coup d'archet (`breathMarkUpbow`).
     Upbow,
+    /// Respiration de Salzedo (`breathMarkSalzedo`).
+    Salzedo,
 }
 
 /// Respiration.

@@ -151,7 +151,9 @@ nuances et tempos lus depuis `<direction>` produisent les bonnes vélocités.
   `trill-mark`, `wavy-line`), fermates, arpèges (`arpeggiate`,
   `non-arpeggiate`), `<slur>` (numéros, orientation), `<slide>`/`<glissando>`,
   doigtés `<technical><fingering>`, lignes d'accord (`falloff`, `doit`,
-  `plop`, `scoop`) et respirations/césures ;
+  `plop`, `scoop`) et respirations/césures (`<caesura>` normal, `curved`,
+  `short`, `thick`, `single` ; `<breath-mark>` `comma`, `tick`, `upbow`,
+  `salzedo`, avec leur `placement`) ;
 - reprises (`<repeat>` avant/arrière, `times`), voltas (`<ending>`), silences
   multi-mesures (`<multiple-rest>`), mesures répétées (`<measure-repeat>`) ;
 - harmonies (`<harmony>` : `root`, `kind`/`text`, `bass`, `numeral`,

@@ -209,3 +209,85 @@ fn tempo_at(score: &Score, tick: i64) -> f64 {
     }
     value
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::repeat_list::RepeatList;
+    use scoretk_core::model::{
+        Annotation, BarLineType, Breath, BreathType, ChordRest, Duration, DurationType, Fermata,
+        FermataType, Fraction, Measure, Placement, Score, Segment, SegmentItem, SegmentType, Track,
+    };
+
+    /// Partition de deux rondes 4/4, la première portant un point d'orgue et
+    /// une césure.
+    fn score_avec_point_d_orgue_et_cesure() -> Score {
+        let mut score = Score::new();
+        let whole = Fraction::ONE;
+        for number in 0..2 {
+            let mut measure =
+                Measure::new(number, whole * Fraction::from_integer(number as i64), whole);
+            let mut chord_rest = ChordRest::rest(Duration::new(DurationType::Whole));
+            chord_rest.kind =
+                scoretk_core::model::ChordRestKind::Rest(scoretk_core::model::Rest::default());
+            let start = measure.start_tick;
+            let mut segment = Segment::new(SegmentType::ChordRest, start, 1);
+            segment.set_element(Track::from_raw(0), SegmentItem::ChordRest(chord_rest));
+            if number == 0 {
+                segment.add_annotation(
+                    Track::from_raw(0),
+                    Annotation::Fermata(Fermata {
+                        kind: FermataType::Normal,
+                        placement: Placement::Above,
+                        visible: true,
+                    }),
+                );
+            }
+            measure.add_segment(segment);
+            if number == 0 {
+                let mut breath = Segment::new(SegmentType::Breath, measure.end_tick(), 1);
+                breath.set_element(
+                    Track::from_raw(0),
+                    SegmentItem::Breath(Breath {
+                        kind: BreathType::CaesuraCurved,
+                        placement: Placement::Above,
+                    }),
+                );
+                measure.add_segment(breath);
+            }
+            score.add_measure(measure);
+        }
+        score
+    }
+
+    /// Ni le point d'orgue ni la césure n'allongent le rendu MIDI.
+    ///
+    /// `engraving/compat/midi/` ne mentionne aucune fermata, et
+    /// `Breath::BREATH_LIST` (`breath.cpp:33-44`) ne sert qu'à `isCaesura()`
+    /// (`breath.cpp:64-74`) : les secondes de pause viennent du `PausesMap`
+    /// (`tempotimeline.h:33`), rempli par le module *playback* absent de
+    /// `ref-musescore/`. `PauseMap` ne traite donc que les sauts de section.
+    #[test]
+    fn points_d_orgue_et_respirations_n_allongent_pas_le_rendu() {
+        let score = score_avec_point_d_orgue_et_cesure();
+        let repeat_list = RepeatList::unwind(&score);
+        let map = PauseMap::build(&score, &repeat_list, &[]);
+        assert!(map.spans().is_empty());
+        assert!(map.tempo_events.is_empty());
+        assert_eq!(map.tick_with_pauses(1920), 1920);
+        assert_eq!(repeat_list.ticks(), 3840);
+    }
+
+    /// Un saut de section, lui, insère bien une mesure de ticks.
+    #[test]
+    fn un_saut_de_section_insere_toujours_une_pause() {
+        let mut score = score_avec_point_d_orgue_et_cesure();
+        score.measures[1].section_break_before = true;
+        score.measures[1].start_bar_line = BarLineType::StartRepeat;
+        let repeat_list = RepeatList::unwind(&score);
+        let map = PauseMap::build(&score, &repeat_list, &[]);
+        assert_eq!(map.spans().len(), 1);
+        assert_eq!(map.spans()[0].inserted, 1920);
+        assert_eq!(map.tempo_events.len(), 2);
+    }
+}

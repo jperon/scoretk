@@ -718,7 +718,27 @@ fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
             }
             markers.sort_by_key(|(right, _)| *right);
             elements.extend(markers.into_iter().map(|(_, element)| element));
+            let has_jump = !jumps.is_empty();
             elements.extend(jumps);
+
+            // Un saut ferme la volta encore ouverte qui s'est terminée avant
+            // lui, ou qui est ouverte et se termine sur cette mesure
+            // (`repeatlist.cpp:525-543`) — sauf si la mesure porte aussi
+            // l'`endRepeat` (cf. #327681), auquel cas c'est la fin de reprise
+            // qui la ferme.
+            if has_jump && !measure.end_bar_line.is_repeat_end() {
+                if let Some(volta) = volta_active {
+                    let span = &voltas[volta];
+                    let ends_here =
+                        span.end < measure_index || (span.end == measure_index && !span.closed);
+                    if ends_here {
+                        let mut element = Element::new(ElementKind::VoltaEnd, measure_index);
+                        element.volta = Some(volta);
+                        elements.push(element);
+                        volta_active = None;
+                    }
+                }
+            }
 
             // Fin de reprise.
             if measure.end_bar_line.is_repeat_end() {
@@ -731,6 +751,15 @@ fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
                     .find(|element| element.kind == ElementKind::RepeatStart)
                 {
                     start_element.repeat_count += i32::from(measure.repeat_count.max(2)) - 1;
+                }
+                // Le C++ ferme ici **toute** volta encore ouverte, sans
+                // condition sur sa mesure de fin (`repeatlist.cpp:581-588`) :
+                // une volta qui déborde l'`endRepeat` se termine sur cette
+                // mesure.
+                if let Some(volta) = volta_active.take() {
+                    let mut end_element = Element::new(ElementKind::VoltaEnd, measure_index);
+                    end_element.volta = Some(volta);
+                    elements.push(end_element);
                 }
             }
 
@@ -912,7 +941,9 @@ fn reevaluate_volta_repeat(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scoretk_core::model::{BarLineType, Measure};
+    use scoretk_core::model::{
+        BarLineType, Measure, Spanner, SpannerAnchor, SpannerType, Track, VoltaInfo,
+    };
 
     fn measure(number: usize, tick: Fraction, len: Fraction) -> Measure {
         Measure::new(number, tick, len)
@@ -933,6 +964,47 @@ mod tests {
         assert_eq!(list.segments.len(), 1);
         assert_eq!(list.segments[0].measures, vec![0, 1, 2]);
         assert_eq!(list.ticks(), 3 * 1920);
+    }
+
+    /// Volta ouverte qui déborde la mesure d'`endRepeat` : le C++ la ferme à
+    /// la mesure du `RepeatEnd` (`repeatlist.cpp:581-588`), donc la mesure qui
+    /// suit l'`endRepeat` est bien jouée au second passage.
+    #[test]
+    fn volta_debordant_le_repeat_end() {
+        let mut score = Score::new();
+        let whole = Fraction::ONE;
+        for number in 0..6 {
+            let mut value = measure(number, whole * Fraction::from_integer(number as i64), whole);
+            if number == 0 {
+                value.start_bar_line = BarLineType::StartRepeat;
+            }
+            if number == 2 {
+                value.end_bar_line = BarLineType::EndRepeat;
+                value.repeat_count = 2;
+            }
+            score.add_measure(value);
+        }
+        // Volta 1 sur les mesures 1 à 3, ouverte : sa dernière mesure dépasse
+        // l'`endRepeat` (mesure 2).
+        let mut volta = Spanner::new(
+            SpannerType::Volta,
+            SpannerAnchor::new(Fraction::from_integer(1), Track::from_raw(0)),
+            SpannerAnchor::new(Fraction::from_integer(4), Track::from_raw(0)),
+        );
+        volta.volta = Some(VoltaInfo {
+            endings: vec![1],
+            closed: false,
+        });
+        score.add_spanner(volta);
+
+        let list = RepeatList::unwind(&score);
+        assert_eq!(list.segments.len(), 3);
+        // Premier passage : reprise de 0 à 2, volta 1 jouée.
+        assert_eq!(list.segments[0].measures, vec![0, 1, 2]);
+        // Second passage : la volta 1 est sautée, la mesure 3 est rejouée.
+        assert_eq!(list.segments[1].measures, vec![0]);
+        assert_eq!(list.segments[2].measures, vec![3, 4, 5]);
+        assert_eq!(list.ticks(), 7 * 1920);
     }
 
     #[test]

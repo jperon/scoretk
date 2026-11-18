@@ -218,7 +218,7 @@ fn read_voice(
             "Dynamic" | "Expression" | "Tempo" | "StaffText" | "SystemText" | "Text"
             | "RehearsalMark" | "Harmony" | "Fermata" | "InstrumentChange" | "FiguredBass"
             | "TremoloBar" => {
-                if let Some(annotation) = annotations::read(reader, child) {
+                if let Some(mut annotation) = annotations::read(reader, child) {
                     // `Segment::add` enregistre l'instrument d'un changement au
                     // tick du segment (`part->setInstrument`).
                     if let Annotation::InstrumentChange(change) = &annotation {
@@ -228,6 +228,13 @@ fn read_voice(
                                 .score
                                 .part_mut(part_id)
                                 .set_instrument_at(ctx.tick, instrument.clone());
+                        }
+                    }
+                    // `MeasureRead::readVoice` place l'annotation au-dessous
+                    // pour la voix 1 ; `<placement>` l'écrase ensuite.
+                    if let Annotation::Fermata(fermata) = &mut annotation {
+                        if child.child("placement").is_none() && ctx.track.voice() % 2 == 1 {
+                            fermata.placement = scoretk_core::model::Placement::Below;
                         }
                     }
                     segment_mut(
@@ -491,37 +498,49 @@ fn read_bar_line(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
         .set_element(ctx.track, SegmentItem::BarLine(bar_line));
 }
 
+/// Symbole d'une respiration (`SymNames::symIdByName`,
+/// `engraving/types/symnames.cpp:798-822`).
+fn breath_kind(symbol: &str) -> BreathType {
+    match symbol {
+        "caesura" => BreathType::Caesura,
+        "caesuraCurved" => BreathType::CaesuraCurved,
+        "caesuraShort" => BreathType::CaesuraShort,
+        "caesuraThick" => BreathType::CaesuraThick,
+        "caesuraSingleStroke" | "chantCaesura" => BreathType::CaesuraSingle,
+        "breathMarkTick" => BreathType::Tick,
+        "breathMarkUpbow" => BreathType::Upbow,
+        "breathMarkSalzedo" => BreathType::Salzedo,
+        _ => BreathType::Comma,
+    }
+}
+
 fn read_breath(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
     let mut breath = Breath::default();
+    let mut explicit_placement = false;
     for child in node.children() {
         match child.name() {
+            // `<subtype>` est obsolète (`TRead::read(Breath*)`,
+            // `rw/read400/tread.cpp:2174-2187`) : 2 = césure courbe,
+            // 3 = césure, le reste étant la virgule.
             "subtype" => {
                 breath.kind = match child.int_text() {
-                    Some(2) | Some(3) => BreathType::Caesura,
+                    Some(2) => BreathType::CaesuraCurved,
+                    Some(3) => BreathType::Caesura,
                     _ => BreathType::Comma,
                 };
             }
-            "symbol" => {
-                breath.kind = match child.trimmed_text().as_str() {
-                    "caesura" => BreathType::Caesura,
-                    "caesuraCurved" => BreathType::CaesuraCurved,
-                    "caesuraShort" => BreathType::CaesuraShort,
-                    "caesuraThick" => BreathType::CaesuraThick,
-                    "caesuraSingleStroke" | "chantCaesura" => BreathType::CaesuraSingle,
-                    "breathMarkTick" => BreathType::Tick,
-                    "stringsUpBow" => BreathType::Upbow,
-                    _ => BreathType::Comma,
-                };
-            }
+            "symbol" => breath.kind = breath_kind(&child.trimmed_text()),
             "placement" => {
                 breath.placement = tables::placement(&child.trimmed_text());
+                explicit_placement = true;
             }
             _ => {}
         }
     }
-    // `MeasureRead::readVoice` : la voix 0 place la respiration au-dessus,
-    // la voix 1 au-dessous.
-    if ctx.track.voice() % 2 == 1 {
+    // `MeasureRead::readVoice` place la respiration au-dessus pour la voix 0
+    // et au-dessous pour la voix 1, puis `TRead::read` applique `<placement>`
+    // s'il est présent.
+    if !explicit_placement && ctx.track.voice() % 2 == 1 {
         breath.placement = scoretk_core::model::Placement::Below;
     }
     segment_mut(

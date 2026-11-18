@@ -163,8 +163,12 @@ côté MusicXML), précisément pour éviter une confusion avec `ordinal`.
 - **`Note::velocity` non appliquée** : les vélocités MIDI viennent des nuances,
   des soufflets et des articulations. `NoteSync` ne porte donc pas de vélocité
   et la vélocité saisie sur la note (import MIDI) n'apparaît pas.
-- **Fermatas non modélisées** : leur allongement n'est ni dans les ticks ni
-  dans les temps.
+- **Fermatas** : MuseScore n'en tire aucun allongement dans `engraving` (la
+  fermata est absente de `compat/midi/`) ; leur durée n'est donc ni dans les
+  ticks ni dans les temps, ce qui est fidèle.
+- **Césures** : les secondes de pause sont calculées par le module *playback*
+  (`PausesMap`, `tempotimeline.h:33`), absent du portage ; aucune pause n'est
+  insérée, comme pour les fermatas.
 - **Trémolos** : plusieurs `NoteSync` peuvent partager un même `xmlId` (les
   attaques répétées d'un même événement du modèle), comme les notes d'un
   accord partagent une mesure.
@@ -175,8 +179,8 @@ côté MusicXML), précisément pour éviter une confusion avec `ordinal`.
   `timemap_alignment::note_ids_match_stable_musicxml` compare le multiensemble
   des notes de la carte à celui des `<note>` du MusicXML **après soustraction
   explicite** de ces deux catégories.
-- **Pauses** : seules les pauses de section sont représentées ; une respiration
-  ou une fermata ne décale rien.
+- **Pauses** : seules les pauses de section sont représentées ; une césure ou
+  une fermata ne décale rien (voir ci-dessus).
 
 ## 8. Côté client : associer un temps à une mesure
 

@@ -491,6 +491,14 @@ Corrigé dans cette passe :
   `down-bow`, `harmonic`, `open`, `stopped`, `snap-pizzicato`, `fingering`,
   `pluck`), `<arpeggiate>`/`<non-arpeggiate>`, `<glissando>`/`<slide>`,
   `<breath-mark>`/`<caesura>` et `falloff`/`doit`/`plop`/`scoop` ;
+- **respirations** : les deux lecteurs suivent les noms de `SymNames`
+  (`symnames.cpp:798-822`) — `breathMarkTick`, `breathMarkUpbow`,
+  `breathMarkSalzedo`, `caesura*`, `chantCaesura` — et non les noms tronqués
+  `breathTick`/`stringsUpBow` ; `<subtype>` numérique reste lu comme forme
+  obsolète (2 = césure courbe, 3 = césure). `<placement>` l'emporte sur le
+  placement déduit de la voix (0 au-dessus, 1 au-dessous), que le C++ pose
+  avant de lire la balise. L'écriture `.mscx` et l'export MusicXML suivent les
+  mêmes noms, `breathMarkSalzedo` compris ;
 - `print-object="no"` sur un `<notations>` dont l'élément est invisible,
   réouverture d'un `<notations>` quand la visibilité change.
 
