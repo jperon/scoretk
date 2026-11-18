@@ -520,21 +520,58 @@ impl<'a> Parser<'a> {
             self.position += 1;
             self.parse_header();
         } else {
-            // Musique sans contexte : une portée anonyme.
+            // Musique sans contexte explicite : une portée anonyme, sauf si
+            // une fonction musicale enveloppe des contextes (`\transpose`,
+            // `\relative`, `\fixed`…), qui donnent alors la structure.
             let music = self.parse_music();
-            if !music.is_empty() {
-                let mut staff = StaffBlock::new();
-                staff.voices.push(VoiceBlock { name: None, music });
-                elements.push(GroupBlock {
-                    kind: GroupKind::Staff,
-                    instrument_name: None,
-                    short_instrument_name: None,
-                    staves: vec![staff],
-                    lyrics: Vec::new(),
-                });
-            }
+            elements.extend(self.score_groups(music));
         }
         elements
+    }
+
+    /// Groupes de portées portés par une musique de `\score`.
+    ///
+    /// LilyPond applique `\transpose`, `\relative` et `\fixed` à une musique
+    /// quelconque, contextes compris : la structure de portées est donc celle
+    /// du contenu, et chaque voix reçoit les enveloppes qui la précèdent.
+    fn score_groups(&mut self, music: Music) -> Vec<GroupBlock> {
+        self.score_groups_in(music, &mut Vec::new())
+    }
+
+    /// [`Self::score_groups`], avec la pile des enveloppes rencontrées.
+    fn score_groups_in(&mut self, music: Music, wrappers: &mut Vec<Wrapper>) -> Vec<GroupBlock> {
+        match music {
+            Music::Empty => Vec::new(),
+            Music::Context(context) => match Wrapper::of(&context) {
+                Some((wrapper, inner)) => {
+                    let inner = inner.clone();
+                    wrappers.push(wrapper);
+                    let groups = self.score_groups_in(inner, wrappers);
+                    wrappers.pop();
+                    groups
+                }
+                None => vec![anonymous_group(wrap_all(wrappers, Music::Context(context)))],
+            },
+            Music::New(mut group) => {
+                wrap_staves(wrappers, &mut group.staves);
+                vec![*group]
+            }
+            Music::Lyrics(block) => vec![GroupBlock {
+                kind: GroupKind::Other,
+                instrument_name: None,
+                short_instrument_name: None,
+                staves: Vec::new(),
+                lyrics: vec![*block],
+            }],
+            Music::Sim(items) => {
+                let mut groups = Vec::new();
+                for item in items {
+                    groups.extend(self.score_groups_in(item, wrappers));
+                }
+                groups
+            }
+            other => vec![anonymous_group(wrap_all(wrappers, other))],
+        }
     }
 
     /// Liste de contextes d'un `<< … >>` de `\score`.
@@ -547,17 +584,7 @@ impl<'a> Parser<'a> {
                 }
             } else {
                 let music = self.parse_music();
-                if !music.is_empty() {
-                    let mut staff = StaffBlock::new();
-                    staff.voices.push(VoiceBlock { name: None, music });
-                    groups.push(GroupBlock {
-                        kind: GroupKind::Staff,
-                        instrument_name: None,
-                        short_instrument_name: None,
-                        staves: vec![staff],
-                        lyrics: Vec::new(),
-                    });
-                }
+                groups.extend(self.score_groups(music));
             }
         }
         if self.at_double_angle_close() {
@@ -713,11 +740,43 @@ impl<'a> Parser<'a> {
         staves: &mut Vec<StaffBlock>,
         lyrics: &mut Vec<LyricsBlock>,
     ) {
+        self.collect_staves_in(music, &mut Vec::new(), staves, lyrics);
+    }
+
+    /// [`Self::collect_staves`], avec la pile des enveloppes rencontrées :
+    /// `\new PianoStaff \transpose c d << … >>` garde ses portées, chacune
+    /// transposée.
+    fn collect_staves_in(
+        &mut self,
+        music: Music,
+        wrappers: &mut Vec<Wrapper>,
+        staves: &mut Vec<StaffBlock>,
+        lyrics: &mut Vec<LyricsBlock>,
+    ) {
         match music {
+            Music::Context(context) => match Wrapper::of(&context) {
+                Some((wrapper, inner)) => {
+                    let inner = inner.clone();
+                    wrappers.push(wrapper);
+                    self.collect_staves_in(inner, wrappers, staves, lyrics);
+                    wrappers.pop();
+                }
+                None => {
+                    let mut staff = StaffBlock::new();
+                    let mut voices = Vec::new();
+                    let mut staff_lyrics = Vec::new();
+                    let music = wrap_all(wrappers, Music::Context(context));
+                    self.collect_voices(music, &mut voices, &mut staff_lyrics);
+                    staff.voices = voices;
+                    staff.lyrics = staff_lyrics;
+                    staves.push(staff);
+                }
+            },
             Music::Sim(items) => {
                 for item in items {
                     match item {
-                        Music::New(group) => {
+                        Music::New(mut group) => {
+                            wrap_staves(wrappers, &mut group.staves);
                             staves.extend(group.staves);
                             lyrics.extend(group.lyrics);
                         }
@@ -726,7 +785,8 @@ impl<'a> Parser<'a> {
                             let mut staff = StaffBlock::new();
                             let mut voices = Vec::new();
                             let mut staff_lyrics = Vec::new();
-                            self.collect_voices(other, &mut voices, &mut staff_lyrics);
+                            let music = wrap_all(wrappers, other);
+                            self.collect_voices(music, &mut voices, &mut staff_lyrics);
                             staff.voices = voices;
                             staff.lyrics = staff_lyrics;
                             staves.push(staff);
@@ -734,12 +794,16 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
-            Music::New(group) => staves.extend(group.staves),
+            Music::New(mut group) => {
+                wrap_staves(wrappers, &mut group.staves);
+                staves.extend(group.staves);
+            }
             Music::Lyrics(block) => lyrics.push(*block),
             other => {
                 let mut staff = StaffBlock::new();
                 let mut voices = Vec::new();
-                self.collect_voices(other, &mut voices, lyrics);
+                let music = wrap_all(wrappers, other);
+                self.collect_voices(music, &mut voices, lyrics);
                 staff.voices = voices;
                 staves.push(staff);
             }
@@ -753,11 +817,37 @@ impl<'a> Parser<'a> {
         voices: &mut Vec<VoiceBlock>,
         lyrics: &mut Vec<LyricsBlock>,
     ) {
+        self.collect_voices_in(music, &mut Vec::new(), voices, lyrics);
+    }
+
+    /// [`Self::collect_voices`], avec la pile des enveloppes rencontrées :
+    /// `\new Staff \transpose c d << \new Voice … >>` garde ses voix,
+    /// chacune transposée.
+    fn collect_voices_in(
+        &mut self,
+        music: Music,
+        wrappers: &mut Vec<Wrapper>,
+        voices: &mut Vec<VoiceBlock>,
+        lyrics: &mut Vec<LyricsBlock>,
+    ) {
         match music {
+            Music::Context(context) => match Wrapper::of(&context) {
+                Some((wrapper, inner)) => {
+                    let inner = inner.clone();
+                    wrappers.push(wrapper);
+                    self.collect_voices_in(inner, wrappers, voices, lyrics);
+                    wrappers.pop();
+                }
+                None => voices.push(VoiceBlock {
+                    name: None,
+                    music: wrap_all(wrappers, Music::Context(context)),
+                }),
+            },
             Music::Sim(items) => {
                 for item in items {
                     match item {
-                        Music::New(group) => {
+                        Music::New(mut group) => {
+                            wrap_staves(wrappers, &mut group.staves);
                             for staff in group.staves {
                                 voices.extend(staff.voices);
                                 lyrics.extend(staff.lyrics);
@@ -767,12 +857,13 @@ impl<'a> Parser<'a> {
                         Music::Lyrics(block) => lyrics.push(*block),
                         other => voices.push(VoiceBlock {
                             name: None,
-                            music: other,
+                            music: wrap_all(wrappers, other),
                         }),
                     }
                 }
             }
-            Music::New(group) => {
+            Music::New(mut group) => {
+                wrap_staves(wrappers, &mut group.staves);
                 for staff in group.staves {
                     voices.extend(staff.voices);
                     lyrics.extend(staff.lyrics);
@@ -783,7 +874,7 @@ impl<'a> Parser<'a> {
             Music::Empty => {}
             other => voices.push(VoiceBlock {
                 name: None,
-                music: other,
+                music: wrap_all(wrappers, other),
             }),
         }
     }
@@ -1303,6 +1394,10 @@ impl<'a> Parser<'a> {
                 })
             }
             "absolute" => self.parse_music(),
+            // `unfoldRepeats` (`music-functions-init.ly`) déplie les reprises
+            // et écarte les alternatives ; le lecteur déplie déjà les reprises,
+            // la commande est donc transparente.
+            "unfoldRepeats" => self.parse_music(),
             "transpose" => {
                 let from = self.parse_optional_pitch().unwrap_or(PitchSpec {
                     step: 0,
@@ -2664,6 +2759,87 @@ fn substitute_function_tokens(
     tokens
 }
 
+/// Fonction musicale qui enveloppe une musique quelconque, contextes compris.
+///
+/// LilyPond les applique récursivement à tout ce que contient la musique
+/// (`\transpose`, `\relative`, `\fixed` sont des fonctions Scheme de
+/// `music-functions-init.ly`) : la construction des portées doit donc
+/// descendre à travers elles et laisser la transformation à chaque voix.
+#[derive(Clone, Copy)]
+enum Wrapper {
+    /// `\transpose de vers`.
+    Transpose { from: PitchSpec, to: PitchSpec },
+    /// `\fixed [référence]`.
+    Fixed(Option<PitchSpec>),
+    /// `\relative [référence]`.
+    Relative(Option<PitchSpec>),
+}
+
+impl Wrapper {
+    /// Enveloppe que porte `context`, avec la musique qu'elle contient.
+    fn of(context: &Context) -> Option<(Self, &Music)> {
+        match context {
+            Context::Transpose { from, to, music } => Some((
+                Self::Transpose {
+                    from: *from,
+                    to: *to,
+                },
+                music,
+            )),
+            Context::Fixed { reference, music } => Some((Self::Fixed(*reference), music)),
+            Context::Relative { reference, music } => Some((Self::Relative(*reference), music)),
+            _ => None,
+        }
+    }
+
+    /// Applique l'enveloppe à une musique.
+    fn wrap(self, music: Music) -> Music {
+        let music = Box::new(music);
+        Music::Context(match self {
+            Self::Transpose { from, to } => Context::Transpose { from, to, music },
+            Self::Fixed(reference) => Context::Fixed { reference, music },
+            Self::Relative(reference) => Context::Relative { reference, music },
+        })
+    }
+}
+
+/// Réapplique une pile d'enveloppes (`[externe, …, interne]`) à une musique.
+fn wrap_all(wrappers: &[Wrapper], music: Music) -> Music {
+    wrappers
+        .iter()
+        .rev()
+        .fold(music, |music, wrapper| wrapper.wrap(music))
+}
+
+/// Applique une pile d'enveloppes à toutes les voix d'une portée ou d'un
+/// groupe : la transformation porte sur chaque voix du contenu.
+fn wrap_staves(wrappers: &[Wrapper], staves: &mut [StaffBlock]) {
+    if wrappers.is_empty() {
+        return;
+    }
+    for staff in staves {
+        for voice in &mut staff.voices {
+            let music = std::mem::replace(&mut voice.music, Music::Empty);
+            voice.music = wrap_all(wrappers, music);
+        }
+    }
+}
+
+/// Portée anonyme qui porte une musique sans contexte explicite.
+fn anonymous_group(music: Music) -> GroupBlock {
+    let mut staff = StaffBlock::new();
+    if !music.is_empty() {
+        staff.voices.push(VoiceBlock { name: None, music });
+    }
+    GroupBlock {
+        kind: GroupKind::Staff,
+        instrument_name: None,
+        short_instrument_name: None,
+        staves: vec![staff],
+        lyrics: Vec::new(),
+    }
+}
+
 /// Vrai si la commande ouvre une expression musicale reconnue par
 /// `parse_music` (hors variables musicales, testées à part).
 fn starts_music_command(name: &str) -> bool {
@@ -2672,6 +2848,7 @@ fn starts_music_command(name: &str) -> bool {
         "relative"
             | "fixed"
             | "absolute"
+            | "unfoldRepeats"
             | "transpose"
             | "tuplet"
             | "times"

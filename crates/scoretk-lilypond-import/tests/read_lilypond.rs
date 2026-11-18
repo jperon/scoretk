@@ -1376,3 +1376,86 @@ fn cadenza_coupee_par_bar_explicite_deux_mesures() {
         vec![Fraction::new(1, 8), Fraction::new(1, 8)]
     );
 }
+
+/// Lit un bloc `\score { … }` complet, langue anglaise, écrit à la main.
+fn lire_score(corps: &str) -> scoretk_core::model::Score {
+    let source = format!("\\version \"2.24.0\"\n\\language \"english\"\n{corps}\n");
+    read_lilypond(&source).unwrap_or_else(|error| panic!("lecture : {error}"))
+}
+
+#[test]
+fn transpose_autour_d_un_contexte() {
+    // `\transpose` prend une musique quelconque, contextes compris : la
+    // structure de portées est celle du contenu et la transposition
+    // s'applique à toutes ses voix. En notation absolue, `c` vaut une octave
+    // sous le do central (48) et `\transpose c d` donne donc `[50, 52]`.
+    let score = lire_score("\\score { \\transpose c d \\new Staff { c4 d } }");
+    assert_eq!(hauteurs(&score), vec![50, 52]);
+    assert_eq!(score.staves.len(), 1);
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(durees_ecrites(&score), vec![Fraction::QUARTER; 2]);
+
+    let score = lire_score("\\score { \\transpose c d << \\new Staff { c4 d } >> }");
+    assert_eq!(hauteurs(&score), vec![50, 52]);
+    assert_eq!(score.staves.len(), 1);
+    assert_eq!(score.measures.len(), 1);
+
+    // Les voix d'une portée sont transposées elles aussi.
+    let score = lire_score(
+        "\\score { \\new Staff \\transpose c d << \\new Voice { c'4 } \\new Voice { e'4 } >> }",
+    );
+    assert_eq!(hauteurs(&score), vec![62, 66]);
+    assert_eq!(score.staves.len(), 1);
+}
+
+#[test]
+fn relative_fixed_et_variable_autour_d_un_contexte() {
+    // Même descente pour les fonctions d'octave : `\relative` et `\fixed`
+    // s'appliquent aux voix de la portée qu'ils enveloppent.
+    let score = lire_score("\\score { \\relative c' \\new Staff { c4 d e f } }");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+    assert_eq!(durees_ecrites(&score), vec![Fraction::QUARTER; 4]);
+
+    let score = lire_score("\\score { \\fixed c' \\new Staff { c4 d } }");
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+
+    // Une variable qui porte la fonction et son contexte se déplie de la
+    // même façon dans `\score`.
+    let score = lire_score("melodie = \\transpose c d \\new Staff { c4 d }\n\\score { \\melodie }");
+    assert_eq!(hauteurs(&score), vec![50, 52]);
+    assert_eq!(score.staves.len(), 1);
+}
+
+#[test]
+fn unfold_repeats_transparent_devant_un_contexte() {
+    // `\unfoldRepeats` ne change pas la musique lue : il est transparent et
+    // laisse passer les contextes qu'il enveloppe.
+    let score = lire_score("\\score { \\unfoldRepeats \\new Staff { c4 d } }");
+    assert_eq!(hauteurs(&score), vec![48, 50]);
+    assert_eq!(score.staves.len(), 1);
+    assert_eq!(score.measures.len(), 1);
+
+    let score = lire_score("\\score { \\unfoldRepeats \\transpose c d \\new Staff { c4 d } }");
+    assert_eq!(hauteurs(&score), vec![50, 52]);
+    assert_eq!(score.staves.len(), 1);
+}
+
+#[test]
+fn transpose_autour_d_un_piano_staff() {
+    // Un groupe de portées garde ses deux portées, chacune transposée, et
+    // forme une seule partie.
+    let score = lire_score(
+        "\\score { \\transpose c d \\new PianoStaff << \\new Staff { c'4 } \\new Staff { \\clef bass c4 } >> }",
+    );
+    assert_eq!(score.staves.len(), 2);
+    assert_eq!(score.parts.len(), 1);
+    assert_eq!(hauteurs(&score), vec![62, 50]);
+    assert_eq!(score.measures.len(), 1);
+
+    // Musique sans contexte : une seule portée anonyme, transposée, barre de
+    // contrôle comprise ; rien ne change pour elle.
+    let score = lire_score("\\score { \\transpose c d { c4 d | e4 f } }");
+    assert_eq!(hauteurs(&score), vec![50, 52, 54, 55]);
+    assert_eq!(score.staves.len(), 1);
+    assert_eq!(score.measures.len(), 1);
+}
