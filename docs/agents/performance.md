@@ -1,14 +1,15 @@
 # Performance : banc natif et profil de la chaîne complète
 
-Ce document consigne la première campagne de mesure de la façade `scoretk` :
-temps par sens et par chaîne, points chauds et coût des allocations. Il
-**décrit** des pistes, il n'en applique aucune : le code de conversion n'est pas
-modifié par cette campagne. Le noyau du projet (règles, commandes, index) reste
-dans `AGENTS.md`.
+Ce document consigne la campagne de mesure de la façade `scoretk` — temps par
+sens et par chaîne, points chauds, coût des allocations — puis les
+optimisations qui en ont été tirées et leur effet. Les sections qui décrivent
+les mesures (§ 3, § 5, § 6) valent pour l'état **avant** optimisation ; § 4
+liste les changements et l'effet mesuré de chacun. Le noyau du projet (règles,
+commandes, index) reste dans `AGENTS.md`.
 
 Toutes les valeurs ci-dessous viennent de commandes réellement exécutées sur
-cette machine (§ 2), au commit de cette campagne (banc incluant les écritures `.mscz` et
-`.mxl`) ; le code de conversion n'est pas modifié.
+cette machine (§ 2) ; chaque mesure est datée et accompagnée des conditions de
+son exécution. Aucun chiffre n'est extrapolé d'une autre machine.
 
 ## 1. Méthode
 
@@ -90,12 +91,12 @@ Le profil porte sur la chaîne complète `.mscx` → MusicXML du plus gros fichi
 
 La machine est **partagée** (navigateur, autres agents) : les médianes varient
 d'un facteur 1 à 6 d'une exécution à l'autre et dérivent même en cours
-d'exécution (§ 6). Un essai épinglé sur un E-core (`taskset -c 3`) a donné des
+d'exécution (§ 7). Un essai épinglé sur un E-core (`taskset -c 3`) a donné des
 médianes jusqu'à 6 fois plus hautes pour le même point (48,3 ms contre 8,1 ms
 pour la lecture `.mscx` de moonlight) : les valeurs retenues sont celles d'une
 exécution sans épinglage.
 
-## 3. Temps mesurés
+## 3. Temps mesurés (avant optimisation)
 
 | Mesure | `v3/moonlight` | `v4/voiceswitching` | `v4/testExcludeInvisibleElements` | `v3/layout_elements` | `v3/voices` | `v4/hairpins_and_repeats` |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -123,14 +124,64 @@ Lecture du tableau :
   `.mscx`/LilyPond/ABC et 280 à 1 100 Mo/s pour MIDI ;
 - **les lignes ne s'additionnent pas** : ici la chaîne complète (16,2 ms)
   ressort plus rapide que l'export MusicXML seul (28,6 ms), mesuré trois
-  groupes plus tôt. La machine a accéléré en cours d'exécution (§ 6). Seuls
+  groupes plus tôt. La machine a accéléré en cours d'exécution (§ 7). Seuls
   les rapports entre fichiers d'un même groupe sont stables ;
 - `write_playback` vaut à peu près l'export MusicXML seul plus le MIDI et la
   carte des temps.
 
-## 4. Points chauds
+## 4. Optimisations appliquées
 
-### 4.1 Self en temps réel (perf, chaîne `moonlight`)
+Six commits ont été fusionnés le 2026-11-18, après la campagne de mesure
+initiale. Le tableau de § 3 n'a **pas** été refait depuis : la machine est
+restée chargée (loadavg 8 à 111 pendant les tentatives, cf. § 7) et une
+ré-exécution aurait mesuré la contention, pas le code. Les effets ci-dessous
+sont donc ceux mesurés au moment de chaque commit — banc ou profil de § 5 sur
+le chaînage `moonlight` —, sans extrapolation d'un commit à l'autre.
+
+- **`e983fa5` — table précalculée dans `tick_to_xml`** (`pitch.rs`) : la
+  fonction reconstruisait, pour chaque note, les 65 candidats (13
+  `DURATION_TYPES` × 5 points) et normalisait une `Fraction` par comparaison —
+  26 % du temps d'export d'après la mesure du commit. Une table `OnceLock`
+  remplie une seule fois, dans le même ordre, la remplace ; un test
+  d'équivalence la compare à l'ancien algorithme. Effet mesuré : le poste
+  `tick_to_xml` (**25,6 %** inclusif) et les `Duration::ticks` qu'il appelait
+  (**29,6 %**, § 5.2) sortent du profil.
+- **`e8fc8ce` et `eff23e7` — arithmétique de `Fraction` par chemin rapide
+  `i64`** : PGCD et produits courts restent en `i64` et n'appellent plus les
+  primitives 128 bits (**18,6 %** des instructions du chaînage, § 5.3) ;
+  `eff23e7` corrige au passage la négation de `i64::MIN` sur ce chemin. Effet
+  mesuré : `normalize` (**12,1 %** en self, **30,7 %** inclusif) et
+  `__divti3`/`__umodti3`/`u128_div_rem` disparaissent du profil ; le gain
+  porte sur les deux sens, l'arithmétique servant aussi à la lecture.
+- **`374bd61` — index des spanners dans `NotationsState`** : `spanner_indices`
+  ne balaie plus `score.spanners` en entier à chaque note et chaque mesure
+  (`SpannerType::eq` **4,8 %** en self, itérateur **1,9 %**, **7,1 %**
+  inclusif, § 5.1 et 5.2). L'index `(type, tick, track) → indices` est
+  construit une fois par mesure.
+- **`6bd58e6` — `zopfli` retiré du graphe de dépendances** : les features
+  DEFLATE de `zip` 2.6.1 sont unifiées sur `deflate-flate2` + `flate2`
+  (`miniz_oxide`), le niveau 6 ne l'utilisait de toute façon jamais (§ 5.3
+  bis). Effet mesuré sur le paquet wasm : **1 546 119 → 1 474 491 o** bruts
+  (−71,6 ko) et **640 218 → 616 877 o** en gzip (−23,3 ko).
+- **`8b11c78` — arbre XML 3.x empruntant le texte source** : `read302::xml`
+  recopiait chaque nom d'élément, chaque attribut et chaque nœud de texte ;
+  `Node` porte désormais des `Cow<'a, str>` et `parse` emprunte le texte
+  analysé (pistes 5 et 6, § 6 ; `push_text` **6,9 %** et `to_vec` **5,9 %**
+  inclusifs). Effet mesuré au commit : lecture `.mscx` de `moonlight` de
+  **6,83 à 4,94 ms**.
+- **Essayé, non retenu — compaction de la table des instruments** (branche
+  `perf-instr`) : **−13 ko** de paquet brut, mais **+189 o en gzip** : DEFLATE
+  élimine déjà les chaînes dupliquées de la table, et la compaction ajoute de
+  l'indexation. Écarté.
+
+## 5. Points chauds
+
+Profil pris **avant** les optimisations de § 4, au commit de la campagne :
+c'est lui qui motive chacune d'elles. Les mesures de cette section ne sont pas
+refaites après coup (part d'instructions et nombres d'allocations restent
+cependant reproductibles, contrairement aux temps, cf. § 7).
+
+### 5.1 Self en temps réel (perf, chaîne `moonlight`)
 
 Part du temps CPU de la chaîne complète, 25 premières entrées :
 
@@ -166,7 +217,7 @@ Le même classement se retrouve en instructions (Callgrind sans `--inclusive`) :
 `normalize` 12,1 %, `__divti3` 9,4 %, `u128_div_rem` 5,6 %,
 `SpannerType::eq` 4,8 %, `_int_malloc` 3,5 %.
 
-### 4.2 Coût inclusif (Callgrind, instructions)
+### 5.2 Coût inclusif (Callgrind, instructions)
 
 25 premières fonctions, hors infrastructure de banc, `main`, allocation brute
 et glue de destruction récursive :
@@ -204,7 +255,7 @@ dans les deux sens, la même famille domine — l'arithmétique exacte des
 fractions (`Fraction`, `Duration::ticks`), recalculée pour chaque note et
 chaque position.
 
-### 4.3 Parsing XML, `String`, `format!`
+### 5.3 Parsing XML, `String`, `format!`
 
 Parts **additives** (somme des coûts self en instructions, donc sans
 recouvrement) sur les 1 940 637 507 instructions du chaînage `moonlight` :
@@ -225,18 +276,20 @@ Le formatage est donc **hors sujet** : les écrivains poussent des octets dans u
 d'harmonie) restent sous 0,02 % des instructions. L'UTF-8, en revanche,
 apparaît deux fois : validation à la lecture XML et `lossy` sur les textes.
 
-### 4.3 bis — Compression des conteneurs (`.mscz`, `.mxl`)
+### 5.3 bis — Compression des conteneurs (`.mscz`, `.mxl`)
 
-La feature `deflate` de `zip` 2.6.1 tire **aussi** `deflate-zopfli` (d'où la
-présence de `zopfli` dans le graphe, cf. `docs/licences-tierces.md`), mais le
-niveau par défaut (6) reste dans la plage flate2 et le profil Callgrind montre
+À l'origine, la feature `deflate` de `zip` 2.6.1 tirait **aussi**
+`deflate-zopfli` (d'où la présence de `zopfli` dans le graphe, cf.
+`docs/licences-tierces.md`), mais le niveau par défaut (6) restait dans la
+plage flate2 et le profil Callgrind montre
 `<flate2::mem::Compress>::compress_vec` à 1,16 % des instructions, **aucun
-appel à `zopfli`**. La compression passe donc par **flate2 / miniz_oxide**,
-pas par zopfli. Le coût d'écriture `.mscz` (10,09 ms) et `.mxl` (19,51 ms)
+appel à `zopfli`**. La compression passait donc déjà par **flate2 /
+miniz_oxide**, pas par zopfli ; `6bd58e6` (§ 4) a depuis retiré `zopfli` du
+graphe. Le coût d'écriture `.mscz` (10,09 ms) et `.mxl` (19,51 ms)
 sur `moonlight` est dominé par la compression DEFLATE du `.mscx` (≈ 410 ko) ;
 il est du même ordre que l'écriture MusicXML non compressée (20,73 ms).
 
-### 4.4 Allocations
+### 5.4 Allocations
 
 Une conversion complète `moonlight.mscx` → MusicXML, mesurée par le compteur
 global (profil de release) :
@@ -268,58 +321,74 @@ représente que 35 % des instructions : l'arbre XML intermédiaire
 (`read302::xml::Content`/`Node`, un `Vec<u8>` par texte) est le poste
 d'allocation dominant.
 
-## 5. Pistes chiffrées (aucune n'est appliquée)
+## 6. Pistes chiffrées
 
 Chaque piste donne la mesure qui la motive et le **plafond** théorique sur le
 chaînage `moonlight` (part des instructions ou des allocations à laquelle elle
 peut toucher), pas un gain garanti. Les pistes 1 à 4 portent sur l'écriture,
-5 et 6 sur la lecture : ce sont deux chantiers séparés.
+5 et 6 sur la lecture : ce sont deux chantiers séparés. L'état de chacune est
+indiqué en tête ; celles qui ont été suivies sont détaillées en § 4, avec leur
+effet mesuré.
 
-1. **Table statique des durées dans `tick_to_xml`** (`pitch.rs`) : pour chaque
-   note, la fonction balaie les 13 `DURATION_TYPES` × 5 points et construit à
-   chaque essai un `Duration::with_dots(...).ticks()`, donc une `Fraction`
-   normalisée par comparaison. Coût mesuré : `tick_to_xml` **25,6 %**
-   inclusif, `Duration::ticks` **29,6 %**. Plafond : la quasi-totalité de
-   l'arithmétique 128 bits (**18,6 %**).
-2. **`Fraction::normalize` sans `u128`** : PGCD et produits passent par
-   `i128`/`u128` alors que les durées tiennent dans `i64` (dénominateurs
-   ≤ 1024 dans le corpus). Coût mesuré : `normalize` **30,7 %** inclusif,
-   **12,1 %** en self, plus `__divti3`/`__umodti3`/`u128_div_rem` (**18,6 %**
-   au total). Plafond : jusqu'à ~15 % du chaînage si le chemin `i64` évite les
-   divisions 128 bits.
-3. **Mémoïser `Duration::ticks`** : la valeur est pure et le `Duration` est
-   immuable ; l'export la recalcule pour chaque note, chaque point et chaque
-   comparaison (`write_measure` 54,5 % inclusif). Plafond : la part des appels
-   redondants, non isolée ici — au moins la moitié des **29,6 %** de `ticks`.
-4. **Indexer les spanners** : `spanner_indices` parcourt `score.spanners` en
-   entier à chaque note et chaque mesure (`SpannerType::eq` **4,8 %** en self,
-   itérateur **1,9 %**) ; un index `(type, tick, track) → indices` construit
-   une fois par mesure remplacerait ce balayage. Plafond : **7,1 %** inclusif.
-5. **Supprimer ou alléger l'arbre XML intermédiaire** : la lecture construit
-   `Content`/`Node` avec un `Vec<u8>` par texte (**72 %** des allocations),
-   puis le détruit ; le parsing pèse **8,6 %** des instructions et l'allocateur
-   **11,0 %**. Plafond : la totalité du poste allocateur côté lecture, soit
-   ~8 à 10 % du chaînage.
+1. **Table statique des durées dans `tick_to_xml`** (`pitch.rs`) — **fait**
+   (`e983fa5`, § 4) : pour chaque note, la fonction balayait les 13
+   `DURATION_TYPES` × 5 points et construisait à chaque essai un
+   `Duration::with_dots(...).ticks()`, donc une `Fraction` normalisée par
+   comparaison. Coût mesuré : `tick_to_xml` **25,6 %** inclusif,
+   `Duration::ticks` **29,6 %**. Plafond : la quasi-totalité de l'arithmétique
+   128 bits (**18,6 %**).
+2. **`Fraction::normalize` sans `u128`** — **fait** (`e8fc8ce`/`eff23e7`,
+   § 4) : PGCD et produits passaient par `i128`/`u128` alors que les durées
+   tiennent dans `i64` (dénominateurs ≤ 1024 dans le corpus). Coût mesuré :
+   `normalize` **30,7 %** inclusif, **12,1 %** en self, plus
+   `__divti3`/`__umodti3`/`u128_div_rem` (**18,6 %** au total). Plafond :
+   jusqu'à ~15 % du chaînage si le chemin `i64` évite les divisions 128 bits.
+3. **Mémoïser `Duration::ticks`** — **partiellement fait** : la valeur est
+   pure et le `Duration` est immuable ; l'export la recalcule pour chaque note
+   (`write_measure` 54,5 % inclusif). Plafond : la part des appels redondants,
+   non isolée ici — au moins la moitié des **29,6 %** de `ticks`. La table de
+   § 4 supprime les 65 comparaisons par note, mais `ticks` reste appelé une
+   fois par note : la mémoïsation elle-même n'est pas faite.
+4. **Indexer les spanners** — **fait** (`374bd61`, § 4) : `spanner_indices`
+   parcourait `score.spanners` en entier à chaque note et chaque mesure
+   (`SpannerType::eq` **4,8 %** en self, itérateur **1,9 %**) ; un index
+   `(type, tick, track) → indices` construit une fois par mesure a remplacé
+   ce balayage. Plafond : **7,1 %** inclusif.
+5. **Supprimer ou alléger l'arbre XML intermédiaire** — **fait** pour le
+   lecteur 3.x (`8b11c78`, § 4) : la lecture construisait `Content`/`Node`
+   avec un `Vec<u8>` par texte (**72 %** des allocations), puis le détruisait ;
+   le parsing pesait **8,6 %** des instructions et l'allocateur **11,0 %**.
+   Plafond : la totalité du poste allocateur côté lecture, soit ~8 à 10 % du
+   chaînage.
 6. **Emprunter les textes XML** (`&[u8]` vers la source) au lieu de les
-   recopier : `push_text` **6,9 %** inclusif, `to_vec` **5,9 %**. C'est le
-   moyen le plus direct pour la piste 5, avec le même plafond.
+   recopier — **fait** pour le lecteur 3.x (`8b11c78`, § 4) : `push_text`
+   **6,9 %** inclusif, `to_vec` **5,9 %**. C'était le moyen le plus direct pour
+   la piste 5, avec le même plafond.
 7. **`String` et `format!`** : **2,0 %** et **0,01 %** des instructions. Rien à
    gagner à court terme ; ne pas s'y attaquer.
-8. **Priorité au sens** : l'export MusicXML représente **64 %** du chaînage
-   contre **35 %** pour la lecture. Optimiser l'écriture (pistes 1 à 4) a deux
-   fois plus de portée que la lecture (pistes 5 et 6). Les autres écritures
+8. **Priorité au sens** — **suivie** : l'export MusicXML représentait **64 %**
+   du chaînage contre **35 %** pour la lecture ; les pistes 1 à 4 ont donc été
+   traitées d'abord, les pistes 5 et 6 ensuite. Les autres écritures
    (MIDI, `.mscx`, LilyPond, ABC) restent sous 3,2 ms sur 410 ko : hors sujet
    pour l'instant.
 
-## 6. Limites de la mesure
+## 7. Limites de la mesure
 
+- **Pas de ré-exécution après optimisation** : le 2026-11-18, la machine a
+  porté d'autres campagnes en parallèle (tests LilyPond, navigateurs headless,
+  compilations) et le `loadavg` est resté entre 8 et 111 pendant les
+  tentatives ; les médianes prises dans ces conditions (lecture `.mscx` de
+  `moonlight` : 7,7 à 15,5 ms d'une exécution à l'autre) ne séparent pas le
+  gain des optimisations de la contention. Le tableau de § 3 reste donc celui
+  de la campagne initiale, et § 4 s'appuie sur les mesures faites au moment de
+  chaque commit.
 - **Variabilité de la machine** : le même point (lecture `.mscx` de
   `moonlight`) a donné 8,1 ms, 12,7 ms et 48,3 ms de médiane selon l'exécution,
   et la dérive continue en cours d'exécution — au point que le tableau de § 3
   contient une chaîne complète plus rapide que l'export seul mesuré trois
   groupes avant. Les temps absolus ne sont **pas** reproductibles à quelques
-  pour cent près sur cette machine ; les parts d'instructions (§ 4.2, 4.3) et
-  les nombres d'allocations (§ 4.4) le sont.
+  pour cent près sur cette machine ; les parts d'instructions (§ 5.2, 5.3) et
+  les nombres d'allocations (§ 5.4) le sont.
 - Une seule machine, partagée, sans épinglage stable (les E-cores à 3,3 GHz
   sont 1,3 × plus lents que le P-core et étaient occupés par d'autres
   processus) ; aucun réglage de gouvernance CPU n'est possible ici.
