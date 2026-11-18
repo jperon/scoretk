@@ -12,3 +12,5 @@ homepage.workspace = true
 scoretk-core = { path = "../scoretk-core" }
 thiserror = { workspace = true }
 zip = { workspace = true }
+# Fournit le backend miniz_oxide à zip (feature deflate-flate2) sans tirer zopfli.
+flate2 = { workspace = true }

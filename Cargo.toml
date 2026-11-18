@@ -30,7 +30,10 @@ repository = "https://github.com/jperon/scoretk"
 homepage = "https://github.com/jperon/scoretk"
 
 [workspace.dependencies]
-zip = { version = "2.6.1", default-features = false, features = ["deflate"] }
+zip = { version = "2.6.1", default-features = false, features = ["deflate-flate2", "flate2"] }
+# Fournit le backend DEFLATE à zip (feature deflate-flate2) sans tirer zopfli :
+# rust_backend de flate2 repose sur miniz_oxide (pur Rust), pas sur zlib C.
+flate2 = { version = "1.1.11", default-features = false, features = ["rust_backend"] }
 quick-xml = "0.42"
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }
