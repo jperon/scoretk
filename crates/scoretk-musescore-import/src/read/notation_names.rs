@@ -23,8 +23,8 @@
 //! deux lecteurs.
 
 use scoretk_core::model::{
-    ArpeggioType, Articulation, ArticulationAnchor, ArticulationType, ChordLineType, FermataType,
-    GlissandoType, LineStyle, Ornament, OrnamentType, Placement, TrillType,
+    ArpeggioType, Articulation, ArticulationAnchor, ArticulationType, BreathType, ChordLineType,
+    FermataType, GlissandoType, LineStyle, Ornament, OrnamentType, Placement, TrillType,
 };
 
 /// Découpe un nom SMuFL en base et ancre verticale.
@@ -111,6 +111,26 @@ pub(crate) fn fermata_type(name: &str) -> Option<FermataType> {
         "curlewSign" => FermataType::Curlew,
         _ => return None,
     })
+}
+
+/// Symbole d'une respiration (`<Breath><symbol>`) vers sa nature.
+///
+/// Portage de `SymNames::symIdByName` (`engraving/types/symnames.cpp:798-822`,
+/// utilisé par `TRead::read(Breath*)`, `rw/read400/tread.cpp:2174-2187`) : le
+/// nom inconnu retombe sur la virgule, comme `Breath::Breath` initialise son
+/// type à `BreathType::COMMA`.
+pub(crate) fn breath_kind(symbol: &str) -> BreathType {
+    match symbol {
+        "caesura" => BreathType::Caesura,
+        "caesuraCurved" => BreathType::CaesuraCurved,
+        "caesuraShort" => BreathType::CaesuraShort,
+        "caesuraThick" => BreathType::CaesuraThick,
+        "caesuraSingleStroke" | "chantCaesura" => BreathType::CaesuraSingle,
+        "breathMarkTick" => BreathType::Tick,
+        "breathMarkUpbow" => BreathType::Upbow,
+        "breathMarkSalzedo" => BreathType::Salzedo,
+        _ => BreathType::Comma,
+    }
 }
 
 /// Ornement à partir de son nom SMuFL.

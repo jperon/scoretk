@@ -37,6 +37,24 @@ use scoretk_musescore_import::MsczContainer;
 
 /// `.mscx` minimal d'une partie de piano, avec le contenu de `<voice>` fourni.
 fn mscx(version: &str, voice: &str) -> String {
+    let voices = format!(
+        "        <voice>\n          <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>\n{voice}        </voice>\n"
+    );
+    mscx_voices(version, &voices)
+}
+
+/// Même fichier, mais dont la première voix est une ronde et la seconde porte
+/// le contenu fourni.
+fn mscx_voix_deux(version: &str, voice: &str) -> String {
+    let voices = format!(
+        "        <voice>\n          <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>\n{}\
+         </voice>\n        <voice>\n{voice}        </voice>\n",
+        rest("whole")
+    );
+    mscx_voices(version, &voices)
+}
+
+fn mscx_voices(version: &str, voices: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <museScore version="{version}">
@@ -57,11 +75,7 @@ fn mscx(version: &str, voice: &str) -> String {
     </Part>
     <Staff id="1">
       <Measure>
-        <voice>
-          <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
-{voice}
-        </voice>
-      </Measure>
+{voices}      </Measure>
     </Staff>
   </Score>
 </museScore>
@@ -78,16 +92,30 @@ fn breath(body: &str) -> String {
 }
 
 fn lire(version: &str, voice: &str) -> scoretk_core::model::Score {
-    let source = mscx(version, voice);
+    lire_source(&mscx(version, voice))
+}
+
+fn lire_voix_deux(version: &str, voice: &str) -> scoretk_core::model::Score {
+    lire_source(&mscx_voix_deux(version, voice))
+}
+
+fn lire_source(source: &str) -> scoretk_core::model::Score {
     let container = MsczContainer::from_bytes(source.as_bytes()).expect("conteneur");
     read_score(&container).expect("lecture du .mscx")
 }
 
 fn respirations(score: &scoretk_core::model::Score) -> Vec<(BreathType, Placement)> {
+    respirations_voix(score, 0)
+}
+
+fn respirations_voix(
+    score: &scoretk_core::model::Score,
+    voice: u8,
+) -> Vec<(BreathType, Placement)> {
     let staff = StaffId::from_raw(0);
     score.measures[0]
         .segments_of_type(SegmentType::Breath)
-        .filter_map(|segment| match segment.element(Track::new(staff, 0)) {
+        .filter_map(|segment| match segment.element(Track::new(staff, voice)) {
             Some(SegmentItem::Breath(breath)) => Some((breath.kind, breath.placement)),
             _ => None,
         })
@@ -199,30 +227,16 @@ fn lit_les_respirations_en_4x() {
 }
 
 fn fermata(score: &scoretk_core::model::Score) -> (FermataType, Placement, bool) {
+    fermata_voix(score, 0)
+}
+
+fn fermata_voix(score: &scoretk_core::model::Score, voice: u8) -> (FermataType, Placement, bool) {
     let staff = StaffId::from_raw(0);
-    let track = Track::new(staff, 0);
+    let track = Track::new(staff, voice);
     for segment in &score.measures[0].segments {
         for annotation in segment.annotations_on(track) {
             if let Annotation::Fermata(fermata) = annotation {
                 return (fermata.kind, fermata.placement, fermata.visible);
-            }
-        }
-    }
-    eprintln!(
-        "TESTSUMMARY measures={} staves={} notes={}",
-        score.measures.len(),
-        score.staves.len(),
-        score.notes.len()
-    );
-    for (index, measure) in score.measures.iter().enumerate() {
-        eprintln!(
-            "measure {index} @{:?} len {:?}",
-            measure.start_tick, measure.len
-        );
-        for segment in &measure.segments {
-            eprintln!("  seg {:?} {:?}", segment.kind, segment.annotations.len());
-            for entry in &segment.annotations {
-                eprintln!("    {:?} -> {:?}", entry.track, entry.annotation);
             }
         }
     }
@@ -264,4 +278,61 @@ fn lit_un_point_d_orgue_invisible() {
         fermata(&lire("4.70", &voice)),
         (FermataType::Curlew, Placement::Above, false)
     );
+}
+
+/// En voix 2, le placement par défaut d'un point d'orgue est `Below`
+/// (`Fermata::propertyDefault`, `dom/fermata.cpp`), et `<placement> above`
+/// l'écrase.
+#[test]
+fn lit_le_placement_des_points_d_orgue_en_voix_2() {
+    for version in ["3.02", "4.70"] {
+        let sans_placement = format!(
+            "          <Fermata><subtype>fermata</subtype></Fermata>\n{}",
+            rest("whole")
+        );
+        assert_eq!(
+            fermata_voix(&lire_voix_deux(version, &sans_placement), 1),
+            (FermataType::Normal, Placement::Below, true),
+            "voix 2 sans <placement> en {version}"
+        );
+
+        let au_dessus = format!(
+            "          <Fermata><subtype>fermata</subtype><placement>above</placement></Fermata>\n{}",
+            rest("whole")
+        );
+        assert_eq!(
+            fermata_voix(&lire_voix_deux(version, &au_dessus), 1),
+            (FermataType::Normal, Placement::Above, true),
+            "voix 2 avec <placement> en {version}"
+        );
+    }
+}
+
+/// Même règle pour les respirations : voix 2 au-dessous par défaut
+/// (`MeasureRead::readVoice`), `<placement> above` prioritaire.
+#[test]
+fn lit_le_placement_des_respirations_en_voix_2() {
+    for version in ["3.02", "4.70"] {
+        let sans_placement = format!(
+            "{}{}",
+            breath("<symbol>breathMarkTick</symbol>"),
+            rest("whole")
+        );
+        assert_eq!(
+            respirations_voix(&lire_voix_deux(version, &sans_placement), 1),
+            vec![(BreathType::Tick, Placement::Below)],
+            "voix 2 sans <placement> en {version}"
+        );
+
+        let au_dessus = format!(
+            "{}{}",
+            breath("<symbol>breathMarkTick</symbol><placement>above</placement>"),
+            rest("whole")
+        );
+        assert_eq!(
+            respirations_voix(&lire_voix_deux(version, &au_dessus), 1),
+            vec![(BreathType::Tick, Placement::Above)],
+            "voix 2 avec <placement> en {version}"
+        );
+    }
 }

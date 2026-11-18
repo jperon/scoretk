@@ -57,8 +57,8 @@ use crate::{Error, Result};
 use scoretk_core::model::{ids::StaffId, tpc};
 use scoretk_core::model::{
     text_style_defaults, Accidental, Annotation, Articulation, BarLine, BarLineType, BeamMode,
-    Breath, BreathType, Chord, ChordRest, ChordRestKind, Clef, ClefType, Credit, CreditJustify,
-    CreditStyle, Duration, DurationType, Fraction, GraceChord, GraceType, Harmony, HarmonyDegree,
+    Breath, Chord, ChordRest, ChordRestKind, Clef, ClefType, Credit, CreditJustify, CreditStyle,
+    Duration, DurationType, Fraction, GraceChord, GraceType, Harmony, HarmonyDegree,
     HarmonyDegreeKind, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
     Measure, MidiArticulation, Note, NoteId, Part, Placement, RehearsalFrame, RehearsalMark,
     RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffText, StemDirection,
@@ -1040,17 +1040,9 @@ impl Reader {
                 }
                 "Breath" => {
                     // Symboles de `SymNames` (`engraving/types/symnames.cpp:798-822`).
-                    let kind = match child.child("symbol").map(Element::text) {
-                        Some("caesura") => BreathType::Caesura,
-                        Some("caesuraCurved") => BreathType::CaesuraCurved,
-                        Some("caesuraShort") => BreathType::CaesuraShort,
-                        Some("caesuraThick") => BreathType::CaesuraThick,
-                        Some("caesuraSingleStroke" | "chantCaesura") => BreathType::CaesuraSingle,
-                        Some("breathMarkTick") => BreathType::Tick,
-                        Some("breathMarkUpbow") => BreathType::Upbow,
-                        Some("breathMarkSalzedo") => BreathType::Salzedo,
-                        _ => BreathType::Comma,
-                    };
+                    let kind = crate::read::notation_names::breath_kind(
+                        child.child("symbol").map(Element::text).unwrap_or_default(),
+                    );
                     // `MeasureRead::readVoice` place la respiration au-dessus
                     // pour la voix 0 et au-dessous pour la voix 1, puis
                     // `TRead::read` applique `<placement>` s'il est présent.
@@ -1237,15 +1229,15 @@ impl Reader {
                     self.add_annotation(measure_index, tick, track, Annotation::Harmony(harmony));
                 }
                 "Fermata" => {
-                    let mut annotation = notations::read_fermata(child);
-                    // `MeasureRead::readVoice` place le point d'orgue
-                    // au-dessous pour la voix 1 ; `<placement>` l'écrase
-                    // ensuite (`rw/read410/measureread.cpp:534-539`).
-                    if let Annotation::Fermata(fermata) = &mut annotation {
-                        if !child.has_child("placement") && track.voice() % 2 == 1 {
-                            fermata.placement = Placement::Below;
-                        }
-                    }
+                    // `MeasureRead::readVoice` fixe le placement de la piste
+                    // avant `TRead::read` (`rw/read410/measureread.cpp:535-538`) :
+                    // voix impaire au-dessous, comme `Fermata::propertyDefault`.
+                    let default_placement = if track.voice() % 2 == 1 {
+                        Placement::Below
+                    } else {
+                        Placement::Above
+                    };
+                    let annotation = notations::read_fermata(child, default_placement);
                     self.add_annotation(measure_index, tick, track, annotation);
                 }
                 "FiguredBass" => {

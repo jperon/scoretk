@@ -34,7 +34,14 @@ use scoretk_core::model::{
 };
 
 /// Lit une annotation de segment, ou `None` si l'élément n'en est pas une.
-pub(crate) fn read(reader: &Reader, node: &Node) -> Option<Annotation> {
+///
+/// `fermata_placement` est le placement par défaut d'un point d'orgue, déduit
+/// de la piste par `MeasureRead::readVoice` ; il ne sert qu'à `<Fermata>`.
+pub(crate) fn read(
+    reader: &Reader,
+    node: &Node,
+    fermata_placement: Placement,
+) -> Option<Annotation> {
     let placement = node
         .child("placement")
         .map(|child| tables::placement(&child.trimmed_text()));
@@ -103,7 +110,7 @@ pub(crate) fn read(reader: &Reader, node: &Node) -> Option<Annotation> {
             visible: visible(node),
         }),
         "Harmony" => Annotation::Harmony(read_harmony(node, placement)),
-        "Fermata" => super::notations::read_fermata(node),
+        "Fermata" => super::notations::read_fermata(node, fermata_placement),
         "FiguredBass" => Annotation::FiguredBass(read_figured_bass(node)),
         "TremoloBar" => Annotation::TremoloBar(read_tremolo_bar(node)),
         "Expression" => Annotation::Expression(StaffText {

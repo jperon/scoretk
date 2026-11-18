@@ -30,8 +30,8 @@ use super::xml::{parse_fraction, Node};
 use super::{annotations, chord, repeats, spanner, Reader, VoiceCtx};
 use scoretk_core::model::{
     Annotation, BarLine, BarLineType, Breath, BreathType, ChordRestKind, Clef, ClefType, Fraction,
-    GraceChord, Key, KeyMode, KeySig, Measure, Segment, SegmentItem, SegmentType, StemDirection,
-    TimeSig, Track, VOICES,
+    GraceChord, Key, KeyMode, KeySig, Measure, Placement, Segment, SegmentItem, SegmentType,
+    StemDirection, TimeSig, Track, VOICES,
 };
 
 /// Lit une mesure et renvoie son tick de fin.
@@ -218,7 +218,16 @@ fn read_voice(
             "Dynamic" | "Expression" | "Tempo" | "StaffText" | "SystemText" | "Text"
             | "RehearsalMark" | "Harmony" | "Fermata" | "InstrumentChange" | "FiguredBass"
             | "TremoloBar" => {
-                if let Some(mut annotation) = annotations::read(reader, child) {
+                // `MeasureRead::readVoice` fixe le placement de la piste avant
+                // `TRead::read` (`rw/read400/measurerw.cpp:570-574`,
+                // `rw/read410/measureread.cpp:535-538`) : voix impaire
+                // au-dessous, comme `Fermata::propertyDefault`.
+                let fermata_placement = if ctx.track.voice() % 2 == 1 {
+                    Placement::Below
+                } else {
+                    Placement::Above
+                };
+                if let Some(annotation) = annotations::read(reader, child, fermata_placement) {
                     // `Segment::add` enregistre l'instrument d'un changement au
                     // tick du segment (`part->setInstrument`).
                     if let Annotation::InstrumentChange(change) = &annotation {
@@ -228,13 +237,6 @@ fn read_voice(
                                 .score
                                 .part_mut(part_id)
                                 .set_instrument_at(ctx.tick, instrument.clone());
-                        }
-                    }
-                    // `MeasureRead::readVoice` place l'annotation au-dessous
-                    // pour la voix 1 ; `<placement>` l'écrase ensuite.
-                    if let Annotation::Fermata(fermata) = &mut annotation {
-                        if child.child("placement").is_none() && ctx.track.voice() % 2 == 1 {
-                            fermata.placement = scoretk_core::model::Placement::Below;
                         }
                     }
                     segment_mut(
@@ -498,22 +500,8 @@ fn read_bar_line(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
         .set_element(ctx.track, SegmentItem::BarLine(bar_line));
 }
 
-/// Symbole d'une respiration (`SymNames::symIdByName`,
-/// `engraving/types/symnames.cpp:798-822`).
-fn breath_kind(symbol: &str) -> BreathType {
-    match symbol {
-        "caesura" => BreathType::Caesura,
-        "caesuraCurved" => BreathType::CaesuraCurved,
-        "caesuraShort" => BreathType::CaesuraShort,
-        "caesuraThick" => BreathType::CaesuraThick,
-        "caesuraSingleStroke" | "chantCaesura" => BreathType::CaesuraSingle,
-        "breathMarkTick" => BreathType::Tick,
-        "breathMarkUpbow" => BreathType::Upbow,
-        "breathMarkSalzedo" => BreathType::Salzedo,
-        _ => BreathType::Comma,
-    }
-}
-
+/// Symbole d'une respiration : voir
+/// [`notation_names::breath_kind`](crate::read::notation_names::breath_kind).
 fn read_breath(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
     let mut breath = Breath::default();
     let mut explicit_placement = false;
@@ -529,7 +517,9 @@ fn read_breath(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
                     _ => BreathType::Comma,
                 };
             }
-            "symbol" => breath.kind = breath_kind(&child.trimmed_text()),
+            "symbol" => {
+                breath.kind = crate::read::notation_names::breath_kind(&child.trimmed_text())
+            }
             "placement" => {
                 breath.placement = tables::placement(&child.trimmed_text());
                 explicit_placement = true;
