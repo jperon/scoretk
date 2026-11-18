@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn style_et_lyrics_placement_3x() {
         let node = super::super::xml::parse(
-            b"<Style><lyricsPlacement>above</lyricsPlacement><pageHeight>11</pageHeight></Style>",
+            "<Style><lyricsPlacement>above</lyricsPlacement><pageHeight>11</pageHeight></Style>",
         )
         .expect("XML");
         let style = read_style(&node, MscVersion::from_raw(302));
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn saut_de_page_et_credit_de_vbox() {
         let node = super::super::xml::parse(
-            b"<VBox><height>18</height><Text><style>composer</style>\
+            "<VBox><height>18</height><Text><style>composer</style>\
               <text>Compositrice</text></Text></VBox>",
         )
         .expect("XML");
@@ -124,7 +124,7 @@ mod tests {
         assert_eq!(score.credits[0].justify, CreditJustify::Right);
 
         let break_node = super::super::xml::parse(
-            b"<VBox><LayoutBreak><subtype>page</subtype></LayoutBreak></VBox>",
+            "<VBox><LayoutBreak><subtype>page</subtype></LayoutBreak></VBox>",
         )
         .expect("XML");
         assert!(page_break(&break_node));

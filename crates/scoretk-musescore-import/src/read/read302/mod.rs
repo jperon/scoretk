@@ -73,7 +73,10 @@ use xml::Node;
 /// [`crate::container::detect_version`]) ; elle ne sert qu'aux corrections de
 /// compatibilité propres à 3.02.
 pub fn read(mscx: &[u8], version: MscVersion) -> Result<Score> {
-    let document = xml::parse(mscx)?;
+    // L'arbre XML emprunte le texte : il faut le garder vivant pendant toute
+    // la lecture.
+    let text = String::from_utf8_lossy(mscx);
+    let document = xml::parse(&text)?;
     let mut reader = Reader::new(version);
     let score_node = match document.name() {
         "museScore" => document.child("Score"),

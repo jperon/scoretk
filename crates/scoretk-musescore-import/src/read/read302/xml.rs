@@ -26,6 +26,8 @@
 //!
 //! Tout reste en mémoire : aucune entrée/sortie, aucun thread.
 
+use std::borrow::Cow;
+
 use quick_xml::errors::IllFormedError;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, XmlVersion};
@@ -40,22 +42,25 @@ use scoretk_core::model::Fraction;
 pub(crate) const TICKS_PER_WHOLE: u32 = 4 * scoretk_core::model::DEFAULT_DIVISION;
 
 /// Contenu d'un élément, dans l'ordre du document.
-enum Content {
-    Text(String),
-    Element(Node),
+///
+/// Les tranches empruntent le texte analysé (`parse`) ; seules les valeurs
+/// normalisées ou les entités résolues sont allouées.
+enum Content<'a> {
+    Text(Cow<'a, str>),
+    Element(Node<'a>),
 }
 
 /// Élément XML.
-pub(crate) struct Node {
-    name: String,
-    attrs: Vec<(String, String)>,
-    content: Vec<Content>,
+pub(crate) struct Node<'a> {
+    name: Cow<'a, str>,
+    attrs: Vec<(Cow<'a, str>, Cow<'a, str>)>,
+    content: Vec<Content<'a>>,
 }
 
-impl Node {
+impl<'a> Node<'a> {
     /// Nom de l'élément.
     pub(crate) fn name(&self) -> &str {
-        &self.name
+        self.name.as_ref()
     }
 
     /// Valeur d'un attribut.
@@ -63,7 +68,7 @@ impl Node {
         self.attrs
             .iter()
             .find(|(key, _)| key == name)
-            .map(|(_, value)| value.as_str())
+            .map(|(_, value)| value.as_ref())
     }
 
     /// Attribut entier.
@@ -72,12 +77,12 @@ impl Node {
     }
 
     /// Premier enfant portant ce nom.
-    pub(crate) fn child(&self, name: &str) -> Option<&Node> {
+    pub(crate) fn child(&self, name: &str) -> Option<&Node<'a>> {
         self.children().find(|child| child.name == name)
     }
 
     /// Enfants éléments, dans l'ordre du document.
-    pub(crate) fn children(&self) -> impl Iterator<Item = &Node> {
+    pub(crate) fn children(&self) -> impl Iterator<Item = &Node<'a>> {
         self.content.iter().filter_map(|item| match item {
             Content::Element(node) => Some(node),
             Content::Text(_) => None,
@@ -85,10 +90,10 @@ impl Node {
     }
 
     /// Enfants éléments portant ce nom.
-    pub(crate) fn children_named<'a>(
-        &'a self,
-        name: &'a str,
-    ) -> impl Iterator<Item = &'a Node> + 'a {
+    pub(crate) fn children_named<'s>(
+        &'s self,
+        name: &'s str,
+    ) -> impl Iterator<Item = &'s Node<'a>> + 's {
         self.children().filter(move |child| child.name == name)
     }
 
@@ -250,17 +255,19 @@ pub(crate) fn parse_fraction(text: &str) -> Option<Fraction> {
 }
 
 /// Analyse un `.mscx` et renvoie son élément racine.
-pub(crate) fn parse(bytes: &[u8]) -> Result<Node> {
-    let text = String::from_utf8_lossy(bytes);
-    let mut reader = Reader::from_str(&text);
-    let mut stack: Vec<Node> = Vec::new();
-    let mut root: Option<Node> = None;
+///
+/// L'arbre emprunte le texte analysé : l'appelant doit le garder vivant
+/// pendant toute la lecture.
+pub(crate) fn parse<'a>(text: &'a str) -> Result<Node<'a>> {
+    let mut reader = Reader::from_str(text);
+    let mut stack: Vec<Node<'a>> = Vec::new();
+    let mut root: Option<Node<'a>> = None;
 
     loop {
         match reader.read_event()? {
-            Event::Start(start) => stack.push(element(&start)?),
+            Event::Start(start) => stack.push(element(text, &start)?),
             Event::Empty(start) => {
-                let node = element(&start)?;
+                let node = element(text, &start)?;
                 attach(&mut stack, &mut root, node);
             }
             Event::End(_) => {
@@ -268,18 +275,11 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Node> {
                     attach(&mut stack, &mut root, node);
                 }
             }
-            Event::Text(chunk) => {
-                let chunk = chunk.into_inner();
-                push_text(&mut stack, chunk.as_ref());
-            }
-            Event::CData(chunk) => {
-                let chunk = chunk.into_inner();
-                push_text(&mut stack, chunk.as_ref());
-            }
+            Event::Text(chunk) => push_text(&mut stack, chunk.into_inner()),
+            Event::CData(chunk) => push_text(&mut stack, chunk.into_inner()),
             Event::GeneralRef(reference) => {
-                let reference = reference.into_inner();
-                if let Some(resolved) = resolve_reference(reference.as_ref()) {
-                    push_text(&mut stack, &resolved);
+                if let Some(resolved) = resolve_reference(&reference.into_inner()) {
+                    push_text(&mut stack, resolved);
                 }
             }
             Event::Eof => break,
@@ -293,15 +293,16 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Node> {
     root.ok_or_else(|| Error::Xml(IllFormedError::MissingEndTag("museScore".to_owned()).into()))
 }
 
-fn element(start: &BytesStart<'_>) -> Result<Node> {
-    let name = start.name().as_ref().to_owned();
+fn element<'a>(text: &'a str, start: &BytesStart<'_>) -> Result<Node<'a>> {
+    let name = borrow_from(text, start.name().into_inner());
     let mut attrs = Vec::new();
     for attribute in start.attributes() {
         let attribute = attribute?;
-        let key = attribute.key.as_ref().to_owned();
-        let value = attribute
-            .normalized_value(XmlVersion::Implicit1_0)?
-            .into_owned();
+        let key = borrow_from(text, attribute.key.into_inner());
+        let value = match attribute.normalized_value(XmlVersion::Implicit1_0)? {
+            Cow::Borrowed(value) => borrow_from(text, value),
+            Cow::Owned(value) => Cow::Owned(value),
+        };
         attrs.push((key, value));
     }
     Ok(Node {
@@ -311,7 +312,22 @@ fn element(start: &BytesStart<'_>) -> Result<Node> {
     })
 }
 
-fn attach(stack: &mut [Node], root: &mut Option<Node>, node: Node) {
+/// Rend à une tranche issue du texte analysé la durée de vie de ce texte.
+///
+/// Les accesseurs de `quick-xml` (`BytesStart::name`, `Attributes`) empruntent
+/// l'événement (`&self`) : la tranche renvoyée est bien une sous-chaîne de
+/// l'entrée, mais le compilateur ne le sait pas. On retrouve donc sa position
+/// par son adresse pour l'emprunter à son tour, au lieu de la recopier ; à
+/// défaut (valeur normalisée ou allouée), on recopie.
+fn borrow_from<'a>(text: &'a str, slice: &str) -> Cow<'a, str> {
+    let offset = (slice.as_ptr() as usize).wrapping_sub(text.as_ptr() as usize);
+    match text.get(offset..).filter(|tail| tail.starts_with(slice)) {
+        Some(tail) => Cow::Borrowed(&tail[..slice.len()]),
+        None => Cow::Owned(slice.to_owned()),
+    }
+}
+
+fn attach<'a>(stack: &mut [Node<'a>], root: &mut Option<Node<'a>>, node: Node<'a>) {
     match stack.last_mut() {
         Some(parent) => parent.content.push(Content::Element(node)),
         None => {
@@ -322,14 +338,17 @@ fn attach(stack: &mut [Node], root: &mut Option<Node>, node: Node) {
     }
 }
 
-fn push_text(stack: &mut [Node], text: &str) {
+fn push_text<'a>(stack: &mut [Node<'a>], text: Cow<'a, str>) {
     if let Some(node) = stack.last_mut() {
-        node.content.push(Content::Text(text.to_owned()));
+        node.content.push(Content::Text(text));
     }
 }
 
 /// Résout une référence d'entité (`&amp;`, `&#38;`, `&#x26;`).
-fn resolve_reference(name: &str) -> Option<String> {
+///
+/// Les entités prédéfinies empruntent des littéraux ; les références
+/// numériques et les entités inconnues (rendues telles quelles) sont allouées.
+fn resolve_reference(name: &str) -> Option<Cow<'static, str>> {
     if let Some(number) = name.strip_prefix('#') {
         let code = match number
             .strip_prefix('x')
@@ -338,15 +357,15 @@ fn resolve_reference(name: &str) -> Option<String> {
             Some(hexadecimal) => u32::from_str_radix(hexadecimal, 16).ok()?,
             None => number.parse().ok()?,
         };
-        return char::from_u32(code).map(|character| character.to_string());
+        return char::from_u32(code).map(|character| Cow::Owned(character.to_string()));
     }
     let character = match name {
-        "amp" => '&',
-        "lt" => '<',
-        "gt" => '>',
-        "quot" => '"',
-        "apos" => '\'',
-        _ => return Some(format!("&{name};")),
+        "amp" => "&",
+        "lt" => "<",
+        "gt" => ">",
+        "quot" => "\"",
+        "apos" => "'",
+        _ => return Some(Cow::Owned(format!("&{name};"))),
     };
-    Some(character.to_string())
+    Some(Cow::Borrowed(character))
 }
