@@ -349,3 +349,115 @@ fn sans_musique_erreur() {
         "message : {error}"
     );
 }
+
+/// Paires (hauteur de départ, hauteur d'arrivée) des liaisons de prolongation.
+fn liaisons(score: &scoretk_core::model::Score) -> Vec<(u8, u8)> {
+    score
+        .notes
+        .iter()
+        .filter_map(|note| {
+            note.tie_forward
+                .map(|next| (note.pitch, score.note(next).pitch))
+        })
+        .collect()
+}
+
+#[test]
+fn liaison_apres_note_simple() {
+    let score = lire("c4~ c4 d2");
+    assert_eq!(liaisons(&score), vec![(60, 60)]);
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .filter(|note| note.tie_back.is_some())
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn liaison_apres_note_avec_nuance_avant() {
+    let score = lire("c4\\p ~ c4 d2");
+    assert_eq!(liaisons(&score), vec![(60, 60)]);
+}
+
+#[test]
+fn liaison_apres_note_avec_nuance_apres() {
+    let score = lire("c4 ~ \\p c4 d2");
+    assert_eq!(liaisons(&score), vec![(60, 60)]);
+}
+
+#[test]
+fn liaison_apres_accord() {
+    let score = lire("<c e>4~ <c e>4 r2");
+    assert_eq!(liaisons(&score), vec![(60, 60), (64, 64)]);
+}
+
+#[test]
+fn liaison_interne_a_un_accord() {
+    // Seul le do est lié : le mi ne porte pas de `~`.
+    let score = lire("<c~ e>4 <c e>4 r2");
+    assert_eq!(liaisons(&score), vec![(60, 60)]);
+}
+
+#[test]
+fn pas_de_liaison_entre_hauteurs_differentes() {
+    let score = lire("c4~ d4 r2");
+    assert!(liaisons(&score).is_empty());
+}
+
+#[test]
+fn liaison_a_travers_une_barre_de_mesure() {
+    let score = lire("c1~ c1");
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(liaisons(&score), vec![(60, 60)]);
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .filter(|note| note.tie_back.is_some())
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn time_denominateur_nul_ne_panique_pas() {
+    // `Fraction::new` paniquait sur un dénominateur nul : l'indication est
+    // désormais rejetée avec un avertissement.
+    let (score, warnings) =
+        read_lilypond_reporting("{ \\time 3/0 c'4 }").expect("lecture sans panique");
+    assert_eq!(hauteurs(&score), vec![60]);
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.message == "indication de mesure invalide ignorée"),
+        "avertissements : {warnings:?}"
+    );
+}
+
+#[test]
+fn partial_duree_nulle_ne_panique_pas() {
+    let _ = read_lilypond_reporting("{ \\partial 0 c'4 }");
+}
+
+#[test]
+fn measure_length_denominateur_nul_ne_panique_pas() {
+    let _ = read_lilypond_reporting("{ \\set Timing.measureLength = #3/0 c'4 }");
+}
+
+#[test]
+fn tuplet_denominateur_nul_ne_panique_pas() {
+    let _ = read_lilypond_reporting("{ \\tuplet 3/0 c'4 }");
+}
+
+#[test]
+fn times_ratio_nul_ne_panique_pas() {
+    let _ = read_lilypond_reporting("{ \\times 0/2 c'4 }");
+}
+
+#[test]
+fn multiplicateur_denominateur_nul_ne_panique_pas() {
+    let _ = read_lilypond_reporting("{ c4*1/0 }");
+}

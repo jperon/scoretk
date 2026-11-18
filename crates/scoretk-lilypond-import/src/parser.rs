@@ -1164,6 +1164,12 @@ impl<'a> Parser<'a> {
                 })
             }
             "time" => match self.parse_ratio() {
+                // Un dénominateur nul ferait paniquer `Fraction::new` dans le
+                // constructeur : on rejette l'indication ici.
+                Some((_, 0)) => {
+                    self.warn("indication de mesure invalide ignorée");
+                    Music::Empty
+                }
                 Some((numerator, denominator)) => context(Context::Time {
                     numerator: i32::try_from(numerator).unwrap_or(4),
                     denominator: i32::try_from(denominator).unwrap_or(4),

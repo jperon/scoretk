@@ -628,13 +628,25 @@ impl<'a> Interpreter<'a> {
             return;
         }
 
+        // Un `~` porté par l'accord (et non par une note de `<…>`) lie toutes
+        // ses notes : LilyPond (event_chord + Tie_engraver) attache une
+        // liaison d'accord à chaque note, vers la note de même hauteur qui
+        // suit.
+        let chord_tie = chord
+            .posts
+            .iter()
+            .any(|post| matches!(post, PostEvent::Tie));
         // Un silence de mesure entière couvre toute la mesure : le
         // constructeur le reconnaîtra d'après le silence multi-mesures.
         let content = match &chord.kind {
             ChordKind::Notes(notes) => ChordContent::Notes(
                 notes
                     .iter()
-                    .filter_map(|note| self.note_event(note))
+                    .filter_map(|note| {
+                        let mut event = self.note_event(note)?;
+                        event.tie |= chord_tie;
+                        Some(event)
+                    })
                     .collect(),
             ),
             ChordKind::Rest => ChordContent::Rest {
