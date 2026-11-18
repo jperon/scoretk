@@ -27,10 +27,10 @@ set -euo pipefail
 racine="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$racine"
 
-nix develop -c cargo test -p scoretk-abc --test outils_externes --no-run >/dev/null
-binaire="$(find target -type f -executable -name 'outils_externes-*' | head -n 1)"
+nix develop -c cargo test -p scoretk --features abc-import,abc-export --test abc_outils_externes --no-run >/dev/null
+binaire="$(find target -type f -executable -name 'abc_outils_externes-*' | head -n 1)"
 if [ -z "$binaire" ]; then
-    echo "binaire de test outils_externes introuvable" >&2
+    echo "binaire de test abc_outils_externes introuvable" >&2
     exit 1
 fi
 

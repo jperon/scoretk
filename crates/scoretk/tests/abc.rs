@@ -17,7 +17,7 @@
 
 //! Façade ABC (feature `abc`) : lecture, écriture et aller-retour.
 
-#![cfg(feature = "abc")]
+#![cfg(all(feature = "abc-import", feature = "abc-export"))]
 
 mod common;
 
@@ -63,8 +63,8 @@ fn mscx_vers_abc_puis_retour() {
     let relu = read(text.as_bytes(), Format::Abc).expect("relecture ABC");
     let direct = write(&score, Format::MusicXml, &options()).expect("MusicXML direct");
     let retour = write(&relu, Format::MusicXml, &options()).expect("MusicXML retour");
-    // Le noyau musical est comparé en détail par scoretk-abc ; ici on vérifie
-    // que la façade ne perd ni parties ni notes.
+    // Le noyau musical est comparé en détail par les crates `scoretk-abc-*` ;
+    // ici on vérifie que la façade ne perd ni parties ni notes.
     let direct = String::from_utf8(direct).expect("UTF-8");
     let retour = String::from_utf8(retour).expect("UTF-8");
     assert_eq!(

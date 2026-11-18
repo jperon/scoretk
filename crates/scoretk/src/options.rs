@@ -17,12 +17,13 @@
 
 //! Options d'écriture communes à tous les formats.
 
+#[cfg(feature = "musicxml-export")]
 use scoretk_musicxml_export::ExportOptions;
 
 /// Options d'écriture MIDI.
 ///
-/// Reprend les réglages utiles de [`scoretk_midi::MidiOptions`] sans exposer
-/// la crate optionnelle : la façade reste utilisable avec les features
+/// Reprend les réglages utiles de `scoretk_midi_export::MidiOptions` sans
+/// exposer la crate optionnelle : la façade reste utilisable avec les features
 /// désactivées.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MidiOptions {
@@ -41,10 +42,9 @@ impl Default for MidiOptions {
 
 /// Options transmises à [`write`](crate::write).
 ///
-/// Les valeurs par défaut sont celles de l'export MusicXML de `scoretk_core` :
-/// logiciel annoncé et date d'encodage constantes (sortie reproductible). La
-/// CLI substitue la date du jour à `encoding_date` si l'utilisateur ne la fige
-/// pas.
+/// Les valeurs par défaut sont celles de l'export MusicXML : logiciel annoncé
+/// et date d'encodage constantes (sortie reproductible). La CLI substitue la
+/// date du jour à `encoding_date` si l'utilisateur ne la fige pas.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
     /// Contenu de `<software>` (MusicXML).
@@ -59,16 +59,27 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        let export = ExportOptions::default();
+        // Les trois premiers champs viennent de l'export MusicXML. Sans la
+        // feature `musicxml-export`, aucun MusicXML ne peut être écrit : ils
+        // restent vides plutôt que de dupliquer les constantes de l'export.
+        #[cfg(feature = "musicxml-export")]
+        let (software, encoding_date, concert_pitch) = {
+            let export = ExportOptions::default();
+            (export.software, export.encoding_date, export.concert_pitch)
+        };
+        #[cfg(not(feature = "musicxml-export"))]
+        let (software, encoding_date, concert_pitch) = (String::new(), String::new(), false);
+
         Self {
-            software: export.software,
-            encoding_date: export.encoding_date,
-            concert_pitch: export.concert_pitch,
+            software,
+            encoding_date,
+            concert_pitch,
             midi: MidiOptions::default(),
         }
     }
 }
 
+#[cfg(feature = "musicxml-export")]
 impl Options {
     /// Convertit vers les options de l'export MusicXML.
     pub(crate) fn export_options(&self) -> ExportOptions {

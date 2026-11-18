@@ -13,15 +13,24 @@ name = "scoretk"
 path = "src/main.rs"
 
 [dependencies]
-# Les six convertisseurs sont branchés par défaut dans la CLI : lecture
-# MusicXML (`musicxml-import`), lecture LilyPond (`lilypond-import`), lecture
-# et écriture ABC (`abc`), écriture MIDI (`midi`), MuseScore
-# (`.mscx`/`.mscz`, `mscx`) et écriture LilyPond (`lilypond`). Ainsi
+# Les dix convertisseurs sont branchés par défaut dans la CLI : une feature par
+# crate de sens (`docs/agents/scoretk.md` § 3), sans alias mixte. Ainsi
 # `scoretk entrée.musicxml -o sortie.mscx`, `… -o sortie.ly`,
 # `… -o sortie.mid` et `… -o sortie.abc` fonctionnent sans option de
 # compilation, et `scoretk entrée.ly -o sortie.musicxml` lit le sous-ensemble
 # LilyPond.
-scoretk = { path = "../scoretk", features = ["musicxml-import", "midi", "lilypond", "lilypond-import", "mscx", "abc"] }
+scoretk = { path = "../scoretk", features = [
+    "musescore-import",
+    "musescore-export",
+    "musicxml-import",
+    "musicxml-export",
+    "midi-import",
+    "midi-export",
+    "lilypond-import",
+    "lilypond-export",
+    "abc-import",
+    "abc-export",
+] }
 clap = { workspace = true }
 
 [dev-dependencies]

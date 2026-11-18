@@ -1,0 +1,13 @@
+[package]
+name = "scoretk-abc-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Écriture ABC depuis le modèle pivot de scoretk"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+scoretk-core = { path = "../scoretk-core" }
+scoretk-abc-common = { path = "../scoretk-abc-common" }

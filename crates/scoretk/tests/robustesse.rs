@@ -18,7 +18,7 @@
 //! Robustesse des entrées de la façade : toute entrée invalide doit renvoyer
 //! une `Err` typée, jamais paniquer (un panic est un abort en wasm).
 
-#![cfg(all(feature = "midi", feature = "musicxml-import"))]
+#![cfg(all(feature = "midi-export", feature = "musicxml-import"))]
 
 mod common;
 

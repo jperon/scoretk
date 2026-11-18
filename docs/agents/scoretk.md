@@ -34,7 +34,7 @@ pub enum Sens { Lecture, Ecriture }
 pub fn read(bytes: &[u8], format: Format) -> Result<Score>;
 pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>>;
 
-#[cfg(feature = "midi")]
+#[cfg(all(feature = "midi-export", feature = "musicxml-export"))]
 pub fn write_playback(score: &Score, options: &Options) -> Result<PlaybackOutput>;
 ```
 
@@ -44,7 +44,7 @@ des reprises de la sortie MIDI ; la CLI l'expose par `--no-expand-repeats`.
 L'export MusicXML ordinaire ne pose aucun identifiant (`stable_ids: false`) :
 il reste identique aux références MuseScore 4.7.4.
 
-`write_playback` (feature `midi`) renvoie
+`write_playback` (features `midi-export` et `musicxml-export`) renvoie
 `PlaybackOutput { musicxml: Vec<u8>, midi: Vec<u8>, timemap: scoretk::Timemap }`.
 Le MusicXML y est exporté avec `stable_ids` forcé : chaque `<measure>` et
 chaque `<note>` porte `id` **et** `xml:id` (même valeur), exactement les
@@ -74,106 +74,104 @@ Rien ne correspond → `None` (la CLI demande alors `--from`).
 
 ### Limites actuelles
 
-État de la **bibliothèque** selon les features ; la CLI `scoretk` active les
-six (`musicxml-import`, `midi`, `lilypond`, `lilypond-import`, `mscx`, `abc`),
-et c'est cet état que montre son `--list-formats`.
+Chaque sens a sa feature, et les dix sont actives par défaut ; la CLI `scoretk`
+et le crate wasm les activent toutes. `--list-formats` montre l'état réel de la
+bibliothèque compilée.
 
 | Format | Lecture | Écriture |
 | --- | --- | --- |
-| `.mscz` / `.mscx` | oui (`scoretk-musescore-import`) | oui (feature `mscx`, `scoretk-mscx`) |
-| MusicXML `.musicxml` / `.xml` | feature `musicxml-import` (t34) | oui |
-| MusicXML `.mxl` | feature `musicxml-import` (t43) | oui |
-| LilyPond `.ly` | oui (feature `lilypond-import`, t40) | oui (feature `lilypond`, `scoretk-lilypond`) |
-| ABC `.abc` | oui (feature `abc`, `scoretk-abc`, t41) | oui (feature `abc`, `scoretk-abc`, t41) |
-| MIDI `.mid` | oui (feature `midi`, `scoretk-midi`, t42) | oui (feature `midi`, `scoretk-midi`) |
+| `.mscz` / `.mscx` | feature `musescore-import` | feature `musescore-export` |
+| MusicXML `.musicxml` / `.xml` | feature `musicxml-import` (t34) | feature `musicxml-export` |
+| MusicXML `.mxl` | feature `musicxml-import` (t43) | feature `musicxml-export` |
+| LilyPond `.ly` | feature `lilypond-import` (t40) | feature `lilypond-export` (t36) |
+| ABC `.abc` | feature `abc-import` (t41) | feature `abc-export` (t41) |
+| MIDI `.mid` | feature `midi-import` (t42) | feature `midi-export` (t35) |
 
 Un format absent dans le sens demandé renvoie
 `Error::FormatNonPrisEnCharge { format, sens }`, jamais une sortie vide.
-L'écriture `.mxl` réutilise `scoretk_musicxml_export::export_mxl_with` (archive ZIP
-`META-INF/container.xml` + `score.xml`, comme `saveMxl` de MuseScore).
 
-## 3. Brancher les convertisseurs (t34, t35, t36, t38)
+## 3. Brancher les convertisseurs : dix features symétriques
 
-Tout le code conditionnel est dans `crates/scoretk/src/hooks.rs`. Les features
-existent déjà, désactivées par défaut ; les variantes d'erreur
-`MusicXmlImport`, `Midi`, `LilyPond` et `Mscx` aussi.
+La façade branche chaque convertisseur par une feature et une seule par sens :
+`<format>-import` pour `read`, `<format>-export` pour `write`. Les dix sont
+actives par défaut et il n'existe **aucun alias mixte** (pas de
+`midi = ["midi-import", "midi-export"]`) : un besoin des deux sens liste les
+deux features, comme le font la CLI et le crate wasm. Chaque feature branche
+exactement un crate :
 
-### t34 — lecture MusicXML (`crates/scoretk-musicxml`)
+| Feature | Crate | Fonctions de `hooks.rs` |
+| --- | --- | --- |
+| `musescore-import` | `scoretk-musescore-import` | `read_musescore` |
+| `musescore-export` | `scoretk-musescore-export` | `write_mscx`, `write_mscz` |
+| `musicxml-import` | `scoretk-musicxml-import` | `read_musicxml`, `read_mxl` |
+| `musicxml-export` | `scoretk-musicxml-export` | `write_musicxml`, `write_mxl` |
+| `midi-import` | `scoretk-midi-import` | `read_midi` |
+| `midi-export` | `scoretk-midi-export` | `write_midi`, `write_playback` |
+| `lilypond-import` | `scoretk-lilypond-import` | `read_lilypond` |
+| `lilypond-export` | `scoretk-lilypond-export` | `write_lilypond` |
+| `abc-import` | `scoretk-abc-import` | `read_abc` |
+| `abc-export` | `scoretk-abc-export` | `write_abc` |
 
-1. Dans `crates/scoretk/Cargo.toml`, ajouter la dépendance optionnelle
-   `scoretk-musicxml = { path = "../scoretk-musicxml", optional = true }` et
-   remplacer `musicxml-import = []` par
-   `musicxml-import = ["dep:scoretk-musicxml"]`.
-2. Rien d'autre : la fonction `hooks::read_musicxml` appelle déjà
-   `scoretk_musicxml::read_musicxml(bytes)` et convertit l'erreur en
-   `Error::MusicXmlImport` (l'erreur de la crate doit implémenter `Display`).
+Tout le code conditionnel est dans `hooks.rs` : chaque fonction a **deux
+définitions exclusives**, la vraie sous `#[cfg(feature = "…")]` et un repli sous
+`#[cfg(not(feature = "…"))]` engendré par la macro `non_branche!`, qui renvoie
+`Error::FormatNonPrisEnCharge { format, sens }`. Aucun `cfg(not(any(...)))`
+global : ajouter une feature revient à ajouter une paire de fonctions.
 
-**Branché** : la CLI active la feature ; `scoretk entrée.musicxml -o sortie.mscx`
-(ou `.ly`, `.mid`) fonctionne, et le `.mxl` en entrée aussi depuis t43.
+`error.rs` suit la même règle : les variantes qui transportent directement
+l'erreur d'un crate (`MuseScoreImport`, `MusicXmlExport`) n'existent que si la
+feature correspondante est active.
 
-### t43 — lecture MusicXML compressé (`.mxl`)
+Pour ajouter un convertisseur :
 
-**Branché** : `hooks::read_mxl` appelle `scoretk_musicxml::read_mxl(bytes)` et
-convertit l'erreur en `Error::MusicXmlImport`. `Format::Mxl` répond oui à
-`supports_read` quand `musicxml-import` est active, et
-`scoretk read(bytes, Format::Mxl)` comme `scoretk entrée.mxl -o sortie.mscx`
-fonctionnent. L'extraction du conteneur, le repli sans `container.xml` et les
-erreurs sont décrits dans `docs/agents/musicxml-import.md`.
+1. déclarer le crate de sens en dépendance optionnelle et la feature
+   `<format>-<sens> = ["dep:…"]` ;
+2. écrire la fonction dans `hooks.rs` (vraie définition + `non_branche!`) ;
+3. brancher le bras correspondant de `read`/`write` dans `lib.rs` et compléter
+   `Format::{supports_read,supports_write}` ;
+4. ajouter la feature à `default`, à la CLI et au crate wasm.
 
-### t38 — écriture MuseScore (`crates/scoretk-mscx`)
+`write_playback` est le seul point qui demande deux features (`midi-export` pour
+le MIDI et la carte des temps, `musicxml-export` pour le MusicXML identifié) :
+il est absent si l'une des deux manque.
 
-**Branché** : dépendance optionnelle `scoretk-mscx`, feature
-`mscx = ["dep:scoretk-mscx"]`, variante d'erreur `Mscx`, et fonctions
-`hooks::write_mscx`/`write_mscz` (`.mscx` texte, `.mscz` archive ZIP avec
-`META-INF/container.xml`, `score.mscx` et `score_style.mss`). La CLI active la
-feature : `scoretk entrée.mscx -o sortie.mscx` et `… -o sortie.mscz`.
+### MuseScore (`.mscz`, `.mscx`) — `musescore-import`, `musescore-export`
 
-### t35 — écriture MIDI (`crates/scoretk-midi`)
+La lecture (t38) passe par `MsczContainer::from_bytes` puis `read::read_score`
+(`scoretk-musescore-import`) ; l'écriture par `write_mscx`/`write_mscz`
+(`scoretk-musescore-export`) : `.mscx` texte, `.mscz` archive ZIP avec
+`META-INF/container.xml`, `score.mscx` et `score_style.mss`.
 
-**Branché** : la dépendance optionnelle et `midi = ["dep:scoretk-midi"]` sont
-en place ; `hooks::write_midi` appelle `scoretk_midi::write_midi(score)` et
-convertit l'erreur en `Error::Midi`. La CLI active la feature : `scoretk
-entrée.mscx -o sortie.mid` et `scoretk entrée.musicxml -o sortie.mid`
-fonctionnent. Pour un test de la bibliothèque seule, activer explicitement la
-feature (`cargo test -p scoretk --features midi`).
+### MusicXML (`.musicxml`, `.xml`, `.mxl`) — `musicxml-import`, `musicxml-export`
 
-### t42 — lecture MIDI (`crates/scoretk-midi`)
+La lecture (t34, t43) appelle `read_musicxml`/`read_mxl` de
+`scoretk-musicxml-import` et convertit l'erreur en `Error::MusicXmlImport`.
+L'export passe par `scoretk-musicxml-export`, et `.mxl` réutilise
+`export_mxl_with` (archive `META-INF/container.xml` + `score.xml`, comme
+`saveMxl` de MuseScore). Détail de l'extraction du conteneur et des replis :
+`docs/agents/musicxml-import.md`.
 
-**Branché** : la même feature `midi` porte la lecture ; `hooks::read_midi`
-appelle `scoretk_midi::read_midi(bytes)` et convertit l'erreur en
-`Error::MidiImport`. `Format::Midi.supports_read()` vaut vrai avec la feature,
-et `scoretk read(bytes, Format::Midi)` comme `scoretk entrée.mid -o
-sortie.musicxml` (ou `.mscx`, `.ly`) fonctionnent. L'import et ses limites sont
-décrits dans `docs/agents/midi.md` (§ « Lecture MIDI »).
+### MIDI — `midi-import`, `midi-export`
 
-### t40 — lecture LilyPond (`crates/scoretk-lilypond`)
+`read_midi` (t42) vient de `scoretk-midi-import` (`Error::MidiImport`) ;
+`write_midi` (t35) et `write_playback` de `scoretk-midi-export`
+(`Error::Midi`). L'import et ses limites sont décrits dans
+`docs/agents/midi.md`, la carte des temps dans `docs/agents/timemap.md`.
 
-**Branché** : feature `lilypond-import = ["dep:scoretk-lilypond"]` (même crate
-que l'écriture), `hooks::read_lilypond(bytes)` décode l'UTF-8 puis appelle
-`scoretk_lilypond::read_lilypond(&str)` et convertit l'erreur en
-`Error::LilyPond`. `Format::Ly` répond donc oui à `supports_read` quand la
-feature est active. Le sous-ensemble lu, ses limites et l'aller-retour mesuré
-sont dans `docs/agents/lilypond.md`.
+### LilyPond — `lilypond-import`, `lilypond-export`
 
-### t41 — lecture et écriture ABC (`crates/scoretk-abc`)
+`read_lilypond` (t40, `scoretk-lilypond-import`) décode l'UTF-8 puis lit un
+sous-ensemble de LilyPond ; `write_lilypond` (t36, `scoretk-lilypond-export`)
+écrit en voix `\fixed c'`. Les deux crates partagent
+`scoretk-lilypond-common` (erreur, `tpc`, clefs). Sous-ensemble, limites et
+aller-retour mesuré : `docs/agents/lilypond.md`.
 
-**Branché** : dépendance optionnelle `scoretk-abc`, feature
-`abc = ["dep:scoretk-abc"]`, variante d'erreur `Abc`, et fonctions
-`hooks::read_abc`/`hooks::write_abc` (conversion UTF-8 et erreurs). La CLI
-active la feature : `scoretk entrée.mscx -o sortie.abc` et
-`scoretk entrée.abc -o sortie.musicxml` fonctionnent. Détail du sous-ensemble,
-des limites et de l'aller-retour mesuré : `docs/agents/abc.md`.
+### ABC — `abc-import`, `abc-export`
 
-### t36 — écriture LilyPond (`crates/scoretk-lilypond`)
-
-**Branché** : dépendance optionnelle, `lilypond = ["dep:scoretk-lilypond"]`,
-`hooks::write_lilypond` appelle `scoretk_lilypond::write_lilypond(score)` et
-convertit l'erreur en `Error::LilyPond`. La CLI active la feature : `scoretk
-entrée.mscx -o sortie.ly` fonctionne. Détail de la correspondance et limites :
-`docs/agents/lilypond.md`.
-
-La lecture MIDI n'a pas encore de point d'accroche : elle suivra le même
-modèle (une variante de feature, une fonction dans `hooks.rs`).
+`read_abc` et `write_abc` (t41) viennent de `scoretk-abc-import` et
+`scoretk-abc-export` (conversion UTF-8 et erreurs en `Error::Abc`) ; les deux
+partagent `scoretk-abc-common`. Sous-ensemble et aller-retour :
+`docs/agents/abc.md`.
 
 ## 4. CLI
 
@@ -211,9 +209,13 @@ scoretk --version                           # version + licence (GPL-3.0-only)
 - `packages.scoretk` construit la CLI (`cargoExtraArgs = "-p scoretk-cli"`).
 - `apps.scoretk` la rend exécutable par `nix run .#scoretk -- …`.
 - `packages.default` construit lui aussi la CLI `scoretk`.
-- Le check `wasm32-unknown-unknown` compile `-p scoretk-core -p
-  scoretk-musescore-import -p scoretk-musicxml-export -p scoretk -p scoretk-abc
-  -p scoretk-midi -p scoretk-lilypond -p scoretk-mscx -p scoretk-wasm`.
+- Le check `wasm32-unknown-unknown` compile les seize crates de bibliothèque
+  (`-p scoretk-core`, `-p scoretk-musescore-import`, `-p scoretk-musescore-export`,
+  `-p scoretk-musicxml-import`, `-p scoretk-musicxml-export`,
+  `-p scoretk-midi-common`, `-p scoretk-midi-import`, `-p scoretk-midi-export`,
+  `-p scoretk-lilypond-common`, `-p scoretk-lilypond-import`,
+  `-p scoretk-lilypond-export`, `-p scoretk-abc-common`, `-p scoretk-abc-import`,
+  `-p scoretk-abc-export`, `-p scoretk`, `-p scoretk-wasm`).
 - `packages.wasm` est le paquet navigateur de la façade (crate
   `scoretk-wasm`) ; voir `docs/agents/wasm.md`.
 - `checks.wasm-node-smoke` vérifie ce paquet sous Node.
@@ -230,19 +232,30 @@ scoretk --version                           # version + licence (GPL-3.0-only)
   le `.musicxml` équivalent, repli sans `container.xml`, ZIP invalide.
 - `crates/scoretk-cli/tests/mxl.rs` : `.mxl` → `.mscx` et `--list-formats`
   avec la lecture `.mxl` active.
-- `crates/scoretk/tests/abc.rs` (feature `abc`) : lecture ABC, écriture,
-  relecture et nombre de notes stable ; `crates/scoretk-cli/tests/abc.rs` :
-  `.mscx` → `.abc`, `.abc` → MusicXML, stdin/stdout, `--list-formats`.
+- `crates/scoretk/tests/abc.rs` (features `abc-import` et `abc-export`) :
+  lecture ABC, écriture, relecture et nombre de notes stable ;
+  `crates/scoretk-cli/tests/abc.rs` : `.mscx` → `.abc`, `.abc` → MusicXML,
+  stdin/stdout, `--list-formats`.
 - `crates/scoretk-cli/tests/lilypond.rs` : `.ly` en `\relative` → MusicXML et
   `--list-formats` avec la lecture LilyPond active.
-- `crates/scoretk-abc/tests/` : airs écrits à la main, instantanés du corpus,
-  aller-retour noyau (`EXPECTED_ROUNDTRIP`), outils externes.
-- `crates/scoretk/tests/mscx.rs` (feature `mscx`) : écriture `.mscx` relue
+- `crates/scoretk/tests/abc_*.rs` (aller-retour dans la façade, puisqu'il
+  exerce les deux sens) : airs écrits à la main (`abc_roundtrip.rs`),
+  instantanés du corpus (`abc_corpus.rs`), aller-retour noyau
+  `EXPECTED_ROUNDTRIP` (`abc_aller_retour.rs`), outils externes
+  (`abc_outils_externes.rs`) ; `crates/scoretk-abc-import/tests/lecture.rs`
+  pour la lecture seule.
+- `crates/scoretk/tests/mscx.rs` (feature `musescore-export`) : écriture `.mscx` relue
   avec un modèle identique, sortie MusicXML identique, `.mscz` détecté et relu,
   version `4.70`.
 - `crates/scoretk/tests/lilypond_read.rs` (feature `lilypond-import`) :
   `read(..., Format::Ly)` renvoie un modèle exportable, une source sans
   `\score` est une erreur.
+- Tests par sens : `crates/scoretk-musescore-import/tests/`,
+  `crates/scoretk-musicxml-import/tests/`,
+  `crates/scoretk-musicxml-export/tests/`,
+  `crates/scoretk-midi-import/tests/`, `crates/scoretk-midi-export/tests/`
+  (`corpus_midi`, `timemap_alignment`), `crates/scoretk-lilypond-import/tests/`,
+  `crates/scoretk-lilypond-export/tests/`, `crates/scoretk-musescore-export/tests/`.
 - `crates/scoretk-cli/tests/cli.rs` : binaire réel (`CARGO_BIN_EXE_scoretk`),
   `--list-formats` (état des features : MusicXML lecture, MIDI écriture),
   `--version`, stdin/stdout, `.mscz` → MusicXML comparé à `scoretk::convert`, sortie

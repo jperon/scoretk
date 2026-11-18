@@ -52,7 +52,8 @@ $ cargo build --workspace
 $ cargo test --workspace
 $ rustup target add wasm32-unknown-unknown
 $ cargo build -p scoretk-core --target wasm32-unknown-unknown
-$ cargo build -p scoretk-midi --target wasm32-unknown-unknown
+$ cargo build -p scoretk-midi-common -p scoretk-midi-import -p scoretk-midi-export \
+    --target wasm32-unknown-unknown
 $ cargo build -p scoretk-wasm --target wasm32-unknown-unknown
 ```
 
@@ -76,16 +77,20 @@ const midi = convert(bytes, { to: 'midi' });          // Uint8Array
 
 ## Structure
 
-- `crates/scoretk-core` : bibliothèque portable (aucune I/O) — modèle pivot,
-  lecteurs MuseScore et export MusicXML.
+- `crates/scoretk-core` : bibliothèque portable (aucune I/O) — modèle pivot.
+- `crates/scoretk-musescore-import` / `crates/scoretk-musescore-export` :
+  lecture `.mscz`/`.mscx` et écriture MuseScore (`.mscx`, `.mscz`).
+- `crates/scoretk-musicxml-import` / `crates/scoretk-musicxml-export` :
+  lecture et export MusicXML (`.musicxml`, `.xml`, `.mxl`).
+- `crates/scoretk-midi-common` / `-import` / `-export` : lecture et écriture
+  MIDI, déroulement des reprises, carte des temps.
+- `crates/scoretk-lilypond-{common,import,export}` : lecture d'un
+  sous-ensemble LilyPond et écriture `.ly`.
+- `crates/scoretk-abc-{common,import,export}` : lecture et écriture ABC.
+- `crates/scoretk` et `crates/scoretk-cli` : façade multi-formats et binaire
+  `scoretk` (convertisseurs optionnels par features, une par sens).
 - `crates/scoretk-wasm` : enveloppe WebAssembly de la façade (`convert`,
   `detect`, `formats`, `version`), unique paquet wasm.
-- `crates/scoretk-midi` : lecture et écriture MIDI, déroulement des reprises,
-  sans I/O.
-- `crates/scoretk-musicxml`, `crates/scoretk-lilypond`, `crates/scoretk-abc`,
-  `crates/scoretk-mscx` : lecteurs et écrivains des autres formats.
-- `crates/scoretk` et `crates/scoretk-cli` : façade multi-formats et binaire
-  `scoretk` (convertisseurs optionnels par features).
 
 ## Licence
 

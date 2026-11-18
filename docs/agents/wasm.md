@@ -47,8 +47,8 @@ Mesure (wasm-bindgen 0.2.130, `opt-level = "z"`, `lto`, `codegen-units = 1`,
 
 | Binaire | Brut | Gzip |
 | --- | --- | --- |
-| `scoretk_wasm_bg.wasm` (avant `wasm-opt`) | 3 039 884 octets | — |
-| `scoretk_wasm_bg.wasm` (après `wasm-opt`) | **1 482 794 octets** | **621 633 octets** |
+| `scoretk_wasm_bg.wasm` (avant `wasm-opt`) | 3 373 069 octets | — |
+| `scoretk_wasm_bg.wasm` (après `wasm-opt`) | **1 552 892 octets** | **641 472 octets** |
 
 Les deux variantes `esm` et `classic` partagent le même binaire à l'octet près.
 
@@ -58,21 +58,71 @@ soit 0,001 %) et 34 octets gzip, très en dessous du seuil de 2 %. Le profil
 `[profile.release]` reste inchangé.
 
 Les ajouts mesurés depuis la taille de référence de 1 472 792 octets bruts
-portent le binaire à 1 482 794 octets bruts / 621 633 octets gzip. Trois
+portaient le binaire à 1 482 794 octets bruts / 621 633 octets gzip. Trois
 contributions distinctes : +9 555 octets bruts (+0,65 %) pour
 `convertWithTimeline` (`timemap_js.rs`, tri des notes), +414 octets bruts
 (+0,03 %) pour la vélocité de note (`Note::user_velocity`) et +33 octets bruts
 pour le calcul en `i64` de `customize_velocity` (anti-débordement), soit un
 cumul de +10 002 octets bruts (+0,68 %). Le surcoût reste sous le seuil de 2 %.
 
-Profil allégé mesuré à titre indicatif, sans changer le contrat : en
-désactivant les features `mscx`, `lilypond`, `lilypond-import` et `abc` de
-`scoretk` (seules `musicxml-import` et `midi` restent), le même pipeline
+Profil allégé mesuré à titre indicatif sur la version d'avant restructuration,
+sans changer le contrat : en
+désactivant les features `musescore-export`, `lilypond-export`,
+`lilypond-import` et `abc-import`/`abc-export` de `scoretk` (seules
+`musicxml-import`, `musicxml-export`, `musescore-import` et `midi-import`
+restent), le même pipeline
 (`cargo build --release`, `wasm-bindgen`, `wasm-opt -Oz --strip-debug`) donne
 **1 140 951 octets bruts** et **488 444 octets gzip**, soit **−23,1 %** brut et
 **−21,4 %** gzip par rapport au paquet complet (1 482 794 / 621 633). Le
 `Cargo.toml` du dépôt n'est pas modifié : c'est une mesure, pas une variante
 livrée.
+
+### Effet du découpage en crates
+
+La restructuration en 17 crates (un `-common`, un `-import` et un `-export`
+par format bidirectionnel) se mesure au même pipeline (`nix build .#wasm`) :
+
+| État | Brut | Gzip |
+| --- | --- | --- |
+| Avant restructuration (`4767464`) | 1 485 733 | 621 845 |
+| Étape 1 : cœur scindé en `scoretk-core` + `-musescore-import` + `-musicxml-export` (`609efad`) | 1 544 160 | 636 991 |
+| Après intégration (scission LilyPond, ABC, MIDI ; renommages) | **1 552 892** | **641 472** |
+
+Soit +67 159 octets bruts (+4,52 %) et +19 627 octets gzip (+3,16 %), dont
++58 427 pour la seule scission du cœur et +8 732 pour l'intégration, pour un
+refactor sans changement de logique. Diagnostic, chiffres à l'appui :
+
+- **Pas de duplication nouvelle.** `cargo tree -d` est vide (aucun crate
+  compilé deux fois) et le nombre de fonctions de même nom apparaissant
+  plusieurs fois est identique avant/après (6, dont quatre `hashbrown`) ;
+  `wasm-opt -Oz --duplicate-function-elimination` ne récupère que 110 octets.
+- **Pas de double chemin.** `scoretk::convert` n'est plus atteint par le
+  paquet (l'API wasm passe par `read`/`write`/`write_playback`) et son symbole
+  a disparu du binaire : la voie d'orchestration historique ne coûte rien.
+  `write_playback` réutilise le même `export_musicxml_with` et le même rendu
+  MIDI que `write`.
+- **LTO toujours actif.** À pipeline identique, `lto = false` donne
+  1 535 725 octets (base) et 1 609 180 (après intégration), contre 1 482 791 et
+  1 550 324 en `lto = true` : les 53 à 59 ko d'écart sont conservés, donc le
+  découpage n'a pas cassé le LTO. `lto = "thin"` est à égalité avec `lto = true`
+  (moins de 300 octets), donc rien à gagner de ce côté.
+- **Ce qui grossit : le code, en nombre de fonctions.** Le code passe de
+  3 311 à 3 543 fonctions (noms conservés, `wasm-opt -Oz --debuginfo`), pour
+  +52 ko de code et +13 ko de données statiques (`.rodata`). Les fonctions
+  moyennes restent de même taille (≈ 380 octets) : c'est le nombre de petites
+  et moyennes fonctions qui augmente, c'est-à-dire des helpers qui étaient
+  inlinés/fusionnés dans leur appelant et restent maintenant des fonctions à
+  part entière, aux frontières de crates.
+
+C'est donc l'effet normal du découpage sur l'inlining inter-crates, et non une
+régression de code. Leviers possibles, **non appliqués** (aucun ne dépasse
+grossièrement le seuil de 2 % du contrat wasm) : garder `lto = "fat"` (déjà le
+cas), éviter les frontières de crates sur les chemins chauds (lire/écrire une
+note, un accord, une mesure), regrouper les deux crates les plus entrelacées
+(`scoretk-musescore-import` + `scoretk-musicxml-export` étaient dans
+`scoretk-core` avant l'étape 1 : leur retour dans un même crate rendrait les
+58 ko de l'étape 1), ou activer `-Z share-generics` (nightly), qui dédupliquerait
+les monomorphisations génériques entre crates.
 
 La construction est en deux étapes :
 
@@ -147,7 +197,7 @@ croissant (puis par clé stable), côté Rust. Le MIDI et la carte viennent du
 même rendu ; `expandRepeats: false` produit un MIDI
 « à plat » et moins de mesures dans `timeline.measures`.
 
-Le type Rust reste `Timemap` (crate `scoretk-midi`, réexporté par `scoretk`) :
+Le type Rust reste `Timemap` (crate `scoretk-midi-export`, réexporté par `scoretk`) :
 la correspondance champ à champ Rust `snake_case` → JS `camelCase` est
 documentée dans `docs/agents/timemap.md` § 6. `MeasureSync::number`,
 `pause_before`, `grace_index` et `grace_before` ne sont pas exposés côté JS.

@@ -58,7 +58,7 @@ fn measure_ids(xml: &str) -> BTreeSet<String> {
     ids
 }
 
-#[cfg(feature = "midi")]
+#[cfg(feature = "midi-export")]
 #[test]
 fn musicxml_de_playback_ignore_expand_repeats() {
     for name in ["repeat65", "repeat69"] {
@@ -79,7 +79,7 @@ fn musicxml_de_playback_ignore_expand_repeats() {
     }
 }
 
-#[cfg(all(feature = "midi", feature = "musicxml-import"))]
+#[cfg(all(feature = "midi-export", feature = "musicxml-import"))]
 fn assert_repeats_survive(score: &Score, label: &str) {
     let expanded = scoretk::write_playback(score, &options(true))
         .unwrap_or_else(|error| panic!("{label} : playback impossible : {error}"));
@@ -96,7 +96,7 @@ fn assert_repeats_survive(score: &Score, label: &str) {
     );
 }
 
-#[cfg(all(feature = "midi", feature = "musicxml-import"))]
+#[cfg(all(feature = "midi-export", feature = "musicxml-import"))]
 #[test]
 fn reprises_survivent_a_un_aller_retour_musicxml() {
     let score = load("repeat65");
@@ -110,7 +110,7 @@ fn reprises_survivent_a_un_aller_retour_musicxml() {
     assert_repeats_survive(&relu, "repeat65 via .mxl");
 }
 
-#[cfg(feature = "midi")]
+#[cfg(feature = "midi-export")]
 #[test]
 fn mesure_jamais_jouee_absente_de_la_carte() {
     // `repeat68` ne contient qu'une mesure sous une volta « 2. (skip) » :

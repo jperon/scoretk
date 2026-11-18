@@ -9,35 +9,59 @@ repository.workspace = true
 homepage.workspace = true
 
 [features]
-default = []
+# Dix features symétriques, une par crate de sens : `<format>-import` branche
+# la lecture, `<format>-export` l'écriture. Aucun alias mixte : un besoin des
+# deux sens liste les deux features (comme la CLI et le crate wasm).
+default = [
+    "musescore-import",
+    "musescore-export",
+    "musicxml-import",
+    "musicxml-export",
+    "midi-import",
+    "midi-export",
+    "lilypond-import",
+    "lilypond-export",
+    "abc-import",
+    "abc-export",
+]
 
-# Points d'accroche des convertisseurs optionnels. Tant qu'ils sont désactivés,
-# le format correspondant renvoie `Error::FormatNonPrisEnCharge`. Pour brancher
-# une crate, voir `docs/agents/scoretk.md` § 3 : ajouter la dépendance
-# optionnelle et remplacer la valeur du feature ci-dessous.
-#
-musicxml-import = ["dep:scoretk-musicxml"]
-midi = ["dep:scoretk-midi"]
-lilypond = ["dep:scoretk-lilypond"]
-# Lecture LilyPond (t40) : même crate, sens inverse.
-lilypond-import = ["dep:scoretk-lilypond"]
-mscx = ["dep:scoretk-mscx"]
-abc = ["dep:scoretk-abc"]
+# Points d'accroche des convertisseurs optionnels. Tant qu'une feature est
+# désactivée, le format correspondant renvoie `Error::FormatNonPrisEnCharge`
+# dans ce sens. Le branchement se fait dans `src/hooks.rs` ; la procédure
+# complète est dans `docs/agents/scoretk.md` § 3.
+musescore-import = ["dep:scoretk-musescore-import"]
+musescore-export = ["dep:scoretk-musescore-export"]
+musicxml-import = ["dep:scoretk-musicxml-import"]
+musicxml-export = ["dep:scoretk-musicxml-export"]
+midi-import = ["dep:scoretk-midi-import"]
+midi-export = ["dep:scoretk-midi-export"]
+lilypond-import = ["dep:scoretk-lilypond-import"]
+lilypond-export = ["dep:scoretk-lilypond-export"]
+abc-import = ["dep:scoretk-abc-import"]
+abc-export = ["dep:scoretk-abc-export"]
 
 [dependencies]
 scoretk-core = { path = "../scoretk-core" }
-# Les deux moitiés MuseScore / MusicXML sont non optionnelles à cette étape :
-# les features seront refaites à l'étape 3.
-scoretk-musescore-import = { path = "../scoretk-musescore-import" }
-scoretk-musicxml-export = { path = "../scoretk-musicxml-export" }
-scoretk-abc = { path = "../scoretk-abc", optional = true }
-scoretk-lilypond = { path = "../scoretk-lilypond", optional = true }
-scoretk-mscx = { path = "../scoretk-mscx", optional = true }
-scoretk-midi = { path = "../scoretk-midi", optional = true }
-scoretk-musicxml = { path = "../scoretk-musicxml", optional = true }
+scoretk-musescore-import = { path = "../scoretk-musescore-import", optional = true }
+scoretk-musescore-export = { path = "../scoretk-musescore-export", optional = true }
+scoretk-musicxml-import = { path = "../scoretk-musicxml-import", optional = true }
+scoretk-musicxml-export = { path = "../scoretk-musicxml-export", optional = true }
+scoretk-midi-import = { path = "../scoretk-midi-import", optional = true }
+scoretk-midi-export = { path = "../scoretk-midi-export", optional = true }
+scoretk-lilypond-import = { path = "../scoretk-lilypond-import", optional = true }
+scoretk-lilypond-export = { path = "../scoretk-lilypond-export", optional = true }
+scoretk-abc-import = { path = "../scoretk-abc-import", optional = true }
+scoretk-abc-export = { path = "../scoretk-abc-export", optional = true }
 thiserror = { workspace = true }
 zip = { workspace = true }
 
 [dev-dependencies]
+# Les tests d'aller-retour comparent les deux sens d'un même format : ils
+# vivent dans la façade et dépendent donc des crates de sens directement.
+scoretk-musescore-import = { path = "../scoretk-musescore-import" }
+scoretk-musicxml-export = { path = "../scoretk-musicxml-export" }
+scoretk-abc-import = { path = "../scoretk-abc-import" }
+scoretk-abc-export = { path = "../scoretk-abc-export" }
 quick-xml = { workspace = true }
 similar = "3"
+zip = { workspace = true }

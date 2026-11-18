@@ -318,28 +318,44 @@ name = "scoretk"
 version = "0.1.0"
 dependencies = [
  "quick-xml",
- "scoretk-abc",
+ "scoretk-abc-export",
+ "scoretk-abc-import",
  "scoretk-core",
- "scoretk-lilypond",
- "scoretk-midi",
- "scoretk-mscx",
+ "scoretk-lilypond-export",
+ "scoretk-lilypond-import",
+ "scoretk-midi-export",
+ "scoretk-midi-import",
+ "scoretk-musescore-export",
  "scoretk-musescore-import",
- "scoretk-musicxml",
  "scoretk-musicxml-export",
+ "scoretk-musicxml-import",
  "similar 3.2.1",
  "thiserror",
  "zip",
 ]
 
 [[package]]
-name = "scoretk-abc"
+name = "scoretk-abc-common"
 version = "0.1.0"
 dependencies = [
- "quick-xml",
  "scoretk-core",
- "scoretk-musescore-import",
- "scoretk-musicxml-export",
  "thiserror",
+]
+
+[[package]]
+name = "scoretk-abc-export"
+version = "0.1.0"
+dependencies = [
+ "scoretk-abc-common",
+ "scoretk-core",
+]
+
+[[package]]
+name = "scoretk-abc-import"
+version = "0.1.0"
+dependencies = [
+ "scoretk-abc-common",
+ "scoretk-core",
 ]
 
 [[package]]
@@ -361,32 +377,70 @@ dependencies = [
 ]
 
 [[package]]
-name = "scoretk-lilypond"
+name = "scoretk-lilypond-common"
+version = "0.1.0"
+dependencies = [
+ "scoretk-core",
+ "thiserror",
+]
+
+[[package]]
+name = "scoretk-lilypond-export"
+version = "0.1.0"
+dependencies = [
+ "scoretk-core",
+ "scoretk-lilypond-common",
+ "scoretk-musescore-import",
+ "thiserror",
+]
+
+[[package]]
+name = "scoretk-lilypond-import"
 version = "0.1.0"
 dependencies = [
  "quick-xml",
  "scoretk-core",
+ "scoretk-lilypond-common",
  "scoretk-musescore-import",
  "scoretk-musicxml-export",
  "thiserror",
 ]
 
 [[package]]
-name = "scoretk-midi"
+name = "scoretk-midi-common"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "scoretk-midi-export"
 version = "0.1.0"
 dependencies = [
  "midly",
  "quick-xml",
  "scoretk-core",
+ "scoretk-midi-common",
+ "scoretk-midi-import",
  "scoretk-musescore-import",
- "scoretk-musicxml",
  "scoretk-musicxml-export",
- "similar 2.7.0",
- "thiserror",
+ "scoretk-musicxml-import",
 ]
 
 [[package]]
-name = "scoretk-mscx"
+name = "scoretk-midi-import"
+version = "0.1.0"
+dependencies = [
+ "midly",
+ "quick-xml",
+ "scoretk-core",
+ "scoretk-midi-common",
+ "scoretk-musicxml-export",
+ "similar 2.7.0",
+]
+
+[[package]]
+name = "scoretk-musescore-export"
 version = "0.1.0"
 dependencies = [
  "quick-xml",
@@ -409,7 +463,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "scoretk-musicxml"
+name = "scoretk-musicxml-export"
+version = "0.1.0"
+dependencies = [
+ "scoretk-core",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
+name = "scoretk-musicxml-import"
 version = "0.1.0"
 dependencies = [
  "quick-xml",
@@ -417,15 +480,6 @@ dependencies = [
  "scoretk-musescore-import",
  "scoretk-musicxml-export",
  "similar 3.2.1",
- "thiserror",
- "zip",
-]
-
-[[package]]
-name = "scoretk-musicxml-export"
-version = "0.1.0"
-dependencies = [
- "scoretk-core",
  "thiserror",
  "zip",
 ]

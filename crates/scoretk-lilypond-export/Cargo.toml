@@ -1,0 +1,20 @@
+[package]
+name = "scoretk-lilypond-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Écriture LilyPond depuis le modèle pivot de scoretk"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+scoretk-core = { path = "../scoretk-core" }
+scoretk-lilypond-common = { path = "../scoretk-lilypond-common" }
+thiserror.workspace = true
+
+# Le corpus de tests part de fichiers MuseScore : le `.mscx` est lu par
+# `scoretk-musescore-import` avant d'être écrit en LilyPond. Aucune dépendance
+# de ce genre n'est utilisée par la crate elle-même.
+[dev-dependencies]
+scoretk-musescore-import = { path = "../scoretk-musescore-import" }

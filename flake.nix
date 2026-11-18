@@ -306,7 +306,7 @@
             // {
               cargoArtifacts = wasmCargoArtifacts;
               CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-              cargoExtraArgs = "-p scoretk-core -p scoretk-musescore-import -p scoretk-musicxml-export -p scoretk -p scoretk-abc -p scoretk-midi -p scoretk-lilypond -p scoretk-musicxml -p scoretk-mscx -p scoretk-wasm";
+              cargoExtraArgs = "-p scoretk-core -p scoretk-musescore-import -p scoretk-musescore-export -p scoretk-musicxml-import -p scoretk-musicxml-export -p scoretk-midi-common -p scoretk-midi-import -p scoretk-midi-export -p scoretk-lilypond-common -p scoretk-lilypond-import -p scoretk-lilypond-export -p scoretk-abc-common -p scoretk-abc-import -p scoretk-abc-export -p scoretk -p scoretk-wasm";
               doCheck = false;
             });
         };

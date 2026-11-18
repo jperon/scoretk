@@ -4,15 +4,15 @@ La carte des temps est un **sous-produit du rendu MIDI** : elle associe à
 chaque tick d'exécution du fichier produit son temps en microsecondes et
 recense les évènements utiles à un lecteur de partition (mesures jouées,
 attaques de notes, changements de tempo, pauses de section). Elle est définie
-dans `crates/scoretk-midi/src/timemap.rs` et remplie par `render.rs` aux mêmes
+dans `crates/scoretk-midi-export/src/timemap.rs` et remplie par `render.rs` aux mêmes
 endroits que les évènements MIDI : ses ticks sont donc exactement ceux du SMF,
 pauses comprises. L'invariance à l'octet est vérifiée par
-`crates/scoretk-midi/tests/timemap_alignment.rs`.
+`crates/scoretk-midi-export/tests/timemap_alignment.rs`.
 
 ## 1. API
 
 ```rust
-use scoretk_midi::{write_midi_with_timemap, write_midi_with_timemap_and, MidiOptions};
+use scoretk_midi_export::{write_midi_with_timemap, write_midi_with_timemap_and, MidiOptions};
 
 let (midi, timemap) = write_midi_with_timemap(&score)?;      // reprises déroulées
 let (midi, timemap) = write_midi_with_timemap_and(&score, MidiOptions { expand_repeats: false })?;

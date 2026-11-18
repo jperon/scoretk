@@ -1,0 +1,22 @@
+[package]
+name = "scoretk-midi-import"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Lecture MIDI (Standard MIDI File) vers le modèle scoretk"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+scoretk-core = { path = "../scoretk-core" }
+scoretk-midi-common = { path = "../scoretk-midi-common" }
+# `alloc` seulement : la crate reste `no_std`-compatible et compile pour
+# wasm32-unknown-unknown. La lecture SMF (`midifile.rs`, propre à l'import) se
+# fait depuis des octets en mémoire.
+midly = { version = "0.5.3", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+scoretk-musicxml-export = { path = "../scoretk-musicxml-export" }
+quick-xml = { workspace = true }
+similar = "2"

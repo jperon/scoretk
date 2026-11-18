@@ -35,20 +35,21 @@
 //!
 //! [`Format`] énumère les sept formats visés. La reconnaissance se fait par
 //! extension ([`Format::from_extension`], [`Format::from_path`]) ou par le
-//! contenu ([`Format::detect`]).
+//! contenu ([`Format::detect`]). Chaque sens a sa feature, qui branche
+//! exactement un crate (`docs/agents/scoretk.md` § 3) :
 //!
 //! | Format | Lecture | Écriture |
 //! | --- | --- | --- |
-//! | MuseScore `.mscz` / `.mscx` | oui | feature `mscx` |
-//! | MusicXML `.musicxml` / `.xml` | feature `musicxml-import` | oui |
-//! | MusicXML `.mxl` | feature `musicxml-import` | oui |
-//! | LilyPond `.ly` | feature `lilypond-import` | feature `lilypond` |
-//! | ABC `.abc` | feature `abc` | feature `abc` |
-//! | MIDI | feature `midi` | feature `midi` |
+//! | MuseScore `.mscz` / `.mscx` | `musescore-import` | `musescore-export` |
+//! | MusicXML `.musicxml` / `.xml` | `musicxml-import` | `musicxml-export` |
+//! | MusicXML `.mxl` | `musicxml-import` | `musicxml-export` |
+//! | LilyPond `.ly` | `lilypond-import` | `lilypond-export` |
+//! | ABC `.abc` | `abc-import` | `abc-export` |
+//! | MIDI | `midi-import` | `midi-export` |
 //!
-//! Un format sans convertisseur dans le sens demandé renvoie
-//! [`Error::FormatNonPrisEnCharge`] : la façade ne produit jamais de sortie
-//! vide ni de conversion silencieusement partielle.
+//! Les dix features sont actives par défaut. Un format dont la feature du sens
+//! demandé est désactivée renvoie [`Error::FormatNonPrisEnCharge`] : la façade
+//! ne produit jamais de sortie vide ni de conversion silencieusement partielle.
 //!
 //! # Exemple
 //!
@@ -85,23 +86,29 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+#[cfg(feature = "musicxml-export")]
 mod convert;
 mod error;
 mod format;
 mod hooks;
 mod options;
 
+#[cfg(feature = "musicxml-export")]
 pub use convert::{convert, ConvertOptions, OutputFormat};
 pub use error::Error;
 pub use format::{Format, Sens};
 pub use options::{MidiOptions, Options};
 pub use scoretk_core::model;
 pub use scoretk_core::model::Score;
+
 /// Types de la carte des temps, réexportés pour les consommateurs de
-/// [`write_playback`] (wasm, CLI) sans dépendre directement de `scoretk-midi`.
-#[cfg(feature = "midi")]
-pub use scoretk_midi::{MeasureSync, NoteSync, PauseSync, TempoChange, Timemap};
+/// [`write_playback`] (wasm, CLI) sans dépendre directement de
+/// `scoretk-midi-export`.
+#[cfg(feature = "midi-export")]
+pub use scoretk_midi_export::{MeasureSync, NoteSync, PauseSync, TempoChange, Timemap};
+#[cfg(feature = "musescore-import")]
 pub use scoretk_musescore_import::{detect_version, MscVersion, MsczContainer};
+#[cfg(feature = "musicxml-export")]
 pub use scoretk_musicxml_export::{
     export_musicxml, export_musicxml_with, ExportOptions, DEFAULT_ENCODING_DATE, DEFAULT_SOFTWARE,
 };
@@ -113,9 +120,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 ///
 /// Le MusicXML est exporté avec `ExportOptions::stable_ids` forcé : ses
 /// attributs `id`/`xml:id` de mesure et de note sont exactement les
-/// identifiants [`scoretk_midi::NoteSync::xml_id`] et
-/// [`scoretk_midi::MeasureSync::xml_id`] de la carte des temps.
-#[cfg(feature = "midi")]
+/// identifiants `NoteSync::xml_id` et `MeasureSync::xml_id` de la carte des
+/// temps.
+#[cfg(all(feature = "midi-export", feature = "musicxml-export"))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlaybackOutput {
     /// MusicXML partwise, avec identifiants stables (`id` et `xml:id`).
@@ -123,21 +130,17 @@ pub struct PlaybackOutput {
     /// Standard MIDI File format 1.
     pub midi: Vec<u8>,
     /// Carte des temps du même rendu MIDI.
-    pub timemap: scoretk_midi::Timemap,
+    pub timemap: scoretk_midi_export::Timemap,
 }
 
 /// Lit un fichier en mémoire et renvoie le modèle pivot.
 ///
-/// `mscz` et `mscx` passent par le lecteur de `scoretk-musescore-import`. MusicXML (`.musicxml`
-/// nu comme archive `.mxl`) est lu si la feature `musicxml-import` est active,
-/// LilyPond avec `lilypond-import`, ABC avec `abc` ; les autres formats
-/// renvoient [`Error::FormatNonPrisEnCharge`].
+/// Chaque format passe par le crate de son sens, branché par la feature
+/// `<format>-import` (`docs/agents/scoretk.md` § 3) ; sans elle, [`read`]
+/// renvoie [`Error::FormatNonPrisEnCharge`].
 pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
     match format {
-        Format::Mscz | Format::Mscx => {
-            let container = scoretk_musescore_import::MsczContainer::from_bytes(bytes)?;
-            Ok(scoretk_musescore_import::read::read_score(&container)?)
-        }
+        Format::Mscz | Format::Mscx => hooks::read_musescore(bytes, format),
         Format::MusicXml => hooks::read_musicxml(bytes),
         Format::Mxl => hooks::read_mxl(bytes),
         Format::Ly => hooks::read_lilypond(bytes),
@@ -148,24 +151,15 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
 
 /// Écrit le modèle pivot dans le format demandé.
 ///
-/// MusicXML passe par `scoretk-musicxml-export` ; `.mxl` réutilise son archive
-/// ZIP (`META-INF/container.xml` + `score.xml`), identique à `saveMxl` de
-/// MuseScore. MuseScore (`.mscx`/`.mscz`) passe par `scoretk-mscx` si la
-/// feature `mscx` est active, MIDI par `scoretk-midi` si la feature `midi`
-/// l'est, LilyPond par `scoretk-lilypond` si la feature `lilypond` l'est, ABC
-/// par `scoretk-abc` si la feature `abc` l'est ; les autres formats renvoient
-/// [`Error::FormatNonPrisEnCharge`].
+/// MusicXML et `.mxl` passent par `scoretk-musicxml-export` ; `.mxl` réutilise
+/// son archive ZIP (`META-INF/container.xml` + `score.xml`), identique à
+/// `saveMxl` de MuseScore. Les autres formats passent par le crate de leur
+/// sens, branché par la feature `<format>-export` ; sans elle, [`write`]
+/// renvoie [`Error::FormatNonPrisEnCharge`].
 pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>> {
     match format {
-        Format::MusicXml => Ok(scoretk_musicxml_export::export_musicxml_with(
-            score,
-            &options.export_options(),
-        )?
-        .into_bytes()),
-        Format::Mxl => Ok(scoretk_musicxml_export::export_mxl_with(
-            score,
-            &options.export_options(),
-        )?),
+        Format::MusicXml => hooks::write_musicxml(score, options),
+        Format::Mxl => hooks::write_mxl(score, options),
         Format::Midi => hooks::write_midi(score, options),
         Format::Mscx => hooks::write_mscx(score),
         Format::Mscz => hooks::write_mscz(score),
@@ -181,14 +175,17 @@ pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>
 /// exception près : `ExportOptions::stable_ids` est forcé, donc chaque
 /// `<measure>` et chaque `<note>` porte un attribut `id` **et** `xml:id`
 /// (même valeur). Ces identifiants correspondent exactement à
-/// [`scoretk_midi::MeasureSync::xml_id`] et
-/// [`scoretk_midi::NoteSync::xml_id`], ce qui permet d'associer un évènement
-/// de la carte des temps à un élément du MusicXML.
+/// `MeasureSync::xml_id` et `NoteSync::xml_id` de la carte des temps, ce qui
+/// permet d'associer un évènement de la carte à un élément du MusicXML.
 ///
 /// Les reprises suivent `options.midi.expand_repeats`. La carte et le MIDI
 /// sont produits par le même rendu : les ticks de la carte sont ceux du
 /// fichier, pauses de section comprises. Voir `docs/agents/timemap.md`.
-#[cfg(feature = "midi")]
+///
+/// La fonction exige les features `midi-export` (carte des temps et MIDI) et
+/// `musicxml-export` (MusicXML identifié) : elle est absente si l'une des deux
+/// manque.
+#[cfg(all(feature = "midi-export", feature = "musicxml-export"))]
 pub fn write_playback(score: &Score, options: &Options) -> Result<PlaybackOutput> {
     let export = scoretk_musicxml_export::ExportOptions {
         stable_ids: true,

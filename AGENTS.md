@@ -10,7 +10,29 @@ Portage en Rust des convertisseurs de **MuseScore Studio** : cœur générique,
 lecture `.mscz`/`.mscx`, export MusicXML `partwise`, puis MuseScore, MusicXML,
 LilyPond, ABC et MIDI (voir `docs/TODO.md`).
 
-Carte des crates et modules :
+Carte des crates et modules (17 membres : un cœur, une façade, sa CLI et son
+paquet wasm, plus les formats découpés par sens) :
+
+```
+crates/
+  scoretk-core              modèle pivot, aucune I/O
+  scoretk-musescore-import  .mscz/.mscx → modèle (3.x et 4.x/5.x)
+  scoretk-musescore-export  modèle → .mscx / .mscz
+  scoretk-musicxml-import   .musicxml/.xml/.mxl → modèle
+  scoretk-musicxml-export   modèle → MusicXML partwise / .mxl
+  scoretk-midi-common       erreur partagée, rien de plus
+  scoretk-midi-import       MIDI → modèle
+  scoretk-midi-export       modèle → MIDI (reprises, carte des temps)
+  scoretk-lilypond-common   erreur, tpc, clefs, partagés par les deux sens
+  scoretk-lilypond-import   sous-ensemble LilyPond → modèle
+  scoretk-lilypond-export   modèle → .ly
+  scoretk-abc-common        tables et helpers ABC partagés par les deux sens
+  scoretk-abc-import        .abc → modèle
+  scoretk-abc-export        modèle → .abc
+  scoretk                   façade : Format, read/write/convert, hooks
+  scoretk-cli               binaire `scoretk` (I/O disque)
+  scoretk-wasm              enveloppe wasm-bindgen
+```
 
 - `crates/scoretk-core` — cœur portable et générique, sans I/O ni format :
   `model/` (modèle en mémoire), `error.rs`, `gap_rests.rs` et
@@ -18,25 +40,37 @@ Carte des crates et modules :
 - `crates/scoretk-musescore-import` — lecture MuseScore : `container.rs` (ZIP
   `.mscz` → `.mscx`, version), `read/read302` (3.x) et `read/read4xx`
   (4.x/5.x) → modèle.
+- `crates/scoretk-musescore-export` — écrivain MuseScore : `write_mscx`
+  (XML 4.x) et `write_mscz` (ZIP), portage de `engraving/rw/write/`.
+- `crates/scoretk-musicxml-import` — lecteur MusicXML (`read_musicxml`) vers le
+  modèle : `.musicxml`/`.xml`/`.mxl` → `Score`.
 - `crates/scoretk-musicxml-export` — export MusicXML : modèle → `partwise` /
   `.mxl`, avec `ExportOptions` et les constantes `DEFAULT_*`.
-- `crates/scoretk-musicxml` — lecteur MusicXML (`read_musicxml`) vers le
-  modèle : `.musicxml`/`.xml`/`.mxl` → `Score`.
-- `crates/scoretk-midi` — lecture MIDI (`read_midi`, portage de l'import de
-  MuseScore, `import/`) et écriture (SMF format 1) avec déroulement des
-  reprises (`repeat_list.rs`) et carte des temps (`timemap.rs`), sans I/O.
-- `crates/scoretk-lilypond` — écriture LilyPond (`.ly`) depuis le modèle (t36,
-  voix en `\fixed c'`) et lecture d'un sous-ensemble de LilyPond par portage
-  de `lily/parser.yy`/`lexer.ll` (t40), sans I/O.
-- `crates/scoretk-abc` — lecture et écriture ABC (`.abc`) depuis le modèle,
-  norme 2.1 et comportement de `xml2abc.py`/`abc2xml.py`, sans I/O (t41).
-- `crates/scoretk-mscx` — écrivain MuseScore : `write_mscx` (XML 4.x) et
-  `write_mscz` (ZIP), portage de `engraving/rw/write/`, brancher par la
-  feature `mscx` de `scoretk`.
+- `crates/scoretk-midi-common` — erreur et résultat partagés par les deux
+  sens, sans I/O ; rien d'autre (la lecture SMF est dans `-import`).
+- `crates/scoretk-midi-import` — lecture MIDI (`read_midi`, portage de l'import
+  de MuseScore) : `midifile.rs` (format SMF, via `midly`), quantification,
+  voix, `timesigmap`, `tuplet`…, sans I/O.
+- `crates/scoretk-midi-export` — écriture MIDI (SMF format 1) avec déroulement
+  des reprises (`repeat_list.rs`) et carte des temps (`timemap.rs`), sans I/O.
+- `crates/scoretk-lilypond-common` — ce que la lecture et l'écriture LilyPond
+  partagent : erreur, spirale des quintes (`tpc`), table des clefs. Aucune
+  logique de conversion.
+- `crates/scoretk-lilypond-import` — lecture d'un sous-ensemble de LilyPond
+  par portage de `lily/parser.yy`/`lexer.ll` (t40), sans I/O.
+- `crates/scoretk-lilypond-export` — écriture LilyPond (`.ly`) depuis le
+  modèle (t36, voix en `\fixed c'`), sans I/O.
+- `crates/scoretk-abc-common` — tables et helpers ABC partagés par les deux
+  sens (hauteurs, armures, clés, durées, décorations, paroles) ; aucun I/O.
+- `crates/scoretk-abc-import` — lecture ABC (`.abc`) vers le modèle, norme 2.1
+  et comportement d'`abc2xml.py`, sans I/O (t41).
+- `crates/scoretk-abc-export` — écriture ABC (`.abc`) depuis le modèle,
+  comportement de `xml2abc.py`, sans I/O (t41).
 - `crates/scoretk` — façade multi-formats : `Format`, détection par extension
-  ou contenu, `read`/`write`/`convert` vers le modèle pivot ; features
-  `musicxml-import` (t34), `midi` (t35), `lilypond` (t36), `mscx` (t38),
-  `lilypond-import` (t40) et `abc` (t41) branchées dans `src/hooks.rs`.
+  ou contenu, `read`/`write`/`convert` vers le modèle pivot ; dix features
+  symétriques `<format>-import` / `<format>-export` (`musescore`, `musicxml`,
+  `midi`, `lilypond`, `abc`), toutes actives par défaut, branchées dans
+  `src/hooks.rs` et sans alias mixte.
 - `crates/scoretk-cli` — binaire `scoretk` (`entrée -o sortie`, `--from`,
   `--to`, `-` pour stdin/stdout) : I/O disque de la façade.
 - `crates/scoretk-wasm` — enveloppe wasm-bindgen de la façade (`convert`,
@@ -44,9 +78,9 @@ Carte des crates et modules :
   (`nix build .#wasm`).
 - `tests/corpus/{v3,v4}/` — `.mscx` amont + références `*.ref.musicxml` ;
   `tests/corpus/midi/` — références `*.ref.mid` ; `crates/scoretk/tests/`
-  (aller-retour et e2e de conformité), `crates/scoretk-musescore-import/tests/`,
-  `crates/scoretk-musicxml-export/tests/` et `crates/scoretk-midi/tests/` —
-  tests par sens.
+  (aller-retour, e2e de conformité et branchement de la façade) ; les tests
+  par sens vivent dans le crate du sens (`crates/scoretk-*-import/tests/`,
+  `crates/scoretk-*-export/tests/`).
 - `scripts/` — références du corpus, table des instruments, licences ;
   `flake.nix` — shell, checks, paquet wasm.
 
@@ -102,10 +136,11 @@ nix develop -c cargo test --workspace
 nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 nix develop -c cargo fmt --all -- --check
 nix develop -c cargo build -p scoretk-core --target wasm32-unknown-unknown
-nix develop -c cargo build -p scoretk-midi --target wasm32-unknown-unknown
-nix develop -c cargo build -p scoretk-lilypond --target wasm32-unknown-unknown
-nix develop -c cargo build -p scoretk-abc --target wasm32-unknown-unknown
-nix develop -c cargo build -p scoretk-mscx --target wasm32-unknown-unknown
+nix develop -c cargo build -p scoretk-midi-common -p scoretk-midi-import -p scoretk-midi-export --target wasm32-unknown-unknown
+nix develop -c cargo build -p scoretk-lilypond-common -p scoretk-lilypond-import -p scoretk-lilypond-export --target wasm32-unknown-unknown
+nix develop -c cargo build -p scoretk-abc-common -p scoretk-abc-import -p scoretk-abc-export --target wasm32-unknown-unknown
+nix develop -c cargo build -p scoretk-musescore-export --target wasm32-unknown-unknown
+nix develop -c cargo build -p scoretk-musicxml-import --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk --target wasm32-unknown-unknown
 nix flake check
 nix build .#wasm
@@ -134,6 +169,9 @@ Les données dérivées se régénèrent avec `scripts/gen-references.sh` et
   « schema version mismatch ».
 - **Le corpus doit rester dans la source des checks Nix** (filtre
   `tests/corpus` de `flake.nix`), sinon le check `tests` échoue.
+- **Un crate `-common` ne contient que ce que les deux sens du même format
+  utilisent** ; aucune logique de conversion, jamais de module à un seul sens
+  (règle complète dans `docs/agents/developpement.md`).
 - **Fichiers générés** : `read/instruments.rs` et
   `docs/agents/ecarts-complets.md` se régénèrent, ne s'éditent pas.
 - **Ordre des `<direction>`, spanners et `<credit>` significatif** pour la
@@ -165,8 +203,8 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
   tests Node : à lire avant de toucher au
   crate `scoretk-wasm`.
 - `docs/agents/midi.md` — lecture et écriture MIDI, `RepeatList`, pauses,
-  vélocités, références et écarts : à lire avant de toucher au crate
-  `scoretk-midi`.
+  vélocités, références et écarts : à lire avant de toucher aux crates
+  `scoretk-midi-*`.
 - `docs/agents/timemap.md` — carte des temps (`Timemap`) : structure Rust et
   JS, identifiants MusicXML stables, passages de reprises, pauses, usage côté
   client et limites : à lire avant de toucher à `write_playback` ou
@@ -181,10 +219,11 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
 - `docs/agents/lilypond.md` — LilyPond : écriture (correspondance modèle →
   `.ly`, mode `\fixed`, instantanés), lecture (sous-ensemble de
   `parser.yy`/`lexer.ll`, aller-retour mesuré), limites et mise à niveau des
-  sources : à lire avant de toucher à `scoretk-lilypond`.
-- `docs/agents/abc.md` — lecture et écriture ABC : sous-ensemble, voix,
-  instantanés, aller-retour mesuré, mise à niveau de `xml2abc`/`abc2xml` : à
-  lire avant de toucher à `scoretk-abc`.
-- `docs/agents/mscx-write.md` — écrivain `.mscx`/`.mscz` (`scoretk-mscx`) :
+  sources : à lire avant de toucher aux crates `scoretk-lilypond-*`.
+- `docs/agents/abc.md` — lecture et écriture ABC : découpage en trois crates,
+  sous-ensemble, voix, instantanés, aller-retour mesuré, mise à niveau de
+  `xml2abc`/`abc2xml` : à lire avant de toucher aux crates `scoretk-abc-*`.
+- `docs/agents/mscx-write.md` — écrivain `.mscx`/`.mscz`
+  (`scoretk-musescore-export`) :
   méthode d'aller-retour, résultats mesurés et limites : à lire avant de
   toucher à l'écriture MuseScore.

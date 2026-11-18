@@ -1,6 +1,8 @@
 # ABC : lecture et écriture dans scoretk
 
-Crate `crates/scoretk-abc`, feature `abc` de la façade, activée par la CLI.
+Crates `crates/scoretk-abc-common`, `crates/scoretk-abc-import` et
+`crates/scoretk-abc-export`, features `abc-import` et `abc-export` de la
+façade, activées par la CLI.
 Ce document décrit le sous-ensemble ABC couvert, la correspondance avec le
 modèle pivot, les résultats mesurés et les limites connues. Le noyau du projet
 reste dans `AGENTS.md` ; la façade est décrite dans `docs/agents/scoretk.md`.
@@ -28,7 +30,7 @@ porter pour le format lui-même. Le crate suit :
 
 Aucune ligne de ces scripts n'est copiée : l'implémentation est une
 réécriture Rust. Les scripts servent de référence de comportement, comme
-`musicxml2ly` pour `scoretk-lilypond`.
+`musicxml2ly` pour `scoretk-lilypond-export`.
 
 ## 2. API et fichiers
 
@@ -39,24 +41,43 @@ pub fn read_abc_tune(src: &str, tune: usize) -> Result<Score, Error>;
 pub fn read_abc_with(src: &str, options: &ReadOptions) -> Result<ReadOutput>;
 ```
 
+Le code est réparti en **trois crates** : un socle partagé et un crate par
+sens. Aucun ne fait d'entrée/sortie, tous compilent pour
+`wasm32-unknown-unknown`.
+
+| Crate | Contenu |
+| --- | --- |
+| `crates/scoretk-abc-common` | `error.rs` (erreurs, avertissements, `Result`), `pitch.rs` (hauteurs, armures, clefs, modes, `AccidentalState`), `duration.rs` (multiplicateurs `L:`), `decorations.rs` (nuances, articulations, ornements), `text.rs` (annotations et paroles `w:`) |
+| `crates/scoretk-abc-import` | `src/lib.rs` (API de lecture), `src/reader/mod.rs` (lignes, en-tête, morceaux `X:`), `src/reader/music.rs` (ligne de musique), `src/reader/lyrics.rs` (paroles), `src/reader/build.rs` (construction du modèle) |
+| `crates/scoretk-abc-export` | `src/lib.rs` (`write_abc`), `src/writer.rs` (en-tête et orchestration), `src/voice.rs` (écriture d'une voix) |
+
+Le partage est **vérifié module par module** : chaque module de
+`scoretk-abc-common` est employé par les deux sens. `pitch.rs` mêle des helpers
+propres à un sens (`tpc_of`, `parse_key`, `parse_clef` pour la lecture ;
+`note_spelling`, `abc_note`, `key_field`, `clef_name` pour l'écriture), mais
+le module entier reste commun parce que `AccidentalState` et `key_alter` sont
+partagés et que les tables de degrés et d'altérations sont la même source.
+
 | Élément | Emplacement |
 | --- | --- |
-| API, modules | `crates/scoretk-abc/src/lib.rs` |
-| Erreurs et avertissements | `src/error.rs` |
-| Hauteurs, armures, clefs, modes | `src/pitch.rs` |
-| Durées, multiplicateurs, figures | `src/duration.rs` |
-| Décorations, nuances, articulations | `src/decorations.rs` |
-| Échappement des annotations et paroles | `src/text.rs` |
-| En-tête et orchestration de l'écriture | `src/writer.rs` |
-| Écriture d'une voix | `src/voice.rs` |
-| Préparation des lignes, en-tête, morceaux `X:` | `src/reader/mod.rs` |
-| Analyse d'une ligne de musique | `src/reader/music.rs` |
-| Paroles `w:` | `src/reader/lyrics.rs` |
-| Construction du modèle | `src/reader/build.rs` |
-| Tests d'airs écrits à la main | `tests/airs.rs` |
-| Instantanés `.abc` du corpus | `tests/corpus_abc.rs` |
-| Aller-retour et noyau musical | `tests/aller_retour.rs` |
-| Outils externes (ignoré par défaut) | `tests/outils_externes.rs` |
+| API de lecture | `crates/scoretk-abc-import/src/lib.rs` |
+| API d'écriture | `crates/scoretk-abc-export/src/lib.rs` |
+| Erreurs et avertissements | `crates/scoretk-abc-common/src/error.rs` |
+| Hauteurs, armures, clefs, modes | `crates/scoretk-abc-common/src/pitch.rs` |
+| Durées, multiplicateurs, figures | `crates/scoretk-abc-common/src/duration.rs` |
+| Décorations, nuances, articulations | `crates/scoretk-abc-common/src/decorations.rs` |
+| Échappement des annotations et paroles | `crates/scoretk-abc-common/src/text.rs` |
+| En-tête et orchestration de l'écriture | `crates/scoretk-abc-export/src/writer.rs` |
+| Écriture d'une voix | `crates/scoretk-abc-export/src/voice.rs` |
+| Préparation des lignes, en-tête, morceaux `X:` | `crates/scoretk-abc-import/src/reader/mod.rs` |
+| Analyse d'une ligne de musique | `crates/scoretk-abc-import/src/reader/music.rs` |
+| Paroles `w:` | `crates/scoretk-abc-import/src/reader/lyrics.rs` |
+| Construction du modèle | `crates/scoretk-abc-import/src/reader/build.rs` |
+| Lecture seule (airs écrits à la main) | `crates/scoretk-abc-import/tests/lecture.rs` |
+| Aller-retour des airs | `crates/scoretk/tests/abc_roundtrip.rs` |
+| Instantanés `.abc` du corpus | `crates/scoretk/tests/abc_corpus.rs` |
+| Aller-retour et noyau musical | `crates/scoretk/tests/abc_aller_retour.rs` |
+| Outils externes (ignoré par défaut) | `crates/scoretk/tests/abc_outils_externes.rs` |
 
 ## 3. Écriture
 
@@ -140,7 +161,7 @@ ignorées, pour ne pas perdre un air entier.
   au niveau du **noyau musical** (mesures, armure, mesure, clef, hauteur,
   type, points, voix, portée, liaisons, n-olets, paroles, reprises) :
   **46/56 identiques**, listés dans `EXPECTED_ROUNDTRIP` de
-  `tests/aller_retour.rs`. Les 10 écarts restants :
+  `crates/scoretk/tests/abc_aller_retour.rs`. Les 10 écarts restants :
   - `clef-1`, `copypaste_parts`, `layout_elements` : clef changée en cours de
     mesure ou double clef au même tick, que l'export direct réduit ;
   - `moonlight` : pièce longue avec armures/clefs/voix multiples ; les
@@ -153,13 +174,16 @@ ignorées, pour ne pas perdre un air entier.
   - `voiceswitching` : n-olets imbriqués combinés à des voix multiples ; les
     hauteurs/positions restent justes, l'ordre des événements diffère.
 - **Outils externes** : `scripts/check-abc-external.sh` compile
-  `tests/outils_externes.rs` et l'exécute sous `nix shell nixpkgs#abcm2ps
-  nixpkgs#abcmidi`. 46 instantanés et 2 airs sont acceptés par `abcm2ps` et
+  `crates/scoretk/tests/abc_outils_externes.rs` (features `abc-import` et
+  `abc-export`) et l'exécute
+  sous `nix shell nixpkgs#abcm2ps nixpkgs#abcmidi`. 46 instantanés et 2 airs sont acceptés par `abcm2ps` et
   `abc2midi` ; les 10 fichiers de `IGNORED` sont refusés par ces outils
   (n-olets imbriqués, clefs anciennes, reprises sans note), pas par la norme.
 - **Façade et CLI** : `crates/scoretk/tests/abc.rs` et
   `crates/scoretk-cli/tests/abc.rs` vérifient lecture, écriture, stdin/stdout
-  et `--list-formats`.
+  et `--list-formats`. `abc_roundtrip`, `abc_corpus`, `abc_aller_retour` et
+  `abc_outils_externes` vivent dans `crates/scoretk/tests/` : ils exercent les
+  **deux moitiés** et le corpus, pas un sens isolé.
 - **Comparaison à `xml2abc.py`** (2026-11-17, `dynamics`) : mêmes hauteurs,
   durées, voix et nuances ; les écarts sont la mise en page et les choix
   propres aux scripts (`L:1/4` au lieu de `L:1/8`, `I:linebreak`, `nm`/`snm`),
@@ -191,14 +215,16 @@ ignorées, pour ne pas perdre un air entier.
 ## 8. Tests et régénération
 
 ```sh
-nix develop -c cargo test -p scoretk-abc
-nix develop -c cargo test -p scoretk-abc --test aller_retour -- --nocapture
-UPDATE_ABC_SNAPSHOTS=1 nix develop -c cargo test -p scoretk-abc --test corpus_abc
+nix develop -c cargo test -p scoretk-abc-common
+nix develop -c cargo test -p scoretk-abc-import
+nix develop -c cargo test -p scoretk-abc-export
+nix develop -c cargo test -p scoretk --features abc-import,abc-export --test abc_aller_retour -- --nocapture
+UPDATE_ABC_SNAPSHOTS=1 nix develop -c cargo test -p scoretk --features abc-import,abc-export --test abc_corpus
 scripts/check-abc-external.sh
 ```
 
 `EXPECTED_ROUNDTRIP` est **non régressif** : un fichier listé qui cesse
-d'être identique fait échouer `aller_retour`. Les instantanés sont versionnés
+d'être identique fait échouer `abc_aller_retour`. Les instantanés sont versionnés
 dans `tests/corpus/abc/` et couverts par le filtre `tests/corpus` de
 `flake.nix`.
 
@@ -241,9 +267,9 @@ hors dépôt (par exemple `/tmp/abcchk/`) pour les consulter.
    page (`L:`, espacement, `I:linebreak`, `nm`/`snm` sont propres aux scripts).
 5. **Régénérer et revalider.**
    ```sh
-   UPDATE_ABC_SNAPSHOTS=1 nix develop -c cargo test -p scoretk-abc --test corpus_abc
-   nix develop -c cargo test -p scoretk-abc
-   nix develop -c cargo test -p scoretk-abc --test aller_retour -- --nocapture
+   UPDATE_ABC_SNAPSHOTS=1 nix develop -c cargo test -p scoretk --features abc-import,abc-export --test abc_corpus
+   nix develop -c cargo test -p scoretk-abc-common -p scoretk-abc-import -p scoretk-abc-export
+   nix develop -c cargo test -p scoretk --features abc-import,abc-export --test abc_aller_retour -- --nocapture
    scripts/check-abc-external.sh
    nix develop -c cargo test --workspace
    nix flake check
@@ -272,7 +298,7 @@ implémentation de référence. Il n'y a donc pas de code amont à comparer,
 mais une spécification à relire et à revalider.
 
 1. **Version suivie.** ABC 2.1, sans sous-version : c'est la version citée
-   dans les en-têtes des fichiers de `crates/scoretk-abc/src/` et dans
+   dans les en-têtes des fichiers de `crates/scoretk-abc-common/src/` et dans
    `NOTICE`. Le préfixe `%abc-2.1` écrit par `writer.rs` en découle.
 2. **Où récupérer la spécification.** La page du § 1 (wiki abcnotation.com),
    ou son archive hors ligne. Les changements de version sont annoncés sur le
@@ -291,9 +317,9 @@ mais une spécification à relire et à revalider.
    ou débloque un fichier réel ; la mise en page reste hors périmètre.
 4. **Revalider.**
    ```sh
-   nix develop -c cargo test -p scoretk-abc
-   nix develop -c cargo test -p scoretk-abc --test aller_retour -- --nocapture
-   UPDATE_ABC_SNAPSHOTS=1 nix develop -c cargo test -p scoretk-abc --test corpus_abc
+   nix develop -c cargo test -p scoretk-abc-common -p scoretk-abc-import -p scoretk-abc-export
+   nix develop -c cargo test -p scoretk --features abc-import,abc-export --test abc_aller_retour -- --nocapture
+   UPDATE_ABC_SNAPSHOTS=1 nix develop -c cargo test -p scoretk --features abc-import,abc-export --test abc_corpus
    scripts/check-abc-external.sh
    nix develop -c cargo test --workspace
    nix flake check

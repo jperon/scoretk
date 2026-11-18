@@ -14,11 +14,18 @@ détails et les pièges d'outillage.
 | `crates/scoretk-core/src/model/` | modèle de partition en mémoire, pivot des lecteurs et de l'export |
 | `crates/scoretk-musicxml-export/src/` | modèle → MusicXML `partwise` / `.mxl` |
 | `crates/scoretk-wasm/` | enveloppe wasm-bindgen de la façade (`convert`, `detect`, `formats`, `version`), unique paquet wasm (`nix build .#wasm`) |
-| `crates/scoretk-musicxml/` | lecteur MusicXML → modèle (`read_musicxml`), bibliothèque portable |
-| `crates/scoretk-midi/` | écriture SMF format 1 et déroulement des reprises, sans I/O |
-| `crates/scoretk-lilypond/` | écriture LilyPond depuis le modèle (voix en `\fixed c'`), sans I/O |
-| `crates/scoretk-mscx/` | écriture MuseScore (`.mscx` 4.x, `.mscz`), sans I/O |
-| `crates/scoretk/` | façade multi-formats : `Format`, détection, `read`/`write` vers le modèle pivot ; features `musicxml-import`, `midi`, `lilypond` et `mscx` |
+| `crates/scoretk-musicxml-import/` | lecteur MusicXML → modèle (`read_musicxml`), bibliothèque portable |
+| `crates/scoretk-musescore-export/` | écriture MuseScore (`.mscx` 4.x, `.mscz`), sans I/O |
+| `crates/scoretk-midi-common/` | erreur et résultat partagés par les deux sens, sans conversion |
+| `crates/scoretk-midi-import/` | lecture MIDI vers le modèle, sans I/O |
+| `crates/scoretk-midi-export/` | écriture SMF format 1 et déroulement des reprises, sans I/O |
+| `crates/scoretk-lilypond-common/` | tables partagées par la lecture et l'écriture LilyPond (erreur, `tpc`, clefs), **sans logique de conversion** |
+| `crates/scoretk-lilypond-import/` | lecture d'un sous-ensemble de LilyPond vers le modèle, sans I/O |
+| `crates/scoretk-lilypond-export/` | écriture LilyPond depuis le modèle (voix en `\fixed c'`), sans I/O |
+| `crates/scoretk-abc-common/` | tables et helpers ABC partagés par les deux sens (hauteurs, armures, clés, durées, décorations, paroles), sans conversion |
+| `crates/scoretk-abc-import/` | lecture ABC vers le modèle, sans I/O |
+| `crates/scoretk-abc-export/` | écriture ABC depuis le modèle, sans I/O |
+| `crates/scoretk/` | façade multi-formats : `Format`, détection, `read`/`write` vers le modèle pivot ; dix features symétriques `<format>-import` / `<format>-export`, une par crate de sens, branchées dans `src/hooks.rs` |
 | `crates/scoretk-cli/` | binaire `scoretk` : I/O disque de la façade, formats déduits des extensions |
 | `crates/scoretk/tests/` | tests d'aller-retour (lecture puis export) et e2e de conformité |
 | `crates/scoretk-musescore-import/tests/` | tests de lecture seule par famille |
@@ -44,6 +51,11 @@ Ne pas retirer cette règle.
   fichiers existants ne reçoivent que le branchement (`mod.rs`, réexport) ou
   un correctif localisé. Cela limite les conflits entre agents parallèles et
   garde les diffs relisibles.
+- **Règle des crates `-common`.** Un `-common` ne contient que ce que les deux
+  sens du même format utilisent ; jamais de logique de conversion (aucune
+  lecture ni écriture de fichier) ; jamais un module utilisé par un seul sens ;
+  le générique va dans `scoretk-core`, le spécifique reste dans le sens
+  concerné.
 - **Commentaires, messages d'erreur et documentation en français.** Les noms
   de types et de fonctions suivent l'amont ou l'usage Rust.
 - **Reproductibilité.** Pas d'horloge : `encoding_date` est une option, avec
@@ -99,8 +111,10 @@ refuse toute licence absente de sa liste blanche.
 La bibliothèque doit compiler et tourner sur `wasm32-unknown-unknown` (sans
 WASI), Android, iOS, Linux, macOS et Windows. Checklist avant d'ajouter du
 code dans les crates de bibliothèque (`scoretk-core`, `scoretk-musescore-import`,
-`scoretk-musicxml-export`, `scoretk-musicxml`, `scoretk-midi`, `scoretk-lilypond`,
-`scoretk-mscx`, `scoretk-abc`) :
+`scoretk-musescore-export`, `scoretk-musicxml-import`, `scoretk-musicxml-export`,
+`scoretk-midi-common`, `scoretk-midi-import`, `scoretk-midi-export`,
+`scoretk-lilypond-common`, `scoretk-lilypond-import`, `scoretk-lilypond-export`,
+`scoretk-abc-common`, `scoretk-abc-import`, `scoretk-abc-export`) :
 
 - pas de `std::fs`, `std::env`, `std::net`, `std::process` ;
 - pas de `std::thread`, `std::sync::mpsc`, `rayon` ;

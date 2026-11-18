@@ -58,10 +58,10 @@ impl fmt::Display for Sens {
 
 /// Format de partition manipulé par scoretk.
 ///
-/// `Ly` est reconnu (extension et contenu), lu avec la feature
-/// `lilypond-import` et écrit avec `lilypond`. `Abc` se lit et s'écrit avec
-/// la feature `abc`. [`read`](crate::read) et [`write`](crate::write)
-/// renvoient [`Error::FormatNonPrisEnCharge`] quand la feature manque.
+/// Chaque format a deux features : `<format>-import` pour [`read`](crate::read)
+/// et `<format>-export` pour [`write`](crate::write). Les deux fonctions
+/// renvoient [`Error::FormatNonPrisEnCharge`] quand la feature du sens demandé
+/// manque.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Format {
     /// Conteneur MuseScore compressé (`.mscz`, archive ZIP avec un `.mscx`).
@@ -118,33 +118,34 @@ impl Format {
         }
     }
 
-    /// Vrai si [`read`](crate::read) sait lire ce format aujourd'hui.
+    /// Vrai si [`read`](crate::read) sait lire ce format.
     ///
-    /// MusicXML et `.mxl` dépendent de la feature `musicxml-import`,
-    /// LilyPond de la feature `lilypond-import`, ABC de la feature `abc`,
-    /// MIDI de la feature `midi`.
+    /// Chaque format dépend de sa feature `<format>-import` : MuseScore
+    /// `musescore-import` (`.mscz`, `.mscx`), MusicXML `musicxml-import`
+    /// (`.musicxml`, `.xml`, `.mxl`), LilyPond `lilypond-import`, ABC
+    /// `abc-import`, MIDI `midi-import`.
     pub const fn supports_read(self) -> bool {
         match self {
-            Self::Mscz | Self::Mscx => true,
+            Self::Mscz | Self::Mscx => cfg!(feature = "musescore-import"),
             Self::MusicXml | Self::Mxl => cfg!(feature = "musicxml-import"),
             Self::Ly => cfg!(feature = "lilypond-import"),
-            Self::Abc => cfg!(feature = "abc"),
-            Self::Midi => cfg!(feature = "midi"),
+            Self::Abc => cfg!(feature = "abc-import"),
+            Self::Midi => cfg!(feature = "midi-import"),
         }
     }
 
-    /// Vrai si [`write`](crate::write) sait écrire ce format aujourd'hui.
+    /// Vrai si [`write`](crate::write) sait écrire ce format.
     ///
-    /// MuseScore (`.mscx`, `.mscz`) dépend de la feature `mscx`, MIDI de la
-    /// feature `midi`, LilyPond de la feature `lilypond`, ABC de la feature
-    /// `abc`.
+    /// Chaque format dépend de sa feature `<format>-export` : MuseScore
+    /// `musescore-export` (`.mscx`, `.mscz`), MusicXML `musicxml-export`,
+    /// LilyPond `lilypond-export`, ABC `abc-export`, MIDI `midi-export`.
     pub const fn supports_write(self) -> bool {
         match self {
-            Self::MusicXml | Self::Mxl => true,
-            Self::Mscz | Self::Mscx => cfg!(feature = "mscx"),
-            Self::Midi => cfg!(feature = "midi"),
-            Self::Ly => cfg!(feature = "lilypond"),
-            Self::Abc => cfg!(feature = "abc"),
+            Self::MusicXml | Self::Mxl => cfg!(feature = "musicxml-export"),
+            Self::Mscz | Self::Mscx => cfg!(feature = "musescore-export"),
+            Self::Midi => cfg!(feature = "midi-export"),
+            Self::Ly => cfg!(feature = "lilypond-export"),
+            Self::Abc => cfg!(feature = "abc-export"),
         }
     }
 

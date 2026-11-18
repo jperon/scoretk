@@ -47,11 +47,11 @@ compatibles.
 | `js-sys` | 0.3.107 | MIT OR Apache-2.0 | wasm (bindings JS) |
 | `log` | 0.4.35 | MIT OR Apache-2.0 | core et wasm (via zopfli, wasm-bindgen) |
 | `memchr` | 2.8.3 | Unlicense OR MIT | core (via quick-xml, zip) |
-| `midly` | 0.5.3 | Unlicense | MIDI (format de fichier, `scoretk-midi`) |
+| `midly` | 0.5.3 | Unlicense | MIDI (format de fichier, `scoretk-midi-import` et `scoretk-midi-export`) |
 | `miniz_oxide` | 0.9.1 | MIT OR Zlib OR Apache-2.0 | core (via flate2) |
 | `pin-project-lite` | 0.2.17 | Apache-2.0 OR MIT | wasm (via futures-util) |
 | `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 | proc-macro |
-| `quick-xml` | 0.42.0 | MIT | core (lecture XML) ; tests de `scoretk-lilypond` (`read_corpus`) |
+| `quick-xml` | 0.42.0 | MIT | core (lecture XML) ; tests de `scoretk-lilypond-import` (`read_corpus`) |
 | `quote` | 1.0.47 | MIT OR Apache-2.0 | proc-macro |
 | `rustversion` | 1.0.23 | MIT OR Apache-2.0 | wasm (build, via wasm-bindgen) |
 | `simd-adler32` | 0.3.10 | MIT | core (via miniz_oxide, zopfli) |
@@ -99,7 +99,7 @@ Ces paquets n'apparaissent pas dans le graphe `normal,build` ci-dessus :
 
 | Paquet | Raison | Licence connue |
 | --- | --- | --- |
-| `similar` | dépendance de **développement** de `scoretk-core` et `scoretk-midi` (tests) | Apache-2.0 |
+| `similar` | dépendance de **développement** de `scoretk-core` et `scoretk-midi-import` (tests) | Apache-2.0 |
 | `arbitrary`, `derive_arbitrary` | fonctionnalité optionnelle de `zip`, non activée | MIT OR Apache-2.0 |
 | `anstyle-wincon`, `windows-sys`, `windows-link` | uniquement pour la cible Windows (couleurs du terminal) | MIT OR Apache-2.0 |
 | `once_cell_polyfill` | chaîne Windows de `clap`/`anstream` | MIT OR Apache-2.0 |

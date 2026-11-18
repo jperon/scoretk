@@ -170,10 +170,10 @@ racine du dépôt. Cette table est dressée à partir des en-têtes
 | `crates/scoretk-musicxml-export/src/textlines.rs` | `…/exportmusicxml.cpp` (`textLine`, `writeHairpinText`) |
 | `crates/scoretk-musicxml-export/src/writer.rs` | `engraving/rw/xmlwriter.cpp` |
 
-### Lecteur MusicXML (`crates/scoretk-musicxml/`)
+### Lecteur MusicXML (`crates/scoretk-musicxml-import/`)
 
 Cette crate est hors de `crates/scoretk-core` mais porte le même code amont ; les
-chemins Rust y sont relatifs à `crates/scoretk-musicxml/src/`.
+chemins Rust y sont relatifs à `crates/scoretk-musicxml-import/src/`.
 
 | Rust | C++ amont |
 | --- | --- |
@@ -185,10 +185,10 @@ chemins Rust y sont relatifs à `crates/scoretk-musicxml/src/`.
 
 Les écarts de cet import sont suivis dans `docs/agents/musicxml-import.md`.
 
-### Écriture MuseScore (`crates/scoretk-mscx/src/`)
+### Écriture MuseScore (`crates/scoretk-musescore-export/src/`)
 
 Cette crate est hors de `crates/scoretk-core` mais porte le même code amont ; les
-chemins Rust y sont relatifs à `crates/scoretk-mscx/src/`.
+chemins Rust y sont relatifs à `crates/scoretk-musescore-export/src/`.
 
 | Rust | C++ amont |
 | --- | --- |
@@ -203,42 +203,42 @@ chemins Rust y sont relatifs à `crates/scoretk-mscx/src/`.
 | `text.rs` | `engraving/dom/textbase.cpp` (écriture du balisage) |
 | `container.rs` | `engraving/infrastructure/mscwriter.cpp` |
 
-### MIDI (`crates/scoretk-midi/src/`)
+### MIDI (`crates/scoretk-midi-common/src/`, `crates/scoretk-midi-import/src/`, `crates/scoretk-midi-export/src/`)
 
 Écriture (t35) :
 
 | Rust | C++ amont |
 | --- | --- |
-| `lib.rs` | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/compatmidirender.cpp` |
-| `repeat_list.rs` | `engraving/dom/repeatlist.cpp` |
-| `render.rs` | `engraving/compat/midi/{compatmidirender,compatmidirenderinternal}.cpp` |
-| `velocity.rs` | `engraving/compat/midi/velocitymap.cpp` |
-| `pause_map.rs` | `engraving/compat/midi/pausemap.cpp` |
-| `writer.rs` | écriture `MidiFile` (format SMF, `no_std`) |
+| `scoretk-midi-export/src/lib.rs` | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/compatmidirender.cpp` |
+| `scoretk-midi-export/src/repeat_list.rs` | `engraving/dom/repeatlist.cpp` |
+| `scoretk-midi-export/src/render.rs` | `engraving/compat/midi/{compatmidirender,compatmidirenderinternal}.cpp` |
+| `scoretk-midi-export/src/velocity.rs` | `engraving/compat/midi/velocitymap.cpp` |
+| `scoretk-midi-export/src/pause_map.rs` | `engraving/compat/midi/pausemap.cpp` |
+| `scoretk-midi-export/src/writer.rs` | écriture `MidiFile` (format SMF, `no_std`) |
 
 Lecture (t42, `import/`) :
 
 | Rust | C++ amont |
 | --- | --- |
-| `import/mod.rs` | `importexport/midi/internal/midiimport/importmidi.cpp` |
-| `import/midifile.rs` | `importexport/midi/internal/midishared/{midifile,midievent}.cpp` |
-| `import/timesigmap.rs` | `engraving/dom/sig.cpp` |
-| `import/chord.rs` | `importexport/midi/internal/midiimport/importmidi_chord.cpp` |
-| `import/quant.rs` | `importexport/midi/internal/midiimport/importmidi_quant.cpp` |
-| `import/meter.rs` | `importexport/midi/internal/midiimport/importmidi_meter.cpp`, `engraving/dom/durationtype.cpp` |
-| `import/simplify.rs` | `importexport/midi/internal/midiimport/importmidi_simplify.cpp` |
-| `import/tuplet.rs` | `importexport/midi/internal/midiimport/importmidi_tuplet*.cpp` |
-| `import/voice.rs` | `importexport/midi/internal/midiimport/importmidi_voice.cpp` |
-| `import/key.rs` | `importexport/midi/internal/midiimport/importmidi_key.cpp` |
-| `import/clef.rs` | `importexport/midi/internal/midiimport/importmidi_clef.cpp` |
-| `import/lrhand.rs` | `importexport/midi/internal/midiimport/importmidi_lrhand.cpp` |
-| `import/drum.rs` | `importexport/midi/internal/midiimport/importmidi_drum.cpp` |
-| `import/lyrics.rs` | `importexport/midi/internal/midiimport/importmidi_lyrics.cpp` |
-| `import/tempo.rs` | `importexport/midi/internal/midiimport/importmidi_tempo.cpp` |
-| `import/instrument.rs` | `importexport/midi/internal/midiimport/importmidi_instrument.cpp`, `midishared/generalmidi.cpp` |
-| `import/operations.rs` | `importexport/midi/internal/midiimport/importmidi_operations.h` |
+| `scoretk-midi-import/src/lib.rs` | `importexport/midi/internal/midiimport/importmidi.cpp` |
+| `scoretk-midi-import/src/midifile.rs` | `importexport/midi/internal/midishared/{midifile,midievent}.cpp` |
+| `scoretk-midi-import/src/timesigmap.rs` | `engraving/dom/sig.cpp` |
+| `scoretk-midi-import/src/chord.rs` | `importexport/midi/internal/midiimport/importmidi_chord.cpp` |
+| `scoretk-midi-import/src/quant.rs` | `importexport/midi/internal/midiimport/importmidi_quant.cpp` |
+| `scoretk-midi-import/src/meter.rs` | `importexport/midi/internal/midiimport/importmidi_meter.cpp`, `engraving/dom/durationtype.cpp` |
+| `scoretk-midi-import/src/simplify.rs` | `importexport/midi/internal/midiimport/importmidi_simplify.cpp` |
+| `scoretk-midi-import/src/tuplet.rs` | `importexport/midi/internal/midiimport/importmidi_tuplet*.cpp` |
+| `scoretk-midi-import/src/voice.rs` | `importexport/midi/internal/midiimport/importmidi_voice.cpp` |
+| `scoretk-midi-import/src/key.rs` | `importexport/midi/internal/midiimport/importmidi_key.cpp` |
+| `scoretk-midi-import/src/clef.rs` | `importexport/midi/internal/midiimport/importmidi_clef.cpp` |
+| `scoretk-midi-import/src/lrhand.rs` | `importexport/midi/internal/midiimport/importmidi_lrhand.cpp` |
+| `scoretk-midi-import/src/drum.rs` | `importexport/midi/internal/midiimport/importmidi_drum.cpp` |
+| `scoretk-midi-import/src/lyrics.rs` | `importexport/midi/internal/midiimport/importmidi_lyrics.cpp` |
+| `scoretk-midi-import/src/tempo.rs` | `importexport/midi/internal/midiimport/importmidi_tempo.cpp` |
+| `scoretk-midi-import/src/instrument.rs` | `importexport/midi/internal/midiimport/importmidi_instrument.cpp`, `midishared/generalmidi.cpp` |
+| `scoretk-midi-import/src/operations.rs` | `importexport/midi/internal/midiimport/importmidi_operations.h` |
 
-### Écriture LilyPond (`crates/scoretk-lilypond/src/`)
+### Écriture LilyPond (`crates/scoretk-lilypond-export/src/`)
 
 Cette crate n'a **pas** de source MuseScore dédiée : MuseScore 4 n'a pas
 d'export LilyPond. Elle porte la sémantique des objets du modèle et suit, pour
@@ -256,7 +256,7 @@ mise à niveau de ces moteurs (LilyPond, `musicxml2ly`, `python-ly`) sont dans
 | `structure.rs` | `engraving/dom/{volta,measure}.h`, `ExportMusicXml::barlineRight` |
 | `pitch.rs` | `engraving/dom/pitchspelling.cpp` (`tpc2stepName`, `tpc2alter`), `engraving/dom/clef.h` |
 | `voice.rs` | `engraving/dom/{segment,measure,chordrest}.h` (parcours d'une voix) |
-| `writer.rs` | `engraving/dom/{part,staff,score}.h` (regroupements et en-tête) |
+| `scoretk-midi-export/src/writer.rs` | `engraving/dom/{part,staff,score}.h` (regroupements et en-tête) |
 
 ## 4. Suivi d'une nouvelle version amont
 

@@ -15,13 +15,13 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Écriture MuseScore par la façade (feature `mscx`).
+//! Écriture MuseScore par la façade (feature `musescore-export`).
 //!
 //! Le test complet d'aller-retour sur tout le corpus vit dans
-//! `crates/scoretk-mscx/tests/roundtrip.rs` ; celui-ci vérifie le branchement
-//! de la façade et le contrat `.mscz`.
+//! `crates/scoretk-musescore-export/tests/roundtrip.rs` ; celui-ci vérifie le
+//! branchement de la façade et le contrat `.mscz`.
 
-#![cfg(feature = "mscx")]
+#![cfg(feature = "musescore-export")]
 
 use std::path::PathBuf;
 

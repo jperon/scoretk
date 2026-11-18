@@ -16,14 +16,18 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Toutes les features : le paquet navigateur est la façade complète, comme la
-# CLI scoretk (cf. crates/scoretk-cli/Cargo.toml).
+# CLI scoretk (cf. crates/scoretk-cli/Cargo.toml), une par crate de sens.
 scoretk = { path = "../scoretk", features = [
+    "musescore-import",
+    "musescore-export",
     "musicxml-import",
-    "midi",
-    "lilypond",
+    "musicxml-export",
+    "midi-import",
+    "midi-export",
     "lilypond-import",
-    "mscx",
-    "abc",
+    "lilypond-export",
+    "abc-import",
+    "abc-export",
 ] }
 # Doit être ÉGALE à la version de wasm-bindgen-cli du shell nix (sinon
 # « schema version mismatch » au moment de `wasm-bindgen`).

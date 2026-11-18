@@ -1,8 +1,8 @@
 # Écriture MuseScore : `.mscx` et `.mscz`
 
-Crate `crates/scoretk-mscx`, branchée dans la façade `scoretk` par la feature
-`mscx` (`Format::Mscx` et `Format::Mscz` en écriture). Le noyau du projet et
-les invariants sont dans `AGENTS.md` ; la correspondance C++ → Rust est dans
+Crate `crates/scoretk-musescore-export`, branchée dans la façade `scoretk` par
+la feature `musescore-export` (`Format::Mscx` et `Format::Mscz` en écriture).
+Le noyau du projet et les invariants sont dans `AGENTS.md` ; la correspondance C++ → Rust est dans
 `docs/agents/upstream.md`.
 
 ## 1. Rôle et API
@@ -41,8 +41,8 @@ la bibliothèque ne fait pas de rendu. MuseScore les recrée à l'enregistrement
 
 ## 3. Fidélité mesurée : aller-retour
 
-Le test `crates/scoretk-mscx/tests/roundtrip.rs` rejoue, pour chaque fichier du
-corpus, la chaîne
+Le test `crates/scoretk-musescore-export/tests/roundtrip.rs` rejoue, pour
+chaque fichier du corpus, la chaîne
 
 ```text
 lire (.mscx 3.x ou 4.x) → écrire .mscx → relire avec le lecteur 4.x
@@ -131,8 +131,8 @@ entier.
 ## 6. Vérifications
 
 ```sh
-nix develop -c cargo test -p scoretk-mscx
-nix develop -c cargo build -p scoretk-mscx --target wasm32-unknown-unknown
+nix develop -c cargo test -p scoretk-musescore-export
+nix develop -c cargo build -p scoretk-musescore-export --target wasm32-unknown-unknown
 # MuseScore 4.7.4 rouvre-t-il les sorties ? (headless, hors session graphique)
 scripts/check-mscx-rewrite.sh
 ```

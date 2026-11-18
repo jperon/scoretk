@@ -1,6 +1,6 @@
 # Import MusicXML : état du portage et écarts mesurés
 
-`crates/scoretk-musicxml` lit un document MusicXML `partwise`
+`crates/scoretk-musicxml-import` lit un document MusicXML `partwise`
 (`.musicxml`, `.xml`, ou archive `.mxl`) et renvoie le modèle pivot de
 `scoretk-core` (`scoretk_core::model::Score`). Le portage suit l'import de MuseScore
 Studio, `src/importexport/musicxml/internal/import/`
@@ -11,7 +11,7 @@ Studio, `src/importexport/musicxml/internal/import/`
 ## 1. Point d'entrée et organisation
 
 ```rust
-use scoretk_musicxml::{read_musicxml, read_mxl};
+use scoretk_musicxml_import::{read_musicxml, read_mxl};
 let score = read_musicxml(bytes)?;            // bytes = .musicxml, .xml ou .mxl
 let score = read_mxl(bytes)?;                 // bytes = archive .mxl uniquement
 let xml = scoretk_musicxml_export::export_musicxml(&score)?;
@@ -62,7 +62,7 @@ reconnaît un ZIP contenant `META-INF/container.xml` **après** avoir écarté u
 
 ## 2. Mesure de fidélité : test d'aller-retour
 
-`crates/scoretk-musicxml/tests/aller_retour.rs` lit chaque
+`crates/scoretk-musicxml-import/tests/aller_retour.rs` lit chaque
 `tests/corpus/{v3,v4}/*.ref.musicxml`, le réexporte avec l'export de
 `scoretk-core`, et compare les deux documents avec la normalisation de
 `crates/scoretk/tests/e2e_corpus.rs`, aux **deux niveaux** :
@@ -74,7 +74,7 @@ reconnaît un ZIP contenant `META-INF/container.xml` **après** avoir écarté u
   que sur `EXPECTED_FULL_V3` / `EXPECTED_FULL_V4`.
 
 ```sh
-nix develop -c cargo test -p scoretk-musicxml --test aller_retour -- --nocapture
+nix develop -c cargo test -p scoretk-musicxml-import --test aller_retour -- --nocapture
 ```
 
 Résultat au 2026-11-17 :
@@ -89,7 +89,7 @@ Toute régression sur un fichier listé dans `EXPECTED_V3`, `EXPECTED_V4`,
 
 ### Aller-retour `.mxl`
 
-`crates/scoretk-musicxml/tests/mxl.rs` vérifie sur tout le corpus que
+`crates/scoretk-musicxml-import/tests/mxl.rs` vérifie sur tout le corpus que
 `.mscx` → `export_mxl` → `read_mxl` → export MusicXML est **identique octet
 pour octet** au `.musicxml` équivalent exporté puis relu (détection du
 conteneur, donc indépendamment du lecteur). Il couvre aussi le repli sans
@@ -97,12 +97,12 @@ conteneur, donc indépendamment du lecteur). Il couvre aussi le repli sans
 `rootfile` absent. Résultat : **56/56** fichiers identiques.
 
 ```sh
-nix develop -c cargo test -p scoretk-musicxml --test mxl -- --nocapture
+nix develop -c cargo test -p scoretk-musicxml-import --test mxl -- --nocapture
 ```
 
 ### Chaîne MusicXML → MIDI
 
-`crates/scoretk-midi/tests/musicxml_midi.rs` lit les références
+`crates/scoretk-midi-export/tests/musicxml_midi.rs` lit les références
 `tests/corpus/{v3,v4}/X.ref.musicxml`, écrit le MIDI avec `write_midi` et
 compare notes (piste, canal, hauteur, début, fin, vélocité) et tempos à
 `tests/corpus/midi/{v3,v4}/X.ref.mid`, comme `corpus_midi.rs`. Résultat :

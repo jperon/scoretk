@@ -8,11 +8,11 @@ cinq formats de partition ; **scoretk-core** en est le premier convertisseur
 
 | Format | Lecture | Écriture |
 |---|---|---|
-| MuseScore (`.mscz` / `.mscx`, 3.x et 4.x) | fait | fait (`scoretk-mscx`) |
+| MuseScore (`.mscz` / `.mscx`, 3.x et 4.x) | fait | fait (`scoretk-musescore-export`) |
 | MusicXML (`.musicxml` / `.mxl`) | fait (noyau, `.mxl` en t43, cf. `docs/agents/musicxml-import.md`) | fait |
-| LilyPond (`.ly`) | fait (sous-ensemble, t40) | fait (`scoretk-lilypond`, t36) |
-| ABC (`.abc`) | fait (`scoretk-abc`, t41) | fait (`scoretk-abc`, t41) |
-| MIDI (`.mid`) | fait (import porté de MuseScore, t42) | fait (`scoretk-midi`) |
+| LilyPond (`.ly`) | fait (sous-ensemble, t40) | fait (`scoretk-lilypond-export`, t36) |
+| ABC (`.abc`) | fait (`scoretk-abc-import`, t41) | fait (`scoretk-abc-export`, t41) |
+| MIDI (`.mid`) | fait (`scoretk-midi-import`, t42) | fait (`scoretk-midi-export`, t35) |
 
 Toutes les combinaisons doivent fonctionner : mscz ↔ musicxml, musicxml ↔ ly,
 musicxml ↔ abc, musicxml ↔ midi, et donc aussi toutes les paires entre mscz,
@@ -22,12 +22,12 @@ ly, abc et midi.
 
 | Crate | Rôle | État |
 | --- | --- | --- |
-| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : lecture `.mscz`/`.mscx`/MusicXML/`.mxl`/`.ly`/ABC/MIDI, écriture MusicXML/`.mxl`/`.mscx`/`.mscz`/`.ly`/`.mid`/`.abc` ; les six features (`musicxml-import`, `midi`, `lilypond`, `lilypond-import`, `mscx`, `abc`) sont activées par la CLI |
-| `scoretk-musicxml` | lecteur MusicXML vers le modèle pivot | fait (t34, t37, t43) : noyau 26/30 v3 et 26/26 v4, parité complète 23/30 et 21/26, `.mxl` relu à l'identique sur tout le corpus (écarts dans `docs/agents/musicxml-import.md`) |
-| `scoretk-midi` | lecteur et écrivain MIDI depuis/vers le modèle pivot | fait (t35 écriture, t42 lecture) : aller-retour 21/21 à la quantification près ; import 4/21 identique au noyau MuseScore, écarts de noms d'instruments et de n-olets complexes (`docs/agents/midi.md`) |
-| `scoretk-lilypond` | écrivain et lecteur LilyPond depuis/vers le modèle pivot | fait (t36, t40) : 56/56 fichiers compilent, aller-retour noyau 24/56 (t40) |
-| `scoretk-mscx` | écrivain MuseScore (`.mscx` 4.x, `.mscz`) | fait (t38) : aller-retour identique sur tout le corpus |
-| `scoretk-abc` | lecteur et écrivain ABC (`.abc`) | fait (t41) : 56/56 instantanés, aller-retour noyau 46/56, écarts dans `docs/agents/abc.md` |
+| `scoretk` + `scoretk-cli` | façade (`Format`, détection, `read`/`write`) et CLI `scoretk` | fait : lecture `.mscz`/`.mscx`/MusicXML/`.mxl`/`.ly`/ABC/MIDI, écriture MusicXML/`.mxl`/`.mscx`/`.mscz`/`.ly`/`.mid`/`.abc` ; les dix features symétriques (`<format>-import` / `<format>-export` pour MuseScore, MusicXML, MIDI, LilyPond et ABC) sont activées par la CLI |
+| `scoretk-musicxml-import` | lecteur MusicXML vers le modèle pivot | fait (t34, t37, t43) : noyau 26/30 v3 et 26/26 v4, parité complète 23/30 et 21/26, `.mxl` relu à l'identique sur tout le corpus (écarts dans `docs/agents/musicxml-import.md`) |
+| `scoretk-midi-common` / `scoretk-midi-import` / `scoretk-midi-export` | erreur partagée, lecteur et écrivain MIDI depuis/vers le modèle pivot | fait (t35 écriture, t42 lecture) : aller-retour 21/21 à la quantification près ; import 4/21 identique au noyau MuseScore, écarts de noms d'instruments et de n-olets complexes (`docs/agents/midi.md`) |
+| `scoretk-lilypond-{common,export,import}` | tables partagées, écrivain et lecteur LilyPond depuis/vers le modèle pivot | fait (t36, t40) : 56/56 fichiers compilent, aller-retour noyau 24/56 (t40) |
+| `scoretk-musescore-export` | écrivain MuseScore (`.mscx` 4.x, `.mscz`) | fait (t38) : aller-retour identique sur tout le corpus |
+| `scoretk-abc-common` / `scoretk-abc-import` / `scoretk-abc-export` | tables ABC partagées, lecteur et écrivain ABC (`.abc`) | fait (t41) : 56/56 instantanés, aller-retour noyau 46/56, écarts dans `docs/agents/abc.md` |
 
 MIDI est à part : c'est un format de performance, pas de notation. L'écriture
 MIDI demande de dérouler les reprises et sauts (comme `RepeatList` de
@@ -55,7 +55,7 @@ Pistes :
   - MusicXML ↔ abc : `xml2abc` et `abc2xml` (W. Vree).
   - MIDI : l'export MIDI de MuseScore (`src/importexport/midi`, `engraving/compat/midi`), son import MIDI (quantification), et la crate Rust `midly` (pure Rust, `no_std`) pour le format de fichier.
   - Vérifier les licences de chacune avant tout portage.
-- **LilyPond.** Écrivain et lecteur sont faits (`scoretk-lilypond`, features
+- **LilyPond.** Écrivain et lecteur sont faits (`scoretk-lilypond-export` et `scoretk-lilypond-import`, features
   `lilypond` et `lilypond-import` de la façade) ; voir
   `docs/agents/lilypond.md`.
   - Écrivain : les voix sont notées en mode **`\fixed`**, jamais `\relative`,

@@ -1,0 +1,28 @@
+[package]
+name = "scoretk-midi-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Écriture MIDI (Standard MIDI File format 1) depuis le modèle scoretk"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+scoretk-core = { path = "../scoretk-core" }
+scoretk-midi-common = { path = "../scoretk-midi-common" }
+# `alloc` seulement : la crate reste `no_std`-compatible et compile pour
+# wasm32-unknown-unknown. L'écriture se fait dans un `Vec<u8>` via l'implémentation
+# `midly::io::Write` de `Vec`.
+midly = { version = "0.5.3", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+# Les fixtures de la carte des temps et des vélocités sont des `.mscx` du
+# corpus : ces tests relèvent de l'export et lisent le modèle MuseScore.
+scoretk-musescore-import = { path = "../scoretk-musescore-import" }
+scoretk-musicxml-export = { path = "../scoretk-musicxml-export" }
+midly = { version = "0.5.3", default-features = false, features = ["alloc"] }
+scoretk-musicxml-import = { path = "../scoretk-musicxml-import" }
+quick-xml = { workspace = true }
+# `roundtrip_midi` exerce les deux sens : dépendance de test uniquement.
+scoretk-midi-import = { path = "../scoretk-midi-import" }

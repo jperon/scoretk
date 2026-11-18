@@ -1,0 +1,12 @@
+[package]
+name = "scoretk-midi-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Types neutres du format MIDI partagés par la lecture et l'écriture scoretk"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+thiserror.workspace = true

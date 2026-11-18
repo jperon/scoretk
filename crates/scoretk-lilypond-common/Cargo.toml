@@ -1,0 +1,13 @@
+[package]
+name = "scoretk-lilypond-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Tables partagées par la lecture et l'écriture LilyPond de scoretk"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+scoretk-core = { path = "../scoretk-core" }
+thiserror.workspace = true

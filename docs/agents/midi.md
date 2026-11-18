@@ -1,16 +1,27 @@
-# Écriture MIDI (`scoretk-midi`)
+# MIDI (`scoretk-midi-common`, `scoretk-midi-import`, `scoretk-midi-export`)
 
-Écriture d'un **Standard MIDI File format 1** à partir du modèle de
-`scoretk-core`. C'est le portage de l'export MIDI de MuseScore Studio : la
-partition est rendue en performance (reprises déroulées, notes, vélocités,
-tempo), puis encodée.
+Le format MIDI est réparti en trois crates sans dépendance croisée entre les
+deux sens :
+
+- `scoretk-midi-common` : erreur et résultat partagés (et rien d'autre) ;
+  l'erreur vient d'un `Error` qui doit rester identique dans les deux sens.
+- `scoretk-midi-import` : lecture MIDI (`read_midi`, portage de `midiimport/`),
+  avec les types du SMF (`RawEvent`, `MidiTrack`, `MidiFile`, `EventKind`,
+  méta-évènements et contrôleurs) et la lecture en mémoire d'un SMF dans
+  `midifile.rs`. Aucune conversion vers le modèle dans `midifile.rs`.
+- `scoretk-midi-export` : écriture d'un **Standard MIDI File format 1** depuis
+  le modèle de `scoretk-core`, rendu en performance (reprises déroulées, notes,
+  vélocités, tempo), puis encodé.
+
+Les deux crates métier dépendent de `-common` ; ni l'une ni l'autre ne dépend de
+sa contrepartie en bibliothèque.
 
 ## API
 
 ```rust
 use scoretk_musescore_import::read;
 use scoretk_core::MsczContainer;
-use scoretk_midi::write_midi;
+use scoretk_midi_export::write_midi;
 
 let container = MsczContainer::from_bytes(&mscx)?;
 let score = read::read_score(&container)?;
@@ -35,12 +46,25 @@ let midi: Vec<u8> = write_midi(&score)?;
   `scoretk_core::model::stable_ids`, comme l'export MusicXML. Structure complète,
   sémantique des passages et limites : `docs/agents/timemap.md`.
 
-La crate est portable comme `scoretk-core` : aucun accès disque, aucun thread,
-aucune horloge ; elle compile pour `wasm32-unknown-unknown`. Seule dépendance
-tierce ajoutée : `midly` (`no_std`, `alloc`), sous licence Unlicense, pour le
-format de fichier.
+Les trois crates sont portables comme `scoretk-core` : aucun accès disque,
+aucun thread, aucune horloge ; elles compilent pour `wasm32-unknown-unknown`.
+Seule dépendance tierce ajoutée : `midly` (`no_std`, `alloc`), sous licence
+Unlicense, pour le format de fichier (`-import` en lecture, `-export` en
+écriture).
 
 ## Modules
+
+### Commun (`crates/scoretk-midi-common/src/`)
+
+| Module | Rôle | C++ amont |
+| --- | --- | --- |
+| `error.rs` | `Error` et `Result` partagés par les deux sens | — |
+
+Rien d'autre : un `-common` ne contient que ce que les deux sens utilisent
+(`docs/agents/developpement.md` § 2). La lecture SMF n'est utilisée que par
+l'import et vit donc dans `scoretk-midi-import` (voir ci-dessous).
+
+### Écriture (`crates/scoretk-midi-export/src/`)
 
 | Module | Rôle | C++ amont |
 | --- | --- | --- |
@@ -108,11 +132,11 @@ suivants restent hors périmètre, faute d'information dans le modèle :
 **Écart connu de déroulement.** Au `RepeatEnd`, le C++ ferme **toute** volta
 encore ouverte (`ref-musescore/src/engraving/dom/repeatlist.cpp:581-588`, idem
 sur un saut, `:525-543`) ; le portage ne la ferme que si elle se termine là
-(`crates/scoretk-midi/src/repeat_list.rs:739-752`). Une volta débordant
+(`crates/scoretk-midi-export/src/repeat_list.rs:739-752`). Une volta débordant
 l'`endRepeat` peut donc différer de MuseScore ; non déclenché par le corpus
 (`v3/repeat06`, `v4/repeat65/66/68/69` conformes), gardé par les 21 références
 de `corpus_midi`. Correctif minimal : fermer la volta à la mesure du
-`RepeatEnd`, puis `cargo test -p scoretk-midi --test corpus_midi`.
+`RepeatEnd`, puis `cargo test -p scoretk-midi-export --test corpus_midi`.
 
 - **Pauses de fermatas et respirations** : la carte des pauses ne traite que
   les sauts de section (pause par défaut de 3 s). Une fermata jouée ou une
@@ -152,7 +176,7 @@ de `corpus_midi`. Correctif minimal : fermer la volta à la mesure du
 `scripts/gen-midi-references.sh` exporte un sous-ensemble court du corpus avec
 MuseScore **4.7.4** (headless, `QT_QPA_PLATFORM=offscreen`) dans
 `tests/corpus/midi/{v3,v4}/<nom>.ref.mid`. Le test
-`crates/scoretk-midi/tests/corpus_midi.rs` lit la source `.mscx`, écrit le MIDI
+`crates/scoretk-midi-export/tests/corpus_midi.rs` lit la source `.mscx`, écrit le MIDI
 et compare après normalisation :
 
 - notes : piste, canal, hauteur, tick de début, tick de fin, vélocité ;
@@ -167,7 +191,7 @@ Le test affiche `MIDI : N/M identiques` et n'échoue que sur
 ```sh
 scripts/gen-midi-references.sh            # toutes les références du sous-ensemble
 scripts/gen-midi-references.sh tests/corpus/v4/dynamics.mscx
-nix develop -c cargo test -p scoretk-midi --test corpus_midi -- --nocapture
+nix develop -c cargo test -p scoretk-midi-export --test corpus_midi -- --nocapture
 ```
 
 Ne pas régénérer avec une autre version de MuseScore sans décision explicite :
@@ -176,16 +200,16 @@ MusicXML, voir `upstream.md`).
 
 ## Chaîne MusicXML → MIDI
 
-`crates/scoretk-midi/tests/musicxml_midi.rs` vérifie la chaîne complète
-MusicXML → modèle (`scoretk_musicxml::read_musicxml`) → MIDI : pour chaque
-`tests/corpus/{v3,v4}/X.ref.musicxml`, il écrit le MIDI et le compare à
+`crates/scoretk-midi-export/tests/musicxml_midi.rs` vérifie la chaîne complète
+MusicXML → modèle (`scoretk_musicxml_import::read_musicxml`) → MIDI : pour
+chaque `tests/corpus/{v3,v4}/X.ref.musicxml`, il écrit le MIDI et le compare à
 `tests/corpus/midi/{v3,v4}/X.ref.mid` avec la même normalisation que
 `corpus_midi.rs` (notes et tempos effectifs). C'est la garantie que les
 nuances et tempos lus depuis `<direction>` produisent les vélocités et
 changements de tempo de MuseScore.
 
 ```sh
-nix develop -c cargo test -p scoretk-midi --test musicxml_midi -- --nocapture
+nix develop -c cargo test -p scoretk-midi-export --test musicxml_midi -- --nocapture
 ```
 
 Résultat au 2026-11-17 : **7/21 identiques** (`v4/dynamics`,
@@ -200,11 +224,12 @@ articulations non lues pour certains fichiers.
 La crate expose la lecture d'un Standard MIDI File vers le modèle pivot :
 
 ```rust
-let score = scoretk_midi::read_midi(&bytes)?;          // options de MuseScore
-let score = scoretk_midi::read_midi_with(&bytes, &options)?; // options explicites
+let score = scoretk_midi_import::read_midi(&bytes)?;          // options de MuseScore
+let score = scoretk_midi_import::read_midi_with(&bytes, &options)?; // options explicites
 ```
 
-La façade `scoretk` la branche avec la feature `midi` :
+La façade `scoretk` la branche avec la feature `midi-import` (l'écriture a sa
+propre feature `midi-export`) :
 `read(bytes, Format::Midi)` et `scoretk entrée.mid -o sortie.musicxml`
 fonctionnent. Le paquet wasm de la façade les expose aussi.
 
@@ -213,10 +238,10 @@ fonctionnent. Le paquet wasm de la façade les expose aussi.
 Portage de `importexport/midi/internal/midiimport/` (mêmes noms et découpage
 que le C++, référence amont dans chaque en-tête) :
 
-| Rust (`crates/scoretk-midi/src/import/`) | C++ amont |
+| Rust (`crates/scoretk-midi-import/src/`) | C++ amont |
 | --- | --- |
-| `mod.rs` | `importmidi.cpp` (`convertMidi`, `createMTrackList`, `createMeasures`, `createNotes`, `processMeta`) |
-| `midifile.rs` | `midishared/midifile.cpp`, `midievent.h` (lecture SMF par `midly`, canaux, fusion note-on/off) |
+| `lib.rs` | `importmidi.cpp` (`convertMidi`, `createMTrackList`, `createMeasures`, `createNotes`, `processMeta`) |
+| `midifile.rs` | `midishared/midifile.cpp`, `midievent.h` (évènements SMF, `MidiFile::read`, séparation des canaux, fusion note-on/off, `to_muse_score_ticks`, par `midly`) |
 | `timesigmap.rs` | `engraving/dom/sig.cpp` (`TimeSigMap`) |
 | `chord.rs` | `importmidi_chord.cpp` (`MChord`) |
 | `quant.rs` | `importmidi_quant.cpp` (`Quantize`) |
@@ -293,7 +318,7 @@ MuseScore).
 `tests/corpus/midi/{v3,v4}/<nom>.ref.mid` par MuseScore **4.7.4** (headless,
 `QT_QPA_PLATFORM=offscreen`, `LD_LIBRARY_PATH` neutralisé) et exporte le
 résultat en `tests/corpus/midi/import/<version>/<nom>.ref.musicxml`.
-`crates/scoretk-midi/tests/import_corpus.rs` lit le MIDI avec `read_midi`,
+`crates/scoretk-midi-import/tests/import_corpus.rs` lit le MIDI avec `read_midi`,
 exporte en MusicXML et compare le **noyau musical** avec la même normalisation
 que `crates/scoretk/tests/e2e_corpus.rs` (`tests/core_norm.rs`, avec en plus
 la normalisation des `<divisions>` : la valeur est une convention d'encodage,
@@ -307,7 +332,7 @@ parties et abréviations, clef octaviée) sauf `v3/testTuplets8` (224 lignes) et
 `EXPECTED_IDENTICAL` ne doit pas régresser.
 
 L'aller-retour `.mscx` → MIDI → `read_midi` → MIDI est vérifié par
-`crates/scoretk-midi/tests/roundtrip_midi.rs` sur les 21 sources : **21/21**
+`crates/scoretk-midi-export/tests/roundtrip_midi.rs` sur les 21 sources : **21/21**
 avec les mêmes hauteurs, des attaques à ±1/16 de noire et des durées à ±1/16,
 sauf notes plus courtes que la grille, que la simplification des n-olets peut
 allonger (documenté dans le test).
@@ -315,8 +340,8 @@ allonger (documenté dans le test).
 ```sh
 scripts/gen-midi-import-references.sh            # toutes les références
 scripts/gen-midi-import-references.sh tests/corpus/midi/v4/dynamics.ref.mid
-nix develop -c cargo test -p scoretk-midi --test import_corpus -- --nocapture
-nix develop -c cargo test -p scoretk-midi --test roundtrip_midi -- --nocapture
+nix develop -c cargo test -p scoretk-midi-import --test import_corpus -- --nocapture
+nix develop -c cargo test -p scoretk-midi-export --test roundtrip_midi -- --nocapture
 ```
 
 ## Mise à niveau de l'import MIDI de MuseScore
@@ -369,8 +394,8 @@ Régénérer et revalider :
 
 ```sh
 scripts/gen-midi-import-references.sh                # avec MuseScore 4.7.4
-nix develop -c cargo test -p scoretk-midi --test import_corpus -- --nocapture
-nix develop -c cargo test -p scoretk-midi --test roundtrip_midi -- --nocapture
+nix develop -c cargo test -p scoretk-midi-import --test import_corpus -- --nocapture
+nix develop -c cargo test -p scoretk-midi-export --test roundtrip_midi -- --nocapture
 nix develop -c cargo test --workspace
 nix flake check
 ```
@@ -390,16 +415,16 @@ portée : **0.5.3** (`Cargo.lock`), licence Unlicense, sans `std`
 (`default-features = false`, `features = ["alloc"]`). Le code du projet ne
 dépend que de `Smf::parse`, de `TrackEventKind`/`MetaMessage` et de l'écriture
 `no_std` ; l'adaptation au C++ est concentrée dans
-`crates/scoretk-midi/src/import/midifile.rs` (lecture) et
-`crates/scoretk-midi/src/writer.rs` (écriture).
+`crates/scoretk-midi-import/src/midifile.rs` (lecture) et
+`crates/scoretk-midi-export/src/writer.rs` (écriture).
 
 Où récupérer les sources : <https://github.com/kovaxis/midly> (ou le paquet
 `midly` de crates.io, sources dans le registre Cargo local). Pour une mise à
 jour :
 
-1. changer la version dans `crates/scoretk-midi/Cargo.toml` (et
-   `Cargo.lock`), vérifier qu'elle reste `no_std + alloc` et compatible
-   `wasm32-unknown-unknown` ;
+1. changer la version dans `crates/scoretk-midi-import/Cargo.toml` et
+   `crates/scoretk-midi-export/Cargo.toml` (et `Cargo.lock`), vérifier qu'elle
+   reste `no_std + alloc` et compatible `wasm32-unknown-unknown` ;
 2. lire le journal des versions (`CHANGELOG`, diffs de `src/smf.rs`,
    `src/event.rs`, `src/primitive.rs`) pour les changements d'API de parsing
    (en-tête, `Timing::Metrical`/`Timecode`, messages méta, `u7`/`u4`) ;
@@ -408,10 +433,10 @@ jour :
 4. revalider :
 
 ```sh
-nix develop -c cargo test -p scoretk-midi
-nix develop -c cargo build -p scoretk-midi --target wasm32-unknown-unknown
-nix develop -c cargo test -p scoretk-midi --test import_corpus -- --nocapture
-nix develop -c cargo test -p scoretk-midi --test roundtrip_midi -- --nocapture
+nix develop -c cargo test -p scoretk-midi-common -p scoretk-midi-import -p scoretk-midi-export
+nix develop -c cargo build -p scoretk-midi-common -p scoretk-midi-import -p scoretk-midi-export --target wasm32-unknown-unknown
+nix develop -c cargo test -p scoretk-midi-import --test import_corpus -- --nocapture
+nix develop -c cargo test -p scoretk-midi-export --test roundtrip_midi -- --nocapture
 nix flake check
 ```
 

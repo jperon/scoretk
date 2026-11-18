@@ -22,7 +22,7 @@
 # fichier MIDI (avec ses options par défaut) et exporte le résultat en
 # MusicXML sous tests/corpus/midi/import/<version>/<nom>.ref.musicxml. Ces
 # références servent au test de conformité de la lecture MIDI
-# (`crates/scoretk-midi/tests/import_corpus.rs`).
+# (`crates/scoretk-midi-import/tests/import_corpus.rs`).
 #
 # MuseScore est lancé en mode headless (QT_QPA_PLATFORM=offscreen) : jamais
 # dans la session graphique de l'utilisateur.

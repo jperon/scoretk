@@ -15,7 +15,7 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Conversion de [`scoretk_midi::Timemap`] vers les objets JavaScript de
+//! Conversion de [`scoretk_midi_export::Timemap`] vers les objets JavaScript de
 //! `convertWithTimeline`.
 //!
 //! Les noms Rust restent en `snake_case` (`time_us`, `end_tick`…) ; la

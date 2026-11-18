@@ -114,11 +114,11 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
     let mscx = std::fs::read(common::corpus_v4("dynamics.mscx")).expect("corpus");
     let score = read(&mscx, Format::Mscx).expect("lecture .mscx");
 
-    // MIDI n'est lu qu'avec la feature `midi` ; sans elle, la façade renvoie
+    // MIDI n'est lu qu'avec la feature `midi-import` ; sans elle, la façade renvoie
     // l'erreur explicite. La CLI active la feature, et la résolution de
     // features du workspace l'active donc aussi quand toute la workspace est
     // testée.
-    #[cfg(not(feature = "midi"))]
+    #[cfg(not(feature = "midi-import"))]
     match read(b"x", Format::Midi) {
         Err(Error::FormatNonPrisEnCharge {
             format: actual,
@@ -129,7 +129,7 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
         }
         other => panic!("lecture MIDI : {other:?}"),
     }
-    #[cfg(feature = "midi")]
+    #[cfg(feature = "midi-import")]
     assert!(Format::Midi.supports_read());
 
     // LilyPond n'est lu qu'avec la feature `lilypond-import` ; sans elle, la
@@ -150,34 +150,31 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
     #[cfg(feature = "lilypond-import")]
     assert!(Format::Ly.supports_read());
 
-    // ABC n'est lu et écrit qu'avec la feature `abc` ; sans elle, la façade
-    // renvoie l'erreur explicite. La CLI active la feature, et la résolution
-    // de features du workspace l'active donc aussi quand toute la workspace
-    // est testée.
-    #[cfg(not(feature = "abc"))]
-    {
-        for (format, sens) in [(Format::Abc, Sens::Lecture), (Format::Abc, Sens::Ecriture)] {
-            let resultat = if sens == Sens::Lecture {
-                read(b"x", format)
-            } else {
-                write(&score, format, &options()).map(|_| score.clone())
-            };
-            match resultat {
-                Err(Error::FormatNonPrisEnCharge {
-                    format: actual,
-                    sens: actual_sens,
-                }) => {
-                    assert_eq!(actual, format);
-                    assert_eq!(actual_sens, sens);
-                }
-                other => panic!("{sens} {format} : {other:?}"),
-            }
+    // ABC a une feature par sens ; sans `abc-import` (lecture) ou `abc-export`
+    // (écriture), la façade renvoie l'erreur explicite. La CLI active les deux,
+    // et la résolution de features du workspace les active donc aussi quand
+    // toute la workspace est testée.
+    #[cfg(not(feature = "abc-import"))]
+    match read(b"x", Format::Abc) {
+        Err(Error::FormatNonPrisEnCharge { format, sens }) => {
+            assert_eq!(format, Format::Abc);
+            assert_eq!(sens, Sens::Lecture);
         }
+        other => panic!("lecture ABC sans feature : {other:?}"),
+    }
+    #[cfg(not(feature = "abc-export"))]
+    match write(&score, Format::Abc, &options()) {
+        Err(Error::FormatNonPrisEnCharge { format, sens }) => {
+            assert_eq!(format, Format::Abc);
+            assert_eq!(sens, Sens::Ecriture);
+        }
+        other => panic!("écriture ABC sans feature : {other:?}"),
     }
 
-    // MuseScore (`.mscx`/`.mscz`) n'est écrit que si la feature `mscx` est
-    // active ; sans elle, la façade renvoie l'erreur explicite.
-    #[cfg(not(feature = "mscx"))]
+    // MuseScore (`.mscx`/`.mscz`) n'est écrit que si la feature
+    // `musescore-export` est active ; sans elle, la façade renvoie l'erreur
+    // explicite.
+    #[cfg(not(feature = "musescore-export"))]
     for format in [Format::Mscz, Format::Mscx] {
         match write(&score, format, &options()) {
             Err(Error::FormatNonPrisEnCharge {
@@ -190,7 +187,7 @@ fn formats_non_branches_renvoient_une_erreur_explicite() {
             other => panic!("écriture {format} : {other:?}"),
         }
     }
-    #[cfg(feature = "mscx")]
+    #[cfg(feature = "musescore-export")]
     for format in [Format::Mscz, Format::Mscx] {
         assert!(write(&score, format, &options()).is_ok(), "{format}");
         assert!(format.supports_write());
@@ -211,7 +208,7 @@ fn lecture_musicxml_branchable_par_feature() {
     assert!(!Format::MusicXml.supports_read());
 }
 
-#[cfg(not(feature = "midi"))]
+#[cfg(not(feature = "midi-export"))]
 #[test]
 fn ecriture_midi_branchable_par_feature() {
     let mscx = std::fs::read(common::corpus_v4("dynamics.mscx")).expect("corpus");
@@ -226,7 +223,7 @@ fn ecriture_midi_branchable_par_feature() {
     assert!(!Format::Midi.supports_write());
 }
 
-#[cfg(feature = "midi")]
+#[cfg(all(feature = "midi-import", feature = "musicxml-export"))]
 #[test]
 fn lecture_midi_vers_musicxml() {
     let bytes = std::fs::read(common::corpus_midi("v4/dynamics.ref.mid")).expect("référence MIDI");
@@ -237,7 +234,7 @@ fn lecture_midi_vers_musicxml() {
     assert!(text.contains("<score-partwise"), "{text}");
 }
 
-#[cfg(not(feature = "midi"))]
+#[cfg(not(feature = "midi-import"))]
 #[test]
 fn lecture_midi_branchable_par_feature() {
     match read(b"MThd", Format::Midi) {
@@ -250,7 +247,7 @@ fn lecture_midi_branchable_par_feature() {
     assert!(!Format::Midi.supports_read());
 }
 
-#[cfg(feature = "lilypond")]
+#[cfg(feature = "lilypond-export")]
 #[test]
 fn ecriture_lilypond_en_mode_fixed() {
     let mscx = std::fs::read(common::corpus_v4("dynamics.mscx")).expect("corpus");

@@ -20,21 +20,26 @@
 use crate::format::{Format, Sens};
 
 /// Toutes les erreurs pouvant survenir dans la façade.
+///
+/// Les variantes qui transportent directement l'erreur d'un crate de sens
+/// n'existent que si la feature correspondante est active.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// Erreur du convertisseur MuseScore → modèle.
+    /// Erreur du convertisseur MuseScore → modèle (feature `musescore-import`).
+    #[cfg(feature = "musescore-import")]
     #[error(transparent)]
     MuseScoreImport(#[from] scoretk_musescore_import::Error),
 
-    /// Erreur de l'export MusicXML.
+    /// Erreur de l'export MusicXML (feature `musicxml-export`).
+    #[cfg(feature = "musicxml-export")]
     #[error(transparent)]
     MusicXmlExport(#[from] scoretk_musicxml_export::Error),
 
-    /// Le format demandé n'a pas encore de convertisseur dans ce sens.
+    /// Le format demandé n'a pas de convertisseur dans ce sens.
     ///
-    /// C'est l'erreur explicite des formats de la feuille de route qui ne sont
-    /// pas encore branchés (lecture MusicXML, écriture MIDI, LilyPond, ABC…) :
-    /// la façade ne devine pas et ne produit pas de sortie vide.
+    /// C'est l'erreur explicite d'un format dont la feature de ce sens est
+    /// désactivée, ou qui n'est pas branché : la façade ne devine pas et ne
+    /// produit pas de sortie vide.
     #[error("format « {format} » non pris en charge en {sens}")]
     FormatNonPrisEnCharge {
         /// Format demandé.
@@ -63,23 +68,26 @@ pub enum Error {
     #[error("lecture MusicXML : {0}")]
     MusicXmlImport(String),
 
-    /// Erreur renvoyée par la crate d'écriture MIDI (feature `midi`).
+    /// Erreur renvoyée par la crate d'écriture MIDI (feature `midi-export`).
     #[error("écriture MIDI : {0}")]
     Midi(String),
 
-    /// Erreur renvoyée par la crate de lecture MIDI (feature `midi`).
+    /// Erreur renvoyée par la crate de lecture MIDI (feature `midi-import`).
     #[error("lecture MIDI : {0}")]
     MidiImport(String),
 
-    /// Erreur renvoyée par la crate d'écriture LilyPond (feature `lilypond`).
-    #[error("écriture LilyPond : {0}")]
+    /// Erreur renvoyée par les crates LilyPond (features `lilypond-import` et
+    /// `lilypond-export`).
+    #[error("LilyPond : {0}")]
     LilyPond(String),
 
-    /// Erreur renvoyée par la crate d'écriture MuseScore (feature `mscx`).
+    /// Erreur renvoyée par la crate d'écriture MuseScore (feature
+    /// `musescore-export`).
     #[error("écriture MuseScore : {0}")]
     Mscx(String),
 
-    /// Erreur renvoyée par la crate ABC (feature `abc`).
+    /// Erreur renvoyée par les crates ABC (features `abc-import` et
+    /// `abc-export`).
     #[error("ABC : {0}")]
     Abc(String),
 }

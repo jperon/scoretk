@@ -1,8 +1,11 @@
-# LilyPond (`scoretk-lilypond`)
+# LilyPond (`scoretk-lilypond-common`, `-import`, `-export`)
 
-Crate `crates/scoretk-lilypond`, branchée dans la façade `scoretk` par la
-feature `lilypond` (`Format::Ly` en écriture) et `lilypond-import` (`Format::Ly`
-en lecture, t40). Ce document décrit l'écriture (correspondance modèle →
+Trois crates : `crates/scoretk-lilypond-common` (ce que les deux sens
+partagent : erreur, spirale des quintes, table des clefs),
+`crates/scoretk-lilypond-export` (modèle → `.ly`, t36) et
+`crates/scoretk-lilypond-import` (lecture `.ly` → modèle, t40). Elles sont
+branchées dans la façade `scoretk` par les features `lilypond-export`
+(`Format::Ly` en écriture) et `lilypond-import` (`Format::Ly` en lecture). Ce document décrit l'écriture (correspondance modèle →
 LilyPond), la lecture d'un sous-ensemble de LilyPond, les choix de notation, les
 limites mesurées sur le corpus et la procédure de mise à niveau des moteurs
 suivis. Le noyau du projet reste dans `AGENTS.md`.
@@ -10,33 +13,52 @@ suivis. Le noyau du projet reste dans `AGENTS.md`.
 ## 1. Rôle et API
 
 ```rust
+// crates/scoretk-lilypond-export
 pub fn write_lilypond(score: &Score) -> Result<String, Error>;
+// crates/scoretk-lilypond-import
 pub fn read_lilypond(src: &str) -> Result<Score, Error>;
 pub fn read_lilypond_reporting(src: &str) -> Result<(Score, Vec<Warning>), Error>;
+// crates/scoretk-lilypond-common : `Error`, `Result`, `pitch`, `clefs`
 ```
 
-La crate ne fait aucune entrée/sortie : elle renvoie le texte en mémoire, ce
-qui la garde compilable pour `wasm32-unknown-unknown`, Android et iOS. Elle ne
-dépend que de `scoretk-core` (modèle pivot) et `thiserror` ; aucune crate tierce
-nouvelle, donc rien à ajouter à `docs/licences-tierces.md`.
+Aucune des trois crates ne fait d'entrée/sortie : elles travaillent sur du
+texte ou des valeurs en mémoire, ce qui les garde compilables pour
+`wasm32-unknown-unknown`, Android et iOS. Elles ne dépendent que de
+`scoretk-core` (modèle pivot), de `scoretk-lilypond-common` pour les deux sens
+et de `thiserror` ; aucune crate tierce nouvelle, donc rien à ajouter à
+`docs/licences-tierces.md`.
+
+**Règle de découpage** : `-common` ne contient **aucune logique de
+conversion**, seulement des tables et des types utilisés par les deux sens.
+`src/pitch.rs` (lecture et écriture) est donc coupé : la spirale des quintes
+(`tpc`, degré, altération) va dans `scoretk-lilypond-common/src/pitch.rs`, la
+table des clefs dans `scoretk-lilypond-common/src/clefs.rs` ; restent dans
+l'écriture les noms de notes anglais du mode `\fixed`, les armures et les têtes
+de note, et dans la lecture les tables de noms par langue, les octaves et la
+transposition. `text.rs` reste entièrement dans l'écriture : la lecture ne
+s'en sert pas.
 
 | Élément | Emplacement |
 | --- | --- |
-| API, documentation | `src/lib.rs` |
-| Erreur | `src/error.rs` |
-| Hauteurs, armures, clés, têtes de note | `src/pitch.rs` |
-| Durées, points, multiplicateurs | `src/duration.rs` |
-| Accords, silences, articulations, ornements | `src/chord.rs` |
-| Annotations (nuances, tempo, textes, accords) | `src/annotations.rs` |
-| Spanners (liaisons, soufflets, ottavas, pédales, trilles, glissandos) | `src/spanners.rs` |
-| Structure des reprises (`\repeat volta`, `\alternative`) | `src/structure.rs` |
-| Trame d'une voix, paroles, rattachement des événements | `src/voice.rs` |
-| En-tête, variables, bloc `\score`, regroupements | `src/writer.rs` |
-| Lecture : lexer, grammaire, arbre, interpréteur, construction | `src/read/` |
-| Instantanés du corpus | `tests/corpus_lilypond.rs`, `tests/corpus/ly/` |
-| Compilation par LilyPond | `tests/lilypond_compile.rs` |
-| Aller-retour de lecture | `tests/read_corpus.rs` |
-| Petites sources écrites à la main | `tests/read_lilypond.rs` |
+| Erreur, `Result` | `crates/scoretk-lilypond-common/src/error.rs` |
+| Spirale des quintes (`tpc`) | `crates/scoretk-lilypond-common/src/pitch.rs` |
+| Table des clefs (deux sens) | `crates/scoretk-lilypond-common/src/clefs.rs` |
+| API d'écriture, documentation | `crates/scoretk-lilypond-export/src/lib.rs` |
+| Hauteurs anglaises, armures, têtes de note | `crates/scoretk-lilypond-export/src/pitch.rs` |
+| Durées, points, multiplicateurs | `crates/scoretk-lilypond-export/src/duration.rs` |
+| Accords, silences, articulations, ornements | `crates/scoretk-lilypond-export/src/chord.rs` |
+| Annotations (nuances, tempo, textes, accords) | `crates/scoretk-lilypond-export/src/annotations.rs` |
+| Spanners (liaisons, soufflets, ottavas, pédales, trilles, glissandos) | `crates/scoretk-lilypond-export/src/spanners.rs` |
+| Structure des reprises (`\repeat volta`, `\alternative`) | `crates/scoretk-lilypond-export/src/structure.rs` |
+| Trame d'une voix, paroles, rattachement des événements | `crates/scoretk-lilypond-export/src/voice.rs` |
+| En-tête, variables, bloc `\score`, regroupements | `crates/scoretk-lilypond-export/src/writer.rs` |
+| API de lecture | `crates/scoretk-lilypond-import/src/lib.rs` |
+| Lecture : lexer, grammaire, arbre, interpréteur, construction | `crates/scoretk-lilypond-import/src/` |
+| Instantanés du corpus (écriture) | `crates/scoretk-lilypond-export/tests/corpus_lilypond.rs`, `tests/corpus/ly/` |
+| Compilation par LilyPond | `crates/scoretk-lilypond-export/tests/lilypond_compile.rs` |
+| Aller-retour de lecture | `crates/scoretk-lilypond-import/tests/read_corpus.rs` |
+| Petites sources écrites à la main | `crates/scoretk-lilypond-import/tests/read_lilypond.rs` |
+| Unités des tables partagées | `#[cfg(test)]` de `scoretk-lilypond-common` |
 
 Référence de comportement : **`musicxml2ly`** (paquet LilyPond,
 GPL-3.0-or-later), qui définit les correspondances idiomatiques entre notation
@@ -58,12 +80,12 @@ sont une copie de LilyPond **2.26.0** conservée **hors du dépôt** (voir
 
 | Étape | Fichier | Rôle |
 | --- | --- | --- |
-| Lexer | `src/read/lexer.rs` | jetons (`\nom`, mots, nombres, fractions, chaînes, ponctuation), commentaires `%` et `%{ %}`, états du lexer amont |
-| Arbre | `src/read/ast.rs` | `music_list`, `sequential_music`, `simultaneous_music`, `note_chord_element`, `post_events`, `\repeat`, `\new`, paroles |
-| Grammaire | `src/read/parser.rs` | analyse descendante des productions utiles ; tout le reste est ignoré avec un `Warning` |
-| Hauteurs | `src/read/pitch.rs` | tables de `define-note-names.scm` (5 langues), octaves `\fixed`/`\relative`/absolues (`Pitch::to_relative_octave`), clés, armures |
-| Interprétation | `src/read/events.rs` | octaves, transposition, n-olets, ornements, spanners, reprises, événements datés |
-| Construction | `src/read/builder.rs` | trame des mesures (`\time`, `\partial`, `Timing.measureLength`, `R`), segments, altérations affichées, paroles, liaisons |
+| Lexer | `scoretk-lilypond-import/src/lexer.rs` | jetons (`\nom`, mots, nombres, fractions, chaînes, ponctuation), commentaires `%` et `%{ %}`, états du lexer amont |
+| Arbre | `scoretk-lilypond-import/src/ast.rs` | `music_list`, `sequential_music`, `simultaneous_music`, `note_chord_element`, `post_events`, `\repeat`, `\new`, paroles |
+| Grammaire | `scoretk-lilypond-import/src/parser.rs` | analyse descendante des productions utiles ; tout le reste est ignoré avec un `Warning` |
+| Hauteurs | `scoretk-lilypond-import/src/pitch.rs` (+ `clefs`/`tpc` de `-common`) | tables de `define-note-names.scm` (5 langues), octaves `\fixed`/`\relative`/absolues (`Pitch::to_relative_octave`), clés, armures |
+| Interprétation | `scoretk-lilypond-import/src/events.rs` | octaves, transposition, n-olets, ornements, spanners, reprises, événements datés |
+| Construction | `scoretk-lilypond-import/src/builder.rs` | trame des mesures (`\time`, `\partial`, `Timing.measureLength`, `R`), segments, altérations affichées, paroles, liaisons |
 
 Sous-ensemble couvert : notes, silences, accords, durées et points,
 `\relative`, `\fixed` et notation absolue, `\transpose`, `\tuplet`/`\times`,
@@ -273,7 +295,13 @@ suite linéaire. Les règles appliquées, dans `src/voice.rs` :
 
 ## 6. Tests
 
-- `tests/corpus_lilypond.rs` convertit les 56 fichiers `.mscx` du corpus v3/v4
+Répartition : un test qui n'exerce qu'un sens vit dans la crate de ce sens ; un
+aller-retour (`.ly` → modèle → `.ly`, ou lecture puis export) vit dans
+`crates/scoretk/tests/` (façade) ou dans le crate d'intégration. Aucune des
+deux moitiés ne dépend de l'autre : la lecture compare au MusicXML du `.mscx`
+d'origine, pas à une réécriture LilyPond.
+
+- `crates/scoretk-lilypond-export/tests/corpus_lilypond.rs` convertit les 56 fichiers `.mscx` du corpus v3/v4
   et compare le résultat aux instantanés `tests/corpus/ly/<version>_<nom>.ly`.
   Il vérifie aussi l'en-tête (`\version "2.24.0"`, `\language "english"`),
   la présence de `\fixed c'` et l'absence de `\relative`.
@@ -281,30 +309,33 @@ suite linéaire. Les règles appliquées, dans `src/voice.rs` :
 
   ```sh
   nix develop -c env UPDATE_LILYPOND_SNAPSHOTS=1 \
-      cargo test -p scoretk-lilypond --test corpus_lilypond
+      cargo test -p scoretk-lilypond-export --test corpus_lilypond
   ```
 
-- `tests/read_corpus.rs` relit les 56 `.ly` du corpus et compare l'export
+- `crates/scoretk-lilypond-import/tests/read_corpus.rs` relit les 56 `.ly` du corpus et compare l'export
   MusicXML au `.mscx` d'origine, aux deux niveaux de `e2e_corpus`. Les listes
   `EXPECTED_CORE` et `EXPECTED_FULL` sont **non régressives** : un fichier qui
   y figure doit rester identique. Le test affiche les écarts des autres.
 
   ```sh
-  nix develop -c cargo test -p scoretk-lilypond --test read_corpus -- --nocapture
-  SHOW_DIFF=1 nix develop -c cargo test -p scoretk-lilypond --test read_corpus -- --nocapture
+  nix develop -c cargo test -p scoretk-lilypond-import --test read_corpus -- --nocapture
+  SHOW_DIFF=1 nix develop -c cargo test -p scoretk-lilypond-import --test read_corpus -- --nocapture
   ```
 
-- `tests/read_lilypond.rs` couvre ce que l'écrivain n'émet pas : `\relative`,
+- `crates/scoretk-lilypond-import/tests/read_lilypond.rs` couvre ce que l'écrivain n'émet pas : `\relative`,
   notation absolue, néerlandais par défaut, variables, reprises, `\transpose`,
   `\partial`, n-olets, ornements, paroles par `\addlyrics`, commandes
   ignorées avec avertissement.
 
-- `tests/lilypond_compile.rs` fait compiler chaque sortie par `lilypond` et
-  échoue sur toute erreur. Le test ne fait rien si `lilypond` n'est pas dans
-  le `PATH` (cas de `nix flake check`, qui travaille hors réseau) :
+- `crates/scoretk-lilypond-export/tests/lilypond_compile.rs` fait compiler
+  chaque sortie par `lilypond` et échoue sur toute erreur. Il vit dans la crate
+  d'écriture : il ne compile que du `.ly` **produit** par l'écrivain, jamais une
+  source lue, et le lecteur n'y intervient pas. Le test ne fait rien si
+  `lilypond` n'est pas dans le `PATH` (cas de `nix flake check`, qui travaille
+  hors réseau) :
 
   ```sh
-  nix develop -c cargo test -p scoretk-lilypond --test lilypond_compile -- --nocapture
+  nix develop -c cargo test -p scoretk-lilypond-export --test lilypond_compile -- --nocapture
   ```
 
 État mesuré le 2026-11-17 : **56/56 conversions sans erreur de compilation**
@@ -462,7 +493,7 @@ GitHub en est un miroir) ; la version stable est aussi dans nixpkgs
 
 **Table des fichiers** :
 
-| Rust (`crates/scoretk-lilypond/src/read/`) | LilyPond |
+| Rust (`crates/scoretk-lilypond-import/src/`) | LilyPond |
 | --- | --- |
 | `lexer.rs` | `lily/lexer.ll` (états `notes`, `lyrics`, `markup`, commentaires) |
 | `parser.rs` | `lily/parser.yy` (`music_list`, `event_chord`, `chord_body`, `post_events`, `repeated_music`, `context_change`, `\score`) |
@@ -489,10 +520,10 @@ backend ne concernent pas le lecteur.
 **Après un portage**, régénérer et revalider :
 
 ```sh
-nix develop -c cargo test -p scoretk-lilypond
-nix develop -c cargo test -p scoretk-lilypond --test read_corpus -- --nocapture
-nix develop -c cargo test -p scoretk-lilypond --test read_lilypond
-nix develop -c cargo test -p scoretk-lilypond --test lilypond_compile -- --nocapture
+nix develop -c cargo test -p scoretk-lilypond-common -p scoretk-lilypond-import
+nix develop -c cargo test -p scoretk-lilypond-import --test read_corpus -- --nocapture
+nix develop -c cargo test -p scoretk-lilypond-import --test read_lilypond
+nix develop -c cargo test -p scoretk-lilypond-export --test lilypond_compile -- --nocapture
 nix flake check
 ```
 
@@ -535,7 +566,7 @@ git -C ../lilypond-ref sparse-checkout add --no-cone \
     '/python/musicxml2ly_definitions.py' '/python/musicxml2ly_globvars.py'
 ```
 
-| Rust (`crates/scoretk-lilypond/src/`) | `musicxml2ly` |
+| Rust (`crates/scoretk-lilypond-export/src/`) | `musicxml2ly` |
 | --- | --- |
 | `pitch.rs` (noms, altérations, têtes de note) | `musicexp.py` (`NotestyleEvent.notehead_styles_dict`, noms de hauteurs) ; `musicxml.py` (lecture des `<pitch>`) |
 | `chord.rs` (articulations, ornements, figures) | tables d'articulations et d'ornements de `musicexp.py` |
@@ -560,11 +591,11 @@ page, d'import MusicXML ou de Scheme ne concernent pas l'écrivain.
 **Après une mise à jour**, régénérer les instantanés puis revalider :
 
 ```sh
-nix develop -c cargo test -p scoretk-lilypond --test read_corpus -- --nocapture
-nix develop -c cargo test -p scoretk-lilypond --test lilypond_compile -- --nocapture
+nix develop -c cargo test -p scoretk-lilypond-import --test read_corpus -- --nocapture
+nix develop -c cargo test -p scoretk-lilypond-export --test lilypond_compile -- --nocapture
 # si une convention d'écriture change (silences, n-olets, en-tête) :
 nix develop -c env UPDATE_LILYPOND_SNAPSHOTS=1 \
-    cargo test -p scoretk-lilypond --test corpus_lilypond
+    cargo test -p scoretk-lilypond-export --test corpus_lilypond
 ```
 
 **Quand le faire** : quand une version stable de LilyPond change une

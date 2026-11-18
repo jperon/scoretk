@@ -1,0 +1,22 @@
+[package]
+name = "scoretk-lilypond-import"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Lecture d'un sous-ensemble de LilyPond vers le modèle pivot de scoretk"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+scoretk-core = { path = "../scoretk-core" }
+scoretk-lilypond-common = { path = "../scoretk-lilypond-common" }
+thiserror.workspace = true
+
+# Les tests de corpus comparent la lecture `.ly` à l'export MusicXML du `.mscx`
+# d'origine : ces deux crates ne servent qu'aux fixtures, jamais à la crate
+# elle-même.
+[dev-dependencies]
+scoretk-musescore-import = { path = "../scoretk-musescore-import" }
+scoretk-musicxml-export = { path = "../scoretk-musicxml-export" }
+quick-xml = { workspace = true }

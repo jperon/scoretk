@@ -16,7 +16,8 @@
 # this program. If not, see the LICENSE file at the root of this repository or
 # <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-# Vérifie que MuseScore 4.7.4 rouvre les fichiers écrits par scoretk-mscx.
+# Vérifie que MuseScore 4.7.4 rouvre les fichiers écrits par
+# scoretk-musescore-export.
 #
 # Pour chaque .mscx du corpus : réécriture avec `scoretk` (sortie .mscx et
 # .mscz), puis ouverture et export MusicXML par MuseScore headless. Le script
