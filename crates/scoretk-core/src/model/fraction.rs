@@ -438,7 +438,9 @@ fn normalize_i64(n: i64, d: i64) -> Option<Fraction> {
         if n_red > (i64::MAX as u64) + 1 {
             return None;
         }
-        -(n_red as i64)
+        // n_red peut valoir 2^63 (= i64::MIN en magnitude) : la négation
+        // déborde, on utilise wrapping_neg pour obtenir i64::MIN.
+        (n_red as i64).wrapping_neg()
     } else {
         if n_red > i64::MAX as u64 {
             return None;
@@ -698,5 +700,23 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn i64_min_normalise() {
+        assert_eq!(
+            Fraction::new(i64::MIN, 1),
+            Fraction {
+                numerator: i64::MIN,
+                denominator: 1,
+            }
+        );
+        assert_eq!(
+            Fraction::try_new(i64::MIN, 1),
+            Some(Fraction {
+                numerator: i64::MIN,
+                denominator: 1,
+            })
+        );
     }
 }
