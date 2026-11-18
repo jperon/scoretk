@@ -1381,6 +1381,9 @@ impl<'a> Parser<'a> {
             }
             Kind::Command => self.parse_command(),
             Kind::Word => self.parse_chord(false),
+            // Durée nue après une note ou un accord : LilyPond répète
+            // l'élément précédent avec cette durée (`lily/parser.yy`).
+            Kind::Number => self.parse_bare_duration(),
             // Musique embarquée `#{ … #}` : du LilyPond à relire.
             Kind::Embedded => {
                 self.position += 1;
@@ -1392,7 +1395,7 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 Music::Empty
             }
-            Kind::Str | Kind::Number | Kind::Punct(_) => {
+            Kind::Str | Kind::Punct(_) => {
                 self.position += 1;
                 Music::Empty
             }
@@ -2327,6 +2330,28 @@ impl<'a> Parser<'a> {
             duration,
             multiplier,
             posts,
+            invisible: false,
+        })
+    }
+
+    /// Durée seule dans le flux musical : elle répète la note ou l'accord
+    /// précédent, exactement comme `q` (`lily/parser.yy`, `note_chord_element`
+    /// accepte une durée sans hauteur). C'est l'idiome `<c e g>4 8 4 8` des
+    /// accompagnements, où chaque durée rejoue le dernier accord.
+    fn parse_bare_duration(&mut self) -> Music {
+        let (duration, multiplier) = self.parse_optional_duration_spec();
+        if duration.is_none() {
+            // Jeton numérique qui n'est pas une durée (une fraction `3/2`
+            // laissée par une commande non reconnue) : le consommer sans
+            // inventer de note, pour garantir la progression de l'analyse.
+            self.position += 1;
+            return Music::Empty;
+        }
+        Music::Chord(Chord {
+            kind: ChordKind::Repeat,
+            duration,
+            multiplier,
+            posts: self.parse_posts(),
             invisible: false,
         })
     }

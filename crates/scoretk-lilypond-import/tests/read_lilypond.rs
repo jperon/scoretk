@@ -2657,3 +2657,35 @@ fn parallel_music_forme_a_virgules_et_sans_barre() {
     assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
     assert_eq!(score.measures.len(), 1);
 }
+
+#[test]
+fn durees_nues_repetent_la_note_ou_l_accord_precedent() {
+    // Une durée seule (`8`, `4`) après une note ou un accord vaut une
+    // répétition de l'élément précédent, comme `q` (lily/parser.yy).
+    let score = lire("\\time 4/4 c8 8 d4 4 r4 | <e g>8 8 <f a>4 4 | c2 2");
+    assert_eq!(
+        hauteurs(&score),
+        vec![60, 60, 62, 62, 64, 67, 64, 67, 65, 69, 65, 69, 60, 60]
+    );
+    assert_eq!(score.measures.len(), 3);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::QUARTER,
+            Fraction::QUARTER,
+            Fraction::QUARTER,
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::QUARTER,
+            Fraction::QUARTER,
+            Fraction::HALF,
+            Fraction::HALF,
+        ]
+    );
+
+    // Cas non concerné : `q` et les durées données restent inchangés.
+    let score = lire("\\time 4/4 c4 q8 q8 d4 e4");
+    assert_eq!(hauteurs(&score), vec![60, 60, 60, 62, 64]);
+}
