@@ -119,9 +119,9 @@ ornements courants, `\grace`, `\acciaccatura`, `\appoggiatura`,
 musicales simples (`nom = #(define-music-function (a b) (prédicat…) #{ … #})`
 puis `\nom arg…`). Une expression musicale écrite directement au
 niveau supérieur du fichier (partition implicite de `toplevel-music-handler`)
-est lue comme un `\score { musique }` sans `\layout` ni `\midi` ; les
-expressions successives d'un même livre sont réunies dans cette partition
-implicite, comme le fait LilyPond ;
+est lue comme un `\score { musique }` sans `\layout` ni `\midi` ; chaque
+expression de haut niveau forme sa propre partition, comme LilyPond (qui en
+produit un fichier MIDI par expression) ;
 `\book`/`\bookpart` sont parcourus pour y chercher `\score`, `\header` et
 cette musique de haut niveau.
 
@@ -478,9 +478,11 @@ pas de régression du lecteur.
   ou étranger à la partie avertit une seule fois par voix, à la position du
   `\change`, et laisse les notes sur leur portée d'origine.
 - **Une seule partition** : quand un fichier en contient plusieurs (`\score`
-  explicites ou expressions de haut niveau), le premier `\score` explicite
-  l'emporte, sinon la première expression ; chaque autre est ignorée avec un
-  avertissement.
+  explicites ou expressions de haut niveau successives), le premier `\score`
+  explicite l'emporte, sinon la première expression ; chaque autre est ignorée
+  avec un avertissement. C'est le cas de `regression/trill-spanner-consecutive.ly`
+  (`\test 2.0 \test 2.1 \test 2.2 \test 2.3`), dont seule la première
+  expression (2 notes) est retenue.
 - **Fonctions musicales** : seules les définitions
   `#(define-music-function …)` à corps `#{ … #}` produisent de la musique.
   La substitution est purement lexicale (`#a`, `$a`, `\a`) : pas d'appel

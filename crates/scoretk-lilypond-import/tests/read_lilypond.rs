@@ -341,6 +341,18 @@ fn partition_explicite_prioritaire_et_premiere() {
             .count(),
         1
     );
+    // Deux expressions musicales de haut niveau forment deux partitions, comme
+    // LilyPond (`{ c'4 d' } { e'4 f' }` → deux fichiers MIDI) : seule la
+    // première est retenue, la seconde est signalée.
+    let (score, warnings) = read_lilypond_reporting("{ c'4 d' }\n{ e'4 f' }").expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+    assert_eq!(
+        warnings
+            .iter()
+            .filter(|warning| warning.message == "partition supplémentaire ignorée")
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -547,8 +559,9 @@ fn musique_embarquee_dans_une_affectation() {
 
 #[test]
 fn fonction_musicale_embarquee_et_appels_successifs() {
-    // regression/trill-spanner-consecutive.ly : quatre appels, deux notes
-    // chacun, réunis dans la partition implicite.
+    // regression/trill-spanner-consecutive.ly : quatre appels de haut niveau,
+    // donc quatre partitions ; seule la première est retenue, les autres sont
+    // ignorées avec un avertissement.
     let (score, warnings) = read_lilypond_reporting(
         r#"\version "2.23.9"
 
@@ -566,7 +579,12 @@ test =
 "#,
     )
     .expect("lecture");
-    assert_eq!(score.notes.len(), 8);
+    assert_eq!(score.notes.len(), 2);
+    let ignorees = warnings
+        .iter()
+        .filter(|warning| warning.message == "partition supplémentaire ignorée")
+        .count();
+    assert_eq!(ignorees, 3, "avertissements : {warnings:?}");
     assert!(
         !warnings
             .iter()
@@ -612,9 +630,11 @@ fn fonction_void_consommee_sans_avertissement() {
 
 #[test]
 fn fonction_musicale_recursive_ne_panique_pas() {
+    // La récursion est bornée ; l'appel fautif ne produit rien et la musique
+    // qui suit est lue normalement, dans la même partition.
     let (score, warnings) = read_lilypond_reporting(
         "loop = #(define-music-function (m) (ly:music?) #{ \\loop $m #})\n\
-         \\loop { c'4 }\n{ d'4 }\n",
+         { \\loop { c'4 } d'4 }\n",
     )
     .expect("lecture sans panique");
     assert_eq!(hauteurs(&score), vec![62]);

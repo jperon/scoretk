@@ -72,10 +72,6 @@ pub(crate) struct Parser<'a> {
     music_functions: BTreeMap<String, MusicFunction>,
     /// Profondeur d'expansion des blocs embarqués et des fonctions.
     expansion_depth: u32,
-    /// Identifiant du `\book`/`\bookpart` courant (0 hors livre).
-    book_scope: u32,
-    /// Compteur d'identifiants de livre.
-    book_serial: u32,
 }
 
 /// Profondeur d'expansion maximale (garde-fou contre la récursion).
@@ -111,8 +107,6 @@ struct Partition {
     score: ScoreAst,
     /// Vrai pour un bloc `\score` explicite.
     explicit: bool,
-    /// Profondeur de `\book` où la partition a été rencontrée.
-    book: u32,
     /// Ligne du premier jeton.
     line: u32,
     /// Colonne du premier jeton.
@@ -140,8 +134,6 @@ pub(crate) fn parse(
         partitions: Vec::new(),
         music_functions: BTreeMap::new(),
         expansion_depth: 0,
-        book_scope: 0,
-        book_serial: 0,
     };
     parser.document()
 }
@@ -311,7 +303,6 @@ impl<'a> Parser<'a> {
                 self.partitions.push(Partition {
                     score,
                     explicit: true,
-                    book: self.book_scope,
                     line: token.line,
                     column: token.column,
                 });
@@ -369,13 +360,9 @@ impl<'a> Parser<'a> {
         if !self.eat_punct('{') {
             return;
         }
-        let saved_scope = self.book_scope;
-        self.book_serial += 1;
-        self.book_scope = self.book_serial;
         while !self.at_end() && !self.eat_punct('}') {
             self.toplevel_item(document);
         }
-        self.book_scope = saved_scope;
     }
 
     /// Vrai si le jeton courant ouvre une expression musicale de haut niveau
@@ -411,10 +398,6 @@ impl<'a> Parser<'a> {
 
     /// Expression musicale de haut niveau : une partition implicite, comme le
     /// `scorify-music` de `toplevel-music-handler`.
-    ///
-    /// LilyPond réunit toute la musique de haut niveau d'un livre en une seule
-    /// partition implicite : les expressions successives sont donc fusionnées
-    /// avec la précédente plutôt que d'en créer une nouvelle.
     fn parse_toplevel_music(&mut self, token: &Token) {
         let mut groups = self.parse_score_element();
         if groups.is_empty() {
@@ -423,21 +406,12 @@ impl<'a> Parser<'a> {
         if let Some(staff) = groups.last_mut().and_then(|group| group.staves.last_mut()) {
             self.collect_addlyrics(staff);
         }
-        if let Some(partition) = self
-            .partitions
-            .last_mut()
-            .filter(|partition| !partition.explicit && partition.book == self.book_scope)
-        {
-            merge_toplevel_groups(&mut partition.score.groups, groups);
-            return;
-        }
         self.partitions.push(Partition {
             score: ScoreAst {
                 groups,
                 lyrics: Vec::new(),
             },
             explicit: false,
-            book: self.book_scope,
             line: token.line,
             column: token.column,
         });
@@ -2517,54 +2491,6 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// Vrai pour une portée anonyme simple, fusionnable avec la précédente.
-fn is_simple_staff(group: &GroupBlock) -> bool {
-    group.kind == GroupKind::Staff
-        && group.instrument_name.is_none()
-        && group.short_instrument_name.is_none()
-        && group.lyrics.is_empty()
-        && group.staves.len() == 1
-        && {
-            let staff = &group.staves[0];
-            staff.name.is_none()
-                && staff.instrument_name.is_none()
-                && staff.short_instrument_name.is_none()
-                && staff.lyrics.is_empty()
-                && staff.voices.len() == 1
-                && staff.voices[0].name.is_none()
-        }
-}
-
-/// Fusionne une expression musicale de haut niveau avec la partition
-/// implicite déjà ouverte.
-///
-/// La musique anonyme s'enchaîne dans la même voix, comme le `music-list` d'un
-/// `\score` implicite ; les groupes nommés ou portant des paroles sont ajoutés
-/// tels quels.
-fn merge_toplevel_groups(existing: &mut Vec<GroupBlock>, groups: Vec<GroupBlock>) {
-    for mut group in groups {
-        if is_simple_staff(&group) {
-            if let Some(last) = existing.last_mut() {
-                if is_simple_staff(last) {
-                    let mut staff = group.staves.remove(0);
-                    let voice = staff.voices.remove(0);
-                    let target = &mut last.staves[0].voices[0];
-                    let previous = std::mem::replace(&mut target.music, Music::Empty);
-                    target.music = if previous.is_empty() {
-                        voice.music
-                    } else {
-                        Music::Seq(vec![previous, voice.music])
-                    };
-                    last.staves[0].lyrics.extend(staff.lyrics);
-                    last.lyrics.extend(group.lyrics);
-                    continue;
-                }
-            }
-        }
-        existing.push(group);
-    }
-}
-
 /// Reconnaît une définition de fonction musicale dans un datum Scheme
 /// (`#(define-music-function …)`).
 ///
@@ -3124,8 +3050,6 @@ mod tests {
             partitions: Vec::new(),
             music_functions: BTreeMap::new(),
             expansion_depth: 0,
-            book_scope: 0,
-            book_serial: 0,
         };
         parser.parse_music()
     }
