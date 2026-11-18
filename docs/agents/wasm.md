@@ -521,3 +521,88 @@ python3 -m http.server 8000        # à la racine du dépôt
 Le worker de la démo charge le paquet par
 `importScripts('../../result/classic/scoretk.js')`.
 
+## 9. Temps d'exécution (Node)
+
+### Méthode
+
+Arbre mesuré : commit `a7f690cf0817fd3f73a3657631e04a231cfc318a` (branche
+`mesure-nodebench`), avant l'ajout du script de mesure et de cette section ;
+aucun code de conversion (`crates/*/src`) n'a été modifié. Paquet construit par
+`nix build .#wasm` (`./result`, binaire de 1 549 059 octets / 640 274 gzip,
+`cat result/SIZE`), CLI native par
+`nix develop -c cargo build --release -p scoretk-cli`
+(`./target/release/scoretk`, profil `release` identique : `opt-level = "z"`,
+`lto`, `codegen-units = 1`).
+
+- Wasm : `nix shell nixpkgs#nodejs -c node crates/scoretk-wasm/tests/node-bench.mjs ./result`
+  (et son variante `--json`, trois exécutions). Le script charge la variante ESM
+  par `initSync` avec un `WebAssembly.Module` précompilé, parcourt les 56
+  `.mscx` de `tests/corpus/v3` et `tests/corpus/v4`, et relève pour chacun,
+  après 3 itérations de chauffe, la médiane de 15 itérations de
+  `convert(bytes,{to:"musicxml"})`, `convert(bytes,{to:"midi"})` et
+  `convertWithTimeline(bytes)`.
+- Natif : le même ensemble de 56 fichiers, une invocation CLI par fichier et
+  par sens (`scoretk "$f" --to musicxml|midi -o /dev/null`), 46 passages
+  chronométrés par sens (`date +%s%N`) ; la CLI n'expose pas
+  `convertWithTimeline`, donc le comparatif « playback » additionne ses deux
+  sens. `time` sur un passage complet a donné 0,144 s (MusicXML) et 0,307 s
+  (MIDI). Le coût d'amorçage des 56 processus a été mesuré à part : médiane de
+  123 ms sur 15 passages de 56 `scoretk --list-formats` ; il est **inclus**
+  dans les mesures natives.
+- Machine : Intel(R) Processor U300, 6 cœurs / 6 threads, 4,4 GHz max, 15 GiB
+  de RAM, Linux 6.18.60 (NixOS) x86_64, Node v24.22.1 (`lscpu`, `free -h`,
+  `node --version`). Charge moyenne de 4,6 à 9,0 pendant les mesures (`uptime`)
+  : une autre session exécutait un benchmark concurrent, d'où un bruit
+  important. Les chiffres ci-dessous sont la médiane de trois exécutions wasm
+  et de 46 passages natifs ; le minimum observé est aussi indiqué.
+
+### Résultats
+
+Instantiation (une seule fois, hors des mesures par fichier, `--json`) :
+compilation du module 5,5 à 10,7 ms, `initSync`/`ready` 0,75 à 4,64 ms,
+mémoire linéaire wasm 6 160 384 octets (5,9 Mio). `process.memoryUsage()` :
+RSS 58,2 Mo avant chargement → 63,7 Mo après `initSync` → environ 180 Mo en fin
+de campagne ; `arrayBuffers` 0,14 → 1,69 → 8,91 Mo.
+
+Cinq plus gros fichiers du corpus (médianes en ms, somme des médianes par
+fichier) :
+
+| Fichier | Octets | MusicXML | MIDI | Timeline | Total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `v3/moonlight.mscx` | 409 776 | 74,317 | 22,547 | 84,613 | 181,477 |
+| `v4/voiceswitching.mscx` | 30 868 | 5,838 | 3,005 | 6,780 | 15,623 |
+| `v4/testExcludeInvisibleElements.mscx` | 29 297 | 4,430 | 2,882 | 6,714 | 14,026 |
+| `v3/layout_elements.mscx` | 24 855 | 3,501 | 1,569 | 4,933 | 10,003 |
+| `v3/voices.mscx` | 24 571 | 2,895 | 1,367 | 4,383 | 8,645 |
+| **Total (56 fichiers)** | | **145,568** | **64,740** | **204,010** | **414,318** |
+
+### Ratio wasm/natif
+
+| Chaîne | Wasm (ms) | Natif CLI (ms) | Ratio wasm/natif |
+| --- | ---: | ---: | ---: |
+| MusicXML | 145,6 | 277 | 0,53 |
+| MIDI | 64,7 | 251 | 0,26 |
+| Playback (MusicXML + MIDI) | 204,0 (`timeline`) | 528 | 0,39 |
+
+Le natif est pénalisé par 56 démarrages de processus (123 ms mesurés). En les
+retraitant : 154 ms / 128 ms / 282 ms côté natif, soit des ratios de 0,95 /
+0,51 / 0,72. Sur les passages les moins chargés, le wasm descend à 128,7 /
+55,6 / 183,1 ms contre 138 / 108 / 246 ms côté natif, soit 0,93 / 0,51 / 0,74.
+L'ordre de grandeur est donc un wasm équivalent à légèrement plus rapide en
+MusicXML, environ deux fois plus rapide en MIDI, et le bruit de la machine
+empêche une précision meilleure que quelques dizaines de pourcents. Le ratio
+« playback » reste approximatif : la carte des temps n'a pas d'équivalent dans
+la CLI, seulement le coût MusicXML + MIDI.
+
+### Fichiers les plus lents
+
+`v3/moonlight.mscx` domine très largement (181,5 ms, environ 44 % du total
+wasm, soit 74,3 ms MusicXML, 22,5 ms MIDI et 84,6 ms timeline) : avec 410 Ko,
+il est quatorze fois plus gros que le suivant. Viennent ensuite
+`v4/voiceswitching.mscx` (15,6 ms), `v4/testExcludeInvisibleElements.mscx`
+(14,0 ms), `v4/timesig-09.mscx` (12,7 ms, seulement 9,7 Ko mais une timeline
+coûteuse) et `v3/layout_elements.mscx` (10,0 ms).
+
+Aucune piste d'optimisation n'a été appliquée : cette section ne consigne que
+des mesures.
+
