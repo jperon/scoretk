@@ -28,7 +28,7 @@
 //! multi-mesures), puis range les événements datés dans les segments de chaque
 //! mesure, comme le fait le lecteur `.mscx` de MuseScore.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, BarLineType, Chord, ChordRest, ChordRestKind, Clef,
@@ -87,6 +87,20 @@ struct VoiceBuild {
     interpreted: InterpretedVoice,
     /// N-olets globaux, dans l'ordre local.
     tuplets: Vec<TupletId>,
+}
+
+/// Voix en attente de rattachement à une portée.
+///
+/// Les voix ouvertes depuis l'intérieur d'une autre (`\new Voice`, branches
+/// d'un `<< … >>`) sont traitées après celle qui les ouvre, jusqu'à
+/// épuisement.
+struct PendingVoice {
+    /// Nom du contexte (`\new Voice = "…"`), pour `\lyricsto`.
+    name: Option<String>,
+    /// Paroles `\addlyrics` attachées au contexte ouvert.
+    lyrics: Vec<LyricsBlock>,
+    /// Voix interprétée.
+    interpreted: InterpretedVoice,
 }
 
 /// Paroles interprétées.
@@ -161,8 +175,10 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 staff.brackets.push(bracket);
             }
             let staff_id = score.add_staff_with(part_id, staff);
-            let voices = build_voices(&mut score, staff_id, staff_block, warnings);
-            let lyrics = staff_block.lyrics.iter().map(lyrics_build).collect();
+            let (voices, voice_lyrics) = build_voices(&mut score, staff_id, staff_block, warnings);
+            let mut lyrics: Vec<LyricsBuild> =
+                staff_block.lyrics.iter().map(lyrics_build).collect();
+            lyrics.extend(voice_lyrics);
             staves.push(StaffBuild {
                 staff: staff_id,
                 name: staff_block.name.clone(),
@@ -201,6 +217,51 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     score
 }
 
+/// Vrai si la voix porte au moins un accord, un silence ou un temps réservé
+/// (tout événement de type [`EventKind::Chord`]).
+fn has_chord_events(interpreted: &InterpretedVoice) -> bool {
+    interpreted
+        .events
+        .iter()
+        .any(|event| matches!(&event.kind, EventKind::Chord(_)))
+}
+
+/// Replie les voix sans accord dans la voix musicale `target` et les retire.
+///
+/// Le préambule passe avant la musique dans l'ordre d'émission : clefs,
+/// armures et indications de mesure précèdent les premières notes de la
+/// portée.
+fn merge_preamble(kept: Vec<PendingVoice>, target: usize) -> Vec<PendingVoice> {
+    let mut preamble: Vec<VoiceEvent> = Vec::new();
+    let mut end = Fraction::ZERO;
+    let mut rest: Vec<PendingVoice> = Vec::new();
+    let mut target_index = 0;
+    for (position, pending) in kept.into_iter().enumerate() {
+        if position == target {
+            target_index = rest.len();
+            end = end.max(pending.interpreted.end);
+            rest.push(pending);
+        } else if has_chord_events(&pending.interpreted) {
+            rest.push(pending);
+        } else {
+            end = end.max(pending.interpreted.end);
+            preamble.extend(pending.interpreted.events);
+        }
+    }
+    if let Some(target) = rest.get_mut(target_index) {
+        preamble.append(&mut target.interpreted.events);
+        for (order, event) in preamble.iter_mut().enumerate() {
+            event.order = order;
+        }
+        // Le préambule précède la musique à tick égal ; l'ordre chronologique
+        // reste ainsi l'ordre du vecteur pour les lecteurs qui ne trient pas.
+        preamble.sort_by_key(|event| (event.tick, event.order));
+        target.interpreted.events = preamble;
+        target.interpreted.end = target.interpreted.end.max(end);
+    }
+    rest
+}
+
 /// Paroles d'un bloc.
 fn lyrics_build(block: &LyricsBlock) -> LyricsBuild {
     LyricsBuild {
@@ -211,14 +272,78 @@ fn lyrics_build(block: &LyricsBlock) -> LyricsBuild {
 }
 
 /// Construit les voix d'une portée et leurs n-olets.
+///
+/// Une voix peut en ouvrir d'autres (`\new Voice` dans sa musique, branches
+/// d'un `<< … >>`) : elles sont interprétées avec leur tick de départ et
+/// ajoutées à la portée, dans l'ordre d'ouverture. Une voix sans aucun
+/// événement (simple conteneur d'un `\new Voice`, par exemple) est ignorée
+/// pour ne pas décaler les pistes du modèle.
 fn build_voices(
     score: &mut Score,
     staff: StaffId,
     staff_block: &StaffBlock,
     warnings: &mut Warnings,
-) -> Vec<VoiceBuild> {
+) -> (Vec<VoiceBuild>, Vec<LyricsBuild>) {
+    let mut queue: VecDeque<PendingVoice> = VecDeque::new();
+    for block in &staff_block.voices {
+        queue.push_back(PendingVoice {
+            name: block.name.clone(),
+            lyrics: Vec::new(),
+            interpreted: Interpreter::run(&block.music, warnings),
+        });
+    }
+    let mut kept: Vec<PendingVoice> = Vec::new();
+    while let Some(pending) = queue.pop_front() {
+        let PendingVoice {
+            name,
+            lyrics,
+            interpreted,
+        } = pending;
+        let InterpretedVoice {
+            events,
+            tuplets,
+            repeats,
+            end,
+            spawned,
+        } = interpreted;
+        for voice in spawned {
+            queue.push_back(PendingVoice {
+                name: voice.name,
+                lyrics: voice.lyrics,
+                interpreted: voice.interpreted,
+            });
+        }
+        if events.is_empty() {
+            continue;
+        }
+        kept.push(PendingVoice {
+            name,
+            lyrics,
+            interpreted: InterpretedVoice {
+                events,
+                tuplets,
+                repeats,
+                end,
+                spawned: Vec::new(),
+            },
+        });
+    }
+
+    // Une voix sans accord (préambule de portée : `\clef`, `\key`,
+    // `\cadenzaOn`…) n'occupe pas de piste : ses événements sont repliés en
+    // tête de la première voix qui porte de la musique, les clefs et armures
+    // appartenant à la portée et non à une voix.
+    let kept = match kept
+        .iter()
+        .position(|pending| has_chord_events(&pending.interpreted))
+    {
+        Some(target) => merge_preamble(kept, target),
+        None => kept,
+    };
+
     let mut voices = Vec::new();
-    for (index, block) in staff_block.voices.iter().enumerate() {
+    let mut lyrics = Vec::new();
+    for (index, pending) in kept.into_iter().enumerate() {
         if index >= VOICES {
             warnings.push(
                 0,
@@ -227,9 +352,9 @@ fn build_voices(
             );
             continue;
         }
-        let interpreted = Interpreter::run(&block.music, warnings);
+        lyrics.extend(pending.lyrics.iter().map(lyrics_build));
         let mut tuplets = Vec::new();
-        for tuplet in &interpreted.tuplets {
+        for tuplet in &pending.interpreted.tuplets {
             let mut value = Tuplet::new(tuplet.ratio, tuplet.base_len, tuplet.tick, tuplet.len);
             value.actual_notes = tuplet.actual_notes;
             value.normal_notes = tuplet.normal_notes;
@@ -245,13 +370,13 @@ fn build_voices(
             tuplets.push(score.add_tuplet(value));
         }
         voices.push(VoiceBuild {
-            name: block.name.clone(),
+            name: pending.name,
             track: Track::new(staff, u8::try_from(index).unwrap_or(0)),
-            interpreted,
+            interpreted: pending.interpreted,
             tuplets,
         });
     }
-    voices
+    (voices, lyrics)
 }
 
 /// Accolade d'un groupe de portées.

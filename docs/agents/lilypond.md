@@ -112,7 +112,9 @@ français, italien, norvégien, portugais, finnois, suédois, flamand), `\includ
 des fichiers de langue et des fichiers livrés sans musique, nuances,
 `\< \> \!`, articulations et
 ornements courants, `\grace`, `\acciaccatura`, `\appoggiatura`,
-`\afterGrace`, `R`/`s`, voix `<< \\ >>`, variables (`nom = { … }` puis
+`\afterGrace`, `R`/`s`, voix `<< \\ >>` (passages polyphoniques
+temporaires) et `\new Voice` rencontré dans une voix d'une portée (voix
+ouverte au tick courant), variables (`nom = { … }` puis
 `\nom`), `\new Staff`/`PianoStaff`/`ChoirStaff`/`Voice`/`Lyrics`,
 `\addlyrics`, `\lyricsto`, `\lyricmode`, `\header`, `\tempo`, `\mark` et
 `\markup` simple (texte), musique embarquée `#{ … #}`/`$#{ … #}` et fonctions
@@ -466,10 +468,19 @@ pas de régression du lecteur.
 ### Limites de la lecture
 
 - **Sous-ensemble**, pas LilyPond complet : Scheme, modes
-  (`\drummode`, `\chordmode`, `\figuremode`), `\new` imbriqué dans une voix,
+  (`\drummode`, `\chordmode`, `\figuremode`),
   `\partCombine`, `\paper` sont ignorés avec un avertissement. `\book` et
   `\bookpart` sont parcourus (leur `\header`, leurs `\score` et leur musique
   de haut niveau).
+- **Voix ouvertes dans une voix** : `\new Voice` (ou `\context Voice`) et
+  chaque branche d'un `<< … >>` rencontrés dans la musique d'une voix ouvrent
+  une voix de la portée au tick courant (`context_prefix` /
+  `NEWCONTEXT`, `lily/parser.yy` ; « Temporary polyphonic passages ») ; la
+  voix d'origine avance ensuite de la durée du contexte ouvert, comme
+  LilyPond. Une simultanée sans `\\` est lue en voix sœurs plutôt qu'en
+  accords fusionnés. Les voix sans accord (préambule `\clef`/`\key`) sont
+  repliées dans la première voix musicale, et une portée reste limitée à
+  quatre voix (les suivantes avertissent et sont ignorées).
 - **`\change`** : `\change <Contexte> = <nom>` est lu comme un changement de
   portée : les notes suivantes gardent leur voix et leur place et portent un
   `Chord.staff_move` calculé d'après la position de `\new Staff = "<nom>"`.

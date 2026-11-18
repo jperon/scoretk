@@ -40,7 +40,10 @@ use scoretk_core::model::{
     Ornament, OrnamentType, OttavaType, Placement, StemDirection, Tremolo,
 };
 
-use crate::ast::{Chord, ChordKind, Context, Music, NoteSpec, PitchSpec, PostEvent, RepeatKind};
+use crate::ast::{
+    Chord, ChordKind, Context, GroupBlock, GroupKind, LyricsBlock, Music, NoteSpec, PitchSpec,
+    PostEvent, RepeatKind,
+};
 use crate::pitch::OctaveState;
 use crate::warnings::Warnings;
 
@@ -292,6 +295,25 @@ pub(crate) struct InterpretedVoice {
     pub repeats: Vec<RepeatSection>,
     /// Tick de fin (fin du dernier événement).
     pub end: Fraction,
+    /// Voix ouvertes depuis l'intérieur de celle-ci (`\new Voice`, `\\`).
+    pub spawned: Vec<SpawnedVoice>,
+}
+
+/// Voix ouverte depuis l'intérieur d'une autre voix.
+///
+/// Correspond à un contexte `Voice` créé par `context_prefix` /
+/// `NEWCONTEXT` (`lily/parser.yy` l. 1685-1690) ou à une branche de passage
+/// polyphonique temporaire (`<< … \\ … >>`, « Temporary polyphonic
+/// passages » de la référence de notation) : la voix appartient à la portée
+/// courante et commence au tick de l'ouverture.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SpawnedVoice {
+    /// Nom du contexte (`\new Voice = "…"`), s'il existe.
+    pub name: Option<String>,
+    /// Paroles `\addlyrics` attachées au contexte ouvert.
+    pub lyrics: Vec<LyricsBlock>,
+    /// Voix interprétée, en ticks absolus.
+    pub interpreted: InterpretedVoice,
 }
 
 /// Ornements d'agrément en cours.
@@ -326,6 +348,9 @@ pub(crate) struct Interpreter<'a> {
     stem_override: Option<StemDirection>,
     /// Portée cible courante d'un `\change` (nom du contexte).
     staff_target: Option<StaffTarget>,
+    /// Facteur de n-olet hérité d'une voix ouverte à l'intérieur d'un
+    /// `\tuplet` (les n-olets ouverts du parent ne sont pas dans `tuplets`).
+    tuplet_scale: Fraction,
     /// Rang d'émission.
     order: usize,
     /// Avertissements.
@@ -348,6 +373,7 @@ impl<'a> Interpreter<'a> {
             default_duration: Duration::quarter(),
             stem_override: None,
             staff_target: None,
+            tuplet_scale: Fraction::ONE,
             order: 0,
             warnings,
         };
@@ -360,18 +386,149 @@ impl<'a> Interpreter<'a> {
     fn walk(&mut self, music: &Music) {
         match music {
             Music::Empty | Music::Lyrics(_) => {}
-            Music::New(_) => {
-                self.warn("contexte imbriqué ignoré dans une voix");
-            }
-            Music::Seq(items) | Music::Sim(items) => {
+            Music::New(group) => self.nested_context(group),
+            Music::Seq(items) => {
                 for item in items {
                     self.walk(item);
                 }
             }
+            Music::Sim(items) => self.simultaneous(items),
             Music::Chord(chord) => self.emit_chord(chord),
             Music::Context(context) => self.context(context),
             Music::Unknown(_) => {}
         }
+    }
+
+    /// Contexte `\new` rencontré dans une voix.
+    ///
+    /// Dans le sous-ensemble lu, seul `\new Voice` a un sens à cet endroit :
+    /// il ouvre une voix de la portée courante (`context_prefix` /
+    /// `NEWCONTEXT`, `lily/parser.yy` l. 1685-1690). Les autres contextes
+    /// (portée, groupe) restent ignorés avec un avertissement.
+    fn nested_context(&mut self, group: &GroupBlock) {
+        if group.kind != GroupKind::Voice {
+            self.warn("contexte imbriqué ignoré dans une voix");
+            return;
+        }
+        if self.grace.is_some() {
+            // Dans un ornement, les notes ne prennent pas de temps : les
+            // garder dans la voix courante évite de perdre l'ornement (la
+            // voix ouverte devrait sinon hériter du cadre d'agrément).
+            for staff in &group.staves {
+                for voice in &staff.voices {
+                    self.walk(&voice.music);
+                }
+            }
+            return;
+        }
+        let start = self.cursor;
+        let mut end = start;
+        for staff in &group.staves {
+            let mut lyrics: Vec<LyricsBlock> = staff.lyrics.clone();
+            lyrics.extend(group.lyrics.iter().cloned());
+            for voice in &staff.voices {
+                end =
+                    end.max(self.spawn_at(start, voice.name.clone(), &voice.music, lyrics.clone()));
+            }
+        }
+        // La musique du contexte fait partie de la séquence : elle avance la
+        // voix d'origine de sa durée, comme LilyPond.
+        self.cursor = end;
+    }
+
+    /// Musique simultanée `<< … >>` d'une voix.
+    ///
+    /// Chaque branche musicale est interprétée à partir du même tick : la
+    /// première continue dans la voix courante, les suivantes ouvrent une voix
+    /// sœur (`simultaneous_music` dans `lily/parser.yy` l. 1581-1588, et
+    /// « Temporary polyphonic passages » : `\\` sépare des voix temporaires).
+    /// Après le `>>`, la voix d'origine reprend au tick le plus avancé. Les
+    /// commandes de contexte écrites directement dans le `<< >>` (`\clef`,
+    /// `\key`, `\bar`…) portent sur la portée et restent dans la voix
+    /// d'origine.
+    fn simultaneous(&mut self, items: &[Music]) {
+        if self.grace.is_some() {
+            // Ornement : lecture séquentielle, comme avant (les ornements ne
+            // font pas avancer le curseur).
+            for item in items {
+                self.walk(item);
+            }
+            return;
+        }
+        let start = self.cursor;
+        let mut musical: Vec<&Music> = Vec::new();
+        for item in items {
+            if is_context_only(item) {
+                self.walk(item);
+            } else {
+                musical.push(item);
+            }
+        }
+        let mut branches = musical.into_iter();
+        let Some(first) = branches.next() else {
+            self.cursor = self.cursor.max(start);
+            return;
+        };
+        self.walk(first);
+        let mut end = self.cursor;
+        for item in branches {
+            end = end.max(self.spawn_at(start, None, item, Vec::new()));
+        }
+        self.cursor = end.max(start);
+    }
+
+    /// Ouvre une voix sœur dans la portée et l'interprète à partir de
+    /// `start`, en reprenant l'état courant (octave, transposition, durée par
+    /// défaut). Rend son tick de fin.
+    fn spawn_at(
+        &mut self,
+        start: Fraction,
+        name: Option<String>,
+        music: &Music,
+        lyrics: Vec<LyricsBlock>,
+    ) -> Fraction {
+        // Type explicite : la voix enfant emprunte les avertissements pour la
+        // seule durée de son interprétation, pas pour `'a`.
+        let mut child = Interpreter {
+            voice: InterpretedVoice::default(),
+            cursor: start,
+            octave: self.octave,
+            transpose: self.transpose,
+            tuplets: Vec::new(),
+            grace: None,
+            pending_grace: Vec::new(),
+            grace_after_target: None,
+            default_duration: self.default_duration,
+            last_chord_notes: self.last_chord_notes.clone(),
+            stem_override: self.stem_override,
+            staff_target: None,
+            tuplet_scale: self.tuplet_scale * self.open_tuplet_scale(),
+            order: 0,
+            warnings: &mut *self.warnings,
+        };
+        child.walk(music);
+        child.voice.end = child.cursor;
+        let end = child.cursor;
+        self.voice.spawned.push(SpawnedVoice {
+            name,
+            lyrics,
+            interpreted: child.voice,
+        });
+        end
+    }
+
+    /// Facteur des n-olets ouverts dans cette voix.
+    fn open_tuplet_scale(&self) -> Fraction {
+        self.tuplets
+            .iter()
+            .filter_map(|index| self.voice.tuplets.get(*index))
+            .fold(Fraction::ONE, |factor, tuplet| {
+                if tuplet.ratio.numerator() == 0 {
+                    factor
+                } else {
+                    factor * Fraction::new(tuplet.ratio.denominator(), tuplet.ratio.numerator())
+                }
+            })
     }
 
     /// Traite une commande de contexte.
@@ -614,17 +771,7 @@ impl<'a> Interpreter<'a> {
     fn emit_chord(&mut self, chord: &Chord) {
         let written = chord.duration.unwrap_or(self.default_duration);
         let multiplier = chord.multiplier.unwrap_or(Fraction::ONE);
-        let tuplet_factor = self
-            .tuplets
-            .iter()
-            .filter_map(|index| self.voice.tuplets.get(*index))
-            .fold(Fraction::ONE, |factor, tuplet| {
-                if tuplet.ratio.numerator() == 0 {
-                    factor
-                } else {
-                    factor * Fraction::new(tuplet.ratio.denominator(), tuplet.ratio.numerator())
-                }
-            });
+        let tuplet_factor = self.tuplet_scale * self.open_tuplet_scale();
         let mut actual = written.ticks() * multiplier * tuplet_factor;
 
         // Un ornement ne prend pas de temps dans la mesure.
@@ -958,6 +1105,39 @@ fn transpose_pitch(
     let target = [0, 2, 4, 5, 7, 9, 11][usize::try_from(step).unwrap_or(0)] + alter + chromatic;
     let new_alter = target - natural - octave_shift * 12;
     (new_step, new_alter, octave + octave_shift)
+}
+
+/// Vrai si l'expression ne contient que des commandes de contexte — aucune
+/// note, aucun `\new`, aucune parole.
+///
+/// Dans un `<< … >>` d'une portée, ces commandes (`\clef`, `\key`, `\time`,
+/// `\bar`, `\set`…) portent sur la portée : elles ne doivent pas ouvrir une
+/// voix comme le fait une branche musicale.
+fn is_context_only(music: &Music) -> bool {
+    match music {
+        Music::Empty | Music::Unknown(_) | Music::Lyrics(_) => true,
+        Music::Chord(_) | Music::New(_) => false,
+        Music::Seq(items) | Music::Sim(items) => items.iter().all(is_context_only),
+        Music::Context(context) => context_is_context_only(context),
+    }
+}
+
+/// Vrai pour une commande de contexte sans note, y compris ses variantes qui
+/// portent une musique (`\tuplet`, `\grace`, `\repeat`, `\fixed`…).
+fn context_is_context_only(context: &Context) -> bool {
+    match context {
+        Context::Tuplet { music, .. }
+        | Context::Grace { music, .. }
+        | Context::Fixed { music, .. }
+        | Context::Relative { music, .. }
+        | Context::Transpose { music, .. } => is_context_only(music),
+        Context::AfterGrace { main, grace } => is_context_only(main) && is_context_only(grace),
+        Context::Repeat {
+            body, alternatives, ..
+        } => is_context_only(body) && alternatives.iter().all(is_context_only),
+        Context::Alternative(items) => items.iter().all(is_context_only),
+        _ => true,
+    }
 }
 
 /// Intervalle d'un `\transpose from to`.

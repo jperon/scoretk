@@ -1484,6 +1484,143 @@ fn transpose_autour_d_un_piano_staff() {
     let score = lire_score("\\score { \\transpose c d { c4 d | e4 f } }");
     assert_eq!(hauteurs(&score), vec![50, 52, 54, 55]);
     assert_eq!(score.staves.len(), 1);
+}
+
+/// Accords d'une voie (piste brute) : (tick absolu, hauteurs, durée écrite).
+fn accords_de_voix(
+    score: &scoretk_core::model::Score,
+    voix: u32,
+) -> Vec<(Fraction, Vec<u8>, Fraction)> {
+    score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| {
+            let chord_rest = segment.chord_rest(Track::from_raw(voix))?;
+            matches!(&chord_rest.kind, ChordRestKind::Chord(_))
+                .then_some((segment.tick, chord_rest))
+        })
+        .map(|(tick, chord_rest)| {
+            let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                unreachable!("accord filtré ci-dessus");
+            };
+            (
+                tick,
+                chord.notes.iter().map(|&id| score.note(id).pitch).collect(),
+                chord_rest.duration.ticks(),
+            )
+        })
+        .collect()
+}
+
+/// Nombre de voix (pistes brutes) portant au moins un accord.
+fn nombre_de_voix(score: &scoretk_core::model::Score) -> usize {
+    (0..4)
+        .filter(|&voix| !accords_de_voix(score, voix).is_empty())
+        .count()
+}
+
+#[test]
+fn voix_ouverte_dans_une_musique_sequentielle() {
+    // `\new Voice` dans une séquence ouvre une voix de la portée à la position
+    // courante (`context_prefix` / NEWCONTEXT, `lily/parser.yy` l. 1685-1690).
+    let score = lire("\\new Voice { c4 d }");
+    assert_eq!(nombre_de_voix(&score), 1);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::new(1, 4), vec![62], Fraction::new(1, 4)),
+        ]
+    );
+    assert_eq!(score.measures.len(), 1);
+
+    // La musique du contexte ouvert fait avancer la séquence : `e` vient après
+    // le `d` de la voix nouvelle, à 2/4, comme LilyPond.
+    let score = lire("c4 \\new Voice { d4 } e4");
+    assert_eq!(nombre_de_voix(&score), 2);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::new(1, 2), vec![64], Fraction::new(1, 4)),
+        ]
+    );
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![(Fraction::new(1, 4), vec![62], Fraction::new(1, 4))]
+    );
+    assert_eq!(score.measures.len(), 1);
+
+    // `\context Voice` retrouve ou ouvre un contexte existant : même effet.
+    let score = lire("\\context Voice = \"x\" { c4 d }");
+    assert_eq!(nombre_de_voix(&score), 1);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::new(1, 4), vec![62], Fraction::new(1, 4)),
+        ]
+    );
+}
+
+#[test]
+fn voix_nommees_dans_une_simultanee() {
+    // Les deux branches d'une simultanée démarrent au même tick, même quand
+    // elles ouvrent des contextes nommés (`<< { \new Voice … } … >>`).
+    let score = lire("<< { \\new Voice = \"s\" { c4 d } } \\new Voice = \"a\" { e4 f } >>");
+    assert_eq!(nombre_de_voix(&score), 2);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::new(1, 4), vec![62], Fraction::new(1, 4)),
+        ]
+    );
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![
+            (Fraction::ZERO, vec![64], Fraction::new(1, 4)),
+            (Fraction::new(1, 4), vec![65], Fraction::new(1, 4)),
+        ]
+    );
+    assert_eq!(score.measures.len(), 1);
+
+    // Forme de niveau portée, déjà lue avant ce correctif : inchangée.
+    let score = read_lilypond(
+        "\\score { \\new Staff << \\new Voice = \"x\" { c4 d } \\new Voice = \"y\" { e4 f } >> }",
+    )
+    .expect("lecture");
+    assert_eq!(nombre_de_voix(&score), 2);
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![
+            (Fraction::ZERO, vec![52], Fraction::new(1, 4)),
+            (Fraction::new(1, 4), vec![53], Fraction::new(1, 4)),
+        ]
+    );
+}
+
+#[test]
+fn polyphonie_temporaire_avec_double_barre() {
+    // `<< … \\ … >>` : passage polyphonique temporaire, une voix par branche,
+    // la musique reprend ensuite dans la voix d'origine.
+    let score = lire("<< { c4 d } \\\\ { e4 f } >>");
+    assert_eq!(nombre_de_voix(&score), 2);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::new(1, 4), vec![62], Fraction::new(1, 4)),
+        ]
+    );
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![
+            (Fraction::ZERO, vec![64], Fraction::new(1, 4)),
+            (Fraction::new(1, 4), vec![65], Fraction::new(1, 4)),
+        ]
+    );
     assert_eq!(score.measures.len(), 1);
 }
 
@@ -1785,6 +1922,95 @@ fn lyricsto_avec_melisma_busy_properties_vide() {
             (60, "la".to_owned()),
             (62, "li".to_owned()),
             (64, "lo".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn lyricsto_voix_ouverte_dans_une_sequence() {
+    // `\new Voice = "s"` ouvert au milieu d'une séquence : la voix est créée
+    // à la position courante, et `\lyricsto "s"` doit la retrouver comme une
+    // voix déclarée dans un `<< … >>` de `\score`.
+    let score = read_lilypond(
+        "\\score { << \\new Staff { \\fixed c' { c4 \\new Voice = \"s\" { d4 e4 f4 } g4 } } \
+         \\new Lyrics \\lyricsto \"s\" { do re mi } >> }",
+    )
+    .expect("lecture");
+    assert_eq!(nombre_de_voix(&score), 2);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::ONE, vec![67], Fraction::new(1, 4)),
+        ]
+    );
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![
+            (Fraction::new(1, 4), vec![62], Fraction::new(1, 4)),
+            (Fraction::new(1, 2), vec![64], Fraction::new(1, 4)),
+            (Fraction::new(3, 4), vec![65], Fraction::new(1, 4)),
+        ]
+    );
+    let textes: Vec<(u8, String)> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(1)))
+        .flat_map(|chord_rest| {
+            let pitch = chord_rest
+                .chord_ref()
+                .and_then(|chord| chord.notes.first().copied())
+                .map(|id| score.note(id).pitch)
+                .unwrap_or(0);
+            chord_rest
+                .lyrics
+                .iter()
+                .map(move |lyrics| (pitch, lyrics.text.clone()))
+        })
+        .collect();
+    assert_eq!(
+        textes,
+        vec![
+            (62, "do".to_owned()),
+            (64, "re".to_owned()),
+            (65, "mi".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn polyphonie_temporaire_dans_une_sequence() {
+    let score = lire("c4 << { d e } \\\\ { f g } >> a");
+    assert_eq!(nombre_de_voix(&score), 2);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::new(1, 4), vec![62], Fraction::new(1, 4)),
+            (Fraction::new(1, 2), vec![64], Fraction::new(1, 4)),
+            (Fraction::new(3, 4), vec![69], Fraction::new(1, 4)),
+        ]
+    );
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![
+            (Fraction::new(1, 4), vec![65], Fraction::new(1, 4)),
+            (Fraction::new(1, 2), vec![67], Fraction::new(1, 4)),
+        ]
+    );
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(score.measures[0].len, Fraction::ONE);
+
+    // Cas limite : contextualisation vide, sans note, ne doit ni paniquer ni
+    // décaler la suite.
+    let score = lire("c4 \\new Voice { } d4");
+    assert_eq!(nombre_de_voix(&score), 1);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::new(1, 4), vec![62], Fraction::new(1, 4)),
         ]
     );
 }

@@ -253,6 +253,11 @@ pub(crate) enum Music {
     /// Séquence `{ … }`.
     Seq(Vec<Music>),
     /// Simultané `<< … >>`.
+    ///
+    /// L'interpréteur le lit branche par branche : la première reste dans la
+    /// voix courante, les suivantes ouvrent des voix sœurs au même tick ; `\\`
+    /// sépare les passages polyphoniques temporaires (« Temporary polyphonic
+    /// passages » de la référence de notation).
     Sim(Vec<Music>),
     /// Accord, silence ou silence multi-mesures.
     Chord(Chord),

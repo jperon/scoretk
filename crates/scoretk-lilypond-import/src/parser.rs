@@ -605,6 +605,11 @@ impl<'a> Parser<'a> {
     fn parse_context_list(&mut self) -> Vec<GroupBlock> {
         let mut items = Vec::new();
         while !self.at_end() && !self.at_double_angle_close() {
+            // `\\` sépare des contextes simultanés : il ne produit rien.
+            if self.peek().is_some_and(|token| token.is_command("\\")) {
+                self.position += 1;
+                continue;
+            }
             let music = self.parse_music();
             if !music.is_empty() {
                 items.push(music);
@@ -614,6 +619,37 @@ impl<'a> Parser<'a> {
             self.position += 2;
         }
         self.score_groups(Music::Sim(items))
+    }
+
+    /// `\new` (`existing == false`) ou `\context` (`existing == true`).
+    ///
+    /// `\context` retrouve un contexte existant (`context_find_or_create`,
+    /// `lily/parser.yy` l. 1685-1690) : un `\context Voice` s'ouvre comme un
+    /// `\new Voice`, tout autre contexte (`Staff`…) est traversé sans changer
+    /// de voix, ses commandes s'appliquant au contexte courant.
+    fn parse_context_command(&mut self, existing: bool) -> Music {
+        if existing {
+            let is_voice = self
+                .peek()
+                .is_some_and(|token| token.kind == Kind::Word && token.text == "Voice");
+            if !is_voice {
+                self.bump();
+                if self.eat_punct('=') {
+                    self.bump();
+                }
+                if self.eat_command("with") {
+                    self.parse_with_block();
+                }
+                return self.parse_music();
+            }
+        }
+        match self.parse_new() {
+            Some(group) if group.staves.is_empty() && !group.lyrics.is_empty() => {
+                Music::Lyrics(Box::new(group.lyrics[0].clone()))
+            }
+            Some(group) => Music::New(Box::new(group)),
+            None => Music::Empty,
+        }
     }
 
     /// `\new Nom [= "id"] [\with { … }] musique`.
@@ -718,7 +754,10 @@ impl<'a> Parser<'a> {
                 });
                 self.collect_addlyrics(&mut staff);
                 Some(GroupBlock {
-                    kind: GroupKind::Staff,
+                    // La nature est conservée : l'interpréteur doit distinguer
+                    // un `\new Voice` rencontré dans une voix d'une portée
+                    // imbriquée (`Music::New`).
+                    kind: GroupKind::Voice,
                     instrument_name,
                     short_instrument_name,
                     staves: vec![staff],
@@ -1747,13 +1786,7 @@ impl<'a> Parser<'a> {
                 // Le `\tweak` porte sur la musique qui suit.
                 self.parse_music()
             }
-            "new" => match self.parse_new() {
-                Some(group) if group.staves.is_empty() && !group.lyrics.is_empty() => {
-                    Music::Lyrics(Box::new(group.lyrics[0].clone()))
-                }
-                Some(group) => Music::New(Box::new(group)),
-                None => Music::Empty,
-            },
+            "new" | "context" => self.parse_context_command(name == "context"),
             "with" => {
                 self.parse_with_block();
                 self.parse_music()
