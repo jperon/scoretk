@@ -51,11 +51,14 @@ Ne pas retirer cette règle.
   fichiers existants ne reçoivent que le branchement (`mod.rs`, réexport) ou
   un correctif localisé. Cela limite les conflits entre agents parallèles et
   garde les diffs relisibles.
-- **Règle des crates `-common`.** Un `-common` ne contient que ce que les deux
-  sens du même format utilisent ; jamais de logique de conversion (aucune
-  lecture ni écriture de fichier) ; jamais un module utilisé par un seul sens ;
-  le générique va dans `scoretk-core`, le spécifique reste dans le sens
-  concerné.
+- **Règle des crates `-common`.** Factoriser intelligemment : ce qui est utile
+  ou nécessaire à tous les formats va dans un crate commun (p. ex. un futur
+  crate d'utilitaires XML partagé par tous les lecteurs/écrivains) ; ce qui
+  sert aux deux sens d'un même format va dans le `-common` de ce format ; ce
+  qui ne sert qu'à une fonction (un seul sens) reste dans le fichier
+  spécifique de ce sens. Pas de module à un seul sens dans un `-common`, pas
+  de logique propre à un format dans un crate commun. Le générique transversal
+  va dans `scoretk-core`.
 - **Commentaires, messages d'erreur et documentation en français.** Les noms
   de types et de fonctions suivent l'amont ou l'usage Rust.
 - **Reproductibilité.** Pas d'horloge : `encoding_date` est une option, avec

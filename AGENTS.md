@@ -169,8 +169,11 @@ Les données dérivées se régénèrent avec `scripts/gen-references.sh` et
   « schema version mismatch ».
 - **Le corpus doit rester dans la source des checks Nix** (filtre
   `tests/corpus` de `flake.nix`), sinon le check `tests` échoue.
-- **Un crate `-common` ne contient que ce que les deux sens du même format
-  utilisent** ; aucune logique de conversion, jamais de module à un seul sens
+- **Règle des crates `-common` (factoriser intelligemment) :** ce qui sert à
+  tous les formats va dans un crate commun (p. ex. utilitaires XML partagés),
+  ce qui sert aux deux sens d'un format va dans son `-common`, ce qui ne sert
+  qu'à un seul sens reste dans son fichier ; jamais de module à un seul sens
+  dans un `-common`, ni de logique de format dans un crate commun
   (règle complète dans `docs/agents/developpement.md`).
 - **Fichiers générés** : `read/instruments.rs` et
   `docs/agents/ecarts-complets.md` se régénèrent, ne s'éditent pas.
