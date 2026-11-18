@@ -240,24 +240,6 @@ fn fermata_voix(score: &scoretk_core::model::Score, voice: u8) -> (FermataType, 
             }
         }
     }
-    eprintln!(
-        "TESTSUMMARY measures={} staves={} notes={}",
-        score.measures.len(),
-        score.staves.len(),
-        score.notes.len()
-    );
-    for (index, measure) in score.measures.iter().enumerate() {
-        eprintln!(
-            "measure {index} @{:?} len {:?}",
-            measure.start_tick, measure.len
-        );
-        for segment in &measure.segments {
-            eprintln!("  seg {:?} {:?}", segment.kind, segment.annotations.len());
-            for entry in &segment.annotations {
-                eprintln!("    {:?} -> {:?}", entry.track, entry.annotation);
-            }
-        }
-    }
     panic!("aucun point d'orgue");
 }
 
