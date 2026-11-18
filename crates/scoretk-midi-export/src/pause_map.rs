@@ -227,9 +227,7 @@ mod tests {
         for number in 0..2 {
             let mut measure =
                 Measure::new(number, whole * Fraction::from_integer(number as i64), whole);
-            let mut chord_rest = ChordRest::rest(Duration::new(DurationType::Whole));
-            chord_rest.kind =
-                scoretk_core::model::ChordRestKind::Rest(scoretk_core::model::Rest::default());
+            let chord_rest = ChordRest::rest(Duration::new(DurationType::Whole));
             let start = measure.start_tick;
             let mut segment = Segment::new(SegmentType::ChordRest, start, 1);
             segment.set_element(Track::from_raw(0), SegmentItem::ChordRest(chord_rest));
