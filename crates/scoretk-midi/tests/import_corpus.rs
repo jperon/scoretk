@@ -67,7 +67,7 @@ fn compare(version: &str, path: &Path) -> (bool, usize, String) {
         .to_owned();
     let bytes = fs::read(path).expect("fichier MIDI du corpus");
     let score = scoretk_midi::read_midi(&bytes).expect("lecture MIDI");
-    let actual = scoretk_core::export::export_musicxml(&score).expect("export MusicXML");
+    let actual = scoretk_musicxml_export::export_musicxml(&score).expect("export MusicXML");
     let reference_path = import_reference(version, &name);
     let reference = fs::read_to_string(&reference_path).unwrap_or_else(|error| {
         panic!(

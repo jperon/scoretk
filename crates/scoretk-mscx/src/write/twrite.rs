@@ -22,7 +22,7 @@
 //! Écriture des objets d'un segment et de leurs notations.
 //!
 //! Les noms d'éléments et de propriétés sont ceux du `.mscx` lus par
-//! `scoretk_core::read` : `TWrite::writeItem(BarLine*)`,
+//! `scoretk_musescore_import::read` : `TWrite::writeItem(BarLine*)`,
 //! `TWrite::writeItem(Chord*)`, `TWrite::writeItem(Note*)`,
 //! `TWrite::writeProperties` pour les annotations.
 

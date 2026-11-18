@@ -30,7 +30,8 @@ use std::path::{Path, PathBuf};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, XmlVersion};
 use scoretk_core::model::Score;
-use scoretk_core::{ExportOptions, MsczContainer};
+use scoretk_musescore_import::MsczContainer;
+use scoretk_musicxml_export::ExportOptions;
 use similar::{ChangeTag, TextDiff};
 
 /// Date d'encodage figée, comme dans `e2e_corpus.rs`.
@@ -395,13 +396,13 @@ fn export(score: &Score) -> String {
         encoding_date: ENCODING_DATE.to_owned(),
         ..ExportOptions::default()
     };
-    scoretk_core::export::export_musicxml_with(score, &options).expect("export MusicXML")
+    scoretk_musicxml_export::export_musicxml_with(score, &options).expect("export MusicXML")
 }
 
 /// Lit un `.mscx` en mémoire.
 fn read(mscx: &[u8]) -> Result<Score, String> {
     let container = MsczContainer::from_bytes(mscx).map_err(|error| error.to_string())?;
-    scoretk_core::read::read_score(&container).map_err(|error| error.to_string())
+    scoretk_musescore_import::read::read_score(&container).map_err(|error| error.to_string())
 }
 
 /// Résultat de l'aller-retour d'un fichier.

@@ -39,7 +39,7 @@ changer de version de référence (voir § 4).
   Les sources `.mscx` viennent du même commit amont (voir
   `tests/corpus/SOURCES.md`), principalement de
   `src/importexport/musicxml/tests/data/` et `src/engraving/tests/`.
-- **Table des instruments** — `crates/scoretk-core/src/read/instruments.rs`,
+- **Table des instruments** — `crates/scoretk-musescore-import/src/read/instruments.rs`,
   **fichier généré** par `scripts/gen-instruments-table.py` à partir de
   `share/instruments/instruments.xml`. Le fichier généré et `NOTICE`
   mentionnent la version **4.4** du catalogue ; ne pas modifier la table à la
@@ -81,8 +81,8 @@ réécriture, voir `NOTICE`).
 
 ## 3. Correspondance C++ → Rust
 
-Chemins amont relatifs à `ref-musescore/src/`. La colonne Rust est relative à
-`crates/scoretk-core/src/`. Cette table est dressée à partir des en-têtes
+Chemins amont relatifs à `ref-musescore/src/`. La colonne Rust est relative à la
+racine du dépôt. Cette table est dressée à partir des en-têtes
 « Portage de … » des fichiers Rust : **mettre à jour l'en-tête et cette table**
 à chaque nouveau portage.
 
@@ -90,85 +90,85 @@ Chemins amont relatifs à `ref-musescore/src/`. La colonne Rust est relative à
 
 | Rust | C++ amont |
 | --- | --- |
-| `lib.rs` | `importexport/musicxml/internal/export/` |
-| `container.rs` | `engraving/infrastructure/mscreader.cpp` |
-| `read/mod.rs` | `engraving/rw/rwregister.cpp` |
-| `read/instruments.rs` | `engraving/dom/instrument.cpp` (`updateInstrumentId`, `recognizeMidiProgram`) et `share/instruments/instruments.xml` |
+| `crates/scoretk-musicxml-export/src/lib.rs` | `importexport/musicxml/internal/export/` |
+| `crates/scoretk-musescore-import/src/container.rs` | `engraving/infrastructure/mscreader.cpp` |
+| `crates/scoretk-musescore-import/src/read/mod.rs` | `engraving/rw/rwregister.cpp` |
+| `crates/scoretk-musescore-import/src/read/instruments.rs` | `engraving/dom/instrument.cpp` (`updateInstrumentId`, `recognizeMidiProgram`) et `share/instruments/instruments.xml` |
 
-### Modèle (`model/`)
-
-| Rust | C++ amont |
-| --- | --- |
-| `model/mod.rs` | `engraving/dom/` |
-| `model/annotation.rs` | `engraving/dom/{segment,dynamic,stafftext,systemtext,tempotext,rehearsalmark,instrument,harmony}.h` |
-| `model/chord.rs` | `engraving/dom/{chordrest,chord,rest,articulation}.h` |
-| `model/duration.rs` | `engraving/dom/durationtype.h`, `engraving/types/types.h` |
-| `model/fraction.rs` | `engraving/types/fraction.h` |
-| `model/hairpin.rs` | `engraving/dom/hairpin.h` |
-| `model/ids.rs` | `engraving/dom/{segment,score}.h` |
-| `model/lyrics.rs` | `engraving/dom/lyrics.h`, `engraving/types/types.h` |
-| `model/measure.rs` | `engraving/dom/measure.h` |
-| `model/notation.rs` | `engraving/dom/{fermata,ornament,tremolosinglechord,tremolotwochord,arpeggio,glissando,chordline,fingering}.h` |
-| `model/note.rs` | `engraving/dom/{note,tie,pitchspelling}.h` |
-| `model/part.rs` | `engraving/dom/{part,staff,instrument}.h` |
-| `model/repeat.rs` | `engraving/dom/{marker,jump,volta}.h` |
-| `model/score.rs` | `engraving/dom/score.h` |
-| `model/segment.rs` | `engraving/dom/{segment,keysig,timesig,clef,barline}.h` |
-| `model/spanner.rs` | `engraving/dom/spanner.h` |
-| `model/style.rs` | `engraving/style/style.h`, `importexport/musicxml/internal/export/exportmusicxml.cpp` |
-| `model/text.rs` | `engraving/dom/textbase.cpp`, `importexport/musicxml/internal/shared/musicxmlfonthandler.cpp`, `…/exportmusicxml.cpp` |
-| `model/tuplet.rs` | `engraving/dom/tuplet.h` |
-
-### Lecteurs 3.x (`read/read302/`)
+### Modèle (`crates/scoretk-core/src/model/`)
 
 | Rust | C++ amont |
 | --- | --- |
-| `read302/mod.rs` | `engraving/rw/read302/read302.cpp`, `engraving/rw/read400/` |
-| `read302/annotations.rs` | `engraving/rw/read400/tread.cpp` |
-| `read302/chord.rs` | `engraving/rw/read400/tread.cpp` |
-| `read302/credits.rs` | `engraving/rw/read302/read302.cpp`, `read400/tread.cpp` |
-| `read302/measure.rs` | `engraving/rw/read400/{staffrw,measurerw}.cpp` |
-| `read302/notations.rs` | `engraving/rw/read400/tread.cpp` |
-| `read302/nuances.rs` | `engraving/rw/read400/tread.cpp` |
-| `read302/part.rs` | `engraving/rw/read400/tread.cpp`, `read302/read302.cpp` |
-| `read302/repeats.rs` | `engraving/rw/read400/tread.cpp` |
-| `read302/spanner.rs` | `engraving/rw/read400/connectorinforeader.cpp` |
-| `read302/tables.rs` | `engraving/types/types.h`, `engraving/rw/` (tables de noms) |
-| `read302/textlines.rs` | `engraving/rw/read400/tread.cpp` |
+| `crates/scoretk-core/src/model/mod.rs` | `engraving/dom/` |
+| `crates/scoretk-core/src/model/annotation.rs` | `engraving/dom/{segment,dynamic,stafftext,systemtext,tempotext,rehearsalmark,instrument,harmony}.h` |
+| `crates/scoretk-core/src/model/chord.rs` | `engraving/dom/{chordrest,chord,rest,articulation}.h` |
+| `crates/scoretk-core/src/model/duration.rs` | `engraving/dom/durationtype.h`, `engraving/types/types.h` |
+| `crates/scoretk-core/src/model/fraction.rs` | `engraving/types/fraction.h` |
+| `crates/scoretk-core/src/model/hairpin.rs` | `engraving/dom/hairpin.h` |
+| `crates/scoretk-core/src/model/ids.rs` | `engraving/dom/{segment,score}.h` |
+| `crates/scoretk-core/src/model/lyrics.rs` | `engraving/dom/lyrics.h`, `engraving/types/types.h` |
+| `crates/scoretk-core/src/model/measure.rs` | `engraving/dom/measure.h` |
+| `crates/scoretk-core/src/model/notation.rs` | `engraving/dom/{fermata,ornament,tremolosinglechord,tremolotwochord,arpeggio,glissando,chordline,fingering}.h` |
+| `crates/scoretk-core/src/model/note.rs` | `engraving/dom/{note,tie,pitchspelling}.h` |
+| `crates/scoretk-core/src/model/part.rs` | `engraving/dom/{part,staff,instrument}.h` |
+| `crates/scoretk-core/src/model/repeat.rs` | `engraving/dom/{marker,jump,volta}.h` |
+| `crates/scoretk-core/src/model/score.rs` | `engraving/dom/score.h` |
+| `crates/scoretk-core/src/model/segment.rs` | `engraving/dom/{segment,keysig,timesig,clef,barline}.h` |
+| `crates/scoretk-core/src/model/spanner.rs` | `engraving/dom/spanner.h` |
+| `crates/scoretk-core/src/model/style.rs` | `engraving/style/style.h`, `importexport/musicxml/internal/export/exportmusicxml.cpp` |
+| `crates/scoretk-core/src/model/text.rs` | `engraving/dom/textbase.cpp`, `importexport/musicxml/internal/shared/musicxmlfonthandler.cpp`, `…/exportmusicxml.cpp` |
+| `crates/scoretk-core/src/model/tuplet.rs` | `engraving/dom/tuplet.h` |
 
-### Lecteurs 4.x/5.x (`read/read4xx/`)
-
-| Rust | C++ amont |
-| --- | --- |
-| `read4xx/mod.rs` | `engraving/rw/read400/read400.cpp`, `read410/read410.cpp`, `read460/read460.cpp`, `read500/read500.cpp` |
-| `read4xx/names.rs` | `engraving/types/types.h`, `engraving/rw/` (tables de noms) |
-| `read4xx/notations.rs` | `engraving/rw/read400/tread.cpp` |
-| `read4xx/nuances.rs` | `engraving/rw/read410/tread.cpp` |
-| `read4xx/ottava.rs` | `engraving/rw/read400/connectorinforeader.cpp` |
-| `read4xx/pedals.rs` | `engraving/rw/read400/{connectorinforeader,tread}.cpp` |
-| `read4xx/repeats.rs` | `engraving/rw/read400/{tread,connectorinforeader}.cpp` |
-| `read4xx/style.rs` | `engraving/rw/compat/readstyle.cpp` |
-| `read4xx/textlines.rs` | `engraving/rw/read400/{connectorinforeader,tread}.cpp` |
-
-### Export (`export/`)
+### Lecteurs 3.x (`crates/scoretk-musescore-import/src/read/read302/`)
 
 | Rust | C++ amont |
 | --- | --- |
-| `export/mod.rs` | `importexport/musicxml/internal/export/` |
-| `export/exportmusicxml.rs` | `importexport/musicxml/internal/export/exportmusicxml.cpp`, `importexport/musicxml/internal/shared/` |
-| `export/beams.rs` | `engraving/rendering/score/beamlayout.cpp`, `engraving/dom/groups.cpp`, `…/exportmusicxml.cpp` |
-| `export/harmony.rs` | `…/exportmusicxml.cpp`, `engraving/dom/chordlist.cpp` |
-| `export/layout.rs` | `…/exportmusicxml.cpp` (`defaults`, `writePageFormat`, `textAsCreditWords`) |
-| `export/notations.rs` | `…/exportmusicxml.cpp` (`chordAttributes`, `fermata`, `symIdToArtic`) |
-| `export/nuances.rs` | `…/exportmusicxml.cpp` (`dynamic`, `hairpin`) |
-| `export/ottava.rs` | `…/exportmusicxml.cpp` (`ottava`) |
-| `export/pedals.rs` | `…/exportmusicxml.cpp`, `importexport/musicxml/internal/shared/` |
-| `export/pitch.rs` | `…/exportmusicxml.cpp` (`tpc2stepName`), `engraving/dom/pitchspelling.cpp` |
-| `export/repeats.rs` | `…/exportmusicxml.cpp` (`barlineLeft/Middle/Right`, marqueurs, sauts) |
-| `export/stems.rs` | `engraving/rendering/score/chordlayout.cpp` |
-| `export/text.rs` | `…/exportmusicxml.cpp`, `…/shared/musicxmlfonthandler.cpp`, `engraving/dom/tempotext.cpp` |
-| `export/textlines.rs` | `…/exportmusicxml.cpp` (`textLine`, `writeHairpinText`) |
-| `export/writer.rs` | `engraving/rw/xmlwriter.cpp` |
+| `crates/scoretk-musescore-import/src/read302/mod.rs` | `engraving/rw/read302/read302.cpp`, `engraving/rw/read400/` |
+| `crates/scoretk-musescore-import/src/read302/annotations.rs` | `engraving/rw/read400/tread.cpp` |
+| `crates/scoretk-musescore-import/src/read302/chord.rs` | `engraving/rw/read400/tread.cpp` |
+| `crates/scoretk-musescore-import/src/read302/credits.rs` | `engraving/rw/read302/read302.cpp`, `read400/tread.cpp` |
+| `crates/scoretk-musescore-import/src/read302/measure.rs` | `engraving/rw/read400/{staffrw,measurerw}.cpp` |
+| `crates/scoretk-musescore-import/src/read302/notations.rs` | `engraving/rw/read400/tread.cpp` |
+| `crates/scoretk-musescore-import/src/read302/nuances.rs` | `engraving/rw/read400/tread.cpp` |
+| `crates/scoretk-musescore-import/src/read302/part.rs` | `engraving/rw/read400/tread.cpp`, `read302/read302.cpp` |
+| `crates/scoretk-musescore-import/src/read302/repeats.rs` | `engraving/rw/read400/tread.cpp` |
+| `crates/scoretk-musescore-import/src/read302/spanner.rs` | `engraving/rw/read400/connectorinforeader.cpp` |
+| `crates/scoretk-musescore-import/src/read302/tables.rs` | `engraving/types/types.h`, `engraving/rw/` (tables de noms) |
+| `crates/scoretk-musescore-import/src/read302/textlines.rs` | `engraving/rw/read400/tread.cpp` |
+
+### Lecteurs 4.x/5.x (`crates/scoretk-musescore-import/src/read/read4xx/`)
+
+| Rust | C++ amont |
+| --- | --- |
+| `crates/scoretk-musescore-import/src/read4xx/mod.rs` | `engraving/rw/read400/read400.cpp`, `read410/read410.cpp`, `read460/read460.cpp`, `read500/read500.cpp` |
+| `crates/scoretk-musescore-import/src/read4xx/names.rs` | `engraving/types/types.h`, `engraving/rw/` (tables de noms) |
+| `crates/scoretk-musescore-import/src/read4xx/notations.rs` | `engraving/rw/read400/tread.cpp` |
+| `crates/scoretk-musescore-import/src/read4xx/nuances.rs` | `engraving/rw/read410/tread.cpp` |
+| `crates/scoretk-musescore-import/src/read4xx/ottava.rs` | `engraving/rw/read400/connectorinforeader.cpp` |
+| `crates/scoretk-musescore-import/src/read4xx/pedals.rs` | `engraving/rw/read400/{connectorinforeader,tread}.cpp` |
+| `crates/scoretk-musescore-import/src/read4xx/repeats.rs` | `engraving/rw/read400/{tread,connectorinforeader}.cpp` |
+| `crates/scoretk-musescore-import/src/read4xx/style.rs` | `engraving/rw/compat/readstyle.cpp` |
+| `crates/scoretk-musescore-import/src/read4xx/textlines.rs` | `engraving/rw/read400/{connectorinforeader,tread}.cpp` |
+
+### Export (`crates/scoretk-musicxml-export/src/`)
+
+| Rust | C++ amont |
+| --- | --- |
+| `crates/scoretk-musicxml-export/src/lib.rs` | `importexport/musicxml/internal/export/` |
+| `crates/scoretk-musicxml-export/src/exportmusicxml.rs` | `importexport/musicxml/internal/export/exportmusicxml.cpp`, `importexport/musicxml/internal/shared/` |
+| `crates/scoretk-musicxml-export/src/beams.rs` | `engraving/rendering/score/beamlayout.cpp`, `engraving/dom/groups.cpp`, `…/exportmusicxml.cpp` |
+| `crates/scoretk-musicxml-export/src/harmony.rs` | `…/exportmusicxml.cpp`, `engraving/dom/chordlist.cpp` |
+| `crates/scoretk-musicxml-export/src/layout.rs` | `…/exportmusicxml.cpp` (`defaults`, `writePageFormat`, `textAsCreditWords`) |
+| `crates/scoretk-musicxml-export/src/notations.rs` | `…/exportmusicxml.cpp` (`chordAttributes`, `fermata`, `symIdToArtic`) |
+| `crates/scoretk-musicxml-export/src/nuances.rs` | `…/exportmusicxml.cpp` (`dynamic`, `hairpin`) |
+| `crates/scoretk-musicxml-export/src/ottava.rs` | `…/exportmusicxml.cpp` (`ottava`) |
+| `crates/scoretk-musicxml-export/src/pedals.rs` | `…/exportmusicxml.cpp`, `importexport/musicxml/internal/shared/` |
+| `crates/scoretk-musicxml-export/src/pitch.rs` | `…/exportmusicxml.cpp` (`tpc2stepName`), `engraving/dom/pitchspelling.cpp` |
+| `crates/scoretk-musicxml-export/src/repeats.rs` | `…/exportmusicxml.cpp` (`barlineLeft/Middle/Right`, marqueurs, sauts) |
+| `crates/scoretk-musicxml-export/src/stems.rs` | `engraving/rendering/score/chordlayout.cpp` |
+| `crates/scoretk-musicxml-export/src/text.rs` | `…/exportmusicxml.cpp`, `…/shared/musicxmlfonthandler.cpp`, `engraving/dom/tempotext.cpp` |
+| `crates/scoretk-musicxml-export/src/textlines.rs` | `…/exportmusicxml.cpp` (`textLine`, `writeHairpinText`) |
+| `crates/scoretk-musicxml-export/src/writer.rs` | `engraving/rw/xmlwriter.cpp` |
 
 ### Lecteur MusicXML (`crates/scoretk-musicxml/`)
 
@@ -305,7 +305,7 @@ avec une correction de parité indépendante.
    # Table des instruments (depuis la copie amont)
    python3 scripts/gen-instruments-table.py \
      ref-musescore/share/instruments/instruments.xml \
-     crates/scoretk-core/src/read/instruments.rs
+     crates/scoretk-musescore-import/src/read/instruments.rs
 
    # Références du corpus (MuseScore 4.7.4 par défaut, headless)
    scripts/gen-references.sh            # tout le corpus
@@ -328,7 +328,7 @@ avec une correction de parité indépendante.
 
    ```sh
    nix develop -c cargo test --workspace
-   nix develop -c cargo test -p scoretk-core --test e2e_corpus -- --nocapture
+   nix develop -c cargo test -p scoretk --test e2e_corpus -- --nocapture
    nix flake check
    ```
 

@@ -87,11 +87,11 @@ pub mod repeat;
 pub mod score;
 pub mod segment;
 pub mod spanner;
+pub mod stable_ids;
 pub mod style;
 pub mod text;
 pub mod tremolo_bar;
 pub mod tuplet;
-pub mod xmlid;
 
 pub use annotation::{
     text_style_defaults, Annotation, Dynamic, Harmony, HarmonyDegree, HarmonyDegreeKind,
@@ -128,6 +128,7 @@ pub use spanner::{
     HairpinType, HookType, LineFont, OttavaType, PedalInfo, Spanner, SpannerAnchor, SpannerType,
     TextLineInfo, TextLineStyle,
 };
+pub use stable_ids::{stable_grace_note_id, stable_measure_id, stable_note_id};
 pub use style::{StyleSettings, TENTHS};
 pub use text::{
     symbol_character, Credit, CreditJustify, CreditStyle, CreditValign, RichText, TboxText,
@@ -135,7 +136,6 @@ pub use text::{
 };
 pub use tremolo_bar::{TremoloBar, TremoloBarPoint, TremoloBarType};
 pub use tuplet::{Tuplet, TupletNumberType};
-pub use xmlid::{grace_note_xml_id, measure_xml_id, note_xml_id};
 
 #[cfg(test)]
 mod tests;

@@ -34,9 +34,9 @@ fn corpus() -> PathBuf {
 
 fn convertir(path: &Path) -> String {
     let bytes = fs::read(path).unwrap_or_else(|error| panic!("lecture de {path:?} : {error}"));
-    let container = scoretk_core::MsczContainer::from_bytes(&bytes)
+    let container = scoretk_musescore_import::MsczContainer::from_bytes(&bytes)
         .unwrap_or_else(|error| panic!("conteneur de {path:?} : {error}"));
-    let score = scoretk_core::read::read_score(&container)
+    let score = scoretk_musescore_import::read::read_score(&container)
         .unwrap_or_else(|error| panic!("lecture de {path:?} : {error}"));
     scoretk_abc::write_abc(&score).unwrap_or_else(|error| panic!("écriture de {path:?} : {error}"))
 }

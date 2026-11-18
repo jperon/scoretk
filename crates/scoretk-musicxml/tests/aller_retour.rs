@@ -20,7 +20,7 @@
 //! Pour chaque `tests/corpus/{v3,v4}/*.ref.musicxml`, on lit la référence avec
 //! [`read_musicxml`], on la réexporte avec l'export de `scoretk_core`, et on
 //! compare les deux documents après la normalisation de
-//! `crates/scoretk-core/tests/e2e_corpus.rs`, aux deux niveaux :
+//! `crates/scoretk/tests/e2e_corpus.rs`, aux deux niveaux :
 //!
 //! - **noyau musical** (`Level::Core`) : c'est le niveau bloquant, celui de la
 //!   conformité `mscx → MusicXML` ;
@@ -36,8 +36,8 @@ mod common;
 
 use std::fs;
 
-use scoretk_core::export::{export_musicxml_with, ExportOptions};
 use scoretk_musicxml::read_musicxml;
+use scoretk_musicxml_export::{export_musicxml_with, ExportOptions};
 
 use common::Level;
 

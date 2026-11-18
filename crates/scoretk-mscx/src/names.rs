@@ -21,7 +21,7 @@
 
 //! Conversions du modèle vers les noms MuseScore.
 //!
-//! Miroir des tables de `scoretk_core::read` : les valeurs écrites sont exactement
+//! Miroir des tables de `scoretk_musescore_import::read` : les valeurs écrites sont exactement
 //! celles que `TConv::toXml` produit dans MuseScore, afin qu'un fichier relu
 //! redonne le même modèle. Les fonctions sont totales : une valeur inconnue
 //! garde son nom MuseScore quand le modèle le porte (`Other`), sinon elle

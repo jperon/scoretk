@@ -17,7 +17,7 @@
 
 //! Options d'écriture communes à tous les formats.
 
-use scoretk_core::ExportOptions;
+use scoretk_musicxml_export::ExportOptions;
 
 /// Options d'écriture MIDI.
 ///

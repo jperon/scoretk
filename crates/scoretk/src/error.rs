@@ -24,7 +24,11 @@ use crate::format::{Format, Sens};
 pub enum Error {
     /// Erreur du convertisseur MuseScore → modèle.
     #[error(transparent)]
-    Core(#[from] scoretk_core::Error),
+    MuseScoreImport(#[from] scoretk_musescore_import::Error),
+
+    /// Erreur de l'export MusicXML.
+    #[error(transparent)]
+    MusicXmlExport(#[from] scoretk_musicxml_export::Error),
 
     /// Le format demandé n'a pas encore de convertisseur dans ce sens.
     ///

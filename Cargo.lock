@@ -317,12 +317,16 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 name = "scoretk"
 version = "0.1.0"
 dependencies = [
+ "quick-xml",
  "scoretk-abc",
  "scoretk-core",
  "scoretk-lilypond",
  "scoretk-midi",
  "scoretk-mscx",
+ "scoretk-musescore-import",
  "scoretk-musicxml",
+ "scoretk-musicxml-export",
+ "similar 3.2.1",
  "thiserror",
  "zip",
 ]
@@ -333,6 +337,8 @@ version = "0.1.0"
 dependencies = [
  "quick-xml",
  "scoretk-core",
+ "scoretk-musescore-import",
+ "scoretk-musicxml-export",
  "thiserror",
 ]
 
@@ -342,7 +348,8 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "scoretk",
- "scoretk-core",
+ "scoretk-musescore-import",
+ "scoretk-musicxml-export",
  "zip",
 ]
 
@@ -350,10 +357,7 @@ dependencies = [
 name = "scoretk-core"
 version = "0.1.0"
 dependencies = [
- "quick-xml",
- "similar 3.2.1",
  "thiserror",
- "zip",
 ]
 
 [[package]]
@@ -362,6 +366,8 @@ version = "0.1.0"
 dependencies = [
  "quick-xml",
  "scoretk-core",
+ "scoretk-musescore-import",
+ "scoretk-musicxml-export",
  "thiserror",
 ]
 
@@ -372,7 +378,9 @@ dependencies = [
  "midly",
  "quick-xml",
  "scoretk-core",
+ "scoretk-musescore-import",
  "scoretk-musicxml",
+ "scoretk-musicxml-export",
  "similar 2.7.0",
  "thiserror",
 ]
@@ -383,7 +391,19 @@ version = "0.1.0"
 dependencies = [
  "quick-xml",
  "scoretk-core",
+ "scoretk-musescore-import",
+ "scoretk-musicxml-export",
  "similar 3.2.1",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
+name = "scoretk-musescore-import"
+version = "0.1.0"
+dependencies = [
+ "quick-xml",
+ "scoretk-core",
  "thiserror",
  "zip",
 ]
@@ -394,7 +414,18 @@ version = "0.1.0"
 dependencies = [
  "quick-xml",
  "scoretk-core",
+ "scoretk-musescore-import",
+ "scoretk-musicxml-export",
  "similar 3.2.1",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
+name = "scoretk-musicxml-export"
+version = "0.1.0"
+dependencies = [
+ "scoretk-core",
  "thiserror",
  "zip",
 ]

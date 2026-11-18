@@ -109,27 +109,29 @@ fn files() -> Vec<PathBuf> {
 
 fn direct_xml(path: &Path) -> String {
     let bytes = fs::read(path).expect("lecture .mscx");
-    let container = scoretk_core::MsczContainer::from_bytes(&bytes).expect("conteneur");
-    let score = scoretk_core::read::read_score(&container).expect("lecture");
-    let options = scoretk_core::ExportOptions {
+    let container = scoretk_musescore_import::MsczContainer::from_bytes(&bytes).expect("conteneur");
+    let score = scoretk_musescore_import::read::read_score(&container).expect("lecture");
+    let options = scoretk_musicxml_export::ExportOptions {
         encoding_date: "2026-11-17".to_owned(),
-        ..scoretk_core::ExportOptions::default()
+        ..scoretk_musicxml_export::ExportOptions::default()
     };
-    scoretk_core::export::export_musicxml_with(&score, &options).expect("export direct")
+    scoretk_musicxml_export::export_musicxml_with(&score, &options).expect("export direct")
 }
 
 fn roundtrip_xml(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path).map_err(|error| error.to_string())?;
-    let container =
-        scoretk_core::MsczContainer::from_bytes(&bytes).map_err(|error| error.to_string())?;
-    let score = scoretk_core::read::read_score(&container).map_err(|error| error.to_string())?;
+    let container = scoretk_musescore_import::MsczContainer::from_bytes(&bytes)
+        .map_err(|error| error.to_string())?;
+    let score = scoretk_musescore_import::read::read_score(&container)
+        .map_err(|error| error.to_string())?;
     let abc = scoretk_abc::write_abc(&score).map_err(|error| error.to_string())?;
     let read = scoretk_abc::read_abc(&abc).map_err(|error| error.to_string())?;
-    let options = scoretk_core::ExportOptions {
+    let options = scoretk_musicxml_export::ExportOptions {
         encoding_date: "2026-11-17".to_owned(),
-        ..scoretk_core::ExportOptions::default()
+        ..scoretk_musicxml_export::ExportOptions::default()
     };
-    scoretk_core::export::export_musicxml_with(&read, &options).map_err(|error| error.to_string())
+    scoretk_musicxml_export::export_musicxml_with(&read, &options)
+        .map_err(|error| error.to_string())
 }
 
 #[test]

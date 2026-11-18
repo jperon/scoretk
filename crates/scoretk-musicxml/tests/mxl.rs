@@ -25,15 +25,15 @@ mod common;
 
 use std::io::{Cursor, Write};
 
-use scoretk_core::export::{export_musicxml_with, export_mxl_with, ExportOptions};
-use scoretk_core::MsczContainer;
+use scoretk_musescore_import::MsczContainer;
 use scoretk_musicxml::{read_musicxml, read_mxl};
+use scoretk_musicxml_export::{export_musicxml_with, export_mxl_with, ExportOptions};
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 fn score_from_mscx(mscx: &[u8]) -> scoretk_core::model::Score {
     let container = MsczContainer::from_bytes(mscx).expect("conteneur .mscx");
-    scoretk_core::read::read_score(&container).expect("lecture .mscx")
+    scoretk_musescore_import::read::read_score(&container).expect("lecture .mscx")
 }
 
 /// Emballe un MusicXML dans une archive `.mxl` donnée.

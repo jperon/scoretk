@@ -14,7 +14,7 @@ Studio, `src/importexport/musicxml/internal/import/`
 use scoretk_musicxml::{read_musicxml, read_mxl};
 let score = read_musicxml(bytes)?;            // bytes = .musicxml, .xml ou .mxl
 let score = read_mxl(bytes)?;                 // bytes = archive .mxl uniquement
-let xml = scoretk_core::export::export_musicxml(&score)?;
+let xml = scoretk_musicxml_export::export_musicxml(&score)?;
 ```
 
 | Fichier | Rôle |
@@ -65,7 +65,7 @@ reconnaît un ZIP contenant `META-INF/container.xml` **après** avoir écarté u
 `crates/scoretk-musicxml/tests/aller_retour.rs` lit chaque
 `tests/corpus/{v3,v4}/*.ref.musicxml`, le réexporte avec l'export de
 `scoretk-core`, et compare les deux documents avec la normalisation de
-`crates/scoretk-core/tests/e2e_corpus.rs`, aux **deux niveaux** :
+`crates/scoretk/tests/e2e_corpus.rs`, aux **deux niveaux** :
 
 - **noyau musical** (`Level::Core`) : niveau bloquant, identique à la
   conformité `mscx → MusicXML` ;

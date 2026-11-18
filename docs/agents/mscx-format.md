@@ -1,6 +1,6 @@
 # Format MSCX — noyau musical
 Référence de lecture des `.mscx` 3.x/4.x/5.x pour les agents qui écrivent en
-Rust les lecteurs de `scoretk-core`. Sources C++ vérifiées, en lecture seule :
+Rust les lecteurs de `scoretk-musescore-import`. Sources C++ vérifiées, en lecture seule :
 `ref-musescore/src/engraving/{rw/read302,read400,read410,read460,read500,dom}`.
 Chemins relatifs à `ref-musescore/src/engraving/`. Corpus de contrôle :
 `src/importexport/musicxml/tests/data/*.mscx` (3.01 à 5.00).
@@ -59,7 +59,7 @@ Enfants utiles de `<Score>` :
 
 `<SystemObjects>`, `<Order>`, `<PageLocks>`, `<SystemLocks>`,
 `<SystemDividers>` sont hors noyau. Le conteneur `.mscz` est traité par
-`crates/scoretk-core/src/container.rs` : `META-INF/container.xml`, `<nom>.mscx`,
+`crates/scoretk-musescore-import/src/container.rs` : `META-INF/container.xml`, `<nom>.mscx`,
 `score_style.mss`, `Excerpts/`.
 `MscReader::readScoreFile` (`infrastructure/mscreader.cpp:139-163`) cherche le
 nom annoncé puis le premier `.mscx` à la racine.

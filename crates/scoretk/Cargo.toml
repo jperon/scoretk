@@ -26,6 +26,10 @@ abc = ["dep:scoretk-abc"]
 
 [dependencies]
 scoretk-core = { path = "../scoretk-core" }
+# Les deux moitiés MuseScore / MusicXML sont non optionnelles à cette étape :
+# les features seront refaites à l'étape 3.
+scoretk-musescore-import = { path = "../scoretk-musescore-import" }
+scoretk-musicxml-export = { path = "../scoretk-musicxml-export" }
 scoretk-abc = { path = "../scoretk-abc", optional = true }
 scoretk-lilypond = { path = "../scoretk-lilypond", optional = true }
 scoretk-mscx = { path = "../scoretk-mscx", optional = true }
@@ -33,3 +37,7 @@ scoretk-midi = { path = "../scoretk-midi", optional = true }
 scoretk-musicxml = { path = "../scoretk-musicxml", optional = true }
 thiserror = { workspace = true }
 zip = { workspace = true }
+
+[dev-dependencies]
+quick-xml = { workspace = true }
+similar = "3"

@@ -77,14 +77,14 @@ non décroissant.
 
 ## 3. Identifiants MusicXML
 
-Les formules viennent de `scoretk_core::model::xmlid`, partagées avec l'export :
+Les formules viennent de `scoretk_core::model::stable_ids`, partagées avec l'export :
 aucune recopie, donc égalité exacte entre la carte et le MusicXML.
 
 | Élément | Fonction | Forme |
 | --- | --- | --- |
-| Mesure | `measure_xml_id(part, measure)` | `p{part}-m{measure}` |
-| Note / silence | `note_xml_id(measure, staff, voice, chord, note)` | `m{measure}-s{staff}-v{voice}-c{chord}-n{note}` |
-| Ornement | `grace_note_xml_id(measure, staff, voice, chord, grace_index, note, before)` | `m{measure}-s{staff}-v{voice}-c{chord}-g{grace_index}{b\|a}n{note}` |
+| Mesure | `stable_measure_id(part, measure)` | `p{part}-m{measure}` |
+| Note / silence | `stable_note_id(measure, staff, voice, chord, note)` | `m{measure}-s{staff}-v{voice}-c{chord}-n{note}` |
+| Ornement | `stable_grace_note_id(measure, staff, voice, chord, grace_index, note, before)` | `m{measure}-s{staff}-v{voice}-c{chord}-g{grace_index}{b\|a}n{note}` |
 
 - `part`, `measure`, `chord`, `note`, `grace_index` sont des indices du modèle
   (base zéro), pas des numéros affichés ni des rangs de passage.

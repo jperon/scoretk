@@ -92,9 +92,9 @@ fn le_corpus_compile_sans_erreur() {
 
     for path in fichiers() {
         let bytes = fs::read(&path).unwrap_or_else(|error| panic!("lecture {path:?} : {error}"));
-        let container = scoretk_core::MsczContainer::from_bytes(&bytes)
+        let container = scoretk_musescore_import::MsczContainer::from_bytes(&bytes)
             .unwrap_or_else(|error| panic!("conteneur {path:?} : {error}"));
-        let score = scoretk_core::read::read_score(&container)
+        let score = scoretk_musescore_import::read::read_score(&container)
             .unwrap_or_else(|error| panic!("lecture {path:?} : {error}"));
         let produit = scoretk_lilypond::write_lilypond(&score)
             .unwrap_or_else(|error| panic!("écriture {path:?} : {error}"));

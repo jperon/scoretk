@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/scoretk-core",
+    "crates/scoretk-musescore-import",
+    "crates/scoretk-musicxml-export",
     "crates/scoretk",
     "crates/scoretk-abc",
     "crates/scoretk-cli",

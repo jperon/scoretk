@@ -14,5 +14,7 @@ thiserror.workspace = true
 zip = { workspace = true }
 
 [dev-dependencies]
+scoretk-musescore-import = { path = "../scoretk-musescore-import" }
+scoretk-musicxml-export = { path = "../scoretk-musicxml-export" }
 quick-xml = { workspace = true }
 similar = "3"

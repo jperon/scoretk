@@ -8,7 +8,7 @@ tempo), puis encodée.
 ## API
 
 ```rust
-use scoretk_core::read;
+use scoretk_musescore_import::read;
 use scoretk_core::MsczContainer;
 use scoretk_midi::write_midi;
 
@@ -32,7 +32,7 @@ let midi: Vec<u8> = write_midi(&score)?;
   LilyPond/ABC.
 - `Timemap` (`timemap.rs`) : `division`, `ticks`, `tempo`, `measures`, `notes`,
   `pauses`, `time_us_at`, `measure_at`. Les identifiants `xml_id()` viennent de
-  `scoretk_core::model::xmlid`, comme l'export MusicXML. Structure complète,
+  `scoretk_core::model::stable_ids`, comme l'export MusicXML. Structure complète,
   sémantique des passages et limites : `docs/agents/timemap.md`.
 
 La crate est portable comme `scoretk-core` : aucun accès disque, aucun thread,
@@ -295,7 +295,7 @@ MuseScore).
 résultat en `tests/corpus/midi/import/<version>/<nom>.ref.musicxml`.
 `crates/scoretk-midi/tests/import_corpus.rs` lit le MIDI avec `read_midi`,
 exporte en MusicXML et compare le **noyau musical** avec la même normalisation
-que `crates/scoretk-core/tests/e2e_corpus.rs` (`tests/core_norm.rs`, avec en plus
+que `crates/scoretk/tests/e2e_corpus.rs` (`tests/core_norm.rs`, avec en plus
 la normalisation des `<divisions>` : la valeur est une convention d'encodage,
 les `<duration>` sont ramenées à 480 par noire).
 

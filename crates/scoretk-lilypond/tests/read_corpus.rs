@@ -324,11 +324,12 @@ fn format_head(event: &quick_xml::events::BytesStart<'_>, level: Level) -> Strin
 /// Exporte un MusicXML depuis un `.mscx`.
 fn export_mscx(path: &Path) -> String {
     let bytes = fs::read(path).unwrap_or_else(|error| panic!("lecture de {path:?} : {error}"));
-    let container = scoretk_core::MsczContainer::from_bytes(&bytes)
+    let container = scoretk_musescore_import::MsczContainer::from_bytes(&bytes)
         .unwrap_or_else(|error| panic!("conteneur de {path:?} : {error}"));
-    let score = scoretk_core::read::read_score(&container)
+    let score = scoretk_musescore_import::read::read_score(&container)
         .unwrap_or_else(|error| panic!("lecture de {path:?} : {error}"));
-    scoretk_core::export::export_musicxml(&score).unwrap_or_else(|error| panic!("export : {error}"))
+    scoretk_musicxml_export::export_musicxml(&score)
+        .unwrap_or_else(|error| panic!("export : {error}"))
 }
 
 /// Exporte un MusicXML depuis un `.ly`.
@@ -337,7 +338,8 @@ fn export_ly(path: &Path) -> String {
         fs::read_to_string(path).unwrap_or_else(|error| panic!("lecture de {path:?} : {error}"));
     let score = scoretk_lilypond::read_lilypond(&source)
         .unwrap_or_else(|error| panic!("lecture de {path:?} : {error}"));
-    scoretk_core::export::export_musicxml(&score).unwrap_or_else(|error| panic!("export : {error}"))
+    scoretk_musicxml_export::export_musicxml(&score)
+        .unwrap_or_else(|error| panic!("export : {error}"))
 }
 
 /// Fichiers `.ly` du corpus, triés, avec leur `.mscx` d'origine.

@@ -38,14 +38,14 @@ Correspondance des grands ensembles :
 
 | Code Rust | Sources MuseScore Studio (sous `src/`) |
 | --- | --- |
-| `crates/scoretk-core/src/export/` | `importexport/musicxml/internal/export/exportmusicxml.cpp`, `importexport/musicxml/internal/shared/`, et pour les ligatures/hampes `engraving/rendering/score/beamlayout.cpp`, `chordlayout.cpp` |
-| `crates/scoretk-core/src/read/read302/` | `engraving/rw/read302/read302.cpp`, `engraving/rw/read400/{staffrw,measurerw,tread,connectorinforeader}.cpp` |
-| `crates/scoretk-core/src/read/read4xx/` | `engraving/rw/read400/`, `read410/`, `read460/`, `read500/` (`read*.cpp`, `staffr*.cpp`, `measurer*.cpp`, `tread.cpp`, `connectorinforeader.cpp`) et `engraving/rw/compat/readstyle.cpp` |
+| `crates/scoretk-musicxml-export/src/` | `importexport/musicxml/internal/export/exportmusicxml.cpp`, `importexport/musicxml/internal/shared/`, et pour les ligatures/hampes `engraving/rendering/score/beamlayout.cpp`, `chordlayout.cpp` |
+| `crates/scoretk-musescore-import/src/read/read302/` | `engraving/rw/read302/read302.cpp`, `engraving/rw/read400/{staffrw,measurerw,tread,connectorinforeader}.cpp` |
+| `crates/scoretk-musescore-import/src/read/read4xx/` | `engraving/rw/read400/`, `read410/`, `read460/`, `read500/` (`read*.cpp`, `staffr*.cpp`, `measurer*.cpp`, `tread.cpp`, `connectorinforeader.cpp`) et `engraving/rw/compat/readstyle.cpp` |
 | `crates/scoretk-core/src/model/` | `engraving/dom/*.h` (partition, segments, notes, accords, spanners, styles de texte…), `engraving/types/`, `engraving/style/style.h` |
-| `crates/scoretk-core/src/container.rs` | `engraving/infrastructure/mscreader.cpp` |
+| `crates/scoretk-musescore-import/src/container.rs` | `engraving/infrastructure/mscreader.cpp` |
 | `crates/scoretk-musicxml/src/` | `importexport/musicxml/internal/import/` (`importmusicxml.cpp`, `importmusicxmlpass1.cpp`, `importmusicxmlpass2.cpp`, `importmusicxmlnoteduration.cpp`, `importmusicxmlnotepitch.cpp`, `musicxmlpart.cpp`, `musicxmltupletstate.cpp`, `musicxmlvoicedesc.cpp`) |
-| `crates/scoretk-core/src/read/mod.rs` | `engraving/rw/rwregister.cpp` |
-| `crates/scoretk-core/src/export/writer.rs` | forme d'écriture XML de `engraving/rw/xmlwriter.cpp` |
+| `crates/scoretk-musescore-import/src/read/mod.rs` | `engraving/rw/rwregister.cpp` |
+| `crates/scoretk-musicxml-export/src/writer.rs` | forme d'écriture XML de `engraving/rw/xmlwriter.cpp` |
 | `crates/scoretk-midi/src/` (écriture) | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/` (`compatmidirender*.cpp`, `velocitymap.cpp`, `pausemap.cpp`) et `engraving/dom/repeatlist.cpp` |
 | `crates/scoretk-midi/src/import/` (lecture) | `importexport/midi/internal/midiimport/` (`importmidi.cpp`, `importmidi_chord.cpp`, `importmidi_quant.cpp`, `importmidi_simplify.cpp`, `importmidi_meter.cpp`, `importmidi_tuplet*.cpp`, `importmidi_voice.cpp`, `importmidi_key.cpp`, `importmidi_clef.cpp`, `importmidi_lrhand.cpp`, `importmidi_drum.cpp`, `importmidi_lyrics.cpp`, `importmidi_tempo.cpp`, `importmidi_instrument.cpp`, `importmidi_operations.h`), `importexport/midi/internal/midishared/{midifile,midievent,generalmidi}.cpp` et `engraving/dom/{sig,durationtype}.cpp` |
 | `crates/scoretk-lilypond/src/` | sémantique de `engraving/dom/` (accords, mesures, volatas, spanners) ; tables de notation de `musicxml2ly` (voir ci-dessous) |
@@ -156,7 +156,7 @@ scripts de **Willem Vree** :
 
 ### Table des instruments
 
-`crates/scoretk-core/src/read/instruments.rs` est généré par
+`crates/scoretk-musescore-import/src/read/instruments.rs` est généré par
 `scripts/gen-instruments-table.py` à partir de
 `share/instruments/instruments.xml` de MuseScore (version 4.4), licence
 GPL-3.0, Copyright (C) MuseScore Limited and others. La table est une donnée

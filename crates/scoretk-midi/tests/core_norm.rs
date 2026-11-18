@@ -18,7 +18,7 @@
 //! Normalisation du noyau musical pour les tests d'import MIDI.
 //!
 //! Copie des règles du niveau `Level::Core` de
-//! `crates/scoretk-core/tests/e2e_corpus.rs` : les deux documents MusicXML sont
+//! `crates/scoretk/tests/e2e_corpus.rs` : les deux documents MusicXML sont
 //! réduits à une suite de lignes canoniques, sans `<identification>`,
 //! `<defaults>`, `<credit>`, `<direction>`, `<stem>`, `<beam>`, `<print>`, ni
 //! attributs de mise en page. Le test garde ainsi la même définition du noyau

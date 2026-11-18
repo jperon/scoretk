@@ -1,0 +1,411 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//
+// Copyright (C) 2026 jperon
+//
+// Portage de `engraving/rw/read400/tread.cpp` de MuseScore Studio, Copyright
+// (C) MuseScore Limited and others, modifié (réécrit en Rust) en 2026.
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License version 3 as published by
+// the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+// more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// this program. If not, see the LICENSE file at the root of this repository or
+// <https://www.gnu.org/licenses/gpl-3.0.html>.
+
+//! Accords, silences, notes, paroles et n-olets.
+//!
+//! Portage de `TRead::read(Chord*)`, `readProperties(ChordRest*)`,
+//! `read(Rest*)`, `read(Note*)`, `read(Lyrics*)` et `read(Tuplet*)`
+//! (`engraving/rw/read400/tread.cpp`).
+
+use super::notations;
+use super::spanner;
+use super::tables;
+use super::xml::Node;
+use super::{Reader, VoiceCtx};
+use scoretk_core::model::{
+    tpc, Accidental, BeamMode, Chord, ChordLineType, ChordRest, ChordRestKind, Duration,
+    DurationType, Fraction, GraceType, Lyrics, LyricsSyllabic, Note, NoteHeadType, NoteId,
+    Placement, Rest, Score, StemDirection, Transpose, Tuplet, TupletId, TupletNumberType,
+};
+
+/// Lit un `<Chord>` ou un `<Rest>`.
+///
+/// `grace_index` est la position de l'accord dans la liste des ornements en
+/// attente ; elle ne sert qu'aux liaisons et spanners ancrés sur une note.
+pub(crate) fn read_chord_rest(
+    reader: &mut Reader,
+    node: &Node,
+    ctx: &VoiceCtx,
+    grace_index: usize,
+) -> ChordRest {
+    let is_rest = node.name() == "Rest";
+    // `MeasureRead::readVoice` crée tout `<Rest>` en silence de mesure entière ;
+    // `<durationType>` le cas échéant change la figure.
+    let mut duration_kind = if is_rest {
+        DurationType::Measure
+    } else {
+        DurationType::Quarter
+    };
+    let mut dots = 0u8;
+    let mut explicit: Option<Fraction> = None;
+    let mut grace: Option<GraceType> = None;
+    let mut slash = false;
+    let mut stem = StemDirection::Auto;
+    let mut small = false;
+    let mut beam = BeamMode::Auto;
+    let mut lyrics = Vec::new();
+    let mut articulations = Vec::new();
+    let mut staff_move = 0i8;
+    let mut ornaments = Vec::new();
+    let mut tremolo = None;
+    let mut arpeggio = None;
+    let mut chord_line = None;
+    let mut visible = true;
+
+    for child in node.children() {
+        match child.name() {
+            "durationType" => {
+                duration_kind =
+                    tables::duration_type(&child.trimmed_text()).unwrap_or(DurationType::Quarter);
+            }
+            "dots" => dots = child.int_text().unwrap_or(0).clamp(0, 4) as u8,
+            "duration" => explicit = child.fraction(),
+            "appoggiatura" => grace = Some(GraceType::Appoggiatura),
+            "acciaccatura" => {
+                grace = Some(GraceType::Acciaccatura);
+                slash = true;
+            }
+            "grace4" => grace = Some(GraceType::Grace4),
+            "grace8after" => grace = Some(GraceType::Grace8After),
+            "grace16" => grace = Some(GraceType::Grace16),
+            "grace16after" => grace = Some(GraceType::Grace16After),
+            "grace32" => grace = Some(GraceType::Grace32),
+            "grace32after" => grace = Some(GraceType::Grace32After),
+            "StemSlash" => slash = true,
+            "StemDirection" => stem = tables::stem_direction(&child.trimmed_text()),
+            "small" => small = child.int_text().unwrap_or(0) != 0,
+            "visible" => visible = child.int_text().unwrap_or(1) != 0,
+            "BeamMode" => beam = tables::beam_mode(&child.trimmed_text()),
+            "Lyrics" => lyrics.push(read_lyrics(child, reader.score.style.lyrics_placement)),
+            "Articulation" => {
+                for articulation in notations::read_articulations(child) {
+                    match crate::read::notation_names::ornament_from_articulation(&articulation) {
+                        Some(ornament) => ornaments.push(ornament),
+                        None => articulations.push(articulation),
+                    }
+                }
+            }
+            "Ornament" => ornaments.push(notations::read_ornament(child)),
+            "Tremolo" => tremolo = notations::read_tremolo(child),
+            "Arpeggio" => arpeggio = Some(notations::read_arpeggio(child)),
+            "staffMove" => {
+                staff_move = child
+                    .int_text()
+                    .map_or(0, |value| value.clamp(-128, 127) as i8);
+            }
+            // TODO(parité): `<Stem>`, `<Hook>`, `<StemSlash>`, `<Tempo>`/
+            // `<Symbol>` d'accord ne sont pas modélisés.
+            _ => {}
+        }
+    }
+
+    let mut duration = Duration::with_dots(duration_kind, dots);
+    if let Some(ticks) = explicit {
+        if !duration.is_measure() && ticks.is_positive() && ticks != duration.ticks() {
+            // TODO(parité): le modèle ne stocke pas de ticks distincts de la
+            // figure. MuseScore garde la figure lue et écrase seulement les
+            // ticks ; on préfère ici une figure dont la durée est juste.
+            duration = tables::duration_from_ticks(ticks);
+        }
+    }
+
+    if is_rest {
+        for child in node.children_named("Spanner") {
+            spanner::read_chord_spanner(reader, child, ctx);
+        }
+    }
+
+    let kind = if is_rest {
+        ChordRestKind::Rest(Rest {
+            full_measure: duration.is_measure(),
+            gap: false,
+            visible,
+        })
+    } else {
+        let mut chord = Chord {
+            stem,
+            staff_move,
+            small,
+            grace,
+            grace_slash: slash,
+            articulations,
+            ornaments,
+            tremolo,
+            arpeggio,
+            chord_line: None,
+            ..Chord::default()
+        };
+        let note_grace = if grace.is_some() {
+            Some(grace_index)
+        } else {
+            None
+        };
+        for child in node.children_named("Note") {
+            let index = chord.notes.len();
+            let note = read_note(reader, child, ctx, note_grace, index, &mut chord_line);
+            chord.notes.push(note);
+        }
+        chord.chord_line = chord_line;
+        for child in node.children_named("Spanner") {
+            spanner::read_chord_spanner(reader, child, ctx);
+        }
+        ChordRestKind::Chord(chord)
+    };
+
+    ChordRest {
+        duration,
+        ticks: None,
+        tuplet: None,
+        lyrics,
+        beam_mode: beam,
+        beam_direction: None,
+        kind,
+    }
+}
+
+/// Durée réelle consommée par un accord ou un silence.
+///
+/// `DurationElement::actualTicks` : durée notée divisée par le ratio de chaque
+/// n-olet englobant. Un silence de mesure entière vaut la longueur de la
+/// mesure.
+pub(crate) fn advance(
+    cr: &ChordRest,
+    measure_len: Fraction,
+    tuplets: &[TupletId],
+    score: &Score,
+) -> Fraction {
+    let mut ticks = cr.ticks_in_measure(measure_len);
+    for &id in tuplets {
+        ticks /= score.tuplet(id).ratio;
+    }
+    ticks
+}
+
+/// Lit un n-olet (`<Tuplet>`).
+///
+/// `tick` est le tick absolu où il commence, `parent` le n-olet englobant
+/// (n-olets imbriqués). La longueur suit MuseScore : `baseNote ×
+/// dénominateur`, sans division par le parent.
+pub(crate) fn read_tuplet(
+    reader: &mut Reader,
+    node: &Node,
+    tick: Fraction,
+    parent: Option<TupletId>,
+) -> TupletId {
+    let mut actual = 1i64;
+    let mut normal = 1i64;
+    let mut base_kind = DurationType::Eighth;
+    let mut base_dots = 0u8;
+    let mut number_type = TupletNumberType::Number;
+    let mut bracket = None;
+    let mut tuplet_placement = None;
+
+    for child in node.children() {
+        match child.name() {
+            "actualNotes" => actual = i64::from(child.int_text().unwrap_or(1).max(1)),
+            "normalNotes" => normal = i64::from(child.int_text().unwrap_or(1).max(1)),
+            "baseNote" => {
+                base_kind =
+                    tables::duration_type(&child.trimmed_text()).unwrap_or(DurationType::Eighth);
+            }
+            "baseDots" => base_dots = child.int_text().unwrap_or(0).clamp(0, 4) as u8,
+            "numberType" => number_type = tables::tuplet_number_type(child.int_text()),
+            "bracket" => bracket = Some(child.int_text().unwrap_or(0) != 0),
+            "direction" => {
+                tuplet_placement = match child.trimmed_text().as_str() {
+                    "up" => Some(Placement::Above),
+                    "down" => Some(Placement::Below),
+                    _ => None,
+                };
+            }
+            _ => {}
+        }
+    }
+
+    let ratio = Fraction::new(actual, normal);
+    let base_len = Duration::with_dots(base_kind, base_dots).ticks();
+    // `TRead::read(Tuplet*)` : ticks = baseLen * ratio.denominator(), avec le
+    // ratio **non réduit** (`normalNotes`).
+    let len = base_len * Fraction::from_integer(normal);
+    let mut tuplet = Tuplet::new(ratio, base_len, tick, len);
+    tuplet.parent = parent;
+    tuplet.number_type = number_type;
+    tuplet.placement = tuplet_placement;
+    tuplet.actual_notes = actual;
+    tuplet.normal_notes = normal;
+    // `Tuplet::calcHasBracket` n'est qu'une mise en page. En 3.x, un n-olet
+    // simple n'a pas de crochet (les notes sont groupées par ligature), tandis
+    // qu'un n-olet englobant en porte un ; le plus interne, de durée de base
+    // plus courte qu'une croche, s'en passe aussi.
+    let short_base = base_len < Fraction::new(1, 8)
+        || (base_len == Fraction::new(1, 8) && ratio != Fraction::ONE);
+    tuplet.bracket = bracket.unwrap_or(match parent {
+        None => false,
+        Some(_) => !short_base,
+    });
+    reader.explicit_tuplet_brackets.push(bracket.is_some());
+    reader.score.add_tuplet(tuplet)
+}
+
+fn read_note(
+    reader: &mut Reader,
+    node: &Node,
+    ctx: &VoiceCtx,
+    grace: Option<usize>,
+    index: usize,
+    chord_line: &mut Option<ChordLineType>,
+) -> NoteId {
+    let id = reader.score.add_note(Note::new(60, tpc::C));
+    let mut pitch = 60u8;
+    let mut tpc1 = tpc::INVALID;
+    let mut tpc2 = tpc::INVALID;
+    let mut tpc2_from_file = false;
+    let mut accidental = None;
+    let mut head = NoteHeadType::Auto;
+    let mut ghost = false;
+    let mut play = true;
+    let mut parentheses = false;
+    let mut fingerings = Vec::new();
+
+    for child in node.children() {
+        match child.name() {
+            "pitch" => pitch = child.int_text().unwrap_or(60).clamp(0, 127) as u8,
+            "tpc" => {
+                let value = child.int_text().unwrap_or(i32::from(tpc::INVALID)) as i8;
+                tpc1 = value;
+                tpc2 = value;
+            }
+            "tpc2" => {
+                tpc2 = child.int_text().unwrap_or(i32::from(tpc::INVALID)) as i8;
+                tpc2_from_file = true;
+            }
+            "Accidental" => accidental = Some(read_accidental(child)),
+            "head" => head = tables::note_head(child.int_text()),
+            "ghost" | "dead" => ghost = child.int_text().unwrap_or(0) != 0,
+            "play" => play = child.int_text().unwrap_or(1) != 0,
+            "Symbol" => {
+                if let Some(name) = child.child("name") {
+                    if name.trimmed_text().starts_with("noteheadParenthesis") {
+                        parentheses = true;
+                    }
+                }
+            }
+            "Spanner" => spanner::read_note_spanner(reader, child, ctx, id, grace, index),
+            "ChordLine" => {
+                if let Some(kind) = notations::read_chord_line(child) {
+                    *chord_line = Some(kind);
+                }
+            }
+            "Fingering" => {
+                if let Some(fingering) = notations::read_fingering(child) {
+                    fingerings.push(fingering);
+                }
+            }
+            // TODO(parité): `<Symbol>`, `<Bend>`, `<NoteDot>`, `<Events>`,
+            // `<offset>`, `<tpc2>` absent et `<velocity>` (ignorée avant 4.0
+            // par le C++) ne sont pas modélisés.
+            _ => {}
+        }
+    }
+
+    // `Note::setupAfterRead` : complète l'orthographe concert (`tpc1`) ou
+    // écrite (`tpc2`) manquante, en transposant l'autre.
+    let transpose = super::instrument_transpose(&reader.score, ctx.staff);
+    if tpc1 == tpc::INVALID && tpc2 == tpc::INVALID {
+        // TODO(parité): `pitch2tpc` choisit l'orthographe selon l'armure
+        // courante (`staff()->key(tick)`) et la préférence dièse/bémol du
+        // fichier ; on se rabat sur une orthographe en dièses.
+        tpc1 = tables::pitch_to_tpc(pitch, 0);
+    }
+    if tpc1 == tpc::INVALID {
+        tpc1 = tables::transpose_tpc(tpc2, transpose);
+    } else if !tpc2_from_file && tpc2 == tpc::INVALID {
+        tpc2 = if transpose.chromatic == 0 && transpose.diatonic == 0 {
+            tpc1
+        } else {
+            tables::transpose_tpc(
+                tpc1,
+                Transpose::new(-transpose.diatonic, -transpose.chromatic),
+            )
+        };
+    }
+    if tpc2 == tpc::INVALID {
+        tpc2 = tpc1;
+    }
+
+    let note = reader.score.note_mut(id);
+    note.pitch = pitch;
+    note.parentheses = parentheses;
+    note.tpc = tpc1;
+    note.tpc_transposed = tpc2;
+    note.accidental = accidental;
+    note.head = head;
+    note.ghost = ghost;
+    note.play = play;
+    note.fingerings = fingerings;
+    id
+}
+
+fn read_accidental(node: &Node) -> Accidental {
+    let mut accidental = Accidental::new(scoretk_core::model::AccidentalType::None);
+    for child in node.children() {
+        match child.name() {
+            "subtype" => {
+                accidental.kind = tables::accidental_type(&child.trimmed_text());
+            }
+            "bracket" => accidental.bracket = child.int_text().unwrap_or(0) != 0,
+            "parens" | "parentheses" => accidental.parentheses = child.int_text().unwrap_or(0) != 0,
+            // `AccidentalRole::USER` vaut 1 ; le rôle par défaut est AUTO.
+            "role" => accidental.user = child.int_text().is_some_and(|value| value == 1),
+            "visible" => accidental.visible = child.int_text().unwrap_or(1) != 0,
+            _ => {}
+        }
+    }
+    accidental
+}
+
+/// `default_placement` est `lyricsPlacement` (`Lyrics::propertyDefault` pour
+/// `Pid::PLACEMENT`, « below » par défaut).
+fn read_lyrics(node: &Node, default_placement: Placement) -> Lyrics {
+    let mut verse = 0usize;
+    let mut syllabic = LyricsSyllabic::Single;
+    let mut text = String::new();
+    let mut melisma = None;
+    let mut placement = default_placement;
+
+    for child in node.children() {
+        match child.name() {
+            "no" => verse = child.int_text().unwrap_or(0).max(0) as usize,
+            "syllabic" => syllabic = tables::syllabic(&child.trimmed_text()),
+            "text" => text = child.text().trim().to_owned(),
+            "ticks" | "ticks_f" => melisma = child.fraction(),
+            "placement" => placement = tables::placement(&child.trimmed_text()),
+            _ => {}
+        }
+    }
+
+    Lyrics {
+        verse,
+        syllabic,
+        text,
+        melisma,
+        placement,
+    }
+}

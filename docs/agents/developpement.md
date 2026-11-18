@@ -8,11 +8,11 @@ détails et les pièges d'outillage.
 
 | Chemin | Rôle |
 | --- | --- |
-| `crates/scoretk-core/` | bibliothèque portable : conteneur, lecteurs `.mscx`, modèle, export MusicXML. **Aucune I/O, aucun thread, aucune horloge.** |
-| `crates/scoretk-core/src/container.rs` | `.mscz` (ZIP) → `.mscx`, détection de version |
-| `crates/scoretk-core/src/read/` | `read302` (3.x) et `read4xx` (4.x/5.x) → modèle |
+| `crates/scoretk-core/` | cœur portable et générique : modèle, erreur, `gap_rests`, identifiants stables. **Aucune I/O, aucun thread, aucune horloge, aucun format.** |
+| `crates/scoretk-musescore-import/src/container.rs` | `.mscz` (ZIP) → `.mscx`, détection de version |
+| `crates/scoretk-musescore-import/src/read/` | `read302` (3.x) et `read4xx` (4.x/5.x) → modèle |
 | `crates/scoretk-core/src/model/` | modèle de partition en mémoire, pivot des lecteurs et de l'export |
-| `crates/scoretk-core/src/export/` | modèle → MusicXML `partwise` / `.mxl` |
+| `crates/scoretk-musicxml-export/src/` | modèle → MusicXML `partwise` / `.mxl` |
 | `crates/scoretk-wasm/` | enveloppe wasm-bindgen de la façade (`convert`, `detect`, `formats`, `version`), unique paquet wasm (`nix build .#wasm`) |
 | `crates/scoretk-musicxml/` | lecteur MusicXML → modèle (`read_musicxml`), bibliothèque portable |
 | `crates/scoretk-midi/` | écriture SMF format 1 et déroulement des reprises, sans I/O |
@@ -20,7 +20,9 @@ détails et les pièges d'outillage.
 | `crates/scoretk-mscx/` | écriture MuseScore (`.mscx` 4.x, `.mscz`), sans I/O |
 | `crates/scoretk/` | façade multi-formats : `Format`, détection, `read`/`write` vers le modèle pivot ; features `musicxml-import`, `midi`, `lilypond` et `mscx` |
 | `crates/scoretk-cli/` | binaire `scoretk` : I/O disque de la façade, formats déduits des extensions |
-| `crates/scoretk-core/tests/` | tests d'intégration par famille + e2e de conformité |
+| `crates/scoretk/tests/` | tests d'aller-retour (lecture puis export) et e2e de conformité |
+| `crates/scoretk-musescore-import/tests/` | tests de lecture seule par famille |
+| `crates/scoretk-musicxml-export/tests/` | tests d'export seul par famille |
 | `tests/corpus/{v3,v4}/` | `.mscx` et références `*.ref.musicxml` |
 | `scripts/` | génération des références et de la table des instruments, contrôle des licences |
 | `flake.nix` | shell de dev, checks, paquet wasm |
@@ -52,7 +54,7 @@ Ne pas retirer cette règle.
   tests unitaires dans le module. Un correctif de parité met à jour
   `EXPECTED_CONFORMANT` et le document d'écarts correspondant.
 - **Fichiers générés, ne pas éditer à la main** :
-  `crates/scoretk-core/src/read/instruments.rs` (par
+  `crates/scoretk-musescore-import/src/read/instruments.rs` (par
   `scripts/gen-instruments-table.py`) et `docs/agents/ecarts-complets.md`
   (sortie du test `ecarts_complets_document`). Régénérer, puis relire le diff.
 
@@ -96,7 +98,9 @@ refuse toute licence absente de sa liste blanche.
 
 La bibliothèque doit compiler et tourner sur `wasm32-unknown-unknown` (sans
 WASI), Android, iOS, Linux, macOS et Windows. Checklist avant d'ajouter du
-code dans `crates/scoretk-core` :
+code dans les crates de bibliothèque (`scoretk-core`, `scoretk-musescore-import`,
+`scoretk-musicxml-export`, `scoretk-musicxml`, `scoretk-midi`, `scoretk-lilypond`,
+`scoretk-mscx`, `scoretk-abc`) :
 
 - pas de `std::fs`, `std::env`, `std::net`, `std::process` ;
 - pas de `std::thread`, `std::sync::mpsc`, `rayon` ;
@@ -108,7 +112,7 @@ code dans `crates/scoretk-core` :
 - les tests peuvent utiliser le système de fichiers (ils tournent sur l'hôte),
   pas la bibliothèque ;
 - vérifier la cible : `nix develop -c cargo build -p scoretk-core --target
-  wasm32-unknown-unknown`.
+  wasm32-unknown-unknown` (et de même pour chaque crate de bibliothèque).
 
 Les CLI sont les seules à lire et écrire des fichiers ; le crate wasm ne fait
 qu'envelopper l'API de la bibliothèque.
@@ -156,13 +160,13 @@ nix flake check          # clippy, tests, fmt, licences, wasm32, smoke Node
 nix build .#wasm         # result/{esm,classic,package.json,…}
 
 # Conformité : les deux niveaux (noyau, puis parité complète)
-nix develop -c cargo test -p scoretk-core --test e2e_corpus -- --nocapture
+nix develop -c cargo test -p scoretk --test e2e_corpus -- --nocapture
 
 # Données dérivées
 scripts/gen-references.sh
 python3 scripts/gen-instruments-table.py \
   ref-musescore/share/instruments/instruments.xml \
-  crates/scoretk-core/src/read/instruments.rs
+  crates/scoretk-musescore-import/src/read/instruments.rs
 
 # Paquet wasm déjà construit
 nix develop -c node crates/scoretk-wasm/tests/node-smoke.mjs
@@ -174,7 +178,7 @@ nix develop -c node crates/scoretk-wasm/tests/node-smoke.mjs
 
 ## 7. Tests de conformité : deux niveaux
 
-`crates/scoretk-core/tests/e2e_corpus.rs` compare chaque `.mscx` à sa référence
+`crates/scoretk/tests/e2e_corpus.rs` compare chaque `.mscx` à sa référence
 4.7.4 après normalisation, à deux niveaux :
 
 1. **Noyau musical** (`Level::Core`) : retire `<identification>`, `<defaults>`,

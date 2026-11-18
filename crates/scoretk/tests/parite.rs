@@ -24,7 +24,7 @@ use std::io::Read;
 
 #[allow(unused_imports)]
 use scoretk::{read, write, Error, Format, Options, Sens};
-use scoretk_core::{ConvertOptions, ExportOptions, OutputFormat};
+use scoretk::{ConvertOptions, ExportOptions, OutputFormat};
 
 const ENCODING_DATE: &str = "2026-11-17";
 
@@ -43,7 +43,7 @@ fn direct_convert(mscx: &[u8]) -> Vec<u8> {
             ..ExportOptions::default()
         },
     };
-    scoretk_core::convert(mscx, &options).expect("conversion scoretk_core")
+    scoretk::convert(mscx, &options).expect("conversion scoretk_core")
 }
 
 #[test]

@@ -113,6 +113,6 @@ pub(crate) fn parse_document(document: &[u8]) -> Result<Score> {
     // `Measure::checkMeasure` : les trous des voix sont comblés par des
     // silences « gap », qui ne sont pas exportés mais font avancer le curseur
     // (origine des `<forward>`/`<backup>` scindés de MuseScore).
-    scoretk_core::read::gap_rests::fill(&mut score);
+    scoretk_core::gap_rests::fill(&mut score);
     Ok(score)
 }

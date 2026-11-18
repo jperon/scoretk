@@ -124,14 +124,14 @@ fn mscz_vers_musicxml_identique_a_scoretk_core() {
         .expect("exécution");
     assert!(output.status.success(), "{:?}", output.stderr);
 
-    let options = scoretk_core::ConvertOptions {
-        format: scoretk_core::OutputFormat::MusicXml,
-        export: scoretk_core::ExportOptions {
+    let options = scoretk::ConvertOptions {
+        format: scoretk::OutputFormat::MusicXml,
+        export: scoretk_musicxml_export::ExportOptions {
             encoding_date: "2026-11-17".to_owned(),
-            ..scoretk_core::ExportOptions::default()
+            ..scoretk_musicxml_export::ExportOptions::default()
         },
     };
-    let reference = scoretk_core::convert(&mscx, &options).expect("scoretk_core");
+    let reference = scoretk::convert(&mscx, &options).expect("scoretk_core");
 
     assert_eq!(output.stdout, reference);
     std::fs::remove_dir_all(&dir).ok();
@@ -324,15 +324,16 @@ fn mscz_ecrit_et_relu_par_scoretk_core() {
     assert!(output.status.success(), "{:?}", output.stderr);
 
     let archive = std::fs::read(&written).expect("sortie .mscz");
-    let container = scoretk_core::MsczContainer::from_bytes(&archive).expect("conteneur .mscz");
+    let container =
+        scoretk_musescore_import::MsczContainer::from_bytes(&archive).expect("conteneur .mscz");
     assert_eq!(container.version().expect("version").to_string(), "4.70");
     assert_eq!(container.main_mscx_name(), "score.mscx");
-    let score = scoretk_core::read::read_score(&container).expect("relecture");
-    let options = scoretk_core::ExportOptions {
+    let score = scoretk_musescore_import::read::read_score(&container).expect("relecture");
+    let options = scoretk_musicxml_export::ExportOptions {
         encoding_date: "2026-11-17".to_owned(),
-        ..scoretk_core::ExportOptions::default()
+        ..scoretk_musicxml_export::ExportOptions::default()
     };
-    let xml = scoretk_core::export::export_musicxml_with(&score, &options).expect("export");
+    let xml = scoretk_musicxml_export::export_musicxml_with(&score, &options).expect("export");
     assert!(xml.contains("<score-partwise"));
     let _ = std::fs::remove_dir_all(dir);
 }

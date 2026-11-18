@@ -4,16 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Modèle pivot, lecteurs MuseScore et export MusicXML de scoretk"
+description = "Modèle de partition générique de scoretk"
 repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-zip = { workspace = true }
-quick-xml = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-zip = { workspace = true }
-quick-xml = { workspace = true }
-similar = "3"

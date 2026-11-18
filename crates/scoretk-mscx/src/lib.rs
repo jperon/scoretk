@@ -22,7 +22,7 @@
 //! (`Writer::writeScore`, `StaffWrite`, `MeasureWrite`, `TWrite`,
 //! `ConnectorInfoWriter`) et de `engraving/infrastructure/mscwriter.cpp` pour
 //! le conteneur. Il produit un fichier `<museScore version="4.70">` que le
-//! lecteur `scoretk_core::read` relit à l'identique : c'est la mesure de fidélité
+//! lecteur `scoretk_musescore_import::read` relit à l'identique : c'est la mesure de fidélité
 //! du test d'aller-retour (`tests/roundtrip.rs`).
 //!
 //! La bibliothèque reste portable : tout se passe en mémoire, sans disque,

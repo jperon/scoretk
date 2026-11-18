@@ -1,0 +1,14 @@
+[package]
+name = "scoretk-musicxml-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Écriture MusicXML (.musicxml/.mxl) depuis le modèle de scoretk"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+scoretk-core = { path = "../scoretk-core" }
+thiserror = { workspace = true }
+zip = { workspace = true }

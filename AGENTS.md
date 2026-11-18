@@ -6,15 +6,20 @@ détails vont dans `docs/agents/` (index en fin de fichier).
 ## Le projet
 
 **scoretk** (GPL-3.0-only) est une boîte à outils de conversion de partitions.
-Premier convertisseur : **scoretk-core**, portage en Rust de l'export MusicXML de
-**MuseScore Studio** (`.mscz`/`.mscx` → MusicXML `partwise`). Objectif à
-terme : MuseScore, MusicXML, LilyPond, ABC et MIDI (voir `docs/TODO.md`).
+Portage en Rust des convertisseurs de **MuseScore Studio** : cœur générique,
+lecture `.mscz`/`.mscx`, export MusicXML `partwise`, puis MuseScore, MusicXML,
+LilyPond, ABC et MIDI (voir `docs/TODO.md`).
 
 Carte des crates et modules :
 
-- `crates/scoretk-core` — bibliothèque portable, sans I/O : `container.rs`
-  (ZIP `.mscz` → `.mscx`, version), `read/read302` (3.x) et `read/read4xx`
-  (4.x/5.x) → modèle, `model/` (modèle en mémoire), `export/` (MusicXML).
+- `crates/scoretk-core` — cœur portable et générique, sans I/O ni format :
+  `model/` (modèle en mémoire), `error.rs`, `gap_rests.rs` et
+  `model/stable_ids.rs` (adressage d'éléments).
+- `crates/scoretk-musescore-import` — lecture MuseScore : `container.rs` (ZIP
+  `.mscz` → `.mscx`, version), `read/read302` (3.x) et `read/read4xx`
+  (4.x/5.x) → modèle.
+- `crates/scoretk-musicxml-export` — export MusicXML : modèle → `partwise` /
+  `.mxl`, avec `ExportOptions` et les constantes `DEFAULT_*`.
 - `crates/scoretk-musicxml` — lecteur MusicXML (`read_musicxml`) vers le
   modèle : `.musicxml`/`.xml`/`.mxl` → `Score`.
 - `crates/scoretk-midi` — lecture MIDI (`read_midi`, portage de l'import de
@@ -29,7 +34,7 @@ Carte des crates et modules :
   `write_mscz` (ZIP), portage de `engraving/rw/write/`, brancher par la
   feature `mscx` de `scoretk`.
 - `crates/scoretk` — façade multi-formats : `Format`, détection par extension
-  ou contenu, `read`/`write` vers le modèle pivot ; features
+  ou contenu, `read`/`write`/`convert` vers le modèle pivot ; features
   `musicxml-import` (t34), `midi` (t35), `lilypond` (t36), `mscx` (t38),
   `lilypond-import` (t40) et `abc` (t41) branchées dans `src/hooks.rs`.
 - `crates/scoretk-cli` — binaire `scoretk` (`entrée -o sortie`, `--from`,
@@ -38,8 +43,10 @@ Carte des crates et modules :
   `detect`, `formats`, `version`) ; unique paquet wasm du dépôt
   (`nix build .#wasm`).
 - `tests/corpus/{v3,v4}/` — `.mscx` amont + références `*.ref.musicxml` ;
-  `tests/corpus/midi/` — références `*.ref.mid` ; `crates/scoretk-core/tests/` et
-  `crates/scoretk-midi/tests/` — tests par famille et e2e de conformité.
+  `tests/corpus/midi/` — références `*.ref.mid` ; `crates/scoretk/tests/`
+  (aller-retour et e2e de conformité), `crates/scoretk-musescore-import/tests/`,
+  `crates/scoretk-musicxml-export/tests/` et `crates/scoretk-midi/tests/` —
+  tests par sens.
 - `scripts/` — références du corpus, table des instruments, licences ;
   `flake.nix` — shell, checks, paquet wasm.
 
@@ -105,7 +112,7 @@ nix build .#wasm
 nix develop -c cargo build -p scoretk-wasm --target wasm32-unknown-unknown
 
 # Conformité, deux niveaux (noyau musical, puis parité complète)
-nix develop -c cargo test -p scoretk-core --test e2e_corpus -- --nocapture
+nix develop -c cargo test -p scoretk --test e2e_corpus -- --nocapture
 ```
 
 Les données dérivées se régénèrent avec `scripts/gen-references.sh` et

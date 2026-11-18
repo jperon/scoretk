@@ -25,5 +25,6 @@ scoretk = { path = "../scoretk", features = ["musicxml-import", "midi", "lilypon
 clap = { workspace = true }
 
 [dev-dependencies]
-scoretk-core = { path = "../scoretk-core" }
+scoretk-musescore-import = { path = "../scoretk-musescore-import" }
+scoretk-musicxml-export = { path = "../scoretk-musicxml-export" }
 zip = { workspace = true }

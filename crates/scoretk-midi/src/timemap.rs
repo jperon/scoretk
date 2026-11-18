@@ -61,10 +61,10 @@
 //!   qu'elles décrivent.
 //!
 //! Les formules d'identifiants MusicXML viennent de
-//! `scoretk_core::model::xmlid` : la carte et l'export MusicXML produisent donc
+//! `scoretk_core::model::stable_ids` : la carte et l'export MusicXML produisent donc
 //! exactement les mêmes chaînes, sans recopie. Voir `docs/agents/timemap.md`.
 
-use scoretk_core::model::xmlid::{grace_note_xml_id, measure_xml_id, note_xml_id};
+use scoretk_core::model::stable_ids::{stable_grace_note_id, stable_measure_id, stable_note_id};
 use scoretk_core::model::Score;
 
 use super::pause_map::PauseMap;
@@ -107,11 +107,11 @@ pub struct MeasureSync {
 impl MeasureSync {
     /// Identifiant MusicXML de la mesure pour une partie : `p{part}-m{measure}`.
     ///
-    /// Délègue à [`scoretk_core::model::measure_xml_id`] ; `measure` est l'indice
+    /// Délègue à [`scoretk_core::model::stable_measure_id`] ; `measure` est l'indice
     /// de la mesure dans `Score::measures` (base zéro), pas le numéro affiché
     /// ni l'indice du passage.
     pub fn xml_id(&self, part: usize) -> String {
-        measure_xml_id(part, self.measure)
+        stable_measure_id(part, self.measure)
     }
 }
 
@@ -153,12 +153,12 @@ pub struct NoteSync {
 impl NoteSync {
     /// Identifiant MusicXML de la note, identique à celui de l'export.
     ///
-    /// Délègue à [`scoretk_core::model::note_xml_id`] pour une note ou un silence
-    /// et à [`scoretk_core::model::grace_note_xml_id`] pour un ornement (position
+    /// Délègue à [`scoretk_core::model::stable_note_id`] pour une note ou un silence
+    /// et à [`scoretk_core::model::stable_grace_note_id`] pour un ornement (position
     /// dans `Chord::grace_chords` et côté avant/après).
     pub fn xml_id(&self) -> String {
         match self.grace_index {
-            Some(index) => grace_note_xml_id(
+            Some(index) => stable_grace_note_id(
                 self.measure,
                 self.staff,
                 self.voice,
@@ -167,7 +167,7 @@ impl NoteSync {
                 self.note,
                 self.grace_before,
             ),
-            None => note_xml_id(self.measure, self.staff, self.voice, self.chord, self.note),
+            None => stable_note_id(self.measure, self.staff, self.voice, self.chord, self.note),
         }
     }
 }
