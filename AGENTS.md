@@ -230,3 +230,6 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
   (`scoretk-musescore-export`) :
   méthode d'aller-retour, résultats mesurés et limites : à lire avant de
   toucher à l'écriture MuseScore.
+- `docs/agents/performance.md` — banc criterion natif (`benches/conversion.rs`),
+  temps par sens sur le corpus, profil `perf`/Callgrind, allocations et pistes
+  chiffrées : à lire avant d'optimiser une conversion.

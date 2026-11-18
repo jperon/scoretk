@@ -15,7 +15,9 @@ $ cargo tree --offline --workspace --edges normal,build --prefix none \
 La commande ne fait aucun accès réseau et n'inclut ni les dépendances de
 développement (`--edges normal,build`), ni les paquets présents dans
 `Cargo.lock` pour d'autres cibles ou pour des fonctionnalités optionnelles
-(voir plus bas). Résultat au 2026-11-17 : **46 crates tierces**, toutes
+(voir plus bas) ; les dépendances de développement, dont celles du banc de
+performance `criterion`, sont listées à part (§ « Dépendances de
+développement »). Résultat au 2026-11-17 : **46 crates tierces**, toutes
 compatibles.
 
 ## Tableau
@@ -109,6 +111,60 @@ Ces paquets n'apparaissent pas dans le graphe `normal,build` ci-dessus :
 
 Les builds **Windows** lieraient `anstyle-wincon`, `windows-sys` et
 `windows-link`, tous sous MIT OR Apache-2.0 : compatibles eux aussi.
+
+### Dépendances de développement : banc de performance (`criterion`)
+
+`crates/scoretk` déclare en **dépendance de développement** `criterion` 0.8.2,
+avec `default-features = false` et la seule fonctionnalité
+`cargo_bench_support` (ni `plotters`, ni `html_reports`, ni `rayon`), pour
+`crates/scoretk/benches/conversion.rs` (voir `docs/agents/performance.md`).
+Ces crates ne sont compilées que par `cargo bench` et `cargo test` : elles
+n'entrent pas dans le graphe `normal,build` ci-dessus — qui reste à
+**46 crates** — et ne sont donc liées dans aucun binaire livré. Relevé le
+2026-11-18 avec :
+
+```console
+$ cargo tree -p scoretk --edges normal,dev --prefix none --format '{p}|{l}'
+```
+
+| Crate | Version | Licence déclarée | Rôle |
+| --- | --- | --- | --- |
+| `alloca` | 0.4.0 | MIT | critère (mesure sans allocation pendant le chronométrage) |
+| `anes` | 0.1.6 | MIT OR Apache-2.0 | critère (statistiques) |
+| `cast` | 0.3.0 | MIT OR Apache-2.0 | critère (conversions numériques) |
+| `ciborium` | 0.2.2 | Apache-2.0 | critère (stockage des résultats) |
+| `ciborium-io` | 0.2.2 | Apache-2.0 | critère (via ciborium) |
+| `ciborium-ll` | 0.2.2 | Apache-2.0 | critère (via ciborium) |
+| `criterion` | 0.8.2 | Apache-2.0 OR MIT | banc de performance |
+| `criterion-plot` | 0.8.2 | Apache-2.0 OR MIT | critère (dépendance dure, tracés désactivés) |
+| `either` | 1.19.0 | MIT OR Apache-2.0 | critère (via itertools) |
+| `half` | 2.7.1 | MIT OR Apache-2.0 | critère (via ciborium) |
+| `itertools` | 0.13.0 | MIT OR Apache-2.0 | critère |
+| `itoa` | 1.0.19 | MIT OR Apache-2.0 | critère (via serde_json) |
+| `libc` | 0.2.191 | MIT OR Apache-2.0 | critère (via page_size) |
+| `num-traits` | 0.2.19 | MIT OR Apache-2.0 | critère (via half) |
+| `oorandom` | 11.1.5 | MIT | critère (échantillonnage aléatoire) |
+| `page_size` | 0.6.0 | MIT/Apache-2.0 | critère (alloca) |
+| `regex` | 1.13.2 | MIT OR Apache-2.0 | critère |
+| `regex-automata` | 0.4.19 | MIT OR Apache-2.0 | critère (via regex) |
+| `regex-syntax` | 0.8.12 | MIT OR Apache-2.0 | critère (via regex) |
+| `same-file` | 1.0.6 | Unlicense/MIT | critère (via walkdir) |
+| `serde` | 1.0.229 | MIT OR Apache-2.0 | critère (résultats) |
+| `serde_core` | 1.0.229 | MIT OR Apache-2.0 | critère (via serde) |
+| `serde_derive` | 1.0.229 | MIT OR Apache-2.0 | critère (proc-macro, via serde) |
+| `serde_json` | 1.0.154 | MIT OR Apache-2.0 | critère (résultats) |
+| `syn` | 2.0.119 | MIT OR Apache-2.0 | proc-macro (via serde_derive) |
+| `tinytemplate` | 1.2.1 | Apache-2.0 OR MIT | critère (rapports texte) |
+| `walkdir` | 2.5.0 | Unlicense/MIT | critère |
+| `zerocopy` | 0.8.63 | BSD-2-Clause OR Apache-2.0 OR MIT | critère (via half) |
+| `zerocopy-derive` | 0.8.63 | BSD-2-Clause OR Apache-2.0 OR MIT | proc-macro (via zerocopy) |
+| `zmij` | 1.0.23 | MIT | critère (via serde_json) |
+
+Toutes ces licences sont déjà dans la liste blanche de
+`scripts/check-licences.py` (MIT, Apache-2.0, BSD-2-Clause, Unlicense) et
+compatibles avec GPL-3.0-only. `page_size` déclare `MIT/Apache-2.0` (barre
+oblique, forme non SPDX) : les deux branches sont permises, et la crate reste
+hors du graphe contrôlé puisqu'elle n'est tirée que par le banc.
 
 Outils de construction hors Cargo (non liés dans les binaires livrés) :
 `wasm-bindgen-cli` (MIT OR Apache-2.0), `binaryen` (Apache-2.0),
