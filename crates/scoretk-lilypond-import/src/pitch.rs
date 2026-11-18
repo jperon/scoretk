@@ -792,6 +792,32 @@ impl OctaveState {
         self.reference = 3 + pitch.octave;
         self.previous = None;
     }
+
+    /// Ouvre un bloc `\relative`.
+    ///
+    /// La première note se place, comme les suivantes, à l'octave la plus
+    /// proche de la référence, degré compris (`\relative f'` ≠ `\relative c'`).
+    /// La référence joue donc le rôle de note précédente, comme la hauteur
+    /// initiale passée à `Music::make_relative` (`lily/music.cc`).
+    ///
+    /// Sans hauteur, LilyPond prend `f` sous le do central : la fonction
+    /// `relative` de `ly/music-functions-init.ly` construit
+    /// `(ly:make-pitch -1 (quotient (ly:pitch-steps (ly:make-pitch 1 0)) 2))`,
+    /// soit fa en octave -1 (`f` pour une gamme de sept degrés), donc l'octave
+    /// 3 dans notre numérotation.
+    pub(crate) fn start_relative(&mut self, reference: Option<&PitchSpec>) {
+        self.relative = true;
+        match reference {
+            Some(pitch) => {
+                self.set_reference(pitch);
+                self.previous = Some((pitch.step, self.reference));
+            }
+            None => {
+                self.reference = 3;
+                self.previous = Some((3, 3));
+            }
+        }
+    }
 }
 
 /// Octave d'une hauteur relative à la précédente.

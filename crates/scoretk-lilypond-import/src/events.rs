@@ -494,12 +494,7 @@ impl<'a> Interpreter<'a> {
             }
             Context::Relative { reference, music } => {
                 let saved = self.octave;
-                self.octave.relative = true;
-                self.octave.previous = None;
-                match reference {
-                    Some(reference) => self.octave.set_reference(reference),
-                    None => self.octave.reference = 4,
-                }
+                self.octave.start_relative(reference.as_ref());
                 self.walk(music);
                 self.octave = saved;
             }

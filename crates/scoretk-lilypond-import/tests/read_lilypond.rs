@@ -51,11 +51,91 @@ fn hauteurs(score: &scoretk_core::model::Score) -> Vec<u8> {
     score.notes.iter().map(|note| note.pitch).collect()
 }
 
+/// Durées écrites (sans mise à l'échelle) de la piste 0, dans l'ordre.
+fn durees_ecrites(score: &scoretk_core::model::Score) -> Vec<Fraction> {
+    score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .map(|chord_rest| chord_rest.duration.ticks())
+        .collect()
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");
     assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 69, 71, 72]);
     assert_eq!(score.measures.len(), 2);
+}
+
+#[test]
+fn relative_reference_place_la_premiere_note() {
+    // La première note se place, comme les suivantes, à l'octave la plus
+    // proche de la référence : `g` après `c''` descend d'une quarte et vaut
+    // g' (67), pas g'' (79), y compris à travers une variable musicale.
+    let score = lire(
+        "phrase = { g8 e f g a b c d }\n\
+         \\relative c'' { \\phrase | <c, e g>2 r2 }",
+    );
+    assert_eq!(
+        hauteurs(&score),
+        vec![67, 64, 65, 67, 69, 71, 72, 74, 60, 64, 67]
+    );
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::HALF,
+            Fraction::HALF,
+        ]
+    );
+}
+
+#[test]
+fn relative_degre_de_la_reference() {
+    // Le degré de la référence compte : `c` après `f'` est c' (quarte
+    // descendante), tandis que `g` après `c'` est le sol sous le do central.
+    let apres_fa = read_lilypond("\\relative f' { c4 }").expect("lecture");
+    assert_eq!(hauteurs(&apres_fa), vec![60]);
+    let apres_do = read_lilypond("\\relative c' { g4 }").expect("lecture");
+    assert_eq!(hauteurs(&apres_do), vec![55]);
+}
+
+#[test]
+fn relative_sans_reference_part_de_fa() {
+    // Sans hauteur, LilyPond 2.18+ prend `f` sous le do central comme
+    // référence (`ly/music-functions-init.ly`, fonction `relative`) : `c''`
+    // vaut donc 72, et `c,` après `d''` vaut c' (60).
+    let score = read_lilypond("\\relative { c''4 d r2 | c,1 }").expect("lecture");
+    assert_eq!(hauteurs(&score), vec![72, 74, 60]);
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::QUARTER,
+            Fraction::QUARTER,
+            Fraction::HALF,
+            Fraction::ONE
+        ]
+    );
+}
+
+#[test]
+fn relative_premiere_note_deja_juste() {
+    // Cas déjà juste : `e` et `g` restent dans l'octave de la référence.
+    let score = read_lilypond("\\relative c' { e4~ e g2 }").expect("lecture");
+    assert_eq!(hauteurs(&score), vec![64, 64, 67]);
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(liaisons(&score), vec![(64, 64)]);
 }
 
 #[test]
@@ -333,8 +413,9 @@ fn musique_de_haut_niveau_simultanee() {
 fn musique_de_haut_niveau_new_staff_relative() {
     let score = read_lilypond("\\new Staff \\relative { c'4 d e f }").expect("lecture");
     assert_eq!(score.staves.len(), 1);
-    // Sans référence, `\relative` part du do central : `c'` monte d'une octave.
-    assert_eq!(hauteurs(&score), vec![72, 74, 76, 77]);
+    // Sans référence, LilyPond prend `f` sous le do central comme référence :
+    // `c'` reste au do central (60).
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
 }
 
 #[test]
@@ -352,8 +433,9 @@ fn musique_de_haut_niveau_transposee() {
 #[test]
 fn variable_musicale_de_haut_niveau() {
     let score = read_lilypond("melodie = \\relative { c'4 d e f }\n\\melodie").expect("lecture");
-    // Sans référence, `\relative` part du do central : `c'` monte d'une octave.
-    assert_eq!(hauteurs(&score), vec![72, 74, 76, 77]);
+    // Sans référence, LilyPond prend `f` sous le do central comme référence :
+    // `c'` reste au do central (60).
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
     assert_eq!(score.measures.len(), 1);
 }
 
