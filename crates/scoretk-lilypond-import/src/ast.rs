@@ -420,4 +420,8 @@ pub(crate) struct Document {
     pub header: HeaderAst,
     /// Bloc `\score`, s'il existe.
     pub score: Option<ScoreAst>,
+    /// `\set melismaBusyProperties = #'()` a été lu : `\lyricsto` ne saute
+    /// alors aucune note. Par défaut, les notes sous une liaison
+    /// d'expression et les continuations de liaison sont sautées.
+    pub melisma_busy_disabled: bool,
 }

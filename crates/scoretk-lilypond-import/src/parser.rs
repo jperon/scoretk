@@ -70,6 +70,9 @@ pub(crate) struct Parser<'a> {
     music_functions: BTreeMap<String, MusicFunction>,
     /// Profondeur d'expansion des blocs embarqués et des fonctions.
     expansion_depth: u32,
+    /// `\set melismaBusyProperties = #'()` a été vu : les paroles ne sautent
+    /// plus les notes occupées (liaisons d'expression, liaisons…).
+    melisma_busy_disabled: bool,
 }
 
 /// Profondeur d'expansion maximale (garde-fou contre la récursion).
@@ -131,6 +134,7 @@ pub(crate) fn parse(
         partitions: Vec::new(),
         music_functions: BTreeMap::new(),
         expansion_depth: 0,
+        melisma_busy_disabled: false,
     };
     parser.document()
 }
@@ -224,6 +228,7 @@ impl<'a> Parser<'a> {
         while !self.at_end() {
             self.toplevel_item(&mut document);
         }
+        document.melisma_busy_disabled = self.melisma_busy_disabled;
 
         // Choix de la partition : un bloc `\score` explicite l'emporte sur la
         // musique de haut niveau ; à égalité, la première rencontrée gagne.
@@ -1900,6 +1905,22 @@ impl<'a> Parser<'a> {
                 return Music::Context(Context::Cadenza(on));
             }
         }
+        // `melismaBusyProperties` vide : `\lyricsto` n'ignore plus les notes
+        // sous liaison d'expression ni les continuations de liaison. La liste
+        // par défaut est `(melismaBusy slurMelismaBusy tieMelismaBusy
+        // beamMelismaBusy completionBusy)` (scm/define-context-properties.scm) ;
+        // `beamMelismaBusy` ne s'active que si `autoBeaming = ##f`
+        // (lily/beam-engraver.cc), que le lecteur ne modélise pas.
+        if path
+            .iter()
+            .any(|part| part.eq_ignore_ascii_case("melismabusyproperties"))
+            && self
+                .peek()
+                .filter(|token| token.is_scheme())
+                .is_some_and(|token| is_empty_scheme_list(&token.text))
+        {
+            self.melisma_busy_disabled = true;
+        }
         let fraction = self.parse_scheme_fraction();
         let is_measure_length = path
             .iter()
@@ -3165,6 +3186,12 @@ fn scheme_text_value(datum: &str) -> String {
     datum.to_owned()
 }
 
+/// Vrai pour la liste Scheme vide `#'()` (`()` ou `'()` comme texte de jeton).
+fn is_empty_scheme_list(datum: &str) -> bool {
+    let datum = datum.trim().trim_start_matches('\'').trim();
+    datum.split_whitespace().collect::<String>() == "()"
+}
+
 /// Vrai pour une commande d'articulation connue.
 fn is_articulation_command(name: &str) -> bool {
     matches!(
@@ -3352,6 +3379,7 @@ mod tests {
             partitions: Vec::new(),
             music_functions: BTreeMap::new(),
             expansion_depth: 0,
+            melisma_busy_disabled: false,
         };
         parser.parse_music()
     }

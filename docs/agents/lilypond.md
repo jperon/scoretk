@@ -557,8 +557,13 @@ pas de régression du lecteur.
 - **Paroles** : `\lyricsto`/`\addlyrics` sont attachés à la voix nommée si
   elle existe, sinon à la première voix de la portée ; `\skip` et les
   silences ne reçoivent pas de syllabe, et les syllabes en trop sont ignorées.
-  Le rang de couplet est lu dans `\stanza "n."` (forme écrite depuis LilyPond
-  2.27) et, pour compatibilité, dans l'ancien `\with { stanza = "n." }`.
+  Comme LilyPond, `\lyricsto` saute les notes occupées : celles à l'intérieur
+  d'une liaison d'expression `( … )` (sauf la note qui l'ouvre) et les
+  continuations de `~`. `\set melismaBusyProperties = #'()` désactive ces
+  sauts ; `beamMelismaBusy` n'est pas modélisé car il ne s'active que si
+  `autoBeaming = ##f` (`lily/beam-engraver.cc`). Le rang de couplet est lu
+  dans `\stanza "n."` (forme écrite depuis LilyPond 2.27) et, pour
+  compatibilité, dans l'ancien `\with { stanza = "n." }`.
 - **Reprises** : `\repeat volta N` avec k blocs `\alternative` produit les
   endings `i, i+k, i+2k…` (règle des passes) ; les imbrications de reprises et
   les numéros d'ending explicites hors de cette règle ne sont pas couverts.

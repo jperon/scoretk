@@ -1725,3 +1725,66 @@ fn lyrics_sans_lyricsto_alignment_par_tick() {
         ]
     );
 }
+
+#[test]
+fn lyricsto_saute_les_notes_sous_liaison() {
+    // `melismaBusyProperties` contient `slurMelismaBusy` par défaut : la note
+    // qui ouvre la liaison reçoit une syllabe, celles qu'elle couvre jusqu'à
+    // la note de fermeture comprise n'en reçoivent pas.
+    let score = read_lilypond(
+        "\\score { << \\new Voice = \"s\" { \\fixed c' { c4( d e) f } } \
+         \\new Lyrics \\lyricsto \"s\" { la li } >> }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+    let places: Vec<(u8, String)> = paroles(&score)
+        .into_iter()
+        .map(|(pitch, _, _, text, _)| (pitch, text))
+        .collect();
+    assert_eq!(places, vec![(60, "la".to_owned()), (65, "li".to_owned())]);
+}
+
+#[test]
+fn lyricsto_avec_melisma_busy_properties_vide() {
+    // `\set melismaBusyProperties = #'()` : plus aucune note n'est sautée,
+    // même sous une liaison d'expression ou après une liaison `~`.
+    let score = read_lilypond(
+        "\\score { << \\new Voice = \"s\" { \\set melismaBusyProperties = #'() \
+         \\fixed c' { c4( d e) f } } \
+         \\new Lyrics \\lyricsto \"s\" { la li lo lu } >> }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+    let places: Vec<(u8, String)> = paroles(&score)
+        .into_iter()
+        .map(|(pitch, _, _, text, _)| (pitch, text))
+        .collect();
+    assert_eq!(
+        places,
+        vec![
+            (60, "la".to_owned()),
+            (62, "li".to_owned()),
+            (64, "lo".to_owned()),
+            (65, "lu".to_owned()),
+        ]
+    );
+
+    let score = read_lilypond(
+        "\\score { << \\new Voice = \"s\" { \\set melismaBusyProperties = #'() \
+         \\fixed c' { c4~ d4 e4 } } \
+         \\new Lyrics \\lyricsto \"s\" { la li lo } >> }",
+    )
+    .expect("lecture");
+    let places: Vec<(u8, String)> = paroles(&score)
+        .into_iter()
+        .map(|(pitch, _, _, text, _)| (pitch, text))
+        .collect();
+    assert_eq!(
+        places,
+        vec![
+            (60, "la".to_owned()),
+            (62, "li".to_owned()),
+            (64, "lo".to_owned()),
+        ]
+    );
+}

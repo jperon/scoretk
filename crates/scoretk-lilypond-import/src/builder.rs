@@ -196,7 +196,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     apply_accidentals(&mut score);
     place_spanners(&mut score, &staves);
     place_repeats(&mut score, &staves);
-    place_lyrics(&mut score, &staves);
+    place_lyrics(&mut score, &staves, document.melisma_busy_disabled);
     link_ties(&mut score, &staves);
     score
 }
@@ -1302,7 +1302,7 @@ fn place_repeats(score: &mut Score, staves: &[StaffBuild]) {
 }
 
 /// Attache les paroles aux accords des voix ciblées.
-fn place_lyrics(score: &mut Score, staves: &[StaffBuild]) {
+fn place_lyrics(score: &mut Score, staves: &[StaffBuild], melisma_busy_disabled: bool) {
     // Numérotation automatique des couplets : sans `\set stanza`, les blocs
     // successifs d'une même voix prennent les numéros 1, 2, 3… dans l'ordre.
     let mut next_verse: HashMap<String, usize> = HashMap::new();
@@ -1337,7 +1337,13 @@ fn place_lyrics(score: &mut Score, staves: &[StaffBuild]) {
                     lyrics.verse
                 }
             };
-            attach_lyrics(score, voice, verse, &lyrics.syllables);
+            attach_lyrics(
+                score,
+                voice,
+                verse,
+                &lyrics.syllables,
+                melisma_busy_disabled,
+            );
         }
     }
 }
@@ -1348,19 +1354,54 @@ fn attach_lyrics(
     voice: &VoiceBuild,
     verse: usize,
     syllables: &[crate::ast::Syllable],
+    melisma_busy_disabled: bool,
 ) {
-    // `\lyricsto` aligne une syllabe par note, mais saute les silences et
-    // les notes qui prolongent une liaison (`~`) : seules les têtes qui
-    // commencent une nouvelle note reçoivent une syllabe.
+    // Par défaut, `melismaBusyProperties` contient `slurMelismaBusy` et
+    // `tieMelismaBusy` : `\lyricsto` saute les notes à l'intérieur d'une
+    // liaison d'expression et les continuations de liaison (`~`). Un
+    // `\set melismaBusyProperties = #'()` désactive ces deux règles.
+    let melisma_busy = !melisma_busy_disabled;
     let mut events: Vec<&VoiceEvent> = voice.interpreted.events.iter().collect();
     events.sort_by_key(|event| (event.tick, event.order));
+
+    // Portées des liaisons d'expression. La note qui porte `(` ouvre la
+    // liaison mais n'est pas elle-même « occupée » ; celles qui suivent,
+    // jusqu'à celle qui porte `)` comprise, le sont. Une liaison non fermée
+    // couvre jusqu'à la fin de la voix.
+    let mut open_slurs: BTreeMap<u8, Fraction> = BTreeMap::new();
+    let mut slur_spans: Vec<(Fraction, Option<Fraction>)> = Vec::new();
+    for event in &events {
+        match &event.kind {
+            EventKind::SlurStart(number) => {
+                open_slurs.insert(*number, event.tick);
+            }
+            EventKind::SlurStop(number) => {
+                if let Some(start) = open_slurs.remove(number) {
+                    slur_spans.push((start, Some(event.tick)));
+                }
+            }
+            _ => {}
+        }
+    }
+    slur_spans.extend(open_slurs.into_values().map(|start| (start, None)));
+    let under_slur = |tick: Fraction| {
+        slur_spans
+            .iter()
+            .any(|(start, end)| *start < tick && end.is_none_or(|end| tick <= end))
+    };
+
+    // `\lyricsto` aligne une syllabe par note éligible, mais saute les
+    // silences et les notes occupées : seules les têtes qui commencent une
+    // nouvelle note hors liaison reçoivent une syllabe.
     let mut chords = Vec::new();
     let mut tied_from_previous = false;
     for event in events {
         if let EventKind::Chord(chord) = &event.kind {
             if let ChordContent::Notes(notes) = &chord.content {
                 let all_tied = !notes.is_empty() && notes.iter().all(|note| note.tie);
-                if !tied_from_previous {
+                let skip = (melisma_busy && tied_from_previous)
+                    || (melisma_busy && under_slur(event.tick));
+                if !skip {
                     chords.push(event.tick);
                 }
                 tied_from_previous = all_tied;
