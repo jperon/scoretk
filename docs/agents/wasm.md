@@ -118,6 +118,228 @@ retour dans un même crate rendrait les 58 ko de l'étape 1), ou activer
 `-Z share-generics` (nightly), qui dédupliquerait les monomorphisations
 génériques entre crates.
 
+## Composition du binaire (twiggy)
+
+Mesure réalisée sur le commit `a7f690c` (branche `mesure-twiggy`), profil
+`[profile.release]` du workspace (`opt-level = "z"`, `lto = true`,
+`codegen-units = 1`), avec `wasm-bindgen 0.2.130` et `wasm-opt -Oz`.
+
+### Méthode de reproduction
+
+```sh
+nix develop -c cargo build --release -p scoretk-wasm --target wasm32-unknown-unknown
+WB=/tmp/scratchpad/build-twiggy
+mkdir -p "$WB/esm"
+nix develop -c wasm-bindgen --target web --out-dir "$WB/esm" --out-name scoretk_wasm \
+  target/wasm32-unknown-unknown/release/scoretk_wasm.wasm
+# avec symboles (pour twiggy) :
+nix develop -c wasm-opt -Oz --debuginfo "$WB/esm/scoretk_wasm_bg.wasm" \
+  -o "$WB/esm/scoretk_wasm_bg.debug.wasm"
+# sans symboles (cohérence avec la taille livrée) :
+nix develop -c wasm-opt -Oz --strip-debug "$WB/esm/scoretk_wasm_bg.wasm" \
+  -o "$WB/esm/scoretk_wasm_bg.strip.wasm"
+nix shell nixpkgs#twiggy -c twiggy top -n 60 "$WB/esm/scoretk_wasm_bg.debug.wasm"
+nix shell nixpkgs#twiggy -c twiggy dominators -d 3 "$WB/esm/scoretk_wasm_bg.debug.wasm"
+nix shell nixpkgs#twiggy -c twiggy monos "$WB/esm/scoretk_wasm_bg.debug.wasm"
+nix shell nixpkgs#twiggy -c twiggy garbage "$WB/esm/scoretk_wasm_bg.debug.wasm"
+```
+
+Mesures obtenues :
+
+| Variante | Brut | Gzip |
+| --- | --- | --- |
+| avec symboles (`--debuginfo`) | 2 155 434 | — |
+| sans symboles (`--strip-debug`) | 1 546 119 | 640 218 |
+| référence documentée (§ 2) | 1 552 892 | 641 472 |
+
+L'écart de 0,4 % entre la mesure locale et la référence documentée vient de
+la toolchain (rustc 1.100.0 / wasm-bindgen 0.2.130 du shell Nix) ; les
+ordres de grandeur sont cohérents. La section de noms (`"function names"`)
+pèse 607 871 octets (28,20 %) dans la variante avec symboles ; elle est
+absente du binaire livré.
+
+### Agrégation par crate (shallow bytes, total 2 155 434)
+
+Classification par préfixe de symbole (`crate[hash]::…`) ; les implémentations
+de traits génériques sont attribuées au crate qui définit la fonction
+générique (`core`, `alloc`). Les buckets `core::fmt` et `panics/messages`
+sont isolés ensuite (voir (a)).
+
+| Bucket | Octets | % |
+| --- | ---: | ---: |
+| `"function names"` (section de noms) | 607 871 | 28,20 |
+| données statiques (`.rodata`) | 213 102 | 9,89 |
+| `scoretk` (façade) | 196 636 | 9,12 |
+| `core` (rust) | 194 787 | 9,04 |
+| `alloc` | 181 775 | 8,43 |
+| `scoretk_musicxml_import` | 102 234 | 4,74 |
+| `scoretk_musicxml_export` | 96 798 | 4,49 |
+| wasm-bindgen (shim + runtime) | 56 754 | 2,63 |
+| `scoretk_midi_export` | 54 392 | 2,52 |
+| `zip` | 47 092 | 2,18 |
+| `scoretk_musescore_import` | 43 439 | 2,02 |
+| `zopfli` | 42 464 | 1,97 |
+| `scoretk_midi_import` | 42 450 | 1,97 |
+| `scoretk_lilypond_import` | 40 825 | 1,89 |
+| `scoretk_musescore_export` | 36 177 | 1,68 |
+| `core::fmt` (isolé, voir (a)) | 32 686 | 1,52 |
+| `scoretk_core` | 27 331 | 1,27 |
+| `miniz_oxide` | 19 525 | 0,91 |
+| `quick_xml` | 17 956 | 0,83 |
+| `scoretk_abc_import` | 15 101 | 0,70 |
+| `scoretk_lilypond_export` | 12 306 | 0,57 |
+| `compiler_builtins` | 10 264 | 0,48 |
+| `flate2` | 9 192 | 0,43 |
+| `dlmalloc` | 7 427 | 0,34 |
+| `memchr` | 5 760 | 0,27 |
+| `scoretk_abc_common` | 4 943 | 0,23 |
+| `indexmap` | 3 182 | 0,15 |
+| `std` | 3 138 | 0,15 |
+| `hashbrown` | 2 066 | 0,10 |
+| `wasm_bindgen` | 1 979 | 0,09 |
+| `scoretk_abc_export` | 1 926 | 0,09 |
+| `midly` | 1 827 | 0,08 |
+| `scoretk_wasm` | 1 630 | 0,08 |
+| `panics/messages` (isolé, voir (a)) | 1 527 | 0,07 |
+| autres dépendances + sections wasm | ~3 600 | 0,17 |
+| **total** | **2 155 434** | **100,00** |
+
+### (a) `core::fmt` et panics/messages
+
+- `core::fmt` : **32 686 octets (1,52 %)** — implémentations `Debug`/`Display`
+  générées pour les types du modèle et des erreurs (incluant les types
+  `scoretk_core::*` via `<… as core::fmt::Display>::fmt`). C'est le poste
+  de formatage, pas le moteur de rendu XML.
+- panics/messages : **1 527 octets (0,07 %)** — `core::panicking` et messages
+  associés. Marginal.
+
+Total isolé : 34 213 octets (1,59 %). Les deux sont déjà marginalisés par
+`panic = "abort"` (mesuré : −20 octets bruts, écarté).
+
+### (b) Données statiques (`.rodata`)
+
+Total `.rodata` : **213 102 octets (9,89 %)**, répartis en 115 segments.
+Les plus gros :
+
+| Segment | Octets | % |
+| --- | ---: | ---: |
+| `.rodata.18` | 53 135 | 2,47 |
+| `.rodata.54` | 20 692 | 0,96 |
+| `.rodata.1` | 20 059 | 0,93 |
+| `.rodata.8` | 9 198 | 0,43 |
+| `.rodata.13` | 7 803 | 0,36 |
+| `.rodata.82` | 7 737 | 0,36 |
+
+Le segment `.rodata.18` contient les chaînes de la table d'instruments
+(`crates/scoretk-musescore-import/src/read/instruments.rs`, 4 934 lignes,
+fichier généré) — on y retrouve `piccolo`, `wind.flutes.flute.piccolo`, etc.
+Estimation : la table d'instruments pèse ≈ **53 Ko (2,47 %)** du binaire.
+Le reste du `.rodata` est dominé par les messages d'erreur et les tables de
+correspondance (clefs, armures, décoration ABC).
+
+### (c) Les 20 plus grosses monomorphisations
+
+`twiggy monos` : 297 instances, bloat cumulé ≈ 262 399 octets (12,2 %)
+si toutes les instances redondantes étaient fusionnées. Top 20 instances :
+
+```
+ 4285   0.20%  zopfli::deflate::add_lz77_block::<zip::write::MaybeEncrypted<Cursor<Vec<u8>>>> (×2)
+ 3382   0.16%  core::slice::sort::unstable::quicksort::<i32>
+ 3128   0.15%  core::slice::sort::unstable::quicksort::<usize>
+ 2708   0.13%  zopfli::squeeze::lz77_optimal::<ZopfliLongestMatchCache> (×2)
+ 2195   0.10%  core::slice::sort::stable::quicksort::<(i64, usize)> (midi)
+ 2036   0.09%  core::slice::sort::stable::quicksort::<Fraction> (midi tuplets)
+ 2031   0.09%  core::slice::sort::stable::quicksort::<(&str, &Element)> (musicxml)
+ 2025   0.09%  core::slice::sort::stable::quicksort::<Volta> (lilypond)
+ 1946   0.09%  core::slice::sort::stable::quicksort::<(TupletId, (usize, usize))>
+ 1940   0.09%  core::slice::sort::stable::quicksort::<Fraction> (PartialOrd)
+ 1878   0.09%  core::slice::sort::stable::quicksort::<VoltaSpan> (midi)
+ 1843   0.09%  core::slice::sort::stable::quicksort::<Event> (lilypond)
+ 1809   0.08%  core::slice::sort::stable::quicksort::<Half> (musescore)
+ 1739   0.08%  core::slice::sort::stable::quicksort::<Leaf> (zopfli)
+ 1523   0.07%  core::slice::sort::stable::drift::sort::<(i64, usize)>
+ 1500   0.07%  core::slice::sort::stable::drift::sort::<VoltaSpan>
+ 1461   0.07%  core::slice::sort::stable::drift::sort::<Volta>
+ 1371   0.06%  core::slice::sort::stable::drift::sort::<(&str, &Element)>
+```
+
+Leviers : `-Z share-generics` (nightly) dédupliquerait les instances identiques
+entre crates ; gain réaliste estimé à 30–80 Ko bruts (borne haute 262 Ko).
+
+### (d) Fonctions scoretk petites et non inlinées (candidates `#[inline]`)
+
+Sélection : fonctions non génériques d'un crate `scoretk_*`, shallow bytes entre
+8 et 96, triées par taille croissante (30 premières sur 91). La vérification
+par `twiggy paths` sur un échantillon (ex. `scoretk_core::gap_rests::units_fraction`,
+14 octets) confirme qu'elles sont bien appelées depuis un autre crate
+(`scoretk_musicxml_import`), donc candidates à `#[inline]` aux frontières de
+crates.
+
+```
+ 13  scoretk_abc_common            duration::unit
+ 13  scoretk_lilypond_common       pitch::valid
+ 13  scoretk_musescore_import      read::read4xx::notations::accidental_type
+ 13  scoretk_musescore_import      read::read302::tables::accidental_type
+ 14  scoretk_core                  gap_rests::units_fraction
+ 14  scoretk_midi_import           chord::min_allowed_duration
+ 14  scoretk_midi_import           timesigmap::fraction_from_ticks
+ 14  scoretk_musescore_import      read::read302::credits::page_break
+ 15  scoretk_musicxml_export       beams::stems_hooks
+ 15  scoretk_musicxml_export       stems::clef_pitch_offset
+ 16  scoretk_midi_import           simplify::simplify_durations_not_drums
+ 19  scoretk_musescore_import      read::read4xx::textlines::rich_text
+ 19  scoretk_musicxml_export       exportmusicxml::borrow_attributes
+ 23  scoretk_musicxml_export       text::write_words
+ 24  scoretk_musescore_import      read::read302::spanner::read_chord_spanner
+ 24  scoretk_musicxml_export       repeats::sound
+ 25  scoretk_musescore_import      read::notation_names::line_style
+ 25  scoretk_musescore_import      read::read302::tables::stem_direction
+ 32  scoretk_midi_import           key::find_key::{closure#0}
+ 34  scoretk_musicxml_export       pitch::tpc_step_name
+ 34  scoretk_musicxml_export       harmony::is_separator
+ 37  scoretk_musescore_export      names::duration_type
+ 37  scoretk_musescore_export      names::clef_type
+ 37  scoretk_musescore_export      write::twrite::stem_name
+ 37  scoretk_musicxml_export       repeats::barline_style
+ 38  scoretk_musicxml_export       exportmusicxml::contains_accidental
+ 38  scoretk_musicxml_export       exportmusicxml::accidental_name
+ 39  scoretk_lilypond_export       annotations::text_event
+ 39  scoretk_midi_import           simplify::minimize_number_of_rests::{closure#1}
+ 40  scoretk_lilypond_import       builder::lyrics_build
+```
+
+Gain individuel faible (≤ 96 octets), mais ces fonctions restent des appels
+inter-crates non inlinés par LTO fat aux frontières de crates : le levier
+réel est le regroupement de crates (voir leviers), pas l'annotation seule.
+
+### Dominators et garbage
+
+`twiggy dominators -d 3` : la racine est l'export `convert` (et
+`convertWithTimeline`), qui domine `scoretk::read` (194 175 octets, 9,01 %),
+puis les lecteurs par format. Aucun cycle de domination anormal.
+
+`twiggy garbage` : **282 octets** de types morts (types wasm inutilisés) ;
+les 168 550 octets signalés dans les data segments sont des faux positifs
+(segments référencés via des indices calculés à l'exécution).
+
+### Leviers chiffrés (non appliqués)
+
+| Levier | Gain brut estimé | Gain gzip estimé | Remarque |
+| --- | ---: | ---: | --- |
+| Regrouper `scoretk-musescore-import` + `scoretk-musicxml-export` dans `scoretk-core` (restaurer l'état pré-étape 1) | 58 427 | 15 146 | mesuré (§ « Effet du découpage ») |
+| Rendre la table d'instruments (`instruments.rs`) optionnelle / chargée à la demande | ~53 000 | ~22 000 | estimé depuis `.rodata.18` |
+| Remplacer `zopfli` par `flate2` deflate pour l'écriture `.mscz` | ~33 000 | ~13 500 | estimé (42 464 − flate2 déjà présent) |
+| Limiter `core::fmt` (`Debug`/`Display`) sur les types internes | 32 686 | ~13 500 | mesuré |
+| `-Z share-generics` (nightly) pour dédupliquer les monomorphisations | 30 000–80 000 | 12 000–33 000 | borne haute 262 399 ; nécessite nightly |
+| Remplacer `dlmalloc` par `wee_alloc` | ~7 000 | ~3 000 | estimé |
+| Éliminer les exports wasm-bindgen multivalue redondants | ~10 000 | ~4 000 | estimé (shim 49 489) |
+
+Les gains en gzip sont estimés au ratio global 640 218 / 1 546 119 ≈ 0,41.
+Aucun de ces leviers n'est appliqué : le paquet reste sous la limite de
+Cantus (≈ 2,5 Mo brut) et les gains individuels restent sous le seuil de 2 %
+du contrat wasm, sauf le regroupement de crates (3,8 %) et `-Z share-generics`.
+
+
 La construction est en deux étapes :
 
 1. `wasm32Build` : `craneLib.cargoBuild` avec
