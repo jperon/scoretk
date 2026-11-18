@@ -81,7 +81,7 @@ pub fn read_lilypond_reporting(src: &str) -> Result<(Score, Vec<Warning>)> {
     let document = parser::parse(src, &mut warnings);
     if document.score.is_none() {
         return Err(Error::Syntaxe(
-            "aucun bloc \\score dans la source LilyPond".to_owned(),
+            "aucune musique dans la source LilyPond".to_owned(),
         ));
     }
     let score = builder::build(&document, &mut warnings);

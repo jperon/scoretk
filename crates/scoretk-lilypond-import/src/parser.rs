@@ -66,6 +66,20 @@ pub(crate) struct Parser<'a> {
     pending_tuplet_number: Option<TupletNumberType>,
     /// Silence invisible demandé par `\once \override Rest.transparent`.
     pending_invisible_rest: bool,
+    /// Partitions rencontrées au niveau supérieur, dans l'ordre du fichier.
+    partitions: Vec<Partition>,
+}
+
+/// Une partition lue au niveau supérieur du fichier.
+struct Partition {
+    /// Arbre de la partition.
+    score: ScoreAst,
+    /// Vrai pour un bloc `\score` explicite.
+    explicit: bool,
+    /// Ligne du premier jeton.
+    line: u32,
+    /// Colonne du premier jeton.
+    column: u32,
 }
 
 /// Résultat de l'analyse.
@@ -82,6 +96,7 @@ pub(crate) fn parse(source: &str, warnings: &mut Warnings) -> Document {
         pending_head: NoteHeadGroup::Normal,
         pending_tuplet_number: None,
         pending_invisible_rest: false,
+        partitions: Vec::new(),
     };
     parser.document()
 }
@@ -173,87 +188,191 @@ impl<'a> Parser<'a> {
         };
 
         while !self.at_end() {
-            let Some(token) = self.peek().cloned() else {
-                break;
-            };
-            match &token.kind {
-                Kind::Command if token.text == "version" => {
-                    self.position += 1;
-                    if let Some(Token {
-                        kind: Kind::Str,
-                        text,
-                        ..
-                    }) = self.bump()
-                    {
-                        document.version = Some(text);
-                    }
+            self.toplevel_item(&mut document);
+        }
+
+        // Choix de la partition : un bloc `\score` explicite l'emporte sur la
+        // musique de haut niveau ; à égalité, la première rencontrée gagne.
+        let chosen = self
+            .partitions
+            .iter()
+            .position(|partition| partition.explicit)
+            .or(if self.partitions.is_empty() {
+                None
+            } else {
+                Some(0)
+            });
+        if let Some(chosen) = chosen {
+            for (index, partition) in self.partitions.iter().enumerate() {
+                if index != chosen {
+                    self.warnings.push(
+                        partition.line,
+                        partition.column,
+                        "partition supplémentaire ignorée",
+                    );
                 }
-                Kind::Command if token.text == "language" => {
-                    self.position += 1;
-                    if let Some(Token {
-                        kind: Kind::Str,
-                        text,
-                        ..
-                    }) = self.bump()
-                    {
-                        match Language::from_name(&text) {
-                            Some(language) => {
-                                self.language = language;
-                                document.language = text;
-                            }
-                            None => self.warn(format!("langue de hauteurs inconnue : {text}")),
+            }
+            if self.partitions.get(chosen).is_some() {
+                let partition = self.partitions.swap_remove(chosen);
+                document.score = Some(partition.score);
+            }
+        }
+        document
+    }
+
+    /// Un élément du niveau supérieur du fichier (ou d'un `\book`) : en-tête,
+    /// bloc `\score`, `\book`, commande ignorée ou expression musicale.
+    fn toplevel_item(&mut self, document: &mut Document) {
+        let Some(token) = self.peek().cloned() else {
+            return;
+        };
+        match &token.kind {
+            Kind::Command if token.text == "version" => {
+                self.position += 1;
+                if let Some(Token {
+                    kind: Kind::Str,
+                    text,
+                    ..
+                }) = self.bump()
+                {
+                    document.version = Some(text);
+                }
+            }
+            Kind::Command if token.text == "language" => {
+                self.position += 1;
+                if let Some(Token {
+                    kind: Kind::Str,
+                    text,
+                    ..
+                }) = self.bump()
+                {
+                    match Language::from_name(&text) {
+                        Some(language) => {
+                            self.language = language;
+                            document.language = text;
                         }
+                        None => self.warn(format!("langue de hauteurs inconnue : {text}")),
                     }
                 }
-                Kind::Command if token.text == "header" => {
+            }
+            Kind::Command if token.text == "header" => {
+                self.position += 1;
+                let header = self.parse_header();
+                document.header.entries.extend(header.entries);
+            }
+            Kind::Command if token.text == "score" => {
+                self.position += 1;
+                let score = self.parse_score();
+                self.partitions.push(Partition {
+                    score,
+                    explicit: true,
+                    line: token.line,
+                    column: token.column,
+                });
+            }
+            Kind::Command if token.text == "book" || token.text == "bookpart" => {
+                self.position += 1;
+                self.parse_book(document);
+            }
+            Kind::Command if token.text == "include" => {
+                self.position += 1;
+                self.bump();
+                self.warn("\\include ignoré : le fichier inclus n'est pas lu");
+            }
+            Kind::Command if token.text == "markup" || token.text == "markuplist" => {
+                self.position += 1;
+                self.parse_markup_text();
+            }
+            Kind::Word => {
+                // Assignation `nom = musique` ou mot isolé.
+                if self.peek_at(1).is_some_and(|next| next.is_punct('=')) {
+                    let name = token.text.clone();
+                    self.position += 2;
+                    let music = self.parse_music();
+                    self.variables.insert(name, music);
+                } else if self.at_toplevel_music() {
+                    self.parse_toplevel_music(&token);
+                } else {
                     self.position += 1;
-                    let header = self.parse_header();
-                    document.header.entries.extend(header.entries);
+                    self.warn(format!("mot hors contexte ignoré : {}", token.text));
                 }
-                Kind::Command if token.text == "score" => {
-                    self.position += 1;
-                    let score = self.parse_score();
-                    document.score = Some(score);
-                }
-                Kind::Command if token.text == "book" || token.text == "bookpart" => {
-                    self.position += 1;
-                    self.skip_braced();
-                }
-                Kind::Command if token.text == "include" => {
-                    self.position += 1;
-                    self.bump();
-                    self.warn("\\include ignoré : le fichier inclus n'est pas lu");
-                }
-                Kind::Command if token.text == "markup" || token.text == "markuplist" => {
-                    self.position += 1;
-                    self.parse_markup_text();
-                }
-                Kind::Word => {
-                    // Assignation `nom = musique` ou mot isolé.
-                    if self.peek_at(1).is_some_and(|next| next.is_punct('=')) {
-                        let name = token.text.clone();
-                        self.position += 2;
-                        let music = self.parse_music();
-                        self.variables.insert(name, music);
-                    } else {
-                        self.position += 1;
-                        self.warn(format!("mot hors contexte ignoré : {}", token.text));
-                    }
-                }
-                Kind::Command => {
+            }
+            Kind::Command => {
+                if self.at_toplevel_music() {
+                    self.parse_toplevel_music(&token);
+                } else {
                     self.position += 1;
                     self.skip_command_arguments(&token.text);
                 }
-                Kind::Punct(';') => {
-                    self.position += 1;
-                }
-                _ => {
-                    self.position += 1;
-                }
+            }
+            Kind::Punct(';') => {
+                self.position += 1;
+            }
+            Kind::Punct('{') | Kind::Punct('<') => self.parse_toplevel_music(&token),
+            _ => {
+                self.position += 1;
             }
         }
+    }
 
-        document
+    /// Bloc `\book { … }` ou `\bookpart { … }` : mêmes éléments qu'au niveau
+    /// du fichier, `\score` et musique de haut niveau compris.
+    fn parse_book(&mut self, document: &mut Document) {
+        if !self.eat_punct('{') {
+            return;
+        }
+        while !self.at_end() && !self.eat_punct('}') {
+            self.toplevel_item(document);
+        }
+    }
+
+    /// Vrai si le jeton courant ouvre une expression musicale de haut niveau
+    /// (partition implicite), telle que `parse_music` l'accepte.
+    fn at_toplevel_music(&self) -> bool {
+        if self.at_double_angle_open() {
+            return true;
+        }
+        match self.peek().map(|token| &token.kind) {
+            Some(Kind::Punct('{') | Kind::Punct('<')) => true,
+            Some(Kind::Command) => {
+                let text = self
+                    .peek()
+                    .map(|token| token.text.as_str())
+                    .unwrap_or_default();
+                self.variables.contains_key(text) || starts_music_command(text)
+            }
+            Some(Kind::Word) => {
+                let text = self
+                    .peek()
+                    .map(|token| token.text.as_str())
+                    .unwrap_or_default();
+                self.variables.contains_key(text)
+                    || matches!(text, "r" | "R" | "s" | "q")
+                    || self.is_pitch_word(text)
+            }
+            _ => false,
+        }
+    }
+
+    /// Expression musicale de haut niveau : une partition implicite, comme le
+    /// `scorify-music` de `toplevel-music-handler`.
+    fn parse_toplevel_music(&mut self, token: &Token) {
+        let mut groups = self.parse_score_element();
+        if groups.is_empty() {
+            return;
+        }
+        if let Some(staff) = groups.last_mut().and_then(|group| group.staves.last_mut()) {
+            self.collect_addlyrics(staff);
+        }
+        self.partitions.push(Partition {
+            score: ScoreAst {
+                groups,
+                lyrics: Vec::new(),
+            },
+            explicit: false,
+            line: token.line,
+            column: token.column,
+        });
     }
 
     /// Bloc `\header { champ = valeur … }`.
@@ -326,45 +445,52 @@ impl<'a> Parser<'a> {
             self.warn("\\score sans accolade");
             return score;
         }
-        let mut elements = Vec::new();
         while !self.at_end() {
             if self.eat_punct('}') {
                 break;
             }
-            if self.at_double_angle_open() {
-                self.position += 2;
-                elements.extend(self.parse_context_list());
-            } else if self.peek().is_some_and(|token| token.is_command("new")) {
-                self.position += 1;
-                if let Some(group) = self.parse_new() {
-                    elements.push(group);
-                }
-            } else if self.peek().is_some_and(|token| {
-                token.is_command("layout") || token.is_command("midi") || token.is_command("paper")
-            }) {
-                self.position += 1;
-                self.skip_braced();
-            } else if self.peek().is_some_and(|token| token.is_command("header")) {
-                self.position += 1;
-                self.parse_header();
-            } else {
-                // Musique sans contexte : une portée anonyme.
-                let music = self.parse_music();
-                if !music.is_empty() {
-                    let mut staff = StaffBlock::new();
-                    staff.voices.push(VoiceBlock { name: None, music });
-                    elements.push(GroupBlock {
-                        kind: GroupKind::Staff,
-                        instrument_name: None,
-                        short_instrument_name: None,
-                        staves: vec![staff],
-                        lyrics: Vec::new(),
-                    });
-                }
+            score.groups.extend(self.parse_score_element());
+        }
+        score
+    }
+
+    /// Un élément du corps de `\score`, également une expression musicale de
+    /// haut niveau : `<< … >>`, `\new …`, `\layout`/`\midi`/`\paper`,
+    /// `\header` ou musique sans contexte (portée anonyme).
+    fn parse_score_element(&mut self) -> Vec<GroupBlock> {
+        let mut elements = Vec::new();
+        if self.at_double_angle_open() {
+            self.position += 2;
+            elements.extend(self.parse_context_list());
+        } else if self.peek().is_some_and(|token| token.is_command("new")) {
+            self.position += 1;
+            if let Some(group) = self.parse_new() {
+                elements.push(group);
+            }
+        } else if self.peek().is_some_and(|token| {
+            token.is_command("layout") || token.is_command("midi") || token.is_command("paper")
+        }) {
+            self.position += 1;
+            self.skip_braced();
+        } else if self.peek().is_some_and(|token| token.is_command("header")) {
+            self.position += 1;
+            self.parse_header();
+        } else {
+            // Musique sans contexte : une portée anonyme.
+            let music = self.parse_music();
+            if !music.is_empty() {
+                let mut staff = StaffBlock::new();
+                staff.voices.push(VoiceBlock { name: None, music });
+                elements.push(GroupBlock {
+                    kind: GroupKind::Staff,
+                    instrument_name: None,
+                    short_instrument_name: None,
+                    staves: vec![staff],
+                    lyrics: Vec::new(),
+                });
             }
         }
-        score.groups = elements;
-        score
+        elements
     }
 
     /// Liste de contextes d'un `<< … >>` de `\score`.
@@ -2085,6 +2211,57 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// Vrai si la commande ouvre une expression musicale reconnue par
+/// `parse_music` (hors variables musicales, testées à part).
+fn starts_music_command(name: &str) -> bool {
+    matches!(
+        name,
+        "relative"
+            | "fixed"
+            | "absolute"
+            | "transpose"
+            | "tuplet"
+            | "times"
+            | "grace"
+            | "slashedGrace"
+            | "acciaccatura"
+            | "appoggiatura"
+            | "afterGrace"
+            | "repeat"
+            | "alternative"
+            | "new"
+            | "with"
+            | "key"
+            | "time"
+            | "clef"
+            | "partial"
+            | "bar"
+            | "section"
+            | "break"
+            | "noBreak"
+            | "pageBreak"
+            | "pageTurn"
+            | "tempo"
+            | "mark"
+            | "ottava"
+            | "sustainOn"
+            | "sustainOff"
+            | "voiceOne"
+            | "voiceTwo"
+            | "voiceThree"
+            | "voiceFour"
+            | "stemUp"
+            | "stemDown"
+            | "set"
+            | "unset"
+            | "once"
+            | "override"
+            | "revert"
+            | "tweak"
+            | "skip"
+    )
+}
+
 /// Vrai si le jeton commence un post-événement (`post_events`).
 fn starts_post_event(token: &Token) -> bool {
     match &token.kind {
@@ -2318,6 +2495,7 @@ mod tests {
             pending_head: NoteHeadGroup::Normal,
             pending_tuplet_number: None,
             pending_invisible_rest: false,
+            partitions: Vec::new(),
         };
         parser.parse_music()
     }

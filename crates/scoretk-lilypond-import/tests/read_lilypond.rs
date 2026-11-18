@@ -232,3 +232,120 @@ fn commandes_ignorees_avec_avertissement() {
         "les commandes ignorées doivent être signalées"
     );
 }
+
+#[test]
+fn musique_de_haut_niveau_relative() {
+    let score = read_lilypond("\\relative c' { c4 d e f | g1 }").expect("lecture");
+    assert_eq!(score.staves.len(), 1);
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67]);
+    assert_eq!(score.measures.len(), 2);
+}
+
+#[test]
+fn musique_de_haut_niveau_absolue() {
+    let score = read_lilypond("{ c'4 d' e' f' }").expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+    assert_eq!(score.measures.len(), 1);
+}
+
+#[test]
+fn musique_de_haut_niveau_simultanee() {
+    let score = read_lilypond("<< \\new Staff { c'1 } \\new Staff { e'1 } >>").expect("lecture");
+    assert_eq!(score.parts.len(), 2);
+    assert_eq!(score.staves.len(), 2);
+    assert_eq!(hauteurs(&score), vec![60, 64]);
+}
+
+#[test]
+fn musique_de_haut_niveau_new_staff_relative() {
+    let score = read_lilypond("\\new Staff \\relative { c'4 d e f }").expect("lecture");
+    assert_eq!(score.staves.len(), 1);
+    // Sans référence, `\relative` part du do central : `c'` monte d'une octave.
+    assert_eq!(hauteurs(&score), vec![72, 74, 76, 77]);
+}
+
+#[test]
+fn musique_de_haut_niveau_fixed() {
+    let score = read_lilypond("\\fixed c' { c d e f }").expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+}
+
+#[test]
+fn musique_de_haut_niveau_transposee() {
+    let score = read_lilypond("\\transpose c d { c'1 }").expect("lecture");
+    assert_eq!(hauteurs(&score), vec![62]);
+}
+
+#[test]
+fn variable_musicale_de_haut_niveau() {
+    let score = read_lilypond("melodie = \\relative { c'4 d e f }\n\\melodie").expect("lecture");
+    // Sans référence, `\relative` part du do central : `c'` monte d'une octave.
+    assert_eq!(hauteurs(&score), vec![72, 74, 76, 77]);
+    assert_eq!(score.measures.len(), 1);
+}
+
+#[test]
+fn paroles_de_haut_niveau() {
+    let score = read_lilypond("\\new Staff { c'1 } \\addlyrics { la }").expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60]);
+    let syllabes: Vec<&str> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .flat_map(|chord_rest| &chord_rest.lyrics)
+        .map(|lyrics| lyrics.text.as_str())
+        .collect();
+    assert_eq!(syllabes, vec!["la"]);
+}
+
+#[test]
+fn livre_et_partie_de_livre() {
+    let score = read_lilypond("\\book { \\header { workTitle = \"T\" } \\score { { c'1 } } }")
+        .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60]);
+    assert_eq!(score.metadata.work_title, "T");
+    let score = read_lilypond("\\bookpart { \\score { { e'1 } } }").expect("lecture");
+    assert_eq!(hauteurs(&score), vec![64]);
+    // La musique de haut niveau est aussi acceptée dans un livre.
+    let score = read_lilypond("\\book { { d'1 } }").expect("lecture");
+    assert_eq!(hauteurs(&score), vec![62]);
+}
+
+#[test]
+fn partition_explicite_prioritaire_et_premiere() {
+    // Un `\score` explicite l'emporte sur la musique de haut niveau.
+    let (score, warnings) =
+        read_lilypond_reporting("{ c'1 }\n\\score { { d'1 } }").expect("lecture");
+    assert_eq!(hauteurs(&score), vec![62]);
+    assert_eq!(
+        warnings
+            .iter()
+            .filter(|warning| warning.message == "partition supplémentaire ignorée")
+            .count(),
+        1
+    );
+    // Entre plusieurs partitions, la première gagne et les autres sont
+    // signalées.
+    let (score, warnings) =
+        read_lilypond_reporting("\\score { { c'1 } }\n\\score { { d'1 } }").expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60]);
+    assert_eq!(
+        warnings
+            .iter()
+            .filter(|warning| warning.message == "partition supplémentaire ignorée")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn sans_musique_erreur() {
+    let error =
+        read_lilypond("\\version \"2.24.0\"\n\\header { title = \"x\" }\n\\markup { \"y\" }")
+            .expect_err("aucune musique");
+    assert!(
+        error.to_string().contains("aucune musique"),
+        "message : {error}"
+    );
+}

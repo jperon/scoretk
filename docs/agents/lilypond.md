@@ -96,12 +96,16 @@ ornements courants, `\grace`, `\acciaccatura`, `\appoggiatura`,
 `\afterGrace`, `R`/`s`, voix `<< \\ >>`, variables (`nom = { … }` puis
 `\nom`), `\new Staff`/`PianoStaff`/`ChoirStaff`/`Voice`/`Lyrics`,
 `\addlyrics`, `\lyricsto`, `\lyricmode`, `\header`, `\tempo`, `\mark` et
-`\markup` simple (texte).
+`\markup` simple (texte). Une expression musicale écrite directement au
+niveau supérieur du fichier (partition implicite de `toplevel-music-handler`)
+est lue comme un `\score { musique }` sans `\layout` ni `\midi` ;
+`\book`/`\bookpart` sont parcourus pour y chercher `\score`, `\header` et
+cette musique de haut niveau.
 
 Tout ce qui sort de ce sous-ensemble — Scheme `#…`/`$…`, commandes inconnues,
 propriétés non modélisées — est **ignoré avec un avertissement collecté**
-(`read_lilypond_reporting`), jamais une erreur : seule une source sans bloc
-`\score` échoue.
+(`read_lilypond_reporting`), jamais une erreur : seule une source sans
+aucune musique (`\score` ou expression de haut niveau) échoue.
 
 ## 3. Choix de notation
 
@@ -424,7 +428,13 @@ pas de régression du lecteur.
 
 - **Sous-ensemble**, pas LilyPond complet : Scheme, `\include`, modes
   (`\drummode`, `\chordmode`, `\figuremode`), `\new` imbriqué dans une voix,
-  `\partCombine`, `\book`, `\paper` sont ignorés avec un avertissement.
+  `\partCombine`, `\paper` sont ignorés avec un avertissement. `\book` et
+  `\bookpart` sont parcourus (leur `\header`, leurs `\score` et leur musique
+  de haut niveau).
+- **Une seule partition** : quand un fichier en contient plusieurs (`\score`
+  explicites ou expressions de haut niveau), le premier `\score` explicite
+  l'emporte, sinon la première expression ; chaque autre est ignorée avec un
+  avertissement. `\include` n'est pas suivi.
 - **Pas de mise en page** : `\layout`, positions, portées masquées et sauts
   calculés ne sont pas relus.
 - **`\relative`** : la règle de `Pitch::to_relative_octave` est portée, mais
