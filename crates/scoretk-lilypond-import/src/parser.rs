@@ -2063,9 +2063,11 @@ impl<'a> Parser<'a> {
 
     /// `\repeat`.
     fn parse_repeat(&mut self) -> Music {
+        // Les partitions anciennes écrivent parfois le type entre guillemets :
+        // `\repeat "unfold" 2 { … }` a le même sens que `\repeat unfold 2`.
         let kind = match self.bump() {
             Some(Token {
-                kind: Kind::Word,
+                kind: Kind::Word | Kind::Str,
                 text,
                 ..
             }) => RepeatKind::from_word(&text),

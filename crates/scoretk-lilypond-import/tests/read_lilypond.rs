@@ -2689,3 +2689,21 @@ fn durees_nues_repetent_la_note_ou_l_accord_precedent() {
     let score = lire("\\time 4/4 c4 q8 q8 d4 e4");
     assert_eq!(hauteurs(&score), vec![60, 60, 60, 62, 64]);
 }
+
+#[test]
+fn repeat_unfold_entre_guillemets_est_deplie() {
+    // `\repeat "unfold" 2 { … }` (forme chaîne des partitions anciennes) se
+    // déplie comme `\repeat unfold 2` ; `\repeat volta`, lui, reste écrit une
+    // seule fois dans le MusicXML.
+    let score = lire(
+        "\\time 4/4 \\repeat \"unfold\" 2 { c4 d e f } | g2 a2 | \
+         \\repeat volta 2 { b4 c' d' e' } | f'2 g'2",
+    );
+    assert_eq!(
+        hauteurs(&score),
+        vec![60, 62, 64, 65, 60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79]
+    );
+    assert_eq!(score.measures.len(), 5);
+    assert_eq!(score.measures[3].start_bar_line, BarLineType::StartRepeat);
+    assert_eq!(score.measures[3].repeat_count, 2);
+}
