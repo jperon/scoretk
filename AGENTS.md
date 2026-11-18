@@ -233,3 +233,5 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
 - `docs/agents/performance.md` — banc criterion natif (`benches/conversion.rs`),
   temps par sens sur le corpus, profil `perf`/Callgrind, allocations et pistes
   chiffrées : à lire avant d'optimiser une conversion.
+- `docs/agents/plan-fiabilite.md` — plan de fiabilisation des dix sens :
+  lots de référence, oracles, phases : à lire avant une campagne de mesure.

@@ -6,6 +6,30 @@ correction mesurées comme celle de la lecture LilyPond (612 → 1 121 fichiers
 exacts sur `~/Musique` en deux jours, grâce à une mesure automatique fichier
 par fichier et sans régression tolérée).
 
+## 0. Objectif (fixé par l'utilisateur, 2026-11-19)
+
+- **Pour chaque conversion, faire au moins aussi bien que les alternatives,
+  de préférence mieux.** Chaque relevé mesure donc aussi l'alternative de
+  référence sur le même lot et le même oracle :
+
+  | Conversion | Alternatives à battre |
+  |---|---|
+  | MuseScore → MusicXML/MIDI | MuseScore 4.7.4 (référence : viser la parité) ; music21 |
+  | MusicXML → MuseScore | import MuseScore 4.7.4 |
+  | MusicXML → LilyPond | `musicxml2ly` (LilyPond) ; python-ly |
+  | LilyPond → MusicXML | python-ly (`ly musicxml`) ; music21 |
+  | ABC → MusicXML / MusicXML → ABC | `abc2xml.py` / `xml2abc.py` ; music21 ; import ABC de MuseScore |
+  | ABC → LilyPond | `abc2ly` |
+  | MIDI → partition | import MIDI de MuseScore ; `midi2ly` ; music21 |
+  | partition → MIDI | MuseScore ; LilyPond ; music21 ; `abc2midi` |
+
+- **Portée** : pas forcément le noyau musical complet, mais tout ce qui est
+  raisonnablement envisageable **en gardant un code maintenable et une
+  sortie dont la taille n'explose pas** (critère de rejet d'un correctif :
+  complexité disproportionnée ou sortie gonflée).
+- Corpus tiers téléchargés hors dépôt : `/home/jacques/programmes/musique/corpus/`
+  (`README.md` : sources et licences).
+
 ## 1. Principes communs
 
 1. **Un oracle externe par sens.** La référence est produite par l'outil qui
@@ -105,8 +129,8 @@ complète → fusion si aucune baisse → reconstruction wasm/cantus.
 
 ## 5. Points à décider
 
-- Téléchargement d'un corpus ABC public (licence, volume).
+- Téléchargement de corpus publics : accordé (licences compatibles
+  seulement).
 - Versionner un sous-lot de `~/Musique` (fichiers personnels) ou seulement
   des listes de chemins.
-- Cible N5 (noyau complet) ou N2 suffisant pour les formats de performance
-  (MIDI) et les formats « légers » (ABC).
+- Cible : tranchée (§ 0, portée).
