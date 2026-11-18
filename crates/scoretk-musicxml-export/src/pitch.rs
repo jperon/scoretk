@@ -25,6 +25,8 @@
 //! (`engraving/dom/pitchspelling.cpp`), `tpc2alter`, `midipitch2xml`,
 //! `tick2xml` et `TDuration::TDuration(const Fraction&)`.
 
+use std::sync::OnceLock;
+
 use scoretk_core::model::{Duration, DurationType, Fraction};
 
 /// Plus petite valeur valide de `Tpc` (`Tpc::TPC_MIN`, fa triple bémol).
@@ -116,13 +118,38 @@ pub(crate) fn duration_type_name(kind: DurationType) -> &'static str {
     }
 }
 
+/// Table paresseuse des figures précalculées, une seule fois par processus.
+///
+/// Remplit exactement les 65 candidats parcourus par l'ancien algorithme :
+/// figures dans l'ordre de [`DURATION_TYPES`], points de 4 à 0, chaque
+/// entrée portant la valeur en fractions de ronde. La recherche dans
+/// [`tick_to_xml`] se contente de renvoyer le premier élément dont la
+/// fraction est inférieure ou égale à la durée demandée.
+fn duration_table() -> &'static [(Fraction, &'static str, u8)] {
+    static TABLE: OnceLock<Vec<(Fraction, &'static str, u8)>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut table = Vec::with_capacity(DURATION_TYPES.len() * 5);
+        for kind in DURATION_TYPES {
+            for dots in [4_u8, 3, 2, 1, 0] {
+                table.push((
+                    Duration::with_dots(kind, dots).ticks(),
+                    duration_type_name(kind),
+                    dots,
+                ));
+            }
+        }
+        table
+    })
+}
+
 /// Figure et nombre de points correspondant à une durée, comme `tick2xml`.
 ///
 /// `ticks` est exprimé en fractions de ronde. La recherche reproduit
 /// `TDuration::TDuration(const Fraction&)` : on part de la figure la plus
 /// longue avec quatre points, on réduit les points puis on descend les
-/// figures jusqu'à ce que la valeur tienne dans `ticks`. Une durée nulle est
-/// un silence de mesure entière (`measure`).
+/// figures jusqu'à ce que la valeur tienne dans `ticks`. Les valeurs sont
+/// précalculées dans [`duration_table`]. Une durée nulle est un silence de
+/// mesure entière (`measure`).
 pub(crate) fn tick_to_xml(ticks: Fraction) -> Option<(&'static str, u8)> {
     if ticks.is_zero() {
         return Some(("measure", 0));
@@ -131,20 +158,10 @@ pub(crate) fn tick_to_xml(ticks: Fraction) -> Option<(&'static str, u8)> {
         return None;
     }
 
-    for kind in DURATION_TYPES {
-        let mut dots = 4_u8;
-        loop {
-            if Duration::with_dots(kind, dots).ticks() <= ticks {
-                return Some((duration_type_name(kind), dots));
-            }
-            if dots == 0 {
-                break;
-            }
-            dots -= 1;
-        }
-    }
-
-    None
+    duration_table()
+        .iter()
+        .find(|&&(value, _, _)| value <= ticks)
+        .map(|(_, name, dots)| (*name, *dots))
 }
 
 #[cfg(test)]
@@ -188,5 +205,46 @@ mod tests {
         assert_eq!(tick_to_xml(Fraction::ONE), Some(("whole", 0)));
         assert_eq!(tick_to_xml(Fraction::new(1, 12)), Some(("16th", 0)));
         assert_eq!(tick_to_xml(Fraction::from_integer(-1)), None);
+    }
+
+    /// Ancien algorithme, recopié tel quel avant le passage à la table
+    /// précalculée : sert de référence dans le test d'équivalence.
+    fn ancien_tick_to_xml(ticks: Fraction) -> Option<(&'static str, u8)> {
+        if ticks.is_zero() {
+            return Some(("measure", 0));
+        }
+        if !ticks.is_positive() {
+            return None;
+        }
+
+        for kind in DURATION_TYPES {
+            let mut dots = 4_u8;
+            loop {
+                if Duration::with_dots(kind, dots).ticks() <= ticks {
+                    return Some((duration_type_name(kind), dots));
+                }
+                if dots == 0 {
+                    break;
+                }
+                dots -= 1;
+            }
+        }
+
+        None
+    }
+
+    #[test]
+    fn table_equivalente_a_lancien_algorithme() {
+        const DENOMINATEURS: [i64; 14] = [1, 2, 3, 4, 6, 8, 12, 16, 32, 64, 128, 256, 512, 1024];
+        for &denominateur in &DENOMINATEURS {
+            for numerateur in 1..=200 {
+                let ticks = Fraction::new(numerateur, denominateur);
+                assert_eq!(
+                    tick_to_xml(ticks),
+                    ancien_tick_to_xml(ticks),
+                    "divergence pour {numerateur}/{denominateur}"
+                );
+            }
+        }
     }
 }
