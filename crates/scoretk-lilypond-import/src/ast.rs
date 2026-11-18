@@ -138,7 +138,11 @@ pub(crate) enum Context {
     Partial(scoretk_core::model::Duration),
     /// `\set Timing.measureLength = #n/d`.
     MeasureLength(scoretk_core::model::Fraction),
-    /// `\bar "…"`.
+    /// `\cadenzaOn` (`true`) / `\cadenzaOff` (`false`), ou
+    /// `\set Timing.timing = ##f` / `##t`. La valeur `true` coupe les barres
+    /// automatiques jusqu'au prochain `false` ou à une barre explicite.
+    Cadenza(bool),
+    /// `\bar "…"`, ou une barre `|` écrite dans la musique.
     Bar(String),
     /// `\section`.
     Section,

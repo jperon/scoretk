@@ -99,6 +99,9 @@ pub(crate) enum MetaEvent {
     Partial(Fraction),
     /// `\set Timing.measureLength`.
     MeasureLength(Fraction),
+    /// `\cadenzaOn` (`true`) / `\cadenzaOff` (`false`) : fin des barres
+    /// automatiques pendant la cadence.
+    Cadenza(bool),
     /// `\bar`.
     Bar(BarLineType),
     /// `\section`.
@@ -395,6 +398,7 @@ impl<'a> Interpreter<'a> {
                     self.meta(MetaEvent::MeasureLength(*length));
                 }
             }
+            Context::Cadenza(on) => self.meta(MetaEvent::Cadenza(*on)),
             Context::Bar(text) => {
                 if let Some(kind) = bar_line_type(text) {
                     self.meta(MetaEvent::Bar(kind));

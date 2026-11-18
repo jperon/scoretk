@@ -1042,7 +1042,10 @@ impl<'a> Parser<'a> {
                 Music::Seq(items)
             }
             Kind::Punct('<') => self.parse_chord_group(),
-            Kind::Punct('}') | Kind::Punct('>') | Kind::Punct('|') | Kind::Punct(')') => {
+            // Une barre `|` est une commande de trame comme `\bar "|"` : elle
+            // peut fermer une mesure, en particulier pendant une cadence.
+            Kind::Punct('|') => Music::Context(Context::Bar("|".to_owned())),
+            Kind::Punct('}') | Kind::Punct('>') | Kind::Punct(')') => {
                 self.position += 1;
                 Music::Empty
             }
@@ -1247,6 +1250,10 @@ impl<'a> Parser<'a> {
                 Some((duration, _)) => context(Context::Partial(duration)),
                 None => Music::Empty,
             },
+            // `property-init.ly` : `cadenzaOn` pose `Timing.timing = ##f`
+            // (plus de barre automatique) et `cadenzaOff` le remet à `##t`.
+            "cadenzaOn" => context(Context::Cadenza(true)),
+            "cadenzaOff" => context(Context::Cadenza(false)),
             "bar" => {
                 let text = match self.bump() {
                     Some(Token {
@@ -1471,6 +1478,25 @@ impl<'a> Parser<'a> {
         let path = self.skip_property_path();
         if !self.eat_punct('=') {
             return Music::Empty;
+        }
+        // `\set Timing.timing = ##f` / `##t` a le même effet que
+        // `\cadenzaOn` / `\cadenzaOff`. Le lexer lit `##f` comme le jeton
+        // Scheme `#f` (et `##t` comme `#t`).
+        if path.iter().any(|part| part.eq_ignore_ascii_case("timing")) {
+            let cadenza =
+                self.peek()
+                    .filter(|token| token.is_scheme())
+                    .and_then(
+                        |token| match token.text.trim().to_ascii_lowercase().as_str() {
+                            "#f" => Some(true),
+                            "#t" => Some(false),
+                            _ => None,
+                        },
+                    );
+            if let Some(on) = cadenza {
+                self.position += 1;
+                return Music::Context(Context::Cadenza(on));
+            }
         }
         let fraction = self.parse_scheme_fraction();
         let is_measure_length = path
@@ -2283,6 +2309,8 @@ fn starts_music_command(name: &str) -> bool {
             | "clef"
             | "partial"
             | "bar"
+            | "cadenzaOn"
+            | "cadenzaOff"
             | "section"
             | "break"
             | "noBreak"

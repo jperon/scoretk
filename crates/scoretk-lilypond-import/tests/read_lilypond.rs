@@ -938,3 +938,59 @@ fn change_dans_beam_cross_staff() {
         "avertissements : {warnings:?}"
     );
 }
+
+fn longueurs(score: &scoretk_core::model::Score) -> Vec<Fraction> {
+    score.measures.iter().map(|measure| measure.len).collect()
+}
+#[test]
+fn cadenza_une_seule_mesure() {
+    let score =
+        lire("\\time 4/4 c'4 d' e' f' \\cadenzaOn c'8 d' e' f' g' a' b' c'' d'' \\cadenzaOff c'1");
+    assert_eq!(
+        longueurs(&score),
+        vec![Fraction::ONE, Fraction::new(9, 8), Fraction::ONE,]
+    );
+    assert!(score.measures[1].is_irregular());
+    assert_eq!(score.measures[1].start_tick, Fraction::ONE);
+    assert_eq!(hauteurs(&score).len(), 14);
+}
+#[test]
+fn cadenza_coupee_par_une_barre() {
+    let score = lire("\\time 4/4 c'1 \\cadenzaOn d'8 \\bar \"|\" e'8 f' | g'8 \\cadenzaOff c'1");
+    assert_eq!(
+        longueurs(&score),
+        vec![
+            Fraction::ONE,
+            Fraction::new(1, 8),
+            Fraction::new(1, 4),
+            Fraction::new(1, 8),
+            Fraction::ONE,
+        ]
+    );
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 60]);
+}
+#[test]
+fn cadenza_avec_set_timing() {
+    let score = lire(
+        "\\time 4/4 c'1 \\set Timing.timing = ##f c'8 d' e' f' g' a' b' c'' d'' \\set Timing.timing = ##t c'1",
+    );
+    assert_eq!(
+        longueurs(&score),
+        vec![Fraction::ONE, Fraction::new(9, 8), Fraction::ONE,]
+    );
+}
+#[test]
+fn cadenza_sans_commande_ignoree() {
+    // Motif de `input/regression/bar-number-after-cadenza.ly` : les deux
+    // commandes de cadence et `\caesura` doivent être lues sans avertissement.
+    let source = "\\version \"2.25.6\"\n\
+                  \\new Score \\fixed c'' { \\repeat unfold 2 { \\cadenzaOn r4 \\cadenzaOff \\caesura c1 } }";
+    let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![72, 72]);
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.message.contains("commande ignorée")),
+        "avertissements : {warnings:?}"
+    );
+}

@@ -48,6 +48,22 @@ use crate::events::{
 use crate::warnings::Warnings;
 use crate::Interpreter;
 
+/// Intervalle pendant lequel les barres automatiques sont suspendues.
+///
+/// Correspond à `Timing.timing = ##f` de LilyPond : la mesure en cours
+/// s'allonge jusqu'à la fermeture de la cadence (`\cadenzaOff`) ou à la
+/// première barre explicite. Les intervalles de toutes les voix sont
+/// collectés tels quels : leurs bornes servent à la fois de coupures et de
+/// test d'appartenance, sans fusion (deux cadences adjacentes séparées par un
+/// `\bar` doivent rester deux mesures).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CadenzaSpan {
+    /// Tick du `\cadenzaOn`.
+    start: Fraction,
+    /// Tick du `\cadenzaOff`, d'une barre explicite ou de la fin de la musique.
+    end: Fraction,
+}
+
 /// Trame d'une mesure.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeasureSlot {
@@ -361,6 +377,64 @@ struct MeterAt {
     partial: Option<Fraction>,
 }
 
+/// Intervalles de cadence de toutes les voix.
+///
+/// Toutes les voix partageant les mesures, une cadence dans une seule voix
+/// suffit à suspendre les barres automatiques pour la partition entière
+/// pendant cet intervalle (voir § 7 de `docs/agents/lilypond.md`).
+fn cadenza_spans(staves: &[StaffBuild], end_tick: Fraction) -> Vec<CadenzaSpan> {
+    let mut spans = Vec::new();
+    for staff in staves {
+        for voice in &staff.voices {
+            let mut events: Vec<&VoiceEvent> = voice.interpreted.events.iter().collect();
+            events.sort_by_key(|event| (event.tick, event.order));
+            let mut open: Option<Fraction> = None;
+            for event in events {
+                match &event.kind {
+                    EventKind::Meta(MetaEvent::Cadenza(true)) => {
+                        if open.is_none() {
+                            open = Some(event.tick);
+                        }
+                    }
+                    EventKind::Meta(MetaEvent::Cadenza(false)) => {
+                        if let Some(start) = open.take() {
+                            if event.tick > start {
+                                spans.push(CadenzaSpan {
+                                    start,
+                                    end: event.tick,
+                                });
+                            }
+                        }
+                    }
+                    // `\bar "|"` ou `|` pendant la cadence : la mesure se
+                    // ferme là, mais la cadence continue ensuite.
+                    EventKind::Meta(MetaEvent::Bar(_)) => {
+                        if let Some(start) = open {
+                            if event.tick > start {
+                                spans.push(CadenzaSpan {
+                                    start,
+                                    end: event.tick,
+                                });
+                                open = Some(event.tick);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(start) = open {
+                if end_tick > start {
+                    spans.push(CadenzaSpan {
+                        start,
+                        end: end_tick,
+                    });
+                }
+            }
+        }
+    }
+    spans
+}
+
 /// Construit la trame des mesures.
 fn plan_measures(staves: &[StaffBuild], warnings: &mut Warnings) -> Vec<MeasureSlot> {
     let mut meter: BTreeMap<Fraction, MeterAt> = BTreeMap::new();
@@ -403,6 +477,7 @@ fn plan_measures(staves: &[StaffBuild], warnings: &mut Warnings) -> Vec<MeasureS
         .map(|voice| voice.interpreted.end)
         .max()
         .unwrap_or(Fraction::ZERO);
+    let spans = cadenza_spans(staves, end_tick);
     let mut slots = Vec::new();
     let mut start = Fraction::ZERO;
     let mut nominal = Fraction::ONE;
@@ -426,6 +501,25 @@ fn plan_measures(staves: &[StaffBuild], warnings: &mut Warnings) -> Vec<MeasureS
         {
             if *tick < start + len {
                 len = *tick - start;
+            }
+        }
+        // Pendant une cadence, aucune barre automatique : la mesure en cours
+        // s'allonge jusqu'à la fermeture de la cadence ou à sa barre
+        // explicite la plus proche. La durée nominale reste celle du `\time`,
+        // ce qui donne une mesure irrégulière (`len != nominal_len`) comme
+        // MuseScore pour une mesure de durée réelle différente de la signature.
+        let end = start + len;
+        if spans
+            .iter()
+            .any(|span| span.start < end && start < span.end)
+        {
+            if let Some(cut) = spans
+                .iter()
+                .map(|span| span.end)
+                .filter(|tick| *tick > start)
+                .min()
+            {
+                len = cut - start;
             }
         }
         slots.push(MeasureSlot {
@@ -857,6 +951,11 @@ fn place_meta(
                 );
             }
         }
+        MetaEvent::Bar(BarLineType::Normal) => {
+            // `|` est la barre par défaut du modèle : la poser écraserait une
+            // barre plus forte (`\bar "|."`, fin de reprise) au même tick.
+            // La trame des mesures s'en sert seule pour couper les cadences.
+        }
         MetaEvent::Bar(kind) => {
             // Une barre à la fin d'une mesure ferme cette mesure ; au début,
             // elle ouvre la suivante.
@@ -893,7 +992,7 @@ fn place_meta(
                 measure.line_break = true;
             }
         }
-        MetaEvent::Partial(_) | MetaEvent::MeasureLength(_) => {}
+        MetaEvent::Partial(_) | MetaEvent::MeasureLength(_) | MetaEvent::Cadenza(_) => {}
     }
 }
 
