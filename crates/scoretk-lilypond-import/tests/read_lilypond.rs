@@ -2707,3 +2707,34 @@ fn repeat_unfold_entre_guillemets_est_deplie() {
     assert_eq!(score.measures[3].start_bar_line, BarLineType::StartRepeat);
     assert_eq!(score.measures[3].repeat_count, 2);
 }
+
+#[test]
+fn paroles_avec_lyrics_imbrique_gardent_les_portees() {
+    // Un `\new Lyrics` à l'intérieur d'un bloc de paroles (second couplet
+    // aligné) ne doit pas avaler la portée suivante ni ses notes.
+    let score = lire_score(
+        "\\score { << \
+           \\new Staff { \\clef treble \\new Voice = \"s\" { c'4 d' e' f' } } \
+           \\new Lyrics = \"l\" \\lyricsto \"s\" { \
+             do re << mi \\new Lyrics \\with { alignBelowContext = \"l\" } \
+             { fa sol } >> la } \
+           \\new Staff { \\clef bass \\new Voice = \"b\" { c4 d e f } } \
+         >> }",
+    );
+    assert_eq!(score.staves.len(), 2);
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 48, 50, 52, 53]);
+    let couplets = paroles(&score);
+    let premiers: Vec<&str> = couplets
+        .iter()
+        .filter(|(_, verse, ..)| *verse == 0)
+        .map(|(_, _, _, text, _)| text.as_str())
+        .collect();
+    assert_eq!(premiers, vec!["do", "re", "mi", "la"]);
+    let seconds: Vec<&str> = couplets
+        .iter()
+        .filter(|(_, verse, ..)| *verse == 1)
+        .map(|(_, _, _, text, _)| text.as_str())
+        .collect();
+    assert_eq!(seconds, vec!["fa", "sol"]);
+}

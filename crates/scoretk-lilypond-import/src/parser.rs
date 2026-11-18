@@ -688,7 +688,19 @@ impl<'a> Parser<'a> {
         }
         match self.parse_new() {
             Some(group) if group.staves.is_empty() && !group.lyrics.is_empty() => {
-                Music::Lyrics(Box::new(group.lyrics[0].clone()))
+                // Un `\new Lyrics` peut porter plusieurs couplets (un couplet
+                // aligné imbriqué) : les conserver tous, pas seulement le
+                // premier, sinon la portée suivante perd ses paroles.
+                let blocks: Vec<Music> = group
+                    .lyrics
+                    .into_iter()
+                    .map(|lyrics| Music::Lyrics(Box::new(lyrics)))
+                    .collect();
+                if blocks.len() == 1 {
+                    blocks.into_iter().next().unwrap()
+                } else {
+                    Music::Sim(blocks)
+                }
             }
             Some(group) => Music::New(Box::new(group)),
             None => Music::Empty,
@@ -753,18 +765,20 @@ impl<'a> Parser<'a> {
                 self.eat_command("addlyrics");
                 String::new()
             };
-            let (syllables, block_verse) = self.parse_lyric_music();
+            let (syllables, block_verse, couplets) = self.parse_lyric_music();
             let block = LyricsBlock {
                 target,
                 syllables,
                 verse: block_verse.or(verse).unwrap_or(0),
             };
+            let mut lyrics = vec![block];
+            lyrics.extend(couplets);
             return Some(GroupBlock {
                 kind: GroupKind::Other,
                 instrument_name: None,
                 short_instrument_name: None,
                 staves: Vec::new(),
-                lyrics: vec![block],
+                lyrics,
             });
         }
 
@@ -1018,7 +1032,7 @@ impl<'a> Parser<'a> {
     /// Attache un `\addlyrics` qui suit une voix.
     fn collect_addlyrics(&mut self, staff: &mut StaffBlock) {
         while self.eat_command("addlyrics") {
-            let (syllables, block_verse) = self.parse_lyric_music();
+            let (syllables, block_verse, couplets) = self.parse_lyric_music();
             let target = staff
                 .voices
                 .last()
@@ -1030,6 +1044,7 @@ impl<'a> Parser<'a> {
                 syllables,
                 verse,
             });
+            staff.lyrics.extend(couplets);
         }
     }
 
@@ -1107,9 +1122,12 @@ impl<'a> Parser<'a> {
 
     /// Contenu d'un bloc de paroles (`\lyricsto`, `\addlyrics`, `\lyricmode`).
     ///
-    /// Renvoie les syllabes et le rang de couplet porté par `\stanza "n."`
-    /// (LilyPond 2.27), à partir de zéro.
-    fn parse_lyric_music(&mut self) -> (Vec<Syllable>, Option<usize>) {
+    /// Renvoie les syllabes, le rang de couplet porté par `\stanza "n."`
+    /// (LilyPond 2.27) et les couplets alignés déclarés par un `\new Lyrics`
+    /// imbriqué. Un `<< … >>` dans des paroles aligne des couplets : il ne
+    /// referme donc pas le bloc courant, sinon la musique qui suit serait lue
+    /// comme une portée supplémentaire.
+    fn parse_lyric_music(&mut self) -> (Vec<Syllable>, Option<usize>, Vec<LyricsBlock>) {
         if !self.eat_punct('{') {
             // `\v` peut désigner un `\lyricmode { … }` mémorisé dans une
             // variable : `\new Lyrics \lyricsto "s" \v` doit relire ses
@@ -1122,16 +1140,37 @@ impl<'a> Parser<'a> {
             {
                 if let Some(Music::Lyrics(block)) = self.variables.get(&text).cloned() {
                     self.position += 1;
-                    return (block.syllables, Some(block.verse));
+                    return (block.syllables, Some(block.verse), Vec::new());
                 }
             }
             // Un unique mot ou une variable : rien à aligner.
             self.skip_music_token();
-            return (Vec::new(), None);
+            return (Vec::new(), None, Vec::new());
         }
         let mut syllables = Vec::new();
         let mut verse = None;
-        while !self.at_end() && !self.eat_punct('}') {
+        let mut couplets = Vec::new();
+        // Profondeur des `<< … >>` traversés : un `}` à l'intérieur d'un
+        // alignement de couplets n'appartient pas au bloc de paroles courant.
+        let mut alignement = 0usize;
+        while !self.at_end() {
+            if self.at_double_angle_open() {
+                self.position += 2;
+                alignement += 1;
+                continue;
+            }
+            if self.at_double_angle_close() {
+                self.position += 2;
+                alignement = alignement.saturating_sub(1);
+                continue;
+            }
+            if self.peek().is_some_and(|token| token.is_punct('}')) {
+                self.position += 1;
+                if alignement == 0 {
+                    break;
+                }
+                continue;
+            }
             if self.eat_punct(';') {
                 continue;
             }
@@ -1188,6 +1227,41 @@ impl<'a> Parser<'a> {
                         skip: false,
                         ticks,
                     });
+                }
+                Some(token) if token.is_command("new") => {
+                    // `\new Lyrics … { … }` dans un `<< … >>` de paroles :
+                    // un couplet supplémentaire, aligné sur les mêmes notes.
+                    // Il faut consommer tout le contexte (nom, `\with`, cible
+                    // et corps) pour ne pas refermer le couplet courant sur le
+                    // `}` de `\with` et laisser la suite devenir une portée.
+                    self.position += 1;
+                    self.bump(); // type de contexte (`Lyrics`)
+                    if self.eat_punct('=') {
+                        self.bump();
+                    }
+                    if self.eat_command("with") {
+                        self.skip_braced();
+                    }
+                    let target = if self.eat_command("lyricsto") {
+                        match self.bump() {
+                            Some(Token {
+                                kind: Kind::Str,
+                                text,
+                                ..
+                            }) => text,
+                            _ => String::new(),
+                        }
+                    } else {
+                        self.eat_command("addlyrics");
+                        String::new()
+                    };
+                    let (new_syllables, new_verse, suivants) = self.parse_lyric_music();
+                    couplets.push(LyricsBlock {
+                        target,
+                        syllables: new_syllables,
+                        verse: new_verse.unwrap_or(verse.unwrap_or(0) + 1),
+                    });
+                    couplets.extend(suivants);
                 }
                 Some(Token {
                     kind: Kind::Word, ..
@@ -1261,7 +1335,7 @@ impl<'a> Parser<'a> {
                 None => break,
             }
         }
-        (syllables, verse)
+        (syllables, verse, couplets)
     }
 
     /// Durée explicite d'une syllabe de paroles (`la4`, `la2.`), en ticks.
@@ -1988,15 +2062,28 @@ impl<'a> Parser<'a> {
                 } else {
                     String::new()
                 };
-                let (syllables, block_verse) = self.parse_lyric_music();
-                if syllables.is_empty() {
+                let (syllables, block_verse, couplets) = self.parse_lyric_music();
+                if syllables.is_empty() && couplets.is_empty() {
                     Music::Empty
                 } else {
-                    Music::Lyrics(Box::new(crate::ast::LyricsBlock {
-                        target,
-                        syllables,
-                        verse: block_verse.unwrap_or(0),
-                    }))
+                    let mut couplets = couplets;
+                    couplets.insert(
+                        0,
+                        crate::ast::LyricsBlock {
+                            target,
+                            syllables,
+                            verse: block_verse.unwrap_or(0),
+                        },
+                    );
+                    let blocks: Vec<Music> = couplets
+                        .into_iter()
+                        .map(|block| Music::Lyrics(Box::new(block)))
+                        .collect();
+                    if blocks.len() == 1 {
+                        blocks.into_iter().next().unwrap()
+                    } else {
+                        Music::Sim(blocks)
+                    }
                 }
             }
             "skip" => {
