@@ -641,6 +641,17 @@ fn collect_voltas(score: &Score, starts: &[i64]) -> Vec<VoltaSpan> {
     voltas
 }
 
+/// Ferme la volta active en poussant un `VOLTA_END` sur la mesure `measure`,
+/// puis la retire (`repeatlist.cpp:490`, `:509`, `:535`, `:584`, `:597`,
+/// `:607`).
+fn close_volta(elements: &mut Vec<Element>, volta_active: &mut Option<usize>, measure: usize) {
+    if let Some(volta) = volta_active.take() {
+        let mut element = Element::new(ElementKind::VoltaEnd, measure);
+        element.volta = Some(volta);
+        elements.push(element);
+    }
+}
+
 /// Construit la liste des éléments par section
 /// (`RepeatList::collectRepeatListElements`).
 fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
@@ -673,13 +684,12 @@ fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
                 .map(|(index, _)| index)
                 .collect();
             for volta_index in starting {
-                if let Some(previous) = volta_active {
-                    if previous != volta_index {
-                        let mut element =
-                            Element::new(ElementKind::VoltaEnd, measure_index.saturating_sub(1));
-                        element.volta = Some(previous);
-                        elements.push(element);
-                    }
+                if volta_active.is_some_and(|previous| previous != volta_index) {
+                    close_volta(
+                        &mut elements,
+                        &mut volta_active,
+                        measure_index.saturating_sub(1),
+                    );
                 }
                 let mut element = Element::new(ElementKind::VoltaStart, measure_index);
                 element.volta = Some(volta_index);
@@ -689,14 +699,12 @@ fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
 
             // Début de reprise.
             if measure.start_bar_line.is_repeat_start() {
-                if let Some(volta) = volta_active {
-                    if voltas[volta].start != measure_index {
-                        let mut element =
-                            Element::new(ElementKind::VoltaEnd, measure_index.saturating_sub(1));
-                        element.volta = Some(volta);
-                        elements.push(element);
-                        volta_active = None;
-                    }
+                if volta_active.is_some_and(|volta| voltas[volta].start != measure_index) {
+                    close_volta(
+                        &mut elements,
+                        &mut volta_active,
+                        measure_index.saturating_sub(1),
+                    );
                 }
                 elements.push(Element::new(ElementKind::RepeatStart, measure_index));
             }
@@ -727,11 +735,7 @@ fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
                             let ends_here = span.end < measure_index
                                 || (span.end == measure_index && !span.closed);
                             if ends_here && !measure.end_bar_line.is_repeat_end() {
-                                let mut end_element =
-                                    Element::new(ElementKind::VoltaEnd, measure_index);
-                                end_element.volta = Some(volta);
-                                elements.push(end_element);
-                                volta_active = None;
+                                close_volta(&mut elements, &mut volta_active, measure_index);
                             }
                         }
                     }
@@ -780,11 +784,7 @@ fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
                 // condition sur sa mesure de fin (`repeatlist.cpp:581-588`) :
                 // une volta qui déborde l'`endRepeat` se termine sur cette
                 // mesure.
-                if let Some(volta) = volta_active.take() {
-                    let mut end_element = Element::new(ElementKind::VoltaEnd, measure_index);
-                    end_element.volta = Some(volta);
-                    elements.push(end_element);
-                }
+                close_volta(&mut elements, &mut volta_active, measure_index);
             }
 
             // Fin de volta : fermée à sa dernière mesure, ou ouverte et suivie
@@ -803,20 +803,13 @@ fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
                             .get(measure_index + 1)
                             .is_some_and(|next| next.section_break_before));
                 if ends_here {
-                    let mut element = Element::new(ElementKind::VoltaEnd, measure_index);
-                    element.volta = Some(volta);
-                    elements.push(element);
-                    volta_active = None;
+                    close_volta(&mut elements, &mut volta_active, measure_index);
                 }
             }
         }
 
         // Fin de section.
-        if let Some(volta) = volta_active {
-            let mut end_element = Element::new(ElementKind::VoltaEnd, end);
-            end_element.volta = Some(volta);
-            elements.push(end_element);
-        }
+        close_volta(&mut elements, &mut volta_active, end);
         elements.push(Element::new(ElementKind::SectionBreak, end));
         sections.push(elements);
     }
