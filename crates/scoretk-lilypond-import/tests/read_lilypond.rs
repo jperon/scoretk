@@ -1486,6 +1486,119 @@ fn transpose_autour_d_un_piano_staff() {
     assert_eq!(score.staves.len(), 1);
 }
 
+#[test]
+fn transpose_traversant_articulate_et_unfold_repeats() {
+    // Partition MIDI écrite par `musicxml2ly` (`Angels_Carol.ly`) :
+    // `\transpose d c \unfoldRepeats \articulate << … >>`. `\articulate` est
+    // une fonction musicale de `articulate.ly` (`define-music-function (music)
+    // (ly:music?)`) : elle prend la musique suivante en argument et ne change
+    // pas les hauteurs. La transposition doit donc porter sur toutes les
+    // portées ; perdue, elle décale toute la partition d'un ton.
+    let source = r#"
+      \version "2.24.0"
+      \language "english"
+      \include "articulate.ly"
+      refrain = \relative c' { c4 d4 | e2 ~ e4 f4 }
+      \score {
+        \transpose c d
+        \unfoldRepeats \articulate
+        <<
+          \new Staff { \refrain | <c e g>2 r2 }
+          \new Staff { \fixed c' { c,2 g,2 | c2 r2 } }
+        >>
+      }
+    "#;
+    let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
+    // `\transpose c d` monte d'un ton : do4→ré4, mi4→fa♯4, do2→ré2.
+    assert_eq!(
+        hauteurs(&score),
+        vec![62, 64, 66, 66, 67, 50, 54, 57, 50, 57, 62]
+    );
+    assert_eq!(score.staves.len(), 2);
+    assert_eq!(score.measures.len(), 3);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::QUARTER,
+            Fraction::QUARTER,
+            Fraction::HALF,
+            Fraction::QUARTER,
+            Fraction::QUARTER,
+            Fraction::HALF,
+            Fraction::HALF
+        ],
+        "durées de la première portée"
+    );
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.message.contains("commande ignorée")),
+        "avertissements : {warnings:?}"
+    );
+
+    // Cas non concerné : sans transposition, `\articulate` ne change rien.
+    let score =
+        lire_score("\\score { \\unfoldRepeats \\articulate \\new Staff { \\fixed c' { c4 d } } }");
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+    // Cas limite : `\articulate` en fin de musique, sans argument musical.
+    let score =
+        lire_score("\\score { \\transpose c d \\new Staff { \\fixed c' { c4 \\articulate } } }");
+    assert_eq!(hauteurs(&score), vec![62]);
+
+    // Cas réel réduit : `musicxml2ly` écrit une partition imprimée (`\layout`,
+    // pas de transposition) puis la partition MIDI (`\midi`, transposée).
+    // Le MusicXML représente la partition GRAVÉE : c'est le premier `\score`
+    // gravé qui fait foi, même si LilyPond ne joue que la seconde. Que la
+    // référence MIDI diffère ici est une limite de l'outil de mesure.
+    let source = r#"
+      \version "2.24.0"
+      \language "english"
+      \include "articulate.ly"
+      \book {
+        \score { \transpose c c \layout {} \new Staff { \fixed c' { c4 d4 } } }
+        \score { \transpose c d \unfoldRepeats \articulate
+                 \new Staff { \fixed c' { c4 d4 } } \midi {} }
+      }
+    "#;
+    let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![Fraction::QUARTER, Fraction::QUARTER]
+    );
+    assert_eq!(
+        warnings
+            .iter()
+            .filter(|warning| warning.message == "partition supplémentaire ignorée")
+            .count(),
+        1
+    );
+
+    // Même arbitrage avec des fonctions musicales : la partition gravée
+    // (`\transpose d d`, donc non transposée) l'emporte sur la partition MIDI
+    // (`\transpose d c`, d'un ton plus bas) : hauteurs non transposées.
+    let source = r#"
+      \version "2.24.0"
+      \language "english"
+      m = \fixed c' { c4 d4 }
+      \book {
+        \score { \transpose d d \m \layout {} }
+        \score { \transpose d c \m \midi {} }
+      }
+    "#;
+    let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(
+        warnings
+            .iter()
+            .filter(|warning| warning.message == "partition supplémentaire ignorée")
+            .count(),
+        1
+    );
+}
+
 /// Accords d'une voie (piste brute) : (tick absolu, hauteurs, durée écrite).
 fn accords_de_voix(
     score: &scoretk_core::model::Score,

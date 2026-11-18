@@ -519,7 +519,13 @@ pas de régression du lecteur.
   explicite l'emporte, sinon la première expression ; chaque autre est ignorée
   avec un avertissement. C'est le cas de `regression/trill-spanner-consecutive.ly`
   (`\test 2.0 \test 2.1 \test 2.2 \test 2.3`), dont seule la première
-  expression (2 notes) est retenue.
+  expression (2 notes) est retenue. Le MusicXML représente la partition gravée :
+  même si un `\score` ultérieur porte un `\midi` (partition que LilyPond joue,
+  transposée), c'est le premier `\score` gravé qui fait foi ; une éventuelle
+  différence avec la référence MIDI est une limite de l'outil de mesure.
+  `\articulate` (`ly/articulate.ly`, fonction musicale prenant la musique
+  suivante) est transparent : il ne change pas les hauteurs et laisse passer
+  les enveloppes `\transpose`/`\unfoldRepeats`.
 - **Fonctions musicales** : seules les définitions
   `#(define-music-function …)` à corps `#{ … #}` produisent de la musique.
   La substitution est purement lexicale (`#a`, `$a`, `\a`) : pas d'appel

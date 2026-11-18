@@ -232,6 +232,9 @@ impl<'a> Parser<'a> {
 
         // Choix de la partition : un bloc `\score` explicite l'emporte sur la
         // musique de haut niveau ; à égalité, la première rencontrée gagne.
+        // Le MusicXML représente la partition gravée : même quand un autre
+        // `\score` porte un `\midi` (partition que LilyPond joue, transposée),
+        // c'est le premier `\score` gravé qui fait foi.
         let chosen = self
             .partitions
             .iter()
@@ -1692,6 +1695,14 @@ impl<'a> Parser<'a> {
             // et écarte les alternatives ; le lecteur déplie déjà les reprises,
             // la commande est donc transparente.
             "unfoldRepeats" => self.parse_music(),
+            // `\articulate` (`ly/articulate.ly`, `define-music-function
+            // (music) (ly:music?)`) applique des articulations à la musique
+            // qu'il reçoit, sans changer les hauteurs. Il est transparent pour
+            // le lecteur : la musique qui suit reste dans l'enveloppe courante
+            // (`\transpose … \unfoldRepeats \articulate << … >>` de
+            // `musicxml2ly`). Le consommer comme une commande inconnue
+            // interrompait la musique et perdait la transposition.
+            "articulate" => self.parse_music(),
             "transpose" => {
                 let from = self.parse_optional_pitch().unwrap_or(PitchSpec {
                     step: 0,
