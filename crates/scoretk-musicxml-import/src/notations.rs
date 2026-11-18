@@ -345,7 +345,7 @@ fn parse_articulations(element: &Element, notations_visible: bool, parsed: &mut 
                 continue;
             }
             "breath-mark" => {
-                // `writeBreathMark` (`exportmusicxml.cpp:3425-3440`).
+                // `MusicXmlParserNotations::articulations` (`importexport/musicxml/internal/import/importmusicxmlpass2.cpp:8626-8642`).
                 let kind = match child.text_trimmed() {
                     "tick" => BreathType::Tick,
                     "upbow" => BreathType::Upbow,
