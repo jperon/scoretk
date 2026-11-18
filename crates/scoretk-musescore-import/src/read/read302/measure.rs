@@ -498,22 +498,8 @@ fn read_bar_line(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
         .set_element(ctx.track, SegmentItem::BarLine(bar_line));
 }
 
-/// Symbole d'une respiration (`SymNames::symIdByName`,
-/// `engraving/types/symnames.cpp:798-822`).
-fn breath_kind(symbol: &str) -> BreathType {
-    match symbol {
-        "caesura" => BreathType::Caesura,
-        "caesuraCurved" => BreathType::CaesuraCurved,
-        "caesuraShort" => BreathType::CaesuraShort,
-        "caesuraThick" => BreathType::CaesuraThick,
-        "caesuraSingleStroke" | "chantCaesura" => BreathType::CaesuraSingle,
-        "breathMarkTick" => BreathType::Tick,
-        "breathMarkUpbow" => BreathType::Upbow,
-        "breathMarkSalzedo" => BreathType::Salzedo,
-        _ => BreathType::Comma,
-    }
-}
-
+/// Symbole d'une respiration : voir
+/// [`notation_names::breath_kind`](crate::read::notation_names::breath_kind).
 fn read_breath(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
     let mut breath = Breath::default();
     let mut explicit_placement = false;
@@ -529,7 +515,9 @@ fn read_breath(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
                     _ => BreathType::Comma,
                 };
             }
-            "symbol" => breath.kind = breath_kind(&child.trimmed_text()),
+            "symbol" => {
+                breath.kind = crate::read::notation_names::breath_kind(&child.trimmed_text())
+            }
             "placement" => {
                 breath.placement = tables::placement(&child.trimmed_text());
                 explicit_placement = true;
