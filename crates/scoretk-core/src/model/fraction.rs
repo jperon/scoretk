@@ -567,54 +567,137 @@ mod tests {
 
     #[test]
     fn fast_path_matches_i128_reference() {
-        // Grille petite : pas de débordement, pas de panique (sauf division
-        // par zéro, ignorée).
-        let small: Vec<(i64, i64)> = (-50..=50)
-            .flat_map(|n| (-50..=50).filter(|&d| d != 0).map(move |d| (n, d)))
+        // Grille réduite : pas de débordement, pas de panique (sauf division
+        // par zéro, ignorée) pour les petites valeurs.
+        let small: Vec<(i64, i64)> = (-12..=12)
+            .flat_map(|n| (-12..=12).filter(|&d| d != 0).map(move |d| (n, d)))
             .collect();
-        let small_f: Vec<(i64, i64, Fraction)> = small
-            .iter()
-            .map(|&(n, d)| (n, d, Fraction::new(n, d)))
-            .collect();
-        for &(n1, d1, a) in &small_f {
-            for &(n2, d2, b) in &small_f {
-                // addition
-                {
-                    let rn = n1 as i128 * d2 as i128 + n2 as i128 * d1 as i128;
-                    let rd = d1 as i128 * d2 as i128;
-                    if let Some(exp) = ref_norm(rn, rd) {
-                        assert_eq!(a + b, exp);
+        // Valeurs remarquables ajoutées à la grille.
+        let remarkable: Vec<(i64, i64)> = vec![
+            (0, 1),
+            (1, 1),
+            (-1, 1),
+            (480, 1),
+            (1, 480),
+            (7, 1920),
+            (-5, 3),
+            (i64::MAX, 1),
+            (i64::MIN, 1),
+            (1, i64::MAX),
+            (i64::MAX, i64::MAX - 1),
+        ];
+        let mut all: Vec<(i64, i64)> = small;
+        all.extend(remarkable);
+
+        let is_small = |n: i64, d: i64| (-12..=12).contains(&n) && (-12..=12).contains(&d);
+
+        for &(n1, d1) in &all {
+            for &(n2, d2) in &all {
+                let a = Fraction::new(n1, d1);
+                let b = Fraction::new(n2, d2);
+
+                if is_small(n1, d1) && is_small(n2, d2) {
+                    // addition
+                    {
+                        let rn = n1 as i128 * d2 as i128 + n2 as i128 * d1 as i128;
+                        let rd = d1 as i128 * d2 as i128;
+                        if let Some(exp) = ref_norm(rn, rd) {
+                            assert_eq!(a + b, exp);
+                        }
                     }
-                }
-                // soustraction
-                {
-                    let rn = n1 as i128 * d2 as i128 - n2 as i128 * d1 as i128;
-                    let rd = d1 as i128 * d2 as i128;
-                    if let Some(exp) = ref_norm(rn, rd) {
-                        assert_eq!(a - b, exp);
+                    // soustraction
+                    {
+                        let rn = n1 as i128 * d2 as i128 - n2 as i128 * d1 as i128;
+                        let rd = d1 as i128 * d2 as i128;
+                        if let Some(exp) = ref_norm(rn, rd) {
+                            assert_eq!(a - b, exp);
+                        }
                     }
-                }
-                // multiplication
-                {
-                    let rn = n1 as i128 * n2 as i128;
-                    let rd = d1 as i128 * d2 as i128;
-                    if let Some(exp) = ref_norm(rn, rd) {
-                        assert_eq!(a * b, exp);
+                    // multiplication
+                    {
+                        let rn = n1 as i128 * n2 as i128;
+                        let rd = d1 as i128 * d2 as i128;
+                        if let Some(exp) = ref_norm(rn, rd) {
+                            assert_eq!(a * b, exp);
+                        }
                     }
-                }
-                // division (ignorée si b nul)
-                if n2 != 0 {
-                    let rn = n1 as i128 * d2 as i128;
-                    let rd = d1 as i128 * n2 as i128;
-                    if let Some(exp) = ref_norm(rn, rd) {
-                        assert_eq!(a / b, exp);
+                    // division (ignorée si b nul)
+                    if n2 != 0 {
+                        let rn = n1 as i128 * d2 as i128;
+                        let rd = d1 as i128 * n2 as i128;
+                        if let Some(exp) = ref_norm(rn, rd) {
+                            assert_eq!(a / b, exp);
+                        }
                     }
-                }
-                // comparaison
-                {
-                    let left = a.numerator() as i128 * b.denominator() as i128;
-                    let right = b.numerator() as i128 * a.denominator() as i128;
-                    assert_eq!(a.cmp(&b), left.cmp(&right));
+                    // comparaison
+                    {
+                        let left = a.numerator() as i128 * b.denominator() as i128;
+                        let right = b.numerator() as i128 * a.denominator() as i128;
+                        assert_eq!(a.cmp(&b), left.cmp(&right));
+                    }
+                } else {
+                    // addition
+                    {
+                        let rn = n1 as i128 * d2 as i128 + n2 as i128 * d1 as i128;
+                        let rd = d1 as i128 * d2 as i128;
+                        let exp = ref_norm(rn, rd);
+                        let actual =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| a + b));
+                        match (exp, actual) {
+                            (Some(e), Ok(v)) => assert_eq!(v, e),
+                            (None, Err(_)) => {}
+                            (Some(_), Err(_)) => panic!("panique inattendue (add)"),
+                            (None, Ok(v)) => panic!("panique attendue manquante (add): {}", v),
+                        }
+                    }
+                    // soustraction
+                    {
+                        let rn = n1 as i128 * d2 as i128 - n2 as i128 * d1 as i128;
+                        let rd = d1 as i128 * d2 as i128;
+                        let exp = ref_norm(rn, rd);
+                        let actual =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| a - b));
+                        match (exp, actual) {
+                            (Some(e), Ok(v)) => assert_eq!(v, e),
+                            (None, Err(_)) => {}
+                            (Some(_), Err(_)) => panic!("panique inattendue (sub)"),
+                            (None, Ok(v)) => panic!("panique attendue manquante (sub): {}", v),
+                        }
+                    }
+                    // multiplication
+                    {
+                        let rn = n1 as i128 * n2 as i128;
+                        let rd = d1 as i128 * d2 as i128;
+                        let exp = ref_norm(rn, rd);
+                        let actual =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| a * b));
+                        match (exp, actual) {
+                            (Some(e), Ok(v)) => assert_eq!(v, e),
+                            (None, Err(_)) => {}
+                            (Some(_), Err(_)) => panic!("panique inattendue (mul)"),
+                            (None, Ok(v)) => panic!("panique attendue manquante (mul): {}", v),
+                        }
+                    }
+                    // division
+                    {
+                        let rn = n1 as i128 * d2 as i128;
+                        let rd = d1 as i128 * n2 as i128;
+                        let exp = ref_norm(rn, rd);
+                        let actual =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| a / b));
+                        match (exp, actual) {
+                            (Some(e), Ok(v)) => assert_eq!(v, e),
+                            (None, Err(_)) => {}
+                            (Some(_), Err(_)) => panic!("panique inattendue (div)"),
+                            (None, Ok(v)) => panic!("panique attendue manquante (div): {}", v),
+                        }
+                    }
+                    // comparaison
+                    {
+                        let left = a.numerator() as i128 * b.denominator() as i128;
+                        let right = b.numerator() as i128 * a.denominator() as i128;
+                        assert_eq!(a.cmp(&b), left.cmp(&right));
+                    }
                 }
             }
         }
