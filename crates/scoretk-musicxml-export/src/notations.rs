@@ -48,6 +48,38 @@ use super::writer::XmlWriter;
 /// Nombre maximal de spanners simultanés (`MAX_NUMBER_LEVEL`).
 const MAX_NUMBER_LEVEL: usize = 32;
 
+/// Index des extrémités des spanners, construit en un seul parcours.
+///
+/// Les indices sont empilés dans l'ordre croissant, ce qui préserve l'ordre
+/// de l'ancien balayage complet de `score.spanners`.
+#[derive(Clone, Debug, Default)]
+struct SpannerIndex {
+    /// Indices par extrémité de départ `(tick, piste)`.
+    starts: BTreeMap<(Tick, Track), Vec<usize>>,
+    /// Indices par extrémité de fin `(tick, piste)`.
+    ends: BTreeMap<(Tick, Track), Vec<usize>>,
+}
+
+impl SpannerIndex {
+    /// Construit l'index en un parcours de `score.spanners`.
+    fn new(score: &Score) -> Self {
+        let mut index = Self::default();
+        for (i, spanner) in score.spanners.iter().enumerate() {
+            index
+                .starts
+                .entry((spanner.start.tick, spanner.start.track))
+                .or_default()
+                .push(i);
+            index
+                .ends
+                .entry((spanner.end.tick, spanner.end.track))
+                .or_default()
+                .push(i);
+        }
+        index
+    }
+}
+
 /// État des notations à numéroter, conservé pendant tout l'export.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NotationsState {
@@ -61,6 +93,11 @@ pub(crate) struct NotationsState {
     wavy_slots: [Option<usize>; MAX_NUMBER_LEVEL],
     /// Arpèges déjà numérotés, par tick (`m_measArpeggios`).
     arpeggios: BTreeMap<Tick, Vec<(u32, usize)>>,
+    /// Index des spanners, construit au premier appel.
+    ///
+    /// Une même `NotationsState` sert à tout un export, sur le même `Score` :
+    /// c'est ce qui rend le cache valable.
+    spanner_index: Option<SpannerIndex>,
 }
 
 impl NotationsState {
@@ -126,6 +163,35 @@ impl NotationsState {
         entries.push((track.raw(), number));
         number
     }
+
+    /// Indices des spanners d'un type dont une extrémité est au tick et à la
+    /// piste donnés.
+    ///
+    /// L'index est construit au premier appel puis réutilisé : une même
+    /// `NotationsState` sert à tout un export, sur le même `Score`.
+    fn spanner_indices(
+        &mut self,
+        score: &Score,
+        kind: SpannerType,
+        tick: Tick,
+        track: Track,
+        start: bool,
+    ) -> Vec<usize> {
+        let index = self
+            .spanner_index
+            .get_or_insert_with(|| SpannerIndex::new(score));
+        let table = if start { &index.starts } else { &index.ends };
+        table
+            .get(&(tick, track))
+            .map(|indices| {
+                indices
+                    .iter()
+                    .copied()
+                    .filter(|&i| score.spanners[i].kind == kind)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 /// Écrit les notations d'un accord (`chordAttributes`).
@@ -141,6 +207,7 @@ pub(crate) fn chord_attributes(
     track: Track,
     end_tick: Tick,
     notations: &mut Notations,
+    state: &mut NotationsState,
 ) {
     // Points d'orgue d'abord (`fermatas`), jamais sur un ornement.
     if let (false, Some(segment)) = (grace, segment) {
@@ -186,7 +253,7 @@ pub(crate) fn chord_attributes(
         };
         xml.tag_with("tremolo", &[("type", kind)], &tremolo.count.to_string());
     }
-    write_trills(score, xml, segment_tick, track, notations);
+    write_trills(score, xml, state, segment_tick, track, notations);
     notations.close_container(xml);
 
     // Enfin les éléments de `<technical>`.
@@ -333,7 +400,7 @@ pub(crate) fn glissandi(
 ) {
     // Les arrêts d'abord, comme `doSlurs` : une demi-liaison rencontrée avant
     // son départ réserve son numéro.
-    for index in spanner_indices(score, SpannerType::Glissando, tick, track, false) {
+    for index in state.spanner_indices(score, SpannerType::Glissando, tick, track, false) {
         let Some(SpannerNotation::Glissando(glissando)) = &score.spanners[index].notation else {
             continue;
         };
@@ -344,7 +411,7 @@ pub(crate) fn glissandi(
         write_glissando(xml, glissando, number, false, notations);
         state.release_glissando(index, wavy);
     }
-    for index in spanner_indices(score, SpannerType::Glissando, tick, track, true) {
+    for index in state.spanner_indices(score, SpannerType::Glissando, tick, track, true) {
         let Some(SpannerNotation::Glissando(glissando)) = &score.spanners[index].notation else {
             continue;
         };
@@ -368,7 +435,7 @@ pub(crate) fn slurs(
 ) {
     // `doSlurs` boucle deux fois : arrêts, puis départs.
     for starting in [false, true] {
-        for index in spanner_indices(score, SpannerType::Slur, tick, track, starting) {
+        for index in state.spanner_indices(score, SpannerType::Slur, tick, track, starting) {
             let Some(SpannerNotation::Slur(slur)) = &score.spanners[index].notation else {
                 continue;
             };
@@ -457,33 +524,8 @@ pub(crate) fn rest_notations(
     if let Some(breath) = breath_at(measure, track, end_tick) {
         write_breath(xml, breath, notations);
     }
-    write_trills(score, xml, segment_tick, track, notations);
+    write_trills(score, xml, state, segment_tick, track, notations);
     slurs(score, xml, state, segment_tick, track, notations);
-}
-
-/// Indices des spanners d'un type dont une extrémité est au tick et à la piste
-/// donnés.
-fn spanner_indices(
-    score: &Score,
-    kind: SpannerType,
-    tick: Tick,
-    track: Track,
-    start: bool,
-) -> Vec<usize> {
-    score
-        .spanners
-        .iter()
-        .enumerate()
-        .filter(|(_, spanner)| {
-            spanner.kind == kind
-                && if start {
-                    spanner.start.tick == tick && spanner.start.track == track
-                } else {
-                    spanner.end.tick == tick && spanner.end.track == track
-                }
-        })
-        .map(|(index, _)| index)
-        .collect()
 }
 
 /// Écrit les lignes ondulées des trilles actifs (`wavyLineStartStop`).
@@ -498,11 +540,12 @@ fn spanner_indices(
 fn write_trills(
     score: &Score,
     xml: &mut XmlWriter,
+    state: &mut NotationsState,
     tick: Tick,
     track: Track,
     notations: &mut Notations,
 ) {
-    let starting = spanner_indices(score, SpannerType::Trill, tick, track, true);
+    let starting = state.spanner_indices(score, SpannerType::Trill, tick, track, true);
     for &index in &starting {
         let spanner = &score.spanners[index];
         let Some(SpannerNotation::Trill(trill)) = &spanner.notation else {
@@ -888,6 +931,7 @@ fn placement_name(placement: Placement) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::super::export_musicxml;
+    use super::NotationsState;
     use scoretk_core::model::{
         tpc, Annotation, Arpeggio, ArpeggioType, Articulation, ArticulationAnchor,
         ArticulationType, Breath, BreathType, Chord, ChordLineType, ChordRest, Duration, Fermata,
@@ -1149,5 +1193,79 @@ mod tests {
             "{xml}"
         );
         assert!(xml.contains("<falloff/>"), "{xml}");
+    }
+
+    #[test]
+    fn index_spanners_equivalent_au_balayage() {
+        let (mut score, _) = partition();
+        let v0 = Track::new(StaffId::from_index(0), 0);
+        let v1 = Track::new(StaffId::from_index(0), 1);
+        let t0 = Tick::ZERO;
+        let t1 = Tick::new(1, 4);
+        let t2 = Tick::new(2, 4);
+        let t3 = Tick::new(3, 4);
+        // Types variés, extrémités à ticks et pistes identiques ou différents.
+        let spanners = [
+            (SpannerType::Slur, t0, v0, t2, v0),
+            (SpannerType::Slur, t0, v0, t3, v0),
+            (SpannerType::Glissando, t0, v0, t1, v0),
+            (SpannerType::Trill, t1, v0, t2, v0),
+            (SpannerType::Slur, t1, v1, t2, v1),
+            (SpannerType::Glissando, t2, v0, t3, v1),
+            (SpannerType::Trill, t0, v1, t1, v0),
+        ];
+        for (kind, start_tick, start_track, end_tick, end_track) in spanners {
+            score.add_spanner(Spanner::new(
+                kind,
+                SpannerAnchor::new(start_tick, start_track),
+                SpannerAnchor::new(end_tick, end_track),
+            ));
+        }
+
+        /// Ancien balayage complet, recopié de l'implémentation d'origine.
+        fn ancien_balayage(
+            score: &Score,
+            kind: SpannerType,
+            tick: Tick,
+            track: Track,
+            start: bool,
+        ) -> Vec<usize> {
+            score
+                .spanners
+                .iter()
+                .enumerate()
+                .filter(|(_, spanner)| {
+                    spanner.kind == kind
+                        && if start {
+                            spanner.start.tick == tick && spanner.start.track == track
+                        } else {
+                            spanner.end.tick == tick && spanner.end.track == track
+                        }
+                })
+                .map(|(index, _)| index)
+                .collect()
+        }
+
+        let ticks = [t0, t1, t2, t3];
+        let tracks = [v0, v1];
+        let kinds = [
+            SpannerType::Slur,
+            SpannerType::Glissando,
+            SpannerType::Trill,
+        ];
+        let mut state = NotationsState::default();
+        for kind in kinds.iter() {
+            for start in [false, true] {
+                for &tick in &ticks {
+                    for &track in &tracks {
+                        assert_eq!(
+                            state.spanner_indices(&score, kind.clone(), tick, track, start),
+                            ancien_balayage(&score, kind.clone(), tick, track, start),
+                            "kind={kind:?} tick={tick:?} track={track:?} start={start}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }
