@@ -1984,6 +1984,7 @@ impl Context<'_> {
             track,
             out.tick,
             notations,
+            &mut out.notations,
         );
     }
 }
