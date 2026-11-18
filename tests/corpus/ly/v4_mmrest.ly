@@ -8,7 +8,7 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \time 4/4
+  \clef treble \time 4/4
   R1 |
   R1*3 |
   R1 |

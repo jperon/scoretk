@@ -244,15 +244,12 @@ impl<'a> Writer<'a> {
             let verses = voice::lyrics_verses(self.score, staff_index, voice_index);
             let multiple = verses.len() > 1;
             for (verse, syllables) in verses {
-                let with = if multiple {
-                    format!(" \\with {{ stanza = \"{}.\" }}", verse + 1)
-                } else {
-                    String::new()
-                };
-                let _ = writeln!(
-                    out,
-                    "{indent}  \\new Lyrics{with} \\lyricsto \"{variable}\" {{"
-                );
+                let _ = writeln!(out, "{indent}  \\new Lyrics \\lyricsto \"{variable}\" {{");
+                // `\stanza` est une fonction musicale dans le bloc de
+                // paroles (LilyPond 2.27), pas une propriété de contexte.
+                if multiple {
+                    let _ = writeln!(out, "{indent}    \\stanza \"{}.\"", verse + 1);
+                }
                 write_tokens(out, &syllables, &format!("{indent}    "));
                 let _ = writeln!(out, "{indent}  }}");
             }

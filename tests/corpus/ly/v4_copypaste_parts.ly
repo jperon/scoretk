@@ -9,7 +9,7 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \key c \major \time 4/4
+  \clef treble \key c \major \time 4/4
   \tempo 4 = 80 b4->\bendAfter #-3 \sustainOn \ottava 1 cs'4-. \=4( b4-- \=4)
   \grace { b,32 } b4:16 \fermata \bar "||"
   \key e \major \time 3/4 \clef bass

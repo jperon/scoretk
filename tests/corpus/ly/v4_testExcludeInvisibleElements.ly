@@ -7,7 +7,7 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \time 4/4
+  \clef treble \time 4/4
   c4 \fermata c4 \fermata d4-. d4 |
   c4 ^\markup { "Visible text" } c4 c4 c4 |
   \tempo 4 = 80 d4 d4 d4 d4 |

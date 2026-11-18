@@ -459,11 +459,11 @@ impl<'a> Parser<'a> {
                 self.eat_command("addlyrics");
                 String::new()
             };
-            let syllables = self.parse_lyric_music();
+            let (syllables, block_verse) = self.parse_lyric_music();
             let block = LyricsBlock {
                 target,
                 syllables,
-                verse: verse.unwrap_or(0),
+                verse: block_verse.or(verse).unwrap_or(0),
             };
             return Some(GroupBlock {
                 kind: GroupKind::Other,
@@ -620,13 +620,13 @@ impl<'a> Parser<'a> {
     /// Attache un `\addlyrics` qui suit une voix.
     fn collect_addlyrics(&mut self, staff: &mut StaffBlock) {
         while self.eat_command("addlyrics") {
-            let syllables = self.parse_lyric_music();
+            let (syllables, block_verse) = self.parse_lyric_music();
             let target = staff
                 .voices
                 .last()
                 .and_then(|voice| voice.name.clone())
                 .unwrap_or_default();
-            let verse = staff.lyrics.len();
+            let verse = block_verse.unwrap_or(staff.lyrics.len());
             staff.lyrics.push(LyricsBlock {
                 target,
                 syllables,
@@ -708,13 +708,17 @@ impl<'a> Parser<'a> {
     //------------------------------------------------------------------
 
     /// Contenu d'un bloc de paroles (`\lyricsto`, `\addlyrics`, `\lyricmode`).
-    fn parse_lyric_music(&mut self) -> Vec<Syllable> {
+    ///
+    /// Renvoie les syllabes et le rang de couplet porté par `\stanza "n."`
+    /// (LilyPond 2.27), à partir de zéro.
+    fn parse_lyric_music(&mut self) -> (Vec<Syllable>, Option<usize>) {
         if !self.eat_punct('{') {
             // Un unique mot ou une variable : rien à aligner.
             self.skip_music_token();
-            return Vec::new();
+            return (Vec::new(), None);
         }
         let mut syllables = Vec::new();
+        let mut verse = None;
         while !self.at_end() && !self.eat_punct('}') {
             if self.eat_punct(';') {
                 continue;
@@ -740,6 +744,22 @@ impl<'a> Parser<'a> {
                     }
                     self.bump();
                     self.parse_property_value();
+                }
+                Some(token) if token.is_command("stanza") => {
+                    self.position += 1;
+                    let text = match self.bump() {
+                        Some(Token {
+                            kind: Kind::Str | Kind::Word,
+                            text,
+                            ..
+                        }) => text,
+                        _ => String::new(),
+                    };
+                    verse = text
+                        .trim_end_matches('.')
+                        .parse::<usize>()
+                        .ok()
+                        .and_then(|number| number.checked_sub(1));
                 }
                 Some(token) if token.is_command("markup") => {
                     self.position += 1;
@@ -810,7 +830,7 @@ impl<'a> Parser<'a> {
                 None => break,
             }
         }
-        syllables
+        (syllables, verse)
     }
 
     /// Consomme `--` (deux tirets consécutifs).
@@ -1144,14 +1164,14 @@ impl<'a> Parser<'a> {
                 } else {
                     String::new()
                 };
-                let syllables = self.parse_lyric_music();
+                let (syllables, block_verse) = self.parse_lyric_music();
                 if syllables.is_empty() {
                     Music::Empty
                 } else {
                     Music::Lyrics(Box::new(super::ast::LyricsBlock {
                         target,
                         syllables,
-                        verse: 0,
+                        verse: block_verse.unwrap_or(0),
                     }))
                 }
             }

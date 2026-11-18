@@ -160,14 +160,16 @@ Les noms d'instrument passent par `\with { instrumentName = … shortInstrumentN
 | `Measure.len < nominal_len` (première mesure) | `\partial <durée>` |
 | `TimeSig` | `\time n/d` |
 | `TimeSig` locale (longueur réelle ≠ mesure affichée) | `\time n/d \set Timing.measureLength = #num/den` |
+| `Measure.len` irrégulière (hors levée) | `\set Timing.measureLength = #num/den` avant la mesure, puis restauration à la métrique en vigueur |
 | `KeySig` | `\key <tonique> \major` ou `\minor` |
 | `Clef` | `\clef treble`, `bass`, `alto`, `tenor`, `"treble_8"`, `varbaritone`, `percussion`… |
+| `Staff.default_clef` sans `Clef` en tête de première mesure | `\clef …` au début de la voix 0 ; `read4xx` ne matérialise pas de segment `HeaderClef`, contrairement à `read302` |
 | `Measure.multi_measure_rest` | `R1*3`, `R2.*4`… |
 | `Measure.start_bar_line`/`end_bar_line` | `\repeat volta` pour les reprises, `\bar "|."`, `\bar "||"`, `\bar ";"` |
 | `section_break_before` | `\section` |
 | `line_break` | `\break` (sauf dernière mesure) |
 | `MeasureRepeatMark` | non rendu (la musique copiée est écrite) |
-| barre de contrôle | `|` en fin de mesure, omise quand l'indication de mesure ne correspond pas à la longueur réelle |
+| barre de contrôle | `|` en fin de mesure quand la longueur réelle correspond à la métrique en vigueur, héritée comprise ; `Timing.measureLength` est posé sinon, jamais un `\time` parasite |
 
 ### Accords, silences et durées
 
@@ -226,7 +228,11 @@ Un bloc `\new Lyrics \lyricsto "<voix>"` par couplet présent dans la voix.
 La syllabisation devient ` --` (début ou milieu de mot) et le mélisme ` __`.
 Les accords sans syllabe pour un couplet donnent `\skip 1` pour garder
 l'alignement ; les silences sont sautés par `\lyricsto` lui-même. Plusieurs
-couplets reçoivent `\with { stanza = "n." }`.
+couplets reçoivent `\stanza "n."` **dans** le bloc de paroles : `stanza` est
+une fonction musicale de LilyPond 2.27, pas une propriété de contexte. Le
+trait d'union n'est émis que si l'accord suivant du même couplet porte une
+syllabe, et les continuations de liaison (toutes notes liées depuis l'accord
+précédent) ne reçoivent pas de jeton, car `\lyricsto` les saute.
 
 ### Reprises
 
@@ -354,13 +360,17 @@ pas de régression du lecteur.
   `src/chord.rs`.
 - **N-olets** : regroupés par appartenance des accords ; un n-olet dont le
   modèle donne une fin incohérente est fermé à la mesure, LilyPond n'ayant pas
-  de n-olet qui franchit une barre.
+  de n-olet qui franchit une barre. Le comblement de fin de mesure utilise la
+  durée réelle (`DurationElement::actualTicks`, ratio des n-olets compris), et
+  non la seule durée notée.
 - **Reprises** : imbrication et enchaînement de plusieurs reprises sur la même
   mesure non couverts ; les numéros d'ending multiples (`1, 2`) ne changent
   pas le nombre de blocs `\alternative`.
 - **Indications de mesure locales** : affichées, mais `Timing.measureLength`
   impose la longueur réelle de la mesure ; une portée en 3/4 dans une mesure
-  de 9/8 n'est donc pas réengravée en trois mesures de 3/4.
+  de 9/8 n'est donc pas réengravée en trois mesures de 3/4. Les mesures
+  irrégulières sans `<TimeSig>` local (3/4 sous un 4/4 hérité) reçoivent de
+  même un `measureLength` temporaire, restauré à la mesure régulière suivante.
 - **Accords croisés** (`Chord.staff_move`) : non rendus, la note reste sur sa
   portée.
 - **Percussions non accordées et micro-intervalles** : le modèle ne les porte
@@ -376,7 +386,8 @@ pas de régression du lecteur.
   écrite du tout (MuseScore en conserve pourtant l'effet sur la lecture).
 - **Paroles** : pas de `\addlyrics`, seulement `\lyricsto` ; les syllabes
   d'un accord qui en porte plusieurs pour le même couplet sont réduites à la
-  première.
+  première. Une syllabe portée par une continuation de liaison est perdue,
+  `\lyricsto` ne l'attachant pas à cette note.
 
 ### Limites de la lecture
 
@@ -418,6 +429,8 @@ pas de régression du lecteur.
 - **Paroles** : `\lyricsto`/`\addlyrics` sont attachés à la voix nommée si
   elle existe, sinon à la première voix de la portée ; `\skip` et les
   silences ne reçoivent pas de syllabe, et les syllabes en trop sont ignorées.
+  Le rang de couplet est lu dans `\stanza "n."` (forme écrite depuis LilyPond
+  2.27) et, pour compatibilité, dans l'ancien `\with { stanza = "n." }`.
 - **Reprises** : `\repeat volta N` avec k blocs `\alternative` produit les
   endings `i, i+k, i+2k…` (règle des passes) ; les imbrications de reprises et
   les numéros d'ending explicites hors de cette règle ne sont pas couverts.

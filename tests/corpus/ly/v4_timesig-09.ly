@@ -2,7 +2,7 @@
 \language "english"
 
 staffOneVoiceOne = \fixed c' {
-  \time 4/4
+  \clef treble \time 4/4
   g1*1/2:32 e'1*1/2:32 |
   g1*1/2:32 e'1*1/2:32 |
   g1*1/2:32 e'1*1/2:32 |

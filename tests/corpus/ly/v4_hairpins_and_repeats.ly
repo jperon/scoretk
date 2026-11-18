@@ -8,7 +8,7 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \time 4/4
+  \clef treble \time 4/4
   f4 _\p \< f4 f4 f4 |
   \repeat volta 2 {
     f4 _\f \! \< f4 f4 f4 \! |

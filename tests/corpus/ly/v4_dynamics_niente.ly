@@ -9,7 +9,7 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \key c \major \time 4/4
+  \clef treble \key c \major \time 4/4
   d'1~ _\f \> |
   d'1 _\n \! |
   d'1~ _\f \> |

@@ -132,6 +132,46 @@ pub(crate) fn render_body(
         }
     }
 
+    // Clef initiale : `read4xx` ne matérialise pas de segment `HeaderClef`
+    // (contrairement à `read302`), et `Staff::default_clef` porte la clef que
+    // MuseScore grave au début de la première mesure. On l'émet une seule
+    // fois, pour la voix 0 : la clef appartient au contexte `Staff`, partagé
+    // par toutes les voix.
+    if voice == 0 {
+        if let Some(first) = score.measures.first() {
+            if !has_initial_clef(score, staff) {
+                if let Some(command) = score
+                    .staves
+                    .get(staff)
+                    .and_then(|data| crate::pitch::clef_command(&data.default_clef))
+                {
+                    pre_by_measure[0].push(Event::new(first.start_tick, before::CLEF, command));
+                }
+            }
+        }
+    }
+
+    // Longueur de mesure attendue par LilyPond : le contrôle de mesure se
+    // juge contre la métrique en vigueur (héritée), pas seulement contre un
+    // `<TimeSig>` local. Une mesure irrégulière reçoit `measureLength` au
+    // lieu d'une barre qui échouerait.
+    let measure_plan = measure_length_plan(score, staff, voice);
+    for (measure_index, plan) in measure_plan.iter().enumerate() {
+        if plan.set {
+            if let Some(measure) = score.measures.get(measure_index) {
+                pre_by_measure[measure_index].push(Event::new(
+                    measure.start_tick,
+                    before::MEASURE_LENGTH,
+                    format!(
+                        "\\set Timing.measureLength = #{}/{}",
+                        measure.len.numerator(),
+                        measure.len.denominator()
+                    ),
+                ));
+            }
+        }
+    }
+
     // Levée : première mesure plus courte que sa durée nominale.
     if voice == 0 {
         if let Some(first) = score.measures.first() {
@@ -339,7 +379,7 @@ pub(crate) fn render_body(
         }
         emitter.flush_line();
 
-        let bar_check = time_signature_matches(measure, staff);
+        let bar_check = measure_plan[measure_index].bar_check;
         let mut cursor = measure.start_tick;
         let measure_items_start = item_index;
         let mut tuplets: Vec<OpenTuplet> = Vec::new();
@@ -558,21 +598,112 @@ fn bar_line_token(measure: &Measure, last: bool, bar_check: bool) -> String {
     }
 }
 
-/// Vrai si l'indication de mesure de la portée correspond à la mesure.
-fn time_signature_matches(measure: &Measure, staff: usize) -> bool {
-    for segment in &measure.segments {
-        for (track, item) in segment.iter_elements() {
-            if track.staff().index() != staff {
-                continue;
+/// Vrai si la portée a déjà une clef au début de la première mesure.
+///
+/// `read302` y place un segment `HeaderClef` ; `read4xx` laisse la clef par
+/// défaut dans [`scoretk_core::model::Staff::default_clef`].
+fn has_initial_clef(score: &Score, staff: usize) -> bool {
+    let Some(first) = score.measures.first() else {
+        return false;
+    };
+    first.segments.iter().any(|segment| {
+        segment.tick == first.start_tick
+            && segment.kind.is_clef_type()
+            && segment.iter_elements().any(|(track, item)| {
+                track.staff().index() == staff
+                    && matches!(item, scoretk_core::model::SegmentItem::Clef(_))
+            })
+    })
+}
+
+/// Décision de contrôle de mesure et de `Timing.measureLength`.
+struct MeasurePlan {
+    /// Poser `\set Timing.measureLength`.
+    set: bool,
+    /// Écrire la barre de contrôle `|`.
+    bar_check: bool,
+}
+
+/// Planifie la longueur de chaque mesure pour une voix.
+///
+/// LilyPond garde `Timing.measureLength` d'une mesure à l'autre ; une mesure
+/// irrégulière (3/4 sous un 4/4 hérité, sans `<TimeSig>`) doit donc le poser,
+/// puis une mesure régulière suivante doit le restaurer. La première levée
+/// est exclue : `\partial` s'en charge pour la voix 0, et les autres voix
+/// reçoivent un `measureLength` explicite si leur première mesure est plus
+/// courte.
+fn measure_length_plan(score: &Score, staff: usize, voice: usize) -> Vec<MeasurePlan> {
+    let mut meter = Fraction::ONE;
+    let mut current = Fraction::ONE;
+    let mut plan = Vec::with_capacity(score.measures.len());
+    for (index, measure) in score.measures.iter().enumerate() {
+        let time = measure
+            .segments
+            .iter()
+            .flat_map(|segment| segment.iter_elements())
+            .filter(|(track, _)| track.staff().index() == staff)
+            .filter_map(|(_, item)| match item {
+                scoretk_core::model::SegmentItem::TimeSig(time) if time.is_valid() => Some(time),
+                _ => None,
+            })
+            .last();
+        let mut expected = current;
+        if let Some(time) = time {
+            meter = time.measure_len();
+            expected = meter;
+            // L'événement `\time` de cette mesure pose déjà `measureLength`
+            // quand l'indication locale diffère de la longueur réelle.
+            if time.measure_len() != measure.len && measure.len.is_positive() {
+                expected = measure.len;
             }
-            if let scoretk_core::model::SegmentItem::TimeSig(time) = item {
-                if time.measure_len() != measure.len {
-                    return false;
-                }
+        }
+        let partial = voice == 0
+            && index == 0
+            && measure.len.is_positive()
+            && measure.len < measure.nominal_len;
+        if partial {
+            expected = measure.len;
+        }
+        let set = measure.len.is_positive() && expected != measure.len;
+        if set {
+            expected = measure.len;
+        }
+        let bar_check = !measure.len.is_positive() || expected == measure.len;
+        plan.push(MeasurePlan { set, bar_check });
+
+        current = if partial {
+            // `\partial` ne vaut que pour la première mesure : LilyPond
+            // restaure ensuite la longueur de la métrique.
+            meter
+        } else {
+            expected
+        };
+    }
+    plan
+}
+
+/// Durée réelle d'un accord ou silence, n-olets et durée explicite compris.
+///
+/// `ChordRest::ticks_in_measure` ne renvoie que la durée notée : dans un
+/// n-olet, la durée consommée est divisée par le ratio du n-olet (ou des
+/// n-olets imbriqués), comme `DurationElement::actualTicks()`.
+fn item_ticks(score: &Score, chord_rest: &ChordRest, measure_len: Fraction) -> Fraction {
+    let mut length = if chord_rest.is_full_measure_rest() {
+        measure_len
+    } else {
+        chord_rest
+            .ticks
+            .unwrap_or_else(|| chord_rest.ticks_in_measure(measure_len))
+    };
+    if let Some(id) = chord_rest.tuplet {
+        for tuplet_id in tuplet_chain(score, id) {
+            let ratio = score.tuplet(tuplet_id).ratio;
+            if ratio.is_positive() {
+                length /= ratio;
             }
         }
     }
-    true
+    length
 }
 
 /// Accords et silences d'une voix, dans l'ordre.
@@ -589,7 +720,7 @@ fn collect_items(score: &Score, staff: usize, voice: usize) -> Vec<Item<'_>> {
                 continue;
             }
             last_tick = Some(segment.tick);
-            let length = chord_rest.ticks_in_measure(measure.len);
+            let length = item_ticks(score, chord_rest, measure.len);
             items.push(Item {
                 measure: measure_index,
                 tick: segment.tick,
@@ -854,18 +985,33 @@ pub(crate) fn lyrics_verses(
     if verses.is_empty() {
         return verses;
     }
+    let chords: Vec<&Item<'_>> = items
+        .iter()
+        .filter(|item| item.chord_rest.is_chord())
+        // `\lyricsto` ne place pas de syllabe sur la continuation d'une
+        // liaison : un jeton de plus décalerait toute la suite et ferait
+        // signaler des traits d'union sans suite.
+        .filter(|item| !is_tied_continuation(score, item.chord_rest))
+        .collect();
     for (verse, syllables) in &mut verses {
-        for item in &items {
-            if !item.chord_rest.is_chord() {
-                continue;
-            }
-            match item
-                .chord_rest
-                .lyrics
-                .iter()
-                .find(|lyrics| lyrics.verse == *verse)
-            {
-                Some(lyrics) => syllables.push(syllable(lyrics)),
+        let entries: Vec<Option<&scoretk_core::model::Lyrics>> = chords
+            .iter()
+            .map(|item| {
+                item.chord_rest
+                    .lyrics
+                    .iter()
+                    .find(|lyrics| lyrics.verse == *verse)
+            })
+            .collect();
+        for (index, entry) in entries.iter().enumerate() {
+            match entry {
+                Some(lyrics) => {
+                    // Un trait d'union n'a de sens que si l'accord suivant du
+                    // même couplet porte une syllabe : `-- \skip` déclenche
+                    // « trait d'union sans suite ».
+                    let has_next = entries.get(index + 1).is_some_and(Option::is_some);
+                    syllables.push(syllable(lyrics, has_next));
+                }
                 None => syllables.push("\\skip 1".to_owned()),
             }
         }
@@ -873,15 +1019,32 @@ pub(crate) fn lyrics_verses(
     verses
 }
 
+/// Vrai si toutes les notes de l'accord prolongent une liaison venue d'avant.
+fn is_tied_continuation(score: &Score, chord_rest: &ChordRest) -> bool {
+    let Some(chord) = chord_rest.chord_ref() else {
+        return false;
+    };
+    !chord.notes.is_empty()
+        && chord
+            .notes
+            .iter()
+            .all(|note| score.note(*note).tie_back.is_some())
+}
+
 /// Syllabe LilyPond d'une entrée de paroles.
-fn syllable(lyrics: &scoretk_core::model::Lyrics) -> String {
+fn syllable(lyrics: &scoretk_core::model::Lyrics, has_next: bool) -> String {
     let mut text_value = text::escape(&lyrics.text);
     match lyrics.syllabic {
         scoretk_core::model::LyricsSyllabic::Begin
-        | scoretk_core::model::LyricsSyllabic::Middle => {
+        | scoretk_core::model::LyricsSyllabic::Middle
+            if has_next =>
+        {
             text_value.push_str(" --");
         }
-        scoretk_core::model::LyricsSyllabic::Single | scoretk_core::model::LyricsSyllabic::End => {}
+        scoretk_core::model::LyricsSyllabic::Single
+        | scoretk_core::model::LyricsSyllabic::End
+        | scoretk_core::model::LyricsSyllabic::Begin
+        | scoretk_core::model::LyricsSyllabic::Middle => {}
     }
     if lyrics.melisma.is_some() {
         text_value.push_str(" __");
@@ -936,7 +1099,8 @@ pub(crate) fn voice_variable(staff: usize, voice: usize) -> String {
 mod tests {
     use super::*;
     use scoretk_core::model::{
-        ChordRest, Duration, Measure, Part, Segment, SegmentItem, SegmentType, Track,
+        ChordRest, Duration, Lyrics, LyricsSyllabic, Measure, Part, Segment, SegmentItem,
+        SegmentType, Track, Tuplet,
     };
 
     fn score_avec_deux_voix() -> Score {
@@ -979,5 +1143,75 @@ mod tests {
         assert_eq!(fill_rest(Fraction::ZERO, Fraction::ONE, &measure), "s1");
         assert_eq!(fill_rest(Fraction::ZERO, Fraction::QUARTER, &measure), "s4");
         assert_eq!(fill_rest(Fraction::ONE, Fraction::ONE, &measure), "");
+    }
+
+    #[test]
+    fn duree_reelle_dun_n_olet() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno."));
+        let staff = score.add_staff(part);
+        let tuplet = score.add_tuplet(Tuplet::new(
+            Fraction::new(3, 2),
+            Fraction::QUARTER,
+            Fraction::ZERO,
+            Fraction::new(1, 2),
+        ));
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::ONE);
+        for index in 0..3 {
+            let mut segment = Segment::new(SegmentType::ChordRest, Fraction::new(index, 6), 1);
+            let mut chord_rest = ChordRest::chord(Duration::quarter());
+            chord_rest.tuplet = Some(tuplet);
+            segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord_rest));
+            measure.add_segment(segment);
+        }
+        score.add_measure(measure);
+
+        let items = collect_items(&score, 0, 0);
+        assert_eq!(items.len(), 3);
+        // Les trois noires du triolet durent 1/6 chacune, pas 1/4.
+        assert_eq!(items[2].end_tick, Fraction::new(1, 2));
+    }
+
+    #[test]
+    fn mesures_irregulieres_avec_measure_length() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno."));
+        score.add_staff(part);
+        for (index, len) in [Fraction::ONE, Fraction::new(3, 4), Fraction::ONE]
+            .into_iter()
+            .enumerate()
+        {
+            score.add_measure(Measure::new(index, Fraction::ZERO, len));
+        }
+
+        let plan = measure_length_plan(&score, 0, 0);
+        assert!(!plan[0].set);
+        assert!(plan[1].set);
+        // La mesure régulière suivante restaure la métrique héritée.
+        assert!(plan[2].set);
+        assert!(plan.iter().all(|measure| measure.bar_check));
+    }
+
+    #[test]
+    fn trait_dunion_seulement_avec_une_suite() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Chœur", "Ch."));
+        let staff = score.add_staff(part);
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(1, 2));
+        for index in 0..2 {
+            let mut segment = Segment::new(SegmentType::ChordRest, Fraction::new(index, 4), 1);
+            let mut chord_rest = ChordRest::chord(Duration::quarter());
+            if index == 0 {
+                chord_rest
+                    .lyrics
+                    .push(Lyrics::new(0, LyricsSyllabic::Begin, "de"));
+            }
+            segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord_rest));
+            measure.add_segment(segment);
+        }
+        score.add_measure(measure);
+
+        let verses = lyrics_verses(&score, 0, 0);
+        assert_eq!(verses[&0], vec!["de".to_owned(), "\\skip 1".to_owned()]);
     }
 }

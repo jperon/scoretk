@@ -31,6 +31,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Avertissements qui signalent un défaut musical ou syntaxique de la sortie.
+const AVERTISSEMENTS_INTERDITS: &[&str] = &[
+    "échec du contrôle de mesure",
+    "trait d'union sans suite",
+    "la propriété « stanza » n'existe pas",
+];
+
+/// Avertissements de mise en page tolérés : le corpus ne vise pas un rendu
+/// de page identique à MuseScore.
+const AVERTISSEMENTS_TOLERES: &[&str] = &[
+    "pas de configuration initiale viable repérée",
+    "a été comprimée",
+    "compression du débordement de page",
+];
+
 /// Racine du corpus.
 fn corpus() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus")
@@ -109,6 +124,25 @@ fn le_corpus_compile_sans_erreur() {
             !journal.contains("erreur fatale") && !journal.contains("Erreur :"),
             "LilyPond signale une erreur sur {path:?} :\n{journal}"
         );
+        for motif in AVERTISSEMENTS_INTERDITS {
+            assert!(
+                !journal.contains(motif),
+                "LilyPond signale « {motif} » sur {path:?} :\n{journal}"
+            );
+        }
+        // Seuls les avertissements de mise en page du corpus sont tolérés ;
+        // tout autre avertissement est considéré comme bruyant.
+        for line in journal.lines() {
+            if !line.contains("Avertissement") {
+                continue;
+            }
+            assert!(
+                AVERTISSEMENTS_TOLERES
+                    .iter()
+                    .any(|motif| line.contains(motif)),
+                "avertissement LilyPond non toléré sur {path:?} : {line}"
+            );
+        }
         compiles += 1;
     }
 

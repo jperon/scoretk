@@ -8,7 +8,7 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \time 4/4
+  \clef treble \time 4/4
   \tempo 4 = 88 R1 |
   \tempo "Andante" 4 = 92 R1 \bar "|."
 }

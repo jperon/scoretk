@@ -9,7 +9,7 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \key c \major \time 4/4
+  \clef treble \key c \major \time 4/4
   c'1 _\markup { "expr text" } |
   c'1 _\markup { "expr text" } |
   c'1 _\markup { "expr text" } |

@@ -3,7 +3,7 @@
 
 staffOneVoiceOne = \fixed c' {
   \voiceOne
-  \key c \major \time 4/4
+  \clef treble \key c \major \time 4/4
   c'2 ^\markup { "This test goes through each measure, moves note input to the segment/voice of the &quot;plus&quot; notehead, and  switches voices. After performing this action, the note input is expected to move to the segment/voice of the &quot;cross&quot; notehead." } ^\markup { "No tuplets:" }
   c'2 |
   c'2 <\tweak style #'cross f c'>2 |

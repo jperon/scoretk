@@ -9,12 +9,12 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \key c \major \time 9/8
+  \clef treble \key c \major \time 9/8
   R1*9/8 \bar "|."
 }
 
 staffTwoVoiceOne = \fixed c' {
-  \key c \major \time 3/4 \set Timing.measureLength = #9/8
+  \clef treble \key c \major \time 3/4 \set Timing.measureLength = #9/8
   R1*9/8 \bar "|."
 }
 

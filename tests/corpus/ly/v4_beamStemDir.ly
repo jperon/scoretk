@@ -2,7 +2,7 @@
 \language "english"
 
 staffOneVoiceOne = \fixed c' {
-  \time 4/4
+  \clef treble \time 4/4
   \once \override Stem.direction = #DOWN c'8
   \once \override Stem.direction = #DOWN c'8
   \once \override Stem.direction = #DOWN c'8
@@ -41,7 +41,7 @@ staffOneVoiceOne = \fixed c' {
 }
 
 staffTwoVoiceOne = \fixed c' {
-  \time 4/4
+  \clef bass \time 4/4
   R1 |
   R1 |
   R1 |

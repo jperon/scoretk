@@ -2,12 +2,12 @@
 \language "english"
 
 staffOneVoiceOne = \fixed c' {
-  \time 4/4
+  \clef treble \time 4/4
   f4---> r4 r2 \bar "|."
 }
 
 staffTwoVoiceOne = \fixed c' {
-  \time 4/4
+  \clef bass \time 4/4
   R1 \bar "|."
 }
 

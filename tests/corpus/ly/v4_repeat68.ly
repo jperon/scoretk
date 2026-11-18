@@ -8,7 +8,7 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \time 4/4
+  \clef treble \time 4/4
   \tempo 4 = 400 e1 ^\markup { "no playback" } \bar "|."
 }
 

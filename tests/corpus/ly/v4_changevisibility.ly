@@ -9,7 +9,7 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \time 4/4
+  \clef treble \time 4/4
   gs8.-> r16 r4.
   \appoggiatura { gs8 } \appoggiatura { gs8 } \appoggiatura { gs8 } gs8 \=1(
   r8 \=1) gs8 |

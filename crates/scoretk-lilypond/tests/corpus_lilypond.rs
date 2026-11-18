@@ -28,6 +28,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use scoretk_core::model::{
+    ChordRest, Clef, ClefType, Duration, Fraction, Measure, Part, Segment, SegmentItem,
+    SegmentType, Track,
+};
+
 /// Racine du corpus.
 fn corpus() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus")
@@ -139,5 +144,38 @@ fn sortie_structuree_et_en_mode_fixed() {
             "{path:?} : bloc \\score absent"
         );
         assert!(produit.ends_with("}\n"), "{path:?} : fin de document");
+    }
+}
+
+#[test]
+fn clef_initiale_depuis_default_clef() {
+    let mut score = scoretk_core::model::Score::new();
+    let part = score.add_part(Part::new("Guitare", "Gtr."));
+    let staff = score.add_staff(part);
+    score.staff_mut(staff).default_clef = Clef::new(ClefType::G8Vb);
+    let mut measure = Measure::new(0, Fraction::ZERO, Fraction::ONE);
+    let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+    segment.set_element(
+        Track::new(staff, 0),
+        SegmentItem::ChordRest(ChordRest::rest(Duration::whole())),
+    );
+    measure.add_segment(segment);
+    score.add_measure(measure);
+
+    let produit = scoretk_lilypond::write_lilypond(&score).expect("écriture");
+    assert!(
+        produit.contains("\\clef \"treble_8\""),
+        "clef initiale absente :\n{produit}"
+    );
+}
+
+#[test]
+fn clef_initiale_des_fichiers_v4() {
+    for nom in ["v4/tenuto_accent.mscx", "v4/beamStemDir.mscx"] {
+        let produit = convertir(&corpus().join(nom));
+        assert!(
+            produit.contains("\\clef bass"),
+            "clef de fa absente dans {nom} :\n{produit}"
+        );
     }
 }

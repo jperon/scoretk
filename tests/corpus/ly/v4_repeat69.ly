@@ -9,7 +9,7 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \key c \major \time 4/4
+  \clef treble \key c \major \time 4/4
   R1 |
   \mark \markup { "Segno" } R1 |
   R1 |
@@ -17,7 +17,7 @@ staffOneVoiceOne = \fixed c' {
 }
 
 staffTwoVoiceOne = \fixed c' {
-  \key c \major \time 4/4
+  \clef treble \key c \major \time 4/4
   R1 |
   R1 |
   R1 |

@@ -9,7 +9,7 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \key c \major \time 4/4
+  \clef treble \key c \major \time 4/4
   c4 ^\markup { "Staff text" } c4 c4 ^\markup { "System text" } c4 |
   \clef bass
   c4 c4 c4 c4 |

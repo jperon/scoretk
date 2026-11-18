@@ -61,6 +61,8 @@ pub(crate) mod before {
     pub(crate) const KEY: u8 = 30;
     /// `\time`.
     pub(crate) const TIME: u8 = 40;
+    /// `\set Timing.measureLength`, après `\time` et avant `\partial`.
+    pub(crate) const MEASURE_LENGTH: u8 = 42;
     /// `\partial` (levée), après `\time`.
     pub(crate) const PARTIAL: u8 = 45;
     /// `\ottava`.
