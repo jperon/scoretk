@@ -335,6 +335,9 @@ pub(crate) struct Syllable {
     pub extender: bool,
     /// Vrai pour `\skip 1` : pas de syllabe sur cet accord.
     pub skip: bool,
+    /// Durée explicite d'une syllabe (`la4`), pour un alignement par tick
+    /// quand les paroles ne sont pas rattachées par `\lyricsto`.
+    pub ticks: Option<scoretk_core::model::Fraction>,
 }
 
 /// Une portée du bloc `\score`.

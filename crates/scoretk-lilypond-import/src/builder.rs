@@ -28,7 +28,7 @@
 //! multi-mesures), puis range les événements datés dans les segments de chaque
 //! mesure, comme le fait le lecteur `.mscx` de MuseScore.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, BarLineType, Chord, ChordRest, ChordRestKind, Clef,
@@ -124,10 +124,18 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     // dans un `<< … >>` de `\score` : il forme un groupe sans portée. Ces
     // paroles sont conservées et rattachées plus loin à la voix nommée, où
     // qu'elle ait été déclarée.
-    let mut pending_lyrics: Vec<LyricsBuild> = Vec::new();
+    let mut pending_lyrics: Vec<(usize, LyricsBuild)> = Vec::new();
     for group in &score_ast.groups {
         if group.staves.is_empty() {
-            pending_lyrics.extend(group.lyrics.iter().map(lyrics_build));
+            // Portée précédente : c'est elle qui porte la voix la plus proche
+            // quand les paroles n'ont pas de cible explicite.
+            let previous = staves.len().saturating_sub(1);
+            pending_lyrics.extend(
+                group
+                    .lyrics
+                    .iter()
+                    .map(|block| (previous, lyrics_build(block))),
+            );
             continue;
         }
         let first = &group.staves[0];
@@ -175,8 +183,10 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     if staves.is_empty() {
         return score;
     }
-    if let Some(last) = staves.last_mut() {
-        last.lyrics.extend(pending_lyrics);
+    for (index, lyrics) in pending_lyrics {
+        if let Some(staff) = staves.get_mut(index) {
+            staff.lyrics.push(lyrics);
+        }
     }
 
     apply_initial_clefs(&mut score, &staves);
@@ -1293,6 +1303,9 @@ fn place_repeats(score: &mut Score, staves: &[StaffBuild]) {
 
 /// Attache les paroles aux accords des voix ciblées.
 fn place_lyrics(score: &mut Score, staves: &[StaffBuild]) {
+    // Numérotation automatique des couplets : sans `\set stanza`, les blocs
+    // successifs d'une même voix prennent les numéros 1, 2, 3… dans l'ordre.
+    let mut next_verse: HashMap<String, usize> = HashMap::new();
     for staff in staves {
         for lyrics in &staff.lyrics {
             // `\lyricsto "nom"` cherche la voix dans toute la partition :
@@ -1311,7 +1324,20 @@ fn place_lyrics(score: &mut Score, staves: &[StaffBuild]) {
             let Some(voice) = voice else {
                 continue;
             };
-            attach_lyrics(score, voice, lyrics.verse, &lyrics.syllables);
+            let verse = if lyrics.target.is_empty() {
+                lyrics.verse
+            } else {
+                let counter = next_verse.entry(lyrics.target.clone()).or_insert(0);
+                if lyrics.verse == 0 {
+                    let assigned = *counter;
+                    *counter += 1;
+                    assigned
+                } else {
+                    *counter = (*counter).max(lyrics.verse + 1);
+                    lyrics.verse
+                }
+            };
+            attach_lyrics(score, voice, verse, &lyrics.syllables);
         }
     }
 }
@@ -1323,16 +1349,53 @@ fn attach_lyrics(
     verse: usize,
     syllables: &[crate::ast::Syllable],
 ) {
+    // `\lyricsto` aligne une syllabe par note, mais saute les silences et
+    // les notes qui prolongent une liaison (`~`) : seules les têtes qui
+    // commencent une nouvelle note reçoivent une syllabe.
+    let mut events: Vec<&VoiceEvent> = voice.interpreted.events.iter().collect();
+    events.sort_by_key(|event| (event.tick, event.order));
     let mut chords = Vec::new();
-    for event in &voice.interpreted.events {
+    let mut tied_from_previous = false;
+    for event in events {
         if let EventKind::Chord(chord) = &event.kind {
-            if matches!(chord.content, ChordContent::Notes(_)) {
-                chords.push(event.tick);
+            if let ChordContent::Notes(notes) = &chord.content {
+                let all_tied = !notes.is_empty() && notes.iter().all(|note| note.tie);
+                if !tied_from_previous {
+                    chords.push(event.tick);
+                }
+                tied_from_previous = all_tied;
+            } else {
+                tied_from_previous = false;
             }
         }
     }
+    // Les paroles écrites avec des durées explicites (`la4 li2`) s'alignent
+    // par tick sur la voix ; sans durée, une syllabe par note, comme
+    // `\lyricsto` le fait.
+    let use_ticks = syllables.iter().any(|syllable| syllable.ticks.is_some());
+    let mut cursor = Fraction::ZERO;
+    let mut current_duration = Fraction::ONE;
     let mut previous_hyphen = false;
-    for (tick, syllable) in chords.iter().zip(syllables) {
+    let mut chord_index = 0;
+    for syllable in syllables {
+        let tick = if use_ticks {
+            if let Some(ticks) = syllable.ticks {
+                current_duration = ticks;
+            }
+            let target = cursor;
+            cursor += current_duration;
+            let Some(index) = chords.iter().position(|tick| *tick >= target) else {
+                break;
+            };
+            chord_index = index + 1;
+            chords[index]
+        } else {
+            let Some(tick) = chords.get(chord_index).copied() else {
+                break;
+            };
+            chord_index += 1;
+            tick
+        };
         if syllable.skip || syllable.text.is_empty() {
             previous_hyphen = false;
             continue;
@@ -1358,19 +1421,24 @@ fn attach_lyrics(
         };
         let Some(measure_index) = score
             .measures
-            .partition_point(|measure| measure.start_tick <= *tick)
+            .partition_point(|measure| measure.start_tick <= tick)
             .checked_sub(1)
         else {
             continue;
         };
         for segment in &mut score.measures[measure_index].segments {
-            if segment.tick != *tick || segment.kind != SegmentType::ChordRest {
+            if segment.tick != tick || segment.kind != SegmentType::ChordRest {
                 continue;
             }
             if let Some(chord_rest) = segment.chord_rest_mut(voice.track) {
                 chord_rest.lyrics.push(value);
                 break;
             }
+        }
+        // Un `__` prolonge la syllabe sur la note suivante : celle-ci ne
+        // reçoit pas de syllabe, comme pour `\lyricsto` dans LilyPond.
+        if syllable.extender && !use_ticks {
+            chord_index += 1;
         }
     }
 }

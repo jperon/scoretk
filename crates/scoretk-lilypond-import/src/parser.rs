@@ -648,13 +648,7 @@ impl<'a> Parser<'a> {
                 match property.as_str() {
                     "instrumentName" => instrument_name = Some(value),
                     "shortInstrumentName" => short_instrument_name = Some(value),
-                    "stanza" => {
-                        verse = value
-                            .trim_end_matches('.')
-                            .parse::<usize>()
-                            .ok()
-                            .and_then(|number| number.checked_sub(1))
-                    }
+                    "stanza" => verse = stanza_verse(&value),
                     _ => {}
                 }
             }
@@ -1034,7 +1028,8 @@ impl<'a> Parser<'a> {
             match self.peek().cloned() {
                 Some(token) if token.is_command("skip") => {
                     self.position += 1;
-                    // La durée de `\skip` est consommée.
+                    // La durée de `\skip` est consommée, mais elle ne pilote
+                    // pas l'alignement : `\skip` est un simple espace.
                     if self.peek().is_some_and(|token| token.kind == Kind::Number) {
                         self.position += 1;
                     }
@@ -1043,15 +1038,22 @@ impl<'a> Parser<'a> {
                         hyphen: false,
                         extender: false,
                         skip: true,
+                        ticks: None,
                     });
                 }
                 Some(token) if token.is_command("set") => {
                     self.position += 1;
+                    let mut property = String::new();
                     while !self.at_end() && !self.peek().is_some_and(|token| token.is_punct('=')) {
-                        self.position += 1;
+                        if let Some(token) = self.bump() {
+                            property.push_str(&token.text);
+                        }
                     }
                     self.bump();
-                    self.parse_property_value();
+                    let value = self.parse_property_value();
+                    if property == "stanza" {
+                        verse = stanza_verse(&value);
+                    }
                 }
                 Some(token) if token.is_command("stanza") => {
                     self.position += 1;
@@ -1063,20 +1065,18 @@ impl<'a> Parser<'a> {
                         }) => text,
                         _ => String::new(),
                     };
-                    verse = text
-                        .trim_end_matches('.')
-                        .parse::<usize>()
-                        .ok()
-                        .and_then(|number| number.checked_sub(1));
+                    verse = stanza_verse(&text);
                 }
                 Some(token) if token.is_command("markup") => {
                     self.position += 1;
                     let text = self.parse_markup_text();
+                    let ticks = self.parse_lyric_duration();
                     syllables.push(Syllable {
                         text,
                         hyphen: false,
                         extender: false,
                         skip: false,
+                        ticks,
                     });
                 }
                 Some(Token {
@@ -1110,11 +1110,13 @@ impl<'a> Parser<'a> {
                     }
                     let hyphen = self.eat_lyric_hyphen();
                     let extender = self.eat_lyric_extender();
+                    let ticks = self.parse_lyric_duration();
                     syllables.push(Syllable {
                         text,
                         hyphen,
                         extender,
                         skip: false,
+                        ticks,
                     });
                 }
                 Some(Token {
@@ -1125,12 +1127,47 @@ impl<'a> Parser<'a> {
                     self.position += 1;
                     let hyphen = self.eat_lyric_hyphen();
                     let extender = self.eat_lyric_extender();
+                    let ticks = self.parse_lyric_duration();
                     syllables.push(Syllable {
                         text,
                         hyphen,
                         extender,
                         skip: false,
+                        ticks,
                     });
+                }
+                Some(Token {
+                    kind: Kind::Command,
+                    text,
+                    ..
+                }) => {
+                    // Un identifiant musical (`\vA`) peut contenir un
+                    // `\lyricmode` : ses syllabes s'insèrent ici, comme
+                    // LilyPond le fait pour une variable de paroles.
+                    self.position += 1;
+                    if let Some(Music::Lyrics(block)) = self.variables.get(&text).cloned() {
+                        syllables.extend(block.syllables);
+                        if verse.is_none() {
+                            verse = Some(block.verse);
+                        }
+                    }
+                }
+                Some(token) if token.is_punct('~') => {
+                    // Élision (`l'~ami`) : gardée dans le texte de la
+                    // syllabe précédente, que l'export MusicXML écrit tel quel.
+                    self.position += 1;
+                    if let Some(previous) = syllables.last_mut() {
+                        previous.text.push('~');
+                    }
+                }
+                Some(token) if token.is_punct('_') => {
+                    // `_` prolonge la syllabe précédente (comme `__`) : le
+                    // trait d'extension est porté par cette syllabe et la note
+                    // suivante n'en reçoit pas de nouvelle.
+                    self.position += 1;
+                    if let Some(previous) = syllables.last_mut() {
+                        previous.extender = true;
+                    }
                 }
                 Some(_) => {
                     self.position += 1;
@@ -1139,6 +1176,19 @@ impl<'a> Parser<'a> {
             }
         }
         (syllables, verse)
+    }
+
+    /// Durée explicite d'une syllabe de paroles (`la4`, `la2.`), en ticks.
+    /// Sans durée, `None` : l'alignement se fait alors une syllabe par note.
+    fn parse_lyric_duration(&mut self) -> Option<Fraction> {
+        // `parse_duration` change la durée par défaut du flux musical : les
+        // paroles ne doivent pas la modifier pour la musique qui suit.
+        let previous = self.default_duration;
+        let parsed = self.parse_duration();
+        self.default_duration = previous;
+        let (duration, multiplier) = parsed?;
+        let ticks = duration.ticks();
+        Some(multiplier.map_or(ticks, |value| ticks * value))
     }
 
     /// Consomme `--` (deux tirets consécutifs).
@@ -3255,6 +3305,21 @@ fn head_group_from_style(style: &str) -> Option<NoteHeadGroup> {
         _ => return None,
     };
     Some(group)
+}
+
+/// Numéro de couplet (à partir de zéro) d'une valeur de `stanza`.
+///
+/// `\set stanza = "2."` et `\with { stanza = "2." }` donnent le même numéro ;
+/// un libellé non numérique (`"R."` pour un refrain) laisse le numéro par
+/// défaut, qui sera attribué par ordre d'apparition.
+fn stanza_verse(value: &str) -> Option<usize> {
+    value
+        .trim()
+        .trim_end_matches('.')
+        .trim()
+        .parse::<usize>()
+        .ok()
+        .and_then(|number| number.checked_sub(1))
 }
 
 /// Découpe un `\alternative { { … } { … } }` en blocs.

@@ -53,9 +53,7 @@ fn hauteurs(score: &scoretk_core::model::Score) -> Vec<u8> {
 
 /// Paroles de la piste 0, avec la hauteur de leur accord, le couplet, la
 /// syllabisation, le texte et la prolongation, dans l'ordre.
-fn paroles(
-    score: &scoretk_core::model::Score,
-) -> Vec<(u8, usize, LyricsSyllabic, String, bool)> {
+fn paroles(score: &scoretk_core::model::Score) -> Vec<(u8, usize, LyricsSyllabic, String, bool)> {
     score
         .measures
         .iter()
@@ -1615,4 +1613,115 @@ fn lyricsto_paroles_dans_variable() {
         .map(|(_, _, _, text, _)| text)
         .collect();
     assert_eq!(textes, vec!["la", "li", "lo", "lu"]);
+}
+
+#[test]
+fn lyricsto_couplets_avec_stanza_et_variables() {
+    // Deux couplets sur la même voix, numérotés par `\set stanza`, avec des
+    // paroles définies dans des variables `\lyricmode` (motif courant des
+    // fichiers réels). Les deux couplets partagent les mêmes hauteurs.
+    let score = read_lilypond(
+        "vA = \\lyricmode { la li lo lu } \
+         vB = \\lyricmode { do re mi fa } \
+         \\score { << \\new Voice = \"s\" { \\fixed c' { c4 d e f } } \
+         \\new Lyrics \\lyricsto \"s\" { \\set stanza = \"1.\" \\vA } \
+         \\new Lyrics \\lyricsto \"s\" { \\set stanza = \"2.\" \\vB } >> }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(
+        paroles(&score),
+        vec![
+            (60, 0, LyricsSyllabic::Single, "la".to_owned(), false),
+            (60, 1, LyricsSyllabic::Single, "do".to_owned(), false),
+            (62, 0, LyricsSyllabic::Single, "li".to_owned(), false),
+            (62, 1, LyricsSyllabic::Single, "re".to_owned(), false),
+            (64, 0, LyricsSyllabic::Single, "lo".to_owned(), false),
+            (64, 1, LyricsSyllabic::Single, "mi".to_owned(), false),
+            (65, 0, LyricsSyllabic::Single, "lu".to_owned(), false),
+            (65, 1, LyricsSyllabic::Single, "fa".to_owned(), false),
+        ]
+    );
+}
+
+#[test]
+fn lyricsto_couplets_sans_stanza_sont_numérotés() {
+    // Sans `\set stanza`, les blocs successifs sur la même voix reçoivent les
+    // numéros 1, 2, 3 (attribut `number` de `<lyric>`), comme dans LilyPond.
+    let score = read_lilypond(
+        "\\score { << \\new Voice = \"s\" { \\fixed c' { c4 d e f } } \
+         \\new Lyrics \\lyricsto \"s\" { la li lo lu } \
+         \\new Lyrics \\lyricsto \"s\" { do re mi fa } >> }",
+    )
+    .expect("lecture");
+    let vers: Vec<usize> = paroles(&score)
+        .into_iter()
+        .map(|(_, verse, _, _, _)| verse)
+        .collect();
+    // Les paroles sont rangées par accord : chaque accord porte les deux
+    // couplets, donc les vers s'alternent.
+    assert_eq!(vers, vec![0, 1, 0, 1, 0, 1, 0, 1]);
+}
+
+#[test]
+fn lyricsto_saute_liaisons_et_prolonge_melisme() {
+    // `~` (fin de liaison) et `__` (mélisme) ne consomment pas de syllabe ;
+    // `--` donne begin/end. Les notes liées ou sous `__` n'en reçoivent pas.
+    let score = read_lilypond(
+        "\\score { << \\new Voice = \"s\" { \\fixed c' { c4~ d4 e4 f4 g4 } } \
+         \\new Lyrics \\lyricsto \"s\" { la li -- lo __ mi } >> }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67]);
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(
+        paroles(&score),
+        vec![
+            (60, 0, LyricsSyllabic::Single, "la".to_owned(), false),
+            (64, 0, LyricsSyllabic::Begin, "li".to_owned(), false),
+            (65, 0, LyricsSyllabic::End, "lo".to_owned(), true),
+        ]
+    );
+}
+
+#[test]
+fn lyricsto_chaines_markup_et_elision() {
+    // Une chaîne et un `\markup` simple servent de syllabes ; `~` d'élision
+    // est conservé dans le texte, comme le fait l'export MusicXML.
+    let score = read_lilypond(
+        "\\score { << \\new Voice = \"s\" { \\fixed c' { c4 d e f } } \
+         \\new Lyrics \\lyricsto \"s\" { \"chaîne\" \\markup { \"suite\" } at~taque } >> }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+    let textes: Vec<String> = paroles(&score)
+        .into_iter()
+        .map(|(_, _, _, text, _)| text)
+        .collect();
+    assert_eq!(textes, vec!["chaîne", "suite", "at~", "taque"]);
+}
+
+#[test]
+fn lyrics_sans_lyricsto_alignment_par_tick() {
+    // `\new Lyrics { la2 li2 … }` sans `\lyricsto` : les durées explicites
+    // alignent les syllabes sur les ticks de la voix de la portée précédente.
+    let score = read_lilypond(
+        "\\score { << \\new Staff { \\fixed c' { \\time 4/4 c2 d2 | e4 f4 g4 a4 } } \
+         \\new Lyrics { la2 li2 do4 re4 mi4 fa4 } >> }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 69]);
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(
+        paroles(&score),
+        vec![
+            (60, 0, LyricsSyllabic::Single, "la".to_owned(), false),
+            (62, 0, LyricsSyllabic::Single, "li".to_owned(), false),
+            (64, 0, LyricsSyllabic::Single, "do".to_owned(), false),
+            (65, 0, LyricsSyllabic::Single, "re".to_owned(), false),
+            (67, 0, LyricsSyllabic::Single, "mi".to_owned(), false),
+            (69, 0, LyricsSyllabic::Single, "fa".to_owned(), false),
+        ]
+    );
 }
