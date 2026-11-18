@@ -22,10 +22,12 @@
 
 //! Hauteurs LilyPond : langues, octaves et transposition.
 //!
-//! Les tables de noms reprennent `scm/define-note-names.scm` pour les cinq
-//! langues demandées (`nederlands`, `english`, `deutsch`, `italiano`,
-//! `français`), altérations simples et doubles seulement : les quarts de ton
-//! ne sont pas modélisés. Le calcul d'octave relative suit
+//! Les tables de noms reprennent `language-pitch-names` de
+//! `scm/define-note-names.scm` : toutes les langues livrées par LilyPond
+//! (`nederlands`, `catalan`, `deutsch`, `english`, `espanol`, `francais`,
+//! `italiano`, `norsk`, `portugues`, `suomi`, `svenska`, `vlaams`) et leurs
+//! alias, altérations simples et doubles seulement : les quarts de ton ne sont
+//! pas modélisés. Le calcul d'octave relative suit
 //! `Pitch::to_relative_octave` (`lily/pitch.cc`) : la hauteur non marquée est
 //! placée à l'octave la plus proche de la précédente.
 
@@ -39,28 +41,53 @@ pub(crate) enum Language {
     /// Néerlandais, langue par défaut de LilyPond.
     #[default]
     Nederlands,
-    /// Anglais.
-    English,
+    /// Catalan.
+    Catalan,
     /// Allemand.
     Deutsch,
-    /// Italien.
-    Italiano,
+    /// Anglais.
+    English,
+    /// Espagnol.
+    Espanol,
     /// Français.
     Francais,
+    /// Italien.
+    Italiano,
+    /// Norvégien.
+    Norsk,
+    /// Portugais.
+    Portugues,
+    /// Finnois.
+    Suomi,
+    /// Suédois.
+    Svenska,
+    /// Flamand.
+    Vlaams,
 }
 
 impl Language {
-    /// Langue correspondant au nom donné à `\language`.
+    /// Langue correspondant au nom donné à `\language` ou au fichier de langue
+    /// de `\include`.
     ///
-    /// Les alias de `define-note-names.scm` sont acceptés (`francais` sans
-    /// cédille, `espanol` non couvert).
+    /// Le nom est normalisé (minuscules, diacritiques ramenés à l'ASCII, y
+    /// compris les formes décomposées comme « c » suivi de U+0327). Les alias
+    /// de `define-note-names.scm` sont acceptés : `catalan` pour `català`,
+    /// `espanol` pour `español`, `semi-german` pour `deutsch` et `portugues`
+    /// pour `português`.
     pub(crate) fn from_name(name: &str) -> Option<Self> {
-        match name.to_ascii_lowercase().replace('ç', "c").as_str() {
+        match normalize_name(name).as_str() {
             "nederlands" => Some(Self::Nederlands),
-            "english" => Some(Self::English),
+            "catala" | "catalan" => Some(Self::Catalan),
             "deutsch" | "semi-german" => Some(Self::Deutsch),
-            "italiano" => Some(Self::Italiano),
+            "english" => Some(Self::English),
+            "espanol" => Some(Self::Espanol),
             "francais" => Some(Self::Francais),
+            "italiano" => Some(Self::Italiano),
+            "norsk" => Some(Self::Norsk),
+            "portugues" => Some(Self::Portugues),
+            "suomi" => Some(Self::Suomi),
+            "svenska" => Some(Self::Svenska),
+            "vlaams" => Some(Self::Vlaams),
             _ => None,
         }
     }
@@ -69,10 +96,17 @@ impl Language {
     fn names(self) -> &'static [(&'static str, u8, i8)] {
         match self {
             Self::Nederlands => NEDERLANDS,
-            Self::English => ENGLISH,
+            Self::Catalan => CATALAN,
             Self::Deutsch => DEUTSCH,
-            Self::Italiano => ITALIANO,
+            Self::English => ENGLISH,
+            Self::Espanol => ESPANOL,
             Self::Francais => FRANCAIS,
+            Self::Italiano => ITALIANO,
+            Self::Norsk => NORSK,
+            Self::Portugues => PORTUGUES,
+            Self::Suomi => SUOMI,
+            Self::Svenska => SVENSKA,
+            Self::Vlaams => VLAAMS,
         }
     }
 
@@ -85,6 +119,34 @@ impl Language {
             .max_by_key(|(name, _, _)| name.len())
             .map(|(_, step, alter)| (*step, *alter))
     }
+}
+
+/// Normalise un nom de langue en minuscules ASCII.
+///
+/// Ramène les lettres accentuées des noms de `language-pitch-names` (`ç`, `é`,
+/// `ê`, `à`, `ñ`…) à leur lettre de base et supprime les diacritiques
+/// combinants : « français » écrit avec « c » + U+0327 vaut `francais`.
+fn normalize_name(name: &str) -> String {
+    name.to_lowercase()
+        .chars()
+        .filter_map(|character| {
+            // Diacritiques combinants (U+0300–U+036F) : cédille décomposée…
+            if ('\u{300}'..='\u{36f}').contains(&character) {
+                return None;
+            }
+            Some(match character {
+                'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => 'a',
+                'ç' => 'c',
+                'è' | 'é' | 'ê' | 'ë' => 'e',
+                'ì' | 'í' | 'î' | 'ï' => 'i',
+                'ñ' => 'n',
+                'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' => 'o',
+                'ù' | 'ú' | 'û' | 'ü' => 'u',
+                'ý' | 'ÿ' => 'y',
+                other => other,
+            })
+        })
+        .collect()
 }
 
 /// Noms néerlandais (`c`, `cis`, `des`, `ees`, `es`…).
@@ -299,6 +361,340 @@ const FRANCAIS: &[(&str, u8, i8)] = &[
     ("sidd", 6, 2),
 ];
 
+/// Noms catalans (`do`, `dod`/`dos`, `reb`…), avec les variantes en `s`.
+const CATALAN: &[(&str, u8, i8)] = &[
+    ("dobb", 0, -2),
+    ("dob", 0, -1),
+    ("do", 0, 0),
+    ("dod", 0, 1),
+    ("dos", 0, 1),
+    ("dodd", 0, 2),
+    ("doss", 0, 2),
+    ("rebb", 1, -2),
+    ("reb", 1, -1),
+    ("re", 1, 0),
+    ("red", 1, 1),
+    ("res", 1, 1),
+    ("redd", 1, 2),
+    ("ress", 1, 2),
+    ("mibb", 2, -2),
+    ("mib", 2, -1),
+    ("mi", 2, 0),
+    ("mid", 2, 1),
+    ("mis", 2, 1),
+    ("midd", 2, 2),
+    ("miss", 2, 2),
+    ("fabb", 3, -2),
+    ("fab", 3, -1),
+    ("fa", 3, 0),
+    ("fad", 3, 1),
+    ("fas", 3, 1),
+    ("fadd", 3, 2),
+    ("fass", 3, 2),
+    ("solbb", 4, -2),
+    ("solb", 4, -1),
+    ("sol", 4, 0),
+    ("sold", 4, 1),
+    ("sols", 4, 1),
+    ("soldd", 4, 2),
+    ("solss", 4, 2),
+    ("labb", 5, -2),
+    ("lab", 5, -1),
+    ("la", 5, 0),
+    ("lad", 5, 1),
+    ("las", 5, 1),
+    ("ladd", 5, 2),
+    ("lass", 5, 2),
+    ("sibb", 6, -2),
+    ("sib", 6, -1),
+    ("si", 6, 0),
+    ("sid", 6, 1),
+    ("sis", 6, 1),
+    ("sidd", 6, 2),
+    ("siss", 6, 2),
+];
+
+/// Noms espagnols (`do`, `dos`, `reb`…), avec les double-dièses en `x`.
+const ESPANOL: &[(&str, u8, i8)] = &[
+    ("dobb", 0, -2),
+    ("dob", 0, -1),
+    ("do", 0, 0),
+    ("dos", 0, 1),
+    ("doss", 0, 2),
+    ("dox", 0, 2),
+    ("rebb", 1, -2),
+    ("reb", 1, -1),
+    ("re", 1, 0),
+    ("res", 1, 1),
+    ("ress", 1, 2),
+    ("rex", 1, 2),
+    ("mibb", 2, -2),
+    ("mib", 2, -1),
+    ("mi", 2, 0),
+    ("mis", 2, 1),
+    ("miss", 2, 2),
+    ("mix", 2, 2),
+    ("fabb", 3, -2),
+    ("fab", 3, -1),
+    ("fa", 3, 0),
+    ("fas", 3, 1),
+    ("fass", 3, 2),
+    ("fax", 3, 2),
+    ("solbb", 4, -2),
+    ("solb", 4, -1),
+    ("sol", 4, 0),
+    ("sols", 4, 1),
+    ("solss", 4, 2),
+    ("solx", 4, 2),
+    ("labb", 5, -2),
+    ("lab", 5, -1),
+    ("la", 5, 0),
+    ("las", 5, 1),
+    ("lass", 5, 2),
+    ("lax", 5, 2),
+    ("sibb", 6, -2),
+    ("sib", 6, -1),
+    ("si", 6, 0),
+    ("sis", 6, 1),
+    ("siss", 6, 2),
+    ("six", 6, 2),
+];
+
+/// Noms norvégiens (`c`, `cess`/`cis`, `b`, `h`…).
+const NORSK: &[(&str, u8, i8)] = &[
+    ("cessess", 0, -2),
+    ("ceses", 0, -2),
+    ("cess", 0, -1),
+    ("ces", 0, -1),
+    ("c", 0, 0),
+    ("ciss", 0, 1),
+    ("cis", 0, 1),
+    ("cississ", 0, 2),
+    ("cisis", 0, 2),
+    ("dessess", 1, -2),
+    ("deses", 1, -2),
+    ("dess", 1, -1),
+    ("des", 1, -1),
+    ("d", 1, 0),
+    ("diss", 1, 1),
+    ("dis", 1, 1),
+    ("dississ", 1, 2),
+    ("disis", 1, 2),
+    ("eessess", 2, -2),
+    ("eeses", 2, -2),
+    ("essess", 2, -2),
+    ("eses", 2, -2),
+    ("eess", 2, -1),
+    ("ees", 2, -1),
+    ("ess", 2, -1),
+    ("es", 2, -1),
+    ("e", 2, 0),
+    ("eiss", 2, 1),
+    ("eis", 2, 1),
+    ("eississ", 2, 2),
+    ("eisis", 2, 2),
+    ("fessess", 3, -2),
+    ("feses", 3, -2),
+    ("fess", 3, -1),
+    ("fes", 3, -1),
+    ("f", 3, 0),
+    ("fiss", 3, 1),
+    ("fis", 3, 1),
+    ("fississ", 3, 2),
+    ("fisis", 3, 2),
+    ("gessess", 4, -2),
+    ("geses", 4, -2),
+    ("gess", 4, -1),
+    ("ges", 4, -1),
+    ("g", 4, 0),
+    ("giss", 4, 1),
+    ("gis", 4, 1),
+    ("gississ", 4, 2),
+    ("gisis", 4, 2),
+    ("aessess", 5, -2),
+    ("assess", 5, -2),
+    ("aeses", 5, -2),
+    ("ases", 5, -2),
+    ("aess", 5, -1),
+    ("ass", 5, -1),
+    ("as", 5, -1),
+    ("aes", 5, -1),
+    ("a", 5, 0),
+    ("aiss", 5, 1),
+    ("ais", 5, 1),
+    ("aississ", 5, 2),
+    ("aisis", 5, 2),
+    // `bes` vaut le double-bémol dans cette table amont, comme `bess`.
+    ("bess", 6, -2),
+    ("bes", 6, -2),
+    ("b", 6, -1),
+    ("h", 6, 0),
+    ("hiss", 6, 1),
+    ("his", 6, 1),
+    ("hississ", 6, 2),
+    ("hisis", 6, 2),
+];
+
+/// Noms portugais (`do`, `dos`, `reb`…).
+const PORTUGUES: &[(&str, u8, i8)] = &[
+    ("dobb", 0, -2),
+    ("dob", 0, -1),
+    ("do", 0, 0),
+    ("dos", 0, 1),
+    ("doss", 0, 2),
+    ("rebb", 1, -2),
+    ("reb", 1, -1),
+    ("re", 1, 0),
+    ("res", 1, 1),
+    ("ress", 1, 2),
+    ("mibb", 2, -2),
+    ("mib", 2, -1),
+    ("mi", 2, 0),
+    ("mis", 2, 1),
+    ("miss", 2, 2),
+    ("fabb", 3, -2),
+    ("fab", 3, -1),
+    ("fa", 3, 0),
+    ("fas", 3, 1),
+    ("fass", 3, 2),
+    ("solbb", 4, -2),
+    ("solb", 4, -1),
+    ("sol", 4, 0),
+    ("sols", 4, 1),
+    ("solss", 4, 2),
+    ("labb", 5, -2),
+    ("lab", 5, -1),
+    ("la", 5, 0),
+    ("las", 5, 1),
+    ("lass", 5, 2),
+    ("sibb", 6, -2),
+    ("sib", 6, -1),
+    ("si", 6, 0),
+    ("sis", 6, 1),
+    ("siss", 6, 2),
+];
+
+/// Noms finnois (`c`, `cis`, `b`, `h`…).
+const SUOMI: &[(&str, u8, i8)] = &[
+    ("ceses", 0, -2),
+    ("ces", 0, -1),
+    ("c", 0, 0),
+    ("cis", 0, 1),
+    ("cisis", 0, 2),
+    ("deses", 1, -2),
+    ("des", 1, -1),
+    ("d", 1, 0),
+    ("dis", 1, 1),
+    ("disis", 1, 2),
+    ("eses", 2, -2),
+    ("es", 2, -1),
+    ("e", 2, 0),
+    ("eis", 2, 1),
+    ("eisis", 2, 2),
+    ("feses", 3, -2),
+    ("fes", 3, -1),
+    ("f", 3, 0),
+    ("fis", 3, 1),
+    ("fisis", 3, 2),
+    ("geses", 4, -2),
+    ("ges", 4, -1),
+    ("g", 4, 0),
+    ("gis", 4, 1),
+    ("gisis", 4, 2),
+    ("asas", 5, -2),
+    ("ases", 5, -2),
+    ("as", 5, -1),
+    ("a", 5, 0),
+    ("ais", 5, 1),
+    ("aisis", 5, 2),
+    ("bes", 6, -2),
+    ("heses", 6, -2),
+    // Entrée invalide conservée par l'amont pour la rétrocompatibilité.
+    ("bb", 6, -2),
+    ("b", 6, -1),
+    ("h", 6, 0),
+    ("his", 6, 1),
+    ("hisis", 6, 2),
+];
+
+/// Noms suédois (`c`, `ciss`, `b`, `h`…).
+const SVENSKA: &[(&str, u8, i8)] = &[
+    ("cessess", 0, -2),
+    ("cess", 0, -1),
+    ("c", 0, 0),
+    ("ciss", 0, 1),
+    ("cississ", 0, 2),
+    ("dessess", 1, -2),
+    ("dess", 1, -1),
+    ("d", 1, 0),
+    ("diss", 1, 1),
+    ("dississ", 1, 2),
+    ("essess", 2, -2),
+    ("ess", 2, -1),
+    ("e", 2, 0),
+    ("eiss", 2, 1),
+    ("eississ", 2, 2),
+    ("fessess", 3, -2),
+    ("fess", 3, -1),
+    ("f", 3, 0),
+    ("fiss", 3, 1),
+    ("fississ", 3, 2),
+    ("gessess", 4, -2),
+    ("gess", 4, -1),
+    ("g", 4, 0),
+    ("giss", 4, 1),
+    ("gississ", 4, 2),
+    ("assess", 5, -2),
+    ("ass", 5, -1),
+    ("a", 5, 0),
+    ("aiss", 5, 1),
+    ("aississ", 5, 2),
+    ("hessess", 6, -2),
+    ("b", 6, -1),
+    ("h", 6, 0),
+    ("hiss", 6, 1),
+    ("hississ", 6, 2),
+];
+
+/// Noms flamands (`do`, `dok`, `reb`…), dièse en `k`.
+const VLAAMS: &[(&str, u8, i8)] = &[
+    ("dobb", 0, -2),
+    ("dob", 0, -1),
+    ("do", 0, 0),
+    ("dok", 0, 1),
+    ("dokk", 0, 2),
+    ("rebb", 1, -2),
+    ("reb", 1, -1),
+    ("re", 1, 0),
+    ("rek", 1, 1),
+    ("rekk", 1, 2),
+    ("mibb", 2, -2),
+    ("mib", 2, -1),
+    ("mi", 2, 0),
+    ("mik", 2, 1),
+    ("mikk", 2, 2),
+    ("fabb", 3, -2),
+    ("fab", 3, -1),
+    ("fa", 3, 0),
+    ("fak", 3, 1),
+    ("fakk", 3, 2),
+    ("solbb", 4, -2),
+    ("solb", 4, -1),
+    ("sol", 4, 0),
+    ("solk", 4, 1),
+    ("solkk", 4, 2),
+    ("labb", 5, -2),
+    ("lab", 5, -1),
+    ("la", 5, 0),
+    ("lak", 5, 1),
+    ("lakk", 5, 2),
+    ("sibb", 6, -2),
+    ("sib", 6, -1),
+    ("si", 6, 0),
+    ("sik", 6, 1),
+    ("sikk", 6, 2),
+];
+
 /// Demi-tons d'un degré diatonique.
 const SEMITONES: [i8; 7] = [0, 2, 4, 5, 7, 9, 11];
 
@@ -455,6 +851,45 @@ mod tests {
         assert_eq!(Language::Francais.parse("réb"), Some((1, -1)));
         assert_eq!(Language::Francais.parse("re"), Some((1, 0)));
         assert_eq!(Language::Nederlands.parse("z"), None);
+    }
+
+    #[test]
+    fn langues_complementaires() {
+        assert_eq!(Language::Catalan.parse("dod"), Some((0, 1)));
+        assert_eq!(Language::Catalan.parse("dos"), Some((0, 1)));
+        assert_eq!(Language::Catalan.parse("sib"), Some((6, -1)));
+        assert_eq!(Language::Espanol.parse("do"), Some((0, 0)));
+        assert_eq!(Language::Espanol.parse("sib"), Some((6, -1)));
+        assert_eq!(Language::Espanol.parse("dox"), Some((0, 2)));
+        assert_eq!(Language::Norsk.parse("cess"), Some((0, -1)));
+        assert_eq!(Language::Norsk.parse("h"), Some((6, 0)));
+        assert_eq!(Language::Norsk.parse("b"), Some((6, -1)));
+        assert_eq!(Language::Portugues.parse("dos"), Some((0, 1)));
+        assert_eq!(Language::Portugues.parse("sibb"), Some((6, -2)));
+        assert_eq!(Language::Suomi.parse("h"), Some((6, 0)));
+        assert_eq!(Language::Suomi.parse("as"), Some((5, -1)));
+        assert_eq!(Language::Svenska.parse("ciss"), Some((0, 1)));
+        assert_eq!(Language::Svenska.parse("b"), Some((6, -1)));
+        assert_eq!(Language::Vlaams.parse("dok"), Some((0, 1)));
+        assert_eq!(Language::Vlaams.parse("sikk"), Some((6, 2)));
+    }
+
+    #[test]
+    fn noms_de_langue_normalises() {
+        assert_eq!(Language::from_name("italiano"), Some(Language::Italiano));
+        assert_eq!(Language::from_name("català"), Some(Language::Catalan));
+        assert_eq!(Language::from_name("catalan"), Some(Language::Catalan));
+        assert_eq!(Language::from_name("español"), Some(Language::Espanol));
+        assert_eq!(Language::from_name("espanol"), Some(Language::Espanol));
+        assert_eq!(Language::from_name("français"), Some(Language::Francais));
+        assert_eq!(Language::from_name("português"), Some(Language::Portugues));
+        // « c » suivi de U+0327 (cédille combinante).
+        assert_eq!(
+            Language::from_name("franc\u{327}ais"),
+            Some(Language::Francais)
+        );
+        assert_eq!(Language::from_name("Francais"), Some(Language::Francais));
+        assert_eq!(Language::from_name("klingon"), None);
     }
 
     #[test]

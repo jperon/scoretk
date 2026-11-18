@@ -35,8 +35,10 @@
 //! Notes, silences, accords, durées et points, `\relative`, `\fixed` et notation
 //! absolue, `\transpose`, `\tuplet`/`\times`, liaisons `~`, `(`/`)`,
 //! `\repeat volta`/`unfold` et `\alternative`, `\key`, `\time`, `\clef`,
-//! `\partial`, `\bar`, `\language` (néerlandais, anglais, allemand, italien,
-//! français), nuances, `\< \> \!`, articulations courantes, `\grace`,
+//! `\partial`, `\bar`, `\language` (toutes les langues de
+//! `define-note-names.scm`), `\include` des fichiers de langue et des fichiers
+//! livrés sans musique, nuances, `\< \> \!`, articulations courantes,
+//! `\grace`,
 //! `\acciaccatura`, `\appoggiatura`, `R`/`s`, voix `<< \\ >>`, variables
 //! (`nom = { … }` puis `\nom`), `\new Staff`/`PianoStaff`/`ChoirStaff`/`Voice`/
 //! `Lyrics`, `\addlyrics`, `\lyricsto`, `\lyricmode`, `\header`, `\tempo` et
@@ -54,6 +56,7 @@
 mod ast;
 mod builder;
 mod events;
+mod include;
 mod lexer;
 mod parser;
 mod pitch;

@@ -39,7 +39,7 @@ use crate::ast::{
     Chord, ChordKind, Context, Document, GroupBlock, GroupKind, HeaderAst, LyricsBlock, Music,
     NoteSpec, PitchSpec, PostEvent, RepeatKind, ScoreAst, StaffBlock, Syllable, VoiceBlock,
 };
-use crate::lexer::{tokenize, Kind, Token};
+use crate::lexer::{Kind, Token};
 use crate::pitch::{self, Language};
 use crate::warnings::Warnings;
 use scoretk_lilypond_common::clefs;
@@ -84,7 +84,7 @@ struct Partition {
 
 /// Résultat de l'analyse.
 pub(crate) fn parse(source: &str, warnings: &mut Warnings) -> Document {
-    let tokens = tokenize(source);
+    let tokens = crate::include::expand(source, warnings);
     let mut parser = Parser {
         tokens,
         position: 0,
@@ -273,11 +273,6 @@ impl<'a> Parser<'a> {
             Kind::Command if token.text == "book" || token.text == "bookpart" => {
                 self.position += 1;
                 self.parse_book(document);
-            }
-            Kind::Command if token.text == "include" => {
-                self.position += 1;
-                self.bump();
-                self.warn("\\include ignoré : le fichier inclus n'est pas lu");
             }
             Kind::Command if token.text == "markup" || token.text == "markuplist" => {
                 self.position += 1;
@@ -1156,6 +1151,22 @@ impl<'a> Parser<'a> {
             "alternative" => {
                 let content = self.parse_music();
                 Music::Context(Context::Alternative(blocks_of(content)))
+            }
+            "language" => {
+                // `\language` vaut aussi au milieu de la musique, comme le
+                // fichier de langue inclus par `\include "italiano.ly"`.
+                if let Some(Token {
+                    kind: Kind::Str,
+                    text,
+                    ..
+                }) = self.bump()
+                {
+                    match Language::from_name(&text) {
+                        Some(language) => self.language = language,
+                        None => self.warn(format!("langue de hauteurs inconnue : {text}")),
+                    }
+                }
+                Music::Empty
             }
             "key" => {
                 let Some(pitch) = self.parse_optional_pitch() else {
@@ -2475,6 +2486,7 @@ fn blocks_of(music: Music) -> Vec<Music> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lexer::tokenize;
 
     fn parse_music_only(source: &str) -> Music {
         let mut warnings = Warnings::new();

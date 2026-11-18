@@ -518,3 +518,108 @@ fn measurelength_en_scheme() {
     assert_eq!(score.measures[0].len, Fraction::new(3, 4));
     assert_eq!(hauteurs(&score), vec![60, 62, 64]);
 }
+
+/// Lit une source complète en exigeant l'absence d'avertissement sur
+/// `\include`.
+fn lire_sans_avertissement_d_include(source: &str) -> scoretk_core::model::Score {
+    let (score, warnings) =
+        read_lilypond_reporting(source).unwrap_or_else(|error| panic!("lecture : {error}"));
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.message.contains("include")),
+        "avertissements : {warnings:?}"
+    );
+    score
+}
+
+#[test]
+fn include_italiano_puis_relative() {
+    // Ancienne façon de choisir la langue des notes : `\include` du fichier de
+    // langue livré par LilyPond vaut `\language "italiano"`.
+    let score = lire_sans_avertissement_d_include(
+        "\\version \"2.24.0\"\n\
+         \\include \"italiano.ly\"\n\
+         \\relative do' { do4 re mi fa sol1 sib4 fad }\n",
+    );
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 70, 66]);
+}
+
+#[test]
+fn include_english_alterations() {
+    let score = lire_sans_avertissement_d_include(
+        "\\include \"english.ly\"\n\
+         \\score { \\new Staff { \\fixed c' { cs4 bf } } }\n",
+    );
+    assert_eq!(hauteurs(&score), vec![61, 70]);
+}
+
+#[test]
+fn include_de_langue_dans_la_musique() {
+    // `\include` vaut aussi au milieu de la musique, pas seulement au niveau
+    // supérieur.
+    let score = lire_sans_avertissement_d_include(
+        "\\score { \\new Staff { \\include \"italiano.ly\" do'4 re' } }\n",
+    );
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+}
+
+#[test]
+fn language_espagnol() {
+    let score = lire_sans_avertissement_d_include(
+        "\\language \"español\"\n\
+         \\score { \\new Staff { do'4 sib' } }\n",
+    );
+    assert_eq!(hauteurs(&score), vec![60, 70]);
+}
+
+#[test]
+fn language_francais_precompose_et_decompose() {
+    let precompose = lire_sans_avertissement_d_include(
+        "\\language \"français\"\n\
+         \\score { \\new Staff { ré'4 mib' } }\n",
+    );
+    assert_eq!(hauteurs(&precompose), vec![62, 63]);
+    // Même nom avec « c » suivi de U+0327 (cédille combinante).
+    let decompose = lire_sans_avertissement_d_include(
+        "\\language \"franc\u{327}ais\"\n\
+         \\score { \\new Staff { ré'4 } }\n",
+    );
+    assert_eq!(hauteurs(&decompose), vec![62]);
+}
+
+#[test]
+fn une_note_par_fichier_de_langue() {
+    let cas: [(&str, &str, u8); 12] = [
+        ("catalan.ly", "dod'4", 61),
+        ("deutsch.ly", "h'4", 71),
+        ("english.ly", "cs'4", 61),
+        ("espanol.ly", "dos'4", 61),
+        ("francais.ly", "ré'4", 62),
+        ("italiano.ly", "fad'4", 66),
+        ("nederlands.ly", "cis'4", 61),
+        ("norsk.ly", "cess'4", 59),
+        ("portugues.ly", "dos'4", 61),
+        ("suomi.ly", "as'4", 68),
+        ("svenska.ly", "ciss'4", 61),
+        ("vlaams.ly", "dok'4", 61),
+    ];
+    for (fichier, musique, attendu) in cas {
+        let source = format!(
+            "\\include \"{fichier}\"\n\
+             \\score {{ \\new Staff {{ {musique} }} }}\n"
+        );
+        let score = lire_sans_avertissement_d_include(&source);
+        assert_eq!(hauteurs(&score), vec![attendu], "{fichier}");
+    }
+}
+
+#[test]
+fn include_de_fichier_livre_ignore_sans_avertissement() {
+    let score = lire_sans_avertissement_d_include(
+        "\\include \"articulate.ly\"\n\
+         \\include \"gregorian.ly\"\n\
+         \\score { \\new Staff { c'4 d' } }\n",
+    );
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+}
