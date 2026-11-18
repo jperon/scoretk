@@ -575,25 +575,58 @@ impl<'a> Parser<'a> {
                 if !items.iter().any(has_context) {
                     return vec![anonymous_group(wrap_all(wrappers, Music::Sim(items)))];
                 }
-                let rest: Vec<Music> = items
-                    .iter()
-                    .filter(|item| !has_context(item))
-                    .cloned()
-                    .collect();
-                let mut rest = if rest.is_empty() { None } else { Some(rest) };
-                let mut groups = Vec::new();
-                for item in items {
-                    if has_context(&item) {
-                        groups.extend(self.score_groups_in(item, wrappers));
-                    } else if let Some(rest) = rest.take() {
-                        // Les éléments sans contexte voisins forment une seule
-                        // portée anonyme, à la place du premier d'entre eux.
-                        groups.push(anonymous_group(wrap_all(wrappers, Music::Sim(rest))));
-                    }
+                self.context_groups(items, wrappers, Music::Sim)
+            }
+            Music::Seq(items) => {
+                // Un `{ … }` peut lui aussi contenir des contextes : LilyPond
+                // les crée à la position courante, comme dans `<< … >>`. Sans
+                // contexte, la séquence reste une musique ordinaire, donc une
+                // portée anonyme.
+                if !items.iter().any(has_context) {
+                    return vec![anonymous_group(wrap_all(wrappers, Music::Seq(items)))];
                 }
-                groups
+                self.warn_sequential_contexts(&items);
+                self.context_groups(items, wrappers, Music::Seq)
             }
             other => vec![anonymous_group(wrap_all(wrappers, other))],
+        }
+    }
+
+    /// Répartit les éléments d'une musique qui contient des contextes entre
+    /// les groupes qu'ils portent et la musique sans contexte voisine, réunie
+    /// en une seule portée anonyme à la place du premier élément concerné.
+    ///
+    /// `combine` reconstruit la musique des éléments restants : simultanée
+    /// pour `<< … >>`, séquentielle pour `{ … }`.
+    fn context_groups(
+        &mut self,
+        items: Vec<Music>,
+        wrappers: &mut Vec<Wrapper>,
+        combine: fn(Vec<Music>) -> Music,
+    ) -> Vec<GroupBlock> {
+        let rest: Vec<Music> = items
+            .iter()
+            .filter(|item| !has_context(item))
+            .cloned()
+            .collect();
+        let mut rest = if rest.is_empty() { None } else { Some(rest) };
+        let mut groups = Vec::new();
+        for item in items {
+            if has_context(&item) {
+                groups.extend(self.score_groups_in(item, wrappers));
+            } else if let Some(rest) = rest.take() {
+                groups.push(anonymous_group(wrap_all(wrappers, combine(rest))));
+            }
+        }
+        groups
+    }
+
+    /// Avertit quand une séquence `{ … }` porte plusieurs contextes : leurs
+    /// positions respectives se perdent, ils deviennent des portées
+    /// parallèles plutôt que rien.
+    fn warn_sequential_contexts(&mut self, items: &[Music]) {
+        if items.iter().filter(|item| has_context(item)).count() > 1 {
+            self.warn("plusieurs contextes dans une séquence `{ … }` : portées parallèles");
         }
     }
 
@@ -817,52 +850,27 @@ impl<'a> Parser<'a> {
                     self.collect_staves_in(inner, wrappers, staves, lyrics);
                     wrappers.pop();
                 }
-                None => {
-                    let mut staff = StaffBlock::new();
-                    let mut voices = Vec::new();
-                    let mut staff_lyrics = Vec::new();
-                    let music = wrap_all(wrappers, Music::Context(context));
-                    self.collect_voices(music, &mut voices, &mut staff_lyrics);
-                    staff.voices = voices;
-                    staff.lyrics = staff_lyrics;
-                    staves.push(staff);
-                }
+                None => self.push_anonymous_staff(Music::Context(context), wrappers, staves),
             },
             Music::Sim(items) => {
                 // Même règle que pour les groupes de `\score` : un `<< … >>`
                 // sans contexte ne fait qu'une portée, avec ses éléments
                 // simultanés (voix) ; un `\new` y définit la structure.
                 if !items.iter().any(has_context) {
-                    let mut staff = StaffBlock::new();
-                    let mut voices = Vec::new();
-                    let mut staff_lyrics = Vec::new();
-                    let music = wrap_all(wrappers, Music::Sim(items));
-                    self.collect_voices(music, &mut voices, &mut staff_lyrics);
-                    staff.voices = voices;
-                    staff.lyrics = staff_lyrics;
-                    staves.push(staff);
+                    self.push_anonymous_staff(Music::Sim(items), wrappers, staves);
                     return;
                 }
-                let rest: Vec<Music> = items
-                    .iter()
-                    .filter(|item| !has_context(item))
-                    .cloned()
-                    .collect();
-                let mut rest = if rest.is_empty() { None } else { Some(rest) };
-                for item in items {
-                    if has_context(&item) {
-                        self.collect_staves_in(item, wrappers, staves, lyrics);
-                    } else if let Some(rest) = rest.take() {
-                        let mut staff = StaffBlock::new();
-                        let mut voices = Vec::new();
-                        let mut staff_lyrics = Vec::new();
-                        let music = wrap_all(wrappers, Music::Sim(rest));
-                        self.collect_voices(music, &mut voices, &mut staff_lyrics);
-                        staff.voices = voices;
-                        staff.lyrics = staff_lyrics;
-                        staves.push(staff);
-                    }
+                self.context_staves(items, wrappers, staves, lyrics, Music::Sim);
+            }
+            Music::Seq(items) => {
+                // Un `{ … }` contenant un contexte décrit lui aussi la
+                // structure : le contexte est créé à la position courante.
+                if !items.iter().any(has_context) {
+                    self.push_anonymous_staff(Music::Seq(items), wrappers, staves);
+                    return;
                 }
+                self.warn_sequential_contexts(&items);
+                self.context_staves(items, wrappers, staves, lyrics, Music::Seq);
             }
             Music::New(mut group) => {
                 wrap_staves(wrappers, &mut group.staves);
@@ -870,12 +878,60 @@ impl<'a> Parser<'a> {
             }
             Music::Lyrics(block) => lyrics.push(*block),
             other => {
+                // Musique nue : une portée anonyme ; ses paroles restent au
+                // niveau du groupe, comme avant.
                 let mut staff = StaffBlock::new();
                 let mut voices = Vec::new();
                 let music = wrap_all(wrappers, other);
                 self.collect_voices(music, &mut voices, lyrics);
                 staff.voices = voices;
                 staves.push(staff);
+            }
+        }
+    }
+
+    /// Pousse une portée anonyme portant `music`, avec les enveloppes
+    /// rencontrées ; ses paroles restent sur la portée.
+    fn push_anonymous_staff(
+        &mut self,
+        music: Music,
+        wrappers: &[Wrapper],
+        staves: &mut Vec<StaffBlock>,
+    ) {
+        let mut staff = StaffBlock::new();
+        let mut voices = Vec::new();
+        let mut staff_lyrics = Vec::new();
+        self.collect_voices(wrap_all(wrappers, music), &mut voices, &mut staff_lyrics);
+        staff.voices = voices;
+        staff.lyrics = staff_lyrics;
+        staves.push(staff);
+    }
+
+    /// Répartit les éléments d'une musique qui contient des contextes entre
+    /// les portées qu'ils portent et la musique sans contexte voisine,
+    /// réunie en une seule portée anonyme.
+    ///
+    /// `combine` reconstruit la musique des éléments restants : simultanée
+    /// pour `<< … >>`, séquentielle pour `{ … }`.
+    fn context_staves(
+        &mut self,
+        items: Vec<Music>,
+        wrappers: &mut Vec<Wrapper>,
+        staves: &mut Vec<StaffBlock>,
+        lyrics: &mut Vec<LyricsBlock>,
+        combine: fn(Vec<Music>) -> Music,
+    ) {
+        let rest: Vec<Music> = items
+            .iter()
+            .filter(|item| !has_context(item))
+            .cloned()
+            .collect();
+        let mut rest = if rest.is_empty() { None } else { Some(rest) };
+        for item in items {
+            if has_context(&item) {
+                self.collect_staves_in(item, wrappers, staves, lyrics);
+            } else if let Some(rest) = rest.take() {
+                self.push_anonymous_staff(combine(rest), wrappers, staves);
             }
         }
     }
@@ -2983,16 +3039,17 @@ fn wrap_staves(wrappers: &[Wrapper], staves: &mut [StaffBlock]) {
 
 /// Vrai si la musique est, ou enveloppe, un contexte (`\new …`).
 ///
-/// Les fonctions musicales (`\transpose`, `\relative`, `\fixed`) et les
-/// simultanéités imbriquées sont traversées : la structure d'un `<< … >>`
-/// n'est celle de ses contextes que si l'un d'eux s'y trouve.
+/// Les fonctions musicales (`\transpose`, `\relative`, `\fixed`), les
+/// simultanéités et les séquences imbriquées sont traversées : la structure
+/// d'un `<< … >>` ou d'un `{ … }` n'est celle de ses contextes que si l'un
+/// d'eux s'y trouve.
 fn has_context(music: &Music) -> bool {
     match music {
         Music::New(_) | Music::Lyrics(_) => true,
         Music::Context(context) => {
             Wrapper::of(context).is_some_and(|(_, inner)| has_context(inner))
         }
-        Music::Sim(items) => items.iter().any(has_context),
+        Music::Sim(items) | Music::Seq(items) => items.iter().any(has_context),
         _ => false,
     }
 }

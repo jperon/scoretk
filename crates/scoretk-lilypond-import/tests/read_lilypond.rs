@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use scoretk_core::model::Fraction;
 use scoretk_core::model::{
     ArticulationType, BarLineType, ChordRestKind, ClefType, DurationType, GraceType, KeyMode,
-    LyricsSyllabic, SegmentItem, SegmentType, Track,
+    LyricsSyllabic, SegmentItem, SegmentType, StaffId, Track,
 };
 use scoretk_lilypond_import::{
     read_lilypond, read_lilypond_reporting, read_lilypond_with_includes,
@@ -2107,4 +2107,131 @@ fn passages_polyphoniques_successifs_partagent_une_voix() {
         ]
     );
     assert_eq!(score.measures.len(), 2);
+}
+
+#[test]
+fn sequence_dans_un_groupe_de_score() {
+    // Un `{ … }` peut contenir des contextes : LilyPond les crée à la
+    // position courante, comme dans `<< … >>`. Le `\new ChoirStaff` de
+    // `\score` reçoit ici une séquence qui n'enveloppe qu'un simultané de
+    // deux portées : elle ne doit plus passer pour une portée anonyme vide.
+    let score = lire_score(
+        "\\score { \\new ChoirStaff { << \\new Staff { c4 d } \\new Staff { e4 f } >> } }",
+    );
+    assert_eq!(score.staves.len(), 2);
+    assert_eq!(score.parts.len(), 1);
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![48], Fraction::QUARTER),
+            (Fraction::QUARTER, vec![50], Fraction::QUARTER),
+        ]
+    );
+    // Portée 2, voix 0 : `Track::new(1, 0)`.
+    assert_eq!(
+        accords_de_voix(&score, Track::new(StaffId::from_index(1), 0).raw()),
+        vec![
+            (Fraction::ZERO, vec![52], Fraction::QUARTER),
+            (Fraction::QUARTER, vec![53], Fraction::QUARTER),
+        ]
+    );
+}
+
+#[test]
+fn musique_de_haut_niveau_dans_une_sequence() {
+    // En musique de haut niveau, `\score { { \new Staff … } }` ne fait pas
+    // une portée anonyme : le contexte du `{ … }` donne la structure. Même
+    // chose quand une variable porte le contexte.
+    let score = lire_score("\\score { { \\new Staff { c4 d } } }");
+    assert_eq!(score.staves.len(), 1);
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![48], Fraction::QUARTER),
+            (Fraction::QUARTER, vec![50], Fraction::QUARTER),
+        ]
+    );
+
+    // Une variable peut porter l'enveloppe et le contexte : `\relative`
+    // s'applique alors à la voix de la portée, accord et silence compris.
+    let score = lire_score("v = \\relative c' \\new Staff { <c e g>4 r d }\n\\score { { \\v } }");
+    assert_eq!(score.staves.len(), 1);
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(hauteurs(&score), vec![60, 64, 67, 62]);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60, 64, 67], Fraction::QUARTER),
+            (Fraction::new(1, 2), vec![62], Fraction::QUARTER),
+        ]
+    );
+}
+
+#[test]
+fn sequence_de_groupe_dans_une_variable() {
+    // Le groupe est enfoui dans une variable, sous un `{ … }` puis sous un
+    // `<< … >>` : la descente traverse les deux sans perdre les portées.
+    let score = lire_score(
+        "p = { << \\new StaffGroup << \\new Staff { c4 d } \\new Staff { e f } >> >> }\n\\
+         \\score { \\p }",
+    );
+    assert_eq!(score.staves.len(), 2);
+    assert_eq!(score.parts.len(), 1);
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![48], Fraction::QUARTER),
+            (Fraction::QUARTER, vec![50], Fraction::QUARTER),
+        ]
+    );
+    // Portée 2, voix 0 : `Track::new(1, 0)`.
+    assert_eq!(
+        accords_de_voix(&score, Track::new(StaffId::from_index(1), 0).raw()),
+        vec![
+            (Fraction::ZERO, vec![52], Fraction::QUARTER),
+            (Fraction::QUARTER, vec![53], Fraction::QUARTER),
+        ]
+    );
+}
+
+#[test]
+fn contextes_multiples_dans_une_sequence() {
+    // Plusieurs contextes dans un même `{ … }` sont rares et sans ordre
+    // séquentiel naturel : ils deviennent des portées parallèles, avec un
+    // avertissement. La musique nue qui les accompagne reste une portée
+    // anonyme, et un `{ … }` sans aucun contexte ne change pas.
+    let (score, warnings) = read_lilypond_reporting(
+        "\\version \"2.24.0\"\n\\language \"english\"\n\
+         v = { \\new Staff { c4 d } \\new Staff { e f } }\n\
+         \\score { { c'8 \\v } }",
+    )
+    .expect("lecture");
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.message.contains("plusieurs contextes")),
+        "avertissements : {warnings:?}"
+    );
+    assert_eq!(score.staves.len(), 3);
+    let mut hauteurs = hauteurs(&score);
+    hauteurs.sort_unstable();
+    assert_eq!(hauteurs, vec![48, 50, 52, 53, 60]);
+
+    // Un `{ … }` sans contexte ne change pas : une portée anonyme, la barre
+    // de contrôle est consommée comme avant.
+    let score = lire_score("\\score { { c4 d | e4 f } }");
+    assert_eq!(score.staves.len(), 1);
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![48], Fraction::QUARTER),
+            (Fraction::QUARTER, vec![50], Fraction::QUARTER),
+            (Fraction::new(1, 2), vec![52], Fraction::QUARTER),
+            (Fraction::new(3, 4), vec![53], Fraction::QUARTER),
+        ]
+    );
 }
