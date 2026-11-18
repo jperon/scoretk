@@ -308,6 +308,11 @@ impl<'a> Parser<'a> {
             Kind::Punct(';') => {
                 self.position += 1;
             }
+            // Expression Scheme isolée : lue comme un seul jeton, ignorée
+            // sans bruit (c'est le cas des `#(ly:set-option …)` d'en-tête).
+            Kind::Scheme => {
+                self.position += 1;
+            }
             Kind::Punct('{') | Kind::Punct('<') => self.parse_toplevel_music(&token),
             _ => {
                 self.position += 1;
@@ -429,6 +434,11 @@ impl<'a> Parser<'a> {
             }) => {
                 self.position += 1;
                 text
+            }
+            Some(token) if token.is_scheme() => {
+                // Valeur Scheme (`##f`…) : consommée, sans texte d'en-tête.
+                self.position += 1;
+                String::new()
             }
             _ => String::new(),
         }
@@ -818,9 +828,9 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 text
             }
-            Some(token) if token.is_punct('#') => {
+            Some(token) if token.is_scheme() => {
                 self.position += 1;
-                self.parse_scheme_atom()
+                scheme_text_value(&token.text)
             }
             Some(token) if token.is_punct('{') => self.parse_markup_text(),
             _ => {
@@ -1039,6 +1049,12 @@ impl<'a> Parser<'a> {
             }
             Kind::Command => self.parse_command(),
             Kind::Word => self.parse_chord(false),
+            // Expression Scheme isolée dans la musique : ignorée sans
+            // avertissement, elle a été lue d'un seul tenant.
+            Kind::Scheme => {
+                self.position += 1;
+                Music::Empty
+            }
             Kind::Str | Kind::Number | Kind::Punct(_) => {
                 self.position += 1;
                 Music::Empty
@@ -1221,14 +1237,25 @@ impl<'a> Parser<'a> {
                 context(Context::Mark(text))
             }
             "ottava" => {
-                let negative = self.eat_punct('-');
-                if self.peek().is_some_and(|token| token.is_punct('#')) {
-                    self.position += 1;
-                }
-                let magnitude = self
-                    .bump()
-                    .and_then(|token| token.as_integer())
-                    .unwrap_or(0);
+                let mut negative = self.eat_punct('-');
+                let magnitude = match self.peek().cloned() {
+                    Some(token) if token.is_scheme() => {
+                        // `#1`, `#-1` : signe éventuellement porté par le datum.
+                        self.position += 1;
+                        let text = token.text.trim();
+                        match text.strip_prefix('-') {
+                            Some(rest) => {
+                                negative = true;
+                                rest.parse().unwrap_or(0)
+                            }
+                            None => text.parse().unwrap_or(0),
+                        }
+                    }
+                    _ => self
+                        .bump()
+                        .and_then(|token| token.as_integer())
+                        .unwrap_or(0),
+                };
                 let shift = if negative { -magnitude } else { magnitude };
                 context(Context::Ottava(shift.clamp(-2, 2) as i8))
             }
@@ -1357,7 +1384,11 @@ impl<'a> Parser<'a> {
         }
         if self.eat_punct('=') {
             if let Some(token) = self.bump() {
-                beats_per_minute = token.as_decimal();
+                beats_per_minute = if token.is_scheme() {
+                    token.scheme_decimal()
+                } else {
+                    token.as_decimal()
+                };
             }
         }
         Music::Context(Context::Tempo {
@@ -1439,19 +1470,22 @@ impl<'a> Parser<'a> {
         let mut direction = None;
         if self.eat_punct('=') {
             let value_start = self.position;
-            if self.peek().is_some_and(|token| token.is_punct('#')) {
-                self.position += 1;
-                let atom = self.parse_scheme_atom();
-                if path.iter().any(|part| part == "direction") {
-                    direction = match atom.to_ascii_uppercase().as_str() {
-                        "UP" => Some(StemDirection::Up),
-                        "DOWN" => Some(StemDirection::Down),
-                        _ => None,
-                    };
+            match self.peek().cloned() {
+                Some(token) if token.is_scheme() => {
+                    self.position += 1;
+                    if path.iter().any(|part| part == "direction") {
+                        let atom = token.text.trim().trim_start_matches('\'').trim();
+                        direction = match atom.to_ascii_uppercase().as_str() {
+                            "UP" => Some(StemDirection::Up),
+                            "DOWN" => Some(StemDirection::Down),
+                            _ => None,
+                        };
+                    }
                 }
-            } else {
-                self.position = value_start;
-                self.skip_scheme_value();
+                _ => {
+                    self.position = value_start;
+                    self.skip_scheme_value();
+                }
             }
         }
         match (once, direction) {
@@ -1466,12 +1500,16 @@ impl<'a> Parser<'a> {
         if !self.eat_punct('=') {
             return;
         }
-        if !self.peek().is_some_and(|token| token.is_punct('#')) {
+        let Some(token) = self.peek().cloned() else {
+            return;
+        };
+        if !token.is_scheme() {
             self.skip_scheme_value();
             return;
         }
         self.position += 1;
-        let value = self.parse_scheme_atom();
+        // `#'cross` : le datum porte son quote, sans signification ici.
+        let value = token.text.trim().trim_start_matches('\'').trim().to_owned();
         if path.iter().any(|part| part == "style") {
             if let Some(group) = head_group_from_style(&value) {
                 self.pending_head = group;
@@ -2019,103 +2057,51 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Valeur Scheme après `#` : atome ou liste entre parenthèses.
-    fn parse_scheme_atom(&mut self) -> String {
-        if self.eat_punct('(') {
-            let mut depth = 1usize;
-            let mut pieces = Vec::new();
-            while !self.at_end() && depth > 0 {
-                let Some(token) = self.bump() else {
-                    break;
-                };
-                if token.is_punct('(') {
-                    depth += 1;
-                } else if token.is_punct(')') {
-                    depth -= 1;
-                    if depth == 0 {
-                        break;
-                    }
-                } else if let Kind::Number | Kind::Word | Kind::Str = token.kind {
-                    pieces.push(token.text);
-                }
-            }
-            return pieces.join(" ");
-        }
-        if self.eat_punct('\'') {
-            return self.bump().map_or_else(String::new, |token| token.text);
-        }
-        if self.eat_punct('-') {
-            return format!(
-                "-{}",
-                self.bump().map_or_else(String::new, |token| token.text)
-            );
-        }
-        self.bump().map_or_else(String::new, |token| token.text)
-    }
-
     /// Fraction d'une valeur Scheme (`#9/8`, `#(ly:make-moment 9/8)`).
     fn parse_scheme_fraction(&mut self) -> Option<Fraction> {
-        if self.eat_punct('#') {
-            return self.scheme_fraction_body();
+        let token = self.peek().cloned()?;
+        match token.kind {
+            Kind::Scheme => {
+                self.position += 1;
+                let (numerator, denominator) = token.scheme_fraction()?;
+                Fraction::try_new(numerator, denominator)
+            }
+            Kind::Number => {
+                self.position += 1;
+                fraction_from_token(&token)
+            }
+            _ => None,
         }
-        if self.peek().is_some_and(|token| token.kind == Kind::Number) {
-            let token = self.bump()?;
-            return fraction_from_token(&token);
-        }
-        None
-    }
-
-    /// Corps d'une valeur Scheme numérique.
-    fn scheme_fraction_body(&mut self) -> Option<Fraction> {
-        if self.peek().is_some_and(|token| token.is_punct('(')) {
-            let atom = self.parse_scheme_atom();
-            let number = atom.split_whitespace().last()?.to_owned();
-            return parse_fraction_text(&number);
-        }
-        let token = self.bump()?;
-        fraction_from_token(&token)
     }
 
     /// Saute une valeur Scheme complète.
     ///
-    /// Gère `##f`, `#UP`, `#tuplet-number::calc-fraction-text` et les listes
-    /// entre parenthèses : on consomme jusqu'au prochain jeton qui ne peut pas
-    /// appartenir à un atome Scheme (mot musical, accolade, durée).
+    /// Le cas courant est l'unique jeton [`Kind::Scheme`] du lexer ; une liste
+    /// écrite sans `#` reste sautée par équilibrage des parenthèses.
     fn skip_scheme_value(&mut self) {
-        if self.peek().is_some_and(|token| token.is_punct('(')) {
-            let _ = self.parse_scheme_atom();
-            return;
+        match self.peek() {
+            Some(token) if token.is_scheme() => {
+                self.position += 1;
+            }
+            Some(token) if token.is_punct('(') => self.skip_paren_list(),
+            _ => {
+                self.bump();
+            }
         }
-        if self.eat_punct('#') || self.eat_punct('$') {
-            // `##f`, `##t` : booléen Scheme, le jeton suivant est la valeur
-            // même s'il ressemble à une hauteur (`f`).
-            if self.eat_punct('#') {
-                if self.peek().is_some_and(|token| token.is_punct('(')) {
-                    let _ = self.parse_scheme_atom();
-                } else {
-                    self.bump();
-                }
-                return;
-            }
-            loop {
-                let Some(token) = self.peek().cloned() else {
-                    return;
-                };
-                match &token.kind {
-                    Kind::Word => {
-                        if self.is_pitch_word(&token.text) {
-                            return;
-                        }
-                        self.position += 1;
-                    }
-                    Kind::Number | Kind::Str => self.position += 1,
-                    Kind::Punct('-') | Kind::Punct(':') | Kind::Punct('.') => self.position += 1,
-                    Kind::Punct('\'') => self.position += 1,
-                    _ => return,
+    }
+
+    /// Saute une liste équilibrée `( … )`.
+    fn skip_paren_list(&mut self) {
+        let mut depth = 0usize;
+        while let Some(token) = self.bump() {
+            if token.is_punct('(') {
+                depth += 1;
+            } else if token.is_punct(')') {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    break;
                 }
             }
-        } else {
-            self.bump();
         }
     }
 
@@ -2154,9 +2140,9 @@ impl<'a> Parser<'a> {
                 Kind::Str | Kind::Number => {
                     self.position += 1;
                 }
-                Kind::Punct('#') | Kind::Punct('$') => {
+                // Une expression Scheme est un seul jeton : le lire suffit.
+                Kind::Scheme => {
                     self.position += 1;
-                    self.skip_scheme_value();
                     return;
                 }
                 Kind::Word => {
@@ -2322,14 +2308,16 @@ fn fraction_from_token(token: &Token) -> Option<Fraction> {
     Fraction::try_new(numerator, denominator)
 }
 
-/// Fraction d'un texte `n/d` ou `n`.
-fn parse_fraction_text(text: &str) -> Option<Fraction> {
-    match text.split_once('/') {
-        Some((numerator, denominator)) => {
-            Fraction::try_new(numerator.parse().ok()?, denominator.parse().ok()?)
-        }
-        None => Fraction::try_new(text.parse().ok()?, 1),
+/// Valeur texte d'un datum Scheme.
+///
+/// Une chaîne `"…"` est déquottée et déséchappée comme la chaîne LilyPond
+/// équivalente ; tout autre datum est renvoyé tel quel.
+fn scheme_text_value(datum: &str) -> String {
+    let datum = datum.trim();
+    if datum.len() >= 2 && datum.starts_with('"') && datum.ends_with('"') {
+        return datum[1..datum.len() - 1].replace("\\\"", "\"");
     }
+    datum.to_owned()
 }
 
 /// Vrai pour une commande d'articulation connue.

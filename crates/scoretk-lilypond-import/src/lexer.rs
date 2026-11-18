@@ -27,6 +27,12 @@
 //! `%` et `%{ … %}` sont retirés à la lecture, comme `longcomment` dans le
 //! lexer amont.
 //!
+//! Comme les règles `#` et `$` du lexer amont, qui passent la main au lecteur
+//! Guile (`parse_embedded_scheme`), une expression Scheme est lue **d'un seul
+//! tenant** et forme un unique jeton ([`Kind::Scheme`]) : listes imbriquées,
+//! chaînes, caractères `#\(`, commentaires Scheme et musique embarquée
+//! `#{ … #}` compris. Le texte du jeton est le datum, sans le `#`/`$` initial.
+//!
 //! Le lexer ne connaît pas la langue des hauteurs : `cis` reste un mot, que
 //! [`crate::pitch`] interprète selon `\language`.
 
@@ -43,6 +49,8 @@ pub(crate) enum Kind {
     Str,
     /// Nombre entier, décimal ou fraction `n/d`.
     Number,
+    /// Expression Scheme `#datum` ou `$datum`, texte = datum sans le préfixe.
+    Scheme,
     /// Ponctuation d'un caractère.
     Punct(char),
 }
@@ -99,6 +107,44 @@ impl Token {
             None => Some((self.text.parse().ok()?, 1)),
         }
     }
+
+    /// Vrai pour une expression Scheme (`#…`, `$…`).
+    pub(crate) fn is_scheme(&self) -> bool {
+        self.kind == Kind::Scheme
+    }
+
+    /// Valeur décimale d'une expression Scheme (`#120`, `#0.5`).
+    pub(crate) fn scheme_decimal(&self) -> Option<f64> {
+        if self.kind != Kind::Scheme {
+            return None;
+        }
+        self.text.trim().parse().ok()
+    }
+
+    /// Fraction portée par une expression Scheme.
+    ///
+    /// Reconnaît `#3/4`, `#9/8` et la forme en liste `#(ly:make-moment 3/4)`,
+    /// dont le dernier atome est la fraction.
+    pub(crate) fn scheme_fraction(&self) -> Option<(i64, i64)> {
+        if self.kind != Kind::Scheme {
+            return None;
+        }
+        let text = self.text.trim();
+        let atom = if text.starts_with('(') {
+            text.rsplit(|character: char| {
+                character.is_whitespace() || character == '(' || character == ')'
+            })
+            .find(|part| !part.is_empty())?
+        } else {
+            text
+        };
+        match atom.split_once('/') {
+            Some((numerator, denominator)) => {
+                Some((numerator.parse().ok()?, denominator.parse().ok()?))
+            }
+            None => Some((atom.parse().ok()?, 1)),
+        }
+    }
 }
 
 impl fmt::Display for Token {
@@ -108,6 +154,8 @@ impl fmt::Display for Token {
             Kind::Command => write!(f, "\\{}", self.text),
             Kind::Str => write!(f, "\"{}\"", self.text),
             Kind::Number => write!(f, "{}", self.text),
+            // Le préfixe est toujours affiché `#`, y compris pour `$`.
+            Kind::Scheme => write!(f, "#{}", self.text),
             Kind::Punct(character) => write!(f, "{character}"),
         }
     }
@@ -178,6 +226,28 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
                 index += 1;
             }
             continue;
+        }
+
+        // Expression Scheme `#datum` / `$datum` : le lexer amont passe la main
+        // au lecteur Guile (`parse_embedded_scheme`), qui lit un datum
+        // complet. On en fait un seul jeton pour ne pas découper listes et
+        // chaînes en mots. `#{ … #}` est de la musique embarquée et garde son
+        // découpage habituel.
+        if (character == '#' || character == '$') && characters.get(index + 1) != Some(&'{') {
+            let (start, end) = scheme_datum_span(&characters, index + 1);
+            if end > start {
+                let text: String = characters[start..end].iter().collect();
+                advance_position(&characters, index, end, &mut line, &mut column);
+                index = end;
+                tokens.push(Token {
+                    kind: Kind::Scheme,
+                    text,
+                    line: token_line,
+                    column: token_column,
+                });
+                continue;
+            }
+            // Datum absent (`#}`, `#)`…) : ponctuation ordinaire.
         }
 
         // Chaîne entre guillemets, avec échappements `\"` et `\\`.
@@ -341,6 +411,249 @@ fn is_symbol_continue(characters: &[char], index: usize) -> bool {
     false
 }
 
+/// Met à jour ligne et colonne pour les caractères `from..to`.
+fn advance_position(characters: &[char], from: usize, to: usize, line: &mut u32, column: &mut u32) {
+    for character in &characters[from..to] {
+        if *character == '\n' {
+            *line += 1;
+            *column = 1;
+        } else {
+            *column += 1;
+        }
+    }
+}
+
+/// Étendue du datum Scheme qui suit `#` ou `$`.
+///
+/// Renvoie l'indice du premier caractère du datum (après espaces et
+/// commentaires) et celui qui le suit immédiatement. Un `end <= start` signale
+/// un datum absent, à traiter comme une ponctuation ordinaire.
+fn scheme_datum_span(characters: &[char], start: usize) -> (usize, usize) {
+    let begin = skip_scheme_atmosphere(characters, start);
+    let end = scheme_datum_end(characters, begin).max(begin);
+    (begin, end)
+}
+
+/// Saute espaces, commentaires `;`, blocs `#| … |#` et commentaires de datum
+/// `#;` avant un datum Scheme.
+fn skip_scheme_atmosphere(characters: &[char], mut index: usize) -> usize {
+    loop {
+        while characters
+            .get(index)
+            .is_some_and(|character| character.is_whitespace())
+        {
+            index += 1;
+        }
+        if matches!(characters.get(index), Some(&';')) {
+            while characters
+                .get(index)
+                .is_some_and(|character| *character != '\n')
+            {
+                index += 1;
+            }
+            continue;
+        }
+        if matches!(characters.get(index), Some(&'#'))
+            && matches!(characters.get(index + 1), Some(&'|'))
+        {
+            index = skip_scheme_block_comment(characters, index);
+            continue;
+        }
+        if matches!(characters.get(index), Some(&'#'))
+            && matches!(characters.get(index + 1), Some(&';'))
+        {
+            index = scheme_datum_end(characters, index + 2);
+            continue;
+        }
+        return index;
+    }
+}
+
+/// Indice qui suit le datum Scheme commençant à `start`.
+fn scheme_datum_end(characters: &[char], start: usize) -> usize {
+    let index = skip_scheme_atmosphere(characters, start);
+    let Some(character) = characters.get(index) else {
+        return characters.len();
+    };
+    match character {
+        '(' => scheme_list_end(characters, index),
+        // Parenthèse orpheline : pas de datum, `#` restera ponctuation.
+        ')' => index,
+        '"' => scheme_string_end(characters, index),
+        '\'' | '`' => scheme_datum_end(characters, index + 1),
+        ',' => {
+            let next = if matches!(characters.get(index + 1), Some(&'@')) {
+                index + 2
+            } else {
+                index + 1
+            };
+            scheme_datum_end(characters, next)
+        }
+        '#' => match characters.get(index + 1) {
+            // Vecteur `#(…)`.
+            Some(&'(') => scheme_list_end(characters, index + 1),
+            Some(&'\\') => scheme_character_end(characters, index),
+            Some(&'{') => scheme_embedded_music_end(characters, index),
+            // Commentaire seul : le datum commence après.
+            Some(&'|') => skip_scheme_block_comment(characters, index),
+            Some(&';') => scheme_datum_end(characters, index + 2),
+            _ => scheme_atom_end(characters, index),
+        },
+        _ => scheme_atom_end(characters, index),
+    }
+}
+
+/// Vrai pour un caractère qui termine un atome Scheme.
+///
+/// En plus des délimiteurs de Guile, `{` et `}` terminent un atome : `#}` hors
+/// musique embarquée doit rester la ponctuation `#` puis `}`.
+fn is_scheme_delimiter(character: char) -> bool {
+    character.is_whitespace()
+        || matches!(
+            character,
+            '(' | ')' | '"' | '\'' | '`' | ',' | ';' | '{' | '}'
+        )
+}
+
+/// Indice qui suit l'atome Scheme commençant à `start`.
+fn scheme_atom_end(characters: &[char], start: usize) -> usize {
+    let mut index = start;
+    while index < characters.len() && !is_scheme_delimiter(characters[index]) {
+        index += 1;
+    }
+    index
+}
+
+/// Indice qui suit la liste `( … )` commençant à `start`.
+///
+/// Ignore les parenthèses des chaînes, des caractères `#\(` `#\)`, des
+/// commentaires Scheme et de la musique embarquée `#{ … #}` : une liste
+/// `#(ly:expect-warning (G_ "… (…)"))` reste d'un seul tenant.
+fn scheme_list_end(characters: &[char], start: usize) -> usize {
+    let mut depth = 0usize;
+    let mut index = start;
+    while index < characters.len() {
+        match characters[index] {
+            '(' => {
+                depth += 1;
+                index += 1;
+            }
+            ')' => {
+                depth = depth.saturating_sub(1);
+                index += 1;
+                if depth == 0 {
+                    return index;
+                }
+            }
+            '"' => index = scheme_string_end(characters, index),
+            ';' => {
+                while characters
+                    .get(index)
+                    .is_some_and(|character| *character != '\n')
+                {
+                    index += 1;
+                }
+            }
+            '#' => match characters.get(index + 1) {
+                Some(&'|') => index = skip_scheme_block_comment(characters, index),
+                Some(&';') => index = scheme_datum_end(characters, index + 2),
+                Some(&'\\') => index = scheme_character_end(characters, index),
+                Some(&'{') => index = scheme_embedded_music_end(characters, index),
+                _ => index += 1,
+            },
+            _ => index += 1,
+        }
+    }
+    characters.len()
+}
+
+/// Indice qui suit la chaîne Scheme commençant à `start` (guillemet inclus).
+fn scheme_string_end(characters: &[char], start: usize) -> usize {
+    let mut index = start + 1;
+    while index < characters.len() {
+        match characters[index] {
+            '\\' => index += 2,
+            '"' => return index + 1,
+            _ => index += 1,
+        }
+    }
+    characters.len()
+}
+
+/// Indice qui suit le caractère Scheme `#\x`, `#\space` ou `#\(` commençant à
+/// `start`.
+fn scheme_character_end(characters: &[char], start: usize) -> usize {
+    let mut index = start + 2;
+    match characters.get(index) {
+        Some(character) if character.is_alphanumeric() => {
+            while characters
+                .get(index)
+                .is_some_and(|character| character.is_alphanumeric())
+            {
+                index += 1;
+            }
+        }
+        // Caractère unique, parenthèse ou espace compris.
+        Some(_) => index += 1,
+        None => {}
+    }
+    index
+}
+
+/// Indice qui suit le bloc `#| … |#` commençant à `start` (imbricable).
+fn skip_scheme_block_comment(characters: &[char], start: usize) -> usize {
+    let mut depth = 0usize;
+    let mut index = start;
+    while index < characters.len() {
+        if characters[index] == '#' && matches!(characters.get(index + 1), Some(&'|')) {
+            depth += 1;
+            index += 2;
+        } else if characters[index] == '|' && matches!(characters.get(index + 1), Some(&'#')) {
+            depth = depth.saturating_sub(1);
+            index += 2;
+            if depth == 0 {
+                return index;
+            }
+        } else {
+            index += 1;
+        }
+    }
+    characters.len()
+}
+
+/// Indice qui suit la musique embarquée `#{ … #}` commençant à `start`.
+///
+/// Les chaînes et commentaires LilyPond sont sautés pour qu'un `#}` cité ne
+/// ferme pas le bloc ; `#{` imbriqué est compté.
+fn scheme_embedded_music_end(characters: &[char], start: usize) -> usize {
+    let mut depth = 0usize;
+    let mut index = start;
+    while index < characters.len() {
+        if characters[index] == '#' && matches!(characters.get(index + 1), Some(&'{')) {
+            depth += 1;
+            index += 2;
+        } else if characters[index] == '#' && matches!(characters.get(index + 1), Some(&'}')) {
+            depth = depth.saturating_sub(1);
+            index += 2;
+            if depth == 0 {
+                return index;
+            }
+        } else if characters[index] == '"' {
+            index = scheme_string_end(characters, index);
+        } else if characters[index] == '%' {
+            while characters
+                .get(index)
+                .is_some_and(|character| *character != '\n')
+            {
+                index += 1;
+            }
+        } else {
+            index += 1;
+        }
+    }
+    characters.len()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,5 +697,67 @@ mod tests {
             texts("<< c4 \\\\ d4 >> \\( c4 \\)"),
             vec!["<", "<", "c", "4", "\\\\", "d", "4", ">", ">", "\\(", "c", "4", "\\)"]
         );
+    }
+
+    #[test]
+    fn expressions_scheme_d_un_seul_jeton() {
+        // Une liste complète ne doit pas être découpée en mots.
+        assert_eq!(
+            texts("#(ly:set-option 'warning-as-error #t) c'4"),
+            vec!["#(ly:set-option 'warning-as-error #t)", "c", "'", "4"]
+        );
+        // Booléens, vecteurs, nombres, symboles et quote.
+        assert_eq!(
+            texts("##t #f ##(1 2) #-1 #0.5 #9/8 #UP"),
+            vec!["##t", "#f", "##(1 2)", "#-1", "#0.5", "#9/8", "#UP"]
+        );
+        assert_eq!(texts("#`x #,y #,@z"), vec!["#`x", "#,y", "#,@z"]);
+        assert_eq!(
+            texts("#'staff-space #' (1 . 2)"),
+            vec!["#'staff-space", "#' (1 . 2)"]
+        );
+    }
+
+    #[test]
+    fn scheme_chaines_caracteres_et_commentaires() {
+        let tokens = tokenize(
+            "#(list \"chaîne ) avec parenthèse\" #\\) #\\( #\\space ; ) en commentaire\n 2)",
+        );
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].kind, Kind::Scheme);
+        assert_eq!(
+            tokens[0].text,
+            "(list \"chaîne ) avec parenthèse\" #\\) #\\( #\\space ; ) en commentaire\n 2)"
+        );
+        // Bloc `#| … |#`, imbricable.
+        let tokens = tokenize("#(a #| ) ( #| |# |# b)");
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].text, "(a #| ) ( #| |# |# b)");
+        // Commentaire de datum `#;`.
+        let tokens = tokenize("#(a #;(b c) d)");
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].text, "(a #;(b c) d)");
+    }
+
+    #[test]
+    fn scheme_musique_embarquee_et_ponctuation() {
+        // `#{ … #}` dans un datum est sauté d'un bloc.
+        assert_eq!(
+            texts("#(define m #{ c'4 d' #}) e4"),
+            vec!["#(define m #{ c'4 d' #})", "e", "4"]
+        );
+        // Hors Scheme, `#{ … #}` garde son découpage de musique.
+        assert_eq!(texts("#{ c'4 #}"), vec!["#", "{", "c", "'", "4", "#", "}"]);
+        // Un `#` sans datum reste une ponctuation.
+        assert_eq!(texts("#} #)"), vec!["#", "}", "#", ")"]);
+    }
+
+    #[test]
+    fn scheme_immediat_dollar() {
+        let tokens = tokenize("$(make-moment 1/4) d4");
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0].kind, Kind::Scheme);
+        assert_eq!(tokens[0].text, "(make-moment 1/4)");
+        assert_eq!(tokens[2].line, 1);
     }
 }

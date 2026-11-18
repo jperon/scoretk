@@ -102,10 +102,13 @@ est lue comme un `\score { musique }` sans `\layout` ni `\midi` ;
 `\book`/`\bookpart` sont parcourus pour y chercher `\score`, `\header` et
 cette musique de haut niveau.
 
-Tout ce qui sort de ce sous-ensemble — Scheme `#…`/`$…`, commandes inconnues,
-propriétés non modélisées — est **ignoré avec un avertissement collecté**
+Tout ce qui sort de ce sous-ensemble — commandes inconnues, propriétés non
+modélisées — est **ignoré avec un avertissement collecté**
 (`read_lilypond_reporting`), jamais une erreur : seule une source sans
-aucune musique (`\score` ou expression de haut niveau) échoue.
+aucune musique (`\score` ou expression de haut niveau) échoue. Les
+expressions Scheme `#…`/`$…` font exception : elles sont lues **d'un seul
+tenant** (un datum complet, comme le lecteur Guile appelé par le lexer
+amont, musique embarquée `#{ … #}` comprise) et ignorées sans bruit.
 
 ## 3. Choix de notation
 

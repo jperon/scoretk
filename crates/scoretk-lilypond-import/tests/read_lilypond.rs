@@ -461,3 +461,60 @@ fn times_ratio_nul_ne_panique_pas() {
 fn multiplicateur_denominateur_nul_ne_panique_pas() {
     let _ = read_lilypond_reporting("{ c4*1/0 }");
 }
+
+#[test]
+fn expressions_scheme_en_tete_ignorees_sans_bruit() {
+    // Chaque expression Scheme est un seul datum : ni ses mots ni ses
+    // parenthèses ne rejaillissent sur la musique qui suit.
+    let (score, warnings) = read_lilypond_reporting(
+        "#(ly:set-option 'warning-as-error #t)\n\
+         #(define (f x) (+ x 1))\n\
+         { c'4 d' e' f' }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.message.contains("mot")),
+        "avertissements : {warnings:?}"
+    );
+}
+
+#[test]
+fn expressions_scheme_dans_la_musique() {
+    // Propriétés Scheme, quote, booléen, chaîne parenthésée, caractère,
+    // commentaire et musique embarquée : la musique reste intacte.
+    let (score, warnings) = read_lilypond_reporting(
+        r#"\version "2.24.0"
+\score { \new Staff { \fixed c' {
+  \override NoteHead.color = #(rgb-color 1 0 0)
+  c4 d
+  #'(1 . 2)
+  ##t
+  #"chaîne ) avec parenthèse"
+  #\)
+  #(list 1 ; ) dans un commentaire
+     2)
+  #(define musique #{ c'4 #})
+  e4 f
+} } }
+"#,
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.message.contains("mot")),
+        "avertissements : {warnings:?}"
+    );
+}
+
+#[test]
+fn measurelength_en_scheme() {
+    let score = lire("\\set Timing.measureLength = #(ly:make-moment 3/4) c4 d e");
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(score.measures[0].len, Fraction::new(3, 4));
+    assert_eq!(hauteurs(&score), vec![60, 62, 64]);
+}
