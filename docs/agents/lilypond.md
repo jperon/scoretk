@@ -18,8 +18,22 @@ pub fn write_lilypond(score: &Score) -> Result<String, Error>;
 // crates/scoretk-lilypond-import
 pub fn read_lilypond(src: &str) -> Result<Score, Error>;
 pub fn read_lilypond_reporting(src: &str) -> Result<(Score, Vec<Warning>), Error>;
+pub fn read_lilypond_with_includes(
+    src: &str,
+    resolve: &mut dyn FnMut(&str, Option<&str>) -> Option<String>,
+) -> Result<(Score, Vec<Warning>), Error>;
+// crates/scoretk (façade) : read_lilypond_with_includes(bytes, resolve) -> Result<Score>
 // crates/scoretk-lilypond-common : `Error`, `Result`, `pitch`, `clefs`
 ```
+
+`read_lilypond` et `read_lilypond_reporting` ne suivent pas les `\include` de
+fichiers ordinaires : ils les ignorent avec un avertissement. La fonction
+`read_lilypond_with_includes` reçoit un résolveur
+`resolve(chemin_demandé, chemin_du_fichier_qui_inclut)` qui renvoie le texte du
+fichier inclus ou `None` ; le second argument vaut `None` au niveau supérieur,
+puis le chemin normalisé du fichier inclus (relatif au fichier principal). La
+CLI fournit un résolveur disque (dossier du fichier qui inclut, puis dossier du
+fichier principal) ; la bibliothèque n'ouvre aucun fichier elle-même.
 
 Aucune des trois crates ne fait d'entrée/sortie : elles travaillent sur du
 texte ou des valeurs en mémoire, ce qui les garde compilables pour
@@ -81,17 +95,21 @@ sont une copie de LilyPond **2.26.0** conservée **hors du dépôt** (voir
 | Étape | Fichier | Rôle |
 | --- | --- | --- |
 | Lexer | `scoretk-lilypond-import/src/lexer.rs` | jetons (`\nom`, mots, nombres, fractions, chaînes, ponctuation), commentaires `%` et `%{ %}`, états du lexer amont |
+| `\include` | `scoretk-lilypond-import/src/include.rs` | expansion textuelle avant l'analyse : fichiers de langue → `\language`, fichiers livrés sans musique ignorés, autres fichiers par le résolveur |
 | Arbre | `scoretk-lilypond-import/src/ast.rs` | `music_list`, `sequential_music`, `simultaneous_music`, `note_chord_element`, `post_events`, `\repeat`, `\new`, paroles |
 | Grammaire | `scoretk-lilypond-import/src/parser.rs` | analyse descendante des productions utiles ; tout le reste est ignoré avec un `Warning` |
-| Hauteurs | `scoretk-lilypond-import/src/pitch.rs` (+ `clefs`/`tpc` de `-common`) | tables de `define-note-names.scm` (5 langues), octaves `\fixed`/`\relative`/absolues (`Pitch::to_relative_octave`), clés, armures |
+| Hauteurs | `scoretk-lilypond-import/src/pitch.rs` (+ `clefs`/`tpc` de `-common`) | tables de `define-note-names.scm` (toutes les langues), octaves `\fixed`/`\relative`/absolues (`Pitch::to_relative_octave`), clés, armures |
 | Interprétation | `scoretk-lilypond-import/src/events.rs` | octaves, transposition, n-olets, ornements, spanners, reprises, événements datés |
 | Construction | `scoretk-lilypond-import/src/builder.rs` | trame des mesures (`\time`, `\partial`, `Timing.measureLength`, `R`), segments, altérations affichées, paroles, liaisons |
 
 Sous-ensemble couvert : notes, silences, accords, durées et points,
 `\relative`, `\fixed` et notation absolue, `\transpose`, `\tuplet`/`\times`,
 `~`, `(`/`)` et `\=N(`/`\=N)`, `\repeat volta`/`unfold` et `\alternative`,
-`\key`, `\time`, `\clef`, `\partial`, `\bar`, `\language` (néerlandais,
-anglais, allemand, italien, français), nuances, `\< \> \!`, articulations et
+`\key`, `\time`, `\clef`, `\partial`, `\bar`, `\language` (toutes les langues
+de `language-pitch-names` : néerlandais, catalan, allemand, anglais, espagnol,
+français, italien, norvégien, portugais, finnois, suédois, flamand), `\include`
+des fichiers de langue et des fichiers livrés sans musique, nuances,
+`\< \> \!`, articulations et
 ornements courants, `\grace`, `\acciaccatura`, `\appoggiatura`,
 `\afterGrace`, `R`/`s`, voix `<< \\ >>`, variables (`nom = { … }` puis
 `\nom`), `\new Staff`/`PianoStaff`/`ChoirStaff`/`Voice`/`Lyrics`,
@@ -429,7 +447,7 @@ pas de régression du lecteur.
 
 ### Limites de la lecture
 
-- **Sous-ensemble**, pas LilyPond complet : Scheme, `\include`, modes
+- **Sous-ensemble**, pas LilyPond complet : Scheme, modes
   (`\drummode`, `\chordmode`, `\figuremode`), `\new` imbriqué dans une voix,
   `\partCombine`, `\paper` sont ignorés avec un avertissement. `\book` et
   `\bookpart` sont parcourus (leur `\header`, leurs `\score` et leur musique
@@ -437,7 +455,17 @@ pas de régression du lecteur.
 - **Une seule partition** : quand un fichier en contient plusieurs (`\score`
   explicites ou expressions de haut niveau), le premier `\score` explicite
   l'emporte, sinon la première expression ; chaque autre est ignorée avec un
-  avertissement. `\include` n'est pas suivi.
+  avertissement.
+- **`\include`** : l'inclusion est textuelle et faite sur les jetons, comme le
+  lexer amont, au niveau supérieur comme dans la musique. Un fichier de langue
+  livré par LilyPond vaut `\language`, les fichiers livrés sans musique
+  (`articulate.ly`, `gregorian.ly`, `arabic.ly`…) sont ignorés sans
+  avertissement. Les autres fichiers passent par le résolveur de
+  `read_lilypond_with_includes` (la CLI lit le disque) ; sans résolveur, ils
+  sont ignorés avec un avertissement. Profondeur maximale 32, cycles
+  détectés, `\include` d'une expression Scheme ignoré avec un avertissement.
+  La position des avertissements du fichier principal est conservée ; ceux des
+  fichiers inclus portent leur propre ligne, sans nom de fichier.
 - **Pas de mise en page** : `\layout`, positions, portées masquées et sauts
   calculés ne sont pas relus.
 - **`\relative`** : la règle de `Pitch::to_relative_octave` est portée, mais

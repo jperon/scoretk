@@ -70,3 +70,50 @@ fn list_formats_ly_en_lecture() {
         .expect("ligne ly");
     assert_eq!(ligne.matches("oui").count(), 2, "{ligne}");
 }
+
+/// Fichier `.ly` qui inclut un autre fichier, lui-même inclusif : le résolveur
+/// disque part du dossier du fichier qui inclut.
+#[test]
+fn ly_includes_relatifs_depuis_un_fichier() {
+    let racine = Path::new("/tmp/scoretk-cli-ly-includes");
+    let parts = racine.join("parts");
+    std::fs::create_dir_all(&parts).expect("dossier parts");
+    let entree = racine.join("main.ly");
+    let sortie = racine.join("main.musicxml");
+    std::fs::write(
+        &entree,
+        "\\version \"2.24.0\"\n\
+         \\language \"english\"\n\
+         \\include \"parts/melody.ly\"\n\
+         \\score { \\new Staff \\melody }\n",
+    )
+    .expect("entrée");
+    std::fs::write(
+        parts.join("melody.ly"),
+        "\\include \"notes.ly\"\nmelody = { \\notes d'4 }\n",
+    )
+    .expect("melody");
+    std::fs::write(parts.join("notes.ly"), "notes = { c'4 }\n").expect("notes");
+
+    let output = binary()
+        .arg(&entree)
+        .args(["--encoding-date", "2026-11-17"])
+        .arg("-o")
+        .arg(&sortie)
+        .output()
+        .expect("exécution");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let texte = std::fs::read_to_string(&sortie).expect("sortie MusicXML");
+    assert!(texte.contains("<step>C</step>"), "{texte}");
+    assert!(texte.contains("<step>D</step>"), "{texte}");
+
+    let _ = std::fs::remove_file(&sortie);
+    let _ = std::fs::remove_file(parts.join("notes.ly"));
+    let _ = std::fs::remove_file(parts.join("melody.ly"));
+    let _ = std::fs::remove_dir(&parts);
+    let _ = std::fs::remove_file(&entree);
+}

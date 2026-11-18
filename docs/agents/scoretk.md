@@ -107,7 +107,7 @@ exactement un crate :
 | `musicxml-export` | `scoretk-musicxml-export` | `write_musicxml`, `write_mxl` |
 | `midi-import` | `scoretk-midi-import` | `read_midi` |
 | `midi-export` | `scoretk-midi-export` | `write_midi`, `write_playback` |
-| `lilypond-import` | `scoretk-lilypond-import` | `read_lilypond` |
+| `lilypond-import` | `scoretk-lilypond-import` | `read_lilypond`, `read_lilypond_with_includes` |
 | `lilypond-export` | `scoretk-lilypond-export` | `write_lilypond` |
 | `abc-import` | `scoretk-abc-import` | `read_abc` |
 | `abc-export` | `scoretk-abc-export` | `write_abc` |
@@ -161,8 +161,10 @@ L'export passe par `scoretk-musicxml-export`, et `.mxl` réutilise
 ### LilyPond — `lilypond-import`, `lilypond-export`
 
 `read_lilypond` (t40, `scoretk-lilypond-import`) décode l'UTF-8 puis lit un
-sous-ensemble de LilyPond ; `write_lilypond` (t36, `scoretk-lilypond-export`)
-écrit en voix `\fixed c'`. Les deux crates partagent
+sous-ensemble de LilyPond ; `read_lilypond_with_includes` suit en plus les
+`\include` par un rappel fourni par l'appelant (sans entrée/sortie dans la
+façade, la CLI lit les fichiers) ; `write_lilypond` (t36,
+`scoretk-lilypond-export`) écrit en voix `\fixed c'`. Les deux crates partagent
 `scoretk-lilypond-common` (erreur, `tpc`, clefs). Sous-ensemble, limites et
 aller-retour mesuré : `docs/agents/lilypond.md`.
 

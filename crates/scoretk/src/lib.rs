@@ -149,6 +149,22 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
     }
 }
 
+/// Lit un LilyPond `.ly` en résolvant ses `\include` par un rappel.
+///
+/// `resolve(chemin_demandé, chemin_du_fichier_qui_inclut)` renvoie le texte du
+/// fichier inclus ou `None` s'il est introuvable. Le rappel évite toute
+/// entrée/sortie dans la façade : c'est l'appelant qui lit les fichiers, comme
+/// la CLI (`docs/agents/lilypond.md` § 1). Les fichiers de langue de LilyPond
+/// et les fichiers livrés sans musique ne passent pas par le rappel. Sans la
+/// feature `lilypond-import`, la fonction renvoie
+/// [`Error::FormatNonPrisEnCharge`].
+pub fn read_lilypond_with_includes(
+    bytes: &[u8],
+    resolve: &mut dyn FnMut(&str, Option<&str>) -> Option<String>,
+) -> Result<Score> {
+    hooks::read_lilypond_with_includes(bytes, resolve)
+}
+
 /// Écrit le modèle pivot dans le format demandé.
 ///
 /// MusicXML et `.mxl` passent par `scoretk-musicxml-export` ; `.mxl` réutilise

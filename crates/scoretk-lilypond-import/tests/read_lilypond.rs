@@ -22,12 +22,16 @@
 //! notation relative, langue néerlandaise par défaut, variables, reprises,
 //! transposition, paroles et commandes ignorées.
 
+use std::collections::HashMap;
+
 use scoretk_core::model::Fraction;
 use scoretk_core::model::{
     ArticulationType, BarLineType, ChordRestKind, ClefType, DurationType, GraceType, KeyMode,
     LyricsSyllabic, SegmentItem, SegmentType, Track,
 };
-use scoretk_lilypond_import::{read_lilypond, read_lilypond_reporting};
+use scoretk_lilypond_import::{
+    read_lilypond, read_lilypond_reporting, read_lilypond_with_includes,
+};
 
 /// Lit une musique dans une portée unique, en mode `\fixed c'`.
 ///
@@ -622,4 +626,114 @@ fn include_de_fichier_livre_ignore_sans_avertissement() {
          \\score { \\new Staff { c'4 d' } }\n",
     );
     assert_eq!(hauteurs(&score), vec![60, 62]);
+}
+
+/// Résolveur en mémoire : `resolve(nom, _)` renvoie le texte de `fichiers`.
+fn resolveur<'a>(
+    fichiers: &'a HashMap<&'a str, &'a str>,
+) -> impl FnMut(&str, Option<&str>) -> Option<String> + 'a {
+    move |nom, _| fichiers.get(nom).map(|texte| (*texte).to_owned())
+}
+
+#[test]
+fn include_au_niveau_superieur_definit_une_variable() {
+    let fichiers = HashMap::from([("macros.ly", "m = { c'4 d' }")]);
+    let (score, warnings) = read_lilypond_with_includes(
+        "\\include \"macros.ly\"\n{ \\m e'4 }\n",
+        &mut resolveur(&fichiers),
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64]);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn include_au_milieu_d_une_voix() {
+    let fichiers = HashMap::from([("more.ly", "d'4 e'")]);
+    let (score, warnings) = read_lilypond_with_includes(
+        "\\score { \\new Staff { c'4 \\include \"more.ly\" f'4 } }\n",
+        &mut resolveur(&fichiers),
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn include_imbrique_avec_chemin_relatif() {
+    let fichiers = HashMap::from([
+        ("sub/a.ly", "\\include \"b.ly\"\na = { c'4 }"),
+        ("b.ly", "b = { d'4 }"),
+    ]);
+    let mut appels = Vec::new();
+    let (score, warnings) = {
+        let mut resolve = |nom: &str, incluant: Option<&str>| {
+            appels.push((nom.to_owned(), incluant.map(str::to_owned)));
+            fichiers.get(nom).map(|texte| (*texte).to_owned())
+        };
+        read_lilypond_with_includes("\\include \"sub/a.ly\"\n{ \\a \\b e'4 }\n", &mut resolve)
+            .expect("lecture")
+    };
+    assert_eq!(hauteurs(&score), vec![60, 62, 64]);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(
+        appels,
+        vec![
+            ("sub/a.ly".to_owned(), None),
+            ("b.ly".to_owned(), Some("sub/a.ly".to_owned()))
+        ]
+    );
+}
+
+#[test]
+fn include_cyclique_averti_sans_boucle() {
+    let fichiers = HashMap::from([
+        ("a.ly", "\\include \"b.ly\"\na = { c'4 }"),
+        ("b.ly", "\\include \"a.ly\"\nb = { d'4 }"),
+    ]);
+    let (score, warnings) = read_lilypond_with_includes(
+        "\\include \"a.ly\"\n{ \\a \\b }\n",
+        &mut resolveur(&fichiers),
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.message.contains("cyclique")),
+        "{warnings:?}"
+    );
+}
+
+#[test]
+fn include_absent_averti() {
+    let fichiers = HashMap::new();
+    let (score, warnings) = read_lilypond_with_includes(
+        "\\include \"absent.ly\"\n{ c'4 }\n",
+        &mut resolveur(&fichiers),
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60]);
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.message.contains("\\include ignoré")),
+        "{warnings:?}"
+    );
+}
+
+#[test]
+fn fichier_de_langue_ne_passe_pas_par_le_resolveur() {
+    let mut appels = 0usize;
+    let (score, warnings) = {
+        let mut resolve = |_: &str, _: Option<&str>| {
+            appels += 1;
+            None
+        };
+        read_lilypond_with_includes("\\include \"italiano.ly\"\n{ do'4 re' }\n", &mut resolve)
+            .expect("lecture")
+    };
+    assert_eq!(appels, 0);
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+    assert!(warnings.is_empty(), "{warnings:?}");
 }

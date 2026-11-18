@@ -26,12 +26,13 @@
 //! Seule cette CLI touche au système de fichiers.
 
 use std::io::{Read, Write};
+use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 
-use scoretk::{Format, MidiOptions, Options};
+use scoretk::{Format, MidiOptions, Options, Score};
 
 /// Version affichée par `--version` : en plus du numéro, la licence et
 /// l'absence de garantie (GPL §0, « Appropriate Legal Notices »).
@@ -100,7 +101,7 @@ fn main() -> ExitCode {
         Err(message) => return fail(&message),
     };
 
-    let score = match scoretk::read(&bytes, from) {
+    let score = match read_score(&bytes, from, &input) {
         Ok(score) => score,
         Err(error) => return fail(&format!("{input} : {error}")),
     };
@@ -135,6 +136,52 @@ fn read_input(input: &str) -> Result<Vec<u8>, String> {
         return Ok(bytes);
     }
     std::fs::read(input).map_err(|error| format!("lecture de {input} impossible : {error}"))
+}
+
+/// Lit la partition : un fichier `.ly` passe par le résolveur d'inclusions du
+/// disque, les autres formats par la façade.
+fn read_score(bytes: &[u8], from: Format, input: &str) -> scoretk::Result<Score> {
+    if from == Format::Ly && input != "-" {
+        let mut resolve = lilypond_resolver(Path::new(input));
+        return scoretk::read_lilypond_with_includes(bytes, &mut resolve);
+    }
+    scoretk::read(bytes, from)
+}
+
+/// Résolveur de `\include` pour un fichier `.ly` du disque.
+///
+/// Le chemin demandé est cherché d'abord dans le dossier du fichier qui
+/// inclut, puis dans celui du fichier principal ; les `.` et `..` sont
+/// normalisés. Aucune autre restriction n'est imposée.
+fn lilypond_resolver(main: &Path) -> impl FnMut(&str, Option<&str>) -> Option<String> {
+    let main_dir = main.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
+    move |requested, includer| {
+        let includer_dir = includer
+            .and_then(|path| Path::new(path).parent())
+            .unwrap_or_else(|| Path::new(""));
+        let candidates = [
+            main_dir.join(includer_dir).join(requested),
+            main_dir.join(requested),
+        ];
+        candidates
+            .iter()
+            .find_map(|path| std::fs::read_to_string(normalize_path(path)).ok())
+    }
+}
+
+/// Normalise un chemin en résolvant `.` et `..` lexicalement.
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
 }
 
 /// Détermine le format d'entrée : `--from`, sinon l'extension, sinon le

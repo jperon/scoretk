@@ -29,7 +29,7 @@
 //! | `musicxml-export` | `scoretk-musicxml-export` | [`write_musicxml`], [`write_mxl`] |
 //! | `midi-import` | `scoretk-midi-import` | [`read_midi`] |
 //! | `midi-export` | `scoretk-midi-export` | [`write_midi`], [`write_playback`] |
-//! | `lilypond-import` | `scoretk-lilypond-import` | [`read_lilypond`] |
+//! | `lilypond-import` | `scoretk-lilypond-import` | [`read_lilypond`], [`read_lilypond_with_includes`] |
 //! | `lilypond-export` | `scoretk-lilypond-export` | [`write_lilypond`] |
 //! | `abc-import` | `scoretk-abc-import` | [`read_abc`] |
 //! | `abc-export` | `scoretk-abc-export` | [`write_abc`] |
@@ -226,6 +226,12 @@ pub(crate) fn write_playback(
 
 // --- LilyPond (lecture) ---------------------------------------------------
 
+/// Rappel de résolution des `\include` LilyPond.
+///
+/// Reçoit le chemin demandé et celui du fichier qui inclut, et renvoie le
+/// texte du fichier inclus ou `None`.
+pub(crate) type LilypondResolver<'a> = dyn FnMut(&str, Option<&str>) -> Option<String> + 'a;
+
 #[cfg(feature = "lilypond-import")]
 pub(crate) fn read_lilypond(bytes: &[u8]) -> Result<Score> {
     let source = std::str::from_utf8(bytes).map_err(|error| Error::LilyPond(error.to_string()))?;
@@ -236,6 +242,30 @@ pub(crate) fn read_lilypond(bytes: &[u8]) -> Result<Score> {
 non_branche!(
     "lilypond-import",
     read_lilypond(bytes: &[u8]) -> Result<Score>,
+    Format::Ly,
+    Lecture
+);
+
+/// Lit un LilyPond `.ly` en résolvant ses `\include` par un rappel.
+///
+/// Même contrat que `scoretk_lilypond_import::read_lilypond_with_includes` :
+/// le rappel reçoit le chemin demandé et celui du fichier qui inclut, et
+/// renvoie le texte ou `None`. Aucune entrée/sortie ici : la lecture des
+/// fichiers appartient à l'appelant (la CLI).
+#[cfg(feature = "lilypond-import")]
+pub(crate) fn read_lilypond_with_includes(
+    bytes: &[u8],
+    resolve: &mut LilypondResolver<'_>,
+) -> Result<Score> {
+    let source = std::str::from_utf8(bytes).map_err(|error| Error::LilyPond(error.to_string()))?;
+    scoretk_lilypond_import::read_lilypond_with_includes(source, resolve)
+        .map(|(score, _)| score)
+        .map_err(|error| Error::LilyPond(error.to_string()))
+}
+
+non_branche!(
+    "lilypond-import",
+    read_lilypond_with_includes(bytes: &[u8], resolve: &mut LilypondResolver<'_>) -> Result<Score>,
     Format::Ly,
     Lecture
 );

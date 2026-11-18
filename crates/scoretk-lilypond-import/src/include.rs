@@ -26,7 +26,8 @@
 //! Ici, l'inclusion est faite sur les jetons : le `\include` et son argument
 //! sont remplacés par les jetons du fichier inclus, au niveau supérieur comme
 //! au milieu de la musique. Aucune entrée/sortie n'a lieu dans ce module : la
-//! lecture des fichiers est laissée à l'appelant.
+//! lecture des fichiers passe par le rappel `resolve` fourni par l'appelant,
+//! ce qui garde la bibliothèque portable.
 //!
 //! Deux familles de `\include` ne demandent pas de fichier :
 //!
@@ -38,6 +39,9 @@
 use crate::lexer::{tokenize, Kind, Token};
 use crate::pitch::Language;
 use crate::warnings::Warnings;
+
+/// Profondeur maximale d'inclusion imbriquée.
+const PROFONDEUR_MAX: usize = 32;
 
 /// Fichiers livrés dans `ly/` avec LilyPond, sans musique utile à la lecture.
 ///
@@ -78,54 +82,138 @@ const FICHIERS_LILYPOND: &[&str] = &[
 
 /// Remplace les `\include` d'une source par leurs jetons.
 ///
-/// Sans résolveur, un fichier inclus autre qu'un fichier de langue ou de la
-/// liste [`FICHIERS_LILYPOND`] est ignoré avec l'avertissement habituel.
-pub(crate) fn expand(source: &str, warnings: &mut Warnings) -> Vec<Token> {
-    let mut tokens = Vec::new();
-    expand_into(source, warnings, &mut tokens);
-    tokens
+/// `resolve(chemin_demandé, chemin_du_fichier_qui_inclut)` renvoie le texte du
+/// fichier demandé ou `None` s'il est introuvable ; le second argument vaut
+/// `None` au niveau supérieur, puis le chemin du fichier inclus (normalisé,
+/// relatif au fichier principal). Un fichier inclus autre qu'un fichier de
+/// langue ou de la liste [`FICHIERS_LILYPOND`] que le résolveur ne trouve pas
+/// est ignoré avec l'avertissement habituel.
+pub(crate) fn expand(
+    source: &str,
+    resolve: &mut dyn FnMut(&str, Option<&str>) -> Option<String>,
+    warnings: &mut Warnings,
+) -> Vec<Token> {
+    let mut expander = Expander {
+        resolve,
+        warnings,
+        tokens: Vec::new(),
+        stack: Vec::new(),
+    };
+    expander.source(source, None, 0);
+    expander.tokens
 }
 
-/// Étend les `\include` d'une source dans `tokens`.
-fn expand_into(source: &str, warnings: &mut Warnings, tokens: &mut Vec<Token>) {
-    let source_tokens = tokenize(source);
-    let mut index = 0usize;
-    while let Some(token) = source_tokens.get(index) {
-        if !token.is_command("include") {
-            tokens.push(token.clone());
-            index += 1;
-            continue;
-        }
-        let (line, column) = (token.line, token.column);
-        let ignored = "\\include ignoré : le fichier inclus n'est pas lu";
-        match source_tokens.get(index + 1) {
-            Some(Token {
-                kind: Kind::Str,
-                text,
-                ..
-            }) => {
-                if let Some(language) = language_argument(text) {
-                    // `\include "italiano.ly"` vaut `\language "italiano"`.
-                    tokens.push(Token {
-                        kind: Kind::Command,
-                        text: "language".to_owned(),
-                        line,
-                        column,
-                    });
-                    tokens.push(Token {
-                        kind: Kind::Str,
-                        text: language.to_owned(),
-                        line,
-                        column,
-                    });
-                } else if !FICHIERS_LILYPOND.contains(&text.as_str()) {
-                    warnings.push(line, column, ignored);
-                }
+/// État de l'expansion des `\include` d'une source.
+struct Expander<'a> {
+    /// Rappel de lecture des fichiers inclus.
+    resolve: &'a mut dyn FnMut(&str, Option<&str>) -> Option<String>,
+    /// Avertissements collectés.
+    warnings: &'a mut Warnings,
+    /// Jetons produits.
+    tokens: Vec<Token>,
+    /// Chemins des fichiers en cours d'inclusion, pour détecter les cycles.
+    stack: Vec<String>,
+}
+
+impl Expander<'_> {
+    /// Étend les `\include` d'une source dans les jetons.
+    ///
+    /// `current` est le chemin du fichier en cours (relatif au fichier
+    /// principal), `depth` sa profondeur d'inclusion.
+    fn source(&mut self, source: &str, current: Option<&str>, depth: usize) {
+        let source_tokens = tokenize(source);
+        let mut index = 0usize;
+        while let Some(token) = source_tokens.get(index) {
+            if !token.is_command("include") {
+                self.tokens.push(token.clone());
+                index += 1;
+                continue;
             }
-            _ => warnings.push(line, column, ignored),
+            let (line, column) = (token.line, token.column);
+            let ignored = "\\include ignoré : le fichier inclus n'est pas lu";
+            match source_tokens.get(index + 1) {
+                Some(Token {
+                    kind: Kind::Str,
+                    text,
+                    ..
+                }) => {
+                    if let Some(language) = language_argument(text) {
+                        // `\include "italiano.ly"` vaut `\language "italiano"`.
+                        self.tokens.push(Token {
+                            kind: Kind::Command,
+                            text: "language".to_owned(),
+                            line,
+                            column,
+                        });
+                        self.tokens.push(Token {
+                            kind: Kind::Str,
+                            text: language.to_owned(),
+                            line,
+                            column,
+                        });
+                    } else if !FICHIERS_LILYPOND.contains(&text.as_str()) {
+                        self.included(text, current, depth, line, column);
+                    }
+                }
+                Some(Token {
+                    kind: Kind::Scheme, ..
+                }) => {
+                    // `\include #fichier` : la valeur Scheme n'est pas connue
+                    // de la lecture, on ne peut pas l'inclure.
+                    self.warnings.push(
+                        line,
+                        column,
+                        "\\include d'une expression Scheme ignoré : la valeur n'est pas connue",
+                    );
+                }
+                _ => self.warnings.push(line, column, ignored),
+            }
+            // La commande et son argument sont consommés, même ignorés.
+            index += 2;
         }
-        // La commande et son argument sont consommés, même ignorés.
-        index += 2;
+    }
+
+    /// Inclut un fichier par le résolveur, avec les garde-fous de profondeur et
+    /// de cycle.
+    fn included(
+        &mut self,
+        requested: &str,
+        current: Option<&str>,
+        depth: usize,
+        line: u32,
+        column: u32,
+    ) {
+        if depth >= PROFONDEUR_MAX {
+            self.warnings.push(
+                line,
+                column,
+                format!(
+                    "\\include ignoré : profondeur d'inclusion maximale dépassée ({PROFONDEUR_MAX})"
+                ),
+            );
+            return;
+        }
+        let path = join_path(current, requested);
+        if self.stack.contains(&path) {
+            self.warnings.push(
+                line,
+                column,
+                format!("\\include cyclique ignoré : {requested}"),
+            );
+            return;
+        }
+        match (self.resolve)(requested, current) {
+            Some(source) => {
+                self.stack.push(path.clone());
+                self.source(&source, Some(&path), depth + 1);
+                self.stack.pop();
+            }
+            None => self.warnings.push(
+                line,
+                column,
+                "\\include ignoré : le fichier inclus n'est pas lu",
+            ),
+        }
     }
 }
 
@@ -141,16 +229,63 @@ fn language_argument(file: &str) -> Option<&str> {
     Language::from_name(stem).map(|_| stem)
 }
 
+/// Chemin d'un fichier inclus, relatif au fichier principal.
+///
+/// Le dossier du fichier qui inclut est joint au chemin demandé, puis les `.`
+/// et `..` sont résolus sans sortir de la racine.
+fn join_path(current: Option<&str>, requested: &str) -> String {
+    match current.and_then(|path| path.rsplit_once('/').map(|(dir, _)| dir)) {
+        Some(dir) => normalize_path(&format!("{dir}/{requested}")),
+        None => normalize_path(requested),
+    }
+}
+
+/// Normalise un chemin relatif : retire `.` et résout `..` lexicalement.
+fn normalize_path(path: &str) -> String {
+    let absolute = path.starts_with('/');
+    let mut parts: Vec<&str> = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other),
+        }
+    }
+    let normalized = parts.join("/");
+    if absolute {
+        format!("/{normalized}")
+    } else {
+        normalized
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
+    /// Étend une source sans aucun fichier joignable.
     fn texts(source: &str) -> Vec<String> {
         let mut warnings = Warnings::new();
-        expand(source, &mut warnings)
+        let mut resolve = |_: &str, _: Option<&str>| None;
+        expand(source, &mut resolve, &mut warnings)
             .iter()
             .map(ToString::to_string)
             .collect()
+    }
+
+    /// Étend une source avec une table de fichiers en mémoire.
+    fn texts_avec(source: &str, files: &HashMap<&str, &str>) -> (Vec<String>, Vec<crate::Warning>) {
+        let mut warnings = Warnings::new();
+        let mut resolve =
+            |name: &str, _: Option<&str>| files.get(name).map(|text| (*text).to_owned());
+        let tokens = expand(source, &mut resolve, &mut warnings);
+        (
+            tokens.iter().map(ToString::to_string).collect(),
+            warnings.into_vec(),
+        )
     }
 
     #[test]
@@ -168,8 +303,10 @@ mod tests {
     #[test]
     fn fichiers_livres_ignores_sans_avertissement() {
         let mut warnings = Warnings::new();
+        let mut resolve = |_: &str, _: Option<&str>| None;
         let tokens = expand(
             "\\include \"articulate.ly\" \\include \"gregorian.ly\" c4",
+            &mut resolve,
             &mut warnings,
         );
         assert_eq!(
@@ -180,9 +317,10 @@ mod tests {
     }
 
     #[test]
-    fn fichier_ordinaire_averti() {
+    fn fichier_ordinaire_averti_sans_resolveur() {
         let mut warnings = Warnings::new();
-        let tokens = expand("\\include \"macros.ly\" c4", &mut warnings);
+        let mut resolve = |_: &str, _: Option<&str>| None;
+        let tokens = expand("\\include \"macros.ly\" c4", &mut resolve, &mut warnings);
         assert_eq!(
             tokens.iter().map(ToString::to_string).collect::<Vec<_>>(),
             vec!["c", "4"]
@@ -194,5 +332,92 @@ mod tests {
             "{warnings:?}"
         );
         assert_eq!((warnings[0].line, warnings[0].column), (1, 1));
+    }
+
+    #[test]
+    fn fichier_inclus_remplace_la_commande() {
+        let files = HashMap::from([("macros.ly", "m = { c4 }")]);
+        let (tokens, warnings) = texts_avec("\\include \"macros.ly\" d4", &files);
+        assert_eq!(tokens, vec!["m", "=", "{", "c", "4", "}", "d", "4"]);
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn chemin_du_fichier_qui_inclut() {
+        let mut files: HashMap<&str, &str> = HashMap::new();
+        files.insert("sub/a.ly", "\\include \"b.ly\"");
+        files.insert("b.ly", "d4");
+        let mut appels = Vec::new();
+        let mut warnings = Warnings::new();
+        let mut resolve = |name: &str, includer: Option<&str>| {
+            appels.push((name.to_owned(), includer.map(str::to_owned)));
+            files.get(name).map(|text| (*text).to_owned())
+        };
+        let tokens = expand("\\include \"sub/a.ly\"", &mut resolve, &mut warnings);
+        assert_eq!(
+            tokens.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            vec!["d", "4"]
+        );
+        assert_eq!(
+            appels,
+            vec![
+                ("sub/a.ly".to_owned(), None),
+                ("b.ly".to_owned(), Some("sub/a.ly".to_owned()))
+            ]
+        );
+    }
+
+    #[test]
+    fn cycle_detecte() {
+        let files = HashMap::from([
+            ("a.ly", "\\include \"b.ly\""),
+            ("b.ly", "\\include \"a.ly\""),
+        ]);
+        let (tokens, warnings) = texts_avec("\\include \"a.ly\" c4", &files);
+        assert_eq!(tokens, vec!["c", "4"]);
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.message.contains("cyclique")),
+            "{warnings:?}"
+        );
+    }
+
+    #[test]
+    fn profondeur_limitee() {
+        // Chaque fichier inclut le suivant, sans cycle : l'expansion s'arrête à
+        // la profondeur maximale.
+        let mut files: HashMap<String, String> = HashMap::new();
+        for index in 0..PROFONDEUR_MAX + 5 {
+            files.insert(
+                format!("{index}.ly"),
+                format!("\\include \"{}.ly\"", index + 1),
+            );
+        }
+        let mut warnings = Warnings::new();
+        let mut resolve = |name: &str, _: Option<&str>| files.get(name).cloned();
+        let tokens = expand("\\include \"0.ly\"", &mut resolve, &mut warnings);
+        assert!(tokens.is_empty());
+        assert!(
+            warnings
+                .into_vec()
+                .iter()
+                .any(|warning| warning.message.contains("profondeur")),
+            "profondeur non signalée"
+        );
+    }
+
+    #[test]
+    fn include_scheme_averti() {
+        let mut warnings = Warnings::new();
+        let mut resolve = |_: &str, _: Option<&str>| None;
+        let tokens = expand("\\include #fichier c4", &mut resolve, &mut warnings);
+        assert_eq!(
+            tokens.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            vec!["c", "4"]
+        );
+        let warnings = warnings.into_vec();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].message.contains("Scheme"), "{warnings:?}");
     }
 }

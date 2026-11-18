@@ -83,8 +83,12 @@ struct Partition {
 }
 
 /// Résultat de l'analyse.
-pub(crate) fn parse(source: &str, warnings: &mut Warnings) -> Document {
-    let tokens = crate::include::expand(source, warnings);
+pub(crate) fn parse(
+    source: &str,
+    resolve: &mut dyn FnMut(&str, Option<&str>) -> Option<String>,
+    warnings: &mut Warnings,
+) -> Document {
+    let tokens = crate::include::expand(source, resolve, warnings);
     let mut parser = Parser {
         tokens,
         position: 0,
