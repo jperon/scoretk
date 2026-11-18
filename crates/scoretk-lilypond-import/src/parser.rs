@@ -1007,6 +1007,20 @@ impl<'a> Parser<'a> {
     /// (LilyPond 2.27), à partir de zéro.
     fn parse_lyric_music(&mut self) -> (Vec<Syllable>, Option<usize>) {
         if !self.eat_punct('{') {
+            // `\v` peut désigner un `\lyricmode { … }` mémorisé dans une
+            // variable : `\new Lyrics \lyricsto "s" \v` doit relire ses
+            // syllabes (comme le fait LilyPond pour un identifiant musical).
+            if let Some(Token {
+                kind: Kind::Command,
+                text,
+                ..
+            }) = self.peek().cloned()
+            {
+                if let Some(Music::Lyrics(block)) = self.variables.get(&text).cloned() {
+                    self.position += 1;
+                    return (block.syllables, Some(block.verse));
+                }
+            }
             // Un unique mot ou une variable : rien à aligner.
             self.skip_music_token();
             return (Vec::new(), None);

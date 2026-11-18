@@ -120,8 +120,14 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     let Some(score_ast) = &document.score else {
         return score;
     };
+    // Un bloc `\new Lyrics \lyricsto "…"` peut être frère du `\new Voice`
+    // dans un `<< … >>` de `\score` : il forme un groupe sans portée. Ces
+    // paroles sont conservées et rattachées plus loin à la voix nommée, où
+    // qu'elle ait été déclarée.
+    let mut pending_lyrics: Vec<LyricsBuild> = Vec::new();
     for group in &score_ast.groups {
         if group.staves.is_empty() {
+            pending_lyrics.extend(group.lyrics.iter().map(lyrics_build));
             continue;
         }
         let first = &group.staves[0];
@@ -168,6 +174,9 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
 
     if staves.is_empty() {
         return score;
+    }
+    if let Some(last) = staves.last_mut() {
+        last.lyrics.extend(pending_lyrics);
     }
 
     apply_initial_clefs(&mut score, &staves);
@@ -1286,17 +1295,19 @@ fn place_repeats(score: &mut Score, staves: &[StaffBuild]) {
 fn place_lyrics(score: &mut Score, staves: &[StaffBuild]) {
     for staff in staves {
         for lyrics in &staff.lyrics {
-            let voice = staff
-                .voices
-                .iter()
-                .find(|voice| {
-                    !lyrics.target.is_empty()
-                        && voice
-                            .name
-                            .as_deref()
-                            .is_some_and(|name| name == lyrics.target)
-                })
-                .or_else(|| staff.voices.first());
+            // `\lyricsto "nom"` cherche la voix dans toute la partition :
+            // elle peut être déclarée dans une autre portée ou un autre
+            // groupe. À défaut de nom (ou de voix trouvée), on garde le
+            // comportement d'\addlyrics : la première voix de la portée.
+            let voice = if lyrics.target.is_empty() {
+                staff.voices.first()
+            } else {
+                staves
+                    .iter()
+                    .flat_map(|staff| staff.voices.iter())
+                    .find(|voice| voice.name.as_deref() == Some(lyrics.target.as_str()))
+                    .or_else(|| staff.voices.first())
+            };
             let Some(voice) = voice else {
                 continue;
             };
