@@ -69,7 +69,6 @@ compatibles.
 | `wasm-bindgen-macro-support` | 0.2.130 | MIT OR Apache-2.0 | wasm (proc-macro) |
 | `wasm-bindgen-shared` | 0.2.130 | MIT OR Apache-2.0 | wasm (via wasm-bindgen) |
 | `zip` | 2.6.1 | MIT | core (conteneur .mscz) |
-| `zopfli` | 0.8.4 | Apache-2.0 | core (via zip) |
 
 ## Compatibilité avec GPL-3.0-only
 
