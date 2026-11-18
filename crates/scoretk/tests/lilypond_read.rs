@@ -43,3 +43,36 @@ fn source_illisible_est_une_erreur() {
     let error = read(b"\\version \"2.24.0\"\n", Format::Ly).expect_err("erreur attendue");
     assert!(matches!(error, scoretk::Error::LilyPond(_)));
 }
+
+/// Textes des syllabes de la première piste, dans l'ordre.
+fn syllabes(score: &scoretk_core::model::Score) -> Vec<String> {
+    score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(scoretk_core::model::Track::from_raw(0)))
+        .flat_map(|chord_rest| chord_rest.lyrics.iter())
+        .map(|lyrics| lyrics.text.clone())
+        .collect()
+}
+
+#[test]
+fn paroles_mot_a_espace_survit_a_l_aller_retour_lilypond() {
+    // `Ah_!` est une syllabe « Ah ! » : elle doit rester une seule syllabe au
+    // fil des conversions, et l'export `.ly` la protéger par des guillemets.
+    const SOURCE: &str = r#"\version "2.24.0"
+\language "english"
+\score { << \new Voice = "v" { \fixed c' { c4 d e f } }
+  \new Lyrics \lyricsto "v" { Ah_! qu'il fait bon } >> }
+"#;
+    let score = read(SOURCE.as_bytes(), Format::Ly).expect("lecture LilyPond");
+    let xml = String::from_utf8(write(&score, Format::MusicXml, &Options::default()).expect("xml"))
+        .expect("UTF-8");
+    assert!(xml.contains("<text>Ah !</text>"), "{xml}");
+    assert!(!xml.contains("<extend"));
+    let ly = String::from_utf8(write(&score, Format::Ly, &Options::default()).expect("ly"))
+        .expect("UTF-8");
+    assert!(ly.contains("\"Ah !\""), "{ly}");
+    let relu = read(ly.as_bytes(), Format::Ly).expect("relecture LilyPond");
+    assert_eq!(syllabes(&relu), vec!["Ah !", "qu'il", "fait", "bon"]);
+}

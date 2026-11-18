@@ -2235,3 +2235,73 @@ fn contextes_multiples_dans_une_sequence() {
         ]
     );
 }
+
+#[test]
+fn paroles_mot_decoupe_a_la_blanche() {
+    // La règle `<lyrics>` de `lily/lexer.ll` découpe les paroles aux blancs :
+    // `Ah_!` est **une** syllabe dont le `_` devient une espace
+    // (`lyric_fudge`), comme l'apostrophe de `qu'il` et la ponctuation collée
+    // de `bon,` / `gne.`. `--` entre blancs reste la césure de mot.
+    let score = read_lilypond(
+        "\\score { << \\new Voice = \"v\" { \\fixed c' { c4 d e f g a b c' d' } } \
+         \\new Lyrics \\lyricsto \"v\" { Ah_! qu'il fait bon, sur la mon -- ta -- gne. } >> }",
+    )
+    .expect("lecture");
+    assert_eq!(
+        paroles(&score),
+        vec![
+            (60, 0, LyricsSyllabic::Single, "Ah !".to_owned(), false),
+            (62, 0, LyricsSyllabic::Single, "qu'il".to_owned(), false),
+            (64, 0, LyricsSyllabic::Single, "fait".to_owned(), false),
+            (65, 0, LyricsSyllabic::Single, "bon,".to_owned(), false),
+            (67, 0, LyricsSyllabic::Single, "sur".to_owned(), false),
+            (69, 0, LyricsSyllabic::Single, "la".to_owned(), false),
+            (71, 0, LyricsSyllabic::Begin, "mon".to_owned(), false),
+            (72, 0, LyricsSyllabic::Middle, "ta".to_owned(), false),
+            (74, 0, LyricsSyllabic::End, "gne.".to_owned(), false),
+        ]
+    );
+}
+
+#[test]
+fn paroles_souligne_isole_saute_la_note() {
+    // Seul un `_` **isolé** entre blancs saute une note (mélisme) ; `__` fait
+    // de même. Collé à un mot, `_` est une espace (`fin_` → « fin ») et
+    // n'allonge plus la syllabe.
+    let score = read_lilypond(
+        "\\score { << \\new Voice = \"s\" { \\fixed c' { c4 d e f g a } } \
+         \\new Lyrics \\lyricsto \"s\" { la _ mon __ bre fin_ } >> }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 69]);
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(
+        paroles(&score),
+        vec![
+            (60, 0, LyricsSyllabic::Single, "la".to_owned(), true),
+            (64, 0, LyricsSyllabic::Single, "mon".to_owned(), true),
+            (67, 0, LyricsSyllabic::Single, "bre".to_owned(), false),
+            (69, 0, LyricsSyllabic::Single, "fin".to_owned(), false),
+        ]
+    );
+}
+
+#[test]
+fn paroles_guillemets_typographiques_et_apostrophe() {
+    // Guillemets et apostrophe typographiques font partie du mot, sans le
+    // couper : `«Ah»` et `l’ami` sont une syllabe chacun.
+    let score = read_lilypond(
+        "\\score { << \\new Voice = \"v\" { \\fixed c' { c4 d e } } \
+         \\new Lyrics \\lyricsto \"v\" { «Ah» l’ami c’est } >> }",
+    )
+    .expect("lecture");
+    assert_eq!(score.measures.len(), 1);
+    let textes: Vec<String> = paroles(&score)
+        .into_iter()
+        .map(|(_, _, syllabic, text, _)| {
+            assert_eq!(syllabic, LyricsSyllabic::Single);
+            text
+        })
+        .collect();
+    assert_eq!(textes, vec!["«Ah»", "l’ami", "c’est"]);
+}

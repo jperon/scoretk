@@ -39,7 +39,7 @@ use crate::ast::{
     Chord, ChordKind, Context, Document, GroupBlock, GroupKind, HeaderAst, LyricsBlock, Music,
     NoteSpec, PitchSpec, PostEvent, RepeatKind, ScoreAst, StaffBlock, Syllable, VoiceBlock,
 };
-use crate::lexer::{Kind, Token};
+use crate::lexer::{self, Kind, Token};
 use crate::pitch::{self, Language};
 use crate::warnings::Warnings;
 use scoretk_lilypond_common::clefs;
@@ -1180,44 +1180,20 @@ impl<'a> Parser<'a> {
                     });
                 }
                 Some(Token {
-                    kind: Kind::Word,
-                    text,
-                    ..
+                    kind: Kind::Word, ..
                 }) => {
-                    self.position += 1;
-                    let mut text = text;
-                    // Ponctuation collée au mot (`ta.`, `Nel,`).
-                    while let Some(next) = self.peek().cloned() {
-                        if next.line == self.tokens[self.position - 1].line
-                            && next.column == self.tokens[self.position - 1].column + 1
-                            && matches!(
-                                next.kind,
-                                Kind::Punct('.')
-                                    | Kind::Punct(',')
-                                    | Kind::Punct('!')
-                                    | Kind::Punct('?')
-                                    | Kind::Punct(':')
-                                    | Kind::Punct(';')
-                                    | Kind::Punct('\'')
-                                    | Kind::Punct('-')
-                            )
-                        {
-                            text.push_str(&next.text);
-                            self.position += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                    let hyphen = self.eat_lyric_hyphen();
-                    let extender = self.eat_lyric_extender();
-                    let ticks = self.parse_lyric_duration();
-                    syllables.push(Syllable {
-                        text,
-                        hyphen,
-                        extender,
-                        skip: false,
-                        ticks,
-                    });
+                    // Mot de paroles entier, ponctuation collée comprise :
+                    // `Ah_!` et `qu'il` sont une syllabe chacun.
+                    self.push_lyric_word(&mut syllables);
+                }
+                Some(Token {
+                    kind: Kind::Punct(_),
+                    ..
+                }) if lexer::mot_de_paroles(&self.tokens, self.position).is_some() => {
+                    // Mot qui commence par un signe typographique
+                    // (`«Ah»`, `’tis`) : guillemets et apostrophe restent
+                    // dans le texte de la syllabe.
+                    self.push_lyric_word(&mut syllables);
                 }
                 Some(Token {
                     kind: Kind::Str,
@@ -1289,6 +1265,28 @@ impl<'a> Parser<'a> {
         let (duration, multiplier) = parsed?;
         let ticks = duration.ticks();
         Some(multiplier.map_or(ticks, |value| ticks * value))
+    }
+
+    /// Ajoute aux syllabes le mot de paroles qui commence à la position
+    /// courante (voir [`lexer::mot_de_paroles`]), puis sa césure, son
+    /// mélisme et sa durée explicite éventuels.
+    fn push_lyric_word(&mut self, syllables: &mut Vec<Syllable>) {
+        let Some((text, consumed)) = lexer::mot_de_paroles(&self.tokens, self.position) else {
+            // Ne devrait pas arriver : l'appelant a vérifié le jeton.
+            self.position += 1;
+            return;
+        };
+        self.position += consumed;
+        let hyphen = self.eat_lyric_hyphen();
+        let extender = self.eat_lyric_extender();
+        let ticks = self.parse_lyric_duration();
+        syllables.push(Syllable {
+            text,
+            hyphen,
+            extender,
+            skip: false,
+            ticks,
+        });
     }
 
     /// Consomme `--` (deux tirets consécutifs).

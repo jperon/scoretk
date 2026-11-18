@@ -1033,7 +1033,16 @@ fn is_tied_continuation(score: &Score, chord_rest: &ChordRest) -> bool {
 
 /// Syllabe LilyPond d'une entrée de paroles.
 fn syllable(lyrics: &scoretk_core::model::Lyrics, has_next: bool) -> String {
-    let mut text_value = text::escape(&lyrics.text);
+    let escaped = text::escape(&lyrics.text);
+    // Un mot de paroles ne contient pas de blanc (`lily/lexer.ll`, état
+    // `lyrics`) : une syllabe qui en porte un (« Ah ! » après lecture de
+    // `Ah_!`) s'écrit entre guillemets, sinon la relecture la couperait en
+    // plusieurs syllabes et décalerait tout le couplet.
+    let mut text_value = if lyrics.text.chars().any(char::is_whitespace) {
+        format!("\"{escaped}\"")
+    } else {
+        escaped
+    };
     match lyrics.syllabic {
         scoretk_core::model::LyricsSyllabic::Begin
         | scoretk_core::model::LyricsSyllabic::Middle

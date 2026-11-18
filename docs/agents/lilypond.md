@@ -301,6 +301,16 @@ trait d'union n'est émis que si l'accord suivant du même couplet porte une
 syllabe, et les continuations de liaison (toutes notes liées depuis l'accord
 précédent) ne reçoivent pas de jeton, car `\lyricsto` les saute.
 
+Côté lecture, un mot de paroles est une suite de caractères non blancs
+(`<lyrics>` de `lily/lexer.ll`, `lexer::mot_de_paroles`) : ponctuation collée
+(`bon,`, `gne.`), apostrophe (`qu'il`, `l’ami`) et guillemets typographiques
+en font partie, et un `_` **dans** le mot devient une espace (`lyric_fudge`
+amont) : `Ah_!` est une seule syllabe « Ah ! ». Seul un `_` isolé entre blancs
+(`__` pour le trait) reste un mélisme ; un `~` sépare les mots (élision). Les
+chiffres sont hors du mot : `la4` donne la durée de la syllabe. À l'écriture,
+une syllabe qui porte une espace est mise entre guillemets (`"Ah !"`), seule
+forme qui la relise comme un seul mot.
+
 ### Reprises
 
 Une barre de début et une barre de fin (`<endRepeat>N</endRepeat>`) donnent

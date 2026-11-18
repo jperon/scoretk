@@ -446,6 +446,64 @@ fn is_symbol_continue(characters: &[char], index: usize) -> bool {
     false
 }
 
+/// Caractères qui ne peuvent pas commencer un mot de paroles.
+///
+/// Repris de la règle `<lyrics>` de `lily/lexer.ll`
+/// (`[^|*.=$#{}\"\\ \t\n\r\f0-9][^$#{}\"\\ \t\n\r\f0-9]*`), à laquelle
+/// s'ajoutent `~` (l'élision sépare les mots pour le parseur), `-` et `_`
+/// (césure et mélisme, lus comme des jetons à part) et les caractères de la
+/// musique `<`, `>`, `&` : un mot de paroles ne commence pas par eux.
+pub(crate) const MOT_DEBUT_INTERDIT: &[char] = &[
+    '|', '*', '.', '=', '$', '#', '{', '}', '"', '\\', '~', '-', '_', '<', '>', '&',
+];
+
+/// Caractères qui ne peuvent pas continuer un mot de paroles.
+///
+/// Comme la suite de la règle amont, sans `$#{}\"\\` ni chiffre ; `.`, `,`,
+/// `!`, `?`, `:` et `'` en font partie (`bon,`, `gne.`, `qu'il`).
+pub(crate) const MOT_SUITE_INTERDITE: &[char] =
+    &['$', '#', '{', '}', '"', '\\', '~', '<', '>', '&'];
+
+/// Mot de paroles à partir du jeton `start`, comme l'état `lyrics` du lexer
+/// amont : une suite de caractères non blancs, ponctuation collée comprise.
+///
+/// Dans le mot, `_` devient une espace (`lyric_fudge` amont) : `Ah_!` est une
+/// seule syllabe « Ah ! ». Seul un `_` isolé entre blancs reste un mélisme ;
+/// un mot n'est donc jamais réduit à des espaces (on retire ceux des bords,
+/// sans effet au rendu). Les chiffres ne font pas partie du mot : le parseur
+/// les lit comme la durée de la syllabe (`la4`), comme le lexer amont.
+///
+/// Renvoie le texte du mot et le nombre de jetons qu'il occupe.
+pub(crate) fn mot_de_paroles(tokens: &[Token], start: usize) -> Option<(String, usize)> {
+    let first = tokens.get(start)?;
+    let mut text = match &first.kind {
+        Kind::Word => first.text.clone(),
+        Kind::Punct(character) if !MOT_DEBUT_INTERDIT.contains(character) => character.to_string(),
+        _ => return None,
+    };
+    // Colonne de la fin du dernier jeton, pour exiger la contiguïté : deux
+    // jetons séparés par un blanc sont deux syllabes.
+    let mut end = first.column + first.text.chars().count() as u32;
+    let mut consumed = 1;
+    while let Some(next) = tokens.get(start + consumed) {
+        if next.line != first.line || next.column != end {
+            break;
+        }
+        let piece = match &next.kind {
+            Kind::Word => next.text.clone(),
+            Kind::Punct(character) if !MOT_SUITE_INTERDITE.contains(character) => {
+                character.to_string()
+            }
+            // Chiffres (durée de la syllabe), chaînes, commandes : hors du mot.
+            _ => break,
+        };
+        text.push_str(&piece);
+        end = next.column + next.text.chars().count() as u32;
+        consumed += 1;
+    }
+    Some((text.replace('_', " ").trim().to_owned(), consumed))
+}
+
 /// Met à jour ligne et colonne pour les caractères `from..to`.
 fn advance_position(characters: &[char], from: usize, to: usize, line: &mut u32, column: &mut u32) {
     for character in &characters[from..to] {
