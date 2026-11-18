@@ -737,3 +737,52 @@ fn fichier_de_langue_ne_passe_pas_par_le_resolveur() {
     assert_eq!(hauteurs(&score), vec![60, 62]);
     assert!(warnings.is_empty(), "{warnings:?}");
 }
+
+fn lire_absolue(music: &str) -> scoretk_core::model::Score {
+    let source = format!("\\score {{ \\new Staff {{ {music} }} }}\n");
+    read_lilypond(&source).unwrap_or_else(|error| panic!("lecture : {error}"))
+}
+fn durees(score: &scoretk_core::model::Score) -> Vec<Fraction> {
+    score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .map(|chord_rest| chord_rest.ticks.expect("durée mise à l'échelle"))
+        .collect()
+}
+#[test]
+fn scale_durations() {
+    // `\scaleDurations 2/3` vaut `c4*2/3` sur chaque note : 1/6 de ronde,
+    // sans crochet de n-olet.
+    let score = lire_absolue("\\time 3/4 \\scaleDurations 2/3 { c'4 d' e' f' g' a' }");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 69]);
+    assert_eq!(durees(&score), vec![Fraction::new(1, 6); 6]);
+    assert_eq!(score.measures[0].len, Fraction::new(3, 4));
+    assert_eq!(score.measures[0].nominal_len, Fraction::new(3, 4));
+}
+#[test]
+fn scale_durations_fraction_scheme() {
+    let score = lire_absolue("\\scaleDurations #'(2 . 3) { c'4 }");
+    assert_eq!(durees(&score), vec![Fraction::new(1, 6)]);
+    let score = lire_absolue("\\scaleDurations #(ly:make-moment 2 3) { c'4 }");
+    assert_eq!(durees(&score), vec![Fraction::new(1, 6)]);
+}
+#[test]
+fn scale_durations_imbrique() {
+    // Les facteurs se composent par produit : 1/2 * 2/3 * 1/4 = 1/12.
+    let score = lire_absolue("\\scaleDurations 1/2 { \\scaleDurations 2/3 { c'4 } }");
+    assert_eq!(durees(&score), vec![Fraction::new(1, 12)]);
+}
+#[test]
+fn scale_durations_denominateur_nul_ne_panique_pas() {
+    let source = "\\score { \\new Staff { \\scaleDurations 3/0 { c'4 } } }";
+    let (score, warnings) = read_lilypond_reporting(source).expect("lecture sans panique");
+    assert_eq!(hauteurs(&score), vec![60]);
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.message.contains("scaleDurations")),
+        "avertissements : {warnings:?}"
+    );
+}

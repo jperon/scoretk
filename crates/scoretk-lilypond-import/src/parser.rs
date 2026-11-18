@@ -1131,6 +1131,19 @@ impl<'a> Parser<'a> {
                     music: Box::new(self.parse_music()),
                 })
             }
+            "scaleDurations" => {
+                // `\scaleDurations n/d` multiplie toutes les durées de la
+                // musique par n/d, exactement comme `c4*n/d`, sans n-olet.
+                // On réutilise donc le multiplicateur `*n/d` déjà interprété
+                // par `events.rs` : les imbrications se composent par produit.
+                let factor = self.parse_scale_fraction();
+                let mut music = self.parse_music();
+                match factor {
+                    Some(factor) => scale_music(&mut music, &factor),
+                    None => self.warn("fraction de \\scaleDurations invalide ignorée"),
+                }
+                music
+            }
             "grace" | "slashedGrace" => Music::Context(Context::Grace {
                 kind: GraceType::Appoggiatura,
                 slash: false,
@@ -2089,6 +2102,23 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Fraction d'un `\scaleDurations` : jeton `n/d` ou datum Scheme
+    /// (`#'(n . d)`, `#(ly:make-moment n d)`…).
+    fn parse_scale_fraction(&mut self) -> Option<Fraction> {
+        let token = self.peek().cloned()?;
+        match token.kind {
+            Kind::Number => {
+                self.position += 1;
+                fraction_from_token(&token)
+            }
+            Kind::Scheme => {
+                self.position += 1;
+                scale_scheme_fraction(&token.text)
+            }
+            _ => None,
+        }
+    }
+
     /// Saute une valeur Scheme complète.
     ///
     /// Le cas courant est l'unique jeton [`Kind::Scheme`] du lexer ; une liste
@@ -2229,6 +2259,7 @@ fn starts_music_command(name: &str) -> bool {
             | "transpose"
             | "tuplet"
             | "times"
+            | "scaleDurations"
             | "grace"
             | "slashedGrace"
             | "acciaccatura"
@@ -2321,6 +2352,92 @@ fn duration_from_value(value: i64) -> Option<Duration> {
 fn fraction_from_token(token: &Token) -> Option<Fraction> {
     let (numerator, denominator) = token.as_fraction()?;
     Fraction::try_new(numerator, denominator)
+}
+
+/// Fraction portée par un datum Scheme de `\scaleDurations` : paire pointée
+/// `'(n . d)`, appel `(ly:make-moment n d)` ou `(ly:make-moment n/d)`, ou
+/// simple fraction `n/d`.
+fn scale_scheme_fraction(datum: &str) -> Option<Fraction> {
+    let text = datum.trim();
+    let body = text.strip_prefix('\'').unwrap_or(text).trim();
+    let inner = body
+        .strip_prefix('(')
+        .and_then(|text| text.strip_suffix(')'))
+        .map(str::trim);
+    let atom = if let Some(inner) = inner {
+        if let Some(args) = inner.strip_prefix("ly:make-moment") {
+            let args = args.trim();
+            if let Some((numerator, denominator)) = args.split_once(char::is_whitespace) {
+                return Fraction::try_new(
+                    numerator.trim().parse().ok()?,
+                    denominator.trim().parse().ok()?,
+                );
+            }
+            args
+        } else {
+            // Paire pointée `'(n . d)`.
+            let (numerator, denominator) = inner.split_once('.')?;
+            return Fraction::try_new(
+                numerator.trim().parse().ok()?,
+                denominator.trim().parse().ok()?,
+            );
+        }
+    } else {
+        body
+    };
+    let (numerator, denominator) = atom.split_once('/').unwrap_or((atom, "1"));
+    Fraction::try_new(
+        numerator.trim().parse().ok()?,
+        denominator.trim().parse().ok()?,
+    )
+}
+
+/// Multiplie par `factor` le multiplicateur `*n/d` de chaque accord d'une
+/// musique. C'est le mécanisme déjà utilisé par l'interpréteur pour les durées
+/// allongées : aucune nouvelle durée n'est introduite.
+fn scale_music(music: &mut Music, factor: &Fraction) {
+    match music {
+        Music::Seq(items) | Music::Sim(items) => {
+            for item in items {
+                scale_music(item, factor);
+            }
+        }
+        Music::Chord(chord) => {
+            let multiplier = chord.multiplier.unwrap_or(Fraction::ONE) * *factor;
+            chord.multiplier = Some(multiplier);
+        }
+        Music::Context(context) => scale_context(context, factor),
+        Music::Empty | Music::New(_) | Music::Lyrics(_) | Music::Unknown(_) => {}
+    }
+}
+
+/// Applique un facteur d'échelle aux musiques contenues dans une commande.
+fn scale_context(context: &mut Context, factor: &Fraction) {
+    match context {
+        Context::Tuplet { music, .. }
+        | Context::Grace { music, .. }
+        | Context::Fixed { music, .. }
+        | Context::Relative { music, .. }
+        | Context::Transpose { music, .. } => scale_music(music, factor),
+        Context::AfterGrace { main, grace } => {
+            scale_music(main, factor);
+            scale_music(grace, factor);
+        }
+        Context::Repeat {
+            body, alternatives, ..
+        } => {
+            scale_music(body, factor);
+            for alternative in alternatives {
+                scale_music(alternative, factor);
+            }
+        }
+        Context::Alternative(items) => {
+            for item in items {
+                scale_music(item, factor);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Valeur texte d'un datum Scheme.
