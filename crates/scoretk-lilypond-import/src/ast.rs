@@ -201,6 +201,16 @@ pub(crate) enum Context {
     },
     /// `\alternative` isolé (déjà consommé par `\repeat`).
     Alternative(Vec<Music>),
+    /// `\change <Contexte> = <nom>` : les notes qui suivent passent sur la
+    /// portée nommée, sans changer de voix.
+    Change {
+        /// Nom du contexte cible (portée).
+        name: String,
+        /// Ligne de la commande `\change`, pour les avertissements.
+        line: u32,
+        /// Colonne de la commande `\change`.
+        column: u32,
+    },
 }
 
 /// Nature d'une reprise.

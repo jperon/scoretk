@@ -452,6 +452,13 @@ pas de régression du lecteur.
   `\partCombine`, `\paper` sont ignorés avec un avertissement. `\book` et
   `\bookpart` sont parcourus (leur `\header`, leurs `\score` et leur musique
   de haut niveau).
+- **`\change`** : `\change <Contexte> = <nom>` est lu comme un changement de
+  portée : les notes suivantes gardent leur voix et leur place et portent un
+  `Chord.staff_move` calculé d'après la position de `\new Staff = "<nom>"`.
+  Le type de contexte n'est pas vérifié ; comme `Chord::staffMove` de MuseScore,
+  la résolution se limite aux portées nommées de la même partie. Un nom inconnu
+  ou étranger à la partie avertit une seule fois par voix, à la position du
+  `\change`, et laisse les notes sur leur portée d'origine.
 - **Une seule partition** : quand un fichier en contient plusieurs (`\score`
   explicites ou expressions de haut niveau), le premier `\score` explicite
   l'emporte, sinon la première expression ; chaque autre est ignorée avec un

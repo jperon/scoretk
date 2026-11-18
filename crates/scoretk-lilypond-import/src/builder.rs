@@ -28,7 +28,7 @@
 //! multi-mesures), puis range les événements datés dans les segments de chaque
 //! mesure, comme le fait le lecteur `.mscx` de MuseScore.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, BarLineType, Chord, ChordRest, ChordRestKind, Clef,
@@ -43,7 +43,7 @@ use crate::ast::{Document, GroupKind, LyricsBlock, StaffBlock};
 use crate::events::{
     arpeggio_object, articulation_objects, breath_object, ornament_objects, ottava_type,
     AnnotationEvent, ChordContent, ChordEvent, EventKind, GraceEvent, InterpretedVoice, MetaEvent,
-    RepeatSection, VoiceEvent,
+    RepeatSection, StaffTarget, VoiceEvent,
 };
 use crate::warnings::Warnings;
 use crate::Interpreter;
@@ -87,6 +87,8 @@ struct LyricsBuild {
 struct StaffBuild {
     /// Identifiant de la portée.
     staff: StaffId,
+    /// Nom du contexte (`\new Staff = "…"`), pour résoudre `\change`.
+    name: Option<String>,
     /// Voix.
     voices: Vec<VoiceBuild>,
     /// Paroles attachées à cette portée.
@@ -133,6 +135,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
             let lyrics = staff_block.lyrics.iter().map(lyrics_build).collect();
             staves.push(StaffBuild {
                 staff: staff_id,
+                name: staff_block.name.clone(),
                 voices,
                 lyrics,
             });
@@ -550,13 +553,29 @@ fn place_measures(
     slots: &[MeasureSlot],
     warnings: &mut Warnings,
 ) {
-    for staff in staves {
+    for (staff_index, staff) in staves.iter().enumerate() {
+        // `Chord::staffMove` ne traverse que les portées d'une même partie :
+        // un `\change` ne peut atteindre que les portées nommées de la partie
+        // courante, pas celles d'un autre instrument.
+        let part = score.staff(staff.staff).part;
+        let local_names: BTreeMap<&str, usize> = staves
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| score.staff(candidate.staff).part == part)
+            .filter_map(|(index, candidate)| candidate.name.as_deref().map(|name| (name, index)))
+            .collect();
         for voice_index in 0..staff.voices.len() {
+            // Un seul avertissement par nom inconnu et par voix, daté du
+            // `\change` qui l'a introduit plutôt que de chaque accord.
+            let mut warned: BTreeSet<&str> = BTreeSet::new();
             let mut events: Vec<VoiceEvent> = staff.voices[voice_index].interpreted.events.clone();
             events.sort_by_key(|event| (event.tick, event.order));
             for event in &events {
                 match &event.kind {
                     EventKind::Chord(chord) => {
+                        let staff_move = chord.staff.as_ref().map_or(0, |target| {
+                            staff_move_of(&local_names, staff_index, target, &mut warned, warnings)
+                        });
                         place_chord(
                             score,
                             slots,
@@ -564,6 +583,7 @@ fn place_measures(
                             voice_index,
                             event.tick,
                             chord,
+                            staff_move,
                             warnings,
                         );
                     }
@@ -583,7 +603,38 @@ fn place_measures(
     }
 }
 
+/// Décalage de portée d'un `\change` vers le contexte nommé, ou 0 si la portée
+/// est inconnue ou hors de la partie (les notes restent alors sur leur portée
+/// d'origine). L'avertissement n'est émis qu'une fois par nom et par voix, à la
+/// position de la commande `\change`.
+fn staff_move_of<'a>(
+    names: &BTreeMap<&str, usize>,
+    from: usize,
+    target: &'a StaffTarget,
+    warned: &mut BTreeSet<&'a str>,
+    warnings: &mut Warnings,
+) -> i8 {
+    match names.get(target.name.as_str()) {
+        Some(&index) => {
+            let from = i8::try_from(from).unwrap_or(i8::MAX);
+            let to = i8::try_from(index).unwrap_or(i8::MAX);
+            to.saturating_sub(from)
+        }
+        None => {
+            if warned.insert(target.name.as_str()) {
+                warnings.push(
+                    target.line,
+                    target.column,
+                    format!("portée inconnue : {}", target.name),
+                );
+            }
+            0
+        }
+    }
+}
+
 /// Place un accord ou un silence.
+#[allow(clippy::too_many_arguments)]
 fn place_chord(
     score: &mut Score,
     slots: &[MeasureSlot],
@@ -591,6 +642,7 @@ fn place_chord(
     voice_index: usize,
     tick: Fraction,
     event: &ChordEvent,
+    staff_move: i8,
     warnings: &mut Warnings,
 ) {
     let voice_track = staff.voices[voice_index].track;
@@ -611,6 +663,7 @@ fn place_chord(
         ChordContent::Notes(notes) => {
             let mut chord = Chord {
                 stem: event.stem,
+                staff_move,
                 articulations: articulation_objects(&event.articulations),
                 ornaments: ornament_objects(&event.ornaments),
                 arpeggio: event.arpeggio.map(arpeggio_object),

@@ -183,6 +183,18 @@ pub(crate) struct GraceEvent {
     pub slash: bool,
 }
 
+/// Portée cible d'un `\change`, avec la position de la commande pour les
+/// avertissements du constructeur.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct StaffTarget {
+    /// Nom du contexte cible.
+    pub name: String,
+    /// Ligne de la commande `\change`.
+    pub line: u32,
+    /// Colonne de la commande `\change`.
+    pub column: u32,
+}
+
 /// Accord ou silence daté.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ChordEvent {
@@ -209,6 +221,8 @@ pub(crate) struct ChordEvent {
     pub chord_line: Option<ChordLineType>,
     /// Direction de hampe explicite.
     pub stem: StemDirection,
+    /// Portée cible d'un `\change` en vigueur pour cet accord.
+    pub staff: Option<StaffTarget>,
     /// Doigtés de la note principale.
     pub fingerings: Vec<String>,
     /// Ornements qui précèdent.
@@ -305,6 +319,8 @@ pub(crate) struct Interpreter<'a> {
     default_duration: Duration,
     /// Hampe explicite en attente.
     stem_override: Option<StemDirection>,
+    /// Portée cible courante d'un `\change` (nom du contexte).
+    staff_target: Option<StaffTarget>,
     /// Rang d'émission.
     order: usize,
     /// Avertissements.
@@ -325,6 +341,7 @@ impl<'a> Interpreter<'a> {
             grace_after_target: None,
             default_duration: Duration::quarter(),
             stem_override: None,
+            staff_target: None,
             order: 0,
             warnings,
         };
@@ -403,6 +420,13 @@ impl<'a> Interpreter<'a> {
             }
             Context::Ottava(shift) => self.event(EventKind::Ottava(*shift)),
             Context::Sustain(on) => self.event(EventKind::Pedal(*on)),
+            Context::Change { name, line, column } => {
+                self.staff_target = Some(StaffTarget {
+                    name: name.clone(),
+                    line: *line,
+                    column: *column,
+                });
+            }
             Context::Voice(_) => {}
             Context::Stem(direction) => {
                 self.stem_override = Some(*direction);
@@ -722,6 +746,7 @@ impl<'a> Interpreter<'a> {
             tremolo,
             chord_line,
             stem,
+            staff: self.staff_target.clone(),
             fingerings,
             grace_before,
             grace_after: Vec::new(),

@@ -1066,7 +1066,8 @@ impl<'a> Parser<'a> {
         let Some(Token {
             kind: Kind::Command,
             text: name,
-            ..
+            line,
+            column,
         }) = self.peek().cloned()
         else {
             return Music::Empty;
@@ -1256,6 +1257,14 @@ impl<'a> Parser<'a> {
                     other => other.map_or_else(String::new, |token| token.text),
                 };
                 context(Context::Bar(text))
+            }
+            "change" => {
+                // `CHANGE STRING '=' simple_string` : le type de contexte
+                // (`Staff` ou `"Staff"`) est consommé, seul le nom compte.
+                self.bump();
+                self.eat_punct('=');
+                let name = self.bump().map_or(String::new(), |token| token.text);
+                context(Context::Change { name, line, column })
             }
             "section" => context(Context::Section),
             "break" | "noBreak" | "pageBreak" | "pageTurn" => context(Context::Break),

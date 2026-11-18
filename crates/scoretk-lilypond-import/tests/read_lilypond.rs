@@ -786,3 +786,155 @@ fn scale_durations_denominateur_nul_ne_panique_pas() {
         "avertissements : {warnings:?}"
     );
 }
+
+/// Paires (hauteur, décalage de portée) des notes de la voix 0, dans l'ordre.
+fn notes_et_portees(score: &scoretk_core::model::Score) -> Vec<(u8, i8)> {
+    score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .filter_map(|chord_rest| match &chord_rest.kind {
+            ChordRestKind::Chord(chord) => Some(
+                chord
+                    .notes
+                    .iter()
+                    .map(|&id| (score.note(id).pitch, chord.staff_move))
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+#[test]
+fn change_de_portee_dans_la_voix() {
+    let (score, warnings) = read_lilypond_reporting(
+        r#"\version "2.24.0"
+\language "english"
+\score {
+  \new PianoStaff <<
+    \new Staff = "haut" { \fixed c' {
+      c4 d \change Staff = "bas" e f \change Staff = haut g a
+    } }
+    \new Staff = "bas" { r1 r1 }
+  >>
+}"#,
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 69]);
+    assert_eq!(score.measures.len(), 2);
+    // Les notes changent de portée sans quitter la voix d'origine.
+    assert_eq!(
+        notes_et_portees(&score),
+        vec![(60, 0), (62, 0), (64, 1), (65, 1), (67, 0), (69, 0),]
+    );
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.message.contains("ignoré")),
+        "avertissements : {warnings:?}"
+    );
+}
+
+#[test]
+fn change_vers_portee_inconnue() {
+    let (score, warnings) = read_lilypond_reporting(
+        r#"\score { \new Staff = "seule" { \fixed c' { c4 \change Staff = "absente" d4 } } }"#,
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+    // La portée cible n'existe pas : avertissement, notes gardées sur place.
+    assert_eq!(notes_et_portees(&score), vec![(60, 0), (62, 0)]);
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.message == "portée inconnue : absente"),
+        "avertissements : {warnings:?}"
+    );
+}
+
+#[test]
+fn change_vers_portee_inconnue_avertissement_unique() {
+    // Quatre notes après le `\change` : un seul avertissement, daté de la
+    // commande et non de chaque accord (ni de 0:0).
+    let source = r#"\score {
+  \new Staff = "seule" { \fixed c' {
+    c4 \change Staff = "absente" d e f g
+  } }
+}"#;
+    let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67]);
+    assert_eq!(
+        notes_et_portees(&score),
+        vec![(60, 0), (62, 0), (64, 0), (65, 0), (67, 0)]
+    );
+    let inconnues: Vec<_> = warnings
+        .iter()
+        .filter(|warning| warning.message == "portée inconnue : absente")
+        .collect();
+    assert_eq!(inconnues.len(), 1, "avertissements : {warnings:?}");
+    let ligne = source
+        .lines()
+        .position(|line| line.contains("\\change"))
+        .expect("ligne du change");
+    let colonne = source
+        .lines()
+        .find(|line| line.contains("\\change"))
+        .expect("ligne du change")
+        .find("\\change")
+        .expect("colonne du change");
+    assert_eq!(
+        (inconnues[0].line, inconnues[0].column),
+        (ligne as u32 + 1, colonne as u32 + 1),
+        "avertissements : {warnings:?}"
+    );
+}
+
+#[test]
+fn change_vers_portee_d_autre_partie() {
+    let (score, warnings) = read_lilypond_reporting(
+        r#"\version "2.24.0"
+\language "english"
+\score {
+  \new Staff = "piano" { \fixed c' { c4 \change Staff = "flute" d e f g } }
+  \new Staff = "flute" { \fixed c' { c'1 } }
+}"#,
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 72]);
+    // "flute" existe mais appartient à une autre partie : pas de staffMove.
+    assert_eq!(
+        notes_et_portees(&score),
+        vec![(60, 0), (62, 0), (64, 0), (65, 0), (67, 0)]
+    );
+    assert_eq!(
+        warnings
+            .iter()
+            .filter(|warning| warning.message == "portée inconnue : flute")
+            .count(),
+        1,
+        "avertissements : {warnings:?}"
+    );
+}
+
+#[test]
+fn change_dans_beam_cross_staff() {
+    // Source de régression externe : le test n'a pas d'effet si elle est
+    // absente (extraction fraîche du dépôt, sans la copie LilyPond).
+    let Ok(source) = std::fs::read_to_string(
+        "/home/jacques/programmes/musique/lilypond-ref/input/regression/beam-cross-staff.ly",
+    ) else {
+        return;
+    };
+    assert!(source.contains("\\change"), "source de régression attendue");
+    let (score, warnings) = read_lilypond_reporting(&source).expect("lecture");
+    assert!(!score.notes.is_empty());
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.message.to_lowercase().contains("change")),
+        "avertissements : {warnings:?}"
+    );
+}
