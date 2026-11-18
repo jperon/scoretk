@@ -98,6 +98,7 @@ sont une copie de LilyPond **2.26.0** conservée **hors du dépôt** (voir
 | `\include` | `scoretk-lilypond-import/src/include.rs` | expansion textuelle avant l'analyse : fichiers de langue → `\language`, fichiers livrés sans musique ignorés, autres fichiers par le résolveur |
 | Arbre | `scoretk-lilypond-import/src/ast.rs` | `music_list`, `sequential_music`, `simultaneous_music`, `note_chord_element`, `post_events`, `\repeat`, `\new`, paroles |
 | Grammaire | `scoretk-lilypond-import/src/parser.rs` | analyse descendante des productions utiles ; tout le reste est ignoré avec un `Warning` |
+| `\parallelMusic` | `scoretk-lilypond-import/src/parallel.rs` | découpage aux contrôles de mesure et répartition entre les variables (`ly/music-functions-init.ly`) |
 | Hauteurs | `scoretk-lilypond-import/src/pitch.rs` (+ `clefs`/`tpc` de `-common`) | tables de `define-note-names.scm` (toutes les langues), octaves `\fixed`/`\relative`/absolues (`Pitch::to_relative_octave`), clés, armures |
 | Interprétation | `scoretk-lilypond-import/src/events.rs` | octaves, transposition, n-olets, ornements, spanners, reprises, événements datés |
 | Construction | `scoretk-lilypond-import/src/builder.rs` | trame des mesures (`\time`, `\partial`, `Timing.measureLength`, `R`), segments, altérations affichées, paroles, liaisons |
@@ -115,7 +116,8 @@ ornements courants, `\grace`, `\acciaccatura`, `\appoggiatura`,
 `\afterGrace`, `R`/`s`, voix `<< \\ >>` (passages polyphoniques
 temporaires) et `\new Voice` rencontré dans une voix d'une portée (voix
 ouverte au tick courant), variables (`nom = { … }` puis
-`\nom`), `\new Staff`/`PianoStaff`/`ChoirStaff`/`Voice`/`Lyrics`,
+`\nom`), `\parallelMusic` (voir ci-dessous),
+`\new Staff`/`PianoStaff`/`ChoirStaff`/`Voice`/`Lyrics`,
 `\addlyrics`, `\lyricsto`, `\lyricmode`, `\header`, `\tempo`, `\mark` et
 `\markup` simple (texte), musique embarquée `#{ … #}`/`$#{ … #}` et fonctions
 musicales simples (`nom = #(define-music-function (a b) (prédicat…) #{ … #})`
@@ -126,6 +128,17 @@ expression de haut niveau forme sa propre partition, comme LilyPond (qui en
 produit un fichier MIDI par expression) ;
 `\book`/`\bookpart` sont parcourus pour y chercher `\score`, `\header` et
 cette musique de haut niveau.
+
+**`\parallelMusic`** (`ly/music-functions-init.ly`, fonction `parallelMusic`) :
+la musique est coupée aux contrôles de mesure `|` et les tranches sont
+affectées circulairement aux variables nommées, une par voix ; c'est
+l'idiome des grilles d'accords (`\parallelMusic #'(PianoI PianoII …)`, ou
+`\parallelMusic haut,bas` depuis 2.24). Les contrôles de mesure ne sont pas
+recopiés dans les voix : le lecteur les ignore de toute façon (`|` ne coupe
+pas la trame), et un contrôle de mesure imbriqué (`\repeat`, bloc `{ … }`)
+ne sépare pas les voix — LilyPond, lui, découpe aussi les éléments
+imbriqués. Sans aucun `|`, la musique est ignorée avec un avertissement,
+comme LilyPond.
 
 Tout ce qui sort de ce sous-ensemble — commandes inconnues, propriétés non
 modélisées — est **ignoré avec un avertissement collecté**
@@ -629,6 +642,7 @@ GitHub en est un miroir) ; la version stable est aussi dans nixpkgs
 | `lexer.rs` | `lily/lexer.ll` (états `notes`, `lyrics`, `markup`, commentaires) |
 | `parser.rs` | `lily/parser.yy` (`music_list`, `event_chord`, `chord_body`, `post_events`, `repeated_music`, `context_change`, `\score`) |
 | `pitch.rs` | `lily/pitch.cc` (`Pitch::to_relative_octave`, `steps`, `up_to`/`down_to`), `scm/define-note-names.scm` (tables par langue) |
+| `parallel.rs` | `ly/music-functions-init.ly` (fonction `parallelMusic`) |
 | `ast.rs`, `events.rs`, `builder.rs` | aucune source directe : sémantique des objets de `engraving/dom/` de MuseScore |
 
 **Repérer les changements pertinents** :

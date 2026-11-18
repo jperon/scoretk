@@ -40,9 +40,10 @@
 //! livrés sans musique, nuances, `\< \> \!`, articulations courantes,
 //! `\grace`,
 //! `\acciaccatura`, `\appoggiatura`, `R`/`s`, voix `<< \\ >>`, variables
-//! (`nom = { … }` puis `\nom`), `\new Staff`/`PianoStaff`/`ChoirStaff`/`Voice`/
-//! `Lyrics`, `\addlyrics`, `\lyricsto`, `\lyricmode`, `\header`, `\tempo` et
-//! `\markup` simple.
+//! (`nom = { … }` puis `\nom`), `\parallelMusic` (musique découpée aux
+//! contrôles de mesure et répartie entre plusieurs variables), `\new Staff`/
+//! `PianoStaff`/`ChoirStaff`/`Voice`/`Lyrics`, `\addlyrics`, `\lyricsto`,
+//! `\lyricmode`, `\header`, `\tempo` et `\markup` simple.
 //!
 //! Tout ce qui sort de ce sous-ensemble (Scheme `#…`/`$…`, commandes inconnues)
 //! est ignoré avec un avertissement collecté : la conversion ne doit pas
@@ -63,6 +64,7 @@ mod builder;
 mod events;
 mod include;
 mod lexer;
+mod parallel;
 mod parser;
 mod pitch;
 mod warnings;

@@ -317,6 +317,13 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 self.parse_markup_text();
             }
+            // `\parallelMusic voix… { musique }` définit une variable par voix
+            // (`ly/music-functions-init.ly`) : c'est une commande de haut
+            // niveau, comme `\score`, et non une musique à jouer.
+            Kind::Command if token.text == "parallelMusic" => {
+                self.position += 1;
+                self.parse_parallel_music();
+            }
             Kind::Word => {
                 // Assignation `nom = musique` ou mot isolé.
                 if self.peek_at(1).is_some_and(|next| next.is_punct('=')) {
@@ -1409,6 +1416,93 @@ impl<'a> Parser<'a> {
         self.variables.insert(name, music);
     }
 
+    /// `\parallelMusic voix… { musique }` : découpe la musique aux contrôles de
+    /// mesure `|` et affecte les tranches aux variables nommées, en tournant
+    /// d'une voix à l'autre (`ly/music-functions-init.ly`, fonction
+    /// `parallelMusic`).
+    fn parse_parallel_music(&mut self) {
+        let names = self.parse_parallel_voice_names();
+        let block = self.take_braced_tokens();
+        if names.is_empty() {
+            self.warn("\\parallelMusic sans nom de voix ignoré");
+            return;
+        }
+        let Some(tokens) = block else {
+            self.warn("musique de \\parallelMusic absente ou invalide");
+            return;
+        };
+        let Some(segments) = crate::parallel::split_at_bar_checks(&tokens) else {
+            self.warn("musique parallèle sans contrôle de mesure ignorée");
+            return;
+        };
+        // Répartition circulaire : la première tranche de chaque mesure va à la
+        // première voix, la deuxième à la suivante, etc. Une voix sans tranche
+        // reste définie et vide, comme le `concatenate!` de LilyPond.
+        let mut voices: Vec<Vec<Token>> = vec![Vec::new(); names.len()];
+        for (index, segment) in segments.into_iter().enumerate() {
+            voices[index % names.len()].extend(segment);
+        }
+        for (name, tokens) in names.into_iter().zip(voices) {
+            let music = self.parse_token_stream(tokens);
+            self.music_functions.remove(&name);
+            self.variables.insert(name, music);
+        }
+    }
+
+    /// Noms de voix de `\parallelMusic` : liste Scheme `#'(A B C)` ou liste à
+    /// virgules `A,B,C` (`\parallelMusic haut,bas` depuis LilyPond 2.24).
+    fn parse_parallel_voice_names(&mut self) -> Vec<String> {
+        if let Some(Token {
+            kind: Kind::Scheme,
+            text,
+            ..
+        }) = self.peek().cloned()
+        {
+            self.position += 1;
+            return crate::parallel::voice_names(&text);
+        }
+        let mut names = Vec::new();
+        while let Some(Token {
+            kind: Kind::Word,
+            text,
+            ..
+        }) = self.peek().cloned()
+        {
+            self.position += 1;
+            names.push(text);
+            if !self.eat_punct(',') {
+                break;
+            }
+        }
+        names
+    }
+
+    /// Lit un bloc `{ … }` et rend ses jetons intérieurs, accolades exclues.
+    /// Le bloc est consommé ; `None` si le flux n'ouvre pas un bloc.
+    fn take_braced_tokens(&mut self) -> Option<Vec<Token>> {
+        if !self.peek().is_some_and(|token| token.is_punct('{')) {
+            return None;
+        }
+        let start = self.position + 1;
+        let mut depth = 0usize;
+        while let Some(token) = self.peek().cloned() {
+            if token.is_punct('{') {
+                depth += 1;
+            } else if token.is_punct('}') {
+                depth -= 1;
+                if depth == 0 {
+                    let inner = self.tokens[start..self.position].to_vec();
+                    self.position += 1;
+                    return Some(inner);
+                }
+            }
+            self.position += 1;
+        }
+        // Bloc non refermé : on garde ce qui a été lu, la fin de fichier sera
+        // signalée par la suite de l'analyse.
+        Some(self.tokens[start..].to_vec())
+    }
+
     /// Relit la source d'un bloc `#{ … #}` comme une expression musicale
     /// séquentielle.
     fn parse_embedded_music(&mut self, source: &str) -> Music {
@@ -1672,6 +1766,13 @@ impl<'a> Parser<'a> {
             "alternative" => {
                 let content = self.parse_music();
                 Music::Context(Context::Alternative(blocks_of(content)))
+            }
+            // `\parallelMusic` définit des variables et ne joue rien : il peut
+            // apparaître dans une variable ou un bloc musical comme au niveau
+            // supérieur.
+            "parallelMusic" => {
+                self.parse_parallel_music();
+                Music::Empty
             }
             "language" => {
                 // `\language` vaut aussi au milieu de la musique, comme le

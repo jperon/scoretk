@@ -2263,6 +2263,134 @@ fn paroles_mot_decoupe_a_la_blanche() {
     );
 }
 
+/// Hauteurs de chaque accord d'une piste, dans l'ordre.
+fn hauteurs_par_accord(score: &scoretk_core::model::Score, piste: u32) -> Vec<Vec<u8>> {
+    accords_de_voix(score, piste)
+        .into_iter()
+        .map(|(_, hauteurs, _)| hauteurs)
+        .collect()
+}
+
+/// Durées écrites de chaque accord d'une piste, dans l'ordre.
+fn durees_par_accord(score: &scoretk_core::model::Score, piste: u32) -> Vec<Fraction> {
+    accords_de_voix(score, piste)
+        .into_iter()
+        .map(|(_, _, duree)| duree)
+        .collect()
+}
+
+#[test]
+fn parallel_music_repartit_les_mesures_entre_les_voix() {
+    // `\parallelMusic` (`ly/music-functions-init.ly`) découpe la musique aux
+    // contrôles de mesure `|` et répartit les tranches circulairement entre
+    // les variables nommées : ici une barre par ligne, quatre voix, le motif
+    // d'un piano à deux portées et deux voix chacune.
+    let score = read_lilypond(
+        r#"\version "2.16"
+\language "français"
+MetriqueArmure = {
+  \time 2/4
+  \key sol \major
+}
+\parallelMusic #'(PianoI PianoII PianoIII PianoIV) {
+  %Bar1
+  re8\mf  |
+  s8      |
+  s8      |
+  re8     |
+
+  %Bar2
+  sol8.  sol16  sol8  si  |
+  si4           re8   re  |
+  re4           re8   sol |
+  sol,4         si8   sol |
+
+  %Bar3
+  la8.   sol16  la8   si   |
+  re4.                fad8 |
+  fad8.  mi16   fad8  fad  |
+  re'4.               si8  |
+}
+\score {
+  \new PianoStaff <<
+    \new Staff <<
+      \MetriqueArmure
+      \new Voice { \voiceOne \relative do' { \PianoI } }
+      \new Voice { \voiceTwo \relative do' { \PianoII } }
+    >>
+    \new Staff <<
+      \MetriqueArmure
+      \clef bass
+      \new Voice { \voiceOne \relative do { \PianoIII } }
+      \new Voice { \voiceTwo \relative do { \PianoIV } }
+    >>
+  >>
+}"#,
+    )
+    .expect("lecture");
+    assert_eq!(score.staves.len(), 2);
+    assert_eq!(score.measures.len(), 3);
+    assert_eq!(
+        hauteurs_par_accord(&score, 0),
+        vec![
+            vec![62],
+            vec![67],
+            vec![67],
+            vec![67],
+            vec![71],
+            vec![69],
+            vec![67],
+            vec![69],
+            vec![71],
+        ]
+    );
+    assert_eq!(
+        durees_par_accord(&score, 0),
+        vec![
+            Fraction::new(1, 8),
+            Fraction::new(3, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(3, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+        ]
+    );
+    assert_eq!(
+        hauteurs_par_accord(&score, 1),
+        vec![vec![59], vec![62], vec![62], vec![62], vec![66]]
+    );
+    assert_eq!(
+        hauteurs_par_accord(&score, 4),
+        vec![
+            vec![50],
+            vec![50],
+            vec![55],
+            vec![54],
+            vec![52],
+            vec![54],
+            vec![54]
+        ]
+    );
+    assert_eq!(
+        hauteurs_par_accord(&score, 5),
+        vec![vec![50], vec![43], vec![47], vec![43], vec![50], vec![47]]
+    );
+    assert_eq!(
+        durees_par_accord(&score, 5),
+        vec![
+            Fraction::new(1, 8),
+            Fraction::QUARTER,
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(3, 8),
+            Fraction::new(1, 8),
+        ]
+    );
+}
+
 #[test]
 fn paroles_souligne_isole_saute_la_note() {
     // Seul un `_` **isolé** entre blancs saute une note (mélisme) ; `__` fait
@@ -2304,4 +2432,45 @@ fn paroles_guillemets_typographiques_et_apostrophe() {
         })
         .collect();
     assert_eq!(textes, vec!["«Ah»", "l’ami", "c’est"]);
+}
+
+#[test]
+fn parallel_music_forme_a_virgules_et_sans_barre() {
+    // Syntaxe à virgules de LilyPond 2.24 (`\parallelMusic haut,bas`), deux
+    // voix d'une même portée : quatre barres donnent deux mesures par voix.
+    let score = lire_score(
+        "\\parallelMusic haut,bas {\n\
+           c'4 d' |\n\
+           e'8 f' |\n\
+           g'4 a' |\n\
+           b'8 c'' |\n\
+         }\n\
+         \\score { \\new Staff << \\time 2/4 \\haut \\\\ \\bas >> }",
+    );
+    assert_eq!(score.staves.len(), 1);
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(
+        hauteurs_par_accord(&score, 0),
+        vec![vec![60], vec![62], vec![67], vec![69]]
+    );
+    assert_eq!(
+        hauteurs_par_accord(&score, 1),
+        vec![vec![64], vec![65], vec![71], vec![72]]
+    );
+
+    // Sans aucun contrôle de mesure, LilyPond ignore la musique avec un
+    // avertissement (« ignoring parallel music without bar checks ») ; la
+    // portée ordinaire du fichier, elle, reste inchangée.
+    let (score, warnings) = read_lilypond_reporting(
+        "\\parallelMusic a,b { c'4 d' }\n\\score { \\new Staff { c'4 d' e' f' } }",
+    )
+    .expect("lecture");
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.message.contains("sans contrôle de mesure")),
+        "avertissements : {warnings:?}"
+    );
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+    assert_eq!(score.measures.len(), 1);
 }
