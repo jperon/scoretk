@@ -51,6 +51,8 @@ Mesure (wasm-bindgen 0.2.130, `opt-level = "z"`, `lto`, `codegen-units = 1`,
 | `scoretk_wasm_bg.wasm` (après `wasm-opt`) | **1 552 892 octets** | **641 472 octets** |
 
 Les deux variantes `esm` et `classic` partagent le même binaire à l'octet près.
+Le paquet reste **complet, toutes features activées** : il reste sous la
+limite de Cantus (≈ 2,5 Mo brut).
 
 `panic = "abort"` a été **mesuré puis écarté** sur une version antérieure du
 paquet : il ne retirait que 20 octets bruts (1 468 917 au lieu de 1 468 937,
@@ -64,18 +66,6 @@ contributions distinctes : +9 555 octets bruts (+0,65 %) pour
 (+0,03 %) pour la vélocité de note (`Note::user_velocity`) et +33 octets bruts
 pour le calcul en `i64` de `customize_velocity` (anti-débordement), soit un
 cumul de +10 002 octets bruts (+0,68 %). Le surcoût reste sous le seuil de 2 %.
-
-Profil allégé mesuré à titre indicatif sur la version d'avant restructuration,
-sans changer le contrat : en
-désactivant les features `musescore-export`, `lilypond-export`,
-`lilypond-import` et `abc-import`/`abc-export` de `scoretk` (seules
-`musicxml-import`, `musicxml-export`, `musescore-import` et `midi-import`
-restent), le même pipeline
-(`cargo build --release`, `wasm-bindgen`, `wasm-opt -Oz --strip-debug`) donne
-**1 140 951 octets bruts** et **488 444 octets gzip**, soit **−23,1 %** brut et
-**−21,4 %** gzip par rapport au paquet complet (1 482 794 / 621 633). Le
-`Cargo.toml` du dépôt n'est pas modifié : c'est une mesure, pas une variante
-livrée.
 
 ### Effet du découpage en crates
 
@@ -115,14 +105,18 @@ refactor sans changement de logique. Diagnostic, chiffres à l'appui :
   part entière, aux frontières de crates.
 
 C'est donc l'effet normal du découpage sur l'inlining inter-crates, et non une
-régression de code. Leviers possibles, **non appliqués** (aucun ne dépasse
-grossièrement le seuil de 2 % du contrat wasm) : garder `lto = "fat"` (déjà le
-cas), éviter les frontières de crates sur les chemins chauds (lire/écrire une
-note, un accord, une mesure), regrouper les deux crates les plus entrelacées
-(`scoretk-musescore-import` + `scoretk-musicxml-export` étaient dans
-`scoretk-core` avant l'étape 1 : leur retour dans un même crate rendrait les
-58 ko de l'étape 1), ou activer `-Z share-generics` (nightly), qui dédupliquerait
-les monomorphisations génériques entre crates.
+régression de code : la scission coûte ≈ 3,2 % de gzip par perte d'inlining
+inter-crates (3 311 → 3 543 fonctions), sans duplication ni double chemin.
+Cette croissance est **acceptée** (décision prise), le paquet restant sous la
+limite de Cantus. Les leviers restent documentés à titre indicatif,
+**non appliqués** (aucun ne dépasse grossièrement le seuil de 2 % du contrat
+wasm) : garder `lto = "fat"` (déjà le cas), éviter les frontières de crates sur
+les chemins chauds (lire/écrire une note, un accord, une mesure), regrouper les
+deux crates les plus entrelacées (`scoretk-musescore-import` +
+`scoretk-musicxml-export` étaient dans `scoretk-core` avant l'étape 1 : leur
+retour dans un même crate rendrait les 58 ko de l'étape 1), ou activer
+`-Z share-generics` (nightly), qui dédupliquerait les monomorphisations
+génériques entre crates.
 
 La construction est en deux étapes :
 
