@@ -7,8 +7,8 @@ modifié par cette campagne. Le noyau du projet (règles, commandes, index) rest
 dans `AGENTS.md`.
 
 Toutes les valeurs ci-dessous viennent de commandes réellement exécutées sur
-cette machine (§ 2), au commit `39157f4` pour le code (seules des
-modifications de documentation ont suivi).
+cette machine (§ 2), au commit de cette campagne (banc incluant les écritures `.mscz` et
+`.mxl`) ; le code de conversion n'est pas modifié.
 
 ## 1. Méthode
 
@@ -16,7 +16,7 @@ modifications de documentation ont suivi).
 
 `crates/scoretk/benches/conversion.rs` (criterion 0.8.2 en dépendance de
 développement, `[[bench]] harness = false`, licences dans
-`docs/licences-tierces.md`) mesure neuf groupes sur six fichiers du corpus :
+`docs/licences-tierces.md`) mesure onze groupes sur six fichiers du corpus :
 
 - les deux plus gros `.mscx` en octets (`v3/moonlight`, 409 776 o ;
   `v4/voiceswitching`, 30 868 o) ;
@@ -24,6 +24,11 @@ développement, `[[bench]] harness = false`, licences dans
   plusieurs voix, les reprises et la mise en page
   (`v4/testExcludeInvisibleElements`, `v3/layout_elements`, `v3/voices`,
   `v4/hairpins_and_repeats`).
+
+Les onze groupes sont : `lecture_mscx`, `lecture_musicxml`, `ecriture_musicxml`,
+`ecriture_midi`, `ecriture_mscx`, `ecriture_mscz`, `ecriture_mxl`,
+`ecriture_lilypond`, `ecriture_abc`, `chaine_mscx_musicxml` et `playback`
+(équivalent de `convertWithTimeline`).
 
 Les octets et les modèles sont chargés **hors mesure** (`OnceLock`, une fois
 par processus) ; seules les fonctions de la façade sont chronométrées, et la
@@ -99,6 +104,8 @@ exécution sans épinglage.
 | modèle → MusicXML | 28,64 ms · 14 Mo/s | 1,06 ms · 29 Mo/s | 0,49 ms · 60 Mo/s | 0,59 ms · 42 Mo/s | 0,42 ms · 58 Mo/s | 0,17 ms · 59 Mo/s |
 | modèle → MIDI | 1,46 ms · 280 Mo/s | 0,06 ms · 548 Mo/s | 0,06 ms · 470 Mo/s | 0,04 ms · 681 Mo/s | 0,03 ms · 969 Mo/s | 0,03 ms · 316 Mo/s |
 | modèle → `.mscx` | 3,16 ms · 130 Mo/s | 0,13 ms · 243 Mo/s | 0,13 ms · 231 Mo/s | 0,12 ms · 209 Mo/s | 0,19 ms · 131 Mo/s | 0,04 ms · 262 Mo/s |
+| modèle → `.mscz` | 10,09 ms · 41 Mo/s | 0,83 ms · 37 Mo/s | 0,76 ms · 39 Mo/s | 1,00 ms · 25 Mo/s | 0,84 ms · 29 Mo/s | 0,45 ms · 22 Mo/s |
+| modèle → `.mxl` | 19,51 ms · 21 Mo/s | 0,89 ms · 35 Mo/s | 0,98 ms · 30 Mo/s | 0,88 ms · 28 Mo/s | 0,93 ms · 26 Mo/s | 0,25 ms · 40 Mo/s |
 | modèle → LilyPond | 1,67 ms · 245 Mo/s | 0,13 ms · 236 Mo/s | 0,05 ms · 545 Mo/s | 0,05 ms · 500 Mo/s | 0,13 ms · 196 Mo/s | 0,01 ms · 793 Mo/s |
 | modèle → ABC | 1,73 ms · 236 Mo/s | 0,06 ms · 506 Mo/s | 0,06 ms · 468 Mo/s | 0,03 ms · 895 Mo/s | 0,06 ms · 406 Mo/s | 0,01 ms · 774 Mo/s |
 | chaîne `.mscx` → MusicXML | 16,21 ms · 25 Mo/s | 2,14 ms · 14 Mo/s | 2,58 ms · 11 Mo/s | 1,13 ms · 22 Mo/s | 1,03 ms · 24 Mo/s | 0,64 ms · 15 Mo/s |
@@ -217,6 +224,17 @@ Le formatage est donc **hors sujet** : les écrivains poussent des octets dans u
 `Vec<u8>`/`String`, et les rares `format!` (identifiants `P<n>`, altérations
 d'harmonie) restent sous 0,02 % des instructions. L'UTF-8, en revanche,
 apparaît deux fois : validation à la lecture XML et `lossy` sur les textes.
+
+### 4.3 bis — Compression des conteneurs (`.mscz`, `.mxl`)
+
+La feature `deflate` de `zip` 2.6.1 tire **aussi** `deflate-zopfli` (d'où la
+présence de `zopfli` dans le graphe, cf. `docs/licences-tierces.md`), mais le
+niveau par défaut (6) reste dans la plage flate2 et le profil Callgrind montre
+`<flate2::mem::Compress>::compress_vec` à 1,16 % des instructions, **aucun
+appel à `zopfli`**. La compression passe donc par **flate2 / miniz_oxide**,
+pas par zopfli. Le coût d'écriture `.mscz` (10,09 ms) et `.mxl` (19,51 ms)
+sur `moonlight` est dominé par la compression DEFLATE du `.mscx` (≈ 410 ko) ;
+il est du même ordre que l'écriture MusicXML non compressée (20,73 ms).
 
 ### 4.4 Allocations
 

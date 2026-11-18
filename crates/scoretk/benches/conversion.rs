@@ -180,6 +180,14 @@ fn ecriture_abc(c: &mut Criterion) {
     groupe_ecriture(c, "ecriture_abc", Format::Abc, write);
 }
 
+fn ecriture_mscz(c: &mut Criterion) {
+    groupe_ecriture(c, "ecriture_mscz", Format::Mscz, write);
+}
+
+fn ecriture_mxl(c: &mut Criterion) {
+    groupe_ecriture(c, "ecriture_mxl", Format::Mxl, write);
+}
+
 fn chaine_mscx_musicxml(c: &mut Criterion) {
     let mut groupe = c.benchmark_group("chaine_mscx_musicxml");
     for e in echantillons() {
@@ -231,6 +239,8 @@ criterion_group! {
         ecriture_mscx,
         ecriture_lilypond,
         ecriture_abc,
+        ecriture_mscz,
+        ecriture_mxl,
         chaine_mscx_musicxml,
         playback,
 }
