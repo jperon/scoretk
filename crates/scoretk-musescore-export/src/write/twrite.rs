@@ -47,14 +47,14 @@ use scoretk_core::model::{NoteId, Tick, Track};
 ///
 /// Les accords et silences passent par [`write_chord_rest`], qui a besoin de la
 /// position de leurs notes pour les liaisons.
-pub(crate) fn write_item(xml: &mut XmlWriter, item: &SegmentItem) {
+pub(crate) fn write_item(xml: &mut XmlWriter, item: &SegmentItem, track: Track) {
     match item {
         SegmentItem::ChordRest(_) => {}
         SegmentItem::KeySig(key_sig) => write_key_sig(xml, key_sig),
         SegmentItem::TimeSig(time_sig) => write_time_sig(xml, time_sig),
         SegmentItem::Clef(clef) => write_clef(xml, clef, false),
         SegmentItem::BarLine(bar_line) => write_bar_line(xml, bar_line),
-        SegmentItem::Breath(breath) => write_breath(xml, breath),
+        SegmentItem::Breath(breath) => write_breath(xml, breath, track),
     }
 }
 
@@ -508,12 +508,20 @@ pub(crate) fn write_bar_line(xml: &mut XmlWriter, bar_line: &BarLine) {
 /// elles diffèrent de leur défaut ; le modèle ne porte pas la pause, qui n'a
 /// aucun effet dans `engraving` (seul le module *playback*, absent du
 /// snapshot, la consomme).
-fn write_breath(xml: &mut XmlWriter, breath: &Breath) {
+fn write_breath(xml: &mut XmlWriter, breath: &Breath, track: Track) {
     xml.start_element("Breath", &[]);
     if let Some(symbol) = names::breath_symbol(breath.kind) {
         xml.tag("symbol", symbol);
     }
-    if breath.placement == Placement::Below {
+    // `Breath::propertyDefault(Pid::PLACEMENT)` (breath.cpp:135-136) :
+    // piste paire → ABOVE, piste impaire → BELOW. On n'écrit `<placement>`
+    // que s'il diffère de ce défaut.
+    let default_placement = if track.raw() & 1 == 1 {
+        Placement::Below
+    } else {
+        Placement::Above
+    };
+    if breath.placement != default_placement {
         xml.tag("placement", placement_name(breath.placement));
     }
     xml.end_element();
@@ -528,7 +536,7 @@ pub(crate) fn placement_name(placement: Placement) -> &'static str {
 }
 
 /// Écrit une annotation de segment.
-pub(crate) fn write_annotation(xml: &mut XmlWriter, annotation: &Annotation) {
+pub(crate) fn write_annotation(xml: &mut XmlWriter, annotation: &Annotation, track: Track) {
     match annotation {
         Annotation::Dynamic(dynamic) => {
             xml.start_element("Dynamic", &[]);
@@ -600,7 +608,7 @@ pub(crate) fn write_annotation(xml: &mut XmlWriter, annotation: &Annotation) {
             xml.end_element();
         }
         Annotation::Harmony(harmony) => write_harmony(xml, harmony),
-        Annotation::Fermata(fermata) => write_fermata(xml, fermata),
+        Annotation::Fermata(fermata) => write_fermata(xml, fermata, track),
         Annotation::FiguredBass(bass) => write_figured_bass(xml, bass),
         Annotation::TremoloBar(bar) => write_tremolo_bar(xml, bar),
         Annotation::Other { .. } => {}
@@ -686,10 +694,20 @@ fn write_harmony(xml: &mut XmlWriter, harmony: &Harmony) {
 }
 
 /// Écrit un point d'orgue.
-fn write_fermata(xml: &mut XmlWriter, fermata: &Fermata) {
+fn write_fermata(xml: &mut XmlWriter, fermata: &Fermata, track: Track) {
     xml.start_element("Fermata", &[]);
     xml.tag("subtype", names::fermata_type(fermata.kind));
-    xml.tag("placement", placement_name(fermata.placement));
+    // `Fermata::propertyDefault(Pid::PLACEMENT)` (fermata.cpp:187-190) :
+    // piste paire → ABOVE, piste impaire → BELOW. On n'écrit `<placement>`
+    // que s'il diffère de ce défaut.
+    let default_placement = if track.raw() & 1 == 1 {
+        Placement::Below
+    } else {
+        Placement::Above
+    };
+    if fermata.placement != default_placement {
+        xml.tag("placement", placement_name(fermata.placement));
+    }
     if !fermata.visible {
         xml.tag("visible", "0");
     }

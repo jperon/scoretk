@@ -260,10 +260,10 @@ fn write_voice(
             write_spanner_half(xml, half);
         }
         for (kind, item) in group.system {
-            write_system_item(xml, kind, item);
+            write_system_item(xml, kind, item, track);
         }
         for annotation in group.annotations {
-            write_annotation(xml, &annotation.annotation);
+            write_annotation(xml, &annotation.annotation, track);
         }
         for chord_rest in group.chords {
             sync_tuplets(xml, ctx, chord_rest.tuplet, &mut open);
@@ -314,7 +314,7 @@ fn write_position(xml: &mut XmlWriter, tick: Tick, cursor: &mut Tick) {
 }
 
 /// Écrit un élément de système (clef, armure, mesure, barre, respiration).
-fn write_system_item(xml: &mut XmlWriter, kind: SegmentType, item: &SegmentItem) {
+fn write_system_item(xml: &mut XmlWriter, kind: SegmentType, item: &SegmentItem, track: Track) {
     if let SegmentItem::Clef(clef) = item {
         let header = matches!(
             kind,
@@ -325,7 +325,7 @@ fn write_system_item(xml: &mut XmlWriter, kind: SegmentType, item: &SegmentItem)
         crate::write::twrite::write_clef(xml, clef, header);
         return;
     }
-    write_item(xml, item);
+    write_item(xml, item, track);
 }
 
 /// Ouvre et ferme les n-olets pour que la pile du lecteur soit celle du modèle.
