@@ -338,6 +338,76 @@ fn transposition() {
     assert_eq!(durees, vec![Fraction::QUARTER; 4]);
 }
 
+/// Source réduite de la voix Piccolo de `Ad_te_Suspiramus.ly` : clef octave,
+/// `\relative` dans une variable, barres de contrôle, accord, silence et
+/// liaison, avec ou sans `\transposition`.
+fn source_transposition(transposition: &str) -> String {
+    format!(
+        "piccolo = \\relative d'' {{\n\
+         \\clef \"treble^8\" \\numericTimeSignature \\time 4/4 \\key bes \\major\n\
+         {transposition} | %% 1\n\
+         r2 r4 r8 d8 | %% 2\n\
+         g8 [ a16 bes16 ] a8 [ g8 ] c8 bes4 a8 | %% 3\n\
+         d,8 [ g8 ] <c' e'>4 a8~ | %% 4\n\
+         a2 r2 \\bar \"|.\"\n\
+         }}\n\
+         \\score {{ \\new Staff {{ \\piccolo }} }}\n"
+    )
+}
+
+#[test]
+fn transposition_ne_consomme_pas_une_note_de_la_musique() {
+    // `\transposition` est une fonction musicale à un argument `ly:pitch?`
+    // (`ly/music-functions-init.ly`) : sa hauteur n'est pas une note. MusicXML
+    // garde la hauteur écrite, sans transposition de jeu. L'argument parasite
+    // ajoutait une note et faussait tout l'état `\relative` d'une octave.
+    let avec = read_lilypond(&source_transposition("\\transposition c'")).expect("lecture");
+    let sans = read_lilypond(&source_transposition("")).expect("lecture");
+    let attendu = vec![74, 79, 81, 82, 81, 79, 84, 82, 81, 74, 79, 96, 112, 93, 93];
+    // Cas non concerné : sans `\transposition`, la musique reste identique.
+    assert_eq!(hauteurs(&sans), attendu);
+    assert_eq!(hauteurs(&avec), attendu);
+    assert_eq!(avec.measures.len(), 4);
+    assert_eq!(
+        durees_ecrites(&avec),
+        vec![
+            Fraction::HALF,
+            Fraction::QUARTER,
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::QUARTER,
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::QUARTER,
+            Fraction::new(1, 8),
+            Fraction::HALF,
+            Fraction::HALF,
+        ]
+    );
+}
+
+#[test]
+fn transposition_argument_absent_ou_different() {
+    // Cas limites : un argument qui n'est pas `c'` est consommé lui aussi, et
+    // un `\transposition` sans argument en fin de musique ne doit ni ajouter de
+    // note ni bloquer l'analyse (toute boucle consomme un jeton par tour).
+    let different =
+        read_lilypond("\\relative c' { \\transposition bes, c4 d4 e4 f4 | }").expect("lecture");
+    assert_eq!(hauteurs(&different), vec![60, 62, 64, 65]);
+    assert_eq!(different.measures.len(), 1);
+
+    let absent = read_lilypond("\\relative c' { c4 d4 \\transposition }").expect("lecture");
+    assert_eq!(hauteurs(&absent), vec![60, 62]);
+    assert_eq!(absent.measures.len(), 1);
+}
+
 /// Quintes des armures du score, dans l'ordre où elles apparaissent.
 fn armures(score: &scoretk_core::model::Score) -> Vec<i8> {
     score

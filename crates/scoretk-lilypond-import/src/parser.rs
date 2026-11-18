@@ -1703,6 +1703,17 @@ impl<'a> Parser<'a> {
             // `musicxml2ly`). Le consommer comme une commande inconnue
             // interrompait la musique et perdait la transposition.
             "articulate" => self.parse_music(),
+            // `transposition` (`ly/music-functions-init.ly`) est une fonction
+            // musicale à un seul argument `ly:pitch?` qui pose la propriété
+            // `instrumentTransposition` du contexte Staff : elle n'ajoute
+            // aucune musique. La hauteur écrite reste celle de la source
+            // (MusicXML n'applique pas la transposition de jeu). La consommer
+            // comme une commande inconnue laissait l'argument devenir une note
+            // parasite et faussait tout l'état `\relative` qui suivait.
+            "transposition" => {
+                let _ = self.parse_optional_pitch();
+                Music::Empty
+            }
             "transpose" => {
                 let from = self.parse_optional_pitch().unwrap_or(PitchSpec {
                     step: 0,
