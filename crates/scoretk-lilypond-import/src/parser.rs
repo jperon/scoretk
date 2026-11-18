@@ -68,6 +68,41 @@ pub(crate) struct Parser<'a> {
     pending_invisible_rest: bool,
     /// Partitions rencontrées au niveau supérieur, dans l'ordre du fichier.
     partitions: Vec<Partition>,
+    /// Fonctions musicales définies en Scheme (`define-music-function`…).
+    music_functions: BTreeMap<String, MusicFunction>,
+    /// Profondeur d'expansion des blocs embarqués et des fonctions.
+    expansion_depth: u32,
+    /// Identifiant du `\book`/`\bookpart` courant (0 hors livre).
+    book_scope: u32,
+    /// Compteur d'identifiants de livre.
+    book_serial: u32,
+}
+
+/// Profondeur d'expansion maximale (garde-fou contre la récursion).
+const MAX_EXPANSION_DEPTH: u32 = 32;
+
+/// Nature d'une fonction définie en Scheme.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FunctionKind {
+    /// `define-music-function` : produit de la musique.
+    Music,
+    /// `define-void-function` / `define-scheme-function` : rien à lire.
+    Silent,
+}
+
+/// Fonction musicale mémorisée à sa définition.
+#[derive(Clone, Debug)]
+struct MusicFunction {
+    /// Nature de la définition.
+    kind: FunctionKind,
+    /// Noms des paramètres, dans l'ordre.
+    params: Vec<String>,
+    /// Prédicats d'argument, un par paramètre.
+    predicates: Vec<String>,
+    /// Corps musical (`#{ … #}`), absent pour une fonction Scheme pure.
+    body: Option<Vec<Token>>,
+    /// Vrai si l'avertissement d'appel a déjà été émis.
+    warned: bool,
 }
 
 /// Une partition lue au niveau supérieur du fichier.
@@ -76,6 +111,8 @@ struct Partition {
     score: ScoreAst,
     /// Vrai pour un bloc `\score` explicite.
     explicit: bool,
+    /// Profondeur de `\book` où la partition a été rencontrée.
+    book: u32,
     /// Ligne du premier jeton.
     line: u32,
     /// Colonne du premier jeton.
@@ -101,6 +138,10 @@ pub(crate) fn parse(
         pending_tuplet_number: None,
         pending_invisible_rest: false,
         partitions: Vec::new(),
+        music_functions: BTreeMap::new(),
+        expansion_depth: 0,
+        book_scope: 0,
+        book_serial: 0,
     };
     parser.document()
 }
@@ -270,6 +311,7 @@ impl<'a> Parser<'a> {
                 self.partitions.push(Partition {
                     score,
                     explicit: true,
+                    book: self.book_scope,
                     line: token.line,
                     column: token.column,
                 });
@@ -287,8 +329,7 @@ impl<'a> Parser<'a> {
                 if self.peek_at(1).is_some_and(|next| next.is_punct('=')) {
                     let name = token.text.clone();
                     self.position += 2;
-                    let music = self.parse_music();
-                    self.variables.insert(name, music);
+                    self.assign(name);
                 } else if self.at_toplevel_music() {
                     self.parse_toplevel_music(&token);
                 } else {
@@ -312,7 +353,10 @@ impl<'a> Parser<'a> {
             Kind::Scheme => {
                 self.position += 1;
             }
-            Kind::Punct('{') | Kind::Punct('<') => self.parse_toplevel_music(&token),
+            // Musique embarquée au niveau supérieur : une expression musicale.
+            Kind::Embedded | Kind::Punct('{') | Kind::Punct('<') => {
+                self.parse_toplevel_music(&token);
+            }
             _ => {
                 self.position += 1;
             }
@@ -325,9 +369,13 @@ impl<'a> Parser<'a> {
         if !self.eat_punct('{') {
             return;
         }
+        let saved_scope = self.book_scope;
+        self.book_serial += 1;
+        self.book_scope = self.book_serial;
         while !self.at_end() && !self.eat_punct('}') {
             self.toplevel_item(document);
         }
+        self.book_scope = saved_scope;
     }
 
     /// Vrai si le jeton courant ouvre une expression musicale de haut niveau
@@ -337,13 +385,16 @@ impl<'a> Parser<'a> {
             return true;
         }
         match self.peek().map(|token| &token.kind) {
+            Some(Kind::Embedded) => true,
             Some(Kind::Punct('{') | Kind::Punct('<')) => true,
             Some(Kind::Command) => {
                 let text = self
                     .peek()
                     .map(|token| token.text.as_str())
                     .unwrap_or_default();
-                self.variables.contains_key(text) || starts_music_command(text)
+                self.variables.contains_key(text)
+                    || self.music_functions.contains_key(text)
+                    || starts_music_command(text)
             }
             Some(Kind::Word) => {
                 let text = self
@@ -360,6 +411,10 @@ impl<'a> Parser<'a> {
 
     /// Expression musicale de haut niveau : une partition implicite, comme le
     /// `scorify-music` de `toplevel-music-handler`.
+    ///
+    /// LilyPond réunit toute la musique de haut niveau d'un livre en une seule
+    /// partition implicite : les expressions successives sont donc fusionnées
+    /// avec la précédente plutôt que d'en créer une nouvelle.
     fn parse_toplevel_music(&mut self, token: &Token) {
         let mut groups = self.parse_score_element();
         if groups.is_empty() {
@@ -368,12 +423,21 @@ impl<'a> Parser<'a> {
         if let Some(staff) = groups.last_mut().and_then(|group| group.staves.last_mut()) {
             self.collect_addlyrics(staff);
         }
+        if let Some(partition) = self
+            .partitions
+            .last_mut()
+            .filter(|partition| !partition.explicit && partition.book == self.book_scope)
+        {
+            merge_toplevel_groups(&mut partition.score.groups, groups);
+            return;
+        }
         self.partitions.push(Partition {
             score: ScoreAst {
                 groups,
                 lyrics: Vec::new(),
             },
             explicit: false,
+            book: self.book_scope,
             line: token.line,
             column: token.column,
         });
@@ -1021,12 +1085,11 @@ impl<'a> Parser<'a> {
         let Some(token) = self.peek().cloned() else {
             return Music::Empty;
         };
-        // Assignation dans un flux musical (`m = { … }`).
+        // Assignation dans un flux musical (`m = { … }` ou fonction Scheme).
         if token.kind == Kind::Word && self.peek_at(1).is_some_and(|next| next.is_punct('=')) {
             let name = token.text.clone();
             self.position += 2;
-            let music = self.parse_music();
-            self.variables.insert(name, music);
+            self.assign(name);
             return Music::Empty;
         }
         match &token.kind {
@@ -1052,6 +1115,11 @@ impl<'a> Parser<'a> {
             }
             Kind::Command => self.parse_command(),
             Kind::Word => self.parse_chord(false),
+            // Musique embarquée `#{ … #}` : du LilyPond à relire.
+            Kind::Embedded => {
+                self.position += 1;
+                self.parse_embedded_music(&token.text)
+            }
             // Expression Scheme isolée dans la musique : ignorée sans
             // avertissement, elle a été lue d'un seul tenant.
             Kind::Scheme => {
@@ -1061,6 +1129,166 @@ impl<'a> Parser<'a> {
             Kind::Str | Kind::Number | Kind::Punct(_) => {
                 self.position += 1;
                 Music::Empty
+            }
+        }
+    }
+
+    /// Affectation `nom = …` : fonction musicale Scheme ou variable musicale.
+    fn assign(&mut self, name: String) {
+        if let Some(Token {
+            kind: Kind::Scheme,
+            text,
+            ..
+        }) = self.peek().cloned()
+        {
+            if let Some(function) = music_function_definition(&text) {
+                self.position += 1;
+                self.variables.remove(&name);
+                self.music_functions.insert(name, function);
+                return;
+            }
+        }
+        let music = self.parse_music();
+        self.music_functions.remove(&name);
+        self.variables.insert(name, music);
+    }
+
+    /// Relit la source d'un bloc `#{ … #}` comme une expression musicale
+    /// séquentielle.
+    fn parse_embedded_music(&mut self, source: &str) -> Music {
+        if self.expansion_depth >= MAX_EXPANSION_DEPTH {
+            self.warn("profondeur d'expansion de la musique embarquée dépassée");
+            return Music::Empty;
+        }
+        let tokens = crate::lexer::tokenize(source);
+        self.parse_token_stream(tokens)
+    }
+
+    /// Analyse une suite de jetons comme une séquence musicale, puis rend la
+    /// main au flux appelant (bloc embarqué, corps de fonction).
+    fn parse_token_stream(&mut self, tokens: Vec<Token>) -> Music {
+        let saved_tokens = std::mem::replace(&mut self.tokens, tokens);
+        let saved_position = std::mem::replace(&mut self.position, 0);
+        self.expansion_depth += 1;
+        let mut items = Vec::new();
+        while !self.at_end() {
+            let before = self.position;
+            let item = self.parse_music();
+            if !item.is_empty() {
+                items.push(item);
+            }
+            // Garde-fou : un jeton non consommé ne doit pas boucler.
+            if self.position == before {
+                self.position += 1;
+            }
+        }
+        self.expansion_depth -= 1;
+        self.tokens = saved_tokens;
+        self.position = saved_position;
+        Music::Seq(items)
+    }
+
+    /// Développe un appel `\nom arg…` de fonction musicale.
+    fn expand_music_function(&mut self, name: &str) -> Music {
+        let Some(function) = self.music_functions.get(name).cloned() else {
+            return Music::Empty;
+        };
+        if self.expansion_depth >= MAX_EXPANSION_DEPTH {
+            // Consommer les arguments sans les interpréter : sinon le bloc de
+            // musique resterait dans le flux et produirait des notes
+            // parasites.
+            self.skip_function_arguments(&function.predicates);
+            self.warn(format!(
+                "profondeur d'expansion dépassée dans la fonction \\{name}"
+            ));
+            return Music::Empty;
+        }
+        let arguments = self.read_function_arguments(&function);
+        let Some(body) = function.body else {
+            // Fonction Scheme pure : rien à jouer, avertissement une seule
+            // fois par fonction.
+            if function.kind == FunctionKind::Music && !function.warned {
+                self.warn(format!(
+                    "fonction musicale sans corps musical ignorée : \\{name}"
+                ));
+            }
+            if let Some(stored) = self.music_functions.get_mut(name) {
+                stored.warned = true;
+            }
+            return Music::Empty;
+        };
+        let tokens = substitute_function_tokens(&body, &function.params, &arguments);
+        self.parse_token_stream(tokens)
+    }
+
+    /// Lit les arguments d'un appel, un par prédicat.
+    fn read_function_arguments(&mut self, function: &MusicFunction) -> Vec<Vec<Token>> {
+        let predicates = function.predicates.clone();
+        let mut arguments = Vec::with_capacity(predicates.len());
+        for predicate in &predicates {
+            let start = self.position;
+            self.read_function_argument(predicate);
+            let end = self.position.min(self.tokens.len());
+            arguments.push(self.tokens.get(start..end).unwrap_or_default().to_vec());
+        }
+        arguments
+    }
+
+    /// Consomme un argument selon son prédicat de fonction musicale.
+    fn read_function_argument(&mut self, predicate: &str) {
+        let predicate = predicate.trim();
+        if predicate.ends_with("music?") || predicate.ends_with("music-list?") {
+            let _ = self.parse_music();
+            return;
+        }
+        if predicate.ends_with("pitch?") {
+            let _ = self.parse_optional_pitch();
+            return;
+        }
+        if predicate.ends_with("duration?") {
+            let _ = self.parse_duration();
+            return;
+        }
+        if predicate == "markup?" || predicate == "ly:markup?" {
+            if self.peek().is_some_and(|token| token.is_command("markup")) {
+                self.position += 1;
+                self.skip_braced();
+            } else {
+                self.bump();
+            }
+            return;
+        }
+        if predicate.ends_with("number?")
+            || predicate.ends_with("integer?")
+            || predicate == "index?"
+        {
+            // Signe éventuellement séparé : `-2` est deux jetons.
+            if self.peek().is_some_and(|token| token.is_punct('-')) {
+                self.position += 1;
+            }
+            self.bump();
+            return;
+        }
+        let Some(token) = self.peek().cloned() else {
+            return;
+        };
+        if token.is_punct('{') || self.at_double_angle_open() {
+            self.skip_braced();
+        } else {
+            // Chaîne, symbole `#'x`, datum Scheme, mot : un seul jeton.
+            self.bump();
+        }
+    }
+
+    /// Consomme les arguments d'un appel sans les interpréter (garde-fou de
+    /// profondeur).
+    fn skip_function_arguments(&mut self, predicates: &[String]) {
+        let predicates = predicates.to_vec();
+        for predicate in &predicates {
+            if predicate.trim().ends_with("music?") || predicate.trim().ends_with("music-list?") {
+                self.skip_music_token();
+            } else {
+                self.read_function_argument(predicate);
             }
         }
     }
@@ -1081,6 +1309,11 @@ impl<'a> Parser<'a> {
         // LilyPond (`identifiant = { … }` puis `\identifiant`).
         if let Some(music) = self.variables.get(&name).cloned() {
             return music;
+        }
+        // Une fonction musicale définie en Scheme prend le pas sur les
+        // commandes intégrées du même nom.
+        if self.music_functions.contains_key(&name) {
+            return self.expand_music_function(&name);
         }
         let context = |context| Music::Context(context);
         match name.as_str() {
@@ -2284,6 +2517,234 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// Vrai pour une portée anonyme simple, fusionnable avec la précédente.
+fn is_simple_staff(group: &GroupBlock) -> bool {
+    group.kind == GroupKind::Staff
+        && group.instrument_name.is_none()
+        && group.short_instrument_name.is_none()
+        && group.lyrics.is_empty()
+        && group.staves.len() == 1
+        && {
+            let staff = &group.staves[0];
+            staff.name.is_none()
+                && staff.instrument_name.is_none()
+                && staff.short_instrument_name.is_none()
+                && staff.lyrics.is_empty()
+                && staff.voices.len() == 1
+                && staff.voices[0].name.is_none()
+        }
+}
+
+/// Fusionne une expression musicale de haut niveau avec la partition
+/// implicite déjà ouverte.
+///
+/// La musique anonyme s'enchaîne dans la même voix, comme le `music-list` d'un
+/// `\score` implicite ; les groupes nommés ou portant des paroles sont ajoutés
+/// tels quels.
+fn merge_toplevel_groups(existing: &mut Vec<GroupBlock>, groups: Vec<GroupBlock>) {
+    for mut group in groups {
+        if is_simple_staff(&group) {
+            if let Some(last) = existing.last_mut() {
+                if is_simple_staff(last) {
+                    let mut staff = group.staves.remove(0);
+                    let voice = staff.voices.remove(0);
+                    let target = &mut last.staves[0].voices[0];
+                    let previous = std::mem::replace(&mut target.music, Music::Empty);
+                    target.music = if previous.is_empty() {
+                        voice.music
+                    } else {
+                        Music::Seq(vec![previous, voice.music])
+                    };
+                    last.staves[0].lyrics.extend(staff.lyrics);
+                    last.lyrics.extend(group.lyrics);
+                    continue;
+                }
+            }
+        }
+        existing.push(group);
+    }
+}
+
+/// Reconnaît une définition de fonction musicale dans un datum Scheme
+/// (`#(define-music-function …)`).
+///
+/// Le corps `#{ … #}` est mémorisé comme jetons ; sans lui, la fonction est
+/// Scheme pur et ses appels ne produiront rien.
+fn music_function_definition(datum: &str) -> Option<MusicFunction> {
+    let characters: Vec<char> = datum.chars().collect();
+    let mut index = skip_scheme_space(&characters, 0);
+    if characters.get(index) != Some(&'(') {
+        return None;
+    }
+    index += 1;
+    let (head, next) = read_scheme_word(&characters, index);
+    index = next;
+    let kind = match head.as_str() {
+        "define-music-function" => FunctionKind::Music,
+        "define-void-function" | "define-scheme-function" => FunctionKind::Silent,
+        _ => return None,
+    };
+    let (params_text, next) = read_scheme_list(&characters, index)?;
+    index = next;
+    let (predicates_text, next) = read_scheme_list(&characters, index)?;
+    index = next;
+
+    let mut params = split_scheme_words(&params_text);
+    // Signature ancienne `(parser location a b)` : les deux premiers noms
+    // désignent le parseur et la position, pas des arguments.
+    if params.len() >= 2 && params[0] == "parser" && params[1] == "location" {
+        params.drain(..2);
+    }
+    let predicates = split_scheme_words(&predicates_text);
+    let arity = params.len().max(predicates.len());
+    let params: Vec<String> = (0..arity)
+        .map(|position| params.get(position).cloned().unwrap_or_default())
+        .collect();
+    let predicates: Vec<String> = (0..arity)
+        .map(|position| {
+            predicates
+                .get(position)
+                .cloned()
+                .unwrap_or_else(|| "ly:music?".to_owned())
+        })
+        .collect();
+
+    let body_source: String = characters[index.min(characters.len())..].iter().collect();
+    let body =
+        crate::lexer::embedded_music_body(&body_source).map(|body| crate::lexer::tokenize(&body));
+    Some(MusicFunction {
+        kind,
+        params,
+        predicates,
+        body,
+        warned: false,
+    })
+}
+
+/// Saute espaces et commentaires de ligne Scheme.
+fn skip_scheme_space(characters: &[char], mut index: usize) -> usize {
+    loop {
+        while characters
+            .get(index)
+            .is_some_and(|character| character.is_whitespace())
+        {
+            index += 1;
+        }
+        if characters.get(index) == Some(&';') {
+            while characters
+                .get(index)
+                .is_some_and(|character| *character != '\n')
+            {
+                index += 1;
+            }
+            continue;
+        }
+        return index;
+    }
+}
+
+/// Lit un atome Scheme (nom de fonction, paramètre) et l'indice qui le suit.
+fn read_scheme_word(characters: &[char], start: usize) -> (String, usize) {
+    let mut index = skip_scheme_space(characters, start);
+    let begin = index;
+    while characters
+        .get(index)
+        .is_some_and(|character| !character.is_whitespace() && !matches!(character, '(' | ')'))
+    {
+        index += 1;
+    }
+    let word = characters[begin..index].iter().collect();
+    (word, index)
+}
+
+/// Lit la liste Scheme `( … )` à `start` et renvoie son contenu (sans les
+/// parenthèses) et l'indice qui la suit.
+fn read_scheme_list(characters: &[char], start: usize) -> Option<(String, usize)> {
+    let mut index = skip_scheme_space(characters, start);
+    if characters.get(index) != Some(&'(') {
+        return None;
+    }
+    index += 1;
+    let begin = index;
+    let mut depth = 1usize;
+    while index < characters.len() {
+        match characters[index] {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    let inner = characters[begin..index].iter().collect();
+                    return Some((inner, index + 1));
+                }
+            }
+            '"' => {
+                index += 1;
+                while index < characters.len() {
+                    match characters[index] {
+                        '\\' => index += 2,
+                        '"' => break,
+                        _ => index += 1,
+                    }
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
+/// Découpe une liste Scheme en mots de premier niveau.
+fn split_scheme_words(text: &str) -> Vec<String> {
+    let characters: Vec<char> = text.chars().collect();
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0usize;
+    for character in characters {
+        if character == '(' {
+            depth += 1;
+            current.push(character);
+        } else if character == ')' {
+            depth = depth.saturating_sub(1);
+            current.push(character);
+        } else if character.is_whitespace() && depth == 0 {
+            if !current.is_empty() {
+                words.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(character);
+        }
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words
+}
+
+/// Remplace `#a`, `$a` et `\a` par l'argument du paramètre `a` (substitution
+/// de jetons, sans évaluation Scheme).
+fn substitute_function_tokens(
+    body: &[Token],
+    params: &[String],
+    arguments: &[Vec<Token>],
+) -> Vec<Token> {
+    let mut tokens = Vec::with_capacity(body.len());
+    for token in body {
+        let replaced = match &token.kind {
+            Kind::Scheme | Kind::Command => params.iter().position(|param| *param == token.text),
+            _ => None,
+        };
+        if let Some(index) = replaced {
+            if let Some(argument) = arguments.get(index) {
+                tokens.extend(argument.iter().cloned());
+                continue;
+            }
+        }
+        tokens.push(token.clone());
+    }
+    tokens
+}
+
 /// Vrai si la commande ouvre une expression musicale reconnue par
 /// `parse_music` (hors variables musicales, testées à part).
 fn starts_music_command(name: &str) -> bool {
@@ -2661,6 +3122,10 @@ mod tests {
             pending_tuplet_number: None,
             pending_invisible_rest: false,
             partitions: Vec::new(),
+            music_functions: BTreeMap::new(),
+            expansion_depth: 0,
+            book_scope: 0,
+            book_serial: 0,
         };
         parser.parse_music()
     }

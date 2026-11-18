@@ -31,7 +31,12 @@
 //! Guile (`parse_embedded_scheme`), une expression Scheme est lue **d'un seul
 //! tenant** et forme un unique jeton ([`Kind::Scheme`]) : listes imbriquées,
 //! chaînes, caractères `#\(`, commentaires Scheme et musique embarquée
-//! `#{ … #}` compris. Le texte du jeton est le datum, sans le `#`/`$` initial.
+//! `#{ … #}` comprise. Le texte du jeton est le datum, sans le `#`/`$` initial.
+//!
+//! En revanche, un bloc `#{ … #}` (ou `$#{ … #}`) placé là où une valeur est
+//! attendue n'est pas du Scheme : comme `embedded_lexer` dans le lexer amont,
+//! son contenu est du LilyPond. Il forme un jeton [`Kind::Embedded`] dont le
+//! texte est la source intérieure, que le parseur relit comme musique.
 //!
 //! Le lexer ne connaît pas la langue des hauteurs : `cis` reste un mot, que
 //! [`crate::pitch`] interprète selon `\language`.
@@ -51,6 +56,8 @@ pub(crate) enum Kind {
     Number,
     /// Expression Scheme `#datum` ou `$datum`, texte = datum sans le préfixe.
     Scheme,
+    /// Musique embarquée `#{ … #}` ou `$#{ … #}`, texte = source intérieure.
+    Embedded,
     /// Ponctuation d'un caractère.
     Punct(char),
 }
@@ -156,6 +163,11 @@ impl fmt::Display for Token {
             Kind::Number => write!(f, "{}", self.text),
             // Le préfixe est toujours affiché `#`, y compris pour `$`.
             Kind::Scheme => write!(f, "#{}", self.text),
+            Kind::Embedded => {
+                write!(f, "#{{")?;
+                write!(f, "{}", self.text)?;
+                write!(f, "#}}")
+            }
             Kind::Punct(character) => write!(f, "{character}"),
         }
     }
@@ -228,12 +240,35 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             continue;
         }
 
+        // Musique embarquée `#{ … #}` (ou `$#{ … #}`) hors d'un datum Scheme :
+        // le contenu est du LilyPond, on en fait un jeton pour que le parseur
+        // le relise comme une expression musicale. Comme `embedded_lexer` dans
+        // le lexer amont, les chaînes et commentaires LilyPond intérieurs ne
+        // ferment pas le bloc.
+        if (character == '#' && characters.get(index + 1) == Some(&'{'))
+            || (character == '$'
+                && characters.get(index + 1) == Some(&'#')
+                && characters.get(index + 2) == Some(&'{'))
+        {
+            let open = if character == '$' { index + 1 } else { index };
+            let (start, content_end, end) = embedded_music_span(&characters, open);
+            let text: String = characters[start..content_end].iter().collect();
+            advance_position(&characters, index, end, &mut line, &mut column);
+            index = end;
+            tokens.push(Token {
+                kind: Kind::Embedded,
+                text,
+                line: token_line,
+                column: token_column,
+            });
+            continue;
+        }
+
         // Expression Scheme `#datum` / `$datum` : le lexer amont passe la main
         // au lecteur Guile (`parse_embedded_scheme`), qui lit un datum
         // complet. On en fait un seul jeton pour ne pas découper listes et
-        // chaînes en mots. `#{ … #}` est de la musique embarquée et garde son
-        // découpage habituel.
-        if (character == '#' || character == '$') && characters.get(index + 1) != Some(&'{') {
+        // chaînes en mots.
+        if character == '#' || character == '$' {
             let (start, end) = scheme_datum_span(&characters, index + 1);
             if end > start {
                 let text: String = characters[start..end].iter().collect();
@@ -623,8 +658,8 @@ fn skip_scheme_block_comment(characters: &[char], start: usize) -> usize {
 
 /// Indice qui suit la musique embarquée `#{ … #}` commençant à `start`.
 ///
-/// Les chaînes et commentaires LilyPond sont sautés pour qu'un `#}` cité ne
-/// ferme pas le bloc ; `#{` imbriqué est compté.
+/// Les chaînes et commentaires LilyPond (`%` et `%{ … %}`) sont sautés pour
+/// qu'un `#}` cité ne ferme pas le bloc ; `#{` imbriqué est compté.
 fn scheme_embedded_music_end(characters: &[char], start: usize) -> usize {
     let mut depth = 0usize;
     let mut index = start;
@@ -641,17 +676,87 @@ fn scheme_embedded_music_end(characters: &[char], start: usize) -> usize {
         } else if characters[index] == '"' {
             index = scheme_string_end(characters, index);
         } else if characters[index] == '%' {
-            while characters
-                .get(index)
-                .is_some_and(|character| *character != '\n')
-            {
-                index += 1;
+            if matches!(characters.get(index + 1), Some(&'{')) {
+                index = skip_lilypond_block_comment(characters, index);
+            } else {
+                while characters
+                    .get(index)
+                    .is_some_and(|character| *character != '\n')
+                {
+                    index += 1;
+                }
             }
         } else {
             index += 1;
         }
     }
     characters.len()
+}
+
+/// Indice qui suit le commentaire LilyPond `%{ … %}` commençant à `start`
+/// (imbricable, comme `longcomment`).
+fn skip_lilypond_block_comment(characters: &[char], start: usize) -> usize {
+    let mut depth = 0usize;
+    let mut index = start;
+    while index < characters.len() {
+        if characters[index] == '%' && matches!(characters.get(index + 1), Some(&'{')) {
+            depth += 1;
+            index += 2;
+        } else if characters[index] == '%' && matches!(characters.get(index + 1), Some(&'}')) {
+            depth = depth.saturating_sub(1);
+            index += 2;
+            if depth == 0 {
+                return index;
+            }
+        } else {
+            index += 1;
+        }
+    }
+    characters.len()
+}
+
+/// Étendue du contenu de la musique embarquée ouverte à `open` (`#{`).
+///
+/// Renvoie le début du contenu, sa fin et l'indice qui suit le bloc. Sans
+/// `#}` fermant, le contenu va jusqu'à la fin de la source.
+fn embedded_music_span(characters: &[char], open: usize) -> (usize, usize, usize) {
+    let start = (open + 2).min(characters.len());
+    let end = scheme_embedded_music_end(characters, open);
+    let closed = end >= start + 2 && characters[end - 2] == '#' && characters[end - 1] == '}';
+    let content_end = if closed { end - 2 } else { end };
+    (start, content_end, end)
+}
+
+/// Source intérieure du premier bloc `#{ … #}` d'un datum Scheme.
+///
+/// Sert au parseur pour reconnaître le corps musical d'une
+/// `define-music-function` ; renvoie `None` si le datum n'en contient pas.
+pub(crate) fn embedded_music_body(source: &str) -> Option<String> {
+    let characters: Vec<char> = source.chars().collect();
+    let mut index = 0;
+    while index < characters.len() {
+        match characters[index] {
+            '"' => index = scheme_string_end(&characters, index),
+            ';' => {
+                while characters
+                    .get(index)
+                    .is_some_and(|character| *character != '\n')
+                {
+                    index += 1;
+                }
+            }
+            '#' => match characters.get(index + 1) {
+                Some(&'|') => index = skip_scheme_block_comment(&characters, index),
+                Some(&'{') => {
+                    let (start, end, _) = embedded_music_span(&characters, index);
+                    return Some(characters[start..end].iter().collect());
+                }
+                _ => index += 1,
+            },
+            _ => index += 1,
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -741,13 +846,19 @@ mod tests {
 
     #[test]
     fn scheme_musique_embarquee_et_ponctuation() {
-        // `#{ … #}` dans un datum est sauté d'un bloc.
+        // `#{ … #}` dans un datum Scheme reste un seul jeton.
         assert_eq!(
             texts("#(define m #{ c'4 d' #}) e4"),
             vec!["#(define m #{ c'4 d' #})", "e", "4"]
         );
-        // Hors Scheme, `#{ … #}` garde son découpage de musique.
-        assert_eq!(texts("#{ c'4 #}"), vec!["#", "{", "c", "'", "4", "#", "}"]);
+        // Hors Scheme, `#{ … #}` est de la musique : un jeton à relire.
+        assert_eq!(texts("#{ c'4 #}"), vec!["#{ c'4 #}"]);
+        assert_eq!(texts("$#{ c'4 #} e4"), vec!["#{ c'4 #}", "e", "4"]);
+        // Les chaînes et commentaires intérieurs ne ferment pas le bloc.
+        assert_eq!(
+            texts("#{ c'4-\"(#)\" % #}\n d'4 %{%} #}"),
+            vec!["#{ c'4-\"(#)\" % #}\n d'4 %{%} #}"]
+        );
         // Un `#` sans datum reste une ponctuation.
         assert_eq!(texts("#} #)"), vec!["#", "}", "#", ")"]);
     }

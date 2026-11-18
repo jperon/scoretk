@@ -516,6 +516,117 @@ fn expressions_scheme_dans_la_musique() {
 }
 
 #[test]
+fn musique_embarquee_au_niveau_superieur() {
+    // regression/embedded-strings-comments.ly : les chaînes et commentaires
+    // LilyPond intérieurs ne doivent pas confondre le lecteur.
+    let (score, warnings) = read_lilypond_reporting(
+        r#"\version "2.21.0"
+\layout { ragged-right = ##t }
+
+$#{ c'4-"(#)" %
+    e'-"($)" %{$%}g'2-"(%)" %{%}
+#}
+"#,
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 64, 67]);
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.message.contains("commande ignorée")),
+        "avertissements : {warnings:?}"
+    );
+}
+
+#[test]
+fn musique_embarquee_dans_une_affectation() {
+    // Un bloc `#{ … #}` est une valeur musicale, y compris après `=`.
+    let score = lire("x = #{ c4 d4 #} \\x e4");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64]);
+}
+
+#[test]
+fn fonction_musicale_embarquee_et_appels_successifs() {
+    // regression/trill-spanner-consecutive.ly : quatre appels, deux notes
+    // chacun, réunis dans la partition implicite.
+    let (score, warnings) = read_lilypond_reporting(
+        r#"\version "2.23.9"
+
+test =
+#(define-music-function (inc) (number?)
+   #{
+     \override Score.SpacingSpanner.spacing-increment = #inc
+     c'2\startTrillSpan c'2\startTrillSpan
+   #})
+
+\test 2.0
+\test 2.1
+\test 2.2
+\test 2.3
+"#,
+    )
+    .expect("lecture");
+    assert_eq!(score.notes.len(), 8);
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.message.contains("commande ignorée")),
+        "avertissements : {warnings:?}"
+    );
+}
+
+#[test]
+fn fonction_musicale_a_parametre_musical() {
+    let score = lire("dbl = #(define-music-function (m) (ly:music?) #{ $m $m #}) \\dbl { c4 d4 }");
+    assert_eq!(hauteurs(&score), vec![60, 62, 60, 62]);
+}
+
+#[test]
+fn fonction_scheme_pure_avertie_une_fois() {
+    // Corps sans `#{ … #}` : les arguments sont consommés, mais rien n'est
+    // joué et l'avertissement n'est émis qu'au premier appel.
+    let (score, warnings) = read_lilypond_reporting(
+        "f = #(define-music-function (x) (number?) (ly:message \"~a\" x))\n\
+         \\f 1\n\\f 2\n{ c'4 }\n",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60]);
+    let appels = warnings
+        .iter()
+        .filter(|warning| warning.message.contains("sans corps musical"))
+        .count();
+    assert_eq!(appels, 1, "avertissements : {warnings:?}");
+}
+
+#[test]
+fn fonction_void_consommee_sans_avertissement() {
+    // `define-void-function` : appel consommé sans musique ni avertissement.
+    let (score, warnings) = read_lilypond_reporting(
+        "v = #(define-void-function (x) (number?) (ly:message \"~a\" x))\n\
+         \\v 3\n{ c'4 }\n",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60]);
+    assert!(warnings.is_empty(), "avertissements : {warnings:?}");
+}
+
+#[test]
+fn fonction_musicale_recursive_ne_panique_pas() {
+    let (score, warnings) = read_lilypond_reporting(
+        "loop = #(define-music-function (m) (ly:music?) #{ \\loop $m #})\n\
+         \\loop { c'4 }\n{ d'4 }\n",
+    )
+    .expect("lecture sans panique");
+    assert_eq!(hauteurs(&score), vec![62]);
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.message.contains("profondeur d'expansion")),
+        "avertissements : {warnings:?}"
+    );
+}
+
+#[test]
 fn measurelength_en_scheme() {
     let score = lire("\\set Timing.measureLength = #(ly:make-moment 3/4) c4 d e");
     assert_eq!(score.measures.len(), 1);

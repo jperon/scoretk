@@ -115,9 +115,13 @@ ornements courants, `\grace`, `\acciaccatura`, `\appoggiatura`,
 `\afterGrace`, `R`/`s`, voix `<< \\ >>`, variables (`nom = { … }` puis
 `\nom`), `\new Staff`/`PianoStaff`/`ChoirStaff`/`Voice`/`Lyrics`,
 `\addlyrics`, `\lyricsto`, `\lyricmode`, `\header`, `\tempo`, `\mark` et
-`\markup` simple (texte). Une expression musicale écrite directement au
+`\markup` simple (texte), musique embarquée `#{ … #}`/`$#{ … #}` et fonctions
+musicales simples (`nom = #(define-music-function (a b) (prédicat…) #{ … #})`
+puis `\nom arg…`). Une expression musicale écrite directement au
 niveau supérieur du fichier (partition implicite de `toplevel-music-handler`)
-est lue comme un `\score { musique }` sans `\layout` ni `\midi` ;
+est lue comme un `\score { musique }` sans `\layout` ni `\midi` ; les
+expressions successives d'un même livre sont réunies dans cette partition
+implicite, comme le fait LilyPond ;
 `\book`/`\bookpart` sont parcourus pour y chercher `\score`, `\header` et
 cette musique de haut niveau.
 
@@ -127,7 +131,20 @@ modélisées — est **ignoré avec un avertissement collecté**
 aucune musique (`\score` ou expression de haut niveau) échoue. Les
 expressions Scheme `#…`/`$…` font exception : elles sont lues **d'un seul
 tenant** (un datum complet, comme le lecteur Guile appelé par le lexer
-amont, musique embarquée `#{ … #}` comprise) et ignorées sans bruit.
+amont) et ignorées sans bruit. Un `#{ … #}` qui n'appartient pas à un datum
+Scheme est en revanche de la **musique** : le lexer en fait un jeton à part
+(`Kind::Embedded`) et le parseur relit son contenu comme une séquence, en
+respectant les chaînes et commentaires LilyPond intérieurs.
+
+Une définition `#(define-music-function (a b) (prédicat… ) #{ corps #})` est
+mémorisée (signature ancienne `(parser location a b)` comprise) ; chaque
+appel `\nom arg…` consomme un argument par prédicat (musique `{…}`, note,
+nombre, chaîne, symbole Scheme, datum) puis rejoue le corps en remplaçant
+les jetons `#a`, `$a` et `\a` par l'argument : c'est une substitution de
+jetons, pas une évaluation Scheme. Un corps sans `#{ … #}` laisse la
+fonction inconnue (avertissement unique au premier appel, arguments
+consommés) ; `define-void-function` et `define-scheme-function` sont
+consommées sans musique ni avertissement de « mot ignoré ».
 
 ## 3. Choix de notation
 
@@ -464,6 +481,15 @@ pas de régression du lecteur.
   explicites ou expressions de haut niveau), le premier `\score` explicite
   l'emporte, sinon la première expression ; chaque autre est ignorée avec un
   avertissement.
+- **Fonctions musicales** : seules les définitions
+  `#(define-music-function …)` à corps `#{ … #}` produisent de la musique.
+  La substitution est purement lexicale (`#a`, `$a`, `\a`) : pas d'appel
+  Scheme, pas de valeur calculée, pas de fonction musicale définie dans un
+  `\include` non résolu. Le nombre d'arguments suit les prédicats ; un
+  prédicat inconnu se lit comme un jeton (ou un bloc `{…}`/`<<…>>`). La
+  profondeur d'expansion des blocs et des appels est bornée à 32, avec
+  avertissement au-delà ; les arguments restants sont consommés sans être
+  interprétés.
 - **`\include`** : l'inclusion est textuelle et faite sur les jetons, comme le
   lexer amont, au niveau supérieur comme dans la musique. Un fichier de langue
   livré par LilyPond vaut `\language`, les fichiers livrés sans musique
