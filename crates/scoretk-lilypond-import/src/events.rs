@@ -308,6 +308,8 @@ pub(crate) struct Interpreter<'a> {
     cursor: Fraction,
     /// État d'octave.
     octave: OctaveState,
+    /// Notes résolues du dernier accord émis, pour la répétition `q`.
+    last_chord_notes: Option<Vec<NoteEvent>>,
     /// Transposition en vigueur (degrés diatoniques, demi-tons).
     transpose: (i32, i32),
     /// N-olets ouverts, index locaux.
@@ -337,6 +339,7 @@ impl<'a> Interpreter<'a> {
             voice: InterpretedVoice::default(),
             cursor: Fraction::ZERO,
             octave: OctaveState::default(),
+            last_chord_notes: None,
             transpose: (0, 0),
             tuplets: Vec::new(),
             grace: None,
@@ -627,10 +630,7 @@ impl<'a> Interpreter<'a> {
         // Un ornement ne prend pas de temps dans la mesure.
         if let Some((kind, slash)) = self.grace.as_ref().map(|frame| (frame.kind, frame.slash)) {
             let notes = match &chord.kind {
-                ChordKind::Notes(notes) => notes
-                    .iter()
-                    .filter_map(|note| self.note_event(note))
-                    .collect(),
+                ChordKind::Notes(notes) => self.chord_notes(notes),
                 _ => Vec::new(),
             };
             if !notes.is_empty() {
@@ -666,23 +666,35 @@ impl<'a> Interpreter<'a> {
             .any(|post| matches!(post, PostEvent::Tie));
         // Un silence de mesure entière couvre toute la mesure : le
         // constructeur le reconnaîtra d'après le silence multi-mesures.
-        let content = match &chord.kind {
-            ChordKind::Notes(notes) => ChordContent::Notes(
-                notes
-                    .iter()
-                    .filter_map(|note| {
-                        let mut event = self.note_event(note)?;
-                        event.tie |= chord_tie;
-                        Some(event)
-                    })
-                    .collect(),
-            ),
+        let mut content = match &chord.kind {
+            ChordKind::Notes(notes) => {
+                // La référence relative est celle de la première note de
+                // l'accord, pas de la dernière.
+                let notes = self.chord_notes(notes);
+                self.last_chord_notes = Some(notes.clone());
+                ChordContent::Notes(notes)
+            }
+            // `q` reprend les hauteurs déjà résolues du dernier accord : les
+            // résoudre de nouveau depuis ses marques écrites les décalerait
+            // d'une octave à chaque répétition.
+            ChordKind::Repeat => match self.last_chord_notes.clone() {
+                Some(notes) => ChordContent::Notes(notes),
+                None => {
+                    self.warn("q sans accord précédent : répétition ignorée");
+                    ChordContent::Notes(Vec::new())
+                }
+            },
             ChordKind::Rest => ChordContent::Rest {
                 visible: !chord.invisible,
             },
             ChordKind::Skip => ChordContent::Skip,
             ChordKind::MultiRest => ChordContent::MultiRest,
         };
+        if let ChordContent::Notes(notes) = &mut content {
+            for note in notes {
+                note.tie |= chord_tie;
+            }
+        }
 
         let mut articulations = Vec::new();
         let mut ornaments = Vec::new();
@@ -843,6 +855,30 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Résout les hauteurs des notes d'un accord.
+    ///
+    /// Chaque note de l'accord se place par rapport à la précédente, mais la
+    /// hauteur rendue à la suite est celle de la première note, comme
+    /// `Event_chord::to_relative_octave` (`lily/music.cc`) : `<f d'> <d b'>`
+    /// place le ré du second accord par rapport au fa du premier.
+    fn chord_notes(&mut self, notes: &[NoteSpec]) -> Vec<NoteEvent> {
+        let mut events = Vec::new();
+        let mut reference = None;
+        for (index, note) in notes.iter().enumerate() {
+            let event = self.note_event(note);
+            if index == 0 {
+                // Capturé après la résolution : c'est l'octave de la
+                // première note, transposition non comprise.
+                reference = self.octave.previous;
+            }
+            events.extend(event);
+        }
+        if let Some(reference) = reference {
+            self.octave.previous = Some(reference);
+        }
+        events
+    }
+
     /// Construit l'événement d'une note écrite.
     fn note_event(&mut self, note: &NoteSpec) -> Option<NoteEvent> {
         let octave = self.octave.resolve(&note.pitch);
@@ -855,11 +891,14 @@ impl<'a> Interpreter<'a> {
             self.transpose.0,
             self.transpose.1,
         );
-        let pitch = crate::pitch::midi_of(
+        let Some(pitch) = crate::pitch::midi_of(
             u8::try_from(step).unwrap_or(0),
             i8::try_from(alter.clamp(-127, 127)).unwrap_or(0),
             i8::try_from(octave).unwrap_or(4),
-        )?;
+        ) else {
+            self.warn("hauteur hors de la plage MIDI (0..127) : note ignorée");
+            return None;
+        };
         // `\transpose` transpose la musique écrite elle-même ; il ne déclare
         // pas d'instrument transpositeur. La classe tonale écrite est donc
         // celle de la hauteur transposée, comme `pitch`.

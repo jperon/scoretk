@@ -108,6 +108,12 @@ pub(crate) enum ChordKind {
     Skip,
     /// Silence multi-mesures (`R`).
     MultiRest,
+    /// Répétition du dernier accord (`q`).
+    ///
+    /// Les hauteurs sont celles, déjà résolues, du dernier accord joué :
+    /// l'analyse syntaxique ne les connaît pas, contrairement à
+    /// l'interprétation.
+    Repeat,
 }
 
 /// Accord, silence ou silence multi-mesures avec sa durée.

@@ -504,11 +504,12 @@ pas de régression du lecteur.
   fichiers inclus portent leur propre ligne, sans nom de fichier.
 - **Pas de mise en page** : `\layout`, positions, portées masquées et sauts
   calculés ne sont pas relus.
-- **`\relative`** : la règle de `Pitch::to_relative_octave` est portée, mais
-  un accord dont les notes n'ont pas de marques se place par rapport à la
-  dernière hauteur résolue (`\relative` ne s'applique qu'au premier son d'un
-  accord dans LilyPond) ; les accords ambigus sont rapprochés de l'octave la
-  plus proche.
+- **`\relative`** : la règle de `Pitch::to_relative_octave` est portée
+  (`lily/pitch.cc`). Dans un accord, chaque note se place par rapport à la
+  précédente, mais la hauteur rendue pour la suite est celle de la première
+  note (`Event_chord::to_relative_octave`) ; `q` répète les hauteurs déjà
+  résolues du dernier accord, pas ses marques écrites. Une hauteur hors de
+  0..127 est écartée avec un avertissement.
 - **`\transpose`** : LilyPond transpose la musique écrite elle-même ;
   `pitch`, `tpc` et `tpc_transposed` portent donc tous la hauteur transposée
   et l'armure (`\key`) est transposée de même (`\key c \major` sous

@@ -139,6 +139,67 @@ fn relative_premiere_note_deja_juste() {
 }
 
 #[test]
+fn relative_accord_reference_premiere_note() {
+    // `Event_chord::to_relative_octave` (`lily/music.cc`) place chaque note
+    // de l'accord par rapport à la précédente, mais rend la première comme
+    // référence pour la suite : `<f d'>` vaut fa' ré'', `<d b'>` ré' si', et
+    // le `c` qui suit se place par rapport au ré' de la première note.
+    let score = lire("\\relative c' { <f d'>4 <d b'>8 c4 | <c e g>2 r2 }");
+    assert_eq!(hauteurs(&score), vec![65, 74, 62, 71, 60, 60, 64, 67]);
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::QUARTER,
+            Fraction::new(1, 8),
+            Fraction::QUARTER,
+            Fraction::HALF,
+            Fraction::HALF
+        ]
+    );
+}
+
+#[test]
+fn relative_repetition_accord() {
+    // `q` répète les hauteurs résolues du dernier accord, pas les marques
+    // écrites : les répétitions gardent les mêmes octaves. La référence
+    // reste la première note de l'accord répété.
+    let score = lire(
+        "motif = { <f d'>4 <d b'>8 }\n\
+         \\relative c' { \\motif q8 c4 | <c e g>4 q q2 }",
+    );
+    assert_eq!(
+        hauteurs(&score),
+        vec![65, 74, 62, 71, 62, 71, 60, 60, 64, 67, 60, 64, 67, 60, 64, 67]
+    );
+    assert_eq!(score.measures.len(), 2);
+}
+
+#[test]
+fn accords_en_mode_fixe_inchanges() {
+    // Hors `\relative`, l'octave d'un accord ne dépend que des marques : sous
+    // `\fixed c'`, le nom non marqué vaut do central, donc `b'` vaut si''
+    // (MIDI 83), et la note précédente n'y change rien.
+    let score = lire("\\fixed c' { <f d'>4 <d b'> <c e g>2 }");
+    assert_eq!(hauteurs(&score), vec![65, 74, 62, 83, 60, 64, 67]);
+    assert_eq!(score.measures.len(), 1);
+}
+
+#[test]
+fn hauteur_hors_plage_avertit() {
+    // Une hauteur qui sort de 0..127 est écartée, mais pas en silence.
+    let (score, warnings) =
+        read_lilypond_reporting("\\fixed c' { c4 c'''''''' }").expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60]);
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.message.contains("hors de la plage MIDI")),
+        "{warnings:?}"
+    );
+}
+
+#[test]
 fn mode_fixe_et_absolu() {
     // `\fixed c'` : un nom sans marque vaut le do central.
     let score = lire("\\fixed c' { c4 c' c, }");

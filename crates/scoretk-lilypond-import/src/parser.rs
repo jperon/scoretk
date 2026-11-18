@@ -54,8 +54,6 @@ pub(crate) struct Parser<'a> {
     language: Language,
     /// Variables musicales déjà définies.
     variables: BTreeMap<String, Music>,
-    /// Dernier accord lu, pour la répétition `q`.
-    last_notes: Option<Vec<NoteSpec>>,
     /// Durée par défaut (celle du dernier jeton de durée).
     default_duration: Duration,
     /// Avertissements collectés.
@@ -125,7 +123,6 @@ pub(crate) fn parse(
         position: 0,
         language: Language::default(),
         variables: BTreeMap::new(),
-        last_notes: None,
         default_duration: Duration::quarter(),
         warnings,
         pending_head: NoteHeadGroup::Normal,
@@ -1828,7 +1825,7 @@ impl<'a> Parser<'a> {
                     let (duration, multiplier) = self.parse_optional_duration_spec();
                     let posts = self.parse_posts();
                     return Music::Chord(Chord {
-                        kind: ChordKind::Notes(self.last_notes.clone().unwrap_or_default()),
+                        kind: ChordKind::Repeat,
                         duration,
                         multiplier,
                         posts,
@@ -1860,9 +1857,6 @@ impl<'a> Parser<'a> {
         let (duration, multiplier) = self.parse_optional_duration_spec();
         // Les post-événements peuvent suivre la durée d'un accord.
         let posts = self.parse_posts();
-        if !in_chord {
-            self.last_notes = Some(notes.clone());
-        }
         Music::Chord(Chord {
             kind: ChordKind::Notes(notes),
             duration,
@@ -1900,7 +1894,6 @@ impl<'a> Parser<'a> {
         }
         let (duration, multiplier) = self.parse_optional_duration_spec();
         let posts = self.parse_posts();
-        self.last_notes = Some(notes.clone());
         Music::Chord(Chord {
             kind: ChordKind::Notes(notes),
             duration,
@@ -3041,7 +3034,6 @@ mod tests {
             position: 0,
             language: Language::English,
             variables: BTreeMap::new(),
-            last_notes: None,
             default_duration: Duration::quarter(),
             warnings: &mut warnings,
             pending_head: NoteHeadGroup::Normal,
