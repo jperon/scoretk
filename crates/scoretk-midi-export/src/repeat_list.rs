@@ -177,6 +177,9 @@ struct Element {
     volta: Option<usize>,
     /// Libellé du marqueur, pour `find_marker`.
     marker_label: Option<String>,
+    /// Vrai pour un marqueur de fin de mesure (`isRightMarker`), pour
+    /// l'insertion des marqueurs (`repeatlist.cpp:549-558`).
+    marker_is_right: bool,
     /// Copie du saut (le modèle ne prête pas ses mesures).
     jump: Option<Jump>,
     /// Indice du saut, pour `m_jumps_taken` et `active_jump`.
@@ -195,6 +198,7 @@ impl Element {
             measure,
             volta: None,
             marker_label: None,
+            marker_is_right: false,
             jump: None,
             jump_index: None,
             measure_repeat_count: 0,
@@ -637,6 +641,17 @@ fn collect_voltas(score: &Score, starts: &[i64]) -> Vec<VoltaSpan> {
     voltas
 }
 
+/// Ferme la volta active en poussant un `VOLTA_END` sur la mesure `measure`,
+/// puis la retire (`repeatlist.cpp:490`, `:509`, `:535`, `:584`, `:597`,
+/// `:607`).
+fn close_volta(elements: &mut Vec<Element>, volta_active: &mut Option<usize>, measure: usize) {
+    if let Some(volta) = volta_active.take() {
+        let mut element = Element::new(ElementKind::VoltaEnd, measure);
+        element.volta = Some(volta);
+        elements.push(element);
+    }
+}
+
 /// Construit la liste des éléments par section
 /// (`RepeatList::collectRepeatListElements`).
 fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
@@ -669,13 +684,12 @@ fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
                 .map(|(index, _)| index)
                 .collect();
             for volta_index in starting {
-                if let Some(previous) = volta_active {
-                    if previous != volta_index {
-                        let mut element =
-                            Element::new(ElementKind::VoltaEnd, measure_index.saturating_sub(1));
-                        element.volta = Some(previous);
-                        elements.push(element);
-                    }
+                if volta_active.is_some_and(|previous| previous != volta_index) {
+                    close_volta(
+                        &mut elements,
+                        &mut volta_active,
+                        measure_index.saturating_sub(1),
+                    );
                 }
                 let mut element = Element::new(ElementKind::VoltaStart, measure_index);
                 element.volta = Some(volta_index);
@@ -685,57 +699,71 @@ fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
 
             // Début de reprise.
             if measure.start_bar_line.is_repeat_start() {
-                if let Some(volta) = volta_active {
-                    if voltas[volta].start != measure_index {
-                        let mut element =
-                            Element::new(ElementKind::VoltaEnd, measure_index.saturating_sub(1));
-                        element.volta = Some(volta);
-                        elements.push(element);
-                        volta_active = None;
-                    }
+                if volta_active.is_some_and(|volta| voltas[volta].start != measure_index) {
+                    close_volta(
+                        &mut elements,
+                        &mut volta_active,
+                        measure_index.saturating_sub(1),
+                    );
                 }
                 elements.push(Element::new(ElementKind::RepeatStart, measure_index));
             }
 
-            // Marqueurs puis sauts, dans l'ordre du fichier.
-            let mut markers = Vec::new();
-            let mut jumps = Vec::new();
+            // Sauts et marqueurs, dans l'ordre de `el()`
+            // (`repeatlist.cpp:517-574`). Le C++ pousse le saut immédiatement,
+            // puis insère le `VOLTA_END` qui le précède éventuellement juste
+            // après lui : les éléments suivants de `el()` (autres sauts,
+            // marqueurs) viennent après. Les marqueurs sont insérés avant les
+            // sauts de la même mesure (`repeatlist.cpp:545-573`).
             for mark in &measure.repeat_marks {
                 match mark {
-                    RepeatMark::Marker(marker) => {
-                        let mut element = Element::new(ElementKind::Marker, measure_index);
-                        element.marker_label = Some(marker.label.clone());
-                        markers.push((marker.kind.is_stop_marker(), element));
-                    }
                     RepeatMark::Jump(jump) => {
                         let mut element = Element::new(ElementKind::Jump, measure_index);
                         element.jump = Some(jump.clone());
                         element.jump_index = Some(jump_index);
                         jump_index += 1;
-                        jumps.push(element);
-                    }
-                }
-            }
-            markers.sort_by_key(|(right, _)| *right);
-            elements.extend(markers.into_iter().map(|(_, element)| element));
-            let has_jump = !jumps.is_empty();
-            elements.extend(jumps);
-
-            // Un saut ferme la volta encore ouverte qui s'est terminée avant
-            // lui, ou qui est ouverte et se termine sur cette mesure
-            // (`repeatlist.cpp:525-543`) — sauf si la mesure porte aussi
-            // l'`endRepeat` (cf. #327681), auquel cas c'est la fin de reprise
-            // qui la ferme.
-            if has_jump && !measure.end_bar_line.is_repeat_end() {
-                if let Some(volta) = volta_active {
-                    let span = &voltas[volta];
-                    let ends_here =
-                        span.end < measure_index || (span.end == measure_index && !span.closed);
-                    if ends_here {
-                        let mut element = Element::new(ElementKind::VoltaEnd, measure_index);
-                        element.volta = Some(volta);
                         elements.push(element);
-                        volta_active = None;
+
+                        // Un saut ferme la volta encore ouverte qui s'est
+                        // terminée avant lui, ou qui est ouverte et se
+                        // termine sur cette mesure (`repeatlist.cpp:525-543`)
+                        // — sauf si la mesure porte aussi l'`endRepeat`
+                        // (cf. #327681), auquel cas c'est la fin de reprise
+                        // qui la ferme.
+                        if let Some(volta) = volta_active {
+                            let span = &voltas[volta];
+                            let ends_here = span.end < measure_index
+                                || (span.end == measure_index && !span.closed);
+                            if ends_here && !measure.end_bar_line.is_repeat_end() {
+                                close_volta(&mut elements, &mut volta_active, measure_index);
+                            }
+                        }
+                    }
+                    RepeatMark::Marker(marker) => {
+                        let right = marker.kind.is_stop_marker();
+                        let mut element = Element::new(ElementKind::Marker, measure_index);
+                        element.marker_label = Some(marker.label.clone());
+                        element.marker_is_right = right;
+                        // Reculer devant les sauts et les marqueurs de droite
+                        // de la même mesure (`repeatlist.cpp:547-572`).
+                        let mut insertion = elements.len().saturating_sub(1);
+                        while !elements.is_empty() && elements[insertion].measure == measure_index {
+                            let (kind, stored_right) = {
+                                let stored = &elements[insertion];
+                                (stored.kind, stored.marker_is_right)
+                            };
+                            let should_go_before =
+                                !right && kind == ElementKind::Marker && stored_right;
+                            if should_go_before || kind == ElementKind::Jump {
+                                if insertion == 0 {
+                                    break;
+                                }
+                                insertion -= 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        elements.insert((insertion + 1).min(elements.len()), element);
                     }
                 }
             }
@@ -756,11 +784,7 @@ fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
                 // condition sur sa mesure de fin (`repeatlist.cpp:581-588`) :
                 // une volta qui déborde l'`endRepeat` se termine sur cette
                 // mesure.
-                if let Some(volta) = volta_active.take() {
-                    let mut end_element = Element::new(ElementKind::VoltaEnd, measure_index);
-                    end_element.volta = Some(volta);
-                    elements.push(end_element);
-                }
+                close_volta(&mut elements, &mut volta_active, measure_index);
             }
 
             // Fin de volta : fermée à sa dernière mesure, ou ouverte et suivie
@@ -779,20 +803,13 @@ fn collect_sections(score: &Score, voltas: &[VoltaSpan]) -> Vec<Vec<Element>> {
                             .get(measure_index + 1)
                             .is_some_and(|next| next.section_break_before));
                 if ends_here {
-                    let mut element = Element::new(ElementKind::VoltaEnd, measure_index);
-                    element.volta = Some(volta);
-                    elements.push(element);
-                    volta_active = None;
+                    close_volta(&mut elements, &mut volta_active, measure_index);
                 }
             }
         }
 
         // Fin de section.
-        if let Some(volta) = volta_active {
-            let mut end_element = Element::new(ElementKind::VoltaEnd, end);
-            end_element.volta = Some(volta);
-            elements.push(end_element);
-        }
+        close_volta(&mut elements, &mut volta_active, end);
         elements.push(Element::new(ElementKind::SectionBreak, end));
         sections.push(elements);
     }
@@ -942,11 +959,99 @@ fn reevaluate_volta_repeat(
 mod tests {
     use super::*;
     use scoretk_core::model::{
-        BarLineType, Measure, Spanner, SpannerAnchor, SpannerType, Track, VoltaInfo,
+        BarLineType, Jump, Marker, MarkerType, Measure, Placement, RepeatMark, Spanner,
+        SpannerAnchor, SpannerType, Track, VoltaInfo,
     };
 
     fn measure(number: usize, tick: Fraction, len: Fraction) -> Measure {
         Measure::new(number, tick, len)
+    }
+
+    /// Une mesure unique portant une volta ouverte et les marques données,
+    /// dans l'ordre où `Measure::el()` les expose.
+    fn sections_avec_volta(marks: Vec<RepeatMark>) -> Vec<Vec<Element>> {
+        let mut score = Score::new();
+        let whole = Fraction::ONE;
+        let mut value = measure(0, Fraction::from_integer(0), whole);
+        value.repeat_marks = marks;
+        score.add_measure(value);
+        let mut volta = Spanner::new(
+            SpannerType::Volta,
+            SpannerAnchor::new(Fraction::from_integer(0), Track::from_raw(0)),
+            SpannerAnchor::new(whole, Track::from_raw(0)),
+        );
+        volta.volta = Some(VoltaInfo {
+            endings: vec![1],
+            closed: false,
+        });
+        score.add_spanner(volta);
+        let (starts, _) = measure_ticks(&score);
+        let voltas = collect_voltas(&score, &starts);
+        collect_sections(&score, &voltas)
+    }
+
+    fn jump() -> Jump {
+        Jump::new(
+            "D.C.",
+            "start",
+            "",
+            "",
+            Placement::Above,
+            Track::from_raw(0),
+        )
+    }
+
+    fn marker() -> Marker {
+        Marker {
+            kind: MarkerType::Segno,
+            label: "segno".into(),
+            text: "Segno".into(),
+            placement: Placement::Above,
+            track: Track::from_raw(0),
+        }
+    }
+
+    fn kinds(section: &[Element]) -> Vec<ElementKind> {
+        section.iter().map(|element| element.kind).collect()
+    }
+
+    /// Le C++ pousse le `JUMP`, puis le `VOLTA_END` juste après lui, dans la
+    /// boucle sur `el()` ; le marqueur qui suit vient après
+    /// (`repeatlist.cpp:523-543`).
+    #[test]
+    fn volta_end_apres_le_saut_avant_le_marqueur() {
+        let sections =
+            sections_avec_volta(vec![RepeatMark::Jump(jump()), RepeatMark::Marker(marker())]);
+        assert_eq!(
+            kinds(&sections[0]),
+            vec![
+                ElementKind::RepeatStart,
+                ElementKind::VoltaStart,
+                ElementKind::Jump,
+                ElementKind::VoltaEnd,
+                ElementKind::Marker,
+                ElementKind::SectionBreak,
+            ]
+        );
+    }
+
+    /// Avec deux sauts, c'est toujours juste après le premier que le
+    /// `VOLTA_END` est inséré ; le second saut vient ensuite.
+    #[test]
+    fn volta_end_apres_le_premier_de_deux_sauts() {
+        let sections =
+            sections_avec_volta(vec![RepeatMark::Jump(jump()), RepeatMark::Jump(jump())]);
+        assert_eq!(
+            kinds(&sections[0]),
+            vec![
+                ElementKind::RepeatStart,
+                ElementKind::VoltaStart,
+                ElementKind::Jump,
+                ElementKind::VoltaEnd,
+                ElementKind::Jump,
+                ElementKind::SectionBreak,
+            ]
+        );
     }
 
     #[test]
