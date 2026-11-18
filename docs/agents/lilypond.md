@@ -509,10 +509,12 @@ pas de régression du lecteur.
   dernière hauteur résolue (`\relative` ne s'applique qu'au premier son d'un
   accord dans LilyPond) ; les accords ambigus sont rapprochés de l'octave la
   plus proche.
-- **`\transpose`** : l'intervalle est appliqué à la hauteur écrite (le
-  modèle garde `pitch` concert et `tpc_transposed` écrit) sans déclarer
-  d'instrument transpositeur ; un `\transpose` local change donc l'octave
-  écrite et non l'armure.
+- **`\transpose`** : LilyPond transpose la musique écrite elle-même ;
+  `pitch`, `tpc` et `tpc_transposed` portent donc tous la hauteur transposée
+  et l'armure (`\key`) est transposée de même (`\key c \major` sous
+  `\transpose c d` donne ré majeur), sans déclarer d'instrument transpositeur.
+  Les transpositions imbriquées se composent, pour les notes comme pour
+  l'armure.
 - **Armures** : `\major` est lu comme `KeyMode::Unknown`, parce que MuseScore
   n'écrit `<mode>` que s'il est explicite et que l'écrivain écrit `\major`
   aussi bien pour un majeur explicite que pour une armure sans mode ; `\minor`

@@ -141,11 +141,80 @@ fn note_relative_et_paroles() {
 
 #[test]
 fn transposition() {
-    let score = lire("\\transpose c d { c4 }");
-    let note = &score.notes[0];
-    assert_eq!(note.pitch, 62);
-    assert_eq!(note.tpc, scoretk_core::model::tpc::D);
-    assert_eq!(note.tpc_transposed, scoretk_core::model::tpc::C);
+    // `\transpose` transpose la musique écrite elle-même : `e4 b c d` devient
+    // `fis4 cis4 d4 e4`, en hauteur comme en classe tonale écrite. Il n'y a
+    // pas d'instrument transpositeur, donc `tpc` et `tpc_transposed` portent
+    // tous deux la hauteur transposée.
+    let score = lire("\\transpose c d { \\relative c' { e4 b4 c4 d4 } }");
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(hauteurs(&score), vec![66, 61, 62, 64]);
+    let tpc: Vec<i8> = score.notes.iter().map(|note| note.tpc).collect();
+    assert_eq!(
+        tpc,
+        vec![
+            scoretk_core::model::tpc::F_SHARP,
+            scoretk_core::model::tpc::C_SHARP,
+            scoretk_core::model::tpc::D,
+            scoretk_core::model::tpc::E
+        ]
+    );
+    let tpc_transposed: Vec<i8> = score.notes.iter().map(|note| note.tpc_transposed).collect();
+    assert_eq!(tpc_transposed, tpc);
+    let durees: Vec<Fraction> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .map(|chord_rest| chord_rest.duration.ticks())
+        .collect();
+    assert_eq!(durees, vec![Fraction::QUARTER; 4]);
+}
+
+/// Quintes des armures du score, dans l'ordre où elles apparaissent.
+fn armures(score: &scoretk_core::model::Score) -> Vec<i8> {
+    score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter(|segment| segment.kind == SegmentType::KeySig)
+        .filter_map(|segment| match segment.element(Track::from_raw(0)) {
+            Some(SegmentItem::KeySig(key)) => Some(key.transposed_key.fifths()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn armure_transposee() {
+    // `\key` est transposé lui aussi : do majeur sous `\transpose c d` devient
+    // ré majeur (2 dièses), et des transpositions imbriquées se composent.
+    let score = lire(
+        "\\transpose c d { \\key c \\major c4 d4 e4 f4 | \\transpose c d { \\key c \\major g4 } }",
+    );
+    assert_eq!(armures(&score), vec![2, 4]);
+    assert_eq!(hauteurs(&score), vec![62, 64, 66, 67, 71]);
+    assert_eq!(score.measures.len(), 2);
+}
+
+#[test]
+fn notes_et_armure_sans_transposition() {
+    // Sans `\transpose`, rien ne change : mêmes hauteurs, mêmes classes
+    // tonales et armure de do majeur.
+    let score = lire("\\key c \\major e4 b4 c4 d4");
+    assert_eq!(hauteurs(&score), vec![64, 71, 60, 62]);
+    let tpc: Vec<i8> = score.notes.iter().map(|note| note.tpc).collect();
+    assert_eq!(
+        tpc,
+        vec![
+            scoretk_core::model::tpc::E,
+            scoretk_core::model::tpc::B,
+            scoretk_core::model::tpc::C,
+            scoretk_core::model::tpc::D
+        ]
+    );
+    let tpc_transposed: Vec<i8> = score.notes.iter().map(|note| note.tpc_transposed).collect();
+    assert_eq!(tpc_transposed, tpc);
+    assert_eq!(armures(&score), vec![0]);
 }
 
 #[test]

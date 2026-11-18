@@ -376,7 +376,12 @@ impl<'a> Interpreter<'a> {
         match context {
             Context::Clef(clef) => self.meta(MetaEvent::Clef(*clef)),
             Context::Key { fifths, mode } => {
-                let mut key = KeySig::new(Key::new(*fifths));
+                // LilyPond transpose l'armure avec la musique : `\key c \major`
+                // sous `\transpose c d` vaut ré majeur. Les quintes se
+                // déduisent de la transposition du do naturel.
+                let shifted = i32::from(*fifths) + fifths_shift(self.transpose.0, self.transpose.1);
+                let fifths = i8::try_from(shifted).unwrap_or(*fifths);
+                let mut key = KeySig::new(Key::new(fifths));
                 key.mode = *mode;
                 self.meta(MetaEvent::Key(key));
             }
@@ -860,14 +865,18 @@ impl<'a> Interpreter<'a> {
             i8::try_from(alter.clamp(-127, 127)).unwrap_or(0),
             i8::try_from(octave).unwrap_or(4),
         )?;
+        // `\transpose` transpose la musique écrite elle-même ; il ne déclare
+        // pas d'instrument transpositeur. La classe tonale écrite est donc
+        // celle de la hauteur transposée, comme `pitch`.
+        let tpc = crate::pitch::tpc_of(
+            u8::try_from(step).unwrap_or(0),
+            i8::try_from(alter.clamp(-2, 2)).unwrap_or(0),
+        );
         let tie = note.posts.iter().any(|post| matches!(post, PostEvent::Tie));
         Some(NoteEvent {
             pitch,
-            tpc: crate::pitch::tpc_of(
-                u8::try_from(step).unwrap_or(0),
-                i8::try_from(alter.clamp(-2, 2)).unwrap_or(0),
-            ),
-            tpc_transposed: crate::pitch::tpc_of(note.pitch.step, note.pitch.alter),
+            tpc,
+            tpc_transposed: tpc,
             tie,
             cautionary: note.pitch.cautionary,
             head_group: note.head_group.clone(),
@@ -927,6 +936,19 @@ fn transpose_delta(from: &PitchSpec, to: &PitchSpec) -> (i32, i32) {
     let chromatic =
         semitones(to) - semitones(from) + 12 * (i32::from(to.octave) - i32::from(from.octave));
     (diatonic, chromatic)
+}
+
+/// Décalage de quintes d'une transposition, pour transposer une armure.
+///
+/// La transposition du do naturel donne la classe tonale du nouvel intervalle
+/// (ré pour `\transpose c d`, si bémol pour `\transpose c bf`), donc son
+/// nombre de quintes.
+fn fifths_shift(diatonic: i32, chromatic: i32) -> i32 {
+    let (step, alter, _) = transpose_pitch(0, 0, 0, diatonic, chromatic);
+    i32::from(crate::pitch::fifths_of(
+        u8::try_from(step).unwrap_or(0),
+        i8::try_from(alter).unwrap_or(0),
+    ))
 }
 
 /// Nombre de barres d'un trémolo à partir de la figure (`:8` → 1).
