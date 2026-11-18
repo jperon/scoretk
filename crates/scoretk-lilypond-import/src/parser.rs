@@ -214,6 +214,24 @@ impl<'a> Parser<'a> {
         self.warnings.push(line, column, message);
     }
 
+    /// Garde de progression pour les boucles qui consomment des jetons.
+    ///
+    /// `before` est la position en début d'itération. Renvoie `false` quand la
+    /// boucle n'a pas avancé : le jeton bloquant est alors consommé (s'il en
+    /// reste un) et un avertissement est émis, pour que l'appelant sorte de sa
+    /// boucle locale au lieu de tourner en accumulant des éléments vides — le
+    /// `|` non consommé faisait encore boucler l'analyse (c79a320).
+    fn guard_progress(&mut self, before: usize) -> bool {
+        if self.position > before {
+            return true;
+        }
+        self.warn("analyse bloquée sur un jeton : progression forcée");
+        if !self.at_end() {
+            self.position += 1;
+        }
+        false
+    }
+
     //------------------------------------------------------------------
     // Document
     //------------------------------------------------------------------
@@ -226,7 +244,9 @@ impl<'a> Parser<'a> {
         };
 
         while !self.at_end() {
+            let before = self.position;
             self.toplevel_item(&mut document);
+            self.guard_progress(before);
         }
         document.melisma_busy_disabled = self.melisma_busy_disabled;
 
@@ -373,7 +393,9 @@ impl<'a> Parser<'a> {
             return;
         }
         while !self.at_end() && !self.eat_punct('}') {
+            let before = self.position;
             self.toplevel_item(document);
+            self.guard_progress(before);
         }
     }
 
@@ -508,7 +530,9 @@ impl<'a> Parser<'a> {
             if self.eat_punct('}') {
                 break;
             }
+            let before = self.position;
             score.groups.extend(self.parse_score_element());
+            self.guard_progress(before);
         }
         score
     }
@@ -653,10 +677,12 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 continue;
             }
+            let before = self.position;
             let music = self.parse_music();
             if !music.is_empty() {
                 items.push(music);
             }
+            self.guard_progress(before);
         }
         if self.at_double_angle_close() {
             self.position += 2;
@@ -1153,7 +1179,14 @@ impl<'a> Parser<'a> {
         // Profondeur des `<< … >>` traversés : un `}` à l'intérieur d'un
         // alignement de couplets n'appartient pas au bloc de paroles courant.
         let mut alignement = 0usize;
+        // Position en début d'itération, absente à la première : le bloc vient
+        // d'ouvrir sa propre accolade et rien n'a encore été lu dedans.
+        let mut before = None;
         while !self.at_end() {
+            if let Some(before) = before {
+                self.guard_progress(before);
+            }
+            before = Some(self.position);
             if self.at_double_angle_open() {
                 self.position += 2;
                 alignement += 1;
@@ -1412,10 +1445,12 @@ impl<'a> Parser<'a> {
                     self.position += 1;
                     continue;
                 }
+                let before = self.position;
                 let item = self.parse_music();
                 if !item.is_empty() {
                     items.push(item);
                 }
+                self.guard_progress(before);
             }
             if self.at_double_angle_close() {
                 self.position += 2;
@@ -1437,10 +1472,12 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 let mut items = Vec::new();
                 while !self.at_end() && !self.eat_punct('}') {
+                    let before = self.position;
                     let item = self.parse_music();
                     if !item.is_empty() {
                         items.push(item);
                     }
+                    self.guard_progress(before);
                 }
                 Music::Seq(items)
             }
@@ -1607,10 +1644,8 @@ impl<'a> Parser<'a> {
             if !item.is_empty() {
                 items.push(item);
             }
-            // Garde-fou : un jeton non consommé ne doit pas boucler.
-            if self.position == before {
-                self.position += 1;
-            }
+            // Un jeton non consommé ne doit pas faire boucler la relecture.
+            self.guard_progress(before);
         }
         self.expansion_depth -= 1;
         self.tokens = saved_tokens;
@@ -2391,6 +2426,7 @@ impl<'a> Parser<'a> {
         self.position += 1;
         let mut notes = Vec::new();
         while !self.at_end() && !self.eat_punct('>') {
+            let before = self.position;
             // `\tweak` dans l'accord décore la note suivante.
             if self.peek().is_some_and(|token| token.is_command("tweak")) {
                 self.position += 1;
@@ -2408,6 +2444,7 @@ impl<'a> Parser<'a> {
                 posts,
                 head_group: head,
             });
+            self.guard_progress(before);
         }
         if notes.is_empty() {
             return Music::Empty;
@@ -2460,7 +2497,7 @@ impl<'a> Parser<'a> {
             let before = self.position;
             let mut parsed = self.parse_post_event();
             posts.append(&mut parsed);
-            if self.position == before {
+            if !self.guard_progress(before) {
                 break;
             }
         }
@@ -2477,7 +2514,7 @@ impl<'a> Parser<'a> {
             let before = self.position;
             let mut parsed = self.parse_post_event();
             posts.append(&mut parsed);
-            if self.position == before {
+            if !self.guard_progress(before) {
                 break;
             }
         }
@@ -3720,6 +3757,48 @@ mod tests {
             Music::Seq(items) => items,
             other => vec![other],
         }
+    }
+
+    #[test]
+    fn garde_de_progression() {
+        // Sur `c d`, une itération qui consomme passe, une itération bloquée
+        // avertit et force l'avancement, et la fin de flux signale l'arrêt sans
+        // tenter de consommer un jeton inexistant.
+        let (progresse, bloque, fin, position, avertissements) = {
+            let mut warnings = Warnings::new();
+            let mut parser = Parser {
+                tokens: tokenize("c d"),
+                position: 1,
+                language: Language::English,
+                variables: BTreeMap::new(),
+                default_duration: Duration::quarter(),
+                warnings: &mut warnings,
+                pending_head: NoteHeadGroup::Normal,
+                pending_tuplet_number: None,
+                pending_invisible_rest: false,
+                partitions: Vec::new(),
+                music_functions: BTreeMap::new(),
+                expansion_depth: 0,
+                melisma_busy_disabled: false,
+            };
+            let progresse = parser.guard_progress(0);
+            let bloque = parser.guard_progress(1);
+            let fin = parser.guard_progress(2);
+            let position = parser.position;
+            drop(parser);
+            (progresse, bloque, fin, position, warnings.into_vec())
+        };
+        assert!(progresse);
+        assert!(!bloque);
+        assert!(!fin);
+        assert_eq!(position, 2);
+        assert_eq!(avertissements.len(), 2);
+        assert!(
+            avertissements
+                .iter()
+                .all(|warning| warning.message.contains("progression forcée")),
+            "avertissements : {avertissements:?}"
+        );
     }
 
     #[test]
