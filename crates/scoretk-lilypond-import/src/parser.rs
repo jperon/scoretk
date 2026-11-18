@@ -564,9 +564,27 @@ impl<'a> Parser<'a> {
                 lyrics: vec![*block],
             }],
             Music::Sim(items) => {
+                // Un `<< … >>` sans contexte est une seule portée anonyme,
+                // comme `{ … }` : on ne descend que si un `\new` (même sous
+                // une fonction musicale) y définit la structure.
+                if !items.iter().any(has_context) {
+                    return vec![anonymous_group(wrap_all(wrappers, Music::Sim(items)))];
+                }
+                let rest: Vec<Music> = items
+                    .iter()
+                    .filter(|item| !has_context(item))
+                    .cloned()
+                    .collect();
+                let mut rest = if rest.is_empty() { None } else { Some(rest) };
                 let mut groups = Vec::new();
                 for item in items {
-                    groups.extend(self.score_groups_in(item, wrappers));
+                    if has_context(&item) {
+                        groups.extend(self.score_groups_in(item, wrappers));
+                    } else if let Some(rest) = rest.take() {
+                        // Les éléments sans contexte voisins forment une seule
+                        // portée anonyme, à la place du premier d'entre eux.
+                        groups.push(anonymous_group(wrap_all(wrappers, Music::Sim(rest))));
+                    }
                 }
                 groups
             }
@@ -575,22 +593,22 @@ impl<'a> Parser<'a> {
     }
 
     /// Liste de contextes d'un `<< … >>` de `\score`.
+    ///
+    /// La liste entière est une musique simultanée : c'est [`Self::score_groups`]
+    /// qui décide quels éléments sont des contextes et réunit les autres en
+    /// une seule portée anonyme.
     fn parse_context_list(&mut self) -> Vec<GroupBlock> {
-        let mut groups = Vec::new();
+        let mut items = Vec::new();
         while !self.at_end() && !self.at_double_angle_close() {
-            if self.eat_command("new") {
-                if let Some(group) = self.parse_new() {
-                    groups.push(group);
-                }
-            } else {
-                let music = self.parse_music();
-                groups.extend(self.score_groups(music));
+            let music = self.parse_music();
+            if !music.is_empty() {
+                items.push(music);
             }
         }
         if self.at_double_angle_close() {
             self.position += 2;
         }
-        groups
+        self.score_groups(Music::Sim(items))
     }
 
     /// `\new Nom [= "id"] [\with { … }] musique`.
@@ -773,24 +791,38 @@ impl<'a> Parser<'a> {
                 }
             },
             Music::Sim(items) => {
+                // Même règle que pour les groupes de `\score` : un `<< … >>`
+                // sans contexte ne fait qu'une portée, avec ses éléments
+                // simultanés (voix) ; un `\new` y définit la structure.
+                if !items.iter().any(has_context) {
+                    let mut staff = StaffBlock::new();
+                    let mut voices = Vec::new();
+                    let mut staff_lyrics = Vec::new();
+                    let music = wrap_all(wrappers, Music::Sim(items));
+                    self.collect_voices(music, &mut voices, &mut staff_lyrics);
+                    staff.voices = voices;
+                    staff.lyrics = staff_lyrics;
+                    staves.push(staff);
+                    return;
+                }
+                let rest: Vec<Music> = items
+                    .iter()
+                    .filter(|item| !has_context(item))
+                    .cloned()
+                    .collect();
+                let mut rest = if rest.is_empty() { None } else { Some(rest) };
                 for item in items {
-                    match item {
-                        Music::New(mut group) => {
-                            wrap_staves(wrappers, &mut group.staves);
-                            staves.extend(group.staves);
-                            lyrics.extend(group.lyrics);
-                        }
-                        Music::Lyrics(block) => lyrics.push(*block),
-                        other => {
-                            let mut staff = StaffBlock::new();
-                            let mut voices = Vec::new();
-                            let mut staff_lyrics = Vec::new();
-                            let music = wrap_all(wrappers, other);
-                            self.collect_voices(music, &mut voices, &mut staff_lyrics);
-                            staff.voices = voices;
-                            staff.lyrics = staff_lyrics;
-                            staves.push(staff);
-                        }
+                    if has_context(&item) {
+                        self.collect_staves_in(item, wrappers, staves, lyrics);
+                    } else if let Some(rest) = rest.take() {
+                        let mut staff = StaffBlock::new();
+                        let mut voices = Vec::new();
+                        let mut staff_lyrics = Vec::new();
+                        let music = wrap_all(wrappers, Music::Sim(rest));
+                        self.collect_voices(music, &mut voices, &mut staff_lyrics);
+                        staff.voices = voices;
+                        staff.lyrics = staff_lyrics;
+                        staves.push(staff);
                     }
                 }
             }
@@ -1370,6 +1402,12 @@ impl<'a> Parser<'a> {
         // Une variable musicale masque les commandes intégrées, comme dans
         // LilyPond (`identifiant = { … }` puis `\identifiant`).
         if let Some(music) = self.variables.get(&name).cloned() {
+            // Une valeur qui n'est pas de la musique utilisable (commande
+            // inconnue) ne doit pas disparaître en silence au point d'appel ;
+            // une musique vide est normale (`m = { }`).
+            if matches!(music, Music::Unknown(_)) {
+                self.warn(format!("variable \\{name} sans musique utilisable ignorée"));
+            }
             return music;
         }
         // Une fonction musicale définie en Scheme prend le pas sur les
@@ -2822,6 +2860,22 @@ fn wrap_staves(wrappers: &[Wrapper], staves: &mut [StaffBlock]) {
             let music = std::mem::replace(&mut voice.music, Music::Empty);
             voice.music = wrap_all(wrappers, music);
         }
+    }
+}
+
+/// Vrai si la musique est, ou enveloppe, un contexte (`\new …`).
+///
+/// Les fonctions musicales (`\transpose`, `\relative`, `\fixed`) et les
+/// simultanéités imbriquées sont traversées : la structure d'un `<< … >>`
+/// n'est celle de ses contextes que si l'un d'eux s'y trouve.
+fn has_context(music: &Music) -> bool {
+    match music {
+        Music::New(_) | Music::Lyrics(_) => true,
+        Music::Context(context) => {
+            Wrapper::of(context).is_some_and(|(_, inner)| has_context(inner))
+        }
+        Music::Sim(items) => items.iter().any(has_context),
+        _ => false,
     }
 }
 

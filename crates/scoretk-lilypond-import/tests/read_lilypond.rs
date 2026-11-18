@@ -1459,3 +1459,74 @@ fn transpose_autour_d_un_piano_staff() {
     assert_eq!(score.staves.len(), 1);
     assert_eq!(score.measures.len(), 1);
 }
+
+#[test]
+fn simultane_sans_contexte_une_seule_portee() {
+    // Un `<< … >>` de `\score` sans aucun `\new` est une musique simultanée
+    // d'une seule portée anonyme, comme un `{ … }` : les deux éléments y sont
+    // deux voix, pas deux portées.
+    let score = lire_score("\\score { << { c'4 } { e'4 } >> }");
+    assert_eq!(score.staves.len(), 1);
+    assert_eq!(hauteurs(&score), vec![60, 64]);
+}
+
+#[test]
+fn contexte_et_musique_nue_dans_le_meme_simultane() {
+    // Dès qu'un `\new` structure le `<< … >>`, les éléments sans contexte
+    // restants sont réunis en une seule portée anonyme.
+    let score = lire_score("a = \\new Staff { d'1 }\n\\score { << \\a { c'1 } >> }");
+    assert_eq!(score.staves.len(), 2);
+    let mut hauteurs = hauteurs(&score);
+    hauteurs.sort_unstable();
+    assert_eq!(hauteurs, vec![60, 62]);
+}
+
+#[test]
+fn variable_portant_un_contexte_dans_un_simultane() {
+    // L'appel d'une variable rend la musique de contexte (`Music::New`) :
+    // `<< \p >>` doit produire une portée, avec ou sans `\with`.
+    let score = lire_score(
+        "fl = { c'4 d' }\np = \\new Staff \\with { midiInstrument = \"flute\" } \\fl\n\\score { << \\p >> }",
+    );
+    assert_eq!(score.staves.len(), 1);
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+
+    let score = lire_score("fl = { c'4 d' }\np = \\new Staff \\fl\n\\score { << \\p >> }");
+    assert_eq!(score.staves.len(), 1);
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+}
+
+#[test]
+fn deux_variables_de_contexte_donnent_deux_portees() {
+    let score =
+        lire_score("a = \\new Staff { c'1 }\nb = \\new Staff { d'1 }\n\\score { << \\a \\b >> }");
+    assert_eq!(score.staves.len(), 2);
+    let mut hauteurs = hauteurs(&score);
+    hauteurs.sort_unstable();
+    assert_eq!(hauteurs, vec![60, 62]);
+}
+
+#[test]
+fn variable_sans_musique_utilisable_avertit() {
+    // Une commande inconnue stockée dans une variable ne doit pas disparaître
+    // en silence au point d'appel ; une musique vide, elle, est normale.
+    let source = "\\version \"2.24.0\"\n\\language \"english\"\n\
+                  a = \\nimportequoi\n\\score { \\a }";
+    let (_, warnings) = read_lilypond_reporting(source).expect("lecture");
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.message.contains("variable \\a")),
+        "avertissements : {warnings:?}"
+    );
+
+    let source = "\\version \"2.24.0\"\n\\language \"english\"\n\
+                  a = \\fermata\n\\score { \\a }";
+    let (_, warnings) = read_lilypond_reporting(source).expect("lecture");
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.message.contains("variable \\a")),
+        "avertissements : {warnings:?}"
+    );
+}
