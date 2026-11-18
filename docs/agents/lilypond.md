@@ -478,7 +478,10 @@ pas de régression du lecteur.
   `NEWCONTEXT`, `lily/parser.yy` ; « Temporary polyphonic passages ») ; la
   voix d'origine avance ensuite de la durée du contexte ouvert, comme
   LilyPond. Une simultanée sans `\\` est lue en voix sœurs plutôt qu'en
-  accords fusionnés. Les voix sans accord (préambule `\clef`/`\key`) sont
+  accords fusionnés. Les branches anonymes de passages temporaires successifs
+  partagent la même piste tant qu'elles ne se chevauchent pas : une pièce à
+  nombreux passages garde deux voix au lieu d'en ouvrir une par passage et de
+  dépasser le modèle. Les voix sans accord (préambule `\clef`/`\key`) sont
   repliées dans la première voix musicale, et une portée reste limitée à
   quatre voix (les suivantes avertissent et sont ignorées).
 - **`\change`** : `\change <Contexte> = <nom>` est lu comme un changement de
@@ -520,7 +523,12 @@ pas de régression du lecteur.
   précédente, mais la hauteur rendue pour la suite est celle de la première
   note (`Event_chord::to_relative_octave`) ; `q` répète les hauteurs déjà
   résolues du dernier accord, pas ses marques écrites. Une hauteur hors de
-  0..127 est écartée avec un avertissement.
+  0..127 est écartée avec un avertissement. Les branches d'un `<< … >>` et
+  les contextes de la séquence sont parcourus dans l'ordre de
+  `Music_sequence::simultaneous_relative_callback` (`lily/music-sequence.cc`) :
+  chaque branche part de la dernière note de la précédente, et la musique qui
+  suit le `>>` de la dernière note de la **dernière** branche (les lire depuis
+  la note qui précède le `<<` décalait la suite d'une octave).
 - **`\transpose`** : LilyPond transpose la musique écrite elle-même ;
   `pitch`, `tpc` et `tpc_transposed` portent donc tous la hauteur transposée
   et l'armure (`\key`) est transposée de même (`\key c \major` sous

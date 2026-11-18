@@ -2014,3 +2014,97 @@ fn polyphonie_temporaire_dans_une_sequence() {
         ]
     );
 }
+
+#[test]
+fn octave_relative_apres_une_polyphonie_temporaire() {
+    // Source vérifiée contre LilyPond 2.27 : la musique qui suit un
+    // `<< … \\ … >>` part de la dernière note de la **dernière** branche.
+    // `Music_sequence::simultaneous_relative_callback` parcourt les branches
+    // dans l'ordre (`lily/music-sequence.cc`), chacune relativement à la
+    // précédente ; partir de la première décalait tout d'une octave.
+    let score = lire("\\relative c' { c4 << { c8 } { e,8 } >> f4 }");
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::new(1, 4), vec![60], Fraction::new(1, 8)),
+            (Fraction::new(3, 8), vec![53], Fraction::new(1, 4)),
+        ]
+    );
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![(Fraction::new(1, 4), vec![52], Fraction::new(1, 8))]
+    );
+
+    // Les branches s'enchaînent : la seconde part de la dernière note de la
+    // première, et la continuation de la dernière note de la seconde.
+    let score = lire("\\relative c' { c4 << { c'8 d } \\\\ { c8 c } >> f4 }");
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::new(1, 4), vec![72], Fraction::new(1, 8)),
+            (Fraction::new(3, 8), vec![74], Fraction::new(1, 8)),
+            (Fraction::new(1, 2), vec![77], Fraction::new(1, 4)),
+        ]
+    );
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![
+            (Fraction::new(1, 4), vec![72], Fraction::new(1, 8)),
+            (Fraction::new(3, 8), vec![72], Fraction::new(1, 8)),
+        ]
+    );
+}
+
+#[test]
+fn octave_relative_apres_un_contexte_ouvert() {
+    // Un `\new Voice` de la séquence est un élément comme un autre :
+    // la musique qui suit part de sa dernière note
+    // (`generic_to_relative_octave`, `lily/music.cc`), d'où le `f` à l'octave 5.
+    let score = lire("\\relative c' { c4 \\new Voice { c'8 } f4 }");
+    assert_eq!(nombre_de_voix(&score), 2);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::new(3, 8), vec![77], Fraction::new(1, 4)),
+        ]
+    );
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![(Fraction::new(1, 4), vec![72], Fraction::new(1, 8))]
+    );
+}
+
+#[test]
+fn passages_polyphoniques_successifs_partagent_une_voix() {
+    // Deux passages `<< … \\ … >>` successifs ne doivent pas ouvrir deux
+    // voix temporaires de plus : MuseScore n'en connaît que quatre et les
+    // passages, disjoints dans le temps, tiennent dans la même piste.
+    let score = lire("c4 << { d8 e } \\\\ { f8 g } >> a4 << { b8 c' } \\\\ { d8 e } >> f4");
+    assert_eq!(nombre_de_voix(&score), 2);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::new(1, 4), vec![62], Fraction::new(1, 8)),
+            (Fraction::new(3, 8), vec![64], Fraction::new(1, 8)),
+            (Fraction::new(1, 2), vec![69], Fraction::new(1, 4)),
+            (Fraction::new(3, 4), vec![71], Fraction::new(1, 8)),
+            (Fraction::new(7, 8), vec![72], Fraction::new(1, 8)),
+            (Fraction::ONE, vec![65], Fraction::new(1, 4)),
+        ]
+    );
+    // Les deux passages tiennent dans la même voix temporaire.
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![
+            (Fraction::new(1, 4), vec![65], Fraction::new(1, 8)),
+            (Fraction::new(3, 8), vec![67], Fraction::new(1, 8)),
+            (Fraction::new(3, 4), vec![62], Fraction::new(1, 8)),
+            (Fraction::new(7, 8), vec![64], Fraction::new(1, 8)),
+        ]
+    );
+    assert_eq!(score.measures.len(), 2);
+}

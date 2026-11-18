@@ -312,8 +312,26 @@ pub(crate) struct SpawnedVoice {
     pub name: Option<String>,
     /// Paroles `\addlyrics` attachées au contexte ouvert.
     pub lyrics: Vec<LyricsBlock>,
+    /// Vrai pour une branche de passage polyphonique temporaire
+    /// (`<< … \\ … >>`) : la voix ne dure que le temps du passage et peut
+    /// partager une piste avec les branches d'un autre passage, plus loin
+    /// dans la pièce. Faux pour un `\new Voice` hors d'un tel passage, qui
+    /// reste une voix à part entière.
+    pub temporary: bool,
     /// Voix interprétée, en ticks absolus.
     pub interpreted: InterpretedVoice,
+}
+
+/// État final d'une voix ouverte, pour la lecture relative séquentielle de
+/// LilyPond : la musique qui suit un contexte ou une branche simultanée part
+/// de sa dernière note.
+struct SpawnResult {
+    /// Tick de fin.
+    end: Fraction,
+    /// État d'octave à la fin de la voix.
+    octave: OctaveState,
+    /// Notes du dernier accord, pour la répétition `q`.
+    last_chord_notes: Option<Vec<NoteEvent>>,
 }
 
 /// Ornements d'agrément en cours.
@@ -351,6 +369,10 @@ pub(crate) struct Interpreter<'a> {
     /// Facteur de n-olet hérité d'une voix ouverte à l'intérieur d'un
     /// `\tuplet` (les n-olets ouverts du parent ne sont pas dans `tuplets`).
     tuplet_scale: Fraction,
+    /// Vrai dans une branche de passage polyphonique temporaire : les
+    /// contextes qui y sont ouverts en héritent et pourront partager une piste
+    /// avec ceux d'un autre passage.
+    temporary: bool,
     /// Rang d'émission.
     order: usize,
     /// Avertissements.
@@ -374,6 +396,7 @@ impl<'a> Interpreter<'a> {
             stem_override: None,
             staff_target: None,
             tuplet_scale: Fraction::ONE,
+            temporary: false,
             order: 0,
             warnings,
         };
@@ -427,8 +450,19 @@ impl<'a> Interpreter<'a> {
             let mut lyrics: Vec<LyricsBlock> = staff.lyrics.clone();
             lyrics.extend(group.lyrics.iter().cloned());
             for voice in &staff.voices {
-                end =
-                    end.max(self.spawn_at(start, voice.name.clone(), &voice.music, lyrics.clone()));
+                let child = self.spawn_at(
+                    start,
+                    voice.name.clone(),
+                    &voice.music,
+                    lyrics.clone(),
+                    self.temporary,
+                );
+                end = end.max(child.end);
+                // La musique d'un contexte est un élément de la séquence :
+                // LilyPond poursuit la lecture relative à sa dernière note
+                // (`generic_to_relative_octave`, `lily/music.cc`).
+                self.octave = child.octave;
+                self.last_chord_notes = child.last_chord_notes;
             }
         }
         // La musique du contexte fait partie de la séquence : elle avance la
@@ -446,6 +480,13 @@ impl<'a> Interpreter<'a> {
     /// commandes de contexte écrites directement dans le `<< >>` (`\clef`,
     /// `\key`, `\bar`…) portent sur la portée et restent dans la voix
     /// d'origine.
+    ///
+    /// Lecture relative : `Music_sequence::simultaneous_relative_callback`
+    /// (`lily/music-sequence.cc`) parcourt les branches dans l'ordre, chacune
+    /// relativement à la dernière note de la précédente, et la musique qui
+    /// suit le `>>` part de la dernière note de la **dernière** branche.
+    /// Lire les branches en parallèle depuis la note qui précède le `<<`
+    /// décalerait tout le reste d'une octave.
     fn simultaneous(&mut self, items: &[Music]) {
         if self.grace.is_some() {
             // Ornement : lecture séquentielle, comme avant (les ornements ne
@@ -472,21 +513,28 @@ impl<'a> Interpreter<'a> {
         self.walk(first);
         let mut end = self.cursor;
         for item in branches {
-            end = end.max(self.spawn_at(start, None, item, Vec::new()));
+            let child = self.spawn_at(start, None, item, Vec::new(), true);
+            end = end.max(child.end);
+            // `music_list_to_relative` enchaîne les branches : la suivante
+            // part de la dernière note de celle-ci, et la continuation du
+            // `>>` de la dernière note de la dernière branche.
+            self.octave = child.octave;
+            self.last_chord_notes = child.last_chord_notes;
         }
         self.cursor = end.max(start);
     }
 
     /// Ouvre une voix sœur dans la portée et l'interprète à partir de
     /// `start`, en reprenant l'état courant (octave, transposition, durée par
-    /// défaut). Rend son tick de fin.
+    /// défaut). Rend son état final.
     fn spawn_at(
         &mut self,
         start: Fraction,
         name: Option<String>,
         music: &Music,
         lyrics: Vec<LyricsBlock>,
-    ) -> Fraction {
+        temporary: bool,
+    ) -> SpawnResult {
         // Type explicite : la voix enfant emprunte les avertissements pour la
         // seule durée de son interprétation, pas pour `'a`.
         let mut child = Interpreter {
@@ -503,18 +551,24 @@ impl<'a> Interpreter<'a> {
             stem_override: self.stem_override,
             staff_target: None,
             tuplet_scale: self.tuplet_scale * self.open_tuplet_scale(),
+            temporary,
             order: 0,
             warnings: &mut *self.warnings,
         };
         child.walk(music);
         child.voice.end = child.cursor;
-        let end = child.cursor;
+        let result = SpawnResult {
+            end: child.cursor,
+            octave: child.octave,
+            last_chord_notes: child.last_chord_notes,
+        };
         self.voice.spawned.push(SpawnedVoice {
             name,
             lyrics,
+            temporary,
             interpreted: child.voice,
         });
-        end
+        result
     }
 
     /// Facteur des n-olets ouverts dans cette voix.

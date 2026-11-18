@@ -99,6 +99,8 @@ struct PendingVoice {
     name: Option<String>,
     /// Paroles `\addlyrics` attachées au contexte ouvert.
     lyrics: Vec<LyricsBlock>,
+    /// Branche d'un passage polyphonique temporaire (`<< … \\ … >>`).
+    temporary: bool,
     /// Voix interprétée.
     interpreted: InterpretedVoice,
 }
@@ -262,6 +264,72 @@ fn merge_preamble(kept: Vec<PendingVoice>, target: usize) -> Vec<PendingVoice> {
     rest
 }
 
+/// Fusionne les branches de passages polyphoniques temporaires.
+///
+/// Une branche de `<< … \\ … >>` (voix anonyme marquée `temporary`) ne dure
+/// que le temps du passage. Quand une branche ultérieure ne chevauche pas une
+/// branche déjà retenue, elle reprend la même piste : la portée garde deux
+/// voix (la voix principale et une voix temporaire) quel que soit le nombre
+/// de passages, au lieu d'en ouvrir une par passage et de dépasser les quatre
+/// voix du modèle.
+fn merge_temporary_voices(kept: Vec<PendingVoice>) -> Vec<PendingVoice> {
+    let mut merged: Vec<PendingVoice> = Vec::new();
+    for pending in kept {
+        let mergeable = pending.temporary && pending.name.is_none();
+        if mergeable {
+            if let Some(target) = merged.iter_mut().find(|target| {
+                target.temporary
+                    && target.name.is_none()
+                    && !voice_ranges_overlap(&target.interpreted, &pending.interpreted)
+            }) {
+                merge_voice_into(target, pending);
+                continue;
+            }
+        }
+        merged.push(pending);
+    }
+    merged
+}
+
+/// Plage de ticks occupée par une voix, d'après ses événements.
+fn voice_range(voice: &InterpretedVoice) -> Option<(Fraction, Fraction)> {
+    let first = voice.events.iter().map(|event| event.tick).min()?;
+    Some((first, voice.end))
+}
+
+/// Vrai si les plages de deux voix se chevauchent (une plage vide ne
+/// chevauche rien).
+fn voice_ranges_overlap(left: &InterpretedVoice, right: &InterpretedVoice) -> bool {
+    match (voice_range(left), voice_range(right)) {
+        (Some((left_start, left_end)), Some((right_start, right_end))) => {
+            left_start < right_end && right_start < left_end
+        }
+        _ => false,
+    }
+}
+
+/// Ajoute les événements d'une voix temporaire à une autre, en décalant les
+/// parents de n-olets et en renumérotant l'ordre d'émission.
+fn merge_voice_into(target: &mut PendingVoice, source: PendingVoice) {
+    let base = target.interpreted.tuplets.len();
+    for mut tuplet in source.interpreted.tuplets {
+        if let Some(parent) = tuplet.parent {
+            tuplet.parent = Some(parent + base);
+        }
+        target.interpreted.tuplets.push(tuplet);
+    }
+    target.interpreted.events.extend(source.interpreted.events);
+    for (order, event) in target.interpreted.events.iter_mut().enumerate() {
+        event.order = order;
+    }
+    target
+        .interpreted
+        .repeats
+        .extend(source.interpreted.repeats);
+    target.interpreted.end = target.interpreted.end.max(source.interpreted.end);
+    target.lyrics.extend(source.lyrics);
+}
+
 /// Paroles d'un bloc.
 fn lyrics_build(block: &LyricsBlock) -> LyricsBuild {
     LyricsBuild {
@@ -289,6 +357,7 @@ fn build_voices(
         queue.push_back(PendingVoice {
             name: block.name.clone(),
             lyrics: Vec::new(),
+            temporary: false,
             interpreted: Interpreter::run(&block.music, warnings),
         });
     }
@@ -297,6 +366,7 @@ fn build_voices(
         let PendingVoice {
             name,
             lyrics,
+            temporary,
             interpreted,
         } = pending;
         let InterpretedVoice {
@@ -310,6 +380,7 @@ fn build_voices(
             queue.push_back(PendingVoice {
                 name: voice.name,
                 lyrics: voice.lyrics,
+                temporary: voice.temporary,
                 interpreted: voice.interpreted,
             });
         }
@@ -319,6 +390,7 @@ fn build_voices(
         kept.push(PendingVoice {
             name,
             lyrics,
+            temporary,
             interpreted: InterpretedVoice {
                 events,
                 tuplets,
@@ -328,6 +400,13 @@ fn build_voices(
             },
         });
     }
+
+    // Les branches d'un passage polyphonique temporaire (`<< … \\ … >>`)
+    // reprennent la même piste d'une occurrence à l'autre : deux passages
+    // successifs n'ouvrent pas deux voix de plus sur la portée (MuseScore
+    // n'en connaît que quatre). La fusion n'a lieu qu'entre branches
+    // anonymes dont les plages de ticks ne se chevauchent pas.
+    let kept = merge_temporary_voices(kept);
 
     // Une voix sans accord (préambule de portée : `\clef`, `\key`,
     // `\cadenzaOn`…) n'occupe pas de piste : ses événements sont repliés en
