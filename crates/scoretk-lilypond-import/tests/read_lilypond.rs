@@ -227,6 +227,35 @@ fn hauteur_hors_plage_avertit() {
 }
 
 #[test]
+fn octave_relative_repetee_sature_sans_panique() {
+    // `\repeat unfold 200 { c'4 d e f }` fait monter l'octave relative d'un
+    // cran à chaque passage : au-delà de la plage MIDI, les notes sont écartées
+    // avec un avertissement, sans panique ni débordement silencieux.
+    let (score, warnings) =
+        read_lilypond_reporting("\\relative { \\repeat unfold 200 { c'4 d e f } }")
+            .expect("lecture");
+    assert_eq!(score.measures.len(), 200);
+    let pitches = hauteurs(&score);
+    // Sept passages tiennent dans la plage MIDI, les suivants sont écartés.
+    assert_eq!(&pitches[..8], &[60, 62, 64, 65, 72, 74, 76, 77]);
+    assert!(pitches.iter().all(|pitch| *pitch <= 127));
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.message.contains("hors de la plage MIDI")),
+        "avertissements : {warnings:?}"
+    );
+    // Cas non concerné : en mode fixe, l'octave ne dérive pas.
+    let (fixed, fixed_warnings) =
+        read_lilypond_reporting("\\fixed c' { c'4 d e f }").expect("lecture");
+    assert_eq!(hauteurs(&fixed), vec![72, 62, 64, 65]);
+    assert!(
+        fixed_warnings.is_empty(),
+        "avertissements : {fixed_warnings:?}"
+    );
+}
+
+#[test]
 fn mode_fixe_et_absolu() {
     // `\fixed c'` : un nom sans marque vaut le do central.
     let score = lire("\\fixed c' { c4 c' c, }");

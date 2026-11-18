@@ -771,13 +771,16 @@ impl OctaveState {
         let octave = if self.relative {
             match self.previous {
                 Some((previous_step, previous_octave)) => {
-                    relative_octave(previous_step, previous_octave, pitch.step) + pitch.octave
+                    relative_octave(previous_step, previous_octave, pitch.step)
+                        .saturating_add(pitch.octave)
                 }
-                None => self.reference + pitch.octave,
+                None => self.reference.saturating_add(pitch.octave),
             }
         } else {
-            self.reference + pitch.octave
+            self.reference.saturating_add(pitch.octave)
         };
+        // La borne atteinte reste visible : `midi_of` écarte la hauteur hors de
+        // 0..127 et l'événement avertit, comme pour les accords relatifs.
         self.previous = Some((pitch.step, octave));
         octave
     }
@@ -789,7 +792,7 @@ impl OctaveState {
     /// `reference - 1 + marques`, la référence valant 3 (`c`, deux octaves
     /// sous le do central) hors mode relatif.
     pub(crate) fn set_reference(&mut self, pitch: &PitchSpec) {
-        self.reference = 3 + pitch.octave;
+        self.reference = 3i8.saturating_add(pitch.octave);
         self.previous = None;
     }
 
@@ -820,6 +823,15 @@ impl OctaveState {
     }
 }
 
+/// Ramène une octave calculée en `i16` dans la plage `i8` en saturant.
+///
+/// Un `unwrap_or(0)` ramènerait une octave débordée à zéro et la musique
+/// repartirait du do central en silence : la borne est conservée pour que la
+/// note soit ensuite écartée avec un avertissement.
+fn borne_octave(octave: i16) -> i8 {
+    octave.clamp(i16::from(i8::MIN), i16::from(i8::MAX)) as i8
+}
+
 /// Octave d'une hauteur relative à la précédente.
 ///
 /// Reprend l'algorithme de `Pitch::to_relative_octave`
@@ -843,9 +855,9 @@ fn relative_octave(previous_step: u8, previous_octave: i8, step: u8) -> i8 {
     let up_distance = (step + up_octave * 7 - reference).abs();
     let down_distance = (step + down_octave * 7 - reference).abs();
     if up_distance < down_distance {
-        i8::try_from(up_octave).unwrap_or(0)
+        borne_octave(up_octave)
     } else {
-        i8::try_from(down_octave).unwrap_or(0)
+        borne_octave(down_octave)
     }
 }
 
@@ -957,5 +969,28 @@ mod tests {
         assert_eq!(state.resolve(&spec(0, 0)), 4);
         // Un si non marqué descend d'une octave.
         assert_eq!(state.resolve(&spec(6, 0)), 3);
+    }
+
+    #[test]
+    fn octave_relative_bornee() {
+        // Après 200 reprises, l'octave relative approche de la borne i8 : une
+        // marque d'octave supplémentaire doit saturer, pas déborder.
+        let mut state = OctaveState {
+            relative: true,
+            reference: 126,
+            previous: Some((0, 126)),
+        };
+        assert_eq!(state.resolve(&spec(0, 1)), 127);
+        assert_eq!(state.resolve(&spec(0, 1)), 127);
+        assert_eq!(state.resolve(&spec(0, -1)), 126);
+        // Symétrie : une descente répétée sature elle aussi.
+        let mut state = OctaveState {
+            relative: true,
+            reference: -126,
+            previous: Some((0, -126)),
+        };
+        assert_eq!(state.resolve(&spec(0, -1)), -127);
+        assert_eq!(state.resolve(&spec(0, -1)), -128);
+        assert_eq!(state.resolve(&spec(0, -1)), -128);
     }
 }
