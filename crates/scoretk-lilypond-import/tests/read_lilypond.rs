@@ -2738,3 +2738,13 @@ fn paroles_avec_lyrics_imbrique_gardent_les_portees() {
         .collect();
     assert_eq!(seconds, vec!["fa", "sol"]);
 }
+
+#[test]
+fn tempo_pointe_ne_fait_pas_perdre_le_time_suivant() {
+    // `\tempo 4.=50` laisse le point et le nombre `50` dans le flux musical.
+    // Un entier qui n'est pas une durée doit consommer son seul jeton :
+    // l'avancer une seconde fois avalerait `\time` et sa mesure.
+    let score = lire("\\tempo 4.=50 \\time 6/8 c4 d4 e4 f4");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+    assert_eq!(score.measures.len(), 2);
+}

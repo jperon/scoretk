@@ -2428,12 +2428,17 @@ impl<'a> Parser<'a> {
     /// accepte une durée sans hauteur). C'est l'idiome `<c e g>4 8 4 8` des
     /// accompagnements, où chaque durée rejoue le dernier accord.
     fn parse_bare_duration(&mut self) -> Music {
+        let before = self.position;
         let (duration, multiplier) = self.parse_optional_duration_spec();
         if duration.is_none() {
-            // Jeton numérique qui n'est pas une durée (une fraction `3/2`
-            // laissée par une commande non reconnue) : le consommer sans
-            // inventer de note, pour garantir la progression de l'analyse.
-            self.position += 1;
+            // Jeton numérique qui n'est pas une durée (reste de `\tempo 4.=50`,
+            // fraction laissée par une commande non reconnue) : le consommer
+            // une seule fois. `parse_duration` a déjà avancé pour un entier
+            // qui n'est pas une durée (`50`) ; l'avancer encore avalerait le
+            // jeton suivant (`\time` par exemple) et perdrait la mesure.
+            if self.position == before {
+                self.position += 1;
+            }
             return Music::Empty;
         }
         Music::Chord(Chord {
