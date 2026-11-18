@@ -494,13 +494,15 @@ pas de régression du lecteur.
   des mesures.
 - **Cadences** : `\cadenzaOn`/`\cadenzaOff` et `\set Timing.timing = ##f`/`##t`
   suspendent les barres automatiques. La mesure en cours s'allonge jusqu'au
-  `\cadenzaOff` ou à la première barre explicite (`\bar "|"` ou `|`) ; sa
-  durée nominale reste celle du `\time`, ce qui produit une mesure
-  irrégulière (`len != nominal_len`), comme MuseScore pour une mesure de
-  durée réelle. La cadence peut être coupée en plusieurs mesures par des
-  barres explicites ; elle reprend ensuite sur la métrique en vigueur après
-  `\cadenzaOff`. Une barre `|` ordinaire a la valeur par défaut du modèle et
-  ne modifie pas une barre plus forte placée au même tick.
+  `\cadenzaOff` ou à la première barre explicite `\bar "…"` ; sa durée
+  nominale reste celle du `\time`, ce qui produit une mesure irrégulière
+  (`len != nominal_len`), comme MuseScore pour une mesure de durée réelle.
+  La cadence peut être coupée en plusieurs mesures par des barres explicites
+  `\bar "…"` ; elle reprend ensuite sur la métrique en vigueur après
+  `\cadenzaOff`. Le contrôle de mesure `|` (bar check de `lily/parser.yy`,
+  `'|'` → `BarCheck`) est consommé et ignoré : il ne crée jamais de barre ni
+  de coupure, même en cadence. Une barre `\bar "|"` ordinaire a la valeur par
+  défaut du modèle et ne modifie pas une barre plus forte placée au même tick.
 - **Cadences et voix multiples** : les mesures étant communes à toutes les
   voix, on choisit l'union des intervalles de cadence : dès qu'une voix est
   en cadence, aucune barre automatique n'est insérée pour la partition

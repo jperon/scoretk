@@ -956,18 +956,19 @@ fn cadenza_une_seule_mesure() {
 }
 #[test]
 fn cadenza_coupee_par_une_barre() {
+    // Le `|` nu est un contrôle de mesure ignoré : seule la barre explicite
+    // `\bar "|"` coupe la cadence, entre `d'8` et le reste.
     let score = lire("\\time 4/4 c'1 \\cadenzaOn d'8 \\bar \"|\" e'8 f' | g'8 \\cadenzaOff c'1");
     assert_eq!(
         longueurs(&score),
         vec![
             Fraction::ONE,
             Fraction::new(1, 8),
-            Fraction::new(1, 4),
-            Fraction::new(1, 8),
+            Fraction::new(3, 8),
             Fraction::ONE,
         ]
     );
-    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 60]);
+    assert_eq!(hauteurs(&score), vec![72, 74, 76, 77, 79, 72]);
 }
 #[test]
 fn cadenza_avec_set_timing() {
@@ -992,5 +993,43 @@ fn cadenza_sans_commande_ignoree() {
             .iter()
             .any(|warning| warning.message.contains("commande ignorée")),
         "avertissements : {warnings:?}"
+    );
+}
+
+#[test]
+fn bar_check_consomme_sans_couper_les_mesures() {
+    // `|` est un contrôle de mesure (bar check de `lily/parser.yy` `'|'`) :
+    // il est consommé et ignoré, ne crée aucune barre et ne coupe jamais la
+    // trame des mesures. Un `|` en fin de source ne doit pas bloquer le
+    // lecteur (boucle infinie observée quand le jeton n'était pas consommé).
+    let debut = std::time::Instant::now();
+    let score = lire("{ c'4 d' e' f' | g'1 | }");
+    assert!(
+        debut.elapsed() < std::time::Duration::from_secs(1),
+        "la lecture d'un bar check ne doit pas boucler"
+    );
+    assert_eq!(hauteurs(&score), vec![72, 74, 76, 77, 79]);
+    assert_eq!(score.measures.len(), 2);
+}
+
+#[test]
+fn cadenza_avec_bar_checks_une_seule_mesure_irreguliere() {
+    // Les contrôles de mesure `|` ne coupent pas la cadence : toute la
+    // cadence reste une seule mesure irrégulière.
+    let score = lire("\\time 4/4 \\cadenzaOn c'8 | d'8 | e'8 \\cadenzaOff");
+    assert_eq!(hauteurs(&score), vec![72, 74, 76]);
+    assert_eq!(longueurs(&score), vec![Fraction::new(3, 8)]);
+    assert!(score.measures[0].is_irregular());
+}
+
+#[test]
+fn cadenza_coupee_par_bar_explicite_deux_mesures() {
+    // Seule la barre explicite `\bar "…"` ferme la mesure pendant une
+    // cadence ; le `|` nu reste sans effet.
+    let score = lire("\\time 4/4 \\cadenzaOn c'8 \\bar \"|\" d'8 \\cadenzaOff");
+    assert_eq!(hauteurs(&score), vec![72, 74]);
+    assert_eq!(
+        longueurs(&score),
+        vec![Fraction::new(1, 8), Fraction::new(1, 8)]
     );
 }

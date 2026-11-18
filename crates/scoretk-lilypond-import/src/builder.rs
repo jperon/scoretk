@@ -406,8 +406,9 @@ fn cadenza_spans(staves: &[StaffBuild], end_tick: Fraction) -> Vec<CadenzaSpan> 
                             }
                         }
                     }
-                    // `\bar "|"` ou `|` pendant la cadence : la mesure se
-                    // ferme là, mais la cadence continue ensuite.
+                    // `\bar "…"` pendant la cadence : la mesure se ferme là,
+                    // mais la cadence continue ensuite (le contrôle de mesure
+                    // `|` ne produit aucun événement et ne coupe rien).
                     EventKind::Meta(MetaEvent::Bar(_)) => {
                         if let Some(start) = open {
                             if event.tick > start {

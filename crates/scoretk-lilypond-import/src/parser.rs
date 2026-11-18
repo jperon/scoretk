@@ -1042,10 +1042,11 @@ impl<'a> Parser<'a> {
                 Music::Seq(items)
             }
             Kind::Punct('<') => self.parse_chord_group(),
-            // Une barre `|` est une commande de trame comme `\bar "|"` : elle
-            // peut fermer une mesure, en particulier pendant une cadence.
-            Kind::Punct('|') => Music::Context(Context::Bar("|".to_owned())),
-            Kind::Punct('}') | Kind::Punct('>') | Kind::Punct(')') => {
+            // `|` est un contrôle de mesure (bar check, `lily/parser.yy` `'|'`
+            // → `BarCheck`) : il ne crée aucune barre et ne coupe jamais la
+            // trame des mesures, même en cadence. On le consomme et on
+            // l'ignore ; seule une barre explicite `\bar "…"` ferme une mesure.
+            Kind::Punct('}') | Kind::Punct('>') | Kind::Punct('|') | Kind::Punct(')') => {
                 self.position += 1;
                 Music::Empty
             }
