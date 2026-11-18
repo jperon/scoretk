@@ -1807,6 +1807,30 @@ impl<'a> Parser<'a> {
             // et écarte les alternatives ; le lecteur déplie déjà les reprises,
             // la commande est donc transparente.
             "unfoldRepeats" => self.parse_music(),
+            // `\partcombine` (ancien nom de `\partCombine`, ainsi que
+            // `\partCombineUp`/`\partCombineDown`) est défini dans
+            // `ly/music-functions-init.ly` : `make-directed-part-combine-music`
+            // place les deux parties dans des voix simultanées (« one » et
+            // « two ») de la même portée, avec `make-non-relative-music` pour
+            // ne pas recalculer leurs hauteurs. L'argument optionnel
+            // `chord-range` (une paire Scheme, `#'(0 . 8)` par défaut) ne
+            // produit aucune musique. Les consommer comme une commande
+            // inconnue sautait la première branche et lisait la seconde à la
+            // suite de la voix courante, en décalant son octave relative.
+            "partcombine" | "partCombine" | "partCombineUp" | "partCombineDown" => {
+                if self.peek().is_some_and(|token| token.is_scheme()) {
+                    self.position += 1;
+                }
+                let first = self.parse_music();
+                let second = self.parse_music();
+                if first.is_empty() {
+                    second
+                } else if second.is_empty() {
+                    first
+                } else {
+                    Music::Sim(vec![first, second])
+                }
+            }
             // `\articulate` (`ly/articulate.ly`, `define-music-function
             // (music) (ly:music?)`) applique des articulations à la musique
             // qu'il reçoit, sans changer les hauteurs. Il est transparent pour

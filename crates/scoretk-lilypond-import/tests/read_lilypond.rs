@@ -2777,3 +2777,92 @@ fn tempo_pointe_ne_fait_pas_perdre_le_time_suivant() {
     assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
     assert_eq!(score.measures.len(), 2);
 }
+
+#[test]
+fn partcombine_deux_voix_simultanees() {
+    // `\partcombine` (ancien nom de `\partCombine`, `ly/music-functions-init.ly`)
+    // place ses deux arguments dans deux voix simultanées de la portée, et non
+    // l'un à la suite de l'autre. Les deux voix gardent leurs accords, leur
+    // liaison et leur silence, dans la mesure ordinaire qui suit des barres.
+    let score = lire_score(
+        "\\score { \\new Staff { \\fixed c' { \
+           c4 d e f | g2 a2 | \
+           \\partcombine { b4 <c' e'>2~ d'4 } { g4 a2 b4 } | \
+           d'2 c'2 | \
+         } } }",
+    );
+    assert_eq!(score.measures.len(), 4);
+    assert_eq!(nombre_de_voix(&score), 2);
+    let quart = Fraction::QUARTER;
+    let blanche = Fraction::HALF;
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::new(0, 1), vec![60], quart),
+            (Fraction::new(1, 4), vec![62], quart),
+            (Fraction::new(2, 4), vec![64], quart),
+            (Fraction::new(3, 4), vec![65], quart),
+            (Fraction::new(1, 1), vec![67], blanche),
+            (Fraction::new(3, 2), vec![69], blanche),
+            (Fraction::new(2, 1), vec![71], quart),
+            (Fraction::new(9, 4), vec![72, 76], blanche),
+            (Fraction::new(11, 4), vec![74], quart),
+            (Fraction::new(3, 1), vec![74], blanche),
+            (Fraction::new(7, 2), vec![72], blanche),
+        ]
+    );
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![
+            (Fraction::new(2, 1), vec![67], quart),
+            (Fraction::new(9, 4), vec![69], blanche),
+            (Fraction::new(11, 4), vec![71], quart),
+        ]
+    );
+}
+
+#[test]
+fn partcombine_chord_range_et_simultanee_ordinaire() {
+    // Cas limite : l'argument optionnel `#'(0 . 8)` (portée des accords) est
+    // consommé, et `\partCombine` en fin de flux garde ses deux voix.
+    let score = lire_score(
+        "\\score { \\new Staff { \\fixed c' { \
+           c4 d e f | \\partCombine #'(0 . 8) { g4 a } { b4 c' } \
+         } } }",
+    );
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(nombre_de_voix(&score), 2);
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::new(0, 1), vec![60], Fraction::QUARTER),
+            (Fraction::new(1, 4), vec![62], Fraction::QUARTER),
+            (Fraction::new(2, 4), vec![64], Fraction::QUARTER),
+            (Fraction::new(3, 4), vec![65], Fraction::QUARTER),
+            (Fraction::new(1, 1), vec![67], Fraction::QUARTER),
+            (Fraction::new(5, 4), vec![69], Fraction::QUARTER),
+        ]
+    );
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![
+            (Fraction::new(1, 1), vec![71], Fraction::QUARTER),
+            (Fraction::new(5, 4), vec![72], Fraction::QUARTER),
+        ]
+    );
+    // Cas non concerné : une simultanée ordinaire reste inchangée.
+    let score = lire_score(
+        "\\score { \\new Staff { \\fixed c' { \
+           c4 d | << { e4 f } \\\\ { g4 a } >> | b4 c' \
+         } } }",
+    );
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(nombre_de_voix(&score), 2);
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![
+            (Fraction::new(1, 2), vec![67], Fraction::QUARTER),
+            (Fraction::new(3, 4), vec![69], Fraction::QUARTER),
+        ]
+    );
+}
