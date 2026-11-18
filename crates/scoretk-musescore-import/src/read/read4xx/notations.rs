@@ -134,7 +134,13 @@ fn accidental_type(name: &str) -> Option<AccidentalType> {
 }
 
 /// Lit un `<Fermata>` et le range dans les annotations de segment.
-pub(crate) fn read_fermata(element: &Element) -> Annotation {
+///
+/// `default_placement` est fixé par `MeasureRead::readVoice` avant
+/// `TRead::read` (`rw/read410/measureread.cpp:535-538`) :
+/// `fermata->track() & 1 ? Below : Above`, le défaut de
+/// `Fermata::propertyDefault` (`dom/fermata.cpp`) ; `<placement>` l'écrase
+/// ensuite.
+pub(crate) fn read_fermata(element: &Element, default_placement: Placement) -> Annotation {
     let subtype = element
         .child("subtype")
         .map(Element::text)
@@ -145,7 +151,7 @@ pub(crate) fn read_fermata(element: &Element) -> Annotation {
         placement: element
             .child("placement")
             .map(|child| placement(Some(child)))
-            .unwrap_or(Placement::Above),
+            .unwrap_or(default_placement),
         visible: !element
             .child("visible")
             .and_then(Element::int)

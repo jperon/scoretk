@@ -1229,15 +1229,15 @@ impl Reader {
                     self.add_annotation(measure_index, tick, track, Annotation::Harmony(harmony));
                 }
                 "Fermata" => {
-                    let mut annotation = notations::read_fermata(child);
-                    // `MeasureRead::readVoice` place le point d'orgue
-                    // au-dessous pour la voix 1 ; `<placement>` l'écrase
-                    // ensuite (`rw/read410/measureread.cpp:534-539`).
-                    if let Annotation::Fermata(fermata) = &mut annotation {
-                        if !child.has_child("placement") && track.voice() % 2 == 1 {
-                            fermata.placement = Placement::Below;
-                        }
-                    }
+                    // `MeasureRead::readVoice` fixe le placement de la piste
+                    // avant `TRead::read` (`rw/read410/measureread.cpp:535-538`) :
+                    // voix impaire au-dessous, comme `Fermata::propertyDefault`.
+                    let default_placement = if track.voice() % 2 == 1 {
+                        Placement::Below
+                    } else {
+                        Placement::Above
+                    };
+                    let annotation = notations::read_fermata(child, default_placement);
                     self.add_annotation(measure_index, tick, track, annotation);
                 }
                 "FiguredBass" => {

@@ -85,7 +85,13 @@ fn articulation_anchor(node: &Node) -> ArticulationAnchor {
 }
 
 /// Point d'orgue d'un `<Fermata>`.
-pub(crate) fn read_fermata(node: &Node) -> Annotation {
+///
+/// `default_placement` vient de `MeasureRead::readVoice`, qui fait
+/// `fermata->setPlacement(fermata->track() & 1 ? Below : Above)` avant
+/// `TRead::read` (`rw/read400/measurerw.cpp:570-574`,
+/// `rw/read410/measureread.cpp:535-538`) ; `<placement>` l'écrase ensuite.
+/// C'est le défaut de `Fermata::propertyDefault` (`dom/fermata.cpp`).
+pub(crate) fn read_fermata(node: &Node, default_placement: Placement) -> Annotation {
     let subtype = node
         .child("subtype")
         .map(Node::trimmed_text)
@@ -94,7 +100,7 @@ pub(crate) fn read_fermata(node: &Node) -> Annotation {
     let placement = node
         .child("placement")
         .map(|child| tables::placement(&child.trimmed_text()))
-        .unwrap_or(Placement::Above);
+        .unwrap_or(default_placement);
     let visible = node
         .child("visible")
         .and_then(Node::int_text)

@@ -30,8 +30,8 @@ use super::xml::{parse_fraction, Node};
 use super::{annotations, chord, repeats, spanner, Reader, VoiceCtx};
 use scoretk_core::model::{
     Annotation, BarLine, BarLineType, Breath, BreathType, ChordRestKind, Clef, ClefType, Fraction,
-    GraceChord, Key, KeyMode, KeySig, Measure, Segment, SegmentItem, SegmentType, StemDirection,
-    TimeSig, Track, VOICES,
+    GraceChord, Key, KeyMode, KeySig, Measure, Placement, Segment, SegmentItem, SegmentType,
+    StemDirection, TimeSig, Track, VOICES,
 };
 
 /// Lit une mesure et renvoie son tick de fin.
@@ -218,7 +218,16 @@ fn read_voice(
             "Dynamic" | "Expression" | "Tempo" | "StaffText" | "SystemText" | "Text"
             | "RehearsalMark" | "Harmony" | "Fermata" | "InstrumentChange" | "FiguredBass"
             | "TremoloBar" => {
-                if let Some(mut annotation) = annotations::read(reader, child) {
+                // `MeasureRead::readVoice` fixe le placement de la piste avant
+                // `TRead::read` (`rw/read400/measurerw.cpp:570-574`,
+                // `rw/read410/measureread.cpp:535-538`) : voix impaire
+                // au-dessous, comme `Fermata::propertyDefault`.
+                let fermata_placement = if ctx.track.voice() % 2 == 1 {
+                    Placement::Below
+                } else {
+                    Placement::Above
+                };
+                if let Some(annotation) = annotations::read(reader, child, fermata_placement) {
                     // `Segment::add` enregistre l'instrument d'un changement au
                     // tick du segment (`part->setInstrument`).
                     if let Annotation::InstrumentChange(change) = &annotation {
@@ -228,13 +237,6 @@ fn read_voice(
                                 .score
                                 .part_mut(part_id)
                                 .set_instrument_at(ctx.tick, instrument.clone());
-                        }
-                    }
-                    // `MeasureRead::readVoice` place l'annotation au-dessous
-                    // pour la voix 1 ; `<placement>` l'écrase ensuite.
-                    if let Annotation::Fermata(fermata) = &mut annotation {
-                        if child.child("placement").is_none() && ctx.track.voice() % 2 == 1 {
-                            fermata.placement = scoretk_core::model::Placement::Below;
                         }
                     }
                     segment_mut(
