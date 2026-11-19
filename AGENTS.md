@@ -235,3 +235,5 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
   chiffrées : à lire avant d'optimiser une conversion.
 - `docs/agents/plan-fiabilite.md` — plan de fiabilisation des dix sens :
   lots de référence, oracles, phases : à lire avant une campagne de mesure.
+- docs/agents/format-mapping/ — tables format ↔ modèle par format et lacunes
+  du modèle : à lire avant d'étendre un lecteur ou un écrivain.
