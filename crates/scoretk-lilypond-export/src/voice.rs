@@ -403,18 +403,31 @@ pub(crate) fn render_body(
         }
         emitter.flush_line();
 
-        // Le `R2.*N` précédent couvre cette mesure : on avance seulement son
-        // curseur d'éléments, sans réécrire son silence ni sa barre.
+        // Le `R2.*N` précédent couvre la mesure suivante **si elle ne contient
+        // que des silences** (cas du modèle MuseScore, qui porte un silence
+        // de mesure sur chaque mesure couverte). Une mesure avec des notes
+        // doit être écrite normalement : la source `.ly` peut placer un vrai
+        // `R2*N` suivi d'une musique distincte, qu'il ne faut surtout pas
+        // supprimer.
         if multi_rest_left > 0 {
-            multi_rest_left -= 1;
-            item_index += items[item_index..]
+            let fin = item_index
+                + items[item_index..]
+                    .iter()
+                    .take_while(|item| item.measure == measure_index)
+                    .count();
+            if items[item_index..fin]
                 .iter()
-                .take_while(|item| item.measure == measure_index)
-                .count();
-            for token in structure.after_measure(measure_index) {
-                emitter.structure(*token);
+                .all(|item| item.chord_rest.is_rest())
+            {
+                multi_rest_left -= 1;
+                item_index = fin;
+                for token in structure.after_measure(measure_index) {
+                    emitter.structure(*token);
+                }
+                continue;
             }
-            continue;
+            // Musique réelle : le `R2.*N` ne couvre pas cette mesure.
+            multi_rest_left = 0;
         }
 
         let bar_check = measure_plan[measure_index].bar_check;

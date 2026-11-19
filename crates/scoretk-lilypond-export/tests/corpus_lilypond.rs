@@ -341,6 +341,51 @@ fn silence_multi_mesures_non_double() {
 /// et toute la compilation échoue (cas réel : `Veni veni Emmanuel` à 13
 /// portées). Le nom doit rester un identifiant valide, quelle que soit la
 /// portée. Musique ordinaire : accords, silences et barres sur chaque portée.
+/// Une mesure couverte par un `R2.*N` n'est redondante que si elle ne
+/// contient que des silences. Les sources `.ly` écrivent parfois `R2*N`
+/// puis une musique distincte : la supprimer ferait perdre des notes (cas
+/// réel : `PriereASteJeanneDArc.ly`, 22 notes perdues).
+#[test]
+fn silence_multi_mesures_ne_mange_pas_les_notes_suivantes() {
+    let mut score = scoretk_core::model::Score::new();
+    let part = score.add_part(Part::new("Voice", "Vo."));
+    let staff = score.add_staff(part);
+    let trois_quarts = Fraction::new(3, 4);
+
+    let mut premiere = Measure::new(0, Fraction::ZERO, trois_quarts);
+    premiere.len = Fraction::new(6, 4);
+    premiere.multi_measure_rest = Some(2);
+    let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+    segment.set_element(
+        Track::new(staff, 0),
+        SegmentItem::ChordRest(ChordRest::rest(Duration::measure())),
+    );
+    premiere.add_segment(segment);
+    score.add_measure(premiere);
+
+    let mut suivante = Measure::new(1, trois_quarts, trois_quarts);
+    let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+    let mut chord = ChordRest::chord(Duration::whole());
+    let note_id = score.add_note(Note::new(72, tpc::C));
+    let ChordRestKind::Chord(ref mut content) = chord.kind else {
+        unreachable!()
+    };
+    content.notes.push(note_id);
+    segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+    suivante.add_segment(segment);
+    score.add_measure(suivante);
+
+    let produit = scoretk_lilypond_export::write_lilypond(&score).expect("écriture");
+    assert!(
+        produit.contains("R2.*2"),
+        "multi-silence absent :\n{produit}"
+    );
+    assert!(
+        produit.contains("c'1"),
+        "note de la mesure suivante supprimée :\n{produit}"
+    );
+}
+
 #[test]
 fn noms_de_variables_valides_au_dela_de_dix_portees() {
     let mut score = scoretk_core::model::Score::new();
