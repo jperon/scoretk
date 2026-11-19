@@ -749,3 +749,59 @@ verifies that choice. Performance-only tables (`abc2midi` event handling) are
 out of scope. The conformity target remains MuseScore 4.7.4 for scoretk's
 exporters; `abc2xml.py` is the reference for the *reading* decisions only.
 
+### 16.5 Step 1 — written measure length (`doMaat`)
+
+**Implementation.** New module `reader/measure.rs` ports `abc2xml.py::doMaat`
+(line 674) and the `measure`/`bar_right` grammar (lines 428-436): a measure
+keeps its written length `actual` instead of `actual.max(nominal)`; the pickup
+case is unchanged (a short first measure was already kept at `actual`) and the
+empty-measure fallback still uses `nominal` so the model stays valid.
+`reader/mod.rs::finish_measure` now only delegates to `measure::do_maat`.
+The model drives the exporter: `write_measure` calls
+`move_to_tick(measure.end_tick())`, so with `Measure::len = actual` a short
+measure produces no `<forward>` padding — exactly what `abc2xml.py` writes
+(it emits no padding element for an implicit/irregular measure). The only
+other use of `nominal_len` in the exporter is the pickup beam calculation in
+`beams.rs`, which does not touch `<forward>`.
+
+**Reduced real tune.** `0811-0899.abc` X:884 (`/tmp/abc-reduits/short-measure-884.abc`,
+94 notes, the short `AGG G2` before a repeat): scoretk N1 100 %, N2
+**0.4894 → 1.00**, the alternative stays 1.00. The tablature X:5 reduction is
+covered by `crates/scoretk-abc-import/tests/measure_length.rs` (model lengths,
+pitches, durations, pickup, EOF and empty-measure cases) and
+`crates/scoretk/tests/abc_short_measures.rs` (no `<forward>`, full-measure
+control, both failing before the fix).
+
+**Full campaign** (foreground, three slices, same corrected oracle and release
+binary as § 16.2, 1 402 files / 4 756 tunes):
+
+| Candidate | Exact tunes | N1 | N2 | Failures |
+| --- | ---: | ---: | ---: | ---: |
+| scoretk (after phase 1, § 16.2) | 4 069 | 94.68 % | 50.20 % | 284 |
+| scoretk (after step 1) | 4 069 | **94.68 %** | **63.00 %** | **284** |
+| `abc2xml.py` (unchanged) | 4 406 | 99.70 % | 92.85 % | 130 |
+
+Per-lot N2 for scoretk goes 56.26 → 57.96 % (abcjs), 50.24 → 63.11 %
+(music21) and 17.43 → 23.25 % (ABC 2.1 fragments). Per-tune N1 is **unchanged:
+0 gains / 0 losses**. Per-tune N2: **2 091 gains / 1 102 losses** (net
++60 348 correctly placed attacks). In the § 16.3 target population of 2 455
+tunes the mean N2 goes 0.419 → 0.646 (1 681 gains, 664 losses, 110 unchanged).
+
+The +40 point estimate of § 16.4 was optimistic: the old `<forward>` padding
+was also compensating for scoretk's own *step 3* timing shortfall. For broken
+rhythm `<`/`>`, slash durations `x/`, tuplets and grace notes, scoretk writes
+the attack positions early (the local `<backup>`/duration is wrong, see the
+`convertBroken`/`mkTmod` row of § 16.4), so a measure ends early; the old
+padding shifted every later measure forward by exactly that shortfall and
+accidentally re-aligned them with the oracle. Removing it exposes that
+already-known, separately diagnosed error. **1 086 of the 1 102 N2 losses are
+in tunes containing broken rhythm, slash durations, tuplets or grace notes;**
+the remaining 16 contain backticks, `[G2G,2]` chords, `u`/`v` bowings, voice
+switches or multi-part annotations — also known reader limitations, not a new
+regression. No plain tune with only notes, rests and barlines regressed. Step 3
+(`convertBroken`, `tuplet_start`, `mkTmod`) must land to turn those masked
+losses into gains; the conformity target remains MuseScore 4.7.4.
+
+The MuseScore corpus is unaffected: `cargo test -p scoretk --test e2e_corpus`
+passes 5/5.
+

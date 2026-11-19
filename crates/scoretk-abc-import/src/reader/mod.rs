@@ -35,6 +35,7 @@
 
 mod build;
 mod lyrics;
+mod measure;
 mod music;
 
 use std::collections::BTreeMap;
@@ -526,21 +527,10 @@ impl Voice {
     pub(crate) fn finish_measure(&mut self, end_bar: BarLineType) {
         let actual = self.tick;
         let nominal = self.time.measure_len();
-        let pickup = self.measures.is_empty() && actual.is_positive() && actual < nominal;
-        let mut len = if actual.is_zero() {
-            if nominal.is_positive() {
-                nominal
-            } else {
-                Fraction::from_integer(1)
-            }
-        } else if pickup {
-            actual
-        } else {
-            actual.max(nominal)
-        };
-        if !len.is_positive() {
-            len = Fraction::from_integer(1);
-        }
+        // Port de `abc2xml.py::doMaat` (ligne 674) et de la grammaire
+        // `measure`/`bar_right` (lignes 428-436) : la mesure garde sa
+        // longueur ÉCRITE, anacrouse comprise ; voir `measure::do_maat`.
+        let len = measure::do_maat(actual, nominal);
         let mut measure = std::mem::replace(&mut self.current, MeasureData::new());
         measure.len = len;
         measure.nominal_len = nominal;
