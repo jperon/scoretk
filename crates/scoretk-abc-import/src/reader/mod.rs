@@ -718,6 +718,11 @@ impl Reader {
             let current = self.current;
             music::parse_line(self, current, text, line.number)?;
         }
+        // Un air sans champ `K:` reste invalide, même si toutes ses lignes
+        // avant cette clé ont été tolérées comme en-tête (voir plus haut).
+        if !self.seen_key {
+            return Err(Error::EnTeteIncomplet("K:"));
+        }
         Ok(())
     }
 

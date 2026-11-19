@@ -68,7 +68,9 @@ fn musicxml(abc: &str) -> String {
 #[test]
 fn mesure_courte_sans_forward_de_remplissage() {
     let xml = musicxml(TABLATURE_X5);
-    assert_eq!(xml.matches("<measure ").count(), 2, "deux mesures écrites");
+    // `%%staves {RH LH}` : une partie à accolade, deux portées nommées.
+    assert_eq!(xml.matches("<part id=").count(), 1, "une partie à accolade");
+    assert_eq!(xml.matches("<measure ").count(), 1, "une mesure globale");
     assert_eq!(
         xml.matches("<note>").count() + xml.matches("<note ").count(),
         2
@@ -89,7 +91,17 @@ fn mesure_courte_sans_forward_de_remplissage() {
             rest[..rest.find('<').expect("fin de duration")].to_owned()
         })
         .collect();
-    assert_eq!(durations, vec!["1", "1"], "deux croches, divisions=2");
+    // Deux croches, plus le `<backup>` qui ramène à la première portée de la
+    // mesure pour y écrire la seconde voix (port de `mergePartMeasure`).
+    assert_eq!(
+        durations,
+        vec!["1", "1", "1"],
+        "croches et backup, divisions=2"
+    );
+    assert!(
+        xml.contains("<backup>"),
+        "les deux portées se partagent la mesure"
+    );
 }
 
 #[test]
