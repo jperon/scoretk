@@ -429,12 +429,15 @@ impl<'a> Interpreter<'a> {
 
     /// Contexte `\new` rencontré dans une voix.
     ///
-    /// Dans le sous-ensemble lu, seul `\new Voice` a un sens à cet endroit :
-    /// il ouvre une voix de la portée courante (`context_prefix` /
-    /// `NEWCONTEXT`, `lily/parser.yy` l. 1685-1690). Les autres contextes
-    /// (portée, groupe) restent ignorés avec un avertissement.
+    /// `\new Voice` ouvre une voix de la portée courante (`context_prefix` /
+    /// `NEWCONTEXT`, `lily/parser.yy` l. 1685-1690). Un `\context Staff`
+    /// rencontré dans une musique de portée retrouve cette portée courante :
+    /// ses voix s'ouvrent donc sur cette portée, exactement comme un passage
+    /// polyphonique temporaire. C'est l'idiome des pièces qui enchâssent
+    /// `\context Staff << \new Voice … >>` dans une portée déjà ouverte.
+    /// Les groupes de portées restent ignorés avec un avertissement.
     fn nested_context(&mut self, group: &GroupBlock) {
-        if group.kind != GroupKind::Voice {
+        if !matches!(group.kind, GroupKind::Voice | GroupKind::Staff) {
             self.warn("contexte imbriqué ignoré dans une voix");
             return;
         }

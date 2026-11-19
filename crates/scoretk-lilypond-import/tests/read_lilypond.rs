@@ -735,6 +735,51 @@ fn musique_de_haut_niveau_simultanee() {
 }
 
 #[test]
+fn context_staff_ouvre_une_portee() {
+    // Deux `\context Staff = "…"` frères dans un `<< … >>` de partition sont
+    // deux portées, pas deux voix d'une même portée (c'est l'idiome des
+    // partitions d'orchestre Mutopia).
+    let source = "\\score { << \
+                  \\context Staff = \"a\" { \\fixed c' { c4 d e f } } \
+                  \\context Staff = \"b\" { \\fixed c' { g4 a b c' } } >> }";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.parts.len(), 2);
+    assert_eq!(score.staves.len(), 2);
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 69, 71, 72]);
+}
+
+#[test]
+fn context_staff_au_dela_de_quatre_voix() {
+    // Cinq `\context Staff` ne doivent pas se faire écraser par la limite de
+    // quatre voix par portée : chacun ouvre sa propre portée.
+    let mut branches = String::new();
+    for (i, note) in ['c', 'd', 'e', 'f', 'g'].iter().enumerate() {
+        branches.push_str(&format!(
+            "\\context Staff = \"s{i}\" {{ \\fixed c' {{ {note}1 }} }} "
+        ));
+    }
+    let source = format!("\\score {{ << {branches} >> }}");
+    let score = read_lilypond(&source).expect("lecture");
+    assert_eq!(score.staves.len(), 5);
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67]);
+}
+
+#[test]
+fn context_staff_imbrique_avec_voix_nommees() {
+    // `\context Staff` dans une portée déjà ouverte retrouve cette portée :
+    // ses voix doivent être lues, pas ignorées comme un contexte imbriqué.
+    let source = "\\score { \\new Staff { \\fixed c' { c1 \
+                  \\context Staff << \
+                    \\context Voice = \"v0\" { d1 } \
+                    \\context Voice = \"v1\" { e1 } \
+                  >> f1 } } }";
+    let score = read_lilypond(source).expect("lecture");
+    let mut notes = hauteurs(&score);
+    notes.sort_unstable();
+    assert_eq!(notes, vec![60, 62, 64, 65]);
+}
+
+#[test]
 fn musique_de_haut_niveau_new_staff_relative() {
     let score = read_lilypond("\\new Staff \\relative { c'4 d e f }").expect("lecture");
     assert_eq!(score.staves.len(), 1);

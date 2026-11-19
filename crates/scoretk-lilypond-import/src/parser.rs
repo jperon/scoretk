@@ -718,16 +718,20 @@ impl<'a> Parser<'a> {
 
     /// `\new` (`existing == false`) ou `\context` (`existing == true`).
     ///
-    /// `\context` retrouve un contexte existant (`context_find_or_create`,
-    /// `lily/parser.yy` l. 1685-1690) : un `\context Voice` s'ouvre comme un
-    /// `\new Voice`, tout autre contexte (`Staff`…) est traversé sans changer
-    /// de voix, ses commandes s'appliquant au contexte courant.
+    /// Un `\context` dont le nom est une portée, un groupe de portées ou une
+    /// voix ouvre un contexte structurel comme `\new` : c'est l'idiome des
+    /// partitions d'orchestre
+    /// `\context StaffGroup << \context Staff = "haut" … >>`. Le traiter comme
+    /// un simple changement de contexte réduirait ces portées à autant de voix
+    /// d'une seule portée (au plus quatre dans le modèle), perdant la musique
+    /// des portées suivantes. Les autres noms (`\context { \Staff … }` d'un
+    /// `\midi`, `\context Score`, `\context Lyrics`…) restent traversés.
     fn parse_context_command(&mut self, existing: bool) -> Music {
         if existing {
-            let is_voice = self
-                .peek()
-                .is_some_and(|token| token.kind == Kind::Word && token.text == "Voice");
-            if !is_voice {
+            let structural = self.peek().is_some_and(|token| {
+                token.kind == Kind::Word && GroupKind::from_name(&token.text) != GroupKind::Other
+            });
+            if !structural {
                 self.bump();
                 if self.eat_punct('=') {
                     self.bump();
@@ -738,7 +742,7 @@ impl<'a> Parser<'a> {
                 return self.parse_music();
             }
         }
-        match self.parse_new() {
+        match self.parse_new_context(existing) {
             Some(group) if group.staves.is_empty() && !group.lyrics.is_empty() => {
                 // Un `\new Lyrics` peut porter plusieurs couplets (un couplet
                 // aligné imbriqué) : les conserver tous, pas seulement le
@@ -761,6 +765,16 @@ impl<'a> Parser<'a> {
 
     /// `\new Nom [= "id"] [\with { … }] musique`.
     fn parse_new(&mut self) -> Option<GroupBlock> {
+        self.parse_new_context(false)
+    }
+
+    /// [`Self::parse_new`], en sachant si le contexte est retrouvé (`\context`)
+    /// ou créé (`\new`). Un `\context Staff` retrouvé peut contenir des voix
+    /// nommées `\context Voice = "…"` : LilyPond les attache à cette portée,
+    /// mais le modèle n'en porte que quatre. Les répartir en portées distinctes
+    /// (comme le faisait la lecture transparente d'avant) évite de perdre la
+    /// musique des voix surnuméraires.
+    fn parse_new_context(&mut self, existing: bool) -> Option<GroupBlock> {
         let name = match self.bump() {
             Some(Token {
                 kind: Kind::Word,
@@ -883,6 +897,25 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 let content = self.parse_music();
+                if existing && kind == GroupKind::Staff {
+                    // Un `\context Staff` retrouvé peut contenir plusieurs
+                    // `\context Voice = "…"` : les conserver comme portées
+                    // sœurs plutôt que comme voix d'une seule portée (le
+                    // modèle en limite le nombre à quatre).
+                    let mut staves = Vec::new();
+                    let mut lyrics = Vec::new();
+                    self.collect_staves(content, &mut staves, &mut lyrics);
+                    if staves.is_empty() {
+                        staves.push(StaffBlock::new());
+                    }
+                    return Some(GroupBlock {
+                        kind: GroupKind::Staff,
+                        instrument_name,
+                        short_instrument_name,
+                        staves,
+                        lyrics,
+                    });
+                }
                 let mut voices = Vec::new();
                 let mut lyrics = Vec::new();
                 self.collect_voices(content, &mut voices, &mut lyrics);

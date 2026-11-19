@@ -497,6 +497,13 @@ pas de régression du lecteur.
   `\partCombine`, `\paper` sont ignorés avec un avertissement. `\book` et
   `\bookpart` sont parcourus (leur `\header`, leurs `\score` et leur musique
   de haut niveau).
+- **`\context Staff`** : retrouvé au niveau d'une partition, il ouvre une
+  portée (les partitions d'orchestre `\context StaffGroup << \context Staff =
+  "haut" … >>` sont ainsi lues en autant de portées). Retrouvé dans la
+  musique d'une portée déjà ouverte, il retrouve cette portée et ses voix y
+  sont ouvertes. Quand il contient des `\context Voice = "…"` nommés, ces voix
+  sont réparties en portées sœurs plutôt que regroupées en une portée de plus
+  de quatre voix (limite du modèle), pour ne pas perdre de musique.
 - **Voix ouvertes dans une voix** : `\new Voice` (ou `\context Voice`) et
   chaque branche d'un `<< … >>` rencontrés dans la musique d'une voix ouvrent
   une voix de la portée au tick courant (`context_prefix` /
