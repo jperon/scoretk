@@ -368,7 +368,10 @@ impl<'a> Parser<'a> {
                     self.parse_toplevel_music(&token);
                 } else {
                     self.position += 1;
-                    self.skip_command_arguments(&token.text);
+                    // Au niveau supérieur, un bloc `{ … }` après une commande
+                    // comme `\layout` ou `\paper` est un réglage, pas de la
+                    // musique : il doit être sauté.
+                    self.skip_command_arguments(&token.text, true);
                 }
             }
             Kind::Punct(';') => {
@@ -2348,7 +2351,9 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 self.warn(format!("commande ignorée : \\{name}"));
-                self.skip_command_arguments(&name);
+                // Dans la musique, le bloc `{ … }` qui suit une commande
+                // inconnue est de la musique ordinaire et non son argument.
+                self.skip_command_arguments(&name, false);
                 Music::Unknown(name)
             }
         }
@@ -3297,7 +3302,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Saute les arguments heuristiques d'une commande inconnue.
-    fn skip_command_arguments(&mut self, name: &str) {
+    fn skip_command_arguments(&mut self, name: &str, braced_argument: bool) {
         if name.is_empty() {
             return;
         }
@@ -3307,7 +3312,18 @@ impl<'a> Parser<'a> {
             };
             match &token.kind {
                 Kind::Punct('{') => {
-                    self.skip_braced();
+                    // Un `{ … }` qui suit une commande inconnue **dans la
+                    // musique** est de la musique ordinaire, pas son argument :
+                    // `\autoBeamOff`, `\dynamicUp`, `\oneVoice`,
+                    // `\compressMMRests`… n'ont aucun argument et le bloc qui
+                    // les suit doit être lu. Le sauter faisait disparaître
+                    // toute la musique des voix écrites
+                    // `<< \autoBeamOff { … } >>` (régressions Mutopia Greis,
+                    // Deutschlandlied, …). Au niveau supérieur, au contraire,
+                    // `\layout`/`\paper` portent un bloc de réglages à sauter.
+                    if braced_argument {
+                        self.skip_braced();
+                    }
                     return;
                 }
                 Kind::Str | Kind::Number => {

@@ -3522,3 +3522,61 @@ fn markup_avec_argument_entre_accolades_laisse_la_musique_suivante() {
     assert_eq!(hauteurs(&score), vec![60, 62, 64], "musique après chaîne");
     assert_eq!(score.measures.len(), 1, "mesures après chaîne");
 }
+
+#[test]
+fn commande_sans_argument_ne_veure_pas_le_bloc_musique_suivant() {
+    // Régressions Mutopia (Greis, Deutschlandlied, ...) : chaque voix écrit
+    // `<< \autoBeamOff \dynamicUp { \global \melodie } >>`. Ces commandes n'ont
+    // pas d'argument : le bloc `{ … }` qui les suit est de la musique ordinaire
+    // et doit être lu, pas consommé comme un argument de commande inconnue.
+    let source = "\\version \"2.24.0\"\n\
+         \\language \"english\"\n\
+         global = { \\key c \\major \\time 4/4 }\n\
+         dessus = \\fixed c' { c'4 d' e' f' | g'2 r | <c' e' g'>2~ q2 | }\n\
+         bas = \\fixed c { c4 d e f | g2 c' | c'2~ c' | }\n\
+         \\score { <<\n\
+           \\new Staff <<\n\
+             \\context Voice = haut { \\voiceOne <<\n\
+               \\autoBeamOff \\dynamicUp { \\global \\dessus }\n\
+             >> }\n\
+             \\context Voice = basse { \\voiceTwo <<\n\
+               \\autoBeamOff \\dynamicDown { \\global \\bas }\n\
+             >> }\n\
+           >>\n\
+           \\new Staff { \\fixed c' { \\clef bass c4 d e f | g2 r | c'2~ c' | } }\n\
+         >> }";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(
+        hauteurs(&score),
+        vec![
+            72, 74, 76, 77, 79, 72, 76, 79, 72, 76, 79, // dessus
+            48, 50, 52, 53, 55, 60, 60, 60, // bas
+            60, 62, 64, 65, 67, 72, 72, // seconde portée
+        ],
+        "hauteurs des trois voix"
+    );
+    assert_eq!(score.measures.len(), 3, "mesures");
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 2),
+            Fraction::new(1, 2),
+            Fraction::new(1, 2),
+            Fraction::new(1, 2),
+        ],
+        "durées de la première voix"
+    );
+
+    // Une commande inconnue en fin de flux ne consomme rien, et une musique
+    // sans commande inconnue reste inchangée (cas non concerné).
+    let score = read_lilypond(
+        "\\score { \\new Staff { \\fixed c' { c'4 d' | e'2 r | } \\autoBeamOff } }",
+    )
+    .expect("lecture fin de flux");
+    assert_eq!(hauteurs(&score), vec![72, 74, 76], "musique avant la commande");
+    assert_eq!(score.measures.len(), 2, "mesures avant la commande");
+}
