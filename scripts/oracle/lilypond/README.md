@@ -144,3 +144,50 @@ Outputs in `--out`: one `.jsonl` per lot (one row per file and per tool), the
 converted files under `travail/`, and `resume.md` (tables and the ten most
 frequent scoretk discrepancy causes). The report in `docs/agents/lilypond.md`,
 section "Measurement", is a formatted version of `resume.md`.
+
+## Writing oracle: scoretk against musicxml2ly
+
+`ecriture.py` measures the **other direction**: `.ly` written from a source
+`S`, then compiled to MIDI by LilyPond 2.26. It reuses `midi_notes.py`
+(MIDI ↔ MIDI N1/N2/N2d, Q16 grid) and `ly_notes.py` (repeat detection). For
+each `S` it writes:
+
+- scoretk's `.ly` directly from `S` (`scoretk S --to ly`);
+- musicxml2ly's `.ly` from the **reference MusicXML** of `S`: the versioned
+  `*.ref.musicxml` for the corpus, MuseScore's own export for `.mscz`, the
+  source itself for `.xml`, and scoretk's MusicXML for `.ly` round trips.
+  Each row records `xml_source` so the report always says which input was used.
+
+A copy of each `.ly` receives an injected `\midi { }` and an `\unfoldRepeats`
+wrapper around the score music: without the latter neither converter unfolds
+volta repeats in MIDI, while the reference MIDI (MuseScore for `.mscx`/`.mscz`/
+`.xml`, LilyPond for `.ly`) does. Both candidates are therefore measured under
+the same conditions. The reference MIDI and MusicXML are cached in
+`<out>/refs/<hash>`, so a re-run only recompiles the candidates.
+
+Columns of interest per row: `compile_ok`, `erreurs`, `avertissements`,
+`taille_ly`, `ref`/`test`, `n1`/`n2`/`n2d`, `exact`, `drapeaux`. A failed
+compilation is recorded as such but its MIDI is still measured when LilyPond
+produced one; the two facts are complementary.
+
+```sh
+scripts/oracle/lilypond/lots-ecriture.sh /tmp/lots-ecriture
+nix develop -c cargo build -p scoretk-cli
+scripts/oracle/lilypond/ecriture.sh --out /tmp/ecriture-base \
+  --scoretk target/debug/scoretk \
+  --lot corpus=/tmp/lots-ecriture/manifestes/corpus.txt \
+  --lot mscz=/tmp/lots-ecriture/manifestes/mscz.txt \
+  --lot xml=/tmp/lots-ecriture/manifestes/xml.txt \
+  --lot ly=/tmp/lots-ecriture/manifestes/ly.txt
+scripts/oracle/lilypond/ecriture.sh --out /tmp/ecriture-base --resume
+python3 scripts/oracle/lilypond/ecriture.py --selftest
+```
+
+`lots-ecriture.sh` builds four manifests: the 56 corpus `.mscx`, the 174
+`.mscz` of `~/Musique`, the genuine MusicXML files of `~/Musique`, and a 1/5
+deterministic sample of the `.ly` files (`SAMPLE=5`, overridable).
+`ecriture.sh` provides `mido`, LilyPond 2.26 and `musicxml2ly`; it also works
+around a transient nixpkgs MuseScore/alsa-lib glibc mismatch through the
+overridable `MSCORE_LIBS` variable. Freeze the scoretk binary under a stable
+path for a campaign (`--scoretk /tmp/scoretk-base`) so a rebuild cannot mix two
+versions in one report.
