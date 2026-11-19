@@ -1453,3 +1453,25 @@ than a gain in this sample. The other four causes were re-checked against the
 notation reference and the MuseScore C++ source this time: none warrants a
 reader or writer change without contradicting the pivot model (§2.6.1 for
 grace notes, §4.1.2 for volta repeats, §1.3.1/§1.3.3 for clefs and ottavas).
+
+### Final re-measurement with the corrected oracles
+
+Both MIDI readers (`midi_notes.py` and `ly_notes.py`) now pair overlapping
+notes FIFO. Re-measuring the frozen `scoretk-base` and the final binary with
+the *same corrected readers* gives:
+
+| Lot | Frozen exact | Final exact | N1 / N2 gains | N1 / N2 losses |
+| --- | ---: | ---: | ---: | ---: |
+| ecriture_ly | 689 | **692** | 13 / 10 | 0 / 1 |
+| ecriture_mscz_corpus | 17 | 17 | 0 | 0 |
+| ecriture_mscz_musique | 2 | 2 | 0 | 0 |
+| lecture_musique | 596 | 596 | 0 | 0 |
+| lecture_mutopia | 49 | 49 | 0 | 0 |
+| LilyPond `mus` | 111 | 108 | 0 / 0 | 0 / 0 (3 exact, explained above) |
+| LilyPond `ra` | 119 | **120** | 3 / 3 | 0 / 0 |
+| LilyPond `mut` | 46 | 46 | 0 / 0 | 0 / 0 |
+
+The single `ecriture_ly` N2 loss remains the documented `LaMouetteGrise`
+chord-grid artefact. The `make-relative` fix above is visible on `ra`, where
+`make-relative-copies.ly` had dropped four notes (N1 16 → 12) before being
+restored to 16/16. No other lot changes.
