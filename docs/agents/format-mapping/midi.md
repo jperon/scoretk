@@ -22,7 +22,7 @@ the code, not inferred from a report.
 | Meta `FF 58` time signature (SMF meta-events) | `TimeSig` (`.../model/segment.rs:166-207`), `Measure::nominal_len` (`.../model/measure.rs:61`) | supported (`import/src/timesigmap.rs`) | supported (`export/src/render.rs`) | Time changes become `TimeSig` segments and nominal bar lengths. |
 | Meta `FF 59` key signature (SMF meta-events) | `KeySig`, `Key`, `KeyMode` (`.../model/segment.rs:43-129`) | supported (`import/src/key.rs:86-223`, `import/src/lib.rs:503-525`) | supported (`export/src/render.rs:378-416`, `export/src/writer.rs:109-112`) | Key changes written as meta-events after each repeat expansion. The `mi` byte is read into `KeyMode` (as MusicXML import does) and written back from the model. MuseScore 4.7.4 reads only `sf` and always writes `mi=0` (`importmidi.cpp` `processMeta`, `exportmidi.cpp` `writeHeader`); scoretk deliberately diverges here to preserve the SMF mode. |
 | Meta `FF 03` track name, `FF 02` copyright, title/composer (SMF §Meta-Events) | `Instrument::track_name` (`.../model/part.rs:67`), `ScoreMetadata` (`score.rs:50-87`) | partial (`import/src/lib.rs:496-535`) | partial (`export/src/render.rs:158`) | Track name, copyright, title, subtitle, composer, translator and poet are read; generic `FF 01` text is read as lyrics by `lib.rs:1052-1063`, not as generic text. Writer emits the part name and essential metas only. |
-| Meta `FF 05` lyrics (SMF §Meta-Events; RP-017, RP-026) | `Lyrics`, `LyricsSyllabic` (`.../model/lyrics.rs:36-63`) | supported for RP-017 (`import/src/lyrics.rs:59-170`, `lib.rs:1038-1068`) | missing (item 5) | Text is attached to notes; RP-017 melismas (empty events) and hyphen-based syllabic state (Begin/Middle/End vs Single) are now decoded, with the tick-0 "on" flag ignored. MuseScore's `importmidi_lyrics.cpp` stores every syllable as `Single` and skips empty events; the port follows RP-017 instead. RP-026 commands/character sets are still not decoded. |
+| Meta `FF 05` lyrics (SMF §Meta-Events; RP-017, RP-026) | `Lyrics`, `LyricsSyllabic` (`.../model/lyrics.rs:36-63`) | supported for RP-017 (`import/src/lyrics.rs:59-170`, `lib.rs:1038-1068`) | supported (`export/src/render.rs:206-219,421-448`, `export/src/writer.rs:114`) | Text is attached to notes; RP-017 melismas (empty events) and hyphen-based syllabic state (Begin/Middle/End vs Single) are now decoded, with the tick-0 "on" flag ignored. The writer emits `FF 05` as MuseScore 4.7.4 does, adding a trailing space only for `Single`/`End`. MuseScore's importer stores every syllable as `Single` and skips empty events; the port follows RP-017 on input. RP-026 commands/character sets are still not decoded. |
 | Meta `FF 06`/`FF 07` marker and cue point (SMF meta-events) | `Marker`, `Jump`, `RepeatMark` (`.../model/repeat.rs:42-257`) | missing | missing | Marker bytes are decoded by `midifile.rs:52,324` but are not mapped to the model by `lib.rs:481-539`. Repeats are expanded on output via `RepeatList` (`export/src/repeat_list.rs`), never written as markers. |
 | Running status and variable-length quantities (SMF track chunk) | — (serialization detail) | supported (`import/src/midifile.rs`, via `midly`) | supported (`export/src/writer.rs`, via `midly`) | Not a musical property; no model field is needed. |
 | Tuplet ratios inferred from grid (MIDI import heuristics) | `Tuplet` (`.../model/tuplet.rs:53-81`), `ChordRest::tuplet` (`chord.rs:334`) | partial (`import/src/tuplet.rs`) | supported (`export/src/render.rs`) | Only simple 3/5/7/9 tuplets on non-binary grids; nested/overlapping/duolets are not detected. |
@@ -34,11 +34,12 @@ the code, not inferred from a report.
 | Pitch bend, aftertouch, polyphonic pressure, system exclusive, CC modulation (MIDI 1.0 detailed spec) | — | missing | missing | No pivot field: nearest related types are `TremoloBar` (`.../model/tremolo_bar.rs:77-84`, guitar bend) and `Instrument::volume`/`pan`, neither of which models MIDI controllers. |
 | Swing, chord names, per-note playback (`%%MIDI`-style playback data) | `SwingParameters` (`annotation.rs:272-277`), `Harmony` (`:428-471`) | missing (`docs/agents/midi.md`: `importmidi_swing`, `importmidi_chordname` not ported) | missing | No swing or chord-name events are produced. |
 
-## Spec features the reader/writer mishandles (file:line)
+## Spec features reviewed at SMF level (file:line)
 
 Checked against the official texts in `specs/midi/`; the syntax/section key is
 `docs/agents/format-ref/midi.md`. These are *SMF-level* defects or omissions,
-distinct from the model gaps listed below.
+distinct from the model gaps listed below. Rows marked **Fixed** were repaired
+in this series of commits; the others remain open.
 
 | Spec feature (source) | Actual behaviour in this worktree | file:line |
 | --- | --- | --- |
@@ -63,10 +64,10 @@ Ranked by musical importance:
 3. **Playback of expressive marks**: fermata/breath pauses (`PauseMap` covers
    section breaks only), `singleNoteDynamics` CC2/CC11, and `<veloChange>` on
    hairpins are not stored in the pivot.
-4. **Lyrics and marker meta-events on output**, plus swing and chord names:
-   the model has `Lyrics`, `Marker`/`Jump`, `SwingParameters` and `Harmony`, but
-   the MIDI writer does not emit their meta-events. On input, RP-017/RP-026
-   lyric conventions are not interpreted (see the spec-gaps table above).
+4. **Marker meta-events on output**, plus swing and chord names: the model has
+   `Marker`/`Jump`, `SwingParameters` and `Harmony`, but the MIDI writer does not
+   emit their meta-events. Lyrics are now written as `FF 05` (see the FF 05 row);
+   RP-026 lyric commands/character sets are still not interpreted on input.
 5. **Instrument identity**: the model has program/channel/volume/pan but no
    link back to the MuseScore instrument catalogue; imported names differ from
    catalogue names and short names are not produced.

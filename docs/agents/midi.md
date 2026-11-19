@@ -163,9 +163,9 @@ restent hors périmètre, faute d'information dans le modèle :
   accord et `playNote` reçoit la note du premier accord. Seule la vélocité de
   la **première note du premier accord** pilote les deux attaques ; la seconde
   n'est jamais lue. Le portage est fidèle à ce comportement.
-- **Changements d'instrument, paroles, repères de répétition, pédales** : non
-  exportés (`exportmidi.cpp` écrit aussi des méta-évènements de paroles et de
-  marqueurs).
+- **Changements d'instrument, repères de répétition, pédales** : non exportés.
+  Les paroles, elles, sont écrites en `FF 05` comme dans `exportmidi.cpp` (voir
+  « Fidélité SMF » ci-dessous) ; les marqueurs restent non exportés.
 - **Instruments à percussion** : pas de table de batterie (`<Drumset>` non
   modélisé) ni de canal 9 automatique.
 - **`playRepeats` d'un saut** : non modélisé, traité comme faux (valeur par
@@ -208,6 +208,12 @@ fixture binaire ajouté).
   le portage l'accepte. Les formats 0 et 1 gardent leur superposition habituelle.
   Vérifié par `smf_format2` (trois motifs, cinq notes, deux mesures, plus le cas
   format 1 inchangé).
+- **Paroles à l'écriture** : contrairement à l'état antérieur du portage,
+  `exportmidi.cpp` de MuseScore 4.7.4 émet bien les paroles du modèle en
+  `FF 05`, avec un espace final ajouté aux syllabes `Single`/`End` seulement.
+  Le portage suit ce comportement, y compris à travers les reprises. Vérifié par
+  `lyrics_export` (quatre noires, trois syllabes, hauteurs et attaques
+  inchangées, aucun `FF 05` sans parole).
 
 ## Références et test de conformité
 

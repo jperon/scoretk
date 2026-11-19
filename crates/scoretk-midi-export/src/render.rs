@@ -37,8 +37,8 @@ use std::collections::BTreeMap;
 
 use scoretk_core::model::{
     Annotation, ArticulationType, Chord, ChordRest, ChordRestKind, Fraction, GraceType, Instrument,
-    KeyMode, KeySig, Measure, Note, PartId, Score, SegmentType, SpannerType, StaffId, TimeSig,
-    Track, TremoloKind, VeloType, VOICES,
+    KeyMode, KeySig, LyricsSyllabic, Measure, Note, PartId, Score, SegmentItem, SegmentType,
+    SpannerType, StaffId, TimeSig, Track, TremoloKind, VeloType, VOICES,
 };
 
 use super::error::Result;
@@ -74,6 +74,8 @@ pub(crate) enum EventKind {
     TimeSignature(u8, u8, u8, u8),
     /// Altérations et drapeau mineur (`mi`) du méta `FF 59 02 sf mi`.
     KeySignature(i8, bool),
+    /// Parole `FF 05`, avec l'espace final des syllabes terminales déjà posé.
+    Lyric(String),
     Tempo(u32),
     ControlChange {
         channel: u8,
@@ -201,6 +203,16 @@ pub(crate) fn render(
                 }
             });
         }
+
+        // Paroles de la portée (`exportmidi.cpp` : « Export lyrics … as Meta
+        // events »). Le déroulement des reprises est le même que pour les notes.
+        let lyrics = lyric_events(score, staff.id);
+        push_unwound(track, repeat_list, &pause_map, &lyrics, |tick, text: &String| {
+            Event {
+                tick,
+                kind: EventKind::Lyric(text.clone()),
+            }
+        });
 
         // Tempo, une seule fois (les pauses ont déjà produit leurs
         // évènements dans `tempo`).
@@ -373,6 +385,35 @@ fn time_signature_events(score: &Score) -> Vec<(i64, TimeSig)> {
         }
     }
     events.into_iter().collect()
+}
+
+/// Paroles d'une portée, prêtes à l'écriture (`tick, texte`).
+fn lyric_events(score: &Score, staff: StaffId) -> Vec<(i64, String)> {
+    let mut result = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (track, item) in segment.iter_elements() {
+                if track.staff() != staff {
+                    continue;
+                }
+                let SegmentItem::ChordRest(chord_rest) = item else {
+                    continue;
+                };
+                for lyric in &chord_rest.lyrics {
+                    // MuseScore ajoute un espace final aux syllabes `Single`
+                    // et `End` (fin de mot), pas à `Begin`/`Middle`.
+                    let mut text = lyric.text.clone();
+                    if matches!(lyric.syllabic, LyricsSyllabic::Single | LyricsSyllabic::End)
+                        && !text.ends_with(' ')
+                    {
+                        text.push(' ');
+                    }
+                    result.push((segment_tick(segment.tick), text));
+                }
+            }
+        }
+    }
+    result
 }
 
 /// Armures d'une portée : `(tick, (altérations, mineur))`.
