@@ -225,6 +225,9 @@ def reference_midi(args, src: str, dest: Path, caches: Path, extensible: bool) -
         return ""
     kind = Path(src).suffix.lower().lstrip(".")
     if kind == "ly":
+        # Certaines sources n'ont ni \score ni \midi (simples définitions de
+        # variables) : LilyPond ne produit alors aucun MIDI, ce que le relevé
+        # enregistre comme référence absente, sans exclusion silencieuse.
         code, _, err = lancer(
             [args.lilypond, "-dmidi-extension=midi", "-o", str(dest.with_suffix("")), src],
             TIMEOUT_LY,
@@ -258,7 +261,27 @@ def reference_xml(args, src: str, dest: Path, tk_xml: Path, caches: Path) -> str
             shutil.copyfile(ref, dest)
             return "ref.musicxml"
     if kind in ("xml", "musicxml", "mxl"):
-        shutil.copyfile(src, dest)
+        if kind == "mxl":
+            # Un .mxl est un ZIP : musicxml2ly le décompresse d'après son
+            # extension. Copier les octets bruts vers un .musicxml lui ferait
+            # lire du binaire comme du XML (erreur expat). On extrait le
+            # premier membre .musicxml/.xml.
+            import zipfile
+
+            try:
+                with zipfile.ZipFile(src) as archive:
+                    membres = [
+                        n for n in archive.namelist()
+                        if n.lower().endswith((".musicxml", ".xml"))
+                    ]
+                    if not membres:
+                        return "absent (mxl vide)"
+                    donnees = archive.read(membres[0])
+            except (OSError, zipfile.BadZipFile) as exc:
+                return f"absent (mxl illisible : {exc})"
+            dest.write_bytes(donnees)
+        else:
+            shutil.copyfile(src, dest)
         return "source"
     # .mscz (et .mscx sans référence) : export MuseScore 4.7.4.
     code, _, err = lancer(borne([args.mscore, "-o", str(dest), src], 30), 30)

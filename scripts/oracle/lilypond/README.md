@@ -186,6 +186,12 @@ python3 scripts/oracle/lilypond/ecriture.py --selftest
 `lots-ecriture.sh` builds four manifests: the 56 corpus `.mscx`, the 174
 `.mscz` of `~/Musique`, the genuine MusicXML files of `~/Musique`, and a 1/5
 deterministic sample of the `.ly` files (`SAMPLE=5`, overridable).
+The `.mxl` sources of the XML lot are decompressed before being handed to
+`musicxml2ly`: passing the raw ZIP bytes under a `.musicxml` name makes its
+XML parser fail before conversion. Failures inside `musicxml2ly` itself (for
+example its `UnboundLocalError: part_list` on some scores) are recorded as
+`echec` rows, not silently discarded.
+
 `ecriture.sh` provides `mido`, LilyPond 2.26 and `musicxml2ly`; it also works
 around a transient nixpkgs MuseScore/alsa-lib glibc mismatch through the
 overridable `MSCORE_LIBS` variable. Freeze the scoretk binary under a stable
