@@ -903,3 +903,46 @@ not a placement error of the ported functions. List (file, X:, N2 after step 3
 
 No plain tune with only notes, rests and barlines regressed. The MuseScore
 corpus is unaffected: `cargo test -p scoretk --test e2e_corpus` passes 5/5.
+
+### 16.7 Remaining port — mode names, rejected tunes, Znn, named voices, overlays (2026-11-19)
+
+This subsection is in English by convention for the measurement reports. The
+porting rules are unchanged: the upstream Python script is **not** committed,
+every ported decision cites its Python function and line in a comment, and each
+step adds its own failing test before the implementation. The baseline is the
+end of §16.6 (step 3): N1 **96.22 %**, N2 **89.61 %**, 216 failures, 4 129 exact
+tunes. The alternative (`abc2xml.py` 269) reads N1 **99.70 %**, N2 **92.85 %**,
+130 failures, 4 406 exact tunes.
+
+#### Diagnosis of the remaining gap (before this campaign)
+
+| Gap | Tunes | Cause / `abc2xml.py` function to port |
+| --- | ---: | --- |
+| N1 (alt right, tk wrong) | 261 | `K:E Minor`, `K:A Dorian`, … : `parse_key` read only the first whitespace token, so `E Minor` became E **major** (4 sharps instead of 1). Port of `doHeaderField` (lines 1808-1820, regex `([A-G][#b]?)\s*([a-zA-Z]*)`). |
+| Rejected tunes (tk fails, alt OK) | 85 | 27 ties separated from the note by a space or broken rhythm (`tie`, line 380), 10 `y` spacers (`basenote`/`noteActn`, lines 367/549), 9 orphan accidentals/line breaks (`errors`, line 431), 8 unknown `K:` forms (`doHeaderField`, lines 1808-1851), 5 stray symbols in chords/graces (`chord_note`, line 385), plus bare tempo lines, additive meters and inline endings. |
+| N2 (alt right, tk wrong) | 20 | Multi-measure rests `Z24` written as one padded rest instead of 24 rests (`fixSlurs.f`, lines 767-775). |
+| N2 | 17 | Parallel named voices collapsed into one part (`%%score (S A) (T B)`), so no `<backup>` was written (`splitHeaderVoices`, line 779; `voiceNamesAndMaps`, line 2253; `mergeMeasure`/`mergeParts`/`mergePartMeasure`, lines 876/935/951). |
+| N2 | 7 | Overlays `&` written sequentially instead of simultaneously (`voice_overlay`, line 425). |
+
+#### Steps landed (one commit each, failing test first, full campaign after each)
+
+1. **Separated mode names.** `parse_key` now joins a recognised mode word to the tonic even when a space separates them, and treats an unknown three-letter mode as major (Python line 1817). New test `tests/key_modes.rs`. Full campaign: N1 96.22 → **97.62 %**, N2 89.61 → **90.96 %**, **261 N1 gains / 0 losses**, 216 failures unchanged.
+2. **Rejected-tune causes.** The parse loop now recovers misplaced characters as warned local skips (Python `errors`, line 431), accepts `.-` and separated ties, `y` spacers, digits after invisible bars, decorations/rests inside chords, orphan accidentals, unknown `K:` values, additive meters (`2+3/8`, line 1800) and pre-`K:` bare lines. New test `tests/tolerance.rs`. Full campaign: N1 97.62 → **99.46 %**, N2 90.96 → **92.64 %**, **80 N1 gains / 0 losses**, failures 216 → **135**.
+3. **`restActn` / `Znn`** (`fixSlurs.f`, lines 767-775): `Z24` expands to 24 full-measure rests. New test `tests/multi_rests.rs`. Four tunes improved, 12 attacks, no loss.
+4. **`mergeMeasure` / `mergeParts` / `mergePartMeasure`**: named `V:` voices receive unique IDs and `%%score` resolves names as well as numbers; overlays and named voices share the correct staff. New test `tests/named_voices.rs`; `tests/measure_length.rs` updated to the now-distinct named voices. About 20 N2 gains, no unexplained loss.
+5. **`voice_overlay` (`&`)**: each overlay opens a voice on the same staff at the first note's tick, with the exporter emitting `<backup>`; overlay voices are reused and their empty measures have zero length so a pickup is not stretched. New test `tests/overlays.rs`. Four tunes improved (one pickup-overlay regression found and fixed before the final campaign).
+6. **Last five rejections**: stray symbols inside chords/graces and microtonal numerators after an accidental are skipped locally. New test `tests/chord_noise.rs`.
+
+#### Final three-lot campaign (foreground, 1 402 files / 4 756 tunes)
+
+| Candidate | Exact tunes | N1 | N2 | Failures | Files fully exact |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| scoretk (§ 16.6 baseline) | 4 129 | 96.22 % | 89.61 % | 216 | 1 132 / 1 402 |
+| scoretk (after this campaign) | **4 446** | **99.58 %** | **92.81 %** | **131** | **1 175 / 1 402** |
+| `abc2xml.py` (unchanged) | 4 406 | 99.70 % | 92.85 % | 130 | 1 147 / 1 402 |
+
+Per-tune comparison against the § 16.6 master: **N1 345 gains / 1 loss**, **N2 371 gains / 0 losses** (net +15 095 correctly placed attacks). The single N1 loss is the NC fragment `abc-2.1-standard/fragments/example-006.abc` X:1 (OCTAVE, 25 → 23 notes): its four named voices are now distinct, so the per-voice `transpose=-24` no longer applies to the two treble voices as an accidental global transposition. This is the faithful per-voice behaviour (the alternative also fails the tune, standard-lot N1 25.8 %), not a regression of a ported function. No plain tune with only notes, rests and barlines regressed.
+
+#### Remaining gap
+
+scoretk is now within **0.12 point of N1 and 0.04 of N2** of `abc2xml.py`, with one more rejection (131 vs 130; 109 files without `X:`, 21 oracle failures shared by both, and one remaining `"` inside a quoted chord annotation in `MyLadysGoonHasGairsOntStrathspey.abc` X:1). The residual N1 gap is 9 empty outputs from `%%stretchlast 1`, 12 partial mismatches, 4 transposition/clef cases and 2 octave cases, all already classified in § 13.3/§ 15.3 and outside this syntax port. The MuseScore corpus is unaffected: `cargo test -p scoretk --test e2e_corpus` passes 5/5.
