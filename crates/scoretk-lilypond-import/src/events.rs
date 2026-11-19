@@ -800,7 +800,15 @@ impl<'a> Interpreter<'a> {
     fn repeat(&mut self, kind: RepeatKind, count: u32, body: &Music, alternatives: &[Music]) {
         match kind {
             RepeatKind::Unfold => {
+                // Portage de `lily/music.cc` et `lily/music-sequence.cc` : le
+                // wrapper de reprise n'a pas de `to-relative-callback`, donc le
+                // corps est converti en octaves absolues une seule fois avant
+                // d'être rejoué. Chaque passage repart de la même hauteur de
+                // référence ; la laisser avancer ferait monter les notes
+                // marquées d'une octave à chaque reprise.
+                let reference = self.octave;
                 for _ in 0..count.max(1) {
+                    self.octave = reference;
                     self.walk(body);
                 }
             }

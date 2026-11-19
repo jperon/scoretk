@@ -227,17 +227,31 @@ fn hauteur_hors_plage_avertit() {
 }
 
 #[test]
+fn unfold_relative_converti_une_seule_fois() {
+    // `\repeat` n'a pas de `to-relative-callback` (`lily/music.cc`) : son corps
+    // est converti en octaves absolues une seule fois avant d'être rejoué.
+    // Relire le corps à chaque passage ferait monter d'une octave les `g''` de
+    // la seconde reprise.
+    let score = lire(
+        "motif = { g''8 e g e }\n\
+         \\relative c' { \\repeat unfold 2 { \\motif | <c e g>4 r4 | } c'4 }",
+    );
+    assert_eq!(
+        hauteurs(&score),
+        vec![79, 76, 79, 76, 72, 76, 79, 79, 76, 79, 76, 72, 76, 79, 84]
+    );
+    assert_eq!(score.measures.len(), 3);
+    assert_eq!(durees_ecrites(&score).len(), 13);
+}
+
+#[test]
 fn octave_relative_repetee_sature_sans_panique() {
-    // `\repeat unfold 200 { c'4 d e f }` fait monter l'octave relative d'un
-    // cran à chaque passage : au-delà de la plage MIDI, les notes sont écartées
-    // avec un avertissement, sans panique ni débordement silencieux.
-    let (score, warnings) =
-        read_lilypond_reporting("\\relative { \\repeat unfold 200 { c'4 d e f } }")
-            .expect("lecture");
-    assert_eq!(score.measures.len(), 200);
+    // Une suite de hauteurs très marquées fait sortir l'octave relative de la
+    // plage MIDI : les notes sont écartées avec un avertissement, sans panique
+    // ni débordement silencieux.
+    let source = format!("\\relative {{ {} }}", "c''''''4 ".repeat(30));
+    let (score, warnings) = read_lilypond_reporting(&source).expect("lecture");
     let pitches = hauteurs(&score);
-    // Sept passages tiennent dans la plage MIDI, les suivants sont écartés.
-    assert_eq!(&pitches[..8], &[60, 62, 64, 65, 72, 74, 76, 77]);
     assert!(pitches.iter().all(|pitch| *pitch <= 127));
     assert!(
         warnings
