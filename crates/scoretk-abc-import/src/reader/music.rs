@@ -791,6 +791,21 @@ impl Parser<'_> {
     // --- crochets : accord, volta ou champ en ligne ----------------------
 
     fn parse_bracket(&mut self) -> Result<()> {
+        // Barre invisible `[|]` ou `[]` (§ 4.8) ; `[|` seul est une barre
+        // épaisse et se poursuit comme une barre ordinaire.
+        if matches!(self.peek_at(1), Some('|' | ']')) {
+            self.pos += 1;
+            if self.peek() == Some('|') && self.peek_at(1) == Some(']') {
+                self.pos += 2;
+                return self.finish_bar(BarLineType::Normal, false, None);
+            }
+            if self.peek() == Some(']') {
+                self.pos += 1;
+                return self.finish_bar(BarLineType::Normal, false, None);
+            }
+            return self.parse_bar();
+        }
+
         // Volta `[1` ou `[1,2`.
         if self.peek_at(1).is_some_and(|value| value.is_ascii_digit()) {
             self.pos += 1;
@@ -1126,6 +1141,31 @@ mod tests {
             .filter(|spanner| matches!(spanner.kind, SpannerType::Volta))
             .filter_map(|spanner| spanner.volta.as_ref().map(|volta| volta.endings.clone()))
             .collect()
+    }
+
+    #[test]
+    fn barres_invisibles_entre_crochets() {
+        let invisible = parse("C D E F|[|]G A B c|]");
+        let normale = parse("C D E F|G A B c|]");
+        assert_eq!(invisible.score.measures.len(), 2);
+        assert_eq!(
+            contenu(&invisible),
+            (
+                vec![60, 62, 64, 65, 67, 69, 71, 72],
+                vec![0.125; 8]
+            )
+        );
+        assert_eq!(contenu(&invisible), contenu(&normale));
+
+        // Limites : `[]`, barre épaisse `[|`, et accord ordinaire inchangé.
+        let vide = parse("C D[]E F|]");
+        assert_eq!(vide.score.measures.len(), 2);
+        assert_eq!(contenu(&vide).0, vec![60, 62, 64, 65]);
+        let epaisse = parse("C D[|E F|]");
+        assert_eq!(epaisse.score.measures.len(), 2);
+        assert_eq!(contenu(&epaisse).0, vec![60, 62, 64, 65]);
+        let accord = parse("[CEG]2 z2|]");
+        assert_eq!(contenu(&accord).0, vec![60, 64, 67]);
     }
 
     #[test]

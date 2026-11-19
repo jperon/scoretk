@@ -507,3 +507,19 @@ and a local skip, never the loss of the whole tune.
   residual `TRANSPOSITION` classification comes from explicit accidentals in
   `K:` being ignored by the shared key parser (both candidates), not from a
   rejection. No per-file regression.
+
+### 14.5 Invalid pitch after a barline: invisible bars (33 rejected tunes)
+
+- Reduced file: `/tmp/abc-reduits/invisible.abc`, X:1 extracted from
+  `music21-corpus/music21/corpus/ryansMammoth/AbithaMugginsFavoriteReel.abc`
+  (the `...[|]|]` ending).
+- Behaviour: ABC 2.1 § 4.8 defines `[|]` (and `[]`) as an invisible bar line and
+  allows liberal barline sequences such as `[|`. `abc2xml.py` recognises them
+  as barlines; previously `[` started a chord and `|` was read as a note
+  pitch, which rejected the whole tune.
+- Fix: `reader/music.rs` recognises `[|]`, `[]` and `[|` in `parse_bracket` and
+  closes the measure through the shared `finish_bar` path; ordinary chords
+  such as `[CEG]` are unchanged.
+- Measurement: N1/N2 **0 % → 98.4 %** (60/61 notes), same as the alternative.
+  The one missing note is a grace-note difference affecting both candidates
+  (group 2 in section 13.3), not a rejection. No per-file regression.
