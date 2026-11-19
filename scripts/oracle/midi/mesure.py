@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Copyright (C) 2026 jperon
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License version 3 as published by
+# the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+# more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program. If not, see the LICENSE file at the root of this repository or
+# <https://www.gnu.org/licenses/gpl-3.0.html>.
+
+"""Pilote de mesure des deux sens de conversion MIDI.
+
+Tous les lancements de scoretk passent par ``timeout 10 prlimit`` (bornes
+mémoire et temps), conformément aux consignes du projet. MuseScore, utilisé
+comme alternative sur la lecture, est lancé de la même façon en mode headless.
+
+Les manifestes sont des fichiers texte, un chemin par ligne ; les paires
+source/référence de l'écriture sont séparées par une tabulation. Aucune donnée
+tierce n'est versionnée : les manifestes et les sorties brutes vont dans le
+dossier ``--out`` (hors dépôt).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+
+from midi_notes import GRID, TOL, compare, read_midi, read_xml
+
+TIMEOUT_SCORETK = 10
+TIMEOUT_MSCORE = 20
+
+
+def lire_manifest(path: str) -> list[str]:
+    with open(path, encoding="utf-8") as f:
+        return [ligne.strip() for ligne in f if ligne.strip() and not ligne.startswith("#")]
+
+
+def lancer(commande: list[str], env: dict | None = None, budget: int = TIMEOUT_SCORETK):
+    """Exécute une conversion bornée ; renvoie (code, secondes, message)."""
+    debut = time.monotonic()
+    try:
+        p = subprocess.run(
+            commande,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            env=env,
+            timeout=budget + 3,
+            check=False,
+        )
+        return p.returncode, time.monotonic() - debut, p.stderr.decode("utf-8", "replace")[-400:]
+    except subprocess.TimeoutExpired:
+        return 124, time.monotonic() - debut, "dépassement de la borne de temps"
+
+
+def cmd_scoretk(binaire: str, src: str, dst: str, entree: str, sortie: str) -> list[str]:
+    return [
+        "timeout", str(TIMEOUT_SCORETK), "prlimit", "--as=2000000000",
+        binaire, src, "--from", entree, "--to", sortie, "-o", dst,
+    ]
+
+
+def cmd_mscore(binaire: str, src: str, dst: str) -> tuple[list[str], dict]:
+    env = dict(os.environ)
+    env.pop("LD_LIBRARY_PATH", None)  # wrapper Nix hostile aux bibliothèques Qt
+    env["QT_QPA_PLATFORM"] = "offscreen"
+    commande = [
+        "timeout", str(TIMEOUT_MSCORE), "prlimit", "--as=2000000000",
+        binaire, "-o", dst, src,
+    ]
+    return commande, env
+
+
+def ecrire_ligne(fichier, releve: dict) -> None:
+    fichier.write(json.dumps(releve, ensure_ascii=False) + "\n")
+
+
+def base_releve(lot: str, sens: str, outil: str, fichier: str) -> dict:
+    return {
+        "lot": lot, "sens": sens, "outil": outil, "fichier": fichier,
+        "ok": False, "code": None, "temps": 0.0, "taille": 0, "erreur": "",
+    }
+
+
+def marquer_echec(releve: dict) -> None:
+    """Classe les échecs pour que le résumé les compte et les regroupe."""
+    releve["drapeaux"] = ["delai" if releve.get("code") == 124 else "echec"]
+
+
+def mesurer_lecture(args, lot: str, manifeste: str, fichier_sortie) -> None:
+    """MIDI → MusicXML : oracle = hauteurs/attaques du MIDI lui-même."""
+    for i, src in enumerate(lire_manifest(manifeste)[: args.limit or None]):
+        try:
+            ref = read_midi(src)
+        except Exception as exc:  # MIDI illisible : on le note comme échec d'oracle
+            r = base_releve(lot, "lecture", "oracle", src)
+            r["erreur"] = f"oracle MIDI : {exc}"
+            marquer_echec(r)
+            ecrire_ligne(fichier_sortie, r)
+            continue
+        work = Path(args.out) / "travail" / lot / str(i)
+        work.mkdir(parents=True, exist_ok=True)
+        cibles = [("scoretk", cmd_scoretk(args.scoretk, src, str(work / "tk.xml"), "midi", "musicxml"), None)]
+        # L'alternative est coûteuse (démarrage de MuseScore) : un pas
+        # déterministe permet de la mesurer sur un échantillon sans réduire
+        # le lot de scoretk. Par défaut 1 (tous les fichiers).
+        if args.mscore and i % args.alt_stride == 0:
+            commande, env = cmd_mscore(args.mscore, src, str(work / "ms.xml"))
+            cibles.append(("mscore", commande, env))
+        for outil, commande, env in cibles:
+            r = base_releve(lot, "lecture", outil, src)
+            xml = work / ("tk.xml" if outil == "scoretk" else "ms.xml")
+            code, duree, erreur = lancer(
+                commande, env, TIMEOUT_MSCORE if outil == "mscore" else TIMEOUT_SCORETK
+            )
+            r["code"], r["temps"] = code, round(duree, 3)
+            r["ok"] = code == 0 and xml.exists() and xml.stat().st_size > 0
+            r["taille"] = xml.stat().st_size if xml.exists() else 0
+            if not r["ok"]:
+                r["erreur"] = erreur or "sortie vide ou absente"
+                marquer_echec(r)
+                ecrire_ligne(fichier_sortie, r)
+                continue
+            try:
+                test = read_xml(str(xml))
+            except Exception as exc:
+                r["erreur"] = f"XML illisible : {exc}"
+                r["ok"] = False  # une sortie mal formée n'est pas une réussite
+                marquer_echec(r)
+                ecrire_ligne(fichier_sortie, r)
+                continue
+            r.update(compare(ref, test, args.grid, args.tol))
+            ecrire_ligne(fichier_sortie, r)
+        fichier_sortie.flush()
+
+
+def mesurer_ecriture(args, lot: str, manifeste: str, fichier_sortie) -> None:
+    """Partition → MIDI : comparateur MIDI ↔ MIDI commun, référence externe."""
+    for i, ligne in enumerate(lire_manifest(manifeste)[: args.limit or None]):
+        src, ref_path = ligne.split("\t", 1)
+        try:
+            ref = read_midi(ref_path)
+        except Exception as exc:
+            r = base_releve(lot, "ecriture", "oracle", src)
+            r["erreur"] = f"oracle MIDI : {exc}"
+            marquer_echec(r)
+            ecrire_ligne(fichier_sortie, r)
+            continue
+        work = Path(args.out) / "travail" / lot / str(i)
+        work.mkdir(parents=True, exist_ok=True)
+        dst = work / "tk.mid"
+        r = base_releve(lot, "ecriture", "scoretk", src)
+        entree = "mscx" if src.endswith(".mscx") else "mscz" if src.endswith(".mscz") else "ly"
+        code, duree, erreur = lancer(
+            cmd_scoretk(args.scoretk, src, str(dst), entree, "midi")
+        )
+        r["code"], r["temps"] = code, round(duree, 3)
+        r["ok"] = code == 0 and dst.exists() and dst.stat().st_size > 0
+        r["taille"] = dst.stat().st_size if dst.exists() else 0
+        if not r["ok"]:
+            r["erreur"] = erreur or "sortie vide ou absente"
+            ecrire_ligne(fichier_sortie, r)
+            continue
+        try:
+            test = read_midi(str(dst))
+        except Exception as exc:
+            r["erreur"] = f"MIDI illisible : {exc}"
+            marquer_echec(r)
+            ecrire_ligne(fichier_sortie, r)
+            continue
+        r.update(compare(ref, test, args.grid, args.tol))
+        ecrire_ligne(fichier_sortie, r)
+        fichier_sortie.flush()
+
+
+def mesurer_robustesse(args, lot: str, manifeste: str, fichier_sortie) -> None:
+    """Corpus sans source : échecs, délais, vides et taille de sortie seulement."""
+    for i, src in enumerate(lire_manifest(manifeste)[: args.limit or None]):
+        work = Path(args.out) / "travail" / lot / str(i)
+        work.mkdir(parents=True, exist_ok=True)
+        dst = work / "tk.xml"
+        r = base_releve(lot, "robustesse", "scoretk", src)
+        code, duree, erreur = lancer(
+            cmd_scoretk(args.scoretk, src, str(dst), "midi", "musicxml")
+        )
+        r["code"], r["temps"] = code, round(duree, 3)
+        r["taille"] = dst.stat().st_size if dst.exists() else 0
+        r["ok"] = code == 0 and r["taille"] > 0
+        if not r["ok"]:
+            r["erreur"] = erreur or "sortie vide ou absente"
+            marquer_echec(r)
+        else:
+            try:
+                r["notes_test"] = len(read_xml(str(dst)))
+                if r["notes_test"] == 0:
+                    r["drapeaux"] = ["sortie_vide"]
+            except Exception as exc:
+                r["erreur"] = f"XML illisible : {exc}"
+                r["ok"] = False  # une sortie mal formée n'est pas une réussite
+                marquer_echec(r)
+        ecrire_ligne(fichier_sortie, r)
+        fichier_sortie.flush()
+        # Seuls la taille et le compte de notes importent ici : on ne garde pas
+        # les XML intermédiaires (le corpus Lakh represente ~2 Go de sorties).
+        if dst.exists():
+            dst.unlink()
+
+
+def charger(out: str) -> list[dict]:
+    relevés: list[dict] = []
+    for chemin in sorted(Path(out).glob("*.jsonl")):
+        with chemin.open(encoding="utf-8") as f:
+            for ligne in f:
+                if ligne.strip():
+                    relevés.append(json.loads(ligne))
+    return relevés
+
+
+def resume(relevés: list[dict]) -> str:
+    groupes: dict[tuple, list[dict]] = {}
+    for r in relevés:
+        groupes.setdefault((r["lot"], r["sens"], r["outil"]), []).append(r)
+    lignes = [
+        "# Relevé MIDI — résumé",
+        "",
+        "Tolérance : ±1/16 de noire sur l'attaque et la durée ; grille de",
+        "quantification : 1/16 de noire (Q16, défaut MuseScore).",
+        "",
+        "| Lot | Sens | Outil | Fichiers | Réussis | Échecs | Délais | Vides | Exacts | N1 % | N2 % | Taille moy. | Temps max |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for (lot, sens, outil), rs in sorted(groupes.items()):
+        n = len(rs)
+        reussis = sum(r["ok"] for r in rs)
+        echecs = sum(not r["ok"] and r.get("code") not in (124,) for r in rs)
+        delais = sum(r.get("code") == 124 for r in rs)
+        vides = sum("sortie_vide" in r.get("drapeaux", []) or (r.get("notes_test") == 0 and r["ok"]) for r in rs)
+        exacts = sum(r.get("exact", False) for r in rs)
+        notes = [r for r in rs if r.get("ref", 0)]
+        n1 = sum(r.get("ref", 0) * r.get("pct_n1", 0) for r in notes)
+        n2 = sum(r.get("ref", 0) * r.get("pct_n2", 0) for r in notes)
+        tot = sum(r.get("ref", 0) for r in notes)
+        taille = sum(r.get("taille", 0) for r in rs) / n if n else 0
+        tmax = max((r.get("temps", 0) for r in rs), default=0)
+        lignes.append(
+            f"| {lot} | {sens} | {outil} | {n} | {reussis} | {echecs} | {delais} | "
+            f"{vides} | {exacts} ({100*exacts/n:.1f} %) | "
+            f"{n1/tot if tot else 0:.2f} | {n2/tot if tot else 0:.2f} | "
+            f"{taille:.0f} | {tmax:.2f} s |"
+        )
+
+    causes: dict[str, list[str]] = {}
+    for r in relevés:
+        if r.get("drapeaux"):
+            causes.setdefault(r["drapeaux"][0], []).append(r["fichier"])
+    lignes += ["", "## Causes d'écart (les plus fréquentes)", "", "| Cause | Fichiers | Exemple |", "| --- | ---: | --- |"]
+    for cause, fichiers in sorted(causes.items(), key=lambda kv: -len(kv[1]))[:10]:
+        lignes.append(f"| {cause} | {len(fichiers)} | `{fichiers[0]}` |")
+    return "\n".join(lignes) + "\n"
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--out", required=True, help="dossier des sorties brutes (hors dépôt)")
+    p.add_argument("--scoretk", required=True, help="chemin du binaire scoretk")
+    p.add_argument("--mscore", default="", help="binaire MuseScore (alternative lecture)")
+    p.add_argument("--alt-stride", type=int, default=1,
+                   help="mesurer MuseScore sur 1 fichier sur N (défaut : 1)")
+    p.add_argument("--lecture", action="append", default=[], metavar="NOM=MANIFESTE")
+    p.add_argument("--ecriture", action="append", default=[], metavar="NOM=MANIFESTE")
+    p.add_argument("--robustesse", action="append", default=[], metavar="NOM=MANIFESTE")
+    p.add_argument("--limit", type=int, default=0, help="nombre max de fichiers par lot (0 = tous)")
+    p.add_argument("--grid", type=float, default=GRID)
+    p.add_argument("--tol", type=float, default=TOL)
+    p.add_argument("--resume", action="store_true", help="ne fait que régénérer le résumé")
+    args = p.parse_args()
+    Path(args.out).mkdir(parents=True, exist_ok=True)
+
+    if not args.resume:
+        for spec in args.lecture:
+            lot, manifeste = spec.split("=", 1)
+            with open(Path(args.out) / f"{lot}.jsonl", "w", encoding="utf-8") as f:
+                mesurer_lecture(args, lot, manifeste, f)
+        for spec in args.ecriture:
+            lot, manifeste = spec.split("=", 1)
+            with open(Path(args.out) / f"{lot}.jsonl", "w", encoding="utf-8") as f:
+                mesurer_ecriture(args, lot, manifeste, f)
+        for spec in args.robustesse:
+            lot, manifeste = spec.split("=", 1)
+            with open(Path(args.out) / f"{lot}.jsonl", "w", encoding="utf-8") as f:
+                mesurer_robustesse(args, lot, manifeste, f)
+
+    texte = resume(charger(args.out))
+    (Path(args.out) / "resume.md").write_text(texte, encoding="utf-8")
+    print(texte)
+
+
+if __name__ == "__main__":
+    main()

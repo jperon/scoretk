@@ -447,3 +447,86 @@ nix flake check
 **Quand le faire** : lors d'une mise à jour de dépendances du projet, ou si un
 fichier MIDI du corpus ne se lit plus après une montée de version de MuseScore
 (le format SMF lui-même est stable ; c'est l'API de `midly` qui évolue).
+
+## Mesure (plan de fiabilisation, phase 0-1)
+
+Relevé du 2026-11-19, **sans aucune correction de scoretk**. Outils versionnés
+dans `scripts/oracle/midi/` (`lots.sh`, `mesure.sh`, `mesure.py`,
+`midi_notes.py`) ; manifestes (listes de chemins, aucune donnée tierce dans le
+dépôt) et sorties brutes dans
+`/tmp/nix-shell.7XCuVq/claude-1000/-home-jacques-programmes-musique-musescore/2ae55baa-d7cc-4f59-831d-f77ca3cc7ebd/scratchpad/midi-mesure/`.
+L'oracle est indépendant des deux sens : `mido` extrait les notes du MIDI de
+référence, `ElementTree` (bibliothèque standard) celles du MusicXML produit.
+Chaque lancement de scoretk passe par `timeout 10 prlimit --as=2000000000`.
+
+**Niveaux mesurés.** N1 = multiset des hauteurs ; N2 = hauteur + attaque ;
+N2d = hauteur + attaque + durée. Attaques et durées sont exprimées en noires,
+ramenées à la grille Q16 (1/16 de noire, réglage par défaut de l'import
+MuseScore) avec une tolérance de rapprochement de ±1/16 de noire. Un fichier
+est « exact » lorsque N1 = N2 = N2d = nombre de notes de référence ; un fichier
+sans note de référence n'est pas compté exact. Les pourcentages sont pondérés
+par le nombre de notes de référence, pour ne pas donner le même poids à un
+court et à un long morceau.
+
+**Lots et échantillonnage.** Lecture : 1 020 MIDI LilyPond de `~/Musique`
+appariés à un `.ly` et 122 MIDI de Mutopia. Écriture : les 1 020 `.ly` appariés
+(référence = MIDI LilyPond), 21 `.mscx` du corpus (référence = MIDI exporté par
+MuseScore 4.7.4) et 8 `.mscz` de `~/Musique` ayant un MIDI à côté. Robustesse :
+corpus Lakh sans source appariée. MuseScore 4.7.4, alternative de lecture, est
+mesuré sur un échantillon déterministe de **1 fichier sur 10** (102 fichiers de
+`~/Musique`, 13 de Mutopia ; `--alt-stride 10`) et Lakh sur **1 fichier sur 20**
+(96 fichiers ; `LAKH_STRIDE=20`) : avec la charge de la machine, MuseScore et
+les imports Lakh denses rendaient les lots complets prohibitifs. scoretk est
+mesuré sur la totalité des lots de lecture et d'écriture.
+
+### Résultats
+
+| Lot | Sens | Outil | Fichiers | Réussis | Échecs | Délais | Vides | Exacts | N1 % | N2 % | Taille moy. | Temps max |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ecriture_ly | écriture | scoretk | 1020 | 1020 | 0 | 0 | 0 | 753 (73,8 %) | 90,33 | 83,25 | 984 | 0,10 s |
+| ecriture_mscz_corpus | écriture | scoretk | 21 | 21 | 0 | 0 | 0 | 17 (81,0 %) | 100,00 | 100,00 | 248 | 0,01 s |
+| ecriture_mscz_musique | écriture | scoretk | 8 | 7 | 1 | 0 | 0 | 1 (12,5 %) | 66,25 | 52,20 | 6451 | 0,22 s |
+| lecture_musique | lecture | scoretk | 1020 | 1018 | 0 | 2 | 0 | 245 (24,0 %) | 100,00 | 97,26 | 46 575 | 10,07 s |
+| lecture_musique | lecture | MuseScore 4.7.4 | 102 | 102 | 0 | 0 | 0 | 20 (19,6 %) | 100,00 | 97,73 | 66 786 | 7,81 s |
+| lecture_mutopia | lecture | scoretk | 122 | 115 | 0 | 7 | 0 | 11 (9,0 %) | 99,74 | 91,20 | 201 211 | 10,01 s |
+| lecture_mutopia | lecture | MuseScore 4.7.4 | 13 | 13 | 0 | 0 | 0 | 1 (7,7 %) | 100,00 | 74,38 | 521 281 | 3,32 s |
+| robustesse_lakh (1/20) | robustesse | scoretk | 96 | 54 | 2 | 40 | 0 | 0 (0,0 %) | — | — | 979 050 | 10,01 s |
+
+Lecture : scoretk place **100 % des hauteurs** sur le lot `~/Musique` (99,74 %
+sur Mutopia) et devance MuseScore sur Mutopia (91,20 % d'attaques contre
+74,38 % sur 13 fichiers), tout en lui étant très proche sur `~/Musique`
+(97,26 % contre 97,73 % sur 102 fichiers). Sur l'écriture, les 21 fichiers du
+corpus avec référence MuseScore
+sont conformes sur les notes ; les 4 non comptés « exacts » (`mmrest`,
+`repeat68`, `repeat69`, `testTempoPrecision`) ont une référence sans note.
+Le lot `.mscz` de `~/Musique` est le plus faible : un fichier est refusé
+(version MuseScore 2.06 non prise en charge) et deux présentent un effectif de
+notes très différent de la référence. En robustesse (Lakh, échantillon 1/20),
+**40 fichiers sur 96 dépassent la borne de 10 s**, 2 produisent un MusicXML mal
+formé et 54 passent, pour une taille de sortie moyenne de 979 ko : c'est le
+signal d'usure le plus net de ce relevé.
+
+### Causes d'écart
+
+Dix causes observées, par fréquence décroissante, avec un fichier exemple
+chacune. Les huit premières sont les drapeaux du regroupement automatique du
+relevé (tous lots confondus) ; les deux dernières sont des diagnostics
+ciblés sur des fichiers du lot `.mscz` et de Lakh :
+
+| Cause | Fichiers | Exemple |
+| --- | ---: | --- |
+| Durée de tenue (`gateTime`) différente, notes et attaques justes | 724 | `~/Musique/Partitions/Accordeon/Encantada/Encantada.ly` |
+| Attaques décalées après quantification | 341 | `~/Musique/Ecole/2024_Noel_1re/À-Notre-Dame.ly` |
+| Octave de clef / clef octaviée | 87 | `~/Musique/Ecole/2206_Pere_Pro/partitions/02_02_Segura_L-aigle-mexicain_partition.ly` |
+| Notes manquantes (voix, n-olets) | 55 | `~/Musique/Partitions/ChantsScouts/Fait/0a/lily-8546410f.ly` |
+| Dépassement de la borne de 10 s | 49 | `~/Musique/Partitions/Chorales/Mendelssohn/Laudate_pueri_Op._39_No._2_-_Felix_Mendelssohn.midi` |
+| Notes supplémentaires (reprises, ornements) | 35 | `~/Musique/Ecole/Promos/22_StMichel/22_HymneStMichel.ly` |
+| Décalage de hauteur constant (transposition, -12 demi-tons) | 13 | `~/Musique/Ecole/Promos/22_StMichel/22_StMichel.ly` |
+| Référence sans note (non comptée exacte) | 6 | `~/Musique/Partitions/ChantsScouts/Partitions/LaRondeDeNuit/LaRondeDeNuit.ly` |
+| MusicXML de sortie mal formé | 2 | `~/programmes/musique/corpus/lakh-midi-clean/clean_midi/Backstreet Boys/Back to Your Heart.1.mid` |
+| Version MuseScore 2.06 non prise en charge | 1 | `~/Musique/Partitions/Chorales/AdTeSuspiramus/Ad_te_Suspiramus.mscz` |
+
+Les délais ne sont pas contournés en augmentant la borne : ce sont des boucles
+ou des traitements quadratiques à corriger en phase 2. Le fichier
+`Dreadlock Holiday.1.mid` (114 ko, Lakh) dépasse encore la limite à 25 s en
+diagnostic isolé.
