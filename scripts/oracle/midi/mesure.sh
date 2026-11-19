@@ -23,6 +23,11 @@
 # Usage :
 #   scripts/oracle/midi/lots.sh <dossier-sortie>
 #   scripts/oracle/midi/mesure.sh <dossier-sortie> <binaire-scoretk> [mscore] [--limit N]
+#
+# Alternatives de lecture (échantillonnées avec --alt-stride) :
+#   --mscore <binaire>  import MIDI de MuseScore 4.7.4 (déjà passé en 3e position)
+#   --midi2ly           midi2ly puis lilypond (-s) : MIDI → .ly → MIDI
+#   --music21           music21.converter.parse → MusicXML (si module disponible)
 
 set -euo pipefail
 
@@ -44,4 +49,10 @@ ARGS+=(--ecriture "ecriture_mscz_musique=$M/ecriture_mscz_musique.txt")
 ARGS+=(--robustesse "robustesse_lakh=$M/robustesse_lakh.txt")
 ARGS+=("$@")
 
-exec nix-shell -p python3Packages.mido --run "python3 '$DIR/mesure.py' $(printf '%q ' "${ARGS[@]}")"
+PAQUETS="python3Packages.mido"
+# midi2ly et lilypond ne sont nécessaires que si l'alternative est demandée.
+for arg in "$@"; do
+    [[ "$arg" == "--midi2ly" ]] && PAQUETS="$PAQUETS lilypond"
+done
+
+exec nix-shell -p $PAQUETS --run "python3 '$DIR/mesure.py' $(printf '%q ' "${ARGS[@]}")"

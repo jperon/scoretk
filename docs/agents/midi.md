@@ -616,3 +616,90 @@ conversion time of 4.23 s instead of 10 s. The two previously malformed files
 (`Back to Your Heart.1.mid`, `Besame Mucho.mid`) and the three slowest files
 (`Dreadlock Holiday.1.mid`, `Fernando.2.mid`, `Beautiful Life.mid`) were also
 checked individually with `ElementTree`: all parse cleanly in 0.26–1.71 s.
+
+## Phase 3 — alternatives, output size and N2 (2026-11-19)
+
+### Alternatives on the same lots and the same oracle
+
+The oracle (`scripts/oracle/midi/`) now runs the alternatives with option
+flags, on the same manifests and with the same N1/N2 comparison as scoretk:
+`--mscore` (MuseScore 4.7.4, headless), `--midi2ly` (`midi2ly` → `.ly` →
+`lilypond -s` → MIDI, compared MIDI↔MIDI) and `--music21`
+(`music21.converter.parse` → MusicXML). **music21 is not packaged in nixpkgs**
+as of 2026-11-19, so the flag is skipped with a warning rather than recorded
+as a failure. Alternatives are sampled with `--alt-stride 10`; scoretk is always
+measured on the whole lot. Every launch uses `timeout` + `prlimit --as=2000000000`.
+
+| Lot | Tool | Files | OK | Fail | Exact | N1 % | N2 % | Avg size | Max time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| lecture_musique | scoretk | 1020 | 1020 | 0 | 251 (24.6 %) | **100.00** | **100.00** | 48 384 B | 0.79 s |
+| lecture_musique | MuseScore 4.7.4 | 102 | 102 | 0 | 20 (19.6 %) | **100.00** | **100.00** | 66 786 B | 2.08 s |
+| lecture_musique | midi2ly 2.26.0 | 102 | 90 | 12 | 87 (85.3 %) | 99.11 | 99.11 | 1 705 B¹ | 5.17 s |
+| lecture_mutopia | scoretk | 122 | 122 | 0 | 12 (9.8 %) | 99.80 | **99.80** | 262 149 B | 2.09 s |
+| lecture_mutopia | MuseScore 4.7.4 | 13 | 13 | 0 | 1 (7.7 %) | 100.00 | 83.73 | 521 281 B | 1.88 s |
+| lecture_mutopia | midi2ly 2.26.0 | 13 | 12 | 1 | 11 (84.6 %) | 97.84 | 96.67 | 7 661 B¹ | 16.46 s |
+
+¹ midi2ly's output is a MIDI file, not MusicXML: its size is not comparable
+with the two MusicXML producers. The 12 + 1 failures are `midi2ly`/`lilypond`
+rejections of dense files, not scoretk failures.
+
+**Result: scoretk ≥ alternatives.** It ties MuseScore on `~/Musique` and beats
+it clearly on Mutopia (N2 99.80 % against 83.73 %), and beats midi2ly on both
+lots. scoretk also has zero failures and a much lower maximum conversion time
+than midi2ly. On the 96-file Lakh robustness sample, scoretk converts 96/96
+files with a 6.30 s maximum on an idle machine (one file hit the 10 s bound
+during the loaded campaign at 10.01 s but completes in 5.77 s in isolation).
+
+### Output size — `Dreadlock Holiday.1.mid`
+
+The 114 KB Lakh file yields **6 834 457 B** of MusicXML from scoretk and
+**8 652 812 B** from MuseScore 4.7.4: the ratio scoretk/MuseScore is **0.79**.
+The source MIDI is single-track format 0, 192 tpq, 15 668 note-ons (14 965
+after note-on/off pairing), one 4/4 signature, one tempo (582 524 µs ≈ 103 BPM)
+and nine programs. The size is therefore inherent to a dense ~15 000-note
+piece, not a runaway conversion. Element counts confirm it:
+
+| Element | scoretk | MuseScore |
+| --- | ---: | ---: |
+| `<note>` (pitched / rest) | 22 115 (17 616 / 4 499) | 22 364 (13 809 / 5 241) |
+| `<chord/>`, ties | 9 420, 4 280 | 8 305, 3 282 |
+| `<beam>`, `<stem>` | 13 011, 17 594 | 6 654, 17 123 |
+| All elements / attributes | 225 074 / 40 935 | 234 165 / 100 226 |
+
+MuseScore emits three times more layout attributes (`default-x`, `default-y`,
+`width`), which is why its file is larger despite fewer notes. scoretk actually
+*preserves* more notes: with the fixed oracle, its output matches
+14 953 / 14 965 reference attacks (99.92 %) while MuseScore's matches only
+1 353 (9.04 %) — MuseScore's performance detection rewrites the piece as 3/4
+at 222 BPM with a −12 transposition. Reducing scoretk's size would mean
+dropping notes or ties, which would lose N1/N2; no faithful importer change is
+warranted. Average size ratios over the lots: **0.72** (`lecture_musique`),
+**0.50** (`lecture_mutopia`), and **0.65–0.80** (mean **0.73**) on a nine-file
+Lakh sample. scoretk is smaller than MuseScore everywhere measured.
+
+### N2 losses — cause and fix
+
+Before the fix, the flagged N2 losses were almost entirely `attaque_decalee`:
+194 files / 3 983 lost attacks on `~/Musique` and 78 / 7 773 on Mutopia, with
+N1 and the note count always correct. Grouping by cause showed this was **not
+an importer defect**: the oracle's `read_xml` ignored `<backup>` and
+accumulated durations per (voice, staff) over the whole part. A voice that
+only appears after bar N therefore had all its attacks shifted to the start of
+the piece. Reduced demonstration: `test_backup.py` (a two-voice score where
+voice 2 starts in bar 2) — it failed before the fix and passes after.
+
+The oracle now uses a per-measure cursor moved by `<backup>`/`<forward>`, with
+the next measure starting at the end of the previous one. After re-measuring
+the same manifests with the same oracle:
+
+| Lot | Before N2 | After N2 | Files improved | Files dropped |
+| --- | ---: | ---: | ---: | ---: |
+| lecture_musique | 97.08 % | **100.00 %** | 194 | 0 |
+| lecture_mutopia | 90.47 % | **99.80 %** | 79 | 0 |
+
+N1 is unchanged (pitch multisets do not depend on attack placement). The
+remaining `duree_seule` flags concern N2d only, not N2: the oracle still skips
+`<tie type="stop"/>` notes, so tied-note durations are undercounted (documented
+oracle limitation, left unchanged to keep the measurement stable). No importer
+change was needed for N2: the import was already faithful, and porting more
+MuseScore voice-separation code could only have degraded the result.

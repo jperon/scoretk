@@ -31,6 +31,7 @@ dossier ``--out`` (hors dépôt).
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -83,6 +84,42 @@ def cmd_mscore(binaire: str, src: str, dst: str) -> tuple[list[str], dict]:
     return commande, env
 
 
+def chaines_midi2ly(src: str, work: Path) -> list[tuple[list[str], dict | None]]:
+    """midi2ly (MIDI → .ly) puis lilypond (ly → MIDI), bornés comme scoretk."""
+    ly = work / "m2l.ly"
+    base = work / "m2l"
+    borne = ["timeout", str(TIMEOUT_MSCORE), "prlimit", "--as=2000000000"]
+    return [
+        (borne + ["midi2ly", "-o", str(ly), src], None),
+        (borne + ["env", "-u", "LD_LIBRARY_PATH", "lilypond", "-s",
+                  "-o", str(base), str(ly)], None),
+    ]
+
+
+def cmd_music21(src: str, dst: str) -> list[str]:
+    """music21.converter.parse → MusicXML (si le module est disponible)."""
+    script = (
+        "from music21 import converter; "
+        f"s = converter.parse({src!r}); "
+        f"s.write('musicxml', fp={dst!r})"
+    )
+    return [
+        "timeout", str(TIMEOUT_MSCORE), "prlimit", "--as=2000000000",
+        "python3", "-c", script,
+    ]
+
+
+def lancer_chaine(chaine: list[tuple[list[str], dict | None]], budget: int):
+    """Lance plusieurs commandes en séquence ; s'arrête au premier échec."""
+    total = 0.0
+    for commande, env in chaine:
+        code, duree, erreur = lancer(commande, env, budget)
+        total += duree
+        if code != 0:
+            return code, total, erreur
+    return 0, total, ""
+
+
 def ecrire_ligne(fichier, releve: dict) -> None:
     fichier.write(json.dumps(releve, ensure_ascii=False) + "\n")
 
@@ -112,31 +149,41 @@ def mesurer_lecture(args, lot: str, manifeste: str, fichier_sortie) -> None:
             continue
         work = Path(args.out) / "travail" / lot / str(i)
         work.mkdir(parents=True, exist_ok=True)
-        cibles = [("scoretk", cmd_scoretk(args.scoretk, src, str(work / "tk.xml"), "midi", "musicxml"), None)]
-        # L'alternative est coûteuse (démarrage de MuseScore) : un pas
-        # déterministe permet de la mesurer sur un échantillon sans réduire
-        # le lot de scoretk. Par défaut 1 (tous les fichiers).
-        if args.mscore and i % args.alt_stride == 0:
-            commande, env = cmd_mscore(args.mscore, src, str(work / "ms.xml"))
-            cibles.append(("mscore", commande, env))
-        for outil, commande, env in cibles:
+        # Chaque cible = (nom, chaîne de commandes, sortie, lecteur, budget).
+        # scoretk est toujours mesuré ; les alternatives sont échantillonnées
+        # avec le même pas déterministe, sans réduire le lot de scoretk.
+        cibles = [(
+            "scoretk",
+            [(cmd_scoretk(args.scoretk, src, str(work / "tk.xml"), "midi", "musicxml"), None)],
+            work / "tk.xml", read_xml, TIMEOUT_SCORETK,
+        )]
+        if i % args.alt_stride == 0:
+            if args.mscore:
+                commande, env = cmd_mscore(args.mscore, src, str(work / "ms.xml"))
+                cibles.append(("mscore", [(commande, env)], work / "ms.xml",
+                               read_xml, TIMEOUT_MSCORE))
+            if args.midi2ly:
+                cibles.append(("midi2ly", chaines_midi2ly(src, work),
+                               work / "m2l.midi", read_midi, TIMEOUT_MSCORE))
+            if args.music21:
+                cibles.append(("music21",
+                               [(cmd_music21(src, str(work / "m21.musicxml")), None)],
+                               work / "m21.musicxml", read_xml, TIMEOUT_MSCORE))
+        for outil, chaine, sortie, lire, budget in cibles:
             r = base_releve(lot, "lecture", outil, src)
-            xml = work / ("tk.xml" if outil == "scoretk" else "ms.xml")
-            code, duree, erreur = lancer(
-                commande, env, TIMEOUT_MSCORE if outil == "mscore" else TIMEOUT_SCORETK
-            )
+            code, duree, erreur = lancer_chaine(chaine, budget)
             r["code"], r["temps"] = code, round(duree, 3)
-            r["ok"] = code == 0 and xml.exists() and xml.stat().st_size > 0
-            r["taille"] = xml.stat().st_size if xml.exists() else 0
+            r["ok"] = code == 0 and sortie.exists() and sortie.stat().st_size > 0
+            r["taille"] = sortie.stat().st_size if sortie.exists() else 0
             if not r["ok"]:
                 r["erreur"] = erreur or "sortie vide ou absente"
                 marquer_echec(r)
                 ecrire_ligne(fichier_sortie, r)
                 continue
             try:
-                test = read_xml(str(xml))
+                test = lire(str(sortie))
             except Exception as exc:
-                r["erreur"] = f"XML illisible : {exc}"
+                r["erreur"] = f"sortie illisible : {exc}"
                 r["ok"] = False  # une sortie mal formée n'est pas une réussite
                 marquer_echec(r)
                 ecrire_ligne(fichier_sortie, r)
@@ -276,8 +323,12 @@ def main() -> None:
     p.add_argument("--out", required=True, help="dossier des sorties brutes (hors dépôt)")
     p.add_argument("--scoretk", required=True, help="chemin du binaire scoretk")
     p.add_argument("--mscore", default="", help="binaire MuseScore (alternative lecture)")
+    p.add_argument("--midi2ly", action="store_true",
+                   help="mesurer aussi midi2ly + lilypond (alternative lecture)")
+    p.add_argument("--music21", action="store_true",
+                   help="mesurer aussi music21.converter (si module disponible)")
     p.add_argument("--alt-stride", type=int, default=1,
-                   help="mesurer MuseScore sur 1 fichier sur N (défaut : 1)")
+                   help="mesurer les alternatives sur 1 fichier sur N (défaut : 1)")
     p.add_argument("--lecture", action="append", default=[], metavar="NOM=MANIFESTE")
     p.add_argument("--ecriture", action="append", default=[], metavar="NOM=MANIFESTE")
     p.add_argument("--robustesse", action="append", default=[], metavar="NOM=MANIFESTE")
@@ -287,6 +338,9 @@ def main() -> None:
     p.add_argument("--resume", action="store_true", help="ne fait que régénérer le résumé")
     args = p.parse_args()
     Path(args.out).mkdir(parents=True, exist_ok=True)
+    if args.music21 and importlib.util.find_spec("music21") is None:
+        print("music21 absent de l'environnement : alternative ignorée")
+        args.music21 = False
 
     if not args.resume:
         for spec in args.lecture:

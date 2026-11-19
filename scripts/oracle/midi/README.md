@@ -32,12 +32,26 @@ de robustesse : les imports Lakh denses dépassent souvent la borne de 10 s, ce
 qui rend le lot complet prohibitif (le taux de dépassement fait partie du
 relevé). Le pas utilisé pour un relevé doit être indiqué dans `midi.md`.
 
-`mesure.sh` ajoute `python3Packages.mido` (absent du shell Nix du projet) et
-transmet les arguments à `mesure.py`. Options utiles : `--limit N` (essai
-rapide sur les N premiers fichiers de chaque lot), `--alt-stride N` (ne lancer
-MuseScore que sur un fichier sur N ; scoretk reste mesuré sur tout le lot —
-utile quand la machine est chargée), `--resume` (régénère le résumé à partir
-des `.jsonl` déjà produits sans relancer les conversions).
+`mesure.sh` ajoute `python3Packages.mido` (absent du shell Nix du projet),
+ajoute `lilypond` si `--midi2ly` est demandé, et transmet les arguments à
+`mesure.py`. Les alternatives de lecture sont mesurées sur le **même lot et le
+même oracle** que scoretk, avec le même pas d'échantillonnage :
+
+* `--mscore <binaire>` (ou 3e argument positionnel) : import MIDI de MuseScore
+  4.7.4, `-o out.musicxml in.mid`, sous `QT_QPA_PLATFORM=offscreen` ;
+* `--midi2ly` : `midi2ly` (MIDI → `.ly`) puis `lilypond -s` (`.ly` → MIDI), la
+  comparaison se faisant alors MIDI ↔ MIDI avec le même extracteur de notes ;
+* `--music21` : `music21.converter.parse` → MusicXML, si le module est
+  disponible (il est absent de nixpkgs au 2026-11-19 : l'option est alors
+  ignorée avec un avertissement, et non comptée comme un échec).
+
+Options utiles : `--limit N` (essai rapide sur les N premiers fichiers de chaque
+lot), `--alt-stride N` (ne lancer les alternatives que sur un fichier sur N ;
+scoretk reste mesuré sur tout le lot — utile quand la machine est chargée),
+`--resume` (régénère le résumé à partir des `.jsonl` déjà produits sans relancer
+les conversions). `test_backup.py` vérifie que l'oracle place correctement les
+attaques des voix qui n'apparaissent qu'après un `<backup>` (lancez-le avec
+`nix-shell -p python3Packages.mido --run "cd scripts/oracle/midi && python3 test_backup.py"`).
 
 Sorties dans `$OUT` : un `.jsonl` par lot (une ligne de mesure par fichier et
 par outil), les fichiers convertis sous `travail/`, et `resume.md` (tableaux et
