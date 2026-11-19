@@ -408,6 +408,46 @@ fn transposition() {
     assert_eq!(durees, vec![Fraction::QUARTER; 4]);
 }
 
+#[test]
+fn transpose_dans_relative_reste_absolu() {
+    // Notation Reference §1.2.2 : « Music inside a \transpose block is
+    // absolute unless a \relative is included in the block. » Côté Scheme,
+    // `TransposedMusic` porte le `to-relative-callback`
+    // `ly:relative-octave-music::no-relative-callback`
+    // (`scm/define-music-types.scm`) : la conversion `\relative` ne descend
+    // pas dans le bloc transposé. Les notes y gardent leur octave absolue
+    // (`f` = F3 = 53, transposé c→d = G3 = 55), et la référence relative qui
+    // suit le bloc reste la dernière note AVANT lui (D7, d'où `c` = C7 = 96),
+    // et non la dernière note du bloc. Vérifié contre le MIDI de LilyPond 2.27
+    // sur cette même source réduite.
+    let source = "\
+        \\score { << \
+          \\new Staff \\relative c' { \
+            c'''4 d4 \\transpose c d { f4 <g b>4 } | c4~ c4 r2 | \
+          } \
+          \\new Staff \\relative c { c2 d2 | e1 } \
+        >> }";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(
+        hauteurs(&score),
+        vec![96, 98, 55, 57, 61, 96, 96, 48, 50, 52]
+    );
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![Fraction::QUARTER; 6]
+            .into_iter()
+            .chain([Fraction::HALF])
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(score.measures.len(), 2);
+
+    // Cas non concerné : sous `\fixed`, la référence absolue est conservée et
+    // la transposition s'applique normalement (F4 transposé c→d = G4 = 67).
+    let fixe = lire("\\fixed c' { \\transpose c d { f4 } }");
+    assert_eq!(hauteurs(&fixe), vec![67]);
+    assert_eq!(fixe.measures.len(), 1);
+}
+
 /// Source réduite de la voix Piccolo de `Ad_te_Suspiramus.ly` : clef octave,
 /// `\relative` dans une variable, barres de contrôle, accord, silence et
 /// liaison, avec ou sans `\transposition`.

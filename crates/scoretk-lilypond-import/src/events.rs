@@ -718,10 +718,21 @@ impl<'a> Interpreter<'a> {
             } => self.repeat(*kind, *count, body, alternatives),
             Context::Transpose { from, to, music } => {
                 let delta = transpose_delta(from, to);
-                let saved = self.transpose;
-                self.transpose = (saved.0 + delta.0, saved.1 + delta.1);
+                let saved_transpose = self.transpose;
+                let saved_octave = self.octave;
+                self.transpose = (
+                    saved_transpose.0 + delta.0,
+                    saved_transpose.1 + delta.1,
+                );
+                // `TransposedMusic` porte `no-relative-callback`
+                // (`scm/define-music-types.scm`) : la musique transposée reste
+                // absolue même dans un `\relative`, et la référence relative
+                // à la sortie du bloc est celle d'avant le bloc, pas sa
+                // dernière note (Notation Reference §1.2.2).
+                self.octave = saved_octave.sans_relative();
                 self.walk(music);
-                self.transpose = saved;
+                self.octave = saved_octave;
+                self.transpose = saved_transpose;
             }
             // `\transposition` de portée : le décalage concert est appliqué
             // par le constructeur, seulement si la partie porte `<transpose>`.
@@ -755,11 +766,7 @@ impl<'a> Interpreter<'a> {
                 // `\relative`. Sous `\fixed`, en revanche, la transposition
                 // s'applique bien aux parties, donc leur référence est conservée.
                 let saved = self.octave;
-                if self.octave.relative {
-                    self.octave = OctaveState::default();
-                } else {
-                    self.octave.relative = false;
-                }
+                self.octave = saved.sans_relative();
                 self.walk(music);
                 self.octave = saved;
             }

@@ -1240,6 +1240,38 @@ with a variable, exact pitches/durations/measure counts and an unaffected
 `FiguredBass` case. Three older tests asserting the former, incorrect
 "display-only" behaviour were updated at the same level of detail.
 
+### Octave: `\transpose` inside `\relative` (third pass)
+
+A second cause was found by reading the specification rather than the
+measurement. Notation Reference §1.2.2 states: "Music inside a `\transpose`
+block is absolute unless a `\relative` is included in the block." In the
+implementation, `TransposedMusic` carries the `to-relative-callback`
+`ly:relative-octave-music::no-relative-callback`
+(`scm/define-music-types.scm`, `lily/relative-octave-music.cc`): the
+`\relative` conversion does not descend into the transposed music, and the
+relative reference after the block is the last note *before* it, not the last
+note inside it.
+
+The reader was walking the transpose body with the enclosing `\relative`
+state and did not restore that state afterwards. On the reduced source
+
+```lilypond
+\relative c' { c'''4 d4 \transpose c d { f4 <g b>4 } | c4~ c4 r2 | }
+```
+
+LilyPond 2.27 plays 96, 98, 55, 57/61, 96, 96; the reader produced 96, 98,
+103, 105/109, 108, 108. `Context::Transpose` now applies the same
+`OctaveState::sans_relative()` transformation as `Context::NonRelative`
+(default absolute reference under `\relative`, current reference kept under
+`\fixed`) and restores the saved octave state after the body. The reduced
+test `transpose_dans_relative_reste_absolu` checks exact pitches, durations,
+measure count, a second staff, a chord, a tie, a rest, bar checks, and the
+unaffected `\fixed` case. Only two files of the 1020-file `ecriture_ly` lot
+use `\transpose` inside `\relative`; the fix gains no exact file and loses
+none. `\clef "treble_8"` and `\ottava` were compiled in isolation and do not
+change MIDI pitch (Notation Reference §1.3.1, §1.3.3), so keeping the written
+octave remains correct.
+
 ### Other causes: measurement artefacts, not reader defects
 
 Each of the five groups was reduced and checked against LilyPond 2.26

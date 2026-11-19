@@ -841,6 +841,29 @@ impl OctaveState {
             }
         }
     }
+
+    /// État d'octave d'une musique que la conversion `\relative` ne parcourt
+    /// pas (`\transpose`, `\partCombine`, `\absolute`…).
+    ///
+    /// Sous `\relative`, on repart de la référence absolue par défaut ; sous
+    /// `\fixed`, la référence courante est conservée car la transposition
+    /// s'applique bien aux parties. C'est le `to-relative-callback`
+    /// `ly:relative-octave-music::no-relative-callback` porté par
+    /// `TransposedMusic` et `UnrelativableMusic`
+    /// (`scm/define-music-types.scm`) : `Music::to_relative_octave` renvoie
+    /// alors la hauteur reçue sans descendre dans le bloc. Notation Reference
+    /// §1.2.2 : « Music inside a `\transpose` block is absolute unless a
+    /// `\relative` is included in the block. »
+    pub(crate) fn sans_relative(self) -> Self {
+        if self.relative {
+            Self::default()
+        } else {
+            Self {
+                relative: false,
+                ..self
+            }
+        }
+    }
 }
 
 /// Ramène une octave calculée en `i16` dans la plage `i8` en saturant.
