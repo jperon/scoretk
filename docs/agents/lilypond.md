@@ -780,3 +780,64 @@ nix develop -c env UPDATE_LILYPOND_SNAPSHOTS=1 \
 correspondance audible (nom de note, articulation, durée) ou qu'un `.ly`
 produit n'est plus compilé par la version de référence ; pas pour suivre les
 versions de développement ni les changements de mise en page.
+
+## 11. Empty-output audit (2026-11-19)
+
+A corpus-wide comparison of written pitches against LilyPond MIDI references
+found 97 `.ly` files that produced no notes although the reference did (76
+`input/regression` tests and 21 Mutopia scores, 6925 reference notes in total).
+Causes were grouped by yield (files × reference notes) and handled in that
+order.
+
+### Fixed: unknown commands swallowed the following music block
+
+`skip_command_arguments` treated a `{ … }` block after an unknown command as
+that command's argument. No-argument commands such as `\autoBeamOff`,
+`\dynamicUp`, `\dynamicDown`, `\oneVoice` and `\compressMMRests` are ubiquitous
+in the Mutopia idiom
+
+```lilypond
+\context Voice = Sopran { \voiceOne << \autoBeamOff \dynamicUp { \global \voice } >> }
+```
+
+so an ignored command at the head of the simultaneous block ate the only music
+branch and the whole voice vanished. In music context the braced block is now
+left in the stream; at top level, where `\layout`/`\paper` carry a settings
+block, it is still skipped. This recovered 5198 of 5202 notes in all 21 Mutopia
+scores, plus five regression files; 5247 notes now match in total. A reduced
+test covers two staves, two named voices, variables, bar checks, chords, rests
+and ties, plus an unknown command at end of file. Twenty previously exact files
+were re-measured and are unchanged.
+
+### Not fixed: causes abandoned as disproportionate
+
+The remaining 71 regression files (1665 reference notes) fall into groups that
+would each require a feature of their own, well beyond a parser fix:
+
+- **Chord grids played as notes** (about 10 files, ~480 notes). `\chordmode`
+  emits chord events that LilyPond plays in a `Voice` or `Staff`; the reader
+  intentionally drops chord grids because they are display-only in
+  `ChordNames`/`FretBoards`. Recovering the notes needs a chord-name-to-pitch
+  table (`c:m7`, `c/g`, `c:7sus4`, `dim7`, …) plus `\transpose` handling.
+- **Drum pitches** (6 files, ~156 notes). `\drummode` abbreviations (`bd`,
+  `sn`, `hh`, `cymr`, …) map through LilyPond's `drumpitch-init.ly` tables and
+  carry note-head variants; the pivot model has no untuned-percussion pitch
+  representation.
+- **Missing installed templates** (7 SATB/SSAATTBB files, ~360 notes). They end
+  in `\include "satb.ly"` / `"ssaattbb.ly"` and contain only variable
+  definitions; the real `\score` lives in LilyPond's installed `ly/` directory.
+  The CLI resolver searches the input file's directory and the library must
+  remain I/O-free, so the include cannot be resolved here.
+- **Scheme-generated music and partial music functions** (`ledger-line-properties`,
+  `note-head-style`, `beat-performer`, `markup-map`, `parallelmusic-partial`, …).
+  These rely on `$@(map …)`, `#{ … #}` splicing, `\etc` partial definitions or
+  the drum tremolo repeat `\*`; supporting them would mean embedding a Scheme
+  evaluator.
+- **Small leftovers** (~15 files, ~90 notes): quoted variable names
+  (`"|" = \bar "||"`), `\with` followed by a context modifier instead of a
+  braced block, braced markup arguments inside property values, and a spurious
+  empty first partition that shadows the real one. Each affects one or two
+  notes and does not justify widening the subset.
+
+These files are expected to keep producing zero notes; the reader's narrow,
+Scheme-free subset is unchanged.
