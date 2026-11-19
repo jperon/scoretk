@@ -3000,6 +3000,13 @@ impl<'a> Parser<'a> {
         while let Some(token) = self.peek().cloned() {
             match &token.kind {
                 Kind::Word => {
+                    // Un nom de note est le début de la musique qui suit, pas
+                    // un élément du chemin : `\unset melismaBusyProperties f1`
+                    // doit laisser `f1` au lecteur de notes. L'avaler décalait
+                    // l'octave relative de toute la mesure suivante.
+                    if self.is_pitch_word(&token.text) {
+                        break;
+                    }
                     parts.push(token.text.clone());
                     self.position += 1;
                 }

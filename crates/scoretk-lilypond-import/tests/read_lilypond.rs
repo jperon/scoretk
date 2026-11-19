@@ -2866,3 +2866,24 @@ fn partcombine_chord_range_et_simultanee_ordinaire() {
         ]
     );
 }
+
+#[test]
+fn unset_ne_mange_pas_la_note_qui_suit() {
+    // Un chemin de propriété s'arrête avant un nom de note : `f1` après
+    // `\unset melismaBusyProperties` est une note relative, pas un morceau du
+    // chemin. L'avaler décalait l'octave relative de toute la suite.
+    let score = lire("\\relative c' { \\unset melismaBusyProperties f1 | bf2 a }");
+    assert_eq!(hauteurs(&score), vec![65, 70, 69]);
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![Fraction::ONE, Fraction::HALF, Fraction::HALF]
+    );
+
+    // Cas non concerné : `\set` porte bien son `=`, et un `\unset` dont le
+    // chemin contient des mots non musicaux laisse la note suivante intacte.
+    let score = lire("\\relative c' { \\set melismaBusyProperties = #'() f1 | bf2 a }");
+    assert_eq!(hauteurs(&score), vec![65, 70, 69]);
+    let score = lire("\\relative c' { \\unset Staff.clef f1 | bf2 a }");
+    assert_eq!(hauteurs(&score), vec![65, 70, 69]);
+}
