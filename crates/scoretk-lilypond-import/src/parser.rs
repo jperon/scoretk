@@ -771,25 +771,47 @@ impl<'a> Parser<'a> {
                 if has_voice_context(&content) || wrapped {
                     return content;
                 }
-                // Un `\context Staff` nommé peut porter plus de quatre voix
-                // nommées (pathetique-1 : chaque main enchaîne onze sections
-                // polyphoniques). Les répartir en portées sœurs, comme avant
-                // le portage des contextes structurels, plutôt que de les
+                // Un `\context Staff` nommé peut porter des voix surnuméraires
+                // (pathetique-1 : chaque main enchaîne onze sections
+                // polyphoniques dans un `{ … }`, ballade-4 : trois voix dans
+                // un `<< … >>`). Les répartir en portées sœurs, comme avant le
+                // portage des contextes structurels, plutôt que de les
                 // regrouper en une seule portée où la limite du modèle les
-                // écraserait.
-                let mut staves = Vec::new();
-                let mut lyrics = Vec::new();
-                self.collect_staves(content, &mut staves, &mut lyrics);
-                if staves.is_empty() {
-                    staves.push(StaffBlock::new());
+                // écraserait. Mais un `<< … >>` à une ou deux voix nommées
+                // (w10-h-moll-cfi : `\global`, `\links`, `\pedal`) désigne une
+                // seule portée : le répartir extrait les enveloppes `\relative`
+                // pour les réappliquer voix par voix, décalant les octaves et
+                // déplaçant les mesures.
+                if !matches!(&content, Music::Sim(_)) || named_voice_count(&content) > 2 {
+                    let mut staves = Vec::new();
+                    let mut lyrics = Vec::new();
+                    self.collect_staves(content, &mut staves, &mut lyrics);
+                    if staves.is_empty() {
+                        staves.push(StaffBlock::new());
+                    }
+                    staves[0].name = context_name;
+                    return Music::New(Box::new(GroupBlock {
+                        kind: GroupKind::Staff,
+                        instrument_name,
+                        short_instrument_name,
+                        staves,
+                        lyrics,
+                    }));
                 }
-                staves[0].name = context_name;
+                let mut staff = StaffBlock::new();
+                staff.name = context_name;
+                let mut voices = Vec::new();
+                let mut lyrics = Vec::new();
+                self.collect_voices(content, &mut voices, &mut lyrics);
+                staff.voices = voices;
+                staff.lyrics.extend(lyrics);
+                self.collect_addlyrics(&mut staff);
                 return Music::New(Box::new(GroupBlock {
                     kind: GroupKind::Staff,
                     instrument_name,
                     short_instrument_name,
-                    staves,
-                    lyrics,
+                    staves: vec![staff],
+                    lyrics: Vec::new(),
                 }));
             }
             let structural = self.peek().is_some_and(|token| {
@@ -3684,6 +3706,23 @@ fn has_voice_context(music: &Music) -> bool {
         }
         Music::Sim(items) | Music::Seq(items) => items.iter().any(has_voice_context),
         _ => false,
+    }
+}
+
+/// Nombre de voix nommées d'une musique, en traversant les enveloppes
+/// (`\relative`, `\fixed`, `\transpose`). Sert à décider si le contenu
+/// simultané d'un `\context Staff` tient sur une seule portée : au-delà de
+/// deux voix nommées il faut le répartir, sinon la répartition réapplique les
+/// enveloppes voix par voix et décale les octaves relatives (w10-h-moll-cfi).
+fn named_voice_count(music: &Music) -> usize {
+    match music {
+        Music::New(group) if group.kind == GroupKind::Voice => 1,
+        Music::New(group) => group.staves.iter().map(|staff| staff.voices.len()).sum(),
+        Music::Context(context) => {
+            Wrapper::of(context).map_or(0, |(_, inner)| named_voice_count(inner))
+        }
+        Music::Sim(items) | Music::Seq(items) => items.iter().map(named_voice_count).sum(),
+        _ => 0,
     }
 }
 

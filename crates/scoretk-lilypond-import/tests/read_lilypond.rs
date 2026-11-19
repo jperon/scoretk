@@ -823,6 +823,51 @@ fn context_staff_nomme_avec_voix_surnumeraires() {
 }
 
 #[test]
+fn context_staff_nomme_garde_les_voix_sur_la_portee_englobante() {
+    // Un `\context Staff = "nom"` dont le contenu porte deux voix nommées
+    // (chacune dans un `\context Staff \relative` de variable, comme les
+    // `\links`/`\pedal` de w10-h-moll-cfi) reste une seule portée. Répartir
+    // ces voix en portées sœurs réapplique les enveloppes `\relative` voix par
+    // voix : les octaves et le nombre de portées changent sans raison.
+    let source = concat!(
+        "global = { s4 s2. } ",
+        "rechts = \\context Staff \\relative c' { fis'4 ais2 | cis'4 d h | } ",
+        "links = \\context Staff \\relative c { ",
+        "\\context Voice = \"links\" r4 h <fis' h d> <fis h d> } ",
+        "pedal = \\context Staff \\relative c, { ",
+        "\\context Voice = \"pedal\" s4 s2. } ",
+        "\\score { \\context PianoStaff << ",
+        "\\context Staff = \"up\" << \\global \\rechts >> ",
+        "\\context Staff = \"down\" << \\global \\links \\pedal >> ",
+        ">> }"
+    );
+    let score = read_lilypond(source).expect("lecture");
+    // Deux portées seulement : une par `\context Staff = "…"` du score.
+    assert_eq!(score.staves.len(), 2);
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(score.measures[0].len, Fraction::new(1, 1));
+    assert_eq!(score.measures[1].len, Fraction::new(1, 1));
+    let mut notes = hauteurs(&score);
+    notes.sort_unstable();
+    assert_eq!(notes, vec![62, 62, 66, 66, 78, 82, 97, 98]);
+
+    // Cas non concerné : une seule voix nommée ne déclenche pas non plus la
+    // répartition, et garde ses hauteurs et sa mesure.
+    let seul = read_lilypond(concat!(
+        "global = { s4 s2. } ",
+        "links = \\context Staff \\relative c { ",
+        "\\context Voice = \"links\" r4 h <fis' h d> <fis h d> } ",
+        "\\score { \\context Staff = \"down\" << \\global \\links >> }"
+    ))
+    .expect("lecture");
+    assert_eq!(seul.staves.len(), 1);
+    assert_eq!(seul.measures.len(), 1);
+    let mut notes = hauteurs(&seul);
+    notes.sort_unstable();
+    assert_eq!(notes, vec![62, 62, 66, 66]);
+}
+
+#[test]
 fn context_staff_avec_relative_garde_la_reference_du_bloc() {
     // `\context Staff \relative << … \\ … >>` : la référence relative porte
     // sur tout le bloc polyphonique (collisions.ly, `\hairyChord`). Ouvrir une
