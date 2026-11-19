@@ -154,6 +154,11 @@ pub(crate) fn render_voice(
         if let Some(value) = new_clef {
             clef = Some(value.transposed);
         }
+        // Port de `xml2abc.py::doAttr` (lignes 1329-1331 :
+        // `clefOct[n] = -clef-octave-change`) et `mkNote` (ligne 1154 :
+        // `oct += clefOct[...]`) : `abc2midi` ignore le `-8`/`+8` des clefs
+        // ABC, donc xml2abc décale les hauteurs écrites d'autant d'octaves.
+        let clef_octave = clef.map_or(0, |value| i32::from(value.octave_change()));
         if key_changed || clef_changed {
             let mut field = format!("[K:{}", pitch::key_field(&key));
             if let Some(clef_value) =
@@ -205,7 +210,7 @@ pub(crate) fn render_voice(
                 for token in &before[offset] {
                     line.push_str(token);
                 }
-                let transpose = transpose_at(score, staff, item.tick);
+                let transpose = transpose_at(score, staff, item.tick) + 12 * clef_octave;
                 let token = render_item(score, item.chord_rest, &mut accidental_state, transpose);
                 line.push_str(&token);
                 for token in &after[offset] {
