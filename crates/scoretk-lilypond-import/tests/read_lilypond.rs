@@ -105,10 +105,7 @@ fn controle_octave_est_absolu() {
         "\\score { \\new Staff { \\relative c' { c4 g'4 a=''4 b4 <a='' d fis a>4 } } }",
     )
     .expect("lecture");
-    assert_eq!(
-        hauteurs(&score),
-        vec![60, 67, 81, 83, 81, 86, 90, 93]
-    );
+    assert_eq!(hauteurs(&score), vec![60, 67, 81, 83, 81, 86, 90, 93]);
     assert_eq!(score.measures.len(), 2);
     // Forme `n'='` : le contrôle porte la marque écrite avant le signe `=`.
     let note = lire("\\relative c' { c4 g'4 a'='4 b4 }");
@@ -470,20 +467,16 @@ fn transposition_de_staff_decale_la_concert() {
          \\relative c' { c4 d e f | <c e g>2 g2 | } } }",
     )
     .expect("lecture");
-    assert_eq!(
-        hauteurs(&score),
-        vec![69, 71, 73, 74, 69, 73, 76, 64]
-    );
+    assert_eq!(hauteurs(&score), vec![69, 71, 73, 74, 69, 73, 76, 64]);
     assert_eq!(score.measures.len(), 2);
     assert_eq!(
         score.parts[0].instrument.transpose,
         Some(Transpose::new(5, 9))
     );
     // Cas non concerné : sans `\transposition`, la concert vaut l'écrite.
-    let sans = read_lilypond(
-        "\\score { \\new Staff { \\relative c' { c4 d e f | <c e g>2 g2 | } } }",
-    )
-    .expect("lecture");
+    let sans =
+        read_lilypond("\\score { \\new Staff { \\relative c' { c4 d e f | <c e g>2 g2 | } } }")
+            .expect("lecture");
     assert_eq!(hauteurs(&sans), vec![60, 62, 64, 65, 60, 64, 67, 55]);
     assert_eq!(sans.parts[0].instrument.transpose, None);
 
@@ -508,10 +501,7 @@ fn transposition_dans_le_bloc_midi() {
          \\midi { \\transposition c } }",
     )
     .expect("lecture");
-    assert_eq!(
-        hauteurs(&score),
-        vec![48, 50, 52, 53, 48, 52, 55, 43]
-    );
+    assert_eq!(hauteurs(&score), vec![48, 50, 52, 53, 48, 52, 55, 43]);
     assert_eq!(score.measures.len(), 2);
     assert_eq!(
         score.parts[0].instrument.transpose,
