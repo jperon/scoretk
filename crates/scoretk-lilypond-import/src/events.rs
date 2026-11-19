@@ -720,10 +720,7 @@ impl<'a> Interpreter<'a> {
                 let delta = transpose_delta(from, to);
                 let saved_transpose = self.transpose;
                 let saved_octave = self.octave;
-                self.transpose = (
-                    saved_transpose.0 + delta.0,
-                    saved_transpose.1 + delta.1,
-                );
+                self.transpose = (saved_transpose.0 + delta.0, saved_transpose.1 + delta.1);
                 // `TransposedMusic` porte `no-relative-callback`
                 // (`scm/define-music-types.scm`) : la musique transposée reste
                 // absolue même dans un `\relative`, et la référence relative
