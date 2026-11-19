@@ -37,6 +37,7 @@ mod build;
 mod lyrics;
 mod measure;
 mod music;
+mod rhythm;
 
 use std::collections::BTreeMap;
 

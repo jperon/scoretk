@@ -805,3 +805,101 @@ losses into gains; the conformity target remains MuseScore 4.7.4.
 The MuseScore corpus is unaffected: `cargo test -p scoretk --test e2e_corpus`
 passes 5/5.
 
+
+### 16.6 Step 3 — written durations: broken rhythm, slashes, tuplets, grace notes (2026-11-19)
+
+**Implementation.** New module `reader/rhythm.rs` ports the pure duration
+calculations of `abc2xml.py` 269: `simplify` (line 590), `doBroken` /
+`convertBroken` (lines 594/614), `note_length` (lines 362/473),
+`tuplet_start` (lines 395/484/2012), `mkTmod` (line 728 — the actual/normal
+pair carried by the model's tuplet ratio) and `doGrace` (line 680 with the
+fixed 1/8 or 1/16 grace unit of `mkNote`, lines 1314-1315). `reader/mod.rs`
+only declares the module; `reader/music.rs` keeps the character consumption
+and delegates the arithmetic to it, each call site citing the Python
+function and line. Three reader corrections came out of the port:
+
+1. **Broken rhythm before building the event.** The old reader applied `<`/`>`
+   *after* pushing the note: it dotted the previous figure but left
+   `voice.tick` at the unmodified advance, so the measure ended short and
+   every later attack was early. `apply_rhythm` now consumes the marker
+   *before* the event is pushed (port of the `convertBroken` scan, which
+   multiplies the written duration of the note preceding the marker and
+   stores the other factor for the next one). The attack positions are then
+   correct in the model, without a compensating `<backup>`.
+2. **All slash characters.** `read_length_text` consumed only the first `/`:
+   `e//` was read as `e/`. It now reads `[digits][slashes][digits]` as the
+   `note_length` grammar does, so `//` is a quarter divisor and `3//2` is
+   3/4 of a unit. `parse_length` delegates to `rhythm::note_length`.
+3. **Tuplet defaults and chord lengths.** `(2`, `(4` and `(8` are now
+   duoles on 3 (`tuplet_start`, line 2014: `into = 3 if n in [2,4,8] else 2`),
+   instead of always being read on 2. Chords also honour the per-note
+   lengths inside `[...]` — `convertChord` (line 651) multiplies each note's
+   duration by the chord's; `[G2G,2]` is a quarter, not an eighth. This was
+   one of the "16 other" losses listed in § 16.5 and was cheap to fix; the
+   remaining ones are covered by the per-tune audit below.
+
+**Reduced real tunes.** `timing.test__abcWarp.abc` X:1 (`CD E>F | (3GAB Ac`,
+9 notes): scoretk N2 **0.333 → 1.000**, alternative 1.000. A reduction of
+`music21-corpus/.../book1.abc` X:0008 (`FA A(G/F/)|…|d>ef>g|aA A2`, 17
+notes): both candidates N1/N2 1.000. `book1.abc` X:0142's `G2 [G2G,2]` and
+the `(d/e//f//)` phrase are covered by
+`crates/scoretk-abc-import/tests/rhythm.rs` (precise pitches, written
+durations, absolute attack ticks, measure lengths, a control measure without
+rhythm features and the unclosed-chord boundary); all four tests fail before
+the port.
+
+**Full campaign** (foreground, three slices, same corrected oracle and
+release binary as § 16.2, 1 402 files / 4 756 tunes):
+
+| Candidate | Exact tunes | N1 | N2 | Failures |
+| --- | ---: | ---: | ---: | ---: |
+| scoretk (after step 1, § 16.5) | 4 069 | 94.68 % | 63.00 % | 284 |
+| scoretk (after step 3) | **4 129** | **96.22 %** | **89.61 %** | **216** |
+| `abc2xml.py` (unchanged) | 4 406 | 99.70 % | 92.85 % | 130 |
+
+Per-tune comparison of the same campaign, step 3 versus **master** (before
+step 1, § 16.5): **N1 68 gains / 0 losses**, **N2 3 382 gains / 25 losses**
+(net +185 753 correctly placed attacks). In the § 16.3 target population the
+step-1 losses are essentially recovered: of the 1 102 N2 losses exposed by
+step 1, 1 073 are now gains again (8 are back to master's value).
+
+**The 25 remaining per-tune N2 losses versus master, explained individually.**
+Every one of them has (a) at least one *short written measure* (the written
+note durations do not fill `M:`), and (b) **exactly the same N2 as
+`abc2xml.py` on the same tune**. Master's `<forward>` padding of those short
+measures happened to re-align their attacks with the oracle; the faithful
+written-length reading used here — and by the alternative — does not pad.
+This is the short-measure cause of § 16.3/§ 16.5, not a step-3 regression and
+not a placement error of the ported functions. List (file, X:, N2 after step 3
+= N2 of the alternative, drop versus master):
+
+| File | X: | N2 (tk = alt) | Drop vs master |
+| --- | ---: | ---: | ---: |
+| `0550-0625.abc` | 587 | 0.438 | 0.137 |
+| `0051-0100.abc` | 71 | 0.154 | 0.123 |
+| `1476-1555.abc` | 1517 | 0.315 | 0.120 |
+| `0550-0625.abc` | 600 | 0.126 | 0.102 |
+| `book4.abc` | 0766 | 0.219 | 0.102 |
+| `0351-0400.abc` | 385 | 0.500 | 0.091 |
+| `0051-0100.abc` | 76 | 0.500 | 0.087 |
+| `1476-1555.abc` | 1531 | 0.492 | 0.063 |
+| `0550-0625.abc` | 578 | 0.354 | 0.062 |
+| `0101-0200.abc` | 175 | 0.395 | 0.061 |
+| `0051-0100.abc` | 54 | 0.288 | 0.061 |
+| `1476-1555.abc` | 1495 | 0.508 | 0.048 |
+| `1556-1576.abc` | 1563 | 0.007 | 0.034 |
+| `0051-0100.abc` | 59 | 0.446 | 0.033 |
+| `0051-0100.abc` | 74 | 0.475 | 0.025 |
+| `americanfifeopus.abc` | 130 | 0.640 | 0.020 |
+| `0401-0486.abc` | 462 | 0.508 | 0.017 |
+| `1476-1555.abc` | 1513 | 0.516 | 0.016 |
+| `americanfifeopus.abc` | 16 | 0.391 | 0.014 |
+| `americanfifeopus.abc` | 116 | 0.391 | 0.014 |
+| `0550-0625.abc` | 552 | 0.338 | 0.014 |
+| `0201-0300.abc` | 286 | 0.178 | 0.010 |
+| `1577-1624.abc` | 1608 | 0.276 | 0.009 |
+| `1577-1624.abc` | 1584 | 0.344 | 0.008 |
+| `0626-0700.abc` | 670 | 0.403 | 0.007 |
+
+No plain tune with only notes, rests and barlines regressed. The MuseScore
+corpus is unaffected: `cargo test -p scoretk --test e2e_corpus` passes 5/5.

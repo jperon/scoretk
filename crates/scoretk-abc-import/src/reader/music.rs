@@ -32,7 +32,9 @@ use scoretk_core::model::{
     DurationType, Fraction, GraceChord, GraceType, Note, NoteId, Ornament, OrnamentType,
 };
 
-use crate::reader::{AnnotationSpec, EventData, GraceData, Position, Reader, TupletSpec, Voice};
+use crate::reader::{
+    rhythm, AnnotationSpec, EventData, GraceData, Position, Reader, TupletSpec, Voice,
+};
 use scoretk_abc_common::decorations::{self, Decoration};
 use scoretk_abc_common::duration;
 use scoretk_abc_common::pitch;
@@ -298,7 +300,10 @@ impl Parser<'_> {
             }
             self.push_event(chord_rest, tick);
             self.voice().tick += actual;
-            self.maybe_broken_rhythm();
+            // Un marqueur après une pause de mesure est sans effet sur une
+            // pause pleine ; on le consomme et on vide le facteur en attente.
+            let _ = self.read_broken_factors();
+            self.voice().pending_rhythm = None;
             return Ok(());
         }
         if matches!(self.peek(), Some('z' | 'x')) {
@@ -318,7 +323,6 @@ impl Parser<'_> {
             }
             self.push_event(chord_rest, tick);
             self.voice().tick += actual;
-            self.maybe_broken_rhythm();
             return Ok(());
         }
 
@@ -373,7 +377,6 @@ impl Parser<'_> {
             let scale = self.tuplet_scale();
             self.push_event(chord_rest, tick);
             self.voice().tick += actual * scale;
-            self.maybe_broken_rhythm();
             return Ok(());
         }
 
@@ -401,7 +404,6 @@ impl Parser<'_> {
         let scale = self.tuplet_scale();
         self.push_event(chord_rest, tick);
         self.voice().tick += actual * scale;
-        self.maybe_broken_rhythm();
         Ok(())
     }
 
@@ -522,23 +524,21 @@ impl Parser<'_> {
         Ok((note, pitch as u8, tie))
     }
 
-    /// Lit le texte de durée après une note (`""`, `2`, `/2`, `3/2`).
+    /// Lit le texte de durée après une note (`""`, `2`, `/2`, `3/2`, `e//`).
+    ///
+    /// Port de la grammaire `note_length` d'`abc2xml.py` (ligne 362) : un
+    /// nombre, TOUS les slashs, puis un nombre. Un seul slash consommé laisse-
+    /// rait `//` dans le flux et ferait échouer la lecture d'un air réel.
     fn read_length_text(&mut self) -> String {
         let mut text = String::new();
-        let mut slash = false;
-        while let Some(character) = self.peek() {
-            match character {
-                '0'..='9' => {
-                    text.push(character);
-                    self.pos += 1;
-                }
-                '/' if !slash => {
-                    slash = true;
-                    text.push('/');
-                    self.pos += 1;
-                }
-                _ => break,
-            }
+        while self.peek().is_some_and(|c| c.is_ascii_digit()) {
+            text.push(self.bump().expect("chiffre"));
+        }
+        while self.peek() == Some('/') {
+            text.push(self.bump().expect("slash"));
+        }
+        while self.peek().is_some_and(|c| c.is_ascii_digit()) {
+            text.push(self.bump().expect("chiffre"));
         }
         text
     }
@@ -553,19 +553,61 @@ impl Parser<'_> {
         }
     }
 
-    /// Convertit un texte de durée en fraction de ronde.
-    fn parse_length(&self, text: &str) -> Result<Fraction> {
-        let unit = self.reader.voices[self.voice].unit;
-        duration::parse_multiplier(text, unit).ok_or_else(|| Error::DureeInvalide {
+    /// Multiple de l'unité `L:` lu par la grammaire `note_length`.
+    fn parse_mult(&self, text: &str) -> Result<Fraction> {
+        rhythm::note_length(text).ok_or_else(|| Error::DureeInvalide {
             line: self.line,
             text: text.to_owned(),
         })
     }
 
+    /// Convertit un texte de durée en fraction de ronde.
+    ///
+    /// Port de l'action `note_length` d'`abc2xml.py` (lignes 362/473) :
+    /// `rhythm::note_length` calcule le multiple de l'unité `L:`, qu'on
+    /// multiplie ici par cette unité pour obtenir une fraction de ronde.
+    fn parse_length(&self, text: &str) -> Result<Fraction> {
+        Ok(self.reader.voices[self.voice].unit * self.parse_mult(text)?)
+    }
+
+    // --- rythme brisé ----------------------------------------------------
+
+    /// Consomme un éventuel marqueur `<`/`>` placé après la durée lue et
+    /// renvoie `(facteur pour cette note, facteur pour la suivante)`.
+    ///
+    /// Port de `abc2xml.py::convertBroken` (ligne 614) : dans le script, la
+    /// transformation parcourt la mesure et, pour chaque `broken`, applique
+    /// `doBroken(prev, brk, x)` (ligne 594) à la note précédente ET à la
+    /// suivante. Ici, le marqueur suit toujours la note qu'il modifie : on
+    /// applique immédiatement son facteur à la durée lue et on garde le
+    /// facteur de la note suivante dans `pending_rhythm`. La durée définitive
+    /// est ainsi connue AVANT de pousser l'événement, ce qui garde le curseur
+    /// (`voice.tick`) aligné sur les attaques réelles — contrairement à une
+    /// correction après coup qui laissait la mesure courte et décalait tout
+    /// le reste de l'air (1 102 airs perdus en N2 après le port de `doMaat`).
+    fn read_broken_factors(&mut self) -> (Fraction, Fraction) {
+        let sauvegarde = self.pos;
+        self.skip_spaces();
+        let Some(symbol @ ('<' | '>')) = self.peek() else {
+            self.pos = sauvegarde;
+            return (Fraction::ONE, Fraction::ONE);
+        };
+        let mut niveaux = 0usize;
+        while self.peek() == Some(symbol) {
+            self.pos += 1;
+            niveaux += 1;
+        }
+        rhythm::broken_factors(symbol, niveaux)
+    }
+
     /// Applique le rythme brisé en attente et le facteur de la note courante.
     fn apply_rhythm(&mut self, nominal: Fraction) -> Result<(Fraction, Fraction)> {
-        let factor = self.voice().pending_rhythm.take().unwrap_or(Fraction::ONE);
-        let nominal = nominal * factor;
+        // Facteur laissé par le marqueur qui suivait la note précédente, puis
+        // facteur du marqueur qui suit celle-ci (consommé par `read_broken_factors`).
+        let attente = self.voice().pending_rhythm.take().unwrap_or(Fraction::ONE);
+        let (ici, suivant) = self.read_broken_factors();
+        self.voice().pending_rhythm = Some(suivant);
+        let nominal = nominal * attente * ici;
         if !nominal.is_positive() {
             return Err(Error::DureeInvalide {
                 line: self.line,
@@ -573,52 +615,6 @@ impl Parser<'_> {
             });
         }
         Ok((nominal, nominal))
-    }
-
-    // --- rythme brisé ----------------------------------------------------
-
-    /// Consomme `<`/`>` et ajuste la note précédente et la suivante.
-    fn maybe_broken_rhythm(&mut self) {
-        let Some(symbol) = self.peek() else {
-            return;
-        };
-        if symbol != '<' && symbol != '>' {
-            return;
-        }
-        let mut levels = 0u32;
-        while self.peek() == Some(symbol) {
-            self.pos += 1;
-            levels += 1;
-        }
-        levels = levels.min(2);
-        let stronger = if symbol == '>' {
-            Fraction::new((1 << (levels + 1)) - 1, 1 << levels)
-        } else {
-            Fraction::new(1, 1 << levels)
-        };
-        let weaker = if symbol == '>' {
-            Fraction::new(1, 1 << levels)
-        } else {
-            Fraction::new((1 << (levels + 1)) - 1, 1 << levels)
-        };
-        let voice = &mut self.reader.voices[self.voice];
-        if let Some(event) = voice.current.events.last_mut() {
-            let notated = event.chord_rest.duration.ticks();
-            let actual = event.chord_rest.ticks.unwrap_or(notated);
-            if let Some(duration) = duration::dotted(event.chord_rest.duration, stronger)
-                .or_else(|| duration::halved(event.chord_rest.duration, levels))
-            {
-                event.chord_rest.duration = duration;
-            }
-            let new_actual = actual * stronger;
-            if new_actual != event.chord_rest.duration.ticks() {
-                event.chord_rest.ticks = Some(new_actual);
-            }
-            if let Some(lyrics) = event.chord_rest.lyrics.last() {
-                let _ = lyrics;
-            }
-        }
-        voice.pending_rhythm = Some(weaker);
     }
 
     // --- événements ------------------------------------------------------
@@ -646,6 +642,15 @@ impl Parser<'_> {
         }
         if let Some(grace_data) = grace.take() {
             if let Some(chord) = chord_rest.chord_mut() {
+                // Port de `abc2xml.py::doGrace` (lignes 680-686) : les notes
+                // d'une suite `{}` sont toutes marquées comme agréments et
+                // comptées (`numNts`) ; `mkNote` (lignes 1314-1315) leur donne
+                // ensuite une unité fixe de 1/8 pour une note seule, 1/16 pour
+                // plusieurs. Le modèle pivot conserve ici la durée ÉCRITE du
+                // jeton (comme il conserve la figure écrite d'un n-olet) :
+                // c'est l'exporteur qui décide de la durée d'exécution, et
+                // l'écrivain ABC réutilise cette valeur pour la réécrire. Les
+                // agréments ne déplacent pas le curseur, comme dans le script.
                 for (id, length, acciaccatura) in grace_data.notes {
                     let grace_type = if acciaccatura {
                         GraceType::Acciaccatura
@@ -794,18 +799,14 @@ impl Parser<'_> {
             }
         }
         numbers[count] = current.parse().unwrap_or(0);
-        count += 1;
-        let actual = numbers[0].max(1);
-        let normal = if count > 1 && numbers[1] > 0 {
-            numbers[1]
-        } else {
-            2
-        };
-        let notes = if count > 2 && numbers[2] > 0 {
-            numbers[2]
-        } else {
-            actual
-        };
+        // Port de `abc2xml.py::tuplet_start` (lignes 395/484/2012) : (2, 4, 8)
+        // sont des duoles/trioles sur 3, les autres sur 2 ; sans indication
+        // le nombre de notes vaut le numérateur. `mkTmod` (ligne 728) écrit
+        // ensuite `tmnum`/`tmden` dans `<time-modification>`.
+        let (tmnum, tmden, ntup) = rhythm::tuplet_start(&numbers[..=count]);
+        let actual = tmnum.max(1);
+        let normal = tmden.max(1);
+        let notes = ntup.max(1);
         let ratio = Fraction::new(actual, normal);
         let parent = self
             .reader
@@ -886,7 +887,7 @@ impl Parser<'_> {
 
     fn parse_chord(&mut self) -> Result<()> {
         // Le crochet a déjà été consommé par `parse_bracket`.
-        let mut notes = Vec::new();
+        let mut notes: Vec<(scoretk_core::model::Note, Fraction)> = Vec::new();
         loop {
             self.skip_spaces();
             match self.peek() {
@@ -902,12 +903,22 @@ impl Parser<'_> {
                 }
                 _ => {
                     let (note, _, _) = self.read_note()?;
-                    notes.push(note);
+                    // Port de `abc2xml.py::convertChord` (ligne 651) : la
+                    // durée écrite d'une note d'accord est le PRODUIT de sa
+                    // durée propre et de celle de l'accord. `[G2G,2]` vaut
+                    // donc une noire, et non un croche comme si l'on ignorait
+                    // les `2` internes (cause des airs `book1.abc` X:0142/0177).
+                    let propre = self.parse_mult(&self.last_length.clone())?;
+                    notes.push((note, propre));
                 }
             }
         }
         let length_text = self.read_length_text();
-        let nominal = self.parse_length(&length_text)?;
+        let chord_mult = self.parse_mult(&length_text)?;
+        let multiple = notes
+            .first()
+            .map_or(chord_mult, |(_, propre)| *propre * chord_mult);
+        let nominal = self.voice().unit * multiple;
         let tie = self.eat_tie();
         let (nominal, _) = self.apply_rhythm(nominal)?;
         let duration = duration::figure_for(nominal);
@@ -915,7 +926,7 @@ impl Parser<'_> {
         let mut chord_rest = ChordRest::chord(duration.0);
         let mut ids = Vec::new();
         let mut pitches = Vec::new();
-        for note in notes {
+        for (note, _) in notes {
             let pitch = note.pitch;
             let id = self.reader.score.add_note(note);
             if let Some(chord) = chord_rest.chord_mut() {
@@ -928,7 +939,6 @@ impl Parser<'_> {
         let scale = self.tuplet_scale();
         self.push_event(chord_rest, tick);
         self.voice().tick += nominal * scale;
-        self.maybe_broken_rhythm();
         Ok(())
     }
 
