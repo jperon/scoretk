@@ -3075,3 +3075,27 @@ fn parser_include_string_injecte_la_musique() {
     );
     assert_eq!(score.measures.len(), 1, "mesures");
 }
+
+#[test]
+fn include_ignore_sans_partition_ne_fait_pas_echouer() {
+    // Les gabarits `satb.*`/`ssaattbb.*` mettent leur `\score` dans le
+    // fichier livré avec LilyPond (`satb.ly`, `ssaattbb.ly`), que le
+    // sous-ensemble n'inclut pas. Ce n'est pas une erreur de syntaxe : la
+    // lecture renvoie une partition vide avec un avertissement.
+    let source = "\\version \"2.19.19\"\n\
+         SopranoMusic = \\relative { c''4 c c4 c }\n\
+         \\include \"satb.ly\"";
+    let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
+    assert!(score.measures.is_empty(), "partition vide");
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.message.contains("aucune partition lisible")),
+        "avertissements : {warnings:?}"
+    );
+
+    // Une source réellement sans musique reste une erreur.
+    let error = read_lilypond("\\version \"2.24.0\"\n\\header { title = \"x\" }")
+        .expect_err("aucune musique");
+    assert!(error.to_string().contains("aucune musique"));
+}

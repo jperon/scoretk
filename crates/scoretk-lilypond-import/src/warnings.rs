@@ -49,6 +49,10 @@ impl fmt::Display for Warning {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Warnings {
     items: Vec<Warning>,
+    /// Un `\include` ignoré pouvait porter la partition : l'absence de
+    /// `\score` n'est alors pas une erreur de syntaxe, mais une limite du
+    /// sous-ensemble lu.
+    music_ignoree: bool,
 }
 
 impl Warnings {
@@ -69,5 +73,15 @@ impl Warnings {
     /// Avertissements collectés.
     pub(crate) fn into_vec(self) -> Vec<Warning> {
         self.items
+    }
+
+    /// Note qu'un include ignoré pouvait contenir la musique.
+    pub(crate) fn mark_music_ignored(&mut self) {
+        self.music_ignoree = true;
+    }
+
+    /// Vrai si un include ignoré pouvait contenir la musique.
+    pub(crate) fn music_ignored(&self) -> bool {
+        self.music_ignoree
     }
 }

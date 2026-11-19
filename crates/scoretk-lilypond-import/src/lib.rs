@@ -117,6 +117,23 @@ pub fn read_lilypond_with_includes(
     let mut warnings = warnings::Warnings::new();
     let document = parser::parse(src, resolve, &mut warnings);
     if document.score.is_none() {
+        if warnings.music_ignored() {
+            // Un `\include` ignoré peut porter le `\score` (gabarits
+            // `satb.ly`, `ssaattbb.ly`) : ce n'est pas une erreur de syntaxe,
+            // mais une limite du sous-ensemble. On renvoie une partition
+            // vide avec un avertissement plutôt que d'échouer sur le fichier.
+            warnings.push(
+                0,
+                0,
+                "aucune partition lisible : la musique est contenue dans un include ignoré",
+            );
+            let document = crate::ast::Document {
+                score: Some(crate::ast::ScoreAst::default()),
+                ..document
+            };
+            let score = builder::build(&document, &mut warnings);
+            return Ok((score, warnings.into_vec()));
+        }
         return Err(Error::Syntaxe(
             "aucune musique dans la source LilyPond".to_owned(),
         ));

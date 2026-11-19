@@ -170,7 +170,12 @@ impl Expander<'_> {
                             line,
                             column,
                         });
-                    } else if !FICHIERS_LILYPOND.contains(&text.as_str()) {
+                    } else if FICHIERS_LILYPOND.contains(&text.as_str()) {
+                        // Un fichier livré par LilyPond peut porter la
+                        // structure du `\score` (`satb.ly`, `ssaattbb.ly`) :
+                        // l'ignorer ne doit pas faire échouer le fichier.
+                        self.warnings.mark_music_ignored();
+                    } else {
                         self.included(text, current, depth, line, column);
                     }
                 }
@@ -184,8 +189,12 @@ impl Expander<'_> {
                         column,
                         "\\include d'une expression Scheme ignoré : la valeur n'est pas connue",
                     );
+                    self.warnings.mark_music_ignored();
                 }
-                _ => self.warnings.push(line, column, ignored),
+                _ => {
+                    self.warnings.push(line, column, ignored);
+                    self.warnings.mark_music_ignored();
+                }
             }
             // La commande et son argument sont consommés, même ignorés.
             index += 2;
@@ -227,11 +236,14 @@ impl Expander<'_> {
                 self.source(&source, Some(&path), depth + 1);
                 self.stack.pop();
             }
-            None => self.warnings.push(
-                line,
-                column,
-                "\\include ignoré : le fichier inclus n'est pas lu",
-            ),
+            None => {
+                self.warnings.push(
+                    line,
+                    column,
+                    "\\include ignoré : le fichier inclus n'est pas lu",
+                );
+                self.warnings.mark_music_ignored();
+            }
         }
     }
 }
