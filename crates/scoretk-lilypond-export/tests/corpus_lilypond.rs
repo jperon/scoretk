@@ -336,6 +336,53 @@ fn silence_multi_mesures_non_double() {
     );
 }
 
+/// Les identifiants LilyPond ne peuvent pas contenir de chiffre : avec plus
+/// de dix portées, `staff11VoiceOne` est analysé comme `staff` suivi de `11`
+/// et toute la compilation échoue (cas réel : `Veni veni Emmanuel` à 13
+/// portées). Le nom doit rester un identifiant valide, quelle que soit la
+/// portée. Musique ordinaire : accords, silences et barres sur chaque portée.
+#[test]
+fn noms_de_variables_valides_au_dela_de_dix_portees() {
+    let mut score = scoretk_core::model::Score::new();
+    let part = score.add_part(Part::new("Choeur", "Ch."));
+    for index in 0..12 {
+        let staff = score.add_staff(part);
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::ONE);
+        for (tick, silence) in [(0, false), (1, true)] {
+            let mut segment = Segment::new(SegmentType::ChordRest, Fraction::new(tick, 1), 1);
+            let chord = if silence {
+                ChordRest::rest(Duration::half())
+            } else {
+                let mut chord = ChordRest::chord(Duration::half());
+                let note_id = score.add_note(Note::new(60 + index as u8, tpc::C));
+                let ChordRestKind::Chord(ref mut content) = chord.kind else {
+                    unreachable!()
+                };
+                content.notes.push(note_id);
+                chord
+            };
+            segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+            measure.add_segment(segment);
+        }
+        score.add_measure(measure);
+    }
+    let produit = scoretk_lilypond_export::write_lilypond(&score).expect("écriture");
+    assert!(
+        produit.contains("staffOneOneVoiceOne"),
+        "nom de la onzième portée absent :\n{produit}"
+    );
+    for identifiant in produit
+        .split_whitespace()
+        .filter(|mot| mot.starts_with("staff"))
+    {
+        let nom = identifiant.trim_matches(|c: char| !c.is_alphanumeric());
+        assert!(
+            !nom.chars().any(|c| c.is_ascii_digit()),
+            "identifiant LilyPond invalide {nom:?} :\n{produit}"
+        );
+    }
+}
+
 #[test]
 fn clef_initiale_des_fichiers_v4() {
     for nom in ["v4/tenuto_accent.mscx", "v4/beamStemDir.mscx"] {

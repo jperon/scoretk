@@ -1125,13 +1125,26 @@ pub(crate) fn written_voices(score: &Score, staff: usize) -> usize {
 }
 
 /// Numéral anglais utilisé dans les noms de variables (`One`, `Two`…).
+///
+/// Un identifiant LilyPond ne peut pas contenir de chiffre : au-delà de dix,
+/// on épelle chaque chiffre du numéro (`staffOneZero` pour la onzième portée)
+/// au lieu de retomber sur `staff11`, que le parseur lit comme `staff` suivi
+/// d'un entier (erreur de syntaxe, toute la partition est perdue).
 fn number_word(index: usize) -> String {
     const WORDS: [&str; 10] = [
         "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
     ];
-    WORDS
-        .get(index)
-        .map_or_else(|| (index + 1).to_string(), |word| (*word).to_owned())
+    if let Some(word) = WORDS.get(index) {
+        return (*word).to_owned();
+    }
+    const DIGITS: [&str; 10] = [
+        "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+    ];
+    (index + 1)
+        .to_string()
+        .bytes()
+        .map(|digit| DIGITS[(digit - b'0') as usize])
+        .collect()
 }
 
 /// Nom de variable d'une portée (`staffOne`, `staffTwo`…).
