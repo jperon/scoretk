@@ -139,10 +139,22 @@ def reference_xml(args, src: str, dest: Path, tk_xml: Path, log: Path) -> str:
 
             try:
                 with zipfile.ZipFile(src) as archive:
-                    membres = [
+                    noms = [
                         n for n in archive.namelist()
                         if n.lower().endswith((".musicxml", ".xml"))
+                        and "meta-inf" not in n.lower()
                     ]
+                    # Le premier membre `.xml` peut être un `container.xml`
+                    # hors META-INF : xml2abc.py n'y trouve aucun `<part>` et
+                    # échoue. On choisit le premier membre qui contient
+                    # réellement une partition partwise.
+                    membres = [
+                        n for n in noms
+                        if b"<score-partwise" in archive.read(n)[:8192]
+                        or b"<score-timewise" in archive.read(n)[:8192]
+                    ]
+                    if not membres and noms:
+                        membres = [noms[0]]
                     if not membres:
                         return "absent (mxl vide)"
                     dest.write_bytes(archive.read(membres[0]))
