@@ -141,6 +141,12 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     // paroles sont conservées et rattachées plus loin à la voix nommée, où
     // qu'elle ait été déclarée.
     let mut pending_lyrics: Vec<(usize, LyricsBuild)> = Vec::new();
+    // `\transposition` est une propriété de Staff mais le parseur peut
+    // séparer un `\context Staff` en plusieurs groupes : le `\global` (souvent
+    // le premier, sans note) porte la propriété, les `\context Voice` qui
+    // suivent portent la musique. On retient alors l'intervalle jusqu'à ce
+    // qu'un groupe musical le reçoive.
+    let mut pending_transposition: Option<(PitchSpec, bool)> = None;
     for group in &score_ast.groups {
         if group.staves.is_empty() {
             // Portée précédente : c'est elle qui porte la voix la plus proche
@@ -156,15 +162,35 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
         }
         // `\transposition` est une propriété de Staff. Une partie MusicXML
         // n'a qu'un `<transpose>` : on ne le porte donc que si le groupe ne
-        // contient qu'une portée, seul cas où l'on sait à quelle instrument
+        // contient qu'une portée, seul cas où l'on sait à quel instrument
         // l'appliquer. Les `\context Staff` transparents de certaines sources
         // anciennes déposent la propriété dans un groupe plus large ; laisser
         // la transposition à la partie entière décalerait les autres portées.
-        let transposition = if group.staves.len() == 1 && group.staves[0].voices.len() == 1 {
-            instrument_transpose(&group.staves[0].voices[0].music)
+        let propre = if group.staves.len() == 1 {
+            // Les partitions de guitare posent souvent `\transposition c`
+            // dans chacune des voix d'une même portée ; toutes portent alors
+            // le même intervalle et la propriété vaut pour la portée entière.
+            let transpositions: Vec<_> = group.staves[0]
+                .voices
+                .iter()
+                .map(|voice| instrument_transpose(&voice.music))
+                .collect();
+            transpositions
+                .first()
+                .copied()
+                .flatten()
+                .filter(|_| transpositions.iter().all(|item| item == &transpositions[0]))
         } else {
             None
         };
+        if propre.is_some() {
+            pending_transposition = propre;
+        } else if !matches!(group.kind, GroupKind::Voice) {
+            // Un nouveau groupe structural (StaffGroup, Staff…) ferme la
+            // portée qui portait la propriété : ne pas la propager au-delà.
+            pending_transposition = None;
+        }
+        let transposition = propre.or(pending_transposition);
         let first = &group.staves[0];
         let long_name = group
             .instrument_name
@@ -207,22 +233,39 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 }
             }
         }
-        // Une partie n'a qu'un `<transpose>` : ne le poser que si toutes les
-        // voix construites appartiennent à la portée transpositrice. Sinon les
-        // hauteurs écrites sont conservées telles quelles pour les autres
-        // voix, sous peine d'écrire une hauteur fausse à l'export. C'est ici,
-        // une fois la structure connue, que la concert est décalée.
+        // C'est ici, une fois la structure connue, que la concert est décalée
+        // et que le `<transpose>` est posé sur la partie.
         if let Some((pitch, a_decaler)) = transposition {
-            if staves[first_staff_index..]
-                .iter()
-                .all(|staff| staff.voices.len() == 1)
-            {
-                let (diatonic, chromatic) = crate::pitch::instrument_transpose(&pitch);
-                if a_decaler {
-                    decaler_vers_concert(&mut staves[first_staff_index..], chromatic);
+            // Une partie n'a qu'un `<transpose>` : ne le poser que si elle
+            // contient une seule portée, seul cas où l'on sait à quel
+            // instrument l'appliquer. Une portée à plusieurs voix peut porter
+            // la propriété si toutes les voix la portent aussi (voir `propre`).
+            if staves[first_staff_index..].len() == 1 {
+                // Un groupe sans note ne porte pas la transposition : il ne
+                // sert que de relais vers les voix musicales qui le suivent
+                // (idiome `\global` des partitions anciennes).
+                let a_des_notes = staves[first_staff_index..].iter().any(|staff| {
+                    staff.voices.iter().any(|voice| {
+                        voice
+                            .interpreted
+                            .events
+                            .iter()
+                            .any(|event| matches!(&event.kind, EventKind::Chord(_)))
+                    })
+                });
+                if a_des_notes {
+                    let (diatonic, chromatic) = crate::pitch::instrument_transpose(&pitch);
+                    if a_decaler {
+                        decaler_vers_concert(&mut staves[first_staff_index..], chromatic);
+                    }
+                    score.part_mut(part_id).instrument.transpose =
+                        Some(Transpose::new(diatonic, chromatic));
+                    // La propriété vaut pour toute la portée : les voix
+                    // musicales suivantes la reçoivent aussi. Un groupe
+                    // structural (`Staff`, `StaffGroup…`) la referme plus haut.
+                } else {
+                    pending_transposition = Some((pitch, a_decaler));
                 }
-                score.part_mut(part_id).instrument.transpose =
-                    Some(Transpose::new(diatonic, chromatic));
             }
         }
     }

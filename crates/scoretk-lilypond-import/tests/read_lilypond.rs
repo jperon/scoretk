@@ -3775,3 +3775,81 @@ fn mark_markup_entre_accolades_ne_devient_pas_une_note() {
     assert_eq!(hauteurs(&score), vec![72, 74, 76], "musique après chaîne");
     assert_eq!(score.measures.len(), 1, "mesures après chaîne");
 }
+
+#[test]
+fn transposition_du_global_atteint_les_voix_de_la_portee() {
+    // Cas réel (Carcassi, guitar-skole…) : `\transposition c` est posé dans
+    // `\global`, frère des `\context Voice` d'un même `\context Staff`. Le
+    // parseur en fait trois groupes : le global (sans note) porte la propriété,
+    // les voix musicales doivent la recevoir. Sans cela, la concert reste écrite
+    // d'une octave trop haut et l'export MusicXML ne porte aucun `<transpose>`.
+    let source = r#"
+      \version "2.24.0"
+      \language "english"
+      global = { \transposition c \clef treble \time 4/4 }
+      haut = { c'4 d' e' f' | <g' c''>2 g'2 | r2 a'2 }
+      bas = { c4 d4 e4 f4 | g2~ g2 | r2 c'2 }
+      \score {
+        \context Staff = "guitare" <<
+          \global
+          \context Voice = "haut" { \haut }
+          \context Voice = "bas" { \bas }
+        >>
+      }
+    "#;
+    let score = read_lilypond(source).expect("lecture");
+    // `\transposition c` fait sonner une octave plus bas : do4->do3 (48).
+    assert_eq!(
+        hauteurs(&score),
+        vec![48, 50, 52, 53, 55, 60, 55, 57, 36, 38, 40, 41, 43, 43, 48]
+    );
+    assert_eq!(score.measures.len(), 3);
+    let transposes: Vec<_> = score
+        .parts
+        .iter()
+        .map(|part| part.instrument.transpose)
+        .collect();
+    assert_eq!(
+        transposes,
+        vec![None, Some(Transpose::new(-7, -12)), Some(Transpose::new(-7, -12))],
+        "la propriété doit suivre les voix musicales, pas le global vide"
+    );
+
+    // Cas non concerné : sans `\transposition`, hauteurs et parties inchangées.
+    let sans = read_lilypond(&source.replace("\\transposition c ", "")).expect("lecture");
+    assert_eq!(
+        hauteurs(&sans),
+        vec![60, 62, 64, 65, 67, 72, 67, 69, 48, 50, 52, 53, 55, 55, 60]
+    );
+    assert!(sans.parts.iter().all(|part| part.instrument.transpose.is_none()));
+
+    // Autre idiom réel (guitar-skole) : chaque voix de la portée porte
+    // `\transposition c`. Toutes portant le même intervalle, la propriété est
+    // posée sur l'unique partie et la concert est décalée d'une octave.
+    let voix = read_lilypond(
+        "\\score { \\new Staff { << \
+         \\new Voice { \\transposition c \\fixed c' { c4 d | e4 f } } \
+         \\new Voice { \\transposition c \\fixed c' { g4 a | b4 c' } } >> } }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&voix), vec![48, 50, 52, 53, 55, 57, 59, 60]);
+    assert_eq!(voix.measures.len(), 1, "les deux voix couvrent une mesure");
+    assert_eq!(voix.parts.len(), 1);
+    assert_eq!(
+        voix.parts[0].instrument.transpose,
+        Some(Transpose::new(-7, -12))
+    );
+
+    // Cas limite : une portée suivante, sans `\transposition`, ne doit pas
+    // hériter de celle du groupe précédent.
+    let deux = read_lilypond(&source.replace(
+        "      }\n    ",
+        "        \\new Staff { \\fixed c' { g4 a4 } }\n      }\n    ",
+    ))
+    .expect("lecture");
+    assert_eq!(
+        deux.parts.last().and_then(|part| part.instrument.transpose),
+        None,
+        "la transposition ne franchit pas un nouveau Staff"
+    );
+}
