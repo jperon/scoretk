@@ -2119,6 +2119,12 @@ impl<'a> Parser<'a> {
                 self.parse_with_block();
                 self.parse_music()
             }
+            // `\chords`, `\figures`, `\lyrics`, `\simultaneous`… ne font que
+            // changer le mode de lecture des jetons suivants ; la musique
+            // enveloppée reste la même. Sans ce cas, la commande était
+            // traitée comme inconnue et sa musique sautée, laissant le
+            // fichier sans partition.
+            _ if is_mode_head(&name) => self.parse_music(),
             // `\markup` accepte une chaîne, une commande de mise en forme ou un
             // bloc entre accolades, mais pas nécessairement d'accolade autour
             // de tout l'expression (`\markup \tiny "No Art."`). `skip_braced`
@@ -3400,10 +3406,31 @@ fn anonymous_group(music: Music) -> GroupBlock {
     }
 }
 
+/// Commandes de changement de mode (`mode_changing_head` et
+/// `mode_changing_head_with_context` de `lily/parser.yy`, ainsi que
+/// `SIMULTANEOUS`). Elles modifient l'interprétation lexicale des jetons
+/// suivants (chordes, figures, paroles) ; pour le lecteur, la musique
+/// enveloppée reste une musique ordinaire.
+fn is_mode_head(name: &str) -> bool {
+    matches!(
+        name,
+        "chordmode"
+            | "figuremode"
+            | "notemode"
+            | "drummode"
+            | "chords"
+            | "figures"
+            | "lyrics"
+            | "drums"
+            | "simultaneous"
+    )
+}
+
 /// Vrai si la commande ouvre une expression musicale reconnue par
 /// `parse_music` (hors variables musicales, testées à part).
 fn starts_music_command(name: &str) -> bool {
-    matches!(
+    is_mode_head(name)
+        || matches!(
         name,
         "relative"
             | "fixed"
