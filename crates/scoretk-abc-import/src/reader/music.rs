@@ -310,25 +310,37 @@ impl Parser<'_> {
         let tick = self.voice().tick;
         if matches!(self.peek(), Some('Z' | 'X')) {
             self.bump();
-            self.read_length_text();
-            let remaining = {
-                let voice = self.voice();
-                let nominal = voice.time.measure_len();
-                (nominal - voice.tick).max(Fraction::ZERO)
-            };
-            let actual = if remaining.is_positive() {
-                remaining
-            } else {
-                Fraction::QUARTER
-            };
-            let nominal = voice_measure_len(self.voice());
-            let mut chord_rest = ChordRest::full_measure_rest();
-            if actual != nominal {
-                chord_rest = ChordRest::rest(Duration::new(DurationType::Whole));
-                chord_rest.ticks = Some(actual);
+            let length = self.read_length_text();
+            // Port de `abc2xml.py::fixSlurs.f` (lignes 767-775) : `Z24` est
+            // réécrit en 24 pauses de mesure `Z|Z|…|Z`. Le nombre compte des
+            // mesures, il n'allonge pas une pause unique.
+            let repetitions = length.parse::<usize>().unwrap_or(1).max(1);
+            for iteration in 0..repetitions {
+                let tick = self.voice().tick;
+                let remaining = {
+                    let voice = self.voice();
+                    let nominal = voice.time.measure_len();
+                    (nominal - voice.tick).max(Fraction::ZERO)
+                };
+                let actual = if remaining.is_positive() {
+                    remaining
+                } else {
+                    Fraction::QUARTER
+                };
+                let nominal = voice_measure_len(self.voice());
+                let mut chord_rest = ChordRest::full_measure_rest();
+                if actual != nominal {
+                    chord_rest = ChordRest::rest(Duration::new(DurationType::Whole));
+                    chord_rest.ticks = Some(actual);
+                }
+                self.push_event(chord_rest, tick);
+                self.voice().tick += actual;
+                // Chaque pause remplie ferme sa mesure ; la dernière est
+                // fermée par la barre écrite qui suit le `Znn`.
+                if iteration + 1 < repetitions {
+                    self.finish_bar(BarLineType::Normal, false, None)?;
+                }
             }
-            self.push_event(chord_rest, tick);
-            self.voice().tick += actual;
             // Un marqueur après une pause de mesure est sans effet sur une
             // pause pleine ; on le consomme et on vide le facteur en attente.
             let _ = self.read_broken_factors();
