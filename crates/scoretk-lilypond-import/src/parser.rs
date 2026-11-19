@@ -2141,11 +2141,15 @@ impl<'a> Parser<'a> {
             // partition.
             _ if is_mode_head(&name) => self.parse_music(),
             // `\markup` accepte une chaîne, une commande de mise en forme ou un
-            // bloc entre accolades, mais pas nécessairement d'accolade autour
-            // de tout l'expression (`\markup \tiny "No Art."`). `skip_braced`
-            // avalerait alors le reste du fichier jusqu'à la première `}`.
+            // bloc entre accolades. Sans accolade, on s'arrête devant la
+            // musique au lieu d'avaler le reste du fichier jusqu'à une `}` ;
+            // avec un bloc, on le saute comme le fait le lexer amont.
             "markup" | "markuplist" => {
-                self.parse_markup_text();
+                if self.markup_argument_est_entre_accolades() {
+                    self.skip_braced();
+                } else {
+                    self.parse_markup_text();
+                }
                 Music::Empty
             }
             "layout" | "midi" | "paper" | "header" => {
@@ -2914,6 +2918,36 @@ impl<'a> Parser<'a> {
     //------------------------------------------------------------------
     // Markup, Scheme et valeurs
     //------------------------------------------------------------------
+
+    /// Vrai si l'expression de markup commence par un bloc entre accolades,
+    /// éventuellement après des commandes de mise en forme (`\markup \column
+    /// { … }`, `^\markup \bold {a Tempo}`). Le bloc doit alors être sauté
+    /// d'un seul tenant : le laisser en place le ferait lire comme une musique
+    /// parasite (régressions `franck_ave_maria`, `duration-line-start-stop`,
+    /// `satb-template-with-keyboard-reduction`).
+    fn markup_argument_est_entre_accolades(&self) -> bool {
+        let mut index = self.position;
+        while let Some(token) = self.tokens.get(index) {
+            match token.kind {
+                Kind::Command => {
+                    if self.variables.contains_key(&token.text)
+                        || self.music_functions.contains_key(&token.text)
+                        || starts_music_command(&token.text)
+                        || is_mode_head(&token.text)
+                    {
+                        return false;
+                    }
+                    index += 1;
+                }
+                // `\override #'(…)` et les autres arguments Scheme font
+                // partie de la commande de mise en forme.
+                Kind::Scheme => index += 1,
+                Kind::Punct('{') => return true,
+                _ => return false,
+            }
+        }
+        false
+    }
 
     /// Texte d'un `\markup`.
     fn parse_markup_text(&mut self) -> String {

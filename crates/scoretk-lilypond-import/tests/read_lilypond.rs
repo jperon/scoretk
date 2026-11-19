@@ -3130,3 +3130,55 @@ fn include_ignore_sans_partition_ne_fait_pas_echouer() {
         .expect_err("aucune musique");
     assert!(error.to_string().contains("aucune musique"));
 }
+
+#[test]
+fn markup_avec_argument_entre_accolades_laisse_la_musique_suivante() {
+    // `\markup \column { … }` (valeur de variable) et `\markup \bold { … }`
+    // (dans une voix) ont un argument entre accolades : le bloc doit être
+    // sauté d'un seul tenant. Sinon il devient une musique parasite, qui
+    // décale les octaves de la suite ou se fait passer pour la partition
+    // implicite (régressions `duration-line-start-stop`,
+    // `satb-template-with-keyboard-reduction`, `franck_ave_maria`).
+    let source = "\\version \"2.24.0\"\n\
+         \\language \"english\"\n\
+         etiquette = \\markup \\column { \"haut\" { \"bas\" } }\n\
+         musique = \\relative c' {\n\
+           \\markup \\bold {a Tempo}\n\
+           c4 ^\\markup \\tiny \"Dolce\" d | e2 r |\n\
+           <c e g>2 c,4 | c1\n\
+         }\n\
+         \\score { <<\n\
+           \\new Staff \\musique\n\
+           \\new Staff { \\fixed c' { c'4 d' | e'2 r | } }\n\
+         >> }";
+    let score = read_lilypond(source).expect("lecture");
+    // Voix 0 : do4 ré4 | mi2 silence | accord do-mi-sol2 do3 | do3,
+    // puis les trois notes de la seconde portée (do5 ré5 mi5).
+    assert_eq!(
+        hauteurs(&score),
+        vec![60, 62, 64, 60, 64, 67, 48, 48, 72, 74, 76]
+    );
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 2),
+            Fraction::new(1, 2),
+            Fraction::new(1, 2),
+            Fraction::new(1, 4),
+            Fraction::new(1, 1),
+        ],
+        "durées de la première portée"
+    );
+    assert_eq!(score.measures.len(), 4, "mesures");
+
+    // Un markup dont l'argument est une chaîne, sans accolade, garde son
+    // comportement : la musique qui suit n'est pas avalée.
+    let source = "\\version \"2.24.0\"\n\
+         \\language \"english\"\n\
+         \\score { \\new Staff { c'4 ^\\markup \\tiny \"No Art.\" d'4 e'2 } }";
+    let score = read_lilypond(source).expect("lecture chaîne");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64], "musique après chaîne");
+    assert_eq!(score.measures.len(), 1, "mesures après chaîne");
+}
