@@ -639,6 +639,7 @@ impl<'a> Parser<'a> {
             }
             Music::Lyrics(block) => vec![GroupBlock {
                 kind: GroupKind::Other,
+                existing: false,
                 instrument_name: None,
                 short_instrument_name: None,
                 staves: Vec::new(),
@@ -808,6 +809,7 @@ impl<'a> Parser<'a> {
                     staves[0].name = context_name;
                     return Music::New(Box::new(GroupBlock {
                         kind: GroupKind::Staff,
+                        existing,
                         instrument_name,
                         short_instrument_name,
                         staves,
@@ -824,6 +826,7 @@ impl<'a> Parser<'a> {
                 self.collect_addlyrics(&mut staff);
                 return Music::New(Box::new(GroupBlock {
                     kind: GroupKind::Staff,
+                    existing,
                     instrument_name,
                     short_instrument_name,
                     staves: vec![staff],
@@ -844,7 +847,7 @@ impl<'a> Parser<'a> {
                 return self.parse_music();
             }
         }
-        match self.parse_new_context() {
+        match self.parse_new_context(existing) {
             Some(group) if group.staves.is_empty() && !group.lyrics.is_empty() => {
                 // Un `\new Lyrics` peut porter plusieurs couplets (un couplet
                 // aligné imbriqué) : les conserver tous, pas seulement le
@@ -867,13 +870,13 @@ impl<'a> Parser<'a> {
 
     /// `\new Nom [= "id"] [\with { … }] musique`.
     fn parse_new(&mut self) -> Option<GroupBlock> {
-        self.parse_new_context()
+        self.parse_new_context(false)
     }
 
     /// Contexte structurel d'un `\new` ou d'un `\context` : le nom non
     /// structurel et le `\context Staff` à contenu musical sont traversés par
     /// [`Self::parse_context_command`] avant d'arriver ici.
-    fn parse_new_context(&mut self) -> Option<GroupBlock> {
+    fn parse_new_context(&mut self, existing: bool) -> Option<GroupBlock> {
         let name = match self.bump() {
             Some(Token {
                 kind: Kind::Word,
@@ -948,6 +951,7 @@ impl<'a> Parser<'a> {
             lyrics.extend(couplets);
             return Some(GroupBlock {
                 kind: GroupKind::Other,
+                existing,
                 instrument_name: None,
                 short_instrument_name: None,
                 staves: Vec::new(),
@@ -965,6 +969,7 @@ impl<'a> Parser<'a> {
             GroupKind::PianoStaff | GroupKind::ChoirStaff | GroupKind::StaffGroup => {
                 let mut group = GroupBlock {
                     kind,
+                    existing,
                     instrument_name,
                     short_instrument_name,
                     staves: Vec::new(),
@@ -988,6 +993,7 @@ impl<'a> Parser<'a> {
                     // un `\new Voice` rencontré dans une voix d'une portée
                     // imbriquée (`Music::New`).
                     kind: GroupKind::Voice,
+                    existing,
                     instrument_name,
                     short_instrument_name,
                     staves: vec![staff],
@@ -1010,6 +1016,7 @@ impl<'a> Parser<'a> {
                 self.collect_addlyrics(&mut staff);
                 Some(GroupBlock {
                     kind: GroupKind::Staff,
+                    existing,
                     instrument_name,
                     short_instrument_name,
                     staves: vec![staff],
@@ -3801,6 +3808,7 @@ fn anonymous_group(music: Music) -> GroupBlock {
     }
     GroupBlock {
         kind: GroupKind::Staff,
+        existing: false,
         instrument_name: None,
         short_instrument_name: None,
         staves: vec![staff],

@@ -401,6 +401,10 @@ impl StaffBlock {
 pub(crate) struct GroupBlock {
     /// Nature du contexte.
     pub kind: GroupKind,
+    /// Vrai pour un `\context` (contexte existant retrouvé), faux pour un
+    /// `\new` : seul le premier peut prolonger la voix courante sans ouvrir
+    /// une nouvelle piste.
+    pub existing: bool,
     /// Nom d'instrument du groupe (`\with`).
     pub instrument_name: Option<String>,
     /// Nom abrégé du groupe.

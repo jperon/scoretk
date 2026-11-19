@@ -706,6 +706,33 @@ fn contexte_staff_simple_garde_trame_et_grace() {
 }
 
 #[test]
+fn new_staff_imbrique_garde_sa_propre_voix() {
+    // Extrait de `incipit-modern.ly` : `\incipit \new Staff { … }` crée une
+    // vraie portée, pas un contexte existant. Ses notes gardent leur piste et
+    // leur trame ; les fondre dans la voix principale ferait chevaucher les
+    // attaques des deux groupes (N2 4/4 → 0/4 dans l'oracle).
+    let source = concat!(
+        "\\score { \\new Staff { \\fixed c' { ",
+        "\\incipit \\new Staff \\with { firstClef = ##f } { c4 e g c' } ",
+        "d4 f a d' } } }"
+    );
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.measures.len(), 2);
+    let incipit = accords_de_voix(&score, 1);
+    assert_eq!(
+        incipit.iter().map(|(_, pitches, _)| pitches.clone()).collect::<Vec<_>>(),
+        vec![vec![60], vec![64], vec![67], vec![72]]
+    );
+    assert_eq!(incipit[0].0, Fraction::ZERO);
+    let principal = accords_de_voix(&score, 0);
+    assert_eq!(
+        principal.iter().map(|(_, pitches, _)| pitches.clone()).collect::<Vec<_>>(),
+        vec![vec![62], vec![65], vec![69], vec![74]]
+    );
+    assert_eq!(principal[0].0, Fraction::ONE);
+}
+
+#[test]
 fn ornements() {
     let score = lire("\\grace { b8 } c4 \\afterGrace d4 { e16 }");
     let mut graces = Vec::new();

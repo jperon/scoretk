@@ -459,7 +459,10 @@ impl<'a> Interpreter<'a> {
         // ferait repartir son compteur d'attaque à zéro dans le MIDI écrit :
         // `grace-staff-length.ly` plaçait ainsi son ornement et sa note au
         // début de la portée au lieu de la deuxième mesure (tick 4).
-        if group.kind == GroupKind::Staff
+        // Un `\new Staff` (y compris sous `\incipit`) crée au contraire une
+        // vraie portée, qui garde sa propre voix et sa propre trame.
+        if group.existing
+            && group.kind == GroupKind::Staff
             && group.staves.len() == 1
             && group.staves[0].voices.len() == 1
         {
