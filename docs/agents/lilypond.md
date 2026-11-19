@@ -1047,7 +1047,7 @@ first 119 `.mscz`), by first cause:
 5. **Duration-only differences (2 files)** — 15 notes of 1017 (~1.5 %) differ
    only in N2d; likely tie/gate-time detail, not worth a targeted fix.
 
-No file was dropped: all four fixes have a reduced test, and the only
+No file was dropped: every fix has a reduced test, and the only
 snapshots regenerated are the seven files whose `.ly` legitimately changed
 (five `\transposition`, one extra `R1` removed, one multi-rest duplication).
 
