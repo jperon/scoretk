@@ -1277,19 +1277,54 @@ octave remains correct.
 Each of the five groups was reduced and checked against LilyPond 2.26
 directly:
 
-* **`octave` (81 files).** Only 24 have N1 below 50 %. Among them, the
-  chord-grid files are fixed above; the rest are multi-`\score` or MIDI-block
-  artefacts. `22_StMichel.ly` has `\transpose c c'` inside the first score's
-  `\midi` block, so the reference sits one octave above the engraved score;
-  `Maiana.ly` has two `\score` blocks, the second (the one with `\midi`) under
-  `\transpose do do''`. The reader deliberately keeps the first, engraved
-  score (§7). The other 57 files are a **false positive of the oracle**:
-  `compare()` counts a missing pitch `p` as an octave error whenever `p ± 12`
-  exists anywhere in the output. In `02_02_Segura_...ly`, N1 is 257/259 and
-  the two "octave" notes are actually lost by the comparator's note-on/off
-  pairing. Clef and ottava are display-only in LilyPond's MIDI (`\clef
-  "treble_8"` and `\ottava #1` were compiled in isolation and do not change
-  pitch), so keeping the written octave is correct.
+* **`octave` (81 files in the frozen baseline).** Each file was measured again
+  with a fresh LilyPond MIDI (built from the *current* source with a `\midi`
+  block injected by `lyaudit/pre.ly`) and with scoretk's raw SMF, and the pitch
+  multisets were compared. There is **no octave error in the reader or the
+  writer** in this group: the flag came from the oracle and from stale or
+  mismatched references. The reduced sources and LilyPond's own MIDI are given
+  below for seven representative files. Grouping of all 81:
+
+  | Cause | Files | Deciding evidence |
+  | --- | ---: | --- |
+  | Transposed `\midi` `\score` used as reference | 13 | Reduced `\score` pairs (Gueguen, 22_StMichel, Maiana): LilyPond's MIDI is the *second*, transposed score; scoretk reads the first engraved one (§7, §1.2.2/§1.3.4) |
+  | Old oracle's note-on overwrite (false octave) | 26 | After the FIFO fix no reference pitch is missing; the flag was `p ± 12` coincidence on a dropped note (Segura) |
+  | Stale `.midi` reference (much larger than a fresh LilyPond MIDI) | 14 | Fresh MIDI = scoretk output: e.g. Veni Creator 249 vs stale 3134, AStMichel 130 vs 666, gaudete 85 vs 440 |
+  | Missing notes, current reference | 13 | Chord grids/transposed grids (9), two different `\score` blocks in the same file (Transeamus ×2), Scheme-generated music (Dechiffrage), one further voice case |
+  | Same note count, pitch difference only | 14 | Chord grids or display-only octave marks; no note is lost |
+  | No playable `\score` in the current source | 1 | `Franck-Da_Pacem_Domine.ly`: LilyPond emits no MIDI |
+
+  Reduced evidence (each compiled with LilyPond 2.27 under
+  `timeout 20 prlimit --as=2000000000`):
+
+  1. `02_02_Segura...partition.ly` — the old oracle lost B2 (47) and E3 (52),
+     then flagged them as octave errors because B3 (59) and E4 (64) existed.
+     With FIFO the reference multiset matches entirely (259/259); scoretk has
+     two *extra* G3/B3 from two voices sharing the part channel, which is the
+     documented MuseScore grace/voice overlap (§2.6.1).
+  2. `Gueguen.ly` — reduced to `\mus = \relative c' { c4 d e f | g1 }`,
+     first `\score` engraved, second `\transpose d b … \midi {}`. LilyPond's
+     MIDI plays 69/71/73/74/76; scoretk reads 60/62/64/65/67. The reference
+     is the transposed score. Notation Reference §1.2.2: `\transpose` rewrites
+     written pitches; §1.3.4: MIDI plays concert pitch.
+  3. `22_StMichel.ly` — same reduction with `\transpose c c'` inside the
+     `\midi` score: LilyPond 72/74/76/77/79, scoretk 60/62/64/65/67.
+  4. `Maiana.ly` — same reduction with `\transpose c c''`: LilyPond
+     84/86/88/89/91, scoretk 60/62/64/65/67.
+  5. `Veni, Creator Spiritus_Courtial_v3_SATB.ly` — the `.midi` file from 2023
+     has 3134 notes; a fresh LilyPond MIDI from the current source has 249,
+     exactly scoretk's 249. Stale reference, not a reader loss.
+  6. `Transeamus.ly` — reduced to its first `\score` (two staves plus voices):
+     LilyPond 483, scoretk 483. The full `.midi` (620) comes from the second
+     `\score`, which carries `\midi {}`. Same mechanism for
+     `Transeamus_a3.ly`.
+  7. `AStMichel.ly` — fresh LilyPond 130, scoretk 130, stale `.midi` 666.
+
+  `\clef "treble_8"` and `\ottava` were compiled in isolation and do not
+  change MIDI pitch (Notation Reference §1.3.1, §1.3.3), so keeping the written
+  octave remains correct. The only genuine reader fix in this area is the
+  `\transpose`-inside-`\relative` rule of the previous subsection, which
+  concerns two files outside this group.
 * **`notes_manquantes` (55 files).** 36 sources contain grace notes. The
   specification settles the semantics (Notation Reference §2.6.1): "Each grace
   note in MIDI output has a length of 1/4 of its actual duration. If the
@@ -1314,6 +1349,18 @@ directly:
   No writer change is warranted: shortening the previous note would break the
   MuseScore-rendered reference lots, and one channel per voice contradicts
   MuseScore's one-channel-per-part export.
+
+  The oracle itself was then corrected: `midi_notes.py::read_midi` now keeps a
+  **FIFO of open notes per `(channel, pitch)`** instead of one note-on slot
+  (`docs/agents/format-ref/midi.md`, §Channel Voice; MuseScore's
+  `midishared/midifile.cpp` pairs each note-on with the first still-free
+  note-off). The reduced regression is `scripts/oracle/midi/test_overlap.py`.
+  Re-measured with the FIFO oracle, the group **disappears entirely**: 0 files
+  have `notes_manquantes` as their primary cause (55 → 0), and the 55 files are
+  redistributed into `notes_supp`, `attaque_decalee` and `duree_seule` — their
+  extra overlapping notes now count against LilyPond's shorter reference. The
+  `octave` group falls from 81 to 59 on the frozen binary and 55 on the fixed
+  one; N1 and N2 never decrease because of the oracle change.
 * **`duree_seule` (49 files).** All have the exact reference note count, N1
   and N2; only durations differ. This is the unison-merge comparator artefact
   documented in `midi.md`. `Encantada.ly` also has four `\score` blocks, the
@@ -1336,6 +1383,14 @@ regress the MuseScore reference lots. These causes are left as documented
 limits.
 
 ### Before / after (same frozen manifests and oracle)
+
+The figures below use the historical oracle (one open note per
+`(channel, pitch)`). Re-running **both** binaries with the corrected FIFO
+oracle gives the same comparison: 689 → 692 exact on `ecriture_ly`, unchanged
+17 / 2 / 596 / 49 on the other four lots, with the same single documented
+N2 loss. The lower absolute count (753 → 689) is the oracle now counting
+scoretk's extra overlapping notes against LilyPond's shorter MIDI; it is not a
+regression.
 
 | Lot | Before exact | After exact | N1 / N2 gains | N1 / N2 losses |
 | --- | ---: | ---: | ---: | ---: |
