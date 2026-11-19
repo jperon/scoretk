@@ -720,6 +720,21 @@ pub(crate) fn fifths_of(step: u8, alter: i8) -> i8 {
     FIFTH_OFFSETS[usize::from(step)] + 7 * alter
 }
 
+/// Intervalle de `\transposition` par rapport au do central écrit.
+///
+/// Le réglage amont vaut `c'` : `\transposition c` fait donc sonner une octave
+/// plus bas, `\transposition a'` une sixte majeure plus haut. Les deux nombres
+/// renvoyés sont l'intervalle diatonique (degrés) et chromatique (demi-tons),
+/// tels que `scoretk_core::model::Transpose` les attend.
+pub(crate) fn instrument_transpose(pitch: &PitchSpec) -> (i32, i32) {
+    let diatonic = i32::from(pitch.octave) * 7 + i32::from(pitch.step) - 7;
+    let chromatic = i32::from(pitch.octave) * 12
+        + i32::from(SEMITONES[usize::from(pitch.step.min(6))])
+        + i32::from(pitch.alter)
+        - 12;
+    (diatonic, chromatic)
+}
+
 /// Mode d'armure d'un mot de `\key`.
 pub(crate) fn key_mode(word: &str) -> KeyMode {
     match word {

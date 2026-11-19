@@ -199,6 +199,10 @@ pub(crate) enum Context {
         to: PitchSpec,
         music: Box<Music>,
     },
+    /// `\transposition` : transposition de l'instrument pour la hauteur
+    /// concert, sans changer la hauteur écrite (`instrumentTransposition` de
+    /// `ly/engraver-init.ly`).
+    InstrumentTranspose(PitchSpec),
     /// `\fixed` : octave de référence absolue.
     Fixed {
         reference: Option<PitchSpec>,

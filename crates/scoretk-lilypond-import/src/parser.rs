@@ -66,6 +66,8 @@ pub(crate) struct Parser<'a> {
     pending_invisible_rest: bool,
     /// Partitions rencontrées au niveau supérieur, dans l'ordre du fichier.
     partitions: Vec<Partition>,
+    /// `\transposition` trouvé dans le bloc `\midi` de la partition courante.
+    midi_transposition: Option<PitchSpec>,
     /// Fonctions musicales définies en Scheme (`define-music-function`…).
     music_functions: BTreeMap<String, MusicFunction>,
     /// Profondeur d'expansion des blocs embarqués et des fonctions.
@@ -132,6 +134,7 @@ pub(crate) fn parse(
         pending_tuplet_number: None,
         pending_invisible_rest: false,
         partitions: Vec::new(),
+        midi_transposition: None,
         music_functions: BTreeMap::new(),
         expansion_depth: 0,
         melisma_busy_disabled: false,
@@ -522,6 +525,7 @@ impl<'a> Parser<'a> {
     /// Bloc `\score { … }`.
     fn parse_score(&mut self) -> ScoreAst {
         let mut score = ScoreAst::default();
+        self.midi_transposition = None;
         if !self.eat_punct('{') {
             self.warn("\\score sans accolade");
             return score;
@@ -533,6 +537,23 @@ impl<'a> Parser<'a> {
             let before = self.position;
             score.groups.extend(self.parse_score_element());
             self.guard_progress(before);
+        }
+        // `\midi { \transposition … }` ne contient pas de musique, mais pose
+        // la transposition de jeu de toute la partition. L'envelopper autour
+        // des voix permet à l'interprète de décaler les hauteurs concert comme
+        // le fait le performer MIDI de LilyPond.
+        if let Some(pitch) = self.midi_transposition {
+            for group in &mut score.groups {
+                for staff in &mut group.staves {
+                    for voice in &mut staff.voices {
+                        let music = std::mem::replace(&mut voice.music, Music::Empty);
+                        voice.music = Music::Seq(vec![
+                            Music::Context(Context::InstrumentTranspose(pitch)),
+                            music,
+                        ]);
+                    }
+                }
+            }
         }
         score
     }
@@ -553,8 +574,13 @@ impl<'a> Parser<'a> {
         } else if self.peek().is_some_and(|token| {
             token.is_command("layout") || token.is_command("midi") || token.is_command("paper")
         }) {
+            let midi = self.peek().is_some_and(|token| token.is_command("midi"));
             self.position += 1;
+            let start = self.position;
             self.skip_braced();
+            if midi {
+                self.midi_transposition = self.find_midi_transposition(start);
+            }
         } else if self.peek().is_some_and(|token| token.is_command("header")) {
             self.position += 1;
             self.parse_header();
@@ -1863,15 +1889,23 @@ impl<'a> Parser<'a> {
             // interrompait la musique et perdait la transposition.
             "articulate" => self.parse_music(),
             // `transposition` (`ly/music-functions-init.ly`) est une fonction
-            // musicale à un seul argument `ly:pitch?` qui pose la propriété
-            // `instrumentTransposition` du contexte Staff : elle n'ajoute
-            // aucune musique. La hauteur écrite reste celle de la source
-            // (MusicXML n'applique pas la transposition de jeu). La consommer
-            // comme une commande inconnue laissait l'argument devenir une note
-            // parasite et faussait tout l'état `\relative` qui suivait.
+            // musicale à un argument `ly:pitch?` qui pose la propriété
+            // `instrumentTransposition` du contexte Staff. Elle n'ajoute aucune
+            // musique, mais décale la hauteur concert : la hauteur écrite reste
+            // celle de la source et la transposition est portée par
+            // `Instrument.transpose`. Sans argument, LilyPond prend `c'`, qui
+            // est aussi la valeur par défaut. La consommer comme une commande
+            // inconnue laissait l'argument devenir une note parasite.
             "transposition" => {
-                let _ = self.parse_optional_pitch();
-                Music::Empty
+                let pitch = self.parse_optional_pitch().unwrap_or(PitchSpec {
+                    step: 0,
+                    alter: 0,
+                    octave: 1,
+                    explicit_octave: true,
+                    force: false,
+                    cautionary: false,
+                });
+                Music::Context(Context::InstrumentTranspose(pitch))
             }
             "transpose" => {
                 let from = self.parse_optional_pitch().unwrap_or(PitchSpec {
@@ -3181,6 +3215,53 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Cherche `\transposition <hauteur>` dans le bloc `\midi` déjà parcouru.
+    ///
+    /// Le bloc ne contient que des réglages de performer : les parcourir comme
+    /// de la musique ajouterait des notes parasites. La hauteur est lue dans
+    /// la langue courante du document.
+    fn find_midi_transposition(&self, start: usize) -> Option<PitchSpec> {
+        let tokens = self.tokens.get(start..self.position)?;
+        for (index, token) in tokens.iter().enumerate() {
+            if !token.is_command("transposition") {
+                continue;
+            }
+            let Some(next) = tokens.get(index + 1) else {
+                return Some(PitchSpec {
+                    step: 0,
+                    alter: 0,
+                    octave: 1,
+                    explicit_octave: true,
+                    force: false,
+                    cautionary: false,
+                });
+            };
+            if next.kind != Kind::Word {
+                continue;
+            }
+            let (step, alter) = self.language.parse(&next.text)?;
+            let mut octave = 0;
+            for mark in tokens.iter().skip(index + 2) {
+                if mark.is_punct('\'') {
+                    octave += 1;
+                } else if mark.is_punct(',') {
+                    octave -= 1;
+                } else {
+                    break;
+                }
+            }
+            return Some(PitchSpec {
+                step,
+                alter,
+                octave,
+                explicit_octave: octave != 0,
+                force: false,
+                cautionary: false,
+            });
+        }
+        None
+    }
+
     /// Saute un bloc `{ … }` ou `<< … >>` équilibré.
     fn skip_braced(&mut self) {
         let mut depth = 0usize;
@@ -3936,6 +4017,7 @@ mod tests {
             pending_tuplet_number: None,
             pending_invisible_rest: false,
             partitions: Vec::new(),
+            midi_transposition: None,
             music_functions: BTreeMap::new(),
             expansion_depth: 0,
             melisma_busy_disabled: false,
@@ -3969,6 +4051,7 @@ mod tests {
                 pending_tuplet_number: None,
                 pending_invisible_rest: false,
                 partitions: Vec::new(),
+                midi_transposition: None,
                 music_functions: BTreeMap::new(),
                 expansion_depth: 0,
                 melisma_busy_disabled: false,

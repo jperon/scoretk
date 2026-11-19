@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use scoretk_core::model::Fraction;
 use scoretk_core::model::{
     ArticulationType, BarLineType, ChordRestKind, ClefType, DurationType, GraceType, KeyMode,
-    LyricsSyllabic, SegmentItem, SegmentType, StaffId, Track,
+    LyricsSyllabic, SegmentItem, SegmentType, StaffId, Track, Transpose,
 };
 use scoretk_lilypond_import::{
     read_lilypond, read_lilypond_reporting, read_lilypond_with_includes,
@@ -437,13 +437,84 @@ fn transposition_ne_consomme_pas_une_note_de_la_musique() {
 }
 
 #[test]
+fn transposition_de_staff_decale_la_concert() {
+    // Portage de `instrumentTransposition` (`ly/engraver-init.ly`) : la valeur
+    // est la hauteur que joue l'instrument quand il lit un do central écrit.
+    // `\transposition a'` fait donc sonner une sixte majeure plus haut, sans
+    // changer les hauteurs écrites : c'est l'instrument qui porte l'intervalle.
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\
+         \\score { \\new Staff { \\transposition a'\n\
+         \\relative c' { c4 d e f | <c e g>2 g2 | } } }",
+    )
+    .expect("lecture");
+    assert_eq!(
+        hauteurs(&score),
+        vec![69, 71, 73, 74, 69, 73, 76, 64]
+    );
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(
+        score.parts[0].instrument.transpose,
+        Some(Transpose::new(5, 9))
+    );
+    // Cas non concerné : sans `\transposition`, la concert vaut l'écrite.
+    let sans = read_lilypond(
+        "\\score { \\new Staff { \\relative c' { c4 d e f | <c e g>2 g2 | } } }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&sans), vec![60, 62, 64, 65, 60, 64, 67, 55]);
+    assert_eq!(sans.parts[0].instrument.transpose, None);
+
+    // Cas limite : plusieurs voix dans la portée. Une partie MusicXML n'a
+    // qu'un `<transpose>` ; le poser ici décalerait la voix qui ne transpose
+    // pas, donc la transposition reste dans les hauteurs concert.
+    let deux_voix = read_lilypond(
+        "\\score { \\new Staff { \\transposition a' { c'4 << { e'4 g' } \\\\ { c'4 d' } >> } } }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&deux_voix), vec![69, 73, 76, 69, 71]);
+    assert_eq!(deux_voix.parts[0].instrument.transpose, None);
+}
+
+#[test]
+fn transposition_dans_le_bloc_midi() {
+    // `\midi { \transposition c }` (guitare écrite une octave au-dessus) ne
+    // contient aucune musique, mais décale d'une octave la hauteur concert.
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\
+         \\score { \\new Staff { \\relative c' { c4 d e f | <c e g>2 g2 | } }\n\
+         \\midi { \\transposition c } }",
+    )
+    .expect("lecture");
+    assert_eq!(
+        hauteurs(&score),
+        vec![48, 50, 52, 53, 48, 52, 55, 43]
+    );
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(
+        score.parts[0].instrument.transpose,
+        Some(Transpose::new(-7, -12))
+    );
+    // Cas non concerné : le même bloc `\midi` sans transposition ne décale rien.
+    let sans = read_lilypond(
+        "\\score { \\new Staff { \\relative c' { c4 d e f } } \\midi { \\tempo 4=60 } }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&sans), vec![60, 62, 64, 65]);
+    assert_eq!(sans.parts[0].instrument.transpose, None);
+}
+
+#[test]
 fn transposition_argument_absent_ou_different() {
     // Cas limites : un argument qui n'est pas `c'` est consommé lui aussi, et
     // un `\transposition` sans argument en fin de musique ne doit ni ajouter de
     // note ni bloquer l'analyse (toute boucle consomme un jeton par tour).
     let different =
         read_lilypond("\\relative c' { \\transposition bes, c4 d4 e4 f4 | }").expect("lecture");
-    assert_eq!(hauteurs(&different), vec![60, 62, 64, 65]);
+    // `bes,` fait sonner un si bémol une octave sous le do central : les
+    // hauteurs écrites restent c d e f, les hauteurs concert montent de 14
+    // demi-tons.
+    assert_eq!(hauteurs(&different), vec![46, 48, 50, 51]);
     assert_eq!(different.measures.len(), 1);
 
     let absent = read_lilypond("\\relative c' { c4 d4 \\transposition }").expect("lecture");

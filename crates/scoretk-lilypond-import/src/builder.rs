@@ -36,10 +36,10 @@ use scoretk_core::model::{
     GraceChord, Hairpin, HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic, Measure, Note,
     NoteId, Part, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score, ScoreMetadata,
     Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff,
-    StaffBracket, StaffId, Tempo, Track, Trill, TrillType, Tuplet, TupletId, VOICES,
+    StaffBracket, StaffId, Tempo, Track, Transpose, Trill, TrillType, Tuplet, TupletId, VOICES,
 };
 
-use crate::ast::{Document, GroupKind, LyricsBlock, StaffBlock};
+use crate::ast::{Context, Document, GroupKind, LyricsBlock, Music, PitchSpec, StaffBlock};
 use crate::events::{
     arpeggio_object, articulation_objects, breath_object, ornament_objects, ottava_type,
     AnnotationEvent, ChordContent, ChordEvent, EventKind, GraceEvent, InterpretedVoice, MetaEvent,
@@ -154,6 +154,17 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
             );
             continue;
         }
+        // `\transposition` est une propriété de Staff. Une partie MusicXML
+        // n'a qu'un `<transpose>` : on ne le porte donc que si le groupe ne
+        // contient qu'une portée, seul cas où l'on sait à quelle instrument
+        // l'appliquer. Les `\context Staff` transparents de certaines sources
+        // anciennes déposent la propriété dans un groupe plus large ; laisser
+        // la transposition à la partie entière décalerait les autres portées.
+        let transposition = if group.staves.len() == 1 && group.staves[0].voices.len() == 1 {
+            instrument_transpose(&group.staves[0].voices[0].music)
+        } else {
+            None
+        };
         let first = &group.staves[0];
         let long_name = group
             .instrument_name
@@ -194,6 +205,19 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 for block in &group.lyrics {
                     target.lyrics.push(lyrics_build(block));
                 }
+            }
+        }
+        // Une partie n'a qu'un `<transpose>` : ne le poser que si toutes les
+        // voix construites appartiennent à la portée transpositrice. Sinon les
+        // hauteurs concert sont conservées telles quelles pour les autres voix.
+        if let Some(pitch) = transposition {
+            if staves[first_staff_index..]
+                .iter()
+                .all(|staff| staff.voices.len() == 1)
+            {
+                let (diatonic, chromatic) = crate::pitch::instrument_transpose(&pitch);
+                score.part_mut(part_id).instrument.transpose =
+                    Some(Transpose::new(diatonic, chromatic));
             }
         }
     }
@@ -481,6 +505,32 @@ fn group_bracket(kind: GroupKind, position: usize, count: usize) -> Option<Staff
 /// sous-ensemble lu : les noms d'instrument sont le seul indice. La table
 /// couvre les instruments courants du corpus ; à défaut, l'instrument garde
 /// son nom et aucun programme.
+/// Cherche un `\transposition` dans une musique de voix.
+///
+/// La propriété est posée par une commande sans musique, souvent au début
+/// d'une variable `global` partagée : la recherche descend donc dans les
+/// séquences, simultanéités, contextes et groupes imbriqués.
+fn instrument_transpose(music: &Music) -> Option<PitchSpec> {
+    match music {
+        Music::Context(Context::InstrumentTranspose(pitch)) => Some(*pitch),
+        Music::Seq(items) | Music::Sim(items) => items.iter().find_map(instrument_transpose),
+        Music::Context(Context::Transpose { music, .. })
+        | Music::Context(Context::Fixed { music, .. })
+        | Music::Context(Context::Relative { music, .. })
+        | Music::Context(Context::NonRelative { music })
+        | Music::Context(Context::Tuplet { music, .. })
+        | Music::Context(Context::Grace { music, .. })
+        | Music::Context(Context::Repeat { body: music, .. }) => instrument_transpose(music),
+        Music::Context(Context::AfterGrace { main, .. }) => instrument_transpose(main),
+        Music::New(group) => group
+            .staves
+            .iter()
+            .flat_map(|staff| staff.voices.iter())
+            .find_map(|voice| instrument_transpose(&voice.music)),
+        _ => None,
+    }
+}
+
 fn instrument_for(long_name: &str, short_name: &str) -> Instrument {
     let mut instrument = Instrument::new(long_name, long_name, short_name);
     instrument.track_name = long_name.to_owned();
