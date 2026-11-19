@@ -25,11 +25,35 @@ only. No corpus file and no third-party script is copied into the repository.
    *A non-zero exit code is accepted when a non-empty MIDI file was written*:
    `abc2midi` uses it for recoverable warnings (unknown chord, etc.). The MIDI
    file is what counts, not the exit code.
-3. scoretk is called as a release binary under
+4. **Ornaments are stripped from the oracle copy** (`sans_ornements()` in
+   `mesure.py`). `abc2midi` *realizes* ornaments as extra notes: a single
+   `Tc` sounds C-D-C-D-C, so a written 6-note tune with a trill, a mordent
+   and a turn yields 20 reference notes. Neither candidate writes those
+   performance notes (they write the ornament symbol), so the oracle was
+   over-counting by construction — the dominant cause of the 678-note
+   `NOTES_MANQUANTES` group in `docs/agents/abc.md` § 15.3.
+   `abc2midi` has no option to disable ornament realization (`-NGRA` only
+   disables grace notes, already ignored on both sides by `cmp.py`), so the
+   preprocessing removes, on **music lines only**:
+   - long decorations `!trill!`, `!turn!`, `!invertedturn!`, `!mordent!`,
+     `!lowermordent!`, `!uppermordent!`, `!pralltriller!`, `!roll!`, `!T!`
+     (and their old-style `+…+` spelling);
+   - the single-letter abbreviations `T`, `M`, `P`, `~` when immediately
+     followed by a (possibly accidental-prefixed) note letter.
+   The names are those of `abc2xml.py` 269, `MusicXml.ornMap` (lines 1096–1097)
+   and `MusicXml.uSyms` (lines 1115–1116): `T`/`trill`, `M`/`lowermordent`,
+   `P`/`uppermordent`, `~`/`roll`, `mordent`, `pralltriller`, `turn`,
+   `invertedturn`. Non-realizing decorations (dynamics, bowings, fermatas,
+   articulations) are left alone; fermatas are handled by `-NFER`. `U:`
+   definitions are left alone too, so the two candidates still receive the
+   unmodified tune. On the reduced `ornament.abc` this brings the reference
+   from 20 notes to the 6 written notes, and both candidates to N1/N2 100 %.
+
+5. scoretk is called as a release binary under
    `timeout 10 prlimit --as=2000000000`, on the extracted tune as-is.
-4. `abc2xml.py` receives the same tune (path given as an argument, outside the
+6. `abc2xml.py` receives the same tune (path given as an argument, outside the
    repository).
-5. `cmp.py` compares the MIDI with each MusicXML file:
+7. `cmp.py` compares the MIDI with each MusicXML file:
    - **N1**: multiset of MIDI pitches (as in the LilyPond oracle's `cmp.py`),
      with MusicXML `<chromatic>`/`<octave-change>` transposition applied;
      grace notes, tie stops and unpitched notes are ignored on both sides;

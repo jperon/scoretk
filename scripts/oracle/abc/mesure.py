@@ -22,11 +22,13 @@ Chaque fichier ABC est découpé en morceaux X:. Pour chaque morceau on écrit
 un fichier autonome (en-tête global + bloc X:), puis on produit :
 
   * l'oracle  : abc2midi → MIDI, sur une copie où les signes de reprise sont
-    remplacés par des barres simples (on mesure les notes ÉCRITES, pas les
-    notes jouées ; abc2midi n'a pas d'option pour désactiver les reprises).
-    L'option -NGUI écarte les notes de guitare générées par les accords `"C"` :
-    ce sont des indications d'harmonie, pas des notes écrites ;
-  * scoretk   : CLI release, sous timeout 10 + prlimit --as=2000000000 ;
+    remplacés par des barres simples et les ornements retirés (on mesure les
+    notes ÉCRITES, pas les notes jouées ; abc2midi n'a pas d'option pour
+    désactiver les reprises ni la réalisation des ornements). L'option -NGUI
+    écarte les notes de guitare générées par les accords `"C"` : ce sont des
+    indications d'harmonie, pas des notes écrites ;
+  * scoretk et abc2xml.py reçoivent l'air d'origine, ornements inclus ; seul
+    l'oracle est appauvri, pour ne pas compter une interprétation ;
   * l'alternative : abc2xml.py, avec le même oracle.
 
 Les trois sorties sont comparées par cmp.py (N1 hauteurs, N2 attaques).
@@ -46,6 +48,20 @@ import cmp
 
 FIELD = re.compile(r"^[A-Za-z]\s*:")
 TUNE = re.compile(r"^X\s*:\s*\d+")
+
+# abc2midi réalise les ornements en notes supplémentaires (un `Tc` devient
+# C-D-C-D-C) : c'est une interprétation, pas une note écrite. Les deux
+# candidats ne gardent que le symbole d'ornement, donc l'oracle ne doit pas
+# compter cette réalisation. abc2midi n'a aucune option pour la désactiver
+# (`-NGRA` ne concerne que les notes de grâce) : on retire donc les ornements
+# de la copie destinée à l'oracle. Noms repris de `abc2xml.py` 269,
+# `MusicXml.ornMap` (lignes 1096-1097) et `MusicXml.uSyms` (lignes 1115-1116) :
+# la table complète est dans README.md. Les ornements longs `!trill!` /
+# `+trill+` et les abréviations `T`, `M`, `P`, `~` placées devant une hauteur.
+ORNEMENT_LONG = re.compile(
+    r"[!+](?:trill|turn|invertedturn|mordent|lowermordent|uppermordent|pralltriller|roll|T)[!+]"
+)
+ORNEMENT_COURT = re.compile(r"(?<![A-Za-z])[TMP~](?=[=^_]?[A-Ga-g])")
 
 
 def decoupe(src):
@@ -81,6 +97,25 @@ def sans_reprises(lines):
         for pattern in (r"::", r"\|:", r":\s*\|+", r"\[[12]", r"\|[12]"):
             line = re.sub(pattern, "|", line)
         out.append(line)
+    return out
+
+
+def sans_ornements(lines):
+    """Retire de la copie oracle les ornements réalisés en notes par abc2midi.
+
+    Seules les lignes de musique sont touchées : les champs d'en-tête et les
+    directives `%%` sont laissés tels quels. Le mot-clé `U:` (définition de
+    symbole) n'est pas modifié non plus : un symbole redéfini qui produirait
+    des notes est déjà écarté par `abc2xml.py` et le lecteur, et retirer sa
+    définition changerait la lecture des deux candidats, pas seulement
+    l'oracle.
+    """
+    out = []
+    for line in lines:
+        if FIELD.match(line) or line.lstrip().startswith("%"):
+            out.append(line)
+            continue
+        out.append(ORNEMENT_COURT.sub("", ORNEMENT_LONG.sub("", line)))
     return out
 
 
@@ -175,7 +210,9 @@ def principal():
             air = os.path.join(work, "air.abc")
             plain = os.path.join(work, "air_plain.abc")
             ecrit(air, header + body)
-            ecrit(plain, sans_reprises(header + body))
+            # L'oracle reçoit une copie sans reprises ni ornements réalisés :
+            # on mesure les notes ÉCRITES, une seule fois chacune.
+            ecrit(plain, sans_ornements(sans_reprises(header + body)))
             log = os.path.join(work, "journal.log")
             midi = os.path.join(work, "ref.mid")
             xml = os.path.join(work, "score.musicxml")
