@@ -542,3 +542,101 @@ group 2 of section 13.3, which is outside the scope of this syntax campaign; it
 affects the alternative too (781). No per-file regression was introduced: each
 change only accepts a previously rejected construct or replaces a rejection by
 a local, warned skip.
+
+## 15. Transposition fixes, `NOTES_MANQUANTES` diagnosis, full campaign (2026-11-19)
+
+### 15.1 Cause 3 — `transpose=` in `K:` / `V:` (fixed)
+
+- Reference behaviour: `abc2xml.py` 269 reads `(?:^t=| t=|transpose=)(-?[\d]+)`
+  in `K:` and `V:` fields and emits `<transpose><chromatic>N</chromatic></transpose>`
+  while keeping the written `<pitch>` unchanged. `abc2midi` sounds written + N.
+- Fix: `reader/mod.rs` parses `transpose=`/`t=` from `K:` parameters and `V:`
+  fields (invalid values warn and are skipped); `reader/music.rs` stores the
+  **sounding** pitch (written + N) in `Note::pitch`, keeping the written spelling
+  in `tpc`; `reader/build.rs` sets `Part::instrument.transpose = Transpose::new(0, N)`
+  so the MusicXML exporter writes the written `<pitch>` plus `<transpose>`, like
+  the alternative.
+- Reduced real file: `/tmp/abc-reduits/transpose.abc`, X:1 extracted from
+  `abcjs-tests/extracted-abc/flattener.test__abcTranspose.abc` (three voices,
+  `V:1 transpose=-2`, `V:3 transpose=4`, chords, rests, ties and barlines).
+- Measurement: scoretk N1/N2 **58.3 % → 100 %** (12/12 notes), alternative 100 %.
+- Reduced tests: `crates/scoretk-abc-import/tests/transposition.rs`
+  (`transposition_k_et_v`, with a no-transpose control case).
+
+### 15.2 Cause 5 — `%%MIDI transpose` (fixed)
+
+- Reference behaviour: `abc2xml.py` routes `%%MIDI transpose N` through the same
+  attribute path: one `<transpose>` element with `<chromatic>N</chromatic>`,
+  written `<pitch>` unchanged.
+- Fix: `reader/mod.rs::handle_directive` parses `%%MIDI transpose N`, stores it
+  as the tune default and applies it to already-created voices; other `%%MIDI`
+  directives keep their existing warning.
+- Reduced real file: `/tmp/abc-reduits/midi-transpose.abc`, X:1 of
+  `abcjs-tests/extracted-abc/flattener.test__abcMidiOptions.abc`
+  (`%%MIDI transpose -2`, key signature A, chord).
+- Measurement: scoretk N1/N2 **50 % → 100 %** (4/4 notes), alternative 100 %.
+- Reduced test: `transposition_midi_directive`, covering an invalid value and
+  `transpose=0` (no `<transpose>` emitted).
+
+### 15.3 Diagnosis of `NOTES_MANQUANTES` (767 tunes, diagnosis only)
+
+Grouping uses all 767 scoretk `NOTES_MANQUANTES` tunes of the post-syntax-fix
+baseline (`final2-full.tsv`); "alt" is `abc2xml.py` on the same tune.
+
+| Sub-cause | Tunes | Reduced real example | alt also loses? |
+| --- | ---: | --- | --- |
+| Trill / mordent / turn / roll / slide realization | 678 | `flattener.test__abcDecoration.abc` X:1 → `/tmp/abc-reduits/ornament.abc` | **Yes** (alt `NOTES_MANQUANTES`) |
+| Tie written between two different pitches (`A-B`) | 78 | `0001-0050.abc` X:1 → `/tmp/abc-reduits/tie.abc` | No (alt OK) |
+| Unclosed `!` decoration swallowing the rest of a line | 3 | `book1.abc` X:0143 → `/tmp/abc-reduits/unclosed.abc` | No (alt OK) |
+| Grace/tuplet/bowing combinations (mixed) | 5 | `0351-0400.abc` X:399, `0550-0625.abc` X:612, `AnnieHughesJig.abc` X:1 | Yes (alt `NOTES_MANQUANTES`) |
+| Ornaments with alt correct | 2 | `0001-0050.abc` X:7 and X:14 | No (alt OK) |
+| Other | 1 | `MaidMarianHornpipe.abc` X:1 | No (alt OK) |
+
+- **Ornaments (678, plus 5 mixed).** `abc2midi` is called with `-NGRA`, which
+  disables grace notes but **not** ornament realization: a single `Tc` is played
+  as C-D-C-D-C. On the reduced `/tmp/abc-reduits/ornament.abc` the oracle has
+  20 notes and both scoretk and the alternative write only 6 (N1 30 % for both).
+  The MusicXML `<trill-mark>`/`<mordent>` symbol is the faithful written form;
+  the extra notes are a performance realization. For these 678 + 5 tunes the
+  **oracle reference is what over-counts**, not the reader: matching it would
+  mean emitting notes that are not written in the ABC. No fix attempted.
+- **Different-pitch ties (78).** `cmp.py` skips MusicXML notes carrying
+  `<tie type="stop">`, while `abc2midi` counts both note-ons. On the reduced
+  `/tmp/abc-reduits/tie.abc` (`G3-A G2-E2`) scoretk gets 7/8 notes and the
+  alternative 8/8: the alternative writes the two notes without a stop tie.
+  This is a genuine scoretk/abc2xml behavioural difference, but it is an oracle
+  comparator artifact rather than a lost written note. No fix attempted.
+- **Unclosed `!` (3).** An orphan `!` makes `reader/music.rs::parse_decoration`
+  consume the rest of the line as a decoration name, dropping the notes after
+  it; `abc2xml.py` recovers. Reduced example: 11/18 notes for scoretk versus
+  18/18 for the alternative. Real reader bug, deferred.
+- **Residual (8).** Five mixed grace/tuplet/bowing tunes are also missed by the
+  alternative (oracle likely over-counting); three are genuine scoretk-only
+  gaps in the `0001-0050.abc` and `MaidMarianHornpipe.abc` collections.
+
+### 15.4 Full campaign after the two transposition fixes
+
+Exact re-run of the three-lot campaign of section 13.4 (1 402 files, 4 756
+`X:` tunes), in the foreground in three slices, with the release CLI of this
+worktree under `timeout 10 prlimit --as=2000000000`:
+
+| Candidate | Exact tunes | N1 | N2 | Failures | Files fully exact |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| scoretk (after the five syntax fixes, § 14) | 3 395 | 92.24 % | 44.60 % | 284 | 1 078 / 1 402 |
+| scoretk (after transposition fixes) | 3 400 | **92.44 %** | **44.64 %** | **284** | unchanged |
+| alternative (unchanged) | 3 729 | 97.5 % | 79.9 % | 130 | 1 095 / 1 402 |
+
+`TRANSPOSITION` fell from 59 to 55 tunes and `OCTAVE` from 5 to 2; the
+`NOTES_MANQUANTES` count (767) is unchanged, consistent with section 15.3.
+Sixteen tunes improved, mostly the Josquin files of `music21` with
+`%%MIDI transpose -12`/`-24` (e.g. `fortunaDunGranTempo.abc` X:2 went from
+`TRANSPOSITION` to `OK`) and the two reduced abcjs files.
+
+One per-tune N2 decrease: `abc-2.1-standard/fragments/example-006.abc` X:1
+(N1 23 → 25, N2 12 → 2). This NC fragment combines `%%score (T1 T2) (B1 B2)`,
+`clef=treble-8`, `middle=d` and `transpose=-24`; its voice names (`T1`, `B1`)
+are not ABC voice numbers, so all four voices collapse into one part and the
+last `-24` is applied globally. The extra bass transposition raises N1 but
+moves previously matching attacks below the reference range. The tune stays in
+the same `OCTAVE` class (the alternative also fails it, standard-lot N1 25.8 %),
+and no other tune regressed on N1 or N2.

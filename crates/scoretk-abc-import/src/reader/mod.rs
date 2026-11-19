@@ -573,7 +573,7 @@ pub(crate) struct Reader {
     pub time: TimeSig,
     /// Armure globale.
     pub key: KeySig,
-    /// Transposition globale issue de `K:`, en demi-tons.
+    /// Transposition globale (`%%MIDI transpose` ou paramètre de `K:`), en demi-tons.
     pub midi_transpose: i32,
     /// Tempo global `(battements par seconde, texte)`.
     pub tempo: Option<(f64, String)>,
@@ -696,6 +696,22 @@ impl Reader {
                 }
             }
             "abc-version" | "abc-include" | "unit" => {}
+            "midi"
+                if value
+                    .split_whitespace()
+                    .next()
+                    .is_some_and(|key| key.eq_ignore_ascii_case("transpose")) =>
+            {
+                let amount = value.split_whitespace().nth(1).unwrap_or("");
+                if let Some(transpose) = parse_transpose_value(amount, number, &mut self.warnings) {
+                    self.midi_transpose = transpose;
+                    // La directive globale s'applique aux voix déjà créées ;
+                    // les voix suivantes héritent de `midi_transpose`.
+                    for voice in &mut self.voices {
+                        voice.transpose = transpose;
+                    }
+                }
+            }
             other => self.warnings.push(Warning::new(
                 number,
                 format!("directive « %%{other} » ignorée"),

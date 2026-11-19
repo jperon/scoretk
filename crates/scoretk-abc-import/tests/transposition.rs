@@ -113,3 +113,63 @@ C D E F | [GB]2 z2 | c2-d2 |]
         .iter()
         .all(|part| part.instrument.transpose.is_none()));
 }
+
+#[test]
+fn transposition_midi_directive() {
+    let source = "\
+X:1
+T:MidiTranspose
+M:4/4
+L:1/8
+%%MIDI transpose -2
+K:A
+A B c d | [ce]2 z2 |]
+";
+    let score = read_abc(source).expect("lecture");
+
+    assert_eq!(score.measures.len(), 2);
+    // En K:A, `c` est do dièse : hauteurs écrites 69 71 73 74, [73 76].
+    assert_eq!(
+        voice_content(&score, 0, 0),
+        (
+            vec![67, 69, 71, 72, 71, 74],
+            vec![0.125, 0.125, 0.125, 0.125, 0.25, 0.25]
+        )
+    );
+    assert_eq!(
+        score.parts[0]
+            .instrument
+            .transpose
+            .map(|value| value.chromatic),
+        Some(-2)
+    );
+
+    // Sans la directive, les hauteurs écrites restent concert.
+    let plain = source.replace("%%MIDI transpose -2\n", "");
+    let score_plain = read_abc(&plain).expect("lecture");
+    assert_eq!(
+        voice_content(&score_plain, 0, 0).0,
+        vec![69, 71, 73, 74, 73, 76]
+    );
+    assert!(score_plain.parts[0].instrument.transpose.is_none());
+
+    // Cas limite : valeur invalide, avertissement et aucun décalage.
+    let invalid = source.replace("%%MIDI transpose -2", "%%MIDI transpose abc");
+    let score_invalid = read_abc(&invalid).expect("lecture");
+    assert_eq!(
+        voice_content(&score_invalid, 0, 0).0,
+        vec![69, 71, 73, 74, 73, 76]
+    );
+    assert!(score_invalid.parts[0].instrument.transpose.is_none());
+
+    // Cas limite : `transpose=0` n'écrit aucun élément `<transpose>`.
+    let zero = source
+        .replace("%%MIDI transpose -2\n", "")
+        .replace("K:A", "K:A transpose=0");
+    let score_zero = read_abc(&zero).expect("lecture");
+    assert_eq!(
+        voice_content(&score_zero, 0, 0).0,
+        vec![69, 71, 73, 74, 73, 76]
+    );
+    assert!(score_zero.parts[0].instrument.transpose.is_none());
+}
