@@ -1206,3 +1206,126 @@ tremolo artefact above. Restricted to the 46 files measurable by both tools,
 the corpus figures are **92.18 % N1 / 88.73 % N2d for scoretk against
 94.52 % / 89.29 % for musicxml2ly** — a 0.56-point N2d gap, entirely the four
 documented cases. No file was dropped from either report.
+
+## 14. MIDI writing: the `ecriture_ly` causes (2026-11-19)
+
+### Method and frozen baseline
+
+The `ecriture_ly` lot of the MIDI oracle (`scripts/oracle/midi/`) compares
+scoretk's MIDI of each `.ly` with the MIDI **LilyPond itself** produces from
+the same source. The baseline binary was built once and frozen as
+`scoretk-base`; `lots.sh` + `mesure.sh` were rerun with `LAKH_STRIDE=20`, every
+conversion under `timeout 10 prlimit --as=2000000000`. The two MIDI reading
+lots and the LilyPond reading oracle (`scripts/oracle/lilypond/`, same
+manifests, `--stride 10`, scoretk only, cached LilyPond references) are
+remeasured as non-regression. The baseline reproduces the published figures:
+`ecriture_ly` 753/1020 exact, `lecture_musique` 596/1020, `lecture_mutopia`
+49/122; the LilyPond oracle gives 111/145 (`mus`), 119/173 (`ra`) and 46/138
+(`mut`).
+
+### Cause found and fixed: LilyPond plays chord grids
+
+LilyPond 2.26 plays `\chords` and both `ChordNames` contexts (`\new` and
+`\context`) in its MIDI; only `FiguredBass` grids are silent. This was checked
+by compiling reduced sources: `\new ChordNames \chordmode { c1 d:m }` beside a
+staff yields a first track with the chord notes. The reader skipped those
+grids, so all their notes were missing. Example `03_08_LaCiteDeDieu.ly`: 107
+reference notes of 319 were absent (N1 66.14 %, N2 36.36 %).
+
+The parser now routes `chords` like `chordmode` and lets both ChordNames forms
+produce an ordinary played staff; `figures`/`FiguredBass` remain skipped. The
+reduced test `grille_daccords_jouee_dans_le_midi` covers `\chords` beside a
+staff with a bar check, `\new ChordNames` with `\with`, `\context ChordNames`
+with a variable, exact pitches/durations/measure counts and an unaffected
+`FiguredBass` case. Three older tests asserting the former, incorrect
+"display-only" behaviour were updated at the same level of detail.
+
+### Other causes: measurement artefacts, not reader defects
+
+Each of the five groups was reduced and checked against LilyPond 2.26
+directly:
+
+* **`octave` (81 files).** Only 24 have N1 below 50 %. Among them, the
+  chord-grid files are fixed above; the rest are multi-`\score` or MIDI-block
+  artefacts. `22_StMichel.ly` has `\transpose c c'` inside the first score's
+  `\midi` block, so the reference sits one octave above the engraved score;
+  `Maiana.ly` has two `\score` blocks, the second (the one with `\midi`) under
+  `\transpose do do''`. The reader deliberately keeps the first, engraved
+  score (§7). The other 57 files are a **false positive of the oracle**:
+  `compare()` counts a missing pitch `p` as an octave error whenever `p ± 12`
+  exists anywhere in the output. In `02_02_Segura_...ly`, N1 is 257/259 and
+  the two "octave" notes are actually lost by the comparator's note-on/off
+  pairing. Clef and ottava are display-only in LilyPond's MIDI (`\clef
+  "treble_8"` and `\ottava #1` were compiled in isolation and do not change
+  pitch), so keeping the written octave is correct.
+* **`notes_manquantes` (55 files).** 36 sources contain grace notes. The
+  oracle's `read_midi` holds a single open note per `(channel, pitch)` in a
+  dictionary: when an acciaccatura overlaps the preceding note on the same
+  channel its note-on overwrites the earlier one, which is never paired. In
+  `Fait/0a/lily-8546410f.ly` the missing B♭4 is present in scoretk's raw SMF
+  (note-on at tick 17 280) but overwritten by the grace note-on at 17 460;
+  LilyPond shortens the preceding note, so its own MIDI has no overlap. Twelve
+  more files are copies of the same `LaVerteAigrette` source and lose a tied
+  note the same way. No writer change is warranted: MuseScore's
+  `collectGraceBeforeChordEvents` also places the grace notes before the beat
+  without shortening the previous note.
+* **`duree_seule` (49 files).** All have the exact reference note count, N1
+  and N2; only durations differ. This is the unison-merge comparator artefact
+  documented in `midi.md`. `Encantada.ly` also has four `\score` blocks, the
+  first engraved under `\transpose a g` and the second with `\unfoldRepeats`;
+  its reference comes from a different score than the one the reader uses.
+* **`attaque_decalee` (46 files).** N1 is 100 %. LilyPond's MIDI does **not**
+  unfold `\repeat volta` unless `\unfoldRepeats` is present (verified on a
+  reduced score), while scoretk's MIDI follows MuseScore and unfolds it, so
+  attacks after the repeat move. `À-Notre-Dame.ly` has `\repeat volta 2` and
+  gains 100 notes. There is no single systematic offset.
+* **`notes_supp` (35 files).** Same volta mechanism or a different `\score`
+  reference. `Lallement_VenezBergersEtBergeres.ly` goes from 338 to 676 notes,
+  exactly twice, the signature of a `\repeat volta 2` unfolded by scoretk
+  only; `22_HymneStMichel.ly` has five `\score` blocks, four of them rehearsal
+  MIDIs with `\unfoldRepeats`.
+
+Changing the reader to follow the MIDI block rather than the engraved score,
+or the writer to stop unfolding repeats, would contradict the model and
+regress the MuseScore reference lots. These causes are left as documented
+limits.
+
+### Before / after (same frozen manifests and oracle)
+
+| Lot | Before exact | After exact | N1 / N2 gains | N1 / N2 losses |
+| --- | ---: | ---: | ---: | ---: |
+| ecriture_ly | 753 (73.8 %) | **756 (74.1 %)** | 13 / 10 | 0 / 1 |
+| ecriture_mscz_corpus | 17 (81.0 %) | 17 (81.0 %) | 0 | 0 |
+| ecriture_mscz_musique | 2 (25.0 %) | 2 (25.0 %) | 0 | 0 |
+| lecture_musique | 596 (58.4 %) | 596 (58.4 %) | 0 | 0 |
+| lecture_mutopia | 49 (40.2 %) | 49 (40.2 %) | 0 | 0 |
+
+On `ecriture_ly`, N2d also gains 9 files and loses 1. The three new exact
+files are `03_01_Miguel_Les-grains-de-mais_partition.ly` (104 → 179 notes,
+all matched), `02_07_LaFleurDesChampsVersLeCiel.ly` (113 → 209) and
+`DuermeNoLlores.ly` (78 → 128). The single N2/N2d loss is
+`LaMouetteGrise_EtBerceDansLaBrise.ly`: its engraved score has one chord grid
+but the `\midi` score, which provides the reference, repeats it three times
+(`\accords \accords \accords` under `\unfoldRepeats`). The new chord notes
+therefore have the right pitches (N1 68 → 76) but attacks the reference does
+not contain (N2 68 → 25); the file is far from exact in both runs. This is the
+documented "first engraved score wins" limit (§7), not a regression.
+
+The LilyPond reading oracle (same manifests, `--stride 10`, cached references)
+goes from 111 to 108 exact on `mus`, 119 to 120 on `ra` (N1 88.58 → 92.99 %)
+and stays at 46 on `mut`. Its three `mus` losses are all chord-grid files
+(`DorogoiDlinnoyu_LeTempsDesFleurs`, `DuermeNoLlores`,
+`LaFleurDesChampsVersLeCiel`): their cached `ly.midi` predates LilyPond's
+chord-grid playback and contains only the voice track (113 notes for
+`LaFleur...`), whereas a fresh LilyPond 2.26 compilation of the same source
+contains both tracks (209 notes). Every reference note still matches (N1 and
+N2 stay at 100 % on those three files); only the newly played chord grid is
+counted as "extra" against the stale reference. No reference note is lost on
+any lot, and no reading lot regresses. On the unrelated `robustesse_lakh` lot
+(MIDI → MusicXML, no `.ly` input), the frozen baseline has one 10 s timeout and
+the fixed run thirteen, because three campaigns and then the final workspace
+checks ran concurrently. Six of the extra-timeout files were retried in
+isolation with both binaries (`Dreadlock Holiday.1.mid`, `Sing A Song (bonus
+track).mid`, `Broken Wings.1.mid`, `Please Don't Go.mid`, `Eternally.mid`,
+`Another Day.2.mid`): all complete in 2–10 s with both the frozen and the
+fixed binary. They are load artefacts, not an effect of the reader change.

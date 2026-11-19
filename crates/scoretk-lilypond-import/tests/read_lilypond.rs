@@ -3501,7 +3501,11 @@ fn grille_daccords_jouee_dans_le_midi() {
         vec![Fraction::new(1, 4); 4],
         "durées de la mélodie (piste 0)"
     );
-    assert_eq!(score.measures.len(), 2, "deux mesures avec barre de contrôle");
+    assert_eq!(
+        score.measures.len(),
+        2,
+        "deux mesures avec barre de contrôle"
+    );
 
     // `\new ChordNames` et `\context ChordNames` jouent aussi, y compris avec
     // `\chordmode` explicite dans une variable et un `\with` sur le contexte.
