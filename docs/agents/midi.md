@@ -202,6 +202,12 @@ fixture binaire ajouté).
   vides : le portage suit la norme. RP-026 (commandes `\r`, jeux de caractères,
   ruby) reste non décodé. Vérifié par `smf_lyrics` sur deux mesures avec huit
   notes, hauteurs et durées incluses.
+- **Format 2** : les pistes sont des motifs indépendants ; `MidiFile::read`
+  décale chaque piste de la fin de la précédente avant la conversion. MuseScore
+  rejette le format 2 (`midifile.cpp` : `midi file format 2 not implemented`) ;
+  le portage l'accepte. Les formats 0 et 1 gardent leur superposition habituelle.
+  Vérifié par `smf_format2` (trois motifs, cinq notes, deux mesures, plus le cas
+  format 1 inchangé).
 
 ## Références et test de conformité
 

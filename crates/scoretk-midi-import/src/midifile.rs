@@ -361,6 +361,20 @@ impl MidiFile {
             });
         }
 
+        // Format 2 : chaque piste est un motif indépendant joué à sa suite,
+        // et non une voix simultanée (SMF §Format 0,1,2). MuseScore rejette ce
+        // format (`midifile.cpp` lève « format not implemented ») ; le portage
+        // le prend en charge en décalant chaque piste de la fin de la précédente.
+        if smf.header.format == midly::Format::Sequential {
+            let mut offset = 0i64;
+            for track in &mut tracks {
+                for (tick, _) in &mut track.events {
+                    *tick += offset;
+                }
+                offset = track.events.last().map_or(offset, |(tick, _)| *tick);
+            }
+        }
+
         Ok(Self {
             tracks,
             division,
