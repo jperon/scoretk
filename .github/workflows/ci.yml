@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 jperon
 #
-# Intégration continue : mêmes commandes que le shell de dev local (§ Commandes
-# de AGENTS.md), exécutées dans Nix pour éviter toute divergence de toolchain.
-# `tests/corpus` est versionné : aucun checkout ni corpus tiers n'est nécessaire.
-# Le seul test qui lit un fichier hors dépôt
+# Continuous integration: the same commands as the local development shell
+# (§ Commands in AGENTS.md), run inside Nix to avoid any toolchain drift.
+# `tests/corpus` is versioned: no checkout or third-party corpus is needed.
+# The only test that reads a file outside the repository
 # (`crates/scoretk-lilypond-import/tests/read_lilypond.rs`,
-# `/home/jacques/.../beam-cross-staff.ly`) retourne déjà silencieusement quand
-# le fichier est absent : il est donc sans effet sur un runner GitHub.
+# `/home/jacques/.../beam-cross-staff.ly`) already returns silently when
+# the file is absent, so it has no effect on a GitHub runner.
 
 name: CI
 
@@ -23,35 +23,35 @@ concurrency:
 
 permissions:
   contents: read
-  # Requis par magic-nix-cache-action pour le cache GitHub Actions.
+  # Required by magic-nix-cache-action for the GitHub Actions cache.
   id-token: write
 
 jobs:
   verifications:
-    name: fmt, clippy, tests et wasm32
+    name: fmt, clippy, tests and wasm32
     runs-on: ubuntu-latest
     steps:
-      - name: Récupération du dépôt
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Installation de Nix
+      - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v23
 
-      # Cache des dérivations Nix entre les runs (pas de cache Cachix à créer).
-      - name: Cache Nix
+      # Cache Nix derivations between runs (no Cachix cache to set up).
+      - name: Nix cache
         uses: DeterminateSystems/magic-nix-cache-action@v15
 
-      - name: Formatage
+      - name: Formatting
         run: nix develop -c cargo fmt --all -- --check
 
-      - name: Clippy (les avertissements sont des erreurs)
+      - name: Clippy (warnings are errors)
         run: nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Tests de tout le workspace
+      - name: Tests for the whole workspace
         run: nix develop -c cargo test --workspace
 
-      # Liste des crates portables donnée dans AGENTS.md, § Commandes.
-      - name: Compilation wasm32 des bibliothèques
+      # List of portable crates given in AGENTS.md, § Commands.
+      - name: wasm32 build of the libraries
         shell: bash
         run: |
           set -euo pipefail
@@ -64,8 +64,8 @@ jobs:
           nix develop -c cargo build -p scoretk --target wasm32-unknown-unknown
           nix develop -c cargo build -p scoretk-wasm --target wasm32-unknown-unknown
 
-      - name: Construction du paquet wasm
+      - name: Build the wasm package
         run: nix build .#wasm
 
-      - name: Test de fumée Node du paquet wasm
+      - name: Node smoke test of the wasm package
         run: nix develop -c node crates/scoretk-wasm/tests/node-smoke.mjs

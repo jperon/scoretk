@@ -1,6 +1,6 @@
 # Installing scoretk
 
-scoretk is a command-line program: you run it from a terminal, not from a menu. There is no graphical installer. This page gives the three ways to obtain it. Pick the one that matches your system.
+scoretk is a command-line program: you run it from a terminal, not from a menu. There is no graphical installer. This page gives the four ways to obtain it. Pick the one that matches your system.
 
 ## Before you start
 
@@ -11,6 +11,54 @@ Open a terminal:
 - **Windows:** PowerShell (or Windows Terminal).
 
 Commands below are typed into that terminal and confirmed with Enter. Do not type the `#` comments.
+
+## Option 0 — download a ready-made program
+
+This is the simplest option if you do not want to install any development tools. Ready-to-run programs are published on the [releases page](https://github.com/jperon/scoretk/releases).
+
+**Which version to choose**
+
+- A **stable version** has a name starting with `v` (for example `v0.1.0`). Pick the most recent one.
+- **nightly** is the latest development version. It contains the newest changes but may be less tested.
+
+**Which archive to download**
+
+On the releases page, under the version you chose, expand "Assets" and download the archive matching your computer:
+
+- **Windows (64-bit):** `scoretk-…-x86_64-pc-windows-msvc.zip`
+- **Mac with an Apple Silicon chip (M1, M2, M3…):** `scoretk-…-aarch64-apple-darwin.tar.gz`
+- **Mac with an Intel chip:** `scoretk-…-x86_64-apple-darwin.tar.gz`
+- **Linux (64-bit, Intel/AMD):** `scoretk-…-x86_64-unknown-linux-musl.tar.gz`
+
+The `…` stands for the version number. Files ending in `-wasm.tgz` are a JavaScript/npm package for web projects, not the command-line program.
+
+**Unpack it and run it**
+
+- **Windows:** right-click the `.zip` file and choose "Extract All…" (or open it with 7-Zip). In the extracted folder, double-click `scoretk.exe`. To use it from PowerShell, run `.\scoretk.exe --version` in that folder.
+- **macOS:** double-click the `.tar.gz` file to unpack it (or run `tar -xzf scoretk-….tar.gz` in Terminal). Then, in Terminal, go into the extracted folder and run `./scoretk --version`. macOS may refuse to open the program with a message saying it is "from an unidentified developer" (Gatekeeper). If that happens, run this command in the folder containing `scoretk`:
+
+  ```sh
+  xattr -d com.apple.quarantine scoretk
+  ```
+
+  then run `./scoretk --version` again.
+
+- **Linux:** unpack the archive with `tar -xzf scoretk-….tar.gz`, then make the file executable and run it:
+
+  ```sh
+  chmod +x scoretk
+  ./scoretk --version
+  ```
+
+**Check the download (optional but recommended)**
+
+Each release also contains a `SHA256SUMS` file. Download it next to the archive, then:
+
+- **Linux:** run `sha256sum -c SHA256SUMS`; the line for your archive must say `OK`.
+- **macOS:** run `shasum -a 256 -c SHA256SUMS` (or `sha256sum -c SHA256SUMS` if you installed coreutils).
+- **Windows (PowerShell):** run `Get-FileHash scoretk-….zip -Algorithm SHA256` and compare the printed hash with the value on the line for your archive in `SHA256SUMS`. They must be identical.
+
+**Important:** release files will only exist after the first release has been published. Until then, the releases page may be empty; use Option A or Option B in the meantime.
 
 ## Option A — with Nix (Linux and macOS)
 
@@ -66,7 +114,7 @@ nix develop -c cargo install --path crates/scoretk-cli
 
 ## Are there precompiled binaries?
 
-No. scoretk does not currently publish ready-to-run binaries or a Windows `.exe`/`.msi` installer. Build it from source with Option A or Option B.
+Yes. Ready-to-run archives (including a Windows `scoretk.exe`) are published on the [releases page](https://github.com/jperon/scoretk/releases); see Option 0. They become available once the first release is published. You can always build from source instead with Option A or Option B.
 
 ## Check that it works
 
