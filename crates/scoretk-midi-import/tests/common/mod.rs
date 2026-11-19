@@ -73,6 +73,7 @@ impl Ev {
 }
 
 /// Encodes a format-1 SMF from tracks of `(absolute_tick, event)` pairs.
+#[allow(dead_code)]
 pub fn smf(tracks: &[Vec<(u32, Ev)>]) -> Vec<u8> {
     smf_with(Format::Parallel, Timing::Metrical(u15::new(480)), tracks)
 }

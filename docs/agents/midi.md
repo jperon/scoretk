@@ -188,6 +188,13 @@ fixture binaire ajouté).
   toujours `0 /* major */`. Le portage diverge volontairement pour ne pas perdre
   le mode d'un SMF lu. Vérifié par `smf_key_signature` (lecture) et
   `key_signature_export` (écriture).
+- **Division SMPTE** : `frames/s × ticks/frame` (29,97 arrondi pour le
+  drop-frame 30) donne des ticks par seconde. `toMuseScoreTicks`
+  (`importmidi_fraction.cpp`) les traite avec `ReducedFraction::fromTicks`,
+  c'est-à-dire une équivalence fixe sans carte des tempos ; le portage fait de
+  même mais divise par la division déclarée (960 ticks MuseScore par seconde à
+  120 BPM). Une carte des tempos SMPTE serait une fonctionnalité distincte.
+  Vérifié par `smf_smpte` (30 et 29,97 images/s, plus un cas métrique inchangé).
 
 ## Références et test de conformité
 
