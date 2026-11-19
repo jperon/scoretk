@@ -237,3 +237,6 @@ Une ligne par document ; lire celui qui correspond au sujet avant de coder.
   lots de référence, oracles, phases : à lire avant une campagne de mesure.
 - docs/agents/format-mapping/ — tables format ↔ modèle par format et lacunes
   du modèle : à lire avant d'étendre un lecteur ou un écrivain.
+- docs/agents/format-ref/ — références synthétiques de syntaxe (anglais) pour
+  agents, une par format, avec n° de section et pièges : à lire avant d'écrire
+  ou relire un lecteur/écrivain.
