@@ -780,6 +780,49 @@ fn context_staff_imbrique_avec_voix_nommees() {
 }
 
 #[test]
+fn silence_avec_hauteur_avance_la_reference_relative() {
+    // `event_chord` de `lily/parser.yy` : `\rest` change la note en
+    // `RestEvent`, mais sa hauteur écrite est résolue et avance la référence
+    // `\relative` comme une note. Sur le passage de bwv651.ly
+    // `d'2\rest d16\rest g, c e g c, e g`, ne pas résoudre les silences
+    // placerait `g,` une octave trop bas (43 au lieu de 55). Vérifié contre
+    // le MIDI produit par LilyPond 2.27.
+    let source = concat!(
+        "motif = { g4 r4 r2 R1 d'2\\rest d16\\rest g, c e g c, e g | <c e g>1~ | c'1 } ",
+        "\\score { \\relative f' { c8 b a4 g2~ | \\motif } }"
+    );
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.measures.len(), 6);
+    assert_eq!(
+        hauteurs(&score),
+        vec![60, 59, 57, 55, 55, 55, 60, 64, 67, 60, 64, 67, 72, 76, 79, 84]
+    );
+}
+
+#[test]
+fn context_staff_nomme_avec_voix_surnumeraires() {
+    // Un `\context Staff = "…"` nommé dont le contenu porte plus de quatre
+    // voix nommées ne doit pas les écraser sur la limite du modèle : chaque
+    // voix surnuméraire ouvre une portée sœur (pathetique-1 de Mutopia, où
+    // chaque main enchaîne onze sections à plusieurs voix).
+    let source = concat!(
+        "\\score { \\context PianoStaff << ",
+        "\\context Staff = \"rh\" { \\fixed c' { c1 ",
+        "\\context Voice = \"a\" { e1 } \\context Voice = \"b\" { g1 } ",
+        "\\context Voice = \"c\" { c'1 } \\context Voice = \"d\" { e'1 } } } ",
+        "\\context Staff = \"lh\" { \\fixed c' { f1 ",
+        "\\context Voice = \"e\" { a1 } \\context Voice = \"f\" { c'1 } ",
+        "\\context Voice = \"g\" { f'1 } \\context Voice = \"h\" { a'1 } } } ",
+        ">> }"
+    );
+    let score = read_lilypond(source).expect("lecture");
+    assert!(score.staves.len() >= 2);
+    let mut notes = hauteurs(&score);
+    notes.sort_unstable();
+    assert_eq!(notes, vec![60, 64, 65, 67, 69, 72, 72, 76, 77, 81]);
+}
+
+#[test]
 fn context_staff_avec_relative_garde_la_reference_du_bloc() {
     // `\context Staff \relative << … \\ … >>` : la référence relative porte
     // sur tout le bloc polyphonique (collisions.ly, `\hairyChord`). Ouvrir une

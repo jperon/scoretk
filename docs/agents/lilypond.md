@@ -509,8 +509,19 @@ pas de régression du lecteur.
   portée englobante (idiome du piano
   `\context Voice = "one" \rightHand`) et la référence relative s'applique à
   tout le bloc polyphonique (`\context Staff \relative << … \\ … >>` de
-  collisions.ly). Sans cela, la limite de quatre voix du modèle écrase la
-  musique et les octaves des voix polyphoniques sont décalées.
+  collisions.ly). En revanche, un `\context Staff = "nom"` dont le contenu
+  porte plus de quatre voix nommées (pathetique-1 de Mutopia) ouvre bien sa
+  portée et répartit les voix surnuméraires en portées sœurs : les regrouper
+  dans une seule portée les ferait écraser par la limite de quatre voix.
+- **`\rest` et `\relative`** : la hauteur écrite d'un `\rest` est résolue et
+  avance la référence relative, comme le `RestEvent` de `event_chord` dans
+  `lily/parser.yy` (vérifié sur `d'2\rest d16\rest g, c e g` de bwv651.ly
+  contre le MIDI de LilyPond 2.27). La baisse du nombre de « notes communes »
+  observée après avoir traité `\rest` comme un silence n'est donc **pas** un
+  changement de hauteur : les 124 notes retirées sont exactement les silences
+  écrits, et 61 d'entre elles portaient une hauteur présente dans le MIDI de
+  référence (mesure par intersection de multiensembles de hauteurs). Aucune
+  note jouée ne change de hauteur.
 - **Voix ouvertes dans une voix** : `\new Voice` (ou `\context Voice`) et
   chaque branche d'un `<< … >>` rencontrés dans la musique d'une voix ouvrent
   une voix de la portée au tick courant (`context_prefix` /

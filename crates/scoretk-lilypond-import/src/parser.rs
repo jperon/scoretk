@@ -771,20 +771,25 @@ impl<'a> Parser<'a> {
                 if has_voice_context(&content) || wrapped {
                     return content;
                 }
-                let mut staff = StaffBlock::new();
-                staff.name = context_name;
-                let mut voices = Vec::new();
+                // Un `\context Staff` nommé peut porter plus de quatre voix
+                // nommées (pathetique-1 : chaque main enchaîne onze sections
+                // polyphoniques). Les répartir en portées sœurs, comme avant
+                // le portage des contextes structurels, plutôt que de les
+                // regrouper en une seule portée où la limite du modèle les
+                // écraserait.
+                let mut staves = Vec::new();
                 let mut lyrics = Vec::new();
-                self.collect_voices(content, &mut voices, &mut lyrics);
-                staff.voices = voices;
-                staff.lyrics.extend(lyrics);
-                self.collect_addlyrics(&mut staff);
+                self.collect_staves(content, &mut staves, &mut lyrics);
+                if staves.is_empty() {
+                    staves.push(StaffBlock::new());
+                }
+                staves[0].name = context_name;
                 return Music::New(Box::new(GroupBlock {
                     kind: GroupKind::Staff,
                     instrument_name,
                     short_instrument_name,
-                    staves: vec![staff],
-                    lyrics: Vec::new(),
+                    staves,
+                    lyrics,
                 }));
             }
             let structural = self.peek().is_some_and(|token| {
