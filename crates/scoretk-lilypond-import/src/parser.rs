@@ -1821,8 +1821,23 @@ impl<'a> Parser<'a> {
                 if self.peek().is_some_and(|token| token.is_scheme()) {
                     self.position += 1;
                 }
-                let first = self.parse_music();
-                let second = self.parse_music();
+                // `make-non-relative-music` enveloppe chaque partie : un
+                // `\relative` extérieur ne recalcule pas leurs hauteurs. Sans
+                // cela, le second `\relative \partCombine …` du test de
+                // régression lisait ses deux branches en chaîne et décalait
+                // l'octave de la suite. Sous `\fixed`, la référence est gardée
+                // (la transposition s'applique aux parties).
+                let non_relative = |music: Music| {
+                    if music.is_empty() {
+                        music
+                    } else {
+                        Music::Context(Context::NonRelative {
+                            music: Box::new(music),
+                        })
+                    }
+                };
+                let first = non_relative(self.parse_music());
+                let second = non_relative(self.parse_music());
                 if first.is_empty() {
                     second
                 } else if second.is_empty() {
@@ -3550,6 +3565,7 @@ fn scale_context(context: &mut Context, factor: &Fraction) {
         | Context::Grace { music, .. }
         | Context::Fixed { music, .. }
         | Context::Relative { music, .. }
+        | Context::NonRelative { music, .. }
         | Context::Transpose { music, .. } => scale_music(music, factor),
         Context::AfterGrace { main, grace } => {
             scale_music(main, factor);

@@ -712,6 +712,22 @@ impl<'a> Interpreter<'a> {
                 self.walk(music);
                 self.octave = saved;
             }
+            Context::NonRelative { music } => {
+                // `make-non-relative-music` soustrait la musique à la
+                // conversion `\relative` environnante (`ly:make-music-relative!`
+                // ne descend pas dedans) : les hauteurs écrites restent dans
+                // l'octave absolue par défaut, quelle que soit la référence du
+                // `\relative`. Sous `\fixed`, en revanche, la transposition
+                // s'applique bien aux parties, donc leur référence est conservée.
+                let saved = self.octave;
+                if self.octave.relative {
+                    self.octave = OctaveState::default();
+                } else {
+                    self.octave.relative = false;
+                }
+                self.walk(music);
+                self.octave = saved;
+            }
             Context::Alternative(_) => {
                 self.warn("\\alternative sans \\repeat ignoré");
             }
@@ -1184,6 +1200,7 @@ fn context_is_context_only(context: &Context) -> bool {
         | Context::Grace { music, .. }
         | Context::Fixed { music, .. }
         | Context::Relative { music, .. }
+        | Context::NonRelative { music, .. }
         | Context::Transpose { music, .. } => is_context_only(music),
         Context::AfterGrace { main, grace } => is_context_only(main) && is_context_only(grace),
         Context::Repeat {

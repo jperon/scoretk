@@ -2887,3 +2887,72 @@ fn unset_ne_mange_pas_la_note_qui_suit() {
     let score = lire("\\relative c' { \\unset Staff.clef f1 | bf2 a }");
     assert_eq!(hauteurs(&score), vec![65, 70, 69]);
 }
+
+#[test]
+fn partcombine_sous_relative_garde_les_hauteurs_absolues() {
+    // Régression `part-combine-relative.ly` : `make-non-relative-music`
+    // (`ly/music-functions-init.ly`) protège les deux parties de
+    // `\partCombine`. Un `\relative` placé *autour* de la commande est donc
+    // ignoré, et les trois mesures du test sont identiques : E4/C4 puis F4/D4.
+    let score = lire_score(
+        "\\score { \\new Staff { \
+           \\partCombine \\absolute { e'2 f' } { c'2 d' } \
+           \\relative \\partCombine { e'2 f' } { c'2 d' } \
+           \\partCombine \\relative { e'2 f } \\relative { c'2 d } \
+         } } }",
+    );
+    assert_eq!(score.measures.len(), 3);
+    assert_eq!(nombre_de_voix(&score), 2);
+    let blanche = Fraction::HALF;
+    // Voix « one » : E4 F4, trois fois de suite.
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::new(0, 1), vec![64], blanche),
+            (Fraction::new(1, 2), vec![65], blanche),
+            (Fraction::new(1, 1), vec![64], blanche),
+            (Fraction::new(3, 2), vec![65], blanche),
+            (Fraction::new(2, 1), vec![64], blanche),
+            (Fraction::new(5, 2), vec![65], blanche),
+        ]
+    );
+    // Voix « two » : C4 D4, trois fois de suite.
+    assert_eq!(
+        accords_de_voix(&score, 1),
+        vec![
+            (Fraction::new(0, 1), vec![60], blanche),
+            (Fraction::new(1, 2), vec![62], blanche),
+            (Fraction::new(1, 1), vec![60], blanche),
+            (Fraction::new(3, 2), vec![62], blanche),
+            (Fraction::new(2, 1), vec![60], blanche),
+            (Fraction::new(5, 2), vec![62], blanche),
+        ]
+    );
+
+    // Cas limite : même avec une hauteur explicite, `\relative c''` autour de
+    // `\partCombine` ne doit pas décaler les hauteurs écrites des deux parties.
+    let score = lire_score(
+        "\\score { \\new Staff { \\relative c'' { \
+           \\partCombine { e'2 f' } { c'2 d' } \
+         } } }",
+    );
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(accords_de_voix(&score, 0)[0].1, vec![64]);
+    assert_eq!(accords_de_voix(&score, 0)[1].1, vec![65]);
+    assert_eq!(accords_de_voix(&score, 1)[0].1, vec![60]);
+    assert_eq!(accords_de_voix(&score, 1)[1].1, vec![62]);
+
+    // Cas non concerné : `\relative` à l'intérieur de chaque partie reste
+    // applicable (motif réel des fichiers qui définissent les voix en
+    // variables `\relative do' { … }` avant `\partcombine`).
+    let score = lire_score(
+        "\\score { \\new Staff { \
+           \\partCombine \\relative c' { e2 f } \\relative c' { c2 d } \
+         } } }",
+    );
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(accords_de_voix(&score, 0)[0].1, vec![64]);
+    assert_eq!(accords_de_voix(&score, 0)[1].1, vec![65]);
+    assert_eq!(accords_de_voix(&score, 1)[0].1, vec![60]);
+    assert_eq!(accords_de_voix(&score, 1)[1].1, vec![62]);
+}

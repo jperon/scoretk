@@ -209,6 +209,11 @@ pub(crate) enum Context {
         reference: Option<PitchSpec>,
         music: Box<Music>,
     },
+    /// `make-non-relative-music` (`ly/music-functions-init.ly`) : musique
+    /// soustraite à la conversion d'un `\relative` environnant (ses hauteurs
+    /// écrites gardent l'octave absolue par défaut). `\partCombine` enveloppe
+    /// ainsi ses deux parties (`make-directed-part-combine-music`).
+    NonRelative { music: Box<Music> },
     /// `\alternative` isolé (déjà consommé par `\repeat`).
     Alternative(Vec<Music>),
     /// `\change <Contexte> = <nom>` : les notes qui suivent passent sur la
