@@ -97,6 +97,28 @@ fn relative_et_octaves() {
 }
 
 #[test]
+fn controle_octave_est_absolu() {
+    // `n=''` est un contrôle d'octave (`ly/relative-octave-check.cc`) : la
+    // hauteur est imposée dans l'octave marquée, et non décalée de deux
+    // octaves depuis la note précédente comme une simple marque `n''`.
+    let score = read_lilypond(
+        "\\score { \\new Staff { \\relative c' { c4 g'4 a=''4 b4 <a='' d fis a>4 } } }",
+    )
+    .expect("lecture");
+    assert_eq!(
+        hauteurs(&score),
+        vec![60, 67, 81, 83, 81, 86, 90, 93]
+    );
+    assert_eq!(score.measures.len(), 2);
+    // Forme `n'='` : le contrôle porte la marque écrite avant le signe `=`.
+    let note = lire("\\relative c' { c4 g'4 a'='4 b4 }");
+    assert_eq!(hauteurs(&note), vec![60, 67, 81, 83]);
+    // Cas non concerné : sans `=`, la marque reste relative.
+    let sans = lire("\\relative c' { c4 g'4 a''4 b4 }");
+    assert_eq!(hauteurs(&sans), vec![60, 67, 93, 95]);
+}
+
+#[test]
 fn relative_reference_place_la_premiere_note() {
     // La première note se place, comme les suivantes, à l'octave la plus
     // proche de la référence : `g` après `c''` descend d'une quarte et vaut

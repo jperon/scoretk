@@ -1495,7 +1495,12 @@ impl<'a> Parser<'a> {
             return Music::Empty;
         };
         // Assignation dans un flux musical (`m = { … }` ou fonction Scheme).
-        if token.kind == Kind::Word && self.peek_at(1).is_some_and(|next| next.is_punct('=')) {
+        // Un nom de note suivi de `=` est un contrôle d'octave (`a=''`), pas
+        // une variable : l'exclure évite d'avaler la musique qui suit.
+        if token.kind == Kind::Word
+            && self.language.parse(&token.text).is_none()
+            && self.peek_at(1).is_some_and(|next| next.is_punct('='))
+        {
             let name = token.text.clone();
             self.position += 2;
             self.assign(name);
@@ -1901,6 +1906,7 @@ impl<'a> Parser<'a> {
                     step: 0,
                     alter: 0,
                     octave: 1,
+                    octave_check: None,
                     explicit_octave: true,
                     force: false,
                     cautionary: false,
@@ -1912,6 +1918,7 @@ impl<'a> Parser<'a> {
                     step: 0,
                     alter: 0,
                     octave: 0,
+                    octave_check: None,
                     explicit_octave: false,
                     force: false,
                     cautionary: false,
@@ -2841,11 +2848,15 @@ impl<'a> Parser<'a> {
             step,
             alter,
             octave: 0,
+            octave_check: None,
             explicit_octave: false,
             force: false,
             cautionary: false,
         };
-        // `!` et `?` peuvent précéder ou suivre les marques d'octave.
+        // `!` et `?` peuvent précéder ou suivre les marques d'octave. Après
+        // `=`, les marques désignent l'octave contrôlée, absolue, et non le
+        // décalage relatif (`lily/relative-octave-check.cc`).
+        let mut checking = false;
         loop {
             match self.peek() {
                 Some(token) if token.is_punct('!') => {
@@ -2857,31 +2868,28 @@ impl<'a> Parser<'a> {
                     self.position += 1;
                 }
                 Some(token) if token.is_punct('\'') => {
-                    pitch.octave += 1;
+                    if checking {
+                        *pitch.octave_check.get_or_insert(pitch.octave) += 1;
+                    } else {
+                        pitch.octave += 1;
+                    }
                     pitch.explicit_octave = true;
                     self.position += 1;
                 }
                 Some(token) if token.is_punct(',') => {
-                    pitch.octave -= 1;
+                    if checking {
+                        *pitch.octave_check.get_or_insert(pitch.octave) -= 1;
+                    } else {
+                        pitch.octave -= 1;
+                    }
                     pitch.explicit_octave = true;
                     self.position += 1;
                 }
                 Some(token) if token.is_punct('=') => {
-                    // Contrôle d'octave `c=`: la hauteur suivante est absolue.
+                    pitch.octave_check = Some(pitch.octave);
+                    pitch.explicit_octave = true;
+                    checking = true;
                     self.position += 1;
-                    while let Some(next) = self.peek() {
-                        if next.is_punct('\'') {
-                            pitch.octave += 1;
-                            pitch.explicit_octave = true;
-                            self.position += 1;
-                        } else if next.is_punct(',') {
-                            pitch.octave -= 1;
-                            pitch.explicit_octave = true;
-                            self.position += 1;
-                        } else {
-                            break;
-                        }
-                    }
                 }
                 _ => break,
             }
@@ -3231,6 +3239,7 @@ impl<'a> Parser<'a> {
                     step: 0,
                     alter: 0,
                     octave: 1,
+                    octave_check: None,
                     explicit_octave: true,
                     force: false,
                     cautionary: false,
@@ -3254,6 +3263,7 @@ impl<'a> Parser<'a> {
                 step,
                 alter,
                 octave,
+                octave_check: None,
                 explicit_octave: octave != 0,
                 force: false,
                 cautionary: false,

@@ -783,7 +783,12 @@ impl OctaveState {
     /// l'octave la plus proche de la précédente, comme
     /// `Pitch::to_relative_octave` dans `lily/pitch.cc`.
     pub(crate) fn resolve(&mut self, pitch: &PitchSpec) -> i8 {
-        let octave = if self.relative {
+        let octave = if let Some(check) = pitch.octave_check {
+            // `n='` : la hauteur vérifiée est absolue, indépendante de la
+            // note précédente et de la référence `\relative`
+            // (`ly/relative-octave-check.cc`).
+            3i8.saturating_add(check)
+        } else if self.relative {
             match self.previous {
                 Some((previous_step, previous_octave)) => {
                     relative_octave(previous_step, previous_octave, pitch.step)
@@ -886,6 +891,7 @@ mod tests {
             step,
             alter: 0,
             octave,
+            octave_check: None,
             explicit_octave: octave != 0,
             force: false,
             cautionary: false,

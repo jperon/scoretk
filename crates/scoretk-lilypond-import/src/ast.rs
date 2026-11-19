@@ -41,6 +41,8 @@ pub(crate) struct PitchSpec {
     pub alter: i8,
     /// Marques d'octave écrites (`'` positifs, `,` négatifs).
     pub octave: i8,
+    /// Contrôle d'octave `n='` : octave absolue imposée, ou `None`.
+    pub octave_check: Option<i8>,
     /// Vrai si le nom donne une octave explicite (marques ou `=`).
     pub explicit_octave: bool,
     /// Altération forcée (`!`).
