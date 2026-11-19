@@ -965,6 +965,13 @@ for it.
 python-ly was measured with the same corrected oracle and is unchanged by
 this campaign: N2 74.17 % (`mus`), 47.49 % (`ra`), 36.29 % (`mut`).
 
+The voice-keyed counter lowers N2 on 29 files relative to the *old* oracle:
+these scores reuse a voice number on different staves, and the old
+`(voice, staff)` key matched only because it restarted the counter there. The
+targeted cross-staff regression goes from 3/12 to 12/12 and the aggregate N2
+rises by 1.5 points, so the corrected semantics are kept; the 29 cases remain
+in the raw rows for inspection.
+
 Per-file comparison (`lyn2-oracle` → `lyn2-final`): **24 files gain N1, 25
 gain N2, none loses either.** The largest gains are `carcassi-op60-07.ly`
 (N1 162 → 525, N2 6 → 265), `spanish-romance.ly` (89 → 308, 0 → 247),
