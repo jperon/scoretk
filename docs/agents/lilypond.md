@@ -1093,3 +1093,116 @@ output about a third smaller.
 - **`.ly` references without `\midi`** — about 7 % of the `.ly` sample
   consists of files with no playable `\score`; LilyPond emits no MIDI for
   them, so their reference is absent (recorded as `echec`, not excluded).
+
+### Second pass: writing `.mscz` (2026-11-19)
+
+#### Method and frozen baseline
+
+The `scoretk` CLI was frozen before any edit (`128e5265…`, `scoretk-base`)
+and the oracle re-run on the 56 corpus `.mscx` and the 174 `.mscz` under
+`timeout 10 prlimit --as=2000000000` (LilyPond compilation under 20 s / 2 GB).
+The frozen binary was later rebuilt as `97cc14bc…` (`scoretk-final2`) after
+the single retained fix; reference MIDI and MusicXML were shared between both
+campaigns through the oracle's `refs/` cache. The four lots are the same as
+above: 56 corpus `.mscx`, 174 `.mscz`, 32 genuine MusicXML and a deterministic
+1/5 sample of 375 `.ly`.
+
+Baseline (frozen `128e5265…`, corpus and `.mscz` only):
+
+| Lot | Tool | Files | Compiled | Exact | N1 % | N2 % | N2d % | Errors | Warnings | Mean .ly bytes | Max time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 28 (50.0 %) | 79.91 | 78.36 | 75.90 | 0 | 11 | 1397 | 3.11 s |
+| corpus | musicxml2ly | 56 | 51 | 28 (50.0 %) | 94.52 | 91.98 | 89.29 | 79 | 20 | 2977 | 20.00 s |
+| mscz | scoretk | 174 | 149 | 28 (16.1 %) | 92.26 | 85.33 | 83.32 | 2 | 1778 | 27313 | 23.34 s |
+| mscz | musicxml2ly | 174 | 142 | 34 (19.5 %) | 93.12 | 91.45 | 90.90 | 80988 | 3812 | 41748 | 40.96 s |
+
+Final campaign (rebuilt `97cc14bc…`, all four lots):
+
+| Lot | Tool | Files | Compiled | Exact | N1 % | N2 % | N2d % | Errors | Warnings | Mean .ly bytes | Max time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 28 (50.0 %) | 79.91 | 78.36 | 75.90 | 0 | 11 | 1396 | 7.61 s |
+| corpus | musicxml2ly | 56 | 51 | 28 (50.0 %) | 94.52 | 91.98 | 89.29 | 79 | 20 | 2986 | 20.03 s |
+| mscz | scoretk | 174 | 149 | 28 (16.1 %) | 92.26 | 85.33 | 83.32 | 2 | 1902 | 27363 | 23.08 s |
+| mscz | musicxml2ly | 174 | 143 | 34 (19.5 %) | 93.12 | 91.45 | 90.90 | 80988 | 3820 | 41755 | 39.41 s |
+| xml | scoretk | 32 | 24 | 12 (37.5 %) | 97.81 | 95.34 | 94.67 | 66 | 251 | 103899 | 23.13 s |
+| xml | musicxml2ly | 32 | 2 | 1 (3.1 %) | 98.79 | 98.79 | 98.79 | 326 | 24 | 19441 | 4.34 s |
+| ly | scoretk | 375 | 289 | 216 (57.6 %) | 90.19 | 78.20 | 77.61 | 0 | 134 | 1952 | 6.04 s |
+| ly | musicxml2ly | 375 | 118 | 79 (21.1 %) | 94.87 | 85.76 | 85.11 | 0 | 258 | 3765 | 7.64 s |
+
+#### Loss grouping (frozen baseline, files where musicxml2ly beats scoretk)
+
+Every group has one reduced example; the first three are *not* export defects.
+
+1. **MuseScore 1.x/2.x input** (22 files of the 174 `.mscz`, 21 in 2.06 and
+   one in 1.14) — e.g.
+   `Jig_-_Tripping_up_the_Stairs.mscz`: `version MuseScore non prise en
+   charge : 2.06`. The reader rejects the file before the writer runs, so no
+   export-side change can recover it. Documented reader limit, out of scope.
+2. **Multi-rest count disagrees inside MuseScore's own files** (about 20
+   orchestral parts) — e.g. `01- Les anges - Violons 1 et 2.mscz`: the `.mscx`
+   carries `<multiMeasureRest>13</multiMeasureRest>` on a measure of `len=
+   52/4`, but MuseScore's own MusicXML export (given to musicxml2ly) writes
+   only six rest measures there, and its reference MIDI places the next notes
+   28 quarters earlier. scoretk faithfully writes `R1*13`; the two views of
+   the same score differ by seven bars. **A tentative export fix was tried and
+   reverted**: making the writer consume one more duplicate rest measure
+   changed nothing on `Les anges` (N2d 38.03 → 37.24) and regressed more than
+   thirty other scores (`01- Magnificat` 1174 → 610, `Once in royal - Violons
+   1 et 2` 1731 → 1394, `02- Flûtes 1 et 2` 1597 → 371) because those extra
+   rest measures are genuine. The discrepancy is in the input, not in the
+   writer; fixing it would mean changing the MuseScore reader's measure model.
+3. **MuseScore playback-only octave coupling** — e.g. `Adios_Muchachos.mscz`
+   (Fisarmonica accordion): the `.mscx` has 444 notes and scoretk writes all
+   444; MuseScore's reference MIDI has 636, of which 143 are an octave away
+   from any written note. musicxml2ly also misses 94 of them. This is a
+   reference artefact, not a scoretk defect.
+4. **Tremolo rendered as repeated notes** — e.g. `timesig-09.mscx`: 20 written
+   chords with `:32` tremolo become 320 strokes in MuseScore's reference MIDI,
+   while LilyPond sustains them (20 notes). musicxml2ly fails to compile this
+   file (`UnboundLocalError` in `group_tremolos`), so it is absent from its
+   aggregate denominator and scoretk's 6.25 % N1 drags the corpus average
+   down. Add this to the list of reference artefacts alongside glissando.
+5. **Invisible / cross-staff elements** — e.g. `testExcludeInvisibleElements`
+   (N1 47/75 vs 53/75), `copypaste_parts` (10/44 vs 26/44) and
+   `partExclusion` (8/12 vs 12/12, the documented ottava limit). These need
+   information the pivot model does not carry; documented limits of §7/§12.
+6. **Duration-only** — e.g. `O salutaris Hostia - Saint-Saëns.mscz`: 15 notes
+   of 1017 differ only in gate time (0.25 vs 0.125 quarter); every pitch and
+   attack matches (N1 = N2 = 1017). Not worth a targeted fix.
+7. **Timing-only** — e.g. `Waltz_No._2.mscz`: N1 100 %, N2d 98.34 vs 99.19;
+   one stray attack on the 1/16 grid, no note lost.
+
+#### Retained fix: redundant octave transposition
+
+A pure octave displacement is not a harmonic transposition. Writing the
+concert pitch directly and omitting `\transposition c` gives **exactly the
+same MIDI** (measured on `v4_hairpin_simple`: 59/60/62/64 at 0/1/2/3 quarters,
+identical to the reference) while shortening the file. The writer now maps
+every `transpose_chromatic` multiple of 12 to zero before both the pitch
+spelling and the `\transposition` event; real chromatic transpositions
+(clarinette en si bémol, cor en fa) keep their written pitch and command.
+One unit test and the three `v4_hairpin_*` snapshots were updated; no other
+snapshot changed. A residual limit: a *chromatic* transposition followed by a
+non-transposing instrument does not emit an identity reset, so LilyPond's
+`\transposition` property persists — pre-existing and rare.
+
+#### Result and remaining losses
+
+Baseline → final: **no per-file gain and no per-file loss** on N1 or N2d (92
+unchanged comparisons on the corpus, 290 on `.mscz`). The retained
+fix is byte-level only: the corpus mean `.ly` size falls from 1397 to 1396
+bytes and the `.mscz` mean from 27 313 to 27 363 (the latter varies with the
+metadata of the scores actually compiled). Musically scoretk stays ahead of
+musicxml2ly on the XML lot (12 exact files vs 1) and on the `.ly` lot
+(216 vs 79); it ties on exact files on the corpus and trails by six on
+`.mscz`, where the 22 unreadable MuseScore 2.x files alone account for most of
+the gap.
+
+The corpus aggregate (N1 79.91 vs 94.52) is **not** a per-file regression.
+musicxml2ly fails to compile three files that scoretk measures (`timesig-09`,
+`repeat39`, `testHarmony6`); `timesig-09` alone carries 320 of the 2320
+reference notes of the lot and scoretk scores 6.25 % there because of the
+tremolo artefact above. Restricted to the 46 files measurable by both tools,
+the corpus figures are **92.18 % N1 / 88.73 % N2d for scoretk against
+94.52 % / 89.29 % for musicxml2ly** — a 0.56-point N2d gap, entirely the four
+documented cases. No file was dropped from either report.
