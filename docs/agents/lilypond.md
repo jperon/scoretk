@@ -971,3 +971,125 @@ than left as unexplained differences.
 Raw rows, converters and the generated summaries are in the out-of-repo
 measurement directories `lyn3-avant`, `lyn3-oracle` and `lyn3-final`;
 `scripts/oracle/lilypond/README.md` documents how to reproduce them.
+
+## 13. Writing export: baseline against musicxml2ly (2026-11-19)
+
+### Method
+
+`scripts/oracle/lilypond/ecriture.py` measures the reverse direction of §12:
+from a source `S` it writes scoretk's `.ly` (`scoretk S --to ly`) and
+musicxml2ly's `.ly`, compiles both with LilyPond 2.26 under
+`timeout 20 prlimit --as=2000000000` (`-dmidi-extension=midi`), and compares
+the resulting MIDI with the reference notes of `S` using the MIDI ↔ MIDI
+N1/N2/N2d of `scripts/oracle/midi/midi_notes.py` (Q16 grid). A `\midi` block
+and an `\unfoldRepeats` wrapper are injected into a copy of **both** candidates
+so that neither is penalised for LilyPond's default behaviour; failures are
+recorded, never silently dropped.
+
+Four lots were measured: the 56 versioned corpus `.mscx`, the 174 `.mscz` of
+`~/Musique`, the 32 genuine MusicXML files of `~/Musique`, and a deterministic
+1/5 sample of its `.ly` files (375). The reference MIDI is MuseScore 4.7.4's
+for `.mscx`/`.mscz`/`.xml`/`.mxl`, and LilyPond's MIDI of the source for the
+`.ly` round trips. musicxml2ly receives, in order: the versioned
+`*.ref.musicxml` (corpus), MuseScore's own MusicXML export (`.mscz`), the
+source itself (`.xml`/`.mxl`), or scoretk's MusicXML (`.ly`). Every row records
+this origin in `xml_source`, so the report always states which input was used.
+Each conversion ran under `timeout 10 prlimit --as=2000000000`.
+
+"Errors"/"Warnings" below are the counts of lines matched by the oracle's
+`Erreur|error` / `Avertissement|warning` regexes in LilyPond's stderr; they are
+an indicator, not a musical judgement. Percentages are weighted by reference
+note counts. On the XML lot musicxml2ly fails internally on 28 of 32 files
+(`UnboundLocalError: part_list`), so its 98.79 % is measured on a single file:
+this is an alternative's defect, recorded as such.
+
+### Baseline (frozen `scoretk-base`, before the fixes below)
+
+| Lot | Tool | Files | Compiled | Exact | N1 % | N2 % | N2d % | Errors | Warnings | Mean .ly bytes | Max time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 22 (39.3 %) | 78.19 | 76.12 | 73.66 | 0 | 11 | 1398 | 1.42 s |
+| corpus | musicxml2ly | 56 | 51 | 28 (50.0 %) | 94.52 | 91.98 | 89.29 | 79 | 20 | 2929 | 20.00 s |
+| mscz | scoretk | 174 | 77 | 18 (10.3 %) | 65.14 | 48.22 | 46.68 | 2782 | 1598 | 28225 | 16.77 s |
+| mscz | musicxml2ly | 174 | 143 | 34 (19.5 %) | 93.12 | 91.45 | 90.90 | 80988 | 3820 | 41699 | 30.95 s |
+| xml | scoretk | 32 | 19 | 6 (18.8 %) | 85.17 | 72.90 | 71.83 | 148 | 251 | 103892 | 23.07 s |
+| xml | musicxml2ly | 32 | 2 | 1 (3.1 %) | 98.79 | 98.79 | 98.79 | 326 | 24 | 19391 | 1.50 s |
+| ly | scoretk | 375 | 269 | 214 (57.1 %) | 90.19 | 75.81 | 74.98 | 97 | 189 | 1953 | 5.36 s |
+| ly | musicxml2ly | 375 | 118 | 79 (21.1 %) | 94.87 | 85.76 | 85.11 | 0 | 258 | 3712 | 6.44 s |
+
+### Loss grouping and fixes
+
+Grouping the files where musicxml2ly was exact and scoretk was not (21 of the
+first 119 `.mscz`), by first cause:
+
+1. **Compilation failures (8 files)** — two independent causes: `\stanza`
+   (a LilyPond 2.27-only function) in scores with several verses, and
+   identifiers such as `staff11VoiceOne` for staves numbered 11+, which
+   LilyPond parses as `staff` followed by an integer. Both are fixed: the
+   writer now emits `\set stanza = "n."` (musicxml2ly's 2.26-compatible form,
+   also read by our reader) and spells numbers beyond ten (`staffOneOne`).
+2. **Shifted attacks (7 files)** — `01- Magnificat` and six other movements
+   had N1 = 100 % but N2 ≈ 6–13 %: a multi-measure rest was written twice
+   (`R2.*30` followed by 29 individual `R2.`), adding 30 bars. The writer now
+   skips the covered measures and uses the nominal bar length for the
+   multiplier. On `01- Magnificat` the fixed output goes from 11.75 % to
+   100 % N2d. A first version skipped every following measure unconditionally
+   and dropped notes from `.ly` sources (`R2*N` followed by real music): the
+   final version skips a measure only when all its items are rests, which
+   restored the 22 notes of `PriereASteJeanneDArc.ly` and the 139 of
+   `Angels_Carol.ly`.
+3. **Wrong pitches (5 corpus files)** — instrument transposition was written
+   as altered note names but no `\transposition`, so LilyPond played the
+   written pitch instead of the concert pitch (N1 = 0 %). The writer now emits
+   `\transposition <pitch>` as musicxml2ly does.
+4. **Unfixable here (4 files)** — MuseScore 1.x/2.x input (`version MuseScore
+   non prise en charge : 2.06/1.14`): a reader limitation, outside the scope
+   of this export campaign.
+5. **Duration-only differences (2 files)** — 15 notes of 1017 (~1.5 %) differ
+   only in N2d; likely tie/gate-time detail, not worth a targeted fix.
+
+No file was dropped: all four fixes have a reduced test, and the only
+snapshots regenerated are the seven files whose `.ly` legitimately changed
+(five `\transposition`, one extra `R1` removed, one multi-rest duplication).
+
+### Final campaign (all fixes, frozen `scoretk-final2`)
+
+| Lot | Tool | Files | Compiled | Exact | N1 % | N2 % | N2d % | Errors | Warnings | Mean .ly bytes | Max time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 28 (50.0 %) | 79.91 | 78.36 | 75.90 | 0 | 11 | 1397 | 1.79 s |
+| corpus | musicxml2ly | 56 | 51 | 28 (50.0 %) | 94.52 | 91.98 | 89.29 | 79 | 20 | 2927 | 20.00 s |
+| mscz | scoretk | 174 | 150 | 28 (16.1 %) | 92.26 | 85.33 | 83.32 | 2 | 1785 | 27313 | 5.57 s |
+| mscz | musicxml2ly | 174 | 143 | 34 (19.5 %) | 93.12 | 91.45 | 90.90 | 80988 | 3820 | 41697 | 28.48 s |
+| xml | scoretk | 32 | 24 | 12 (37.5 %) | 99.19 | 53.41 | 50.56 | 66 | 251 | 103888 | 23.18 s |
+| xml | musicxml2ly | 32 | 2 | 1 (3.1 %) | 98.79 | 98.79 | 98.79 | 326 | 24 | 19385 | 1.08 s |
+| ly | scoretk | 375 | 289 | 216 (57.6 %) | 90.19 | 78.20 | 77.61 | 0 | 134 | 1952 | 2.48 s |
+| ly | musicxml2ly | 375 | 118 | 79 (21.1 %) | 94.87 | 85.76 | 85.11 | 0 | 258 | 3710 | 3.34 s |
+
+Per-file, baseline → final for scoretk: **6 gains / 0 losses** on the corpus,
+**89 / 0** on the 174 `.mscz`, **11 / 0** on the XML lot and **8 gains / 3
+losses** on the `.ly` sample. The three `.ly` losses are timing-only: note
+count and N1 are unchanged (`GaudeteChristusEstNatus` 1.77 → 0.37 % N2d,
+`Gevaert_LeMessageDesAnges-a4` 74.77 → 73.52 %, `GaiDuguesclin` 45.90 →
+44.26 %). They come from the intended multi-rest normalisation
+(`R1*11/2*11` → `R2*11`), which moves bar checks and therefore a few attacks
+on the 1/16 grid; no note is lost. On `.mscz` the gain is concentrated in
+compilation (77 → 150 files) and attacks (N2 48.22 → 85.33 %), with slightly
+smaller output on average (28 225 → 27 313 bytes). On the `.ly` round-trip
+sample scoretk stays well ahead of the alternative (216 vs 79 exact files).
+Overall scoretk matches or beats musicxml2ly on three lots and is within
+7.6 N2d points and 6 exact files on `.mscz`, with far fewer error lines and
+output about a third smaller.
+
+### Remaining known limits
+
+- **Ottava (`v4_partExclusion`)** — MuseScore's MusicXML export writes the
+  *sounding* pitch under an octave-shift mark, while the pivot model stores
+  the *written* pitch. LilyPond's `\ottava` is display-only, so those notes
+  are played an octave low. Fixing it would require changing the model↔`.ly`
+  octave convention for every ottava and risks round-trip regressions; left
+  as a documented one-file difference.
+- **Glissando** — MuseScore's reference MIDI renders glissandi as chromatic
+  runs, LilyPond's MIDI does not. Both converters lose those notes against
+  the reference: an oracle artefact, not a scoretk defect.
+- **`.ly` references without `\midi`** — about 7 % of the `.ly` sample
+  consists of files with no playable `\score`; LilyPond emits no MIDI for
+  them, so their reference is absent (recorded as `echec`, not excluded).
