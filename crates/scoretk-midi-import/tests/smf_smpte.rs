@@ -26,7 +26,7 @@ use midly::{Fps, Timing};
 use scoretk_core::model::{ChordRestKind, Fraction, Score, SegmentItem};
 use scoretk_midi_import::read_midi;
 
-use common::{Ev, smf_with};
+use common::{smf_with, Ev};
 
 /// Notes `(hauteur, attaque, durée)` en fractions de ronde.
 fn notes(score: &Score) -> Vec<(u8, Fraction, Fraction)> {
@@ -40,7 +40,9 @@ fn notes(score: &Score) -> Vec<(u8, Fraction, Fraction)> {
                 let ChordRestKind::Chord(chord) = &chord_rest.kind else {
                     continue;
                 };
-                let duration = chord_rest.ticks.unwrap_or_else(|| chord_rest.duration.ticks());
+                let duration = chord_rest
+                    .ticks
+                    .unwrap_or_else(|| chord_rest.duration.ticks());
                 for note_id in &chord.notes {
                     result.push((score.notes[note_id.index()].pitch, segment.tick, duration));
                 }

@@ -21,7 +21,7 @@
 //! ajoutant un espace final aux syllabes `Single`/`End` seulement. Le portage
 //! suit ce comportement, contrairement à l'état antérieur qui les ignorait.
 
-use midly::{MidiMessage, MetaMessage, Smf, TrackEventKind};
+use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
 use scoretk_musescore_import::MsczContainer;
 
 /// `.mscx` 4.10 avec quatre noires et une parole par accord.
@@ -140,5 +140,8 @@ fn paroles_ecrites_avec_espace_final_sur_les_syllabes_terminales() {
     );
 
     // Cas non concerné : sans paroles, aucun FF 05 n'est émis.
-    assert!(lyric_events(&smf(&mscx(["", "", ""]))).is_empty(), "aucune parole");
+    assert!(
+        lyric_events(&smf(&mscx(["", "", ""]))).is_empty(),
+        "aucune parole"
+    );
 }

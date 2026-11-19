@@ -75,13 +75,14 @@ pub fn parse_rp017(events: &[(Fraction, String)]) -> Vec<LyricEvent> {
         };
         let syllabic = if word_ends {
             match pending.take() {
-                Some(LyricsSyllabic::Begin) | Some(LyricsSyllabic::Middle) => {
-                    LyricsSyllabic::End
-                }
+                Some(LyricsSyllabic::Begin) | Some(LyricsSyllabic::Middle) => LyricsSyllabic::End,
                 _ => LyricsSyllabic::Single,
             }
         } else {
-            let continuing = matches!(pending, Some(LyricsSyllabic::Begin | LyricsSyllabic::Middle));
+            let continuing = matches!(
+                pending,
+                Some(LyricsSyllabic::Begin | LyricsSyllabic::Middle)
+            );
             let syllabic = if continuing {
                 LyricsSyllabic::Middle
             } else {

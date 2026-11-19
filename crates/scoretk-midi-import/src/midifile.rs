@@ -523,8 +523,7 @@ pub fn to_muse_score_ticks(tick: i64, old_division: i64, is_division_in_tps: boo
         let integral = tick.div_euclid(division);
         let remainder = tick.rem_euclid(division);
         let per_second = DIVISION * 2;
-        let converted = integral * per_second
-            + (remainder * per_second + division / 2) / division;
+        let converted = integral * per_second + (remainder * per_second + division / 2) / division;
         return Fraction::from_ticks(converted, UNITS_PER_WHOLE as u32);
     }
     let old_division = old_division.max(1);

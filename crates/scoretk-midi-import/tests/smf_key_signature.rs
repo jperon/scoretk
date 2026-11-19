@@ -28,7 +28,7 @@ use scoretk_core::model::{
 };
 use scoretk_midi_import::read_midi;
 
-use common::{Ev, smf};
+use common::{smf, Ev};
 
 /// Notes `(hauteur, attaque, durée)` en fractions de ronde, toutes portées.
 fn notes(score: &Score) -> Vec<(u8, Fraction, Fraction)> {
@@ -42,7 +42,9 @@ fn notes(score: &Score) -> Vec<(u8, Fraction, Fraction)> {
                 let ChordRestKind::Chord(chord) = &chord_rest.kind else {
                     continue;
                 };
-                let duration = chord_rest.ticks.unwrap_or_else(|| chord_rest.duration.ticks());
+                let duration = chord_rest
+                    .ticks
+                    .unwrap_or_else(|| chord_rest.duration.ticks());
                 for note_id in &chord.notes {
                     result.push((score.notes[note_id.index()].pitch, segment.tick, duration));
                 }
@@ -140,5 +142,8 @@ fn armure_mineure_lue_puis_changée_en_majeur() {
     ]]);
     let plain = read_midi(&plain).expect("lecture sans armure");
     let detected = key_sigs(&plain, 0);
-    assert!(detected.is_empty(), "aucune armure explicite sans méta FF 59");
+    assert!(
+        detected.is_empty(),
+        "aucune armure explicite sans méta FF 59"
+    );
 }

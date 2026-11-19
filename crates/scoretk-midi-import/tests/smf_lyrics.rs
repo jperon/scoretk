@@ -22,12 +22,10 @@
 
 mod common;
 
-use scoretk_core::model::{
-    ChordRestKind, Fraction, LyricsSyllabic, Score, SegmentItem,
-};
+use scoretk_core::model::{ChordRestKind, Fraction, LyricsSyllabic, Score, SegmentItem};
 use scoretk_midi_import::read_midi;
 
-use common::{Ev, smf};
+use common::{smf, Ev};
 
 type Lyric = (Fraction, String, LyricsSyllabic, Option<Fraction>);
 
@@ -122,12 +120,7 @@ fn paroles_rp017_syllabes_melismes_et_drapeau_zero() {
                 LyricsSyllabic::Middle,
                 None
             ),
-            (
-                Fraction::HALF,
-                "la".to_owned(),
-                LyricsSyllabic::End,
-                None
-            ),
+            (Fraction::HALF, "la".to_owned(), LyricsSyllabic::End, None),
             (
                 Fraction::new(3, 4),
                 "Sol".to_owned(),

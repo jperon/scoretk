@@ -196,23 +196,31 @@ pub(crate) fn render(
             .get(staff_index)
             .and_then(|entries| entries.as_ref())
         {
-            push_unwound(track, repeat_list, &pause_map, entries, |tick, key: &(i8, bool)| {
-                Event {
+            push_unwound(
+                track,
+                repeat_list,
+                &pause_map,
+                entries,
+                |tick, key: &(i8, bool)| Event {
                     tick,
                     kind: EventKind::KeySignature(key.0, key.1),
-                }
-            });
+                },
+            );
         }
 
         // Paroles de la portée (`exportmidi.cpp` : « Export lyrics … as Meta
         // events »). Le déroulement des reprises est le même que pour les notes.
         let lyrics = lyric_events(score, staff.id);
-        push_unwound(track, repeat_list, &pause_map, &lyrics, |tick, text: &String| {
-            Event {
+        push_unwound(
+            track,
+            repeat_list,
+            &pause_map,
+            &lyrics,
+            |tick, text: &String| Event {
                 tick,
                 kind: EventKind::Lyric(text.clone()),
-            }
-        });
+            },
+        );
 
         // Tempo, une seule fois (les pauses ont déjà produit leurs
         // évènements dans `tempo`).

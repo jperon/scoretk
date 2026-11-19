@@ -21,12 +21,12 @@
 
 mod common;
 
-use midly::{Format, Timing};
 use midly::num::u15;
+use midly::{Format, Timing};
 use scoretk_core::model::{ChordRestKind, Fraction, Score, SegmentItem};
 use scoretk_midi_import::read_midi;
 
-use common::{Ev, smf_with};
+use common::{smf_with, Ev};
 
 /// Deux motifs de deux noires et un motif d'une noire.
 fn patterns(format: Format) -> Vec<u8> {
@@ -48,10 +48,7 @@ fn patterns(format: Format) -> Vec<u8> {
                 track
             },
             melody(67, 72),
-            vec![
-                (0, Ev::NoteOn(0, 76, 90)),
-                (480, Ev::NoteOff(0, 76)),
-            ],
+            vec![(0, Ev::NoteOn(0, 76, 90)), (480, Ev::NoteOff(0, 76))],
         ],
     )
 }
@@ -67,7 +64,9 @@ fn notes(score: &Score) -> Vec<(u8, Fraction, Fraction)> {
                 let ChordRestKind::Chord(chord) = &chord_rest.kind else {
                     continue;
                 };
-                let duration = chord_rest.ticks.unwrap_or_else(|| chord_rest.duration.ticks());
+                let duration = chord_rest
+                    .ticks
+                    .unwrap_or_else(|| chord_rest.duration.ticks());
                 for note_id in &chord.notes {
                     result.push((score.notes[note_id.index()].pitch, segment.tick, duration));
                 }
