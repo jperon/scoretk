@@ -843,3 +843,94 @@ recognised beats, remains a documented limitation (§ "Limites mesurées"): it
 would be a separate feature port with a real risk to the 100 % N1/N2 baseline,
 not a localised N2d fix, so it is deliberately out of scope here. No
 conversion in this phase was run without `timeout` + `prlimit --as=2000000000`.
+
+## Phase 5 — MIDI writing: baseline, alternatives and the tie-gate fix (2026-11-19)
+
+### Frozen baseline and MuseScore on the same lots
+
+The CLI was built once, copied aside as a frozen binary, and the three writing
+lots were measured with `scripts/oracle/midi/lots.sh` + `mesure.py` (same
+manifests, same oracle, `timeout 10 prlimit --as=2000000000` on every launch).
+MuseScore 4.7.4 itself was then exported on the two `.mscz` lots with the same
+oracle. All numbers are "files exact" / N1 / N2 percentages.
+
+| Lot | Tool | Files | Exact | N1 % | N2 % |
+| --- | --- | ---: | ---: | ---: | ---: |
+| ecriture_ly | scoretk (frozen) | 1020 | 753 (73.8 %) | 90.33 | 83.25 |
+| ecriture_mscz_corpus | scoretk (frozen) | 21 | 17 (81.0 %) | 100.00 | 100.00 |
+| ecriture_mscz_corpus | MuseScore 4.7.4 | 21 | 17 (81.0 %) | 100.00 | 100.00 |
+| ecriture_mscz_musique | scoretk (frozen) | 8 | 1 (12.5 %) | 66.25 | 52.20 |
+| ecriture_mscz_musique | MuseScore 4.7.4 | 8 | 3 (37.5 %) | — | — |
+
+MuseScore is the reference for both `.mscz` lots, so its 17/21 on the corpus
+is the ceiling (the four non-exact rows have a reference with **zero notes**:
+`mmrest`, `repeat68`, `repeat69`, `testTempoPrecision`). On `~/Musique` it gets
+3/8; the three extras are `Ad_te_Suspiramus` (MuseScore 2.06, which scoretk's
+reader rejects), `Stella_maris_voix-égales` and `Puer_natus_est_nobis_-_De_Martre`.
+On the five other files MuseScore's fresh headless export differs widely from
+the stored `.midi` reference (e.g. `Wellerman`: 732 produced notes for 183
+reference notes), so those rows are reference/tool artefacts, not scoretk
+defects. The two actionable gaps are therefore the 2.06 reader (out of scope
+for the writer) and the tied-note duration below.
+
+### Non-exact files grouped by first cause, with one reduced example each
+
+`ecriture_ly` (267 non-exact): `octave` 81
+(`2206_Pere_Pro/.../02_02_Segura_L-aigle-mexicain_partition.ly`, clef/ottava
+octave from the LilyPond reader), `notes_manquantes` 55
+(`Fait/0a/lily-8546410f.ly`, voices/nested input), `duree_seule` 49
+(`Partitions/Accordeon/Encantada/Encantada.ly`), `attaque_decalee` 46
+(`2024_Noel_1re/À-Notre-Dame.ly`), `notes_supp` 35
+(`Promos/22_StMichel/22_HymneStMichel.ly`), `autre` 1 (empty reference).
+`ecriture_mscz_corpus`: only the four empty references above.
+`ecriture_mscz_musique`: `octave`/`notes_manquantes` 5, `duree_seule` 1
+(`Puer_natus_est_nobis_-_De_Martre.mscz`), plus the unreadable 2.06 file.
+
+The 46 `attaque_decalee` files have no single systematic offset (the per-note
+deltas spread from −24 to +16 quarters); they are repeat/volta and pickup
+differences between the two notations, not a localized writer defect. Most
+`duree_seule` hits are a **comparator artefact**: in a two-voice staff LilyPond
+merges simultaneous unisons into one note while MuseScore (and scoretk) writes
+both, so the oracle's `(channel, pitch)` note-on map collapses the duplicates.
+Reduced example: `Fait/8a/lily-376d6605.ly`, pitch 60 at 89.5 quarters —
+LilyPond has one note-on/one note-off (1 quarter), scoretk has two note-ons
+(one per voice), which the oracle pairs as a 0.5-quarter note. This is faithful
+to MuseScore's `EventsHolder` (`events[channel].emplace`, no unison merge) and
+was intentionally left unchanged. The same mechanism accounts for the
+"ratio 0.5" family (163 notes of 1→0.5 quarter, 132 of 0.5→0.25).
+
+### Cause fixed: tie duration must carry the instrument gateTime
+
+`calculateTieLength` (`compatmidirenderinternal.cpp:771-786`) reads
+`nel[0].len()` of every tied note, and that play-event length has already been
+multiplied by the instrument `gateTime` in `renderChord`
+(`compatmidirender.cpp:263`, `e.setLen(e.len() * gateTime / 100)`). The port
+added the raw `actualTicks()` of the tied note, so a tied note on an instrument
+with a default articulation below 100 % was too long. Reduced test
+(`tests/gate_time_ties.rs`): an instrument with an unnamed articulation at
+95 % and two tied quarter notes gave a note-off at tick 935 instead of 911;
+a single note (455) and a 100 % gate (959) are unchanged. The fix passes
+`instrument`/`source_tick` to `tie_length` and applies the same gated
+`playEvents` length per tied chord.
+
+### Before / after (same frozen manifests and oracle)
+
+| Lot | Before exact | After exact | Gain | Loss |
+| --- | ---: | ---: | ---: | ---: |
+| ecriture_ly | 753 (73.8 %) | 753 (73.8 %) | 0 | 0 |
+| ecriture_mscz_corpus | 17 (81.0 %) | 17 (81.0 %) | 0 | 0 |
+| ecriture_mscz_musique | 1 (12.5 %) | **2 (25.0 %)** | 1 (`Puer_natus`) | 0 |
+
+Per-file comparison of N1, N2 and N2d shows exactly one gain and zero losses
+across the 1049 files. The `.ref.mid` corpus test (`corpus_midi`) and the
+`e2e_corpus` test remain at 21/21 and unchanged. Every conversion in this
+phase used `timeout` + `prlimit --as=2000000000`.
+
+The byte-level oracle (`scratchpad/oracle/compare.sh`) is **not a usable gate
+for this change**: its reference was generated on 2026-11-18 and is stale with
+respect to later commits (262 diffs, of which 248 are in unrelated
+MusicXML/Mxl/LilyPond/ABC outputs). Re-running the frozen binary and the new
+binary on the 14 differing `.midi` cases shows that only two actually change:
+`v3_voices.mscx` and `v4_testExcludeInvisibleElements.mscx`. Both declare a
+default instrument `gateTime` of 95 %, so the new note-off placement is the
+intended, MuseScore-faithful result, not a regression.
