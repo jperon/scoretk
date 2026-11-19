@@ -96,34 +96,8 @@ impl Parser<'_> {
                     self.push_decoration(Decoration::Articulation(ArticulationType::Staccato));
                     self.pos += 1;
                 }
-                '~' => {
-                    self.push_decoration(Decoration::Ornament(OrnamentType::Turn));
-                    self.pos += 1;
-                }
-                'H' => {
-                    self.push_decoration(Decoration::Articulation(ArticulationType::Fermata));
-                    self.pos += 1;
-                }
-                'u' => {
-                    self.push_decoration(Decoration::Articulation(ArticulationType::UpBow));
-                    self.pos += 1;
-                }
-                'v' => {
-                    self.push_decoration(Decoration::Articulation(ArticulationType::DownBow));
-                    self.pos += 1;
-                }
-                'T' => {
-                    self.push_decoration(Decoration::Ornament(OrnamentType::TrillMark));
-                    self.pos += 1;
-                }
-                'M' => {
-                    self.push_decoration(Decoration::Ornament(OrnamentType::Mordent));
-                    self.pos += 1;
-                }
-                'P' => {
-                    self.push_decoration(Decoration::Ornament(OrnamentType::InvertedMordent));
-                    self.pos += 1;
-                }
+                // Symboles redéfinissables (§ 4.16) : H-W, h-w et `~`.
+                'H'..='W' | 'h'..='w' | '~' => self.handle_user_symbol(character),
                 // Guillemets de regroupement (§ 4.7 de la norme) : purement
                 // typographiques, les programmes doivent les ignorer.
                 '`' => self.pos += 1,
@@ -242,6 +216,49 @@ impl Parser<'_> {
 
     fn push_decoration(&mut self, decoration: Decoration) {
         self.voice().decorations.push(decoration);
+    }
+
+    /// Traite un symbole redéfinissable (`U:` ou définition par défaut).
+    fn handle_user_symbol(&mut self, symbol: char) {
+        self.pos += 1;
+        if let Some(name) = self.reader.user_symbols.get(&symbol).cloned() {
+            if let Some(decoration) = decorations::parse_decoration(&name) {
+                self.push_decoration(decoration);
+            } else {
+                self.warn(format!(
+                    "décoration « {name} » du symbole « {symbol} » non prise en charge"
+                ));
+            }
+            return;
+        }
+        let default = match symbol {
+            'H' => Decoration::Articulation(ArticulationType::Fermata),
+            'L' => Decoration::Articulation(ArticulationType::Accent),
+            'M' => Decoration::Ornament(OrnamentType::Mordent),
+            'P' => Decoration::Ornament(OrnamentType::InvertedMordent),
+            'T' => Decoration::Ornament(OrnamentType::TrillMark),
+            'u' => Decoration::Articulation(ArticulationType::UpBow),
+            'v' => Decoration::Articulation(ArticulationType::DownBow),
+            '~' => Decoration::Ornament(OrnamentType::Turn),
+            _ => {
+                self.warn(format!("symbole « {symbol} » non défini, ignoré"));
+                return;
+            }
+        };
+        self.push_decoration(default);
+    }
+
+    /// Ignore ou applique les symboles redéfinissables dans un accord ou un
+    /// agrément (`read_note` est alors appelée sans passer par la boucle
+    /// principale).
+    fn consume_user_symbols(&mut self) {
+        while let Some(symbol) = self.peek() {
+            if matches!(symbol, 'H'..='W' | 'h'..='w' | '~') {
+                self.handle_user_symbol(symbol);
+            } else {
+                break;
+            }
+        }
     }
 
     // --- accords, notes et silences --------------------------------------
@@ -383,6 +400,7 @@ impl Parser<'_> {
         while self.peek() == Some('`') {
             self.pos += 1;
         }
+        self.consume_user_symbols();
         let mut alter: Option<i32> = None;
         let mut explicit = AccidentalType::None;
         loop {
@@ -1040,7 +1058,7 @@ fn looks_like_chord(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scoretk_core::model::{SpannerType, StaffId, Track};
+    use scoretk_core::model::{OrnamentType, SpannerType, StaffId, Track};
 
     fn parse(music: &str) -> crate::reader::ReadOutput {
         let source = format!("X:1\nT:Test\nM:4/4\nL:1/8\nK:C\n{music}\n");
@@ -1090,6 +1108,56 @@ mod tests {
             .filter(|spanner| matches!(spanner.kind, SpannerType::Volta))
             .filter_map(|spanner| spanner.volta.as_ref().map(|volta| volta.endings.clone()))
             .collect()
+    }
+
+    #[test]
+    fn symboles_redefiniables_et_non_definis() {
+        let source = "\
+X:1
+T:Symbols
+M:4/4
+L:1/8
+K:C
+U:k = !trill!
+V:1
+kvC2 (DE) [GB]2 z2 | k^d2 e2 f2 g2 | C D k |]
+V:2
+C, D, E, F, | qG, A, B, c |]
+";
+        let output = crate::reader::read_abc_with(source, &crate::reader::ReadOptions::default())
+            .expect("lecture");
+        assert_eq!(output.score.measures.len(), 3);
+        assert_eq!(
+            contenu(&output),
+            (
+                vec![60, 62, 64, 67, 71, 75, 76, 77, 79, 60, 62],
+                vec![
+                    0.25, 0.125, 0.125, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.125, 0.125
+                ]
+            )
+        );
+        assert_eq!(output.score.notes.len(), 19, "les deux voix sont lues");
+        let trilles = output
+            .score
+            .measures
+            .iter()
+            .flat_map(|measure| &measure.segments)
+            .filter_map(|segment| {
+                segment.chord_rest(Track::new(StaffId::from_index(0), 0))
+            })
+            .filter_map(|chord_rest| chord_rest.chord_ref())
+            .flat_map(|chord| chord.ornaments.iter())
+            .filter(|ornament| ornament.kind == OrnamentType::TrillMark)
+            .count();
+        assert_eq!(trilles, 2, "U:k = !trill! est appliqué");
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|warning| warning.message.contains('q')),
+            "le symbole non défini « q » doit avertir : {:?}",
+            output.warnings
+        );
     }
 
     #[test]

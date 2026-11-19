@@ -534,6 +534,8 @@ pub(crate) struct Reader {
     pub key: KeySig,
     /// Tempo global `(battements par seconde, texte)`.
     pub tempo: Option<(f64, String)>,
+    /// Symboles redéfinis par `U:` (lettre → nom de décoration).
+    pub user_symbols: BTreeMap<char, String>,
     /// Groupement `%%score`.
     pub score_spec: Option<String>,
     /// Titre.
@@ -567,6 +569,7 @@ impl Default for Reader {
             time: TimeSig::new(4, 4),
             key: KeySig::new(Key::C),
             tempo: None,
+            user_symbols: BTreeMap::new(),
             score_spec: None,
             title: String::new(),
             composer: String::new(),
@@ -764,7 +767,28 @@ impl Reader {
                     self.voices.push(voice);
                 }
             }
-            'P' | 'U' | 'I' => self
+            'U' => {
+                // Norme 2.1 § 4.16 : `U: k = !trill!` associe une décoration
+                // à une lettre H-W, h-w ou au symbole `~`.
+                let definition = value.trim();
+                let parsed = definition.split_once('=').and_then(|(symbol, name)| {
+                    let symbol = symbol.trim().chars().next()?;
+                    if !matches!(symbol, 'H'..='W' | 'h'..='w' | '~') {
+                        return None;
+                    }
+                    let name = name.trim().trim_matches(['!', '+', '"']).to_ascii_lowercase();
+                    Some((symbol, name))
+                });
+                if let Some((symbol, name)) = parsed {
+                    self.user_symbols.insert(symbol, name);
+                } else {
+                    self.warnings.push(Warning::new(
+                        number,
+                        format!("définition « U: {definition} » ignorée"),
+                    ));
+                }
+            }
+            'P' | 'I' => self
                 .warnings
                 .push(Warning::new(number, format!("champ « {letter}: » ignoré"))),
             other => self.warnings.push(Warning::new(

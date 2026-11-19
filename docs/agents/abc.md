@@ -473,3 +473,19 @@ and a local skip, never the loss of the whole tune.
   same `finish_bar` path.
 - Measurement: N1/N2 **0 % → 100 %** (13/13 notes), no regression. The unit
   test compares the inline form with the bracketed form note by note.
+
+### 14.3 Redefinable symbols such as `k` (92 rejected tunes)
+
+- Reduced file: `/tmp/abc-reduits/k-seul.abc`, X:1 extracted from
+  `music21-corpus/music21/corpus/ryansMammoth/BirdOnTheWingJig.abc`
+  (`vkd2k^d2 ...`, `uk(d2.D) ...`).
+- Behaviour: ABC 2.1 § 4.16 reserves H-W, h-w and `~` for symbols defined by
+  `U:` (`U: k = !trill!`); `abc2xml.py` parses any of these letters as a
+  decoration. An undefined symbol is only a warning, not a fatal parse error.
+- Fix: `reader/mod.rs` stores `U:` definitions; `reader/music.rs` maps defined
+  symbols to known decorations, keeps the standard default meanings
+  (`H` fermata, `M` mordent, `P` inverted mordent, `T` trill, `u`/`v` bowings,
+  `~` turn) and warns + skips undefined ones, including inside chords and
+  grace notes.
+- Measurement: N1/N2 **0 % → 100 %** (35/35 notes), no regression. Two real
+  files from the same corpus now parse end to end under `timeout 10`.
