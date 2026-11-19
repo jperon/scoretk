@@ -7,10 +7,10 @@
 }
 
 staffOneVoiceOne = \fixed c' {
-  \clef treble \key c \major \time 4/4
+  \clef treble \transposition a \key c \major \time 4/4
   ef4 ^\markup { "A Clarinet" } f4 g4 af4 |
   bf4 c'4 d'4 ef'4 |
-  \key c \major
+  \transposition bf \key c \major
   ef4 ^\markup { "B♭ Clarinet" } f4 g4 af4 |
   bf4 c'4 d'4 ef'4 |
   R1 |

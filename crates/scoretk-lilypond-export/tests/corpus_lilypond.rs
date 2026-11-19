@@ -29,8 +29,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use scoretk_core::model::{
-    ChordRest, Clef, ClefType, Duration, Fraction, Measure, Part, Segment, SegmentItem,
-    SegmentType, Track,
+    tpc, ChordRest, ChordRestKind, Clef, ClefType, Duration, Fraction, Measure, Note, Part, Segment,
+    SegmentItem, SegmentType, Track, Transpose,
 };
 
 /// Racine du corpus.
@@ -166,6 +166,64 @@ fn clef_initiale_depuis_default_clef() {
     assert!(
         produit.contains("\\clef \"treble_8\""),
         "clef initiale absente :\n{produit}"
+    );
+}
+
+/// La transposition de l'instrument doit être écrite dans la voix, sinon
+/// LilyPond joue la hauteur **écrite** et non la hauteur concert (par exemple
+/// une guitare à l'octave sous sonne une octave trop haut). Cas réel du corpus
+/// (`\transposition c`) et cas construit (`\transposition bf`), avec une
+/// deuxième partie non transpositrice qui ne doit rien recevoir.
+#[test]
+fn transposition_instrument_ecrite_dans_la_voix() {
+    let produit = convertir(&corpus().join("v4/hairpin_simple.mscx"));
+    assert!(
+        produit.contains("\\transposition c"),
+        "transposition de la guitare absente :\n{produit}"
+    );
+    for hauteur in ["b4", "c'4", "d'4", "e'4"] {
+        assert!(
+            produit.contains(hauteur),
+            "hauteur écrite {hauteur} absente :\n{produit}"
+        );
+    }
+
+    // Deux parties : une clarinette en si bémol (écrit = concert + 2) et une
+    // flûte non transpositrice, chacune avec accord, silence et barre finale.
+    let mut score = scoretk_core::model::Score::new();
+    let clarinette = score.add_part(Part::new("Clarinette", "Cl."));
+    score.part_mut(clarinette).instrument.transpose = Some(Transpose::new(-2, -2));
+    let flute = score.add_part(Part::new("Flûte", "Fl."));
+    let staff_cl = score.add_staff(clarinette);
+    let staff_fl = score.add_staff(flute);
+    let mut measure = Measure::new(0, Fraction::ZERO, Fraction::ONE);
+    for (staff, midi) in [(staff_cl, 62), (staff_fl, 62)] {
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+        let mut chord = ChordRest::chord(Duration::whole());
+        let mut note = Note::new(midi, tpc::D);
+        note.tpc_transposed = if staff == staff_cl { tpc::E } else { tpc::D };
+        let note_id = score.add_note(note);
+        let ChordRestKind::Chord(ref mut content) = chord.kind else {
+            unreachable!()
+        };
+        content.notes.push(note_id);
+        segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+        measure.add_segment(segment);
+    }
+    score.add_measure(measure);
+
+    let produit = scoretk_lilypond_export::write_lilypond(&score).expect("écriture");
+    assert!(
+        produit.contains("\\transposition bf"),
+        "transposition si bémol absente :\n{produit}"
+    );
+    let voix_flute = produit
+        .split("staffTwoVoiceOne = ")
+        .nth(1)
+        .expect("deuxième voix");
+    assert!(
+        !voix_flute.contains("\\transposition"),
+        "la flûte ne doit pas porter de transposition :\n{voix_flute}"
     );
 }
 

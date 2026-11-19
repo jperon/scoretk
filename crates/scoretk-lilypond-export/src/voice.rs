@@ -151,6 +151,27 @@ pub(crate) fn render_body(
         }
     }
 
+    // Transposition de l'instrument : sans cette commande LilyPond jouerait la
+    // hauteur **écrite** et non la hauteur concert (une guitare à l'octave
+    // sous sonnerait une octave trop haut). La propriété vaut pour la portée
+    // entière : on la pose dans chaque voix, et on la renouvelle à chaque
+    // changement d'instrument (`instrument_at` est évalué au début de mesure).
+    let mut derniere_transposition: Option<i32> = None;
+    for (measure_index, measure) in score.measures.iter().enumerate() {
+        let transposition = transpose_at(score, staff, measure.start_tick);
+        if derniere_transposition == Some(transposition) {
+            continue;
+        }
+        if let Some(command) = crate::pitch::transposition_command(transposition) {
+            pre_by_measure[measure_index].push(Event::new(
+                measure.start_tick,
+                before::TRANSPOSE,
+                command,
+            ));
+        }
+        derniere_transposition = Some(transposition);
+    }
+
     // Longueur de mesure attendue par LilyPond : le contrôle de mesure se
     // juge contre la métrique en vigueur (héritée), pas seulement contre un
     // `<TimeSig>` local. Une mesure irrégulière reçoit `measureLength` au

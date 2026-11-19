@@ -91,6 +91,36 @@ pub(crate) fn pitch_name(note: &Note, transpose_chromatic: i32) -> String {
     )
 }
 
+/// `\transposition <hauteur>` pour une transposition d'instrument.
+///
+/// LilyPond ne transpose que le MIDI : la hauteur écrite reste celle de la
+/// partition, exactement comme le `<transpose>` de MuseScore. L'argument est
+/// la hauteur qui sonne quand on écrit `c'` : LilyPond retranche alors
+/// `72 - hauteur` demi-tons aux hauteurs MIDI. Ainsi `c` (60) donne -12,
+/// `bf` (70) donne -2, `c'` (72) ne donne rien — la règle utilisée par
+/// `musicxml2ly` pour la commande `\transposition`. `None` si la transposition
+/// est nulle ou hors domaine MIDI.
+pub(crate) fn transposition_command(transpose_chromatic: i32) -> Option<String> {
+    if transpose_chromatic == 0 {
+        return None;
+    }
+    let pitch = 72 + transpose_chromatic;
+    if !(0..=127).contains(&pitch) {
+        return None;
+    }
+    Some(format!("\\transposition {}", transposition_name(pitch)))
+}
+
+/// Nom d'une hauteur pour `\transposition`, avec l'orthographe des bémols
+/// utilisée par `musicxml2ly` (`bf` et non `as`, `ef` et non `ds`).
+fn transposition_name(pitch: i32) -> String {
+    const NOMS: [&str; 12] = [
+        "c", "cs", "d", "ef", "e", "f", "fs", "g", "af", "a", "bf", "b",
+    ];
+    let octave = pitch.div_euclid(12) - 1;
+    format!("{}{}", NOMS[(pitch % 12) as usize], octave_marks(octave))
+}
+
 /// Nom déduit de la seule hauteur MIDI, quand aucun `tpc` n'est valide.
 fn midi_name(pitch: u8) -> String {
     const STEPS: [char; 12] = ['c', 'c', 'd', 'd', 'e', 'f', 'f', 'g', 'g', 'a', 'a', 'b'];
@@ -242,6 +272,16 @@ mod tests {
         let mut note = Note::new(60, tpc::C);
         note.tpc_transposed = tpc::D;
         assert_eq!(pitch_name(&note, -2), "d");
+    }
+
+    #[test]
+    fn transposition_des_instruments() {
+        assert_eq!(transposition_command(0), None);
+        assert_eq!(transposition_command(-12).as_deref(), Some("\\transposition c"));
+        assert_eq!(transposition_command(-2).as_deref(), Some("\\transposition bf"));
+        assert_eq!(transposition_command(2).as_deref(), Some("\\transposition d'"));
+        assert_eq!(transposition_command(-7).as_deref(), Some("\\transposition f"));
+        assert_eq!(transposition_command(-200), None);
     }
 
     #[test]

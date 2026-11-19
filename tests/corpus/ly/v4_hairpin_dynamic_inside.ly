@@ -2,7 +2,7 @@
 \language "english"
 
 staffOneVoiceOne = \fixed c' {
-  \clef treble \key c \major \time 4/4
+  \clef treble \transposition c \key c \major \time 4/4
   \tempo 4 = 120 c'4 _\mf \< d'4 e'4 f'4 _\p |
   g'4 a'4 _\f b'4 r4 \! \bar "|."
 }
