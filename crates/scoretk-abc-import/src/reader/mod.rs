@@ -776,7 +776,10 @@ impl Reader {
                     if !matches!(symbol, 'H'..='W' | 'h'..='w' | '~') {
                         return None;
                     }
-                    let name = name.trim().trim_matches(['!', '+', '"']).to_ascii_lowercase();
+                    let name = name
+                        .trim()
+                        .trim_matches(['!', '+', '"'])
+                        .to_ascii_lowercase();
                     Some((symbol, name))
                 });
                 if let Some((symbol, name)) = parsed {

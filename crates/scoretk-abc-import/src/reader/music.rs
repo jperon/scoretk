@@ -1118,16 +1118,10 @@ mod tests {
         let mut durees = Vec::new();
         for measure in &output.score.measures {
             for segment in &measure.segments {
-                if let Some(chord_rest) =
-                    segment.chord_rest(Track::new(StaffId::from_index(0), 0))
+                if let Some(chord_rest) = segment.chord_rest(Track::new(StaffId::from_index(0), 0))
                 {
                     if let Some(chord) = chord_rest.chord_ref() {
-                        pitches.extend(
-                            chord
-                                .notes
-                                .iter()
-                                .map(|id| output.score.note(*id).pitch),
-                        );
+                        pitches.extend(chord.notes.iter().map(|id| output.score.note(*id).pitch));
                     }
                     durees.push(chord_rest.duration.ticks().as_f64());
                 }
@@ -1154,10 +1148,7 @@ mod tests {
         assert_eq!(invisible.score.measures.len(), 2);
         assert_eq!(
             contenu(&invisible),
-            (
-                vec![60, 62, 64, 65, 67, 69, 71, 72],
-                vec![0.125; 8]
-            )
+            (vec![60, 62, 64, 65, 67, 69, 71, 72], vec![0.125; 8])
         );
         assert_eq!(contenu(&invisible), contenu(&normale));
 
@@ -1214,7 +1205,8 @@ C, D, E, F, | ^/G, A, B, c |]
         assert_eq!(contenu(&double).0, vec![61]);
         let incomplet = "X:1\nT:Test\nM:4/4\nL:1/8\nK:C\nC ^/ |\n";
         assert!(
-            crate::reader::read_abc_with(incomplet, &crate::reader::ReadOptions::default()).is_err(),
+            crate::reader::read_abc_with(incomplet, &crate::reader::ReadOptions::default())
+                .is_err(),
             "une hauteur manquante reste une erreur"
         );
     }
@@ -1240,9 +1232,7 @@ C, D, E, F, | qG, A, B, c |]
             contenu(&output),
             (
                 vec![60, 62, 64, 67, 71, 75, 76, 77, 79, 60, 62],
-                vec![
-                    0.25, 0.125, 0.125, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.125, 0.125
-                ]
+                vec![0.25, 0.125, 0.125, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.125, 0.125]
             )
         );
         assert_eq!(output.score.notes.len(), 19, "les deux voix sont lues");
@@ -1251,9 +1241,7 @@ C, D, E, F, | qG, A, B, c |]
             .measures
             .iter()
             .flat_map(|measure| &measure.segments)
-            .filter_map(|segment| {
-                segment.chord_rest(Track::new(StaffId::from_index(0), 0))
-            })
+            .filter_map(|segment| segment.chord_rest(Track::new(StaffId::from_index(0), 0)))
             .filter_map(|chord_rest| chord_rest.chord_ref())
             .flat_map(|chord| chord.ornaments.iter())
             .filter(|ornament| ornament.kind == OrnamentType::TrillMark)
@@ -1276,7 +1264,10 @@ C, D, E, F, | qG, A, B, c |]
         assert_eq!(inline.score.measures.len(), 3);
         assert_eq!(
             contenu(&inline),
-            (vec![60, 62, 64, 65, 67, 69], vec![0.125, 0.125, 0.125, 0.125, 0.125, 0.125])
+            (
+                vec![60, 62, 64, 65, 67, 69],
+                vec![0.125, 0.125, 0.125, 0.125, 0.125, 0.125]
+            )
         );
         assert_eq!(voltas(&inline), vec![vec![1], vec![2]]);
         assert!(inline.score.measures[0].start_bar_line.is_repeat_start());
