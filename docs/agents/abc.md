@@ -342,3 +342,100 @@ ne déterminent ni la sortie ni les instantanés. Si un fichier de `IGNORED`
 devient accepté, le retirer de la liste ; si un fichier conforme devient
 refusé, vérifier d'abord que la sortie reste lisible par le lecteur interne
 avant de conclure à une régression.
+
+## 13. Measurement against `abc2midi` (phases 0-1, 2026-11-19)
+
+This section is in English by convention for the reliability measurement
+reports. No scoretk code was changed for this baseline.
+
+### 13.1 Oracle, alternative, scripts
+
+- **Oracle**: `abc2midi` 5.03 (nixpkgs `abcmidi`) → MIDI. It is called with
+  `-NGRA` (no grace notes) and `-NGUI` (no guitar-chord strumming from chord
+  symbols such as `"C"`, which are harmony annotations, not written notes).
+  Repeat barlines are replaced by plain bars and `P:` field lines are removed
+  on a copy, so **written** notes are compared, not notes replayed by repeats.
+  A non-zero exit code is accepted when a non-empty MIDI file was written.
+- **Alternative to beat**: `abc2xml.py` 269 (Willem Vree, outside the
+  repository), measured with the same oracle.
+- **Scripts**: `scripts/oracle/abc/{mesure.sh,mesure.py,cmp.py,one.sh,aggreg.py}`
+  (GPL-3.0-only headers, no third-party data or script copied into the repo).
+  `cmp.py` computes **N1** (multiset of pitches) and **N2** (pitch + attack
+  quantized to 1/24 of a quarter note) with the Python standard library only.
+
+### 13.2 Lots and result
+
+Three local lots, 1 402 files / 4 756 `X:` tunes: `abcjs-tests` (271 files,
+MIT), `music21-corpus` (1 116 files; `essenFolksong` excluded), and
+`abc-2.1-standard` (15 fragments, NC: local measurement only, never copied
+into the repository). One tune is one measurement; files without `X:` are
+counted but excluded from the note comparison. Raw outputs are in
+`/tmp/abc-mesure/final2/` (not versioned).
+
+| Lot | Tunes | Exact (tk / alt) | Ref notes | N1 correct tk | N1 correct alt | N2 tk | N2 alt | Failures tk / alt |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| abcjs | 272 | 105 / 120 | 2 448 | 1 595 (65.2 %) | 2 250 (91.9 %) | 46.7 % | 71.3 % | 143 / 124 |
+| music21 | 4 465 | 2 810 / 3 601 | 478 557 | 374 404 (78.2 %) | 466 816 (97.5 %) | 37.7 % | 80.0 % | 805 / 0 |
+| ABC 2.1 (NC) | 19 | 1 / 8 | 1 007 | 258 (25.6 %) | 910 (90.4 %) | 17.6 % | 56.2 % | 6 / 6 |
+| **Total** | **4 756** | **2 916 / 3 729** | **482 012** | **376 257 (78.1 %)** | **469 976 (97.5 %)** | **37.7 %** | **79.9 %** | **954 / 130** |
+
+Files whose *every* tune is exact: **877 / 1 402 (62.6 %)** for scoretk,
+**1 095 / 1 402 (78.1 %)** for the alternative. Empty outputs: 23 (tk) vs
+20 (alt). The alternative is ahead by **19.4 points on N1** and **42.2 on N2**;
+it never failed when the oracle succeeded (its 130 failures are the 109 files
+without `X:` and the 21 tunes rejected by `abc2midi`). The baseline to beat for
+the ABC reading campaign is therefore N1 78.1 % / N2 37.7 %, target 97.5 % /
+79.9 %.
+
+### 13.3 Ten largest groups of gaps (scoretk, unless noted)
+
+Counts are tune measurements; example paths are under
+`/home/jacques/programmes/musique/corpus/`.
+
+1. **Syntax rejected by the reader (824)** — mostly unexpected `` ` `` (336),
+   inline ending `1` (195), `k` (92), quarter-tone `/` (58), invalid pitch
+   after `|` (33). Example: `abcjs-tests/extracted-abc/flattener.test__abcRepeat.abc`
+   X:1 (inline `1`).
+2. **Missing notes (645)** — written notes absent from the MusicXML, partly
+   from ornaments on chords. Example: `abcjs-tests/extracted-abc/misc.test__abcChordClass.abc` X:1.
+3. **Mixed missing and extra notes (148)** — many come from per-voice
+   `transpose=` ignored by the reader. Example: `abcjs-tests/extracted-abc/flattener.test__abcTranspose.abc` X:1.
+4. **No `X:` field (109 files)** — ABC fragments, not comparable. Example:
+   `abc-2.1-standard/fragments/example-010.abc`.
+5. **Pitch offset: MIDI transpose, octave clefs, local key (48 + 4 + 2)** —
+   `%%MIDI transpose -2` is applied by `abc2midi`, not by scoretk. Example:
+   `abcjs-tests/extracted-abc/flattener.test__abcMidiOptions.abc` X:1.
+6. **Oracle cannot convert the tune (21)** — `abc2midi` limitation, not a
+   scoretk error; affects both candidates. Example:
+   `abcjs-tests/extracted-abc/parsing.test__abc3.abc` X:360 (bare `[V:]` lines).
+7. **Oracle has no notes (14)** — empty reference, affects both candidates.
+   Example: `abc-2.1-standard/fragments/example-007.abc` X:2.
+8. **Truncated output (11)** — e.g. drum tracks counted by `abc2midi` and
+   absent from MusicXML. Example:
+   `abcjs-tests/extracted-abc/flattener.test__abcMetronome.abc` X:1.
+9. **Empty scoretk output (9)** — a global `%%stretchlast 1` makes the reader
+   emit measures with no notes (reduced locally to a 6-line file). Example:
+   `abcjs-tests/extracted-abc/wrap.test__abcShortMeasures.abc` X:1.
+10. **Percussion / unpitched notes (3)** — drum maps have no MusicXML pitch.
+    Example: `abcjs-tests/extracted-abc/flattener.test__abcSnare.abc` X:1.
+
+Rarer residual groups: extra notes (2), rhythm/attack only (0 for scoretk,
+1 for the alternative), ornament pitches (0 / 1).
+
+### 13.4 Reproducing
+
+```sh
+BIN=./target/release/scoretk
+ALT=/tmp/abcchk/abc2xml_269/abc2xml.py          # outside the repository
+SORTIES=/tmp/abc-mesure/nouveau
+
+scripts/oracle/abc/mesure.sh liste.txt "$SORTIES" "$BIN" "$ALT"
+python3 scripts/oracle/abc/aggreg.py "$SORTIES/mesures.tsv"
+# one file only:
+scripts/oracle/abc/one.sh "$SORTIES/un" "$BIN" air.abc "$ALT"
+```
+
+`liste.txt` holds one `lot<TAB>/absolute/path/file.abc` line per file. Every
+scoretk launch is bounded by `timeout 10 prlimit --as=2000000000`. Re-run the
+complete campaign before merging any reader fix, and require no per-file
+regression on N1 and N2 (see `docs/agents/plan-fiabilite.md`).
