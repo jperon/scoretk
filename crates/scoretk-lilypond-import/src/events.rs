@@ -452,6 +452,20 @@ impl<'a> Interpreter<'a> {
             }
             return;
         }
+        // Un `\context Staff` à musique simple (une seule portée, une seule
+        // voix) retrouve le contexte existant (`context_find_or_create`,
+        // `lily/context.cc`) : il n'ouvre pas une voix sœur au tick courant,
+        // il poursuit la lecture dans la voix en cours. Ouvrir une voix
+        // ferait repartir son compteur d'attaque à zéro dans le MIDI écrit :
+        // `grace-staff-length.ly` plaçait ainsi son ornement et sa note au
+        // début de la portée au lieu de la deuxième mesure (tick 4).
+        if group.kind == GroupKind::Staff
+            && group.staves.len() == 1
+            && group.staves[0].voices.len() == 1
+        {
+            self.walk(&group.staves[0].voices[0].music);
+            return;
+        }
         let start = self.cursor;
         let mut end = start;
         for staff in &group.staves {

@@ -661,6 +661,51 @@ fn levees_et_n_olets() {
 }
 
 #[test]
+fn contexte_staff_simple_garde_trame_et_grace() {
+    // Extrait minimal de `grace-staff-length.ly` : après un silence d'une
+    // mesure, un `\context Staff` (contexte EXISTANT) contient un ornement et
+    // sa note. LilyPond poursuit la trame de la portée : la note est jouée
+    // dans la deuxième mesure, avec son ornement, sur la même piste.
+    let source = concat!(
+        "\\version \"2.16.0\"\n\\language \"english\"\n",
+        "\\score { \\new PianoStaff << ",
+        "\\new Staff { R1 R1 \\bar \"|.\" } ",
+        "\\new Staff \\fixed c' { R1 \\context Staff { \\grace { c16 } c1 } } ",
+        ">> }"
+    );
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(score.measures[0].len, Fraction::ONE);
+    // La note principale est dans la mesure 2 (tick 4), pas au début de la
+    // portée : le `\context Staff` ne rouvre pas une voix à zéro.
+    let notes_du_context: Vec<_> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| {
+            let raw = segment.element(Track::from_raw(4))?;
+            let scoretk_core::model::SegmentItem::ChordRest(chord_rest) = raw else {
+                return None;
+            };
+            let scoretk_core::model::ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                return None;
+            };
+            Some((
+                segment.tick,
+                chord_rest.duration.kind,
+                chord.notes.len(),
+                chord.grace_chords.len(),
+            ))
+        })
+        .collect();
+    assert_eq!(
+        notes_du_context,
+        vec![(Fraction::ONE, DurationType::Whole, 1, 1)]
+    );
+    assert_eq!(hauteurs(&score), vec![60, 60]);
+}
+
+#[test]
 fn ornements() {
     let score = lire("\\grace { b8 } c4 \\afterGrace d4 { e16 }");
     let mut graces = Vec::new();
