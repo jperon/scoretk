@@ -14,7 +14,7 @@ G8 |
 D8 |
 [1 G8 :|
 [2 B8 |]
-V:2 name="B♭ Clarinet" clef=treble
+V:2 name="B♭ Clarinet" clef=treble transpose=-2
 [K:D clef=treble] |: B8 |
 E8 |
 !>(!G8 |

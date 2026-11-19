@@ -260,6 +260,19 @@ fn voice_header(score: &Score, spec: writer::VoiceSpec) -> String {
             header.push_str(&format!(" clef={name}"));
         }
     }
+    // Port de `xml2abc.py::doAttr` (lignes 1278 et 1319-1332) : la
+    // transposition chromatique, augmentée de l'`octave-change` que l'import
+    // MusicXML a déjà repliée dans `Transpose::chromatic`, est écrite dans
+    // l'en-tête `V:`. Sans elle `abc2midi` jouerait la hauteur notée au lieu
+    // de la hauteur concert, comme le MIDI de référence de MuseScore.
+    let debut = score
+        .measures
+        .first()
+        .map_or(Tick::ZERO, |measure| measure.start_tick);
+    let transposition = transpose_at(score, staff, debut);
+    if transposition != 0 {
+        header.push_str(&format!(" transpose={transposition}"));
+    }
     header
 }
 

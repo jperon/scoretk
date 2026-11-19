@@ -5,5 +5,5 @@ M:4/4
 L:1/8
 Q:" = 120" 1/4=120
 K:C clef=treble
-V:1 name="Steel Guitar" clef=treble
+V:1 name="Steel Guitar" clef=treble transpose=-12
 !p!"^ = 120"!<(!B2c2d2!f!!<)!e2 |]
