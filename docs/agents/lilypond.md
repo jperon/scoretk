@@ -315,8 +315,9 @@ Un bloc `\new Lyrics \lyricsto "<voix>"` par couplet présent dans la voix.
 La syllabisation devient ` --` (début ou milieu de mot) et le mélisme ` __`.
 Les accords sans syllabe pour un couplet donnent `\skip 1` pour garder
 l'alignement ; les silences sont sautés par `\lyricsto` lui-même. Plusieurs
-couplets reçoivent `\stanza "n."` **dans** le bloc de paroles : `stanza` est
-une fonction musicale de LilyPond 2.27, pas une propriété de contexte. Le
+couplets reçoivent `\set stanza = "n."` **dans** le bloc de paroles : c'est la
+forme de `musicxml2ly`, compilable par LilyPond 2.26 (contrairement à
+`\stanza "n."`, fonction musicale ajoutée en 2.27). Le
 trait d'union n'est émis que si l'accord suivant du même couplet porte une
 syllabe, et les continuations de liaison (toutes notes liées depuis l'accord
 précédent) ne reçoivent pas de jeton, car `\lyricsto` les saute.
@@ -644,8 +645,9 @@ pas de régression du lecteur.
   continuations de `~`. `\set melismaBusyProperties = #'()` désactive ces
   sauts ; `beamMelismaBusy` n'est pas modélisé car il ne s'active que si
   `autoBeaming = ##f` (`lily/beam-engraver.cc`). Le rang de couplet est lu
-  dans `\stanza "n."` (forme écrite depuis LilyPond 2.27) et, pour
-  compatibilité, dans l'ancien `\with { stanza = "n." }`.
+  dans `\set stanza = "n."` (forme écrite par l'écrivain, compilable dès
+  2.26), dans `\stanza "n."` (LilyPond 2.27) et, pour compatibilité, dans
+  l'ancien `\with { stanza = "n." }`.
 - **Reprises** : `\repeat volta N` avec k blocs `\alternative` produit les
   endings `i, i+k, i+2k…` (règle des passes) ; les imbrications de reprises et
   les numéros d'ending explicites hors de cette règle ne sont pas couverts.

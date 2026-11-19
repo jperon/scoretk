@@ -29,8 +29,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use scoretk_core::model::{
-    tpc, ChordRest, ChordRestKind, Clef, ClefType, Duration, Fraction, Measure, Note, Part, Segment,
-    SegmentItem, SegmentType, Track, Transpose,
+    tpc, ChordRest, ChordRestKind, Clef, ClefType, Duration, Fraction, Lyrics, LyricsSyllabic,
+    Measure, Note, Part, Segment, SegmentItem, SegmentType, Track, Transpose,
 };
 
 /// Racine du corpus.
@@ -224,6 +224,47 @@ fn transposition_instrument_ecrite_dans_la_voix() {
     assert!(
         !voix_flute.contains("\\transposition"),
         "la flûte ne doit pas porter de transposition :\n{voix_flute}"
+    );
+}
+
+/// LilyPond 2.26 (version cible de l'oracle) ne connaît pas `\stanza` :
+/// plusieurs couplets font échouer la compilation. La forme `\set stanza =
+/// "n."`, utilisée par `musicxml2ly`, fonctionne sur 2.26 et est relue par
+/// notre lecteur. Cas construit avec deux couplets, une portée, des accords,
+/// des silences et une barre de contrôle.
+#[test]
+fn couplets_compilables_sous_lilypond_2_26() {
+    let mut score = scoretk_core::model::Score::new();
+    let part = score.add_part(Part::new("Voice", "Vo."));
+    let staff = score.add_staff(part);
+    let mut measure = Measure::new(0, Fraction::ZERO, Fraction::ONE);
+    for (tick, texte) in [(0, "premier"), (2, "second")] {
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::new(tick, 1), 1);
+        let mut chord = ChordRest::chord(Duration::half());
+        let note_id = score.add_note(Note::new(60, tpc::C));
+        let ChordRestKind::Chord(ref mut content) = chord.kind else {
+            unreachable!()
+        };
+        content.notes.push(note_id);
+        chord.lyrics.push(Lyrics::new(0, LyricsSyllabic::Single, texte));
+        chord.lyrics.push(Lyrics::new(1, LyricsSyllabic::Single, texte));
+        segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+        measure.add_segment(segment);
+    }
+    score.add_measure(measure);
+
+    let produit = scoretk_lilypond_export::write_lilypond(&score).expect("écriture");
+    assert!(
+        produit.contains("\\set stanza = \"1.\""),
+        "numéro de couplet 1 absent :\n{produit}"
+    );
+    assert!(
+        produit.contains("\\set stanza = \"2.\""),
+        "numéro de couplet 2 absent :\n{produit}"
+    );
+    assert!(
+        !produit.contains("\\stanza"),
+        "\\stanza n'est pas compilable par LilyPond 2.26 :\n{produit}"
     );
 }
 

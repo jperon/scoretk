@@ -245,10 +245,11 @@ impl<'a> Writer<'a> {
             let multiple = verses.len() > 1;
             for (verse, syllables) in verses {
                 let _ = writeln!(out, "{indent}  \\new Lyrics \\lyricsto \"{variable}\" {{");
-                // `\stanza` est une fonction musicale dans le bloc de
-                // paroles (LilyPond 2.27), pas une propriété de contexte.
+                // `\stanza` n'existe que depuis LilyPond 2.27 : la forme
+                // `\set stanza = "n."`, utilisée par `musicxml2ly`, compile
+                // aussi sous 2.26 et est relue par notre lecteur.
                 if multiple {
-                    let _ = writeln!(out, "{indent}    \\stanza \"{}.\"", verse + 1);
+                    let _ = writeln!(out, "{indent}    \\set stanza = \"{}.\"", verse + 1);
                 }
                 write_tokens(out, &syllables, &format!("{indent}    "));
                 let _ = writeln!(out, "{indent}  }}");
