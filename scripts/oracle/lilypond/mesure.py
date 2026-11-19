@@ -40,7 +40,7 @@ import shutil
 import subprocess
 import time
 
-from ly_notes import GRID, TOL, compare, read_midi, read_xml
+from ly_notes import GRID, TOL, a_des_repetitions, compare, read_midi, read_xml
 
 TIMEOUT = 10
 TIMEOUT_LY = 20
@@ -62,6 +62,28 @@ M21_CODE = (
 def lire_manifest(path: str) -> list[str]:
     with open(path, encoding="utf-8") as f:
         return [l.strip() for l in f if l.strip() and not l.startswith("#")]
+
+
+def texte_source(src: str) -> str:
+    """Source ``.ly`` et ses inclusions directes, pour repérer les reprises.
+
+    Les fichiers Mutopia mettent souvent chaque voix dans un ``\\include`` :
+    ne lire que le fichier principal manquerait la majorité des ``\\repeat``.
+    Les inclusions sont lues à un niveau (itinéraire borné, pas de cycle).
+    """
+    try:
+        texte = Path(src).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    dossier = Path(src).parent
+    for nom in re.findall(r'\\include\s+"([^"]+)"', texte)[:20]:
+        inclusion = dossier / nom
+        if inclusion.is_file():
+            try:
+                texte += "\n" + inclusion.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                pass
+    return texte
 
 
 def nom_court(src: str) -> str:
@@ -113,9 +135,9 @@ def commandes(args, outil: str, src: str, dst: str) -> list[str]:
     return borne([args.scoretk, src, "--to", "musicxml", "-o", dst])
 
 
-def base_releve(lot: str, outil: str, src: str) -> dict:
+def base_releve(lot: str, outil: str, src: str, repetitions: bool = False) -> dict:
     return {
-        "lot": lot, "outil": outil, "fichier": src,
+        "lot": lot, "outil": outil, "fichier": src, "repeat": repetitions,
         "ok": False, "code": None, "temps": 0.0, "taille": 0, "erreur": "",
     }
 
@@ -157,13 +179,14 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
         fichiers = fichiers[: args.limit]
     with sortie.open("w", encoding="utf-8") as out:
         for i, src in enumerate(fichiers):
+            repetitions = a_des_repetitions(texte_source(src))
             work = Path(args.out) / "travail" / lot / str(i)
             work.mkdir(parents=True, exist_ok=True)
             ref_path = work / "ref.mid"
             err_ref = reference(args, lot, src, str(ref_path))
             if err_ref or not ref_path.is_file():
                 for outil in outils(args):
-                    r = base_releve(lot, outil, src)
+                    r = base_releve(lot, outil, src, repetitions)
                     r["erreur"] = err_ref or "référence MIDI absente"
                     marquer_echec(r)
                     ecrire(out, r)
@@ -173,7 +196,7 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                 ref = read_midi(str(ref_path))
             except Exception as exc:
                 for outil in outils(args):
-                    r = base_releve(lot, outil, src)
+                    r = base_releve(lot, outil, src, repetitions)
                     r["erreur"] = f"MIDI illisible : {exc}"
                     marquer_echec(r)
                     ecrire(out, r)
@@ -183,7 +206,7 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                 dst = work / ("tk.musicxml" if outil == "scoretk"
                               else "ply.musicxml" if outil == "python-ly" else "m21.musicxml")
                 commande = commandes(args, outil, src, str(dst))
-                r = base_releve(lot, outil, src)
+                r = base_releve(lot, outil, src, repetitions)
                 code, duree, erreur = lancer(commande)
                 r["code"], r["temps"] = code, round(duree, 3)
                 r["taille"] = dst.stat().st_size if dst.is_file() else 0
@@ -224,28 +247,33 @@ def resume(releves: list[dict]) -> str:
     lignes = [
         "# Relevé LilyPond — résumé",
         "",
-        "Tolérance : ±1/16 de noire sur l'attaque ; grille : 1/16 de noire (Q16).",
-        "N2 est calculé sur le sous-ensemble apparié par N1 (reprises dépliées neutralisées).",
+        "Grille : 1/16 de noire (Q16) ; N2 est l'intersection des multiensembles",
+        "(hauteur, attaque quantifiée), sans appariement arbitraire.",
+        "N1 porte sur tous les fichiers ; N2 **uniquement sur les fichiers sans",
+        "reprise** (le MIDI de LilyPond déplie les reprises, pas le MusicXML).",
         "",
-        "| Lot | Outil | Fichiers | Réussis | Échecs | Délais | Vides | Exacts | N1 % | N2 % | Temps max |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Lot | Outil | Fichiers | Reprises | Réussis | Échecs | Délais | Vides | Exacts | N1 % (tous) | N2 % (sans reprise) | Temps max |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for (lot, outil), rs in sorted(groupes.items()):
         n = len(rs)
+        reprises = sum(r.get("repeat", False) for r in rs)
         reussis = sum(r["ok"] for r in rs)
         echecs = sum(not r["ok"] and r.get("code") != 124 for r in rs)
         delais = sum(r.get("code") == 124 for r in rs)
         vides = sum("sortie_vide" in r.get("drapeaux", []) for r in rs)
         exacts = sum(r.get("exact", False) for r in rs)
         notes = [r for r in rs if r.get("ref", 0)]
+        sans = [r for r in notes if not r.get("repeat", False)]
         n1 = sum(r["ref"] * r.get("pct_n1", 0) for r in notes)
-        n2 = sum(r["ref"] * r.get("pct_n2", 0) for r in notes)
+        n2 = sum(r["ref"] * r.get("pct_n2", 0) for r in sans)
         tot = sum(r["ref"] for r in notes)
+        tot_sans = sum(r["ref"] for r in sans)
         tmax = max((r.get("temps", 0) for r in rs), default=0)
         lignes.append(
-            f"| {lot} | {outil} | {n} | {reussis} | {echecs} | {delais} | {vides} | "
+            f"| {lot} | {outil} | {n} | {reprises} | {reussis} | {echecs} | {delais} | {vides} | "
             f"{exacts} ({100*exacts/n:.1f} %) | {n1/tot if tot else 0:.2f} | "
-            f"{n2/tot if tot else 0:.2f} | {tmax:.2f} s |"
+            f"{n2/tot_sans if tot_sans else 0:.2f} | {tmax:.2f} s |"
         )
     causes: dict[str, list[str]] = {}
     for r in releves:
@@ -258,12 +286,48 @@ def resume(releves: list[dict]) -> str:
     return "\n".join(lignes) + "\n"
 
 
+def selftest() -> None:
+    """Autotest de l'agrégation : N2 ignore les fichiers avec reprises.
+
+    Un fichier propre de 10 notes à 100 % et un fichier avec reprise de 100
+    notes à 0 % : l'ancien agrégat donnait 9,09 %, le nouveau doit donner
+    100 % en ne comptant que le fichier sans reprise.
+    """
+    base = {"lot": "mus", "outil": "scoretk", "ok": True, "temps": 0.1,
+            "drapeaux": [], "exact": False}
+    ex = [
+        {**base, "fichier": "propre.ly", "repeat": False,
+         "ref": 10, "pct_n1": 100.0, "pct_n2": 100.0, "exact": True},
+        {**base, "fichier": "reprise.ly", "repeat": True,
+         "ref": 100, "pct_n1": 100.0, "pct_n2": 0.0},
+    ]
+    texte = resume(ex)
+    assert "| 100.00 | 100.00 |" in texte, texte
+    assert "9.09" not in texte, texte
+
+    # Détection dans une source et son inclusion directe (voix incluses).
+    import os
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, "principal.ly")
+        inc = os.path.join(tmp, "voix.ly")
+        with open(src, "w", encoding="utf-8") as f:
+            f.write('\\version "2.24"\n\\include "voix.ly"\n')
+        with open(inc, "w", encoding="utf-8") as f:
+            f.write("musique = { \\repeat volta 2 { c4 d4 } }\n")
+        assert a_des_repetitions(texte_source(src))
+        with open(inc, "w", encoding="utf-8") as f:
+            f.write("musique = { c4 d4 e4 f4 }\n")
+        assert not a_des_repetitions(texte_source(src))
+    print("selftest mesure : OK")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--out", required=True, help="dossier des sorties brutes (hors dépôt)")
+    p.add_argument("--out", default="", help="dossier des sorties brutes (hors dépôt)")
     p.add_argument("--refs", default="", help="racine des ly.midi (préfixe + lot + md5_nom)")
     p.add_argument("--refs-prefix", default="out3", help="préfixe des dossiers de lot (out3mus, …)")
-    p.add_argument("--scoretk", required=True, help="binaire scoretk")
+    p.add_argument("--scoretk", default="", help="binaire scoretk")
     p.add_argument("--python-ly", default="ly", help="commande python-ly")
     p.add_argument("--music21", default="", help="interpréteur Python muni de music21")
     p.add_argument("--lot", action="append", default=[], metavar="NOM=MANIFESTE")
@@ -272,7 +336,13 @@ def main() -> None:
     p.add_argument("--grid", type=float, default=GRID)
     p.add_argument("--tol", type=float, default=TOL)
     p.add_argument("--resume", action="store_true", help="régénère seulement le résumé")
+    p.add_argument("--selftest", action="store_true", help="autotest de l'agrégation (sans corpus)")
     args = p.parse_args()
+    if args.selftest:
+        selftest()
+        return
+    if not args.out or not args.scoretk:
+        p.error("--out et --scoretk sont requis sauf avec --selftest")
     Path(args.out).mkdir(parents=True, exist_ok=True)
 
     if not args.resume:

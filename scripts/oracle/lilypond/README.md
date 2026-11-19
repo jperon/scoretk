@@ -9,42 +9,50 @@ under `timeout` and `prlimit --as=2000000000`.
 ## Levels
 
 A note is a tuple `(pitch, attack, duration, track)`; attacks and durations are
-in **quarter notes**. Pitches are MIDI note numbers (concert pitch). Grace
-notes and tie stops are ignored on both sides; MusicXML `<chromatic>` /
+in **quarter notes**. Pitches are MIDI note numbers (concert pitch). Tie stops
+are ignored on both sides (a MIDI note-off closes an attack, it does not open
+one); **grace notes are counted on both sides**: LilyPond plays them in its
+MIDI and the readers write them as `<grace>` elements. In MusicXML a grace note
+is placed at the current attack (the following note's) and borrows its time, so
+it does not advance the position counter. MusicXML `<chromatic>` /
 `<octave-change>` transposition is applied.
 
 - **N1** — multiset of pitches, as in the historical `xmlcmp/cmp.py`. An octave
   error (±12/±24 semitones) and a constant transposition are also reported to
   classify the discrepancy.
-- **N2** — multiset of `(pitch, quantized attack)`. This is the same level as
-  `scripts/oracle/midi`: grid **1/16 of a quarter note** (a 32nd note, `GRID =
-  0.25`), matching tolerance **±1/16 of a quarter note** (`TOL = 0.25`), i.e.
-  MuseScore's default Q16 MIDI-import grid. A file is *exact* when the note
-  count, N1 and N2 all match the reference.
+- **N2** — multiset of `(pitch, quantized attack)`: attacks are rounded to the
+  grid **1/16 of a quarter note** (a 32nd note, `GRID = 0.25`) and the two
+  multisets are intersected. This is the Q16 grid of `scripts/oracle/midi`.
+  There is no "pair the earliest attacks of each pitch" rule: with duplicated
+  notes such a rule matches arbitrary events, depends on list order and moves
+  every attack after an unfolded block. A file is *exact* when the note count,
+  N1 and N2 all match the reference.
 
 Percentages are weighted by the number of reference notes, so a short and a
 long score do not carry the same weight.
 
-### Repeats: making the attack comparison fair
+### Repeats: N2 is restricted to repeat-free scores
 
-LilyPond's MIDI backend always unfolds `\repeat unfold`, and unfolds `\repeat
-volta` whenever `\unfoldRepeats` is present in the source. The MusicXML side,
-whether written by scoretk or by python-ly, writes each note **once, as
-written**. Comparing raw attack times would therefore penalize every note of
-an unfolded pass after the first.
+LilyPond's MIDI unfolds `\repeat unfold` always, and `\repeat volta` when
+`\unfoldRepeats` is present; a MusicXML reader may write the structure once
+instead. The two timelines are then not comparable beat for beat. Rather than
+pair attacks heuristically, the driver detects `\repeat`, `\unfoldRepeats`,
+`\volta` and `\alternative` in the source **and its direct `\include`s**, and
+records a `repeat` flag on every row. N1 is still reported for all files;
+**N2 is aggregated only over repeat-free files**. The raw rows keep N2 for
+repeat files (recorded, never silently dropped) so the effect can be inspected.
 
-N2 is consequently computed **only on the subset selected by N1**: for each
-pitch, the two attack lists are sorted and the `min(count_ref, count_test)`
-earliest attacks are paired in order. The surplus copies contributed by an
-unfolded repeat arrive after the first pass and are discarded by the N1
-intersection before attacks are compared. This is neutral for scores without
-repeats (all notes are paired) and keeps the comparison "as written" on both
-sides. It does not need a second LilyPond run or a source rewrite.
+Two further reader details are handled explicitly in `read_xml()`:
+- a `<forward>` before the **first** note of a (voice, staff) advances that
+  voice's counter — this is how writers denote a pickup or a spacer rest;
+- later `<backup>`/`<forward>` pairs only reposition the writer's stream and
+  are ignored, because the counter is already local to each voice. Honouring
+  them would shift correctly placed notes (verified on real corpus files).
 
-Known limit: material *following* an unfolded block is shifted in the MIDI by
-the length of the extra passes, so its attack can differ even though N1 is
-correct. Such cases stay flagged `attaque_decalee`; they are a small minority
-and are reported as such rather than silently filtered.
+Minimal reproductions used to validate these rules:
+`input/regression/grace-nest5.ly` (leading `<forward>` + a grace note),
+a two-measure `\partial 4` score (pickup), a `\times 2/3` score (tuplets),
+and a `\repeat unfold` / `\repeat volta` score (repeat flag).
 
 ## Alternatives measured with the same oracle
 
@@ -80,8 +88,9 @@ scripts/oracle/lilypond/mesure.sh \
 # Rebuild only the summary from raw measurements:
 scripts/oracle/lilypond/mesure.sh --out /tmp/oracle-out --resume
 
-# Unit-level check of the comparator (no corpus, no process):
+# Unit-level checks (no corpus, no process):
 python3 scripts/oracle/lilypond/ly_notes.py selftest
+python3 scripts/oracle/lilypond/mesure.py --selftest
 ```
 
 `--stride N` keeps one file in N (`NR % N == 1` equivalent) for a deterministic
