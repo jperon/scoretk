@@ -2119,7 +2119,15 @@ impl<'a> Parser<'a> {
                 self.parse_with_block();
                 self.parse_music()
             }
-            "layout" | "midi" | "paper" | "header" | "markup" | "markuplist" => {
+            // `\markup` accepte une chaîne, une commande de mise en forme ou un
+            // bloc entre accolades, mais pas nécessairement d'accolade autour
+            // de tout l'expression (`\markup \tiny "No Art."`). `skip_braced`
+            // avalerait alors le reste du fichier jusqu'à la première `}`.
+            "markup" | "markuplist" => {
+                self.parse_markup_text();
+                Music::Empty
+            }
+            "layout" | "midi" | "paper" | "header" => {
                 self.skip_braced();
                 Music::Empty
             }

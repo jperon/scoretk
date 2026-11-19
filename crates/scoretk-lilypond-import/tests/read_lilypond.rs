@@ -2956,3 +2956,25 @@ fn partcombine_sous_relative_garde_les_hauteurs_absolues() {
     assert_eq!(accords_de_voix(&score, 1)[0].1, vec![60]);
     assert_eq!(accords_de_voix(&score, 1)[1].1, vec![62]);
 }
+
+#[test]
+fn markup_sans_accolades_ne_mange_pas_la_musique() {
+    // `\sectionLabel \markup \tiny "…"` n'a pas d'accolade : le texte du
+    // markup s'arrête à la musique suivante, qui doit rester lisible
+    // (régressions `caesura-style-*`, `bar-line-stuff-override-*`).
+    let source = "\\version \"2.24.0\"\n\
+         \\language \"english\"\n\
+         staffMusic = \\fixed c' {\n\
+           \\sectionLabel \\markup \\tiny \"No Art.\"\n\
+           c4 d e f\n\
+         }\n\
+         \\score { << \\new Staff \\staffMusic >> }";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![Fraction::new(1, 4); 4],
+        "durées"
+    );
+    assert_eq!(score.measures.len(), 1, "mesures");
+}
