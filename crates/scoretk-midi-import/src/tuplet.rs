@@ -182,6 +182,13 @@ pub fn find_all_tuplets(track: &mut MTrack, sigmap: &TimeSigMap, basic_quant: Fr
             } else {
                 span
             };
+            // Garde de progression : un fichier MIDI mal formé (mesure de
+            // longueur nulle ou division invalide) ne doit pas bloquer la
+            // boucle. `span` est déjà filtré non nul, mais une mesure
+            // incohérente peut rendre `step` non positif.
+            if !step.is_positive() {
+                continue;
+            }
             let mut start = bar_start;
             while start + span <= bar_start + bar_len {
                 if let Some((voice, tuplet_number, tolerance)) =
@@ -226,13 +233,15 @@ fn detect_tuplet(
     basic_quant: Fraction,
 ) -> Option<(usize, i32, Fraction)> {
     let _ = basic_quant;
+    // Ne parcourt que les accords de l'intervalle, comme le C++ qui limite la
+    // recherche à la mesure courante. Un `iter()` complet coûtait O(nombre total
+    // d'accords) à chaque position candidate (quadratique sur les fichiers
+    // denses).
     let chords: Vec<(Fraction, usize, Fraction, bool)> = track
         .chords
-        .iter()
-        .filter(|(on_time, chord)| {
-            *on_time >= start && *on_time < start + span && chord.bar_index == bar_index
-        })
-        .map(|(on_time, chord)| {
+        .range(start, start + span)
+        .filter(|(_, chord)| chord.bar_index == bar_index)
+        .map(|((on_time, _), chord)| {
             (
                 on_time,
                 chord.voice,

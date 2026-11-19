@@ -246,14 +246,14 @@ fn minimize_number_of_rests(
             .tuplet
             .and_then(|key| track.tuplets.get(&key))
             .cloned();
+        // La table est ordonnée par date : le premier accord de même voix après
+        // `key` est le plus proche. Un `iter()` complet coûtait O(n²).
         let next = track
             .chords
-            .iter()
-            .filter(|(next_on_time, next_chord)| *next_on_time > key.0 && next_chord.voice == voice)
-            .min_by(|left, right| left.0.cmp(&right.0))
-            .map(|(next_on_time, next_chord)| {
+            .next_in_voice(key, voice)
+            .map(|(next_key, next_chord)| {
                 (
-                    next_on_time,
+                    next_key.0,
                     next_chord.is_in_tuplet,
                     next_chord
                         .tuplet

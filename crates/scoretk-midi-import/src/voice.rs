@@ -28,6 +28,8 @@
 //! sont renumérotées par hauteur moyenne décroissante (voix 1 = la plus aiguë),
 //! comme `sortVoicesByPitch`.
 
+use std::collections::BTreeMap;
+
 use scoretk_core::model::{Fraction, VOICES};
 
 use super::chord::MTrack;
@@ -90,26 +92,25 @@ pub fn separate_voices(
             .unwrap_or(0)
             + 1;
 
+        // Un seul passage pour répartir les clés par mesure : le code initial
+        // parcourait toute la table pour chaque mesure (quadratique). La table
+        // sparse évite aussi d'allouer pour un index de mesure aberrant.
+        let mut keys_by_bar: BTreeMap<i32, Vec<_>> = BTreeMap::new();
+        for (key, chord) in track.chords.iter_with_keys() {
+            keys_by_bar.entry(chord.bar_index).or_default().push(*key);
+        }
+
         for bar_index in 0..bar_count {
-            let keys: Vec<_> = track
-                .chords
-                .keys()
-                .into_iter()
-                .filter(|key| {
-                    track
-                        .chords
-                        .get(*key)
-                        .map(|chord| chord.bar_index == bar_index)
-                        .unwrap_or(false)
-                })
-                .collect();
+            let Some(keys) = keys_by_bar.get(&bar_index) else {
+                continue;
+            };
             if keys.is_empty() {
                 continue;
             }
 
             let mut voice_ends: Vec<Option<Fraction>> = vec![None; limit];
             let mut voice_pitches: Vec<(i64, i64)> = vec![(0, 0); limit];
-            for key in &keys {
+            for key in keys {
                 let Some(chord) = track.chords.get(*key) else {
                     continue;
                 };
@@ -153,7 +154,7 @@ pub fn separate_voices(
             for (new_voice, (_, old_voice)) in averages.iter().enumerate() {
                 mapping[*old_voice] = new_voice;
             }
-            for key in &keys {
+            for key in keys {
                 if let Some(chord) = track.chords.get_mut(*key) {
                     chord.voice = mapping.get(chord.voice).copied().unwrap_or(0);
                 }

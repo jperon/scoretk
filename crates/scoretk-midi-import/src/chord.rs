@@ -196,6 +196,37 @@ impl ChordMap {
             .map(|(key, _)| *key)
             .collect()
     }
+
+    /// Accords dont l'attaque est dans `[start, end)`.
+    ///
+    /// Équivalent d'un `lowerBound`/`upperBound` sur la `std::multimap` du C++
+    /// (`MidiTuplet::findAllTuplets` ne parcourt que les accords de la mesure),
+    /// évite de rescanner toute la piste à chaque position candidate.
+    pub fn range(
+        &self,
+        start: Fraction,
+        end: Fraction,
+    ) -> impl Iterator<Item = (ChordKey, &MidiChord)> {
+        self.entries
+            .range((start, 0)..(end, 0))
+            .map(|(key, chord)| (*key, chord))
+    }
+
+    /// Prochain accord après `key` appartenant à `voice`.
+    ///
+    /// Évite de rescanner toute la table pour chaque accord
+    /// (`minimizeNumberOfRests` est quadratique sans cela).
+    pub fn next_in_voice(&self, key: ChordKey, voice: usize) -> Option<(ChordKey, &MidiChord)> {
+        // Borne exclusive sur `(date, rang maximal)` : tous les accords à la
+        // même date sont écartés, comme le test `*next_on_time > key.0` d'origine.
+        self.entries
+            .range((
+                std::ops::Bound::Excluded((key.0, u64::MAX)),
+                std::ops::Bound::Unbounded,
+            ))
+            .find(|(_, chord)| chord.voice == voice)
+            .map(|(key, chord)| (*key, chord))
+    }
 }
 
 /// Piste MIDI en cours d'import (`MTrack`).
