@@ -89,6 +89,7 @@ exemple `../lilypond-ref/`, comme `ref-musescore/`) et jamais distribuée :
 | `read/lexer.rs` | `lily/lexer.ll` (états `notes`, `lyrics`, `markup`, commentaires) |
 | `read/parser.rs` | `lily/parser.yy` (`music_list`, `event_chord`, `chord_body`, `post_events`, `duration`, `repeated_music`, `context_change`, `\score`) |
 | `read/pitch.rs` | `lily/pitch.cc` (`Pitch::to_relative_octave`, `steps`, `up_to`/`down_to`) et `scm/define-note-names.scm` (tables de noms par langue) |
+| `modes.rs` | `ly/drumpitch-init.ly` (`drumPitchNames`, `midiDrumPitches`) et `scm/chord-entry.scm` (`construct-chord-elements`) : tables de hauteurs MIDI des modes `\drummode` et `\chordmode` |
 
 Licence : **GNU GPL version 3 ou ultérieure**, Copyright (C) 1998--2026
 Han-Wen Nienhuys et les autres auteurs de LilyPond. La réécriture Rust ne

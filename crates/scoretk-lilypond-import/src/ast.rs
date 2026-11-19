@@ -100,6 +100,10 @@ pub(crate) struct NoteSpec {
     pub posts: Vec<PostEvent>,
     /// Groupe de tête (`\tweak style #'cross`).
     pub head_group: NoteHeadGroup,
+    /// Hauteur MIDI imposée (`\drummode`, `\chordmode`) : dans ces modes les
+    /// noms ne sont pas des hauteurs diatoniques et l'interprète n'applique
+    /// ni octave relative ni transposition.
+    pub midi: Option<u8>,
 }
 
 /// Contenu rythmique d'un élément.
@@ -322,7 +326,7 @@ impl GroupKind {
     /// Mutopia anciennes écrivent souvent `\new voice`, `\context staff`…
     pub(crate) fn from_name(name: &str) -> Self {
         match name.to_ascii_lowercase().as_str() {
-            "staff" => Self::Staff,
+            "staff" | "drumstaff" => Self::Staff,
             "pianostaff" => Self::PianoStaff,
             "choirstaff" => Self::ChoirStaff,
             "staffgroup" => Self::StaffGroup,

@@ -1167,6 +1167,28 @@ impl<'a> Interpreter<'a> {
 
     /// Construit l'événement d'une note écrite.
     fn note_event(&mut self, note: &NoteSpec) -> Option<NoteEvent> {
+        // Dans `\drummode` et `\chordmode`, le nom est un événement dont la
+        // hauteur est déjà MIDI : ni octave relative, ni `\transpose`, ni
+        // `\transposition` de portée ne s'appliquent (le performer MIDI de
+        // LilyPond joue directement la hauteur de son table d'instruments).
+        if let Some(pitch) = note.midi {
+            let naturels = [0, 2, 4, 5, 7, 9, 11];
+            let semiton = i32::from(pitch) % 12;
+            let step = naturels
+                .iter()
+                .rposition(|naturel| *naturel <= semiton)
+                .unwrap_or(0) as u8;
+            let alter = (semiton - naturels[usize::from(step)]) as i8;
+            let tpc = crate::pitch::tpc_of(step, alter);
+            return Some(NoteEvent {
+                pitch,
+                tpc,
+                tpc_transposed: tpc,
+                tie: note.posts.iter().any(|post| matches!(post, PostEvent::Tie)),
+                cautionary: note.pitch.cautionary,
+                head_group: note.head_group.clone(),
+            });
+        }
         let octave = self.octave.resolve(&note.pitch);
         let written_step = note.pitch.step as i32;
         let written_alter = i32::from(note.pitch.alter);

@@ -3860,3 +3860,115 @@ fn transposition_du_global_atteint_les_voix_de_la_portee() {
         "la transposition ne franchit pas un nouveau Staff"
     );
 }
+
+#[test]
+fn drummode_et_drumstaff_jouent_des_percussions() {
+    // Cas réel (hara-kiri-drumstaff.ly, midi-drums.ly) : les noms `bd`, `sn`,
+    // `hh` ne sont pas des hauteurs de la langue mais des événements que
+    // LilyPond joue dans son MIDI (tables de `ly/drumpitch-init.ly`).
+    let source = r#"
+      \version "2.24.0"
+      \score {
+        <<
+          \new DrumStaff \drummode {
+            bd4 sn8 hh16 hh sn2 | r4 bd4 bd2
+          }
+          \new Staff { c'4 d' e' f' | g'2 r2 }
+        >>
+      }
+    "#;
+    let score = read_lilypond(source).expect("lecture des percussions");
+    assert_eq!(
+        hauteurs(&score),
+        vec![36, 38, 42, 42, 38, 36, 36, 60, 62, 64, 65, 67],
+        "hauteurs MIDI des fûts puis de la portée ordinaire"
+    );
+    // `durees_ecrites` ne regarde que la piste 0 : la batterie, y compris le
+    // silence `r4` de la seconde mesure.
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::new(1, 4),
+            Fraction::new(1, 8),
+            Fraction::new(1, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 2),
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 2),
+        ],
+        "durées de la piste de batterie (silence compris)"
+    );
+    assert_eq!(score.measures.len(), 2, "deux mesures communes");
+
+    // Cas limite : un nom inconnu est consommé sans bloquer la suite.
+    let inconnu = read_lilypond("\\score { \\new DrumStaff \\drummode { bd4 inconnu4 sn4 } }")
+        .expect("nom inconnu");
+    assert_eq!(hauteurs(&inconnu), vec![36, 38]);
+
+    // Cas « non concerné » : sans \drummode, la portée ordinaire est
+    // exactement la même (les mots de batterie n'y sont pas des notes).
+    let ordinaire = read_lilypond("\\score { \\new Staff { c'4 d' e' f' | g'2 r2 } }")
+        .expect("portée ordinaire");
+    assert_eq!(hauteurs(&ordinaire), vec![60, 62, 64, 65, 67]);
+    assert_eq!(hauteurs(&ordinaire), hauteurs(&score)[7..]);
+}
+
+#[test]
+fn chordmode_dans_une_portee_joue_les_accords() {
+    // `\chordmode` est joué par LilyPond dans un Staff (chord-changes.ly),
+    // contrairement à `\chords`/ChordNames qui reste une grille d'affichage.
+    let source = r#"
+      \version "2.24.0"
+      \language "nederlands"
+      grille = \chordmode { c2 c:m7 c/g }
+      \score {
+        <<
+          \new Staff { \grille | }
+          \new Staff { \relative c' { c4 d e f | g2 r2 } }
+        >>
+      }
+    "#;
+    let score = read_lilypond(source).expect("lecture de la grille jouée");
+    // c = 60/64/67, c:m7 = 60/63/67/70, c/g = 60/64/67 + basse 55.
+    // La seconde portée est en do central (60, 62, 64, 65, 67).
+    assert_eq!(
+        hauteurs(&score),
+        vec![60, 64, 67, 60, 63, 67, 70, 60, 64, 67, 55, 60, 62, 64, 65, 67,],
+        "notes des accords joués puis de la portée relative"
+    );
+    assert_eq!(score.measures.len(), 2, "deux mesures communes");
+    // Une durée par accord sur la piste 0 (chaque accord joué dure une
+    // blanche), y compris le silence de la seconde portée.
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![Fraction::new(1, 2); 3],
+        "durées des accords de la piste 0"
+    );
+
+    // Cas limite : fin de flux, un accord seul sans durée explicite garde la
+    // durée par défaut (noire).
+    let seul = read_lilypond("\\score { \\new Staff \\chordmode { c:m } }")
+        .expect("accord en fin de flux");
+    assert_eq!(hauteurs(&seul), vec![60, 63, 67]);
+    assert_eq!(durees_ecrites(&seul), vec![Fraction::new(1, 4)]);
+
+    // Cas « non concerné » : `\chords` sous ChordNames reste une grille non
+    // jouée, comme avant ; seule la portée ordinaire fournit des notes. Les
+    // deux idiomatiques `\new` et `\context` sont couverts : ce dernier
+    // traverse une branche du parseur qui sautait la grille par défaut, mais
+    // laissait passer ses notes dès qu'elles devenaient lisibles.
+    let affichage = read_lilypond(
+        "\\score { << \\new ChordNames \\chords { c1 c:m } \
+         \\new Staff { c'2 d' e' f' } >> }",
+    )
+    .expect("grille d'affichage");
+    assert_eq!(hauteurs(&affichage), vec![60, 62, 64, 65]);
+    let contexte = read_lilypond(
+        "grille = \\chordmode { c1 c:m }\n\
+         \\score { << \\context ChordNames \\with { chordChanges = ##t } \\grille \
+         \\new Staff { c'2 d' e' f' } >> }",
+    )
+    .expect("grille en \\context");
+    assert_eq!(hauteurs(&contexte), vec![60, 62, 64, 65]);
+}

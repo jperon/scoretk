@@ -41,18 +41,23 @@ supprimé : N2 n'est fiable que sur les fichiers **sans reprise**, détectés pa
 
 Les notes de grâce sont comptées des deux côtés : LilyPond les joue dans son
 MIDI, et le MusicXML les porte comme éléments ``<grace>``. Côté XML elles sont
-placées à l'attaque courante (celle de la note suivante), sans avancer le
-compteur, ce qui correspond à leur durée empruntée. Un ``<forward>`` qui
-précède la première note d'une voix avance son compteur (levée, silence
-d'espaceur) ; les ``<backup>``/``<forward>`` ultérieurs sont des artefacts de
-positionnement de flux et sont ignorés, le compteur étant propre à chaque
-voix. Voir ``README.md`` pour le détail et les exemples minimaux.
+placées à l'attaque courante, sans avancer le curseur, ce qui correspond à
+leur durée empruntée.
+
+Le temps MusicXML est représenté par **un seul curseur par partie** : les
+notes sans ``<chord/>`` l'avancent de leur durée, les accords partagent
+l'attaque précédente, ``<backup>``/``<forward>`` le déplacent, et chaque
+nouvelle mesure repart de l'extension maximale de la précédente. Ce modèle
+remplace l'ancien compteur par voix (puis par couple voix/portée), qui
+décalait les voix réutilisées sur plusieurs portées. Voir ``README.md`` pour
+le détail, les exemples minimaux et la convention de comparaison des
+percussions ``<unpitched>``.
 """
 
 from __future__ import annotations
 
 import argparse
-from collections import Counter, defaultdict
+from collections import Counter
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -100,99 +105,101 @@ def read_midi(path: str) -> list[tuple[int, float, float, int]]:
 def read_xml(path: str) -> list[tuple[int, float, float, int]]:
     """Notes d'un MusicXML partwise : hauteur concert, attaque, durée, partie.
 
-    Le compteur d'attaque est propre à chaque **voix** (pas à chaque couple
-    voix/portée) et repart de zéro pour chaque partie. Une voix qui change de
-    portée (``\\change Staff`` de LilyPond, ``Chord::staff_move`` du modèle)
-    garde le même ``<voice>`` avec des ``<staff>`` différents : cléer sur
-    (voix, portée) ferait repartir son compteur à zéro à chaque changement et
-    écraserait les attaques (``tuplet-bracket-cross-staff.ly``). Les barres de
-    contrôle et les variables du ``.ly`` sont déjà résolues par le
-    convertisseur en hauteurs et positions absolues ; elles n'apparaissent pas
-    ici. Les accords (``<chord/>``) partagent l'attaque de la note précédente,
-    les silences avancent le compteur, et les prolongations de liaison
-    (``<tie type="stop"/>``) ne sont pas des attaques et sont écartées.
+    MusicXML définit le temps **par partie avec un seul curseur**, jamais par
+    voix ni par couple (voix, portée). Le curseur est tenu en noires :
 
-    Les notes de grâce (``<grace>``) sont **comptées** : LilyPond les joue dans
-    son MIDI, les écarter d'un seul côté fausserait N1 et N2. Elles sont
-    placées à l'attaque courante (celle de la note qui suit) et n'avancent pas
-    le compteur, leur durée étant empruntée à cette note. Un ``<forward>`` qui
-    précède la **première** note d'une voix avance son compteur : c'est le cas
-    d'une levée ou d'un silence d'espaceur écrit sous forme de saut. La note
-    suivante peut être dans la mesure **suivante** : un saut de mesure partielle
-    est souvent le dernier élément de sa mesure (``knjze12monferA.ly``), et le
-    limiter à la mesure courante le ferait ignorer. Les ``<backup>``/``<forward>``
-    suivants sont des artefacts de positionnement de flux des exportateurs ; le
-    compteur par voix les rend inutiles et les honorer décalerait les attaques
-    (vérifié sur des fichiers réels).
+    * une note sans ``<chord/>`` est placée au curseur et l'avance de sa
+      ``<duration>`` convertie par ``<divisions>`` ;
+    * une note avec ``<chord/>`` partage l'attaque de la note précédente ;
+    * ``<backup>`` recule le curseur, ``<forward>`` l'avance ;
+    * une nouvelle mesure commence à l'attache de la précédente augmentée de
+      l'**extension maximale** atteinte dans celle-ci (le plus grand curseur
+      vu, et non sa position finale, souvent reculée par un ``<backup>``) ;
+    * une note de grâce (``<grace>``) est comptée sans durée : elle est placée
+      à l'attaque courante et ne fait pas avancer le curseur.
 
-    La transposition ``<chromatic>``/``<octave-change>`` est appliquée, comme
-    dans l'oracle historique.
+    Les ``<divisions>`` changent en cours de mesure via ``<attributes>`` et
+    s'appliquent aux durées suivantes, y compris celles des
+    ``<backup>``/``<forward>``. Les prolongations de liaison
+    (``<tie type="stop"/>``) ne sont pas des attaques et sont écartées, mais
+    elles occupent leur durée sur le curseur. La transposition
+    ``<chromatic>``/``<octave-change>`` est appliquée aux hauteurs, comme dans
+    l'oracle historique. Enfin, les notes non accordées (``<unpitched>``) des
+    batteries sont lues comme des hauteurs MIDI : voir le chapitre dédié du
+    ``README.md`` pour la convention de comparaison des percussions.
     """
     racine = ET.parse(path).getroot()
     notes: list[tuple[int, float, float, int]] = []
     for numero_part, part in enumerate(racine.findall("part")):
         divisions = 1
         transposition = 0
-        # Une voix garde sa chronologie quand elle change de portée : la clé
-        # est le numéro de voix, pas le couple (voix, portée).
-        position: dict[str, float] = defaultdict(float)
-        derniere_attaque: dict[str, float] = {}
-        voix_vues: set[str] = set()
-        # Aplatir toutes les mesures de la partie : un `<forward>` peut clore
-        # une mesure partielle et sa première note être dans la suivante.
-        flux = [elem for measure in part.findall("measure") for elem in list(measure)]
-        for index, elem in enumerate(flux):
-            if elem.tag == "attributes":
-                d = elem.find("divisions")
-                if d is not None and d.text:
-                    divisions = int(float(d.text))
-                t = elem.find("transpose")
-                if t is not None:
-                    chromatique = t.findtext("chromatic", "0")
-                    octave = t.findtext("octave-change", "0")
-                    transposition = int(float(chromatique)) + 12 * int(float(octave))
-                continue
-            if elem.tag == "forward":
-                # Un saut avant la première note d'une voix décale son
-                # entrée (levée / espaceur). Ensuite, c'est un artefact de
-                # flux : le compteur propre à la voix suffit.
-                valeur = elem.findtext("duration")
-                if not valeur:
+        curseur = 0.0             # position courante de la partie, en noires
+        debut_mesure = 0.0        # attache de la mesure en cours
+        extension = 0.0           # extension maximale de la mesure en cours
+        attaque_precedente = 0.0  # attache de la dernière note (pour <chord/>)
+        for measure in part.findall("measure"):
+            debut_mesure += extension
+            curseur = debut_mesure
+            extension = 0.0
+            attaque_precedente = curseur
+            for elem in measure:
+                if elem.tag == "attributes":
+                    d = elem.find("divisions")
+                    if d is not None and d.text:
+                        divisions = int(float(d.text))
+                    t = elem.find("transpose")
+                    if t is not None:
+                        chromatique = t.findtext("chromatic", "0")
+                        octave = t.findtext("octave-change", "0")
+                        transposition = int(float(chromatique)) + 12 * int(float(octave))
                     continue
-                suivante = next((n for n in flux[index + 1:] if n.tag == "note"), None)
-                if suivante is None:
+                if elem.tag in ("backup", "forward"):
+                    valeur = elem.findtext("duration")
+                    if not valeur:
+                        continue  # argument absent : on ne bouge pas le curseur
+                    delta = int(float(valeur)) / divisions
+                    curseur += delta if elem.tag == "forward" else -delta
+                    extension = max(extension, curseur - debut_mesure)
                     continue
-                cle_suivante = suivante.findtext("voice") or "1"
-                if cle_suivante not in voix_vues:
-                    position[cle_suivante] += int(float(valeur)) / divisions
-                continue
-            if elem.tag != "note":
-                continue
-            duree_texte = elem.findtext("duration")
-            duree = int(float(duree_texte)) / divisions if duree_texte else 0.0
-            cle = elem.findtext("voice") or "1"
-            est_grace = elem.find("grace") is not None
-            est_accord = elem.find("chord") is not None
-            attaque = derniere_attaque.get(cle, 0.0) if est_accord else position[cle]
-            if not est_accord:
-                derniere_attaque[cle] = attaque
-                # Une grâce ne consomme pas de temps sur la trame.
-                if not est_grace:
-                    position[cle] = attaque + duree
-            voix_vues.add(cle)
-            if any(t.get("type") == "stop" for t in elem.findall("tie")):
-                continue
-            pitch = elem.find("pitch")
-            if pitch is None:
-                continue  # silence : il a déjà avancé le compteur
-            step = pitch.findtext("step")
-            octave_txt = pitch.findtext("octave")
-            if step not in STEPS or octave_txt is None:
-                continue
-            alter = pitch.findtext("alter", "0")
-            hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
-            notes.append((hauteur + transposition, attaque,
-                          0.0 if est_grace else duree, numero_part))
+                if elem.tag != "note":
+                    continue
+                duree_texte = elem.findtext("duration")
+                duree = int(float(duree_texte)) / divisions if duree_texte else 0.0
+                est_grace = elem.find("grace") is not None
+                est_accord = elem.find("chord") is not None
+                attaque = attaque_precedente if est_accord else curseur
+                if not est_accord:
+                    attaque_precedente = attaque
+                    # Une grâce ne consomme pas de temps sur la trame.
+                    if not est_grace:
+                        curseur = attaque + duree
+                        extension = max(extension, curseur - debut_mesure)
+                if any(t.get("type") == "stop" for t in elem.findall("tie")):
+                    continue
+                pitch = elem.find("pitch")
+                if pitch is None:
+                    # Percussion `<unpitched>` : les écritures qui ne portent
+                    # pas de hauteur MIDI sont comparées par leur position de
+                    # tête (display-step/display-octave). scoretk écrit ses
+                    # fûts comme des `<pitch>` MIDI (cf. README.md) : ils sont
+                    # donc comparés directement au MIDI de LilyPond.
+                    unpitched = elem.find("unpitched")
+                    if unpitched is not None:
+                        step_u = unpitched.findtext("display-step")
+                        octave_u = unpitched.findtext("display-octave")
+                        if step_u in STEPS and octave_u is not None:
+                            hauteur_u = 12 * (int(octave_u) + 1) + STEPS[step_u]
+                            notes.append((hauteur_u + transposition, attaque,
+                                          0.0 if est_grace else duree, numero_part))
+                    continue  # silence : le curseur a déjà avancé
+                step = pitch.findtext("step")
+                octave_txt = pitch.findtext("octave")
+                if step not in STEPS or octave_txt is None:
+                    continue
+                alter = pitch.findtext("alter", "0")
+                hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
+                notes.append((hauteur + transposition, attaque,
+                              0.0 if est_grace else duree, numero_part))
     return notes
 
 
@@ -321,19 +328,24 @@ def selftest() -> None:
           <voice>1</voice><staff>1</staff><type>quarter</type><tie type="start"/></note>
         <note><pitch><step>G</step><octave>4</octave></pitch><duration>4</duration>
           <voice>1</voice><staff>1</staff><type>quarter</type><tie type="stop"/></note>
-        <note><rest/><duration>4</duration><voice>2</voice><staff>2</staff><type>quarter</type></note>
+        <backup><duration>12</duration></backup>
+        <note><rest/><duration>4</duration><voice>1</voice><staff>2</staff><type>quarter</type></note>
         <note><pitch><step>A</step><octave>3</octave></pitch><duration>4</duration>
-          <voice>2</voice><staff>2</staff><type>quarter</type></note>
+          <voice>1</voice><staff>2</staff><type>quarter</type></note>
         <note><grace cue="/"/><pitch><step>B</step><octave>4</octave></pitch>
-          <duration>1</duration><voice>1</voice><staff>1</staff></note>
+          <duration>1</duration><voice>1</voice><staff>2</staff></note>
       </measure></part>
     </score-partwise>"""
     # Hauteurs attendues : C4+2-12 = 50, E4 -> 54, G4 -> 57, A3+2-12 = 47,
     # B4 (grâce) -> 61. La prolongation de liaison (tie stop) n'est pas une
-    # attaque : écartée. La grâce est comptée, sans avancer le compteur.
+    # attaque : écartée. La grâce est comptée, sans avancer le curseur.
+    # La portée 2 réutilise la **voix 1** (cas du piano) : le <backup> doit
+    # ramener le curseur à zéro, sinon A3 et la grâce sont décalés de 3
+    # noires. Un compteur par voix échoue ici — c'est le test qui échoue
+    # avant le passage au curseur unique par partie.
     att = [
         (50, 0.0, 1.0, 0), (54, 0.0, 1.0, 0), (57, 1.0, 1.0, 0),
-        (47, 1.0, 1.0, 0), (61, 3.0, 0.0, 0),
+        (47, 1.0, 1.0, 0), (61, 2.0, 0.0, 0),
     ]
     with tempfile.TemporaryDirectory() as tmp:
         p = os.path.join(tmp, "musique.musicxml")
@@ -367,8 +379,10 @@ def selftest() -> None:
             f.write(levee)
         assert read_xml(p) == [(77, 2.0, 1.0, 0), (81, 3.0, 1.0, 0)], read_xml(p)
 
-        # Cas « non concerné » : après une première note, backup/forward sont
-        # des artefacts de flux et ne doivent PAS avancer le compteur de voix.
+        # Le même saut après une première note est un déplacement réel du
+        # curseur : C4 occupe 0→1, le backup ramène à 0, le forward avance à 2.
+        # F5 et A5 partent donc de 2,0 et 3,0 (plus de compteur par voix pour
+        # l'ignorer).
         flux = levee.replace(
             "<forward><duration>2</duration></forward>",
             "<note><pitch><step>C</step><octave>4</octave></pitch>"
@@ -377,8 +391,55 @@ def selftest() -> None:
         )
         with open(p, "w", encoding="utf-8") as f:
             f.write(flux)
-        # F5 et A5 restent à 1,0 et 2,0 : le saut est bien ignoré ici.
-        assert read_xml(p)[-2:] == [(77, 1.0, 1.0, 0), (81, 2.0, 1.0, 0)], read_xml(p)
+        assert read_xml(p)[-2:] == [(77, 2.0, 1.0, 0), (81, 3.0, 1.0, 0)], read_xml(p)
+
+        # Correction 6 — changement de <divisions>, accord et extension de
+        # mesure. La mesure 1 avance le curseur à 3 noires (forward 2 + note
+        # 1) ; la mesure 2 change de divisions (2 par noire) et son backup
+        # d'une noire place A4 sur l'attaque de G4. L'extension maximale de
+        # la mesure 1 (3, pas la position finale après backup) fixe le début
+        # de la mesure 2.
+        div = """<score-partwise version="4.0">
+          <part id="P1">
+            <measure number="1">
+              <attributes><divisions>1</divisions></attributes>
+              <forward><duration>2</duration></forward>
+              <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration>
+                <voice>1</voice><staff>1</staff></note>
+            </measure>
+            <measure number="2">
+              <attributes><divisions>2</divisions></attributes>
+              <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration>
+                <voice>1</voice><staff>1</staff></note>
+              <note><chord/><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration>
+                <voice>1</voice><staff>1</staff></note>
+              <backup><duration>2</duration></backup>
+              <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration>
+                <voice>1</voice><staff>1</staff></note>
+            </measure>
+          </part></score-partwise>"""
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(div)
+        attendu_div = [
+            (65, 2.0, 1.0, 0), (67, 3.0, 1.0, 0),
+            (71, 3.0, 1.0, 0), (69, 3.0, 1.0, 0),
+        ]
+        assert read_xml(p) == attendu_div, read_xml(p)
+
+        # Percussions `<unpitched>` : une tête B4 vaut 71 ; sa durée et son
+        # attaque suivent le même curseur que les notes accordées. Le cas
+        # « non concerné » est le `<pitch>` ordinaire, inchangé.
+        perc = """<score-partwise version="4.0">
+          <part id="P1"><measure number="1">
+            <attributes><divisions>1</divisions></attributes>
+            <note><unpitched><display-step>B</display-step><display-octave>4</display-octave>
+              </unpitched><duration>1</duration><voice>1</voice><staff>1</staff></note>
+            <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>
+              <voice>1</voice><staff>1</staff></note>
+          </measure></part></score-partwise>"""
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(perc)
+        assert read_xml(p) == [(71, 0.0, 1.0, 0), (60, 1.0, 1.0, 0)], read_xml(p)
 
         # Correction 3 — reprises : l'ancien appariement « attaques les plus
         # anciennes par hauteur » consommait un couple sur la copie surnumé-
@@ -432,13 +493,10 @@ def selftest() -> None:
             <attributes><divisions>1</divisions></attributes>
             <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>
               <voice>1</voice><staff>1</staff></note>
-            <backup><duration>1</duration></backup>
             <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration>
               <voice>1</voice><staff>2</staff></note>
-            <backup><duration>1</duration></backup>
             <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration>
               <voice>1</voice><staff>1</staff></note>
-            <backup><duration>1</duration></backup>
             <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration>
               <voice>1</voice><staff>2</staff></note>
           </measure></part></score-partwise>"""

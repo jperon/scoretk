@@ -78,10 +78,26 @@ pub(crate) struct Parser<'a> {
     /// `\layout` déplace explicitement `Timing_translator` de `Score` vers
     /// `Staff` : les indications `\time` deviennent propres à chaque portée.
     staff_local_timing: bool,
+    /// Mode courant des noms de notes (`\drummode` ou `\chordmode`), qui
+    /// remplace la notation diatonique par des événements à hauteur MIDI.
+    note_mode: NoteMode,
 }
 
 /// Profondeur d'expansion maximale (garde-fou contre la récursion).
 const MAX_EXPANSION_DEPTH: u32 = 32;
+
+/// Interprétation des noms de notes dans la musique courante.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum NoteMode {
+    /// Noms de notes ordinaires (`a`, `bes`, `c'`…).
+    #[default]
+    Notes,
+    /// Noms de percussions (`bd`, `sn`, `hh`…), portés par `\drummode`.
+    Drums,
+    /// Noms d'accords (`c:m7`, `c/g`…), portés par `\chordmode` dans une
+    /// portée : LilyPond les joue comme des notes.
+    Chords,
+}
 
 /// Nature d'une fonction définie en Scheme.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -142,6 +158,7 @@ pub(crate) fn parse(
         expansion_depth: 0,
         melisma_busy_disabled: false,
         staff_local_timing: false,
+        note_mode: NoteMode::Notes,
     };
     parser.document()
 }
@@ -837,12 +854,18 @@ impl<'a> Parser<'a> {
                 token.kind == Kind::Word && GroupKind::from_name(&token.text) != GroupKind::Other
             });
             if !structural {
-                self.bump();
+                let nom = self.bump().map(|token| token.text).unwrap_or_default();
                 if self.eat_punct('=') {
                     self.bump();
                 }
                 if self.eat_command("with") {
                     self.parse_with_block();
+                }
+                // `\context ChordNames` (au contraire de `\new ChordNames`)
+                // arrive ici : sans ce test, sa grille devenait une portée
+                // jouée dès que ses noms d'accords étaient lisibles.
+                if matches!(nom.as_str(), "ChordNames" | "FiguredBass") {
+                    return self.skip_nonplaying_grid(&nom);
                 }
                 return self.parse_music();
             }
@@ -1001,7 +1024,14 @@ impl<'a> Parser<'a> {
                 })
             }
             _ => {
+                // `\new DrumStaff` : le contenu est en mode percussion même
+                // sans `\drummode` explicite (`ly/drumpitch-init.ly`).
+                let mode_precedent = self.note_mode;
+                if name.eq_ignore_ascii_case("drumstaff") {
+                    self.note_mode = NoteMode::Drums;
+                }
                 let content = self.parse_music();
+                self.note_mode = mode_precedent;
                 let mut voices = Vec::new();
                 let mut lyrics = Vec::new();
                 self.collect_voices(content, &mut voices, &mut lyrics);
@@ -2305,6 +2335,28 @@ impl<'a> Parser<'a> {
             // `\chords`, `\figures` et leurs alias ouvrent une grille non
             // jouée : la sauter, sans faire échouer le fichier.
             _ if is_nonplaying_mode_head(&name) => self.skip_nonplaying_grid(&name),
+            // `\drummode` et `\chordmode` changent l'interprétation des noms.
+            // Dans une portée LilyPond joue ces événements : on les lit comme
+            // des notes à hauteur MIDI (tables de `modes.rs`). Le mode est
+            // restauré après l'expression pour ne pas déteindre sur la suite.
+            "drummode" | "drums" | "chordmode" => {
+                let mode = if name == "chordmode" {
+                    NoteMode::Chords
+                } else {
+                    NoteMode::Drums
+                };
+                let precedent = self.note_mode;
+                self.note_mode = mode;
+                let music = self.parse_music();
+                self.note_mode = precedent;
+                if matches!(music, Music::Empty) {
+                    // Cas limite (fin de fichier après la commande) : comme
+                    // pour une grille ignorée, signaler la limite plutôt que
+                    // de faire échouer la lecture.
+                    self.warnings.mark_music_ignored();
+                }
+                music
+            }
             // `\lyrics`, `\simultaneous`, `\notemode`… ne font que changer le
             // mode de lecture des jetons suivants ; la musique enveloppée
             // reste la même. Sans ce cas, la commande était traitée comme
@@ -2615,6 +2667,86 @@ impl<'a> Parser<'a> {
     // Accords et durées
     //------------------------------------------------------------------
 
+    /// Recompose un nom d'accord coupé par le lexer (`c:m7`, `c/g`,
+    /// `c:m7.5-`). La durée qui suit (un nombre sans `:` ni `/`) n'en fait pas
+    /// partie et reste pour `parse_optional_duration_spec`.
+    fn parse_chord_name(&mut self, first: &str) -> String {
+        let mut nom = first.to_string();
+        loop {
+            let suivant = self.peek().cloned();
+            match suivant {
+                Some(Token {
+                    kind: Kind::Punct(':'),
+                    ..
+                }) => {
+                    self.position += 1;
+                    nom.push(':');
+                    if let Some(Token { kind, text, .. }) = self.peek().cloned() {
+                        match kind {
+                            // `c:7` : le chiffre est la qualité, la durée
+                            // éventuelle qui suit n'en fait pas partie.
+                            Kind::Number => {
+                                nom.push_str(&text);
+                                self.position += 1;
+                            }
+                            // `c:m7`, `c:maj7` : le lexer coupe la lettre et
+                            // le chiffre ; les deux font partie de la qualité.
+                            Kind::Word => {
+                                nom.push_str(&text);
+                                self.position += 1;
+                                if let Some(Token {
+                                    kind: Kind::Number,
+                                    text: chiffre,
+                                    ..
+                                }) = self.peek().cloned()
+                                {
+                                    nom.push_str(&chiffre);
+                                    self.position += 1;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    while self.peek().is_some_and(|token| token.is_punct('.')) {
+                        self.position += 1;
+                        nom.push('.');
+                        if let Some(Token {
+                            kind: Kind::Number,
+                            text,
+                            ..
+                        }) = self.peek().cloned()
+                        {
+                            nom.push_str(&text);
+                            self.position += 1;
+                        }
+                        if self.peek().is_some_and(|token| token.is_punct('-')) {
+                            self.position += 1;
+                            nom.push('-');
+                        }
+                    }
+                }
+                Some(Token {
+                    kind: Kind::Punct('/'),
+                    ..
+                }) => {
+                    self.position += 1;
+                    nom.push('/');
+                    if let Some(Token {
+                        kind: Kind::Word,
+                        text,
+                        ..
+                    }) = self.peek().cloned()
+                    {
+                        nom.push_str(&text);
+                        self.position += 1;
+                    }
+                }
+                _ => break,
+            }
+        }
+        nom
+    }
+
     /// Accord, silence, silence multi-mesures ou répétition d'accord.
     fn parse_chord(&mut self, in_chord: bool) -> Music {
         let Some(Token {
@@ -2662,6 +2794,57 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // `\drummode` / `\chordmode` : les mots ne sont pas des hauteurs de la
+        // langue courante mais des événements dont la table donne la hauteur
+        // MIDI jouée par LilyPond. Un nom inconnu est consommé (progression
+        // garantie) et avertit, comme pour un mot ordinaire.
+        if self.note_mode != NoteMode::Notes {
+            self.position += 1;
+            // Le lexer coupe `c:m7` en `c`, `:`, `m7` et `c/g` en `c`, `/`,
+            // `g` : recomposer le nom complet avant de consulter la table.
+            let nom = if self.note_mode == NoteMode::Chords {
+                self.parse_chord_name(&text)
+            } else {
+                text.clone()
+            };
+            let eventuelles: Option<(Vec<u8>, Option<u8>)> = match self.note_mode {
+                NoteMode::Drums => crate::modes::drum_pitch(&nom).map(|pitch| (vec![pitch], None)),
+                NoteMode::Chords => crate::modes::chord_pitches(self.language, &nom),
+                NoteMode::Notes => None,
+            };
+            if let Some((mut pitches, basse)) = eventuelles {
+                if let Some(basse) = basse {
+                    pitches.push(basse);
+                }
+                let head = std::mem::take(&mut self.pending_head);
+                let posts = self.parse_posts_until_note_end();
+                let notes = pitches
+                    .into_iter()
+                    .map(|pitch| NoteSpec {
+                        pitch: PitchSpec::default(),
+                        posts: posts.clone(),
+                        head_group: head.clone(),
+                        midi: Some(pitch),
+                    })
+                    .collect();
+                let (duration, multiplier) = self.parse_optional_duration_spec();
+                let chord_posts = self.parse_posts();
+                return Music::Chord(Chord {
+                    kind: ChordKind::Notes(notes),
+                    duration,
+                    multiplier,
+                    posts: chord_posts,
+                    invisible: false,
+                });
+            }
+            // Consommer la durée et les événements qui suivent le nom inconnu
+            // pour qu'ils ne se transforment pas en note parasite.
+            let _ = self.parse_optional_duration_spec();
+            let _ = self.parse_posts();
+            self.warn(format!("nom de mode ignoré dans la musique : {text}"));
+            return Music::Empty;
+        }
+
         let Some(pitch) = self.parse_pitch_spec() else {
             // Mot qui n'est pas une hauteur : variable ou symbole isolé.
             self.position += 1;
@@ -2679,6 +2862,7 @@ impl<'a> Parser<'a> {
             pitch,
             posts: std::mem::take(&mut note_posts),
             head_group: head,
+            midi: None,
         }];
         let (duration, multiplier) = self.parse_optional_duration_spec();
         // Les post-événements peuvent suivre la durée d'un accord.
@@ -2714,6 +2898,7 @@ impl<'a> Parser<'a> {
                 pitch,
                 posts,
                 head_group: head,
+                midi: None,
             });
             self.guard_progress(before);
         }
@@ -3822,7 +4007,7 @@ fn anonymous_group(music: Music) -> GroupBlock {
 /// contenu doit être sauté, comme avant l'introduction des têtes de mode
 /// transparentes.
 fn is_nonplaying_mode_head(name: &str) -> bool {
-    matches!(name, "chordmode" | "figuremode" | "chords" | "figures")
+    matches!(name, "figuremode" | "figures" | "chords")
 }
 
 /// Commandes de changement de mode (`mode_changing_head` et
@@ -4253,6 +4438,7 @@ mod tests {
             expansion_depth: 0,
             melisma_busy_disabled: false,
             staff_local_timing: false,
+            note_mode: NoteMode::Notes,
         };
         parser.parse_music()
     }
@@ -4288,6 +4474,7 @@ mod tests {
                 expansion_depth: 0,
                 melisma_busy_disabled: false,
                 staff_local_timing: false,
+                note_mode: NoteMode::Notes,
             };
             let progresse = parser.guard_progress(0);
             let bloque = parser.guard_progress(1);

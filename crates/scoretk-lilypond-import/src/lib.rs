@@ -64,6 +64,7 @@ mod builder;
 mod events;
 mod include;
 mod lexer;
+mod modes;
 mod parallel;
 mod parser;
 mod pitch;

@@ -42,25 +42,56 @@ records a `repeat` flag on every row. N1 is still reported for all files;
 **N2 is aggregated only over repeat-free files**. The raw rows keep N2 for
 repeat files (recorded, never silently dropped) so the effect can be inspected.
 
-Three further reader details are handled explicitly in `read_xml()`:
-- the attack counter is keyed by **voice**, not by `(voice, staff)`: a
-  cross-staff voice (`\change Staff`) keeps one `<voice>` and changes `<staff>`
-  from note to note, so keying on the pair restarts its timeline at zero;
-- a `<forward>` before the **first** note of a voice advances that voice's
-  counter — this is how writers denote a pickup or a spacer rest. The lookahead
-  for the following note spans **all measures** of the part: a partial measure
-  often ends with the `<forward>`, its first note being in the next measure;
-- later `<backup>`/`<forward>` pairs only reposition the writer's stream and
-  are ignored, because the counter is already local to each voice. Honouring
-  them would shift correctly placed notes (verified on real corpus files).
+### MusicXML time is one cursor per part
 
-Minimal reproductions used to validate these rules:
-`input/regression/grace-nest5.ly` (leading `<forward>` + a grace note),
-`input/regression/tuplet-bracket-cross-staff.ly` (voice changing staff),
-`~/.../knjze12monferA.ly` (partial-measure `<forward>`), a two-measure
-`\partial 4` score (pickup), a `\times 2/3` score (tuplets), and a
-`\repeat unfold` / `\repeat volta` score (repeat flag). Each rule has an
-assertion in `ly_notes.py selftest`.
+`read_xml()` no longer keeps **any** per-voice or per-`(voice, staff)` counter.
+MusicXML defines time per **part** with a single cursor, expressed in quarter
+notes:
+
+- a `<note>` without `<chord/>` is placed at the cursor and advances it by its
+  `<duration>` (converted with the current `<divisions>`, which may change in
+  `<attributes>` mid-measure); a `<chord/>` note shares the previous attack;
+- `<backup>` moves the cursor backwards, `<forward>` forwards — both are real
+  timeline moves, not writer artefacts to ignore;
+- a new `<measure>` starts at the previous measure's start plus that measure's
+  **maximal cursor extent** (the furthest position reached, not the final one,
+  which a trailing `<backup>` usually brings back to the measure start);
+- a `<grace>` note is counted but has no duration, so it does not move the
+  cursor; `<tie type="stop"/>` is not an attack but still occupies its time.
+
+The old counter keyed by voice was itself a correction of an even older
+`(voice, staff)` key: a cross-staff voice (`\change Staff`) keeps one `<voice>`
+and changes `<staff>`, so the pair key restarted its timeline. The cursor model
+keeps cross-staff notes monotonic too, and additionally handles a piano part
+that reuses voice 1 on both staves (a `<backup>` separates them). On the 4543
+measurable files of the full last campaign the cursor and voice models give the
+same N2 file by file, but the aggregate changes because the cursor also honours
+`<backup>`/`<forward>` and per-measure extents; see `docs/agents/lilypond.md`.
+
+Minimal reproductions used to validate these rules (each has an assertion in
+`ly_notes.py selftest`): a piano part with voice 1 reused on both staves and a
+`<backup>` between them; a voice changing `<staff>`; chords and a chord at end
+of measure; `<backup>`/`<forward>` with a `<divisions>` change; a partial-measure
+`<forward>` whose first note is in the next measure (`knjze12monferA.ly`); a
+leading `<forward>` plus a grace (`input/regression/grace-nest5.ly`); and a
+`\repeat unfold` / `\repeat volta` score (repeat flag).
+
+### Percussion (`<unpitched>`)
+
+LilyPond plays `\drummode` / `\new DrumStaff` notes on General MIDI drum
+channels. The pivot model has no untuned-percussion pitch, so scoretk exports
+these notes as ordinary `<pitch>` elements carrying the **GM MIDI note number**
+from `ly/drumpitch-init.ly` (`bd` 36, `sn` 38, `hh` 42, `cymr` 51, …). The
+oracle therefore compares them to LilyPond's MIDI exactly as pitched notes;
+that is the meaningful drum comparison.
+
+Other writers may write `<unpitched>` instead. `read_xml()` then uses
+`<display-step>`/`<display-octave>` as the comparison pitch (B4 = 71), so the
+note is at least counted and its attack checked. python-ly emits the same B4
+head for every drum voice and carries no MIDI number, so its drum pitches
+cannot be matched to LilyPond's MIDI — a documented oracle limitation, not a
+reader defect. No corpus file or third-party script is copied into the
+repository.
 
 ## Alternatives measured with the same oracle
 
