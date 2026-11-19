@@ -946,3 +946,146 @@ Per-tune comparison against the § 16.6 master: **N1 345 gains / 1 loss**, **N2 
 #### Remaining gap
 
 scoretk is now within **0.12 point of N1 and 0.04 of N2** of `abc2xml.py`, with one more rejection (131 vs 130; 109 files without `X:`, 21 oracle failures shared by both, and one remaining `"` inside a quoted chord annotation in `MyLadysGoonHasGairsOntStrathspey.abc` X:1). The residual N1 gap is 9 empty outputs from `%%stretchlast 1`, 12 partial mismatches, 4 transposition/clef cases and 2 octave cases, all already classified in § 13.3/§ 15.3 and outside this syntax port. The MuseScore corpus is unaffected: `cargo test -p scoretk --test e2e_corpus` passes 5/5.
+
+## 17. Writing export: baseline against `xml2abc.py` (2026-11-19)
+
+This section is in English by convention for the reliability measurement
+reports. The upstream script is **not** committed: the copy used is
+`/tmp/abcchk/xml2abc_177/xml2abc.py` (version 177). The three fixes below are
+faithful ports of its behaviour; each cites the Python function and line in a
+Rust comment, and each landed with its own failing test first.
+
+### 17.1 Oracle
+
+`scripts/oracle/abc/ecriture.py` (wrapper `ecriture.sh`, lot builder
+`lots-ecriture.sh`) measures the **writing** direction against the same
+`abc2midi` 5.03 oracle as the reading campaign of § 13. For each source `S`:
+
+- scoretk writes `.abc` directly from `S`;
+- `xml2abc.py` writes `.abc` from the versioned `*.ref.musicxml` (corpus),
+  MuseScore's MusicXML export (`.mscz`), the MusicXML source itself (`.mxl`/
+  `.xml`), or scoretk's MusicXML as a fallback. The `xml_source` column records
+  the origin in every row.
+- Both `.abc` are played by `abc2midi -silent -NGRA -NGUI` after `mesure.py`'s
+  `sans_reprises`/`sans_ornements` cleanup of a **copy**: written notes, played
+  once, not repeats or realized ornaments. The resulting MIDI is compared to
+  the reference MIDI of `S` with `midi_notes.py` N1/N2/N2d (Q16 grid):
+  MuseScore 4.7.4 for `.mscx`/`.mscz`, scoretk's MIDI for MusicXML.
+- `abc2midi` error/warning lines and the `.abc` byte count are recorded. Every
+  binary runs under `timeout 10 prlimit --as=2000000000`.
+
+Two oracle corrections were needed before comparing campaigns: the `.mxl`
+extractor now skips `META-INF/container.xml` and selects the member containing
+`<score-partwise>` (otherwise `xml2abc.py` failed on the three 18 598-note
+files), and the reference cache of the `mscz03` chunk was completed so both
+campaigns use byte-identical reference MIDI/MusicXML. `cmp.py` and `mesure.py`
+are reused, not duplicated.
+
+### 17.2 Lots and baseline
+
+Three lots from `scripts/oracle/lilypond/lots-ecriture.sh`: 56 corpus `.mscx`,
+174 `.mscz` of `~/Musique` (split into four chunks), 32 genuine MusicXML.
+Frozen baseline binary: `/tmp/abc-ecriture/bin/scoretk-base`. "ABC OK" counts
+non-empty `.abc` files; "Exact" counts files with N1 = N2 = N2d = 100 %.
+Percentages are weighted by reference note counts.
+
+| Lot | Tool | Files | ABC OK | Exact | N1 % | N2 % | N2d % | Errors | Warnings | Mean .abc B |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 20 | 77.84 | 72.11 | 68.40 | 20 | 79 | 298 |
+| corpus | xml2abc | 56 | 56 | 23 | 78.96 | 68.23 | 64.79 | 39 | 165 | 338 |
+| mscz00 | scoretk | 44 | 32 | 6 | 80.08 | 67.87 | 61.84 | 0 | 2 152 | 3 966 |
+| mscz00 | xml2abc | 44 | 44 | 10 | 81.49 | 69.30 | 66.24 | 49 | 1 318 | 4 582 |
+| mscz01 | scoretk | 44 | 44 | 1 | 88.79 | 87.57 | 80.13 | 13 855 | 10 072 | 13 565 |
+| mscz01 | xml2abc | 44 | 44 | 4 | 92.62 | 92.43 | 85.92 | 13 389 | 859 | 14 938 |
+| mscz02 | scoretk | 44 | 44 | 0 | 73.36 | 55.89 | 51.17 | 49 895 | 12 480 | 15 293 |
+| mscz02 | xml2abc | 44 | 44 | 0 | 76.25 | 60.86 | 56.29 | 47 825 | 3 979 | 18 562 |
+| mscz03 | scoretk | 42 | 32 | 0 | 84.18 | 65.87 | 63.14 | 3 696 | 9 242 | 11 788 |
+| mscz03 | xml2abc | 42 | 42 | 4 | 85.65 | 56.18 | 53.84 | 6 079 | 4 052 | 15 114 |
+| xml | scoretk | 32 | 32 | 4 | 90.47 | 25.28 | 22.25 | 24 | 8 312 | 13 410 |
+| xml | xml2abc | 32 | 32 | 7 | 93.07 | 27.26 | 24.29 | 664 | 6 340 | 13 516 |
+
+Per-file with both candidates valid (N2d): scoretk better **21**, equal 87,
+worse **132**. The large error/warning counts of `mscz01`/`mscz02` come from
+`abc2midi` rejecting nested tuplets and old clefs (the same files are listed
+in `IGNORED` in § 6), not from a silent loss.
+
+### 17.3 Causes and fixes (one commit each)
+
+Files where `xml2abc.py` was better were grouped by first cause:
+
+1. **Instrument transposition missing (fix 1).** `xml2abc.py::doAttr`
+   (lines 1278, 1319-1332) writes `transpose=<chromatic + 12*octave-change>`
+   in `V:`. scoretk only wrote the written pitch, so `abc2midi` played e.g.
+   the steel guitar an octave high and the B♭ clarinet two semitones high
+   (N1 0 % on `hairpin_{simple,dynamic_*}.mscx`). The writer now emits the
+   field. Reduced test: `crates/scoretk/tests/abc_ecriture_transposition.rs`,
+   with a non-transposing voice as control and the null-transposition case.
+   Six corpus snapshots gained `transpose=`.
+2. **Octave clefs (fix 2).** `xml2abc.py::doAttr` lines 1329-1331
+   (`clefOct[n] = -clef-octave-change`) and `mkNote` line 1154
+   (`oct += clefOct[...]`) shift the written octave because `abc2midi` ignores
+   the `-8`/`+8` suffix of an ABC clef. scoretk wrote the unshifted note, so
+   an octave-treble tenor sounded 12 semitones low (N1 58.8 % vs 100 % on
+   `Omni_die_dic_Mariae.mscz`). Reduced test:
+   `crates/scoretk/tests/abc_ecriture_clef_octave.rs` (both signs, a control
+   voice, chords, rests, ties, two measures).
+3. **Ottava wrongly emitted as transposition (fix 3).** Fix 1 initially used
+   `transpose_at`, which also subtracts the ottava compensation. On
+   `copypaste_parts.mscx` this double-counted an octave (N2d −9.09 points).
+   `xml2abc.py::doAttr` reads only `<transpose>`, never `<octave-shift>`: the
+   writer now uses the instrument transpose alone. The added test
+   `ottava_ne_devient_pas_une_transposition` fails before the fix; the
+   snapshot of that corpus file is back to its original content.
+
+### 17.4 Final campaign (frozen `scoretk-final3`)
+
+| Lot | Tool | Files | ABC OK | Exact | N1 % | N2 % | N2d % | Errors | Warnings | Mean .abc B |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 23 | 79.01 | 73.66 | 69.95 | 20 | 79 | 299 |
+| corpus | xml2abc | 56 | 56 | 23 | 78.96 | 68.23 | 64.79 | 39 | 165 | 338 |
+| mscz00 | scoretk | 44 | 32 | 10 | 86.15 | 74.53 | 68.48 | 0 | 2 152 | 3 944 |
+| mscz00 | xml2abc | 44 | 44 | 10 | 81.49 | 69.30 | 66.24 | 49 | 1 318 | 4 582 |
+| mscz01 | scoretk | 44 | 44 | 4 | 92.42 | 91.61 | 84.08 | 13 855 | 10 072 | 13 538 |
+| mscz01 | xml2abc | 44 | 44 | 4 | 92.62 | 92.43 | 85.92 | 13 389 | 859 | 14 938 |
+| mscz02 | scoretk | 44 | 44 | 0 | 75.46 | 58.38 | 53.64 | 49 895 | 12 480 | 15 295 |
+| mscz02 | xml2abc | 44 | 44 | 0 | 76.25 | 60.86 | 56.29 | 47 825 | 3 979 | 18 562 |
+| mscz03 | scoretk | 42 | 32 | 0 | 91.84 | 73.13 | 70.21 | 3 696 | 9 242 | 11 706 |
+| mscz03 | xml2abc | 42 | 42 | 4 | 85.65 | 56.18 | 53.84 | 6 079 | 4 052 | 15 114 |
+| xml | scoretk | 32 | 32 | 7 | 92.94 | 27.82 | 24.68 | 24 | 8 312 | 13 375 |
+| xml | xml2abc | 32 | 32 | 7 | 93.07 | 27.26 | 24.29 | 664 | 6 340 | 13 516 |
+
+Per-file with both candidates valid (N2d): scoretk better **29**, equal 140,
+worse **71** (baseline 21 / 87 / 132). Against the frozen baseline, per-file
+N2d is **90 gains / 0 losses / 150 unchanged**; no file lost a pitch or an
+attack. scoretk now matches or beats `xml2abc.py` on the corpus and on the
+XML lot (where the weighted average is dominated by three 18 598-note files
+that both tools handle badly), and has closed most of the gap on `mscz00`
+and `mscz03`. Its `.abc` output stays 4-23 % smaller than the alternative's.
+
+### 17.5 Remaining losses, by first cause
+
+- **Reader limitation (22 files).** The scoretk `.mscx`/`.mscz` reader
+  rejects MuseScore 1.x/2.x (`version MuseScore non prise en charge : 2.06`):
+  all the Vivaldi/Pitoni/Palestrina chorales and most accordion files. No ABC
+  is written at all. This is a reader issue, outside this writing campaign,
+  as in § 13 of `docs/agents/lilypond.md`.
+- **Short written measures and attack shifts (~20 files).** On e.g.
+  `Buenos_dias,_Mexico_!.mscz` (N1 98.8 % both), `Omni_die_dic_Mariae.mscz`
+  and `00- Adeste fideles - choeur.mscz`, pitches are right but a handful of
+  attacks are late: `xml2abc.py` writes `$` line breaks and explicit short
+  rests where the writer emits `Z` or fill rests, and `abc2midi` pads the two
+  forms differently. Porting `doMaat` (line 674) and the measure/bar grammar
+  (lines 428-436) of `xml2abc.py` is the next step; no note is lost.
+- **Nested tuplets (1 corpus file).** `testTuplets8.mscx`: `(3:2:3` with an
+  inner `(5:4` here versus `(3:2:7`/`(5:4:5` in `xml2abc.py`; both are outside
+  ABC 2.1 and `abc2midi` accepts neither the same way. The existing reader
+  port of `tuplet_start`/`mkTmod` does not cover the writer.
+- **Notes missing in both candidates (rest of the losses, mostly `mscz02`).**
+  Both N1 values are below 100 % with the same `notes_manquantes` flag; the
+  MuseScore reference MIDI realizes ornaments, glissandi and multi-measure
+  voltas that neither written ABC contains. This is the oracle artefact
+  already diagnosed in § 15.3/§ 16.1, not a scoretk-only regression.
+
+No file was dropped from any lot, no reference was regenerated with another
+MuseScore version, and the only snapshots changed are the five legitimate
+`transpose=` additions of fix 1.
