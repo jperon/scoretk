@@ -1111,7 +1111,7 @@ fn render_chord(
         }
         let mut off = on + ticks * length / 1000 - 1;
         // Prolongation des liaisons : chaque note liée ajoute sa durée.
-        off += tie_length(score, staff, note);
+        off += tie_length(score, staff, note, instrument, source_tick);
         out.push(Event {
             tick: on,
             kind: EventKind::NoteOn {
@@ -1170,7 +1170,8 @@ fn render_grace_notes(
         // La personnalisation est par note, comme `playNote` dans le C++.
         let velocity = customize_velocity(velocity_base.clamp(1, 127), note) as u8;
         let key = note.pitch.min(127);
-        let end = off + tie_length(score, staff, note);
+        let instrument = instrument_for(score, staff.part, source_tick);
+        let end = off + tie_length(score, staff, note, instrument, source_tick);
         let start = on.max(0);
         // Un ornement placé avant le tout début peut avoir `on < 0` : la fin
         // reste alors strictement après le début effectif.
@@ -1204,8 +1205,21 @@ fn render_grace_notes(
 }
 
 /// Durée ajoutée par une chaîne de liaisons de prolongation
-/// (`calculateTieLength`).
-fn tie_length(score: &Score, staff: &scoretk_core::model::Staff, note: &Note) -> i64 {
+/// (`calculateTieLength`, `compatmidirenderinternal.cpp:771-786`).
+///
+/// Le C++ lit `nel[0].len()` de chaque note liée : cet évènement de jeu a déjà
+/// été multiplié par le `gateTime` de l'instrument dans `renderChord`
+/// (`compatmidirender.cpp:263`, `e.setLen(e.len() * gateTime / 100)`). La durée
+/// d'une liaison doit donc porter le même facteur que la note elle-même, sans
+/// quoi un instrument à tenue courte (flûte à 95 %) joue ses notes liées trop
+/// longuement.
+fn tie_length(
+    score: &Score,
+    staff: &scoretk_core::model::Staff,
+    note: &Note,
+    instrument: &Instrument,
+    source_tick: i64,
+) -> i64 {
     let mut total = 0;
     let mut tie = note.tie_forward;
     let mut guard = 0;
@@ -1220,15 +1234,17 @@ fn tie_length(score: &Score, staff: &scoretk_core::model::Staff, note: &Note) ->
         if next_ticks <= 0 {
             break;
         }
-        // La note liée n'est pas attaquée : seule sa durée effective (réduite
-        // par ses propres ornements après) prolonge la note.
-        let next_trail = match &next_rest.kind {
-            ChordRestKind::Chord(next_chord) => {
-                trail_time(next_chord, next_rest.duration, next_ticks)
-            }
-            ChordRestKind::Rest(_) => 0,
+        // La note liée n'est pas attaquée : seule la durée de son évènement de
+        // jeu (ornements après et `gateTime` déjà appliqués) prolonge la note.
+        let (next_trail, next_gate) = match &next_rest.kind {
+            ChordRestKind::Chord(next_chord) => (
+                trail_time(next_chord, next_rest.duration, next_ticks),
+                gate_time(score, staff, instrument, next_chord, source_tick),
+            ),
+            ChordRestKind::Rest(_) => (0, 100),
         };
-        total += next_ticks * (1000 - next_trail) / 1000;
+        let next_len = (1000 - next_trail) * next_gate / 100;
+        total += next_len * next_ticks / 1000;
         guard += 1;
         tie = score.notes[next_id.index()].tie_forward;
     }
