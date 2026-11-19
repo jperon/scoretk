@@ -91,6 +91,22 @@ pub(crate) fn pitch_name(note: &Note, transpose_chromatic: i32) -> String {
     )
 }
 
+/// Transposition à appliquer à l'écriture des hauteurs.
+///
+/// Un décalage d'octave pur n'est pas une transposition harmonique : écrire la
+/// hauteur concert telle quelle et omettre `\transposition` donne exactement
+/// le même MIDI, avec moins d'octets. C'est le cas des guitares et autres
+/// instruments à octave décalée (par exemple les `v4_hairpin_*` du corpus).
+/// Les transpositions chromatiques réelles (clarinette en si bémol, cor en fa…)
+/// sont conservées : la hauteur écrite doit rester celle de la partition.
+pub(crate) fn written_transposition(transpose_chromatic: i32) -> i32 {
+    if transpose_chromatic != 0 && transpose_chromatic % 12 == 0 {
+        0
+    } else {
+        transpose_chromatic
+    }
+}
+
 /// `\transposition <hauteur>` pour une transposition d'instrument.
 ///
 /// LilyPond ne transpose que le MIDI : la hauteur écrite reste celle de la
@@ -276,6 +292,19 @@ mod tests {
 
     #[test]
     fn transposition_des_instruments() {
+        // Un décalage d'octave pur n'écrit ni `\transposition` ni hauteur
+        // transposée : la hauteur concert suffit et le MIDI est identique.
+        assert_eq!(written_transposition(0), 0);
+        assert_eq!(written_transposition(-12), 0);
+        assert_eq!(written_transposition(12), 0);
+        assert_eq!(written_transposition(-24), 0);
+        assert_eq!(written_transposition(-2), -2);
+        assert_eq!(written_transposition(-7), -7);
+        assert_eq!(transposition_command(written_transposition(-12)), None);
+        assert_eq!(
+            transposition_command(written_transposition(-2)).as_deref(),
+            Some("\\transposition bf")
+        );
         assert_eq!(transposition_command(0), None);
         assert_eq!(
             transposition_command(-12).as_deref(),

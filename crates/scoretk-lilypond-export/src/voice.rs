@@ -151,14 +151,17 @@ pub(crate) fn render_body(
         }
     }
 
-    // Transposition de l'instrument : sans cette commande LilyPond jouerait la
-    // hauteur **écrite** et non la hauteur concert (une guitare à l'octave
-    // sous sonnerait une octave trop haut). La propriété vaut pour la portée
-    // entière : on la pose dans chaque voix, et on la renouvelle à chaque
-    // changement d'instrument (`instrument_at` est évalué au début de mesure).
+    // Transposition chromatique de l'instrument : sans cette commande LilyPond
+    // jouerait la hauteur **écrite** et non la hauteur concert (une clarinette
+    // en si bémol sonnerait une seconde trop haut). Les décalages d'octave pur
+    // sont ramenés à zéro par `written_transposition` : on écrit alors la
+    // hauteur concert, sans commande redondante. La propriété vaut pour la
+    // portée entière : on la renouvelle à chaque changement d'instrument
+    // (`instrument_at` est évalué au début de mesure).
     let mut derniere_transposition: Option<i32> = None;
     for (measure_index, measure) in score.measures.iter().enumerate() {
-        let transposition = transpose_at(score, staff, measure.start_tick);
+        let transposition =
+            crate::pitch::written_transposition(transpose_at(score, staff, measure.start_tick));
         if derniere_transposition == Some(transposition) {
             continue;
         }
@@ -482,7 +485,8 @@ pub(crate) fn render_body(
             }
             open_tuplets(score, &chain, &mut tuplets, &mut emitter);
 
-            let transpose = transpose_at(score, staff, item.tick);
+            let transpose =
+                crate::pitch::written_transposition(transpose_at(score, staff, item.tick));
             let mut line = chord::render(score, item.chord_rest, measure.len, transpose);
             for event in &post_by_item[item_index] {
                 if !line.is_empty() {

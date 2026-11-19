@@ -169,22 +169,24 @@ fn clef_initiale_depuis_default_clef() {
     );
 }
 
-/// La transposition de l'instrument doit être écrite dans la voix, sinon
-/// LilyPond joue la hauteur **écrite** et non la hauteur concert (par exemple
-/// une guitare à l'octave sous sonne une octave trop haut). Cas réel du corpus
-/// (`\transposition c`) et cas construit (`\transposition bf`), avec une
-/// deuxième partie non transpositrice qui ne doit rien recevoir.
+/// Un décalage d'octave pur n'est pas une transposition harmonique : on écrit
+/// la hauteur concert sans `\transposition`, ce qui donne le même MIDI avec
+/// moins d'octets (cas réel des `v4_hairpin_*`). Une transposition
+/// chromatique, elle, doit rester écrite dans la voix, sinon LilyPond joue la
+/// hauteur écrite et non la hauteur concert (cas construit `\transposition
+/// bf`). Une seconde partie non transpositrice ne reçoit rien.
 #[test]
 fn transposition_instrument_ecrite_dans_la_voix() {
     let produit = convertir(&corpus().join("v4/hairpin_simple.mscx"));
     assert!(
-        produit.contains("\\transposition c"),
-        "transposition de la guitare absente :\n{produit}"
+        !produit.contains("\\transposition"),
+        "transposition d'octave redondante :\n{produit}"
     );
-    for hauteur in ["b4", "c'4", "d'4", "e'4"] {
+    // En mode `\fixed c'`, le si 3 concert s'écrit `b,` et le do 4 `c`.
+    for hauteur in ["b,4", "c4", "d4", "e4"] {
         assert!(
             produit.contains(hauteur),
-            "hauteur écrite {hauteur} absente :\n{produit}"
+            "hauteur concert {hauteur} absente :\n{produit}"
         );
     }
 
