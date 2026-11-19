@@ -371,6 +371,7 @@ impl Parser<'_> {
         let (nominal, actual) = self.apply_rhythm(nominal)?;
         let duration = duration::figure_for(nominal);
         let id = self.reader.score.add_note(note);
+        self.drop_foreign_ties(&[pitch]);
         if let Some(previous) = self.voice().pending_ties.remove(&pitch) {
             self.reader.score.note_mut(previous).tie_forward = Some(id);
             self.reader.score.note_mut(id).tie_back = Some(previous);
@@ -660,8 +661,35 @@ impl Parser<'_> {
         voice.last_line_chords.push((measure, index));
     }
 
+    /// Abandonne les liaisons en attente dont la hauteur n'est pas présente.
+    ///
+    /// Portage de `abc2xml.py` 269, `MusicXml.doNotations` (lignes 1445-1460) :
+    /// à chaque note, toute liaison ouverte dont le tuple de hauteur ne
+    /// correspond pas à la note courante est signalée (« tie between different
+    /// pitches ») et supprimée (elle est convertie en phrasé). Sans ce contrôle
+    /// une liaison `G-A G` traverserait le `A` et relierait les deux `G`, alors
+    /// qu'abc2midi compte les deux notes : c'était les notes liées en fin de
+    /// liaison que le comparateur écarte (cause 78 airs, § 15.3 de abc.md).
+    fn drop_foreign_ties(&mut self, pitches: &[u8]) {
+        let foreign: Vec<u8> = self
+            .voice()
+            .pending_ties
+            .keys()
+            .copied()
+            .filter(|pitch| !pitches.contains(pitch))
+            .collect();
+        for pitch in foreign {
+            self.voice().pending_ties.remove(&pitch);
+            self.warn(format!(
+                "liaison entre hauteurs différentes ({pitch}) abandonnée"
+            ));
+        }
+    }
+
     /// Rattache une note à la liaison en attente et enregistre la sienne.
     fn link_ties(&mut self, notes: &[(NoteId, u8, bool)]) {
+        let pitches: Vec<u8> = notes.iter().map(|(_, pitch, _)| *pitch).collect();
+        self.drop_foreign_ties(&pitches);
         for (id, pitch, tie) in notes {
             if let Some(previous) = self.voice().pending_ties.remove(pitch) {
                 self.reader.score.note_mut(previous).tie_forward = Some(*id);
