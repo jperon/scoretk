@@ -211,7 +211,13 @@ pub(crate) fn render_voice(
                     line.push_str(token);
                 }
                 let transpose = transpose_at(score, staff, item.tick) + 12 * clef_octave;
-                let token = render_item(score, item.chord_rest, &mut accidental_state, transpose);
+                let token = render_item(
+                    score,
+                    measure,
+                    item.chord_rest,
+                    &mut accidental_state,
+                    transpose,
+                );
                 line.push_str(&token);
                 for token in &after[offset] {
                     line.push_str(token);
@@ -358,18 +364,29 @@ pub(crate) fn voice_has_content(score: &Score, staff: usize, voice: usize) -> bo
     })
 }
 
+/// Jeton d'un silence couvrant toute une mesure.
+///
+/// Port de `xml2abc.py::doMaat` (ligne 674) et de la grammaire des mesures
+/// (`abc_grammar`, lignes 428-436) : `Z` est le silence de **mesure entière**,
+/// dont la durée est celle de l'indication `M:` courante. Une mesure écrite
+/// plus courte (ou plus longue) que `M:` doit être remplie par un `z` explicite
+/// avec son multiplicateur ; sinon `abc2midi` décalerait toutes les attaques
+/// suivantes d'autant.
+fn rest_token(len: Fraction, measure: &Measure) -> String {
+    if len == measure.nominal_len {
+        "Z".to_owned()
+    } else {
+        format!("z{}", duration::multiplier(len, duration::unit()))
+    }
+}
+
 /// Remplit un trou par un silence de la bonne longueur.
 fn push_fill_rest(line: &mut String, start: Tick, end: Tick, measure: &Measure) {
     let len = end - start;
     if !len.is_positive() {
         return;
     }
-    if start == measure.start_tick && len == measure.len {
-        line.push('Z');
-    } else {
-        line.push('z');
-        line.push_str(&duration::multiplier(len, duration::unit()));
-    }
+    line.push_str(&rest_token(len, measure));
 }
 
 /// Chaîne des n-olets d'un accord, du plus externe au plus interne.
@@ -809,13 +826,17 @@ fn item_at_or_before(
 /// Rend un accord ou un silence en jeton ABC.
 fn render_item(
     score: &Score,
+    measure: &Measure,
     chord_rest: &ChordRest,
     accidental_state: &mut pitch::AccidentalState,
     transpose: i32,
 ) -> String {
     if let Some(rest) = chord_rest.rest_ref() {
         if chord_rest.is_full_measure_rest() {
-            return "Z".to_owned();
+            // Un `<Rest>` de mesure n'a pas de `ticks` propres dans le modèle :
+            // sa longueur écrite est celle de la mesure (le `ticks` de
+            // `ChordRest` peut être nul).
+            return rest_token(measure.len, measure);
         }
         let head = if rest.visible { 'z' } else { 'x' };
         let length = duration::chord_rest_length(chord_rest);
