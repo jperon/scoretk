@@ -100,12 +100,16 @@ def read_midi(path: str) -> list[tuple[int, float, float, int]]:
 def read_xml(path: str) -> list[tuple[int, float, float, int]]:
     """Notes d'un MusicXML partwise : hauteur concert, attaque, durée, partie.
 
-    Le compteur d'attaque est propre à chaque (voix, portée) et repart de zéro
-    pour chaque partie, comme le temps musical du fichier. Les barres de
-    contrôle et les variables du ``.ly`` sont déjà résolues par le convertisseur
-    en hauteurs et positions absolues ; elles n'apparaissent pas ici. Les
-    accords (``<chord/>``) partagent l'attaque de la note précédente, les
-    silences avancent le compteur, et les prolongations de liaison
+    Le compteur d'attaque est propre à chaque **voix** (pas à chaque couple
+    voix/portée) et repart de zéro pour chaque partie. Une voix qui change de
+    portée (``\\change Staff`` de LilyPond, ``Chord::staff_move`` du modèle)
+    garde le même ``<voice>`` avec des ``<staff>`` différents : cléer sur
+    (voix, portée) ferait repartir son compteur à zéro à chaque changement et
+    écraserait les attaques (``tuplet-bracket-cross-staff.ly``). Les barres de
+    contrôle et les variables du ``.ly`` sont déjà résolues par le
+    convertisseur en hauteurs et positions absolues ; elles n'apparaissent pas
+    ici. Les accords (``<chord/>``) partagent l'attaque de la note précédente,
+    les silences avancent le compteur, et les prolongations de liaison
     (``<tie type="stop"/>``) ne sont pas des attaques et sont écartées.
 
     Les notes de grâce (``<grace>``) sont **comptées** : LilyPond les joue dans
@@ -113,10 +117,13 @@ def read_xml(path: str) -> list[tuple[int, float, float, int]]:
     placées à l'attaque courante (celle de la note qui suit) et n'avancent pas
     le compteur, leur durée étant empruntée à cette note. Un ``<forward>`` qui
     précède la **première** note d'une voix avance son compteur : c'est le cas
-    d'une levée ou d'un silence d'espaceur écrit sous forme de saut. Les
-    ``<backup>``/``<forward>`` suivants sont des artefacts de positionnement de
-    flux des exportateurs ; le compteur par voix les rend inutiles et les
-    honorer décalerait les attaques (vérifié sur des fichiers réels).
+    d'une levée ou d'un silence d'espaceur écrit sous forme de saut. La note
+    suivante peut être dans la mesure **suivante** : un saut de mesure partielle
+    est souvent le dernier élément de sa mesure (``knjze12monferA.ly``), et le
+    limiter à la mesure courante le ferait ignorer. Les ``<backup>``/``<forward>``
+    suivants sont des artefacts de positionnement de flux des exportateurs ; le
+    compteur par voix les rend inutiles et les honorer décalerait les attaques
+    (vérifié sur des fichiers réels).
 
     La transposition ``<chromatic>``/``<octave-change>`` est appliquée, comme
     dans l'oracle historique.
@@ -126,66 +133,66 @@ def read_xml(path: str) -> list[tuple[int, float, float, int]]:
     for numero_part, part in enumerate(racine.findall("part")):
         divisions = 1
         transposition = 0
-        position: dict[tuple[str, str], float] = defaultdict(float)
-        derniere_attaque: dict[tuple[str, str], float] = {}
-        voix_vues: set[tuple[str, str]] = set()
-        for measure in part.findall("measure"):
-            enfants = list(measure)
-            for index, elem in enumerate(enfants):
-                if elem.tag == "attributes":
-                    d = elem.find("divisions")
-                    if d is not None and d.text:
-                        divisions = int(float(d.text))
-                    t = elem.find("transpose")
-                    if t is not None:
-                        chromatique = t.findtext("chromatic", "0")
-                        octave = t.findtext("octave-change", "0")
-                        transposition = int(float(chromatique)) + 12 * int(float(octave))
+        # Une voix garde sa chronologie quand elle change de portée : la clé
+        # est le numéro de voix, pas le couple (voix, portée).
+        position: dict[str, float] = defaultdict(float)
+        derniere_attaque: dict[str, float] = {}
+        voix_vues: set[str] = set()
+        # Aplatir toutes les mesures de la partie : un `<forward>` peut clore
+        # une mesure partielle et sa première note être dans la suivante.
+        flux = [elem for measure in part.findall("measure") for elem in list(measure)]
+        for index, elem in enumerate(flux):
+            if elem.tag == "attributes":
+                d = elem.find("divisions")
+                if d is not None and d.text:
+                    divisions = int(float(d.text))
+                t = elem.find("transpose")
+                if t is not None:
+                    chromatique = t.findtext("chromatic", "0")
+                    octave = t.findtext("octave-change", "0")
+                    transposition = int(float(chromatique)) + 12 * int(float(octave))
+                continue
+            if elem.tag == "forward":
+                # Un saut avant la première note d'une voix décale son
+                # entrée (levée / espaceur). Ensuite, c'est un artefact de
+                # flux : le compteur propre à la voix suffit.
+                valeur = elem.findtext("duration")
+                if not valeur:
                     continue
-                if elem.tag == "forward":
-                    # Un saut avant la première note d'une voix décale son
-                    # entrée (levée / espaceur). Ensuite, c'est un artefact de
-                    # flux : le compteur propre à la voix suffit.
-                    valeur = elem.findtext("duration")
-                    if not valeur:
-                        continue
-                    suivante = next((n for n in enfants[index + 1:] if n.tag == "note"), None)
-                    if suivante is None:
-                        continue
-                    cle_suivante = (suivante.findtext("voice") or "1",
-                                    suivante.findtext("staff") or "1")
-                    if cle_suivante not in voix_vues:
-                        position[cle_suivante] += int(float(valeur)) / divisions
+                suivante = next((n for n in flux[index + 1:] if n.tag == "note"), None)
+                if suivante is None:
                     continue
-                if elem.tag != "note":
-                    continue
-                duree_texte = elem.findtext("duration")
-                duree = int(float(duree_texte)) / divisions if duree_texte else 0.0
-                voix = elem.findtext("voice") or "1"
-                portee = elem.findtext("staff") or "1"
-                cle = (voix, portee)
-                est_grace = elem.find("grace") is not None
-                est_accord = elem.find("chord") is not None
-                attaque = derniere_attaque.get(cle, 0.0) if est_accord else position[cle]
-                if not est_accord:
-                    derniere_attaque[cle] = attaque
-                    # Une grâce ne consomme pas de temps sur la trame.
-                    if not est_grace:
-                        position[cle] = attaque + duree
-                voix_vues.add(cle)
-                if any(t.get("type") == "stop" for t in elem.findall("tie")):
-                    continue
-                pitch = elem.find("pitch")
-                if pitch is None:
-                    continue  # silence : il a déjà avancé le compteur
-                step = pitch.findtext("step")
-                octave_txt = pitch.findtext("octave")
-                if step not in STEPS or octave_txt is None:
-                    continue
-                alter = pitch.findtext("alter", "0")
-                hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
-                notes.append((hauteur + transposition, attaque,
-                              0.0 if est_grace else duree, numero_part))
+                cle_suivante = suivante.findtext("voice") or "1"
+                if cle_suivante not in voix_vues:
+                    position[cle_suivante] += int(float(valeur)) / divisions
+                continue
+            if elem.tag != "note":
+                continue
+            duree_texte = elem.findtext("duration")
+            duree = int(float(duree_texte)) / divisions if duree_texte else 0.0
+            cle = elem.findtext("voice") or "1"
+            est_grace = elem.find("grace") is not None
+            est_accord = elem.find("chord") is not None
+            attaque = derniere_attaque.get(cle, 0.0) if est_accord else position[cle]
+            if not est_accord:
+                derniere_attaque[cle] = attaque
+                # Une grâce ne consomme pas de temps sur la trame.
+                if not est_grace:
+                    position[cle] = attaque + duree
+            voix_vues.add(cle)
+            if any(t.get("type") == "stop" for t in elem.findall("tie")):
+                continue
+            pitch = elem.find("pitch")
+            if pitch is None:
+                continue  # silence : il a déjà avancé le compteur
+            step = pitch.findtext("step")
+            octave_txt = pitch.findtext("octave")
+            if step not in STEPS or octave_txt is None:
+                continue
+            alter = pitch.findtext("alter", "0")
+            hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
+            notes.append((hauteur + transposition, attaque,
+                          0.0 if est_grace else duree, numero_part))
     return notes
 
 
@@ -414,6 +421,60 @@ def selftest() -> None:
         with open(p, "w", encoding="utf-8") as f:
             f.write(fin)
         assert read_xml(p)[-1][0] == 62  # C5 transposé de +2 et -1 octave
+
+        # Correction 4 — voix traversant plusieurs portées (`\change Staff`).
+        # Une voix garde sa chronologie quand `<staff>` change : le compteur
+        # d'attaque est propre à la voix, pas au couple (voix, portée). Ici la
+        # voix 1 alterne portée 1 et 2 : les attaques sont 0,1,2,3 et non
+        # 0,0,1,1 (le compteur ne doit pas repartir à chaque changement).
+        change = """<score-partwise version="4.0">
+          <part id="P1"><measure number="1">
+            <attributes><divisions>1</divisions></attributes>
+            <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>
+              <voice>1</voice><staff>1</staff></note>
+            <backup><duration>1</duration></backup>
+            <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration>
+              <voice>1</voice><staff>2</staff></note>
+            <backup><duration>1</duration></backup>
+            <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration>
+              <voice>1</voice><staff>1</staff></note>
+            <backup><duration>1</duration></backup>
+            <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration>
+              <voice>1</voice><staff>2</staff></note>
+          </measure></part></score-partwise>"""
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(change)
+        lu_change = read_xml(p)
+        assert [(n[1], n[3]) for n in lu_change] == [
+            (0.0, 0), (1.0, 0), (2.0, 0), (3.0, 0)
+        ], lu_change
+        # Le même XML sans changement de portée doit rester identique : cas
+        # « non concerné » qui ne doit pas régresser.
+        same = change.replace("<staff>2</staff>", "<staff>1</staff>")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(same)
+        assert [n[1] for n in read_xml(p)] == [0.0, 1.0, 2.0, 3.0]
+
+        # Correction 5 — `<forward>` de mesure partielle en fin de mesure.
+        # Le saut est le dernier élément de la mesure 1 ; la note qui suit est
+        # dans la mesure 2. Le compteur de la voix doit avancer de 2 noires,
+        # sinon toute la deuxième mesure est décalée (knjze12monferA.ly).
+        partiel = """<score-partwise version="4.0">
+          <part id="P1">
+            <measure number="1">
+              <attributes><divisions>1</divisions></attributes>
+              <forward><duration>2</duration></forward>
+            </measure>
+            <measure number="2">
+              <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration>
+                <voice>1</voice><staff>1</staff></note>
+              <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration>
+                <voice>1</voice><staff>1</staff></note>
+            </measure>
+          </part></score-partwise>"""
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(partiel)
+        assert read_xml(p) == [(65, 2.0, 1.0, 0), (67, 3.0, 1.0, 0)], read_xml(p)
 
     print("selftest : OK")
 

@@ -42,17 +42,25 @@ records a `repeat` flag on every row. N1 is still reported for all files;
 **N2 is aggregated only over repeat-free files**. The raw rows keep N2 for
 repeat files (recorded, never silently dropped) so the effect can be inspected.
 
-Two further reader details are handled explicitly in `read_xml()`:
-- a `<forward>` before the **first** note of a (voice, staff) advances that
-  voice's counter — this is how writers denote a pickup or a spacer rest;
+Three further reader details are handled explicitly in `read_xml()`:
+- the attack counter is keyed by **voice**, not by `(voice, staff)`: a
+  cross-staff voice (`\change Staff`) keeps one `<voice>` and changes `<staff>`
+  from note to note, so keying on the pair restarts its timeline at zero;
+- a `<forward>` before the **first** note of a voice advances that voice's
+  counter — this is how writers denote a pickup or a spacer rest. The lookahead
+  for the following note spans **all measures** of the part: a partial measure
+  often ends with the `<forward>`, its first note being in the next measure;
 - later `<backup>`/`<forward>` pairs only reposition the writer's stream and
   are ignored, because the counter is already local to each voice. Honouring
   them would shift correctly placed notes (verified on real corpus files).
 
 Minimal reproductions used to validate these rules:
 `input/regression/grace-nest5.ly` (leading `<forward>` + a grace note),
-a two-measure `\partial 4` score (pickup), a `\times 2/3` score (tuplets),
-and a `\repeat unfold` / `\repeat volta` score (repeat flag).
+`input/regression/tuplet-bracket-cross-staff.ly` (voice changing staff),
+`~/.../knjze12monferA.ly` (partial-measure `<forward>`), a two-measure
+`\partial 4` score (pickup), a `\times 2/3` score (tuplets), and a
+`\repeat unfold` / `\repeat volta` score (repeat flag). Each rule has an
+assertion in `ly_notes.py selftest`.
 
 ## Alternatives measured with the same oracle
 
