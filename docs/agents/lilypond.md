@@ -503,9 +503,14 @@ pas de régression du lecteur.
   portée (les partitions d'orchestre `\context StaffGroup << \context Staff =
   "haut" … >>` sont ainsi lues en autant de portées). Retrouvé dans la
   musique d'une portée déjà ouverte, il retrouve cette portée et ses voix y
-  sont ouvertes. Quand il contient des `\context Voice = "…"` nommés, ces voix
-  sont réparties en portées sœurs plutôt que regroupées en une portée de plus
-  de quatre voix (limite du modèle), pour ne pas perdre de musique.
+  sont ouvertes. Quand son contenu porte des `\new Voice`/`\context Voice`
+  nommés ou une enveloppe `\relative`/`\fixed`/`\transpose`, il est traversé
+  comme avant le portage des contextes structurels : les voix restent sur la
+  portée englobante (idiome du piano
+  `\context Voice = "one" \rightHand`) et la référence relative s'applique à
+  tout le bloc polyphonique (`\context Staff \relative << … \\ … >>` de
+  collisions.ly). Sans cela, la limite de quatre voix du modèle écrase la
+  musique et les octaves des voix polyphoniques sont décalées.
 - **Voix ouvertes dans une voix** : `\new Voice` (ou `\context Voice`) et
   chaque branche d'un `<< … >>` rencontrés dans la musique d'une voix ouvrent
   une voix de la portée au tick courant (`context_prefix` /

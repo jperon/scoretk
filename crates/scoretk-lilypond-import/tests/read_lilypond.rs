@@ -780,6 +780,35 @@ fn context_staff_imbrique_avec_voix_nommees() {
 }
 
 #[test]
+fn context_staff_avec_relative_garde_la_reference_du_bloc() {
+    // `\context Staff \relative << … \\ … >>` : la référence relative porte
+    // sur tout le bloc polyphonique (collisions.ly, `\hairyChord`). Ouvrir une
+    // portée fille la ferait résoudre voix par voix et décalerait `fis,` de
+    // deux octaves (66 attendu, 42 obtenu avant correction).
+    let source = concat!(
+        "hairy = \\context Staff \\relative << e''1 \\\\ fis,1 >> ",
+        "suite = \\fixed c' { c1 d1 } ",
+        "\\score { \\hairy | \\suite }"
+    );
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.measures.len(), 2);
+    let mut notes = hauteurs(&score);
+    notes.sort_unstable();
+    assert_eq!(notes, vec![60, 62, 66, 76]);
+
+    // Cas limite : le bloc polyphonique en fin de source, sans musique après.
+    let seul = read_lilypond(concat!(
+        "hairy = \\context Staff \\relative << e''1 \\\\ fis,1 >> ",
+        "\\score { \\hairy }"
+    ))
+    .expect("lecture");
+    assert_eq!(seul.measures.len(), 1);
+    let mut notes = hauteurs(&seul);
+    notes.sort_unstable();
+    assert_eq!(notes, vec![66, 76]);
+}
+
+#[test]
 fn noms_de_contextes_insensibles_a_la_casse() {
     // Les partitions Mutopia anciennes écrivent `\new voice` (2.8.0) ou
     // `\context staff` en minuscules : LilyPond les accepte, le lecteur aussi.
