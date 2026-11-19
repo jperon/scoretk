@@ -90,11 +90,23 @@ def read_xml(path: str) -> list[tuple[int, float, float, int]]:
     (voix, portée) sur tout le morceau : une voix qui n'apparaissait qu'en
     cours de route voyait toutes ses attaques décalées vers le début (les
     « attaques décalées » du relevé, en fait un défaut de l'oracle, pas de
-    l'import). Les notes de grâce et les prolongations de liaison
-    (``<tie type="stop"/>``) ne sont pas des attaques et sont écartées.
+    l'import).
+
+    Une note tenue sur plusieurs mesures est écrite comme une chaîne de notes
+    liées (``<tie type="start"/>`` … ``<tie type="stop"/>``), une par fragment
+    de mesure. Le MIDI de référence ne connaît qu'une seule attaque couvrant
+    toute la tenue : l'oracle doit donc fusionner chaque chaîne en UNE note
+    dont la durée est la somme des fragments, avec l'attaque du premier. Les
+    chaînes sont distinguées par (part, portée, voix, hauteur), car deux voix
+    peuvent tenir la même hauteur en parallèle. Les notes de grâce ne sont pas
+    des attaques et sont écartées. Ce lecteur est commun à scoretk et à
+    MuseScore, donc la correction s'applique équitablement aux deux sorties.
     """
     racine = ET.parse(path).getroot()
-    notes: list[tuple[int, float, float, int]] = []
+    # Listes mutables : une chaîne de liaison agrandit la durée de son
+    # premier fragment au fur et à mesure que ses continuations sont lues.
+    notes: list[list] = []
+    ties_ouvertes: dict[tuple, list] = {}
     for numero_part, part in enumerate(racine.findall("part")):
         divisions = 1
         transposition = 0
@@ -135,8 +147,6 @@ def read_xml(path: str) -> list[tuple[int, float, float, int]]:
                 fin_mesure = max(fin_mesure, attaque + duree)
                 if elem.find("grace") is not None:
                     continue
-                if any(t.get("type") == "stop" for t in elem.findall("tie")):
-                    continue
                 pitch = elem.find("pitch")
                 if pitch is None:
                     continue  # silence : il a déjà avancé le curseur
@@ -145,15 +155,33 @@ def read_xml(path: str) -> list[tuple[int, float, float, int]]:
                 if step not in STEPS or octave_txt is None:
                     continue
                 alter = pitch.findtext("alter", "0")
-                hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
-                notes.append((hauteur + transposition, attaque, duree, numero_part))
+                hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter)) + transposition
+                types_tie = [t.get("type") for t in elem.findall("tie")]
+                tie_stop = "stop" in types_tie
+                tie_start = "start" in types_tie
+                voix = elem.findtext("voice", "1")
+                portee = elem.findtext("staff", "1")
+                cle = (numero_part, portee, voix, hauteur)
+                if tie_stop and cle in ties_ouvertes:
+                    # Continuation d'une chaîne : on ajoute la durée du
+                    # fragment au premier fragment, sans nouvelle attaque.
+                    ouverte = ties_ouvertes[cle]
+                    ouverte[2] += duree
+                    fin_mesure = max(fin_mesure, ouverte[1] + ouverte[2])
+                    if not tie_start:  # fin de chaîne
+                        del ties_ouvertes[cle]
+                    continue
+                note = [hauteur, attaque, duree, numero_part]
+                notes.append(note)
+                if tie_start:
+                    ties_ouvertes[cle] = note
             if not a_des_notes:
                 # Mesure vide : on avance au moins de sa durée nominale pour
                 # ne pas écraser la suivante sur le même temps.
                 temps_part = max(fin_mesure, temps_part + 4.0)
             else:
                 temps_part = fin_mesure
-    return notes
+    return [tuple(note) for note in notes]
 
 
 def _rapprocher(
