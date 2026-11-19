@@ -548,7 +548,7 @@ impl<'a> Parser<'a> {
                     for voice in &mut staff.voices {
                         let music = std::mem::replace(&mut voice.music, Music::Empty);
                         voice.music = Music::Seq(vec![
-                            Music::Context(Context::InstrumentTranspose(pitch)),
+                            Music::Context(Context::MidiInstrumentTranspose(pitch)),
                             music,
                         ]);
                     }
@@ -2886,7 +2886,11 @@ impl<'a> Parser<'a> {
                     self.position += 1;
                 }
                 Some(token) if token.is_punct('=') => {
-                    pitch.octave_check = Some(pitch.octave);
+                    // `quotes` après `=` donne l'octave absolue contrôlée
+                    // (`absolute-octave = q - 1` dans `lily/parser.yy`) ; les
+                    // marques avant `=` appartiennent à la hauteur relative
+                    // et ne comptent pas ici (`ly/relative-octave-check.cc`).
+                    pitch.octave_check = Some(0);
                     pitch.explicit_octave = true;
                     checking = true;
                     self.position += 1;

@@ -352,9 +352,10 @@ pub(crate) struct Interpreter<'a> {
     last_chord_notes: Option<Vec<NoteEvent>>,
     /// Transposition en vigueur (degrés diatoniques, demi-tons).
     transpose: (i32, i32),
-    /// Décalage concert de `\transposition`, en demi-tons (hauteur écrite
-    /// inchangée).
-    instrument_transpose: i32,
+    /// Décalage concert du `\transposition` du bloc `\midi`, en demi-tons.
+    /// Il vaut pour toutes les portées et n'est pas porté par `<transpose>`
+    /// lorsque la partie en réunit plusieurs.
+    midi_instrument_transpose: i32,
     /// N-olets ouverts, index locaux.
     tuplets: Vec<usize>,
     /// Ornements en cours d'analyse.
@@ -391,7 +392,7 @@ impl<'a> Interpreter<'a> {
             octave: OctaveState::default(),
             last_chord_notes: None,
             transpose: (0, 0),
-            instrument_transpose: 0,
+            midi_instrument_transpose: 0,
             tuplets: Vec::new(),
             grace: None,
             pending_grace: Vec::new(),
@@ -546,7 +547,7 @@ impl<'a> Interpreter<'a> {
             cursor: start,
             octave: self.octave,
             transpose: self.transpose,
-            instrument_transpose: self.instrument_transpose,
+            midi_instrument_transpose: self.midi_instrument_transpose,
             tuplets: Vec::new(),
             grace: None,
             pending_grace: Vec::new(),
@@ -702,8 +703,14 @@ impl<'a> Interpreter<'a> {
                 self.walk(music);
                 self.transpose = saved;
             }
-            Context::InstrumentTranspose(pitch) => {
-                self.instrument_transpose = crate::pitch::instrument_transpose(pitch).1;
+            // `\transposition` de portée : le décalage concert est appliqué
+            // par le constructeur, seulement si la partie porte `<transpose>`.
+            Context::InstrumentTranspose(_) => {}
+            // `\transposition` du bloc `\midi` : vaut pour toute la partition
+            // et s'applique ici à toutes les voix, même si la partie ne porte
+            // pas `<transpose>` (plusieurs portées dans le même groupe).
+            Context::MidiInstrumentTranspose(pitch) => {
+                self.midi_instrument_transpose = crate::pitch::instrument_transpose(pitch).1;
             }
             Context::Fixed { reference, music } => {
                 let saved = self.octave;
@@ -1124,7 +1131,7 @@ impl<'a> Interpreter<'a> {
             self.transpose.0,
             self.transpose.1,
         );
-        let Some(written) = crate::pitch::midi_of(
+        let Some(ecrite) = crate::pitch::midi_of(
             u8::try_from(step).unwrap_or(0),
             i8::try_from(alter.clamp(-127, 127)).unwrap_or(0),
             i8::try_from(octave).unwrap_or(4),
@@ -1132,10 +1139,10 @@ impl<'a> Interpreter<'a> {
             self.warn("hauteur hors de la plage MIDI (0..127) : note ignorée");
             return None;
         };
-        // `\transposition` ne change pas la notation : il ne décale que la
-        // hauteur concert. Le modèle stocke la hauteur concert et l'instrument
-        // porte l'intervalle, pour que l'export réécrive la hauteur écrite.
-        let concert = i32::from(written) + self.instrument_transpose;
+        // Le `\transposition` du bloc `\midi` décale la hauteur concert de
+        // toutes les voix, sans changer la notation : c'est le performer MIDI
+        // de LilyPond qui le joue, et l'oracle compare à ce MIDI.
+        let concert = i32::from(ecrite) + self.midi_instrument_transpose;
         let Ok(pitch) = u8::try_from(concert) else {
             self.warn("hauteur hors de la plage MIDI (0..127) : note ignorée");
             return None;
@@ -1146,7 +1153,9 @@ impl<'a> Interpreter<'a> {
         }
         // `\transpose` transpose la musique écrite elle-même ; il ne déclare
         // pas d'instrument transpositeur. La classe tonale écrite est donc
-        // celle de la hauteur transposée, comme `pitch`.
+        // celle de la hauteur transposée, comme `pitch`. Le décalage concert
+        // de `\transposition` de portée est appliqué plus tard par le constructeur,
+        // uniquement si la partie porte `<transpose>`.
         let tpc = crate::pitch::tpc_of(
             u8::try_from(step).unwrap_or(0),
             i8::try_from(alter.clamp(-2, 2)).unwrap_or(0),

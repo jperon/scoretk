@@ -205,6 +205,11 @@ pub(crate) enum Context {
     /// concert, sans changer la hauteur écrite (`instrumentTransposition` de
     /// `ly/engraver-init.ly`).
     InstrumentTranspose(PitchSpec),
+    /// `\transposition` posé dans le bloc `\midi` : il concerne toutes les
+    /// portées (réglage du performer MIDI), et non un seul instrument. Son
+    /// décalage est appliqué à toutes les voix sans déclarer `<transpose>`
+    /// quand la partie réunit plusieurs portées.
+    MidiInstrumentTranspose(PitchSpec),
     /// `\fixed` : octave de référence absolue.
     Fixed {
         reference: Option<PitchSpec>,

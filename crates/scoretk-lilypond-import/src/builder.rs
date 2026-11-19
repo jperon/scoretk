@@ -209,13 +209,18 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
         }
         // Une partie n'a qu'un `<transpose>` : ne le poser que si toutes les
         // voix construites appartiennent à la portée transpositrice. Sinon les
-        // hauteurs concert sont conservées telles quelles pour les autres voix.
-        if let Some(pitch) = transposition {
+        // hauteurs écrites sont conservées telles quelles pour les autres
+        // voix, sous peine d'écrire une hauteur fausse à l'export. C'est ici,
+        // une fois la structure connue, que la concert est décalée.
+        if let Some((pitch, a_decaler)) = transposition {
             if staves[first_staff_index..]
                 .iter()
                 .all(|staff| staff.voices.len() == 1)
             {
                 let (diatonic, chromatic) = crate::pitch::instrument_transpose(&pitch);
+                if a_decaler {
+                    decaler_vers_concert(&mut staves[first_staff_index..], chromatic);
+                }
                 score.part_mut(part_id).instrument.transpose =
                     Some(Transpose::new(diatonic, chromatic));
             }
@@ -509,10 +514,13 @@ fn group_bracket(kind: GroupKind, position: usize, count: usize) -> Option<Staff
 ///
 /// La propriété est posée par une commande sans musique, souvent au début
 /// d'une variable `global` partagée : la recherche descend donc dans les
-/// séquences, simultanéités, contextes et groupes imbriqués.
-fn instrument_transpose(music: &Music) -> Option<PitchSpec> {
+/// séquences, simultanéités, contextes et groupes imbriqués. Le booléen dit
+/// si le décalage doit encore être appliqué aux notes : faux pour le
+/// `\transposition` du bloc `\midi`, déjà porté par toutes les voix.
+fn instrument_transpose(music: &Music) -> Option<(PitchSpec, bool)> {
     match music {
-        Music::Context(Context::InstrumentTranspose(pitch)) => Some(*pitch),
+        Music::Context(Context::InstrumentTranspose(pitch)) => Some((*pitch, true)),
+        Music::Context(Context::MidiInstrumentTranspose(pitch)) => Some((*pitch, false)),
         Music::Seq(items) | Music::Sim(items) => items.iter().find_map(instrument_transpose),
         Music::Context(Context::Transpose { music, .. })
         | Music::Context(Context::Fixed { music, .. })
@@ -529,6 +537,55 @@ fn instrument_transpose(music: &Music) -> Option<PitchSpec> {
             .find_map(|voice| instrument_transpose(&voice.music)),
         _ => None,
     }
+}
+
+/// Décale d'un intervalle chromatique les hauteurs d'une portée transpositrice.
+///
+/// `\transposition` ne change pas la notation : la hauteur écrite reste celle
+/// de la source, c'est la hauteur concert qui est décalée. Le modèle stocke la
+/// concert et l'instrument porte l'intervalle, pour que l'export réécrive la
+/// hauteur écrite en retranchant `<transpose>`. Appelé seulement quand la
+/// partie porte effectivement `<transpose>`, sinon la hauteur écrite doit
+/// rester intacte (cas des orchestres, où plusieurs portées de transpositions
+/// différentes partagent la même partie MusicXML).
+fn decaler_vers_concert(staves: &mut [StaffBuild], chromatic: i32) {
+    for staff in staves {
+        for voice in &mut staff.voices {
+            for event in &mut voice.interpreted.events {
+                if let EventKind::Chord(chord) = &mut event.kind {
+                    decaler_accord(&mut chord.content, chromatic);
+                    for grace in chord
+                        .grace_before
+                        .iter_mut()
+                        .chain(chord.grace_after.iter_mut())
+                    {
+                        decaler_notes(&mut grace.notes, chromatic);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Décale les notes d'un accord (les silences n'ont pas de hauteur).
+fn decaler_accord(content: &mut ChordContent, chromatic: i32) {
+    if let ChordContent::Notes(notes) = content {
+        decaler_notes(notes, chromatic);
+    }
+}
+
+/// Décale des notes dans la plage MIDI, en écartant celles qui en sortent.
+fn decaler_notes(notes: &mut Vec<crate::events::NoteEvent>, chromatic: i32) {
+    notes.retain_mut(|note| {
+        let concert = i32::from(note.pitch) + chromatic;
+        match u8::try_from(concert) {
+            Ok(pitch) if pitch <= 127 => {
+                note.pitch = pitch;
+                true
+            }
+            _ => false,
+        }
+    });
 }
 
 fn instrument_for(long_name: &str, short_name: &str) -> Instrument {

@@ -107,9 +107,17 @@ fn controle_octave_est_absolu() {
     .expect("lecture");
     assert_eq!(hauteurs(&score), vec![60, 67, 81, 83, 81, 86, 90, 93]);
     assert_eq!(score.measures.len(), 2);
-    // Forme `n'='` : le contrôle porte la marque écrite avant le signe `=`.
+    // Seules les marques APRÈS `=` fixent l'octave contrôlée : la marque
+    // avant `=` appartient à la hauteur relative. `a'='` sonne donc la4
+    // (69), comme LilyPond, et non la5.
     let note = lire("\\relative c' { c4 g'4 a'='4 b4 }");
-    assert_eq!(hauteurs(&note), vec![60, 67, 81, 83]);
+    assert_eq!(hauteurs(&note), vec![60, 67, 69, 71]);
+    // Cas réel (Debussy, Arabesque 2) : marques des deux côtés de `=`. La
+    // note vérifiée est imposée dans l'octave des marques après `=`, et la
+    // note relative suivante repart de cette hauteur.
+    let reelles = lire("\\relative c' { a4 a,,,=,4 a,='4 a4 }");
+    assert_eq!(hauteurs(&reelles), vec![57, 45, 69, 69]);
+    assert_eq!(reelles.measures.len(), 1);
     // Cas non concerné : sans `=`, la marque reste relative.
     let sans = lire("\\relative c' { c4 g'4 a''4 b4 }");
     assert_eq!(hauteurs(&sans), vec![60, 67, 93, 95]);
@@ -480,15 +488,20 @@ fn transposition_de_staff_decale_la_concert() {
     assert_eq!(hauteurs(&sans), vec![60, 62, 64, 65, 60, 64, 67, 55]);
     assert_eq!(sans.parts[0].instrument.transpose, None);
 
-    // Cas limite : plusieurs voix dans la portée. Une partie MusicXML n'a
-    // qu'un `<transpose>` ; le poser ici décalerait la voix qui ne transpose
-    // pas, donc la transposition reste dans les hauteurs concert.
-    let deux_voix = read_lilypond(
-        "\\score { \\new Staff { \\transposition a' { c'4 << { e'4 g' } \\\\ { c'4 d' } >> } } }",
+    // Cas réel : les orchestres réunissent plusieurs portées dans un même
+    // StaffGroup, donc une seule partie MusicXML. On ne peut poser qu'un
+    // `<transpose>` pour toutes les portées : décaler la concert de la portée
+    // transpositrice ferait écrire des hauteurs fausses à l'export. On garde
+    // donc les hauteurs ÉCRITES de chaque portée, comme sans `\transposition`.
+    let orchestre = read_lilypond(
+        "\\score { << \\new StaffGroup << \
+         \\new Staff { \\transposition a' \\relative c' { c4 d e f } } \
+         \\new Staff { \\relative c' { c4 d e f } } >> >> }",
     )
     .expect("lecture");
-    assert_eq!(hauteurs(&deux_voix), vec![69, 73, 76, 69, 71]);
-    assert_eq!(deux_voix.parts[0].instrument.transpose, None);
+    assert_eq!(hauteurs(&orchestre), vec![60, 62, 64, 65, 60, 62, 64, 65]);
+    assert_eq!(orchestre.measures.len(), 1);
+    assert_eq!(orchestre.parts[0].instrument.transpose, None);
 }
 
 #[test]
@@ -505,6 +518,22 @@ fn transposition_dans_le_bloc_midi() {
     assert_eq!(score.measures.len(), 2);
     assert_eq!(
         score.parts[0].instrument.transpose,
+        Some(Transpose::new(-7, -12))
+    );
+    // Cas réel : un duo de guitares. Le `\transposition` du bloc `\midi` vaut
+    // pour toutes les portées : il décale la concert de chacune dès
+    // l'interprétation, avant même que la structure des parties soit connue.
+    let duo = read_lilypond(
+        "\\score { << \\new Staff { \\relative c' { c4 d e f } } \
+         \\new Staff { \\relative c' { c4 d e f } } >> \
+         \\midi { \\transposition c } }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&duo), vec![48, 50, 52, 53, 48, 50, 52, 53]);
+    assert_eq!(duo.measures.len(), 1);
+    assert_eq!(duo.parts.len(), 2);
+    assert_eq!(
+        duo.parts[0].instrument.transpose,
         Some(Transpose::new(-7, -12))
     );
     // Cas non concerné : le même bloc `\midi` sans transposition ne décale rien.
