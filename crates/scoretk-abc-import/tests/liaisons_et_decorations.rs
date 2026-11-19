@@ -131,11 +131,15 @@ C D E F | G A B c |]
     assert_eq!(pitches, vec![60, 62, 64, 65, 67, 69, 71, 72]);
     assert_eq!(durations, vec![0.25; 8]);
     // L'autre voix est lue entièrement, elle aussi.
-    assert_eq!(voice_content(score, 1, 0).0, vec![60, 62, 64, 65, 67, 69, 71, 72]);
-    assert!(output
-        .warnings
-        .iter()
-        .any(|warning| warning.message.contains("non fermée")),
+    assert_eq!(
+        voice_content(score, 1, 0).0,
+        vec![60, 62, 64, 65, 67, 69, 71, 72]
+    );
+    assert!(
+        output
+            .warnings
+            .iter()
+            .any(|warning| warning.message.contains("non fermée")),
         "avertissement absent : {:?}",
         output.warnings
     );
@@ -166,9 +170,7 @@ C D E F | G A B c |]
         .measures
         .iter()
         .flat_map(|measure| &measure.segments)
-        .filter_map(|segment| {
-            segment.chord_rest(Track::new(StaffId::from_index(0), 0))
-        })
+        .filter_map(|segment| segment.chord_rest(Track::new(StaffId::from_index(0), 0)))
         .filter_map(|chord_rest| chord_rest.chord_ref())
         .flat_map(|chord| chord.ornaments.iter())
         .filter(|ornament| ornament.kind == OrnamentType::TrillMark)
