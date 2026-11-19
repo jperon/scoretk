@@ -401,15 +401,17 @@ pub fn remove_overlapping_notes(track: &mut MTrack) {
             continue;
         }
 
-        // Copie des indices pour pouvoir modifier la note courante.
-        let note_count = track.chords.get(*key).map_or(0, |chord| chord.notes.len());
+        // Parcours par index : une note trop courte est retirée sans avancer
+        // l'index, il faut donc relire la longueur à chaque tour. Un compteur
+        // figé paniquait quand la dernière note disparaissait (fichiers Lakh
+        // denses, auparavant masqués par le dépassement de 10 s).
         let mut index = 0;
-        while index < note_count {
-            let (pitch, off_time, voice) = {
-                let chord1 = track.chords.get(*key).expect("accord présent");
-                let note = &chord1.notes[index];
-                (note.pitch, note.off_time, chord1.voice)
-            };
+        while let Some((pitch, off_time, voice)) = track.chords.get(*key).and_then(|chord1| {
+            chord1
+                .notes
+                .get(index)
+                .map(|note| (note.pitch, note.off_time, chord1.voice))
+        }) {
             let mut new_off = off_time;
             let mut tuplet = None;
             let mut is_in_tuplet = false;
