@@ -387,8 +387,16 @@ impl Parser<'_> {
                     // (lignes 383-385) : une décoration peut précéder chaque
                     // note d'un accord (`[.e.g]`, `[C(E]`). On la signale et
                     // on la saute, comme le fait `errorWarn` pour `b1`.
-                    Some('(' | ')' | '.' | '!' | '+' | '~' | ',' | '`' | '$') => {
-                        self.warn("décoration dans un accord ignorée");
+                    Some('z' | 'Z' | 'x' | 'X') => {
+                        // Port de `chord_note = dec_note | rest | b1` (ligne 385) :
+                        // un silence peut figurer dans un accord ; il n'a pas
+                        // de hauteur, mais il emporte sa durée écrite.
+                        self.warn("silence sans hauteur dans un accord ignoré");
+                        self.pos += 1;
+                        let _ = self.read_length_text();
+                    }
+                    Some('(' | ')' | '.' | '!' | '+' | '~' | ',' | '`' | '$' | '<' | '>' | '"') => {
+                        self.warn("symbole égaré dans un accord ignoré");
                         self.pos += 1;
                     }
                     // Un accord coupé par une fin de ligne n'est pas une
@@ -472,6 +480,7 @@ impl Parser<'_> {
         self.consume_user_symbols();
         let mut alter: Option<i32> = None;
         let mut explicit = AccidentalType::None;
+        let mut microtonal = false;
         loop {
             match self.peek() {
                 Some('^') => {
@@ -497,13 +506,22 @@ impl Parser<'_> {
                     alter = Some(0);
                     explicit = AccidentalType::Natural;
                 }
+                // Port de `abc2xml.py`, `alteration` (ligne 368) : le
+                // numérateur/le dénominateur d'une altération microtonale
+                // (`^3^F`, `^/C`) appartient au même jeton. Comme le script
+                // avec `edo=12`, on garde le demi-ton déjà lu.
+                Some(value) if value.is_ascii_digit() || value == '/' => {
+                    microtonal = true;
+                    self.pos += 1;
+                }
                 _ => break,
             }
         }
         // Micro-intervalles (`^/C`, `_/c`, `^3/2C`…) : le modèle n'a pas de
         // hauteur fractionnaire. Comme abc2xml.py avec edo=12, on arrondit au
         // demi-ton lu par `^`/`_` et on saute localement la fraction.
-        if self.peek() == Some('/')
+        if microtonal
+            || self.peek() == Some('/')
             || (self.peek().is_some_and(|value| value.is_ascii_digit())
                 && self.peek_at(1) == Some('/'))
         {
@@ -517,6 +535,16 @@ impl Parser<'_> {
                 self.pos += 1;
             }
             self.warn("micro-intervalle arrondi au demi-ton le plus proche");
+        }
+        // Port de l'élément `errors` d'`abc2xml.py` (ligne 431) : un chiffre
+        // orphelin après une altération (`^3^F`) ou un rythme brisé est
+        // signalé et sauté localement, comme le reste du nombre d'altération.
+        while self
+            .peek()
+            .is_some_and(|character| character.is_ascii_digit())
+        {
+            self.warn("chiffre égaré avant une hauteur, ignoré");
+            self.pos += 1;
         }
         // Port de la grammaire insensible aux espaces d'`abc2xml.py`
         // (`abc_voice.zonderWit()`, ligne 505) : `= (ed)` sur deux lignes
@@ -1109,8 +1137,13 @@ impl Parser<'_> {
                 // Port de `abc2xml.py`, `chord_note = dec_note | rest | b1`
                 // (lignes 383-385) : une décoration peut précéder chaque note
                 // d'un accord (`[.e.g]`, `[C(E]`). On la signale et on la saute.
-                Some('(' | ')' | '.' | '!' | '+' | '~' | ',' | '`' | '$') => {
-                    self.warn("décoration dans un accord ignorée");
+                Some('z' | 'Z' | 'x' | 'X') => {
+                    self.warn("silence sans hauteur dans un accord ignoré");
+                    self.pos += 1;
+                    let _ = self.read_length_text();
+                }
+                Some('(' | ')' | '.' | '!' | '+' | '~' | ',' | '`' | '$' | '<' | '>' | '"') => {
+                    self.warn("symbole égaré dans un accord ignoré");
                     self.pos += 1;
                 }
                 // Un accord coupé par une fin de ligne ne fait pas rejeter
@@ -1329,6 +1362,14 @@ impl Parser<'_> {
                 Some('}') => {
                     self.bump();
                     break;
+                }
+                // Port de `abc2xml.py`, `grace_stem = Optional(decorations)
+                // + stem` (lignes 398-399) : un accord peut former le `:
+                // stem` d'un agrément (`{[Ge]}`). Les crochets sont sautés
+                // localement, les notes sont gardées.
+                Some('[' | ']') => {
+                    self.warn("accord dans un agrément : crochet ignoré");
+                    self.pos += 1;
                 }
                 None => {
                     return Err(Error::LigneInvalide {
