@@ -431,6 +431,24 @@ impl Parser<'_> {
                 _ => break,
             }
         }
+        // Micro-intervalles (`^/C`, `_/c`, `^3/2C`…) : le modèle n'a pas de
+        // hauteur fractionnaire. Comme abc2xml.py avec edo=12, on arrondit au
+        // demi-ton lu par `^`/`_` et on saute localement la fraction.
+        if self.peek() == Some('/')
+            || (self.peek().is_some_and(|value| value.is_ascii_digit())
+                && self.peek_at(1) == Some('/'))
+        {
+            while self.peek().is_some_and(|value| value.is_ascii_digit()) {
+                self.pos += 1;
+            }
+            while self.peek() == Some('/') {
+                self.pos += 1;
+            }
+            while self.peek().is_some_and(|value| value.is_ascii_digit()) {
+                self.pos += 1;
+            }
+            self.warn("micro-intervalle arrondi au demi-ton le plus proche");
+        }
         let letter = self.bump().ok_or(Error::LigneInvalide {
             line: self.line,
             message: "hauteur attendue".to_owned(),
@@ -1108,6 +1126,53 @@ mod tests {
             .filter(|spanner| matches!(spanner.kind, SpannerType::Volta))
             .filter_map(|spanner| spanner.volta.as_ref().map(|volta| volta.endings.clone()))
             .collect()
+    }
+
+    #[test]
+    fn microintervalles_arrondis_au_demi_ton() {
+        let source = "\
+X:1
+T:Microtones
+M:4/4
+L:1/8
+K:C
+V:1
+^/C2 _/B2 =C2 ^^C2 | [^/D^/F]2 z2 | {^/G}A2 B2 c2 |]
+V:2
+C, D, E, F, | ^/G, A, B, c |]
+";
+        let output = crate::reader::read_abc_with(source, &crate::reader::ReadOptions::default())
+            .expect("lecture");
+        assert_eq!(output.score.measures.len(), 3);
+        assert_eq!(
+            contenu(&output),
+            (
+                vec![61, 70, 60, 62, 63, 66, 69, 71, 72],
+                vec![0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]
+            )
+        );
+        assert_eq!(output.score.notes.len(), 18, "les deux voix sont lues");
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|warning| warning.message.contains("micro-intervalle")),
+            "avertissement d'arrondi absent : {:?}",
+            output.warnings
+        );
+
+        // Sans la barre de micro-intervalle, la musique ordinaire est inchangée.
+        let ordinaire = parse("^C2 _B2 =C2 ^^C2 | [^D^F]2 z2 | {^G}A2 B2 c2 |]");
+        assert_eq!(contenu(&output), contenu(&ordinaire));
+
+        // Cas limite : slashs multiples et fin de ligne sans note suivante.
+        let double = parse("^//C2 |");
+        assert_eq!(contenu(&double).0, vec![61]);
+        let incomplet = "X:1\nT:Test\nM:4/4\nL:1/8\nK:C\nC ^/ |\n";
+        assert!(
+            crate::reader::read_abc_with(incomplet, &crate::reader::ReadOptions::default()).is_err(),
+            "une hauteur manquante reste une erreur"
+        );
     }
 
     #[test]

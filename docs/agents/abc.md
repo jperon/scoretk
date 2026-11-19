@@ -489,3 +489,21 @@ and a local skip, never the loss of the whole tune.
   grace notes.
 - Measurement: N1/N2 **0 % → 100 %** (35/35 notes), no regression. Two real
   files from the same corpus now parse end to end under `timeout 10`.
+
+### 14.4 Quarter-tone slash (58 rejected tunes)
+
+- Reduced file: `/tmp/abc-reduits/quarter.abc`, X:1 extracted from
+  `abcjs-tests/extracted-abc/flattener.test__abcQuarterTones.abc`
+  (`^/A^/B^/c`, `_/A_/B`, and the `K: C ^/f _/B _A ^D` header).
+- Behaviour: `abc2xml.py` extends the standard with microtonal accidentals
+  (`^/`, `_/`, `^3/2`); with its default `edo=12` it rounds them to whole
+  semitones when writing MusicXML pitches.
+- Fix: `reader/music.rs` consumes the optional numerator, slashes and
+  denominator after an accidental, keeps the semitone already read and emits a
+  warning. The note is no longer lost; this also applies inside chords and
+  grace notes.
+- Measurement: N1 **0 % → 84.4 %** (76/90 notes), N2 **0 % → 71.1 %**; the
+  alternative reaches only 80.0 % / 71.1 % on the same reduced tune. The
+  residual `TRANSPOSITION` classification comes from explicit accidentals in
+  `K:` being ignored by the shared key parser (both candidates), not from a
+  rejection. No per-file regression.
