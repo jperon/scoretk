@@ -274,7 +274,17 @@ pub(crate) fn parse_voice_fields(text: &str) -> VoiceFields {
     let mut transpose = None;
     for (index, part) in text.split_whitespace().enumerate() {
         if index == 0 && !part.contains('=') {
-            number = part.trim_start_matches('"').parse().unwrap_or(1);
+            let first = part.trim_start_matches('"');
+            if let Ok(value) = first.parse() {
+                number = value;
+            } else {
+                // Port de `abc2xml.py::splitHeaderVoices` (ligne 779) et
+                // `voiceNamesAndMaps` (ligne 2253) : un nom de voix (`V:S`)
+                // est un identifiant, pas le numéro 1. `0` demande au lecteur
+                // de lui attribuer un numéro unique, conservé pour `%%score`.
+                name = first.to_owned();
+                number = 0;
+            }
             continue;
         }
         let Some((key, value)) = part.split_once('=') else {
@@ -585,6 +595,9 @@ pub(crate) struct Reader {
     pub tempo: Option<(f64, String)>,
     /// Symboles redéfinis par `U:` (lettre → nom de décoration).
     pub user_symbols: BTreeMap<char, String>,
+    /// Numéros attribués aux voix nommées `V:S`, `V:A`… (port de
+    /// `abc2xml.py::splitHeaderVoices`, ligne 779).
+    pub voice_ids: BTreeMap<String, usize>,
     /// Groupement `%%score`.
     pub score_spec: Option<String>,
     /// Titre.
@@ -620,6 +633,7 @@ impl Default for Reader {
             midi_transpose: 0,
             tempo: None,
             user_symbols: BTreeMap::new(),
+            voice_ids: BTreeMap::new(),
             score_spec: None,
             title: String::new(),
             composer: String::new(),
@@ -844,7 +858,20 @@ impl Reader {
                 }
             }
             'V' => {
-                let fields = parse_voice_fields(value);
+                let mut fields = parse_voice_fields(value);
+                if fields.number == 0 {
+                    // Un nom de voix reçoit un numéro unique, mémorisé afin que
+                    // `%%score (S A)` puisse le retrouver plus tard.
+                    let name = fields.name.clone();
+                    let number = if let Some(&number) = self.voice_ids.get(&name) {
+                        number
+                    } else {
+                        let number = self.voice_ids.values().copied().max().unwrap_or(0) + 1;
+                        self.voice_ids.insert(name, number);
+                        number
+                    };
+                    fields.number = number;
+                }
                 if let Some(index) = self
                     .voices
                     .iter()

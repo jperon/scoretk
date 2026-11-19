@@ -65,29 +65,33 @@ fn voice_content(score: &Score, staff: usize, voice: u8) -> (Vec<u8>, Vec<f64>) 
 fn mesure_courte_garde_sa_longueur_ecrite() {
     let score = read_abc(TABLATURE_X5).expect("lecture de l'air réduit");
 
-    // Les noms de voix `RH`/`LH` ne sont pas des numéros ABC : le lecteur les
-    // ramène à une seule voix, qui enchaîne donc deux mesures d'un croche.
-    assert_eq!(score.measures.len(), 2, "deux mesures écrites");
-    // Première mesure : anacrouse, déjà courte avant le port.
-    assert_eq!(score.measures[0].len, Fraction::new(1, 8));
-    // C'est le point du port : la seconde mesure, non-anacrouse, gardait
+    // `RH` et `LH` sont des noms de voix distincts : chacun garde sa portée
+    // et les deux notes courtes tombent dans la même mesure globale.
+    assert_eq!(
+        score.parts.len(),
+        1,
+        "%%staves {{…}} : une partie à accolade"
+    );
+    assert_eq!(
+        score.parts[0].staves.len(),
+        2,
+        "deux portées dans la partie"
+    );
+    assert_eq!(score.measures.len(), 1);
+    // C'est le point du port : la mesure courte, non-anacrouse, gardait
     // `actual.max(nominal)` = 4/4 (1.0) au lieu de sa longueur écrite.
     assert_eq!(
-        score.measures[1].len,
+        score.measures[0].len,
         Fraction::new(1, 8),
         "la mesure doit garder sa longueur écrite (1/8), pas la nominale"
     );
-    for measure in &score.measures {
-        assert_eq!(measure.nominal_len, Fraction::ONE, " mesure nominale 4/4");
-    }
+    assert_eq!(score.measures[0].nominal_len, Fraction::ONE);
     assert_eq!(
-        score.measures[1].start_tick,
-        scoretk_core::model::Tick::new(1, 8)
+        score.measures[0].start_tick,
+        scoretk_core::model::Tick::ZERO
     );
-    assert_eq!(
-        voice_content(&score, 0, 0),
-        (vec![72, 55], vec![0.125, 0.125])
-    );
+    assert_eq!(voice_content(&score, 0, 0), (vec![72], vec![0.125]));
+    assert_eq!(voice_content(&score, 1, 0), (vec![55], vec![0.125]));
     assert_eq!(score.notes.len(), 2);
 }
 

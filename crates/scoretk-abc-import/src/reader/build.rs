@@ -220,20 +220,49 @@ pub(crate) struct PartSpec {
 /// Analyse `%%score` selon la grammaire d'`abc2xml` : un numéro seul est une
 /// portée isolée, `(1 2)` regroupe des voix sur une portée, `{…}` et `[…]`
 /// encadrent une partie à accolade ou à crochet.
-fn parse_score_spec(spec: &str) -> Vec<PartSpec> {
+fn parse_score_spec(spec: &str, voices: &[Voice]) -> Vec<PartSpec> {
     let mut parser = ScoreSpecParser {
         chars: spec.chars().collect(),
         pos: 0,
+        voices,
     };
     parser.sequence(None)
 }
 
-struct ScoreSpecParser {
+struct ScoreSpecParser<'a> {
     chars: Vec<char>,
     pos: usize,
+    voices: &'a [Voice],
 }
 
-impl ScoreSpecParser {
+impl ScoreSpecParser<'_> {
+    /// Lit un numéro ou un nom de voix et le résout en numéro.
+    ///
+    /// Port de `abc2xml.py::voiceNamesAndMaps` (ligne 2253) : un identifiant
+    /// de `%%score` peut être un nom déclaré par `V:S`, pas seulement un
+    /// chiffre. La lecture s'arrête sur le premier caractère non alphanumérique.
+    fn read_voice(&mut self) -> Option<usize> {
+        let start = self.pos;
+        while self
+            .chars
+            .get(self.pos)
+            .is_some_and(|character| character.is_ascii_alphanumeric())
+        {
+            self.pos += 1;
+        }
+        if start == self.pos {
+            return None;
+        }
+        let token: String = self.chars[start..self.pos].iter().collect();
+        if let Ok(number) = token.parse() {
+            return Some(number);
+        }
+        self.voices
+            .iter()
+            .find(|voice| voice.name == token)
+            .map(|voice| voice.number)
+    }
+
     fn sequence(&mut self, terminator: Option<char>) -> Vec<PartSpec> {
         let mut parts = Vec::new();
         loop {
@@ -260,17 +289,8 @@ impl ScoreSpecParser {
                             self.pos += 1;
                             break;
                         }
-                        if value.is_ascii_digit() {
-                            let mut number = String::new();
-                            while self
-                                .chars
-                                .get(self.pos)
-                                .is_some_and(|digit| digit.is_ascii_digit())
-                            {
-                                number.push(self.chars[self.pos]);
-                                self.pos += 1;
-                            }
-                            if let Ok(number) = number.parse() {
+                        if value.is_ascii_alphanumeric() {
+                            if let Some(number) = self.read_voice() {
                                 voices.push(number);
                             }
                         } else {
@@ -295,17 +315,8 @@ impl ScoreSpecParser {
                         parts.push(PartSpec { staves });
                     }
                 }
-                value if value.is_ascii_digit() => {
-                    let mut number = String::new();
-                    while self
-                        .chars
-                        .get(self.pos)
-                        .is_some_and(|digit| digit.is_ascii_digit())
-                    {
-                        number.push(self.chars[self.pos]);
-                        self.pos += 1;
-                    }
-                    if let Ok(number) = number.parse() {
+                value if value.is_ascii_alphanumeric() => {
+                    if let Some(number) = self.read_voice() {
                         parts.push(PartSpec {
                             staves: vec![vec![number]],
                         });
@@ -321,7 +332,7 @@ impl ScoreSpecParser {
 /// Groupes de voix : un groupe par partie.
 fn groups(reader: &Reader, voices: &[Voice]) -> Vec<PartSpec> {
     let mut groups = if let Some(spec) = &reader.score_spec {
-        parse_score_spec(spec)
+        parse_score_spec(spec, voices)
     } else {
         Vec::new()
     };
