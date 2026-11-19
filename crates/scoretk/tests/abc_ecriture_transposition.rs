@@ -103,6 +103,42 @@ fn transposition_octave_dans_les_declinaisons_de_voix() {
     );
 }
 
+/// Une ottava n'est pas une transposition d'instrument : en ABC la hauteur
+/// écrite est déjà décalée pour compenser le fait qu'`abc2midi` ignore l'ottava.
+/// Ajouter `transpose=` dans ce cas rejouerait les notes une octave à côté.
+#[test]
+fn ottava_ne_devient_pas_une_transposition() {
+    let source = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\
+<score-partwise version=\"4.0\">\
+<part-list><score-part id=\"P1\"><part-name>Flûte</part-name></score-part></part-list>\
+<part id=\"P1\"><measure number=\"1\">\
+<attributes><divisions>2</divisions><key><fifths>0</fifths></key>\
+<time><beats>4</beats><beat-type>4</beat-type></time>\
+<clef><sign>G</sign><line>2</line></clef></attributes>\
+<direction><direction-type><octave-shift type=\"down\"/></direction-type></direction>\
+<note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration><type>quarter</type></note>\
+<note><rest measure=\"yes\"/><duration>6</duration></note>\
+</measure></part></score-partwise>";
+    let partition = scoretk::read(source.as_bytes(), Format::MusicXml).expect("lecture MusicXML");
+    let octets = write(&partition, Format::Abc, &Options::default()).expect("écriture ABC");
+    let abc = String::from_utf8(octets).expect("ABC UTF-8");
+    let v1 = abc.lines().find(|l| l.starts_with("V:1 ")).expect("V:1");
+    assert!(
+        !v1.contains("transpose="),
+        "une ottava ne s'écrit pas comme une transposition : {v1}"
+    );
+    // La hauteur écrite est compensée d'une octave (C4 → C, ou c'), mais
+    // n'est pas rejouée une seconde fois par un champ `transpose=`.
+    let note = abc
+        .lines()
+        .find(|l| l.starts_with("C") || l.starts_with("c"))
+        .expect("note");
+    assert!(
+        note.starts_with("C,") || note.starts_with('c'),
+        "hauteur compensée par l'ottava : {note}"
+    );
+}
+
 #[test]
 fn transposition_chromatique_sans_controle_invalide() {
     let abc = ecrire("<transpose><diatonic>-1</diatonic><chromatic>-2</chromatic></transpose>");

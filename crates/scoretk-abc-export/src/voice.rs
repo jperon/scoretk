@@ -274,7 +274,9 @@ fn voice_header(score: &Score, spec: writer::VoiceSpec) -> String {
         .measures
         .first()
         .map_or(Tick::ZERO, |measure| measure.start_tick);
-    let transposition = transpose_at(score, staff, debut);
+    // Seule la transposition de l'instrument : la compensation d'ottava est
+    // déjà appliquée aux hauteurs écrites et ne doit pas être rejouée.
+    let transposition = instrument_transpose(score, staff, debut);
     if transposition != 0 {
         header.push_str(&format!(" transpose={transposition}"));
     }
@@ -311,16 +313,20 @@ fn collect_items(score: &Score, staff: usize, voice: usize) -> Vec<Item<'_>> {
     items
 }
 
-/// Transposition de l'instrument en vigueur à un tick.
-fn transpose_at(score: &Score, staff: usize, tick: Tick) -> i32 {
+/// Transposition chromatique de l'instrument seul, sans compensation d'ottava.
+fn instrument_transpose(score: &Score, staff: usize, tick: Tick) -> i32 {
     let Some(staff_data) = score.staves.get(staff) else {
         return 0;
     };
     let part = score.part(staff_data.part);
-    let instrument = part
-        .instrument_at(tick)
+    part.instrument_at(tick)
         .transpose
-        .map_or(0, |transpose| transpose.chromatic);
+        .map_or(0, |transpose| transpose.chromatic)
+}
+
+/// Décalage à retrancher de la hauteur du modèle pour obtenir la hauteur écrite.
+fn transpose_at(score: &Score, staff: usize, tick: Tick) -> i32 {
+    let instrument = instrument_transpose(score, staff, tick);
     // `pitch2xml` ajoute le décalage d'ottava à l'octave écrite.
     let ottava = score
         .spanners
