@@ -3811,7 +3811,11 @@ fn transposition_du_global_atteint_les_voix_de_la_portee() {
         .collect();
     assert_eq!(
         transposes,
-        vec![None, Some(Transpose::new(-7, -12)), Some(Transpose::new(-7, -12))],
+        vec![
+            None,
+            Some(Transpose::new(-7, -12)),
+            Some(Transpose::new(-7, -12))
+        ],
         "la propriété doit suivre les voix musicales, pas le global vide"
     );
 
@@ -3821,7 +3825,10 @@ fn transposition_du_global_atteint_les_voix_de_la_portee() {
         hauteurs(&sans),
         vec![60, 62, 64, 65, 67, 72, 67, 69, 48, 50, 52, 53, 55, 55, 60]
     );
-    assert!(sans.parts.iter().all(|part| part.instrument.transpose.is_none()));
+    assert!(sans
+        .parts
+        .iter()
+        .all(|part| part.instrument.transpose.is_none()));
 
     // Autre idiom réel (guitar-skole) : chaque voix de la portée porte
     // `\transposition c`. Toutes portant le même intervalle, la propriété est
