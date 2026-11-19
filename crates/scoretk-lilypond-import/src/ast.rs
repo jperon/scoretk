@@ -316,13 +316,17 @@ pub(crate) enum GroupKind {
 
 impl GroupKind {
     /// Nature correspondant au nom de contexte LilyPond.
+    ///
+    /// Les noms de contextes sont insensibles à la casse pour LilyPond :
+    /// `\new voice` et `\new Voice` désignent le même contexte. Les partitions
+    /// Mutopia anciennes écrivent souvent `\new voice`, `\context staff`…
     pub(crate) fn from_name(name: &str) -> Self {
-        match name {
-            "Staff" => Self::Staff,
-            "PianoStaff" => Self::PianoStaff,
-            "ChoirStaff" => Self::ChoirStaff,
-            "StaffGroup" => Self::StaffGroup,
-            "Voice" => Self::Voice,
+        match name.to_ascii_lowercase().as_str() {
+            "staff" => Self::Staff,
+            "pianostaff" => Self::PianoStaff,
+            "choirstaff" => Self::ChoirStaff,
+            "staffgroup" => Self::StaffGroup,
+            "voice" => Self::Voice,
             _ => Self::Other,
         }
     }

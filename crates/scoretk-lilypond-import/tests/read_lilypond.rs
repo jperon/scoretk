@@ -780,6 +780,25 @@ fn context_staff_imbrique_avec_voix_nommees() {
 }
 
 #[test]
+fn noms_de_contextes_insensibles_a_la_casse() {
+    // Les partitions Mutopia anciennes écrivent `\new voice` (2.8.0) ou
+    // `\context staff` en minuscules : LilyPond les accepte, le lecteur aussi.
+    let source = "\\score { \
+                  \\new staff { \
+                    << \\new voice { \\fixed c' { c4 d e f } } \
+                       \\new voice { \\fixed c' { g4 a b c' } } >> \
+                  } \
+                  \\context staff = \"bas\" { \\fixed c' { c,4 e, g, } } \
+                  }";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.staves.len(), 2);
+    assert_eq!(
+        hauteurs(&score),
+        vec![60, 62, 64, 65, 67, 69, 71, 72, 48, 52, 55]
+    );
+}
+
+#[test]
 fn musique_de_haut_niveau_new_staff_relative() {
     let score = read_lilypond("\\new Staff \\relative { c'4 d e f }").expect("lecture");
     assert_eq!(score.staves.len(), 1);

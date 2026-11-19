@@ -120,6 +120,8 @@ temporaires) et `\new Voice` rencontré dans une voix d'une portée (voix
 ouverte au tick courant), variables (`nom = { … }` puis
 `\nom`), `\parallelMusic` (voir ci-dessous),
 `\new Staff`/`PianoStaff`/`ChoirStaff`/`Voice`/`Lyrics`,
+`\context Staff`/`PianoStaff`/`ChoirStaff`/`StaffGroup`/`Voice` (noms de
+contextes insensibles à la casse : `\new voice`, `\context staff`…),
 `\addlyrics`, `\lyricsto`, `\lyricmode`, `\header`, `\tempo`, `\mark` et
 `\markup` simple (texte), musique embarquée `#{ … #}`/`$#{ … #}` et fonctions
 musicales simples (`nom = #(define-music-function (a b) (prédicat…) #{ … #})`
