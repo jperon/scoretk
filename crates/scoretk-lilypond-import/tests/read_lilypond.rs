@@ -3583,3 +3583,74 @@ fn commande_sans_argument_ne_veure_pas_le_bloc_musique_suivant() {
     );
     assert_eq!(score.measures.len(), 2, "mesures avant la commande");
 }
+
+#[test]
+fn mark_markup_entre_accolades_ne_devient_pas_une_note() {
+    // Régression Angels_Carol (musicxml2ly, Rutter) : les voix portent
+    // `\mark \markup { \box { A } }`. Le gestionnaire de `\mark` laissait la
+    // commande `\markup` en place : son bloc entre accolades restait dans le
+    // flux et, lu comme de la musique, le « A » de `\box { A }` devenait une
+    // note parasite qui décalait toutes les mesures suivantes.
+    let source = "\\version \"2.24.0\"\n\
+         \\language \"english\"\n\
+         global = { \\key c \\major \\time 4/4 }\n\
+         dessus = \\fixed c' {\n\
+           \\global c4 d | e2 r |\n\
+           \\mark \\markup { \\box { A } } <c e g>2~ q2 | c1\n\
+         }\n\
+         accomp = \\relative c' { c4 d | e2 r | c2~ c | }\n\
+         \\score { <<\n\
+           \\new Staff <<\n\
+             \\context Voice = haut { \\voiceOne \\dessus }\n\
+             \\context Voice = basse { \\voiceTwo \\accomp }\n\
+           >>\n\
+           \\new Staff { \\fixed c' { c'4 d' | e'2 r' | } }\n\
+         >> }";
+    let score = read_lilypond(source).expect("lecture");
+    // Première voix : do4 ré4 | mi4 silence | accord do-mi-sol lié à lui-même
+    // puis do4. La seconde portée ajoute do5 ré5 | mi5 silence.
+    assert_eq!(
+        hauteurs(&score),
+        vec![
+            60, 62, 64, 60, 64, 67, 60, 64, 67, 60, // dessus
+            60, 62, 64, 60, 60, // accompagnement
+            72, 74, 76, // seconde portée
+        ],
+        "hauteurs : le « A » du markup ne doit pas apparaître"
+    );
+    assert_eq!(score.measures.len(), 4, "mesures");
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 2),
+            Fraction::new(1, 2),
+            Fraction::new(1, 2),
+            Fraction::new(1, 2),
+            Fraction::new(1, 1),
+        ],
+        "durées de la première portée"
+    );
+
+    // Cas limite : accolades imbriquées dans le markup, en fin de flux. Le
+    // bloc entier doit être consommé, sans laisser échapper la dernière note.
+    let source = "\\score { \\new Staff { \\fixed c' { c'4 d' | e'2 r' | \
+         \\mark \\markup { \\box { \\bold { Z } } } c''1 } } }";
+    let score = read_lilypond(source).expect("lecture imbriquée");
+    assert_eq!(
+        hauteurs(&score),
+        vec![72, 74, 76, 84],
+        "musique après markup imbriqué"
+    );
+    assert_eq!(score.measures.len(), 3, "mesures après markup imbriqué");
+
+    // Cas non concerné : un `\mark` dont l'argument est une chaîne garde son
+    // comportement, la musique qui suit restant intacte.
+    let score = read_lilypond(
+        "\\score { \\new Staff { \\fixed c' { c'4 \\mark \\markup \"A\" d'4 e'2 } } }",
+    )
+    .expect("lecture chaîne");
+    assert_eq!(hauteurs(&score), vec![72, 74, 76], "musique après chaîne");
+    assert_eq!(score.measures.len(), 1, "mesures après chaîne");
+}

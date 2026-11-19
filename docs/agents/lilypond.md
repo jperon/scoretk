@@ -809,6 +809,14 @@ test covers two staves, two named voices, variables, bar checks, chords, rests
 and ties, plus an unknown command at end of file. Twenty previously exact files
 were re-measured and are unchanged.
 
+A later measurement on non-regression scores caught a side effect: the
+`musicxml2ly` idiom `\mark \markup { \box { A } }` left the `\markup` token in
+the stream, so its braced block was parsed as music and the letter `A` became a
+spurious note. `\mark` now consumes `\markup` before calling
+`parse_markup_text`, which drains the whole block (including nested braces).
+`Angels_Carol.ly` recovers its 12 shared notes and now also exports its eight
+rehearsal marks; the no-argument-command fix above is unchanged.
+
 ### Not fixed: causes abandoned as disproportionate
 
 The remaining 71 regression files (1665 reference notes) fall into groups that

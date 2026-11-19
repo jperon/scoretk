@@ -2200,6 +2200,16 @@ impl<'a> Parser<'a> {
             "break" | "noBreak" | "pageBreak" | "pageTurn" => context(Context::Break),
             "tempo" => self.parse_tempo(),
             "mark" => {
+                // `\mark \markup { … }` : contrairement aux autres appelants
+                // de `parse_markup_text`, `\mark` reçoit encore la commande
+                // `\markup`. La consommer pour que le bloc entre accolades soit
+                // lu et épuisé par `parse_markup_text` : sinon le bloc reste
+                // dans le flux et, traité comme de la musique, l'argument de
+                // `\box { A }` devient une note parasite qui décale toutes les
+                // mesures suivantes (régression Angels_Carol).
+                if self.peek().is_some_and(|token| token.is_command("markup")) {
+                    self.position += 1;
+                }
                 let text = self.parse_markup_text();
                 context(Context::Mark(text))
             }
