@@ -82,10 +82,15 @@ def read_midi(path: str) -> list[tuple[int, float, float, int]]:
 def read_xml(path: str) -> list[tuple[int, float, float, int]]:
     """Notes d'un MusicXML partwise : hauteur concert, attaque, durée, part.
 
-    Le compteur d'attaques est propre à chaque (voix, portée) et repart de
-    zéro pour chaque partie, comme le temps musical du fichier. Les accords
-    (``<chord/>``) partagent l'attaque de la note précédente ; les silences
-    avancent le compteur ; les notes de grâce et les prolongations de liaison
+    L'attaque est calculée comme dans un vrai lecteur MusicXML : un curseur
+    parcourt chaque mesure depuis son début, ``<backup>``/``<forward>`` le
+    déplacent, et les accords (``<chord/>``) partagent l'attaque de la note
+    précédente sans avancer le curseur. Le début de la mesure suivante est la
+    fin de la précédente. L'ancienne version additionnait les durées par
+    (voix, portée) sur tout le morceau : une voix qui n'apparaissait qu'en
+    cours de route voyait toutes ses attaques décalées vers le début (les
+    « attaques décalées » du relevé, en fait un défaut de l'oracle, pas de
+    l'import). Les notes de grâce et les prolongations de liaison
     (``<tie type="stop"/>``) ne sont pas des attaques et sont écartées.
     """
     racine = ET.parse(path).getroot()
@@ -93,9 +98,12 @@ def read_xml(path: str) -> list[tuple[int, float, float, int]]:
     for numero_part, part in enumerate(racine.findall("part")):
         divisions = 1
         transposition = 0
-        position: dict[tuple[str, str], float] = defaultdict(float)
-        derniere_attaque: dict[tuple[str, str], float] = {}
+        temps_part = 0.0
         for measure in part.findall("measure"):
+            curseur = temps_part
+            fin_mesure = temps_part
+            derniere_attaque = temps_part
+            a_des_notes = False
             for elem in measure:
                 if elem.tag == "attributes":
                     d = elem.find("divisions")
@@ -107,25 +115,31 @@ def read_xml(path: str) -> list[tuple[int, float, float, int]]:
                         octave = t.findtext("octave-change", "0")
                         transposition = int(float(chromatique)) + 12 * int(float(octave))
                     continue
+                if elem.tag in ("backup", "forward"):
+                    duree_texte = elem.findtext("duration")
+                    delta = int(float(duree_texte)) / divisions if duree_texte else 0.0
+                    curseur += -delta if elem.tag == "backup" else delta
+                    continue
                 if elem.tag != "note":
                     continue
                 duree_texte = elem.findtext("duration")
                 duree = int(float(duree_texte)) / divisions if duree_texte else 0.0
-                voix = elem.findtext("voice") or "1"
-                portee = elem.findtext("staff") or "1"
-                cle = (voix, portee)
                 est_accord = elem.find("chord") is not None
-                attaque = derniere_attaque.get(cle, 0.0) if est_accord else position[cle]
-                if not est_accord:
-                    derniere_attaque[cle] = attaque
-                    position[cle] = attaque + duree
+                if est_accord:
+                    attaque = derniere_attaque
+                else:
+                    attaque = curseur
+                    derniere_attaque = attaque
+                    curseur += duree
+                a_des_notes = True
+                fin_mesure = max(fin_mesure, attaque + duree)
                 if elem.find("grace") is not None:
                     continue
                 if any(t.get("type") == "stop" for t in elem.findall("tie")):
                     continue
                 pitch = elem.find("pitch")
                 if pitch is None:
-                    continue  # silence : il a déjà avancé le compteur
+                    continue  # silence : il a déjà avancé le curseur
                 step = pitch.findtext("step")
                 octave_txt = pitch.findtext("octave")
                 if step not in STEPS or octave_txt is None:
@@ -133,6 +147,12 @@ def read_xml(path: str) -> list[tuple[int, float, float, int]]:
                 alter = pitch.findtext("alter", "0")
                 hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
                 notes.append((hauteur + transposition, attaque, duree, numero_part))
+            if not a_des_notes:
+                # Mesure vide : on avance au moins de sa durée nominale pour
+                # ne pas écraser la suivante sur le même temps.
+                temps_part = max(fin_mesure, temps_part + 4.0)
+            else:
+                temps_part = fin_mesure
     return notes
 
 
