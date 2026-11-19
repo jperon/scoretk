@@ -688,6 +688,18 @@ fn ornements() {
 }
 
 #[test]
+fn post_event_rest_transforme_la_note_en_silence() {
+    // `c4\rest` est un silence nommé, pas une note de hauteur c : LilyPond ne
+    // l'entend pas dans le MIDI. Le post-événement s'applique à la note
+    // précédente et ne doit pas décaler les notes qui suivent.
+    let source = "\\score { \\fixed c' { c4\\rest d e f | g\\rest a b c' } }";
+    let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![62, 64, 65, 69, 71, 72]);
+    assert_eq!(score.measures.len(), 2);
+    assert!(!warnings.iter().any(|w| w.message.contains("rest")));
+}
+
+#[test]
 fn commandes_ignorees_avec_avertissement() {
     let source = "\\version \"2.24.0\"\n\
                   \\score { \\new Staff { c4 \\uneCommandeInconnue d4 #(ly:make-moment 1/4) e4 } }";

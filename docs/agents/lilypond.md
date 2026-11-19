@@ -103,7 +103,9 @@ sont une copie de LilyPond **2.26.0** conservée **hors du dépôt** (voir
 | Interprétation | `scoretk-lilypond-import/src/events.rs` | octaves, transposition, n-olets, ornements, spanners, reprises, événements datés |
 | Construction | `scoretk-lilypond-import/src/builder.rs` | trame des mesures (`\time`, `\partial`, `Timing.measureLength`, `R`), segments, altérations affichées, paroles, liaisons |
 
-Sous-ensemble couvert : notes, silences, accords, durées et points,
+Sous-ensemble couvert : notes, silences (y compris le post-événement `\rest`,
+qui transforme la note écrite en silence, comme `event_chord` de
+`lily/parser.yy`), accords, durées et points,
 `\relative`, `\fixed` et notation absolue, `\transpose`, `\tuplet`/`\times`,
 `~`, `(`/`)` et `\=N(`/`\=N)`, `\repeat volta`/`unfold` et `\alternative`,
 `\key`, `\time`, `\clef`, `\partial`, `\bar`, `\cadenzaOn`/`\cadenzaOff`

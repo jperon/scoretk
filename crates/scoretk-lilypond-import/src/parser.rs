@@ -2717,6 +2717,13 @@ impl<'a> Parser<'a> {
                     Vec::new()
                 }
             }
+            // `\rest` s'applique à la note elle-même, pas au jeton suivant :
+            // il ne doit pas passer par `parse_direction_event` (réservé à
+            // `^`, `_`, `-` et aux commandes d'articulation qui les suivent).
+            Kind::Command if token.text == "rest" => {
+                self.position += 1;
+                vec![PostEvent::Rest]
+            }
             Kind::Command => {
                 self.position += 1;
                 self.parse_direction_event(&format!("\\{}", token.text), Placement::Below)
@@ -3700,6 +3707,7 @@ fn starts_post_event(token: &Token) -> bool {
                 || token.text == ">"
                 || token.text == "!"
                 || token.text == "markup"
+                || token.text == "rest"
                 || is_articulation_command(&token.text)
                 || is_dynamic_command(&token.text)
         }
@@ -3922,6 +3930,7 @@ fn is_dynamic_command(name: &str) -> bool {
 /// Événement d'une commande de post-traitement connue.
 fn post_event_for_command(name: &str, placement: Placement) -> Option<PostEvent> {
     let event = match name {
+        "rest" => PostEvent::Rest,
         "staccato" => PostEvent::Articulation(ArticulationType::Staccato),
         "staccatissimo" => PostEvent::Articulation(ArticulationType::Staccatissimo),
         "accent" => PostEvent::Articulation(ArticulationType::Accent),

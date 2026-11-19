@@ -54,6 +54,9 @@ pub(crate) struct PitchSpec {
 /// Événement attaché à une note ou à un accord (`post_event`).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum PostEvent {
+    /// `\rest` : la note écrite est en fait un silence (`lily/parser.yy`,
+    /// `event_chord` ; `Note_event` converti en `Rest_event`).
+    Rest,
     /// Liaison de prolongation (`~`).
     Tie,
     /// Début de liaison d'expression (`(`, `\=N(`) avec son numéro.

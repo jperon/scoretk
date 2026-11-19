@@ -896,6 +896,25 @@ impl<'a> Interpreter<'a> {
             return;
         }
 
+        // `\rest` convertit la note (ou l'accord) écrite en silence : c'est le
+        // comportement de `event_chord` dans `lily/parser.yy`. La note écrite
+        // est tout de même résolue, car elle avance la référence `\relative`
+        // (`Event_chord::to_relative_octave` s'applique avant la conversion).
+        let note_is_rest = |notes: &[NoteSpec]| {
+            notes.iter().any(|note| {
+                note.posts
+                    .iter()
+                    .any(|post| matches!(post, PostEvent::Rest))
+            })
+        };
+        let is_rest = chord
+            .posts
+            .iter()
+            .any(|post| matches!(post, PostEvent::Rest))
+            || match &chord.kind {
+                ChordKind::Notes(notes) => note_is_rest(notes),
+                _ => false,
+            };
         // Un `~` porté par l'accord (et non par une note de `<…>`) lie toutes
         // ses notes : LilyPond (event_chord + Tie_engraver) attache une
         // liaison d'accord à chaque note, vers la note de même hauteur qui
@@ -909,10 +928,17 @@ impl<'a> Interpreter<'a> {
         let mut content = match &chord.kind {
             ChordKind::Notes(notes) => {
                 // La référence relative est celle de la première note de
-                // l'accord, pas de la dernière.
+                // l'accord, pas de la dernière. Résoudre les hauteurs même
+                // pour un `\rest` avance cette référence, comme LilyPond.
                 let notes = self.chord_notes(notes);
-                self.last_chord_notes = Some(notes.clone());
-                ChordContent::Notes(notes)
+                if is_rest {
+                    ChordContent::Rest {
+                        visible: !chord.invisible,
+                    }
+                } else {
+                    self.last_chord_notes = Some(notes.clone());
+                    ChordContent::Notes(notes)
+                }
             }
             // `q` reprend les hauteurs déjà résolues du dernier accord : les
             // résoudre de nouveau depuis ses marques écrites les décalerait
@@ -1040,7 +1066,7 @@ impl<'a> Interpreter<'a> {
         fingerings: &mut Vec<String>,
     ) {
         match post {
-            PostEvent::Tie => {}
+            PostEvent::Rest | PostEvent::Tie => {}
             PostEvent::SlurStart(number) => {
                 self.event(EventKind::SlurStart(*number));
             }
