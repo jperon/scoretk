@@ -1,101 +1,40 @@
 # scoretk
 
-Boîte à outils de conversion de partitions, sous licence GPL-3.0-only. Elle
-vise les allers-retours entre MuseScore (`.mscz` / `.mscx`), MusicXML,
-LilyPond, ABC et MIDI ; la feuille de route est dans
-[`docs/TODO.md`](docs/TODO.md).
+scoretk converts music scores between MuseScore, MusicXML, LilyPond, ABC and MIDI, on Linux, macOS and Windows.
 
-Le convertisseur MuseScore → MusicXML, **scoretk-core**, est un portage en Rust
-de l'export MusicXML de MuseScore Studio.
+It is a small command-line tool: you give it a score file and it writes the same music in another format. It does not lay out or print scores — open the result in your notation software for the final appearance.
 
-## Objectifs de portabilité
+## Supported formats
 
-La bibliothèque `scoretk-core` est conçue pour tourner partout où Rust compile :
+| Format | Extensions | Read | Write |
+| --- | --- | --- | --- |
+| MuseScore | `.mscz`, `.mscx` | Yes | Yes |
+| MusicXML | `.musicxml`, `.xml` | Yes | Yes |
+| Compressed MusicXML | `.mxl` | Yes | Yes |
+| LilyPond | `.ly` | Yes | Yes |
+| ABC | `.abc` | Yes | Yes |
+| MIDI | `.mid`, `.midi` | Yes | Yes |
 
-- **wasm32-unknown-unknown** (navigateur, sans WASI) ;
-- **Android** et **iOS** ;
-- **Linux, macOS, Windows**.
+The tool also reports the formats it supports with `scoretk --list-formats`.
 
-Pour cela, elle respecte des contraintes strictes :
+## What converts well, and what does not
 
-- aucune entrée/sortie fichier : l'API travaille sur des **octets en mémoire** ;
-- aucun thread, aucune horloge, aucun accès réseau ;
-- aucune dépendance C : le ZIP est décodé en Rust pur (`zip` avec
-  `default-features = false`, décompression `deflate` via `miniz_oxide`) ;
-- pas de `std::fs`, pas de `std::env` dans la bibliothèque.
+**Usually preserved:** pitches and note durations, rests, voices and staves, clefs, key and time signatures, ties, lyrics, repeats and endings, dynamics, articulations, tempo changes and chord names. Converting between MuseScore and MusicXML is the most faithful path.
 
-Le crate `scoretk-cli` est la seule partie qui touche au système de
-fichiers ; il n'est pas destiné au wasm.
+**Not preserved:** page layout, margins, system breaks, exact spacing and text positions. Output is *musically* equivalent, not visually identical; let MuseScore or LilyPond do the final engraving. Fine engraving details (beam hooks, stem directions, notehead shapes) may also differ.
 
-## État actuel (étape 1)
+**LilyPond and ABC are subsets.** Advanced LilyPond constructs (Scheme, layout blocks, drum or chord modes, some ornaments, microtones) and ABC features outside the common subset may be ignored or simplified. Only the first score in a LilyPond file is read, and ABC keeps a single key and time signature per tune. A round trip through ABC does not restore MuseScore transposition settings.
 
-- lecture d'un conteneur `.mscz` (ZIP) : `MsczContainer::from_bytes(&[u8])` ;
-- résolution du fichier `.mscx` principal via `META-INF/container.xml`
-  (`rootfile` / `full-path`), avec repli sur le premier `.mscx` à la racine ;
-- acceptation d'un `.mscx` nu ;
-- détection de la version du format : `detect_version(&[u8]) -> Result<MscVersion>`,
-  par exemple `"3.02"` → `302`, `"4.60"` → `460`.
+**MIDI is playback, not notation.** It carries no layout, lyrics, text, instrument names or engraving details. Fermatas and breaths add no playback time, and drum maps and instrument changes are not exported. Note velocities in the output come from dynamics, hairpins and velocities set on the notes, rather than from raw note velocities in a MIDI file. Converting MIDI back to MusicXML restores notes and rhythm, but not how the music was written on the page.
 
-L'export MusicXML lui-même viendra dans les étapes suivantes.
+If a detail matters to you, open both files in your notation program and compare before using the result.
 
-## Utilisation
+## License
 
-```console
-$ scoretk partition.mscz -o partition.musicxml
-$ scoretk partition.musicxml -o partition.mscz
-```
+scoretk is free software licensed under GPL-3.0-only; see [LICENSE](LICENSE).
 
-## Compilation et tests
+## Guides
 
-```console
-$ cargo build --workspace
-$ cargo test --workspace
-$ rustup target add wasm32-unknown-unknown
-$ cargo build -p scoretk-core --target wasm32-unknown-unknown
-$ cargo build -p scoretk-midi-common -p scoretk-midi-import -p scoretk-midi-export \
-    --target wasm32-unknown-unknown
-$ cargo build -p scoretk-wasm --target wasm32-unknown-unknown
-```
-
-## Paquet WebAssembly
-
-`nix build .#wasm` produit le paquet navigateur de la façade (module ES et
-script classique) dans `result/` : `package.json` `name: "scoretk"`,
-`esm/scoretk_wasm.*`, `classic/scoretk.js`. Son API est documentée dans
-[`docs/agents/wasm.md`](docs/agents/wasm.md) :
-
-```js
-import init, { convert } from 'scoretk';
-
-await init();
-const xml = new TextDecoder().decode(convert(bytes)); // musicxml par défaut
-const midi = convert(bytes, { to: 'midi' });          // Uint8Array
-```
-
-`convert` renvoie un `Uint8Array` et expose `detect`, `formats` et
-`convertWithTimeline` (voir [`docs/agents/wasm.md`](docs/agents/wasm.md)).
-
-## Structure
-
-- `crates/scoretk-core` : bibliothèque portable (aucune I/O) — modèle pivot.
-- `crates/scoretk-musescore-import` / `crates/scoretk-musescore-export` :
-  lecture `.mscz`/`.mscx` et écriture MuseScore (`.mscx`, `.mscz`).
-- `crates/scoretk-musicxml-import` / `crates/scoretk-musicxml-export` :
-  lecture et export MusicXML (`.musicxml`, `.xml`, `.mxl`).
-- `crates/scoretk-midi-common` / `-import` / `-export` : lecture et écriture
-  MIDI, déroulement des reprises, carte des temps.
-- `crates/scoretk-lilypond-{common,import,export}` : lecture d'un
-  sous-ensemble LilyPond et écriture `.ly`.
-- `crates/scoretk-abc-{common,import,export}` : lecture et écriture ABC.
-- `crates/scoretk` et `crates/scoretk-cli` : façade multi-formats et binaire
-  `scoretk` (convertisseurs optionnels par features, une par sens).
-- `crates/scoretk-wasm` : enveloppe WebAssembly de la façade (`convert`,
-  `detect`, `formats`, `version`), unique paquet wasm.
-
-## Licence
-
-GPL-3.0-only. Le texte complet est dans [`LICENSE`](LICENSE).
-
-Ce projet est un portage du code d'import/export de MuseScore Studio
-(© MuseScore Limited and others), distribué sous GPL-3.0-only. Il s'agit
-d'une œuvre dérivée : seule la version 3 de la GPL s'applique.
+- [Installation](docs/guide/installation.md) — get the `scoretk` command on Linux, macOS or Windows.
+- [Usage](docs/guide/usage.md) — convert files, choose formats, use standard input/output and batch convert.
+- [Developer documentation](docs/developers.md) — architecture, builds, tests and the WebAssembly package.
