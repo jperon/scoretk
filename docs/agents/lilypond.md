@@ -850,158 +850,130 @@ would each require a feature of their own, well beyond a parser fix:
 These files are expected to keep producing zero notes; the reader's narrow,
 Scheme-free subset is unchanged.
 
-## 12. Measurement (oracle audited 2026-11-19)
+## 12. Measurement (oracle and reader audited 2026-11-19)
 
 The versioned oracle in `scripts/oracle/lilypond/` compares the MIDI rendered
 by LilyPond from the same `.ly` source with the MusicXML produced by each
 reader. N1 is the multiset of pitches (as in the historical `xmlcmp/cmp.py`);
-N2 is the **multiset intersection of `(pitch, quantized attack)` pairs**, on
-the 1/16-of-a-quarter grid (`GRID = 0.25`). Percentages are weighted by
+N2 is the **multiset intersection of `(pitch, quantized attack)` pairs**, on the
+1/16-of-a-quarter grid (`GRID = 0.25`). Percentages are weighted by
 reference-note counts. `scripts/oracle/lilypond/README.md` documents the
 conventions and the reproduction commands.
 
-### Oracle audit: three suspected artefacts
+### Oracle artefacts: all four now fixed
 
-The earlier N2 figure (46.25 % for scoretk) was suspected of measuring oracle
-bugs rather than reader quality. Each suspicion was reduced to a minimal real
-excerpt, then run through `lilypond` and `target/debug/scoretk`:
+Earlier campaigns classified four discrepancies as measurement artefacts. Each
+was reduced to a minimal real excerpt, run through `lilypond` and
+`target/debug/scoretk`, and given an assertion in `ly_notes.py selftest`:
 
-- **`\partial` pickup.** A two-measure `\partial 4` score gives N1 6/6 and N2
-  6/6 for both scoretk and python-ly: the oracle places measure 1 at tick 0 on
-  both sides, matching LilyPond's MIDI. The cited `Trio_op11_3.ly` (N1
-  4209/4216, old N2 100/4216) has six `\repeat` blocks in its included voices;
-  its low score came from the old pairing, not from a pickup offset. **Not a
-  reader defect and not an oracle bug.**
-- **Tuplets.** A minimal `\times 2/3` score gives 7/7 exact, with triplet
-  attacks at 0, 1/3 and 2/3 quarters on both sides. No corpus file changes
-  `<divisions>` mid-file, no grace note carries a `<duration>`, and LilyPond's
-  MIDI uses a constant PPQ, so `<duration>/<divisions>` is read correctly. The
-  cited `Violin_Concerto_3.ly` fails on cross-staff voices, not on tuplet
-  scaling: the minimal `input/regression/tuplet-bracket-cross-staff.ly` has N1
-  12/12 but N2 3/12, each `\change Staff` voice starting at 0 instead of at its
-  position in the tuplet. **Tuplet timing is right; the voice structure is not.**
-- **Repeats.** Pairing "earliest attack per pitch" was arbitrary: with a
-  duplicate it consumes a pair on the wrong copy (a 3-note/2-note regression
-  in `ly_notes.py selftest` scores 0 before the fix, 2 after). It is replaced
-  by multiset intersection, and N2 is aggregated only over repeat-free files
-  (208 of 910 paths carry `\repeat`/`\unfoldRepeats`/`\volta` in the source or
-  a direct `\include`). After the change, scoretk repeat files score N2 64.13 %
-  against 64.03 % for repeat-free files: repeats were **not** the dominant
-  confound; the pairing was. The old "unfolded pass" warning in the README is
+- **Grace notes** were in LilyPond's MIDI but silently dropped from the
+  MusicXML side; `<grace>` notes are now counted at the following note's
+  attack (as documented). A `<forward>` before a voice's *first* note was
+  ignored, putting `input/regression/grace-nest5.ly` at tick 0 instead of 2.
+- **Repeats.** Pairing "earliest attack per pitch" was arbitrary and consumed
+  a pair on the wrong copy. It was replaced by multiset intersection, and N2
+  is aggregated only over repeat-free files (208 of 910 sampled paths carry
+  a repeat construct). The old "unfolded pass" warning in the README is
   obsolete.
+- **Cross-staff voices** (`input/regression/tuplet-bracket-cross-staff.ly`,
+  old N1 12/12, N2 3/12). `read_xml()` keyed its attack counter on
+  `(voice, staff)`; a `\change Staff` keeps one `<voice>` and changes
+  `<staff>` from note to note, so each staff change restarted the counter.
+  The counter is now keyed by **voice** alone: N2 is 12/12. The reader's
+  timeline was already correct (LilyPond's `ContextChange` iterator,
+  `lily/parser.yy`); removing `staff_move` had only masked the bug. Splitting
+  the voice into one voice per staff reached 6/12 and diverged from LilyPond,
+  so neither workaround is kept.
+- **Partial-measure `<forward>`** (`knjze12monferA.ly`, old N1 150/150,
+  N2 7/150). The writer emits a `<forward duration="2">` as the last element
+  of an eighth-note partial measure, its first note being in the *next*
+  measure. The lookahead was limited to the current measure and dropped the
+  0.5-quarter offset. `read_xml()` now flattens all measures of a part before
+  looking ahead; N2 is 90/150 (the rest is the documented repeat/volta
+  limitation). Later `<backup>`/`<forward>` pairs remain ignored: they are
+  writer stream artefacts, and honouring them shifts correctly placed notes.
 
-Two further **real oracle bugs** were fixed, each with a self-test:
-grace notes were present in LilyPond's MIDI but silently dropped from the
-MusicXML side despite the README claiming otherwise (corrected by counting
-`<grace>` notes at the following note's attack); and a `<forward>` preceding a
-voice's *first* note was ignored, putting the first notes of
-`input/regression/grace-nest5.ly` at 0 instead of 2 quarters. Later
-`<backup>`/`<forward>` pairs are writer stream artefacts and stay ignored —
-honouring them shifts correctly placed notes in real files.
+The `\partial` pickup and tuplet suspicions were **not** bugs: a two-measure
+`\partial 4` score and a minimal `\times 2/3` score both score 6/6 and 7/7
+exactly on both sides.
 
 Run `python3 scripts/oracle/lilypond/ly_notes.py selftest` and
 `python3 scripts/oracle/lilypond/mesure.py --selftest` for these checks.
 
+### Grouping the octave discrepancies
+
+The `octave` column of the three `-base.txt` lists (column 5) was grouped by
+construct in the source and its direct `\include`s; the groups overlap:
+
+| Cause | Files | Octave notes | Status |
+| --- | ---: | ---: | --- |
+| `\transposition` (guitar, brass) | 39 | 6549 | **Reader defect fixed** (below) |
+| `\ottava` | 78 | 4416 | Oracle limitation, not a reader defect |
+| `\relative` (no `\transposition`) | 155 | 3660 | Localised, not fixed |
+| `\transpose` | 34 | 572 | Layout/other scores, not fixed |
+| No octave construct | 29 | 134 | Mostly layout-only regression tests |
+
+For `\ottava`, LilyPond's MIDI plays the **written** pitch: `\ottava 1` only
+draws a bracket. scoretk writes the MuseScore convention — sounding pitch plus
+`<octave-shift type="down">` — and `read_xml()` does not apply `<octave-shift>`
+(the way it applies `<chromatic>`/`<octave-change>`). `ottava-percent-repeat-rest.ly`
+is 0/2 for that reason alone; its two notes are at the right ticks. Fixing it
+would be a third oracle change, outside this campaign's scope, so it is left
+unchanged. The `\relative` group contains localised errors (e.g. the German
+`b`/`h` accidentals of `Lassus_Alleluja._Dies_sanctificatus.ly`); no systematic
+octave shift explains them and they are left to a future campaign.
+
+### Reader fix: `\transposition` on the musical voices
+
+`\transposition` is a Staff property, but the parser can split one
+`\context Staff` into several groups: a `\global` with no notes and one
+group per `\context Voice`. It was also written inside every voice of guitar
+scores (`guitar-skole-*`, Carcassi, Carulli, Mertz). In both idioms the
+interval was left on a part with no notes (or missed altogether when the
+staff had several voices), so the concert pitch stayed an octave too high and
+the export carried no `<transpose>`. `builder.rs` now carries the interval
+from the empty holder to the musical voices of the same staff, and accepts a
+single-staff group whose voices all declare the same interval; a new
+`Staff`/`StaffGroup` closes the property. `tests/read_lilypond.rs` covers a
+`\global` plus two named voices (bar checks, chords, rests, ties), the
+per-voice guitar idiom, a no-`\transposition` control and a following staff
+that must not inherit the interval.
+
 ### Sample, timing and alternatives
 
 Three lots from the `-base.txt` column 6: `mus` (~/Musique), `ra`
-(`lilypond-ref/input/regression`), `mut` (Mutopia). The deterministic 1/5
-sample contains 290 + 346 + 274 = **910 files** (two `TKFAIL` lines without a
-path drop out). The 1/5 sample was re-run **in the foreground** with the
-corrected oracle for scoretk and python-ly only, every conversion under
+(`lilypond-ref/input/regression`), `mut` (Mutopia), i.e. 1447 + 1726 + 1377 =
+4550 paths. The full three lots were re-run **in the foreground**, before and
+after the reader fix, with the corrected oracle, every conversion under
 `timeout 10 prlimit --as=2000000000` (no timeouts). The earlier music21
-attempt is not repeated: 10.5.2 has no LilyPond reader, so all 910
-`converter.parse` calls failed at format detection and no N1/N2 exists for it.
+attempt is not repeated: 10.5.2 has no LilyPond reader, so no N1/N2 exists
+for it.
 
-### Results (corrected oracle)
+### Results (foreground, full lists)
 
 | Lot | Tool | Files | Repeats | OK | Fail | Empty | Exact | N1 % (all) | N2 % (no repeat) | Max time |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| mus | scoretk | 290 | 20 | 290 | 0 | 0 | 221 (76.2 %) | 99.90 | 86.70 | 0.20 s |
-| mus | python-ly | 290 | 20 | 251 | 39 | 35 | 163 (56.2 %) | 79.99 | 76.32 | 1.27 s |
-| ra | scoretk | 346 | 56 | 346 | 0 | 12 | 233 (67.3 %) | 89.97 | 68.93 | 0.02 s |
-| ra | python-ly | 346 | 56 | 332 | 14 | 59 | 169 (48.8 %) | 62.42 | 56.49 | 0.35 s |
-| mut | scoretk | 274 | 132 | 274 | 0 | 0 | 58 (21.2 %) | 97.46 | 58.25 | 6.42 s |
-| mut | python-ly | 274 | 132 | 209 | 65 | 50 | 36 (13.1 %) | 64.07 | 33.67 | 2.65 s |
-| **all** | **scoretk** | **910** | **208** | **910** | **0** | **12** | **512 (56.3 %)** | **97.61** | **64.03** | **6.42 s** |
-| **all** | **python-ly** | **910** | **176** | **792** | **118** | **144** | **368 (40.4 %)** | **66.33** | **43.30** | **2.65 s** |
+| mus | scoretk, oracle corrected | 1447 | 113 | 1444 | 3 | 0 | 1079 (74.6 %) | 99.09 | 85.19 | 0.34 s |
+| mus | scoretk, reader fixed | 1447 | 113 | 1444 | 3 | 0 | 1079 (74.6 %) | 99.09 | 85.19 | 0.14 s |
+| ra | scoretk, oracle corrected | 1726 | 305 | 1724 | 2 | 69 | 1157 (67.0 %) | 88.66 | 70.05 | 0.15 s |
+| ra | scoretk, reader fixed | 1726 | 305 | 1724 | 2 | 69 | 1158 (67.1 %) | 88.66 | 70.06 | 0.06 s |
+| mut | scoretk, oracle corrected | 1377 | 652 | 1376 | 1 | 0 | 267 (19.4 %) | 97.44 | 58.06 | 5.22 s |
+| mut | scoretk, reader fixed | 1377 | 652 | 1376 | 1 | 0 | 269 (19.5 %) | 97.73 | 58.28 | 4.95 s |
+| **all** | **scoretk, oracle corrected** | **4550** | **1070** | **4544** | **6** | **69** | **2503 (55.0 %)** | **97.43** | **63.34** | **5.22 s** |
+| **all** | **scoretk, reader fixed** | **4550** | **1070** | **4544** | **6** | **69** | **2506 (55.1 %)** | **97.67** | **63.51** | **4.95 s** |
 
-scoretk converts every sampled file and beats python-ly by +31.3 N1 points
-and +20.7 N2 points. Correcting the oracle raises N2 from 46.25 % to 64.03 %
-for scoretk and from 29.51 % to 43.30 % for python-ly: most of the old gap was
-measurement error, not better attacks. N1 stays near-perfect on `mus` and
-`mut`; `ra` remains lower because many regression tests are layout-only.
+python-ly was measured with the same corrected oracle and is unchanged by
+this campaign: N2 74.17 % (`mus`), 47.49 % (`ra`), 36.29 % (`mut`).
 
-### Real reader defects (with minimal examples)
-
-Only patterns verified as reader defects are listed. For each, the example is
-a file from the 1/5 sample reduced to the construct named; `N1/N2` are
-`matched / reference notes` with the corrected oracle. Categories overlap.
-
-| Reader defect | Minimal example | Evidence |
-| --- | --- | --- |
-| Unresolved `\include` / missing installed templates (SATB, `music-map`, …) and Scheme-generated music (`#{…#}`, `$@(map …)`) | `input/regression/satb-template-with-changed-instrument-names.ly`; `input/regression/utf-8-scheme.ly` | 0 notes written for 39 and 1 reference notes; 12 empty outputs overall |
-| `\transpose` and octave displacement | `input/regression/ottava-percent-repeat-rest.ly`; `~/Musique/…/Lassus_Alleluja._Dies_sanctificatus.ly` | N1 0/2 on the small case; 674/707 pitches on the large one (33 octave errors) |
-| Grace notes after a simple `\context Staff` started at the beginning of the staff instead of their real tick | `input/regression/grace-staff-length.ly` | N2 0/2 before the fix, 2/2 after: a single-voice `\context Staff` now continues the current voice instead of opening one whose attack counter restarts at zero |
-| `\chordmode` / `\drummode` played by LilyPond and dropped | `input/regression/chord-changes.ly`; `input/regression/hara-kiri-drumstaff.ly` | 0 notes written for 30 and 24 reference notes |
-| Per-staff `\time` was ignored when `\layout` explicitly moved `Timing_translator` to `Staff` | `input/regression/skiptypesetting-show-first-and-last.ly` | The reader used only staff 0's meter; it now takes the union of each staff's measure boundaries when the `\remove`/`\consists` pair is present (default stays global) |
-
-### Attack discrepancies that are oracle artefacts, not reader defects
-
-Three of the six rows in the previous revision of this table were traced to
-the oracle's simplified MusicXML reader, not to the scoretk reader. The
-reader's model was checked event by event against LilyPond's MIDI for each
-minimal example.
-
-- **Cross-staff voices** (`input/regression/tuplet-bracket-cross-staff.ly`,
-  N1 12/12, N2 3/12). The reader emits the twelve notes of `\voice` in one
-  MusicXML voice at the correct global ticks 0, 1/12, …, 11/12 (whole-note
-  units), with `Chord::staff_move` pointing at staves I/II/III — exactly the
-  MuseScore model and LilyPond's `ContextChange` iterator
-  (`lily/parser.yy`, `ContextChange`, `ly:change-iterator`). `read_xml()` in
-  `ly_notes.py` keys its attack counter on `(voice, staff)`, so each `<staff>`
-  change resets the counter and the same twelve notes are read at 0, 1/12, …
-  per staff. Removing `staff_move` (i.e. dropping the staff placement) makes
-  N2 12/12, which proves the reader's timeline was right. Splitting the voice
-  into one voice per staff without filling the gaps only reaches N2 6/12 and
-  diverges from LilyPond, so neither is done.
-- **Volta / `\partial` in `knjze12monferA.ly`** (N1 150/150, N2 7/150). The
-  exact construct is `\repeat volta 2 { \partial 8*4 s8 … }` followed by a
-  second `\repeat volta 2 { \partial 8*3 … }`. The reader places the first
-  main note at tick 1/8 (0.5 quarters), matching LilyPond's MIDI, and all 150
-  pitches at the right ticks. The writer emits a `<forward duration="2">` at
-  the end of the one-eighth partial measure; `read_xml()` only honours a
-  `<forward>` when a note follows it *in the same measure*, so it drops that
-  0.5 quarter and shifts the first block by +0.5 (and the second by +2.0).
-  This is a limitation of the oracle's position bookkeeping.
-- **Grace notes in `grace-nest5.ly`** (N2 2/3). LilyPond's MIDI plays the
-  grace G at 2.773 quarters, 0.227 before the main E at 3.0; MusicXML places
-  `<grace>` at the following note's attack (3.0), as documented in
-  `scripts/oracle/lilypond/README.md`. The one unmatched pair is that
-  deliberate convention, not a placement error.
-
-`skiptypesetting-show-first-and-last.ly` additionally defines
-`showFirstLength`/`showLastLength`, which LilyPond's toplevel
-`skip-as-needed` (`scm/music-functions.scm`) turns into `skipTypesetting`
-regions: its MIDI contains only 15 of the 30 written notes. That Scheme
-transformation is outside the reader's subset, so its N2 (5/15) is not a
-meter defect.
-
-### Fix campaign (full three lots, 2026-11-19)
-
-The full column-6 lists (`mus` 1447, `ra` 1726, `mut` 1377 files) were run in
-the foreground before and after, with `timeout 10 prlimit --as=2000000000` on
-every conversion. Per-file comparison (`lyn2-before` → `lyn2-after2`):
-
-- N2 increase: `grace-staff-length.ly` 0/2 → 2/2.
-- N2 decrease: none. An earlier intermediate run showed `incipit-modern.ly`
-  4/4 → 0/4 because the first grace fix also merged an `\incipit \new Staff`;
-  restricting the merge to `\context` (commit `5f22865`) restored it to 4/4.
-- N1 aggregate 97.59 → 97.43 solely because `Symphony7_1.ly` timed out in the
-  "before" run and succeeds in the "after" run, adding its 86.5 % to the
-  weighted mean. N2 is unchanged (61.81) since that file has repeats. Exact
-  outputs go from 2480 to 2481.
+Per-file comparison (`lyn2-oracle` → `lyn2-final`): **24 files gain N1, 25
+gain N2, none loses either.** The largest gains are `carcassi-op60-07.ly`
+(N1 162 → 525, N2 6 → 265), `spanish-romance.ly` (89 → 308, 0 → 247),
+`guitar-skole-no-13.ly` (59 → 229, 9 → 229) and `guitar-skole-no-23.ly`
+(N2 13 → 262). The oracle correction alone took scoretk from N1 97.43 /
+N2 61.81 (previous baseline) to 97.43 / 63.34, and exact outputs from 2481
+to 2503; the reader fix adds 0.24 N1 and 0.17 N2 points. No per-file N1 or
+N2 decrease was left unexplained.
 
 Raw rows, converters and the generated summary are in the out-of-repo
-measurement directory; `scripts/oracle/lilypond/README.md` documents how to
-reproduce them.
+measurement directories `lyn2-oracle` and `lyn2-final`;
+`scripts/oracle/lilypond/README.md` documents how to reproduce them.
