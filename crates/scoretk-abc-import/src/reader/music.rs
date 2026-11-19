@@ -758,26 +758,7 @@ impl Parser<'_> {
         // Volta `[1` ou `[1,2`.
         if self.peek_at(1).is_some_and(|value| value.is_ascii_digit()) {
             self.pos += 1;
-            let mut numbers = Vec::new();
-            let mut current = String::new();
-            while let Some(character) = self.peek() {
-                if character.is_ascii_digit() {
-                    current.push(character);
-                    self.pos += 1;
-                } else if character == ',' || character == '-' {
-                    if let Ok(value) = current.parse::<u8>() {
-                        numbers.push(value);
-                    }
-                    current.clear();
-                    self.pos += 1;
-                } else {
-                    break;
-                }
-            }
-            if let Ok(value) = current.parse::<u8>() {
-                numbers.push(value);
-            }
-            if !numbers.is_empty() {
+            if let Some(numbers) = self.read_volta_numbers() {
                 self.voice().current.volta = Some(numbers);
             }
             return Ok(());
@@ -900,6 +881,18 @@ impl Parser<'_> {
             }
             _ => {}
         }
+        // Norme 2.1 § 4.9 : `|1` et `:|2` abrègent `|[1` et `:[2`.
+        let volta = self.read_volta_numbers();
+        self.finish_bar(end, start_repeat, volta)
+    }
+
+    /// Termine la mesure sur une barre, avec une volta éventuelle.
+    fn finish_bar(
+        &mut self,
+        end: BarLineType,
+        start_repeat: bool,
+        volta: Option<Vec<u8>>,
+    ) -> Result<()> {
         let voice = &mut self.reader.voices[self.voice];
         let empty = voice.current.events.is_empty() && voice.tick.is_zero();
         if empty {
@@ -909,17 +902,48 @@ impl Parser<'_> {
             if start_repeat {
                 voice.current.start_bar = BarLineType::StartRepeat;
             }
+            voice.current.volta = volta;
             return Ok(());
         }
         let measure = voice.measure_index();
-        if let Some(volta) = voice.current.volta.clone() {
-            voice.voltas.push((measure, measure, volta));
+        if let Some(numbers) = voice.current.volta.clone() {
+            voice.voltas.push((measure, measure, numbers));
         }
         voice.finish_measure(end);
+        self.reader.voices[self.voice].current.volta = volta;
         if start_repeat {
-            voice.next_start_bar = BarLineType::StartRepeat;
+            self.reader.voices[self.voice].next_start_bar = BarLineType::StartRepeat;
         }
         Ok(())
+    }
+
+    /// Lit une liste de numéros de volta (`1`, `1,2`, `1-3`) après une barre.
+    fn read_volta_numbers(&mut self) -> Option<Vec<u8>> {
+        let debut = self.pos;
+        let mut numbers = Vec::new();
+        let mut current = String::new();
+        while let Some(character) = self.peek() {
+            if character.is_ascii_digit() {
+                current.push(character);
+                self.pos += 1;
+            } else if character == ',' || character == '-' {
+                if let Ok(value) = current.parse::<u8>() {
+                    numbers.push(value);
+                }
+                current.clear();
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        if let Ok(value) = current.parse::<u8>() {
+            numbers.push(value);
+        }
+        if self.pos == debut {
+            None
+        } else {
+            Some(numbers)
+        }
     }
 
     // --- agréments -------------------------------------------------------
@@ -1016,7 +1040,7 @@ fn looks_like_chord(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scoretk_core::model::{StaffId, Track};
+    use scoretk_core::model::{SpannerType, StaffId, Track};
 
     fn parse(music: &str) -> crate::reader::ReadOutput {
         let source = format!("X:1\nT:Test\nM:4/4\nL:1/8\nK:C\n{music}\n");
@@ -1055,6 +1079,39 @@ mod tests {
             }
         }
         (pitches, durees)
+    }
+
+    /// Numéros de voltas du modèle.
+    fn voltas(output: &crate::reader::ReadOutput) -> Vec<Vec<u8>> {
+        output
+            .score
+            .spanners
+            .iter()
+            .filter(|spanner| matches!(spanner.kind, SpannerType::Volta))
+            .filter_map(|spanner| spanner.volta.as_ref().map(|volta| volta.endings.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn voltas_inline_sans_crochet() {
+        let inline = parse("|: C D |1 E F :|2 G A |]");
+        let crochets = parse("|: C D |[1 E F :|[2 G A |]");
+        assert_eq!(inline.score.measures.len(), 3);
+        assert_eq!(
+            contenu(&inline),
+            (vec![60, 62, 64, 65, 67, 69], vec![0.125, 0.125, 0.125, 0.125, 0.125, 0.125])
+        );
+        assert_eq!(voltas(&inline), vec![vec![1], vec![2]]);
+        assert!(inline.score.measures[0].start_bar_line.is_repeat_start());
+        assert!(inline.score.measures[1].end_bar_line.is_repeat_end());
+
+        // La forme abrégée doit donner exactement la même musique que `[1`.
+        assert_eq!(contenu(&inline), contenu(&crochets));
+        assert_eq!(voltas(&inline), voltas(&crochets));
+
+        // Cas limite : plusieurs numéros, ici sans note après la barre finale.
+        let multiple = parse("C D |1,2 E F |]");
+        assert_eq!(voltas(&multiple), vec![vec![1, 2]]);
     }
 
     #[test]

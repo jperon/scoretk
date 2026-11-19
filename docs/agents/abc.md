@@ -459,3 +459,17 @@ and a local skip, never the loss of the whole tune.
 - Fix: `reader/music.rs` skips U+0060 in the main parse loop and before every
   note, including notes inside chords and grace notes.
 - Measurement: N1/N2 **0 % → 100 %** (69/69 notes), no regression.
+
+### 14.2 Inline first/second endings (195 rejected tunes)
+
+- Reduced file: `/tmp/abc-reduits/volta1.abc`, X:1 extracted from
+  `abcjs-tests/extracted-abc/flattener.test__abcRepeat.abc`
+  (`...|1"G"g4 fedc:|...`).
+- Behaviour: ABC 2.1 § 4.9 allows `|1` and `:|2` as short forms of `|[1` and
+  `:[2` (a space is required only in front of the explicit bracket).
+  `abc2xml.py` accepts digits after a barline as volta numbers.
+- Fix: `reader/music.rs` reads a volta number list after any barline and records
+  it on the measure that follows; the bracketed and inline forms now share the
+  same `finish_bar` path.
+- Measurement: N1/N2 **0 % → 100 %** (13/13 notes), no regression. The unit
+  test compares the inline form with the bracketed form note by note.
