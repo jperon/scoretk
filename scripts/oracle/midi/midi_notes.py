@@ -36,7 +36,7 @@ valeur par défaut de l'import MIDI de MuseScore (Q16, double croche).
 from __future__ import annotations
 
 import argparse
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 import json
 import xml.etree.ElementTree as ET
 
@@ -58,23 +58,33 @@ def read_midi(path: str) -> list[tuple[int, float, float, int]]:
     Les note-off et les note-on à vélocité nulle ferment l'attaque
     correspondante. Les hauteurs sont absolues (doigté MIDI), sans
     interprétation de batterie : le comparateur est le même dans les deux sens.
+
+    Une file par couple (canal, hauteur), et non une seule attache : le MIDI
+    autorise plusieurs notes simultanées de même hauteur (§Channel Voice de
+    `docs/agents/format-ref/midi.md`, messages `0x8`/`0x9` appariés) — par
+    exemple une appoggiature qui chevauche la note précédente ou deux voix
+    d'une même partie. Le lecteur de MuseScore suit la même règle : dans
+    `midishared/midifile.cpp`, chaque note-on cherche le premier note-off
+    encore libre de cette hauteur et le marque consommé (FIFO). Une table
+    simple écrasait l'attaque précédente et perdait la note la plus ancienne.
     """
     mid = mido.MidiFile(path)
     tpb = mid.ticks_per_beat or 480
     notes: list[tuple[int, float, float, int]] = []
     for index, track in enumerate(mid.tracks):
         tick = 0
-        ouvertes: dict[tuple[int, int], int] = {}
+        ouvertes: dict[tuple[int, int], deque[int]] = defaultdict(deque)
         for msg in track:
             tick += msg.time
             if msg.is_meta:
                 continue
             cle = (msg.channel, msg.note) if hasattr(msg, "note") else None
             if msg.type == "note_on" and msg.velocity > 0:
-                ouvertes[cle] = tick
+                ouvertes[cle].append(tick)
             elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
-                debut = ouvertes.pop(cle, None)
-                if debut is not None:
+                file_attentes = ouvertes.get(cle)
+                if file_attentes:
+                    debut = file_attentes.popleft()
                     notes.append((msg.note, debut / tpb, (tick - debut) / tpb, index))
     return notes
 
