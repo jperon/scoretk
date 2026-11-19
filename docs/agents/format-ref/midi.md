@@ -1,93 +1,162 @@
 # MIDI / Standard MIDI File — condensed reference for coding agents
 
-Targets: **SMF 1.0** container, **MIDI 1.0** channel messages, **General MIDI 1**
-instrument map. Local sources: `specs/README.md` § MIDI;
-`specs/midi/wikipedia-standard-midi-file.html` (`WP-SMF` section names),
-`specs/midi/wikipedia-general-midi.html` (`WP-GM` section names). Licence:
-CC BY-SA 4.0 with attribution/share-alike; this is an original summary, not
-copied text. The normative MMA PDFs are login-gated and were **not** downloaded:
-section references point to the openly licensed summaries and to internal docs.
-Companion: [MIDI ↔ pivot model](../format-mapping/midi.md).
-Reader `crates/scoretk-midi-import`, writer `crates/scoretk-midi-export`;
-internal detail `docs/agents/midi.md`.
+English reference for the scoretk MIDI readers/writers. All statements below
+are checked against the local normative texts listed in `specs/README.md` §
+MIDI; short quotations only, everything else is paraphrase. Companion:
+[MIDI ↔ pivot model](../format-mapping/midi.md). Reader
+`crates/scoretk-midi-import`, writer `crates/scoretk-midi-export`; internal
+porting notes `docs/agents/midi.md`.
+
+## Source key (cited inline as `[…]`)
+
+- `[SMF]` — Standard MIDI Files 1.0 (= Recommended Practice RP-001), reproduced
+  in the AMEI book, chapter 4, §"Sequences, Tracks, Chunks" / "Header Chunk" /
+  "Format 0, 1, 2" / "Track Chunk" / "Meta-Events" (pp. 4-1…4-11, English
+  equivalents in the Complete MIDI 1.0 Detailed Specification).
+- `[MIDI]` — MIDI 1.0 Detailed Specification, doc. v4.2.1 (96-1-4, 1996), §Data
+  Format / Data Types / Running Status / Channel Voice Messages and Tables I–II.
+  This document is **protocol only**; it contains no SMF specification.
+- `[GM]` — General MIDI System Level 1, RP-003 / MMA0007, §Performance
+  Requirements and Sound Set (Tables 1–3), §Additional Messages.
+- `[RP-017]` — SMF Lyric Meta Event Definition (1997).
+- `[RP-019A]` — SMF Device Name and Program Name Meta Event (1998/99).
+- `[RP-026]` — SMF Language and Display Extensions (1999).
+- `[RP-032]` — SMF Meta Event for XMF Patch Type Prefix (2000/01).
 
 ## Container layout
 
-- A file is a concatenation of chunks: `MThd` + `MTrk`…; each chunk =
-  4-byte ASCII type + 4-byte big-endian length + payload. (WP-SMF →
-  Computer files / Standard MIDI File)
-- `MThd` payload = 6 bytes: `format` (0 = one merged track, 1 = parallel
-  tracks, typically one per part, 2 = independent songs), `ntrks`, `division`.
-  (WP-SMF → Computer files / Standard MIDI File)
-- `MTrk` payload = a stream of `<delta-time><event>`; no absolute timestamps,
-  no bar/measure/staff/voice fields exist in SMF. (WP-SMF → Computer files)
-- `division` is either ticks per quarter note (0x0001–0x7FFF) or, if the high
-  byte is negative, SMPTE: `-24`/`-25`/`-29`/`-30` frames/s in the high byte
-  and ticks/frame in the low byte. All tick math depends on this field.
-  (WP-SMF → Computer files / Technical specifications)
+- An SMF is a stream of bytes made of chunks: `MThd` + one or more `MTrk`.
+  Each chunk is a 4-byte ASCII type + a 32-bit **big-endian** byte length +
+  payload; the length excludes those 8 bytes. A reader must skip unknown chunk
+  types rather than fail. `[SMF §Chunks]`
+- `MThd` length is **6** (ignore extra bytes but honour the declared length):
+  three 16-bit words, `format`, `ntrks`, `division`. `[SMF §Header Chunk]`
+  - `format` 0 = exactly one multi-channel track; 1 = one or more **simultaneous**
+    tracks (or MIDI outputs) of a single sequence; 2 = one or more **sequentially
+    independent** single-track patterns. `ntrks` is always 1 for format 0.
+  - `division`: if bit 15 = 0, bits 0–14 are ticks per quarter note (metrical).
+    If bit 15 = 1, time is SMPTE-based: bits 8–14 hold the frames/second as a
+    negative two's-complement value −24, −25, −29 (30 drop-frame) or −30, and
+    bits 0–7 hold ticks per frame (typically 4, 8, 10, 80 or 100; 25 fps × 40
+    gives millisecond resolution). Example: `E250` = 30 fps, bit resolution.
+  - Defaults when absent: **4/4 and 120 BPM**; tempo (and time signature)
+    meta-events belong in the first `MTrk` of a format 1 file. `[SMF §Format 0,1,2]`
+- `MTrk` payload = `<delta-time><event>` repeated (at least one event).
+  There are no absolute timestamps and no bar/measure/staff/voice fields.
+  `[SMF §Track Chunk]`
 
-## Event stream and time
+## Events and time
 
-- Delta time is a **variable-length quantity**: 7 data bits per byte, most
-  significant bit set on every byte except the last, big-endian; 480 = `83 60`.
-  (WP-SMF → Messages; SMF 1.0 varlen encoding)
-- Running status: a channel message whose status byte equals the previous
-  channel status may omit it. A parser must remember the last status across
-  delta times but reset it at meta/sysex events. (WP-SMF → Messages)
-- Status byte high nibble: `0x8` note off, `0x9` note on, `0xA` aftertouch,
-  `0xB` control change, `0xC` program change (1 data byte), `0xD` channel
-  pressure, `0xE` pitch bend; low nibble = channel 0–15 (channel **9** = GM
-  channel 10, percussion). (WP-SMF → Messages, Instrument control; WP-GM →
-  Percussion)
-- Note on `9n kk vv`: key 0–127 (60 = C4/middle C, 69 = A4 = 440 Hz), velocity
-  1–127; velocity 0 is a legal note-off (a very common writer optimisation).
-  Note off `8n kk vv` (release velocity usually 0). (WP-SMF → Messages)
-- Meta events `FF <type> <varlen length> <data>`: `FF 00` sequence number,
-  `FF 01`–`FF 0F` text (incl. `FF 03` track name, `FF 05` lyrics, `FF 06`
-  marker, `FF 07` cue), `FF 2F 00` end of track (mandatory), `FF 51 03`
-  microseconds per quarter note (500000 = 120 BPM), `FF 58 04` time signature
-  `nn dd cc bb` (dd = 2^denominator, cc = clocks/click, bb = 32nds/quarter),
-  `FF 59 02 sf mi` key. System exclusive `F0 … F7`. (WP-SMF → Messages,
-  Technical specifications)
-- Tempo lives in a **meta event** (usually track 0), not in the header; an
-  absent tempo means 500000 µs/qn. (WP-SMF → Computer files / Messages)
+- Delta time is a **variable-length quantity (VLQ)**: 7 data bits per byte,
+  MSB set on all but the last byte, big-endian; 480 = `83 60`. It is always
+  present, even when zero, and is in the units given by `division`. The maximum
+  representable value is `0x0FFFFFFF` (268 435 455; `FF FF FF 7F`).
+  `[SMF §Conventions; §Track Chunk]`
+- Running status: for channel voice/mode messages only, a repeated status byte
+  may be omitted; it **persists across delta times**, but each `MTrk` must
+  start with an explicit status. System-exclusive **and meta events cancel any
+  running status in effect**; real-time bytes do not affect it. `[SMF §Track
+  Chunk; MIDI §Running Status]`
+- Channel status nibbles: `0x8` note off, `0x9` note on, `0xA` polyphonic key
+  pressure, `0xB` control change, `0xC` program change (one data byte), `0xD`
+  channel pressure, `0xE` pitch bend; low nibble = channel 0–15. Data bytes are
+  0x00–0x7F; note-on velocity 0 is a legal note-off. `[MIDI §Channel Voice;
+  Table II]`
+- Note number 60 (`3C`) is middle C on melodic channels; 69 = A4 = 440 Hz.
+  `[MIDI §Note Number; GM §Performance Requirements]`
+- SysEx events: `F0 <len> <data…>` (length excludes `F0` and the length itself;
+  the last data byte must be `F7`) and `F7 <len> <data…>` (escape/continuation
+  of a multi-packet SysEx). No transmitable MIDI event may occur between
+  packets of one multi-packet SysEx. `[SMF §Track Chunk]`
+- Meta events: `FF <type> <varlen length> <data>`. Unknown types must be
+  skipped, their declared length must always be honoured (even if longer than
+  expected), and no private data may be appended to a known meta event.
+  `[SMF §Meta-Events]`
+
+### Meta-event types (type, fixed/variable length, meaning)
+
+| Bytes | Meaning | Source |
+| --- | --- | --- |
+| `FF 00 02 ssss` | Sequence number; at time 0 before any nonzero delta / transmitable event | `[SMF]` |
+| `FF 01 len text` | Text event (types `01`–`0F` reserved for text) | `[SMF]` |
+| `FF 02 len text` | Copyright notice; first event at time 0 of track 1 | `[SMF]` |
+| `FF 03 len text` | Sequence name (format 0 / first track) or track name | `[SMF]` |
+| `FF 04 len text` | Instrument name | `[SMF]` |
+| `FF 05 len text` | Lyric: "each syllable will be a separate lyric event" | `[SMF; RP-017]` |
+| `FF 06 len text` | Marker (rehearsal mark / section name) | `[SMF]` |
+| `FF 07 len text` | Cue point (film/stage description) | `[SMF]` |
+| `FF 08 len text`, `FF 09 len text` | Program name, device name (>16 channels / reorchestration) | `[RP-019A]` |
+| `FF 20 01 cc` | MIDI channel prefix (channel 0–15 for following meta/SysEx) | `[SMF]` |
+| `FF 2F 00` | End of track — **mandatory**, last event of every track | `[SMF]` |
+| `FF 51 03 tttttt` | Tempo: microseconds per MIDI quarter note (24 MIDI clocks); 500000 = 120 BPM | `[SMF]` |
+| `FF 54 05 hr mn se fr ff` | SMPTE offset (`hr` encodes the SMPTE format; `ff` in 1/100 frame) | `[SMF]` |
+| `FF 58 04 nn dd cc bb` | Time signature: `dd` = exponent of 2 (2 = quarter, 3 = eighth); `cc` = MIDI clocks per metronome click (24 per quarter); `bb` = 32nds per MIDI quarter (normally 8). 6/8 = `06 03 18 08` | `[SMF]` |
+| `FF 59 02 sf mi` | Key signature: `sf` −7 (7 flats)…0 (C)…+7 (7 sharps); `mi` 0 = major, 1 = minor | `[SMF]` |
+| `FF 60 01 pp` | XMF patch type prefix (`01` GM1 default, `02` GM2, `03` DLS); only valid as the first event of a track | `[RP-032]` |
+| `FF 7F len data` | Sequencer-specific (starts with manufacturer ID) | `[SMF]` |
+
+Concurrent meta-events at the same tick may appear in any order; sequence
+number and sequence/track name must be at time 0, and end-of-track last.
+`[SMF §Meta-Events]`
 
 ## Instruments, parts, repeats
 
-- GM1: 128 melodic programs, program numbers 1–128 in user-facing notation
-  but 0–127 on the wire (`0xC0 0x00` = piano); channel 10 is reserved for 47
-  percussion sounds at keys 35–81 (key 60 = high bongo, not middle C).
-  (WP-GM → General MIDI 1 requirements, Program change events, Percussion)
-- GM controllers: 1 modulation, 7 volume, 10 pan, 11 expression, 64 sustain,
-  66 sostenuto, 67 soft, 121 reset, 123 all notes off; pitch bend and fine/
-  coarse tuning use RPN via CC 100/101 + 6/38. (WP-GM → Controller events, RPN)
-- Format 1 tracks are independent event streams played in parallel; score
-  parts/staves/voices must be assigned to tracks or channels by the writer —
-  SMF itself has no such fields. (WP-SMF → Computer files / Standard MIDI File)
-- SMF has **no repeats, volta, tuplets, ties or slurs**: repeats must be
-  expanded into events before writing; a tie becomes one longer note (or
-  re-articulation at the same pitch), tuplets become tick arithmetic, grace
-  notes become short notes at shifted ticks, slurs are invisible except via
-  CC/text. Lyrics survive only as `FF 05` text. (`docs/agents/midi.md`)
+- GM1: **128 melodic programs, numbered 1–128 in the published tables but
+  0–127 on the wire** (`C0 00` = program 1, Acoustic Grand Piano). All
+  channels except 10 are melodic. `[GM §Sound Set, Table 2]`
+- Percussion: key-based percussion is **always on channel 10** (wire channel
+  9); 47 preset drum sounds at keys **35–81**; key 60 there is Hi Bongo, not
+  middle C. `[GM §Requirements, Table 3]`
+- GM1 controllers: 1 modulation, 7 volume, 10 pan, 11 expression, 64 sustain,
+  121 reset all controllers, 123 all notes off. Registered parameters 0 pitch
+  bend sensitivity, 1 fine tuning, 2 coarse tuning. Defaults: volume 100, bend
+  0, pitch bend range ±2 semitones. (Controllers 66/67 sostenuto/soft often
+  listed elsewhere are **not** in the RP-003 GM1 table.) `[GM §Requirements]`
+- GM mode on/off SysEx: `F0 7E <dev> 09 01 F7` / `F0 7E <dev> 09 02 F7`.
+  `[GM §Additional Messages]`
+- Format 1 tracks are parallel event streams; SMF has no part/staff/voice
+  fields, so the writer must assign them to tracks/channels. Format 2 tracks
+  are independent patterns, not simultaneous parts. `[SMF §Format 0,1,2]`
+- SMF has no repeats, voltas, tuplets, ties or slurs: repeats must be expanded,
+  ties become one longer note, tuplets become tick arithmetic, grace notes
+  become short notes at shifted ticks. Lyrics survive only as meta text.
+  `[docs/agents/midi.md]`
+
+## Lyrics: RP-017 and RP-026
+
+- RP-001 defines `FF 05` only loosely; **RP-017** fixes the interchange rules:
+  one lyric meta-event per syllable, beginning at the event time; a trailing
+  ASCII space (0x20) terminates a word (no space ⇒ next event continues the
+  word); punctuation goes at the end of a syllable before that space; a
+  carriage return (0x0D) alone ends a line and a line feed (0x0A) alone ends a
+  paragraph; an **empty** lyric event is a melisma (hold the previous
+  syllable). A first lyric event at tick 0 is recommended as an "on" flag.
+- **RP-026** renames them *Lyric/Display Meta Events* and reserves five ASCII
+  characters: `\` command codes (`\r`, `\n`, `\t`, and `\\`, `\{`, `\}`, `\[`,
+  `\]` escapes), `[`…`]` Ruby (furigana) parts, `{@LATIN}` / `{@JP}` character
+  code sets (ANSI default; a `FF FE` / `FE FF` BOM implies Unicode), and
+  `{#TITLE=}` / `{#COMPOSER=}` / `{#LYRICS=}` / `{#ARTIST=}` / `{#}` song
+  information tags. It does **not** supplant the other text metas (`FF 01`,
+  `02`, `03`, `04`, `06`, `07`).
 
 ## Traps that silently break data
 
-1. Varlen delta times and running status are the two classic reader bugs;
-   treating delta as absolute or forgetting to reset running status after a
-   meta event shifts/corrupts all following notes. (WP-SMF → Messages)
-2. A note-on without a matching note-off (or a velocity-0 note-on not treated
-   as note-off) leaves hanging notes. (WP-SMF → Messages)
-3. Missing `FF 2F 00` end-of-track: readers may read past the track boundary
-   into the next chunk. (WP-SMF → Messages)
-4. Confusing ticks-per-quarter with BPM; `division` is a resolution, tempo is
-   a meta event. (WP-SMF → Computer files)
-5. Program numbers are 0-based on the wire; GM channel 10 (wire 9) is drums,
-   so key numbers there are instrument IDs, not pitches. (WP-GM → Percussion)
-6. Rounding ticks when converting to/from a model with a different PPQ
-   silently accumulates drift; use a rational time map.
-7. Assuming one track per staff: format 0 merges everything, and format 1
-   track order is not a semantic part order.
-8. Instrument changes are `0xCn` events at a tick, not score-level metadata.
+1. VLQ delta times and running status are the classic reader bugs: treating
+   delta as absolute, or keeping running status after a meta/SysEx event,
+   shifts/corrupts every later note. `[SMF]`
+2. Note-on velocity 0 is note-off; ignoring it leaves hanging notes. `[MIDI]`
+3. Missing `FF 2F 00` lets a reader run into the next chunk; meta lengths and
+   chunk lengths must be trusted, not guessed. `[SMF]`
+4. Confusing `division` (a resolution, possibly SMPTE) with tempo (a meta
+   event); SMPTE files need a frame-rate-aware time map. `[SMF]`
+5. Program numbers are 0-based on the wire but 1-based in GM tables; channel 10
+   key numbers are drum IDs. `[GM]`
+6. Rounding ticks between different PPQs accumulates drift; use a rational
+   time map. Format 0 merges all channels into one track; format 1 track order
+   is not a semantic part order; format 2 tracks are not simultaneous.
+7. RP-026 markup is *data*, not plain text: a reader that does not decode it
+   stores `\r`, `{@JP}`, `[…]` literally in lyrics; Shift-JIS text read as UTF-8
+   becomes mojibake. `[RP-017; RP-026]`
 
 ## Tiny valid example
 
@@ -96,9 +165,9 @@ internal detail `docs/agents/midi.md`.
 4D 54 72 6B  00 00 00 1F                         MTrk: 31 bytes follow
 00 FF 51 03 07 A1 20                             delta 0: tempo 500000 us/qn = 120 bpm
 00 FF 58 04 04 02 18 08                          delta 0: 4/4, 24 clocks/click, 8 32nds/qn
-00 C0 00                                         delta 0: program 1 (Acoustic Grand Piano)
+00 C0 00                                         delta 0: GM program 1 (Acoustic Grand Piano)
 00 90 3C 40                                      delta 0: note on C4 (60), vel 64
-83 60 80 3C 40                                   delta 480 (varlen 83 60): note off C4
+83 60 80 3C 40                                   delta 480 (VLQ 83 60): note off C4
 00 FF 2F 00                                      delta 0: end of track
 ```
 `83 60` = 480 ticks = one quarter note at `division = 480`; the `MTrk` length
