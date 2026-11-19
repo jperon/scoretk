@@ -849,3 +849,95 @@ would each require a feature of their own, well beyond a parser fix:
 
 These files are expected to keep producing zero notes; the reader's narrow,
 Scheme-free subset is unchanged.
+
+## 12. Measurement
+
+The out-of-repo `xmlcmp/one.sh` + `cmp.py` oracle is now versioned under
+`scripts/oracle/lilypond/` (GPL headers, no third-party data). It keeps the
+historical **N1** (multiset of pitches) and adds **N2** (pitch + attack), with
+the same conventions as `scripts/oracle/midi`: attacks in quarter notes,
+quantization grid and matching tolerance both **1/16 of a quarter note**
+(`GRID = TOL = 0.25`). Percentages are weighted by reference-note counts.
+
+Repeats need care: LilyPond's MIDI always unfolds `\repeat unfold` and unfolds
+`\repeat volta` whenever `\unfoldRepeats` is present, while MusicXML writes
+each note once. N2 is therefore computed on the **N1-matched subset**: for each
+pitch the two sorted attack lists are paired over their first
+`min(n_ref, n_test)` elements (the earliest ones). Surplus copies from an
+unfolded pass are discarded before attacks are compared, so the comparison
+stays "as written" on both sides without recompiling the source. The residual
+bias for material *after* an unfolded block is documented in the oracle README
+and shows up as `attaque_decalee`.
+
+The same oracle was applied to three alternatives. **python-ly 0.9.10**
+(`ly musicxml`) produces MusicXML and is measured normally. **music21 10.5.2**
+was installed in an out-of-repo virtualenv: `converter.parse` of a `.ly` fails
+immediately with `ConverterFileException: cannot find format from file
+extensions`; an explicit `format='lilypond'` is also rejected
+(`File is not in a correct format`). music21 does **not** call LilyPond and
+cannot read `.ly`, so no N1/N2 figure exists for it — the 910 failed attempts
+are kept in the raw `.jsonl` as evidence.
+
+### Sample and timing
+
+Three lots from the `-base.txt` column 6: `mus` (~/Musique), `ra`
+(`lilypond-ref/input/regression`), `mut` (Mutopia). A **deterministic 1/5
+sample** (every fifth line, starting at line 1) gives 290 + 346 + 276 = 912
+paths; two `mut` lines are `TKFAIL` records without a path and drop out,
+leaving **910 measured files**. Every conversion ran in the foreground under
+`timeout 10 prlimit --as=2000000000` (no timeouts occurred). Total wall time
+about 15 min; per-tool CPU totals: scoretk 37 s, python-ly 227 s, music21
+629 s (all failed at format detection).
+
+### Results
+
+| Lot | Tool | Files | OK | Fail | Empty | Exact | N1 % | N2 % | Max time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| mus | scoretk | 290 | 290 | 0 | 0 | 214 (73.8 %) | 99.78 | 76.43 | 0.41 s |
+| mus | python-ly | 290 | 251 | 39 | 35 | 157 (54.1 %) | 79.85 | 65.03 | 1.60 s |
+| mus | music21 | 290 | 0 | 290 | 0 | 0 | – | – | 2.62 s |
+| ra | scoretk | 346 | 346 | 0 | 13 | 224 (64.7 %) | 88.35 | 63.01 | 0.06 s |
+| ra | python-ly | 346 | 332 | 14 | 59 | 164 (47.4 %) | 61.63 | 46.06 | 0.57 s |
+| ra | music21 | 346 | 0 | 346 | 0 | 0 | – | – | 2.51 s |
+| mut | scoretk | 274 | 274 | 0 | 5 | 47 (17.2 %) | 96.20 | 40.89 | 5.37 s |
+| mut | python-ly | 274 | 209 | 65 | 50 | 22 (8.0 %) | 63.79 | 22.61 | 1.56 s |
+| mut | music21 | 274 | 0 | 274 | 0 | 0 | – | – | 0.91 s |
+| **all** | **scoretk** | **910** | **910** | **0** | **18** | **485 (53.3 %)** | **96.49** | **46.25** | **5.37 s** |
+| **all** | **python-ly** | **910** | **792** | **118** | **144** | **343 (37.7 %)** | **66.06** | **29.51** | **1.60 s** |
+| **all** | **music21** | **910** | **0** | **910** | **0** | **0** | **–** | **–** | **2.62 s** |
+
+scoretk converts every sampled file and is stronger than python-ly on both
+levels (+30.4 N1 points, +16.7 N2 points overall). N1 is near-perfect on the
+two "real music" lots (99.8 % / 96.2 %) but lower on `ra` (88.4 %), where many
+regression tests are layout-only and carry almost no notes. N2 is roughly
+20–30 points below N1 everywhere: the pitches are right far more often than
+the attacks.
+
+### Ten most frequent N2 discrepancy causes (scoretk)
+
+Counts are the number of the 425 non-exact sampled files carrying the pattern
+in the source (including direct `\include`s); categories overlap. "Effect" is
+the N2 difference between files with and without the pattern over all 910
+files, except where noted.
+
+| # | Cause | Files | Example | Effect |
+| --- | --- | ---: | --- | --- |
+| 1 | Unresolved `\include` / missing installed templates (SATB, SSAATTBB, `music-map`, …) | 174 | `lilypond-ref/.../satb-template-with-changed-instrument-names.ly` | N2 44.6 % vs 48.2 % for the rest; 18 files yield no notes at all |
+| 2 | Anacrusis / `\partial` pickup: first attacks shifted by the missing pickup length | 127 | `mutopia/.../Trio_op11_3.ly` (N1 4209/4216, N2 100/4216) | −10.9 pts |
+| 3 | `\repeat volta` and alternative endings played once in MIDI but written differently | 88 | `mutopia/.../Six_Variations_Opus76.ly` (N1 3157/3180, N2 269/3180) | −9.8 pts |
+| 4 | Grace / cue notes changing the following attack grid | 85 | `lilypond-ref/.../grace-nest5.ly` (N1 2/3, N2 0/3) | −17.9 pts |
+| 5 | `\repeat unfold` / `\unfoldRepeats`: extra passes and material following them | 74 | `mutopia/.../bwv651.ly` (N1 2856/2858, N2 110/2858) | neutral on average: N2 51.5 % for the 119 files carrying the pattern vs 44.7 % for the rest; the N1-matched N2 removes most of the bias, residue is trailing material |
+| 6 | Tuplets (`\tuplet`, `\times 2/3`) not rescaled: progressive attack drift | 68 | `mutopia/.../Violin_Concerto_3.ly` (N1 9185/10391, N2 231/10391) | −31.3 pts, the largest single impact |
+| 7 | `\transpose` and octave displacement | 47 with `\transpose`, 136 flagged `octave` | `~/Musique/.../Lassus_Alleluja._Dies_sanctificatus.ly` | octave errors dominate the pitch side; 6 files have a constant transposition |
+| 8 | Scheme-generated music (`#{ … #}`, `$@(map …)`, `\etc`, `\markup` blocks) | 28 | `lilypond-ref/.../alteration-glyphs.ly` (empty output) | −7.0 pts |
+| 9 | Empty output from swallowed music (unknown no-argument commands, quoted variable names) | 18 | `mutopia/.../GrabliedM.ly` | 0 notes written for a non-empty reference |
+| 10 | Chord grids (`\chordmode`, `\chordnames`) played as notes by LilyPond and dropped by the reader | 6 | `lilypond-ref/.../chord-changes.ly` (N1 0/30) | −37.9 N1 pts (note loss, not timing) |
+
+The dominant N2 mechanism is tuplet timing: once a `\times`/`\tuplet` passage
+is mis-scaled, every later attack of that voice drifts and `frac0` (share of
+paired attacks within tolerance) collapses to 0.0–0.2 on the largest files.
+The next tier is pickup offsets, volta/unfold structure and grace notes. None
+of these were changed here: this is a measurement of the current reader, not a
+correction campaign. Raw rows, converters and the generated summary are in the
+out-of-repo measurement directory; `scripts/oracle/lilypond/README.md`
+documents how to reproduce them.
