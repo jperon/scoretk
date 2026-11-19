@@ -75,6 +75,9 @@ pub(crate) struct Parser<'a> {
     /// `\set melismaBusyProperties = #'()` a été vu : les paroles ne sautent
     /// plus les notes occupées (liaisons d'expression, liaisons…).
     melisma_busy_disabled: bool,
+    /// `\layout` déplace explicitement `Timing_translator` de `Score` vers
+    /// `Staff` : les indications `\time` deviennent propres à chaque portée.
+    staff_local_timing: bool,
 }
 
 /// Profondeur d'expansion maximale (garde-fou contre la récursion).
@@ -138,6 +141,7 @@ pub(crate) fn parse(
         music_functions: BTreeMap::new(),
         expansion_depth: 0,
         melisma_busy_disabled: false,
+        staff_local_timing: false,
     };
     parser.document()
 }
@@ -252,6 +256,7 @@ impl<'a> Parser<'a> {
             self.guard_progress(before);
         }
         document.melisma_busy_disabled = self.melisma_busy_disabled;
+        document.staff_local_timing = self.staff_local_timing;
 
         // Choix de la partition : un bloc `\score` explicite l'emporte sur la
         // musique de haut niveau ; à égalité, la première rencontrée gagne.
@@ -367,11 +372,15 @@ impl<'a> Parser<'a> {
                 if self.at_toplevel_music() {
                     self.parse_toplevel_music(&token);
                 } else {
+                    let debut_arguments = self.position + 1;
                     self.position += 1;
                     // Au niveau supérieur, un bloc `{ … }` après une commande
                     // comme `\layout` ou `\paper` est un réglage, pas de la
                     // musique : il doit être sauté.
                     self.skip_command_arguments(&token.text, true);
+                    if token.text == "layout" && self.timing_translator_deplacé(debut_arguments) {
+                        self.staff_local_timing = true;
+                    }
                 }
             }
             Kind::Punct(';') => {
@@ -578,11 +587,15 @@ impl<'a> Parser<'a> {
             token.is_command("layout") || token.is_command("midi") || token.is_command("paper")
         }) {
             let midi = self.peek().is_some_and(|token| token.is_command("midi"));
+            let layout = self.peek().is_some_and(|token| token.is_command("layout"));
             self.position += 1;
             let start = self.position;
             self.skip_braced();
             if midi {
                 self.midi_transposition = self.find_midi_transposition(start);
+            }
+            if layout && self.timing_translator_deplacé(start) {
+                self.staff_local_timing = true;
             }
         } else if self.peek().is_some_and(|token| token.is_command("header")) {
             self.position += 1;
@@ -2304,7 +2317,11 @@ impl<'a> Parser<'a> {
                 Music::Empty
             }
             "layout" | "midi" | "paper" | "header" => {
+                let start = self.position;
                 self.skip_braced();
+                if name == "layout" && self.timing_translator_deplacé(start) {
+                    self.staff_local_timing = true;
+                }
                 Music::Empty
             }
             "lyricsto" | "addlyrics" | "lyricmode" => {
@@ -3406,6 +3423,30 @@ impl<'a> Parser<'a> {
         None
     }
 
+    /// Vrai si le bloc `\layout` parcouru déplace `Timing_translator` du
+    /// contexte `Score` vers `Staff` (`\remove` puis `\consists`, idiomatique
+    /// de la polymétrie). Sans ce déplacement, le traducteur vit dans `Score`
+    /// et un `\time` écrit dans une portée vaut pour toutes les portées.
+    fn timing_translator_deplacé(&self, start: usize) -> bool {
+        let Some(tokens) = self.tokens.get(start..self.position) else {
+            return false;
+        };
+        let mut retiré = false;
+        let mut ajouté = false;
+        for (index, token) in tokens.iter().enumerate() {
+            let est_translator = |suivant: Option<&Token>| {
+                suivant.is_some_and(|t| t.kind == Kind::Str && t.text == "Timing_translator")
+            };
+            if token.is_command("remove") && est_translator(tokens.get(index + 1)) {
+                retiré = true;
+            }
+            if token.is_command("consists") && est_translator(tokens.get(index + 1)) {
+                ajouté = true;
+            }
+        }
+        retiré && ajouté
+    }
+
     /// Saute un bloc `{ … }` ou `<< … >>` équilibré.
     fn skip_braced(&mut self) {
         let mut depth = 0usize;
@@ -4203,6 +4244,7 @@ mod tests {
             music_functions: BTreeMap::new(),
             expansion_depth: 0,
             melisma_busy_disabled: false,
+            staff_local_timing: false,
         };
         parser.parse_music()
     }
@@ -4237,6 +4279,7 @@ mod tests {
                 music_functions: BTreeMap::new(),
                 expansion_depth: 0,
                 melisma_busy_disabled: false,
+                staff_local_timing: false,
             };
             let progresse = parser.guard_progress(0);
             let bloque = parser.guard_progress(1);

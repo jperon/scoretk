@@ -1796,6 +1796,46 @@ fn change_dans_beam_cross_staff() {
 fn longueurs(score: &scoretk_core::model::Score) -> Vec<Fraction> {
     score.measures.iter().map(|measure| measure.len).collect()
 }
+
+#[test]
+fn timing_translator_dans_staff_rend_le_temps_local() {
+    // Extrait de `skiptypesetting-show-first-and-last.ly` : le bloc `\layout`
+    // retire `Timing_translator` de `Score` et l'ajoute à `Staff`. Les deux
+    // portées ont alors leur propre mesure (3/4 et 4/4), au lieu d'une trame
+    // unique imposée par la première portée.
+    let source = concat!(
+        "\\version \"2.23.8\"\n",
+        "\\layout { \\context { \\Score \\remove \"Timing_translator\" } ",
+        "\\context { \\Staff \\consists \"Timing_translator\" } }\n",
+        "\\score { << ",
+        "\\new Staff { \\fixed c' { \\time 3/4 c4 c4 c4 | d4 d4 d4 } } ",
+        "\\new Staff { \\fixed c { \\clef bass \\time 4/4 c4 c4 c4 c4 } } ",
+        ">> }"
+    );
+    let score = read_lilypond(source).expect("lecture");
+    // Frontières 0, 3, 4, 6 quarts : les deux tempos sont conservés.
+    assert_eq!(
+        longueurs(&score),
+        vec![
+            Fraction::new(3, 4),
+            Fraction::new(1, 4),
+            Fraction::new(2, 4),
+        ]
+    );
+    assert_eq!(score.measures.len(), 3);
+    assert_eq!(hauteurs(&score), vec![60, 60, 60, 62, 62, 62, 48, 48, 48, 48]);
+
+    // Cas non concerné : sans déplacement du traducteur, un seul `\time`
+    // vaut pour toute la partition ; la mesure reste celle de la portée 0.
+    let sans_deplacement = source.replace("\\remove \"Timing_translator\" ", "");
+    let sans_deplacement = sans_deplacement.replace("\\consists \"Timing_translator\" ", "");
+    let score = read_lilypond(&sans_deplacement).expect("lecture");
+    assert_eq!(
+        longueurs(&score),
+        vec![Fraction::new(3, 4), Fraction::new(3, 4)]
+    );
+    assert_eq!(score.measures.len(), 2);
+}
 #[test]
 fn cadenza_une_seule_mesure() {
     let score =

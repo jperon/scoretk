@@ -237,7 +237,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     }
 
     apply_initial_clefs(&mut score, &staves);
-    let slots = plan_measures(&staves, warnings);
+    let slots = plan_measures(&staves, document.staff_local_timing, warnings);
     create_measures(&mut score, &slots);
     place_measures(&mut score, &staves, &slots, warnings);
     apply_accidentals(&mut score);
@@ -767,7 +767,53 @@ fn cadenza_spans(staves: &[StaffBuild], end_tick: Fraction) -> Vec<CadenzaSpan> 
 }
 
 /// Construit la trame des mesures.
-fn plan_measures(staves: &[StaffBuild], warnings: &mut Warnings) -> Vec<MeasureSlot> {
+fn plan_measures(
+    staves: &[StaffBuild],
+    staff_local_timing: bool,
+    warnings: &mut Warnings,
+) -> Vec<MeasureSlot> {
+    if staff_local_timing {
+        return plan_measures_polymetric(staves, warnings);
+    }
+    plan_measures_global(staves, warnings)
+}
+
+/// Trame quand `Timing_translator` a été déplacé dans chaque `Staff` : chaque
+/// portée a ses propres barres, donc sa propre mesure. Le modèle n'a qu'une
+/// trame globale : on prend l'union des frontières de toutes les portées, en
+/// conservant l'indication `\time` portée par chaque frontière.
+fn plan_measures_polymetric(staves: &[StaffBuild], warnings: &mut Warnings) -> Vec<MeasureSlot> {
+    let mut bornes: BTreeSet<Fraction> = BTreeSet::new();
+    bornes.insert(Fraction::ZERO);
+    let mut nominales: BTreeMap<Fraction, Fraction> = BTreeMap::new();
+    for staff in staves {
+        let seuls = std::slice::from_ref(staff);
+        for slot in plan_measures_global(seuls, warnings) {
+            bornes.insert(slot.start);
+            bornes.insert(slot.start + slot.len);
+            nominales.entry(slot.start).or_insert(slot.nominal);
+        }
+    }
+    let fin = bornes.iter().copied().max().unwrap_or(Fraction::ZERO);
+    let debuts: Vec<Fraction> = bornes.into_iter().filter(|tick| *tick < fin).collect();
+    let mut slots = Vec::new();
+    let mut nominal = Fraction::ONE;
+    for (index, start) in debuts.iter().enumerate() {
+        if let Some(value) = nominales.get(start) {
+            nominal = *value;
+        }
+        let next = debuts.get(index + 1).copied().unwrap_or(fin);
+        slots.push(MeasureSlot {
+            start: *start,
+            len: next - *start,
+            nominal,
+            multi_rest: None,
+        });
+    }
+    slots
+}
+
+fn plan_measures_global(staves: &[StaffBuild], warnings: &mut Warnings) -> Vec<MeasureSlot> {
     let mut meter: BTreeMap<Fraction, MeterAt> = BTreeMap::new();
     for (staff_index, staff) in staves.iter().enumerate() {
         for voice in &staff.voices {

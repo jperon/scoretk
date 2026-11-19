@@ -452,4 +452,9 @@ pub(crate) struct Document {
     /// alors aucune note. Par défaut, les notes sous une liaison
     /// d'expression et les continuations de liaison sont sautées.
     pub melisma_busy_disabled: bool,
+    /// Le bloc `\layout` a explicitement retiré `Timing_translator` du
+    /// contexte `Score` et l'a ajouté à `Staff` : les `\time` sont alors
+    /// propres à chaque portée (polymétrie). Sans ce déplacement, tout
+    /// `\time` vaut pour toutes les portées à partir de sa position.
+    pub staff_local_timing: bool,
 }
