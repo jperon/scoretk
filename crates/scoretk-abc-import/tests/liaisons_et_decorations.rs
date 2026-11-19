@@ -21,8 +21,8 @@
 //! Liaisons entre hauteurs différentes et récupération d'une décoration
 //! non fermée, telles que `abc2xml.py` 269 les traite.
 
-use scoretk_abc_import::read_abc;
-use scoretk_core::model::{Score, StaffId, Track};
+use scoretk_abc_import::{read_abc, read_abc_with, ReadOptions};
+use scoretk_core::model::{OrnamentType, Score, StaffId, Track};
 
 /// Hauteurs, durées et drapeaux de liaison d'une voix, dans l'ordre du fichier.
 fn voice_content(score: &Score, staff: usize, voice: u8) -> (Vec<u8>, Vec<f64>, Vec<(bool, bool)>) {
@@ -104,4 +104,74 @@ C2 D2 E2 F2 | G2 A2 B2 c2 | C2 D2 E2 F2 |]
     );
     assert_eq!(durations, vec![0.25; 12]);
     assert!(ties.iter().all(|(back, forward)| !back && !forward));
+}
+
+#[test]
+fn decoration_non_fermee() {
+    // Musique ordinaire : deux voix, accord, silence, barres. Le `!` placé
+    // devant G2 n'a pas de fermant : abc2xml.py le traite comme saut de ligne
+    // (`linebreak = ~decorations + '!'`, ligne 432), pas comme une décoration
+    // avalant toute la fin de la ligne.
+    let source = "\
+X:1
+T:Orphelin
+M:4/4
+L:1/8
+K:C
+V:1
+C2 D2 E2 F2 | !G2 [AB]2 z2 c2 |
+V:2
+C D E F | G A B c |]
+";
+    let output = read_abc_with(source, &ReadOptions::default()).expect("lecture");
+    let score = &output.score;
+
+    assert_eq!(score.measures.len(), 2);
+    let (pitches, durations, _) = voice_content(score, 0, 0);
+    assert_eq!(pitches, vec![60, 62, 64, 65, 67, 69, 71, 72]);
+    assert_eq!(durations, vec![0.25; 8]);
+    // L'autre voix est lue entièrement, elle aussi.
+    assert_eq!(voice_content(score, 1, 0).0, vec![60, 62, 64, 65, 67, 69, 71, 72]);
+    assert!(output
+        .warnings
+        .iter()
+        .any(|warning| warning.message.contains("non fermée")),
+        "avertissement absent : {:?}",
+        output.warnings
+    );
+
+    // Cas limite : `!` en fin de fichier, sans aucune note après.
+    let eof = "X:1\nT:Fin\nM:4/4\nL:1/8\nK:C\nC D E !\n";
+    let output_eof = read_abc_with(eof, &ReadOptions::default()).expect("lecture fin de fichier");
+    assert_eq!(
+        output_eof
+            .score
+            .notes
+            .iter()
+            .map(|note| note.pitch)
+            .collect::<Vec<_>>(),
+        vec![60, 62, 64]
+    );
+
+    // Cas « non concerné » : une décoration correctement fermée garde son
+    // effet et les mêmes hauteurs.
+    let closed = source.replace("!G2", "!trill!G2");
+    let output_closed = read_abc_with(&closed, &ReadOptions::default()).expect("lecture");
+    assert_eq!(
+        voice_content(&output_closed.score, 0, 0).0,
+        vec![60, 62, 64, 65, 67, 69, 71, 72]
+    );
+    let trills = output_closed
+        .score
+        .measures
+        .iter()
+        .flat_map(|measure| &measure.segments)
+        .filter_map(|segment| {
+            segment.chord_rest(Track::new(StaffId::from_index(0), 0))
+        })
+        .filter_map(|chord_rest| chord_rest.chord_ref())
+        .flat_map(|chord| chord.ornaments.iter())
+        .filter(|ornament| ornament.kind == OrnamentType::TrillMark)
+        .count();
+    assert_eq!(trills, 1, "le trill fermé reste une décoration");
 }

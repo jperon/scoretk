@@ -179,10 +179,22 @@ impl Parser<'_> {
     }
 
     fn parse_decoration(&mut self) {
-        let delimiter = self.bump();
+        let delimiter = self.bump().expect("délimiteur de décoration");
+        // Portage de `abc2xml.py` 269, grammaire `long_decoration` (ligne
+        // 374) et `linebreak` (ligne 432) : un nom de décoration ne contient
+        // ni espace ni l'autre délimiteur, et doit être fermé. Sinon le `!`
+        // (ou `+`) est un saut de ligne et la musique qui suit est lue
+        // normalement ; l'ancien code avalait toute la fin de la ligne.
+        let ferme = self.chars[self.pos..]
+            .iter()
+            .position(|&c| c == delimiter || c.is_whitespace() || c == '!' || c == '+');
+        if !ferme.is_some_and(|index| self.chars[self.pos + index] == delimiter) {
+            self.warn("décoration non fermée, traitée comme saut de ligne".to_owned());
+            return;
+        }
         let mut name = String::new();
         while let Some(character) = self.bump() {
-            if Some(character) == delimiter {
+            if character == delimiter {
                 break;
             }
             name.push(character);
