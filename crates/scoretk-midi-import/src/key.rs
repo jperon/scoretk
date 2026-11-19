@@ -43,6 +43,9 @@ pub struct TrackKey {
     pub concert_key: Key,
     /// Armure écrite (identique ici : l'import MIDI ne transpose pas).
     pub key: Key,
+    /// Mode lu dans le drapeau `mi` du méta `FF 59` ; `Unknown` pour une
+    /// armure déduite des notes, comme dans l'import MuseScore.
+    pub mode: KeyMode,
 }
 
 /// Liste d'armures par tick (`KeyList` de `engraving/dom/keylist.h`).
@@ -146,19 +149,23 @@ pub fn find_key(tracks: &[MTrack]) -> Key {
 /// comme dans le C++ (la première, précédée implicitement de do, l'est).
 pub fn assign_key_list_to_staff(score: &mut Score, staff: StaffId, key_list: &KeyList) {
     let mut previous = Key::C;
+    let mut previous_mode = KeyMode::Unknown;
     let staff_count = score.staves.len();
     for (tick, key) in key_list.iter() {
-        if key.key == Key::C && key.key == previous {
+        if key.key == Key::C && key.key == previous && key.mode == previous_mode {
             continue;
         }
         previous = key.key;
+        previous_mode = key.mode;
         let Some(measure_index) = measure_index_for_tick(score, tick) else {
             continue;
         };
         let start = score.measures[measure_index].start_tick;
         let mut keysig = KeySig::new(key.concert_key);
         keysig.transposed_key = key.key;
-        keysig.mode = KeyMode::Unknown;
+        // Le mode du SMF est conservé tel quel, comme pour l'import MusicXML
+        // (`pass2.rs` : `<mode>minor</mode>` → `KeyMode::Minor`).
+        keysig.mode = key.mode;
         let measure = &mut score.measures[measure_index];
         let segment = match measure
             .segments
@@ -213,6 +220,7 @@ pub fn recognize_main_key_sig(score: &mut Score, tracks: &mut [MTrack]) {
             TrackKey {
                 concert_key: key,
                 key,
+                mode: KeyMode::Unknown,
             },
         );
         assign_key_list_to_staff(score, staff, &key_list);

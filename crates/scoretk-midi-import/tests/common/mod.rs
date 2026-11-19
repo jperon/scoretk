@@ -29,6 +29,8 @@ pub enum Ev {
     Lyric(&'static [u8]),
     Tempo(u32),
     TimeSig(u8, u8),
+    /// Armure SMF `FF 59 02 sf mi` (nombre d'altérations, drapeau mineur).
+    KeySig(i8, bool),
     Program(u8, u8),
     NoteOn(u8, u8, u8),
     NoteOff(u8, u8),
@@ -42,6 +44,9 @@ impl Ev {
             Ev::Tempo(value) => TrackEventKind::Meta(MetaMessage::Tempo(u24::new(value))),
             Ev::TimeSig(numerator, denominator) => {
                 TrackEventKind::Meta(MetaMessage::TimeSignature(numerator, denominator, 24, 8))
+            }
+            Ev::KeySig(sharps, minor) => {
+                TrackEventKind::Meta(MetaMessage::KeySignature(sharps, minor))
             }
             Ev::Program(channel, program) => TrackEventKind::Midi {
                 channel: u4::new(channel),
@@ -69,10 +74,14 @@ impl Ev {
 
 /// Encodes a format-1 SMF from tracks of `(absolute_tick, event)` pairs.
 pub fn smf(tracks: &[Vec<(u32, Ev)>]) -> Vec<u8> {
-    let mut result = Smf::new(Header::new(
-        Format::Parallel,
-        Timing::Metrical(u15::new(480)),
-    ));
+    smf_with(Format::Parallel, Timing::Metrical(u15::new(480)), tracks)
+}
+
+/// Generalised builder: lets a test choose the SMF format and the division
+/// (metrical or SMPTE) while keeping the same `(absolute_tick, event)` input.
+#[allow(dead_code)]
+pub fn smf_with(format: Format, timing: Timing, tracks: &[Vec<(u32, Ev)>]) -> Vec<u8> {
+    let mut result = Smf::new(Header::new(format, timing));
     for events in tracks {
         let mut encoded = Vec::with_capacity(events.len() + 1);
         let mut previous = 0;

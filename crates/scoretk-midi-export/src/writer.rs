@@ -106,8 +106,8 @@ fn kind(event: &Event) -> Result<TrackEventKind<'_>> {
                 *thirty_seconds,
             ))
         }
-        EventKind::KeySignature(sharps) => {
-            TrackEventKind::Meta(MetaMessage::KeySignature(*sharps, false))
+        EventKind::KeySignature(sharps, minor) => {
+            TrackEventKind::Meta(MetaMessage::KeySignature(*sharps, *minor))
         }
         EventKind::Tempo(microseconds) => TrackEventKind::Meta(MetaMessage::Tempo(u24::new(
             (*microseconds).min(0x00ff_ffff),

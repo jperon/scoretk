@@ -175,6 +175,20 @@ restent hors périmètre, faute d'information dans le modèle :
 - **Fichiers à staves liées** (`linked-ties`) : le modèle ne duplique pas les
   portées liées ; l'export suit le contenu réellement modélisé.
 
+## Fidélité SMF (décisions documentées)
+
+Ces points concernent le format SMF lui-même, pas le rendu Musical. Ils sont
+mesurés par des tests reduced construisant les octets SMF avec `midly` (aucun
+fixture binaire ajouté).
+
+- **Drapeau mineur `FF 59`** : le lecteur lit `mi` (`0` majeur, `1` mineur) et le
+  stocke dans `KeySig::mode`, comme l'import MusicXML. L'écrivain le restitue
+  depuis le modèle. MuseScore 4.7.4 fait autrement : `processMeta`
+  (`importmidi.cpp`) ne lit que `sf`, et `writeHeader` (`exportmidi.cpp`) écrit
+  toujours `0 /* major */`. Le portage diverge volontairement pour ne pas perdre
+  le mode d'un SMF lu. Vérifié par `smf_key_signature` (lecture) et
+  `key_signature_export` (écriture).
+
 ## Références et test de conformité
 
 `scripts/gen-midi-references.sh` exporte un sous-ensemble court du corpus avec

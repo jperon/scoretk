@@ -69,8 +69,8 @@ pub mod voice;
 use std::collections::BTreeMap;
 
 use scoretk_core::model::{
-    Chord, ChordRest, Duration, Fraction, Instrument, Key, Measure, Note, Part, Score, Segment,
-    SegmentItem, SegmentType, TimeSig, Track, Tuplet, VOICES,
+    Chord, ChordRest, Duration, Fraction, Instrument, Key, KeyMode, Measure, Note, Part, Score,
+    Segment, SegmentItem, SegmentType, TimeSig, Track, Tuplet, VOICES,
 };
 
 use chord::{
@@ -509,11 +509,20 @@ fn process_non_lyric_meta(
                         continue;
                     }
                     let value = Key::new(fifths);
+                    // `mi` (FF 59 02 sf mi) : 0 = majeur, 1 = mineur. Le mode
+                    // est stocké comme dans l'import MusicXML, sans changer le
+                    // nombre d'altérations du `Key`.
+                    let mode = if data.get(1).is_some_and(|minor| *minor != 0) {
+                        KeyMode::Minor
+                    } else {
+                        KeyMode::Major
+                    };
                     key_list.set_key(
                         tick,
                         key::TrackKey {
                             concert_key: value,
                             key: value,
+                            mode,
                         },
                     );
                     track.has_key = true;
@@ -609,6 +618,7 @@ fn create_keys(score: &mut Score, tracks: &mut [MTrack]) {
                 key::TrackKey {
                     concert_key: Key::C,
                     key: Key::C,
+                    mode: KeyMode::Major,
                 },
             );
             track.key_list = list;

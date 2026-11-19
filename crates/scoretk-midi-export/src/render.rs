@@ -37,8 +37,8 @@ use std::collections::BTreeMap;
 
 use scoretk_core::model::{
     Annotation, ArticulationType, Chord, ChordRest, ChordRestKind, Fraction, GraceType, Instrument,
-    KeySig, Measure, Note, PartId, Score, SegmentType, SpannerType, StaffId, TimeSig, Track,
-    TremoloKind, VeloType, VOICES,
+    KeyMode, KeySig, Measure, Note, PartId, Score, SegmentType, SpannerType, StaffId, TimeSig,
+    Track, TremoloKind, VeloType, VOICES,
 };
 
 use super::error::Result;
@@ -72,7 +72,8 @@ pub(crate) struct Event {
 pub(crate) enum EventKind {
     TrackName(String),
     TimeSignature(u8, u8, u8, u8),
-    KeySignature(i8),
+    /// Altérations et drapeau mineur (`mi`) du méta `FF 59 02 sf mi`.
+    KeySignature(i8, bool),
     Tempo(u32),
     ControlChange {
         channel: u8,
@@ -193,10 +194,10 @@ pub(crate) fn render(
             .get(staff_index)
             .and_then(|entries| entries.as_ref())
         {
-            push_unwound(track, repeat_list, &pause_map, entries, |tick, key: &i8| {
+            push_unwound(track, repeat_list, &pause_map, entries, |tick, key: &(i8, bool)| {
                 Event {
                     tick,
-                    kind: EventKind::KeySignature(*key),
+                    kind: EventKind::KeySignature(key.0, key.1),
                 }
             });
         }
@@ -374,11 +375,14 @@ fn time_signature_events(score: &Score) -> Vec<(i64, TimeSig)> {
     events.into_iter().collect()
 }
 
+/// Armures d'une portée : `(tick, (altérations, mineur))`.
+type KeySigEntries = Vec<(i64, (i8, bool))>;
+
 /// Armures de chaque portée, dédoublonnées par tick.
-fn key_signature_events(score: &Score) -> Vec<Option<Vec<(i64, i8)>>> {
+fn key_signature_events(score: &Score) -> Vec<Option<KeySigEntries>> {
     let mut result = Vec::with_capacity(score.staves.len());
     for staff in &score.staves {
-        let mut events: BTreeMap<i64, i8> = BTreeMap::new();
+        let mut events: BTreeMap<i64, (i8, bool)> = BTreeMap::new();
         for measure in &score.measures {
             for segment in &measure.segments {
                 if !segment.kind.is_key_sig_type() {
@@ -389,19 +393,24 @@ fn key_signature_events(score: &Score) -> Vec<Option<Vec<(i64, i8)>>> {
                         continue;
                     }
                     if let scoretk_core::model::SegmentItem::KeySig(KeySig {
-                        concert_key, ..
+                        concert_key,
+                        mode,
+                        ..
                     }) = item
                     {
-                        events.insert(segment_tick(segment.tick), concert_key.fifths());
+                        events.insert(
+                            segment_tick(segment.tick),
+                            (concert_key.fifths(), *mode == KeyMode::Minor),
+                        );
                     }
                 }
             }
         }
-        let mut entries: Vec<(i64, i8)> = events.into_iter().collect();
+        let mut entries: KeySigEntries = events.into_iter().collect();
         if entries.first().is_none_or(|(tick, _)| *tick != 0) {
             // `writeHeader` écrit une armure de do majeur quand le fichier n'en
             // donne aucune au début.
-            entries.insert(0, (0, 0));
+            entries.insert(0, (0, (0, false)));
         }
         result.push(Some(entries));
     }
