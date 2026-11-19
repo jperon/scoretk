@@ -6,7 +6,7 @@ L:1/8
 Q:" = 80" 1/4=80
 K:C clef=treble
 V:1 name="Piano" clef=treble
-!fermata!C2!fermata!C2!staccato!D2D2 |
+!fermata!C2!fermata!C2.D2D2 |
 "^Visible text"C2C2C2C2 |
 "^ = 80"D2D2D2D2 |
 !invertedturn!C2!turn!C2C2C2 |

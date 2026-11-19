@@ -128,6 +128,13 @@ pub(crate) fn render_voice(
             range.clone(),
             &mut before,
         );
+        // `abc2midi` refuse un jeton court (`.`, `u`, `v`) immédiatement suivi
+        // d'une décoration `!…!` (`.!mp!d` est « malformed note »). Comme
+        // `xml2abc.py` (`doDirection` puis `addChord`), les `!…!` sont écrits
+        // d'abord, les jetons courts juste avant la note.
+        for tokens in &mut before {
+            tokens.sort_by_key(|token| !matches!(token.as_bytes().first(), Some(b'!') | Some(b'"')));
+        }
 
         let mut line = String::new();
         let mut prefixes: Vec<String> = Vec::new();
@@ -511,7 +518,7 @@ fn draw_chords(
                 continue;
             }
             if let Some(token) = decorations::articulation_token(&articulation.kind) {
-                before[offset].push(format!("!{token}!"));
+                before[offset].push(token.to_owned());
             }
         }
         for ornament in &chord.ornaments {
@@ -593,7 +600,10 @@ fn annotation_token(annotation: &Annotation) -> Option<String> {
     }
     let token = match annotation {
         Annotation::Dynamic(dynamic) => {
-            if decorations::is_dynamic(&dynamic.text) {
+            // Port de `xml2abc.py::dynamics_map` (lignes 59-71) : seules les
+            // nuances de la table sont des `!nom!` ; `sf`, `fz`, `fp`… sont
+            // écrites comme annotations et non comme décorations ignorées.
+            if decorations::is_dynamic_token(&dynamic.text) {
                 format!("!{}!", dynamic.text.trim().to_ascii_lowercase())
             } else {
                 let value = text::escape_annotation(&dynamic.text);

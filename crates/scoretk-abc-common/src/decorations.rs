@@ -56,35 +56,51 @@ pub enum Decoration {
     HairpinEnd,
 }
 
-/// Nom ABC d'une articulation, ou `None` si elle n'a pas d'équivalent.
+/// Jeton ABC complet d'une articulation, ou `None` sans équivalent.
+///
+/// Port de `xml2abc.py::note_ornamentation_map` (lignes 32-57) : ce sont les
+/// jetons qu'écrit le script de référence. En particulier `staccato` → `.`,
+/// `staccatissimo`/`spiccato` → `!wedge!`, `accent` → `!>!` et
+/// `strong-accent` → `!^!`. Les anciens noms longs (`!staccato!`,
+/// `!marcato!`, `!accent!`, `!staccatissimo!`) sont ignorés par `abc2midi`
+/// et produisaient un avertissement par note.
 pub fn articulation_token(kind: &ArticulationType) -> Option<&'static str> {
     let token = match kind {
-        ArticulationType::Staccato => "staccato",
-        ArticulationType::Staccatissimo | ArticulationType::Spiccato => "staccatissimo",
-        ArticulationType::Accent | ArticulationType::SoftAccent => "accent",
-        ArticulationType::Marcato => "marcato",
-        ArticulationType::Tenuto => "tenuto",
-        ArticulationType::Portato => "portato",
-        ArticulationType::Fermata => "fermata",
+        ArticulationType::Staccato => ".",
+        ArticulationType::Staccatissimo | ArticulationType::Spiccato => "!wedge!",
+        ArticulationType::Accent | ArticulationType::SoftAccent => "!>!",
+        ArticulationType::Marcato => "!^!",
+        ArticulationType::Tenuto => "!tenuto!",
+        ArticulationType::Portato => "!tenuto!.",
+        ArticulationType::Fermata => "!fermata!",
         ArticulationType::FermataShort
         | ArticulationType::FermataLong
         | ArticulationType::FermataVeryShort
-        | ArticulationType::FermataVeryLong => "fermata",
-        ArticulationType::BreathMark => "breath",
-        ArticulationType::Caesura => "caesura",
-        ArticulationType::UpBow => "upbow",
-        ArticulationType::DownBow => "downbow",
-        ArticulationType::Harmonic => "harmonic",
-        ArticulationType::Open => "open",
-        ArticulationType::Stopped => "stopped",
-        ArticulationType::SnapPizzicato => "snap",
+        | ArticulationType::FermataVeryLong => "!fermata!",
+        ArticulationType::BreathMark => "!breath!",
+        ArticulationType::Caesura => "!caesura!",
+        ArticulationType::UpBow => "u",
+        ArticulationType::DownBow => "v",
+        ArticulationType::Harmonic | ArticulationType::Open => "!open!",
+        ArticulationType::Stopped => "!plus!",
+        ArticulationType::SnapPizzicato => "!snap!",
         ArticulationType::SoftAccentStaccato
         | ArticulationType::SoftAccentTenuto
-        | ArticulationType::SoftAccentTenutoStaccato => "accent",
-        ArticulationType::Stress => "emphasis",
+        | ArticulationType::SoftAccentTenutoStaccato => "!>!",
+        ArticulationType::Stress => "!>!",
         ArticulationType::Unstress | ArticulationType::Other(_) => return None,
     };
     Some(token)
+}
+
+/// Vrai si la nuance est dans `xml2abc.py::dynamics_map` (lignes 59-71) et
+/// doit donc être écrite comme `!nom!`. Les autres (`sf`, `fz`, `fp`…)
+/// sont des annotations texte pour cet outil.
+pub fn is_dynamic_token(text: &str) -> bool {
+    const MAPPED: [&str; 11] = [
+        "pppp", "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff", "ffff", "sfz",
+    ];
+    MAPPED.contains(&text.trim().to_ascii_lowercase().as_str())
 }
 
 /// Nom ABC d'un ornement, ou `None` s'il n'a pas d'équivalent.
@@ -110,7 +126,7 @@ pub fn parse_decoration(name: &str) -> Option<Decoration> {
     }
     let decoration = match lowered.as_str() {
         "staccato" | "." => Decoration::Articulation(ArticulationType::Staccato),
-        "staccatissimo" => Decoration::Articulation(ArticulationType::Staccatissimo),
+        "staccatissimo" | "wedge" => Decoration::Articulation(ArticulationType::Staccatissimo),
         "accent" | ">" => Decoration::Articulation(ArticulationType::Accent),
         "marcato" | "^" => Decoration::Articulation(ArticulationType::Marcato),
         "tenuto" | "-" => Decoration::Articulation(ArticulationType::Tenuto),
@@ -161,11 +177,14 @@ mod tests {
 
     #[test]
     fn articulations_et_ornements() {
+        assert_eq!(articulation_token(&ArticulationType::Staccato), Some("."));
         assert_eq!(
-            articulation_token(&ArticulationType::Staccato),
-            Some("staccato")
+            articulation_token(&ArticulationType::Staccatissimo),
+            Some("!wedge!")
         );
         assert_eq!(ornament_token(&OrnamentType::TrillMark), Some("trill"));
+        assert!(is_dynamic_token("sfz"));
+        assert!(!is_dynamic_token("sf"));
         assert_eq!(
             parse_decoration("staccato"),
             Some(Decoration::Articulation(ArticulationType::Staccato))

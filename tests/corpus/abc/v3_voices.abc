@@ -15,7 +15,7 @@ Z |
 [M:4/4] [K:Eb clef=treble] Z |]
 V:2 name="Piano" clef=treble
 A2B2c2z2 |
-E2E2!2!E2!accent!E2 |
+E2E2!2!E2!>!E2 |
 E2E2E2E2 |
 [M:2/4] (E2E2 |
 E2E2) |
@@ -47,7 +47,7 @@ Z |
 [M:4/4] [K:Eb clef=bass] Z |]
 V:6 name="Trombone" clef=bass
 C,2=D,2=E,2z2 |
-G,,2G,,2!2!G,,2!accent!G,,2 |
+G,,2G,,2!2!G,,2!>!G,,2 |
 G,,2G,,2G,,2G,,2 |
 [M:2/4] (G,,2G,,2 |
 G,,2G,,2) |

@@ -5,10 +5,10 @@ M:4/4
 L:1/8
 K:C clef=treble
 V:1 name="Flute" clef=treble
-!staccato!!tenuto!(!<(!C2!staccato!!tenuto!D2!staccato!!tenuto!E2!fermata!(F2) |
-[M:3/4] !staccato!!tenuto!C2!staccato!!tenuto!D2!staccato!!tenuto!!<)!E2 |
+!tenuto!!<(!.(C2!tenuto!.D2!tenuto!.E2!fermata!(F2) |
+[M:3/4] !tenuto!.C2!tenuto!.D2!tenuto!!<)!.E2 |
 G4G2) |
-!staccato!!tenuto!B2!staccato!!tenuto!c2"^simile"!>(!d2 |
+!tenuto!.B2!tenuto!.c2"^simile"!>(!d2 |
 c2B2A2 |
 G2F2!>)!E2 |
 D2!p!C4 |
