@@ -530,3 +530,89 @@ Les délais ne sont pas contournés en augmentant la borne : ce sont des boucles
 ou des traitements quadratiques à corriger en phase 2. Le fichier
 `Dreadlock Holiday.1.mid` (114 ko, Lakh) dépasse encore la limite à 25 s en
 diagnostic isolé.
+
+### Phase 2 — Lakh robustness fixes (2026-11-19)
+
+The phase-0 findings above were reproduced and fixed in three independent
+causes. Profiling used a release build with temporary per-stage instrumentation
+(`perf` is not available in the Nix shell) on `Dreadlock Holiday.1.mid`,
+`Fernando.2.mid` and `Beautiful Life.mid`. Parsing the SMF and merging note-on /
+note-off pairs took less than 15 ms per file; all the time was spent in
+`convert_midi`.
+
+**1. Quadratic chord scans (performance).** `MidiTuplet::findAllTuplets`
+accounted for roughly 3.5 s of a 3.7 s conversion on `Dreadlock Holiday.1.mid`:
+for each candidate start position of each metric span of each bar,
+`detect_tuplet` rebuilt its chord list by walking **all** chords of the track,
+i.e. `O(bars × spans × positions × chords)`. Upstream
+(`importexport/midi/internal/midiimport/importmidi_tuplet.cpp`,
+`findAllTuplets`) iterates `[startBarIt, endBarIt)` ranges of the
+`std::multimap`, which contain only the chords of the current bar. The port now
+mirrors that with `ChordMap::range(start, end)`, a `BTreeMap::range` on
+`(tick, rank)`; the original time and `bar_index` filters are kept, so the
+selected chords and their order are unchanged. The same pattern was fixed in
+two other stages:
+
+* `MChord::minimizeNumberOfRests` looked for the next chord of the same voice by
+  scanning the whole table for every chord (`O(n²)`); `ChordMap::next_in_voice`
+  now uses an **exclusive** bound at `(tick, u64::MAX)` so chords at the same
+  tick remain excluded, exactly as the original `next_on_time > key.0` filter.
+* `MidiVoice::separateVoices` rebuilt each bar's key list by scanning the whole
+  table once per bar; a single pass now fills a sparse
+  `BTreeMap<bar_index, keys>`.
+
+A progress guard was added to the tuplet start loop: a non-positive `step`
+(which a malformed bar length could produce) skips the span instead of spinning
+forever. None of these upstream algorithms is intrinsically exponential; the
+cost came from repeated linear scans over ordered data, so the results are
+unchanged and only the time drops.
+
+`tests/dense_bars.rs` covers the correctness of the range queries with 12 bars,
+two tracks, 352 sixteenth notes plus a triplet in each track: it checks the
+part, measure, chord and note counts, the pitches and durations, and that the
+triplet is still detected.
+
+**2. Malformed MusicXML (NUL in track names).** Many Lakh MIDI files terminate
+their text meta events with a NUL byte (for example `Back To Your Heart.1.mid`:
+`'Back To Your Heart'\0`). `String::from_utf8_lossy` preserves NUL, which XML
+1.0 forbids and cannot escape, so the raw byte ended up inside `<part-name>` and
+`xml.etree.ElementTree` rejected the output. This is faithful to upstream
+`midishared/midifile.cpp`: `MidiFile::writeEvent` writes `len - 1` bytes for text
+meta events ("Don't null terminate text meta events") and the import converts
+the data with C-string semantics. `midifile::decode_meta_text` now removes the
+XML 1.0 forbidden characters (C0 controls other than tab/LF/CR, `U+FFFE`,
+`U+FFFF`) at decoding time, and is used for track names, metadata and lyrics.
+`tests/meta_text.rs` checks an end-to-end MIDI → MusicXML conversion (no NUL,
+parseable XML, exact part/measure/note counts and pitches) plus an unaffected
+case with ordinary names and whitespace.
+
+**3. Latent panic in `removeOverlappingNotes`.** Once the timeouts were gone,
+`Toto/Don't Chain My Heart.mid` exposed a pre-existing out-of-bounds panic: a
+note discarded for being shorter than the minimum duration shrinks its chord,
+but the loop kept a cached note count and indexed `notes[0]` on an empty vector
+(`chord.rs`). The loop now reads the note at the current index on every
+iteration. `tests/overlapping_notes.rs` reproduces the exact Lakh timing
+(two same-pitch chords 1/192 apart, below the 1/128 minimum) and checks that
+only the later chord survives.
+
+**Remeasurement (`LAKH_STRIDE=20`, same manifests).** The table below replaces
+the phase-0 rows; it was produced with `scripts/oracle/midi/mesure.sh` and the
+same `timeout 10 prlimit --as=2000000000` bounds.
+
+| Lot | Files | OK | Timeouts | Exact | N1 % | N2 % | Max time |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| lecture_musique | 1020 | 1020 | 0 | 245 (24.0 %) | 100.00 | 97.08 | 0.25 s |
+| lecture_mutopia | 122 | 122 | 0 | 11 (9.0 %) | 99.80 | 90.47 | 0.50 s |
+| robustesse_lakh (1/20) | 96 | 96 | 0 | 0 (0.0 %) | — | — | 4.23 s |
+
+The small drop in the aggregate N2/N2d percentages is **not** a regression: the
+nine files that used to time out (two in `lecture_musique`, seven in
+`lecture_mutopia`) now complete with partial matches below 100 %, which lowers
+the weighted average. Restricted to the 1018 + 115 files that already succeeded
+in phase 0, the note counts, N1, N2, N2d and the exact flags are **unchanged**.
+On Lakh, the 40 timeouts, the two malformed outputs and the latent panic are
+gone; all 96 files now produce a non-empty MusicXML output, with a maximum
+conversion time of 4.23 s instead of 10 s. The two previously malformed files
+(`Back to Your Heart.1.mid`, `Besame Mucho.mid`) and the three slowest files
+(`Dreadlock Holiday.1.mid`, `Fernando.2.mid`, `Beautiful Life.mid`) were also
+checked individually with `ElementTree`: all parse cleanly in 0.26–1.71 s.

@@ -20,7 +20,40 @@
 
 mod common;
 
-use common::{chords, smf, Ev};
+use common::{smf, Ev};
+use scoretk_core::model::{ChordRestKind, SegmentItem, StaffId, Track, VOICES};
+
+/// Collects `(pitches, duration in ticks of 1/1920 whole)` from every chord.
+pub fn chords(score: &scoretk_core::model::Score) -> Vec<(Vec<u8>, i64)> {
+    let mut result = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for staff in 0..score.staves.len() {
+                for voice in 0..VOICES {
+                    let Some(SegmentItem::ChordRest(chord_rest)) =
+                        segment.element(Track::new(StaffId::from_index(staff), voice as u8))
+                    else {
+                        continue;
+                    };
+                    let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                        continue;
+                    };
+                    let ticks = chord_rest
+                        .ticks
+                        .unwrap_or_else(|| chord_rest.duration.ticks())
+                        .ticks(1920);
+                    let pitches: Vec<u8> = chord
+                        .notes
+                        .iter()
+                        .map(|note| score.notes[note.index()].pitch)
+                        .collect();
+                    result.push((pitches, ticks));
+                }
+            }
+        }
+    }
+    result
+}
 
 #[test]
 fn dense_bars_keep_tuplets_and_note_boundaries() {

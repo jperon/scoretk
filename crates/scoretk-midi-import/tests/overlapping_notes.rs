@@ -18,7 +18,7 @@
 //! A chord whose only note is discarded as too short must not panic.
 
 use scoretk_core::model::Fraction;
-use scoretk_midi_import::chord::{remove_overlapping_notes, MidiChord, MidiNote, MTrack};
+use scoretk_midi_import::chord::{remove_overlapping_notes, MTrack, MidiChord, MidiNote};
 
 #[test]
 fn discarding_the_last_note_does_not_panic() {
