@@ -124,6 +124,9 @@ impl Parser<'_> {
                     self.push_decoration(Decoration::Ornament(OrnamentType::InvertedMordent));
                     self.pos += 1;
                 }
+                // Guillemets de regroupement (§ 4.7 de la norme) : purement
+                // typographiques, les programmes doivent les ignorer.
+                '`' => self.pos += 1,
                 '$' | '\\' | '*' | ']' => self.pos += 1,
                 '&' => {
                     self.warn("superposition « & » ignorée");
@@ -375,6 +378,11 @@ impl Parser<'_> {
     /// Lit une hauteur : altération, lettre, octave, durée.
     fn read_note(&mut self) -> Result<(Note, u8, bool)> {
         self.last_length.clear();
+        // Les guillemets peuvent aussi apparaître entre les notes d'un accord
+        // ou d'un agrément : ils sont ignorés comme dans la ligne principale.
+        while self.peek() == Some('`') {
+            self.pos += 1;
+        }
         let mut alter: Option<i32> = None;
         let mut explicit = AccidentalType::None;
         loop {
@@ -1023,6 +1031,51 @@ mod tests {
             .filter_map(|segment| segment.chord_rest(Track::new(StaffId::from_index(0), 0)))
             .nth(index)
             .expect("accord")
+    }
+
+    /// Hauteurs et durées des accords d'une voix, pour comparer deux lectures.
+    fn contenu(output: &crate::reader::ReadOutput) -> (Vec<u8>, Vec<f64>) {
+        let mut pitches = Vec::new();
+        let mut durees = Vec::new();
+        for measure in &output.score.measures {
+            for segment in &measure.segments {
+                if let Some(chord_rest) =
+                    segment.chord_rest(Track::new(StaffId::from_index(0), 0))
+                {
+                    if let Some(chord) = chord_rest.chord_ref() {
+                        pitches.extend(
+                            chord
+                                .notes
+                                .iter()
+                                .map(|id| output.score.note(*id).pitch),
+                        );
+                    }
+                    durees.push(chord_rest.duration.ticks().as_f64());
+                }
+            }
+        }
+        (pitches, durees)
+    }
+
+    #[test]
+    fn backquotes_entre_notes_ignorees() {
+        let avec = parse("C2-C2``D``E``F``G | [CEG]4``z4 | A4``A4 |]");
+        let sans = parse("C2-C2D E F G | [CEG]4z4 | A4A4 |]");
+        assert_eq!(avec.score.measures.len(), 3);
+        assert_eq!(
+            contenu(&avec),
+            (
+                vec![60, 60, 62, 64, 65, 67, 60, 64, 67, 69, 69],
+                vec![0.25, 0.25, 0.125, 0.125, 0.125, 0.125, 0.5, 0.5, 0.5, 0.5]
+            )
+        );
+        // Sans les guillemets, la musique ordinaire doit rester identique.
+        assert_eq!(contenu(&avec), contenu(&sans));
+
+        // Cas limite : guillemets en fin de ligne, juste avant une barre.
+        let fin = parse("C D`` |");
+        assert_eq!(fin.score.measures.len(), 1);
+        assert_eq!(contenu(&fin).0, vec![60, 62]);
     }
 
     #[test]

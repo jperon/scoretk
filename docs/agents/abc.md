@@ -439,3 +439,23 @@ scripts/oracle/abc/one.sh "$SORTIES/un" "$BIN" air.abc "$ALT"
 scoretk launch is bounded by `timeout 10 prlimit --as=2000000000`. Re-run the
 complete campaign before merging any reader fix, and require no per-file
 regression on N1 and N2 (see `docs/agents/plan-fiabilite.md`).
+
+## 14. Reader fixes for rejected tunes (2026-11-19)
+
+Each fix is measured with `scripts/oracle/abc/one.sh` on a reduced real-world
+tune (one `X:` tune, kept outside the repository). The baseline is section 13:
+scoretk N1 78.1 % / N2 37.7 %. Fixes are committed one by one, in decreasing
+order of frequency. A construction we do not understand must produce a warning
+and a local skip, never the loss of the whole tune.
+
+### 14.1 Back quotes between notes (336 rejected tunes)
+
+- Reduced file: X:1 extracted from `music21-corpus/music21/corpus/airdsAirs/book1.abc`
+  into `/tmp/abc-reduits/backtick.abc` (back quotes between `B2` and `G2`,
+  and between `FA` and `FD`).
+- Behaviour: ABC 2.1 § 4.7 states that back quotes between beamed notes are
+  typographic spacers that programs must ignore; `abc2xml.py` also skips them
+  as recoverable characters.
+- Fix: `reader/music.rs` skips U+0060 in the main parse loop and before every
+  note, including notes inside chords and grace notes.
+- Measurement: N1/N2 **0 % → 100 %** (69/69 notes), no regression.
