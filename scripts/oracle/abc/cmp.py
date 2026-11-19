@@ -124,27 +124,32 @@ def musicxml(path):
                 elif tag == "note":
                     if element.find("grace") is not None:
                         continue
-                    if any(t.get("type") == "stop" for t in element.findall("tie")):
-                        continue
-                    node = element.find("pitch")
-                    if node is None:
-                        continue
-                    step = node.findtext("step")
-                    octave = node.findtext("octave")
-                    if step not in STEP or octave is None:
-                        continue
-                    try:
-                        pitch = (
-                            12 * (int(octave) + 1)
-                            + STEP[step]
-                            + round(float(node.findtext("alter", "0")))
-                            + transpose
-                        )
-                    except ValueError:
-                        continue
+                    # Une note en fin de liaison n'a pas de note-on dans le
+                    # MIDI : on ne la compte pas, mais sa durée appartient
+                    # toujours à la ligne de temps. L'ancien `continue`
+                    # sautait aussi la durée, ce qui décalait toutes les
+                    # attaques suivantes et masquait les `<forward>` de
+                    # remplissage (19 airs en phase 1). Les deux candidats
+                    # sont désormais mesurés de la même manière.
+                    tied_stop = any(t.get("type") == "stop" for t in element.findall("tie"))
                     duration = int(float(element.findtext("duration", "0"))) / divisions
-                    pitches[pitch] += 1
-                    attacks[(pitch, round(time * QUANT))] += 1
+                    node = element.find("pitch")
+                    if not tied_stop and node is not None:
+                        step = node.findtext("step")
+                        octave = node.findtext("octave")
+                        if step in STEP and octave is not None:
+                            try:
+                                pitch = (
+                                    12 * (int(octave) + 1)
+                                    + STEP[step]
+                                    + round(float(node.findtext("alter", "0")))
+                                    + transpose
+                                )
+                            except ValueError:
+                                pitch = None
+                            if pitch is not None:
+                                pitches[pitch] += 1
+                                attacks[(pitch, round(time * QUANT))] += 1
                     if element.find("chord") is None:
                         time += duration
     return pitches, attacks

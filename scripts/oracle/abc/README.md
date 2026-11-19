@@ -58,6 +58,10 @@ only. No corpus file and no third-party script is copied into the repository.
      with MusicXML `<chromatic>`/`<octave-change>` transposition applied;
      grace notes, tie stops and unpitched notes are ignored on both sides;
    - **N2**: same, with the attack quantized to 1/24 of a quarter note;
+     A note carrying `<tie type="stop">` is not counted (no note-on in the
+     MIDI), **but its duration still advances the timeline** — otherwise
+     every subsequent attack is shifted and scoretk's `<forward>` padding
+     is accidentally compensated (this inflated 19 tunes' N2 before phase 1).
    - a file is "exact" when N1 is exact (same number of notes, all correct).
    Counters per lot: files, tunes, exacts, notes, correct notes, percentage,
    failures, empty outputs.
