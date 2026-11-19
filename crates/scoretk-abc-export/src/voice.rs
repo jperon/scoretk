@@ -74,6 +74,13 @@ pub(crate) fn render_voice(
     out.push('\n');
 
     let items = collect_items(score, staff, model_voice);
+    // Port de `xml2abc.py::writePart` (lignes 331-334) : les couplets sont
+    // collectés sur toute la voix, pas seulement sur la mesure courante,
+    // pour qu'une mesure chantée sans paroles porte quand même son `w:`.
+    let all_verses: BTreeSet<usize> = items
+        .iter()
+        .flat_map(|item| item.chord_rest.lyrics.iter().map(|lyrics| lyrics.verse))
+        .collect();
     let tuplet_counts = tuplet_counts(score, &items);
     let mut ranges = Vec::with_capacity(score.measures.len());
     let mut cursor = 0usize;
@@ -247,7 +254,14 @@ pub(crate) fn render_voice(
         out.push_str(&full_line.join(" "));
         out.push('\n');
 
-        for lyric_line in lyrics_lines(score, &items, measure, range.clone(), &mut pending_word) {
+        for lyric_line in lyrics_lines(
+            score,
+            &items,
+            &all_verses,
+            measure,
+            range.clone(),
+            &mut pending_word,
+        ) {
             out.push_str(&lyric_line);
             out.push('\n');
         }
@@ -944,18 +958,13 @@ fn render_chord(
 fn lyrics_lines(
     _score: &Score,
     items: &[Item<'_>],
+    verses: &BTreeSet<usize>,
     _measure: &Measure,
     range: std::ops::Range<usize>,
     pending_word: &mut bool,
 ) -> Vec<String> {
-    let mut verses: BTreeSet<usize> = BTreeSet::new();
-    for item in &items[range.clone()] {
-        for lyrics in &item.chord_rest.lyrics {
-            verses.insert(lyrics.verse);
-        }
-    }
     let mut lines = Vec::new();
-    for verse in verses {
+    for &verse in verses {
         let mut tokens: Vec<String> = Vec::new();
         let mut extend = Fraction::ZERO;
         for item in &items[range.clone()] {
