@@ -953,7 +953,11 @@ impl Parser<'_> {
             if start_repeat {
                 voice.current.start_bar = BarLineType::StartRepeat;
             }
-            voice.current.volta = volta;
+            // Une mesure vide peut déjà porter une volta écrite avant la
+            // barre : ne l'efface pas quand aucun numéro en ligne ne suit.
+            if let Some(numbers) = volta {
+                voice.current.volta = Some(numbers);
+            }
             return Ok(());
         }
         let measure = voice.measure_index();
@@ -1285,6 +1289,10 @@ C, D, E, F, | qG, A, B, c |]
         // Cas limite : plusieurs numéros, ici sans note après la barre finale.
         let multiple = parse("C D |1,2 E F |]");
         assert_eq!(voltas(&multiple), vec![vec![1, 2]]);
+
+        // Une mesure vide entre la volta et les notes conserve son numéro.
+        let vide = parse("C D |[1 | E F |]");
+        assert_eq!(voltas(&vide), vec![vec![1]]);
     }
 
     #[test]

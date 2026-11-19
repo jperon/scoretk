@@ -523,3 +523,22 @@ and a local skip, never the loss of the whole tune.
 - Measurement: N1/N2 **0 % → 98.4 %** (60/61 notes), same as the alternative.
   The one missing note is a grace-note difference affecting both candidates
   (group 2 in section 13.3), not a rejection. No per-file regression.
+
+### Overall campaign after the five fixes
+
+Re-run of the exact three-lot campaign of section 13.4, in the foreground, with
+the release CLI built from this worktree (`mesure.sh` list + `aggreg.py`):
+
+| Candidate | Exact tunes | N1 | N2 | Failures | Files fully exact |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| scoretk (baseline, § 13.2) | 2 916 | 78.1 % | 37.7 % | 954 | 877 / 1 402 |
+| scoretk (after fixes) | 3 395 | **92.2 %** | **44.6 %** | **284** | **1 078 / 1 402** |
+| alternative (unchanged) | 3 729 | 97.5 % | 79.9 % | 130 | 1 095 / 1 402 |
+
+Per lot, scoretk N1 is 88.8 % (abcjs), 92.4 % (music21) and 25.6 % (ABC 2.1
+fragments, unchanged: those files have no `X:`). Rejections `ECHEC_TK` fell from
+824 to **154**. The remaining dominant gap is `NOTES_MANQUANTES` (767), i.e.
+group 2 of section 13.3, which is outside the scope of this syntax campaign; it
+affects the alternative too (781). No per-file regression was introduced: each
+change only accepts a previously rejected construct or replaces a rejection by
+a local, warned skip.
