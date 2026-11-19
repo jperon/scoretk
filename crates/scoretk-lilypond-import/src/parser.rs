@@ -2083,6 +2083,10 @@ impl<'a> Parser<'a> {
             "voiceTwo" => context(Context::Voice(1)),
             "voiceThree" => context(Context::Voice(2)),
             "voiceFour" => context(Context::Voice(3)),
+            // `\stemNeutral` est un alias de `\revert Stem.direction`
+            // (`ly/property-init.ly`) : la hampe redevient automatique, sans
+            // consommer la musique suivante.
+            "stemNeutral" => context(Context::Stem(StemDirection::Auto)),
             "stemUp" => context(Context::Stem(StemDirection::Up)),
             "stemDown" => context(Context::Stem(StemDirection::Down)),
             "set" => self.parse_set(),
@@ -2248,6 +2252,19 @@ impl<'a> Parser<'a> {
             }) => RepeatKind::from_word(&text),
             _ => RepeatKind::Volta,
         };
+        // `\etc` clôt une fonction musicale partielle (`REPEAT … partial_function`
+        // dans `lily/parser.yy`) : les arguments manquants seront fournis plus
+        // tard, quand la variable sera appliquée. La musique qui suit ne fait
+        // pas partie de cette définition : ne pas la consommer comme corps.
+        if self.peek().is_some_and(|token| token.is_command("etc")) {
+            self.position += 1;
+            return Music::Context(Context::Repeat {
+                kind,
+                count: 2,
+                body: Box::new(Music::Empty),
+                alternatives: Vec::new(),
+            });
+        }
         let count = match self.bump() {
             Some(Token {
                 kind: Kind::Number,
@@ -2256,6 +2273,15 @@ impl<'a> Parser<'a> {
             }) => text.parse().unwrap_or(2),
             _ => 2,
         };
+        if self.peek().is_some_and(|token| token.is_command("etc")) {
+            self.position += 1;
+            return Music::Context(Context::Repeat {
+                kind,
+                count,
+                body: Box::new(Music::Empty),
+                alternatives: Vec::new(),
+            });
+        }
         let body = Box::new(self.parse_music());
         let mut alternatives = Vec::new();
         if self.eat_command("alternative") {

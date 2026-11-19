@@ -3010,3 +3010,33 @@ fn commandes_de_mode_ouvrent_la_musique() {
     assert_eq!(hauteurs(&score), vec![60, 62, 64]);
     assert_eq!(score.measures.len(), 1, "mesures implicites");
 }
+
+#[test]
+fn raccourcis_sans_musique_ne_mangent_pas_la_suite() {
+    // `\stemNeutral` est un alias de `\revert Stem.direction`
+    // (`ly/property-init.ly`) et `\etc` marque une fonction musicale
+    // partielle (`REPEAT … partial_function`, `lily/parser.yy`) : ni l'un ni
+    // l'autre ne doit avaler la musique qui suit (régressions
+    // `grace-music-override`, `repeat-etc`).
+    let source = "\\version \"2.24.0\"\n\
+         \\language \"english\"\n\
+         stopGraceMusic = \\stemNeutral\n\
+         { \\grace a32 f4 \\grace a32 f4 }";
+    let score = read_lilypond(source).expect("lecture stemNeutral");
+    // Les appoggiatures sont stockées avant la note qu'elles ornent ;
+    // l'octave par défaut est la troisième (`a` = 57, `f` = 53).
+    assert_eq!(hauteurs(&score), vec![53, 57, 53, 57]);
+    assert_eq!(score.measures.len(), 1, "mesures");
+
+    let source = "\\version \"2.24.0\"\n\
+         testPercent = \\repeat percent \\etc\n\
+         { \\testPercent c'4 d'4 }";
+    let score = read_lilypond(source).expect("lecture etc");
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![Fraction::new(1, 4), Fraction::new(1, 4)],
+        "durées"
+    );
+    assert_eq!(score.measures.len(), 1, "mesures");
+}
