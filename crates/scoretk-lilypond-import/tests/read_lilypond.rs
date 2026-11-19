@@ -952,6 +952,27 @@ fn fonction_musicale_a_parametre_musical() {
 }
 
 #[test]
+fn fonction_signature_ancienne_nom_de_fonction() {
+    // LilyPond 2.8 écrit la signature `(nom location …)` : `nom` et `location`
+    // ne sont pas des paramètres. Les confondre faisait consommer la musique
+    // qui suit l'appel comme arguments et rejouer la mesure suivante à la
+    // place de l'argument musical.
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\
+         foo = #(define-music-function (foo location str music) (string? ly:music?) #{ $music #})\n\
+         \\score { \\relative c' { <a d fis>8 d,16 d' fis, d' |\n\
+         \\foo #\"x\" { a,16 cis' a' cis, } a,,4 |\n\
+         <a' cis g'>4 } }",
+    )
+    .expect("lecture");
+    assert_eq!(
+        hauteurs(&score),
+        vec![57, 62, 66, 50, 62, 54, 62, 45, 61, 69, 61, 33, 45, 49, 55]
+    );
+    assert_eq!(score.measures.len(), 2);
+}
+
+#[test]
 fn fonction_scheme_pure_avertie_une_fois() {
     // Corps sans `#{ … #}` : les arguments sont consommés, mais rien n'est
     // joué et l'avertissement n'est émis qu'au premier appel.

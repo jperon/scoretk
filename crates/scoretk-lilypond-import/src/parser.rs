@@ -3251,9 +3251,11 @@ fn music_function_definition(datum: &str) -> Option<MusicFunction> {
     index = next;
 
     let mut params = split_scheme_words(&params_text);
-    // Signature ancienne `(parser location a b)` : les deux premiers noms
-    // désignent le parseur et la position, pas des arguments.
-    if params.len() >= 2 && params[0] == "parser" && params[1] == "location" {
+    // Signatures anciennes `(parser location a b)` et `(nom location a b)`
+    // (LilyPond 2.8) : les deux premiers noms désignent le parseur ou la
+    // fonction elle-même et la position, pas des arguments. Les confondre
+    // ferait consommer la musique qui suit l'appel comme paramètres.
+    if params.len() >= 2 && params[1] == "location" {
         params.drain(..2);
     }
     let predicates = split_scheme_words(&predicates_text);
