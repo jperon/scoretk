@@ -1089,3 +1089,134 @@ and `mscz03`. Its `.abc` output stays 4-23 % smaller than the alternative's.
 No file was dropped from any lot, no reference was regenerated with another
 MuseScore version, and the only snapshots changed are the five legitimate
 `transpose=` additions of fix 1.
+
+### 17.6 Second pass: `abc2midi` warnings and remaining N2/N2d (2026-11-19)
+
+This subsection is in English by convention for the measurement reports. The
+binary was frozen **before** any edit of this pass (`scoretk-final3`, the
+binary of § 17.4) and the final campaign below uses the new frozen
+`scoretk-final5`; all launches are bounded by
+`timeout 10 prlimit --as=2000000000`. The frozen binaries, manifests and raw
+outputs stay outside the repository.
+
+#### 17.6.1 Warning grouping and fixes
+
+`abc2midi` output was captured for the three files of each lot with the most
+messages and grouped after replacing digits by `N`. On that sample of 18
+files the messages split as follows (left: baseline binary):
+
+| Message text | Count | Cause in our output | Action |
+| --- | ---: | --- | --- |
+| `Error … Channel limit exceeded` | 11 486 | 17+ `V:` voices in orchestral scores; `abc2midi` has 16 channels. `xml2abc.py` writes the same 17 voices and the same errors (83 on one file). | Not a warning; shared with the reference, documented. |
+| `Warning … Line of music without lyrics` | 5 537 | `w:` written only on measures that have lyrics, whereas `xml2abc.py::writePart` (lines 331-355) writes one `w:` per verse after **every** music line of a sung voice. | Fixed (see below). |
+| `Warning … instruction !staccato! ignored` | 3 585 | Our `!staccato!`; `note_ornamentation_map` line 47 writes `.` | Fixed (see below). |
+| `Warning … instruction !N! ignored` | 3 145 | Fingerings `!1!`; `xml2abc.py` line 1054 writes the same tokens. | Shared with the reference, documented. |
+| `Warning … Track N Bar N has N time units …` | 851 | Irregular written measures; `xml2abc.py::doMaat` writes `$` line breaks and explicit short rests. | Partially fixed by the short-rest fix; remainder is a layout choice. |
+| `Warning … Different length notes in tuple` | 676 | Explicit `(p:q:r` tuplets of the reader port; `abc2midi` does not support them. | Out of writing scope (ABC 2.1 extension). |
+| `Warning … instruction !marcato!`, `!sf!`, `!fz!` | 426 | `note_ornamentation_map` line 46 writes `!^!`; `dynamics_map` (lines 59-71) has no `sf`/`fz`. | Fixed (see below). |
+| `Warning … whitespace in field declaration` / `Potentially ambiguous line` | 216 | `:|` at the beginning of a continuation line on a grouped score. | Layout only, left unchanged. |
+
+Three fixes landed, each with a failing test first:
+
+- **Short written measures** (`xml2abc.py::doMaat`, line 674; measure/bar
+  grammar, lines 428-436). `Z` is a *full-measure* rest for `abc2midi`: its
+  length comes from `M:`, so a short measure written `Z` shifted every later
+  attack. Short and pickup measures now write `z` + multiplier; a genuine
+  full measure still writes `Z`. A full-measure rest takes its written length
+  from `Measure::len` (its `ChordRest` carries no `ticks`). Reduced real tune
+  `Omni_die_dic_Mariae__Carlo_Rossini.mscz` (both copies): N2d
+  **61.34 % → 100 %**, now exact like the alternative. New test
+  `crates/scoretk/tests/abc_ecriture_silences_courts.rs` (two staves, chord,
+  short rest, full-measure control, end of file).
+- **Decoration tokens** (`xml2abc.py::note_ornamentation_map`, lines 32-57;
+  `dynamics_map`, lines 59-71). Staccato is `.` (not `!staccato!`),
+  staccatissimo/spiccato `!wedge!`, accent `!>!`, strong accent `!^!`;
+  `sf`/`fz` are annotations, not `!…!`. `abc2midi` rejects a short token
+  followed by `!…!` (`.!mp!d` is a "malformed note"), so short tokens are
+  written last, as in `xml2abc.py`'s `doDirection` → `addChord` order. On
+  `00- Il est né le divin enfant – Rutter – Conducteur.mscz`, the 278
+  `!staccato! ignored` warnings disappeared with no new error. New test
+  `crates/scoretk/tests/abc_ecriture_decorations.rs`; six snapshots changed
+  by token rename only.
+- **`w:` on every sung line** (`xml2abc.py::writePart`, lines 331-355).
+  Verses are collected over the whole voice; each music line containing
+  notes gets one `w:` per verse, with `*` where a syllable is missing.
+  On the same file the `Line of music without lyrics` warnings fell
+  **282 → 82** (the 82 remaining lines contain no notes at all, which
+  `abc2midi` cannot attach lyrics to even with a `w:`). New test
+  `crates/scoretk/tests/abc_ecriture_paroles.rs`; four snapshots gained
+  placeholder lines.
+
+Warning totals of the final campaign (baseline → new): corpus 79 → 51,
+mscz00 2 152 → 1 157, mscz01 **10 072 → 4 618**, mscz02 **12 480 → 4 492**,
+mscz03 9 242 → 7 578, xml **8 312 → 5 969** (overall 42 337 → 23 865,
+−43.6 %). The remaining difference is mostly rest-only lines and the shared
+`Channel limit exceeded`/fingering messages.
+
+#### 17.6.2 Final campaign (frozen `scoretk-final5`)
+
+Measured in the foreground, in six chunks, with the same reference caches on
+both sides. The alternative's numbers differ slightly from § 17.4 because its
+reference cache was completed after that table; within one campaign both
+candidates use byte-identical references.
+
+| Lot | Tool | Files | ABC OK | Exact | N1 % | N2 % | N2d % | Errors | Warnings |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 23 | 79.01 | 73.66 | 69.87 | 20 | 51 |
+| corpus | xml2abc | 56 | 56 | 23 | 78.96 | 68.23 | 64.79 | 39 | 165 |
+| mscz00 | scoretk | 44 | 32 | 10 | 86.15 | 75.08 | 69.10 | 1 | 1 157 |
+| mscz00 | xml2abc | 44 | 44 | 10 | 81.49 | 69.30 | 66.24 | 49 | 1 318 |
+| mscz01 | scoretk | 44 | 44 | 4 | 92.42 | 91.84 | 85.38 | 13 855 | 4 618 |
+| mscz01 | xml2abc | 44 | 44 | 4 | 92.62 | 92.43 | 85.92 | 13 389 | 859 |
+| mscz02 | scoretk | 44 | 43 | 0 | 76.27 | 59.54 | 54.72 | 46 172 | 4 492 |
+| mscz02 | xml2abc | 44 | 42 | 0 | 78.00 | 62.98 | 58.36 | 40 379 | 3 429 |
+| mscz03 | scoretk | 42 | 32 | 2 | 91.84 | 73.27 | 70.38 | 3 699 | 7 578 |
+| mscz03 | xml2abc | 42 | 39 | 3 | 92.30 | 72.68 | 70.31 | 5 903 | 2 425 |
+| xml | scoretk | 32 | 32 | 8 | 92.94 | 30.85 | 27.53 | 48 | 5 969 |
+| xml | xml2abc | 32 | 32 | 7 | 93.07 | 27.26 | 24.29 | 664 | 6 340 |
+
+Per-file with both candidates valid (N2d): scoretk better **30**, equal **154**,
+worse **57** (baseline 29 / 140 / 71). Against the frozen baseline binary,
+per-file N2d is **33 gains / 1 loss / 242 unchanged and 0 N1 change**; no file
+lost a pitch or an attack. The single N2d loss is
+`tests/corpus/v3/timesig-05.mscx` (9.09 % → 3.03 %, N1 and N2 unchanged): the
+faithful `.` staccato token makes `abc2midi` realize short durations, whereas
+the previously ignored `!staccato!` accidentally matched two more reference
+durations on a file that already misses 9 of 33 notes (N2 12.12 %) and where
+`xml2abc.py` itself only reaches 9.09 %. No per-file regression is unexplained.
+
+#### 17.6.3 Remaining gaps, by first cause
+
+Files where `xml2abc.py` still wins, grouped by the first flag of `midi_notes.py`
+(the `octave` flag is set whenever a missing pitch exists an octave away in
+the output, so it also catches semitone and channel-limit differences):
+
+| Cause | mscz01 | mscz02 | mscz03 | xml | Diagnosis |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `octave` | 12 | 23 | 6 | 8 | Mostly the oracle artefact of § 17.5: the reference MIDI realizes ornaments/voltanas that neither written file contains; on `Stella_maris_instruments – SiB.mscz` the two candidates now have the **same** pitch multiset (1 363/1 363), the residual N2d gap is attack placement under `abc2midi`'s channel limit. |
+| `attaque_decalee` | 0 | 1 | 1 | 3 | Short written measures and `$` line breaks of `xml2abc.py::doMaat`; partially fixed, the rest needs multi-measure per-line grouping (a layout choice). |
+| `notes_manquantes` | 0 | 0 | 0 | 0 | Out of writing scope; shared oracle artefact. |
+
+`mscz03` files where the alternative is exact: `Cantate_Domino__G.O._Pitoni.mscz`
+(out of scope, MuseScore 2.x), `Sancta_Maria_Lux_tempestiva…mscz` (N2d
+99.72 %, two notes an octave off) and both copies of
+`Omni_die_dic_Mariae__Carlo_Rossini.mscz` (**now exact**, fixed above).
+
+**Out of scope — unreadable sources (22 files).** scoretk's reader rejects
+MuseScore 1.x/2.x (`version MuseScore non prise en charge : 2.06`), so no ABC
+is written: 12 files of `mscz00` (accordion collection,
+`Autumn_Leaves_Frank_Marocco`, `Canon_in_D_Pachelbel_-_arranged_for_accordion`,
+`Czardas_Monti_-_advanced_version_for_accordion`, `Espana_Cani`,
+`Jig_-_Tripping_up_the_Stairs`, `La_foule`, `La_Partida__Venezualan_Waltz__`,
+`Spanish_Ladies`, `Triumphal_March`, `ZORBA_THE_GREEK`, `Ad_te_Suspiramus`,
+`Hallelujah_-_Haendel`) and 10 of `mscz03` (`AnthemChristmas_Lullaby`,
+`Sicut_Cervus__Palestrina`, `Cantate_Domino__G.O._Pitoni`,
+`Ave_Verum____Camille_SAINT-SANS`, five Vivaldi `Dixit Dominus` movements and
+`Vingt_danses_enfantines_pour_piano`). One further `mscz02` file
+(`03- Minuit chretien - Vcl - Cb - Timb.mscz`) has no reference MIDI because
+MuseScore hit the 10 s timeout; it is not a scoretk reader failure. None of
+these is counted as a cause of the writing gap.
+
+No corpus reference was regenerated with another MuseScore version; the
+snapshot changes of this pass are ten decoration-token renames and 13 added
+`w:` placeholder lines.

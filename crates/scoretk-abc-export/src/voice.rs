@@ -140,7 +140,8 @@ pub(crate) fn render_voice(
         // `xml2abc.py` (`doDirection` puis `addChord`), les `!…!` sont écrits
         // d'abord, les jetons courts juste avant la note.
         for tokens in &mut before {
-            tokens.sort_by_key(|token| !matches!(token.as_bytes().first(), Some(b'!') | Some(b'"')));
+            tokens
+                .sort_by_key(|token| !matches!(token.as_bytes().first(), Some(b'!') | Some(b'"')));
         }
 
         let mut line = String::new();

@@ -85,17 +85,29 @@ fn ecrire() -> String {
 #[test]
 fn articulations_sont_les_jetons_de_xml2abc() {
     let abc = ecrire();
-    let m1 = abc
-        .lines()
-        .find(|l| l.contains("[CE]2"))
-        .unwrap_or("");
+    let m1 = abc.lines().find(|l| l.contains("[CE]2")).unwrap_or("");
     assert!(abc.contains(".[CE]2"), "staccato doit être '.' : {abc}");
     assert!(abc.contains("!>!.[CE]2"), "accent puis staccato : {abc}");
-    assert!(abc.contains("!^!G2"), "strong-accent doit être '!^!' : {abc}");
-    assert!(abc.contains("!wedge!B2"), "staccatissimo doit être '!wedge!' : {abc}");
-    assert!(!abc.contains("!staccato!"), "jeton ignoré par abc2midi : {abc}");
-    assert!(!abc.contains("!accent!"), "jeton ignoré par abc2midi : {abc}");
-    assert!(!abc.contains("!marcato!"), "jeton ignoré par abc2midi : {abc}");
+    assert!(
+        abc.contains("!^!G2"),
+        "strong-accent doit être '!^!' : {abc}"
+    );
+    assert!(
+        abc.contains("!wedge!B2"),
+        "staccatissimo doit être '!wedge!' : {abc}"
+    );
+    assert!(
+        !abc.contains("!staccato!"),
+        "jeton ignoré par abc2midi : {abc}"
+    );
+    assert!(
+        !abc.contains("!accent!"),
+        "jeton ignoré par abc2midi : {abc}"
+    );
+    assert!(
+        !abc.contains("!marcato!"),
+        "jeton ignoré par abc2midi : {abc}"
+    );
     // Cas « non concerné » : tenuto garde son nom long, reconnu par abc2midi.
     assert!(abc.contains("!tenuto!A4"), "tenuto inchangé : {abc}");
     assert!(m1.contains('|'), "mesure ordinaire conservée : {m1}");
@@ -105,8 +117,14 @@ fn articulations_sont_les_jetons_de_xml2abc() {
 fn nuances_non_tablees_ne_sont_pas_des_decorations() {
     let abc = ecrire();
     assert!(abc.contains("!sfz!"), "sfz est dans dynamics_map : {abc}");
-    assert!(!abc.contains("!sf!"), "sf n'est pas dans dynamics_map : {abc}");
+    assert!(
+        !abc.contains("!sf!"),
+        "sf n'est pas dans dynamics_map : {abc}"
+    );
     // Les deux voix et leurs deux mesures restent présentes (régression).
     assert_eq!(abc.lines().filter(|l| l.starts_with("V:")).count(), 2);
-    assert!(abc.contains("Z |]"), "silence de mesure pleine témoin : {abc}");
+    assert!(
+        abc.contains("Z |]"),
+        "silence de mesure pleine témoin : {abc}"
+    );
 }
