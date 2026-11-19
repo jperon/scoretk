@@ -373,11 +373,38 @@ pub struct ParsedKey {
     pub parameters: Vec<(String, String)>,
 }
 
+/// Vrai si le mot est un nom de mode ABC (éventuellement abrégé).
+fn looks_like_mode(word: &str) -> bool {
+    let lowered = word.to_ascii_lowercase();
+    lowered == "m"
+        || ["maj", "min", "aeo", "ion", "dor", "phr", "lyd", "mix", "loc"]
+            .iter()
+            .any(|prefix| lowered.starts_with(prefix))
+}
+
 /// Analyse un champ `K:` (valeur après `K:`).
 pub fn parse_key(text: &str) -> Option<ParsedKey> {
     let mut parts = text.split_whitespace();
-    let tonic_text = parts.next()?;
-    let parameters = parts
+    let first = parts.next()?;
+    // Port de `abc2xml.py` 269, `doHeaderField`, branche `K:` (lignes 1808-1820)
+    // : la regex `([A-G][#b]?)\s*([a-zA-Z]*)` lit la tonique **et** le mot de
+    // mode qui la suit, même séparés par un espace. `K:E Minor` est donc
+    // une armure de 1 dièse (mineur relatif de E), et non 4 dièses (E majeur).
+    // Un mot non reconnu comme mode est traité comme majeur par le script
+    // (ligne 1817) : on le laisse alors aux paramètres, comme `clef=treble`.
+    let mut tonic_text = first.to_owned();
+    let mut rest = Vec::new();
+    if let Some(next) = parts.next() {
+        let word: String = next.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+        if looks_like_mode(&word) {
+            tonic_text.push_str(&word);
+        } else {
+            rest.push(next);
+        }
+    }
+    rest.extend(parts);
+    let parameters = rest
+        .into_iter()
         .filter_map(|part| {
             let (name, value) = part.split_once('=')?;
             Some((name.to_ascii_lowercase(), value.to_owned()))
