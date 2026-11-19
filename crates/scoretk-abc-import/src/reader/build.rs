@@ -339,12 +339,15 @@ fn groups(reader: &Reader, voices: &[Voice]) -> Vec<PartSpec> {
     if groups.is_empty() {
         groups = voices
             .iter()
+            .filter(|voice| voice.overlay_of.is_none())
             .map(|voice| PartSpec {
                 staves: vec![vec![voice.number]],
             })
             .collect();
     }
-    // Ajoute les voix absentes de `%%score` comme portées isolées.
+    // Ajoute les voix absentes de `%%score` comme portées isolées ; une voix
+    // de superposition `&` rejoint la portée de sa racine (port de
+    // `abc2xml.py::mergePartMeasure`, ligne 951).
     let mut present = std::collections::BTreeSet::new();
     for part in &groups {
         for staff in &part.staves {
@@ -352,10 +355,31 @@ fn groups(reader: &Reader, voices: &[Voice]) -> Vec<PartSpec> {
         }
     }
     for voice in voices {
+        if let Some(root) = voice.overlay_of {
+            let root_number = voices[root].number;
+            if let Some(group) = groups.iter_mut().find(|group| {
+                group
+                    .staves
+                    .iter()
+                    .any(|staff| staff.contains(&root_number))
+            }) {
+                let staff = group
+                    .staves
+                    .iter_mut()
+                    .find(|staff| staff.contains(&root_number))
+                    .expect("groupe trouvé ci-dessus");
+                if !staff.contains(&voice.number) {
+                    staff.push(voice.number);
+                }
+                present.insert(voice.number);
+                continue;
+            }
+        }
         if !present.contains(&voice.number) {
             groups.push(PartSpec {
                 staves: vec![vec![voice.number]],
             });
+            present.insert(voice.number);
         }
     }
     if groups.is_empty() {

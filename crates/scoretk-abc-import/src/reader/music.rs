@@ -33,7 +33,7 @@ use scoretk_core::model::{
 };
 
 use crate::reader::{
-    rhythm, AnnotationSpec, EventData, GraceData, Position, Reader, TupletSpec, Voice,
+    rhythm, AnnotationSpec, EventData, GraceData, Position, Reader, TupletSpec, Voice, VoiceFields,
 };
 use scoretk_abc_common::decorations::{self, Decoration};
 use scoretk_abc_common::duration;
@@ -121,8 +121,13 @@ impl Parser<'_> {
                 '`' => self.pos += 1,
                 '$' | '\\' | '*' | ']' => self.pos += 1,
                 '&' => {
-                    self.warn("superposition « & » ignorée");
+                    // Port de `abc2xml.py`, `voice_overlay` (ligne 425) et
+                    // `mergePartMeasure` (ligne 951) : `&` ouvre une voix
+                    // supplémentaire sur la même portée, au même tick. Sans
+                    // cela les notes superposées s'enchaînaient et toutes les
+                    // attaques après la première étaient décalées.
                     self.pos += 1;
+                    self.start_overlay();
                 }
                 '<' | '>' => {
                     self.pos += 1;
@@ -745,6 +750,78 @@ impl Parser<'_> {
         voice.last_line_chords.push((measure, index));
     }
 
+    /// Ouvre une voix superposée sur la portée de la voix courante.
+    ///
+    /// Port de `abc2xml.py::voice_overlay` (ligne 425) et `mergePartMeasure`
+    /// (ligne 951) : une note après `&` attaque au même tick que la première
+    /// note du groupe, sur une voix distincte de la même portée. L'export en
+    /// tire un `<backup>` au lieu d'enchaîner les notes.
+    fn start_overlay(&mut self) {
+        let root = self
+            .reader
+            .voices
+            .get(self.voice)
+            .and_then(|voice| voice.overlay_of)
+            .unwrap_or(self.voice);
+        let (unit, time, key, clef, transpose, tick, measures) = {
+            let voice = &self.reader.voices[root];
+            let tick = voice
+                .current
+                .events
+                .first()
+                .map_or(voice.tick, |event| event.tick);
+            (
+                voice.unit,
+                voice.time.clone(),
+                voice.key.clone(),
+                voice.clef,
+                voice.transpose,
+                tick,
+                voice.measures.len(),
+            )
+        };
+        // Le modèle n'a que quatre voix par portée : on réutilise les trois
+        // voix de superposition d'une mesure à l'autre, en les parcourant dans
+        // l'ordre à chaque `&` (les voix déjà pourvues sont refermées par la
+        // barre, voir `finish_bar`).
+        let cursor_value = self.reader.overlay_cursor.get(&root).copied().unwrap_or(0);
+        let mut pool_len = self.reader.overlay_pool.get(&root).map_or(0, Vec::len);
+        if cursor_value >= pool_len && pool_len < 3 {
+            let number = self.reader.voices.len() + 1;
+            let fields = VoiceFields {
+                number,
+                name: String::new(),
+                clef,
+                transpose: Some(transpose),
+            };
+            let mut overlay = Voice::new(&fields, unit, time, key);
+            overlay.overlay_of = Some(root);
+            overlay.tick = tick;
+            // Les mesures déjà refermées de la racine restent vides ici ;
+            // leur longueur doit être nulle pour ne pas étirer une anacrouse.
+            for _ in 0..measures {
+                overlay.finish_measure(BarLineType::Normal);
+                if let Some(last) = overlay.measures.last_mut() {
+                    last.len = Fraction::ZERO;
+                }
+            }
+            let index = self.reader.voices.len();
+            self.reader.voices.push(overlay);
+            self.reader
+                .overlay_pool
+                .entry(root)
+                .or_default()
+                .push(index);
+            pool_len += 1;
+        }
+        let pool = &self.reader.overlay_pool[&root];
+        let index = pool[cursor_value % pool_len];
+        self.reader.overlay_cursor.insert(root, cursor_value + 1);
+        self.reader.voices[index].tick = tick;
+        self.voice = index;
+        self.reader.current = index;
+    }
+
     /// Vrai si une lettre de hauteur suit l'altération courante, en ignorant
     /// les espaces, les décorations de phrasé et les autres altérations.
     ///
@@ -1140,6 +1217,36 @@ impl Parser<'_> {
         start_repeat: bool,
         volta: Option<Vec<u8>>,
     ) -> Result<()> {
+        // Port de `abc2xml.py::mergePartMeasure` (ligne 951) : toutes les voix
+        // superposées se ferment sur la même barre que leur voix racine.
+        let root = self
+            .reader
+            .voices
+            .get(self.voice)
+            .and_then(|voice| voice.overlay_of)
+            .unwrap_or(self.voice);
+        let overlays: Vec<usize> = (0..self.reader.voices.len())
+            .filter(|&index| index != root && self.reader.voices[index].overlay_of == Some(root))
+            .collect();
+        for index in overlays {
+            // Même vide, la mesure est refermée : sinon l'index de mesure de
+            // la voix superposée dérive et ses notes tombent une mesure plus
+            // tôt que celles de la racine. Une mesure vide garde une longueur
+            // nulle pour ne pas étirer une mesure courte de la racine.
+            let overlay = &mut self.reader.voices[index];
+            let empty = overlay.current.events.is_empty() && overlay.tick.is_zero();
+            overlay.finish_measure(end);
+            if empty {
+                if let Some(last) = overlay.measures.last_mut() {
+                    last.len = Fraction::ZERO;
+                }
+            }
+        }
+        // La barre est toujours traitée par la voix racine : c'est elle qui
+        // porte les volatas et les barres de reprise de la mesure.
+        self.reader.overlay_cursor.remove(&root);
+        self.voice = root;
+        self.reader.current = root;
         let voice = &mut self.reader.voices[self.voice];
         let empty = voice.current.events.is_empty() && voice.tick.is_zero();
         if empty {
@@ -1154,6 +1261,10 @@ impl Parser<'_> {
             if let Some(numbers) = volta {
                 voice.current.volta = Some(numbers);
             }
+            // Après la barre, la musique revient à la voix racine : les notes
+            // qui suivent ne sont plus des superpositions.
+            self.voice = root;
+            self.reader.current = root;
             return Ok(());
         }
         let measure = voice.measure_index();
@@ -1165,6 +1276,8 @@ impl Parser<'_> {
         if start_repeat {
             self.reader.voices[self.voice].next_start_bar = BarLineType::StartRepeat;
         }
+        self.voice = root;
+        self.reader.current = root;
         Ok(())
     }
 

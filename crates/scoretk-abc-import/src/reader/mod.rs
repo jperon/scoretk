@@ -405,6 +405,9 @@ impl MeasureData {
 pub(crate) struct Voice {
     /// Numéro ABC.
     pub number: usize,
+    /// Voix racine d'une superposition `&` (port de `abc2xml.py::voice_overlay`,
+    /// ligne 425) : cette voix partage la portée de la racine.
+    pub overlay_of: Option<usize>,
     /// Nom affiché.
     pub name: String,
     /// Clef demandée.
@@ -476,6 +479,7 @@ impl Voice {
     pub(crate) fn new(fields: &VoiceFields, unit: Fraction, time: TimeSig, key: KeySig) -> Self {
         Self {
             number: fields.number,
+            overlay_of: None,
             name: fields.name.clone(),
             clef: fields.clef,
             unit,
@@ -598,6 +602,11 @@ pub(crate) struct Reader {
     /// Numéros attribués aux voix nommées `V:S`, `V:A`… (port de
     /// `abc2xml.py::splitHeaderVoices`, ligne 779).
     pub voice_ids: BTreeMap<String, usize>,
+    /// Voix superposées créées pour chaque racine (`&`, ligne 425) ; elles sont
+    /// réutilisées de mesure en mesure car le modèle n'a que quatre voix.
+    pub overlay_pool: BTreeMap<usize, Vec<usize>>,
+    /// Prochaine voix superposée à utiliser dans la mesure courante.
+    pub overlay_cursor: BTreeMap<usize, usize>,
     /// Groupement `%%score`.
     pub score_spec: Option<String>,
     /// Titre.
@@ -634,6 +643,8 @@ impl Default for Reader {
             tempo: None,
             user_symbols: BTreeMap::new(),
             voice_ids: BTreeMap::new(),
+            overlay_pool: BTreeMap::new(),
+            overlay_cursor: BTreeMap::new(),
             score_spec: None,
             title: String::new(),
             composer: String::new(),
