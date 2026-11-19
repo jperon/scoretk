@@ -716,17 +716,26 @@ impl<'a> Interpreter<'a> {
                 body,
                 alternatives,
             } => self.repeat(*kind, *count, body, alternatives),
-            Context::Transpose { from, to, music } => {
+            Context::Transpose {
+                from,
+                to,
+                absolute,
+                music,
+            } => {
                 let delta = transpose_delta(from, to);
                 let saved_transpose = self.transpose;
                 let saved_octave = self.octave;
                 self.transpose = (saved_transpose.0 + delta.0, saved_transpose.1 + delta.1);
                 // `TransposedMusic` porte `no-relative-callback`
-                // (`scm/define-music-types.scm`) : la musique transposée reste
-                // absolue même dans un `\relative`, et la référence relative
-                // à la sortie du bloc est celle d'avant le bloc, pas sa
-                // dernière note (Notation Reference §1.2.2).
-                self.octave = saved_octave.sans_relative();
+                // (`scm/define-music-types.scm`) : un `\transpose` littéral
+                // reste absolu même dans un `\relative`, et la référence
+                // relative à la sortie du bloc est celle d'avant le bloc
+                // (Notation Reference §1.2.2). Une fonction `make-relative`
+                // a en revanche déjà relu ses arguments dans le contexte
+                // relatif avant de les transposer : sa référence est gardée.
+                if *absolute {
+                    self.octave = saved_octave.sans_relative();
+                }
                 self.walk(music);
                 self.octave = saved_octave;
                 self.transpose = saved_transpose;

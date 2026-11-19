@@ -81,6 +81,10 @@ pub(crate) struct Parser<'a> {
     /// Mode courant des noms de notes (`\drummode` ou `\chordmode`), qui
     /// remplace la notation diatonique par des événements à hauteur MIDI.
     note_mode: NoteMode,
+    /// Vrai pendant l'expansion du corps d'une fonction `make-relative` : un
+    /// `\transpose` y reçoit des hauteurs déjà lues dans le `\relative`
+    /// environnant, et non des hauteurs absolues.
+    in_relative_function: bool,
 }
 
 /// Profondeur d'expansion maximale (garde-fou contre la récursion).
@@ -119,6 +123,10 @@ struct MusicFunction {
     predicates: Vec<String>,
     /// Corps musical (`#{ … #}`), absent pour une fonction Scheme pure.
     body: Option<Vec<Token>>,
+    /// Vrai si la définition utilise `make-relative` : les arguments sont
+    /// lus dans le contexte relatif environnant avant d'être insérés dans le
+    /// corps (`scm/music-functions.scm`), y compris sous un `\transpose`.
+    relative_body: bool,
     /// Vrai si l'avertissement d'appel a déjà été émis.
     warned: bool,
 }
@@ -159,6 +167,7 @@ pub(crate) fn parse(
         melisma_busy_disabled: false,
         staff_local_timing: false,
         note_mode: NoteMode::Notes,
+        in_relative_function: false,
     };
     parser.document()
 }
@@ -1874,7 +1883,14 @@ impl<'a> Parser<'a> {
             return Music::Empty;
         };
         let tokens = substitute_function_tokens(&body, &function.params, &arguments);
-        self.parse_token_stream(tokens)
+        let relative_body = function.relative_body;
+        let saved = self.in_relative_function;
+        if relative_body {
+            self.in_relative_function = true;
+        }
+        let music = self.parse_token_stream(tokens);
+        self.in_relative_function = saved;
+        music
     }
 
     /// Lit les arguments d'un appel, un par prédicat.
@@ -2079,6 +2095,10 @@ impl<'a> Parser<'a> {
                 Music::Context(Context::Transpose {
                     from,
                     to,
+                    // Un `\transpose` littéral est absolu sous `\relative`
+                    // (§1.2.2) ; dans une fonction `make-relative`, les notes
+                    // ont déjà été lues dans le contexte relatif.
+                    absolute: !self.in_relative_function,
                     music: Box::new(self.parse_music()),
                 })
             }
@@ -3734,6 +3754,13 @@ fn music_function_definition(datum: &str) -> Option<MusicFunction> {
         .collect();
 
     let body_source: String = characters[index.min(characters.len())..].iter().collect();
+    // Le corps utile est le premier `#{ … #}` ; tout ce qui le précède est
+    // du Scheme. `make-relative` y relit ses arguments dans le contexte
+    // relatif avant de les insérer dans le corps, y compris sous un
+    // `\transpose` (`scm/music-functions.scm`, `make-relative`).
+    let relative_body = body_source
+        .split_once("#{")
+        .is_some_and(|(prefix, _)| prefix.contains("make-relative"));
     let body =
         crate::lexer::embedded_music_body(&body_source).map(|body| crate::lexer::tokenize(&body));
     Some(MusicFunction {
@@ -3741,6 +3768,7 @@ fn music_function_definition(datum: &str) -> Option<MusicFunction> {
         params,
         predicates,
         body,
+        relative_body,
         warned: false,
     })
 }
@@ -3878,7 +3906,11 @@ fn substitute_function_tokens(
 #[derive(Clone, Copy)]
 enum Wrapper {
     /// `\transpose de vers`.
-    Transpose { from: PitchSpec, to: PitchSpec },
+    Transpose {
+        from: PitchSpec,
+        to: PitchSpec,
+        absolute: bool,
+    },
     /// `\fixed [référence]`.
     Fixed(Option<PitchSpec>),
     /// `\relative [référence]`.
@@ -3889,10 +3921,16 @@ impl Wrapper {
     /// Enveloppe que porte `context`, avec la musique qu'elle contient.
     fn of(context: &Context) -> Option<(Self, &Music)> {
         match context {
-            Context::Transpose { from, to, music } => Some((
+            Context::Transpose {
+                from,
+                to,
+                absolute,
+                music,
+            } => Some((
                 Self::Transpose {
                     from: *from,
                     to: *to,
+                    absolute: *absolute,
                 },
                 music,
             )),
@@ -3906,7 +3944,12 @@ impl Wrapper {
     fn wrap(self, music: Music) -> Music {
         let music = Box::new(music);
         Music::Context(match self {
-            Self::Transpose { from, to } => Context::Transpose { from, to, music },
+            Self::Transpose { from, to, absolute } => Context::Transpose {
+                from,
+                to,
+                absolute,
+                music,
+            },
             Self::Fixed(reference) => Context::Fixed { reference, music },
             Self::Relative(reference) => Context::Relative { reference, music },
         })
@@ -4441,6 +4484,7 @@ mod tests {
             melisma_busy_disabled: false,
             staff_local_timing: false,
             note_mode: NoteMode::Notes,
+            in_relative_function: false,
         };
         parser.parse_music()
     }
@@ -4477,6 +4521,7 @@ mod tests {
                 melisma_busy_disabled: false,
                 staff_local_timing: false,
                 note_mode: NoteMode::Notes,
+                in_relative_function: false,
             };
             let progresse = parser.guard_progress(0);
             let bloque = parser.guard_progress(1);

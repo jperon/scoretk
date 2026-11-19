@@ -206,6 +206,12 @@ pub(crate) enum Context {
     Transpose {
         from: PitchSpec,
         to: PitchSpec,
+        /// Vrai pour un `\transpose` littéral : son contenu reste absolu dans
+        /// un `\relative` environnant (Notation Reference §1.2.2). Faux quand
+        /// le corps vient d'une fonction `make-relative`, qui a déjà relu ses
+        /// arguments dans le contexte relatif avant de construire le
+        /// `TransposedMusic` (`scm/music-functions.scm`).
+        absolute: bool,
         music: Box<Music>,
     },
     /// `\transposition` : transposition de l'instrument pour la hauteur

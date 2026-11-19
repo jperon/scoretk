@@ -448,6 +448,27 @@ fn transpose_dans_relative_reste_absolu() {
     assert_eq!(fixe.measures.len(), 1);
 }
 
+#[test]
+fn make_relative_dans_transpose_garde_le_contexte_relative() {
+    // `scm/music-functions.scm` : `make-relative` relit ses arguments dans le
+    // `\relative` environnant AVANT de construire le `TransposedMusic`. Le
+    // `\transpose` n'est donc pas un corps littéral absolu (§1.2.2) : ses
+    // hauteurs doivent rester celles du contexte relatif. Source réduite de
+    // `input/regression/make-relative-copies.ly`, vérifiée contre le MIDI de
+    // LilyPond 2.27 (55, 59, 62, 67 par portée).
+    let source = "\
+        reltranspose = #(define-music-function (from to music) \
+          (ly:pitch? ly:pitch? ly:music?) \
+          (make-relative (music) music #{ \\transpose #from #to $music #})) \
+        mus = \\reltranspose c g { \\partial 4. c8 e g | c2 r8 c, e g c1 } \
+        \\score { \\new Staff \\relative \\mus }";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![55, 59, 62, 67, 55, 59, 62, 67]);
+    // Le `\partial 4.` décale la numérotation : huit noires tiennent dans
+    // trois mesures (levée + deux mesures pleines).
+    assert_eq!(score.measures.len(), 3);
+}
+
 /// Source réduite de la voix Piccolo de `Ad_te_Suspiramus.ly` : clef octave,
 /// `\relative` dans une variable, barres de contrôle, accord, silence et
 /// liaison, avec ou sans `\transposition`.

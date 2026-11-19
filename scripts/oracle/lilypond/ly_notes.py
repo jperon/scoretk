@@ -79,25 +79,33 @@ def read_midi(path: str) -> list[tuple[int, float, float, int]]:
     zéro, donc la somme des deltas dans une piste est bien l'attaque absolue
     en ticks, convertie en noires avec ``ticks_per_beat``. Les note-off et les
     note-on à vélocité nulle ferment l'attaque correspondante.
+
+    Comme dans `scripts/oracle/midi/midi_notes.py`, une **file** par couple
+    (canal, hauteur) : plusieurs notes peuvent se chevaucher sur la même
+    hauteur (`docs/agents/format-ref/midi.md`, §Channel Voice ; MuseScore
+    `midishared/midifile.cpp` apparie chaque note-on au premier note-off
+    encore libre). Une table simple écraserait l'attaque précédente.
     """
     import mido
+    from collections import defaultdict, deque
 
     mid = mido.MidiFile(path)
     tpb = mid.ticks_per_beat or 480
     notes: list[tuple[int, float, float, int]] = []
     for index, track in enumerate(mid.tracks):
         tick = 0
-        ouvertes: dict[tuple[int, int], int] = {}
+        ouvertes: dict[tuple[int, int], deque[int]] = defaultdict(deque)
         for msg in track:
             tick += msg.time
             if msg.is_meta:
                 continue
             cle = (msg.channel, msg.note) if hasattr(msg, "note") else None
             if msg.type == "note_on" and msg.velocity > 0:
-                ouvertes[cle] = tick
+                ouvertes[cle].append(tick)
             elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
-                debut = ouvertes.pop(cle, None)
-                if debut is not None:
+                file_attentes = ouvertes.get(cle)
+                if file_attentes:
+                    debut = file_attentes.popleft()
                     notes.append((msg.note, debut / tpb, (tick - debut) / tpb, index))
     return notes
 
