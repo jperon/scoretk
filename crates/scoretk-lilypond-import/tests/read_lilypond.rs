@@ -720,13 +720,19 @@ fn new_staff_imbrique_garde_sa_propre_voix() {
     assert_eq!(score.measures.len(), 2);
     let incipit = accords_de_voix(&score, 1);
     assert_eq!(
-        incipit.iter().map(|(_, pitches, _)| pitches.clone()).collect::<Vec<_>>(),
+        incipit
+            .iter()
+            .map(|(_, pitches, _)| pitches.clone())
+            .collect::<Vec<_>>(),
         vec![vec![60], vec![64], vec![67], vec![72]]
     );
     assert_eq!(incipit[0].0, Fraction::ZERO);
     let principal = accords_de_voix(&score, 0);
     assert_eq!(
-        principal.iter().map(|(_, pitches, _)| pitches.clone()).collect::<Vec<_>>(),
+        principal
+            .iter()
+            .map(|(_, pitches, _)| pitches.clone())
+            .collect::<Vec<_>>(),
         vec![vec![62], vec![65], vec![69], vec![74]]
     );
     assert_eq!(principal[0].0, Fraction::ONE);
@@ -1850,7 +1856,10 @@ fn timing_translator_dans_staff_rend_le_temps_local() {
         ]
     );
     assert_eq!(score.measures.len(), 3);
-    assert_eq!(hauteurs(&score), vec![60, 60, 60, 62, 62, 62, 48, 48, 48, 48]);
+    assert_eq!(
+        hauteurs(&score),
+        vec![60, 60, 60, 62, 62, 62, 48, 48, 48, 48]
+    );
 
     // Cas non concerné : sans déplacement du traducteur, un seul `\time`
     // vaut pour toute la partition ; la mesure reste celle de la portée 0.
