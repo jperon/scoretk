@@ -1,0 +1,281 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (C) 2026 jperon
+#
+# Deux modes de publication :
+#   - étiquette v* : release normale, notes générées, nom = étiquette ;
+#   - push sur master : rolling release « nightly », étiquette mobile déplacée,
+#     prerelease, anciens assets supprimés (concurrency : un seul run à la fois).
+# Rien n'est poussé depuis le poste de travail : publier une version se fait
+# avec `git tag v… && git push origin v…` (voir docs/agents/developpement.md).
+
+name: Releases
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+
+# La rolling annule le run précédent ; chaque étiquette v* a son propre groupe.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  meta:
+    name: Version et source exacte
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.calcul.outputs.version }}
+      nightly: ${{ steps.calcul.outputs.nightly }}
+      source_url: ${{ steps.calcul.outputs.source_url }}
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@v4
+
+      - name: Calcul de la version
+        id: calcul
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="$GITHUB_REF_NAME"
+            nightly=false
+            source_url="https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_REF_NAME"
+          else
+            # Version du Cargo.toml, suffixée pour la rolling : le code Rust
+            # n'est pas modifié (voir la section « Releases » de la doc).
+            base=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+            court="${GITHUB_SHA:0:7}"
+            jour=$(date -u +%Y%m%d)
+            version="${base}-nightly.${jour}.${court}"
+            nightly=true
+            source_url="https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_SHA"
+          fi
+          {
+            echo "version=$version"
+            echo "nightly=$nightly"
+            echo "source_url=$source_url"
+          } >> "$GITHUB_OUTPUT"
+          echo "version=$version, nightly=$nightly, source=$source_url"
+
+  cli:
+    name: CLI ${{ matrix.target }}
+    needs: meta
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            ext: ""
+            archive: tar.gz
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            ext: ""
+            archive: tar.gz
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            ext: ""
+            archive: tar.gz
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: ".exe"
+            archive: zip
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@v4
+
+      - name: Outils musl (Linux statique)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+
+      - name: Cible Rust
+        if: matrix.target != 'x86_64-unknown-linux-musl'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add "$TARGET"
+
+      - name: Compilation de la CLI
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --release --locked -p scoretk-cli --target "$TARGET"
+
+      # Obligations GPL §5/§6 : licence, avis, README et adresse de la source
+      # correspondante à la version exacte (étiquette ou commit de la nightly).
+      - name: Contenu de l'archive
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          EXT: ${{ matrix.ext }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          SOURCE_URL: ${{ needs.meta.outputs.source_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p staging dist
+          cp "target/$TARGET/release/scoretk$EXT" staging/
+          cp LICENSE NOTICE README.md staging/
+          {
+            printf 'scoretk %s (%s)\n' "$VERSION" "$TARGET"
+            printf 'Source correspondante (version exacte) : %s\n' "$SOURCE_URL"
+            printf 'Licence : GPL-3.0-only. Distribué SANS AUCUNE GARANTIE.\n'
+          } > staging/SOURCES.txt
+          ls -l staging
+
+      - name: Archive .tar.gz
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          tar -czf "dist/scoretk-${VERSION}-${TARGET}.tar.gz" \
+            -C staging scoretk LICENSE NOTICE README.md SOURCES.txt
+
+      - name: Archive .zip
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Force -Path staging/* `
+            -DestinationPath "dist/scoretk-${env:VERSION}-${env:TARGET}.zip"
+
+      - name: Envoi de l'artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  wasm:
+    name: Paquet wasm
+    needs: meta
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Requis par magic-nix-cache-action pour le cache GitHub Actions.
+      id-token: write
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installation de Nix
+        uses: DeterminateSystems/nix-installer-action@v23
+
+      - name: Cache Nix
+        uses: DeterminateSystems/magic-nix-cache-action@v15
+
+      - name: Construction du paquet
+        run: nix build .#wasm
+
+      - name: Paquet npm et avis GPL
+        shell: bash
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          SOURCE_URL: ${{ needs.meta.outputs.source_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist travail
+          cp -R result/. travail/
+          chmod -R u+w travail
+          # Le nom du paquet npm reste `scoretk` (contrat cantus) ; seule la
+          # version de package.json suit la release (`v` retiré pour npm).
+          # `files` est une liste blanche : ajouter SOURCES.txt, sinon l'avis
+          # GPL sur la source exacte serait absent du .tgz.
+          npm_version="${VERSION#v}"
+          (cd travail && npm pkg set version="$npm_version" 'files[]=SOURCES.txt')
+          {
+            printf 'scoretk %s (wasm32-unknown-unknown)\n' "$VERSION"
+            printf 'Source correspondante (version exacte) : %s\n' "$SOURCE_URL"
+            printf 'Licence : GPL-3.0-only. Distribué SANS AUCUNE GARANTIE.\n'
+          } > travail/SOURCES.txt
+          (cd travail && npm pack --pack-destination ../dist)
+          mv dist/scoretk-*.tgz "dist/scoretk-${VERSION}-wasm.tgz"
+          ls -l dist
+
+      - name: Envoi de l'artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm
+          path: dist/*
+          if-no-files-found: error
+
+  publication:
+    name: Publication de la release
+    needs: [meta, cli, wasm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@v4
+
+      - name: Téléchargement des artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artefacts
+          merge-multiple: true
+
+      - name: Sommes SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artefacts
+          liste=$(mktemp)
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort > "$liste"
+          while IFS= read -r fichier; do sha256sum "$fichier"; done < "$liste" > SHA256SUMS
+          rm "$liste"
+          cat SHA256SUMS
+
+      - name: Déplacement de l'étiquette mobile nightly
+        if: needs.meta.outputs.nightly == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f nightly
+          git push --force origin refs/tags/nightly
+
+      - name: Suppression des anciens assets de la nightly
+        if: needs.meta.outputs.nightly == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          anciens=$(gh release view nightly --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' 2>/dev/null || true)
+          while IFS= read -r asset; do
+            [ -n "$asset" ] || continue
+            gh release delete-asset nightly "$asset" --repo "$GITHUB_REPOSITORY" --yes
+          done <<< "$anciens"
+
+      - name: Release nightly (prerelease)
+        if: needs.meta.outputs.nightly == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: nightly
+          prerelease: true
+          generate_release_notes: false
+          overwrite_files: true
+          files: artefacts/*
+
+      - name: Release de version
+        if: needs.meta.outputs.nightly != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: artefacts/*

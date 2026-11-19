@@ -246,3 +246,73 @@ Ceux qui ne produisent aucune erreur visible :
 - **`<tick>` et durées** : voir les pièges du format dans
   `docs/agents/mscx-format.md` § 17 (tick implicite, `actualTicks`, ordre de
   `<dots>`, voix positionnelles, liaisons 3.x/4.x vs 5.0, spanners 5.0).
+
+## 9. Intégration continue et releases
+
+Deux workflows GitHub Actions vivent dans `.github/workflows/` et s'appuient
+sur Nix (même toolchain que `nix develop -c`) :
+
+- `ci.yml` — sur push et pull request vers `master` : `cargo fmt --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace`, les builds `wasm32-unknown-unknown` de la liste du
+  § Commandes de `AGENTS.md`, `nix build .#wasm` puis le test Node
+  `node-smoke.mjs`. Le corpus
+  `tests/corpus` est versionné ; le seul test lisant un fichier hors dépôt
+  (`change_dans_beam_cross_staff` de `scoretk-lilypond-import`) retourne
+  silencieusement quand ce fichier est absent, donc sans effet sur la CI.
+- `release.yml` — voir ci-dessous.
+
+Les deux fichiers se valident localement avec `actionlint` (`act` n'est pas
+installé dans le shell de dev) :
+
+```sh
+nix-shell -p actionlint --run 'actionlint .github/workflows/*.yml'
+```
+
+### Publier une version
+
+1. Mettre à jour `version` dans `[workspace.package]` de `Cargo.toml` (et, si
+   besoin, `version` de `flake.nix`) pour que `scoretk --version` et `version()`
+   du wasm coïncident avec l'étiquette.
+2. Laisser la CI passer sur `master`, puis :
+
+   ```sh
+   git tag v0.2.0 && git push origin v0.2.0
+   ```
+
+3. Le déclencheur `v*` crée la release GitHub nommée d'après l'étiquette, avec
+   des notes générées automatiquement. Ne pas la créer à la main.
+
+### Rolling release « nightly »
+
+Chaque push sur `master` produit une release **prerelease** sur l'étiquette
+mobile `nightly` : l'étiquette est déplacée sur le dernier commit et les
+anciens assets sont supprimés avant l'envoi des nouveaux (la concurrence annule
+un run de rolling encore en cours). Elle est toujours au même endroit :
+
+- <https://github.com/jperon/scoretk/releases/tag/nightly>
+
+`releases/latest` continue de désigner la dernière release `v*`, pas la
+rolling. Les archives portent la version calculée : l'étiquette `vX.Y.Z` pour
+une release normale, `0.1.0-nightly.AAAAAMMJJ.<sha court>` pour la rolling
+(version de base lue dans `Cargo.toml`). Le binaire CLI est compilé avec la
+version du `Cargo.toml` : la suffixation n'est pas réécrite dans le code Rust,
+elle apparaît dans les noms d'archives et dans la version du paquet npm. Pour
+qu'une nightly affiche son suffixe dans `scoretk --version`, il faudrait modifier
+le code : ce n'est pas fait ici.
+
+### Contenu des artefacts
+
+Pour chaque cible (`x86_64-unknown-linux-musl`, `aarch64-apple-darwin`,
+`x86_64-apple-darwin`, `x86_64-pc-windows-msvc`), une archive
+`scoretk-<version>-<cible>.tar.gz` (`.zip` sur Windows) contient le binaire
+`scoretk`, `LICENSE`, `NOTICE`, `README.md` et `SOURCES.txt`. Le paquet wasm
+(sortie de `nix build .#wasm`, empaquetée par `npm pack`) donne
+`scoretk-<version>-wasm.tgz` avec les mêmes avis. `SOURCES.txt` porte l'URL
+exacte de la source correspondante (étiquette ou commit de la nightly), comme
+l'exige la GPL §6 (voir `docs/agents/licence.md`). Un fichier `SHA256SUMS`
+global est joint à chaque release.
+
+Le workflow publie avec `GITHUB_TOKEN` et `permissions: contents: write`
+uniquement dans le job de publication ; les autres jobs restent en lecture
+seule. Aucune étiquette ni release n'est créée depuis le poste de travail.

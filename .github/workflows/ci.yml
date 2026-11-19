@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (C) 2026 jperon
+#
+# Intégration continue : mêmes commandes que le shell de dev local (§ Commandes
+# de AGENTS.md), exécutées dans Nix pour éviter toute divergence de toolchain.
+# `tests/corpus` est versionné : aucun checkout ni corpus tiers n'est nécessaire.
+# Le seul test qui lit un fichier hors dépôt
+# (`crates/scoretk-lilypond-import/tests/read_lilypond.rs`,
+# `/home/jacques/.../beam-cross-staff.ly`) retourne déjà silencieusement quand
+# le fichier est absent : il est donc sans effet sur un runner GitHub.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # Requis par magic-nix-cache-action pour le cache GitHub Actions.
+  id-token: write
+
+jobs:
+  verifications:
+    name: fmt, clippy, tests et wasm32
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installation de Nix
+        uses: DeterminateSystems/nix-installer-action@v23
+
+      # Cache des dérivations Nix entre les runs (pas de cache Cachix à créer).
+      - name: Cache Nix
+        uses: DeterminateSystems/magic-nix-cache-action@v15
+
+      - name: Formatage
+        run: nix develop -c cargo fmt --all -- --check
+
+      - name: Clippy (les avertissements sont des erreurs)
+        run: nix develop -c cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests de tout le workspace
+        run: nix develop -c cargo test --workspace
+
+      # Liste des crates portables donnée dans AGENTS.md, § Commandes.
+      - name: Compilation wasm32 des bibliothèques
+        shell: bash
+        run: |
+          set -euo pipefail
+          nix develop -c cargo build -p scoretk-core --target wasm32-unknown-unknown
+          nix develop -c cargo build -p scoretk-midi-common -p scoretk-midi-import -p scoretk-midi-export --target wasm32-unknown-unknown
+          nix develop -c cargo build -p scoretk-lilypond-common -p scoretk-lilypond-import -p scoretk-lilypond-export --target wasm32-unknown-unknown
+          nix develop -c cargo build -p scoretk-abc-common -p scoretk-abc-import -p scoretk-abc-export --target wasm32-unknown-unknown
+          nix develop -c cargo build -p scoretk-musescore-export --target wasm32-unknown-unknown
+          nix develop -c cargo build -p scoretk-musicxml-import --target wasm32-unknown-unknown
+          nix develop -c cargo build -p scoretk --target wasm32-unknown-unknown
+          nix develop -c cargo build -p scoretk-wasm --target wasm32-unknown-unknown
+
+      - name: Construction du paquet wasm
+        run: nix build .#wasm
+
+      - name: Test de fumée Node du paquet wasm
+        run: nix develop -c node crates/scoretk-wasm/tests/node-smoke.mjs
