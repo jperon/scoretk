@@ -124,6 +124,25 @@ impl Expander<'_> {
         let source_tokens = tokenize(source);
         let mut index = 0usize;
         while let Some(token) = source_tokens.get(index) {
+            // `#(ly:parser-include-string "…")` inclut son argument comme un
+            // fichier (`lily/lexer.ll`) : on le relit récursivement, avec le
+            // même garde-fou de profondeur que les `\include`.
+            if token.kind == Kind::Scheme {
+                if let Some(injected) = parser_include_string(&token.text) {
+                    let (line, column) = (token.line, token.column);
+                    if depth >= PROFONDEUR_MAX {
+                        self.warnings.push(
+                            line,
+                            column,
+                            "ly:parser-include-string ignoré : profondeur maximale dépassée",
+                        );
+                    } else {
+                        self.source(&injected, current, depth + 1);
+                    }
+                    index += 1;
+                    continue;
+                }
+            }
             if !token.is_command("include") {
                 self.tokens.push(token.clone());
                 index += 1;
@@ -215,6 +234,22 @@ impl Expander<'_> {
             ),
         }
     }
+}
+
+/// Argument texte d'un `#(ly:parser-include-string "…")`.
+///
+/// Le lexer lit toute l'expression Scheme en un seul jeton. On reconnaît
+/// l'appel précis (et non une expression quelconque contenant son nom) et on
+/// renvoie le contenu de sa chaîne, tel qu'il sera relu par le lexer.
+fn parser_include_string(datum: &str) -> Option<String> {
+    const APPEL: &str = "(ly:parser-include-string";
+    let reste = datum.trim_start().strip_prefix(APPEL)?.trim_start();
+    let reste = reste.strip_prefix('"')?;
+    let fin = reste.rfind('"')?;
+    if fin == 0 {
+        return None;
+    }
+    Some(reste[..fin].to_owned())
 }
 
 /// Langue d'un fichier de langue livré par LilyPond.

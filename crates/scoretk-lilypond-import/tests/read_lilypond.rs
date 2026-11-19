@@ -3058,3 +3058,20 @@ fn markup_sans_accolades_s_arrete_devant_une_fonction_musicale() {
     );
     assert_eq!(score.measures.len(), 1, "mesures");
 }
+
+#[test]
+fn parser_include_string_injecte_la_musique() {
+    // `#(ly:parser-include-string "…")` inclut son argument comme un fichier
+    // (`lily/lexer.ll`) : la musique injectée doit être lue, pas ignorée
+    // (régression `include-string`).
+    let source = "\\version \"2.19.22\"\n\
+         #(ly:parser-include-string \"\\relative { a4 b c d }\")";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![57, 59, 60, 62]);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![Fraction::new(1, 4); 4],
+        "durées"
+    );
+    assert_eq!(score.measures.len(), 1, "mesures");
+}
