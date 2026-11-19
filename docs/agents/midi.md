@@ -703,3 +703,103 @@ remaining `duree_seule` flags concern N2d only, not N2: the oracle still skips
 oracle limitation, left unchanged to keep the measurement stable). No importer
 change was needed for N2: the import was already faithful, and porting more
 MuseScore voice-separation code could only have degraded the result.
+
+## Phase 4 — tied-note oracle fix and N2d causes (2026-11-19)
+
+### Oracle: a tied chain is one note
+
+The `duree_seule` limitation above is now fixed in
+`scripts/oracle/midi/midi_notes.py::read_xml`. A sustained note crossing a
+barline is written in MusicXML as a chain of tied fragments
+(`<tie type="start"/>` … `<tie type="stop"/>`), one per measure, while the
+reference MIDI has a single note whose duration covers the whole sustain.
+The old reader discarded `<tie type="stop"/>` notes, so only the first
+fragment was counted. The reader now merges each chain into **one note** whose
+attack is the first fragment's and whose duration is the **sum** of all
+fragments. Chains are keyed by `(part, staff, voice, pitch)`, so two voices (or
+two staves) sustaining the same pitch in parallel stay separate. Grace notes
+are still skipped. `read_xml` is shared by scoretk and MuseScore, so the fix
+applies equally to both tools and the comparison stays fair. The reduced
+regression test `scripts/oracle/midi/test_ties.py` covers a chain across a
+barline, a three-fragment chain (stop + start in the middle), two parallel
+chains on different voices/staves, an unterminated tie at end of file and an
+untied repeated pitch (which must not merge). `test_backup.py` still passes.
+
+### Re-measurement (same manifests, same oracle, both tools)
+
+| Lot | Tool | Files | Exact before → after | N1 % | N2 % | N2d % |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| lecture_musique | scoretk | 1020 | 24.6 % → **58.4 %** | 100.00 | 100.00 | 97.83 |
+| lecture_musique | MuseScore 4.7.4 | 102 | 19.6 % → **46.1 %** | 100.00 | 100.00 | 97.85 |
+| lecture_mutopia | scoretk | 122 | 9.8 % → **40.2 %** | 99.80 | 99.80 | 96.08 |
+| lecture_mutopia | MuseScore 4.7.4 | 13 | 7.7 % → **23.1 %** | 100.00 | 83.73 | 75.38 |
+
+N1 and N2 are unchanged by the tie fix (they do not depend on the duration of
+a note). The exact rate jumps because N2d now matches the reference MIDI for
+sustained notes. On the Lakh robustness sample (1/20, 96 files) scoretk still
+converts 96/96 files, with a 7.02 s maximum and no timeout, under the standing
+`timeout 10 prlimit --as=2000000000` bound. In this worktree the
+`ecriture_mscz_corpus` manifest still points to a scratch worktree that no
+longer exists, so its 21 rows are oracle-side failures (missing reference
+MIDI), not scoretk failures; the other writing lots are unchanged from
+phase 3.
+
+### Remaining N2d mismatches grouped by cause
+
+Causes were counted note by note on the files sampled for both tools (every
+10th file, 102 on `~/Musique` and 13 on Mutopia), after pairing each reference
+note with the test note of the same pitch and an attack within ±1/16 quarter.
+Only pairs whose duration differs by more than that tolerance are counted.
+A *fair* subset was also built, restricted to files where both tools match
+every reference attack (N2 = reference), so the duration comparison is not
+confounded by MuseScore's attack shifts.
+
+| Cause | `~/Musique` tk / MuseScore | Mutopia tk / MuseScore | Verdict |
+| --- | ---: | ---: | --- |
+| Staccato/legato length (short note lengthened by one grid step) | 230 / 239 | 567 / 1058 | scoretk better |
+| Last note of the piece (one extra grid step at the end) | 27 / 40 | 7 / 14 | scoretk better |
+| Note-off quantisation (off-grid reference offsets) | 1 / 15 | 116 / 24 | see below |
+| Overlapping notes in one voice | 0 / 0 | 0 / 0 | equivalent |
+| Grace notes | 0 / 0 | 0 / 0 | equivalent |
+
+On the fair subset the aggregate is also in scoretk's favour: N2d
+**98.09 % vs 97.85 %** on `~/Musique` and **95.29 % vs 90.42 %** on Mutopia;
+the exact-file counts are 57 vs 47 and 6 vs 3. The aggregate N2d over all
+files (97.83 % vs 97.85 % on `~/Musique`) is a tie to within 0.02 percentage
+points, and scoretk wins clearly on Mutopia (96.08 % vs 75.38 %).
+
+The note-off-quantisation line is the only one where scoretk has more local
+mismatches, and it is an artefact of the comparison, not a defect worth a
+port: all 116 Mutopia cases come from three human-performance files
+(`KV331_2_1_menuetto`, `SchubertF-D899-2-Impromptu`, `KingCotton`), where the
+reference has offsets such as 191/384 or 1/3 quarter and MuseScore's own
+attack placement is wrong (for example N2 = 18.53 % on `KV331_2_1_menuetto`,
+against 100.00 % for scoretk). On those files the two tools are not aligning
+the same notes, so the duration counts are not comparable. Restricted to the
+fair subset, scoretk matches more note-offs than MuseScore on `~/Musique`
+(1 vs 15). The remaining local files where scoretk is lower on N2d
+(`Fait/04/lily-47b4b301`, `Fait/32/lily-a931e49d`, `Encantada`, `Etude1`) all
+belong to the staccato/legato and last-note causes above, where the aggregate
+still favours scoretk.
+
+### No importer change
+
+For every cause above scoretk equals or beats MuseScore, so per the stated
+rule the importer is left untouched: no port from
+`ref-musescore/src/importexport/midi/` was committed, and no file was dropped.
+One candidate was investigated and rejected: upstream
+`Simplify::minimizeNumberOfRests` skips a next chord that starts before the
+current note's off-time (`next->first < note.offTime`), whereas the port's
+`ChordMap::next_in_voice` does not. Adding the equivalent
+`next_in_voice_after` filter and rebuilding the CLI produced **identical**
+N2d on the affected files (92.48 %, 96.67 % and 94.05 % respectively), so the
+change was reverted rather than committed as a no-op with a misleading test.
+The other upstream difference, the `isHumanPerformance` flag that
+`lengthenNote` uses to relax its accuracy guard, is not threaded into
+`simplify.rs`, but it has no effect on these grid-aligned lots (both tools
+detect the same human performances, and the fair subset still favours
+scoretk). `MidiBeat::adjustChordsToBeats`, which aligns human performances to
+recognised beats, remains a documented limitation (§ "Limites mesurées"): it
+would be a separate feature port with a real risk to the 100 % N1/N2 baseline,
+not a localised N2d fix, so it is deliberately out of scope here. No
+conversion in this phase was run without `timeout` + `prlimit --as=2000000000`.
