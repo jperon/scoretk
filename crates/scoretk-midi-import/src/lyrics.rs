@@ -30,6 +30,77 @@ use scoretk_core::model::{Fraction, Lyrics, LyricsSyllabic, Score, SegmentItem, 
 
 use super::chord::MTrack;
 
+/// Parole RP-017 prête à être posée sur un accord.
+#[derive(Clone, Debug)]
+pub struct LyricEvent {
+    /// Attaque d'origine de la syllabe.
+    pub tick: Fraction,
+    /// Texte, sans le hyphen de syllabation ni les espaces de fin de mot.
+    pub text: String,
+    /// État de la syllabe dans son mot.
+    pub syllabic: LyricsSyllabic,
+    /// Durée du mélisme, quand des évènements vides prolongent la syllabe.
+    pub melisma: Option<Fraction>,
+}
+
+/// Décode les conventions RP-017 d'une piste de méta-évènements de paroles.
+///
+/// Un évènement vide prolonge la syllabe précédente (mélisme) ; un évènement
+/// dont le texte finit par un hyphen ouvre ou continue un mot, et le premier
+/// évènement vide au tick 0 sert de drapeau « on » sans syllabe à prolonger.
+/// MuseScore (`importmidi_lyrics.cpp`) ne décode aucune de ces conventions et
+/// pose chaque texte en `LyricsSyllabic::Single` : le portage suit ici RP-017,
+/// comme le demande la norme SMF.
+pub fn parse_rp017(events: &[(Fraction, String)]) -> Vec<LyricEvent> {
+    let mut result: Vec<LyricEvent> = Vec::new();
+    let mut pending: Option<LyricsSyllabic> = None;
+    let mut cursor = Fraction::ZERO;
+
+    for (tick, raw) in events {
+        let text = raw.trim_end_matches(' ').to_owned();
+        if text.is_empty() {
+            if let Some(previous) = result.last_mut() {
+                if *tick > cursor {
+                    let melisma = previous.melisma.get_or_insert(Fraction::ZERO);
+                    *melisma += *tick - cursor;
+                }
+            }
+            cursor = *tick;
+            continue;
+        }
+
+        let (text, word_ends) = match text.strip_suffix('-') {
+            Some(stem) => (stem.trim_end().to_owned(), false),
+            None => (text, true),
+        };
+        let syllabic = if word_ends {
+            match pending.take() {
+                Some(LyricsSyllabic::Begin) | Some(LyricsSyllabic::Middle) => {
+                    LyricsSyllabic::End
+                }
+                _ => LyricsSyllabic::Single,
+            }
+        } else {
+            let continuing = matches!(pending, Some(LyricsSyllabic::Begin | LyricsSyllabic::Middle));
+            let syllabic = if continuing {
+                LyricsSyllabic::Middle
+            } else {
+                LyricsSyllabic::Begin
+            };
+            pending = Some(syllabic);
+            syllabic
+        };
+        result.push(LyricEvent {
+            tick: *tick,
+            text,
+            syllabic,
+            melisma: None,
+        });
+        cursor = *tick;
+    }
+    result
+}
+
 /// Préfixe des textes réservés (`META_PREFIX`).
 const META_PREFIX: &str = "@";
 /// Préfixe des titres (`TEXT_PREFIX`).
@@ -54,16 +125,18 @@ fn remove_slashes(text: &str) -> String {
 
 /// Pose les paroles d'une piste (`addLyricsToScore`).
 ///
-/// `lyrics` contient les couples `(attaque d'origine, texte)`. Une parole est
-/// rattachée au premier accord dont une note porte cette attaque.
-pub fn set_lyrics(score: &mut Score, track: &MTrack, lyrics: &[(Fraction, String)]) {
+/// Une parole est rattachée au premier accord dont une note porte son attaque
+/// d'origine, avec l'état de syllabation et le mélisme décodés par
+/// [`parse_rp017`].
+pub fn set_lyrics(score: &mut Score, track: &MTrack, lyrics: &[LyricEvent]) {
     let Some(staff) = track.staff else {
         return;
     };
-    for (orig_tick, text) in lyrics {
-        if !is_lyric_text(text) {
+    for event in lyrics {
+        if !is_lyric_text(&event.text) {
             continue;
         }
+        let orig_tick = &event.tick;
         let Some((on_time, chord)) = track.chords.iter().find(|(_, chord)| {
             chord
                 .notes
@@ -81,7 +154,7 @@ pub fn set_lyrics(score: &mut Score, track: &MTrack, lyrics: &[(Fraction, String
             continue;
         };
         let track_id = Track::new(staff, voice as u8);
-        let text = remove_slashes(text);
+        let text = remove_slashes(&event.text);
         for segment in &mut score.measures[measure_index].segments {
             if segment.tick != on_time {
                 continue;
@@ -89,9 +162,9 @@ pub fn set_lyrics(score: &mut Score, track: &MTrack, lyrics: &[(Fraction, String
             let Some(SegmentItem::ChordRest(chord_rest)) = segment.element_mut(track_id) else {
                 continue;
             };
-            chord_rest
-                .lyrics
-                .push(Lyrics::new(0, LyricsSyllabic::Single, text.clone()));
+            let mut lyric = Lyrics::new(0, event.syllabic, text.clone());
+            lyric.melisma = event.melisma;
+            chord_rest.lyrics.push(lyric);
             break;
         }
     }

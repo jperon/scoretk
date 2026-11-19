@@ -1062,14 +1062,14 @@ fn process_lyric_meta(
             if *kind != meta::LYRIC && *kind != meta::TEXT {
                 continue;
             }
+            // Un texte vide est conservé : RP-017 en fait un mélisme (ou un
+            // drapeau « on » au tick 0), décodé par `parse_rp017`.
             let text = decode_meta_text(data);
-            if text.is_empty() {
-                continue;
-            }
             let tick =
                 midifile::to_muse_score_ticks(*tick, track.division, track.is_division_in_tps);
             lyrics.push((tick, text));
         }
-        lyrics::set_lyrics(score, track, &lyrics);
+        let parsed = lyrics::parse_rp017(&lyrics);
+        lyrics::set_lyrics(score, track, &parsed);
     }
 }

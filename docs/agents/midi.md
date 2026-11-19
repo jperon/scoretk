@@ -195,6 +195,13 @@ fixture binaire ajouté).
   même mais divise par la division déclarée (960 ticks MuseScore par seconde à
   120 BPM). Une carte des tempos SMPTE serait une fonctionnalité distincte.
   Vérifié par `smf_smpte` (30 et 29,97 images/s, plus un cas métrique inchangé).
+- **Paroles RP-017** : `parse_rp017` reconnaît l'évènement vide comme un
+  mélisme (durée cumulée sur la syllabe précédente), le hyphen final comme
+  `Begin`/`Middle` puis `End`, et ignore le drapeau « on » du tick 0. MuseScore
+  (`importmidi_lyrics.cpp`) pose chaque texte en `Single` et saute les évènements
+  vides : le portage suit la norme. RP-026 (commandes `\r`, jeux de caractères,
+  ruby) reste non décodé. Vérifié par `smf_lyrics` sur deux mesures avec huit
+  notes, hauteurs et durées incluses.
 
 ## Références et test de conformité
 
