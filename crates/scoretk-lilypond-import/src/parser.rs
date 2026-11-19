@@ -776,6 +776,14 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // `\new ChordNames` / `\new FiguredBass` portent une grille que
+        // LilyPond ne joue pas dans le MIDI : ni le contexte ni ses notes ne
+        // doivent apparaître dans la partition.
+        if kind == GroupKind::Other && matches!(name.as_str(), "ChordNames" | "FiguredBass") {
+            self.skip_nonplaying_grid(&name);
+            return None;
+        }
+
         // `\new Lyrics \lyricsto "…" { … }` et `\new Lyrics \addlyrics { … }`.
         if kind == GroupKind::Other && name == "Lyrics" {
             let target = if self.eat_command("lyricsto") {
@@ -2123,11 +2131,14 @@ impl<'a> Parser<'a> {
                 self.parse_with_block();
                 self.parse_music()
             }
-            // `\chords`, `\figures`, `\lyrics`, `\simultaneous`… ne font que
-            // changer le mode de lecture des jetons suivants ; la musique
-            // enveloppée reste la même. Sans ce cas, la commande était
-            // traitée comme inconnue et sa musique sautée, laissant le
-            // fichier sans partition.
+            // `\chords`, `\figures` et leurs alias ouvrent une grille non
+            // jouée : la sauter, sans faire échouer le fichier.
+            _ if is_nonplaying_mode_head(&name) => self.skip_nonplaying_grid(&name),
+            // `\lyrics`, `\simultaneous`, `\notemode`… ne font que changer le
+            // mode de lecture des jetons suivants ; la musique enveloppée
+            // reste la même. Sans ce cas, la commande était traitée comme
+            // inconnue et sa musique sautée, laissant le fichier sans
+            // partition.
             _ if is_mode_head(&name) => self.parse_music(),
             // `\markup` accepte une chaîne, une commande de mise en forme ou un
             // bloc entre accolades, mais pas nécessairement d'accolade autour
@@ -3088,6 +3099,19 @@ impl<'a> Parser<'a> {
         parts
     }
 
+    /// Ignore une grille d'accords ou de chiffres : LilyPond ne la joue pas
+    /// dans le MIDI (`ChordNames` / `FiguredBass`). On lit l'expression pour
+    /// la consommer entièrement (variables, blocs imbriqués) puis on la jette,
+    /// afin qu'aucune de ses notes n'atteigne la partition. Quand c'est la
+    /// seule musique, on signale la limite du sous-ensemble pour renvoyer une
+    /// partition vide plutôt qu'une erreur (cf. `lib.rs`).
+    fn skip_nonplaying_grid(&mut self, name: &str) -> Music {
+        let _ = self.parse_music();
+        self.warn(format!("\\{name} : grille non jouée, ignorée"));
+        self.warnings.mark_music_ignored();
+        Music::Empty
+    }
+
     /// Saute les arguments heuristiques d'une commande inconnue.
     fn skip_command_arguments(&mut self, name: &str) {
         if name.is_empty() {
@@ -3446,11 +3470,21 @@ fn anonymous_group(music: Music) -> GroupBlock {
     }
 }
 
+/// Têtes de mode qui décrivent une grille d'accords ou de chiffres
+/// (`mode_changing_head` de `lily/parser.yy`). Les contextes ChordNames et
+/// FiguredBass ne produisent pas de notes dans le MIDI de référence : leur
+/// contenu doit être sauté, comme avant l'introduction des têtes de mode
+/// transparentes.
+fn is_nonplaying_mode_head(name: &str) -> bool {
+    matches!(name, "chordmode" | "figuremode" | "chords" | "figures")
+}
+
 /// Commandes de changement de mode (`mode_changing_head` et
 /// `mode_changing_head_with_context` de `lily/parser.yy`, ainsi que
 /// `SIMULTANEOUS`). Elles modifient l'interprétation lexicale des jetons
 /// suivants (chordes, figures, paroles) ; pour le lecteur, la musique
-/// enveloppée reste une musique ordinaire.
+/// enveloppée reste une musique ordinaire, sauf les grilles non jouées
+/// ([`is_nonplaying_mode_head`]).
 fn is_mode_head(name: &str) -> bool {
     matches!(
         name,

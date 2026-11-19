@@ -119,13 +119,14 @@ pub fn read_lilypond_with_includes(
     if document.score.is_none() {
         if warnings.music_ignored() {
             // Un `\include` ignoré peut porter le `\score` (gabarits
-            // `satb.ly`, `ssaattbb.ly`) : ce n'est pas une erreur de syntaxe,
-            // mais une limite du sous-ensemble. On renvoie une partition
-            // vide avec un avertissement plutôt que d'échouer sur le fichier.
+            // `satb.ly`, `ssaattbb.ly`) ; une grille d'accords ou de chiffres
+            // peut aussi être la seule musique du fichier. Ce n'est pas une
+            // erreur de syntaxe, mais une limite du sous-ensemble. On renvoie
+            // une partition vide avec un avertissement plutôt que d'échouer.
             warnings.push(
                 0,
                 0,
-                "aucune partition lisible : la musique est contenue dans un include ignoré",
+                "aucune partition lisible : la musique est ignorée (include ou grille non jouée)",
             );
             let document = crate::ast::Document {
                 score: Some(crate::ast::ScoreAst::default()),

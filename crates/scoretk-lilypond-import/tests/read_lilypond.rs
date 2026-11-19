@@ -2980,35 +2980,66 @@ fn markup_sans_accolades_ne_mange_pas_la_musique() {
 }
 
 #[test]
-fn commandes_de_mode_ouvrent_la_musique() {
-    // Les têtes de mode (`\chords`, `\figures`, `\lyrics`,
-    // `\simultaneous`) changent l'interprétation lexicale des jetons
-    // suivants, mais la musique enveloppée reste lisible. Sans ce cas la
-    // commande était inconnue et sa musique sautée, laissant le fichier
-    // sans partition (régressions `chord-name-*`, `figured-bass-*`,
-    // `lyric-*`, `tag-filter`).
+fn grille_daccords_a_cote_dune_melodie() {
+    // `\chords` décrit une grille d'accords (contexte ChordNames) : LilyPond
+    // ne la joue pas dans le MIDI. Seule la mélodie doit produire des notes,
+    // même si la grille vient en premier (régressions `AuClairDeLaLune`,
+    // `HavaNagila` : notes d'accompagnement en trop).
     let source = "\\version \"2.24.0\"\n\
          \\language \"english\"\n\
          \\score { <<\n\
-           \\new Staff \\chords { c:7 d:m }\n\
+           \\chords { c:7 d:m }\n\
            \\new Staff { c'4 d'4 }\n\
          >> }";
     let score = read_lilypond(source).expect("lecture");
-    assert_eq!(hauteurs(&score), vec![48, 50, 60, 62]);
+    assert_eq!(hauteurs(&score), vec![60, 62], "notes de la mélodie seule");
     assert_eq!(
         durees_ecrites(&score),
         vec![Fraction::new(1, 4); 2],
-        "durées de la première portée"
+        "durées de la mélodie"
     );
     assert_eq!(score.measures.len(), 1, "mesures");
 
-    // Une tête de mode au niveau supérieur, sans `\score` explicite,
-    // fournit elle aussi une partition implicite ; la musique ordinaire
-    // reste inchangée.
+    // `\simultaneous` n'est pas une grille : il reste de la musique.
     let source = "\\version \"2.24.0\"\n\\simultaneous { c'4 d'4 e'4 }";
     let score = read_lilypond(source).expect("lecture partition implicite");
     assert_eq!(hauteurs(&score), vec![60, 62, 64]);
     assert_eq!(score.measures.len(), 1, "mesures implicites");
+}
+
+#[test]
+fn grilles_non_jouees_seules_et_contextes() {
+    // Une grille comme seule musique ne doit pas faire échouer le fichier :
+    // partition vide avec avertissement (cas limite, fin de fichier sans
+    // argument après `\chordmode`).
+    let (score, warnings) = read_lilypond_reporting("\\version \"2.24.0\"\n\\chords { c:7 d:m }")
+        .expect("grille seule");
+    assert!(hauteurs(&score).is_empty(), "aucune note de grille");
+    assert!(
+        warnings.iter().any(|w| w.message.contains("grille")),
+        "avertissement sur la grille ignorée : {warnings:?}"
+    );
+    let score = read_lilypond("\\version \"2.24.0\"\n\\chordmode").expect("chordmode seul en fin");
+    assert!(hauteurs(&score).is_empty(), "aucune note en fin de fichier");
+
+    // `\figures`, `\new ChordNames` et `\new FiguredBass` ne jouent pas
+    // davantage à côté d'une mélodie avec barre de contrôle.
+    let source = "\\version \"2.24.0\"\n\
+         \\language \"english\"\n\
+         \\score { <<\n\
+           \\new ChordNames { c1 d1 }\n\
+           \\figures { e1 f1 }\n\
+           \\new FiguredBass { g1 a1 }\n\
+           \\new Staff { c'4 d'4 | e'4 f'4 }\n\
+         >> }";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65], "mélodie seule");
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![Fraction::new(1, 4); 4],
+        "durées de la mélodie"
+    );
+    assert_eq!(score.measures.len(), 1, "mesures");
 }
 
 #[test]
