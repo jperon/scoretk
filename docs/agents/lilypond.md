@@ -1475,3 +1475,12 @@ The single `ecriture_ly` N2 loss remains the documented `LaMouetteGrise`
 chord-grid artefact. The `make-relative` fix above is visible on `ra`, where
 `make-relative-copies.ly` had dropped four notes (N1 16 → 12) before being
 restored to 16/16. No other lot changes.
+
+`oracle/compare.sh` still reports 280 DIFF rows because its frozen reference
+dates from 2026-11-18, before later merged commits (chord-grid playback, ABC
+and MIDI export changes). This was checked directly: the same script on a
+clean worktree at the pre-change commit `982a7fa` reports exactly the same 280
+rows, and the two freshly generated output trees are byte-identical
+(`diff -rq` empty). None of the DIFFs comes from these changes; none of the
+compared conversions has a `.ly` input, and the changed reader only affects
+`.ly` reading.
