@@ -1322,9 +1322,22 @@ directly:
 
   `\clef "treble_8"` and `\ottava` were compiled in isolation and do not
   change MIDI pitch (Notation Reference §1.3.1, §1.3.3), so keeping the written
-  octave remains correct. The only genuine reader fix in this area is the
-  `\transpose`-inside-`\relative` rule of the previous subsection, which
-  concerns two files outside this group.
+  octave remains correct.
+
+  The full LilyPond reading oracle then exposed the one exception to the
+  `\transpose` rule above: `input/regression/make-relative-copies.ly` defines a
+  music function with `make-relative` whose body is `#{ \transpose … #}`.
+  According to `scm/music-functions.scm`, `make-relative` **first reads its
+  arguments in the surrounding `\relative` context**, then builds the
+  `TransposedMusic`: the body is therefore already relative, not absolute,
+  even though `TransposedMusic` carries `no-relative-callback`. The reader now
+  records `make-relative` on the stored music function and marks such
+  `\transpose` envelopes `absolute: false`, so the interpreter keeps the
+  relative reference. Reduced test
+  `make_relative_dans_transpose_garde_le_contexte_relative` checks the eight
+  pitches (55, 59, 62, 67 per staff) and the measure count; the regression
+  file is back to N1 = N2 = 16/16. No file in the `ecriture_ly` octave group
+  uses this idiom.
 * **`notes_manquantes` (55 files).** 36 sources contain grace notes. The
   specification settles the semantics (Notation Reference §2.6.1): "Each grace
   note in MIDI output has a length of 1/4 of its actual duration. If the
