@@ -150,8 +150,66 @@ impl EventKind {
 
     /// Texte UTF-8 d'un méta-évènement (octets invalides remplacés).
     pub fn meta_text(&self) -> Option<String> {
-        self.meta_data()
-            .map(|data| String::from_utf8_lossy(data).into_owned())
+        self.meta_data().map(decode_meta_text)
+    }
+}
+
+/// Décode le texte d'un méta-évènement en une chaîne acceptable en XML 1.0.
+///
+/// Les caractères de contrôle C0 (hors tabulation, saut de ligne et retour
+/// chariot), ainsi que `U+FFFE`/`U+FFFF`, sont interdits en XML 1.0 et ne
+/// peuvent pas être échappés. De nombreux fichiers MIDI (dont le corpus Lakh)
+/// terminent leurs noms de piste par un octet NUL : sans ce filtrage, le nom se
+/// retrouve tel quel dans `<part-name>` et le MusicXML produit est mal formé.
+/// On retire ces caractères à la source, comme le fait le nettoyage appliqué
+/// par `XmlWriter` côté MuseScore.
+pub fn decode_meta_text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes)
+        .chars()
+        .filter(|character| is_xml_10_char(*character))
+        .collect()
+}
+
+/// Caractère autorisé par la production `Char` de la recommandation XML 1.0.
+fn is_xml_10_char(character: char) -> bool {
+    matches!(character, '\u{9}' | '\u{A}' | '\u{D}')
+        || ('\u{20}'..='\u{D7FF}').contains(&character)
+        || ('\u{E000}'..='\u{FFFD}').contains(&character)
+        || ('\u{10000}'..='\u{10FFFF}').contains(&character)
+}
+
+#[cfg(test)]
+mod meta_text_tests {
+    use super::{decode_meta_text, meta, EventKind};
+
+    #[test]
+    fn strips_trailing_nul_from_track_name() {
+        let raw = b"Back To Your Heart'\x00";
+        assert_eq!(decode_meta_text(raw), "Back To Your Heart'");
+    }
+
+    #[test]
+    fn keeps_ordinary_accents_and_xml_allowed_whitespace() {
+        let raw = "Percussion, \"Piano\"\t\n\r—é\n".as_bytes();
+        assert_eq!(decode_meta_text(raw), "Percussion, \"Piano\"\t\n\r—é\n");
+    }
+
+    #[test]
+    fn strips_control_characters_and_noncharacters() {
+        let raw = [b'A', 0x00, 0x01, 0x08, 0x0B, 0x0C, 0x1F, b'B'];
+        assert_eq!(decode_meta_text(&raw), "AB");
+        let utf16 = ['A', '\u{FFFE}', '\u{FFFF}', 'B'];
+        let encoded: String = utf16.iter().collect();
+        assert_eq!(decode_meta_text(encoded.as_bytes()), "AB");
+    }
+
+    #[test]
+    fn meta_text_uses_the_same_decoding() {
+        let event = EventKind::Meta {
+            kind: meta::TRACK_NAME,
+            data: b"Violon\x00".to_vec(),
+        };
+        assert_eq!(event.meta_text().as_deref(), Some("Violon"));
     }
 }
 

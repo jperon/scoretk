@@ -79,7 +79,7 @@ use chord::{
     MTrack, MidiChord, MidiNote,
 };
 use meter::{meter_to_duration_list, DurationKind};
-use midifile::{meta, EventKind, MidiFile, UNITS_PER_WHOLE};
+use midifile::{decode_meta_text, meta, EventKind, MidiFile, UNITS_PER_WHOLE};
 use operations::ImportOptions;
 use timesigmap::{fraction_from_ticks, TimeSigMap, Timesig};
 
@@ -495,7 +495,7 @@ fn process_non_lyric_meta(
             };
             match *kind {
                 meta::TRACK_NAME => {
-                    let text = String::from_utf8_lossy(data).into_owned();
+                    let text = decode_meta_text(data);
                     if track.name.is_empty() {
                         track.name = text;
                     }
@@ -519,10 +519,10 @@ fn process_non_lyric_meta(
                     track.has_key = true;
                 }
                 meta::COPYRIGHT => {
-                    score.metadata.copyright = String::from_utf8_lossy(data).into_owned();
+                    score.metadata.copyright = decode_meta_text(data);
                 }
                 meta::TITLE | meta::SUBTITLE | meta::COMPOSER | meta::TRANSLATOR | meta::POET => {
-                    let text = String::from_utf8_lossy(data).into_owned();
+                    let text = decode_meta_text(data);
                     match *kind {
                         meta::TITLE => score.metadata.work_title = text,
                         meta::SUBTITLE => score.metadata.subtitle = text,
@@ -1052,7 +1052,7 @@ fn process_lyric_meta(
             if *kind != meta::LYRIC && *kind != meta::TEXT {
                 continue;
             }
-            let text = String::from_utf8_lossy(data).into_owned();
+            let text = decode_meta_text(data);
             if text.is_empty() {
                 continue;
             }
