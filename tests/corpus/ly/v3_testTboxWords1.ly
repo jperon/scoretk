@@ -13,7 +13,6 @@ staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
   R1 ^\markup { "Above" } _\markup { "Below" } |
   R1*2 |
-  R1 |
   g1 ^\markup { "Staff Text" } _\markup { "Staff Text" } |
   g1 \bar "|."
 }

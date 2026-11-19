@@ -277,10 +277,22 @@ mod tests {
     #[test]
     fn transposition_des_instruments() {
         assert_eq!(transposition_command(0), None);
-        assert_eq!(transposition_command(-12).as_deref(), Some("\\transposition c"));
-        assert_eq!(transposition_command(-2).as_deref(), Some("\\transposition bf"));
-        assert_eq!(transposition_command(2).as_deref(), Some("\\transposition d'"));
-        assert_eq!(transposition_command(-7).as_deref(), Some("\\transposition f"));
+        assert_eq!(
+            transposition_command(-12).as_deref(),
+            Some("\\transposition c")
+        );
+        assert_eq!(
+            transposition_command(-2).as_deref(),
+            Some("\\transposition bf")
+        );
+        assert_eq!(
+            transposition_command(2).as_deref(),
+            Some("\\transposition d'")
+        );
+        assert_eq!(
+            transposition_command(-7).as_deref(),
+            Some("\\transposition f")
+        );
         assert_eq!(transposition_command(-200), None);
     }
 

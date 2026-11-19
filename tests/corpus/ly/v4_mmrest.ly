@@ -11,23 +11,9 @@ staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
   R1 |
   R1*3 |
-  R1 |
-  R1 |
-  \break
   R1*4 |
-  R1 |
-  R1 |
-  R1 |
-  \break
   R1*4 |
-  R1 |
-  R1 |
-  R1 |
-  \break
   R1*4 |
-  R1 |
-  R1 |
-  R1 \bar "|."
 }
 
 \score {

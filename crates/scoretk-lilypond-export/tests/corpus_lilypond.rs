@@ -246,8 +246,12 @@ fn couplets_compilables_sous_lilypond_2_26() {
             unreachable!()
         };
         content.notes.push(note_id);
-        chord.lyrics.push(Lyrics::new(0, LyricsSyllabic::Single, texte));
-        chord.lyrics.push(Lyrics::new(1, LyricsSyllabic::Single, texte));
+        chord
+            .lyrics
+            .push(Lyrics::new(0, LyricsSyllabic::Single, texte));
+        chord
+            .lyrics
+            .push(Lyrics::new(1, LyricsSyllabic::Single, texte));
         segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
         measure.add_segment(segment);
     }
@@ -265,6 +269,70 @@ fn couplets_compilables_sous_lilypond_2_26() {
     assert!(
         !produit.contains("\\stanza"),
         "\\stanza n'est pas compilable par LilyPond 2.26 :\n{produit}"
+    );
+}
+
+/// Un silence multi-mesures est marqué sur sa première mesure, mais les
+/// mesures suivantes existent aussi dans le modèle avec un silence de mesure.
+/// Écrire `R2.*N` puis N-1 fois `R2.` allonge la partition de N mesures et
+/// décale toutes les attaques (cas réel : `01- Magnificat.mscz`).
+#[test]
+fn silence_multi_mesures_non_double() {
+    let mut score = scoretk_core::model::Score::new();
+    let part = score.add_part(Part::new("Voice", "Vo."));
+    let staff = score.add_staff(part);
+    let mesure = |score: &mut scoretk_core::model::Score,
+                  index: usize,
+                  start: Fraction,
+                  len: Fraction,
+                  multi: Option<u16>,
+                  note: bool| {
+        let mut measure = Measure::new(index, start, Fraction::new(3, 4));
+        measure.len = len;
+        measure.nominal_len = Fraction::new(3, 4);
+        measure.multi_measure_rest = multi;
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+        let mut chord = if note {
+            ChordRest::chord(Duration::whole())
+        } else {
+            ChordRest::rest(Duration::measure())
+        };
+        if note {
+            let note_id = score.add_note(Note::new(60, tpc::C));
+            let ChordRestKind::Chord(ref mut content) = chord.kind else {
+                unreachable!()
+            };
+            content.notes.push(note_id);
+        }
+        segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+        measure.add_segment(segment);
+        measure
+    };
+    let trois_quarts = Fraction::new(3, 4);
+    for (index, start, len, multi, note) in [
+        (0, Fraction::ZERO, Fraction::new(9, 4), Some(3), false),
+        (1, trois_quarts, trois_quarts, None, false),
+        (2, Fraction::new(3, 2), trois_quarts, None, false),
+        (3, Fraction::new(9, 4), trois_quarts, None, true),
+    ] {
+        let measure = mesure(&mut score, index, start, len, multi, note);
+        score.add_measure(measure);
+    }
+
+    let produit = scoretk_lilypond_export::write_lilypond(&score).expect("écriture");
+    assert!(
+        produit.contains("R2.*3"),
+        "silence multi-mesures absent :\n{produit}"
+    );
+    assert_eq!(
+        produit.matches("R2.").count(),
+        1,
+        "les mesures couvertes par R2.*3 ne doivent pas être réécrites :\n{produit}"
+    );
+    assert_eq!(
+        produit.matches("c1").count(),
+        1,
+        "une seule note :\n{produit}"
     );
 }
 

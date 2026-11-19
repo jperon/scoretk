@@ -391,6 +391,9 @@ pub(crate) fn render_body(
     }
 
     let mut item_index = 0usize;
+    // Mesures couvertes par un `R` multi-mesures écrit plus haut : le modèle
+    // les porte avec leur propre silence, mais LilyPond les jouerait deux fois.
+    let mut multi_rest_left: u16 = 0;
     for (measure_index, measure) in score.measures.iter().enumerate() {
         for token in structure.before_measure(measure_index) {
             emitter.structure(*token);
@@ -399,6 +402,20 @@ pub(crate) fn render_body(
             emitter.token(&event.text);
         }
         emitter.flush_line();
+
+        // Le `R2.*N` précédent couvre cette mesure : on avance seulement son
+        // curseur d'éléments, sans réécrire son silence ni sa barre.
+        if multi_rest_left > 0 {
+            multi_rest_left -= 1;
+            item_index += items[item_index..]
+                .iter()
+                .take_while(|item| item.measure == measure_index)
+                .count();
+            for token in structure.after_measure(measure_index) {
+                emitter.structure(*token);
+            }
+            continue;
+        }
 
         let bar_check = measure_plan[measure_index].bar_check;
         let mut cursor = measure.start_tick;
@@ -420,16 +437,20 @@ pub(crate) fn render_body(
                 .iter()
                 .all(|item| item.chord_rest.is_rest());
             if all_rests {
-                let len = if measure.len.is_positive() {
-                    measure.len
-                } else {
+                // Le multiplicateur porte sur la mesure nominale : `R2.*30`
+                // et non `R1*9/4*30` pour 30 mesures de 3/4 (comportement de
+                // `musicxml2ly`).
+                let len = if measure.nominal_len.is_positive() {
                     measure.nominal_len
+                } else {
+                    measure.len
                 };
                 if len.is_positive() {
                     emitter.token(&format!("{}*{count}", measure_rest_token(len)));
                 }
                 item_index = end_of_measure;
                 multi_rest_done = true;
+                multi_rest_left = count - 1;
             }
         }
 
