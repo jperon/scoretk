@@ -81,6 +81,19 @@ pub(crate) fn render_voice(
         .iter()
         .flat_map(|item| item.chord_rest.lyrics.iter().map(|lyrics| lyrics.verse))
         .collect();
+    // § 5.1 : une ligne `w:` décale l'alignement du couplet suivant ; une
+    // ligne faite de `*` n'est donc utile que si une syllabe réelle vient
+    // encore après elle dans le même couplet. On retient la dernière mesure
+    // chantée de chaque couplet pour supprimer les lignes terminales, qui
+    // n'alignent aucune syllabe.
+    let mut last_sung: BTreeMap<usize, usize> = BTreeMap::new();
+    for item in &items {
+        for lyrics in &item.chord_rest.lyrics {
+            if !text::escape_lyric(&lyrics.text).is_empty() {
+                last_sung.insert(lyrics.verse, item.measure);
+            }
+        }
+    }
     let tuplet_counts = tuplet_counts(score, &items);
     let mut ranges = Vec::with_capacity(score.measures.len());
     let mut cursor = 0usize;
@@ -222,17 +235,28 @@ pub(crate) fn render_voice(
                         }
                     }
                 }
-                for token in &before[offset] {
-                    line.push_str(token);
-                }
                 let transpose = transpose_at(score, staff, item.tick) + 12 * clef_octave;
+                let mut grace = String::new();
                 let token = render_item(
                     score,
                     measure,
                     item.chord_rest,
                     &mut accidental_state,
                     transpose,
+                    &mut grace,
                 );
+                // § 4.20 de la norme ABC 2.1 : l'ordre d'un accord est
+                // `<grace notes>`, `<chord symbols>`, `<annotations>/<decorations>`,
+                // `<accidentals>`, `<note>`. Le groupe d'agréments précède donc
+                // les décorations ; sinon `abc2midi` rejette la note comme
+                // « Malformed note ». `xml2abc.py::mkNote` (ligne 1217) ouvre
+                // le groupe avant que `doDirection` (lignes 1040-1054) n'ajoute
+                // les décorations, et `doMaat` (ligne 656) les écrit dans cet
+                // ordre.
+                line.push_str(&grace);
+                for token in &before[offset] {
+                    line.push_str(token);
+                }
                 line.push_str(&token);
                 for token in &after[offset] {
                     line.push_str(token);
@@ -256,10 +280,10 @@ pub(crate) fn render_voice(
         out.push('\n');
 
         for lyric_line in lyrics_lines(
-            score,
             &items,
             &all_verses,
-            measure,
+            measure_index,
+            &last_sung,
             range.clone(),
             &mut pending_word,
         ) {
@@ -855,6 +879,7 @@ fn render_item(
     chord_rest: &ChordRest,
     accidental_state: &mut pitch::AccidentalState,
     transpose: i32,
+    grace: &mut String,
 ) -> String {
     if let Some(rest) = chord_rest.rest_ref() {
         if chord_rest.is_full_measure_rest() {
@@ -870,7 +895,7 @@ fn render_item(
     let Some(chord) = chord_rest.chord_ref() else {
         return String::new();
     };
-    render_chord(score, chord_rest, chord, accidental_state, transpose)
+    render_chord(score, chord_rest, chord, accidental_state, transpose, grace)
 }
 
 /// Rend un accord : agréments, hauteurs, durée, liaison.
@@ -880,6 +905,7 @@ fn render_chord(
     chord: &Chord,
     accidental_state: &mut pitch::AccidentalState,
     transpose: i32,
+    grace: &mut String,
 ) -> String {
     let mut token = String::new();
     let mut grace_group = String::new();
@@ -913,9 +939,9 @@ fn render_chord(
         }
     }
     if !grace_group.is_empty() {
-        token.push('{');
-        token.push_str(&grace_group);
-        token.push('}');
+        grace.push('{');
+        grace.push_str(&grace_group);
+        grace.push('}');
     }
 
     let notes: Vec<&Note> = chord
@@ -957,10 +983,10 @@ fn render_chord(
 
 /// Lignes `w:` de la mesure, une par couplet.
 fn lyrics_lines(
-    _score: &Score,
     items: &[Item<'_>],
     verses: &BTreeSet<usize>,
-    _measure: &Measure,
+    measure_index: usize,
+    last_sung: &BTreeMap<usize, usize>,
     range: std::ops::Range<usize>,
     pending_word: &mut bool,
 ) -> Vec<String> {
@@ -1005,9 +1031,20 @@ fn lyrics_lines(
                 }
             }
         }
-        if !tokens.is_empty() {
-            lines.push(format!("w: {}", tokens.join(" ")));
+        if tokens.is_empty() {
+            continue;
         }
+        // § 5.1 : sans syllabe réelle ultérieure, les `*` n'alignent rien ;
+        // ils seraient de l'octet sans information (et n'empêcheraient pas
+        // l'avertissement `abc2midi` sur une ligne de musique sans paroles).
+        if tokens.iter().all(|token| token == "*")
+            && last_sung
+                .get(&verse)
+                .is_none_or(|last| *last <= measure_index)
+        {
+            continue;
+        }
+        lines.push(format!("w: {}", tokens.join(" ")));
     }
     lines
 }

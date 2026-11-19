@@ -110,7 +110,12 @@ pub fn ornament_token(kind: &OrnamentType) -> Option<&'static str> {
         OrnamentType::Turn | OrnamentType::TurnSlash => "turn",
         OrnamentType::InvertedTurn => "invertedturn",
         OrnamentType::Mordent | OrnamentType::MordentLong => "mordent",
-        OrnamentType::InvertedMordent | OrnamentType::InvertedMordentLong => "invertedmordent",
+        // § 4.14 de la norme ABC 2.1 : `!mordent!` = `!lowermordent!` et
+        // `!uppermordent!` (abréviation `P`) sont définis, mais pas
+        // `!invertedmordent!`, qu'un lecteur conforme ignore. `xml2abc.py`
+        // (`note_ornamentation_map`, lignes 34-35) mappe précisément
+        // `mordent` sur `M` et `inverted-mordent` sur `P`.
+        OrnamentType::InvertedMordent | OrnamentType::InvertedMordentLong => "uppermordent",
         OrnamentType::Haydn => "haydn",
         OrnamentType::Schleifer => "schleifer",
         _ => return None,
@@ -145,7 +150,11 @@ pub fn parse_decoration(name: &str) -> Option<Decoration> {
         "emphasis" => Decoration::Articulation(ArticulationType::Stress),
         "trill" | "t" => Decoration::Ornament(OrnamentType::TrillMark),
         "mordent" | "m" => Decoration::Ornament(OrnamentType::Mordent),
-        "invertedmordent" | "p" => Decoration::Ornament(OrnamentType::InvertedMordent),
+        // § 4.14 : `!uppermordent!` est le nom long de l'abréviation `P`,
+        // accepté aussi bien à la lecture qu'à l'écriture.
+        "invertedmordent" | "uppermordent" | "p" => {
+            Decoration::Ornament(OrnamentType::InvertedMordent)
+        }
         "turn" => Decoration::Ornament(OrnamentType::Turn),
         "invertedturn" => Decoration::Ornament(OrnamentType::InvertedTurn),
         "haydn" => Decoration::Ornament(OrnamentType::Haydn),

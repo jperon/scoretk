@@ -1220,3 +1220,108 @@ these is counted as a cause of the writing gap.
 No corpus reference was regenerated with another MuseScore version; the
 snapshot changes of this pass are ten decoration-token renames and 13 added
 `w:` placeholder lines.
+
+### 17.7 Third pass: the ABC 2.1 clauses behind the messages (2026-11-20)
+
+This subsection is in English by convention for the measurement reports. The
+binary was frozen **before** any edit of this pass as `scoretk-final6`; the
+campaign below uses `scoretk-final7`. Both campaigns reused the same reference
+MIDI/MusicXML caches and every binary ran under
+`timeout 10 prlimit --as=2000000000`. All message counts below are from the
+single final run (digits replaced by `N` when grouping); the first baseline
+run was repeated and its raw journals contain each message twice, so only the
+per-file oracle summaries are used for the before/after totals.
+
+#### 17.7.1 Grouping every remaining `abc2midi` message
+
+| Message (normalised) | Final count | Clause of ABC 2.1 / `xml2abc.py` code | Action |
+| --- | ---: | --- | --- |
+| `Channel limit exceeded`, `All N MIDI channels used up` | ~68 000 | §7 defines one `V:` per voice and leaves staff grouping to `%%score` (§11.1); the 16-channel limit is an `abc2midi` implementation limit. `xml2abc.py` writes `V:` per **staff** from `s.clefs` (lines 431-435): 6 voices on `00- Adeste fideles - choeur.mscz` where scoretk writes 19. | Documented; merging independent voices would lose data in a conforming reader (§7). |
+| `Line of music without lyrics` | 14 874 | §5.1: "syllables are not aligned on grace notes, rests or spacers"; a `w:` after a rest-only line aligns nothing. `writePart` (lines 331-355) writes one `w:` per line to please `abc2midi`. | Documented as a tool heuristic; see §17.7.2. |
+| `Track N Bar N has N time units …`, `Track N is N.N quarter notes long …` | 3 653 | §3.1.6 `M:`, §4.3 note lengths, §4.8 bar lines. `doMaat` (line 674) and the measure grammar (lines 428-436) write `$` breaks and short rests. | Layout choice; `xml2abc.py` emits **more** of these than we do; no note is lost. |
+| `Different length notes in tuple`, `nested tuples` | 2 200 | §4.13 explicitly allows `(p:q:r` with unequal note values and nested groups ("notes of different lengths within a tuplet"). `xml2abc.py` writes the same general form (lines 602-606). | `abc2midi` limitation, documented, not bent. |
+| `instruction !N! ignored` (fingerings), `!>!`, `!tenuto!`, `!^!` | 4 963 | §4.14 defines `!0!`–`!5!`, `!>!, !tenuto!`; playback of most symbols is optional ("Player programs may choose to ignore most of the symbols"). `note_ornamentation_map` (lines 32-57) and `dynamics_map` (lines 59-71) write the same tokens. | Shared with the reference, documented. |
+| `Slur within slur` | 448 | §4.11: "Slurs may be nested". `matchSlur` (lines 1020-1036) writes nested slurs too. | `abc2midi` limitation, documented. |
+| `whitespace in field declaration`, `Potentially ambiguous line` | 238 | §4.8 makes `:|` the end-repeat symbol; the warning is `abc2midi`'s line heuristic. `addBar` (lines 263-278) writes the same `:|`. | Layout only, unchanged. |
+| `Unrecognized character: ,` / `N` | 34 | §4.10 allows `[1,3,5-7` endings ("any list of numbers and ranges as long as it contains no spaces"); `addBar` line 276 writes them. | `abc2midi` only handles `[1`/`[2`; documented. |
+| `instruction !<u>N</u>! ignored` | 6 (12 in baseline) | §4.14: an undefined symbol is ignored; the `<u>` markup comes from a MusicXML fingering. `xml2abc.py` line 1054 writes the raw fingering text. | Shared artefact, documented. |
+| `clef varbaritone not recognized` | 2 | §4.6 lists the clef names and says unknown names are ignored/default to treble. `xml2abc.py`'s `teken` table (line 1275) uses `bass`/`bass3` for F clefs on lines 4/3. | Left unchanged: our reader accepts `varbaritone` (`pitch.rs::parse_clef`); emitting `bass3` would change the clef sign and break the round-trip. Documented. |
+| `found [N or like before |:`, `Assuming repeat` | 4 | §4.9: `[1` without an explicit `|:` is legal ("in many abc files the `\|:` may not be present"); `addBar` lines 267-277 writes the same voltas. | `abc2midi` assumption, documented. |
+| `Malformed note : expecting a-g or A-G` | **0** (20 in baseline) | §4.20: "<grace notes>, <chord symbols>, <annotations>/<decorations>, …". A staccato dot before `{…}` is not a note. `mkNote` line 1217 opens the grace group before `doDirection` (lines 1040-1054) appends decorations; `doMaat` line 656 joins them in that order. | **Fixed** below. |
+| `instruction !invertedmordent! ignored` | **0** (1 in baseline) | §4.14 defines `!uppermordent!` (abbrev. `P`) but not `!invertedmordent!`, and says unknown symbols are ignored. `note_ornamentation_map` line 35 maps `inverted-mordent` to `P`. | **Fixed** below. |
+
+Three fixes landed, each with a failing test first:
+
+1. **Grace notes before decorations** (`voice.rs::render_chord`/`render_item`,
+   §4.20). `render_chord` now returns the `{…}` group separately and the voice
+   writer emits it before the decoration tokens. On the three
+   `Vingt_danses_enfantines_pour_piano*.mxl` files the malformed-note errors
+   disappear. Test `crates/scoretk/tests/abc_ecriture_ordre_agrements.rs`
+   (acciaccatura + staccato, tie, chord, rest, second staff without grace).
+2. **Terminal `w:` lines made only of `*`** (§5.1). A `w:` after the last real
+   syllable of a verse no longer aligns anything; it is dropped. Intermediate
+   star lines are kept because §5.1 starts the next verse's alignment "at the
+   first note after the notes aligned to the previous `w:` field". Four corpus
+   snapshots lose 12 such lines. Test
+   `crates/scoretk/tests/abc_ecriture_paroles_finales.rs`.
+3. **Inverted mordent** (`decorations.rs::ornament_token`, §4.14). The token is
+   now `!uppermordent!` and the reader accepts that long name as well; the
+   ordinary mordent stays `!mordent!`. Test
+   `crates/scoretk/tests/abc_ecriture_mordent_inverse.rs`.
+
+#### 17.7.2 The `w: *` check (§5.1)
+
+On the frozen baseline, 8 312 `w:` lines contained only `*`; 7 317 were
+followed by a real syllable **of the same verse** and are therefore required
+by §5.1, while 995 were terminal and carried no alignment information. Only
+the latter are now omitted (12 lines in four corpus snapshots). A rest-only line never gets a `w:` either:
+§5.1 does not align syllables on rests. Removing those lines raises the
+`Line of music without lyrics` count by ~2 600: `abc2midi` expects a `w:`
+after **every** music line of a sung voice, including lines with no alignable
+note. That expectation is not in §5.1, so it is documented rather than paid
+for with bytes.
+
+#### 17.7.3 Remaining N2d gaps on mscz01/mscz02, by cause
+
+| Cause | mscz01 | mscz02 | Diagnosis |
+| --- | ---: | ---: | --- |
+| `octave, notes_manquantes` with equal or nearly equal N1 | 10 | 26 | Oracle artefact of §17.5: the reference MIDI realizes ornaments and multi-measure voltas that neither written file contains. All 11 `mscz01` files where the alternative has a better N1 use the **same** MuseScore MusicXML (`xml_source = mscore`); the residual is attack placement and channel limit, not missing pitches. On `Stella_maris_instruments – SiB.mscz` both candidates now have the same pitch multiset (1 363/1 363). |
+| `attaque_decalee` | 0 | 1 | `00- Adeste fideles - choeur.mscz`: N1 100 % for both, N2 82.45 % vs 100 %. At tick 16 the reference has four simultaneous notes; our 19 `V:` exceed `abc2midi`'s 16 channels and two attacks are dropped, whereas `xml2abc.py` writes 6 `V:` (§7 permits one per voice, so this is a tool limit). |
+| shared low N1 (~56 %) | 0 | 7 | The seven `Minuit chretien` parts: both candidates miss the same reference notes; outside the writing scope (§15.3). |
+
+#### 17.7.4 Final campaign (frozen `scoretk-final7`)
+
+Same six chunks, same caches, foreground, all launches bounded.
+
+| Lot | Tool | Files | ABC OK | Exact | N1 % | N2 % | N2d % | Errors | Warnings | Mean .abc B |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 23 | 79.01 | 73.06 | 69.31 | 20 | 77 | 297 |
+| corpus | xml2abc | 56 | 56 | 23 | 78.96 | 68.23 | 64.79 | 39 | 165 | 338 |
+| mscz00 | scoretk | 44 | 32 | 10 | 86.15 | 75.07 | 69.10 | 0 | 1 160 | 3 689 |
+| mscz00 | xml2abc | 44 | 44 | 10 | 81.49 | 69.30 | 66.24 | 49 | 1 318 | 4 582 |
+| mscz01 | scoretk | 44 | 44 | 4 | 92.42 | 91.84 | 85.38 | 13 855 | 5 384 | 13 626 |
+| mscz01 | xml2abc | 44 | 44 | 4 | 92.62 | 92.43 | 85.92 | 13 389 | 859 | 14 938 |
+| mscz02 | scoretk | 44 | 44 | 0 | 75.46 | 58.61 | 53.83 | 49 895 | 6 211 | 16 056 |
+| mscz02 | xml2abc | 44 | 44 | 0 | 76.25 | 60.86 | 56.29 | 47 825 | 3 979 | 18 562 |
+| mscz03 | scoretk | 42 | 32 | 2 | 91.84 | 73.27 | 70.38 | 3 696 | 7 745 | 11 841 |
+| mscz03 | xml2abc | 42 | 40 | 4 | 92.22 | 74.15 | 71.84 | 5 903 | 2 432 | 13 088 |
+| xml | scoretk | 32 | 32 | 8 | 92.94 | 30.93 | 27.57 | 24 | 6 039 | 12 488 |
+| xml | xml2abc | 32 | 32 | 7 | 93.07 | 27.26 | 24.29 | 664 | 6 340 | 13 516 |
+
+Against the frozen baseline, per file: **7 metric gains, 5 losses**. The gains
+are the three `Vingt_danses_enfantines_pour_piano*.mxl` files (malformed notes)
+and a small duration gain on `Tarentella_Napoletana_Accordion_Solo.mscz`; no
+file gained or lost a pitch. The five
+losses all come from the §4.20 fix making `abc2midi` finally *realize* a
+fermata that the baseline's misplaced token caused it to ignore:
+`layout_elements.mscx` (N2 63.64 → 43.94), `copypaste_parts.mscx`
+(15.91 → 13.64) and `Il_Postino_accordion_solo.mscz` (34.05 → 33.83, N2d
+unchanged). A minimal ABC confirms it: `!fermata!{/=G}E2` gives E a 1-quarter
+duration, while the standard-conformant `{/=G}!fermata!E2` gives it 2 quarters
+and shifts the next attack. The MuseScore reference and `xml2abc.py` do not
+realize that fermata in these measures; this is the same oracle artefact as
+§17.5, not a regression of the writer. Oracle totals: errors
+67 518 → 67 490 (malformed notes and the unknown mordent gone), warnings
+24 018 → 26 616 (the documented `w:` effect); written `.abc` stays 2-19 %
+smaller than `xml2abc.py`'s. No corpus reference was regenerated and no file
+was dropped from a lot.
