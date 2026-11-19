@@ -2927,7 +2927,21 @@ impl<'a> Parser<'a> {
             // tant que les jetons restent du texte.
             while let Some(token) = self.peek().cloned() {
                 match token.kind {
-                    Kind::Str | Kind::Command => self.collect_markup_atom(&mut pieces),
+                    Kind::Command => {
+                        // Une commande qui est une variable, une fonction
+                        // musicale ou une commande de musique n'appartient
+                        // pas au texte : elle est appelée juste après le
+                        // markup (`\markup "étiquette" \musique ...`).
+                        if self.variables.contains_key(&token.text)
+                            || self.music_functions.contains_key(&token.text)
+                            || starts_music_command(&token.text)
+                            || is_mode_head(&token.text)
+                        {
+                            break;
+                        }
+                        self.collect_markup_atom(&mut pieces);
+                    }
+                    Kind::Str => self.collect_markup_atom(&mut pieces),
                     Kind::Word => {
                         if self.is_pitch_word(&token.text) {
                             break;

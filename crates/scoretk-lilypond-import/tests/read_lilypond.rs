@@ -2973,8 +2973,8 @@ fn markup_sans_accolades_ne_mange_pas_la_musique() {
     assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
     assert_eq!(
         durees_ecrites(&score),
-        vec![Fraction::new(1, 4); 2],
-        "durées de la première portée"
+        vec![Fraction::new(1, 4); 4],
+        "durées"
     );
     assert_eq!(score.measures.len(), 1, "mesures");
 }
@@ -3032,6 +3032,24 @@ fn raccourcis_sans_musique_ne_mangent_pas_la_suite() {
          testPercent = \\repeat percent \\etc\n\
          { \\testPercent c'4 d'4 }";
     let score = read_lilypond(source).expect("lecture etc");
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![Fraction::new(1, 4), Fraction::new(1, 4)],
+        "durées"
+    );
+    assert_eq!(score.measures.len(), 1, "mesures");
+}
+
+#[test]
+fn markup_sans_accolades_s_arrete_devant_une_fonction_musicale() {
+    // `\markup "0.50:" \example 0.50` : la chaîne appartient au markup, mais
+    // `\example` est une fonction musicale appelée juste après. Le markup ne
+    // doit pas l'avaler avec la suite (régression `magnifyStaff-space-alist`).
+    let source = "\\version \"2.24.0\"\n\
+         example = #(define-music-function (mag) (positive?) #{ c'4 d'4 #})\n\
+         \\markup \"0.50:\" \\example 0.50";
+    let score = read_lilypond(source).expect("lecture");
     assert_eq!(hauteurs(&score), vec![60, 62]);
     assert_eq!(
         durees_ecrites(&score),
