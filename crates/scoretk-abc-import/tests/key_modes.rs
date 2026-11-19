@@ -35,10 +35,12 @@ fn content(source: &str) -> (usize, Vec<u8>, Vec<f64>) {
         .measures
         .iter()
         .flat_map(|measure| measure.segments.iter())
-        .filter_map(|segment| segment.chord_rest(scoretk_core::model::Track::new(
-            scoretk_core::model::StaffId::from_index(0),
-            0,
-        )))
+        .filter_map(|segment| {
+            segment.chord_rest(scoretk_core::model::Track::new(
+                scoretk_core::model::StaffId::from_index(0),
+                0,
+            ))
+        })
         .map(|chord_rest| chord_rest.duration.ticks().as_f64())
         .collect();
     (score.measures.len(), pitches, durations)
@@ -54,11 +56,7 @@ fn mode_separe_par_un_espace() {
     let source = format!("X:1\nM:4/4\nL:1/8\nK:E Minor\n{MUSIC}");
     assert_eq!(
         content(&source),
-        (
-            2,
-            vec![60, 62, 64, 66, 67, 69, 71, 72],
-            vec![0.125; 8],
-        ),
+        (2, vec![60, 62, 64, 66, 67, 69, 71, 72], vec![0.125; 8],),
         "K:E Minor : F dièse, C et G naturels"
     );
 

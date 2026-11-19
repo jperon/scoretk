@@ -136,6 +136,21 @@ fn prepare(src: &str) -> Vec<Line> {
             pending = Some(Line { number, text });
             continue;
         }
+        // Port de la lecture de `abc2xml.py` (ligne 505, `abc_voice` analysé
+        // sur tout le texte d'une voix, espaces inclus) : une altération en fin
+        // de ligne (`... =` puis `(ed)` sur la suivante) appartient à la note
+        // suivante. On joint donc ces deux lignes comme pour `\`.
+        let champ = text.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+            && text.chars().nth(1) == Some(':');
+        let alteration_fin = !champ
+            && text
+                .chars()
+                .last()
+                .is_some_and(|c| matches!(c, '^' | '_' | '='));
+        if alteration_fin {
+            pending = Some(Line { number, text });
+            continue;
+        }
         if !text.trim().is_empty() {
             lines.push(Line { number, text });
         }
@@ -644,6 +659,17 @@ impl Reader {
                 self.handle_field(letter, value, line.number)?;
                 continue;
             }
+            if !self.seen_key {
+                // Port de `abc2xml.py::splitHeaderVoices` (lignes 833-837) :
+                // tout ce qui précède le champ `K:` est un en-tête. Une ligne
+                // sans champ (`3/8=120` par exemple) est signalée et sautée,
+                // au lieu de faire rejeter l'air entier.
+                self.warnings.push(Warning::new(
+                    line.number,
+                    format!("ligne « {text} » avant K: ignorée"),
+                ));
+                continue;
+            }
             if self.voices.is_empty() {
                 let fields = VoiceFields {
                     number: 1,
@@ -756,10 +782,28 @@ impl Reader {
                 self.tempo = parse_tempo(value);
             }
             'K' => {
-                let parsed = pitch::parse_key(value).ok_or_else(|| Error::TonaliteInvalide {
-                    line: number,
-                    text: value.to_owned(),
-                })?;
+                // Port de `abc2xml.py::doHeaderField` (lignes 1812-1813,
+                // 1824-1828) : les altérations explicites séparées par un
+                // espace (`K:C ^F _B`) sont signalées et sautées ; le modèle
+                // pivot n'a pas de signature graphique pour les porter.
+                let nettoye = strip_key_accidentals(value, number, &mut self.warnings);
+                let parsed = match pitch::parse_key(&nettoye) {
+                    Some(parsed) => parsed,
+                    None => {
+                        // Un champ sans tonique (`K:treble+8`) ne fait pas
+                        // rejeter l'air : le script n'écrit alors aucune
+                        // armure, soit C majeur par défaut.
+                        self.warnings.push(Warning::new(
+                            number,
+                            format!("tonalité « {value} » non reconnue, C majeur pris par défaut"),
+                        ));
+                        scoretk_abc_common::pitch::ParsedKey {
+                            key: KeySig::new(Key::C),
+                            exotic_mode: None,
+                            parameters: Vec::new(),
+                        }
+                    }
+                };
                 self.seen_key = true;
                 if !self.header_done {
                     self.header_key = parsed.key.clone();
@@ -917,6 +961,40 @@ impl Reader {
     }
 }
 
+/// Retire d'un champ `K:` les altérations explicites séparées par un espace.
+///
+/// Port de `abc2xml.py` 269, `doHeaderField` (lignes 1812-1813 et 1824-1828) :
+/// `^F`, `_B`, `=c`, `^/f` sont des altérations graphiques de la signature.
+/// Le modèle pivot ne les porte pas ; on les signale et on les saute plutôt
+/// que de rejeter tout l'air.
+fn strip_key_accidentals(value: &str, line: usize, warnings: &mut Vec<Warning>) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    let mut out = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        let character = chars[index];
+        if matches!(character, '^' | '_' | '=') && (index == 0 || chars[index - 1].is_whitespace())
+        {
+            let mut end = index + 1;
+            while end < chars.len() && (chars[end].is_ascii_digit() || chars[end] == '/') {
+                end += 1;
+            }
+            if end < chars.len() && chars[end].is_ascii_alphabetic() {
+                let token: String = chars[index..=end].iter().collect();
+                warnings.push(Warning::new(
+                    line,
+                    format!("altération explicite « {token} » dans K: ignorée"),
+                ));
+                index = end + 1;
+                continue;
+            }
+        }
+        out.push(character);
+        index += 1;
+    }
+    out
+}
+
 /// Analyse une indication de mesure.
 fn parse_time(text: &str, line: usize) -> Result<TimeSig> {
     let trimmed = text.trim();
@@ -936,13 +1014,20 @@ fn parse_time(text: &str, line: usize) -> Result<TimeSig> {
                 line,
                 text: trimmed.to_owned(),
             })?;
+    // Port de `abc2xml.py::doFields` (ligne 1800, `eval(beats)`) : une mesure
+    // additive telle que `2+3/8` vaut la somme de ses termes, soit 5/8.
     let numerator: i32 = numerator
         .trim()
-        .parse()
-        .map_err(|_| Error::MesureInvalide {
-            line,
-            text: trimmed.to_owned(),
-        })?;
+        .split('+')
+        .map(|term| {
+            term.trim()
+                .parse::<i32>()
+                .map_err(|_| Error::MesureInvalide {
+                    line,
+                    text: trimmed.to_owned(),
+                })
+        })
+        .sum::<Result<i32>>()?;
     let denominator: i32 = denominator
         .trim()
         .parse()

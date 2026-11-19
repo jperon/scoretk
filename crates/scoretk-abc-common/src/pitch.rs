@@ -377,9 +377,11 @@ pub struct ParsedKey {
 fn looks_like_mode(word: &str) -> bool {
     let lowered = word.to_ascii_lowercase();
     lowered == "m"
-        || ["maj", "min", "aeo", "ion", "dor", "phr", "lyd", "mix", "loc"]
-            .iter()
-            .any(|prefix| lowered.starts_with(prefix))
+        || [
+            "maj", "min", "aeo", "ion", "dor", "phr", "lyd", "mix", "loc",
+        ]
+        .iter()
+        .any(|prefix| lowered.starts_with(prefix))
 }
 
 /// Analyse un champ `K:` (valeur après `K:`).
@@ -395,7 +397,10 @@ pub fn parse_key(text: &str) -> Option<ParsedKey> {
     let mut tonic_text = first.to_owned();
     let mut rest = Vec::new();
     if let Some(next) = parts.next() {
-        let word: String = next.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+        let word: String = next
+            .chars()
+            .take_while(|c| c.is_ascii_alphabetic())
+            .collect();
         if looks_like_mode(&word) {
             tonic_text.push_str(&word);
         } else {
@@ -448,15 +453,19 @@ pub fn parse_key(text: &str) -> Option<ParsedKey> {
         }
     }
     let suffix = rest.to_ascii_lowercase();
-    let mode = match suffix.as_str() {
-        "" | "maj" | "major" | "ion" | "ionian" => Mode::Ionian,
-        "m" | "min" | "minor" | "aeo" | "aeolian" => Mode::Aeolian,
-        "dor" | "dorian" => Mode::Dorian,
-        "phr" | "phrygian" => Mode::Phrygian,
-        "lyd" | "lydian" => Mode::Lydian,
-        "mix" | "mixolydian" => Mode::Mixolydian,
-        "loc" | "locrian" => Mode::Locrian,
-        _ => return None,
+    // Port de `abc2xml.py::doHeaderField` (lignes 1815-1817) : seul le
+    // préfixe de trois lettres du mode est significatif, et un préfixe
+    // inconnu est traité comme majeur (`if mode not in s.offTab: mode='maj'`).
+    let court: String = suffix.chars().take(3).collect();
+    let mode = match court.as_str() {
+        "" | "maj" | "ion" => Mode::Ionian,
+        "m" | "min" | "aeo" => Mode::Aeolian,
+        "dor" => Mode::Dorian,
+        "phr" => Mode::Phrygian,
+        "lyd" => Mode::Lydian,
+        "mix" => Mode::Mixolydian,
+        "loc" => Mode::Locrian,
+        _ => Mode::Ionian,
     };
 
     let major_letter = shifted_letter(letter, -mode.letter_offset());

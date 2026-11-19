@@ -91,6 +91,22 @@ impl Parser<'_> {
                 }
                 '{' => self.parse_grace()?,
                 '}' => self.pos += 1,
+                // `=20` après une barre est un numéro de mesure ; comme
+                // l'élément `errors` de `abc2xml.py` (ligne 431), on le signale
+                // et on le saute au lieu d'essayer d'en faire une note.
+                '=' if self.peek_at(1).is_some_and(|c| c.is_ascii_digit()) => {
+                    self.warn("numéro de mesure « =… » ignoré");
+                    self.pos += 1;
+                    while self.peek().is_some_and(|c| c.is_ascii_digit()) {
+                        self.pos += 1;
+                    }
+                }
+                // Une altération en fin de ligne, sans note après elle, est
+                // sautée localement comme le `errors` d'`abc2xml.py` (ligne 431).
+                '^' | '_' | '=' if !self.accidental_has_note() => {
+                    self.warn("altération sans note, ignorée");
+                    self.pos += 1;
+                }
                 'A'..='G' | 'a'..='g' | 'z' | 'Z' | 'x' | 'X' | '^' | '_' | '=' => {
                     self.parse_chord_or_note()?
                 }
@@ -111,11 +127,24 @@ impl Parser<'_> {
                 '<' | '>' => {
                     self.pos += 1;
                 }
+                // Port de `abc2xml.py` 269, `basenote` (ligne 367) et
+                // `noteActn` (ligne 549) : `y` est un espacement typographique,
+                // jamais une note ; il est écarté avec sa durée.
+                'y' => {
+                    self.warn("espacement « y » ignoré");
+                    self.pos += 1;
+                }
+                // Port de `abc2xml.py::tie` (ligne 380, `oneOf('.- -')`) : un
+                // tiret séparé de la note par un espace, un rythme brisé ou un
+                // agrément reste une liaison, pas une erreur de lecture.
+                '-' => self.tie_last_note(),
+                // Port de l'élément `errors` de la grammaire d'`abc2xml.py`
+                // (ligne 431, `pas(r'[^:&|]')` avec `errorWarn`) : un symbole
+                // égaré est signalé et sauté localement. Un air entier n'est
+                // jamais rejeté pour un tel caractère.
                 other => {
-                    return Err(Error::LigneInvalide {
-                        line: self.line,
-                        message: format!("caractère inattendu « {other} »"),
-                    });
+                    self.warn(format!("caractère égaré « {other} » ignoré"));
+                    self.pos += 1;
                 }
             }
         }
@@ -337,11 +366,19 @@ impl Parser<'_> {
                         self.bump();
                         break;
                     }
+                    // Port de `abc2xml.py`, `chord_note = dec_note | rest | b1`
+                    // (lignes 383-385) : une décoration peut précéder chaque
+                    // note d'un accord (`[.e.g]`, `[C(E]`). On la signale et
+                    // on la saute, comme le fait `errorWarn` pour `b1`.
+                    Some('(' | ')' | '.' | '!' | '+' | '~' | ',' | '`' | '$') => {
+                        self.warn("décoration dans un accord ignorée");
+                        self.pos += 1;
+                    }
+                    // Un accord coupé par une fin de ligne n'est pas une
+                    // raison de rejeter tout l'air : on le referme ici.
                     None => {
-                        return Err(Error::LigneInvalide {
-                            line: self.line,
-                            message: "accord non fermé".to_owned(),
-                        });
+                        self.warn("accord non fermé, traité comme fermé");
+                        break;
                     }
                     _ => {
                         let (note, _, _) = self.read_note()?;
@@ -464,6 +501,18 @@ impl Parser<'_> {
             }
             self.warn("micro-intervalle arrondi au demi-ton le plus proche");
         }
+        // Port de la grammaire insensible aux espaces d'`abc2xml.py`
+        // (`abc_voice.zonderWit()`, ligne 505) : `= (ed)` sur deux lignes
+        // jointes est une altération suivie de la note `e`, pas une erreur.
+        self.skip_spaces();
+        // Port de `abc2xml.py`, `dec_note = Optional(decorations) + pitch`
+        // (lignes 377/384) : un phrasé ou un staccato peut séparer l'altération
+        // de la note (`= (ed)`). Ces décorations sont signalées et sautées.
+        while matches!(self.peek(), Some('(' | ')' | '.')) {
+            self.warn("décoration entre altération et note ignorée");
+            self.pos += 1;
+            self.skip_spaces();
+        }
         let letter = self.bump().ok_or(Error::LigneInvalide {
             line: self.line,
             message: "hauteur attendue".to_owned(),
@@ -544,9 +593,15 @@ impl Parser<'_> {
     }
 
     /// Consomme un tiret de prolongation.
+    ///
+    /// Port de `abc2xml.py::tie` (ligne 380, `oneOf('.- -')`) : la forme `.-`
+    /// est un seul tiret, pas un staccato suivi d'une erreur.
     fn eat_tie(&mut self) -> bool {
         if self.peek() == Some('-') {
             self.pos += 1;
+            true
+        } else if self.peek() == Some('.') && self.peek_at(1) == Some('-') {
+            self.pos += 2;
             true
         } else {
             false
@@ -676,6 +731,68 @@ impl Parser<'_> {
             annotations,
         });
         voice.last_line_chords.push((measure, index));
+    }
+
+    /// Vrai si une lettre de hauteur suit l'altération courante, en ignorant
+    /// les espaces, les décorations de phrasé et les autres altérations.
+    ///
+    /// Port de la grammaire insensible aux espaces d'`abc2xml.py`
+    /// (`abc_voice.zonderWit()`, ligne 505) et de la tolérance de `errors`
+    /// (ligne 431) : une altération orpheline est sautée, pas fatale.
+    fn accidental_has_note(&self) -> bool {
+        let mut index = self.pos;
+        while let Some(character) = self.chars.get(index).copied() {
+            if character.is_whitespace()
+                || matches!(character, '(' | ')' | '.' | '^' | '_' | '=' | '/')
+                || character.is_ascii_digit()
+            {
+                index += 1;
+            } else {
+                return ('A'..='G').contains(&character.to_ascii_uppercase());
+            }
+        }
+        false
+    }
+
+    /// Rattache à la dernière note un tiret rencontré dans la boucle
+    /// principale (après un espace, un rythme brisé ou un agrément).
+    ///
+    /// Port de `abc2xml.py::tie` (ligne 380) et de la grammaire insensible aux
+    /// espaces du script (`abc_voice.zonderWit()`, ligne 505) : dans `G4 - G8`
+    /// ou `A>-A`, le tiret appartient à la note précédente. Le modèle ne
+    /// referme la liaison que quand la note suivante est lue (`link_ties`).
+    fn tie_last_note(&mut self) {
+        self.pos += 1;
+        let Some((measure, index)) = self.voice().last_line_chords.last().copied() else {
+            self.warn("liaison sans note précédente, ignorée");
+            return;
+        };
+        let voice = &self.reader.voices[self.voice];
+        // La mesure en cours n'est pas encore dans `voice.measures` : son
+        // index vaut précisément `measures.len()` tant qu'elle n'est pas finie.
+        let events = if measure == voice.measures.len() {
+            &voice.current.events
+        } else {
+            &voice.measures[measure].events
+        };
+        let notes: Vec<(NoteId, u8)> = events
+            .get(index)
+            .and_then(|event| event.chord_rest.chord_ref())
+            .map(|chord| {
+                chord
+                    .notes
+                    .iter()
+                    .map(|id| (*id, self.reader.score.note(*id).pitch))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if notes.is_empty() {
+            self.warn("liaison sans note précédente, ignorée");
+            return;
+        }
+        for (id, pitch) in notes {
+            self.voice().pending_ties.insert(pitch, id);
+        }
     }
 
     /// Abandonne les liaisons en attente dont la hauteur n'est pas présente.
@@ -843,11 +960,16 @@ impl Parser<'_> {
             self.pos += 1;
             if self.peek() == Some('|') && self.peek_at(1) == Some(']') {
                 self.pos += 2;
-                return self.finish_bar(BarLineType::Normal, false, None);
+                // Port de `abc2xml.py`, `volta` (lignes 419-421) et
+                // `bar_left` (ligne 427) : un numéro peut suivre la barre
+                // invisible (`[|]1`) comme une barre ordinaire (`|1`).
+                let volta = self.read_volta_numbers();
+                return self.finish_bar(BarLineType::Normal, false, volta);
             }
             if self.peek() == Some(']') {
                 self.pos += 1;
-                return self.finish_bar(BarLineType::Normal, false, None);
+                let volta = self.read_volta_numbers();
+                return self.finish_bar(BarLineType::Normal, false, volta);
             }
             return self.parse_bar();
         }
@@ -895,11 +1017,18 @@ impl Parser<'_> {
                     self.bump();
                     break;
                 }
+                // Port de `abc2xml.py`, `chord_note = dec_note | rest | b1`
+                // (lignes 383-385) : une décoration peut précéder chaque note
+                // d'un accord (`[.e.g]`, `[C(E]`). On la signale et on la saute.
+                Some('(' | ')' | '.' | '!' | '+' | '~' | ',' | '`' | '$') => {
+                    self.warn("décoration dans un accord ignorée");
+                    self.pos += 1;
+                }
+                // Un accord coupé par une fin de ligne ne fait pas rejeter
+                // tout l'air : on le referme ici avec un avertissement.
                 None => {
-                    return Err(Error::LigneInvalide {
-                        line: self.line,
-                        message: "accord non fermé".to_owned(),
-                    });
+                    self.warn("accord non fermé, traité comme fermé");
+                    break;
                 }
                 _ => {
                     let (note, _, _) = self.read_note()?;
@@ -1259,10 +1388,17 @@ C, D, E, F, | ^/G, A, B, c |]
         let double = parse("^//C2 |");
         assert_eq!(contenu(&double).0, vec![61]);
         let incomplet = "X:1\nT:Test\nM:4/4\nL:1/8\nK:C\nC ^/ |\n";
-        assert!(
+        let orphelin =
             crate::reader::read_abc_with(incomplet, &crate::reader::ReadOptions::default())
-                .is_err(),
-            "une hauteur manquante reste une erreur"
+                .expect("une altération orpheline est sautée, pas fatale");
+        assert_eq!(orphelin.score.notes.len(), 1, "seul le `C` est lu");
+        assert_eq!(orphelin.score.notes[0].pitch, 60);
+        assert!(
+            orphelin
+                .warnings
+                .iter()
+                .any(|warning| warning.message.contains("altération sans note")),
+            "l'altération orpheline doit être signalée"
         );
     }
 
