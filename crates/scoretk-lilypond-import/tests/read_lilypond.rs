@@ -3573,10 +3573,13 @@ fn commande_sans_argument_ne_veure_pas_le_bloc_musique_suivant() {
 
     // Une commande inconnue en fin de flux ne consomme rien, et une musique
     // sans commande inconnue reste inchangée (cas non concerné).
-    let score = read_lilypond(
-        "\\score { \\new Staff { \\fixed c' { c'4 d' | e'2 r | } \\autoBeamOff } }",
-    )
-    .expect("lecture fin de flux");
-    assert_eq!(hauteurs(&score), vec![72, 74, 76], "musique avant la commande");
+    let score =
+        read_lilypond("\\score { \\new Staff { \\fixed c' { c'4 d' | e'2 r | } \\autoBeamOff } }")
+            .expect("lecture fin de flux");
+    assert_eq!(
+        hauteurs(&score),
+        vec![72, 74, 76],
+        "musique avant la commande"
+    );
     assert_eq!(score.measures.len(), 2, "mesures avant la commande");
 }
