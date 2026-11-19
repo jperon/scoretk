@@ -119,12 +119,21 @@ scripts de **Willem Vree** :
   by the Free Software Foundation », **sans numéro de version**. La LGPL 2.1
   § 3 autorise la conversion en GPL ; la distribution reste en
   **GPL-3.0-only**.
+- **Sources portées.** Depuis la phase 1 de la campagne ABC (2026-11-19),
+  `abc2xml.py` est une **source portée** au même titre que MuseScore : le lecteur
+  `crates/scoretk-abc-import/` reprend ses noms de fonctions et sa structure
+  (`doNotations` pour les liaisons entre hauteurs différentes, `long_decoration`
+  / `linebreak` pour la récupération d'un `!` orphelin ; voir le plan de portage
+  dans `docs/agents/abc.md` § 16.4). `xml2abc.py` reste une source de
+  comportement pour l'écriture (`crates/scoretk-abc-export/`). Les deux scripts
+  sont donc déclarés ici comme **code et comportements repris** (LGPL sans
+  numéro → GPL-3.0-only, LGPL 2.1 § 3), sans qu'aucune ligne ne soit copiée.
 - Nature de la reprise : **réécriture en Rust** du comportement observé
   (grammaire `%%score`, décorations, n-olets, paroles, modes de `K:`), sans
   copie de ligne. Aucun script de Willem Vree n'est distribué dans ce dépôt.
   L'attribution figure aussi dans l'en-tête des fichiers de
   `crates/scoretk-abc-common/src/` et dans `docs/agents/abc.md` (§ 9 pour la mise à
-  niveau).
+  niveau, § 16 pour le portage).
 
 ## Données reprises
 

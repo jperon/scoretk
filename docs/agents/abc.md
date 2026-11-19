@@ -640,3 +640,112 @@ last `-24` is applied globally. The extra bass transposition raises N1 but
 moves previously matching attacks below the reference range. The tune stays in
 the same `OCTAVE` class (the alternative also fails it, standard-lot N1 25.8 %),
 and no other tune regressed on N1 or N2.
+
+## 16. Phase 1 — faithful port of `abc2xml.py`: oracle cleanup, three reader fixes and N2 diagnosis (2026-11-19)
+
+This section is in English by convention for the measurement and port reports.
+No upstream Python script is committed; the copy used is
+`/tmp/abcchk/abc2xml_269/abc2xml.py` (version 269). Section 15 left two
+"diagnosis only" causes (different-pitch ties, unclosed `!`) and an oracle that
+over-counted ornaments. Phase 1 fixes those three items and diagnoses what
+remains of the N2 gap. The decision is to **port `abc2xml.py` faithfully**
+(function names and structure, upstream references in comments) while still
+building scoretk's generic model, not MusicXML directly.
+
+### 16.1 Oracle and reader fixes
+
+- **Oracle — ornaments** (`scripts/oracle/abc/mesure.py`, `sans_ornements()`):
+  `abc2midi` realizes `Tc` as C-D-C-D-C (and likewise mordents, turns, rolls),
+  but both candidates write only the written note plus an ornament symbol. The
+  reference therefore over-counted 678 tunes. `abc2midi` has no switch for this
+  (`-NGRA` only covers grace notes), so the ornaments of `abc2xml.py`'s
+  `ornMap`/`uSyms` are stripped **from the oracle copy only**; the candidates
+  still receive the unmodified tune. On the reduced `ornament.abc` the reference
+  goes from 20 to the 6 written notes (both candidates N1/N2 100 %). Documented
+  in `scripts/oracle/abc/README.md`.
+- **Oracle — ties** (`scripts/oracle/abc/cmp.py`): a `<tie type="stop">` note has
+  no MIDI note-on and is not counted, **but its duration must advance the
+  timeline**. The old `continue` skipped the duration too, shifting all later
+  attacks and accidentally compensating scoretk's `<forward>` padding (19
+  apparent N2 drops once the reader tie fix landed). This now measures both
+  candidates the same way.
+- **Reader — different-pitch ties** (`reader/music.rs::drop_foreign_ties`): port
+  of `abc2xml.py::doNotations`, lines 1445–1460 (`if pt == ptup: continue`, then
+  `info('tie between different pitches …')`, delete the start tie and turn it
+  into a slur). A pending tie whose pitch is absent from the current event is
+  now dropped instead of crossing the intervening note. Reduced `tie.abc`:
+  scoretk 7/8 → 8/8 notes, N2 0.25 → 1.00, matching the alternative.
+- **Reader — unclosed `!`** (`reader/music.rs::parse_decoration`): port of
+  `abc2xml.py`'s `long_decoration` (line 374, name contains no space or other
+  delimiter and must be closed) and `linebreak` (line 432, `~decorations + '!'`).
+  An orphan delimiter is now a one-character line break instead of swallowing
+  the rest of the line. Reduced `unclosed.abc`: scoretk 11/18 → 18/18 notes,
+  N2 0.61 → 1.00, matching the alternative.
+
+### 16.2 Phase 1 campaign (foreground, three slices, 1 402 files / 4 756 tunes)
+
+Both columns below use the **corrected oracle**; "before" is the pre-fix binary
+and "after" the binary with the two reader fixes.
+
+| Candidate | Campaign | Exact tunes | N1 | N2 | Failures |
+| --- | --- | ---: | ---: | ---: | ---: |
+| scoretk | § 15.4, old oracle | 3 400 | 92.44 % | 44.64 % | 284 |
+| scoretk | corrected oracle, before | 3 964 | 94.53 % | 50.12 % | 284 |
+| scoretk | corrected oracle, **after** | **4 069** | **94.68 %** | **50.20 %** | 284 |
+| `abc2xml.py` | corrected oracle, unchanged | 4 406 | 99.70 % | 92.85 % | 130 |
+
+Per-tune comparison of the same campaign, before vs after: **N1 115 gains / 0
+losses**, **N2 75 gains / 2 losses**. The two N2 losses are `book6.abc` X:1091
+and X:1110: both are `K:A Minor` tunes with several orphan `!`s where the
+alternative itself is far from the oracle (N2 0.63 / 0.46); the fix recovers the
+notes after the orphan delimiters with correct pitches (N1 +15 / +28 points)
+but their attacks are displaced by the already-known modal-key offset. These
+tunes stay in the `TRANSPOSITION` / `ARMURE` classes; there is **no unexplained
+per-tune regression**.
+
+### 16.3 N2 gap diagnosis — 2 515 tunes where the alternative is right and scoretk is wrong
+
+Selection: both candidates N1-exact and `statut == ok`, `n2(alt) ≥ 0.8`,
+`n2(tk) < 0.9`, `n2(alt) - n2(tk) ≥ 0.2`. Counts are mutually exclusive, assigned
+in the order of the table. Examples are real corpus tunes kept outside the
+repository; the "minimal" example is the smallest by reference note count.
+
+| Cause | Tunes | Minimal real example (N2 tk / alt) | `abc2xml.py` function(s) to port |
+| --- | ---: | --- | --- |
+| Short measures padded to nominal length: `reader/mod.rs::finish_measure` uses `actual.max(nominal)`, so the exporter emits `<forward>` and shifts every later attack. `abc2xml.py` writes a measure at its written length. | **2 488** | `tablature.test__bracketPlacement.abc` X:5 (2 notes, 0.50 / 1.00); representative `0811-0899.abc` X:884 (94 notes, 0.49 / 1.00, the short `AGG G2` before a repeat shifts attacks by +12 ticks) | `doMaat` (line 674), `abc_grammar` measure/bar rules (lines 428–436) |
+| Tuplets and broken rhythm (`<`/`>`) attack placement | 11 | `timing.test__abcWarp.abc` X:1 (9 notes, 0.33 / 1.00) | `convertBroken` (line 594), `tuplet_start` (line 395), `mkTmod` (line 728) |
+| Parallel voices not merged into one measure (scoretk has no `<backup>` where the alternative has one) | 5 | `flattener.test__abcNoChordVoice.abc` X:1 (4 notes, 0.25 / 1.00) | `mergeMeasure` (line 876), `mergeParts` (line 935), `mergePartMeasure` (line 951) |
+| Multi-measure rests `Znn`: scoretk emits one padded measure instead of `nn` written rests | 3 | `misc.test__abcMeasureNumbers.abc` X:1 (`Z24`, 1 note, 0.00 / 1.00) | `restActn` (line 554), `note_length` (line 473) |
+| Other (overlays `&`, annotation/timing corners) | 8 | `tablature.test__overlay.abc` X:1 (5 notes, 0.20 / 1.00) | `abc_grammar` `voice_overlay` (line 425), `element` (line 433) |
+
+A further **297** tunes of the phase 1 selection have a N1 gap too; they are the
+survivors of the § 15.3 table after the three phase 1 fixes removed the ornament
+(678), different-pitch tie (78) and unclosed-`!` (3) causes.
+
+### 16.4 Port plan — order, function map, replacement strategy
+
+The reader is replaced **piece by piece**, one `abc2xml.py` function family at a
+time in decreasing expected N2 gain. Each step keeps the current Rust API, adds
+a focused failing test first, is measured with `scripts/oracle/abc/one.sh` on a
+reduced real tune, then with the full three-lot campaign, and is committed
+separately. Comments in the ported code cite the Python function and line. The
+existing reader is never deleted wholesale: a new module is added per family,
+`reader/mod.rs` keeps the orchestration and delegates to it, and the old path is
+removed only once the new one matches on its whole reduced set.
+
+| Order | `abc2xml.py` function (lines) | Rust destination | Expected N2 gain |
+| ---: | --- | --- | ---: |
+| 1 | `doMaat` (674), measure/bar grammar (428–436) | `reader/mod.rs::Voice::finish_measure` (526): use the written `actual` length for non-pickup measures instead of `actual.max(nominal)`; keep the pickup case; audit the exporter's `move_to_tick` so the model, not a forced nominal length, drives `<forward>` | 2 488 tunes (≈ +40 pts) |
+| 2 | `restActn` (554), `note_length` (473) | `reader/music.rs::parse_chord_or_note` `Z`/`X` path (268–300): expand `Znn` into `nn` full-measure rests | 3 tunes |
+| 3 | `convertBroken` (594), `tuplet_start` (395), `mkTmod` (728) | `reader/music.rs::apply_rhythm` (572) and the tuplet block (615–660): compute written durations exactly as the Python actions do | 11 tunes |
+| 4 | `mergeMeasure` (876), `mergeParts` (935), `mergePartMeasure` (951) | `reader/build.rs::groups`/`create_parts` (322–410): keep parallel voices in the same measure and check the exporter writes `<backup>`; part/staff grouping follows `splitHeaderVoices` (779) | 5 tunes (+13 with cause 1) |
+| 5 | `abc_grammar` `voice_overlay`/`element` (425, 433) | `reader/music.rs` overlay branch (105): warn + local skip instead of collapsing overlays | 8 tunes |
+| done | `doNotations` tie cleanup (1445–1460) | `reader/music.rs::drop_foreign_ties` | phase 1 |
+| done | `long_decoration` (374), `linebreak` (432) | `reader/music.rs::parse_decoration` | phase 1 |
+
+Only the **written** representation is ported: ornaments stay symbols
+(`<trill-mark>`, `<mordent>`, …), not realized note runs — the corrected oracle
+verifies that choice. Performance-only tables (`abc2midi` event handling) are
+out of scope. The conformity target remains MuseScore 4.7.4 for scoretk's
+exporters; `abc2xml.py` is the reference for the *reading* decisions only.
+
