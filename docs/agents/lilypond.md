@@ -1291,16 +1291,29 @@ directly:
   "treble_8"` and `\ottava #1` were compiled in isolation and do not change
   pitch), so keeping the written octave is correct.
 * **`notes_manquantes` (55 files).** 36 sources contain grace notes. The
-  oracle's `read_midi` holds a single open note per `(channel, pitch)` in a
-  dictionary: when an acciaccatura overlaps the preceding note on the same
-  channel its note-on overwrites the earlier one, which is never paired. In
-  `Fait/0a/lily-8546410f.ly` the missing B♭4 is present in scoretk's raw SMF
-  (note-on at tick 17 280) but overwritten by the grace note-on at 17 460;
-  LilyPond shortens the preceding note, so its own MIDI has no overlap. Twelve
-  more files are copies of the same `LaVerteAigrette` source and lose a tied
-  note the same way. No writer change is warranted: MuseScore's
-  `collectGraceBeforeChordEvents` also places the grace notes before the beat
-  without shortening the previous note.
+  specification settles the semantics (Notation Reference §2.6.1): "Each grace
+  note in MIDI output has a length of 1/4 of its actual duration. If the
+  combined length of the grace notes is greater than the length of the
+  preceding note a 'Going back in MIDI time' error will be generated."
+  LilyPond therefore *shortens* the preceding note so that the grace note fits
+  before the beat. MuseScore does not: `collectGraceBeforeChordEvents`
+  (`src/engraving/compat/midi/compatmidirenderinternal.cpp:1080`) computes
+  `graceOffsetOn = graceTickSum − graceTickOffset × i` and places the grace
+  note-on before the main chord without emitting an earlier note-off for the
+  previous chord. scoretk's writer follows that model, as it must for the
+  MuseScore reference lots. The oracle's `read_midi` holds a single open note
+  per `(channel, pitch)` in a dictionary: when the acciaccatura overlaps the
+  preceding note on the same pitch the later note-on overwrites the earlier
+  one, which is never paired. In `Fait/0a/lily-8546410f.ly` the missing B♭4 is
+  present in scoretk's raw SMF (note-on at tick 17 280, grace note-on at
+  17 460, one shared note-off at 17 519); LilyPond's own MIDI has the main note
+  ending at 13 824 and the grace starting at 13 994. The same overlap occurs
+  when two voices play the same pitch at the same tick on the shared part
+  channel (`Fait/13/lily-0d80bdd1.ly`, 92 → 91 notes). Twelve more files are
+  copies of the same `LaVerteAigrette` source and lose a tied note the same way.
+  No writer change is warranted: shortening the previous note would break the
+  MuseScore-rendered reference lots, and one channel per voice contradicts
+  MuseScore's one-channel-per-part export.
 * **`duree_seule` (49 files).** All have the exact reference note count, N1
   and N2; only durations differ. This is the unison-merge comparator artefact
   documented in `midi.md`. `Encantada.ly` also has four `\score` blocks, the
@@ -1361,3 +1374,14 @@ isolation with both binaries (`Dreadlock Holiday.1.mid`, `Sing A Song (bonus
 track).mid`, `Broken Wings.1.mid`, `Please Don't Go.mid`, `Eternally.mid`,
 `Another Day.2.mid`): all complete in 2–10 s with both the frozen and the
 fixed binary. They are load artefacts, not an effect of the reader change.
+
+The `\transpose`-inside-`\relative` fix above was measured again against the
+same frozen baseline on `ecriture_ly`, `lecture_musique`, `lecture_mutopia` and
+the LilyPond reading oracle (stride 10, cached references): the figures are
+unchanged — 756/1020, 596/1020, 49/122 and 108/120/46 exact respectively — with
+no per-file N1 or N2 loss on any lot. Only two of the 1020 `.ly` sources use
+`\transpose` inside `\relative`, so the fix is a correctness improvement rather
+than a gain in this sample. The other four causes were re-checked against the
+notation reference and the MuseScore C++ source this time: none warrants a
+reader or writer change without contradicting the pivot model (§2.6.1 for
+grace notes, §4.1.2 for volta repeats, §1.3.1/§1.3.3 for clefs and ottavas).
