@@ -861,10 +861,11 @@ impl<'a> Parser<'a> {
                 if self.eat_command("with") {
                     self.parse_with_block();
                 }
-                // `\context ChordNames` (au contraire de `\new ChordNames`)
-                // arrive ici : sans ce test, sa grille devenait une portée
-                // jouée dès que ses noms d'accords étaient lisibles.
-                if matches!(nom.as_str(), "ChordNames" | "FiguredBass") {
+                // `\context ChordNames` arrive ici. LilyPond joue sa grille
+                // dans le MIDI (vérifié en 2.26) : on laisse la musique nue
+                // devenir une portée anonyme, comme pour `\new ChordNames`.
+                // Seul FiguredBass reste une grille muette.
+                if nom == "FiguredBass" {
                     return self.skip_nonplaying_grid(&nom);
                 }
                 return self.parse_music();
@@ -941,10 +942,11 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // `\new ChordNames` / `\new FiguredBass` portent une grille que
-        // LilyPond ne joue pas dans le MIDI : ni le contexte ni ses notes ne
-        // doivent apparaître dans la partition.
-        if kind == GroupKind::Other && matches!(name.as_str(), "ChordNames" | "FiguredBass") {
+        // `\new FiguredBass` porte une grille de chiffres que LilyPond ne joue
+        // pas dans le MIDI. `\new ChordNames`, lui, produit bien une piste
+        // jouée (vérifié en compilant une grille avec LilyPond 2.26) : il suit
+        // le chemin ordinaire des portées, ci-dessous, comme `\new DrumStaff`.
+        if kind == GroupKind::Other && name == "FiguredBass" {
             self.skip_nonplaying_grid(&name);
             return None;
         }
@@ -2332,15 +2334,16 @@ impl<'a> Parser<'a> {
                 self.parse_with_block();
                 self.parse_music()
             }
-            // `\chords`, `\figures` et leurs alias ouvrent une grille non
-            // jouée : la sauter, sans faire échouer le fichier.
+            // `\figures` et ses alias ouvrent une grille de chiffres non jouée
+            // : la sauter, sans faire échouer le fichier.
             _ if is_nonplaying_mode_head(&name) => self.skip_nonplaying_grid(&name),
-            // `\drummode` et `\chordmode` changent l'interprétation des noms.
-            // Dans une portée LilyPond joue ces événements : on les lit comme
-            // des notes à hauteur MIDI (tables de `modes.rs`). Le mode est
-            // restauré après l'expression pour ne pas déteindre sur la suite.
-            "drummode" | "drums" | "chordmode" => {
-                let mode = if name == "chordmode" {
+            // `\drummode`, `\chordmode` et `\chords` changent l'interprétation
+            // des noms. LilyPond joue ces événements dans son MIDI (y compris
+            // sous ChordNames) : on les lit comme des notes à hauteur MIDI
+            // (tables de `modes.rs`). Le mode est restauré après l'expression
+            // pour ne pas déteindre sur la suite.
+            "drummode" | "drums" | "chordmode" | "chords" => {
+                let mode = if name == "chordmode" || name == "chords" {
                     NoteMode::Chords
                 } else {
                     NoteMode::Drums
@@ -4001,21 +4004,20 @@ fn anonymous_group(music: Music) -> GroupBlock {
     }
 }
 
-/// Têtes de mode qui décrivent une grille d'accords ou de chiffres
-/// (`mode_changing_head` de `lily/parser.yy`). Les contextes ChordNames et
-/// FiguredBass ne produisent pas de notes dans le MIDI de référence : leur
-/// contenu doit être sauté, comme avant l'introduction des têtes de mode
-/// transparentes.
+/// Têtes de mode qui décrivent une grille de chiffres non jouée
+/// (`mode_changing_head` de `lily/parser.yy`). Le contexte FiguredBass ne
+/// produit pas de notes dans le MIDI de référence. `chords`, lui, est joué
+/// par LilyPond et suit le chemin de `chordmode`.
 fn is_nonplaying_mode_head(name: &str) -> bool {
-    matches!(name, "figuremode" | "figures" | "chords")
+    matches!(name, "figuremode" | "figures")
 }
 
 /// Commandes de changement de mode (`mode_changing_head` et
 /// `mode_changing_head_with_context` de `lily/parser.yy`, ainsi que
 /// `SIMULTANEOUS`). Elles modifient l'interprétation lexicale des jetons
 /// suivants (chordes, figures, paroles) ; pour le lecteur, la musique
-/// enveloppée reste une musique ordinaire, sauf les grilles non jouées
-/// ([`is_nonplaying_mode_head`]).
+/// enveloppée reste une musique ordinaire, sauf les grilles de chiffres non
+/// jouées ([`is_nonplaying_mode_head`]).
 fn is_mode_head(name: &str) -> bool {
     matches!(
         name,

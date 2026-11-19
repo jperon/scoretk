@@ -3442,10 +3442,9 @@ fn markup_sans_accolades_ne_mange_pas_la_musique() {
 
 #[test]
 fn grille_daccords_a_cote_dune_melodie() {
-    // `\chords` décrit une grille d'accords (contexte ChordNames) : LilyPond
-    // ne la joue pas dans le MIDI. Seule la mélodie doit produire des notes,
-    // même si la grille vient en premier (régressions `AuClairDeLaLune`,
-    // `HavaNagila` : notes d'accompagnement en trop).
+    // `\chords` décrit une grille d'accords que LilyPond joue dans son MIDI
+    // (track dédié, vérifié en 2.26). La grille précède la mélodie dans la
+    // source : ses notes doivent donc venir en premier.
     let source = "\\version \"2.24.0\"\n\
          \\language \"english\"\n\
          \\score { <<\n\
@@ -3453,11 +3452,22 @@ fn grille_daccords_a_cote_dune_melodie() {
            \\new Staff { c'4 d'4 }\n\
          >> }";
     let score = read_lilypond(source).expect("lecture");
-    assert_eq!(hauteurs(&score), vec![60, 62], "notes de la mélodie seule");
     assert_eq!(
-        durees_ecrites(&score),
+        hauteurs(&score),
+        vec![60, 64, 67, 70, 62, 65, 69, 60, 62],
+        "accords joués puis mélodie"
+    );
+    let durees_melodie: Vec<Fraction> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(4)))
+        .map(|chord_rest| chord_rest.duration.ticks())
+        .collect();
+    assert_eq!(
+        durees_melodie,
         vec![Fraction::new(1, 4); 2],
-        "durées de la mélodie"
+        "durées de la mélodie (piste 4)"
     );
     assert_eq!(score.measures.len(), 1, "mesures");
 
@@ -3469,22 +3479,82 @@ fn grille_daccords_a_cote_dune_melodie() {
 }
 
 #[test]
-fn grilles_non_jouees_seules_et_contextes() {
-    // Une grille comme seule musique ne doit pas faire échouer le fichier :
-    // partition vide avec avertissement (cas limite, fin de fichier sans
-    // argument après `\chordmode`).
+fn grille_daccords_jouee_dans_le_midi() {
+    // Vérifié en compilant ces sources avec LilyPond 2.26 : `\chords` et les
+    // contextes ChordNames produisent une piste MIDI jouée, avec les notes des
+    // accords. Seules les grilles de chiffres (FiguredBass) restent muettes.
+    let source = "\\version \"2.26.0\"\n\
+         \\language \"english\"\n\
+         \\score { <<\n\
+           \\new Staff { \\time 2/4 c'4 d'4 | e'4 f'4 }\n\
+           \\chords { c:7 d:m }\n\
+         >> }";
+    let score = read_lilypond(source).expect("lecture de la grille jouée");
+    // C7 = 60/64/67/70, Dm = 62/65/69, puis la mélodie en do central.
+    assert_eq!(
+        hauteurs(&score),
+        vec![60, 62, 64, 65, 60, 64, 67, 70, 62, 65, 69],
+        "mélodie puis accords joués"
+    );
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![Fraction::new(1, 4); 4],
+        "durées de la mélodie (piste 0)"
+    );
+    assert_eq!(score.measures.len(), 2, "deux mesures avec barre de contrôle");
+
+    // `\new ChordNames` et `\context ChordNames` jouent aussi, y compris avec
+    // `\chordmode` explicite dans une variable et un `\with` sur le contexte.
+    let new_context = read_lilypond(
+        "grille = \\chordmode { c2 c:m7 }\n\
+         \\score { << \\new ChordNames \\with { chordChanges = ##t } \\grille \
+         \\new Staff { c'2 d'2 } >> }",
+    )
+    .expect("grille \\new ChordNames");
+    assert_eq!(
+        hauteurs(&new_context),
+        vec![60, 64, 67, 60, 63, 67, 70, 60, 62],
+        "accords de la grille puis mélodie"
+    );
+    assert_eq!(new_context.measures.len(), 1, "une mesure");
+    let existing = read_lilypond(
+        "grille = \\chordmode { c1 c:m }\n\
+         \\score { << \\context ChordNames \\grille \
+         \\new Staff { c'1 d'1 } >> }",
+    )
+    .expect("grille \\context ChordNames");
+    assert_eq!(
+        hauteurs(&existing),
+        vec![60, 64, 67, 60, 63, 67, 60, 62],
+        "accords du contexte puis mélodie"
+    );
+
+    // Cas « non concerné » : FiguredBass reste une grille muette.
+    let figures = read_lilypond(
+        "\\score { << \\new FiguredBass \\figures { <6>1 <4>1 } \
+         \\new Staff { c'2 d' e' f' } >> }",
+    )
+    .expect("grille de chiffres");
+    assert_eq!(hauteurs(&figures), vec![60, 62, 64, 65], "mélodie seule");
+}
+
+#[test]
+fn grilles_de_chiffres_non_jouees_et_fin_de_flux() {
+    // Une grille d'accords comme seule musique est jouée, sans avertissement.
     let (score, warnings) = read_lilypond_reporting("\\version \"2.24.0\"\n\\chords { c:7 d:m }")
         .expect("grille seule");
-    assert!(hauteurs(&score).is_empty(), "aucune note de grille");
+    assert_eq!(hauteurs(&score), vec![60, 64, 67, 70, 62, 65, 69]);
     assert!(
-        warnings.iter().any(|w| w.message.contains("grille")),
-        "avertissement sur la grille ignorée : {warnings:?}"
+        !warnings.iter().any(|w| w.message.contains("grille")),
+        "aucun avertissement sur une grille jouée : {warnings:?}"
     );
+    // Cas limite : fin de fichier sans argument après `\chordmode`.
     let score = read_lilypond("\\version \"2.24.0\"\n\\chordmode").expect("chordmode seul en fin");
     assert!(hauteurs(&score).is_empty(), "aucune note en fin de fichier");
 
-    // `\figures`, `\new ChordNames` et `\new FiguredBass` ne jouent pas
-    // davantage à côté d'une mélodie avec barre de contrôle.
+    // `\figures` et `\new FiguredBass` restent des grilles muettes ; la grille
+    // `\new ChordNames` joue, avec des notes seules (pas de triade sans
+    // `\chordmode`, comme dans le MIDI de LilyPond 2.26).
     let source = "\\version \"2.24.0\"\n\
          \\language \"english\"\n\
          \\score { <<\n\
@@ -3494,13 +3564,25 @@ fn grilles_non_jouees_seules_et_contextes() {
            \\new Staff { c'4 d'4 | e'4 f'4 }\n\
          >> }";
     let score = read_lilypond(source).expect("lecture");
-    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65], "mélodie seule");
     assert_eq!(
-        durees_ecrites(&score),
-        vec![Fraction::new(1, 4); 4],
-        "durées de la mélodie"
+        hauteurs(&score),
+        vec![48, 50, 60, 62, 64, 65],
+        "grille jouée puis mélodie (chiffres ignorés)"
     );
-    assert_eq!(score.measures.len(), 1, "mesures");
+    let durees_melodie: Vec<Fraction> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(4)))
+        .map(|chord_rest| chord_rest.duration.ticks())
+        .collect();
+    assert_eq!(
+        durees_melodie,
+        vec![Fraction::new(1, 4); 4],
+        "durées de la mélodie (piste 4)"
+    );
+    // La grille en blanches couvre deux mesures, la mélodie une seule.
+    assert_eq!(score.measures.len(), 2, "mesures");
 }
 
 #[test]
@@ -3953,22 +4035,26 @@ fn chordmode_dans_une_portee_joue_les_accords() {
     assert_eq!(hauteurs(&seul), vec![60, 63, 67]);
     assert_eq!(durees_ecrites(&seul), vec![Fraction::new(1, 4)]);
 
-    // Cas « non concerné » : `\chords` sous ChordNames reste une grille non
-    // jouée, comme avant ; seule la portée ordinaire fournit des notes. Les
-    // deux idiomatiques `\new` et `\context` sont couverts : ce dernier
-    // traverse une branche du parseur qui sautait la grille par défaut, mais
-    // laissait passer ses notes dès qu'elles devenaient lisibles.
-    let affichage = read_lilypond(
+    // Les deux idiomatiques `\new` et `\context` sous ChordNames jouent la
+    // grille (vérifié contre le MIDI de LilyPond 2.26) : c = 60/64/67,
+    // c:m = 60/63/67, puis la portée ordinaire.
+    let jouee = read_lilypond(
         "\\score { << \\new ChordNames \\chords { c1 c:m } \
          \\new Staff { c'2 d' e' f' } >> }",
     )
-    .expect("grille d'affichage");
-    assert_eq!(hauteurs(&affichage), vec![60, 62, 64, 65]);
+    .expect("grille \\new ChordNames");
+    assert_eq!(
+        hauteurs(&jouee),
+        vec![60, 64, 67, 60, 63, 67, 60, 62, 64, 65]
+    );
     let contexte = read_lilypond(
         "grille = \\chordmode { c1 c:m }\n\
          \\score { << \\context ChordNames \\with { chordChanges = ##t } \\grille \
          \\new Staff { c'2 d' e' f' } >> }",
     )
     .expect("grille en \\context");
-    assert_eq!(hauteurs(&contexte), vec![60, 62, 64, 65]);
+    assert_eq!(
+        hauteurs(&contexte),
+        vec![60, 64, 67, 60, 63, 67, 60, 62, 64, 65]
+    );
 }
