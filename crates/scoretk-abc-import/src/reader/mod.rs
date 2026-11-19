@@ -216,6 +216,37 @@ pub(crate) struct VoiceFields {
     pub name: String,
     /// Clef demandée.
     pub clef: Option<ClefType>,
+    /// Transposition demandée, en demi-tons (`transpose=`/`t=`).
+    pub transpose: Option<i32>,
+}
+
+/// Transposition d'un champ de paramètres (`transpose=` ou `t=`).
+///
+/// `abc2xml.py` accepte les deux orthographes ; une valeur invalide est
+/// ignorée avec un avertissement plutôt que de faire échouer le morceau.
+fn parse_transpose_parameter(
+    parameters: &[(String, String)],
+    line: usize,
+    warnings: &mut Vec<Warning>,
+) -> Option<i32> {
+    parameters
+        .iter()
+        .find(|(name, _)| name == "transpose" || name == "t")
+        .and_then(|(_, value)| parse_transpose_value(value, line, warnings))
+}
+
+/// Analyse une valeur de transposition signée.
+fn parse_transpose_value(value: &str, line: usize, warnings: &mut Vec<Warning>) -> Option<i32> {
+    match value.trim().parse::<i32>() {
+        Ok(number) => Some(number),
+        Err(_) => {
+            warnings.push(Warning::new(
+                line,
+                format!("transposition « {value} » ignorée"),
+            ));
+            None
+        }
+    }
 }
 
 /// Analyse les champs d'une ligne `V:`.
@@ -223,6 +254,7 @@ pub(crate) fn parse_voice_fields(text: &str) -> VoiceFields {
     let mut number = 1usize;
     let mut name = String::new();
     let mut clef = None;
+    let mut transpose = None;
     for (index, part) in text.split_whitespace().enumerate() {
         if index == 0 && !part.contains('=') {
             number = part.trim_start_matches('"').parse().unwrap_or(1);
@@ -235,10 +267,16 @@ pub(crate) fn parse_voice_fields(text: &str) -> VoiceFields {
         match key.to_ascii_lowercase().as_str() {
             "name" | "nm" => name = value.to_owned(),
             "clef" => clef = pitch::parse_clef(value),
+            "transpose" | "t" => transpose = value.parse().ok(),
             _ => {}
         }
     }
-    VoiceFields { number, name, clef }
+    VoiceFields {
+        number,
+        name,
+        clef,
+        transpose,
+    }
 }
 
 /// Position dans une voix : mesure et tick dans la mesure.
@@ -350,6 +388,8 @@ pub(crate) struct Voice {
     pub time: TimeSig,
     /// Armure en vigueur.
     pub key: KeySig,
+    /// Transposition en vigueur, en demi-tons (hauteur réelle = écrite + transposition).
+    pub transpose: i32,
     /// Indication de mesure initiale.
     pub initial_time: TimeSig,
     /// Armure initiale.
@@ -414,6 +454,7 @@ impl Voice {
             unit,
             time: time.clone(),
             key: key.clone(),
+            transpose: 0,
             initial_time: time,
             accidental: pitch::AccidentalState::new(key.concert_key.fifths()),
             initial_key: key,
@@ -532,6 +573,8 @@ pub(crate) struct Reader {
     pub time: TimeSig,
     /// Armure globale.
     pub key: KeySig,
+    /// Transposition globale issue de `K:`, en demi-tons.
+    pub midi_transpose: i32,
     /// Tempo global `(battements par seconde, texte)`.
     pub tempo: Option<(f64, String)>,
     /// Symboles redéfinis par `U:` (lettre → nom de décoration).
@@ -568,6 +611,7 @@ impl Default for Reader {
             unit: Fraction::new(1, 8),
             time: TimeSig::new(4, 4),
             key: KeySig::new(Key::C),
+            midi_transpose: 0,
             tempo: None,
             user_symbols: BTreeMap::new(),
             score_spec: None,
@@ -614,13 +658,15 @@ impl Reader {
                     number: 1,
                     name: String::new(),
                     clef: self.default_clef,
+                    transpose: None,
                 };
-                let voice = Voice::new(
+                let mut voice = Voice::new(
                     &fields,
                     self.header_unit,
                     self.header_time.clone(),
                     self.header_key.clone(),
                 );
+                voice.transpose = self.midi_transpose;
                 self.voices.push(voice);
             }
             if !self.seen_key {
@@ -725,6 +771,14 @@ impl Reader {
                         voice.schedule_key(parsed.key.clone());
                     }
                 }
+                if let Some(transpose) =
+                    parse_transpose_parameter(&parsed.parameters, number, &mut self.warnings)
+                {
+                    self.midi_transpose = transpose;
+                    for voice in &mut self.voices {
+                        voice.transpose = transpose;
+                    }
+                }
                 for (name, value) in &parsed.parameters {
                     if name == "clef" {
                         if let Some(clef) = pitch::parse_clef(value) {
@@ -752,17 +806,22 @@ impl Reader {
                     if let Some(clef) = fields.clef {
                         self.voices[index].clef = Some(clef);
                     }
+                    if let Some(transpose) = fields.transpose {
+                        self.voices[index].transpose = transpose;
+                    }
                 } else {
+                    let transpose = fields.transpose.unwrap_or(self.midi_transpose);
                     let fields = VoiceFields {
                         clef: fields.clef.or(self.default_clef),
                         ..fields
                     };
-                    let voice = Voice::new(
+                    let mut voice = Voice::new(
                         &fields,
                         self.header_unit,
                         self.header_time.clone(),
                         self.header_key.clone(),
                     );
+                    voice.transpose = transpose;
                     self.current = self.voices.len();
                     self.voices.push(voice);
                 }
@@ -809,13 +868,15 @@ impl Reader {
                 number: 1,
                 name: String::new(),
                 clef: None,
+                transpose: None,
             };
-            let voice = Voice::new(
+            let mut voice = Voice::new(
                 &fields,
                 self.header_unit,
                 self.header_time.clone(),
                 self.header_key.clone(),
             );
+            voice.transpose = self.midi_transpose;
             self.voices.push(voice);
         }
         for voice in &mut self.voices {
@@ -961,6 +1022,16 @@ mod tests {
                 number: 1,
                 name: "Piano".into(),
                 clef: Some(ClefType::F),
+                transpose: None,
+            }
+        );
+        assert_eq!(
+            parse_voice_fields("2 transpose=-2 clef=bass"),
+            VoiceFields {
+                number: 2,
+                name: String::new(),
+                clef: Some(ClefType::F),
+                transpose: Some(-2),
             }
         );
         let time = parse_time("6/8", 1).expect("6/8");

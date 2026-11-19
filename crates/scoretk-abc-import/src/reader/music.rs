@@ -490,7 +490,12 @@ impl Parser<'_> {
             }
             absolute
         };
-        let pitch = (octave + 1) * 12 + natural_semitone(letter) + absolute;
+        // La hauteur lue est la hauteur **écrite** ; le modèle porte la
+        // hauteur **réelle** (écrite + transposition), comme `abc2xml.py` qui
+        // écrit `<pitch>` tel quel et déclare l'écart dans `<transpose>`.
+        let written = (octave + 1) * 12 + natural_semitone(letter) + absolute;
+        let transpose = self.voice().transpose;
+        let pitch = written + transpose;
         if !(0..=127).contains(&pitch) {
             return Err(Error::LigneInvalide {
                 line: self.line,

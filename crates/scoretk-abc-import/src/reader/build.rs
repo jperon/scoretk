@@ -30,7 +30,7 @@
 use scoretk_core::model::{
     Annotation, BarLineType, Clef, ClefType, Dynamic, Fraction, Harmony, KeySig, Measure, Part,
     Placement, RichText, Score, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor,
-    SpannerType, Staff, TimeSig, Track, Tuplet, TupletId, VoltaInfo,
+    SpannerType, Staff, TimeSig, Track, Transpose, Tuplet, TupletId, VoltaInfo,
 };
 
 use crate::reader::{AnnotationSpec, Position, Reader, Voice};
@@ -378,6 +378,16 @@ fn create_parts(
                 format!("Voix {number}")
             });
         let part = score.add_part(Part::new(name.clone(), name));
+        // Une transposition de voix devient l'instrument transpositeur de la
+        // partie : l'écriture MusicXML garde la hauteur écrite et émet
+        // `<transpose>`, exactement comme `abc2xml.py`.
+        let transpose = first_voice
+            .and_then(|number| voices.iter().find(|voice| voice.number == number))
+            .filter(|voice| voice.transpose != 0)
+            .map(|voice| Transpose::new(0, voice.transpose));
+        if let Some(transpose) = transpose {
+            score.part_mut(part).instrument.transpose = Some(transpose);
+        }
         for staff_voices in &group.staves {
             let mut staff = Staff::new(part);
             if let Some(number) = staff_voices.first() {
@@ -605,6 +615,7 @@ mod tests {
             number,
             name: String::new(),
             clef: None,
+            transpose: None,
         };
         let voices = vec![
             Voice::new(
@@ -646,6 +657,7 @@ mod tests {
             number: 1,
             name: String::new(),
             clef: None,
+            transpose: None,
         };
         let mut voice = Voice::new(
             &fields,
