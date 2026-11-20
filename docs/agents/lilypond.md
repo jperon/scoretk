@@ -2292,3 +2292,31 @@ applied. On the 230 files that previously declared more staves than the
 reference has MIDI tracks, **140 now declare fewer, none more, and 68 exactly
 match the reference** (e.g. `pathetique-1` 14 → 5 staves, N1 4111 → 4154 and
 N2 2890 → 2946; `Cellosonata_No3_1` 7 → 3, N1 5111 → 5210).
+
+#### Final state of the context fix
+
+Narrowing the grouping to a Staff whose content is only Voice contexts and
+has more than two of them keeps the common two-staff idiom untouched (each
+`\context Staff` keeps its own part) while fixing the many-voices scores. The
+safety cap on sibling staves was raised to 1024 so no voice is ever dropped.
+
+| Lot | Exact | N1 % | N2 % (no repeat) | N2-grace % (no repeat) |
+| --- | ---: | ---: | ---: | ---: |
+| mus | 1136 (78.5 %) | 99.22 | 93.51 → **93.44** | 93.44 |
+| ra | 1269 (73.5 %) | 91.28 | 81.25 → **81.66** | 82.12 |
+| mut | 439 (31.9 %) | 98.12 | 80.12 → **79.15** | 79.17 |
+
+Against the previous run: **51 N1 gains / 1 loss, 53 N2 gains / 2 losses**,
+exact files 2837 → **2844**. On the 230 files that declared too many staves,
+143 now declare fewer, none more, and 79 match the MIDI track count.
+`pathetique-1` gains 43 played notes and 56 matched attacks; `ballade` goes
+from 113 staves to 41 with 17 more matched pitches; `BWV865_Fuga20` from 11 to
+7 without losing a note.
+
+The three per-file decreases are explained and are not note losses:
+`milan-pavan2.ly` **gains** 61 pitches (N1 143 → 204) while its new attacks
+differ from the stale reference (N2 143 → 72); `AveMaria-midi.ly` keeps all
+155 pitches but its two `\context Staff=trackB` (same id, so LilyPond reuses
+one staff) now share a part, which changes the oracle's per-part cursor
+attacks (N2 139 → 39); `LVB_Sonate_10no1_3.ly` loses one pitch out of 1975
+(a tie/grace edge) while N2 stays unchanged.
