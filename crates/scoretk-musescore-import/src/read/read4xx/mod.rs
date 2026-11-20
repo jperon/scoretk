@@ -730,6 +730,10 @@ impl Reader {
         let irregular = element.attr("len").is_some();
         let model_index = if staff_index == 0 {
             let mut measure = Measure::new(measure_index, self.global_tick, self.last_nominal);
+            // `@len` marque une mesure irrégulière, exclue de la numérotation
+            // (`Measure::excludeFromNumbering`). L'export MusicXML écrit alors
+            // `number="0" implicit="yes"` pour la première d'entre elles.
+            measure.exclude_from_numbering = irregular;
             if let Some(len) = element.attr_fraction("len") {
                 if len.is_positive() {
                     measure.len = len;

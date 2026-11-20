@@ -852,9 +852,7 @@ impl<'a> Context<'a> {
         // (`MeasureNumberStateHandler`).
         let is_first = measure_index == 0 || measure.section_break_before;
 
-        // TODO(parité): numérotation `implicit="yes"` des mesures d'anacrouse
-        // (le modèle n'a pas l'équivalent de `excludeFromNumbering`).
-        let number = self.measure_number(measure_index).to_string();
+        let (number, implicit) = self.measure_number(measure_index);
         // `stable_ids` ajoute `id` et `xml:id` de mesure (même valeur),
         // uniques par partie ; sans lui, la sortie reste identique aux
         // références MuseScore 4.7.4.
@@ -863,6 +861,9 @@ impl<'a> Context<'a> {
             .stable_ids
             .then(|| stable_measure_id(part_index, measure_index));
         let mut measure_attributes: Vec<(&str, &str)> = vec![("number", &number)];
+        if implicit {
+            measure_attributes.push(("implicit", "yes"));
+        }
         if let Some(id) = &measure_id {
             measure_attributes.push(("id", id));
             measure_attributes.push(("xml:id", id));
@@ -2001,13 +2002,33 @@ impl Context<'_> {
 // ----------------------------------------------------------------------
 
 impl Context<'_> {
-    /// Numéro affiché d'une mesure, remis à 1 après un saut de section.
-    fn measure_number(&self, index: usize) -> usize {
-        let start = self.score.measures[..=index]
+    /// Numéro affiché d'une mesure et drapeau `implicit`, remis à l'état
+    /// initial après un saut de section (`MeasureNumberStateHandler`,
+    /// exportmusicxml.cpp:8264-8299). Une mesure exclue de la numérotation
+    /// (anacrouse) porte `number="0" implicit="yes"` si elle ouvre la section,
+    /// puis `number="Xn" implicit="yes"`.
+    fn measure_number(&self, index: usize) -> (String, bool) {
+        let debut = self.score.measures[..=index]
             .iter()
             .rposition(|measure| measure.section_break_before)
             .unwrap_or(0);
-        index - start + 1
+        let mut numero = 1usize;
+        let mut irregulier = 1usize;
+        let mut resultat = ("1".to_owned(), false);
+        for mesure in &self.score.measures[debut..=index] {
+            if mesure.exclude_from_numbering {
+                if irregulier + numero == 2 {
+                    resultat = ("0".to_owned(), true);
+                } else {
+                    resultat = (format!("X{irregulier}"), true);
+                    irregulier += 1;
+                }
+            } else {
+                resultat = (numero.to_string(), false);
+                numero += 1;
+            }
+        }
+        resultat
     }
 
     /// Écrit les armures et indications de mesure (`keysigTimesig`).

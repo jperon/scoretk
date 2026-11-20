@@ -2398,3 +2398,32 @@ fn port_midi_de_l_instrument() {
     let xml = export_musicxml(&score).expect("export");
     assert!(xml.contains("<midi-device id=\"P1-I1\" port=\"1\"></midi-device>"));
 }
+
+#[test]
+fn anacrouse_implicite_et_numeration() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let piste = Track::new(staff, 0);
+    let nominal = Fraction::new(12, 8);
+
+    // Première mesure courte, exclue de la numérotation (anacrouse) ; la
+    // suivante est la première mesure « réelle ».
+    let mut m0 = ajouter_mesure(0, Fraction::ZERO, nominal, Fraction::new(3, 8));
+    m0.exclude_from_numbering = true;
+    ajouter_accord(
+        &mut score, &mut m0, piste, Fraction::ZERO, Duration::quarter(), &[(60, tpc::C)]
+    );
+    score.add_measure(m0);
+
+    let mut m1 = ajouter_mesure(1, Fraction::new(3, 8), nominal, nominal);
+    ajouter_silence_mesure(&mut score, &mut m1, piste, Fraction::ZERO);
+    score.add_measure(m1);
+
+    let xml = export_musicxml(&score).expect("export");
+    // MeasureNumberStateHandler (exportmusicxml.cpp:8272-8299).
+    assert!(
+        xml.contains("<measure number=\"0\" implicit=\"yes\">"),
+        "anacrouse : {xml}"
+    );
+    assert!(xml.contains("<measure number=\"1\">"), "mesure réelle : {xml}");
+}

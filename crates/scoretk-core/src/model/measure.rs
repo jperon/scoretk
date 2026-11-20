@@ -59,6 +59,11 @@ pub struct Measure {
     pub len: Fraction,
     /// Durée nominale donnée par l'indication de mesure.
     pub nominal_len: Fraction,
+    /// Mesure exclue de la numérotation (`Measure::excludeFromNumbering()`),
+    /// c'est-à-dire une anacrouse ou une mesure irrégulière marquée
+    /// `<irregular>1</irregular>` (3.x) ou `@len` (4.x). MuseScore l'exporte
+    /// avec `number="0" implicit="yes"`.
+    pub exclude_from_numbering: bool,
     /// Barre de mesure au début.
     pub start_bar_line: BarLineType,
     /// Barre de mesure à la fin.
@@ -108,6 +113,7 @@ impl Measure {
             start_tick,
             len: nominal_len,
             nominal_len,
+            exclude_from_numbering: false,
             start_bar_line: BarLineType::Normal,
             end_bar_line: BarLineType::Normal,
             repeat_count: 0,
