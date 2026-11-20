@@ -2211,6 +2211,89 @@ trails only on the corpus (90.61 % vs 91.98 %, 27 notes). Every remaining
 cause is either below 0.3 point or requires the reader, which this campaign
 does not touch.
 
+### Re-ranking against the reference MIDI (all four lots, 2026-11-20)
+
+The target is now **95 % N2 against the reference MIDI**, not musicxml2ly.
+Full re-measurement with the merged binary `9b5b6ed5524f3fc0…` (all four
+whole lists, cached references, `timeout 10 prlimit --as=2000000000`,
+LilyPond compilation 20 s / 2 GB) gives:
+
+| Lot | Files | Reference notes | N2 matches | N2 % | Files < 95 % | Lost notes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 2320 | 1818 | 78.36 | 16 | 482 |
+| `.mscz` | 174 | 351 649 | 322 213 | 91.63 | 73 | 28 319 |
+| xml | 32 | 17 612 | 16 837 | 95.60 | 6 | 630 |
+| `.ly` | 375 | 37 441 | 30 592 | 81.71 | 35 | 6803 |
+| **all** | **637** | **409 022** | **371 460** | **90.82** | **130** | **36 234** |
+
+By first diverging attack: `octave` 33 761 notes / 100 files,
+`attaque_decalee` 1874 / 20, `notes_manquantes` 599 / 10.
+
+**Every top-ranked loss was checked with a MusicXML dump of the model before
+attributing it.** For the biggest files the model itself already disagrees
+with the reference, so they belong to the reading agent, not to this writer.
+The `N2(model)` column below is the multiset match of `scoretk S --to
+musicxml` against the same reference MIDI, using the oracle's Q16 grid.
+
+| File | Lost | N2(model) | N2(written) | Attribution |
+| --- | ---: | ---: | ---: | --- |
+| `JMHaydn_Viderunt_omnes.mscz` | 876 | 90.70 % | 88.99 % | Reader 1.7 pt; rest = unison artefact |
+| `Espana_Cani.mscz` | 1544 | 49.84 % | 49.84 % | Reader |
+| `El_Choclo.mscz` | 867 | 23.51 % | 25.32 % | Reader |
+| `Sicut_Cervus.mscz` | 550 | 50.85 % | 50.85 % | Reader |
+| `Minuit chrétien` (9 parts) | 538 each | 91.62 % | 89.73 % | Reader 1.9 pt; rest = unison artefact |
+| `Angels_Carol.ly` | 1568 | 1.24 % | 2.43 % | Reader |
+| `GaudeteChristusEstNatus.ly` | 1070 | 0.37 % | 0.37 % | Reader |
+| `AStMichel.ly` | 657 | 1.35 % | 1.35 % | Reader (model 130 notes vs ref 666) |
+| `22_StMichel.ly` | 352 | 9.97 % | 9.97 % | Reader |
+| `03_05_Enfants.ly` | 167 | 67.29 % | 55.23 % | Writer (45) + reader (122) |
+| `À-Notre-Dame.ly` | 108 | 100 % | 53.04 % | Repeat-unfold artefact (see below) |
+
+### Reader causes for the reading agent (do not touch import here)
+
+1. **MIDI-only `\score` with `\transpose`** — `GaudeteChristusEstNatus.ly`
+   (`\score { \transpose d e … }`, model first chord MIDI 45/48/52/57 against
+   reference 47/50/54/59, 2 semitones low), `22_StMichel.ly`
+   (`\unfoldRepeats \articulate {\transpose c c' …}`, model an octave low),
+   `À-Notre-Dame.ly` (`\transpose d e`). Reference: Notation Reference §1.2.2
+   (Transpose) and §24.3; LilyPond `lily/parser.yy` `transpose` production.
+   File to inspect: `crates/scoretk-lilypond-import/src/playback.rs`
+   (detection of a second, MIDI-only score) and `import/src/events.rs`
+   (application of the interval to notes and key signatures).
+2. **`\clef "treble_8"` / `\clef "G_8"`** — `22_StMichel.ly`, `AStMichel.ly`:
+   model pitches one octave below the reference. Reference: Notation
+   Reference §1.3.1 (clefs), §1.3.3 (octave shift); `lily/parser.yy` clef
+   production and `scm/parser-clef.scm`. Inspect `import/src/events.rs`
+   (clef handling) and `import/src/pitch.rs` (absolute octave).
+3. **`\chordmode` grids and multi-score selection** — `AStMichel.ly` model has
+   130 notes against 662 in the reference: voices from a second score are
+   lost. Inspect `import/src/parser.rs` and `import/src/builder.rs`
+   (score selection with `toplevel-music-handler`).
+
+### Reference artefacts proven with LilyPond 2.26
+
+- **Unison chords**: `<g g g>4` compiled to MIDI yields a single pitch 67,
+  whereas MuseScore's reference plays all three. This explains the ~99 notes
+  per `Minuit chrétien` part and ~130 in `JMHaydn`. Not a writer defect.
+- **`\ottava` playback**: `\ottava 1` leaves MIDI unchanged (verified: `f4`
+  still plays 65), Notation Reference §1.3.3 « leaving the sounding pitch
+  unchanged ». MuseScore's reference does shift; unfixable in the writer
+  without changing the model↔`.ly` octave convention.
+- **Repeat unfolding of `.ly` references**: the writing oracle injects
+  `\unfoldRepeats` into both candidates but the reference MIDI of a `.ly`
+  source is LilyPond's plain `\midi`. Minimal compile: `\repeat volta 2 {
+  c' d' e' f' } g'` gives 5 notes plain, 9 unfolded. This is why
+  `À-Notre-Dame.ly` has 330 written notes against 230 reference notes even
+  though the model matches the reference 100 %. Oracle/method artefact, not
+  a writer loss.
+- **Tremolo / glissando / accordion playback coupling** — §13: MuseScore's
+  reference renders tremolos as repeated strokes and couples octaves;
+  LilyPond sustains them. No writer-side equivalent.
+
+No writer cause worth more than 0.3 N2 point remains after these attributions;
+the 95 % target requires the reader-side fixes above plus the artefact
+denominator corrections.
+
 ## 21. Reading campaign, third pass (2026-11-20)
 
 ### Current ranking (binary after the first two passes)
