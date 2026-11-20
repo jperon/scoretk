@@ -812,10 +812,7 @@ impl<'a> Parser<'a> {
                                 filter,
                                 wanted: wanted.clone(),
                                 groups: tag_groups.clone(),
-                                music: Box::new(std::mem::replace(
-                                    &mut voice.music,
-                                    Music::Empty,
-                                )),
+                                music: Box::new(std::mem::replace(&mut voice.music, Music::Empty)),
                             };
                         }
                     }

@@ -2824,3 +2824,48 @@ losses**, exact files 2769 → 2817. All remaining losses are the pre-existing
 `\relative`/`\keepWithTag` ordering bug isolated above (Chop-28-16 −444 N2,
 baba −461, rach-prelude23-05 −792, In_dulci_jubilo −235,…), with a failing
 reduced test kept `#[ignore]` pending the interpreter refactor.
+
+### Deux correctifs de lecture sur le lot Mutopia (2026-11-20)
+
+#### `\relative` avant `\keepWithTag`
+
+`music-filter` (`scm/music-functions.scm`) applique `\keepWithTag` /
+`\removeWithTag` au **résultat** de la fonction musicale : dans
+`\keepWithTag #'midi \relative { … }`, la conversion relative a déjà parcouru
+les branches `\tag #'layout` avant qu'elles ne soient retirées
+(`lily/relative-octave-music.cc`). Le lecteur filtrait d'abord, puis résolvait
+les octaves, donc la référence d'octave de la branche écartée manquait.
+
+Le filtrage est maintenant différé à l'interprétation (`Music::Filtered`,
+`events.rs`) ; l'enveloppe survit à l'extraction des groupes
+(`score_groups_in`), et une note filtrée met à jour la référence d'octave sans
+émettre d'événement ni avancer le curseur. Le test réduit
+`keepwithtag_apres_relative_pour_la_reference_octave` échouait avant le
+correctif (51/57/66 au lieu de 63/69/78).
+
+Mesure ciblée sur 11 fichiers Mutopia perdants, références fraîches : aucun
+recul ; `Chop-28-16` +252 N1 / +444 N2, `baba` +88 / +461, `Chop-28-18`
++33 / +34, `Chop-28-23` +29 / +3.
+
+#### Passages temporaires enchâssés dans `\context Staff`
+
+`lily/parser.yy` (`context_change`, « temporary polyphonic passages ») joue
+les branches `<< … \\ \new Voice … >>` dans les emplacements de la portée
+courante : elles se succèdent dans le temps. L'heuristique du lecteur
+comptait les `\new Voice` à n'importe quelle profondeur et ouvrait une portée
+sœur dès qu'il y en avait plus de deux. Dans `ballade-4`, les 28 `\new Voice`
+enchâssés sous `\relative` produisaient 14 portées et rejouaient chaque
+passage au tick 0.
+
+Seuls les `\new Voice` portés **directement** par les éléments du `<< … >>`
+déclenchent désormais la répartition en portées ; les voix enchâssées dans un
+enveloppeur restent une seule musique de portée, que l'interpréteur lit avec
+ses passages temporaires. Le test réduit
+`passages_temporaires_dans_un_contexte_staff_restent_sur_une_portee`
+échouait avant le correctif (4 portées au lieu d'une).
+
+Mesure ciblée sur dix fichiers (références et dénominateur constants) :
+`ballade-4` +1171 N1 / **+5437 N2** (450 → 5887 sur 6050, 97,31 %) ; aucun
+changement sur `pathetique-1`, `Violinsonata_No7_1`, `Symphony5_2`,
+`Concerto_No3`, `BWV865_Fuga20`, `ricercare6` et
+`mendelssohn-scherzo-eminor`.
