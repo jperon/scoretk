@@ -566,13 +566,44 @@ fn draw_chords(
                 if !fingering.visible {
                     continue;
                 }
-                let value = text::escape_annotation(&fingering.text);
-                if !value.is_empty() {
-                    before[offset].push(format!("!{value}!"));
+                // § 4.14 : seuls `!0!`-`!5!` (et les doigtés de cordes
+                // `!p!`-`!c!`) sont des symboles définis ; un nom de symbole
+                // ne peut pas contenir d'espace. MuseScore stocke parfois le
+                // doigté avec des balises `<font …>` : on retire les balises
+                // et on n'écrit que le symbole, sinon `abc2midi` avertit
+                // « instruction !<font! ignored » sur chaque note.
+                if let Some(token) = fingering_token(&fingering.text) {
+                    before[offset].push(format!("!{token}!"));
                 }
             }
         }
     }
+}
+
+/// Symbole de doigté admissible dans une décoration `!…!` (§ 4.14).
+///
+/// MuseScore 2.x enregistre par exemple le doigté `1` précédé de balises de
+/// mise en forme : selon le lecteur, il reste `font size='9'/font … 1` ou
+/// `<font …></font> … 1`. On retire les balises éventuelles et on ne garde
+/// que le dernier mot, qui est le symbole ; un texte qui ne se réduit pas à
+/// un seul symbole connu ne produit aucun jeton plutôt qu'un nom invalide.
+fn fingering_token(value: &str) -> Option<char> {
+    let mut plain = String::with_capacity(value.len());
+    let mut in_markup = false;
+    for character in value.chars() {
+        match character {
+            '<' => in_markup = true,
+            '>' => in_markup = false,
+            _ if !in_markup => plain.push(character),
+            _ => {}
+        }
+    }
+    let last = plain.split_whitespace().next_back()?;
+    let mut chars = last.chars();
+    let token = chars.next()?;
+    (chars.next().is_none()
+        && matches!(token, '0'..='5' | 'p' | 'i' | 'm' | 'a' | 'c'))
+    .then_some(token)
 }
 
 /// Ajoute les annotations de segment aux notes les plus proches.
