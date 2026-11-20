@@ -2892,3 +2892,58 @@ pas des régressions. Avec un dénominateur constant, les gains réels sont
 et deux pertes mineures sur des fichiers déjà désynchronisés portant des
 `\tag` : `bridge` −7 et `two-jews` −6 N2, sans perte N1. Aucun autre fichier
 des trois lots n'a changé.
+
+### Troisième passe : pertes `bridge`/`two-jews`, profil, voix séquentielles
+
+#### `bridge` −7 et `two-jews` −6 : un `s` filtré réservait encore du temps
+
+Les six notes de `two-jews` (F3/F#3 aux attaques 99, 100, 101, 103, 104, 105)
+étaient décalées de +1/2 noire, et sept notes de `bridge` de +2 noires, sans
+perte N1. Les deux fichiers viennent du correctif `\relative`/`\keepWithTag` :
+dans `events.rs`, le retour anticipé de `ChordContent::Skip` (`s`) avait lieu
+**avant** le test `tags_pass_filters()`. Un `s` étiqueté retiré par le filtre
+avançait donc le curseur et changeait la durée par défaut, alors que LilyPond
+filtre l'arbre avant l'interprétation (`music-filter`, `scm/music-functions.scm`).
+
+Source réduite compilée par LilyPond 2.26 :
+`\keepWithTag #'midi { c'4, \tag #'layout { s2 }, \tag #'midi { s2 }, d'4 }`
+donne les attaques 0 et 3 ; le lecteur donnait 0 et 5. Le test
+`skip_etiquete_filtre_ne_consomme_pas_de_temps` échouait avant le correctif.
+Après correction, les deux fichiers retrouvent exactement leur score initial
+(`bridge` 172/172, `two-jews` 827/827 N2) et la source réduite 46/46.
+
+#### Profil des conversions lentes : `link_ties` quadratique
+
+`Symphony7_1`, `violin_concerto_1` et `Concerto_No3` basculent autour de la
+borne de 10 s du pilote. Un chronométrage par phase (pas de `perf` disponible :
+`perf_event_paranoid = 2`) montre que le temps est partagé entre la lecture et
+l'écriture MusicXML, et que dans le lecteur `link_ties` domine : 365 ms sur
+`Symphony7_1` (455 mesures, 20 556 notes), contre 103 ms pour
+`place_measures` et 75 ms pour `apply_accidentals`. Pour chaque accord,
+`link_ties` parcourait toutes les mesures puis tous les segments pour trouver
+ celui du tick courant, soit O(événements × mesures × segments).
+
+Un index `BTreeMap<tick, (mesure, segment)>` construit une fois ramène la
+recherche à O(log n). Le test `liaisons_indexees_sur_beaucoup_de_mesures`
+vérifie 61 liaisons sur 61 mesures. La sortie MusicXML est **octet pour octet
+identique** avant/après sur les 1377 fichiers du lot `mut` (deux binaires,
+même date d'encodage, zéro différence, zéro fichier sauté). Le temps total de
+`Symphony7_1` passe de 6,0/7,0/6,5 s à 5,7/6,2/4,1 s sur trois mesures.
+
+#### Voix enchâssées dans un `\context Staff` séquentiel
+
+`BWV865_Fuga20` déclarait sept portées pour un `PianoStaff` à deux portées :
+le contenu de `\context Staff = "up"` est une séquence (`\clef`, `\time`, puis
+trois `<< … \new Voice … >>`) et passait par `collect_staves`, qui ouvrait une
+portée par voix enchâssée ; chaque passage était alors lu depuis le tick 0.
+LilyPond 2.26 (`lily/parser.yy`, `context_change`) les joue sur la même portée
+aux ticks 0, 4 et 8. Le test réduit
+`passages_temporaires_sequenciels_dans_un_contexte_staff` échouait avant le
+correctif (5 portées au lieu de 2, notes aux ticks 0–3 au lieu de 0–11). Le
+lecteur garde désormais la séquence entière comme unique musique de portée
+quand aucune voix n'est portée directement par le `<< … >>`.
+
+Mesure ciblée sur 21 fichiers, références constants : aucun recul,
+`pathetique-1` +128 N1 / +1332 N2, `Violinsonata_No7_1` +757 N2,
+`BWV865_Fuga20` +12, `bridge` +7 et `two-jews` +6 (récupération du correctif
+précédent).
