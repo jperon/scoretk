@@ -1327,26 +1327,30 @@ Le seul port de cette série est donc l'auxiliaire de trille selon l'armure
 (commit précédent) : 19 fichiers `.mscz` gagnent 1319 attaques, 0 perte,
 N2 94,57 → 94,92 %.
 
-### Pause de section rejouée au saut (2026-11-20, port)
+### Pauses : port de `collectPauses` par segment (2026-11-20)
 
-`LayoutBreak::pause` (`engraving/dom/layoutbreak.cpp:43, 209-210`) est porté
-par la mesure qui contient la rupture ; la valeur par défaut est
-`Sid::sectionPause` = 3 s (`styledef.cpp:643`). Quand un passage de cette
-mesure est rejoué par un saut, la pause doit être rejouée à la frontière du
-segment. `unfold` (`pause_map.rs`) insère désormais la pause à `tick ==
-segment.end` pour les segments suivis d'un saut en arrière (`next.tick <=
-segment.tick` et mesure de départ différente), avec `or_insert` pour qu'un
-segment ultérieur qui commence au même tick n'écrase pas le décalage. Les
-frontières ordinaires et les changements de tempo ne sont pas touchés.
+L'heuristique `jump_back` du commit précédent n'était pas un port : elle ne
+gagnait rien et perdait 19 notes sur `Vingt_danses`. Elle est remplacée par le
+mécanisme réel de MuseScore.
 
-Le test réduit `tests/section_pause_jump.rs` (2.06, D.S. al Fine + section
-dans la mesure du saut) passe : deux pauses de 4 noires aux passages, comme
-dans le MIDI MuseScore 4.7.4. Mesure complète à références égales : aucun
-fichier ne gagne, `Vingt_danses_enfantines_pour_piano.mscz` perd **19 notes
-sur 26 477** (0,07 %), les autres sont inchangés ; N2 94,92 → 94,91 %. Cette
-perte résiduelle vient d'une seconde pause de la même partition, dont le
-décalage n'est pas encore attribué à un passage précis ; le port est
-conservé parce qu'il corrige le comportement défini par le C++ sur le cas
-réduit et ne modifie aucune mesure nominale. Les bornes inclusives globales
-(essayées auparavant) ont été écartées : elles régressaient le même fichier
-de 2373 notes.
+`ScoreAutomationController::collectPauses`
+(`src/engraving/automation/internal/scoreautomationcontroller.cpp:1100-1131`,
+appelé à `:549` pour chaque mesure de chaque `RepeatSegment`) inscrit la pause
+d'une rupture de section au `startUtick = measure.tick() + tickOffset` de la
+mesure qui suit la rupture dans l'ordre brut (`measure->prev()`, `:1105-1111`),
+avec `tickOffset = seg->utick - seg->tick` (`:542`). `PauseMap::calculate`
+(`compat/midi/pausemap.cpp:47-76`) utilise ces uticks directement.
+
+`pause_map.rs::pauses_by_segment` porte ce mécanisme : il parcourt
+`repeat_list.segments`, puis les mesures de chaque segment, et inscrit
+`sectionPause` (3 s, `Sid::sectionPause`, `styledef.cpp:643`) à l'utick de
+chaque mesure marquée `section_break_before`. L'`unfold` des tempos reste
+inchangé. Le test réduit `tests/section_pause_jump.rs` (2.06, rupture de
+section, MIDI MuseScore 4.7.4 : notes aux ticks 0, 4 et 12) passe.
+
+Mesure complète à références égales : **aucune perte**, `Vingt_danses`
+récupère les 19 notes perdues par l'heuristique (N2 10 344 → 10 363),
+N2 global 94,91 → **94,92 %**. Le décalage d'un quart au tick 1507 n'est
+toujours pas corrigé : la pause concernée n'appartient à aucun passage où le
+modèle porte `section_break_before`, ce qui reste à identifier dans le
+lecteur 2.x (`read206`).

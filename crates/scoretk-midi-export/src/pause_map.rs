@@ -188,21 +188,26 @@ fn source_tempos(score: &Score) -> BTreeMap<i64, f64> {
     values
 }
 
-/// Pauses de la partition, au tick source (`PausesMap`, `tempotimeline.h:33`).
-///
-/// `section_break_before` marque la mesure qui ouvre la nouvelle section, qui
-/// est aussi le tick du `LayoutBreak` dans le modèle (le corpus 4.x
-/// `repeat66` l'impose). Fermatas et respirations n'ont pas de durée dans le
-/// modèle : le module *playback* qui construit `PausesMap` est absent de
-/// `ref-musescore/` (voir `docs/agents/midi.md`).
-fn source_pauses(score: &Score) -> BTreeMap<i64, f64> {
+/// Pauses enregistrées pour chaque mesure de chaque segment
+/// (`ScoreAutomationController::collectPauses`,
+/// `src/engraving/automation/internal/scoreautomationcontroller.cpp:1100-1131`).
+/// La rupture de section est portée par la mesure précédente dans l'ordre
+/// brut (`measure->prev()`, `:1105-1111`) et inscrite au `startUtick` de la
+/// mesure courante, avec le décalage du segment : la pause est ainsi rejouée
+/// à chaque passage qui contient la mesure, y compris après un saut.
+fn pauses_by_segment(score: &Score, repeat_list: &RepeatList) -> BTreeMap<i64, f64> {
     let mut pauses = BTreeMap::new();
-    for (index, measure) in score.measures.iter().enumerate() {
-        if index > 0 && measure.section_break_before {
-            pauses.insert(
-                measure.start_tick.ticks(UNITS_PER_WHOLE),
-                SECTION_PAUSE_SECONDS,
-            );
+    for segment in &repeat_list.segments {
+        let offset = segment.utick - segment.tick;
+        for &index in &segment.measures {
+            if let Some(measure) = score.measures.get(index) {
+                if measure.section_break_before {
+                    pauses.insert(
+                        measure.start_tick.ticks(UNITS_PER_WHOLE) + offset,
+                        SECTION_PAUSE_SECONDS,
+                    );
+                }
+            }
         }
     }
     pauses
@@ -211,17 +216,12 @@ fn source_pauses(score: &Score) -> BTreeMap<i64, f64> {
 /// Déroule une carte indexée par tick source à travers [`RepeatList`].
 fn unfold(values: &BTreeMap<i64, f64>, repeat_list: &RepeatList) -> BTreeMap<i64, f64> {
     let mut result = BTreeMap::new();
-    for (index, segment) in repeat_list.segments.iter().enumerate() {
+    for segment in &repeat_list.segments {
         let end = repeat_list.segment_end(segment);
         let offset = segment.utick - segment.tick;
-        let jump_back = repeat_list.segments.get(index + 1).is_some_and(|next| {
-            next.tick <= segment.tick && next.measures.first() != segment.measures.last()
-        });
         for (tick, value) in values {
             if *tick >= segment.tick && *tick < end {
                 result.insert(tick + offset, *value);
-            } else if jump_back && *tick == end {
-                result.entry(tick + offset).or_insert(*value);
             }
         }
     }
@@ -233,7 +233,7 @@ fn unfold(values: &BTreeMap<i64, f64>, repeat_list: &RepeatList) -> BTreeMap<i64
 /// le précède, éventuellement le changement de tempo de ce même tick.
 fn tempo_timeline(score: &Score, repeat_list: &RepeatList) -> Vec<TempoPoint> {
     let tempos = unfold(&source_tempos(score), repeat_list);
-    let pauses = unfold(&source_pauses(score), repeat_list);
+    let pauses = pauses_by_segment(score, repeat_list);
     let mut values = tempos.into_iter().peekable();
     let mut rests = pauses.into_iter().peekable();
     let mut points = Vec::new();

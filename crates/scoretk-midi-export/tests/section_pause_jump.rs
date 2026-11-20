@@ -27,7 +27,7 @@ use scoretk_musescore_import::MsczContainer;
 const SOURCE: &str = include_str!("section_pause_jump.mscx");
 
 #[test]
-fn pause_de_section_rejouee_au_saut() {
+fn pause_de_section_au_utick_de_la_mesure() {
     let container = MsczContainer::from_bytes(SOURCE.as_bytes()).expect("conteneur");
     let score = scoretk_musescore_import::read::read_score(&container).expect("lecture");
     let midi = scoretk_midi_export::write_midi(&score).expect("écriture MIDI");
@@ -49,12 +49,8 @@ fn pause_de_section_rejouee_au_saut() {
         }
     }
     onsets.sort_unstable();
-    // MIDI MuseScore 4.7.4 : deux passages (0–7, 12–19), une pause de 4
-    // noires après chacun (8–11, 20–23), puis les trois dernières mesures.
-    let expected: Vec<i64> = [
-        0, 1, 2, 3, 4, 5, 6, 7, 12, 13, 14, 15, 16, 17, 18, 19, 24, 28, 29,
-    ]
-    .into_iter()
-    .collect();
-    assert_eq!(onsets, expected, "pause de section au saut");
+    // MIDI MuseScore 4.7.4 : la rupture de section insère une mesure de pause
+    // (4 noires) entre le début de la section (tick 4) et la mesure suivante.
+    let expected: Vec<i64> = [0, 4, 12].into_iter().collect();
+    assert_eq!(onsets, expected, "pause de section au tick déroulé");
 }
