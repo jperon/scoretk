@@ -90,9 +90,21 @@ Le nouveau champ ne doit pas être perdu aux autres frontières :
   (`MusicXmlParserPass2::staffDetails`, `importmusicxmlpass2.cpp:3262-3292`),
   avec un test dans `tests/lecture.rs`.
 
-Les nuances du C++ non modélisées ici (cutaway `print-spacing="yes"`,
-portée vide masquée par le style `hideEmptyStaves`, visibilité par mesure)
-restent des limites du modèle pivot.
+### Correction du défaut de visibilité à la relecture
+
+`MusicXmlParserPass2::staffDetails` (`importmusicxmlpass2.cpp:3262-3297`) ne
+rend la portée entière invisible que si le cas n'est ni un cutaway
+(`print-spacing="yes"`) ni une mesure ne contenant que des silences : dans ce
+dernier cas il active le style `hideEmptyStaves`. Or notre export écrit justement
+`print-object="no"` pour une portée masquée sur un seul système. La lecture
+positionnelle le transformait à tort en portée invisible pour toute la
+partition, et un `<staff-details>` postérieur sans attribut la rétablissait.
+La décision est maintenant différée en fin de mesure (les `<attributes>`
+précèdent les notes) et suit les trois cas du C++. Deux tests de lecture couvrent
+le cas « portée entière » et le cas « portée vide masquée sur un système ».
+
+Les nuances non modélisées (visibilité par mesure du cutaway) restent une
+limite du modèle pivot.
 
 ## 5. Cause suivante : numérotation des mesures
 

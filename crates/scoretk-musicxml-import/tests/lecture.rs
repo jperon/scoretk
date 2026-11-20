@@ -126,3 +126,42 @@ fn staff_details_print_object_no_rend_la_portee_invisible() {
         "print-object=\"no\" doit rendre la portée invisible"
     );
 }
+
+/// Un `<staff-details print-object="no"/>` sur une mesure ne contenant qu'une
+/// pause est une portée masquée par `hideEmptyStaves`, pas une portée
+/// invisible (`importmusicxmlpass2.cpp:3275-3286`). L'export de scoretk écrit
+/// ce cas pour une portée masquée sur un seul système : la rendre invisible
+/// pour toute la partition était faux, et un `<staff-details>` sans attribut
+/// sur la mesure suivante la rendait de nouveau visible.
+#[test]
+fn staff_details_portee_vide_masquee_pas_invisible() {
+    let document = br#"<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <staff-details print-object="no"/>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><rest measure="yes"/><duration>4</duration><voice>1</voice></note>
+    </measure>
+    <measure number="2">
+      <attributes>
+        <staff-details/>
+      </attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type></note>
+    </measure>
+  </part>
+</score-partwise>"#;
+    let score = read_musicxml(document).expect("lecture");
+    let staff = score.parts[0].staves[0];
+    assert!(
+        score.staff(staff).visible,
+        "la portée masquée sur un système ne doit pas devenir invisible"
+    );
+    assert!(
+        score.style.hide_empty_staves && !score.style.dont_hide_staves_in_first_system,
+        "le style hideEmptyStaves doit être déduit du print-object=\"no\""
+    );
+}

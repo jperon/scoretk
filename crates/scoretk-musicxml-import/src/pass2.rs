@@ -37,11 +37,11 @@
 use std::collections::BTreeMap;
 
 use scoretk_core::model::{
-    Accidental, AccidentalType, Chord, ChordRest, Clef, ClefType, Duration, DurationType, Fraction,
-    GraceChord, GraceType, Instrument, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure,
-    MeasureRepeatMark, Note, NoteHeadGroup, NoteHeadType, NoteId, Part, Placement, Score, Segment,
-    SegmentItem, SegmentType, StaffId, StemDirection, TimeSig, Track, Tuplet, TupletId,
-    TupletNumberType, VOICES,
+    Accidental, AccidentalType, Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration,
+    DurationType, Fraction, GraceChord, GraceType, Instrument, Key, KeyMode, KeySig, Lyrics,
+    LyricsSyllabic, Measure, MeasureRepeatMark, Note, NoteHeadGroup, NoteHeadType, NoteId, Part,
+    Placement, Score, Segment, SegmentItem, SegmentType, StaffId, StemDirection, TimeSig, Track,
+    Tuplet, TupletId, TupletNumberType, VOICES,
 };
 
 use crate::direction;
@@ -177,6 +177,7 @@ fn instrument(data: &InstrumentData) -> Instrument {
         transpose: None,
         midi_program: data.program,
         midi_channel: data.channel,
+        channel_count: 1,
         midi_port: None,
         volume: data.volume,
         pan: data.pan,
@@ -305,6 +306,10 @@ fn read_measure(
     let mut multi_rest: Option<u16> = None;
     let mut measure_style_repeat: Option<u16> = None;
     let mut figured_bass: Vec<(Fraction, Track, scoretk_core::model::FiguredBass)> = Vec::new();
+    // Décisions de visibilité différées : `<attributes>` précède les notes,
+    // donc la mesure n'est complète qu'en fin de passe (voir C++
+    // `MusicXmlParserPass2::staffDetails`, importmusicxmlpass2.cpp:3262-3297).
+    let mut pending_staff_details: Vec<(StaffId, bool, bool)> = Vec::new();
 
     for child in &element.children {
         match child.name.as_str() {
@@ -349,9 +354,13 @@ fn read_measure(
                                 }
                             }
                         }
-                        "staff-details" => {
-                            read_staff_details(score, analysis, part_index, attribute)
-                        }
+                        "staff-details" => read_staff_details(
+                            score,
+                            analysis,
+                            part_index,
+                            attribute,
+                            &mut pending_staff_details,
+                        ),
                         "measure-style" => {
                             for style in &attribute.children {
                                 match style.name.as_str() {
@@ -543,6 +552,23 @@ fn read_measure(
         let index = get_segment(score, measure_index, SegmentType::ChordRest, tick);
         score.measures[measure_index].segments[index]
             .add_annotation(track, scoretk_core::model::Annotation::FiguredBass(bass));
+    }
+
+    // La mesure est complète : on peut distinguer une portée entièrement
+    // invisible d'une portée vide masquée par le style, ou d'un cutaway.
+    for (staff_id, hidden, spacing) in pending_staff_details {
+        if hidden {
+            if spacing {
+                // Visibilité par mesure (cutaway) : non modélisée par le pivot.
+            } else if staff_only_rests(score, measure_index, staff_id) {
+                score.style.hide_empty_staves = true;
+                score.style.dont_hide_staves_in_first_system = false;
+            } else {
+                score.staff_mut(staff_id).visible = false;
+            }
+        } else {
+            score.staff_mut(staff_id).visible = true;
+        }
     }
 
     direction::flush_pending_instrument(score, part_index, measure_index, directions);
@@ -822,15 +848,19 @@ fn chord_rest_at_mut(
 /// Lignes et visibilité d'une portée (`MusicXmlParserPass2::staffDetails`,
 /// `importmusicxmlpass2.cpp:3246-3305`).
 ///
-/// `print-object="no"` rend la portée invisible (`:3262-3292`). Le C++ distingue
-/// aussi le cutaway (`print-spacing="yes"`, visibilité par mesure) et les
-/// portées vides masquées par le style `hideEmptyStaves` ; le modèle pivot n'a
-/// ni visibilité par mesure ni ce style déduit, on retient le cas général.
+/// `print-object="no"` ne rend la portée entière invisible (`:3288-3291`) que
+/// si le cas n'est ni un cutaway (`print-spacing="yes"`, visibilité par mesure,
+/// `:3272-3274`) ni une portée vide masquée par le style `hideEmptyStaves`
+/// (`:3275-3286`). L'export de scoretk écrit précisément ce dernier cas pour
+/// une portée masquée sur un seul système : la traiter comme invisible pour
+/// toute la partition était faux, et un `<staff-details>` postérieur sans
+/// l'attribut la rendait de nouveau visible (`:3292-3297`).
 fn read_staff_details(
     score: &mut Score,
     analysis: &Analysis,
     part_index: usize,
     element: &Element,
+    pending: &mut Vec<(StaffId, bool, bool)>,
 ) {
     let position = element
         .attribute("number")
@@ -840,13 +870,44 @@ fn read_staff_details(
     let Some(staff_id) = score.parts[part_index].staves.get(position).copied() else {
         return;
     };
-    score.staff_mut(staff_id).visible = element.attribute("print-object") != Some("no");
+    pending.push((
+        staff_id,
+        element.attribute("print-object") == Some("no"),
+        element.attribute("print-spacing") == Some("yes"),
+    ));
     let Some(lines) = element.child_int("staff-lines") else {
         return;
     };
     if let Ok(lines) = u8::try_from(lines) {
         score.staff_mut(staff_id).lines = lines;
     }
+}
+
+/// Vrai si la mesure ne porte, sur cette portée, que des silences en voix 1
+/// (`Measure::hasVoices`/`isOnlyRests`, `importmusicxmlpass2.cpp:3275-3286`).
+fn staff_only_rests(score: &Score, measure_index: usize, staff: StaffId) -> bool {
+    let Some(measure) = score.measures.get(measure_index) else {
+        return false;
+    };
+    for segment in &measure.segments {
+        if segment.kind != SegmentType::ChordRest {
+            continue;
+        }
+        for (track, item) in segment.iter_elements() {
+            if i64::from(track.raw()) / VOICES as i64 != i64::from(staff.raw()) {
+                continue;
+            }
+            if track.raw() % VOICES as u32 != 0 {
+                return false;
+            }
+            if let SegmentItem::ChordRest(chord_rest) = item {
+                if matches!(chord_rest.kind, ChordRestKind::Chord(_)) {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }
 
 /// Armure (`MusicXmlParserPass2::key`).
