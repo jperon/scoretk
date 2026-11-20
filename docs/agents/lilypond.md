@@ -2183,13 +2183,33 @@ Per-file gains from the corrected helper (`.mscz`, against the previous run):
 isolated retry in 6.9 s produced **byte-identical** `.ly` to the previous run.
 No corpus file changed and no file loses N1, N2 or N2d.
 
-Remaining gaps on common files, all below the 0.3-point actionable threshold
-except the two first: corpus 27 notes over 7 files (invisible/cross-staff,
-courtesy accidentals, each ≤8 notes); `.ly` 150 notes over 5 files
-(`HavaNagila` 47, `03_05_Enfants` 45, `Lassus_In_pace` 42, two 8-note snippets);
-`.mscz` 9 files where musicxml2ly still wins, led by `La_foule` (363) and
-accordion/octave-coupling artefacts (`Triumphal_March`, `ZORBA_THE_GREEK`,
-`Adios_Muchachos`). The next causes are ranked and fixed below.
+### Cause fixed: stretched chord and its covered measures
+
+Notation Reference §2.1.3 (Scaling durations) allows `4*N`: a chord whose
+model `ticks` spans several measures is written once with that multiplier.
+`musicxml2ly` does the same (`python/musicexp.py:310-311`). The writer also
+re-emitted the following empty model measures as `s1`, adding phantom bars and
+shifting the music (first divergence of `HavaNagila.ly`: `<e g b>1*4` followed
+by three `s1` instead of the single chord). It now skips measures covered by
+the previous element's `end_tick`, exactly as it already did for multi-rests.
+The reduced test `accord_etire_ne_reecrit_pas_les_mesures_couvertes` failed
+before and passes after; the targeted compile gives `HavaNagila` 156 → 203 N2
+matches (96.21 %, same as musicxml2ly), with no change on the other sampled
+`.ly` files and no corpus snapshot change.
+
+### Remaining causes, ranked and deliberately not fixed
+
+| Cause | Notes (lot) | Verdict |
+| --- | ---: | --- |
+| Ottava playback | 19 (corpus, 4 files) | **Not fixable with `\ottava`.** Notation Reference §1.3.3 states it leaves the sounding pitch unchanged; a minimal `.ly` compiled with LilyPond 2.26 confirms `f4` under `\ottava 1` still plays MIDI 65. Reproducing MuseScore's shift would require writing sounding pitches or composing `\transposition`, breaking the `.ly` ↔ model octave convention (§13). A placement fix was tried and retracted: it changed four snapshots for zero N2 gain. |
+| `03_05_Enfants`, `Lassus_In_pace`, two snippets | 103 (`.ly`) | 0.64 point of that lot; model dumps show the first diverging attack is already wrong in the MusicXML export for `Lassus` (pitch 64 absent at tick 30), i.e. a reader-side model, and the other case is a single wrong written pitch under a multi-score `\transpose`. Both below the actionable threshold for this crate. |
+| `La_foule`, accordion octave coupling | 821 (`.mscz`) | 0.30 point on that lot; MuseScore reference artefacts (playback coupling, §13) plus one wrong written pitch under invisible elements. |
+
+All three lots now beat musicxml2ly on exact files; on the common files
+scoretk wins `.mscz` (92.15 % vs 91.33 %) and `.ly` (90.72 % vs 87.41 %) and
+trails only on the corpus (90.61 % vs 91.98 %, 27 notes). Every remaining
+cause is either below 0.3 point or requires the reader, which this campaign
+does not touch.
 
 ## 21. Reading campaign, third pass (2026-11-20)
 
