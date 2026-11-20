@@ -574,3 +574,53 @@ fn nom_de_partie_3x_avec_saut_de_ligne() {
     assert_eq!(score.measures.len(), 1);
     assert_eq!(score.notes.len(), 3);
 }
+
+/// `midiInstrument` (`exportmusicxml.cpp:7341`) lit le volume du premier canal
+/// (`instr->channel(0)`). Le lecteur 3.x parcourait tous les `<Channel>` et
+/// gardait le dernier : écart de volume sur deux partitions réelles.
+#[test]
+fn volume_et_pan_du_premier_canal_seulement() {
+    let mscx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="3.01">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <Instrument id="keyboard.piano">
+        <longName>Piano</longName>
+        <shortName>Pno.</shortName>
+        <Channel>
+          <program value="40"/>
+          <controller ctrl="7" value="40"/>
+          <controller ctrl="10" value="10"/>
+          </Channel>
+        <Channel name="pizzicato">
+          <program value="45"/>
+          <controller ctrl="7" value="42"/>
+          <controller ctrl="10" value="90"/>
+          </Channel>
+        </Instrument>
+      </Part>
+    <Staff id="1">
+      <Measure>
+        <voice>
+          <TimeSig><sigN>2</sigN><sigD>4</sigD></TimeSig>
+          <Chord><durationType>quarter</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+          <Rest><durationType>quarter</durationType></Rest>
+          </voice>
+        </Measure>
+    </Staff>
+  </Score>
+  </museScore>
+"#;
+    let container = scoretk_musescore_import::MsczContainer::from_bytes(mscx.as_bytes())
+        .expect("conteneur 3.x");
+    let score = scoretk_musescore_import::read::read_score(&container).expect("lecture 3.x");
+
+    assert_eq!(score.parts.len(), 1);
+    assert_eq!(score.parts[0].instrument.midi_program, Some(40));
+    assert_eq!(score.parts[0].instrument.volume, Some(40));
+    assert_eq!(score.parts[0].instrument.pan, Some(10));
+    assert_eq!(score.notes.len(), 1);
+    assert_eq!(score.measures.len(), 1);
+}

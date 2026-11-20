@@ -259,8 +259,11 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         instrument.midi_program = recognized_program.and_then(|value| u8::try_from(value).ok());
     }
 
-    // Réglages de canal : contrôleur 7 (volume) et 10 (panoramique).
-    for channel in node.children_named("Channel") {
+    // Réglages de canal : contrôleur 7 (volume) et 10 (panoramique), sur le
+    // premier canal seulement (`midiInstrument` lit `instr->channel(0)`,
+    // exportmusicxml.cpp:7345-7355). Les canaux suivants ont leurs propres
+    // contrôleurs, mais ne sont pas exportés dans `<midi-instrument>`.
+    if let Some(channel) = node.children_named("Channel").next() {
         for controller in channel.children_named("controller") {
             let Some(value) = controller
                 .attr_i32("value")
