@@ -2879,3 +2879,42 @@ fn crochet_de_nolet_sans_bracket_type() {
         );
     }
 }
+
+/// `Rest::checkDots()` n'est appelé que par le layout de la portée
+/// (`restlayout.cpp:148`) : une portée masquée (`<isStaffVisible>0`) n'a donc
+/// aucun `NoteDot`, et `writeRest` (`exportmusicxml.cpp:4655-4669`) n'écrit
+/// alors aucun `<dot/>`, même pour une figure pointée. Cas réel : les 155
+/// points supprimés de `Minuit chrétien` sont sur des portées masquées.
+fn silence_pointee(visible: bool) -> String {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    score.staff_mut(staff).visible = visible;
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_element(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        ChordRest::rest(Duration::with_dots(DurationType::Half, 1)),
+    );
+    score.add_measure(measure);
+    export_musicxml(&score).expect("export")
+}
+
+#[test]
+fn dot_silence_portee_masquee_supprime() {
+    let xml = silence_pointee(false);
+    assert!(!xml.contains("<dot/>"), "point sur portée masquée : {xml}");
+}
+
+#[test]
+fn dot_silence_portee_visible_conserve() {
+    let xml = silence_pointee(true);
+    assert!(
+        xml.contains("<dot/>"),
+        "point sur portée visible perdu : {xml}"
+    );
+}

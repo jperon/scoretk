@@ -64,6 +64,7 @@ use super::ottava;
 use super::pedals;
 use super::pitch;
 use super::repeats;
+use super::rest_dots;
 use super::stems;
 use super::systems;
 use super::text;
@@ -1944,7 +1945,8 @@ impl Context<'_> {
             if !name.is_empty() {
                 out.xml.tag("type", name);
             }
-            for _ in 0..chord_rest.duration.dots {
+            let staff_visible = self.score.staff(track.staff()).visible;
+            for _ in 0..rest_dots::dot_count(chord_rest.duration.dots, staff_visible) {
                 out.xml.tag_empty("dot", &[]);
             }
         }

@@ -54,6 +54,7 @@ mod ottava;
 mod pedals;
 mod pitch;
 mod repeats;
+mod rest_dots;
 mod stems;
 mod systems;
 mod text;

@@ -177,19 +177,21 @@ dans le même `<attributes>`.
 Mesure ciblée sur les 39 fichiers : **21 gains, 0 perte**, lignes divergentes
 9 932 → 9 528 ; les 2 fichiers sensibles à la XSD restent valides.
 
-### Cause `dot` : constat non corrigeable sans mise en page
+### Cause `dot` (27 fichiers) — résolue
 
-Sur les 22 fichiers dont la première différence est `dot`, l'écart vient des
-**silences pointés** : `writeRest` (`exportmusicxml.cpp:4655-4669`) n'écrit
-`<dot>` que depuis `rest->dotList()` (objets `NoteDot` créés par la mise en
-page), alors que le portage le déduit de la figure `TDuration`. Exemple :
-`Minuit chrétien — Vcl — Cb — Timb` a 175 silences `<dots>` dans le `.mscx`,
-mais MuseScore 4.7.4 n'écrit le point que sur 20 d'entre eux (ceux des voix et
-mesures où la mise en page a créé un `NoteDot`). Supprimer les points de
-silences fait gagner 21 fichiers sur 22 mais casse la conformité du corpus
-(`changevisibility` v4, `moonlight` v3), où le point doit être conservé : la
-décision dépend de données de mise en page absentes du modèle pivot. Aucun
-correctif n'a donc été commité pour cette cause.
+L'écart vient des **silences pointés** : `writeRest`
+(`exportmusicxml.cpp:4655-4669`) n'écrit `<dot>` que depuis `rest->dotList()`.
+`Rest::checkDots` (`rest.cpp:308-321`) crée ces `NoteDot`, mais n'est appelé que
+par le layout (`restlayout.cpp:148`) : une portée masquée
+(`<isStaffVisible>0</isStaffVisible>`) n'a donc aucun `NoteDot`. Dans
+`Minuit chrétien`, les 20 points conservés par MuseScore 4.7.4 sont exactement
+ceux des portées visibles (Timbales, Vcl/Cb) ; les 155 supprimés sont sur des
+portées masquées. Le nouveau fichier `rest_dots.rs` porte cette règle. Deux
+tests réduits (portée visible/masquée) ont été écrits avant le correctif.
+
+Mesure ciblée sur les 27 fichiers : **27 gains, 0 perte**, lignes divergentes
+6 261 → 4 605. Les corpus v3/v4 (`changevisibility`, `moonlight`) gardent leurs
+points car leurs portées sont visibles.
 
 ## 9. Cause suivante : crochet des n-olets (`calcHasBracket`)
 
