@@ -4605,3 +4605,34 @@ bas = \fixed c {
     assert_eq!(hauteurs(&nul), vec![60, 62, 64]);
     assert_eq!(durees_ecrites(&nul), vec![Fraction::new(1, 32); 3]);
 }
+
+/// Notation Reference §4.2.2 « Tremolo repeats » : la durée totale d'un
+/// `\repeat tremolo n { a b }` vaut n fois celle du corps. Le MIDI de LilyPond
+/// 2.26 joue deux notes tenues, chacune de durée `n × écrite`, et non les notes
+/// du corps répétées : vérifié pour n = 2, 4, 6, 8 sur `c'16 d'16`.
+#[test]
+fn repeat_tremolo_etire_les_durees() {
+    let score = lire("\\time 4/4 \\repeat tremolo 4 { c16 d16 } e2");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64]);
+    assert_eq!(score.measures.len(), 1, "mesures");
+    let reelles: Vec<Fraction> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .map(|chord_rest| chord_rest.ticks.unwrap_or(chord_rest.duration.ticks()))
+        .collect();
+    assert_eq!(
+        reelles,
+        vec![Fraction::new(1, 4), Fraction::new(1, 4), Fraction::new(1, 2)],
+        "chaque note du trémolo dure 4 × une double croche"
+    );
+
+    // Cas limite : facteur 1, sans changement de durée.
+    let un = lire("\\repeat tremolo 1 { c8 d8 } e4");
+    assert_eq!(hauteurs(&un), vec![60, 62, 64]);
+    assert_eq!(
+        durees_ecrites(&un),
+        vec![Fraction::new(1, 8), Fraction::new(1, 8), Fraction::new(1, 4)]
+    );
+}

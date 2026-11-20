@@ -262,8 +262,11 @@ pub(crate) enum RepeatKind {
     Volta,
     /// `\repeat unfold n`.
     Unfold,
-    /// `\repeat percent n` ou `\repeat tremolo` : lue une fois.
+    /// `\repeat percent n` : lue une fois (pas dépliée dans les références MIDI).
     Ignored,
+    /// `\repeat tremolo n { a b }` : durées étirées d'un facteur n, sans
+    /// nouvelles attaques (Notation Reference §4.2.2).
+    Tremolo,
 }
 
 impl RepeatKind {
@@ -272,6 +275,7 @@ impl RepeatKind {
         match word {
             "volta" => Self::Volta,
             "unfold" => Self::Unfold,
+            "tremolo" => Self::Tremolo,
             _ => Self::Ignored,
         }
     }

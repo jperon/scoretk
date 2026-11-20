@@ -2926,6 +2926,18 @@ impl<'a> Parser<'a> {
             });
         }
         let body = Box::new(self.parse_music());
+        if kind == RepeatKind::Tremolo {
+            // Notation Reference §4.2.2 : « The duration of the tremolo equals
+            // the duration of the braced expression multiplied by the number
+            // of repeats ». Le MIDI de LilyPond joue les deux notes du corps
+            // tenues `n ×` leur durée écrite, sans nouvelles attaques. Étirer
+            // les durées conserve les hauteurs et décale correctement la musique
+            // qui suit, sans déplier le trémolo en n passages.
+            let mut body = *body;
+            let factor = Fraction::from_integer(count.max(1) as i64);
+            scale_music(&mut body, &factor);
+            return body;
+        }
         let mut alternatives = Vec::new();
         if self.eat_command("alternative") {
             let content = self.parse_music();

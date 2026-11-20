@@ -868,6 +868,10 @@ impl<'a> Interpreter<'a> {
                 self.warn("\\repeat non pris en charge : musique lue une fois");
                 self.walk(body);
             }
+            // Le facteur de trémolo est déjà appliqué aux durées par le
+            // parseur (§4.2.2) : ce bras ne peut survenir que sur un arbre
+            // construit à la main ; on lit alors le corps tel quel.
+            RepeatKind::Tremolo => self.walk(body),
             RepeatKind::Volta => {
                 let start = self.cursor;
                 self.walk(body);
