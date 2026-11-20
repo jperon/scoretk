@@ -20,7 +20,7 @@
 use std::fs;
 use std::path::Path;
 
-use scoretk_core::model::{Annotation, Score, tpc};
+use scoretk_core::model::{tpc, Annotation, Score};
 use scoretk_musescore_import::MsczContainer;
 
 fn lire(mscx: &[u8]) -> Score {
@@ -94,7 +94,10 @@ fn fonction_nashville_ecrit_une_racine() {
     let relu = lire(ecrit.as_bytes());
     let direct = scoretk_musicxml_export::export_musicxml(&partition).expect("export");
     let retour = scoretk_musicxml_export::export_musicxml(&relu).expect("export");
-    assert_eq!(direct.matches("<pitch>").count(), retour.matches("<pitch>").count());
+    assert_eq!(
+        direct.matches("<pitch>").count(),
+        retour.matches("<pitch>").count()
+    );
     assert_eq!(
         direct.matches("<duration>").count(),
         retour.matches("<duration>").count()

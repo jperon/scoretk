@@ -561,3 +561,103 @@ remaining difference on both is `<note>` vs `<forward>` (scoretk's explicit
 voice padding), and on mscz-167 then the tuplet-bracket heuristic — both
 reader/MusicXML-export work, not mis-serialised writer values. The 43 unopened
 rows have the same grouping and count as in the baseline.
+
+### Fifth pass — translation and writer causes (English)
+
+Sections 1–7 of this document are now in English; no section number, path or
+table was changed. This pass re-examined the 49/56 corpus scores and the
+31/171 `.mscz` scores against the C++ writer of MuseScore 4.7.4. There is no
+published specification of `.mscx`/`.mscz`, so every cause below cites the
+upstream `engraving/rw/write/*.cpp` behaviour.
+
+**Corpus — first core difference and the C++ writer of that element** (the
+`scoretk` column is the side of the comparison written by scoretk):
+
+| Score | First core difference | C++ writer | Cause / action |
+| --- | --- | --- | --- |
+| `moonlight` | `<note>` vs `<forward>` | `TWrite::write(const ChordRest*)` (`write/twrite.cpp:1090-1105`) | reader/MusicXML: scoretk pads voices with explicit `<forward>`; 98 core lines remain after the `<numberType>` fix. Not a MuseScore writer value. |
+| `testHarmony6` | `<function>m</function>` vs `<numeral>` | `TWrite::write(const Harmony*)` (`write/twrite.cpp:1834-1868`), `writeHarmonyInfo` (`:1786-1826`) | **writer, fixed**: the pivot keeps `<function>` but no `rootTpc`; MuseScore 4.6+ only reads `<root>` in `<harmonyInfo>`. |
+| `testTboxWords1` | `<measure-style><multiple-rest>` only in scoretk | `MeasureWrite::writeMeasure` (`write/measurewrite.cpp:45-56`) | model: mmRest count/range; enabling `createMultiMeasureRests` and adding the voice rest by hand did not restore parity. |
+| `changevisibility` | `<accidental>natural</accidental>` only in scoretk | `TWrite::write(const Note*)` (`write/twrite.cpp:2456-2462`), `write(const Accidental*)` (`:707-715`) | reader: the accidental of a grace note inside an ornament is collapsed onto the main note. MuseScore's own writer emits the same `<Accidental>` element, so the writer is faithful. |
+| `linked-ties` | `<tie type="start"/>` only in scoretk | `TWrite::write(const Tie*)` (`write/twrite.cpp:3388-3393`) | reader: the corpus ties a grace note (`<location><grace>0</grace>`) to the main note; the pivot has no grace-tie anchor. |
+| `mmrest` | `<measure-style>` only in scoretk | `MeasureWrite::writeMeasure` (`write/measurewrite.cpp:45-56`), `StaffWrite::writeStaff` (`:50-54`) | model: MuseScore rebuilds mmRests from consecutive measures when style `createMultiMeasureRests` is enabled (`style/styledef.cpp:571`); not a mis-serialised writer value. |
+| `testExcludeInvisibleElements` | `<octave>4</octave>` vs `<octave>5</octave>` | `TWrite::write(const Ottava*)` (`write/twrite.cpp:2564-2574`), `SpannerWriter::fillSpannerPosition` (`write/connectorinfowriter.cpp:82-96`) | **writer, fixed**: a whole-measure offset was written as `<fractions>1/1</fractions>` instead of `<measures>1</measures>`; MuseScore shortened the ottava by one measure. |
+
+**`<root>` from `<function>` — `testHarmony6`.** `writeHarmonyInfo` writes
+`<root>` from `rootTpc`, and MuseScore's own reader converts a 3.x `<function>`
+to `rootTpc` (`read410/tread.cpp:2839`) via `function2Tpc`
+(`dom/pitchspelling.cpp:726-754`) and `tpcInterval` (`:658-669`). The writer now
+does the same conversion using the key signature in force at the harmony.
+Reduced test: `fonction_nashville_ecrit_une_racine`, in ordinary music (bars,
+chords, lyrics, time signature), with a non-concerned Roman harmony that must
+not gain a root. Reopened in MuseScore 4.7.4, `testHarmony6` is core-identical.
+
+**`<measures>` of a spanner — `testExcludeInvisibleElements`.**
+`SpannerWriter::fillSpannerPosition` stores `Location::measure()` and
+`Location::frac()` separately, and `TWrite::write(const Location*)`
+(`write/twrite.cpp:2355-2368`) writes `<measures>` and `<fractions>` as two
+distinct tags. scoretk converted the whole tick delta to a fraction, so the
+ottava ended one measure early (`ConnectorInfoReader`,
+`read460/connectorinforeader.cpp:346`). The writer now derives the measure
+index and the within-measure fraction of each endpoint. Reduced test:
+`ottava_ecrit_ses_mesures_et_non_pas_une_fraction`, with a non-concerned
+intra-measure tie that must stay in `<fractions>`. Reopened in MuseScore 4.7.4,
+the score is core-identical.
+
+**`.mscz` ranking.** Across the 171 written `.mscz`, the most frequent changed
+core tags are `notations`/`slur` (149/145 files, layout), `measure` (35),
+`measure-style`/`multiple-rest` (63), `note`/`forward` (82), `beam` (50),
+`stem` (93) and `tuplet` (36). Restricting to files where MuseScore's own
+import is core-identical and ours is not, the first differing lines group as
+mmRest ranges (7 files), anacrusis measure numbers (6), explicit voice padding
+(3), accidentals (5), Nashville harmony, clef octave, MIDI channel and tie
+metadata. The two writer causes above apply to the same element families in
+that lot; the rest need model or reader work (mmRest layout, anacrusis number,
+voice padding), as documented in pass 3.
+
+**Incomplete measures.** Reduced example `ly-3`
+(`02_01_Miguel_Humberto_Sous-le-toit-la-tourterelle_partition.ly`, 715 bytes):
+MuseScore reports `Incomplete measure, measure 32, staff 1. Found: 5/4.
+Expected: 4/4` (and the same on most measures). The written `.mscx` starts
+that voice with two `<location><fractions>1/8</fractions></location>` before
+the first quarter chord; the model has the first chord at tick `1/4` with no
+rest for the missing `1/4`. scoretk's MusicXML export makes that gap explicit
+as `<forward>`, but the MuseScore writer follows `TWrite::writeVoiceMove`
+(`write/twrite.cpp:3546-3576`) and writes only `<location>`. Replacing those
+locations with a `gap` rest by hand does not restore parity (the other
+locations are still counted), so the wrong object is the *model*: the reader
+leaves a voice gap where MuseScore would have a rest. This is a reader cause
+(`\partial`/voice padding in `scoretk-lilypond-import`), not a writer value;
+no writer change was applied. The same mechanism explains the rest of the 23
+`Incomplete measure` / 1 `Voice too long` rows.
+
+### Fifth pass — final table
+
+Binary `/tmp/scoretk-mscz-pass5-final` (sha256 `b957fb91…`). Same 638 scores,
+same oracle, same tolerance. Note that master gained LilyPond reader fixes
+between the previous table and this one; the *reference* MusicXML/MIDI of the
+`.ly` lot therefore changes independently of the MuseScore writer.
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | **51/56** | 0.9702 | 0.9694 | 0 | 56/56 |
+| mscz | 174 | 172 | 172 | **34/172** | 0.9763 | 0.9762 | 0 | 39/172 |
+| xml | 32 | 27 | 27 | 0/27 | **0.9943** | **0.9868** | 0 | 0/27 |
+| ly | 375 | 345 | 345 | 1/345 | 0.9985 | 0.9957 | 0 | 0/0 |
+| abc | 1 | 1 | 1 | 0/1 | 1.0000 | 1.0000 | 0 | 0/0 |
+| **Total** | **638** | **601** | **601** | **86/601** | **0.9808** | **0.9794** | **0** | **95/255** |
+
+Compared with the previous table: **five files become core-identical**
+(`testHarmony6`, `testExcludeInvisibleElements`, mscz-10, mscz-44, mscz-142),
+16 files lose changed core lines (the three `Vingt danses` XML scores drop
+from 169 to 53 each; the xml N2 rises from 0.3055 to 0.9868 because the
+corrected spanner endpoints restore MuseScore's repeat/playback expansion),
+and no file stops opening. Five files gain core lines: mscz-12 (+4, first
+difference unchanged `<note>` vs `<forward>` — diff alignment after the
+spanner rewrite, its direct MusicXML is byte-identical) and four `.ly`
+(ly-14 +7, ly-166 +34, ly-255 +2, ly-316 +2) whose *direct* MusicXML also
+changed between the two binaries because of the master reader fixes, so they
+are not caused by this writer. The two N2 movements on ly-127/171
+(180 → 174 notes) come from the same reader changes: N1 = N2 = ref on both
+runs, i.e. still a perfect playback match. The 43 unopened rows keep the same
+grouping; no writer-only failure was found.

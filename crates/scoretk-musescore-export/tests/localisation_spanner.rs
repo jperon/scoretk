@@ -79,7 +79,10 @@ fn ottava_ecrit_ses_mesures_et_non_pas_une_fraction() {
     assert_eq!(fins_relues, fins);
     let direct = scoretk_musicxml_export::export_musicxml(&partition).expect("export");
     let retour = scoretk_musicxml_export::export_musicxml(&relu).expect("export");
-    assert_eq!(direct.matches("<pitch>").count(), retour.matches("<pitch>").count());
+    assert_eq!(
+        direct.matches("<pitch>").count(),
+        retour.matches("<pitch>").count()
+    );
     assert_eq!(
         direct.matches("<duration>").count(),
         retour.matches("<duration>").count()
