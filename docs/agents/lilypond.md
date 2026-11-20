@@ -1873,3 +1873,119 @@ musical regression.
 The two reproducible parser defects were therefore taken first; their gain
 (+8.53 N2 points over repeat-free files) is larger than either single ranked
 row would have suggested, because they acted across all of them.
+
+## 19. Reading campaign, second pass (2026-11-20)
+
+### Re-ranking on the current binary
+
+Same 4550 files, same cached references, binary `2b00392` + the three fixes;
+"lost" is `ref − matched N2 pairs`, assigned from the first diverging attack.
+The table of §18 was measured **before** those fixes and is superseded here.
+
+| Construct at first divergence | Lost notes | Files | Example |
+| --- | ---: | ---: | --- |
+| `\grace` / `\acciaccatura` | 65 602 | 152 | `Ackermans_NoelDesPetitsSantons.ly` |
+| `\voiceOne` / `<< … >>` | 63 402 | 306 | `Symphony5_1.ly` |
+| `\tuplet` / `\times` | 28 217 | 88 | `lily-18e51d2e.ly` |
+| none of the tracked constructs | 24 605 | 116 | `Ave_dulcissima_Maria.ly` |
+| `R1*n` / `\bar` | 17 611 | 56 | `01_01_Buenos-dias-Mexico_livret.ly` |
+| `s` spacer | 14 914 | 39 | `Angels_Carol__John_Rutter-midi.ly` |
+| variables | 10 860 | 126 | `Dechiffrage.ly` |
+| `\set Timing.*` | 6 722 | 29 | `Ecce_sacrum_paratum_convivium.ly` |
+| `\repeat volta` / `unfold` | 5 523 | 33 | `Encantada.ly` |
+| `\time` / `\partial` | 1 575 | 17 | `02_02_Segura….ly` |
+| `\repeat tremolo` | 1 231 | 10 | `promenade-6.ly` |
+| `\cadenzaOn` | 356 | 6 | `accidental-ledger.ly` |
+| lyrics | 310 | 5 | `T_Amo_Mia_Vita.ly` |
+| `\repeat percent` | 50 | 11 | `ottava-double-percent-repeat-note.ly` |
+| `\partCombine` | 20 | 3 | `duration-line-and-partCombine.ly` |
+| `\scaleDurations` | 3 | 1 | `chord-tremolo-scaled-durations.ly` |
+
+By flag: `octave` 120 757 notes / 341 files, `attaque_decalee` 118 404 /
+517, `sortie_vide` 996 / 52, `notes_manquantes` 808 / 78.
+
+### Grace notes: oracle comparison rule, not a reader change
+
+Notation Reference §2.6.1 states that graces "take up no additional logical
+time in a measure" and that each grace note in MIDI has 1/4 of its written
+duration; `lily/grace-iterator.cc` processes them in the **grace part** of a
+musical moment and `lily/midi-walker.cc` notes that a score starting with
+graces starts at negative MIDI times. The oracle's `read_xml()` places a
+`<grace/>` at the current cursor, i.e. the following main note's attack, with
+zero duration. Quantizing LilyPond's grace onsets raw therefore compares two
+different times.
+
+The oracle now records **two** rules (files `scripts/oracle/lilypond/`
+`ly_notes.py`, `mesure.py`, `README.md`; `ly_notes.py selftest` and
+`mesure.py --selftest` cover the marker, the pairing, a missing grace and the
+unaffected case):
+
+- **N2** unchanged: every note is compared on `(pitch, quantized attack)`;
+- **N2-grace**: each candidate grace is paired with the latest unmatched MIDI
+  note of the **same pitch** in `[main attack − 1 quarter, main attack + grid/2]`;
+  paired graces are compared on the main note's logical attack and counted
+  separately (`graces_ref`, `graces_test`, `graces_match`). Pairing is
+  deterministic, never reassigns a main note, and a stale grace stays unmatched.
+
+| Lot | N2 % (no repeat) | N2-grace % (no repeat) |
+| --- | ---: | ---: |
+| mus | 93.51 | 93.51 |
+| ra | 81.25 | **81.80** |
+| mut | 80.12 | **80.14** |
+| **all** | **82.68** | **82.71** |
+
+All 4584 reference graces are matched (5440 graces emitted by the candidate,
+856 with no reference counterpart); the aggregate gain is small because the
+65 602 notes of the grace row are mostly **drift later in long scores**, not
+grace onsets: a reduced `c'4 \grace { d16 } e'4 f'2` source matches on the Q16
+grid under both rules.
+
+### The three largest `\voiceOne`/`<< … >>` files
+
+1. **`Symphony5_1.ly`** (7861 notes): first divergence at −3.5 quarters, a
+   candidate note at a **negative attack** produced by a leading `<backup>`
+   in measure 1, as in `25EF-04.ly`; a constant −8-quarter shift aligns 448
+   of its 8295 notes. This is the documented oracle offset, not a construct
+   error.
+2. **`bwv910.ly`** (3894 notes, N1 4147/4147): first divergence at 5.0
+   quarters, where the reference has seven 32nds and the candidate a single
+   quarter note. The source is
+   `a[ cis fis eis fis \change Staff = "LH" fis, a gis] \skip 4`: numeric
+   `\skip 4` set the remembered duration to a quarter for the following bare
+   notes. Notation Reference §2.2.2 says explicitly that *"a numeric duration
+   argument does not affect the duration of the subsequent note"* (unlike
+   `s4`), verified on a reduced source against LilyPond 2.26's MIDI. Fixed
+   (commit `1292ed9`); the reduced test
+   `skip_numerique_garde_la_duree_precedente` fails on the old code.
+3. **`BWV865_Fuga20.ly`** (2158 notes, N1 2376/2376): first divergence at 0,
+   five candidate notes at the very first attack where the reference starts
+   at 0.5 quarters. Its XML declares `<staves>11</staves>` for a two-staff
+   `PianoStaff`: nested `<< … \\ … >>` blocks containing `\new Voice` open
+   extra staves, and those branches put their notes at the current tick.
+   Notation Reference §5.2.1/§5.2.2 and `lily/parser.yy` `context_change`
+   keep voices *inside* a staff; the reader's §7 heuristic ("a simultaneous
+   block without `\\` is read as sibling voices") is too coarse here. A fix
+   requires reworking context allocation, which risks the eight already-exact
+   Bach files; this one is documented rather than patched blindly.
+
+### Final state of the second pass
+
+Frozen `/tmp/ly95-fix4` on the same full lists and cached references:
+
+| Lot | Exact | N1 % (all) | N2 % (no repeat) | N2-grace % (no repeat) |
+| --- | ---: | ---: | ---: | ---: |
+| mus | 1136 (78.5 %) | 99.22 | 93.51 | 93.51 |
+| ra | 1249 (72.4 %) | 90.93 | 81.25 | 81.70 |
+| mut | 435 (31.6 %) | 98.24 | 80.12 → **80.74** | 80.76 |
+| **all** | **2820 (62.0 %)** | **98.18** | **82.68 → 83.20** | **83.23** |
+
+After the previous pass (82.68 % N2 without repeats), the numeric-`\skip` fix
+gains **0.52 N2 points**, all of it from `bwv910.ly`: its 4147 notes go from
+253 to **4146 matched attacks** (the remaining note is an unrelated tie
+detail). Across all 4550 files there is **one N2 gain and zero N2 or N1 loss**;
+the number of exact files is unchanged. The N2-grace figures above were
+recomputed from the stored `ref.mid`/`tk.musicxml` of the same run after a
+correction to the pairing code: candidate graces must also be removed from
+the main-note multiset, otherwise a grace at the main attack can match a
+reference main note of the same pitch and be counted twice. `ly_notes.py
+selftest` and `mesure.py --selftest` cover the corrected rule.

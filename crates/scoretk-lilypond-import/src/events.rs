@@ -991,7 +991,9 @@ impl<'a> Interpreter<'a> {
                 visible: !chord.invisible,
             },
             ChordKind::Skip => ChordContent::Skip { sets_default: true },
-            ChordKind::SkipNumeric => ChordContent::Skip { sets_default: false },
+            ChordKind::SkipNumeric => ChordContent::Skip {
+                sets_default: false,
+            },
             ChordKind::MultiRest => ChordContent::MultiRest,
         };
         if let ChordContent::Notes(notes) = &mut content {

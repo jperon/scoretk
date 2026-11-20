@@ -4575,15 +4575,15 @@ bas = \fixed c {
     assert_eq!(
         durees_ecrites(&score),
         vec![
-            Fraction::new(1, 32),  // c32
-            Fraction::new(1, 32),  // d32
-            Fraction::new(1, 32),  // e32
-            Fraction::new(1, 32),  // f32
-            Fraction::new(1, 32),  // g32 : `\skip 4` n'a rien changé
-            Fraction::new(1, 32),  // a32
-            Fraction::new(1, 32),  // b32
-            Fraction::new(1, 32),  // c'32
-            Fraction::new(1, 2),   // d'2
+            Fraction::new(1, 32), // c32
+            Fraction::new(1, 32), // d32
+            Fraction::new(1, 32), // e32
+            Fraction::new(1, 32), // f32
+            Fraction::new(1, 32), // g32 : `\skip 4` n'a rien changé
+            Fraction::new(1, 32), // a32
+            Fraction::new(1, 32), // b32
+            Fraction::new(1, 32), // c'32
+            Fraction::new(1, 2),  // d'2
         ],
         "durées de la première portée"
     );

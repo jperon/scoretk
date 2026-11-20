@@ -219,7 +219,7 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     ecrire(out, r)
                     continue
                 try:
-                    test = read_xml(str(dst))
+                    test = read_xml(str(dst), with_grace=True)
                 except Exception as exc:
                     r["erreur"] = f"XML illisible : {exc}"
                     marquer_echec(r)
@@ -228,7 +228,9 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                 # Les graces du MIDI sont appariées à l'attaque de leur note
                 # principale (§2.6.1, grace-iterator.cc) ; N2 reste inchangé,
                 # n2_grace est publié à côté pour les deux règles de lecture.
-                graces = lire_graces(read_xml(str(dst), with_grace=True))
+                # On relit le XML avec le marqueur de grâce pour que `compare`
+                # retire aussi ces graces de l'intersection des notes principales.
+                graces = lire_graces(test)
                 r.update(compare(ref, test, args.grid, args.tol, graces=graces))
                 if r["ref"] and not r["test"]:
                     r["drapeaux"] = ["sortie_vide"]
