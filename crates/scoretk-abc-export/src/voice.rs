@@ -81,19 +81,6 @@ pub(crate) fn render_voice(
         .iter()
         .flat_map(|item| item.chord_rest.lyrics.iter().map(|lyrics| lyrics.verse))
         .collect();
-    // § 5.1 : une ligne `w:` décale l'alignement du couplet suivant ; une
-    // ligne faite de `*` n'est donc utile que si une syllabe réelle vient
-    // encore après elle dans le même couplet. On retient la dernière mesure
-    // chantée de chaque couplet pour supprimer les lignes terminales, qui
-    // n'alignent aucune syllabe.
-    let mut last_sung: BTreeMap<usize, usize> = BTreeMap::new();
-    for item in &items {
-        for lyrics in &item.chord_rest.lyrics {
-            if !text::escape_lyric(&lyrics.text).is_empty() {
-                last_sung.insert(lyrics.verse, item.measure);
-            }
-        }
-    }
     let tuplet_counts = tuplet_counts(score, &items);
     let mut ranges = Vec::with_capacity(score.measures.len());
     let mut cursor = 0usize;
@@ -282,8 +269,6 @@ pub(crate) fn render_voice(
         for lyric_line in lyrics_lines(
             &items,
             &all_verses,
-            measure_index,
-            &last_sung,
             range.clone(),
             &mut pending_word,
         ) {
@@ -985,8 +970,6 @@ fn render_chord(
 fn lyrics_lines(
     items: &[Item<'_>],
     verses: &BTreeSet<usize>,
-    measure_index: usize,
-    last_sung: &BTreeMap<usize, usize>,
     range: std::ops::Range<usize>,
     pending_word: &mut bool,
 ) -> Vec<String> {
@@ -1034,16 +1017,13 @@ fn lyrics_lines(
         if tokens.is_empty() {
             continue;
         }
-        // § 5.1 : sans syllabe réelle ultérieure, les `*` n'alignent rien ;
-        // ils seraient de l'octet sans information (et n'empêcheraient pas
-        // l'avertissement `abc2midi` sur une ligne de musique sans paroles).
-        if tokens.iter().all(|token| token == "*")
-            && last_sung
-                .get(&verse)
-                .is_none_or(|last| *last <= measure_index)
-        {
-            continue;
-        }
+        // § 5.1 : `*` est une syllabe blanche, et une ligne `w:` peut n'en
+        // contenir que : les notes restantes restent sans paroles. `xml2abc.py`
+        // (`writePart`, lignes 331-355) écrit un `w:` après chaque ligne de
+        // musique chantée. Omettre la ligne terminale économise quelques
+        // octets mais déclenche « Line of music without lyrics » sur une ligne
+        // qui porte pourtant des notes ; on l'écrit donc aussi en fin de
+        // couplet.
         lines.push(format!("w: {}", tokens.join(" ")));
     }
     lines

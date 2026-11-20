@@ -17,14 +17,17 @@
 
 //! Paroles terminales réduites à des `*`.
 //!
-//! § 5.1 de la norme ABC 2.1 : « the alignment of the lyrics starts at the
-//! first note after the notes aligned to the previous `w:` field ». Une ligne
-//! `w: * * * *` est donc **nécessaire** entre deux couplets (elle consomme les
-//! notes sans paroles du couplet courant, sinon le couplet suivant se décale),
-//! mais elle ne l'est plus après le dernier couplet : elle n'aligne alors
-//! aucune syllabe et n'ajoute que des octets. Le silence final, lui, n'est pas
-//! aligné (§ 5.1 : « syllables are not aligned on … rests ») et ne réclame
-//! aucun `w:`.
+//! § 5.1 de la norme ABC 2.1 : « * is equivalent to a blank syllable » et
+//! « if there are fewer syllables than available notes, the remaining notes
+//! have no lyric (blank syllables) ». Une ligne `w: * * * *` est donc
+//! nécessaire entre deux couplets (elle consomme les notes sans paroles du
+//! couplet courant, sinon le couplet suivant se décale) et reste licite après
+//! le dernier : elle déclare les syllabes blanches des notes restantes, comme
+//! `xml2abc.py::writePart` (lignes 331-355) écrit un `w:` après chaque ligne
+//! de musique chantée. Sans elle, `abc2midi` avertit « Line of music without
+//! lyrics » sur une ligne qui porte pourtant des notes. Le silence final, lui,
+//! n'est pas aligné (§ 5.1 : « syllables are not aligned on … rests ») et ne
+//! réclame aucun `w:`.
 
 #![cfg(all(feature = "musicxml-import", feature = "abc-export"))]
 
@@ -153,7 +156,7 @@ fn ecrire() -> String {
 }
 
 #[test]
-fn w_etoiles_terminal_supprime_et_etoiles_intermediaires_conserve() {
+fn w_etoiles_terminal_conserve_et_etoiles_intermediaires_conserve() {
     let abc = ecrire();
     let lignes: Vec<&str> = abc.lines().collect();
     let w: Vec<&str> = lignes
@@ -161,8 +164,9 @@ fn w_etoiles_terminal_supprime_et_etoiles_intermediaires_conserve() {
         .copied()
         .filter(|l| l.starts_with("w:"))
         .collect();
-    // Les quatre premières lignes restent : deux servent d'alignement entre
-    // couplets, deux portent des syllabes. La dernière n'aligne plus rien.
+    // Une ligne par mesure chantée : deux servent d'alignement entre couplets,
+    // trois portent des syllabes, la dernière ne déclare que des syllabes
+    // blanches (§ 5.1) mais évite l'avertissement `abc2midi`.
     assert_eq!(
         w,
         [
@@ -171,6 +175,7 @@ fn w_etoiles_terminal_supprime_et_etoiles_intermediaires_conserve() {
             "w: mi fa * *",
             "w: * * * *",
             "w: sol la * *",
+            "w: * * * *",
         ],
         "paroles écrites : {w:?}"
     );
@@ -198,6 +203,23 @@ fn w_etoiles_terminal_supprime_et_etoiles_intermediaires_conserve() {
         ],
         "musique de la voix chantée : {music:?}"
     );
+    // Toute ligne de musique portant des notes dans la voix chantée est
+    // suivie d'un `w:` : c'est exactement ce que `abc2midi` exige pour ne pas
+    // émettre « Line of music without lyrics » (§ 5.1 : syllabes blanches).
+    let chant: Vec<&str> = lignes[debut..]
+        .iter()
+        .copied()
+        .take_while(|l| !l.starts_with("V:"))
+        .collect();
+    for (i, ligne) in chant.iter().enumerate() {
+        if ligne.is_empty() || ligne.starts_with("w:") {
+            continue;
+        }
+        assert!(
+            chant.get(i + 1).is_some_and(|suivant| suivant.starts_with("w:")),
+            "ligne chantée sans `w:` : {ligne:?}"
+        );
+    }
     // Cas « non concerné » : la portée sans paroles n'en reçoit aucune.
     let fin: Vec<&str> = lignes
         .iter()
