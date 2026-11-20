@@ -846,70 +846,79 @@ ignored (`read206.cpp:1151-1153`). Articulations use the old name table
 merged (`convertDoubleArticulations`). Ties attached to a note are `<Tie>`
 (§19.3), not `<Spanner type="Tie">`.
 
-### 19.7 Limits of the port
+### 19.7 Id-based spanners (voltas, slurs, hairpins, ottavas)
 
-Layout, styles and positions are not modelled. Id-based slurs/hairpins/
-ottavas/pedals/volt/trill spanners and old glissandi are not reconnected, so
-their octave/text effects are missing on export; so are fret diagrams, images
-and drumsets. The 21 MuseScore 2.x files of `~/Musique` were measured against
-4.7.4 MusicXML: 19/21 match exactly on the multiset of written pitches,
-alterations, octaves and durations; one file differs only because its
-transposing instrument is exported in written rather than concert pitch
-(export option, not the reader), one because of missing ottava spanners.
+`read206.cpp` pairs a definition carrying `id` with a later `<endSpanner id>`:
+`readVolta206` (`:2212`), `readSlur206` (`:2598`), `readHairpin206` (`:2318`),
+`readOttava` (`:2286`), and `readMeasure206` (`:2834-2852`) resolves the closing
+end. The Rust port collects both halves during `transform`, then `fix_spanners`
+builds the model `Spanner`s after the 3.x read, exactly as `fix_ties` does for
+ties. Voltas carry `<endings>` and `<endHook>` (`VoltaInfo`); slurs carry `<up>`;
+hairpins carry the integer `<subtype>` (1/3 diminuendo, ≥2 dashed line),
+`beginText` and `hairpinCircledTip`; ottavas carry `<subtype>` `8va`/`8vb`/
+`15ma`/`15mb`. An ottava defined after some chords is anchored on the next
+chord, because `readMeasure206` places it at the current tick, not the measure
+start. Pedals, trills and old glissandi are still **not** ported.
 
+### 19.8 The two remaining MusicXML differences — resolved or explained
 
-```xml
-<StaffText><placement>below</placement><text>doux <b>et</b> <i>lié</i></text></StaffText>
-<Tempo><tempo>2</tempo><followText>1</followText>
-  <text><sym>metNoteQuarterUp</sym> = 120</text></Tempo>
-<RehearsalMark><frameType>2</frameType><text>A</text></RehearsalMark>
-<VBox><height>10</height>
-  <Text><style>title</style><text>Mon titre</text></Text>
-</VBox>
-```
-Annotations de segment (aucune ne consomme de tick, section 6) : `StaffText`,
-`SystemText`, `Tempo`, `RehearsalMark`, `Expression`, `InstrumentChange`,
-`Dynamic`, `Harmony`. Propriétés lues : `<text>`, `<placement>` (`above`
-défaut / `below`), `<visible>` (0 = non exporté), `<frameType>` (0 sans cadre,
-1 rectangle, 2 cercle), `<style>`, `<italic>`/`<bold>`/`<underline>`/`<strike>` ;
-pour `Tempo` `<tempo>` (battements **par seconde**) et `<followText>` ; pour
-`InstrumentChange` `<Instrument>` (non lu). `<style>` fixe le placement et la
-police de départ que le fichier ne répète pas : `<style>expression</style>`
-donne un texte italique **sous** la portée (`TextStyleType::EXPRESSION`), et les
-propriétés `italic`/`bold` ci-dessus écrasent ce format de départ.
+* **Ottavas — fixed.** Before the spanner port, the piano file `Vingt danses
+  enfantines` differed from 4.7.4 on 174 notes (one octave). With the 8
+  `<Ottava id>` pairs reconnected, both exports write 16 `<octave-shift>`
+  elements and the difference drops to 7 notes out of 17 830; the remainder
+  comes from ottavas whose extent ends mid-measure (the 2.x `<endSpanner>` can
+  fall on a note inside a measure, where our model anchor is less precise).
+* **Written pitch of a transposing instrument — explained, not a read loss.**
+  `Ad_te_Suspiramus` is a Piccolo part with `+12` chromatic transposition.
+  MuseScore 4.7.4 exports it with `<concert-score/>`, i.e. `Sid::concertPitch`
+  is true. In the C++ export, `ExportMusicXml::pitch2xml`
+  (`exportmusicxml.cpp:1654`) uses `note->concertPitch() ? 0 :
+  instr->transpose()`, and `EngravingItem::concertPitch()`
+  (`engravingitem.cpp:2043`) reads that style; `read206.cpp:3371` fills it from
+  `<displayInConcertPitch>`. scoretk exposes the same choice as
+  `ExportOptions::concert_pitch` (`crates/scoretk/src/options.rs:55`, default
+  `false`, no CLI flag), so the CLI writes written pitch (D4) where the 4.7.4
+  reference writes sounding pitch (D5). A facade caller can set the option to
+  match; the reader itself loses no pitch (all 1 139 notes are present).
 
-`<text>` est du **balisage** et non du texte brut : `TRead::readProperties`
-utilise `XmlReader::readXml` (`rw/xmlreader.cpp:212`), qui re-sérialise les
-balises internes. Balises : `<b>`, `<i>`, `<u>`, `<s>`, `<sub>`, `<sup>`,
-`<font face="…"/>` et `<font size="…"/>` (une propriété par balise ;
-`</font>` ne restaure pas le format précédent), `<sym>nom</sym>` (symbole
-SMuFL rendu par un point de code MuseScore), `\n` = saut de ligne. Les entités
-nommées (`&quot;`, `&amp;`) sont conservées telles quelles dans le texte
-interne, les références numériques sont résolues.
+After these fixes, **19 of the 21** MuseScore 2.x files match 4.7.4 exactly on
+the multiset of written pitch/alter/octave/duration; the piano file differs on
+only 7 of 17 830 notes (partial ottava extents) and `Ad_te_Suspiramus` keeps the
+concert-pitch option difference described above.
 
-Export (`export/text.rs`, portage de `MScoreTextToMusicXml::writeTextFragments`
-et `ExportMusicXml::words`/`tempoText`/`systemText`/`rehearsal`/`credits`) :
-un `<words>` par fragment, attributs de format seulement quand ils changent par
-rapport au fragment précédent (référence = style des textes de portée : Edwin
-10). `StaffText`/`Expression`/`InstrumentChange` → `<direction>` + `<words>` ;
-`SystemText` et `Tempo` → `system="only-top"` ; `Tempo` → `<metronome>` quand
-`findMetronome`/`TempoText::findTempoDuration` reconnaît une formule
-(`<beat-unit>`, `<beat-unit-dot>`, `<per-minute>`), plus `<sound tempo>`
-(arrondi à 2 décimales) ; un tempo invisible n'exporte que ce `<sound>`.
-`RehearsalMark` → `<rehearsal>` avec `enclosure` (absent si rectangle).
-Un texte décalé par rapport au tick courant ajoute
-`<offset sound="yes">` (tempo, `<words>`) ou `<offset>` (repère).
+### 19.9 Writing oracles on the `.mscz` lot (baseline `4d78e80` → current)
 
-`<VBox>` → `<credit>` (`ExportMusicXml::credits`) : un `<credit page="1">` par
-`<Text>` visible, `<credit-type>` d'après `<style>` (`title`, `subtitle`,
-`composer`, `lyricist`, vide sinon), alignements `justify`/`valign` du style,
-police et taille par défaut selon le style. `<work>`, `<movement-number>`,
-`<movement-title>` et les `<creator>` d'`<identification>` viennent des
-`<metaTag>`, pas des textes.
+Frozen baseline: CLI built from `git worktree` at `1bcf854^` (= `4d78e80`, the
+commit just before the first `read206` port). Same reference MIDI/MusicXML
+files and same tolerance/grid for both runs. The `mscz` lot of the LilyPond and
+ABC writing oracles has 174 files; to keep the campaign bounded we ran a
+**targeted manifest of 31 files**: all 21 MuseScore 2.x files plus 10
+deterministically sampled 3.x/4.x controls (every 9th non-2.x file). The MIDI
+`ecriture_mscz_musique` lot is complete (8 files).
 
-Non porté : textes de `TBox` (`tboxTextAsWords`), textes de spanner
-(`TextLine`), détails des changements d'instrument (`writeInstrumentChange`),
-symboles hors table de métronome, positions (`default-x`/`default-y`), style de
-partition (`<Style>`/`.mss`) et `<miscellaneous>`. Les `<Marker>`/`<Jump>`
-(D.C., D.S., Fine…) sont eux exportés en `<words>` par `export/repeats.rs` :
-ne pas les produire une seconde fois depuis les annotations.
+| Oracle / lot (31 files unless stated) | Tool | Baseline (master before port) | Current | Reading |
+| --- | --- | --- | --- | --- |
+| MIDI `ecriture_mscz_musique` (8) vs MuseScore MIDI | scoretk | 7/8 OK, 2 exact, N2 52.27 % | 8/8 OK, 2 exact, N2 57.25 % | the one 2.x file goes from hard failure to N2 100 %; the other 7 are byte-identical in score |
+| LilyPond `mscz`, reference = MuseScore MIDI via `musicxml2ly` | scoretk | 10/31 compiled, 2 exact, N2d 86.69 % | 28/31 compiled, 3 exact, N2d 58.24 % | 21 previously unreadable files now compile (N2d 0 → 40–100 %); aggregate drops only because they now enter the average |
+| LilyPond `mscz` | `musicxml2ly` | 28/31 compiled, 6 exact, N2d 84.59 % | 28/31 compiled, 6 exact, N2d 84.59 % | unchanged control |
+| ABC `mscz`, reference = MuseScore MIDI via `xml2abc.py` | scoretk | 10/31 ABC OK, 2 exact, N2d 79.19 % | 31/31 ABC OK, 2 exact, N2d 44.77 % | same pattern: 21 new readable files, lower aggregate mean |
+| ABC `mscz` | `xml2abc.py` | 31/31 ABC OK, 3 exact, N2d 45.61 % | 31/31 ABC OK, 3 exact, N2d 45.61 % | unchanged control |
+
+**No per-file loss.** All 10 control files keep exactly the same N2d score in
+all three oracles (e.g. `Buenos_dias` 97.93 % in LilyPond and 87.19 % in ABC,
+before and after). The 21 2.x files go from `echec` (no output at all) to real
+conversions; 2 of them still fail LilyPond compilation (`La_foule`,
+`Vingt_danses`) and two ABC/LilyPond conversions show `octave` deviations,
+tracked to the concert-pitch export option and to unported pedal/trill
+spanners. The aggregate percentage decrease is therefore an expansion of the
+denominator, not a regression.
+
+### 19.10 Is porting `read114` worth it?
+
+No. The only version ≤ 114 file in `~/Musique` is
+`Partitions/Accordeon/Canon_in_D_Pachelbel_-_arranged_for_accordion.mscz`
+(`version="1.14"`, 349 KB of MSCX, 154 measures, 930 chords, 2 staves).
+`read114.cpp` is 3 257 lines of additional format conventions (one `<Staff>`
+per voice, `<ticklen>`/`<move>` timing, its own tie and text encoding), which
+would be a second full reader comparable to `read206` for a single file. It is
+left unported and documented here rather than guessed from the 2.x reader.

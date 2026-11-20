@@ -131,6 +131,7 @@ conventions d'ensemble (voix `<track>`/`<tick>`, `<Tie id>`/`<endSpanner id>`,
 | --- | --- |
 | `crates/scoretk-musescore-import/src/read206/mod.rs` | `engraving/rw/read206/read206.cpp` (`Read206::readScoreFile`, `readScoreTag`, `Score::connectTies`) |
 | `crates/scoretk-musescore-import/src/read206/transform.rs` | `read206.cpp` (`readStaffContent206`, `readMeasure206`, `readChord`, `readNote206`, `readTuplet206`, `readTextStyle206`) et `rw/rwregister.cpp` |
+| `crates/scoretk-musescore-import/src/read206/spanners.rs` | `read206.cpp` (`readVolta206`, `readSlur206`, `readHairpin206`, `readOttava`, `readMeasure206` pairing) et `dom/spanner.h` |
 | `crates/scoretk-musescore-import/src/read206/xml.rs` | `engraving/rw/xmlreader.cpp` (lecture des attributs et du contenu mixte) |
 
 `src/engraving/rw/read114/` n'a été consulté que pour comprendre les seuils de
