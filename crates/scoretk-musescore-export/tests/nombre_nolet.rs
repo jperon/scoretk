@@ -84,7 +84,10 @@ fn type_nombre_nolet_ecrit_et_relu() {
 
     // Aucune perte musicale : hauteurs, durées et mesures sont conservées.
     let direct = scoretk_musicxml_export::export_musicxml(&partition).expect("export");
-    assert_eq!(direct.matches("<pitch>").count(), retour.matches("<pitch>").count());
+    assert_eq!(
+        direct.matches("<pitch>").count(),
+        retour.matches("<pitch>").count()
+    );
     assert_eq!(
         direct.matches("<duration>").count(),
         retour.matches("<duration>").count()

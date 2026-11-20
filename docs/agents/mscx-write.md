@@ -454,3 +454,113 @@ and the three `Vingt danses` xml scores each lose 3 core lines (`coda`,
 lot, so there is no playback regression. On corpus/mscz/xml the alternative
 stays at 56/56, 39/171 and 0/27 core-identical: the remaining gap is
 reader/model work out of scope here.
+
+### Fourth pass — fresh baseline (English)
+
+The baseline of this pass is a **fresh, full measurement** (`mesure.sh` without
+`--resume`) of the same 638 scores with the current master binary
+`/tmp/scoretk-mscz-pass4-base` (commit `47fc6d4`, sha256 `e07c1ae9…`). Since
+pass 3, master gained the LilyPond `\partial` multiplier fix and several
+MuseScore reader / MusicXML export fixes; the table below is the new baseline,
+not a copy of the pass-3 table.
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | 49/56 | 0.9700 | 0.9682 | 0 | 56/56 |
+| mscz | 174 | 171 | 172 | 31/171 | 0.9781 | 0.9732 | 0 | 39/171 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9103 | 0.3055 | 0 | 0/27 |
+| ly | 375 | 340 | 340 | 1/340 | 0.9998 | 0.9970 | 0 | 0/0 |
+| abc | 1 | 1 | 1 | 0/1 | 1.0000 | 1.0000 | 0 | 0/0 |
+| **Total** | **638** | **595** | **596** | **81/595** | **0.9682** | **0.8612** | **0** | **95/254** |
+
+The 43 rows MuseScore did not open group as follows. Its CLI prints nothing;
+the messages come from `~/.local/share/MuseScore/MuseScore4/logs/`, one
+invocation per log.
+
+| Cause | Rows | Owner |
+| --- | ---: | --- |
+| `Incomplete measure … Found: x Expected: y` | 23 | reader/model: a measure `len` disagrees with the durations written in it (anacrusis, padded voices) |
+| scoretk `source LilyPond illisible : aucune musique dans la source` | 16 | reader: `.ly` include snippets with no music |
+| SIGSEGV (ly-29 `SanctePieX.ly`) | 1 | not reduced to a writer value; MuseScore's own import of the source also fails (rc 40), so there is no alternative to beat |
+| `Voice too long … Found: 66/8. Expected: 8` (ly-97) | 1 | reader: LilyPond voice overflow |
+| scoretk `version MuseScore non prise en charge` (1.14, mscz-7) | 1 | reader: `read114` is deliberately not ported |
+| MuseScore MIDI export timeout (mscz-55) | 1 | playback, not the writer |
+
+For the SIGSEGV, adding a `<Channel>`, instrument names, or removing the
+`<Spanner>`, `<Lyrics>`, `<VBox>` and `<BarLine>` elements of the written
+`.mscx` one at a time did not change the crash: it is not a missing writer
+child of the kind fixed in pass 2.
+
+### Fourth pass — corpus/mscz gaps reduced
+
+For every score where MuseScore's own import is core-identical (rightmost
+column of the baseline table) and scoretk's written `.mscz` is not, the first
+differing core line was reduced. None of the 25 corpus/mscz files is gained or
+lost by the fix below except corpus-11.
+
+| Cause / owner | Scores | First differing core line |
+| --- | --- | --- |
+| **tuplet `numberType` — writer, fixed** | corpus-11 | `<tuplet bracket="no" type="start"/>` vs `… show-number="none" …` |
+| mmRest count — model/style | corpus-24, 42; mscz-34, 35, 36, 38, 39, 42 | `<measure-style><multiple-rest>N</multiple-rest>` written by scoretk only |
+| anacrusis measure number — reader/model | mscz-1, 2, 11, 28, 41, 47 | `<measure number="1">` vs `<measure implicit="yes" number="0">` |
+| accidental attached to an ornament/padded voice — reader/model | corpus-31; mscz-10, 44, 56, 142 | `<accidental>natural</accidental>` / `<accidental>flat</accidental>` |
+| explicit timeline padding — reader | mscz-12, 17, 154 | `<note>` vs `<forward>` |
+| Nashville `<function>` — reader | corpus-22 | `<function>m</function>` vs `<numeral>` |
+| excerpt/tie metadata — model | corpus-41 | `<tie type="start"/>` written by scoretk only |
+| ottava and invisible elements — reader | corpus-50 | `<octave>5</octave>` vs `<octave>4</octave>` |
+
+The mmRest group is not a missing writer attribute: `createMultiMeasureRests`
+is in `score_style.mss`, outside the pivot `StyleSettings`. Adding the flag to
+the written `.mscx` and `.mss` of corpus-24 by hand makes MuseScore export
+three `<multiple-rest>1</multiple-rest>` where scoretk writes one
+`<multiple-rest>2</multiple-rest>`: it needs model work, not a writer fudge.
+The Nashville group needs `function2Tpc` in `TRead::read(HarmonyInfo*)`
+(upstream `read410/tread.cpp:2839`) to fill `rootTpc`, which scoretk's 3.x
+reader does not do.
+
+**`<numberType>` of a tuplet — corpus-11 (`moonlight`), 618 core lines.** The
+writer emitted `<Number><text/></Number>` but not `Pid::NUMBER_TYPE`, so
+MuseScore's 4.6+ reader fell back to `SHOW_NUMBER`. Port of
+`TWrite::write(const Tuplet*)` (`write/twrite.cpp:3500-3525`) through
+`writeStyledProperties` (`:644-647`), writing `numberType` 1 (`SHOW_RELATION`)
+and 2 (`NO_TEXT`) from `dom/property.cpp:119` and `dom/types.h:1600`; the 4.6+
+reader (`read460/tread.cpp:1530`) and MusicXML exporter
+(`exportmusicxml.cpp:2781-2784`) use only that property. The 4.x reader of
+scoretk now reads it too, keeping `<Number><text>` as fallback for older
+files. Reduced test: `type_nombre_nolet_ecrit_et_relu`, in ordinary music
+(`testTuplets8`: bars, chords, rests, voices and n-olets), with a
+non-concerned case. On `moonlight` reopened by MuseScore 4.7.4, the re-export
+now carries the same 264 `show-number="none"` as scoretk's direct export
+(0 before), over the same 536 tuplets: no pitch, duration or measure changed.
+Its core diff drops from 618 to 98 changed lines, but it does **not** become
+core-identical: the first remaining difference is `<note>` vs `<forward>`
+(scoretk's explicit voice padding), which is reader/MusicXML-export work.
+Format note: `.mscx` has no published specification, so this follows the
+MuseScore 4.7.4 behaviour and the upstream C++ cited above.
+
+### Fourth pass — final table
+
+Binary `/tmp/scoretk-mscz-pass4-final` (sha256 `069b8afe…`). Same 638 scores,
+same oracle, same tolerance. The final run hit the 1-hour shell timeout after
+264 of the 375 `.ly` files; the remaining 111 `.ly` and the single `.abc` were
+measured with the same frozen binary into a second output directory, then
+their rows and work files were merged before recomputing the table from all
+638 rows (`mesure.sh --resume` only recomputes the core comparison).
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | 49/56 | 0.9700 | 0.9682 | 0 | 56/56 |
+| mscz | 174 | 171 | 172 | 31/171 | 0.9781 | 0.9732 | 0 | 39/171 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9103 | 0.3055 | 0 | 0/27 |
+| ly | 375 | 340 | 340 | 1/340 | 0.9998 | 0.9970 | 0 | 0/0 |
+| abc | 1 | 1 | 1 | 0/1 | 1.0000 | 1.0000 | 0 | 0/0 |
+| **Total** | **638** | **595** | **596** | **81/595** | **0.9682** | **0.8612** | **0** | **95/254** |
+
+Compared with the fresh baseline, **no file loses a core line** and two files
+improve: corpus-11 `moonlight` (618 → 98 changed core lines) and mscz-167
+`Vivaldi, DeTorrente` (366 → 104, same `<tuplet show-number="none">` cause).
+N1/N2 are unchanged on every lot. No file becomes core-identical: the first
+remaining difference on both is `<note>` vs `<forward>` (scoretk's explicit
+voice padding), and on mscz-167 then the tuplet-bracket heuristic — both
+reader/MusicXML-export work, not mis-serialised writer values. The 43 unopened
+rows have the same grouping and count as in the baseline.
