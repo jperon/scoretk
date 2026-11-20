@@ -146,6 +146,16 @@ fn write_repeat_mark(xml: &mut XmlWriter, mark: &RepeatMark) {
             if !label.is_empty() {
                 xml.tag("label", &label);
             }
+            // Port de `TWrite::write(const Marker*)` (`write/twrite.cpp:2401-2409`) :
+            // `Pid::MARKER_TYPE` (<markerType>, table `typesconv.cpp:3254`) doit
+            // être écrit en plus du <label>. Le lecteur 4.6+
+            // (`read460/tread.cpp:1724-1727`) ne reconstruit le type qu'à partir
+            // de là ; sinon `Marker::Marker` (`dom/marker.cpp:79`) prend FINE par
+            // défaut et MuseScore réexporte `<sound fine="yes"/>`.
+            let marker_type = crate::names::marker_label(marker.kind);
+            if !marker_type.is_empty() {
+                xml.tag("markerType", marker_type);
+            }
             if !marker.text.is_empty() {
                 xml.tag("text", &marker.text);
             }
