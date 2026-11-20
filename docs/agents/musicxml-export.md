@@ -77,7 +77,24 @@ layout hides without an explicit `<isStaffVisible>` (distance to the previous
 staff ≤ 0 in `exportmusicxml.cpp:7553-7575`). The pivot model carries no layout,
 so these are a documented limit, not a regression.
 
-## 4. Next causes
+## 4. Round trip de `Staff::visible`
+
+Le nouveau champ ne doit pas être perdu aux autres frontières :
+
+- l'écrivain `.mscx` (`write/twrite.cpp:2945-2947`) n'écrivait jamais
+  `<isStaffVisible>` ; il l'écrit maintenant quand la portée est invisible
+  (`crates/scoretk-musescore-export/src/write/staffwrite.rs`), avec un test
+  lecture → écriture → relecture (`tests/portee_invisible.rs`) ;
+- le lecteur MusicXML ne lisait que `<staff-lines>` dans `<staff-details>` ;
+  `print-object="no"` rend désormais la portée invisible
+  (`MusicXmlParserPass2::staffDetails`, `importmusicxmlpass2.cpp:3262-3292`),
+  avec un test dans `tests/lecture.rs`.
+
+Les nuances du C++ non modélisées ici (cutaway `print-spacing="yes"`,
+portée vide masquée par le style `hideEmptyStaves`, visibilité par mesure)
+restent des limites du modèle pivot.
+
+## 5. Next causes
 
 Work the ranking of §2 in order, re-measuring after each committed cause:
 `tuplet` (bracket direction), `attributes`, `measure`, `midi-channel`, `sound`.

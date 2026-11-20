@@ -819,25 +819,33 @@ fn chord_rest_at_mut(
 // Attributs de mesure
 // ----------------------------------------------------------------------
 
-/// Nombre de lignes d'une portée (`setStaffLines`).
+/// Lignes et visibilité d'une portée (`MusicXmlParserPass2::staffDetails`,
+/// `importmusicxmlpass2.cpp:3246-3305`).
+///
+/// `print-object="no"` rend la portée invisible (`:3262-3292`). Le C++ distingue
+/// aussi le cutaway (`print-spacing="yes"`, visibilité par mesure) et les
+/// portées vides masquées par le style `hideEmptyStaves` ; le modèle pivot n'a
+/// ni visibilité par mesure ni ce style déduit, on retient le cas général.
 fn read_staff_details(
     score: &mut Score,
     analysis: &Analysis,
     part_index: usize,
     element: &Element,
 ) {
-    let Some(lines) = element.child_int("staff-lines") else {
-        return;
-    };
     let position = element
         .attribute("number")
         .and_then(|number| number.parse::<usize>().ok())
         .map_or(0, |number| number.saturating_sub(1));
     let _ = analysis;
-    if let Some(staff_id) = score.parts[part_index].staves.get(position).copied() {
-        if let Ok(lines) = u8::try_from(lines) {
-            score.staff_mut(staff_id).lines = lines;
-        }
+    let Some(staff_id) = score.parts[part_index].staves.get(position).copied() else {
+        return;
+    };
+    score.staff_mut(staff_id).visible = element.attribute("print-object") != Some("no");
+    let Some(lines) = element.child_int("staff-lines") else {
+        return;
+    };
+    if let Ok(lines) = u8::try_from(lines) {
+        score.staff_mut(staff_id).lines = lines;
     }
 }
 

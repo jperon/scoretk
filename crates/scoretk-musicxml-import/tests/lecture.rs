@@ -107,3 +107,22 @@ fn racine_inconnue_refusee() {
             | scoretk_musicxml_import::Error::MissingPartList
     ));
 }
+
+/// `MusicXmlParserPass2::staffDetails` (`importmusicxmlpass2.cpp:3262-3292`)
+/// lit `print-object="no"` sur `<staff-details>` et rend la portée invisible.
+/// Le portage ne lisait que `<staff-lines>`.
+#[test]
+fn staff_details_print_object_no_rend_la_portee_invisible() {
+    let mut texte = String::from_utf8(partition_44()).expect("utf8");
+    texte = texte.replacen(
+        "<divisions>1</divisions>",
+        "<divisions>1</divisions>\n        <staff-details print-object=\"no\"><staff-lines>5</staff-lines></staff-details>",
+        1,
+    );
+    let score = read_musicxml(texte.as_bytes()).expect("lecture");
+    let staff = score.parts[0].staves[0];
+    assert!(
+        !score.staff(staff).visible,
+        "print-object=\"no\" doit rendre la portée invisible"
+    );
+}

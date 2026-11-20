@@ -165,6 +165,11 @@ fn write_part(xml: &mut XmlWriter, ctx: &WriteContext<'_>, index: usize, part: &
         if staff.bar_line_span {
             xml.tag("barLineSpan", "1");
         }
+        // `TWrite::write(Staff*)` (`write/twrite.cpp:2945-2947`) n'écrit
+        // `<isStaffVisible>` que pour une portée invisible ; la valeur est 0.
+        if !staff.visible {
+            xml.tag("isStaffVisible", "0");
+        }
         write_default_clef(xml, staff.default_clef);
         for bracket in &staff.brackets {
             write_bracket(xml, bracket);
