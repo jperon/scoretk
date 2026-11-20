@@ -57,25 +57,41 @@ fn diatonic_step(tpc: i8) -> usize {
     FIFTHS_TO_DIATONIC[fifths]
 }
 
-/// Intervalle en demi-tons vers le degré diatonique suivant.
-const STEP_SEMITONES: [i32; 7] = [2, 2, 1, 2, 2, 2, 1];
+/// Hauteurs naturelles des degrés dans l'ordre do, ré, mi, fa, sol, la, si.
+const NATURAL_PITCH_CLASS: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
+/// Ordre des dièses et des bémols dans une armure (index de degré).
+const SHARP_ORDER: [usize; 7] = [3, 0, 4, 1, 5, 2, 6];
+const FLAT_ORDER: [usize; 7] = [6, 2, 5, 1, 4, 0, 3];
 
-/// Hauteur du degré `steps` au-dessus de la note écrite
-/// (`chromaticPitchSteps` de `compatmidirender.cpp`).
-fn step_pitch(note: &Note, steps: i32) -> u8 {
-    let mut pitch = i32::from(note.pitch);
-    let mut step = diatonic_step(note.tpc);
-    let direction = if steps < 0 { -1 } else { 1 };
-    for _ in 0..steps.abs() {
-        if direction > 0 {
-            pitch += STEP_SEMITONES[step];
-            step = (step + 1) % 7;
-        } else {
-            step = (step + 6) % 7;
-            pitch -= STEP_SEMITONES[step];
+/// Altérations de l'armure par degré (do..si) pour `fifths` dièses (+)
+/// ou bémols (−), comme `KeySig::concertKey().fifths()` du modèle.
+fn key_accidentals(fifths: i8) -> [i32; 7] {
+    let mut result = [0i32; 7];
+    if fifths > 0 {
+        for step in SHARP_ORDER.iter().take(fifths as usize) {
+            result[*step] = 1;
+        }
+    } else if fifths < 0 {
+        for step in FLAT_ORDER.iter().take((-fifths) as usize) {
+            result[*step] = -1;
         }
     }
-    pitch.clamp(0, 127) as u8
+    result
+}
+
+/// Hauteur du degré `steps` au-dessus de la note écrite dans l'armure courante
+/// (`chromaticPitchSteps`/`tpcInterval` de `compatmidirender.cpp`).
+fn step_pitch(note: &Note, steps: i32, fifths: i8) -> u8 {
+    if steps == 0 {
+        return note.pitch;
+    }
+    let accidentals = key_accidentals(fifths);
+    let step = diatonic_step(note.tpc);
+    let target = (step as i32 + steps).rem_euclid(7) as usize;
+    let target_pc = (NATURAL_PITCH_CLASS[target] + accidentals[target]).rem_euclid(12);
+    let note_pc = i32::from(note.pitch).rem_euclid(12);
+    let delta = (target_pc - note_pc).rem_euclid(12);
+    (i32::from(note.pitch) + if delta == 0 { 12 } else { delta }).clamp(0, 127) as u8
 }
 
 /// Évènements d'un trille sur `note` : `(décalage en ticks, hauteur, durée)`.
@@ -84,7 +100,12 @@ fn step_pitch(note: &Note, steps: i32) -> u8 {
 /// tempo en battements par seconde au tick source. Le style est celui par
 /// défaut de MuseScore ; le style baroque (préfixe `{1,0}`) n'est pas encore
 /// modélisé dans le pivot.
-pub(crate) fn trill(note: &Note, ticks: i64, beats_per_second: f64) -> Vec<(i64, u8, i64)> {
+pub(crate) fn trill(
+    note: &Note,
+    ticks: i64,
+    beats_per_second: f64,
+    fifths: i8,
+) -> Vec<(i64, u8, i64)> {
     if ticks <= 0 {
         return Vec::new();
     }
@@ -117,7 +138,11 @@ pub(crate) fn trill(note: &Note, ticks: i64, beats_per_second: f64) -> Vec<(i64,
     let mut events = Vec::new();
     let mut ontime = 0i64;
     let mut emit = |degre: i32, duree: i64, events: &mut Vec<(i64, u8, i64)>| {
-        events.push((ticks * ontime / 1000, step_pitch(note, degre), duree));
+        events.push((
+            ticks * ontime / 1000,
+            step_pitch(note, degre, fifths),
+            duree,
+        ));
         ontime += milles;
     };
     emit(0, milles * ticks / 1000 - 1, &mut events);
@@ -129,7 +154,7 @@ pub(crate) fn trill(note: &Note, ticks: i64, beats_per_second: f64) -> Vec<(i64,
     if sustain > 0 {
         events.push((
             ticks * ontime / 1000,
-            step_pitch(note, 1),
+            step_pitch(note, 1, fifths),
             sustain * ticks / 1000 - 1,
         ));
     }
@@ -144,11 +169,13 @@ mod tests {
     #[test]
     fn pas_du_trille_et_degre_superieur() {
         let note = Note::new(72, tpc::C);
-        assert_eq!(step_pitch(&note, 0), 72);
-        assert_eq!(step_pitch(&note, 1), 74); // do → ré
+        assert_eq!(step_pitch(&note, 0, 0), 72);
+        assert_eq!(step_pitch(&note, 1, 0), 74); // do → ré
         let si = Note::new(71, tpc::B);
-        assert_eq!(step_pitch(&si, 1), 72); // si → do
-        let events = trill(&note, i64::from(DIVISION), 2.0);
+        assert_eq!(step_pitch(&si, 1, 0), 72); // si → do
+        let fis = Note::new(78, tpc::F_SHARP);
+        assert_eq!(step_pitch(&fis, 1, 2), 79); // ré majeur : fa# → sol naturel
+        let events = trill(&note, i64::from(DIVISION), 2.0, 0);
         assert_eq!(events.len(), 8);
         assert_eq!(events[0], (0, 72, 59));
         assert_eq!(events[1], (60, 74, 59));

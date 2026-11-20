@@ -552,6 +552,25 @@ fn pitch_offset(map: &BTreeMap<i64, i32>, tick: i64) -> i32 {
         .map_or(0, |(_, shift)| *shift)
 }
 
+/// Armure (`Key::fifths`) en vigueur au tick source, pour l'orthographe des
+/// notes auxiliaires des ornements (`tpcInterval` de `compatmidirender.cpp`).
+fn key_fifths_at(score: &Score, tick: i64) -> i8 {
+    let mut fifths = 0i8;
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            if segment.tick.ticks(UNITS_PER_WHOLE) > tick {
+                continue;
+            }
+            for (_, item) in segment.iter_elements() {
+                if let scoretk_core::model::SegmentItem::KeySig(key) = item {
+                    fifths = key.concert_key.fifths();
+                }
+            }
+        }
+    }
+    fifths
+}
+
 /// Temps en battements par seconde au tick source (annotations `<Tempo>`).
 /// Sert à borner la fréquence du trille comme `multipliedTempo` dans
 /// `renderNoteArticulation` (`compatmidirender.cpp:705-720`).
@@ -1204,9 +1223,12 @@ fn render_chord(
             && chord.grace_chords.is_empty()
             && tremolo.is_none()
         {
-            for (offset, trill_key, length) in
-                ornaments::trill(note, ticks, beats_per_second_at(score, source_tick))
-            {
+            for (offset, trill_key, length) in ornaments::trill(
+                note,
+                ticks,
+                beats_per_second_at(score, source_tick),
+                key_fifths_at(score, source_tick),
+            ) {
                 let start = on + offset;
                 let end = start + length.max(1);
                 out.push(Event {

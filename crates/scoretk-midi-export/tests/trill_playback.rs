@@ -102,6 +102,51 @@ fn mscx(trill: &str) -> String {
     )
 }
 
+/// Le degré auxiliaire suit l'armure : en ré majeur (2 dièses), le trille sur
+/// fa dièse alterne avec sol **naturel** (79), pas sol dièse (80). Référence
+/// MuseScore 4.7.4 sur une mesure réduite en 4/10, `KeySig accidental=2`.
+#[test]
+fn trille_auxiliaire_selon_larmure() {
+    let source = r#"<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="4.10">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <trackName>Piano</trackName>
+      <Instrument id="keyboard.piano">
+        <longName>Piano</longName><shortName>Pno.</shortName><trackName>Piano</trackName>
+        <instrumentId>keyboard.piano</instrumentId>
+        <Channel><program value="0"/></Channel>
+      </Instrument>
+    </Part>
+    <Staff id="1"><Measure><voice>
+      <KeySig><accidental>2</accidental></KeySig>
+      <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+      <Tempo><tempo>2</tempo><followText>1</followText></Tempo>
+      <Chord>
+        <durationType>quarter</durationType>
+        <Articulation><subtype>ornamentTrill</subtype></Articulation>
+        <Note><pitch>78</pitch><tpc>20</tpc></Note>
+      </Chord>
+      <Chord><durationType>quarter</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+      <Chord><durationType>quarter</durationType><Note><pitch>62</pitch><tpc>16</tpc></Note></Chord>
+      <Chord><durationType>quarter</durationType><Note><pitch>64</pitch><tpc>18</tpc></Note></Chord>
+    </voice></Measure></Staff>
+  </Score>
+</museScore>
+"#;
+    let container = MsczContainer::from_bytes(source.as_bytes()).expect("conteneur");
+    let score = scoretk_musescore_import::read::read_score(&container).expect("lecture");
+    let midi = scoretk_midi_export::write_midi(&score).expect("écriture MIDI");
+    let got = notes(&midi);
+    let expected: Vec<(i64, u8, i64)> = (0..8)
+        .map(|index| (index * 60, if index % 2 == 0 { 78 } else { 79 }, 59))
+        .chain([(480, 60, 479), (960, 62, 479), (1440, 64, 479)])
+        .collect();
+    assert_eq!(got, expected, "auxiliaire du trille en ré majeur");
+}
+
 #[test]
 fn trille_alterne_le_degre_diatonique_superieur() {
     for (label, trill) in [
