@@ -746,3 +746,105 @@ campaign: they come from the pre-existing branch commit `4d78e80` (ABC export)
 against the older `master` reference. In particular `EXPECTED_CONFORMANT` in
 `e2e_corpus.rs` is unchanged and `cargo test -p scoretk --test e2e_corpus` still
 passes (5/5).
+
+### Fidelity campaign (English)
+
+#### Frozen baseline and grouping
+
+The binary was frozen from `master` before any fix (`/tmp/scoretk-base3`,
+sha256 `7944c0d7e7598157`); the 174 `.mscz` of `~/Musique` were measured with
+`scripts/oracle/musicxml/mesure.sh`. With the new 1.15–2.07 reader, 173 files
+convert (the 22 files of the previous campaign are no longer failures).
+
+| Metric | Frozen baseline | Final | Δ |
+| --- | ---: | ---: | ---: |
+| Converted | 173 | 173 | 0 |
+| Core-identical to MuseScore 4.7.4 | 27 | **39** | +12 |
+| N1 pitch multiset | 0.9779 | 0.9778 | −0.0001 |
+| N2 pitch + attack | 0.9086 | 0.9086 | 0 |
+| XSD errors, scoretk / MuseScore | 0 / 2 | 0 / 2 | 0 |
+
+`groupes.py` groups the 146 non-conformant baseline files by **first differing
+core family** (the first changed canonical line, in document order, extracted
+by `oracle_core.rs`). Counts and reduced examples:
+
+| First differing family | Files | Reduced example (ref → scoretk) |
+| --- | ---: | --- |
+| instruments / transposition | 77 | `<midi-channel>3</midi-channel>` → `2` |
+| barlines / repeats (measure number) | 18 | `<measure implicit="yes" number="0">` → `number="1"` |
+| structure / part-list | 16 | `<group-symbol>square</group-symbol>` → `line` |
+| notes / pitch | 7 | `<accidental>sharp</accidental>` → absent |
+| tuplets | 6 | `<tuplet bracket="no">` → `bracket="yes"` |
+| voices / staves | 5 | `<staff-details number="1">` → absent |
+| lyrics | 5 | absent → `<extend/>` |
+| metadata (layout artefact) | 4 | `<movement-number>8</movement-number>` → `<measure number="1">` |
+| ties | 3 | `<tie type="start"/>` duplicated vs missing half |
+| harmony / chords | 2 | `<harmony print-frame="no">` → same tag, different children |
+| directions | 2 | absent → `<sound tempo="160"/>` |
+| duration / rhythm | 1 | `<backup>` → `<forward>` |
+
+#### Fixes, one commit per cause
+
+1. **MIDI port, 52 files** — `Instrument::midi_port` read from
+   `<Channel><midiPort>` by `read302` (therefore `read206`) and `read4xx`, then
+   written as `<midi-device port>` by `score-instruments`. Port of
+   `ExportMusicXml::partList` (`exportmusicxml.cpp:7939-7947`,
+   `midiMapping(channel)->port() + 1`). Test `port_midi_de_l_instrument`.
+2. **Pickup measure numbering, 18 files** — `Measure::exclude_from_numbering`
+   and a port of `MeasureNumberStateHandler::updateForMeasure`
+   (`exportmusicxml.cpp:8272-8299`). Test `anacrouse_implicite_et_numeration`.
+   A follow-up commit restricts the flag to `<irregular>1</irregular>`: a bare
+   `@len` makes a measure irregular but **does not** remove its number
+   (`Buenos_dias` vs `L'Aigle_mexicain`). Test `irregular_et_len_sont_distincts`.
+3. **Part-group symbol, 16 files** — `bracket_symbol` mapped `BracketType`
+   (`src/engraving/types/types.h:1289`: `NORMAL`, `BRACE`, `SQUARE`, `LINE`,
+   `GROUP`); types 2 and 3 were swapped. `partGroupStart`
+   (`exportmusicxml.cpp:4742-4770`) confirms the names. Test
+   `symbole_de_groupe_carre_et_ligne`.
+4. **Legacy accidental names, 7 files** — 2.x `<subtype>sharp|natural|flat`
+   was not recognised by `TConv::fromXml` (`read302/tables.rs`); the written
+   `<accidental>` was missing. Test `alteration_explicite_2x`.
+5. **Null melisma, 5 files** — `write_lyric` emitted `<extend/>` for
+   `Some(Fraction::ZERO)`, read from `<ticks_f>0/16</ticks_f>`. Port of
+   `ExportMusicXml::lyrics` (`exportmusicxml.cpp:6130`, `ticks().isNotZero()`).
+   Test `melisma_nul_n_ecrit_pas_extend`.
+6. **2.x ties, 3 files** — the note ordinal used to pair `<Tie id>` with
+   `<endSpanner id>` was reset at each chord, so all first notes of chords got
+   rank 0 and `fix_ties` discarded intra-measure ties (`from == to`). The
+   counter is now per voice over the whole measure. Test
+   `liaison_2x_entre_deux_accords_separeres`.
+
+#### Causes deliberately left unchanged (layout artefacts, not music)
+
+- **Tuplet brackets, 6 files** — `bracket` is computed by
+  `Tuplet::calcHasBracket` (`src/engraving/dom/tuplet.cpp:204-274`) from beams,
+  head side and staff crossing, none of which is in the pivot model. The
+  heuristic reproduces the versioned corpus but cannot match both directions
+  observed on real files (4 files want `no`, 2 want `yes`). Changing it would
+  break `voiceswitching`; no export change.
+- **`<staff-details>`, 5 files** — the reference writes `<staff-size scaling=
+  "70">70</staff-size>` (small staff) or `print-object="no"` (hidden empty
+  staff), both layout decisions absent from the model (`writeStaffDetails`,
+  `exportmusicxml.rs:2256`). No export change.
+- **`<movement-number>` / bezier points, 4 files** — `core_norm` keeps
+  `<movement-number>` and the `bezier-x`/`bezier-y` attributes that
+  `Level::Full` drops. These files differ only by metadata and layout geometry
+  (slurs), not by notes, durations or structure.
+- **`<sound tempo>` / `<sound segno>`, 2 files** — invisible tempo marks and a
+  jump's `sound` attribute depend on export context (`tempoSound`,
+  `exportmusicxml.cpp:5006-5016`); the first file has 3 extra `<sound tempo>`
+  out of 59 invisible tempos, with identical pitches.
+- **`<backup>` vs `<forward>`, 1 file** — an equivalent timeline encoding of a
+  gap rest (`fillGap`); the resulting cursor and notes are unchanged.
+
+#### Per-file changes and corpus
+
+No file went from core-identical to non-identical. The 11 changed rows are all
+2.x files: 6 N1 and 4 N2 variations come from the tie fix, which now merges
+tied notes in scoretk's MIDI as MuseScore does (fewer note-ons, different
+multiset, same sounding music); one core increase (`ZORBA_THE_GREEK`, 35 → 56)
+comes from preserving explicit 2.x accidentals that MuseScore 4.7.4 suppresses
+as redundant against the key, while pitches and durations are unchanged.
+The versioned corpus stays at **54/56**; `barline01` was added to
+`EXPECTED_CONFORMANT_V3` now that it is conformant. `moonlight` (18 lines) and
+`voices` (6 lines) keep their documented layout differences.

@@ -2391,7 +2391,10 @@ fn port_midi_de_l_instrument() {
         xml.contains("<midi-device id=\"P1-I1\" port=\"2\"></midi-device>"),
         "port de la piste : {xml}"
     );
-    assert!(!xml.contains("port=\"1\""), "aucun port par défaut ici : {xml}");
+    assert!(
+        !xml.contains("port=\"1\""),
+        "aucun port par défaut ici : {xml}"
+    );
 
     // Un instrument sans port explicite garde le port 1 (cas non concerné).
     score.part_mut(part_id).instrument.midi_port = None;
@@ -2411,7 +2414,12 @@ fn anacrouse_implicite_et_numeration() {
     let mut m0 = ajouter_mesure(0, Fraction::ZERO, nominal, Fraction::new(3, 8));
     m0.exclude_from_numbering = true;
     ajouter_accord(
-        &mut score, &mut m0, piste, Fraction::ZERO, Duration::quarter(), &[(60, tpc::C)]
+        &mut score,
+        &mut m0,
+        piste,
+        Fraction::ZERO,
+        Duration::quarter(),
+        &[(60, tpc::C)],
     );
     score.add_measure(m0);
 
@@ -2425,7 +2433,10 @@ fn anacrouse_implicite_et_numeration() {
         xml.contains("<measure number=\"0\" implicit=\"yes\">"),
         "anacrouse : {xml}"
     );
-    assert!(xml.contains("<measure number=\"1\">"), "mesure réelle : {xml}");
+    assert!(
+        xml.contains("<measure number=\"1\">"),
+        "mesure réelle : {xml}"
+    );
 }
 
 #[test]
@@ -2470,10 +2481,20 @@ fn melisma_nul_n_ecrit_pas_extend() {
 
     let mut m0 = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
     let premiers = ajouter_accord(
-        &mut score, &mut m0, piste, Fraction::ZERO, Duration::quarter(), &[(60, tpc::C)]
+        &mut score,
+        &mut m0,
+        piste,
+        Fraction::ZERO,
+        Duration::quarter(),
+        &[(60, tpc::C)],
     );
     let suivants = ajouter_accord(
-        &mut score, &mut m0, piste, Fraction::new(1, 4), Duration::quarter(), &[(60, tpc::C)]
+        &mut score,
+        &mut m0,
+        piste,
+        Fraction::new(1, 4),
+        Duration::quarter(),
+        &[(60, tpc::C)],
     );
     score.note_mut(premiers[0]).tie_forward = Some(suivants[0]);
     score.note_mut(suivants[0]).tie_back = Some(premiers[0]);
@@ -2499,7 +2520,11 @@ fn melisma_nul_n_ecrit_pas_extend() {
 
     let xml = export_musicxml(&score).expect("export");
     // `ExportMusicXml::lyrics` (exportmusicxml.cpp:6130) : ticks().isNotZero().
-    assert_eq!(xml.matches("<extend/>").count(), 1, "extend nul en trop : {xml}");
+    assert_eq!(
+        xml.matches("<extend/>").count(),
+        1,
+        "extend nul en trop : {xml}"
+    );
     assert!(xml.contains("<text>fant</text>\n          <extend/>"));
     assert_eq!(xml.matches("<measure number=").count(), 2);
 }

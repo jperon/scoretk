@@ -48,12 +48,19 @@ fn line_tag(line: &str) -> Option<String> {
     (fin > 0).then(|| reste[..fin].to_owned())
 }
 
+/// Résultat d'une comparaison de lignes canoniques.
+struct DiffInfo {
+    /// Nombre de lignes modifiées.
+    changees: usize,
+    /// Balises modifiées et leur fréquence.
+    tags: BTreeMap<String, usize>,
+    /// Première balise différente, avec sa ligne de référence et de sortie.
+    premier: Option<(String, String, String)>,
+}
+
 /// Compare les lignes canoniques, compte les balises modifiées et retient la
 /// première ligne qui diffère (balise + texte), dans l'ordre du document.
-fn compare(
-    reference: &[String],
-    sortie: &[String],
-) -> (usize, BTreeMap<String, usize>, Option<(String, String, String)>) {
+fn compare(reference: &[String], sortie: &[String]) -> DiffInfo {
     let a: Vec<&str> = reference.iter().map(String::as_str).collect();
     let b: Vec<&str> = sortie.iter().map(String::as_str).collect();
     let texte = TextDiff::from_slices(&a, &b);
@@ -87,7 +94,11 @@ fn compare(
             sortie_premiere.unwrap_or_default(),
         )
     });
-    (modifiees, tags, premier)
+    DiffInfo {
+        changees: modifiees,
+        tags,
+        premier,
+    }
 }
 
 /// Échappe une ligne canonique pour le format TSV.
@@ -102,9 +113,7 @@ fn tsv(texte: &str) -> String {
 fn colonne(premier: &Option<(String, String, String)>) -> String {
     premier
         .as_ref()
-        .map(|(tag, reference, sortie)| {
-            format!("{}|{}|{}", tsv(tag), tsv(reference), tsv(sortie))
-        })
+        .map(|(tag, reference, sortie)| format!("{}|{}|{}", tsv(tag), tsv(reference), tsv(sortie)))
         .unwrap_or_default()
 }
 
@@ -130,15 +139,20 @@ fn compare_paires() {
         let sortie_xml = fs::read_to_string(sortie_xml).expect("sortie lisible");
         let ref_core = normalize(&ref_xml);
         let sortie_core = normalize(&sortie_xml);
-        let (noyau, _, premier_noyau) = compare(&ref_core, &sortie_core);
-        let (plein, tags, premier_plein) =
-            compare(&normalize_full(&ref_xml), &normalize_full(&sortie_xml));
-        let tags: Vec<String> = tags.iter().map(|(tag, n)| format!("{tag}:{n}")).collect();
+        let noyau = compare(&ref_core, &sortie_core);
+        let plein = compare(&normalize_full(&ref_xml), &normalize_full(&sortie_xml));
+        let tags: Vec<String> = plein
+            .tags
+            .iter()
+            .map(|(tag, n)| format!("{tag}:{n}"))
+            .collect();
         resultats.push_str(&format!(
-            "{id}\t{noyau}\t{plein}\t{}\t{}\t{}\n",
+            "{id}\t{}\t{}\t{}\t{}\t{}\n",
+            noyau.changees,
+            plein.changees,
             tags.join(","),
-            colonne(&premier_noyau),
-            colonne(&premier_plein),
+            colonne(&noyau.premier),
+            colonne(&plein.premier),
         ));
     }
     fs::write(Path::new(&sortie), resultats).expect("résultats écrits");

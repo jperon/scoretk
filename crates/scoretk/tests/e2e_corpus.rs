@@ -97,6 +97,7 @@ const EXPECTED_CONFORMANT: &[&str] = &[
 /// après normalisation (voir `docs/agents/ecarts-noyau.md`).
 const EXPECTED_CONFORMANT_V3: &[&str] = &[
     "Beam-CrossM1",
+    "barline01",
     "barlinedelete",
     "change",
     "clef-1",

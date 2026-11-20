@@ -415,9 +415,18 @@ fn liaison_2x_entre_deux_accords_separeres() {
         .map(|id| score.note(id))
         .collect();
     assert_eq!(notes.len(), 3);
-    assert!(notes[0].tie_forward.is_some(), "la première note doit partir en liaison");
-    assert!(notes[1].tie_back.is_some(), "la deuxième note doit recevoir la liaison");
-    assert!(notes[2].tie_forward.is_none(), "la troisième note est étrangère à la liaison");
+    assert!(
+        notes[0].tie_forward.is_some(),
+        "la première note doit partir en liaison"
+    );
+    assert!(
+        notes[1].tie_back.is_some(),
+        "la deuxième note doit recevoir la liaison"
+    );
+    assert!(
+        notes[2].tie_forward.is_none(),
+        "la troisième note est étrangère à la liaison"
+    );
 }
 
 #[test]
