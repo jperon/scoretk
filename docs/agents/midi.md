@@ -1270,3 +1270,35 @@ zero losses**; N2 93.14 % → **94.17 %**. Largest gains: `JMHaydn` +584 (91.50 
 98.78 %), the nine `Minuit chrétien` parts +252 each (91.76 → 96.57 %), four
 `Missa in Es` Haydn movements +128/+77, and several `Adeste fideles` parts +62.
 `Espana_Cani` and `Sicut_Cervus` remain unchanged (already 99.74/100 %).
+
+### Remaining causes: diagnosis (2026-11-20, follow-up)
+
+Matching the remaining extra notes `(tick, pitch, track)` against the `.mscx`
+gives the following diagnoses. None is a reader or voicing fault; each needs a
+separate port beyond the chord/trill work above.
+
+- **`Vingt_danses_enfantines_pour_piano.mscz`** (16 114 lost, N1 99.89 %): all
+  pitches are present; from playback tick 1507 every attack is exactly **one
+  quarter early**. Our timemap puts segment 15's last measure (index 474, a
+  `D.S. al Fine` with `jumpTo=segno4`, `playUntil=fine4`,
+  `continueAt=segno5`) at ticks 1503–1506 and segment 16 (target measure 346)
+  at 1506; MuseScore resumes at 1507 — a one-quarter gap at the jump. The
+  section pauses of this file are at ticks 536 640 and 837 600, far from the
+  divergence, so `PauseMap` is not the cause. `quarter_notes_at` was suspected
+  (`qn=2` vs `sigqn=3` at some pauses) but a reduced 2.06 score with an
+  irregular `len="2/4"` under `3/4` showed MuseScore 4.7.4 also uses the
+  **measure length**, as the current code does; that hypothesis is retracted.
+  The remaining work is the jump/fine gap in `RepeatList` (`repeatlist.cpp:
+  737-782`, `performJump`), not the pause map.
+- **`Vivaldi … Dominus_fredipi.mscz`** (897 lost, N1 100 %): the file has 18
+  `ornamentTrill`, 4 `fermataAbove` and one `section` break. Our trill
+  renderer produces 206 more notes than the reference and spells the upper
+  degree a semitone high (reference 79, ours 80 at tick 10.5): the step must be
+  resolved against the key signature (2 sharps), not only the note's TPC
+  (`tpcInterval` in `realizedharmony.cpp`). Fermata time stretch
+  (`Fermata::timeStretch`) has no duration in the pivot model (`PausesMap` is
+  absent from the reference tree), so its playback cannot be reproduced yet.
+- **`El_Choclo.mscz`** (775 lost, N1 100 %): the first 70 quarters match
+  exactly after the chord fix, then the same one-quarter drift as above;
+  the file contains `<playUntil>fine</playUntil>` and a `segno`, so the jump
+  gap is the common cause.
