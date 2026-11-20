@@ -1091,6 +1091,25 @@ impl Parser<'_> {
             return self.parse_bar();
         }
 
+        // Port de `abc2xml.py`, `volta_text = Suppress('[') + pas(r'"[^"]+"')`
+        // (ligne 417) et `bar_left` (ligne 424) : `["Coda"` est une fin de
+        // reprise étiquetée. La norme ABC 2.1 § 4.9 est muette sur le texte
+        // des voltas ; comme le script, on consomme la chaîne entière pour ne
+        // pas lire son contenu comme des hauteurs. Le modèle ne porte pas de
+        // texte de volta : on signale et on saute localement, les notes qui
+        // suivent restent lisibles.
+        if self.peek_at(1) == Some('"') {
+            self.pos += 2; // '[' puis le guillemet d'ouverture
+            while self.peek().is_some_and(|value| value != '"') {
+                self.pos += 1;
+            }
+            if self.peek() == Some('"') {
+                self.pos += 1;
+            }
+            self.warn("texte de volta ignoré");
+            return Ok(());
+        }
+
         // Volta `[1` ou `[1,2`.
         if self.peek_at(1).is_some_and(|value| value.is_ascii_digit()) {
             self.pos += 1;

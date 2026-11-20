@@ -948,6 +948,62 @@ Per-tune comparison against the § 16.6 master: **N1 345 gains / 1 loss**, **N2 
 
 scoretk is now within **0.12 point of N1 and 0.04 of N2** of `abc2xml.py`, with one more rejection (131 vs 130; 109 files without `X:`, 21 oracle failures shared by both, and one remaining `"` inside a quoted chord annotation in `MyLadysGoonHasGairsOntStrathspey.abc` X:1). The residual N1 gap is 9 empty outputs from `%%stretchlast 1`, 12 partial mismatches, 4 transposition/clef cases and 2 octave cases, all already classified in § 13.3/§ 15.3 and outside this syntax port. The MuseScore corpus is unaffected: `cargo test -p scoretk --test e2e_corpus` passes 5/5.
 
+#### 16.7.1 Last rejection — text volta `["Coda"` (2026-11-20)
+
+This subsection is in English by convention for the measurement reports. The
+**frozen baseline** is the release binary of § 16.7 (reader unchanged since
+commit `6969f0a`); its campaign data is `rejectfix-full/mesures.tsv`, which
+reproduces the § 16.7 table exactly. No upstream Python script is committed.
+
+| Gap | Tunes | Cause / `abc2xml.py` function to port |
+| --- | ---: | --- |
+| Rejection where the alternative succeeds | 1 | `MyLadysGoonHasGairsOntStrathspey.abc` X:1: `||["Coda" e3g…`. `abc2xml.py`'s `volta_text` (line 417, `Suppress('[') + pas(r'"[^"]+"')`) and `bar_left` (line 424) read `["Coda"` as a *text-labelled ending*. scoretk read `[` as a chord, dropped the opening quote and then rejected the remaining `"`/`Coda` characters as invalid pitches (`LigneInvalide`, `hauteur « " » invalide`). |
+
+ABC 2.1 § 4.9 defines numeric endings (`[1`, `[2`) and is **silent** on
+text-labelled endings; the construct is an `abc2xml.py` extension, so the
+Python grammar is the behaviour source here. The model has no field for a
+volta text, so the fix follows the usual "warn + local skip" rule: consume the
+whole `["…"` token, keep the notes that follow, and emit a `Warning`.
+
+- **Fix** (`reader/music.rs::parse_bracket`): a `[` followed by `"` consumes
+  the quoted text through its closing quote (at least two characters per
+  loop turn) and returns; `[|`, `[]`, `[1` and `[K:…]` are checked first and
+  are unchanged.
+- **Reduced tune** (the extracted X:1 as-is): scoretk N1 **0 → 1.00**, N2
+  **0 → 0.9556**, exactly the alternative's N1/N2 on the same tune (135/135
+  notes, 129 attacks placed).
+- **Test** (`crates/scoretk-abc-import/tests/chord_noise.rs`):
+  `volta_avec_texte_entre_crochets` combines ordinary music (barlines, a
+  `[CEG]` chord, slurs, an inline `"4"` annotation, a tie), the text volta
+  followed by notes, and a text volta at end of file; it asserts precise
+  pitches, written durations and the measure count. It fails on the frozen
+  reader with `hauteur « " » invalide`.
+- **CLI smoke test**: three real `ryansMammoth/*.abc` files, each under
+  `timeout 10 prlimit --as=2000000000`, all exit 0 with non-empty MusicXML.
+
+Full campaign (foreground, three slices, 1 402 files / 4 756 tunes, same
+corrected oracle and release binary as § 16.7, every launch under
+`timeout 10 prlimit --as=2000000000`):
+
+| Candidate | Exact tunes | N1 | N2 | Failures |
+| --- | ---: | ---: | ---: | ---: |
+| scoretk (frozen baseline, § 16.7) | 4 446 | 99.58 % | 92.81 % | 131 |
+| scoretk (after the text-volta fix) | **4 447** | **99.61 %** | **92.84 %** | 139 |
+| `abc2xml.py` (unchanged) | 4 406 | 99.70 % | 92.85 % | 130 |
+
+Per-tune comparison against the frozen baseline: **N1 1 gain / 0 loss**,
+**N2 1 gain / 0 loss** — the single gain is `MyLadysGoonHasGairsOntStrathspey.abc`
+X:1, now identical to the alternative. The failure count rises from 131 to 139
+without any note or attack loss: eight tunes that already produced **empty**
+output (N1 = N2 = 0, classified `VIDE` in the baseline) are now classified
+`ECHEC_TK`. All eight contain a `%%` directive before `X:1`; the pre-existing
+check added by commit `1ac3b83` (`EnTeteIncomplet("K:")` when `seen_key` is
+false) turns their previously silent empty output into a rejection. The
+text-volta fix never applies to them (their ABC has no `["` sequence), so this
+is not a regression of this fix; it is a separate line-preparation limitation
+of `prepare()` (see the continuation subsection below). No plain tune with
+notes regressed.
+
 ## 17. Writing export: baseline against `xml2abc.py` (2026-11-19)
 
 This section is in English by convention for the reliability measurement

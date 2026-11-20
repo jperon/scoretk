@@ -57,3 +57,56 @@ fn agrament_avec_accord_et_controle() {
     let source = "X:1\nM:4/4\nL:1/8\nK:C\n[CEG]2 |]\n";
     assert_eq!(pitches(source), vec![60, 64, 67]);
 }
+
+#[test]
+fn volta_avec_texte_entre_crochets() {
+    // Port de `abc2xml.py`, `volta_text = Suppress('[') + pas(r'"[^"]+"')`
+    // (ligne 417) et `bar_left` (ligne 424) : la norme ABC 2.1 § 4.9 est
+    // muette sur les fins de reprise étiquetées, mais le script accepte
+    // `["Coda"` comme une volta textuelle. Le lecteur doit consommer tout le
+    // texte entre guillemets, sinon le chiffre ou la lettre suivante est pris
+    // pour une hauteur et l'air entier est rejeté.
+    let source = "\
+X:1
+M:4/4
+L:1/8
+K:C
+c2 [CEG]2 | e2 (\"4\"c'3.B) | [\"Coda\" e2 (\"4\"c'3.B) (dc3)c2 |]
+";
+    let score = read_abc(source).expect("la volta textuelle ne rejette pas l'air");
+    let mut notes = Vec::new();
+    let mut durations = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            if let Some(chord_rest) = segment.chord_rest(scoretk_core::model::Track::new(
+                scoretk_core::model::StaffId::from_index(0),
+                0,
+            )) {
+                if let Some(chord) = chord_rest.chord_ref() {
+                    notes.extend(chord.notes.iter().map(|id| score.note(*id).pitch));
+                }
+                durations.push(chord_rest.duration.ticks().as_f64());
+            }
+        }
+    }
+    assert_eq!(score.measures.len(), 3, "trois mesures écrites");
+    assert_eq!(
+        notes,
+        vec![72, 60, 64, 67, 76, 84, 71, 76, 84, 71, 74, 72, 72],
+        "hauteurs : accord ordinaire, slur/annotation, puis notes après la volta"
+    );
+    assert_eq!(
+        durations,
+        vec![0.25, 0.25, 0.25, 0.375, 0.125, 0.25, 0.375, 0.125, 0.125, 0.375, 0.25],
+        "durées écrites (L:1/8) de chaque chord/rest"
+    );
+
+    // Cas limite : la volta textuelle en fin de fichier, sans note après.
+    let source = "X:1\nM:4/4\nL:1/8\nK:C\nC2 | [\"Coda\"\n";
+    let score = read_abc(source).expect("volta textuelle en fin de fichier");
+    assert_eq!(
+        score.notes.iter().map(|note| note.pitch).collect::<Vec<_>>(),
+        vec![60],
+        "la note avant la volta reste seule"
+    );
+}
