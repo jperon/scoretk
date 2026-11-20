@@ -89,6 +89,13 @@ pub(crate) fn write_style(xml: &mut XmlWriter, style: &StyleSettings) {
             "0"
         },
     );
+    // `Sid::concertPitch` (`style/styledef.cpp:567`, défaut `false`) est écrit
+    // dans `<Style>` par `MscWriter::writeStyleFile`
+    // (`infrastructure/mscwriter.cpp:135`). Sans lui, MuseScore réouvre la
+    // partition en hauteurs transposées.
+    if style.concert_pitch {
+        xml.tag("concertPitch", "1");
+    }
     if style.create_multi_measure_rests {
         // `Sid::createMultiMeasureRests` (`style/styledef.cpp:571`) est lu par
         // le lecteur 4.x et conditionne la reconstruction des multi-repos par
