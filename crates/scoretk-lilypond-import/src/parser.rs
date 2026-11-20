@@ -37,7 +37,8 @@ use scoretk_core::model::{
 
 use crate::ast::{
     Chord, ChordKind, Context, Document, GroupBlock, GroupKind, HeaderAst, LyricsBlock, Music,
-    NoteSpec, PitchSpec, PostEvent, RepeatKind, ScoreAst, StaffBlock, Syllable, VoiceBlock,
+    NoteSpec, PitchSpec, PostEvent, RepeatKind, ScoreAst, StaffBlock, Syllable, TagFilter,
+    VoiceBlock,
 };
 use crate::lexer::{self, Kind, Token};
 use crate::pitch::{self, Language};
@@ -154,13 +155,6 @@ struct Partition {
     column: u32,
 }
 
-/// Filtre appliqué par `\keepWithTag` ou `\removeWithTag`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TagFilter {
-    Keep,
-    Remove,
-}
-
 /// Groupes de tags posés au départ par LilyPond (`scm/music-functions.scm`) :
 /// les deux tags internes utilisés par `\autoChange` et `\partCombine`.
 fn default_tag_groups() -> Vec<Vec<String>> {
@@ -187,7 +181,7 @@ fn tag_group_of(name: &str, groups: &[Vec<String>]) -> Option<usize> {
 /// `\removeWithTag` retire les expressions qui portent un des tags nommés ;
 /// `\keepWithTag` garde les expressions qui portent un des tags nommés, ou
 /// dont aucun tag n'appartient à un groupe des tags nommés.
-fn tags_kept(
+pub(crate) fn tags_kept(
     tags: &[String],
     wanted: &[String],
     filter: TagFilter,
@@ -211,137 +205,6 @@ fn tags_kept(
                 .any(|tag| wanted_groups.contains(&tag_group_of(tag, groups)))
         }
     }
-}
-
-/// Applique récursivement un filtre de tags à une expression musicale, comme
-/// `music-filter` de `lily/music.cc` appelé par les fonctions musicales
-/// `\keepWithTag`/`\removeWithTag` (`ly/music-functions-init.ly`).
-fn filter_tagged_music(
-    music: Music,
-    filter: TagFilter,
-    wanted: &[String],
-    groups: &[Vec<String>],
-) -> Music {
-    match music {
-        Music::Tag { tags, music } => {
-            if tags_kept(&tags, wanted, filter, groups) {
-                Music::Tag {
-                    tags,
-                    music: Box::new(filter_tagged_music(*music, filter, wanted, groups)),
-                }
-            } else {
-                Music::Empty
-            }
-        }
-        Music::Seq(items) => Music::Seq(
-            items
-                .into_iter()
-                .map(|item| filter_tagged_music(item, filter, wanted, groups))
-                .collect(),
-        ),
-        Music::Sim(items) => Music::Sim(
-            items
-                .into_iter()
-                .map(|item| filter_tagged_music(item, filter, wanted, groups))
-                .collect(),
-        ),
-        Music::Context(context) => {
-            Music::Context(filter_tagged_context(context, filter, wanted, groups))
-        }
-        Music::New(group) => Music::New(Box::new(filter_tagged_group(
-            *group, filter, wanted, groups,
-        ))),
-        other => other,
-    }
-}
-
-/// [`filter_tagged_music`] dans les expressions portées par une commande de
-/// contexte (n-olets, reprises, enveloppes d'octave…).
-fn filter_tagged_context(
-    context: Context,
-    filter: TagFilter,
-    wanted: &[String],
-    groups: &[Vec<String>],
-) -> Context {
-    let rec = |music: Music| filter_tagged_music(music, filter, wanted, groups);
-    match context {
-        Context::Tuplet {
-            numerator,
-            denominator,
-            number_type,
-            music,
-        } => Context::Tuplet {
-            numerator,
-            denominator,
-            number_type,
-            music: Box::new(rec(*music)),
-        },
-        Context::Grace { kind, slash, music } => Context::Grace {
-            kind,
-            slash,
-            music: Box::new(rec(*music)),
-        },
-        Context::AfterGrace { main, grace } => Context::AfterGrace {
-            main: Box::new(rec(*main)),
-            grace: Box::new(rec(*grace)),
-        },
-        Context::Repeat {
-            kind,
-            count,
-            body,
-            alternatives,
-        } => Context::Repeat {
-            kind,
-            count,
-            body: Box::new(rec(*body)),
-            alternatives: alternatives.into_iter().map(rec).collect(),
-        },
-        Context::Transpose {
-            from,
-            to,
-            absolute,
-            music,
-        } => Context::Transpose {
-            from,
-            to,
-            absolute,
-            music: Box::new(rec(*music)),
-        },
-        Context::Fixed { reference, music } => Context::Fixed {
-            reference,
-            music: Box::new(rec(*music)),
-        },
-        Context::Relative { reference, music } => Context::Relative {
-            reference,
-            music: Box::new(rec(*music)),
-        },
-        Context::NonRelative { music } => Context::NonRelative {
-            music: Box::new(rec(*music)),
-        },
-        Context::Alternative(items) => Context::Alternative(items.into_iter().map(rec).collect()),
-        other => other,
-    }
-}
-
-/// [`filter_tagged_music`] dans les voix d'un `\new …` (un `\tag` peut marquer
-/// une voix entière, comme dans `regression/tag-multiple.ly`).
-fn filter_tagged_group(
-    mut group: GroupBlock,
-    filter: TagFilter,
-    wanted: &[String],
-    groups: &[Vec<String>],
-) -> GroupBlock {
-    for staff in &mut group.staves {
-        for voice in &mut staff.voices {
-            voice.music = filter_tagged_music(
-                std::mem::replace(&mut voice.music, Music::Empty),
-                filter,
-                wanted,
-                groups,
-            );
-        }
-    }
-    group
 }
 
 /// Noms de tags d'un argument Scheme : `#'a`, `#'(a b)`, ou une liste à
@@ -933,6 +796,32 @@ impl<'a> Parser<'a> {
             // le filtre a déjà été appliqué à l'analyse, l'étiquette n'a plus
             // de rôle ici et la structure est celle de la musique intérieure.
             Music::Tag { music, .. } => self.score_groups_in(*music, wrappers),
+            Music::Filtered {
+                filter,
+                wanted,
+                groups: tag_groups,
+                music,
+            } => {
+                // Le filtre doit survivre à l'extraction de la structure :
+                // sans lui l'interpréteur perdrait les étiquettes à filtrer.
+                let mut result = self.score_groups_in(*music, wrappers);
+                for group in &mut result {
+                    for staff in &mut group.staves {
+                        for voice in &mut staff.voices {
+                            voice.music = Music::Filtered {
+                                filter,
+                                wanted: wanted.clone(),
+                                groups: tag_groups.clone(),
+                                music: Box::new(std::mem::replace(
+                                    &mut voice.music,
+                                    Music::Empty,
+                                )),
+                            };
+                        }
+                    }
+                }
+                result
+            }
             Music::Context(context) => match Wrapper::of(&context) {
                 Some((wrapper, inner)) => {
                     let inner = inner.clone();
@@ -2421,9 +2310,18 @@ impl<'a> Parser<'a> {
                 } else {
                     TagFilter::Remove
                 };
+                // Ne pas filtrer ici : LilyPond applique `music-filter` au
+                // résultat de la fonction musicale, donc après la conversion
+                // relative de toutes les branches. On diffère le filtrage à
+                // l'interprétation (Music::Filtered).
                 let music = self.parse_music();
                 let groups = self.tag_groups.clone();
-                filter_tagged_music(music, filter, &wanted, &groups)
+                Music::Filtered {
+                    filter,
+                    wanted,
+                    groups,
+                    music: Box::new(music),
+                }
             }
             // Déclarations de groupes de tags : elles ne produisent pas de
             // musique, mais changent le prédicat des `\keepWithTag` suivants.
@@ -4516,7 +4414,7 @@ fn has_instrument_transpose(music: &Music) -> bool {
             .iter()
             .flat_map(|staff| staff.voices.iter())
             .any(|voice| has_instrument_transpose(&voice.music)),
-        Music::Tag { music, .. } => has_instrument_transpose(music),
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => has_instrument_transpose(music),
         _ => false,
     }
 }
@@ -4528,7 +4426,7 @@ fn has_context(music: &Music) -> bool {
             Wrapper::of(context).is_some_and(|(_, inner)| has_context(inner))
         }
         Music::Sim(items) | Music::Seq(items) => items.iter().any(has_context),
-        Music::Tag { music, .. } => has_context(music),
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => has_context(music),
         _ => false,
     }
 }
@@ -4548,7 +4446,7 @@ fn has_voice_context(music: &Music) -> bool {
                 })
         }
         Music::Sim(items) | Music::Seq(items) => items.iter().any(has_voice_context),
-        Music::Tag { music, .. } => has_voice_context(music),
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => has_voice_context(music),
         _ => false,
     }
 }
@@ -4566,7 +4464,7 @@ fn named_voice_count(music: &Music) -> usize {
             Wrapper::of(context).map_or(0, |(_, inner)| named_voice_count(inner))
         }
         Music::Sim(items) | Music::Seq(items) => items.iter().map(named_voice_count).sum(),
-        Music::Tag { music, .. } => named_voice_count(music),
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => named_voice_count(music),
         _ => 0,
     }
 }
@@ -4789,7 +4687,7 @@ fn scale_music(music: &mut Music, factor: &Fraction) {
             chord.multiplier = Some(multiplier);
         }
         Music::Context(context) => scale_context(context, factor),
-        Music::Tag { music, .. } => scale_music(music, factor),
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => scale_music(music, factor),
         Music::Empty | Music::New(_) | Music::Lyrics(_) | Music::Unknown(_) => {}
     }
 }

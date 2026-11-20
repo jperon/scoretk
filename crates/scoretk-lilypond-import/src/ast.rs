@@ -281,6 +281,13 @@ impl RepeatKind {
     }
 }
 
+/// Filtre appliqué par `\keepWithTag` ou `\removeWithTag`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TagFilter {
+    Keep,
+    Remove,
+}
+
 /// Expression musicale.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Music {
@@ -311,6 +318,20 @@ pub(crate) enum Music {
     /// retire les sous-arbres dont les tags ne satisfont pas le prédicat.
     Tag {
         tags: Vec<String>,
+        music: Box<Music>,
+    },
+    /// Filtre de tags à appliquer **après** la conversion relative.
+    ///
+    /// LilyPond porte `\keepWithTag`/`\removeWithTag` sur le résultat d'une
+    /// fonction musicale (`music-filter`, `scm/music-functions.scm`) : le
+    /// `\relative` a donc déjà résolu les octaves de toutes les branches,
+    /// y compris celles que le filtre retire ensuite. Le lecteur doit différer
+    /// ce filtrage jusqu'à l'interprétation pour préserver la référence
+    /// d'octave (Chop-28-16, `\tag #'layout` + `\tag #'midi`).
+    Filtered {
+        filter: TagFilter,
+        wanted: Vec<String>,
+        groups: Vec<Vec<String>>,
         music: Box<Music>,
     },
     /// Commande inconnue, ignorée avec un avertissement.

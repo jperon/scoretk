@@ -42,7 +42,7 @@ use scoretk_core::model::{
 
 use crate::ast::{
     Chord, ChordKind, Context, GroupBlock, GroupKind, LyricsBlock, Music, NoteSpec, PitchSpec,
-    PostEvent, RepeatKind,
+    PostEvent, RepeatKind, TagFilter,
 };
 use crate::pitch::OctaveState;
 use crate::warnings::Warnings;
@@ -381,6 +381,10 @@ pub(crate) struct Interpreter<'a> {
     /// contextes qui y sont ouverts en héritent et pourront partager une piste
     /// avec ceux d'un autre passage.
     temporary: bool,
+    /// Pile des tags des expressions tag traversees.
+    tag_stack: Vec<Vec<String>>,
+    /// Pile des filtres keepWithTag/removeWithTag actifs.
+    filter_stack: Vec<(TagFilter, Vec<String>, Vec<Vec<String>>)>,
     /// Rang d'émission.
     order: usize,
     /// Avertissements.
@@ -406,6 +410,8 @@ impl<'a> Interpreter<'a> {
             staff_target: None,
             tuplet_scale: Fraction::ONE,
             temporary: false,
+            tag_stack: Vec::new(),
+            filter_stack: Vec::new(),
             order: 0,
             warnings,
         };
@@ -427,7 +433,22 @@ impl<'a> Interpreter<'a> {
             Music::Sim(items) => self.simultaneous(items),
             Music::Chord(chord) => self.emit_chord(chord),
             Music::Context(context) => self.context(context),
-            Music::Tag { music, .. } => self.walk(music),
+            Music::Tag { tags, music } => {
+                self.tag_stack.push(tags.clone());
+                self.walk(music);
+                self.tag_stack.pop();
+            }
+            Music::Filtered {
+                filter,
+                wanted,
+                groups,
+                music,
+            } => {
+                self.filter_stack
+                    .push((*filter, wanted.clone(), groups.clone()));
+                self.walk(music);
+                self.filter_stack.pop();
+            }
             Music::Unknown(_) => {}
         }
     }
@@ -583,6 +604,8 @@ impl<'a> Interpreter<'a> {
             staff_target: None,
             tuplet_scale: self.tuplet_scale * self.open_tuplet_scale(),
             temporary,
+            tag_stack: self.tag_stack.clone(),
+            filter_stack: self.filter_stack.clone(),
             order: 0,
             warnings: &mut *self.warnings,
         };
@@ -1081,6 +1104,13 @@ impl<'a> Interpreter<'a> {
             grace_after: Vec::new(),
             breath: breaths.first().copied(),
         };
+        if !self.tags_pass_filters() {
+            // Le filtre retire ces notes AVANT l'interprétation chez LilyPond :
+            // elles ne consomment pas de temps. Leur octave a déjà été
+            // résolue par `chord_notes` (le `\relative` porte sur tout
+            // l'arbre), ce qui est précisément l'effet recherché.
+            return;
+        }
         self.voice.events.push(VoiceEvent {
             tick: self.cursor,
             order: self.order,
@@ -1266,6 +1296,14 @@ impl<'a> Interpreter<'a> {
         })
     }
 
+    /// Vrai si les tags courants passent tous les filtres actifs.
+    fn tags_pass_filters(&self) -> bool {
+        let tags: Vec<String> = self.tag_stack.iter().flatten().cloned().collect();
+        self.filter_stack.iter().all(|(filter, wanted, groups)| {
+            crate::parser::tags_kept(&tags, wanted, *filter, groups)
+        })
+    }
+
     /// Émet un événement de contexte.
     fn meta(&mut self, meta: MetaEvent) {
         self.event(EventKind::Meta(meta));
@@ -1278,6 +1316,9 @@ impl<'a> Interpreter<'a> {
 
     /// Émet un événement au curseur courant.
     fn event(&mut self, kind: EventKind) {
+        if !self.tags_pass_filters() {
+            return;
+        }
         self.voice.events.push(VoiceEvent {
             tick: self.cursor,
             order: self.order,
@@ -1321,7 +1362,7 @@ fn is_context_only(music: &Music) -> bool {
         Music::Chord(_) | Music::New(_) => false,
         Music::Seq(items) | Music::Sim(items) => items.iter().all(is_context_only),
         Music::Context(context) => context_is_context_only(context),
-        Music::Tag { music, .. } => is_context_only(music),
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => is_context_only(music),
     }
 }
 

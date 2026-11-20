@@ -4904,7 +4904,6 @@ fn score_grave_avec_midi_preval_sur_les_scores_midi_suivants() {
 /// retire ensuite. Le lecteur filtrait d'abord, changeant l'octave de la
 /// branche retenue (Chop-28-16, NR §22.2.2).
 #[test]
-#[ignore = "bug lecteur : \relative appliqué après keepWithTag au lieu d'avant"]
 fn keepwithtag_apres_relative_pour_la_reference_octave() {
     let source = r#"\version "2.24.0"
 \language "english"
