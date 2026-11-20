@@ -1,12 +1,12 @@
-# Carte des temps (`timemap`)
+# Time map (`timemap`)
 
-La carte des temps est un **sous-produit du rendu MIDI** : elle associe à
-chaque tick d'exécution du fichier produit son temps en microsecondes et
-recense les évènements utiles à un lecteur de partition (mesures jouées,
-attaques de notes, changements de tempo, pauses de section). Elle est définie
-dans `crates/scoretk-midi-export/src/timemap.rs` et remplie par `render.rs` aux mêmes
-endroits que les évènements MIDI : ses ticks sont donc exactement ceux du SMF,
-pauses comprises. L'invariance à l'octet est vérifiée par
+The time map is a **by-product of MIDI rendering**: it associates each
+performance tick of the produced file with its time in microseconds and
+lists the events useful to a score reader (measures played,
+note onsets, tempo changes, section pauses). It is defined
+in `crates/scoretk-midi-export/src/timemap.rs` and filled by `render.rs` at the same
+places as the MIDI events: its ticks are therefore exactly those of the SMF,
+pauses included. Byte-for-byte invariance is checked by
 `crates/scoretk-midi-export/tests/timemap_alignment.rs`.
 
 ## 1. API
@@ -14,32 +14,32 @@ pauses comprises. L'invariance à l'octet est vérifiée par
 ```rust
 use scoretk_midi_export::{write_midi_with_timemap, write_midi_with_timemap_and, MidiOptions};
 
-let (midi, timemap) = write_midi_with_timemap(&score)?;      // reprises déroulées
+let (midi, timemap) = write_midi_with_timemap(&score)?;      // repeats unfolded
 let (midi, timemap) = write_midi_with_timemap_and(&score, MidiOptions { expand_repeats: false })?;
 ```
 
-La façade `scoretk` expose la version complète :
+The `scoretk` facade exposes the full version:
 
 ```rust
 use scoretk::{write_playback, Options};
 
 let playback = write_playback(&score, &Options::default())?;
-// playback.musicxml : Vec<u8> (id + xml:id forcés)
-// playback.midi     : Vec<u8> (identique au MIDI ordinaire)
+// playback.musicxml : Vec<u8> (id + xml:id forced)
+// playback.midi     : Vec<u8> (identical to ordinary MIDI)
 // playback.timemap  : scoretk::Timemap
 ```
 
-`write_playback` force `stable_ids` pour le MusicXML : les `xmlId` de la carte
-existent tels quels dans le document. L'export MusicXML ordinaire reste sans
-identifiants (`Options::default()`), pour rester identique aux références
-MuseScore 4.7.4.
+`write_playback` forces `stable_ids` for the MusicXML: the `xmlId`s of the map
+exist as-is in the document. Ordinary MusicXML export stays without
+identifiers (`Options::default()`), to remain identical to the
+MuseScore 4.7.4 references.
 
-## 2. Structure Rust
+## 2. Rust structure
 
 ```rust
 pub struct Timemap {
-    pub division: u32,          // 480 ticks par noire
-    pub ticks: i64,             // durée totale, pauses comprises
+    pub division: u32,          // 480 ticks per quarter note
+    pub ticks: i64,             // total duration, pauses included
     pub tempo: Vec<TempoChange>,
     pub measures: Vec<MeasureSync>,
     pub notes: Vec<NoteSync>,
@@ -59,142 +59,142 @@ pub struct NoteSync {
 pub struct PauseSync { pub tick, pub end_tick, pub time_us, pub end_time_us, pub seconds }
 ```
 
-Tous les ticks sont des ticks d'exécution (après déroulement des reprises et
-décalage par les pauses). `MeasureSync::end_tick` est exclu ; un tick de fin de
-mesure appartient à la mesure suivante (ou à une pause).
+All ticks are performance ticks (after repeat unfolding and
+offset by pauses). `MeasureSync::end_tick` is exclusive; a tick at the end of a
+measure belongs to the next measure (or to a pause).
 
-Les bornes de chaque occurrence de mesure sont **figées au rendu**, à l'endroit
-où la mesure est parcourue (`render.rs`, juste avant `render_measure`), et non
-recalculées dans `Builder::finish` : la carte ne peut donc pas dériver du MIDI.
-`finish` vérifie seulement en debug que le recalcul depuis `RepeatList` et
-`PauseMap` redonne la même valeur.
+The bounds of each measure occurrence are **frozen at render time**, at the point
+where the measure is traversed (`render.rs`, just before `render_measure`), and not
+recomputed in `Builder::finish`: the map therefore cannot diverge from the MIDI.
+`finish` only checks in debug that recomputation from `RepeatList` and
+`PauseMap` gives the same value.
 
-`Timemap::notes` est trié par `tick` croissant, puis, à tick égal, par
-`measure`, `staff`, `voice`, `chord`, `note`, `pitch`. Le tri est fait à la
-construction de la carte (`Builder::finish`), pas côté JavaScript : la carte
-Rust et `timeline.notes` ont donc le même ordre déterministe, et `tick` y est
-non décroissant.
+`Timemap::notes` is sorted by increasing `tick`, then, for equal ticks, by
+`measure`, `staff`, `voice`, `chord`, `note`, `pitch`. The sort is done when
+building the map (`Builder::finish`), not on the JavaScript side: the Rust
+map and `timeline.notes` therefore have the same deterministic order, and `tick` is
+non-decreasing there.
 
-## 3. Identifiants MusicXML
+## 3. MusicXML identifiers
 
-Les formules viennent de `scoretk_core::model::stable_ids`, partagées avec l'export :
-aucune recopie, donc égalité exacte entre la carte et le MusicXML.
+The formulas come from `scoretk_core::model::stable_ids`, shared with the export:
+no duplication, hence exact equality between the map and the MusicXML.
 
-| Élément | Fonction | Forme |
+| Element | Function | Form |
 | --- | --- | --- |
-| Mesure | `stable_measure_id(part, measure)` | `p{part}-m{measure}` |
-| Note / silence | `stable_note_id(measure, staff, voice, chord, note)` | `m{measure}-s{staff}-v{voice}-c{chord}-n{note}` |
-| Ornement | `stable_grace_note_id(measure, staff, voice, chord, grace_index, note, before)` | `m{measure}-s{staff}-v{voice}-c{chord}-g{grace_index}{b\|a}n{note}` |
+| Measure | `stable_measure_id(part, measure)` | `p{part}-m{measure}` |
+| Note / rest | `stable_note_id(measure, staff, voice, chord, note)` | `m{measure}-s{staff}-v{voice}-c{chord}-n{note}` |
+| Grace note | `stable_grace_note_id(measure, staff, voice, chord, grace_index, note, before)` | `m{measure}-s{staff}-v{voice}-c{chord}-g{grace_index}{b\|a}n{note}` |
 
-- `part`, `measure`, `chord`, `note`, `grace_index` sont des indices du modèle
-  (base zéro), pas des numéros affichés ni des rangs de passage.
-- `chord` est le rang du `ChordRest` dans sa voix, **silences compris**, dans
-  l'ordre du rendu ; `note` vaut zéro pour un silence.
-- `staff` est l'indice de la portée (`StaffId::raw()`), `voice` la voix 0 à 3.
-- Quand `stable_ids` est actif, l'export écrit **`id` et `xml:id`** avec la
-  même valeur sur chaque `<measure>` et chaque `<note>` ; c'est cette valeur
-  que `MeasureSync::xml_id` et `NoteSync::xml_id` renvoient. L'identifiant de
-  mesure `p{part}-m{measure}` est **unique dans tout le document** : ce qui est
-  répété par le MusicXML `partwise`, c'est la *présence* du même `<measure>`
-  dans chaque `<part>`, et le préfixe `p{part}` lève l'ambiguïté. Côté
-  JavaScript, `MeasureSync` n'expose que `xmlId` de la partie 0.
+- `part`, `measure`, `chord`, `note`, `grace_index` are model indices
+  (zero-based), not displayed numbers or passage ranks.
+- `chord` is the rank of the `ChordRest` in its voice, **rests included**, in
+  rendering order; `note` is zero for a rest.
+- `staff` is the staff index (`StaffId::raw()`), `voice` the voice 0 to 3.
+- When `stable_ids` is active, the export writes **`id` and `xml:id`** with the
+  same value on every `<measure>` and every `<note>`; that is the value
+  returned by `MeasureSync::xml_id` and `NoteSync::xml_id`. The measure
+  identifier `p{part}-m{measure}` is **unique throughout the document**: what the `partwise` MusicXML
+  repeats is the *presence* of the same `<measure>`
+  in each `<part>`, and the `p{part}` prefix disambiguates. On the
+  JavaScript side, `MeasureSync` exposes only `xmlId` of part 0.
 
-## 4. Reprises : `segment` et `passage`
+## 4. Repeats: `segment` and `passage`
 
-Une mesure du modèle peut être jouée plusieurs fois. La carte liste chaque
-**occurrence** dans l'ordre d'exécution :
+A model measure can be played several times. The map lists each
+**occurrence** in performance order:
 
-- `measure` : indice de la mesure dans `Score::measures` (identique d'un
-  passage à l'autre) ;
-- `number` : numéro de mesure du modèle (base zéro) ;
-- `segment` : indice du segment de reprise (`RepeatList::segments`) ;
-- `passage` (`pass` en Rust) : numéro de passage du segment, à partir de 1 ;
-- `tick` / `end_tick` : position de **cette** occurrence dans la performance.
+- `measure`: index of the measure in `Score::measures` (identical from one
+  pass to another);
+- `number`: model measure number (zero-based);
+- `segment`: index of the repeat segment (`RepeatList::segments`);
+- `passage` (`pass` in Rust): pass number of the segment, starting at 1;
+- `tick` / `end_tick`: position of **this** occurrence in the performance.
 
-Avec `expand_repeats: false` (`RepeatList::flatten`), chaque mesure
-n'apparaît qu'une fois. Un saut D.S./D.C. peut rejouer une mesure dans des
-segments de même `playback_count` : `passage` peut donc être identique alors
-que `segment` ou `tick` diffèrent ; l'association fiable reste `xmlId` +
+With `expand_repeats: false` (`RepeatList::flatten`), each measure
+appears only once. A D.S./D.C. jump can replay a measure in
+segments with the same `playback_count`: `passage` can therefore be identical while
+`segment` or `tick` differ; the reliable association remains `xmlId` +
 `tick`.
 
-## 5. Temps, tempos et pauses
+## 5. Times, tempos and pauses
 
-Le temps fait foi en **arithmétique entière** : chaque segment de tempo
-contribue `delta_ticks × micros_per_quarter / DIVISION`, accumulé en `i64`.
-Il n'y a ni flottant ni horloge, donc pas de dérive avec la longueur du
-morceau. `time_us_at(tick)` prolonge le dernier tempo en vigueur au-delà du
-dernier changement.
+Time is authoritative in **integer arithmetic**: each tempo segment
+contributes `delta_ticks × micros_per_quarter / DIVISION`, accumulated in `i64`.
+There is neither floating point nor clock, hence no drift with the
+length of the piece. `time_us_at(tick)` extends the last tempo in force beyond the
+last change.
 
-Une pause de section insère une mesure de ticks et deux changements de tempo
-(début et fin de pause, 3 s par défaut). Entre les deux, `measure_at(tick)`
-renvoie `None` : le tick tombe dans la pause. `MeasureSync::pause_before`
-signale la mesure qui suit une pause ; la fin de la mesure précédente reste
-fixée au début de la pause.
+A section pause inserts a measure's worth of ticks and two tempo changes
+(start and end of pause, 3 s by default). Between the two, `measure_at(tick)`
+returns `None`: the tick falls in the pause. `MeasureSync::pause_before`
+flags the measure following a pause; the end of the previous measure remains
+fixed at the start of the pause.
 
-## 6. Structure JavaScript
+## 6. JavaScript structure
 
-`convertWithTimeline` renvoie `{ musicxml, midi, timeline }`. Le type Rust
-reste `Timemap` ; les champs JS sont en `camelCase` :
+`convertWithTimeline` returns `{ musicxml, midi, timeline }`. The Rust
+type remains `Timemap`; the JS fields are in `camelCase`:
 
 | Rust (`Timemap`) | JS (`Timeline`) |
 | --- | --- |
 | `division`, `ticks` | `division`, `ticks` |
 | `tempo[].time_us`, `micros_per_quarter` | `tempo[].timeUs`, `microsPerQuarter` |
 | `measures[].measure/segment/pass` | `measures[].measure/segment/passage` |
-| `measures[].measure` | `measures[].ordinal` (indice 0-basé, seule clé d'ancrage) |
+| `measures[].measure` | `measures[].ordinal` (0-based index, only anchoring key) |
 | `measures[].xml_id(0)` | `measures[].xmlId` |
 | `measures[].end_tick`, `time_us`, `end_time_us` | `measures[].endTick`, `timeUs`, `endTimeUs`, `timeMs` |
 | `notes[].duration_ticks`, `pass`, `grace`, `tremolo`, `xml_id()` | `notes[].durationTicks`, `passage`, `grace`, `tremolo`, `xmlId` |
 | `pauses[].end_tick`, `time_us`, `end_time_us`, `seconds` | `pauses[].endTick`, `timeUs`, `endTimeUs`, `seconds` |
 
-`timeMs` vaut `timeUs / 1000`. `TimelineMeasure::ordinal` vaut exactement
-`measure` (indice 0-basé dans `Score::measures`, identique à la position de la
-`<measure>` dans chaque `<part>` du MusicXML) : c'est la seule clé d'ancrage à
-utiliser. Les champs Rust absents de la surface JS sont `MeasureSync::number`,
-`MeasureSync::pause_before`, `NoteSync::grace_index` et
-`NoteSync::grace_before` : ils servent au calcul des identifiants et au rendu.
-`number` n'est pas exposé (0-basé côté modèle, 1-basé et remis à 1 par section
-côté MusicXML), précisément pour éviter une confusion avec `ordinal`.
+`timeMs` is `timeUs / 1000`. `TimelineMeasure::ordinal` is exactly
+`measure` (0-based index in `Score::measures`, identical to the position of the
+`<measure>` in each `<part>` of the MusicXML): it is the only anchoring key to
+use. The Rust fields absent from the JS surface are `MeasureSync::number`,
+`MeasureSync::pause_before`, `NoteSync::grace_index` and
+`NoteSync::grace_before`: they serve identifier computation and rendering.
+`number` is not exposed (0-based on the model side, 1-based and reset to 1 per section
+on the MusicXML side), precisely to avoid confusion with `ordinal`.
 
-## 7. Limites
+## 7. Limits
 
-- **Pas de géométrie** : ni abscisse, ni système, ni page. Placer un curseur à
-  l'écran demande un moteur de mise en page, hors de cette carte.
-- **`Note::velocity` non appliquée** : les vélocités MIDI viennent des nuances,
-  des soufflets et des articulations. `NoteSync` ne porte donc pas de vélocité
-  et la vélocité saisie sur la note (import MIDI) n'apparaît pas.
-- **Fermatas** : MuseScore n'en tire aucun allongement dans `engraving` (la
-  fermata est absente de `compat/midi/`) ; leur durée n'est donc ni dans les
-  ticks ni dans les temps, ce qui est fidèle.
-- **Césures** : les secondes de pause sont calculées par le module *playback*
-  (`PausesMap`, `tempotimeline.h:33`), absent du portage ; aucune pause n'est
-  insérée, comme pour les fermatas.
-- **Trémolos** : plusieurs `NoteSync` peuvent partager un même `xmlId` (les
-  attaques répétées d'un même événement du modèle), comme les notes d'un
-  accord partagent une mesure.
-- **Notes sans attaque** : les silences et les notes de prolongation
-  (`<tie type="stop">` / `<tied type="stop">`) ont un `id` dans le MusicXML
-  stable mais pas de `NoteSync` : le rendu MIDI n'émet aucune attaque pour
-  eux, une chaîne liée n'ayant qu'une attaque initiale. Le test
-  `timemap_alignment::note_ids_match_stable_musicxml` compare le multiensemble
-  des notes de la carte à celui des `<note>` du MusicXML **après soustraction
-  explicite** de ces deux catégories.
-- **Pauses** : seules les pauses de section sont représentées ; une césure ou
-  une fermata ne décale rien (voir ci-dessus).
+- **No geometry**: neither x-coordinate, nor system, nor page. Placing a cursor on
+  screen requires a layout engine, outside this map.
+- **`Note::velocity` not applied**: MIDI velocities come from dynamics,
+  hairpins and articulations. `NoteSync` therefore carries no velocity
+  and the velocity entered on the note (MIDI import) does not appear.
+- **Fermatas**: MuseScore derives no lengthening from them in `engraving` (the
+  fermata is absent from `compat/midi/`); their duration is therefore in neither
+  the ticks nor the times, which is faithful.
+- **Caesuras**: the pause seconds are computed by the *playback* module
+  (`PausesMap`, `tempotimeline.h:33`), absent from the port; no pause is
+  inserted, as for fermatas.
+- **Tremolos**: several `NoteSync`s can share the same `xmlId` (the
+  repeated attacks of the same model event), as the notes of a
+  chord share a measure.
+- **Notes without an attack**: rests and tied continuation notes
+  (`<tie type="stop">` / `<tied type="stop">`) have an `id` in the stable MusicXML
+  but no `NoteSync`: MIDI rendering emits no attack for
+  them, a tied chain having only one initial attack. The test
+  `timemap_alignment::note_ids_match_stable_musicxml` compares the multiset
+  of notes in the map with that of the `<note>`s in the MusicXML **after explicit subtraction**
+  of these two categories.
+- **Pauses**: only section pauses are represented; a caesura or
+  a fermata shifts nothing (see above).
 
-## 8. Côté client : associer un temps à une mesure
+## 8. Client side: associating a time with a measure
 
-1. chercher avec `measure_at(tick)` (ou `timeline.measures` triées par `tick`)
-   la dernière mesure dont `tick <= temps < endTick` ;
-2. si le tick tombe dans une pause, aucune mesure ne correspond : utiliser
-   `pauses` pour afficher la pause ;
-3. pour retrouver un élément graphique, utiliser `xmlId` : il existe à
-   l'identique dans le MusicXML (`id` et `xml:id`) ; pour ancrer une mesure,
-   utiliser `ordinal` (indice 0-basé) ;
-4. en cas de passages multiples, ne pas indexer par `xmlId` seul : garder le
-   couple (`xmlId`, `tick`) ou l'indice de l'occurrence dans `measures`.
+1. search with `measure_at(tick)` (or `timeline.measures` sorted by `tick`)
+   for the last measure with `tick <= time < endTick`;
+2. if the tick falls in a pause, no measure corresponds: use
+   `pauses` to display the pause;
+3. to find a graphical element, use `xmlId`: it exists identically
+   in the MusicXML (`id` and `xml:id`); to anchor a measure,
+   use `ordinal` (0-based index);
+4. in case of multiple passes, do not index by `xmlId` alone: keep the
+   pair (`xmlId`, `tick`) or the occurrence index in `measures`.
 
-Exemple minimal :
+Minimal example:
 
 ```js
 const at = timeline.measures.find((m) => tick >= m.tick && tick < m.endTick);

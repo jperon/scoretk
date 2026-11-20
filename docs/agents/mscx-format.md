@@ -1,26 +1,26 @@
-# Format MSCX — noyau musical
-Référence de lecture des `.mscx` 3.x/4.x/5.x pour les agents qui écrivent en
-Rust les lecteurs de `scoretk-musescore-import`. Sources C++ vérifiées, en lecture seule :
+# MSCX format — musical core
+Reading reference for `.mscx` 3.x/4.x/5.x for agents writing in
+Rust the readers of `scoretk-musescore-import`. Verified C++ sources, read-only:
 `ref-musescore/src/engraving/{rw/read302,read400,read410,read460,read500,dom}`.
-Chemins relatifs à `ref-musescore/src/engraving/`. Corpus de contrôle :
-`src/importexport/musicxml/tests/data/*.mscx` (3.01 à 5.00).
+Paths relative to `ref-musescore/src/engraving/`. Control corpus:
+`src/importexport/musicxml/tests/data/*.mscx` (3.01 to 5.00).
 
-## 1. Versions et aiguillage
-La version du format est l'attribut `version` de `<museScore>`, pas
-`<programVersion>` : un fichier 3.6.2 déclare `version="3.02"`.
+## 1. Versions and dispatch
+The format version is the `version` attribute of `<museScore>`, not
+`<programVersion>`: a 3.6.2 file declares `version="3.02"`.
 
-`RWRegister::reader` (`rw/rwregister.cpp:45-59`) aiguille aussi les versions
-antérieures : `<= 114` → `Read114` (not ported), `<= 207` → `Read206`, `< 400`
+`RWRegister::reader` (`rw/rwregister.cpp:45-59`) also dispatches earlier
+versions: `<= 114` → `Read114` (not ported), `<= 207` → `Read206`, `< 400`
 → `Read302`. See §19 for the 1.x/2.x conventions.
 ```xml
 <museScore version="3.02">
   <programVersion>3.6.2</programVersion>
 ```
-`MscLoader::readMasterScore` (`rw/mscloader.cpp:219-231`) calcule
-`mscVersion = majeur*100 + mineur` : `3.02→302`, `4.10→410`, `4.60→460`,
-`5.00→500`. `RWRegister::reader` (`rw/rwregister.cpp:39-58`) choisit :
+`MscLoader::readMasterScore` (`rw/mscloader.cpp:219-231`) computes
+`mscVersion = major*100 + minor`: `3.02→302`, `4.10→410`, `4.60→460`,
+`5.00→500`. `RWRegister::reader` (`rw/rwregister.cpp:39-58`) chooses:
 
-| `mscVersion` | Lecteur | Période |
+| `mscVersion` | Reader | Period |
 |---|---|---|
 | `< 400` | `Read302` | 3.00–3.99 |
 | `400..409` | `Read400` | 4.0.x |
@@ -28,13 +28,13 @@ antérieures : `<= 114` → `Read114` (not ported), `<= 207` → `Read206`, `< 4
 | `460..499` | `Read460` | 4.6–4.9 |
 | `>= 500` | `Read500` | 5.0+ |
 
-Le lecteur 3.x réutilise `read400` : `Read302::readScoreTag`
-(`rw/read302/read302.cpp:54`) appelle `read400::StaffRead::readStaff` et
-`read400::TRead`. Les seuils internes diffèrent parfois du dispatch (4.1, 4.5,
-5.0) : comparer l'entier `mscVersion`, jamais les chaînes.
+The 3.x reader reuses `read400`: `Read302::readScoreTag`
+(`rw/read302/read302.cpp:54`) calls `read400::StaffRead::readStaff` and
+`read400::TRead`. Internal thresholds sometimes differ from the dispatch (4.1, 4.5,
+5.0): compare the `mscVersion` integer, never the strings.
 
-## 2. Structure du fichier
-Squelette 3.x :
+## 2. File structure
+3.x skeleton:
 ```xml
 <museScore version="3.02"><Score>
   <Division>480</Division><Style>...</Style>
@@ -43,64 +43,63 @@ Squelette 3.x :
   <Staff id="1"><Measure>...</Measure></Staff>
 </Score></museScore>
 ```
-En 4.x/5.x, le style est normalement dans `score_style.mss` du `.mscz`
-(`MscLoader::loadMscz`, `rw/mscloader.cpp:105-118`), mais `<Style>` inline
-reste accepté (`Read400::readScoreTag`, `rw/read400/read400.cpp:170-186`).
-Les parties liées sont dans `Excerpts/<nom>/<nom>.mscx`. 5.0 ajoute des
-`<eid>` sur la plupart des objets.
+In 4.x/5.x, the style is normally in `score_style.mss` of the `.mscz`
+(`MscLoader::loadMscz`, `rw/mscloader.cpp:105-118`), but inline `<Style>`
+is still accepted (`Read400::readScoreTag`, `rw/read400/read400.cpp:170-186`).
+Linked parts are in `Excerpts/<nom>/<nom>.mscx`. 5.0 adds
+`<eid>` on most objects.
 
-Enfants utiles de `<Score>` :
+Useful children of `<Score>`:
 
-| Élément | Rôle | Lecteur |
+| Element | Role | Reader |
 |---|---|---|
-| `<Division>` | division MIDI (souvent 480), sert aux `<tick>` | `Read302/400::readScoreTag` |
-| `<Style>` | style inline (surtout 3.x) | `compat::ReadStyleHook::readStyleTag` |
+| `<Division>` | MIDI division (often 480), used for `<tick>`s | `Read302/400::readScoreTag` |
+| `<Style>` | inline style (mainly 3.x) | `compat::ReadStyleHook::readStyleTag` |
 | `<metaTag name>` | composer, workTitle, movementTitle… | `Score::setMetaTag` |
-| `<Part>` | partie et déclaration de ses portées | `TRead::read(Part*)` |
-| `<Staff id>` | contenu musical d'une portée | `StaffRead::readStaff` |
-| `<Score>` imbriqué | partie liée inline | récursion `readScoreTag` |
-| `<SpannerMap>` | spanners 5.0 | `TRead::readScoreSpanners` |
+| `<Part>` | part and declaration of its staves | `TRead::read(Part*)` |
+| `<Staff id>` | musical content of a staff | `StaffRead::readStaff` |
+| nested `<Score>` | inline linked part | `readScoreTag` recursion |
+| `<SpannerMap>` | 5.0 spanners | `TRead::readScoreSpanners` |
 
 `<SystemObjects>`, `<Order>`, `<PageLocks>`, `<SystemLocks>`,
-`<SystemDividers>` sont hors noyau. Le conteneur `.mscz` est traité par
-`crates/scoretk-musescore-import/src/container.rs` : `META-INF/container.xml`, `<nom>.mscx`,
+`<SystemDividers>` are outside the core. The `.mscz` container is handled by
+`crates/scoretk-musescore-import/src/container.rs`: `META-INF/container.xml`, `<nom>.mscx`,
 `score_style.mss`, `Excerpts/`.
-`MscReader::readScoreFile` (`infrastructure/mscreader.cpp:139-163`) cherche le
-nom annoncé puis le premier `.mscx` à la racine.
+`MscReader::readScoreFile` (`infrastructure/mscreader.cpp:139-163`) looks for the
+announced name then the first `.mscx` at the root.
 
-## 3. Temps, piste, portée
-Les durées sont des **fractions de ronde** exactes : `1/4` = noire, `1/2` =
-blanche, `1/1` = ronde, `3/8` = trois croches. `<duration>`, `<len>`,
-`<fractions>`, `<ticks_f>` utilisent cette forme. `XmlReader::readFraction`
-(`rw/xmlreader.cpp:117-134`) accepte aussi un entier seul (ticks internes) et
-les anciens attributs `z`/`n`.
+## 3. Time, track, staff
+Durations are exact **fractions of a whole note**: `1/4` = quarter, `1/2` =
+half, `1/1` = whole, `3/8` = three eighths. `<duration>`, `<len>`,
+`<fractions>`, `<ticks_f>` use this form. `XmlReader::readFraction`
+(`rw/xmlreader.cpp:117-134`) also accepts a bare integer (internal ticks) and
+the old `z`/`n` attributes.
 
-`<Division>` ne sert qu'aux `<tick>` : `Score::fileDivision(int)`
-(`dom/score.h:565`) applique `(tick_fichier * 480 + Division/2) / Division`,
-où 480 est `Constants::DIVISION` (identité si `<Division>480</Division>`). Les
-fractions de durée n'en dépendent pas.
+`<Division>` is only used for `<tick>`s: `Score::fileDivision(int)`
+(`dom/score.h:565`) applies `(file_tick * 480 + Division/2) / Division`,
+where 480 is `Constants::DIVISION` (identity if `<Division>480</Division>`). Duration
+fractions do not depend on it.
 
-- `ctx.tick()` : tick absolu depuis le début ; `ctx.rtick()` : relatif à la
-  mesure (`ReadContext::rtick`, `rw/read400/readcontext.cpp:219-223`).
-- Une mesure connaît `tick()` et `ticks()` ; le tick est presque toujours
-  implicite (section 6).
+- `ctx.tick()`: absolute tick from the start; `ctx.rtick()`: relative to the
+  measure (`ReadContext::rtick`, `rw/read400/readcontext.cpp:219-223`).
+- A measure knows `tick()` and `ticks()`; the tick is almost always
+  implicit (section 6).
 
-`VOICES = 4` (`dom/mscore.h:30`) : `track = staffIdx*4 + voiceIdx` (0..3).
-`staffIdx` suit l'ordre global des déclarations `<Staff>` des `<Part>` ;
-`voiceIdx` est la position du bloc `<voice>`, pas un attribut.
+`VOICES = 4` (`dom/mscore.h:30`): `track = staffIdx*4 + voiceIdx` (0..3).
+`staffIdx` follows the global order of `<Staff>` declarations in `<Part>`s;
+`voiceIdx` is the position of the `<voice>` block, not an attribute.
 
-Durée réelle d'un accord/repos :
+Actual duration of a chord/rest:
 ```text
 globalTicks = duree_nominale / ratios_des_olets_imbriques
 actualTicks = globalTicks / timeStretch(portee, tick)
 ```
-`DurationElement::globalTicks` (`dom/durationelement.cpp:87-94`) divise par
-`t->ratio()` pour chaque tuplet parent ; `actualTicksAt`
-(`dom/durationelement.cpp:108-117`) divise par `Staff::timeStretch`
-(`dom/staff.cpp:560-564`), le `stretch` de la métrique courante.
-`MeasureRead::readVoice` ajoute `actualTicks()` après chaque accord/repos
-non-ornement (`rw/read400/measurerw.cpp:289,328`) ; les ornements ne
-consomment aucun tick.
+`DurationElement::globalTicks` (`dom/durationelement.cpp:87-94`) divides by
+`t->ratio()` for each parent tuplet; `actualTicksAt`
+(`dom/durationelement.cpp:108-117`) divides by `Staff::timeStretch`
+(`dom/staff.cpp:560-564`), the `stretch` of the current metre.
+`MeasureRead::readVoice` adds `actualTicks()` after every non-grace chord/rest
+(`rw/read400/measurerw.cpp:289,328`); grace notes consume no tick.
 
 ## 4. `<Part>`, `<Staff>`, `<Instrument>`
 ```xml
@@ -115,33 +114,33 @@ consomment aucun tick.
   </Instrument>
 </Part>
 ```
-`<Part>` ne contient pas de musique : il déclare une partie, ses portées et son
-instrument. `<Staff id="N">` dans `<Part>` est **1-based** (`staffIdx=N-1`) ;
-`TRead::readProperties(Part*)` (`rw/read400/tread.cpp:3358`) crée la `Staff` et
-l'ajoute (`appendStaff`). L'ordre des déclarations dans tous les `<Part>`
-définit l'ordre global des portées.
+`<Part>` contains no music: it declares a part, its staves and its
+instrument. `<Staff id="N">` in `<Part>` is **1-based** (`staffIdx=N-1`);
+`TRead::readProperties(Part*)` (`rw/read400/tread.cpp:3358`) creates the `Staff` and
+appends it (`appendStaff`). The order of declarations in all `<Part>`s
+defines the global staff order.
 
-- `<StaffType group="pitched|percussion|tab">` ; `<trackName>` : nom de piste,
-  pouvant différer du `trackName` d'instrument.
-- `<Instrument id>` : modèle MuseScore ; `<instrumentId>` : identifiant
-  MusicXML (`wind.group`), à préférer pour l'export.
-- `<transposeChromatic>`/`<transposeDiatonic>` : transposition, variable dans
-  le temps via les changements d'instrument.
-- `<clef staff="2">F</clef>` : clé par défaut de la portée 1-based indiquée ;
-  `<Channel><program value>` : programme MIDI.
-- Une partie à deux portées déclare deux `<Staff>` ; chaque portée répète sa
-  propre séquence de `<Measure>` (mesures non partagées en XML).
-- `<InstrumentChange>` porte un `<Instrument>` complet et fixe la transposition
-  à partir de son tick. `Staff::transpose(tick)` et `Part::instrument(tick)`
-  résolvent l'instrument courant : calculer par tick.
+- `<StaffType group="pitched|percussion|tab">`; `<trackName>`: track name,
+  which may differ from the instrument's `trackName`.
+- `<Instrument id>`: MuseScore model; `<instrumentId>`: MusicXML
+  identifier (`wind.group`), preferred for export.
+- `<transposeChromatic>`/`<transposeDiatonic>`: transposition, variable over
+  time via instrument changes.
+- `<clef staff="2">F</clef>`: default clef of the indicated 1-based staff;
+  `<Channel><program value>`: MIDI program.
+- A two-staff part declares two `<Staff>`s; each staff repeats its
+  own sequence of `<Measure>`s (measures are not shared in XML).
+- `<InstrumentChange>` carries a complete `<Instrument>` and fixes transposition
+  from its tick. `Staff::transpose(tick)` and `Part::instrument(tick)`
+  resolve the current instrument: compute per tick.
 
-Différences : **3.x/4.0–4.5** n'ont pas `Part/@id` ; les `<Staff>` de
-déclaration portent `id`. **5.0** a `<Part id="1">`, des `<Staff>` sans `id`
-(ordre), et des noms dans `<InstrumentLabel>` (`<longName>`, `<shortName>`).
-**3.6.x** peut avoir des `Instrument/@id` faux ; `Read302::fixInstrumentId`
-(`rw/read302/read302.cpp:292-334`) corrige `Winds→winds`, harmonicas
-`d12*→d10*`, plusieurs `mdl-*`. **5.0** : parties partagées `<SharedPart>` /
-`<sharedPart>` (EID), hors périmètre d'un export complet.
+Differences: **3.x/4.0–4.5** have no `Part/@id`; declaration `<Staff>`s
+carry `id`. **5.0** has `<Part id="1">`, `<Staff>`s without `id`
+(order), and names in `<InstrumentLabel>` (`<longName>`, `<shortName>`).
+**3.6.x** can have bogus `Instrument/@id`s; `Read302::fixInstrumentId`
+(`rw/read302/read302.cpp:292-334`) corrects `Winds→winds`, harmonicas
+`d12*→d10*`, several `mdl-*`. **5.0**: shared parts `<SharedPart>` /
+`<sharedPart>` (EID), outside the scope of a complete export.
 
 ## 5. `<Measure>`
 ```xml
@@ -154,32 +153,32 @@ déclaration portent `id`. **5.0** a `<Part id="1">`, des `<Staff>` sans `id`
   </voice>
 </Measure>
 ```
-`len` est optionnel. Il n'y a **pas** de numéro de mesure : la position dans la
-séquence fait foi ; `<noOffset>` ne change que l'affichage
-(`rw/read400/measurerw.cpp:129-130`). Chaque mesure commence au tick courant de
-la portée. Sa durée par défaut est la métrique héritée (`4/4` au départ) :
+`len` is optional. There is **no** measure number: the position in the
+sequence is authoritative; `<noOffset>` only changes display
+(`rw/read400/measurerw.cpp:129-130`). Each measure starts at the staff's current
+tick. Its default duration is the inherited metre (`4/4` initially):
 `measure->setTicks(f); measure->setTimesig(f);`
-(`rw/read400/staffrw.cpp:58-61`). Une `<TimeSig>` au début remplace la durée ;
-une `<TimeSig>` en fin annonce la suivante (section 10). `len="N/D"` force
-`ticks=N/D` et marque la mesure irrégulière (section 14). Les `<voice>`
-repartent du début de la mesure.
+(`rw/read400/staffrw.cpp:58-61`). A `<TimeSig>` at the start replaces the duration;
+a `<TimeSig>` at the end announces the next one (section 10). `len="N/D"` forces
+`ticks=N/D` and marks the measure irregular (section 14). `<voice>`s
+restart from the beginning of the measure.
 
-Les autres enfants (`<startRepeat>`, `<endRepeat>`, `<Marker>`, `<BarLine>`,
+The other children (`<startRepeat>`, `<endRepeat>`, `<Marker>`, `<BarLine>`,
 `<LayoutBreak>`, `<stretch>`, `<irregular>`, `<vspacer*>`,
-`<multiMeasureRest>`) ne changent pas le tick. `measure->ticks()` fait avancer le tick de portée
+`<multiMeasureRest>`) do not change the tick. `measure->ticks()` advances the staff tick
 (`rw/read400/staffrw.cpp:72`).
 
-`StaffRead::readStaff` (`rw/read400/staffrw.cpp:39`) ne crée les mesures que
-pour la portée 0 (`id="1"`) ; les suivantes les réutilisent par ordre
-(`:95-126`). Une mesure manquante est créée vide (`missing measure!`). La
-première portée doit être `id="1"` et toutes doivent avoir la même séquence.
+`StaffRead::readStaff` (`rw/read400/staffrw.cpp:39`) creates measures only
+for staff 0 (`id="1"`); the following ones reuse them in order
+(`:95-126`). A missing measure is created empty (`missing measure!`). The
+first staff must be `id="1"` and all must have the same sequence.
 
-`MeasureRead::readMeasure` : `rw/read400/measurerw.cpp:70` ;
-`Measure::checkMeasure` : `dom/check.cpp:307` (cohérence, comble les trous,
-journalise les débordements). **3.02/4.0** : `len` alimente
-`compatTimeSigMap` (`:99-100`) et `<stretch>` est ignoré avant 4.0
-(`:118-128`). **4.1+** : plus de `compatTimeSigMap`, `<stretch>` lu.
-**5.0** : `<mmRestLast>` (EID de fin de multi-repos) apparaît
+`MeasureRead::readMeasure`: `rw/read400/measurerw.cpp:70`;
+`Measure::checkMeasure`: `dom/check.cpp:307` (consistency, fills gaps,
+logs overflows). **3.02/4.0**: `len` feeds
+`compatTimeSigMap` (`:99-100`) and `<stretch>` is ignored before 4.0
+(`:118-128`). **4.1+**: no more `compatTimeSigMap`, `<stretch>` read.
+**5.0**: `<mmRestLast>` (EID of end of multi-measure rest) appears
 (`rw/read500/measureread.cpp:179-184`).
 
 ## 6. `<voice>`
@@ -192,32 +191,32 @@ journalise les débordements). **3.02/4.0** : `len` alimente
   </voice>
 </Measure>
 ```
-L'indice de voix est **positionnel** : premier `<voice>` = voix 0, deuxième =
-voix 1… `MeasureRead::readVoice` fait `ctx.setTrack(nextTrack++)`
-(`rw/read400/measurerw.cpp:106-108`), avec `nextTrack=staffIdx*4`. Chaque voix
-démarre au tick de la mesure (`ctx.setTick(measure->tick())`). Le tick avance
-de `actualTicks()` après chaque `<Chord>`/`<Rest>` non-ornement ; il n'y a pas
-de tick par accord.
+The voice index is **positional**: first `<voice>` = voice 0, second =
+voice 1… `MeasureRead::readVoice` does `ctx.setTrack(nextTrack++)`
+(`rw/read400/measurerw.cpp:106-108`), with `nextTrack=staffIdx*4`. Each voice
+starts at the measure tick (`ctx.setTick(measure->tick())`). The tick advances
+by `actualTicks()` after each non-grace `<Chord>`/`<Rest>`; there is no
+tick per chord.
 
-Ne consomment pas de tick : `<Clef>`, `<KeySig>`, `<TimeSig>`, `<BarLine>`,
+Do not consume a tick: `<Clef>`, `<KeySig>`, `<TimeSig>`, `<BarLine>`,
 `<Breath>`, `<Dynamic>`, `<Expression>`, `<Harmony>`, `<Tempo>`,
 `<StaffText>`, `<RehearsalMark>`, `<Fermata>`, `<Symbol>`, `<Image>`,
 `<Spanner>`, `<Tuplet>`/`<endTuplet>`, `<Beam>`, `<Ambitus>`. `<MeasureRepeat>`
-/ `<RepeatMeasure>` consomme `measure->ticks()` (`:339-352`). Un `<voice>`
-vide ne crée rien.
+/ `<RepeatMeasure>` consumes `measure->ticks()` (`:339-352`). An empty `<voice>`
+creates nothing.
 
-Le lecteur C++ incrémente un compteur par `<voice>` : préserver l'ordre, ne
-pas déduire l'indice du contenu, ne pas supprimer un `<voice>` vide (cela
-décale les suivants). Le corpus n'a pas de `<voice>` vide : une mesure à une
-voix n'émet qu'un bloc.
-Contenu typique : `<Clef>`/`<KeySig>`/`<TimeSig>`, accords/repos/ornements,
-annotations (`<Dynamic>`, `<Harmony>`, `<Tempo>`…), spanners, tuplets, barres.
+The C++ reader increments a counter per `<voice>`: preserve the order, do
+not infer the index from content, do not drop an empty `<voice>` (this
+shifts the following ones). The corpus has no empty `<voice>`: a one-voice
+measure emits only one block.
+Typical content: `<Clef>`/`<KeySig>`/`<TimeSig>`, chords/rests/grace notes,
+annotations (`<Dynamic>`, `<Harmony>`, `<Tempo>`…), spanners, tuplets, barlines.
 
-`MeasureRead::readVoice` : `rw/read400/measurerw.cpp:211`. **3.02/4.0** :
-`<tick>` accepté comme obsolète. **4.1+** : `<location>` peut porter
-`isTimeTick` et créer un ancrage de métrique
-(`rw/read410/measureread.cpp:215-220`). **5.0** : plus de `<Spanner>` dans une
-mesure ; les spanners sont dans `<SpannerMap>` (section 12).
+`MeasureRead::readVoice`: `rw/read400/measurerw.cpp:211`. **3.02/4.0**:
+`<tick>` accepted as obsolete. **4.1+**: `<location>` may carry
+`isTimeTick` and create a metre anchor
+(`rw/read410/measureread.cpp:215-220`). **5.0**: no more `<Spanner>` inside a
+measure; spanners are in `<SpannerMap>` (section 12).
 
 ## 7. `<Chord>`, `<Rest>`, `<Note>`
 ```xml
@@ -227,85 +226,85 @@ mesure ; les spanners sont dans `<SpannerMap>` (section 12).
 <Rest><durationType>quarter</durationType></Rest>
 <Rest><durationType>measure</durationType><duration>1/1</duration></Rest>
 ```
-`ChordRest` lit `<durationType>` (`long`, `breve`, `whole`, `half`, `quarter`,
+`ChordRest` reads `<durationType>` (`long`, `breve`, `whole`, `half`, `quarter`,
 `eighth`, `16th`, `32nd`, `64th`, `128th`, `256th`, `512th`, `1024th`,
 `measure`). `TRead::readProperties(ChordRest*)` (`rw/read400/tread.cpp:2405`)
-fixe les ticks à `actualDurationType().fraction()` sauf pour `V_MEASURE`.
-`<dots>` (0 à 4) applique le multiplicateur `(2^(n+1)-1)/2^n`
-(`TDuration::fraction`, `dom/durationtype.cpp:357-404`). `<duration>` est une
-fraction de ronde qui **écrase** les ticks calculés. `<small>`,
+sets ticks to `actualDurationType().fraction()` except for `V_MEASURE`.
+`<dots>` (0 to 4) applies the multiplier `(2^(n+1)-1)/2^n`
+(`TDuration::fraction`, `dom/durationtype.cpp:357-404`). `<duration>` is a
+whole-note fraction that **overrides** the computed ticks. `<small>`,
 `<staffMove>`, `<BeamMode>`, `<Articulation>`, `<Ornament>`, `<Lyrics>`,
-`<Spanner>` sont secondaires.
+`<Spanner>` are secondary.
 
-**Ordre** : `<dots>` doit précéder `<durationType>`, car les ticks sont
-calculés en lisant le type avec les points déjà lus. Le corpus respecte cet
-ordre ; un lecteur Rust peut lire tous les enfants avant de calculer, mais doit
-signaler l'ordre inverse.
+**Order**: `<dots>` must precede `<durationType>`, because ticks are
+computed by reading the type with the dots already read. The corpus respects this
+order; a Rust reader may read all children before computing, but must
+report the reverse order.
 
-`readVoice` crée tout `<Rest>` en `V_MEASURE` avec
-`ticks = measure->timesig() / timeStretch` (`measurerw.cpp:304-309`). Puis
-`<durationType>` peut changer le type, et `<duration>` écrase les ticks. Dans
-le corpus, `<duration>` vaut souvent `1/1` ou `4/4` pour une mesure 4/4, `8/4`
-pour 8/4 : c'est la longueur de la mesure, parfois non réduite. Pour l'export,
-utiliser `measure->ticks()` si `<duration>` et la mesure diffèrent.
+`readVoice` creates every `<Rest>` as `V_MEASURE` with
+`ticks = measure->timesig() / timeStretch` (`measurerw.cpp:304-309`). Then
+`<durationType>` may change the type, and `<duration>` overrides the ticks. In
+the corpus, `<duration>` is often `1/1` or `4/4` for a 4/4 measure, `8/4`
+for 8/4: it is the measure length, sometimes unreduced. For export,
+use `measure->ticks()` if `<duration>` and the measure differ.
 
-Notes :
+Notes:
 ```xml
 <Note><pitch>69</pitch><tpc>17</tpc><tpc2>17</tpc2></Note>
 ```
-- `<pitch>` : hauteur MIDI **sonnante** 0–127, 60 = do central
-  (`dom/note.h:547`), bornée par `clampPitch` (`rw/read400/tread.cpp:3022`).
-- `<tpc>` : orthographe (degré + altération), fixe `tpc1` **et** `tpc2`
-  (`:3026-3029`). `<tpc2>` surcharge l'orthographe écrite ; `tpc1` = concert,
-  `tpc2` = partie transposée.
-- `<Accidental>` : altération graphique, distincte du `tpc`.
+- `<pitch>`: **sounding** MIDI pitch 0–127, 60 = middle C
+  (`dom/note.h:547`), clamped by `clampPitch` (`rw/read400/tread.cpp:3022`).
+- `<tpc>`: spelling (step + accidental), sets `tpc1` **and** `tpc2`
+  (`:3026-3029`). `<tpc2>` overrides the written spelling; `tpc1` = concert,
+  `tpc2` = transposed part.
+- `<Accidental>`: graphical accidental, distinct from `tpc`.
 - `<track>`, `<velocity>`, `<play>`, `<tuning>`, `<fret>`, `<string>`,
-  `<ghost>`, `<dead>`, `<head>`, `<line>` : lecture/jeu. `<NoteDot>` : points
-  graphiques ; les points de durée sont dans `<dots>` du ChordRest.
-- **4.x** : `<velocity>` sur `<Note>` est `Pid::USER_VELOCITY`, un entier
-  **signé** (pourcentage d'écart en mode offset, absolu en mode user), et
-  `<veloType>` vaut `offset` ou `user` (`typesconv.cpp:2499-2500`). La
-  propriété est `USER_VAL` par défaut (`dom/note.cpp:3316-3317`) : le C++
-  n'écrit `<veloType>` que pour `offset`. Une balise `<veloType>` inconnue est
-  lue comme `OFFSET_VAL` (`rw/read410/tread.cpp:401-402`). Le rendu MIDI
-  applique `Note::customizeVelocity` par note. En 3.x, `<velocity>` de note est
-  ignoré (`read302`), comme dans le C++.
+  `<ghost>`, `<dead>`, `<head>`, `<line>`: playback. `<NoteDot>`: graphical dots;
+  duration dots are in the ChordRest's `<dots>`.
+- **4.x**: `<velocity>` on `<Note>` is `Pid::USER_VELOCITY`, a
+  **signed** integer (deviation percentage in offset mode, absolute in user mode), and
+  `<veloType>` is `offset` or `user` (`typesconv.cpp:2499-2500`). The
+  property is `USER_VAL` by default (`dom/note.cpp:3316-3317`): the C++
+  writes `<veloType>` only for `offset`. An unknown `<veloType>` tag is
+  read as `OFFSET_VAL` (`rw/read410/tread.cpp:401-402`). MIDI rendering
+  applies `Note::customizeVelocity` per note. In 3.x, note `<velocity>` is
+  ignored (`read302`), as in the C++.
 
-`Note::setupAfterRead` (`dom/note.cpp:1651-1712`) dérive un `tpc` manquant de
-la tonalité et de `pitch`, dérive l'autre orthographe par transposition, et
-ajuste `pitch` si `tpc1` est incohérent modulo 12 (sauf percussion).
+`Note::setupAfterRead` (`dom/note.cpp:1651-1712`) derives a missing `tpc` from
+the key and `pitch`, derives the other spelling by transposition, and
+adjusts `pitch` if `tpc1` is inconsistent modulo 12 (except percussion).
 
-Table TPC (`dom/pitchspelling.h:41-58`) :
+TPC table (`dom/pitchspelling.h:41-58`):
 
-| Degré | F | C | G | D | A | E | B |
+| Step | F | C | G | D | A | E | B |
 |---|---|---|---|---|---|---|---|
 | `tpc` | 13 | 14 | 15 | 16 | 17 | 18 | 19 |
 
-Chaque dièse ajoute 7, chaque bémol retranche 7 (`F#=20`, `Bb=12`,
+Each sharp adds 7, each flat subtracts 7 (`F#=20`, `Bb=12`,
 `C##=28`). `TPC_MIN=-8` (`Fbbb`), `TPC_MAX=40` (`B###`). Conversion
-(`dom/pitchspelling.cpp`, `dom/pitchspelling.h:121-129`) :
+(`dom/pitchspelling.cpp`, `dom/pitchspelling.h:121-129`):
 ```text
 alter  = (tpc - TPC_MIN) / 7 - 3          // -3..+3
 step   = {F:3,C:0,G:4,D:1,A:5,E:2,B:6}[(tpc - TPC_MIN) % 7]
 octave = (pitch - alter) / 12 - 1
 ```
-`tpc2pitch` (`dom/pitchspelling.cpp:195-210`) donne les demi-tons des naturels
-(`F=5, C=0, G=7, D=2, A=9, E=4, B=11`), plus `alter`. Pour un instrument
-transpositeur, la hauteur écrite est `pitch - instrument.transpose.chromatic`.
+`tpc2pitch` (`dom/pitchspelling.cpp:195-210`) gives the semitones of naturals
+(`F=5, C=0, G=7, D=2, A=9, E=4, B=11`), plus `alter`. For a transposing
+instrument, the written pitch is `pitch - instrument.transpose.chromatic`.
 
-Lecteurs : `TRead::read(Chord*)` (`rw/read400/tread.cpp:2304`),
+Readers: `TRead::read(Chord*)` (`rw/read400/tread.cpp:2304`),
 `readProperties(Chord*)` (`:2323`), `readProperties(ChordRest*)` (`:2405`),
 `read(Rest*)` (`:3447`), `read(Note*)` (`:3005`), `readProperties(Note*)`
-(`:3020`). **3.02/4.0** : compatibilités pré-1.12 dans `<durationType>`
-(rondes converties en repos de mesure, `ticklen` obsolète) et métriques
-pré-1.14 (`:2405-2458`). **Avant 4.1** : `<BeamMode>` traduit
-`begin64`/`begin32` en `begin32`/`begin16` (`:2433-2443`) ; **4.1+** lit
-direct (`rw/read410/tread.cpp:2501`). **4.0+** : `ghost` = `ghost` (3.x :
-`dead`) ; `<velocity>` utilisateur en 4.x, ignoré en 3.x. **5.0** : plus de
-compat pré-1.12 (`rw/read500/tread.cpp:2576`), ajout de `<Text>`,
-`<LaissezVib>`, `<PartialTie>` dans `<Note>`.
+(`:3020`). **3.02/4.0**: pre-1.12 compatibilities in `<durationType>`
+(wholes converted to measure rests, obsolete `ticklen`) and pre-1.14 metres
+(`:2405-2458`). **Before 4.1**: `<BeamMode>` translates
+`begin64`/`begin32` to `begin32`/`begin16` (`:2433-2443`); **4.1+** reads
+directly (`rw/read410/tread.cpp:2501`). **4.0+**: `ghost` = `ghost` (3.x:
+`dead`); user `<velocity>` in 4.x, ignored in 3.x. **5.0**: no more
+pre-1.12 compat (`rw/read500/tread.cpp:2576`), addition of `<Text>`,
+`<LaissezVib>`, `<PartialTie>` in `<Note>`.
 
-## 8. `<Tuplet>` et `<endTuplet/>`
+## 8. `<Tuplet>` and `<endTuplet/>`
 ```xml
 <Tuplet>
   <normalNotes>2</normalNotes>
@@ -317,26 +316,26 @@ compat pré-1.12 (`rw/read500/tread.cpp:2576`), ajout de `<Text>`,
 </Tuplet>
 <endTuplet/>
 ```
-`<normalNotes>` = dénominateur du ratio, `<actualNotes>` = numérateur,
-`<baseNote>` (+ `<baseDots>`) = durée de base.
-`ticks = baseLen.fraction() * ratio.denominator()` : triolet de croches =
+`<normalNotes>` = denominator of the ratio, `<actualNotes>` = numerator,
+`<baseNote>` (+ `<baseDots>`) = base duration.
+`ticks = baseLen.fraction() * ratio.denominator()`: eighth-note triplet =
 `1/8*2 = 1/4`
-(`TRead::read(Tuplet*)`, `rw/read400/tread.cpp:1519-1521`). Les accords
-internes gardent leur durée nominale (`1/8`) mais leur durée réelle est divisée
-par le ratio (`1/12`).
+(`TRead::read(Tuplet*)`, `rw/read400/tread.cpp:1519-1521`). Inner chords
+keep their nominal duration (`1/8`) but their actual duration is divided
+by the ratio (`1/12`).
 
-`<endTuplet/>` est un **frère**, pas une balise fermante XML : il ferme le
-tuplet courant et remonte au parent. Tuplets imbriqués : un `<Tuplet>` rencontré
-alors qu'un autre est ouvert devient son enfant
-(`rw/read400/measurerw.cpp:587-595`) ; chaque `endTuplet` ferme un niveau.
-`endTuplet` sans ouverture : ignoré avec log. Tuplet vide : supprimé. Tuplet
-non fermé non vide : laissé avec log (`:596-646`). Les `<Tuplet>` n'avancent
-pas le tick : seuls les accords/repos le font, avec `actualTicks()` déjà divisé
-par les ratios.
+`<endTuplet/>` is a **sibling**, not a closing XML tag: it closes the
+current tuplet and returns to the parent. Nested tuplets: a `<Tuplet>` encountered
+while another is open becomes its child
+(`rw/read400/measurerw.cpp:587-595`); each `endTuplet` closes one level.
+`endTuplet` without an opener: ignored with a log. Empty tuplet: dropped. Non-empty
+unclosed tuplet: left with a log (`:596-646`). `<Tuplet>`s do not advance
+the tick: only chords/rests do, with `actualTicks()` already divided
+by the ratios.
 
-Lecteurs : `MeasureRead::readVoice` (`measurerw.cpp:587-612`),
+Readers: `MeasureRead::readVoice` (`measurerw.cpp:587-612`),
 `TRead::read(Tuplet*)` (`tread.cpp:1446`), `DurationElement::globalTicks`
-(`dom/durationelement.cpp:87`). Mécanisme stable de 3.02 à 5.0.
+(`dom/durationelement.cpp:87`). Mechanism stable from 3.02 to 5.0.
 
 ## 9. `<location>`, `<tick>`, `<move>`
 ```xml
@@ -345,56 +344,56 @@ Lecteurs : `MeasureRead::readVoice` (`measurerw.cpp:587-612`),
   <Chord>...</Chord>
 </voice>
 ```
-Champs : `<staves>`, `<voices>`, `<measures>`, `<fractions>`, `<grace>`,
+Fields: `<staves>`, `<voices>`, `<measures>`, `<fractions>`, `<grace>`,
 `<notes>` (`TRead::read(Location*)`, `rw/read400/tread.cpp:2859-2880`).
-`<measures>` = décalage en mesures (0 courante, 1 suivante, -1 précédente) ;
-`<fractions>` = décalage en fraction de ronde relatif au début de la mesure
-cible ; `<staves>`/`<voices>` = décalage de portée/voix, rare ; `<grace>` =
-indice d'ornement ; `<notes>` = indice de note dans un accord.
+`<measures>` = offset in measures (0 current, 1 next, -1 previous);
+`<fractions>` = offset as a whole-note fraction relative to the start of the target
+measure; `<staves>`/`<voices>` = staff/voice offset, rare; `<grace>` =
+grace-note index; `<notes>` = note index in a chord.
 
-`ReadContext::setLocation` (`rw/read400/readcontext.cpp:274-298`) fait
-`Location::toAbsolute(location())` (addition de la position courante), puis
-`setTrack`, `setTick(l.frac())`, et en lecture normale
-`incTick(currentMeasure()->tick())` pour rendre la fraction absolue. Ainsi
-`<fractions>1/4</fractions>` place la suite au quart de la mesure ;
-`<measures>1</measures><fractions>-1/4</fractions>` au quart avant la fin de
-la mesure suivante. Le déplacement persiste pour les accords suivants.
+`ReadContext::setLocation` (`rw/read400/readcontext.cpp:274-298`) does
+`Location::toAbsolute(location())` (adding the current position), then
+`setTrack`, `setTick(l.frac())`, and in normal reading
+`incTick(currentMeasure()->tick())` to make the fraction absolute. Thus
+`<fractions>1/4</fractions>` places what follows at a quarter of the measure;
+`<measures>1</measures><fractions>-1/4</fractions>` at a quarter before the end of
+the next measure. The shift persists for following chords.
 
-`<tick>1920</tick>` dans `<Staff>` ou `<voice>` fixe un tick **absolu** en
-ticks de fichier :
+`<tick>1920</tick>` in `<Staff>` or `<voice>` sets an **absolute** tick in
+file ticks:
 `ctx.setTick(Fraction::fromTicks(ctx.fileDivision(e.readInt())))`
-(`staffrw.cpp:89-90,121-122` ; `measurerw.cpp:229-231`). Ce n'est pas relatif à
-la mesure ; la balise est obsolète et absente du corpus.
+(`staffrw.cpp:89-90,121-122`; `measurerw.cpp:229-231`). It is not relative to
+the measure; the tag is obsolete and absent from the corpus.
 
-Aucune balise `<move>` n'est lue par les lecteurs 3.x/4.x/5.x.
-`XmlReader::readFraction` mentionne `<move z="2" n="4"/>` et `<move>2/4</move>`
-dans un commentaire (`rw/xmlreader.cpp:111-115`) : vestige de très vieux
-formats. Un `<move>` serait ignoré par `e.unknown()`. Le déplacement se fait par
+No `<move>` tag is read by the 3.x/4.x/5.x readers.
+`XmlReader::readFraction` mentions `<move z="2" n="4"/>` and `<move>2/4</move>`
+in a comment (`rw/xmlreader.cpp:111-115`): a remnant of very old
+formats. A `<move>` would be ignored by `e.unknown()`. Shifting is done via
 `<location>`.
 
-**4.1+** : `<location>` peut porter `isTimeTick` et créer un ancrage de
-métrique (`rw/read410/measureread.cpp:215-220`), sans effet sur le tick
-musical. **5.0** : les spanners n'utilisent plus `<location>` (section 12).
+**4.1+**: `<location>` may carry `isTimeTick` and create a metre
+anchor (`rw/read410/measureread.cpp:215-220`), with no effect on the
+musical tick. **5.0**: spanners no longer use `<location>` (section 12).
 
-## 10. Armure, métrique, clé
+## 10. Key signature, metre, clef
 ### 10.1 `<KeySig>`
 ```xml
 <KeySig><accidental>2</accidental></KeySig>
 <KeySig><concertKey>2</concertKey><actualKey>2</actualKey></KeySig>
 ```
-`<accidental>` : entier `Key` de -7 à +7 (0 = do majeur / la mineur).
-`<concertKey>` : armure de concert ; `setConcertKey` fixe aussi la tonalité
-écrite (`dom/key.cpp:205-210`). `<actualKey>` : armure écrite, sinon = concert. `<subtype>` : ancien encodage, secours via `initFromSubtype`
-(`dom/key.cpp:270`). `<custom>`, `<CustDef>`/`<KeySym>` : armures
-personnalisées ; `<mode>`, `<showCourtesy>` : secondaires. Une armure en début de mesure est
-réelle ; en fin de mesure, c'est une courtoisie annonçant la suivante.
+`<accidental>`: `Key` integer from -7 to +7 (0 = C major / A minor).
+`<concertKey>`: concert key signature; `setConcertKey` also sets the written
+key (`dom/key.cpp:205-210`). `<actualKey>`: written key signature, otherwise = concert. `<subtype>`: old encoding, fallback via `initFromSubtype`
+(`dom/key.cpp:270`). `<custom>`, `<CustDef>`/`<KeySym>`: custom
+key signatures; `<mode>`, `<showCourtesy>`: secondary. A key signature at the start of a measure is
+real; at the end of a measure, it is a courtesy announcing the next one.
 
-Lecteur : `TRead::read(KeySig*)` (`rw/read400/tread.cpp:1189`) ; placement
-`rw/read400/measurerw.cpp:418-429` ; `Staff::setKey` (`dom/staff.h:109`).
-**3.02/4.0** : `<accidental>`. **4.1** : `<accidental>` ou
-`concertKey`/`actualKey` (`rw/read410/tread.cpp:1331-1345`). **4.6+** :
-`concertKey`/`actualKey` seuls (`rw/read460/tread.cpp:1318-1321`). **4.5+** :
-courtoisie par `<isCourtesy>`, plus devinée par la position.
+Reader: `TRead::read(KeySig*)` (`rw/read400/tread.cpp:1189`); placement
+`rw/read400/measurerw.cpp:418-429`; `Staff::setKey` (`dom/staff.h:109`).
+**3.02/4.0**: `<accidental>`. **4.1**: `<accidental>` or
+`concertKey`/`actualKey` (`rw/read410/tread.cpp:1331-1345`). **4.6+**:
+`concertKey`/`actualKey` only (`rw/read460/tread.cpp:1318-1321`). **4.5+**:
+courtesy via `<isCourtesy>`, otherwise guessed from position.
 ### 10.2 `<TimeSig>`
 ```xml
 <TimeSig>
@@ -402,22 +401,22 @@ courtoisie par `<isCourtesy>`, plus devinée par la position.
   <stretchN>1</stretchN><stretchD>1</stretchD>
 </TimeSig>
 ```
-`<sigN>`/`<sigD>` : métrique. `<subtype>` : type graphique
-(`dom/timesig.h:37-43`) : 0 normal, 1 common time, 2 alla breve, 3 cut Bach,
-4 cut triple ; sans effet sur la durée. `<stretchN>`/`<stretchD>` : étirement
-local ; divise la durée réelle (`actualTicks = globalTicks / timeStretch`).
-`<textN>`/`<textD>`, `<Groups>` : affichage/groupement. `<isCourtesy>` :
-courtoisie (4.5+). Une métrique en début de mesure fixe `timesig` et, si la
-mesure n'est pas irrégulière, `ticks`. En fin de mesure, elle annonce la
-suivante (`ctx.setTimeSigForNextMeasure`,
+`<sigN>`/`<sigD>`: metre. `<subtype>`: graphical type
+(`dom/timesig.h:37-43`): 0 normal, 1 common time, 2 alla breve, 3 cut Bach,
+4 cut triple; no effect on duration. `<stretchN>`/`<stretchD>`: local
+stretch; divides the actual duration (`actualTicks = globalTicks / timeStretch`).
+`<textN>`/`<textD>`, `<Groups>`: display/grouping. `<isCourtesy>`:
+courtesy (4.5+). A metre at the start of a measure sets `timesig` and, if the
+measure is not irregular, `ticks`. At the end of a measure, it announces the
+next one (`ctx.setTimeSigForNextMeasure`,
 `rw/read410/measureread.cpp:381-384`).
 
-Lecteur : `TRead::read(TimeSig*)` (`rw/read400/tread.cpp:3979`) ; placement
-`rw/read400/measurerw.cpp:395-417`. **3.02/4.0** : courtoisie devinée par
-`currTick > measure->tick()`. **4.1–4.4** : même devinette si
-`mscVersion < 450` (`rw/read410/measureread.cpp:370`). **4.5+** :
-`isCourtesy()` seul (`rw/read460/measureread.cpp:364`). Les anciens
-`<den>`/`<nom1..4>` restent lus, hors périmètre 3.02+.
+Reader: `TRead::read(TimeSig*)` (`rw/read400/tread.cpp:3979`); placement
+`rw/read400/measurerw.cpp:395-417`. **3.02/4.0**: courtesy guessed from
+`currTick > measure->tick()`. **4.1–4.4**: same guess if
+`mscVersion < 450` (`rw/read410/measureread.cpp:370`). **4.5+**:
+`isCourtesy()` alone (`rw/read460/measureread.cpp:364`). Old
+`<den>`/`<nom1..4>` are still read, outside the 3.02+ scope.
 ### 10.3 `<Clef>`
 ```xml
 <Clef>
@@ -426,28 +425,28 @@ Lecteur : `TRead::read(TimeSig*)` (`rw/read400/tread.cpp:3979`) ; placement
   <isHeader>1</isHeader>
 </Clef>
 ```
-`<concertClefType>`/`<transposingClefType>` : clés concert/transposée.
-`<isHeader>` : clé d'en-tête (4.1+). `<showCourtesyClef>`, `<clefToBarlinePos>`,
-`<forInstrumentChange>` : secondaires. Aucune clé valide → `G` forcé
-(`rw/read400/tread.cpp:2551-2553`). Valeurs du corpus : `G`, `F`, `C3`, `G8vb`,
-`G8vbp`, `PERC`, `TAB` ; table complète dans `TConv::fromXml` (généré, absent
-de la copie). Début de mesure = en-tête ; ailleurs = changement en cours.
-Avant 4.5, l'en-tête est deviné par la position et l'armure/métrique avant
+`<concertClefType>`/`<transposingClefType>`: concert/transposing clefs.
+`<isHeader>`: header clef (4.1+). `<showCourtesyClef>`, `<clefToBarlinePos>`,
+`<forInstrumentChange>`: secondary. No valid clef → `G` forced
+(`rw/read400/tread.cpp:2551-2553`). Corpus values: `G`, `F`, `C3`, `G8vb`,
+`G8vbp`, `PERC`, `TAB`; full table in `TConv::fromXml` (generated, absent
+from the copy). Start of measure = header; elsewhere = mid-measure change.
+Before 4.5, the header is guessed from position and the preceding key/metre
 (`rw/read400/measurerw.cpp:360-385`).
 
-Lecteur : `TRead::read(Clef*)` (`rw/read400/tread.cpp:2527`) ; placement
-`rw/read400/measurerw.cpp:353-394`. **3.02/4.0** : pas de `<isHeader>`,
-devinette. **4.1–4.4** : `<isHeader>` avec repli
-(`rw/read410/measureread.cpp:350-360`). **4.5+** : `<isHeader>` autoritaire,
-plus de correction `AFTER` (`rw/read460/measureread.cpp:352-356`).
+Reader: `TRead::read(Clef*)` (`rw/read400/tread.cpp:2527`); placement
+`rw/read400/measurerw.cpp:353-394`. **3.02/4.0**: no `<isHeader>`,
+guessed. **4.1–4.4**: `<isHeader>` with fallback
+(`rw/read410/measureread.cpp:350-360`). **4.5+**: authoritative `<isHeader>`,
+no more `AFTER` correction (`rw/read460/measureread.cpp:352-356`).
 
-## 11. Liaisons de prolongation (`Tie`)
-**Correction d'une idée reçue.** En 3.x, une liaison n'est pas un `<Tie>`
-autonome : c'est déjà un `<Spanner type="Tie">` contenant `<Tie>` et une
-extrémité `<next>`/`<prev>` (`testChordSymbols.mscx`, 3.01 ; `Read302` délègue
-à `read400::TRead`, qui ne connaît pas de `<Tie>` autonome dans `Note`). Vraie
-différence : **3.x/4.x** = deux demi-spanners avec `<location>` ; **5.0** = un
-`<Tie>` direct dans la note, avec `<startElement>`/`<endElement>` (EID).
+## 11. Ties (`Tie`)
+**Correcting a misconception.** In 3.x, a tie is not a standalone `<Tie>`:
+it is already a `<Spanner type="Tie">` containing `<Tie>` and an
+end `<next>`/`<prev>` (`testChordSymbols.mscx`, 3.01; `Read302` delegates
+to `read400::TRead`, which knows no standalone `<Tie>` in `Note`). The real
+difference: **3.x/4.x** = two half-spanners with `<location>`; **5.0** = a
+`<Tie>` directly in the note, with `<startElement>`/`<endElement>` (EIDs).
 ```xml
 <Note><pitch>75</pitch><tpc>11</tpc>
   <Spanner type="Tie"><Tie/>
@@ -471,25 +470,25 @@ différence : **3.x/4.x** = deux demi-spanners avec `<location>` ; **5.0** = un
   <pitch>66</pitch><tpc>20</tpc>
 </Note>
 ```
-Une liaison ne consomme aucun tick et ne change pas la durée. Elle relie deux
-notes de même hauteur ; l'export produit `<tie>` (son) et `<tied>` (notation).
-En 3.x/4.x, un `ConnectorInfo` par demi-spanner, appariement par
-type/piste/location, `tieFor` au départ et `tieBack` à l'arrivée
+A tie consumes no tick and does not change duration. It links two
+notes of the same pitch; export produces `<tie>` (sound) and `<tied>` (notation).
+In 3.x/4.x, one `ConnectorInfo` per half-spanner, matching by
+type/track/location, `tieFor` at the start and `tieBack` at the end
 (`ConnectorInfoReader::readAddConnector(Note*)`,
-`rw/read400/connectorinforeader.cpp:367-430`). En 5.0,
-`TRead::readProperties(Spanner*)` enregistre les EID, puis
-`ReadContext::connectNoteAnchoredSpanners` les résout en fin de lecture
-(`rw/read500/tread.cpp:3880-3935` ; `rw/read500/readcontext.cpp:261-292`). Le
-`<Tie>` 5.0 est placé dans la note de fin dans les fichiers de test, mais nomme
-les deux extrémités : un seul élément suffit.
+`rw/read400/connectorinforeader.cpp:367-430`). In 5.0,
+`TRead::readProperties(Spanner*)` records the EIDs, then
+`ReadContext::connectNoteAnchoredSpanners` resolves them at the end of reading
+(`rw/read500/tread.cpp:3880-3935`; `rw/read500/readcontext.cpp:261-292`). The
+5.0 `<Tie>` is placed in the ending note in test files, but names
+both ends: a single element is sufficient.
 
-Lecteurs : `TRead::read(Tie*)` (`rw/read400/tread.cpp:3974`,
-`rw/read500/tread.cpp:4411`) ; `ConnectorInfoReader::read`
-(`rw/read400/connectorinforeader.cpp:73`) ; `Score::connectTies` en fin de
-lecture (`rw/read302/read302.cpp:227`, `rw/read400/read400.cpp:297`).
+Readers: `TRead::read(Tie*)` (`rw/read400/tread.cpp:3974`,
+`rw/read500/tread.cpp:4411`); `ConnectorInfoReader::read`
+(`rw/read400/connectorinforeader.cpp:73`); `Score::connectTies` at the end of
+reading (`rw/read302/read302.cpp:227`, `rw/read400/read400.cpp:297`).
 
-## 12. Spanners génériques (`Slur`, `HairPin`, …)
-Mécanisme 3.x/4.x :
+## 12. Generic spanners (`Slur`, `HairPin`, …)
+3.x/4.x mechanism:
 ```xml
 <Spanner type="Slur">
   <Slur><SlurSegment no="0"/></Slur>
@@ -500,17 +499,17 @@ Mécanisme 3.x/4.x :
   <prev><location><fractions>-1/2</fractions></location></prev>
 </Spanner>
 ```
-`type` = nom d'élément : `Slur`, `HairPin`, `Ottava`, `TextLine`, `Volta`,
+`type` = element name: `Slur`, `HairPin`, `Ottava`, `TextLine`, `Volta`,
 `Trill`, `Pedal`, `LetRing`, `Vibrato`, `PalmMute`, `WhammyBar`, `Rasgueado`,
-`HarmonicMark`, `GradualTempoChange`… L'enfant porte le même nom et ses
-propriétés (`<subtype>`, `<color>`, `<SlurSegment>`…). L'extrémité
-courante est implicite (position de l'élément conteneur) ; `<next>`/`<prev>`
-donne l'autre via une `<location>` relative. Le lecteur apparie les deux
-moitiés par type, piste et location absolue, puis crée un seul objet. Un
-`<Spanner>` isolé peut être reconnecté en fin de score
-(`ctx.reconnectBrokenConnectors()`) ou supprimé comme orphelin.
+`HarmonicMark`, `GradualTempoChange`… The child has the same name and its
+properties (`<subtype>`, `<color>`, `<SlurSegment>`…). The current
+end is implicit (position of the containing element); `<next>`/`<prev>`
+gives the other via a relative `<location>`. The reader matches the two
+halves by type, track and absolute location, then creates a single object. An
+isolated `<Spanner>` can be reconnected at the end of the score
+(`ctx.reconnectBrokenConnectors()`) or dropped as an orphan.
 
-Mécanisme 5.0 :
+5.0 mechanism:
 ```xml
 <SpannerMap>
   <Slur>
@@ -521,23 +520,23 @@ Mécanisme 5.0 :
   </Slur>
 </SpannerMap>
 ```
-`<SpannerMap>` est un enfant direct de `<Score>`. Chaque spanner est un élément
-direct, sans `<Spanner type>` ni `<next>`/`<prev>`. `<startElement>` /
-`<endElement>` sont des EID d'accords, repos ou mesures ; `<track>` donne la
-piste. `TRead::readScoreSpanners` (`rw/read500/tread.cpp:617-632`) crée l'objet
-via `tryCreateSpanner` (`:595-615`). Les spanners ancrés sur note (Tie,
-Glissando, NoteLine) restent dans la note.
+`<SpannerMap>` is a direct child of `<Score>`. Each spanner is a direct
+element, without `<Spanner type>` or `<next>`/`<prev>`. `<startElement>` /
+`<endElement>` are EIDs of chords, rests or measures; `<track>` gives the
+track. `TRead::readScoreSpanners` (`rw/read500/tread.cpp:617-632`) creates the object
+via `tryCreateSpanner` (`:595-615`). Note-anchored spanners (Tie,
+Glissando, NoteLine) remain in the note.
 
-Lecteurs : `TRead::readSpanner` (`rw/read400/tread.cpp:4338`) ;
+Readers: `TRead::readSpanner` (`rw/read400/tread.cpp:4338`);
 `ConnectorInfoReader::read`/`readAddConnector`
-(`rw/read400/connectorinforeader.cpp:73-500`) ; `TRead::readScoreSpanners`
-(`rw/read500/tread.cpp:617`). **3.02/4.0** : `<Spanner>` peut aussi apparaître
-au niveau `<Score>` pour `HairPin`, `Ottava`, `TextLine`, `Volta`, `Trill`,
-`Slur`, `Pedal`, lus par `TRead::readItem` (`rw/read400/read400.cpp:222-230`).
-**5.0** : plus de `<Spanner>` au niveau voix/mesure ; tout passe par
-`<SpannerMap>` sauf les spanners ancrés sur note.
+(`rw/read400/connectorinforeader.cpp:73-500`); `TRead::readScoreSpanners`
+(`rw/read500/tread.cpp:617`). **3.02/4.0**: `<Spanner>` may also appear
+at `<Score>` level for `HairPin`, `Ottava`, `TextLine`, `Volta`, `Trill`,
+`Slur`, `Pedal`, read by `TRead::readItem` (`rw/read400/read400.cpp:222-230`).
+**5.0**: no more `<Spanner>` at voice/measure level; everything goes through
+`<SpannerMap>` except note-anchored spanners.
 
-## 13. `<Lyrics>` et ornements
+## 13. `<Lyrics>` and grace notes
 ### 13.1 `<Lyrics>`
 ```xml
 <Chord>
@@ -550,17 +549,17 @@ au niveau `<Score>` pour `HairPin`, `Ottava`, `TextLine`, `Volta`, `Trill`,
   <Note><pitch>72</pitch><tpc>15</tpc></Note>
 </Chord>
 ```
-Enfant du **Chord**, pas de la Note. `<no>` : ligne **0-based** (absent = 0,
-`1` = 2e ligne). `<syllabic>` : `single`, `begin`, `end`, `middle`. `<text>` :
-syllabe (peut contenir `<sym>`). `<ticks_f>` : mélisme, remplace `<ticks>`.
-`<LyricsLine>` : trait de prolongation (5.0). `<placement>`/`<offset>` : hors
-noyau.
+Child of the **Chord**, not of the Note. `<no>`: **0-based** line (absent = 0,
+`1` = 2nd line). `<syllabic>`: `single`, `begin`, `end`, `middle`. `<text>`:
+syllable (may contain `<sym>`). `<ticks_f>`: melisma, replaces `<ticks>`.
+`<LyricsLine>`: continuation line (5.0). `<placement>`/`<offset>`: outside
+the core.
 
-Lecteurs : `TRead::read(Lyrics*)` (`rw/read400/tread.cpp:2882`) ;
-`readProperties(Lyrics*)` (`:2926`) ; création depuis `<Chord>` (`:2488-2492`).
-**3.02** : `<ticks>` obsolète encore lu. **4.0+** : `<ticks_f>`. **5.0** :
-`<LyricsLine>` et `PartialLyricsLine`, plus de `<ticks>`.
-### 13.2 Appoggiatures
+Readers: `TRead::read(Lyrics*)` (`rw/read400/tread.cpp:2882`);
+`readProperties(Lyrics*)` (`:2926`); creation from `<Chord>` (`:2488-2492`).
+**3.02**: obsolete `<ticks>` still read. **4.0+**: `<ticks_f>`. **5.0**:
+`<LyricsLine>` and `PartialLyricsLine`, no more `<ticks>`.
+### 13.2 Grace notes
 ```xml
 <Chord>
   <durationType>eighth</durationType>
@@ -571,7 +570,7 @@ Lecteurs : `TRead::read(Lyrics*)` (`rw/read400/tread.cpp:2882`) ;
   <Note><pitch>74</pitch><tpc>16</tpc></Note></Chord>
 ```
 
-| Balise | `NoteType` |
+| Tag | `NoteType` |
 |---|---|
 | `<appoggiatura/>` | `APPOGGIATURA` |
 | `<acciaccatura/>` | `ACCIACCATURA` |
@@ -582,22 +581,22 @@ Lecteurs : `TRead::read(Lyrics*)` (`rw/read400/tread.cpp:2882`) ;
 | `<grace16after/>` | `GRACE16_AFTER` |
 | `<grace32after/>` | `GRACE32_AFTER` |
 
-Un accord ornement est un `<Chord>` avec `NoteType` non `NORMAL`, placé
-**avant** l'accord principal. `MeasureRead::readVoice` ne l'ajoute pas à un
-segment et n'avance pas le tick : il le met dans `graceNotes`
-(`measurerw.cpp:276-285`), puis le rattache à l'accord normal suivant avec
-`graceIndex = 0,1,…` (`:280-284`). `<durationType>` d'un ornement est indicatif
-(taille du crochet), pas une durée musicale. `grace8after` signifie « après la
-note principale » ; le lecteur le stocke quand même dans la liste de l'accord
-suivant, l'ordre étant résolu par `NoteType`. Un ornement sans accord normal
-suivant reste non rattaché : corruption à signaler.
+A grace chord is a `<Chord>` with a `NoteType` other than `NORMAL`, placed
+**before** the main chord. `MeasureRead::readVoice` does not add it to a
+segment and does not advance the tick: it puts it in `graceNotes`
+(`measurerw.cpp:276-285`), then attaches it to the next normal chord with
+`graceIndex = 0,1,…` (`:280-284`). A grace note's `<durationType>` is indicative
+(hook size), not a musical duration. `grace8after` means "after the
+main note"; the reader still stores it in the following chord's list,
+the order being resolved by `NoteType`. A grace note without a following normal
+chord remains unattached: corruption to report.
 
-Lecteurs : `TRead::readProperties(Chord*)` (`tread.cpp:2349-2375`) ;
-`MeasureRead::readVoice` (`measurerw.cpp:214,265-290`) ; `Chord::add`
-(`dom/chord.cpp:686-694`). Mécanisme identique en 3.02/4.x/5.0 ; 5.0 ajoute des
-EID.
+Readers: `TRead::readProperties(Chord*)` (`tread.cpp:2349-2375`);
+`MeasureRead::readVoice` (`measurerw.cpp:214,265-290`); `Chord::add`
+(`dom/chord.cpp:686-694`). Same mechanism in 3.02/4.x/5.0; 5.0 adds
+EIDs.
 
-## 14. Mesures irrégulières (`len`)
+## 14. Irregular measures (`len`)
 ```xml
 <Measure len="3/4">
   <voice>
@@ -606,21 +605,21 @@ EID.
   </voice>
 </Measure>
 ```
-`len` est un **attribut**, parsé par `Fraction::fromString` ; fixe
-`measure->ticks(len)`. La métrique (`timesig`) reste héritée/déclarée. La
-mesure est marquée `irregular` : une `<TimeSig>` lue dedans ne réécrit pas
-`ticks` (`rw/read400/measurerw.cpp:414-416`). `len` invalide ou `< 1/128` :
-erreur MSCX (`:90-101`). `len` peut être plus long ou plus court que la
-métrique (3/4 dans 4/4, 8/4, 23/8…) ; le tick avance de `len`.
+`len` is an **attribute**, parsed by `Fraction::fromString`; it sets
+`measure->ticks(len)`. The metre (`timesig`) remains inherited/declared. The
+measure is marked `irregular`: a `<TimeSig>` read inside it does not rewrite
+`ticks` (`rw/read400/measurerw.cpp:414-416`). Invalid `len` or `< 1/128`:
+MSCX error (`:90-101`). `len` may be longer or shorter than the
+metre (3/4 in 4/4, 8/4, 23/8…); the tick advances by `len`.
 
-Lecteur : `MeasureRead::readMeasure` (`rw/read400/measurerw.cpp:89-101`).
-**3.02/4.0** : ajoute `compatTimeSigMap` (`:99-100`). **4.1+** : ces entrées
-disparaissent (`rw/read410/measureread.cpp:90-95`).
+Reader: `MeasureRead::readMeasure` (`rw/read400/measurerw.cpp:89-101`).
+**3.02/4.0**: adds `compatTimeSigMap` (`:99-100`). **4.1+**: these entries
+disappear (`rw/read410/measureread.cpp:90-95`).
 
-## 15. Excerpts et parties liées
-Il n'y a **pas** de balise `<Excerpt>` dans un MSCX.
+## 15. Excerpts and linked parts
+There is **no** `<Excerpt>` tag in an MSCX.
 
-Score imbriqué (3.x/4.x) :
+Nested score (3.x/4.x):
 ```xml
 <Score>...
   <Staff id="1">...</Staff>
@@ -629,87 +628,87 @@ Score imbriqué (3.x/4.x) :
     <Staff id="1">...</Staff></Score>
 </Score>
 ```
-`Read302/400::readScoreTag` traite `<Score>` par récursion : crée un `Score`
-séparé, lit son contenu, puis `Excerpt::linkMeasures(s, m)` relie les mesures
-au maître (`rw/read302/read302.cpp:143-164` ; `rw/read400/read400.cpp:233-257`).
-`<name>` ne s'applique qu'au score enfant ; `<Tracklist>` mappe les pistes.
+`Read302/400::readScoreTag` handles `<Score>` by recursion: creates a separate
+`Score`, reads its content, then `Excerpt::linkMeasures(s, m)` links the measures
+to the master (`rw/read302/read302.cpp:143-164`; `rw/read400/read400.cpp:233-257`).
+`<name>` applies only to the child score; `<Tracklist>` maps tracks.
 
-Fichiers séparés (4.x/5.x) : `MscLoader::loadMscz`
-(`rw/mscloader.cpp:156-207`) liste `Excerpts/*.mscx`, lit chaque fichier avec
-le même lecteur, puis `Excerpt::linkMeasures(partScore, masterScore)`. Le style
-est dans `Excerpts/<nom>/<nom>.mss`.
+Separate files (4.x/5.x): `MscLoader::loadMscz`
+(`rw/mscloader.cpp:156-207`) lists `Excerpts/*.mscx`, reads each file with
+the same reader, then `Excerpt::linkMeasures(partScore, masterScore)`. The style
+is in `Excerpts/<nom>/<nom>.mss`.
 
-Pour l'export : partition complète → ignorer les `<Score>` imbriqués et les
-fichiers `Excerpts/` (le maître contient tout) ; parties → lire l'excerpt et
-appliquer `<Tracklist>` (ou les EID 5.0), sans fusionner les mesures. 5.0 :
-`<SharedPart>`/`<sharedPart>` (EID), hors périmètre complet. Piège : « tous
-les `<Staff>` descendants » ramasse les excerpts et double la musique ;
-s'arrêter aux enfants directs du `<Score>` maître.
+For export: full score → ignore nested `<Score>`s and
+`Excerpts/` files (the master contains everything); parts → read the excerpt and
+apply `<Tracklist>` (or the 5.0 EIDs), without merging measures. 5.0:
+`<SharedPart>`/`<sharedPart>` (EIDs), outside the full scope. Pitfall: "all
+descendant `<Staff>`s" also gathers excerpts and doubles the music;
+stop at the direct children of the master `<Score>`.
 
-## 16. Synthèse 3.02 → 5.0
+## 16. Summary 3.02 → 5.0
 
-| Sujet | 3.02 | 4.0 | 4.1 | 4.6 | 5.0 |
+| Subject | 3.02 | 4.0 | 4.1 | 4.6 | 5.0 |
 |---|---|---|---|---|---|
-| Lecteur | `Read302` | `Read400` | `Read410` | `Read460` | `Read500` |
-| `Part/@id` | non | non | non | non | oui |
-| `Staff` déclaration | `id` | `id` | `id` | `id` | ordre, sans `id` |
-| Noms instrument | `longName` | idem | idem | idem | `InstrumentLabel` |
-| `KeySig` | `accidental` | `accidental` | les deux | `concertKey` | idem |
-| Courtoisie | devinée | devinée | devinée si `<450` | `isCourtesy` | `isCourtesy` |
-| Clé d'en-tête | devinée | devinée | `isHeader`+repli | `isHeader` | `isHeader` |
-| Liaison | `Spanner` | `Spanner` | `Spanner` | `Spanner` | `<Tie>`+EID |
+| Reader | `Read302` | `Read400` | `Read410` | `Read460` | `Read500` |
+| `Part/@id` | no | no | no | no | yes |
+| `Staff` declaration | `id` | `id` | `id` | `id` | order, no `id` |
+| Instrument names | `longName` | idem | idem | idem | `InstrumentLabel` |
+| `KeySig` | `accidental` | `accidental` | both | `concertKey` | idem |
+| Courtesy | guessed | guessed | guessed if `<450` | `isCourtesy` | `isCourtesy` |
+| Header clef | guessed | guessed | `isHeader`+fallback | `isHeader` | `isHeader` |
+| Tie | `Spanner` | `Spanner` | `Spanner` | `Spanner` | `<Tie>`+EID |
 | Spanners | `Spanner` | `Spanner` | `Spanner` | `Spanner` | `SpannerMap` |
-| `<eid>` | non | non | non | non | oui |
-| Durées pré-1.12 | oui | oui | oui | oui | non |
-| `BeamMode` ancien | traduit | traduit | direct | direct | direct |
-| Excerpts | inline | inline/fichiers | fichiers | fichiers | +SharedPart |
+| `<eid>` | no | no | no | no | yes |
+| Pre-1.12 durations | yes | yes | yes | yes | no |
+| Old `BeamMode` | translated | translated | direct | direct | direct |
+| Excerpts | inline | inline/files | files | files | +SharedPart |
 
-## 17. Pièges
-1. **Tick implicite.** Pas de `<tick>` par accord : il commence au tick courant
-   et avance de `actualTicks()`.
-2. **`actualTicks()` ≠ `ticks()`.** Diviser par les ratios d'olets et par
+## 17. Pitfalls
+1. **Implicit tick.** No `<tick>` per chord: it starts at the current tick
+   and advances by `actualTicks()`.
+2. **`actualTicks()` ≠ `ticks()`.** Divide by tuplet ratios and by
    `timeStretch` (section 3).
-3. **`<dots>` avant `<durationType>`.** Les ticks sont calculés en lisant le
-   type ; des points après sont ignorés. `<duration>` écrase tout : pour un
-   repos `measure`, utiliser la longueur de la mesure, pas la valeur brute.
-4. **Voix positionnelles et portées non partagées.** L'indice est l'ordre du
-   `<voice>` ; ne pas le déduire du contenu, ne pas supprimer un `<voice>`
-   vide. La portée 0 crée les mesures, les suivantes les réutilisent par
-   ordre ; un décalage décale tout.
-5. **`<tick>` absolu, `<location>` relatif.** `<tick>` est en ticks de fichier
-   depuis le début ; `<fractions>` est relatif à la mesure cible. `<move>`
-   n'existe pas en 3.02+ : utiliser `<location>`.
-6. **Olets imbriqués.** Chaque `endTuplet` ferme un niveau ; le tick avance
-   par accord déjà divisé par tous les ratios, ne pas ajouter
-   `tuplet->ticks()`. Olet vide supprimé, non fermé non vide laissé avec log :
-   signaler, ne pas inventer.
-7. **Ornements sans durée.** `appoggiatura`/`acciaccatura`/`grace*` ne
-   consomment aucun tick et se rattachent à l'accord suivant par `graceIndex`.
-   Un ornement final sans accord suivant est corrompu.
-8. **Liaison 3.x/4.x = deux moitiés** (`<next>` et `<prev>`). En 5.0, un
-   `<Tie>` avec EID : ne pas chercher `<Spanner type="Tie">` en 5.0, ni
-   `<Tie>` autonome en 3.x/4.x.
-9. **Spanners 5.0 hors mesure.** Ils sont dans `<SpannerMap>` au niveau
-   `<Score>` ; un parcours des seules voix les manque.
-10. **Excerpts.** Ignorer pour l'export complet ; traiter séparément pour les
-    parties. Ne pas ramasser les `<Staff>` des `<Score>` imbriqués.
-11. **Armure 4.6+.** `<accidental>` n'est plus lu ; utiliser
-    `concertKey`/`actualKey`. En 4.0/4.1, `<accidental>` est encore écrit.
-12. **Courtoisie et clé d'en-tête avant 4.5.** Devinées par la position ;
-    depuis 4.5, seuls `isCourtesy`/`isHeader` font foi (4.1 écrit déjà
-    `<isHeader>`).
-13. **Pitch sonnant, tpc écrit.** `<pitch>` est sonnant ; `tpc1` = concert,
-    `tpc2` = écrit. Pour la hauteur écrite, soustraire la transposition.
-    `setupAfterRead` ajuste `pitch` si `tpc1` est incohérent modulo 12.
-14. **Instruments 3.6.** `Instrument/@id` peut être faux ; préférer
-    `<instrumentId>`/`<trackName>` et `Read302::fixInstrumentId`.
-15. **`<Division>`, formes et version.** `<Division>` ne sert qu'aux `<tick>` ;
-    `1/1`, `4/4`, `8/8` peuvent être la même durée (comparer après réduction) ;
-    `version="5.00"` → 500, ne pas comparer `"5.0"` à `"5.00"` ni déduire le
-    schéma de `<programVersion>`. Une mesure sans `<voice>` garde sa durée :
-    générer un repos de mesure à l'export.
+3. **`<dots>` before `<durationType>`.** Ticks are computed when reading the
+   type; later dots are ignored. `<duration>` overrides everything: for a
+   `measure` rest, use the measure length, not the raw value.
+4. **Positional voices and unshared staves.** The index is the order of the
+   `<voice>`; do not infer it from content, do not drop an empty `<voice>`
+   Staff 0 creates the measures, the following ones reuse them in
+   order; one offset shifts everything.
+5. **Absolute `<tick>`, relative `<location>`.** `<tick>` is in file ticks
+   from the start; `<fractions>` is relative to the target measure. `<move>`
+   does not exist in 3.02+: use `<location>`.
+6. **Nested tuplets.** Each `endTuplet` closes one level; the tick advances
+   per chord already divided by all ratios, do not add
+   `tuplet->ticks()`. Empty tuplet dropped, non-empty unclosed tuplet left with a log:
+   report, do not invent.
+7. **Grace notes without duration.** `appoggiatura`/`acciaccatura`/`grace*` consume
+   no tick and attach to the following chord via `graceIndex`.
+   A final grace note with no following chord is corrupt.
+8. **3.x/4.x tie = two halves** (`<next>` and `<prev>`). In 5.0, a
+   `<Tie>` with EID: do not look for `<Spanner type="Tie">` in 5.0, nor for a
+   standalone `<Tie>` in 3.x/4.x.
+9. **5.0 spanners outside measures.** They are in `<SpannerMap>` at
+   `<Score>` level; a traversal of voices only misses them.
+10. **Excerpts.** Ignore for a full export; handle separately for
+     parts. Do not gather the `<Staff>`s of nested `<Score>`s.
+11. **Key signature 4.6+.** `<accidental>` is no longer read; use
+     `concertKey`/`actualKey`. In 4.0/4.1, `<accidental>` is still written.
+12. **Courtesy and header clef before 4.5.** Guessed from position;
+     since 4.5, only `isCourtesy`/`isHeader` are authoritative (4.1 already writes
+     `<isHeader>`).
+13. **Sounding pitch, written tpc.** `<pitch>` is sounding; `tpc1` = concert,
+     `tpc2` = written. For written pitch, subtract the transposition.
+     `setupAfterRead` adjusts `pitch` if `tpc1` is inconsistent modulo 12.
+14. **Instruments 3.6.** `Instrument/@id` may be bogus; prefer
+     `<instrumentId>`/`<trackName>` and `Read302::fixInstrumentId`.
+15. **`<Division>`, forms and version.** `<Division>` is only for `<tick>`s;
+     `1/1`, `4/4`, `8/8` may be the same duration (compare after reduction);
+     `version="5.00"` -> 500, do not compare `"5.0"` with `"5.00"` nor infer the
+     schema from `<programVersion>`. A measure without `<voice>` keeps its duration:
+     generate a measure rest on export.
 
-## 18. Textes et cadres
+## 18. Texts and frames
 ```xml
 <StaffText><placement>below</placement><text>doux <b>et</b> <i>lié</i></text></StaffText>
 <Tempo><tempo>2</tempo><followText>1</followText>
@@ -719,53 +718,52 @@ s'arrêter aux enfants directs du `<Score>` maître.
   <Text><style>title</style><text>Mon titre</text></Text>
 </VBox>
 ```
-Annotations de segment (aucune ne consomme de tick, section 6) : `StaffText`,
+Segment annotations (none consumes a tick, section 6): `StaffText`,
 `SystemText`, `Tempo`, `RehearsalMark`, `Expression`, `InstrumentChange`,
-`Dynamic`, `Harmony`. Propriétés lues : `<text>`, `<placement>` (`above`
-défaut / `below`), `<visible>` (0 = non exporté), `<frameType>` (0 sans cadre,
-1 rectangle, 2 cercle), `<style>`, `<italic>`/`<bold>`/`<underline>`/`<strike>` ;
-pour `Tempo` `<tempo>` (battements **par seconde**) et `<followText>` ; pour
-`InstrumentChange` `<Instrument>` (non lu). `<style>` fixe le placement et la
-police de départ que le fichier ne répète pas : `<style>expression</style>`
-donne un texte italique **sous** la portée (`TextStyleType::EXPRESSION`), et les
-propriétés `italic`/`bold` ci-dessus écrasent ce format de départ.
+`Dynamic`, `Harmony`. Read properties: `<text>`, `<placement>` (`above`
+default / `below`), `<visible>` (0 = not exported), `<frameType>` (0 no frame,
+1 rectangle, 2 circle), `<style>`, `<italic>`/`<bold>`/`<underline>`/`<strike>`;
+for `Tempo` `<tempo>` (beats **per second**) and `<followText>`; for
+`InstrumentChange` `<Instrument>` (not read). `<style>` sets the placement and the
+starting font that the file does not repeat: `<style>expression</style>`
+gives italic text **below** the staff (`TextStyleType::EXPRESSION`), and the
+`italic`/`bold` properties above override that starting format.
 
-`<text>` est du **balisage** et non du texte brut : `TRead::readProperties`
-utilise `XmlReader::readXml` (`rw/xmlreader.cpp:212`), qui re-sérialise les
-balises internes. Balises : `<b>`, `<i>`, `<u>`, `<s>`, `<sub>`, `<sup>`,
-`<font face="…"/>` et `<font size="…"/>` (une propriété par balise ;
-`</font>` ne restaure pas le format précédent), `<sym>nom</sym>` (symbole
-SMuFL rendu par un point de code MuseScore), `\n` = saut de ligne. Les entités
-nommées (`&quot;`, `&amp;`) sont conservées telles quelles dans le texte
-interne, les références numériques sont résolues.
+`<text>` is **markup**, not plain text: `TRead::readProperties`
+uses `XmlReader::readXml` (`rw/xmlreader.cpp:212`), which re-serialises the
+inner tags. Tags: `<b>`, `<i>`, `<u>`, `<s>`, `<sub>`, `<sup>`,
+`<font face="…"/>` and `<font size="…"/>` (one property per tag;
+`</font>` does not restore the previous format), `<sym>name</sym>` (a
+SMuFL symbol rendered by a MuseScore code point), `\n` = line break. Named entities
+(`&quot;`, `&amp;`) are preserved as-is in the internal text,
+numeric references are resolved.
 
-Export (`export/text.rs`, portage de `MScoreTextToMusicXml::writeTextFragments`
-et `ExportMusicXml::words`/`tempoText`/`systemText`/`rehearsal`/`credits`) :
-un `<words>` par fragment, attributs de format seulement quand ils changent par
-rapport au fragment précédent (référence = style des textes de portée : Edwin
-10). `StaffText`/`Expression`/`InstrumentChange` → `<direction>` + `<words>` ;
-`SystemText` et `Tempo` → `system="only-top"` ; `Tempo` → `<metronome>` quand
-`findMetronome`/`TempoText::findTempoDuration` reconnaît une formule
+Export (`export/text.rs`, port of `MScoreTextToMusicXml::writeTextFragments`
+and `ExportMusicXml::words`/`tempoText`/`systemText`/`rehearsal`/`credits`):
+one `<words>` per fragment, format attributes only when they change compared to the
+previous fragment (reference = staff text style: Edwin
+10). `StaffText`/`Expression`/`InstrumentChange` → `<direction>` + `<words>`;
+`SystemText` and `Tempo` → `system="only-top"`; `Tempo` → `<metronome>` when
+`findMetronome`/`TempoText::findTempoDuration` recognises a formula
 (`<beat-unit>`, `<beat-unit-dot>`, `<per-minute>`), plus `<sound tempo>`
-(arrondi à 2 décimales) ; un tempo invisible n'exporte que ce `<sound>`.
-`RehearsalMark` → `<rehearsal>` avec `enclosure` (absent si rectangle).
-Un texte décalé par rapport au tick courant ajoute
-`<offset sound="yes">` (tempo, `<words>`) ou `<offset>` (repère).
+(rounded to 2 decimals); an invisible tempo exports only that `<sound>`.
+`RehearsalMark` → `<rehearsal>` with `enclosure` (absent if rectangle).
+Text shifted from the current tick adds
+`<offset sound="yes">` (tempo, `<words>`) or `<offset>` (mark).
 
-`<VBox>` → `<credit>` (`ExportMusicXml::credits`) : un `<credit page="1">` par
-`<Text>` visible, `<credit-type>` d'après `<style>` (`title`, `subtitle`,
-`composer`, `lyricist`, vide sinon), alignements `justify`/`valign` du style,
-police et taille par défaut selon le style. `<work>`, `<movement-number>`,
-`<movement-title>` et les `<creator>` d'`<identification>` viennent des
-`<metaTag>`, pas des textes.
+`<VBox>` → `<credit>` (`ExportMusicXml::credits`): one `<credit page="1">` per
+visible `<Text>`, `<credit-type>` from `<style>` (`title`, `subtitle`,
+`composer`, `lyricist`, empty otherwise), `justify`/`valign` alignments of the style,
+font and default size according to the style. `<work>`, `<movement-number>`,
+`<movement-title>` and the `<creator>`s of `<identification>` come from
+`<metaTag>`s, not from texts.
 
-Non porté : textes de `TBox` (`tboxTextAsWords`), textes de spanner
-(`TextLine`), détails des changements d'instrument (`writeInstrumentChange`),
-symboles hors table de métronome, positions (`default-x`/`default-y`), style de
-partition (`<Style>`/`.mss`) et `<miscellaneous>`. Les `<Marker>`/`<Jump>`
-(D.C., D.S., Fine…) sont eux exportés en `<words>` par `export/repeats.rs` :
-ne pas les produire une seconde fois depuis les annotations.
-
+Not ported: `TBox` texts (`tboxTextAsWords`), spanner texts
+(`TextLine`), instrument-change details (`writeInstrumentChange`),
+symbols outside the metronome table, positions (`default-x`/`default-y`), score
+style (`<Style>`/`.mss`) and `<miscellaneous>`. `<Marker>`/`<Jump>`
+(D.C., D.S., Fine…) are exported as `<words>` by `export/repeats.rs`:
+do not produce them a second time from annotations.
 ## 19. MuseScore 1.x/2.x (`read206`) — differences from 3.x
 
 There is no published MSCX specification; this section follows

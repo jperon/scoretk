@@ -1,70 +1,70 @@
-# Écarts du noyau musical sur le corpus v4
+# Musical-core discrepancies on the v4 corpus
 
-Ce document inventorie les écarts constatés par le test de bout en bout
-`crates/scoretk/tests/e2e_corpus.rs` entre la conversion `X.mscx` →
-MusicXML et la référence `X.ref.musicxml` exportée par MuseScore 4.7.4.
+This document inventories the discrepancies reported by the end-to-end test
+`crates/scoretk/tests/e2e_corpus.rs` between the conversion `X.mscx` →
+MusicXML and the `X.ref.musicxml` reference exported by MuseScore 4.7.4.
 
-Méthode : les deux documents sont normalisés (métadonnées, mise en page,
-`<direction>`, `<stem>`, `<beam>`, `<print>`, `<notations>` hors `tied`/`tuplet`,
-`<barline>` hors `<repeat>` retirés), puis comparés ligne à ligne avec `similar`.
-Le test `crates/scoretk/tests/noyau_corpus.rs` compare en plus, fichier par
-fichier et mesure par mesure, les seuls éléments de la famille noyau (hauteurs,
-`octave-shift`, n-olets, `measure-style`, noms de partie, volume/pan, liaisons,
-`sound tempo`, `repeat times`), avec un nombre d'écarts attendu explicite.
-Le tableau ci-dessous donne, pour chaque fichier, le nombre de lignes d'écart
-après normalisation ; les fichiers marqués **identique** constituent la liste
-`EXPECTED_CONFORMANT` du test.
+Method: both documents are normalised (metadata, layout,
+`<direction>`, `<stem>`, `<beam>`, `<print>`, `<notations>` except `tied`/`tuplet`,
+`<barline>` except `<repeat>` removed), then compared line by line with `similar`.
+The test `crates/scoretk/tests/noyau_corpus.rs` additionally compares, file by
+file and measure by measure, only the elements of the core family (pitches,
+`octave-shift`, n-tuplets, `measure-style`, part names, volume/pan, ties,
+`sound tempo`, `repeat times`), with an explicit expected discrepancy count.
+The table below gives, for each file, the number of differing lines after
+normalisation; files marked **identical** constitute the test's
+`EXPECTED_CONFORMANT` list.
 
-Écarts triés par fréquence (nombre de fichiers touchés), puis par nombre
-d'occurrences. Les causes sont classées « lecteur », « modèle » ou « export ».
-Les écarts 1 à 14 sont corrigés (voir chaque section), ainsi que les écarts 16
-et ceux du corpus 3.x listés plus bas.
+Discrepancies sorted by frequency (number of affected files), then by number
+of occurrences. Causes are classified as "reader", "model" or "export".
+Discrepancies 1 to 14 are fixed (see each section), as are discrepancy 16
+and those of the 3.x corpus listed below.
 
-## Tableau de conformité
+## Compliance table
 
-| Fichier | Lignes d'écart |
+| File | Differing lines |
 | --- | ---: |
-| beamStemDir | **identique** |
-| changevisibility | **identique** |
-| copypaste_parts | **identique** |
-| copypastesymbollist-lyrics | **identique** |
-| dynamics | **identique** |
-| dynamics_niente | **identique** |
-| expression-1 | **identique** |
-| hairpin_dynamic_inside | **identique** |
-| hairpin_dynamic_jump | **identique** |
-| hairpin_simple | **identique** |
-| hairpins_and_repeats | **identique** |
-| linked-ties | **identique** |
-| mmrest | **identique** |
-| part-textlines | **identique** |
-| partExclusion | **identique** |
-| repeat65 | **identique** |
-| repeat66 | **identique** |
-| repeat68 | **identique** |
-| repeat69 | **identique** |
-| tenuto_accent | **identique** |
-| testExcludeInvisibleElements | **identique** |
-| testLocalTimesig1 | **identique** |
-| testNoteheads2 | **identique** |
-| testTempoPrecision | **identique** |
-| timesig-09 | **identique** |
-| voiceswitching | **identique** |
+| beamStemDir | **identical** |
+| changevisibility | **identical** |
+| copypaste_parts | **identical** |
+| copypastesymbollist-lyrics | **identical** |
+| dynamics | **identical** |
+| dynamics_niente | **identical** |
+| expression-1 | **identical** |
+| hairpin_dynamic_inside | **identical** |
+| hairpin_dynamic_jump | **identical** |
+| hairpin_simple | **identical** |
+| hairpins_and_repeats | **identical** |
+| linked-ties | **identical** |
+| mmrest | **identical** |
+| part-textlines | **identical** |
+| partExclusion | **identical** |
+| repeat65 | **identical** |
+| repeat66 | **identical** |
+| repeat68 | **identical** |
+| repeat69 | **identical** |
+| tenuto_accent | **identical** |
+| testExcludeInvisibleElements | **identical** |
+| testLocalTimesig1 | **identical** |
+| testNoteheads2 | **identical** |
+| testTempoPrecision | **identical** |
+| timesig-09 | **identical** |
+| voiceswitching | **identical** |
 
 
-## 1. Clef par défaut absente — 14 fichiers
+## 1. Missing default clef — 14 files
 
-**Corrigé** (lecteur/modèle/export) : `Staff::default_clef` reprend
-`<defaultClef>` (ou ses variantes concert/transposée) et l'export écrit une
-clef du type par défaut de la portée quand aucun `<Clef>` n'ouvre la partition,
-comme la mise en page de MuseScore.
+**Fixed** (reader/model/export): `Staff::default_clef` reads
+`<defaultClef>` (or its concert/transposing variants) and export writes a
+clef of the staff's default type when no `<Clef>` opens the score,
+as MuseScore's layout does.
 
-Fichiers : beamStemDir, changevisibility, copypaste_parts, dynamics,
+Files: beamStemDir, changevisibility, copypaste_parts, dynamics,
 hairpin_dynamic_inside, linked-ties, mmrest, part-textlines, repeat65,
 tenuto_accent, testExcludeInvisibleElements, testLocalTimesig1, timesig-09,
 voiceswitching.
 
-Diff (beamStemDir) :
+Diff (beamStemDir):
 
 ```diff
 -        <clef number="1">
@@ -77,25 +77,25 @@ Diff (beamStemDir) :
 -        </clef>
 ```
 
-Ces `.mscx` ne contiennent aucun élément `<Clef>` : la clef vient de
-`<defaultClef>F</defaultClef>` dans `<Staff id="2">` (parties à plusieurs
-portées) ou de la clef par défaut « sol » d'une portée simple. **Cause :
-lecteur/modèle.** `read4xx` n'insère un segment `HeaderClef` que s'il rencontre
-un `<Clef>` ; `<defaultClef>` n'est pas lu et le modèle n'a pas de clef par
-défaut par portée. L'export ne peut donc écrire aucune clef (son repli
-« sol » suppose un segment `HeaderClef` existant), alors que MuseScore crée
-cette clef à la lecture (`read400`).
+These `.mscx` contain no `<Clef>` element: the clef comes from
+`<defaultClef>F</defaultClef>` in `<Staff id="2">` (multi-staff parts) or from
+the default "treble" clef of a single staff. **Cause: reader/model.**
+`read4xx` inserts a `HeaderClef` segment only when it encounters
+a `<Clef>`; `<defaultClef>` is not read and the model has no per-staff
+default clef. Export therefore cannot write any clef (its "treble"
+fallback assumes an existing `HeaderClef` segment), whereas MuseScore creates
+that clef on reading (`read400`).
 
-## 2. `<instrument-name>` pris dans le nom long au lieu du nom de piste — 3 fichiers
+## 2. `<instrument-name>` taken from the long name instead of the track name — 3 files
 
-**Corrigé** (lecteur/modèle/export) : `Instrument::track_name` reprend
-`<trackName>` et `<instrument-name>` l'écrit tel quel, comme
-`MScoreTextToMusicXml::toPlainText(instr->trackName())` ; le nom long ne sert
-plus de repli.
+**Fixed** (reader/model/export): `Instrument::track_name` reads
+`<trackName>` and `<instrument-name>` writes it as-is, like
+`MScoreTextToMusicXml::toPlainText(instr->trackName())`; the long name is no
+longer a fallback.
 
-Fichiers : hairpin_dynamic_inside, part-textlines, testLocalTimesig1.
+Files: hairpin_dynamic_inside, part-textlines, testLocalTimesig1.
 
-Diffs :
+Diffs:
 
 ```diff
 -        <instrument-name></instrument-name>
@@ -112,26 +112,26 @@ Diffs :
 +        <instrument-name>Piano 1</instrument-name>
 ```
 
-MuseScore écrit dans `<instrument-name>` le `<trackName>` de l'instrument, non
-son `<longName>` (d'où la chaîne vide de `hairpin_dynamic_inside`, dont le
-`<trackName>` est vide, et le « Piano » de `testLocalTimesig1`, dont le
-`<longName>` vaut « Piano 1 »). **Cause : lecteur/modèle.** `read_instrument`
-ne stocke pas le nom de piste (TODO explicite) ; l'export se replie sur
-`instrument.long_name`. Le même défaut explique le « Bb » au lieu de « B♭ »
-(le nom long est déjà dépouillé du bémol par `plain_text`).
+MuseScore writes the instrument's `<trackName>` into `<instrument-name>`, not
+its `<longName>` (hence the empty string for `hairpin_dynamic_inside`, whose
+`<trackName>` is empty, and "Piano" for `testLocalTimesig1`, whose
+`<longName>` is "Piano 1"). **Cause: reader/model.** `read_instrument`
+does not store the track name (explicit TODO); export falls back to
+`instrument.long_name`. The same flaw explains "Bb" instead of "B♭"
+(the long name is already stripped of the flat by `plain_text`).
 
-## 3. Têtes de note : mauvais nom, têtes nommées perdues — 3 fichiers
+## 3. Noteheads: wrong name, named heads lost — 3 files
 
-**Corrigé** (lecteur/modèle/export) : `Note` distingue désormais le groupe de
-tête (`head_group`, `NoteHeadGroup`) du type (`head`), et `visible`.
-L'export reproduit `writeNotehead` : valeur MusicXML du groupe (`x`, `cross`,
-`circle-x`, `slashed`, `triangle`, `inverted triangle`, solfège…), nom SMuFL
-avec `other` pour les groupes sans équivalent, `none` pour une note invisible,
-attribut `filled` d'après `<headType>`.
+**Fixed** (reader/model/export): `Note` now distinguishes the head
+group (`head_group`, `NoteHeadGroup`) from the type (`head`), and `visible`.
+Export reproduces `writeNotehead`: MusicXML value of the group (`x`, `cross`,
+`circle-x`, `slashed`, `triangle`, `inverted triangle`, solfège…), SMuFL
+name with `other` for groups without an equivalent, `none` for an invisible note,
+and the `filled` attribute from `<headType>`.
 
-Fichiers : testNoteheads2 (conforme), voiceswitching, testExcludeInvisibleElements.
+Files: testNoteheads2 (conformant), voiceswitching, testExcludeInvisibleElements.
 
-Diff (testNoteheads2) :
+Diff (testNoteheads2):
 
 ```diff
 -        <notehead>x</notehead>
@@ -146,31 +146,31 @@ Diff (testNoteheads2) :
 -        <notehead>so</notehead>
 ```
 
-Deux problèmes se cumulent :
+Two problems compound:
 
-- **lecteur/modèle** : `names::note_head` replie des têtes MuseScore distinctes
+- **reader/model**: `names::note_head` folds distinct MuseScore heads
   (`cross`, `xcircle`, `withx`, `slashed1/2`, `diamond-old`, `large-arrow`,
-  `plus`, `circled`, têtes de solfège `do/ré/mi/fa/sol/la/ti`, `none`…) sur
-  quelques variantes du modèle ; `NoteHeadType::Other(u8)` ne conserve pas le
-  nom d'origine ;
-- **export** : `write_notehead` réécrit ces variantes avec des noms MusicXML
-  approximatifs (`Cross` → `cross` au lieu de `x`, `X` → `x` au lieu de
-  `circle-x`, `Slash` → `slash` au lieu de `slashed`) et n'émet rien pour
-  `Other`, `none` ou les têtes nommées.
+  `plus`, `circled`, solfège heads `do/ré/mi/fa/sol/la/ti`, `none`…) into
+  a few model variants; `NoteHeadType::Other(u8)` does not keep the
+  original name;
+- **export**: `write_notehead` rewrites these variants with approximate MusicXML
+  names (`Cross` → `cross` instead of `x`, `X` → `x` instead of
+  `circle-x`, `Slash` → `slash` instead of `slashed`) and emits nothing for
+  `Other`, `none` or named heads.
 
-## 4. Durée réelle (`<duration>`) ignorée : durée, divisions, `time-modification`, `backup` — 2 fichiers
+## 4. Actual duration (`<duration>`) ignored: duration, divisions, `time-modification`, `backup` — 2 files
 
-**Corrigé** (lecteur/modèle/export) : `ChordRest::ticks` conserve le
-`<duration>` explicite, `Staff::time_stretch` l'étirement d'une indication
-locale, et `Chord::tremolo_two_chord` le trémolo à deux notes (appariement de
-l'accord suivant dans la même voix, comme `Measure::connectTremolo`). L'export
-écrit `<duration>` depuis les ticks réels, avance la position avec
-`actualTicks` (ticks / étirement), compte la moitié d'un trémolo dans
-`calcDivisions` et ajoute `<time-modification>` 2:1 pour un trémolo.
+**Fixed** (reader/model/export): `ChordRest::ticks` keeps the
+explicit `<duration>`, `Staff::time_stretch` the local direction stretch,
+and `Chord::tremolo_two_chord` the two-note tremolo (matching the
+following chord in the same voice, like `Measure::connectTremolo`). Export
+writes `<duration>` from the real ticks, advances position with
+`actualTicks` (ticks / stretch), counts half a tremolo in
+`calcDivisions` and adds `<time-modification>` 2:1 for a tremolo.
 
-Fichiers : timesig-09 (conforme), copypaste_parts (ne garde que l'écart 5).
+Files: timesig-09 (conformant), copypaste_parts (only discrepancy 5 remains).
 
-Diff initial (timesig-09) :
+Initial diff (timesig-09):
 
 ```diff
 -        <duration>2</duration>
@@ -187,446 +187,444 @@ Diff initial (timesig-09) :
 +      </backup>
 ```
 
-Ces accords portent `<durationType>whole</durationType>` **et**
-`<duration>1/2</duration>` (figure ronde étirée à une demi-ronde). `read_chord`
-lit `<duration>` dans `ParsedChord::ticks` et avance le curseur en
-conséquence ; le modèle ne gardait que `duration` (la figure) et l'export
-recalculait la durée avec `duration.ticks()`, d'où l'absence de
-`<time-modification>` 2:1, de `backup` corrects et de divisions justes.
+These chords carry `<durationType>whole</durationType>` **and**
+`<duration>1/2</duration>` (a whole note stretched to a double whole). `read_chord`
+reads `<duration>` into `ParsedChord::ticks` and advances the cursor
+accordingly; the model kept only `duration` (the note type) and export
+recomputed the duration with `duration.ticks()`, hence the missing
+`<time-modification>` 2:1, incorrect `backup`s and wrong divisions.
 
-## 5. Spanner `Ottava` non appliqué à la hauteur — 2 fichiers
+## 5. `Ottava` spanner not applied to pitch — 2 files
 
-**Corrigé** (lecteur/export) : `read4xx` apparie les deux moitiés
-`<Spanner type="Ottava">` (nouveau `read/read4xx/ottava.rs`) et les range dans
-`Score::spanners` ; `read302` le faisait déjà. L'export décale la hauteur écrite
-de `ppitch - pitch` (une ou deux octaves) comme `pitch2xml`, et écrit
-`<direction><direction-type><octave-shift>` au début et à la fin, y compris
-pour une ottava invisible (le trait disparaît, la hauteur reste décalée).
+**Fixed** (reader/export): `read4xx` pairs the two halves of
+`<Spanner type="Ottava">` (new `read/read4xx/ottava.rs`) and stores them in
+`Score::spanners`; `read302` already did so. Export shifts the written pitch
+by `ppitch - pitch` (one or two octaves) like `pitch2xml`, and writes
+`<direction><direction-type><octave-shift>` at the start and the end, including
+for an invisible ottava (the line disappears, the pitch stays shifted).
 
-Fichiers : copypaste_parts, partExclusion, testExcludeInvisibleElements.
+Files: copypaste_parts, partExclusion, testExcludeInvisibleElements.
 
-## 6. `bracket` des n-olets — 1 fichier, 9 occurrences
+## 6. `bracket` of n-tuplets — 1 file, 9 occurrences
 
-**Corrigé** (lecteur) : les lecteurs calculent le crochet faute de ligatures
-modélisées, d'après `Tuplet::calcHasBracket` et le corpus :
+**Fixed** (reader): readers compute the bracket in the absence of modelled
+beams, following `Tuplet::calcHasBracket` and the corpus:
 
-- 3.x : un n-olet simple n'a pas de crochet, un n-olet qui contient un n-olet
-  imbriqué en a un, et le niveau interne le plus court s'en passe ;
-- 4.x : crochet par défaut, sauf pour un n-olet imbriqué de base plus courte
-  qu'une croche, ou de croches avec un ratio réduit.
+- 3.x: a simple n-tuplet has no bracket, an n-tuplet containing a nested
+  n-tuplet has one, and the shortest inner level does not;
+- 4.x: bracket by default, except for a nested n-tuplet with a base shorter
+  than an eighth, or eighths with a reduced ratio.
 
-Fichier : voiceswitching (conforme). Même règle appliquée à
-`testTuplets8`, `copypaste_tuplet_01` et `layout_elements` (v3, conformes).
+File: voiceswitching (conformant). Same rule applied to
+`testTuplets8`, `copypaste_tuplet_01` and `layout_elements` (v3, conformant).
 
-## 7. Nombres affichés des n-olets imbriqués réduits — 1 fichier, 3 occurrences
+## 7. Displayed numbers of reduced nested n-tuplets — 1 file, 3 occurrences
 
-**Corrigé** (modèle/lecteurs/export) : `Tuplet` porte
-`actual_notes`/`normal_notes` (nombres bruts du fichier) en plus du `ratio`
-réduit ; `<tuplet-actual>`/`<tuplet-normal>` les écrivent tels quels
-(`Tuplet::displayed_numbers`). Un `4:4` reste `4`/`4`.
+**Fixed** (model/readers/export): `Tuplet` carries
+`actual_notes`/`normal_notes` (raw numbers from the file) in addition to the
+reduced `ratio`; `<tuplet-actual>`/`<tuplet-normal>` write them as-is
+(`Tuplet::displayed_numbers`). A `4:4` remains `4`/`4`.
 
-Fichier : voiceswitching (conforme).
+File: voiceswitching (conformant).
 
-## 8. Nombre de reprises d'une barre de fin — 1 fichier
+## 8. Repeat count of an end barline — 1 file
 
-**Corrigé** (lecteur/modèle/export) : `Measure::repeat_count` reçoit
-`<endRepeat>N</endRepeat>` dans les deux lecteurs et `<repeat>` écrit
-`times="N"` au-delà de deux lectures. (Déjà corrigé avec les reprises, voir
+**Fixed** (reader/model/export): `Measure::repeat_count` receives
+`<endRepeat>N</endRepeat>` in both readers and `<repeat>` writes
+`times="N"` beyond two plays. (Already fixed with repeats, see
 `export/repeats.rs`.)
 
-Fichier : repeat65 (conforme).
+File: repeat65 (conformant).
 
-## 9. Silences multi-mesures (`<measure-style>`) — 1 fichier
+## 9. Multi-measure rests (`<measure-style>`) — 1 file
 
-**Corrigé** (lecteur/modèle/export) : `Measure::multi_measure_rest` reçoit le
-compteur du marqueur `<multiMeasureRest>N</multiMeasureRest>` sur la mesure qui
-ouvre le groupe (les marqueurs suivent leur première mesure dans le `.mscx`).
-Quand le style `<createMultiMeasureRests>` est actif et que toute la partition
-est faite de mesures vides, une mesure vide isolée reçoit `1` (mmrest.mscx).
-L'export écrit `<attributes><measure-style><multiple-rest>N`.
+**Fixed** (reader/model/export): `Measure::multi_measure_rest` receives the
+counter of the `<multiMeasureRest>N</multiMeasureRest>` marker on the measure that
+opens the group (markers follow their first measure in the `.mscx`).
+When the `<createMultiMeasureRests>` style is active and the whole score
+consists of empty measures, an isolated empty measure receives `1` (mmrest.mscx).
+Export writes `<attributes><measure-style><multiple-rest>N`.
 
-Fichier : mmrest (conforme).
+File: mmrest (conformant).
 
-## 10. `<part-name-display>` / `<part-abbreviation-display>` — 1 fichier
+## 10. `<part-name-display>` / `<part-abbreviation-display>` — 1 file
 
-**Corrigé** (export) : `writeDisplayName` décompose les noms contenant `♭`/`♯`
-en `<display-text>` / `<accidental-text>`, pour le nom long et l'abréviation.
-Le `<part-name>` reste en texte plat (`Bb Clarinet`).
+**Fixed** (export): `writeDisplayName` splits names containing `♭`/`♯`
+into `<display-text>` / `<accidental-text>`, for the long name and the abbreviation.
+`<part-name>` stays plain text (`Bb Clarinet`).
 
-Fichier : part-textlines (conforme).
+File: part-textlines (conformant).
 
-## 11. Réglages de canal MIDI (volume) — 1 fichier
+## 11. MIDI channel settings (volume) — 1 file
 
-**Corrigé** (lecteur/modèle/export) : `Instrument::volume`/`pan` reprennent les
-contrôleurs 7 et 10 de `<Channel>` ; l'export calcule
-`volume/127*100` (`79.5276` pour 101) et
-`int((pan-63.5)/63.5*90)`, avec 100/64 par défaut.
+**Fixed** (reader/model/export): `Instrument::volume`/`pan` read
+controllers 7 and 10 of `<Channel>`; export computes
+`volume/127*100` (`79.5276` for 101) and
+`int((pan-63.5)/63.5*90)`, with 100/64 by default.
 
-Fichiers : hairpin_dynamic_inside, hairpin_dynamic_jump, hairpin_simple
-(conformes).
+Files: hairpin_dynamic_inside, hairpin_dynamic_jump, hairpin_simple
+(conformant).
 
-## 12. `<sound tempo>` d'un tempo invisible — 1 fichier
+## 12. `<sound tempo>` of an invisible tempo — 1 file
 
-**Corrigé** (lecteur/modèle/export) : `Tempo::visible` est lu et un tempo
-invisible n'exporte que son `<sound tempo>` autonome, hors `<direction>`.
+**Fixed** (reader/model/export): `Tempo::visible` is read and an invisible
+tempo exports only its standalone `<sound tempo>`, outside `<direction>`.
 
-Fichier : testExcludeInvisibleElements (conforme).
+File: testExcludeInvisibleElements (conformant).
 
-## 13. Liaisons : `<measures>` de `<location>` ignoré — 1 fichier
+## 13. Ties: `<measures>` of `<location>` ignored — 1 file
 
-**Corrigé** (lecteur) : `register_tie` conserve la `<location>` complète
-(`<measures>`, `<fractions>`, `<staves>`, `<voices>`) et l'appariement calcule
-la position absolue comme `Location::toAbsolute` : position relative dans la
-mesure cible, décalée par `<measures>`.
+**Fixed** (reader): `register_tie` keeps the complete `<location>`
+(`<measures>`, `<fractions>`, `<staves>`, `<voices>`) and matching computes
+the absolute position as `Location::toAbsolute`: relative position in the
+target measure, shifted by `<measures>`.
 
-Fichiers : testExcludeInvisibleElements, dynamics_niente (conformes).
+Files: testExcludeInvisibleElements, dynamics_niente (conformant).
 
-## 14. Indication de mesure locale par portée — 1 fichier
+## 14. Per-staff local metre — 1 file
 
-**Corrigé** (lecteur/modèle/export) : voir l'écart 4 (`<duration>` explicite et
-`Staff::time_stretch`). testLocalTimesig1 est conforme.
+**Fixed** (reader/model/export): see discrepancy 4 (explicit `<duration>` and
+`Staff::time_stretch`). testLocalTimesig1 is conformant.
 
-## 15. Paroles au-dessus de la portée et crédits sans mise en page — corrigé
+## 15. Lyrics above the staff and credits without layout — fixed
 
-**Corrigé** (modèle, lecteurs 3.x et 4.x, export) :
+**Fixed** (model, 3.x and 4.x readers, export):
 
-- `Lyrics::placement` par défaut vaut `below`, comme `lyricsPlacement` dans
+- `Lyrics::placement` defaults to `below`, like `lyricsPlacement` in
   MuseScore (`engraving/dom/lyrics.cpp`, `propertyDefault(Pid::PLACEMENT)`).
-  Les deux lecteurs lisent `<Style><lyricsPlacement>` et ne prennent
-  `<placement>` d'une syllabe que s'il est présent ; l'export n'écrit
-  `placement="above"` que pour un placement explicitement supérieur.
-  Avant, tout `<Lyrics>` sans `<placement>` était lu comme « au-dessus ».
-- `StyleSettings` (nouveau `model/style.rs`) conserve le format de page, les
-  marges, les tailles de police des crédits et le nombre de pages. Les lecteurs
-  lisent `<Style>` (`Spatium`, `pageWidth`/`pageHeight`, `page*Margin`,
-  `pageTwosided`, `lyricsPlacement`, `*FontSize`) ; les valeurs absentes
-  prennent les défauts de MuseScore pour la version du fichier (marges 10/20 mm
-  en 3.x, 15 mm en 4.x, titre 24 puis 22 pt).
-- L'export écrit `<defaults>` (`<scaling>`, `<page-layout>` et ses
-  `<page-margins>`) et positionne les `<credit>` comme `textAsCreditWords` :
-  `default-x` d'après l'alignement et les marges, `default-y` d'après la
-  hauteur de page, la marge haute, le décalage du sous-titre (10 mm) et la
-  hauteur du `VBox` pour les alignements bas. Le copyright est répété sur
-  chaque page déduite des `<LayoutBreak>` de type `page`.
+  Both readers read `<Style><lyricsPlacement>` and take a syllable's
+  `<placement>` only if present; export writes
+  `placement="above"` only for an explicitly upper placement.
+  Previously, every `<Lyrics>` without `<placement>` was read as "above".
+- `StyleSettings` (new `model/style.rs`) keeps the page format,
+  margins, credit font sizes and page count. Readers
+  read `<Style>` (`Spatium`, `pageWidth`/`pageHeight`, `page*Margin`,
+  `pageTwosided`, `lyricsPlacement`, `*FontSize`); missing values
+  take MuseScore's defaults for the file's version (margins 10/20 mm
+  in 3.x, 15 mm in 4.x, title 24 then 22 pt).
+- Export writes `<defaults>` (`<scaling>`, `<page-layout>` and its
+  `<page-margins>`) and positions `<credit>`s like `textAsCreditWords`:
+  `default-x` from alignment and margins, `default-y` from the
+  page height, the top margin, the subtitle offset (10 mm) and the
+  `VBox` height for bottom alignments. Copyright is repeated on
+  each page deduced from `<LayoutBreak>`s of type `page`.
 
-Tests : `crates/scoretk/tests/credits_corpus.rs` compare crédits, format de
-page et paroles des corpus v3 et v4.
+Tests: `crates/scoretk/tests/credits_corpus.rs` compares credits, page
+format and lyrics of the v3 and v4 corpora.
 
-Écarts restants, listés dans ce test :
+Remaining discrepancies, listed in this test:
 
-- `<defaults>` n'écrit pas encore `<appearance>`, `<music-font>`,
-  `<word-font>` ni `<lyric-font>` : ces blocs demandent une trentaine de
-  valeurs de style (largeurs de traits, polices) absentes du modèle.
-- `moonlight.mscx` : **corrigé** (famille textes) — les fragments de texte
-  sont écrits bruts (`XmlWriter::tag_raw`), les entités nommées (`&quot;`)
-  sont donc conservées comme dans MuseScore.
-- `testBreaksPage.mscx` : un `VBox` placé après deux systèmes n'est pas en
-  haut de page ; sans moteur de mise en page, son `default-y` calculé est
-  celui d'un cadre en haut de page (1626,67 au lieu de 1446,67, soit 18 sp).
-- Les nombres du format de page sont rendus à six chiffres significatifs comme
-  MuseScore ; les marges du corpus v3 diffèrent parfois de 0,0001 dixième
-  (`56.6893` au lieu de `56.6894`) par arrondi de la valeur de style.
+- `<defaults>` does not yet write `<appearance>`, `<music-font>`,
+  `<word-font>` or `<lyric-font>`: these blocks need about thirty style
+  values (line widths, fonts) absent from the model.
+- `moonlight.mscx`: **fixed** (text family) — text fragments
+  are written raw (`XmlWriter::tag_raw`), so named entities (`&quot;`)
+  are preserved as in MuseScore.
+- `testBreaksPage.mscx`: a `VBox` placed after two systems is not at
+  the top of a page; without a layout engine, its computed `default-y` is
+  that of a frame at the top of a page (1626.67 instead of 1446.67, i.e. 18 sp).
+- Page-format numbers are rendered to six significant digits like
+  MuseScore; v3 corpus margins sometimes differ by 0.0001 tenth
+  (`56.6893` instead of `56.6894`) from rounding of the style value.
 
-## 16. Numérotation après un saut de section — 2 fichiers (v3 et v4)
+## 16. Numbering after a section break — 2 files (v3 and v4)
 
-**Corrigé** (modèle, lecteurs 3.x et 4.x, export) : `Measure::section_break_before`
-reçoit un `<LayoutBreak><subtype>section</subtype></LayoutBreak>` rencontré dans
-la mesure ou dans un cadre (`HBox`/`VBox`). L'export recommence alors les numéros
-à `1` et réécrit les `<attributes>` de début de section (`<divisions>` compris),
-comme `MeasureNumberStateHandler`.
+**Fixed** (model, 3.x and 4.x readers, export): `Measure::section_break_before`
+receives a `<LayoutBreak><subtype>section</subtype></LayoutBreak>` found in
+the measure or in a frame (`HBox`/`VBox`). Export then restarts numbers
+at `1` and rewrites section-start `<attributes>` (including `<divisions>`),
+like `MeasureNumberStateHandler`.
 
-Fichiers : repeat66 (v4), keysig_78216 (v3).
+Files: repeat66 (v4), keysig_78216 (v3).
 
-## Écarts du corpus v3 relevés par `e2e_corpus.rs`
+## Discrepancies of the v3 corpus reported by `e2e_corpus.rs`
 
-Le test de bout en bout couvre `v3/` avec la même normalisation. Les fichiers
-conformes constituent `EXPECTED_CONFORMANT_V3` (Beam-CrossM1, barlinedelete,
+The end-to-end test covers `v3/` with the same normalisation. Conformant
+files constitute `EXPECTED_CONFORMANT_V3` (Beam-CrossM1, barlinedelete,
 change, clef-1, copypaste_tuplet_01, grace, keysig_78216, lyricsline01,
 measure-4, repeat01, repeat06, repeat07, repeat11, repeat20, repeat39,
 selectionfilter1, testBreaksPage, testChordSymbols, testHairpinDynamics,
 testHarmony6, testMultiInstrumentPart3, testTboxWords1, testTuplets8,
 testWedge4, timesig-05, undoResequenceMeasure, voices).
 
-Les points 1 à 5 et 9 à 12 sont corrigés ; restent les points 6 à 8 et 13.
+Points 1 to 5 and 9 to 12 are fixed; points 6 to 8 and 13 remain.
 
-1. **`<instrument-sound>` et `<midi-program>` absents — 13 fichiers.**
-   **Corrigé** (lecteur/modèle) : `read/instruments.rs` porte la table des
-   instruments de MuseScore (`share/instruments/instruments.xml`, généré par
-   `scripts/gen-instruments-table.py`). Pour un fichier antérieur à 3.6,
-   `updateInstrumentId` est reproduit : reconnaissance par le nom de piste puis
-   les noms long/court (poids 4/2/1), à défaut par le programme MIDI, sinon
-   `keyboard.piano` ; le programme par défaut vient du même instrument.
-   `<midi-channel>` est lu quand le fichier le fixe.
-2. **Changements d'instrument — 3 fichiers.** **Corrigé** (modèle, lecteurs,
-   export, avec la famille textes) : `Part` porte les instruments successifs,
-   `<InstrumentChange>` enregistre le sien au tick du segment (`Segment::add`),
-   et l'export écrit un `<score-instrument>`/`<midi-instrument>` par instrument,
-   `<instruments>` à la première mesure, `<instrument>` par note, les canaux
-   MIDI dans l'ordre (canal « harmony » compris) et la hauteur écrite avec la
-   transposition en vigueur. `writeInstrumentChange` (famille textes) écrit
-   `<print><part-name-display>`, `<transpose>` et `<sound><instrument-change>`.
-   `change` et `testMultiInstrumentPart3` sont conformes.
-3. **Harmonies 3.x — 4 fichiers.** **Corrigé** (modèle/lecteur/export) :
-   `Harmony` garde le suffixe (`<name>`), le type (`normal`/`roman`/`nashville`),
-   la fonction et les `<degree>`. `export/harmony.rs` analyse le suffixe comme
-   `ParsedChord::parse` (qualités et extensions courantes), écrit
-   `<root>`/`<kind>` (+ texte, symboles, parenthèses, degrés),
-   `<function>`/`<numeral>` des chiffrages romain et Nashville, la basse et
-   `<offset>`. Un accord sans note est rattaché au segment précédent avec son
-   décalage, comme `harmonies()`.
-4. **Clef de la seconde portée — 2 fichiers.** **Corrigé** (lecteur) :
-   `readVoice` place la première clef d'une voix au début de mesure dans un
-   segment `HeaderClef` même si une autre portée a déjà posé la métrique.
-   `clef-1` et `moonlight` sont conformes pour ce point.
-5. **Numérotation après saut de section — 1 fichier.** **Corrigé**, voir
-   l'écart 16.
-6. **Orientation des liaisons — 1 fichier, 7 occurrences.** **Ouvert** :
-   `moonlight` écrit `<tied orientation="over|under">` d'après le `TieSegment`
-   calculé par la mise en page ; le modèle n'a pas cette direction (elle ne
-   figure pas dans le `.mscx`). L'orientation est donc absente de la sortie.
-7. **Détails de portée et de remplissage — 1 fichier.** **Corrigé en partie** :
-   `<staffMove>` place les notes croisées sur l'autre portée (`<staff>` juste)
-   et `<role>` utilisateur d'une altération produit `cautionary="yes"
-   parentheses="no"` (ou `editorial` avec des crochets). **Reste** les
-   `<forward>`/`<backup>` scindés en fin de mesure (`36` au lieu de `12`+`24`),
-   qui viennent du découpage des segments par la mise en page.
-8. **`<measure-repeat>` — 1 fichier.** **Ouvert** : `layout_elements` recopie
-   les mesures répétées au lieu d'écrire
+1. **`<instrument-sound>` and `<midi-program>` missing — 13 files.**
+   **Fixed** (reader/model): `read/instruments.rs` carries MuseScore's
+   instruments table (`share/instruments/instruments.xml`, generated by
+   `scripts/gen-instruments-table.py`). For a file earlier than 3.6,
+   `updateInstrumentId` is reproduced: recognition by track name then
+   long/short names (weights 4/2/1), otherwise by MIDI program, otherwise
+   `keyboard.piano`; the default program comes from the same instrument.
+   `<midi-channel>` is read when the file sets it.
+2. **Instrument changes — 3 files.** **Fixed** (model, readers,
+   export, with the text family): `Part` carries successive instruments,
+   `<InstrumentChange>` registers its own at the segment tick (`Segment::add`),
+   and export writes one `<score-instrument>`/`<midi-instrument>` per instrument,
+   `<instruments>` at the first measure, `<instrument>` per note, MIDI channels
+   in order (including the "harmony" channel) and written pitch with the
+   transposition in force. `writeInstrumentChange` (text family) writes
+   `<print><part-name-display>`, `<transpose>` and `<sound><instrument-change>`.
+   `change` and `testMultiInstrumentPart3` are conformant.
+3. **3.x harmonies — 4 files.** **Fixed** (model/reader/export):
+   `Harmony` keeps the suffix (`<name>`), the type (`normal`/`roman`/`nashville`),
+   the function and the `<degree>`s. `export/harmony.rs` parses the suffix as
+   `ParsedChord::parse` (common qualities and extensions), writes
+   `<root>`/`<kind>` (+ text, symbols, parentheses, degrees),
+   `<function>`/`<numeral>` of roman and Nashville figures, the bass and
+   `<offset>`. A chord without a note is attached to the previous segment with its
+   offset, like `harmonies()`.
+4. **Clef of the second staff — 2 files.** **Fixed** (reader):
+   `readVoice` places a voice's first clef at the start of measure in a
+   `HeaderClef` segment even if another staff has already set the metre.
+   `clef-1` and `moonlight` are conformant for this point.
+5. **Numbering after a section break — 1 file.** **Fixed**, see
+   discrepancy 16.
+6. **Tie orientation — 1 file, 7 occurrences.** **Open**:
+   `moonlight` writes `<tied orientation="over|under">` from the `TieSegment`
+   computed by layout; the model has no such direction (it is not
+   in the `.mscx`). Orientation is therefore absent from the output.
+7. **Staff and filler details — 1 file.** **Partially fixed**:
+   `<staffMove>` places cross-staff notes on the other staff (correct `<staff>`)
+   and a user `<role>` on an accidental produces `cautionary="yes"
+   parentheses="no"` (or `editorial` with brackets). **Remaining** are
+   split `<forward>`/`<backup>` at the end of measures (`36` instead of `12`+`24`),
+   which come from segment splitting by layout.
+8. **`<measure-repeat>` — 1 file.** **Open**: `layout_elements` copies
+   repeated measures instead of writing
    `<measure-style><measure-repeat>`.
-9. **`<key number="1">` — 1 fichier.** **Corrigé** (export) : une armure n'est
-   commune (sans `number`) que si toutes les portées de la partie en ont une,
-   identique (`keysigTimesig`).
-10. **`<part-group>` — 1 fichier.** **Corrigé** (modèle/lecteurs/export) :
-    `<bracket>` et `<barLineSpan>` sont lus ; `part-group` ouvre et ferme les
-    groupes comme `partGroupStart`, en filtrant l'accolade implicite d'une
-    partie à plusieurs portées.
-11. **Altérations d'avertissement — `moonlight`.** **Corrigé**, voir point 7.
-12. **Notes croisées de portée — `moonlight`.** **Corrigé**, voir point 7.
-13. **`<staff-details/>` des portées masquées — `barline01`.** **Ouvert** : les
-    mesures 5 et 7 cachent une portée vide (`hideEmptyStaves`), que MuseScore
-    signale par `<staff-details print-object="no"/>`. Le modèle ne lit pas
-    `<hideEmptyStaves>` et la décision dépend de la mise en page (distance
-    nulle entre portées).
+9. **`<key number="1">` — 1 file.** **Fixed** (export): a key is
+   common (without `number`) only if all staves of the part have the same
+   one (`keysigTimesig`).
+10. **`<part-group>` — 1 file.** **Fixed** (model/readers/export):
+    `<bracket>` and `<barLineSpan>` are read; `part-group` opens and closes
+    groups like `partGroupStart`, filtering the implicit brace of a
+    multi-staff part.
+11. **Cautionary accidentals — `moonlight`.** **Fixed**, see point 7.
+12. **Cross-staff notes — `moonlight`.** **Fixed**, see point 7.
+13. **`<staff-details/>` of hidden staves — `barline01`.** **Open**:
+    measures 5 and 7 hide an empty staff (`hideEmptyStaves`), which MuseScore
+    signals with `<staff-details print-object="no"/>`. The model does not read
+    `<hideEmptyStaves>` and the decision depends on layout (zero
+    distance between staves).
 
-Écarts de `layout_elements` restants, hors familles instruments et accords
-(voir écarts 8 et 18) : `<figured-bass>`, `<notehead parentheses="yes">` et
+Remaining `layout_elements` discrepancies, outside the instruments and chords families
+(see discrepancies 8 and 18): `<figured-bass>`, `<notehead parentheses="yes">` and
 `<measure-repeat>`.
 
-## Tests dédiés
+## Dedicated tests
 
-- `crates/scoretk/tests/instruments_corpus.rs` compare, pour chaque fichier
-  des corpus v3 et v4, les `<score-instrument>`/`<midi-instrument>`,
-  `<part-group>`, numéros de mesure, `<attributes>` (`instruments`, `key`,
-  `clef`, `transpose`, `staff-details`), `<harmony>`, `<instrument>` et
-  `<staff>` des notes, et les altérations. Les écarts restants y sont listés
-  (`transpose` du changement d'instrument, `staff-details`) et filtrés.
-- `crates/scoretk-musicxml-export/src/tests.rs` couvre sur des partitions construites à
-  la main les parties multi-instruments, la numérotation après saut de section
-  et les altérations d'avertissement.
-- `crates/scoretk/tests/texts_corpus.rs` et
-  `crates/scoretk/tests/notations_corpus.rs` couvrent les familles textes et
-  notations (voir écarts 17 et 18).
+- `crates/scoretk/tests/instruments_corpus.rs` compares, for each file
+  of the v3 and v4 corpora, the `<score-instrument>`/`<midi-instrument>`,
+  `<part-group>`, measure numbers, `<attributes>` (`instruments`, `key`,
+  `clef`, `transpose`, `staff-details`), `<harmony>`, `<instrument>` and
+  notes' `<staff>`, and accidentals. The remaining discrepancies are listed there
+  (instrument-change `transpose`, `staff-details`) and filtered.
+- `crates/scoretk-musicxml-export/src/tests.rs` covers hand-built scores with
+  multi-instrument parts, numbering after a section break
+  and cautionary accidentals.
+- `crates/scoretk/tests/texts_corpus.rs` and
+  `crates/scoretk/tests/notations_corpus.rs` cover the text and
+  notation families (see discrepancies 17 and 18).
 
-## 17. Textes de ligne, cadres `TBox`, changements d'instrument, swing — famille textes
+## 17. Line texts, `TBox` frames, instrument changes, swing — text family
 
-**Corrigé** (lecteur/modèle/export) et couvert par
-`crates/scoretk/tests/texts_corpus.rs` sur le corpus **v3 et v4** (l'e2e v4
-ignore les `<direction>` et `<print>`) :
+**Fixed** (reader/model/export) and covered by
+`crates/scoretk/tests/texts_corpus.rs` on the **v3 and v4** corpora (the v4 e2e
+ignores `<direction>` and `<print>`):
 
-- **lignes de texte** (`<Spanner type="TextLine">`) : `TextLineInfo` porte
-  `lineVisible`, `beginText`/`endText`, style de trait, crochets, hauteurs de
-  crochet, polices et `system`. L'export reproduit `ExportMusicXml::textLine`
-  et `writeHairpinText` : `<words>` de début/fin, `<bracket type=… number=…
-  line-end=… line-type=… end-length=…>`, `<dashes>` pour un trait sans
-  crochet, et l'`<offset sound="yes">` négatif des fins de ligne invisible
-  (la position sentinelle `Fraction(-1,1)` du C++) ;
-- **textes de `TBox`** (`tboxTextAsWords`) : lus dans les deux lecteurs,
-  exportés en `<words valign="top">` au début de la mesure, au-dessus ou
-  au-dessous selon le cadre (défauts de style 3.x : 12 points) ;
-- **changements d'instrument** (`writeInstrumentChange`) :
-  `<print><part-name-display>`/`<part-abbreviation-display>` (♭/♯ en
-  `<accidental-text>`), `<transpose>` dans `<attributes>` et
-  `<sound><instrument-change id="Pn-Im"><instrument-sound>`. L'identifiant
-  MusicXML absent des `.mscx` 3.x est retrouvé par nom ou programme MIDI
-  (`recognize_musicxml_id`) ;
-- **tempo** : `<type>aTempo</type>`/`<type>tempoPrimo</type>` reprennent le
-  dernier tempo normal (`tempoSound`) ;
-- **swing** : `<swing unit=… ratio=…>` d'un `SystemText` exporté en
-  `<sound><swing>` (`straight`, `first`/`second`/`swing-type`), offset
-  compris pour un texte invisible ;
-- **crédits 3.x** : les `VBox` sont lus (styles 3.x : titre 24, sous-titre 14,
-  compositeur/parolier 12, `frame` 12, `instrument_excerpt` 18, copyright 8),
-  avec pagination et répétition du copyright ; les tailles de police suivent
-  `QString::arg(double)` (6 chiffres significatifs) au lieu d'un arrondi à
-  deux décimales.
+- **line texts** (`<Spanner type="TextLine">`): `TextLineInfo` carries
+  `lineVisible`, `beginText`/`endText`, line style, hooks, hook
+  heights, fonts and `system`. Export reproduces `ExportMusicXml::textLine`
+  and `writeHairpinText`: start/end `<words>`, `<bracket type=… number=…
+  line-end=… line-type=… end-length=…>`, `<dashes>` for a line without
+  hooks, and the negative `<offset sound="yes">` of invisible line ends
+  (the C++'s sentinel position `Fraction(-1,1)`);
+- **`TBox` texts** (`tboxTextAsWords`): read by both readers,
+  exported as `<words valign="top">` at the start of the measure, above or
+  below according to the frame (3.x style defaults: 12 points);
+- **instrument changes** (`writeInstrumentChange`):
+  `<print><part-name-display>`/`<part-abbreviation-display>` (♭/♯ as
+  `<accidental-text>`), `<transpose>` in `<attributes>` and
+  `<sound><instrument-change id="Pn-Im"><instrument-sound>`. The MusicXML
+  identifier absent from 3.x `.mscx` files is recovered by name or MIDI program
+  (`recognize_musicxml_id`);
+- **tempo**: `<type>aTempo</type>`/`<type>tempoPrimo</type>` take the
+  last normal tempo (`tempoSound`);
+- **swing**: a `SystemText`'s `<swing unit=… ratio=…>` exported as
+  `<sound><swing>` (`straight`, `first`/`second`/`swing-type`), including
+  the offset for an invisible text;
+- **3.x credits**: `VBox`es are read (3.x styles: title 24, subtitle 14,
+  composer/lyricist 12, `frame` 12, `instrument_excerpt` 18, copyright 8),
+  with page numbering and copyright repetition; font sizes follow
+  `QString::arg(double)` (6 significant digits) instead of rounding to
+  two decimals.
 
-Écart restant, documenté et filtré dans `texts_corpus.rs` : les `<words>` et
-`<dashes>` des **soufflets** (`HairPin` avec `beginText`/`endText`), dont la
-mise en forme relève de `writeHairpinText` côté famille nuances
-(`testHairpinDynamics`, `voices`). Le repère « A » ré-exporté de
-`layout_elements` vient d'une reprise de mesure (`RepeatMeasure`), hors
-famille textes.
+Remaining discrepancy, documented and filtered in `texts_corpus.rs`: the `<words>` and
+`<dashes>` of **hairpins** (`HairPin` with `beginText`/`endText`), whose
+formatting belongs to `writeHairpinText` in the dynamics family
+(`testHairpinDynamics`, `voices`). The "A" label re-exported from
+`layout_elements` comes from a measure repeat (`RepeatMeasure`), outside
+the text family.
 
-## 18. Notations : écarts résiduels d'une famille désormais couverte
+## 18. Notations: residual discrepancies of a now-covered family
 
-La famille des notations (articulations, points d'orgue, liaisons d'expression,
-ornements, trilles, trémolos, techniques, arpèges, glissandos, respirations et
-lignes d'accord) est couverte par un test dédié,
-`crates/scoretk/tests/notations_corpus.rs`, qui compare les `<notations>` de
-ces éléments à la référence, mesure par mesure et dans l'ordre. Les tests de
-bout en bout ci-dessus continuent de retirer `<notations>` sauf `tied`/`tuplet` :
-les écarts ci-dessous n'apparaissent donc pas dans leurs tableaux.
+The notation family (articulations, fermatas, expression ties,
+ornaments, trills, tremolos, techniques, arpeggios, glissandos, breaths and
+chord lines) is covered by a dedicated test,
+`crates/scoretk/tests/notations_corpus.rs`, which compares the `<notations>` of
+these elements to the reference, measure by measure and in order. The
+end-to-end tests above still remove `<notations>` except `tied`/`tuplet`:
+the discrepancies below therefore do not appear in their tables.
 
-Corrigé dans cette passe :
+Fixed in this pass:
 
-- **lecteurs 3.x et 4.x** : articulations (y compris l'éclatement des
-  articulations composées en `staccato`/`tenuto`/`accent`…), points d'orgue,
-  ornements et leurs altérations, trémolos simples et à deux notes, arpèges,
-  lignes d'accord, doigtés, respirations/césures, et les spanners `Slur`,
-  `Trill`, `Glissando` avec leurs propriétés (sens, texte, style de trait,
-  visibilité) ;
-- **export** : `<articulations>`, `<fermata>`, `<slur>` avec numéro et
+- **3.x and 4.x readers**: articulations (including splitting of
+  compound articulations into `staccato`/`tenuto`/`accent`…), fermatas,
+  ornaments and their accidentals, single and two-note tremolos, arpeggios,
+  chord lines, fingerings, breaths/caesuras, and the `Slur`,
+  `Trill`, `Glissando` spanners with their properties (direction, text, line style,
+  visibility);
+- **export**: `<articulations>`, `<fermata>`, `<slur>` with number and
   `orientation`/`placement`, `<ornaments>` (`trill-mark`, `turn`, `mordent`,
   `wavy-line`, `tremolo`, `accidental-mark`), `<technical>` (`up-bow`,
   `down-bow`, `harmonic`, `open`, `stopped`, `snap-pizzicato`, `fingering`,
   `pluck`), `<arpeggiate>`/`<non-arpeggiate>`, `<glissando>`/`<slide>`,
-  `<breath-mark>`/`<caesura>` et `falloff`/`doit`/`plop`/`scoop` ;
-- **respirations** : les deux lecteurs suivent les noms de `SymNames`
+  `<breath-mark>`/`<caesura>` and `falloff`/`doit`/`plop`/`scoop`;
+- **breaths**: both readers follow the `SymNames` names
   (`symnames.cpp:798-822`) — `breathMarkTick`, `breathMarkUpbow`,
-  `breathMarkSalzedo`, `caesura*`, `chantCaesura` — et non les noms tronqués
-  `breathTick`/`stringsUpBow` ; `<subtype>` numérique reste lu comme forme
-  obsolète (2 = césure courbe, 3 = césure). `<placement>` l'emporte sur le
-  placement déduit de la voix (0 au-dessus, 1 au-dessous), que le C++ pose
-  avant de lire la balise. L'écriture `.mscx` et l'export MusicXML suivent les
-  mêmes noms, `breathMarkSalzedo` compris ;
-- `print-object="no"` sur un `<notations>` dont l'élément est invisible,
-  réouverture d'un `<notations>` quand la visibilité change.
+  `breathMarkSalzedo`, `caesura*`, `chantCaesura` — and not the truncated names
+  `breathTick`/`stringsUpBow`; numeric `<subtype>` is still read as an
+  obsolete form (2 = curved caesura, 3 = caesura). `<placement>` prevails over the
+  placement deduced from the voice (0 above, 1 below), which the C++ sets
+  before reading the tag. `.mscx` writing and MusicXML export follow the
+  same names, including `breathMarkSalzedo`;
+- `print-object="no"` on a `<notations>` whose element is invisible,
+  reopening of a `<notations>` when visibility changes.
 
-Corrigé lors de la passe de parité complète (`ECARTS_CONNUS` est désormais
-vide, le test exige une parité exacte) :
+Fixed during the full-parity pass (`ECARTS_CONNUS` is now
+empty, the test requires exact parity):
 
-- **v3/layout_elements** : la reprise de mesure est dépliée à la lecture
-  (`read/measure_repeat.rs` : marque `MeasureRepeat`, copie des accords,
-  annotations de segments d'accords et spanners de la mesure source) ;
-  `<measure-repeat>` est écrit par `measureRepeat` à l'export. Les
-  `TremoloBar` (bend de guitare) sont lus dans les deux lecteurs et écrits en
-  `<technical><bend>` par `writeGuitarBend`. **Cause : lecteur/modèle/export.**
-- **v4/copypaste_parts** : MuseScore 4.7 remplit son `TrillHash` avec
-  `Trill::endElement()`, calculé une seule fois par `Score::addSpanner` quand
-  `tick2 == tick` et jamais recalculé : le `wavy-line type="stop"` sort donc
-  sur l'accord de départ, avec le `type="start"`. L'export reproduit ce
-  rattachement (`write_trills`). **Cause : export.**
-- **v4/testExcludeInvisibleElements** : `Note` porte la visibilité du départ et
-  de l'arrivée de liaison (`<Tie><visible>`, lu par les deux lecteurs) ; le
-  `<tied>` invisible ouvre donc un `<notations print-object="no">` et le
-  regroupement des notations redevient celui de MuseScore. **Cause :
-  lecteur/modèle/export.**
+- **v3/layout_elements**: the measure repeat is unfolded on reading
+  (`read/measure_repeat.rs`: marks `MeasureRepeat`, copies chords,
+  chord segment annotations and the source measure's spanners);
+  `<measure-repeat>` is written by `measureRepeat` on export. The
+  `TremoloBar` (guitar bend) are read by both readers and written as
+  `<technical><bend>` by `writeGuitarBend`. **Cause: reader/model/export.**
+- **v4/copypaste_parts**: MuseScore 4.7 fills its `TrillHash` with
+  `Trill::endElement()`, computed once by `Score::addSpanner` when
+  `tick2 == tick` and never recomputed: the `wavy-line type="stop"` therefore comes
+  out on the starting chord, with `type="start"`. Export reproduces this
+  attachment (`write_trills`). **Cause: export.**
+- **v4/testExcludeInvisibleElements**: `Note` carries the visibility of the tie's
+  start and end (`<Tie><visible>`, read by both readers); the invisible
+  `<tied>` therefore opens a `<notations print-object="no">` and the
+  notations grouping matches MuseScore's again. **Cause:
+  reader/model/export.**
 
-## 19. Parité complète : hampes, ligatures, barres, métadonnées
+## 19. Full parity: stems, beams, barlines, metadata
 
-Le test de bout en bout a un second niveau, `Level::Full` (`corpus_v3_complet`,
-`corpus_v4_complet`, `ecarts_complets_document`), qui ne retire que la mise en
-page pure (attributs `default-x`/`default-y`/`relative-x`/`relative-y`/`width`,
-points de contrôle `bezier-x`/`bezier-y`, blocs `<defaults>` et `<print>`,
-`<system-layout>`, `<staff-layout>`, `<encoding-date>`) et produit
+The end-to-end test has a second level, `Level::Full` (`corpus_v3_complet`,
+`corpus_v4_complet`, `ecarts_complets_document`), which removes only pure
+layout (attributes `default-x`/`default-y`/`relative-x`/`relative-y`/`width`,
+control points `bezier-x`/`bezier-y`, `<defaults>` and `<print>` blocks,
+`<system-layout>`, `<staff-layout>`, `<encoding-date>`) and produces
 `docs/agents/ecarts-complets.md`.
 
-Corrigé dans cette passe :
+Fixed in this pass:
 
-- **hampes** : toujours écrites (`stem.ts`), direction calculée comme
-  `Chord::up()` (`export/stems.rs`) : direction explicite hors ligature,
-  ligature, trémolo, plusieurs voix (parité de piste), ornement, accord croisé,
-  puis hauteurs (`computeAutoStemDirection`, `Tpc` → `relStep` avec la clef en
-  vigueur et la hauteur écrite des instruments transpositeurs). Résultat :
-  aucun écart de hampe hors `v3/moonlight` (9 notes croisées dont la ligature
-  impose une direction que le modèle ne restitue pas).
-- **ligatures** : `export/beams.rs` reconstruit `BeamLayout::createBeams` et
-  `Groups::baseBeamMode`/`actualBeamMode` (table `noteGroups`, subdivisions de
-  temps, anacrouse, n-olets, reprise entre mesures), puis écrit
-  `begin`/`continue`/`end`/`forward hook`/`backward hook` par niveau comme
-  `writeBeam`, y compris les ornements (`beamGraceNotes`). `BeamMode` gagne
-  `begin16`/`begin32` et `ChordRest::beam_direction` porte le
-  `<Beam><StemDirection>` lu. Aucun écart de `<beam>` sur les deux corpus.
-- **barres** : la fermata posée en fin de mesure est écrite dans
-  `<barline location="right">` comme `barlineRight`, et non dans les notations
-  du silence.
-- **accords croisés** : `Chord::staff_move` (lecture des deux formats) décale
-  `<staff>` et la direction de hampe ; `v3/moonlight` passe de 213 à 5 lignes
-  d'écart `<staff>`.
-- **métadonnées** : `<miscellaneous>` reprend `creationDate`, `mscVersion`,
-  `platform` et `subtitle` (plateforme `Linux` et date d'encodage par défaut,
-  comme `MasterScore`).
-- **soufflets** : `spread` vient de `hairpinHeight` (12 en 3.x, 11.5 en 4.x).
-- **silences invisibles** : `<note print-object="no">` pour un silence masqué.
-- **n-olets** : `Tuplet::placement` reprend `<direction>` et écrit
-  `placement="above|below"` sur `<tuplet type="start">` ; les fichiers
-  `testTuplets8` et `voiceswitching` deviennent conformes.
-- **ordre des directions** : les débuts de spanner suivent l'ordre des
-  spanners (`spannerStart`), et non un ordre par famille : soufflet avant
-  ligne de texte, pédale avant ottava (`part-textlines` conforme).
-- **pédales** : nouveau `PedalInfo` (trait, textes, crochets, placement) lu
-  par les deux lecteurs (nouveau `read/read4xx/pedals.rs`) et exporté comme
+- **stems**: always written (`stem.ts`), direction computed as
+  `Chord::up()` (`export/stems.rs`): explicit direction outside beams,
+  beam, tremolo, multiple voices (track parity), grace note, cross-staff chord,
+  then pitches (`computeAutoStemDirection`, `Tpc` → `relStep` with the clef in
+  force and the written pitch of transposing instruments). Result:
+  no stem discrepancy outside `v3/moonlight` (9 cross-staff notes whose beam
+  imposes a direction the model does not restore).
+- **beams**: `export/beams.rs` rebuilds `BeamLayout::createBeams` and
+  `Groups::baseBeamMode`/`actualBeamMode` (the `noteGroups` table, time subdivisions,
+  anacrusis, n-tuplets, cross-measure beams), then writes
+  `begin`/`continue`/`end`/`forward hook`/`backward hook` per level like
+  `writeBeam`, including grace notes (`beamGraceNotes`). `BeamMode` gains
+  `begin16`/`begin32` and `ChordRest::beam_direction` carries the
+  `<Beam><StemDirection>` read. No `<beam>` discrepancy in either corpus.
+- **barlines**: a fermata placed at the end of a measure is written in
+  `<barline location="right">` like `barlineRight`, not in the rest's notations.
+- **cross-staff chords**: `Chord::staff_move` (reading both formats) shifts
+  `<staff>` and stem direction; `v3/moonlight` goes from 213 to 5 lines
+  of `<staff>` discrepancy.
+- **metadata**: `<miscellaneous>` takes `creationDate`, `mscVersion`,
+  `platform` and `subtitle` (platform `Linux` and default encoding date,
+  like `MasterScore`).
+- **hairpins**: `spread` comes from `hairpinHeight` (12 in 3.x, 11.5 in 4.x).
+- **invisible rests**: `<note print-object="no">` for a hidden rest.
+- **n-tuplets**: `Tuplet::placement` reads `<direction>` and writes
+  `placement="above|below"` on `<tuplet type="start">`; the files
+  `testTuplets8` and `voiceswitching` become conformant.
+- **direction order**: spanner starts follow the order of
+  spanners (`spannerStart`), not an order by family: hairpin before
+  line of text, pedal before ottava (`part-textlines` conformant).
+- **pedals**: new `PedalInfo` (line, texts, hooks, placement) read
+  by both readers (new `read/read4xx/pedals.rs`) and exported like
   `ExportMusicXml::pedal` (`start`/`stop`, `line`, `sign`, `<staff>`).
-- **textes de soufflet** : la police (`beginFontFace`/`Size`/`Style`, défaut
-  FreeSerif 12 italique) est portée par `Hairpin` et écrite sur les `<words>`.
-- **repères de répétition** : `justify="center"` (style `rehearsalMarkAlign`).
-- **armure et mesure invisibles** : `KeySig::visible` / `TimeSig::visible`
-  écrivent `print-object="no"`.
-- **têtes entre parenthèses** : `Note::parentheses` (symboles
-  `noteheadParenthesisLeft/Right`) écrit `parentheses="yes"`.
-- **soufflets invisibles** : `Spanner::visible` est lu dans `<HairPin>` et un
-  soufflet invisible n'est pas exporté (`canWrite`).
+- **hairpin texts**: the font (`beginFontFace`/`Size`/`Style`, default
+  FreeSerif 12 italic) is carried by `Hairpin` and written on the `<words>`.
+- **rehearsal marks**: `justify="center"` (style `rehearsalMarkAlign`).
+- **invisible key and metre**: `KeySig::visible` / `TimeSig::visible`
+  write `print-object="no"`.
+- **parenthesised noteheads**: `Note::parentheses` (symbols
+  `noteheadParenthesisLeft/Right`) writes `parentheses="yes"`.
+- **invisible hairpins**: `Spanner::visible` is read in `<HairPin>` and an
+  invisible hairpin is not exported (`canWrite`).
 
-Corrigé dans cette passe :
+Fixed in this pass:
 
-- **chiffrages figurés** : `model/figured_bass.rs` (items, préfixe/suffixe,
-  trait de prolongation, durée), lus par les deux lecteurs
-  (`read4xx/figures.rs`, `read302/annotations.rs`) et exportés comme
-  `ExportMusicXml::figuredBass` (`export/figured_bass.rs` : `<figure>`,
-  `<figure-number>`, `<extend>`, `<duration>`, prolongation sur les accords
-  suivants).
-- **barres de courtoisie** : `Measure::line_break` reprend les
-  `<LayoutBreak>` `line`/`page` des deux lecteurs et `end_bar_line_type`
-  écrit `light-light` avant un changement d'armure ou de métrique en début de
-  système, comme le `BarLine` `DOUBLE` que la mise en page de MuseScore ajoute
-  alors. Sans saut explicite dans le fichier (système coupé par la largeur de
-  page), la règle ne peut pas s'appliquer : c'est le seul cas restant, dans
+- **figured bass**: `model/figured_bass.rs` (items, prefix/suffix,
+  continuation line, duration), read by both readers
+  (`read4xx/figures.rs`, `read302/annotations.rs`) and exported like
+  `ExportMusicXml::figuredBass` (`export/figured_bass.rs`: `<figure>`,
+  `<figure-number>`, `<extend>`, `<duration>`, continuation over following chords).
+- **courtesy barlines**: `Measure::line_break` takes the
+  `<LayoutBreak>` `line`/`page` from both readers and `end_bar_line_type`
+  writes `light-light` before a key or metre change at the start of a
+  system, like the `BarLine` `DOUBLE` that MuseScore's layout adds
+  then. Without an explicit break in the file (system cut by page
+  width), the rule cannot apply: this is the only remaining case, in
   `v3/voices`.
-- **`<measure-repeat>`** : voir écart 18.
-- **`TBox` « below »** : un texte de cadre sous une mesure couverte par un
-  groupe de silences multi-mesures est rattaché à la mesure qui remplace le
-  groupe (`mmrest_group_start`), comme `coveringMMRestOrThis`.
-- **regroupement des `<notations>` autour d'un `tied` invisible** : voir
-  écart 18.
+- **`<measure-repeat>`**: see discrepancy 18.
+- **`TBox` "below"**: a frame text below a measure covered by a
+  multi-measure rest group is attached to the measure that replaces the
+  group (`mmrest_group_start`), like `coveringMMRestOrThis`.
+- **regrouping of `<notations>` around an invisible `tied`**: see
+  discrepancy 18.
 
-Corrigé dans la passe de parité `t31` :
+Fixed in the `t31` parity pass:
 
-- **silences « gap »** : `read/gap_rests.rs` porte `Measure::checkMeasure` et
-  `Measure::fillGap` (`check.cpp`), ainsi que la découpe rythmique de
-  `toRhythmicDurationList` (`durationtype.cpp`, `sig.cpp`). Les trous d'une
-  voix deviennent des silences invisibles dont la position fait avancer le
-  curseur d'export : c'est l'origine des `<forward>`/`<backup>` scindés de
-  MuseScore (`moonlight`).
-- **orientation des liaisons de prolongation** : le `.mscx` porte la direction
-  explicite dans `<Tie><up>up|down</up>` (`Pid::SLUR_DIRECTION`) ; les deux
-  lecteurs la conservent (`Note::tie_up`) et l'export écrit
-  `orientation`/`placement` comme `slurTieLineStyle` (`moonlight`).
-- **portées masquées** : `Measure::line_break`/`section_break_before` donnent
-  les systèmes explicites ; `export/systems.rs` applique
-  `SystemLayout::hideEmptyStaves` et l'export écrit
-  `<staff-details print-object="no"/>` à la première mesure du système
+- **"gap" rests**: `read/gap_rests.rs` ports `Measure::checkMeasure` and
+  `Measure::fillGap` (`check.cpp`), as well as the rhythmic splitting of
+  `toRhythmicDurationList` (`durationtype.cpp`, `sig.cpp`). Gaps in a
+  voice become invisible rests whose position advances the
+  export cursor: the origin of MuseScore's split `<forward>`/`<backup>`
+  (`moonlight`).
+- **tie orientation**: the `.mscx` carries the explicit direction
+  in `<Tie><up>up|down</up>` (`Pid::SLUR_DIRECTION`); both
+  readers keep it (`Note::tie_up`) and export writes
+  `orientation`/`placement` like `slurTieLineStyle` (`moonlight`).
+- **hidden staves**: `Measure::line_break`/`section_break_before` give
+  explicit systems; `export/systems.rs` applies
+  `SystemLayout::hideEmptyStaves` and export writes
+  `<staff-details print-object="no"/>` at the first measure of the system
   (`barline01`).
-- **durée totale des n-olets** : `TRead::read(Tuplet*)` calcule
-  `baseLen * normalNotes` avec le ratio **non réduit** ; les deux lecteurs
-  utilisaient le dénominateur réduit (un `4:4` durait une figure au lieu de
-  quatre).
+- **total duration of n-tuplets**: `TRead::read(Tuplet*)` computes
+  `baseLen * normalNotes` with the **unreduced** ratio; both readers
+  used the reduced denominator (a `4:4` lasted one note value instead of
+  four).
 
-Écarts complets restants (détail et fréquence dans `ecarts-complets.md`) :
-direction de hampe d'une ligature croisée (9 notes de `moonlight`, calculée
-par `BeamLayout::layout1` à partir du groupement et de la géométrie des
-ligatures) et barres de courtoisie des systèmes coupés automatiquement par la
-largeur de page (2 barres de `v3/voices`, sans `<LayoutBreak>` dans le
-fichier).
+Remaining full discrepancies (detail and frequency in `ecarts-complets.md`):
+cross-beam stem direction (9 notes of `moonlight`, computed
+by `BeamLayout::layout1` from beam grouping and geometry) and courtesy barlines
+of systems automatically cut by page
+width (2 barlines of `v3/voices`, without `<LayoutBreak>` in the
+file).
 
 ## 20. MusicXML export — schema validity and measured fidelity (English)
 

@@ -32,7 +32,7 @@
 //!   `<beam>`, `<print>`, `<notations>` sauf `tied`/`tuplet`, `<barline>` sauf
 //!   les reprises (`<repeat>`).
 //!
-//! Le test affiche un tableau « fichier : identique / N lignes d'écart » et
+//! The test prints a table "file: identical / N differing lines" and
 //! n'échoue que pour les fichiers de [`EXPECTED_CONFORMANT`] : les autres
 //! écarts sont documentés dans `docs/agents/ecarts-noyau.md`.
 
@@ -61,7 +61,7 @@ fn corpus_dir(version: &str) -> PathBuf {
         .join(version)
 }
 
-/// Fichiers dont la conversion est aujourd'hui identique à la référence après
+/// Files whose conversion is currently identical to the reference after
 /// normalisation. Toute régression sur cette liste fait échouer le test ; les
 /// fichiers absents sont suivis dans `docs/agents/ecarts-noyau.md`.
 const EXPECTED_CONFORMANT: &[&str] = &[
@@ -93,7 +93,7 @@ const EXPECTED_CONFORMANT: &[&str] = &[
     "voiceswitching",
 ];
 
-/// Fichiers du corpus 3.x dont la conversion est identique à la référence
+/// Files of the 3.x corpus whose conversion is identical to the reference
 /// après normalisation (voir `docs/agents/ecarts-noyau.md`).
 const EXPECTED_CONFORMANT_V3: &[&str] = &[
     "Beam-CrossM1",
@@ -158,9 +158,9 @@ struct TagStat {
 
 /// Résultat de la comparaison complète d'un corpus.
 struct FullReport {
-    /// Nombre de lignes d'écart par fichier, dans l'ordre alphabétique.
+    /// Number of differing lines per file, in alphabetical order.
     rows: Vec<(String, usize)>,
-    /// Écarts groupés par nom de balise, avec exemples.
+    /// Discrepancies grouped by tag name, with examples.
     tags: BTreeMap<String, TagStat>,
     /// Diffs unifiés, pour le diagnostic.
     diffs: String,
@@ -263,7 +263,7 @@ fn run_full_corpus(version: &str) -> FullReport {
                 report.rows.push((name.clone(), usize::MAX));
                 report
                     .diffs
-                    .push_str(&format!("\n=== {version}/{name} : ERREUR ===\n{error}\n"));
+                    .push_str(&format!("\n=== {version}/{name}: ERROR ===\n{error}\n"));
                 continue;
             }
         };
@@ -273,7 +273,7 @@ fn run_full_corpus(version: &str) -> FullReport {
         if changed > 0 {
             collect_tags(&expected, &actual, &name, &mut report.tags);
             report.diffs.push_str(&format!(
-                "\n=== {version}/{name} : {changed} lignes d'écart ===\n"
+                "\n=== {version}/{name}: {changed} differing lines ===\n"
             ));
             report.diffs.push_str(&truncate_diff(&diff, 60));
             report.diffs.push('\n');
@@ -293,24 +293,24 @@ fn corpus_v3_complet() {
     print_full_report("v3", &run_full_corpus("v3"));
 }
 
-/// Imprime le tableau et les écarts groupés d'un corpus.
+/// Prints the table and the grouped discrepancies of a corpus.
 fn print_full_report(version: &str, report: &FullReport) {
-    println!("conformité complète du corpus {version} (mise en page pure retirée) :");
+    println!("full compliance of corpus {version} (pure layout removed):");
     for (name, changed) in &report.rows {
         if *changed == usize::MAX {
-            println!("  {name} : ERREUR");
+            println!("  {name}: ERROR");
         } else if *changed == 0 {
-            println!("  {name} : identique");
+            println!("  {name}: identical");
         } else {
-            println!("  {name} : {changed} lignes d'écart");
+            println!("  {name}: {changed} differing lines");
         }
     }
-    println!("écarts groupés par balise :");
+    println!("discrepancies grouped by tag:");
     print_tag_stats(&report.tags);
     println!("{}", report.diffs);
 }
 
-/// Imprime les écarts groupés, triés par nombre de lignes décroissant.
+/// Prints grouped discrepancies, sorted by decreasing line count.
 fn print_tag_stats(tags: &BTreeMap<String, TagStat>) {
     let mut stats: Vec<(&String, &TagStat)> = tags.iter().collect();
     stats.sort_by(|(left_name, left), (right_name, right)| {
@@ -323,51 +323,51 @@ fn print_tag_stats(tags: &BTreeMap<String, TagStat>) {
     for (tag, stat) in stats {
         let mut examples = stat.examples.join(" | ");
         if examples.is_empty() {
-            examples.push_str("(aucun exemple)");
+            examples.push_str("(no example)");
         }
         println!(
-            "  {tag} : {} lignes, {} fichiers — {examples}",
+            "  {tag}: {} lines, {} files — {examples}",
             stat.lines,
             stat.files.len()
         );
     }
 }
 
-/// Produit le contenu de `docs/agents/ecarts-complets.md`.
+/// Produces the contents of `docs/agents/ecarts-complets.md`.
 ///
-/// Le test est volontairement non bloquant : il mesure l'écart complet pour
-/// suivre la parité, sans exiger qu'elle soit atteinte.
+/// The test is deliberately non-blocking: it measures the full discrepancy to
+/// track parity, without requiring it to be reached.
 #[test]
 fn ecarts_complets_document() {
     let v4 = run_full_corpus("v4");
     let v3 = run_full_corpus("v3");
 
     println!("---DEBUT DOC---");
-    println!("# Écarts complets sur le corpus (parité complète)");
+    println!("# Full discrepancies on the corpus (full parity)");
     println!();
     println!(
-        "Ce document est produit par le test `ecarts_complets_document` de \
-         `crates/scoretk/tests/e2e_corpus.rs`. Il compare chaque `.mscx` à sa \
-         référence `X.ref.musicxml` après retrait de la **mise en page pure** \
-         uniquement : attributs `default-x`, `default-y`, `relative-x`, \
-         `relative-y`, `width`, blocs `<defaults>`, `<print>` (et leurs \
-         `<system-layout>`/`<staff-layout>`) et `<encoding-date>`. Tout le \
-         reste est comparé : `<stem>`, `<beam>`, `<barline>`, `<direction>`, \
+        "This document is produced by the `ecarts_complets_document` test in \
+         `crates/scoretk/tests/e2e_corpus.rs`. It compares each `.mscx` to its \
+         `X.ref.musicxml` reference after removing **pure layout** \
+         only: attributes `default-x`, `default-y`, `relative-x`, \
+         `relative-y`, `width`, `<defaults>`, `<print>` blocks (and their \
+         `<system-layout>`/`<staff-layout>`) and `<encoding-date>`. Everything \
+         else is compared: `<stem>`, `<beam>`, `<barline>`, `<direction>`, \
          `<notations>`, `<credit>`, `<part-list>`, `<identification>`, etc."
     );
     println!();
-    println!("## Tableau par fichier");
+    println!("## Table by file");
     println!();
     for (version, report) in [("v3", &v3), ("v4", &v4)] {
         println!("### Corpus {version}");
         println!();
-        println!("| Fichier | Lignes d'écart |");
+        println!("| File | Differing lines |");
         println!("| --- | ---: |");
         for (name, changed) in &report.rows {
             if *changed == usize::MAX {
-                println!("| {name} | ERREUR |");
+                println!("| {name} | ERROR |");
             } else if *changed == 0 {
-                println!("| {name} | **identique** |");
+                println!("| {name} | **identical** |");
             } else {
                 println!("| {name} | {changed} |");
             }
@@ -375,14 +375,14 @@ fn ecarts_complets_document() {
         println!();
     }
 
-    println!("## Écarts groupés par balise");
+    println!("## Discrepancies grouped by tag");
     println!();
     println!(
-        "Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; \
-              fichiers = nombre de fichiers touchés. Tri par fréquence décroissante."
+        "Frequency = number of modified canonical lines across both corpora; \
+              files = number of affected files. Sorted by decreasing frequency."
     );
     println!();
-    println!("| Balise | Lignes | Fichiers | Exemples |");
+    println!("| Tag | Lines | Files | Examples |");
     println!("| --- | ---: | ---: | --- |");
     let mut combined: BTreeMap<String, TagStat> = BTreeMap::new();
     for report in [&v3, &v4] {
@@ -420,25 +420,25 @@ fn ecarts_complets_document() {
         );
     }
     println!();
-    println!("## Écarts qui dépendent de la mise en page calculée");
+    println!("## Discrepancies that depend on computed layout");
     println!();
     println!(
-        "Certains écarts ne viennent pas d'une donnée du `.mscx` mais d'un objet \
-         que MuseScore fabrique pendant la mise en page, absente du modèle. \
-         Ils sont irréductibles sans porter le moteur de mise en page :\n\n\
-         - **direction de hampe d'une ligature croisée** (`v3/moonlight`, \
-           9 notes) : `BeamLayout::layout1` fixe la direction de la ligature à \
-           partir de `computeUpForMovedCross` et `isBelowCrossBeam`, donc du \
-           groupement des ligatures et de la géométrie des notes, pas du \
-           `<Beam><StemDirection>` du fichier ;\n\
-         - **barres de courtoisie d'un système coupé par la largeur de page** \
-           (`v3/voices`, 2 barres `light-light`) : `MeasureLayout::createEndBarLines` \
-           ne pose la barre double que si la mesure est la dernière du système \
-           (`isLastMeasureInSystem`) et que la suivante change d'armure. Quand \
-           le saut de système figure dans le fichier (`<LayoutBreak>`), il est \
-           reproduit (voir `export/systems.rs` et `read/measure_repeat.rs`) ; \
-           une coupure automatique dépend de la largeur calculée des mesures, \
-           donc de toute la mise en page horizontale."
+        "Some discrepancies do not come from a datum of the `.mscx` but from an object \
+         that MuseScore builds during layout, absent from the model. \
+         They are irreducible without porting the layout engine:\n\n\
+         - **stem direction of a cross beam** (`v3/moonlight`, \
+           9 notes): `BeamLayout::layout1` sets the beam direction from \
+           `computeUpForMovedCross` and `isBelowCrossBeam`, hence from beam \
+           grouping and note geometry, not from the file's \
+           `<Beam><StemDirection>`;\n\
+         - **courtesy barlines of a system cut by page width** \
+           (`v3/voices`, 2 `light-light` barlines): `MeasureLayout::createEndBarLines` \
+           places the double barline only if the measure is the last in the system \
+           (`isLastMeasureInSystem`) and the next one changes key signature. When \
+           the system break appears in the file (`<LayoutBreak>`), it is \
+           reproduced (see `export/systems.rs` and `read/measure_repeat.rs`); \
+           an automatic cut depends on the computed width of measures, \
+           hence on the whole horizontal layout."
     );
     println!();
     println!("## Diffs");
@@ -499,8 +499,8 @@ fn run_corpus(version: &str, expected_conformant: &[&str]) {
         let actual = match convert(&input, &options) {
             Ok(bytes) => normalize(&String::from_utf8(bytes).expect("MusicXML UTF-8")),
             Err(error) => {
-                rows.push(format!("{name} : ERREUR ({error})"));
-                diffs.push_str(&format!("\n=== {name} : ERREUR ===\n{error}\n"));
+                rows.push(format!("{name}: ERROR ({error})"));
+                diffs.push_str(&format!("\n=== {name}: ERROR ===\n{error}\n"));
                 continue;
             }
         };
@@ -508,10 +508,10 @@ fn run_corpus(version: &str, expected_conformant: &[&str]) {
         let (changed, diff) = diff(&expected, &actual);
         if changed == 0 {
             identical.push(name.clone());
-            rows.push(format!("{name} : identique"));
+            rows.push(format!("{name}: identical"));
         } else {
-            rows.push(format!("{name} : {changed} lignes d'écart"));
-            diffs.push_str(&format!("\n=== {name} : {changed} lignes d'écart ===\n"));
+            rows.push(format!("{name}: {changed} differing lines"));
+            diffs.push_str(&format!("\n=== {name}: {changed} differing lines ===\n"));
             diffs.push_str(&truncate_diff(&diff, 80));
             diffs.push('\n');
         }

@@ -1,16 +1,16 @@
 # LilyPond (`scoretk-lilypond-common`, `-import`, `-export`)
 
-Trois crates : `crates/scoretk-lilypond-common` (ce que les deux sens
-partagent : erreur, spirale des quintes, table des clefs),
-`crates/scoretk-lilypond-export` (modèle → `.ly`, t36) et
-`crates/scoretk-lilypond-import` (lecture `.ly` → modèle, t40). Elles sont
-branchées dans la façade `scoretk` par les features `lilypond-export`
-(`Format::Ly` en écriture) et `lilypond-import` (`Format::Ly` en lecture). Ce document décrit l'écriture (correspondance modèle →
-LilyPond), la lecture d'un sous-ensemble de LilyPond, les choix de notation, les
-limites mesurées sur le corpus et la procédure de mise à niveau des moteurs
-suivis. Le noyau du projet reste dans `AGENTS.md`.
+Three crates: `crates/scoretk-lilypond-common` (what both directions
+share: error, circle of fifths, clef table),
+`crates/scoretk-lilypond-export` (model → `.ly`, t36) and
+`crates/scoretk-lilypond-import` (reading `.ly` → model, t40). They are
+wired into the `scoretk` facade by the `lilypond-export`
+feature (`Format::Ly` for writing) and `lilypond-import` (`Format::Ly` for reading). This document describes writing (model →
+LilyPond mapping), reading a subset of LilyPond, notation choices,
+limits measured on the corpus and the upgrade procedure for the
+tracked engines. The project core remains in `AGENTS.md`.
 
-## 1. Rôle et API
+## 1. Role and API
 
 ```rust
 // crates/scoretk-lilypond-export
@@ -22,196 +22,195 @@ pub fn read_lilypond_with_includes(
     src: &str,
     resolve: &mut dyn FnMut(&str, Option<&str>) -> Option<String>,
 ) -> Result<(Score, Vec<Warning>), Error>;
-// crates/scoretk (façade) : read_lilypond_with_includes(bytes, resolve) -> Result<Score>
+// crates/scoretk (facade) : read_lilypond_with_includes(bytes, resolve) -> Result<Score>
 // crates/scoretk-lilypond-common : `Error`, `Result`, `pitch`, `clefs`
 ```
 
-`read_lilypond` et `read_lilypond_reporting` ne suivent pas les `\include` de
-fichiers ordinaires : ils les ignorent avec un avertissement. La fonction
-`read_lilypond_with_includes` reçoit un résolveur
-`resolve(chemin_demandé, chemin_du_fichier_qui_inclut)` qui renvoie le texte du
-fichier inclus ou `None` ; le second argument vaut `None` au niveau supérieur,
-puis le chemin normalisé du fichier inclus (relatif au fichier principal). La
-CLI fournit un résolveur disque (dossier du fichier qui inclut, puis dossier du
-fichier principal) ; la bibliothèque n'ouvre aucun fichier elle-même.
+`read_lilypond` and `read_lilypond_reporting` do not follow `\include`s of
+ordinary files: they ignore them with a warning. The function
+`read_lilypond_with_includes` receives a resolver
+`resolve(requested_path, including_file_path)` returning the included file's
+text or `None`; the second argument is `None` at the top level,
+then the normalised path of the included file (relative to the main file). The
+CLI supplies a disk resolver (including file's directory, then main
+file's directory); the library itself opens no files.
 
-Aucune des trois crates ne fait d'entrée/sortie : elles travaillent sur du
-texte ou des valeurs en mémoire, ce qui les garde compilables pour
-`wasm32-unknown-unknown`, Android et iOS. Elles ne dépendent que de
-`scoretk-core` (modèle pivot), de `scoretk-lilypond-common` pour les deux sens
-et de `thiserror` ; aucune crate tierce nouvelle, donc rien à ajouter à
+None of the three crates does I/O: they work on in-memory
+text or values, keeping them compilable for
+`wasm32-unknown-unknown`, Android and iOS. They depend only on
+`scoretk-core` (pivot model), on `scoretk-lilypond-common` for both directions
+and on `thiserror`; no new third-party crate, so nothing to add to
 `docs/licences-tierces.md`.
 
-**Règle de découpage** : `-common` ne contient **aucune logique de
-conversion**, seulement des tables et des types utilisés par les deux sens.
-`src/pitch.rs` (lecture et écriture) est donc coupé : la spirale des quintes
-(`tpc`, degré, altération) va dans `scoretk-lilypond-common/src/pitch.rs`, la
-table des clefs dans `scoretk-lilypond-common/src/clefs.rs` ; restent dans
-l'écriture les noms de notes anglais du mode `\fixed`, les armures et les têtes
-de note, et dans la lecture les tables de noms par langue, les octaves et la
-transposition. `text.rs` reste entièrement dans l'écriture : la lecture ne
-s'en sert pas.
+**Splitting rule**: `-common` contains **no conversion logic**, only tables and types used by both directions.
+`src/pitch.rs` (reading and writing) is therefore split: the circle of fifths
+(`tpc`, step, accidental) goes into `scoretk-lilypond-common/src/pitch.rs`, the
+clef table into `scoretk-lilypond-common/src/clefs.rs`; what remains in
+writing are the English note names of `\fixed` mode, key signatures and
+noteheads, and in reading the per-language name tables, octaves and
+transposition. `text.rs` remains entirely in writing: reading does
+not use it.
 
-| Élément | Emplacement |
+| Element | Location |
 | --- | --- |
-| Erreur, `Result` | `crates/scoretk-lilypond-common/src/error.rs` |
-| Spirale des quintes (`tpc`) | `crates/scoretk-lilypond-common/src/pitch.rs` |
-| Table des clefs (deux sens) | `crates/scoretk-lilypond-common/src/clefs.rs` |
-| API d'écriture, documentation | `crates/scoretk-lilypond-export/src/lib.rs` |
-| Hauteurs anglaises, armures, têtes de note | `crates/scoretk-lilypond-export/src/pitch.rs` |
-| Durées, points, multiplicateurs | `crates/scoretk-lilypond-export/src/duration.rs` |
-| Accords, silences, articulations, ornements | `crates/scoretk-lilypond-export/src/chord.rs` |
-| Annotations (nuances, tempo, textes, accords) | `crates/scoretk-lilypond-export/src/annotations.rs` |
-| Spanners (liaisons, soufflets, ottavas, pédales, trilles, glissandos) | `crates/scoretk-lilypond-export/src/spanners.rs` |
-| Structure des reprises (`\repeat volta`, `\alternative`) | `crates/scoretk-lilypond-export/src/structure.rs` |
-| Trame d'une voix, paroles, rattachement des événements | `crates/scoretk-lilypond-export/src/voice.rs` |
-| En-tête, variables, bloc `\score`, regroupements | `crates/scoretk-lilypond-export/src/writer.rs` |
-| API de lecture | `crates/scoretk-lilypond-import/src/lib.rs` |
-| Lecture : lexer, grammaire, arbre, interpréteur, construction | `crates/scoretk-lilypond-import/src/` |
-| Instantanés du corpus (écriture) | `crates/scoretk-lilypond-export/tests/corpus_lilypond.rs`, `tests/corpus/ly/` |
-| Compilation par LilyPond | `crates/scoretk-lilypond-export/tests/lilypond_compile.rs` |
-| Aller-retour de lecture | `crates/scoretk-lilypond-import/tests/read_corpus.rs` |
-| Petites sources écrites à la main | `crates/scoretk-lilypond-import/tests/read_lilypond.rs` |
-| Unités des tables partagées | `#[cfg(test)]` de `scoretk-lilypond-common` |
+| Error, `Result` | `crates/scoretk-lilypond-common/src/error.rs` |
+| Circle of fifths (`tpc`) | `crates/scoretk-lilypond-common/src/pitch.rs` |
+| Clef table (both directions) | `crates/scoretk-lilypond-common/src/clefs.rs` |
+| Writing API, documentation | `crates/scoretk-lilypond-export/src/lib.rs` |
+| English pitches, key signatures, noteheads | `crates/scoretk-lilypond-export/src/pitch.rs` |
+| Durations, dots, multipliers | `crates/scoretk-lilypond-export/src/duration.rs` |
+| Chords, rests, articulations, ornaments | `crates/scoretk-lilypond-export/src/chord.rs` |
+| Annotations (dynamics, tempo, texts, chords) | `crates/scoretk-lilypond-export/src/annotations.rs` |
+| Spanners (ties, hairpins, ottavas, pedals, trills, glissandos) | `crates/scoretk-lilypond-export/src/spanners.rs` |
+| Repeat structure (`\repeat volta`, `\alternative`) | `crates/scoretk-lilypond-export/src/structure.rs` |
+| Voice framework, lyrics, event attachment | `crates/scoretk-lilypond-export/src/voice.rs` |
+| Header, variables, `\score` block, groupings | `crates/scoretk-lilypond-export/src/writer.rs` |
+| Reading API | `crates/scoretk-lilypond-import/src/lib.rs` |
+| Reading: lexer, grammar, tree, interpreter, building | `crates/scoretk-lilypond-import/src/` |
+| Corpus snapshots (writing) | `crates/scoretk-lilypond-export/tests/corpus_lilypond.rs`, `tests/corpus/ly/` |
+| LilyPond compilation | `crates/scoretk-lilypond-export/tests/lilypond_compile.rs` |
+| Reading round trip | `crates/scoretk-lilypond-import/tests/read_corpus.rs` |
+| Small hand-written sources | `crates/scoretk-lilypond-import/tests/read_lilypond.rs` |
+| Units of shared tables | `#[cfg(test)]` of `scoretk-lilypond-common` |
 
-Référence de comportement : **`musicxml2ly`** (paquet LilyPond,
-GPL-3.0-or-later), qui définit les correspondances idiomatiques entre notation
-MusicXML et LilyPond. MuseScore 4 n'a pas d'export LilyPond ; les tables
-d'articulations, d'ornements, de nuances et de figures reprennent donc celles
-de `musicxml2ly`, réécrites en Rust. L'attribution est dans `NOTICE` et dans
-l'en-tête des fichiers concernés.
+Behaviour reference: **`musicxml2ly`** (LilyPond package,
+GPL-3.0-or-later), which defines the idiomatic mappings between
+MusicXML notation and LilyPond. MuseScore 4 has no LilyPond export; the
+articulation, ornament, dynamic and figure tables therefore follow those
+of `musicxml2ly`, rewritten in Rust. The attribution is in `NOTICE` and in
+the headers of the relevant files.
 
-## 2. Lecture : méthode et sous-ensemble
+## 2. Reading: method and subset
 
-LilyPond n'est pas intégrable : son parseur est un couple Bison/Flex
-(`lily/parser.yy`, `lily/lexer.ll`) qui dépend de Guile Scheme pour presque
-toutes ses actions sémantiques. La lecture est donc une **réécriture en Rust
-d'un sous-ensemble de la grammaire**, sur le modèle de `python-ly`
-(`ly.music`, `ly.lex`), qui lit LilyPond sans Scheme. Les sources de référence
-sont une copie de LilyPond **2.26.0** conservée **hors du dépôt** (voir
-`NOTICE` et § 8) : `lily/parser.yy`, `lily/lexer.ll`, `lily/pitch.cc` et
+LilyPond cannot be embedded: its parser is a Bison/Flex pair
+(`lily/parser.yy`, `lily/lexer.ll`) that depends on Guile Scheme for nearly
+all its semantic actions. Reading is therefore a **Rust rewrite
+of a subset of the grammar**, following `python-ly`
+(`ly.music`, `ly.lex`), which reads LilyPond without Scheme. The reference
+sources are a copy of LilyPond **2.26.0** kept **outside the repository** (see
+`NOTICE` and § 8): `lily/parser.yy`, `lily/lexer.ll`, `lily/pitch.cc` and
 `scm/define-note-names.scm`.
 
-| Étape | Fichier | Rôle |
+| Step | File | Role |
 | --- | --- | --- |
-| Lexer | `scoretk-lilypond-import/src/lexer.rs` | jetons (`\nom`, mots, nombres, fractions, chaînes, ponctuation), commentaires `%` et `%{ %}`, états du lexer amont |
-| `\include` | `scoretk-lilypond-import/src/include.rs` | expansion textuelle avant l'analyse : fichiers de langue → `\language`, fichiers livrés sans musique ignorés, autres fichiers par le résolveur |
-| Arbre | `scoretk-lilypond-import/src/ast.rs` | `music_list`, `sequential_music`, `simultaneous_music`, `note_chord_element`, `post_events`, `\repeat`, `\new`, paroles |
-| Grammaire | `scoretk-lilypond-import/src/parser.rs` | analyse descendante des productions utiles ; tout le reste est ignoré avec un `Warning` |
-| `\parallelMusic` | `scoretk-lilypond-import/src/parallel.rs` | découpage aux contrôles de mesure et répartition entre les variables (`ly/music-functions-init.ly`) |
-| Hauteurs | `scoretk-lilypond-import/src/pitch.rs` (+ `clefs`/`tpc` de `-common`) | tables de `define-note-names.scm` (toutes les langues), octaves `\fixed`/`\relative`/absolues (`Pitch::to_relative_octave`), clés, armures |
-| Interprétation | `scoretk-lilypond-import/src/events.rs` | octaves, transposition, n-olets, ornements, spanners, reprises, événements datés |
-| Construction | `scoretk-lilypond-import/src/builder.rs` | trame des mesures (`\time`, `\partial`, `Timing.measureLength`, `R`), segments, altérations affichées, paroles, liaisons |
+| Lexer | `scoretk-lilypond-import/src/lexer.rs` | tokens (`\name`, words, numbers, fractions, strings, punctuation), `%` and `%{ %}` comments, upstream lexer states |
+| `\include` | `scoretk-lilypond-import/src/include.rs` | textual expansion before parsing: language files → `\language`, files delivered without music ignored, other files via the resolver |
+| Tree | `scoretk-lilypond-import/src/ast.rs` | `music_list`, `sequential_music`, `simultaneous_music`, `note_chord_element`, `post_events`, `\repeat`, `\new`, lyrics |
+| Grammar | `scoretk-lilypond-import/src/parser.rs` | recursive-descent parsing of useful productions; everything else ignored with a `Warning` |
+| `\parallelMusic` | `scoretk-lilypond-import/src/parallel.rs` | splitting at bar checks and distribution among variables (`ly/music-functions-init.ly`) |
+| Pitches | `scoretk-lilypond-import/src/pitch.rs` (+ `clefs`/`tpc` from `-common`) | tables of `define-note-names.scm` (all languages), `\fixed`/`\relative`/absolute octaves (`Pitch::to_relative_octave`), clefs, key signatures |
+| Interpretation | `scoretk-lilypond-import/src/events.rs` | octaves, transposition, n-tuplets, ornaments, spanners, repeats, time-stamped events |
+| Building | `scoretk-lilypond-import/src/builder.rs` | measure framework (`\time`, `\partial`, `Timing.measureLength`, `R`), segments, displayed accidentals, lyrics, ties |
 
-Sous-ensemble couvert : notes, silences (y compris le post-événement `\rest`,
-qui transforme la note écrite en silence, comme `event_chord` de
-`lily/parser.yy`), accords, durées et points,
-`\relative`, `\fixed` et notation absolue, `\transpose`, `\tuplet`/`\times`,
-`~`, `(`/`)` et `\=N(`/`\=N)`, `\repeat volta`/`unfold` et `\alternative`,
+Covered subset: notes, rests (including the `\rest` post-event,
+which turns the written note into a rest, like `event_chord` of
+`lily/parser.yy`), chords, durations and dots,
+`\relative`, `\fixed` and absolute notation, `\transpose`, `\tuplet`/`\times`,
+`~`, `(`/`)` and `\=N(`/`\=N)`, `\repeat volta`/`unfold` and `\alternative`,
 `\key`, `\time`, `\clef`, `\partial`, `\bar`, `\cadenzaOn`/`\cadenzaOff`
-(et `\set Timing.timing = ##f/##t`), `\language` (toutes les langues de
-`language-pitch-names` : néerlandais, catalan, allemand, anglais, espagnol,
-français, italien, norvégien, portugais, finnois, suédois, flamand), `\include`
-des fichiers de langue et des fichiers livrés sans musique, nuances,
-`\< \> \!`, articulations et
-ornements courants, `\grace`, `\acciaccatura`, `\appoggiatura`,
-`\afterGrace`, `R`/`s`, voix `<< \\ >>` (passages polyphoniques
-temporaires) et `\new Voice` rencontré dans une voix d'une portée (voix
-ouverte au tick courant), variables (`nom = { … }` puis
-`\nom`), `\parallelMusic` (voir ci-dessous),
+(and `\set Timing.timing = ##f/##t`), `\language` (all languages of
+`language-pitch-names`: Dutch, Catalan, German, English, Spanish,
+French, Italian, Norwegian, Portuguese, Finnish, Swedish, Flemish), `\include`
+of language files and files delivered without music, dynamics,
+`\< \> \!`, common articulations and
+ornaments, `\grace`, `\acciaccatura`, `\appoggiatura`,
+`\afterGrace`, `R`/`s`, `<< \\ >>` voices (temporary polyphonic
+passages) and `\new Voice` encountered in a staff voice (voice
+opened at the current tick), variables (`name = { … }` then
+`\name`), `\parallelMusic` (see below),
 `\new Staff`/`PianoStaff`/`ChoirStaff`/`Voice`/`Lyrics`,
-`\context Staff`/`PianoStaff`/`ChoirStaff`/`StaffGroup`/`Voice` (noms de
-contextes insensibles à la casse : `\new voice`, `\context staff`…),
-`\addlyrics`, `\lyricsto`, `\lyricmode`, `\header`, `\tempo`, `\mark` et
-`\markup` simple (texte), `\chordmode` dans une portée (les noms d'accords
-sont **joués** : `c:m7` → MIDI 60/63/67/70, tables de `scm/chord-entry.scm`),
-`\drummode` et `\new DrumStaff` (noms de fûts → hauteurs MIDI de
-`ly/drumpitch-init.ly`), musique embarquée `#{ … #}`/`$#{ … #}` et fonctions
-musicales simples (`nom = #(define-music-function (a b) (prédicat…) #{ … #})`
-puis `\nom arg…`). Une expression musicale écrite directement au
-niveau supérieur du fichier (partition implicite de `toplevel-music-handler`)
-est lue comme un `\score { musique }` sans `\layout` ni `\midi` ; chaque
-expression de haut niveau forme sa propre partition, comme LilyPond (qui en
-produit un fichier MIDI par expression) ;
-`\book`/`\bookpart` sont parcourus pour y chercher `\score`, `\header` et
-cette musique de haut niveau.
+`\context Staff`/`PianoStaff`/`ChoirStaff`/`StaffGroup`/`Voice` (context
+names case-insensitive: `\new voice`, `\context staff`…),
+`\addlyrics`, `\lyricsto`, `\lyricmode`, `\header`, `\tempo`, `\mark` and
+simple `\markup` (text), `\chordmode` in a staff (chord names are
+**played**: `c:m7` → MIDI 60/63/67/70, tables of `scm/chord-entry.scm`),
+`\drummode` and `\new DrumStaff` (drum names → MIDI pitches of
+`ly/drumpitch-init.ly`), embedded music `#{ … #}`/`$#{ … #}` and simple music
+functions (`name = #(define-music-function (a b) (predicate…) #{ … #})`
+then `\name arg…`). A music expression written directly at the
+top level of the file (implicit score of `toplevel-music-handler`)
+is read as a `\score { music }` without `\layout` or `\midi`; each
+top-level expression forms its own score, as LilyPond does (which
+produces one MIDI file per expression);
+`\book`/`\bookpart` are traversed to find `\score`, `\header` and
+that top-level music.
 
-**`\parallelMusic`** (`ly/music-functions-init.ly`, fonction `parallelMusic`) :
-la musique est coupée aux contrôles de mesure `|` et les tranches sont
-affectées circulairement aux variables nommées, une par voix ; c'est
-l'idiome des grilles d'accords (`\parallelMusic #'(PianoI PianoII …)`, ou
-`\parallelMusic haut,bas` depuis 2.24). Les contrôles de mesure ne sont pas
-recopiés dans les voix : le lecteur les ignore de toute façon (`|` ne coupe
-pas la trame), et un contrôle de mesure imbriqué (`\repeat`, bloc `{ … }`)
-ne sépare pas les voix — LilyPond, lui, découpe aussi les éléments
-imbriqués. Sans aucun `|`, la musique est ignorée avec un avertissement,
-comme LilyPond.
+**`\parallelMusic`** (`ly/music-functions-init.ly`, function `parallelMusic`):
+music is split at bar checks `|` and the slices are
+assigned cyclically to the named variables, one per voice; this is
+the idiom of chord grids (`\parallelMusic #'(PianoI PianoII …)`, or
+`\parallelMusic high,low` since 2.24). Bar checks are not
+copied into the voices: the reader ignores them anyway (`|` does not cut
+the framework), and a nested bar check (`\repeat`, `{ … }` block)
+does not separate voices — LilyPond, for its part, also splits nested
+elements. With no `|` at all, music is ignored with a warning,
+as LilyPond does.
 
-Tout ce qui sort de ce sous-ensemble — commandes inconnues, propriétés non
-modélisées — est **ignoré avec un avertissement collecté**
-(`read_lilypond_reporting`), jamais une erreur : seule une source sans
-aucune musique (`\score` ou expression de haut niveau) échoue. Les
-expressions Scheme `#…`/`$…` font exception : elles sont lues **d'un seul
-tenant** (un datum complet, comme le lecteur Guile appelé par le lexer
-amont) et ignorées sans bruit. Un `#{ … #}` qui n'appartient pas à un datum
-Scheme est en revanche de la **musique** : le lexer en fait un jeton à part
-(`Kind::Embedded`) et le parseur relit son contenu comme une séquence, en
-respectant les chaînes et commentaires LilyPond intérieurs.
+Everything outside this subset — unknown commands, unmodelled properties — is
+**ignored with a collected warning**
+(`read_lilypond_reporting`), never an error: only a source with
+no music at all (`\score` or top-level expression) fails. Scheme
+expressions `#…`/`$…` are an exception: they are read **as a whole**
+(one complete datum, like the Guile reader called by the upstream
+lexer) and silently ignored. A `#{ … #}` that is not part of a Scheme
+datum is, on the other hand, **music**: the lexer makes a separate token
+of it (`Kind::Embedded`) and the parser rereads its contents as a sequence,
+respecting inner LilyPond strings and comments.
 
-Une définition `#(define-music-function (a b) (prédicat… ) #{ corps #})` est
-mémorisée (signature ancienne `(parser location a b)` comprise) ; chaque
-appel `\nom arg…` consomme un argument par prédicat (musique `{…}`, note,
-nombre, chaîne, symbole Scheme, datum) puis rejoue le corps en remplaçant
-les jetons `#a`, `$a` et `\a` par l'argument : c'est une substitution de
-jetons, pas une évaluation Scheme. Un corps sans `#{ … #}` laisse la
-fonction inconnue (avertissement unique au premier appel, arguments
-consommés) ; `define-void-function` et `define-scheme-function` sont
-consommées sans musique ni avertissement de « mot ignoré ».
+A definition `#(define-music-function (a b) (predicate…) #{ body #})` is
+memoised (the old signature `(parser location a b)` is understood); each
+call `\name arg…` consumes one argument per predicate (music `{…}`, note,
+number, string, Scheme symbol, datum) then replays the body replacing
+tokens `#a`, `$a` and `\a` with the argument: this is token substitution,
+not Scheme evaluation. A body without `#{ … #}` leaves the
+function unknown (single warning on first call, arguments
+consumed); `define-void-function` and `define-scheme-function` are
+consumed without music or an "ignored word" warning.
 
-## 3. Choix de notation
+## 3. Notation choices
 
-### Mode `\fixed`, jamais `\relative`
+### `\fixed` mode, never `\relative`
 
-Chaque voix est une variable dont le corps est enveloppé dans
-`\fixed c' { … }` : l'octave est **absolue**, `c` valant le do central
-(MIDI 60), `c'` l'octave au-dessus, `c,` l'octave en dessous. Une note se
-transpose ou se déplace sans changer le sens des notes voisines, contrairement
-à `\relative` ; c'est une exigence explicite du projet (`docs/TODO.md`).
+Each voice is a variable whose body is wrapped in
+`\fixed c' { … }`: the octave is **absolute**, `c` being middle C
+(MIDI 60), `c'` the octave above, `c,` the octave below. A note can be
+transposed or moved without changing the meaning of neighbouring notes, unlike
+`\relative`; this is an explicit project requirement (`docs/TODO.md`).
 
-### Langue anglaise explicite
+### Explicit English language
 
-`\language "english"` est déclaré en tête : les altérations s'écrivent `cs`
-(do dièse), `bf` (si bémol), `css`/`bff` (doubles). Sans cette ligne, le
-fichier dépendrait de la langue par défaut de LilyPond (`nederlands`).
+`\language "english"` is declared at the top: accidentals are written `cs`
+(C sharp), `bf` (B flat), `css`/`bff` (double). Without this line, the
+file would depend on LilyPond's default language (`nederlands`).
 
-### Conventions d'écriture pour l'aller-retour
+### Writing conventions for round trips
 
-Trois conventions, choisies pour que le lecteur retrouve le modèle sans
-ambiguïté, sont visibles dans les `.ly` produits :
+Three conventions, chosen so the reader recovers the model without
+ambiguity, are visible in the produced `.ly` files:
 
-- **Trous de voix** : un intervalle sans élément dans une voix du modèle
-  s'écrit `s` (spacer), et non `r` ; un silence réel rendu invisible s'écrit
-  `\once \override Rest.transparent = ##t r…`. Le lecteur distingue ainsi
-  « pas d'élément » de « silence invisible ».
-- **Nombre de n-olet** : `TupletNumberType::None` s'écrit
+- **Voice gaps**: an interval with no element in a model voice
+  is written `s` (spacer), not `r`; a real rest rendered invisible is written
+  `\once \override Rest.transparent = ##t r…`. The reader can thus distinguish
+  "no element" from "invisible rest".
+- **N-tuplet number**: `TupletNumberType::None` is written
   `\override TupletNumber.stencil = ##f` … `\revert TupletNumber.stencil`,
-  `Ratio` s'écrit `\override TupletNumber.text =
+  `Ratio` is written `\override TupletNumber.text =
   #tuplet-number::calc-fraction-text` … `\revert`.
-- **Métadonnées** : les champs non standard de `\header` (`workTitle`,
-  `movementTitle`…) sont acceptés par LilyPond et permettent de restituer
-  exactement les métadonnées du `.mscx`.
+- **Metadata**: non-standard `\header` fields (`workTitle`,
+  `movementTitle`…) are accepted by LilyPond and make it possible to restore
+  the `.mscx` metadata exactly.
 
-### Une variable par voix
+### One variable per voice
 
 ```lilypond
 staffOneVoiceOne = \fixed c' { … }
 staffTwoVoiceTwo = \fixed c' { … }
 ```
 
-Le nom sert à la fois de variable et de cible à `\lyricsto`. Les voix d'une
-portée qui en compte plusieurs reçoivent `\voiceOne`, `\voiceTwo`… pour que
-LilyPond gère hampes et collisions. Dans le bloc `\score`, une portée à
-plusieurs voix et sans paroles utilise le séparateur idiomatique `\\` :
+The name serves both as a variable and as a `\lyricsto` target. Voices of a
+staff with several voices receive `\voiceOne`, `\voiceTwo`… so that
+LilyPond handles stems and collisions. In the `\score` block, a staff with
+several voices and no lyrics uses the idiomatic `\\` separator:
 
 ```lilypond
 \new Staff = "staffOne" <<
@@ -221,121 +220,121 @@ plusieurs voix et sans paroles utilise le séparateur idiomatique `\\` :
 >>
 ```
 
-Dès qu'une voix porte des paroles, les voix deviennent des `\new Voice`
-nommés, seuls acceptés comme cible par `\lyricsto`.
+As soon as a voice carries lyrics, the voices become named `\new Voice`s,
+the only ones accepted as a target by `\lyricsto`.
 
-### Regroupement des portées
+### Staff grouping
 
-D'après les accolades de MuseScore (`<bracket>`, champ `StaffBracket::kind`) :
+Based on MuseScore's brackets (`<bracket>`, `StaffBracket::kind` field):
 
-| Crochet MuseScore | LilyPond |
+| MuseScore bracket | LilyPond |
 | --- | --- |
-| accolade (`1`) | `\new PianoStaff` |
-| crochet, crochet carré (`0`, `3`) | `\new ChoirStaff` |
-| plusieurs portées sans crochet | `\new StaffGroup` |
-| une seule portée | `\new Staff` |
+| brace (`1`) | `\new PianoStaff` |
+| bracket, square bracket (`0`, `3`) | `\new ChoirStaff` |
+| several staves without bracket | `\new StaffGroup` |
+| a single staff | `\new Staff` |
 
-Les noms d'instrument passent par `\with { instrumentName = … shortInstrumentName = … }`.
+Instrument names go through `\with { instrumentName = … shortInstrumentName = … }`.
 
-## 4. Correspondance modèle → LilyPond
+## 4. Model → LilyPond mapping
 
-### Partition et mesures
+### Score and measures
 
-| Modèle | LilyPond |
+| Model | LilyPond |
 | --- | --- |
-| `ScoreMetadata` (et crédits en repli) | `\header { title, workTitle, subtitle, movementTitle, movementNumber, workNumber, composer, poet, arranger, copyright, source }` ; `workTitle` n'est écrit que si le modèle porte un titre d'œuvre |
-| `Measure.len < nominal_len` (première mesure) | `\partial <durée>` |
+| `ScoreMetadata` (and credits as fallback) | `\header { title, workTitle, subtitle, movementTitle, movementNumber, workNumber, composer, poet, arranger, copyright, source }`; `workTitle` is written only if the model carries a work title |
+| `Measure.len < nominal_len` (first measure) | `\partial <duration>` |
 | `TimeSig` | `\time n/d` |
-| `TimeSig` locale (longueur réelle ≠ mesure affichée) | `\time n/d \set Timing.measureLength = #num/den` |
-| `Measure.len` irrégulière (hors levée) | `\set Timing.measureLength = #num/den` avant la mesure, puis restauration à la métrique en vigueur |
-| `KeySig` | `\key <tonique> \major` ou `\minor` |
+| local `TimeSig` (actual length ≠ displayed measure) | `\time n/d \set Timing.measureLength = #num/den` |
+| irregular `Measure.len` (outside pickup) | `\set Timing.measureLength = #num/den` before the measure, then restoration to the metre in force |
+| `KeySig` | `\key <tonic> \major` or `\minor` |
 | `Clef` | `\clef treble`, `bass`, `alto`, `tenor`, `"treble_8"`, `varbaritone`, `percussion`… |
-| `Staff.default_clef` sans `Clef` en tête de première mesure | `\clef …` au début de la voix 0 ; `read4xx` ne matérialise pas de segment `HeaderClef`, contrairement à `read302` |
+| `Staff.default_clef` without a `Clef` at the head of the first measure | `\clef …` at the start of voice 0; `read4xx` does not materialise a `HeaderClef` segment, unlike `read302` |
 | `Measure.multi_measure_rest` | `R1*3`, `R2.*4`… |
-| `Measure.start_bar_line`/`end_bar_line` | `\repeat volta` pour les reprises, `\bar "|."`, `\bar "||"`, `\bar ";"` |
+| `Measure.start_bar_line`/`end_bar_line` | `\repeat volta` for repeats, `\bar "|."`, `\bar "||"`, `\bar ";"` |
 | `section_break_before` | `\section` |
-| `line_break` | `\break` (sauf dernière mesure) |
-| `MeasureRepeatMark` | non rendu (la musique copiée est écrite) |
-| barre de contrôle | `|` en fin de mesure quand la longueur réelle correspond à la métrique en vigueur, héritée comprise ; `Timing.measureLength` est posé sinon, jamais un `\time` parasite |
+| `line_break` | `\break` (except on the last measure) |
+| `MeasureRepeatMark` | not rendered (the copied music is written) |
+| bar check | `|` at the end of a measure when the actual length matches the metre in force, inherited ones included; `Timing.measureLength` is set otherwise, never a spurious `\time` |
 
-### Accords, silences et durées
+### Chords, rests and durations
 
-| Modèle | LilyPond |
+| Model | LilyPond |
 | --- | --- |
-| `Duration` + points | `4`, `2.`, `8..`, `\breve`, `\longa` |
-| `ChordRest.ticks` ≠ figure | multiplicateur `4*3/2` |
-| `Chord` à une note / plusieurs | `c'4` / `<c e g>4` |
-| `Note.pitch` + `tpc` | nom orthographié (`cs`, `bf`) et octave absolue |
-| `Note` transposée (`tpc_transposed`, instrument) | hauteur écrite, comme `pitch2xml` |
-| altération de courtoisie (`user`, parenthèses, crochets) | suffixe `?` |
-| silence | `r4` ; invisible (`print-object="no"`) → `s4` ; mesure entière → `R1` |
-| `Tuplet` | `\tuplet 3/2 { … }`, imbrication par accolades |
-| `Note.tie_forward` | `~` (sur l'élément du `<c~ e g>` pour un accord) |
-| `GraceType` | `\grace`, `\acciaccatura`, `\appoggiatura` ; types `…After` → `\afterGrace` |
-| `ArticulationType` | `-.` staccato, `-!` staccatissimo/spiccato, `->` accent, `-^` marcato, `--` tenuto, `-_` portato, `\espressivo`, `\fermata` et variantes, `\breathe`, `\caesura`, `\upbow`, `\downbow`, `\flageolet`, `\open`, `\stopped`, `\snappizzicato` |
+| `Duration` + dots | `4`, `2.`, `8..`, `\breve`, `\longa` |
+| `ChordRest.ticks` ≠ note value | multiplier `4*3/2` |
+| `Chord` with one / several notes | `c'4` / `<c e g>4` |
+| `Note.pitch` + `tpc` | spelled name (`cs`, `bf`) and absolute octave |
+| transposed `Note` (`tpc_transposed`, instrument) | written pitch, like `pitch2xml` |
+| courtesy accidental (`user`, parentheses, brackets) | `?` suffix |
+| rest | `r4`; invisible (`print-object="no"`) → `s4`; whole measure → `R1` |
+| `Tuplet` | `\tuplet 3/2 { … }`, nesting by braces |
+| `Note.tie_forward` | `~` (on the element of `<c~ e g>` for a chord) |
+| `GraceType` | `\grace`, `\acciaccatura`, `\appoggiatura`; `…After` types → `\afterGrace` |
+| `ArticulationType` | `-.` staccato, `-!` staccatissimo/spiccato, `->` accent, `-^` marcato, `--` tenuto, `-_` portato, `\espressivo`, `\fermata` and variants, `\breathe`, `\caesura`, `\upbow`, `\downbow`, `\flageolet`, `\open`, `\stopped`, `\snappizzicato` |
 | `OrnamentType` | `\trill`, `\turn`, `\reverseturn`, `\slashturn`, `\mordent`, `\prall`, `\prallprall`, `\haydnturn`, `\upmordent` |
 | `Arpeggio` | `\arpeggio`, `\arpeggioArrowUp`/`Down`, `\arpeggioBracket` |
-| `Tremolo` | `:8`, `:16`, `:32` (une barre = croche) |
-| `Fingering` | `-1` pour un chiffre, `-\markup { "T" }` sinon |
-| `ChordLine` | `\bendAfter`, seule commande standard (chute, montée, plop et scoop ne sont pas distingués par LilyPond) |
+| `Tremolo` | `:8`, `:16`, `:32` (one bar = eighth note) |
+| `Fingering` | `-1` for a digit, `-\markup { "T" }` otherwise |
+| `ChordLine` | `\bendAfter`, the only standard command (fall, rise, plop and scoop are not distinguished by LilyPond) |
 | `StemDirection` | `\once \override Stem.direction = #UP`/`#DOWN` |
 | `NoteHeadGroup` | `\tweak style #'cross`, `#'harmonic-mixed`, `#'slash`, `#'xcircle`, `#'do`… |
-| `Chord.grace_slash` | porté par `\acciaccatura` |
+| `Chord.grace_slash` | carried by `\acciaccatura` |
 
 ### Annotations
 
-| Modèle | LilyPond |
+| Model | LilyPond |
 | --- | --- |
-| `Dynamic` prédéfinie (`p`, `mf`, `sfz`…) | `\p`, `\mf` (avec `_`/`^` selon le placement) |
-| `Dynamic` personnalisée | `-\markup { "…" }` |
-| `Tempo` | `\tempo "Allegro" 4 = 120` (le texte seul s'il n'y a pas de battements par seconde) |
+| predefined `Dynamic` (`p`, `mf`, `sfz`…) | `\p`, `\mf` (with `_`/`^` according to placement) |
+| custom `Dynamic` | `-\markup { "…" }` |
+| `Tempo` | `\tempo "Allegro" 4 = 120` (text alone if there are no beats per second) |
 | `StaffText`, `Expression`, `SystemText`, `InstrumentChange` | `^\markup { "…" }` / `_\markup` |
-| `RehearsalMark` | `\mark \markup { "A" }` ; un second repère au même instant devient un `\markup` |
-| `Harmony` | `^\markup { "Cm7" }` (le texte du modèle, pas `\chordmode`) |
+| `RehearsalMark` | `\mark \markup { "A" }`; a second mark at the same instant becomes a `\markup` |
+| `Harmony` | `^\markup { "Cm7" }` (the model's text, not `\chordmode`) |
 | `Fermata` | `\fermata`, `\shortfermata`, `\longfermata`, `\verylongfermata`, `\henzelongfermata`, `\henzeshortfermata` |
-| `TboxText` | `^\markup` sur la première note de la mesure |
-| `FiguredBass`, `TremoloBar` | non rendus |
+| `TboxText` | `^\markup` on the measure's first note |
+| `FiguredBass`, `TremoloBar` | not rendered |
 
 ### Spanners
 
-| Modèle | LilyPond |
+| Model | LilyPond |
 | --- | --- |
-| `Slur` | `\=N(` … `\=N)` (numéroté pour les liaisons qui se chevauchent) |
-| `Hairpin` | `\<` … `\!` (ou `\cresc`/`\decresc` pour un soufflet en texte) |
+| `Slur` | `\=N(` … `\=N)` (numbered for overlapping slurs) |
+| `Hairpin` | `\<` … `\!` (or `\cresc`/`\decresc` for a text hairpin) |
 | `Ottava` | `\ottava 1`/`-1`/`2`/`-2` … `\ottava 0` |
 | `Pedal` | `\sustainOn` … `\sustainOff` |
 | `Trill` | `\startTrillSpan` … `\stopTrillSpan` |
 | `Glissando` | `\glissando` |
-| `TextLine` | textes de début et de fin en `\markup`, trait non dessiné |
-| `Volta` | structure `\alternative`, pas de commande propre |
+| `TextLine` | start and end texts in `\markup`, line not drawn |
+| `Volta` | `\alternative` structure, no dedicated command |
 
-### Paroles
+### Lyrics
 
-Un bloc `\new Lyrics \lyricsto "<voix>"` par couplet présent dans la voix.
-La syllabisation devient ` --` (début ou milieu de mot) et le mélisme ` __`.
-Les accords sans syllabe pour un couplet donnent `\skip 1` pour garder
-l'alignement ; les silences sont sautés par `\lyricsto` lui-même. Plusieurs
-couplets reçoivent `\set stanza = "n."` **dans** le bloc de paroles : c'est la
-forme de `musicxml2ly`, compilable par LilyPond 2.26 (contrairement à
-`\stanza "n."`, fonction musicale ajoutée en 2.27). Le
-trait d'union n'est émis que si l'accord suivant du même couplet porte une
-syllabe, et les continuations de liaison (toutes notes liées depuis l'accord
-précédent) ne reçoivent pas de jeton, car `\lyricsto` les saute.
+One `\new Lyrics \lyricsto "<voice>"` block per verse present in the voice.
+Syllabification becomes ` --` (start or middle of a word) and the melisma ` __`.
+Chords without a syllable for a verse yield `\skip 1` to keep
+alignment; rests are skipped by `\lyricsto` itself. Several
+verses receive `\set stanza = "n."` **inside** the lyrics block: this is
+`musicxml2ly`'s form, compilable by LilyPond 2.26 (unlike
+`\stanza "n."`, a music function added in 2.27). The
+hyphen is emitted only if the following chord of the same verse carries a
+syllable, and tie continuations (all notes tied from the previous chord
+) receive no token, since `\lyricsto` skips them.
 
-Côté lecture, un mot de paroles est une suite de caractères non blancs
-(`<lyrics>` de `lily/lexer.ll`, `lexer::mot_de_paroles`) : ponctuation collée
-(`bon,`, `gne.`), apostrophe (`qu'il`, `l’ami`) et guillemets typographiques
-en font partie, et un `_` **dans** le mot devient une espace (`lyric_fudge`
-amont) : `Ah_!` est une seule syllabe « Ah ! ». Seul un `_` isolé entre blancs
-(`__` pour le trait) reste un mélisme ; un `~` sépare les mots (élision). Les
-chiffres sont hors du mot : `la4` donne la durée de la syllabe. À l'écriture,
-une syllabe qui porte une espace est mise entre guillemets (`"Ah !"`), seule
-forme qui la relise comme un seul mot.
+On the reading side, a lyric word is a sequence of non-whitespace
+characters (`<lyrics>` of `lily/lexer.ll`, `lexer::mot_de_paroles`): attached
+punctuation (`bon,`, `gne.`), apostrophe (`qu'il`, `l’ami`) and typographic
+quotes are part of it, and a `_` **inside** the word becomes a space (`lyric_fudge`
+upstream): `Ah_!` is a single syllable "Ah !". Only an isolated `_` between spaces
+(`__` for the line) remains a melisma; a `~` separates words (elision).
+Digits are outside the word: `la4` gives the syllable's duration. When writing,
+a syllable containing a space is put in quotes (`"Ah !"`), the only
+form that reads it back as a single word.
 
-### Reprises
+### Repeats
 
-Une barre de début et une barre de fin (`<endRepeat>N</endRepeat>`) donnent
-`\repeat volta N`. Les volatas de fin et les endings suivants deviennent :
+A start barline and an end barline (`<endRepeat>N</endRepeat>`) give
+`\repeat volta N`. Ending voltas and the following endings become:
 
 ```lilypond
 \repeat volta 2 {
@@ -347,322 +346,307 @@ Une barre de début et une barre de fin (`<endRepeat>N</endRepeat>`) donnent
 }
 ```
 
-Le corps s'arrête au début du premier ending ; un ending qui occupe toute la
-section tient lieu de corps. Une reprise sans second ending est écrite comme
-une reprise simple (la musique est la même dans les deux lectures).
+The body stops at the start of the first ending; an ending that occupies the whole
+section stands in for the body. A repeat without a second ending is written as
+a simple repeat (the music is the same on both passes).
 
-## 5. Rattachement des événements
+## 5. Event attachment
 
-Le modèle range les objets en segments verticaux ; une voix LilyPond est une
-suite linéaire. Les règles appliquées, dans `src/voice.rs` :
+The model stores objects in vertical segments; a LilyPond voice is a
+linear sequence. The rules applied, in `src/voice.rs`:
 
-1. les accords et silences forment la trame ; les trous sont comblés par des
-   silences de la bonne longueur, pour que chaque voix couvre exactement la
-   mesure ;
-2. clé, armure, indication de mesure, levée et saut de section sont posés au
-   début de la mesure concernée ;
-3. les annotations et les spanners sont rattachés à une note : la **dernière
-   note au plus tard au tick** pour une fermeture (`)`, `\!`) ou une nuance,
-   la **première note au tick ou après** pour un tempo ou un repère ;
-4. à tick égal, les fermetures passent avant les ouvertures (`\!` puis `\<`),
-   pour qu'un soufflet qui s'arrête là où le suivant commence reste valide ;
-5. un soufflet dont le départ et l'arrivée tombent sur le même silence est
-   omis (LilyPond refuse une durée nulle).
+1. chords and rests form the framework; gaps are filled by rests of the right
+   length so that each voice exactly covers the measure;
+2. clef, key signature, time signature, pickup and section break are placed at
+   the start of the relevant measure;
+3. annotations and spanners are attached to a note: the **last
+   note at or before the tick** for an ending (`)`, `\!`) or a dynamic,
+   the **first note at or after the tick** for a tempo or a mark;
+4. at equal ticks, closings come before openings (`\!` then `\<`),
+   so a hairpin stopping where the next one starts remains valid;
+5. a hairpin whose start and end fall on the same rest is
+   omitted (LilyPond rejects a zero duration).
 
 ## 6. Tests
 
-Répartition : un test qui n'exerce qu'un sens vit dans la crate de ce sens ; un
-aller-retour (`.ly` → modèle → `.ly`, ou lecture puis export) vit dans
-`crates/scoretk/tests/` (façade) ou dans le crate d'intégration. Aucune des
-deux moitiés ne dépend de l'autre : la lecture compare au MusicXML du `.mscx`
-d'origine, pas à une réécriture LilyPond.
+Allocation: a test exercising only one direction lives in that direction's crate; a
+round trip (`.ly` → model → `.ly`, or reading then export) lives in
+`crates/scoretk/tests/` (facade) or in the integration crate. Neither
+half depends on the other: reading compares to the MusicXML of the original
+`.mscx`, not to a LilyPond rewrite.
 
-- `crates/scoretk-lilypond-export/tests/corpus_lilypond.rs` convertit les 56 fichiers `.mscx` du corpus v3/v4
-  et compare le résultat aux instantanés `tests/corpus/ly/<version>_<nom>.ly`.
-  Il vérifie aussi l'en-tête (`\version "2.24.0"`, `\language "english"`),
-  la présence de `\fixed c'` et l'absence de `\relative`.
-  Régénération après un changement volontaire de forme :
+- `crates/scoretk-lilypond-export/tests/corpus_lilypond.rs` converts the 56 `.mscx` files of the v3/v4 corpus
+  and compares the result to the snapshots `tests/corpus/ly/<version>_<nom>.ly`.
+  It also checks the header (`\version "2.24.0"`, `\language "english"`),
+  the presence of `\fixed c'` and the absence of `\relative`.
+  Regeneration after an intentional format change:
 
   ```sh
   nix develop -c env UPDATE_LILYPOND_SNAPSHOTS=1 \
       cargo test -p scoretk-lilypond-export --test corpus_lilypond
   ```
-
-- `crates/scoretk-lilypond-import/tests/read_corpus.rs` relit les 56 `.ly` du corpus et compare l'export
-  MusicXML au `.mscx` d'origine, aux deux niveaux de `e2e_corpus`. Les listes
-  `EXPECTED_CORE` et `EXPECTED_FULL` sont **non régressives** : un fichier qui
-  y figure doit rester identique. Le test affiche les écarts des autres.
+- `crates/scoretk-lilypond-import/tests/read_corpus.rs` rereads the corpus's 56 `.ly` files and compares the exported
+  MusicXML to the source `.mscx`, at both levels of `e2e_corpus`. The lists
+  `EXPECTED_CORE` and `EXPECTED_FULL` are **non-regressive**: a file listed
+  there must stay identical. The test reports the discrepancies of the others.
 
   ```sh
   nix develop -c cargo test -p scoretk-lilypond-import --test read_corpus -- --nocapture
   SHOW_DIFF=1 nix develop -c cargo test -p scoretk-lilypond-import --test read_corpus -- --nocapture
   ```
 
-- `crates/scoretk-lilypond-import/tests/read_lilypond.rs` couvre ce que l'écrivain n'émet pas : `\relative`,
-  notation absolue, néerlandais par défaut, variables, reprises, `\transpose`,
-  `\partial`, n-olets, ornements, paroles par `\addlyrics`, commandes
-  ignorées avec avertissement, `\drummode`/`\new DrumStaff` (deux portées,
-  silences, durées, nom inconnu, contrôle sans mode) et `\chordmode` joué dans
-  une portée (accords, basse, variable, `\relative`, contrôle `\chords`).
+- `crates/scoretk-lilypond-import/tests/read_lilypond.rs` covers what the writer does not emit: `\relative`,
+  absolute notation, default Dutch, variables, repeats, `\transpose`,
+  `\partial`, n-tuplets, ornaments, lyrics via `\addlyrics`, commands
+  ignored with a warning, `\drummode`/`\new DrumStaff` (two staves,
+  rests, durations, unknown name, control without mode) and `\chordmode` played in
+  a staff (chords, bass, variable, `\relative`, `\chords` control).
 
-- `crates/scoretk-lilypond-export/tests/lilypond_compile.rs` fait compiler
-  chaque sortie par `lilypond` et échoue sur toute erreur. Il vit dans la crate
-  d'écriture : il ne compile que du `.ly` **produit** par l'écrivain, jamais une
-  source lue, et le lecteur n'y intervient pas. Le test ne fait rien si
-  `lilypond` n'est pas dans le `PATH` (cas de `nix flake check`, qui travaille
-  hors réseau) :
+- `crates/scoretk-lilypond-export/tests/lilypond_compile.rs` compiles each output with
+  `lilypond` and fails on any error. It lives in the writer's crate: it only compiles `.ly` **produced** by the writer, never a
+  read source, and the reader is not involved. The test does nothing if
+  `lilypond` is not in the `PATH` (the case of `nix flake check`, which works
+  offline):
 
   ```sh
   nix develop -c cargo test -p scoretk-lilypond-export --test lilypond_compile -- --nocapture
   ```
 
-État mesuré le 2026-11-17 : **56/56 conversions sans erreur de compilation**
-avec LilyPond 2.27 (les instantanés sont en `\version "2.24.0"`, version
-stable de référence ; LilyPond applique ses conversions habituelles).
-Seul `v3/moonlight.mscx` produit des avertissements de mise en page
-(« page 1 comprimée »), sans rapport avec la musique.
+Measured state on 2026-11-17: **56/56 conversions without compilation errors**
+with LilyPond 2.27 (the snapshots are at `\version "2.24.0"`, the reference
+stable version; LilyPond applies its usual conversions).
+Only `v3/moonlight.mscx` produces layout warnings
+("page 1 compressed"), unrelated to the music.
 
-### Aller-retour mesuré (t40)
+### Measured round trip (t40)
 
-État mesuré le 2026-11-17 par `tests/read_corpus.rs` : **24/56 fichiers
-identiques au niveau du noyau musical** et **3/56 à parité complète**
-(`v3_copypaste_tuplet_01`, `v3_grace`, `v3_lyricsline01`). Les 24 fichiers du
-noyau sont listés dans `EXPECTED_CORE`. Les écarts restants ont trois causes,
-toutes documentées :
+Measured state on 2026-11-17 by `tests/read_corpus.rs`: **24/56 files
+identical at the musical core level** and **3/56 at full parity**
+(`v3_copypaste_tuplet_01`, `v3_grace`, `v3_lyricsline01`). The 24 core files are
+listed in `EXPECTED_CORE`. The remaining discrepancies have three causes,
+all documented:
 
-1. **Informations absentes du `.ly`** (l'écrivain ne peut pas les écrire) :
-   sous-type d'indication de mesure (`C`, `C barré` deviennent des chiffres),
-   texte et numéros d'ending au-delà de la règle des passes, canaux et
-   programmes MIDI explicites, distinction `part-name`/`instrument-name`,
-   chiffrages d'accords (`\markup` au lieu de `<harmony>`), silences gap
-   découpés en plusieurs `<forward>` (un seul est réémis), armure de mode
-   inconnu, types d'ornements (`\grace` ne distingue pas 8/16/32) ;
-2. **Mise en page** : positions, polices, sauts de système, largeurs
-   (`<print>`, `default-x`, `relative-y`…) — hors périmètre, retirées au
-   niveau complet ;
-3. **Sous-ensemble non couvert** : `\bar` exotiques, modes anciens,
-   percussions non accordées, micro-intervalles.
+1. **Information absent from the `.ly`** (the writer cannot write it):
+   time-signature subtype (`C`, `C cut` become numbers), ending texts and
+   numbers beyond the pass rule, explicit MIDI channels and
+   programs, `part-name`/`instrument-name` distinction, chord
+   symbols (`\markup` instead of `<harmony>`), gap rests
+   split into several `<forward>`s (only one is re-emitted), unknown-mode
+   key signature, ornament types (`\grace` does not distinguish 8/16/32);
+2. **Layout**: positions, fonts, system breaks, widths
+   (`<print>`, `default-x`, `relative-y`…) — out of scope, removed at
+   the full level;
+3. **Uncovered subset**: exotic `\bar`s, old modes,
+   untuned percussion, micro-intervals.
 
-Le noyau identique prouve que hauteurs, durées, mesures, reprises, paroles,
-liaisons, armures, clés et accords sont relus correctement sur plus d'un tiers
-du corpus ; les fichiers restants servent de mesure des pertes de l'écrivain,
-pas de régression du lecteur.
+The identical core proves that pitches, durations, measures, repeats, lyrics,
+ties, key signatures, clefs and chords are read back correctly on more than a third
+of the corpus; the remaining files serve as a measure of the writer's losses,
+not of reader regressions.
 
-## 7. Limites connues
+## 7. Known limits
 
-- **Pas de mise en page** : ni marges, ni sauts de système calculés, ni
-  positions de textes. `\layout { }` laisse LilyPond décider.
-- **Accords chiffrés en `\markup`**, pas en `\chordmode` : le texte du modèle
-  est conservé, sans grille d'accords ni réalisation.
-- **Têtes de note** : seuls les groupes non standard passent par
-  `\tweak style` ; le remplissage et la forme liés à la durée
-  (`NoteHeadType`) ne sont pas forcés.
-- **Altérations** : LilyPond décide seul des altérations à afficher d'après le
-  `tpc` et l'armure. Les altérations éditoriales ne sont pas distinguées des
-  autres ; seules les altérations de courtoisie (`user`, parenthèses,
-  crochets) reçoivent `?`.
-- **Trémolo à deux notes** : écrit comme un trémolo sur chacune des deux
-  notes (`:N`), pas en `\repeat tremolo`.
-- **Ornements avec altération** : les `<accidental-mark>` ne sont pas rendus.
-- **Articulations sans équivalent** (`stress`, `unstress`, `spiccato` exact,
-  variantes d'accent doux) : approximation ou omission, documentée dans
+- **No layout**: neither margins, computed system breaks, nor
+  text positions. `\layout { }` lets LilyPond decide.
+- **Chord symbols in `\markup`**, not `\chordmode`: the model's text
+  is preserved, without a chord grid or realisation.
+- **Noteheads**: only non-standard groups go through
+  `\tweak style`; filling and shape tied to duration
+  (`NoteHeadType`) are not forced.
+- **Accidentals**: LilyPond alone decides which accidentals to display from the
+  `tpc` and the key. Editorial accidentals are not distinguished from
+  others; only courtesy accidentals (`user`, parentheses,
+  brackets) receive `?`.
+- **Two-note tremolo**: written as a tremolo on each of the two
+  notes (`:N`), not as `\repeat tremolo`.
+- **Ornaments with accidental**: `<accidental-mark>`s are not rendered.
+- **Articulations without equivalent** (`stress`, `unstress`, exact `spiccato`,
+  soft-accent variants): approximation or omission, documented in
   `src/chord.rs`.
-- **N-olets** : regroupés par appartenance des accords ; un n-olet dont le
-  modèle donne une fin incohérente est fermé à la mesure, LilyPond n'ayant pas
-  de n-olet qui franchit une barre. Le comblement de fin de mesure utilise la
-  durée réelle (`DurationElement::actualTicks`, ratio des n-olets compris), et
-  non la seule durée notée.
-- **Reprises** : imbrication et enchaînement de plusieurs reprises sur la même
-  mesure non couverts ; les numéros d'ending multiples (`1, 2`) ne changent
-  pas le nombre de blocs `\alternative`.
-- **Indications de mesure locales** : affichées, mais `Timing.measureLength`
-  impose la longueur réelle de la mesure ; une portée en 3/4 dans une mesure
-  de 9/8 n'est donc pas réengravée en trois mesures de 3/4. Les mesures
-  irrégulières sans `<TimeSig>` local (3/4 sous un 4/4 hérité) reçoivent de
-  même un `measureLength` temporaire, restauré à la mesure régulière suivante.
-- **Accords croisés** (`Chord.staff_move`) : non rendus, la note reste sur sa
-  portée.
-- **Percussions non accordées et micro-intervalles** : le modèle ne les porte
-  pas encore.
-- **Texte** : le balisage (`<b>`, `<font>`, symboles `<sym>`) est perdu ; les
-  caractères de la zone à usage privé (symboles MuseScore) sont retirés pour
-  éviter des glyphes manquants. Un tempo dont le texte n'est qu'un symbole
-  métronomique (`♩ = 80`) perd son libellé et garde `4 = 80`.
-- **Unité du tempo** : `\tempo` est toujours écrit avec la noire
-  (`4 = bpm`), faute d'unité de battement dans le modèle ; un tempo à la
-  blanche ou à la blanche pointée est donc noté avec la noire.
-- **Tempo invisible** : une indication de tempo `print-object="no"` n'est pas
-  écrite du tout (MuseScore en conserve pourtant l'effet sur la lecture).
-- **Paroles** : pas de `\addlyrics`, seulement `\lyricsto` ; les syllabes
-  d'un accord qui en porte plusieurs pour le même couplet sont réduites à la
-  première. Une syllabe portée par une continuation de liaison est perdue,
-  `\lyricsto` ne l'attachant pas à cette note.
+- **N-tuplets**: grouped by chord membership; a n-tuplet whose model
+  gives an inconsistent end is closed at the measure, LilyPond having no
+  n-tuplet crossing a barline. End-of-measure filling uses the
+  actual duration (`DurationElement::actualTicks`, n-tuplet ratios included), and
+  not the notated duration alone.
+- **Repeats**: nesting and chaining several repeats on the same
+  measure are not covered; multiple ending numbers (`1, 2`) do not change
+  the number of `\alternative` blocks.
+- **Local time signatures**: displayed, but `Timing.measureLength`
+  imposes the measure's actual length; a staff in 3/4 within a
+  measure of 9/8 is therefore not re-engraved as three 3/4 measures. Irregular
+  measures without a local `<TimeSig>` (3/4 under an inherited 4/4) likewise receive a
+  temporary `measureLength`, restored at the next regular measure.
+- **Cross-staff chords** (`Chord.staff_move`): not rendered, the note stays on its
+  staff.
+- **Untuned percussion and micro-intervals**: the model does not yet carry
+  them.
+- **Text**: markup (`<b>`, `<font>`, `<sym>` symbols) is lost; characters from
+  the private use area (MuseScore symbols) are removed to
+  avoid missing glyphs. A tempo whose text is only a metronome
+  symbol (`♩ = 80`) loses its label and keeps `4 = 80`.
+- **Tempo unit**: `\tempo` is always written with the quarter note
+  (`4 = bpm`), the model having no beat unit; a tempo at the half note or
+  dotted half note is therefore notated with the quarter note.
+- **Invisible tempo**: a `print-object="no"` tempo direction is not
+  written at all (MuseScore nevertheless keeps its playback effect).
+- **Lyrics**: no `\addlyrics`, only `\lyricsto`; syllables
+  of a chord carrying several for the same verse are reduced to the
+  first. A syllable on a tie continuation is lost,
+  `\lyricsto` not attaching it to that note.
 
-### Limites de la lecture
+### Reading limits
 
-- **Sous-ensemble**, pas LilyPond complet : Scheme, `\figuremode`,
-  `\partCombine`, `\paper` sont ignorés avec un avertissement. `\chords` /
-  `\new ChordNames` reste une grille d'affichage non jouée (comme avant) ;
-  un export conforme écrirait `<harmony>` pour ces grilles, ce que le modèle
-  pivot sait porter mais que le lecteur ne produit pas encore. `\book` et
-  `\bookpart` sont parcourus (leur `\header`, leurs `\score` et leur musique
-  de haut niveau).
-- **`\context Staff`** : retrouvé au niveau d'une partition, il ouvre une
-  portée (les partitions d'orchestre `\context StaffGroup << \context Staff =
-  "haut" … >>` sont ainsi lues en autant de portées). Retrouvé dans la
-  musique d'une portée déjà ouverte, il retrouve cette portée et ses voix y
-  sont ouvertes. Quand son contenu porte des `\new Voice`/`\context Voice`
-  nommés ou une enveloppe `\relative`/`\fixed`/`\transpose`, il est traversé
-  comme avant le portage des contextes structurels : les voix restent sur la
-  portée englobante (idiome du piano
-  `\context Voice = "one" \rightHand`) et la référence relative s'applique à
-  tout le bloc polyphonique (`\context Staff \relative << … \\ … >>` de
-  collisions.ly). En revanche, un `\context Staff = "nom"` dont le contenu
-  porte plus de quatre voix nommées (pathetique-1 de Mutopia) ouvre bien sa
-  portée et répartit les voix surnuméraires en portées sœurs : les regrouper
-  dans une seule portée les ferait écraser par la limite de quatre voix.
-- **`\rest` et `\relative`** : la hauteur écrite d'un `\rest` est résolue et
-  avance la référence relative, comme le `RestEvent` de `event_chord` dans
-  `lily/parser.yy` (vérifié sur `d'2\rest d16\rest g, c e g` de bwv651.ly
-  contre le MIDI de LilyPond 2.27). La baisse du nombre de « notes communes »
-  observée après avoir traité `\rest` comme un silence n'est donc **pas** un
-  changement de hauteur : les 124 notes retirées sont exactement les silences
-  écrits, et 61 d'entre elles portaient une hauteur présente dans le MIDI de
-  référence (mesure par intersection de multiensembles de hauteurs). Aucune
-  note jouée ne change de hauteur.
-- **Voix ouvertes dans une voix** : `\new Voice` (ou `\context Voice`) et
-  chaque branche d'un `<< … >>` rencontrés dans la musique d'une voix ouvrent
-  une voix de la portée au tick courant (`context_prefix` /
-  `NEWCONTEXT`, `lily/parser.yy` ; « Temporary polyphonic passages ») ; la
-  voix d'origine avance ensuite de la durée du contexte ouvert, comme
-  LilyPond. Une simultanée sans `\\` est lue en voix sœurs plutôt qu'en
-  accords fusionnés. Les branches anonymes de passages temporaires successifs
-  partagent la même piste tant qu'elles ne se chevauchent pas : une pièce à
-  nombreux passages garde deux voix au lieu d'en ouvrir une par passage et de
-  dépasser le modèle. Les voix sans accord (préambule `\clef`/`\key`) sont
-  repliées dans la première voix musicale, et une portée reste limitée à
-  quatre voix (les suivantes avertissent et sont ignorées).
-- **`\change`** : `\change <Contexte> = <nom>` est lu comme un changement de
-  portée : les notes suivantes gardent leur voix et leur place et portent un
-  `Chord.staff_move` calculé d'après la position de `\new Staff = "<nom>"`.
-  Le type de contexte n'est pas vérifié ; comme `Chord::staffMove` de MuseScore,
-  la résolution se limite aux portées nommées de la même partie. Un nom inconnu
-  ou étranger à la partie avertit une seule fois par voix, à la position du
-  `\change`, et laisse les notes sur leur portée d'origine.
-- **Une seule partition** : quand un fichier en contient plusieurs (`\score`
-  explicites ou expressions de haut niveau successives), le premier `\score`
-  explicite l'emporte, sinon la première expression ; chaque autre est ignorée
-  avec un avertissement. C'est le cas de `regression/trill-spanner-consecutive.ly`
-  (`\test 2.0 \test 2.1 \test 2.2 \test 2.3`), dont seule la première
-  expression (2 notes) est retenue. Le MusicXML représente la partition gravée :
-  même si un `\score` ultérieur porte un `\midi` (partition que LilyPond joue,
-  transposée), c'est le premier `\score` gravé qui fait foi ; une éventuelle
-  différence avec la référence MIDI est une limite de l'outil de mesure.
-  `\articulate` (`ly/articulate.ly`, fonction musicale prenant la musique
-  suivante) est transparent : il ne change pas les hauteurs et laisse passer
-  les enveloppes `\transpose`/`\unfoldRepeats`.
-- **Fonctions musicales** : seules les définitions
-  `#(define-music-function …)` à corps `#{ … #}` produisent de la musique.
-  La substitution est purement lexicale (`#a`, `$a`, `\a`) : pas d'appel
-  Scheme, pas de valeur calculée, pas de fonction musicale définie dans un
-  `\include` non résolu. Le nombre d'arguments suit les prédicats ; un
-  prédicat inconnu se lit comme un jeton (ou un bloc `{…}`/`<<…>>`). La
-  profondeur d'expansion des blocs et des appels est bornée à 32, avec
-  avertissement au-delà ; les arguments restants sont consommés sans être
-  interprétés.
-- **`\include`** : l'inclusion est textuelle et faite sur les jetons, comme le
-  lexer amont, au niveau supérieur comme dans la musique. Un fichier de langue
-  livré par LilyPond vaut `\language`, les fichiers livrés sans musique
-  (`articulate.ly`, `gregorian.ly`, `arabic.ly`…) sont ignorés sans
-  avertissement. Les autres fichiers passent par le résolveur de
-  `read_lilypond_with_includes` (la CLI lit le disque) ; sans résolveur, ils
-  sont ignorés avec un avertissement. Profondeur maximale 32, cycles
-  détectés, `\include` d'une expression Scheme ignoré avec un avertissement.
-  La position des avertissements du fichier principal est conservée ; ceux des
-  fichiers inclus portent leur propre ligne, sans nom de fichier.
-- **Pas de mise en page** : `\layout`, positions, portées masquées et sauts
-  calculés ne sont pas relus.
-- **`\relative`** : la règle de `Pitch::to_relative_octave` est portée
-  (`lily/pitch.cc`). Dans un accord, chaque note se place par rapport à la
-  précédente, mais la hauteur rendue pour la suite est celle de la première
-  note (`Event_chord::to_relative_octave`) ; `q` répète les hauteurs déjà
-  résolues du dernier accord, pas ses marques écrites. Une hauteur hors de
-  0..127 est écartée avec un avertissement. Les branches d'un `<< … >>` et
-  les contextes de la séquence sont parcourus dans l'ordre de
-  `Music_sequence::simultaneous_relative_callback` (`lily/music-sequence.cc`) :
-  chaque branche part de la dernière note de la précédente, et la musique qui
-  suit le `>>` de la dernière note de la **dernière** branche (les lire depuis
-  la note qui précède le `<<` décalait la suite d'une octave).
-- **`\transpose`** : LilyPond transpose la musique écrite elle-même ;
-  `pitch`, `tpc` et `tpc_transposed` portent donc tous la hauteur transposée
-  et l'armure (`\key`) est transposée de même (`\key c \major` sous
-  `\transpose c d` donne ré majeur), sans déclarer d'instrument transpositeur.
-  Les transpositions imbriquées se composent, pour les notes comme pour
-  l'armure.
-- **Armures** : `\major` est lu comme `KeyMode::Unknown`, parce que MuseScore
-  n'écrit `<mode>` que s'il est explicite et que l'écrivain écrit `\major`
-  aussi bien pour un majeur explicite que pour une armure sans mode ; `\minor`
-  reste mineur.
-- **Indications de mesure** : les sous-types `C`/`C barré` ne sont pas
-  distingués de `4/4` ; `\set Timing.measureLength` est suivi pour la trame
-  des mesures.
-- **Cadences** : `\cadenzaOn`/`\cadenzaOff` et `\set Timing.timing = ##f`/`##t`
-  suspendent les barres automatiques. La mesure en cours s'allonge jusqu'au
-  `\cadenzaOff` ou à la première barre explicite `\bar "…"` ; sa durée
-  nominale reste celle du `\time`, ce qui produit une mesure irrégulière
-  (`len != nominal_len`), comme MuseScore pour une mesure de durée réelle.
-  La cadence peut être coupée en plusieurs mesures par des barres explicites
-  `\bar "…"` ; elle reprend ensuite sur la métrique en vigueur après
-  `\cadenzaOff`. Le contrôle de mesure `|` (bar check de `lily/parser.yy`,
-  `'|'` → `BarCheck`) est consommé et ignoré : il ne crée jamais de barre ni
-  de coupure, même en cadence. Une barre `\bar "|"` ordinaire a la valeur par
-  défaut du modèle et ne modifie pas une barre plus forte placée au même tick.
-- **Cadences et voix multiples** : les mesures étant communes à toutes les
-  voix, on choisit l'union des intervalles de cadence : dès qu'une voix est
-  en cadence, aucune barre automatique n'est insérée pour la partition
-  entière pendant cet intervalle, et la mesure est allongée jusqu'à la
-  fermeture de la cadence la plus proche. C'est le comportement le plus
-  simple ; une cadence propre à une voix ne découpe donc pas les autres voix.
-- **Silences** : `R` devient un silence de mesure entière (`multiMeasureRest`
-  quand il couvre plusieurs mesures) ; `s` (spacer) ne crée aucun élément,
-  ce qui reproduit les trous du modèle MuseScore ; un silence rendu invisible
-  s'écrit `\once \override Rest.transparent = ##t r…` et se relit comme
-  `Rest::visible = false`. Les silences de mesure entière des voix autres que
-  la première sont ignorés : l'écrivain les utilisait pour combler les trous.
-- **Altérations** : les altérations affichées sont recalculées (armure et
-  dernière altération de la mesure, par degré et octave) ; les altérations
-  éditoriales et les `force-accidental` autres que `?` ne sont pas distinguées.
-- **N-olets** : le nombre affiché est encodé par `\override
-  TupletNumber.stencil = ##f` (aucun) ou `TupletNumber.text =
-  #tuplet-number::calc-fraction-text` (ratio), relu par le parseur ; le
-  crochet est déduit de `Tuplet::calcHasBracket` faute d'information dans
+- **Subset**, not full LilyPond: Scheme, `\figuremode`,
+  `\partCombine`, `\paper` are ignored with a warning. `\chords` /
+  `\new ChordNames` remains a display grid that is not played (as before);
+  a conformant export would write `<harmony>` for these grids, which the pivot
+  model can carry but the reader does not yet produce. `\book` and
+  `\bookpart` are traversed (their `\header`, their `\score` and their
+  top-level music).
+- **`\context Staff`**: found at score level, it opens a
+  staff (orchestral scores `\context StaffGroup << \context Staff =
+  "high" … >>` are thus read as as many staves). Found in the
+  music of an already open staff, it finds that staff again and its voices are
+  opened there. When its content carries named `\new Voice`/`\context Voice` or a `\relative`/`\fixed`/`\transpose` wrapper, it is traversed
+  as before the structural-context port: voices stay on the
+  enclosing staff (the piano idiom
+  `\context Voice = "one" \rightHand`) and the relative reference applies to
+  the whole polyphonic block (`\context Staff \relative << … \\ … >>` from
+  collisions.ly). On the other hand, a `\context Staff = "name"` whose content
+  carries more than four named voices (Mutopia's pathetique-1) does open its
+  staff and distributes the extra voices across sibling staves: grouping
+  them into a single staff would make them collide with the four-voice limit.
+- **`\rest` and `\relative`**: the written pitch of a `\rest` is resolved and
+  advances the relative reference, like the `RestEvent` of `event_chord` in
+  `lily/parser.yy` (verified on `d'2\rest d16\rest g, c e g` of bwv651.ly
+  against LilyPond 2.27's MIDI). The drop in the number of "common notes"
+  observed after treating `\rest` as a rest is therefore **not** a
+  pitch change: the 124 removed notes are exactly the written rests, and 61 of them carried a pitch present in the
+  reference MIDI (measured by multiset intersection of pitches). No
+  played note changes pitch.
+- **Voices opened within a voice**: `\new Voice` (or `\context Voice`) and
+  each branch of a `<< … >>` encountered in a voice's music open
+  a staff voice at the current tick (`context_prefix` /
+  `NEWCONTEXT`, `lily/parser.yy`; "Temporary polyphonic passages"); the
+  original voice then advances by the duration of the opened context, as
+  LilyPond does. A simultaneous block without `\\` is read as sibling voices rather than
+  merged chords. The anonymous branches of successive temporary passages
+  share the same track as long as they do not overlap: a piece with
+  many passages keeps two voices instead of opening one per passage and
+  exceeding the model. Voices without a chord (preamble `\clef`/`\key`) are
+  folded into the first musical voice, and a staff remains limited to
+  four voices (later ones warn and are ignored).
+- **`\change`**: `\change <Context> = <name>` is read as a staff change: the following notes keep their voice and place and carry a
+  `Chord.staff_move` computed from the position of `\new Staff = "<name>"`.
+  The context type is not checked; as with MuseScore's `Chord::staffMove`,
+  resolution is limited to named staves of the same part. An unknown name
+  or one foreign to the part warns once per voice, at the position of the
+  `\change`, and leaves the notes on their original staff.
+- **One score only**: when a file contains several (`\score`
+  blocks or successive top-level expressions), the first explicit `\score`
+  wins, otherwise the first expression; each other is ignored
+  with a warning. This is the case of `regression/trill-spanner-consecutive.ly`
+  (`\test 2.0 \test 2.1 \test 2.2 \test 2.3`), of which only the first
+  expression (2 notes) is kept. The MusicXML represents the engraved score:
+  even if a later `\score` carries a `\midi` (a score LilyPond plays,
+  transposed), the first engraved `\score` prevails; any
+  difference from the MIDI reference is a limit of the measurement tool.
+  `\articulate` (`ly/articulate.ly`, a music function taking the following
+  music) is transparent: it does not change pitches and lets `\transpose`/`\unfoldRepeats` wrappers pass through.
+- **Music functions**: only `#(define-music-function …)` definitions with a `#{ … #}` body produce music.
+  Substitution is purely lexical (`#a`, `$a`, `\a`): no Scheme
+  call, no computed value, no music function defined in an
+  `\include`d file. The number of arguments follows the predicates; an
+  unknown predicate is read as a token (or a `{…}`/`<<…>>` block). Expansion depth of
+  blocks and calls is bounded to 32, with a warning beyond; remaining arguments are consumed without being
+  interpreted.
+- **`\include`**: inclusion is textual and done on tokens, like the
+  upstream lexer, both at top level and within music. A language file
+  shipped by LilyPond acts as `\language`, files shipped without music
+  (`articulate.ly`, `gregorian.ly`, `arabic.ly`…) are ignored without
+  a warning. Other files go through the resolver of
+  `read_lilypond_with_includes` (the CLI reads the disk); without a resolver, they
+  are ignored with a warning. Maximum depth 32, cycles
+  detected, `\include` of a Scheme expression ignored with a warning.
+  Warning positions in the main file are preserved; those from included
+  files carry their own line, without a file name.
+- **No layout**: `\layout`, positions, hidden staves and computed breaks
+  are not read back.
+- **`\relative`**: the rule of `Pitch::to_relative_octave` is ported
+  (`lily/pitch.cc`). In a chord, each note is placed relative to the
+  previous one, but the pitch returned for what follows is that of the first
+  note (`Event_chord::to_relative_octave`); `q` repeats the already resolved pitches of the last chord, not its written marks. A pitch outside
+  0..127 is discarded with a warning. The branches of a `<< … >>` and
+  the contexts of the sequence are traversed in the order of
+  `Music_sequence::simultaneous_relative_callback` (`lily/music-sequence.cc`):
+  each branch starts from the last note of the previous one, and the music that
+  follows the `>>` uses the last note of the **last** branch (reading from
+  the note before the `<<` shifted the rest by an octave).
+- **`\transpose`**: LilyPond transposes the written music itself;
+  `pitch`, `tpc` and `tpc_transposed` therefore all carry the transposed pitch
+  and the key signature (`\key`) is transposed likewise (`\key c \major` under
+  `\transpose c d` gives D major), without declaring a transposing instrument.
+  Nested transpositions compose, for notes as well as for the key.
+- **Key signatures**: `\major` is read as `KeyMode::Unknown`, because MuseScore
+  writes `<mode>` only when explicit and the writer writes `\major`
+  both for an explicit major and for a keyless key signature; `\minor` remains minor.
+- **Time signatures**: `C`/`C cut` subtypes are not distinguished from
+  `4/4`; `\set Timing.measureLength` is followed for the measure framework.
+- **Cadenzas**: `\cadenzaOn`/`\cadenzaOff` and `\set Timing.timing = ##f`/`##t`
+  suspend automatic barlines. The current measure lengthens until
+  `\cadenzaOff` or the first explicit barline `\bar "…"`; its nominal
+  duration remains that of `\time`, producing an irregular measure
+  (`len != nominal_len`), as MuseScore does for an actual-duration measure.
+  The cadenza may be cut into several measures by explicit barlines
+  `\bar "…"`; it then resumes on the metre in force after `\cadenzaOff`. The bar check `|` (bar check of `lily/parser.yy`,
+  `'|'` → `BarCheck`) is consumed and ignored: it never creates a barline or
+  a break, even in a cadenza. An ordinary `\bar "|"` has the model's
+  default value and does not modify a stronger barline at the same tick.
+- **Cadenzas and multiple voices**: since measures are common to all
+  voices, we choose the union of cadenza intervals: as soon as a voice is
+  in cadenza, no automatic barline is inserted for the whole score
+  during that interval, and the measure is lengthened until the
+  nearest cadenza closes. This is the simplest behaviour; a voice-specific cadenza therefore does not split the other voices.
+- **Rests**: `R` becomes a whole-measure rest (`multiMeasureRest`
+  when it spans several measures); `s` (spacer) creates no element,
+  reproducing MuseScore model gaps; a rest rendered invisible is written
+  `\once \override Rest.transparent = ##t r…` and read back as
+  `Rest::visible = false`. Whole-measure rests in voices other than
+  the first are ignored: the writer used them to fill gaps.
+- **Accidentals**: displayed accidentals are recomputed (key and
+  last accidental of the measure, per step and octave); editorial accidentals
+  and `force-accidental`s other than `?` are not distinguished.
+- **N-tuplets**: the displayed number is encoded by `\override
+  TupletNumber.stencil = ##f` (none) or `TupletNumber.text =
+  #tuplet-number::calc-fraction-text` (ratio), read by the parser; the
+  bracket is inferred from `Tuplet::calcHasBracket` for lack of information in
   `\tuplet`.
-- **Paroles** : `\lyricsto`/`\addlyrics` sont attachés à la voix nommée si
-  elle existe, sinon à la première voix de la portée ; `\skip` et les
-  silences ne reçoivent pas de syllabe, et les syllabes en trop sont ignorées.
-  Comme LilyPond, `\lyricsto` saute les notes occupées : celles à l'intérieur
-  d'une liaison d'expression `( … )` (sauf la note qui l'ouvre) et les
-  continuations de `~`. `\set melismaBusyProperties = #'()` désactive ces
-  sauts ; `beamMelismaBusy` n'est pas modélisé car il ne s'active que si
-  `autoBeaming = ##f` (`lily/beam-engraver.cc`). Le rang de couplet est lu
-  dans `\set stanza = "n."` (forme écrite par l'écrivain, compilable dès
-  2.26), dans `\stanza "n."` (LilyPond 2.27) et, pour compatibilité, dans
-  l'ancien `\with { stanza = "n." }`.
-- **Reprises** : `\repeat volta N` avec k blocs `\alternative` produit les
-  endings `i, i+k, i+2k…` (règle des passes) ; les imbrications de reprises et
-  les numéros d'ending explicites hors de cette règle ne sont pas couverts.
-- **Spanners** : les liaisons d'expression, soufflets, ottavas, pédales,
-  trilles et glissandos sont relus ; leurs réglages de forme et de texte ne
-  sont pas modélisés.
+- **Lyrics**: `\lyricsto`/`\addlyrics` are attached to the named voice if
+  it exists, otherwise to the first voice of the staff; `\skip` and
+  rests receive no syllable, and extra syllables are ignored.
+  Like LilyPond, `\lyricsto` skips occupied notes: those inside
+  an expression slur `( … )` (except the note opening it) and
+  `~` continuations. `\set melismaBusyProperties = #'()` disables these
+  skips; `beamMelismaBusy` is not modelled because it only activates when
+  `autoBeaming = ##f` (`lily/beam-engraver.cc`). The verse rank is read
+  from `\set stanza = "n."` (the form written by the writer, compilable since
+  2.26), from `\stanza "n."` (LilyPond 2.27) and, for compatibility, from
+  the old `\with { stanza = "n." }`.
+- **Repeats**: `\repeat volta N` with k `\alternative` blocks produces
+  endings `i, i+k, i+2k…` (pass rule); nested repeats and
+  explicit ending numbers outside this rule are not covered.
+- **Spanners**: expression slurs, hairpins, ottavas, pedals,
+  trills and glissandos are read back; their shape and text settings are
+  not modelled.
 
-## 8. Mise à niveau de LilyPond (lecture)
+## 8. Upgrading LilyPond (reading)
 
-Le lecteur suit la grammaire de **LilyPond 2.26.0**, commit
-`3596756be0fac1f81066a99d2054329212172b2d`. La copie de référence est
-**hors du dépôt** (comme `ref-musescore/`), par exemple
-`../lilypond-ref/`, et n'est jamais versionnée.
+The reader follows the grammar of **LilyPond 2.26.0**, commit
+`3596756be0fac1f81066a99d2054329212172b2d`. The reference copy is
+**outside the repository** (like `ref-musescore/`), e.g.
+`../lilypond-ref/`, and is never versioned.
 
-**Récupérer la copie** (clone partiel, suffisant pour les fichiers portés) :
+**Get the copy** (partial clone, sufficient for the ported files):
 
 ```sh
 git clone --filter=blob:none --sparse \
@@ -673,21 +657,21 @@ git -C ../lilypond-ref sparse-checkout set --no-cone \
 git -C ../lilypond-ref rev-parse HEAD   # doit afficher 3596756b…
 ```
 
-Le miroir officiel est <https://gitlab.com/lilypond/lilypond> (le dépôt
-GitHub en est un miroir) ; la version stable est aussi dans nixpkgs
+The official mirror is <https://gitlab.com/lilypond/lilypond> (the GitHub
+repository is a mirror); the stable version is also in nixpkgs
 (`nix shell nixpkgs#lilypond`).
 
-**Table des fichiers** :
+**File table**:
 
 | Rust (`crates/scoretk-lilypond-import/src/`) | LilyPond |
 | --- | --- |
-| `lexer.rs` | `lily/lexer.ll` (états `notes`, `lyrics`, `markup`, commentaires) |
+| `lexer.rs` | `lily/lexer.ll` (states `notes`, `lyrics`, `markup`, comments) |
 | `parser.rs` | `lily/parser.yy` (`music_list`, `event_chord`, `chord_body`, `post_events`, `repeated_music`, `context_change`, `\score`) |
-| `pitch.rs` | `lily/pitch.cc` (`Pitch::to_relative_octave`, `steps`, `up_to`/`down_to`), `scm/define-note-names.scm` (tables par langue) |
-| `parallel.rs` | `ly/music-functions-init.ly` (fonction `parallelMusic`) |
-| `ast.rs`, `events.rs`, `builder.rs` | aucune source directe : sémantique des objets de `engraving/dom/` de MuseScore |
+| `pitch.rs` | `lily/pitch.cc` (`Pitch::to_relative_octave`, `steps`, `up_to`/`down_to`), `scm/define-note-names.scm` (tables by language) |
+| `parallel.rs` | `ly/music-functions-init.ly` (function `parallelMusic`) |
+| `ast.rs`, `events.rs`, `builder.rs` | no direct source: semantics of MuseScore's `engraving/dom/` objects |
 
-**Repérer les changements pertinents** :
+**Spot the relevant changes**:
 
 ```sh
 git -C ../lilypond-ref fetch origin
@@ -696,15 +680,14 @@ git -C ../lilypond-ref log --oneline 3596756b..origin/master -- \
 git -C ../lilypond-ref diff 3596756b..origin/master -- lily/parser.yy
 ```
 
-Surveiller en priorité : les productions `note_chord_element`,
+Watch in priority: the `note_chord_element`,
 `chord_body_element`, `post_events`, `duration`, `repeated_music`,
-`alternative_music`, `context_change` ; les états et expressions régulières
-du lexer (`SYMBOL`, `FRACTION`, `RESTNAME`, `MULTI_MEASURE_REST`,
-`EXTENDER`, `HYPHEN`) ; les tables de noms (`define-note-names.scm`) et
-`Pitch::to_relative_octave`. Les changements de mise en page, de Scheme ou de
-backend ne concernent pas le lecteur.
+`alternative_music`, `context_change` productions; the lexer states and regular
+expressions (`SYMBOL`, `FRACTION`, `RESTNAME`, `MULTI_MEASURE_REST`,
+`EXTENDER`, `HYPHEN`); the name tables (`define-note-names.scm`) and
+`Pitch::to_relative_octave`. Layout, Scheme and backend changes do not concern the reader.
 
-**Après un portage**, régénérer et revalider :
+**After a port**, regenerate and revalidate:
 
 ```sh
 nix develop -c cargo test -p scoretk-lilypond-common -p scoretk-lilypond-import
@@ -714,18 +697,18 @@ nix develop -c cargo test -p scoretk-lilypond-export --test lilypond_compile -- 
 nix flake check
 ```
 
-Mettre à jour la liste `EXPECTED_CORE`/`EXPECTED_FULL` et le tableau
-« Aller-retour mesuré » ci-dessus. **Quand le faire** : quand une version
-stable de LilyPond change la syntaxe lue (nouvelle commande, lexer modifié) ou
-quand le corpus contient un fichier écrit par une version plus récente ; pas
-pour suivre les versions de développement.
+Update the `EXPECTED_CORE`/`EXPECTED_FULL` list and the
+"Measured round trip" table above. **When to do it**: when a
+stable LilyPond version changes the syntax read (new command, modified lexer) or
+when the corpus contains a file written by a newer version; not
+to follow development versions.
 
-## 9. Mise à niveau de python-ly
+## 9. Upgrading python-ly
 
-`python-ly` (<https://github.com/frescobaldi/python-ly>, GPL-3.0-or-later) a
-servi de **modèle** pour un lecteur sans Scheme, pas de source portée : aucune
-ligne n'est copiée. Version consultée : `master` du 2026-11-17 (licence
-`LICENSES/GPL-3.0-or-later.txt`). Pour la revoir :
+`python-ly` (<https://github.com/frescobaldi/python-ly>, GPL-3.0-or-later)
+served as a **model** for a Scheme-free reader, not as a ported source: no
+line is copied. Consulted version: `master` of 2026-11-17 (licence
+`LICENSES/GPL-3.0-or-later.txt`). To review it:
 
 ```sh
 git clone --depth 1 https://github.com/frescobaldi/python-ly ../python-ly-ref
@@ -734,17 +717,17 @@ sed -n '1,80p' ../python-ly-ref/ly/lex.py     # lexer LilyPond sans Scheme
 git -C ../python-ly-ref log -1 --format='%H %ad'
 ```
 
-Elle n'est utile que pour comparer l'approche (événements datés, tolérance aux
-commandes inconnues) : aucun fichier de ce dépôt n'en dépend, et une mise à
-jour n'impose ni régénération ni test.
+It is useful only for comparing approaches (time-stamped events, tolerance of
+unknown commands): no file in this repository depends on it, and an
+update requires neither regeneration nor tests.
 
-## 10. Mise à niveau de musicxml2ly (écriture)
+## 10. Upgrading musicxml2ly (writing)
 
-L'écrivain ne porte aucun fichier C++ de MuseScore (MuseScore 4.7 n'a pas
-d'export LilyPond) : il suit les **tables et le comportement** de
-`musicxml2ly`, livré avec **LilyPond 2.26.0** (même commit
-`3596756b…` que la lecture, cf. § 8). Sources Python, à ajouter à la copie
-hors dépôt (jamais distribuées) :
+The writer ports no MuseScore C++ file (MuseScore 4.7 has no
+LilyPond export): it follows the **tables and behaviour** of
+`musicxml2ly`, shipped with **LilyPond 2.26.0** (same commit
+`3596756b…` as reading, cf. § 8). Python sources, to add to the copy
+outside the repository (never distributed):
 
 ```sh
 git -C ../lilypond-ref sparse-checkout add --no-cone \
@@ -755,13 +738,13 @@ git -C ../lilypond-ref sparse-checkout add --no-cone \
 
 | Rust (`crates/scoretk-lilypond-export/src/`) | `musicxml2ly` |
 | --- | --- |
-| `pitch.rs` (noms, altérations, têtes de note) | `musicexp.py` (`NotestyleEvent.notehead_styles_dict`, noms de hauteurs) ; `musicxml.py` (lecture des `<pitch>`) |
-| `chord.rs` (articulations, ornements, figures) | tables d'articulations et d'ornements de `musicexp.py` |
-| `annotations.rs` (nuances) | `dynamics` de `musicexp.py` |
-| `duration.rs`, `structure.rs`, `spanners.rs` | constructions `\repeat`, n-olets, spanners de `musicexp.py` |
-| `writer.rs`, `voice.rs`, `text.rs` | trame `\score`/`\header`, ordre des événements et `\lyricsto` de `musicxml2ly.py` |
+| `pitch.rs` (names, accidentals, noteheads) | `musicexp.py` (`NotestyleEvent.notehead_styles_dict`, pitch names); `musicxml.py` (reading `<pitch>`) |
+| `chord.rs` (articulations, ornaments, figures) | `musicexp.py` articulation and ornament tables |
+| `annotations.rs` (dynamics) | `dynamics` of `musicexp.py` |
+| `duration.rs`, `structure.rs`, `spanners.rs` | `\repeat`, n-tuplet and spanner constructions of `musicexp.py` |
+| `writer.rs`, `voice.rs`, `text.rs` | `\score`/`\header` framework, event order and `\lyricsto` of `musicxml2ly.py` |
 
-**Repérer les changements pertinents** :
+**Spot the relevant changes**:
 
 ```sh
 git -C ../lilypond-ref fetch origin
@@ -770,12 +753,11 @@ git -C ../lilypond-ref log --oneline 3596756b..origin/master -- \
 git -C ../lilypond-ref diff 3596756b..origin/master -- python/musicexp.py
 ```
 
-Surveiller les dictionnaires de noms (`notehead_styles_dict`, noms
-d'articulations, `dynamics`) et les constructions de sortie (`\\repeat`,
-`\\tuplet`, `\\fixed`/`\\relative`, `\\lyricsto`). Les changements de mise en
-page, d'import MusicXML ou de Scheme ne concernent pas l'écrivain.
+Watch the name dictionaries (`notehead_styles_dict`, articulation
+names, `dynamics`) and output constructions (`\repeat`,
+`\tuplet`, `\fixed`/`\relative`, `\lyricsto`). Layout, MusicXML import and Scheme changes do not concern the writer.
 
-**Après une mise à jour**, régénérer les instantanés puis revalider :
+**After an update**, regenerate the snapshots then revalidate:
 
 ```sh
 nix develop -c cargo test -p scoretk-lilypond-import --test read_corpus -- --nocapture
@@ -785,10 +767,10 @@ nix develop -c env UPDATE_LILYPOND_SNAPSHOTS=1 \
     cargo test -p scoretk-lilypond-export --test corpus_lilypond
 ```
 
-**Quand le faire** : quand une version stable de LilyPond change une
-correspondance audible (nom de note, articulation, durée) ou qu'un `.ly`
-produit n'est plus compilé par la version de référence ; pas pour suivre les
-versions de développement ni les changements de mise en page.
+**When to do it**: when a stable LilyPond version changes an
+audible mapping (note name, articulation, duration) or a produced `.ly`
+no longer compiles with the reference version; not to follow development
+versions or layout changes.
 
 ## 11. Empty-output audit (2026-11-19)
 

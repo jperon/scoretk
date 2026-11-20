@@ -1,57 +1,57 @@
-# Amont MuseScore Studio : référence et suivi
+# MuseScore Studio upstream: reference and tracking
 
-Ce document décrit la version de MuseScore Studio dont le code est porté, la
-façon d'en obtenir une copie locale, la correspondance entre les fichiers C++
-et les fichiers Rust, et la procédure à suivre pour absorber une nouvelle
-version amont.
+This document describes the version of MuseScore Studio whose code is ported, how
+to obtain a local copy, the correspondence between C++ files
+and Rust files, and the procedure to follow to absorb a new
+upstream version.
 
-## 1. Référence actuelle
+## 1. Current reference
 
-| Élément | Valeur |
+| Element | Value |
 | --- | --- |
-| Projet | **MuseScore Studio**, <https://github.com/musescore/MuseScore> |
-| Commit porté | `2b9e82df847111d673c2051a93deeaaeea3f5a29` (2026-11-16) |
+| Project | **MuseScore Studio**, <https://github.com/musescore/MuseScore> |
+| Ported commit | `2b9e82df847111d673c2051a93deeaaeea3f5a29` (2026-11-16) |
 | `version.cmake` | version **5.0.0** (`MUSE_APP_UNSTABLE ON`, `MUSE_APP_IS_PRERELEASE ON`) |
-| Copie locale | `ref-musescore/`, **non versionnée** (`.gitignore`), en lecture seule |
-| Licence amont | GNU GPL version 3 (`LICENSE.txt`), Copyright (C) 1999-2026 MuseScore Limited and others |
+| Local copy | `ref-musescore/`, **not versioned** (`.gitignore`), read-only |
+| Upstream licence | GNU GPL version 3 (`LICENSE.txt`), Copyright (C) 1999-2026 MuseScore Limited and others |
 
-Vérifications faites le 2026-11-17 : `NOTICE`, `tests/corpus/SOURCES.md` et le
-`version.cmake` du commit amont concordent. La copie `ref-musescore/` n'existe
-pas dans une extraction fraîche : elle se recrée avec la procédure ci-dessous.
+Checks made on 2026-11-17: `NOTICE`, `tests/corpus/SOURCES.md` and the
+`version.cmake` of the upstream commit agree. The `ref-musescore/` copy does not
+exist in a fresh checkout: recreate it with the procedure below.
 
-Deux références coexistent, et il ne faut pas les confondre :
+Two references coexist, and they must not be confused:
 
-- **source portée** : le snapshot amont 5.0.0 ci-dessus, pour la structure du
-  code et les noms (`read*.cpp`, `exportmusicxml.cpp`, `engraving/dom/…`) ;
-- **référence de comportement** : **MuseScore 4.7.4** (paquet nixpkgs), qui a
-  produit les `*.ref.musicxml` du corpus. `DEFAULT_SOFTWARE` annonce cette
-  version, et la date d'encodage par défaut est figée pour la reproductibilité.
+- **ported source**: the 5.0.0 upstream snapshot above, for code
+  structure and names (`read*.cpp`, `exportmusicxml.cpp`, `engraving/dom/…`);
+- **behaviour reference**: **MuseScore 4.7.4** (nixpkgs package), which
+  produced the `*.ref.musicxml` of the corpus. `DEFAULT_SOFTWARE` announces this
+  version, and the default encoding date is frozen for reproducibility.
 
-En cas de divergence entre le code amont 5.0.0 et la sortie 4.7.4, **la
-référence 4.7.4 gagne** tant qu'une décision explicite n'a pas été prise de
-changer de version de référence (voir § 4).
+In case of divergence between the 5.0.0 upstream code and the 4.7.4 output, **the
+4.7.4 reference wins** until an explicit decision has been made to
+change the reference version (see § 4).
 
-### Données dérivées
+### Derived data
 
-- **Références du corpus** — `tests/corpus/{v3,v4}/*.ref.musicxml`, produites
-  par `scripts/gen-references.sh` avec MuseScore **4.7.4** de nixpkgs, lancé
-  en mode headless (`QT_QPA_PLATFORM=offscreen`, `LD_LIBRARY_PATH` neutralisé).
-  Les sources `.mscx` viennent du même commit amont (voir
-  `tests/corpus/SOURCES.md`), principalement de
-  `src/importexport/musicxml/tests/data/` et `src/engraving/tests/`.
-- **Table des instruments** — `crates/scoretk-musescore-import/src/read/instruments.rs`,
-  **fichier généré** par `scripts/gen-instruments-table.py` à partir de
-  `share/instruments/instruments.xml`. Le fichier généré et `NOTICE`
-  mentionnent la version **4.4** du catalogue ; ne pas modifier la table à la
-  main, la régénérer.
-- **Tableaux de noms** — `read302/tables.rs` et `read4xx/names.rs` reprennent
-  `TConv::fromXml` (`engraving/rw/types/typesconv.cpp`, fichier **généré à la
-  construction** chez MuseScore, donc absent de la copie de référence) et les
-  valeurs de `engraving/types/types.h`.
+- **Corpus references** — `tests/corpus/{v3,v4}/*.ref.musicxml`, produced
+  by `scripts/gen-references.sh` with MuseScore **4.7.4** from nixpkgs, run
+  in headless mode (`QT_QPA_PLATFORM=offscreen`, `LD_LIBRARY_PATH` neutralised).
+  The `.mscx` sources come from the same upstream commit (see
+  `tests/corpus/SOURCES.md`), mainly from
+  `src/importexport/musicxml/tests/data/` and `src/engraving/tests/`.
+- **Instruments table** — `crates/scoretk-musescore-import/src/read/instruments.rs`,
+  a **generated file** produced by `scripts/gen-instruments-table.py` from
+  `share/instruments/instruments.xml`. The generated file and `NOTICE`
+  mention version **4.4** of the catalogue; do not edit the table by
+  hand, regenerate it.
+- **Name tables** — `read302/tables.rs` and `read4xx/names.rs` follow
+  `TConv::fromXml` (`engraving/rw/types/typesconv.cpp`, a file **generated at
+  build time** by MuseScore, therefore absent from the reference copy) and the
+  values of `engraving/types/types.h`.
 
-## 2. Obtenir `ref-musescore/`
+## 2. Obtaining `ref-musescore/`
 
-Clone complet au commit exact (plus simple, plusieurs centaines de Mo) :
+Full clone at the exact commit (simpler, several hundred MB):
 
 ```sh
 git clone https://github.com/musescore/MuseScore ref-musescore
@@ -59,8 +59,8 @@ git -C ref-musescore checkout 2b9e82df847111d673c2051a93deeaaeea3f5a29
 git -C ref-musescore rev-parse HEAD   # doit afficher le commit ci-dessus
 ```
 
-Clone partiel, suffisant pour les sources et le corpus (méthode utilisée pour
-constituer `tests/corpus/`) :
+Partial clone, sufficient for the sources and the corpus (method used to
+build `tests/corpus/`):
 
 ```sh
 git clone --depth 1 --filter=blob:none --sparse \
@@ -75,29 +75,29 @@ git -C ref-musescore fetch --depth 1 origin 2b9e82df847111d673c2051a93deeaaeea3f
 git -C ref-musescore checkout 2b9e82df847111d673c2051a93deeaaeea3f5a29
 ```
 
-`ref-musescore/` est ignoré par Git : ne jamais l'ajouter au dépôt, ne jamais
-copier de fichier C++ dans les sources distribuées (le portage est une
-réécriture, voir `NOTICE`).
+`ref-musescore/` is ignored by Git: never add it to the repository, never
+copy a C++ file into the distributed sources (the port is a
+rewrite, see `NOTICE`).
 
-## 3. Correspondance C++ → Rust
+## 3. C++ → Rust correspondence
 
-Chemins amont relatifs à `ref-musescore/src/`. La colonne Rust est relative à la
-racine du dépôt. Cette table est dressée à partir des en-têtes
-« Portage de … » des fichiers Rust : **mettre à jour l'en-tête et cette table**
-à chaque nouveau portage.
+Upstream paths are relative to `ref-musescore/src/`. The Rust column is relative to the
+repository root. This table is drawn from the
+« Portage de … » headers of the Rust files: **update both the header and the table**
+with every new port.
 
-### Racine, conteneur et aiguillage
+### Root, container and routing
 
-| Rust | C++ amont |
+| Rust | Upstream C++ |
 | --- | --- |
 | `crates/scoretk-musicxml-export/src/lib.rs` | `importexport/musicxml/internal/export/` |
 | `crates/scoretk-musescore-import/src/container.rs` | `engraving/infrastructure/mscreader.cpp` |
 | `crates/scoretk-musescore-import/src/read/mod.rs` | `engraving/rw/rwregister.cpp` |
-| `crates/scoretk-musescore-import/src/read/instruments.rs` | `engraving/dom/instrument.cpp` (`updateInstrumentId`, `recognizeMidiProgram`) et `share/instruments/instruments.xml` |
+| `crates/scoretk-musescore-import/src/read/instruments.rs` | `engraving/dom/instrument.cpp` (`updateInstrumentId`, `recognizeMidiProgram`) and `share/instruments/instruments.xml` |
 
-### Modèle (`crates/scoretk-core/src/model/`)
+### Model (`crates/scoretk-core/src/model/`)
 
-| Rust | C++ amont |
+| Rust | Upstream C++ |
 | --- | --- |
 | `crates/scoretk-core/src/model/mod.rs` | `engraving/dom/` |
 | `crates/scoretk-core/src/model/annotation.rs` | `engraving/dom/{segment,dynamic,stafftext,systemtext,tempotext,rehearsalmark,instrument,harmony}.h` |
@@ -119,28 +119,27 @@ racine du dépôt. Cette table est dressée à partir des en-têtes
 | `crates/scoretk-core/src/model/text.rs` | `engraving/dom/textbase.cpp`, `importexport/musicxml/internal/shared/musicxmlfonthandler.cpp`, `…/exportmusicxml.cpp` |
 | `crates/scoretk-core/src/model/tuplet.rs` | `engraving/dom/tuplet.h` |
 
-### Lecteur 2.x (`crates/scoretk-musescore-import/src/read/read206/`)
+### 2.x reader (`crates/scoretk-musescore-import/src/read/read206/`)
 
-Le format n'a pas de spécification publiée : la syntaxe suit `read206.cpp`, et
-la référence de comportement reste MuseScore 4.7.4 (§1). `Read206` délègue la
-lecture des éléments au lecteur commun `read400` ; le portage réécrit donc les
-conventions d'ensemble (voix `<track>`/`<tick>`, `<Tie id>`/`<endSpanner id>`,
-`<Tuplet id>`) avant de confier l'arbre à `read302`.
+The format has no published specification: the syntax follows `read206.cpp`, and
+the behaviour reference remains MuseScore 4.7.4 (§1). `Read206` delegates
+element reading to the common `read400` reader; the port therefore rewrites the
+overall conventions (voices `<track>`/`<tick>`, `<Tie id>`/`<endSpanner id>`,
+`<Tuplet id>`) before handing the tree to `read302`.
 
-| Rust | C++ amont |
+| Rust | Upstream C++ |
 | --- | --- |
 | `crates/scoretk-musescore-import/src/read206/mod.rs` | `engraving/rw/read206/read206.cpp` (`Read206::readScoreFile`, `readScoreTag`, `Score::connectTies`) |
-| `crates/scoretk-musescore-import/src/read206/transform.rs` | `read206.cpp` (`readStaffContent206`, `readMeasure206`, `readChord`, `readNote206`, `readTuplet206`, `readTextStyle206`) et `rw/rwregister.cpp` |
-| `crates/scoretk-musescore-import/src/read206/spanners.rs` | `read206.cpp` (`readVolta206`, `readSlur206`, `readHairpin206`, `readOttava`, `readMeasure206` pairing) et `dom/spanner.h` |
-| `crates/scoretk-musescore-import/src/read206/xml.rs` | `engraving/rw/xmlreader.cpp` (lecture des attributs et du contenu mixte) |
+| `crates/scoretk-musescore-import/src/read206/transform.rs` | `read206.cpp` (`readStaffContent206`, `readMeasure206`, `readChord`, `readNote206`, `readTuplet206`, `readTextStyle206`) and `rw/rwregister.cpp` |
+| `crates/scoretk-musescore-import/src/read206/spanners.rs` | `read206.cpp` (`readVolta206`, `readSlur206`, `readHairpin206`, `readOttava`, `readMeasure206` pairing) and `dom/spanner.h` |
+| `crates/scoretk-musescore-import/src/read206/xml.rs` | `engraving/rw/xmlreader.cpp` (reading attributes and mixed content) |
 
-`src/engraving/rw/read114/` n'a été consulté que pour comprendre les seuils de
-version de `rwregister.cpp` ; il n'est pas porté (versions `<= 114` non prises
-en charge).
+`src/engraving/rw/read114/` was consulted only to understand the
+version thresholds of `rwregister.cpp`; it is not ported (versions `<= 114` are not supported).
 
-### Lecteurs 3.x (`crates/scoretk-musescore-import/src/read/read302/`)
+### 3.x readers (`crates/scoretk-musescore-import/src/read/read302/`)
 
-| Rust | C++ amont |
+| Rust | Upstream C++ |
 | --- | --- |
 | `crates/scoretk-musescore-import/src/read302/mod.rs` | `engraving/rw/read302/read302.cpp`, `engraving/rw/read400/` |
 | `crates/scoretk-musescore-import/src/read302/annotations.rs` | `engraving/rw/read400/tread.cpp` |
@@ -152,15 +151,15 @@ en charge).
 | `crates/scoretk-musescore-import/src/read302/part.rs` | `engraving/rw/read400/tread.cpp`, `read302/read302.cpp` |
 | `crates/scoretk-musescore-import/src/read302/repeats.rs` | `engraving/rw/read400/tread.cpp` |
 | `crates/scoretk-musescore-import/src/read302/spanner.rs` | `engraving/rw/read400/connectorinforeader.cpp` |
-| `crates/scoretk-musescore-import/src/read302/tables.rs` | `engraving/types/types.h`, `engraving/rw/` (tables de noms) |
+| `crates/scoretk-musescore-import/src/read302/tables.rs` | `engraving/types/types.h`, `engraving/rw/` (name tables) |
 | `crates/scoretk-musescore-import/src/read302/textlines.rs` | `engraving/rw/read400/tread.cpp` |
 
-### Lecteurs 4.x/5.x (`crates/scoretk-musescore-import/src/read/read4xx/`)
+### 4.x/5.x readers (`crates/scoretk-musescore-import/src/read/read4xx/`)
 
-| Rust | C++ amont |
+| Rust | Upstream C++ |
 | --- | --- |
 | `crates/scoretk-musescore-import/src/read4xx/mod.rs` | `engraving/rw/read400/read400.cpp`, `read410/read410.cpp`, `read460/read460.cpp`, `read500/read500.cpp` |
-| `crates/scoretk-musescore-import/src/read4xx/names.rs` | `engraving/types/types.h`, `engraving/rw/` (tables de noms) |
+| `crates/scoretk-musescore-import/src/read4xx/names.rs` | `engraving/types/types.h`, `engraving/rw/` (name tables) |
 | `crates/scoretk-musescore-import/src/read4xx/notations.rs` | `engraving/rw/read400/tread.cpp` |
 | `crates/scoretk-musescore-import/src/read4xx/nuances.rs` | `engraving/rw/read410/tread.cpp` |
 | `crates/scoretk-musescore-import/src/read4xx/ottava.rs` | `engraving/rw/read400/connectorinforeader.cpp` |
@@ -171,7 +170,7 @@ en charge).
 
 ### Export (`crates/scoretk-musicxml-export/src/`)
 
-| Rust | C++ amont |
+| Rust | Upstream C++ |
 | --- | --- |
 | `crates/scoretk-musicxml-export/src/lib.rs` | `importexport/musicxml/internal/export/` |
 | `crates/scoretk-musicxml-export/src/exportmusicxml.rs` | `importexport/musicxml/internal/export/exportmusicxml.cpp`, `importexport/musicxml/internal/shared/` |
@@ -183,61 +182,61 @@ en charge).
 | `crates/scoretk-musicxml-export/src/ottava.rs` | `…/exportmusicxml.cpp` (`ottava`) |
 | `crates/scoretk-musicxml-export/src/pedals.rs` | `…/exportmusicxml.cpp`, `importexport/musicxml/internal/shared/` |
 | `crates/scoretk-musicxml-export/src/pitch.rs` | `…/exportmusicxml.cpp` (`tpc2stepName`), `engraving/dom/pitchspelling.cpp` |
-| `crates/scoretk-musicxml-export/src/repeats.rs` | `…/exportmusicxml.cpp` (`barlineLeft/Middle/Right`, marqueurs, sauts) |
+| `crates/scoretk-musicxml-export/src/repeats.rs` | `…/exportmusicxml.cpp` (`barlineLeft/Middle/Right`, markers, jumps) |
 | `crates/scoretk-musicxml-export/src/stems.rs` | `engraving/rendering/score/chordlayout.cpp` |
 | `crates/scoretk-musicxml-export/src/text.rs` | `…/exportmusicxml.cpp`, `…/shared/musicxmlfonthandler.cpp`, `engraving/dom/tempotext.cpp` |
 | `crates/scoretk-musicxml-export/src/textlines.rs` | `…/exportmusicxml.cpp` (`textLine`, `writeHairpinText`) |
 | `crates/scoretk-musicxml-export/src/writer.rs` | `engraving/rw/xmlwriter.cpp` |
 
-### Lecteur MusicXML (`crates/scoretk-musicxml-import/`)
+### MusicXML reader (`crates/scoretk-musicxml-import/`)
 
-Cette crate est hors de `crates/scoretk-core` mais porte le même code amont ; les
-chemins Rust y sont relatifs à `crates/scoretk-musicxml-import/src/`.
+This crate is outside `crates/scoretk-core` but ports the same upstream code; the
+Rust paths there are relative to `crates/scoretk-musicxml-import/src/`.
 
-| Rust | C++ amont |
+| Rust | Upstream C++ |
 | --- | --- |
 | `pass1.rs` | `importexport/musicxml/internal/import/importmusicxmlpass1.cpp`, `musicxmlpart.cpp`, `musicxmlvoicedesc.cpp` |
 | `pass2.rs` | `importexport/musicxml/internal/import/importmusicxmlpass2.cpp`, `importmusicxmlnotepitch.cpp`, `musicxmltupletstate.cpp` |
 | `noteduration.rs` | `importexport/musicxml/internal/import/importmusicxmlnoteduration.cpp` |
-| `container.rs` | `importexport/musicxml/internal/import/importmusicxml.cpp` (lecture `.mxl`) |
-| `xml.rs` | remplace `muse::XmlStreamReader` par un arbre en mémoire (fichier original) |
+| `container.rs` | `importexport/musicxml/internal/import/importmusicxml.cpp` (reading `.mxl`) |
+| `xml.rs` | replaces `muse::XmlStreamReader` with an in-memory tree (original file) |
 
-Les écarts de cet import sont suivis dans `docs/agents/musicxml-import.md`.
+The discrepancies of this import are tracked in `docs/agents/musicxml-import.md`.
 
-### Écriture MuseScore (`crates/scoretk-musescore-export/src/`)
+### MuseScore writing (`crates/scoretk-musescore-export/src/`)
 
-Cette crate est hors de `crates/scoretk-core` mais porte le même code amont ; les
-chemins Rust y sont relatifs à `crates/scoretk-musescore-export/src/`.
+This crate is outside `crates/scoretk-core` but ports the same upstream code; the
+Rust paths there are relative to `crates/scoretk-musescore-export/src/`.
 
-| Rust | C++ amont |
+| Rust | Upstream C++ |
 | --- | --- |
 | `write/writer.rs` | `engraving/rw/write/writer.cpp` (`Writer::writeScore`) |
-| `write/staffwrite.rs` | `engraving/rw/write/staffwrite.cpp`, `engraving/dom/` (parties, portées, cadres, crédits) |
+| `write/staffwrite.rs` | `engraving/rw/write/staffwrite.cpp`, `engraving/dom/` (parts, staves, frames, credits) |
 | `write/measurewrite.rs` | `engraving/rw/write/measurewrite.cpp` (`MeasureWrite::writeMeasure`) |
 | `write/twrite.rs` | `engraving/rw/write/twrite.cpp` (`TWrite::writeItem`, `writeProperties`) |
 | `write/connectorinfowriter.rs` | `engraving/rw/write/connectorinfowriter.cpp` |
 | `write/context.rs` | `engraving/rw/write/writecontext.h` |
 | `xmlwriter.rs` | `engraving/rw/xmlwriter.cpp` |
-| `names.rs` | `engraving/types/types.h`, `engraving/rw/` (tables `TConv::toXml`) |
-| `text.rs` | `engraving/dom/textbase.cpp` (écriture du balisage) |
+| `names.rs` | `engraving/types/types.h`, `engraving/rw/` (`TConv::toXml` tables) |
+| `text.rs` | `engraving/dom/textbase.cpp` (markup writing) |
 | `container.rs` | `engraving/infrastructure/mscwriter.cpp` |
 
 ### MIDI (`crates/scoretk-midi-common/src/`, `crates/scoretk-midi-import/src/`, `crates/scoretk-midi-export/src/`)
 
-Écriture (t35) :
+Writing (t35):
 
-| Rust | C++ amont |
+| Rust | Upstream C++ |
 | --- | --- |
 | `scoretk-midi-export/src/lib.rs` | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/compatmidirender.cpp` |
 | `scoretk-midi-export/src/repeat_list.rs` | `engraving/dom/repeatlist.cpp` |
 | `scoretk-midi-export/src/render.rs` | `engraving/compat/midi/{compatmidirender,compatmidirenderinternal}.cpp` |
 | `scoretk-midi-export/src/velocity.rs` | `engraving/compat/midi/velocitymap.cpp` |
 | `scoretk-midi-export/src/pause_map.rs` | `engraving/compat/midi/pausemap.cpp` |
-| `scoretk-midi-export/src/writer.rs` | écriture `MidiFile` (format SMF, `no_std`) |
+| `scoretk-midi-export/src/writer.rs` | `MidiFile` writing (SMF format, `no_std`) |
 
-Lecture (t42, `import/`) :
+Reading (t42, `import/`):
 
-| Rust | C++ amont |
+| Rust | Upstream C++ |
 | --- | --- |
 | `scoretk-midi-import/src/lib.rs` | `importexport/midi/internal/midiimport/importmidi.cpp` |
 | `scoretk-midi-import/src/midifile.rs` | `importexport/midi/internal/midishared/{midifile,midievent}.cpp` |
@@ -257,33 +256,33 @@ Lecture (t42, `import/`) :
 | `scoretk-midi-import/src/instrument.rs` | `importexport/midi/internal/midiimport/importmidi_instrument.cpp`, `midishared/generalmidi.cpp` |
 | `scoretk-midi-import/src/operations.rs` | `importexport/midi/internal/midiimport/importmidi_operations.h` |
 
-### Écriture LilyPond (`crates/scoretk-lilypond-export/src/`)
+### LilyPond writing (`crates/scoretk-lilypond-export/src/`)
 
-Cette crate n'a **pas** de source MuseScore dédiée : MuseScore 4 n'a pas
-d'export LilyPond. Elle porte la sémantique des objets du modèle et suit, pour
-les correspondances de notation, le comportement de **`musicxml2ly`** du
-paquet LilyPond (GPL-3.0-or-later), cité dans `NOTICE` et dans les en-têtes.
-La **lecture** (t40) porte en plus un sous-ensemble de `lily/parser.yy`,
-`lily/lexer.ll`, `lily/pitch.cc` et `scm/define-note-names.scm` de LilyPond
-2.26.0 (copie hors dépôt) ; les correspondances complètes et les procédures de
-mise à niveau de ces moteurs (LilyPond, `musicxml2ly`, `python-ly`) sont dans
-`docs/agents/lilypond.md` § 8 à § 10.
+This crate has **no** dedicated MuseScore source: MuseScore 4 has no
+LilyPond export. It ports the semantics of the model objects and follows, for
+notation mappings, the behaviour of **`musicxml2ly`** from the
+LilyPond package (GPL-3.0-or-later), cited in `NOTICE` and in the headers.
+**Reading** (t40) additionally ports a subset of `lily/parser.yy`,
+`lily/lexer.ll`, `lily/pitch.cc` and `scm/define-note-names.scm` from LilyPond
+2.26.0 (copy outside the repository); the full mappings and the
+upgrade procedures of these engines (LilyPond, `musicxml2ly`, `python-ly`) are in
+`docs/agents/lilypond.md` § 8 to § 10.
 
-| Rust | Référence |
+| Rust | Reference |
 | --- | --- |
-| `chord.rs` | `engraving/dom/{chordrest,chord,rest,articulation}.h` ; table d'articulations et d'ornements de `musicxml2ly` |
+| `chord.rs` | `engraving/dom/{chordrest,chord,rest,articulation}.h` ; articulation and ornament table of `musicxml2ly` |
 | `structure.rs` | `engraving/dom/{volta,measure}.h`, `ExportMusicXml::barlineRight` |
 | `pitch.rs` | `engraving/dom/pitchspelling.cpp` (`tpc2stepName`, `tpc2alter`), `engraving/dom/clef.h` |
-| `voice.rs` | `engraving/dom/{segment,measure,chordrest}.h` (parcours d'une voix) |
-| `scoretk-midi-export/src/writer.rs` | `engraving/dom/{part,staff,score}.h` (regroupements et en-tête) |
+| `voice.rs` | `engraving/dom/{segment,measure,chordrest}.h` (voice traversal) |
+| `scoretk-midi-export/src/writer.rs` | `engraving/dom/{part,staff,score}.h` (groupings and header) |
 
-## 4. Suivi d'une nouvelle version amont
+## 4. Tracking a new upstream version
 
-Préparer un lot par famille (conteneur, lecteur 3.x, lecteur 4.x, modèle,
-export) et un commit par lot. Ne jamais mélanger le portage d'un diff amont
-avec une correction de parité indépendante.
+Prepare one batch per family (container, 3.x reader, 4.x reader, model,
+export) and one commit per batch. Never mix the port of an upstream diff
+with an independent parity fix.
 
-1. **Récupérer et identifier.**
+1. **Fetch and identify.**
 
    ```sh
    git -C ref-musescore fetch origin
@@ -291,10 +290,10 @@ avec une correction de parité indépendante.
    git -C ref-musescore show origin/master:version.cmake | grep MUSE_APP_VERSION
    ```
 
-   Noter l'ancien commit (`2b9e82d…` ou celui du dernier suivi) et le nouveau.
+   Note the old commit (`2b9e82d…` or the last tracked one) and the new one.
 
-2. **Lister les changements des seuls chemins portés.** Les chemins exacts sont
-   ceux du § 3 ; pour un premier survol, restreindre aux répertoires portés :
+2. **List changes in the ported paths only.** The exact paths are
+   those of § 3; for a first overview, restrict to the ported directories:
 
    ```sh
    git -C ref-musescore log --oneline <ancien>..<nouveau> -- \
@@ -308,42 +307,41 @@ avec une correction de parité indépendante.
    git -C ref-musescore diff <ancien>..<nouveau> -- <fichier>
    ```
 
-   `src/engraving/dom/` est vaste : filtrer ensuite par fichier de la table
-   (§ 3) pour ne pas lire le bruit (interface graphique, playback, layout non
-   porté). Les tables de noms (`typesconv.cpp`) sont **générées à la
-   construction** chez MuseScore et absentes de la copie : vérifier alors
-   `engraving/types/types.h` et les valeurs de `TConv::fromXml`.
+   `src/engraving/dom/` is vast: then filter by file from the table
+   (§ 3) to avoid the noise (GUI, playback, unported layout). The name tables
+   (`typesconv.cpp`) are **generated at build time** by MuseScore and absent from the
+   copy: in that case check `engraving/types/types.h` and the values of `TConv::fromXml`.
 
-3. **Trier.** Écarter ce qui ne concerne pas le périmètre (UI, playback,
-   engraving non porté). Pour chaque changement retenu, noter le fichier C++,
-   le comportement observable et le fichier Rust à modifier.
+3. **Sort.** Discard what is out of scope (UI, playback,
+   unported engraving). For each retained change, note the C++ file,
+   the observable behaviour and the Rust file to modify.
 
-4. **Régénérer les données dérivées** avec la version cible :
+4. **Regenerate the derived data** with the target version:
 
    ```sh
-   # Table des instruments (depuis la copie amont)
+   # Instruments table (from the upstream copy)
    python3 scripts/gen-instruments-table.py \
      ref-musescore/share/instruments/instruments.xml \
      crates/scoretk-musescore-import/src/read/instruments.rs
 
-   # Références du corpus (MuseScore 4.7.4 par défaut, headless)
+   # Corpus references (MuseScore 4.7.4 by default, headless)
    scripts/gen-references.sh            # tout le corpus
    scripts/gen-references.sh tests/corpus/v4/foo.mscx   # un fichier
    ```
 
-   Ne changer la version de MuseScore qui produit les références qu'après une
-   décision explicite : cela change la cible de conformité, et impose de
-   relancer tout le corpus et de mettre à jour `NOTICE`, `tests/corpus/SOURCES.md`,
-   `DEFAULT_SOFTWARE` (`export/exportmusicxml.rs`) et les documents d'écarts.
+   Change the version of MuseScore producing the references only after an
+   explicit decision: it changes the compliance target, and requires
+   rerunning the whole corpus and updating `NOTICE`, `tests/corpus/SOURCES.md`,
+   `DEFAULT_SOFTWARE` (`export/exportmusicxml.rs`) and the discrepancy documents.
 
-5. **Porter les diffs fichier par fichier**, dans l'ordre lecteur → modèle →
-   export, en respectant les conventions de `docs/agents/developpement.md` :
-   nouveau code dans de nouveaux fichiers de la famille, en-tête « Portage de »
-   actualisé, commentaires citant les noms C++ (`TRead::read(Chord*)`,
-   `ExportMusicXml::chord`, …). Ne pas réécrire de mémoire : relire le C++ et
-   les tests amont.
+5. **Port the diffs file by file**, in the order reader → model →
+   export, respecting the conventions of `docs/agents/developpement.md`:
+   new code in new files of the family, updated « Portage de » header,
+   comments citing the C++ names (`TRead::read(Chord*)`,
+   `ExportMusicXml::chord`, …). Do not rewrite from memory: reread the C++ and
+   the upstream tests.
 
-6. **Vérifier.** La conformité de bout en bout ne doit pas régresser :
+6. **Verify.** End-to-end compliance must not regress:
 
    ```sh
    nix develop -c cargo test --workspace
@@ -351,17 +349,17 @@ avec une correction de parité indépendante.
    nix flake check
    ```
 
-   Le test e2e a deux niveaux (noyau musical, puis parité complète) ; lire le
-   tableau et `docs/agents/ecarts-{noyau,complets}.md`. Un fichier qui devient
-   conforme s'ajoute à `EXPECTED_CONFORMANT` **et** se documente ; un écart
-   nouveau se justifie ou se corrige.
+   The e2e test has two levels (musical core, then full parity); read the
+   table and `docs/agents/ecarts-{noyau,complets}.md`. A file that becomes
+   compliant is added to `EXPECTED_CONFORMANT` **and** documented; a new
+   discrepancy is justified or fixed.
 
-7. **Mettre à jour la traçabilité** : `NOTICE` (nouveau commit, date, version,
-   éventuelles nouvelles sources ou données), le présent document (référence,
-   table C++ → Rust), les en-têtes des fichiers Rust touchés, et
-   `tests/corpus/SOURCES.md` si le corpus change.
+7. **Update traceability**: `NOTICE` (new commit, date, version,
+   any new sources or data), this document (reference,
+   C++ → Rust table), the headers of the touched Rust files, and
+   `tests/corpus/SOURCES.md` if the corpus changes.
 
-**Critère d'acceptation d'un suivi** : `cargo test --workspace` et
-`nix flake check` passent, et la conformité e2e n'est pas dégradée par rapport
-à l'état antérieur. Toute dégradation doit être corrigée dans le lot, ou
-documentée et validée explicitement avant fusion.
+**Acceptance criterion for a tracking run**: `cargo test --workspace` and
+`nix flake check` pass, and e2e compliance is not degraded compared
+to the previous state. Any degradation must be fixed in the batch, or
+documented and explicitly validated before merging.

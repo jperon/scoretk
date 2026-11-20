@@ -1,97 +1,97 @@
-# Écarts complets sur le corpus (parité complète)
+# Full discrepancies on the corpus (full parity)
 
-Ce document est produit par le test `ecarts_complets_document` de `crates/scoretk/tests/e2e_corpus.rs`. Il compare chaque `.mscx` à sa référence `X.ref.musicxml` après retrait de la **mise en page pure** uniquement : attributs `default-x`, `default-y`, `relative-x`, `relative-y`, `width`, blocs `<defaults>`, `<print>` (et leurs `<system-layout>`/`<staff-layout>`) et `<encoding-date>`. Tout le reste est comparé : `<stem>`, `<beam>`, `<barline>`, `<direction>`, `<notations>`, `<credit>`, `<part-list>`, `<identification>`, etc.
+This document is produced by the `ecarts_complets_document` test in `crates/scoretk/tests/e2e_corpus.rs`. It compares each `.mscx` to its `X.ref.musicxml` reference after removing **pure layout** only: attributes `default-x`, `default-y`, `relative-x`, `relative-y`, `width`, `<defaults>`, `<print>` blocks (and their `<system-layout>`/`<staff-layout>`) and `<encoding-date>`. Everything else is compared: `<stem>`, `<beam>`, `<barline>`, `<direction>`, `<notations>`, `<credit>`, `<part-list>`, `<identification>`, etc.
 
-## Tableau par fichier
+## Table by file
 
 ### Corpus v3
 
-| Fichier | Lignes d'écart |
+| File | Differing lines |
 | --- | ---: |
-| Beam-CrossM1 | **identique** |
-| barline01 | **identique** |
-| barlinedelete | **identique** |
-| change | **identique** |
-| clef-1 | **identique** |
-| copypaste_tuplet_01 | **identique** |
-| grace | **identique** |
-| keysig_78216 | **identique** |
-| layout_elements | **identique** |
-| lyricsline01 | **identique** |
-| measure-4 | **identique** |
+| Beam-CrossM1 | **identical** |
+| barline01 | **identical** |
+| barlinedelete | **identical** |
+| change | **identical** |
+| clef-1 | **identical** |
+| copypaste_tuplet_01 | **identical** |
+| grace | **identical** |
+| keysig_78216 | **identical** |
+| layout_elements | **identical** |
+| lyricsline01 | **identical** |
+| measure-4 | **identical** |
 | moonlight | 18 |
-| repeat01 | **identique** |
-| repeat06 | **identique** |
-| repeat07 | **identique** |
-| repeat11 | **identique** |
-| repeat20 | **identique** |
-| repeat39 | **identique** |
-| selectionfilter1 | **identique** |
-| testBreaksPage | **identique** |
-| testChordSymbols | **identique** |
-| testHairpinDynamics | **identique** |
-| testHarmony6 | **identique** |
-| testMultiInstrumentPart3 | **identique** |
-| testTboxWords1 | **identique** |
-| testTuplets8 | **identique** |
-| testWedge4 | **identique** |
-| timesig-05 | **identique** |
-| undoResequenceMeasure | **identique** |
+| repeat01 | **identical** |
+| repeat06 | **identical** |
+| repeat07 | **identical** |
+| repeat11 | **identical** |
+| repeat20 | **identical** |
+| repeat39 | **identical** |
+| selectionfilter1 | **identical** |
+| testBreaksPage | **identical** |
+| testChordSymbols | **identical** |
+| testHairpinDynamics | **identical** |
+| testHarmony6 | **identical** |
+| testMultiInstrumentPart3 | **identical** |
+| testTboxWords1 | **identical** |
+| testTuplets8 | **identical** |
+| testWedge4 | **identical** |
+| timesig-05 | **identical** |
+| undoResequenceMeasure | **identical** |
 | voices | 6 |
 
 ### Corpus v4
 
-| Fichier | Lignes d'écart |
+| File | Differing lines |
 | --- | ---: |
-| beamStemDir | **identique** |
-| changevisibility | **identique** |
-| copypaste_parts | **identique** |
-| copypastesymbollist-lyrics | **identique** |
-| dynamics | **identique** |
-| dynamics_niente | **identique** |
-| expression-1 | **identique** |
-| hairpin_dynamic_inside | **identique** |
-| hairpin_dynamic_jump | **identique** |
-| hairpin_simple | **identique** |
-| hairpins_and_repeats | **identique** |
-| linked-ties | **identique** |
-| mmrest | **identique** |
-| part-textlines | **identique** |
-| partExclusion | **identique** |
-| repeat65 | **identique** |
-| repeat66 | **identique** |
-| repeat68 | **identique** |
-| repeat69 | **identique** |
-| tenuto_accent | **identique** |
-| testExcludeInvisibleElements | **identique** |
-| testLocalTimesig1 | **identique** |
-| testNoteheads2 | **identique** |
-| testTempoPrecision | **identique** |
-| timesig-09 | **identique** |
-| voiceswitching | **identique** |
+| beamStemDir | **identical** |
+| changevisibility | **identical** |
+| copypaste_parts | **identical** |
+| copypastesymbollist-lyrics | **identical** |
+| dynamics | **identical** |
+| dynamics_niente | **identical** |
+| expression-1 | **identical** |
+| hairpin_dynamic_inside | **identical** |
+| hairpin_dynamic_jump | **identical** |
+| hairpin_simple | **identical** |
+| hairpins_and_repeats | **identical** |
+| linked-ties | **identical** |
+| mmrest | **identical** |
+| part-textlines | **identical** |
+| partExclusion | **identical** |
+| repeat65 | **identical** |
+| repeat66 | **identical** |
+| repeat68 | **identical** |
+| repeat69 | **identical** |
+| tenuto_accent | **identical** |
+| testExcludeInvisibleElements | **identical** |
+| testLocalTimesig1 | **identical** |
+| testNoteheads2 | **identical** |
+| testTempoPrecision | **identical** |
+| timesig-09 | **identical** |
+| voiceswitching | **identical** |
 
-## Écarts groupés par balise
+## Discrepancies grouped by tag
 
-Fréquence = nombre de lignes canoniques modifiées sur les deux corpus ; fichiers = nombre de fichiers touchés. Tri par fréquence décroissante.
+Frequency = number of modified canonical lines across both corpora; files = number of affected files. Sorted by decreasing frequency.
 
-| Balise | Lignes | Fichiers | Exemples |
+| Tag | Lines | Files | Examples |
 | --- | ---: | ---: | --- |
 | `stem` | 18 | 1 | `<stem>down</stem>` `<stem>up</stem>` |
 | `barline` | 4 | 1 | `<barline location="right">` `</barline>` |
 | `bar-style` | 2 | 1 | `<bar-style>light-light</bar-style>` |
 
-## Écarts qui dépendent de la mise en page calculée
+## Discrepancies that depend on computed layout
 
-Certains écarts ne viennent pas d'une donnée du `.mscx` mais d'un objet que MuseScore fabrique pendant la mise en page, absente du modèle. Ils sont irréductibles sans porter le moteur de mise en page :
+Some discrepancies do not come from a datum of the `.mscx` but from an object that MuseScore builds during layout, absent from the model. They are irreducible without porting the layout engine:
 
-- **direction de hampe d'une ligature croisée** (`v3/moonlight`, 9 notes) : `BeamLayout::layout1` fixe la direction de la ligature à partir de `computeUpForMovedCross` et `isBelowCrossBeam`, donc du groupement des ligatures et de la géométrie des notes, pas du `<Beam><StemDirection>` du fichier ;
-- **barres de courtoisie d'un système coupé par la largeur de page** (`v3/voices`, 2 barres `light-light`) : `MeasureLayout::createEndBarLines` ne pose la barre double que si la mesure est la dernière du système (`isLastMeasureInSystem`) et que la suivante change d'armure. Quand le saut de système figure dans le fichier (`<LayoutBreak>`), il est reproduit (voir `export/systems.rs` et `read/measure_repeat.rs`) ; une coupure automatique dépend de la largeur calculée des mesures, donc de toute la mise en page horizontale.
+- **stem direction of a cross beam** (`v3/moonlight`, 9 notes): `BeamLayout::layout1` sets the beam direction from `computeUpForMovedCross` and `isBelowCrossBeam`, hence from beam grouping and note geometry, not from the file's `<Beam><StemDirection>`;
+- **courtesy barlines of a system cut by page width** (`v3/voices`, 2 `light-light` barlines): `MeasureLayout::createEndBarLines` places the double barline only if the measure is the last in the system (`isLastMeasureInSystem`) and the next one changes key signature. When the system break appears in the file (`<LayoutBreak>`), it is reproduced (see `export/systems.rs` and `read/measure_repeat.rs`); an automatic cut depends on the computed width of measures, hence on the whole horizontal layout.
 
 ## Diffs
 
 ```diff
 
-=== v3/moonlight : 18 lignes d'écart ===
+=== v3/moonlight: 18 differing lines ===
 --- reference
 +++ sortie
 @@ -3465,5 +3465,5 @@
@@ -154,7 +154,7 @@ Certains écarts ne viennent pas d'une donnée du `.mscx` mais d'un objet que Mu
            <normal-notes>2</normal-notes>
 … (diff tronqué)
 
-=== v3/voices : 6 lignes d'écart ===
+=== v3/voices: 6 differing lines ===
 --- reference
 +++ sortie
 @@ -554,7 +554,4 @@

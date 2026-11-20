@@ -1,136 +1,131 @@
-# Plan de fiabilisation des conversions (dix sens, cinq formats)
+# Reliability plan for the conversions (ten directions, five formats)
 
-Rédigé le 2026-11-19. But : pour chaque format et chaque sens, un **lot de
-référence** et un **oracle indépendant de scoretk**, puis des campagnes de
-correction mesurées comme celle de la lecture LilyPond (612 → 1 121 fichiers
-exacts sur `~/Musique` en deux jours, grâce à une mesure automatique fichier
-par fichier et sans régression tolérée).
+Written on 2026-11-19. Goal: for each format and each direction, a **reference
+batch** and an **oracle independent of scoretk**, then correction campaigns measured like the LilyPond reading campaign (612 → 1 121 exact
+files on `~/Musique` in two days, thanks to automatic file-by-file
+measurement and no tolerated regression).
 
-## 0. Objectif (fixé par l'utilisateur, 2026-11-19)
+## 0. Objective (set by the user, 2026-11-19)
 
-- **Pour chaque conversion, faire au moins aussi bien que les alternatives,
-  de préférence mieux.** Chaque relevé mesure donc aussi l'alternative de
-  référence sur le même lot et le même oracle :
+- **For every conversion, do at least as well as the alternatives, preferably better.** Each survey therefore also measures the reference alternative on the same batch and the same oracle:
 
-  | Conversion | Alternatives à battre |
+  | Conversion | Alternatives to beat |
   |---|---|
-  | MuseScore → MusicXML/MIDI | MuseScore 4.7.4 (référence : viser la parité) ; music21 |
-  | MusicXML → MuseScore | import MuseScore 4.7.4 |
-  | MusicXML → LilyPond | `musicxml2ly` (LilyPond) ; python-ly |
-  | LilyPond → MusicXML | python-ly (`ly musicxml`) ; music21 |
-  | ABC → MusicXML / MusicXML → ABC | `abc2xml.py` / `xml2abc.py` ; music21 ; import ABC de MuseScore |
+  | MuseScore → MusicXML/MIDI | MuseScore 4.7.4 (reference: aim for parity); music21 |
+  | MusicXML → MuseScore | MuseScore 4.7.4 import |
+  | MusicXML → LilyPond | `musicxml2ly` (LilyPond); python-ly |
+  | LilyPond → MusicXML | python-ly (`ly musicxml`); music21 |
+  | ABC → MusicXML / MusicXML → ABC | `abc2xml.py` / `xml2abc.py`; music21; MuseScore's ABC import |
   | ABC → LilyPond | `abc2ly` |
-  | MIDI → partition | import MIDI de MuseScore ; `midi2ly` ; music21 |
-  | partition → MIDI | MuseScore ; LilyPond ; music21 ; `abc2midi` |
+  | MIDI → score | MuseScore's MIDI import; `midi2ly`; music21 |
+  | score → MIDI | MuseScore; LilyPond; music21; `abc2midi` |
 
-- **Portée** : pas forcément le noyau musical complet, mais tout ce qui est
-  raisonnablement envisageable **en gardant un code maintenable et une
-  sortie dont la taille n'explose pas** (critère de rejet d'un correctif :
-  complexité disproportionnée ou sortie gonflée).
-- Corpus tiers téléchargés hors dépôt : `/home/jacques/programmes/musique/corpus/`
-  (`README.md` : sources et licences).
+- **Scope**: not necessarily the whole musical core, but everything reasonably achievable
+  **while keeping maintainable code and output whose size does not explode** (criterion for rejecting a fix:
+  disproportionate complexity or bloated output).
+- Third-party corpora downloaded outside the repository: `/home/jacques/programmes/musique/corpus/`
+  (`README.md`: sources and licences).
 
-## 1. Principes communs
+## 1. Common principles
 
-1. **Un oracle externe par sens.** La référence est produite par l'outil qui
-   fait foi pour le format : MuseScore 4.7.4, LilyPond, `abc2midi`/`abc2xml`.
-   Jamais par scoretk lui-même (l'aller-retour seul masque les erreurs
-   symétriques).
-2. **Mesure graduée, du plus robuste au plus fin** :
-   - N1 hauteurs (multiset par voix/portée) ;
-   - N2 attaques et durées (tick, normalisées en noires) ;
-   - N3 structure (mesures, armures, chiffrages, clefs, reprises) ;
-   - N4 texte (paroles, titres, indications) ;
-   - N5 noyau musical complet (`core_norm`), déjà en place pour MusicXML.
-   Chaque campagne vise d'abord N1–N2 sur tout le lot, puis monte.
-3. **Deux indicateurs suivis** : notes justes / notes de référence, et
-   fichiers entièrement justes (au niveau mesuré). Plus : échecs, délais,
-   vides.
-4. **Garde anti-régression** : chaque fusion compare au dernier relevé ;
-   aucune baisse par fichier tolérée sans explication écrite.
-5. **Sécurité** : tout lancement de scoretk sous
+1. **One external oracle per direction.** The reference is produced by the tool that
+   is authoritative for the format: MuseScore 4.7.4, LilyPond, `abc2midi`/`abc2xml`.
+   Never by scoretk itself (a round trip alone hides symmetric errors).
+2. **Graduated measurement, from the most robust to the finest**:
+    - N1 pitches (multiset per voice/staff);
+    - N2 onsets and durations (tick, normalised to quarter notes);
+    - N3 structure (measures, key signatures, time signatures, clefs, repeats);
+    - N4 text (lyrics, titles, directions);
+    - N5 complete musical core (`core_norm`), already in place for MusicXML.
+    Each campaign first targets N1–N2 over the whole batch, then moves up.
+3. **Two tracked indicators**: correct notes / reference notes, and
+   entirely correct files (at the measured level). Plus: failures, timeouts,
+   empties.
+4. **Anti-regression guard**: each merge compares against the last survey;
+   no per-file drop tolerated without a written explanation.
+5. **Safety**: every launch of scoretk under
    `timeout 10 prlimit --as=2000000000`.
-6. **Lots non versionnés** (fichiers personnels, gros corpus tiers) : listes
-   de chemins + références dérivées hors dépôt. Un **sous-lot versionné**
-   (fichiers à licence compatible, déclarés dans `NOTICE`) alimente les tests
-   `cargo test` bloquants.
+6. **Unversioned batches** (personal files, large third-party corpora): lists
+   of paths + derived references outside the repository. A **versioned sub-batch**
+   (files with compatible licences, declared in `NOTICE`) feeds the blocking
+   `cargo test` tests.
 
-## 2. Infrastructure (phase 0, préalable)
+## 2. Infrastructure (phase 0, prerequisite)
 
-- Promouvoir l'oracle actuel (`one.sh` + `cmp.py`, hauteurs MusicXML vs MIDI
-  LilyPond) en outil versionné `scripts/oracle/` : entrée = (fichier,
-  référence, sens), sortie = ligne de mesure N1/N2 ; agrégation et
-  comparaison de relevés (`baisses`).
-- Comparateur commun **MIDI ↔ MIDI** (notes : hauteur, attaque, durée, piste)
-  et **MusicXML ↔ MusicXML** (réutilise `core_norm`).
-- Un relevé de base par sens, archivé (`docs/agents/releves/`, résumé
-  seulement), pour suivre l'évolution.
+- Promote the current oracle (`one.sh` + `cmp.py`, MusicXML vs MIDI pitches
+  LilyPond) into a versioned tool `scripts/oracle/`: input = (file,
+  reference, direction), output = N1/N2 measurement line; aggregation and
+  comparison of surveys (`baisses`).
+- Common comparators **MIDI ↔ MIDI** (notes: pitch, onset, duration, track)
+  and **MusicXML ↔ MusicXML** (reuse `core_norm`).
+- A baseline survey per direction, archived (`docs/agents/releves/`, summary
+  only), to track progress.
 
-## 3. Par format
+## 3. Per format
 
 ### MuseScore (`.mscz`/`.mscx`)
 
-| Sens | Lot de référence | Oracle | État / cible |
+| Direction | Reference batch | Oracle | State / target |
 |---|---|---|---|
-| Lecture | 56 fichiers du corpus (versionnés) ; **174 `.mscz` de `~/Musique`** ; ~150 `.mscx` des tests amont (`ref-musescore/src/importexport/musicxml/tests/data`) | export MusicXML de MuseScore 4.7.4 (`gen-references.sh`), comparé au noyau | 54/56 au noyau ; étendre aux 174 fichiers réels |
-| Écriture | tout ce que scoretk sait lire (mscz, xml, ly, abc) | réouverture par MuseScore 4.7.4 **puis export MusicXML**, comparé au MusicXML direct de scoretk (fidélité, pas seulement ouverture) | 56/56 ouverts ; mesurer la fidélité |
+| Reading | 56 corpus files (versioned); **174 `.mscz` from `~/Musique`**; ~150 `.mscx` from the upstream tests (`ref-musescore/src/importexport/musicxml/tests/data`) | MuseScore 4.7.4 MusicXML export (`gen-references.sh`), compared to the core | 54/56 at the core; extend to the 174 real files |
+| Writing | everything scoretk can read (mscz, xml, ly, abc) | reopening by MuseScore 4.7.4 **then MusicXML export**, compared to scoretk's direct MusicXML (fidelity, not just opening) | 56/56 opened; measure fidelity |
 
 ### MusicXML
 
-| Sens | Lot | Oracle | État / cible |
+| Direction | Batch | Oracle | State / target |
 |---|---|---|---|
-| Écriture | les mêmes que la lecture MuseScore | référence MuseScore 4.7.4 + validation **XSD MusicXML 4.0** | noyau quasi complet ; ajouter XSD et `~/Musique` |
-| Lecture | **suite de tests MusicXML** (207 fichiers, `lilypond-ref/input/regression/musicxml`, conçue pour couvrir la norme) ; **451 `.xml` des tests amont MuseScore**, avec leur `.mscx` attendu ; 80 `.xml` + 27 `.mxl` de `~/Musique` | import puis export MusicXML par MuseScore 4.7.4, comparé au noyau ; pour les tests amont, le `.mscx` attendu | 26/30, 26/26 en aller-retour ; mesurer sur ces ~750 fichiers |
+| Writing | the same as MuseScore reading | MuseScore 4.7.4 reference + **MusicXML 4.0 XSD validation** | near-complete core; add XSD and `~/Musique` |
+| Reading | **MusicXML test suite** (207 files, `lilypond-ref/input/regression/musicxml`, designed to cover the standard); **451 `.xml` from MuseScore's upstream tests**, with their expected `.mscx`; 80 `.xml` + 27 `.mxl` from `~/Musique` | import then MusicXML export by MuseScore 4.7.4, compared to the core; for upstream tests, the expected `.mscx` | 26/30, 26/26 round trip; measure on these ~750 files |
 
 ### MIDI
 
-| Sens | Lot | Oracle | État / cible |
+| Direction | Batch | Oracle | State / target |
 |---|---|---|---|
-| Écriture | 174 `.mscz` ; corpus ; **paires `.ly`/`.midi` de `~/Musique`** (1 228 MIDI LilyPond) | MIDI de MuseScore 4.7.4 (pour mscz) ; MIDI de LilyPond (pour ly : teste la chaîne ly → modèle → MIDI) ; N2 notes | 7/21 identiques ; écarts = `gateTime`, articulations |
-| Lecture | **tests amont MuseScore** (`importexport/midi/tests`, 118 `.mid` + `.mscx` attendus) ; 1 228 MIDI de `~/Musique` (dont on a la source `.ly`) | `.mscx` attendu de MuseScore ; et pour les MIDI LilyPond : hauteurs/attaques de la source (N1–N2 après quantification) | 4/21 ; mesurer sur ~1 350 fichiers |
+| Writing | 174 `.mscz`; corpus; **`.ly`/`.midi` pairs from `~/Musique`** (1 228 LilyPond MIDIs) | MuseScore 4.7.4 MIDI (for mscz); LilyPond MIDI (for ly: tests the ly → model → MIDI chain); N2 notes | 7/21 identical; discrepancies = `gateTime`, articulations |
+| Reading | **MuseScore upstream tests** (`importexport/midi/tests`, 118 `.mid` + expected `.mscx`); 1 228 MIDIs from `~/Musique` (whose `.ly` source we have) | MuseScore's expected `.mscx`; and for LilyPond MIDIs: source pitches/onsets (N1–N2 after quantisation) | 4/21; measure on ~1 350 files |
 
 ### LilyPond (`.ly`)
 
-| Sens | Lot | Oracle | État / cible |
+| Direction | Batch | Oracle | State / target |
 |---|---|---|---|
-| Lecture | **1 447 `.ly` de `~/Musique`** ; **1 693 fichiers de `lilypond-ref/input/regression`** | MIDI de LilyPond (N1 en place ; ajouter N2 attaques/durées et N4 paroles) | 98,8 % des notes, 1 121 fichiers exacts ; `regression` : 84 % |
-| Écriture | 174 `.mscz`, corpus 56, `.xml` ; en aller-retour les 1 447 `.ly` | compilation **LilyPond sans erreur**, puis MIDI de LilyPond comparé au MIDI de scoretk (N2) ; et au MIDI de la source | 56/56 compilent, noyau 24/56 |
+| Reading | **1 447 `.ly` from `~/Musique`**; **1 693 files from `lilypond-ref/input/regression`** | LilyPond MIDI (N1 in place; add N2 onsets/durations and N4 lyrics) | 98.8% of notes, 1 121 exact files; `regression`: 84% |
+| Writing | 174 `.mscz`, corpus 56, `.xml`; round trip of the 1 447 `.ly` | **error-free LilyPond compilation**, then LilyPond MIDI compared to scoretk MIDI (N2); and to the source MIDI | 56/56 compile, core 24/56 |
 
 ### ABC
 
-| Sens | Lot | Oracle | État / cible |
+| Direction | Batch | Oracle | State / target |
 |---|---|---|---|
-| Lecture | à constituer : **tests de `abc2ly`** (`lilypond-ref/input/regression/abc2ly`, 8) ; exemples de la norme 2.1 ; un **recueil public** (The Session, abcnotation.com, Nottingham Music Database — licence à vérifier avant tout téléchargement, accord de l'utilisateur requis) | `abc2midi` (abcMIDI, nixpkgs) → MIDI, N1–N2 ; `abc2xml.py` pour N3 | aucune mesure réelle aujourd'hui |
-| Écriture | tous les autres lots (mscz, xml, ly) | `abc2midi` sur la sortie de scoretk vs MIDI de scoretk / de la référence ; `abcm2ps` sans erreur | 46/56 en aller-retour |
+| Reading | to be built: **`abc2ly` tests** (`lilypond-ref/input/regression/abc2ly`, 8); examples from standard 2.1; a **public collection** (The Session, abcnotation.com, Nottingham Music Database — licence to check before any download, user agreement required) | `abc2midi` (abcMIDI, nixpkgs) → MIDI, N1–N2; `abc2xml.py` for N3 | no real measurement today |
+| Writing | all the other batches (mscz, xml, ly) | `abc2midi` on scoretk's output vs scoretk's / reference's MIDI; `abcm2ps` without error | 46/56 round trip |
 
-## 4. Phases et ordre proposé
+## 4. Phases and proposed order
 
-Ordre guidé par l'usage (cantus lit surtout mscz/ly/xml) et par le rendement
-attendu des lots déjà disponibles :
+Order guided by usage (cantus mainly reads mscz/ly/xml) and by the expected
+yield of the batches already available:
 
-1. **Phase 0 — outillage** (§ 2). Rapide, débloque tout le reste.
-2. **Phase 1 — relevés de base** des dix sens, sans correction : un tableau
-   chiffré complet, qui remplace les chiffres disparates d'aujourd'hui.
-3. **Phase 2 — MusicXML lecture** sur la suite de tests et les tests amont
-   (format pivot de cantus, ~750 fichiers d'oracle déjà prêts).
-4. **Phase 3 — LilyPond** : finir la lecture (N2, paroles, `\chordmode`,
-   `\partCombine`, `\tag`, 91 fichiers vides du corpus `regression`), puis
-   l'écriture mesurée par compilation + MIDI.
-5. **Phase 4 — MIDI** : lecture sur les 1 228 MIDI LilyPond (source connue :
-   oracle idéal de quantification) et les tests amont ; écriture sur paires
-   ly/midi.
-6. **Phase 5 — MuseScore** : lecture des 174 fichiers réels, fidélité de
-   l'écriture par réouverture.
-7. **Phase 6 — ABC** : constituer le lot (avec accord), puis les deux sens.
+1. **Phase 0 — tooling** (§ 2). Quick, unblocks everything else.
+2. **Phase 1 — baseline surveys** of the ten directions, without fixes: a full
+   quantified table, replacing today's disparate figures.
+3. **Phase 2 — MusicXML reading** on the test suite and upstream tests
+   (cantus's pivot format, ~750 oracle files already ready).
+4. **Phase 3 — LilyPond**: finish reading (N2, lyrics, `\chordmode`,
+   `\partCombine`, `\tag`, 91 empty files in the `regression` corpus), then
+   writing measured by compilation + MIDI.
+5. **Phase 4 — MIDI**: reading on the 1 228 LilyPond MIDIs (known source:
+   ideal quantisation oracle) and the upstream tests; writing on ly/midi
+   pairs.
+6. **Phase 5 — MuseScore**: reading the 174 real files, writing fidelity by
+   reopening.
+7. **Phase 6 — ABC**: build the batch (with agreement), then both directions.
 
-Chaque phase suit la boucle de la campagne LilyPond : relevé → regroupement
-des écarts par cause → une tâche par cause (fichier réduit + test) → mesure
-complète → fusion si aucune baisse → reconstruction wasm/cantus.
+Each phase follows the LilyPond campaign loop: survey → grouping
+of discrepancies by cause → one task per cause (reduced file + test) → full
+measurement → merge if no drop → wasm/cantus rebuild.
 
-## 5. Points à décider
+## 5. Points to decide
 
-- Téléchargement de corpus publics : accordé (licences compatibles
-  seulement).
-- Versionner un sous-lot de `~/Musique` (fichiers personnels) ou seulement
-  des listes de chemins.
-- Cible : tranchée (§ 0, portée).
+- Downloading public corpora: allowed (compatible licences
+  only).
+- Versioning a sub-batch of `~/Musique` (personal files) or only
+  lists of paths.
+- Target: decided (§ 0, scope).
