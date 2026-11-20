@@ -34,9 +34,10 @@ use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, BarLineType, Chord, ChordRest, ChordRestKind, Clef,
     Credit, CreditStyle, Duration, Dynamic, Fingering, Fraction, Glissando, GlissandoType,
     GraceChord, Hairpin, HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic, Measure, Note,
-    NoteId, Part, PartId, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score, ScoreMetadata,
-    Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff,
-    StaffBracket, StaffId, Tempo, Track, Transpose, Trill, TrillType, Tuplet, TupletId, VOICES,
+    NoteId, Part, PartId, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score,
+    ScoreMetadata, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation,
+    SpannerType, Staff, StaffBracket, StaffId, Tempo, Track, Transpose, Trill, TrillType, Tuplet,
+    TupletId, VOICES,
 };
 
 use crate::ast::{Context, Document, GroupKind, LyricsBlock, Music, PitchSpec, StaffBlock};
@@ -469,7 +470,7 @@ fn assign_voice_slots(
         let end = interpreted.end;
         let Some(slot) = ends
             .iter()
-            .position(|occupied| occupied.map_or(true, |until| until <= start))
+            .position(|occupied| occupied.is_none_or(|until| until <= start))
         else {
             overflow.push(PendingVoice {
                 name,
@@ -601,8 +602,7 @@ fn build_voices(
         warnings.push(
             0,
             0,
-            "plus de quatre voix simultanées : voix reportée sur une portée sœur"
-                .to_owned(),
+            "plus de quatre voix simultanées : voix reportée sur une portée sœur".to_owned(),
         );
         let extra_staff = score.add_staff_with(part, Staff::new(part));
         let (voices, lyrics, reste) = assign_voice_slots(score, extra_staff, overflow);
@@ -619,8 +619,7 @@ fn build_voices(
         warnings.push(
             0,
             0,
-            "voix surnuméraires non placées : trop de portées simultanées"
-                .to_owned(),
+            "voix surnuméraires non placées : trop de portées simultanées".to_owned(),
         );
     }
     built
