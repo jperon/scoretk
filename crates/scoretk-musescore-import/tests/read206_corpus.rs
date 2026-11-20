@@ -419,3 +419,29 @@ fn liaison_2x_entre_deux_accords_separeres() {
     assert!(notes[1].tie_back.is_some(), "la deuxième note doit recevoir la liaison");
     assert!(notes[2].tie_forward.is_none(), "la troisième note est étrangère à la liaison");
 }
+
+#[test]
+fn irregular_et_len_sont_distincts() {
+    let score = score(
+        r#"<Staff id="1">
+  <Measure len="2/4">
+    <TimeSig><sigN>3</sigN><sigD>4</sigD></TimeSig>
+    <Chord><durationType>half</durationType>
+      <Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+    </Measure>
+  <Measure len="2/4">
+    <irregular>1</irregular>
+    <Chord><durationType>half</durationType>
+      <Note><pitch>62</pitch><tpc>16</tpc></Note></Chord>
+    </Measure>
+  </Staff>"#,
+    );
+    assert!(
+        !score.measures[0].exclude_from_numbering,
+        "un simple @len ne retire pas le numéro"
+    );
+    assert!(
+        score.measures[1].exclude_from_numbering,
+        "<irregular>1</irregular> retire le numéro"
+    );
+}

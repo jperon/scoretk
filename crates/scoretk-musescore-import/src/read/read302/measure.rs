@@ -45,7 +45,6 @@ pub(crate) fn read_measure(
     if let Some(len) = node.attr("len").and_then(parse_fraction) {
         if len >= Fraction::new(1, 128) {
             reader.score.measures[index].len = len;
-            reader.score.measures[index].exclude_from_numbering = true;
             irregular = true;
         }
         // TODO(parité): une longueur invalide est une erreur MSCX dans le C++ ;
