@@ -2492,3 +2492,39 @@ the reference exactly. The rows that were previously attributed to the
 "shared grid" improve as expected: `R1*n` 17 338 → 16 730 lost notes (56 → 55
 files) and "none" 24 988 → 23 890. `\tuplet`, `s` and variables are unchanged
 and keep the first divergences recorded in the table above.
+
+### Exact piece figures and `\tuplet` span (seventh pass)
+
+The cross-bar rest split now uses the project's own duration decomposition:
+a local port of `engraving/durationtype.cpp::toDurationList` (the same function
+as `scoretk-midi-import::meter::to_duration_list`, l. 412), with up to four
+dots. Each bar piece becomes one or more rests whose written duration sums to
+it exactly: `3/8` is a dotted quarter, `5/16` a quarter plus a sixteenth,
+`7/16` a twice-dotted quarter. The reduced test
+`silences_decoupes_en_figures_exactes` checks a `3/8` and a `5/16` piece and
+fails on the previous approximated figures.
+
+`ly/music-functions-init.ly:2470` defines `\tuplet` with an **optional**
+`tuplet-span` duration (`\tuplet 3/2 8 { … }`); it is used for engraving
+grouping but the music is always compressed by the ratio. The reader did not
+consume that token, so it was read as a bare duration note and the tuplet was
+lost. It is now consumed without changing the default duration. The reduced
+test `tuplet_avec_duree_de_regroupement` asserts exact pitches, the 3/2 ratio,
+six tuplet notes, the measure count and the unaffected no-span case; on
+`Lassus_In_pace` N2 goes 43 → 79 and on `finger-glide-spanner` 4 → 22.
+
+Full lots, same manifest and cached references as the previous run:
+
+| Lot | N2 % (no repeat) | Exact |
+| --- | --- | ---: |
+| mus | 93.67 → **93.69** | 1136 |
+| ra | 81.66 → **82.31** | 1279 |
+| mut | 80.26 → **80.46** | 443 |
+| all exact | | 2847 → **2858** |
+
+Per file: **23 N2 gains / 1 loss** and **1 N1 loss**. `baba.ly` loses 17
+matched pitches but gains **847** matched attacks (N2 1056 → 1903) because a
+tuplet span was previously misread. `liszt-consolation-no3.ly` keeps all its
+pitches but loses 51 attacks: the newly preserved note at tick 0 is absent
+from the reference, an interaction with the rest inside that tuplet which is
+outside this fix. No denominator changed.
