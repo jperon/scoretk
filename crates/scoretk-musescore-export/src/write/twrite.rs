@@ -1088,6 +1088,12 @@ pub(crate) fn write_tuplet(xml: &mut XmlWriter, tuplet: &Tuplet) {
     // `calcHasBracket` n'est qu'une mise en page, mais MuseScore 3 écrivait le
     // choix dans `<bracket>` et le lecteur le relit : on le conserve.
     xml.tag("bracket", if tuplet.bracket { "1" } else { "0" });
+    // `TWrite::write(const Tuplet*)` (`write/twrite.cpp:3500-3525`) écrit aussi
+    // `Pid::BRACKET_TYPE` via `writeStyledProperties` : `SHOW_BRACKET = 1`,
+    // `SHOW_NO_BRACKET = 2` (`types.h:1604-1607`). Le lecteur 4.6+ ignore
+    // `<bracket>` et ne consulte que cette propriété dans `calcHasBracket`
+    // (`dom/tuplet.cpp:204-208`).
+    xml.tag("bracketType", if tuplet.bracket { "1" } else { "2" });
     xml.end_element();
 }
 

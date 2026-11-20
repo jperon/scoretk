@@ -1770,11 +1770,19 @@ impl Reader {
         // modélisées, on applique la règle du corpus : un n-olet de croches ou
         // plus court, imbriqué, se passe de crochet. Un `<bracket>` explicite
         // (écrit par MuseScore 3, et par l'écrivain de scoretk) fait foi.
-        let explicit_bracket = element.child("bracket").is_some();
-        tuplet.bracket = element
-            .child("bracket")
-            .and_then(Element::int)
-            .is_none_or(|value| value != 0);
+        // `TRead::readStyledProperty` relit `Pid::BRACKET_TYPE`
+        // (`SHOW_BRACKET = 1`, `SHOW_NO_BRACKET = 2`, `types.h:1604-1607`) ;
+        // `<bracket>` reste le repli des fichiers 3.x.
+        let bracket_type = element.child("bracketType").and_then(Element::int);
+        let explicit_bracket = element.child("bracket").is_some() || bracket_type.is_some();
+        tuplet.bracket = match bracket_type {
+            Some(1) => true,
+            Some(2) => false,
+            _ => element
+                .child("bracket")
+                .and_then(Element::int)
+                .is_none_or(|value| value != 0),
+        };
         let id = self.score.add_tuplet(tuplet);
         (id, explicit_bracket)
     }
