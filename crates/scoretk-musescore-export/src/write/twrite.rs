@@ -388,6 +388,14 @@ fn write_articulation(xml: &mut XmlWriter, articulation: &Articulation) {
 fn write_ornament(xml: &mut XmlWriter, ornament: &Ornament) {
     xml.start_element("Ornament", &[]);
     xml.tag("subtype", &names::ornament_type(&ornament.kind));
+    // `TWrite::writeProperties(Ornament*)` (`write/twrite.cpp`) écrit les
+    // propriétés de style, dont `INTERVAL_ABOVE`/`INTERVAL_BELOW`.
+    if let Some(interval) = &ornament.interval_above {
+        xml.tag("intervalAbove", interval);
+    }
+    if let Some(interval) = &ornament.interval_below {
+        xml.tag("intervalBelow", interval);
+    }
     if let Some(placement) = ornament.placement {
         xml.tag("placement", placement_name(placement));
     }

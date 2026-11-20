@@ -85,6 +85,15 @@ pub(crate) fn read_articulations(element: &Element) -> Vec<Articulation> {
 pub(crate) fn read_ornament(element: &Element) -> Option<scoretk_core::model::Ornament> {
     let subtype = element.child("subtype").map(Element::text)?;
     let mut ornament = scoretk_core::model::Ornament::new(names::ornament_type(subtype));
+    // `TRead::readProperties(Ornament*)` (`read460/tread.cpp:1868-1872`).
+    ornament.interval_above = element
+        .child("intervalAbove")
+        .map(|child| child.text().to_owned())
+        .filter(|text| !text.is_empty());
+    ornament.interval_below = element
+        .child("intervalBelow")
+        .map(|child| child.text().to_owned())
+        .filter(|text| !text.is_empty());
     ornament.placement = element
         .child("placement")
         .map(|child| placement(Some(child)));

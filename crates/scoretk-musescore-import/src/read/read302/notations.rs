@@ -119,6 +119,16 @@ pub(crate) fn read_ornament(node: &Node) -> Ornament {
         .map(Node::trimmed_text)
         .unwrap_or_default();
     let mut ornament = Ornament::new(names::ornament_type(&subtype));
+    // `TRead::readProperties(Ornament*)` (`read460/tread.cpp:1868-1872`) :
+    // `Pid::INTERVAL_ABOVE`/`Pid::INTERVAL_BELOW`.
+    ornament.interval_above = node
+        .child("intervalAbove")
+        .map(Node::trimmed_text)
+        .filter(|text| !text.is_empty());
+    ornament.interval_below = node
+        .child("intervalBelow")
+        .map(Node::trimmed_text)
+        .filter(|text| !text.is_empty());
     ornament.placement = node
         .child("placement")
         .map(|child| tables::placement(&child.trimmed_text()));

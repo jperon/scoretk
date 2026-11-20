@@ -162,6 +162,13 @@ pub struct Ornament {
     pub placement: Option<Placement>,
     /// Altérations écrites au-dessus et au-dessous de l'ornement.
     pub accidentals: Vec<OrnamentAccidental>,
+    /// Intervalles du gruppetto (`Pid::INTERVAL_ABOVE`/`INTERVAL_BELOW`).
+    ///
+    /// MuseScore les utilise pour construire les notes du turn ; sans eux le
+    /// lecteur 4.7.4 retombe sur ses intervalles par défaut.
+    pub interval_above: Option<String>,
+    /// Intervalle inférieur du gruppetto.
+    pub interval_below: Option<String>,
     /// Vrai si l'ornement est visible.
     pub visible: bool,
 }
@@ -173,6 +180,8 @@ impl Ornament {
             kind,
             placement: None,
             accidentals: Vec::new(),
+            interval_above: None,
+            interval_below: None,
             visible: true,
         }
     }
