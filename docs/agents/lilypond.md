@@ -2869,3 +2869,26 @@ Mesure ciblée sur dix fichiers (références et dénominateur constants) :
 changement sur `pathetique-1`, `Violinsonata_No7_1`, `Symphony5_2`,
 `Concerto_No3`, `BWV865_Fuga20`, `ricercare6` et
 `mendelssohn-scherzo-eminor`.
+
+#### Mesure complète après les deux correctifs
+
+Une passe complète sur les trois listes, avec le même cache de références
+frîches et les mêmes manifestes que la baseline, donne :
+
+| Lot | N2 baseline | N2 après | Exact |
+| --- | ---: | ---: | ---: |
+| mus | 93,95 % | 93,95 % | 1119 |
+| ra | 82,37 % | 82,37 % | 1279 |
+| mut | 82,24 % | 82,10 % | 420 → 421 |
+
+Le pourcentage `mut` baisse **uniquement pour une raison de dénominateur** :
+trois gros fichiers ont changé de statut entre les deux passes à la borne de
+10 s du pilote (`Symphony7_1` et `violin_concerto_1` réussissent après,
+`Concerto_No3` échoue après). Mesurés à part sans borne (`timeout 90`), ces
+trois fichiers donnent des résultats identiques avec l'ancien et le nouveau
+binaire (par exemple `Concerto_No3` 7675/12338 N2 des deux côtés) : ce ne sont
+pas des régressions. Avec un dénominateur constant, les gains réels sont
+`ballade-4` +5437 N2, `Chop-28-16` +444, `baba` +461, `5.Inquietude` +636,
+et deux pertes mineures sur des fichiers déjà désynchronisés portant des
+`\tag` : `bridge` −7 et `two-jews` −6 N2, sans perte N1. Aucun autre fichier
+des trois lots n'a changé.
