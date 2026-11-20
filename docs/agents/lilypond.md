@@ -1789,3 +1789,39 @@ a dynamic and a fermata before `\times`/`\tuplet`, a post-event at end of
 music, and the unaffected bare `\times` case; it failed on the frozen code
 (5 measures / 1 n-tuplet instead of 4 / 3). Three random
 `input/regression/*.ly` files complete under `timeout 5 prlimit`.
+
+### Fix 2 — a no-argument command must not swallow a following rest name
+
+`lily/parser.yy` distinguishes a bare `command_element` (no arguments) from a
+`music_function_call` (arguments declared by the function's signature);
+`lily/lexer.ll` lexes `r`, `R`, `s` as rest names and `q` as the repeated-chord
+token. None can be an argument of `\autoBeamOff`, `\oneVoice`, `\dynamicUp`…
+The heuristic `skip_command_arguments` only excluded pitch words, so
+`\autoBeamOff r8 f8` lost the `r`: the bare `8` was then read as a note reusing
+the previous pitch, shifting the whole voice. This is one mechanism behind
+the `s` spacer and "no tracked construct" rows of the table, and it affects
+several hundred Mutopia sources (e.g. `lily-f93c49a3.ly`, `LeRoiArthur.ly`,
+`52title-hub.ly`). Rest names are now left in the token stream like pitch
+names. The reduced test `commande_sans_argument_ne_consomme_pas_un_silence`
+checks two staves, variables, `\fixed`, `\partial`, bar checks, a chord and a
+tie, a normal rest, a full-measure rest and a spacer after three different
+no-argument commands, plus a command at end of music and the unaffected
+note case; it failed on the frozen code (extra repeated-pitch notes).
+
+Measurement of fix 1 (frozen `/tmp/ly95-fix1`, same full lists and cached
+references, every conversion under `timeout 10 prlimit --as=2000000000`):
+
+| Lot | N2 % (no repeat), before → after | N2 % (all), before → after | Exact |
+| --- | --- | --- | ---: |
+| mus | 91.64 → **92.15** | 89.22 → **90.27** | 1125 → 1133 |
+| ra | 75.86 → **76.03** | 78.09 → **78.21** | 1200 → 1206 |
+| mut | 69.94 → **75.75** | 68.86 → **74.78** | 390 → 394 |
+| all | 74.15 → **78.85** | 71.78 → **76.95** | 2715 → 2733 |
+
+Four `mut` files timed out in the second run (against two in the first), so
+the reference-note denominators differ by about 1.7 %; no file was silently
+dropped from the report. The gain is concentrated in Mutopia, as expected
+from the `\times`-heavy sources. No per-file loss was attributed to the fix:
+`attaque_decalee` falls from 641 to 617 files and `notes_supp` rises from
+697 to 709 only because previously shifted attacks now land on notes the
+stale references do not contain.

@@ -3963,8 +3963,15 @@ impl<'a> Parser<'a> {
                     return;
                 }
                 Kind::Word => {
-                    // Un nom de note est un argument musical : on le laisse.
-                    if self.is_pitch_word(&token.text) {
+                    // Les noms de hauteur **et de silence** sont de la musique :
+                    // `lily/parser.yy` ne leur donne la valeur d'argument que
+                    // dans un `music_function_call`, jamais après une commande
+                    // sans argument. `\autoBeamOff r8` doit donc garder son `r` :
+                    // l'avaler transformait le `8` suivant en note de durée nue
+                    // reprenant la hauteur précédente.
+                    if self.is_pitch_word(&token.text)
+                        || matches!(token.text.as_str(), "r" | "R" | "s" | "q")
+                    {
                         return;
                     }
                     self.position += 1;

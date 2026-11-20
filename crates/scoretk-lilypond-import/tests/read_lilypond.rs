@@ -4498,3 +4498,52 @@ bas = \fixed c {
     assert_eq!(hauteurs(&seul), vec![60, 62, 64]);
     assert_eq!(seul.tuplets.len(), 1);
 }
+
+/// `lily/parser.yy` : une commande sans argument (`command_element`) ne prend
+/// aucun jeton ; seuls les `music_function_call` en ont. `r`, `R` et `s` sont
+/// des noms de silence (de la musique), jamais des arguments. L'heuristique
+/// `skip_command_arguments` ne doit donc pas les avaler après `\autoBeamOff`,
+/// `\oneVoice`, `\dynamicUp`…, sinon le silence disparaît et tout le reste de
+/// la portée est décalé d'une durée.
+#[test]
+fn commande_sans_argument_ne_consomme_pas_un_silence() {
+    let source = r#"\version "2.24.0"
+\language "english"
+haut = \fixed c' {
+  \time 4/4 \partial 4
+  \autoBeamOff r8 f8 | \oneVoice R1 | g2~ g2
+}
+bas = \fixed c {
+  \time 4/4 \partial 4
+  \dynamicUp s4 c4 | \oneVoice r2 d2
+}
+\score { << \new Staff \haut \new Staff \bas >> }"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.measures.len(), 3, "mesures");
+    assert_eq!(
+        score.measures[0].len,
+        Fraction::new(1, 4),
+        "levée d'un quart"
+    );
+    assert_eq!(hauteurs(&score), vec![65, 67, 67, 48, 50]);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::new(1, 8), // r8
+            Fraction::new(1, 8), // f8
+            Fraction::ZERO,      // R1 : silence de mesure entière
+            Fraction::new(1, 2),
+            Fraction::new(1, 2),
+        ],
+        "durées de la première portée"
+    );
+
+    // Cas limite : commande sans argument en fin de musique.
+    let fin = lire("c4 \\autoBeamOff");
+    assert_eq!(hauteurs(&fin), vec![60]);
+    assert_eq!(fin.measures.len(), 1);
+
+    // Cas non concerné : la note suivant la commande reste lue.
+    let note = lire("\\autoBeamOff c4 d4");
+    assert_eq!(hauteurs(&note), vec![60, 62]);
+}
