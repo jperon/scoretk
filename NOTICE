@@ -1,199 +1,199 @@
 # NOTICE
 
-**scoretk** est une boîte à outils de conversion de partitions. Son premier
-convertisseur, **scoretk-core**, est un portage en Rust de l'export MusicXML et des
-lecteurs de partitions (`.mscx` / `.mscz`, formats 3.x et 4.x/5.x) de
-**MuseScore Studio**. Les crates `scoretk-midi-common`, `scoretk-midi-import`
-et `scoretk-midi-export` portent son format SMF, son import MIDI (lecture d'un
-SMF vers le modèle), son export MIDI et le déroulement des reprises
-(`RepeatList`). Ce fichier récapitule l'origine du
-code et des données, les licences correspondantes et les marques.
+**scoretk** is a score conversion toolkit. Its first
+converter, **scoretk-core**, is a Rust port of MusicXML export and of the
+score readers (`.mscx` / `.mscz`, 3.x and 4.x/5.x formats) of
+**MuseScore Studio**. The crates `scoretk-midi-common`, `scoretk-midi-import`
+and `scoretk-midi-export` port its SMF format, its MIDI import (reading an
+SMF into the model), its MIDI export and repeat unfolding
+(`RepeatList`). This file summarises the origin of the
+code and data, the corresponding licences and the trademarks.
 
-## Licence du projet
+## Project licence
 
 Copyright (C) 2026 jperon.
 
-Le projet est distribué sous **GNU General Public License version 3 seulement
-(GPL-3.0-only)**. Le texte complet est dans [`LICENSE`](LICENSE) ; chaque
-fichier source porte l'identifiant SPDX `GPL-3.0-only` et l'avis de modification
-requis par la section 5(a) de la licence.
+The project is distributed under the **GNU General Public License version 3 only
+(GPL-3.0-only)**. The full text is in [`LICENSE`](LICENSE); every
+source file carries the SPDX identifier `GPL-3.0-only` and the modification
+notice required by section 5(a) of the licence.
 
-## Code porté depuis MuseScore Studio
+## Code ported from MuseScore Studio
 
-- Projet d'origine : **MuseScore Studio**,
+- Originating project: **MuseScore Studio**,
   <https://github.com/musescore/MuseScore>.
-- Copie de référence utilisée en lecture seule (répertoire `ref-musescore/`,
-  non versionné dans ce dépôt) : commit
-  `2b9e82df847111d673c2051a93deeaaeea3f5a29` du 2026-11-16. Le fichier
-  `version.cmake` de cette copie déclare la version **5.0.0** (branche de
-  développement, `MUSE_APP_UNSTABLE ON`).
-- Licence du projet amont : **GNU GPL version 3** (fichier `LICENSE.txt` amont),
+- Reference copy used read-only (directory `ref-musescore/`,
+  not versioned in this repository): commit
+  `2b9e82df847111d673c2051a93deeaaeea3f5a29` of 2026-11-16. The
+  `version.cmake` file of this copy declares version **5.0.0** (development
+  branch, `MUSE_APP_UNSTABLE ON`).
+- Upstream project licence: **GNU GPL version 3** (upstream `LICENSE.txt` file),
   Copyright (C) 1999-2026 MuseScore Limited and others.
-- Nature de la reprise : **réécriture en Rust**, à partir de la lecture des
-  sources C++. Aucun fichier C++ de MuseScore n'est distribué dans ce dépôt.
-  Les en-têtes des fichiers Rust indiquent, pour chacun, le ou les fichiers
-  C++ d'origine (`Portage de … de MuseScore Studio, … modifié (réécrit en
+- Nature of the reuse: **rewrite in Rust**, based on reading the
+  C++ sources. No MuseScore C++ file is distributed in this repository.
+  The headers of the Rust files indicate, for each one, the original
+  C++ file or files (`Portage de … de MuseScore Studio, … modifié (réécrit en
   Rust) en 2026`).
 
-Correspondance des grands ensembles :
+Correspondence of the main sets:
 
-| Code Rust | Sources MuseScore Studio (sous `src/`) |
+| Rust code | MuseScore Studio sources (under `src/`) |
 | --- | --- |
-| `crates/scoretk-musicxml-export/src/` | `importexport/musicxml/internal/export/exportmusicxml.cpp`, `importexport/musicxml/internal/shared/`, et pour les ligatures/hampes `engraving/rendering/score/beamlayout.cpp`, `chordlayout.cpp` |
-| `crates/scoretk-musescore-import/src/read/read206/` | `engraving/rw/read206/read206.cpp`, `engraving/rw/xmlreader.cpp`, `engraving/rw/rwregister.cpp` (source amont complétée dans la copie de référence par `git sparse-checkout add`, sans nouveau commit ni nouvelle donnée) |
+| `crates/scoretk-musicxml-export/src/` | `importexport/musicxml/internal/export/exportmusicxml.cpp`, `importexport/musicxml/internal/shared/`, and for beams/stems `engraving/rendering/score/beamlayout.cpp`, `chordlayout.cpp` |
+| `crates/scoretk-musescore-import/src/read/read206/` | `engraving/rw/read206/read206.cpp`, `engraving/rw/xmlreader.cpp`, `engraving/rw/rwregister.cpp` (upstream source completed in the reference copy with `git sparse-checkout add`, without a new commit or new data) |
 | `crates/scoretk-musescore-import/src/read/read302/` | `engraving/rw/read302/read302.cpp`, `engraving/rw/read400/{staffrw,measurerw,tread,connectorinforeader}.cpp` |
-| `crates/scoretk-musescore-import/src/read/read4xx/` | `engraving/rw/read400/`, `read410/`, `read460/`, `read500/` (`read*.cpp`, `staffr*.cpp`, `measurer*.cpp`, `tread.cpp`, `connectorinforeader.cpp`) et `engraving/rw/compat/readstyle.cpp` |
-| `crates/scoretk-core/src/model/` | `engraving/dom/*.h` (partition, segments, notes, accords, spanners, styles de texte…), `engraving/types/`, `engraving/style/style.h` |
+| `crates/scoretk-musescore-import/src/read/read4xx/` | `engraving/rw/read400/`, `read410/`, `read460/`, `read500/` (`read*.cpp`, `staffr*.cpp`, `measurer*.cpp`, `tread.cpp`, `connectorinforeader.cpp`) and `engraving/rw/compat/readstyle.cpp` |
+| `crates/scoretk-core/src/model/` | `engraving/dom/*.h` (score, segments, notes, chords, spanners, text styles…), `engraving/types/`, `engraving/style/style.h` |
 | `crates/scoretk-musescore-import/src/container.rs` | `engraving/infrastructure/mscreader.cpp` |
 | `crates/scoretk-musicxml-import/src/` | `importexport/musicxml/internal/import/` (`importmusicxml.cpp`, `importmusicxmlpass1.cpp`, `importmusicxmlpass2.cpp`, `importmusicxmlnoteduration.cpp`, `importmusicxmlnotepitch.cpp`, `musicxmlpart.cpp`, `musicxmltupletstate.cpp`, `musicxmlvoicedesc.cpp`) |
 | `crates/scoretk-musescore-import/src/read/mod.rs` | `engraving/rw/rwregister.cpp` |
-| `crates/scoretk-musicxml-export/src/writer.rs` | forme d'écriture XML de `engraving/rw/xmlwriter.cpp` |
-| `crates/scoretk-midi-export/src/` (écriture) | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/` (`compatmidirender*.cpp`, `velocitymap.cpp`, `pausemap.cpp`) et `engraving/dom/repeatlist.cpp` |
-| `crates/scoretk-midi-import/src/` (lecture, `midifile.rs` pour le format SMF) | `importexport/midi/internal/midiimport/` (`importmidi.cpp`, `importmidi_chord.cpp`, `importmidi_quant.cpp`, `importmidi_simplify.cpp`, `importmidi_meter.cpp`, `importmidi_tuplet*.cpp`, `importmidi_voice.cpp`, `importmidi_key.cpp`, `importmidi_clef.cpp`, `importmidi_lrhand.cpp`, `importmidi_drum.cpp`, `importmidi_lyrics.cpp`, `importmidi_tempo.cpp`, `importmidi_instrument.cpp`, `importmidi_operations.h`), `importexport/midi/internal/midishared/{midifile,midievent,generalmidi}.cpp` et `engraving/dom/{sig,durationtype}.cpp` |
-| `crates/scoretk-lilypond-export/src/` | sémantique de `engraving/dom/` (accords, mesures, volatas, spanners) ; tables de notation de `musicxml2ly` (voir ci-dessous) |
-| `crates/scoretk-musescore-export/src/` | `engraving/rw/write/` (`writer.cpp`, `staffwrite.cpp`, `measurewrite.cpp`, `twrite.cpp`, `connectorinfowriter.cpp`), `engraving/rw/xmlwriter.cpp` et `engraving/infrastructure/mscwriter.cpp` |
-| `crates/scoretk-abc-{common,import,export}/src/` | sémantique du modèle `engraving/dom/` ; pas de source MuseScore pour ABC (MuseScore n'a ni import ni export ABC) ; comportement de `xml2abc.py`/`abc2xml.py` (voir ci-dessous) |
+| `crates/scoretk-musicxml-export/src/writer.rs` | XML writing style of `engraving/rw/xmlwriter.cpp` |
+| `crates/scoretk-midi-export/src/` (writing) | `importexport/midi/internal/midiexport/exportmidi.cpp`, `engraving/compat/midi/` (`compatmidirender*.cpp`, `velocitymap.cpp`, `pausemap.cpp`) and `engraving/dom/repeatlist.cpp` |
+| `crates/scoretk-midi-import/src/` (reading, `midifile.rs` for the SMF format) | `importexport/midi/internal/midiimport/` (`importmidi.cpp`, `importmidi_chord.cpp`, `importmidi_quant.cpp`, `importmidi_simplify.cpp`, `importmidi_meter.cpp`, `importmidi_tuplet*.cpp`, `importmidi_voice.cpp`, `importmidi_key.cpp`, `importmidi_clef.cpp`, `importmidi_lrhand.cpp`, `importmidi_drum.cpp`, `importmidi_lyrics.cpp`, `importmidi_tempo.cpp`, `importmidi_instrument.cpp`, `importmidi_operations.h`), `importexport/midi/internal/midishared/{midifile,midievent,generalmidi}.cpp` and `engraving/dom/{sig,durationtype}.cpp` |
+| `crates/scoretk-lilypond-export/src/` | semantics of `engraving/dom/` (chords, measures, volatas, spanners); notation tables of `musicxml2ly` (see below) |
+| `crates/scoretk-musescore-export/src/` | `engraving/rw/write/` (`writer.cpp`, `staffwrite.cpp`, `measurewrite.cpp`, `twrite.cpp`, `connectorinfowriter.cpp`), `engraving/rw/xmlwriter.cpp` and `engraving/infrastructure/mscwriter.cpp` |
+| `crates/scoretk-abc-{common,import,export}/src/` | semantics of the `engraving/dom/` model; no MuseScore source for ABC (MuseScore has neither ABC import nor export); behaviour of `xml2abc.py`/`abc2xml.py` (see below) |
 
-Les tables de conversion de noms (`read302/tables.rs`, `read4xx/names.rs`)
-reprennent `TConv::fromXml` de `engraving/rw/types/typesconv.cpp` — fichier
-**généré** à la construction chez MuseScore et donc absent de la copie de
-référence — et les valeurs de `engraving/types/types.h`.
+The name conversion tables (`read302/tables.rs`, `read4xx/names.rs`)
+follow `TConv::fromXml` of `engraving/rw/types/typesconv.cpp` — a file
+**generated** at build time by MuseScore and therefore absent from the
+reference copy — and the values of `engraving/types/types.h`.
 
-## Code et comportements repris depuis LilyPond
+## Code and behaviours reused from LilyPond
 
-MuseScore 4 n'a pas d'export LilyPond : l'écrivain de `scoretk-lilypond-export` ne
-porte donc pas de fichier C++ de MuseScore pour la sortie elle-même. Ses
-correspondances de notation (articulations, ornements, nuances, figures,
-noms de clés et d'armures, mode `\fixed`) suivent le comportement de
-**`musicxml2ly`**, livré avec LilyPond.
+MuseScore 4 has no LilyPond export: the writer of `scoretk-lilypond-export` therefore does
+not port any MuseScore C++ file for the output itself. Its
+notation mappings (articulations, ornaments, dynamics, figures,
+clef and key signature names, `\fixed` mode) follow the behaviour of
+**`musicxml2ly`**, shipped with LilyPond.
 
-- Projet d'origine : **LilyPond**, <https://gitlab.com/lilypond/lilypond>.
-- Licence : **GNU GPL version 3 ou ultérieure** (GPL-3.0-or-later), Copyright
-  (C) 2016--2026 John Gourlay, Werner Lemberg et les autres auteurs de
-  LilyPond. La GPL-3.0-or-later autorise la distribution sous GPL-3.0-only,
-  licence du présent projet.
-- Nature de la reprise : **réécriture en Rust** des tables et du comportement
-  observés (`musicxml2ly` et `musicxml2ly_definitions.py`) ; aucun fichier de
-  LilyPond n'est distribué dans ce dépôt et aucune ligne de code n'est
-  copiée. L'attribution figure aussi dans l'en-tête des fichiers concernés de
+- Originating project: **LilyPond**, <https://gitlab.com/lilypond/lilypond>.
+- Licence: **GNU GPL version 3 or later** (GPL-3.0-or-later), Copyright
+  (C) 2016--2026 John Gourlay, Werner Lemberg and the other authors of
+  LilyPond. GPL-3.0-or-later permits distribution under GPL-3.0-only,
+  the licence of this project.
+- Nature of the reuse: **rewrite in Rust** of the observed tables and behaviour
+  (`musicxml2ly` and `musicxml2ly_definitions.py`); no LilyPond file is
+  distributed in this repository and no line of code is
+  copied. The attribution also appears in the header of the relevant files of
   `crates/scoretk-lilypond-export/src/`.
 
-### Lecture LilyPond (`crates/scoretk-lilypond-import/src/`)
+### LilyPond reading (`crates/scoretk-lilypond-import/src/`)
 
-La lecture porte un sous-ensemble de la grammaire de LilyPond. Les sources de
-référence sont une copie de **LilyPond 2.26.0**, commit
-`3596756be0fac1f81066a99d2054329212172b2d`, conservée hors du dépôt (par
-exemple `../lilypond-ref/`, comme `ref-musescore/`) et jamais distribuée :
+The reader ports a subset of LilyPond's grammar. The reference
+sources are a copy of **LilyPond 2.26.0**, commit
+`3596756be0fac1f81066a99d2054329212172b2d`, kept outside the repository (for
+example `../lilypond-ref/`, like `ref-musescore/`) and never distributed:
 
-| Fichier Rust | Source LilyPond |
+| Rust file | LilyPond source |
 | --- | --- |
-| `read/lexer.rs` | `lily/lexer.ll` (états `notes`, `lyrics`, `markup`, commentaires) |
+| `read/lexer.rs` | `lily/lexer.ll` (states `notes`, `lyrics`, `markup`, comments) |
 | `read/parser.rs` | `lily/parser.yy` (`music_list`, `event_chord`, `chord_body`, `post_events`, `duration`, `repeated_music`, `context_change`, `\score`) |
-| `read/pitch.rs` | `lily/pitch.cc` (`Pitch::to_relative_octave`, `steps`, `up_to`/`down_to`) et `scm/define-note-names.scm` (tables de noms par langue) |
-| `modes.rs` | `ly/drumpitch-init.ly` (`drumPitchNames`, `midiDrumPitches`) et `scm/chord-entry.scm` (`construct-chord-elements`) : tables de hauteurs MIDI des modes `\drummode` et `\chordmode` |
+| `read/pitch.rs` | `lily/pitch.cc` (`Pitch::to_relative_octave`, `steps`, `up_to`/`down_to`) and `scm/define-note-names.scm` (name tables by language) |
+| `modes.rs` | `ly/drumpitch-init.ly` (`drumPitchNames`, `midiDrumPitches`) and `scm/chord-entry.scm` (`construct-chord-elements`): MIDI pitch tables for `\drummode` and `\chordmode` |
 
-Licence : **GNU GPL version 3 ou ultérieure**, Copyright (C) 1998--2026
-Han-Wen Nienhuys et les autres auteurs de LilyPond. La réécriture Rust ne
-copie aucune ligne et se distribue sous GPL-3.0-only, licence du projet.
+Licence: **GNU GPL version 3 or later**, Copyright (C) 1998--2026
+Han-Wen Nienhuys and the other authors of LilyPond. The Rust rewrite
+copies no line and is distributed under GPL-3.0-only, the project's licence.
 
-**Modèle de lecteur sans Scheme** : `python-ly`
-(<https://github.com/frescobaldi/python-ly>, GPL-3.0-or-later), consulté comme
-référence d'architecture (`ly.music`, `ly.lex`) sans reprise de code. Licence
-compatible avec la distribution du présent projet sous GPL-3.0-only.
+**Scheme-free reader model**: `python-ly`
+(<https://github.com/frescobaldi/python-ly>, GPL-3.0-or-later), consulted as
+an architectural reference (`ly.music`, `ly.lex`) without reusing code. Its
+licence is compatible with distributing this project under GPL-3.0-only.
 
-Procédure de mise à niveau : `docs/agents/lilypond.md` § 8 à § 10.
+Upgrade procedure: `docs/agents/lilypond.md` § 8 to § 10.
 
-## Code et comportements repris depuis xml2abc et abc2xml
+## Code and behaviours reused from xml2abc and abc2xml
 
-MuseScore Studio n'a pas d'import ni d'export ABC natif. Le crate
-les crates `scoretk-abc-common`, `scoretk-abc-import` et `scoretk-abc-export`
-suivent la norme **ABC 2.1**
-(<https://abcnotation.com/wiki/abc:standard:v2.1>) et le comportement des
-scripts de **Willem Vree** :
+MuseScore Studio has no native ABC import or export. The crates
+`scoretk-abc-common`, `scoretk-abc-import` and `scoretk-abc-export`
+follow the **ABC 2.1** standard
+(<https://abcnotation.com/wiki/abc:standard:v2.1>) and the behaviour of the
+scripts of **Willem Vree**:
 
 - `xml2abc.py` (MusicXML → ABC), version **177**, `Copyright (C) 2012-2025:
-  W.G. Vree`, téléchargé le 2026-11-17 depuis
+  W.G. Vree`, downloaded on 2026-11-17 from
   <https://wim.vree.org/svgParse/xml2abc.html> ;
 - `abc2xml.py` (ABC → MusicXML), version **269**, `Copyright (C) 2012-2026:
-  Willem G. Vree`, téléchargé le 2026-11-17 depuis
+  Willem G. Vree`, downloaded on 2026-11-17 from
   <https://wim.vree.org/svgParse/abc2xml.html> ;
-- leurs en-têtes déclarent la « Lesser GNU General Public License as published
-  by the Free Software Foundation », **sans numéro de version**. La LGPL 2.1
-  § 3 autorise la conversion en GPL ; la distribution reste en
+- their headers declare the « Lesser GNU General Public License as published
+  by the Free Software Foundation », **without a version number**. LGPL 2.1
+  § 3 permits conversion to GPL; distribution remains
   **GPL-3.0-only**.
-- **Sources portées.** Depuis la phase 1 de la campagne ABC (2026-11-19),
-  `abc2xml.py` est une **source portée** au même titre que MuseScore : le lecteur
-  `crates/scoretk-abc-import/` reprend ses noms de fonctions et sa structure
-  (`doNotations` pour les liaisons entre hauteurs différentes, `long_decoration`
-  / `linebreak` pour la récupération d'un `!` orphelin ; voir le plan de portage
-  dans `docs/agents/abc.md` § 16.4). `xml2abc.py` reste une source de
-  comportement pour l'écriture (`crates/scoretk-abc-export/`). Les deux scripts
-  sont donc déclarés ici comme **code et comportements repris** (LGPL sans
-  numéro → GPL-3.0-only, LGPL 2.1 § 3), sans qu'aucune ligne ne soit copiée.
-- Nature de la reprise : **réécriture en Rust** du comportement observé
-  (grammaire `%%score`, décorations, n-olets, paroles, modes de `K:`), sans
-  copie de ligne. Aucun script de Willem Vree n'est distribué dans ce dépôt.
-  L'attribution figure aussi dans l'en-tête des fichiers de
-  `crates/scoretk-abc-common/src/` et dans `docs/agents/abc.md` (§ 9 pour la mise à
-  niveau, § 16 pour le portage).
+- **Ported sources.** Since phase 1 of the ABC campaign (2026-11-19),
+  `abc2xml.py` is a **ported source** on the same footing as MuseScore: the reader
+  `crates/scoretk-abc-import/` reuses its function names and structure
+  (`doNotations` for ties between different pitches, `long_decoration`
+  / `linebreak` for recovering an orphan `!`; see the porting plan
+  in `docs/agents/abc.md` § 16.4). `xml2abc.py` remains a source of
+  behaviour for the writer (`crates/scoretk-abc-export/`). Both scripts
+  are therefore declared here as **reused code and behaviours** (LGPL without
+  a version number → GPL-3.0-only, LGPL 2.1 § 3), without any line being copied.
+- Nature of the reuse: **rewrite in Rust** of the observed behaviour
+  (`%%score` grammar, decorations, n-tuplets, lyrics, `K:` modes), without
+  copying any line. No script of Willem Vree is distributed in this repository.
+  The attribution also appears in the header of the files of
+  `crates/scoretk-abc-common/src/` and in `docs/agents/abc.md` (§ 9 for the
+  upgrade, § 16 for the port).
 
-## Données reprises
+## Reused data
 
-### Corpus de tests
+### Test corpus
 
-- `tests/corpus/v3/*.mscx` et `tests/corpus/v4/*.mscx` : partitions de test
-  copiées telles quelles depuis MuseScore Studio (même commit que ci-dessus),
-  principalement `src/engraving/tests/**` et
+- `tests/corpus/v3/*.mscx` and `tests/corpus/v4/*.mscx`: test scores
+  copied as-is from MuseScore Studio (same commit as above),
+  mainly `src/engraving/tests/**` and
   `src/importexport/musicxml/tests/data/`. Licence GPL-3.0, Copyright (C)
-  MuseScore Limited and others. Le détail fichier par fichier est dans
+  MuseScore Limited and others. The file-by-file detail is in
   [`tests/corpus/SOURCES.md`](tests/corpus/SOURCES.md).
-- `tests/corpus/**/*.ref.musicxml` : références produites localement par
-  `scripts/gen-references.sh` avec **MuseScore 4.7.4** (paquet nixpkgs), lancé
-  en mode headless. Ce sont des sorties du programme MuseScore, couvertes par
-  la même licence.
-- `tests/corpus/midi/**/*.ref.mid` : références MIDI produites localement par
-  `scripts/gen-midi-references.sh` avec la même version de MuseScore. Même
+- `tests/corpus/**/*.ref.musicxml`: references produced locally by
+  `scripts/gen-references.sh` with **MuseScore 4.7.4** (nixpkgs package), run
+  in headless mode. These are outputs of the MuseScore program, covered by
+  the same licence.
+- `tests/corpus/midi/**/*.ref.mid`: MIDI references produced locally by
+  `scripts/gen-midi-references.sh` with the same version of MuseScore. Same
   licence.
-- `tests/corpus/midi/import/**/*.ref.musicxml` : références d'import MIDI
-  produites localement par `scripts/gen-midi-import-references.sh` (MuseScore
-  4.7.4 importe chaque `.ref.mid` et exporte en MusicXML). Sorties du programme
-  MuseScore, même licence.
-- `tests/corpus/ly/**/*.ly` : instantanés de la sortie de `scoretk-lilypond-export`
-  sur le corpus, produits par la crate elle-même (commande
-  `UPDATE_LILYPOND_SNAPSHOTS=1 cargo test -p scoretk-lilypond-export`). Œuvre du
-  projet, licence GPL-3.0-only.
-- `tests/corpus/abc/**/*.abc` : instantanés de la sortie de `scoretk-abc-export`
-  sur le corpus, produits par la crate elle-même (commande
+- `tests/corpus/midi/import/**/*.ref.musicxml`: MIDI import
+  references produced locally by `scripts/gen-midi-import-references.sh` (MuseScore
+  4.7.4 imports each `.ref.mid` and exports to MusicXML). Outputs of the
+  MuseScore program, same licence.
+- `tests/corpus/ly/**/*.ly`: snapshots of the output of `scoretk-lilypond-export`
+  on the corpus, produced by the crate itself (command
+  `UPDATE_LILYPOND_SNAPSHOTS=1 cargo test -p scoretk-lilypond-export`). Work of
+  the project, licence GPL-3.0-only.
+- `tests/corpus/abc/**/*.abc`: snapshots of the output of `scoretk-abc-export`
+  on the corpus, produced by the crate itself (command
   `UPDATE_ABC_SNAPSHOTS=1 cargo test -p scoretk --test abc_corpus`).
-  Œuvre du projet, licence GPL-3.0-only.
+  Work of the project, licence GPL-3.0-only.
 
-### Table des instruments
+### Instruments table
 
-`crates/scoretk-musescore-import/src/read/instruments.rs` est généré par
-`scripts/gen-instruments-table.py` à partir de
-`share/instruments/instruments.xml` de MuseScore (version 4.4), licence
-GPL-3.0, Copyright (C) MuseScore Limited and others. La table est une donnée
-dérivée (identifiants MuseScore, noms, identifiants MusicXML, programmes MIDI),
-convertie en Rust en 2026.
+`crates/scoretk-musescore-import/src/read/instruments.rs` is generated by
+`scripts/gen-instruments-table.py` from MuseScore's
+`share/instruments/instruments.xml` (version 4.4), licence
+GPL-3.0, Copyright (C) MuseScore Limited and others. The table is derived data
+(MuseScore identifiers, names, MusicXML identifiers, MIDI programs),
+converted to Rust in 2026.
 
-### Noms des programmes General MIDI
+### General MIDI program names
 
-`crates/scoretk-midi-import/src/instrument/gm_names.rs` est une table dérivée
-de `importexport/midi/internal/midishared/generalmidi.cpp` de MuseScore
-(`GM1_PROGRAM_DATA`, 128 entrées) par extraction automatique, convertie en Rust
-en 2026. Licence GPL-3.0, Copyright (C) MuseScore Limited and others.
+`crates/scoretk-midi-import/src/instrument/gm_names.rs` is a table derived
+from MuseScore's `importexport/midi/internal/midishared/generalmidi.cpp`
+(`GM1_PROGRAM_DATA`, 128 entries) by automatic extraction, converted to Rust
+in 2026. Licence GPL-3.0, Copyright (C) MuseScore Limited and others.
 
-## Marques
+## Trademarks
 
-« MuseScore » est une marque de **MuseScore Limited**. Ce projet est un
-portage indépendant : il n'est **ni affilié à, ni approuvé par** MuseScore
-Limited. Les noms « MuseScore », « mscz », « mscx » et « MusicXML » sont
-utilisés uniquement pour décrire les formats et l'origine du code, sans
-suggestion d'approbation.
+« MuseScore » is a trademark of **MuseScore Limited**. This project is an
+independent port: it is **neither affiliated with nor endorsed by** MuseScore
+Limited. The names « MuseScore », « mscz », « mscx » and « MusicXML » are
+used only to describe the formats and the origin of the code, without
+suggesting endorsement.
 
-## Dépendances tierces
+## Third-party dependencies
 
-La liste des crates tierces effectivement liées dans les binaires, avec leur
-licence et la vérification de compatibilité GPL-3.0-only, est dans
-[`docs/licences-tierces.md`](docs/licences-tierces.md). Le contrôle est
-automatisé par `scripts/check-licences.py` et le check de flake `licences`.
+The list of third-party crates actually linked in the binaries, with their
+licences and the GPL-3.0-only compatibility check, is in
+[`docs/licences-tierces.md`](docs/licences-tierces.md). The check is
+automated by `scripts/check-licences.py` and the flake check `licences`.

@@ -1,104 +1,103 @@
-# Licence : obligations d'un consommateur
+# Licence: a consumer's obligations
 
-Ce document décrit les obligations de quiconque **utilise ou distribue**
-`scoretk-core` — la bibliothèque Rust ou le paquet `scoretk` (CLI et
-WebAssembly, `nix build .#wasm`) — et non celles du projet lui-même (voir
-`NOTICE`). Le projet est sous **GPL-3.0-only** ; il n'existe **aucune licence
-plus permissive** pour la bibliothèque, y compris pour le wasm.
+This document describes the obligations of anyone who **uses or distributes**
+`scoretk-core` — the Rust library or the `scoretk` package (CLI and
+WebAssembly, `nix build .#wasm`) — and not those of the project itself (see
+`NOTICE`). The project is under **GPL-3.0-only**; there is **no more permissive
+licence** for the library, including for the wasm.
 
-> Ce texte est une aide technique, pas un avis juridique. Pour un produit
-> commercial, faire relire le montage par un juriste.
+> This text is a technical aid, not legal advice. For a commercial
+> product, have the arrangement reviewed by a lawyer.
 
-## Utilisation simple : aucune obligation
+## Simple use: no obligations
 
-La GPL v3 ne restreint ni l'usage privé, ni l'usage interne en entreprise, ni
-l'exécution : utiliser `scoretk-core` pour convertir ses propres partitions ne
-déclenche rien. De même, un service en ligne qui **exécute** le binaire ou le
-wasm à la demande n'est pas, en soi, une distribution : la GPL v3, contrairement
-à l'AGPL, ne comporte pas de clause « usage par réseau ». (La situation change
-dès que le code lui-même est livré : assets statiques, paquet npm, application
-mobile ou de bureau, CDN public.)
+GPL v3 restricts neither private use, nor internal use in a company, nor
+running the program: using `scoretk-core` to convert your own scores triggers
+nothing. Likewise, an online service that **runs** the binary or the
+wasm on demand is not, in itself, a distribution: GPL v3, unlike
+AGPL, has no « network use » clause. (The situation changes
+as soon as the code itself is delivered: static assets, npm package, mobile
+or desktop application, public CDN.)
 
-## Le cas d'une application qui embarque le wasm ou la bibliothèque
+## The case of an application embedding the wasm or the library
 
-Charger le module wasm dans une application JavaScript (page, worker, PWA,
-extension, application empaquetée) et l'appeler depuis du code non-GPL crée
-**vraisemblablement une œuvre combinée** au sens de la GPL : le module et son
-code appelant s'exécutent dans le même programme, partagent ses structures de
-données et forment un tout fonctionnel. C'est l'analyse habituelle de la FSF
-pour l'édition de liens dynamiques, dont le chargement d'un module wasm est
-l'équivalent technologique. La « simple agrégation » (§5) ne couvre que des
-programmes indépendants, communiquant au mieux par des fichiers ou des
-arguments de ligne de commande — pas un module chargé et piloté en mémoire.
+Loading the wasm module into a JavaScript application (page, worker, PWA,
+extension, packaged application) and calling it from non-GPL code creates
+**most likely a combined work** within the meaning of the GPL: the module and its
+calling code run in the same program, share its data structures and form a functional whole. This is the FSF's usual analysis
+for dynamic linking, of which loading a wasm module is the
+technological equivalent. "Mere aggregation" (§5) covers only
+independent programs, communicating at best through files or
+command-line arguments — not a module loaded and driven in memory.
 
-Conséquences pour une telle application **distribuée** :
+Consequences for such a **distributed** application:
 
-1. **Licence compatible.** L'ensemble (application + wasm) doit être distribué
-   sous GPL-3.0-only ou une licence compatible avec elle — en pratique
-   GPL-3.0-only, ou GPL-3.0-or-later si l'on veut laisser le choix aux
-   destinataires. Une licence permissive (MIT, Apache-2.0) ne suffit pas :
-   elle autorise l'usage du wasm, mais l'ensemble distribué reste soumis à la
+1. **Compatible licence.** The whole (application + wasm) must be distributed
+   under GPL-3.0-only or a licence compatible with it — in practice
+   GPL-3.0-only, or GPL-3.0-or-later if you want to leave the choice to
+   recipients. A permissive licence (MIT, Apache-2.0) is not sufficient:
+   it permits use of the wasm, but the distributed whole remains subject to the
    GPL.
-2. **Source correspondante.** Fournir la « Corresponding Source » de
-   l'ensemble : le code de l'application, la version exacte du wasm utilisée,
-   et tout ce qui est nécessaire pour le reconstruire à partir de cette
-   source (le crate `scoretk-core`, le `Cargo.lock`, la recette de construction —
-   ici `flake.nix`, les scripts et la version de wasm-bindgen). La source doit
-   être livrée avec le binaire ou proposée par écrit (§6), et rester
-   accessible aussi longtemps que le binaire est distribué.
-3. **Avis conservés.** Ne pas retirer les en-têtes SPDX, les mentions de
-   copyright, `LICENSE` ni `NOTICE` du paquet. Les fichiers modifiés doivent
-   porter un avis de modification bien visible (§5a) : si l'on modifie le
-   wasm ou son wrapper, l'indiquer avec la date.
-4. **Avis légaux dans l'interface.** Pour un programme interactif, afficher
-   les « Appropriate Legal Notices » (§0) : au minimum le nom du programme, la
-   licence (GPL-3.0-only), l'absence de garantie et un lien vers la source
-   correspondante — typiquement dans un écran « À propos » ou « Licence ».
-   C'est la contrepartie de l'absence de publicité imposée par la GPL.
-5. **Pas de restriction supplémentaire.** Aucune condition ajoutée (EULA,
-   DRM empêchant la copie du logiciel, limitation du nombre d'installations,
-   clause de non-rétro-ingénierie plus stricte que la loi) ne doit s'ajouter
-   aux droits conférés par la GPL (§7, §10). Une clause de résiliation
-   unilatérale ou une « licence d'utilisation » séparée est incompatible.
-6. **Brevets.** La GPL v3 concède une licence de brevet implicite (§11) ; ne
-   pas ajouter de clause qui la contredirait. Inversement, distribuer
-   l'ensemble n'oblige pas à céder ses propres brevets au-delà de ce que
-   prévoit la GPL.
-7. **Marque.** La GPL ne concède aucun droit sur la marque « MuseScore »
-   (MuseScore Limited). Une application dérivée peut décrire son format
-   d'entrée, mais ne doit pas suggérer une affiliation ni une approbation.
+2. **Corresponding source.** Provide the "Corresponding Source" of
+   the whole: the application code, the exact version of the wasm used,
+   and everything needed to rebuild it from that
+   source (the `scoretk-core` crate, the `Cargo.lock`, the build recipe —
+   here `flake.nix`, the scripts and the wasm-bindgen version). The source must
+   be delivered with the binary or offered in writing (§6), and remain
+   available for as long as the binary is distributed.
+3. **Notices preserved.** Do not remove SPDX headers, copyright
+   notices, `LICENSE` or `NOTICE` from the package. Modified files must
+   carry a prominent modification notice (§5a): if you modify the
+   wasm or its wrapper, indicate it with the date.
+4. **Legal notices in the interface.** For an interactive program, display the
+   "Appropriate Legal Notices" (§0): at minimum the program name, the
+   licence (GPL-3.0-only), the absence of warranty and a link to the
+   corresponding source — typically in an « About » or « Licence » screen.
+   This is the counterpart of the GPL's ban on additional advertising.
+5. **No additional restriction.** No added condition (EULA,
+   DRM preventing copying of the software, limitation of the number of installations,
+   a non-reverse-engineering clause stricter than the law) may be added
+   to the rights granted by the GPL (§7, §10). A unilateral termination
+   clause or a separate "usage licence" is incompatible.
+6. **Patents.** GPL v3 grants an implicit patent licence (§11); do
+   not add a clause that would contradict it. Conversely, distributing
+   the whole does not oblige you to surrender your own patents beyond what
+   the GPL provides.
+7. **Trademark.** The GPL grants no right over the « MuseScore »
+   trademark (MuseScore Limited). A derived application may describe its
+   input format, but must not suggest affiliation or endorsement.
 
-## Cas particuliers
+## Special cases
 
-- **Modifier le wasm ou la bibliothèque** : mêmes obligations, plus l'avis de
-  modification (§5a) et l'interdiction de renommer ou masquer l'origine. Le
-  code modifié reste GPL-3.0-only.
-- **Distribuer uniquement le binaire** (`.wasm`, paquet npm, APK) : c'est une
-  distribution ; il faut joindre la source correspondante ou une offre écrite
-  valable, avec l'URL et la version exacte.
-- **Intégrer dans un produit matériel** (firmware d'un appareil) : la §6
-  impose aussi les « Installation Information » nécessaires pour installer
-  une version modifiée sur l'appareil, dans la mesure où l'appareil est un
-  « User Product ».
-- **Mélanger avec du code GPL-incompatible** (bibliothèque propriétaire
-  liée, code sous GPLv2-only) : la distribution de l'ensemble est impossible
-  sans changer de licence ou isoler réellement les programmes (processus
-  séparés, échange par fichiers).
-- **Utiliser le wasm côté serveur sans le distribuer** : pas d'obligation de
-  publication tant que le code n'est pas livré au client. Attention : servir
-  les fichiers `.js`/`.wasm` au navigateur est une distribution.
+- **Modifying the wasm or the library**: the same obligations, plus the
+  modification notice (§5a) and the prohibition on renaming or hiding the origin. The
+  modified code remains GPL-3.0-only.
+- **Distributing only the binary** (`.wasm`, npm package, APK): this is a
+  distribution; you must include the corresponding source or a valid written
+  offer, with the URL and the exact version.
+- **Integrating into a hardware product** (device firmware): §6
+  also requires the "Installation Information" needed to install
+  a modified version on the device, insofar as the device is a
+  "User Product".
+- **Mixing with GPL-incompatible code** (linked proprietary
+  library, GPLv2-only code): distribution of the whole is impossible
+  without changing licence or actually isolating the programs (separate
+  processes, exchange via files).
+- **Using the wasm server-side without distributing it**: no obligation to
+  publish as long as the code is not delivered to the client. Beware: serving
+  the `.js`/`.wasm` files to the browser is a distribution.
 
-## Résumé pratique
+## Practical summary
 
 | Action | Obligation |
 | --- | --- |
-| Convertir ses partitions avec la CLI | aucune |
-| Appeler le wasm depuis une page servie à des tiers | distribuer l'application sous GPL-compatible + source correspondante + avis |
-| Publier le paquet wasm tel quel sur un CDN ou npm | joindre `LICENSE`, `NOTICE` et la source correspondante (déjà dans le paquet pour les avis ; le dépôt pour la source) |
-| Modifier le code | avis de modification daté, source publiée, licence conservée |
-| Intégrer dans un firmware/appareil | + Installation Information (§6) |
+| Converting your scores with the CLI | none |
+| Calling the wasm from a page served to third parties | distribute the application under GPL-compatible terms + corresponding source + notices |
+| Publishing the wasm package as-is on a CDN or npm | include `LICENSE`, `NOTICE` and the corresponding source (notices already in the package; source in the repository) |
+| Modifying the code | dated modification notice, published source, licence preserved |
+| Integrating into firmware/a device | + Installation Information (§6) |
 
-Le paquet wasm livré par `nix build .#wasm` contient déjà `LICENSE`, `NOTICE`,
-le bandeau `/*! @license … */` en tête des fichiers JS et la section
-« Licence et sources » de son README ; l'application hôte doit, elle, afficher
-la licence et le lien vers sa propre source correspondante.
+The wasm package delivered by `nix build .#wasm` already contains `LICENSE`, `NOTICE`,
+the `/*! @license … */` banner at the head of the JS files and the
+"Licence and sources" section of its README; the host application must, for its part, display
+the licence and the link to its own corresponding source.
