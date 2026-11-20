@@ -244,7 +244,13 @@ fn write_note(xml: &mut XmlWriter, ctx: &WriteContext<'_>, note: &Note, tick: Ti
         xml.end_element();
     }
     if note.ghost {
-        xml.tag("ghost", "1");
+        // Port de `TWrite::write(const Note*)` (`write/twrite.cpp:2500-2505`) :
+        // MuseScore écrit `Pid::GHOST` et `Pid::DEAD` séparément. Le modèle
+        // pivot confond les deux en `Note::ghost` ; l'export MusicXML de
+        // scoretk ne met pas de parenthèses sur ces têtes, alors que `ghost()`
+        // (`engravingitem.cpp:1688`) en fait mettre une par MuseScore. Écrire
+        // `<dead>` conserve la parité avec l'export direct.
+        xml.tag("dead", "1");
     }
     if !note.play {
         xml.tag("play", "0");
