@@ -3008,3 +3008,51 @@ Sur `mut`, 45 fichiers gagnent (jusqu'à +2312 N2 sur `Symphony7_1`, +2171 sur
 analysées par cause dans le tableau suivant ; deux gros fichiers
 (`violin_concerto_1`, `Concerto_No3`) ont dépassé la borne de 10 s et sont
  donc exclus de l'agrégat des deux côtés.
+
+### Classement des pertes restantes par cause (lot `mut`)
+
+Sur les 722 fichiers `mut` sans reprise correctement lus (références
+fraîches, dernier relevé), 259 perdent encore des attaques, pour un total de
+95 077 notes non appariées. Chaque fichier est classé dans la **première**
+cause qui s'applique (les constructes se cumulent, les lignes ne se
+chevauchent donc pas) ; les nombres entre parenthèses sont les notes perdues.
+
+| Cause | Fichiers | Notes perdues | Exemples |
+| --- | ---: | ---: | --- |
+| Voix `\new|\context Voice`, `\\` (positions encore décalées) | 129 | 24 994 | `djinns` (2382), `Rumores_de_la-caleta` (1307), `BWV533` (1250) |
+| Transposition / octave / `set-octavation` (Scheme ignoré) | 18 | 24 054 | `violin_concerto_1` (12200), `Concerto_No3` (3597), `Violin_Concerto_3` (1611) |
+| Autre / non classé | 41 | 14 274 | `Violinsonata_No7_1` (4199), `Cellosonata_No3_2` (2039) |
+| Référence réparée par LilyPond (erreurs de contrôle de mesure) | 5 | 13 567 | `Symphony5_2` (6079), `Oyseaux-Endfassung` (2586), `Beatus_vir_primo` (2579) |
+| `\partial` / anacrouse | 42 | 7 622 | `miserere-mei-deus` (1357), `SongWW_opus53no5` (1213) |
+| `\set measureLength` | 9 | 4 080 | `chopin_prelude_op45` (1222), `Laudate_Dominum` (635) |
+| Silences multi-mesures `R1*n` | 8 | 3 582 | `contrapunctusXIV` (1341), `contrapunctusXIX` (858) |
+| `\tag` | 2 | 2 578 | deux `score.ly` (1562, 1016) |
+| Ornements `\grace` | 4 | 182 | `Czerny_Op_821_No_013` (121) |
+| `\times` / n-olets | 1 | 144 | `Czerny_Op_821_No_014` |
+
+#### Correctif de la plus grosse cause mesurable : multiplicateurs enchaînés
+
+Avant ce correctif, la cause « silences multi-mesures » totalisait 16 569
+notes perdues sur 60 fichiers. Un échantillon réduit a montré que le vrai
+défaut n'était pas `R1*n` mais les **multiplicateurs enchaînés** :
+
+```lilypond
+\time 12/8 R1*12/8*4 c'4 d'4 e'4
+```
+
+LilyPond 2.26 place `c'4` au tick 24 (6 mesures de 12/8) ; le lecteur ne
+lisait que le premier `*12/8` et le plaçait au tick 6. `parse_optional_duration_spec`
+ne consommait qu'un `*n/d`. Il multiplie désormais tous les multiplicateurs
+consécutifs, comme `lily/parser.yy` (`duration` → `multiplier` appliqués
+successivement dans `event_chord`). Le test
+`multiplicateurs_de_duree_enchaines` échouait avant (ticks 3/2, 7/4, 2, 9/4
+au lieu de 6, 25/4, 13/2).
+
+Mesure complète sur les trois lots, références constantes : 11 fichiers
+gagnent (jusqu'à +1758 N2 sur un `score.ly`, +1348 sur `bwv-1006a_1`,
++1168 sur `bwv-1006a_1g`, +1099 sur `contrapunctusXII`) et trois perdent,
+tous marginalement : `contrapunctusXIV` −20 et `bwv656-a4`/`bwv656-let`
+−2 chacun, où le déplacement du silence révèle un décalage de bar-check
+préexistant. Le pourcentage agrégé `mut` passe de 85,26 % à 84,23 % uniquement
+parce que deux gros fichiers précédemment exclus pour délai
+(`violin_concerto_1`, `Concerto_No3`) entrent dans le dénominateur.

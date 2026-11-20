@@ -5063,3 +5063,42 @@ fn une_portee_par_contexte_voix_ouvertes_a_leur_tick() {
         ]
     );
 }
+
+/// Un accord qui franchit une barre doit être placé dans la mesure où il
+/// commence, sans allonger cette mesure : le lecteur ignore les `|` mais la
+/// trame de mesures reste celle du `\time`. Le quatrième accord de
+/// `c'2 b4 g'2 ees2` attaque donc au tick 5/4, pas 3/2.
+#[test]
+fn accord_a_cheval_sur_une_barne_pas_de_calage_supplementaire() {
+    let score = read_lilypond("\\score { \\new Staff { c'2 b4 g'2 ees2 } }").expect("lecture");
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(score.measures[0].len, Fraction::ONE);
+    let notes = accords_de_voix(&score, 0);
+    assert_eq!(
+        notes.iter().map(|(tick, _, _)| *tick).collect::<Vec<_>>(),
+        vec![
+            Fraction::ZERO,
+            Fraction::new(1, 2),
+            Fraction::new(3, 4),
+            Fraction::new(5, 4),
+        ]
+    );
+}
+
+/// `R1*12/8*4` porte deux multiplicateurs : LilyPond 2.26 place la note
+/// suivante au tick 24 (en noires), soit 6 mesures de 12/8. Le lecteur
+/// n'en lisait qu'un et plaçait la note au tick 6.
+#[test]
+fn multiplicateurs_de_duree_enchaines() {
+    let score = read_lilypond("\\score { \\new Staff { \\time 12/8 R1*12/8*4 c'4 d4 e4 } }")
+        .expect("lecture");
+    let notes = accords_de_voix(&score, 0);
+    assert_eq!(
+        notes.iter().map(|(tick, _, _)| *tick).collect::<Vec<_>>(),
+        vec![
+            Fraction::new(6, 1),
+            Fraction::new(25, 4),
+            Fraction::new(13, 2),
+        ]
+    );
+}

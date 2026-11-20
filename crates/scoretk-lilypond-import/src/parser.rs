@@ -3613,11 +3613,15 @@ impl<'a> Parser<'a> {
             duration.dots = duration.dots.saturating_add(1);
         }
         self.default_duration = duration;
-        // Multiplicateur `*n/d` (durée allongée).
+        // Multiplicateurs `*n/d` enchaînés (durée allongée) : LilyPond les
+        // multiplie dans l'ordre (`R1*12/8*4` vaut 1 × 12/8 × 4 mesures).
         let mut multiplier = None;
-        if self.eat_punct('*') {
+        while self.eat_punct('*') {
             if let Some((numerator, denominator)) = self.parse_ratio() {
-                multiplier = Fraction::try_new(i64::from(numerator), i64::from(denominator));
+                if let Some(value) = Fraction::try_new(i64::from(numerator), i64::from(denominator))
+                {
+                    multiplier = Some(multiplier.map_or(value, |previous| previous * value));
+                }
             }
         }
         Some((duration, multiplier))
