@@ -92,6 +92,13 @@ pub(crate) fn write_measure(
 
     // Éléments de système, écrits pour la première portée seulement.
     if staff_index == 0 {
+        // `MeasureWrite::writeMeasure` (`write/measurewrite.cpp:76`) écrit
+        // `Pid::EXCLUDE_FROM_NUMBERING` (`<irregular>`), relu par le lecteur
+        // 4.6+ (`read460/measureread.cpp:124-125`). Sans lui, une anacrouse
+        // réouverte par MuseScore perd son `number="0" implicit="yes"`.
+        if measure.exclude_from_numbering {
+            xml.tag("irregular", "1");
+        }
         if measure.start_bar_line.is_repeat_start() {
             xml.tag_empty_plain("startRepeat");
         }
