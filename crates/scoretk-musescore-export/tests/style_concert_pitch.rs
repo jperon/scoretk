@@ -55,10 +55,16 @@ fn style_concert_pitch_lu_et_ecrit() {
         "le style doit être réécrit dans <Style>"
     );
     let relu = lire(ecrit.as_bytes());
-    assert!(relu.style.concert_pitch, "le style doit survivre à la relecture");
+    assert!(
+        relu.style.concert_pitch,
+        "le style doit survivre à la relecture"
+    );
     let direct = scoretk_musicxml_export::export_musicxml(&partition).expect("export");
     let retour = scoretk_musicxml_export::export_musicxml(&relu).expect("export");
-    assert_eq!(direct.matches("<pitch>").count(), retour.matches("<pitch>").count());
+    assert_eq!(
+        direct.matches("<pitch>").count(),
+        retour.matches("<pitch>").count()
+    );
     assert_eq!(
         direct.matches("<duration>").count(),
         retour.matches("<duration>").count()

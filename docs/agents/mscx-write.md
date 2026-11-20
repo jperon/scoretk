@@ -931,3 +931,46 @@ corpus reference test `elements_instruments_et_harmonies`, so it was reverted
 too. Neither category has a safe fix yet; both need the model to distinguish
 MuseScore-created gap rests and mmRest ranges from ordinary rests, which is
 out of scope for a localised writer/reader patch.
+
+### Tenth pass — style `concertPitch` and `startWithMeasureOne` (English)
+
+Two writer/reader omissions found while investigating the writer-only N2
+losses were fixed; both have a reduced test written first and cite the 4.7.4
+code.
+
+**`<concertPitch>` (style).** `Sid::concertPitch` (`style/styledef.cpp:567`,
+default `false`) belongs to `<Style>`, which `MscWriter::writeStyleFile`
+(`infrastructure/mscwriter.cpp:135`) writes; the pivot already read it through
+`StyleSettings::set_value` but the writer never emitted it. On mscz-165, whose
+source has `<concertPitch>1</concertPitch>`, adding that tag by hand to the
+written `.mscz` reduced the core diff from 121 to 89 lines. Reduced test:
+`style_concert_pitch_lu_et_ecrit`, on `voices` with the unset case as the
+non-concerned control.
+
+**`<startWithMeasureOne>` of a section break.** `Pid::START_WITH_MEASURE_ONE`
+(`dom/property.cpp:468`) is read by `TRead::read(LayoutBreak*)`
+(`read460/tread.cpp:2971`) and used by `MeasureBase` to restart numbering at 1
+(`dom/measurebase.cpp:332`). scoretk's reader ignored it and its writer emitted
+only `<subtype>section</subtype>`. `Measure` now carries the flag on the
+measure the break applies to; the reader fills it and the writer emits it.
+Reduced test: `saut_de_numero_mesure`, with a plain section break as control.
+Three `.mscz` scores (mscz-31, 76, 77) become core-identical.
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | N1w | N2w | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | 54/56 | 0.9882 | 0.9873 | 0.9836 | 0.9733 | 0 | 56/56 |
+| mscz | 174 | 172 | 172 | 49/172 | 0.9974 | 0.9973 | 0.9987 | 0.9936 | 0 | 40/172 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9983 | 0.9908 | 0.9066 | 0.8992 | 0 | 0/27 |
+| ly | 375 | 345 | 345 | 1/345 | 0.9997 | 0.9971 | — | — | 0 | 0/0 |
+| abc | 1 | 1 | 1 | 0/1 | 1.0000 | 1.0000 | — | — | 0 | 0/0 |
+| **Total** | **638** | **601** | **601** | **104/601** | **0.9977** | **0.9963** | **0.9816** | **0.9761** | **0** | **96/255** |
+
+Against the previous table, N1/N2 improve strongly (total N2 0.9932 →
+0.9963) because master gained MIDI fixes; writer-only N2w is unchanged on
+corpus and `.mscz` (0.9733 and 0.9936) and drops on `xml` (0.9276 → 0.8992)
+because master also changed the MusicXML reader, not because of these two
+writer fixes. Three `.mscz` scores lose core-identical status (mscz-93, 94,
+157): their first difference is `<staff-details>` written by scoretk after
+master's `Staff::visible` fix and not reproduced by MuseScore's re-export —
+an external change, not a regression from `concertPitch` or
+`startWithMeasureOne` (neither tag is present in those three sources).
