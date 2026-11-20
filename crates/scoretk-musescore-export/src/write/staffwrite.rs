@@ -89,6 +89,12 @@ pub(crate) fn write_style(xml: &mut XmlWriter, style: &StyleSettings) {
             "0"
         },
     );
+    if style.create_multi_measure_rests {
+        // `Sid::createMultiMeasureRests` (`style/styledef.cpp:571`) est lu par
+        // le lecteur 4.x et conditionne la reconstruction des multi-repos par
+        // `Measure::coveringMMRestOrThis` (`dom/measure.cpp:2899`).
+        xml.tag("createMultiMeasureRests", "1");
+    }
     xml.end_element();
 }
 

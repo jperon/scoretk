@@ -48,9 +48,53 @@ pub mod read4xx;
 mod measure_repeat;
 mod notation_names;
 
+use quick_xml::events::Event;
+
 use crate::container::MsczContainer;
 use crate::{Error, Result};
 use scoretk_core::model::{Measure, Score};
+
+/// Applique le `<Style>` séparé d'un `.mscz` au style déjà lu.
+///
+/// `MscLoader::read` (`rw/mscloader.cpp:86-94`) appelle
+/// `MscReader::readStyleFile()` (`infrastructure/mscreader.cpp:127-132`) et
+/// `masterScore->style().read(&buf)` avant de lire la partition.
+fn apply_style_file(score: &mut Score, mss: &[u8]) -> Result<()> {
+    let mut reader = quick_xml::Reader::from_reader(mss);
+    reader.config_mut().trim_text(true);
+    let mut in_style = false;
+    let mut name = String::new();
+    let mut text = String::new();
+    loop {
+        match reader.read_event()? {
+            Event::Start(element) => {
+                let local = element.name();
+                let tag = local.as_ref();
+                if tag == "Style" {
+                    in_style = true;
+                } else if in_style {
+                    name = tag.to_owned();
+                    text.clear();
+                }
+            }
+            Event::Text(value) if in_style && !name.is_empty() => {
+                text.push_str(value.as_ref());
+            }
+            Event::End(element) => {
+                if element.name().as_ref() == "Style" {
+                    in_style = false;
+                } else if in_style && !name.is_empty() {
+                    score.style.set_value(&name, text.trim());
+                    name.clear();
+                    text.clear();
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    Ok(())
+}
 
 /// Mesure de départ du groupe de silences multi-mesures qui couvre `target`.
 ///
@@ -81,6 +125,9 @@ pub fn read_score(container: &MsczContainer) -> Result<Score> {
         115..=207 => read206::read(container.main_mscx(), version)?,
         _ => return Err(Error::UnsupportedVersion(version)),
     };
+    if let Some(mss) = container.style_mss() {
+        apply_style_file(&mut score, mss)?;
+    }
     // `Measure::checkMeasure` est appelé juste après la lecture de chaque
     // mesure par MuseScore ; les silences « gap » qui en résultent font
     // avancer le curseur d'export (`<forward>`/`<backup>`).

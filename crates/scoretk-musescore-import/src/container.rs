@@ -42,6 +42,7 @@ use crate::{Error, Result};
 /// Nom conventionnel donné au fichier principal lorsqu'on lit un `.mscx` nu.
 pub const DEFAULT_MSCX_NAME: &str = "score.mscx";
 const CONTAINER_XML: &str = "META-INF/container.xml";
+const STYLE_MSS: &str = "score_style.mss";
 
 /// Plafond de pré-allocation pour une entrée ZIP, en octets.
 ///
@@ -115,6 +116,8 @@ impl fmt::Display for MscVersion {
 pub struct MsczContainer {
     main_mscx_name: String,
     main_mscx: Vec<u8>,
+    /// `<Style>` séparé d'un `.mscz` (`score_style.mss`, `MscReader::readStyleFile`).
+    style_mss: Option<Vec<u8>>,
 }
 
 impl MsczContainer {
@@ -124,6 +127,7 @@ impl MsczContainer {
             return Ok(Self {
                 main_mscx_name: DEFAULT_MSCX_NAME.to_owned(),
                 main_mscx: bytes.to_vec(),
+                style_mss: None,
             });
         }
 
@@ -137,6 +141,7 @@ impl MsczContainer {
                         return Ok(Self {
                             main_mscx_name: root,
                             main_mscx: data,
+                            style_mss: read_zip_entry(&mut archive, STYLE_MSS)?,
                         });
                     }
                     None => {
@@ -169,6 +174,12 @@ impl MsczContainer {
     /// Contenu XML du fichier `.mscx` principal.
     pub fn main_mscx(&self) -> &[u8] {
         &self.main_mscx
+    }
+
+    /// Style séparé d'un `.mscz`, lu par `MscReader::readStyleFile`
+    /// (`infrastructure/mscreader.cpp:127-132`) avant la partition.
+    pub fn style_mss(&self) -> Option<&[u8]> {
+        self.style_mss.as_deref()
     }
 
     /// Version déclarée par le fichier `.mscx` principal.
@@ -243,6 +254,7 @@ fn read_first_root_mscx(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Result<Optio
             Ok(Some(MsczContainer {
                 main_mscx_name: name,
                 main_mscx: data,
+                style_mss: read_zip_entry(archive, STYLE_MSS)?,
             }))
         }
         None => Ok(None),

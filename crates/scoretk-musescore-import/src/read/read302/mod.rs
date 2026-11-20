@@ -176,6 +176,10 @@ impl Reader {
                         .child("createMultiMeasureRests")
                         .and_then(Node::int_text)
                         .is_some_and(|value| value != 0);
+                    // Le style doit aussi rester dans le modèle : MuseScore
+                    // reconstruit les `<multiMeasureRest>` seulement quand il
+                    // est actif (`Measure::coveringMMRestOrThis`, dom/measure.cpp:2899).
+                    self.score.style.create_multi_measure_rests = self.create_multi_measure_rests;
                 }
                 // TODO(parité): `<Score>` imbriqué (parties liées),
                 // `<Order>`, `<SystemObjects>`, `<PageLocks>`, `<SystemLocks>`,

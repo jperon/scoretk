@@ -102,6 +102,8 @@ pub struct StyleSettings {
     /// MuseScore écrit alors `<concert-score/>` et `pitch2xml` ne soustrait
     /// pas la transposition de l'instrument.
     pub concert_pitch: bool,
+    /// Reconstruire les multi-repos à la mise en page (`Sid::createMultiMeasureRests`).
+    pub create_multi_measure_rests: bool,
 }
 
 impl StyleSettings {
@@ -147,6 +149,7 @@ impl StyleSettings {
             hide_empty_staves: false,
             dont_hide_staves_in_first_system: true,
             concert_pitch: false,
+            create_multi_measure_rests: false,
         }
     }
 
@@ -187,6 +190,7 @@ impl StyleSettings {
             "footerFontSize" => Self::set_number(&mut self.footer_font_size, value),
             "hairpinHeight" => Self::set_positive(&mut self.hairpin_height_sp, value),
             "concertPitch" | "displayInConcertPitch" => self.concert_pitch = flag(value),
+            "createMultiMeasureRests" => self.create_multi_measure_rests = flag(value),
             "hideEmptyStaves" => self.hide_empty_staves = flag(value),
             "dontHideStavesInFirstSystem" => {
                 self.dont_hide_staves_in_first_system = flag(value);
