@@ -2943,7 +2943,30 @@ correctif (5 portées au lieu de 2, notes aux ticks 0–3 au lieu de 0–11). Le
 lecteur garde désormais la séquence entière comme unique musique de portée
 quand aucune voix n'est portée directement par le `<< … >>`.
 
-Mesure ciblée sur 21 fichiers, références constants : aucun recul,
-`pathetique-1` +128 N1 / +1332 N2, `Violinsonata_No7_1` +757 N2,
-`BWV865_Fuga20` +12, `bridge` +7 et `two-jews` +6 (récupération du correctif
-précédent).
+Mesure ciblée sur 26 fichiers, références constantes : `pathetique-1`
++24 N1 / +934 N2, `Violinsonata_No7_1` +313 N2, `bwv652` +554 N2,
+`bridge` +7 et `two-jews` +6 (récupération du correctif précédent). Les
+fichiers à deux `\context Voice` directs (`bach_siciliano_bmv_1031`,
+`bach_air_bmv_1068`, `faure_dolly_berceuse`) conservent leur score initial,
+et `ballade-4` garde son gain de +5437 N2. Seul `ballade.ly` présente un
+arbitrage : −32 N1 (7 notes de moins, 32 hauteurs en désaccord d'octave sur
+6958) pour **+1422 N2** (79 → 1501 attaques appariées) ; le gain musical
+net est largement positif.
+
+#### Bilan final sur références fraîches
+
+Dernière passe complète après les trois correctifs de cette section, avec
+les mêmes manifestes et le même cache que la baseline (le pilote n'a plus
+aucun délai à 10 s, temps max 4,33 s sur `mut`) :
+
+| Lot | N2 baseline | N2 final | Exact |
+| --- | ---: | ---: | ---: |
+| mus | 93,95 % | 93,95 % | 1119 |
+| ra | 82,37 % | 82,37 % | 1279 |
+| mut | 82,24 % | 82,34 % | 420 |
+
+À dénominateur constant, 17 fichiers `mut` gagnent des notes appariées et
+un seul perd : `ballade.ly` (-32 N1, mais +1422 N2, voir ci-dessus). Les
+gains principaux sont `ballade-4` +5437 N2, `pathetique-1` +934,
+`Concerto_No3` +3610 (réglage du délai), `bwv652` +554, `5.Inquietude` +636,
+`baba` +461. Aucun changement sur `mus` ni `ra`.

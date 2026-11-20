@@ -987,7 +987,9 @@ impl<'a> Parser<'a> {
                 // NR §5.2.1). Un contenu mêlé (`\global` avec
                 // `\transposition`, par exemple) reste transparent pour que
                 // la propriété soit propagée aux groupes musicaux.
-                if has_voice_context(&content) && !wrapped && named_voice_count(&content) > 2 {
+                let early_voices = has_voice_context(&content)
+                    || (!matches!(content, Music::Sim(_)) && has_any_voice(&content));
+                if early_voices && !wrapped && named_voice_count(&content) > 2 {
                     let only_voices = match &content {
                         Music::Sim(items) | Music::Seq(items) => {
                             items.iter().all(|item| {
@@ -1017,7 +1019,10 @@ impl<'a> Parser<'a> {
                     // Voix enchâssées sous un enveloppeur ou dans des
                     // passages polyphoniques successifs : une seule portée,
                     // dont l'interpréteur ouvre les voix au bon tick.
-                    if direct_named_voices(&content) == 0 {
+                    if direct_named_voices(&content) == 0
+                        && named_voice_count(&content) > 3
+                        && !matches!(content, Music::Sim(_))
+                    {
                         let mut staff = StaffBlock::new();
                         staff.name = context_name.clone();
                         staff.voices.push(VoiceBlock {
@@ -1052,7 +1057,7 @@ impl<'a> Parser<'a> {
                 // seule portée : le répartir extrait les enveloppes `\relative`
                 // pour les réappliquer voix par voix, décalant les octaves et
                 // déplaçant les mesures.
-                if direct_named_voices(&content) > 2 {
+                if !matches!(&content, Music::Sim(_)) || direct_named_voices(&content) > 2 {
                     let mut staves = Vec::new();
                     let mut lyrics = Vec::new();
                     self.collect_staves(content, &mut staves, &mut lyrics);
@@ -4473,6 +4478,27 @@ fn has_voice_context(music: &Music) -> bool {
         }
         Music::Sim(items) | Music::Seq(items) => items.iter().any(has_voice_context),
         Music::Tag { music, .. } | Music::Filtered { music, .. } => has_voice_context(music),
+        _ => false,
+    }
+}
+
+/// Vrai si une musique porte une voix, y compris un `\context Voice` ou
+/// une voix enchâssée sous un enveloppeur (`\relative`, `\transpose`…).
+fn has_any_voice(music: &Music) -> bool {
+    match music {
+        Music::New(group) => {
+            group.kind == GroupKind::Voice
+                || group
+                    .staves
+                    .iter()
+                    .any(|staff| staff.voices.iter().any(|voice| has_any_voice(&voice.music)))
+        }
+        Music::Context(Context::Voice(_)) => true,
+        Music::Context(context) => {
+            Wrapper::of(context).is_some_and(|(_, inner)| has_any_voice(inner))
+        }
+        Music::Sim(items) | Music::Seq(items) => items.iter().any(has_any_voice),
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => has_any_voice(music),
         _ => false,
     }
 }

@@ -4935,6 +4935,7 @@ fn passages_temporaires_dans_un_contexte_staff_restent_sur_une_portee() {
       << { c4 d4 e4 f4 } \\ \new Voice { g4 a4 b4 c'4 } >>
       << { c4 d4 e4 f4 } \\ \new Voice { g4 a4 b4 c'4 } >>
       << { c4 d4 e4 f4 } \\ \new Voice { g4 a4 b4 c'4 } >>
+      << { c4 d4 e4 f4 } \\ \new Voice { g4 a4 b4 c'4 } >>
     }
   >>
 }
@@ -4944,10 +4945,10 @@ fn passages_temporaires_dans_un_contexte_staff_restent_sur_une_portee() {
     assert_eq!(
         score.staves.len(),
         1,
-        "trois passages temporaires successifs tiennent sur une portée"
+        "quatre passages temporaires successifs tiennent sur une portée"
     );
-    assert_eq!(score.measures.len(), 3);
-    assert_eq!(score.notes.len(), 24);
+    assert_eq!(score.measures.len(), 4);
+    assert_eq!(score.notes.len(), 32);
 }
 
 /// Un `s` étiqueté retiré par `\keepWithTag` ne réserve aucun temps :
@@ -5018,6 +5019,7 @@ fn passages_temporaires_sequenciels_dans_un_contexte_staff() {
       << { R1 } \\ \new Voice { c'4 d'4 e'4 f'4 } >>
       << { R1 } \\ \new Voice { g'4 a'4 b'4 c''4 } >>
       << { R1 } \\ \new Voice { d''4 e''4 f''4 g''4 } >>
+      << { R1 } \\ \new Voice { a''4 b''4 c'''4 d'''4 } >>
     }
     \context Staff = "down" { \clef bass c4 c4 c4 c4 }
   >>
@@ -5026,6 +5028,6 @@ fn passages_temporaires_sequenciels_dans_un_contexte_staff() {
     )
     .expect("lecture");
     assert_eq!(score.staves.len(), 2, "PianoStaff à deux portées");
-    assert_eq!(score.measures.len(), 3);
-    assert_eq!(score.notes.len(), 16);
+    assert_eq!(score.measures.len(), 4);
+    assert_eq!(score.notes.len(), 20);
 }
