@@ -45,7 +45,9 @@ fn clef_basse_ecrit_son_type_transposant() {
     let partition = lire(&source);
 
     let ecrit = scoretk_musescore_export::write_mscx(&partition).expect("écriture");
-    let concert = ecrit.matches("<concertClefType>F</concertClefType>").count();
+    let concert = ecrit
+        .matches("<concertClefType>F</concertClefType>")
+        .count();
     let transposant = ecrit
         .matches("<transposingClefType>F</transposingClefType>")
         .count();

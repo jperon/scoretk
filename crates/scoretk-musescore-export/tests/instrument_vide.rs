@@ -44,7 +44,10 @@ fn instrument_vide_ecrit_un_instrument_valide() {
         .join("v4");
     let source = fs::read(racine.join("dynamics.mscx")).expect("corpus");
     let mut partition = lire(&source);
-    assert!(!partition.parts.is_empty(), "le corpus doit avoir une partie");
+    assert!(
+        !partition.parts.is_empty(),
+        "le corpus doit avoir une partie"
+    );
     partition.parts[0].instrument = Instrument::new("", "", "");
 
     let ecrit = scoretk_musescore_export::write_mscx(&partition).expect("écriture");
@@ -63,7 +66,16 @@ fn instrument_vide_ecrit_un_instrument_valide() {
     // La musique, elle, est inchangée : hauteurs, durées et mesures.
     let direct = scoretk_musicxml_export::export_musicxml(&partition).expect("export");
     let retour = scoretk_musicxml_export::export_musicxml(&relu).expect("export");
-    assert_eq!(direct.matches("<pitch>").count(), retour.matches("<pitch>").count());
-    assert_eq!(direct.matches("<duration>").count(), retour.matches("<duration>").count());
-    assert_eq!(direct.matches("<measure ").count(), retour.matches("<measure ").count());
+    assert_eq!(
+        direct.matches("<pitch>").count(),
+        retour.matches("<pitch>").count()
+    );
+    assert_eq!(
+        direct.matches("<duration>").count(),
+        retour.matches("<duration>").count()
+    );
+    assert_eq!(
+        direct.matches("<measure ").count(),
+        retour.matches("<measure ").count()
+    );
 }

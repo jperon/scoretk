@@ -43,7 +43,10 @@ fn port_midi_du_canal_ecrit_et_relu() {
         .join("v3");
     let source = fs::read(racine.join("voices.mscx")).expect("corpus");
     let mut partition = lire(&source);
-    assert!(!partition.parts.is_empty(), "le corpus doit avoir une partie");
+    assert!(
+        !partition.parts.is_empty(),
+        "le corpus doit avoir une partie"
+    );
     partition.parts[0].instrument.midi_port = Some(1);
 
     let ecrit = scoretk_musescore_export::write_mscx(&partition).expect("écriture");

@@ -29,11 +29,11 @@
 use scoretk_core::model::tpc;
 use scoretk_core::model::{
     Annotation, Arpeggio, Articulation, BarLine, BarLineType, BeamMode, Breath, Chord, ChordRest,
-    Clef, Duration, DurationType, Fermata, FiguredBass, Fingering, Fraction, GraceChord,
-    Hairpin, HairpinType, Harmony, Instrument, KeyMode, KeySig, Lyrics, Note, NoteHeadGroup,
-    NoteHeadType, Ornament, PedalInfo, Placement, RehearsalFrame, SegmentItem, SpannerNotation,
-    StaffText, StemDirection, SwingUnit, Tempo, TempoKind, TextLineInfo, TimeSig, TimeSigType,
-    Tremolo, TremoloBar, TremoloKind, Tuplet, TupletNumberType, VoltaInfo,
+    Clef, Duration, DurationType, Fermata, FiguredBass, Fingering, Fraction, GraceChord, Hairpin,
+    HairpinType, Harmony, Instrument, KeyMode, KeySig, Lyrics, Note, NoteHeadGroup, NoteHeadType,
+    Ornament, PedalInfo, Placement, RehearsalFrame, SegmentItem, SpannerNotation, StaffText,
+    StemDirection, SwingUnit, Tempo, TempoKind, TextLineInfo, TimeSig, TimeSigType, Tremolo,
+    TremoloBar, TremoloKind, Tuplet, TupletNumberType, VoltaInfo,
 };
 
 use crate::names;
