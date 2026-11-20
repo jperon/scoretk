@@ -4686,3 +4686,72 @@ fn new_voice_reuse_un_emplacement_de_voix() {
     assert_eq!(deux.staves.len(), 2);
     assert_eq!(hauteurs(&deux), vec![60, 64]);
 }
+
+/// `Timing` est un alias de `Score` (`ly/engraver-init.ly`) : il n'y a qu'une
+/// grille de mesures, et `\partial` (`ly/music-functions-init.ly`, `PartialSet`)
+/// décale la position dans cette grille pour toutes les portées. Un `R4.` qui
+/// franchit la barre de la levée continue simplement après celle-ci : le MIDI
+/// de LilyPond joue les notes du haut à 0,5/1/1,5/2 noires et celle du bas à
+/// 6 noires. Les éléments qui franchissent une barre doivent être découpés.
+#[test]
+fn elements_a_travers_les_barres_sont_decoupes() {
+    let source = r#"\version "2.24.0"
+\language "english"
+\score { \new PianoStaff <<
+  \new Staff { \time 3/8 \partial 8 r8 c'8 d'8 e'8 | f'4. }
+  \new Staff { \time 3/8 R4. R4. R4. R4. c4. }
+>> }"#;
+    let score = read_lilypond(source).expect("lecture");
+    let mut notes: Vec<(u8, Fraction)> = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for track in 0..8 {
+                if let Some(chord_rest) = segment.chord_rest(Track::from_raw(track)) {
+                    if let Some(chord) = chord_rest.chord_ref() {
+                        for id in &chord.notes {
+                            notes.push((score.note(*id).pitch, segment.tick));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    notes.sort();
+    notes.dedup();
+    assert_eq!(
+        notes,
+        vec![
+            (48, Fraction::new(3, 2)),  // bas : 6 noires
+            (60, Fraction::new(1, 8)),  // haut : 0,5 noire
+            (62, Fraction::new(1, 4)),
+            (64, Fraction::new(3, 8)),
+            (65, Fraction::new(1, 2)),
+        ],
+        "attaques absolues des cinq notes"
+    );
+
+    // Le `R4.` du bas traverse la barre de la levée : il doit être découpé en
+    // silences explicites, sinon l'écrivain MusicXML le tronque à 0,5 noire.
+    let bas: Vec<_> = (0..8)
+        .flat_map(|track| {
+            score.measures.iter().flat_map(move |measure| {
+                measure.segments.iter().filter_map(move |segment| {
+                    segment
+                        .chord_rest(Track::from_raw(track))
+                        .filter(|rest| rest.chord_ref().is_none())
+                        .map(|rest| (track, rest))
+                })
+            })
+        })
+        .filter(|(track, _)| *track == 4)
+        .map(|(_, rest)| (rest.ticks, rest.is_full_measure_rest()))
+        .collect();
+    assert!(
+        bas.len() >= 4,
+        "silences du bas découpés à chaque barre : {bas:?}"
+    );
+    assert!(
+        bas.iter().all(|(ticks, full)| ticks.is_some() && !*full),
+        "chaque morceau porte sa durée explicite : {bas:?}"
+    );
+}
