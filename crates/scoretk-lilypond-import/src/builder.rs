@@ -34,7 +34,7 @@ use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, BarLineType, Chord, ChordRest, ChordRestKind, Clef,
     Credit, CreditStyle, Duration, Dynamic, Fingering, Fraction, Glissando, GlissandoType,
     GraceChord, Hairpin, HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic, Measure, Note,
-    NoteId, Part, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score, ScoreMetadata,
+    NoteId, Part, PartId, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score, ScoreMetadata,
     Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff,
     StaffBracket, StaffId, Tempo, Track, Transpose, Trill, TrillType, Tuplet, TupletId, VOICES,
 };
@@ -219,16 +219,30 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 staff.brackets.push(bracket);
             }
             let staff_id = score.add_staff_with(part_id, staff);
-            let (voices, voice_lyrics) = build_voices(&mut score, staff_id, staff_block, warnings);
-            let mut lyrics: Vec<LyricsBuild> =
-                staff_block.lyrics.iter().map(lyrics_build).collect();
-            lyrics.extend(voice_lyrics);
-            staves.push(StaffBuild {
-                staff: staff_id,
-                name: staff_block.name.clone(),
-                voices,
-                lyrics,
-            });
+            let built = build_voices(&mut score, staff_id, part_id, staff_block, warnings);
+            let mut built = built.into_iter();
+            if let Some(premiere) = built.next() {
+                let mut lyrics: Vec<LyricsBuild> =
+                    staff_block.lyrics.iter().map(lyrics_build).collect();
+                lyrics.extend(premiere.lyrics);
+                staves.push(StaffBuild {
+                    staff: staff_id,
+                    name: staff_block.name.clone(),
+                    voices: premiere.voices,
+                    lyrics,
+                });
+            }
+            // Portées sœurs créées uniquement pour les voix réellement
+            // simultanées au-delà de quatre : elles gardent les mêmes paroles
+            // que la portée d'origine, adressées par nom de voix.
+            for sœur in built {
+                staves.push(StaffBuild {
+                    staff: sœur.staff,
+                    name: None,
+                    voices: sœur.voices,
+                    lyrics: sœur.lyrics,
+                });
+            }
         }
         // Paroles du groupe (hors portée) : rattachées à sa première portée.
         if !group.lyrics.is_empty() {
@@ -416,6 +430,80 @@ fn lyrics_build(block: &LyricsBlock) -> LyricsBuild {
     }
 }
 
+/// Voix et paroles effectivement placées sur une portée construite.
+struct BuiltVoices {
+    staff: StaffId,
+    voices: Vec<VoiceBuild>,
+    lyrics: Vec<LyricsBuild>,
+}
+
+/// Répartit des voix sur les quatre emplacements d'une portée.
+///
+/// Un contexte Voice meurt à la fin de sa musique (`lily/context.cc`) : un
+/// emplacement libéré est réutilisé par la voix suivante, même si elle porte un
+/// autre nom. Seule une voix réellement simultanée avec quatre autres passe sur
+/// une portée sœur, avec un avertissement, au lieu d'être perdue.
+fn assign_voice_slots(
+    score: &mut Score,
+    staff: StaffId,
+    pending: Vec<PendingVoice>,
+) -> (Vec<VoiceBuild>, Vec<LyricsBuild>, Vec<PendingVoice>) {
+    // Fin du dernier événement occupant chaque emplacement, ou `None` si libre.
+    let mut ends: Vec<Option<Fraction>> = vec![None; VOICES];
+    let mut voices = Vec::new();
+    let mut lyrics = Vec::new();
+    let mut overflow = Vec::new();
+    for item in pending {
+        let PendingVoice {
+            name,
+            lyrics: voice_lyrics,
+            temporary,
+            interpreted,
+        } = item;
+        let start = interpreted
+            .events
+            .iter()
+            .map(|event| event.tick)
+            .min()
+            .unwrap_or(Fraction::ZERO);
+        let end = interpreted.end;
+        let Some(slot) = ends
+            .iter()
+            .position(|occupied| occupied.map_or(true, |until| until <= start))
+        else {
+            overflow.push(PendingVoice {
+                name,
+                lyrics: voice_lyrics,
+                temporary,
+                interpreted,
+            });
+            continue;
+        };
+        ends[slot] = Some(end);
+        lyrics.extend(voice_lyrics.iter().map(lyrics_build));
+        let mut tuplets = Vec::new();
+        for tuplet in &interpreted.tuplets {
+            let mut value = Tuplet::new(tuplet.ratio, tuplet.base_len, tuplet.tick, tuplet.len);
+            value.actual_notes = tuplet.actual_notes;
+            value.normal_notes = tuplet.normal_notes;
+            value.number_type = tuplet.number_type;
+            value.bracket = !(tuplet.base_len < Fraction::new(1, 8)
+                || (tuplet.base_len == Fraction::new(1, 8) && tuplet.ratio != Fraction::ONE));
+            if let Some(parent) = tuplet.parent {
+                value.parent = tuplets.get(parent).copied();
+            }
+            tuplets.push(score.add_tuplet(value));
+        }
+        voices.push(VoiceBuild {
+            name,
+            track: Track::new(staff, u8::try_from(slot).unwrap_or(0)),
+            interpreted,
+            tuplets,
+        });
+    }
+    (voices, lyrics, overflow)
+}
+
 /// Construit les voix d'une portée et leurs n-olets.
 ///
 /// Une voix peut en ouvrir d'autres (`\new Voice` dans sa musique, branches
@@ -426,9 +514,10 @@ fn lyrics_build(block: &LyricsBlock) -> LyricsBuild {
 fn build_voices(
     score: &mut Score,
     staff: StaffId,
+    part: PartId,
     staff_block: &StaffBlock,
     warnings: &mut Warnings,
-) -> (Vec<VoiceBuild>, Vec<LyricsBuild>) {
+) -> Vec<BuiltVoices> {
     let mut queue: VecDeque<PendingVoice> = VecDeque::new();
     for block in &staff_block.voices {
         queue.push_back(PendingVoice {
@@ -497,42 +586,44 @@ fn build_voices(
         None => kept,
     };
 
-    let mut voices = Vec::new();
-    let mut lyrics = Vec::new();
-    for (index, pending) in kept.into_iter().enumerate() {
-        if index >= VOICES {
-            warnings.push(
-                0,
-                0,
-                "plus de quatre voix sur une portée : voix ignorée".to_owned(),
-            );
-            continue;
+    let (voices, lyrics, mut overflow) = assign_voice_slots(score, staff, kept);
+    let mut built = vec![BuiltVoices {
+        staff,
+        voices,
+        lyrics,
+    }];
+    // Plus de quatre voix *simultanées* : le modèle ne peut pas les contenir
+    // sur une seule portée. Ouvrir une portée sœur conserve toutes les notes ;
+    // l'avertissement signale l'écart avec LilyPond.
+    let mut garde = 0;
+    while !overflow.is_empty() && garde < 1024 {
+        garde += 1;
+        warnings.push(
+            0,
+            0,
+            "plus de quatre voix simultanées : voix reportée sur une portée sœur"
+                .to_owned(),
+        );
+        let extra_staff = score.add_staff_with(part, Staff::new(part));
+        let (voices, lyrics, reste) = assign_voice_slots(score, extra_staff, overflow);
+        if !voices.is_empty() {
+            built.push(BuiltVoices {
+                staff: extra_staff,
+                voices,
+                lyrics,
+            });
         }
-        lyrics.extend(pending.lyrics.iter().map(lyrics_build));
-        let mut tuplets = Vec::new();
-        for tuplet in &pending.interpreted.tuplets {
-            let mut value = Tuplet::new(tuplet.ratio, tuplet.base_len, tuplet.tick, tuplet.len);
-            value.actual_notes = tuplet.actual_notes;
-            value.normal_notes = tuplet.normal_notes;
-            value.number_type = tuplet.number_type;
-            // `Tuplet::calcHasBracket` (lecteur `.mscx`) : un n-olet dont la
-            // durée de base tient dans une croche se passe de crochet ; sinon
-            // MuseScore dessine le crochet.
-            value.bracket = !(tuplet.base_len < Fraction::new(1, 8)
-                || (tuplet.base_len == Fraction::new(1, 8) && tuplet.ratio != Fraction::ONE));
-            if let Some(parent) = tuplet.parent {
-                value.parent = tuplets.get(parent).copied();
-            }
-            tuplets.push(score.add_tuplet(value));
-        }
-        voices.push(VoiceBuild {
-            name: pending.name,
-            track: Track::new(staff, u8::try_from(index).unwrap_or(0)),
-            interpreted: pending.interpreted,
-            tuplets,
-        });
+        overflow = reste;
     }
-    (voices, lyrics)
+    if !overflow.is_empty() {
+        warnings.push(
+            0,
+            0,
+            "voix surnuméraires non placées : trop de portées simultanées"
+                .to_owned(),
+        );
+    }
+    built
 }
 
 /// Accolade d'un groupe de portées.

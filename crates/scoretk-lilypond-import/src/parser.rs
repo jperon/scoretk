@@ -1075,7 +1075,45 @@ impl<'a> Parser<'a> {
                 // Relative (collisions.ly, `\hairyChord`).
                 let wrapped =
                     matches!(&content, Music::Context(context) if Wrapper::of(context).is_some());
-                if has_voice_context(&content) || wrapped {
+                // Un `\context Staff` dont le contenu ne comporte que des
+                // voix désigne **une seule portée** : ces voix restent ses
+                // voix, et non des portées sœurs (lily/parser.yy 1686-1690,
+                // NR §5.2.1). Un contenu mêlé (`\global` avec
+                // `\transposition`, par exemple) reste transparent pour que
+                // la propriété soit propagée aux groupes musicaux.
+                if has_voice_context(&content) && !wrapped && named_voice_count(&content) > 2 {
+                    let only_voices = match &content {
+                        Music::Sim(items) | Music::Seq(items) => {
+                            items.iter().all(|item| {
+                                matches!(item, Music::New(group) if group.kind == GroupKind::Voice)
+                            })
+                        }
+                        Music::New(group) => group.kind == GroupKind::Voice,
+                        _ => false,
+                    };
+                    if only_voices {
+                        let mut staff = StaffBlock::new();
+                        staff.name = context_name.clone();
+                        let mut voices = Vec::new();
+                        let mut lyrics = Vec::new();
+                        self.collect_voices(content, &mut voices, &mut lyrics);
+                        staff.voices = voices;
+                        staff.lyrics = lyrics;
+                        return Music::New(Box::new(GroupBlock {
+                            kind: GroupKind::Staff,
+                            existing,
+                            instrument_name,
+                            short_instrument_name,
+                            staves: vec![staff],
+                            lyrics: Vec::new(),
+                        }));
+                    }
+                    return content;
+                }
+                // Un `\global` frère des voix porte parfois `\transposition` :
+                // laisser alors les groupes séparés pour que la propriété soit
+                // propagée aux groupes musicaux par `build_score`.
+                if wrapped || has_instrument_transpose(&content) {
                     return content;
                 }
                 // Un `\context Staff` nommé peut porter des voix surnuméraires
@@ -1383,7 +1421,26 @@ impl<'a> Parser<'a> {
             }
             Music::New(mut group) => {
                 wrap_staves(wrappers, &mut group.staves);
-                staves.extend(group.staves);
+                // `lily/parser.yy` `context_prefix` (l. 1686-1690) : `\new` et
+                // `\context Voice` créent ou retrouvent un contexte **Voice
+                // dans le Staff courant** (`context_create` /
+                // `context_find_or_create`, `lily/context.cc`). Ces voix
+                // appartiennent donc à la portée en cours, pas à des portées
+                // sœurs : c'est le constructeur qui répartit leurs emplacements
+                // et ouvre des portées supplémentaires seulement si plus de
+                // quatre voix sont simultanées.
+                if group.kind == GroupKind::Voice && group.staves.len() == 1 {
+                    let mut voice_staff = group.staves.remove(0);
+                    if let Some(current) = staves.iter_mut().find(|staff| staff.name.is_none()) {
+                        current.voices.append(&mut voice_staff.voices);
+                        current.lyrics.append(&mut voice_staff.lyrics);
+                    } else {
+                        staves.push(voice_staff);
+                    }
+                    lyrics.append(&mut group.lyrics);
+                } else {
+                    staves.extend(group.staves);
+                }
             }
             Music::Lyrics(block) => lyrics.push(*block),
             other => {
@@ -4413,6 +4470,23 @@ fn wrap_staves(wrappers: &[Wrapper], staves: &mut [StaffBlock]) {
 /// simultanéités et les séquences imbriquées sont traversées : la structure
 /// d'un `<< … >>` ou d'un `{ … }` n'est celle de ses contextes que si l'un
 /// d'eux s'y trouve.
+/// Vrai si une musique porte un `\transposition` d'instrument : le groupe
+/// qui le porte doit rester séparé des voix pour que `build_score` propage la
+/// propriété (recherche identique à celle du constructeur).
+fn has_instrument_transpose(music: &Music) -> bool {
+    match music {
+        Music::Context(Context::InstrumentTranspose(_)) => true,
+        Music::Seq(items) | Music::Sim(items) => items.iter().any(has_instrument_transpose),
+        Music::New(group) => group
+            .staves
+            .iter()
+            .flat_map(|staff| staff.voices.iter())
+            .any(|voice| has_instrument_transpose(&voice.music)),
+        Music::Tag { music, .. } => has_instrument_transpose(music),
+        _ => false,
+    }
+}
+
 fn has_context(music: &Music) -> bool {
     match music {
         Music::New(_) | Music::Lyrics(_) => true,

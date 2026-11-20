@@ -4644,3 +4644,45 @@ fn repeat_tremolo_etire_les_durees() {
         ]
     );
 }
+
+/// `lily/parser.yy` `context_prefix` (l. 1686-1690) : `\new Voice` crée une
+/// voix **dans le Staff courant**, pas une portée sœur. Les contextes Voice
+/// meurent à la fin de leur musique : quatre `\new Voice` successifs peuvent
+/// réutiliser le même emplacement de voix. Aucune note ne doit être perdue.
+#[test]
+fn new_voice_reuse_un_emplacement_de_voix() {
+    let source = r#"\version "2.24.0"
+\language "english"
+\score { \context Staff = "up" {
+  \new Voice { c4 d4 }
+  \new Voice { e4 f4 }
+  \new Voice { g4 a4 }
+  \new Voice { b4 c'4 }
+} }"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.staves.len(), 1, "une seule portée");
+    assert_eq!(
+        hauteurs(&score),
+        vec![48, 50, 52, 53, 55, 57, 59, 60],
+        "toutes les notes sont conservées"
+    );
+    let pistes: Vec<u32> = (0..16)
+        .filter(|track| {
+            score.measures.iter().any(|measure| {
+                measure.segments.iter().any(|segment| {
+                    segment
+                        .chord_rest(Track::from_raw(*track))
+                        .is_some_and(|chord_rest| chord_rest.chord_ref().is_some())
+                })
+            })
+        })
+        .collect();
+    // réutilisation des emplacements : une seule piste suffit.
+    assert_eq!(pistes.len(), 1, "pistes occupées : {pistes:?}");
+
+    // Cas non concerné : deux `\new Staff` restent deux portées distinctes.
+    let deux = read_lilypond("\\score { << \\new Staff { c'4 } \\new Staff { e'4 } >> }")
+        .expect("lecture");
+    assert_eq!(deux.staves.len(), 2);
+    assert_eq!(hauteurs(&deux), vec![60, 64]);
+}

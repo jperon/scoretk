@@ -2264,3 +2264,31 @@ effect: the previous run had four 10-second timeouts and this one has none, so
 40 000 more reference notes are now counted. Restricted to the files measured
 in both runs, N2 is identical before and after the fix except for the tremolo
 sources.
+
+### Context creation, completed (fourth pass)
+
+The direct_merge attempt described above was replaced by a three-part fix that
+keeps every note:
+
+1. `\new Voice` / `\context Voice` inside a Staff stay **voices of that Staff**
+   (`lily/parser.yy` 1686–1690 `context_prefix`: `context_create` /
+   `context_find_or_create`, `lily/context.cc::find_create_context`, NR §5.2.1).
+   They are no longer emitted as sibling staves.
+2. Consecutive Voice groups that belong to one `<< … >>` (or one `{ … }`) are
+   interpreted by **one** interpreter, so their sequential positions are kept;
+   `assign_voice_slots` gives the first four voices the four model slots and
+   **reuses a slot as soon as the previous voice's last event has passed**
+   (LilyPond contexts die at the end of their music).
+3. Only a voice that is still active when all four slots are occupied is moved
+   to a sibling staff, with a warning — instead of being dropped at the old
+   `index >= VOICES` guard.
+
+Two reduced tests: `new_voice_reuse_un_emplacement_de_voix` (four successive
+`\new Voice`, one staff, one occupied track, all eight notes kept, two `\new
+Staff` still two staves) and the existing
+`transposition_du_global_atteint_les_voix_de_la_portee`, updated because the two
+guitar voices now share one part, with the `\global` transposition still
+applied. On the 230 files that previously declared more staves than the
+reference has MIDI tracks, **140 now declare fewer, none more, and 68 exactly
+match the reference** (e.g. `pathetique-1` 14 → 5 staves, N1 4111 → 4154 and
+N2 2890 → 2946; `Cellosonata_No3_1` 7 → 3, N1 5111 → 5210).
