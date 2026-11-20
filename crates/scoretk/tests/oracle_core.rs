@@ -35,7 +35,7 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-use common::musicxml_core::{diff, normalize, normalize_full};
+use common::musicxml_core::{normalize, normalize_full};
 use similar::{ChangeTag, TextDiff};
 
 /// Nom de balise d'une ligne canonique, pour grouper les écarts par famille.
@@ -48,13 +48,20 @@ fn line_tag(line: &str) -> Option<String> {
     (fin > 0).then(|| reste[..fin].to_owned())
 }
 
-/// Compare les lignes canoniques et compte les balises modifiées.
-fn compare(reference: &[String], sortie: &[String]) -> (usize, BTreeMap<String, usize>) {
+/// Compare les lignes canoniques, compte les balises modifiées et retient la
+/// première ligne qui diffère (balise + texte), dans l'ordre du document.
+fn compare(
+    reference: &[String],
+    sortie: &[String],
+) -> (usize, BTreeMap<String, usize>, Option<(String, String, String)>) {
     let a: Vec<&str> = reference.iter().map(String::as_str).collect();
     let b: Vec<&str> = sortie.iter().map(String::as_str).collect();
     let texte = TextDiff::from_slices(&a, &b);
     let mut tags = BTreeMap::new();
     let mut modifiees = 0;
+    let mut tag_premier = None;
+    let mut ref_premiere = None;
+    let mut sortie_premiere = None;
     for change in texte.iter_all_changes() {
         if change.tag() == ChangeTag::Equal {
             continue;
@@ -63,8 +70,42 @@ fn compare(reference: &[String], sortie: &[String]) -> (usize, BTreeMap<String, 
         if let Some(tag) = line_tag(change.value()) {
             *tags.entry(tag).or_insert(0) += 1;
         }
+        if tag_premier.is_none() {
+            tag_premier = Some(line_tag(change.value()).unwrap_or_else(|| "?".to_owned()));
+        }
+        if change.tag() == ChangeTag::Delete && ref_premiere.is_none() {
+            ref_premiere = Some(change.value().trim().to_owned());
+        }
+        if change.tag() == ChangeTag::Insert && sortie_premiere.is_none() {
+            sortie_premiere = Some(change.value().trim().to_owned());
+        }
     }
-    (modifiees, tags)
+    let premier = tag_premier.map(|tag| {
+        (
+            tag,
+            ref_premiere.unwrap_or_default(),
+            sortie_premiere.unwrap_or_default(),
+        )
+    });
+    (modifiees, tags, premier)
+}
+
+/// Échappe une ligne canonique pour le format TSV.
+fn tsv(texte: &str) -> String {
+    texte
+        .replace('\\', "\\\\")
+        .replace('\t', "\\t")
+        .replace('\n', "\\n")
+}
+
+/// Formate la première différence sous la forme `balise|référence|sortie`.
+fn colonne(premier: &Option<(String, String, String)>) -> String {
+    premier
+        .as_ref()
+        .map(|(tag, reference, sortie)| {
+            format!("{}|{}|{}", tsv(tag), tsv(reference), tsv(sortie))
+        })
+        .unwrap_or_default()
 }
 
 #[test]
@@ -87,10 +128,18 @@ fn compare_paires() {
         let (id, reference, sortie_xml) = (champs[0], champs[1], champs[2]);
         let ref_xml = fs::read_to_string(reference).expect("référence lisible");
         let sortie_xml = fs::read_to_string(sortie_xml).expect("sortie lisible");
-        let (noyau, _) = diff(&normalize(&ref_xml), &normalize(&sortie_xml));
-        let (plein, tags) = compare(&normalize_full(&ref_xml), &normalize_full(&sortie_xml));
+        let ref_core = normalize(&ref_xml);
+        let sortie_core = normalize(&sortie_xml);
+        let (noyau, _, premier_noyau) = compare(&ref_core, &sortie_core);
+        let (plein, tags, premier_plein) =
+            compare(&normalize_full(&ref_xml), &normalize_full(&sortie_xml));
         let tags: Vec<String> = tags.iter().map(|(tag, n)| format!("{tag}:{n}")).collect();
-        resultats.push_str(&format!("{id}\t{noyau}\t{plein}\t{}\n", tags.join(",")));
+        resultats.push_str(&format!(
+            "{id}\t{noyau}\t{plein}\t{}\t{}\t{}\n",
+            tags.join(","),
+            colonne(&premier_noyau),
+            colonne(&premier_plein),
+        ));
     }
     fs::write(Path::new(&sortie), resultats).expect("résultats écrits");
 }

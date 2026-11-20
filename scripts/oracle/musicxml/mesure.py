@@ -152,11 +152,13 @@ def fusionner_core(args) -> None:
     core = {}
     for ligne in sortie.read_text(encoding="utf-8").splitlines():
         champs = ligne.split("\t")
-        if len(champs) == 4:
+        if len(champs) >= 6:
             core[champs[0]] = {
                 "noyau_lignes": int(champs[1]),
                 "plein_lignes": int(champs[2]),
                 "tags": dict(t.split(":") for t in champs[3].split(",") if ":" in t),
+                "premier_noyau": champs[4],
+                "premier_plein": champs[5],
             }
     chemin = Path(args.out) / "mesure.jsonl"
     lignes = []
