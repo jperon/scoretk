@@ -100,7 +100,9 @@ impl Element {
             let Some(end) = rest[position..].find('>') else {
                 break;
             };
-            let tag = rest[position + 1..position + end].trim().trim_end_matches('/');
+            let tag = rest[position + 1..position + end]
+                .trim()
+                .trim_end_matches('/');
             if tag == "br" {
                 plain.push('\n');
             }
