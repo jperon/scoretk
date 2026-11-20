@@ -661,3 +661,81 @@ are not caused by this writer. The two N2 movements on ly-127/171
 (180 → 174 notes) come from the same reader changes: N1 = N2 = ref on both
 runs, i.e. still a perfect playback match. The 43 unopened rows keep the same
 grouping; no writer-only failure was found.
+
+### Sixth pass — reader/model causes and the anacrusis writer fix (English)
+
+**Corpus — the five remaining files.** Each was reduced against the C++
+reader; none is a mis-serialised writer value, so no writer change was made
+for them (except the anacrusis property below, which concerns the `.mscz`
+lot):
+
+| Score | Remaining gap | C++ reader / model | Owner |
+| --- | --- | --- | --- |
+| `moonlight` | `<note>` vs `<forward>` (98 core lines) | `Measure::checkMeasure`/`fillGap` (`engraving/dom/check.cpp`), ported in `crates/scoretk-core/src/gap_rests.rs` | model: gap-rest durations differ from MuseScore's, so scoretk's export cursor inserts `<forward>` where MuseScore writes a rest |
+| `testTboxWords1` | `<measure-style><multiple-rest>` only in scoretk | `TRead::read(Measure*)` (`read460/measureread.cpp:174-177`), `Measure::mmRestLast()` (`dom/measure.cpp:2875-2885`) | model: MuseScore rebuilds the mmRest from consecutive measures when style `createMultiMeasureRests` is set (`style/styledef.cpp:571`); the pivot stores one count on one measure |
+| `changevisibility` | `<accidental>natural</accidental>` only in scoretk | `TRead::read(Note*)` (`read460/tread.cpp`), `TRead::read(Accidental*)` (`read460/tread.cpp`, `Pid::ACCIDENTAL_TYPE`) | reader: the grace chord inside `<Ornament>` is dropped while its accidental stays on the main note; MuseScore's own writer emits the identical `<Accidental>` element |
+| `linked-ties` | `<tie type="start"/>` only in scoretk | `TRead::read(Tie*)` (`read460/tread.cpp`), `ConnectorInfoReader::readEndpointLocation` (`read460/connectorinforeader.cpp:120-130`) | model: the corpus ties a grace note (`<location><grace>0</grace>`) to the main note; the pivot has no grace-tie anchor |
+| `mmrest` | `<measure-style>` only in scoretk | `TRead::read(Measure*)` (`read460/measureread.cpp:174-177`) | model: same mmRest range issue as `testTboxWords1`; layout style is not in the pivot |
+
+For `testTboxWords1`, hand-enabling `createMultiMeasureRests` in both
+`score.mscx` and `score_style.mss` makes MuseScore export three
+`<multiple-rest>1</multiple-rest>` where scoretk writes one
+`<multiple-rest>2</multiple-rest>`: the fix needs the mmRest range model, not
+a writer attribute.
+
+**Incomplete measures — reduced example.** `ly-3`
+(`02_01_Miguel_Humberto_Sous-le-toit-la-tourterelle_partition.ly`, 715 bytes)
+is read from LilyPond, not from `.mscx`. MuseScore reports `Incomplete
+measure, measure 32, staff 1. Found: 5/4. Expected: 4/4`. The written voice
+starts with two `<location><fractions>1/8</fractions></location>` before the
+first chord: the model has a 1/4 voice gap with no rest (`s8*2` in the
+`\chordmode` staff). `scoretk-core::gap_rests::fill` is called by the MuseScore
+and MusicXML importers (`read/mod.rs:87`, `musicxml-import/src/lib.rs:116`)
+but not by `scoretk-lilypond-import`; this is the precise cause to hand to the
+LilyPond agent. It is already recorded in `docs/agents/lilypond.md` under
+"The '+3.5 quarters' shift" (full-measure rest written with the pickup
+measure length, NR §2.2.3/§2.3.3). No LilyPond crate was touched here.
+
+**`.mscz` ranking and writer fix.** Across the 172 written `.mscz`, the most
+frequent changed core tags remain `notations`/`slur` (layout), `measure` (24
+files), `measure-style`/`multiple-rest` (63), `note`/`forward` (82) and
+`tuplet` (36). Among files where MuseScore's own import is core-identical and
+ours is not, the first difference is an anacrusis measure number on six files
+(`<measure number="1">` vs `<measure implicit="yes" number="0">`), mmRest
+ranges on six, voice padding on four, accidentals on three.
+
+`MeasureWrite::writeMeasure` (`write/measurewrite.cpp:76`) writes
+`Pid::EXCLUDE_FROM_NUMBERING` as `<irregular>`; the 4.6+ reader
+(`read460/measureread.cpp:124-125`) restores `Measure::excludeFromNumbering()`.
+The writer only emitted the `len` attribute, so MuseScore lost the anacrusis
+flag on reopening. It now writes `<irregular>1</irregular>` whenever the pivot
+sets it. Reduced test: `mesure_irreguliere_ecrit_sa_propriete`, in ordinary
+music (voices, chords, rests, bars), with a non-concerned ordinary measure.
+A hand patch of `tk.mscz` for mscz-1 confirmed that adding
+`<irregular>1</irregular>` changes MuseScore's re-export from
+`<measure number="1">` to `<measure number="0" implicit="yes">`.
+
+### Sixth pass — final table
+
+Binary `/tmp/scoretk-mscz-pass6-final` (sha256 `3d77a839…`). Same 638 scores,
+same oracle, same tolerance. Master gained LilyPond reader commits between the
+previous binary and this one (`6c5d873`, `ba4b690`, `60659a1`), so the
+reference MIDI/MusicXML of the `.ly` lot changes independently of this writer.
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | 51/56 | 0.9702 | 0.9694 | 0 | 56/56 |
+| mscz | 174 | 172 | 172 | **40/172** | 0.9763 | 0.9762 | 0 | 39/172 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9943 | 0.9868 | 0 | 0/27 |
+| ly | 375 | 345 | 345 | 1/345 | 0.9822 | 0.9490 | 0 | 0/0 |
+| abc | 1 | 1 | 1 | 0/1 | 1.0000 | 1.0000 | 0 | 0/0 |
+| **Total** | **638** | **601** | **601** | **92/601** | **0.9796** | **0.9760** | **0** | **95/255** |
+
+Compared with the previous table, **six `.mscz` become core-identical**
+(mscz-1, 2, 11, 28, 41, 47 — all the anacrusis `<irregular>` cases) and 27
+`.mscz` scores lose changed core lines. No score gains core lines and none
+stops opening. The `.ly` N2 drop (0.9957 → 0.9490) is entirely one file,
+`Angels_Carol.ly` (ly-255, 1617 → 20 matched notes): its *direct* MIDI from
+scoretk differs between the two binaries because of the master LilyPond
+reader commits above, which are not ancestors of the previous binary.
+N1 = N2 on both runs; no MuseScore replay regression from this writer.
