@@ -916,3 +916,127 @@ piano N2 drop are the tie-merge and repeat-expansion effects described above.
 preserved even where MuseScore 4.7.4 suppresses them as redundant. No file
 went from core-identical to non-identical, and the versioned corpus remains
 54/56 with `EXPECTED_CONFORMANT` unchanged.
+
+### Second fidelity campaign — reader information loss and part-list fidelity (English)
+
+#### Frozen baseline and regrouping
+
+Baseline binary: `/tmp/scoretk-mxl-base`, sha256 starting `1b086523`, built
+from commit `842da94` before any fix of this campaign. Same 174-file manifest
+(`scripts/oracle/musicxml/lots.sh`) and same oracle
+(`scripts/oracle/musicxml/mesure.sh`) as above. The frozen binary stays
+available for A/B measurement; all scores run under `timeout` and
+`prlimit --as=2000000000`.
+
+`groupes.py` groups the 134 non-conformant baseline scores by **first differing
+core family** (the canonical line extracted by `oracle_core.rs`, in document
+order). Layout-only tags (`<staff-details>`, tuplet brackets) and metadata
+artefacts (`movement-number`, measure numbering across Vivaldi movements) are
+kept in the table but deliberately not fixed.
+
+| First differing family | Baseline files | Final files |
+| --- | ---: | ---: |
+| instruments / transposition | 60 | 6 |
+| voices / staves (hidden/small staves) | 21 | 72 |
+| tuplets (bracket layout) | 12 | 14 |
+| other (part-group order, layout artefact) | 11 | — |
+| barlines / repeats (measure-style, layout) | 10 | 11 |
+| structure / part-list | 6 | 14 |
+| metadata (artefact) | 4 | 4 |
+| notes / pitch | 3 | 3 |
+| harmony / chords | 2 | 2 |
+| ties | 2 | 2 |
+| directions | 2 | 5 |
+| duration / rhythm | 1 | 1 |
+
+By first differing **tag**, the baseline had `part-name` 50, `staff-details`
+21, `tuplet` 12, `part-group` 11, `measure` 8, `attributes` 6,
+`midi-channel` 4, `movement-number` 4, `volume` 3, `instrument-sound` 3. The
+five fixed causes below remove all 67 files whose first difference was
+`part-name`, `part-group`, `instrument-sound` or `volume`; the remaining first
+tags are layout (`staff-details`, `tuplet`) or documented artefacts.
+
+#### Fixes, one commit per cause
+
+1. **`<br/>` in instrument names, 50 files** — `TRead::readLegacyStaffName`
+   (`read500/tread.cpp:4200`) and `lineBreakFromTag` (`:3812`) replace `<br/>`
+   with a newline; the MusicXML writer's `toPlainText`
+   (`musicxmlfonthandler.cpp:56`) keeps that newline. The 3.x/4.x readers
+   concatenated the text and dropped the `<br/>`, so MuseScore exported
+   `<part-name>S\nA</part-name>` while scoretk wrote `SA`. Fixed in
+   `read302/xml.rs`, `read302/part.rs`, `read4xx/dom.rs` and `read4xx/mod.rs`.
+   MusicXML 4.0 is silent on how a MuseScore legacy name is decoded; MuseScore
+   4.7.4 behaviour is followed (`ref:part-name`). Reduced tests:
+   `sauts_de_ligne_dans_les_noms_de_partie`,
+   `nom_de_partie_3x_avec_saut_de_ligne`.
+2. **Part-group closing order, 11 files** — `partList`
+   (`exportmusicxml.cpp:7953-7960`) closes `partGroupEnd` from the last group
+   down to zero (a stack); scoretk closed groups in ascending order. The XSD
+   leaves the order free, so the reference tool decides. Reduced test:
+   `fermeture_des_groupes_de_parties_en_ordre_decroissant`.
+3. **Instrument ID not recognised for 2.x, 3 files** —
+   `TRead::read(Instrument*)` (`read400/tread.cpp:803`) always calls
+   `updateInstrumentId`. `read206` delegates with version 302, and the reader
+   skipped recognition for that version, so `<instrument-sound>` was missing
+   from `<score-instrument>`. Reduced test:
+   `identifiant_d_instrument_reconnu_sans_id_dans_le_fichier`.
+4. **Volume/pan from the last channel, 2 files** — `midiInstrument`
+   (`exportmusicxml.cpp:7341-7355`) reads `instr->channel(0)`. The 3.x reader
+   overwrote the controller values with each later `<Channel>`. Reduced test:
+   `volume_et_pan_du_premier_canal_seulement`.
+5. **Volume decimal formatting, 1 file** — `XmlWriter::tag` writes doubles
+   with six significant digits (`3.93701` for a controller at 5); scoretk
+   used four decimal places (`3.937`). Reduced test:
+   `volume_en_chiffres_significatifs`.
+
+A sixth cause, **MIDI channel allocation** (6 files, 42 lines), was
+implemented then reverted: reserving one channel per `<Channel>` requires a
+new pivot-model field, and the MuseScore writer emits a single `<Channel>`,
+so the `.mscz` round-trip test (`mscz_est_un_conteneur_musescore`) lost the
+count. Porting the full channel map through the writer is a separate change;
+no partial fix was kept. `<midi-channel>` remains the first difference of 6
+files.
+
+#### Final measurement against the frozen baseline
+
+Final binary `/tmp/oracle-mxl-campagne` rebuild, sha256 starting `0f03299f`;
+same manifest and oracle.
+
+| Metric | Frozen baseline | Final | Δ |
+| --- | ---: | ---: | ---: |
+| Scores | 174 | 174 | 0 |
+| Converted | 173 | 173 | 0 |
+| XSD-invalid scoretk outputs | 0 | 0 | 0 |
+| XSD errors, scoretk / MuseScore | 0 / 2 | 0 / 2 | 0 |
+| Core-identical to MuseScore | 39 | 39 | 0 |
+| N1 pitch multiset | 0.9783 | 0.9783 | 0 |
+| N2 pitch + attack | 0.9314 | 0.9314 | 0 |
+| Total differing core lines | 42 599 | 42 107 | −492 |
+| Files with fewer differing core lines | — | 68 | — |
+
+No per-file loss: across all 174 rows, `ok`, `ref`, `n1`, `n2`, `n2d` and the
+reference (`ms`) outputs are unchanged; no file went from core-identical to
+non-identical and no file's core line count increased. 68 files improved by
+1 to 12 lines each. The 39 already-conformant files stay conformant; none of
+the improved files becomes fully conformant because it still has a layout
+difference (`<staff-details>`, tuplet brackets, or `<sound>` placement).
+`EXPECTED_CONFORMANT` is unchanged and
+`cargo test -p scoretk --test e2e_corpus` still passes (5/5).
+
+#### Causes deliberately left unchanged (layout or metadata)
+
+- **`<staff-details>`, now 72 files** — `print-object="no"` on an empty staff
+  and `<staff-size>` come from MuseScore's layout decisions, absent from the
+  pivot model (`writeStaffDetails`, `exportmusicxml.rs:2256`).
+- **Tuplet brackets, 14 files** — `bracket` is computed by
+  `Tuplet::calcHasBracket` from beams and staff crossing; no export change.
+- **`<measure-style>` (multiple rests), 6 files** — MuseScore creates them in
+  the layout engine from `<createMultiMeasureRests>`; reproducing that pass
+  is a layout change, not a musical gap.
+- **Vivaldi measure numbering / `<movement-number>`, 13 files** — continuous
+  numbering across movements and the `Level::Full` metadata artefact, both
+  documented above.
+- **`<sound tempo>`/`<sound segno>`, 5 files** — invisible tempo marks and
+  jump playback context depend on the export pass (`tempoSound`,
+  `exportmusicxml.cpp:5006-5016`).
+- **`<midi-channel>`, 6 files** — see the reverted cause above.
