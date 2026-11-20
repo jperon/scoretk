@@ -37,8 +37,8 @@ use std::collections::BTreeMap;
 
 use scoretk_core::model::{
     Annotation, ArticulationType, Chord, ChordRest, ChordRestKind, Fraction, GraceType, Instrument,
-    KeyMode, KeySig, LyricsSyllabic, Measure, Note, PartId, Score, SegmentItem, SegmentType,
-    SpannerType, StaffId, TimeSig, Track, TremoloKind, VeloType, VOICES,
+    KeyMode, KeySig, LyricsSyllabic, Measure, Note, OttavaType, PartId, Score, SegmentItem,
+    SegmentType, SpannerType, StaffId, TimeSig, Track, TremoloKind, VeloType, VOICES,
 };
 
 use super::error::Result;
@@ -128,6 +128,7 @@ pub(crate) fn render(
 ) -> Result<Rendered> {
     let channels = channels(score);
     let velocities = build_velocities(score);
+    let pitch_offsets = pitch_offsets(score);
     let time_sigs = time_signature_events(score);
     let key_sigs = key_signature_events(score);
     let pause_map = PauseMap::build(score, repeat_list, &time_sigs);
@@ -147,6 +148,7 @@ pub(crate) fn render(
         let part = &score.parts[staff.part.index()];
         let channel = channels[staff.part.index()];
         let is_top = part.staves.first() == Some(&staff.id);
+        let offsets = &pitch_offsets[staff_index];
         let track = &mut performance.tracks[staff_index];
 
         // Nom de piste (`writeHeader`) : le nom de la partie, identique sur
@@ -279,6 +281,7 @@ pub(crate) fn render(
                     offset,
                     &pause_map,
                     &velocities,
+                    offsets,
                     &mut notes,
                     &mut prev_chords,
                     &mut timemap,
@@ -471,6 +474,47 @@ fn segment_tick(tick: Fraction) -> i64 {
     tick.ticks(UNITS_PER_WHOLE)
 }
 
+/// Décalage de hauteur jouée d'une ottava, en demi-tons
+/// (`Ottava::pitchShift`, `engraving/dom/ottava.h:67-74`).
+fn ottava_shift(kind: OttavaType) -> i32 {
+    match kind {
+        OttavaType::OctaveUp => 12,
+        OttavaType::OctaveDown => -12,
+        OttavaType::FifteenthUp => 24,
+        OttavaType::FifteenthDown => -24,
+    }
+}
+
+/// Carte des décalages de hauteur par portée
+/// (`Staff::updateOttava`, `engraving/dom/staff.cpp:1279-1301`).
+///
+/// La norme SMF n'a pas d'ottava : c'est un réglage de rendu de MuseScore.
+/// Comme dans le C++, chaque ottava inscrit son `pitchShift` au tick de début
+/// et `0` au tick de fin ; `insert` reproduit `insert_or_assign` en écrasant
+/// une valeur déjà présente au même tick (la dernière ottava gagne).
+fn pitch_offsets(score: &Score) -> Vec<BTreeMap<i64, i32>> {
+    let mut result = vec![BTreeMap::new(); score.staves.len()];
+    for spanner in &score.spanners {
+        let SpannerType::Ottava(kind) = &spanner.kind else {
+            continue;
+        };
+        let Some(map) = result.get_mut(spanner.start.track.staff().index()) else {
+            continue;
+        };
+        map.insert(segment_tick(spanner.start.tick), ottava_shift(*kind));
+        map.insert(segment_tick(spanner.end.tick), 0);
+    }
+    result
+}
+
+/// Dernier décalage inscrit à un tick ≤ `tick` (`Staff::pitchOffset`,
+/// `engraving/dom/staff.cpp:1293-1301` : `findLessOrEqual`).
+fn pitch_offset(map: &BTreeMap<i64, i32>, tick: i64) -> i32 {
+    map.range(..=tick)
+        .next_back()
+        .map_or(0, |(_, shift)| *shift)
+}
+
 /// Tempo initial et changements, en microsecondes par noire.
 ///
 /// Les changements sont déroulés comme les autres évènements, puis les pauses
@@ -584,6 +628,7 @@ fn render_measure(
     offset: i64,
     pause_map: &PauseMap,
     velocities: &VelocityMaps,
+    offsets: &BTreeMap<i64, i32>,
     out: &mut Vec<Event>,
     prev_chords: &mut [i64; VOICES],
     timemap: &mut Builder<'_>,
@@ -650,6 +695,7 @@ fn render_measure(
                                 track_raw(staff.id, voice),
                                 source_tick,
                                 velocities,
+                                offsets,
                                 out,
                                 &mut AttackContext {
                                     measure: measure_index,
@@ -683,6 +729,7 @@ fn render_measure(
                 track_raw(staff.id, voice),
                 source_tick,
                 velocities,
+                offsets,
                 out,
                 &mut AttackContext {
                     measure: measure_index,
@@ -761,6 +808,7 @@ fn render_two_chord_tremolo(
     track: u32,
     source_tick: i64,
     velocities: &VelocityMaps,
+    offsets: &BTreeMap<i64, i32>,
     out: &mut Vec<Event>,
     context: &mut AttackContext<'_, '_>,
 ) {
@@ -801,11 +849,11 @@ fn render_two_chord_tremolo(
         let first_key = first
             .notes
             .first()
-            .map(|id| played_pitch(score, &score.notes[id.index()]));
+            .map(|id| played_pitch(score, &score.notes[id.index()], source_tick, offsets));
         let second_key = second_chord
             .notes
             .first()
-            .map(|id| played_pitch(score, &score.notes[id.index()]));
+            .map(|id| played_pitch(score, &score.notes[id.index()], source_tick, offsets));
         let Some(first_key) = first_key else {
             continue;
         };
@@ -903,17 +951,24 @@ fn actual_ticks(
 
 /// Hauteur MIDI effectivement jouée d'une note du modèle.
 ///
+/// `Note::ppitch` (`engraving/dom/note.cpp:2668-2690`) ajoute à la hauteur
+/// écrite le décalage d'ottava de la portée au tick du segment. La norme SMF
+/// (§Channel Voice) ne définit pas l'ottava : ce décalage est propre au rendu
+/// de MuseScore, porté ici par [`pitch_offset`]. Le tick utilisé est le tick
+/// source du segment, pas le tick d'exécution `utick` : dans le C++, la note
+/// provient du segment original, même quand les reprises sont déroulées.
+///
 /// La transposition de lecture trouvée dans un second `\score` LilyPond
 /// (`\transpose` sur la partition MIDI, Notation Reference §1.2.2/§24.3) ne
 /// s'applique qu'ici, aux numéros de note des messages Note On/Off (MIDI 1.0
 /// §Channel Voice). Le méta `FF 59` (`Key Signature`, SMF §Meta-Events) reste
 /// celui de la partition gravée : c'est une donnée d'affichage/analyse, elle ne
 /// change aucun numéro de note, et les autres écrivains gardent l'armure écrite.
-fn played_pitch(score: &Score, note: &Note) -> u8 {
+fn played_pitch(score: &Score, note: &Note, source_tick: i64, offsets: &BTreeMap<i64, i32>) -> u8 {
     let shift = score
         .playback_transposition
         .map_or(0, |transposition| transposition.chromatic);
-    (i32::from(note.pitch) + shift).clamp(0, 127) as u8
+    (i32::from(note.pitch) + shift + pitch_offset(offsets, source_tick)).clamp(0, 127) as u8
 }
 
 /// Rend un accord : notes d'ornement avant, note principale, ornements après
@@ -931,6 +986,7 @@ fn render_chord(
     track: u32,
     source_tick: i64,
     velocities: &VelocityMaps,
+    offsets: &BTreeMap<i64, i32>,
     out: &mut Vec<Event>,
     context: &mut AttackContext<'_, '_>,
 ) {
@@ -989,6 +1045,7 @@ fn render_chord(
                 &chord_velocity,
                 velocities,
                 source_tick,
+                offsets,
                 out,
                 context,
             );
@@ -1021,6 +1078,7 @@ fn render_chord(
                 &chord_velocity,
                 velocities,
                 source_tick,
+                offsets,
                 out,
                 context,
             );
@@ -1053,6 +1111,7 @@ fn render_chord(
                 &chord_velocity,
                 velocities,
                 source_tick,
+                offsets,
                 out,
                 context,
             );
@@ -1093,7 +1152,7 @@ fn render_chord(
         // Le C++ clampe la vélocité calculée avant de la personnaliser par
         // note (`compatmidirenderinternal.cpp:887-893`, puis `playNote`).
         let velocity = customize_velocity((velocity.round() as i32).clamp(1, 127), note) as u8;
-        let key = played_pitch(score, note);
+        let key = played_pitch(score, note, source_tick, offsets);
         if let Some((events, step)) = tremolo {
             for index in 0..events {
                 let start = on + ticks * (index * step) / 1000;
@@ -1174,6 +1233,7 @@ fn render_grace_notes(
     velocity_multiplier: &f64,
     velocities: &VelocityMaps,
     source_tick: i64,
+    offsets: &BTreeMap<i64, i32>,
     out: &mut Vec<Event>,
     context: &mut AttackContext<'_, '_>,
 ) {
@@ -1187,7 +1247,7 @@ fn render_grace_notes(
         }
         // La personnalisation est par note, comme `playNote` dans le C++.
         let velocity = customize_velocity(velocity_base.clamp(1, 127), note) as u8;
-        let key = played_pitch(score, note);
+        let key = played_pitch(score, note, source_tick, offsets);
         let instrument = instrument_for(score, staff.part, source_tick);
         let end = off + tie_length(score, staff, note, instrument, source_tick);
         let start = on.max(0);

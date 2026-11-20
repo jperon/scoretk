@@ -994,3 +994,106 @@ engraved score, a `\transpose c d` MIDI score and ordinary music; byte-identical
 MusicXML, MIDI pitched a tone higher, and a MIDI score that differs otherwise
 records nothing) plus the interval assertions added to the reader's existing
 `partition_explicite_prioritaire_et_premiere` test.
+
+## Ottava playback and the MuseScore 2.x repeat gap (2026-11-20)
+
+### Ottava: `Staff::pitchOffset` in the MIDI writer
+
+`crates/scoretk-midi-export/src/render.rs` now builds, once per staff, the
+`pitchOffset` map of `Staff::updateOttava` (`engraving/dom/staff.cpp:1279-1301`):
+each `SpannerType::Ottava` writes its `pitchShift` at its start tick and `0` at
+its end tick (`BTreeMap::insert` reproduces `insert_or_assign`, last writer
+wins). `played_pitch` adds the last value at a tick ≤ the note's **source** tick
+(`findLessOrEqual`, `staff.cpp:1293-1301`). Shifts come from `ottavaDefault`
+(`engraving/dom/ottava.h:67-74`): 8va/8vb ±12, 15ma/15mb ±24 semitones. This is
+`Note::ppitch = m_pitch + ottaveCapoFret()` (`note.cpp:2664-2690`), which
+`compatmidirenderinternal.cpp:860` uses for Note On/Off. The source tick, not
+the unfolded `utick`, is correct: up to `RepeatList` expansion the C++ note
+object still belongs to the original segment. SMF §Channel Voice defines note
+numbers but no ottava (the tool decides the playback transposition), so the
+behaviour follows MuseScore, not a normative text.
+
+`Spanner::visible` is intentionally ignored: an invisible 8va still shifts
+playback (`setPlaySpanner`, `ottava.cpp:304-309`, is independent of `visible`).
+The model has no `playSpanner` flag and MuseScore's default is true.
+
+Tests (`crates/scoretk-midi-export/tests/ottava.rs`): an 8va over two notes
+then a note outside it, mid-measure end with the unmodified control, two staves
+with 8va/8vb, a chord, a rest and a tied note, and the MusicXML
+`<octave-shift>` → model → MIDI chain. The MusicXML importer subtracts the
+shift from the written pitch (`pass2.rs::build_note`), so MIDI restores the
+sounding pitch of the XML; all four expected pitch/attack/duration triples
+come from the reduced scores rendered with MuseScore 4.7.4, without a binary
+fixture.
+
+### Measurement against a frozen master binary
+
+Frozen baseline `/tmp/scoretk-master-ottava` built from this worktree's HEAD
+(`20e6833`, before the change); same manifests and oracle for both runs,
+`timeout 10 prlimit --as=2000000000` on every launch
+(`scripts/oracle/midi/mesure.py`, writing lots regenerated with `lots.sh`).
+
+| Lot | Baseline exact / N1 / N2 | Current exact / N1 / N2 |
+| --- | --- | --- |
+| `ecriture_ly` (1020) | 692 / 92.27 / 85.77 | 692 / 92.25 / 85.76 |
+| `ecriture_mscz_corpus` (21) | 17 / 100.00 / 100.00 | 17 / 100.00 / 100.00 |
+| `ecriture_mscz_musique` (8) | 2 / 69.89 / 57.25 | 2 / 69.89 / 57.25 |
+
+The two `.mscz` lots and all 21 corpus files are byte-identical in score. On
+`ecriture_ly`, two files lose a few matches and **must be explained**:
+`Ackermans_NoelDesPetitsSantons.ly` (N1 2201 → 2180, N2 2011 → 1994) and
+`Salazar_ALaEstrellaQueEsmalta.ly` (N1 1240 → 1239, N2 1240 → 1238). Both use
+`\ottava`; in these two contexts the LilyPond reader's ottava spanner covers
+one more chord than LilyPond's own MIDI playback, so a shift that was inert
+before is now audible (for example a note at 165 quarters is 48 in the
+reference and becomes 72 under `\ottava #2`). Correcting that anchor belongs
+to the LilyPond reader and is deliberately left out of this MIDI-only change;
+the aggregate loss is 0.02 N1 / 0.01 N2 percentage points. No other file
+changes.
+
+MusicXML oracle (`scripts/oracle/musicxml/mesure.py`, same 174-file manifest,
+current binary, N2 per version line as in §20): 3.x/4.x N1 0.9792, N2 0.9740
+(unchanged); 1.x/2.x N1 0.9739 (was 0.9700), N2 0.6754 (was 0.6742). The gain
+is concentrated in `Vingt_danses_enfantines_pour_piano.mscz` (N1 0.9896 →
+0.9985, N2 0.3106 → 0.3134, 26437/26477 matched pitches). The MIDI writer
+does not change `core`, XSD or `exact` counts.
+
+The byte-level oracle `scratchpad/oracle/compare.sh` is not a usable gate for
+this change either: its frozen reference predates several commits and already
+reports 276 DIFFs on the untouched master tree. With the ottava change it
+reports 281. The five new rows are exactly the MIDI outputs of the four corpus
+scores carrying ottavas (`v3/layout_elements`, `v4/copypaste_parts`,
+`v4/partExclusion`, `v4/testExcludeInvisibleElements`, each as `.mscx` and as
+`.ref.musicxml`). All four are now **closer** to the conformance target:
+`corpus_midi` still reports `MIDI : 21/21 identiques` against the `.ref.mid`
+produced by MuseScore 4.7.4, and no non-MIDI output changes.
+
+### Repeats: the 2.x reader and the unfolding are not the cause
+
+The piano file was reduced to the *first* passage where attacks shift: a
+hand-written 2.06 score with `segno`/`fine` markers, a D.C. `<Jump>`, a
+`<startRepeat>`/`<endRepeat>4` and voltas with `endings` `1, 3` and `2, 4`.
+`crates/scoretk-midi-export/tests/repeat_2x.rs` checks its 65 MuseScore 4.7.4
+attacks: they match exactly. The real file is also read completely — 2040
+measures, 60 voltas, 8 ottavas, 144 marker/repeat elements, all `<Marker>`,
+`<Jump>`, `<Volta id>` + `<endSpanner id>` and all `<endings>` values converted
+by `read206` (`docs/agents/mscx-format.md` §19). `RepeatList::unwind`
+(`repeat_list.rs:348-586`) was compared line by line with
+`RepeatList::unwind` (`engraving/dom/repeatlist.cpp:787-1069`), including
+`findMarker` (`:643-726`), `performJump` (`:737-782`) and the repeat/volta
+rewind (`:886-908`): no algorithmic difference was found that would explain
+the measured offsets. Neither the reader nor the unfolding needed a change.
+
+The remaining +6/+4.5/+13/+3-quarter offsets are **section-pause tempo
+differences**, not repeat passes. In the reference MIDI the pause at 1118
+quarters is 40 BPM for 2 quarters (a 2/4 measure, `quarterNotesPerMeasure /
+3 s`) whereas scoretk writes 60 BPM for 3 quarters, and the reference has 93
+tempo events against 58 in scoretk (`PauseMap::calculate`,
+`engraving/compat/midi/pausemap.cpp:47-76`, versus `pause_map.rs:74-115`).
+Removing the `pause.tick == segment.tick` guard decreased N2 from 8298 to
+5411 on that file, so that guard is correct and was kept. The remaining
+pitch divergences are the 2.x ottavas whose extent ends mid-measure
+(`docs/agents/mscx-format.md` §19.8), where the model anchor is less precise.
+Fixing either would require a separate port of the tempo timeline / 2.x
+spanner anchoring, not a change to `read206` or `repeat_list.rs`; none is made
+here because a wrong change there would regress the 21/21 conformant corpus.
