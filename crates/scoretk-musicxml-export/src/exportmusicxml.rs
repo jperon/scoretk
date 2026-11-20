@@ -2690,7 +2690,10 @@ fn write_lyric(out: &mut Out, lyric: &Lyrics) {
     out.xml.start_element("lyric", &borrowed);
     out.xml.tag("syllabic", syllabic_name(lyric.syllabic));
     out.xml.tag("text", &lyric.text);
-    if lyric.melisma.is_some() {
+    // `ExportMusicXml::lyrics` (exportmusicxml.cpp:6130) n'écrit `<extend>`
+    // que si `ticks().isNotZero()` : un `<ticks_f>0/16</ticks_f>` attentive
+    // une syllabe sans prolongement, pas un melisma.
+    if lyric.melisma.is_some_and(|ticks| ticks != Fraction::ZERO) {
         out.xml.tag_empty("extend", &[]);
     }
     out.xml.end_element();

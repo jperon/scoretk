@@ -2461,3 +2461,45 @@ fn symbole_de_groupe_carre_et_ligne() {
     assert!(xml.contains("<group-symbol>line</group-symbol>"));
     assert!(!xml.contains("<group-symbol>square</group-symbol>"));
 }
+
+#[test]
+fn melisma_nul_n_ecrit_pas_extend() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let piste = Track::new(staff, 0);
+
+    let mut m0 = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let premiers = ajouter_accord(
+        &mut score, &mut m0, piste, Fraction::ZERO, Duration::quarter(), &[(60, tpc::C)]
+    );
+    let suivants = ajouter_accord(
+        &mut score, &mut m0, piste, Fraction::new(1, 4), Duration::quarter(), &[(60, tpc::C)]
+    );
+    score.note_mut(premiers[0]).tie_forward = Some(suivants[0]);
+    score.note_mut(suivants[0]).tie_back = Some(premiers[0]);
+    // Un `<ticks_f>0/16</ticks_f>` est lu comme Some(ZERO) : aucun prolongement.
+    let mut nul = Lyrics::new(0, LyricsSyllabic::Begin, "En");
+    nul.melisma = Some(Fraction::ZERO);
+    let mut cr = ChordRest::chord(Duration::quarter());
+    cr.lyrics.push(nul);
+    cr.chord_mut().expect("accord").notes.push(premiers[0]);
+    ajouter_element(&mut score, &mut m0, piste, Fraction::ZERO, cr);
+    // Une syllabe avec un vrai melisma doit garder son <extend/>.
+    let mut reel = Lyrics::new(0, LyricsSyllabic::End, "fant");
+    reel.melisma = Some(Fraction::new(1, 4));
+    let mut cr2 = ChordRest::chord(Duration::quarter());
+    cr2.lyrics.push(reel);
+    cr2.chord_mut().expect("accord").notes.push(suivants[0]);
+    ajouter_element(&mut score, &mut m0, piste, Fraction::new(1, 4), cr2);
+    score.add_measure(m0);
+
+    let mut m1 = ajouter_mesure(1, Fraction::ONE, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut m1, piste, Fraction::ZERO);
+    score.add_measure(m1);
+
+    let xml = export_musicxml(&score).expect("export");
+    // `ExportMusicXml::lyrics` (exportmusicxml.cpp:6130) : ticks().isNotZero().
+    assert_eq!(xml.matches("<extend/>").count(), 1, "extend nul en trop : {xml}");
+    assert!(xml.contains("<text>fant</text>\n          <extend/>"));
+    assert_eq!(xml.matches("<measure number=").count(), 2);
+}
