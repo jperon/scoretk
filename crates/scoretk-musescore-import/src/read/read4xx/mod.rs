@@ -563,6 +563,7 @@ impl Reader {
         let mut page = 1u32;
         // Un saut de section porte sur la mesure suivante.
         let mut section_break = false;
+        let mut section_keeps_numbering = false;
         for child in &element.children {
             match child.name.as_str() {
                 "Measure" => {
@@ -586,9 +587,14 @@ impl Reader {
                     }
                     self.read_measure(child, staff_index, measure_index)?;
                     if section_break {
-                        self.score.measures[measure_index].section_break_before = true;
+                        let measure = &mut self.score.measures[measure_index];
+                        measure.section_break_before = true;
+                        measure.section_keeps_numbering = section_keeps_numbering;
                     }
                     section_break = Self::has_section_break(child);
+                    if section_break {
+                        section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                    }
                     measure_index += 1;
                 }
                 // Les cadres changent la numérotation affichée mais pas le
@@ -596,13 +602,19 @@ impl Reader {
                 // suivante. MuseScore les écrit sous la première portée
                 // (`StaffRead::readStaff`).
                 "VBox" => {
-                    section_break |= Self::has_section_break(child);
+                    if Self::has_section_break(child) {
+                        section_break = true;
+                        section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                    }
                     if staff_index == 0 {
                         self.read_vbox(child, page);
                     }
                 }
                 "TBox" => {
-                    section_break |= Self::has_section_break(child);
+                    if Self::has_section_break(child) {
+                        section_break = true;
+                        section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                    }
                     // Texte de cadre exporté en `<words>` au début de la mesure
                     // qui suit (`tboxTextAsWords`) ; un cadre suivi d'un saut
                     // de page est au-dessous du système précédent.
@@ -620,7 +632,10 @@ impl Reader {
                     }
                 }
                 "HBox" | "FBox" => {
-                    section_break |= Self::has_section_break(child);
+                    if Self::has_section_break(child) {
+                        section_break = true;
+                        section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                    }
                 }
                 "tick" => {}
                 _ => {}
@@ -642,6 +657,17 @@ impl Reader {
             .child("LayoutBreak")
             .and_then(|layout_break| layout_break.child("subtype"))
             .is_some_and(|subtype| subtype.text() == "section")
+    }
+
+    /// `startWithMeasureOne` du saut de section porté par l'élément.
+    /// Absent, le corpus MuseScore 4.7.4 relance la numérotation à 1.
+    fn section_break_starts_at_one(element: &Element) -> bool {
+        element
+            .child("LayoutBreak")
+            .and_then(|layout_break| layout_break.child("startWithMeasureOne"))
+            .and_then(Element::int)
+            .unwrap_or(1)
+            != 0
     }
 
     /// Lit les textes d'un cadre vertical (`VBox`), exportés en `<credit>`.
@@ -806,6 +832,10 @@ impl Reader {
                 // `<LayoutBreak><subtype>line|page</subtype>` : la mesure
                 // finit un système (voir `line_break`).
                 "LayoutBreak" => {
+                    // Un saut de section porte sur la mesure suivante : il est
+                    // traité par `has_section_break`/`section_keeps_numbering` plus
+                    // haut, pas ici (sinon la mesure courante serait marquée
+                    // deux fois).
                     if matches!(
                         child.child("subtype").map(Element::text),
                         Some("line" | "page")
@@ -813,8 +843,15 @@ impl Reader {
                         self.score.measures[model_index].line_break = true;
                     }
                 }
-                // TODO(parité): <stretch>, <noOffset>,
-                // <measureRepeatCount>, <MMRestRange>, <visible>.
+                // `Measure::setMeasureNumberOffset` (`measureread.cpp:121`) :
+                // numérotation d'origine conservée par une partition extraite.
+                "noOffset" => {
+                    if let Some(offset) = child.int() {
+                        self.score.measures[model_index].number_offset = offset as i32;
+                    }
+                }
+                // TODO(parité): <stretch>, <measureRepeatCount>, <MMRestRange>,
+                // <visible>.
                 _ => {}
             }
         }

@@ -239,6 +239,7 @@ impl Reader {
         // Un saut de section porte sur la mesure suivante : MuseScore y
         // recommence la numérotation à 1 (et les `<attributes>` MusicXML).
         let mut section_break = false;
+        let mut section_keeps_numbering = false;
         for child in node.children() {
             match child.name() {
                 "Measure" => {
@@ -258,8 +259,15 @@ impl Reader {
                         continue;
                     }
                     let measure = self.ensure_measure(index, tick);
-                    self.score.measures[measure].section_break_before |= section_break;
+                    if section_break {
+                        self.score.measures[measure].section_break_before = true;
+                        self.score.measures[measure].section_keeps_numbering =
+                            section_keeps_numbering;
+                    }
                     section_break = Self::has_section_break(child);
+                    if section_break {
+                        section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                    }
                     tick = measure::read_measure(self, measure, child, staff);
                     index += 1;
                 }
@@ -272,7 +280,10 @@ impl Reader {
                 // (`tboxTextAsWords`). Un cadre suivi d'un saut de page est
                 // au-dessous du système précédent.
                 "TBox" => {
-                    section_break |= Self::has_section_break(child);
+                    if Self::has_section_break(child) {
+                        section_break = true;
+                        section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                    }
                     let below = index > 0 && credits::page_break(child);
                     if let Some(mut text) = textlines::read_tbox(child, index, below) {
                         if below {
@@ -283,7 +294,10 @@ impl Reader {
                     }
                 }
                 "VBox" => {
-                    section_break |= Self::has_section_break(child);
+                    if Self::has_section_break(child) {
+                        section_break = true;
+                        section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                    }
                     // Les textes d'un `VBox` deviennent des `<credit>` ; les
                     // autres cadres n'en portent pas.
                     if staff == 0 {
@@ -292,9 +306,11 @@ impl Reader {
                 }
                 // TODO(parité): `<HBox>` et `<FBox>` ne portent pas de texte ;
                 // seuls leurs sauts de page et de section comptent.
-                "HBox" | "FBox" => {
-                    section_break |= Self::has_section_break(child);
+                "HBox" | "FBox" if Self::has_section_break(child) => {
+                    section_break = true;
+                    section_keeps_numbering = !Self::section_break_starts_at_one(child);
                 }
+                "HBox" | "FBox" => {}
                 _ => {}
             }
             // Un saut de page s'applique après l'élément qui le porte.
@@ -310,6 +326,16 @@ impl Reader {
         node.child("LayoutBreak")
             .and_then(|layout_break| layout_break.child("subtype"))
             .is_some_and(|subtype| subtype.trimmed_text() == "section")
+    }
+
+    /// `startWithMeasureOne` du saut de section. Absent, le corpus 4.7.4
+    /// recommence la numérotation à 1.
+    fn section_break_starts_at_one(node: &Node) -> bool {
+        node.child("LayoutBreak")
+            .and_then(|layout_break| layout_break.child("startWithMeasureOne"))
+            .and_then(Node::int_text)
+            .unwrap_or(1)
+            != 0
     }
 
     /// Complète les silences multi-mesures d'un seul tenant.

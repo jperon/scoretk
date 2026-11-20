@@ -2025,12 +2025,16 @@ impl Context<'_> {
     fn measure_number(&self, index: usize) -> (String, bool) {
         let debut = self.score.measures[..=index]
             .iter()
-            .rposition(|measure| measure.section_break_before)
+            .rposition(|measure| measure.section_break_before && !measure.section_keeps_numbering)
             .unwrap_or(0);
-        let mut numero = 1usize;
-        let mut irregulier = 1usize;
+        let mut numero = 1i64;
+        let mut irregulier = 1i64;
         let mut resultat = ("1".to_owned(), false);
         for mesure in &self.score.measures[debut..=index] {
+            // `MeasureNumberStateHandler::updateForMeasure`
+            // (`exportmusicxml.cpp:8288-8300`) : le décalage de numérotation
+            // est ajouté au compteur courant avant d'écrire le numéro.
+            numero += i64::from(mesure.number_offset);
             if mesure.exclude_from_numbering {
                 if irregulier + numero == 2 {
                     resultat = ("0".to_owned(), true);

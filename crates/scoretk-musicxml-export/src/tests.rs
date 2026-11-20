@@ -2170,6 +2170,7 @@ fn numerotation_apres_saut_de_section() {
         let mut measure = ajouter_mesure(index, start, Fraction::ONE, Fraction::ONE);
         if index == 1 {
             measure.section_break_before = true;
+            measure.section_keeps_numbering = false;
         }
         ajouter_accord(
             &mut score,
@@ -2669,5 +2670,68 @@ fn portee_masquee_ecrit_staff_details() {
     assert!(
         xml.contains("<staff-lines>5</staff-lines>"),
         "staff-lines de la portée masquée absent :\n{xml}"
+    );
+}
+
+/// `MeasureNumberStateHandler::updateForMeasure` (`exportmusicxml.cpp:8288-8300`)
+/// ajoute `measureNumberOffset()` au numéro courant. Une partition extraite
+/// d'une grande œuvre garde ainsi ses numéros d'origine (`<noOffset>494</noOffset>`
+/// dans le `.mscx`, cas réel : les 9 fichiers Vivaldi Dixit Dominus).
+#[test]
+fn numero_de_mesure_avec_decalage_nooffset() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    measure.number_offset = 494;
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<measure number=\"495\">"),
+        "décalage de numérotation perdu :\n{xml}"
+    );
+}
+
+/// Un saut de section avec `startWithMeasureOne="0"` ne relance pas la
+/// numérotation (`exportmusicxml.cpp:8274-8286`). Cas réel : Vivaldi, RV 594,
+/// « Dominus fredipi » (`noOffset` 317 puis 325).
+#[test]
+fn saut_de_section_sans_reprise_garde_le_numero() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    let track = Track::new(score.staff(staff).id, 0);
+    for index in 0..2 {
+        let mut measure = ajouter_mesure(
+            index,
+            Fraction::from_integer(index as i64),
+            Fraction::ONE,
+            Fraction::ONE,
+        );
+        if index == 0 {
+            measure.number_offset = 317;
+        } else {
+            measure.section_break_before = true;
+            measure.section_keeps_numbering = true;
+            measure.number_offset = 325;
+        }
+        ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+        ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+        score.add_measure(measure);
+    }
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<measure number=\"644\">"),
+        "la numérotation doit continuer après le saut :\n{xml}"
+    );
+    assert_eq!(
+        xml.matches("<measure number=\"318\">").count(),
+        1,
+        "le saut sans startWithMeasureOne ne doit pas relancer la numérotation"
     );
 }

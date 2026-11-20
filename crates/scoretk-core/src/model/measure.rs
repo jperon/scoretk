@@ -53,6 +53,9 @@ pub struct Measure {
     /// Numéro de mesure à partir de zéro, comme `Measure::measureNumber()`
     /// dans MuseScore. Le numéro affiché en MusicXML est calculé par l'export.
     pub number: usize,
+    /// Décalage de numérotation affichée (`Measure::measureNumberOffset`,
+    /// `<noOffset>`). Additionné au numéro courant à l'export MusicXML.
+    pub number_offset: i32,
     /// Tick de début.
     pub start_tick: Tick,
     /// Durée réelle de la mesure.
@@ -84,6 +87,10 @@ pub struct Measure {
     /// MuseScore recommence alors la numérotation affichée à 1 et réécrit les
     /// `<attributes>` de début de section (`<divisions>` compris).
     pub section_break_before: bool,
+    /// Un saut de section avec `startWithMeasureOne="0"` conserve la
+    /// numérotation au lieu de la relancer à 1
+    /// (`MeasureNumberStateHandler::updateForMeasure`, `exportmusicxml.cpp:8274-8286`).
+    pub section_keeps_numbering: bool,
     /// Mesure répétée (`<RepeatMeasure>`/`<MeasureRepeat>`), avec la portée
     /// concernée et le nombre de mesures répétées.
     ///
@@ -110,6 +117,7 @@ impl Measure {
     pub fn new(number: usize, start_tick: Tick, nominal_len: Fraction) -> Self {
         Self {
             number,
+            number_offset: 0,
             start_tick,
             len: nominal_len,
             nominal_len,
@@ -119,6 +127,7 @@ impl Measure {
             repeat_count: 0,
             multi_measure_rest: None,
             section_break_before: false,
+            section_keeps_numbering: false,
             measure_repeat: None,
             line_break: false,
             repeat_marks: Vec::new(),

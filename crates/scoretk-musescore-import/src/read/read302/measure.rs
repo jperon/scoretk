@@ -92,6 +92,8 @@ pub(crate) fn read_measure(
             // `<LayoutBreak><subtype>line|page</subtype>` : la mesure finit un
             // système. Un saut de section n'en est pas un pour l'export (pas de
             // barre de courtoisie).
+            // Un saut de section porte sur la mesure suivante : il est traité
+            // par `read302::read_staff`, pas ici.
             "LayoutBreak" => {
                 if matches!(
                     child
@@ -103,8 +105,14 @@ pub(crate) fn read_measure(
                     reader.score.measures[index].line_break = true;
                 }
             }
+            // `<noOffset>` : décalage de numérotation (`read206.cpp:3117`).
+            "noOffset" => {
+                if let Some(offset) = child.int_text() {
+                    reader.score.measures[index].number_offset = offset;
+                }
+            }
             // TODO(parité): `<stretch>` (ignoré avant 4.0),
-            // `<noOffset>`, `<irregular>`, `<measureRepeatCount>`, `<vspacer*>`,
+            // `<irregular>`, `<measureRepeatCount>`, `<vspacer*>`,
             // `<visible>`, `<SystemDivider>`, `<MeasureNumber>` et
             // `<multiMeasureRest>` ne changent pas le noyau musical lu ici.
             _ => {}

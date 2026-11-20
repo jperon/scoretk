@@ -94,7 +94,22 @@ Les nuances du C++ non modélisées ici (cutaway `print-spacing="yes"`,
 portée vide masquée par le style `hideEmptyStaves`, visibilité par mesure)
 restent des limites du modèle pivot.
 
-## 5. Next causes
+## 5. Cause suivante : numérotation des mesures
+
+`MeasureNumberStateHandler::updateForMeasure` (`exportmusicxml.cpp:8274-8300`)
+ajoute `Measure::measureNumberOffset()` (`<noOffset>`) au numéro courant, et ne
+relance la numérotation à 1 que si le saut de section porte
+`startWithMeasureOne`. Le portage ignorait `<noOffset>` et relançait à 1 sur
+**tout** saut de section. Le modèle porte maintenant `number_offset` et
+`section_keeps_numbering` (lecteurs 3.x et 4.x), et l'export s'en sert. Deux
+tests réduits : décalage initial (494 → 495) et section avec
+`startWithMeasureOne="0"` (numéros 318/644 au lieu d'un retour à 1).
+
+Mesure ciblée sur les 9 fichiers concernés (RV 594 de Vivaldi) : **9 gains,
+0 perte**, lignes canoniques divergentes 9 577 → 543. Les écarts résiduels
+sont les causes suivantes du classement.
+
+## 6. Next causes
 
 Work the ranking of §2 in order, re-measuring after each committed cause:
 `tuplet` (bracket direction), `attributes`, `measure`, `midi-channel`, `sound`.
