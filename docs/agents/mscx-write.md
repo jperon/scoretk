@@ -166,3 +166,123 @@ Le test e2e du corpus (références 4.7.4) reste inchangé par ces ajouts : seul
 `v3/moonlight` (18 lignes) et `v3/voices` (6 lignes) diffèrent encore des
 références, pour les raisons de mise en page déjà documentées dans
 `docs/agents/ecarts-noyau.md`.
+
+## 8. Measured fidelity after reopening in MuseScore 4.7.4 (English)
+
+### Frozen baseline and oracle
+
+There is no published specification of `.mscz` (see
+`docs/agents/format-ref/musescore.md`): the behaviour of MuseScore 4.7.4 is the
+reference. The round-trip test of §3 only uses scoretk's *own* reader, which
+can hide symmetric errors; the oracle below uses MuseScore itself.
+
+- Frozen binary: `/tmp/scoretk-mscz-base`, built from commit `497f9e3`, sha256
+  starting `04033ff2586c5090`. The fixed binary `/tmp/scoretk-mscz-final`
+  (sha256 starting `3611bacac5460a50`) is built from the same worktree after
+  the four fixes below, so both runs can be compared file by file.
+- Lots: the 56 corpus `.mscx`, the 174 `.mscz` of `~/Musique`, the 32 genuine
+  MusicXML files of `~/Musique`, a deterministic 1/5 sample of the 1 872 `.ly`
+  files (375) and of the `.abc` files (1). Manifests are built by
+  `scripts/oracle/musescore/lots.sh`, which reuses the lists of the LilyPond
+  and ABC writing oracles. No third-party file is versioned.
+- Oracle: `scripts/oracle/musescore/mesure.sh`. For each source, scoretk writes
+  a `.mscz`, MuseScore 4.7.4 reopens it and exports MusicXML and MIDI, and the
+  result is compared to scoretk's *direct* MusicXML and MIDI. Core comparison
+  reuses `core_norm` through `crates/scoretk/tests/oracle_core.rs` (no
+  duplicated normalisation), N1/N2 reuse `scripts/oracle/midi/midi_notes.py`
+  at the Q16 grid (±1/16 quarter). Every binary runs under `timeout` and
+  `prlimit --as=2000000000`.
+- **Alternative to beat:** MuseScore's own import of the same source (its own
+  `.mscz` for an mscz source, MusicXML/LilyPond/ABC import otherwise). A file
+  is counted as a loss when its round-trip has more changed core lines than
+  that alternative.
+
+### Baseline table (frozen binary)
+
+| Lot | Scores | `.mscz` written | Opened | Core-identical | N1 | N2 | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | 38/56 | 0.9834 | 0.9817 | 0 | 56/56 |
+| mscz | 174 | 171 | 172 | 9/171 | 0.9823 | 0.9783 | 0 | 39/171 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9127 | 0.3063 | 0 | 0/27 |
+| ly | 375 | 3 | 3 | 1/3 | 1.0000 | 1.0000 | 0 | 0/0 |
+| abc | 1 | 0 | 0 | 0/0 | — | — | 0 | 0/0 |
+| **Total** | **638** | **257** | **258** | **48/257** | **0.9695** | **0.8542** | **0** | **95/254** |
+
+No MuseScore load error or warning was reported on the files it did open; the
+three mscz failures (one unreadable 1.14 file, one MIDI export timeout) and
+the 372 unopened `.ly`/`.abc` files are the limits detailed below.
+
+### Baseline gaps by first differing core family
+
+154 files are worse than MuseScore's own import. The first differing core
+family (`scripts/oracle/musicxml/groupes.py`, same columns) is:
+
+| Family (changed tag) | Files | Extra changed lines |
+| --- | ---: | ---: |
+| `midi-device` | 46 | 30 556 |
+| `sign` (clef) | 26 | 2 554 |
+| `measure-style` | 14 | 3 026 |
+| `measure` | 11 | 1 971 |
+| `part-abbreviation` | 10 | 706 |
+| `note` | 9 | 5 018 |
+| `tuplet` | 8 | 1 392 |
+| `clef-octave-change` | 7 | 785 |
+| `harmony` | 4 | 205 |
+| `accidental` | 4 | 153 |
+| others (2 or fewer each) | 17 | — |
+
+### Final table (after the four fixes)
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | 45/56 | 0.9700 | 0.9682 | 0 | 56/56 |
+| mscz | 174 | 171 | 172 | 28/171 | 0.9781 | 0.9732 | 0 | 39/171 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9103 | 0.3055 | 0 | 0/27 |
+| ly | 375 | 297 | 297 | 1/297 | 0.9998 | 0.9966 | 0 | 0/0 |
+| abc | 1 | 0 | 0 | 0/0 | — | — | 0 | 0/0 |
+| **Total** | **638** | **551** | **552** | **74/551** | **0.9677** | **0.8594** | **0** | **95/254** |
+
+171 files improve, 3 files gain core lines (mscz-33: +51, mscz-117: +12,
+mscz-115: +2). All three keep exactly the same N1/N2/N2d (4 196/4 196 notes
+for mscz-33, 2 856/2 856 for the other two): the corrected `<midi-device>` and
+clef lines change the alignment of the line diff, exposing the unchanged
+`note`/`forward`, anacrusis and `<attributes>` differences that were already
+further down in the same file. There is no musical loss.
+
+### Fixes, in decreasing count
+
+1. **`<midi-device port>` — 46 files, up to 1 975 changed lines.** The writer
+   never emitted `<Channel><midiPort>`, so MuseScore recomputed the port from
+   the MIDI channel. Port of `TWrite::write(const InstrChannel*)`
+   (`write/twrite.cpp:2111-2114`), which writes `midiPort` and `midiChannel`
+   together. Reduced test: `port_midi_du_canal_ecrit_et_relu`.
+2. **Clef `<sign>` — 26 files.** The writer omitted `<transposingClefType>`
+   when it equalled the concert clef; the reader (`read400/tread.cpp:2551`)
+   then forces G. Port of `TWrite::write(const Clef*)`
+   (`write/twrite.cpp:1281-1299`). Reduced test:
+   `clef_basse_ecrit_son_type_transposant`.
+3. **Harmony — 4 files first, but up to 196 lines on the worst one.** The
+   writer used the pre-4.6 `<root>`/`<name>` children of `<Harmony>`; since
+   4.6 the reader (`read460/tread.cpp:2868`) only accepts `<harmonyInfo>`.
+   Port of `writeHarmonyInfo` (`write/twrite.cpp:1786-1826`), with the direct
+   children kept for scoretk's own reader. Reduced test:
+   `accords_chiffres_relus_par_musescore_46`.
+4. **Empty `<Instrument/>` — 372 files that MuseScore refused to open.** A
+   scoretk score built from LilyPond/ABC has no instrument; MuseScore 4.7.4
+   exits with code 1 (no message) on `<Instrument/>`. The writer now emits
+   the minimal default `<Instrument><Channel><program value="0"/></Channel>`
+   as MuseScore's own writer always does (`TWrite::write(const Instrument*)`,
+   `write/twrite.cpp:1947`). Reduced test:
+   `instrument_vide_ecrit_un_instrument_valide`.
+
+### Out of scope (unchanged)
+
+The remaining families are not simple mis-serialisations of a stored value:
+`measure-style`/`measure` concern the anacrusis number and multi-measure-rest
+range, `part-abbreviation` the part-group/newline handling,
+`clef-octave-change`/`accidental` the interaction between clef octave and
+transposition and courtesy accidentals, `tuplet` the bracket encoding read back
+by MuseScore, and `note`/`forward` the padded voice timeline. They need model
+or reader work in addition to the writer, and are left unchanged here. The
+`v3/moonlight` and `v3/voices` reference differences of §7 are likewise
+layout-only.
