@@ -550,11 +550,10 @@ impl<'a> Parser<'a> {
                     crate::playback::detect(&score.score, &self.partitions[index].score)
                 })
             });
-            let chosen = if detected.is_some() {
-                midi.unwrap_or(engraved)
-            } else {
-                engraved
-            };
+            // Dès qu'un score ne produit que du MIDI, c'est le seul que
+            // LilyPond joue : il fournit le modèle même si sa musique diffère
+            // du score gravé (AStMichel : 666 notes jouées contre 130 gravées).
+            let chosen = midi.unwrap_or(engraved);
             document.playback_transposition = if chosen == engraved { detected } else { None };
             for (index, partition) in self.partitions.iter().enumerate() {
                 if index != chosen {

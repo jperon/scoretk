@@ -4841,3 +4841,20 @@ mus = { c'4 d' e' f' }
         read_lilypond("\\score { \\transpose c d { c'4 d' } \\layout {} }").expect("lecture");
     assert_eq!(hauteurs(&seul), vec![62, 64]);
 }
+
+/// Quand LilyPond rencontre plusieurs `\score` et qu'un seul porte `\midi`
+/// sans `\layout`, c'est ce score qu'il joue (NR §24.3) : même si sa musique
+/// diffère du score gravé, c'est elle que décrit la référence MIDI.
+#[test]
+fn score_midi_seul_choisi_meme_si_musique_differente() {
+    let source = r#"\version "2.24.0"
+\language "english"
+\score { { c'4 d' } \layout {} }
+\score { { e'4 f' g' a' } \midi {} }
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![64, 65, 67, 69]);
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(durees_ecrites(&score), vec![Fraction::new(1, 4); 4]);
+    assert_eq!(score.playback_transposition, None);
+}
