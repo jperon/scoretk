@@ -31,6 +31,34 @@ it does not advance the position counter. MusicXML `<chromatic>` /
 Percentages are weighted by the number of reference notes, so a short and a
 long score do not carry the same weight.
 
+### Grace notes: two N2 rules (`N2` and `N2-grace`)
+
+Notation Reference §2.6.1 states that grace notes "take up no additional
+logical time in a measure"; `lily/grace-iterator.cc` puts them in the *grace
+part* of a musical moment and `lily/midi-walker.cc` notes that their MIDI can
+even start at negative times. §2.6.1 also states that each grace note in MIDI
+is played at 1/4 of its written duration. MusicXML `<grace/>` instead has zero
+duration and is
+read by `ly_notes.read_xml()` at the current cursor, i.e. at the **following
+main note's attack**. Quantizing the MIDI grace onsets directly to the Q16
+grid therefore compares two different times.
+
+The driver now records both rules:
+
+- **N2** (unchanged): every note, including graces, is compared on
+  `(pitch, quantized attack)`. This is the non-regression figure.
+- **N2-grace**: each candidate `<grace/>` note is paired with the *latest*
+  unmatched MIDI note of the **same pitch** in the window
+  `[main attack − 1 quarter, main attack + grid/2]`; paired graces are compared
+  on their main note's logical attack and counted separately (`graces_ref`,
+  `graces_test`, `graces_match`). Pairing is deterministic (one MIDI note per
+  candidate grace, latest first) and never reassigns a main note. A missing or
+  stale grace remains unmatched and still lowers the score.
+
+`ly_notes.py selftest` and `mesure.py --selftest` cover the grace marker, the
+pairing, the missing-grace case and the unaffected case. No reader change is
+involved: this is a comparison rule, not a tuning knob.
+
 ### Repeats: N2 is restricted to repeat-free scores
 
 LilyPond's MIDI unfolds `\repeat unfold` always, and `\repeat volta` when

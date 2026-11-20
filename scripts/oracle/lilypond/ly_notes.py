@@ -110,8 +110,12 @@ def read_midi(path: str) -> list[tuple[int, float, float, int]]:
     return notes
 
 
-def read_xml(path: str) -> list[tuple[int, float, float, int]]:
+def read_xml(path: str, with_grace: bool = False) -> list[tuple]:
     """Notes d'un MusicXML partwise : hauteur concert, attaque, durée, partie.
+
+    Avec ``with_grace=True``, chaque note porte un cinquième élément indiquant
+    si elle est une grâce (``<grace/>``). Le format par défaut reste inchangé
+    pour les autres appelants.
 
     MusicXML définit le temps **par partie avec un seul curseur**, jamais par
     voix ni par couple (voix, portée). Le curseur est tenu en noires :
@@ -198,6 +202,9 @@ def read_xml(path: str) -> list[tuple[int, float, float, int]]:
                         if step_u in STEPS and octave_u is not None:
                             hauteur_u = 12 * (int(octave_u) + 1) + STEPS[step_u]
                             notes.append((hauteur_u + transposition, attaque,
+                                          0.0 if est_grace else duree, numero_part,
+                                          est_grace) if with_grace else
+                                         (hauteur_u + transposition, attaque,
                                           0.0 if est_grace else duree, numero_part))
                     continue  # silence : le curseur a déjà avancé
                 step = pitch.findtext("step")
@@ -207,6 +214,9 @@ def read_xml(path: str) -> list[tuple[int, float, float, int]]:
                 alter = pitch.findtext("alter", "0")
                 hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
                 notes.append((hauteur + transposition, attaque,
+                              0.0 if est_grace else duree, numero_part, est_grace)
+                             if with_grace else
+                             (hauteur + transposition, attaque,
                               0.0 if est_grace else duree, numero_part))
     return notes
 
@@ -227,6 +237,47 @@ def compter_paires(
     return sum((ref & essai).values())
 
 
+def lire_graces(notes: list[tuple]) -> list[tuple[int, float]]:
+    """Graces du candidat : (hauteur, attaque de la note principale).
+
+    `lily/grace-iterator.cc` place les graces dans la *partie grace* du moment
+    musical et `lily/midi-walker.cc` note que leur MIDI peut commencer à un
+    temps négatif ; la Notation Reference §2.6.1 rappelle qu'elles ne prennent
+    aucun temps logique. Côté MusicXML, `<grace/>` est donc placé à l'attaque
+    courante, celle de la note principale qui suit.
+    """
+    return [(note[0], note[1]) for note in notes if len(note) >= 5 and note[4]]
+
+
+def apparier_graces(
+    reference: list[tuple], graces: list[tuple[int, float]], grid: float = GRID,
+    window: float = 1.0,
+) -> tuple[list[tuple], int, int, int]:
+    """Retire du MIDI les graces appariées et les compte à part.
+
+    Une grâce du candidat `(hauteur, attaque principale)` est appariée à la
+    note MIDI **de même hauteur** la plus proche par-dessous dans la fenêtre
+    `[attaque - window, attaque + grid/2]`, qui n'a pas déjà été utilisée.
+    L'appariement est déterministe (une seule note par grâce, la plus tardive
+    en cas de doublon) et ne touche pas aux notes principales. Renvoie
+    `(référence sans graces, graces MIDI, graces XML, graces appariées)`.
+    """
+    restants = list(reference)
+    utilises: set[int] = set()
+    apparies = 0
+    for hauteur, attaque in graces:
+        candidats = [
+            i for i, note in enumerate(restants)
+            if i not in utilises and note[0] == hauteur
+            and attaque - window <= note[1] <= attaque + grid / 2
+        ]
+        if candidats:
+            utilises.add(max(candidats, key=lambda i: (restants[i][1], -i)))
+            apparies += 1
+    return ([note for i, note in enumerate(restants) if i not in utilises],
+            len(utilises), len(graces), apparies)
+
+
 def a_des_repetitions(texte: str) -> bool:
     """Vrai si la source LilyPond contient une construction de reprise.
 
@@ -240,13 +291,21 @@ def a_des_repetitions(texte: str) -> bool:
 
 
 def compare(
-    reference: list[tuple], test: list[tuple], grid: float = GRID, tol: float = TOL
+    reference: list[tuple], test: list[tuple], grid: float = GRID, tol: float = TOL,
+    graces: list[tuple[int, float]] | None = None,
 ) -> dict:
     """Compare deux listes de notes et renvoie un relevé sérialisable.
 
     ``tol`` est conservé pour la compatibilité de l'interface CLI : la
-    correspondance se fait désormais exactement sur la grille de quantification
+    correspondance se fait exactement sur la grille de quantification
     (``grid``), sans tolérance flottante ni appariement arbitraire.
+
+    Quand ``graces`` est fourni (graces du candidat, voir `lire_graces`), on
+    calcule aussi ``n2_grace`` : les graces du MIDI sont appariées par hauteur
+    dans la fenêtre de la note principale et comparées sur cette attaque
+    logique, au lieu d'être quantifiées à leur temps de lecture (§2.6.1 de la
+    Notation Reference, `grace-iterator.cc`, `midi-walker.cc`). Les notes
+    principales gardent exactement la même règle que pour ``n2``.
     """
     r = len(reference)
     t = len(test)
@@ -286,6 +345,19 @@ def compare(
     }
     resultat["pct_n1"] = round(100.0 * n1 / r, 2) if r else 0.0
     resultat["pct_n2"] = round(100.0 * n2 / r, 2) if r else 0.0
+    if graces is not None:
+        ref_main, n_gr_ref, n_gr_test, n_gr_match = apparier_graces(
+            reference, graces, grid
+        )
+        test_main = [note for note in test if not (len(note) >= 5 and note[4])]
+        n2_grace = compter_paires(ref_main, test_main, grid) + n_gr_match
+        resultat.update({
+            "n2_grace": n2_grace,
+            "pct_n2_grace": round(100.0 * n2_grace / r, 2) if r else 0.0,
+            "graces_ref": n_gr_ref,
+            "graces_test": n_gr_test,
+            "graces_match": n_gr_match,
+        })
     resultat["exact"] = bool(r and r == t == n1 == n2)
     resultat["drapeaux"] = drapeaux(resultat)
     return resultat
@@ -361,6 +433,10 @@ def selftest() -> None:
             f.write(xml)
         lu = read_xml(p)
         assert lu == att, (lu, att)
+        # Le même passage avec le marqueur de grâce : le B4 est bien signalé.
+        lu_graces = read_xml(p, with_grace=True)
+        assert [note[4] for note in lu_graces] == [False] * 4 + [True]
+        assert lire_graces(lu_graces) == [(61, 2.0)]
 
         # Cas « non concerné » : XML lisible, hauteur et attaque exactes.
         relevant = compare(att, lu)
@@ -371,6 +447,28 @@ def selftest() -> None:
         sans_grace = [n for n in att if n[0] != 61]
         manque = compare(att, sans_grace)
         assert manque["n1"] == 4 and manque["n2"] == 4, manque
+
+        # Règle des graces : le MIDI de LilyPond les joue *avant* l'attaque
+        # logique (`grace-iterator.cc`, `midi-walker.cc`), le MusicXML les place
+        # *à* cette attaque. La règle habituelle perd la première grâce, la
+        # règle "appariée" la retrouve par hauteur dans la fenêtre de la note
+        # principale, sans toucher aux notes ordinaires.
+        ref_g = [(62, 0.0, 0.0625, 0), (60, 0.25, 1.0, 0),
+                 (62, 1.0, 0.0625, 0), (64, 1.25, 1.0, 0)]
+        test_g = [(62, 0.25, 0.0, 0), (60, 0.25, 1.0, 0),
+                  (62, 1.25, 0.0, 0), (64, 1.25, 1.0, 0)]
+        graces_g = [(62, 0.25), (62, 1.25)]
+        brut = compare(ref_g, test_g)
+        rule = compare(ref_g, test_g, graces=graces_g)
+        assert brut["n2"] == 2, brut
+        assert rule["n2"] == 2 and rule["graces_match"] == 2, rule
+        assert rule["n2_grace"] == 4 and rule["pct_n2_grace"] == 100.0, rule
+        # Une grâce absente du candidat ne doit pas être inventée.
+        absent = compare(ref_g, [(60, 0.25, 1.0, 0), (64, 1.25, 1.0, 0)],
+                         graces=[])
+        assert absent["n2_grace"] == 2 and absent["graces_match"] == 0, absent
+        # Sans graces déclarées, le relevé n'a pas de champ supplémentaire.
+        assert "n2_grace" not in brut, brut
 
         # Correction 2 — <forward> avant la première note d'une voix (levée).
         # Le silence de deux noires décale l'entrée : F5 passe de 0,0 à 2,0.

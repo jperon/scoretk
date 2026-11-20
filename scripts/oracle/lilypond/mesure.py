@@ -40,7 +40,9 @@ import shutil
 import subprocess
 import time
 
-from ly_notes import GRID, TOL, a_des_repetitions, compare, read_midi, read_xml
+from ly_notes import (
+    GRID, TOL, a_des_repetitions, compare, lire_graces, read_midi, read_xml,
+)
 
 TIMEOUT = 10
 TIMEOUT_LY = 20
@@ -223,7 +225,11 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     marquer_echec(r)
                     ecrire(out, r)
                     continue
-                r.update(compare(ref, test, args.grid, args.tol))
+                # Les graces du MIDI sont appariées à l'attaque de leur note
+                # principale (§2.6.1, grace-iterator.cc) ; N2 reste inchangé,
+                # n2_grace est publié à côté pour les deux règles de lecture.
+                graces = lire_graces(read_xml(str(dst), with_grace=True))
+                r.update(compare(ref, test, args.grid, args.tol, graces=graces))
                 if r["ref"] and not r["test"]:
                     r["drapeaux"] = ["sortie_vide"]
                 ecrire(out, r)
@@ -251,9 +257,11 @@ def resume(releves: list[dict]) -> str:
         "(hauteur, attaque quantifiée), sans appariement arbitraire.",
         "N1 porte sur tous les fichiers ; N2 **uniquement sur les fichiers sans",
         "reprise** (le MIDI de LilyPond déplie les reprises, pas le MusicXML).",
+        "N2-grace applique la même règle en appariant les graces du MIDI à",
+        "l'attaque de leur note principale (§2.6.1, grace-iterator.cc).",
         "",
-        "| Lot | Outil | Fichiers | Reprises | Réussis | Échecs | Délais | Vides | Exacts | N1 % (tous) | N2 % (sans reprise) | Temps max |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Lot | Outil | Fichiers | Reprises | Réussis | Échecs | Délais | Vides | Exacts | N1 % (tous) | N2 % (sans reprise) | N2-grace % (sans reprise) | Temps max |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for (lot, outil), rs in sorted(groupes.items()):
         n = len(rs)
@@ -267,13 +275,15 @@ def resume(releves: list[dict]) -> str:
         sans = [r for r in notes if not r.get("repeat", False)]
         n1 = sum(r["ref"] * r.get("pct_n1", 0) for r in notes)
         n2 = sum(r["ref"] * r.get("pct_n2", 0) for r in sans)
+        n2g = sum(r["ref"] * r.get("pct_n2_grace", 0) for r in sans)
         tot = sum(r["ref"] for r in notes)
         tot_sans = sum(r["ref"] for r in sans)
         tmax = max((r.get("temps", 0) for r in rs), default=0)
         lignes.append(
             f"| {lot} | {outil} | {n} | {reprises} | {reussis} | {echecs} | {delais} | {vides} | "
             f"{exacts} ({100*exacts/n:.1f} %) | {n1/tot if tot else 0:.2f} | "
-            f"{n2/tot_sans if tot_sans else 0:.2f} | {tmax:.2f} s |"
+            f"{n2/tot_sans if tot_sans else 0:.2f} | "
+            f"{n2g/tot_sans if tot_sans else 0:.2f} | {tmax:.2f} s |"
         )
     causes: dict[str, list[str]] = {}
     for r in releves:
@@ -297,12 +307,15 @@ def selftest() -> None:
             "drapeaux": [], "exact": False}
     ex = [
         {**base, "fichier": "propre.ly", "repeat": False,
-         "ref": 10, "pct_n1": 100.0, "pct_n2": 100.0, "exact": True},
+         "ref": 10, "pct_n1": 100.0, "pct_n2": 100.0,
+         "pct_n2_grace": 90.0, "exact": True},
         {**base, "fichier": "reprise.ly", "repeat": True,
-         "ref": 100, "pct_n1": 100.0, "pct_n2": 0.0},
+         "ref": 100, "pct_n1": 100.0, "pct_n2": 0.0, "pct_n2_grace": 0.0},
     ]
     texte = resume(ex)
-    assert "| 100.00 | 100.00 |" in texte, texte
+    # N2 et N2-grace sont deux colonnes distinctes ; la reprise est exclue des
+    # deux agrégats, sinon le fichier propre à 10 notes donnerait 9,09 %.
+    assert "| 100.00 | 100.00 | 90.00 |" in texte, texte
     assert "9.09" not in texte, texte
 
     # Détection dans une source et son inclusion directe (voix incluses).
