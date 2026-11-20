@@ -1325,3 +1325,106 @@ realize that fermata in these measures; this is the same oracle artefact as
 24 018 → 26 616 (the documented `w:` effect); written `.abc` stays 2-19 %
 smaller than `xml2abc.py`'s. No corpus reference was regenerated and no file
 was dropped from a lot.
+
+### 17.8 Fourth pass: verified warning histogram and two output fixes (2026-11-20)
+
+This subsection is in English by convention for the measurement reports. The
+frozen baseline is `scoretk-final6`, the binary built from 5ef2686 (the commit
+before `abc-export3`, 4d78e80); the final campaign uses a fresh release build
+of this worktree. Both sides reuse the same six-lot manifests, the same
+reference MIDI/MusicXML caches and `timeout 10 prlimit --as=2000000000` for
+every launch. The pass-3 baseline journals had been accumulated by two runs,
+so both sides were rerun cleanly into `/tmp/abc-ecriture/pass4-{base,courant,final}`
+before any conclusion was drawn.
+
+#### 17.8.1 Verified cause of the 24 018 → 26 616 increase
+
+The clean baseline reproduces **24 018** warnings for scoretk. On the 240
+files readable by both the baseline and current master, master has exactly
+**+2 598** warnings (corpus +26, mscz00 +3, mscz01 +766, mscz02 +1 566,
+mscz03 +167, xml +70): this is the delta of § 17.7.4, and every one of those
+messages is `Line of music without lyrics`. The only relevant change on those
+files was the removal of terminal `w:` lines by § 17.7 fix 2.
+
+That removal was legal but not required by the standard. § 5.1 says that `*` is
+"equivalent to a blank syllable" and that "the remaining notes have no lyric
+(blank syllables)"; it also allows a `w:` field to associate notes that
+appeared previously. `xml2abc.py::writePart` (lines 331-355) writes one `w:`
+after every music line of a sung voice. The `abc2midi` warning is a tool
+heuristic, not a § 5.1 requirement, but the blank-syllable line is conforming
+and suppresses it. Terminal lines are therefore written again (commit
+fa4c8de). The cost is 12 added `w:` lines in four corpus snapshots, with no
+change to pitches, durations or attacks; on the common files master had 26 616
+warnings and the final binary has 24 026.
+
+#### 17.8.2 Histogram by message and by file
+
+Digits were replaced by `N`. Counts are scoretk messages of the final run
+(with the pre-fix current-master count in parentheses where it differs):
+
+| Normalised message | Final (pre-fix) | Clause / decision |
+| --- | ---: | --- |
+| `Line of music without lyrics` | 13 709 (16 305) | § 5.1 blank syllables; **fixed** (§ 17.8.1). |
+| `Track N Bar N has N time units …` | 10 339 (10 339) | § 3.1.6, § 4.3, § 4.8. On a reduced real file the warning appears only after a `!fermata!` note whose realization by `abc2midi` lengthens the bar; `xml2abc.py` emits more of these than we do. Tool/fermata artefact, documented (§ 17.5, § 17.7.4). |
+| `Track N is N.N quarter notes long …` | 888 (888) | Same cause, long-score variant; documented. |
+| `instruction !N! ignored` (fingerings), `!>!`, `!^!`, `!tenuto!`, `!D.S.!`, … | 8 574 (7 466) plus 2 680 / 822 / 592 / ~100 | § 4.14 defines these symbols and states "Player programs may choose to ignore most of the symbols"; `xml2abc.py` writes the same tokens. Tool limitation, documented. The 1 108-message rise is the `<font` class below becoming valid `!N!` tokens. |
+| `Different length notes in tuple` | 2 224 (2 224) | § 4.13 explicitly allows `(p:q:r` with unequal note values; `abc2midi` does not support it. Tool limitation, documented. |
+| `Slur within slur` | 1 319 (1 319) | § 4.11: "Slurs may be nested". Tool limitation, documented. |
+| `instruction !<font! ignored`, `!<u><font! ignored` | 0 (1 103) | § 4.14: a symbol name may not contain spaces or `[ ] : |`. MuseScore 2.x stores the fingering `1` as `font size='9'/font … 1`. **Fixed** (a8f3148): only the final fingering symbol is written; `abc2midi` still ignores fingerings, so these messages move to the documented `!N!` class, but the ABC is now valid. |
+| `whitespace in field declaration`, `Potentially ambiguous line` | 157 each (157) | § 4.8 makes `:|` an end repeat; `abc2midi`'s line heuristic. Layout only, unchanged. |
+| `Unrecognized character: ,`, `clef varbaritone`, `Assuming repeat`, … | < 50 | § 4.10 ending lists, § 4.6 clef names, § 4.9 optional `|:`; documented in § 17.7.1. |
+
+By file, the largest counts are on long lyric-heavy scores
+(`Missa_in_Es_Hob._XXII4_II._Gloria_-_Haydn.mscz`: 1 545 `Line of music without
+lyrics`; `Magnificat__Prt.mscz`: 598 bar-length messages) and on the three
+`Vingt_danses_enfantines_pour_piano*.mxl` (973 fingering messages each);
+`Vingt_danses_enfantines_pour_piano.mscz` carried the 973 `!<font!` messages
+that a8f3148 removes. No file was excluded from the count.
+
+The `Channel limit exceeded` lines (67 390 for scoretk in the pre-fix run) are
+**errors**, not warnings: § 7 permits one `V:` per voice and `abc2midi` has 16
+channels; `xml2abc.py` produces the same errors (67 032). They remain
+documented as a tool limit, as in § 17.7.1.
+
+#### 17.8.3 Final table per lot (frozen baseline vs final binary)
+
+| Lot | Binary | Files | ABC OK | Exact | N1 % | N2 % | N2d % | Errors | Warnings | Mean .abc B |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | baseline | 56 | 56 | 23 | 79.01 | 73.66 | 69.87 | 20 | 51 | 298 |
+| corpus | final | 56 | 56 | 23 | 79.01 | 73.06 | 69.31 | 20 | 53 | 298 |
+| mscz00 | baseline | 44 | 32 | 10 | 86.16 | 75.08 | 69.10 | 1 | 1 157 | 3 708 |
+| mscz00 | final | 44 | 43 | 10 | 80.91 | 69.02 | 64.38 | 0 | 1 342 | 4 090 |
+| mscz01 | baseline | 44 | 44 | 4 | 92.42 | 91.85 | 85.39 | 13 855 | 4 618 | 13 725 |
+| mscz01 | final | 44 | 44 | 4 | 92.42 | 91.85 | 85.39 | 13 855 | 4 618 | 13 725 |
+| mscz02 | baseline | 44 | 44 | 0 | 75.46 | 58.61 | 53.83 | 49 895 | 4 645 | 16 376 |
+| mscz02 | final | 44 | 44 | 0 | 75.46 | 58.61 | 53.83 | 49 895 | 4 645 | 16 376 |
+| mscz03 | baseline | 42 | 32 | 2 | 91.84 | 73.27 | 70.39 | 3 699 | 7 578 | 11 913 |
+| mscz03 | final | 42 | 42 | 3 | 84.33 | 54.78 | 52.13 | 7 648 | 9 805 | 13 660 |
+| xml | baseline | 32 | 32 | 10 | 92.99 | 31.06 | 27.16 | 48 | 5 969 | 12 547 |
+| xml | final | 32 | 32 | 10 | 92.99 | 31.14 | 27.21 | 24 | 5 975 | 12 547 |
+
+Total warnings go from 24 018 to 26 438. This is **not** a writer regression:
+the frozen baseline predates the MuseScore 2.x reader, so 21 files that it
+rejected are now written (11 in `mscz00`, 10 in `mscz03`), with a naturally
+lower N1 on pieces such as the Vivaldi/Palestrina chorales; they carry the
+extra 2 412 warnings and the lower lot averages. Restricted to the 240 files
+readable by both binaries, warnings are 24 018 → 24 026 and total `.abc` bytes
+2 242 647 → 2 242 602. The two writer fixes therefore remove the entire
+master increase on common files at essentially unchanged size.
+
+#### 17.8.4 Per-file audit
+
+Against the frozen baseline, no file lost a pitch: N1 is unchanged on every
+commonly readable file, and 24 files gained notes (the newly readable 2.x
+scores) or attacks (the three `Vingt_danses_enfantines_pour_piano*.mxl`). There
+are exactly three per-file N2 losses, all already present in § 17.7.4 and
+unchanged by this pass: `layout_elements.mscx` (29/42 instead of 42/42),
+`copypaste_parts.mscx` (6/11 instead of 7/11) and
+`Il_Postino_accordion_solo.mscz` (158/451 instead of 159/451). Each is the
+§ 4.20 grace-before-decoration fix making `abc2midi` finally realize a fermata
+that the old, malformed token order caused it to ignore; the MuseScore
+reference and `xml2abc.py` do not realize it, so this is the oracle artefact of
+§ 17.5, not a placement error of the writer.
+
+No corpus reference was regenerated, no file was dropped from a lot, and the
+only snapshot changes are the 12 blank-syllable `w:` lines of § 17.8.1.
