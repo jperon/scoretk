@@ -804,3 +804,100 @@ core-identical (corpus 51 → 53, total 92 → 94). Twelve `.mscz` and three `.l
 scores also lose changed core lines (four lines each for the `.mscz` grace-tie
 group, larger gains for three `.ly` with ornament intervals). No file gains a
 core line, no file stops opening, and N1/N2 are unchanged on every lot.
+
+### Eighth pass — full ranking of the 132 non-identical `.mscz`
+
+On the pass-7 binary, 40 of 172 written `.mscz` are core-identical after
+reopening in MuseScore 4.7.4. The table below classifies **all 132** remaining
+files by their *first* differing core line (element and attribute), not just
+by the most frequent tag. Categories are mutually exclusive; "first" means
+the first change in the shared core normalisation, so a file can have other
+differences further down.
+
+| Files | First differing core category (MuseScore re-export vs scoretk direct) |
+| ---: | --- |
+| 37 | `<attributes>` (key/time/clef change placement) |
+| 35 | `<measure-style><multiple-rest>` (mmRest range) |
+| 25 | voice gap: `<note>` vs `<forward>`/`<backup>` |
+| 21 | `<tuplet bracket="…">` |
+| 3 | `<sound tempo="…">` |
+| 3 | `<accidental>` attributes (cautionary/parentheses vs bracket/editorial) |
+| 3 | tie anchor (`<note>` vs `<tie type="start">`) |
+| 1 | `<harmony>` |
+| 1 | `<actual-notes>` |
+| 1 | `<clef-octave-change>` vs `<transpose>` |
+| 1 | `<midi-channel>` |
+| 1 | `<staff-details>` |
+| **132** | **total** |
+
+The two largest actionable categories are the mmRest range and the tuplet
+bracket; the `<attributes>` and voice-gap families are model/gap-rest work.
+
+### Eighth pass — mmRest style and tuplet bracket type (English)
+
+**`score_style.mss` — `createMultiMeasureRests` (35 files in the ranking).**
+`MscLoader::read` (`rw/mscloader.cpp:86-94`) calls `MscReader::readStyleFile()`
+(`infrastructure/mscreader.cpp:127-132`) and applies `score_style.mss` before
+the score. The pivot kept only the inline `<Style>`, so the flag was lost on
+`.mscz` input; `Measure::coveringMMRestOrThis()` (`dom/measure.cpp:2899`) then
+refused to rebuild the mmRests and `measureStyle()` (`importmusicxml.cpp:6587`)
+wrote no `<multiple-rest>`. The container now keeps `score_style.mss`, the
+reader applies its `<Style>` through `StyleSettings::set_value`, and the writer
+emits `<createMultiMeasureRests>1</createMultiMeasureRests>` when set
+(`style/styledef.cpp:571`, default `false`). Reduced test:
+`style_multi_repos_lu_et_ecrit`, on `mmrest` with `testNoteheads2` as the
+non-concerned case. On mscz-34 reopened by MuseScore 4.7.4, the core diff is
+now 0 (the only remaining differences in the local diff tool are its own
+`<notations/>` rendering artefacts). The flag also removes the hidden
+`<multiple-rest>` differences behind several files ranked under
+`<attributes>`.
+
+**`<bracketType>` of a tuplet (21 files in the ranking).** The C++ writer
+`TWrite::write(const Tuplet*)` (`write/twrite.cpp:3500-3525`) emits the styled
+property `Pid::BRACKET_TYPE` as `<bracketType>`: `SHOW_BRACKET = 1`,
+`SHOW_NO_BRACKET = 2` (`types.h:1604-1607`). MuseScore 4.6+ ignores the 3.x
+`<bracket>` tag and takes the bracket from `Tuplet::calcHasBracket()`
+(`dom/tuplet.cpp:204-208`). scoretk wrote only `<bracket>`, so MuseScore
+recomputed a different value. The writer now emits both tags and the 4.x
+reader accepts `<bracketType>`. Reduced test: `type_crochet_nolet_ecrit_et_relu`,
+on `testTuplets8` with a no-tuplet score as the non-concerned case. On mscz-0
+reopened by MuseScore 4.7.4, the core diff is now 0.
+
+The remaining top categories — `<attributes>` placement, voice gaps
+(`<note>` vs `<forward>`) and the tuplet-bracket *heuristic* where no explicit
+type existed — still need model work (gap-rest durations, beam-aware
+`calcHasBracket`) and are not writer mis-serialisations.
+
+### Eighth pass — final table
+
+Binary `/tmp/scoretk-mscz-pass8b-final` (sha256 `1897ab76…`; the pass-8 run
+timed out with six `.ly` left, which were measured with the same binary and
+merged before recomputing the core table). Same 638 scores, same oracle, same
+tolerance. Master also gained MIDI-only and LilyPond reader commits during
+this pass, which change some *reference* outputs independently of the writer.
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | **54/56** | 0.9882 | 0.9873 | 0 | 56/56 |
+| mscz | 174 | 172 | 172 | **52/172** | 0.9935 | 0.9934 | 0 | 39/172 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9981 | 0.9907 | 0 | 0/27 |
+| ly | 375 | 345 | 345 | 1/345 | 0.9995 | 0.9968 | 0 | 0/0 |
+| abc | 1 | 1 | 1 | 0/1 | 1.0000 | 1.0000 | 0 | 0/0 |
+| **Total** | **638** | **601** | **601** | **107/601** | **0.9947** | **0.9932** | **0** | **95/255** |
+
+Compared with pass 7: corpus 53 → 54 (`mmrest` becomes core-identical), mscz
+40 → 52 (the mmRest and explicit tuplet-bracket files), total 94 → 107. No
+file stops opening and no N1/N2 decreases. Three files gain changed core
+lines: corpus-24 and mscz-149 (5 → 10 and 33 → 58) because the restored
+`createMultiMeasureRests` style makes MuseScore build mmRests that the pivot
+still does not model as `<multiple-rest>`; mscz-70 (661 → 979) because the
+tuplet tag disappears from the diff and shifts its alignment, exposing the
+unchanged `forward`/`slur` differences (same counts as before). The eleven
+`.ly` regressions are caused by master's `a269f08`/`c31b250` LilyPond reader
+commits, which change those scores' *direct* MusicXML; they are not produced
+by this writer.
+
+The first broad version of the `.mss` merge applied every style value and
+regressed 68 `.mscz` files (e.g. mscz-57, 63 → 117 lines); it was corrected
+before the final measurement to carry only `createMultiMeasureRests`, so the
+inline `<Style>` keeps precedence as in `MscLoader::read`.

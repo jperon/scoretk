@@ -65,7 +65,10 @@ fn type_crochet_nolet_ecrit_et_relu() {
     assert!(!relu.tuplets[1].bracket);
     let direct = scoretk_musicxml_export::export_musicxml(&partition).expect("export");
     let retour = scoretk_musicxml_export::export_musicxml(&relu).expect("export");
-    assert_eq!(direct.matches("<pitch>").count(), retour.matches("<pitch>").count());
+    assert_eq!(
+        direct.matches("<pitch>").count(),
+        retour.matches("<pitch>").count()
+    );
     assert_eq!(
         direct.matches("<duration>").count(),
         retour.matches("<duration>").count()
