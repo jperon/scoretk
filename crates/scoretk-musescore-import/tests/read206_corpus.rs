@@ -206,6 +206,41 @@ fn n_olets_et_liaisons_2x() {
 }
 
 #[test]
+fn slur_2x_apparie_par_id() {
+    let score = score(
+        r#"<Staff id="1">
+  <Measure number="1">
+    <Slur id="5"><track>0</track><up>up</up></Slur>
+    <Chord><durationType>quarter</durationType>
+      <Slur type="start" id="5"/><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+    <Chord><durationType>quarter</durationType>
+      <Note><pitch>62</pitch><tpc>16</tpc></Note></Chord>
+    <Chord><durationType>quarter</durationType>
+      <Slur type="stop" id="5"/><Note><pitch>64</pitch><tpc>18</tpc></Note></Chord>
+    <Chord><durationType>quarter</durationType>
+      <Note><pitch>65</pitch><tpc>19</tpc></Note></Chord>
+    </Measure>
+  </Staff>"#,
+    );
+    let slurs: Vec<_> = score
+        .spanners
+        .iter()
+        .filter(|spanner| spanner.kind == scoretk_core::model::SpannerType::Slur)
+        .collect();
+    assert_eq!(slurs.len(), 1, "une seule liaison reconstruite");
+    assert_eq!(slurs[0].start.tick, Fraction::new(0, 1));
+    assert_eq!(slurs[0].end.tick, Fraction::new(1, 2));
+    let placement = slurs[0]
+        .notation
+        .as_ref()
+        .and_then(|notation| match notation {
+            scoretk_core::model::SpannerNotation::Slur(slur) => slur.placement,
+            _ => None,
+        });
+    assert_eq!(placement, Some(scoretk_core::model::Placement::Above));
+}
+
+#[test]
 fn volta_2x_appariee_par_id() {
     let score = score(
         r#"<Staff id="1">

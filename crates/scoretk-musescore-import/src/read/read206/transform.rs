@@ -212,6 +212,23 @@ fn adapt_measure(
                     links.push(link);
                 }
             }
+            "Slur" => {
+                // `readSlur206` (read206.cpp:2598) enregistre la définition par
+                // id ; l'ancrage définitif viendra du `<Slur type="start">`
+                // porté par l'accord.
+                if let Some(id) = node.attr_i32("id") {
+                    let mut link = SpannerLink::new(id, SpanFamily::Slur);
+                    let mut key = measure_key(index, staff);
+                    if let Some(track) = node.child("track").and_then(Node::int_text) {
+                        if let SpanKey::Measure { track: value, .. } = &mut key {
+                            *value = track as u32;
+                        }
+                    }
+                    link.start = Some(key);
+                    link.slur_up = node.child("up").map(Node::trimmed_text);
+                    links.push(link);
+                }
+            }
             "endSpanner" => {
                 if let Some(id) = node.attr_i32("id") {
                     let mut link = SpannerLink::new(id, SpanFamily::Volta);
@@ -302,6 +319,29 @@ fn adapt_element(
             replace_in_texts(node, "\u{e179}", "<sym>codaSquare</sym>");
         }
         "Chord" => {
+            let chord_key = SpanKey::Chord {
+                measure,
+                track: ((staff * 4) + voice) as u32,
+                ordinal: chord_ordinal,
+            };
+            // `readChordRestProperties206` (read206.cpp:1823) : les moitiés de
+            // slur 2.x sont portées par l'accord avec `type="start"`/`"stop"`.
+            for child in node.children() {
+                if child.name != "Slur" {
+                    continue;
+                }
+                let Some(id) = child.attr_i32("id") else {
+                    continue;
+                };
+                let mut link = SpannerLink::new(id, SpanFamily::Slur);
+                if child.attr("type") == Some("stop") {
+                    link.end = Some(chord_key);
+                } else {
+                    link.start = Some(chord_key);
+                }
+                link.slur_up = child.child("up").map(Node::trimmed_text);
+                links.push(link);
+            }
             let mut ordinal = 0usize;
             for child in node.children_mut() {
                 if child.name != "Note" {

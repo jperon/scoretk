@@ -31,7 +31,8 @@
 //! les liaisons.
 
 use scoretk_core::model::{
-    Fraction, Score, SegmentType, Spanner, SpannerAnchor, SpannerType, Track, VoltaInfo,
+    Fraction, Placement, Score, SegmentType, Slur, Spanner, SpannerAnchor, SpannerNotation,
+    SpannerType, Track, VoltaInfo,
 };
 
 /// Ancrage d'une extrémité de spanner dans le fichier 2.x.
@@ -52,6 +53,7 @@ pub(super) enum SpanKey {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SpanFamily {
     Volta,
+    Slur,
 }
 
 /// Moitié d'un spanner 2.x ; les deux moitiés sont appariées par `id`.
@@ -64,6 +66,8 @@ pub(super) struct SpannerLink {
     pub(super) endings: Vec<u8>,
     pub(super) closed: bool,
     pub(super) text: Option<String>,
+    /// Direction explicite d'une liaison d'expression (`<up>` 2.x).
+    pub(super) slur_up: Option<String>,
 }
 
 impl SpannerLink {
@@ -76,6 +80,7 @@ impl SpannerLink {
             endings: Vec::new(),
             closed: false,
             text: None,
+            slur_up: None,
         }
     }
 }
@@ -112,6 +117,7 @@ pub(super) fn fix_spanners(score: &mut Score, links: &[SpannerLink]) {
         let mut spanner = Spanner::new(
             match link.family {
                 SpanFamily::Volta => SpannerType::Volta,
+                SpanFamily::Slur => SpannerType::Slur,
             },
             SpannerAnchor::new(start_tick, start_track),
             SpannerAnchor::new(end_tick, end_track),
@@ -124,17 +130,35 @@ pub(super) fn fix_spanners(score: &mut Score, links: &[SpannerLink]) {
                     closed: link.closed,
                 });
             }
+            SpanFamily::Slur => {
+                let mut slur = Slur::new();
+                slur.placement = match link.slur_up.as_deref() {
+                    Some("up") => Some(Placement::Above),
+                    Some("down") => Some(Placement::Below),
+                    _ => None,
+                };
+                spanner.notation = Some(SpannerNotation::Slur(slur));
+            }
         }
         score.add_spanner(spanner);
     }
 }
 
 fn merge(existing: &mut SpannerLink, link: &SpannerLink) {
-    if existing.start.is_none() {
+    // Une définition `<Slur id>` donne une position de mesure approximative ;
+    // le `<Slur type="start" id>` de l'accord est l'ancrage retenu par
+    // `readChordRestProperties206` (read206.cpp:1823-1903).
+    let start_is_provisional = matches!(existing.start, Some(SpanKey::Measure { .. }));
+    if existing.start.is_none()
+        || (start_is_provisional && matches!(link.start, Some(SpanKey::Chord { .. })))
+    {
         existing.start = link.start;
     }
     if existing.end.is_none() {
         existing.end = link.end;
+    }
+    if link.slur_up.is_some() {
+        existing.slur_up = link.slur_up.clone();
     }
     if !link.endings.is_empty() {
         existing.endings = link.endings.clone();
