@@ -4034,13 +4034,12 @@ fn transposition_du_global_atteint_les_voix_de_la_portee() {
         .iter()
         .map(|part| part.instrument.transpose)
         .collect();
+    // Une seule portée LilyPond = une seule partie MusicXML : la
+    // transposition portée par le `\global` frère des voix s'applique à
+    // cette partie, qui contient toutes les voix de la portée.
     assert_eq!(
         transposes,
-        vec![
-            None,
-            Some(Transpose::new(-7, -12)),
-            Some(Transpose::new(-7, -12))
-        ],
+        vec![Some(Transpose::new(-7, -12))],
         "la propriété doit suivre les voix musicales, pas le global vide"
     );
 
@@ -5030,4 +5029,37 @@ fn passages_temporaires_sequenciels_dans_un_contexte_staff() {
     assert_eq!(score.staves.len(), 2, "PianoStaff à deux portées");
     assert_eq!(score.measures.len(), 4);
     assert_eq!(score.notes.len(), 20);
+}
+
+/// Règle LilyPond : un `\new Staff` est **une** portée ; les voix ouvertes par
+/// `\\` ou `\new Voice` sont réparties sur ses quatre pistes à leur tick
+/// d'ouverture, et une voix terminée libère sa piste. Deux passages
+/// polyphoniques successifs doivent donc donner deux voix de quatre notes
+/// chacune ( ticks 0–3 ), et non quatre voix de deux notes toutes au tick 0.
+#[test]
+fn une_portee_par_contexte_voix_ouvertes_a_leur_tick() {
+    let score = read_lilypond(
+        r#"\version "2.24.0"
+\score { \new Staff {
+  << { c'4 d'4 } \\ { e'4 f'4} >>
+  << { g'4 a'4 } \\ { b'4 c''4} >>
+}
+"#,
+    )
+    .expect("lecture");
+    assert_eq!(score.staves.len(), 1);
+    let voix0 = accords_de_voix(&score, 0);
+    let voix1 = accords_de_voix(&score, 1);
+    assert_eq!(voix0.len(), 4, "voix principale : {:?}", voix0);
+    assert_eq!(voix1.len(), 4, "voix sœur : {:?}", voix1);
+    let ticks: Vec<_> = voix0.iter().map(|(tick, _, _)| *tick).collect();
+    assert_eq!(
+        ticks,
+        vec![
+            Fraction::ZERO,
+            Fraction::new(1, 4),
+            Fraction::new(1, 2),
+            Fraction::new(3, 4)
+        ]
+    );
 }

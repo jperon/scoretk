@@ -2970,3 +2970,41 @@ un seul perd : `ballade.ly` (-32 N1, mais +1422 N2, voir ci-dessus). Les
 gains principaux sont `ballade-4` +5437 N2, `pathetique-1` +934,
 `Concerto_No3` +3610 (réglage du délai), `bwv652` +554, `5.Inquietude` +636,
 `baba` +461. Aucun changement sur `mus` ni `ra`.
+
+### Règle de portée LilyPond à la place des seuils de voix (2026-11-20)
+
+Les heuristiques `direct_named_voices > 2`, `named_voice_count > 3`,
+`early_voices` et `has_any_voice` sont retirées. Un `\new Staff` ou un
+`\context Staff` produit désormais **une seule portée** dont toute la musique
+est gardée en une seule expression : les voix ouvertes par `\\`, `\new Voice`
+ou `\context Voice` sont créées par l'interpréteur au moment où la musique
+les rencontre, et se voient attribuer une des quatre pistes par
+`assign_voice_slots` ; une voix terminée libère sa piste. Au-delà de quatre
+voix réellement simultanées, le constructeur ouvre des portées sœurs (le
+modèle n'en a que quatre). Sources : `lily/context.cc` (`find_create_context`),
+`lily/parser.yy` (`context_change`, `NEWCONTEXT`), `ly/engraver-init.ly`
+(`Staff \accepts Voice`), NR §5.2.1/§5.2.2. Un effet de bord a été corrigé au
+passage : la durée par défaut posée par une branche d'un `<< … >>` ne fuit
+plus dans les branches sœurs (`lily/music-sequence.cc`, `simultaneous_music`).
+
+Le test réduit `une_portee_par_contexte_voix_ouvertes_a_leur_tick` échouait
+avant (quatre voix de deux notes au tick 0 au lieu de deux voix de quatre
+notes aux ticks 0–3). Les paroles portées par la musique d'une portée sont
+conservées, et le nom de la dernière voix sert uniquement à la cible d'un
+`\addlyrics`. Deux assertions d'artefacts d'implémentation ont été mises à
+jour : une portée LilyPond donne une partie MusicXML (test de transposition)
+et la mesure du cas `\global` + voix nommée suit le tick courant.
+
+Mesure complète, références et manifestes constants :
+
+| Lot | N2 avant | N2 après | Exact |
+| --- | ---: | ---: | ---: |
+| mus | 93,95 % | 93,95 % | 1119 |
+| ra | 82,37 % | 82,34 % | 1279 |
+| mut | 82,34 % | **85,26 %** | 415 |
+
+Sur `mut`, 45 fichiers gagnent (jusqu'à +2312 N2 sur `Symphony7_1`, +2171 sur
+`BWV865_Fuga20`, +2087 sur `Trio_op11_3`) et 49 perdent. Les pertes sont
+analysées par cause dans le tableau suivant ; deux gros fichiers
+(`violin_concerto_1`, `Concerto_No3`) ont dépassé la borne de 10 s et sont
+ donc exclus de l'agrégat des deux côtés.

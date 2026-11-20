@@ -975,123 +975,28 @@ impl<'a> Parser<'a> {
                     }
                 }
                 let content = self.parse_music();
-                // Un `\context Staff \relative << … >>` applique sa
-                // référence à tout le bloc polyphonique : ouvrir une portée
-                // fille ferait résoudre chaque voix dans sa propre référence
-                // Relative (collisions.ly, `\hairyChord`).
-                let wrapped =
-                    matches!(&content, Music::Context(context) if Wrapper::of(context).is_some());
-                // Un `\context Staff` dont le contenu ne comporte que des
-                // voix désigne **une seule portée** : ces voix restent ses
-                // voix, et non des portées sœurs (lily/parser.yy 1686-1690,
-                // NR §5.2.1). Un contenu mêlé (`\global` avec
-                // `\transposition`, par exemple) reste transparent pour que
-                // la propriété soit propagée aux groupes musicaux.
-                let early_voices = has_voice_context(&content)
-                    || (!matches!(content, Music::Sim(_)) && has_any_voice(&content));
-                if early_voices && !wrapped && named_voice_count(&content) > 2 {
-                    let only_voices = match &content {
-                        Music::Sim(items) | Music::Seq(items) => {
-                            items.iter().all(|item| {
-                                matches!(item, Music::New(group) if group.kind == GroupKind::Voice)
-                            })
-                        }
-                        Music::New(group) => group.kind == GroupKind::Voice,
-                        _ => false,
-                    };
-                    if only_voices {
-                        let mut staff = StaffBlock::new();
-                        staff.name = context_name.clone();
-                        let mut voices = Vec::new();
-                        let mut lyrics = Vec::new();
-                        self.collect_voices(content, &mut voices, &mut lyrics);
-                        staff.voices = voices;
-                        staff.lyrics = lyrics;
-                        return Music::New(Box::new(GroupBlock {
-                            kind: GroupKind::Staff,
-                            existing,
-                            instrument_name,
-                            short_instrument_name,
-                            staves: vec![staff],
-                            lyrics: Vec::new(),
-                        }));
-                    }
-                    // Voix enchâssées sous un enveloppeur ou dans des
-                    // passages polyphoniques successifs : une seule portée,
-                    // dont l'interpréteur ouvre les voix au bon tick.
-                    if direct_named_voices(&content) == 0
-                        && named_voice_count(&content) > 3
-                        && !matches!(content, Music::Sim(_))
-                    {
-                        let mut staff = StaffBlock::new();
-                        staff.name = context_name.clone();
-                        staff.voices.push(VoiceBlock {
-                            name: None,
-                            music: content,
-                        });
-                        return Music::New(Box::new(GroupBlock {
-                            kind: GroupKind::Staff,
-                            existing,
-                            instrument_name,
-                            short_instrument_name,
-                            staves: vec![staff],
-                            lyrics: Vec::new(),
-                        }));
-                    }
-                    return content;
-                }
-                // Un `\global` frère des voix porte parfois `\transposition` :
-                // laisser alors les groupes séparés pour que la propriété soit
-                // propagée aux groupes musicaux par `build_score`.
-                if wrapped || has_instrument_transpose(&content) {
-                    return content;
-                }
-                // Un `\context Staff` nommé peut porter des voix surnuméraires
-                // (pathetique-1 : chaque main enchaîne onze sections
-                // polyphoniques dans un `{ … }`, ballade-4 : trois voix dans
-                // un `<< … >>`). Les répartir en portées sœurs, comme avant le
-                // portage des contextes structurels, plutôt que de les
-                // regrouper en une seule portée où la limite du modèle les
-                // écraserait. Mais un `<< … >>` à une ou deux voix nommées
-                // (w10-h-moll-cfi : `\global`, `\links`, `\pedal`) désigne une
-                // seule portée : le répartir extrait les enveloppes `\relative`
-                // pour les réappliquer voix par voix, décalant les octaves et
-                // déplaçant les mesures.
-                if !matches!(&content, Music::Sim(_)) || direct_named_voices(&content) > 2 {
-                    let mut staves = Vec::new();
-                    let mut lyrics = Vec::new();
-                    self.collect_staves(content, &mut staves, &mut lyrics);
-                    if staves.is_empty() {
-                        staves.push(StaffBlock::new());
-                    }
-                    staves[0].name = context_name;
-                    return Music::New(Box::new(GroupBlock {
-                        kind: GroupKind::Staff,
-                        existing,
-                        instrument_name,
-                        short_instrument_name,
-                        staves,
-                        lyrics,
-                    }));
-                }
+                // Règle LilyPond : tout le contenu d'un `\context Staff`
+                // appartient à **cette** portée. Les voix ouvertes par
+                // `\new Voice`, `\context Voice` ou `\\` sont des voix
+                // *dans* la portée, créées au moment où la musique les
+                // rencontre (`lily/context.cc` `find_create_context`,
+                // `lily/parser.yy` `context_change`, `ly/engraver-init.ly`
+                // `\accepts Voice`). On garde donc une seule musique à
+                // interpréter : l'interpréteur ouvre les voix sœurs aux bons
+                // ticks et libère leur piste quand elles finissent. Les
+                // n-ups de plus de quatre voix simultanées sont répartis sur
+                // des portées sœurs par le constructeur.
                 let mut staff = StaffBlock::new();
                 staff.name = context_name;
-                let mut voices = Vec::new();
-                let mut lyrics = Vec::new();
-                if has_voice_context(&content) && direct_named_voices(&content) == 0 {
-                    // Voix enchâssées dans des enveloppeurs ou des séquences :
-                    // une seule musique de portée, que l'interpréteur parcourt
-                    // pour ouvrir les voix au bon tick (BWV865_Fuga20).
-                    voices.push(VoiceBlock {
-                        name: None,
-                        music: content,
-                    });
-                } else {
-                    self.collect_voices(content, &mut voices, &mut lyrics);
-                }
-                staff.voices = voices;
-                staff.lyrics.extend(lyrics);
-                self.collect_addlyrics(&mut staff);
+                staff.instrument_name = instrument_name.clone();
+                staff.short_instrument_name = short_instrument_name.clone();
+                let addlyrics_target = last_voice_name(&content);
+                collect_lyrics_in_music(&content, &mut staff.lyrics);
+                staff.voices.push(VoiceBlock {
+                    name: None,
+                    music: content,
+                });
+                self.collect_addlyrics_target(&mut staff, addlyrics_target);
                 return Music::New(Box::new(GroupBlock {
                     kind: GroupKind::Staff,
                     existing,
@@ -1285,18 +1190,16 @@ impl<'a> Parser<'a> {
                 }
                 let content = self.parse_music();
                 self.note_mode = mode_precedent;
-                let mut voices = Vec::new();
-                let mut lyrics = Vec::new();
-                self.collect_voices(content, &mut voices, &mut lyrics);
-                if voices.is_empty() {
-                    voices.push(VoiceBlock {
-                        name: None,
-                        music: Music::Empty,
-                    });
-                }
-                staff.voices = voices;
-                staff.lyrics.extend(lyrics);
-                self.collect_addlyrics(&mut staff);
+                // Une seule musique de portée, comme pour `\context Staff` :
+                // les voix sont ouvertes par l'interpréteur au tick courant,
+                // pas relues chacune depuis zéro.
+                let addlyrics_target = last_voice_name(&content);
+                collect_lyrics_in_music(&content, &mut staff.lyrics);
+                staff.voices.push(VoiceBlock {
+                    name: None,
+                    music: content,
+                });
+                self.collect_addlyrics_target(&mut staff, addlyrics_target);
                 Some(GroupBlock {
                     kind: GroupKind::Staff,
                     existing,
@@ -1513,13 +1416,17 @@ impl<'a> Parser<'a> {
 
     /// Attache un `\addlyrics` qui suit une voix.
     fn collect_addlyrics(&mut self, staff: &mut StaffBlock) {
+        let target = staff.voices.last().and_then(|voice| voice.name.clone());
+        self.collect_addlyrics_target(staff, target);
+    }
+
+    /// Attache un `\addlyrics` dont la cible est déjà connue : le contenu
+    /// d'une portée garde ses voix en une seule musique, donc le nom de la
+    /// dernière voix déclarée est cherché dans cette musique.
+    fn collect_addlyrics_target(&mut self, staff: &mut StaffBlock, target: Option<String>) {
         while self.eat_command("addlyrics") {
             let (syllables, block_verse, couplets) = self.parse_lyric_music();
-            let target = staff
-                .voices
-                .last()
-                .and_then(|voice| voice.name.clone())
-                .unwrap_or_default();
+            let target = target.clone().unwrap_or_default();
             let verse = block_verse.unwrap_or(staff.lyrics.len());
             staff.lyrics.push(LyricsBlock {
                 target,
@@ -4427,29 +4334,6 @@ fn wrap_staves(wrappers: &[Wrapper], staves: &mut [StaffBlock]) {
     }
 }
 
-/// Vrai si la musique est, ou enveloppe, un contexte (`\new …`).
-///
-/// Les fonctions musicales (`\transpose`, `\relative`, `\fixed`), les
-/// simultanéités et les séquences imbriquées sont traversées : la structure
-/// d'un `<< … >>` ou d'un `{ … }` n'est celle de ses contextes que si l'un
-/// d'eux s'y trouve.
-/// Vrai si une musique porte un `\transposition` d'instrument : le groupe
-/// qui le porte doit rester séparé des voix pour que `build_score` propage la
-/// propriété (recherche identique à celle du constructeur).
-fn has_instrument_transpose(music: &Music) -> bool {
-    match music {
-        Music::Context(Context::InstrumentTranspose(_)) => true,
-        Music::Seq(items) | Music::Sim(items) => items.iter().any(has_instrument_transpose),
-        Music::New(group) => group
-            .staves
-            .iter()
-            .flat_map(|staff| staff.voices.iter())
-            .any(|voice| has_instrument_transpose(&voice.music)),
-        Music::Tag { music, .. } | Music::Filtered { music, .. } => has_instrument_transpose(music),
-        _ => false,
-    }
-}
-
 fn has_context(music: &Music) -> bool {
     match music {
         Music::New(_) | Music::Lyrics(_) => true,
@@ -4462,84 +4346,56 @@ fn has_context(music: &Music) -> bool {
     }
 }
 
-/// Vrai si une musique porte au moins une voix nommée (`\new Voice` ou
-/// `\context Voice`), c.-à-d. un contexte de voix qui appartient à la portée
-/// englobante plutôt que d'en ouvrir une nouvelle.
-fn has_voice_context(music: &Music) -> bool {
+/// Paroles portées par la musique d'une portée (`\new Lyrics`, `\lyricsto`,
+/// `Music::Lyrics`) : elles restent sur la portée même quand toute sa
+/// musique est gardée en une seule expression. Les paroles d'un `\new Voice`
+/// sont déjà portées par ce groupe et ne sont pas prises ici.
+fn collect_lyrics_in_music(music: &Music, out: &mut Vec<LyricsBlock>) {
     match music {
         Music::New(group) => {
-            group.kind == GroupKind::Voice
-                || group.staves.iter().any(|staff| {
-                    staff
-                        .voices
-                        .iter()
-                        .any(|voice| has_voice_context(&voice.music))
-                })
+            if group.kind != GroupKind::Voice {
+                out.extend(group.lyrics.iter().cloned());
+            }
+            for staff in &group.staves {
+                for voice in &staff.voices {
+                    collect_lyrics_in_music(&voice.music, out);
+                }
+            }
         }
-        Music::Sim(items) | Music::Seq(items) => items.iter().any(has_voice_context),
-        Music::Tag { music, .. } | Music::Filtered { music, .. } => has_voice_context(music),
-        _ => false,
-    }
-}
-
-/// Vrai si une musique porte une voix, y compris un `\context Voice` ou
-/// une voix enchâssée sous un enveloppeur (`\relative`, `\transpose`…).
-fn has_any_voice(music: &Music) -> bool {
-    match music {
-        Music::New(group) => {
-            group.kind == GroupKind::Voice
-                || group
-                    .staves
-                    .iter()
-                    .any(|staff| staff.voices.iter().any(|voice| has_any_voice(&voice.music)))
+        Music::Lyrics(block) => out.push((**block).clone()),
+        Music::Seq(items) | Music::Sim(items) => {
+            for item in items {
+                collect_lyrics_in_music(item, out);
+            }
         }
-        Music::Context(Context::Voice(_)) => true,
         Music::Context(context) => {
-            Wrapper::of(context).is_some_and(|(_, inner)| has_any_voice(inner))
+            if let Some((_, inner)) = Wrapper::of(context) {
+                collect_lyrics_in_music(inner, out);
+            }
         }
-        Music::Sim(items) | Music::Seq(items) => items.iter().any(has_any_voice),
-        Music::Tag { music, .. } | Music::Filtered { music, .. } => has_any_voice(music),
-        _ => false,
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => {
+            collect_lyrics_in_music(music, out)
+        }
+        _ => {}
     }
 }
 
-/// Voix portées **directement** par les éléments d'un `<< … >>` ou d'un
-/// `{ … }` de `\context Staff`.
-///
-/// Les voix enchâssées dans un enveloppeur (fixed, relative, transpose) ou
-/// dans une séquence plus profonde sont des branches de passages
-/// polyphoniques temporaires : `lily/parser.yy` (`context_change` /
-/// `temporary_note`) les joue dans les emplacements de la portée courante,
-/// et leur musique se succède dans le temps. Les répartir en portées sœurs
-/// les ferait toutes lire depuis le tick 0 (ballade-4, BWV865_Fuga20).
-fn direct_named_voices(music: &Music) -> usize {
+/// Nom de la dernière voix explicitement nommée d'une musique, pour
+/// rattacher un `\addlyrics` qui la suit.
+fn last_voice_name(music: &Music) -> Option<String> {
     match music {
-        Music::Sim(items) | Music::Seq(items) => items
-            .iter()
-            .filter(|item| {
-                matches!(item, Music::New(group) if group.kind == GroupKind::Voice)
-                    || matches!(item, Music::Context(Context::Voice(_)))
-            })
-            .count(),
-        _ => 0,
-    }
-}
-
-/// Nombre de voix nommées d'une musique, en traversant les enveloppes
-/// (`\relative`, `\fixed`, `\transpose`). Sert à décider si le contenu
-/// simultané d'un `\context Staff` tient sur une seule portée : au-delà de
-/// deux voix nommées il faut le répartir, sinon la répartition réapplique les
-/// enveloppes voix par voix et décale les octaves relatives (w10-h-moll-cfi).
-fn named_voice_count(music: &Music) -> usize {
-    match music {
-        Music::New(group) if group.kind == GroupKind::Voice => 1,
-        Music::New(group) => group.staves.iter().map(|staff| staff.voices.len()).sum(),
+        Music::New(group) if group.kind == GroupKind::Voice => group
+            .staves
+            .first()
+            .and_then(|staff| staff.voices.last())
+            .and_then(|voice| voice.name.clone()),
+        Music::Context(Context::Voice(_)) => None,
+        Music::Seq(items) | Music::Sim(items) => items.iter().rev().find_map(last_voice_name),
         Music::Context(context) => {
-            Wrapper::of(context).map_or(0, |(_, inner)| named_voice_count(inner))
+            Wrapper::of(context).and_then(|(_, inner)| last_voice_name(inner))
         }
-        Music::Sim(items) | Music::Seq(items) => items.iter().map(named_voice_count).sum(),
-        Music::Tag { music, .. } | Music::Filtered { music, .. } => named_voice_count(music),
-        _ => 0,
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => last_voice_name(music),
+        _ => None,
     }
 }
 

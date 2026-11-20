@@ -548,6 +548,10 @@ impl<'a> Interpreter<'a> {
             return;
         }
         let start = self.cursor;
+        // La durée par défaut est propre à chaque branche : un `s2.` écrit
+        // dans la première ne doit pas donner sa durée aux accords nus de la
+        // suivante (`lily/music-sequence.cc` `simultaneous_music`).
+        let default_duration = self.default_duration;
         let mut musical: Vec<&Music> = Vec::new();
         for item in items {
             if is_context_only(item) {
@@ -564,6 +568,7 @@ impl<'a> Interpreter<'a> {
         self.walk(first);
         let mut end = self.cursor;
         for item in branches {
+            self.default_duration = default_duration;
             let child = self.spawn_at(start, None, item, Vec::new(), true);
             end = end.max(child.end);
             // `music_list_to_relative` enchaîne les branches : la suivante
@@ -573,6 +578,7 @@ impl<'a> Interpreter<'a> {
             self.last_chord_notes = child.last_chord_notes;
         }
         self.cursor = end.max(start);
+        self.default_duration = default_duration;
     }
 
     /// Ouvre une voix sœur dans la portée et l'interprète à partir de
