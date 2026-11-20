@@ -530,6 +530,17 @@ fn find_metronome(fragments: &[TextFragment]) -> Option<Metronome> {
         }
     }
 
+    // `xsd:metronome` (musicxml-4.0.xsd:3795-3825) impose, après le premier
+    // `<beat-unit>`, soit un `<per-minute>`, soit un second `<beat-unit>`.
+    // `findMetronome` (exportmusicxml.cpp:4834-4861) ne teste pas
+    // `posEq == npos` : sans signe « = » il renvoie vrai avec `metroRight`
+    // vide, et MuseScore 4.7.4 écrit un `<metronome>` invalide suivi d'un
+    // `<words>` qui contient le nombre. On retombe alors sur des `<words>`
+    // complets, seuls conformes à la XSD et qui conservent le « ≈ ».
+    if per_minute.is_none() && second_beat.is_none() {
+        return None;
+    }
+
     let mut parentheses = false;
     if start > 0
         && characters[start - 1] == '('

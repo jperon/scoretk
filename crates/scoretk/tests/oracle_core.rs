@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//
+// Copyright (C) 2026 jperon
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License version 3 as published by
+// the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+// more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// this program. If not, see the LICENSE file at the root of this repository or
+// <https://www.gnu.org/licenses/gpl-3.0.html>.
+
+//! Aide de l'oracle d'écriture MusicXML : compare deux documents avec la
+//! normalisation `core`/`full` déjà utilisée par `e2e_corpus`.
+//!
+//! Ce test est ignoré par défaut. L'oracle le lance avec :
+//!
+//! ```sh
+//! SCORETK_ORACLE_MANIFEST=... SCORETK_ORACLE_OUTPUT=... \
+//!   cargo test -p scoretk --test oracle_core -- --ignored
+//! ```
+//!
+//! Le manifeste contient une ligne `identifiant<tab>référence<tab>sortie`.
+//! Chaque ligne de résultat est `identifiant<tab>lignes-noyau<tab>lignes-plein<tab>tag:count,…`.
+
+mod common;
+
+use std::collections::BTreeMap;
+use std::env;
+use std::fs;
+use std::path::Path;
+
+use common::musicxml_core::{diff, normalize, normalize_full};
+use similar::{ChangeTag, TextDiff};
+
+/// Nom de balise d'une ligne canonique, pour grouper les écarts par famille.
+fn line_tag(line: &str) -> Option<String> {
+    let reste = line.trim_start().strip_prefix('<')?;
+    let reste = reste.strip_prefix('/').unwrap_or(reste);
+    let fin = reste
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .unwrap_or(reste.len());
+    (fin > 0).then(|| reste[..fin].to_owned())
+}
+
+/// Compare les lignes canoniques et compte les balises modifiées.
+fn compare(reference: &[String], sortie: &[String]) -> (usize, BTreeMap<String, usize>) {
+    let a: Vec<&str> = reference.iter().map(String::as_str).collect();
+    let b: Vec<&str> = sortie.iter().map(String::as_str).collect();
+    let texte = TextDiff::from_slices(&a, &b);
+    let mut tags = BTreeMap::new();
+    let mut modifiees = 0;
+    for change in texte.iter_all_changes() {
+        if change.tag() == ChangeTag::Equal {
+            continue;
+        }
+        modifiees += 1;
+        if let Some(tag) = line_tag(change.value()) {
+            *tags.entry(tag).or_insert(0) += 1;
+        }
+    }
+    (modifiees, tags)
+}
+
+#[test]
+#[ignore = "outil de mesure : lancé explicitement par l'oracle MusicXML"]
+fn compare_paires() {
+    let Ok(manifeste) = env::var("SCORETK_ORACLE_MANIFEST") else {
+        return;
+    };
+    let Ok(sortie) = env::var("SCORETK_ORACLE_OUTPUT") else {
+        return;
+    };
+    let contenu = fs::read_to_string(&manifeste).expect("manifeste lisible");
+    let mut resultats = String::new();
+    for ligne in contenu.lines() {
+        if ligne.trim().is_empty() {
+            continue;
+        }
+        let champs: Vec<&str> = ligne.splitn(3, '\t').collect();
+        assert_eq!(champs.len(), 3, "ligne de manifeste invalide : {ligne}");
+        let (id, reference, sortie_xml) = (champs[0], champs[1], champs[2]);
+        let ref_xml = fs::read_to_string(reference).expect("référence lisible");
+        let sortie_xml = fs::read_to_string(sortie_xml).expect("sortie lisible");
+        let (noyau, _) = diff(&normalize(&ref_xml), &normalize(&sortie_xml));
+        let (plein, tags) = compare(&normalize_full(&ref_xml), &normalize_full(&sortie_xml));
+        let tags: Vec<String> = tags.iter().map(|(tag, n)| format!("{tag}:{n}")).collect();
+        resultats.push_str(&format!("{id}\t{noyau}\t{plein}\t{}\n", tags.join(",")));
+    }
+    fs::write(Path::new(&sortie), resultats).expect("résultats écrits");
+}

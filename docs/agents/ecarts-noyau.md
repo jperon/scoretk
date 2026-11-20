@@ -627,3 +627,122 @@ par `BeamLayout::layout1` à partir du groupement et de la géométrie des
 ligatures) et barres de courtoisie des systèmes coupés automatiquement par la
 largeur de page (2 barres de `v3/voices`, sans `<LayoutBreak>` dans le
 fichier).
+
+## 20. MusicXML export — schema validity and measured fidelity (English)
+
+### Frozen baseline (before the fixes of this campaign)
+
+- Frozen binary: `/tmp/scoretk-base`, built from commit `5ef2686`, sha256 starting
+  `4084ce2dc32f6377`. The fixed binary is built from the same worktree after the
+  the two fixes below; the frozen one stays available for A/B measurement.
+- Lot: the 174 `.mscz` of `~/Musique`, manifest built by
+  `scripts/oracle/musicxml/lots.sh` (same list as
+  `scripts/oracle/lilypond/lots-ecriture.sh`). No corpus file or third-party
+  script is versioned.
+- Oracle: `scripts/oracle/musicxml/mesure.sh` (wraps `mesure.py` with
+  `python3Packages.mido` and `libxml2`). For each score: scoretk → MusicXML,
+  MuseScore 4.7.4 → MusicXML (fidelity reference), both → MIDI (what each tool
+  plays). Every binary runs under `timeout` and `prlimit --as=2000000000`.
+  Core comparison reuses `core_norm` through
+  `crates/scoretk/tests/oracle_core.rs`; N1/N2 reuse `midi_notes.py` at the
+  Q16 grid (±1/16 quarter). music21 is not installed in this environment, so
+  the only alternative measured is MuseScore 4.7.4.
+- XSD: MusicXML 4.0 (`specs/musicxml/musicxml-4.0.xsd`), its `xml.xsd` and
+  `xlink.xsd` imports resolved locally through a catalog. Errors are counted by
+  message. XSD text: `xsd:<type>`; narrative text: `ref:<element>` in
+  `docs/agents/format-ref/musicxml.md`.
+
+| Metric | Baseline (frozen) |
+| --- | ---: |
+| Scores | 174 |
+| Converted | 152 |
+| XSD-invalid scoretk outputs | 2 |
+| XSD errors, scoretk / MuseScore 4.7.4 | 3 / 2 |
+| Core-identical to MuseScore | 24 / 152 |
+| N1 pitch multiset | 0.9791 |
+| N2 pitch + attack | 0.9739 |
+
+### XSD errors by cause
+
+1. `<measure-style number="0">` — 2 occurrences, scoretk only
+   (`Waltz_No._2.mscz`). `xsd:measure-style` declares `number` as
+   `xsd:staff-number`, a restriction of `xs:positiveInteger`
+   (`musicxml-4.0.xsd:780-785`); the spec says the number selects the staff from
+   the top, 1 being the first (`ref:measure-style`, format-ref § "Clef, time,
+   staves, parts"). Cause: export. `write_measure_repeat` used `Some(0)` as a
+   sentinel for the closing `<measure-repeat type="stop">`. Port of
+   `measureRepeat()` (`exportmusicxml.cpp:6534-6571`), which builds the
+   `number` attribute once per staff in the loop and reuses it for both the
+   start and the stop. Fixed by passing the 0-based staff position and adding
+   one inside `write_measure_repeat`. Reduced test:
+   `repetition_de_mesure_stop_numero_de_porte_valide`.
+
+2. `<metronome>` with only `<beat-unit>` — 1 occurrence, scoretk **and** 1 in
+   MuseScore 4.7.4 (`Magnificat__Prt.mscz`). `xsd:metronome`
+   (`musicxml-4.0.xsd:3795-3825`) is a choice whose first branch is a sequence
+   `<beat-unit>` then either `<per-minute>` or another `<beat-unit>`; the spec
+   describes the same regular/metric-modulation forms (`ref:metronome`,
+   format-ref § "Repeats, jumps, directions, lyrics"). Cause: upstream export,
+   faithfully reproduced by scoretk. `findMetronome()`
+   (`exportmusicxml.cpp:4809-4884`) does not test `posEq == npos`: when the text
+   is `♩ ≈ 90` (no `=`), it returns true with `metroRight` empty and
+   `wordsMetronome()` writes the invalid element followed by `<words> ≈ 90</words>`.
+   Fixed by returning `None` when neither `per_minute` nor `second_beat` was
+   found, so the full text becomes `<words>` (valid and keeps the `≈`).
+   Deliberate divergence from MuseScore 4.7.4, which is invalid here: this is a
+   validity fix, not a fidelity regression. Only formatting changes on that
+   file (the symbol moves into a `<words>` and the bold style is no longer
+   attached to the number); pitches, durations and the `<sound tempo="90"/>`
+   are unchanged. Reduced test: `tempo_sans_equation_reste_en_words`.
+
+3. `<accidental-mark cautionary="no">` — 1 occurrence, MuseScore 4.7.4 only.
+   `xsd:accidental-mark` has no `cautionary` attribute; scoretk already emits a
+   valid element. No change needed.
+
+### Out of scope: MuseScore 2.x sources
+
+22 of the 174 files cannot be read by scoretk and are therefore not converted:
+20 at version `2.06`, one at `1.14` (`Canon_in_D_Pachelbel_-_arranged_for_accordion.mscz`)
+and one reported as `2` (`Autumn_Leaves_Frank_Marocco.mscz`). They are all under
+`Partitions/Accordeon`, `Partitions/Chorales` and
+`Partitions/Piano/Vingt_danses_enfantines_pour_piano.mscz`; the exact absolute
+paths are in the `erreur` field of `/tmp/oracle-xml-full/mesure.jsonl` (raw
+measurement, not versioned). The reader supports 3.x and 4.x/5.x only: adding
+2.x support is a separate task and is out of scope here.
+
+### Final measurement against the frozen baseline
+
+Fixed binary `/tmp/scoretk-fix`, sha256 starting `b95222eff66c7169`; same 174-file
+manifest and oracle as above.
+
+| Metric | Frozen baseline | After fixes | Δ |
+| --- | ---: | ---: | ---: |
+| Converted | 152 | 152 | 0 |
+| XSD-invalid scoretk outputs | 2 | **0** | −2 |
+| XSD errors, scoretk | 3 | **0** | −3 |
+| XSD errors, MuseScore 4.7.4 (unchanged reference) | 2 | 2 | 0 |
+| Core-identical to MuseScore | 24 | **25** | +1 |
+| N1 pitch multiset | 0.9791 | 0.9791 | 0 |
+| N2 pitch + attack | 0.9739 | 0.9739 | 0 |
+
+No per-file loss: across all 174 rows, `ok`, `ref`, `n1`, `n2` and `n2d` are
+identical to the frozen baseline. The only core change is
+`Waltz_No._2.mscz` (4 → 0 differing lines); `Magnificat__Prt.mscz` keeps its 39
+core lines because `<direction>` is removed by `core_norm`, but its XSD error is
+gone. The `directions` family gains 5 changed lines (the `♩ ≈ 90` text is now
+two `<words>` instead of one `<metronome>` plus one `<words>`), which is the
+documented validity fix and not a pitch, duration or tempo change (`<sound
+tempo="90"/>` is preserved). `EXPECTED_CONFORMANT` in `e2e_corpus.rs` is
+unchanged.
+
+### Regression guard (oracle diff)
+
+`compare.sh` reports DIFFs on this worktree, but none is caused by the two
+fixes. After normalising the encoding date (the reference outputs were frozen
+on 2026-11-18, this run was made on 2026-11-20) **every** `.musicxml`, `.mxl`
+and `.mscz` output is byte-identical to the reference. The remaining differences
+are 28 `.abc`, 14 `.midi` and 14 `.ly` outputs, i.e. formats untouched by this
+campaign: they come from the pre-existing branch commit `4d78e80` (ABC export)
+against the older `master` reference. In particular `EXPECTED_CONFORMANT` in
+`e2e_corpus.rs` is unchanged and `cargo test -p scoretk --test e2e_corpus` still
+passes (5/5).

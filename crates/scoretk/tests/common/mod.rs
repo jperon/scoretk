@@ -19,6 +19,8 @@
 
 #![allow(dead_code)]
 
+pub mod musicxml_core;
+
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 

@@ -25,10 +25,11 @@ use scoretk_core::model::{
     tpc, Accidental, AccidentalType, Annotation, Articulation, ArticulationType, BarLineType,
     BeamMode, ChordRest, Clef, ClefType, Credit, CreditStyle, Duration, DurationType, Fraction,
     GraceChord, GraceType, Harmony, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
-    LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteId, Part, PartId, Placement, RehearsalFrame,
-    RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor,
-    SpannerType, Staff, StaffBracket, StaffId, StaffText, SwingParameters, SwingUnit, SystemText,
-    TboxText, Tempo, TempoKind, TextLineInfo, TimeSig, Track, Transpose, Tuplet,
+    LyricsSyllabic, Measure, MeasureRepeatMark, Note, NoteHeadGroup, NoteId, Part, PartId,
+    Placement, RehearsalFrame, RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType,
+    Spanner, SpannerAnchor, SpannerType, Staff, StaffBracket, StaffId, StaffText, SwingParameters,
+    SwingUnit, SystemText, TboxText, Tempo, TempoKind, TextLineInfo, TimeSig, Track, Transpose,
+    Tuplet,
 };
 
 use super::{export_musicxml, export_musicxml_with, ExportOptions};
@@ -2207,4 +2208,160 @@ fn alteration_d_avertissement() {
 
     let xml = export_musicxml(&score).expect("export");
     assert!(xml.contains("<accidental cautionary=\"yes\" parentheses=\"no\">sharp</accidental>"));
+}
+
+#[test]
+fn repetition_de_mesure_stop_numero_de_porte_valide() {
+    let mut score = Score::new();
+    let (part_id, staff1) = piano(&mut score);
+    let staff2 = score.add_staff(part_id);
+    let (piste1, piste2) = (Track::new(staff1, 0), Track::new(staff2, 0));
+    let mesure = Fraction::ONE;
+
+    // Trois mesures ordinaires : la deuxième ouvre une répétition sur la
+    // portée 2, la troisième la ferme. Le groupe porte donc le numéro 2.
+    let mut m0 = ajouter_mesure(0, Fraction::ZERO, mesure, mesure);
+    ajouter_accord(
+        &mut score,
+        &mut m0,
+        piste1,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(60, tpc::C)],
+    );
+    ajouter_accord(
+        &mut score,
+        &mut m0,
+        piste2,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(48, tpc::C)],
+    );
+    score.add_measure(m0);
+
+    let mut m1 = ajouter_mesure(1, mesure, mesure, mesure);
+    m1.measure_repeat = Some(MeasureRepeatMark {
+        staff: staff2,
+        count: 2,
+    });
+    ajouter_accord(
+        &mut score,
+        &mut m1,
+        piste1,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(62, tpc::C)],
+    );
+    ajouter_accord(
+        &mut score,
+        &mut m1,
+        piste2,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(50, tpc::C)],
+    );
+    score.add_measure(m1);
+
+    let mut m2 = ajouter_mesure(2, Fraction::new(2, 1), mesure, mesure);
+    ajouter_accord(
+        &mut score,
+        &mut m2,
+        piste1,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(64, tpc::C)],
+    );
+    ajouter_accord(
+        &mut score,
+        &mut m2,
+        piste2,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(52, tpc::C)],
+    );
+    score.add_measure(m2);
+
+    let xml = export_musicxml(&score).expect("export");
+    // xsd:staff-number = xs:positiveInteger : « 0 » n'est pas un numéro de portée.
+    assert!(
+        !xml.contains("number=\"0\""),
+        "numéro de portée invalide dans {xml}"
+    );
+    assert!(
+        xml.contains("<measure-style number=\"2\">"),
+        "ouverture sur la portée 2 : {xml}"
+    );
+    assert!(
+        xml.contains("<measure-style number=\"2\">\n          <measure-repeat type=\"stop\"")
+            || xml.contains("<measure-style number=\"2\">\n        <measure-repeat type=\"stop\""),
+        "la fermeture doit porter le numéro de la portée : {xml}"
+    );
+    assert_eq!(xml.matches("<measure number=").count(), 3);
+}
+
+#[test]
+fn tempo_sans_equation_reste_en_words() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let piste = Track::new(staff, 0);
+
+    let mut m0 = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let ids = ajouter_accord(
+        &mut score,
+        &mut m0,
+        piste,
+        Fraction::ZERO,
+        Duration::quarter(),
+        &[(60, tpc::C)],
+    );
+    let suivants = ajouter_accord(
+        &mut score,
+        &mut m0,
+        piste,
+        Fraction::new(1, 4),
+        Duration::quarter(),
+        &[(60, tpc::C)],
+    );
+    score.note_mut(ids[0]).tie_forward = Some(suivants[0]);
+    score.note_mut(suivants[0]).tie_back = Some(ids[0]);
+    ajouter_silence(
+        &mut score,
+        &mut m0,
+        piste,
+        Fraction::new(1, 2),
+        Duration::half(),
+    );
+    // « ♩ ≈ 90 » : pas de signe « = », donc pas de formule de métronome.
+    let mut tempo = Tempo::new("<sym>metNoteQuarterUp</sym> ≈ 90");
+    tempo.beats_per_second = Some(1.5);
+    ajouter_annotation(
+        &mut m0,
+        score.staves.len(),
+        piste,
+        Fraction::ZERO,
+        Annotation::Tempo(tempo),
+    );
+    score.add_measure(m0);
+
+    let mut m1 = ajouter_mesure(1, Fraction::ONE, Fraction::ONE, Fraction::ONE);
+    ajouter_accord(
+        &mut score,
+        &mut m1,
+        piste,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(62, tpc::C)],
+    );
+    score.add_measure(m1);
+
+    let xml = export_musicxml(&score).expect("export");
+    // xsd:metronome exige <per-minute> ou un second <beat-unit> ; sans « = »
+    // MuseScore 4.7.4 écrit un <metronome> invalide, on garde donc des <words>.
+    assert!(
+        !xml.contains("<metronome"),
+        "métrophone sans enfant valide : {xml}"
+    );
+    assert!(xml.contains("≈ 90"), "le « ≈ » doit rester lisible : {xml}");
+    assert!(xml.contains("<sound tempo=\"90\"/>"));
+    assert_eq!(xml.matches("<measure number=").count(), 2);
 }

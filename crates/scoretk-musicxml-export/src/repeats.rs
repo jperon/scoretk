@@ -155,9 +155,19 @@ pub(super) fn measure_style(
         .and_then(|previous| previous.measure_repeat);
     let Some(mark) = measure.measure_repeat else {
         // Sortie d'un groupe : la mesure précédente répétait sur une portée de
-        // cette partie.
-        if previous.is_some_and(|mark| part.staves.contains(&mark.staff)) {
-            write_measure_repeat(out, part.staves.len(), Some(0), None);
+        // cette partie. `measureRepeat` (exportmusicxml.cpp:6544-6571) construit
+        // ses attributs dans la boucle de portée et utilise donc, pour le
+        // `<measure-repeat type="stop">`, le même `number` que l'ouverture.
+        // Le portage passait une position sentinelle 0, soit `number="0"`,
+        // refusé par `xsd:staff-number` (xs:positiveInteger).
+        if let Some(previous) = previous.filter(|mark| part.staves.contains(&mark.staff)) {
+            if let Some(position) = part
+                .staves
+                .iter()
+                .position(|staff| *staff == previous.staff)
+            {
+                write_measure_repeat(out, part.staves.len(), Some(position), None);
+            }
         }
         return;
     };
@@ -168,15 +178,18 @@ pub(super) fn measure_style(
     {
         return;
     }
-    write_measure_repeat(out, part.staves.len(), Some(position + 1), Some(mark.count));
+    write_measure_repeat(out, part.staves.len(), Some(position), Some(mark.count));
 }
 
 /// Écrit un `<attributes><measure-style><measure-repeat>` (ou sa fin).
+///
+/// `position` est l'indice 0-basé de la portée dans la partie ; le numéro
+/// MusicXML est `position + 1`, car `xsd:staff-number` est un entier positif.
 fn write_measure_repeat(out: &mut Out, staves: usize, position: Option<usize>, count: Option<u16>) {
     out.attr(true);
     let number = position
         .filter(|_| staves > 1)
-        .map(|position| position.to_string());
+        .map(|position| (position + 1).to_string());
     let attributes: Vec<(&str, &str)> = number
         .as_deref()
         .map(|number| vec![("number", number)])
