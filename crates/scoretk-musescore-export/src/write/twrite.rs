@@ -990,31 +990,41 @@ pub(crate) fn write_instrument(xml: &mut XmlWriter, instrument: &Instrument) {
     // instrument MuseScore possède toujours au moins un canal. Le laisser vide
     // fait échouer `PlaybackSetupDataResolver` et plantent MuseScore 4.7.4 à
     // l'ouverture d'une partition issue de LilyPond/ABC.
-    {
-        xml.start_element("Channel", &[]);
+    // Tous les canaux de l'instrument comptent dans `rebuildMidiMapping`
+    // (`midimapping.cpp:286-310`) ; on les réécrit pour que le round trip
+    // `.mscx` → modèle → `.mscx` conserve leur nombre. Seul le premier porte
+    // les réglages détaillés, comme dans les fichiers de MuseScore.
+    for index in 0..instrument.channel_count.max(1) {
+        let name = (index > 0).then(|| format!("channel-{index}"));
+        let name = name.as_deref();
+        let attributes: Vec<(&str, &str)> =
+            name.map(|name| vec![("name", name)]).unwrap_or_default();
+        xml.start_element("Channel", &attributes);
         if let Some(program) = instrument.midi_program {
             xml.tag_empty("program", &[("value", &program.to_string())]);
         }
-        // Port de `TWrite::write(const InstrChannel*)` (`write/twrite.cpp:2111-2114`) :
-        // quand l'attribution MIDI est exportée, le port et le canal sont écrits
-        // ensemble. Sans `<midiPort>`, MuseScore recalcule le port au chargement
-        // et l'export MusicXML change `<midi-device port>`.
-        if let Some(port) = instrument.midi_port {
-            xml.tag("midiPort", &port.to_string());
-        }
-        if let Some(channel) = instrument.midi_channel {
-            // `Instrument::midiChannel` (base zéro) : l'export en dérive
-            // `<midi-channel>` (base un) et l'attribution des canaux libres.
-            xml.tag("midiChannel", &channel.to_string());
-        }
-        if let Some(volume) = instrument.volume {
-            xml.tag_empty(
-                "controller",
-                &[("ctrl", "7"), ("value", &volume.to_string())],
-            );
-        }
-        if let Some(pan) = instrument.pan {
-            xml.tag_empty("controller", &[("ctrl", "10"), ("value", &pan.to_string())]);
+        if index == 0 {
+            // Port de `TWrite::write(const InstrChannel*)` (`write/twrite.cpp:2111-2114`) :
+            // quand l'attribution MIDI est exportée, le port et le canal sont
+            // écrits ensemble. Sans `<midiPort>`, MuseScore recalcule le port
+            // au chargement et l'export MusicXML change `<midi-device port>`.
+            if let Some(port) = instrument.midi_port {
+                xml.tag("midiPort", &port.to_string());
+            }
+            if let Some(channel) = instrument.midi_channel {
+                // `Instrument::midiChannel` (base zéro) : l'export en dérive
+                // `<midi-channel>` (base un) et l'attribution des canaux libres.
+                xml.tag("midiChannel", &channel.to_string());
+            }
+            if let Some(volume) = instrument.volume {
+                xml.tag_empty(
+                    "controller",
+                    &[("ctrl", "7"), ("value", &volume.to_string())],
+                );
+            }
+            if let Some(pan) = instrument.pan {
+                xml.tag_empty("controller", &[("ctrl", "10"), ("value", &pan.to_string())]);
+            }
         }
         xml.end_element();
     }

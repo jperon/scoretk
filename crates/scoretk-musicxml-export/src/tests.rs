@@ -149,6 +149,7 @@ fn piano_instrument() -> Instrument {
         track_name: "Piano".to_owned(),
         transpose: None,
         midi_channel: None,
+        channel_count: 1,
         midi_port: None,
         midi_program: Some(0),
         volume: None,
@@ -694,6 +695,7 @@ fn transposition_et_concert_pitch() {
         track_name: "B♭ Clarinet".to_owned(),
         transpose: Some(Transpose::new(-1, -2)),
         midi_channel: None,
+        channel_count: 1,
         midi_port: None,
         midi_program: Some(71),
         volume: None,
@@ -1108,6 +1110,7 @@ fn corpus_linked_ties() {
         track_name: "Flute".to_owned(),
         transpose: None,
         midi_channel: None,
+        channel_count: 1,
         midi_port: None,
         midi_program: Some(73),
         volume: None,
@@ -1284,6 +1287,7 @@ fn corpus_paroles() {
         track_name: "Voice".to_owned(),
         transpose: None,
         midi_channel: None,
+        channel_count: 1,
         midi_port: None,
         midi_program: Some(52),
         volume: None,
@@ -2734,4 +2738,32 @@ fn saut_de_section_sans_reprise_garde_le_numero() {
         1,
         "le saut sans startWithMeasureOne ne doit pas relancer la numérotation"
     );
+}
+
+/// `midiInstrument` (`exportmusicxml.cpp:7337-7346`) utilise le canal alloué
+/// au **premier** `<Channel>` de l'instrument dans `rebuildMidiMapping`, qui
+/// parcourt tous les canaux secondaires (mute, harmony…). Trois canaux par
+/// instrument décalent donc le canal exporté de 0, 3, 6… Cas réel :
+/// `Amazing Grace - String Quartet` (canaux 1, 4, 7, 11).
+#[test]
+fn canaux_midi_des_canaux_secondaires() {
+    let mut score = Score::new();
+    for index in 0..2 {
+        let part_id = score.add_part(Part::new(format!("Part{index}"), "P"));
+        score.part_mut(part_id).instrument.channel_count = 3;
+        let staff = score.add_staff(part_id);
+        let track = Track::new(score.staff(staff).id, 0);
+        let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+        ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+        ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+        score.add_measure(measure);
+    }
+
+    let xml = export_musicxml(&score).expect("export");
+    let canaux: Vec<&str> = xml
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("<midi-channel>"))
+        .map(|line| line.split('<').next().unwrap_or(""))
+        .collect();
+    assert_eq!(canaux, vec!["1", "4"], "canaux exportés : {canaux:?}");
 }

@@ -43,6 +43,7 @@ fn piano(score: &mut Score) -> StaffId {
         track_name: "Piano".to_owned(),
         transpose: None,
         midi_channel: None,
+        channel_count: 1,
         midi_port: None,
         midi_program: Some(0),
         volume: None,

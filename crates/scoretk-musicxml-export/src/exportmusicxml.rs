@@ -695,9 +695,15 @@ impl<'a> Context<'a> {
                     Some(channel) => usize::from(channel),
                     None => {
                         let channel = take_free();
-                        // Le canal « harmony » du premier instrument occupe
-                        // aussi un canal, mais n'est pas exporté.
-                        if instrument_index == 0 && has_harmony {
+                        // Chaque `<Channel>` secondaire occupe un canal dans
+                        // `rebuildMidiMapping` (`midimapping.cpp:286-310`).
+                        for _ in 1..instrument.channel_count.max(1) {
+                            let _ = take_free();
+                        }
+                        // Le canal « harmony » occupe aussi un canal, mais
+                        // n'est pas exporté ; il est déjà compté parmi les
+                        // canaux de l'instrument quand il est déclaré.
+                        if instrument_index == 0 && has_harmony && instrument.channel_count <= 1 {
                             let _ = take_free();
                         }
                         channel

@@ -199,6 +199,7 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         transpose: None,
         midi_program: None,
         midi_channel: None,
+        channel_count: 1,
         midi_port: None,
         volume: None,
         pan: None,
@@ -214,6 +215,9 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         ));
     }
 
+    // Tous les `<Channel>` comptent dans `rebuildMidiMapping` (canaux
+    // secondaires compris) : ils décalent le canal exporté.
+    instrument.channel_count = node.children_named("Channel").count().max(1);
     // Programme MIDI du premier canal sonore (`<Channel><program value>`).
     for channel in node.children_named("Channel") {
         if let Some(program) = channel.child("program") {

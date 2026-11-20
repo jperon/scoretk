@@ -121,7 +121,21 @@ Mesure ciblée sur les 9 fichiers concernés (RV 594 de Vivaldi) : **9 gains,
 0 perte**, lignes canoniques divergentes 9 577 → 543. Les écarts résiduels
 sont les causes suivantes du classement.
 
-## 6. Next causes
+## 6. Cause suivante : canaux MIDI des instruments
+
+`midiInstrument` (`exportmusicxml.cpp:7337-7346`) écrit le canal alloué au
+premier `<Channel>` de l'instrument par `rebuildMidiMapping`
+(`midimapping.cpp:286-310`) : **tous** les canaux d'un instrument, y compris les
+canaux secondaires (mute, harmony…), consomment un canal MIDI. Le portage
+n'en allouait qu'un seul par instrument. `Instrument::channel_count` est lu par
+les lecteurs 3.x/4.x, réécrit par l'écrivain `.mscx`, et l'export en tient
+compte. Test réduit : deux instruments à trois canaux donnent `<midi-channel>1`
+et `4` au lieu de `1` et `2`.
+
+Mesure ciblée sur les 6 fichiers concernés : **6 gains, 0 perte** (par exemple
+`Hallelujah - Haendel` : 16 → 0 lignes divergentes).
+
+## 7. Next causes
 
 Work the ranking of §2 in order, re-measuring after each committed cause:
 `tuplet` (bracket direction), `attributes`, `measure`, `midi-channel`, `sound`.

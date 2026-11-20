@@ -475,6 +475,10 @@ impl Reader {
             instrument.transpose = Some(Transpose::new(diatonic, chromatic));
         }
 
+        // `rebuildMidiMapping` (`midimapping.cpp:286-310`) alloue un canal
+        // MIDI à chaque `<Channel>` de tous les instruments, y compris les
+        // canaux secondaires (mute, harmony…) qui ne sont pas exportés.
+        instrument.channel_count = element.children_named("Channel").count().max(1);
         instrument.midi_program = element
             .child("Channel")
             .and_then(|channel| channel.child("program"))
