@@ -3445,8 +3445,18 @@ impl<'a> Parser<'a> {
                 vec![PostEvent::Rest]
             }
             Kind::Command => {
+                // `lily/parser.yy` : `post_event_nofinger: direction_less_event`
+                // est un événement isolé (`\fermata`, `\p`, `\trill`, …) : il ne
+                // consomme aucun jeton. Seule `script_dir music_function_call`
+                // prend un argument, et les directions `^`, `_`, `-` sont déjà
+                // traitées plus haut. Avaler ici le jeton suivant faisait
+                // disparaître un `\times`/`\tuplet` placé après un post-événement.
+                let name = token.text.clone();
                 self.position += 1;
-                self.parse_direction_event(&format!("\\{}", token.text), Placement::Below)
+                if let Some(post) = post_event_for_command(&name, Placement::Below) {
+                    return vec![post];
+                }
+                self.parse_direction_event(&format!("\\{name}"), Placement::Below)
             }
             _ => Vec::new(),
         }

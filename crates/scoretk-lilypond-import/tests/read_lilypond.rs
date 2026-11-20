@@ -4420,3 +4420,81 @@ fn measurelength_moment_scheme_a_deux_entiers() {
     assert_eq!(score.measures[0].len, Fraction::new(1, 2));
     assert_eq!(hauteurs(&score), vec![60, 62]);
 }
+
+/// `lily/parser.yy` `post_event_nofinger: direction_less_event` : `\fermata` ou
+/// `\p` est un post-événement isolé, sans argument. Seule la règle
+/// `script_dir music_function_call` consomme la commande qui suit, après
+/// `^`, `_` ou `-`. Un `\times`/`\tuplet` suivant un post-événement reste donc
+/// de la musique et doit produire son n-olet.
+#[test]
+fn post_event_ne_consomme_pas_le_times_suivant() {
+    let source = r#"\version "2.24.0"
+\language "english"
+mus = \fixed c' {
+  \time 2/4
+  c4 d4 | e4\fermata \times 2/3 { f8 g8 a8 } |
+  b4\p \tuplet 3/2 { c'8 d'8 e'8 } | <f' a' c''>4 ~ <f' a' c''>4
+}
+bas = \fixed c {
+  \time 2/4
+  c4\fermata \times 2/3 { d8 e8 f8 } | g2 r2
+}
+\score { << \new Staff \mus \new Staff \bas >> }"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.measures.len(), 4, "mesures");
+    assert_eq!(
+        score.tuplets.len(),
+        3,
+        "les deux \\times et le \\tuplet après post-événement"
+    );
+    assert!(score
+        .tuplets
+        .iter()
+        .all(|tuplet| tuplet.ratio == Fraction::new(3, 2)));
+    let tuplets: Vec<_> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .filter(|chord_rest| chord_rest.tuplet.is_some())
+        .map(|chord_rest| {
+            (
+                chord_rest
+                    .chord_ref()
+                    .map(|chord| chord.notes.clone())
+                    .unwrap_or_default(),
+                chord_rest.duration.ticks(),
+            )
+        })
+        .collect();
+    let notes_en_n_olet: Vec<(u8, Fraction)> = tuplets
+        .into_iter()
+        .flat_map(|(notes, duree)| {
+            notes.into_iter().map(move |id| (id, duree))
+        })
+        .map(|(id, duree)| (score.note(id).pitch, duree))
+        .collect();
+    assert_eq!(
+        notes_en_n_olet,
+        vec![
+            (65, Fraction::new(1, 8)),
+            (67, Fraction::new(1, 8)),
+            (69, Fraction::new(1, 8)),
+            (72, Fraction::new(1, 8)),
+            (74, Fraction::new(1, 8)),
+            (76, Fraction::new(1, 8)),
+        ],
+        "hauteurs et durées écrites des n-olets de la première portée"
+    );
+
+    // Cas limite : post-événement en fin de musique, sans jeton à suivre.
+    let fin = lire("c4 \\fermata");
+    assert_eq!(hauteurs(&fin), vec![60]);
+    assert_eq!(fin.measures.len(), 1);
+    assert!(fin.tuplets.is_empty());
+
+    // Cas non concerné : `\times` sans post-événement devant est inchangé.
+    let seul = lire("\\times 2/3 { c8 d8 e8 }");
+    assert_eq!(hauteurs(&seul), vec![60, 62, 64]);
+    assert_eq!(seul.tuplets.len(), 1);
+}

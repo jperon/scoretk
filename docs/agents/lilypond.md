@@ -1698,3 +1698,94 @@ Per-file changes on the writing `ly` lot: `lily-cf5ff785.ly` becomes exact
 (N2 226 → 271) and `Ecce_sacrum_paratum_convivium.ly` gains N2 (78 → 257);
 `lily-9f2fb156.ly` only changes size. No file loses notes or attacks on either
 lot.
+
+## 18. Reading campaign toward 95 % N2 (2026-11-20)
+
+### Frozen baseline and method
+
+Master `2b00392` was frozen as `/tmp/ly95-base`; the three full lists
+(`mus` 1447, `ra` 1726, `mut` 1377 paths, no stride) were run with the
+versioned oracle, cached LilyPond references and every conversion under
+`timeout 10 prlimit --as=2000000000`. Weighted N2 is the multiset
+intersection of `(pitch, attack on the 1/16-quarter grid)` (oracle §N2).
+
+| Lot | Files | Repeats | OK | Exact | N1 % (all) | N2 % (no repeat) | N2 % (all files) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| mus | 1447 | 113 | 1444 | 1125 (77.7 %) | 99.20 | 91.64 | 89.22 |
+| ra | 1726 | 305 | 1724 | 1200 (69.5 %) | 90.84 | 75.86 | 78.09 |
+| mut | 1377 | 651 | 1374 | 390 (28.3 %) | 98.10 | 69.94 | 68.86 |
+| **all** | **4550** | **1069** | **4542** | **2715 (59.7 %)** | **98.05** | **74.15** | **71.78** |
+
+### Repeats: decision and effect on the denominator
+
+`lyaudit/pre.ly` injects only a `\midi {}` block into scores that lack one;
+it does **not** wrap the music in `\unfoldRepeats`. A `\repeat volta` is
+therefore played **once** in the reference MIDI, which is the same written-once
+structure that the MusicXML writer produces and the oracle reads (a repeat is
+a direction, not duplicated notes). Among the 1069 repeat-flagged sources, 309
+contain an explicit `\unfoldRepeats` (207 of them also contain `\repeat`), so
+their cached reference may come from a separate MIDI score that *does* unfold;
+they stay flagged and are listed separately in the raw rows.
+
+We do **not** regenerate the references with `\unfoldRepeats`: LilyPond would
+then play each volta twice while the MusicXML writer keeps the structure once
+(only the MIDI writer unfolds, through `RepeatList`), and scoring the two
+against each other would need the arbitrary earliest-attack pairing that the
+oracle deliberately rejects. Both denominators are reported above: the
+repeat-free N2 stays the non-regression figure, and the "all files" N2 now
+includes every repeat row instead of silently dropping it. The change costs
+2.37 N2 points globally (74.15 → 71.78) but makes the 1069 repeat files
+measurable rather than excluded.
+
+### Ranked N2 losses (before the fixes below)
+
+For each file we reconstructed the reference MIDI and scoretk's MusicXML from
+the frozen run, found the **first attack where the `(pitch, tick)` multisets
+differ**, and read the LilyPond construct in a window of the source around
+that bar (direct `\include`s included). Loss is `ref − matched pairs`, so it
+counts notes, not files. Categories overlap only in the sense that each file
+has exactly one first-divergence construct.
+
+| Construct at the first diverging attack | Lost notes | Files | Example |
+| --- | ---: | ---: | --- |
+| `\grace` / `\acciaccatura` / `\afterGrace` | 103 579 | 177 | `Ackermans_NoelDesPetitsSantons.ly` |
+| `\voiceOne` / `<< … >>` | 98 022 | 363 | `AuClairDeLaLune.ly` |
+| `\tuplet` / `\times` | 36 603 | 91 | `Promo_Foucauld.ly` |
+| `R1*n` / `\bar` | 28 105 | 70 | `01_01_Buenos-dias-Mexico_livret.ly` |
+| none of the tracked constructs | 27 100 | 126 | `Ave_dulcissima_Maria.ly` |
+| `s` spacer | 18 804 | 40 | `Angels_Carol__John_Rutter-midi.ly` |
+| variables | 16 981 | 143 | `benoit_ave_maria.ly` |
+| `\set Timing.*` | 6 921 | 29 | `Ecce_sacrum_paratum_convivium.ly` |
+| `\repeat volta` / `\repeat unfold` | 6 307 | 36 | `Encantada.ly` |
+| lyrics (`\lyricsto`, `\addlyrics`) | 5 857 | 10 | `Vorrei_baciarti.ly` |
+| `\time` / `\partial` | 1 700 | 16 | `02_02_Segura….ly` |
+| `\repeat tremolo` | 1 231 | 10 | `promenade-6.ly` |
+| `\cadenzaOn` | 356 | 6 | `accidental-ledger.ly` |
+| `\repeat percent` | 50 | 11 | `ottava-double-percent-repeat-note.ly` |
+| `\partCombine` | 21 | 3 | `duration-line-and-partCombine.ly` |
+| `\scaleDurations` | 3 | 1 | `chord-tremolo-scaled-durations.ly` |
+
+By the oracle's primary flag: `attaque_decalee` 175 358 notes (641 files),
+`octave` 174 407 (347), `sortie_vide` 996 (52), `notes_manquantes` 843 (82),
+the rest below 20. The two large flags overlap with the table above: a
+wrong attack does not change the pitch multiset (N1 100 %), and the `octave`
+flag is often raised by a stray unmatched pitch whose octave exists elsewhere.
+
+### Fix 1 — a post-event must not swallow the following command
+
+`lily/parser.yy` (`post_event_nofinger: direction_less_event`,
+`post_event: post_event_nofinger | '-' fingering`) makes `\fermata`, `\p`,
+`\trill`… **isolated** events: only the `script_dir music_function_call`
+rule consumes a following command, and that rule applies after `^`, `_`, `-`.
+The reader's `parse_post_event` sent every bare `\command` through
+`parse_direction_event`, which consumed the **next** token. On
+`e4\fermata \times 2/3 { f8 g8 a8 }` the `\times` token disappeared, the three
+eighths kept their written duration and the next bar started late — the
+mechanism behind most of the `\tuplet`/`\times` and part of the `\grace`
+rows above. `parse_post_event` now recognises a known post-event directly and
+consumes only its own token. The reduced test `post_event_ne_consomme_pas_le_times_suivant`
+covers two staves, variables, `\fixed`, bar checks, a chord, a tie, a rest,
+a dynamic and a fermata before `\times`/`\tuplet`, a post-event at end of
+music, and the unaffected bare `\times` case; it failed on the frozen code
+(5 measures / 1 n-tuplet instead of 4 / 3). Three random
+`input/regression/*.ly` files complete under `timeout 5 prlimit`.
