@@ -1989,6 +1989,96 @@ correction to the pairing code: candidate graces must also be removed from
 the main-note multiset, otherwise a grace at the main attack can match a
 reference main note of the same pitch and be counted twice. `ly_notes.py
 selftest` and `mesure.py --selftest` cover the corrected rule.
+## 20. Writing campaign toward 95 % N2 (2026-11-20)
+
+### Protocol and frozen baseline
+
+The master CLI was frozen **before any edit** (`/tmp/ly95-base-bin`,
+`ee50fb906f5f0d60…`, built from `2b00392` with
+`nix develop -c cargo build -p scoretk-cli`). All four **whole** lots were
+measured with `scripts/oracle/lilypond/ecriture.sh`: the 56 versioned corpus
+`.mscx`, the 174 `.mscz` and 32 genuine MusicXML of `~/Musique`, and the
+deterministic 1/5 sample of 375 `.ly`. Cached reference MIDI/MusicXML were
+reused; every conversion ran under `timeout 10 prlimit --as=2000000000` and
+every LilyPond 2.26 compilation under 20 s / 2 GB. The `.mscz` lot was split in
+two after the first process was stopped at 85 files; the two `.jsonl` halves
+are added (174 distinct files), and the `.ly` lot was measured in a dedicated
+parallel run. This is §13's method, applied to the current branch.
+
+| Lot | Tool | Files | Compiled | Exact | N1 % | N2 % | N2d % | Errors | Warn. | Mean .ly bytes | Max time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 28 (50.0 %) | 79.91 | 78.36 | 75.90 | 0 | 11 | 1396 | 3.17 s |
+| corpus | musicxml2ly | 56 | 51 | 28 (50.0 %) | 94.52 | 91.98 | 89.29 | 79 | 20 | 2926 | 20.01 s |
+| mscz | scoretk | 174 | 158 | 30 (17.2 %) | 91.96 | 85.35 | 83.31 | 68 | 1790 | 28 043 | 23.37 s |
+| mscz | musicxml2ly | 174 | 140 | 34 (19.5 %) | 93.18 | 91.49 | 90.94 | 80 988 | 3494 | 40 169 | 33.86 s |
+| xml | scoretk | 32 | 24 | 12 (37.5 %) | 97.81 | 95.34 | 94.67 | 66 | 251 | 103 899 | 23.24 s |
+| xml | musicxml2ly | 32 | 2 | 1 (3.1 %) | 98.79 | 98.79 | 98.79 | 326 | 24 | 19 381 | 4.66 s |
+| ly | scoretk | 375 | 289 | 238 (63.5 %) | 90.71 | 80.38 | 80.00 | 0 | 129 | 1957 | 8.94 s |
+| ly | musicxml2ly | 375 | 118 | 93 (24.8 %) | 96.09 | 87.18 | 86.64 | 0 | 251 | 3745 | 12.96 s |
+
+Per-file, where at least one tool is exact: corpus 1 win / 27 ties / 1 loss;
+`.mscz` 5 / 25 / 9; XML 11 / 1 / 0; `.ly` 147 / 91 / 2. scoretk still beats
+musicxml2ly on three lots by exact files and compiles far more sources; the
+XML figure of musicxml2ly is measured on one file (alternative's
+`UnboundLocalError`, §13).
+
+### Loss ranking by lost notes (first diverging cause)
+
+| First cause | Lost N2d notes | Files | Reduced example | Decision |
+| --- | ---: | ---: | --- | --- |
+| `octave` | 12 469 | 33 | `07- Adeste fideles - Trompettes.mscz` | Input/reference disagreement and reader limits (§13): MuseScore's own MusicXML and reference MIDI drop rest measures the `.mscx` really contains. The reverted fix of §13 would recover these notes by deleting genuine music; out of scope here. |
+| `attaque_decalee` | 842 | 9 | `03_05_Enfants_Alleluia_livret.ly` | Multi-score `\transpose` and chord-grid positions are resolved by the reader; the writer receives an already-shifted model. Out of scope (import agent). |
+| `compilation` | 377 | 1 | `La_foule.mscz` | **Fixed below**: a lyric syllable `7` was written bare, which LilyPond rejects as a duration. |
+| `autre` | 47 | 1 | `HavaNagila.ly` | Chord grid written with `*N` plus redundant spacers; reader-side model, out of scope. |
+| `duree_seule` | 31 | 3 | `clef-1.mscx` | Gate time only (0.25 vs 0.125 quarter), no pitch or attack lost; not worth a targeted fix. |
+
+By lot, the N2d gap is 13 436 notes on `.mscz` (37 files), 311 on `.ly` (6
+files) and 19 on the corpus (4 files); XML has no loss. No fixable export
+cause exceeds 0.3 N2 point once the input/reference artefacts and reader
+limits are excluded. The 95 % target is therefore not reachable from this
+crate alone: the remaining gap is the MuseScore 1.x/2.x reader (22 files),
+the multi-rest disagreement, tremolo/glissando/playback-coupling reference
+artefacts (§13) and chord-grid/`\transpose` reading.
+
+### Cause fixed: `\transposition` identity reset
+
+Notation Reference §1.3.4 (Instrument transpositions) states that
+« The `\transposition` may be changed during a piece » and prescribes
+`\transposition c` for a concert-pitch instrument; LilyPond's
+`scm/define-context-properties.scm:475-478` defines `instrumentTransposition`
+as the pitch sounding for written middle C and says it is « used to transpose
+the MIDI output ». It is therefore a **persistent context property**: after a
+B-flat clarinet changes to a non-transposing instrument, omitting the command
+keeps the MIDI transposed a tone high. `musicxml2ly` writes the same command
+(`python/musicexp.py:4507-4512`, `Transposition.ly_expression`). The writer now
+emits `\transposition c` on the measure where `written_transposition` returns
+to zero after a non-zero value. A reduced two-staff test (chords, a rest, a
+tie across the bar line, bar checks, and an untouched non-transposing control
+staff) failed before the fix and passes after it.
+
+### Cause fixed: numeric lyric syllables
+
+Notation Reference §9.1.2 (Entering lyrics): « A word or syllable of lyrics
+begins with an alphabetic character » (plus `_ ? ! : '`, control characters
+and characters above 127). `lily/lexer.ll:568-612` puts the `FRACTION`,
+`STRICTREAL` and `UNSIGNED` rules before the lyric-word rule, whose **two**
+character classes both exclude digits: a digit anywhere (`7`, `a7`) is lexed
+as a duration and LilyPond answers « this is not a duration » (verified with
+a minimal `.ly` compiled by LilyPond 2.26). The writer now quotes a syllable
+that cannot be a bare lyric word — a space, a digit, or an invalid first
+character — using the same quoting it already applied to spaces. On
+`La_foule.mscz` this changes `\skip 1 7` into `\skip 1 "7"`; LilyPond 2.26 now
+compiles the output with **0 errors instead of 25** (`compile_ok` false →
+true). Its N2d stays 52.62 %: LilyPond already emitted the MIDI before the
+fatal error, so the gain is compilation fidelity, not notes. The control
+cases (`m`, `l'ami!`, `ta.`) remain bare words and the corpus snapshots are
+unchanged.
+
+Both fixes are byte-inert on the measured corpus: the fixed binary
+(`6398909639c5933b…`) was compared to the frozen one on all 637 lot sources
+(`timeout 10 prlimit --as=2000000000`): **637/637 identical `.ly`**; one
+transient 10 s timeout on a large Vivaldi score was rerun alone in 9.4 s with
+identical bytes. No file loses N1, N2 or N2d.
 
 ## 21. Reading campaign, third pass (2026-11-20)
 

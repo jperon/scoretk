@@ -171,6 +171,19 @@ pub(crate) fn render_body(
                 before::TRANSPOSE,
                 command,
             ));
+        } else if transposition == 0 && derniere_transposition.is_some_and(|prec| prec != 0) {
+            // Notation Reference §1.3.4 (Instrument transpositions) :
+            // « \transposition may be changed during a piece » et
+            // « \transposition c to get correct MIDI output ». La propriété
+            // est portée par le contexte : sans cette remise à zéro, les notes
+            // écrites après un changement vers un instrument non transpositeur
+            // resteraient transposées dans le MIDI. `musicxml2ly` écrit
+            // pareillement `\transposition` (musicexp.py, Transposition).
+            pre_by_measure[measure_index].push(Event::new(
+                measure.start_tick,
+                before::TRANSPOSE,
+                "\\transposition c".to_string(),
+            ));
         }
         derniere_transposition = Some(transposition);
     }
@@ -1093,11 +1106,27 @@ fn is_tied_continuation(score: &Score, chord_rest: &ChordRest) -> bool {
 /// Syllabe LilyPond d'une entrée de paroles.
 fn syllable(lyrics: &scoretk_core::model::Lyrics, has_next: bool) -> String {
     let escaped = text::escape(&lyrics.text);
-    // Un mot de paroles ne contient pas de blanc (`lily/lexer.ll`, état
-    // `lyrics`) : une syllabe qui en porte un (« Ah ! » après lecture de
-    // `Ah_!`) s'écrit entre guillemets, sinon la relecture la couperait en
-    // plusieurs syllabes et décalerait tout le couplet.
-    let mut text_value = if lyrics.text.chars().any(char::is_whitespace) {
+    // Un mot de paroles ne contient ni blanc ni chiffre : les deux classes du
+    // lexer (`lily/lexer.ll`, état `<lyrics>`, première règle du mot) excluent
+    // `0-9`, et Notation Reference §9.1.2 précise qu'un chiffre termine un mot.
+    // Une syllabe qui en porte un (« Ah ! » après lecture de `Ah_!`, ou « 7 »)
+    // s'écrit entre guillemets : sinon la relecture la couperait en plusieurs
+    // syllabes, ou LilyPond prendrait le chiffre pour une durée et refuserait
+    // le fichier.
+    let mut caracteres = lyrics.text.chars();
+    let mot_nu = caracteres.next().is_some_and(|c| {
+        !c.is_whitespace()
+            && !c.is_ascii_digit()
+            && !matches!(
+                c,
+                '|' | '*' | '.' | '=' | '$' | '#' | '{' | '}' | '"' | '\\'
+            )
+    }) && caracteres.all(|c| {
+        !c.is_whitespace()
+            && !c.is_ascii_digit()
+            && !matches!(c, '$' | '#' | '{' | '}' | '"' | '\\')
+    });
+    let mut text_value = if !mot_nu {
         format!("\"{escaped}\"")
     } else {
         escaped
@@ -1271,6 +1300,33 @@ mod tests {
         // La mesure régulière suivante restaure la métrique héritée.
         assert!(plan[2].set);
         assert!(plan.iter().all(|measure| measure.bar_check));
+    }
+
+    /// Notation Reference §9.1.2 (Entering lyrics) : « A word or syllable of
+    /// lyrics begins with an alphabetic character » (plus `_ ? ! : '` et les
+    /// caractères > 127). `lily/lexer.ll`, état `<lyrics>`, place les règles
+    /// `FRACTION`/`UNSIGNED` avant celle du mot (et les deux classes du mot
+    /// excluent `0-9`) : un chiffre, même en fin de syllabe, est lu comme une
+    /// durée et LilyPond refuse le fichier (« this is not a duration »). Les
+    /// guillemets en font une chaîne, comme pour un mot contenant un blanc.
+    #[test]
+    fn syllabe_commencant_par_un_chiffre_entre_guillemets() {
+        let numerique = Lyrics::new(0, LyricsSyllabic::Single, "7");
+        assert_eq!(syllable(&numerique, false), "\"7\"");
+        let fraction = Lyrics::new(0, LyricsSyllabic::Single, "1/2");
+        assert_eq!(syllable(&fraction, false), "\"1/2\"");
+        // Cas non concerné : un mot ordinaire reste nu.
+        let mot = Lyrics::new(0, LyricsSyllabic::Single, "m");
+        assert_eq!(syllable(&mot, false), "m");
+        // Un chiffre terminant un mot est aussi lu comme une durée.
+        let melange = Lyrics::new(0, LyricsSyllabic::Single, "a7");
+        assert_eq!(syllable(&melange, false), "\"a7\"");
+        // Cas non concerné : la ponctuation reste un mot nu (§9.1.2), y
+        // compris un point final, admis après la première lettre par le lexer.
+        let ponctuation = Lyrics::new(0, LyricsSyllabic::Single, "l'ami!");
+        assert_eq!(syllable(&ponctuation, false), "l'ami!");
+        let point = Lyrics::new(0, LyricsSyllabic::Single, "ta.");
+        assert_eq!(syllable(&point, false), "ta.");
     }
 
     #[test]

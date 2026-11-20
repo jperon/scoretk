@@ -229,6 +229,141 @@ fn transposition_instrument_ecrite_dans_la_voix() {
     );
 }
 
+/// `\transposition` est une propriété de contexte qui persiste sur toute la
+/// portée : Notation Reference §1.3.4 « The `\transposition` may be changed
+/// during a piece » et « `\transposition c` to get correct MIDI output ».
+/// Quand une clarinette en si bémol cède la place à un instrument non
+/// transpositeur, il faut donc réinitialiser explicitement la propriété, sinon
+/// LilyPond continue de jouer les notes de la seconde mesure un ton trop bas.
+/// La seconde portée, jamais transpositrice, sert de témoin : sa sortie ne doit
+/// pas changer.
+#[test]
+fn retour_a_une_portee_non_transpositrice_reinitialise_la_transposition() {
+    let mut score = scoretk_core::model::Score::new();
+    let clarinette = score.add_part(Part::new("Clarinette", "Cl."));
+    score.part_mut(clarinette).instrument.transpose = Some(Transpose::new(-2, -2));
+    let flute = score.add_part(Part::new("Flûte", "Fl."));
+    let staff_cl = score.add_staff(clarinette);
+    let staff_fl = score.add_staff(flute);
+
+    // Deux mesures pleines de musique ordinaire : accord de trois notes en
+    // ronde (mesure 1), silence puis accord lié à travers la barre (mesure 2),
+    // barres de contrôle, deux portées dont une témoin.
+    fn accord(
+        score: &mut scoretk_core::model::Score,
+        transpositeur: bool,
+        duree: Duration,
+    ) -> (ChordRest, scoretk_core::model::NoteId) {
+        let mut chord = ChordRest::chord(duree);
+        let ChordRestKind::Chord(ref mut content) = chord.kind else {
+            unreachable!()
+        };
+        let tpcs = if transpositeur {
+            [tpc::E, tpc::G_SHARP, tpc::B]
+        } else {
+            [tpc::D, tpc::F_SHARP, tpc::A]
+        };
+        let mut premier = None;
+        for (midi, tpc_note) in [62, 66, 69].into_iter().zip(tpcs) {
+            let mut note = Note::new(midi, tpc_note);
+            if transpositeur {
+                note.tpc_transposed = tpc_note;
+            }
+            let id = score.add_note(note);
+            if premier.is_none() {
+                premier = Some(id);
+            }
+            content.notes.push(id);
+        }
+        (chord, premier.unwrap())
+    }
+
+    let mut lies: Vec<scoretk_core::model::NoteId> = Vec::new();
+    for measure_index in 0usize..2 {
+        let start = Fraction::new(measure_index as i64, 1);
+        let mut measure = Measure::new(measure_index, start, Fraction::ONE);
+        if measure_index == 1 {
+            let mut repos = Segment::new(SegmentType::ChordRest, start, 1);
+            for staff in [staff_cl, staff_fl] {
+                repos.set_element(
+                    Track::new(staff, 0),
+                    SegmentItem::ChordRest(ChordRest::rest(Duration::half())),
+                );
+            }
+            measure.add_segment(repos);
+        }
+
+        if measure_index == 1 {
+            let mut seconde = Segment::new(SegmentType::ChordRest, start + Fraction::new(1, 2), 1);
+            for (staff, prec) in [staff_cl, staff_fl].into_iter().zip(lies.clone()) {
+                let (chord, id) = accord(&mut score, staff == staff_cl, Duration::half());
+                score.note_mut(prec).tie_forward = Some(id);
+                score.note_mut(id).tie_back = Some(prec);
+                seconde.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+            }
+            measure.add_segment(seconde);
+        } else {
+            let mut premiere = Segment::new(SegmentType::ChordRest, start, 1);
+            for staff in [staff_cl, staff_fl] {
+                let (chord, id) = accord(&mut score, staff == staff_cl, Duration::whole());
+                lies.push(id);
+                premiere.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+            }
+            measure.add_segment(premiere);
+        }
+        score.add_measure(measure);
+    }
+
+    // Changement d'instrument au début de la seconde mesure.
+    let mut concert = score.part(clarinette).instrument.clone();
+    concert.transpose = None;
+    score
+        .part_mut(clarinette)
+        .set_instrument_at(Fraction::ONE, concert);
+
+    let produit = scoretk_lilypond_export::write_lilypond(&score).expect("écriture");
+    let voix_cl = produit
+        .split("staffOneVoiceOne = ")
+        .nth(1)
+        .expect("première voix");
+    let voix_fl = produit
+        .split("staffTwoVoiceOne = ")
+        .nth(1)
+        .expect("deuxième voix");
+
+    assert!(voix_cl.contains("\\transposition bf"), "{voix_cl}");
+    assert!(
+        voix_cl.contains("\\transposition c"),
+        "propriété de transposition non réinitialisée au changement d'instrument :\n{voix_cl}"
+    );
+    assert!(
+        voix_cl.find("\\transposition bf").unwrap() < voix_cl.find("\\transposition c").unwrap(),
+        "ordre des commandes de transposition :\n{voix_cl}"
+    );
+    assert!(
+        !voix_fl.contains("\\transposition"),
+        "la portée témoin ne doit pas porter de transposition :\n{voix_fl}"
+    );
+    // Hauteurs, durées, liaison traversant la barre et deux mesures : la
+    // clarinette écrit mi/sol dièse/si (62 + 2), la flûte ré/fa dièse/la.
+    for (voix, accord) in [(voix_cl, "<e~ gs b>1"), (voix_fl, "<d~ fs a>1")] {
+        assert!(voix.contains(accord), "accord en ronde absent :\n{voix}");
+        assert!(voix.contains("r2"), "blanche absente :\n{voix}");
+        assert!(
+            voix.contains(" |\n") && voix.contains("\\bar \"|.\""),
+            "barres de contrôle des deux mesures absentes :\n{voix}"
+        );
+    }
+    assert!(
+        voix_cl.contains("<e gs b>2"),
+        "accord lié de la seconde mesure absent :\n{voix_cl}"
+    );
+    assert!(
+        voix_fl.contains("<d fs a>2"),
+        "accord témoin de la seconde mesure absent :\n{voix_fl}"
+    );
+}
+
 /// LilyPond 2.26 (version cible de l'oracle) ne connaît pas `\stanza` :
 /// plusieurs couplets font échouer la compilation. La forme `\set stanza =
 /// "n."`, utilisée par `musicxml2ly`, fonctionne sur 2.26 et est relue par
