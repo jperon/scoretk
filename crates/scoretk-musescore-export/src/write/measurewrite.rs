@@ -267,7 +267,7 @@ fn write_voice(
     for (tick, group) in groups {
         write_position(xml, tick, &mut cursor);
         for half in group.halves {
-            write_spanner_half(xml, half);
+            write_spanner_half(xml, half, ctx.score);
         }
         for (kind, item) in group.system {
             write_system_item(xml, kind, item, track);

@@ -303,13 +303,25 @@ fn write_tie_half(
         }
         xml.end_element();
     }
-    write_location_element(xml, other_tick, tick, other_track, track, forward);
+    write_location_element(xml, ctx.score, other_tick, tick, other_track, track, forward);
     xml.end_element();
+}
+
+/// Indice de mesure et position dans la mesure d'un tick.
+fn measure_location(score: &scoretk_core::model::Score, tick: Tick) -> (i64, Fraction) {
+    let last = score.measures.len().saturating_sub(1);
+    for (index, measure) in score.measures.iter().enumerate() {
+        if tick < measure.start_tick + measure.len || index == last {
+            return (index as i64, tick - measure.start_tick);
+        }
+    }
+    (0, tick)
 }
 
 /// Écrit `<next>`/`<prev>` avec la `<location>` relative de l'autre extrémité.
 pub(crate) fn write_location_element(
     xml: &mut XmlWriter,
+    score: &scoretk_core::model::Score,
     other_tick: Tick,
     tick: Tick,
     other_track: Track,
@@ -318,7 +330,19 @@ pub(crate) fn write_location_element(
 ) {
     xml.start_element(if forward { "next" } else { "prev" }, &[]);
     xml.start_element("location", &[]);
-    let delta = other_tick - tick;
+    // Port de `SpannerWriter::fillSpannerPosition`
+    // (`write/connectorinfowriter.cpp:82-96`) et de `TWrite::write(Location*)`
+    // (`write/twrite.cpp:2355-2368`) : `measures` et `fractions` sont deux
+    // propriétés distinctes. Un décalage d'une mesure entière doit rester
+    // `<measures>1</measures>` ; MuseScore ne peut pas le reconstituer depuis
+    // `<fractions>1/1</fractions>` et raccourcit alors l'ottava d'une mesure.
+    let (measure, frac) = measure_location(score, tick);
+    let (other_measure, other_frac) = measure_location(score, other_tick);
+    let measures = other_measure - measure;
+    let delta = other_frac - frac;
+    if measures != 0 {
+        xml.tag("measures", &measures.to_string());
+    }
     if !delta.is_zero() {
         xml.tag("fractions", &fraction(delta));
     }

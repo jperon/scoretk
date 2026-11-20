@@ -39,7 +39,11 @@ use crate::write::twrite::{
 use crate::xmlwriter::XmlWriter;
 
 /// Écrit une moitié de spanner.
-pub(crate) fn write_spanner_half(xml: &mut XmlWriter, half: &Half<'_>) {
+pub(crate) fn write_spanner_half(
+    xml: &mut XmlWriter,
+    half: &Half<'_>,
+    score: &scoretk_core::model::Score,
+) {
     let spanner = half.spanner;
     let Some(type_name) = spanner_type_name(spanner) else {
         return;
@@ -55,6 +59,7 @@ pub(crate) fn write_spanner_half(xml: &mut XmlWriter, half: &Half<'_>) {
     };
     write_location_element(
         xml,
+        score,
         half.other_tick,
         tick,
         half.other_track,
