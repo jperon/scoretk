@@ -88,7 +88,10 @@ fn intervalles_dornement_lus_et_ecrits() {
     assert_eq!(retour_turn.interval_below.as_deref(), Some("second,minor"));
     let direct = scoretk_musicxml_export::export_musicxml(&partition).expect("export");
     let retour = scoretk_musicxml_export::export_musicxml(&relu).expect("export");
-    assert_eq!(direct.matches("<pitch>").count(), retour.matches("<pitch>").count());
+    assert_eq!(
+        direct.matches("<pitch>").count(),
+        retour.matches("<pitch>").count()
+    );
     assert_eq!(
         direct.matches("<duration>").count(),
         retour.matches("<duration>").count()

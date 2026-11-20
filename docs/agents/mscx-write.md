@@ -739,3 +739,68 @@ stops opening. The `.ly` N2 drop (0.9957 → 0.9490) is entirely one file,
 scoretk differs between the two binaries because of the master LilyPond
 reader commits above, which are not ancestors of the previous binary.
 N1 = N2 on both runs; no MuseScore replay regression from this writer.
+
+### Seventh pass — ornament intervals and grace-tie anchors (English)
+
+Two of the reader/model causes left in §6 are now fixed; both are faithful
+ports of the 4.7.4 code, not writer fudges.
+
+**`changevisibility` — `Pid::INTERVAL_ABOVE`/`Pid::INTERVAL_BELOW`.**
+`TRead::readProperties(Ornament*)` (`read460/tread.cpp:1868-1872`) reads the
+turn's two intervals; the 3.x reader (`read302/notations.rs`) and the 4.x
+reader (`read4xx/notations.rs`) ignored them, so the writer had nothing to
+put back. `TWrite::writeProperties(Ornament*)` (`write/twrite.cpp`) writes
+them as `<intervalAbove>`/`<intervalBelow>`. The pivot `Ornament` now carries
+both optional strings, the two readers fill them and the writer emits them.
+A hand patch adding only `<intervalAbove>second,major</intervalAbove>` and
+`<intervalBelow>second,minor</intervalBelow>` to the written `.mscz` made
+MuseScore restore the missing `<accidental>natural</accidental>`, which
+identified the cause. Reduced test: `intervalles_dornement_lus_et_ecrits`,
+in ordinary music (bars, chords, rests, lyrics, two ornaments), with the
+trill's single interval as the non-concerned case. On `changevisibility`
+reopened by MuseScore 4.7.4, the core diff is now 0.
+
+**`linked-ties` — `Pid::LOCATION_GRACE`.**
+`TWrite::write(const Location*)` (`write/twrite.cpp:2355-2368`) writes
+`<grace>` from `Location::graceIndex()` (`dom/location.cpp:196-207`), which
+`ConnectorInfoReader` uses to find the grace chord at the tie endpoint
+(`read460/connectorinforeader.cpp:346-360`). scoretk resolved the tie to the
+correct note IDs but wrote a location without `<grace>`, so MuseScore lost
+the four tie tags on reopening. `WriteContext` now indexes the grace index of
+each grace-chord note, and the tie writer emits `<grace>N</grace>` when the
+other endpoint is a grace note. Reduced test:
+`liaison_depuis_note_dagrement_ecrit_grace`, on the corpus plus ordinary ties
+from `copypaste_parts` as the non-concerned case. On `linked-ties` reopened by
+MuseScore 4.7.4, the core diff is now 0.
+
+**`.mscz` re-ranking on the current binary.** After the `<irregular>` fix, the
+`measure` first-difference group disappeared. The remaining first core
+differences group as `attributes` (37 files, 1 worse than MuseScore's own
+import), `measure-style`/`multiple-rest` (35, 6 worse), `note`/`forward`
+(25, 4 worse), `tuplet` (18, 0 worse), `tie` (6, 0 worse), `sound` (3),
+`accidental` (3) and singletons. By total changed lines, `notations`/`slur`
+still dominate (about 70k/35k lines) but are identical to MuseScore's own
+import on the same source: they are layout, not a serialisation error. The
+actionable families — mmRest ranges, voice padding and the remaining
+`attributes` case — need model work (mmRest range, gap-rest durations), as
+recorded in §6; no further writer value was found by the C++ comparison.
+
+### Seventh pass — final table
+
+Binary `/tmp/scoretk-mscz-pass7-final` (sha256 `86571d73…`). Same 638 scores,
+same oracle, same tolerance, no master change between the two binaries.
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | **53/56** | 0.9711 | 0.9702 | 0 | 56/56 |
+| mscz | 174 | 172 | 172 | 40/172 | 0.9763 | 0.9762 | 0 | 39/172 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9943 | 0.9868 | 0 | 0/0 |
+| ly | 375 | 345 | 345 | 1/345 | 0.9822 | 0.9490 | 0 | 0/0 |
+| abc | 1 | 1 | 1 | 0/1 | 1.0000 | 1.0000 | 0 | 0/0 |
+| **Total** | **638** | **601** | **601** | **94/601** | **0.9796** | **0.9760** | **0** | **95/255** |
+
+Compared with the previous table, `changevisibility` and `linked-ties` become
+core-identical (corpus 51 → 53, total 92 → 94). Twelve `.mscz` and three `.ly`
+scores also lose changed core lines (four lines each for the `.mscz` grace-tie
+group, larger gains for three `.ly` with ornament intervals). No file gains a
+core line, no file stops opening, and N1/N2 are unchanged on every lot.

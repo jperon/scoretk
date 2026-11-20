@@ -311,15 +311,7 @@ fn write_tie_half(
         }
         xml.end_element();
     }
-    write_location_element(
-        xml,
-        ctx.score,
-        other_tick,
-        tick,
-        other_track,
-        track,
-        end,
-    );
+    write_location_element(xml, ctx.score, other_tick, tick, other_track, track, end);
     xml.end_element();
 }
 
