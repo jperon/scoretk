@@ -286,3 +286,79 @@ by MuseScore, and `note`/`forward` the padded voice timeline. They need model
 or reader work in addition to the writer, and are left unchanged here. The
 `v3/moonlight` and `v3/voices` reference differences of §7 are likewise
 layout-only.
+
+### Second pass — the 86 files still unopened
+
+The frozen baseline of this pass is the previous final run itself: the binary
+`/tmp/scoretk-mscz-pass2-base` rebuilt from the merged master is byte-identical
+(sha256 `3611bacac5460a50…`) to `/tmp/scoretk-mscz-final`, so the table above
+is the baseline for the comparison below.
+
+MuseScore 4.7.4 writes a detailed log under
+`~/.local/share/MuseScore/MuseScore4/logs/` even though the CLI prints nothing;
+grouping the 86 unopened files by its first error gives:
+
+| Cause (MuseScore log / scoretk error) | Files | Owner |
+| --- | ---: | --- |
+| `Incomplete measure … Found: 3/8. Expected: 1/8` (and 30 other Found/Expected pairs) | 63 | reader: `\partial 8*5` and `*4` multipliers in the LilyPond/ABC source produce a measure whose `len` disagrees with its chord durations |
+| `PlaybackSetupDataResolver: Unable to resolve setup data for instrument, id: S.` then SIGSEGV | 6 | **writer**: an `<Instrument>` with no `<Channel>` |
+| scoretk `source LilyPond illisible : aucune musique dans la source` | 16 | reader: `.ly` include snippets with no music |
+| scoretk `version MuseScore non prise en charge` (1.14) | 1 | reader: `read114` is deliberately not ported |
+
+The one writer cause is fixed by porting `TWrite::write(const Instrument*)`
+(`write/twrite.cpp:1947`): every instrument now gets at least an empty
+`<Channel>`, as MuseScore's own writer always does. Reduced test:
+`instrument_sans_programme_ecrit_un_canal`. The patch was first verified by hand
+on `03_01_Miguel_Les-grains-de-mais_livret.ly`: adding `<Channel/>` to the
+written `.mscz` changes MuseScore's exit from SIGSEGV to success.
+
+### Second pass — remaining non-identical files by first core family
+
+On the current binary, 477 opened files still differ from scoretk's direct
+MusicXML. Counting files *worse than MuseScore's own import of the same source*
+(rightmost column) is the meaningful measure; the first differing tag alone is
+often a diff-alignment artefact (e.g. `part-group` prints an identical line).
+
+| First tag | Files | Changed core lines | Worse than alternative |
+| --- | ---: | ---: | ---: |
+| `instrument-sound` | 299 | 11 482 | 0 |
+| `measure-style` | 29 | 11 144 | 24 |
+| `measure` | 24 | 27 809 | 24 |
+| `note` | 22 | 5 953 | 18 |
+| `attributes` | 17 | 9 296 | 8 |
+| `part-group` | 17 | 4 613 | 13 |
+| `tuplet` | 15 | 8 785 | 6 |
+| `part-abbreviation` | 14 | 756 | 9 |
+| `accidental` | 9 | 298 | 6 |
+| others (8 or fewer each) | 30 | — | 14 |
+
+`instrument-sound` is the known consequence of the fallback instrument: a
+LilyPond source has no instrument in the pivot model, so scoretk's direct
+MusicXML writes none while MuseScore assigns `keyboard.piano.grand`. MuseScore's
+own import of the same `.ly` fails outright, so there is no alternative to beat
+on those files.
+
+`measure-style`/`measure` come from the reader's anacrusis and multi-measure
+rest model (a 1/8 `len` holding a dotted quarter, or a single mmRest measure
+where MuseScore builds a range); `note`/`forward` from scoretk's explicit
+timeline padding in the MusicXML exporter; `tuplet` from the reader's bracket
+heuristic; `part-abbreviation`/`part-group` from part metadata. None is a
+mis-serialised value in the writer: a faithful port of
+`MeasureWrite::writeMeasure`, `TWrite::write(const Tuplet*)` and
+`TWrite::writeProperties(const ChordRest*)` already reproduces the model. They
+are left for reader/model work rather than patched with a writer-side fudge.
+
+### Second pass — final table
+
+Binary `/tmp/scoretk-mscz-pass2-final` (sha256 `5e1d046bb209beb6…`). Same 638 scores, same oracle, same tolerance.
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | 45/56 | 0.9700 | 0.9682 | 0 | 56/56 |
+| mscz | 174 | 171 | 172 | 28/171 | 0.9781 | 0.9732 | 0 | 39/171 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9103 | 0.3055 | 0 | 0/27 |
+| ly | 375 | 301 | 301 | 1/301 | 0.9998 | 0.9967 | 0 | 0/0 |
+| abc | 1 | 1 | 1 | 0/1 | 1.0000 | 1.0000 | 0 | 0/0 |
+| **Total** | **638** | **556** | **557** | **74/556** | **0.9679** | **0.8603** | **0** | **95/254** |
+
+Compared with the frozen baseline: **5 more scores open** (301 `.ly` instead of 297, and the single `.abc`), N2 rises from 0.8594 to 0.8603, and **no file loses any core line** (0 regressions, 0 improvements on files that already opened). The 1 still-failing mscore conversion is a reader-caused incomplete measure; the 17 scoretk errors are unchanged. On the `.ly` and `.abc` lots MuseScore's own import fails outright, so the alternative cannot be beaten there; on corpus/mscz/xml the alternative stays at 56/56, 39/171 and 0/27 core-identical, unchanged.

@@ -43,7 +43,10 @@ fn instrument_sans_programme_ecrit_un_canal() {
         .join("v4");
     let source = fs::read(racine.join("dynamics.mscx")).expect("corpus");
     let mut partition = lire(&source);
-    assert!(!partition.parts.is_empty(), "le corpus doit avoir une partie");
+    assert!(
+        !partition.parts.is_empty(),
+        "le corpus doit avoir une partie"
+    );
     let instrument = &mut partition.parts[0].instrument;
     instrument.midi_program = None;
     instrument.midi_channel = None;
@@ -64,6 +67,12 @@ fn instrument_sans_programme_ecrit_un_canal() {
     assert_eq!(relu.parts.len(), partition.parts.len());
     let direct = scoretk_musicxml_export::export_musicxml(&partition).expect("export");
     let retour = scoretk_musicxml_export::export_musicxml(&relu).expect("export");
-    assert_eq!(direct.matches("<pitch>").count(), retour.matches("<pitch>").count());
-    assert_eq!(direct.matches("<measure ").count(), retour.matches("<measure ").count());
+    assert_eq!(
+        direct.matches("<pitch>").count(),
+        retour.matches("<pitch>").count()
+    );
+    assert_eq!(
+        direct.matches("<measure ").count(),
+        retour.matches("<measure ").count()
+    );
 }
