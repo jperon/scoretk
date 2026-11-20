@@ -469,17 +469,18 @@ fn write_time_sig(xml: &mut XmlWriter, time_sig: &TimeSig) {
 
 /// Écrit une clef.
 ///
-/// Le lecteur retombe sur la clef concert quand `transposingClefType` manque :
-/// on ne l'écrit que s'il diffère, et `isHeader` fixe le type de segment.
+/// Port de `TWrite::write(const Clef*)` (`write/twrite.cpp:1281-1299`) : les
+/// deux propriétés `CLEF_TYPE_CONCERT` et `CLEF_TYPE_TRANSPOSING` sont écrites.
+/// Le lecteur (`read400/tread.cpp:2551-2553`) force la clé en G quand le type
+/// transposant manque, même si la clé concert est F : l'omettre ferait rouvrir
+/// une portée de basse en clé de sol. `isHeader` fixe le type de segment.
 pub(crate) fn write_clef(xml: &mut XmlWriter, clef: &Clef, header: bool) {
     xml.start_element("Clef", &[]);
     if header {
         xml.tag("isHeader", "1");
     }
     xml.tag("concertClefType", names::clef_type(clef.concert));
-    if clef.transposed != clef.concert || clef.concert == ClefType::Invalid {
-        xml.tag("transposingClefType", names::clef_type(clef.transposed));
-    }
+    xml.tag("transposingClefType", names::clef_type(clef.transposed));
     xml.end_element();
 }
 
