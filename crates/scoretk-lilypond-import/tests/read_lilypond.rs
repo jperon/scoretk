@@ -4721,8 +4721,8 @@ fn elements_a_travers_les_barres_sont_decoupes() {
     assert_eq!(
         notes,
         vec![
-            (48, Fraction::new(3, 2)),  // bas : 6 noires
-            (60, Fraction::new(1, 8)),  // haut : 0,5 noire
+            (48, Fraction::new(3, 2)), // bas : 6 noires
+            (60, Fraction::new(1, 8)), // haut : 0,5 noire
             (62, Fraction::new(1, 4)),
             (64, Fraction::new(3, 8)),
             (65, Fraction::new(1, 2)),

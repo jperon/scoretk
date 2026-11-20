@@ -32,12 +32,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, BarLineType, Chord, ChordRest, ChordRestKind, Clef,
-    Credit, CreditStyle, Duration, DurationType, Dynamic, Fingering, Fraction, Glissando, GlissandoType,
-    GraceChord, Hairpin, HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic, Measure, Note,
-    NoteId, Part, PartId, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score,
-    ScoreMetadata, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation,
-    SpannerType, Staff, StaffBracket, StaffId, Tempo, Track, Transpose, Trill, TrillType, Tuplet,
-    TupletId, VOICES,
+    Credit, CreditStyle, Duration, DurationType, Dynamic, Fingering, Fraction, Glissando,
+    GlissandoType, GraceChord, Hairpin, HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic,
+    Measure, Note, NoteId, Part, PartId, PedalInfo, Placement, RehearsalMark, Rest, RichText,
+    Score, ScoreMetadata, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor,
+    SpannerNotation, SpannerType, Staff, StaffBracket, StaffId, Tempo, Track, Transpose, Trill,
+    TrillType, Tuplet, TupletId, VOICES,
 };
 
 use crate::ast::{Context, Document, GroupKind, LyricsBlock, Music, PitchSpec, StaffBlock};
@@ -1275,51 +1275,51 @@ fn place_chord(
             .map(|index| end <= slots[index].start + slots[index].len)
             .unwrap_or(false);
         if !fits {
-        let mut cursor = tick;
-        let mut garde = 0;
-        while cursor < end && garde < 1000 {
-            garde += 1;
-            let Some(index) = measure_at(slots, cursor) else {
-                warnings.push(0, 0, "silence hors mesure ignoré".to_owned());
-                break;
-            };
-            let measure_end = slots[index].start + slots[index].len;
-            let piece_end = end.min(measure_end);
-            if piece_end <= cursor {
-                break;
+            let mut cursor = tick;
+            let mut garde = 0;
+            while cursor < end && garde < 1000 {
+                garde += 1;
+                let Some(index) = measure_at(slots, cursor) else {
+                    warnings.push(0, 0, "silence hors mesure ignoré".to_owned());
+                    break;
+                };
+                let measure_end = slots[index].start + slots[index].len;
+                let piece_end = end.min(measure_end);
+                if piece_end <= cursor {
+                    break;
+                }
+                let segment_index = ensure_segment(score, index, SegmentType::ChordRest, cursor);
+                let piece = piece_end - cursor;
+                let figure = if piece >= Fraction::ONE {
+                    DurationType::Whole
+                } else if piece >= Fraction::new(1, 2) {
+                    DurationType::Half
+                } else if piece >= Fraction::new(1, 4) {
+                    DurationType::Quarter
+                } else if piece >= Fraction::new(1, 8) {
+                    DurationType::Eighth
+                } else {
+                    DurationType::Sixteenth
+                };
+                let chord_rest = ChordRest {
+                    duration: Duration::new(figure),
+                    ticks: Some(piece),
+                    tuplet: None,
+                    lyrics: Vec::new(),
+                    beam_mode: Default::default(),
+                    beam_direction: None,
+                    kind: ChordRestKind::Rest(Rest {
+                        full_measure: false,
+                        gap: false,
+                        visible: true,
+                    }),
+                };
+                if let Some(segment) = score.measures[index].segments.get_mut(segment_index) {
+                    segment.set_element(voice_track, SegmentItem::ChordRest(chord_rest));
+                }
+                cursor = piece_end;
             }
-            let segment_index = ensure_segment(score, index, SegmentType::ChordRest, cursor);
-            let piece = piece_end - cursor;
-            let figure = if piece >= Fraction::ONE {
-                DurationType::Whole
-            } else if piece >= Fraction::new(1, 2) {
-                DurationType::Half
-            } else if piece >= Fraction::new(1, 4) {
-                DurationType::Quarter
-            } else if piece >= Fraction::new(1, 8) {
-                DurationType::Eighth
-            } else {
-                DurationType::Sixteenth
-            };
-            let chord_rest = ChordRest {
-                duration: Duration::new(figure),
-                ticks: Some(piece),
-                tuplet: None,
-                lyrics: Vec::new(),
-                beam_mode: Default::default(),
-                beam_direction: None,
-                kind: ChordRestKind::Rest(Rest {
-                    full_measure: false,
-                    gap: false,
-                    visible: true,
-                }),
-            };
-            if let Some(segment) = score.measures[index].segments.get_mut(segment_index) {
-                segment.set_element(voice_track, SegmentItem::ChordRest(chord_rest));
-            }
-            cursor = piece_end;
-        }
-        return;
+            return;
         }
     }
     let Some(measure_index) = measure_at(slots, tick) else {
