@@ -230,6 +230,15 @@ fn write_note(xml: &mut XmlWriter, ctx: &WriteContext<'_>, note: &Note, tick: Ti
         xml.tag("visible", "0");
     }
     if note.parentheses {
+        // Port de `TWrite::writeProperties(const Note*)`
+        // (`write/twrite.cpp:690-697`) : `Pid::HAS_PARENTHESES` s'écrit
+        // `<parentheses>both</parentheses>` (table `typesconv.cpp:952-958`).
+        // Sans lui, l'export MusicXML de MuseScore 4.6+
+        // (`importmusicxml.cpp:3883-3902`) ignore le seul
+        // `<Symbol name="noteheadParenthesis">` et n'écrit pas
+        // `<notehead parentheses="yes">`. Le Symbol reste pour le lecteur
+        // de scoretk, qui s'en sert pour positionner `Note::parentheses`.
+        xml.tag("parentheses", "both");
         xml.start_element("Symbol", &[]);
         xml.tag("name", "noteheadParenthesis");
         xml.end_element();
