@@ -1,135 +1,134 @@
-# AGENTS.md — noyau des consignes
+# AGENTS.md — core instructions
 
-Ce fichier est lu à **chaque requête** : il ne contient que le noyau. Les
-détails vont dans `docs/agents/` (index en fin de fichier).
+This file is read on **every request**: it contains only the core. Details live
+in `docs/agents/` (index at the end of the file).
 
-## Le projet
+## The project
 
-**scoretk** (GPL-3.0-only) est une boîte à outils de conversion de partitions.
-Portage en Rust des convertisseurs de **MuseScore Studio** : cœur générique,
-lecture `.mscz`/`.mscx`, export MusicXML `partwise`, puis MuseScore, MusicXML,
-LilyPond, ABC et MIDI (voir `docs/TODO.md`).
+**scoretk** (GPL-3.0-only) is a score conversion toolkit. A Rust port of the
+converters of **MuseScore Studio**: a generic core, reading `.mscz`/`.mscx`,
+`partwise` MusicXML export, then MuseScore, MusicXML, LilyPond, ABC and MIDI
+(see `docs/TODO.md`).
 
-Carte des crates et modules (17 membres : un cœur, une façade, sa CLI et son
-paquet wasm, plus les formats découpés par sens) :
+Map of crates and modules (17 members: one core, one facade, its CLI and its
+wasm package, plus the formats split by direction):
 
 ```
 crates/
-  scoretk-core              modèle pivot, aucune I/O
-  scoretk-musescore-import  .mscz/.mscx → modèle (3.x et 4.x/5.x)
-  scoretk-musescore-export  modèle → .mscx / .mscz
-  scoretk-musicxml-import   .musicxml/.xml/.mxl → modèle
-  scoretk-musicxml-export   modèle → MusicXML partwise / .mxl
-  scoretk-midi-common       erreur partagée, rien de plus
-  scoretk-midi-import       MIDI → modèle
-  scoretk-midi-export       modèle → MIDI (reprises, carte des temps)
-  scoretk-lilypond-common   erreur, tpc, clefs, partagés par les deux sens
-  scoretk-lilypond-import   sous-ensemble LilyPond → modèle
-  scoretk-lilypond-export   modèle → .ly
-  scoretk-abc-common        tables et helpers ABC partagés par les deux sens
-  scoretk-abc-import        .abc → modèle
-  scoretk-abc-export        modèle → .abc
-  scoretk                   façade : Format, read/write/convert, hooks
-  scoretk-cli               binaire `scoretk` (I/O disque)
-  scoretk-wasm              enveloppe wasm-bindgen
+  scoretk-core              pivot model, no I/O
+  scoretk-musescore-import  .mscz/.mscx → model (3.x and 4.x/5.x)
+  scoretk-musescore-export  model → .mscx / .mscz
+  scoretk-musicxml-import   .musicxml/.xml/.mxl → model
+  scoretk-musicxml-export   model → partwise MusicXML / .mxl
+  scoretk-midi-common       shared error, nothing more
+  scoretk-midi-import       MIDI → model
+  scoretk-midi-export       model → MIDI (repeats, time map)
+  scoretk-lilypond-common   error, tpc, clefs, shared by both directions
+  scoretk-lilypond-import   LilyPond subset → model
+  scoretk-lilypond-export   model → .ly
+  scoretk-abc-common        ABC tables and helpers shared by both directions
+  scoretk-abc-import        .abc → model
+  scoretk-abc-export        model → .abc
+  scoretk                   facade: Format, read/write/convert, hooks
+  scoretk-cli               `scoretk` binary (disk I/O)
+  scoretk-wasm              wasm-bindgen wrapper
 ```
 
-- `crates/scoretk-core` — cœur portable et générique, sans I/O ni format :
-  `model/` (modèle en mémoire), `error.rs`, `gap_rests.rs` et
-  `model/stable_ids.rs` (adressage d'éléments).
-- `crates/scoretk-musescore-import` — lecture MuseScore : `container.rs` (ZIP
+- `crates/scoretk-core` — portable, generic core, with no I/O and no format:
+  `model/` (in-memory model), `error.rs`, `gap_rests.rs` and
+  `model/stable_ids.rs` (element addressing).
+- `crates/scoretk-musescore-import` — MuseScore reading: `container.rs` (ZIP
   `.mscz` → `.mscx`, version), `read/read206` (1.15–2.07), `read/read302`
-  (3.x) et `read/read4xx` (4.x/5.x) → modèle.
-- `crates/scoretk-musescore-export` — écrivain MuseScore : `write_mscx`
-  (XML 4.x) et `write_mscz` (ZIP), portage de `engraving/rw/write/`.
-- `crates/scoretk-musicxml-import` — lecteur MusicXML (`read_musicxml`) vers le
-  modèle : `.musicxml`/`.xml`/`.mxl` → `Score`.
-- `crates/scoretk-musicxml-export` — export MusicXML : modèle → `partwise` /
-  `.mxl`, avec `ExportOptions` et les constantes `DEFAULT_*`.
-- `crates/scoretk-midi-common` — erreur et résultat partagés par les deux
-  sens, sans I/O ; rien d'autre (la lecture SMF est dans `-import`).
-- `crates/scoretk-midi-import` — lecture MIDI (`read_midi`, portage de l'import
-  de MuseScore) : `midifile.rs` (format SMF, via `midly`), quantification,
-  voix, `timesigmap`, `tuplet`…, sans I/O.
-- `crates/scoretk-midi-export` — écriture MIDI (SMF format 1) avec déroulement
-  des reprises (`repeat_list.rs`) et carte des temps (`timemap.rs`), sans I/O.
-- `crates/scoretk-lilypond-common` — ce que la lecture et l'écriture LilyPond
-  partagent : erreur, spirale des quintes (`tpc`), table des clefs. Aucune
-  logique de conversion.
-- `crates/scoretk-lilypond-import` — lecture d'un sous-ensemble de LilyPond
-  par portage de `lily/parser.yy`/`lexer.ll` (t40), sans I/O.
-- `crates/scoretk-lilypond-export` — écriture LilyPond (`.ly`) depuis le
-  modèle (t36, voix en `\fixed c'`), sans I/O.
-- `crates/scoretk-abc-common` — tables et helpers ABC partagés par les deux
-  sens (hauteurs, armures, clés, durées, décorations, paroles) ; aucun I/O.
-- `crates/scoretk-abc-import` — lecture ABC (`.abc`) vers le modèle, norme 2.1
-  et comportement d'`abc2xml.py`, sans I/O (t41).
-- `crates/scoretk-abc-export` — écriture ABC (`.abc`) depuis le modèle,
-  comportement de `xml2abc.py`, sans I/O (t41).
-- `crates/scoretk` — façade multi-formats : `Format`, détection par extension
-  ou contenu, `read`/`write`/`convert` vers le modèle pivot ; dix features
-  symétriques `<format>-import` / `<format>-export` (`musescore`, `musicxml`,
-  `midi`, `lilypond`, `abc`), toutes actives par défaut, branchées dans
-  `src/hooks.rs` et sans alias mixte.
-- `crates/scoretk-cli` — binaire `scoretk` (`entrée -o sortie`, `--from`,
-  `--to`, `-` pour stdin/stdout) : I/O disque de la façade.
-- `crates/scoretk-wasm` — enveloppe wasm-bindgen de la façade (`convert`,
-  `detect`, `formats`, `version`) ; unique paquet wasm du dépôt
+  (3.x) and `read/read4xx` (4.x/5.x) → model.
+- `crates/scoretk-musescore-export` — MuseScore writer: `write_mscx`
+  (4.x XML) and `write_mscz` (ZIP), ported from `engraving/rw/write/`.
+- `crates/scoretk-musicxml-import` — MusicXML reader (`read_musicxml`) into the
+  model: `.musicxml`/`.xml`/`.mxl` → `Score`.
+- `crates/scoretk-musicxml-export` — MusicXML export: model → `partwise` /
+  `.mxl`, with `ExportOptions` and the `DEFAULT_*` constants.
+- `crates/scoretk-midi-common` — error and result shared by both
+  directions, no I/O; nothing else (SMF reading is in `-import`).
+- `crates/scoretk-midi-import` — MIDI reading (`read_midi`, ported from
+  MuseScore's import): `midifile.rs` (SMF format, via `midly`), quantisation,
+  voices, `timesigmap`, `tuplet`…, no I/O.
+- `crates/scoretk-midi-export` — MIDI writing (SMF format 1) with repeat
+  unfolding (`repeat_list.rs`) and a time map (`timemap.rs`), no I/O.
+- `crates/scoretk-lilypond-common` — what LilyPond reading and writing
+  share: error, circle of fifths (`tpc`), clef table. No conversion logic.
+- `crates/scoretk-lilypond-import` — reading a subset of LilyPond
+  by porting `lily/parser.yy`/`lexer.ll` (t40), no I/O.
+- `crates/scoretk-lilypond-export` — LilyPond writing (`.ly`) from the
+  model (t36, voices in `\fixed c'`), no I/O.
+- `crates/scoretk-abc-common` — ABC tables and helpers shared by both
+  directions (pitches, key signatures, clefs, durations, ornaments, lyrics); no I/O.
+- `crates/scoretk-abc-import` — ABC reading (`.abc`) into the model, standard 2.1
+  and the behaviour of `abc2xml.py`, no I/O (t41).
+- `crates/scoretk-abc-export` — ABC writing (`.abc`) from the model,
+  the behaviour of `xml2abc.py`, no I/O (t41).
+- `crates/scoretk` — multi-format facade: `Format`, detection by extension
+  or content, `read`/`write`/`convert` into the pivot model; ten symmetric
+  `<format>-import` / `<format>-export` features (`musescore`, `musicxml`,
+  `midi`, `lilypond`, `abc`), all enabled by default, wired up in
+  `src/hooks.rs` and with no mixed alias.
+- `crates/scoretk-cli` — `scoretk` binary (`input -o output`, `--from`,
+  `--to`, `-` for stdin/stdout): disk I/O for the facade.
+- `crates/scoretk-wasm` — wasm-bindgen wrapper of the facade (`convert`,
+  `detect`, `formats`, `version`); the only wasm package in the repository
   (`nix build .#wasm`).
-- `tests/corpus/{v3,v4}/` — `.mscx` amont + références `*.ref.musicxml` ;
-  `tests/corpus/midi/` — références `*.ref.mid` ; `crates/scoretk/tests/`
-  (aller-retour, e2e de conformité et branchement de la façade) ; les tests
-  par sens vivent dans le crate du sens (`crates/scoretk-*-import/tests/`,
+- `tests/corpus/{v3,v4}/` — upstream `.mscx` + `*.ref.musicxml` references;
+  `tests/corpus/midi/` — `*.ref.mid` references; `crates/scoretk/tests/`
+  (round trips, compliance e2e tests and facade wiring); tests
+  per direction live in that direction's crate (`crates/scoretk-*-import/tests/`,
   `crates/scoretk-*-export/tests/`).
-- `scripts/` — références du corpus, table des instruments, licences ;
-  `flake.nix` — shell, checks, paquet wasm.
+- `scripts/` — corpus references, instruments table, licences;
+  `flake.nix` — shell, checks, wasm package.
 
 ## Invariants
 
-1. **Bibliothèque portable.** Aucun `std::fs`/`env`/`net`/`process`, aucun
-   thread, aucune horloge, aucune dépendance C dans `crates/scoretk-core` : elle
-   doit compiler pour `wasm32-unknown-unknown` (sans WASI), Android et iOS.
-   Entrées/sorties en octets en mémoire. La CLI et les tests, eux, peuvent
-   utiliser le disque.
-2. **Fidélité à MuseScore 4.7.4.** La conformité se mesure contre les
-   références `*.ref.musicxml` produites par MuseScore 4.7.4. La source C++
-   portée est un snapshot amont 5.0.0 de développement : en cas de divergence,
-   c'est le comportement 4.7.4 qui fait foi (sauf décision explicite de changer
-   de référence, cf. `docs/agents/upstream.md`). Sortie reproductible : pas
-   d'horloge, date d'encodage optionnelle avec constante par défaut.
-3. **Nouveau code dans de nouveaux fichiers, par famille** (lecteur 3.x,
-   lecteur 4.x, modèle, export). Un fichier existant ne reçoit que le
-   branchement (`mod.rs`) ou un correctif localisé. Portage fidèle : suivre les
-   noms et découpages du C++ (`TRead::read(Chord*)`, `write_measure`,
-   `calc_divisions`), avec la référence amont en commentaire ; ne pas coder de
-   mémoire.
-4. **Licence GPL-3.0-only.** Tout fichier source nouveau ou modifié porte
-   l'identifiant SPDX, le copyright, le texte GPL-3.0-only et, s'il est porté,
-   l'avis de modification « Portage de `<chemin C++>` …, modifié (réécrit en
-   Rust) en 2026 ». Toute nouvelle source ou donnée amont se déclare dans
-   `NOTICE` ; toute nouvelle crate tierce dans `docs/licences-tierces.md`
-   (vérifiée par `scripts/check-licences.py`). Modèle d'en-tête :
+1. **Portable library.** No `std::fs`/`env`/`net`/`process`, no
+   threads, no clock, no C dependency in `crates/scoretk-core`: it must
+   compile for `wasm32-unknown-unknown` (without WASI), Android and iOS.
+   Inputs/outputs are in-memory bytes. The CLI and tests, however, may
+   use the disk.
+2. **Fidelity to MuseScore 4.7.4.** Compliance is measured against the
+   `*.ref.musicxml` references produced by MuseScore 4.7.4. The ported C++
+   source is a 5.0.0 development upstream snapshot: in case of divergence,
+   the 4.7.4 behaviour prevails (unless there is an explicit decision to change
+   the reference, see `docs/agents/upstream.md`). Reproducible output: no
+   clock, optional encoding date with a default constant.
+3. **New code in new files, by family** (3.x reader,
+   4.x reader, model, export). An existing file receives only the
+   wiring (`mod.rs`) or a localised fix. Faithful port: follow the
+   names and breakdowns of the C++ (`TRead::read(Chord*)`, `write_measure`,
+   `calc_divisions`), with the upstream reference in a comment; do not code from
+   memory.
+4. **GPL-3.0-only licence.** Every new or modified source file carries
+   the SPDX identifier, the copyright, the GPL-3.0-only text and, if it is ported,
+   the modification notice « Portage de `<chemin C++>` …, modifié (réécrit en
+   Rust) en 2026 ». Every new upstream source or datum is declared in
+   `NOTICE`; every new third-party crate in `docs/licences-tierces.md`
+   (checked by `scripts/check-licences.py`). Header template:
    `docs/agents/developpement.md`.
-5. **Contrat wasm stable pour cantus.** Ne pas changer sans coordination :
-   paquet `package.json` `name: "scoretk"` ; `esm/scoretk_wasm.js` +
+5. **Stable wasm contract for cantus.** Do not change without coordination:
+   `package.json` package `name: "scoretk"` ; `esm/scoretk_wasm.js` +
    `esm/scoretk_wasm_bg.wasm` + `esm/scoretk_wasm.d.ts` ;
-   `classic/scoretk.js` exposant
+   `classic/scoretk.js` exposing
    `self.scoretk = { ready, convert, convertWithTimeline, version, detect,
    formats, baseUrl }` ;
    `convert(Uint8Array, { from?, to?, encodingDate?, software?, concertPitch?,
-   expandRepeats? }) → Uint8Array` (`to` vaut `"musicxml"` par défaut) ;
+   expandRepeats? }) → Uint8Array` (`to` defaults to `"musicxml"`) ;
    `detect(bytes) → string | null` ; `formats() → FormatInfo[]` ;
    `version() → string` ; `convertWithTimeline(bytes, options?) →
-   { musicxml, midi, timeline }` (additif : MusicXML identifié et carte des
-   temps, voir `docs/agents/timemap.md` ; `timeline.measures[].ordinal` est
-   l'indice 0-basé de la mesure et la seule clé d'ancrage, `timeline.notes`
-   est trié par `tick` croissant puis par clé stable). `convert` renvoie des
-   `Uint8Array` que le consommateur décode avec `TextDecoder`
-   (voir `docs/agents/wasm.md`).
-6. **Pas de C++ amont distribué.** Le portage est une réécriture ; la copie de
-   référence `ref-musescore/` est en lecture seule et non versionnée.
+   { musicxml, midi, timeline }` (additive: identified MusicXML and time map,
+   see `docs/agents/timemap.md`; `timeline.measures[].ordinal` is
+   the 0-based measure index and the only anchoring key, `timeline.notes`
+   is sorted by increasing `tick` then by a stable key). `convert` returns
+   `Uint8Array`s that the consumer decodes with `TextDecoder`
+   (see `docs/agents/wasm.md`).
+6. **No distributed upstream C++.** The port is a rewrite; the
+   reference copy `ref-musescore/` is read-only and not versioned.
 
-## Commandes
+## Commands
 
 ```sh
 nix develop -c cargo test --workspace
@@ -146,97 +145,97 @@ nix flake check
 nix build .#wasm
 nix develop -c cargo build -p scoretk-wasm --target wasm32-unknown-unknown
 
-# Conformité, deux niveaux (noyau musical, puis parité complète)
+# Compliance, two levels (musical core, then full parity)
 nix develop -c cargo test -p scoretk --test e2e_corpus -- --nocapture
 ```
 
-Les données dérivées se régénèrent avec `scripts/gen-references.sh` et
-`scripts/gen-instruments-table.py` ; le paquet wasm se teste avec
-`crates/scoretk-wasm/tests/node-smoke.mjs` (après `nix build .#wasm`).
+Derived data is regenerated with `scripts/gen-references.sh` and
+`scripts/gen-instruments-table.py`; the wasm package is tested with
+`crates/scoretk-wasm/tests/node-smoke.mjs` (after `nix build .#wasm`).
 
-## Pièges qui cassent en silence
+## Pitfalls that fail silently
 
-- **Hors `nix develop -c`, le `cargo` du PATH est un shim rustup** en conflit
-  (`rust-std`) : toujours passer par le shell Nix.
-- **Deux niveaux e2e, et le noyau seul est bloquant pour
-  `EXPECTED_CONFORMANT`** : un fichier non listé peut régresser sans bruit ;
-  une différence de mise en page n'est pas un écart musical, ne pas
-  « corriger » l'export pour un attribut de position.
-- **Ne pas régénérer les références avec une autre version de MuseScore** sans
-  décision explicite : la cible de conformité change en silence
-  (`NOTICE`, `SOURCES.md`, `DEFAULT_SOFTWARE`, documents d'écarts à jour).
-- **`wasm-bindgen` est épinglé `=0.2.130`**, égal au CLI du flake ; sinon
+- **Outside `nix develop -c`, the `cargo` on PATH is a conflicting rustup shim**
+  (`rust-std`): always go through the Nix shell.
+- **Two e2e levels, and only the core is blocking for
+  `EXPECTED_CONFORMANT`**: an unlisted file can regress silently;
+  a layout difference is not a musical discrepancy, do not
+  "fix" the export for a position attribute.
+- **Do not regenerate the references with another version of MuseScore** without
+  an explicit decision: the compliance target changes silently
+  (`NOTICE`, `SOURCES.md`, `DEFAULT_SOFTWARE`, updated discrepancy documents).
+- **`wasm-bindgen` is pinned to `=0.2.130`**, equal to the flake's CLI; otherwise
   « schema version mismatch ».
-- **Le corpus doit rester dans la source des checks Nix** (filtre
-  `tests/corpus` de `flake.nix`), sinon le check `tests` échoue.
-- **Règle des crates `-common` (factoriser intelligemment) :** ce qui sert à
-  tous les formats va dans un crate commun (p. ex. utilitaires XML partagés),
-  ce qui sert aux deux sens d'un format va dans son `-common`, ce qui ne sert
-  qu'à un seul sens reste dans son fichier ; jamais de module à un seul sens
-  dans un `-common`, ni de logique de format dans un crate commun
-  (règle complète dans `docs/agents/developpement.md`).
-- **Fichiers générés** : `read/instruments.rs` et
-  `docs/agents/ecarts-complets.md` se régénèrent, ne s'éditent pas.
-- **Ordre des `<direction>`, spanners et `<credit>` significatif** pour la
-  parité : ne pas trier une collection sans vérifier le C++ et la référence.
-- **`ref-musescore/` est absent d'une extraction fraîche** : le recréer avec
-  `docs/agents/upstream.md` avant de lire le C++.
-- **Lecture du format** : tick implicite, `actualTicks()` ≠ `ticks()`, ordre
-  `<dots>` avant `<durationType>`, voix positionnelles, `<tick>` absolu vs
-  `<location>` relatif, liaisons 3.x/4.x en deux moitiés vs `<Tie>` à EID en
-  5.0, spanners 5.0 hors mesure, premier `rootfile` `.mscx` (pas `.mss`).
-  Détail : `docs/agents/mscx-format.md` § 17.
+- **The corpus must stay in the source of the Nix checks** (the
+  `tests/corpus` filter in `flake.nix`), otherwise the `tests` check fails.
+- **Rule for `-common` crates (factorise intelligently):** what serves
+  all formats goes into a common crate (e.g. shared XML utilities),
+  what serves both directions of a format goes into its `-common`, what serves
+  only one direction stays in its own file; never a single-direction module
+  in a `-common`, nor format logic in a common crate
+  (full rule in `docs/agents/developpement.md`).
+- **Generated files**: `read/instruments.rs` and
+  `docs/agents/ecarts-complets.md` are regenerated, never hand-edited.
+- **Order of `<direction>`, spanners and `<credit>` is significant** for
+  parity: do not sort a collection without checking the C++ and the reference.
+- **`ref-musescore/` is absent from a fresh checkout**: recreate it with
+  `docs/agents/upstream.md` before reading the C++.
+- **Format reading**: implicit tick, `actualTicks()` ≠ `ticks()`, order
+  `<dots>` before `<durationType>`, positional voices, absolute `<tick>` vs
+  relative `<location>`, 3.x/4.x ties in two halves vs EID-based `<Tie>` in
+  5.0, 5.0 spanners outside measures, first `.mscx` `rootfile` (not `.mss`).
+  Details: `docs/agents/mscx-format.md` § 17.
 
 ## Index `docs/agents/`
 
-Une ligne par document ; lire celui qui correspond au sujet avant de coder.
+One line per document; read the one matching the subject before coding.
 
-- `docs/agents/upstream.md` — version portée, clone de `ref-musescore`, table
-  C++ → Rust, suivi amont : à lire avant tout portage ou mise à jour.
-- `docs/agents/developpement.md` — conventions, en-têtes de licence,
-  portabilité, contrat wasm, outillage : à lire avant d'écrire du code.
-- `docs/agents/mscx-format.md` — référence du format `.mscx` 3.x/4.x/5.x et
-  pièges de lecture : à lire avant de toucher à un lecteur.
-- `docs/agents/ecarts-noyau.md` — écarts de conformité du noyau, fichier par
-  fichier et causes : à lire pour choisir la prochaine correction.
-- `docs/agents/ecarts-complets.md` — rapport **généré** de parité complète :
-  à lire pour mesurer, pas pour décider seul d'un correctif.
-- `docs/agents/wasm.md` — unique paquet wasm (façade scoretk) : construction,
-  tailles, API (convert/detect/formats/version), options, usage ESM/classic,
-  tests Node : à lire avant de toucher au
-  crate `scoretk-wasm`.
-- `docs/agents/midi.md` — lecture et écriture MIDI, `RepeatList`, pauses,
-  vélocités, références et écarts : à lire avant de toucher aux crates
-  `scoretk-midi-*`.
-- `docs/agents/timemap.md` — carte des temps (`Timemap`) : structure Rust et
-  JS, identifiants MusicXML stables, passages de reprises, pauses, usage côté
-  client et limites : à lire avant de toucher à `write_playback` ou
+- `docs/agents/upstream.md` — ported version, `ref-musescore` clone, C++ → Rust
+  table, upstream tracking: read before any porting or upgrade.
+- `docs/agents/developpement.md` — conventions, licence headers,
+  portability, wasm contract, tooling: read before writing code.
+- `docs/agents/mscx-format.md` — `.mscx` 3.x/4.x/5.x format reference and
+  reading pitfalls: read before touching a reader.
+- `docs/agents/ecarts-noyau.md` — musical-core compliance discrepancies, file by
+  file and their causes: read to choose the next fix.
+- `docs/agents/ecarts-complets.md` — **generated** report of full parity:
+  read to measure, not to decide a fix on its own.
+- `docs/agents/wasm.md` — the single wasm package (scoretk facade): build,
+  sizes, API (convert/detect/formats/version), options, ESM/classic usage,
+  Node tests: read before touching the
+  `scoretk-wasm` crate.
+- `docs/agents/midi.md` — MIDI reading and writing, `RepeatList`, rests,
+  velocities, references and discrepancies: read before touching the
+  `scoretk-midi-*` crates.
+- `docs/agents/timemap.md` — time map (`Timemap`): Rust and
+  JS structures, stable MusicXML identifiers, repeat passages, rests, client-side
+  usage and limits: read before touching `write_playback` or
   `convertWithTimeline`.
-- `docs/agents/scoretk.md` — façade multi-formats : API, détection, points de
-  branchement t34/t35/t36/t38, CLI et tests : à lire avant de toucher à `scoretk`.
-- `docs/agents/licence.md` — obligations GPL-3.0-only d'un consommateur :
-  à lire avant toute distribution ou intégration.
-- `docs/agents/musicxml-import.md` — portage de l'import MusicXML, résultat
-  du test d'aller-retour et écarts restants : à lire avant de toucher au
-  lecteur MusicXML.
-- `docs/agents/lilypond.md` — LilyPond : écriture (correspondance modèle →
-  `.ly`, mode `\fixed`, instantanés), lecture (sous-ensemble de
-  `parser.yy`/`lexer.ll`, aller-retour mesuré), limites et mise à niveau des
-  sources : à lire avant de toucher aux crates `scoretk-lilypond-*`.
-- `docs/agents/abc.md` — lecture et écriture ABC : découpage en trois crates,
-  sous-ensemble, voix, instantanés, aller-retour mesuré, mise à niveau de
-  `xml2abc`/`abc2xml` : à lire avant de toucher aux crates `scoretk-abc-*`.
-- `docs/agents/mscx-write.md` — écrivain `.mscx`/`.mscz`
-  (`scoretk-musescore-export`) :
-  méthode d'aller-retour, résultats mesurés et limites : à lire avant de
-  toucher à l'écriture MuseScore.
-- `docs/agents/performance.md` — banc criterion natif (`benches/conversion.rs`),
-  temps par sens sur le corpus, profil `perf`/Callgrind, allocations et pistes
-  chiffrées : à lire avant d'optimiser une conversion.
-- `docs/agents/plan-fiabilite.md` — plan de fiabilisation des dix sens :
-  lots de référence, oracles, phases : à lire avant une campagne de mesure.
-- docs/agents/format-mapping/ — tables format ↔ modèle par format et lacunes
-  du modèle : à lire avant d'étendre un lecteur ou un écrivain.
-- docs/agents/format-ref/ — références synthétiques de syntaxe (anglais) pour
-  agents, une par format, avec n° de section et pièges : à lire avant d'écrire
-  ou relire un lecteur/écrivain.
+- `docs/agents/scoretk.md` — multi-format facade: API, detection, wiring points
+  t34/t35/t36/t38, CLI and tests: read before touching `scoretk`.
+- `docs/agents/licence.md` — GPL-3.0-only obligations of a consumer:
+  read before any distribution or integration.
+- `docs/agents/musicxml-import.md` — MusicXML import port, result
+  of the round-trip test and remaining discrepancies: read before touching the
+  MusicXML reader.
+- `docs/agents/lilypond.md` — LilyPond: writing (model →
+  `.ly` mapping, `\fixed` mode, snapshots), reading (subset of
+  `parser.yy`/`lexer.ll`, measured round trip), limits and upgrade of the
+  sources: read before touching the `scoretk-lilypond-*` crates.
+- `docs/agents/abc.md` — ABC reading and writing: split into three crates,
+  subset, voices, snapshots, measured round trip, upgrade of
+  `xml2abc`/`abc2xml`: read before touching the `scoretk-abc-*` crates.
+- `docs/agents/mscx-write.md` — `.mscx`/`.mscz` writer
+  (`scoretk-musescore-export`):
+  round-trip method, measured results and limits: read before
+  touching MuseScore writing.
+- `docs/agents/performance.md` — native criterion benchmark (`benches/conversion.rs`),
+  times per direction on the corpus, `perf`/Callgrind profiling, allocations and
+  quantified leads: read before optimising a conversion.
+- `docs/agents/plan-fiabilite.md` — reliability plan for the ten directions:
+  reference batches, oracles, phases: read before a measurement campaign.
+- docs/agents/format-mapping/ — format ↔ model tables per format and model
+  gaps: read before extending a reader or a writer.
+- docs/agents/format-ref/ — synthetic syntax references (in English) for
+  agents, one per format, with section numbers and pitfalls: read before writing
+  or reviewing a reader/writer.
