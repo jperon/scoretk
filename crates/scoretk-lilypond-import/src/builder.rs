@@ -2148,6 +2148,19 @@ fn key_alter(fifths: i8, step: u8) -> i8 {
 
 /// Relie les notes de prolongation.
 fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
+    // Index des segments ChordRest par tick absolu : la recherche linéaire
+    // dans toutes les mesures coûtait O(événements × mesures × segments)
+    // (plus de 300 ms sur un concerto de 455 mesures).
+    let mut segments_by_tick: BTreeMap<Fraction, (usize, usize)> = BTreeMap::new();
+    for (measure_index, measure) in score.measures.iter().enumerate() {
+        for (segment_index, segment) in measure.segments.iter().enumerate() {
+            if segment.kind == SegmentType::ChordRest {
+                segments_by_tick
+                    .entry(segment.tick)
+                    .or_insert((measure_index, segment_index));
+            }
+        }
+    }
     for staff in staves {
         for voice in &staff.voices {
             let mut sequence: Vec<(Fraction, NoteId, bool)> = Vec::new();
@@ -2158,21 +2171,11 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                 let ChordContent::Notes(notes) = &chord.content else {
                     continue;
                 };
-                let Some(segment) = score
-                    .measures
-                    .iter()
-                    .find(|measure| {
-                        measure.start_tick <= event.tick
-                            && event.tick < measure.start_tick + measure.len
-                    })
-                    .and_then(|measure| {
-                        measure.segments.iter().find(|segment| {
-                            segment.tick == event.tick && segment.kind == SegmentType::ChordRest
-                        })
-                    })
+                let Some(&(measure_index, segment_index)) = segments_by_tick.get(&event.tick)
                 else {
                     continue;
                 };
+                let segment = &score.measures[measure_index].segments[segment_index];
                 let ids: Vec<NoteId> = segment
                     .chord_rest(voice.track)
                     .and_then(ChordRest::chord_ref)

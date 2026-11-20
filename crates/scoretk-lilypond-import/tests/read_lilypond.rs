@@ -4981,3 +4981,23 @@ fn skip_etiquete_filtre_ne_consomme_pas_de_temps() {
         ]
     );
 }
+
+/// Garde-fou du index tick → segment utilisé par `link_ties` : une liaison
+/// doit être retrouvée quel que soit le nombre de mesures qui la précèdent.
+#[test]
+fn liaisons_indexees_sur_beaucoup_de_mesures() {
+    let music = "c4~ c4 d4 e4 | ".repeat(60) + "c4~ c4 d4 e4";
+    let score = lire(&music);
+    assert_eq!(score.measures.len(), 61);
+    let ties = liaisons(&score);
+    assert_eq!(ties.len(), 61);
+    assert!(ties.iter().all(|(from, to)| from == to));
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .filter(|note| note.tie_back.is_some())
+            .count(),
+        61
+    );
+}
