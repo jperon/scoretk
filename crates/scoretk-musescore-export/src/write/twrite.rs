@@ -29,7 +29,7 @@
 use scoretk_core::model::tpc;
 use scoretk_core::model::{
     Annotation, Arpeggio, Articulation, BarLine, BarLineType, BeamMode, Breath, Chord, ChordRest,
-    Clef, ClefType, Duration, DurationType, Fermata, FiguredBass, Fingering, Fraction, GraceChord,
+    Clef, Duration, DurationType, Fermata, FiguredBass, Fingering, Fraction, GraceChord,
     Hairpin, HairpinType, Harmony, Instrument, KeyMode, KeySig, Lyrics, Note, NoteHeadGroup,
     NoteHeadType, Ornament, PedalInfo, Placement, RehearsalFrame, SegmentItem, SpannerNotation,
     StaffText, StemDirection, SwingUnit, Tempo, TempoKind, TextLineInfo, TimeSig, TimeSigType,
@@ -816,6 +816,13 @@ pub(crate) fn write_instrument(xml: &mut XmlWriter, instrument: &Instrument) {
         xml.start_element("Channel", &[]);
         if let Some(program) = instrument.midi_program {
             xml.tag_empty("program", &[("value", &program.to_string())]);
+        }
+        // Port de `TWrite::write(const InstrChannel*)` (`write/twrite.cpp:2111-2114`) :
+        // quand l'attribution MIDI est exportée, le port et le canal sont écrits
+        // ensemble. Sans `<midiPort>`, MuseScore recalcule le port au chargement
+        // et l'export MusicXML change `<midi-device port>`.
+        if let Some(port) = instrument.midi_port {
+            xml.tag("midiPort", &port.to_string());
         }
         if let Some(channel) = instrument.midi_channel {
             // `Instrument::midiChannel` (base zéro) : l'export en dérive
