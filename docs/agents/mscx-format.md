@@ -8,6 +8,10 @@ Chemins relatifs à `ref-musescore/src/engraving/`. Corpus de contrôle :
 ## 1. Versions et aiguillage
 La version du format est l'attribut `version` de `<museScore>`, pas
 `<programVersion>` : un fichier 3.6.2 déclare `version="3.02"`.
+
+`RWRegister::reader` (`rw/rwregister.cpp:45-59`) aiguille aussi les versions
+antérieures : `<= 114` → `Read114` (not ported), `<= 207` → `Read206`, `< 400`
+→ `Read302`. See §19 for the 1.x/2.x conventions.
 ```xml
 <museScore version="3.02">
   <programVersion>3.6.2</programVersion>
@@ -706,6 +710,154 @@ s'arrêter aux enfants directs du `<Score>` maître.
     générer un repos de mesure à l'export.
 
 ## 18. Textes et cadres
+```xml
+<StaffText><placement>below</placement><text>doux <b>et</b> <i>lié</i></text></StaffText>
+<Tempo><tempo>2</tempo><followText>1</followText>
+  <text><sym>metNoteQuarterUp</sym> = 120</text></Tempo>
+<RehearsalMark><frameType>2</frameType><text>A</text></RehearsalMark>
+<VBox><height>10</height>
+  <Text><style>title</style><text>Mon titre</text></Text>
+</VBox>
+```
+Annotations de segment (aucune ne consomme de tick, section 6) : `StaffText`,
+`SystemText`, `Tempo`, `RehearsalMark`, `Expression`, `InstrumentChange`,
+`Dynamic`, `Harmony`. Propriétés lues : `<text>`, `<placement>` (`above`
+défaut / `below`), `<visible>` (0 = non exporté), `<frameType>` (0 sans cadre,
+1 rectangle, 2 cercle), `<style>`, `<italic>`/`<bold>`/`<underline>`/`<strike>` ;
+pour `Tempo` `<tempo>` (battements **par seconde**) et `<followText>` ; pour
+`InstrumentChange` `<Instrument>` (non lu). `<style>` fixe le placement et la
+police de départ que le fichier ne répète pas : `<style>expression</style>`
+donne un texte italique **sous** la portée (`TextStyleType::EXPRESSION`), et les
+propriétés `italic`/`bold` ci-dessus écrasent ce format de départ.
+
+`<text>` est du **balisage** et non du texte brut : `TRead::readProperties`
+utilise `XmlReader::readXml` (`rw/xmlreader.cpp:212`), qui re-sérialise les
+balises internes. Balises : `<b>`, `<i>`, `<u>`, `<s>`, `<sub>`, `<sup>`,
+`<font face="…"/>` et `<font size="…"/>` (une propriété par balise ;
+`</font>` ne restaure pas le format précédent), `<sym>nom</sym>` (symbole
+SMuFL rendu par un point de code MuseScore), `\n` = saut de ligne. Les entités
+nommées (`&quot;`, `&amp;`) sont conservées telles quelles dans le texte
+interne, les références numériques sont résolues.
+
+Export (`export/text.rs`, portage de `MScoreTextToMusicXml::writeTextFragments`
+et `ExportMusicXml::words`/`tempoText`/`systemText`/`rehearsal`/`credits`) :
+un `<words>` par fragment, attributs de format seulement quand ils changent par
+rapport au fragment précédent (référence = style des textes de portée : Edwin
+10). `StaffText`/`Expression`/`InstrumentChange` → `<direction>` + `<words>` ;
+`SystemText` et `Tempo` → `system="only-top"` ; `Tempo` → `<metronome>` quand
+`findMetronome`/`TempoText::findTempoDuration` reconnaît une formule
+(`<beat-unit>`, `<beat-unit-dot>`, `<per-minute>`), plus `<sound tempo>`
+(arrondi à 2 décimales) ; un tempo invisible n'exporte que ce `<sound>`.
+`RehearsalMark` → `<rehearsal>` avec `enclosure` (absent si rectangle).
+Un texte décalé par rapport au tick courant ajoute
+`<offset sound="yes">` (tempo, `<words>`) ou `<offset>` (repère).
+
+`<VBox>` → `<credit>` (`ExportMusicXml::credits`) : un `<credit page="1">` par
+`<Text>` visible, `<credit-type>` d'après `<style>` (`title`, `subtitle`,
+`composer`, `lyricist`, vide sinon), alignements `justify`/`valign` du style,
+police et taille par défaut selon le style. `<work>`, `<movement-number>`,
+`<movement-title>` et les `<creator>` d'`<identification>` viennent des
+`<metaTag>`, pas des textes.
+
+Non porté : textes de `TBox` (`tboxTextAsWords`), textes de spanner
+(`TextLine`), détails des changements d'instrument (`writeInstrumentChange`),
+symboles hors table de métronome, positions (`default-x`/`default-y`), style de
+partition (`<Style>`/`.mss`) et `<miscellaneous>`. Les `<Marker>`/`<Jump>`
+(D.C., D.S., Fine…) sont eux exportés en `<words>` par `export/repeats.rs` :
+ne pas les produire une seconde fois depuis les annotations.
+
+## 19. MuseScore 1.x/2.x (`read206`) — differences from 3.x
+
+There is no published MSCX specification; this section follows
+`src/engraving/rw/read206/read206.cpp` (snapshot `2b9e82d…`, 5.0 development)
+and the MuseScore 4.7.4 export used as the conformance reference. `Read206`
+(`rwregister.cpp:45-49`) handles `115..=207`; `<= 114` goes to `Read114`, which
+is **not** ported (one `1.14` file in `~/Musique` remains unreadable). Nearly
+every element is delegated to the common
+`read400::TRead` code, already ported as `read302`; only the container-level
+conventions differ.
+
+### 19.1 `<Score>` layout
+
+A 2.x `<Score>` carries `<Division>` and metadata inline, just like 3.x, but
+`<metaTag>` names are supplemented by dedicated tags (`work-title`,
+`movement-title`, `work-number`, `movement-number`, `source`, `copyright`).
+`<siglist>` holds `<sig>` events with `tick`, `<nom>`, `<denom>`, optional
+`<nom2>`/`<denom2>` (`Read206::readTimeSigMap`); it only feeds the obsolete
+`<ticklen>` handling, since the real `<TimeSig>` elements live in measures.
+`<Part>` declares `<Staff id="…">` children plus `<Instrument>`, where
+`<transposeDiatonic>`/`<transposeChromatic>` may also appear on a declared
+`<Staff>` (`readStaff`, `read206.cpp:889-892`) rather than on the instrument.
+`<VBox>`/`<HBox>`/`<TBox>` frames precede the measures of the first staff.
+
+### 19.2 No `<voice>` blocks; `<track>` and `<tick>` instead
+
+`readMeasure206` (`read206.cpp:2645`) reads `<Chord>`, `<Rest>`, `<Clef>`,
+`<KeySig>`, `<TimeSig>`, `<BarLine>`, annotations… as **direct children** of
+`<Measure>`. There is no `<voice>` element. Voices are distinguished by a
+`<track>` child on the element (`track = staffIdx * 4 + voiceIdx`), and their
+position is given by an absolute `<tick>` in file divisions, converted with
+`ctx.fileDivision()` (`read206.cpp:2688-2690`). The obsolete `<move>`
+(`read206.cpp:2686`) is a fraction relative to the measure start. The Rust
+reader groups elements into `<voice>` blocks by `track % 4` and repeats each
+measure-level `<tick>` into every group, then hands the tree to `read302`.
+
+### 19.3 `<Tie id>` and `<endSpanner id>`
+
+A tie is **not** a two-half `<Spanner>` in 2.x. The starting `<Note>` contains
+`<Tie id="N">` (`readTie206` registers the spanner by id, `read206.cpp:2619`),
+and the ending element contains `<endSpanner id="N">` — in 2.x this is read
+from `<Note>` (`readNoteProperties206`, `read206.cpp:1221`) as well as from the
+measure. The reader reconnects both halves by id and sets `tie_forward` /
+`tie_back` on the model notes. The same `<endSpanner id>` mechanism closes
+slurs, hairpins, pedals, ottavas, trills and voltas.
+
+### 19.4 `<Tuplet id>` references
+
+`readTuplet206` (`read206.cpp:1615`) creates a tuplet from `<Tuplet id="N">`
+with `<normalNotes>`, `<actualNotes>`, `<baseNote>` and a `<Number>` text.
+Chords are attached by a **reference child** `<Tuplet>N</Tuplet>`
+(`readDurationProperties206`, `read206.cpp:1691`). There is no `<endTuplet/>`
+in 2.x. The Rust reader turns each reference into the 3.x sequence
+`<Tuplet>…</Tuplet>`, referenced chords, `<endTuplet/>`; closing the tuplet at
+the last referencing chord is essential — leaving it open would apply its
+ratio to the following chords and drop notes through tick collisions.
+
+### 19.5 Texts and annotations
+
+`readText206` uses `TextReaderContext206` (`read206.cpp:1438`): the `<text>`
+content is re-parsed in a second reader because in 2.x the `<style>` tag may
+appear anywhere inside the element. Style names come from a fixed table
+(`readTextStyle206`, `read206.cpp:317-361`) — `"Title"`, `"Staff"`, `"System"`,
+`"Tempo"`, `"Dynamics"`… A `<Text>` with style `System`/`Tempo`/`Marker`/
+`Jump`/`Volta` becomes a `SystemText` in 3.x (`read206.cpp:3023`). Tempo text
+rewrites `<sym>unicode…` to `<sym>met…`, and marker text replaces the private
+use symbols `U+E177/E178/E179` with `<sym>segno</sym>`, `<sym>coda</sym>`,
+`<sym>codaSquare</sym>` (`convertMScoreFontMarkerSymbols206`). `<Dynamic>`
+reads `<subtype>`, `<velocity>` and `<dynType>` (`read206.cpp:1586`).
+
+### 19.6 `<Chord>` and `<Note>` details
+
+Same element names as 3.x, but the TPC/spelling fallback of `readNote206`
+(`read206.cpp:957-1012`) derives a missing `tpc` from the key, then derives the
+other spelling via `Transpose::transposeTpc`. `<velocity>` on a 2.x note is
+ignored (`read206.cpp:1151-1153`). Articulations use the old name table
+(`articulationNames`, `read206.cpp:644-692`) and doubled articulations are
+merged (`convertDoubleArticulations`). Ties attached to a note are `<Tie>`
+(§19.3), not `<Spanner type="Tie">`.
+
+### 19.7 Limits of the port
+
+Layout, styles and positions are not modelled. Id-based slurs/hairpins/
+ottavas/pedals/volt/trill spanners and old glissandi are not reconnected, so
+their octave/text effects are missing on export; so are fret diagrams, images
+and drumsets. The 21 MuseScore 2.x files of `~/Musique` were measured against
+4.7.4 MusicXML: 19/21 match exactly on the multiset of written pitches,
+alterations, octaves and durations; one file differs only because its
+transposing instrument is exported in written rather than concert pitch
+(export option, not the reader), one because of missing ottava spanners.
+
+
 ```xml
 <StaffText><placement>below</placement><text>doux <b>et</b> <i>lié</i></text></StaffText>
 <Tempo><tempo>2</tempo><followText>1</followText>

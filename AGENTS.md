@@ -38,8 +38,8 @@ crates/
   `model/` (modèle en mémoire), `error.rs`, `gap_rests.rs` et
   `model/stable_ids.rs` (adressage d'éléments).
 - `crates/scoretk-musescore-import` — lecture MuseScore : `container.rs` (ZIP
-  `.mscz` → `.mscx`, version), `read/read302` (3.x) et `read/read4xx`
-  (4.x/5.x) → modèle.
+  `.mscz` → `.mscx`, version), `read/read206` (1.15–2.07), `read/read302`
+  (3.x) et `read/read4xx` (4.x/5.x) → modèle.
 - `crates/scoretk-musescore-export` — écrivain MuseScore : `write_mscx`
   (XML 4.x) et `write_mscz` (ZIP), portage de `engraving/rw/write/`.
 - `crates/scoretk-musicxml-import` — lecteur MusicXML (`read_musicxml`) vers le

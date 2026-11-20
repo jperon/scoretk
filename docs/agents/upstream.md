@@ -119,6 +119,24 @@ racine du dépôt. Cette table est dressée à partir des en-têtes
 | `crates/scoretk-core/src/model/text.rs` | `engraving/dom/textbase.cpp`, `importexport/musicxml/internal/shared/musicxmlfonthandler.cpp`, `…/exportmusicxml.cpp` |
 | `crates/scoretk-core/src/model/tuplet.rs` | `engraving/dom/tuplet.h` |
 
+### Lecteur 2.x (`crates/scoretk-musescore-import/src/read/read206/`)
+
+Le format n'a pas de spécification publiée : la syntaxe suit `read206.cpp`, et
+la référence de comportement reste MuseScore 4.7.4 (§1). `Read206` délègue la
+lecture des éléments au lecteur commun `read400` ; le portage réécrit donc les
+conventions d'ensemble (voix `<track>`/`<tick>`, `<Tie id>`/`<endSpanner id>`,
+`<Tuplet id>`) avant de confier l'arbre à `read302`.
+
+| Rust | C++ amont |
+| --- | --- |
+| `crates/scoretk-musescore-import/src/read206/mod.rs` | `engraving/rw/read206/read206.cpp` (`Read206::readScoreFile`, `readScoreTag`, `Score::connectTies`) |
+| `crates/scoretk-musescore-import/src/read206/transform.rs` | `read206.cpp` (`readStaffContent206`, `readMeasure206`, `readChord`, `readNote206`, `readTuplet206`, `readTextStyle206`) et `rw/rwregister.cpp` |
+| `crates/scoretk-musescore-import/src/read206/xml.rs` | `engraving/rw/xmlreader.cpp` (lecture des attributs et du contenu mixte) |
+
+`src/engraving/rw/read114/` n'a été consulté que pour comprendre les seuils de
+version de `rwregister.cpp` ; il n'est pas porté (versions `<= 114` non prises
+en charge).
+
 ### Lecteurs 3.x (`crates/scoretk-musescore-import/src/read/read302/`)
 
 | Rust | C++ amont |

@@ -28,14 +28,18 @@
 //! | --- | --- |
 //! | 4.00 – 5.00 | `read4xx` (portage de `read400`, `read410`, `read460`, `read500`) |
 //! | 3.00 – 3.99 | `read302` (portage de `read302`) |
+//! | 1.15 – 2.07 | `read206` (portage de `read206`) |
 //!
-//! Les versions antérieures ou inconnues renvoient
+//! Comme `RWRegister::reader` (`rw/rwregister.cpp:45-49`), les versions
+//! `<= 114` restent sans lecteur porté et renvoient
 //! [`Error::UnsupportedVersion`](crate::Error::UnsupportedVersion).
 
 /// Catalogue d'instruments de MuseScore, pour les fichiers 3.x sans
 /// identifiant MusicXML.
 pub(crate) mod instruments;
 
+/// Lecteur des partitions MuseScore 1.15 à 2.07 (portage de `read206`).
+pub mod read206;
 /// Lecteur des partitions MuseScore 3.00 à 3.99 (portage de `read302`).
 pub mod read302;
 /// Lecteur des partitions MuseScore 4.00 à 5.00 (portage de `read4xx`).
@@ -74,6 +78,7 @@ pub fn read_score(container: &MsczContainer) -> Result<Score> {
     let mut score = match version.as_u32() {
         400..=500 => read4xx::read(container.main_mscx(), version)?,
         300..=399 => read302::read(container.main_mscx(), version)?,
+        115..=207 => read206::read(container.main_mscx(), version)?,
         _ => return Err(Error::UnsupportedVersion(version)),
     };
     // `Measure::checkMeasure` est appelé juste après la lecture de chaque
@@ -106,7 +111,7 @@ mod tests {
 
     #[test]
     fn refuse_les_versions_non_prises_en_charge() {
-        for version in ["2.06", "1.14", "5.01", "6.00"] {
+        for version in ["1.14", "5.01", "6.00"] {
             let error = read_score(&container(version)).unwrap_err();
             assert!(
                 matches!(error, Error::UnsupportedVersion(_)),
@@ -118,6 +123,16 @@ mod tests {
             read_score(&container("3.02")).is_ok(),
             "version 3.02 lue par le lecteur 3.x"
         );
+    }
+
+    #[test]
+    fn lit_les_versions_2() {
+        for version in ["2.06", "2.07"] {
+            assert!(
+                read_score(&container(version)).is_ok(),
+                "version {version} lue par le lecteur 2.x"
+            );
+        }
     }
 
     #[test]

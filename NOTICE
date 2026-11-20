@@ -40,6 +40,7 @@ Correspondance des grands ensembles :
 | Code Rust | Sources MuseScore Studio (sous `src/`) |
 | --- | --- |
 | `crates/scoretk-musicxml-export/src/` | `importexport/musicxml/internal/export/exportmusicxml.cpp`, `importexport/musicxml/internal/shared/`, et pour les ligatures/hampes `engraving/rendering/score/beamlayout.cpp`, `chordlayout.cpp` |
+| `crates/scoretk-musescore-import/src/read/read206/` | `engraving/rw/read206/read206.cpp`, `engraving/rw/xmlreader.cpp`, `engraving/rw/rwregister.cpp` (source amont complétée dans la copie de référence par `git sparse-checkout add`, sans nouveau commit ni nouvelle donnée) |
 | `crates/scoretk-musescore-import/src/read/read302/` | `engraving/rw/read302/read302.cpp`, `engraving/rw/read400/{staffrw,measurerw,tread,connectorinforeader}.cpp` |
 | `crates/scoretk-musescore-import/src/read/read4xx/` | `engraving/rw/read400/`, `read410/`, `read460/`, `read500/` (`read*.cpp`, `staffr*.cpp`, `measurer*.cpp`, `tread.cpp`, `connectorinforeader.cpp`) et `engraving/rw/compat/readstyle.cpp` |
 | `crates/scoretk-core/src/model/` | `engraving/dom/*.h` (partition, segments, notes, accords, spanners, styles de texte…), `engraving/types/`, `engraving/style/style.h` |
