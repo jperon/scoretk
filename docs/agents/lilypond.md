@@ -2794,3 +2794,33 @@ avant d'être retirée) ; le lecteur donne 51/57/66. Le test
 `keepwithtag_apres_relative_pour_la_reference_octave` est marqué `#[ignore]`
 avec cette preuve : corriger ce comportement demande de différer le filtrage
 après la résolution relative, un changement d'architecture hors de cette passe.
+
+### Fresh reference cache and baseline
+
+The 27 losing files were recompiled with LilyPond 2.26 and their cached MIDI
+updated. Their re-measurement on identical fresh references **confirmed** the
+stale-ref attribution for 11 of them (`Prière-pour-nos-anciens` and six copies,
+`22_HymneStMichel`, `01_01_Etudiants`, `Prelude-et-fugue-en-la-majeur`,
+`mozart_abendruhe`…), and confirmed genuine gains for six others
+(`GaudeteChristusEstNatus` 4 → 1074, `Gueguen` +256, `Sonis` +240,
+`Partition` +139, both `Gaudete…abrege` +92). The refinement choosing the
+**first score with `\midi`** even when it also has `\layout` fixed the 11
+files: a reduced test
+`score_grave_avec_midi_preval_sur_les_scores_midi_suivants` failed before it.
+
+The whole cache was then regenerated: 2808 sources recompiled with plain
+LilyPond, 1742 sources produce no MIDI in a plain compile and keep their
+previous cached reference (both binaries see the same files). Both binaries
+were re-measured on all three lists with that cache:
+
+| Lot | Old binary N2 (fresh refs) | Current N2 (fresh refs) |
+| --- | ---: | ---: |
+| mus | 88.53 % | **93.95 %** |
+| ra | 82.37 % | 82.37 % |
+| mut | 80.16 % | **82.24 %** |
+
+Fresh-reference baseline: **141 N1 gains / 6 losses, 147 N2 gains / 10
+losses**, exact files 2769 → 2817. All remaining losses are the pre-existing
+`\relative`/`\keepWithTag` ordering bug isolated above (Chop-28-16 −444 N2,
+baba −461, rach-prelude23-05 −792, In_dulci_jubilo −235,…), with a failing
+reduced test kept `#[ignore]` pending the interpreter refactor.
