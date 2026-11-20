@@ -654,13 +654,30 @@ fn write_tempo(xml: &mut XmlWriter, tempo: &Tempo) {
 /// Écrit un symbole d'accord.
 fn write_harmony(xml: &mut XmlWriter, harmony: &Harmony) {
     xml.start_element("Harmony", &[]);
-    if harmony.root_tpc != tpc::INVALID {
-        xml.tag("root", &harmony.root_tpc.to_string());
+    // Port de `writeHarmonyInfo` (write/twrite.cpp:1786-1826) : depuis 4.6, le
+    // lecteur (`read460/tread.cpp:2868-2879`) n'accepte les accords chiffrés que
+    // dans un enfant `<harmonyInfo>`. Les balises directes sont conservées en
+    // plus pour le lecteur de scoretk (`read4xx/mod.rs:1205`), qui n'a pas été
+    // porté à `read460` : un fichier 4.70 doit rester lisible des deux côtés.
+    let info: Vec<(&str, String)> = {
+        let mut champs = Vec::new();
+        champs.push(("name", harmony.name.clone()));
+        if harmony.root_tpc != tpc::INVALID {
+            champs.push(("root", harmony.root_tpc.to_string()));
+        }
+        if let Some(bass) = harmony.bass_tpc {
+            champs.push(("bass", bass.to_string()));
+        }
+        champs
+    };
+    xml.start_element("harmonyInfo", &[]);
+    for (tag, value) in &info {
+        xml.tag(tag, value);
     }
-    if let Some(bass) = harmony.bass_tpc {
-        xml.tag("bass", &bass.to_string());
+    xml.end_element();
+    for (tag, value) in &info {
+        xml.tag(tag, value);
     }
-    xml.tag("name", &harmony.name);
     if harmony.kind != "normal" {
         let kind = match harmony.kind.as_str() {
             "roman" => "1",
