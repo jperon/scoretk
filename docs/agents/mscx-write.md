@@ -901,3 +901,33 @@ The first broad version of the `.mss` merge applied every style value and
 regressed 68 `.mscz` files (e.g. mscz-57, 63 → 117 lines); it was corrected
 before the final measurement to carry only `createMultiMeasureRests`, so the
 inline `<Style>` keeps precedence as in `MscLoader::read`.
+
+### Ninth pass — writer-only N2 in the oracle (English)
+
+`mesure.py` now also asks MuseScore 4.7.4 to export MIDI from the *source*
+(`alt.mid`) and compares it with its MIDI from our written `.mscz` (`ms.mid`).
+The new N1w/N2w columns therefore measure only what our writer loses:
+playback differences between scoretk and MuseScore on the same source are
+excluded. `resume.md` additionally lists every file whose writer-only N2 is
+below 1.0 with a short cause (octave, transposition, missing notes, shifted
+attacks); MuseScore cannot import the LilyPond source, so N1w/N2w are `—` on
+the `.ly` lot.
+
+On the pass-8b rows (written before the current master fixes): corpus
+N2w 0.9733 (3 files below 1.0, all octave), mscz N2w 0.9936 (12 files),
+xml N2w 0.9276 (3 files), total 0.9871. The writer is thus much closer to
+MuseScore's own playback than N2 (0.9932) suggested: most of the remaining
+N2 gap is scoretk's own source interpretation, not a loss in `.mscz`.
+
+**Categories re-examined in this pass.** The `<attributes>` first difference
+is, on inspection, mostly a hidden `<measure-style><multiple-rest>`: extending
+`assign_multiple_rests` to every isolated empty measure (read4xx/read302) was
+tried with a reduced test (`multi_repos_isole`) and hand-checked on mscz-36/39
+and 62-65; it improved mscz-36 but worsened four other scores, so it was
+reverted. Writing gap rests as `<note print-object="no">` (instead of
+`<forward>`, `importmusicxml.cpp:4571-4650`) was also tried with a reduced test
+(`silences_gap`); it made mscz-6 core-identical but regressed the MuseScore
+corpus reference test `elements_instruments_et_harmonies`, so it was reverted
+too. Neither category has a safe fix yet; both need the model to distinguish
+MuseScore-created gap rests and mmRest ranges from ordinary rests, which is
+out of scope for a localised writer/reader patch.
