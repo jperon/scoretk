@@ -1326,3 +1326,27 @@ separate port beyond the chord/trill work above.
 Le seul port de cette série est donc l'auxiliaire de trille selon l'armure
 (commit précédent) : 19 fichiers `.mscz` gagnent 1319 attaques, 0 perte,
 N2 94,57 → 94,92 %.
+
+### Pause de section rejouée au saut (2026-11-20, port)
+
+`LayoutBreak::pause` (`engraving/dom/layoutbreak.cpp:43, 209-210`) est porté
+par la mesure qui contient la rupture ; la valeur par défaut est
+`Sid::sectionPause` = 3 s (`styledef.cpp:643`). Quand un passage de cette
+mesure est rejoué par un saut, la pause doit être rejouée à la frontière du
+segment. `unfold` (`pause_map.rs`) insère désormais la pause à `tick ==
+segment.end` pour les segments suivis d'un saut en arrière (`next.tick <=
+segment.tick` et mesure de départ différente), avec `or_insert` pour qu'un
+segment ultérieur qui commence au même tick n'écrase pas le décalage. Les
+frontières ordinaires et les changements de tempo ne sont pas touchés.
+
+Le test réduit `tests/section_pause_jump.rs` (2.06, D.S. al Fine + section
+dans la mesure du saut) passe : deux pauses de 4 noires aux passages, comme
+dans le MIDI MuseScore 4.7.4. Mesure complète à références égales : aucun
+fichier ne gagne, `Vingt_danses_enfantines_pour_piano.mscz` perd **19 notes
+sur 26 477** (0,07 %), les autres sont inchangés ; N2 94,92 → 94,91 %. Cette
+perte résiduelle vient d'une seconde pause de la même partition, dont le
+décalage n'est pas encore attribué à un passage précis ; le port est
+conservé parce qu'il corrige le comportement défini par le C++ sur le cas
+réduit et ne modifie aucune mesure nominale. Les bornes inclusives globales
+(essayées auparavant) ont été écartées : elles régressaient le même fichier
+de 2373 notes.

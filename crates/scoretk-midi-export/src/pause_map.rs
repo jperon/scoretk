@@ -211,12 +211,17 @@ fn source_pauses(score: &Score) -> BTreeMap<i64, f64> {
 /// Déroule une carte indexée par tick source à travers [`RepeatList`].
 fn unfold(values: &BTreeMap<i64, f64>, repeat_list: &RepeatList) -> BTreeMap<i64, f64> {
     let mut result = BTreeMap::new();
-    for segment in &repeat_list.segments {
+    for (index, segment) in repeat_list.segments.iter().enumerate() {
         let end = repeat_list.segment_end(segment);
         let offset = segment.utick - segment.tick;
+        let jump_back = repeat_list.segments.get(index + 1).is_some_and(|next| {
+            next.tick <= segment.tick && next.measures.first() != segment.measures.last()
+        });
         for (tick, value) in values {
             if *tick >= segment.tick && *tick < end {
                 result.insert(tick + offset, *value);
+            } else if jump_back && *tick == end {
+                result.entry(tick + offset).or_insert(*value);
             }
         }
     }
