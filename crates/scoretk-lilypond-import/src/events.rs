@@ -1071,6 +1071,12 @@ impl<'a> Interpreter<'a> {
         // `s4` fixe la durée des notes suivantes, `\skip 4` (durée numérique)
         // non. Un silence transparent reste un `Rest` invisible, distinct.
         if let ChordContent::Skip { sets_default } = content {
+            // Un `s` étiqueté retiré par le filtre ne réserve pas de temps :
+            // LilyPond filtre l'arbre musical avant l'interprétation, donc
+            // ni le curseur ni la durée par défaut ne doivent être touchés.
+            if !self.tags_pass_filters() {
+                return;
+            }
             self.cursor += actual;
             if sets_default {
                 self.default_duration = written;

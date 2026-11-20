@@ -4949,3 +4949,35 @@ fn passages_temporaires_dans_un_contexte_staff_restent_sur_une_portee() {
     assert_eq!(score.measures.len(), 3);
     assert_eq!(score.notes.len(), 24);
 }
+
+/// Un `s` étiqueté retiré par `\keepWithTag` ne réserve aucun temps :
+/// LilyPond filtre l'arbre avant de le faire jouer, et le `s` conservé
+/// dans l'autre branche fixe seul l'attaque suivante. Notation Reference
+/// §2.2.2 et §22.2.2 ; vérifié sur une source réduite compilée par
+/// LilyPond 2.26 (c'4, `s2` étiqueté layout retiré, `s2` midi gardé, d'4 :
+/// attaques 0 et 3).
+#[test]
+fn skip_etiquete_filtre_ne_consomme_pas_de_temps() {
+    let score = read_lilypond(
+        r#"\version "2.24.0"
+\score {
+  \keepWithTag #'midi
+  \new Staff {
+    \time 4/4
+    c'4
+    \tag #'layout { s2 }
+    \tag #'midi { s2 }
+    d'4
+  }
+}
+"#,
+    )
+    .expect("lecture");
+    assert_eq!(
+        accords_de_voix(&score, 0),
+        vec![
+            (Fraction::ZERO, vec![60], Fraction::new(1, 4)),
+            (Fraction::new(3, 4), vec![62], Fraction::new(1, 4)),
+        ]
+    );
+}
