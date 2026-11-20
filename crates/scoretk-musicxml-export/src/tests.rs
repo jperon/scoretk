@@ -2621,3 +2621,26 @@ fn fermeture_des_groupes_de_parties_en_ordre_decroissant() {
         "le groupe 1 doit se fermer en second : {xml}"
     );
 }
+
+/// `XmlWriter` de MuseScore écrit les réels avec six chiffres significatifs :
+/// `<volume>3.93701</volume>` pour un contrôleur à 5 (`exportmusicxml.cpp:7353`,
+/// `volume / 127 * 100`). Quatre décimales fixes perdaient le dernier chiffre.
+#[test]
+fn volume_en_chiffres_significatifs() {
+    let mut score = Score::new();
+    let (part_id, staff) = piano(&mut score);
+    score.part_mut(part_id).instrument.volume = Some(5);
+    let piste = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, piste, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<volume>3.93701</volume>"), "{xml}");
+
+    // Cas non concerné : une valeur entière reste entière (100/127*100 n'est
+    // pas entier ; on vérifie la fraction usuelle 78.7402).
+    score.part_mut(part_id).instrument.volume = Some(100);
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<volume>78.7402</volume>"), "{xml}");
+}

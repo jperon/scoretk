@@ -717,7 +717,9 @@ impl<'a> Context<'a> {
                 // contrôleurs du canal, avec les valeurs par défaut de
                 // MuseScore (100/127 et 64).
                 let volume = f64::from(instrument.volume.unwrap_or(100)) / 127.0 * 100.0;
-                out.xml.tag("volume", &format_number(volume, 4));
+                // `midiInstrument` (`exportmusicxml.cpp:7353`) passe un double
+                // à `XmlWriter::tag`, qui écrit six chiffres significatifs.
+                out.xml.tag("volume", &format_number_significant(volume, 6));
                 let pan = f64::from(instrument.pan.unwrap_or(64));
                 let pan = ((pan - 63.5) / 63.5 * 90.0) as i32;
                 out.xml.tag("pan", &pan.to_string());
@@ -3036,6 +3038,25 @@ pub(crate) fn format_number(value: f64, decimals: usize) -> String {
         format!("{}", rounded as i64)
     } else {
         format!("{rounded}")
+    }
+}
+
+/// Réel écrit avec `digits` chiffres significatifs, sans zéros de queue.
+///
+/// Reproduit `String::number` de MuseScore utilisé par `XmlWriter::tag` pour
+/// les attributs et textes numériques (ici `<volume>`).
+pub(crate) fn format_number_significant(value: f64, digits: usize) -> String {
+    if value == 0.0 {
+        return "0".to_owned();
+    }
+    let exponent = value.abs().log10().floor() as i32;
+    let decimals = (digits as i32 - 1 - exponent).clamp(0, 12) as usize;
+    let text = format!("{:.*}", decimals, value);
+    let trimmed = text.trim_end_matches('0').trim_end_matches('.');
+    if trimmed.is_empty() || trimmed == "-" {
+        "0".to_owned()
+    } else {
+        trimmed.to_owned()
     }
 }
 
