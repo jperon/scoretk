@@ -44,14 +44,16 @@ pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
         .map(read_instrument_clefs)
         .unwrap_or_default();
 
+    // `TRead::readLegacyStaffName` (`read500/tread.cpp:4200`) : `<br/>` est un
+    // saut de ligne dans le nom, pas du texte à aplatir.
     let long_name = node
         .child("name")
-        .map(Node::trimmed_text)
-        .or_else(|| node.child("longName").map(Node::trimmed_text))
+        .map(Node::legacy_staff_name)
+        .or_else(|| node.child("longName").map(Node::legacy_staff_name))
         .unwrap_or_else(|| instrument.long_name.clone());
     let short_name = node
         .child("shortName")
-        .map(Node::trimmed_text)
+        .map(Node::legacy_staff_name)
         .unwrap_or_else(|| instrument.short_name.clone());
     let name = node
         .child("trackName")
@@ -180,11 +182,11 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         },
         long_name: node
             .child("longName")
-            .map(Node::trimmed_text)
+            .map(Node::legacy_staff_name)
             .unwrap_or_default(),
         short_name: node
             .child("shortName")
-            .map(Node::trimmed_text)
+            .map(Node::legacy_staff_name)
             .unwrap_or_default(),
         track_name,
         transpose: None,

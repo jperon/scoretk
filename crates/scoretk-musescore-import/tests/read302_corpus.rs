@@ -532,3 +532,45 @@ fn corpus_v3_mesures_coherentes() {
         }
     }
 }
+
+/// Même portage que pour 4.x : `TRead::readLegacyStaffName` convertit `<br/>`
+/// en saut de ligne. Le lecteur 3.x doit garder l'information, sinon l'export
+/// MusicXML aplatit `S\nA` en `SA`.
+#[test]
+fn nom_de_partie_3x_avec_saut_de_ligne() {
+    let mscx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="3.02">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <Instrument id="voice">
+        <longName>S<br/>A</longName>
+        <shortName>S<br/>A</shortName>
+        <Channel><program value="52"/></Channel>
+        </Instrument>
+      </Part>
+    <Staff id="1">
+      <Measure>
+        <voice>
+          <TimeSig><sigN>3</sigN><sigD>4</sigD></TimeSig>
+          <Chord><durationType>quarter</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+          <Chord><durationType>eighth</durationType><Note><pitch>62</pitch><tpc>16</tpc></Note></Chord>
+          <Chord><durationType>eighth</durationType><Note><pitch>64</pitch><tpc>18</tpc></Note></Chord>
+          <Rest><durationType>quarter</durationType></Rest>
+          </voice>
+        </Measure>
+    </Staff>
+  </Score>
+  </museScore>
+"#;
+    let container = scoretk_musescore_import::MsczContainer::from_bytes(mscx.as_bytes())
+        .expect("conteneur 3.x");
+    let score = scoretk_musescore_import::read::read_score(&container).expect("lecture 3.x");
+
+    assert_eq!(score.parts.len(), 1);
+    assert_eq!(score.parts[0].long_name, "S\nA");
+    assert_eq!(score.parts[0].short_name, "S\nA");
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(score.notes.len(), 3);
+}

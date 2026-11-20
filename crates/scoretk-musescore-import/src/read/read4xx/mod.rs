@@ -376,13 +376,15 @@ impl Reader {
             .child("trackName")
             .map(|child| child.text().to_owned())
             .unwrap_or_default();
+        // `TRead::readLegacyStaffName` (`read500/tread.cpp:4200`) : les noms
+        // d'instrument gardent leurs sauts de ligne `<br/>`.
         let part_long_name = element
             .child("name")
-            .map(|child| child.text().to_owned())
+            .map(Element::legacy_staff_name)
             .unwrap_or_default();
         let part_short_name = element
             .child("shortName")
-            .map(|child| child.text().to_owned())
+            .map(Element::legacy_staff_name)
             .unwrap_or_default();
 
         let long_name = if instrument.long_name.is_empty() {
@@ -430,7 +432,7 @@ impl Reader {
                         .child("InstrumentLabel")
                         .and_then(|label| label.child("longName"))
                 })
-                .map(|child| child.text().to_owned())
+                .map(Element::legacy_staff_name)
                 .unwrap_or_default(),
             short_name: element
                 .child("shortName")
@@ -439,7 +441,7 @@ impl Reader {
                         .child("InstrumentLabel")
                         .and_then(|label| label.child("shortName"))
                 })
-                .map(|child| child.text().to_owned())
+                .map(Element::legacy_staff_name)
                 .unwrap_or_default(),
             // `Instrument::trackName()`, distinct du nom long : c'est lui que
             // `<instrument-name>` reprend.

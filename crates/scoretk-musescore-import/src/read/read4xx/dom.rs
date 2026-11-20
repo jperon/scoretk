@@ -84,6 +84,32 @@ impl Element {
         self.text.trim()
     }
 
+    /// Nom d'instrument hérité : `<br/>` devient un saut de ligne.
+    ///
+    /// Portage de `TRead::readLegacyStaffName` (`read500/tread.cpp:4200`) et
+    /// `lineBreakFromTag` (`:3812`). L'export `toPlainText`
+    /// (`musicxmlfonthandler.cpp:56`) retire le balisage restant ; le modèle
+    /// ne garde que du texte, on produit donc directement ce texte, avec les
+    /// sauts de ligne. La norme MusicXML est muette sur cette lecture : on
+    /// suit le comportement de MuseScore 4.7.4.
+    pub fn legacy_staff_name(&self) -> String {
+        let mut plain = String::new();
+        let mut rest = self.raw_inner.as_str();
+        while let Some(position) = rest.find('<') {
+            plain.push_str(&rest[..position]);
+            let Some(end) = rest[position..].find('>') else {
+                break;
+            };
+            let tag = rest[position + 1..position + end].trim().trim_end_matches('/');
+            if tag == "br" {
+                plain.push('\n');
+            }
+            rest = &rest[position + end + 1..];
+        }
+        plain.push_str(rest);
+        unescape(plain.trim())
+    }
+
     /// Texte direct converti en entier.
     pub fn int(&self) -> Option<i64> {
         self.text().parse().ok()

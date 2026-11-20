@@ -491,3 +491,76 @@ fn lit_les_textes_et_les_credits() {
     // Le symbole de métronome garde son point de code MuseScore.
     assert_eq!(tempo.text.plain(), "\u{ECA5} = 120");
 }
+
+/// `TRead::readLegacyStaffName` (`read500/tread.cpp:4200`) et
+/// `lineBreakFromTag` (`:3812`) transforment `<br/>` en saut de ligne dans les
+/// noms d'instrument. Sans cela l'export MusicXML écrit `SA` au lieu de
+/// `S\nA` (premier écart de 50 partitions réelles).
+#[test]
+fn sauts_de_ligne_dans_les_noms_de_partie() {
+    let mscx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="4.70">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <Instrument id="women">
+        <longName>S<br/>A</longName>
+        <shortName>S<br/>A</shortName>
+        <Channel><program value="52"/></Channel>
+        </Instrument>
+      </Part>
+    <Part id="2">
+      <Staff id="2"><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <Instrument id="men">
+        <longName>Ténor</longName>
+        <shortName>T.</shortName>
+        <Channel><program value="52"/></Channel>
+        </Instrument>
+      </Part>
+    <Staff id="1">
+      <Measure>
+        <voice>
+          <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+          <Chord><durationType>quarter</durationType>
+            <Note><pitch>60</pitch><tpc>14</tpc>
+              <Spanner type="Tie"><Tie/><next><location><fractions>1/4</fractions></location></next></Spanner>
+              </Note>
+            <Note><pitch>64</pitch><tpc>18</tpc></Note>
+            </Chord>
+          <Chord><durationType>quarter</durationType>
+            <Note><pitch>60</pitch><tpc>14</tpc>
+              <Spanner type="Tie"><Tie/><prev><location><fractions>-1/4</fractions></location></prev></Spanner>
+              </Note>
+            </Chord>
+          <Rest><durationType>half</durationType></Rest>
+          </voice>
+        </Measure>
+    </Staff>
+    <Staff id="2">
+      <Measure>
+        <voice>
+          <Chord><durationType>whole</durationType><Note><pitch>48</pitch><tpc>12</tpc></Note></Chord>
+          </voice>
+        </Measure>
+    </Staff>
+    </Score>
+  </museScore>
+"#;
+
+    let container = MsczContainer::from_bytes(mscx.as_bytes()).expect("conteneur");
+    let score = read_score(&container).expect("lecture 4.x");
+
+    assert_eq!(score.parts.len(), 2);
+    assert_eq!(score.parts[0].long_name, "S\nA", "nom long");
+    assert_eq!(score.parts[0].short_name, "S\nA", "nom court");
+    // Cas non concerné : un nom sans <br/> reste inchangé.
+    assert_eq!(score.parts[1].long_name, "Ténor");
+    assert_eq!(score.parts[1].short_name, "T.");
+    // Musique ordinaire : une mesure partagée par les deux portées, quatre
+    // notes sonores, une liaison.
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(score.notes.len(), 4);
+    assert!(score.notes[0].tie_forward.is_some());
+    assert!(score.notes[2].tie_back.is_some());
+}

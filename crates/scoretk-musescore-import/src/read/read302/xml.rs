@@ -204,6 +204,31 @@ impl<'a> Node<'a> {
         self.text().trim().to_owned()
     }
 
+    /// Nom d'instrument hérité, avec `<br/>` converti en saut de ligne.
+    ///
+    /// Portage de `TRead::readLegacyStaffName` (`read500/tread.cpp:4200`) et
+    /// de `lineBreakFromTag` (`:3812`) : le C++ lit le balisage brut, y
+    /// remplace `<br/>` par `\n`, puis l'export `toPlainText` retire les
+    /// balises restantes. Le modèle ne gardant que du texte, on produit
+    /// directement ce texte brut, sans les balises mais avec les sauts de
+    /// ligne. La MusicXML 4.0 ne prescrit pas ce détail de lecture : c'est le
+    /// comportement de MuseScore 4.7.4 qui fait foi (`ref:part-name`).
+    pub(crate) fn legacy_staff_name(&self) -> String {
+        let mut out = String::new();
+        self.collect_staff_name(&mut out);
+        out.trim().to_owned()
+    }
+
+    fn collect_staff_name(&self, out: &mut String) {
+        for item in &self.content {
+            match item {
+                Content::Text(text) => out.push_str(text),
+                Content::Element(child) if child.name == "br" => out.push('\n'),
+                Content::Element(child) => child.collect_staff_name(out),
+            }
+        }
+    }
+
     /// Texte entier.
     pub(crate) fn int_text(&self) -> Option<i32> {
         self.trimmed_text().parse().ok()
