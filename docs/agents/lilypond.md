@@ -3102,3 +3102,31 @@ l'oracle) : 55 fichiers gagnent (jusqu'à +250 N2 sur `biga.ly`, +137 sur
 `Dans_l_antre_du_roi_de_la_montagne.ly` −159 N2 pour +68 N1 : les ottavas y
 chevauchent des hauteurs déjà écrites dans l'octave jouée, l'export et le
 MIDI ne sont pas alignés sur les mêmes portées. N2 84,23 → 84,33 %.
+
+### Cause 4 du tableau : références réparées par des bar-checks
+
+Les cinq fichiers de la cause « référence réparée par LilyPond » ne sont pas
+un défaut du lecteur : la compilation LilyPond 2.26 de `Symphony5_2.ly` et
+`miserere-mei-deus.ly` émet des avertissements de contrôle de mesure, et
+`lily/bar-check.cc` insère du silence pour réparer la mesure avant d'écrire le
+MIDI. Le lecteur ignore volontairement les `|` (§2.5.4 : un contrôle de mesure
+ne fait que signaler une durée erronée), donc sa trame suit les durées écrites.
+C'est un artefact de la référence, pas une note perdue : corriger le lecteur
+pour reproduire cette réparation corromprait les partitions bien formées. Aucun
+changement de code ; la cause reste documentée ici.
+
+### Bilan après les deux causes
+
+Dernière mesure complète (références et manifestes constants, deux causes
+committées et oracle corrigé) :
+
+| Lot | N2 avant | N2 final | Exact |
+| --- | ---: | ---: | ---: |
+| mus | 93,95 % | 93,96 % | 1119 |
+| ra | 82,34 % | 82,55 % | 1292 |
+| mut | 84,23 % | 84,40 % | 424 |
+
+À dénominateur constant, 67 fichiers `mut` gagnent et 19 perdent ; la plus
+grosse perte (`Dans_l_antre_du_roi_de_la_montagne.ly`, −159 N2) est expliquée
+par le chevauchement d'ottavas ci-dessus, les autres sont des résidus de
+bar-check ou des décalages d'attaque déjà classés dans la table.
