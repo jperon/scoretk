@@ -30,7 +30,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use scoretk_core::model::{Duration, DurationType, Fraction};
+use scoretk_core::model::{Duration, Fraction};
 
 use super::chord::min_allowed_duration;
 use super::midifile::{DIVISION, UNITS_PER_WHOLE};
@@ -404,68 +404,8 @@ struct Node {
     mid_level: i32,
 }
 
-/// Convertit une longueur en suite de figures, la plus grande d'abord
-/// (`toDurationList` de `durationtype.cpp`).
-///
-/// `max_dots` limite les points de prolongation (1 dans `Meter`, 4 ailleurs
-/// comme `engraving::toDurationList`).
-pub fn to_duration_list(
-    mut length: Fraction,
-    use_dots: bool,
-    max_dots: u8,
-    _print_rest_remains: bool,
-) -> Vec<Duration> {
-    let max_dots = if use_dots { max_dots } else { 0 };
-    let mut result = Vec::new();
-
-    // Figures de la plus longue à la plus courte, comme `DurationType`.
-    const TYPES: [DurationType; 14] = [
-        DurationType::Long,
-        DurationType::Breve,
-        DurationType::Whole,
-        DurationType::Half,
-        DurationType::Quarter,
-        DurationType::Eighth,
-        DurationType::Sixteenth,
-        DurationType::ThirtySecond,
-        DurationType::SixtyFourth,
-        DurationType::OneHundredTwentyEighth,
-        DurationType::TwoHundredFiftySixth,
-        DurationType::FiveHundredTwelfth,
-        DurationType::OneThousandTwentyFourth,
-        DurationType::Zero,
-    ];
-
-    while length.is_positive() {
-        let mut found = None;
-        for kind in TYPES {
-            if matches!(kind, DurationType::Zero) {
-                break;
-            }
-            let mut dots = i32::from(max_dots);
-            while dots >= 0 {
-                let duration = Duration::with_dots(kind, dots as u8);
-                let fraction = duration.ticks();
-                if fraction <= length {
-                    found = Some(duration);
-                    break;
-                }
-                dots -= 1;
-            }
-            if found.is_some() {
-                break;
-            }
-        }
-        match found {
-            Some(duration) => {
-                length -= duration.ticks();
-                result.push(duration);
-            }
-            None => break,
-        }
-    }
-    result
-}
+// `toDurationList` est porté une seule fois dans `scoretk-core`.
+use scoretk_core::duration_list::to_duration_list;
 
 /// Nombre de figures nécessaires (`noteCount`).
 fn note_count(duration: Fraction, use_dots: bool) -> usize {

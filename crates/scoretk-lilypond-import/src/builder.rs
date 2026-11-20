@@ -30,14 +30,15 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
+use scoretk_core::duration_list::to_duration_list;
 use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, BarLineType, Chord, ChordRest, ChordRestKind, Clef,
-    Credit, CreditStyle, Duration, DurationType, Dynamic, Fingering, Fraction, Glissando,
-    GlissandoType, GraceChord, Hairpin, HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic,
-    Measure, Note, NoteId, Part, PartId, PedalInfo, Placement, RehearsalMark, Rest, RichText,
-    Score, ScoreMetadata, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor,
-    SpannerNotation, SpannerType, Staff, StaffBracket, StaffId, Tempo, Track, Transpose, Trill,
-    TrillType, Tuplet, TupletId, VOICES,
+    Credit, CreditStyle, Duration, Dynamic, Fingering, Fraction, Glissando, GlissandoType,
+    GraceChord, Hairpin, HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic, Measure, Note,
+    NoteId, Part, PartId, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score,
+    ScoreMetadata, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation,
+    SpannerType, Staff, StaffBracket, StaffId, Tempo, Track, Transpose, Trill, TrillType, Tuplet,
+    TupletId, VOICES,
 };
 
 use crate::ast::{Context, Document, GroupKind, LyricsBlock, Music, PitchSpec, StaffBlock};
@@ -1243,53 +1244,6 @@ fn staff_move_of<'a>(
 }
 
 /// Place un accord ou un silence.
-#[allow(clippy::too_many_arguments)]
-/// Décompose une durée en figures exactes, la plus grande d'abord.
-/// Port local de `engraving/durationtype.cpp::toDurationList` (voir le port
-/// `scoretk-midi-import::meter::to_duration_list`, l. 412) : jusqu'à quatre
-/// points de prolongation, comme l'écrivain MuseScore.
-fn to_duration_list(mut length: Fraction) -> Vec<Duration> {
-    const TYPES: [DurationType; 13] = [
-        DurationType::Long,
-        DurationType::Breve,
-        DurationType::Whole,
-        DurationType::Half,
-        DurationType::Quarter,
-        DurationType::Eighth,
-        DurationType::Sixteenth,
-        DurationType::ThirtySecond,
-        DurationType::SixtyFourth,
-        DurationType::OneHundredTwentyEighth,
-        DurationType::TwoHundredFiftySixth,
-        DurationType::FiveHundredTwelfth,
-        DurationType::OneThousandTwentyFourth,
-    ];
-    let mut result = Vec::new();
-    while length.is_positive() {
-        let mut found = None;
-        for kind in TYPES {
-            for dots in (0..=4).rev() {
-                let duration = Duration::with_dots(kind, dots);
-                if duration.ticks() <= length {
-                    found = Some(duration);
-                    break;
-                }
-            }
-            if found.is_some() {
-                break;
-            }
-        }
-        match found {
-            Some(duration) => {
-                length -= duration.ticks();
-                result.push(duration);
-            }
-            None => break,
-        }
-    }
-    result
-}
-
 // Le contexte de placement (partition, mesure, portée, voix, tick, événement,
 // déplacement de portée et avertissements) est passé explicitement : un struct
 // alourdirait tous les appelants pour un seul appel.
@@ -1340,7 +1294,7 @@ fn place_chord(
                 }
                 let piece = piece_end - cursor;
                 let mut position = cursor;
-                for figure in to_duration_list(piece) {
+                for figure in to_duration_list(piece, true, 4, false) {
                     let segment_index =
                         ensure_segment(score, index, SegmentType::ChordRest, position);
                     let chord_rest = ChordRest {

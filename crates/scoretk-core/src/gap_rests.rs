@@ -234,16 +234,11 @@ fn largest_fitting(length: Fraction) -> Option<DurationType> {
 }
 
 /// `toDurationList` : plus grandes figures successives, sans point.
-fn to_duration_list(mut length: Fraction) -> Vec<DurationType> {
-    let mut list = Vec::new();
-    while length.is_positive() {
-        let Some(kind) = largest_fitting(length) else {
-            break;
-        };
-        list.push(kind);
-        length -= kind.ticks();
-    }
-    list
+fn to_duration_list(length: Fraction) -> Vec<DurationType> {
+    crate::duration_list::to_duration_list(length, false, 0, false)
+        .into_iter()
+        .map(|duration| duration.kind)
+        .collect()
 }
 
 /// `toRhythmicDurationList` : découpe un trou sur les temps forts.

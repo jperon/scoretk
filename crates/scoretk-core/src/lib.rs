@@ -23,10 +23,12 @@
 //! compiler pour `wasm32-unknown-unknown`, Android et iOS.
 //!
 //! Le module [`model`] contient le modèle de partition en mémoire, rempli par
-//! les importeurs et parcouru par les exporteurs. [`gap_rests`] comble les
+//! les importeurs et parcouru par les exporteurs. [`duration_list`] décompose
+//! une durée en figures, [`gap_rests`] comble les
 //! trous de voix ; [`model::stable_ids`] calcule les identifiants d'éléments
 //! partagés par les exporteurs.
 
+pub mod duration_list;
 mod error;
 pub mod gap_rests;
 pub mod model;
