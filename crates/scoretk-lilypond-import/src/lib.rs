@@ -68,6 +68,7 @@ mod modes;
 mod parallel;
 mod parser;
 mod pitch;
+mod playback;
 mod warnings;
 
 pub use warnings::Warning;

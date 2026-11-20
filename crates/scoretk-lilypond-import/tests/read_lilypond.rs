@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use scoretk_core::model::Fraction;
 use scoretk_core::model::{
     ArticulationType, BarLineType, ChordRestKind, ClefType, DurationType, GraceType, KeyMode,
-    LyricsSyllabic, SegmentItem, SegmentType, StaffId, Track, Transpose,
+    LyricsSyllabic, PlaybackTransposition, SegmentItem, SegmentType, StaffId, Track, Transpose,
 };
 use scoretk_lilypond_import::{
     read_lilypond, read_lilypond_reporting, read_lilypond_with_includes,
@@ -2188,6 +2188,12 @@ fn transpose_traversant_articulate_et_unfold_repeats() {
         durees_ecrites(&score),
         vec![Fraction::QUARTER, Fraction::QUARTER]
     );
+    // La partition gravée reste en do ; le second `\score` (sans `\layout`,
+    // avec `\midi`) porte `\transpose c d` : un ton de plus en lecture seule.
+    assert_eq!(
+        score.playback_transposition,
+        Some(PlaybackTransposition::new(2))
+    );
     assert_eq!(
         warnings
             .iter()
@@ -2211,6 +2217,11 @@ fn transpose_traversant_articulate_et_unfold_repeats() {
     let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
     assert_eq!(hauteurs(&score), vec![60, 62]);
     assert_eq!(score.measures.len(), 1);
+    // `\transpose d d` gravé contre `\transpose d c` MIDI : un ton en moins.
+    assert_eq!(
+        score.playback_transposition,
+        Some(PlaybackTransposition::new(-2))
+    );
     assert_eq!(
         warnings
             .iter()

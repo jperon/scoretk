@@ -934,3 +934,63 @@ binary on the 14 differing `.midi` cases shows that only two actually change:
 `v3_voices.mscx` and `v4_testExcludeInvisibleElements.mscx`. Both declare a
 default instrument `gateTime` of 95 %, so the new note-off placement is the
 intended, MuseScore-faithful result, not a regression.
+
+## Playback transposition from a LilyPond MIDI-only score (2026-11-20)
+
+### What is stored and where it is applied
+
+Some LilyPond files engrave one `\score` but render their MIDI from a second,
+transposed `\score` (`\midi` without `\layout`, Notation Reference §24.3;
+`\transpose frompitch topitch`, §1.2.2). The pivot model still carries the
+engraved score; `Score::playback_transposition`
+(`scoretk-core/src/model/playback.rs`, `Option<PlaybackTransposition>` with a
+chromatic semitone count) additionally records the interval. Every writer
+except MIDI ignores it.
+
+The LilyPond reader only records it when the two scores are structurally the
+same music after removing the leading `\transpose` envelopes (same groups,
+staves, voices, notes, durations, rests, chords and ties). A MIDI score that
+differs in any other way is ignored; see `docs/agents/lilypond.md` §15 for the
+seven concrete cases in the corpus.
+
+The MIDI writer applies the interval in `render.rs::played_pitch` to the note
+numbers of **Note On / Note Off messages only** (MIDI 1.0 §Channel Voice), for
+main notes, grace notes and both chords of a two-chord tremolo. The `FF 59`
+key-signature meta-event keeps the engraved key. Reason from the SMF
+specification (§Meta-Events): `FF 59 02 sf mi` is a *meta-event* carrying the
+key signature for score display/analysis; it is not a channel voice message
+and never changes a note number. Transposing it would make the MIDI key
+disagree with the pivot's engraved `KeySig` and with the MusicXML, LilyPond,
+ABC and MuseScore outputs, with no audible effect. The same choice keeps the
+`sound` pitch and the displayed key consistent for every other input format
+(the field is `None` there).
+
+### Measurement (same manifests and oracles as §"Final re-measurement")
+
+Baseline: frozen corrected-FIFO campaign `lym-fifo-final` (before this
+change). All conversions used `timeout 10 prlimit --as=2000000000`.
+
+| Lot | Baseline exact | Current exact | N1 gains / losses | N2 gains / losses |
+| --- | ---: | ---: | ---: | ---: |
+| ecriture_ly | 692 (67.8 %) | 692 (67.8 %) | 6 / 0 | 6 / 0 |
+| ecriture_mscz_corpus | 17 | 17 | 0 / 0 | 0 / 0 |
+| ecriture_mscz_musique | 2 | 2 | 0 / 0 | 0 / 0 |
+| lecture_musique | 596 | 596 | 0 / 0 | 0 / 0 |
+| lecture_mutopia | 49 | 49 | 0 / 0 | 0 / 0 |
+
+`ecriture_ly` N1 rises 91.00 → 92.27 % and N2 83.86 → 85.77 %. The six files
+that gain are `Gueguen.ly` (23 → 258 matched notes), `Sonis (copie 1).ly`
+(47 → 258), `Sonis.ly` (46 → 266), and the three `GaudeteChristusEstNatus*`
+files (189 → 402, 189 → 402, 441 → 1074). None becomes exact: the three
+Gaudete files now match all pitches and attacks but have duration-only
+differences, and the Gueguen/Sonis references still have the extra notes of an
+unfolded `\repeat volta` (the engraved score is not unfolded). No file loses
+N1 or N2; the `octave` flag falls from 60 to 55 files. The two MIDI reading
+lots and the LilyPond reading oracle (108/120/46 exact on `mus`/`ra`/`mut`)
+are unchanged, because MusicXML output ignores the new field.
+
+Tests: `crates/scoretk/tests/playback_transposition.rs` (reduced `.ly` with an
+engraved score, a `\transpose c d` MIDI score and ordinary music; byte-identical
+MusicXML, MIDI pitched a tone higher, and a MIDI score that differs otherwise
+records nothing) plus the interval assertions added to the reader's existing
+`partition_explicite_prioritaire_et_premiere` test.

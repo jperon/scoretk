@@ -798,11 +798,14 @@ fn render_two_chord_tremolo(
     for index in 0..events {
         let ontime = length * index * 2;
         let second_ontime = ontime + length;
-        let first_key = first.notes.first().map(|id| score.notes[id.index()].pitch);
+        let first_key = first
+            .notes
+            .first()
+            .map(|id| played_pitch(score, &score.notes[id.index()]));
         let second_key = second_chord
             .notes
             .first()
-            .map(|id| score.notes[id.index()].pitch);
+            .map(|id| played_pitch(score, &score.notes[id.index()]));
         let Some(first_key) = first_key else {
             continue;
         };
@@ -896,6 +899,21 @@ fn actual_ticks(
         tuplet = value.parent;
     }
     ticks.ticks(UNITS_PER_WHOLE)
+}
+
+/// Hauteur MIDI effectivement jouée d'une note du modèle.
+///
+/// La transposition de lecture trouvée dans un second `\score` LilyPond
+/// (`\transpose` sur la partition MIDI, Notation Reference §1.2.2/§24.3) ne
+/// s'applique qu'ici, aux numéros de note des messages Note On/Off (MIDI 1.0
+/// §Channel Voice). Le méta `FF 59` (`Key Signature`, SMF §Meta-Events) reste
+/// celui de la partition gravée : c'est une donnée d'affichage/analyse, elle ne
+/// change aucun numéro de note, et les autres écrivains gardent l'armure écrite.
+fn played_pitch(score: &Score, note: &Note) -> u8 {
+    let shift = score
+        .playback_transposition
+        .map_or(0, |transposition| transposition.chromatic);
+    (i32::from(note.pitch) + shift).clamp(0, 127) as u8
 }
 
 /// Rend un accord : notes d'ornement avant, note principale, ornements après
@@ -1075,7 +1093,7 @@ fn render_chord(
         // Le C++ clampe la vélocité calculée avant de la personnaliser par
         // note (`compatmidirenderinternal.cpp:887-893`, puis `playNote`).
         let velocity = customize_velocity((velocity.round() as i32).clamp(1, 127), note) as u8;
-        let key = note.pitch.min(127);
+        let key = played_pitch(score, note);
         if let Some((events, step)) = tremolo {
             for index in 0..events {
                 let start = on + ticks * (index * step) / 1000;
@@ -1169,7 +1187,7 @@ fn render_grace_notes(
         }
         // La personnalisation est par note, comme `playNote` dans le C++.
         let velocity = customize_velocity(velocity_base.clamp(1, 127), note) as u8;
-        let key = note.pitch.min(127);
+        let key = played_pitch(score, note);
         let instrument = instrument_for(score, staff.part, source_tick);
         let end = off + tie_length(score, staff, note, instrument, source_tick);
         let start = on.max(0);

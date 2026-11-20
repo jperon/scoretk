@@ -1484,3 +1484,77 @@ rows, and the two freshly generated output trees are byte-identical
 (`diff -rq` empty). None of the DIFFs comes from these changes; none of the
 compared conversions has a `.ly` input, and the changed reader only affects
 `.ly` reading.
+
+## 15. Playback transposition of a MIDI-only `\score` (2026-11-20)
+
+### Decision and detection
+
+The 13 files grouped as "transposed `\midi` `\score`" in §14 (Gueguen,
+`22_StMichel.ly`, `Maiana.ly`, …) are the cases where LilyPond's MIDI comes
+from a **second** `\score`. Per §7 the engraved (first) score still provides
+the model: MusicXML, LilyPond, ABC and MuseScore output are unchanged.
+
+The reader now also records, in `Score::playback_transposition`
+(`scoretk-core/src/model/playback.rs`, chromatic semitones) — a field ignored
+by every writer except MIDI — the interval of a separate `\score` that has
+`\midi` **without** `\layout` (Notation Reference §24.3: such a score produces
+only MIDI). It is recognised structurally in
+`scoretk-lilypond-import/src/playback.rs`:
+
+- the group/staff/voice shape of the two scores must be identical;
+- after removing the leading `\transpose` envelopes (and only those; `\fixed`
+  and `\relative` are kept in place) from **each** voice, the music trees must
+  be *equal* — same variables, notes, durations, rests, chords and ties;
+- the retained interval is the MIDI score's total `\transpose` minus the
+  engraved score's total `\transpose`, and must be the same for every voice
+  (so per-staff transpositions that disagree are rejected);
+- when both scores apply `\transpose c c` (identity) and `\transpose c d`, the
+  result is `+2`, not `+2` guessed from a pitch comparison.
+
+If the MIDI score differs in **any other way**, nothing is recorded. In the
+frozen `ecriture_ly` lot this excludes seven of the 13 files, for a concrete
+reason each: `22_StMichel.ly` adds per-staff `midiInstrument` and drops
+`\autoBeamOff`; `EzpataDantza.ly` changes `midiInstrument`, adds `\tempo` and
+`\unfoldRepeats` and drops the `.|` bar; `Maiana.ly` drops `\bar ".|"`/`\break`
+and adds `\unfoldRepeats`; `MakilarianII.ly` uses a different variable
+(`\partition` instead of `\partitiontransposee`); `MakilTxikiak.ly` and
+`UztaiDantza.ly` duplicate the `\appelII` voice; `Angels_Carol.ly` adds an
+extra piano staff in the MIDI score. Accepting any of them would mean
+transposing a score that is not the engraved one — exactly the guess this
+detection is meant to avoid.
+
+### Measurement (frozen `lym-fifo-final` baseline, same manifests and oracles)
+
+The frozen baseline is the corrected-FIFO campaign of §14 (`scoretk-final`
+figures). All conversions ran under `timeout 10 prlimit --as=2000000000`.
+
+| Lot | Baseline exact | Current exact | N1 gains / losses | N2 gains / losses |
+| --- | ---: | ---: | ---: | ---: |
+| MIDI `ecriture_ly` | 692 (67.8 %) | 692 (67.8 %) | 6 / 0 | 6 / 0 |
+| MIDI `ecriture_mscz_corpus` | 17 | 17 | 0 / 0 | 0 / 0 |
+| MIDI `ecriture_mscz_musique` | 2 | 2 | 0 / 0 | 0 / 0 |
+| MIDI `lecture_musique` | 596 | 596 | 0 / 0 | 0 / 0 |
+| MIDI `lecture_mutopia` | 49 | 49 | 0 / 0 | 0 / 0 |
+| LilyPond oracle `mus` | 108 | 108 | 0 / 0 | 0 / 0 |
+| LilyPond oracle `ra` | 120 | 120 | 0 / 0 | 0 / 0 |
+| LilyPond oracle `mut` | 46 | 46 | 0 / 0 | 0 / 0 |
+
+The aggregate `ecriture_ly` percentages rise from N1 91.00 / N2 83.86 to
+N1 92.27 / N2 85.77. Six files gain notes **and** attacks with no loss:
+
+| File | N1 before → after | Flag before → after |
+| --- | --- | --- |
+| `Gueguen.ly` | 23 → 258 | `octave, transposition` → none |
+| `Sonis (copie 1).ly` | 47 → 258 | `octave, transposition` → none |
+| `Sonis.ly` | 46 → 266 | `octave, transposition` → `octave` (2 notes) |
+| `GaudeteChristusEstNatus_abrege_a4.ly` | 189 → 402 | `octave, transposition` → `duree_seule` |
+| `GaudeteChristusEstNatus_abrege.ly` | 189 → 402 | `octave, transposition` → `duree_seule` |
+| `GaudeteChristusEstNatus.ly` | 441 → 1074 | `octave, transposition` → `duree_seule` |
+
+None becomes *exact*: the Gueguen/Sonis references still contain extra notes
+from `\unfoldRepeats` (the engraved score is not unfolded, §7), and the three
+Gaudete files now match every pitch and attack but differ only in note
+durations. Both are already documented limits, not regressions. The `octave`
+flag falls from 60 to 55 files; no file gains or loses N1 or N2 downwards. The
+reading lots and the LilyPond reading oracle are byte-level unchanged, as
+expected since the MusicXML writer does not use the new field.

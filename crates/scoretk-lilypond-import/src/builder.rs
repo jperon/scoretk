@@ -130,6 +130,11 @@ struct StaffBuild {
 /// Construit la partition d'un document LilyPond.
 pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     let mut score = Score::new();
+    // Transposition d'un second `\score` MIDI : ignorée par tous les écrivains
+    // sauf MIDI, la partition gravée reste la référence du modèle.
+    score.playback_transposition = document
+        .playback_transposition
+        .map(scoretk_core::model::PlaybackTransposition::new);
     write_metadata(&mut score, document);
 
     let mut staves: Vec<StaffBuild> = Vec::new();

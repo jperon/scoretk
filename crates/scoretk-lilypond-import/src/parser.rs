@@ -137,6 +137,10 @@ struct Partition {
     score: ScoreAst,
     /// Vrai pour un bloc `\score` explicite.
     explicit: bool,
+    /// Blocs de sortie vus dans ce `\score` (§24.3 : `\midi` sans `\layout`
+    /// signifie une partition qui ne produit que du MIDI).
+    has_layout: bool,
+    has_midi: bool,
     /// Ligne du premier jeton.
     line: u32,
     /// Colonne du premier jeton.
@@ -299,6 +303,20 @@ impl<'a> Parser<'a> {
                 Some(0)
             });
         if let Some(chosen) = chosen {
+            // Une seconde partition `\midi` sans `\layout` peut jouer la même
+            // musique que la partition gravée, enveloppée dans `\transpose`
+            // (Notation Reference §1.2.2, §24.3). On relève l'intervalle avant
+            // de jeter les autres partitions : le modèle reste gravé, seul
+            // l'écrivain MIDI s'en servira.
+            document.playback_transposition = self.partitions.get(chosen).and_then(|engraved| {
+                self.partitions
+                    .iter()
+                    .enumerate()
+                    .find(|(index, partition)| {
+                        *index != chosen && partition.has_midi && !partition.has_layout
+                    })
+                    .and_then(|(_, midi)| crate::playback::detect(&engraved.score, &midi.score))
+            });
             for (index, partition) in self.partitions.iter().enumerate() {
                 if index != chosen {
                     self.warnings.push(
@@ -358,10 +376,12 @@ impl<'a> Parser<'a> {
             }
             Kind::Command if token.text == "score" => {
                 self.position += 1;
-                let score = self.parse_score();
+                let (score, has_layout, has_midi) = self.parse_score();
                 self.partitions.push(Partition {
                     score,
                     explicit: true,
+                    has_layout,
+                    has_midi,
                     line: token.line,
                     column: token.column,
                 });
@@ -487,6 +507,8 @@ impl<'a> Parser<'a> {
                 lyrics: Vec::new(),
             },
             explicit: false,
+            has_layout: false,
+            has_midi: false,
             line: token.line,
             column: token.column,
         });
@@ -560,17 +582,25 @@ impl<'a> Parser<'a> {
     // Bloc \score et contextes
     //------------------------------------------------------------------
 
-    /// Bloc `\score { … }`.
-    fn parse_score(&mut self) -> ScoreAst {
+    /// Bloc `\score { … }`, avec les blocs de sortie vus (`\layout`, `\midi`).
+    fn parse_score(&mut self) -> (ScoreAst, bool, bool) {
         let mut score = ScoreAst::default();
+        let mut has_layout = false;
+        let mut has_midi = false;
         self.midi_transposition = None;
         if !self.eat_punct('{') {
             self.warn("\\score sans accolade");
-            return score;
+            return (score, has_layout, has_midi);
         }
         while !self.at_end() {
             if self.eat_punct('}') {
                 break;
+            }
+            if self.peek().is_some_and(|token| token.is_command("midi")) {
+                has_midi = true;
+            }
+            if self.peek().is_some_and(|token| token.is_command("layout")) {
+                has_layout = true;
             }
             let before = self.position;
             score.groups.extend(self.parse_score_element());
@@ -593,7 +623,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        score
+        (score, has_layout, has_midi)
     }
 
     /// Un élément du corps de `\score`, également une expression musicale de

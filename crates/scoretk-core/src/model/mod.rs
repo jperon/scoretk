@@ -83,6 +83,7 @@ pub mod measure;
 pub mod notation;
 pub mod note;
 pub mod part;
+pub mod playback;
 pub mod repeat;
 pub mod score;
 pub mod segment;
@@ -118,6 +119,7 @@ pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadGroup, NoteHeadTyp
 pub use part::{
     recognize_musicxml_id, Instrument, MidiArticulation, Part, Staff, StaffBracket, Transpose,
 };
+pub use playback::PlaybackTransposition;
 pub use repeat::{Jump, JumpType, Marker, MarkerType, RepeatMark, VoltaInfo};
 pub use score::{Score, ScoreMetadata, DEFAULT_DIVISION};
 pub use segment::{

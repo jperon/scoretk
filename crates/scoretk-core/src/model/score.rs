@@ -31,6 +31,7 @@ use super::ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, TupletId};
 use super::measure::Measure;
 use super::note::Note;
 use super::part::{Part, Staff};
+use super::playback::PlaybackTransposition;
 use super::spanner::Spanner;
 use super::style::StyleSettings;
 use super::text::{Credit, TboxText};
@@ -130,6 +131,11 @@ pub struct Score {
     pub credits: Vec<Credit>,
     /// Textes de cadres `TBox`, exportés en `<words>` de direction.
     pub tbox_texts: Vec<TboxText>,
+    /// Transposition de lecture trouvée dans un second `\score` MIDI LilyPond.
+    ///
+    /// `None` pour toutes les autres sources. Ignoré par tous les écrivains
+    /// sauf l'écrivain MIDI : la partition gravée reste la référence du modèle.
+    pub playback_transposition: Option<PlaybackTransposition>,
     /// Arène des notes.
     pub notes: Vec<Note>,
     /// Arène des n-olets.
@@ -163,6 +169,7 @@ impl Score {
             measures: Vec::new(),
             credits: Vec::new(),
             tbox_texts: Vec::new(),
+            playback_transposition: None,
             notes: Vec::new(),
             tuplets: Vec::new(),
             spanners: Vec::new(),

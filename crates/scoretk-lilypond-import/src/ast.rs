@@ -462,6 +462,11 @@ pub(crate) struct Document {
     pub header: HeaderAst,
     /// Bloc `\score`, s'il existe.
     pub score: Option<ScoreAst>,
+    /// Écart chromatique (demi-tons) d'un second `\score` MIDI dont la musique
+    /// est la même que la partition gravée enveloppée dans `\transpose`
+    /// (Notation Reference §1.2.2, §24.3). `None` sinon : seul l'écrivain MIDI
+    /// s'en sert, les autres écrivains gardent la partition gravée.
+    pub playback_transposition: Option<i32>,
     /// `\set melismaBusyProperties = #'()` a été lu : `\lyricsto` ne saute
     /// alors aucune note. Par défaut, les notes sous une liaison
     /// d'expression et les continuations de liaison sont sautées.
