@@ -1223,7 +1223,7 @@ fn place_chord(
                 visible: *visible,
             }),
         },
-        ChordContent::Skip => return,
+        ChordContent::Skip { .. } => return,
         ChordContent::MultiRest => ChordRest {
             duration: Duration::measure(),
             ticks: None,

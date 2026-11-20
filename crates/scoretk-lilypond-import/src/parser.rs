@@ -2822,7 +2822,7 @@ impl<'a> Parser<'a> {
             "skip" => {
                 let (duration, multiplier) = self.parse_optional_duration_spec();
                 Music::Chord(Chord {
-                    kind: ChordKind::Skip,
+                    kind: ChordKind::SkipNumeric,
                     duration: Some(duration.unwrap_or(self.default_duration)),
                     multiplier,
                     posts: Vec::new(),

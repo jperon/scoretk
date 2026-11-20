@@ -113,8 +113,11 @@ pub(crate) enum ChordKind {
     Notes(Vec<NoteSpec>),
     /// Silence (`r`).
     Rest,
-    /// Silence invisible (`s`).
+    /// Silence invisible (`s`) : sa durée devient la durée par défaut.
     Skip,
+    /// `\skip <durée numérique>` : sa durée ne change pas la durée par défaut
+    /// (Notation Reference §2.2.2, compatibilité avec l'implémentation historique).
+    SkipNumeric,
     /// Silence multi-mesures (`R`).
     MultiRest,
     /// Répétition du dernier accord (`q`).

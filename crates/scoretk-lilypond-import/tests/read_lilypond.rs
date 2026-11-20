@@ -4545,3 +4545,63 @@ bas = \fixed c {
     let note = lire("\\autoBeamOff c4 d4");
     assert_eq!(hauteurs(&note), vec![60, 62]);
 }
+
+/// Notation Reference §2.2.2 « Invisible rests » : avec un silence invisible
+/// `s4`, la durée explicite devient celle des notes suivantes ; avec
+/// `\skip 4` (durée **numérique**), elle est ignorée pour la durée par défaut,
+/// « to preserve backward compatibility with the legacy implementation ».
+#[test]
+fn skip_numerique_garde_la_duree_precedente() {
+    let source = r#"\version "2.24.0"
+\language "english"
+haut = \fixed c' {
+  \time 4/4
+  c32 d32 e32 f32 \skip 4 g32 a32 b32 c'32 | d'2
+}
+bas = \fixed c {
+  \time 4/4
+  c32 d32 s4 e32 f32 | g2
+}
+\score { << \new Staff \haut \new Staff \bas >> }"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.measures.len(), 1, "mesures");
+    assert_eq!(
+        hauteurs(&score),
+        vec![
+            60, 62, 64, 65, 67, 69, 71, 72, 74, // haut
+            48, 50, 52, 53, 55, // bas
+        ]
+    );
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::new(1, 32),  // c32
+            Fraction::new(1, 32),  // d32
+            Fraction::new(1, 32),  // e32
+            Fraction::new(1, 32),  // f32
+            Fraction::new(1, 32),  // g32 : `\skip 4` n'a rien changé
+            Fraction::new(1, 32),  // a32
+            Fraction::new(1, 32),  // b32
+            Fraction::new(1, 32),  // c'32
+            Fraction::new(1, 2),   // d'2
+        ],
+        "durées de la première portée"
+    );
+    // Contraste : sur une portée seule, `s4` change bien la durée par défaut.
+    let spacer = lire("c32 d32 s4 e f");
+    assert_eq!(hauteurs(&spacer), vec![60, 62, 64, 65]);
+    assert_eq!(
+        durees_ecrites(&spacer),
+        vec![
+            Fraction::new(1, 32),
+            Fraction::new(1, 32),
+            Fraction::new(1, 4), // e32 -> quart
+            Fraction::new(1, 4), // f32
+        ]
+    );
+
+    // Cas limite : multiplicateur nul sur `\skip`, sans panique ni note.
+    let nul = lire("c32 d32 \\skip 0 e32");
+    assert_eq!(hauteurs(&nul), vec![60, 62, 64]);
+    assert_eq!(durees_ecrites(&nul), vec![Fraction::new(1, 32); 3]);
+}

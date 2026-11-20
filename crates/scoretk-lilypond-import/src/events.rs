@@ -153,8 +153,12 @@ pub(crate) enum ChordContent {
         /// Vrai si le silence est affiché.
         visible: bool,
     },
-    /// Temps réservé sans élément (`s`).
-    Skip,
+    /// Temps réservé sans élément (`s` ou `\skip`).
+    Skip {
+        /// Vrai pour `s` : sa durée devient celle des notes suivantes ;
+        /// faux pour `\skip <durée numérique>` (Notation Reference §2.2.2).
+        sets_default: bool,
+    },
     /// Silence de mesure entière ou multi-mesures.
     MultiRest,
 }
@@ -986,7 +990,8 @@ impl<'a> Interpreter<'a> {
             ChordKind::Rest => ChordContent::Rest {
                 visible: !chord.invisible,
             },
-            ChordKind::Skip => ChordContent::Skip,
+            ChordKind::Skip => ChordContent::Skip { sets_default: true },
+            ChordKind::SkipNumeric => ChordContent::Skip { sets_default: false },
             ChordKind::MultiRest => ChordContent::MultiRest,
         };
         if let ChordContent::Notes(notes) = &mut content {
@@ -1032,12 +1037,15 @@ impl<'a> Interpreter<'a> {
             }
         }
 
-        // `s` réserve du temps sans rien afficher : on ne crée aucun élément
-        // (l'export écrit `<forward>`). Un silence transparent reste un
-        // `Rest` invisible, distinct.
-        if matches!(content, ChordContent::Skip) {
+        // `s` et `\skip` réservent du temps sans rien afficher : on ne crée
+        // aucun élément (l'export écrit `<forward>`). Notation Reference §2.2.2 :
+        // `s4` fixe la durée des notes suivantes, `\skip 4` (durée numérique)
+        // non. Un silence transparent reste un `Rest` invisible, distinct.
+        if let ChordContent::Skip { sets_default } = content {
             self.cursor += actual;
-            self.default_duration = written;
+            if sets_default {
+                self.default_duration = written;
+            }
             return;
         }
         let stem = self.stem_override.take().unwrap_or(StemDirection::Auto);
