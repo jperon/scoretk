@@ -550,17 +550,16 @@ fn transposition_de_staff_decale_la_concert() {
     assert_eq!(sans.parts[0].instrument.transpose, None);
 
     // Cas réel : les orchestres réunissent plusieurs portées dans un même
-    // StaffGroup, donc une seule partie MusicXML. On ne peut poser qu'un
-    // `<transpose>` pour toutes les portées : décaler la concert de la portée
-    // transpositrice ferait écrire des hauteurs fausses à l'export. On garde
-    // donc les hauteurs ÉCRITES de chaque portée, comme sans `\transposition`.
+    // StaffGroup, donc une seule partie MusicXML sans `<transpose>` global.
+    // LilyPond 2.26 joue cependant la portée transpositrice une sixte plus
+    // haut : la concert de cette portée seule est décalée dans le modèle.
     let orchestre = read_lilypond(
         "\\score { << \\new StaffGroup << \
          \\new Staff { \\transposition a' \\relative c' { c4 d e f } } \
          \\new Staff { \\relative c' { c4 d e f } } >> >> }",
     )
     .expect("lecture");
-    assert_eq!(hauteurs(&orchestre), vec![60, 62, 64, 65, 60, 62, 64, 65]);
+    assert_eq!(hauteurs(&orchestre), vec![69, 71, 73, 74, 60, 62, 64, 65]);
     assert_eq!(orchestre.measures.len(), 1);
     assert_eq!(orchestre.parts[0].instrument.transpose, None);
 }
@@ -5101,4 +5100,27 @@ fn multiplicateurs_de_duree_enchaines() {
             Fraction::new(13, 2),
         ]
     );
+}
+
+/// `\transposition` est une propriété de Staff : dans un groupe de plusieurs
+/// portées elle ne doit s'appliquer qu'à la portée qui la porte. LilyPond 2.26
+/// joue ici do4/ré4/mi4/fa4 sur la première portée et la2/si2/do3/ré3 sur la
+/// seconde (`\transposition a`, `lily/audio-item.cc` instrumentTransposition).
+#[test]
+fn transposition_sur_une_seule_portee_dun_groupe() {
+    let score = read_lilypond(
+        r#"\version "2.24.0"
+\score {
+  \new StaffGroup <<
+    \new Staff { \fixed c' { c4 d4 e4 f4 } }
+    \new Staff { \transposition a \fixed c' { c4 d4 e4 f4 } }
+  >>
+}
+"#,
+    )
+    .expect("lecture");
+    assert_eq!(score.staves.len(), 2);
+    let mut notes = hauteurs(&score);
+    notes.sort_unstable();
+    assert_eq!(notes, vec![57, 59, 60, 61, 62, 62, 64, 65]);
 }

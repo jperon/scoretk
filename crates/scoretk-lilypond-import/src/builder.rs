@@ -216,6 +216,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
 
         let first_staff_index = staves.len();
         for (position, staff_block) in group.staves.iter().enumerate() {
+            let staff_start = staves.len();
             let mut staff = Staff::new(part_id);
             if let Some(bracket) = group_bracket(group.kind.clone(), position, group.staves.len()) {
                 staff.brackets.push(bracket);
@@ -244,6 +245,23 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                     voices: sœur.voices,
                     lyrics: sœur.lyrics,
                 });
+            }
+            // Un groupe de plusieurs portées ne peut pas porter un seul
+            // `<transpose>` de partie : LilyPond applique `	ransposition`
+            // à la portée qui le déclare (`lily/audio-item.cc`,
+            // `instrumentTransposition`). On décale donc cette portée seule
+            // dans le modèle, où les hauteurs sont concert.
+            if group.staves.len() > 1 {
+                let transposition = staff_block
+                    .voices
+                    .iter()
+                    .find_map(|voice| instrument_transpose(&voice.music));
+                if let Some((pitch, a_decaler)) = transposition {
+                    if a_decaler {
+                        let (_, chromatic) = crate::pitch::instrument_transpose(&pitch);
+                        decaler_vers_concert(&mut staves[staff_start..], chromatic);
+                    }
+                }
             }
         }
         // Paroles du groupe (hors portée) : rattachées à sa première portée.

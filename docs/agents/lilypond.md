@@ -3056,3 +3056,30 @@ tous marginalement : `contrapunctusXIV` −20 et `bwv656-a4`/`bwv656-let`
 préexistant. Le pourcentage agrégé `mut` passe de 85,26 % à 84,23 % uniquement
 parce que deux gros fichiers précédemment exclus pour délai
 (`violin_concerto_1`, `Concerto_No3`) entrent dans le dénominateur.
+
+### Cause 1 du tableau : `\transposition` par portée
+
+`\transposition` est une propriété de Staff, pas de MusicXML Part. Quand un
+`StaffGroup` réunit plusieurs portées, la partie n'a qu'un `<transpose>` et le
+constructeur ne décalait aucune portée : les hauteurs concert restaient les
+hauteurs écrites. LilyPond 2.26 joue pourtant la portée transpositrice à sa
+hauteur concert (`lily/audio-item.cc`, `instrumentTransposition` porté par
+`lily/note-performer.cc`) : sur
+
+```lilypond
+\new StaffGroup <<
+  \new Staff { \fixed c' { c4 d4 e4 f4 } }
+  \new Staff { \transposition a \fixed c' { c4 d4 e4 f4 } }
+>>
+```
+
+le MIDI donne do4/ré4/mi4/fa4 puis la2/si2/do3/ré3. Le test
+`transposition_sur_une_seule_portee_dun_groupe` échouait avant (8 hauteurs
+écrites). Le constructeur décale désormais la concert de la seule portée qui
+porte la propriété ; l'assertion d'artefact de `transposition_de_staff_decale_la_concert`
+est mise à jour avec la mesure LilyPond.
+
+Mesure ciblée sur dix fichiers : `violin_concerto_1` +191 N1,
+`Violin_Concerto_3` +89, `Concerto_No3` +181 (N1), sans changement N2 notable.
+Les pertes N2 de ces fichiers sont donc des décalages d'attaque, pas des
+erreurs de hauteur : la course suivante porte sur `\partial`.
