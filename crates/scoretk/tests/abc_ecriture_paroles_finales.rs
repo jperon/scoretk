@@ -216,7 +216,9 @@ fn w_etoiles_terminal_conserve_et_etoiles_intermediaires_conserve() {
             continue;
         }
         assert!(
-            chant.get(i + 1).is_some_and(|suivant| suivant.starts_with("w:")),
+            chant
+                .get(i + 1)
+                .is_some_and(|suivant| suivant.starts_with("w:")),
             "ligne chantée sans `w:` : {ligne:?}"
         );
     }

@@ -266,12 +266,7 @@ pub(crate) fn render_voice(
         out.push_str(&full_line.join(" "));
         out.push('\n');
 
-        for lyric_line in lyrics_lines(
-            &items,
-            &all_verses,
-            range.clone(),
-            &mut pending_word,
-        ) {
+        for lyric_line in lyrics_lines(&items, &all_verses, range.clone(), &mut pending_word) {
             out.push_str(&lyric_line);
             out.push('\n');
         }
@@ -601,9 +596,8 @@ fn fingering_token(value: &str) -> Option<char> {
     let last = plain.split_whitespace().next_back()?;
     let mut chars = last.chars();
     let token = chars.next()?;
-    (chars.next().is_none()
-        && matches!(token, '0'..='5' | 'p' | 'i' | 'm' | 'a' | 'c'))
-    .then_some(token)
+    (chars.next().is_none() && matches!(token, '0'..='5' | 'p' | 'i' | 'm' | 'a' | 'c'))
+        .then_some(token)
 }
 
 /// Ajoute les annotations de segment aux notes les plus proches.

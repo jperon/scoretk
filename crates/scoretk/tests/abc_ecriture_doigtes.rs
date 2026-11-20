@@ -29,7 +29,8 @@ use scoretk::{write, Format, Options};
 /// `<fingering>` avec deux balises de mise en forme avant le chiffre, doigté
 /// nu, puis balises seules (aucun symbole à écrire).
 fn source() -> String {
-    let markup = "&lt;font size='9'&gt;&lt;/font&gt; &lt;font face='Times New Roman'&gt;&lt;/font&gt; ";
+    let markup =
+        "&lt;font size='9'&gt;&lt;/font&gt; &lt;font face='Times New Roman'&gt;&lt;/font&gt; ";
     let note = |step: &str, octave: u8, fingering: &str, tie: &str| {
         format!(
             "<note><pitch><step>{step}</step><octave>{octave}</octave></pitch>\
@@ -78,21 +79,22 @@ fn doigtes_markup_ecrits_comme_symboles_valides() {
         .position(|l| l.starts_with("V:1 "))
         .expect("en-tête V:1")
         + 1;
-    let musique: Vec<&str> = abc.lines()
+    let musique: Vec<&str> = abc
+        .lines()
         .skip(debut)
         .take_while(|l| !l.starts_with("V:"))
         .filter(|l| !l.starts_with('w'))
         .collect();
     assert_eq!(
         musique,
-        [
-            "!1!C2!3!E2G2z2 |",
-            "!5![CEG]2!2!D2-!4!D2x2 |]",
-        ],
+        ["!1!C2!3!E2G2z2 |", "!5![CEG]2!2!D2-!4!D2x2 |]",],
         "musique de la voix chantée : {musique:?}"
     );
     // Aucun fragment de balise dans un nom de symbole (§ 4.14).
-    assert!(!abc.contains("<font"), "balise MuseScore dans l'ABC : {abc}");
+    assert!(
+        !abc.contains("<font"),
+        "balise MuseScore dans l'ABC : {abc}"
+    );
     assert!(!abc.contains("!<"), "décoration invalide : {abc}");
     // Cas « non concerné » : la portée témoin ne reçoit aucun doigté.
     let temoin: Vec<&str> = abc.lines().skip_while(|l| !l.starts_with("V:2")).collect();
