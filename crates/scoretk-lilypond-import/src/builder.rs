@@ -1244,6 +1244,56 @@ fn staff_move_of<'a>(
 
 /// Place un accord ou un silence.
 #[allow(clippy::too_many_arguments)]
+/// Décompose une durée en figures exactes, la plus grande d'abord.
+/// Port local de `engraving/durationtype.cpp::toDurationList` (voir le port
+/// `scoretk-midi-import::meter::to_duration_list`, l. 412) : jusqu'à quatre
+/// points de prolongation, comme l'écrivain MuseScore.
+fn to_duration_list(mut length: Fraction) -> Vec<Duration> {
+    const TYPES: [DurationType; 13] = [
+        DurationType::Long,
+        DurationType::Breve,
+        DurationType::Whole,
+        DurationType::Half,
+        DurationType::Quarter,
+        DurationType::Eighth,
+        DurationType::Sixteenth,
+        DurationType::ThirtySecond,
+        DurationType::SixtyFourth,
+        DurationType::OneHundredTwentyEighth,
+        DurationType::TwoHundredFiftySixth,
+        DurationType::FiveHundredTwelfth,
+        DurationType::OneThousandTwentyFourth,
+    ];
+    let mut result = Vec::new();
+    while length.is_positive() {
+        let mut found = None;
+        for kind in TYPES {
+            for dots in (0..=4).rev() {
+                let duration = Duration::with_dots(kind, dots);
+                if duration.ticks() <= length {
+                    found = Some(duration);
+                    break;
+                }
+            }
+            if found.is_some() {
+                break;
+            }
+        }
+        match found {
+            Some(duration) => {
+                length -= duration.ticks();
+                result.push(duration);
+            }
+            None => break,
+        }
+    }
+    result
+}
+
+// Le contexte de placement (partition, mesure, portée, voix, tick, événement,
+// déplacement de portée et avertissements) est passé explicitement : un struct
+// alourdirait tous les appelants pour un seul appel.
+#[allow(clippy::too_many_arguments)]
 fn place_chord(
     score: &mut Score,
     slots: &[MeasureSlot],
@@ -1288,34 +1338,28 @@ fn place_chord(
                 if piece_end <= cursor {
                     break;
                 }
-                let segment_index = ensure_segment(score, index, SegmentType::ChordRest, cursor);
                 let piece = piece_end - cursor;
-                let figure = if piece >= Fraction::ONE {
-                    DurationType::Whole
-                } else if piece >= Fraction::new(1, 2) {
-                    DurationType::Half
-                } else if piece >= Fraction::new(1, 4) {
-                    DurationType::Quarter
-                } else if piece >= Fraction::new(1, 8) {
-                    DurationType::Eighth
-                } else {
-                    DurationType::Sixteenth
-                };
-                let chord_rest = ChordRest {
-                    duration: Duration::new(figure),
-                    ticks: Some(piece),
-                    tuplet: None,
-                    lyrics: Vec::new(),
-                    beam_mode: Default::default(),
-                    beam_direction: None,
-                    kind: ChordRestKind::Rest(Rest {
-                        full_measure: false,
-                        gap: false,
-                        visible: true,
-                    }),
-                };
-                if let Some(segment) = score.measures[index].segments.get_mut(segment_index) {
-                    segment.set_element(voice_track, SegmentItem::ChordRest(chord_rest));
+                let mut position = cursor;
+                for figure in to_duration_list(piece) {
+                    let segment_index =
+                        ensure_segment(score, index, SegmentType::ChordRest, position);
+                    let chord_rest = ChordRest {
+                        duration: figure,
+                        ticks: None,
+                        tuplet: None,
+                        lyrics: Vec::new(),
+                        beam_mode: Default::default(),
+                        beam_direction: None,
+                        kind: ChordRestKind::Rest(Rest {
+                            full_measure: false,
+                            gap: false,
+                            visible: true,
+                        }),
+                    };
+                    if let Some(segment) = score.measures[index].segments.get_mut(segment_index) {
+                        segment.set_element(voice_track, SegmentItem::ChordRest(chord_rest));
+                    }
+                    position += figure.ticks();
                 }
                 cursor = piece_end;
             }

@@ -4744,14 +4744,50 @@ fn elements_a_travers_les_barres_sont_decoupes() {
             })
         })
         .filter(|(track, _)| *track == 4)
-        .map(|(_, rest)| (rest.ticks, rest.is_full_measure_rest()))
+        .map(|(_, rest)| (rest.duration.ticks(), rest.is_full_measure_rest()))
         .collect();
     assert!(
         bas.len() >= 4,
         "silences du bas découpés à chaque barre : {bas:?}"
     );
     assert!(
-        bas.iter().all(|(ticks, full)| ticks.is_some() && !*full),
+        bas.iter()
+            .all(|(ticks, full)| *ticks > Fraction::ZERO && !*full),
         "chaque morceau porte sa durée explicite : {bas:?}"
+    );
+}
+
+/// Les morceaux découpés à la barre portent une figure exacte, décomposée
+/// comme `toDurationList` (`durationtype.cpp`, porté dans
+/// `scoretk-midi-import::meter::to_duration_list`) : 5/16 = noire + double
+/// croche, 3/8 = noire pointée. Aucune figure approximative, aucun plancher.
+#[test]
+fn silences_decoupes_en_figures_exactes() {
+    let durees = |src: &str| -> Vec<Fraction> {
+        let score = lire(src);
+        score
+            .measures
+            .iter()
+            .flat_map(|measure| measure.segments.iter())
+            .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+            .filter(|rest| rest.chord_ref().is_none())
+            .map(|rest| rest.duration.ticks())
+            .collect()
+    };
+    // Cinq croches (2,5 noires) puis R2. (noire pointée = 3 noires) : deux
+    // morceaux de 3/8 de ronde, chacun une noire pointée.
+    assert_eq!(
+        durees("\\time 4/4 c8 c8 c8 c8 c8 R2. c4"),
+        vec![Fraction::new(3, 8), Fraction::new(3, 8)]
+    );
+    // Début à 2,75 noires : 5/16 = noire + double croche, puis 7/16 =
+    // noire + noire pointée.
+    assert_eq!(
+        durees("\\time 4/4 c8 c8 c8 c8 c8 c16 R2. c4"),
+        vec![
+            Fraction::new(1, 4),
+            Fraction::new(1, 16),
+            Fraction::new(7, 16), // double croche pointée deux fois
+        ]
     );
 }
