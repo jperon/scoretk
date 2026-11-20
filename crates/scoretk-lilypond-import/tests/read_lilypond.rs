@@ -4469,9 +4469,7 @@ bas = \fixed c {
         .collect();
     let notes_en_n_olet: Vec<(u8, Fraction)> = tuplets
         .into_iter()
-        .flat_map(|(notes, duree)| {
-            notes.into_iter().map(move |id| (id, duree))
-        })
+        .flat_map(|(notes, duree)| notes.into_iter().map(move |id| (id, duree)))
         .map(|(id, duree)| (score.note(id).pitch, duree))
         .collect();
     assert_eq!(

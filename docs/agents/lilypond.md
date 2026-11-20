@@ -1825,3 +1825,51 @@ from the `\times`-heavy sources. No per-file loss was attributed to the fix:
 `attaque_decalee` falls from 641 to 617 files and `notes_supp` rises from
 697 to 709 only because previously shifted attacks now land on notes the
 stale references do not contain.
+
+### Final measurement (both fixes, full lists)
+
+Frozen `/tmp/ly95-fix2`, same manifests, cached references and `timeout 10
+prlimit --as=2000000000` on every conversion:
+
+| Lot | Exact | N1 % (all) | N2 % (no repeat) | N2 % (all files) |
+| --- | ---: | ---: | ---: | ---: |
+| mus | 1136 (78.5 %) | 99.22 | 91.64 → **93.51** | 89.22 → **91.46** |
+| ra | 1249 (72.4 %) | 90.93 | 75.86 → **81.25** | 78.09 → **82.11** |
+| mut | 435 (31.6 %) | 98.16 | 69.94 → **80.12** | 68.86 → **78.53** |
+| **all** | **2820 (62.0 %)** | **98.11** | **74.15 → 82.68** | **71.78 → 80.36** |
+
+Fix 2 alone: 197 files gain N2, 12 lose N2, 87 become exact and none ceases
+to be exact. Fix 1 alone: 89 gain N2, 12 lose, 18 become exact, none lost
+exactness. From the frozen baseline: 273 files gain N2, 19 lose it, and
+105 become exact with no exact loss.
+
+The per-file decreases have no note loss: N1 is unchanged on all of them but
+four, and the two largest (`Voglio_che_sia_l_indegno.ly` 2210 → 1884 and
+`Solo_e_pensoso.ly` 924 → 663) keep **every** pitch and every note (N1 stays
+2538/2538 and 1367/1367); only attacks move, by the duration of a rest that
+fix 2 restored in the source (397 → 398 written rests in the first). The
+other decreases are ≤ 50 notes each and eight of the twelve after fix 1 are
+repeat-flagged, i.e. outside the blocking denominator. The leading-`<backup>`
+offset of `25EF-04.ly` (largest fix-1 loss) makes every one of its 395 notes
+match after a constant four-quarter shift, so it is an oracle offset, not a
+musical regression.
+
+### Why the two largest ranked rows were not changed
+
+- **`\grace`/`\acciaccatura` (first row).** Reduced `\grace`, `\acciaccatura`,
+  `\appoggiatura` sources were compiled with LilyPond 2.26 and compared with
+  scoretk on the Q16 grid: single graces land on the same cell. The residual
+  losses are the documented MuseScore-vs-LilyPond onset model
+  (`collectGraceBeforeChordEvents`, §14) and several graces spread over a
+  beat by LilyPond while MuseScore places them all at the following attack.
+  Changing the reader would break the MuseScore reference lots, so this is a
+  measurement-model limit, not a reproducible reader defect.
+- **`\voiceOne` / `<< … >>` (second row).** A reduced
+  `<< { c4 d4 } \\ { e4 f4 } >> g4 a4 | b2` matches LilyPond's MIDI exactly
+  (both branches at 0/1, following notes at 2/3/4). The row is dominated by
+  long Mutopia scores whose attacks drift from stale or unfolded references,
+  not by a grammar bug.
+
+The two reproducible parser defects were therefore taken first; their gain
+(+8.53 N2 points over repeat-free files) is larger than either single ranked
+row would have suggested, because they acted across all of them.
