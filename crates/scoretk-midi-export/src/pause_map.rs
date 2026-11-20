@@ -113,7 +113,10 @@ impl PauseMap {
             // au tick de la mesure qui suit la rupture.
             let tick = repeat_list.utick2tick(utick);
             let quarter_notes = quarter_notes_at(score, time_signatures, tick);
-            let ticks_per_measure = (quarter_notes * f64::from(DIVISION)).round() as i64;
+            // pausemap.cpp:70 : `int ticksPerMeasure = quarterNotesPerMeasure
+            // * Constants::DIVISION;` — le double est TRONQUÉ en int (pas
+            // arrondi). Le tempo (`:71`) garde la valeur fractionnaire.
+            let ticks_per_measure = (quarter_notes * f64::from(DIVISION)) as i64;
             let before = map.tick_with_pauses(utick);
             map.tempo_events
                 .insert(before, quarter_notes / point.pause.max(f64::EPSILON));
@@ -200,14 +203,17 @@ fn pauses_by_segment(score: &Score, repeat_list: &RepeatList) -> BTreeMap<i64, f
     for segment in &repeat_list.segments {
         let offset = segment.utick - segment.tick;
         for &index in &segment.measures {
-            if let Some(measure) = score.measures.get(index) {
-                if measure.section_break_before {
-                    pauses.insert(
-                        measure.start_tick.ticks(UNITS_PER_WHOLE) + offset,
-                        SECTION_PAUSE_SECONDS,
-                    );
-                }
+            if index == 0 {
+                continue;
             }
+            let Some(measure) = score.measures.get(index) else {
+                continue;
+            };
+            if !measure.section_break_before {
+                continue;
+            }
+            let at = measure.start_tick.ticks(UNITS_PER_WHOLE) + offset;
+            pauses.insert(at, SECTION_PAUSE_SECONDS);
         }
     }
     pauses
@@ -366,6 +372,33 @@ mod tests {
         assert_eq!(map.tempo_events, BTreeMap::from([(0, 2.0)]));
         assert_eq!(map.tick_with_pauses(1920), 1920);
         assert_eq!(repeat_list.ticks(), 3840);
+    }
+
+    /// Une mesure de 5/8 (2,5 noires) garde sa longueur fractionnaire : la
+    /// pause insère 2,5 × 480 = 1200 ticks, sans troncature à 2 noires.
+    #[test]
+    fn pause_en_cinq_huit_sans_troncature() {
+        let mut score = score_avec_point_d_orgue_et_cesure(Fraction::new(5, 8));
+        score.measures[1].section_break_before = true;
+        let repeat_list = RepeatList::unwind(&score);
+        let time_sigs = [(0, TimeSig::new(5, 8))];
+        let map = PauseMap::build(&score, &repeat_list, &time_sigs);
+        assert_eq!(map.spans().len(), 1);
+        assert_eq!(map.spans()[0].inserted, 1200);
+        assert_eq!(map.tempo_events.get(&1200), Some(&(2.5 / 3.0)));
+        assert_eq!(map.tempo_events.get(&2400), Some(&2.0));
+    }
+
+    /// La première mesure n'a pas de `measure->prev()` : un marqueur de
+    /// rupture posé dessus n'insère aucune pause (`collectPauses`, `:1105`).
+    #[test]
+    fn premiere_mesure_sans_pause_de_section() {
+        let mut score = score_avec_point_d_orgue_et_cesure(Fraction::ONE);
+        score.measures[0].section_break_before = true;
+        let repeat_list = RepeatList::unwind(&score);
+        let map = PauseMap::build(&score, &repeat_list, &[]);
+        assert!(map.spans().is_empty(), "aucune pause avant la mesure 0");
+        assert_eq!(map.tick_with_pauses(1920), 1920);
     }
 
     /// Un saut de section insère une mesure entière de ticks. La pause est

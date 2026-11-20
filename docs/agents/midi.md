@@ -1354,3 +1354,70 @@ N2 global 94,91 → **94,92 %**. Le décalage d'un quart au tick 1507 n'est
 toujours pas corrigé : la pause concernée n'appartient à aucun passage où le
 modèle porte `section_break_before`, ce qui reste à identifier dans le
 lecteur 2.x (`read206`).
+
+### Pause au saut de `Vingt_danses` : évènements de tempo (2026-11-20)
+
+Les évènements `MetaMessage set_tempo` des deux MIDIs autour du tick 1507
+lèvent l'ambiguïté : la référence 4.7.4 porte **20 BPM de 722 880 à 723 360**
+(120 BPM ensuite), soit une pause d'un quart de noire exactement au passage
+du saut `D.S. al Fine` ; notre MIDI n'avait aucun évènement de tempo là. La
+cause n'était donc ni un tempo écrit ni une mesure manquante, mais la pause
+de la rupture de section portée par la mesure du saut et jouée au début du
+segment suivant dans l'ordre d'exécution (`collectPauses`,
+`scoreautomationcontroller.cpp:1100-1131` ; `RepeatSegment::utick`). Le
+nombre de noires inséré est celui de la mesure qui ouvre la nouvelle section
+(anacrouse d'un quart dans `Vingt_danses`).
+
+`pauses_by_segment` porte désormais ce cas : quand le segment précédent se
+termine sur une mesure avec `<Jump>` et que la mesure suivante de la partition
+porte la rupture, la pause est inscrite à l'utick du segment courant avec ce
+nombre de noires (`pause_quarters` dans `TempoPoint`, utilisé par
+`PauseMap::calculate` à la place de la longueur de la mesure au tick source).
+Le garde `index > 0` de `collectPauses` (`measure->prev()` nul pour la
+première mesure) est restauré, avec un test unitaire.
+
+Mesure complète à références égales : **+358 notes sur `Vingt_danses`,
+0 perte** ; N2 `.mscz` 94,92 → **95,01 %**. Les autres lots ne changent pas.
+
+### Correction de `d39d7f5` : fraction des mesures de pause (2026-11-20)
+
+`d39d7f5` convertissait `quarter_notes_at()` en `i64` avant de le réutiliser :
+une mesure de 5/8 (2,5 noires) devenait 2 noires, aussi bien pour le tempo que
+pour les ticks insérés. `pause_quarters` est désormais `Option<f64>` et la
+valeur fractionnaire est conservée (`PauseMap::calculate`, `pausemap.cpp:68-71`
+: `quarterNotesPerMeasure` est un `double`, seul `ticksPerMeasure` est un
+`int`). Test unitaire `pause_en_cinq_huit_sans_troncature` : 1200 ticks et
+2,5/3 bps. Le garde `index > 0` de `collectPauses` est également restauré
+(`measure->prev()` nul pour la première mesure), testé par
+`premiere_mesure_sans_pause_de_section`.
+
+Le gain de +358 notes annoncé par `d39d7f5` était un artefact de cette
+troncature sur les mesures irrégulières de `Vingt_danses`, pas l'effet de la
+règle de saut (dont le motif `RepeatMark::Jump` n'a pas de contrepartie dans
+`collectPauses`, qui ne raisonne que sur `measure->prev()` en ordre brut).
+Avec la valeur correcte, cette règle n'apporte rien et a été retirée ; le
+décalage au tick 1507 reste ouvert. La référence porte bien un évènement
+`20 BPM` de 722 880 à 723 360, mais les essais d'ancrage au segment suivant
+ ont tous régressé d'autres passages — le mécanisme exact reste à identifier.
+
+### Bilan de la campagne des pauses (2026-11-20)
+
+Comparaison fichier par fichier contre **master** (références et manifeste
+identiques) : avec la valeur fractionnaire conservée pour le tempo et la
+**troncature** de `ticksPerMeasure` (`pausemap.cpp:70`), **aucun fichier ne
+gagne ni ne perd** ; les deux écarts
+apparents (`Vivaldi … Judicabit`, `Vivaldi … Gloria Patri`) sont des dépassements
+de la borne de 10 s de l'oracle — relancés sous 20 s, ils donnent exactement
+les valeurs de master (2469 et 1677).
+
+Le décalage d'un quart au tick 1507 reste ouvert, avec la preuve suivante :
+le MIDI 4.7.4 porte un changement de tempo à 20 BPM de 722 880 à 723 360, soit
+`quarterNotesPerMeasure / pause = 1 / 3 s` (`pausemap.cpp:71`) : la pause est
+bien celle de la mesure anacrustique `len="1/4"` qui suit le saut, mais elle est
+jouée à la frontière du saut. Dans notre modèle, cette mesure n'est atteinte
+qu'après `fine4`, et toutes les tentatives pour l'ancre au saut (marqueur
+`Jump`,mesure d'irregularité, bornes inclusives) ont régressé d'autres passages
+de la même partition — le mécanisme exact qui place cette anacrouse dans la
+`RepeatSegment` de 4.7.4 n'est pas dans le portage. Un gain net sur master
+n'est donc pas démontrable sans ce mécanisme ; le correctif de troncature est
+conservé pour sa conformité à `pausemap.cpp:68-71`, sans gain de mesure.
