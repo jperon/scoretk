@@ -209,6 +209,7 @@ impl Reader {
         let metadata = &mut self.score.metadata;
         match name {
             "workTitle" => metadata.work_title = text,
+            "movementNumber" => metadata.movement_number = text,
             "movementTitle" => metadata.movement_title = text,
             "workNumber" => metadata.work_number = text,
             "composer" => metadata.composer = text,
@@ -502,4 +503,23 @@ pub(crate) fn instrument_transpose(score: &Score, staff: usize) -> Transpose {
         .and_then(|part| score.parts.get(part))
         .and_then(|part| part.instrument.transpose)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod meta_tests {
+    /// `ExportMusicXml::work` (`exportmusicxml.cpp:6522-6524`) écrit
+    /// `<movement-number>` depuis le metaTag `movementNumber`. Le lecteur 4.x
+    /// le lit déjà ; le lecteur 3.x l'ignorait (4 fichiers Vivaldi RV 594).
+    #[test]
+    fn mouvement_numero_du_metatag_3x() {
+        let xml = br#"<museScore version="3.01"><Score>
+          <metaTag name="movementNumber">2</metaTag>
+          <metaTag name="movementTitle">Donec ponam</metaTag>
+          <Division>480</Division>
+          </Score></museScore>"#;
+        let container = crate::MsczContainer::from_bytes(xml).expect("conteneur");
+        let score = crate::read::read_score(&container).expect("lecture");
+        assert_eq!(score.metadata.movement_number, "2");
+        assert_eq!(score.metadata.movement_title, "Donec ponam");
+    }
 }

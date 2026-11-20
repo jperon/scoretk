@@ -266,3 +266,12 @@ core-identiques 54 → 57. XSD scoretk : 0 erreur. Le classement restant est
 `movement-number` 4. Les 40 `staff-details` restants sont essentiellement les
 portées masquées par la mise en page (voir §10, non corrigeables avec le
 découpage en systèmes du pivot).
+
+## 12. `movement-number` (4 fichiers)
+
+`ExportMusicXml::work` (`exportmusicxml.cpp:6508-6527`) écrit
+`<movement-number>` depuis le metaTag `movementNumber`. Le lecteur 4.x le
+lisait déjà, pas le lecteur 3.x : les quatre extraits Vivaldi RV 594
+(versions 3.01) perdaient le numéro de mouvement. Test réduit écrit d'abord,
+échouant avant le correctif. Oracle ciblé : 4 gains, 0 perte (123 → 122,
+7 → 6, 12 → 11, 15 → 14 lignes divergentes).
