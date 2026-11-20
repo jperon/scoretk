@@ -1141,3 +1141,44 @@ goes from N2 0.3134 to 0.3913 (8298 → 10361 matched attacks) and N2d 7720 →
 9643, with its first three section pauses now at the reference's 672/952/1118
 quarters, 40 BPM for 2 quarters each. `core`, XSD and `exact` counts are
 unchanged.
+
+### Ottava anchoring: 2.x `endSpanner` and LilyPond `\ottava` (2026-11-20)
+
+Two anchoring gaps remained from the first ottava commit.
+
+* **MuseScore 2.x.** In `read206/transform.rs`, a measure-level
+  `<endSpanner id>` was anchored on the measure's start tick. `readMeasure206`
+  (`read206.cpp:2834-2852`) uses `ctx.tick()` — the current position — so an
+  `<endSpanner>` between two chords ends the ottava at the following chord,
+  not at the barline. The anchor now uses `SpanKey::Chord` with the current
+  chord ordinal, like the 2.x ottava start; `spanners.rs::anchor` falls back
+  to the measure end when the spanner closes after the last chord. Reduced
+  test `ottava_2x_milieu_de_mesure.rs`: a 2.06 score with `<Ottava id="1">`
+  after two chords of bar 1 and `<endSpanner id="1"/>` after two chords of bar
+  2; its eight MuseScore 4.7.4 pitches/ticks are asserted (76/77/79/81 under
+  the 8va, 71/72 outside). Before the fix G4/A4 were played as 67/69.
+* **LilyPond.** Notation Reference §1.3.3 is explicit: ottava brackets
+  "raise or lower displayed notes by one or more octaves, leaving the
+  sounding pitch unchanged". This is confirmed with LilyPond 2.26: a plain
+  `c'4` and a `c'4` under `\ottava #1` both produce MIDI note 60. MuseScore's
+  ottava, conversely, changes playback. The model now carries
+  `Spanner::play` (the C++ `Spanner::playSpanner()`, default true); the
+  LilyPond reader sets it to false for ottava spans, and
+  `render.rs::pitch_offsets` skips such spans just as
+  `Staff::updateOttava` (`staff.cpp:1285`) skips `!playSpanner()`. The span
+  itself is unchanged (still exactly the notes between `\ottava #1` and
+  `\ottava #0`), so LilyPond and MusicXML export keep the bracket. Reduced
+  test `read_lilypond::ottava_de_lilypond_est_une_convention_d_ecriture`
+  asserts the span ticks (480 → 1440) and `play == false`. This removes the
+  two `ecriture_ly` losses of the first ottava commit without changing any
+  other score.
+
+Measurement (frozen baseline from master `aaa9cf5`, same oracle, `timeout 10
+prlimit --as=2000000000`): the three MIDI writing lots show exactly two
+changed files, both gains — `Ackermans_NoelDesPetitsSantons.ly` N1 2180 →
+2201, N2 1994 → 2011 and `Salazar_ALaEstrellaQueEsmalta.ly` N1 1239 → 1240,
+N2 1238 → 1240 (the `octave` flag disappears); aggregate `ecriture_ly` returns
+to 92.27 / 85.76, the two `.mscz` lots are unchanged. MusicXML oracle: 3.x/4.x
+N2 0.9740 unchanged, 1.x/2.x 0.7094 unchanged; the piano file gains 10 more
+matched pitches (26437 → 26447) and 2 attacks (10361 → 10363). `core`, XSD,
+`exact` and `corpus_midi` (21/21) are unchanged.

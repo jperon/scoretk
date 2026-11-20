@@ -293,7 +293,20 @@ fn adapt_measure(
             "endSpanner" => {
                 if let Some(id) = node.attr_i32("id") {
                     let mut link = SpannerLink::new(id, SpanFamily::Volta);
-                    link.end = Some(measure_key(index, staff));
+                    // `readMeasure206` (`read206.cpp:2834-2852`) ferme le
+                    // spanner à `ctx.tick()`, c'est-à-dire au tick courant : un
+                    // `<endSpanner>` mesure-level peut tomber entre deux
+                    // accords. L'ancrer sur le début de mesure raccourcit
+                    // l'ottava d'un accord entier (§19.8 de mscx-format.md).
+                    link.end = Some(if chord_ordinals[voice] == 0 {
+                        measure_key(index, staff)
+                    } else {
+                        SpanKey::Chord {
+                            measure: index,
+                            track: ((staff * 4) + voice) as u32,
+                            ordinal: chord_ordinals[voice],
+                        }
+                    });
                     links.push(link);
                 }
             }

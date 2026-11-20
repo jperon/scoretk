@@ -319,6 +319,11 @@ pub struct Spanner {
     /// Une ottava invisible décale quand même la hauteur écrite ; seul son
     /// `<octave-shift>` est omis.
     pub visible: bool,
+    /// Vrai si le spanner agit sur la hauteur jouée (`playSpanner()` dans
+    /// `engraving/dom/spanner.h`). Une ottava de MuseScore le fait ; celle de
+    /// LilyPond ne change que la notation (Notation Reference §1.3.3 :
+    /// « leaving the sounding pitch unchanged »), donc son `play` est faux.
+    pub play: bool,
 }
 
 impl Spanner {
@@ -336,6 +341,7 @@ impl Spanner {
             notation: None,
             text_line: None,
             visible: true,
+            play: true,
         }
     }
 }

@@ -4134,3 +4134,32 @@ fn chordmode_dans_une_portee_joue_les_accords() {
         vec![60, 64, 67, 60, 63, 67, 60, 62, 64, 65]
     );
 }
+
+/// `\ottava` ne transpose pas le MIDI de LilyPond (Notation Reference §1.3.3 :
+/// « leaving the sounding pitch unchanged »). Le modèle garde la portée pour
+/// l'écriture, mais `play` est faux : l'export MIDI ne doit pas décaler ces
+/// notes. Le spanner couvre exactement les notes entre `\ottava #1` et
+/// `\ottava #0` (la mesure de 4/4 commence au tick 0, chaque noire vaut 480).
+#[test]
+fn ottava_de_lilypond_est_une_convention_d_ecriture() {
+    use scoretk_core::model::SpannerType;
+
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\\language \"english\"\n\
+         \\score { \\new Staff { \\fixed c' { c4 \\ottava #1 d4 e4 \\ottava #0 f4 } } }",
+    )
+    .expect("lecture \\ottava");
+    let ottavas: Vec<_> = score
+        .spanners
+        .iter()
+        .filter(|spanner| matches!(spanner.kind, SpannerType::Ottava(_)))
+        .collect();
+    assert_eq!(ottavas.len(), 1, "une seule portée d'ottava");
+    let ottava = ottavas[0];
+    assert!(
+        !ottava.play,
+        "le MIDI LilyPond ne transpose pas sous \\ottava"
+    );
+    assert_eq!(ottava.start.tick.ticks(1920), 480, "début sur d4");
+    assert_eq!(ottava.end.tick.ticks(1920), 1440, "fin après e4");
+}

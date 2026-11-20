@@ -498,6 +498,11 @@ fn pitch_offsets(score: &Score) -> Vec<BTreeMap<i64, i32>> {
         let SpannerType::Ottava(kind) = &spanner.kind else {
             continue;
         };
+        // `Staff::updateOttava` (`staff.cpp:1285`) ne retient que les
+        // `playSpanner()` : l'ottava LilyPond n'est qu'une convention d'écriture.
+        if !spanner.play {
+            continue;
+        }
         let Some(map) = result.get_mut(spanner.start.track.staff().index()) else {
             continue;
         };
@@ -519,7 +524,11 @@ fn pitch_offset(map: &BTreeMap<i64, i32>, tick: i64) -> i32 {
 ///
 /// Les changements sont déroulés comme les autres évènements, puis les pauses
 /// de section ajoutent leur tempo et le retour au tempo en vigueur.
-fn tempo_events(_score: &Score, _repeat_list: &RepeatList, pause_map: &PauseMap) -> Vec<(i64, u32)> {
+fn tempo_events(
+    _score: &Score,
+    _repeat_list: &RepeatList,
+    pause_map: &PauseMap,
+) -> Vec<(i64, u32)> {
     // `PauseMap::calculate` (`pausemap.cpp:47-76`) tient **tous** les
     // changements de tempo dans `m_tempoEvents`, y compris les indications
     // écrites et les pauses, aux ticks après insertion. On ne reconstruit donc

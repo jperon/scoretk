@@ -1525,7 +1525,10 @@ fn place_spanners(score: &mut Score, staves: &[StaffBuild]) {
                                             start,
                                             tick,
                                             voice.track,
-                                            |_| {},
+                                            // `\ottava` ne transpose pas le MIDI
+                                            // LilyPond (Notation Reference §1.3.3)
+                                            // : la portée ne joue pas ce spanner.
+                                            |spanner| spanner.play = false,
                                         );
                                     }
                                 }

@@ -252,7 +252,10 @@ pub(super) fn anchor(score: &Score, key: &SpanKey) -> Option<(Fraction, Track)> 
                 }
                 rank += 1;
             }
-            None
+            // Un `<endSpanner>` placé après le dernier accord de la mesure
+            // tombe à `ctx.tick()` en fin de mesure : la fin du spanner est
+            // alors le début de la mesure suivante.
+            Some((measure.start_tick + measure.len, track))
         }
     }
 }
