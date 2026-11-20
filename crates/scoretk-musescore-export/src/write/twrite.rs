@@ -838,10 +838,10 @@ pub(crate) fn write_instrument(xml: &mut XmlWriter, instrument: &Instrument) {
         xml.tag("transposeDiatonic", &transpose.diatonic.to_string());
         xml.tag("transposeChromatic", &transpose.chromatic.to_string());
     }
-    if instrument.midi_program.is_some()
-        || instrument.midi_channel.is_some()
-        || instrument.volume.is_some()
-        || instrument.pan.is_some()
+    // Port de `TWrite::write(const Instrument*)` (`write/twrite.cpp:1947`) : un
+    // instrument MuseScore possède toujours au moins un canal. Le laisser vide
+    // fait échouer `PlaybackSetupDataResolver` et plantent MuseScore 4.7.4 à
+    // l'ouverture d'une partition issue de LilyPond/ABC.
     {
         xml.start_element("Channel", &[]);
         if let Some(program) = instrument.midi_program {
