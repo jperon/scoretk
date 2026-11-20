@@ -1173,3 +1173,51 @@ to 92.27 / 85.76, the two `.mscz` lots are unchanged. MusicXML oracle: 3.x/4.x
 N2 0.9740 unchanged, 1.x/2.x 0.7094 unchanged; the piano file gains 10 more
 matched pitches (26437 → 26447) and 2 attacks (10361 → 10363). `core`, XSD,
 `exact` and `corpus_midi` (21/21) are unchanged.
+
+## `.mscz` losses at first divergence: model check (2026-11-20)
+
+The writing campaign's N2 table for `.mscz` was measured on **LilyPond's MIDI
+of scoretk's `.ly`**, not on scoretk's MIDI writer. Before changing the reader
+or the MIDI writer, the five files named in that table were re-checked with
+`scoretk S --to midi` against the *same* MuseScore 4.7.4 reference MIDI
+(`/tmp/ly95-rank/refs/<md5>.mid`, `timeout 10 prlimit --as=2000000000`, Q16
+grid). The MusicXML dump (`--to musicxml`) was read with `midi_notes.read_xml`
+on the same grid.
+
+| File | `<Note>` in source `.mscx` | model MusicXML | our MIDI | reference MIDI | N2 (our MIDI) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `Espana_Cani.mscz` | 1605 | 1534 | 3070 | 3078 | **99.74 %** |
+| `Sicut_Cervus__Palestrina.mscz` | 1209 | 1119 | 1119 | 1119 | **100.00 %** |
+| `El_Choclo.mscz` | 508 | 508 | 924 | 1161 | 28.17 % |
+| `JMHaydn_Viderunt_omnes.mscz` | 7398 | 7287 | 7340 | 8022 | 91.50 % |
+| `Minuit chrétien - Basson.mscz` | 4871 | 4802 | 4809 | 5241 | 91.76 % |
+
+Conclusions, in decreasing order of the earlier claim:
+
+1. **`Espana_Cani` and `Sicut_Cervus` are not model or writer losses.** The
+   earlier 49.84 % / 50.85 % came from LilyPond's rendering of our `.ly`
+   (unison merging, §"tremolo/artefacts" above), not from model N2. Our MIDI
+   export matches the reference to within eight notes and exactly,
+   respectively. No reader or writer change is warranted; the premise that
+   these two need a fix is retracted with the measurement above.
+2. **`El_Choclo`, `JMHaydn`, `Minuit chrétien`**: the reference MIDI contains
+   **more notes than the source `.mscx` carries** (+653, +624 and +370 beyond
+   the `<Note>` count; the difference survives repeat expansion: our MIDI is
+   already the unfolded score). First diverging attacks: El Choclo tick 0,
+   reference `[38, 38, 62, 65, 69]` against a source whose first chord is only
+   `[38]`; JMHaydn tick 55.5, four `72` *and* four `74` in the reference
+   against four `72` in the source; Minuit tick 90, extra unison `48`/`50`
+   attacks. These are MuseScore playback doublings of the kind already
+   documented in §13/§14 of `lilypond.md` (accordion/register coupling,
+   linked-part unisons), not notes the `.mscz` reader drops: the model dump
+   matches the `.mscx` note-for-note (the small deficit is tie fragments,
+   which the MIDI writer intentionally merges into one attack). A reader fix
+   cannot invent notes absent from the input; a writer fix cannot reproduce
+   a playback rule that the model does not carry.
+
+No reduced test was added: a failing test would have to assert extra notes
+that the source file does not contain. If a playback coupling rule is ever
+modelled (a `Spanner`/`Instrument` flag in `scoretk-core`), these three files
+are the regressors to use. Meanwhile the actionable `.mscz` reader work
+remains the MuseScore 1.x/2.x reader and the `duree_seule` family already
+listed in §"Measurement against a frozen master binary".
