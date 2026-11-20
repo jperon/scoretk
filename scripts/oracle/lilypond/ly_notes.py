@@ -145,6 +145,7 @@ def read_xml(path: str, with_grace: bool = False) -> list[tuple]:
     for numero_part, part in enumerate(racine.findall("part")):
         divisions = 1
         transposition = 0
+        octave_shift = 0
         curseur = 0.0             # position courante de la partie, en noires
         debut_mesure = 0.0        # attache de la mesure en cours
         extension = 0.0           # extension maximale de la mesure en cours
@@ -164,6 +165,24 @@ def read_xml(path: str, with_grace: bool = False) -> list[tuple]:
                         chromatique = t.findtext("chromatic", "0")
                         octave = t.findtext("octave-change", "0")
                         transposition = int(float(chromatique)) + 12 * int(float(octave))
+                    continue
+                if elem.tag == "direction":
+                    # `<octave-shift>` porte sur la hauteur *jouée*, pas sur
+                    # la hauteur écrite : l'export MuseScore écrit l'octave
+                    # corrigée, le MIDI de LilyPond joue la hauteur concert.
+                    for type_element in elem.findall("direction-type"):
+                        shift = type_element.find("octave-shift")
+                        if shift is None:
+                            continue
+                        size = shift.findtext("size", "8")
+                        amount = 24 if size == "15" else 12
+                        kind = shift.get("type")
+                        if kind == "down":
+                            octave_shift -= amount
+                        elif kind == "up":
+                            octave_shift += amount
+                        elif kind == "stop":
+                            octave_shift = 0
                     continue
                 if elem.tag in ("backup", "forward"):
                     valeur = elem.findtext("duration")
@@ -201,10 +220,10 @@ def read_xml(path: str, with_grace: bool = False) -> list[tuple]:
                         octave_u = unpitched.findtext("display-octave")
                         if step_u in STEPS and octave_u is not None:
                             hauteur_u = 12 * (int(octave_u) + 1) + STEPS[step_u]
-                            notes.append((hauteur_u + transposition, attaque,
+                            notes.append((hauteur_u + transposition + octave_shift, attaque,
                                           0.0 if est_grace else duree, numero_part,
                                           est_grace) if with_grace else
-                                         (hauteur_u + transposition, attaque,
+                                         (hauteur_u + transposition + octave_shift, attaque,
                                           0.0 if est_grace else duree, numero_part))
                     continue  # silence : le curseur a déjà avancé
                 step = pitch.findtext("step")
@@ -213,10 +232,10 @@ def read_xml(path: str, with_grace: bool = False) -> list[tuple]:
                     continue
                 alter = pitch.findtext("alter", "0")
                 hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
-                notes.append((hauteur + transposition, attaque,
+                notes.append((hauteur + transposition + octave_shift, attaque,
                               0.0 if est_grace else duree, numero_part, est_grace)
                              if with_grace else
-                             (hauteur + transposition, attaque,
+                             (hauteur + transposition + octave_shift, attaque,
                               0.0 if est_grace else duree, numero_part))
     return notes
 
@@ -437,6 +456,24 @@ def selftest() -> None:
         lu_graces = read_xml(p, with_grace=True)
         assert [note[4] for note in lu_graces] == [False] * 4 + [True]
         assert lire_graces(lu_graces) == [(61, 2.0)]
+
+        # `<octave-shift>` : l'écriture est décalée d'une octave, la hauteur
+        # jouée (comparée au MIDI) ne l'est pas.
+        ottava = """<score-partwise version="4.0"><part id="P1"><measure number="1">
+          <attributes><divisions>1</divisions></attributes>
+          <direction><direction-type><octave-shift type="down" size="8"/>
+            </direction-type></direction>
+          <note><pitch><step>D</step><octave>5</octave></pitch><duration>1</duration>
+            <voice>1</voice></note>
+          <direction><direction-type><octave-shift type="stop" size="8"/>
+            </direction-type></direction>
+          <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration>
+            <voice>1</voice></note>
+        </measure></part></score-partwise>"""
+        p2 = os.path.join(tmp, "ottava.musicxml")
+        with open(p2, "w", encoding="utf-8") as f:
+            f.write(ottava)
+        assert read_xml(p2) == [(62, 0.0, 1.0, 0), (67, 1.0, 1.0, 0)]
 
         # Cas « non concerné » : XML lisible, hauteur et attaque exactes.
         relevant = compare(att, lu)

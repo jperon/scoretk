@@ -3083,3 +3083,22 @@ Mesure ciblée sur dix fichiers : `violin_concerto_1` +191 N1,
 `Violin_Concerto_3` +89, `Concerto_No3` +181 (N1), sans changement N2 notable.
 Les pertes N2 de ces fichiers sont donc des décalages d'attaque, pas des
 erreurs de hauteur : la course suivante porte sur `\partial`.
+
+### Cause 2 du tableau : `octave-shift` de l'oracle
+
+`\ottava #1` ne change pas la hauteur jouée dans le MIDI de LilyPond 2.26 :
+sur `c'4 \ottava #1 d'4 e'4 f'4 \ottava #0 g'4` le MIDI donne
+60/62/64/65/67. Le lecteur place bien ces hauteurs dans le modèle, mais
+l'export MusicXML écrit l'octave corrigée sous `<octave-shift>` (portage de
+MuseScore, `ExportMusicXml::ottava`). L'oracle comparait cette hauteur écrite
+telle quelle au MIDI : tous les fichiers avec ottava perdaient leurs notes.
+`ly_notes.py::read_xml` applique désormais `<octave-shift>` (`up`/`down`/
+`stop`, tailles 8 et 15) à la hauteur jouée, comme le fait un lecteur
+MusicXML ; l'autotest de l'oracle couvre le cas.
+
+Mesure complète du lot `mut` avec l'ancien binaire (pour isoler l'effet de
+l'oracle) : 55 fichiers gagnent (jusqu'à +250 N2 sur `biga.ly`, +137 sur
+`Chop-28-16`, +113 sur `Chop-28-23`) et 11 perdent, la plus grosse perte étant
+`Dans_l_antre_du_roi_de_la_montagne.ly` −159 N2 pour +68 N1 : les ottavas y
+chevauchent des hauteurs déjà écrites dans l'octave jouée, l'export et le
+MIDI ne sont pas alignés sur les mêmes portées. N2 84,23 → 84,33 %.
