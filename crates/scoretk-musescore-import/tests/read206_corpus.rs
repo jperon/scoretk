@@ -386,3 +386,36 @@ fn alteration_explicite_2x() {
     );
     assert!(notes[3].accidental.is_none(), "sans altération explicite");
 }
+
+#[test]
+fn liaison_2x_entre_deux_accords_separeres() {
+    let score = score(
+        r#"<Staff id="1">
+  <Measure number="1">
+    <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+    <Chord><durationType>quarter</durationType>
+      <Note><Tie id="9"/><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+    <Chord><durationType>quarter</durationType>
+      <Note><endSpanner id="9"/><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+    <Chord><durationType>half</durationType>
+      <Note><pitch>62</pitch><tpc>16</tpc></Note></Chord>
+    </Measure>
+  </Staff>"#,
+    );
+    let notes: Vec<_> = score.measures[0]
+        .segments
+        .iter()
+        .filter_map(|segment| {
+            segment
+                .element(Track::from_raw(0))
+                .and_then(|item| item.as_chord_rest())
+                .and_then(|chord_rest| chord_rest.chord_ref())
+        })
+        .filter_map(|chord| chord.notes.first().copied())
+        .map(|id| score.note(id))
+        .collect();
+    assert_eq!(notes.len(), 3);
+    assert!(notes[0].tie_forward.is_some(), "la première note doit partir en liaison");
+    assert!(notes[1].tie_back.is_some(), "la deuxième note doit recevoir la liaison");
+    assert!(notes[2].tie_forward.is_none(), "la troisième note est étrangère à la liaison");
+}

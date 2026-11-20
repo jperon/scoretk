@@ -179,6 +179,12 @@ fn adapt_measure(
     let mut groups: [Vec<Node>; 4] = std::array::from_fn(|_| Vec::new());
     let mut chord_ordinals = [0usize; 4];
     let mut kept = Vec::new();
+    // Ordinal des notes par voix dans la mesure : `find_note` retrouve ensuite
+    // les notes par leur position globale (mesure, piste, rang). Le compteur
+    // doit donc survivre d'un accord à l'autre, sinon toutes les premières
+    // notes d'accord reçoivent le rang 0 et les liaisons intra-mesure se
+    // retrouvent sur la même note.
+    let mut ordinals = [0usize; 4];
 
     for item in old {
         let Content::Element(mut node) = item else {
@@ -305,6 +311,8 @@ fn adapt_measure(
             }
             continue;
         }
+        // Deux comptages par voix dans la mesure : les accords/silences
+        // (extrémités de spanners) et les notes (extrémités de liaisons).
         let chord_ordinal = if node.name == "Chord" || node.name == "Rest" {
             let value = chord_ordinals[voice];
             chord_ordinals[voice] += 1;
@@ -312,7 +320,16 @@ fn adapt_measure(
         } else {
             0
         };
-        adapt_element(&mut node, index, staff, voice, chord_ordinal, ties, links);
+        adapt_element(
+            &mut node,
+            index,
+            staff,
+            voice,
+            chord_ordinal,
+            ties,
+            links,
+            &mut ordinals[voice],
+        );
         groups[voice].push(node);
     }
 
@@ -353,6 +370,9 @@ fn adapt_element(
     chord_ordinal: usize,
     ties: &mut Vec<super::TieLink>,
     links: &mut Vec<SpannerLink>,
+    // Rang de la note courante dans la voix de la mesure, maintenu d'un
+    // accord à l'autre pour que `fix_ties` retrouve les bonnes extrémités.
+    ordinal: &mut usize,
 ) {
     match node.name.as_str() {
         "Text" | "StaffText" => {
@@ -397,7 +417,6 @@ fn adapt_element(
                 link.slur_up = child.child("up").map(Node::trimmed_text);
                 links.push(link);
             }
-            let mut ordinal = 0usize;
             for child in node.children_mut() {
                 if child.name != "Note" {
                     continue;
@@ -405,9 +424,9 @@ fn adapt_element(
                 let key = NoteKey {
                     measure,
                     track: ((staff * 4) + voice) as u32,
-                    ordinal,
+                    ordinal: *ordinal,
                 };
-                ordinal += 1;
+                *ordinal += 1;
                 if let Some(tie) = child.child("Tie") {
                     if let Some(id) = tie.attr_i32("id") {
                         ties.push(super::TieLink {
