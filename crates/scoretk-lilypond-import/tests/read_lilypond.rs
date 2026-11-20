@@ -4858,3 +4858,16 @@ fn score_midi_seul_choisi_meme_si_musique_differente() {
     assert_eq!(durees_ecrites(&score), vec![Fraction::new(1, 4); 4]);
     assert_eq!(score.playback_transposition, None);
 }
+
+/// NR §1.1.3/§1.3.3 : `\clef "treble_8"` / `"G_8"` ne change que
+/// l'affichage, jamais la hauteur MIDI. Le décalage d'octave observé sur
+/// `AStMichel`/`22_StMichel` venait du choix du score gravé transposé, pas
+/// de la clé.
+#[test]
+fn clef_treble_8_ne_change_pas_la_hauteur() {
+    for clef in ["treble_8", "G_8", "treble"] {
+        let src = format!("\\clef \"{clef}\" c'4 d'4");
+        let score = lire(&src);
+        assert_eq!(hauteurs(&score), vec![72, 74], "clé {clef}");
+    }
+}
