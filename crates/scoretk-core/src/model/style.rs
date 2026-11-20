@@ -98,6 +98,10 @@ pub struct StyleSettings {
     /// Ne pas masquer les portées vides du premier système
     /// (`dontHideStavesInFirstSystem`, vrai par défaut).
     pub dont_hide_staves_in_first_system: bool,
+    /// Afficher / exporter les hauteurs en sons réels (`Sid::concertPitch`).
+    /// MuseScore écrit alors `<concert-score/>` et `pitch2xml` ne soustrait
+    /// pas la transposition de l'instrument.
+    pub concert_pitch: bool,
 }
 
 impl StyleSettings {
@@ -142,6 +146,7 @@ impl StyleSettings {
             hairpin_height_sp: hairpin_height,
             hide_empty_staves: false,
             dont_hide_staves_in_first_system: true,
+            concert_pitch: false,
         }
     }
 
@@ -181,6 +186,7 @@ impl StyleSettings {
             }
             "footerFontSize" => Self::set_number(&mut self.footer_font_size, value),
             "hairpinHeight" => Self::set_positive(&mut self.hairpin_height_sp, value),
+            "concertPitch" | "displayInConcertPitch" => self.concert_pitch = flag(value),
             "hideEmptyStaves" => self.hide_empty_staves = flag(value),
             "dontHideStavesInFirstSystem" => {
                 self.dont_hide_staves_in_first_system = flag(value);

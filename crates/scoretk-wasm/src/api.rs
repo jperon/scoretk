@@ -133,7 +133,7 @@ pub fn convert(input: &[u8], options: Option<ConvertOptions>) -> Result<Vec<u8>,
         write_options.software = software;
     }
     if let Some(concert_pitch) = options.concert_pitch {
-        write_options.concert_pitch = concert_pitch;
+        write_options.concert_pitch = Some(concert_pitch);
     }
     if let Some(expand_repeats) = options.expand_repeats {
         write_options.midi.expand_repeats = expand_repeats;
@@ -182,7 +182,7 @@ pub fn convert_with_timeline(
         write_options.software = software;
     }
     if let Some(concert_pitch) = options.concert_pitch {
-        write_options.concert_pitch = concert_pitch;
+        write_options.concert_pitch = Some(concert_pitch);
     }
     if let Some(expand_repeats) = options.expand_repeats {
         write_options.midi.expand_repeats = expand_repeats;

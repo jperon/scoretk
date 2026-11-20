@@ -51,8 +51,9 @@ pub struct Options {
     pub software: String,
     /// Contenu de `<encoding-date>` (MusicXML, `AAAA-MM-JJ`).
     pub encoding_date: String,
-    /// Exporter les hauteurs en sons réels (MusicXML).
-    pub concert_pitch: bool,
+    /// Exporter les hauteurs en sons réels (MusicXML). `None` suit le style
+    /// `concertPitch` enregistré dans la partition ; `Some(v)` surcharge.
+    pub concert_pitch: Option<bool>,
     /// Réglages de la sortie MIDI (reprises).
     pub midi: MidiOptions,
 }
@@ -68,7 +69,7 @@ impl Default for Options {
             (export.software, export.encoding_date, export.concert_pitch)
         };
         #[cfg(not(feature = "musicxml-export"))]
-        let (software, encoding_date, concert_pitch) = (String::new(), String::new(), false);
+        let (software, encoding_date, concert_pitch) = (String::new(), String::new(), None);
 
         Self {
             software,

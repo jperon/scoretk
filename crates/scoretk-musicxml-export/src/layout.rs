@@ -38,7 +38,7 @@ use super::exportmusicxml::Out;
 /// MuseScore écrit ensuite `<appearance>`, `<music-font>`, `<word-font>` et
 /// `<lyric-font>` à partir d'une trentaine de valeurs de style qui ne sont pas
 /// encore modélisées ; ces blocs restent absents (écart documenté).
-pub(crate) fn write_defaults(out: &mut Out, style: &StyleSettings) {
+pub(crate) fn write_defaults(out: &mut Out, style: &StyleSettings, concert_pitch: bool) {
     out.xml.start_element("defaults", &[]);
 
     out.xml.start_element("scaling", &[]);
@@ -46,6 +46,12 @@ pub(crate) fn write_defaults(out: &mut Out, style: &StyleSettings) {
         .tag("millimeters", &format_style_number(style.spatium_mm * 4.0));
     out.xml.tag("tenths", &TENTHS.to_string());
     out.xml.end_element();
+
+    // `defaults` (exportmusicxml.cpp:1369-1371) : la partition en hauteurs
+    // réelles est signalée juste après le <scaling>.
+    if concert_pitch {
+        out.xml.tag_empty("concert-score", &[]);
+    }
 
     out.xml.start_element("page-layout", &[]);
     out.xml.tag(

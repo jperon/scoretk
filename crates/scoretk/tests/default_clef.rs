@@ -72,7 +72,7 @@ fn render(version: &str, staff_default: &str, instrument_clefs: &str, concert: b
         format: OutputFormat::MusicXml,
         export: ExportOptions {
             encoding_date: ENCODING_DATE.to_owned(),
-            concert_pitch: concert,
+            concert_pitch: Some(concert),
             ..ExportOptions::default()
         },
     };

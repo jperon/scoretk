@@ -87,11 +87,14 @@ pub struct ExportOptions {
     pub software: String,
     /// Contenu de `<encoding-date>`.
     pub encoding_date: String,
-    /// Vrai pour exporter les hauteurs en sons réels (concert pitch).
+    /// Hauteurs en sons réels (concert pitch). `None` (défaut) suit le style
+    /// enregistré dans la partition (`StyleSettings::concert_pitch`,
+    /// `Sid::concertPitch`) ; `Some(v)` est une surcharge explicite de
+    /// l'appelant, notamment l'option wasm `concertPitch`.
     ///
-    /// MuseScore exporte par défaut les hauteurs écrites (`false`), en
-    /// utilisant `Note::tpc_transposed` et la transposition de l'instrument.
-    pub concert_pitch: bool,
+    /// Sans style et sans surcharge, MuseScore exporte les hauteurs écrites
+    /// (`false`), en utilisant `Note::tpc_transposed` et la transposition.
+    pub concert_pitch: Option<bool>,
     /// Vrai pour émettre un `id` sur `<measure>` et `<note>`.
     ///
     /// Les identifiants sont calculés par [`scoretk_core::model::stable_ids`] à partir des
@@ -106,7 +109,7 @@ impl Default for ExportOptions {
         Self {
             software: DEFAULT_SOFTWARE.to_owned(),
             encoding_date: DEFAULT_ENCODING_DATE.to_owned(),
-            concert_pitch: false,
+            concert_pitch: None,
             stable_ids: false,
         }
     }
@@ -353,6 +356,8 @@ fn rank(element: TupletElement) -> u8 {
 pub(crate) struct Context<'a> {
     pub(crate) score: &'a Score,
     options: &'a ExportOptions,
+    /// Valeur effective : surcharge de l'appelant ou style de la partition.
+    concert_pitch: bool,
     tuplets: TupletIndex,
     /// Ligatures reconstituées, comme les `Beam` de la mise en page.
     beams: beams::Beams,
@@ -402,18 +407,23 @@ struct GraceRef<'a> {
 
 impl<'a> Context<'a> {
     fn new(score: &'a Score, options: &'a ExportOptions) -> Self {
+        // `ExportMusicXml::write` (exportmusicxml.cpp:8944) suit le style
+        // `Sid::concertPitch` de la partition ; `pitch2xml` (l. 1654) s'en sert
+        // pour annuler la transposition. Une surcharge explicite gagne.
+        let concert_pitch = options.concert_pitch.unwrap_or(score.style.concert_pitch);
         Self {
             score,
             options,
+            concert_pitch,
             tuplets: TupletIndex::new(score),
-            beams: beams::Beams::new(score, options.concert_pitch),
+            beams: beams::Beams::new(score, concert_pitch),
             systems: systems::Systems::new(score),
         }
     }
 
     /// Vrai si l'export écrit les hauteurs en sons réels (`concertPitch`).
     pub(crate) fn concert_pitch(&self) -> bool {
-        self.options.concert_pitch
+        self.concert_pitch
     }
 
     /// Tempo en battements par seconde en vigueur à un tick
@@ -460,7 +470,7 @@ impl<'a> Context<'a> {
 
         self.work(out);
         self.identification(out);
-        layout::write_defaults(out, &self.score.style);
+        layout::write_defaults(out, &self.score.style, self.concert_pitch);
         text::write_credits(out, self.score);
         self.part_list(out);
         self.write_parts(out, nuances);
@@ -1250,7 +1260,7 @@ impl<'a> Context<'a> {
 
     /// Transposition chromatique de la portée, en demi-tons.
     fn transpose_chromatic(&self, staff_id: StaffId, tick: Tick) -> i32 {
-        if self.options.concert_pitch {
+        if self.concert_pitch {
             return 0;
         }
         let part = self.score.part(self.score.staff(staff_id).part);
@@ -1676,7 +1686,7 @@ impl Context<'_> {
                 out.xml.tag_empty("chord", &[]);
             }
 
-            write_pitch(out, note, self.options.concert_pitch, transpose, ottava);
+            write_pitch(out, note, self.concert_pitch, transpose, ottava);
 
             if grace.is_none() {
                 out.xml.tag(
@@ -1731,7 +1741,7 @@ impl Context<'_> {
                     track,
                     segment_tick,
                     actual,
-                    self.options.concert_pitch,
+                    self.concert_pitch,
                     transpose,
                     grace.and_then(|grace| grace.beam).map_or_else(
                         || self.beams.up(measure.number, track, segment_tick),
@@ -2098,7 +2108,7 @@ impl Context<'_> {
 
     /// Tonalité à afficher (concert ou transposée).
     fn active_key(&self, keysig: &KeySig) -> Key {
-        if self.options.concert_pitch {
+        if self.concert_pitch {
             keysig.concert_key
         } else {
             keysig.transposed_key
@@ -2195,7 +2205,7 @@ impl Context<'_> {
 
     /// Clef à afficher (concert ou transposée).
     fn active_clef(&self, clef: &Clef) -> ClefType {
-        if self.options.concert_pitch {
+        if self.concert_pitch {
             clef.concert
         } else if clef.transposed != ClefType::Invalid {
             clef.transposed
@@ -2285,7 +2295,7 @@ impl Context<'_> {
         }
 
         out.attr(true);
-        if self.options.concert_pitch {
+        if self.concert_pitch {
             out.xml.start_element("for-part", &[]);
             out.xml.start_element("part-transpose", &[]);
         } else {
@@ -2300,7 +2310,7 @@ impl Context<'_> {
             out.xml.tag("octave-change", &octave_change.to_string());
         }
         out.xml.end_element();
-        if self.options.concert_pitch {
+        if self.concert_pitch {
             out.xml.end_element();
         }
         out.attr(false);

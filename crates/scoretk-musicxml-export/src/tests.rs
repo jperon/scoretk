@@ -727,7 +727,7 @@ fn transposition_et_concert_pitch() {
     assert!(xml.contains("<part-name print-object=\"no\">Bb Clarinet</part-name>"));
 
     let concert = ExportOptions {
-        concert_pitch: true,
+        concert_pitch: Some(true),
         ..ExportOptions::default()
     };
     let xml = export_musicxml_with(&score, &concert).expect("export");
@@ -2527,4 +2527,44 @@ fn melisma_nul_n_ecrit_pas_extend() {
     );
     assert!(xml.contains("<text>fant</text>\n          <extend/>"));
     assert_eq!(xml.matches("<measure number=").count(), 2);
+}
+
+#[test]
+fn concert_pitch_suit_le_style_de_la_partition() {
+    let mut score = Score::new();
+    let (part_id, staff) = piano(&mut score);
+    // Piccolo : +12 chromatique, hauteur sonnante D5 (74), écrite D4.
+    score.part_mut(part_id).instrument.transpose = Some(Transpose::new(0, 12));
+    score.style.concert_pitch = true;
+    let piste = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_accord(
+        &mut score, &mut measure, piste, Fraction::ZERO, Duration::whole(), &[(74, tpc::D)]
+    );
+    score.add_measure(measure);
+
+    // Sans surcharge, le style enregistré décide (exportmusicxml.cpp:1369,
+    // 8944 et pitch2xml 1654).
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<concert-score/>"), "style concertPitch : {xml}");
+    assert!(
+        xml.contains("<step>D</step>\n          <octave>5</octave>"),
+        "hauteur sonnante : {xml}"
+    );
+    // En hauteurs réelles, la transposition devient `<for-part><part-transpose>`
+    // (`writeInstrumentDetails`), comme dans la référence 4.7.4.
+    assert!(xml.contains("<part-transpose>"));
+
+    // Une surcharge explicite de l'appelant gagne toujours sur le style.
+    let ecrit = ExportOptions {
+        concert_pitch: Some(false),
+        ..ExportOptions::default()
+    };
+    let xml = export_musicxml_with(&score, &ecrit).expect("export");
+    assert!(!xml.contains("<concert-score/>"));
+    assert!(xml.contains("<transpose>"));
+    assert!(
+        xml.contains("<step>D</step>\n          <octave>4</octave>"),
+        "hauteur écrite : {xml}"
+    );
 }
