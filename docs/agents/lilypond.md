@@ -2320,3 +2320,27 @@ differ from the stale reference (N2 143 → 72); `AveMaria-midi.ly` keeps all
 one staff) now share a part, which changes the oracle's per-part cursor
 attacks (N2 139 → 39); `LVB_Sonate_10no1_3.ly` loses one pitch out of 1975
 (a tie/grace edge) while N2 stays unchanged.
+
+### The "+3.5 quarters" shift: construct located, fix deferred
+
+The reduced source
+
+```lilypond
+\new PianoStaff <<
+  \new Staff { \time 3/8 \partial 8 r8 c'8 d'8 e'8 | f'4. }
+  \new Staff { \time 3/8 R4. R4. R4. R4. c4. }
+>>
+```
+
+reproduces the shift seen in `Symphony5_2` and the Rutter carols: LilyPond's
+MIDI plays 60/62/64 at 0.5/1.0/1.5 and the last note of the first staff at
+2.0, while scoretk writes it at 3.0. The culprit is the first `R4.` of the
+second staff: it is written with the **pickup measure length** (0.5 quarter)
+instead of the nominal 3/8 (1.5 quarters). A full-measure rest is stored as
+`Duration::measure()`, whose written duration comes from `Measure::len` — and
+`Measure::len` is the anacrusis length in measure 1. Notation Reference §2.2.3
+requires `R` to span the current time signature, and §2.3.3 keeps the meter
+unchanged in an upbeat. Fixing it means distinguishing `Measure::len` from
+`Measure::nominal_len` for full-measure rests in the writer and in the measure
+framework; this is a cross-cutting change and is deferred rather than patched
+in the reader.
