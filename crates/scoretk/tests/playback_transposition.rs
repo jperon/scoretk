@@ -31,7 +31,6 @@
     feature = "midi-import"
 ))]
 
-use scoretk::model::PlaybackTransposition;
 use scoretk::{read, write, Format, Options};
 
 /// Partition réduite mais ordinaire : deux portées, deux variables, barres de
@@ -99,20 +98,24 @@ fn hauteurs_triees(source: &str) -> Vec<u8> {
 #[test]
 fn transposition_de_lecture_midi_seulement() {
     let score = read(SOURCE.as_bytes(), Format::Ly).expect("lecture .ly");
+    // NR §24.3 : le second `\score`, qui porte `\midi` sans `\layout`, est
+    // le seul que LilyPond joue : c'est sa musique transposée qui fournit le
+    // modèle, déjà en hauteur de concert.
     assert_eq!(
-        score.playback_transposition,
-        Some(PlaybackTransposition::new(2)),
-        "l'intervalle du second \\score MIDI doit être enregistré"
+        score.playback_transposition, None,
+        "le modèle est déjà la partition MIDI transposée"
     );
 
-    // Hauteurs et durées du modèle : la partition gravée, pas la MIDI.
     let gravé = read(SOURCE_GRAVE_SEULE.as_bytes(), Format::Ly).expect("lecture gravée");
     assert_eq!(score.notes.len(), 18, "18 notes écrites");
     assert_eq!(score.measures.len(), 3, "trois mesures");
-    assert_eq!(hauteurs_triees(SOURCE), hauteurs_triees(SOURCE_GRAVE_SEULE));
+    // Une octave et un ton au-dessus de la partition gravée (transposition c→d).
     assert_eq!(
-        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
-        gravé.notes.iter().map(|n| n.pitch).collect::<Vec<_>>()
+        hauteurs_triees(SOURCE),
+        hauteurs_triees(SOURCE_GRAVE_SEULE)
+            .into_iter()
+            .map(|pitch| pitch + 2)
+            .collect::<Vec<_>>()
     );
     let durees: Vec<_> = score
         .measures
@@ -135,13 +138,11 @@ fn transposition_de_lecture_midi_seulement() {
         "accord pointé en fin de première portée"
     );
 
-    // MusicXML : octet pour octet identique à une source sans partition MIDI.
+    // Le modèle suit maintenant la partition MIDI : le MusicXML est transposé
+    // d'un ton par rapport au score gravé, comme la référence MIDI.
     let xml = write(&score, Format::MusicXml, &Options::default()).expect("export MusicXML");
     let xml_grave = write(&gravé, Format::MusicXml, &Options::default()).expect("export gravé");
-    assert_eq!(
-        xml, xml_grave,
-        "le MusicXML doit rester la partition gravée"
-    );
+    assert_ne!(xml, xml_grave, "le MusicXML suit la partition MIDI");
 
     // MIDI : seules les hauteurs sont décalées d'un ton, pas les clés (`FF 59`).
     let midi = write(&score, Format::Midi, &Options::default()).expect("export MIDI");
