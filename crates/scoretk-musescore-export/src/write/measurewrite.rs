@@ -117,6 +117,13 @@ pub(crate) fn write_measure(
         if section_break {
             xml.start_element("LayoutBreak", &[]);
             xml.tag("subtype", "section");
+            // `TWrite::write(const LayoutBreak*)` écrit `Pid::START_WITH_MEASURE_ONE`
+            // (`dom/property.cpp:468`, lu par `read460/tread.cpp:2971`). Absent,
+            // MuseScore relance la numérotation à 1 ; on n'écrit donc que le
+            // cas `startWithMeasureOne="0"`, qui conserve la numérotation.
+            if ctx.score.measures[measure_index + 1].section_keeps_numbering {
+                xml.tag("startWithMeasureOne", "0");
+            }
             xml.end_element();
         }
         if measure.line_break {
