@@ -296,6 +296,16 @@ pub(crate) enum Music {
     Lyrics(Box<LyricsBlock>),
     /// Commande de contexte ou structurelle.
     Context(Context),
+    /// Musique marquée par `\tag` (Notation Reference §22.2.2).
+    ///
+    /// Plusieurs `\tag` successifs s'empilent : les noms sont réunis dans
+    /// l'ordre, comme les `tags` de `ly:music-property` du C++ amont. Le
+    /// filtrage par `\keepWithTag`/`\removeWithTag` parcourt cet arbre et
+    /// retire les sous-arbres dont les tags ne satisfont pas le prédicat.
+    Tag {
+        tags: Vec<String>,
+        music: Box<Music>,
+    },
     /// Commande inconnue, ignorée avec un avertissement.
     Unknown(String),
 }

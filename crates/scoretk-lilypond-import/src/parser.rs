@@ -85,6 +85,13 @@ pub(crate) struct Parser<'a> {
     /// `\transpose` y reçoit des hauteurs déjà lues dans le `\relative`
     /// environnant, et non des hauteurs absolues.
     in_relative_function: bool,
+    /// Groupes de tags déclarés par `\tagGroup` (Notation Reference §22.2.2).
+    /// Les deux groupes internes de LilyPond sont posés par défaut dans
+    /// `scm/music-functions.scm`.
+    tag_groups: Vec<Vec<String>>,
+    /// Variables musicales définies en Scheme (`#(define nom #{ … #})`) et
+    /// insérées par `$nom` (Extending §1).
+    scheme_variables: BTreeMap<String, Music>,
 }
 
 /// Profondeur d'expansion maximale (garde-fou contre la récursion).
@@ -147,6 +154,223 @@ struct Partition {
     column: u32,
 }
 
+/// Filtre appliqué par `\keepWithTag` ou `\removeWithTag`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TagFilter {
+    Keep,
+    Remove,
+}
+
+/// Groupes de tags posés au départ par LilyPond (`scm/music-functions.scm`) :
+/// les deux tags internes utilisés par `\autoChange` et `\partCombine`.
+fn default_tag_groups() -> Vec<Vec<String>> {
+    vec![
+        vec!["$autoChange".to_owned()],
+        vec!["$partCombine".to_owned()],
+    ]
+}
+
+/// Groupe auquel appartient un tag, d'après `\tagGroup` (Notation Reference
+/// §22.2.2). `None` correspond à un tag sans groupe, ce qui compte dans la
+/// comparaison : `tags-keep-predicate` de `scm/music-functions.scm` compare
+/// aussi les groupes absents (Guile `#f`).
+fn tag_group_of(name: &str, groups: &[Vec<String>]) -> Option<usize> {
+    groups
+        .iter()
+        .position(|group| group.iter().any(|tag| tag == name))
+}
+
+/// Vrai si une expression portant `tags` survit au filtre.
+///
+/// Portage de `tags-keep-predicate` et `tags-remove-predicate`
+/// (`scm/music-functions.scm`) : une expression sans tag est toujours gardée ;
+/// `\removeWithTag` retire les expressions qui portent un des tags nommés ;
+/// `\keepWithTag` garde les expressions qui portent un des tags nommés, ou
+/// dont aucun tag n'appartient à un groupe des tags nommés.
+fn tags_kept(
+    tags: &[String],
+    wanted: &[String],
+    filter: TagFilter,
+    groups: &[Vec<String>],
+) -> bool {
+    if tags.is_empty() {
+        return true;
+    }
+    match filter {
+        TagFilter::Remove => !tags.iter().any(|tag| wanted.contains(tag)),
+        TagFilter::Keep => {
+            if tags.iter().any(|tag| wanted.contains(tag)) {
+                return true;
+            }
+            let wanted_groups: Vec<_> = wanted
+                .iter()
+                .map(|name| tag_group_of(name, groups))
+                .collect();
+            !tags
+                .iter()
+                .any(|tag| wanted_groups.contains(&tag_group_of(tag, groups)))
+        }
+    }
+}
+
+/// Applique récursivement un filtre de tags à une expression musicale, comme
+/// `music-filter` de `lily/music.cc` appelé par les fonctions musicales
+/// `\keepWithTag`/`\removeWithTag` (`ly/music-functions-init.ly`).
+fn filter_tagged_music(
+    music: Music,
+    filter: TagFilter,
+    wanted: &[String],
+    groups: &[Vec<String>],
+) -> Music {
+    match music {
+        Music::Tag { tags, music } => {
+            if tags_kept(&tags, wanted, filter, groups) {
+                Music::Tag {
+                    tags,
+                    music: Box::new(filter_tagged_music(*music, filter, wanted, groups)),
+                }
+            } else {
+                Music::Empty
+            }
+        }
+        Music::Seq(items) => Music::Seq(
+            items
+                .into_iter()
+                .map(|item| filter_tagged_music(item, filter, wanted, groups))
+                .collect(),
+        ),
+        Music::Sim(items) => Music::Sim(
+            items
+                .into_iter()
+                .map(|item| filter_tagged_music(item, filter, wanted, groups))
+                .collect(),
+        ),
+        Music::Context(context) => {
+            Music::Context(filter_tagged_context(context, filter, wanted, groups))
+        }
+        Music::New(group) => Music::New(Box::new(filter_tagged_group(
+            *group, filter, wanted, groups,
+        ))),
+        other => other,
+    }
+}
+
+/// [`filter_tagged_music`] dans les expressions portées par une commande de
+/// contexte (n-olets, reprises, enveloppes d'octave…).
+fn filter_tagged_context(
+    context: Context,
+    filter: TagFilter,
+    wanted: &[String],
+    groups: &[Vec<String>],
+) -> Context {
+    let rec = |music: Music| filter_tagged_music(music, filter, wanted, groups);
+    match context {
+        Context::Tuplet {
+            numerator,
+            denominator,
+            number_type,
+            music,
+        } => Context::Tuplet {
+            numerator,
+            denominator,
+            number_type,
+            music: Box::new(rec(*music)),
+        },
+        Context::Grace { kind, slash, music } => Context::Grace {
+            kind,
+            slash,
+            music: Box::new(rec(*music)),
+        },
+        Context::AfterGrace { main, grace } => Context::AfterGrace {
+            main: Box::new(rec(*main)),
+            grace: Box::new(rec(*grace)),
+        },
+        Context::Repeat {
+            kind,
+            count,
+            body,
+            alternatives,
+        } => Context::Repeat {
+            kind,
+            count,
+            body: Box::new(rec(*body)),
+            alternatives: alternatives.into_iter().map(rec).collect(),
+        },
+        Context::Transpose {
+            from,
+            to,
+            absolute,
+            music,
+        } => Context::Transpose {
+            from,
+            to,
+            absolute,
+            music: Box::new(rec(*music)),
+        },
+        Context::Fixed { reference, music } => Context::Fixed {
+            reference,
+            music: Box::new(rec(*music)),
+        },
+        Context::Relative { reference, music } => Context::Relative {
+            reference,
+            music: Box::new(rec(*music)),
+        },
+        Context::NonRelative { music } => Context::NonRelative {
+            music: Box::new(rec(*music)),
+        },
+        Context::Alternative(items) => Context::Alternative(items.into_iter().map(rec).collect()),
+        other => other,
+    }
+}
+
+/// [`filter_tagged_music`] dans les voix d'un `\new …` (un `\tag` peut marquer
+/// une voix entière, comme dans `regression/tag-multiple.ly`).
+fn filter_tagged_group(
+    mut group: GroupBlock,
+    filter: TagFilter,
+    wanted: &[String],
+    groups: &[Vec<String>],
+) -> GroupBlock {
+    for staff in &mut group.staves {
+        for voice in &mut staff.voices {
+            voice.music = filter_tagged_music(
+                std::mem::replace(&mut voice.music, Music::Empty),
+                filter,
+                wanted,
+                groups,
+            );
+        }
+    }
+    group
+}
+
+/// Noms de tags d'un argument Scheme : `#'a`, `#'(a b)`, ou une liste à
+/// virgules. Les guillemets Scheme sont retirés (`scm/music-functions.scm`
+/// attend des symboles, pas des chaînes).
+fn scheme_tag_names(datum: &str) -> Vec<String> {
+    let mut text = datum.trim();
+    if let Some(rest) = text.strip_prefix('\'') {
+        text = rest.trim();
+    }
+    if let Some(inner) = text
+        .strip_prefix('(')
+        .and_then(|part| part.strip_suffix(')'))
+    {
+        split_scheme_words(inner)
+            .into_iter()
+            .map(|word| word.trim_start_matches('\'').trim().to_owned())
+            .filter(|word| !word.is_empty())
+            .collect()
+    } else {
+        let name = text.trim_start_matches('\'').trim();
+        if name.is_empty() {
+            Vec::new()
+        } else {
+            vec![name.to_owned()]
+        }
+    }
+}
+
 /// Résultat de l'analyse.
 pub(crate) fn parse(
     source: &str,
@@ -172,6 +396,8 @@ pub(crate) fn parse(
         staff_local_timing: false,
         note_mode: NoteMode::Notes,
         in_relative_function: false,
+        tag_groups: default_tag_groups(),
+        scheme_variables: BTreeMap::new(),
     };
     parser.document()
 }
@@ -432,10 +658,14 @@ impl<'a> Parser<'a> {
             Kind::Punct(';') => {
                 self.position += 1;
             }
-            // Expression Scheme isolée : lue comme un seul jeton, ignorée
-            // sans bruit (c'est le cas des `#(ly:set-option …)` d'en-tête).
+            // Expression Scheme isolée : lue comme un seul jeton. Seules les
+            // définitions `#(define nom #{ … #})` ont un effet (variable
+            // musicale) ; les réglages comme `#(ly:set-option …)` ou
+            // `#(set-global-staff-size n)` restent ignorés sans bruit.
             Kind::Scheme => {
+                let datum = token.text.clone();
                 self.position += 1;
+                let _ = self.record_scheme_define(&datum);
             }
             // Musique embarquée au niveau supérieur : une expression musicale.
             Kind::Embedded | Kind::Punct('{') | Kind::Punct('<') => {
@@ -679,6 +909,10 @@ impl<'a> Parser<'a> {
     fn score_groups_in(&mut self, music: Music, wrappers: &mut Vec<Wrapper>) -> Vec<GroupBlock> {
         match music {
             Music::Empty => Vec::new(),
+            // Un `\tag` peut envelopper un contexte (`\tag #'x \new Staff …`) :
+            // le filtre a déjà été appliqué à l'analyse, l'étiquette n'a plus
+            // de rôle ici et la structure est celle de la musique intérieure.
+            Music::Tag { music, .. } => self.score_groups_in(*music, wrappers),
             Music::Context(context) => match Wrapper::of(&context) {
                 Some((wrapper, inner)) => {
                     let inner = inner.clone();
@@ -1730,11 +1964,18 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 self.parse_embedded_music(&token.text)
             }
-            // Expression Scheme isolée dans la musique : ignorée sans
-            // avertissement, elle a été lue d'un seul tenant.
+            // Expression Scheme isolée dans la musique, lue d'un seul tenant.
+            // `$nom` insère une variable définie par `#(define nom #{ … #})`
+            // (Extending §1) ; les autres datum sont ignorés sans bruit.
             Kind::Scheme => {
+                let datum = token.text.clone();
                 self.position += 1;
-                Music::Empty
+                if let Some(music) = self.scheme_variables.get(&datum).cloned() {
+                    music
+                } else {
+                    let _ = self.record_scheme_define(&datum);
+                    Music::Empty
+                }
             }
             Kind::Str | Kind::Punct(_) => {
                 self.position += 1;
@@ -1995,6 +2236,52 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Noms de tags d'un argument de `\tag`, `\keepWithTag`, `\removeWithTag`
+    /// ou `\tagGroup` : `#'a`, `#'(a b)`, `"a"`, `a,b` ou `a` (Notation
+    /// Reference §22.2.2).
+    fn parse_tag_names(&mut self) -> Vec<String> {
+        let Some(token) = self.peek().cloned() else {
+            return Vec::new();
+        };
+        match token.kind {
+            Kind::Scheme => {
+                self.position += 1;
+                scheme_tag_names(&token.text)
+            }
+            Kind::Str => {
+                self.position += 1;
+                vec![token.text]
+            }
+            Kind::Word => {
+                let mut names = vec![token.text];
+                self.position += 1;
+                while self.eat_punct(',') {
+                    match self.peek().cloned() {
+                        Some(next) if next.kind == Kind::Word || next.kind == Kind::Str => {
+                            names.push(next.text);
+                            self.position += 1;
+                        }
+                        _ => break,
+                    }
+                }
+                names
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// `#(define nom #{ … #})` : mémorise une variable musicale, insérable par
+    /// `$nom` (Extending §1). Les autres datum Scheme sont consommés sans
+    /// effet, comme le reste du sous-ensemble Scheme.
+    fn record_scheme_define(&mut self, datum: &str) -> bool {
+        let Some((name, body)) = scheme_music_definition(datum) else {
+            return false;
+        };
+        let music = self.parse_embedded_music(&body);
+        self.scheme_variables.insert(name, music);
+        true
+    }
+
     /// Commande musicale.
     fn parse_command(&mut self) -> Music {
         let Some(Token {
@@ -2040,6 +2327,54 @@ impl<'a> Parser<'a> {
                 })
             }
             "absolute" => self.parse_music(),
+            // `\tag` marque la musique suivante ; `\keepWithTag` et
+            // `\removeWithTag` filtrent récursivement les expressions ainsi
+            // marquées (Notation Reference §22.2.2, `ly/music-functions-init.ly`).
+            "tag" => {
+                let tags = self.parse_tag_names();
+                Music::Tag {
+                    tags,
+                    music: Box::new(self.parse_music()),
+                }
+            }
+            "keepWithTag" | "removeWithTag" => {
+                let wanted = self.parse_tag_names();
+                let filter = if name == "keepWithTag" {
+                    TagFilter::Keep
+                } else {
+                    TagFilter::Remove
+                };
+                let music = self.parse_music();
+                let groups = self.tag_groups.clone();
+                filter_tagged_music(music, filter, &wanted, &groups)
+            }
+            // Déclarations de groupes de tags : elles ne produisent pas de
+            // musique, mais changent le prédicat des `\keepWithTag` suivants.
+            "tagGroup" => {
+                let group = self.parse_tag_names();
+                if !group.is_empty() {
+                    self.tag_groups
+                        .retain(|existing| !group.iter().any(|tag| existing.contains(tag)));
+                    self.tag_groups.push(group);
+                }
+                Music::Empty
+            }
+            "resetTagGroups" => {
+                self.tag_groups = default_tag_groups();
+                Music::Empty
+            }
+            // `\tagGroupRef` et `\resetTagGroup` servent à modifier un groupe
+            // existant ; consommés sans musique (le sous-ensemble ne retient
+            // que les déclarations simples de `\tagGroup`).
+            "tagGroupRef" => {
+                let _ = self.parse_tag_names();
+                Music::Empty
+            }
+            "resetTagGroup" | "addToTagGroup" | "removeFromTagGroup" => {
+                let _ = self.parse_tag_names();
+                let _ = self.parse_tag_names();
+                Music::Empty
+            }
             // `unfoldRepeats` (`music-functions-init.ly`) déplie les reprises
             // et écarte les alternatives ; le lecteur déplie déjà les reprises,
             // la commande est donc transparente.
@@ -3748,6 +4083,30 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// Reconnaît `#(define nom #{ … #})` dans un datum Scheme et rend le nom et
+/// le corps musical. Les autres formes de `define` (nombres, réglages,
+/// fonctions) ne sont pas des variables musicales.
+fn scheme_music_definition(datum: &str) -> Option<(String, String)> {
+    let characters: Vec<char> = datum.chars().collect();
+    let mut index = skip_scheme_space(&characters, 0);
+    if characters.get(index) != Some(&'(') {
+        return None;
+    }
+    index += 1;
+    index = skip_scheme_space(&characters, index);
+    let (head, next) = read_scheme_word(&characters, index);
+    if head != "define" && head != "define-public" {
+        return None;
+    }
+    index = skip_scheme_space(&characters, next);
+    let (name, next) = read_scheme_word(&characters, index);
+    if name.is_empty() || next == index {
+        return None;
+    }
+    let body = crate::lexer::embedded_music_body(datum)?;
+    Some((name, body))
+}
+
 /// Reconnaît une définition de fonction musicale dans un datum Scheme
 /// (`#(define-music-function …)`).
 ///
@@ -4032,6 +4391,7 @@ fn has_context(music: &Music) -> bool {
             Wrapper::of(context).is_some_and(|(_, inner)| has_context(inner))
         }
         Music::Sim(items) | Music::Seq(items) => items.iter().any(has_context),
+        Music::Tag { music, .. } => has_context(music),
         _ => false,
     }
 }
@@ -4051,6 +4411,7 @@ fn has_voice_context(music: &Music) -> bool {
                 })
         }
         Music::Sim(items) | Music::Seq(items) => items.iter().any(has_voice_context),
+        Music::Tag { music, .. } => has_voice_context(music),
         _ => false,
     }
 }
@@ -4068,6 +4429,7 @@ fn named_voice_count(music: &Music) -> usize {
             Wrapper::of(context).map_or(0, |(_, inner)| named_voice_count(inner))
         }
         Music::Sim(items) | Music::Seq(items) => items.iter().map(named_voice_count).sum(),
+        Music::Tag { music, .. } => named_voice_count(music),
         _ => 0,
     }
 }
@@ -4170,6 +4532,15 @@ fn starts_music_command(name: &str) -> bool {
                 | "revert"
                 | "tweak"
                 | "skip"
+                | "tag"
+                | "keepWithTag"
+                | "removeWithTag"
+                | "tagGroup"
+                | "resetTagGroups"
+                | "tagGroupRef"
+                | "resetTagGroup"
+                | "addToTagGroup"
+                | "removeFromTagGroup"
         )
 }
 
@@ -4281,6 +4652,7 @@ fn scale_music(music: &mut Music, factor: &Fraction) {
             chord.multiplier = Some(multiplier);
         }
         Music::Context(context) => scale_context(context, factor),
+        Music::Tag { music, .. } => scale_music(music, factor),
         Music::Empty | Music::New(_) | Music::Lyrics(_) | Music::Unknown(_) => {}
     }
 }
@@ -4526,6 +4898,8 @@ mod tests {
             staff_local_timing: false,
             note_mode: NoteMode::Notes,
             in_relative_function: false,
+            tag_groups: default_tag_groups(),
+            scheme_variables: BTreeMap::new(),
         };
         parser.parse_music()
     }
@@ -4563,6 +4937,8 @@ mod tests {
                 staff_local_timing: false,
                 note_mode: NoteMode::Notes,
                 in_relative_function: false,
+                tag_groups: default_tag_groups(),
+                scheme_variables: BTreeMap::new(),
             };
             let progresse = parser.guard_progress(0);
             let bloque = parser.guard_progress(1);

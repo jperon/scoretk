@@ -1618,3 +1618,101 @@ its anacrusis (`len` 1/8 → 3/8) but not that independent voice-length defect.
 The MIDI comparison is byte-for-byte on the generated files (6 of the 100
 sampled sources produce no MIDI in either binary and are excluded), so the
 `ecriture_ly` figures of §15 still hold.
+
+## 17. Tags, Scheme variables and `\include` (2026-11-20)
+
+### Coverage and sources
+
+The Notation Reference sections used are §22.1 (Including LilyPond files),
+§22.2 (Different editions from one source, in particular §22.2.2 Using tags)
+and Extending §1 (Scheme tutorial). Where the published text is silent about
+the exact filtering rule, the implementation follows LilyPond 2.26.0's
+`scm/music-functions.scm` (`tags-keep-predicate`, `tags-remove-predicate`,
+`define-tag-group`) and `ly/music-functions-init.ly` (`tag`, `keepWithTag`,
+`removeWithTag`, `tagGroup`). This is a port of those predicates, **not** a
+Scheme interpreter: no expression is evaluated.
+
+- `\tag #'a { … }`, `\tag a,b { … }`, `\tag "a" { … }` mark a music expression.
+  Several `\tag`s on one expression accumulate their names, as the `tags`
+  property does upstream.
+- `\keepWithTag` / `\removeWithTag` filter the music tree recursively, as
+  `music-filter` does. Untagged music is always kept. `\removeWithTag` drops
+  music bearing any of the named tags. `\keepWithTag` keeps music bearing any
+  of the named tags, or bearing only tags from groups unrelated to the named
+  ones. The two internal groups `$autoChange` and `$partCombine` are present
+  by default; `\tagGroup` adds a group, `\resetTagGroups` restores the defaults.
+  A tag without a group compares equal to "no group" (Guile `#f`), which is why
+  `\keepWithTag other` keeps tags from an unrelated *group* while removing
+  other ungrouped tags.
+- The common Scheme subset is consumed without evaluation:
+  `#(set-global-staff-size n)` and other settings remain silently ignored;
+  `#(define nom #{ … #})` records a music variable inserted by `$nom`;
+  `#(define …)` without an embedded music body (numbers, functions, flags)
+  is still ignored. `\set Timing.measureLength = #(ly:make-moment n d)` now
+  reads the two-integer form as `n/d` in addition to the one-argument
+  `#(ly:make-moment n/d)` already supported.
+- `\include` was already expanded from tokens by `include.rs` (commit
+  `c393d6c`). It was checked on all reading-oracle lots: absent paths still
+  warn and are skipped without looping, and no new I/O was added. The one
+  remaining gap is unchanged and documented in §11: LilyPond's installed
+  templates (`satb.ly`, `ssaattbb.ly`) and files found through the
+  command-line `--include` search path are not available to the library's
+  resolver. The CLI only searches the including file's and the main file's
+  directories; adding an installed-template search path would change the CLI
+  and is out of scope here.
+
+Four reduced tests were added to `read_lilypond.rs`: tag filtering in a
+five-staff score (variables, `\relative`, chords, ties, bar checks, symbol
+lists, and an unfiltered control staff), tag-group semantics, a Scheme music
+variable inserted with `$motif`, and the two-integer `ly:make-moment`. All
+four failed on the frozen baseline before the fix. The CLI also completed
+three randomly chosen `input/regression/*.ly` files under
+`timeout 5 prlimit --as=2000000000`.
+
+### Measurement
+
+Baseline `/tmp/scoretk-lytag-base` (merged master, commit `842da94`) and final
+`/tmp/scoretk-lytag-final`, both under `timeout` + `prlimit --as=2000000000`;
+the LilyPond reading oracle uses the cached MIDI references with `--stride 10`
+on all three lots:
+
+| Oracle | Lot | Baseline exact | Final exact | N1 / N2 change |
+| --- | --- | ---: | ---: | --- |
+| LilyPond reading (`mus`, 145) | music | 113 | **114** | N2 88.52 → 88.83 |
+| LilyPond reading (`ra`, 173) | regression | 39 | 39 | unchanged |
+| LilyPond reading (`mut`, 138) | Mutopia | 42 | 42 | N1 89.06 → 93.33 |
+| LilyPond reading, all tag/Scheme regression files (37) | targeted | 2 | **3** | see below |
+| MuseScore writing, `ly` (375) | round trip | 237 | **238** | N2 79.78 → 80.38 |
+
+The 37-file targeted lot consists of every `input/regression/*.ly` containing
+`\tag`, `\keepWithTag`, `\removeWithTag`, `\tagGroup` or
+`set-global-staff-size`; the stride-10 sample of `ra` contained none of them.
+
+Per-file changes on the reading campaign, all explained:
+
+- `LaMarcheDesPetitsLapins.ly` (N2 226 → 271, `attaque_decalee` cleared)
+  and `Et_resurrexit.ly` (N2 110 → 137) use the two-integer `ly:make-moment`
+  for `measureLength`; the old code read the last integer instead of the
+  fraction.
+- The three `polymetric-time-warning-{mid-measure,set-in-timing-staff,unset-in-timing-staff}.ly`
+  files use string tags (`\tag "layout"` / `\keepWithTag "layout"`); their
+  shorter output is the filtered engraved score and one gains N2 (4 → 6).
+- `Chop-28-23.ly` loses 4 matched pitches (N1 431 → 427) but gains N2
+  (288 → 290). Its engraved `\score` keeps the `layout` tags while the MIDI
+  reference comes from a second `\score` keeping the `midi` tags; reading the
+  engraved score is the documented rule of §7, and the baseline had matched
+  both alternatives at once only because tags were ignored.
+- `satb-template-with-keyboard-reduction.ly` loses its 8 matched notes. It
+  ends in `\include "satb.ly"`, an installed template the resolver cannot open
+  (§11). Previously the tagged piano music leaked out of its variable as a
+  spurious implicit score; it now stays inside `PianoRHMusic`/`PianoLHMusic`,
+  so an unresolved include leaves no playable score. This is the include gap,
+  not a tag-filtering loss.
+- `Symphony7_1.ly` hit one 10 s timeout in the final run (8 MB of MusicXML).
+  Three isolated retries finished in 5.6, 6.1 and 6.3 s with the final binary,
+  against 6.3, 6.5 and 10.0 s with the baseline: a load artefact, not a loop.
+
+Per-file changes on the writing `ly` lot: `lily-cf5ff785.ly` becomes exact
+(N2 226 → 271) and `Ecce_sacrum_paratum_convivium.ly` gains N2 (78 → 257);
+`lily-9f2fb156.ly` only changes size. No file loses notes or attacks on either
+lot.

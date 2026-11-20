@@ -130,18 +130,32 @@ impl Token {
 
     /// Fraction portée par une expression Scheme.
     ///
-    /// Reconnaît `#3/4`, `#9/8` et la forme en liste `#(ly:make-moment 3/4)`,
-    /// dont le dernier atome est la fraction.
+    /// Reconnaît `#3/4`, `#9/8`, `#(ly:make-moment 3/4)` (dernier atome) et la
+    /// forme à deux entiers `#(ly:make-moment 3 4)`, fréquente dans les
+    /// partitions réelles (`\set Timing.measureLength = #(ly:make-moment 1 8)`).
+    /// La référence de notation §2.3.1 laisse le détail des moments au Scheme ;
+    /// on suit la primitive `ly:make-moment` de `lily/moment-scheme.cc` (les
+    /// deux entiers sont numérateur et dénominateur).
     pub(crate) fn scheme_fraction(&self) -> Option<(i64, i64)> {
         if self.kind != Kind::Scheme {
             return None;
         }
         let text = self.text.trim();
-        let atom = if text.starts_with('(') {
-            text.rsplit(|character: char| {
-                character.is_whitespace() || character == '(' || character == ')'
-            })
-            .find(|part| !part.is_empty())?
+        let atom = if let Some(inner) = text
+            .strip_prefix('(')
+            .and_then(|part| part.strip_suffix(')'))
+        {
+            let words: Vec<&str> = inner.split_whitespace().filter(|w| !w.is_empty()).collect();
+            // `(ly:make-moment n d)` : deux arguments entiers forment la
+            // fraction ; avec un seul, c'est le dernier atome qui la porte.
+            if words
+                .first()
+                .is_some_and(|word| word.contains("make-moment"))
+                && words.len() >= 3
+            {
+                return Some((words[1].parse().ok()?, words[2].parse().ok()?));
+            }
+            *words.last()?
         } else {
             text
         };

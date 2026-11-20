@@ -4237,3 +4237,186 @@ fn ottava_de_lilypond_est_une_convention_d_ecriture() {
     assert_eq!(ottava.start.tick.ticks(1920), 480, "début sur d4");
     assert_eq!(ottava.end.tick.ticks(1920), 1440, "fin après e4");
 }
+
+/// Notation Reference §22.2.2 : `\tag` marque une expression, `\keepWithTag`
+/// ne garde que les expressions marquées d'un des tags nommés (les expressions
+/// sans tag sont toujours gardées) et `\removeWithTag` retire celles qui portent
+/// un des tags nommés. Le test porte sur une partition à quatre portées, avec
+/// variables, `\relative`, accords, silences, liaisons et barres de contrôle.
+#[test]
+fn tags_filtrent_les_alternatives_en_musique_ordinaire() {
+    let score = read_lilypond(
+        r#"\version "2.24.0"
+\language "english"
+motif = \fixed c' {
+  \tag #'a { c4 d e f }
+  \tag #'b { g4 a b c' }
+  c'2 ~ c'2 |
+}
+rel = \relative c' { \tag #'a { c4 d } \tag #'b { e4 f } | }
+\score {
+  <<
+    \new Staff { \keepWithTag #'a \motif }
+    \new Staff { \removeWithTag #'a \motif }
+    \new Staff { \keepWithTag #'a \rel }
+    \new Staff { \motif }
+    \new Staff { \keepWithTag #'(a b) \motif }
+  >>
+}
+"#,
+    )
+    .expect("lecture des tags");
+    // Une portée occupe une piste brute tous les quatre indices (quatre voix
+    // par portée dans le modèle, `ids.rs`).
+    let piste = |staff: u32| Track::new(StaffId::from_raw(staff), 0).raw();
+    // Portée 1 : seul le tag `a`, plus la musique sans tag (la liaison).
+    assert_eq!(
+        hauteurs_par_accord(&score, piste(0)),
+        vec![vec![60], vec![62], vec![64], vec![65], vec![72], vec![72]]
+    );
+    assert_eq!(
+        durees_par_accord(&score, piste(0)),
+        vec![
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 2),
+            Fraction::new(1, 2),
+        ]
+    );
+    // Portée 2 : `\removeWithTag a` garde le tag `b` et la musique sans tag.
+    assert_eq!(
+        hauteurs_par_accord(&score, piste(1)),
+        vec![vec![67], vec![69], vec![71], vec![72], vec![72], vec![72]]
+    );
+    // Portée 3 : le filtre s'applique aussi à une variable écrite en `\relative`.
+    assert_eq!(
+        hauteurs_par_accord(&score, piste(2)),
+        vec![vec![60], vec![62]]
+    );
+    // Cas non concerné : sans filtre, les deux alternatives sont lues.
+    assert_eq!(
+        hauteurs_par_accord(&score, piste(3)),
+        vec![
+            vec![60],
+            vec![62],
+            vec![64],
+            vec![65],
+            vec![67],
+            vec![69],
+            vec![71],
+            vec![72],
+            vec![72],
+            vec![72]
+        ]
+    );
+    // Portée 5 : une liste de tags garde les deux alternatives (forme `#'(…)`).
+    assert_eq!(
+        hauteurs_par_accord(&score, piste(4)),
+        vec![
+            vec![60],
+            vec![62],
+            vec![64],
+            vec![65],
+            vec![67],
+            vec![69],
+            vec![71],
+            vec![72],
+            vec![72],
+            vec![72]
+        ]
+    );
+    assert_eq!(score.measures.len(), 3);
+}
+
+/// Notation Reference §22.2.2, « Using tag groups » : avec `\tagGroup`, un
+/// `\keepWithTag` ne retire que les tags du même groupe que ceux qu'il garde.
+/// Un tag sans groupe (ici `other`) n'est pas touché ; réciproquement garder un
+/// tag sans groupe ne retire aucun des tags appartenant à un groupe.
+#[test]
+fn tag_group_filtre_selon_le_groupe_et_non_selon_le_nom() {
+    let score = read_lilypond(
+        r#"\version "2.24.0"
+\language "english"
+music = \fixed c' {
+  \tag violinI { c4 d }
+  \tag violinII { e4 f }
+  \tag other { g4 a }
+  b4 c' |
+}
+\tagGroup violinI,violinII
+\score {
+  <<
+    \new Staff { \keepWithTag violinI \music }
+    \new Staff { \keepWithTag other \music }
+  >>
+}
+"#,
+    )
+    .expect("lecture des groupes de tags");
+    let piste = |staff: u32| Track::new(StaffId::from_raw(staff), 0).raw();
+    assert_eq!(
+        hauteurs_par_accord(&score, piste(0)),
+        vec![vec![60], vec![62], vec![67], vec![69], vec![71], vec![72]]
+    );
+    assert_eq!(
+        hauteurs_par_accord(&score, piste(1)),
+        vec![
+            vec![60],
+            vec![62],
+            vec![64],
+            vec![65],
+            vec![67],
+            vec![69],
+            vec![71],
+            vec![72]
+        ]
+    );
+    assert_eq!(score.measures.len(), 2);
+}
+
+/// Extending §1 : un `#(define x #{ … #})` est une variable musicale, insérée
+/// par `$x`. `#(set-global-staff-size n)` est un réglage sans effet musical.
+#[test]
+fn variable_musicale_definie_en_scheme() {
+    let (score, warnings) = read_lilypond_reporting(
+        "\\version \"2.24.0\"\n\
+         \\language \"english\"\n\
+         #(set-global-staff-size 16)\n\
+         #(define motif #{ c'4 d' e' f' #})\n\
+         \\score { \\new Staff { \\fixed c' { $motif g'2 ~ g'2 | } } }\n",
+    )
+    .expect("lecture de la variable Scheme");
+    // `#{ … #}` est absolu : c' y vaut 72 (do central + une octave), et le
+    // `\fixed c'` environnant ne change pas ces hauteurs écrites.
+    assert_eq!(hauteurs(&score), vec![72, 74, 76, 77, 79, 79]);
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 2),
+            Fraction::new(1, 2),
+        ]
+    );
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.message.contains("commande ignorée")),
+        "avertissements : {warnings:?}"
+    );
+}
+
+/// `\set Timing.measureLength = #(ly:make-moment n d)` : la forme à deux
+/// entiers est une fraction, comme la forme `#(ly:make-moment n/d)` déjà lue.
+#[test]
+fn measurelength_moment_scheme_a_deux_entiers() {
+    let score = lire("\\set Timing.measureLength = #(ly:make-moment 2 4) c4 d");
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(score.measures[0].len, Fraction::new(1, 2));
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+}

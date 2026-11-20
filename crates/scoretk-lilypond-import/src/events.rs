@@ -423,6 +423,7 @@ impl<'a> Interpreter<'a> {
             Music::Sim(items) => self.simultaneous(items),
             Music::Chord(chord) => self.emit_chord(chord),
             Music::Context(context) => self.context(context),
+            Music::Tag { music, .. } => self.walk(music),
             Music::Unknown(_) => {}
         }
     }
@@ -1306,6 +1307,7 @@ fn is_context_only(music: &Music) -> bool {
         Music::Chord(_) | Music::New(_) => false,
         Music::Seq(items) | Music::Sim(items) => items.iter().all(is_context_only),
         Music::Context(context) => context_is_context_only(context),
+        Music::Tag { music, .. } => is_context_only(music),
     }
 }
 
