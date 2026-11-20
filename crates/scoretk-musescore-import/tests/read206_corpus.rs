@@ -206,6 +206,35 @@ fn n_olets_et_liaisons_2x() {
 }
 
 #[test]
+fn hairpin_2x_apparie_par_id() {
+    let score = score(
+        r#"<Staff id="1">
+  <Measure number="1">
+    <HairPin id="12"><subtype>0</subtype>
+      <beginText><text>cresc.</text></beginText></HairPin>
+    <Chord><durationType>whole</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord></Measure>
+  <Measure number="2">
+    <Chord><durationType>half</durationType>
+      <Note><pitch>62</pitch><tpc>16</tpc><endSpanner id="12"/></Note></Chord>
+    </Measure>
+  </Staff>"#,
+    );
+    let hairpins: Vec<_> = score
+        .spanners
+        .iter()
+        .filter(|spanner| matches!(spanner.kind, scoretk_core::model::SpannerType::Hairpin(_)))
+        .collect();
+    assert_eq!(hairpins.len(), 1, "un soufflet reconstruit");
+    assert_eq!(
+        hairpins[0].kind,
+        scoretk_core::model::SpannerType::Hairpin(scoretk_core::model::HairpinType::Crescendo)
+    );
+    assert_eq!(hairpins[0].hairpin.as_ref().unwrap().begin_text, "cresc.");
+    assert_eq!(hairpins[0].start.tick, score.measures[0].start_tick);
+    assert_eq!(hairpins[0].end.tick, score.measures[1].start_tick);
+}
+
+#[test]
 fn slur_2x_apparie_par_id() {
     let score = score(
         r#"<Staff id="1">

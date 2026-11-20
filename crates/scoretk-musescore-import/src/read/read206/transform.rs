@@ -212,6 +212,31 @@ fn adapt_measure(
                     links.push(link);
                 }
             }
+            "HairPin" => {
+                // `readHairpin206` (read206.cpp:2318) : `<subtype>` entier,
+                // 1/3 = diminuendo, >= 2 = trait pointillé.
+                if let Some(id) = node.attr_i32("id") {
+                    let mut link = SpannerLink::new(id, SpanFamily::Hairpin);
+                    link.start = Some(measure_key(index, staff));
+                    let subtype = node.child("subtype").and_then(Node::int_text).unwrap_or(0);
+                    link.hairpin_kind = Some(if subtype == 1 || subtype == 3 {
+                        scoretk_core::model::HairpinType::Diminuendo
+                    } else {
+                        scoretk_core::model::HairpinType::Crescendo
+                    });
+                    link.hairpin_line = subtype >= 2;
+                    link.hairpin_niente = node
+                        .child("hairpinCircledTip")
+                        .and_then(Node::int_text)
+                        .is_some_and(|value| value != 0);
+                    link.hairpin_direction = node.child("direction").map(Node::trimmed_text);
+                    link.text = node
+                        .child("beginText")
+                        .and_then(|node| node.child("text"))
+                        .map(Node::text);
+                    links.push(link);
+                }
+            }
             "Slur" => {
                 // `readSlur206` (read206.cpp:2598) enregistre la définition par
                 // id ; l'ancrage définitif viendra du `<Slur type="start">`

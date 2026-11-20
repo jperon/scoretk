@@ -31,8 +31,8 @@
 //! les liaisons.
 
 use scoretk_core::model::{
-    Fraction, Placement, Score, SegmentType, Slur, Spanner, SpannerAnchor, SpannerNotation,
-    SpannerType, Track, VoltaInfo,
+    Fraction, Hairpin, HairpinType, Placement, Score, SegmentType, Slur, Spanner, SpannerAnchor,
+    SpannerNotation, SpannerType, Track, VoltaInfo,
 };
 
 /// Ancrage d'une extrémité de spanner dans le fichier 2.x.
@@ -54,6 +54,7 @@ pub(super) enum SpanKey {
 pub(super) enum SpanFamily {
     Volta,
     Slur,
+    Hairpin,
 }
 
 /// Moitié d'un spanner 2.x ; les deux moitiés sont appariées par `id`.
@@ -68,6 +69,11 @@ pub(super) struct SpannerLink {
     pub(super) text: Option<String>,
     /// Direction explicite d'une liaison d'expression (`<up>` 2.x).
     pub(super) slur_up: Option<String>,
+    /// Sens d'un soufflet 2.x (`<subtype>` entier, `readHairpin206`).
+    pub(super) hairpin_kind: Option<HairpinType>,
+    pub(super) hairpin_line: bool,
+    pub(super) hairpin_niente: bool,
+    pub(super) hairpin_direction: Option<String>,
 }
 
 impl SpannerLink {
@@ -81,6 +87,10 @@ impl SpannerLink {
             closed: false,
             text: None,
             slur_up: None,
+            hairpin_kind: None,
+            hairpin_line: false,
+            hairpin_niente: false,
+            hairpin_direction: None,
         }
     }
 }
@@ -118,6 +128,9 @@ pub(super) fn fix_spanners(score: &mut Score, links: &[SpannerLink]) {
             match link.family {
                 SpanFamily::Volta => SpannerType::Volta,
                 SpanFamily::Slur => SpannerType::Slur,
+                SpanFamily::Hairpin => {
+                    SpannerType::Hairpin(link.hairpin_kind.unwrap_or(HairpinType::Crescendo))
+                }
             },
             SpannerAnchor::new(start_tick, start_track),
             SpannerAnchor::new(end_tick, end_track),
@@ -129,6 +142,17 @@ pub(super) fn fix_spanners(score: &mut Score, links: &[SpannerLink]) {
                     endings: link.endings.clone(),
                     closed: link.closed,
                 });
+            }
+            SpanFamily::Hairpin => {
+                let mut hairpin = Hairpin::new();
+                hairpin.line = link.hairpin_line;
+                hairpin.niente = link.hairpin_niente;
+                hairpin.placement = match link.hairpin_direction.as_deref() {
+                    Some("up") => Placement::Above,
+                    _ => Placement::Below,
+                };
+                hairpin.begin_text = link.text.clone().unwrap_or_default();
+                spanner.hairpin = Some(hairpin);
             }
             SpanFamily::Slur => {
                 let mut slur = Slur::new();
@@ -159,6 +183,18 @@ fn merge(existing: &mut SpannerLink, link: &SpannerLink) {
     }
     if link.slur_up.is_some() {
         existing.slur_up = link.slur_up.clone();
+    }
+    if link.hairpin_kind.is_some() {
+        existing.hairpin_kind = link.hairpin_kind;
+    }
+    if link.hairpin_line {
+        existing.hairpin_line = true;
+    }
+    if link.hairpin_niente {
+        existing.hairpin_niente = true;
+    }
+    if link.hairpin_direction.is_some() {
+        existing.hairpin_direction = link.hairpin_direction.clone();
     }
     if !link.endings.is_empty() {
         existing.endings = link.endings.clone();
