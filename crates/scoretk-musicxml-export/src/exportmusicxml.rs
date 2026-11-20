@@ -727,7 +727,10 @@ impl<'a> Context<'a> {
             out.xml.end_element();
 
             staff_count += part.staves.len();
-            for (group, end) in part_group_end.iter_mut().enumerate() {
+            // `partList` (`exportmusicxml.cpp:7953-7960`) parcourt
+            // `partGroupEnd` de MAX_PART_GROUPS-1 à 0 : les groupes imbriqués
+            // se ferment en pile, du plus grand numéro au plus petit.
+            for (group, end) in part_group_end.iter_mut().enumerate().rev() {
                 if end.is_some_and(|end| staff_count >= end) {
                     let group = (group + 1).to_string();
                     out.xml

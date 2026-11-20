@@ -2576,3 +2576,48 @@ fn concert_pitch_suit_le_style_de_la_partition() {
         "hauteur écrite : {xml}"
     );
 }
+
+/// `partList` (`exportmusicxml.cpp:7953-7960`) ferme les groupes de parties en
+/// parcourant `partGroupEnd` de la fin vers le début (pile). Le portage les
+/// fermait dans l'ordre croissant : premier écart de 11 partitions réelles.
+#[test]
+fn fermeture_des_groupes_de_parties_en_ordre_decroissant() {
+    let mut score = Score::new();
+    let p1 = score.add_part(Part::new("Bois", "Bois"));
+    let s1 = score.add_staff(p1);
+    let p2 = score.add_part(Part::new("Cuivres", "Cuiv."));
+    let s2 = score.add_staff(p2);
+    // Deux colonnes d'accolades couvrant les deux parties : deux groupes
+    // s'ouvrent et doivent se fermer dans l'ordre inverse.
+    score.staff_mut(s1).brackets.push(StaffBracket {
+        kind: 0,
+        span: 2,
+        visible: true,
+    });
+    score.staff_mut(s1).brackets.push(StaffBracket {
+        kind: 2,
+        span: 2,
+        visible: true,
+    });
+    for staff in [s1, s2] {
+        let piste = Track::new(staff, 0);
+        let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+        ajouter_silence_mesure(&mut score, &mut measure, piste, Fraction::ZERO);
+        score.add_measure(measure);
+    }
+
+    let xml = export_musicxml(&score).expect("export");
+    let stops: Vec<&str> = xml
+        .lines()
+        .filter(|line| line.contains("<part-group type=\"stop\""))
+        .collect();
+    assert_eq!(stops.len(), 2, "deux groupes à fermer : {xml}");
+    assert!(
+        stops[0].contains("number=\"2\""),
+        "le groupe 2 doit se fermer en premier : {xml}"
+    );
+    assert!(
+        stops[1].contains("number=\"1\""),
+        "le groupe 1 doit se fermer en second : {xml}"
+    );
+}
