@@ -603,20 +603,12 @@ impl<'a> Context<'a> {
         // parties, instruments puis canaux. Les canaux écrits dans le fichier
         // sont réservés d'avance et priment. Le canal 10 (percussion) reste
         // libre pour les instruments mélodiques.
-        // Un instrument occupe autant de canaux que de `<Channel>` dans le
-        // fichier (`MasterScore::updateMidiMapping`, midimapping.cpp:38).
         let mut used: BTreeSet<usize> = self
             .score
             .parts
             .iter()
             .flat_map(Part::instruments)
-            .filter_map(|instrument| {
-                instrument.midi_channel.map(|first| {
-                    let first = usize::from(first);
-                    first..first.saturating_add(usize::from(instrument.channel_count.max(1)))
-                })
-            })
-            .flatten()
+            .filter_map(|instrument| instrument.midi_channel.map(usize::from))
             .collect();
         let mut next_channel = 0usize;
         let mut take_free = || {
@@ -699,16 +691,10 @@ impl<'a> Context<'a> {
                 );
                 out.xml
                     .start_element("midi-instrument", &[("id", &instrument_id)]);
-                let slots = usize::from(instrument.channel_count.max(1));
                 let midi_channel = match instrument.midi_channel {
                     Some(channel) => usize::from(channel),
                     None => {
                         let channel = take_free();
-                        // Les canaux suivants de l'instrument sont réservés,
-                        // mais seuls `channel(0)` est exporté.
-                        for _ in 1..slots {
-                            let _ = take_free();
-                        }
                         // Le canal « harmony » du premier instrument occupe
                         // aussi un canal, mais n'est pas exporté.
                         if instrument_index == 0 && has_harmony {

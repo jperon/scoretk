@@ -149,7 +149,6 @@ fn piano_instrument() -> Instrument {
         track_name: "Piano".to_owned(),
         transpose: None,
         midi_channel: None,
-        channel_count: 1,
         midi_port: None,
         midi_program: Some(0),
         volume: None,
@@ -695,7 +694,6 @@ fn transposition_et_concert_pitch() {
         track_name: "B♭ Clarinet".to_owned(),
         transpose: Some(Transpose::new(-1, -2)),
         midi_channel: None,
-        channel_count: 1,
         midi_port: None,
         midi_program: Some(71),
         volume: None,
@@ -1110,7 +1108,6 @@ fn corpus_linked_ties() {
         track_name: "Flute".to_owned(),
         transpose: None,
         midi_channel: None,
-        channel_count: 1,
         midi_port: None,
         midi_program: Some(73),
         volume: None,
@@ -1287,7 +1284,6 @@ fn corpus_paroles() {
         track_name: "Voice".to_owned(),
         transpose: None,
         midi_channel: None,
-        channel_count: 1,
         midi_port: None,
         midi_program: Some(52),
         volume: None,
@@ -2647,37 +2643,4 @@ fn volume_en_chiffres_significatifs() {
     score.part_mut(part_id).instrument.volume = Some(100);
     let xml = export_musicxml(&score).expect("export");
     assert!(xml.contains("<volume>78.7402</volume>"), "{xml}");
-}
-
-/// `midiInstrument` (`exportmusicxml.cpp:7341`) prend `midiChannel(channel(0))`
-/// et `MasterScore::updateMidiMapping` (`midimapping.cpp:38`) réserve un canal
-/// par `<Channel>` : deux canaux sur la première partie décalent la seconde.
-#[test]
-fn canaux_alloues_par_canal_d_instrument() {
-    let mut score = Score::new();
-    let p1 = score.add_part(Part::new("Un", "Un"));
-    let s1 = score.add_staff(p1);
-    let p2 = score.add_part(Part::new("Deux", "Deux"));
-    let s2 = score.add_staff(p2);
-    score.part_mut(p1).instrument.channel_count = 2;
-    score.part_mut(p2).instrument.channel_count = 2;
-    for staff in [s1, s2] {
-        let piste = Track::new(staff, 0);
-        let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
-        ajouter_silence_mesure(&mut score, &mut measure, piste, Fraction::ZERO);
-        score.add_measure(measure);
-    }
-
-    let xml = export_musicxml(&score).expect("export");
-    let channels: Vec<&str> = xml
-        .lines()
-        .filter(|line| line.trim_start().starts_with("<midi-channel"))
-        .collect();
-    assert_eq!(channels.len(), 2, "{xml}");
-    assert_eq!(channels[0].trim(), "<midi-channel>1</midi-channel>");
-    assert_eq!(
-        channels[1].trim(),
-        "<midi-channel>3</midi-channel>",
-        "deux canaux réservés par instrument : {xml}"
-    );
 }

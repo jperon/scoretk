@@ -53,7 +53,7 @@ pub struct MidiArticulation {
 ///
 /// Version minimale de `Instrument` dans `engraving/dom/instrument.h`, limitée
 /// à ce que l'export MusicXML utilise pour `<score-part>` et `<transpose>`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Instrument {
     /// Identifiant MusicXML / identifiant MuseScore de l'instrument, par
     /// exemple `"keyboard.piano"`.
@@ -75,12 +75,6 @@ pub struct Instrument {
     /// Absent quand le fichier ne fixe pas de canal ; MuseScore attribue alors
     /// un canal libre dans l'ordre des instruments (`rebuildMidiMapping`).
     pub midi_channel: Option<u8>,
-    /// Nombre de canaux sonores de l'instrument (`<Channel>` dans le `.mscx`).
-    ///
-    /// `MasterScore::updateMidiMapping` réserve un canal MIDI par canal
-    /// d'instrument : l'export n'écrit que le premier, mais les suivants
-    /// décalent les canaux des instruments suivants. Vaut au moins 1.
-    pub channel_count: u8,
     /// Port MIDI du premier canal de l'instrument (`<Channel><midiPort>`, base
     /// zéro), tel que lu dans le fichier. MuseScore l'exporte dans
     /// `<midi-device port>` après l'avoir incrémenté d'un (`midiMapping::port`).
@@ -115,26 +109,6 @@ impl Instrument {
             transpose: None,
             midi_program: None,
             midi_channel: None,
-            channel_count: 1,
-            midi_port: None,
-            volume: None,
-            pan: None,
-            midi_articulations: Vec::new(),
-        }
-    }
-}
-
-impl Default for Instrument {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            long_name: String::new(),
-            short_name: String::new(),
-            track_name: String::new(),
-            transpose: None,
-            midi_program: None,
-            midi_channel: None,
-            channel_count: 1,
             midi_port: None,
             volume: None,
             pan: None,

@@ -1004,7 +1004,6 @@ fn read_instrument_change(
         transpose: state.last_transpose,
         midi_program: data.program,
         midi_channel: data.channel,
-        channel_count: 1,
         midi_port: None,
         volume: data.volume,
         pan: data.pan,
