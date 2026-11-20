@@ -1004,6 +1004,66 @@ is not a regression of this fix; it is a separate line-preparation limitation
 of `prepare()` (see the continuation subsection below). No plain tune with
 notes regressed.
 
+#### 16.7.2 Fields after a continued line, and ranked remaining N2 gaps (2026-11-20)
+
+This subsection is in English by convention for the measurement reports. The
+**frozen baseline** is the release binary of the previous subsection (after
+the text-volta fix); its campaign data is `textvolta-full/mesures.tsv`.
+
+**Cause — bare `L:` field after a `\` continuation (281 lost attacks).**
+ABC 2.1 § 2.2.6 (local standard, line 1529) states that "any information
+fields and stylesheet directives are processed at the point where the physical
+line-break occurs", and warns (line 349) that abc files cannot generally be
+parsed by pre-processing continuations into single lines. `abc2xml.py` does
+exactly that: `r2.match(x2)` recognises a field independently of `mcont` and
+`escField(fln)` emits it as an inline field (lines 803-818). `prepare()` in
+`reader/mod.rs` instead appended the following field line to the continued
+music line, so `b4 (b/2a/2f3)…| L:1/16` lost its `L:` and all later notes were
+read at the old unit.
+
+- **Fix** (`reader/mod.rs::prepare`): if the line after a `\`-continued music
+  line is a field (`X:` style) or a `%%` directive, the music line is emitted
+  first and the field follows as its own line; ordinary music continuations
+  are still joined.
+- **Reduced real tune** (`0626-0635.abc` X:631): scoretk N2 **0.093 → 0.987**,
+  N1 0.987 unchanged, exactly the alternative's values (151 reference notes).
+- **Test** (`crates/scoretk-abc-import/tests/continuations.rs`): `L:1/16` and
+  `L:1/8` after `\`, precise pitches/durations/measures, an ordinary music
+  continuation as control, and a field at end of file; fails on the frozen
+  reader.
+- **Full campaign** (same three slices, corrected oracle, all launches
+  bounded): scoretk N2 **92.84 → 92.86 %**, N1 99.61 % unchanged, 1 N2 gain /
+  0 losses, exact tunes and failures unchanged. scoretk is now **0.01 point
+  ahead** of `abc2xml.py` (92.85 %) on N2.
+
+| Candidate | Exact tunes | N1 | N2 | Failures |
+| --- | ---: | ---: | ---: | ---: |
+| scoretk (frozen baseline, § 16.7.1) | 4 447 | 99.61 % | 92.84 % | 139 |
+| scoretk (after the continuation fix) | 4 447 | 99.61 % | **92.86 %** | 139 |
+| `abc2xml.py` (unchanged) | 4 406 | 99.70 % | 92.85 % | 130 |
+
+**Ranked remaining N2 gaps** (tunes where `abc2xml.py` places strictly more
+attacks, grouped by the ABC construct at the first diverging attack; "lost"
+is `sum(alt.com2 − tk.com2)` in attacks). These are all far below the
+0.3-point-of-N2 threshold of the reliability plan; the two largest causes
+above it were fixed in this campaign and in § 16.7.1.
+
+| First cause (construct at first diverging attack) | Tunes | Lost attacks | N2 points | Minimal real example (N2 tk / alt) | Reference to port (not attempted, below threshold) |
+| --- | ---: | ---: | ---: | --- | --- |
+| Mid-measure multi-measure rest `Z2` (`G4 Z2 \|\|`): the first rest is shortened by the current tick instead of being a full measure | 1 | 146 | 0.031 | `0626-0700.abc` X:637 (0.319 / 0.940) | ABC 2.1 § 4.5; `abc2xml.py` `restActn` (line 554), `fixSlurs.f` (lines 767-775) |
+| Broken rhythm `>` and (nested) tuplets `(3(3` attack placement | 2 | 176 | 0.037 | `1625-1700.abc` X:1649 (0.387 / 1.000), `1176-1275.abc` X:1185 (0.372 / 1.000) | ABC 2.1 § 4.4, § 4.13; `convertBroken` (line 594), `tuplet_start` (line 395) |
+| Chord durations with per-note multipliers `[F2A2]` | 2 | 89 | 0.019 | `americanfifeopus.abc` X:119 (0.121 / 0.500) | ABC 2.1 § 4.17; `convertChord` (line 651) |
+| Inline key change per voice `[K:F]` | 1 | 27 | 0.006 | `parsing.test__abcInlineKeyPerVoice.abc` X:1 (0.438 / 1.000) | ABC 2.1 § 7.3; `doHeaderField` (lines 1808-1851) |
+| Octave clefs (`clef=treble-8`, `clef=bass`) | 3 | 17 | 0.004 | `flattener.test__abcOctaveClefs.abc` X:1 (0.000 / 0.818) | ABC 2.1 § 4.6; `doAttr` (lines 1329-1331) |
+| Other 1-3 attack cases (long tunes, annotations, layout corners) | 27 | 51 | 0.011 | `book3.abc` X:0556 (0.822 / 0.850) | mixed, no single construct |
+| **Total** | **36** | **506** | **0.107** | | |
+
+No fix is attempted for these causes: the largest is worth 0.031 point of
+N2, well under the 0.3-point threshold, and scoretk now exceeds the
+alternative on N2 overall. No per-tune loss was introduced by the three fixes
+of §§ 16.7.1-16.7.2; every measured change is a gain or a pitch-preserving
+status reclassification already explained above.
+
 ## 17. Writing export: baseline against `xml2abc.py` (2026-11-19)
 
 This section is in English by convention for the reliability measurement

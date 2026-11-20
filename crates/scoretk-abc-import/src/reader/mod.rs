@@ -111,25 +111,43 @@ fn prepare(src: &str) -> Vec<Line> {
         let number = index + 1;
         let mut text = strip_comment(raw).trim_end().to_owned();
         if let Some(mut previous) = pending.take() {
-            previous.text.push(' ');
-            previous.text.push_str(text.trim_start());
-            text = previous.text;
-            let continued = text.ends_with('\\');
-            if continued {
-                text.pop();
-            }
-            pending = Some(Line {
-                number: previous.number,
-                text,
-            });
-            if !continued {
-                if let Some(line) = pending.take() {
-                    if !line.text.trim().is_empty() {
-                        lines.push(line);
+            // Port de la norme ABC 2.1 § 2.2.6 (ligne 1529 de l'archive
+            // locale) : « any information fields and stylesheet directives
+            // are processed at the point where the physical line-break
+            // occurs » ; pré-processer les continuations en une seule ligne
+            // est déconseillé (ligne 349). `abc2xml.py` reconnaît chaque champ
+            // indépendamment de `mcont` et l'émet comme champ en ligne
+            // (lignes 803-818). Un champ ou une directive après un `\` ne
+            // doit donc pas être collé à la ligne de musique : on clôt celle-
+            // ci et on traite le champ normalement.
+            let est_champ_ou_directive = text.starts_with("%%")
+                || (text.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                    && text.chars().nth(1) == Some(':'));
+            if est_champ_ou_directive {
+                if !previous.text.trim().is_empty() {
+                    lines.push(previous);
+                }
+            } else {
+                previous.text.push(' ');
+                previous.text.push_str(text.trim_start());
+                text = previous.text;
+                let continued = text.ends_with('\\');
+                if continued {
+                    text.pop();
+                }
+                pending = Some(Line {
+                    number: previous.number,
+                    text,
+                });
+                if !continued {
+                    if let Some(line) = pending.take() {
+                        if !line.text.trim().is_empty() {
+                            lines.push(line);
+                        }
                     }
                 }
+                continue;
             }
-            continue;
         }
         if text.ends_with('\\') {
             text.pop();
