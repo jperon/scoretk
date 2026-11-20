@@ -336,6 +336,9 @@ struct SpawnResult {
     octave: OctaveState,
     /// Notes du dernier accord, pour la répétition `q`.
     last_chord_notes: Option<Vec<NoteEvent>>,
+    /// Durée par défaut à la fin de la voix, propagée à la musique qui
+    /// suit le `<< … >>` (`lily/music-sequence.cc`).
+    default_duration: Duration,
 }
 
 /// Ornements d'agrément en cours.
@@ -567,6 +570,7 @@ impl<'a> Interpreter<'a> {
         };
         self.walk(first);
         let mut end = self.cursor;
+        let mut last_duration = self.default_duration;
         for item in branches {
             self.default_duration = default_duration;
             let child = self.spawn_at(start, None, item, Vec::new(), true);
@@ -576,9 +580,10 @@ impl<'a> Interpreter<'a> {
             // `>>` de la dernière note de la dernière branche.
             self.octave = child.octave;
             self.last_chord_notes = child.last_chord_notes;
+            last_duration = child.default_duration;
         }
         self.cursor = end.max(start);
-        self.default_duration = default_duration;
+        self.default_duration = last_duration;
     }
 
     /// Ouvre une voix sœur dans la portée et l'interprète à partir de
@@ -621,6 +626,7 @@ impl<'a> Interpreter<'a> {
             end: child.cursor,
             octave: child.octave,
             last_chord_notes: child.last_chord_notes,
+            default_duration: child.default_duration,
         };
         self.voice.spawned.push(SpawnedVoice {
             name,

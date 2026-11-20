@@ -5135,3 +5135,26 @@ fn ottava_ne_change_pas_les_hauteurs_midi() {
             .expect("lecture");
     assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67]);
 }
+/// La musique qui suit `<< … \\ … >>` continue avec la durée par défaut
+/// posée par la **dernière** branche (`lily/music-sequence.cc`,
+/// `simultaneous_relative_callback`). Ici `a'2` la fixe à la blanche : la
+/// dernière note attaque au tick 6 (en noires), pas 5.
+#[test]
+fn duree_par_defaut_apres_passage_polyphonique_suit_derniere_branche() {
+    let score = read_lilypond(
+        "\\score { \\new Staff { \\time 4/4 << { c'4 d'4 e'4 f'4 } \\\\ { g'2 a'2 } >> b' c'' } }",
+    )
+    .expect("lecture");
+    let notes = accords_de_voix(&score, 0);
+    assert_eq!(
+        notes.iter().map(|(tick, _, _)| *tick).collect::<Vec<_>>(),
+        vec![
+            Fraction::ZERO,
+            Fraction::new(1, 4),
+            Fraction::new(1, 2),
+            Fraction::new(3, 4),
+            Fraction::new(1, 1),
+            Fraction::new(3, 2),
+        ]
+    );
+}

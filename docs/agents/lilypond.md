@@ -3130,3 +3130,85 @@ committées et oracle corrigé) :
 grosse perte (`Dans_l_antre_du_roi_de_la_montagne.ly`, −159 N2) est expliquée
 par le chevauchement d'ottavas ci-dessus, les autres sont des résidus de
 bar-check ou des décalages d'attaque déjà classés dans la table.
+
+### Éclaircissement A : pourquoi 85,26 % puis 84,23 % ?
+
+Les deux pourcentages n'avaient pas le même dénominateur. Les deux passes
+utilisaient bien les mêmes références et les mêmes manifestes, mais le pilote
+avait une borne de 10 s : `Concerto_No3.ly` et `violin_concerto_1.ly` ont
+échoué à cette borne dans la passe « règle de portée » et réussi dans la passe
+suivante. Sur les **722 fichiers non-reprise réussis dans les deux passes**,
+le correctif des multiplicateurs améliore en fait N2 de **85,26 % à 86,17 %**
+(488613 → 493801 notes appariées sur 573081). L'entrée de ces deux gros
+fichiers (N2 3597/12338 et 5182/17382) dans le dénominateur faisait baisser
+l'agrégat d'un point sans qu'aucune note soit perdue. La borne du pilote est
+maintenant portée de 10 à 30 s (`mesure.py`), ce qui supprime l'instabilité.
+Chiffres courants, dénominateur constant, après les deux causes et le
+correctif de voix ci-dessous : **mus 93,96 %, ra 82,58 %, mut 85,11 %**.
+
+### Éclaircissement B : les bar-checks ne réparent pas le MIDI
+
+L'affirmation précédente (« `lily/bar-check.cc` insère du silence ») était
+fausse et est retirée. Il n'existe ni `bar-check.cc` ni `bar-check-iterator.cc`
+dans l'arbre LilyPond 2.26. Le contrôle est dans
+`lily/timing-translator.cc` :
+
+```c++
+void Timing_translator::listen_bar_check (Stream_event *ev) {
+  if (!bar_check_event_) bar_check_event_ = ev;
+  const auto &now = now_mom ();
+  if ((now.main_part_ != measure_start_mom_.main_part_)
+      && from_scm<bool> (get_property (this, "deprecatedBarCheckSynchronize")))
+    { ... set_property (context (), mp_sym, to_scm (Moment ())); ... }
+}
+...
+if (!bar_check_ok && bar_check_event_ && !warned_for_bar_check_
+    && !from_scm<bool> (get_property (this, "ignoreBarChecks")))
+  bar_check_event_->warning (_f ("bar check failed at: %s", to_string (mp)));
+```
+
+`deprecatedBarCheckSynchronize` vaut `##f` par défaut dans
+`ly/engraver-init.ly` (ligne 935) : la synchronisation est désactivée, il ne
+reste qu'un avertissement. Source réduite compilée par LilyPond 2.26 :
+
+```lilypond
+\time 4/4 c'4 d' e' | f'1 | g'1
+```
+
+MIDI : attaques 0, 1, 2, 3, 7 — exactement les durées écrites, sans silence
+inséré. Ce n'est donc pas un artefact de référence pour les cinq fichiers
+classés « bar-check » : leurs décalages viennent d'autres constructs (par
+exemple `ricercare6` : un accord qui franchit une barre décale l'attaque
+suivante d'une noire dans notre export, comme sur
+`\time 2/2 R1*36 c'2 ees2 …`). Tenter de couper ces accords dans le lecteur a
+été essayé puis annulé : cela régressait dix tests réduits et n'améliorait pas
+la mesure globale. La cause reste ouverte et documentée ici.
+
+### Cause voix : durée par défaut après `<< … \\ … >>`
+
+Sous-classe « voix / `\\` » (129 fichiers, ~25 000 notes) : le défaut
+reproductible est la durée par défaut après un passage polyphonique. Sur
+
+```lilypond
+\time 4/4 << { c'4 d'4 e'4 f'4 } \\ { g'2 a'2 } >> b' c''
+```
+
+LilyPond 2.26 joue la dernière note au tick 6 (noires) : la musique qui suit
+le `>>` continue avec la durée posée par la **dernière** branche
+(`Music_sequence::simultaneous_relative_callback`, `lily/music-sequence.cc`).
+Le lecteur réinitialisait la durée à celle d'avant le `<<`, donnant tick 5.
+Le test `duree_par_defaut_apres_passage_polyphonique_suit_derniere_branche`
+échouait avant ; `SpawnResult` porte désormais la durée finale de chaque
+branche et la dernière est propagée à la voix d'origine.
+
+Une tentative de déduplication des unissons entre voix a été annulée : elle
+régressait 397 fichiers `mut` (par exemple `ballade-4` −2368 N2), le MIDI
+LilyPond jouant bien les deux notes dans la plupart des cas.
+
+Mesure complète avec les trois lots (références constantes, borne 30 s) :
+30 gains `mut` (jusqu'à +2663 sur `Concerto_No3`, +779 sur `EinFesteBurg`,
++661 sur `amaryllis`) et huit pertes résiduelles : `biga` (−316 N2 mais
++157 N1, ottavas chevauchantes déjà expliquées), `bwv853a` (−311),
+`BWV-827-5` (−144), `14title-hub` (−75), `rimsky-korsakov-op11-1` (−50) et
+trois pertes ≤ 15 notes, toutes sur des fichiers dont le décalage d'attaque
+était déjà classé dans la table des causes.

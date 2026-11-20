@@ -44,7 +44,7 @@ from ly_notes import (
     GRID, TOL, a_des_repetitions, compare, lire_graces, read_midi, read_xml,
 )
 
-TIMEOUT = 10
+TIMEOUT = 30
 TIMEOUT_LY = 20
 
 # music21 n'a pas de parser LilyPond : on tente quand même la lecture afin que
