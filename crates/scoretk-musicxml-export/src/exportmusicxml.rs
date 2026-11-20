@@ -2944,12 +2944,16 @@ pub(crate) fn placement_name(placement: Placement) -> &'static str {
 }
 
 /// Symbole MusicXML d'une accolade MuseScore (`partGroupStart`).
+/// `BracketType` (src/engraving/types/types.h:1289) : `NORMAL`, `BRACE`,
+/// `SQUARE`, `LINE`, `GROUP`. L'ordre est celui du fichier `.mscx`
+/// (`<bracket type="…">`) ; le portage inversait SQUARE et LINE.
 fn bracket_symbol(kind: i8) -> &'static str {
     match kind {
         0 => "bracket",
         1 => "brace",
-        2 => "line",
-        3 => "square",
+        2 => "square",
+        3 => "line",
+        4 => "none",
         _ => "none",
     }
 }

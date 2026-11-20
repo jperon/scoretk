@@ -2427,3 +2427,37 @@ fn anacrouse_implicite_et_numeration() {
     );
     assert!(xml.contains("<measure number=\"1\">"), "mesure réelle : {xml}");
 }
+
+#[test]
+fn symbole_de_groupe_carre_et_ligne() {
+    let mut score = Score::new();
+    let p1 = score.add_part(Part::new("Bois", "Bois"));
+    let s1 = score.add_staff(p1);
+    let p2 = score.add_part(Part::new("Cuivres", "Cuiv."));
+    let s2 = score.add_staff(p2);
+    // BracketType (src/engraving/types/types.h:1289) : 0 NORMAL, 1 BRACE,
+    // 2 SQUARE, 3 LINE. Le portage inversait 2 et 3.
+    score.staff_mut(s1).brackets.push(StaffBracket {
+        kind: 2,
+        span: 2,
+        visible: true,
+    });
+    for staff in [s1, s2] {
+        let piste = Track::new(staff, 0);
+        let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+        ajouter_silence_mesure(&mut score, &mut measure, piste, Fraction::ZERO);
+        score.add_measure(measure);
+    }
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<group-symbol>square</group-symbol>"),
+        "type 2 = SQUARE : {xml}"
+    );
+    assert!(!xml.contains("<group-symbol>line</group-symbol>"));
+
+    // Cas non concerné : le type 3 reste un trait.
+    score.staff_mut(s1).brackets[0].kind = 3;
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<group-symbol>line</group-symbol>"));
+    assert!(!xml.contains("<group-symbol>square</group-symbol>"));
+}
