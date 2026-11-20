@@ -2644,3 +2644,30 @@ fn volume_en_chiffres_significatifs() {
     let xml = export_musicxml(&score).expect("export");
     assert!(xml.contains("<volume>78.7402</volume>"), "{xml}");
 }
+
+/// `writeStaffDetails` (`exportmusicxml.cpp:8059-8104`) écrit aussi les
+/// portées masquées (`hideEmptyStaves`), y compris à 5 lignes, avec
+/// `print-object="no"` et `<staff-lines>`. Le portage ignorait ces portées.
+/// Cas réels : 72 fichiers du lot `.mscz` (Marusia, Veni veni Emmanuel…).
+#[test]
+fn portee_masquee_ecrit_staff_details() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    score.staff_mut(staff).visible = false;
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(1, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<staff-details print-object=\"no\">"),
+        "staff-details de la portée masquée absent :\n{xml}"
+    );
+    assert!(
+        xml.contains("<staff-lines>5</staff-lines>"),
+        "staff-lines de la portée masquée absent :\n{xml}"
+    );
+}

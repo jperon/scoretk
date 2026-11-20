@@ -109,6 +109,13 @@ pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
         if let Some(value) = staff_node.child("barLineSpan").and_then(Node::int_text) {
             staff.bar_line_span = value != 0;
         }
+        // `<visible>`/`<isStaffVisible>` : `Staff::setVisible`, comme dans le
+        // lecteur 4.x (`read500/tread.cpp:4111`).
+        for tag in ["visible", "isStaffVisible"] {
+            if let Some(value) = staff_node.child(tag).and_then(Node::int_text) {
+                staff.visible = value != 0;
+            }
+        }
         for bracket in staff_node.children_named("bracket") {
             let kind = bracket.attr_i32("type").unwrap_or(-1);
             if kind < 0 {

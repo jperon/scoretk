@@ -215,6 +215,8 @@ One line per document; read the one matching the subject before coding.
   t34/t35/t36/t38, CLI and tests: read before touching `scoretk`.
 - `docs/agents/licence.md` — GPL-3.0-only obligations of a consumer:
   read before any distribution or integration.
+- `docs/agents/musicxml-export.md` — MusicXML export reliability campaign,
+  file-by-file gains and remaining causes: read before touching the writer.
 - `docs/agents/musicxml-import.md` — MusicXML import port, result
   of the round-trip test and remaining discrepancies: read before touching the
   MusicXML reader.

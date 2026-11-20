@@ -318,6 +318,11 @@ pub struct Staff {
     pub part: PartId,
     /// Nombre de lignes de la portée (5 pour une portée standard).
     pub lines: u8,
+    /// Visibilité de la portée (`Staff::visible`, `<isStaffVisible>`).
+    ///
+    /// Une portée invisible est signalée `print-object="no"` dans
+    /// `<staff-details>` à l'export MusicXML (`writeStaffDetails`).
+    pub visible: bool,
     /// Vrai si la portée est en petit format.
     pub small: bool,
     /// Étirement temporel de la portée (`Staff::timeStretch`, indication de
@@ -344,6 +349,7 @@ impl Staff {
             id: StaffId::from_raw(0),
             part,
             lines: 5,
+            visible: true,
             small: false,
             bar_line_span: false,
             brackets: Vec::new(),

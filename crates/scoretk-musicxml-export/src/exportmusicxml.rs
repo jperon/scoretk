@@ -909,7 +909,7 @@ impl<'a> Context<'a> {
         }
         self.write_measure_clefs(out, measure, measure_index, part);
         if is_first {
-            self.write_staff_details(out, part);
+            self.write_staff_details(out, measure_index, part);
             self.write_instrument_details(out, part);
         } else {
             // Portées masquées du système (`hideEmptyStaves`) : MuseScore les
@@ -2268,14 +2268,22 @@ impl Context<'_> {
         // Une clef en fin de mesure sera écrite au début de la suivante.
     }
 
-    /// Écrit `<staff-details>` pour les portées non standard (`writeStaffDetails`).
-    fn write_staff_details(&self, out: &mut Out, part: &Part) {
+    /// Écrit `<staff-details>` pour les portées non standard ou masquées
+    /// (`writeStaffDetails`, `exportmusicxml.cpp:8059-8104`).
+    ///
+    /// Le C++ ajoute `print-object="no"` aux portées de la liste
+    /// `hiddenStaves` (`hideEmptyStaves`) et écrit le bloc dès qu'une portée
+    /// est masquée, même si elle a 5 lignes. Le portage n'écrivait que les
+    /// portées non standard et ignorait les portées masquées.
+    fn write_staff_details(&self, out: &mut Out, measure_index: usize, part: &Part) {
         let staves = part.staves.len();
+        let hidden = self.systems.hidden_at(measure_index);
         for (position, staff_id) in part.staves.iter().enumerate() {
             let staff = self.score.staff(*staff_id);
+            let hidden_staff = !staff.visible || hidden.contains(&(staff_id.raw() as usize));
             // TODO(parité): portées en petit format (staff-size), tablature
-            // et portées masquées.
-            if staff.lines == 5 {
+            // et couleurs/visibilité des lignes (`line-detail`).
+            if staff.lines == 5 && !hidden_staff {
                 continue;
             }
             out.attr(true);
@@ -2283,6 +2291,9 @@ impl Context<'_> {
             let mut attributes: Vec<(&str, &str)> = Vec::new();
             if staves > 1 {
                 attributes.push(("number", &number));
+            }
+            if hidden_staff {
+                attributes.push(("print-object", "no"));
             }
             out.xml.start_element("staff-details", &attributes);
             out.xml.tag("staff-lines", &staff.lines.to_string());

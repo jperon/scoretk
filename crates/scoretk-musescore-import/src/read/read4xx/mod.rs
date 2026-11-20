@@ -332,6 +332,12 @@ impl Reader {
             if let Some(staff_type) = staff_element.child("StaffType") {
                 staff.lines = staff_lines(staff_type);
             }
+            // `TRead::read(Staff*)` (`read500/tread.cpp:4111`) :
+            // `<isStaffVisible>` commande `Staff::setVisible`. MuseScore signale
+            // ensuite la portée par `print-object="no"` dans `<staff-details>`.
+            if let Some(value) = staff_element.child("isStaffVisible").and_then(Element::int) {
+                staff.visible = value != 0;
+            }
             if let Some(value) = staff_element.child("barLineSpan").and_then(Element::int) {
                 staff.bar_line_span = value != 0;
             }
