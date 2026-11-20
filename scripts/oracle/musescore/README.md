@@ -37,6 +37,12 @@ Three measurements follow:
   against `tk.mid`, using `scripts/oracle/midi/midi_notes.py` at the Q16 grid
   (±1/16 quarter). `alt_core` compares the alternative's MusicXML to scoretk's
   on the same files.
+- **N1w/N2w (writer only)** — MuseScore is also asked to export the *source*
+  itself to `alt.mid`; that MIDI is the reference and `ms.mid` (MuseScore
+  reopening our `.mscz`) is the output. Playback differences between scoretk
+  and MuseScore on the source are therefore excluded: only what our writer
+  loses is counted. `resume.md` lists every file with writer-only N2 below 1.0
+  and a short cause (octave, transposition, missing notes, shifted attacks).
 
 ## Lots
 

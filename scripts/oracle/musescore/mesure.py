@@ -120,6 +120,7 @@ def mesure_lot(lot: str, args, fichier) -> None:
         ms_xml, ms_mid = travail / "ms.musicxml", travail / "ms.mid"
         tk_xml, tk_mid = travail / "tk.musicxml", travail / "tk.mid"
         alt_xml = travail / "alt.musicxml"
+        alt_mid = travail / "alt.mid"
 
         etapes = [
             ("scoretk_mscz", cmd_scoretk(args.scoretk, src, str(tk_mscz), "mscz"), None),
@@ -156,6 +157,27 @@ def mesure_lot(lot: str, args, fichier) -> None:
             r["temps"] += round(duree, 3)
             if not (code == 0 and alt_xml.exists() and alt_xml.stat().st_size):
                 r["alt_erreur"] = f"code {code} {erreur[-200:]}"
+            # N2 « écrivain seul » : MuseScore joue la source, puis notre
+            # `.mscz`. Les écarts entre scoretk et MuseScore sur la *source*
+            # ne comptent plus ; seul ce que l'écrivain perd est mesuré.
+            code, duree, erreur = lancer(cmd_mscore(args.mscore, src, str(alt_mid)), env_mscore())
+            r["temps"] += round(duree, 3)
+            if not (code == 0 and alt_mid.exists() and alt_mid.stat().st_size):
+                r["alt_midi_erreur"] = f"code {code} {erreur[-200:]}"
+            elif ms_mid.exists() and ms_mid.stat().st_size:
+                try:
+                    writer = compare(
+                        read_midi(str(alt_mid)), read_midi(str(ms_mid)), args.grid, args.tol
+                    )
+                    r["refw"] = writer["ref"]
+                    r["n1w"] = writer["n1"]
+                    r["n2w"] = writer["n2"]
+                    r["n2dw"] = writer["n2d"]
+                    r["testw"] = writer["test"]
+                    r["octavew"] = writer["octave"]
+                    r["transpositionw"] = writer["transposition"]
+                except Exception as exc:  # MIDI illisible : noté, pas masqué
+                    r["erreur_midiw"] = str(exc)[:200]
         ecrire(fichier, r)
         fichier.flush()
 
@@ -226,14 +248,25 @@ def fusionner_core(args, manifeste: Path, sortie: Path, cle: str) -> None:
                 ecrire(f, r)
 
 
+def cause_n2w(r: dict) -> str:
+    """Cause courte d'un N2 écrivain inférieur à 1."""
+    if r.get("octavew", 0):
+        return "octave"
+    if r.get("transpositionw", 0):
+        return f"transposition {r['transpositionw']:+d}"
+    if r.get("testw", 0) < r.get("refw", 0):
+        return f"notes manquantes ({r.get('refw', 0) - r.get('testw', 0)})"
+    return "attaques décalées"
+
+
 def resume(args) -> str:
     """Tableau récapitulatif par lot, avec l'alternative sur le même lot."""
     lignes = [
         "# MuseScore export oracle — fidelity after reopening in MuseScore 4.7.4",
         "",
         ("| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | "
-         "Load err/warn | Alt core-identical |"),
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+         "N1w | N2w | Load err/warn | Alt core-identical |"),
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     totaux: dict[str, list[float]] = {}
     for lot in args.lots:
@@ -246,16 +279,23 @@ def resume(args) -> str:
         notes_ref = sum(r.get("ref", 0) for r in rows)
         n1 = sum(r.get("n1", 0) for r in rows)
         n2 = sum(r.get("n2", 0) for r in rows)
+        refw = sum(r.get("refw", 0) for r in rows)
+        n1w = sum(r.get("n1w", 0) for r in rows)
+        n2w = sum(r.get("n2w", 0) for r in rows)
         avert = sum(r.get("averts", 0) for r in rows)
         alt_ok = sum(1 for r in rows if r.get("alt_core", {}).get("noyau_lignes") == 0)
         alt_n = sum(1 for r in rows if "alt_core" in r)
         pct = lambda a, b: f"{a/b:.4f}" if b else "—"
         lignes.append(
             f"| {lot} | {n} | {ecrits} | {ouverts} | {core_ok}/{ecrits} | "
-            f"{pct(n1, notes_ref)} | {pct(n2, notes_ref)} | {avert} | "
+            f"{pct(n1, notes_ref)} | {pct(n2, notes_ref)} | "
+            f"{pct(n1w, refw)} | {pct(n2w, refw)} | {avert} | "
             f"{alt_ok}/{alt_n} |"
         )
-        totaux[lot] = [n, ecrits, ouverts, core_ok, notes_ref, n1, n2, avert, alt_ok, alt_n]
+        totaux[lot] = [
+            n, ecrits, ouverts, core_ok, notes_ref, n1, n2, refw, n1w, n2w,
+            avert, alt_ok, alt_n,
+        ]
     n = sum(v[0] for v in totaux.values())
     ecrits = sum(v[1] for v in totaux.values())
     ouverts = sum(v[2] for v in totaux.values())
@@ -263,21 +303,49 @@ def resume(args) -> str:
     notes_ref = sum(v[4] for v in totaux.values())
     n1 = sum(v[5] for v in totaux.values())
     n2 = sum(v[6] for v in totaux.values())
-    avert = sum(v[7] for v in totaux.values())
-    alt_ok = sum(v[8] for v in totaux.values())
-    alt_n = sum(v[9] for v in totaux.values())
+    refw = sum(v[7] for v in totaux.values())
+    n1w = sum(v[8] for v in totaux.values())
+    n2w = sum(v[9] for v in totaux.values())
+    avert = sum(v[10] for v in totaux.values())
+    alt_ok = sum(v[11] for v in totaux.values())
+    alt_n = sum(v[12] for v in totaux.values())
     pct = lambda a, b: f"{a/b:.4f}" if b else "—"
     lignes += [
         f"| **Total** | **{n}** | **{ecrits}** | **{ouverts}** | "
         f"**{core_ok}/{ecrits}** | **{pct(n1, notes_ref)}** | "
-        f"**{pct(n2, notes_ref)}** | **{avert}** | **{alt_ok}/{alt_n}** |",
+        f"**{pct(n2, notes_ref)}** | **{pct(n1w, refw)}** | "
+        f"**{pct(n2w, refw)}** | **{avert}** | **{alt_ok}/{alt_n}** |",
         "",
         "Core-identical: MuseScore re-export of scoretk's `.mscz` matches "
         "scoretk's direct MusicXML (`core` normalisation, 0 changed line). "
         "N1/N2: scoretk's direct MIDI against MuseScore's playback of its "
-        "`.mscz`. Alt core-identical: MuseScore's own import of the source "
-        "against scoretk's direct MusicXML, on the same files.",
+        "`.mscz`. N1w/N2w (writer only): MuseScore's playback of the *source* "
+        "against MuseScore's playback of our `.mscz`; playback differences "
+        "between scoretk and MuseScore are excluded. Alt core-identical: "
+        "MuseScore's own import of the source against scoretk's direct "
+        "MusicXML, on the same files.",
+        "",
+        "## Writer-only N2 below 1.0",
+        "",
+        "| File | Ref notes | N1w | N2w | Cause |",
+        "| --- | ---: | ---: | ---: | --- |",
     ]
+    for lot in args.lots:
+        chemin = Path(args.out) / f"{lot}.jsonl"
+        if not chemin.exists():
+            continue
+        for ligne in chemin.read_text(encoding="utf-8").splitlines():
+            r = json.loads(ligne)
+            if not r.get("refw") or r.get("n2w", 1.0) >= 1.0:
+                continue
+            pct_w = r["n2w"] / r["refw"]
+            if pct_w >= 1.0:
+                continue
+            lignes.append(
+                f"| {lot}-{r['i']} {Path(r['fichier']).name} | {r['refw']} | "
+                f"{pct(r.get('n1w', 0), r['refw'])} | {pct_w:.4f} | "
+                f"{cause_n2w(r)} |"
+            )
     return "\n".join(lignes) + "\n"
 
 
