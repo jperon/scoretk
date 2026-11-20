@@ -154,15 +154,18 @@ pub(crate) fn bar_line_type(name: &str) -> Option<BarLineType> {
 /// ignorée plutôt qu'approchée.
 pub(crate) fn accidental_type(name: &str) -> AccidentalType {
     match name.trim() {
-        "accidentalFlat" => AccidentalType::Flat,
-        "accidentalNatural" => AccidentalType::Natural,
-        "accidentalSharp" => AccidentalType::Sharp,
-        "accidentalDoubleFlat" => AccidentalType::DoubleFlat,
-        "accidentalDoubleSharp" => AccidentalType::DoubleSharp,
-        "accidentalNaturalFlat" => AccidentalType::NaturalFlat,
-        "accidentalNaturalSharp" => AccidentalType::NaturalSharp,
-        "accidentalTripleFlat" => AccidentalType::TripleFlat,
-        "accidentalTripleSharp" => AccidentalType::TripleSharp,
+        // Les fichiers 2.x écrivent les noms courts (`sharp`, `natural`,
+        // `flat`) ; `Read206` délègue la lecture à `TRead::read(Accidental*)`,
+        // dont la table `TConv::fromXml` accepte les deux formes.
+        "flat" | "accidentalFlat" => AccidentalType::Flat,
+        "natural" | "accidentalNatural" => AccidentalType::Natural,
+        "sharp" | "accidentalSharp" => AccidentalType::Sharp,
+        "doubleFlat" | "accidentalDoubleFlat" => AccidentalType::DoubleFlat,
+        "doubleSharp" | "accidentalDoubleSharp" => AccidentalType::DoubleSharp,
+        "naturalFlat" | "accidentalNaturalFlat" => AccidentalType::NaturalFlat,
+        "naturalSharp" | "accidentalNaturalSharp" => AccidentalType::NaturalSharp,
+        "tripleFlat" | "accidentalTripleFlat" => AccidentalType::TripleFlat,
+        "tripleSharp" | "accidentalTripleSharp" => AccidentalType::TripleSharp,
         _ => AccidentalType::None,
     }
 }

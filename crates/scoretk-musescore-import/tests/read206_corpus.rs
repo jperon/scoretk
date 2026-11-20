@@ -337,3 +337,52 @@ fn version_3_non_concernee() {
         vec![(60, Fraction::new(1, 4), Fraction::ZERO)]
     );
 }
+
+#[test]
+fn alteration_explicite_2x() {
+    let score = score(
+        r#"<Staff id="1">
+  <Measure number="1">
+    <KeySig><accidental>1</accidental></KeySig>
+    <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+    <Chord><durationType>quarter</durationType>
+      <Note><Accidental><subtype>sharp</subtype></Accidental>
+        <pitch>61</pitch><tpc>23</tpc></Note></Chord>
+    <Chord><durationType>quarter</durationType>
+      <Note><Accidental><subtype>natural</subtype></Accidental>
+        <pitch>60</pitch><tpc>14</tpc></Note></Chord>
+    <Chord><durationType>quarter</durationType>
+      <Note><Accidental><subtype>flat</subtype></Accidental>
+        <pitch>63</pitch><tpc>19</tpc></Note></Chord>
+    <Chord><durationType>quarter</durationType>
+      <Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+    </Measure>
+  </Staff>"#,
+    );
+    let notes: Vec<_> = score.measures[0]
+        .segments
+        .iter()
+        .filter_map(|segment| {
+            segment
+                .element(Track::from_raw(0))
+                .and_then(|item| item.as_chord_rest())
+                .and_then(|chord_rest| chord_rest.chord_ref())
+        })
+        .filter_map(|chord| chord.notes.first().copied())
+        .map(|id| score.note(id))
+        .collect();
+    assert_eq!(notes.len(), 4);
+    assert_eq!(
+        notes[0].accidental.as_ref().map(|a| a.kind),
+        Some(scoretk_core::model::AccidentalType::Sharp)
+    );
+    assert_eq!(
+        notes[1].accidental.as_ref().map(|a| a.kind),
+        Some(scoretk_core::model::AccidentalType::Natural)
+    );
+    assert_eq!(
+        notes[2].accidental.as_ref().map(|a| a.kind),
+        Some(scoretk_core::model::AccidentalType::Flat)
+    );
+    assert!(notes[3].accidental.is_none(), "sans altération explicite");
+}
