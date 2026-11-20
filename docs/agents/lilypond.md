@@ -1989,3 +1989,103 @@ correction to the pairing code: candidate graces must also be removed from
 the main-note multiset, otherwise a grace at the main attack can match a
 reference main note of the same pitch and be counted twice. `ly_notes.py
 selftest` and `mesure.py --selftest` cover the corrected rule.
+
+## 21. Reading campaign, third pass (2026-11-20)
+
+### Current ranking (binary after the first two passes)
+
+Same 4550 files and cached references; lost notes = `ref − matched N2 pairs`
+at the first diverging attack:
+
+| Construct at first divergence | Lost notes | Files |
+| --- | ---: | ---: |
+| `\voiceOne` / `<< … >>` | 64 759 | 306 |
+| `\grace` / `\acciaccatura` | 59 812 | 151 |
+| `\tuplet` / `\times` | 28 217 | 88 |
+| none of the tracked constructs | 24 605 | 116 |
+| `R1*n` / `\bar` | 17 611 | 56 |
+| `s` spacer | 14 914 | 39 |
+| variables | 10 860 | 126 |
+| `\set Timing.*` | 6 722 | 29 |
+| `\repeat volta` / `unfold` | 5 523 | 33 |
+
+### Why the grace row was a detection site, not the cause
+
+The three files with the most lost notes in that row were reconstructed note
+by note from the stored reference MIDI and candidate XML:
+
+- **`Symphony5_2.ly`** (6126 notes): the first seven notes match exactly, then
+  everything is shifted by **+3.5 quarters**. The candidate has four empty
+  measures before the first note (seven voices of `\partial 8 r8`, then `R4.`
+  in 3/8), while LilyPond's MIDI starts at 0.5. This is the global-measure
+  framework of §19 (one voice's full-measure rests delay every voice), not a
+  grace onset.
+- **`ballade-4.ly`** (5600) and **`Cellosonata_No3_1.ly`** (5037): the first
+  divergence is at attack 0 with, respectively, 45 and 7 declared staves for
+  a two-staff score and a large chord of candidate notes at tick 0. The
+  construct "grace" was simply present in the first bar of the source window.
+
+Reduced sources settle the grace semantics themselves: `c'4 \grace { d16 } e'4
+f'2`, the same inside `\relative`, and `\acciaccatura`/`\appoggiatura`
+variants were compiled with LilyPond 2.26 and compared on the Q16 grid. Durations,
+octaves and the following note's attack all match; only the N2-grace onset rule
+of §19 differs, and it moves the aggregate by 0.03 points. Notation Reference
+§2.6.1, `lily/grace-iterator.cc` and `lily/midi-walker.cc` are therefore
+satisfied by the reader: no reader change is warranted for this row.
+
+### The context-creation bug and why the direct fix was rejected
+
+`lily/parser.yy` `context_prefix` (l. 1686–1690) maps `\context` to
+`context_find_or_create` and `\new` to `context_create`; both create a **Voice
+context inside the current Staff** (Notation Reference §5.2.1), never a sibling
+Staff. `lily/context.cc::find_create_context` reuses a context with the same id.
+The reader's `collect_staves_in` instead turns every `Music::New` of kind
+`Voice` into a new `StaffBlock`: a two-staff `PianoStaff` containing one
+`\new Voice` already produced three staves, and `BWV865_Fuga20` produced
+eleven. A count over the stored outputs finds **230 files** whose declared
+`<staves>` exceeds the number of MIDI tracks (e.g. `ballade.ly` 113 vs 2,
+`ballade-4.ly` 45 vs 2, `BWV865_Fuga20.ly` 11 vs 2).
+
+A first fix merged these `\new Voice` groups into the current anonymous staff,
+capping it at the model's four voices. It reduced the stave counts (11 → 7,
+45 → 14, 7 → 2) but **lost notes**: `BWV865_Fuga20` N1 fell from 2376 to 1876
+and `ballade-4` from 4788 to 4618, because voices that LilyPond keeps on one
+staff exceed the model's four-voice limit and are dropped. Marking anonymous
+`\new Voice` voices as mergeable temporary voices recovered part of the loss
+but not all of it. The change was reverted rather than shipped as a regression:
+a correct fix needs a voice-allocation redesign (start ticks and overlap
+handling per voice), outside a localised parser patch.
+
+### `\repeat tremolo` (fixed)
+
+Notation Reference §4.2.2: "The duration of the tremolo equals the duration of
+the braced expression multiplied by the number of repeats". LilyPond 2.26's
+MIDI was checked for n = 2, 4, 6, 8 on `\repeat tremolo n { c'16 d'16 }`: it
+plays **two sustained notes**, each `n ×` the written duration, with no extra
+attacks. The reader read the body once with unstretched durations, so every
+later note arrived early (up to 1231 lost notes in ten sources, led by
+`promenade-6.ly`). `\repeat tremolo n` now scales the body's durations by `n`
+at parse time; the reduced test `repeat_tremolo_etire_les_durees` fails on the
+old code (case n = 1 and a bar check included). On `promenade-6.ly` N2 goes
+from 65 to **319 of 1207** notes.
+
+### Full measurement of the third pass
+
+Frozen `/tmp/ly95lect-fix9`, same manifests and cached references, every
+conversion under `timeout 10 prlimit --as=2000000000`:
+
+| Lot | Exact | N1 % | N2 % (no repeat) | N2-grace % (no repeat) |
+| --- | ---: | ---: | ---: | ---: |
+| mus | 1136 (78.5 %) | 99.22 | 93.51 | 93.51 |
+| ra | 1266 (73.3 %) | 90.93 | 81.25 | 81.70 |
+| mut | 435 (31.6 %) | 97.83 | 78.91 | 78.93 |
+
+Per file against the previous run: **25 N2 gains, 0 N1 or N2 loss**, and the
+number of exact files goes from 2820 to **2837**. The official repeat-free N2
+stays at 83.20 % because the "\repeat tremolo" sources are all repeat-flagged
+by the oracle; over **all** files N2 goes from 80.528 to **80.606 %**. The
+apparent drop of the Mutopia aggregate (80.74 → 78.91 %) is a denominator
+effect: the previous run had four 10-second timeouts and this one has none, so
+40 000 more reference notes are now counted. Restricted to the files measured
+in both runs, N2 is identical before and after the fix except for the tremolo
+sources.
