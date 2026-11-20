@@ -322,13 +322,15 @@ fn adapt_measure(
         };
         adapt_element(
             &mut node,
-            index,
-            staff,
-            voice,
-            chord_ordinal,
-            ties,
-            links,
-            &mut ordinals[voice],
+            &mut AdaptCtx {
+                measure: index,
+                staff,
+                voice,
+                chord_ordinal,
+                ties,
+                links,
+                ordinal: &mut ordinals[voice],
+            },
         );
         groups[voice].push(node);
     }
@@ -362,18 +364,22 @@ fn parse_endings(text: &str) -> Vec<u8> {
 }
 
 /// Adapte un élément musical : textes système, symboles de tempo et liaisons.
-fn adapt_element(
-    node: &mut Node,
+/// Contexte d'adaptation d'un élément musical 2.x. Deux comptages par voix
+/// coexistent : les accords/silences ancrent les spanners, les notes ancrent
+/// les liaisons.
+struct AdaptCtx<'a> {
     measure: usize,
     staff: usize,
     voice: usize,
+    /// Rang de l'accord ou silence dans la voix (`SpanKey::Chord`).
     chord_ordinal: usize,
-    ties: &mut Vec<super::TieLink>,
-    links: &mut Vec<SpannerLink>,
-    // Rang de la note courante dans la voix de la mesure, maintenu d'un
-    // accord à l'autre pour que `fix_ties` retrouve les bonnes extrémités.
-    ordinal: &mut usize,
-) {
+    /// Rang de la note dans la voix, maintenu d'un accord à l'autre.
+    ordinal: &'a mut usize,
+    ties: &'a mut Vec<super::TieLink>,
+    links: &'a mut Vec<SpannerLink>,
+}
+
+fn adapt_element(node: &mut Node, ctx: &mut AdaptCtx<'_>) {
     match node.name.as_str() {
         "Text" | "StaffText" => {
             let system = node
@@ -395,9 +401,9 @@ fn adapt_element(
         }
         "Chord" => {
             let chord_key = SpanKey::Chord {
-                measure,
-                track: ((staff * 4) + voice) as u32,
-                ordinal: chord_ordinal,
+                measure: ctx.measure,
+                track: ((ctx.staff * 4) + ctx.voice) as u32,
+                ordinal: ctx.chord_ordinal,
             };
             // `readChordRestProperties206` (read206.cpp:1823) : les moitiés de
             // slur 2.x sont portées par l'accord avec `type="start"`/`"stop"`.
@@ -415,21 +421,21 @@ fn adapt_element(
                     link.start = Some(chord_key);
                 }
                 link.slur_up = child.child("up").map(Node::trimmed_text);
-                links.push(link);
+                ctx.links.push(link);
             }
             for child in node.children_mut() {
                 if child.name != "Note" {
                     continue;
                 }
                 let key = NoteKey {
-                    measure,
-                    track: ((staff * 4) + voice) as u32,
-                    ordinal: *ordinal,
+                    measure: ctx.measure,
+                    track: ((ctx.staff * 4) + ctx.voice) as u32,
+                    ordinal: *ctx.ordinal,
                 };
-                *ordinal += 1;
+                *ctx.ordinal += 1;
                 if let Some(tie) = child.child("Tie") {
                     if let Some(id) = tie.attr_i32("id") {
-                        ties.push(super::TieLink {
+                        ctx.ties.push(super::TieLink {
                             id,
                             start: Some(key),
                             end: None,
@@ -439,7 +445,7 @@ fn adapt_element(
                 }
                 if let Some(end) = child.child("endSpanner") {
                     if let Some(id) = end.attr_i32("id") {
-                        ties.push(super::TieLink {
+                        ctx.ties.push(super::TieLink {
                             id,
                             start: None,
                             end: Some(key),
@@ -448,11 +454,11 @@ fn adapt_element(
                         // (`readNoteProperties206`, read206.cpp:1221).
                         let mut link = SpannerLink::new(id, SpanFamily::Volta);
                         link.end = Some(SpanKey::Chord {
-                            measure,
-                            track: ((staff * 4) + voice) as u32,
-                            ordinal: chord_ordinal,
+                            measure: ctx.measure,
+                            track: ((ctx.staff * 4) + ctx.voice) as u32,
+                            ordinal: ctx.chord_ordinal,
                         });
-                        links.push(link);
+                        ctx.links.push(link);
                     }
                     child.retain_without("endSpanner");
                 }
