@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use scoretk_core::model::Fraction;
 use scoretk_core::model::{
     ArticulationType, BarLineType, ChordRestKind, ClefType, DurationType, GraceType, KeyMode,
-    LyricsSyllabic, PlaybackTransposition, SegmentItem, SegmentType, StaffId, Track, Transpose,
+    LyricsSyllabic, SegmentItem, SegmentType, StaffId, Track, Transpose,
 };
 use scoretk_lilypond_import::{
     read_lilypond, read_lilypond_reporting, read_lilypond_with_includes,
@@ -2240,11 +2240,10 @@ fn transpose_traversant_articulate_et_unfold_repeats() {
         lire_score("\\score { \\transpose c d \\new Staff { \\fixed c' { c4 \\articulate } } }");
     assert_eq!(hauteurs(&score), vec![62]);
 
-    // Cas réel réduit : `musicxml2ly` écrit une partition imprimée (`\layout`,
-    // pas de transposition) puis la partition MIDI (`\midi`, transposée).
-    // Le MusicXML représente la partition GRAVÉE : c'est le premier `\score`
-    // gravé qui fait foi, même si LilyPond ne joue que la seconde. Que la
-    // référence MIDI diffère ici est une limite de l'outil de mesure.
+    // Cas réel réduit : `musicxml2ly` écrit une partition imprimée (`\layout`)
+    // puis la partition MIDI (`\midi` sans `\layout`, transposée). LilyPond
+    // n'écrit qu'un MIDI, celui de la seconde (NR §24.3) : c'est elle qui
+    // fournit le modèle, à hauteur de concert de la référence.
     let source = r#"
       \version "2.24.0"
       \language "english"
@@ -2256,18 +2255,15 @@ fn transpose_traversant_articulate_et_unfold_repeats() {
       }
     "#;
     let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
-    assert_eq!(hauteurs(&score), vec![60, 62]);
+    assert_eq!(hauteurs(&score), vec![62, 64]);
     assert_eq!(score.measures.len(), 1);
     assert_eq!(
         durees_ecrites(&score),
         vec![Fraction::QUARTER, Fraction::QUARTER]
     );
-    // La partition gravée reste en do ; le second `\score` (sans `\layout`,
-    // avec `\midi`) porte `\transpose c d` : un ton de plus en lecture seule.
-    assert_eq!(
-        score.playback_transposition,
-        Some(PlaybackTransposition::new(2))
-    );
+    // Le modèle est déjà la partition MIDI transposée : aucune transposition
+    // de lecture supplémentaire ne doit être appliquée par l'écrivain MIDI.
+    assert_eq!(score.playback_transposition, None);
     assert_eq!(
         warnings
             .iter()
@@ -2276,9 +2272,9 @@ fn transpose_traversant_articulate_et_unfold_repeats() {
         1
     );
 
-    // Même arbitrage avec des fonctions musicales : la partition gravée
-    // (`\transpose d d`, donc non transposée) l'emporte sur la partition MIDI
-    // (`\transpose d c`, d'un ton plus bas) : hauteurs non transposées.
+    // Même arbitrage avec des fonctions musicales : la partition MIDI
+    // (`\transpose d c`, d'un ton plus bas) est celle que LilyPond joue,
+    // donc le modèle suit ses hauteurs (58/60).
     let source = r#"
       \version "2.24.0"
       \language "english"
@@ -2289,13 +2285,10 @@ fn transpose_traversant_articulate_et_unfold_repeats() {
       }
     "#;
     let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
-    assert_eq!(hauteurs(&score), vec![60, 62]);
+    assert_eq!(hauteurs(&score), vec![58, 60]);
     assert_eq!(score.measures.len(), 1);
-    // `\transpose d d` gravé contre `\transpose d c` MIDI : un ton en moins.
-    assert_eq!(
-        score.playback_transposition,
-        Some(PlaybackTransposition::new(-2))
-    );
+    // Le modèle est la partition MIDI : pas de transposition de lecture.
+    assert_eq!(score.playback_transposition, None);
     assert_eq!(
         warnings
             .iter()
@@ -4820,4 +4813,31 @@ fn tuplet_avec_duree_de_regroupement() {
     let simple = lire("\\tuplet 3/2 { c8 d8 e8 } f2");
     assert_eq!(hauteurs(&simple), vec![60, 62, 64, 65]);
     assert_eq!(simple.tuplets.len(), 1);
+}
+
+/// LilyPond n'écrit qu'un MIDI : celui du `\score` qui porte `\midi` sans
+/// `\layout` (NR §24.3). Quand un tel score accompagne le score gravé et joue
+/// la même musique sans `\transpose`, c'est lui qui fait le modèle : la
+/// référence MIDI est à hauteur de concert, pas transposée.
+#[test]
+fn score_midi_seul_choisi_pour_le_modele() {
+    let source = r#"\version "2.24.0"
+\language "english"
+mus = { c'4 d' e' f' }
+\score { \transpose c d { \mus } \layout { ragged-right = ##t } }
+\score { { \mus } \midi { \tempo 4 = 100 } }
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(
+        hauteurs(&score),
+        vec![60, 62, 64, 65],
+        "hauteurs de concert du score MIDI (pas transposées)"
+    );
+    assert_eq!(score.measures.len(), 1);
+    assert_eq!(durees_ecrites(&score), vec![Fraction::new(1, 4); 4]);
+
+    // Cas non concerné : sans second score MIDI, le score gravé fait foi.
+    let seul =
+        read_lilypond("\\score { \\transpose c d { c'4 d' } \\layout {} }").expect("lecture");
+    assert_eq!(hauteurs(&seul), vec![62, 64]);
 }

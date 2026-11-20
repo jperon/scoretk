@@ -519,7 +519,7 @@ impl<'a> Parser<'a> {
         // Le MusicXML représente la partition gravée : même quand un autre
         // `\score` porte un `\midi` (partition que LilyPond joue, transposée),
         // c'est le premier `\score` gravé qui fait foi.
-        let chosen = self
+        let engraved = self
             .partitions
             .iter()
             .position(|partition| partition.explicit)
@@ -528,21 +528,34 @@ impl<'a> Parser<'a> {
             } else {
                 Some(0)
             });
-        if let Some(chosen) = chosen {
-            // Une seconde partition `\midi` sans `\layout` peut jouer la même
-            // musique que la partition gravée, enveloppée dans `\transpose`
-            // (Notation Reference §1.2.2, §24.3). On relève l'intervalle avant
-            // de jeter les autres partitions : le modèle reste gravé, seul
-            // l'écrivain MIDI s'en servira.
-            document.playback_transposition = self.partitions.get(chosen).and_then(|engraved| {
-                self.partitions
-                    .iter()
-                    .enumerate()
-                    .find(|(index, partition)| {
-                        *index != chosen && partition.has_midi && !partition.has_layout
-                    })
-                    .and_then(|(_, midi)| crate::playback::detect(&engraved.score, &midi.score))
+        if let Some(engraved) = engraved {
+            // Une seconde partition `\midi` sans `\layout` joue la même
+            // musique que la partition gravée, privée de `\transpose`
+            // (Notation Reference §1.2.2, §24.3). LilyPond n'écrit qu'un MIDI,
+            // celui de cette partition : c'est donc elle qui fournit le modèle
+            // et sa hauteur de concert, quand elle est structurellement
+            // identique à la partition gravée. Sinon on garde la règle de §7
+            // (premier score gravé) et on ne retient qu'un intervalle pour
+            // l'écrivain MIDI.
+            let midi = self
+                .partitions
+                .iter()
+                .enumerate()
+                .find(|(index, partition)| {
+                    *index != engraved && partition.has_midi && !partition.has_layout
+                })
+                .map(|(index, _)| index);
+            let detected = self.partitions.get(engraved).and_then(|score| {
+                midi.and_then(|index| {
+                    crate::playback::detect(&score.score, &self.partitions[index].score)
+                })
             });
+            let chosen = if detected.is_some() {
+                midi.unwrap_or(engraved)
+            } else {
+                engraved
+            };
+            document.playback_transposition = if chosen == engraved { detected } else { None };
             for (index, partition) in self.partitions.iter().enumerate() {
                 if index != chosen {
                     self.warnings.push(
