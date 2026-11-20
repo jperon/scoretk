@@ -115,10 +115,8 @@ impl PauseMap {
             let quarter_notes = quarter_notes_at(score, time_signatures, tick);
             let ticks_per_measure = (quarter_notes * f64::from(DIVISION)).round() as i64;
             let before = map.tick_with_pauses(utick);
-            map.tempo_events.insert(
-                before,
-                quarter_notes / point.pause.max(f64::EPSILON),
-            );
+            map.tempo_events
+                .insert(before, quarter_notes / point.pause.max(f64::EPSILON));
             let total = ticks_per_measure + map.offset_at(utick);
             map.offsets.insert(utick, total);
             // Le second `tickWithPauses(utick)` est calculé **après** l'insertion
@@ -154,7 +152,12 @@ impl PauseMap {
     /// pas comptée dans la fin de la mesure courante, ce qui évite de compter
     /// deux fois la pause à la frontière.
     pub(crate) fn tick_with_pauses_before(&self, utick: i64) -> i64 {
-        utick + self.offsets.range(..utick).next_back().map_or(0, |(_, o)| *o)
+        utick
+            + self
+                .offsets
+                .range(..utick)
+                .next_back()
+                .map_or(0, |(_, o)| *o)
     }
 
     /// Pauses insérées, dans l'ordre de construction.
@@ -196,7 +199,10 @@ fn source_pauses(score: &Score) -> BTreeMap<i64, f64> {
     let mut pauses = BTreeMap::new();
     for (index, measure) in score.measures.iter().enumerate() {
         if index > 0 && measure.section_break_before {
-            pauses.insert(measure.start_tick.ticks(UNITS_PER_WHOLE), SECTION_PAUSE_SECONDS);
+            pauses.insert(
+                measure.start_tick.ticks(UNITS_PER_WHOLE),
+                SECTION_PAUSE_SECONDS,
+            );
         }
     }
     pauses
@@ -300,7 +306,7 @@ mod tests {
     use crate::repeat_list::RepeatList;
     use scoretk_core::model::{
         BarLineType, Breath, BreathType, ChordRest, Duration, DurationType, Fermata, FermataType,
-        Fraction, Measure, Placement, Segment, SegmentItem, SegmentType, Track, TimeSig,
+        Fraction, Measure, Placement, Segment, SegmentItem, SegmentType, TimeSig, Track,
     };
 
     /// Partition de deux rondes 4/4, la première portant un point d'orgue et
