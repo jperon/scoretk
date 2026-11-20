@@ -2528,3 +2528,40 @@ tuplet span was previously misread. `liszt-consolation-no3.ly` keeps all its
 pitches but loses 51 attacks: the newly preserved note at tick 0 is absent
 from the reference, an interaction with the rest inside that tuplet which is
 outside this fix. No denominator changed.
+
+### Factorisation de `toDurationList` (neuvième passe)
+
+La même fonction existait en trois exemplaires : `gap_rests.rs:237` (sans
+points), `scoretk-midi-import/src/meter.rs:412` (avec `useDots`/`maxDots`) et la
+copie locale du lecteur LilyPond. Un port public unique vit maintenant dans
+`scoretk-core/src/duration_list.rs`, avec l'en-tête GPL, la notice de
+modification (« Portage de `engraving/dom/durationtype.cpp::toDurationList` …
+modifié (réécrit en Rust) en 2026 ») et des tests unitaires (3/8, 5/16, 7/16
+avec et sans points, Long/Breve, somme exacte). La signature suit le C++ :
+`(length, useDots, maxDots, printRestRemains)` ; le drapeau de journalisation
+est conservé mais sans effet dans un noyau sans I/O. L'ordre des essais est
+celui du constructeur `TDuration(l, true, maxDots)` : types du plus long au
+plus court, puis points décroissants. `gap_rests` passe `useDots = false`,
+`maxDots = 0` ; `Meter` passe 1 point ; le lecteur LilyPond passe 4.
+Vérification : 134 suites de tests `--workspace`, et les deux arbres de sorties
+générés par `oracle/compare.sh` avant et après sont **octet pour octet
+identiques** (489 écarts préexistants inchangés de part et d'autre).
+
+### Re-classement après le correctif de `\tuplet`
+
+La rangée `\tuplet`/`\times` passe de 28 217 à 25 518 notes perdues (88 → 74
+fichiers). Les rangées restantes, avec leurs trois plus gros fichiers et la
+première divergence (`best` = décalage global qui aligne le plus de notes) :
+
+| Rangée | Notes / fichiers | Trois plus gros fichiers (div, décalage) | Référence |
+| --- | ---: | --- | --- |
+| `\voiceOne`/`<< >>` | 77 806 / 288 | `violin_concerto_1` (4, +1), `Symphony5_1` (−3,5, −21), `ballade` (0, +9) | NR §5.2.1, `parser.yy` `context_prefix` |
+| graces | 73 573 / 151 | `Symphony7_1` (0, −3), `Symphony5_2` (0,5, −26), `Violinsonata_No9_1` (26, +4) | NR §2.6.1, `grace-iterator.cc` |
+| « aucun » | 24 001 / 118 | `Beatus_vir_primo` (28, −16), `Chop-28-17` (16, −27), `mendelssohn-scherzo` (57, −18) | NR §2.1.1 |
+| `R1*n`/`\bar` | 16 694 / 55 | `Oyseaux-Endfassung` (52, −28), `ricercare6` (156, −32), `Cellosonata_No3_2` (121, +3) | NR §2.2.3 |
+| `s` | 13 928 / 38 | `rach-prelude23-05` (48, +1), `Angels_Carol` (8,5, −3), `a-breeze` (0, +6) | NR §2.2.2 |
+| variables | 10 018 / 116 | `20title-hub`/`21title-hub` (0, +25), `chopin_fantaisie-impromptu` (0, −8) | NR §4.4.4 |
+
+Toutes ces divergences sont des décalagesglobaux de la fin d'une pièce, liés
+aux constructions déjà examinées (contextes, levées et grille de mesure), et
+non un jeton mal consommé comme l'était la durée optionnelle de `\tuplet`.
