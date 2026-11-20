@@ -1014,6 +1014,25 @@ impl<'a> Parser<'a> {
                             lyrics: Vec::new(),
                         }));
                     }
+                    // Voix enchâssées sous un enveloppeur ou dans des
+                    // passages polyphoniques successifs : une seule portée,
+                    // dont l'interpréteur ouvre les voix au bon tick.
+                    if direct_named_voices(&content) == 0 {
+                        let mut staff = StaffBlock::new();
+                        staff.name = context_name.clone();
+                        staff.voices.push(VoiceBlock {
+                            name: None,
+                            music: content,
+                        });
+                        return Music::New(Box::new(GroupBlock {
+                            kind: GroupKind::Staff,
+                            existing,
+                            instrument_name,
+                            short_instrument_name,
+                            staves: vec![staff],
+                            lyrics: Vec::new(),
+                        }));
+                    }
                     return content;
                 }
                 // Un `\global` frère des voix porte parfois `\transposition` :
@@ -1033,7 +1052,7 @@ impl<'a> Parser<'a> {
                 // seule portée : le répartir extrait les enveloppes `\relative`
                 // pour les réappliquer voix par voix, décalant les octaves et
                 // déplaçant les mesures.
-                if !matches!(&content, Music::Sim(_)) || direct_named_voices(&content) > 2 {
+                if direct_named_voices(&content) > 2 {
                     let mut staves = Vec::new();
                     let mut lyrics = Vec::new();
                     self.collect_staves(content, &mut staves, &mut lyrics);
@@ -1054,7 +1073,17 @@ impl<'a> Parser<'a> {
                 staff.name = context_name;
                 let mut voices = Vec::new();
                 let mut lyrics = Vec::new();
-                self.collect_voices(content, &mut voices, &mut lyrics);
+                if has_voice_context(&content) && direct_named_voices(&content) == 0 {
+                    // Voix enchâssées dans des enveloppeurs ou des séquences :
+                    // une seule musique de portée, que l'interpréteur parcourt
+                    // pour ouvrir les voix au bon tick (BWV865_Fuga20).
+                    voices.push(VoiceBlock {
+                        name: None,
+                        music: content,
+                    });
+                } else {
+                    self.collect_voices(content, &mut voices, &mut lyrics);
+                }
                 staff.voices = voices;
                 staff.lyrics.extend(lyrics);
                 self.collect_addlyrics(&mut staff);
@@ -4448,20 +4477,23 @@ fn has_voice_context(music: &Music) -> bool {
     }
 }
 
-/// Voix `\new Voice` portées **directement** par les éléments d'un
-/// `<< … >>` de `\context Staff`.
+/// Voix portées **directement** par les éléments d'un `<< … >>` ou d'un
+/// `{ … }` de `\context Staff`.
 ///
-/// Les voix enchâssées dans un enveloppeur (fixed, relative, transpose)
-/// ou dans une séquence sont des branches de passages polyphoniques
-/// temporaires : `lily/parser.yy` (`context_change` / `temporary_note`)
-/// les joue dans les emplacements de la portée courante, et leur musique
-/// se succède dans le temps. Les répartir en portées sœurs les ferait
-/// toutes lire depuis le tick 0 (ballade-4).
+/// Les voix enchâssées dans un enveloppeur (fixed, relative, transpose) ou
+/// dans une séquence plus profonde sont des branches de passages
+/// polyphoniques temporaires : `lily/parser.yy` (`context_change` /
+/// `temporary_note`) les joue dans les emplacements de la portée courante,
+/// et leur musique se succède dans le temps. Les répartir en portées sœurs
+/// les ferait toutes lire depuis le tick 0 (ballade-4, BWV865_Fuga20).
 fn direct_named_voices(music: &Music) -> usize {
     match music {
-        Music::Sim(items) => items
+        Music::Sim(items) | Music::Seq(items) => items
             .iter()
-            .filter(|item| matches!(item, Music::New(group) if group.kind == GroupKind::Voice))
+            .filter(|item| {
+                matches!(item, Music::New(group) if group.kind == GroupKind::Voice)
+                    || matches!(item, Music::Context(Context::Voice(_)))
+            })
             .count(),
         _ => 0,
     }

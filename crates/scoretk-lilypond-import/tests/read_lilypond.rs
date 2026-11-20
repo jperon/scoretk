@@ -5001,3 +5001,31 @@ fn liaisons_indexees_sur_beaucoup_de_mesures() {
         61
     );
 }
+
+/// Même cause que les passages temporaires enchâssés, mais avec un contenu
+/// séquentiel (`\clef`, `\time`, puis plusieurs `<< … \new Voice … >>`) :
+/// LilyPond 2.26 joue ces trois passages sur la portée unique, aux ticks 0, 4
+/// et 8 ; les voix enchâssées ne doivent pas ouvrir de portées sœurs.
+#[test]
+fn passages_temporaires_sequenciels_dans_un_contexte_staff() {
+    let score = read_lilypond(
+        r#"\version "2.24.0"
+\score {
+  \context PianoStaff <<
+    \context Staff = "up" {
+      \clef treble
+      \time 4/4
+      << { R1 } \\ \new Voice { c'4 d'4 e'4 f'4 } >>
+      << { R1 } \\ \new Voice { g'4 a'4 b'4 c''4 } >>
+      << { R1 } \\ \new Voice { d''4 e''4 f''4 g''4 } >>
+    }
+    \context Staff = "down" { \clef bass c4 c4 c4 c4 }
+  >>
+}
+"#,
+    )
+    .expect("lecture");
+    assert_eq!(score.staves.len(), 2, "PianoStaff à deux portées");
+    assert_eq!(score.measures.len(), 3);
+    assert_eq!(score.notes.len(), 16);
+}
