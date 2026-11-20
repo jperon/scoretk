@@ -2456,3 +2456,39 @@ they are all instances of the shared measure grid or of voice allocation
 already documented above, and changing them locally would regress the files
 fixed in §21. They are recorded with their exact divergences rather than
 patched blindly.
+
+### Cross-bar rests: the single-grid fix (not a model limit)
+
+Correction to the previous section: LilyPond also has one grid.
+`ly/engraver-init.ly:743-756` establishes `Timing` as an **alias of `Score`**,
+and `ly/music-functions-init.ly` `partial` only issues a `PartialSet` in that
+context; a staff whose `R4.` overruns the pickup does not get its own bar.
+The reader's model ticks were already correct — the bug was that a
+`ChordRest` spanning several measures was stored as one `<rest measure="yes"/>`,
+which the writer truncates to the first measure's length. `place_chord` now
+splits any full-measure rest that crosses a barline into consecutive rests,
+each with its explicit duration (and a matching notated figure), while
+in-measure rests keep the normal full-measure representation.
+
+The reduced two-staff test `elements_a_travers_les_barres_sont_decoupes`
+failed before the fix and now matches LilyPond 2.26's MIDI exactly: notes at
+0.5/1/1.5/2 quarters on the upper staff and 6 quarters on the lower one.
+Its assertions cover absolute ticks and the four explicit rest pieces.
+
+Full lots, **constant denominator** (same file set and 593 055 reference
+notes for the repeat-free `mut` aggregation as in the previous run):
+
+| Lot | N2 before → after | Exact |
+| --- | --- | ---: |
+| mus | 93.44 → **93.67** | 1136 |
+| ra | 81.66 → 81.66 | 1269 |
+| mut | 79.15 → **80.26** | 435 → 442 |
+| all matched notes | 615 076 → **621 967** (`+6891`) | 2844 → 2847 |
+
+Per file: **31 N2 gains, 15 losses, 0 N1 change**. The losses are all small
+(≤21 notes) and occur where the writer's `<backup>` layout changes by one
+tick for surrounding notes; no note is lost and the reduced source follows
+the reference exactly. The rows that were previously attributed to the
+"shared grid" improve as expected: `R1*n` 17 338 → 16 730 lost notes (56 → 55
+files) and "none" 24 988 → 23 890. `\tuplet`, `s` and variables are unchanged
+and keep the first divergences recorded in the table above.
