@@ -336,7 +336,7 @@ def resume(args) -> str:
             continue
         for ligne in chemin.read_text(encoding="utf-8").splitlines():
             r = json.loads(ligne)
-            if not r.get("refw") or r.get("n2w", 1.0) >= 1.0:
+            if not r.get("refw") or "n2w" not in r:
                 continue
             pct_w = r["n2w"] / r["refw"]
             if pct_w >= 1.0:
