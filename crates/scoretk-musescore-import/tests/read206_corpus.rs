@@ -454,3 +454,36 @@ fn irregular_et_len_sont_distincts() {
         "<irregular>1</irregular> retire le numéro"
     );
 }
+
+/// `TRead::read(Instrument*)` (`read400/tread.cpp:803`) appelle
+/// `updateInstrumentId` même quand le fichier n'a pas d'identifiant : le nom
+/// de piste suffit. Le lecteur 2.x délègue à `read302` avec la version 302,
+/// ce qui faisait sauter cette reconnaissance et supprimait
+/// `<instrument-sound>` à l'export de trois partitions réelles.
+#[test]
+fn identifiant_d_instrument_reconnu_sans_id_dans_le_fichier() {
+    let xml = r#"<museScore version="2.06"><Score>
+<Division>480</Division>
+<Part><Staff id="1"/><trackName>Piano</trackName>
+  <Instrument><longName>Soprano</longName><shortName>S.</shortName>
+    <trackName>Piano</trackName>
+    <Channel><program value="0"/></Channel></Instrument></Part>
+<Staff id="1"><Measure>
+  <TimeSig><sigN>3</sigN><sigD>4</sigD></TimeSig>
+  <Chord><durationType>quarter</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+  <Rest><durationType>quarter</durationType></Rest>
+  <Chord><durationType>quarter</durationType><Note><pitch>64</pitch><tpc>18</tpc></Note></Chord>
+  </Measure></Staff>
+</Score></museScore>"#;
+    let container = MsczContainer::from_bytes(xml.as_bytes()).expect("conteneur 2.x");
+    let score = read_score(&container).expect("lecture 2.x");
+
+    assert_eq!(score.parts.len(), 1);
+    assert_eq!(
+        score.parts[0].instrument.id, "keyboard.piano",
+        "identifiant reconnu depuis le nom de piste"
+    );
+    // Cas non concerné : un identifiant explicite reste prioritaire.
+    assert_eq!(score.notes.len(), 2);
+    assert_eq!(score.measures.len(), 1);
+}

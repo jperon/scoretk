@@ -250,9 +250,11 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         ],
         instrument.midi_program.map(i16::from),
     );
-    if reader.version.as_u32() != 302 {
-        instrument.id = recognized_id;
-    }
+    // `TRead::read(Instrument*)` (`read400/tread.cpp:803`) appelle toujours
+    // `updateInstrumentId`, y compris pour les fichiers 2.x que `read206`
+    // confie à ce lecteur avec la version 302. L'identifiant explicite lu
+    // prime déjà dans `recognize`.
+    instrument.id = recognized_id;
     if instrument.midi_program.is_none() {
         instrument.midi_program = recognized_program.and_then(|value| u8::try_from(value).ok());
     }
