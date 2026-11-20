@@ -54,41 +54,39 @@ use crate::container::MsczContainer;
 use crate::{Error, Result};
 use scoretk_core::model::{Measure, Score};
 
-/// Applique le `<Style>` séparé d'un `.mscz` au style déjà lu.
+/// Reprend du `<Style>` séparé d'un `.mscz` la seule valeur que le pivot ne
+/// peut pas déduire du `.mscx`.
 ///
 /// `MscLoader::read` (`rw/mscloader.cpp:86-94`) appelle
 /// `MscReader::readStyleFile()` (`infrastructure/mscreader.cpp:127-132`) et
-/// `masterScore->style().read(&buf)` avant de lire la partition.
+/// `masterScore->style().read(&buf)` *avant* de lire la partition : le style
+/// inline du `.mscx` l'emporte ensuite. Comme le lecteur lit déjà le style
+/// inline, on ne reprend ici que `createMultiMeasureRests` (`styledef.cpp:571`)
+/// — seule valeur nécessaire à la reconstruction des multi-repos
+/// (`dom/measure.cpp:2899`) — afin de ne pas écraser les autres réglages.
 fn apply_style_file(score: &mut Score, mss: &[u8]) -> Result<()> {
     let mut reader = quick_xml::Reader::from_reader(mss);
     reader.config_mut().trim_text(true);
     let mut in_style = false;
-    let mut name = String::new();
-    let mut text = String::new();
+    let mut in_flag = false;
     loop {
         match reader.read_event()? {
             Event::Start(element) => {
                 let local = element.name();
-                let tag = local.as_ref();
-                if tag == "Style" {
-                    in_style = true;
-                } else if in_style {
-                    name = tag.to_owned();
-                    text.clear();
+                match local.as_ref() {
+                    "Style" => in_style = true,
+                    "createMultiMeasureRests" if in_style => in_flag = true,
+                    _ => {}
                 }
             }
-            Event::Text(value) if in_style && !name.is_empty() => {
-                text.push_str(value.as_ref());
+            Event::Text(value) if in_flag => {
+                score.style.create_multi_measure_rests = value.as_ref().trim() == "1";
             }
-            Event::End(element) => {
-                if element.name().as_ref() == "Style" {
-                    in_style = false;
-                } else if in_style && !name.is_empty() {
-                    score.style.set_value(&name, text.trim());
-                    name.clear();
-                    text.clear();
-                }
-            }
+            Event::End(element) => match element.name().as_ref() {
+                "Style" => in_style = false,
+                "createMultiMeasureRests" => in_flag = false,
+                _ => {}
+            },
             Event::Eof => break,
             _ => {}
         }
