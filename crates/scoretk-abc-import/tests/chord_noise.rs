@@ -105,7 +105,11 @@ c2 [CEG]2 | e2 (\"4\"c'3.B) | [\"Coda\" e2 (\"4\"c'3.B) (dc3)c2 |]
     let source = "X:1\nM:4/4\nL:1/8\nK:C\nC2 | [\"Coda\"\n";
     let score = read_abc(source).expect("volta textuelle en fin de fichier");
     assert_eq!(
-        score.notes.iter().map(|note| note.pitch).collect::<Vec<_>>(),
+        score
+            .notes
+            .iter()
+            .map(|note| note.pitch)
+            .collect::<Vec<_>>(),
         vec![60],
         "la note avant la volta reste seule"
     );

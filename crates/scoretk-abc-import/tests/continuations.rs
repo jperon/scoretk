@@ -99,7 +99,11 @@ fn champ_apres_continuation_en_fin_de_fichier() {
         "la mesure avant le champ garde sa longueur écrite"
     );
     assert_eq!(
-        score.notes.iter().map(|note| note.pitch).collect::<Vec<_>>(),
+        score
+            .notes
+            .iter()
+            .map(|note| note.pitch)
+            .collect::<Vec<_>>(),
         vec![60],
         "aucune note ajoutée par le champ final"
     );
