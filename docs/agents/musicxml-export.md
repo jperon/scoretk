@@ -135,7 +135,19 @@ et `4` au lieu de `1` et `2`.
 Mesure ciblée sur les 6 fichiers concernés : **6 gains, 0 perte** (par exemple
 `Hallelujah - Haendel` : 16 → 0 lignes divergentes).
 
-## 7. Next causes
+## 7. Correction XSD détectée par la re-mesure
+
+La re-mesure complète a révélé 5 erreurs XSD sur 2 fichiers : une clef
+`after-barline` était écrite dans le même `<attributes>` que `<staff-details>`,
+ce que la XSD 4.0 interdit (`clef*` précède `staff-details*`). Les fonctions
+`writeStaffDetails`/`writeInstrumentDetails` laissent `<attributes>` ouvert
+quand il n'y a pas de `<transpose>`. L'export le referme désormais uniquement
+quand un bloc `<staff-details>` vient d'être écrit
+(`crates/scoretk-musicxml-export/src/exportmusicxml.rs`), avec un test de non-
+régression structurel. Les deux fichiers concernés (`Sancta Maria KV 273`,
+`Dixit Dominus — Sicut erat`) sont de nouveau valides (0 erreur XSD).
+
+## 8. Next causes
 
 Work the ranking of §2 in order, re-measuring after each committed cause:
 `tuplet` (bracket direction), `attributes`, `measure`, `midi-channel`, `sound`.

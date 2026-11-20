@@ -2767,3 +2767,42 @@ fn canaux_midi_des_canaux_secondaires() {
         .collect();
     assert_eq!(canaux, vec!["1", "4"], "canaux exportés : {canaux:?}");
 }
+
+/// Une clef de reprise (`after-barline`) ne doit jamais être écrite dans le
+/// même `<attributes>` que `<staff-details>` : la XSD 4.0 exige toutes les
+/// clefs avant les `<staff-details>`.Cas réel : Sancta Maria KV 273.
+#[test]
+fn clef_apres_staff_details_interdite() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    score.staff_mut(staff).visible = false;
+    let track = Track::new(score.staff(staff).id, 0);
+
+    let mut first = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut first, track, ClefType::G);
+    ajouter_silence_mesure(&mut score, &mut first, track, Fraction::ZERO);
+    score.add_measure(first);
+
+    let mut second = ajouter_mesure(1, Fraction::ONE, Fraction::ONE, Fraction::ONE);
+    second.section_break_before = true;
+    let mut segment = Segment::new(SegmentType::Clef, Fraction::ONE, score.staves.len());
+    segment.set_element(track, SegmentItem::Clef(Clef::new(ClefType::F)));
+    second.add_segment(segment);
+    ajouter_silence_mesure(&mut score, &mut second, track, Fraction::ZERO);
+    score.add_measure(second);
+
+    let xml = export_musicxml(&score).expect("export");
+    for block in xml.split("<attributes>").skip(1) {
+        let block = block.split("</attributes>").next().unwrap_or("");
+        if let (Some(details), Some(clef)) = (
+            block.find("<staff-details"),
+            block.find("<clef after-barline"),
+        ) {
+            assert!(
+                clef < details,
+                "clef après staff-details dans le même attributes :\n{block}"
+            );
+        }
+    }
+}

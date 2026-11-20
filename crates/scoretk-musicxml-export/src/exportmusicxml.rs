@@ -914,8 +914,9 @@ impl<'a> Context<'a> {
             );
         }
         self.write_measure_clefs(out, measure, measure_index, part);
+        let mut wrote_staff_details = false;
         if is_first {
-            self.write_staff_details(out, measure_index, part);
+            wrote_staff_details = self.write_staff_details(out, measure_index, part);
             self.write_instrument_details(out, part);
         } else {
             // Portées masquées du système (`hideEmptyStaves`) : MuseScore les
@@ -945,6 +946,14 @@ impl<'a> Context<'a> {
                 out.xml.tag_empty("staff-details", &attributes);
                 out.attr(false);
             }
+        }
+        // Quand `writeStaffDetails` a écrit un bloc sans `<transpose>` suivant,
+        // `<attributes>` reste ouvert : une clef de fin de mesure
+        // (`after-barline`) risquerait d'y être écrite après `<staff-details>`
+        // (interdit par la XSD 4.0). On ne ferme que dans ce cas, pour ne pas
+        // changer la structure des autres mesures.
+        if wrote_staff_details {
+            out.attr(false);
         }
         // `measureStyle` : un `<measure-style>` ouvre le groupe de silences
         // multi-mesures, sur la première mesure du groupe.
@@ -2285,9 +2294,10 @@ impl Context<'_> {
     /// `hiddenStaves` (`hideEmptyStaves`) et écrit le bloc dès qu'une portée
     /// est masquée, même si elle a 5 lignes. Le portage n'écrivait que les
     /// portées non standard et ignorait les portées masquées.
-    fn write_staff_details(&self, out: &mut Out, measure_index: usize, part: &Part) {
+    fn write_staff_details(&self, out: &mut Out, measure_index: usize, part: &Part) -> bool {
         let staves = part.staves.len();
         let hidden = self.systems.hidden_at(measure_index);
+        let mut wrote = false;
         for (position, staff_id) in part.staves.iter().enumerate() {
             let staff = self.score.staff(*staff_id);
             let hidden_staff = !staff.visible || hidden.contains(&(staff_id.raw() as usize));
@@ -2308,7 +2318,9 @@ impl Context<'_> {
             out.xml.start_element("staff-details", &attributes);
             out.xml.tag("staff-lines", &staff.lines.to_string());
             out.xml.end_element();
+            wrote = true;
         }
+        wrote
     }
 
     /// Écrit `<transpose>` (`writeInstrumentDetails`).
