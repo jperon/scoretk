@@ -1215,9 +1215,42 @@ Conclusions, in decreasing order of the earlier claim:
    - **Chord symbols** in `El_Choclo` (32 `<Harmony>`). At tick 0 the reference
      adds `62, 65, 69` (D minor) where the source has a single `38`: the
      `<Harmony><root>16</root><name>m</name>` is realised and played by
-     `renderHarmony` (`compatmidirenderinternal.cpp:1021-1078`). Not ported yet:
-     it needs the `RealizedHarmony` voicing and a separate harmony channel,
-     neither of which the pivot carries.
+     `renderHarmony` (`compatmidirenderinternal.cpp:1021-1078`) using the
+     `RealizedHarmony` voicing. The pivot carries the symbol but the MIDI
+     writer did not realise it; fixed below.
+
+### Cause fixed: chord-symbol playback
+
+`crates/scoretk-midi-export/src/harmony.rs` (new file) ports the default-style
+`RealizedHarmony` voicing (`realizedharmony.cpp:92-180`): bass at
+`DEFAULT_OCTAVE - 2` (octave 3), root and close-position degrees at
+`DEFAULT_OCTAVE` (octave 5), intervals from the chord name (minor/major, 7th,
+dim, aug, sus…), and `getActualDuration` with the default
+`UNTIL_NEXT_CHORD_SYMBOL` (`styledef.cpp:420`). `render.rs` unfolds those
+symbols on the same repeat segments as the notes (`renderHarmony`,
+`compatmidirenderinternal.cpp:1021-1078`). The reduced test
+`tests/harmony_playback.rs` uses the notes of a two-measure `Dm` → `A7` score
+exported by MuseScore 4.7.4 (bass 38/45, close voicing 62/65/69 and
+69/61/64/67), without a binary fixture.
+
+Full `.mscz` re-measurement on the same 171 reference MIDIs: **6 files gain
+1522 N2 matches, zero losses**; N2 94.17 % → **94.57 %**. Gains:
+`Czardas Monti` +394, `Triumphal March` +364, `ZORBA THE GREEK` +355,
+`Adios Muchachos` +192, `La Partida` +158, `El Choclo` +59 (the first
+passages now match exactly; the later ones keep a pre-existing shift).
+
+### Remaining `.mscz` losses (common manifest, by lost notes)
+
+| File | Lost | N1 / N2 | First divergence and attribution |
+| --- | ---: | ---: | --- |
+| `Vingt_danses_enfantines_pour_piano.mscz` | 16 114 | 99.89 / 39.14 | From tick 1507 a 1-quarter drift; documented above as section-pause tempo (40 BPM/2 quarters vs 60/3) and 2.x mid-measure ottava anchoring — not a repeat or voicing fault. |
+| `Vivaldi … Dominus_fredipi.mscz` | 897 | 100 / 40.71 | All pitches present, attacks shifted; same pause/volta family. |
+| `El_Choclo.mscz` | 775 | 100 / 33.25 | First 70 quarters exact after the chord fix; then a 1.5-quarter drift from a later passage (repeat/pause), not the voicing. |
+| four others | 519 | — | Accordion registration and 2.x ottava ends (§19.8 of `mscx-format.md`). |
+
+These require the tempo timeline / 2.x spanner anchoring port discussed above;
+neither is a chord-symbol, trill or reader-note defect. No per-file loss was
+introduced by either playback cause.
 
 ### Cause fixed: trill playback in the MIDI writer
 
