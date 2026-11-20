@@ -313,9 +313,16 @@ impl RepeatList {
         if self.segments.is_empty() {
             return utick;
         }
+        // `RepeatList::utick2tick` (`repeatlist.cpp:239-258`) borne la recherche
+        // par l'utick du **segment suivant**, jamais par `endTick()` (un tick
+        // source). Mélanger les deux repères faisait retomber à zéro tout utick
+        // situé après une reprise.
         for (index, segment) in self.segments.iter().enumerate() {
-            let end = self.segment_end(segment);
-            if utick >= segment.utick && (utick < end || index + 1 == self.segments.len()) {
+            let next_utick = self
+                .segments
+                .get(index + 1)
+                .map_or(i64::MAX, |next| next.utick);
+            if utick >= segment.utick && utick < next_utick {
                 return utick - (segment.utick - segment.tick);
             }
         }

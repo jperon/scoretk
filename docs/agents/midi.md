@@ -1097,3 +1097,47 @@ pitch divergences are the 2.x ottavas whose extent ends mid-measure
 Fixing either would require a separate port of the tempo timeline / 2.x
 spanner anchoring, not a change to `read206` or `repeat_list.rs`; none is made
 here because a wrong change there would regress the 21/21 conformant corpus.
+
+### Pause map: faithful `PauseMap::calculate` (2026-11-20, follow-up)
+
+`pause_map.rs` now ports `PauseMap::calculate` line by line
+(`pausemap.cpp:47-76`). It first builds the **unfolded** tempo timeline:
+`source_tempos` collects every `<Tempo>`/tempo annotation (plus the default 2
+bps at tick 0, `tempotimeline.cpp:44-46`), `source_pauses` collects the section
+breaks (3 s, `Sid::sectionPause`), both are unfolded through `RepeatList`
+segments, then `tempo_timeline` merge-walks them by utick like
+`TempoTimeline::rebuild` (`tempotimeline.cpp:134-180`). A pause point carries
+the bps of the point that precedes it, so the restore no longer uses a separate
+source-tick lookup. `render.rs::tempo_events` now only converts
+`PauseMap::tempo_events` (the C++ `m_tempoEvents` map) to microseconds: there
+is no second, independent unfolding of tempo marks. Fermatas and caesuras have
+no duration in the pivot model (the upstream playback module that fills
+`PausesMap` is absent), so only section breaks produce pauses; the existing
+reduced test `points_d_orgue_et_respirations_n_allongent_pas_le_rendu` guards
+that choice.
+
+Two upstream details matter for 4.7.4:
+
+* `RepeatList::utick2tick` (`repeatlist.cpp:239-258`) bounds the search by the
+  **next segment's utick**. The Rust port compared an unfolded tick with
+  `segment_end`, a source tick, so every pause after the first repeat mapped
+  to source tick 0 and inherited the wrong time signature. Fixed in
+  `repeat_list.rs`.
+* 4.7.4 takes the pause length from the **actual measure length**, not the
+  declared `<TimeSig>`: the 2.x piano file has `len="2/4"` measures declaring
+  `3/4`, and the reference writes 40 BPM for 2 quarters where the 5.0 source
+  would write 60 BPM for 3. Per `docs/agents/upstream.md`, 4.7.4 wins.
+  `quarter_notes_at` uses `Measure::len` and falls back to the time signature.
+
+Reduced test: `pause_map::tests::un_saut_de_section_insere_toujours_une_pause`
+builds a 2/4 measure with a 3/4 `<TimeSig>` and asserts the 2/3 bps pause, the
+960 inserted ticks and the 2 bps restore. `corpus_midi` stays 21/21.
+
+Measurement (frozen baseline from master `82b28dd`, same manifests and oracle,
+`timeout 10 prlimit --as=2000000000`): the three MIDI writing lots are
+**unchanged file by file** (no gain, no loss). MusicXML oracle, N2 per version:
+3.x/4.x 0.9740 unchanged; 1.x/2.x **0.6754 → 0.7094**. The piano file alone
+goes from N2 0.3134 to 0.3913 (8298 → 10361 matched attacks) and N2d 7720 →
+9643, with its first three section pauses now at the reference's 672/952/1118
+quarters, 40 BPM for 2 quarters each. `core`, XSD and `exact` counts are
+unchanged.

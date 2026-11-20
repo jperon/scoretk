@@ -519,43 +519,20 @@ fn pitch_offset(map: &BTreeMap<i64, i32>, tick: i64) -> i32 {
 ///
 /// Les changements sont déroulés comme les autres évènements, puis les pauses
 /// de section ajoutent leur tempo et le retour au tempo en vigueur.
-fn tempo_events(score: &Score, repeat_list: &RepeatList, pause_map: &PauseMap) -> Vec<(i64, u32)> {
-    // MuseScore initialise toujours le tempo par défaut à 2 battements par
-    // seconde (500 000 µs) quand aucune indication n'ouvre la partition.
-    let mut source: BTreeMap<i64, f64> = BTreeMap::new();
-    source.insert(0, 2.0);
-    for measure in &score.measures {
-        for segment in &measure.segments {
-            for entry in &segment.annotations {
-                if let Annotation::Tempo(tempo) = &entry.annotation {
-                    if let Some(beats_per_second) = tempo.beats_per_second {
-                        source.insert(segment_tick(segment.tick), beats_per_second);
-                    }
-                }
-            }
-        }
-    }
-
+fn tempo_events(_score: &Score, _repeat_list: &RepeatList, pause_map: &PauseMap) -> Vec<(i64, u32)> {
+    // `PauseMap::calculate` (`pausemap.cpp:47-76`) tient **tous** les
+    // changements de tempo dans `m_tempoEvents`, y compris les indications
+    // écrites et les pauses, aux ticks après insertion. On ne reconstruit donc
+    // rien ici : la chronologie déroulée et fusionnée est la seule source.
     let to_micros = |beats_per_second: f64| {
         let micros = (1.0 / beats_per_second * 1_000_000.0).round();
         micros.clamp(1.0, 0x00ff_ffff as f64) as u32
     };
-
-    let mut events: BTreeMap<i64, u32> = BTreeMap::new();
-    for segment in &repeat_list.segments {
-        let end = repeat_list.segment_end(segment);
-        let offset = segment.utick - segment.tick;
-        for (tick, beats_per_second) in &source {
-            if *tick >= segment.tick && *tick < end {
-                let utick = pause_map.tick_with_pauses(tick + offset);
-                events.insert(utick, to_micros(*beats_per_second));
-            }
-        }
-    }
-    for (utick, beats_per_second) in &pause_map.tempo_events {
-        events.insert(*utick, to_micros(*beats_per_second));
-    }
-    events.into_iter().collect()
+    pause_map
+        .tempo_events
+        .iter()
+        .map(|(utick, beats_per_second)| (*utick, to_micros(*beats_per_second)))
+        .collect()
 }
 
 /// Carte des vélocités depuis les nuances et les soufflets
