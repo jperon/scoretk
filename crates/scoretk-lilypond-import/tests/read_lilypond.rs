@@ -4871,3 +4871,30 @@ fn clef_treble_8_ne_change_pas_la_hauteur() {
         assert_eq!(hauteurs(&score), vec![72, 74], "clé {clef}");
     }
 }
+
+/// Quand la partition gravée porte elle-même `\\midi`, LilyPond écrit son MIDI
+/// en premier : la référence est donc transposée, et le modèle doit suivre la
+/// partition gravée, pas un `\\score` MIDI ultérieur.
+#[test]
+fn score_grave_avec_midi_preval_sur_les_scores_midi_suivants() {
+    let source = r#"\version "2.24.0"
+\language "english"
+\score { \transpose c d { c'4 d' } \layout {} \midi {} }
+\score { { e'4 f' } \midi {} }
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![62, 64], "score gravé transposé");
+    assert_eq!(score.measures.len(), 1);
+
+    // Cas non concerné : sans `\\midi` sur le score gravé, le score MIDI seul
+    // fait le modèle (règle NR §24.3).
+    let seul = read_lilypond(
+        r#"\version "2.24.0"
+\language "english"
+\score { \transpose c d { c'4 d' } \layout {} }
+\score { { e'4 f' } \midi {} }
+"#,
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&seul), vec![64, 65]);
+}

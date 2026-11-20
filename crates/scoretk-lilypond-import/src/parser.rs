@@ -550,10 +550,18 @@ impl<'a> Parser<'a> {
                     crate::playback::detect(&score.score, &self.partitions[index].score)
                 })
             });
-            // Dès qu'un score ne produit que du MIDI, c'est le seul que
-            // LilyPond joue : il fournit le modèle même si sa musique diffère
-            // du score gravé (AStMichel : 666 notes jouées contre 130 gravées).
-            let chosen = midi.unwrap_or(engraved);
+            // LilyPond écrit un MIDI par score qui porte `\midi`, dans
+            // l'ordre du fichier ; l'oracle retient le premier produit. Si la
+            // partition gravée porte elle-même `\midi`, c'est son MIDI
+            // (transposé) qui fait référence : on garde alors le score gravé.
+            // Sinon, le premier score `\midi` sans `\layout` est le seul
+            // joué (AStMichel : 666 notes contre 130 gravées) et fournit le
+            // modèle, même si sa musique diffère du score gravé.
+            let first_midi = self
+                .partitions
+                .iter()
+                .position(|partition| partition.has_midi);
+            let chosen = first_midi.unwrap_or(engraved);
             document.playback_transposition = if chosen == engraved { detected } else { None };
             for (index, partition) in self.partitions.iter().enumerate() {
                 if index != chosen {
