@@ -1746,15 +1746,25 @@ impl Reader {
         // dans `<tuplet-actual>`, même si le ratio interne est réduit).
         tuplet.actual_notes = actual.max(1);
         tuplet.normal_notes = normal.max(1);
-        if let Some(number) = element.child("Number") {
-            let text = number.child("text").map(Element::text).unwrap_or_default();
-            tuplet.number_type = if text.is_empty() {
-                TupletNumberType::None
-            } else if text.contains(':') {
-                TupletNumberType::Ratio
-            } else {
-                TupletNumberType::Number
-            };
+        // `TRead::readStyledProperty` (read460/tread.cpp:1530) relit
+        // `Pid::NUMBER_TYPE` (`numberType`) en priorité ; les fichiers plus
+        // anciens n'ont que `<Number><text>`, conservé en repli.
+        match element.child("numberType").and_then(Element::int) {
+            Some(1) => tuplet.number_type = TupletNumberType::Ratio,
+            Some(2) => tuplet.number_type = TupletNumberType::None,
+            Some(0 | 3) | None => {
+                if let Some(number) = element.child("Number") {
+                    let text = number.child("text").map(Element::text).unwrap_or_default();
+                    tuplet.number_type = if text.is_empty() {
+                        TupletNumberType::None
+                    } else if text.contains(':') {
+                        TupletNumberType::Ratio
+                    } else {
+                        TupletNumberType::Number
+                    };
+                }
+            }
+            Some(_) => {}
         }
         // `Tuplet::calcHasBracket` n'est qu'une mise en page ; faute de ligatures
         // modélisées, on applique la règle du corpus : un n-olet de croches ou

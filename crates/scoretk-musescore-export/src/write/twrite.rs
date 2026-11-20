@@ -940,6 +940,18 @@ pub(crate) fn write_tuplet(xml: &mut XmlWriter, tuplet: &Tuplet) {
             xml.end_element();
         }
     }
+    // `TWrite::write(const Tuplet*)` (`write/twrite.cpp:3500-3525`) appelle
+    // `writeStyledProperties` (`:644-647`) : `Pid::NUMBER_TYPE` est une
+    // propriété de style (`dom/tuplet.cpp:50`) nommée `numberType`
+    // (`dom/property.cpp:119`), 1 = SHOW_RELATION et 2 = NO_TEXT
+    // (`dom/types.h:1600`). Le lecteur 4.6+ (`read460/tread.cpp:1530`) ne lit
+    // que cette propriété ; sans elle il retombe sur SHOW_NUMBER et l'export
+    // MusicXML de MuseScore perd `show-number="none"`/`"both"`.
+    match tuplet.number_type {
+        TupletNumberType::Number => {}
+        TupletNumberType::Ratio => xml.tag("numberType", "1"),
+        TupletNumberType::None => xml.tag("numberType", "2"),
+    }
     // `calcHasBracket` n'est qu'une mise en page, mais MuseScore 3 écrivait le
     // choix dans `<bracket>` et le lecteur le relit : on le conserve.
     xml.tag("bracket", if tuplet.bracket { "1" } else { "0" });
