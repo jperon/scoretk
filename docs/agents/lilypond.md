@@ -2022,23 +2022,68 @@ musicxml2ly on three lots by exact files and compiles far more sources; the
 XML figure of musicxml2ly is measured on one file (alternative's
 `UnboundLocalError`, §13).
 
-### Loss ranking by lost notes (first diverging cause)
+### Why the percentages and an earlier "lost notes" ranking disagreed
 
-| First cause | Lost N2d notes | Files | Reduced example | Decision |
-| --- | ---: | ---: | --- | --- |
-| `octave` | 12 469 | 33 | `07- Adeste fideles - Trompettes.mscz` | Input/reference disagreement and reader limits (§13): MuseScore's own MusicXML and reference MIDI drop rest measures the `.mscx` really contains. The reverted fix of §13 would recover these notes by deleting genuine music; out of scope here. |
-| `attaque_decalee` | 842 | 9 | `03_05_Enfants_Alleluia_livret.ly` | Multi-score `\transpose` and chord-grid positions are resolved by the reader; the writer receives an already-shifted model. Out of scope (import agent). |
-| `compilation` | 377 | 1 | `La_foule.mscz` | **Fixed below**: a lyric syllable `7` was written bare, which LilyPond rejects as a duration. |
-| `autre` | 47 | 1 | `HavaNagila.ly` | Chord grid written with `*N` plus redundant spacers; reader-side model, out of scope. |
-| `duree_seule` | 31 | 3 | `clef-1.mscx` | Gate time only (0.25 vs 0.125 quarter), no pitch or attack lost; not worth a targeted fix. |
+The oracle's N2 % is a **reference-weighted mean**:
+`Σ(ref_i × pct_n2_i) / Σ(ref_i)`, over the files where a reference MIDI exists
+*and* the candidate produced a MIDI. It is not a mean of per-file percentages,
+and the numerator/denominator are not the same for the two tools.
 
-By lot, the N2d gap is 13 436 notes on `.mscz` (37 files), 311 on `.ly` (6
-files) and 19 on the corpus (4 files); XML has no loss. No fixable export
-cause exceeds 0.3 N2 point once the input/reference artefacts and reader
-limits are excluded. The 95 % target is therefore not reachable from this
-crate alone: the remaining gap is the MuseScore 1.x/2.x reader (22 files),
-the multi-rest disagreement, tremolo/glissando/playback-coupling reference
-artefacts (§13) and chord-grid/`\transpose` reading.
+| Tool | Lot | Files with ref | Σ ref notes | Σ N2 matches | N2 % |
+| --- | --- | ---: | ---: | ---: | ---: |
+| scoretk | corpus | 56 | 2320 | 1818 | 78.36 |
+| musicxml2ly | corpus | 46 | 1970 | 1812 | 91.98 |
+| scoretk | `.mscz` | 166 | 344 845 | 294 309 | 85.35 |
+| musicxml2ly | `.mscz` | 144 | 270 513 | 247 497 | 91.49 |
+
+musicxml2ly fails internally or at compilation on 10 corpus files (including
+`timesig-09`, 320 reference notes) and 30 `.mscz` files; **their reference
+notes leave its denominator entirely**. Restricted to the 46 corpus files both
+tools measure, scoretk is 1785/1970 = **90.61 %** against 91.98 %: a 1.37-point
+gap (27 notes), not 13.62 points. The other 12.25 points are scoretk's
+9.43 % on the 10 files musicxml2ly cannot process (33/350, mostly the tremolo
+artefact of §13). On the 139 common `.mscz` files the gap is real and large:
+230 138/262 167 = 87.78 % against 91.83 %, i.e. **10 621 notes**.
+
+An earlier ranking compared **N2d** (duration-sensitive), skipped every file
+where musicxml2ly had no percentage, and used a 0.3-note threshold: it found
+only 19 corpus notes and mistook the denominator effect for a musical result.
+The corrected ranking below uses **N2 matches**, `ref × (pct_n2_m2 −
+pct_n2_tk)/100`, on the files both tools measure.
+
+### Loss ranking against musicxml2ly (first diverging attack)
+
+Corpus: 7 files, +30 N2 matches to musicxml2ly — `testExcludeInvisibleElements`
+(+8), `copypaste_parts` (+5), `partExclusion` (+4), `layout_elements` (+4),
+`voices` (+3), `timesig-05` (+3), `testChordSymbols` (+3). These are small,
+layout/cross-staff and optional-courtesy cases (§7), worth 0.13 N2 point
+together.
+
+`.mscz`: 34 files, **+12 274 matches**, dominated by orchestral parts. The
+first diverging attack of `07- Adeste fideles - Trompettes` is bar 5 (tick 16),
+where the reference and musicxml2ly have pitches 55/59/62 and scoretk has none;
+of `02- Les anges - Alto` it is tick 68, where three voices have pitches 69/76
+in the reference and musicxml2ly but only 61 in scoretk; of `01- Trompettes`
+it is tick 256, where pitch 41 is missing. In each case scoretk's notes are
+**shifted later by 28 quarters (7 bars)**, not absent. The construct is the
+multi-measure rest: `musicxml2ly` writes the number of rest measures actually
+present in the MusicXML, while the writer trusted `Measure::multi_measure_rest`
+even when it overstates them.
+
+This is **not** a reader defect: `scoretk file.mscz --to musicxml` was compared
+to MuseScore's own MusicXML export for these four files — identical note count
+and 100 % N2 against the reference for `Les anges`/`01- Trompettes` (both 2022
+and 1813 notes). The model given to the writer is right; the writer inserted
+seven phantom bars. The `.ly` control case `silence_multi_mesures_ne_mange_pas_
+les_notes_suivantes` already required not swallowing real music; the new
+multiplier test below adds the converse case (field larger than the music).
+
+| Cause (first divergence) | Lost N2 matches | Files | Decision |
+| --- | ---: | ---: | --- |
+| Multi-measure-rest multiplier | 12 274 | 34 | **Fixed below**: derive the multiplier from the measures present and the measure length, capped by the field. |
+| Invisible/cross-staff/courtesy accidents | 30 | 7 | Model carries no visibility/cross-staff data (§7); below 0.3 point. |
+| MuseScore 1.x/2.x input | 0 (excluded from both) | 22 | Reader limit of the other agent, not this crate. |
+| Tremolo/glissando/playback coupling | — | — | Reference artefacts of §13; no writer-side equivalent. |
 
 ### Cause fixed: `\transposition` identity reset
 
@@ -2074,12 +2119,52 @@ fatal error, so the gain is compilation fidelity, not notes. The control
 cases (`m`, `l'ami!`, `ta.`) remain bare words and the corpus snapshots are
 unchanged.
 
-Both fixes are byte-inert on the measured corpus: the fixed binary
-(`6398909639c5933b…`) was compared to the frozen one on all 637 lot sources
-(`timeout 10 prlimit --as=2000000000`): **637/637 identical `.ly`**; one
-transient 10 s timeout on a large Vivaldi score was rerun alone in 9.4 s with
-identical bytes. No file loses N1, N2 or N2d.
+### Cause fixed: multi-measure-rest multiplier
 
+Notation Reference §2.2.3 (Full measure rests): « The duration of a
+multi-measure rest must always be equal to the length of one or several
+measures. » `musicxml2ly` builds the multiplier from the duration actually read
+(`python/musicexp.py:310-311`, `Duration.ly_expression`:
+`if self.repeat != 1: dur_str += f'*{self.repeat}'`), not from an annotation. The
+writer used `Measure::multi_measure_rest` verbatim. On the four orchestral files
+analysed above the field says 13 but only six measures of silence precede the
+music, so `R1*13` shifted every following attack by 28 quarters in four staves
+while the model, MuseScore's own MusicXML export and the reference MIDI all
+place the notes at tick 68. The writer now computes the multiplier as
+`max(consecutive all-rest model measures, measure.len/nominal_len)`, capped by
+the field; the two earlier tests (field smaller than or equal to the music)
+still pass, and a new reduced test (field 5, three rest measures, then a note)
+failed before and passes after, emitting `R1*3`.
+
+Full re-measurement of the four-lot oracle with the final binary
+(`/tmp/ly95-final`, same cached references, all launches under
+`timeout 10 prlimit --as=2000000000`):
+
+| Lot | Baseline N2 % | Final N2 % | Change on comparable files |
+| --- | ---: | ---: | --- |
+| corpus | 78.36 | 78.36 | 0 gain, 0 loss (56 files) |
+| `.mscz` | 85.35 | 82.23 | **+1.99 points** (85.35 → 87.34) on the 166 files measurable in both runs |
+
+The raw `.mscz` aggregate fell only because five large scores had no cached
+reference MIDI in the baseline run and gained one in the final run
+(`Vingt_danses_enfantines_pour_piano.mscz` alone has 26 477 reference notes).
+On the 166 common files the fix gains **+6878 N2 matches over 12 files, with
+zero losses**: the `Minuit chrétien` parts (+1105, +1089, +1089, +1004, +872,
++549), `00- Il est né … choeur` (+340) and four `Adeste fideles` parts
+(+220, +195, +168, +151). The first two fixes are byte-inert: the intermediate
+binary (`6398909639c5933b…`) was compared to the frozen one on all 637 lot
+sources: **637/637 identical `.ly`** (one transient 10 s timeout on a large
+Vivaldi score was rerun alone in 9.4 s with identical bytes). No corpus
+snapshot changed and no file loses N1, N2 or N2d.
+
+The remaining `Les anges` losses (1162 notes on two files) are **not** a writer
+defect and are documented with the required reduced example: the model's own
+MusicXML export (identical to MuseScore's for these files) has
+`<multiple-rest>13</multiple-rest>` at measure 12 of part P6 but only six
+`<measure>` elements carrying rests before measure 18, which carries notes.
+The writer faithfully expands 13 measures (the model given to it is already
+wrong); musicxml2ly writes the six measures actually present. correcting it
+requires the reader, which this campaign must not touch.
 ## 21. Reading campaign, third pass (2026-11-20)
 
 ### Current ranking (binary after the first two passes)

@@ -68,6 +68,35 @@ struct Item<'a> {
 /// `voice_count` est le nombre de voix écrites pour la portée : au-delà d'une,
 /// chaque voix reçoit `\voiceOne`, `\voiceTwo`… pour que LilyPond gère les
 /// collisions et les hampes comme MuseScore.
+
+// Nombre de mesures consécutives, à partir de `debut`, qui ne contiennent que
+// des silences dans cette voix. Le modèle est la seule source de vérité : le
+// champ `multi_measure_rest` peut annoncer plus de mesures que la musique n'en
+// contient réellement (MuseScore 4.7.4 tronque certains multi-silences dans son
+// propre export MusicXML, confirmé par la référence MIDI). Écrire le chiffre du
+// champ décalerait toutes les notes suivantes de la différence.
+fn silences_present(items: &[Item<'_>], debut: usize, total: usize) -> usize {
+    let mut index = 0usize;
+    let mut presents = 0usize;
+    for numero in debut..total {
+        let fin = index
+            + items[index..]
+                .iter()
+                .take_while(|item| item.measure == numero)
+                .count();
+        if !items[index..fin]
+            .iter()
+            .all(|item| item.chord_rest.is_rest())
+        {
+            break;
+        }
+        presents += 1;
+        index = fin;
+    }
+    presents
+}
+
+/// Écrit le corps d'une variable de voix, sans l'enveloppe `\fixed c' { … }`.
 pub(crate) fn render_body(
     score: &Score,
     structure: &Structure,
@@ -475,11 +504,18 @@ pub(crate) fn render_body(
                     measure.len
                 };
                 if len.is_positive() {
-                    emitter.token(&format!("{}*{count}", measure_rest_token(len)));
+                    // Le champ du modèle est un plafond, pas une vérité : le
+                    // multiplicateur est le nombre de mesures de silence
+                    // réellement présentes, ou l'étendue de la mesure quand
+                    // elle en condense plusieurs (cas des tests du corpus).
+                    let presents = silences_present(&items, measure_index, score.measures.len());
+                    let etendue = (measure.len / len).as_f64().round().max(1.0) as usize;
+                    let reel = presents.max(etendue).min(count as usize);
+                    emitter.token(&format!("{}*{reel}", measure_rest_token(len)));
+                    multi_rest_left = reel.saturating_sub(1) as u16;
                 }
                 item_index = end_of_measure;
                 multi_rest_done = true;
-                multi_rest_left = count - 1;
             }
         }
 

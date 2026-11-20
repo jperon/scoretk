@@ -473,6 +473,56 @@ fn silence_multi_mesures_non_double() {
     );
 }
 
+/// Le champ `multi_measure_rest` du modèle peut annoncer plus de mesures que
+/// n'en contient réellement la musique (cas réel : `02- Les anges - Alto.mscz`,
+/// `multiMeasureRest` 13 mais six seules mesures de silence dans l'export
+/// MusicXML de MuseScore, donc dans le modèle). Écrire `R1*13` aligne la note
+/// suivante sept mesures trop tard : 1162 attaques perdues. Le multiplicateur
+/// doit venir des mesures présentes, pas du seul champ.
+#[test]
+fn multiplicateur_du_silence_multi_mesures_compte_les_mesures_du_modele() {
+    let mut score = scoretk_core::model::Score::new();
+    let part = score.add_part(Part::new("Voice", "Vo."));
+    let staff = score.add_staff(part);
+    let quatre_quarts = Fraction::ONE;
+
+    // Mes porteuse du marqueur : le champ annonce cinq mesures, mais deux
+    // seulement sont des silences dans le modèle, puis vient une note.
+    for index in 0..4usize {
+        let start = Fraction::new(index as i64, 1);
+        let mut measure = Measure::new(index, start, quatre_quarts);
+        if index == 0 {
+            measure.multi_measure_rest = Some(5);
+        }
+        let mut segment = Segment::new(SegmentType::ChordRest, start, 1);
+        let chord = if index < 3 {
+            ChordRest::rest(Duration::measure())
+        } else {
+            let mut chord = ChordRest::chord(Duration::whole());
+            let note_id = score.add_note(Note::new(60, tpc::C));
+            let ChordRestKind::Chord(ref mut content) = chord.kind else {
+                unreachable!()
+            };
+            content.notes.push(note_id);
+            chord
+        };
+        segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+        measure.add_segment(segment);
+        score.add_measure(measure);
+    }
+
+    let produit = scoretk_lilypond_export::write_lilypond(&score).expect("écriture");
+    assert!(
+        produit.contains("R1*3"),
+        "le multiplicateur doit compter les trois mesures de silence du modèle :\n{produit}"
+    );
+    assert!(
+        !produit.contains("R1*5"),
+        "le champ multi_measure_rest annonce cinq mesures absentes du modèle :\n{produit}"
+    );
+    assert!(produit.contains("c1"), "note finale absente :\n{produit}");
+}
+
 /// Les identifiants LilyPond ne peuvent pas contenir de chiffre : avec plus
 /// de dix portées, `staff11VoiceOne` est analysé comme `staff` suivi de `11`
 /// et toute la compilation échoue (cas réel : `Veni veni Emmanuel` à 13
