@@ -1200,24 +1200,40 @@ Conclusions, in decreasing order of the earlier claim:
    export matches the reference to within eight notes and exactly,
    respectively. No reader or writer change is warranted; the premise that
    these two need a fix is retracted with the measurement above.
-2. **`El_Choclo`, `JMHaydn`, `Minuit chrétien`**: the reference MIDI contains
-   **more notes than the source `.mscx` carries** (+653, +624 and +370 beyond
-   the `<Note>` count; the difference survives repeat expansion: our MIDI is
-   already the unfolded score). First diverging attacks: El Choclo tick 0,
-   reference `[38, 38, 62, 65, 69]` against a source whose first chord is only
-   `[38]`; JMHaydn tick 55.5, four `72` *and* four `74` in the reference
-   against four `72` in the source; Minuit tick 90, extra unison `48`/`50`
-   attacks. These are MuseScore playback doublings of the kind already
-   documented in §13/§14 of `lilypond.md` (accordion/register coupling,
-   linked-part unisons), not notes the `.mscz` reader drops: the model dump
-   matches the `.mscx` note-for-note (the small deficit is tie fragments,
-   which the MIDI writer intentionally merges into one attack). A reader fix
-   cannot invent notes absent from the input; a writer fix cannot reproduce
-   a playback rule that the model does not carry.
+2. **The extra notes are playback-generated, and the reader is not at fault.**
+   Matching the extra MIDI notes `(tick, pitch, track)` against the `.mscx`
+   identifies two constructs:
+   - **Trills** in `JMHaydn` (206 `<Articulation><subtype>ornamentTrill`) and
+     `Minuit chrétien` (16 `<Ornament>` of the same subtype). Their 682 and
+     432 extra notes have a duration of ~0.12 quarter (59 ticks) and alternate
+     two diatonic degrees — e.g. JMHaydn tick 55.5/55.75/56.0: `74, 72, 74`,
+     then `79, 77, 79`. MuseScore's `excursions` table
+     (`compatmidirenderinternal.h:89-92`) and `renderNoteArticulation`
+     (`compatmidirender.cpp:668-810`) generate exactly this. The `.mscz` reader
+     already stores `OrnamentType::TrillMark` (`read/notation_names.rs:139`);
+     the **MIDI writer** ignored it. Fixed below.
+   - **Chord symbols** in `El_Choclo` (32 `<Harmony>`). At tick 0 the reference
+     adds `62, 65, 69` (D minor) where the source has a single `38`: the
+     `<Harmony><root>16</root><name>m</name>` is realised and played by
+     `renderHarmony` (`compatmidirenderinternal.cpp:1021-1078`). Not ported yet:
+     it needs the `RealizedHarmony` voicing and a separate harmony channel,
+     neither of which the pivot carries.
 
-No reduced test was added: a failing test would have to assert extra notes
-that the source file does not contain. If a playback coupling rule is ever
-modelled (a `Spanner`/`Instrument` flag in `scoretk-core`), these three files
-are the regressors to use. Meanwhile the actionable `.mscz` reader work
-remains the MuseScore 1.x/2.x reader and the `duree_seule` family already
-listed in §"Measurement against a frozen master binary".
+### Cause fixed: trill playback in the MIDI writer
+
+`crates/scoretk-midi-export/src/ornaments.rs` (new file) ports the default-style
+`ornamentTrill` excursion: 32nd step (60 ticks at 480/quarter), prefix `{0,1}`,
+body `{0,1}` repeated to fill the chord, diatonic upper degree, with the
+64 Hz/8 Hz frequency bounds of `renderNoteArticulation`. `render.rs` replaces
+the sustained note by that excursion when a chord carries `TrillMark` and no
+grace notes are merged (`graceNotesMerged`, `compatmidirenderinternal.cpp:1736`).
+The reduced test `tests/trill_playback.rs` uses the eight attacks and three
+following notes exported by MuseScore 4.7.4 from a minimal `.mscx` (both the
+`<Articulation>` and `<Ornament>` encodings), not a binary fixture.
+
+Full `.mscz` re-measurement with the same 171 reference MIDIs and both binaries
+under `timeout 10 prlimit --as=2000000000`: **30 files gain 3870 N2 matches,
+zero losses**; N2 93.14 % → **94.17 %**. Largest gains: `JMHaydn` +584 (91.50 →
+98.78 %), the nine `Minuit chrétien` parts +252 each (91.76 → 96.57 %), four
+`Missa in Es` Haydn movements +128/+77, and several `Adeste fideles` parts +62.
+`Espana_Cani` and `Sicut_Cervus` remain unchanged (already 99.74/100 %).
