@@ -2157,14 +2157,40 @@ sources: **637/637 identical `.ly`** (one transient 10 s timeout on a large
 Vivaldi score was rerun alone in 9.4 s with identical bytes). No corpus
 snapshot changed and no file loses N1, N2 or N2d.
 
-The remaining `Les anges` losses (1162 notes on two files) are **not** a writer
-defect and are documented with the required reduced example: the model's own
-MusicXML export (identical to MuseScore's for these files) has
-`<multiple-rest>13</multiple-rest>` at measure 12 of part P6 but only six
-`<measure>` elements carrying rests before measure 18, which carries notes.
-The writer faithfully expands 13 measures (the model given to it is already
-wrong); musicxml2ly writes the six measures actually present. correcting it
-requires the reader, which this campaign must not touch.
+The first version of that fix was inert: its helper scanned the item list from
+index 0 instead of the current item, so every score kept the marker's value.
+Instrumenting one conversion showed `mi=11 count=13 presents=55 etendue=1`,
+obviously an out-of-range scan. After passing `item_index` to the helper, the
+**real** measure grid is used. The earlier conclusion that `Les anges` was a
+reader defect was therefore wrong and is retracted here: with the corrected
+helper those files match musicxml2ly exactly. The reduced test
+`grille_de_mesures_preval_sur_la_len_du_multi_silence` (a 13-bar `len` plus five
+distinct rest measures, then a note) failed before and passes after.
+
+### Final re-measurement (all three lots, common files)
+
+| Lot | Common files | scoretk N2 | musicxml2ly N2 | Gap |
+| --- | ---: | ---: | ---: | ---: |
+| corpus | 46 | 90.61 % | 91.98 % | −1.37 pt (27 notes) |
+| `.mscz` | 143 | **92.15 %** | 91.33 % | **+0.82 pt in our favour** |
+| `.ly` | 118 | **90.72 %** | 87.41 % | +3.31 pt in our favour |
+
+Per-file gains from the corrected helper (`.mscz`, against the previous run):
+`Les anges - Alto` and `- Violons` +1162 each, `Adeste - Trompettes` +1230,
+`Minuit chrétien` parts +964/+964/+840/+719/+468, `Adeste - Flûtes` +955,
+`- Basson` +937, etc. — 30 files gain 14 292 matches. One apparent −2588 on
+`Vivaldi … Juravit Dominus` was a 10 s conversion timeout under load; an
+isolated retry in 6.9 s produced **byte-identical** `.ly` to the previous run.
+No corpus file changed and no file loses N1, N2 or N2d.
+
+Remaining gaps on common files, all below the 0.3-point actionable threshold
+except the two first: corpus 27 notes over 7 files (invisible/cross-staff,
+courtesy accidentals, each ≤8 notes); `.ly` 150 notes over 5 files
+(`HavaNagila` 47, `03_05_Enfants` 45, `Lassus_In_pace` 42, two 8-note snippets);
+`.mscz` 9 files where musicxml2ly still wins, led by `La_foule` (363) and
+accordion/octave-coupling artefacts (`Triumphal_March`, `ZORBA_THE_GREEK`,
+`Adios_Muchachos`). The next causes are ranked and fixed below.
+
 ## 21. Reading campaign, third pass (2026-11-20)
 
 ### Current ranking (binary after the first two passes)
