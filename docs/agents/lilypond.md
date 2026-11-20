@@ -2722,3 +2722,31 @@ model changed was removed from a hard-linked copy of the refs tree. The driver
 then regenerated each of them with **plain** LilyPond (no injected `\midi`)
 into its work directory; both binaries were measured against that same tree,
 so the comparison keeps a constant denominator and a constant reference.
+
+#### Measurement of the MIDI-score selection
+
+Both binaries were measured with the **same** reference tree and the same
+manifests (constant denominator); 191 sources whose model changed had their
+cached `ly.midi` removed so the driver regenerated them with plain LilyPond
+2.26. The regenerated reference is now the one LilyPond actually writes (the
+`\midi`-only score), not the engraved score that `pre.ly` used to inject MIDI
+into.
+
+| Lot | N2 before → after (same refs) | Exact |
+| --- | --- | ---: |
+| mus | 88.85 → **94.10** | 1093 → 1115 |
+| ra | 82.31 → 82.31 | 1279 |
+| mut | 78.84 → **80.77** | 434 → 444 |
+
+Per file: **133 N1 gains / 21 losses, 139 N2 gains / 26 losses**, exact files
+2806 → 2838. The losses are concentrated in repeat-flagged files whose
+reference still came from an older `pre.ly` compilation: `GaudeteChristusEstNatus`
+loses 1070 matched notes because the cached MIDI there was the engraved,
+transposed score, whereas a fresh plain LilyPond compile gives 1074/1074
+matching pitches and attacks with the fixed binary. Several other losses
+(`rach-prelude23-05`, `Prelude-et-fugue-en-la-majeur`) are the same stale-ref
+effect; they are not reader regressions. Restricted to the files whose
+reference was actually regenerated and to non-repeat files, the change is a
+clear gain. The `\clef "treble_8"` cause of §20 vanishes with the selection
+fix: the pitch error came from choosing the transposed engraved score, and a
+control test confirms the clef itself never changes MIDI pitch.
