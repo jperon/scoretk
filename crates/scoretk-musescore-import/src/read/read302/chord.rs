@@ -215,6 +215,7 @@ pub(crate) fn read_tuplet(
     let mut base_dots = 0u8;
     let mut number_type = TupletNumberType::Number;
     let mut bracket = None;
+    let mut bracket_type = None;
     let mut tuplet_placement = None;
 
     for child in node.children() {
@@ -228,6 +229,9 @@ pub(crate) fn read_tuplet(
             "baseDots" => base_dots = child.int_text().unwrap_or(0).clamp(0, 4) as u8,
             "numberType" => number_type = tables::tuplet_number_type(child.int_text()),
             "bracket" => bracket = Some(child.int_text().unwrap_or(0) != 0),
+            // `Pid::BRACKET_TYPE` (SHOW_BRACKET = 1, SHOW_NO_BRACKET = 2),
+            // comme dans le lecteur 4.x (`read4xx/mod.rs`).
+            "bracketType" => bracket_type = child.int_text(),
             "direction" => {
                 tuplet_placement = match child.trimmed_text().as_str() {
                     "up" => Some(Placement::Above),
@@ -256,10 +260,15 @@ pub(crate) fn read_tuplet(
     // plus courte qu'une croche, s'en passe aussi.
     let short_base = base_len < Fraction::new(1, 8)
         || (base_len == Fraction::new(1, 8) && ratio != Fraction::ONE);
-    tuplet.bracket = bracket.unwrap_or(match parent {
-        None => false,
-        Some(_) => !short_base,
-    });
+    tuplet.bracket = match bracket_type {
+        Some(1) => true,
+        Some(2) => false,
+        _ => bracket.unwrap_or(match parent {
+            None => false,
+            Some(_) => !short_base,
+        }),
+    };
+    tuplet.bracket_explicit = bracket.is_some() || bracket_type.is_some();
     reader.explicit_tuplet_brackets.push(bracket.is_some());
     reader.score.add_tuplet(tuplet)
 }

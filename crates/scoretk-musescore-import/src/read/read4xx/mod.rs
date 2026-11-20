@@ -1822,6 +1822,7 @@ impl Reader {
         // `<bracket>` reste le repli des fichiers 3.x.
         let bracket_type = element.child("bracketType").and_then(Element::int);
         let explicit_bracket = element.child("bracket").is_some() || bracket_type.is_some();
+        tuplet.bracket_explicit = explicit_bracket;
         tuplet.bracket = match bracket_type {
             Some(1) => true,
             Some(2) => false,

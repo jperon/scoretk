@@ -191,6 +191,44 @@ silences fait gagner 21 fichiers sur 22 mais casse la conformité du corpus
 décision dépend de données de mise en page absentes du modèle pivot. Aucun
 correctif n'a donc été commité pour cette cause.
 
+## 9. Cause suivante : crochet des n-olets (`calcHasBracket`)
+
+`Tuplet::calcHasBracket` (`tuplet.cpp:204-268`) retire le crochet d'un n-olet
+entièrement ligaturé. Le portage écrivait le crochet par défaut sur les 22
+fichiers concernés. Le modèle pivot n'a pas les groupes de ligatures calculés
+par la mise en page, mais porte les durées notées : une ligature n'est possible
+que pour une croche ou plus courte (`:231-245`, `beamCount < 1` → crochet). Un
+nouveau fichier `tuplet_bracket.rs` porte cette règle et ses garde-fous
+(n-olet dégénéré `cr1 == cr2` **sans** crochet, `tuplet.cpp:209-211` ; silence
+avec crochet, `:212-214` ; ratio non réduit `4:4` avec limite à la double-croche).
+`bracket_explicit` distingue les valeurs lues (`<bracket>`, `<bracketType>`,
+attribut MusicXML `bracket`) qui restent prioritaires. Le lecteur 3.x lit
+désormais `<bracketType>` comme le lecteur 4.x.
+
+Mesure ciblée sur les 22 fichiers : **22 gains, 0 perte**, lignes divergentes
+7 660 → 6 382. Conformité du corpus et aller-retour MusicXML conservés.
+
+### Re-mesure complète après ces deux causes (174 fichiers)
+
+La re-mesure a donné **51 gains, 1 perte, 121 inchangés** (42 107 → 28 979 →
+26 775 lignes ; 54 fichiers core-identiques ; XSD scoretk toujours 0 erreur).
+L'unique perte, `Dixit Dominus — Judicabit in na` (84 → 104), a été ramenée à
+**84** après correction d'un détail du portage : `calcHasBracket` renvoie
+`false` pour un n-olet dégénéré (`cr1 == cr2`, `:209-211`), alors que la
+première version du portage le traitait comme un silence. Vérification ciblée
+sur les 31 fichiers `attributes`/`tuplet` + ce fichier : 1 gain, 0 perte. Le
+résultat corrigé est donc **51 gains, 0 perte, 122 inchangés** et 26 755 lignes
+divergentes. Le classement restant est `staff-details` 35, `dot` 27,
+`attributes` 24, `tuplet` 7.
+
+### Données manquantes pour un portage complet
+
+`calcHasBracket` utilise aussi l'appartenance exacte aux objets `Beam`, le
+nombre de ligatures de chaque note, la direction de hampe calculée et les
+ruptures 32/64 (`:218-268`). Ces objets sont créés par la mise en page et ne
+sont pas dans le `.mscx` : le modèle pivot ne peut les reconstruire. La règle
+ci-dessus reprodut le cas observé dans le lot sans ces données.
+
 ## 8. Next causes
 
 Work the ranking of §2 in order, re-measuring after each committed cause:

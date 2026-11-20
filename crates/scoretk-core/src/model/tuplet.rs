@@ -65,6 +65,10 @@ pub struct Tuplet {
     pub number_type: TupletNumberType,
     /// Vrai si le n-olet est encadré d'un crochet.
     pub bracket: bool,
+    /// Vrai si `<bracket>`/`<bracketType>` était explicite dans le `.mscx`
+    /// (`Tuplet::bracketType() != AUTO_BRACKET`) : la valeur l'emporte alors
+    /// sur le calcul de mise en page `calcHasBracket`.
+    pub bracket_explicit: bool,
     /// Nombre de notes jouées tel qu'écrit dans le fichier (`<actualNotes>`).
     ///
     /// Le ratio est réduit, donc `4/4` y devient `1/1` ; MuseScore affiche en
@@ -91,6 +95,7 @@ impl Tuplet {
             parent: None,
             number_type: TupletNumberType::Number,
             bracket: false,
+            bracket_explicit: false,
             actual_notes: ratio.numerator(),
             normal_notes: ratio.denominator(),
             placement: None,

@@ -68,6 +68,7 @@ use super::stems;
 use super::systems;
 use super::text;
 use super::textlines;
+use super::tuplet_bracket;
 use super::writer::XmlWriter;
 
 /// Logiciel annoncé dans `<encoding>`, identique à MuseScore 4.7.
@@ -1411,10 +1412,12 @@ impl Context<'_> {
         if !simple {
             attributes.push(("number", number.to_string()));
         }
-        attributes.push((
-            "bracket",
-            if tuplet.bracket { "yes" } else { "no" }.to_owned(),
-        ));
+        let bracket = if tuplet.bracket_explicit {
+            tuplet.bracket
+        } else {
+            tuplet_bracket::has_bracket(self.score, id)
+        };
+        attributes.push(("bracket", if bracket { "yes" } else { "no" }.to_owned()));
         match tuplet.number_type {
             TupletNumberType::Number => {}
             TupletNumberType::Ratio => attributes.push(("show-number", "both".to_owned())),

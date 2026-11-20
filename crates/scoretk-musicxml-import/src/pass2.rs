@@ -59,6 +59,7 @@ struct TupletNotation {
     stop: bool,
     number: usize,
     bracket: bool,
+    bracket_explicit: bool,
     placement: Option<Placement>,
     number_type: TupletNumberType,
     actual: Option<i64>,
@@ -1620,6 +1621,7 @@ fn tuplet_notations(element: &Element) -> Vec<TupletNotation> {
                 .and_then(|number| number.parse().ok())
                 .unwrap_or(1),
             bracket: tuplet.attribute("bracket") == Some("yes"),
+            bracket_explicit: tuplet.attribute("bracket").is_some(),
             placement: match tuplet.attribute("placement") {
                 Some("above") => Some(Placement::Above),
                 Some("below") => Some(Placement::Below),
@@ -1694,6 +1696,7 @@ fn start_tuplets(
         let mut tuplet = Tuplet::new(ratio, base_len, tick, Fraction::ZERO);
         tuplet.parent = state.tuplets.last().map(|open| open.id);
         tuplet.bracket = notation.bracket;
+        tuplet.bracket_explicit = notation.bracket_explicit;
         tuplet.number_type = notation.number_type;
         tuplet.placement = notation.placement;
         tuplet.actual_notes = actual_notes;

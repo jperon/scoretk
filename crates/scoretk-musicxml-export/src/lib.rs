@@ -58,6 +58,7 @@ mod stems;
 mod systems;
 mod text;
 mod textlines;
+mod tuplet_bracket;
 mod writer;
 
 #[cfg(test)]

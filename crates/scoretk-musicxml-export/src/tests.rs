@@ -545,12 +545,14 @@ fn n_olets_imbriques() {
     let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::HALF, Fraction::HALF);
     ajouter_clef(&mut score, &mut measure, track, ClefType::G);
 
-    let outer = score.add_tuplet(Tuplet::new(
+    let mut outer = Tuplet::new(
         Fraction::new(3, 2),
         Fraction::new(1, 4),
         Fraction::ZERO,
         Fraction::HALF,
-    ));
+    );
+    outer.bracket_explicit = true; // ce test porte sur l'imbrication, pas sur le crochet
+    let outer = score.add_tuplet(outer);
     let inner = score.add_tuplet({
         let mut tuplet = Tuplet::new(
             Fraction::new(5, 4),
@@ -559,6 +561,7 @@ fn n_olets_imbriques() {
             Fraction::QUARTER,
         );
         tuplet.parent = Some(outer);
+        tuplet.bracket_explicit = true;
         tuplet
     });
 
@@ -2833,4 +2836,46 @@ fn measure_style_dans_le_bloc_staff_details() {
         same_block,
         "measure-style doit rester dans le bloc staff-details :\n{xml}"
     );
+}
+
+/// `Tuplet::calcHasBracket` (`tuplet.cpp:204-268`) supprime le crochet d'un
+/// n-olet entièrement ligaturé (croches ou plus courtes). Le portage écrivait
+/// le crochet par défaut. Cas réels : Buenos_dias (15 fichiers). Un n-olet de
+/// noires non ligaturables garde son crochet (7 fichiers).
+#[test]
+fn crochet_de_nolet_sans_bracket_type() {
+    for (duration, expected) in [(Duration::eighth(), "no"), (Duration::quarter(), "yes")] {
+        let mut score = Score::new();
+        let part_id = score.add_part(Part::new("Voix", "Vx"));
+        let staff = score.add_staff(part_id);
+        let track = Track::new(score.staff(staff).id, 0);
+        let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+        ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+        let tuplet = score.add_tuplet(Tuplet::new(
+            Fraction::new(3, 2),
+            duration.ticks(),
+            Fraction::ZERO,
+            Fraction::ONE,
+        ));
+        for index in 0..3 {
+            let note = score.add_note(Note::new(62 + index as u8, tpc::D));
+            let mut chord_rest = ChordRest::chord(duration);
+            chord_rest.tuplet = Some(tuplet);
+            chord_rest.chord_mut().expect("accord").notes.push(note);
+            ajouter_element(
+                &mut score,
+                &mut measure,
+                track,
+                Fraction::new(index as i64, 3),
+                chord_rest,
+            );
+        }
+        score.add_measure(measure);
+
+        let xml = export_musicxml(&score).expect("export");
+        assert!(
+            xml.contains(&format!("<tuplet type=\"start\" bracket=\"{expected}\"")),
+            "crochet attendu {expected} pour {duration:?} :\n{xml}"
+        );
+    }
 }
