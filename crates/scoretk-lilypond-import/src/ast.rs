@@ -149,8 +149,8 @@ pub(crate) enum Context {
     Key { fifths: i8, mode: KeyMode },
     /// `\time`.
     Time { numerator: i32, denominator: i32 },
-    /// `\partial`.
-    Partial(scoretk_core::model::Duration),
+    /// `\partial`, en ticks (multiplicateur `*n/d` déjà appliqué, §2.3.3).
+    Partial(scoretk_core::model::Fraction),
     /// `\set Timing.measureLength = #n/d`.
     MeasureLength(scoretk_core::model::Fraction),
     /// `\cadenzaOn` (`true`) / `\cadenzaOff` (`false`), ou

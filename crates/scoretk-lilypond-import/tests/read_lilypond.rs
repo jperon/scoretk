@@ -722,6 +722,80 @@ fn levees_et_n_olets() {
 }
 
 #[test]
+fn partial_avec_multiplicateur_donne_la_longueur_de_mesure() {
+    // Notation Reference §2.3.3 « Upbeats » : `\partial` prend une durée et
+    // les multiplicateurs sont admis, donc `\partial 8*5` vaut cinq croches.
+    // Source réduite d'une levée en fin de partition, avec barres de contrôle,
+    // accord, silence et mesures pleines qui encadrent la levée.
+    let score = lire(concat!(
+        "\\time 3/4 \\partial 8*5 ",
+        "c'8 c'8 c'8 c'8 c'8 | ",
+        "d'4. e'4. | ",
+        "<g' b' d''>2. \\bar \"|.\"",
+    ));
+    let lens: Vec<_> = score.measures.iter().map(|measure| measure.len).collect();
+    assert_eq!(
+        lens,
+        vec![
+            Fraction::new(5, 8),
+            Fraction::new(3, 4),
+            Fraction::new(3, 4),
+        ],
+        "longueurs des mesures"
+    );
+    assert!(score.measures[0].is_irregular());
+    assert_eq!(
+        durees_ecrites(&score),
+        [
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(3, 8),
+            Fraction::new(3, 8),
+            Fraction::new(3, 4),
+        ],
+        "durées écrites de la voix"
+    );
+}
+
+#[test]
+fn partial_multiplicateur_en_cours_de_partition() {
+    // Réduction de `FauconDArmor.ly` : `\partial 8` en ouverture (cas non
+    // concerné, doit rester 1/8) puis `\partial 8*5` en fin de partition, en
+    // 6/8. La deuxième levée vient juste après une barre implicite.
+    let score = lire(concat!(
+        "\\time 6/8 \\partial 8 c'8 | ",
+        "d'4. e'8 f'8 g'8 | ",
+        "\\partial 8*5 <c' e' g'>4. r4 \\bar \"|.\"",
+    ));
+    let lens: Vec<_> = score.measures.iter().map(|measure| measure.len).collect();
+    assert_eq!(
+        lens,
+        vec![
+            Fraction::new(1, 8),
+            Fraction::new(6, 8),
+            Fraction::new(5, 8)
+        ],
+        "longueurs des mesures"
+    );
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::new(1, 8),
+            Fraction::new(3, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(3, 8),
+            Fraction::new(2, 8),
+        ],
+        "durées écrites de la voix"
+    );
+}
+
+#[test]
 fn contexte_staff_simple_garde_trame_et_grace() {
     // Extrait minimal de `grace-staff-length.ly` : après un silence d'une
     // mesure, un `\context Staff` (contexte EXISTANT) contient un ornement et

@@ -2272,7 +2272,18 @@ impl<'a> Parser<'a> {
                 }
             }
             "partial" => match self.parse_duration() {
-                Some((duration, _)) => context(Context::Partial(duration)),
+                // Notation Reference §2.3.3 « Upbeats » : l'argument de
+                // `\partial` est une durée, multiplicateur `*n/d` compris
+                // (`\partial 8*5` = cinq croches). Comme pour les durées de
+                // paroles (§ parse_lyric_duration), on applique ici le
+                // multiplicateur : la figure seule ne peut pas représenter
+                // 5/8 et le multiplicateur était jusqu'ici perdu, laissant la
+                // mesure plus courte que la somme de ses accords.
+                Some((duration, multiplier)) => {
+                    let ticks = duration.ticks();
+                    let len = multiplier.map_or(ticks, |value| ticks * value);
+                    context(Context::Partial(len))
+                }
                 None => Music::Empty,
             },
             // `property-init.ly` : `cadenzaOn` pose `Timing.timing = ##f`

@@ -632,10 +632,9 @@ impl<'a> Interpreter<'a> {
                 numerator: *numerator,
                 denominator: *denominator,
             }),
-            Context::Partial(duration) => {
-                let len = duration.ticks();
+            Context::Partial(len) => {
                 if len.is_positive() {
-                    self.meta(MetaEvent::Partial(len));
+                    self.meta(MetaEvent::Partial(*len));
                 }
             }
             Context::MeasureLength(length) => {

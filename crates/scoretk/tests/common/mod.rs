@@ -19,6 +19,7 @@
 
 #![allow(dead_code)]
 
+pub mod consistency;
 pub mod musicxml_core;
 
 use std::io::{Cursor, Write};

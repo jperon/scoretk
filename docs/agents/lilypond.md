@@ -1558,3 +1558,63 @@ durations. Both are already documented limits, not regressions. The `octave`
 flag falls from 60 to 55 files; no file gains or loses N1 or N2 downwards. The
 reading lots and the LilyPond reading oracle are byte-level unchanged, as
 expected since the MusicXML writer does not use the new field.
+
+## 16. `\partial` with a duration multiplier (2026-11-20)
+
+### Cause and fix
+
+Notation Reference §2.3.3 (Upbeats) defines `\partial <duration>` as the length
+of the music before the first bar, and §2.1.3 allows multipliers on durations:
+`\partial 8*5` is five eighths, not one eighth. In the reader,
+`Parser::parse_duration()` returns both the written figure and its `*n/d`
+factor; the `\partial` branch kept only the figure. The measure frame then gave
+the anacrusis `len = 1/8` while its chords summed to `5/8`, and MuseScore 4.7.4
+refused the written `.mscz` with `Incomplete measure … Found: 5/8. Expected:
+1/8` (`docs/agents/mscx-write.md` §8, second pass). §2.6.3 (Time administration)
+also allows `\partial` in the middle of a score, where its argument is the
+*remaining* length of the current bar — this is why many affected sources put
+a second shortened bar at the very end.
+
+`ast::Context::Partial` now carries the tick `Fraction` (figure × multiplier)
+instead of a `Duration`, using the same conversion as explicit lyric
+durations. A zero factor is ignored, so the measure falls back to the time
+signature, as for `\partial 0`. The writer is unchanged: it still emits
+`\partial <duration>` from `Measure.len`.
+
+### Tests
+
+- `read_lilypond.rs`: a five-eighth upbeat with control bars, a chord, a rest
+  and two following full bars; a mid-score `\partial 8*5` after a plain
+  `\partial 8`. Both assert measure lengths, nominal lengths and every written
+  duration.
+- `partial_multiplier.rs`: two staves, variables, `\relative`, a later
+  `\score`, `\times`/`\tuplet`, chords and rests; exact pitches and measure
+  lengths, plus `\partial 4*0` (limit) and `\partial 4` (unaffected case).
+- `common/consistency.rs` + `coherence_corpus.rs`: a shared invariant — each
+  voice's effective chord-rest durations, tuplets included, sum to
+  `Measure::len` — checked over the 56 `.ly` corpus files. `v3_moonlight.ly` is
+  excluded: it has voices that stop before the bar line, an already documented
+  layout difference (§7 and `mscx-write.md` §7), not an anacrusis defect.
+
+### Measurement
+
+Frozen baseline: `/tmp/scoretk-mscz-pass2-base` (merged master, before this
+fix); fixed binary: `/tmp/scoretk-partial-fix`. All binaries ran under
+`timeout` + `prlimit --as=2000000000`.
+
+| Oracle | Baseline | Current | Change |
+| --- | ---: | ---: | --- |
+| MuseScore writing, `ly` partial lot (50 files) | 10 opened | 49 opened | +39, 0 loss |
+| LilyPond reading `mus` (73 files) | 55 exact | 58 exact | +3, 0 loss |
+| LilyPond reading `ra` (87) / `mut` (19) | 20 / 6 exact | 20 / 6 exact | unchanged |
+| MIDI `ecriture_ly` (50 partial + 94 other files) | — | — | byte-identical MIDI |
+
+The three reading-oracle gains are `Benedicite.ly` (N2 20 → 36) and the two
+`LChefDePatrouilleADeuxGalons.ly` copies (N2 16 → 76); all become *exact* and
+none loses notes. The one file of the partial lot that MuseScore still refuses,
+`lily-cf5ff785.ly`, fails on a different cause (`Voice too long`, measure 33,
+staff 1, voice 3) and was already unopened in the baseline: our change fixes
+its anacrusis (`len` 1/8 → 3/8) but not that independent voice-length defect.
+The MIDI comparison is byte-for-byte on the generated files (6 of the 100
+sampled sources produce no MIDI in either binary and are excluded), so the
+`ecriture_ly` figures of §15 still hold.
