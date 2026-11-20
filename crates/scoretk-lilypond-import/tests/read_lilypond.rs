@@ -4624,7 +4624,11 @@ fn repeat_tremolo_etire_les_durees() {
         .collect();
     assert_eq!(
         reelles,
-        vec![Fraction::new(1, 4), Fraction::new(1, 4), Fraction::new(1, 2)],
+        vec![
+            Fraction::new(1, 4),
+            Fraction::new(1, 4),
+            Fraction::new(1, 2)
+        ],
         "chaque note du trémolo dure 4 × une double croche"
     );
 
@@ -4633,6 +4637,10 @@ fn repeat_tremolo_etire_les_durees() {
     assert_eq!(hauteurs(&un), vec![60, 62, 64]);
     assert_eq!(
         durees_ecrites(&un),
-        vec![Fraction::new(1, 8), Fraction::new(1, 8), Fraction::new(1, 4)]
+        vec![
+            Fraction::new(1, 8),
+            Fraction::new(1, 8),
+            Fraction::new(1, 4)
+        ]
     );
 }
