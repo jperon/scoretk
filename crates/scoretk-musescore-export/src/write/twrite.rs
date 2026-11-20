@@ -785,7 +785,37 @@ fn write_tremolo_bar(xml: &mut XmlWriter, bar: &TremoloBar) {
 }
 
 /// Écrit un instrument (`TWrite::writeProperties(Instrument*)`).
+/// Vrai si l'instrument du modèle n'a aucune propriété à écrire.
+fn instrument_est_vide(instrument: &Instrument) -> bool {
+    instrument.id.is_empty()
+        && instrument.long_name.is_empty()
+        && instrument.short_name.is_empty()
+        && instrument.track_name.is_empty()
+        && instrument.transpose.is_none()
+        && instrument.midi_program.is_none()
+        && instrument.midi_channel.is_none()
+        && instrument.midi_port.is_none()
+        && instrument.volume.is_none()
+        && instrument.pan.is_none()
+        && instrument.midi_articulations.is_empty()
+}
+
 pub(crate) fn write_instrument(xml: &mut XmlWriter, instrument: &Instrument) {
+    // Aucune norme écrite (`docs/agents/format-ref/musescore.md`) : le
+    // comportement de MuseScore 4.7.4 fait foi. Son écrivain
+    // (`TWrite::write(const Instrument*)`, write/twrite.cpp:1947) produit
+    // toujours un instrument valide ; un `<Instrument/>` vide est refusé au
+    // chargement (code 1, sans message). Les sources LilyPond/ABC ne fixent pas
+    // d'instrument dans le modèle pivot : on écrit le canal minimal par défaut.
+    let repli = Instrument {
+        midi_program: Some(0),
+        ..Instrument::new("", "", "")
+    };
+    let instrument = if instrument_est_vide(instrument) {
+        &repli
+    } else {
+        instrument
+    };
     let attrs: Vec<(&str, &str)> = if instrument.id.is_empty() {
         Vec::new()
     } else {
