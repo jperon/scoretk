@@ -30,7 +30,7 @@ use scoretk_core::model::tpc;
 use scoretk_core::model::{
     Annotation, Arpeggio, Articulation, BarLine, BarLineType, BeamMode, Breath, Chord, ChordRest,
     Clef, Duration, DurationType, Fermata, FiguredBass, Fingering, Fraction, GraceChord, Hairpin,
-    HairpinType, Harmony, Instrument, KeyMode, KeySig, Lyrics, Note, NoteHeadGroup, NoteHeadType,
+    HairpinType, Harmony, Instrument, Key, KeyMode, KeySig, Lyrics, Note, NoteHeadGroup, NoteHeadType,
     Ornament, PedalInfo, Placement, RehearsalFrame, SegmentItem, SpannerNotation, StaffText,
     StemDirection, SwingUnit, Tempo, TempoKind, TextLineInfo, TimeSig, TimeSigType, Tremolo,
     TremoloBar, TremoloKind, Tuplet, TupletNumberType, VoltaInfo,
@@ -552,7 +552,13 @@ pub(crate) fn placement_name(placement: Placement) -> &'static str {
 }
 
 /// Écrit une annotation de segment.
-pub(crate) fn write_annotation(xml: &mut XmlWriter, annotation: &Annotation, track: Track) {
+pub(crate) fn write_annotation(
+    xml: &mut XmlWriter,
+    annotation: &Annotation,
+    track: Track,
+    score: &scoretk_core::model::Score,
+    tick: Tick,
+) {
     match annotation {
         Annotation::Dynamic(dynamic) => {
             xml.start_element("Dynamic", &[]);
@@ -623,7 +629,9 @@ pub(crate) fn write_annotation(xml: &mut XmlWriter, annotation: &Annotation, tra
             xml.tag_raw("text", &markup(&change.text));
             xml.end_element();
         }
-        Annotation::Harmony(harmony) => write_harmony(xml, harmony),
+        Annotation::Harmony(harmony) => {
+            write_harmony(xml, harmony, key_at(score, tick, track));
+        }
         Annotation::Fermata(fermata) => write_fermata(xml, fermata, track),
         Annotation::FiguredBass(bass) => write_figured_bass(xml, bass),
         Annotation::TremoloBar(bar) => write_tremolo_bar(xml, bar),
@@ -667,19 +675,97 @@ fn write_tempo(xml: &mut XmlWriter, tempo: &Tempo) {
     xml.end_element();
 }
 
+/// Armure en vigueur pour une annotation, sur sa portée.
+fn key_at(score: &scoretk_core::model::Score, tick: Tick, track: Track) -> Key {
+    let mut key = Key::C;
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            if segment.tick > tick {
+                return key;
+            }
+            if let Some(SegmentItem::KeySig(sig)) = segment.element(track) {
+                key = sig.concert_key;
+            }
+        }
+    }
+    key
+}
+
+/// Racine d'un chiffrage de Nashville écrit par `<function>`.
+///
+/// Port de `function2Tpc` (`engraving/dom/pitchspelling.cpp:726-754`) et de
+/// `tpcInterval` (`:658-669`) : `keyTpc = key + 14`, les degrés diatoniques
+/// valent `0, 2, 4, -1, 1, 3, 5` et un altération vaut 7 tpcs. Le résultat est
+/// ramené dans l'ambiguïté enharmonique par `clampEnharmonic` (`:929-937`).
+fn root_from_function(function: &str, key: Key) -> Option<i8> {
+    let chars: Vec<char> = function.chars().collect();
+    let (alter, digit) = if chars.first().is_some_and(char::is_ascii_digit) {
+        (0, chars[0])
+    } else {
+        let altered = chars.len() > 1;
+        let digit = *chars.last()?;
+        let prefix: String = if altered {
+            chars[..chars.len() - 1].iter().collect()
+        } else {
+            String::new()
+        };
+        let alter = if prefix.starts_with("bb") {
+            -2
+        } else if prefix.starts_with("##") {
+            2
+        } else if prefix.starts_with('b') {
+            -1
+        } else if prefix.starts_with('#') {
+            1
+        } else {
+            return None;
+        };
+        (alter, digit)
+    };
+    if !digit.is_ascii_digit() {
+        return None;
+    }
+    let step = digit.to_digit(10)? as usize;
+    if step == 0 {
+        return None;
+    }
+    const INTERVALS: [i8; 7] = [0, 2, 4, -1, 1, 3, 5];
+    let mut tpc = key.fifths() + 14 + INTERVALS[(step - 1) % 7] + alter * 7;
+    while tpc > 27 {
+        tpc -= 12;
+    }
+    while tpc < 1 {
+        tpc += 12;
+    }
+    Some(tpc)
+}
+
 /// Écrit un symbole d'accord.
-fn write_harmony(xml: &mut XmlWriter, harmony: &Harmony) {
+fn write_harmony(xml: &mut XmlWriter, harmony: &Harmony, key: Key) {
     xml.start_element("Harmony", &[]);
     // Port de `writeHarmonyInfo` (write/twrite.cpp:1786-1826) : depuis 4.6, le
     // lecteur (`read460/tread.cpp:2868-2879`) n'accepte les accords chiffrés que
     // dans un enfant `<harmonyInfo>`. Les balises directes sont conservées en
     // plus pour le lecteur de scoretk (`read4xx/mod.rs:1205`), qui n'a pas été
     // porté à `read460` : un fichier 4.70 doit rester lisible des deux côtés.
+    // `writeHarmonyInfo` écrit `<root>` depuis `rootTpc`. Le pivot 3.x stocke
+    // parfois seulement `<function>` (Nashville) : le lecteur de MuseScore
+    // (`read410/tread.cpp:2839`) le convertit en `rootTpc` ; on fait de même
+    // ici pour que le lecteur 4.6+ retrouve l'accord.
+    let root = if harmony.root_tpc == tpc::INVALID {
+        harmony
+            .function
+            .as_deref()
+            .and_then(|function| root_from_function(function, key))
+            .unwrap_or(tpc::INVALID)
+    } else {
+        harmony.root_tpc
+    };
     let info: Vec<(&str, String)> = {
         let mut champs = Vec::new();
         champs.push(("name", harmony.name.clone()));
-        if harmony.root_tpc != tpc::INVALID {
-            champs.push(("root", harmony.root_tpc.to_string()));
+        if root != tpc::INVALID {
+            champs.push(("root", root.to_string()));
         }
         if let Some(bass) = harmony.bass_tpc {
             champs.push(("bass", bass.to_string()));

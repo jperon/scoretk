@@ -273,7 +273,7 @@ fn write_voice(
             write_system_item(xml, kind, item, track);
         }
         for annotation in group.annotations {
-            write_annotation(xml, &annotation.annotation, track);
+            write_annotation(xml, &annotation.annotation, track, ctx.score, tick);
         }
         for chord_rest in group.chords {
             sync_tuplets(xml, ctx, chord_rest.tuplet, &mut open);
