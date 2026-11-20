@@ -4791,3 +4791,33 @@ fn silences_decoupes_en_figures_exactes() {
         ]
     );
 }
+
+/// `ly/music-functions-init.ly:2470` : `\tuplet ratio [span] music` prend une
+/// durée optionnelle de regroupement ; même sans elle, la musique est
+/// compressée par `ratio`. Le lecteur doit consommer `8` avant le corps,
+/// sinon la durée nue devient une note parasite et le n-olet disparaît.
+#[test]
+fn tuplet_avec_duree_de_regroupement() {
+    let score = lire("\\tuplet 3/2 8 { c8 d8 e8 f8 g8 a8 } b2");
+    assert_eq!(
+        hauteurs(&score),
+        vec![60, 62, 64, 65, 67, 69, 71],
+        "aucune note parasite issue de la durée 8"
+    );
+    assert_eq!(score.tuplets.len(), 1, "un n-olet 3/2");
+    assert_eq!(score.tuplets[0].ratio, Fraction::new(3, 2));
+    let notes_avec_n_olet = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .filter(|chord_rest| chord_rest.tuplet.is_some())
+        .count();
+    assert_eq!(notes_avec_n_olet, 6);
+    assert_eq!(score.measures.len(), 1, "mesures");
+
+    // Cas non concerné : sans durée de regroupement, même comportement.
+    let simple = lire("\\tuplet 3/2 { c8 d8 e8 } f2");
+    assert_eq!(hauteurs(&simple), vec![60, 62, 64, 65]);
+    assert_eq!(simple.tuplets.len(), 1);
+}

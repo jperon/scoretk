@@ -2526,6 +2526,20 @@ impl<'a> Parser<'a> {
             }
             "tuplet" => {
                 let (numerator, denominator) = self.parse_ratio().unwrap_or((3, 2));
+                // `ly/music-functions-init.ly:2470` : `tuplet` prend une durée
+                // optionnelle de regroupement (`\tuplet 3/2 8 { … }`), qui ne
+                // devient pas la durée par défaut des notes suivantes. La
+                // consommer évite qu'une durée nue soit lue comme une note.
+                let default = self.default_duration;
+                if self.peek().is_some_and(|token| {
+                    token.as_integer().is_some()
+                        || token.is_command("breve")
+                        || token.is_command("longa")
+                        || token.is_command("maxima")
+                }) {
+                    let _ = self.parse_duration();
+                    self.default_duration = default;
+                }
                 let number_type = self.pending_tuplet_number.take().unwrap_or_default();
                 Music::Context(Context::Tuplet {
                     numerator,
