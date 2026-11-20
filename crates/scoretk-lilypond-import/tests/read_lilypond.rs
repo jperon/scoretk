@@ -5124,3 +5124,14 @@ fn transposition_sur_une_seule_portee_dun_groupe() {
     notes.sort_unstable();
     assert_eq!(notes, vec![57, 59, 60, 61, 62, 62, 64, 65]);
 }
+
+/// `\ottava #1` ne transpose pas les hauteurs MIDI : LilyPond 2.26 joue
+/// do4/ré4/mi4/fa4/sol4, l'ottava ne change que la notation (`make-ottava-set`,
+/// `scm/music-functions.scm`, `lily/ottava-bracket.cc`).
+#[test]
+fn ottava_ne_change_pas_les_hauteurs_midi() {
+    let score =
+        read_lilypond("\\score { \\new Staff { c'4 \\ottava #1 d'4 e'4 f'4 \\ottava #0 g'4 } }")
+            .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67]);
+}
