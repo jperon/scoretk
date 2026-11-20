@@ -362,3 +362,95 @@ Binary `/tmp/scoretk-mscz-pass2-final` (sha256 `5e1d046bb209beb6…`). Same 638 
 | **Total** | **638** | **556** | **557** | **74/556** | **0.9679** | **0.8603** | **0** | **95/254** |
 
 Compared with the frozen baseline: **5 more scores open** (301 `.ly` instead of 297, and the single `.abc`), N2 rises from 0.8594 to 0.8603, and **no file loses any core line** (0 regressions, 0 improvements on files that already opened). The 1 still-failing mscore conversion is a reader-caused incomplete measure; the 17 scoretk errors are unchanged. On the `.ly` and `.abc` lots MuseScore's own import fails outright, so the alternative cannot be beaten there; on corpus/mscz/xml the alternative stays at 56/56, 39/171 and 0/27 core-identical, unchanged.
+
+### Third pass — corpus fidelity after reopening (English)
+
+The baseline of this pass is pass 2 (master `1008616`): corpus 45/56,
+mscz 28/171, xml N2 0.3055. The 11 corpus scores whose scoretk-written `.mscz`
+did not round-trip like MuseScore's own import were reduced by their first
+differing core line; three writer causes were found and fixed.
+
+- **`<markerType>` of a repeat marker** — `repeat69` reopened as a `FINE`
+  marker (`<sound fine="yes"/>`) because the writer emitted only `<label>`.
+  Port of `TWrite::write(const Marker*)` (`write/twrite.cpp:2401-2409`), which
+  writes `Pid::MARKER_TYPE` (`<markerType>`, table `typesconv.cpp:3254`);
+  without it `Marker::Marker` (`dom/marker.cpp:79`) defaults to `FINE`.
+  Reduced test: `marqueur_segno_ecrit_son_type`.
+- **`<parentheses>` of a notehead** — `layout_elements` lost the parenthesised
+  head: the single `<Symbol name="noteheadParenthesis">` is not the 4.6+
+  property. Port of `TWrite::writeProperties(const Note*)`
+  (`write/twrite.cpp:690-697`), which writes `Pid::HAS_PARENTHESES`
+  (`<parentheses>both</parentheses>`, table `typesconv.cpp:952-958`); the
+  MusicXML exporter of MuseScore (`importmusicxml.cpp:3883-3902`) only reads
+  that property. The `<Symbol>` is kept for scoretk's own reader. Reduced
+  test: `parenthèses_de_tête_ecrites_pour_musescore`.
+- **`<dead>` instead of `<ghost>`** — `testNoteheads2` and `voiceswitching`
+  gained `<notehead parentheses="yes">`: the pivot collapses MuseScore's
+  separate `Pid::GHOST` and `Pid::DEAD` into `Note::ghost`, and `<ghost>` makes
+  `ghost()` (`engravingitem.cpp:1688`) add parentheses where the direct export
+  does not. Port of `TWrite::write(const Note*)`
+  (`write/twrite.cpp:2500-2505`): write `<dead>` for the collapsed field.
+  Reduced test: `note_dead_ecrite_comme_dead_pas_comme_ghost`.
+
+Each fix was verified in ordinary music (bars, voices, chords, rests, ties)
+and on a non-concerned score, and confirmed by reopening the written `.mscz`
+in MuseScore 4.7.4: all four corpus files are now core-identical.
+
+| Cause | Corpus | First differing core line | Owner |
+| --- | --- | --- | --- |
+| `<markerType>` | repeat69 | `<sound fine="yes"/>` vs `<sound segno="segno"/>` | writer |
+| `<parentheses>` | layout_elements | missing `<notehead parentheses="yes">normal</notehead>` | writer |
+| `<dead>`/`<ghost>` | testNoteheads2, voiceswitching | `<notehead parentheses="yes">x</notehead>` vs `<notehead>x</notehead>` | writer |
+
+The 7 remaining corpus files are not simple mis-serialisations: `mmrest` and
+`testTboxWords1` keep the multi-measure-rest count only through MuseScore's
+layout (`createMultiMeasureRests` and page-break frames are not in the pivot
+style); `moonlight` is 618 core lines of tuplet brackets in a dense 3.x score;
+`testHarmony6` relies on `<function>`, dropped from the 4.6+ harmony encoding;
+`changevisibility` attaches an accidental to a trill ornament;
+`linked-ties` needs excerpt metadata absent from the pivot; and
+`testExcludeInvisibleElements` mixes ottava and invisible elements. They need
+model, reader or layout work and are left unchanged.
+
+### Third pass — xml N2 (0.31) reduced
+
+The xml N2 collapse is dominated by three `Vingt danses enfantines` scores
+(N1 0.89, N2 0.13). The divergence was reduced to `red_137.musicxml`
+(36 measures) and then to `red_1_160.musicxml` (160 measures). Re-reading both
+`.mscz` with scoretk gives an identical MusicalXML core (0 changed line), so
+the writer preserves the model, the three `<startRepeat>`/`<endRepeat>` pairs
+and the six volta spanners. The difference is in MuseScore's playback: its
+own re-import of the same source plays 1308 notes over 588.5 quarters, the
+scoretk-written `.mscz` 1104 notes over 492.5 quarters — the repeat expansion
+is shorter. Targeted encodings were tested one at a time without restoring
+parity: grace-note `<Events><Event><len>0</len></Event></Events>`, volta
+`<beginText>`, empty versus explicit tie `<location><fractions>`, stray
+`<location>` positioning, `<eid>`, `<Division>`, `<Part>` and `score_style.mss`.
+This is a MuseScore reader/MIDI-expansion semantic difference, not a
+mis-serialised stored value; no speculative writer fudge was applied and the
+xml N2 stays at 0.3055.
+
+### Third pass — final table
+
+Binary `/tmp/scoretk-mscz-pass3-final` (sha256 `7ccc09798f0a774d1d0d8a24…`).
+Same 638 scores, same oracle, same tolerance. Baseline = pass 2 (§ above),
+frozen from master.
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | **49/56** | 0.9700 | 0.9682 | 0 | 56/56 |
+| mscz | 174 | 171 | 172 | **30/171** | 0.9781 | 0.9732 | 0 | 39/171 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9103 | 0.3055 | 0 | 0/27 |
+| ly | 375 | 301 | 301 | 1/301 | 0.9998 | 0.9967 | 0 | 0/0 |
+| abc | 1 | 1 | 1 | 0/1 | 1.0000 | 1.0000 | 0 | 0/0 |
+| **Total** | **638** | **556** | **557** | **80/556** | **0.9679** | **0.8603** | **0** | **95/254** |
+
+Compared with the frozen baseline, **10 files improve and none loses a core
+line**: corpus 8, 48, 52 and 55 (the four causes above, now core-identical);
+mscz 20 (20 to 19 changed lines), 46 and 170 (both core-identical, both
+`<sound fine="yes"/>` from an unrecognised marker, fixed by `<markerType>`);
+and the three `Vingt danses` xml scores each lose 3 core lines (`coda`,
+`segno`, `sound`) from the same marker fix. N1 and N2 are unchanged on every
+lot, so there is no playback regression. On corpus/mscz/xml the alternative
+stays at 56/56, 39/171 and 0/27 core-identical: the remaining gap is
+reader/model work out of scope here.

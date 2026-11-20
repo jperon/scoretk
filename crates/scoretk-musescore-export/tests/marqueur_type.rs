@@ -45,9 +45,10 @@ fn marqueur_segno_ecrit_son_type() {
     let source = fs::read(racine.join("repeat69.mscx")).expect("corpus");
     let partition = lire(&source);
     assert!(
-        partition.measures.iter().any(|m| m.repeat_marks.iter().any(|mark| {
-            matches!(mark, scoretk_core::model::RepeatMark::Marker(_))
-        })),
+        partition.measures.iter().any(|m| m
+            .repeat_marks
+            .iter()
+            .any(|mark| { matches!(mark, scoretk_core::model::RepeatMark::Marker(_)) })),
         "le corpus doit porter un marqueur de reprise"
     );
 

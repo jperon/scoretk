@@ -66,11 +66,21 @@ fn parenthèses_de_tête_ecrites_pour_musescore() {
     // pas de propriété, et le reste de la musique est inchangé.
     let nu = fs::read(racine.join("barline01.mscx")).expect("corpus");
     let nu_partition = lire(&nu);
-    assert_eq!(nu_partition.notes.iter().filter(|n| n.parentheses).count(), 0);
+    assert_eq!(
+        nu_partition.notes.iter().filter(|n| n.parentheses).count(),
+        0
+    );
     let ecrit_nu = scoretk_musescore_export::write_mscx(&nu_partition).expect("écriture");
     assert!(!ecrit_nu.contains("<parentheses>both</parentheses>"));
     let direct = scoretk_musicxml_export::export_musicxml(&nu_partition).expect("export");
-    let retour = scoretk_musicxml_export::export_musicxml(&lire(ecrit_nu.as_bytes())).expect("export");
-    assert_eq!(direct.matches("<pitch>").count(), retour.matches("<pitch>").count());
-    assert_eq!(direct.matches("<measure ").count(), retour.matches("<measure ").count());
+    let retour =
+        scoretk_musicxml_export::export_musicxml(&lire(ecrit_nu.as_bytes())).expect("export");
+    assert_eq!(
+        direct.matches("<pitch>").count(),
+        retour.matches("<pitch>").count()
+    );
+    assert_eq!(
+        direct.matches("<measure ").count(),
+        retour.matches("<measure ").count()
+    );
 }
