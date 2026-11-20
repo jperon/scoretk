@@ -38,6 +38,7 @@
 //! `docs/agents/format-ref/musescore.md`), la syntaxe suit `read206.cpp` et le
 //! comportement de référence est MuseScore 4.7.4.
 
+mod spanners;
 mod transform;
 mod xml;
 
@@ -78,11 +79,13 @@ pub fn read(mscx: &[u8], _version: MscVersion) -> Result<Score> {
     let text = String::from_utf8_lossy(mscx);
     let mut root = xml::parse(&text)?;
     let mut ties = Vec::new();
-    transform::adapt(&mut root, &mut ties);
+    let mut links = Vec::new();
+    transform::adapt(&mut root, &mut ties, &mut links);
     let mut adapted = String::new();
     root.write_xml(&mut adapted);
     let mut score = read302::read(adapted.as_bytes(), MscVersion::from_raw(302))?;
     fix_ties(&mut score, &ties);
+    spanners::fix_spanners(&mut score, &links);
     Ok(score)
 }
 

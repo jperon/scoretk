@@ -206,6 +206,34 @@ fn n_olets_et_liaisons_2x() {
 }
 
 #[test]
+fn volta_2x_appariee_par_id() {
+    let score = score(
+        r#"<Staff id="1">
+  <Measure number="1"><startRepeat/>
+    <Chord><durationType>whole</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord></Measure>
+  <Measure number="2">
+    <Volta id="9"><endHook>1</endHook>
+      <beginText><text>1.</text></beginText><endings>1</endings></Volta>
+    <Chord><durationType>whole</durationType><Note><pitch>62</pitch><tpc>16</tpc></Note></Chord></Measure>
+  <Measure number="3"><endSpanner id="9"/><endRepeat>2</endRepeat>
+    <Chord><durationType>whole</durationType><Note><pitch>64</pitch><tpc>18</tpc></Note></Chord></Measure>
+  </Staff>"#,
+    );
+    let voltas: Vec<_> = score
+        .spanners
+        .iter()
+        .filter(|spanner| spanner.kind == scoretk_core::model::SpannerType::Volta)
+        .collect();
+    assert_eq!(voltas.len(), 1, "une seule volta reconstruite");
+    let info = voltas[0].volta.as_ref().expect("informations de volta");
+    assert_eq!(info.endings, vec![1]);
+    assert!(info.closed, "endHook ferme la volta");
+    assert_eq!(voltas[0].text.as_deref(), Some("1."));
+    assert_eq!(voltas[0].start.tick, score.measures[1].start_tick);
+    assert_eq!(voltas[0].end.tick, score.measures[2].start_tick);
+}
+
+#[test]
 fn version_3_non_concernee() {
     let xml = r#"<museScore version="3.02"><Score><Division>480</Division>
 <Part><Staff id="1"/><trackName>Flute</trackName><Instrument><Channel><program value="73"/></Channel></Instrument></Part>

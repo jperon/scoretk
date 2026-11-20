@@ -31,6 +31,7 @@
 //! conventions, puis on confie l'arbre obtenu à `read302` : c'est le même
 //! partage du travail que dans le C++ amont.
 
+use super::spanners::{SpanFamily, SpanKey, SpannerLink};
 use super::xml::{Content, Node};
 use super::NoteKey;
 
@@ -68,14 +69,14 @@ const MEASURE_LEVEL: &[&str] = &[
 const SYSTEM_STYLES: &[&str] = &["System", "Tempo", "Marker", "Jump", "Volta"];
 
 /// Adapte l'arbre complet et collecte les liaisons à reconnecter sur le modèle.
-pub(super) fn adapt(root: &mut Node, ties: &mut Vec<super::TieLink>) {
+pub(super) fn adapt(root: &mut Node, ties: &mut Vec<super::TieLink>, links: &mut Vec<SpannerLink>) {
     let Some(score) = root.child_mut("Score") else {
         return;
     };
-    adapt_score(score, ties);
+    adapt_score(score, ties, links);
 }
 
-fn adapt_score(score: &mut Node, ties: &mut Vec<super::TieLink>) {
+fn adapt_score(score: &mut Node, ties: &mut Vec<super::TieLink>, links: &mut Vec<SpannerLink>) {
     // `readStaff` 2.x porte `<transposeDiatonic>`/`<transposeChromatic>` sur la
     // portée, alors que le lecteur 3.x les lit dans `<Instrument>`. On les
     // remonte dans l'instrument de la partie qui déclare cette portée.
@@ -105,7 +106,7 @@ fn adapt_score(score: &mut Node, ties: &mut Vec<super::TieLink>) {
                 let staff = child
                     .attr_i32("id")
                     .map_or(index, |id| (id.max(1) - 1) as usize);
-                adapt_staff(child, staff, ties);
+                adapt_staff(child, staff, ties, links);
                 index += 1;
             }
             "Part" => {
@@ -147,14 +148,19 @@ fn insert_text_child(parent: &mut Node, name: &str, value: &str) {
 }
 
 /// Adapte le contenu d'une `<Staff id="…">` (numéro de portée 0-basé `staff`).
-fn adapt_staff(staff: &mut Node, staff_index: usize, ties: &mut Vec<super::TieLink>) {
+fn adapt_staff(
+    staff: &mut Node,
+    staff_index: usize,
+    ties: &mut Vec<super::TieLink>,
+    links: &mut Vec<SpannerLink>,
+) {
     // Seuls les `<Measure>` deviennent des mesures du modèle : les cadres
     // `<VBox>`/`<HBox>` ne comptent pas dans l'index utilisé pour retrouver les
     // notes des liaisons.
     let mut index = 0usize;
     for child in staff.children_mut() {
         if child.name == "Measure" {
-            adapt_measure(child, index, staff_index, ties);
+            adapt_measure(child, index, staff_index, ties, links);
             index += 1;
         }
     }
@@ -162,15 +168,59 @@ fn adapt_staff(staff: &mut Node, staff_index: usize, ties: &mut Vec<super::TieLi
 
 /// Regroupe les éléments d'une mesure 2.x en voix, reshape les n-olets et
 /// retire les liaisons idées, à la manière de `readMeasure206`.
-fn adapt_measure(measure: &mut Node, index: usize, staff: usize, ties: &mut Vec<super::TieLink>) {
+fn adapt_measure(
+    measure: &mut Node,
+    index: usize,
+    staff: usize,
+    ties: &mut Vec<super::TieLink>,
+    links: &mut Vec<SpannerLink>,
+) {
     let old = std::mem::take(&mut measure.content);
     let mut groups: [Vec<Node>; 4] = std::array::from_fn(|_| Vec::new());
+    let mut chord_ordinals = [0usize; 4];
     let mut kept = Vec::new();
 
     for item in old {
         let Content::Element(mut node) = item else {
             continue;
         };
+        let voice = node
+            .child("track")
+            .and_then(Node::int_text)
+            .map_or(0, |track| (track.rem_euclid(4)) as usize)
+            .min(3);
+        // `readMeasure206` (read206.cpp:2834-2873) : une volta 2.x est définie
+        // par `<Volta id>` et refermée par `<endSpanner id>`. On collecte les
+        // deux moitiés ; `fix_spanners` les apparie après la lecture 3.x.
+        match node.name.as_str() {
+            "Volta" => {
+                if let Some(id) = node.attr_i32("id") {
+                    let mut link = SpannerLink::new(id, SpanFamily::Volta);
+                    link.start = Some(measure_key(index, staff));
+                    link.endings = node
+                        .child("endings")
+                        .map(|node| parse_endings(&node.trimmed_text()))
+                        .unwrap_or_default();
+                    link.closed = node
+                        .child("endHook")
+                        .and_then(Node::int_text)
+                        .is_some_and(|value| value != 0);
+                    link.text = node
+                        .child("beginText")
+                        .and_then(|node| node.child("text"))
+                        .map(Node::text);
+                    links.push(link);
+                }
+            }
+            "endSpanner" => {
+                if let Some(id) = node.attr_i32("id") {
+                    let mut link = SpannerLink::new(id, SpanFamily::Volta);
+                    link.end = Some(measure_key(index, staff));
+                    links.push(link);
+                }
+            }
+            _ => {}
+        }
         if MEASURE_LEVEL.contains(&node.name.as_str()) {
             kept.push(Content::Element(node));
             continue;
@@ -183,12 +233,14 @@ fn adapt_measure(measure: &mut Node, index: usize, staff: usize, ties: &mut Vec<
             }
             continue;
         }
-        let voice = node
-            .child("track")
-            .and_then(Node::int_text)
-            .map_or(0, |track| (track.rem_euclid(4)) as usize)
-            .min(3);
-        adapt_element(&mut node, index, staff, voice, ties);
+        let chord_ordinal = if node.name == "Chord" || node.name == "Rest" {
+            let value = chord_ordinals[voice];
+            chord_ordinals[voice] += 1;
+            value
+        } else {
+            0
+        };
+        adapt_element(&mut node, index, staff, voice, chord_ordinal, ties, links);
         groups[voice].push(node);
     }
 
@@ -204,13 +256,31 @@ fn adapt_measure(measure: &mut Node, index: usize, staff: usize, ties: &mut Vec<
     measure.content = kept;
 }
 
+/// Clé d'ancrage d'un élément au niveau mesure (`read206.cpp:2874-2875`).
+fn measure_key(measure: usize, staff: usize) -> SpanKey {
+    SpanKey::Measure {
+        measure,
+        track: (staff * 4) as u32,
+    }
+}
+
+/// `<endings>` d'une volta 2.x : liste d'entiers séparés par des virgules
+/// (`readVolta206`, `read206.cpp:2216-2222`).
+fn parse_endings(text: &str) -> Vec<u8> {
+    text.split(',')
+        .filter_map(|value| value.trim().parse::<u8>().ok())
+        .collect()
+}
+
 /// Adapte un élément musical : textes système, symboles de tempo et liaisons.
 fn adapt_element(
     node: &mut Node,
     measure: usize,
     staff: usize,
     voice: usize,
+    chord_ordinal: usize,
     ties: &mut Vec<super::TieLink>,
+    links: &mut Vec<SpannerLink>,
 ) {
     match node.name.as_str() {
         "Text" | "StaffText" => {
@@ -260,6 +330,15 @@ fn adapt_element(
                             start: None,
                             end: Some(key),
                         });
+                        // Un soufflet peut aussi se refermer sur une note
+                        // (`readNoteProperties206`, read206.cpp:1221).
+                        let mut link = SpannerLink::new(id, SpanFamily::Volta);
+                        link.end = Some(SpanKey::Chord {
+                            measure,
+                            track: ((staff * 4) + voice) as u32,
+                            ordinal: chord_ordinal,
+                        });
+                        links.push(link);
                     }
                     child.retain_without("endSpanner");
                 }
