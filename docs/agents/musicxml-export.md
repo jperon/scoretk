@@ -162,6 +162,35 @@ reste `staff-details`, et le gain net du corpus est de plus de 13 000 lignes.
 Le classement après correction est : `attributes` 39, `staff-details` 26,
 `tuplet` 22, `dot` 22, `sound` 5.
 
+## 8. Cause suivante : bloc `<attributes>` et `<measure-style>`
+
+`Attributes::doAttr` garde `<attributes>` ouvert entre `writeStaffDetails` et
+`measureStyle` (`exportmusicxml.cpp:8691-8710`) : MuseScore écrit
+`<measure-style>` dans le **même** bloc que `<staff-details>`. La correction XSD
+précédente refermait le bloc dès `<staff-details>`, ce qui créait un bloc
+supplémentaire sur 39 fichiers. La fermeture est désormais différée jusqu'à une
+clef `after-barline` (seul cas où la XSD l'interdit), conditionnée par la
+présence effective d'un `<staff-details>` dans le bloc. Test réduit : un silence
+multi-mesures avec portée masquée garde `<measure-style>` et `<staff-details>`
+dans le même `<attributes>`.
+
+Mesure ciblée sur les 39 fichiers : **21 gains, 0 perte**, lignes divergentes
+9 932 → 9 528 ; les 2 fichiers sensibles à la XSD restent valides.
+
+### Cause `dot` : constat non corrigeable sans mise en page
+
+Sur les 22 fichiers dont la première différence est `dot`, l'écart vient des
+**silences pointés** : `writeRest` (`exportmusicxml.cpp:4655-4669`) n'écrit
+`<dot>` que depuis `rest->dotList()` (objets `NoteDot` créés par la mise en
+page), alors que le portage le déduit de la figure `TDuration`. Exemple :
+`Minuit chrétien — Vcl — Cb — Timb` a 175 silences `<dots>` dans le `.mscx`,
+mais MuseScore 4.7.4 n'écrit le point que sur 20 d'entre eux (ceux des voix et
+mesures où la mise en page a créé un `NoteDot`). Supprimer les points de
+silences fait gagner 21 fichiers sur 22 mais casse la conformité du corpus
+(`changevisibility` v4, `moonlight` v3), où le point doit être conservé : la
+décision dépend de données de mise en page absentes du modèle pivot. Aucun
+correctif n'a donc été commité pour cette cause.
+
 ## 8. Next causes
 
 Work the ranking of §2 in order, re-measuring after each committed cause:

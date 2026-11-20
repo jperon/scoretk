@@ -145,6 +145,9 @@ pub(crate) struct Out {
     div: u32,
     pub(crate) tick: Tick,
     in_attributes: bool,
+    /// Vrai si le `<attributes>` ouvert contient déjà un `<staff-details>` :
+    /// une clef `after-barline` ne peut plus y être écrite (XSD 4.0).
+    pub(crate) attributes_has_details: bool,
     /// État des notations à numéroter (liaisons, glissandos, arpèges).
     pub(crate) notations: notations::NotationsState,
 }
@@ -156,6 +159,7 @@ impl Out {
             div: 1,
             tick: Tick::ZERO,
             in_attributes: false,
+            attributes_has_details: false,
             notations: notations::NotationsState::default(),
         }
     }
@@ -165,9 +169,11 @@ impl Out {
         if open && !self.in_attributes {
             self.xml.start_element("attributes", &[]);
             self.in_attributes = true;
+            self.attributes_has_details = false;
         } else if !open && self.in_attributes {
             self.xml.end_element();
             self.in_attributes = false;
+            self.attributes_has_details = false;
         }
     }
 
@@ -914,9 +920,8 @@ impl<'a> Context<'a> {
             );
         }
         self.write_measure_clefs(out, measure, measure_index, part);
-        let mut wrote_staff_details = false;
         if is_first {
-            wrote_staff_details = self.write_staff_details(out, measure_index, part);
+            self.write_staff_details(out, measure_index, part);
             self.write_instrument_details(out, part);
         } else {
             // Portées masquées du système (`hideEmptyStaves`) : MuseScore les
@@ -944,16 +949,9 @@ impl<'a> Context<'a> {
                 attributes.push(("print-object", "no"));
                 out.attr(true);
                 out.xml.tag_empty("staff-details", &attributes);
+                out.attributes_has_details = true;
                 out.attr(false);
             }
-        }
-        // Quand `writeStaffDetails` a écrit un bloc sans `<transpose>` suivant,
-        // `<attributes>` reste ouvert : une clef de fin de mesure
-        // (`after-barline`) risquerait d'y être écrite après `<staff-details>`
-        // (interdit par la XSD 4.0). On ne ferme que dans ce cas, pour ne pas
-        // changer la structure des autres mesures.
-        if wrote_staff_details {
-            out.attr(false);
         }
         // `measureStyle` : un `<measure-style>` ouvre le groupe de silences
         // multi-mesures, sur la première mesure du groupe.
@@ -2277,6 +2275,12 @@ impl Context<'_> {
         if segment.tick != measure.start_tick && segment.tick != measure.end_tick() {
             self.clef(out, xml_staff, self.active_clef(clef), &[]);
         } else if segment.tick == measure.start_tick {
+            // `Attributes::doAttr` referme `<attributes>` avant d'écrire une
+            // clef de reprise : la XSD 4.0 exige toutes les clefs avant les
+            // `<staff-details>`/`<measure-style>` du bloc courant.
+            if out.attributes_has_details {
+                out.attr(false);
+            }
             self.clef(
                 out,
                 xml_staff,
@@ -2294,10 +2298,9 @@ impl Context<'_> {
     /// `hiddenStaves` (`hideEmptyStaves`) et écrit le bloc dès qu'une portée
     /// est masquée, même si elle a 5 lignes. Le portage n'écrivait que les
     /// portées non standard et ignorait les portées masquées.
-    fn write_staff_details(&self, out: &mut Out, measure_index: usize, part: &Part) -> bool {
+    fn write_staff_details(&self, out: &mut Out, measure_index: usize, part: &Part) {
         let staves = part.staves.len();
         let hidden = self.systems.hidden_at(measure_index);
-        let mut wrote = false;
         for (position, staff_id) in part.staves.iter().enumerate() {
             let staff = self.score.staff(*staff_id);
             let hidden_staff = !staff.visible || hidden.contains(&(staff_id.raw() as usize));
@@ -2318,9 +2321,8 @@ impl Context<'_> {
             out.xml.start_element("staff-details", &attributes);
             out.xml.tag("staff-lines", &staff.lines.to_string());
             out.xml.end_element();
-            wrote = true;
+            out.attributes_has_details = true;
         }
-        wrote
     }
 
     /// Écrit `<transpose>` (`writeInstrumentDetails`).

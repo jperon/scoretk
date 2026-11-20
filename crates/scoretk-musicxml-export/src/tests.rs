@@ -2806,3 +2806,31 @@ fn clef_apres_staff_details_interdite() {
         }
     }
 }
+
+/// `Attributes::doAttr` garde `<attributes>` ouvert entre `writeStaffDetails`
+/// et `measureStyle` : MuseScore écrit `<measure-style>` dans le même bloc que
+/// `<staff-details>` (`exportmusicxml.cpp:8691-8710`). Les fichiers Il est né…
+/// et Les anges dans nos campagnes… montrent cet ordre (39 fichiers du lot).
+#[test]
+fn measure_style_dans_le_bloc_staff_details() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    score.staff_mut(staff).visible = false;
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    measure.multi_measure_rest = Some(3);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    let same_block = xml.split("<attributes>").skip(1).any(|block| {
+        let block = block.split("</attributes>").next().unwrap_or("");
+        block.contains("<staff-details") && block.contains("<measure-style>")
+    });
+    assert!(
+        same_block,
+        "measure-style doit rester dans le bloc staff-details :\n{xml}"
+    );
+}
