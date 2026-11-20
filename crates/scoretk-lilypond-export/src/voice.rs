@@ -62,13 +62,6 @@ struct Item<'a> {
     chord_rest: &'a ChordRest,
 }
 
-/// Écrit le corps d'une variable de voix, sans l'enveloppe
-/// `\fixed c' { … }`.
-///
-/// `voice_count` est le nombre de voix écrites pour la portée : au-delà d'une,
-/// chaque voix reçoit `\voiceOne`, `\voiceTwo`… pour que LilyPond gère les
-/// collisions et les hampes comme MuseScore.
-
 // Nombre de mesures consécutives, à partir de `debut`, qui ne contiennent que
 // des silences dans cette voix. Le modèle est la seule source de vérité : le
 // champ `multi_measure_rest` peut annoncer plus de mesures que la musique n'en
@@ -102,6 +95,10 @@ fn silences_present(
 }
 
 /// Écrit le corps d'une variable de voix, sans l'enveloppe `\fixed c' { … }`.
+///
+/// `voice_count` est le nombre de voix écrites pour la portée : au-delà d'une,
+/// chaque voix reçoit `\voiceOne`, `\voiceTwo`… pour que LilyPond gère les
+/// collisions et les hampes comme MuseScore.
 pub(crate) fn render_body(
     score: &Score,
     structure: &Structure,
