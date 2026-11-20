@@ -4898,3 +4898,23 @@ fn score_grave_avec_midi_preval_sur_les_scores_midi_suivants() {
     .expect("lecture");
     assert_eq!(hauteurs(&seul), vec![64, 65]);
 }
+
+/// `\\keepWithTag` filtre le résultat d'un `\\relative` : la conversion
+/// relative parcourt **toutes** les branches, y compris celles que le filtre
+/// retire ensuite. Le lecteur filtrait d'abord, changeant l'octave de la
+/// branche retenue (Chop-28-16, NR §22.2.2).
+#[test]
+#[ignore = "bug lecteur : \relative appliqué après keepWithTag au lieu d'avant"]
+fn keepwithtag_apres_relative_pour_la_reference_octave() {
+    let source = r#"\version "2.24.0"
+\language "english"
+\score { \keepWithTag #'midi \relative {
+  \tag #'layout { <ef' a gf'>4 }
+  \tag #'midi { <ef a gf'>4 }
+} }"#;
+    // Valeurs attestées par une compilation LilyPond 2.26 isolée :
+    // 63/69/78 (mi bémol 4, la 4, fa dièse 5).
+    let score = read_lilypond(source).expect("lecture");
+    let notes: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+    assert_eq!(notes, vec![63, 69, 78], "octave issue de la branche layout");
+}

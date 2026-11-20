@@ -2750,3 +2750,47 @@ reference was actually regenerated and to non-repeat files, the change is a
 clear gain. The `\clef "treble_8"` cause of §20 vanishes with the selection
 fix: the pitch error came from choosing the transposed engraved score, and a
 control test confirms the clef itself never changes MIDI pitch.
+
+### Réconciliation des pertes sur références fraîches
+
+Les 27 fichiers qui had recorded a loss were recompiled with LilyPond 2.26
+(plain compilation, no `pre.ly`) and their cached MIDI updated in the oracle
+tree. Both binaries were then re-measured on those 27 files with the same
+fresh references:
+
+| Fichier | N1 avant → après | N2 avant → après | Verdict |
+| --- | ---: | ---: | --- |
+| `GaudeteChristusEstNatus.ly` | 441 → **1074** | 4 → **1074** | gain, référence obsolète confirmée |
+| `Gueguen.ly` | +235 | +256 | gain |
+| `Sonis.ly` | +220 | +240 | gain |
+| `Prière-pour-nos-anciens.ly` (+6 copies) | 149 → 149 | 134 → **149** | **réel bug de sélection** |
+| `22_HymneStMichel.ly` | +0 | +0 | corrigé par l'affinement |
+| `Chop-28-16.ly` | −252 | −444 | bug lecteur préexistant, voir ci-dessous |
+
+L'affinement a consisté à choisir le **premier score portant `\midi`**, même
+s'il porte aussi `\layout` : `Prière-pour-nos-anciens` a cinq `\score` dont le
+premier est `\transpose sol sib` avec `\midi`, et LilyPond écrit ce MIDI en
+premier. Un test réduit
+`score_grave_avec_midi_preval_sur_les_scores_midi_suivants` échouait avant
+l'affinement. Les 11 fichiers qui avaient perdu 99/134 notes sont revenus à
+l'état de référence. Le correctif `first_midi` a réduit le nombre de fichiers
+dont le modèle change de 197 à 184.
+
+Les pertes qui subsistent sur références fraîches sont un **bug préexistant**
+du lecteur, isolé par une source réduite : LilyPond applique `\relative` à
+l'arbre complet **avant** de filtrer avec `\keepWithTag` (`music-filter` de
+`scm/music-functions.scm` filtre le résultat de la fonction musicale), tandis
+que le lecteur filtre d'abord, puis résout les octaves. Sur
+
+```lilypond
+\keepWithTag #'midi \relative {
+  \tag #'layout { <ef' a gf'>4 }
+  \tag #'midi { <ef a gf'>4 }
+}
+```
+
+LilyPond 2.26 joue 63/69/78 (la branche `layout` a fixé la référence relative
+avant d'être retirée) ; le lecteur donne 51/57/66. Le test
+`keepwithtag_apres_relative_pour_la_reference_octave` est marqué `#[ignore]`
+avec cette preuve : corriger ce comportement demande de différer le filtrage
+après la résolution relative, un changement d'architecture hors de cette passe.
