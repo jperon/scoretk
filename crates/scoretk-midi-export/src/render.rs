@@ -42,6 +42,7 @@ use scoretk_core::model::{
 };
 
 use super::error::Result;
+use super::harmony;
 use super::ornaments;
 use super::pause_map::PauseMap;
 use super::repeat_list::{RepeatList, DIVISION, UNITS_PER_WHOLE};
@@ -240,6 +241,36 @@ pub(crate) fn render(
         // (`track.insert(0, …)` dans `writeHeader`).
         if is_top {
             push_channel_setup(track, &part.instrument, channel);
+        }
+
+        // Accords chiffrés : `renderHarmony`
+        // (`compatmidirenderinternal.cpp:1021-1078`) joue les hauteurs
+        // réalisées du symbole courant jusqu'au symbole suivant. Leur
+        // déroulement suit les mêmes segments que les notes.
+        for (tick, duration, pitches) in harmony::events(score, staff.id) {
+            for segment in &repeat_list.segments {
+                let end = repeat_list.segment_end(segment);
+                if tick < segment.tick || tick >= end {
+                    continue;
+                }
+                let offset = segment.utick - segment.tick;
+                let on = pause_map.tick_with_pauses(tick + offset);
+                let off = pause_map.tick_with_pauses(tick + duration + offset);
+                for key in &pitches {
+                    track.events.push(Event {
+                        tick: on,
+                        kind: EventKind::NoteOn {
+                            channel,
+                            key: *key,
+                            velocity: 80,
+                        },
+                    });
+                    track.events.push(Event {
+                        tick: off,
+                        kind: EventKind::NoteOff { channel, key: *key },
+                    });
+                }
+            }
         }
 
         // Note events.
