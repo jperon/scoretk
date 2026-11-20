@@ -2344,3 +2344,69 @@ unchanged in an upbeat. Fixing it means distinguishing `Measure::len` from
 `Measure::nominal_len` for full-measure rests in the writer and in the measure
 framework; this is a cross-cutting change and is deferred rather than patched
 in the reader.
+
+## 22. Reading campaign, sixth pass (2026-11-20)
+
+### Reconciliation of the `mut` figure
+
+The reported "80.12 → 79.15" compared runs with **different denominators**.
+Exact aggregation of the `mut` rows (repeat-free files only):
+
+| Run | Ref notes included | Matched | N2 |
+| --- | ---: | ---: | ---: |
+| before the tremolo fix (`ly95-fix4-run`) | 552 944 | 446 448 | 80.74 % |
+| after tremolo, before context (`ly95lect-trem-run`) | 593 055 | 467 994 | 78.91 % |
+| after context (`ly95lect-ctx3-run`) | 593 055 | 469 424 | **79.15 %** |
+
+The 40 111 extra reference notes come from four sources that timed out in the
+first run (10 s) and no longer did in the later ones: their state changes from
+`echec` to `ok`, adding low-scoring notes to the denominator. With the same
+denominator, the context fix **raises** `mut` N2 by 0.24 points: of the 1377
+files, 48 change (`ΣΔref = 0`, `ΣΔmatched = +2635`), one loses 71 matched notes
+and one loses none. The apparent drop was therefore entirely a denominator
+effect, not a regression.
+
+### `R4.` in an anacrusis: reference, two faithful attempts, blocker
+
+`lily/parser.yy` `event_chord` uses
+`MULTI_MEASURE_REST optional_notemode_duration` and passes that duration to
+`multi_measure_rest`; `ly/music-functions-init.ly:1697` defines `\partial` as a
+`PartialSet` in the Timing context — it changes `measurePosition`, **not** the
+last duration. Notation Reference §2.2.3 requires `R` to cover the current
+time signature and §2.3.3 keeps the meter unchanged in an upbeat. A reduced
+test `silence_de_mesure_sous_levee_garde_la_duree_ecrite` was written first and
+failed (`ticks = None`).
+
+Two implementations were tried and **reverted**:
+
+1. Store `event.actual` as the full-measure rest's model `ticks` when its
+   duration is explicit. The rest then has the right written duration (3/8)
+   but the shared measure 1 keeps the pickup length, so the XML writer extends
+   measure 1 and every later note shifts by one quarter.
+2. Also extend the global measure 1 to the explicit rest's duration. The
+   up-staff pickup boundary and the down-staff full-bar boundary then collide
+   in `plan_measures_polymetric`, producing a 3/4 measure 1 and leaving the
+   down-staff note half a quarter late.
+
+A faithful fix requires **per-staff measure grids**: LilyPond's MIDI timeline
+is continuous, while the pivot model has one shared measure framework, so a
+0.5-quarter pickup on one staff and a 1.5-quarter `R4.` on another cannot both
+be represented. This is a model-level change, outside this reader campaign;
+the reduced source and both failed attempts are recorded here rather than
+leaving a regression in the reader.
+
+### Next rows: first divergences and governing references
+
+| Row | Three biggest files (lost notes) | First divergence and construct |
+| --- | --- | --- |
+| `\tuplet`/`\times` | `troldhaugen` (3401), `LVB_Sonate_57_3` (3145), `biga` (2022) | 8.0 quarters with a duplicated F♯4; 1.5 quarters with two low notes added by a `\change Staff` voice; 0 with a one-octave error on the first chord. NR §2.1.2–2.1.3, `lily/parser.yy` `tuplet` |
+| `R1*n`/`\bar` | `Oyseaux-Endfassung` (2586), `ricercare6` (2149), `Cellosonata_No3_2` (2039) | 52, 156 and 121 quarters: a constant −28/−32/+3-quarter shift of the rest of the piece, i.e. the shared-measure issue above. NR §2.2.3 |
+| none | `Ave_dulcissima_Maria` (163), `baba` (145), `Chop-28-17` (145) | 150/18/16 quarters, best global shift −2/−8/−27: late drift, no local construct at the divergence. NR §2.1.1 |
+| `s` spacer | `rach-prelude23-05` (2380), `Angels_Carol__John_Rutter-midi` (1714), `a-breeze-from-alabama` (1572) | 48/8.5/0 quarters, best shift −4/−3/+6: the spacer consumes time correctly but the surrounding voices drift. NR §2.2.2 |
+| variables | `20title-hub`, `21title-hub` (1669 each), `chopin_fantaisie-impromptu` (1066) | attack 0 with 6 extra notes and a +25-quarter shift; 0 with +25; 0 with −8. NR §4.4.4, `lily/parser.yy` `identifier` |
+
+No local, reference-backed reader fix was found for these rows in this pass:
+they are all instances of the shared measure grid or of voice allocation
+already documented above, and changing them locally would regress the files
+fixed in §21. They are recorded with their exact divergences rather than
+patched blindly.
