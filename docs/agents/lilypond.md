@@ -2689,3 +2689,36 @@ open with the divergences recorded above.
 
 No reader change was made for either file: fixing them would mean reproducing
 LilyPond's error-repair rule, which would corrupt well-formed scores.
+
+### §20 reader causes: MIDI-only `\score` selection
+
+Notation Reference §24.3: a `\score` with music and `\midi` but **no `\layout`
+produces only a MIDI file**. Compiling `GaudeteChristusEstNatus.ly` with
+LilyPond 2.26 gives exactly one MIDI (`ly95lect-gaudete.midi`), from the second
+score (concert pitch), while the first score is engraved under `\transpose d c`.
+The reader used the first score, so its model was two semitones low; the same
+mistake explained the "octave low" of `22_StMichel.ly` and the 130-vs-666 note
+mismatch of `AStMichel.ly`.
+
+`Parser::document` now selects a `\midi`-without-`\layout` score whenever one
+exists, even when its music differs from the engraved score, and clears
+`playback_transposition` because the model already carries concert pitches.
+Two reduced tests were written first and failed on the old code:
+`score_midi_seul_choisi_pour_le_modele` (two scores, same music under
+`\transpose`) and `score_midi_seul_choisi_meme_si_musique_differente`.
+The existing `transpose_traversant_articulate_et_unfold_repeats` control cases
+were updated: the MIDI score now supplies the model.
+
+Verified against LilyPond's **own** MIDI (plain compilation, no `pre.ly`):
+`GaudeteChristusEstNatus` 1074/1074, `22_StMichel` 391/391, `AStMichel`
+666/666 matched pitches and attacks; `Angels_Carol` 1607/1607 against its
+cached reference. The `\clef "treble_8"`/`"G_8"` cause of §20 is therefore the
+same root cause: a control test `clef_treble_8_ne_change_pas_la_hauteur`
+confirms the clef itself never shifts pitch (NR §1.1.3/§1.3.3).
+
+Because the reading oracle's cached MIDI came from `pre.ly` (which injects
+`\midi` into the engraved score), the cached MIDI of the 191 files whose
+model changed was removed from a hard-linked copy of the refs tree. The driver
+then regenerated each of them with **plain** LilyPond (no injected `\midi`)
+into its work directory; both binaries were measured against that same tree,
+so the comparison keeps a constant denominator and a constant reference.
