@@ -2565,3 +2565,44 @@ première divergence (`best` = décalage global qui aligne le plus de notes) :
 Toutes ces divergences sont des décalagesglobaux de la fin d'une pièce, liés
 aux constructions déjà examinées (contextes, levées et grille de mesure), et
 non un jeton mal consommé comme l'était la durée optionnelle de `\tuplet`.
+
+### Two whole-score divergences proven to be reference artefacts
+
+**`Symphony5_1` (divergence −3,5, best shift −21).** Bisection of the score
+(the variables are defined in included files) first reduced it to one staff
+with `<< \context Voice = "text" \struktur \context Voice = fl \flauti >>`:
+the divergence stays. With only `\flauti` it stays; emptying `\struktur` down
+to `\time 2/4 \key c \minor` it stays. The first note of the flute part is at
+35,5 quarters in LilyPond's MIDI and at 38,5 in scoretk's model, but the
+writer's `<backup>` chain makes the oracle see it at negative ticks — this is
+the known per-part-cursor artefact.
+
+The actual cause is in the source itself: LilyPond 2.26 reports
+`échec du contrôle de mesure à 1/4` at `flauti.ly:22:13` (twice), because
+`\compressFullBarRests` with `r2^\fermata R2*2 r2^\fermata` leaves the bar
+position at 1/4. A minimal reduced source
+
+```lilypond
+\compressFullBarRests \time 2/4 \key c \minor
+\repeat volta 2 { r2 r2^\fermata R2*2 r2^\fermata R2*12 r8 <d''' g'''>8 }
+```
+
+reproduces the warning and shows LilyPond's MIDI at 35,5 quarters against
+scoretk's 34,5: **LilyPond inserts a quarter of silence to repair the bar**.
+Notation Reference §2.5.4 says a bar check only reports warnings about
+entered durations and that an incorrect duration can garble the score; the
+reader deliberately ignores bar checks (`|` is consumed, never a barline),
+so its timeline follows the written durations and the oracle's +1 is a
+reference artefact on malformed input, not a reader defect.
+
+**`Symphony5_2` (divergence 0,5, best shift −26).** The same reduction isolates
+`flauti.ly:13:2` with two `échec du contrôle de mesure à 1/4` warnings;
+`\partial 8 r8 R4. …` in 3/8 with a temporary `<< … \\ … >>` passage leaves
+the bar position at 1/4 on the inner voice. LilyPond repairs it in MIDI and
+scoretk does not, so again the reference is garbled by an input error.
+`Oyseaux-Endfassung`, `ricercare6` and `ballade` were compiled too and show
+**no** bar-check warnings, so their drifts are not this artefact and remain
+open with the divergences recorded above.
+
+No reader change was made for either file: fixing them would mean reproducing
+LilyPond's error-repair rule, which would corrupt well-formed scores.
