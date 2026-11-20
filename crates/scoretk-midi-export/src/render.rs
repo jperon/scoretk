@@ -37,11 +37,12 @@ use std::collections::BTreeMap;
 
 use scoretk_core::model::{
     Annotation, ArticulationType, Chord, ChordRest, ChordRestKind, Fraction, GraceType, Instrument,
-    KeyMode, KeySig, LyricsSyllabic, Measure, Note, OttavaType, PartId, Score, SegmentItem,
-    SegmentType, SpannerType, StaffId, TimeSig, Track, TremoloKind, VeloType, VOICES,
+    KeyMode, KeySig, LyricsSyllabic, Measure, Note, OrnamentType, OttavaType, PartId, Score,
+    SegmentItem, SegmentType, SpannerType, StaffId, TimeSig, Track, TremoloKind, VeloType, VOICES,
 };
 
 use super::error::Result;
+use super::ornaments;
 use super::pause_map::PauseMap;
 use super::repeat_list::{RepeatList, DIVISION, UNITS_PER_WHOLE};
 use super::timemap::{Attack, Builder, Timemap};
@@ -518,6 +519,28 @@ fn pitch_offset(map: &BTreeMap<i64, i32>, tick: i64) -> i32 {
     map.range(..=tick)
         .next_back()
         .map_or(0, |(_, shift)| *shift)
+}
+
+/// Temps en battements par seconde au tick source (annotations `<Tempo>`).
+/// Sert à borner la fréquence du trille comme `multipliedTempo` dans
+/// `renderNoteArticulation` (`compatmidirender.cpp:705-720`).
+fn beats_per_second_at(score: &Score, tick: i64) -> f64 {
+    let mut tempo = 2.0;
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            if segment.tick.ticks(UNITS_PER_WHOLE) > tick {
+                continue;
+            }
+            for entry in &segment.annotations {
+                if let Annotation::Tempo(value) = &entry.annotation {
+                    if let Some(beats) = value.beats_per_second {
+                        tempo = beats;
+                    }
+                }
+            }
+        }
+    }
+    tempo
 }
 
 /// Tempo initial et changements, en microsecondes par noire.
@@ -1139,6 +1162,53 @@ fn render_chord(
         // note (`compatmidirenderinternal.cpp:887-893`, puis `playNote`).
         let velocity = customize_velocity((velocity.round() as i32).clamp(1, 127), note) as u8;
         let key = played_pitch(score, note, source_tick, offsets);
+        // Trille : `renderNoteArticulation` (`compatmidirender.cpp:668-810`)
+        // remplace la note tenue par l'excitation de l'ornement. Les grâces
+        // attachées à un trille sont déjà fusionnées dans l'ornement
+        // (`graceNotesMerged`, `compatmidirenderinternal.cpp:1736-1754`).
+        if chord
+            .ornaments
+            .iter()
+            .any(|ornament| ornament.kind == OrnamentType::TrillMark)
+            && chord.grace_chords.is_empty()
+            && tremolo.is_none()
+        {
+            for (offset, trill_key, length) in
+                ornaments::trill(note, ticks, beats_per_second_at(score, source_tick))
+            {
+                let start = on + offset;
+                let end = start + length.max(1);
+                out.push(Event {
+                    tick: start,
+                    kind: EventKind::NoteOn {
+                        channel,
+                        key: trill_key,
+                        velocity,
+                    },
+                });
+                context.attack(
+                    start,
+                    end - start,
+                    AttackNote {
+                        chord: context.chord,
+                        note: note_index,
+                        pitch: trill_key,
+                        grace: true,
+                        grace_index: None,
+                        grace_before: true,
+                        tremolo: false,
+                    },
+                );
+                out.push(Event {
+                    tick: end,
+                    kind: EventKind::NoteOff {
+                        channel,
+                        key: trill_key,
+                    },
+                });
+            }
+            continue;
+        }
         if let Some((events, step)) = tremolo {
             for index in 0..events {
                 let start = on + ticks * (index * step) / 1000;
