@@ -848,3 +848,71 @@ as redundant against the key, while pitches and durations are unchanged.
 The versioned corpus stays at **54/56**; `barline01` was added to
 `EXPECTED_CONFORMANT_V3` now that it is conformant. `moonlight` (18 lines) and
 `voices` (6 lines) keep their documented layout differences.
+
+### Final re-measurement (after rebase and concert pitch)
+
+The binary was rebuilt from the rebased tree (2.x spanners, per-voice tie
+ordinals, style-driven concert pitch) and measured against the same frozen
+`/tmp/oracle-base3` baseline. The 2.x spanner port and the concert-pitch fix
+are the only behavioural changes since the previous table.
+
+| Metric | Frozen baseline | Final | Δ |
+| --- | ---: | ---: | ---: |
+| Converted | 173 | 173 | 0 |
+| Core-identical to MuseScore 4.7.4 | 27 | **39** | +12 |
+| N1 pitch multiset | 0.9779 | 0.9776 | −0.0003 |
+| N2 pitch + attack | 0.9086 | **0.9257** | +0.0171 |
+| XSD errors, scoretk / MuseScore | 0 / 2 | 0 / 2 | 0 |
+
+#### N2 split by score version
+
+| Group | Files | Reference notes | N1 | N2 |
+| --- | ---: | ---: | ---: | ---: |
+| 3.x / 4.x | 152 | 317 317 | 0.9791 | **0.9739** |
+| 1.x / 2.x | 22 (21 converted) | 60 809 | 0.9700 | **0.6742** |
+
+The 3.x/4.x figure is unchanged from the frozen baseline. The 2.x figure rose
+from 0.5680 to 0.6742; it remains low for one reason, not a general reader
+failure: `Vingt_danses_enfantines_pour_piano.mscz` alone carries 26 477 of the
+60 809 reference notes and has N2 = 0.3106. The other converted 2.x scores are
+mostly at 0.97–1.00 (`La_Partida` 0.779, `Czardas` 0.801, `ZORBA` 0.790 and
+`Triumphal_March` 0.676 are the four remaining outliers).
+
+Reduced cause for the piano file (raw MIDI in `/tmp/oracle-final4/travail/173`):
+- repeat/jump expansion diverges. Matching notes show attack offsets of +6,
+  +4.5, +13 and +3 quarters (4 241, 2 427, 1 756 and 1 716 notes); the score
+  has 30 `<Volta>`, `<endRepeat>` and `<Jump>` markers. Both tools expand
+  repeats, but MuseScore's `RepeatList` and scoretk's walker do not make the
+  same passes, so most attacks in the second half fall outside the ±1/16
+  tolerance and N2 collapses while N1 stays at 0.9896.
+- ottava playback: the first pitch divergence is at tick 856, reference 88
+  (E6) vs scoretk 76 (E5), i.e. one octave; 271 notes are affected. scoretk's
+  MIDI writer does not apply `<Ottava>` to playback, unlike MuseScore.
+- Disabling scoretk's repeat expansion makes N2 worse (0.0706), confirming
+  that the reference does expand repeats.
+
+Both effects are layout/playback-policy differences of the MIDI oracle, not
+lost notes: N1 is 0.9896 and the MusicXML core diff on that file is 403 lines
+of layout and ottava placement. No export change is made here: faithfully
+reproducing MuseScore's 2.x jump passes would require porting `RepeatList`
+beyond the versioned corpus, with a high regression risk.
+
+#### Concert pitch
+
+`Ad_te_Suspiramus` (Piccolo, `Sid::concertPitch` in `<Style>`) went from 797 to
+56 differing core lines: `<concert-score/>` is now emitted, pitches are written
+at concert pitch (D5 instead of D4) and the transposition becomes
+`<for-part><part-transpose>`. N1 and N2 were already 1.0000 (MIDI uses sounding
+pitch on both sides) and remain so. The wasm `concertPitch` option still maps
+to `Some(value)` and overrides the style; the JS contract is unchanged.
+
+#### Per-file changes
+
+The 16 rows that changed are all 2.x files. N2 **increased** for 7 of them
+(Czardas 1 272 → 1 734, La_foule 450 → 813, La_Partida 431 → 557, ZORBA 795 →
+1 335, …) thanks to the 2.x spanner port; the 8 small N1 decreases and the
+piano N2 drop are the tie-merge and repeat-expansion effects described above.
+`ZORBA_THE_GREEK` gains 21 core lines because explicit 2.x accidentals are now
+preserved even where MuseScore 4.7.4 suppresses them as redundant. No file
+went from core-identical to non-identical, and the versioned corpus remains
+54/56 with `EXPECTED_CONFORMANT` unchanged.

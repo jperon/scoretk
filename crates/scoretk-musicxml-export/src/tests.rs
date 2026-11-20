@@ -2539,14 +2539,22 @@ fn concert_pitch_suit_le_style_de_la_partition() {
     let piste = Track::new(staff, 0);
     let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
     ajouter_accord(
-        &mut score, &mut measure, piste, Fraction::ZERO, Duration::whole(), &[(74, tpc::D)]
+        &mut score,
+        &mut measure,
+        piste,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(74, tpc::D)],
     );
     score.add_measure(measure);
 
     // Sans surcharge, le style enregistré décide (exportmusicxml.cpp:1369,
     // 8944 et pitch2xml 1654).
     let xml = export_musicxml(&score).expect("export");
-    assert!(xml.contains("<concert-score/>"), "style concertPitch : {xml}");
+    assert!(
+        xml.contains("<concert-score/>"),
+        "style concertPitch : {xml}"
+    );
     assert!(
         xml.contains("<step>D</step>\n          <octave>5</octave>"),
         "hauteur sonnante : {xml}"
