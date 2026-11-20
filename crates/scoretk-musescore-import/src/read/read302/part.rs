@@ -192,6 +192,10 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         transpose: None,
         midi_program: None,
         midi_channel: None,
+        // `MasterScore::updateMidiMapping` réserve un canal par `<Channel>` ;
+        // l'export n'écrit que le premier mais les suivants décalent les
+        // instruments suivants (portage de `midimapping.cpp:38`).
+        channel_count: node.children_named("Channel").count().clamp(1, 255) as u8,
         midi_port: None,
         volume: None,
         pan: None,

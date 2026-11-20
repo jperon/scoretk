@@ -418,6 +418,9 @@ impl Reader {
     }
 
     fn read_instrument(&self, element: &Element) -> Instrument {
+        // Un canal MIDI est réservé par `<Channel>` (`updateMidiMapping`,
+        // midimapping.cpp:38) : le nombre décale les instruments suivants.
+        let channel_count = element.children_named("Channel").count().clamp(1, 255);
         let mut instrument = Instrument {
             id: element
                 .child("instrumentId")
@@ -454,6 +457,7 @@ impl Reader {
                 })
                 .map(|child| child.text().to_owned())
                 .unwrap_or_default(),
+            channel_count: channel_count as u8,
             ..Instrument::default()
         };
 
