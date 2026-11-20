@@ -259,7 +259,15 @@ fn write_note(xml: &mut XmlWriter, ctx: &WriteContext<'_>, note: &Note, tick: Ti
         write_fingering(xml, fingering);
     }
     if let Some(start) = note.tie_back {
-        write_tie_half(xml, ctx, start, tick, track, false, (None, true));
+        write_tie_half(
+            xml,
+            ctx,
+            start,
+            tick,
+            track,
+            (false, ctx.note_grace_index(start)),
+            (None, true),
+        );
     }
     if let Some(end) = note.tie_forward {
         write_tie_half(
@@ -268,7 +276,7 @@ fn write_note(xml: &mut XmlWriter, ctx: &WriteContext<'_>, note: &Note, tick: Ti
             end,
             tick,
             track,
-            true,
+            (true, ctx.note_grace_index(end)),
             (note.tie_up, note.tie_forward_visible),
         );
     }
@@ -286,14 +294,14 @@ fn write_tie_half(
     other: NoteId,
     tick: Tick,
     track: Track,
-    forward: bool,
+    end: (bool, Option<i64>),
     (tie_up, visible): (Option<bool>, bool),
 ) {
     let Some((other_tick, other_track)) = ctx.note_position(other) else {
         return;
     };
     xml.start_element("Spanner", &[("type", "Tie")]);
-    if forward {
+    if end.0 {
         xml.start_element("Tie", &[]);
         if let Some(up) = tie_up {
             xml.tag("up", if up { "up" } else { "down" });
@@ -310,7 +318,7 @@ fn write_tie_half(
         tick,
         other_track,
         track,
-        forward,
+        end,
     );
     xml.end_element();
 }
@@ -334,9 +342,9 @@ pub(crate) fn write_location_element(
     tick: Tick,
     other_track: Track,
     track: Track,
-    forward: bool,
+    end: (bool, Option<i64>),
 ) {
-    xml.start_element(if forward { "next" } else { "prev" }, &[]);
+    xml.start_element(if end.0 { "next" } else { "prev" }, &[]);
     xml.start_element("location", &[]);
     // Port de `SpannerWriter::fillSpannerPosition`
     // (`write/connectorinfowriter.cpp:82-96`) et de `TWrite::write(Location*)`
@@ -353,6 +361,13 @@ pub(crate) fn write_location_element(
     }
     if !delta.is_zero() {
         xml.tag("fractions", &fraction(delta));
+    }
+    // `TWrite::write(const Location*)` (`write/twrite.cpp:2365`) écrit
+    // `Pid::LOCATION_GRACE` (`<grace>`) ; sans lui, une liaison dont une
+    // extrémité est une note d'agrément perd son ancre à la réouverture
+    // (`ConnectorInfoReader`, `read460/connectorinforeader.cpp:346-360`).
+    if let Some(grace) = end.1 {
+        xml.tag("grace", &grace.to_string());
     }
     let delta_track = i64::from(other_track.raw()) - i64::from(track.raw());
     let voices = delta_track.rem_euclid(4);

@@ -63,6 +63,8 @@ pub(crate) struct WriteContext<'a> {
     pub score: &'a Score,
     /// Position de chaque note : tick du segment et piste.
     note_positions: BTreeMap<NoteId, (Tick, Track)>,
+    /// Indice de grâce des notes d'agrément (`Chord::graceNotes()`).
+    grace_indices: BTreeMap<NoteId, i64>,
     /// Moitiés de spanners, rangées par (piste brute, tick).
     halves: BTreeMap<(u32, Fraction), Vec<Half<'a>>>,
     /// Mesures répétées, indexées par mesure.
@@ -77,6 +79,7 @@ impl<'a> WriteContext<'a> {
         let mut context = Self {
             score,
             note_positions: BTreeMap::new(),
+            grace_indices: BTreeMap::new(),
             halves: BTreeMap::new(),
             repeats: vec![None; score.measures.len()],
             stretch: Vec::new(),
@@ -91,6 +94,12 @@ impl<'a> WriteContext<'a> {
     /// Position d'une note, pour les liaisons de prolongation.
     pub fn note_position(&self, note: NoteId) -> Option<(Tick, Track)> {
         self.note_positions.get(&note).copied()
+    }
+
+    /// Indice de grâce d'une note d'agrément, pour `Location::graceIndex`
+    /// (`engraving/dom/location.cpp:196-207`).
+    pub fn note_grace_index(&self, note: NoteId) -> Option<i64> {
+        self.grace_indices.get(&note).copied()
     }
 
     /// Moitiés de spanners d'une piste dont la position tombe dans une mesure.
@@ -145,11 +154,12 @@ impl<'a> WriteContext<'a> {
                             .entry(*note)
                             .or_insert((segment.tick, track));
                     }
-                    for grace in &chord.grace_chords {
+                    for (index, grace) in chord.grace_chords.iter().enumerate() {
                         for note in &grace.chord.notes {
                             self.note_positions
                                 .entry(*note)
                                 .or_insert((segment.tick, track));
+                            self.grace_indices.insert(*note, index as i64);
                         }
                     }
                 }

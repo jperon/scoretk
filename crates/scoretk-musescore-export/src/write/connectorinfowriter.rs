@@ -64,7 +64,7 @@ pub(crate) fn write_spanner_half(
         tick,
         half.other_track,
         track,
-        half.start,
+        (half.start, None),
     );
     xml.end_element();
 }
