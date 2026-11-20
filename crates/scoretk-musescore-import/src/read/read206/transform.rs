@@ -212,6 +212,36 @@ fn adapt_measure(
                     links.push(link);
                 }
             }
+            "Ottava" => {
+                // `readOttava` (read206.cpp:2286) : `"8va"`, `"8vb"`,
+                // `"15ma"`, `"15mb"` (22ma/22mb n'ont pas d'équivalent dans le
+                // modèle et retombent sur l'octave correspondante).
+                if let Some(id) = node.attr_i32("id") {
+                    let mut link = SpannerLink::new(id, SpanFamily::Ottava);
+                    // `readMeasure206` place l'ottava au tick courant, qui peut
+                    // être au milieu de la mesure si des accords l'ont déjà
+                    // précédée : on s'ancre sur le prochain accord.
+                    link.start = Some(if chord_ordinals[voice] == 0 {
+                        measure_key(index, staff)
+                    } else {
+                        SpanKey::Chord {
+                            measure: index,
+                            track: ((staff * 4) + voice) as u32,
+                            ordinal: chord_ordinals[voice],
+                        }
+                    });
+                    link.ottava_type = Some(
+                        match node.child("subtype").map(Node::trimmed_text).as_deref() {
+                            Some("8vb") => scoretk_core::model::OttavaType::OctaveDown,
+                            Some("15ma") => scoretk_core::model::OttavaType::FifteenthUp,
+                            Some("15mb") => scoretk_core::model::OttavaType::FifteenthDown,
+                            Some("22mb") => scoretk_core::model::OttavaType::FifteenthDown,
+                            _ => scoretk_core::model::OttavaType::OctaveUp,
+                        },
+                    );
+                    links.push(link);
+                }
+            }
             "HairPin" => {
                 // `readHairpin206` (read206.cpp:2318) : `<subtype>` entier,
                 // 1/3 = diminuendo, >= 2 = trait pointillé.

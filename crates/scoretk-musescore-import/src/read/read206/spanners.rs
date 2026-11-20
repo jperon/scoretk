@@ -31,8 +31,8 @@
 //! les liaisons.
 
 use scoretk_core::model::{
-    Fraction, Hairpin, HairpinType, Placement, Score, SegmentType, Slur, Spanner, SpannerAnchor,
-    SpannerNotation, SpannerType, Track, VoltaInfo,
+    Fraction, Hairpin, HairpinType, OttavaType, Placement, Score, SegmentType, Slur, Spanner,
+    SpannerAnchor, SpannerNotation, SpannerType, Track, VoltaInfo,
 };
 
 /// Ancrage d'une extrémité de spanner dans le fichier 2.x.
@@ -55,6 +55,7 @@ pub(super) enum SpanFamily {
     Volta,
     Slur,
     Hairpin,
+    Ottava,
 }
 
 /// Moitié d'un spanner 2.x ; les deux moitiés sont appariées par `id`.
@@ -74,6 +75,8 @@ pub(super) struct SpannerLink {
     pub(super) hairpin_line: bool,
     pub(super) hairpin_niente: bool,
     pub(super) hairpin_direction: Option<String>,
+    /// Type d'ottava 2.x (`<subtype>`, `readOttava`).
+    pub(super) ottava_type: Option<OttavaType>,
 }
 
 impl SpannerLink {
@@ -91,6 +94,7 @@ impl SpannerLink {
             hairpin_line: false,
             hairpin_niente: false,
             hairpin_direction: None,
+            ottava_type: None,
         }
     }
 }
@@ -131,6 +135,9 @@ pub(super) fn fix_spanners(score: &mut Score, links: &[SpannerLink]) {
                 SpanFamily::Hairpin => {
                     SpannerType::Hairpin(link.hairpin_kind.unwrap_or(HairpinType::Crescendo))
                 }
+                SpanFamily::Ottava => {
+                    SpannerType::Ottava(link.ottava_type.unwrap_or(OttavaType::OctaveUp))
+                }
             },
             SpannerAnchor::new(start_tick, start_track),
             SpannerAnchor::new(end_tick, end_track),
@@ -153,6 +160,10 @@ pub(super) fn fix_spanners(score: &mut Score, links: &[SpannerLink]) {
                 };
                 hairpin.begin_text = link.text.clone().unwrap_or_default();
                 spanner.hairpin = Some(hairpin);
+            }
+            SpanFamily::Ottava => {
+                // Le type est déjà porté par `SpannerType::Ottava` : aucun
+                // complément à renseigner dans le modèle.
             }
             SpanFamily::Slur => {
                 let mut slur = Slur::new();
@@ -195,6 +206,9 @@ fn merge(existing: &mut SpannerLink, link: &SpannerLink) {
     }
     if link.hairpin_direction.is_some() {
         existing.hairpin_direction = link.hairpin_direction.clone();
+    }
+    if link.ottava_type.is_some() {
+        existing.ottava_type = link.ottava_type;
     }
     if !link.endings.is_empty() {
         existing.endings = link.endings.clone();
