@@ -1302,3 +1302,27 @@ separate port beyond the chord/trill work above.
   exactly after the chord fix, then the same one-quarter drift as above;
   the file contains `<playUntil>fine</playUntil>` and a `segno`, so the jump
   gap is the common cause.
+
+### Ports 2 et 3 : résultats (2026-11-20, suite)
+
+- **Fermata — aucun port nécessaire.** `Fermata::timeStretch`
+  (`engraving/dom/fermata.cpp:138-139, 250`, `Pid::TIME_STRETCH`) n'est pas
+  consulté par le rendu MIDI de compatibilité. Une partition réduite avec un
+  `fermataAbove` sur une noire, exportée par MuseScore 4.7.4, donne quatre
+  notes d'une noire à 0/1/2/3 — exactement notre sortie. Le test
+  `tests/fermata_no_stretch.rs` fixe ce comportement pour éviter un port
+  erroné du `timeStretch`.
+- **Pause au saut D.S. — expérience refusée.** Un `.mscx` 2.06 réduit avec un
+  `LayoutBreak section` dans la mesure du saut reproduit l'écart : MuseScore
+  insère une pause de 4 noires après **chaque** passage, notre `unfold` ne
+  l'insère que devant la mesure suivante de la partition. Rendre la borne de
+  segment inclusive (`tick <= segment.end`) fait passer ce test réduit mais
+  **régresse `Vingt_danses` de 2373 attaques** (mesure complète à références
+  égales) : la pause y tombe aussi sur des frontières de segments ordinaires.
+  Le changement a été annulé. Une correction correcte doit rattacher la pause
+  à la mesure qui porte le `LayoutBreak` et la rejouer aux passages du saut,
+  dans `PauseMap`/`RepeatList`, sans toucher aux frontières ordinaires.
+
+Le seul port de cette série est donc l'auxiliaire de trille selon l'armure
+(commit précédent) : 19 fichiers `.mscz` gagnent 1319 attaques, 0 perte,
+N2 94,57 → 94,92 %.
