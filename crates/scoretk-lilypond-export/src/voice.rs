@@ -444,6 +444,9 @@ pub(crate) fn render_body(
     // Mesures couvertes par un `R` multi-mesures écrit plus haut : le modèle
     // les porte avec leur propre silence, mais LilyPond les jouerait deux fois.
     let mut multi_rest_left: u16 = 0;
+    // Fin absolue d'un élément étiré au-delà de sa mesure : les mesures vides
+    // qu'il couvre ne doivent pas être réécrites en `s` (§2.1.3, durée × N).
+    let mut couvert_jusqu_a: Tick = Fraction::ZERO;
     for (measure_index, measure) in score.measures.iter().enumerate() {
         for token in structure.before_measure(measure_index) {
             emitter.structure(*token);
@@ -452,6 +455,28 @@ pub(crate) fn render_body(
             emitter.token(&event.text);
         }
         emitter.flush_line();
+
+        // Un accord ou silence étiré (`ticks` > figure) couvre les mesures
+        // suivantes. Le modèle les porte vides ; les réécrire en `s1` les
+        // ferait jouer une seconde fois et décalerait la musique suivante.
+        if multi_rest_left == 0 && measure.start_tick < couvert_jusqu_a {
+            let fin = item_index
+                + items[item_index..]
+                    .iter()
+                    .take_while(|item| item.measure == measure_index)
+                    .count();
+            if items[item_index..fin]
+                .iter()
+                .all(|item| item.chord_rest.is_rest())
+            {
+                item_index = fin;
+                for token in structure.after_measure(measure_index) {
+                    emitter.structure(*token);
+                }
+                continue;
+            }
+            couvert_jusqu_a = Fraction::ZERO;
+        }
 
         // Le `R2.*N` précédent couvre la mesure suivante **si elle ne contient
         // que des silences** (cas du modèle MuseScore, qui porte un silence
@@ -557,6 +582,7 @@ pub(crate) fn render_body(
             emitter.token(&line);
 
             cursor = item.end_tick.max(item.tick);
+            couvert_jusqu_a = cursor;
             item_index += 1;
         }
 

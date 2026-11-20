@@ -583,6 +583,64 @@ fn grille_de_mesures_preval_sur_la_len_du_multi_silence() {
     assert!(produit.contains("c1"), "note finale absente :\n{produit}");
 }
 
+/// Un accord étiré (`ticks` supérieur à la figure) couvre plusieurs mesures.
+/// Les mesures suivantes du modèle sont vides : les réécrire en `s1` ajoute
+/// autant de mesures fantômes et décale toutes les notes (cas réel
+/// `HavaNagila.ly`, 47 attaques : `<e g b>1*4` suivi de trois `s1` au lieu du
+/// seul accord, contre `<e gis b>1*4` dans `musicxml2ly`).
+#[test]
+fn accord_etire_ne_reecrit_pas_les_mesures_couvertes() {
+    let mut score = scoretk_core::model::Score::new();
+    let part = score.add_part(Part::new("Voice", "Vo."));
+    let staff = score.add_staff(part);
+
+    let mut premiere = Measure::new(0, Fraction::ZERO, Fraction::ONE);
+    let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+    let mut chord = ChordRest::chord(Duration::whole());
+    chord.ticks = Some(Fraction::new(4, 1));
+    for midi in [60, 64, 67] {
+        let note_id = score.add_note(Note::new(midi, tpc::C));
+        let ChordRestKind::Chord(ref mut content) = chord.kind else {
+            unreachable!()
+        };
+        content.notes.push(note_id);
+    }
+    segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+    premiere.add_segment(segment);
+    score.add_measure(premiere);
+
+    // Trois mesures vides, couvertes par l'accord étiré.
+    for index in 1..4usize {
+        score.add_measure(Measure::new(
+            index,
+            Fraction::new(index as i64, 1),
+            Fraction::ONE,
+        ));
+    }
+    let mut derniere = Measure::new(4, Fraction::new(4, 1), Fraction::ONE);
+    let mut segment = Segment::new(SegmentType::ChordRest, Fraction::new(4, 1), 1);
+    let mut chord = ChordRest::chord(Duration::whole());
+    let note_id = score.add_note(Note::new(72, tpc::C));
+    let ChordRestKind::Chord(ref mut content) = chord.kind else {
+        unreachable!()
+    };
+    content.notes.push(note_id);
+    segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+    derniere.add_segment(segment);
+    score.add_measure(derniere);
+
+    let produit = scoretk_lilypond_export::write_lilypond(&score).expect("écriture");
+    assert!(
+        produit.contains("1*4/1"),
+        "accord étiré absent :\n{produit}"
+    );
+    assert!(
+        !produit.contains("s1"),
+        "les mesures couvertes par l'accord ne doivent pas être réécrites :\n{produit}"
+    );
+    assert!(produit.contains("c'1"), "note finale absente :\n{produit}");
+}
+
 /// Les identifiants LilyPond ne peuvent pas contenir de chiffre : avec plus
 /// de dix portées, `staff11VoiceOne` est analysé comme `staff` suivi de `11`
 /// et toute la compilation échoue (cas réel : `Veni veni Emmanuel` à 13
