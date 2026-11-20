@@ -147,6 +147,21 @@ quand un bloc `<staff-details>` vient d'être écrit
 régression structurel. Les deux fichiers concernés (`Sancta Maria KV 273`,
 `Dixit Dominus — Sicut erat`) sont de nouveau valides (0 erreur XSD).
 
+### Re-mesure complète après les deux causes (174 fichiers)
+
+Comparaison fichier par fichier avec la référence propre d'avant campagne :
+**86 fichiers gagnent, 1 fichier perd une seule ligne canonique, 86 sont
+inchangés** ; lignes divergentes 42 107 → 28 979 ; fichiers core-identiques
+40 → 43. Les erreurs XSD scoretk passent de 5 (2 fichiers) à 0.
+
+L'unique perte est `Sancta Maria KV 273` (285 → 286 lignes divergentes) : la
+correction XSD sépare en deux `<attributes>` la clef `after-barline` du bloc
+`<staff-details>`, ce qui ajoute une ligne au diff canonique. C'est le prix
+d'un document valide, sans effet musical ; la première différence du fichier
+reste `staff-details`, et le gain net du corpus est de plus de 13 000 lignes.
+Le classement après correction est : `attributes` 39, `staff-details` 26,
+`tuplet` 22, `dot` 22, `sound` 5.
+
 ## 8. Next causes
 
 Work the ranking of §2 in order, re-measuring after each committed cause:
