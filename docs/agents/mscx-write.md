@@ -1,173 +1,170 @@
-# Écriture MuseScore : `.mscx` et `.mscz`
+# Writing MuseScore: `.mscx` and `.mscz`
 
-Crate `crates/scoretk-musescore-export`, branchée dans la façade `scoretk` par
-la feature `musescore-export` (`Format::Mscx` et `Format::Mscz` en écriture).
-Le noyau du projet et les invariants sont dans `AGENTS.md` ; la correspondance C++ → Rust est dans
-`docs/agents/upstream.md`.
+The `crates/scoretk-musescore-export` crate, wired into the `scoretk` facade by
+the `musescore-export` feature (`Format::Mscx` and `Format::Mscz` for writing).
+The project core and its invariants are in `AGENTS.md`; the C++ → Rust mapping is
+in `docs/agents/upstream.md`.
 
-## 1. Rôle et API
+## 1. Role and API
 
 ```rust
 pub fn write_mscx(score: &Score) -> Result<String, Error>; // <museScore version="4.70">
-pub fn write_mscz(score: &Score) -> Result<Vec<u8>, Error>; // archive ZIP
+pub fn write_mscz(score: &Score) -> Result<Vec<u8>, Error>; // ZIP archive
 ```
 
-L'écrivain est le portage de `engraving/rw/write/` (`Writer::writeScore`,
+The writer is a port of `engraving/rw/write/` (`Writer::writeScore`,
 `StaffWrite::writeStaff`, `MeasureWrite::writeMeasure`, `TWrite::writeItem`,
-`ConnectorInfoWriter`, `WriteContext`) et de
-`engraving/infrastructure/mscwriter.cpp` pour le conteneur. Les noms de
-fonctions et le découpage suivent le C++ : `write/writer.rs`,
-`write/staffwrite.rs`, `write/measurewrite.rs`, `write/twrite.rs`,
-`write/connectorinfowriter.rs`, `write/context.rs`.
+`ConnectorInfoWriter`, `WriteContext`) and of
+`engraving/infrastructure/mscwriter.cpp` for the container. Function names and
+breakdown follow the C++: `write/writer.rs`, `write/staffwrite.rs`,
+`write/measurewrite.rs`, `write/twrite.rs`, `write/connectorinfowriter.rs`,
+`write/context.rs`.
 
-La bibliothèque est portable (aucun `std::fs`, thread ni horloge) et compile
-pour `wasm32-unknown-unknown` ; le test de conformité tourne sur l'hôte.
+The library is portable (no `std::fs`, threads or clock) and compiles for
+`wasm32-unknown-unknown`; the compliance test runs on the host.
 
-## 2. Contenu du `.mscz`
+## 2. Contents of the `.mscz`
 
-`MscSaver::writeMscz` écrit le style à part et le reste dans l'archive. La
-crate produit, dans cet ordre et de façon déterministe (deflate, horodatage ZIP
-figé) :
+`MscSaver::writeMscz` writes the style separately and the rest in the archive.
+The crate produces, in this order and deterministically (deflate, frozen ZIP
+timestamp):
 
-| Entrée | Rôle |
+| Entry | Role |
 | --- | --- |
-| `META-INF/container.xml` | `rootfile` vers `score_style.mss` puis `score.mscx`, comme MuseScore 4.7 |
-| `score_style.mss` | `<Style>` du modèle (mêmes valeurs que dans le `.mscx`) |
-| `score.mscx` | partition complète |
+| `META-INF/container.xml` | `rootfile` to `score_style.mss` then `score.mscx`, as in MuseScore 4.7 |
+| `score_style.mss` | `<Style>` of the model (same values as in the `.mscx`) |
+| `score.mscx` | complete score |
 | `audiosettings.json`, `viewsettings.json` | `{}` |
 
-La vignette (`Thumbnails/thumbnail.png`) et les médias ne sont pas produits :
-la bibliothèque ne fait pas de rendu. MuseScore les recrée à l'enregistrement.
+The thumbnail (`Thumbnails/thumbnail.png`) and media are not produced: the
+library does not render. MuseScore recreates them when saving.
 
-## 3. Fidélité mesurée : aller-retour
+## 3. Measured fidelity: round trip
 
-Le test `crates/scoretk-musescore-export/tests/roundtrip.rs` rejoue, pour
-chaque fichier du corpus, la chaîne
+The test `crates/scoretk-musescore-export/tests/roundtrip.rs` replays, for each
+corpus file, the chain
 
 ```text
-lire (.mscx 3.x ou 4.x) → écrire .mscx → relire avec le lecteur 4.x
-→ exporter MusicXML
+read (.mscx 3.x or 4.x) → write .mscx → re-read with the 4.x reader
+→ export MusicXML
 ```
 
-et compare le MusicXML obtenu à l'export **direct** du modèle d'origine, avec la
-normalisation exacte de `crates/scoretk/tests/e2e_corpus.rs`, aux deux niveaux
-(noyau musical et parité complète). Résultat au 2026-11-17 :
+and compares the resulting MusicXML with the **direct** export of the original
+model, using the exact normalisation of `crates/scoretk/tests/e2e_corpus.rs`, at
+both levels (musical core and full parity). Result as of 2026-11-17:
 
-| Corpus | Aller-retour `.mscx` identique | Aller-retour `.mscz` identique |
+| Corpus | Identical `.mscx` round trip | Identical `.mscz` round trip |
 | --- | --- | --- |
-| `tests/corpus/v4` | **26/26** (noyau et complet) | **26/26** |
-| `tests/corpus/v3` (lu en 3.x, écrit en 4.x) | **30/30** | **30/30** |
+| `tests/corpus/v4` | **26/26** (core and full) | **26/26** |
+| `tests/corpus/v3` (read as 3.x, written as 4.x) | **30/30** | **30/30** |
 
-Les deux conteneurs sont mesurés pour chaque fichier.
+Both containers are measured for each file.
 
-Tous ces fichiers sont listés dans `EXPECTED_ROUNDTRIP_V4` et
-`EXPECTED_ROUNDTRIP_V3` : l'un d'eux qui cesse d'être identique fait échouer le
-test. La liste est donc non régressive, comme `EXPECTED_CONFORMANT` du test e2e.
+All these files are listed in `EXPECTED_ROUNDTRIP_V4` and
+`EXPECTED_ROUNDTRIP_V3`: if any one of them ceases to be identical, the test
+fails. The list is therefore non-regressive, like `EXPECTED_CONFORMANT` of the
+e2e test.
 
-Le test `archive_mscz_relue` vérifie en plus le conteneur `.mscz` sur un
-fichier ; la CLI `scoretk` a ses propres tests (`.mscx` et `.mscz` écrits puis
-relus).
+The `archive_mscz_relue` test additionally checks the `.mscz` container on one
+file; the `scoretk` CLI has its own tests (`.mscx` and `.mscz` written then
+re-read).
 
-## 4. Ce qui est conservé, et comment
+## 4. What is preserved, and how
 
-Le modèle ne stocke que ce dont l'export MusicXML a besoin ; l'écrivain produit
-les éléments que le lecteur relit pour reconstruire ce même modèle :
+The model stores only what the MusicXML export needs; the writer produces the
+elements that the reader re-reads to reconstruct that same model:
 
-- **partition** : `<Division>`, `<Style>` complet (format de page, marges,
-  `lyricsPlacement`, tailles de police, `hairpinHeight`, portées vides),
-  `<metaTag>` (tous les champs, même vides : un `<metaTag name="platform">`
-  vide ne vaut pas « absent ») ;
-- **parties et portées** : `<Part>` (noms, `<Instrument>` avec transposition,
-  programme, canal MIDI, volume, panoramique, articulations MIDI),
-  déclarations `<Staff>` (lignes, `barLineSpan`, clef par défaut, accolades) ;
-- **mesures** : `len` des mesures irrégulières, `<startRepeat>`/`<endRepeat>`,
-  `<multiMeasureRest>` (mesure de mise en page après celle qui ouvre le
-  groupe), `<LayoutBreak>` (`section` sur la précédente, `line` sur celle qui
-  finit le système), `<Marker>`/`<Jump>`, `MeasureRepeat` (avec
-  `measureRepeatCount`, `<durationType>measure</durationType>` et sa durée :
-  MuseScore 4.7 refuse le fichier sans ces deux enfants ; le contenu est
-  recopié par le lecteur, non réécrit) ;
-- **voix et rythme** : `<voice>` positionnelles, positions exactes par
-  `<location><fractions>` (aucun arrondi), `<durationType>`, `<dots>`,
-  `<duration>` explicite, `<Beam>`/`<BeamMode>`, `<Tuplet>` (avec `<bracket>`),
-  accords d'agrément en `<Chord>` séparés, silences `gap`, paroles, doigtés ;
-- **notations** : armures (`concertKey`/`actualKey`, mode, courtoisie),
-  indications de mesure (sous-type, étirement, courtoisie), clefs (`isHeader`),
-  barres (extension), articulations, ornements, points d'orgue, trémolos,
-  arpèges, lignes d'accord, altérations (`role`/`parens`), liaisons de
-  prolongation (deux moitiés avec `<location>`), slurs, trilles, glissandos,
-  soufflets, ottavas, pédales, voltas, lignes de texte ;
-- **annotations** : nuances, textes de portée/expression/système (balisage
-  MuseScore reconstruit, entités `&quot;` conservées, `<sym>` rétabli),
-  tempos, repères, changements d'instrument, accords chiffrés
-  (`harmonyType`, degrés), chiffrages figurés, barres de vibrato ;
-- **cadres** : crédits (`<VBox>` par page, hauteur, style, alignement), textes
-  `TBox` (au-dessus ou au-dessous de la mesure, taille de police).
+- **score**: `<Division>`, complete `<Style>` (page format, margins,
+  `lyricsPlacement`, font sizes, `hairpinHeight`, empty staves), `<metaTag>`
+  (all fields, even empty: an empty `<metaTag name="platform">` is not the
+  same as "absent");
+- **parts and staves**: `<Part>` (names, `<Instrument>` with transposition,
+  program, MIDI channel, volume, pan, MIDI articulations), `<Staff>`
+  declarations (lines, `barLineSpan`, default clef, brackets);
+- **measures**: `len` of irregular measures, `<startRepeat>`/`<endRepeat>`,
+  `<multiMeasureRest>` (layout measure after the one that opens the group),
+  `<LayoutBreak>` (`section` on the previous one, `line` on the one that ends
+  the system), `<Marker>`/`<Jump>`, `MeasureRepeat` (with
+  `measureRepeatCount`, `<durationType>measure</durationType>` and its
+  duration: MuseScore 4.7 rejects the file without these two children; the
+  content is copied by the reader, not rewritten);
+- **voices and rhythm**: positional `<voice>` blocks, exact positions via
+  `<location><fractions>` (no rounding), `<durationType>`, `<dots>`, explicit
+  `<duration>`, `<Beam>`/`<BeamMode>`, `<Tuplet>` (with `<bracket>`), grace
+  chords as separate `<Chord>`s, `gap` rests, lyrics, fingerings;
+- **notations**: key signatures (`concertKey`/`actualKey`, mode, courtesy),
+  time signatures (subtype, stretch, courtesy), clefs (`isHeader`), barlines
+  (extension), articulations, ornaments, fermatas, tremolos, arpeggios, chord
+  lines, accidentals (`role`/`parens`), tie prolongation (two halves with
+  `<location>`), slurs, trills, glissandos, hairpins, ottavas, pedals, voltas,
+  text lines;
+- **annotations**: dynamics, staff/expression/system texts (MuseScore markup
+  reconstructed, `&quot;` entities preserved, `<sym>` restored), tempos,
+  rehearsal marks, instrument changes, chord symbols (`harmonyType`, degrees),
+  figured bass, vibrato bars;
+- **frames**: credits (`<VBox>` per page, height, style, alignment), `TBox`
+  texts (above or below the measure, font size).
 
-Les positions sont écrites en fractions exactes (`<location><fractions>`), ce
-qui évite toute perte sur les n-olets (3, 5, 7…), contrairement à un `<tick>`
-entier.
+Positions are written as exact fractions (`<location><fractions>`), which
+avoids any loss on n-tuplets (3, 5, 7…), unlike an integer `<tick>`.
 
-## 5. Limites connues
+## 5. Known limits
 
-- **Mise en page non modélisée** : positions fines (`default-x/y`, hampes,
-  ligatures calculées, largeur des systèmes) ne sont pas dans le modèle ; la
-  sortie est musicalement identique, pas graphiquement. C'est la même limite
-  que l'export MusicXML.
-- **Ordre de `spanners` recopié** : un spanner entièrement contenu dans une
-  mesure répétée n'est pas écrit ; le lecteur le recrée en développant la
-  mesure source.
-- **Champs sans équivalent `.mscx`** : `Accidental.user` passe par `<role>`,
-  parenthèses par `<parens>` ; `Dimension`/`BarLine` construits à la main
-  peuvent perdre `EndStartRepeat` (écrit comme `<endRepeat>` + `<startRepeat>`),
-  ce que l'export MusicXML ne distingue pas.
-- **Format 3.x** : la sortie est toujours 4.70 ; le lecteur 3.x n'est pas
-  écrit. Les éléments lus en 3.x mais sans équivalent 4.x (par exemple les
-  encodages anciens d'armure `<subtype>`) sont convertis par la lecture 3.x,
-  pas par l'écriture.
-- **Dates** : `<programVersion>` est figée à `4.7.4` et `<programRevision>`
-  vide ; aucune horloge n'est lue (sortie reproductible).
+- **Unmodelled layout**: fine positions (`default-x/y`, stems, computed beams,
+  system widths) are not in the model; the output is musically identical, not
+  graphically. This is the same limit as the MusicXML export.
+- **Copied `spanners` order**: a spanner entirely contained in a repeated
+  measure is not written; the reader recreates it when expanding the source
+  measure.
+- **Fields without a `.mscx` equivalent**: `Accidental.user` goes through
+  `<role>`, parentheses through `<parens>`; hand-built `Dimension`/`BarLine`
+  can lose `EndStartRepeat` (written as `<endRepeat>` + `<startRepeat>`),
+  which the MusicXML export does not distinguish.
+- **3.x format**: the output is always 4.70; there is no 3.x writer. Elements
+  read in 3.x but with no 4.x equivalent (for example old `<subtype>` key
+  encodings) are converted by the 3.x reader, not by the writer.
+- **Dates**: `<programVersion>` is frozen at `4.7.4` and `<programRevision>`
+  is empty; no clock is read (reproducible output).
 
-## 6. Vérifications
+## 6. Checks
 
 ```sh
 nix develop -c cargo test -p scoretk-musescore-export
 nix develop -c cargo build -p scoretk-musescore-export --target wasm32-unknown-unknown
-# MuseScore 4.7.4 rouvre-t-il les sorties ? (headless, hors session graphique)
+# Does MuseScore 4.7.4 reopen the outputs? (headless, outside the graphical session)
 scripts/check-mscx-rewrite.sh
 ```
 
-`scripts/check-mscx-rewrite.sh` réécrit chaque fichier du corpus en `.mscx` et
-`.mscz`, puis demande à MuseScore 4.7.4 (`QT_QPA_PLATFORM=offscreen`) de
-l'ouvrir et de l'exporter. Il vérifie l'ouverture, pas la parité graphique :
-au 2026-11-17, **56/56 fichiers** (les 26 v4 et les 30 v3, en `.mscx` et en
-`.mscz`) sont rouverts sans `--force`.
+`scripts/check-mscx-rewrite.sh` rewrites each corpus file as `.mscx` and
+`.mscz`, then asks MuseScore 4.7.4 (`QT_QPA_PLATFORM=offscreen`) to open and
+export it. It checks opening, not graphical parity: as of 2026-11-17,
+**56/56 files** (the 26 v4 and the 30 v3, in both `.mscx` and `.mscz`) are
+reopened without `--force`.
 
-## 7. Ajustements du lecteur 4.x faits pour l'aller-retour
+## 7. 4.x reader adjustments made for the round trip
 
-Quelques propriétés que l'écrivain doit conserver n'étaient pas relues par le
-lecteur 4.x (elles ne changeaient pas les références du corpus, qui ne les
-contient pas) ; elles ont été ajoutées dans `read4xx`, avec la même sémantique
-que `read302` et `TRead` :
+A few properties that the writer must preserve were not re-read by the 4.x
+reader (they did not change the corpus references, which do not contain them);
+they were added in `read4xx`, with the same semantics as `read302` and `TRead`:
 
-| Propriété | Élément `.mscx` | Effet sur l'export |
+| Property | `.mscx` element | Effect on export |
 | --- | --- | --- |
-| crochet de n-olet | `<Tuplet><bracket>` | `<tuplet bracket="no">` |
-| écriture d'accord | `<Harmony><harmonyType>` | branche `<numeral>`/`<function>` au lieu de `<root>` |
-| degrés d'accord | `<Harmony><degree>` | `<degree>` MusicXML |
-| rôle d'altération | `<Accidental><role>` | `cautionary="yes"` |
-| parenthèses d'altération | `<Accidental><parens>` | `parentheses="yes"` |
-| canal MIDI | `<Channel><midiChannel>` | `<midi-channel>` et canaux libres |
-| changement d'instrument | `<InstrumentChange><Instrument>` | `Part::instruments()`, `<score-instrument>` |
-| cadre sous la mesure | `<TBox><Text><offset y>` | cible et placement du texte |
-| taille de police de cadre | `<TBox><Text><size>` | `font-size` des `<words>` |
+| n-tuplet bracket | `<Tuplet><bracket>` | `<tuplet bracket="no">` |
+| chord writing | `<Harmony><harmonyType>` | `<numeral>`/`<function>` branch instead of `<root>` |
+| chord degrees | `<Harmony><degree>` | MusicXML `<degree>` |
+| accidental role | `<Accidental><role>` | `cautionary="yes"` |
+| accidental parentheses | `<Accidental><parens>` | `parentheses="yes"` |
+| MIDI channel | `<Channel><midiChannel>` | `<midi-channel>` and free channels |
+| instrument change | `<InstrumentChange><Instrument>` | `Part::instruments()`, `<score-instrument>` |
+| frame below the measure | `<TBox><Text><offset y>` | text target and placement |
+| frame font size | `<TBox><Text><size>` | `font-size` of `<words>` |
 
-Le test e2e du corpus (références 4.7.4) reste inchangé par ces ajouts : seuls
-`v3/moonlight` (18 lignes) et `v3/voices` (6 lignes) diffèrent encore des
-références, pour les raisons de mise en page déjà documentées dans
+The corpus e2e test (4.7.4 references) remains unchanged by these additions:
+only `v3/moonlight` (18 lines) and `v3/voices` (6 lines) still differ from the
+references, for the layout reasons already documented in
 `docs/agents/ecarts-noyau.md`.
 
-## 8. Measured fidelity after reopening in MuseScore 4.7.4 (English)
+## 8. Measured fidelity after reopening in MuseScore 4.7.4
 
 ### Frozen baseline and oracle
 
