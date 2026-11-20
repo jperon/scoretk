@@ -190,6 +190,7 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         transpose: None,
         midi_program: None,
         midi_channel: None,
+        midi_port: None,
         volume: None,
         pan: None,
         midi_articulations: Vec::new(),
@@ -224,6 +225,15 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         .and_then(|channel| channel.child("midiChannel"))
         .and_then(Node::int_text)
         .and_then(|value| u8::try_from(value.clamp(0, 127)).ok());
+
+    // Port du premier canal (`<Channel><midiPort>`), base zéro. Utilisé par
+    // l'export MusicXML pour `<midi-device port>`.
+    instrument.midi_port = node
+        .children_named("Channel")
+        .next()
+        .and_then(|channel| channel.child("midiPort"))
+        .and_then(Node::int_text)
+        .and_then(|value| u8::try_from(value.clamp(0, 15)).ok());
 
     // Les partitions antérieures à 3.6 ne stockent ni identifiant MusicXML ni
     // programme par défaut : `Instrument::updateInstrumentId` les retrouve dans

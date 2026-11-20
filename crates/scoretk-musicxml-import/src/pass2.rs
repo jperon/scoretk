@@ -177,6 +177,7 @@ fn instrument(data: &InstrumentData) -> Instrument {
         transpose: None,
         midi_program: data.program,
         midi_channel: data.channel,
+        midi_port: None,
         volume: data.volume,
         pan: data.pan,
         midi_articulations: Vec::new(),

@@ -149,6 +149,7 @@ fn piano_instrument() -> Instrument {
         track_name: "Piano".to_owned(),
         transpose: None,
         midi_channel: None,
+        midi_port: None,
         midi_program: Some(0),
         volume: None,
         pan: None,
@@ -693,6 +694,7 @@ fn transposition_et_concert_pitch() {
         track_name: "B♭ Clarinet".to_owned(),
         transpose: Some(Transpose::new(-1, -2)),
         midi_channel: None,
+        midi_port: None,
         midi_program: Some(71),
         volume: None,
         pan: None,
@@ -1106,6 +1108,7 @@ fn corpus_linked_ties() {
         track_name: "Flute".to_owned(),
         transpose: None,
         midi_channel: None,
+        midi_port: None,
         midi_program: Some(73),
         volume: None,
         pan: None,
@@ -1281,6 +1284,7 @@ fn corpus_paroles() {
         track_name: "Voice".to_owned(),
         transpose: None,
         midi_channel: None,
+        midi_port: None,
         midi_program: Some(52),
         volume: None,
         pan: None,
@@ -2364,4 +2368,33 @@ fn tempo_sans_equation_reste_en_words() {
     assert!(xml.contains("≈ 90"), "le « ≈ » doit rester lisible : {xml}");
     assert!(xml.contains("<sound tempo=\"90\"/>"));
     assert_eq!(xml.matches("<measure number=").count(), 2);
+}
+
+#[test]
+fn port_midi_de_l_instrument() {
+    let mut score = Score::new();
+    let (part_id, staff) = piano(&mut score);
+    let instrument = Instrument {
+        midi_port: Some(1),
+        ..score.part(part_id).instrument.clone()
+    };
+    score.part_mut(part_id).instrument = instrument;
+    let piste = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, piste, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    // MuseScore : midi-device port = <Channel><midiPort> + 1
+    // (exportmusicxml.cpp:7939-7947). La valeur par défaut reste 1.
+    assert!(
+        xml.contains("<midi-device id=\"P1-I1\" port=\"2\"></midi-device>"),
+        "port de la piste : {xml}"
+    );
+    assert!(!xml.contains("port=\"1\""), "aucun port par défaut ici : {xml}");
+
+    // Un instrument sans port explicite garde le port 1 (cas non concerné).
+    score.part_mut(part_id).instrument.midi_port = None;
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<midi-device id=\"P1-I1\" port=\"1\"></midi-device>"));
 }

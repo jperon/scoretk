@@ -668,10 +668,17 @@ impl<'a> Context<'a> {
             for (instrument_index, instrument) in instruments.iter().enumerate() {
                 let instrument_id = format!("P{number}-I{}", instrument_index + 1);
                 // MuseScore écrit un élément vide non auto-fermant pour
-                // <midi-device>. Le modèle n'a pas de port MIDI : celui par
-                // défaut de MuseScore vaut 1.
-                out.xml
-                    .tag_with("midi-device", &[("id", &instrument_id), ("port", "1")], "");
+                // <midi-device> et y met `channel()->port() + 1`
+                // (exportmusicxml.cpp:7939-7947 : le port du premier canal de
+                // l'instrument, ou `part->midiPort() + 1` sans canal). Le port
+                // par défaut reste 1 quand le fichier ne le fixe pas.
+                let port = instrument.midi_port.map_or(1, |port| u16::from(port) + 1);
+                let port = port.to_string();
+                out.xml.tag_with(
+                    "midi-device",
+                    &[("id", &instrument_id), ("port", &port)],
+                    "",
+                );
                 out.xml
                     .start_element("midi-instrument", &[("id", &instrument_id)]);
                 let midi_channel = match instrument.midi_channel {

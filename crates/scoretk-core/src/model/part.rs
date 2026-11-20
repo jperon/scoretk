@@ -75,6 +75,10 @@ pub struct Instrument {
     /// Absent quand le fichier ne fixe pas de canal ; MuseScore attribue alors
     /// un canal libre dans l'ordre des instruments (`rebuildMidiMapping`).
     pub midi_channel: Option<u8>,
+    /// Port MIDI du premier canal de l'instrument (`<Channel><midiPort>`, base
+    /// zéro), tel que lu dans le fichier. MuseScore l'exporte dans
+    /// `<midi-device port>` après l'avoir incrémenté d'un (`midiMapping::port`).
+    pub midi_port: Option<u8>,
     /// Volume du canal MIDI (`Channel::controller` 7), 0-127.
     ///
     /// Absent quand le fichier ne règle pas le contrôleur 7 ; MuseScore retient
@@ -105,6 +109,7 @@ impl Instrument {
             transpose: None,
             midi_program: None,
             midi_channel: None,
+            midi_port: None,
             volume: None,
             pan: None,
             midi_articulations: Vec::new(),

@@ -495,6 +495,12 @@ impl Reader {
                 .child("midiChannel")
                 .and_then(Element::int)
                 .and_then(|value| u8::try_from(value.clamp(0, 127)).ok());
+            // Port du canal (`Channel::port` dans le C++) : MuseScore l'écrit
+            // dans `<midi-device port>` (exportmusicxml.cpp:7939-7947).
+            instrument.midi_port = channel
+                .child("midiPort")
+                .and_then(Element::int)
+                .and_then(|value| u8::try_from(value.clamp(0, 15)).ok());
         }
 
         // Table des articulations MIDI (`read(MidiArticulation*)`) : une
