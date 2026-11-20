@@ -523,6 +523,66 @@ fn multiplicateur_du_silence_multi_mesures_compte_les_mesures_du_modele() {
     assert!(produit.contains("c1"), "note finale absente :\n{produit}");
 }
 
+/// Même cause que ci-dessus, mais la mesure porteuse du marqueur a elle-même
+/// une `len` de 13 mesures nominales : c'est le cas réel des parties
+/// d'`Adeste fideles` et des `Les anges` (1162 attaques décalées). Le modèle
+/// porte à la fois cette mesure longue et cinq mesures de silence distinctes ;
+/// `musicxml2ly` écrit les six mesures présentes (§2.2.3), pas les 13 du
+/// marqueur. La grille de mesures prévaut sur l'étendue dès qu'elle contient
+/// plusieurs mesures de silence.
+#[test]
+fn grille_de_mesures_preval_sur_la_len_du_multi_silence() {
+    let mut score = scoretk_core::model::Score::new();
+    let part = score.add_part(Part::new("Voice", "Vo."));
+    let staff = score.add_staff(part);
+
+    let mut premiere = Measure::new(0, Fraction::ZERO, Fraction::ONE);
+    premiere.len = Fraction::new(13, 1);
+    premiere.multi_measure_rest = Some(13);
+    let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+    segment.set_element(
+        Track::new(staff, 0),
+        SegmentItem::ChordRest(ChordRest::rest(Duration::measure())),
+    );
+    premiere.add_segment(segment);
+    score.add_measure(premiere);
+
+    // Cinq mesures de silence distinctes dans la grille du modèle.
+    for index in 1..6usize {
+        let start = Fraction::new(index as i64, 1);
+        let mut measure = Measure::new(index, start, Fraction::ONE);
+        let mut segment = Segment::new(SegmentType::ChordRest, start, 1);
+        segment.set_element(
+            Track::new(staff, 0),
+            SegmentItem::ChordRest(ChordRest::rest(Duration::measure())),
+        );
+        measure.add_segment(segment);
+        score.add_measure(measure);
+    }
+    let mut derniere = Measure::new(6, Fraction::new(6, 1), Fraction::ONE);
+    let mut segment = Segment::new(SegmentType::ChordRest, Fraction::new(6, 1), 1);
+    let mut chord = ChordRest::chord(Duration::whole());
+    let note_id = score.add_note(Note::new(60, tpc::C));
+    let ChordRestKind::Chord(ref mut content) = chord.kind else {
+        unreachable!()
+    };
+    content.notes.push(note_id);
+    segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+    derniere.add_segment(segment);
+    score.add_measure(derniere);
+
+    let produit = scoretk_lilypond_export::write_lilypond(&score).expect("écriture");
+    assert!(
+        produit.contains("R1*6"),
+        "les six mesures de la grille doivent être écrites :\n{produit}"
+    );
+    assert!(
+        !produit.contains("R1*13"),
+        "la len du marqueur ne doit pas décaler la note :\n{produit}"
+    );
+    assert!(produit.contains("c1"), "note finale absente :\n{produit}");
+}
+
 /// Les identifiants LilyPond ne peuvent pas contenir de chiffre : avec plus
 /// de dix portées, `staff11VoiceOne` est analysé comme `staff` suivi de `11`
 /// et toute la compilation échoue (cas réel : `Veni veni Emmanuel` à 13

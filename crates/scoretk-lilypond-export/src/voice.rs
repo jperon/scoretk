@@ -75,10 +75,15 @@ struct Item<'a> {
 // contient réellement (MuseScore 4.7.4 tronque certains multi-silences dans son
 // propre export MusicXML, confirmé par la référence MIDI). Écrire le chiffre du
 // champ décalerait toutes les notes suivantes de la différence.
-fn silences_present(items: &[Item<'_>], debut: usize, total: usize) -> usize {
-    let mut index = 0usize;
+fn silences_present(
+    items: &[Item<'_>],
+    debut_item: usize,
+    debut_measure: usize,
+    total: usize,
+) -> usize {
+    let mut index = debut_item;
     let mut presents = 0usize;
-    for numero in debut..total {
+    for numero in debut_measure..total {
         let fin = index
             + items[index..]
                 .iter()
@@ -508,9 +513,15 @@ pub(crate) fn render_body(
                     // multiplicateur est le nombre de mesures de silence
                     // réellement présentes, ou l'étendue de la mesure quand
                     // elle en condense plusieurs (cas des tests du corpus).
-                    let presents = silences_present(&items, measure_index, score.measures.len());
+                    let presents =
+                        silences_present(&items, item_index, measure_index, score.measures.len());
                     let etendue = (measure.len / len).as_f64().round().max(1.0) as usize;
-                    let reel = presents.max(etendue).min(count as usize);
+                    // Dès que la grille du modèle porte plusieurs mesures de
+                    // silence, elle décrit la musique réelle (§2.2.3) : la
+                    // `len` du marqueur est redondante et ne doit pas allonger
+                    // le silence. Sinon (une seule mesure longue), c'est elle
+                    // qui donne le nombre de mesures nominales couvertes.
+                    let reel = if presents > 1 { presents } else { etendue }.min(count as usize);
                     emitter.token(&format!("{}*{reel}", measure_rest_token(len)));
                     multi_rest_left = reel.saturating_sub(1) as u16;
                 }
