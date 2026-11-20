@@ -4917,3 +4917,35 @@ fn keepwithtag_apres_relative_pour_la_reference_octave() {
     let notes: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
     assert_eq!(notes, vec![63, 69, 78], "octave issue de la branche layout");
 }
+
+/// Les branches `<< … \\ \new Voice … >>` d'un `\context Staff` qui sont
+/// enchâssées dans un enveloppeur (`\fixed`, `\relative`) sont des passages
+/// polyphoniques temporaires : LilyPond les joue sur la même portée en
+/// réutilisant les emplacements de voix, et leur musique succède dans le
+/// temps. Ouvrir une portée par branche déplace toutes les branches au tick 0.
+#[test]
+fn passages_temporaires_dans_un_contexte_staff_restent_sur_une_portee() {
+    let score = read_lilypond(
+        r#"\version "2.24.0"
+\score {
+  \context Staff = "up" <<
+    \key c \major
+    \time 4/4
+    \fixed c' {
+      << { c4 d4 e4 f4 } \\ \new Voice { g4 a4 b4 c'4 } >>
+      << { c4 d4 e4 f4 } \\ \new Voice { g4 a4 b4 c'4 } >>
+      << { c4 d4 e4 f4 } \\ \new Voice { g4 a4 b4 c'4 } >>
+    }
+  >>
+}
+"#,
+    )
+    .expect("lecture");
+    assert_eq!(
+        score.staves.len(),
+        1,
+        "trois passages temporaires successifs tiennent sur une portée"
+    );
+    assert_eq!(score.measures.len(), 3);
+    assert_eq!(score.notes.len(), 24);
+}

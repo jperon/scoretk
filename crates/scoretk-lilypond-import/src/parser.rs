@@ -1036,7 +1036,7 @@ impl<'a> Parser<'a> {
                 // seule portée : le répartir extrait les enveloppes `\relative`
                 // pour les réappliquer voix par voix, décalant les octaves et
                 // déplaçant les mesures.
-                if !matches!(&content, Music::Sim(_)) || named_voice_count(&content) > 2 {
+                if !matches!(&content, Music::Sim(_)) || direct_named_voices(&content) > 2 {
                     let mut staves = Vec::new();
                     let mut lyrics = Vec::new();
                     self.collect_staves(content, &mut staves, &mut lyrics);
@@ -4448,6 +4448,25 @@ fn has_voice_context(music: &Music) -> bool {
         Music::Sim(items) | Music::Seq(items) => items.iter().any(has_voice_context),
         Music::Tag { music, .. } | Music::Filtered { music, .. } => has_voice_context(music),
         _ => false,
+    }
+}
+
+/// Voix `\new Voice` portées **directement** par les éléments d'un
+/// `<< … >>` de `\context Staff`.
+///
+/// Les voix enchâssées dans un enveloppeur (fixed, relative, transpose)
+/// ou dans une séquence sont des branches de passages polyphoniques
+/// temporaires : `lily/parser.yy` (`context_change` / `temporary_note`)
+/// les joue dans les emplacements de la portée courante, et leur musique
+/// se succède dans le temps. Les répartir en portées sœurs les ferait
+/// toutes lire depuis le tick 0 (ballade-4).
+fn direct_named_voices(music: &Music) -> usize {
+    match music {
+        Music::Sim(items) => items
+            .iter()
+            .filter(|item| matches!(item, Music::New(group) if group.kind == GroupKind::Voice))
+            .count(),
+        _ => 0,
     }
 }
 
