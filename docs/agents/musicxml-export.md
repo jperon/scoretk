@@ -237,3 +237,32 @@ Work the ranking of §2 in order, re-measuring after each committed cause:
 `tuplet` (bracket direction), `attributes`, `measure`, `midi-channel`, `sound`.
 Each cause gets its own commit, a reduced test written first, and a C++
 citation.
+
+## 10. Cause `staff-details` (35 fichiers) — sous-classification
+
+Les 35 fichiers se répartissent : 14 `<staff-details>` avec lignes absentes,
+10 `<staff-details/>` absents, 6 écarts de position de `dot` (résolus par la
+cause `dot`), 2 avec `number="1"`, 3 divers. Pour les 14+10, la cause est
+`hideEmptyStaves` du `score_style.mss` (présent dans 28 fichiers). Le reprise
+de ce réglage dans le lecteur a été **rejetée** : elle fait gagner 13 fichiers
+mais en perd 15, car notre découpage en systèmes (sauts explicites seulement)
+et `Measure::isEmpty` simplifié sur-massent les portées masquées. Ce constat
+est conservé comme limite, sans correctif.
+
+La partie réellement corrigeable est `<staff-size>` : `writeStaffDetails`
+(`exportmusicxml.cpp:8139-8144`) l'écrit quand `staffMag != 1`
+(`staff.cpp:806-809`), avec `smallStaffMag = 0.7` (`styledef.cpp:529`) et un
+`<mag>` utilisateur éventuel. Le lecteur 4.x lit désormais `<small>` et `<mag>`
+de `<StaffType>`, et l'export écrit `<staff-size scaling="…">…</staff-size>`.
+Test réduit échouant avant le correctif. Oracle ciblé sur les 35 fichiers :
+**12 gains, 0 perte**, 6 876 → 6 570 lignes divergentes.
+
+## 11. Re-mesure complète après `dot` + `staff-size` (174 fichiers)
+
+Comparaison fichier par fichier avec le relevé précédent : **47 gains,
+0 perte, 126 inchangés** ; lignes divergentes 26 775 → 24 733 ; fichiers
+core-identiques 54 → 57. XSD scoretk : 0 erreur. Le classement restant est
+`staff-details` 40, `attributes` 33, `tuplet` 12, `sound` 5,
+`movement-number` 4. Les 40 `staff-details` restants sont essentiellement les
+portées masquées par la mise en page (voir §10, non corrigeables avec le
+découpage en systèmes du pivot).

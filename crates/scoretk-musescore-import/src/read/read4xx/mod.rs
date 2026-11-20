@@ -331,6 +331,17 @@ impl Reader {
             let mut staff = Staff::new(part_id);
             if let Some(staff_type) = staff_element.child("StaffType") {
                 staff.lines = staff_lines(staff_type);
+                // `Staff::mag()` : une portée `<small>` utilise `smallStaffMag`
+                // (0.7, `styledef.cpp:529`) ; l'export en dérive `<staff-size>`.
+                if let Some(small) = staff_type.child("small").and_then(Element::int) {
+                    staff.small = small != 0;
+                }
+                if let Some(mag) = staff_type
+                    .child("mag")
+                    .and_then(|mag| mag.text().parse::<f64>().ok())
+                {
+                    staff.user_mag_percent = (mag * 100.0).round() as i32;
+                }
             }
             // `TRead::read(Staff*)` (`read500/tread.cpp:4111`) :
             // `<isStaffVisible>` commande `Staff::setVisible`. MuseScore signale

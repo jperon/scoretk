@@ -2918,3 +2918,26 @@ fn dot_silence_portee_visible_conserve() {
         "point sur portée visible perdu : {xml}"
     );
 }
+
+/// `writeStaffDetails` (`exportmusicxml.cpp:8139-8144`) écrit `<staff-size>`
+/// quand le facteur d'agrandissement diffère de 1 : une portée réduite
+/// (`<small>1</small>`, mag 0.7) donne `<staff-size scaling="70">70</staff-size>`.
+/// Cas réels : Sancta Maria KV 273 (4 occurrences), Gloria Patri de Vivaldi (8).
+#[test]
+fn staff_size_des_portees_reduites() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    score.staff_mut(staff).small = true;
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<staff-size scaling=\"70\">70</staff-size>"),
+        "staff-size de la portée réduite absent :\n{xml}"
+    );
+}

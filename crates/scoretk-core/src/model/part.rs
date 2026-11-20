@@ -330,6 +330,9 @@ pub struct Staff {
     pub visible: bool,
     /// Vrai si la portée est en petit format.
     pub small: bool,
+    /// Agrandissement utilisateur en pourcentage (`StaffType::userMag`,
+    /// `<mag>`) : 100 par défaut.
+    pub user_mag_percent: i32,
     /// Étirement temporel de la portée (`Staff::timeStretch`, indication de
     /// mesure locale). Vaut un hors indication locale.
     pub time_stretch: Fraction,
@@ -356,6 +359,7 @@ impl Staff {
             lines: 5,
             visible: true,
             small: false,
+            user_mag_percent: 100,
             bar_line_span: false,
             brackets: Vec::new(),
             time_stretch: Fraction::ONE,

@@ -2309,9 +2309,12 @@ impl Context<'_> {
         for (position, staff_id) in part.staves.iter().enumerate() {
             let staff = self.score.staff(*staff_id);
             let hidden_staff = !staff.visible || hidden.contains(&(staff_id.raw() as usize));
-            // TODO(parité): portées en petit format (staff-size), tablature
-            // et couleurs/visibilité des lignes (`line-detail`).
-            if staff.lines == 5 && !hidden_staff {
+            // `staffMag = (small ? smallStaffMag : 1) * userMag`
+            // (`staff.cpp:806-809`), smallStaffMag = 0.7 (`styledef.cpp:529`).
+            let mag = (if staff.small { 70 } else { 100 }) * staff.user_mag_percent;
+            let size = mag / 100;
+            // TODO(parité): tablature et couleurs/visibilité des lignes.
+            if staff.lines == 5 && !hidden_staff && size == 100 {
                 continue;
             }
             out.attr(true);
@@ -2325,6 +2328,13 @@ impl Context<'_> {
             }
             out.xml.start_element("staff-details", &attributes);
             out.xml.tag("staff-lines", &staff.lines.to_string());
+            // `writeStaffDetails` (`exportmusicxml.cpp:8139-8144`) :
+            // `<staff-size scaling="mag*100">mag*100</staff-size>`.
+            if size != 100 {
+                let scaling = size.to_string();
+                out.xml
+                    .tag_with("staff-size", &[("scaling", &scaling)], &scaling);
+            }
             out.xml.end_element();
             out.attributes_has_details = true;
         }
