@@ -572,6 +572,7 @@ fn segment_at(
 /// Convertit une annotation lue.
 fn annotation_object(spec: &AnnotationSpec) -> Annotation {
     match spec {
+        AnnotationSpec::Fermata(fermata) => Annotation::Fermata(*fermata),
         AnnotationSpec::Dynamic(text) => Annotation::Dynamic(Dynamic::new(text.clone())),
         AnnotationSpec::Text {
             text,

@@ -29,8 +29,8 @@
 
 use scoretk_core::model::{
     Accidental, AccidentalType, Articulation, ArticulationType, BarLineType, ChordRest, Duration,
-    DurationType, Fraction, GraceChord, GraceType, Note, NoteId, Ornament, OrnamentType, Slur,
-    Spanner, SpannerAnchor, SpannerNotation, SpannerType, Track,
+    DurationType, Fermata, FermataType, Fraction, GraceChord, GraceType, Note, NoteId, Ornament,
+    OrnamentType, Slur, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Track,
 };
 
 use crate::reader::{
@@ -746,6 +746,14 @@ impl Parser<'_> {
                 Decoration::Articulation(kind) => {
                     if let Some(chord) = chord_rest.chord_mut() {
                         chord.articulations.push(Articulation::new(kind));
+                    } else if kind == ArticulationType::Fermata {
+                        // ABC 2.1 §4.14 (`abc2xml.py::doDecos`, lignes
+                        // 1491-1492): `H`/`!fermata!` before a rest is a
+                        // fermata on that rest. The pivot model has no
+                        // articulation on `Rest`, but `rest_notations`
+                        // writes `<fermata>` from a segment annotation.
+                        annotations
+                            .push(AnnotationSpec::Fermata(Fermata::new(FermataType::Normal)));
                     }
                 }
                 Decoration::Ornament(kind) => {

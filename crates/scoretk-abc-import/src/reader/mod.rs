@@ -42,7 +42,7 @@ mod rhythm;
 use std::collections::BTreeMap;
 
 use scoretk_core::model::{
-    BarLineType, ClefType, Fraction, HairpinType, Key, KeySig, NoteId, Score, TimeSig,
+    BarLineType, ClefType, Fermata, Fraction, HairpinType, Key, KeySig, NoteId, Score, TimeSig,
 };
 
 use scoretk_abc_common::decorations::Decoration;
@@ -384,6 +384,11 @@ pub(crate) enum AnnotationSpec {
     },
     /// Nuance (`!p!`).
     Dynamic(String),
+    /// Point d'orgue sur un silence (`Hz`, `Hx`, `!fermata!z`). Le modèle
+    /// n'attache pas d'articulation à un `Rest`, mais l'exporteur lit les
+    /// `Annotation::Fermata` de segment sur chaque note, silence compris
+    /// (`notations.rs::rest_notations` ; `abc2xml.py::doDecos` 1491-1492).
+    Fermata(Fermata),
 }
 
 /// Accord d'agrément en attente.
