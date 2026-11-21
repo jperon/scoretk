@@ -5852,3 +5852,48 @@ fn changement_de_transposition_en_cours_de_piece() {
         pitches
     );
 }
+
+#[test]
+fn acciaccature_apres_arret_de_soufflet() {
+    // `\!` est un post-événement de la note précédente : il ne doit pas avaler
+    // le `\acciaccatura` suivant comme argument de direction, ni transformer
+    // son ornement en note ordinaire (ce qui décalerait toutes les attaques
+    // suivantes d'une croche).
+    let score = lire("c'8 \\! \\acciaccatura { e'8 } d'8 c'8");
+    let mut graces = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            if let Some(SegmentItem::ChordRest(chord_rest)) = segment.element(Track::from_raw(0)) {
+                if let ChordRestKind::Chord(chord) = &chord_rest.kind {
+                    for grace in &chord.grace_chords {
+                        graces.push((
+                            grace.chord.grace,
+                            grace
+                                .chord
+                                .notes
+                                .iter()
+                                .map(|&id| score.note(id).pitch)
+                                .collect::<Vec<_>>(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(
+        graces,
+        vec![(Some(GraceType::Acciaccatura), vec![76])],
+        "l'ornement après \\! doit rester une acciaccature"
+    );
+    assert_eq!(
+        accords_de_voix(&score, 0)
+            .iter()
+            .map(|(tick, pitches, _)| (*tick, pitches.clone()))
+            .collect::<Vec<_>>(),
+        vec![
+            (Fraction::ZERO, vec![72]),
+            (Fraction::new(1, 8), vec![74]),
+            (Fraction::new(1, 4), vec![72]),
+        ]
+    );
+}

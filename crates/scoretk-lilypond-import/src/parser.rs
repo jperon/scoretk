@@ -3441,6 +3441,24 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 vec![PostEvent::Rest]
             }
+            // `\<`, `\>` et `\!` sont des événements isolés (`lily/parser.yy`
+            // `direction_less_event`), pas des directions : les laisser passer
+            // par la branche générique appellerait `parse_direction_event`,
+            // qui consommerait la commande suivante comme argument — avalant
+            // par exemple un `\acciaccatura` placé juste après `\!` et
+            // transformant son ornement en note ordinaire qui décale la suite.
+            Kind::Command if token.text == "<" => {
+                self.position += 1;
+                vec![PostEvent::HairpinStart(true)]
+            }
+            Kind::Command if token.text == ">" => {
+                self.position += 1;
+                vec![PostEvent::HairpinStart(false)]
+            }
+            Kind::Command if token.text == "!" => {
+                self.position += 1;
+                vec![PostEvent::HairpinStop]
+            }
             Kind::Command => {
                 // `lily/parser.yy` : `post_event_nofinger: direction_less_event`
                 // est un événement isolé (`\fermata`, `\p`, `\trill`, …) : il ne

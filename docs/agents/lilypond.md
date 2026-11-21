@@ -3962,3 +3962,16 @@ Failing reduced test `ottava_commence_avant_la_note_du_tick_de_depart` first
 written `.ly` now has `\ottava 1` before the first note of the covered
 measure and `\ottava 0` before the next measure, matching the reference
 `<octave-shift>` positions.
+
+### Hairpin post-events must not swallow the next command
+
+`parse_post_event` sent `\<`, `\>` and `\!` through its generic command
+branch, which calls `parse_direction_event` with the hairpin as if it were a
+direction (`^`, `_`, `-`). That consumed the following command as a script:
+after `c'8 \!`, a written `\acciaccatura { e'8 }` became a plain `{ e'8 }`,
+so the grace was read as an ordinary note and shifted every later attack by
+half a beat — the local cause of the long tuplet/voice drift class on
+`Vingt_danses_enfantines_pour_piano.mscz`. These tokens are
+`direction_less_event`s in `lily/parser.yy` (no argument), so
+`parse_post_event` now returns their `PostEvent` directly. Failing reduced
+test `acciaccature_apres_arret_de_soufflet` first.
