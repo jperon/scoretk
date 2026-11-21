@@ -1716,3 +1716,40 @@ l'import 4.7.4 du même MIDI. Ventilation du lot (référence `.ly`), pour
 information : voix 17 967 notes, attaque 6 645, durée 6 041, n-olets 827,
 hauteur 605 ; pires fichiers : `Laudate_pueri…`, `Sancta_Maria_Mater_Dei_Mozart`,
 `Vincent-Lecornier-Jeanne-d-Arc`, `Lassus_Alleluja…`, `benoit_ave_maria`.
+
+## Oracle LilyPond reconstruit sur MuseScore 4.7.4 (2026-11-21, suite)
+
+`scripts/oracle/midi/ms-oracle.sh` convertit les 1 020 `.midi` du lot avec
+MuseScore 4.7.4 (`env -u LD_LIBRARY_PATH QT_QPA_PLATFORM=offscreen mscore`),
+en parallèle (`xargs -P nproc`), avec cache hors dépôt et reprise sur les
+fichiers déjà produits. Il écrit `$OUT/done.txt` en condition de fin.
+`categories_ms.py` calcule ensuite le score et la ventilation des pertes
+contre cette référence.
+
+Premiers résultats sur les 15 fichiers déjà convertis à ce stade : score
+moyen de notre import contre MuseScore **0,8089**, avec trois fichiers exacts
+à 1,0000 (`Vincent-Lecornier-Jeanne-d-Arc`, `Lassus_Alleluja…`,
+`Ave_Verum…`). La référence `.ly` n'atteint que 0,4014 contre MuseScore sur
+`Laudate_pueri…`, ce qui confirme que l'ancien N = 0,7592 mesurait surtout un
+écart de choix d'import, pas une fidélité.
+
+Cause identifiée sur `GaudeteChristusEstNatus_abrege` (notre score 0,6495,
+pitch seul 0,7033, attaques/durées/voix exactes) : à partir de la mesure où
+apparaît le programme 43 (contrabasse), MuseScore écrit les hauteurs une
+octave plus haut que les notes MIDI et pose
+`<transpose><octave-change>-1</octave-change>`. L'instrument
+`contrabass` de `share/instruments/instruments.xml` porte en effet
+`<transposeChromatic>-12</transposeChromatic>`. Notre import MIDI ne renseigne
+pas `Instrument::transpose` :
+`crates/scoretk-midi-import/src/instrument.rs` n'extrait que le nom, le
+programme et le grand staff. C'est une cause réelle, localisée dans le C++
+(`importmidi_instrument.cpp` : sélection du gabarit d'instrument), mais sa
+correction exige la table des transpositions d'instruments, absente du crate
+pour l'instant ; elle n'est donc pas encore commise.
+
+Autres causes testées et rejetées ce tour (mesures enregistrées) : tri des
+voix par `findBarIndexForOffTime` (upstream 258 → 261, LilyPond 31 615 →
+31 660), attribution globale des voix + `sortVoices` fidèle (aucun gain sur
+le cas réduit `Maiana`), somme des hauteurs brutes (aucun gain),
+`useDots=false` (très régressif), `is_human=false` (aucun effet lot
+LilyPond).
