@@ -74,18 +74,28 @@ def read_midi(path: str) -> list[tuple[int, float, float, int]]:
     for index, track in enumerate(mid.tracks):
         tick = 0
         ouvertes: dict[tuple[int, int], deque[int]] = defaultdict(deque)
+        # Ordre canonique à chaque tick : les note-off avant les note-on.
+        # L'ordre des messages au même tick dépend de l'exporteur (MuseScore
+        # écrit parfois l'off avant le on d'une note de durée nulle) ; le
+        # figer rend l'appariement FIFO indépendant de cet ordre.
+        par_tick: dict[int, list] = defaultdict(list)
         for msg in track:
             tick += msg.time
-            if msg.is_meta:
-                continue
-            cle = (msg.channel, msg.note) if hasattr(msg, "note") else None
-            if msg.type == "note_on" and msg.velocity > 0:
-                ouvertes[cle].append(tick)
-            elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
-                file_attentes = ouvertes.get(cle)
-                if file_attentes:
-                    debut = file_attentes.popleft()
-                    notes.append((msg.note, debut / tpb, (tick - debut) / tpb, index))
+            if not msg.is_meta and hasattr(msg, "note"):
+                par_tick[tick].append(msg)
+        for instant in sorted(par_tick):
+            messages = sorted(par_tick[instant], key=lambda m: 0 if (
+                m.type == "note_off" or (m.type == "note_on" and m.velocity == 0)
+            ) else 1)
+            for msg in messages:
+                cle = (msg.channel, msg.note)
+                if msg.type == "note_on" and msg.velocity > 0:
+                    ouvertes[cle].append(instant)
+                else:
+                    file_attentes = ouvertes.get(cle)
+                    if file_attentes:
+                        debut = file_attentes.popleft()
+                        notes.append((msg.note, debut / tpb, (instant - debut) / tpb, index))
     return notes
 
 
