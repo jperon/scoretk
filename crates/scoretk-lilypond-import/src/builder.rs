@@ -228,7 +228,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
             let staff_part_id = if let Some((pitch, true)) = staff_transposition {
                 // Portée transpositrice dans un groupe : instrument distinct,
                 // transposition portée par le Part, hauteurs du modèle écrites.
-                let (diatonic, chromatic) = crate::pitch::instrument_transpose(&pitch);
+                let interval = interval_from_pitch(&pitch);
                 let nom = staff_block.name.clone().unwrap_or_default();
                 let court = staff_block
                     .short_instrument_name
@@ -237,7 +237,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 let mut part = Part::new(nom.clone(), court.clone());
                 part.name = nom;
                 part.instrument = instrument_for(&part.name, &court);
-                part.instrument.transpose = Some(Transpose::new(diatonic, chromatic));
+                part.instrument.transpose = Some(interval);
                 score.add_part(part)
             } else {
                 part_id
@@ -272,9 +272,9 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 });
             }
             if let Some((pitch, true)) = staff_transposition {
-                let (_, chromatic) = crate::pitch::instrument_transpose(&pitch);
+                let interval = interval_from_pitch(&pitch);
                 let depuis = transposition_depuis(&staves[staff_start..]);
-                decaler_vers_concert(&mut staves[staff_start..], chromatic, depuis);
+                decaler_vers_concert(&mut staves[staff_start..], interval, depuis);
             }
         }
         // Paroles du groupe (hors portée) : rattachées à sa première portée.
@@ -306,14 +306,13 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                     })
                 });
                 if a_des_notes {
-                    let (diatonic, chromatic) = crate::pitch::instrument_transpose(&pitch);
+                    let interval = interval_from_pitch(&pitch);
                     let depuis = transposition_depuis(&staves[first_staff_index..]);
                     if a_decaler {
-                        decaler_vers_concert(&mut staves[first_staff_index..], chromatic, depuis);
+                        decaler_vers_concert(&mut staves[first_staff_index..], interval, depuis);
                     }
                     if depuis.is_zero() {
-                        score.part_mut(part_id).instrument.transpose =
-                            Some(Transpose::new(diatonic, chromatic));
+                        score.part_mut(part_id).instrument.transpose = Some(interval);
                     }
                     // La propriété vaut pour toute la portée : les voix
                     // musicales suivantes la reçoivent aussi. Un groupe
@@ -734,7 +733,7 @@ fn transposition_depuis(staves: &[StaffBuild]) -> Fraction {
 /// partie porte effectivement `<transpose>`, sinon la hauteur écrite doit
 /// rester intacte (cas des orchestres, où plusieurs portées de transpositions
 /// différentes partagent la même partie MusicXML).
-fn decaler_vers_concert(staves: &mut [StaffBuild], chromatic: i32, depuis: Fraction) {
+fn decaler_vers_concert(staves: &mut [StaffBuild], interval: Transpose, depuis: Fraction) {
     for staff in staves {
         for voice in &mut staff.voices {
             for event in &mut voice.interpreted.events {
@@ -742,13 +741,13 @@ fn decaler_vers_concert(staves: &mut [StaffBuild], chromatic: i32, depuis: Fract
                     continue;
                 }
                 if let EventKind::Chord(chord) = &mut event.kind {
-                    decaler_accord(&mut chord.content, chromatic, true);
+                    decaler_accord(&mut chord.content, interval, true);
                     for grace in chord
                         .grace_before
                         .iter_mut()
                         .chain(chord.grace_after.iter_mut())
                     {
-                        decaler_notes(&mut grace.notes, chromatic);
+                        decaler_notes(&mut grace.notes, interval.chromatic);
                     }
                 }
             }
@@ -756,25 +755,51 @@ fn decaler_vers_concert(staves: &mut [StaffBuild], chromatic: i32, depuis: Fract
     }
 }
 
-/// Tpc d'une hauteur concert, avec l'altération la plus simple
-/// (`pitchspelling.cpp` : spirale des quintes fa do sol ré la mi si).
-fn tpc_from_midi(pitch: u8) -> i8 {
-    const SPIRAL: [i32; 7] = [0, 1, 2, 3, 4, 5, 6];
-    const ALTER: [i32; 12] = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
-    const STEP: [usize; 12] = [1, 1, 3, 3, 5, 0, 0, 2, 2, 4, 4, 6];
-    let index = usize::from(pitch % 12);
-    i8::try_from(-8 + 7 * (ALTER[index] + 3) + SPIRAL[STEP[index]]).unwrap_or(14)
+/// Intervalle diatonique/chromatique d'une hauteur de `\transposition`.
+fn interval_from_pitch(pitch: &crate::ast::PitchSpec) -> Transpose {
+    let (diatonic, chromatic) = crate::pitch::instrument_transpose(pitch);
+    Transpose::new(diatonic, chromatic)
 }
 
-/// Décale les notes d'un accord (les silences n'ont pas de hauteur).
-fn decaler_accord(content: &mut ChordContent, chromatic: i32, concert_tpc: bool) {
+/// Décale les hauteurs d'un accord (les silences n'ont pas de hauteur) et
+/// transpose son orthographe si le modèle doit rester concert.
+fn decaler_accord(content: &mut ChordContent, interval: Transpose, concert_tpc: bool) {
     if let ChordContent::Notes(notes) = content {
-        decaler_notes(notes, chromatic);
+        let tpc_avant: Vec<i8> = notes.iter().map(|note| note.tpc).collect();
+        decaler_notes(notes, interval.chromatic);
         if concert_tpc {
-            for note in notes {
-                note.tpc = tpc_from_midi(note.pitch);
+            for (note, tpc) in notes.iter_mut().zip(tpc_avant) {
+                note.tpc = transpose_tpc(tpc, interval);
             }
         }
+    }
+}
+
+/// Transpose une orthographe de l'intervalle d'un instrument, comme
+/// `Transpose::transposeTpc` (`engraving/dom/transpose.cpp`) : un degré
+/// diatonique vaut deux pas dans la spirale des quintes, et l'altération est
+/// recalculée pour conserver l'enharmonie choisie par le compositeur.
+fn transpose_tpc(value: i8, interval: Transpose) -> i8 {
+    const SEMITONES: [i32; 7] = [5, 0, 7, 2, 9, 4, 11];
+    const TPC_MIN: i32 = -8;
+    const TPC_MAX: i32 = 40;
+    if value < TPC_MIN as i8 || value > TPC_MAX as i8 {
+        return value;
+    }
+    let offset = i32::from(value) - TPC_MIN;
+    let step = offset.rem_euclid(7) as usize;
+    let alteration = offset.div_euclid(7) - 3;
+    let new_step = (step as i32 + 2 * interval.diatonic).rem_euclid(7) as usize;
+    let target = (SEMITONES[step] + alteration + interval.chromatic).rem_euclid(12);
+    let mut new_alteration = (target - SEMITONES[new_step]).rem_euclid(12);
+    if new_alteration > 6 {
+        new_alteration -= 12;
+    }
+    let result = TPC_MIN + (new_alteration + 3) * 7 + new_step as i32;
+    if (TPC_MIN..=TPC_MAX).contains(&result) {
+        result as i8
+    } else {
+        -9
     }
 }
 

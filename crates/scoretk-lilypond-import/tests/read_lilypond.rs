@@ -5339,3 +5339,26 @@ fn groupe_de_portees_vide_ne_cree_pas_de_portee() {
     .expect("lecture");
     assert_eq!(score.staves.len(), 1);
 }
+
+/// La transposition doit conserver l'enharmonie du compositeur : un sol bémol
+/// écrit pour une clarinette en si bémol devient un fa bémol concert (tpc 6),
+/// pas un mi. `Transpose::transposeTpc` (`engraving/dom/transpose.cpp`).
+#[test]
+fn transposition_conserve_lenharmonie() {
+    let score = read_lilypond(
+        r#"\version "2.24.0"
+\score { \new StaffGroup <<
+  \new Staff { \transposition bes \key g \major \time 4/4 ges'1 g'1 }
+  \new Staff { \time 4/4 c''1 d''1 }
+>> }
+"#,
+    )
+    .expect("lecture");
+    let concert: Vec<_> = score
+        .notes
+        .iter()
+        .filter(|note| note.pitch == 64)
+        .map(|note| (note.pitch, note.tpc))
+        .collect();
+    assert_eq!(concert, vec![(64, 6)], "fa bémol concert, pas mi");
+}

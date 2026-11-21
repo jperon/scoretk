@@ -3400,3 +3400,13 @@ modèle et en transposant le `tpc` du même intervalle
 `export_concert_sans_transpose_de_partie` vérifie la cohérence pitch/tpc, le
 Part muni d'une transposition et la sortie MusicXML. Mesure complète :
 mus 97,38 %, ra 83,21 %, mut **88,90 %**, 14 gains et aucune perte.
+
+### Spelling de la transposition
+
+`transposeTpc` de `engraving/dom/transpose.cpp` transpose l'orthographe avec
+l'intervalle diatonique/chromatique, au lieu de respeller la hauteur concert
+depuis son numéro MIDI. Le lecteur utilisait `tpc_from_midi`, ce qui transformait
+un sol bémol écrit pour une clarinette en si bémol en mi concert au lieu de fa
+bémol. Le test `transposition_conserve_lenharmonie` échouait avant (tpc 18 au
+lieu de 6). `tpc_from_midi` est remplacé par une copie locale de
+`transposeTpc`, appliquée au tpc avec l'intervalle de `instrument_transpose`.
