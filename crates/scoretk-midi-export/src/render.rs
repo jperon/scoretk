@@ -1410,9 +1410,13 @@ fn render_chord(
         if !note.play {
             continue;
         }
-        if note.tie_back.is_some() {
+        if note.tie_back.is_some() && !trilled {
             // Note déjà tenue par le début de la liaison : pas de nouvelle
-            // attaque, la durée a été ajoutée à la note de départ.
+            // attaque, la durée a été ajoutée à la note de départ. Un trille
+            // porté par la note tenue fait exception : MuseScore attache ses
+            // évènements à la note de départ (`createPlayEvents`), et l'accord
+            // d'agrément lié est déjà fusionné (`graceNotesMerged`), donc
+            // c'est ici qu'il faut rendre l'excursion.
             continue;
         }
         let mut velocity = velocity_base as f64 * chord_velocity;
@@ -1479,6 +1483,8 @@ fn render_chord(
         // (`graceNotesMerged`, `compatmidirenderinternal.cpp:1736-1754`).
         if trilled && tremolo.is_none() {
             let span = tied_span_ticks(score, staff, note, ticks);
+            let auxiliary =
+                ornaments::previous_accidental_auxiliary(score, staff, source_tick, note);
             for (offset, trill_key, length) in ornaments::trill(
                 note,
                 span,
@@ -1487,6 +1493,7 @@ fn render_chord(
                 after.len(),
                 beats_per_second_at(score, source_tick),
                 key_fifths_at(score, source_tick),
+                auxiliary,
             ) {
                 let start = on + offset;
                 let end = start + length.max(1);
