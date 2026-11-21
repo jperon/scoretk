@@ -3717,3 +3717,48 @@ reste anormal pour ces fichiers (par exemple `violin_concerto_1` 5817 → 17024
 notes appariées quand on lui fournit la source convertie). La mesure « brute »
 de `mut` ne peut donc pas bouger tant que la référence n'est pas normalisée ;
 on publie les deux chiffres (§ « État final »).
+
+## 23. LilyPond import : état final (2026-11-21)
+
+### Chiffres
+
+Oracle MIDI LilyPond **2.27.0** ; sources 2.26.0 ou antérieures. Dernière
+mesure complète (mus 1447, ra 1726, mut 1377 fichiers) :
+
+| Lot | N2 % |
+| --- | ---: |
+| mus | 98,28 |
+| ra | 87,17 |
+| mut (brut) | 92,35 |
+| mut hors sources obsolètes et anomalies MIDI | 96,01 |
+
+Le lot `ra` est la suite de régression de LilyPond : la majorité de ses
+pertes sont des fichiers entièrement générés par Scheme ou des tests de
+gravure sans musique jouée (§22). Le lot `mut` brut est dominé par 13 sources
+obsolètes (règle `convert-ly` 2.11.51) et deux anomalies du MIDI 2.27
+(§22) ; une fois ces paniers écartés, le lecteur est à **96,01 %**.
+
+Avec les références normalisées — seulement les 15 renommages de la règle
+2.11.51/2.11.52 appliqués aux sources avant compilation MIDI — le chiffre
+**brut** de `mut` passe à **95,90 %** (724 fichiers sans reprise : 95,90 %),
+soit 22 gains et quatre pertes. Les quatre pertes sont des artefacts de
+normalisation : par exemple `Violinsonata_No9_3` passe de 5852 à 7683 notes
+de référence parce que le MIDI 2.27 d'origine était tronqué par la commande
+inconnue `\sustainDown`; le lecteur émet 5857 notes et avait donc
+artificiellement plus de correspondances avec le MIDI tronqué.
+
+### Classes restantes
+
+1. **Sources obsolètes** : acceptées dans le lecteur (§22), mais l'oracle
+   2.27 produit un MIDI anormal jusqu'à ce que la source soit convertie.
+2. **Anomalies MIDI 2.27** : notes simultanées de même hauteur fusionnées
+   (`djinns`), `\partcombine` joué en séquence (`score.ly` de `dies_irae`).
+3. **Musique Scheme** : `define-music-function`, `make-relative`, évaluations
+   lyriques — hors sous-ensemble, surtout dans `ra`.
+4. **Dérives de lecture** résiduelles : `\afterGrace`, n-olets longs,
+   `\autochange`, contextes `Staff` proposant des propriétés seules —
+   chacune sous le seuil de 0,3 point sur l'agrégat.
+
+L'import LilyPond est considéré comme terminé : les causes au-dessus de
+0,3 point sont soit classées, soit corrigées. La campagne suivante porte sur
+l'écriture (`crates/scoretk-lilypond-export`).
