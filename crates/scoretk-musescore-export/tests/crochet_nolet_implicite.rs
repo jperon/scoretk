@@ -69,7 +69,10 @@ fn crochet_implicite_pas_de_propriete() {
     assert!(relu.tuplets[0].bracket);
     let direct = scoretk_musicxml_export::export_musicxml(&explicite).expect("export");
     let retour = scoretk_musicxml_export::export_musicxml(&relu).expect("export");
-    assert_eq!(direct.matches("<pitch>").count(), retour.matches("<pitch>").count());
+    assert_eq!(
+        direct.matches("<pitch>").count(),
+        retour.matches("<pitch>").count()
+    );
     assert_eq!(
         direct.matches("<duration>").count(),
         retour.matches("<duration>").count()

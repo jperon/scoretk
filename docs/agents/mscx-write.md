@@ -1106,3 +1106,53 @@ change is caused by the trill/glissando reader commits. The oracle reference
 was regenerated with `scripts/oracle/refresh-reference.sh` before these code
 changes and must be refreshed again afterwards so `compare.sh` remains
 meaningful.
+
+### Thirteenth pass — the seven lost `.mscz` are a round-trip bracket bug (English)
+
+A fresh full measurement on current master (binary `9e8ff1c2…`) confirmed that
+the seven `.mscz` scores were still lost: 42/172 core-identical, mscz-18 first
+difference `<tuplet bracket="no">` (MuseScore's re-export) vs
+`<tuplet bracket="yes">` (scoretk's direct MusicXML). Master's `8c539b1`
+introduced `Tuplet::bracket_explicit` and made the MusicXML exporter compute a
+non-explicit bracket with `tuplet_bracket::has_bracket` (`tuplet.cpp:204-208`
+via the C++ port). The MuseScore writer, however, always wrote `<bracket>` and
+`<bracketType>`, turning an implicit bracket into an explicit one in our
+`.mscz`. MuseScore then kept our value instead of recalculating it: on mscz-18
+it re-exported 12 `bracket="no"` where both the source and scoretk's direct
+export have 12 `bracket="yes"`.
+
+Fix: `TWrite::write(const Tuplet*)` (`write/twrite.cpp:3500-3525`) emits
+`Pid::BRACKET_TYPE` only when the property is explicit; the writer now does the
+same. Reduced test: `crochet_nolet_implicite`, on `testTuplets8` with an
+explicit-bracket score as control; the older `type_crochet_nolet` test was
+updated to set `bracket_explicit` on the two tuplets it edits. After the fix,
+mscz-18's re-export has 12 `bracket="yes"` matching its direct export.
+
+The element inventory of the remaining writer-only N2 losses was continued:
+after the 2.x trill/glissando fixes, the lost playable elements are mostly
+notes/tuplets of linked excerpts (mscz-166, out of scope: the pivot writes one
+score), plus `Slur` (3 files), `Articulation` (2) and `Symbol` (3, layout only).
+The next actionable writer cause is not a missing element but the bracket
+round trip above.
+
+### Fourteenth pass — final table
+
+Binary `/tmp/scoretk-mscz-pass14-final` (sha256 `892cf991…`), full 638-score
+run with the implicit-bracket fix.
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | N1w | N2w | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | 54/56 | 0.9882 | 0.9873 | 0.9836 | 0.9733 | 0 | 56/56 |
+| mscz | 174 | 172 | 172 | **50/172** | 0.9967 | 0.9967 | 0.9990 | 0.9939 | 0 | 58/172 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9983 | 0.9908 | 0.9066 | 0.8992 | 0 | 0/27 |
+| ly | 375 | 358 | 358 | 1/358 | 0.9913 | 0.9889 | — | — | 0 | 0/0 |
+| abc | 1 | 1 | 1 | 0/1 | 1.0000 | 1.0000 | — | — | 0 | 0/0 |
+| **Total** | **638** | **614** | **614** | **105/614** | **0.9965** | **0.9951** | **0.9819** | **0.9763** | **0** | **114/255** |
+
+Compared with the fresh master baseline (42/172), **eight `.mscz` scores
+become core-identical** and 21 lose changed core lines; no writer-only N2
+decreases on any lot and no file stops opening. Two scores gain 4 and 14 core
+lines: mscz-150 (first difference moves from `<staff-details>` to a tuplet
+bracket, i.e. a diff-alignment shift after the bracket fix) and mscz-167
+(measure numbering `1` vs `454`, a pre-existing section-numbering difference
+unchanged by the fix). Neither is a musical loss.
