@@ -286,7 +286,18 @@ def mesurer_ecriture(args, lot: str, manifeste: str, fichier_sortie) -> None:
         work.mkdir(parents=True, exist_ok=True)
         dst = work / "tk.mid"
         r = base_releve(lot, "ecriture", "scoretk", src)
-        entree = "mscx" if src.endswith(".mscx") else "mscz" if src.endswith(".mscz") else "ly"
+        # A source MusicXML is not LilyPond: the old fallback sent
+        # `.musicxml`/`.xml`/`.mxl` through the LilyPond reader, which yielded
+        # an empty score (one note in the SMF) for every file of the xml lot.
+        lower = src.lower()
+        if lower.endswith((".musicxml", ".xml", ".mxl")):
+            entree = "musicxml"
+        elif lower.endswith(".mscx"):
+            entree = "mscx"
+        elif lower.endswith(".mscz"):
+            entree = "mscz"
+        else:
+            entree = "ly"
         extra = ["--no-expand-repeats"] if sans_unfold(src) else None
         code, duree, erreur = lancer(
             cmd_scoretk(args.scoretk, src, str(dst), entree, "midi", extra)
