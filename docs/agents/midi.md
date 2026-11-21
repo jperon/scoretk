@@ -2747,12 +2747,16 @@ alternative to the next. The reference is saved after the body and restored
 before every alternative. This is what turns `Ackermans` from the octave class
 into an exact file after the repeat fix.
 
-The two losses are the limits of this pass: `Maiana` (622 → 498) and
-`Encantada` (538 → 453) combine two scores, `\transpose` and
-`\unfoldRepeats`; the previous MuseScore over-expansion happened to match some
-of their notes, and the remaining second-score/transpose interaction is not
-reduced yet. They are the only per-file losses; every other `.ly` file that
-changed gained notes or became exact.
+The two losses are the `\partcombine` limitation, reduced to a minimal
+`\partcombine \theme \acc` used twice under `\transpose` and
+`\unfoldRepeats`: LilyPond's `lily/part-combine-iterator.cc` and
+`part-combine-engraver.cc` write a **single** combined voice (solo / a2 /
+unison decisions), while the reader keeps both voices and plays them
+simultaneously (`notes_supp`, `octave`). `Maiana` and `Encantada` use
+`\partcombine`; the previous model's over-expansion happened to match part of
+their second voice, hence the apparent regression. The limitation is already
+documented in `lilypond.md` § "Reading limits" (`partCombine`); it is not the
+repeat or transpose fix.
 
 ### Remaining classes
 

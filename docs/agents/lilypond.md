@@ -975,11 +975,22 @@ The **`mus`** lot of the reading oracle was re-run in full after the fixes:
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | mus | before (first pass) | 1447 | 113 | 1444 | 3 | 0 | 1072 (74.1 %) | 99.09 | 88.62 | 0.28 s |
 | mus | transpose + repeats + alternatives | 1447 | 113 | 1423 | 24 | 0 | **1148 (79.3 %)** | **99.06** | **98.59** | 1.11 s |
+| ra | before (first pass) | 1726 | 305 | 1724 | 2 | 69 | 1198 (69.4 %) | 89.84 | 75.01 | 0.06 s |
+| ra | transpose + repeats + alternatives | 1725 | 305 | 1724 | 1 | 52 | **1328 (77.0 %)** | **93.60** | **87.60** | 0.48 s |
+| mut | before (first pass) | 1377 | 652 | 1376 | 1 | 0 | 369 (26.8 %) | 97.73 | 67.85 | 5.44 s |
+| mut | transpose + repeats + alternatives | 2186 | 991 | 1742 | 444 | 3 | **692 (31.7 %)** | **97.51** | **93.49** | 28.13 s |
 
-The `ra` and `mut` lots were not re-run to completion in this pass (the full
-three-lot run was interrupted); their previous figures and rows stand. The
-`mus` gain (+76 exact, N2 88.62 → 98.59) is the same reader change measured on
-the MIDI lot.
+The `ra` lot was reconstructed from the surviving raw rows (1725 of the 1726
+paths; one path was lost) and re-run with the surviving references. The `mut`
+line uses the **whole surviving reference set** (2 186 files), not the original
+1 377-file list, which was deleted by the `/tmp` cleanup; the two rows are not
+strictly comparable, but every row comes from the same eight metrics. The
+`mus` gain (+76 exact, N2 88.62 → 98.59) and the `ra` gain (+130 exact, N2
+75.01 → 87.60) are the same reader change measured on the MIDI lot; the `mut`
+N2 moves from 67.85 to 93.49 on the larger set. The remaining `mut` failures
+are dominated by Mutopia files whose reference MIDI is absent or stale
+(`echec` 444), then `notes_supp` 607 and `attaque_decalee` 240; they are the
+next reading causes, not the repeat fixes.
 
 ## 13. Writing export: baseline against musicxml2ly (2026-11-19)
 
