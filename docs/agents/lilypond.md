@@ -3318,3 +3318,34 @@ antérieurs ; le `<transpose>` de partie n'est posé que si la propriété vaut
 depuis le début. Aucun fichier du corpus n'a de `\transposition` en cours de
 portée : la mesure complète reste mus 97,38 %, ra 83,21 %, mut 88,20 %, sans
 gain ni perte.
+
+### Re-classement par erreur réellement observée sur les notes
+
+Le classement par construct présent dans le fichier était trompeur : la
+ligne « transposition/octave » restait première alors que le correctif
+`\transposition` depuis sa déclaration ne changeait aucune note du corpus.
+J'ai donc comparé, pour les plus gros fichiers perdants, les couples
+(hauteur, attaque) du MIDI LilyPond et du MusicXML produit, en cherchant un
+intervalle de hauteur constant, un décalage de temps constant, ou des notes
+manquantes/surnuméraires. Résultat pour les cinq plus gros :
+
+| Fichier | Notes perdues | Erreur dominante |
+| --- | ---: | --- |
+| `violin_concerto_1.ly` | 12 078 | décalage de temps de +2 noires à partir de la mesure 11, avec des notes de hauteur différente aux premières mesures ; 358 notes surnuméraires |
+| `Symphony5_2.ly` | 5 947 | décalage global de +3,5 noires (première note à 4,0 au lieu de 0,5), puis des hauteurs à +12 semi-tons ; 178 notes surnuméraires |
+| `Violinsonata_No7_1.ly` | 2 795 | décalage de +2 noires et doublon de hauteur 43 au tick 56 |
+| `Beatus_vir_primo.ly` | 2 579 | décalage de +8 noires à partir du tick 28 (\`\\set measureLength\`) ; note 72 manquante |
+| `djinns.ly` | 2 384 | décalage de -4 noires à partir du tick 26 ; note 61 manquante au tick 11 |
+
+Aucun de ces fichiers ne perd ses notes par transposition d'instrument :
+les intervalles de hauteur « optimaux » (par exemple -5 ou +12 semi-tons)
+sont des artefacts du décalage de temps, qui aligne une note sur la suivante
+de même hauteur. Les causes réelles sont des décalages d'attaque, des
+doublons et des notes manquantes, déjà classés dans les lignes « bar-check »,
+« `R1*n` » et « non classé » du tableau. Les correctifs de cette campagne
+(coupe des accords aux barres, durée par défaut après `<< >>` et après
+`\\new Voice`, `\transposition` depuis sa déclaration) adressent les causes
+mécaniques identifiables ; les décalages restants nécessitent une réduction
+source par source et ne peuvent pas être réglés par une règle globale sans
+risquer de régressions. Aucun nouveau correctif global n'a été appliqué lors
+de cette passe, afin de ne pas introduire de perte par fichier.
