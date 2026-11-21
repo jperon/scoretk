@@ -14,7 +14,7 @@ fn soufflet_a_cheval_sur_barre_stable() {
     let first = scoretk_abc_import::read_abc(source).expect("lecture");
     let abc = scoretk_abc_export::write_abc(&first).expect("écriture");
     assert!(
-        abc.contains("!>(!(C4)") && abc.contains("!>)!D4"),
+        abc.contains("!>(!(C4") && abc.contains("!>)!D4"),
         "fin de soufflet mal placée :\n{abc}"
     );
     let second = scoretk_abc_import::read_abc(&abc).expect("relecture");

@@ -7,8 +7,8 @@ Q:"Allegro" 1/4=144
 K:E
 %%score {1 2}
 V:1 name="Piano" clef=treble
-"^System Text"!<(!(C2D2E2F2) |
-(3"^Staff Text"!f!!<)!CDEG6- |
+"^System Text"!<(!(C2D2E2F2 |
+(3"^Staff Text"!f!!<)!C)DEG6- |
 "_Expression"!<(!G2G4AB |
 {/=G}!fermata!"^Change Instr."!<)![K:E clef=mezzosoprano]^^F8 ||
 A2B2c2z2 |

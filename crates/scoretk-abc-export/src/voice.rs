@@ -739,7 +739,13 @@ fn draw_spanners(
                         before[offset].push("(".to_owned());
                     }
                 }
-                if spanner.end.tick > measure.start_tick && spanner.end.tick <= measure.end_tick() {
+                // Une seule mesure porte la fin : sans cela un slur qui se
+                // termine sur une barre écrivait `)` dans les deux mesures
+                // adjacentes. Même règle que les soufflets (voir plus bas).
+                if spanner.end.tick >= measure.start_tick
+                    && (spanner.end.tick < measure.end_tick()
+                        || (last_measure && spanner.end.tick <= measure.end_tick()))
+                {
                     if let Some(offset) = item_at_or_before(items, range.clone(), spanner.end.tick)
                     {
                         after[offset].push(")".to_owned());

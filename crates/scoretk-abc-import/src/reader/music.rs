@@ -1097,8 +1097,20 @@ impl Parser<'_> {
     }
 
     fn close_slur(&mut self) {
-        let end = self.voice().position();
+        // Un `)` lu juste après une note clôt la liaison sur CETTE note. Le
+        // tick courant a déjà été avancé par `parse_chord_or_note` : l'utiliser
+        // tel quel décalait l'extrémité d'une note à chaque aller-retour
+        // (`(cde)f` → `(cdef)g` → `(cdefg)`, ABC 2.1 § 4.11).
         let voice = self.voice();
+        let end = voice
+            .current
+            .events
+            .last()
+            .map(|event| crate::reader::Position {
+                measure: voice.measure_index(),
+                tick: event.tick,
+            })
+            .unwrap_or_else(|| voice.position());
         if let Some(start) = voice.open_slurs.pop() {
             voice.slurs.push((start, end));
         }
