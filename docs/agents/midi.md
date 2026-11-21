@@ -2427,3 +2427,31 @@ depends on the finer divisions; the beat tracker (`MidiBeat`) is still not
 wired (see the BeatRoot section). `02_02_Segura_L-aigle-mexicain` is unchanged
 (voice 0.9073): its first fragments were already equal, so its voice loss comes
 from another part of the tie chains, not from the missing split.
+
+## Decision: tuplet notation stays opt-in (2026-11-21)
+
+Requirement: make detection the default only if the full measurement shows no
+per-file loss without explanation, with insertion at MuseScore's stage
+(`convertMidi`: `findAllTuplets` inside `quantizeAllTracks`).
+
+Final figures, same manifests and oracle, after the beat-tie fix:
+
+| Setting | LilyPond N | onset loss | duration loss | tuplet loss | upstream N |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| default (old detector) | **0.9821** | **26.0** | **350.8** | 11 778.0 | 0.7662 |
+| `tuplet_notation` (late) | 0.9819 | 154.0 | 535.9 | **6 216.0** | **0.7743** |
+
+With the DFS filter the notation gain is real (tuplet loss −47 %, upstream
++0.0081) but the opt-in path loses two files (`OSalutarisHostia` and its
+duplicate, −0.0244, notated `<duration>` values) and worsens attacks/durations
+(it passes an empty tuplet list to `toDurationList`). Inserted at MuseScore's
+early stage, `v4/timesig-09` — whose source has **no** `<Tuplet>` — receives
+**182** invented time modifications (DFS filter, `/tmp/scoretk-filter`). That is
+a per-file divergence without an explanation, so:
+
+- **default off**; the detector and filter stay behind
+  `ImportOptions::tuplet_notation` / `--midi-tuplet-notation`;
+- turning it on requires porting `addChordsBetweenTupletNotes` and the
+  voice/tuplet interplay (`importmidi_tuplet.cpp:533-575`,
+  `assignVoices`) so that `timesig-09` produces no tuplet and `OSalutarisHostia`
+  keeps MuseScore's notated durations.
