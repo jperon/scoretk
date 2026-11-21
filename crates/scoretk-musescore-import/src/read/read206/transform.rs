@@ -304,6 +304,24 @@ fn adapt_measure(
                     links.push(link);
                 }
             }
+            "Glissando" => {
+                // `readMeasure206` (`read206.cpp:2871-2892`) : même couplage
+                // `<Glissando id>` / `<endSpanner id>` que pour les trilles.
+                if let Some(id) = node.attr_i32("id") {
+                    let mut link = SpannerLink::new(id, SpanFamily::Glissando);
+                    link.start = Some(measure_key(index, staff));
+                    let subtype = node.child("subtype").map(Node::trimmed_text);
+                    let style = node
+                        .child("lineStyle")
+                        .map(|child| crate::read::notation_names::line_style(&child.trimmed_text()))
+                        .unwrap_or(scoretk_core::model::LineStyle::Solid);
+                    link.glissando = Some(scoretk_core::model::Glissando::new(
+                        notation_names::glissando_type(subtype.as_deref(), style),
+                    ));
+                    link.text = node.child("text").map(Node::text);
+                    links.push(link);
+                }
+            }
             "endSpanner" => {
                 if let Some(id) = node.attr_i32("id") {
                     let mut link = SpannerLink::new(id, SpanFamily::Volta);
@@ -469,6 +487,35 @@ fn adapt_element(node: &mut Node, ctx: &mut AdaptCtx<'_>) {
                         });
                     }
                     child.retain_without("Tie");
+                }
+                // `readNoteProperties206` (read206.cpp:1221) : un glissando
+                // 2.x peut être porté par une note, pas seulement par une
+                // mesure ; c'est le cas du corpus (mscz-8).
+                let glissando = child.child("Glissando").map(|gliss| {
+                    let id = gliss.attr_i32("id");
+                    let subtype = gliss.child("subtype").map(Node::trimmed_text);
+                    let style = gliss
+                        .child("lineStyle")
+                        .map(|child| {
+                            crate::read::notation_names::line_style(&child.trimmed_text())
+                        })
+                        .unwrap_or(scoretk_core::model::LineStyle::Solid);
+                    let text = gliss.child("text").map(Node::text);
+                    (id, subtype, style, text)
+                });
+                if let Some((Some(id), subtype, style, text)) = glissando {
+                    let mut link = SpannerLink::new(id, SpanFamily::Glissando);
+                    link.start = Some(SpanKey::Chord {
+                        measure: ctx.measure,
+                        track: ((ctx.staff * 4) + ctx.voice) as u32,
+                        ordinal: ctx.chord_ordinal,
+                    });
+                    link.glissando = Some(scoretk_core::model::Glissando::new(
+                        notation_names::glissando_type(subtype.as_deref(), style),
+                    ));
+                    link.text = text;
+                    ctx.links.push(link);
+                    child.retain_without("Glissando");
                 }
                 if let Some(end) = child.child("endSpanner") {
                     if let Some(id) = end.attr_i32("id") {

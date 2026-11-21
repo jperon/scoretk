@@ -31,8 +31,9 @@
 //! les liaisons.
 
 use scoretk_core::model::{
-    Fraction, Hairpin, HairpinType, OttavaType, Placement, Score, SegmentType, Slur, Spanner,
-    SpannerAnchor, SpannerNotation, SpannerType, Track, Trill, TrillType, VoltaInfo,
+    Fraction, Glissando, GlissandoType, Hairpin, HairpinType, LineStyle, OttavaType, Placement,
+    Score, SegmentType, Slur, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Track, Trill,
+    TrillType, VoltaInfo,
 };
 
 /// Ancrage d'une extrémité de spanner dans le fichier 2.x.
@@ -57,6 +58,7 @@ pub(super) enum SpanFamily {
     Hairpin,
     Ottava,
     Trill,
+    Glissando,
 }
 
 /// Moitié d'un spanner 2.x ; les deux moitiés sont appariées par `id`.
@@ -80,6 +82,8 @@ pub(super) struct SpannerLink {
     pub(super) ottava_type: Option<OttavaType>,
     /// Type de trille 2.x (`<subtype>`, `readTrill206`, read206.cpp:2362).
     pub(super) trill_type: Option<TrillType>,
+    /// Glissando 2.x (`<subtype>` + `<lineStyle>`, read206.cpp:2880).
+    pub(super) glissando: Option<Glissando>,
 }
 
 impl SpannerLink {
@@ -99,6 +103,7 @@ impl SpannerLink {
             hairpin_direction: None,
             ottava_type: None,
             trill_type: None,
+            glissando: None,
         }
     }
 }
@@ -143,6 +148,7 @@ pub(super) fn fix_spanners(score: &mut Score, links: &[SpannerLink]) {
                     SpannerType::Ottava(link.ottava_type.unwrap_or(OttavaType::OctaveUp))
                 }
                 SpanFamily::Trill => SpannerType::Trill,
+                SpanFamily::Glissando => SpannerType::Glissando,
             },
             SpannerAnchor::new(start_tick, start_track),
             SpannerAnchor::new(end_tick, end_track),
@@ -174,6 +180,13 @@ pub(super) fn fix_spanners(score: &mut Score, links: &[SpannerLink]) {
                 spanner.notation = Some(SpannerNotation::Trill(Trill::new(
                     link.trill_type.unwrap_or(TrillType::TrillLine),
                 )));
+            }
+            SpanFamily::Glissando => {
+                let mut glissando = link.glissando.clone().unwrap_or_else(|| {
+                    Glissando::new(GlissandoType::Straight(LineStyle::Solid))
+                });
+                glissando.text = link.text.clone().unwrap_or_default();
+                spanner.notation = Some(SpannerNotation::Glissando(glissando));
             }
             SpanFamily::Slur => {
                 let mut slur = Slur::new();
