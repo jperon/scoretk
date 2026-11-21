@@ -1572,3 +1572,17 @@ prenait que la clef graphique. Test réduit `[K: treble+8]C4|` écrit d'abord,
 échouant avant le correctif (60 au lieu de 72). Sur les 4 airs concernés :
 **1 air devient exact**, les autres passent de N1 0,09/0,43/0,56 à
 0,45/0,71/0,56, aucun cas nouveau en échec.
+
+### 17.3 Campagne complète après les deux causes (2026-11-21)
+
+Comparaison air par air avec la campagne de référence du même jour :
+**12 gains N1, 0 perte, 4 743 inchangés**. Airs exacts 4 447 → **4 456**,
+N1 global 99,6 → **99,8 %** ; le lot `std` passe de 2 à **9 airs exacts** sur
+19 (94,9 % de notes justes, désormais au-dessus de l'alternative à 91,2 %).
+scoretk dépasse l'alternative en airs exacts (4 456 contre 4 406) sur ce lot.
+Les causes restantes sont dominées par `NOTES_MANQUANTES` (125) et `SANS_X`
+(109), toutes deux identiques chez l'alternative ou exclues par construction :
+elles ne sont pas imputables au lecteur. La catégorie `OCTAVE` passe de 2 à 3
+après la correction partielle des clefs : les 2 airs restants combinent
+plusieurs changements de clef inline et demandent un port plus complet de
+`doClef` (notamment `clef-octave-change` et `gtrans` par voix).
