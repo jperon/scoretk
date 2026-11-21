@@ -2466,6 +2466,37 @@ the tuplet-note call were ported. Re-measurement of both lots: upstream
 losing — the overlapping tuplet case is rare in these corpora, but the port
 now matches the reference behaviour.
 
+## Delta-debug of `lily-bd83d4c2`: live chord iterator (2026-11-21)
+
+`target/delta-bd83/delta.py` and `bars.py` cut the source MIDI by tracks and
+bars while comparing our conversion with MuseScore 4.7.4 (`mscore -o`). Track 1
+alone reproduced the 11 mismatched notes; bar 2 alone (9 notes, ticks 8..12
+quarters) reproduced all of them. In that reduced case MuseScore and our
+output differ by a voice swap and one over-long note (70 at 10.0: 2.0 vs 1.5
+quarters).
+
+Dumping our chords after each stage (`importmidi.cpp:1191-1205` order) showed
+both tools make the same first split (67 moved out at 9.0). At the next chord
+(10.0), `findBestSplit` (`importmidi_voice.cpp:530-571`) must see that moved
+chord to compute pitch distances: C++ iterates the **live** `std::multimap`
+and `splitChordToVoice` (`:788-866`) reassigns `chordIt` to the newly inserted
+chord. Our `do_voice_separation` kept a `keys` vector captured before the loop,
+so later distance queries ignored voices created by earlier splits. Reduced
+test `voice::max_voice_tests::accord_insere_visible_pour_la_separation_suivante`
+was written first (70 ended in voice 1 instead of 0), then the key list is
+refreshed after each inserted chord. On the reduced case our output is now
+**identical** to MuseScore's 9 notes (pitch, onset, duration, voice).
+
+Full re-measurement (`target/midi-measure-v3c/`): upstream **0.9780** and
+LilyPond MIDI **0.6935**. In the 255-file notation comparison only three files
+move, and all three reach MuseScore's score: `lily-bd83d4c2` 0.583 →
+**0.6089**, `lily-691782a0` 0.5648 → **0.5544**, `Patrick-Doyle…` 0.7467 →
+**0.7477**. The 21 files that lose against the *`.ly` reference* in the
+`import_mesure.py` oracle are explained: sampled ones (`AveMaria-midi`,
+`SanctePieX`, `lily-5d32e270`) now match MuseScore's own conversion **exactly**
+(direct score 1.0); the `.ly` reference encodes another voice layout, which
+is not the fidelity target (AGENTS.md invariant 2).
+
 ## Voice assignment: divergences found against 4.7.4 (2026-11-21)
 
 Line-by-line comparison of `crates/scoretk-midi-import/src/voice.rs` with

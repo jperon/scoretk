@@ -972,7 +972,7 @@ fn do_voice_separation(
 ) -> bool {
     chord::sort_notes_by_length(track);
     let mut inserted: BTreeMap<Fraction, Vec<TupletKey>> = BTreeMap::new();
-    let keys = track.chords.keys();
+    let mut keys = track.chords.keys();
     let max_chord_length = chord::find_max_chord_length(track);
 
     let mut changed = false;
@@ -1030,9 +1030,16 @@ fn do_voice_separation(
             max_occupied_voices.insert(bar_index, best_split.voice);
         }
         if split_done && new_key.is_some() {
-            // Comme le C++ après l'insertion : on reprend après tous les
-            // accords de même date.
-            index += 1;
+            // `splitChordToVoice` insere un nouvel accord dans le multimap
+            // vivant ; le C++ le voit des la decision suivante. Le vecteur de
+            // cles doit donc etre rafraichi, sinon les distances de hauteur
+            // (`findBestSplit`) ignorent la voix deja deplacee.
+            keys = track.chords.keys();
+            index = keys
+                .iter()
+                .position(|candidate| *candidate == key)
+                .unwrap_or(index)
+                + 1;
             while index < keys.len() && keys[index].0 == key.0 {
                 index += 1;
             }
@@ -1362,7 +1369,7 @@ pub fn assign_non_tuplet_voices(
     // hauteurs moyennes de ses accords (et non de toutes ses notes).
     let mut tuplet_pitch: BTreeMap<usize, i32> = BTreeMap::new();
     let all_keys = track.chords.keys();
-    for (tuplet_key, _) in &track.tuplets {
+    for tuplet_key in track.tuplets.keys() {
         let belongs: Vec<ChordKey> = all_keys
             .iter()
             .copied()
@@ -1456,6 +1463,55 @@ mod max_voice_tests {
     /// calcule la hauteur d'un n-olet comme la moyenne des hauteurs moyennes
     /// de ses accords. Le port moyennait toutes les notes, ce qui change le
     /// choix de voix quand les accords n'ont pas le meme nombre de notes.
+    /// `doVoiceSeparation` (importmidi_voice.cpp:895-953) parcourt le
+    /// multimap vivant : l'accord insere par `splitChordToVoice` est visible
+    /// des la decision suivante. Le port gardait un vecteur de cles fige au
+    /// debut, donc les distances de hauteur ignoraient l'accord deja deplace.
+    #[test]
+    fn accord_insere_visible_pour_la_separation_suivante() {
+        let mut track = MTrack::default();
+        let cases = [
+            (
+                Fraction::new(2, 1),
+                vec![(65, Fraction::new(9, 4)), (62, Fraction::new(9, 4))],
+            ),
+            (
+                Fraction::new(9, 4),
+                vec![(67, Fraction::new(19, 8)), (63, Fraction::new(5, 2))],
+            ),
+            (Fraction::new(19, 8), vec![(69, Fraction::new(5, 2))]),
+            (
+                Fraction::new(5, 2),
+                vec![(65, Fraction::new(11, 4)), (70, Fraction::new(23, 8))],
+            ),
+            (Fraction::new(11, 4), vec![(65, Fraction::new(23, 8))]),
+            (Fraction::new(23, 8), vec![(70, Fraction::new(3, 1))]),
+        ];
+        for (on_time, notes) in cases {
+            let chord = MidiChord {
+                notes: notes
+                    .into_iter()
+                    .map(|(pitch, off)| MidiNote::new(pitch, 90, off, on_time))
+                    .collect(),
+                ..MidiChord::default()
+            };
+            track.chords.insert(on_time, chord);
+        }
+
+        super::do_voice_separation(&mut track, &TimeSigMap::default(), 4, true);
+
+        let voice_of = |pitch: i32, on: Fraction| {
+            track
+                .chords
+                .iter()
+                .find(|(time, chord)| *time == on && chord.notes.iter().any(|n| n.pitch == pitch))
+                .map(|(_, chord)| chord.voice)
+        };
+        // Le C++ deplace 67 en voix 1, puis 65 en voix 1 ; 70 reste en voix 0.
+        assert_eq!(voice_of(67, Fraction::new(9, 4)), Some(1));
+        assert_eq!(voice_of(70, Fraction::new(5, 2)), Some(0));
+    }
+
     #[test]
     fn distance_de_nolet_par_accord_pas_par_note() {
         use crate::tuplet::TupletData;
