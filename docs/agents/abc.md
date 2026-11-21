@@ -2021,3 +2021,80 @@ Classées par première ligne ABC différante :
 
 Aucune de ces causes n'est corrigée dans cette passe ; elles sont documentées
 avec leur référence ABC 2.1 / `xml2abc.py` pour une passe ultérieure.
+
+## 29. Écriture ABC : oracle « like with like » et causes d'aller-retour (2026-11-21)
+
+### 29.1 Oracle — 53 artefacts éliminés (`2f123c4`, `e58a...`)
+
+Le mode MIDI historique comparait l'ABC joué par `abc2midi` au MIDI de référence de
+MuseScore. Deux artefacts rendaient la comparaison invalide sur 53 des 57 « pertes »
+mscz classées en § 28.1 :
+
+1. le MIDI de MuseScore **réalise** les ornements et les voltas (notes supplémentaires)
+   que ni l'ABC de scoretk ni celui de `xml2abc.py` ne contiennent ;
+2. `abc2midi` plafonne à **16 canaux** : sur les partitions orchestrales à 17+ voix,
+   les hauteurs sont mal attribuées (`octave`, `notes_manquantes`).
+
+`ecriture.py --mode model` juge désormais **like with like** au niveau du modèle
+pivot : scoretk exporte la source en MusicXML (référence), chaque ABC candidat est
+réimporté par scoretk puis exporté de la même manière, et `midi_notes.compare` porte
+sur les notes (N1/N2/N2d). `xml2abc.py` reçoit le même MusicXML que scoretk. Le mode
+MIDI reste disponible pour la continuité des campagnes précédentes.
+
+Table mscz, même binaire, ancien → nouveau oracle :
+
+| Oracle | scoretk > xml2abc | = | < |
+| --- | ---: | ---: | ---: |
+| MIDI (§ 28) | 22 | 94 | **57** |
+| Modèle | **119** | 38 | **16** |
+
+Les 53 artefacts disparaissent : N1 scoretk passe de 83,12 % à **96,88 %**. Les 16
+pertes restantes sont de vraies pertes d'écriture. Le mode modèle sert désormais de
+référence ; le tableau complet est dans `/tmp/abc-ecriture-final-all/resume.md`.
+
+### 29.2 Cause 1 — frontière de slur (`cc4890fe`)
+
+`reader/music.rs::close_slur` utilisait le tick courant, déjà avancé par
+`parse_chord_or_note` : le `)` d'un `(cde)f` était rattaché à `f`, donc
+`(cde)f → (cdef)g → (cdefg)` à chaque aller-retour. On prend le tick du dernier
+événement. À l'écriture, la fin n'est émise que dans la mesure qui contient son
+tick (même règle que les soufflets de § 28.2) : sans cela un slur finissant sur une
+barre écrivait son `)` dans les deux mesures adjacentes. C'est cette règle commune
+aux deux files de tokens attachés aux notes qui résout l'interaction avec le test
+des soufflets, qui avait fait avorter la tentative de § 28.4. ABC 2.1 § 4.11.
+
+Test réduit `abc_ecriture_slur_fin.rs` écrit d'abord, échouant avant le correctif.
+
+### 29.3 Cause 2 — silences « gap » (`588ad0c2`)
+
+`collect_items` écrivait les `Rest { gap: true }` comme des `z` ordinaires. Un tel
+silence ne compte pas dans la mesure (l'écrivain MusicXML le saute déjà dans
+`write_measure_tracks`) : l'écrire allongeait la mesure (ex. `E6z6z` = 13 croches
+dans un 12/8) et décalait les attaques suivantes à la relecture. ABC 2.1 § 4.5.
+Test réduit `abc_ecriture_silence_gap.rs` écrit d'abord, échouant avant le
+correctif ; l'instantané `v3_moonlight` fusionne correctement `z4z2 → z6`.
+
+### 29.4 Cause 3 — champs de clef consécutifs dupliqués (`66e307bd`)
+
+Deux changements de clef sans note intermédiaire se rattachent au même `offset` de
+la file de tokens : `draw_context_changes` écrivait deux fois `[K:… clef=…]`, et
+l'aller-retour en ajoutait un à chaque lecture (`…[K:G clef=bass][K:G clef=bass]…`).
+On déduplique les tokens par offset. Test réduit `abc_ecriture_clef_duplique.rs`
+écrit d'abord, échouant avant le correctif (2 au lieu de 1) ; sur la famille
+`Il est né` la duplication disparaît. ABC 2.1 § 4.6.
+
+### 29.5 Relevé final
+
+| Lot | Stables avant cette passe | Stables après | N1/N2/N2d |
+| --- | ---: | ---: | --- |
+| corpus | 54/56 | **54/56** | inchangés |
+| mscz | 4/160 | **106/160** | inchangés |
+| xml | 2/28 | **13/28** | inchangés |
+
+Sur la fin de passe (après le slur), le détail donne **73 gains de stabilité au
+total** (65 pour le slur, 8 pour la déduplication de clef), **0 régression**, et
+aucune variation de N1/N2/N2d. 68 fichiers `.abc` ont changé de texte (suppression
+des silences gap, déduplication des champs de clef) sans changer leur contenu
+musical, ce qui est précisément le comportement attendu. Taille moyenne du `.abc`
+inchangée (295 / 11 974 / 12 517 octets contre 338 / 13 375 / 13 216 pour
+`xml2abc.py`).
