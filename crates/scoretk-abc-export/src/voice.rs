@@ -878,7 +878,12 @@ fn draw_context_changes(
         };
         // Deux changements successifs sans note intermédiaire se rattachent
         // au même `offset` : n'écrire le champ qu'une seule fois, sinon
-        // l'aller-retour ajoute un `[K:… clef=…]` à chaque lecture.
+        // l'aller-retour ajoute un `[K:… clef=…]` à chaque lecture. Un
+        // changement d'armure au même tick est absorbé par le champ de clef,
+        // qui contient déjà l'armure courante.
+        if kind == 2 {
+            before[offset].retain(|existing| !existing.starts_with("[K:"));
+        }
         if !before[offset].iter().any(|existing| existing == &token) {
             before[offset].push(token);
         }
