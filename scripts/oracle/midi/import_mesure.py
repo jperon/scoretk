@@ -57,10 +57,18 @@ def notes(path: Path, to_concert: bool = False) -> list[tuple[int, float, float,
     annulant `<transpose>` : c'est nécessaire face à un `.mscx` de référence
     (MuseScore y stocke la hauteur concert), mais pas face à un MusicXML
     exporté par MuseScore (qui contient la hauteur écrite).
+
+    Les chaînes de liaisons sont fusionnées en **une** note dont la durée est
+    la somme des fragments (`<tie type="start"/>` … `<tie type="stop"/>`), des
+    deux côtés de la comparaison : une note tenue qui franchit un temps est
+    écrite par MuseScore comme deux notes liées, et compter les fragments
+    pénaliserait tout import qui écrit une seule note. Les chaînes sont
+    distinguées par (part, portée, voix, hauteur).
     """
     root = ET.parse(path).getroot()
-    out: list[tuple[int, float, float, int]] = []
-    for part in root.findall("part"):
+    raw: list[list] = []  # [hauteur, attaque, durée, voix], mutables
+    open_ties: dict[tuple[int, int, int, int], list] = {}
+    for part_index, part in enumerate(root.findall("part")):
         transpose = 0
         if to_concert:
             for element in part.findall(".//attributes/transpose"):
@@ -93,18 +101,32 @@ def notes(path: Path, to_concert: bool = False) -> list[tuple[int, float, float,
                             semi = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}[step]
                             semi += int(pitch.findtext("alter", "0"))
                             midi = 12 * (int(pitch.findtext("octave", "0")) + 1) + semi + transpose
-                            voice = int(child.findtext("voice", "1"))
+                            raw_voice = int(child.findtext("voice", "1"))
                             staff = int(child.findtext("staff", "1"))
-                            # La sortie MusicXML numérote les voixglobalement
+                            # La sortie MusicXML numérote les voix globalement
                             # `(staff - 1) * VOICES + voice` ; la référence
                             # `.mscx` utilise une voix locale par portée.
-                            voice -= (staff - 1) * 4
-                            out.append((midi, round(onset / GRID) * GRID,
-                                        round(dur / GRID) * GRID, voice))
+                            voice = raw_voice - (staff - 1) * 4
+                            tie_types = [tie.get("type") for tie in child.findall("tie")]
+                            tie_stop = "stop" in tie_types
+                            tie_start = "start" in tie_types
+                            cle = (part_index, staff, raw_voice, midi)
+                            if tie_stop and cle in open_ties:
+                                # Continuation : la durée s'ajoute au premier
+                                # fragment, sans nouvelle attaque.
+                                open_ties[cle][2] += dur
+                                if not tie_start:
+                                    del open_ties[cle]
+                            else:
+                                note = [midi, onset, dur, voice]
+                                raw.append(note)
+                                if tie_start:
+                                    open_ties[cle] = note
                     if not is_chord_note:
                         offset += dur
             tick += offset
-    return out
+    return [(pitch, round(onset / GRID) * GRID, round(dur / GRID) * GRID, voice)
+            for pitch, onset, dur, voice in raw]
 
 
 DUREES = {
@@ -118,12 +140,17 @@ def mscx_notes(path: Path) -> list[tuple[int, float, float, int]]:
 
     Le `.mscx` stocke la hauteur réelle : le convertir en MusicXML appliquerait
     la transposition de l'instrument et décalerait la référence d'une octave.
+
+    Les liaisons sont fusionnées comme dans `notes()` : une note continuée
+    porte un `<Tie>` dont `<startElement>` est l'`<eid>` de la note précédente
+    de la chaîne. La durée de chaque continuation est reportée sur le premier
+    fragment, et la continuation n'est pas comptée comme une attaque.
     """
     root = ET.parse(path).getroot()
     score_el = root.find("Score")
     if score_el is None:
         return []
-    out: list[tuple[int, float, float, int]] = []
+    raw: list[list] = []  # [hauteur, attaque, durée, voix, eid, eid précédent]
     for staff in score_el.findall("Staff"):
         if not staff.findall("Measure"):
             continue  # déclaration de portée sous <Part>
@@ -173,11 +200,33 @@ def mscx_notes(path: Path) -> list[tuple[int, float, float, int]]:
                             for note in child.findall("Note"):
                                 pitch = note.findtext("pitch")
                                 if pitch is not None:
-                                    out.append((int(pitch), round(cursor / GRID) * GRID,
-                                                round(length / GRID) * GRID, voice_index))
+                                    tie = note.find("Tie")
+                                    previous = (tie.findtext("startElement")
+                                                if tie is not None else None)
+                                    raw.append([int(pitch), cursor, length, voice_index,
+                                                note.findtext("eid"), previous])
                         cursor += length
             tick += mesure_len
-    return out
+
+    by_eid = {note[4]: index for index, note in enumerate(raw) if note[4]}
+    racine = list(range(len(raw)))
+
+    def racine_de(index: int) -> int:
+        while racine[index] != index:
+            index = racine[index]
+        return index
+
+    continuations = set()
+    for index, note in enumerate(raw):
+        previous = note[5]
+        if previous is None or previous not in by_eid:
+            continue
+        debut = racine_de(by_eid[previous])
+        racine[index] = debut
+        raw[debut][2] += note[2]
+        continuations.add(index)
+    return [(note[0], round(note[1] / GRID) * GRID, round(note[2] / GRID) * GRID, note[3])
+            for index, note in enumerate(raw) if index not in continuations]
 
 
 def score(ref: list[tuple], got: list[tuple]) -> float:

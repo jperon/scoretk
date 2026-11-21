@@ -50,9 +50,11 @@ lot), `--alt-stride N` (ne lancer les alternatives que sur un fichier sur N ;
 scoretk reste mesuré sur tout le lot — utile quand la machine est chargée),
 `--resume` (régénère le résumé à partir des `.jsonl` déjà produits sans relancer
 les conversions). `test_backup.py` vérifie que l'oracle place correctement les
-attaques des voix qui n'apparaissent qu'après un `<backup>` et `test_ids.py`
-que deux partitions homonymes reçoivent des identifiants distincts (lancez-les
-avec `nix-shell -p python3Packages.mido --run "cd scripts/oracle/midi && python3 test_backup.py"`).
+attaques des voix qui n'apparaissent qu'après un `<backup>`, `test_ids.py`
+que deux partitions homonymes reçoivent des identifiants distincts et
+`test_ties_import.py` que les chaînes de liaisons sont fusionnées des deux
+côtés (lancez-les avec
+`nix-shell -p python3Packages.mido --run "cd scripts/oracle/midi && python3 test_backup.py"`).
 
 Sorties dans `$OUT` : un `.jsonl` par lot (une ligne de mesure par fichier et
 par outil), les fichiers convertis sous `travail/`, et `resume.md` (tableaux et
