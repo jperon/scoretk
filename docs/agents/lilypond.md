@@ -954,44 +954,6 @@ Raw rows, converters and the generated summaries are in the out-of-repo
 measurement directories `lyn3-avant`, `lyn3-oracle` and `lyn3-final`;
 `scripts/oracle/lilypond/README.md` documents how to reproduce them.
 
-### Second pass (2026-11-21): transpose, repeats and alternatives
-
-The `.ly` MIDI comparison exposed three reader defects in the largest lot:
-`\chordmode` pitches were not transposed by `\transpose`
-(`NoteSpec.midi` bypassed the interval), `\unfoldRepeats` was transparent so
-the model kept repeat marks and the MIDI writer expanded them with MuseScore's
-`<endings>` while LilyPond distributes `\alternative` blocks contiguously, and
-the `\relative` reference of an alternative was the previous alternative
-instead of the end of the body. They are fixed in
-`crates/scoretk-lilypond-import` (`NoteSpec::transposable`, the `repeat` arm of
-`Interpreter`; `Score::playback_unfold_repeats` records the source flag for
-the reader, and the MIDI oracle passes `--no-expand-repeats` when the score
-music has no `\unfoldRepeats`); the `.ly` MIDI lot goes from
-662/1 020 exact and N2d 91.21 % to **711/1 020 exact and N2d 93.88 %**.
-
-The **`mus`** lot of the reading oracle was re-run in full after the fixes:
-
-| Lot | Step | Files | Repeats | OK | Fail | Empty | Exact | N1 % (all) | N2 % (no repeat) | Max time |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| mus | before (first pass) | 1447 | 113 | 1444 | 3 | 0 | 1072 (74.1 %) | 99.09 | 88.62 | 0.28 s |
-| mus | transpose + repeats + alternatives | 1447 | 113 | 1423 | 24 | 0 | **1148 (79.3 %)** | **99.06** | **98.59** | 1.11 s |
-| ra | before (first pass) | 1726 | 305 | 1724 | 2 | 69 | 1198 (69.4 %) | 89.84 | 75.01 | 0.06 s |
-| ra | transpose + repeats + alternatives | 1725 | 305 | 1724 | 1 | 52 | **1328 (77.0 %)** | **93.60** | **87.60** | 0.48 s |
-| mut | before (first pass) | 1377 | 652 | 1376 | 1 | 0 | 369 (26.8 %) | 97.73 | 67.85 | 5.44 s |
-| mut | transpose + repeats + alternatives | 2186 | 991 | 1742 | 444 | 3 | **692 (31.7 %)** | **97.51** | **93.49** | 28.13 s |
-
-The `ra` lot was reconstructed from the surviving raw rows (1725 of the 1726
-paths; one path was lost) and re-run with the surviving references. The `mut`
-line uses the **whole surviving reference set** (2 186 files), not the original
-1 377-file list, which was deleted by the `/tmp` cleanup; the two rows are not
-strictly comparable, but every row comes from the same eight metrics. The
-`mus` gain (+76 exact, N2 88.62 → 98.59) and the `ra` gain (+130 exact, N2
-75.01 → 87.60) are the same reader change measured on the MIDI lot; the `mut`
-N2 moves from 67.85 to 93.49 on the larger set. The remaining `mut` failures
-are dominated by Mutopia files whose reference MIDI is absent or stale
-(`echec` 444), then `notes_supp` 607 and `attaque_decalee` 240; they are the
-next reading causes, not the repeat fixes.
-
 ## 13. Writing export: baseline against musicxml2ly (2026-11-19)
 
 ### Method
@@ -4032,3 +3994,69 @@ the remaining loss of the accordion files (`Under_Paris_Skies`,
 `\once \override Rest.transparent = ##t R2.` in 3/4. Failing reduced test
 `silence_de_mesure_invisible_en_3_4` first; both files re-read with zero
 lost notes and the whole mscz lot reaches 99.98 % N2d.
+
+### Hairpin commands precede the note they cover
+
+`render_body` attached spanner events with `attach_post` for everything except
+`\ottava`. `\<`/`\cresc` and `\!` are context properties too
+(`lily/parser.yy` `DYNAMIC`, `ly/property-init.ly`), so writing them after the
+note starts/ends the dynamic spanner one note too late. On
+`Angels_Carol__John_Rutter.mscz` this made LilyPond 2.26 report four times
+« Spanner `DynamicTextSpanner' is not fully contained in parent spanner »
+because the `\cresc` spanner outlasted the slur enclosing it. Hairpin events
+now go through `attach_pre`, like `\ottava`; the four errors disappear.
+Failing reduced test `soufflet_se_terminne_avant_la_note_du_tick_de_fin` first.
+
+### Remaining classes: investigation (LilyPond 2.26 / 2.27.0)
+
+The writer already emits the constructs the Notation Reference prescribes for
+irregular metres: `\partial` for a shortened first measure (**NR §2.3.3
+Upbeats**), `\set Timing.measureLength = #num/den` when the real measure
+length differs from the displayed time signature (**NR §2.3.1 Time
+signature**), `R<length>` for full-measure rests (**NR §2.2.3 Full measure
+rests**) and `\tuplet n/d { … }` (**NR §2.1.2 Tuplets**) — not
+`\scaleDurations` (**NR §2.1.3**), which is for scaling a whole passage
+without changing the signature. Minimal round trips through scoretk confirm
+that `\partial 2`, `\set Timing.measureLength = #5/4` and `R2.` in 3/4 are
+read back at the correct ticks. The residual losses are therefore not a
+missing LilyPond construct:
+
+* **`Vivaldi…_10._Sicut_erat`** (1390 lost). The pivot model exported from
+  the `.mxl` contains 90 notes with *negative* attacks (first divergence at
+  note 0: −55 quarters in the reference, 0 on re-read) and voice chains whose
+  `<backup>` of 208 divisions pushes the cursor before the measure start.
+  LilyPond cannot place a note before tick 0; fixing this needs the
+  MusicXML/pivot voice-backup model, not the `.ly` writer.
+* **`Anerio_Ascendit_Deus`** (320) and **`Perosi…Laudate_Dominum`** (190).
+  Their first divergences are *durations and staff offsets* (69 at tick 45
+  lasts 1.5 quarters in the reference vs 1.0 on re-read; 67 at tick 53 is 3.0
+  vs 2.0; a whole part starts four quarters early in Perosi). Tied notes and
+  per-staff measure lengths in the model, not a writer command.
+* **`Byrd_Dies.mxl`** (336). The first measure of the reference contains two
+  invisible quarter rests at ticks 0 and 0.5 (two voices overlapping); the
+  writer emits `\partial 2` plus two consecutive `r4`, so the re-read measure
+  lasts 2 quarters instead of 1.5 and every later attack shifts by 0.5.
+  Reproducing overlapping rests needs separate voices (**NR §5.2.1
+  Single-staff polyphony**), which the model does not mark.
+* **`CanonDeLaPaix.xml`** (229). The source has a 16th note in voice 2
+  ending the measure; the pivot model carries it in voice 1 one sixteenth
+  *before* a whole note. The writer has no grace flag and writes `a1 f16`, so
+  the re-read places the 16th after the whole note (tick 67.75 → 68.0) and
+  shifts the following notes. A faithful rendering would need either
+  separate voices (**NR §5.2.1**) or `\grace` (**NR §2.6.1 Grace notes**).
+
+### Compile messages
+
+* `Angels_Carol__John_Rutter.mscz`: four LilyPond 2.26 errors
+  « Spanner `DynamicTextSpanner' is not fully contained in parent spanner »;
+  fixed by the hairpin placement above.
+* `Amazing_Grace_-_String_Quartet.mscz`: two errors from Ghostscript
+  rejecting the `NotoSerifCJKjp` CFF2 font selected for the score's Japanese
+  text (`イ ギ ス リ`) during PDF conversion. The `.ly` itself is valid and
+  its N2d is 100 %; this is an environment font failure, not a writer defect.
+* `…_10._Sicut_erat_in_principio.mxl`: two LilyPond 2.26 layout errors
+  « No viable beam quanting found. Using unquanted y value » on measures
+  whose explicit stem directions conflict with an irregular measure length.
+  Removing the `\once \stemUp`/`\stemDown` overrides makes them disappear but
+  would discard MuseScore's stem directions; no note is affected, so they are
+  kept.
