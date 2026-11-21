@@ -1193,6 +1193,138 @@ pub fn separate_voices(
     changed
 }
 
+/// Temps d'attaque situe entre les accords voisins (`findOnTimeBetweenChords`,
+/// `importmidi_tuplet.cpp:957-1043`). La quantification est affinee jusqu'a ce
+/// que l'attaque ne soit pas avant le precedent ni apres le suivant.
+fn find_on_time_between_chords(
+    track: &MTrack,
+    key: ChordKey,
+    basic_quant: Fraction,
+    bar_start: Fraction,
+) -> Fraction {
+    let Some(chord) = track.chords.get(key) else {
+        return key.0;
+    };
+    if key.0 < bar_start {
+        return bar_start;
+    }
+    let voice = chord.voice;
+    let mut quant = basic_quant;
+    loop {
+        let on_time = super::quant::find_min_quantized_on_time(chord, key.0, quant);
+        let mut changed = false;
+
+        // Accord precedent de la meme voix, dans une fenetre de 2 * basicQuant.
+        let window = key.0 - basic_quant * Fraction::from_integer(2);
+        let all_keys = track.chords.keys();
+        let mut candidate_index = all_keys
+            .iter()
+            .position(|candidate| *candidate >= key)
+            .unwrap_or(all_keys.len());
+        while candidate_index > 0 {
+            candidate_index -= 1;
+            let candidate = all_keys[candidate_index];
+            if candidate.0 < window {
+                break;
+            }
+            if candidate.0 == key.0 {
+                continue;
+            }
+            let Some(previous) = track.chords.get(candidate) else {
+                continue;
+            };
+            if previous.voice != voice {
+                continue;
+            }
+            let previous_on =
+                super::quant::find_min_quantized_on_time(previous, candidate.0, quant);
+            if on_time < previous_on {
+                if quant < chord::min_allowed_duration() * Fraction::from_integer(2) {
+                    return on_time;
+                }
+                quant *= Fraction::HALF;
+                changed = true;
+            }
+            break;
+        }
+
+        if !changed {
+            let following: Vec<ChordKey> = track
+                .chords
+                .keys()
+                .into_iter()
+                .skip_while(|candidate| *candidate <= key)
+                .take_while(|candidate| {
+                    candidate.0 < key.0 + basic_quant * Fraction::from_integer(2)
+                })
+                .collect();
+            for candidate in following {
+                let Some(next) = track.chords.get(candidate) else {
+                    continue;
+                };
+                if next.voice != voice {
+                    continue;
+                }
+                let next_on = super::quant::find_min_quantized_on_time(next, candidate.0, quant);
+                if on_time > next_on {
+                    if quant < chord::min_allowed_duration() * Fraction::from_integer(2) {
+                        return on_time;
+                    }
+                    quant *= Fraction::HALF;
+                    changed = true;
+                }
+                break;
+            }
+        }
+        if !changed {
+            return on_time;
+        }
+    }
+}
+
+/// Intervalle d'un accord (`chordInterval`,
+/// `importmidi_tuplet_voice.cpp:50-68`).
+fn chord_interval(
+    track: &MTrack,
+    key: ChordKey,
+    basic_quant: Fraction,
+    bar_start: Fraction,
+) -> (Fraction, Fraction) {
+    let Some(chord) = track.chords.get(key) else {
+        return (key.0, key.0);
+    };
+    let on_time = find_on_time_between_chords(track, key, basic_quant, bar_start);
+    let mut off_time = super::quant::find_max_quantized_off_time(chord, key.0, basic_quant);
+    if off_time < on_time {
+        off_time = on_time;
+    }
+    if off_time == on_time {
+        off_time += super::quant::quant_for_len(chord::min_note_len(key.0, chord), basic_quant);
+    }
+    (on_time, off_time)
+}
+
+/// Distance de hauteur entre un accord et le n-olet d'une voix
+/// (`findPitchDist`, `importmidi_tuplet_voice.cpp:135-168`). Le C++ moyenne
+/// les hauteurs moyennes des accords du n-olet, pas les hauteurs des notes.
+/// La hauteur du premier n-olet de chaque voix est calculee une seule fois
+/// par `assign_non_tuplet_voices`.
+fn find_pitch_dist(notes: &[MidiNote], voice: usize, tuplet_pitch: &BTreeMap<usize, i32>) -> i32 {
+    let Some(tuplet_pitch) = tuplet_pitch.get(&voice) else {
+        return i32::MAX;
+    };
+    if *tuplet_pitch == 0 {
+        return i32::MAX;
+    }
+    if notes.is_empty() {
+        return i32::MAX;
+    }
+    let chord_pitch = (f64::from(notes.iter().map(|note| note.pitch).sum::<i32>())
+        / notes.len() as f64)
+        .round() as i32;
+    (chord_pitch - *tuplet_pitch).abs()
+}
+
 /// Attribue une voix aux accords hors n-olet (`MidiTuplet::setNonTupletVoices`,
 /// `importmidi_tuplet_voice.cpp:171-206`).
 ///
@@ -1206,12 +1338,18 @@ pub fn separate_voices(
 /// Approximation : la date de début de l'intervalle d'accord est sa date
 /// d'attaque (`findOnTimeBetweenChords` n'est pas porté) ; la fin est la fin
 /// brute de la plus longue note, les fins étant déjà quantifiées à ce stade.
-pub fn assign_non_tuplet_voices(track: &mut MTrack, limit: usize) {
+pub fn assign_non_tuplet_voices(
+    track: &mut MTrack,
+    limit: usize,
+    basic_quant: Fraction,
+    sigmap: &TimeSigMap,
+) {
     if track.drum_track || track.chords.is_empty() {
         return;
     }
     let limit = limit.clamp(1, VOICES);
 
+    // `tupletIntervals` de `setTupletVoices` (`importmidi_tuplet_voice.cpp:89-127`).
     let mut intervals: BTreeMap<usize, Vec<(Fraction, Fraction)>> = BTreeMap::new();
     for tuplet in track.tuplets.values() {
         intervals
@@ -1220,30 +1358,42 @@ pub fn assign_non_tuplet_voices(track: &mut MTrack, limit: usize) {
             .push((tuplet.on_time, tuplet.on_time + tuplet.len));
     }
 
-    // `findPitchDist` : premier n-olet de la voix, hauteur moyenne de ses accords.
+    // `findPitchDist` (`:135-168`) : premiere n-olet de la voix, moyenne des
+    // hauteurs moyennes de ses accords (et non de toutes ses notes).
     let mut tuplet_pitch: BTreeMap<usize, i32> = BTreeMap::new();
-    for (key, tuplet) in &track.tuplets {
-        if tuplet_pitch.contains_key(&tuplet.voice) {
+    let all_keys = track.chords.keys();
+    for (tuplet_key, _) in &track.tuplets {
+        let belongs: Vec<ChordKey> = all_keys
+            .iter()
+            .copied()
+            .filter(|key| {
+                track.chords.get(*key).is_some_and(|chord| {
+                    chord.tuplet == Some(*tuplet_key)
+                        || chord
+                            .notes
+                            .iter()
+                            .any(|note| note.tuplet == Some(*tuplet_key))
+                })
+            })
+            .collect();
+        let Some(first) = belongs.first() else {
+            continue;
+        };
+        let Some(first_voice) = track.chords.get(*first).map(|chord| chord.voice) else {
+            continue;
+        };
+        if tuplet_pitch.contains_key(&first_voice) {
             continue;
         }
-        let mut sum = 0;
-        let mut count = 0;
-        for (_, chord) in track.chords.iter() {
-            let belongs = chord.tuplet == Some(*key)
-                || chord.notes.iter().any(|note| note.tuplet == Some(*key));
-            if belongs {
-                for note in &chord.notes {
-                    sum += note.pitch;
-                    count += 1;
-                }
-            }
-        }
-        if count > 0 {
-            tuplet_pitch.insert(
-                tuplet.voice,
-                (f64::from(sum) / f64::from(count)).round() as i32,
-            );
-        }
+        let sum: i32 = belongs
+            .iter()
+            .filter_map(|key| track.chords.get(*key))
+            .map(chord::chord_average_pitch)
+            .sum();
+        tuplet_pitch.insert(
+            first_voice,
+            (f64::from(sum) / belongs.len() as f64).round() as i32,
+        );
     }
 
     let keys = track.chords.keys();
@@ -1254,8 +1404,11 @@ pub fn assign_non_tuplet_voices(track: &mut MTrack, limit: usize) {
         if chord.is_in_tuplet || chord.notes.iter().any(|note| note.is_in_tuplet) {
             continue;
         }
-        let chord_pitch = chord::chord_average_pitch(chord);
-        let interval = (key.0, MTrack::max_off_time(chord));
+        let bar_start = find_bar_start(sigmap, key.0);
+        // `chordInterval` (`importmidi_tuplet_voice.cpp:50-68`) : attaque
+        // entre accords voisins (`findOnTimeBetweenChords`) et fin quantifiee
+        // (`findMaxQuantizedOffTime`), pas les bornes brutes.
+        let interval = chord_interval(track, key, basic_quant, bar_start);
         let mut best_voice = 0;
         let mut min_dist: Option<i32> = None;
         for voice in 0..limit {
@@ -1266,9 +1419,9 @@ pub fn assign_non_tuplet_voices(track: &mut MTrack, limit: usize) {
             if intersects {
                 continue;
             }
-            let dist = tuplet_pitch
-                .get(&voice)
-                .map_or(i32::MAX, |pitch| (chord_pitch - *pitch).abs());
+            // `findPitchDist` (`:135-168`) moyenne les hauteurs moyennes des
+            // accords du n-olet, et non les hauteurs de toutes ses notes.
+            let dist = find_pitch_dist(&chord.notes, voice, &tuplet_pitch);
             if min_dist.is_none_or(|current| dist < current) {
                 min_dist = Some(dist);
                 best_voice = voice;
@@ -1299,6 +1452,105 @@ mod max_voice_tests {
     /// (`importmidi_tuplet_voice.cpp:872-924`) n'est pas appele et les accords
     /// restent a la voix 0 jusqu'a `doVoiceSeparation`. Le port ajoutait une
     /// passe de repartition par chevauchement avant cette etape.
+    /// `MidiTuplet::findPitchDist` (`importmidi_tuplet_voice.cpp:135-168`)
+    /// calcule la hauteur d'un n-olet comme la moyenne des hauteurs moyennes
+    /// de ses accords. Le port moyennait toutes les notes, ce qui change le
+    /// choix de voix quand les accords n'ont pas le meme nombre de notes.
+    #[test]
+    fn distance_de_nolet_par_accord_pas_par_note() {
+        use crate::tuplet::TupletData;
+        let mut track = MTrack::default();
+        // Voix 0 : deux accords, [60,62] (moyenne 61) et [70] ; moyenne des
+        // accords = 66, moyenne des notes = 64.
+        let key_a = (Fraction::ZERO, 0);
+        track.tuplets.insert(
+            key_a,
+            TupletData {
+                voice: 0,
+                on_time: Fraction::ZERO,
+                len: Fraction::new(1, 1),
+                tuplet_number: 3,
+                element_count: 2,
+            },
+        );
+        let chord_a = MidiChord {
+            voice: 0,
+            is_in_tuplet: true,
+            tuplet: Some(key_a),
+            notes: vec![
+                MidiNote::new(60, 80, Fraction::new(1, 2), Fraction::ZERO),
+                MidiNote::new(62, 80, Fraction::new(1, 2), Fraction::ZERO),
+            ],
+            ..MidiChord::default()
+        };
+        track.chords.insert(Fraction::ZERO, chord_a);
+        let chord_a2 = MidiChord {
+            voice: 0,
+            is_in_tuplet: true,
+            tuplet: Some(key_a),
+            notes: vec![MidiNote::new(
+                70,
+                80,
+                Fraction::new(1, 1),
+                Fraction::new(1, 2),
+            )],
+            ..MidiChord::default()
+        };
+        track.chords.insert(Fraction::new(1, 2), chord_a2);
+
+        // Voix 1 : un seul accord a 67 ; distance 1 pour le accord hors n-olet.
+        let key_b = (Fraction::new(4, 1), 0);
+        track.tuplets.insert(
+            key_b,
+            TupletData {
+                voice: 1,
+                on_time: Fraction::new(4, 1),
+                len: Fraction::new(1, 1),
+                tuplet_number: 3,
+                element_count: 1,
+            },
+        );
+        let chord_b = MidiChord {
+            voice: 1,
+            is_in_tuplet: true,
+            tuplet: Some(key_b),
+            notes: vec![MidiNote::new(
+                67,
+                80,
+                Fraction::new(5, 1),
+                Fraction::new(4, 1),
+            )],
+            ..MidiChord::default()
+        };
+        track.chords.insert(Fraction::new(4, 1), chord_b);
+
+        // Accord hors n-olet a 66 : plus proche de la voix 0 (distance 0)
+        // que de la voix 1 (distance 1) selon le C++.
+        let plain = MidiChord {
+            notes: vec![MidiNote::new(
+                66,
+                80,
+                Fraction::new(11, 1),
+                Fraction::new(10, 1),
+            )],
+            ..MidiChord::default()
+        };
+        let plain_key = track.chords.insert(Fraction::new(10, 1), plain);
+
+        super::assign_non_tuplet_voices(
+            &mut track,
+            4,
+            Fraction::new(1, 16),
+            &TimeSigMap::default(),
+        );
+
+        assert_eq!(
+            track.chords.get(plain_key).map(|chord| chord.voice),
+            Some(0),
+            "la moyenne des accords du n-olet donne la voix 0"
+        );
+    }
+
     #[test]
     fn accords_qui_se_chevauchent_restent_en_voix_0() {
         let mut track = MTrack::default();

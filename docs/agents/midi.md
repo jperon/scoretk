@@ -2493,15 +2493,25 @@ assignment). The faithful functions are `findOptimalSplitPoint` (:231-283),
    leaves every chord at voice 0, as in 4.7.4; reduced test
    `voice::max_voice_tests::accords_qui_se_chevauchent_restent_en_voix_0`.
    No file changes on either lot.
-4. **`assign_non_tuplet_voices`** (`voice.rs:1237-1300`) — approximation of
-   `setNonTupletVoices`: C++ uses `chordInterval`, which relies on
-   `findMaxQuantizedOffTime` and `findOnTimeBetweenChords`
-   (`importmidi_tuplet_voice.cpp:182`); the port uses the raw maximum off
-   time and the chord on time. It also approximates `findPitchDist` by the
-   average pitch of the first tuplet of a voice.
+4. **`assign_non_tuplet_voices`** — **fixed**. C++ `setNonTupletVoices`
+   (`importmidi_tuplet_voice.cpp:171-206`) uses `chordInterval` (`:50-68`),
+   which combines `findOnTimeBetweenChords` (`importmidi_tuplet.cpp:957-1043`)
+   and `findMaxQuantizedOffTime` (`importmidi_quant.cpp`), and
+   `findPitchDist` (`:135-168`), the average of the *chord* average pitches
+   of the first tuplet of a voice. The port used the raw on/off times and
+   averaged all notes of that tuplet. Faithful port with reduced test
+   `voice::max_voice_tests::distance_de_nolet_par_accord_pas_par_note`
+   (tuplet chords `[60,62]` and `[70]`: chord average 66, note average 64).
+   Re-measurement: upstream **0.9780**, LilyPond **0.6950**, no per-file
+   gain or loss. The tuplet pitch is precomputed once per voice to keep the
+   port linear (the naive version took 32 s on the largest chorale).
 5. **`sort_notes_by_length`** (`chord.rs:609-613`) — Rust's `sort_by_key` is
    stable, C++ uses `std::sort` (unstable). Notes with equal off times can
    land in a different order, which changes the low/high split group.
+   **Kept stable deliberately**: `std::sort`'s order for equal keys is not
+   reproducible across standard-library implementations, and the project
+   requires reproducible output (AGENTS.md invariant 2). Changing it to a
+   Rust unstable sort would not reproduce MuseScore either.
 
 ## Voice limit from neighbouring bars (2026-11-21)
 

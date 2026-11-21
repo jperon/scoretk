@@ -415,7 +415,12 @@ fn quantize_all_tracks(
         // `MidiTuplet::assignVoices` : les accords hors n-olet repartent sur la
         // voix la plus proche des n-olets (voix 0 sans n-olet), avant
         // `MidiVoice::separateVoices`.
-        voice::assign_non_tuplet_voices(track, options.max_voice_count.limit());
+        voice::assign_non_tuplet_voices(
+            track,
+            options.max_voice_count.limit(),
+            basic_quant,
+            sigmap,
+        );
     }
     detected_tuplets
 }
