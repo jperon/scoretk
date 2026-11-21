@@ -1689,3 +1689,26 @@ le `:|` devenait `Double`, perdant le `<repeat direction="backward"/>`.
 de reprise déjà posée (ABC 2.1 §4.9). Test réduit
 `C D:| / ||E F:| / ||G A:|` écrit d'abord, échouant avant le correctif (1 au
 lieu de 3) ; sur X:708, 7/7 repeats produits comme l'alternative.
+
+## 22. Mesure N3 final après les trois correctifs (2026-11-21)
+
+Campagne complète rejouée (`mesure.sh`, 1 402 fichiers, 4 756 `X:` tunes,
+binaire de ce worktree) puis `n3.py`. Comparaison air par air avec la référence
+`/tmp/abc-n3-final` (avant ces trois correctifs).
+
+Catégories en défaut (scoretk < alternatif), avant → après :
+
+| Catégorie | Avant | Après | Gain |
+| --- | ---: | ---: | ---: |
+| decorations | 661 | **437** | 224 |
+| repeats | 175 | **35** | 140 |
+| slurs | 151 | **27** | 124 |
+
+Table N3 complète après : decorations 437 (235 en excès), keys 39, repeats 35,
+times 32, slurs 27 (19 en excès), tuplets 26, clefs 21 (4 583 en excès),
+voices 18, voltas 15, lyrics 10, ties 3, harmony 2, graces 2.
+
+Aucune perte air par air : sur 4 755 tunes communs, N1 et N2 sont strictement
+inchangés (0 gain, 0 perte) et aucune catégorie N3 ne voit son écart se creuser
+(0 perte). Les 3 causes corrigées ne touchent que l'écriture des ornements,
+des slurs de liaisons invalides et des fins de reprise.
