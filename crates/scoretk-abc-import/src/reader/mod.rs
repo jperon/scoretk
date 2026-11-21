@@ -305,12 +305,42 @@ fn parse_transpose_value(value: &str, line: usize, warnings: &mut Vec<Warning>) 
 }
 
 /// Analyse les champs d'une ligne `V:`.
+/// Découpe les champs d'un `V:` en respectant les guillemets doubles.
+fn split_voice_fields(text: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    for character in text.chars() {
+        match character {
+            '"' => {
+                in_quotes = !in_quotes;
+                current.push(character);
+            }
+            character if character.is_whitespace() && !in_quotes => {
+                if !current.is_empty() {
+                    parts.push(std::mem::take(&mut current));
+                }
+            }
+            other => current.push(other),
+        }
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts
+}
+
 pub(crate) fn parse_voice_fields(text: &str) -> VoiceFields {
     let mut number = 1usize;
     let mut name = String::new();
     let mut clef = None;
     let mut transpose = None;
-    for (index, part) in text.split_whitespace().enumerate() {
+    // Un texte entre guillemets peut contenir des espaces (`name="Voix 1"`) :
+    // ABC 2.1 § 8.2. Découper avec `split_whitespace` tronquait le nom au
+    // premier espace, rendant l'écriture instable.
+    let parts = split_voice_fields(text);
+    for (index, part) in parts.iter().enumerate() {
+        let part = part.as_str();
         if index == 0 && !part.contains('=') {
             let first = part.trim_start_matches('"');
             if let Ok(value) = first.parse() {
