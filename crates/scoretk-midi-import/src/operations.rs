@@ -87,8 +87,18 @@ pub struct ImportOptions {
     pub quant_value: QuantValue,
     /// Cherche les n-olets.
     pub search_tuplets: bool,
+    /// Note les n-olets détectés (`<time-modification>`), opt-in.
+    ///
+    /// Le filtre complet de MuseScore (`filterTuplets`) n'est pas porté :
+    /// l'option permet de mesurer le détecteur sans changer le comportement
+    /// par défaut.
+    pub tuplet_notation: bool,
+    /// Cherche les duolets (`search2plets`, faux par défaut).
+    pub search_2plets: bool,
     /// Cherche les triolets.
     pub search_3plets: bool,
+    /// Cherche les quadruplets (`search4plets`, vrai par défaut).
+    pub search_4plets: bool,
     /// Cherche les quintolet.
     pub search_5plets: bool,
     /// Cherche les septolets.
@@ -120,7 +130,10 @@ impl Default for ImportOptions {
         Self {
             quant_value: QuantValue::Q16,
             search_tuplets: true,
+            tuplet_notation: false,
+            search_2plets: false,
             search_3plets: true,
+            search_4plets: true,
             search_5plets: true,
             search_7plets: true,
             search_9plets: true,

@@ -319,6 +319,12 @@ def main() -> None:
     ap.add_argument("--out", required=True, help="dossier des sorties (hors dépôt)")
     ap.add_argument("--upstream", default="")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument(
+        "--extra-arg",
+        action="append",
+        default=[],
+        help="argument ajouté à chaque conversion scoretk (reproductible)",
+    )
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -361,9 +367,9 @@ def main() -> None:
                         a = []
                         row["erreur"] = f"reference : {exc}"[:200]
             if not exclu:
-                extra = None
+                extra = list(args.extra_arg) or None
                 if ident.startswith("up-") and ident[3:] in no_simplify:
-                    extra = ["--midi-no-simplify", "--midi-voices", "1"]
+                    extra = (extra or []) + ["--midi-no-simplify", "--midi-voices", "1"]
                 code_mid = run(args.binary, mid, got_xml, extra)
                 if common.est_non_pris_en_charge(code_mid):
                     common.marquer_exclu(row, str(mid))

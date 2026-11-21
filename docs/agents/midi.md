@@ -2275,26 +2275,61 @@ correct configuration, not a regression of the option plumbing. The other
 `m4`, `meter_9-8`, `meter_chord_example`, `meter_last_quarter_rest_compound`,
 `meter_rests`, `min_duration`, `pickup`, `tuplet_quadruplet`…).
 
-## Next class: tuplets — state after the voice port
+## Tuplets: literal detector port, opt-in (2026-11-21)
 
-`categories_ms.py` assigns each file its worst dimension and includes a binary
-`tuplet` flag (presence of `<time-modification>`). After the voice port, 11 of
-the 15 files whose worst dimension is `tuplet` have **N = 1.0000**: the notes,
-attacks, durations and voices match, only the tuplet notation is missing
-(`OSalutarisHostia`, `MakilarianII`, the `lily-de3207f2`/`OCheftaine…` group,
-`Ad_te_Suspiramus` with 186 tuplet elements in the reference, …). The 792.9
-weighted loss of that category comes from four files with real note
-differences — `Sancta_Maria_Mater_Dei_Mozart` (N 0.8885), `Ackermans…`
-(0.9429), `Veni Creator…` (0.9451, the one remaining simplify regression) and
-`Angels_Carol…` (0.9537) — and their losses are in the `duration` and `voice`
-dimensions, not in the tuplet flag itself.
+The previous detector only accepted an evenly spaced 3/5/7/9 group with no
+foreign chord in between; it found no tuplet at all on `OSalutarisHostia`,
+`Ackermans…`, `OCheftaine…` and the other files whose MuseScore reference has
+`<time-modification>`. The port mirrors the detector:
 
-Consequently the next pass is not "port the tuplet flag": it is the real
-tuplet detector/notation (`importmidi_tuplet*.cpp`), which is also what would
-turn the flag on. The current detector only accepts 3/5/7/9 tuplets on a
-non-binary grid; MuseScore also searches 4-plets by default
-(`search4plets = true`, `importmidi_operations.h:192`) and uses
-`findTupletApproximation` / `isTupletAllowed` sum-error filters
-(`importmidi_tuplet_detect.cpp:354-426`), which are not ported. That port must
-be measured against the four files above and must keep `v3/testTuplets8` (one
-frozen n-olet difference) unchanged.
+| C++ | Rust (`tuplet/detect.rs`) |
+| --- | --- |
+| `isTupletAllowed` `importmidi_tuplet_detect.cpp:34` | `is_tuplet_allowed` |
+| `findTupletNumbers` :87 | `find_tuplet_numbers` |
+| `findSumLengthOfRests` :122 | `find_sum_length_of_rests` |
+| `findTupletApproximation` :169 | `find_tuplet_approximation` |
+| `detectStaccato` :263 | `detect_staccato` |
+| `haveChordsInTheMiddleBetweenTupletChords` :289 | `have_chords_in_the_middle` |
+| `isTupletLenAllowed` :314 | `is_tuplet_len_allowed` |
+| `isNextBarOwnershipOk` :329 | `is_next_bar_ownership_ok` |
+| `detectTuplets` :354 | `detect_tuplets` |
+| `findOnTimeQuantError` `importmidi_quant.cpp:359` | `find_on_time_quant_error` |
+| `shortestQuantizedNoteInRange` :135 | `shortest_quantized_len` |
+
+`findAllTuplets`/`findTuplets` (`importmidi_tuplet.cpp:1169`, `:1074`) are the
+orchestration (`detect_all_tuplets` per bar) and `addTupletEvents` (`:862`) is
+`apply_tuplets`. `MidiOperations::search2plets`/`search4plets`
+(`importmidi_operations.h:190-195`) are added to `ImportOptions` (defaults
+false/true, as upstream).
+
+**Opt-in.** `filterTuplets` (`importmidi_tuplet_filter.cpp:691-786`, a DFS over
+tuplet sets with voice intervals) is **not** ported; the port keeps a greedy
+selection of non-overlapping tuplets by error (`tuplet/filter.rs`, documented
+there). With that approximation, inserting tuplets before quantisation retimed
+the 320 notes of `v4/timesig-09` and changed the model boundaries of
+`dense_bars`. The detector is therefore behind `ImportOptions::tuplet_notation`
+(`--midi-tuplet-notation`), default **off**: the default pipeline is unchanged
+(measured byte-identical file by file), and the option enables
+`<time-modification>`.
+
+Reduced test `tuplet_detect.rs` (written first, failed before the port): a 3:2
+tuplet with a foreign chord between two positions is detected; it runs with
+`tuplet_notation = true`.
+
+Measurement (same manifests, MuseScore oracle with ties merged; default and
+opt-in on the same binary):
+
+| Metric | Default | Opt-in |
+| --- | ---: | ---: |
+| LilyPond N (1 020 files) | 0.9820 | 0.9819 |
+| `tuplet` flag agreement (files) | 1 005 | **1 017** |
+| `tuplet` dimension loss | 13 626.0 | **9 390.0** |
+| upstream N (96 files) | 0.7894 | **0.7975** |
+| files with N loss | 0 | 2 (`OSalutarisHostia` and its duplicate, −0.0244) |
+
+The two losses are the reference's notated `<duration>` values for the tuplet
+notes (MuseScore writes 4/3, 2/3, 1/3; we keep the sounding values up to
+tolerance), not lost pitches. `OSalutarisHostia` now carries tuplets where it
+had none; `OCheftaine…` gets the reference's 8 time modifications.
+
+## Next class: filtering and the remaining duration/voice losses

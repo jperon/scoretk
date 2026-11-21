@@ -142,7 +142,7 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     drum::split_drum_tracks(&mut tracks);
 
     let last_tick = find_last_chord_tick(&tracks);
-    quantize_all_tracks(
+    let detected_tuplets = quantize_all_tracks(
         &mut tracks,
         &sigmap,
         last_tick,
@@ -174,6 +174,17 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     drum::split_unequal_drum_chords(&mut tracks);
     for track in &mut tracks {
         split_unequal_chords(track);
+    }
+
+    // N-olets détectés sur les accords bruts puis insérés ici, pour la
+    // notation seule : le filtre complet (`filterTuplets`) n'étant pas porté,
+    // une insertion précoce retime les notes (`v4/timesig-09`).
+    if options.tuplet_notation {
+        for (index, track) in tracks.iter_mut().enumerate() {
+            if let Some(candidates) = detected_tuplets.get(index) {
+                tuplet::apply_tuplets(track, candidates);
+            }
+        }
     }
 
     let mut track_list = prepare_track_list(tracks);
@@ -354,10 +365,12 @@ fn quantize_all_tracks(
     quant_value: operations::QuantValue,
     options: &ImportOptions,
     is_human: bool,
-) {
+) -> Vec<Vec<tuplet::TupletInfo>> {
     let basic_quant = quant::quant_value_to_fraction(quant_value);
+    let mut detected_tuplets: Vec<Vec<tuplet::TupletInfo>> = Vec::with_capacity(tracks.len());
     for track in tracks {
         if track.chords.is_empty() {
+            detected_tuplets.push(Vec::new());
             continue;
         }
         chord::set_bar_indexes(track, basic_quant, last_tick, sigmap);
@@ -371,10 +384,21 @@ fn quantize_all_tracks(
             is_human,
         );
         voice::assign_initial_voices(track, options.max_voice_count.limit());
-        if track.drum_track {
+        if options.tuplet_notation && (options.search_tuplets || track.drum_track) {
+            detected_tuplets.push(tuplet::detect_all_tuplets(
+                track,
+                sigmap,
+                basic_quant,
+                options,
+                is_human,
+            ));
+        } else if track.drum_track {
             drum::find_all_tuplets_for_drums(track, sigmap, basic_quant);
         } else if options.search_tuplets {
             tuplet::find_all_tuplets(track, sigmap, basic_quant);
+            detected_tuplets.push(Vec::new());
+        } else {
+            detected_tuplets.push(Vec::new());
         }
         quant::quantize_chords(track, basic_quant);
         if track.tuplets.is_empty() {
@@ -390,6 +414,7 @@ fn quantize_all_tracks(
         // `MidiVoice::separateVoices`.
         voice::assign_non_tuplet_voices(track, options.max_voice_count.limit());
     }
+    detected_tuplets
 }
 
 /// Tick du premier accord (`findFirstChordTick`).
@@ -1074,7 +1099,12 @@ fn duration_list(
 ) -> Vec<(Fraction, Duration)> {
     let measure = &score.measures[measure_index];
     let bar_tick = measure.start_tick;
-    let tuplets = tuplet::find_tuplets_in_bar_for_duration(track, voice, bar_tick, start_tick, len);
+    // En mode notation seule, les n-olets ne découpent pas les durées.
+    let tuplets = if options.tuplet_notation {
+        Vec::new()
+    } else {
+        tuplet::find_tuplets_in_bar_for_duration(track, voice, bar_tick, start_tick, len)
+    };
     meter_to_duration_list_with_sig(
         start_tick - bar_tick,
         start_tick - bar_tick + len,

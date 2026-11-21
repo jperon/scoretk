@@ -103,6 +103,10 @@ struct Cli {
     /// Import MIDI : nombre maximal de voix, 1 à 4 (`maxVoiceCount`)
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(1..=4))]
     midi_voices: Option<u8>,
+
+    /// Import MIDI : détecter et noter les n-olets (`<time-modification>`)
+    #[arg(long)]
+    midi_tuplet_notation: bool,
 }
 
 fn main() -> ExitCode {
@@ -136,6 +140,10 @@ fn main() -> ExitCode {
     let mut custom_midi = false;
     if cli.midi_no_simplify {
         midi_options.simplify_durations = false;
+        custom_midi = true;
+    }
+    if cli.midi_tuplet_notation {
+        midi_options.tuplet_notation = true;
         custom_midi = true;
     }
     if let Some(voices) = cli.midi_voices {

@@ -29,9 +29,131 @@
 
 use scoretk_core::model::Fraction;
 
-use super::chord::{min_allowed_duration, MTrack};
+use super::chord::{min_allowed_duration, ChordKey, MTrack};
 use super::meter::{divisions_of_bar_for_tuplets_raw, is_simple_note_duration};
-use super::timesigmap::TimeSigMap;
+use super::timesigmap::{fraction_from_ticks, TimeSigMap};
+
+mod detect;
+mod filter;
+
+/// N-olet candidat pendant la détection (`MidiTuplet::TupletInfo`).
+#[derive(Clone, Debug, Default)]
+pub struct TupletInfo {
+    /// Nombre de notes du n-olet (3, 5, 7, 9, 2 ou 4).
+    pub tuplet_number: i32,
+    /// Début du n-olet.
+    pub on_time: Fraction,
+    /// Durée totale.
+    pub len: Fraction,
+    /// Accords retenus, triés par date.
+    pub chords: Vec<ChordKey>,
+    /// Indice de la position du premier accord.
+    pub first_chord_index: i32,
+    /// Somme des erreurs de n-olet.
+    pub tuplet_sum_error: Fraction,
+    /// Somme des erreurs de quantification régulière.
+    pub regular_sum_error: Fraction,
+    /// Somme des silences internes.
+    pub sum_length_of_rests: Fraction,
+    /// Indices des notes piquées : accord → indice de note.
+    pub staccato_chords: std::collections::BTreeMap<ChordKey, usize>,
+    /// Rang du candidat dans la mesure.
+    pub id: usize,
+}
+
+/// Détecte les n-olets d'une piste sans la modifier (`detectTuplets`).
+pub fn detect_all_tuplets(
+    track: &MTrack,
+    sigmap: &TimeSigMap,
+    basic_quant: Fraction,
+    options: &super::operations::ImportOptions,
+    is_human: bool,
+) -> Vec<TupletInfo> {
+    if track.chords.is_empty() {
+        return Vec::new();
+    }
+    let keys = track.chords.keys();
+    let bar_count = track
+        .chords
+        .iter()
+        .map(|(_, chord)| chord.bar_index)
+        .max()
+        .unwrap_or(-1)
+        + 1;
+    let detect_options = detect::DetectOptions {
+        search_2plets: options.search_2plets,
+        search_3plets: options.search_3plets,
+        search_4plets: options.search_4plets,
+        search_5plets: options.search_5plets,
+        search_7plets: options.search_7plets,
+        search_9plets: options.search_9plets,
+        is_human,
+        simplify_durations: options.simplify_durations,
+    };
+    let mut candidates = Vec::new();
+    for bar_index in 0..bar_count {
+        let bar_start = fraction_from_ticks(sigmap.bar2tick(i64::from(bar_index), 0));
+        let timesig = sigmap.timesig(sigmap.bar2tick(i64::from(bar_index), 0));
+        let bar_len = timesig.measure_len();
+        if !bar_len.is_positive() {
+            continue;
+        }
+        candidates.extend(detect::detect_tuplets(
+            track,
+            &keys,
+            bar_index,
+            bar_start,
+            bar_len,
+            timesig.numerator,
+            basic_quant,
+            detect_options,
+        ));
+    }
+    filter::filter_tuplets(&mut candidates);
+    candidates
+}
+
+/// Insère les n-olets détectés dans la piste (`addTupletEvents`).
+pub fn apply_tuplets(track: &mut MTrack, candidates: &[TupletInfo]) {
+    let mut next_seq = track
+        .tuplets
+        .keys()
+        .map(|key| key.1)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1);
+    for info in candidates {
+        let key = (info.on_time, next_seq);
+        next_seq = next_seq.saturating_add(1);
+        let voice = info
+            .chords
+            .first()
+            .and_then(|key| track.chords.get(*key))
+            .map_or(0, |chord| chord.voice);
+        track.tuplets.insert(
+            key,
+            TupletData {
+                voice,
+                on_time: info.on_time,
+                len: info.len,
+                tuplet_number: info.tuplet_number,
+                element_count: 0,
+            },
+        );
+        let mut count = 0;
+        for chord_key in &info.chords {
+            if let Some(chord) = track.chords.get_mut(*chord_key) {
+                chord.is_in_tuplet = true;
+                chord.tuplet = Some(key);
+                count += 1;
+            }
+        }
+        if let Some(tuplet) = track.tuplets.get_mut(&key) {
+            tuplet.element_count = count;
+        }
+    }
+    remove_empty_tuplets(track);
+}
 
 /// Clé d'un n-olet dans [`MTrack::tuplets`] : date et rang.
 pub type TupletKey = (Fraction, u64);
