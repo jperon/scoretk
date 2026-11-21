@@ -1276,7 +1276,23 @@ fn parse_tempo(text: &str) -> Option<(f64, String)> {
         let after = &text[start + 1..];
         if let Some(end) = after.find('"') {
             let label = after[..end].to_owned();
-            let rest = format!("{} {}", &text[..start], &after[end + 1..]);
+            // Remove every quoted segment from the numeric scan: a second
+            // label (`[Q:"left" 1/4=170"right"]`) would otherwise land in
+            // the bpm string and make the parse fail.
+            let mut rest = String::new();
+            let mut position = 0;
+            while let Some(open) = text[position..].find('"') {
+                rest.push_str(&text[position..position + open]);
+                let after_open = position + open + 1;
+                match text[after_open..].find('"') {
+                    Some(close) => position = after_open + close + 1,
+                    None => {
+                        position = text.len();
+                        break;
+                    }
+                }
+            }
+            rest.push_str(&text[position..]);
             (label, rest)
         } else {
             (String::new(), text.to_owned())
