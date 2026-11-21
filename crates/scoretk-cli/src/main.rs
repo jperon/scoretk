@@ -24,6 +24,10 @@
 //! La date d'encodage MusicXML est celle du jour en UTC, comme dans l'export
 //! de `scoretk-core` ; `--encoding-date` la fige pour des sorties reproductibles.
 //! Seule cette CLI touche au système de fichiers.
+//!
+//! Codes de sortie : 0 succès, 1 échec de conversion, 2 usage invalide,
+//! 3 entrée délibérément non prise en charge (version ou format), voir
+//! [`EXIT_UNSUPPORTED`].
 
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -42,10 +46,26 @@ const VERSION_LINE: &str = concat!(
     "\nvoir le fichier LICENSE ou <https://www.gnu.org/licenses/gpl-3.0.html>."
 );
 
+/// Code de sortie d'une entrée délibérément non prise en charge.
+///
+/// Distinct d'un échec de conversion (1) et d'un usage invalide (2) : les
+/// scripts de mesure excluent ces fichiers de leur numérateur et de leur
+/// dénominateur au lieu de les compter comme des régressions. Voir
+/// `scoretk::Error::is_unsupported`.
+const EXIT_UNSUPPORTED: u8 = 3;
+
 /// Boîte à outils de conversion de partitions (MuseScore, MusicXML, LilyPond,
 /// ABC, MIDI).
 #[derive(Debug, Parser)]
-#[command(name = "scoretk", version = VERSION_LINE, about)]
+#[command(
+    name = "scoretk",
+    version = VERSION_LINE,
+    about,
+    after_help = "Codes de sortie : 0 succès ; 1 échec de conversion ; \
+                  2 usage invalide ; 3 entrée non prise en charge \
+                  (version ou format délibérément non supporté, par exemple \
+                  MuseScore < 1.15)."
+)]
 struct Cli {
     /// Fichier d'entrée, ou « - » pour l'entrée standard
     #[arg(required_unless_present = "list_formats")]
@@ -103,6 +123,9 @@ fn main() -> ExitCode {
 
     let score = match read_score(&bytes, from, &input) {
         Ok(score) => score,
+        Err(error) if error.is_unsupported() => {
+            return fail_unsupported(&format!("{input} : {error}"));
+        }
         Err(error) => return fail(&format!("{input} : {error}")),
     };
 
@@ -240,6 +263,12 @@ fn write_file(path: &str, output: &[u8]) -> ExitCode {
 fn fail(message: &str) -> ExitCode {
     eprintln!("scoretk : {message}");
     ExitCode::FAILURE
+}
+
+/// Échec dû à une entrée délibérément non prise en charge (code 3).
+fn fail_unsupported(message: &str) -> ExitCode {
+    eprintln!("scoretk : entrée non prise en charge : {message}");
+    ExitCode::from(EXIT_UNSUPPORTED)
 }
 
 /// Tableau de `--list-formats`.

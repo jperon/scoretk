@@ -205,6 +205,25 @@ scoretk --version                           # version + licence (GPL-3.0-only)
 - `--no-expand-repeats` does not unfold repeats in the MIDI output
   (`Options::midi.expand_repeats = false`); the output is then "flat".
 
+Exit codes (also in `scoretk --help`):
+
+| Code | Meaning |
+| ---: | --- |
+| 0 | success |
+| 1 | conversion failure (unreadable or malformed input, writer error) |
+| 2 | invalid usage (clap: missing `--from`/`--to`, unknown option…) |
+| 3 | **unsupported input**: version or format deliberately not supported |
+
+Code 3 is what `scoretk::Error::is_unsupported` classifies: a MuseScore file
+whose version is outside the ported subset (`UnsupportedVersion`: 1.15–2.07,
+3.00–3.99 and 4.00–5.00 are read, below 1.15 `read114` is not ported) and a
+format without a converter in the requested direction
+(`FormatNonPrisEnCharge`, disabled feature). A
+reader bug, a malformed XML/ZIP or an unreadable source keeps code 1: the
+distinction exists so that the measurement scripts (`scripts/oracle/*`) can
+exclude an unsupported input from their numerator and denominator — shared
+helper `scripts/oracle/common.py` — never to hide a regression.
+
 ## 5. Flake
 
 - `packages.scoretk` builds the CLI (`cargoExtraArgs = "-p scoretk-cli"`).

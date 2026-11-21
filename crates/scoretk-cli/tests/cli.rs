@@ -498,3 +498,61 @@ fn no_expand_repeats_raccourcit_le_midi() {
         with_repeats.stdout.len()
     );
 }
+
+#[test]
+fn version_non_prise_en_charge_code_3() {
+    // MuseScore 1.14 : `read114` n'est pas porté. Ce n'est pas une régression
+    // de lecture : le code 3 permet aux oracles d'exclure le fichier de leur
+    // numérateur et de leur dénominateur.
+    let dir = temp_dir();
+    let input = dir.join("ancien.mscx");
+    std::fs::write(
+        &input,
+        r#"<museScore version="1.14"><Score><Staff id="1"/></Score></museScore>"#,
+    )
+    .expect("écriture du .mscx");
+    let output = binary()
+        .arg(&input)
+        .args(["--to", "musicxml"])
+        .output()
+        .expect("exécution");
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8(output.stderr).expect("UTF-8");
+    assert!(stderr.contains("non prise en charge"), "{stderr}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn erreur_de_lecture_reste_un_echec_ordinaire() {
+    // Un XML tronqué n'est pas « non pris en charge » : il garde le code 1,
+    // sinon une régression du lecteur serait exclue silencieusement.
+    let dir = temp_dir();
+    let input = dir.join("casse.mscx");
+    std::fs::write(&input, r#"<museScore version="4.00"><Score>"#).expect("écriture");
+    let output = binary()
+        .arg(&input)
+        .args(["--to", "musicxml"])
+        .output()
+        .expect("exécution");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn aide_documente_les_codes_de_sortie() {
+    let output = binary().arg("--help").output().expect("exécution");
+    assert!(output.status.success());
+    let texte = String::from_utf8(output.stdout).expect("UTF-8");
+    assert!(texte.contains("Codes de sortie"), "{texte}");
+    assert!(texte.contains("non prise en charge"), "{texte}");
+}

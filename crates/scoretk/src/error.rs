@@ -91,3 +91,33 @@ pub enum Error {
     #[error("ABC : {0}")]
     Abc(String),
 }
+
+impl Error {
+    /// Vrai si l'échec tient à une entrée **délibérément non prise en charge**,
+    /// et non à un défaut de lecture.
+    ///
+    /// Qualifient :
+    ///
+    /// - `scoretk_musescore_import::Error::UnsupportedVersion` : version
+    ///   MuseScore hors du sous-ensemble porté (aujourd'hui < 1.15, `read114`
+    ///   n'est pas porté) ;
+    /// - [`Error::FormatNonPrisEnCharge`] : format sans convertisseur dans le
+    ///   sens demandé (feature du sens désactivée).
+    ///
+    /// Toute autre erreur — XML mal formé, ZIP invalide, source illisible —
+    /// reste un échec ordinaire : la distinction sert à ne pas imputer à
+    /// scoretk ce qu'il refuse par construction, jamais à masquer une
+    /// régression de lecture. Les lecteurs MusicXML, LilyPond, ABC et MIDI
+    /// n'ont pas, aujourd'hui, de variante « version non prise en charge » ;
+    /// leurs erreurs arrivent ici sous forme de texte (`MusicXmlImport`,
+    /// `LilyPond`, `Abc`, `MidiImport`) et restent donc des échecs ordinaires.
+    #[must_use]
+    pub fn is_unsupported(&self) -> bool {
+        match self {
+            #[cfg(feature = "musescore-import")]
+            Self::MuseScoreImport(scoretk_musescore_import::Error::UnsupportedVersion(_)) => true,
+            Self::FormatNonPrisEnCharge { .. } => true,
+            _ => false,
+        }
+    }
+}
