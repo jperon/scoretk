@@ -281,9 +281,8 @@ fn minimize_number_of_rests(
                 );
             }
             let bar_start = find_bar_start(sigmap, note.off_time);
-            let bar_fraction = sigmap
-                .timesig(bar_start.ticks(UNITS_PER_WHOLE as u32))
-                .measure_len();
+            let timesig = sigmap.timesig(bar_start.ticks(UNITS_PER_WHOLE as u32));
+            let bar_fraction = timesig.measure_len();
             let mut duration_start = key.0.max(bar_start);
             if chord_is_in_tuplet {
                 if let Some(tuplet) = &chord_tuplet {
@@ -316,7 +315,13 @@ fn minimize_number_of_rests(
                     }
                 }
             }
-            let beat_len = beat_length(bar_fraction);
+            let beat_len = if is_drum_track {
+                // Les pistes de percussion utilisent la signature non réduite
+                // (`ReducedFraction` C++) ; les autres gardent la lecture actuelle.
+                super::meter::beat_length_raw(bar_fraction, timesig.numerator)
+            } else {
+                beat_length(bar_fraction)
+            };
             let beat_time = bar_start + quantize_to_large(note.off_time - bar_start, beat_len);
             if end_time > beat_time {
                 end_time = beat_time;

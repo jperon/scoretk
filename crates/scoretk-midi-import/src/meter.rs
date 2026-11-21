@@ -101,6 +101,37 @@ pub fn is_septuple(bar_fraction: Fraction) -> bool {
     bar_fraction.numerator() % 7 == 0
 }
 
+/// Classifications sur le numérateur non réduit : `ReducedFraction` conserve
+/// 4/4 comme `(4, 4)`, tandis que `Fraction` réduit à `1/1` et perd le nombre
+/// de temps. `Timesig` fournit le numérateur brut à ces variantes.
+pub fn is_duple_num(n: i64) -> bool {
+    n == 2 || n == 6
+}
+pub fn is_triple_num(n: i64) -> bool {
+    n == 3 || n == 9
+}
+pub fn is_quadruple_num(n: i64) -> bool {
+    n % 4 == 0
+}
+pub fn is_complex_num(n: i64) -> bool {
+    n == 5 || n == 7
+}
+
+/// `beatLength` avec le numérateur non réduit (`importmidi_meter.cpp:135-147`).
+pub fn beat_length_raw(bar_fraction: Fraction, numerator: i64) -> Fraction {
+    if is_duple_num(numerator) {
+        bar_fraction * Fraction::HALF
+    } else if is_triple_num(numerator) {
+        bar_fraction / Fraction::from_integer(3)
+    } else if is_quadruple_num(numerator) {
+        bar_fraction * Fraction::new(1, 4)
+    } else if is_complex_num(numerator) {
+        bar_fraction / Fraction::from_integer(numerator)
+    } else {
+        bar_fraction * Fraction::new(1, 4)
+    }
+}
+
 /// Longueur d'un temps (`beatLength`).
 pub fn beat_length(bar_fraction: Fraction) -> Fraction {
     if is_duple(bar_fraction) {

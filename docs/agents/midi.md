@@ -1564,3 +1564,15 @@ accepts one extra tuplet there and lengthens a note, where MuseScore's
 `tupletSumError` / `regularSumError` filter rejects it. That filter is part
 of the still-unported `importmidi_tuplet_filter.cpp`.
 
+### Cause fixed: unreduced time signature for drum durations
+
+`ReducedFraction` keeps a 4/4 signature as `(4, 4)`; our `Fraction` reduces
+it to `1/1`, so `beatLength` (`importmidi_meter.cpp:135-147`) lost the number
+of beats. `beat_length_raw` now takes the raw `Timesig` numerator. It is
+applied to drum tracks only: applying it everywhere regressed three compound
+meter / duplet files (`meter_last_quarter_rest_compound`, `tuplet_duplet`,
+`tuplet_quadruplet`) because `meter_to_duration_list` still uses the reduced
+signature — making both sides consistent is the next step of that port.
+
+Measured: N 0.2558 → **0.2588** with no per-file loss; `up-perc_drums`
+0.8462 → 1.0000 and `up-perc_short_notes` 0.7000 → 0.8000.
