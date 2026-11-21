@@ -2822,3 +2822,25 @@ or gone.
 
 No `.mscz` file regressed: 0 loss, and the 21 corpus files stay at 21/21
 (`corpus_midi`), including the four with empty references.
+
+## Final `.mscz` classification (2026-11-21)
+
+The four non-exact files of the 173-file MuseScore lot (reference MIDIs
+regenerated with MuseScore 4.7.4, fresh candidate run in `target/midi-turn`)
+were classified against `ref-musescore/src/engraving/compat/midi/`
+(`compatmidirender.cpp`, `compatmidirenderinternal.{cpp,h}`) at the ported
+5.0.0 commit, with 4.7.4 output prevailing:
+
+| File | Cause | Verdict |
+| --- | --- | --- |
+| `Buenos_dias,_Mexico_!.mscz` | `ornamentTurn` on a 16th was played as a single F4; MuseScore renders the excursion `{+1,0,-1,0}` in 32nds (`compatmidirenderinternal.h:88`, `compatmidirender.cpp:665-800`) | **real writer bug — fixed** |
+| `Adios_Muchachos.mscz` | 8 pitch-60 notes differ only in duration (e.g. 1.75 vs 2.0, short vs 0.5): a written note and the harmony bass share a tick, so the oracle's FIFO note-off pairing cannot separate them; the pitch/onset multisets match | **oracle artefact**, explained (no per-file loss) |
+| `Chant_de_la_Promotion.mscz` | empty score: 0 notes in both the 4.7.4 reference and our output | **oracle artefact** (`exact` requires a non-empty reference) |
+| `Chant_de_la_promotion_Saint_Michel.mscz` | same empty score | **oracle artefact** |
+
+Fix: `ornaments::turn` and its dispatch in `render.rs`, plus a downward
+diatonic auxiliary helper (`step_pitch_below`); reduced test in
+`tests/turn.rs`, failing before the fix. Re-measure: **170/173 exact**
+(169 before), 1 gain, **0 losses**, N1/N2 100 %. The `.ly` lot figures are
+not part of this pass: they mostly measure the LilyPond reader, owned
+elsewhere.
