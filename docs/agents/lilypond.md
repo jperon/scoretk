@@ -3469,3 +3469,15 @@ pas son multiplicateur `*n/d`. `lily/parser.yy` (`DURATION`) retient les deux :
 le multiplicateur à un. Le champ `default_multiplier` suit désormais la durée
 par défaut dans l'interprète et les voix ouvertes. `contrapunctusXIV` passe de
 65 à 1397 notes appariées sur 1397.
+
+#### Correctif du multiplicateur : `\scaleDurations`
+
+La première mesure complète après le multiplicateur par défaut faisait perdre
+1911 notes à `ToccataFugue.ly` : ses `\scaleDurations #'(2 . 3) { … }` posaient
+le facteur 2/3 sur chaque accord, et la note nue qui suit le bloc héritait de
+ce facteur au lieu d'une noire entière (décalage de 1/12 de noire, cumulé sur
+tout le morceau). `Chord::from_scale` distingue maintenant le `*n/d` écrit du
+facteur injecté par `\scaleDurations` : seul le premier devient durée par
+défaut. Test `echelle_de_durees_ne_change_pas_la_duree_par_defaut` (échoue
+avant). `ToccataFugue` retrouve ses 3433 appariements et `contrapunctusXIV`
+reste à 1397/1397.

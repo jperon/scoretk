@@ -5625,3 +5625,21 @@ fn multiplicateur_de_duree_propage_aux_notes_nues() {
         touches
     );
 }
+
+/// `\scaleDurations` ne modifie que sa musique : la note nue qui suit le bloc
+/// reprend la durée par défaut d'avant, sans le facteur d'échelle.
+#[test]
+fn echelle_de_durees_ne_change_pas_la_duree_par_defaut() {
+    let score = lire("\\scaleDurations #'(2 . 3) { c16 d16 e16 } f g");
+    let touches: Vec<_> = accords_de_voix(&score, 0)
+        .iter()
+        .map(|(tick, _, _)| *tick)
+        .collect();
+    assert!(touches.len() >= 5, "les cinq notes sont là : {:?}", touches);
+    assert_eq!(
+        touches[4] - touches[3],
+        Fraction::new(1, 16),
+        "la dernière note vaut une noire, pas 2/3 : {:?}",
+        touches
+    );
+}

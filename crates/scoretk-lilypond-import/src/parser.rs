@@ -2763,6 +2763,7 @@ impl<'a> Parser<'a> {
                     kind: ChordKind::SkipNumeric,
                     duration: Some(duration.unwrap_or(self.default_duration)),
                     multiplier,
+                    from_scale: false,
                     posts: Vec::new(),
                     invisible: true,
                 })
@@ -3123,6 +3124,7 @@ impl<'a> Parser<'a> {
                         },
                         duration,
                         multiplier,
+                        from_scale: false,
                         posts,
                         invisible,
                     });
@@ -3135,6 +3137,7 @@ impl<'a> Parser<'a> {
                         kind: ChordKind::Repeat,
                         duration,
                         multiplier,
+                        from_scale: false,
                         posts,
                         invisible: false,
                     });
@@ -3182,6 +3185,7 @@ impl<'a> Parser<'a> {
                     kind: ChordKind::Notes(notes),
                     duration,
                     multiplier,
+                    from_scale: false,
                     posts: chord_posts,
                     invisible: false,
                 });
@@ -3220,6 +3224,7 @@ impl<'a> Parser<'a> {
             kind: ChordKind::Notes(notes),
             duration,
             multiplier,
+            from_scale: false,
             posts,
             invisible: false,
         })
@@ -3260,6 +3265,7 @@ impl<'a> Parser<'a> {
             kind: ChordKind::Notes(notes),
             duration,
             multiplier,
+            from_scale: false,
             posts,
             invisible: false,
         })
@@ -3287,6 +3293,7 @@ impl<'a> Parser<'a> {
             kind: ChordKind::Repeat,
             duration,
             multiplier,
+            from_scale: false,
             posts: self.parse_posts(),
             invisible: false,
         })
@@ -4630,6 +4637,7 @@ fn scale_music(music: &mut Music, factor: &Fraction) {
         Music::Chord(chord) => {
             let multiplier = chord.multiplier.unwrap_or(Fraction::ONE) * *factor;
             chord.multiplier = Some(multiplier);
+            chord.from_scale = true;
         }
         Music::Context(context) => scale_context(context, factor),
         Music::Tag { music, .. } | Music::Filtered { music, .. } => scale_music(music, factor),

@@ -137,6 +137,9 @@ pub(crate) struct Chord {
     pub duration: Option<scoretk_core::model::Duration>,
     /// Durée réelle quand un multiplicateur `*n/d` l'allonge.
     pub multiplier: Option<scoretk_core::model::Fraction>,
+    /// Le multiplicateur vient de `\scaleDurations`, pas d'un `*n/d` écrit :
+    /// il ne devient pas la durée par défaut de la musique qui suit.
+    pub from_scale: bool,
     /// Événements attachés à l'accord.
     pub posts: Vec<PostEvent>,
     /// Vrai pour un silence rendu invisible (`Rest.transparent`).

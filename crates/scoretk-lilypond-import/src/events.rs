@@ -963,6 +963,14 @@ impl<'a> Interpreter<'a> {
         } else {
             self.default_multiplier
         });
+        // `\scaleDurations n/d { … }` modifie la musique contenue, pas la
+        // durée par défaut du flux après la commande : la note nue qui suit
+        // le bloc ne doit pas hériter du facteur d'échelle.
+        let default_multiplier = if chord.from_scale {
+            self.default_multiplier
+        } else {
+            multiplier
+        };
         let tuplet_factor = self.tuplet_scale * self.open_tuplet_scale();
         let mut actual = written.ticks() * multiplier * tuplet_factor;
 
@@ -992,7 +1000,7 @@ impl<'a> Interpreter<'a> {
                 }
             }
             self.default_duration = written;
-            self.default_multiplier = multiplier;
+            self.default_multiplier = default_multiplier;
             return;
         }
 
@@ -1116,7 +1124,7 @@ impl<'a> Interpreter<'a> {
             self.cursor += actual;
             if sets_default {
                 self.default_duration = written;
-                self.default_multiplier = multiplier;
+                self.default_multiplier = default_multiplier;
             }
             return;
         }
@@ -1170,7 +1178,7 @@ impl<'a> Interpreter<'a> {
             self.order += 1;
         }
         self.default_duration = written;
-        self.default_multiplier = multiplier;
+        self.default_multiplier = default_multiplier;
     }
 
     /// Applique un post-événement.
