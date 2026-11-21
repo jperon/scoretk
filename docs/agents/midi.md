@@ -1996,7 +1996,9 @@ La table `crates/scoretk-core/src/instruments.rs` (toujours générée par
 `scripts/gen-instruments-table.py`, jamais éditée) porte désormais le groupe,
 les programmes de canaux **dans l'ordre**, les genres, `use_drumset`
 (corrigé), `has_drumset` et `drum_pitch_mask`, et les plages absentes valent
-`MIN_PITCH`/`MAX_PITCH` (0/127) comme `InstrumentTemplate`.
+`MIN_PITCH`/`MAX_PITCH` (0/127) comme `InstrumentTemplate`. Coût mesuré :
+`nix build .#wasm` donne 1 989 235 octets bruts / 798 227 gzip, contre
+1 924 312 / 783 580 avant (+3,4 % brut, +1,9 % gzip).
 
 Test réduit (`instrument_template.rs::plage_de_la_piste_departage_les_gabarits`) :
 programme 73 avec les plages réelles de `Transeamus` (58–70) et de
