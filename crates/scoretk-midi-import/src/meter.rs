@@ -283,6 +283,24 @@ pub fn metric_divisions_of_bar_raw(bar_fraction: Fraction, numerator: i64) -> Di
         info.div_lengths
             .push((last / Fraction::from_integer(3), level));
     }
+    // Subdivisions successives jusqu'à la durée minimale autorisée
+    // (`metricDivisionsOfBar`, `importmidi_meter.cpp:113-116`) : sans elles,
+    // `levelOfTick` retombait à 0 pour toute durée plus courte qu'un temps et
+    // `toDurationList` ne coupait pas les notes aux temps.
+    let min_duration = crate::chord::min_allowed_duration() * Fraction::from_integer(2);
+    while info
+        .div_lengths
+        .last()
+        .is_some_and(|(len, _)| *len >= min_duration)
+    {
+        level -= 1;
+        let last = info
+            .div_lengths
+            .last()
+            .map(|(len, _)| *len)
+            .unwrap_or(bar_fraction);
+        info.div_lengths.push((last * Fraction::HALF, level));
+    }
     info
 }
 
@@ -555,36 +573,43 @@ fn exclude_nodes(nodes: &mut BTreeMap<Fraction, Node>, tol: i32, use_dots: bool)
     if tol == 0 {
         return;
     }
-    loop {
-        let positions: Vec<Fraction> = nodes.keys().copied().collect();
-        if positions.len() < 3 {
-            return;
+    // Fenêtre glissante du C++ (`excludeNodes`, `importmidi_meter.cpp:448-483`) :
+    // après une suppression, le nœud suivant devient p2 et n'est pas réexaminé
+    // depuis le début. Une boucle avec redémarrage supprimait des nœuds de
+    // temps successifs et fusionnait une note en une seule figure pointée.
+    let positions: Vec<Fraction> = nodes.keys().copied().collect();
+    if positions.len() < 3 {
+        return;
+    }
+    let mut removed: Vec<Fraction> = Vec::new();
+    let mut first = 0;
+    let mut middle = 1;
+    let mut last = 2;
+    while last < positions.len() {
+        let p1 = nodes[&positions[first]];
+        let p2 = nodes[&positions[middle]];
+        let p3 = nodes[&positions[last]];
+        if !bad_level_condition(
+            p2.mid_level - p1.edge_level,
+            p2.mid_level - p3.edge_level,
+            tol,
+        ) && is_less_note_count(
+            positions[first],
+            positions[middle],
+            positions[last],
+            use_dots,
+        ) {
+            removed.push(positions[middle]);
+            middle = last;
+            last += 1;
+            continue;
         }
-        let mut removed = false;
-        let mut index = 0;
-        while index + 2 < positions.len() {
-            let p1 = nodes[&positions[index]];
-            let p2 = nodes[&positions[index + 1]];
-            let p3 = nodes[&positions[index + 2]];
-            if !bad_level_condition(
-                p2.mid_level - p1.edge_level,
-                p2.mid_level - p3.edge_level,
-                tol,
-            ) && is_less_note_count(
-                positions[index],
-                positions[index + 1],
-                positions[index + 2],
-                use_dots,
-            ) {
-                nodes.remove(&positions[index + 1]);
-                removed = true;
-                break;
-            }
-            index += 1;
-        }
-        if !removed {
-            return;
-        }
+        first += 1;
+        middle += 1;
+        last += 1;
+    }
+    for position in removed {
+        nodes.remove(&position);
     }
 }
 

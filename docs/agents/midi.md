@@ -2383,22 +2383,47 @@ per-file loss. `v4/timesig-09` has no `<Tuplet>` in its source: inserted at
 MuseScore's early stage it still receives **182** invented time modifications,
 so the option stays opt-in and the insertion stays after the duration stages.
 
-## Beat-tie splitting in `processPendingNotes`
+## Beat-tie splitting: `metricDivisionsOfBar` subdivisions (2026-11-21)
 
-MuseScore does **not** split notes at beats before `separateVoices`: the split
-is in `MTrack::processPendingNotes` (`importmidi.cpp:553-611`), at model
-creation, and is already ported in `process_pending_notes` (`lib.rs`):
+MuseScore splits a note that crosses a beat at model creation, not before
+`separateVoices`: `MTrack::processPendingNotes` (`importmidi.cpp:553-611`) takes
+the **first** figure of `toDurationList`, sets `chord->setTicks(d.fraction())`
+and ties the continuation (`setTies`, `importmidi.cpp:541-551`). The port
+already had that loop, but the metric structure it relies on was truncated:
+`metricDivisionsOfBar` (`importmidi_meter.cpp:88-121`) ends with
 
-- `splitDurationOnBarBoundary` (`importmidi.cpp:426-437`) clamps the chunk to
-  the measure end;
-- `toDurationList` returns the figures of the gap; only the **first** figure is
-  used (`chord->setTicks(d.fraction())`) and the note is cut there;
-- `setTies` (`importmidi.cpp:541-551`) ties the continuation, which re-enters
-  the loop with the remaining duration.
+```cpp
+while (divLengths.back().len >= MChord::minAllowedDuration() * 2) {
+    divLengths.push_back({ divLengths.back().len / 2, --level });
+}
+```
 
-The reduced test `beat_ties.rs` fixes this: a 3-quarter note starting on the
-second eighth of a 4/4 bar comes out as **tied fragments**, not one long note.
-The `02_02_Segura` voice difference is therefore not a missing split: our
-first fragment lengths differ from MuseScore's because `toDurationList` gives
-another first figure (the file has 161 tie starts in the reference), and that
-is the remaining cause of its `voice` loss.
+which the Rust port omitted. Without the subdivisions, `levelOfTick(1/8)` fell
+back to level 0 and `toDurationList` never cut inside a beat: a 3-quarter note
+starting on the second eighth came out as one dotted half instead of MuseScore's
+1.5 + 1.5 tied. Added in `metric_divisions_of_bar_raw`
+(`crates/scoretk-midi-import/src/meter.rs`). `excludeNodes`
+(`importmidi_meter.cpp:448-483`) is also a single sliding window in the C++;
+the port restarted from the beginning after each removal, which could cascade
+and merge beat nodes — it is now the literal single pass.
+
+Reduced test `beat_ties.rs` (written first, failed before the fix): a 3-quarter
+note from 0.5 to 3.5 in 4/4 gives one 3/4 figure before, and two tied fragments
+after, the first at 1/8 with less than 3 quarters.
+
+Measurement (default pipeline, same manifests and oracle):
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| LilyPond N (1 020 files) | 0.9820 | **0.9821** |
+| total loss | 2 460.7 | **2 438.9** |
+| `onset` dimension | 142.0 | **26.0** |
+| `duration` dimension | 507.2 | **350.8** |
+| upstream N (96 files) | 0.7894 | 0.7662 |
+
+18 LilyPond files gain, **none loses**. The upstream loss is one file,
+`human_tempo` (0.5252 → 0.3813): a human performance whose simplification
+depends on the finer divisions; the beat tracker (`MidiBeat`) is still not
+wired (see the BeatRoot section). `02_02_Segura_L-aigle-mexicain` is unchanged
+(voice 0.9073): its first fragments were already equal, so its voice loss comes
+from another part of the tie chains, not from the missing split.
