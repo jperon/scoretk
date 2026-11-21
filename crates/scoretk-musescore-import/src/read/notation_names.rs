@@ -93,6 +93,25 @@ fn simple_articulation(base: &str, anchor: ArticulationAnchor) -> Option<Articul
         "brassMuteOpen" | "articOpen" => ArticulationType::Open,
         "brassMuteClosed" | "articStopped" => ArticulationType::Stopped,
         "pluckedSnapPizzicato" | "articSnapPizzicato" => ArticulationType::SnapPizzicato,
+        // Noms des formats 2.x/3.x (`articulationNames2SymId206`,
+        // `rw/read206/read206.cpp:594-652`) : `<subtype>staccato</subtype>`
+        // vaut `articStaccatoAbove`, et ainsi de suite. Sans cette table, ces
+        // articulations restaient `Other("staccato")` et le rendu MIDI
+        // gardait le `gateTime` par défaut de l'instrument.
+        "staccato" => ArticulationType::Staccato,
+        "staccatissimo" => ArticulationType::Staccatissimo,
+        "tenuto" => ArticulationType::Tenuto,
+        "portato" => ArticulationType::Portato,
+        "marcato" => ArticulationType::Marcato,
+        "sforzato" => ArticulationType::Accent,
+        "ouvert" => ArticulationType::Open,
+        "plusstop" => ArticulationType::Stopped,
+        "upbow" => ArticulationType::UpBow,
+        "downbow" => ArticulationType::DownBow,
+        "snappizzicato" => ArticulationType::SnapPizzicato,
+        "shortfermata" => ArticulationType::FermataShort,
+        "longfermata" => ArticulationType::FermataLong,
+        "verylongfermata" => ArticulationType::FermataVeryLong,
         _ => return None,
     })
 }
