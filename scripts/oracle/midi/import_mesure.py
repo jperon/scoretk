@@ -46,11 +46,24 @@ TOL = 0.25
 LIMITE = 15
 
 
-def notes(path: Path) -> list[tuple[int, float, float, int]]:
-    """Notes d'un MusicXML partwise : hauteur, attaque, durée, voix (noires)."""
+def notes(path: Path, to_concert: bool = False) -> list[tuple[int, float, float, int]]:
+    """Notes d'un MusicXML partwise : hauteur, attaque, durée, voix (noires).
+
+    `to_concert` ramène les hauteurs écrites aux hauteurs concert en
+    annulant `<transpose>` : c'est nécessaire face à un `.mscx` de référence
+    (MuseScore y stocke la hauteur concert), mais pas face à un MusicXML
+    exporté par MuseScore (qui contient la hauteur écrite).
+    """
     root = ET.parse(path).getroot()
     out: list[tuple[int, float, float, int]] = []
     for part in root.findall("part"):
+        transpose = 0
+        if to_concert:
+            for element in part.findall(".//attributes/transpose"):
+                chromatic = int(element.findtext("chromatic", "0"))
+                octave = int(element.findtext("octave-change", "0"))
+                transpose = chromatic + 12 * octave
+                break
         divisions = 1
         tick = 0.0
         for measure in part.findall("measure"):
@@ -75,7 +88,7 @@ def notes(path: Path) -> list[tuple[int, float, float, int]]:
                             step = pitch.findtext("step", "C")
                             semi = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}[step]
                             semi += int(pitch.findtext("alter", "0"))
-                            midi = 12 * (int(pitch.findtext("octave", "0")) + 1) + semi
+                            midi = 12 * (int(pitch.findtext("octave", "0")) + 1) + semi + transpose
                             voice = int(child.findtext("voice", "1"))
                             staff = int(child.findtext("staff", "1"))
                             # La sortie MusicXML numérote les voixglobalement
@@ -245,7 +258,7 @@ def main() -> None:
                     row["erreur"] = f"reference : {exc}"[:200]
             if run(args.binary, mid, got_xml):
                 try:
-                    b = notes(got_xml)
+                    b = notes(got_xml, to_concert=ref.suffix == ".mscx")
                     row.update(ref_notes=len(a), got_notes=len(b), score=round(score(a, b), 4))
                 except Exception as exc:
                     row["erreur"] = str(exc)[:200]

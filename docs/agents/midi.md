@@ -1884,3 +1884,17 @@ Nouvelle mesure : **1 924 312 octets / 783 580 gzip** (le gzip augmente
 légèrement, le brut baisse de 13,9 Ko). Le fichier généré passe de 8 580 à
 8 870 lignes mais de 300 Ko à 261 Ko de source ; la donnée reste générée,
 jamais éditée à la main.
+
+## Oracle amont : hauteur concert vs hauteur écrite
+
+Les trois pertes upstream apparues avec le port des gabarits
+(`instrument_clef`, `pickup_long`, `instrument_channels`) n'étaient pas des
+régressions de l'import : l'oracle lisait la hauteur **concert** du `.mscx`
+attendu et la hauteur **écrite** de notre MusicXML (transposé par le gabarit).
+Aucun nom de piste n'existe dans ces trois MIDI, donc une recherche par nom
+ne peut pas les corriger. Failing test réduit : `test_concert_pitch.py`
+vérifie qu'un MusicXML avec `<transpose chromatic="-7">` donne A4=69 écrit et
+D4=62 concert. `import_mesure.py` convertit désormais nos hauteurs vers le
+repère concert quand la référence est un `.mscx`. Mesure : **3 gains
+(0,0/0,909 → 1,0), 0 perte** sur le lot amont ; le lot LilyPond est
+inchangé (ses références MuseScore sont déjà en hauteur écrite).
