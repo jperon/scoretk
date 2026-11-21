@@ -339,7 +339,7 @@ fn collect_items(score: &Score, staff: usize, voice: usize) -> Vec<Item<'_>> {
             }
             last_tick = Some(segment.tick);
             let length = if chord_rest.is_full_measure_rest() {
-                full_measure_rest_length(chord_rest, measure)
+                measure.len
             } else {
                 duration::chord_rest_length(chord_rest)
             };
@@ -425,26 +425,6 @@ pub(crate) fn voice_has_content(score: &Score, staff: usize, voice: usize) -> bo
 /// plus courte (ou plus longue) que `M:` doit être remplie par un `z` explicite
 /// avec son multiplicateur ; sinon `abc2midi` décalerait toutes les attaques
 /// suivantes d'autant.
-/// Written length of a full-measure rest.
-///
-/// `Measure::len` is the notated bar length, but a `<rest measure="yes"/>`
-/// can carry its own `ChordRest::ticks` (e.g. a multi-measure rest compressed
-/// into one `<measure>` by the MusicXML importer). Use that explicit length
-/// when present, falling back to the bar length only when it is absent, as
-/// `xml2abc.py::outVoice` writes the rest's own duration. Otherwise a rest of
-/// 8 beats is written `z8` (4 beats) and every later attack is shifted by two
-/// beats on re-read (Anerio, `attaque_decalee`, ABC 2.1 §4.5).
-fn full_measure_rest_length(chord_rest: &ChordRest, measure: &Measure) -> Fraction {
-    // Only an explicit duration LONGER than the bar denotes a compressed
-    // multi-measure rest. A shorter `ticks` is a partial rest in a voice with
-    // a local time signature (`testLocalTimesig1`) and must keep the bar
-    // length.
-    chord_rest
-        .ticks
-        .filter(|ticks| *ticks > measure.len)
-        .unwrap_or(measure.len)
-}
-
 fn rest_token(len: Fraction, _measure: &Measure) -> String {
     // `xml2abc.py` writes an explicit `z` with the full multiplier for a
     // full-measure rest (e.g. `z12` in 12/8), never `Z`: the written length
@@ -966,7 +946,10 @@ fn render_item(
 ) -> String {
     if let Some(rest) = chord_rest.rest_ref() {
         if chord_rest.is_full_measure_rest() {
-            return rest_token(full_measure_rest_length(chord_rest, measure), measure);
+            // Un `<Rest>` de mesure n'a pas de `ticks` propres dans le modèle :
+            // sa longueur écrite est celle de la mesure (le `ticks` de
+            // `ChordRest` peut être nul).
+            return rest_token(measure.len, measure);
         }
         let head = if rest.visible { 'z' } else { 'x' };
         let length = duration::chord_rest_length(chord_rest);
