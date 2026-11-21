@@ -512,19 +512,14 @@ impl MidiFile {
 
 /// Convertit un tick de fichier en fraction de ronde MuseScore.
 ///
-/// Portage de `toMuseScoreTicks` (`importmidi_fraction.cpp`) : en division
-/// métrique, le reste de la division est arrondi à la demi-unité près. En SMPTE,
-/// `tick / old_division` est un temps en secondes ; comme MuseScore ne consulte
-/// pas la carte des tempos ici, on utilise l'équivalence fixe à 120 BPM (deux
-/// noires par seconde, soit `2 * DIVISION` ticks MuseScore par seconde).
+/// Portage de `toMuseScoreTicks` (`importmidi_fraction.cpp:350-379`) : en
+/// division métrique, le reste de la division est arrondi à la demi-unité près.
+/// En SMPTE (`:352-354`), le C++ renvoie `fromTicks(tick)` **sans conversion** :
+/// une table de tempos n'est pas consultée ici, et appliquer 120 BPM modifierait
+/// artificiellement les hauteurs de mesure d'un fichier à division temporelle.
 pub fn to_muse_score_ticks(tick: i64, old_division: i64, is_division_in_tps: bool) -> Fraction {
     if is_division_in_tps {
-        let division = old_division.max(1);
-        let integral = tick.div_euclid(division);
-        let remainder = tick.rem_euclid(division);
-        let per_second = DIVISION * 2;
-        let converted = integral * per_second + (remainder * per_second + division / 2) / division;
-        return Fraction::from_ticks(converted, UNITS_PER_WHOLE as u32);
+        return Fraction::from_ticks(tick, UNITS_PER_WHOLE as u32);
     }
     let old_division = old_division.max(1);
     let integral = tick.div_euclid(old_division);
