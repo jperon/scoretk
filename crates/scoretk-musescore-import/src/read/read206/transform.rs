@@ -479,6 +479,23 @@ fn adapt_element(node: &mut Node, ctx: &mut AdaptCtx<'_>) {
                 link.slur_up = child.child("up").map(Node::trimmed_text);
                 ctx.links.push(link);
             }
+            // Les notes d'un accord d'agrément ne sont pas des `ChordRest`
+            // du modèle : elles vivent dans `Chord::grace_chords`, que
+            // `find_note` ne parcourt pas. Les compter ici décalait tous les
+            // rangs de la voix et empêchait `fix_ties` de retrouver la note de
+            // départ (les 14 liaisons de ZORBA après une acciaccatura).
+            let grace = [
+                "appoggiatura",
+                "acciaccatura",
+                "grace4",
+                "grace8after",
+                "grace16",
+                "grace16after",
+                "grace32",
+                "grace32after",
+            ]
+            .iter()
+            .any(|tag| node.child(tag).is_some());
             for child in node.children_mut() {
                 if child.name != "Note" {
                     continue;
@@ -488,7 +505,9 @@ fn adapt_element(node: &mut Node, ctx: &mut AdaptCtx<'_>) {
                     track: ((ctx.staff * 4) + ctx.voice) as u32,
                     ordinal: *ctx.ordinal,
                 };
-                *ctx.ordinal += 1;
+                if !grace {
+                    *ctx.ordinal += 1;
+                }
                 if let Some(tie) = child.child("Tie") {
                     if let Some(id) = tie.attr_i32("id") {
                         ctx.ties.push(super::TieLink {
