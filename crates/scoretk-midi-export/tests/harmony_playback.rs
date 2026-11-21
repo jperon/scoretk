@@ -92,6 +92,68 @@ fn mscx() -> String {
     .to_owned()
 }
 
+fn mscx_deux_voix() -> String {
+    r#"<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="4.10">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <trackName>Piano</trackName>
+      <Instrument id="keyboard.piano">
+        <longName>Piano</longName><shortName>Pno.</shortName><trackName>Piano</trackName>
+        <instrumentId>keyboard.piano</instrumentId>
+        <Channel><program value="0"/></Channel>
+      </Instrument>
+    </Part>
+    <Staff id="1">
+      <Measure>
+        <voice>
+          <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+          <Harmony><root>14</root></Harmony>
+          <Chord><durationType>whole</durationType><Note><pitch>76</pitch><tpc>14</tpc></Note></Chord>
+        </voice>
+        <voice>
+          <Harmony><root>13</root></Harmony>
+          <Rest><durationType>whole</durationType></Rest>
+        </voice>
+      </Measure>
+      <Measure><voice>
+        <Harmony><root>15</root></Harmony>
+        <Chord><durationType>whole</durationType><Note><pitch>77</pitch><tpc>16</tpc></Note></Chord>
+      </voice></Measure>
+    </Staff>
+  </Score>
+</museScore>
+"#
+    .to_owned()
+}
+
+/// `ticksTillNext` cherche le symbole suivant sur **la même piste**
+/// (`dom/harmony.cpp:1034`, `findAnnotation(ElementType::HARMONY, track(),
+/// track())`) : un accord d'une autre voix ne raccourcit pas la durée. Le do
+/// de la voix 1 (piste 0) dure donc la mesure, le fa de la voix 2 (piste 1)
+/// va jusqu'à la fin, et le sol de la mesure 2 dure la mesure.
+#[test]
+fn accord_duree_jusqu_au_symbole_de_la_meme_piste() {
+    let container = MsczContainer::from_bytes(mscx_deux_voix().as_bytes()).expect("conteneur");
+    let score = scoretk_musescore_import::read::read_score(&container).expect("lecture");
+    let midi = scoretk_midi_export::write_midi(&score).expect("écriture MIDI");
+    let got = notes(&midi);
+    assert!(
+        got.contains(&(0, 36, 1920)),
+        "basse du do (piste 0) : {got:?}"
+    );
+    assert!(
+        got.contains(&(0, 41, 3840)),
+        "basse du fa (piste 1) : {got:?}"
+    );
+    assert!(
+        got.contains(&(1920, 43, 1920)),
+        "basse du sol (piste 0) : {got:?}"
+    );
+}
+
 fn mscx_desactive() -> String {
     r#"<?xml version="1.0" encoding="UTF-8"?>
 <museScore version="4.10">

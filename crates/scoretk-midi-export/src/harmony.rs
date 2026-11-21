@@ -30,7 +30,7 @@
 //! jusqu'au symbole suivant (`HDuration::UNTIL_NEXT_CHORD_SYMBOL`, valeur
 //! par défaut de `harmonyDuration`, `styledef.cpp:420`).
 
-use scoretk_core::model::{Annotation, Harmony, Score, StaffId};
+use scoretk_core::model::{Annotation, Harmony, Score, StaffId, Track};
 
 /// Classe de hauteur d'un TPC.
 ///
@@ -86,11 +86,12 @@ pub(crate) fn realize(harmony: &Harmony) -> Vec<u8> {
 
 /// `(tick source, durée en ticks source, hauteurs)` pour une portée.
 ///
-/// La durée est celle du symbole courant jusqu'au suivant (ou la fin du
-/// dernier mesure), comme `getActualDuration` avec
-/// `HDuration::UNTIL_NEXT_CHORD_SYMBOL`.
+/// La durée est celle du symbole courant jusqu'au suivant **de la même piste**
+/// (ou la fin du dernier mesure), comme `getActualDuration` avec
+/// `HDuration::UNTIL_NEXT_CHORD_SYMBOL` et `Harmony::ticksTillNext`
+/// (`dom/harmony.cpp:1034`).
 pub(crate) fn events(score: &Score, staff: StaffId) -> Vec<(i64, i64, Vec<u8>)> {
-    let mut found: Vec<(i64, Vec<u8>)> = Vec::new();
+    let mut found: Vec<(i64, Track, Vec<u8>)> = Vec::new();
     for measure in &score.measures {
         for segment in &measure.segments {
             for entry in &segment.annotations {
@@ -108,6 +109,7 @@ pub(crate) fn events(score: &Score, staff: StaffId) -> Vec<(i64, i64, Vec<u8>)> 
                     if !pitches.is_empty() {
                         found.push((
                             segment.tick.ticks(crate::repeat_list::UNITS_PER_WHOLE),
+                            entry.track,
                             pitches,
                         ));
                     }
@@ -115,17 +117,22 @@ pub(crate) fn events(score: &Score, staff: StaffId) -> Vec<(i64, i64, Vec<u8>)> 
             }
         }
     }
-    found.sort_by_key(|(tick, _)| *tick);
+    found.sort_by_key(|(tick, track, _)| (*tick, track.raw()));
     let end = score.measures.last().map_or(0, |measure| {
         measure
             .end_tick()
             .ticks(crate::repeat_list::UNITS_PER_WHOLE)
     });
     let mut result = Vec::new();
-    for index in 0..found.len() {
-        let (tick, pitches) = found[index].clone();
-        let next = found.get(index + 1).map_or(end, |(tick, _)| *tick);
-        result.push((tick, (next - tick).max(1), pitches));
+    for (index, (tick, track, pitches)) in found.iter().enumerate() {
+        // `Harmony::ticksTillNext` ne s'arrête qu'au symbole de **la même
+        // piste** (`dom/harmony.cpp:1034`, `findAnnotation(HARMONY, track(),
+        // track())`) : un accord d'une autre voix ne raccourcit pas la durée.
+        let next = found[index + 1..]
+            .iter()
+            .find(|(_, next_track, _)| next_track == track)
+            .map_or(end, |(next_tick, _, _)| *next_tick);
+        result.push((*tick, (next - tick).max(1), pitches.clone()));
     }
     result
 }
