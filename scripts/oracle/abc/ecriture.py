@@ -68,7 +68,11 @@ import common  # noqa: E402
 import mesure  # noqa: E402
 from midi_notes import GRID, TOL, compare, read_midi, read_xml  # noqa: E402
 
-TIMEOUT = 10
+# `Vingt_danses_enfantines_pour_piano` porte 17 616 notes et met ~23 s à
+# convertir : avec 10 s, l'une des trois copies échouait au hasard et le relevé
+# perdait un fichier entier (N2d 0 %) sans cause musicale. Même budget que
+# l'oracle LilyPond ; la borne est un maximum, pas un délai.
+TIMEOUT = 45
 RE_ERREUR = re.compile(r"\b(?:erreur|error)\b", re.IGNORECASE)
 RE_AVERT = re.compile(r"\b(?:avertissement|warning)\b", re.IGNORECASE)
 
