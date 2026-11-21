@@ -3890,3 +3890,14 @@ writer now reads `part.instrument_at(tick)` instead of the base instrument.
 Failing reduced test `changement_de_transposition_en_cours_de_piece` first.
 On `testMultiInstrumentPart3.mscx`, model-mode N2 for scoretk goes from
 **50 % to 100 %** (8 notes, one file); musicxml2ly also reaches 100 %.
+
+### Export status in model mode (after the transposition fix)
+
+With `--mode model`, the whole 56-file versioned corpus gives scoretk
+**99.78 % N1/N2/N2d**, 48/56 exact, 0 errors, 11 warnings, mean 1326 bytes,
+versus musicxml2ly 89.38 % N2 / 83.91 % N2d, 27/56 exact, 79 errors,
+20 warnings, mean 2903 bytes. Before the mid-piece transposition fix the
+same corpus was at 99.6 % with only two imperfect files; the fix recovers
+`testMultiInstrumentPart3.mscx` (8 notes, 50 % → 100 % N2 on that file).
+The remaining 8 imperfect corpus files are ottava and instrument-convention
+differences with the MuseScore model, documented in §20.
