@@ -31,7 +31,7 @@ use scoretk_core::model::Fraction;
 use scoretk_core::model::{
     note::tpc, AccidentalType, ArticulationAnchor, BarLineType, BeamMode, ClefType, Duration,
     DurationType, KeyMode, LyricsSyllabic, NoteHeadType, OttavaType, Placement, StemDirection,
-    TimeSigType, Transpose, TupletNumberType,
+    TimeSigType, TupletNumberType,
 };
 
 /// Figure de durée à partir du nom écrit dans `<durationType>`.
@@ -287,9 +287,6 @@ pub(crate) fn ottava_type(node: &super::xml::Node) -> OttavaType {
 /// Plus petit `tpc` valide (`TPC_MIN`, `Fbbb`).
 pub(crate) const TPC_MIN: i8 = -8;
 
-/// Plus grand `tpc` valide (`TPC_MAX`, `B###`).
-pub(crate) const TPC_MAX: i8 = 40;
-
 /// Nom de la note désignée par un `tpc`.
 ///
 /// Sert au texte des symboles d'accord : `11` donne `Eb`, `21` donne `C#`.
@@ -327,35 +324,6 @@ pub(crate) fn pitch_to_tpc(pitch: u8, fifths: i8) -> i8 {
         SHARPS[index]
     } else {
         FLATS[index]
-    }
-}
-
-/// Transposition d'une orthographe (`Transpose::transposeTpc`).
-///
-/// Les altérations suivent MuseScore : un degré diatonique vaut deux pas dans
-/// l'ordre des quintes (`F C G D A E B`), et l'altération est recalculée pour
-/// que la hauteur écrite soit juste. Renvoie [`tpc::INVALID`] si le résultat
-/// sort de `-8..=40` (`Fbbb`…`B###`).
-pub(crate) fn transpose_tpc(value: i8, interval: Transpose) -> i8 {
-    const STEP_SEMITONES: [i32; 7] = [5, 0, 7, 2, 9, 4, 11];
-
-    if value == tpc::INVALID {
-        return value;
-    }
-    let offset = i32::from(value) - i32::from(TPC_MIN);
-    let step = offset.rem_euclid(7) as usize;
-    let alteration = offset.div_euclid(7) - 3;
-    let new_step = (step as i32 + 2 * interval.diatonic).rem_euclid(7) as usize;
-    let target = (STEP_SEMITONES[step] + alteration + interval.chromatic).rem_euclid(12);
-    let mut new_alteration = (target - STEP_SEMITONES[new_step]).rem_euclid(12);
-    if new_alteration > 6 {
-        new_alteration -= 12;
-    }
-    let result = i32::from(TPC_MIN) + (new_alteration + 3) * 7 + new_step as i32;
-    if (i32::from(TPC_MIN)..=i32::from(TPC_MAX)).contains(&result) {
-        result as i8
-    } else {
-        tpc::INVALID
     }
 }
 

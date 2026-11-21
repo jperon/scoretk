@@ -117,7 +117,8 @@ pub use notation::{
 };
 pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadGroup, NoteHeadType, VeloType};
 pub use part::{
-    recognize_musicxml_id, Instrument, MidiArticulation, Part, Staff, StaffBracket, Transpose,
+    recognize_musicxml_id, transpose_tpc, Instrument, MidiArticulation, Part, Staff, StaffBracket,
+    Transpose,
 };
 pub use playback::PlaybackTransposition;
 pub use repeat::{Jump, JumpType, Marker, MarkerType, RepeatMark, VoltaInfo};

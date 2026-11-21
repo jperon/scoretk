@@ -144,6 +144,37 @@ impl Transpose {
     }
 }
 
+/// Transpose une classe de hauteur tonale par un intervalle, comme
+/// `Transpose::transposeTpc` (`engraving/dom/transpose.cpp`).
+///
+/// Un degré diatonique vaut deux pas dans la spirale des quintes
+/// (`F C G D A E B`) ; l'altération est recalculée pour que la hauteur
+/// transposée soit juste. Renvoie [`super::note::tpc::INVALID`] hors de
+/// `-8..=40`.
+pub fn transpose_tpc(value: i8, interval: Transpose) -> i8 {
+    const SEMITONES: [i32; 7] = [5, 0, 7, 2, 9, 4, 11];
+    const MIN: i32 = -8;
+    const MAX: i32 = 40;
+    if value == super::note::tpc::INVALID {
+        return value;
+    }
+    let offset = i32::from(value) - MIN;
+    let step = offset.rem_euclid(7) as usize;
+    let alteration = offset.div_euclid(7) - 3;
+    let new_step = (step as i32 + 2 * interval.diatonic).rem_euclid(7) as usize;
+    let target = (SEMITONES[step] + alteration + interval.chromatic).rem_euclid(12);
+    let mut new_alteration = (target - SEMITONES[new_step]).rem_euclid(12);
+    if new_alteration > 6 {
+        new_alteration -= 12;
+    }
+    let result = MIN + (new_alteration + 3) * 7 + new_step as i32;
+    if (MIN..=MAX).contains(&result) {
+        result as i8
+    } else {
+        super::note::tpc::INVALID
+    }
+}
+
 /// Identifiant MusicXML approché d'un instrument (`Instrument::recognizeMusicXmlId`).
 ///
 /// MuseScore cherche l'instrument dans son catalogue par nom puis par

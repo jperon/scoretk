@@ -30,9 +30,9 @@ use super::tables;
 use super::xml::Node;
 use super::{Reader, VoiceCtx};
 use scoretk_core::model::{
-    tpc, Accidental, BeamMode, Chord, ChordLineType, ChordRest, ChordRestKind, Duration,
-    DurationType, Fraction, GraceType, Lyrics, LyricsSyllabic, Note, NoteHeadType, NoteId,
-    Placement, Rest, Score, StemDirection, Transpose, Tuplet, TupletId, TupletNumberType,
+    tpc, transpose_tpc, Accidental, BeamMode, Chord, ChordLineType, ChordRest, ChordRestKind,
+    Duration, DurationType, Fraction, GraceType, Lyrics, LyricsSyllabic, Note, NoteHeadType,
+    NoteId, Placement, Rest, Score, StemDirection, Transpose, Tuplet, TupletId, TupletNumberType,
 };
 
 /// Lit un `<Chord>` ou un `<Rest>`.
@@ -344,12 +344,12 @@ fn read_note(
         tpc1 = tables::pitch_to_tpc(pitch, 0);
     }
     if tpc1 == tpc::INVALID {
-        tpc1 = tables::transpose_tpc(tpc2, transpose);
+        tpc1 = transpose_tpc(tpc2, transpose);
     } else if !tpc2_from_file && tpc2 == tpc::INVALID {
         tpc2 = if transpose.chromatic == 0 && transpose.diatonic == 0 {
             tpc1
         } else {
-            tables::transpose_tpc(
+            transpose_tpc(
                 tpc1,
                 Transpose::new(-transpose.diatonic, -transpose.chromatic),
             )

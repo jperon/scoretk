@@ -769,37 +769,9 @@ fn decaler_accord(content: &mut ChordContent, interval: Transpose, concert_tpc: 
         decaler_notes(notes, interval.chromatic);
         if concert_tpc {
             for (note, tpc) in notes.iter_mut().zip(tpc_avant) {
-                note.tpc = transpose_tpc(tpc, interval);
+                note.tpc = scoretk_core::model::transpose_tpc(tpc, interval);
             }
         }
-    }
-}
-
-/// Transpose une orthographe de l'intervalle d'un instrument, comme
-/// `Transpose::transposeTpc` (`engraving/dom/transpose.cpp`) : un degré
-/// diatonique vaut deux pas dans la spirale des quintes, et l'altération est
-/// recalculée pour conserver l'enharmonie choisie par le compositeur.
-fn transpose_tpc(value: i8, interval: Transpose) -> i8 {
-    const SEMITONES: [i32; 7] = [5, 0, 7, 2, 9, 4, 11];
-    const TPC_MIN: i32 = -8;
-    const TPC_MAX: i32 = 40;
-    if value < TPC_MIN as i8 || value > TPC_MAX as i8 {
-        return value;
-    }
-    let offset = i32::from(value) - TPC_MIN;
-    let step = offset.rem_euclid(7) as usize;
-    let alteration = offset.div_euclid(7) - 3;
-    let new_step = (step as i32 + 2 * interval.diatonic).rem_euclid(7) as usize;
-    let target = (SEMITONES[step] + alteration + interval.chromatic).rem_euclid(12);
-    let mut new_alteration = (target - SEMITONES[new_step]).rem_euclid(12);
-    if new_alteration > 6 {
-        new_alteration -= 12;
-    }
-    let result = TPC_MIN + (new_alteration + 3) * 7 + new_step as i32;
-    if (TPC_MIN..=TPC_MAX).contains(&result) {
-        result as i8
-    } else {
-        -9
     }
 }
 
