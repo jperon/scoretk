@@ -2275,4 +2275,26 @@ correct configuration, not a regression of the option plumbing. The other
 `m4`, `meter_9-8`, `meter_chord_example`, `meter_last_quarter_rest_compound`,
 `meter_rests`, `min_duration`, `pickup`, `tuplet_quadruplet`…).
 
-## Next class: tuplets (930)
+## Next class: tuplets — state after the voice port
+
+`categories_ms.py` assigns each file its worst dimension and includes a binary
+`tuplet` flag (presence of `<time-modification>`). After the voice port, 11 of
+the 15 files whose worst dimension is `tuplet` have **N = 1.0000**: the notes,
+attacks, durations and voices match, only the tuplet notation is missing
+(`OSalutarisHostia`, `MakilarianII`, the `lily-de3207f2`/`OCheftaine…` group,
+`Ad_te_Suspiramus` with 186 tuplet elements in the reference, …). The 792.9
+weighted loss of that category comes from four files with real note
+differences — `Sancta_Maria_Mater_Dei_Mozart` (N 0.8885), `Ackermans…`
+(0.9429), `Veni Creator…` (0.9451, the one remaining simplify regression) and
+`Angels_Carol…` (0.9537) — and their losses are in the `duration` and `voice`
+dimensions, not in the tuplet flag itself.
+
+Consequently the next pass is not "port the tuplet flag": it is the real
+tuplet detector/notation (`importmidi_tuplet*.cpp`), which is also what would
+turn the flag on. The current detector only accepts 3/5/7/9 tuplets on a
+non-binary grid; MuseScore also searches 4-plets by default
+(`search4plets = true`, `importmidi_operations.h:192`) and uses
+`findTupletApproximation` / `isTupletAllowed` sum-error filters
+(`importmidi_tuplet_detect.cpp:354-426`), which are not ported. That port must
+be measured against the four files above and must keep `v3/testTuplets8` (one
+frozen n-olet difference) unchanged.
