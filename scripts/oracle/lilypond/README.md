@@ -73,6 +73,39 @@ records a `repeat` flag on every row. N1 is still reported for all files;
 **N2 is aggregated only over repeat-free files**. The raw rows keep N2 for
 repeat files (recorded, never silently dropped) so the effect can be inspected.
 
+### References: regenerate, do not trust a mixed tree
+
+The reference must come from the **installed** LilyPond. A `ly.midi`
+produced by another version, or by another `\score` choice, is not a
+reader oracle: `Symphony7_1` had 18 631 notes in the old `ly.midi` against
+23 374 for the installed compiler. Regenerate a lot with:
+
+```sh
+scripts/oracle/lilypond/references.py --manifest mut.txt --out refs \
+    --lot mut --jobs 8 --timeout 120
+```
+
+The MIDI is written to `<out>/<lot>/<md5_basename>/ly.midi` and the status to
+`status.jsonl`; a source where LilyPond writes no MIDI has no reference.
+Pass `--refs-only` to `mesure.py` to mark such a source `echec` instead of
+regenerating it on the fly: the excluded denominator is then explicit and
+reproducible. Two very large sources exceed the timeout *after* writing the
+MIDI; check the file size before discarding them.
+
+### Unison notes: one MIDI attack per staff
+
+Two voices of the same staff playing the same pitch at the same tick emit a
+single MIDI note (`lily/midi-walker.cc:98-106`, `merge_unisons_`). The
+MusicXML writes both notated voices. `read_xml` merges them (key: part,
+staff, pitch, exact attack, grace flag) so the comparison measures the sound,
+not the engraving. The merge is **disabled** when the candidate separates
+fewer staves than the reference has tracks (`nombre_portees < tracks`): the
+tracks may be per-Voice (`Staff_performer` moved from `Staff` to `Voice`, as
+in `daslied`) or the candidate may still fold several tracks onto one staff
+(`samia-a4`). In that case merging would erase notes LilyPond really plays.
+The same-voice duplicate (same pitch and attack in one voice) is never merged:
+it is a candidate defect and must stay visible.
+
 ### MusicXML time is one cursor per part
 
 `read_xml()` no longer keeps **any** per-voice or per-`(voice, staff)` counter.
