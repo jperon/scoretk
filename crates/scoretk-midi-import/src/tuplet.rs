@@ -291,12 +291,20 @@ fn detect_tuplet(
             continue;
         }
 
-        // Les notes du n-olet ne dépassent pas leur case (à la tolérance près) ;
-        // les accords étrangers sont plus courts qu'une case.
-        let main_line = matched.iter().all(|index| {
-            let (on_time, _, off_time, _) = chords[*index];
-            off_time - on_time <= grid + tolerance
-        });
+        // `isTupletAllowed` (`importmidi_tuplet_detect.cpp:75-80`) n'exige
+        // qu'une note atteignant la moitié d'une case ; `detectStaccato`
+        // (`:265-278`) écarte ensuite les n-olets dont la majorité des notes
+        // sont piquées. Une seule note courte est tolérée : cela accepte le
+        // triolet lié de `tuplet_tied_3_5_tuplets.mid` sans confondre les
+        // notes staccato de `tuplet_7_staccato.mid`.
+        let short_count = matched
+            .iter()
+            .filter(|index| {
+                let (on_time, _, off_time, _) = chords[**index];
+                off_time - on_time < grid * Fraction::HALF
+            })
+            .count();
+        let main_line = short_count <= 1;
         let foreign_are_short = chords
             .iter()
             .enumerate()

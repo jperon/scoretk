@@ -105,14 +105,35 @@ def mscx_notes(path: Path) -> list[tuple[int, float, float, int]]:
         if not staff.findall("Measure"):
             continue  # déclaration de portée sous <Part>
         tick = 0.0
+        current_sig = 4.0
         for measure in staff.findall("Measure"):
+            for timesig in measure.findall(".//TimeSig"):
+                num, den = timesig.findtext("sigN"), timesig.findtext("sigD")
+                if num and den:
+                    current_sig = float(num) / float(den) * 4.0
+                    break
+            mesure_len = current_sig
+            len_txt = measure.get("len")
+            if len_txt:
+                num, _, den = len_txt.partition("/")
+                mesure_len = float(num) / float(den or 1) * 4.0
             for voice_index, voice in enumerate(measure.findall("voice"), start=1):
                 cursor = tick
+                # Un <Tuplet> réduit la durée réelle des accords suivants :
+                # `<normalNotes>2</normalNotes><actualNotes>3</actualNotes>`
+                # sur des croches donne 2/3 de croche par note, pas 1/2.
+                tuplet: tuple[float, float] | None = None  # (ratio, reste)
                 for child in voice:
                     if child.tag == "location":
                         frac = child.findtext("fractions", "0/1")
                         num, _, den = frac.partition("/")
                         cursor += int(num) / int(den or 1)
+                    elif child.tag == "Tuplet":
+                        normal = int(child.findtext("normalNotes", "1"))
+                        actual = int(child.findtext("actualNotes", "1"))
+                        base = DUREES.get(child.findtext("baseNote", "eighth"), 0.5)
+                        if normal > 0 and actual > 0:
+                            tuplet = (normal / actual, normal * base)
                     elif child.tag in ("Chord", "Rest"):
                         duree = child.findtext("duration")
                         if duree:
@@ -120,6 +141,11 @@ def mscx_notes(path: Path) -> list[tuple[int, float, float, int]]:
                             length = float(num) / float(den or 1) * 4.0
                         else:
                             length = DUREES.get(child.findtext("durationType", "quarter"), 1.0)
+                        if tuplet is not None:
+                            ratio, remainder = tuplet
+                            length *= ratio
+                            remainder -= length
+                            tuplet = (ratio, remainder) if remainder > GRID / 2 else None
                         if child.tag == "Chord":
                             for note in child.findall("Note"):
                                 pitch = note.findtext("pitch")
@@ -127,11 +153,7 @@ def mscx_notes(path: Path) -> list[tuple[int, float, float, int]]:
                                     out.append((int(pitch), round(cursor / GRID) * GRID,
                                                 round(length / GRID) * GRID, voice_index))
                         cursor += length
-            tick += 4.0  # mesure nominale ; les cas 3/4 sont traités par <len>
-            len_txt = measure.get("len")
-            if len_txt:
-                num, _, den = len_txt.partition("/")
-                tick = (tick - 4.0) + float(num) / float(den or 1) * 4.0
+            tick += mesure_len
     return out
 
 
@@ -195,7 +217,13 @@ def main() -> None:
             got_xml = d / "got.musicxml"
             row = {"id": ident, "mid": str(mid), "ref": str(ref), "score": 0.0}
             try:
-                a = mscx_notes(ref) if ref.suffix == ".mscx" else notes(ref)
+                if ref.suffix == ".mscx":
+                    a = mscx_notes(ref)
+                elif ref.suffix == ".ly":
+                    from ly_notes import notes as ly_notes
+                    a = ly_notes(ref)
+                else:
+                    a = notes(ref)
             except Exception as exc:
                 a = []
                 row["erreur"] = f"reference : {exc}"[:200]

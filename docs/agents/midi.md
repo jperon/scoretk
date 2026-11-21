@@ -1494,3 +1494,73 @@ Five files lose score, all tuplet tests: `up-tuplet_3_5_7_tuplets` (0.2222 →
 `<Tuplet>` (Q32 quantisation in upstream tests) that our CLI defaults do not
 detect; the voice renumbering changes their (already non-conformant) layout.
 Their combined loss is about 9 notes against 53 gained elsewhere.
+
+## Oracle corrections, category breakdown and second measurement pass (2026-11-21)
+
+The numbers above were produced by an oracle that had three more biases, now
+fixed in `scripts/oracle/midi/import_mesure.py` :
+
+* a `<Tuplet>` in the expected `.mscx` scales its notes' real durations
+  (`normalNotes/actualNotes`), which the parser ignored — this made every
+  tuplet test look wrong even when our import was exact;
+* the measure length comes from the last `<TimeSig>` seen (carried over from
+  measure to measure), not from a hard-coded 4/4 — `perc_drums` starts with
+  three 2/4 measures;
+* the LilyPond `.ly` references are parsed by `ly_notes.py` instead of being
+  fed to the XML parser.
+
+With the corrected oracle the upstream baseline is **N = 0.2290** and the
+current tree **N = 0.2588** (the earlier 0.3989/0.4516 figures are not
+comparable).
+
+`scripts/oracle/midi/categories.py` reads a measurement and assigns each file
+its worst musical category; the report for the current tree is:
+
+| Category | Files | Weighted loss (notes) |
+| --- | ---: | ---: |
+| voice | 15 | 225 |
+| clef | 12 | 54 |
+| duration | 25 | 53 |
+| onset | 10 | 43 |
+| tuplet | 15 | 36 |
+
+Pitch is never the bottleneck. The biggest single file is `human_tempo`
+(142 notes, voice 0.44, onset 0.76): fixing it needs MuseScore's beat tracker
+(`importmidi_beat.cpp`), which is still unported. Most "voice" losses are on
+upstream tests compiled with `maxVoiceCount V_1`, which our CLI defaults
+cannot reproduce.
+
+**LilyPond-MIDI lot.** Only four `.mid` files under `~/Musique` have a
+same-stem `.ly` source; two are inside `~/Musique` and are the ones measured
+by the oracle (`Ottavio-Catalano-Audite-coeli`, 854 source notes;
+`Angels_Carol__John_Rutter`, 253). Their full 4-tuple scores are 0.007 and
+0.028, but the minimal `.ly` parser is not measure/voice aware, so these
+numbers are **indicative only** and must not be compared with the upstream
+lot. The pitch-multiset part is more informative: 1.0000 for `Angels_Carol`
+(all source pitches are present after import) and 0.2728 for the mensural
+`Ottavio` file, whose deutsch note names and relative octaves the minimal
+parser does not fully handle. The plan's 1 228 `.ly`/`.mid` pairs are not
+present in this checkout; extending this lot requires generating those MIDIs.
+
+### Cause fixed: tied/staccato tuplet acceptance
+
+`isTupletAllowed` (`importmidi_tuplet_detect.cpp:34-82`) requires only one
+note reaching half a tuplet cell, while `detectStaccato` (`:265-278`) rejects
+tuplets whose notes are mostly staccato. Our `detect_tuplet` required **all**
+notes to fit in their cell, which rejected the tied triplet of
+`tuplet_tied_3_5_tuplets.mid`. Reduced test `tuplet_tied` (written first,
+failed before the fix) reproduces the three onsets at 0, 1/3 and 2/3 of a
+quarter with the last note held for 1.5 quarters. The port now tolerates at
+most one short note, which also keeps `tuplet_7_staccato` exact.
+`assign_initial_voices_quantized` is skipped when a track has tuplets: the
+previous commit's voice renumbering otherwise changed those files' voices.
+
+Measured against the pre-turn tree: N 0.2489 → 0.2558;
+`up-tuplet_tied_3_5_tuplets` 0.1111 → 1.0000,
+`up-tuplet_tied_3_5_tuplets2` 0.1250 → 1.0000,
+`up-tuplet_7_staccato` 0.8571 → 1.0000.
+One file loses score, `up-tuplet_16th_8th` (0.9091 → 0.7273): our heuristic
+accepts one extra tuplet there and lengthens a note, where MuseScore's
+`tupletSumError` / `regularSumError` filter rejects it. That filter is part
+of the still-unported `importmidi_tuplet_filter.cpp`.
+

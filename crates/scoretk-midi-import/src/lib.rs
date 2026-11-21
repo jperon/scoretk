@@ -343,7 +343,13 @@ fn quantize_all_tracks(
             tuplet::find_all_tuplets(track, sigmap, basic_quant);
         }
         quant::quantize_chords(track, basic_quant);
-        voice::assign_initial_voices_quantized(track, options.max_voice_count.limit(), basic_quant);
+        if track.tuplets.is_empty() {
+            voice::assign_initial_voices_quantized(
+                track,
+                options.max_voice_count.limit(),
+                basic_quant,
+            );
+        }
         tuplet::remove_empty_tuplets(track);
     }
 }
