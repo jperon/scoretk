@@ -79,18 +79,27 @@ pub(crate) fn fixup_midi(performance: &mut Performance, part_of_track: &[usize])
         .iter()
         .map(|track| vec![Decision::Keep; track.events.len()])
         .collect();
-    // (partie, hauteur) → (notes en cours, piste de la dernière attaque).
-    let mut playing: BTreeMap<(usize, u8), (u32, usize)> = BTreeMap::new();
+    // (partie, canal midi, hauteur) → (notes en cours, piste de la dernière
+    // attaque). Le canal distingue la réalisation des accords chiffrés
+    // (`Part::harmonyChannel`) des notes écrites de la même partie, tout en
+    // gardant deux parties qui partageraient un canal de sortie séparées.
+    let mut playing: BTreeMap<(usize, u8, u8), (u32, usize)> = BTreeMap::new();
 
     for (_, track_index, seq) in order {
         let event = &tracks[track_index].events[seq];
         match &event.kind {
-            EventKind::NoteOn { key, velocity, .. } if *velocity > 0 => {
+            EventKind::NoteOn {
+                channel,
+                key,
+                velocity,
+            } if *velocity > 0 => {
                 let part = part_of_track
                     .get(track_index)
                     .copied()
                     .unwrap_or(track_index);
-                let state = playing.entry((part, *key)).or_insert((0, track_index));
+                let state = playing
+                    .entry((part, *channel, *key))
+                    .or_insert((0, track_index));
                 if state.0 >= 1 {
                     // `event.setDiscard(info[channel].event[pitch]->getOriginatingStaff()+1)`
                     decisions[track_index][seq] = Decision::Restrike(state.1);
@@ -98,12 +107,14 @@ pub(crate) fn fixup_midi(performance: &mut Performance, part_of_track: &[usize])
                 state.0 += 1;
                 state.1 = track_index;
             }
-            EventKind::NoteOff { key, .. } => {
+            EventKind::NoteOff { channel, key } => {
                 let part = part_of_track
                     .get(track_index)
                     .copied()
                     .unwrap_or(track_index);
-                let state = playing.entry((part, *key)).or_insert((0, track_index));
+                let state = playing
+                    .entry((part, *channel, *key))
+                    .or_insert((0, track_index));
                 if state.0 == 0 || state.0 - 1 > 0 {
                     // « already off or still playing » : extinction ignorée.
                     decisions[track_index][seq] = Decision::Drop;

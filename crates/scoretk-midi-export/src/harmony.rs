@@ -32,12 +32,16 @@
 
 use scoretk_core::model::{Annotation, Harmony, Score, StaffId};
 
-/// Classe de hauteur d'un TPC (F=13, C=14, … B=19 ; un dièse ajoute 7).
+/// Classe de hauteur d'un TPC.
+///
+/// `tpc2pitch` (`engraving/dom/pitchspelling.cpp:202-222`) lit une table
+/// indexée par `tpc - Tpc::TPC_MIN` : chaque pas sur le cercle des quintes
+/// ajoute 7 demi-tons. Sur les classes, cela vaut `(7 * tpc + 10) mod 12`,
+/// formule qui couvre aussi les tons bémols (`tpc` < 13, p. ex. si bémol
+/// `TPC_B_B` = 12), là où une lecture par naturels + altération les
+/// confondait avec fa dièse et suivants.
 fn pitch_class(tpc: i8) -> i32 {
-    const NATURAL_PC: [i32; 7] = [5, 0, 7, 2, 9, 4, 11]; // F C G D A E B
-    let index = (i32::from(tpc) - 13).rem_euclid(7) as usize;
-    let natural = 13 + (i32::from(tpc) - 13).rem_euclid(7);
-    NATURAL_PC[index] + (i32::from(tpc) - natural)
+    (7 * i32::from(tpc) + 10).rem_euclid(12)
 }
 
 /// Intervalles en demi-tons du voicing proche pour un nom d'accord.

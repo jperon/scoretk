@@ -159,7 +159,7 @@ pub(crate) fn render(
 
     for (staff_index, staff) in score.staves.iter().enumerate() {
         let part = &score.parts[staff.part.index()];
-        let channel = channels[staff.part.index()];
+        let channel = channels.notes[staff.part.index()];
         let is_top = part.staves.first() == Some(&staff.id);
         let offsets = &pitch_offsets[staff_index];
         let track = &mut performance.tracks[staff_index];
@@ -252,13 +252,25 @@ pub(crate) fn render(
         // (`track.insert(0, …)` dans `writeHeader`).
         if is_top {
             push_channel_setup(track, &part.instrument, channel);
+            // Canal `harmony` : clone du canal 0, programme 0
+            // (`part.cpp:931-940`) ; ses contrôleurs sont donc ceux de la
+            // partie, seul le programme change.
+            if let Some(harmony_channel) = channels.harmony[staff.part.index()] {
+                let mut harmony_instrument = part.instrument.clone();
+                harmony_instrument.midi_program = Some(0);
+                push_channel_setup(track, &harmony_instrument, harmony_channel);
+            }
         }
 
         // Accords chiffrés : `renderHarmony`
         // (`compatmidirenderinternal.cpp:1021-1078`) joue les hauteurs
         // réalisées du symbole courant jusqu'au symbole suivant. Leur
         // déroulement suit les mêmes segments que les notes.
+        let harmony_channel = channels.harmony[staff.part.index()];
         for (tick, duration, pitches) in harmony::events(score, staff.id) {
+            let Some(harmony_channel) = harmony_channel else {
+                break;
+            };
             for segment in &repeat_list.segments {
                 let end = repeat_list.segment_end(segment);
                 if tick < segment.tick || tick >= end {
@@ -271,14 +283,17 @@ pub(crate) fn render(
                     track.events.push(Event {
                         tick: on,
                         kind: EventKind::NoteOn {
-                            channel,
+                            channel: harmony_channel,
                             key: *key,
                             velocity: 80,
                         },
                     });
                     track.events.push(Event {
                         tick: off,
-                        kind: EventKind::NoteOff { channel, key: *key },
+                        kind: EventKind::NoteOff {
+                            channel: harmony_channel,
+                            key: *key,
+                        },
                     });
                 }
             }
@@ -351,14 +366,55 @@ pub(crate) fn render(
     })
 }
 
-/// Canal MIDI de chaque partie : canal déclaré, sinon rang de la partie.
-fn channels(score: &Score) -> Vec<u8> {
-    score
+/// Canaux MIDI des parties.
+struct ChannelMap {
+    /// Canal des notes écrites de chaque partie.
+    notes: Vec<u8>,
+    /// Canal de la réalisation des accords chiffrés, quand la partie en a un.
+    ///
+    /// `Part::updateHarmonyChannels` (`dom/part.cpp:894-943`) ajoute à
+    /// l'instrument un canal `harmony`, clone du canal 0 avec le programme 0,
+    /// dès que la partie porte un `<Harmony>`. `renderHarmony`
+    /// (`compat/midi/compatmidirenderinternal.cpp:1006,1016`) écrit ensuite les
+    /// hauteurs réalisées sur ce canal : une même hauteur peut donc sonner à
+    /// la fois comme note écrite et comme accord sans que `fixupMIDI` ne
+    /// tronque l'une des deux.
+    harmony: Vec<Option<u8>>,
+}
+
+/// Canaux MIDI de chaque partie : canal déclaré, sinon rang de la partie.
+fn channels(score: &Score) -> ChannelMap {
+    let notes: Vec<u8> = score
         .parts
         .iter()
         .enumerate()
         .map(|(index, part)| part.instrument.midi_channel.unwrap_or(index as u8).min(15))
-        .collect()
+        .collect();
+    let used: std::collections::BTreeSet<u8> = notes.iter().copied().collect();
+    let mut free = (0u8..16).filter(|channel| *channel != 9 && !used.contains(channel));
+    let harmony = score
+        .parts
+        .iter()
+        .enumerate()
+        .map(|(index, part)| {
+            part_has_harmony(score, part).then(|| free.next().unwrap_or(notes[index]))
+        })
+        .collect();
+    ChannelMap { notes, harmony }
+}
+
+/// Vrai si la partie porte au moins un `<Harmony>` (`Part::harmonyCount`,
+/// `dom/part.cpp:868-891`), même inréalisable : MuseScore crée le canal dans
+/// tous les cas.
+fn part_has_harmony(score: &Score, part: &scoretk_core::model::Part) -> bool {
+    score.measures.iter().any(|measure| {
+        measure.segments.iter().any(|segment| {
+            segment.annotations.iter().any(|entry| {
+                part.staves.contains(&entry.track.staff())
+                    && matches!(entry.annotation, Annotation::Harmony(_))
+            })
+        })
+    })
 }
 
 /// Contrôleurs initiaux d'un canal (`writeHeader`, branche `staff->isTop()`).
