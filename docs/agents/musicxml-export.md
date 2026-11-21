@@ -451,13 +451,14 @@ fichiers core-identiques 58 → **63** ; XSD scoretk 0 erreur ; N1 0,9971,
 N2 0,9497. La catégorie `duration` disparaît du classement, `sound` tombe à 1
 résidu.
 
-L'unique perte est `Tarentella_Napoletana_Accordion_Solo` (5 → 8 lignes) :
-dans sa mesure 101, la référence n'écrit aucun `<forward>` alors que notre
-export en écrit 2. L'héritage corrigé du 6/8 change la découpe des silences gap
-de cette mesure ; le port de `toRhythmicDurationList` ne reproduit pas encore
-tous ses paramètres (`maxDots`, `timeStretch`, contexte de n-olet,
-`durationtype.cpp:511-537`). Le gain net reste de 655 lignes sur le lot et
-cette mesure est la seule régression observée.
+La régression `Tarentella` (5 → 8 lignes) a été corrigée : son silence
+invisible en voix 2 ne doit pas créer de voix. `Measure::hasVoices`
+(`measure.cpp:2198-2262`) ignore les ChordRest invisibles ; le port les
+comptait, générant des silences gap et deux `<forward>` surnuméraires dans la
+mesure 101. Test réduit (voix 2 avec silence invisible) écrit d'abord,
+échouant avant le correctif. Oracle ciblé : 8 → **0** lignes divergentes. Le
+bilan corrigé est donc **27 gains, 0 perte, 145 inchangés** et 22 292 lignes
+divergentes.
 
 Reste : `attributes` 46 et `staff-details` 43 (portées masquées par la mise en
 page, laissées pour la fin par priorité), puis des résidus de 1 à 3 fichiers

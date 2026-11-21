@@ -33,8 +33,8 @@
 //! sous-temps forts de l'indication de mesure.
 
 use crate::model::{
-    ChordRest, DurationType, Fraction, Rest, Score, Segment, SegmentItem, SegmentType, Tuplet,
-    VOICES,
+    ChordRest, ChordRestKind, DurationType, Fraction, Rest, Score, Segment, SegmentItem,
+    SegmentType, Tuplet, VOICES,
 };
 
 /// Unités par ronde, comme `4 * Constants::DIVISION` chez MuseScore.
@@ -524,12 +524,21 @@ fn fill_staff(score: &mut Score, index: usize, staff: usize, sig: Sig) {
     let measure_len = measure.len;
     let start_tick = measure.start_tick;
     let staff_id = score.staves[staff].id;
+    // `Measure::hasVoices` (`measure.cpp:2198-2262`, appelé par
+    // `checkMeasure`) ne compte que les ChordRest **visibles** dans les voix
+    // 2..4 : un silence invisible n'y crée pas de voix, donc pas de silences
+    // gap et pas de `<forward>` surnuméraires à l'export.
     let has_voices = (1..VOICES as u8).any(|voice| {
         measure.segments.iter().any(|segment| {
-            segment.kind == SegmentType::ChordRest
-                && segment
-                    .chord_rest(crate::model::Track::new(staff_id, voice))
-                    .is_some()
+            if segment.kind != SegmentType::ChordRest {
+                return false;
+            }
+            segment
+                .chord_rest(crate::model::Track::new(staff_id, voice))
+                .is_some_and(|cr| match &cr.kind {
+                    ChordRestKind::Rest(rest) => rest.visible && !rest.gap,
+                    ChordRestKind::Chord(_) => true,
+                })
         })
     });
     let tracks = if has_voices { VOICES } else { 1 };
@@ -692,6 +701,51 @@ mod tests {
     /// par la mesure 0 : la recherche doit remonter jusqu'à elle. Le portage
     /// s'arrêtait à la mesure précédente et retombait sur 4/4, changeant la
     /// segmentation des silences gap (et les `<forward>` de l'export).
+    /// Tarentella Napoletana, mesure 101 : la voix 2 ne contient qu'un
+    /// silence invisible (`<visible>0</visible>`). `Measure::hasVoices`
+    /// (`measure.cpp:2198-2262`) ne compte pas les éléments invisibles : la
+    /// voix n'est donc pas remplie de silences gap, et l'export n'écrit
+    /// aucun `<forward>` surnuméraire.
+    #[test]
+    fn voix_avec_silence_invisible_nest_pas_remplie() {
+        let mut score = crate::model::Score::new();
+        let part = score.add_part(crate::model::Part::new("P", "P"));
+        let staff = score.add_staff(part);
+        let mut measure =
+            crate::model::Measure::new(0, crate::model::Tick::ZERO, Fraction::new(3, 4));
+        for voice in 0..2 {
+            let mut segment = crate::model::Segment::new(
+                crate::model::SegmentType::ChordRest,
+                crate::model::Tick::ZERO,
+                score.staves.len(),
+            );
+            let mut rest = crate::model::ChordRest::rest(crate::model::Duration::quarter());
+            if let crate::model::ChordRestKind::Rest(r) = &mut rest.kind {
+                r.visible = voice == 0;
+            }
+            segment.set_element(
+                crate::model::Track::new(staff, voice),
+                crate::model::SegmentItem::ChordRest(rest),
+            );
+            measure.add_segment(segment);
+        }
+        score.add_measure(measure);
+
+        fill(&mut score);
+        let gaps: usize = score.measures[0]
+            .segments
+            .iter()
+            .flat_map(|segment| {
+                segment
+                    .chord_rest(crate::model::Track::new(staff, 1))
+                    .and_then(|cr| cr.rest_ref())
+                    .filter(|rest| rest.gap)
+                    .map(|_| 1)
+            })
+            .sum();
+        assert_eq!(gaps, 0, "silences gap créés dans une voix invisible");
+    }
+
     #[test]
     fn indication_de_mesure_heritee_dune_mesure_anterior() {
         let mut score = crate::model::Score::new();
