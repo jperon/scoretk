@@ -157,7 +157,7 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
         merge_chords_with_equal_on_time_and_voice(track);
     }
     simplify::simplify_durations_not_drums(&mut tracks, &sigmap, is_human, options.use_dots);
-    if voice::separate_voices(&mut tracks, &sigmap, max_voice_count) {
+    if voice::separate_voices(&mut tracks, &sigmap, max_voice_count, options.use_dots) {
         simplify::simplify_durations_not_drums(&mut tracks, &sigmap, is_human, options.use_dots);
     }
     simplify::simplify_durations_for_drums(&mut tracks, &sigmap, is_human, options.use_dots);
@@ -375,6 +375,10 @@ fn quantize_all_tracks(
             );
         }
         tuplet::remove_empty_tuplets(track);
+        // `MidiTuplet::assignVoices` : les accords hors n-olet repartent sur la
+        // voix la plus proche des n-olets (voix 0 sans n-olet), avant
+        // `MidiVoice::separateVoices`.
+        voice::assign_non_tuplet_voices(track, options.max_voice_count.limit());
     }
 }
 

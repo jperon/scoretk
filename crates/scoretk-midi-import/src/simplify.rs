@@ -37,7 +37,7 @@ use super::tuplet::{find_tuplets_in_bar_for_duration, TupletData};
 
 /// Nombre de figures d'une liste, un demi-point par figure pointée
 /// (`MidiDuration::durationCount`).
-fn duration_count(durations: &[(Fraction, scoretk_core::model::Duration)]) -> f64 {
+pub(crate) fn duration_count(durations: &[(Fraction, scoretk_core::model::Duration)]) -> f64 {
     let mut count = durations.len() as f64;
     for (_, duration) in durations {
         if duration.dots > 0 {
@@ -48,7 +48,7 @@ fn duration_count(durations: &[(Fraction, scoretk_core::model::Duration)]) -> f6
 }
 
 /// Début de la mesure contenant un temps (`MidiBar::findBarStart`).
-fn find_bar_start(sigmap: &TimeSigMap, time: Fraction) -> Fraction {
+pub(crate) fn find_bar_start(sigmap: &TimeSigMap, time: Fraction) -> Fraction {
     let (bar_index, _, _) = sigmap.tick_values(time.ticks(UNITS_PER_WHOLE as u32));
     fraction_from_ticks(sigmap.bar2tick(bar_index, 0))
 }

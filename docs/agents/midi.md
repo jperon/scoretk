@@ -341,8 +341,10 @@ scale).
   (chord exceeding an octave, outside an already present grand staff); note
   allocation uses the largest pitch gap, without the
   dynamic programming of `LRHand::findSplits`.
-- **Voices**: allocation by overlap then sorting by average pitch; the
-  splitting of chords and n-tuplets between `MidiVoice` voices is not ported.
+- **Voices**: `MidiVoice::separateVoices` is ported literally (see the
+  section at the end); `MidiTuplet::setNonTupletVoices` is approximated (the
+  chord interval starts at its on time, `findOnTimeBetweenChords` is not
+  ported).
 - **Percussion**: the drum table is not embedded; only the
   voice-1 pitches of the standard kit (35, 36, 44) are known, and splitting
   by pitch (`splitDrumTracks`) is not exercised (`doStaffSplit` false).
@@ -2153,4 +2155,81 @@ MuseScore detects the tuplet and keeps 2/3 quarter. This is the documented
 n-olet limitation, not a lost note; the exact pair is asserted, so any other
 change fails. All other 20 files are unchanged.
 
-## Next class: voices (`importmidi_voice.cpp`)
+## Voices: literal port of `importmidi_voice.cpp` (2026-11-21)
+
+The previous separation was a heuristic: chords were assigned to the first
+free voice by overlap, then voices were sorted by average pitch per bar. The
+port now mirrors the file function by function:
+
+| C++ `importmidi_voice.cpp` | Rust `voice.rs` |
+| --- | --- |
+| `toIntVoiceCount` :41 / `voiceLimit` :56 | `to_int_voice_count` (limit passed) |
+| `allNotesHaveEqualLength` :127 | `all_notes_have_equal_length` |
+| `findDurationCountInGroup` :138 | `find_duration_count_in_group` |
+| `findDurationCount` :204 | `find_duration_count` |
+| `findOptimalSplitPoint` :231 | `find_optimal_split_point` |
+| `findInsertedTuplet` :300 | `find_inserted_tuplet` |
+| `hasIntersectionWithTuplets` :318 | `has_intersection_with_tuplets` |
+| `addGroupSplits` :341 | `add_group_splits` |
+| `maximizeOffTime` :383 | `maximize_off_time` |
+| `findPossibleVoiceSplits` :398 | `find_possible_voice_splits` |
+| `findPrevPitchDist` :455 / `findNextPitchDist` :471 | `find_prev_pitch_dist` / `find_next_pitch_dist` |
+| `findMinPitchDist` :487 | `find_min_pitch_dist` |
+| `findAverageLowPitch` :508 / `findAverageHighPitch` :519 | `find_average_low_pitch` / `find_average_high_pitch` |
+| `findBestSplit` :530 | `find_best_split` |
+| `insertNewTuplet` :573 | `insert_new_tuplet` |
+| `canSplitTuplet` :604 | `can_split_tuplet` |
+| `splitTuplet` :637 | `split_tuplet` |
+| `updateChordTuplets` :704 | `update_chord_tuplets` |
+| `findMaxOccupiedVoiceInBar` :754 | `find_max_occupied_voice_in_bar` |
+| `splitChordToVoice` :788 | `split_chord_to_voice` |
+| `findNotesToMove` :868 | `find_notes_to_move` |
+| `doVoiceSeparation` :895 | `do_voice_separation` |
+| `findBarIndexForOffTime` :955 | `find_bar_index_for_off_time` |
+| `averagePitchOfChords` :965 | `average_pitch_of_chords` |
+| `sortVoicesByPitch` :985 / `sortVoices` :1031 | `sort_voices_by_pitch` / `sort_voices` |
+| `separateVoices` :1065 | `separate_voices` |
+
+The input state also had to match. MuseScore runs `MidiVoice` after
+`MidiTuplet::assignVoices`, whose `setNonTupletVoices`
+(`importmidi_tuplet_voice.cpp:171-206`) assigns every non-tuplet chord to the
+voice whose tuplets are closest in pitch and do not intersect it — and, with
+no tuplets, to voice 0, because all distances are `INT_MAX` and the first
+voice wins. Our overlap-based pre-assignment put chords in several voices
+instead. `voice::assign_non_tuplet_voices` now runs after tuplet removal and
+reproduces this rule (approximation: the chord interval starts at its on time,
+`findOnTimeBetweenChords` is not ported; non-tuplet intervals are not
+reserved, as upstream).
+
+Reduced test: `simplify_order.rs` is un-ignored and passes. Its three notes
+(57 at 5.0, 60 at 6.0, 62 at 6.5) now give 2.0 / 0.5 / 0.5 quarters: 57 is
+moved alone to the other voice by `doVoiceSeparation` (the chord overlaps its
+voice at 6.0), and `sortVoices` keeps the higher voice for 60/62 — exactly the
+MuseScore 4.7.4 reference.
+
+Measurement (same manifests, MuseScore oracle with ties merged, frozen
+`/tmp/scoretk-simplify`, `timeout 10 prlimit --as=2000000000`):
+
+| Metric | Before | After |
+| --- | --- | --- |
+| LilyPond N (1 020 files, 136 236 notes) | 0.9566 | **0.9820** |
+| total loss | 5 913.9 | **2 458.7** |
+| `voice` dimension | 2 446.9 | **1 076.1** |
+| `duration` dimension | 1 254.2 | **507.2** |
+| `pitch` / `onset` | 0.0 / 142.0 | 0.0 / 142.0 |
+| upstream N (96 files, 864 notes) | 0.7315 | **0.7604** |
+
+198 files gain, 10 lose. The 42 losses of the simplify commit are recovered:
+41 are back at or above their pre-simplify score and the last one loses 0.0029
+(`Veni, Creator Spiritus_Courtial_v3_SATB`). The 10 remaining losses are all
+in the `voice` dimension and small (worst 0.0849):
+`02_02_Segura_L-aigle-mexicain_partition` keeps unequal-duration notes in one
+voice in MuseScore because MuseScore has already split them at beats and tied
+the fragments (their first fragments have equal lengths), whereas our model
+holds one long note per pitch, so the literal splitter separates them; the
+others (`Ackermans…`, `01_01_Buenos-dias…`, `LeCantiqueDesPatrouilles` group,
+`Veni Creator`) are one or two notes placed in another voice. The upstream lot
+gains 8 files and loses 7 (3-8 notes each, mostly tuplet/voice tests compiled
+with non-default options).
+
+## Next class: tuplets (930)

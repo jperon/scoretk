@@ -420,3 +420,121 @@ pub fn tuplet_for_element(
         })
         .map(|(key, _)| *key)
 }
+
+/// Vrai si deux intervalles se recoupent (`haveIntersection`,
+/// `importmidi_inner.cpp:222-230`).
+fn have_intersection(
+    first: (Fraction, Fraction),
+    second: (Fraction, Fraction),
+    strict: bool,
+) -> bool {
+    if strict {
+        first.1 > second.0 && first.0 < second.1
+    } else {
+        first.1 >= second.0 && first.0 <= second.1
+    }
+}
+
+/// N-olets d'une voix qui recoupent un intervalle
+/// (`MidiTuplet::findTupletsForTimeRange`).
+pub fn find_tuplets_for_time_range(
+    track: &MTrack,
+    voice: usize,
+    on_time: Fraction,
+    len: Fraction,
+    strict: bool,
+) -> Vec<TupletKey> {
+    let interval = (on_time, on_time + len);
+    let mut result = Vec::new();
+    for (key, tuplet) in &track.tuplets {
+        if tuplet.voice != voice {
+            continue;
+        }
+        let tuplet_interval = (tuplet.on_time, tuplet.on_time + tuplet.len);
+        if have_intersection(interval, tuplet_interval, strict) {
+            result.push(*key);
+        }
+    }
+    result
+}
+
+/// Vrai si l'accord a une note qui ne remplit pas le n-olet
+/// (`MidiTuplet::hasNonTrivialChord`, `importmidi_tuplet.cpp:77-105`).
+pub fn has_non_trivial_chord(
+    chord_on_time: Fraction,
+    notes: &[super::chord::MidiNote],
+    tuplet_on_time: Fraction,
+    tuplet_len: Fraction,
+) -> bool {
+    if chord_on_time == tuplet_on_time {
+        notes
+            .iter()
+            .any(|note| note.off_time - chord_on_time < tuplet_len)
+    } else {
+        if chord_on_time > tuplet_on_time && chord_on_time < tuplet_on_time + tuplet_len {
+            return true;
+        }
+        if chord_on_time >= tuplet_on_time + tuplet_len {
+            return false;
+        }
+        notes
+            .iter()
+            .any(|note| note.off_time < tuplet_on_time + tuplet_len)
+    }
+}
+
+/// Vrai si le n-olet ne contient plus aucun accord qui en a besoin
+/// (`MidiTuplet::isTupletUseless`, `importmidi_tuplet.cpp:109-130`).
+pub fn is_tuplet_useless(
+    track: &MTrack,
+    voice: usize,
+    on_time: Fraction,
+    len: Fraction,
+    max_chord_length: Fraction,
+) -> bool {
+    let found = super::chord::find_chords_for_time_range(
+        track,
+        voice,
+        on_time,
+        on_time + len,
+        max_chord_length,
+    );
+    for key in found {
+        if let Some(chord) = track.chords.get(key) {
+            if has_non_trivial_chord(key.0, &chord.notes, on_time, len) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Retire un n-olet et les références qu'y font les accords et les notes
+/// (`MidiTuplet::removeTuplet`, `importmidi_tuplet.cpp:132-161`).
+pub fn remove_tuplet(track: &mut MTrack, key: TupletKey, max_chord_length: Fraction) {
+    let Some(tuplet) = track.tuplets.remove(&key) else {
+        return;
+    };
+    let end = tuplet.on_time + tuplet.len;
+    let keys = track.chords.keys();
+    for chord_key in keys {
+        if chord_key.0 + max_chord_length <= tuplet.on_time {
+            continue;
+        }
+        if chord_key.0 >= end {
+            continue;
+        }
+        if let Some(chord) = track.chords.get_mut(chord_key) {
+            if chord.tuplet == Some(key) {
+                chord.is_in_tuplet = false;
+                chord.tuplet = None;
+            }
+            for note in &mut chord.notes {
+                if note.tuplet == Some(key) {
+                    note.is_in_tuplet = false;
+                    note.tuplet = None;
+                }
+            }
+        }
+    }
+}
