@@ -3170,3 +3170,46 @@ fn annotation_vide_ecrite_en_words() {
         "annotation vide perdue :\n{xml}"
     );
 }
+
+/// Une note d'agrément dans un n-olet porte aussi le `<time-modification>`
+/// (`abc2xml.py::mkNote` applique `ntup` à toutes les notes du groupe, agréments
+/// compris). Le port l'omettait (`grace.is_none()`).
+#[test]
+fn agrement_dans_niolet_time_modification() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let piste = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let tuplet = score.add_tuplet(Tuplet::new(
+        Fraction::new(3, 2),
+        Fraction::new(1, 8),
+        Fraction::QUARTER,
+        Fraction::QUARTER,
+    ));
+    let id = score.add_note(Note::new(69, tpc::A));
+    let mut cr = ChordRest::chord(Duration::eighth());
+    cr.tuplet = Some(tuplet);
+    {
+        let chord = cr.chord_mut().expect("accord");
+        chord.notes.push(id);
+        let mut grace = scoretk_core::model::GraceChord::new(
+            scoretk_core::model::GraceType::Appoggiatura,
+            Duration::eighth(),
+        );
+        grace
+            .chord_mut()
+            .notes
+            .push(score.add_note(Note::new(67, tpc::G)));
+        chord.grace_chords.push(grace);
+    }
+    ajouter_element(&mut score, &mut measure, piste, Fraction::ZERO, cr);
+    score.add_measure(measure);
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<grace/>"));
+    // 1 time-modification pour l'agrément + 1 pour la note principale.
+    assert_eq!(
+        xml.matches("<time-modification>").count(),
+        2,
+        "time-modification de l'agrément manquant :\n{xml}"
+    );
+}

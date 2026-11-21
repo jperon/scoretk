@@ -1734,3 +1734,13 @@ l'exporteur supprimait les `RichText` vides : deux silences. Le correctif
 conserve l'annotation vide et écrit `<words/>` pour un texte vide. Tests
 réduits des deux côtés écrits d'abord, échouant avant le correctif. Sur
 `9629d955e64a_t578`, 12 `<words/>` vides produits comme l'alternative.
+
+## 25. N3 — agréments dans les n-olets (2026-11-21)
+
+Dans `(3{a}gfg)`, `abc2xml.py::mkNote` applique `ntup` à toutes les notes du
+groupe, y compris la note d'agrément `{a}` : il écrit un `<time-modification>`
+sur elle. L'exporteur le supprimait (`grace.is_none()`), perdant 6 des 24
+`<time-modification>` de `1556-1576.abc` X:1574. Le correctif écrit le
+`<time-modification>` sur toutes les notes ; il reste sans effet hors n-olet
+(actual == normal). Test réduit écrit d'abord, échouant avant le correctif
+(1 au lieu de 2). Sur X:1574 : 24/24 comme l'alternative, contre 18 avant.

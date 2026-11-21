@@ -1742,10 +1742,11 @@ impl Context<'_> {
             if let Some(accidental) = &note.accidental {
                 write_accidental(out, accidental);
             }
-            // Un accord d'agrément n'appartient à aucun n-olet.
-            if grace.is_none() {
-                self.write_time_modification(out, chord_rest);
-            }
+            // `abc2xml.py::mkNote` applique `ntup` à toutes les notes du
+            // groupe, y compris les agréments écrits à l'intérieur de `(3…)`.
+            // Écrire le `<time-modification>` sur un agrément sans n-olet est
+            // sans effet (`write_time_modification` sort si actual == normal).
+            self.write_time_modification(out, chord_rest);
 
             // Pas de hampe pour les rondes et les valeurs plus longues.
             // MuseScore écrit toujours une hampe dès qu'il y en a une ; la
