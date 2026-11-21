@@ -465,3 +465,29 @@ page, laissées pour la fin par priorité), puis des résidus de 1 à 3 fichiers
 (`clef`, `tie`, `dot`, `measure-style`, `tuplet`, `staff`, `harmony`, `forward`,
 `sound`). Pour le contenu musical porté par le modèle, l'export MusicXML est
 déclaré terminé.
+
+## 24. Ratios de n-olets non réduits dans `<time-modification>` (2026-11-21)
+
+Dernière classe musicale mesurée sur les 174 `.mscz` (`target/export-baseline/`) :
+`actual-notes` 1446 lignes sur 2 fichiers, premier écart
+`<actual-notes>6</actual-notes>` attendu contre `3` produit.
+
+`writeTimeModification` (`exportmusicxml.cpp:4248-4278`) appelle
+`timeModification` (`:4199-4214`) qui multiplie **à la main** les numérateurs
+et dénominateurs des n-olets imbriqués : le commentaire du C++ précise qu'un
+`Fraction::operator*()` réduirait un 6:4 en 3:2. Le port utilisait
+`value.ratio.numerator()` / `.denominator()` (le ratio réduit du modèle),
+alors que `Tuplet` conserve les nombres bruts du fichier dans
+`actual_notes` / `normal_notes` (`displayed_numbers()`). Le port multiplie
+maintenant ces nombres bruts. Corollaire : `Fraction::operator==` compare par
+valeur, donc `4:4 == 1:1` et le C++ n'écrit rien (`ratio != Fraction(1,1)`,
+`:4255`) ; la garde du port est devenue `actual == normal` au lieu de
+`actual == 1 && normal == 1`, ce qui évite d'ajouter des
+`<time-modification>` 4:4 et 16:16 sur `v4/voiceswitching` (test e2e).
+
+Test réduit écrit d'abord : n-olet dont le ratio est 3/2 mais les nombres
+bruts 6/4 ; échouait avec `<actual-notes>3</actual-notes>`. Re-mesure complète
+(`target/export-final/`), 174 fichiers : aucun changement N1/N2/N2d (la
+numération écrite ne change pas la lecture MIDI), **aucune perte** ; lignes
+centrales `Czardas_Monti` 60 → **12**, `Ave_Maria_Schubert_in_C` 3560 →
+**720**. `cargo test -p scoretk --test e2e_corpus` reste vert (5/5).

@@ -3213,3 +3213,67 @@ fn agrement_dans_niolet_time_modification() {
         "time-modification de l'agrément manquant :\n{xml}"
     );
 }
+
+/// `writeTimeModification` (`exportmusicxml.cpp:4199-4213`) multiplie les
+/// numérateurs et dénominateurs **non réduits** : un n-olet 6:4 doit rester
+/// `<actual-notes>6</actual-notes><normal-notes>4</normal-notes>`, pas 3:2.
+/// Le commentaire du C++ précise qu'utiliser `Fraction::operator*` réduirait
+/// le rapport. Vérifié sur `Czardas_Monti` et `Ave_Maria_Schubert_in_C`.
+#[test]
+fn rapport_de_nolet_non_reduit_dans_time_modification() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::quarter(),
+        &[(60, tpc::C)],
+    );
+
+    let mut tuplet = Tuplet::new(
+        Fraction::new(3, 2),
+        Fraction::new(1, 8),
+        Fraction::QUARTER,
+        Fraction::QUARTER,
+    );
+    // Ratio interne réduit, nombres bruts du fichier conservés dans le modèle.
+    tuplet.actual_notes = 6;
+    tuplet.normal_notes = 4;
+    let tuplet = score.add_tuplet(tuplet);
+
+    for index in 0..6 {
+        let note = score.add_note(Note::new(62 + index as u8, tpc::D));
+        let mut chord_rest = ChordRest::chord(Duration::eighth());
+        chord_rest.tuplet = Some(tuplet);
+        chord_rest.chord_mut().expect("accord").notes.push(note);
+        ajouter_element(
+            &mut score,
+            &mut measure,
+            track,
+            Fraction::QUARTER + Fraction::new(index, 24),
+            chord_rest,
+        );
+    }
+    ajouter_silence_mesure(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::HALF + Fraction::QUARTER,
+    );
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<actual-notes>6</actual-notes>"),
+        "le nombre brut 6 doit être écrit :\n{xml}"
+    );
+    assert!(
+        xml.contains("<normal-notes>4</normal-notes>"),
+        "le nombre brut 4 doit être écrit :\n{xml}"
+    );
+}

@@ -1496,12 +1496,19 @@ impl Context<'_> {
                 break;
             }
             let value = self.score.tuplet(id);
-            actual *= value.ratio.numerator();
-            normal *= value.ratio.denominator();
+            // `timeModification` (`exportmusicxml.cpp:4199-4213`) multiplie
+            // les nombres bruts : une Fraction réduite changerait un 6:4 en
+            // 3:2. Le modèle conserve les nombres affichés du fichier.
+            let (act, nrm) = value.displayed_numbers();
+            actual *= act.max(1);
+            normal *= nrm.max(1);
             tuplet = value.parent;
             depth += 1;
         }
-        if actual == 1 && normal == 1 {
+        // `Fraction::operator==` compare par valeur : 4:4 == 1:1, donc le
+        // C++ (`ratio != Fraction(1,1)`, `:4255`) n'écrit rien pour ces
+        // n-olets, tout en conservant 6:4 (qui vaut 3:2 mais s'écrit brut).
+        if actual == normal {
             return;
         }
 
