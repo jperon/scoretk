@@ -132,7 +132,7 @@ If the wrapper cannot locate its files from its own URL, define `self.SCORETK_BA
 
 ### Sizes
 
-After `wasm-opt -Oz --strip-debug` the binary is roughly 1.55 MB raw and 640 KB gzipped; `cat result/SIZE` gives the exact figures for the current build. The package stays below the roughly 2.5 MB raw budget of cantus. See [the wasm reference, section 2](agents/wasm.md) for the measurement method and breakdown.
+After `wasm-opt -Oz --strip-debug` the binary is roughly 1.9 MB raw (784 KB gzipped, 599 KB brotli) at commit `fdf22443`; `cat result/SIZE` gives the exact raw and gzip figures for the current build. The package stays below the roughly 2.5 MB raw budget of cantus. See [the wasm reference, section 2](agents/wasm.md) for the measurement method and breakdown.
 
 ### Stability contract for cantus
 

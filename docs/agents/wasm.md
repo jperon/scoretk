@@ -42,22 +42,30 @@ NOTICE                        MuseScore Studio origin, reused data, trademark
 SIZE                          raw and gzip measurement of the .wasm
 ```
 
-Measurement (wasm-bindgen 0.2.130, `opt-level = "z"`, `lto`, `codegen-units = 1`,
-`wasm-opt -Oz --strip-debug`):
+Measurement (wasm-bindgen 0.2.130, binaryen 133 / `wasm-opt`, rustc 1.100.0,
+`opt-level = "z"`, `lto = true`, `codegen-units = 1`, `wasm-opt -Oz
+--strip-debug`), state of commit `fdf22443` (2026-11-21):
 
-| Binary | Raw | Gzip |
-| --- | --- | --- |
-| `scoretk_wasm_bg.wasm` (before `wasm-opt`) | 3 373 069 bytes | — |
-| `scoretk_wasm_bg.wasm` (after `wasm-opt`) | **1 552 892 bytes** | **641 472 bytes** |
+| Binary | Raw | Gzip -9 | Brotli -q 11 |
+| --- | --- | --- | --- |
+| cdylib `scoretk_wasm.wasm` (rustc output) | 4 472 499 bytes | — | — |
+| `scoretk_wasm_bg.wasm` (after wasm-bindgen) | 4 223 436 bytes | — | — |
+| `scoretk_wasm_bg.wasm` (after `wasm-opt`) | **1 924 924 bytes** | **783 883 bytes** | **599 312 bytes** |
 
 The two `esm` and `classic` variants share the same binary byte for byte.
 The package remains **complete, all features enabled**: it stays below
 Cantus's limit (≈ 2.5 Mo raw).
 
+The previous reference (1 552 892 raw / 641 472 gzip, commit `a7f690c`) predates
+the addition of the ABC and LilyPond readers, the MIDI reader and the ten
+directions of the facade: the binary has grown with the features, not through a
+build regression (§ "Composition" below).
+
 `panic = "abort"` was **measured then discarded** on an earlier version of the
 package: it removed only 20 raw bytes (1 468 917 instead of 1 468 937,
-i.e. 0.001 %) and 34 gzip bytes, well below the 2 % threshold. The
-`[profile.release]` profile remains unchanged.
+i.e. 0.001 %) and 34 gzip bytes, well below the 2 % threshold. It is in fact
+the **default strategy of the `wasm32-unknown-unknown` target**: the profile
+setting is a no-op there (§ "Build settings evaluated on 2026-11-21").
 
 The additions measured since the reference size of 1 472 792 raw bytes
 brought the binary to 1 482 794 raw bytes / 621 633 gzip bytes. Three
@@ -66,6 +74,7 @@ distinct contributions: +9 555 raw bytes (+0.65 %) for
 (+0.03 %) for note velocity (`Note::user_velocity`) and +33 raw bytes
 for the `i64` computation of `customize_velocity` (overflow protection), i.e. a
 total of +10 002 raw bytes (+0.68 %). The overhead stays below the 2 % threshold.
+(Historical figures, before the ABC/LilyPond/MIDI readers.)
 
 ### Effect of the crate split
 
@@ -116,7 +125,126 @@ them back into the same crate would recover the 58 ko of step 1), or enable
 `-Z share-generics` (nightly), which would deduplicate generic monomorphisations
 across crates.
 
-## Binary composition (twiggy)
+## Binary composition — measurement of 2026-11-21
+
+State: commit `fdf22443`, delivered binary of **1 924 924 raw / 783 883 gzip /
+599 312 brotli** bytes. `.rodata.2837` and `.rodata.1419` figures below come
+from the raw data section; twiggy reports 10 bytes more per segment
+(alignment).
+
+### Reproduction method
+
+```sh
+nix build .#wasm
+# INPUT_WASM: the cdylib produced by rustc, before wasm-bindgen
+nix develop -c cargo build --release -p scoretk-wasm --target wasm32-unknown-unknown
+nix develop -c wasm-bindgen --target web --out-dir /tmp/m/esm --out-name scoretk_wasm \
+  target/wasm32-unknown-unknown/release/scoretk_wasm.wasm
+nix develop -c wasm-opt -Oz --debuginfo /tmp/m/esm/scoretk_wasm_bg.wasm -o /tmp/m/debug.wasm
+nix shell nixpkgs#twiggy -c twiggy top -f csv -o /tmp/m/top.csv /tmp/m/debug.wasm
+nix shell nixpkgs#twiggy -c twiggy dominators -d 3 /tmp/m/debug.wasm
+nix shell nixpkgs#twiggy -c twiggy garbage /tmp/m/debug.wasm
+```
+
+The variant with symbols weighs 2 722 922 bytes; its name sections
+(`"function names"` 734 629 bytes, `"data names"` 63 294 bytes) are absent from
+the delivered binary. Removing them leaves 1 924 953 bytes, within 29 bytes of
+the delivered size: percentages below use that as denominator and are therefore
+those of the shipped module.
+
+Structural counts: 3 824 functions, 4 303 active data segments, 142 types,
+15 imports, 16 exports.
+
+### Aggregation by crate (bytes present in the delivered binary)
+
+| Bucket | Bytes | % |
+| --- | ---: | ---: |
+| data segments (`.rodata` + active data) | 384 948 | 20,00 |
+| `alloc` | 218 075 | 11,33 |
+| `core` (outside `core::fmt`/`core::panicking`) | 214 346 | 11,14 |
+| `scoretk_lilypond_import` | 165 056 | 8,57 |
+| `scoretk_musescore_import` | 151 085 | 7,85 |
+| `scoretk_musicxml_import` | 103 062 | 5,35 |
+| `scoretk_musicxml_export` | 101 095 | 5,25 |
+| `scoretk` (facade) | 100 175 | 5,20 |
+| `scoretk_midi_export` | 63 182 | 3,28 |
+| wasm-bindgen `convert` multivalue shim | 57 884 | 3,01 |
+| `scoretk_midi_import` | 46 587 | 2,42 |
+| `zip` | 45 570 | 2,37 |
+| `scoretk_musescore_export` | 40 904 | 2,12 |
+| `core::fmt` (`Debug`/`Display`, isolated) | 31 983 | 1,66 |
+| `scoretk_core` | 30 370 | 1,58 |
+| `scoretk_abc_import` | 29 319 | 1,52 |
+| other + wasm sections | 20 198 | 1,05 |
+| `miniz_oxide` | 19 345 | 1,00 |
+| `quick_xml` | 17 958 | 0,93 |
+| `scoretk_lilypond_export` | 12 806 | 0,67 |
+| `compiler_builtins` | 9 812 | 0,51 |
+| `flate2` | 9 192 | 0,48 |
+| `dlmalloc` | 7 427 | 0,39 |
+| `memchr` | 5 760 | 0,30 |
+| `scoretk_abc_common` | 5 512 | 0,29 |
+| `std` | 3 515 | 0,18 |
+| `indexmap` | 3 182 | 0,17 |
+| `hashbrown` | 2 227 | 0,12 |
+| `wasm_bindgen` | 2 214 | 0,12 |
+| `scoretk_abc_export` | 1 889 | 0,10 |
+| `midly` | 1 827 | 0,09 |
+| `scoretk_wasm` | 1 630 | 0,08 |
+| `core::panicking` | 1 527 | 0,08 |
+| `crc32fast` | 1 341 | 0,07 |
+| remaining (types, globals, `js_sys`, `scoretk_midi_common`, …) | ~3 100 | 0,16 |
+| **total** | **1 924 953** | **100,00** |
+
+Reading:
+
+- **The data section is now the first item (20.0 % of the binary)**, ahead of
+  code: 4 303 segments, dominated by generated tables and panic/error messages
+  (§ "Largest data segments").
+- **`alloc` + `core` = 22.5 %**: `Vec`/`String`/`BTreeMap`/sorting machinery and
+  `core` formatting/parsing, not format logic. `core::fmt` alone is 1.66 %
+  (31 983 bytes), `core::panicking` 0.08 %: marginal, as before.
+- The five readers and five writers are balanced (1.5 % to 8.6 % each);
+  `scoretk-lilypond-import` is the heaviest crate (8.57 %) because of its
+  parser.
+- The wasm-bindgen **multivalue shim for `convert`** alone weighs 57 884 bytes
+  (3.01 %): it copies input into linear memory, calls the Rust function and
+  builds the returned `(ptr, len, ptr, len)` tuple. `convertWithTimeline` has a
+  smaller shim.
+- `zip` + `miniz_oxide` + `flate2` + `crc32fast` = 82 448 bytes (4.28 %): the
+  pure-Rust cost of `.mscz`/`.mxl` containers. `zopfli` is no longer in the
+  graph.
+
+### Largest data segments
+
+| Segment | Twiggy bytes | Content identified |
+| --- | ---: | --- |
+| `.rodata.1419` | 40 451 | concatenated string literals of the writers (MusicXML element/attribute names, `<sym>` glyph names, directions, harmony tables) |
+| `.rodata.14` | 26 801 | panic messages (`assertion failed: …`) and French user-facing error messages |
+| `.rodata.2837` | 25 645 | instruments table: names and `wind.flutes.flute.piccolo`-style ids (`read/instruments.rs`, generated) |
+| `.rodata.1` | 22 695 | mixed literals: LilyPond templates (`\once \override …`), `staff`/`voice` names, error messages |
+| `.rodata.4243` | 20 720 | `miniz_oxide` internal assertion messages (`out_pos + 3 < out_slice.len()`, …) |
+| `.rodata.13` | 18 899 | LilyPond reader tables: pitch names, errors, volta/tremolo keywords |
+| `.rodata.2833` | 7 743 | `.mscx` element/attribute names (`page-margins`, `defaults`, …) |
+| `.rodata.4271` | 7 737 | binary (non-text) table |
+| `.rodata.1417` | 7 676 | panic messages of `alloc` (`LeftOrRight::…`, one-time initialisation) and `zip` errors |
+| `.rodata.2821` | 5 828 | ABC/MuseScore tables: articulations, clefs, ornament names |
+| `.rodata.4295` | 5 284 | binary (non-text) table, weakly compressible |
+| `.rodata.2822` | 5 222 | `quick_xml`/`alloc` errors and CDATA/XML literal markers |
+| `.rodata.1415` | 4 074 | French error messages (`accord présent`, `armure`) and MIDI instrument names |
+
+The other 4 290 segments are below 4 Ko. `twiggy garbage` reports 282 bytes of
+truly dead types; the 320 058 bytes flagged in data segments are false
+positives (segments addressed through computed indices).
+
+### Dominators
+
+The root is the `convert` export (and `convertWithTimeline`); it dominates
+`scoretk::read` (946 487 retained bytes, 34.76 %), itself dominating the five
+readers, of which `musescore_import::read_score` is the largest
+(171 697 bytes, 6.31 %). No abnormal cycle.
+
+## Binary composition (twiggy) — historical measurement (a7f690c)
 
 Measurement made on commit `a7f690c` (`mesure-twiggy` branch), the workspace's
 `[profile.release]` profile (`opt-level = "z"`, `lto = true`,
@@ -493,6 +621,33 @@ nix build .#wasm
 node crates/scoretk-wasm/tests/node-smoke.mjs
 SCORETK_PKG_DIR=$PWD/result node crates/scoretk-wasm/tests/node-smoke.mjs
 ```
+
+### Byte identity between two builds
+
+`scripts/check-wasm-identity.mjs` compares two package directories in the same
+Node process and fails on the first differing byte. It loads both ESM variants
+(`initSync` with a precompiled module), then on a corpus sample:
+
+- compares `detect`, `formats()` and `version()` ;
+- converts each sample to every writable format (`.mscx`, `.mscz`,
+  `musicxml`, `.mxl`, `midi`, `.ly`, `.abc`), with and without an explicit
+  `from`, and compares the output bytes;
+- reads `.mscz` and `.mxl` containers built once with the old package;
+- compares `convertWithTimeline` output (MusicXML bytes, MIDI bytes and the
+  whole time map, with and without `expandRepeats`);
+- compares the three user-visible error messages.
+
+Samples cover both MuseScore versions, MusicXML, MIDI, LilyPond, ABC and
+repeats; the ten import/export directions are all exercised (the script fails
+if one is missing).
+
+```sh
+cp -rL result /tmp/scoretk-old
+# ... modify the build ...
+nix build .#wasm
+node scripts/check-wasm-identity.mjs /tmp/scoretk-old result
+```
+
 
 ## 7. Licence and sources
 
