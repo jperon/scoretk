@@ -3481,3 +3481,19 @@ facteur injecté par `\scaleDurations` : seul le premier devient durée par
 défaut. Test `echelle_de_durees_ne_change_pas_la_duree_par_defaut` (échoue
 avant). `ToccataFugue` retrouve ses 3433 appariements et `contrapunctusXIV`
 reste à 1397/1397.
+
+#### Mesure finale des trois causes
+
+Mesure complète à dénominateur constant (mus 1447, ra 1726, mut 1377) :
+mus 98,09 → **98,15 %**, ra 83,21 → **83,30 %**, mut 91,37 → **91,84 %**.
+110 fichiers `mut` gagnent (`contrapunctusXIV` +1332, `chopin_nocturne_op9_n3`
++406, `sonate.ly` +367, `score.ly` +360) ; trois fichiers `mus` gagnent
+(`Angels_Carol` +106). Cinq fichiers `mut` perdent 6 à 68 notes
+(`Mazurka-Op6-No1`, `16title-hub`, `liszt-consolation-no3`, `sonate2`,
+`Matiegka2`) et un fichier `mus` perd 23 notes (`Faure-Cantique…`), tous déjà
+à forte dérive (5 à 78 % de N2). Ces pertes viennent de l'interaction du
+multiplicateur par défaut avec des accords nus dans des voix que le lecteur
+place déjà mal ; le correctif est validé sur les extraits minimaux
+(`R1*3 c d e`, `c8*2/3 \rest d e`) où il reproduit exactement le MIDI de
+LilyPond. `ToccataFugue` (−1911 avec la première version du correctif) est
+revenu à 3433 appariements après `from_scale`.
