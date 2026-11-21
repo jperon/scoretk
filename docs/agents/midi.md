@@ -2483,22 +2483,40 @@ Measurement (same manifests and oracle):
 | upstream N (96 files) | 0.7662 | **0.7824** |
 | LilyPond lot (1 020 files) | — | unchanged, file by file |
 
-`human_tempo` is the only upstream file that changes; no file loses anything.
-**The 0.5000 target is not reached.** Exact divergence, as requested:
+`human_tempo` was the only upstream file that changed; no file lost anything.
+**The 0.5000 target was not reached.** The remaining divergence was located
+and fixed as follows (reduced test `tests/beat_anchoring.rs`, written first:
+it failed with 217/128 whole before the fix):
 
 - BeatRoot's beat list starts at **29/64 whole = 1.8125 quarters** (first beat
-  870 ticks); spacing is **0.48 s ≈ 0.96 quarter** instead of one quarter.
-- The first chord is at 2726 ticks (**5.679 quarters**); after
-  `adjustChordsToBeats` it maps near 3.9 quarters, and the score's first note
-  lands at **9.0 quarters**, while the reference has it at **16.0 quarters**
-  (four leading 4/4 measures of rests).
-- The diverging step is therefore the beat list **start** and the leading-rest
-  anchoring: `Agent::fillBeats` (`Agent.cpp`) / `addFirstBeats`
-  (`importmidi_beat.cpp:140-162`) do not produce the earlier beats MuseScore
-  has, and `createMeasures` starts the score at the first chord
-  (`findFirstChordTick`) rather than at the first beat. This is a structural
-  difference, not a parameter: nothing in the literal diff of the induction
-  (`Induction::beatInduction`) or the agent (`Agent::beatTrack`) differs.
+  870 ticks), with spacing **0.48 s ≈ 0.96 quarter** instead of one quarter.
+  `Agent::fillBeats` (`Agent.cpp:100-116`) and `addFirstBeats`
+  (`importmidi_beat.cpp:140-162`) are literal ports; the induction and the
+  agent themselves diverge in no observable way.
+- The real divergence was in the **wiring**: `MidiBeat::adjustChordsToBeats`
+  (`importmidi.cpp:1169-1170`) was called **twice** in `convert_midi` — once
+  right after `collectChords` and a second time after `quantizeAllTracks`.
+  MuseScore calls it only once. Aligning already-aligned chords a second time
+  re-quantised the first chord of `human_tempo` from 4.0 quarters to 2.0,
+  against **4.0 quarters (16 sixteenths)** in the reference — the leading
+  4/4 measure of rests was lost. This also shifted a bar of the LilyPond file
+  `Lassus_Alleluja…`.
+- Fix: remove the second call, so the beat grid anchored by
+  `createMeasures`/`findFirstChordTick` is used once, as upstream. Reduced
+  test: a 30-onset human-performance SMF whose first note MuseScore places at
+  13/16 whole; before the fix scoretk placed it at 217/128.
+
+Re-measurement (same manifests and oracle, full run):
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| `human_tempo` | 0.4820 | **0.9353** |
+| upstream N (96 files) | 0.7824 | **0.8576** |
+| LilyPond N (1 020 files) | 0.6921 | **0.6947** |
+| Files improved / lost | — | **3 / 0** |
+
+The three gains are `up-human_tempo`, `ly-Lassus_Alleluja…` (0.5177 → 0.9915)
+and `up-tuplet_3_5_7_tuplets` (0.1111 → 0.2222).
 
 ## MIDI import: status (2026-11-21)
 retk-midi-import`, `scoretk-midi-export`)
@@ -4957,37 +4975,38 @@ it: `assignVoices`'s tuplet part must reject those, and `OSalutarisHostia`
 must keep MuseScore's notated durations (or the oracle must compare sounding
 durations).
 
-## `human_tempo`: beat tracking is used upstream, our glue is regressive
+## `human_tempo`: beat tracking is wired (historical note)
 
-MuseScore does use the beat tracker on import when the performance is detected
-as human: `Quantize::setIfHumanPerformance` calls `MidiBeat::findBeatLocations`
-(`importmidi_quant.cpp:399-480`) and `convertMidi` always calls
-`MidiBeat::adjustChordsToBeats` (`importmidi.cpp`, after `collectChords`),
-which is a no-op for non-human files. Our port detects the same human
-performances (`quant::is_human_performance`) and contains the BeatRoot glue,
-but it is **not wired**: the measured wiring changed `human_tempo` from 0.5000
-to 0.2958 before the beat-tie fix, and the induction/anchoring
-(`updateFirstLastBeats`) does not reproduce MuseScore's grid. After the
-beat-tie fix the file scores 0.3813 (default), so the remaining cause is the
-tracker itself; wiring it without a correct anchoring would regress the row
-again. Documented as an open cause, not enabled.
+MuseScore uses the beat tracker on import when the performance is detected as
+human: `Quantize::setIfHumanPerformance` calls `MidiBeat::findBeatLocations`
+(`importmidi_quant.cpp:399-480`) and `convertMidi` calls
+`MidiBeat::adjustChordsToBeats` once, right after `collectChords`
+(`importmidi.cpp:1169-1170`). The earlier measurements recorded here (0.5000 →
+0.2958, then 0.3813) came from a glue that was not wired or was wired twice;
+see the section `human_tempo`: beat tracker ported and wired, target not
+reached above for the literal diff, the anchoring fix and the final figures.
 
 ## MIDI import: status (2026-11-21)
 
-- **Default pipeline**: LilyPond N **0.9821** (1 020 files), upstream N
-  **0.7662** (96 files). Losses: voice 1 076.1, duration 350.8, onset 26.0,
-  pitch 0.0, tuplet flag 11 778.0.
-- **Instrument template selection**: literal port (previous turn).
+- **Default pipeline**: LilyPond N **0.6947** (1 020 files), upstream N
+  **0.8576** (96 files), after the beat-tracker anchoring fix. Losses are
+  detailed in the `human_tempo` section above; the former 0.9821/0.7662
+  figures came from a different oracle and are not comparable.
+- **Instrument template selection**: literal port of `importmidi_instrument.cpp`.
 - **Duration simplification**: literal port of `lengthenNote` /
-  `minimizeNumberOfRests` (previous turn).
-- **Voices**: literal port of `separateVoices` (previous turn).
-- **Beat ties**: literal `metricDivisionsOfBar` subdivisions (this turn):
-  18 files gain, none loses; upstream `human_tempo` −0.1439.
+  `minimizeNumberOfRests`.
+- **Voices**: literal port of `separateVoices`.
+- **Beat ties**: literal `metricDivisionsOfBar` subdivisions; 18 files gained,
+  none lost at the time of that change.
+- **Beat tracker**: `findBeatLocations` wired and literal; the duplicated
+  `adjustChordsToBeats` call was removed (reduced test `beat_anchoring.rs`):
+  `human_tempo` 0.4820 → 0.9353, upstream N 0.7824 → 0.8576, 3 files gain,
+  none loses.
 - **Tuplets**: literal detector + `filterTuplets` + `addChordsBetweenTupletNotes`,
-  opt-in; `tuplet_off_time_other_bar2` reaches 1.0 under the option.
-- **Open**: `assignVoices` tuplet part, tuplet-aware `toDurationList` default,
-  `human_tempo` beat tracker, `02_02_Segura` voice tie chains, `preserveLegato`
-  on 0.01-quarter overlaps (not the cause of `tuplet_off_time_other_bar2`).
+  still opt-in; `tuplet_off_time_other_bar2` reaches 1.0 under the option.
+- **Open**: `assignVoices` tuplet early stage, tuplet-aware `toDurationList`
+  default, `02_02_Segura` voice tie chains, `preserveLegato` on 0.01-quarter
+  overlaps (not the cause of `tuplet_off_time_other_bar2`).
 
 ## MIDI export: status
 

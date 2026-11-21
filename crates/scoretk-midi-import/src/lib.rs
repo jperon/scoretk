@@ -161,14 +161,6 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     for track in &mut tracks {
         remove_overlapping_notes(track);
     }
-    // `MidiBeat::adjustChordsToBeats` juste après `collectChords`
-    // (importmidi.cpp:1169-1170).
-    if let Some(data) = &beat_data {
-        beat_locator::adjust_chords_to_beats(&mut tracks, data);
-    }
-    for track in &mut tracks {
-        merge_chords_with_equal_on_time_and_voice(track);
-    }
     // `Simplify::simplifyDurations` teste l'option `simplifyDurations` de la
     // piste (`importmidi_simplify.cpp:298`) : les tests amont `dontSimplify`
     // l'ont à faux (`midiimport_tests.cpp:86`).
