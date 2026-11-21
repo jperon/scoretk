@@ -99,6 +99,7 @@ def base_releve(lot: str, outil: str, src: str, xml_source: str = "") -> dict:
         "lot": lot, "outil": outil, "fichier": src, "xml_source": xml_source,
         "ok": False, "code": None, "erreurs": 0, "avertissements": 0,
         "taille_abc": 0, "temps": 0.0, "erreur": "",
+        "rt_ok": False, "rt_stable": False,
     }
 
 
@@ -182,6 +183,26 @@ def ecrire_abc_scoretk(args, src: str, dst: Path, log: Path) -> tuple[bool, str]
     code, _, message = lancer([args.scoretk, src, "-o", str(dst)], log)
     ok = code == 0 and dst.is_file() and dst.stat().st_size > 0
     return ok, "" if ok else (message[-300:] or f"code {code}, sortie absente")
+
+
+def verifier_aller_retour(args, abc: Path, work: Path, log: Path) -> dict:
+    """Relit l'ABC écrit, l'écrit à nouveau et vérifie qu'il est stable.
+
+    ``.abc → scoretk → .abc → scoretk`` : deux écritures successives depuis
+    le modèle relu doivent donner des octets identiques (idempotence de
+    l'écrivain). La taille du second fichier est aussi relevée pour détecter
+    un gonflement silencieux.
+    """
+    rt1 = work / "rt1.abc"
+    rt2 = work / "rt2.abc"
+    ok1, _ = ecrire_abc_scoretk(args, str(abc), rt1, log)
+    if not ok1:
+        return {"rt_ok": False, "rt_stable": False}
+    ok2, _ = ecrire_abc_scoretk(args, str(rt1), rt2, log)
+    if not ok2:
+        return {"rt_ok": False, "rt_stable": False}
+    stable = rt1.read_bytes() == rt2.read_bytes()
+    return {"rt_ok": True, "rt_stable": stable}
 
 
 def ecrire_abc_alt(args, musicxml: Path, dossier: Path, log: Path) -> tuple[bool, str, Path]:
@@ -290,6 +311,8 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     continue
                 r["ok"] = True
                 r["taille_abc"] = abc.stat().st_size
+                if outil == "scoretk":
+                    r.update(verifier_aller_retour(args, abc, work, log))
                 r.update(jouer_abc(abc, work / f"{outil}.mid", log))
                 r["temps"] = round(time.monotonic() - debut, 3)
                 if not r["midi_ok"]:
@@ -359,6 +382,16 @@ def resume(releves: list[dict]) -> str:
             f"{pct('pct_n1'):.2f} | {pct('pct_n2'):.2f} | {pct('pct_n2d'):.2f} | "
             f"{sum(r.get('erreurs', 0) for r in rs)} | {sum(r.get('avertissements', 0) for r in rs)} | "
             f"{(sum(tailles)/len(tailles)) if tailles else 0:.0f} | {tmax:.2f} s |"
+        )
+    lignes += ["", "## Aller-retour `.abc → scoretk → .abc → scoretk`", "",
+               "| Lot | Testés | Relus | Stables | Instables |",
+               "| --- | ---: | ---: | ---: | ---: |"]
+    for lot in sorted({lot for lot, _ in groupes}):
+        rs = [r for r in releves if r["lot"] == lot and r["outil"] == "scoretk" and r.get("ok")]
+        tests = [r for r in rs if r.get("rt_ok")]
+        stables = [r for r in tests if r.get("rt_stable")]
+        lignes.append(
+            f"| {lot} | {len(rs)} | {len(tests)} | {len(stables)} | {len(tests)-len(stables)} |"
         )
     paires: dict[tuple, dict] = {}
     for r in releves:
