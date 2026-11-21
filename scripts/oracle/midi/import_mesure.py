@@ -37,6 +37,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -245,11 +246,28 @@ def score(ref: list[tuple], got: list[tuple]) -> float:
     return found / len(ref)
 
 
-def run(binary: str, src: Path, dst: Path) -> int:
+def run(binary: str, src: Path, dst: Path, extra: list[str] | None = None) -> int:
     """Lit ``src`` avec la CLI ; renvoie son code (3 = non prise en charge)."""
     cmd = ["timeout", str(LIMITE), "prlimit", "--as=2000000000",
            binary, str(src), "--to", "musicxml", "-o", str(dst)]
+    cmd += extra or []
     return subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+
+
+def dont_simplify_tests(tests_dir: Path) -> set[str]:
+    """Tests amont compilés avec ``dontSimplify`` (``midiimport_tests.cpp``).
+
+    Le helper ``dontSimplify`` de MuseScore pose ``simplifyDurations = false``,
+    ``maxVoiceCount = V_1``, ``doStaffSplit = false`` et
+    ``showTempoText = false`` (``midiimport_tests.cpp:79-92``) : la référence
+    ``.mscx`` attendue décrit donc une configuration d'import différente de
+    celle de la CLI. On rejoue ces tests avec les mêmes options, sans quoi leur
+    score mesure un choix d'import, pas une fidélité.
+    """
+    source = tests_dir / "midiimport_tests.cpp"
+    if not source.exists():
+        return set()
+    return set(re.findall(r'dontSimplify\(\s*"([^"]+)"\s*\)', source.read_text(encoding="utf-8")))
 
 
 def paires_upstream(data: Path) -> list[tuple[str, Path, Path]]:
@@ -305,8 +323,11 @@ def main() -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     paires = []
+    no_simplify: set[str] = set()
     if args.upstream:
-        paires += paires_upstream(Path(args.upstream))
+        upstream = Path(args.upstream)
+        paires += paires_upstream(upstream)
+        no_simplify = dont_simplify_tests(upstream.parent)
     paires += paires_lilypond()
     if args.limit:
         paires = paires[:args.limit]
@@ -340,7 +361,10 @@ def main() -> None:
                         a = []
                         row["erreur"] = f"reference : {exc}"[:200]
             if not exclu:
-                code_mid = run(args.binary, mid, got_xml)
+                extra = None
+                if ident.startswith("up-") and ident[3:] in no_simplify:
+                    extra = ["--midi-no-simplify", "--midi-voices", "1"]
+                code_mid = run(args.binary, mid, got_xml, extra)
                 if common.est_non_pris_en_charge(code_mid):
                     common.marquer_exclu(row, str(mid))
                 elif code_mid == 0:

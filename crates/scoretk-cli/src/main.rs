@@ -95,6 +95,14 @@ struct Cli {
     /// Ne pas dérouler les reprises dans la sortie MIDI
     #[arg(long)]
     no_expand_repeats: bool,
+
+    /// Import MIDI : ne pas simplifier les durées (`simplifyDurations`)
+    #[arg(long)]
+    midi_no_simplify: bool,
+
+    /// Import MIDI : nombre maximal de voix, 1 à 4 (`maxVoiceCount`)
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(1..=4))]
+    midi_voices: Option<u8>,
 }
 
 fn main() -> ExitCode {
@@ -121,12 +129,41 @@ fn main() -> ExitCode {
         Err(message) => return fail(&message),
     };
 
-    let score = match read_score(&bytes, from, &input) {
-        Ok(score) => score,
-        Err(error) if error.is_unsupported() => {
-            return fail_unsupported(&format!("{input} : {error}"));
+    // Options d'import MIDI explicites (`MidiOperations`) : la CLI les
+    // transmet telles quelles, ce qui permet de reproduire une configuration
+    // de référence MuseScore.
+    let mut midi_options = scoretk::MidiImportOptions::default();
+    let mut custom_midi = false;
+    if cli.midi_no_simplify {
+        midi_options.simplify_durations = false;
+        custom_midi = true;
+    }
+    if let Some(voices) = cli.midi_voices {
+        midi_options.max_voice_count = match voices {
+            1 => scoretk::VoiceCount::V1,
+            2 => scoretk::VoiceCount::V2,
+            3 => scoretk::VoiceCount::V3,
+            _ => scoretk::VoiceCount::V4,
+        };
+        custom_midi = true;
+    }
+
+    let score = if from == scoretk::Format::Midi && custom_midi {
+        match scoretk::read_midi_with(&bytes, &midi_options) {
+            Ok(score) => score,
+            Err(error) if error.is_unsupported() => {
+                return fail_unsupported(&format!("{input} : {error}"));
+            }
+            Err(error) => return fail(&format!("{input} : {error}")),
         }
-        Err(error) => return fail(&format!("{input} : {error}")),
+    } else {
+        match read_score(&bytes, from, &input) {
+            Ok(score) => score,
+            Err(error) if error.is_unsupported() => {
+                return fail_unsupported(&format!("{input} : {error}"));
+            }
+            Err(error) => return fail(&format!("{input} : {error}")),
+        }
     };
 
     let options = Options {

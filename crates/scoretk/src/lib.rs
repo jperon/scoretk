@@ -106,6 +106,11 @@ pub use scoretk_core::model::Score;
 /// `scoretk-midi-export`.
 #[cfg(feature = "midi-export")]
 pub use scoretk_midi_export::{MeasureSync, NoteSync, PauseSync, TempoChange, Timemap};
+/// Options d'import MIDI (`MidiOperations`), réexportées pour la CLI et les
+/// oracles qui reproduisent une configuration de MuseScore
+/// (`simplifyDurations`, `maxVoiceCount`).
+#[cfg(feature = "midi-import")]
+pub use scoretk_midi_import::{ImportOptions as MidiImportOptions, VoiceCount};
 #[cfg(feature = "musescore-import")]
 pub use scoretk_musescore_import::{detect_version, MscVersion, MsczContainer};
 #[cfg(feature = "musicxml-export")]
@@ -147,6 +152,18 @@ pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
         Format::Abc => hooks::read_abc(bytes),
         Format::Midi => hooks::read_midi(bytes),
     }
+}
+
+/// Lit un MIDI avec des options d'import explicites.
+///
+/// Les options par défaut sont celles de `MidiOperations::Opers` ; cette
+/// variante sert à reproduire une configuration précise de MuseScore (tests
+/// amont `dontSimplify`, `maxVoiceCount`). Sans la feature `midi-import`,
+/// renvoie [`Error::FormatNonPrisEnCharge`].
+#[cfg(feature = "midi-import")]
+pub fn read_midi_with(bytes: &[u8], options: &MidiImportOptions) -> Result<Score> {
+    scoretk_midi_import::read_midi_with(bytes, options)
+        .map_err(|error| Error::MidiImport(error.to_string()))
 }
 
 /// Lit un LilyPond `.ly` en résolvant ses `\include` par un rappel.

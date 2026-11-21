@@ -82,9 +82,10 @@ use chord::{
 };
 use meter::{meter_to_duration_list_with_sig, DurationKind};
 use midifile::{decode_meta_text, meta, EventKind, MidiFile, UNITS_PER_WHOLE};
-use operations::ImportOptions;
 use timesigmap::{fraction_from_ticks, TimeSigMap, Timesig};
 
+/// Options d'import MIDI (`MidiOperations`) et nombre de voix.
+pub use operations::{ImportOptions, VoiceCount};
 pub use scoretk_midi_common::Error;
 
 /// Lit un fichier MIDI et renvoie le modèle pivot, avec les options par défaut
@@ -156,11 +157,20 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     for track in &mut tracks {
         merge_chords_with_equal_on_time_and_voice(track);
     }
-    simplify::simplify_durations_not_drums(&mut tracks, &sigmap, is_human, options.use_dots);
-    if voice::separate_voices(&mut tracks, &sigmap, max_voice_count, options.use_dots) {
+    // `Simplify::simplifyDurations` teste l'option `simplifyDurations` de la
+    // piste (`importmidi_simplify.cpp:298`) : les tests amont `dontSimplify`
+    // l'ont à faux (`midiimport_tests.cpp:86`).
+    if options.simplify_durations {
         simplify::simplify_durations_not_drums(&mut tracks, &sigmap, is_human, options.use_dots);
     }
-    simplify::simplify_durations_for_drums(&mut tracks, &sigmap, is_human, options.use_dots);
+    if voice::separate_voices(&mut tracks, &sigmap, max_voice_count, options.use_dots)
+        && options.simplify_durations
+    {
+        simplify::simplify_durations_not_drums(&mut tracks, &sigmap, is_human, options.use_dots);
+    }
+    if options.simplify_durations {
+        simplify::simplify_durations_for_drums(&mut tracks, &sigmap, is_human, options.use_dots);
+    }
     drum::split_unequal_drum_chords(&mut tracks);
     for track in &mut tracks {
         split_unequal_chords(track);

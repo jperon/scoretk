@@ -2232,4 +2232,47 @@ others (`Ackermans…`, `01_01_Buenos-dias…`, `LeCantiqueDesPatrouilles` group
 gains 8 files and loses 7 (3-8 notes each, mostly tuplet/voice tests compiled
 with non-default options).
 
+## Import options: the upstream `dontSimplify` configuration (2026-11-21)
+
+MuseScore exposes `TrackOp<bool> simplifyDurations`
+(`importmidi_operations.h:197`). The upstream test helper `dontSimplify`
+(`midiimport_tests.cpp:79-92`) sets `simplifyDurations = false`,
+`maxVoiceCount = V_1`, `doStaffSplit = false` and `showTempoText = false`
+before importing: its expected `.mscx` therefore describes a **different
+import configuration** from the CLI defaults. Counting those files as losses
+measured an option mismatch, not a fidelity defect.
+
+Changes:
+
+- `scoretk-midi-import` now honours `options.simplify_durations` around both
+  `Simplify::simplifyDurationsNotDrums` and `Simplify::simplifyDurationsForDrums`
+  (`importmidi_simplify.cpp:298`), as the C++ does per track; `separateVoices`
+  still runs, and the second simplification after it is gated too.
+- The facade re-exports `MidiImportOptions` (`ImportOptions`) and `VoiceCount`
+  and adds `read_midi_with(bytes, &options)`.
+- The CLI adds `--midi-no-simplify` and `--midi-voices N` (1-4).
+- `scripts/oracle/midi/import_mesure.py` parses `dontSimplify("…")` from the
+  upstream `midiimport_tests.cpp` (found next to `midiimport_data/`) and
+  replays those files with `--midi-no-simplify --midi-voices 1`; no test name
+  is hard-coded in the repository.
+
+Reduced test `simplify_option.rs`: the 6/8 chords of `01_01_Etudiants` stay at
+0.5 quarter with the option off, and become 1.5 quarters with the default.
+
+Measurement (same manifests, frozen `/tmp/scoretk-voice`):
+
+| Metric | Before | After |
+| --- | --- | --- |
+| upstream N (96 files, 864 notes) | 0.7604 | **0.7894** |
+| LilyPond lot (1 020 files) | unchanged | unchanged |
+
+13 upstream files gain, one loses: `tuplet_off_time_other_bar2`
+(1.0000 → 0.8333). With the test's own `V_1` configuration, the note 74 at 2.0
+keeps 1.25 quarters where MuseScore's expected `.mscx` has 0.75: an off-time /
+overlap difference (`preserveLegato` on a 0.01-quarter overlap) exposed by the
+correct configuration, not a regression of the option plumbing. The other
+`dontSimplify` files reach 1.0000 (`chord_1_tick_long`, `clef_tied`, `m3`,
+`m4`, `meter_9-8`, `meter_chord_example`, `meter_last_quarter_rest_compound`,
+`meter_rests`, `min_duration`, `pickup`, `tuplet_quadruplet`…).
+
 ## Next class: tuplets (930)
