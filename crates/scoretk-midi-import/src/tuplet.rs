@@ -118,8 +118,70 @@ pub fn detect_all_tuplets(
     candidates
 }
 
+/// Ajoute les accords intermédiaires d'un n-olet (`addChordsBetweenTupletNotes`,
+/// `importmidi_tuplet.cpp:533-575`) : un accord non rattaché, dont l'intervalle
+/// recoupe le n-olet, rejoint celui-ci si son erreur de n-olet est inférieure à
+/// son erreur de quantification régulière.
+fn add_chords_between_tuplet_notes(
+    track: &MTrack,
+    info: &TupletInfo,
+    bar_start: Fraction,
+    basic_quant: Fraction,
+) -> Vec<ChordKey> {
+    let mut chords = info.chords.clone();
+    let tuplet_data = TupletData {
+        voice: 0,
+        on_time: bar_start,
+        len: info.len,
+        tuplet_number: info.tuplet_number,
+        element_count: 0,
+    };
+    let ratio = tuplet_limits(info.tuplet_number).ratio;
+    let end = info.on_time + info.len;
+    for (chord_key, chord) in track.chords.range(info.on_time, end) {
+        if chord_key.0 <= info.on_time || chord.is_in_tuplet || chords.contains(&chord_key) {
+            continue;
+        }
+        let on_time = chord_key.0;
+        let off_time = MTrack::max_off_time(chord);
+        if off_time < info.on_time || on_time > end {
+            continue;
+        }
+        let tuplet_error = (on_time
+            - super::quant::find_quantized_tuplet_chord_on_time(on_time, &tuplet_data, ratio))
+        .abs();
+        let regular_error = super::quant::find_on_time_quant_error(on_time, chord, basic_quant);
+        let mut tuplet_error = tuplet_error;
+        let mut regular_error = regular_error;
+        if off_time < end {
+            tuplet_error += (off_time
+                - super::quant::find_quantized_tuplet_note_off_time(
+                    on_time,
+                    off_time,
+                    &tuplet_data,
+                    ratio,
+                )
+                .0)
+                .abs();
+            regular_error += (off_time
+                - super::quant::find_quantized_note_off_time(on_time, off_time, basic_quant).0)
+                .abs();
+        }
+        if tuplet_error < regular_error {
+            chords.push(chord_key);
+        }
+    }
+    chords.sort();
+    chords
+}
+
 /// Insère les n-olets détectés dans la piste (`addTupletEvents`).
-pub fn apply_tuplets(track: &mut MTrack, candidates: &[TupletInfo]) {
+pub fn apply_tuplets(
+    track: &mut MTrack,
+    sigmap: &TimeSigMap,
+    candidates: &[TupletInfo],
+    basic_quant: Fraction,
+) {
     let mut next_seq = track
         .tuplets
         .keys()
@@ -135,6 +197,8 @@ pub fn apply_tuplets(track: &mut MTrack, candidates: &[TupletInfo]) {
             .first()
             .and_then(|key| track.chords.get(*key))
             .map_or(0, |chord| chord.voice);
+        let bar_start = super::simplify::find_bar_start(sigmap, info.on_time);
+        let chords = add_chords_between_tuplet_notes(track, info, bar_start, basic_quant);
         track.tuplets.insert(
             key,
             TupletData {
@@ -146,7 +210,7 @@ pub fn apply_tuplets(track: &mut MTrack, candidates: &[TupletInfo]) {
             },
         );
         let mut count = 0;
-        for chord_key in &info.chords {
+        for chord_key in &chords {
             if let Some(chord) = track.chords.get_mut(*chord_key) {
                 chord.is_in_tuplet = true;
                 chord.tuplet = Some(key);

@@ -182,7 +182,12 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     if options.tuplet_notation {
         for (index, track) in tracks.iter_mut().enumerate() {
             if let Some(candidates) = detected_tuplets.get(index) {
-                tuplet::apply_tuplets(track, candidates);
+                tuplet::apply_tuplets(
+                    track,
+                    &sigmap,
+                    candidates,
+                    quant::quant_value_to_fraction(quant_value),
+                );
             }
         }
     }

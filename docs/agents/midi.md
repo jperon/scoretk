@@ -2474,3 +2474,25 @@ tolerance (0.25 quarter). Reduced test `tuplet_off_time.rs` (written first)
 checks the first fragment of note 74 at 2.0 quarters and that no longer
 fragment extends it. The default pipeline still scores 0.8333 until the tuplet
 insertion stage is decided (see the next section).
+
+## Tuplet insertion: `addChordsBetweenTupletNotes` (2026-11-21)
+
+The C++ adds the chords between two tuplet positions to the tuplet after
+filtering (`addChordsBetweenTupletNotes`, `importmidi_tuplet.cpp:533-575`): a
+chord that starts after the tuplet's on time, whose interval intersects the
+tuplet, joins it when its tuplet quantisation error is lower than its regular
+one (`findOnTimeTupletQuantError` + `findOffTimeTupletQuantError`,
+`importmidi_quant.cpp`). `apply_tuplets` now ports this literally
+(`add_chords_between_tuplet_notes`), with `MTrack::max_off_time` as the chord
+interval end.
+
+The tuplet part of `assignVoices` (`importmidi_tuplet_voice.cpp:872-926`) —
+`setBackTiedVoices`, `setTupletVoices`, `excludeExtraVoiceTuplets` — is **not**
+ported: the detector already fixes a tuplet's voice from its first chord when
+it is inserted (`insert_detected_tuplet`), and
+`assign_non_tuplet_voices` ports `setNonTupletVoices` (`:171-206`). An
+ablation measurement (option enabled, with and without
+`addChordsBetweenTupletNotes`) gives **identical** scores on both lots
+(opt-in N 0.9819, tuplet dimension 6 216.0, upstream 0.7743), so the missing
+pieces do not change the measured output today; they remain required before
+tuplet detection can become the default.
