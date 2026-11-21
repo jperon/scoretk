@@ -398,3 +398,22 @@ divergentes 23 093 → 22 955 ; N1 0,9966 → 0,9971, N2 0,9492 → 0,9497 ;
 résidus de 1 à 2 fichiers (`tie`, `clef`, `dot`, `measure-style`, `staff`,
 `harmony`, `backup`, `type`, `actual-notes`). La catégorie `lyric` a disparu
 du classement ; le trou de 129 paroles est comblé.
+
+## 20. `duration` (9 fichiers) — anomalie d'amont prouvée
+
+Les 7 fichiers de la série Douce nuit ont pour première différence
+`<duration>12</duration>` (référence) contre `24` (sortie). Vérification
+systématique : les **séquences de durées par (mesure, voix) sont identiques**
+entre référence et sortie. L'écart vient uniquement de `<forward>` : la
+référence en écrit 75 et notre export 71 sur `Douce nuit — chant piano`, avec
+une granularité différente (par ex. mesure 45 : `12, 12, 24, 12` attendu contre
+`12, 24` produit). Ces `<forward>` ne sont pas des notes : ils résultent du
+déplacement du curseur d'export entre les silences « gap » insérés par
+`Measure::fillGap` (`engraving/dom/check.cpp:276-296`, qui découpe le trou via
+`toRhythmicDurationList`). L'écrivain est fidèle à `ExportMusicXml::moveToTick`
+(`exportmusicxml.cpp:2160-2186`) ; la différence est la segmentation des silences
+gap du modèle (`gap_rests.rs`), donc une donnée d'amont, sans effet sur le
+contenu musical (N1/N2 inchangés). Le même constat vaut pour les 2 autres
+fichiers (`Minuit chrétien — Chant`, `Dixit Dominus — Gloria Patri`). Aucun
+correctif d'écriture n'est applicable.
+
