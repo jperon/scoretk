@@ -1753,3 +1753,19 @@ voix par `findBarIndexForOffTime` (upstream 258 → 261, LilyPond 31 615 →
 le cas réduit `Maiana`), somme des hauteurs brutes (aucun gain),
 `useDots=false` (très régressif), `is_human=false` (aucun effet lot
 LilyPond).
+
+### Cause fixed: transposition des instruments (contrabasse)
+
+`share/instruments/instruments.xml` donne à l'instrument `contrabass`
+`<transposeDiatonic>-7</transposeDiatonic>` et
+`<transposeChromatic>-12</transposeChromatic>` pour les programmes GM 32 et
+43. MuseScore 4.7.4 pose donc `<transpose><octave-change>-1</…>` et écrit les
+hauteurs une octave plus haut ; notre import MIDI ne renseignait pas
+`Instrument::transpose`. Failing test first : `instrument_transpose` vérifie
+que le programme 43 porte une transposition chromatique de -12.
+
+`instrument::transpose_for_program` est appliqué dans `createInstruments`.
+Sur les 15 pires fichiers du lot comparés à MuseScore 4.7.4, `GaudeteChristus…
+` passe de **0,6495 à 1,0000** (150 notes retrouvées) et aucun autre fichier
+ne régresse ; perte totale 2 776 → 2 626 notes. La mesure complète sur les
+1 020 fichiers est en cours avec le nouvel oracle MuseScore.

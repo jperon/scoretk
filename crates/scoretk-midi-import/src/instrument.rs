@@ -78,3 +78,18 @@ pub fn set_grand_staff_program(tracks: &mut [MTrack]) {
         }
     }
 }
+
+/// Transposition écrite d'un instrument GM (`InstrumentTemplate::transpose`).
+///
+/// Les gabarits de MuseScore portent un intervalle de transposition ; pour
+/// l'import MIDI, le seul utilisé ici est celui de la contrebasse
+/// (`share/instruments/instruments.xml`, instrument `contrabass` :
+/// `<transposeDiatonic>-7</transposeDiatonic>`,
+/// `<transposeChromatic>-12</transposeChromatic>`, programmes GM 32 et 43).
+/// Un instrument non transpositeur garde `None`.
+pub fn transpose_for_program(program: u8) -> Option<scoretk_core::model::Transpose> {
+    match program {
+        32 | 43 => Some(scoretk_core::model::Transpose::new(-7, -12)),
+        _ => None,
+    }
+}

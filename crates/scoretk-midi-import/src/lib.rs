@@ -434,6 +434,7 @@ fn create_instruments(score: &mut Score, tracks: &mut [MTrack], options: &Import
                 .unwrap_or("")
                 .to_owned();
         part.instrument.track_name = name.clone();
+        part.instrument.transpose = instrument::transpose_for_program(tracks[index].program);
         part.instrument.midi_program = Some(if tracks[index].drum_track {
             0
         } else {
