@@ -369,8 +369,13 @@ impl Parser<'_> {
             if actual != duration.0.ticks() {
                 chord_rest.ticks = Some(actual);
             }
+            // A rest inside a tuplet advances the tick by the same scaled
+            // duration as a note: ABC 2.1 §4.13 and `abc2xml.py::mkNote`
+            // (lines 1306, 1366) count and scale rests like notes. Without
+            // this, `(2:3ez/2fz/2` in 12/8 is read as 7/16 instead of 15/32.
+            let scale = self.tuplet_scale();
             self.push_event(chord_rest, tick);
-            self.voice().tick += actual;
+            self.voice().tick += actual * scale;
             return Ok(());
         }
 
