@@ -70,7 +70,11 @@ fn glissandi(score: &Score) -> usize {
 #[test]
 fn glissando_2x_ecrit_comme_spanner() {
     let score = partition(true);
-    assert_eq!(glissandi(&score), 1, "le lecteur 2.x doit lire le glissando");
+    assert_eq!(
+        glissandi(&score),
+        1,
+        "le lecteur 2.x doit lire le glissando"
+    );
     let ecrit = scoretk_musescore_export::write_mscx(&score).expect("écriture");
     assert!(
         ecrit.contains("<Spanner type=\"Glissando\">"),

@@ -182,9 +182,10 @@ pub(super) fn fix_spanners(score: &mut Score, links: &[SpannerLink]) {
                 )));
             }
             SpanFamily::Glissando => {
-                let mut glissando = link.glissando.clone().unwrap_or_else(|| {
-                    Glissando::new(GlissandoType::Straight(LineStyle::Solid))
-                });
+                let mut glissando = link
+                    .glissando
+                    .clone()
+                    .unwrap_or_else(|| Glissando::new(GlissandoType::Straight(LineStyle::Solid)));
                 glissando.text = link.text.clone().unwrap_or_default();
                 spanner.notation = Some(SpannerNotation::Glissando(glissando));
             }

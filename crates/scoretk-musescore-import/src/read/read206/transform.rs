@@ -496,9 +496,7 @@ fn adapt_element(node: &mut Node, ctx: &mut AdaptCtx<'_>) {
                     let subtype = gliss.child("subtype").map(Node::trimmed_text);
                     let style = gliss
                         .child("lineStyle")
-                        .map(|child| {
-                            crate::read::notation_names::line_style(&child.trimmed_text())
-                        })
+                        .map(|child| crate::read::notation_names::line_style(&child.trimmed_text()))
                         .unwrap_or(scoretk_core::model::LineStyle::Solid);
                     let text = gliss.child("text").map(Node::text);
                     (id, subtype, style, text)

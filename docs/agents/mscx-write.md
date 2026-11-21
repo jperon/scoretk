@@ -1043,3 +1043,66 @@ master staff-visibility fixes. No file loses a core line or writer-only N2
 compared with pass 10. The remaining octave-classified writer-only losses
 need the model to distinguish MuseScore's playback of glissando/trill notes
 from the long written values; no speculative writer change was applied.
+
+### Twelfth pass — element inventory of the writer-only N2 losses (English)
+
+Rather than trusting the `octave` label of `midi_notes`, the element inventory
+of the source `.mscx` and of our written `.mscx` was compared for every file
+with writer-only N2 below 1.0 (first `<Score>` only, since some sources contain
+linked excerpts; mscz-166 was excluded as its source has nine linked scores).
+Elements lost by the rewrite, by count and number of files: `Beam` 2334 (9),
+`Note`/`Chord` about 1400 each (mostly the excluded multi-score file), `Tuplet`
+222 (3), `Slur` 146 (3), `Symbol` 53 (3), `Articulation` 9 (2), `Trill` 11,
+`Glissando` 4, `Ornament` 1. Beams and symbols do not change playback; the
+playable elements actually missing were legacy 2.x `<Trill>` and `<Glissando>`
+spanners, which the 2.x reader ignored.
+
+**Legacy `<Trill id>` (mscz-33).** `Read206::readTrill206`
+(`read206.cpp:2362-2376`) and `readMeasure206` (`:2871-2892`) pair a 2.x
+`<Trill id>` with its `<endSpanner id>`. scoretk's 2.x reader had no `Trill`
+spanner family, so all 11 trills of Hallelujah disappeared from the written
+`.mscx` and MuseScore could not play their notes. `SpanFamily::Trill` now
+reads the subtype (`notation_names::trill_type`) and `fix_spanners` builds a
+`SpannerType::Trill` with `SpannerNotation::Trill`; `TWrite::write(const Trill*)`
+(`write/twrite.cpp:3490-3494`) is then reproduced by the writer. Reduced test:
+`trill_206`, with a score without trill as the control. On mscz-33 reopened by
+MuseScore 4.7.4, writer-only N2 goes from 4204/4321 (0.9729) to 4321/4321
+(1.0000).
+
+**Legacy `<Glissando id>` (mscz-8).** The same 2.x coupling applies to
+`<Glissando id>` (`read206.cpp:2871-2892`); it can be carried by a `<Note>`
+(`readNoteProperties206`, `:1221`), as in the corpus. The 2.x reader now
+collects the subtype, line style and text and builds a `SpannerType::Glissando`
+with `SpannerNotation::Glissando`; the writer emits the corresponding
+`<Spanner type="Glissando">`. Reduced test: `glissando_206`, with a score
+without glissando as the control. The rewritten mscz-8 now carries four
+glissando spanners instead of zero (its writer-only N2 stays at 0.9852: the
+remaining loss is the glissando note-generation itself, not the spanner).
+
+### Twelfth pass — final table
+
+Binary `/tmp/scoretk-mscz-pass12-final` (sha256 `80df43de…`), full 638-score
+run. Writer-only N2 improves on mscz-33 (0.9729 → 1.0000) and no file loses
+writer-only N2.
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | N1w | N2w | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | 54/56 | 0.9882 | 0.9873 | 0.9836 | 0.9733 | 0 | 56/56 |
+| mscz | 174 | 172 | 172 | 42/172 | 0.9967 | 0.9967 | 0.9990 | 0.9939 | 0 | 56/172 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9983 | 0.9908 | 0.9066 | 0.8992 | 0 | 0/27 |
+| ly | 375 | 358 | 358 | 1/358 | 0.9913 | 0.9889 | — | — | 0 | 0/0 |
+| abc | 1 | 1 | 1 | 0/1 | 1.0000 | 1.0000 | — | — | 0 | 0/0 |
+| **Total** | **638** | **614** | **614** | **97/614** | **0.9965** | **0.9951** | **0.9819** | **0.9763** | **0** | **112/255** |
+
+The core-identical count drops from 49 to 42 on the `.mscz` lot, with seven
+scores gaining 2–36 core lines whose first difference is the tuplet bracket.
+Between the two binaries master merged `8c539b1` ("MusicXML : crochet des
+n-olets d'après calcHasBracket"), which changed our *direct* MusicXML bracket
+values independently of the two 2.x reader fixes; none of those seven sources
+has a legacy `<Trill>` or `<Glissando>`. The `.ly` lot gains 13 openable scores
+(345 → 358) from master's LilyPond reader fixes, which also explains its
+slightly lower N1/N2 averages (more, harder files are now measured). Neither
+change is caused by the trill/glissando reader commits. The oracle reference
+was regenerated with `scripts/oracle/refresh-reference.sh` before these code
+changes and must be refreshed again afterwards so `compare.sh` remains
+meaningful.
