@@ -2560,6 +2560,22 @@ reference places the low notes in a third voice that our no-split path does
 not reproduce (0.5 → 0.1667 with the locked option), so replaying that flag
 would be a per-file regression; excluding it gives upstream N **0.9248**.
 
+## Oracle: `<dots>` in the upstream `.mscx` references (2026-11-21)
+
+`mscx_notes()` read `<durationType>` without applying `<dots>`, so a dotted
+quarter counted as one quarter. In the 23 upstream references that use dots
+(mostly 12/8 and 9/8 meter tests) every later onset was shifted and every
+dotted duration shortened. Reduced test
+`scripts/oracle/midi/test_dots.py` (written first, failing with onset 1.0
+instead of 1.5) checks a dotted quarter rest followed by a dotted eighth.
+`mscx_notes()` now multiplies by `2 - 2⁻ⁿ` when `<dots>` is present and
+`<duration>` is not. Full re-measurement: **16 upstream files recover**, none
+loses; upstream N 0.9144 → **0.9653**, total upstream loss 74.0 → **30.0**
+notes. LilyPond N unchanged (0.6943: that lot uses `.ly` references, not
+`.mscx`). Only `quant_dotted_4th` remains at 0 because its reference was
+generated with the non-default `QuantValue::Q_4` option, which the CLI does
+not replay.
+
 ## `human_tempo`: beat tracker ported, wired and anchored (2026-11-21)
 
 Literal diff of `importmidi_beat.cpp` and the BeatRoot sources against our
@@ -5079,25 +5095,26 @@ Default pipeline, same 96-file upstream manifest and oracle; losses are
 | Rank | File | Lost notes | Score | Main cause |
 | ---: | --- | ---: | ---: | --- |
 | 1 | `up-tuplet_3_5_7_tuplets` | 9.0 | 0.5000 | Tuplet notation / non-default test options |
-| 2 | `up-perc_no_grand_staff` | 9.0 | 0.2500 | Drum table / grand-staff option |
-| 3 | `up-human_tempo` | 9.0 | 0.9353 | Residual beat-grid anchor (1 of 139 notes) |
-| 4 | `up-lyrics_voice_1` | 7.0 | 0.5000 | Lyrics voice attribution |
-| 5 | `up-meter_15-8` | 4.0 | 0.3333 | Time signature / non-default options |
-| 6 | `up-voice_central` | 4.0 | 0.0000 | Voice separation |
-| 7 | `up-voice_acid` | 4.0 | 0.5000 | Voice separation |
+| 2 | `up-human_tempo` | 9.0 | 0.9353 | Nine D4 notes in the right hand instead of the left |
+| 3 | `up-lyrics_voice_1` | 7.0 | 0.5000 | Voice assignment of the upper line |
+| 4 | `up-tuplet_2_voices_3_5_tuplets` | 2.0 | 0.8182 | Two-voice tuplet durations |
+| 5 | `up-tuplet_2_voices_tuplet_non` | 1.0 | 0.8750 | Two-voice tuplet layout |
+| 6 | `up-quant_dotted_4th` | 1.0 | 0.0000 | Reference uses non-default `Q_4` quantisation |
+| 7 | `up-human_4-4` | 1.0 | 0.7500 | Human-performance quantisation |
 
-Total: **85.0 lost notes** over the 96 upstream files, down from 123.0 before
-early tuplet insertion became the default. The remaining rows are mostly
-upstream tests compiled with non-default options (`dontSimplify`, `V_1`) or
-configuration limits (drum kit, lyrics voices).
+Total: **30.0 lost notes** over the 96 upstream files, down from 85.0 after
+the staff-split option and from 123.0 before early tuplet insertion became
+the default. The remaining rows are mostly non-default upstream test options
+or local voice/hand-assignment choices.
 
 ## MIDI import: status (2026-11-21)
 
-- **Default pipeline**: LilyPond N **0.6942** (1 020 files), upstream N
-  **0.9016** (96 files), after the beat-tracker anchoring fix and the default
-  early tuplet detection. The four LilyPond rows that lose less than 0.033
-  are explained attribute-only differences (see above); the former
-  0.9821/0.7662 figures came from a different oracle and are not comparable.
+- **Default pipeline**: LilyPond N **0.6943** (1 020 files), upstream N
+  **0.9653** (96 files), after the beat-tracker anchoring fix, the default
+  early tuplet detection, the locked staff-split option and the `<dots>`
+  oracle fix. The four LilyPond rows that lose less than 0.033 are explained
+  attribute-only differences (see above); the former 0.9821/0.7662 figures
+  came from a different oracle and are not comparable.
 - **Instrument template selection**: literal port of `importmidi_instrument.cpp`.
 - **Duration simplification**: literal port of `lengthenNote` /
   `minimizeNumberOfRests`.
@@ -5115,11 +5132,11 @@ configuration limits (drum kit, lyrics voices).
   four explained tuplet-attribute differences; the two tied-tuplet files are
   back to 1.0 after porting `setTiedChordVoice` (`importmidi_tuplet_voice.cpp:542`).
 - **Biggest remaining upstream losses** (weighted lost notes, default
-  pipeline): `tuplet_3_5_7_tuplets` 9.0, `perc_no_grand_staff` 9.0,
-  `human_tempo` 9.0, `lyrics_voice_1` 7.0, then five files at 4.0 — **85.0**
-  lost notes in total over 96 files, down from 123.0. The rest are mostly
-  upstream tests built with non-default options (`dontSimplify`, `V_1`) or
-  configuration limits (percussion kit, lyrics voices).
+  pipeline): `tuplet_3_5_7_tuplets` 9.0, `human_tempo` 9.0,
+  `lyrics_voice_1` 7.0, then four files at 1.0–2.0 — **30.0** lost notes in
+  total over 96 files, down from 85.0 and from 123.0 before early tuplet
+  insertion. The rest are mostly non-default upstream options (`Q_4`) or
+  local voice/hand-assignment choices.
 - **Open**: tuplet-aware `toDurationList` default, `02_02_Segura` voice tie
   chains, `preserveLegato` on 0.01-quarter overlaps (not the cause of
   `tuplet_off_time_other_bar2`).

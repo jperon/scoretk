@@ -192,6 +192,13 @@ def mscx_notes(path: Path) -> list[tuple[int, float, float, int]]:
                             length = float(num) / float(den or 1) * 4.0
                         else:
                             length = DUREES.get(child.findtext("durationType", "quarter"), 1.0)
+                            # `<dots>` change la durée réelle, pas seulement
+                            # la notation : un croche pointé vaut 3/4 de
+                            # noire. Les mesures composées (12/8) du lot amont
+                            # en sont pleines.
+                            dots = int(child.findtext("dots", "0") or 0)
+                            if dots > 0:
+                                length *= 2 - 2 ** (-dots)
                         if tuplet is not None:
                             ratio, remainder = tuplet
                             length *= ratio
