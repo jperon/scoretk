@@ -1660,3 +1660,20 @@ articulation `Fermata*` s'écrit désormais `<fermata type="upright"/>` (ou
 accord) écrit d'abord, échouant avant le correctif. Sur
 `decorations.test__abcFermata` : 12 `<fermata>` produits, comme l'alternative.
 
+
+## 20. N3 — liaisons entre hauteurs différentes converties en slurs (2026-11-21)
+
+`abc2xml.py::doNotations` (lignes 1445-1460, ABC 2.1 §4.14) signale
+« tie between different pitches … converted to slur » : une liaison `-` ouverte
+dont la hauteur n'est pas dans la note suivante n'est pas abandonnée mais
+transformée en slur d'expression. Le lecteur ne faisait que supprimer la
+liaison en attente (`drop_foreign_ties` avertissait « abandonnée ») : les 151
+airs N3 en défaut de slurs perdaient ces liaisons.
+
+Le correctif conserve la position d'origine de chaque liaison
+(`pending_ties: BTreeMap<u8, (NoteId, Position)>`), retire le `tie_forward`
+(pour que le comparateur N1 compte toujours la note, § 15.3) et crée un
+`Spanner` `Slur` entre le tick d'origine et le tick de la note courante.
+Test réduit `C-D|` écrit d'abord et échouant avant le correctif
+(`tests/foreign_ties.rs`). Sur `0001-0050.abc` X:16 (`A4-B2`…) : 24 slurs
+start / 24 stop produits, comme l'alternative, contre 0 avant.

@@ -29,7 +29,8 @@
 
 use scoretk_core::model::{
     Accidental, AccidentalType, Articulation, ArticulationType, BarLineType, ChordRest, Duration,
-    DurationType, Fraction, GraceChord, GraceType, Note, NoteId, Ornament, OrnamentType,
+    DurationType, Fraction, GraceChord, GraceType, Note, NoteId, Ornament, OrnamentType, Slur,
+    Spanner, SpannerAnchor, SpannerNotation, SpannerType, Track,
 };
 
 use crate::reader::{
@@ -449,12 +450,13 @@ impl Parser<'_> {
         let duration = duration::figure_for(nominal);
         let id = self.reader.score.add_note(note);
         self.drop_foreign_ties(&[pitch]);
-        if let Some(previous) = self.voice().pending_ties.remove(&pitch) {
+        if let Some((previous, _)) = self.voice().pending_ties.remove(&pitch) {
             self.reader.score.note_mut(previous).tie_forward = Some(id);
             self.reader.score.note_mut(id).tie_back = Some(previous);
         }
         if tie {
-            self.voice().pending_ties.insert(pitch, id);
+            let position = self.voice().position();
+            self.voice().pending_ties.insert(pitch, (id, position));
         }
         let mut chord_rest = ChordRest::chord(duration.0);
         if let Some(chord) = chord_rest.chord_mut() {
@@ -908,8 +910,18 @@ impl Parser<'_> {
             return;
         }
         for (id, pitch) in notes {
-            self.voice().pending_ties.insert(pitch, id);
+            let position = self.voice().position();
+            self.voice().pending_ties.insert(pitch, (id, position));
         }
+    }
+
+    /// Tick absolu d'une position dans une voix (somme des mesures écrites).
+    fn voice_tick(measures: &[crate::reader::MeasureData], position: &Position) -> Fraction {
+        let mut tick = Fraction::ZERO;
+        for measure in measures.iter().take(position.measure) {
+            tick += measure.len;
+        }
+        tick + position.tick
     }
 
     /// Abandonne les liaisons en attente dont la hauteur n'est pas présente.
@@ -929,10 +941,32 @@ impl Parser<'_> {
             .copied()
             .filter(|pitch| !pitches.contains(pitch))
             .collect();
+        let destination = self.voice().position();
         for pitch in foreign {
-            self.voice().pending_ties.remove(&pitch);
+            let Some((previous, origin)) = self.voice().pending_ties.remove(&pitch) else {
+                continue;
+            };
+            // `abc2xml.py::doNotations` (lignes 1445-1460) : une liaison `-`
+            // dont la hauteur n'est pas dans la note suivante est convertie
+            // en slur, pas abandonnée. On retire le `tie_forward` et on crée
+            // un spanner de liaison d'expression entre les deux notes.
+            self.reader.score.note_mut(previous).tie_forward = None;
+            let voice = self.voice();
+            let start_tick = Self::voice_tick(&voice.measures, &origin);
+            let end_tick = Self::voice_tick(&voice.measures, &destination);
+            let track = Track::new(
+                scoretk_core::model::StaffId::from_index(0),
+                self.voice as u8,
+            );
+            let mut spanner = Spanner::new(
+                SpannerType::Slur,
+                SpannerAnchor::new(start_tick, track),
+                SpannerAnchor::new(end_tick, track),
+            );
+            spanner.notation = Some(SpannerNotation::Slur(Slur::new()));
+            self.reader.score.add_spanner(spanner);
             self.warn(format!(
-                "liaison entre hauteurs différentes ({pitch}) abandonnée"
+                "liaison entre hauteurs différentes ({pitch}) convertie en slur"
             ));
         }
     }
@@ -942,12 +976,13 @@ impl Parser<'_> {
         let pitches: Vec<u8> = notes.iter().map(|(_, pitch, _)| *pitch).collect();
         self.drop_foreign_ties(&pitches);
         for (id, pitch, tie) in notes {
-            if let Some(previous) = self.voice().pending_ties.remove(pitch) {
+            if let Some((previous, _)) = self.voice().pending_ties.remove(pitch) {
                 self.reader.score.note_mut(previous).tie_forward = Some(*id);
                 self.reader.score.note_mut(*id).tie_back = Some(previous);
             }
             if *tie {
-                self.voice().pending_ties.insert(*pitch, *id);
+                let position = self.voice().position();
+                self.voice().pending_ties.insert(*pitch, (*id, position));
             }
         }
     }

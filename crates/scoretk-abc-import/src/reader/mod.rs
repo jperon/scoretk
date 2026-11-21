@@ -485,7 +485,7 @@ pub(crate) struct Voice {
     /// Pile des soufflets ouverts.
     pub open_hairpins: Vec<(usize, Position)>,
     /// Liaisons en attente, par hauteur.
-    pub pending_ties: BTreeMap<u8, NoteId>,
+    pub pending_ties: BTreeMap<u8, (NoteId, Position)>,
     /// Agréments en attente.
     pub grace: Option<GraceData>,
     /// Décorations en attente.
