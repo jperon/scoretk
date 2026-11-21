@@ -418,8 +418,8 @@ fn create_parts(
         // `<transpose>`, exactement comme `abc2xml.py`.
         let transpose = first_voice
             .and_then(|number| voices.iter().find(|voice| voice.number == number))
-            .filter(|voice| voice.transpose != 0)
-            .map(|voice| Transpose::new(0, voice.transpose));
+            .filter(|voice| voice.instrument_transpose != 0)
+            .map(|voice| Transpose::new(0, voice.instrument_transpose));
         if let Some(transpose) = transpose {
             score.part_mut(part).instrument.transpose = Some(transpose);
         }

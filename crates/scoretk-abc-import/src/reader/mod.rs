@@ -488,6 +488,8 @@ pub(crate) struct Voice {
     pub key: KeySig,
     /// Transposition en vigueur, en demi-tons (hauteur réelle = écrite + transposition).
     pub transpose: i32,
+    /// Transposition d'instrument seule, sans les decalages d'octave des clefs.
+    pub instrument_transpose: i32,
     /// Indication de mesure initiale.
     pub initial_time: TimeSig,
     /// Armure initiale.
@@ -554,6 +556,7 @@ impl Voice {
             time: time.clone(),
             key: key.clone(),
             transpose: 0,
+            instrument_transpose: 0,
             initial_time: time,
             accidental: pitch::AccidentalState::new(key.concert_key.fifths()),
             initial_key: key,
@@ -663,6 +666,8 @@ pub(crate) struct Reader {
     pub key: KeySig,
     /// Transposition globale (`%%MIDI transpose` ou paramètre de `K:`), en demi-tons.
     pub midi_transpose: i32,
+    /// Transposition globale d'instrument seule (sans decalage de clef).
+    pub instrument_transpose: i32,
     /// Tempo global `(battements par seconde, texte)`.
     pub tempo: Option<(f64, String)>,
     /// Symboles redéfinis par `U:` (lettre → nom de décoration).
@@ -708,6 +713,7 @@ impl Default for Reader {
             time: TimeSig::new(4, 4),
             key: KeySig::new(Key::C),
             midi_transpose: 0,
+            instrument_transpose: 0,
             tempo: None,
             user_symbols: BTreeMap::new(),
             voice_ids: BTreeMap::new(),
@@ -777,6 +783,7 @@ impl Reader {
                     self.header_key.clone(),
                 );
                 voice.transpose = self.midi_transpose;
+                voice.instrument_transpose = self.instrument_transpose;
                 self.voices.push(voice);
             }
             if !self.seen_key {
@@ -820,10 +827,12 @@ impl Reader {
                 let amount = value.split_whitespace().nth(1).unwrap_or("");
                 if let Some(transpose) = parse_transpose_value(amount, number, &mut self.warnings) {
                     self.midi_transpose = transpose;
+                    self.instrument_transpose = transpose;
                     // La directive globale s'applique aux voix déjà créées ;
                     // les voix suivantes héritent de `midi_transpose`.
                     for voice in &mut self.voices {
                         voice.transpose = transpose;
+                        voice.instrument_transpose = transpose;
                     }
                 }
             }
@@ -924,8 +933,10 @@ impl Reader {
                     parse_transpose_parameter(&parsed.parameters, number, &mut self.warnings)
                 {
                     self.midi_transpose = transpose;
+                    self.instrument_transpose = transpose;
                     for voice in &mut self.voices {
                         voice.transpose = transpose;
+                        voice.instrument_transpose = transpose;
                     }
                 }
                 // `abc2xml.py::doClef` (lignes 1736-1744) : un suffixe
@@ -969,6 +980,9 @@ impl Reader {
                     self.midi_transpose += octave_shift;
                     for voice in &mut self.voices {
                         voice.transpose += octave_shift;
+                        // Le suffixe de clef ne fait PAS partie de la
+                        // transposition d'instrument : il sera réécrit tel
+                        // quel dans la clef et ne doit pas être cumulé.
                     }
                 }
             }
@@ -1000,10 +1014,16 @@ impl Reader {
                         self.voices[index].clef = Some(clef);
                     }
                     if let Some(transpose) = fields.transpose {
-                        self.voices[index].transpose = transpose;
+                        self.voices[index].transpose =
+                            transpose + self.midi_transpose - self.instrument_transpose;
+                        self.voices[index].instrument_transpose = transpose;
                     }
                 } else {
-                    let transpose = fields.transpose.unwrap_or(self.midi_transpose);
+                    let instrument_transpose =
+                        fields.transpose.unwrap_or(self.instrument_transpose);
+                    let transpose = fields.transpose.map_or(self.midi_transpose, |t| {
+                        t + self.midi_transpose - self.instrument_transpose
+                    });
                     let fields = VoiceFields {
                         clef: fields.clef.or(self.default_clef),
                         ..fields
@@ -1015,6 +1035,7 @@ impl Reader {
                         self.header_key.clone(),
                     );
                     voice.transpose = transpose;
+                    voice.instrument_transpose = instrument_transpose;
                     self.current = self.voices.len();
                     self.voices.push(voice);
                 }
@@ -1070,6 +1091,7 @@ impl Reader {
                 self.header_key.clone(),
             );
             voice.transpose = self.midi_transpose;
+            voice.instrument_transpose = self.instrument_transpose;
             self.voices.push(voice);
         }
         for voice in &mut self.voices {
