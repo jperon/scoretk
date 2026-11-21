@@ -1155,21 +1155,33 @@ fn merge_multi_rests(slots: &mut Vec<MeasureSlot>, staves: &[StaffBuild]) {
 
 /// Longueur d'un silence multi-mesures commençant à un tick.
 fn multi_rest_length(staves: &[StaffBuild], start: Fraction) -> Option<Fraction> {
+    let mut length = None;
     for staff in staves {
+        let mut local = None;
         for voice in &staff.voices {
             for event in &voice.interpreted.events {
                 if event.tick != start {
                     continue;
                 }
                 if let EventKind::Chord(chord) = &event.kind {
-                    if matches!(chord.content, ChordContent::MultiRest) {
-                        return Some(chord.actual);
+                    match chord.content {
+                        ChordContent::MultiRest => local = Some(chord.actual),
+                        // Une portée joue à ce tick : les mesures ne peuvent
+                        // pas être fusionnées pour les autres portées.
+                        ChordContent::Notes(_) | ChordContent::Rest { .. } => return None,
+                        ChordContent::Skip { .. } => {}
                     }
                 }
             }
         }
+        if let Some(value) = local {
+            if length.is_some_and(|previous| previous != value) {
+                return None;
+            }
+            length = Some(value);
+        }
     }
-    None
+    length
 }
 
 /// Crée les mesures de la trame.

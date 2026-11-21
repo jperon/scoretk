@@ -5362,3 +5362,216 @@ fn transposition_conserve_lenharmonie() {
         .collect();
     assert_eq!(concert, vec![(64, 6)], "fa bémol concert, pas mi");
 }
+
+/// Reduction reelle de Beatus_vir_primo.ly (trois portees, sept mesures).
+#[test]
+fn silences_multi_mesures_ne_fusionnent_pas_les_portees_jouees() {
+    let source = r#"\version "2.12.2"
+\language "deutsch"
+staffSopranoI = \new Staff  {
+	\time 4/4
+	\override Score.MetronomeMark #'stencil = ##f
+	\tempo 4 = 100 
+	\set Staff.instrumentName="Soprano I"
+	\set Staff.midiInstrument="oboe"
+	\key c \major
+	\clef treble
+	\relative c'' { 	
+		\context Voice = "melodySopI" {
+			\dynamicUp
+			\autoBeamOff
+			r8 e e4 d8 d d8. d16 |
+			c8 c c4 c8 c c h |
+			c4 r8 e, f4 g |
+			a r8 g a c c8. h16 |
+			c4 r r2 |
+			R1 |
+			r8 e e4 d8 d d d |
+}}}
+
+staffSopranoII = \new Staff  {
+	\set Staff.instrumentName="Soprano II"
+	\set Staff.midiInstrument="oboe"
+	\key c \major
+	\clef treble
+	\relative c'' { 	
+		\context Voice = "melodySopII" {
+			\dynamicUp
+			\autoBeamOff
+			R1 |
+			r8 e e4 d8 d d d |
+			c4 r8 g a4 e |
+			f r8 g f e d8. d16 |
+			c4 r r2 |
+			R1*2 |
+			r8 e' e4 d8 d d d |
+}}}
+
+staffAlto = \new Staff  {
+	\set Staff.instrumentName="Alto"
+	\set Staff.midiInstrument="oboe"
+	\key c \major
+	\clef treble
+	\relative c'' { 	
+		\context Voice = "melodyAlt" {
+			\dynamicUp
+			\autoBeamOff
+			R1 |
+			r8 g g4 f8 a g g |
+			g4 r r2 |
+			R1*4 |
+			r8 g g4 f8 a g g |
+			g4 r r2 |
+			R1*5 |
+}}}
+
+staffTenoreI = \new Staff  {
+	\set Staff.instrumentName="Tenore I"
+	\set Staff.midiInstrument="oboe"
+	\key c \major
+	\clef "G_8"
+	\relative c' { 	
+		\context Voice = "melodyTenI" {
+			\dynamicUp
+			\autoBeamOff
+			R1 |
+			r8 e e4 a,8 a d g, |
+			g4 r r2 |
+			R1 |
+			r2 f8 e f g |
+			a h c c c4\melisma h\melismaEnd |
+			c r r2 |
+}}}
+
+staffTenoreII = \new Staff  {
+	\set Staff.instrumentName="Tenore II"
+	\set Staff.midiInstrument="oboe"
+	\key c \major
+	\clef "G_8"
+	\relative c' { 	
+		\context Voice = "melodyTenII" {
+			\dynamicUp
+			\autoBeamOff
+			R1 |
+			r8 c c4 d8 d d d |
+			e4 r r2 |
+			R1 |
+			r2 a,8 g a h |
+			c d e f d2 |
+			c4 r r2 |
+}}}
+
+staffBasso = \new Staff  {
+	\set Staff.instrumentName="Basso"
+	\set Staff.midiInstrument="oboe"
+	\key c \major
+	\clef bass
+	\relative c { 	
+		\context Voice = "melodyBas" {
+			\dynamicUp
+			\autoBeamOff
+			R1 |
+			r8 c e4 f8 f g g |
+			c,4 r r2 |
+			R1*4 |
+			r8 c e4 f8 f g g |
+			c,4 r r2 |
+			R1*5 |
+}}}
+
+staffViolinI = \new Staff  {
+	\set Staff.instrumentName="Violino I"
+	\set Staff.midiInstrument="violin"
+	\key c \major
+	\clef treble
+	\relative c'' {
+		R1 |
+		r8 c c4 c8 c c8. h16 |
+		c4 r r2 |
+		R1*4 |
+		r8 c c4 c8 c c8. h16 |
+		c4 r r2 |
+		r8 g' g4 a16 g f e d e f d |
+}}
+
+staffViolinII = \new Staff  {
+	\set Staff.instrumentName="Violino II"
+	\set Staff.midiInstrument="violin"
+	\key c \major
+	\clef treble
+	\relative c'' {
+		R1 |
+		r8 e e4 d8 d d d |
+		c4 r r2 |
+		R1*4 |
+		r8 e e4 d8 d d d |
+		c g' g4 a16 g f e d e f d |
+		e f g f e d c h a8 c c8. h16 |
+}}
+
+staffBassoContinuo = \new Staff  {
+	\set Staff.instrumentName="Basso"
+	\set Staff.midiInstrument="harpsichord"
+	\key c \major
+	\clef bass
+	\relative c {
+		c4 e f g |
+		c, e f g |
+		c, h a g |
+		f e f g |
+		c h a g |
+		f e g2 |
+		c4 e f g |
+}}
+
+staffBC = \new FiguredBass {
+	\figuremode {
+		s1*61 |
+		\time 3/2
+		\tempo 2=320
+		\set Score.measureLength = #(ly:make-moment 3 1)
+		s\breve. s\breve <_+>1 |
+		s\breve. s\breve. |
+		s\breve. s\breve. |
+		s\breve. s\breve <_+>1 |
+		s\breve. s\breve. |
+		s\breve. s\breve <_+>1 |
+}}
+
+
+\score {
+	<<
+		\staffSopranoI
+		
+		\staffSopranoII
+		
+		\staffAlto
+		
+		
+		
+		
+		
+	>>
+	
+	\midi {
+	}
+
+	\layout  {
+	}
+}
+
+\paper {
+}
+
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert!(
+        score.measures[3].multi_measure_rest.is_none(),
+        "la mesure 4 porte des notes de la seconde portee : {:?}",
+        score
+            .measures
+            .iter()
+            .map(|measure| measure.multi_measure_rest)
+            .collect::<Vec<_>>()
+    );
+}

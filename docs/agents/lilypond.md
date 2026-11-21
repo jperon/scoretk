@@ -3410,3 +3410,27 @@ un sol bémol écrit pour une clarinette en si bémol en mi concert au lieu de f
 bémol. Le test `transposition_conserve_lenharmonie` échouait avant (tpc 18 au
 lieu de 6). `tpc_from_midi` est remplacé par une copie locale de
 `transposeTpc`, appliquée au tpc avec l'intervalle de `instrument_transpose`.
+
+### Réduction réelle de `Beatus_vir_primo.ly`
+
+La réduction mécanique part du fichier réel : découpe des mesures par la fin
+(les dérives persistent jusqu'à sept mesures par portée), puis retrait des
+portées une à une — seules Soprano I, Soprano II et Alto sont nécessaires —,
+puis simplification des autres portées. Le résultat tient en trois portées de
+sept mesures, avec le `\\context Voice` et les silences multi-mesures d'origine.
+
+`merge_multi_rests` fusionnait les mesures globalement dès que **une** portée
+portait un `R1*n` au tick considéré. Ici le `R1*2` de Soprano II et le `R1` de
+Soprano I tombaient dans une plage fusionnée à cause d'un `R1*4` d'Alto : la
+mesure 4 était marquée `<measure-style><multiple-rest>4</multiple-rest>`
+alors que Soprano II y jouait, et ses notes étaient décalées de huit noires.
+`multi_rest_length` exige maintenant que toutes les portées qui jouent à ce
+tick portent un `MultiRest` du même intervalle (`lily/timing-translator.cc` :
+une seule trame de mesure pour tout le Score, mais un silence multi-mesures
+n'efface pas la musique des autres portées). Test
+`silences_multi_mesures_ne_fusionnent_pas_les_portees_jouees` (échoue avant).
+
+Mesure complète, dénominateur constant : mus 97,38 → **98,09 %**, ra 83,21 %,
+mut 88,90 → **91,37 %** ; 32 gains `mut` (`bwv652` +3408, `Symphony5_2` +2603,
+`Beatus_vir_primo` +2579, `ricercare6` +1532) et deux pertes d'une ou deux
+notes, sur des fichiers déjà à forte dérive.
