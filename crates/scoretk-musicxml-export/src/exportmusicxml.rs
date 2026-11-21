@@ -2922,9 +2922,15 @@ fn write_accidental(out: &mut Out, accidental: &Accidental) {
     // `writeAccidental` : le rôle utilisateur rend l'altération d'avertissement.
     if accidental.bracket {
         if accidental.user {
-            attributes.push(("editorial", "yes"));
+            // MuseScore 4.7.4 : `bracket` + rôle utilisateur s'exporte en
+            // `cautionary="yes" parentheses="yes"` (Ave Verum, Angels Carol).
+            // Le C++ 5.0 (`exportmusicxml.cpp:2866-2870`) écrit encore
+            // `editorial`/`bracket`, mais la référence 4.7.4 prévaut.
+            attributes.push(("cautionary", "yes"));
+            attributes.push(("parentheses", "yes"));
+        } else {
+            attributes.push(("bracket", "yes"));
         }
-        attributes.push(("bracket", "yes"));
     } else if accidental.parentheses {
         if accidental.user {
             attributes.push(("cautionary", "yes"));

@@ -307,3 +307,13 @@ disparaît du classement. Restent `staff-details` 41, `attributes` 39,
 `tuplet` (7 pertes à la re-mesure) a été remplacée par le critère de visibilité
 de portée décrit en §13, vérifié sur l'union des fichiers concernés puis sur
 les 174 fichiers.
+
+## 15. `accidental` (4 fichiers)
+
+MuseScore 4.7.4 exporte une altération avec `<bracket>1</bracket>` et rôle
+utilisateur en `cautionary="yes" parentheses="yes"` ; le C++ 5.0
+(`exportmusicxml.cpp:2866-2870`) écrit encore `editorial="yes" bracket="yes"`.
+La référence 4.7.4 prévalant, l'export suit son comportement. Test réduit
+écrit d'abord, échouant avant le correctif. Oracle ciblé : 3 gains, 0 perte
+(2→0, 75→63, 11→7 ; le 4e fichier a un écart de taille `size="cue"`, non
+lié à cette règle).

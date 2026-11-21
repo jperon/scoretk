@@ -3000,3 +3000,34 @@ fn crochet_triolet_silence_portee_masquee() {
         "crochet supprimé attendu sur portée masquée :\n{xml}"
     );
 }
+
+/// MuseScore 4.7.4 exporte une altération `<bracket>1</bracket>` avec rôle
+/// utilisateur en `cautionary="yes" parentheses="yes"` (références : Ave
+/// Verum, Angels Carol). Le C++ 5.0 (`exportmusicxml.cpp:2866-2870`) écrit
+/// `editorial`/`bracket`, mais la référence 4.7.4 fait foi.
+#[test]
+fn alteration_crochetee_et_utilisateur() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let ids = ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(61, tpc::C)],
+    );
+    let mut accidental = Accidental::new(AccidentalType::Sharp);
+    accidental.bracket = true;
+    accidental.user = true;
+    score.note_mut(ids[0]).accidental = Some(accidental);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<accidental cautionary=\"yes\" parentheses=\"yes\">sharp</accidental>"),
+        "altération user+crochet mal exportée :\n{xml}"
+    );
+}
