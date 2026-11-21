@@ -3519,3 +3519,28 @@ la note `aes` jouée au tick 56 au lieu de 59. Un mot `r`/`R`/`s` est désormais
 une frontière du texte, comme une hauteur. Test
 `markup_sans_accolades_ne_mange_pas_les_silences` (échoue avant). La voix, puis
 le fichier entier, passent à 721/721 notes appariées.
+
+#### Solde des six pertes résiduelles
+
+Mesure complète après les deux causes : mus 98,28 %, ra 84,78 %,
+mut **92,31 %**, et **aucune perte** par rapport à la mesure précédente.
+Par rapport au relevé initial : Faure +156, `16title-hub` +257,
+`liszt-consolation-no3` +866, `Mazurka-Op6-No1` +70, `Matiegka2` +11.
+
+`sonate2` reste à −39 sur le relevé initial, mais ce n'est pas une régression
+musicale : la grille Q16 quantifie des attaques à 1/12 de noire issues de
+`16*2/3` puis de notes nues qui héritent du multiplicateur. Le nouveau fichier
+écrit la durée réelle (1/12 au lieu de 1/4), et l'appariement **s'améliore**
+sur les grilles fines : 97 → 109 sur Q8 et 92 → 108 sur Q16/4. Le −39 sur Q16
+est un effet de frontière de quantification dans un passage où le lecteur
+avait déjà 84 % d'écart (169 → 130 notes appariées sur 806). Extrait réduit :
+`\times 2/3 { <b d,>16( <as cs,> <b d,>) } <cs e,>8 <b d,>16*2/3( … )`,
+où le correctif passe de 12 à 14 notes appariées sur 14.
+
+`Violinsonata_No7_1` : la dérive dominante (629 notes décalées de 1/2 noire à
+partir de la mesure 77) vient de `\setTextCresc`, commande obsolète de 2.10
+que LilyPond 2.27 ne connaît plus (`python/convertrules.py` la convertit en
+`\crescTextCresc`). Extrait réduit `g''8 \setTextCresc <g g'>4 <g g'> <g g'>`
+: le MIDI 2.27 joue le premier accord au tick 1 au lieu de 1/2, bien que la
+commande ne consomme aucun temps dans la partition source. Le lecteur suit la
+partition (2.10), pas cette anomalie du MIDI de référence.
