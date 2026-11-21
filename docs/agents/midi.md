@@ -2451,22 +2451,18 @@ it is a shared reference/option difference, not a scoretk-only loss.
 
 ## Voice limit from neighbouring bars (2026-11-21)
 
-`MidiVoice::findMaxOccupiedVoiceInBar` (`importmidi_voice.cpp:754-784`)
-examines the current bar, the previous one and the next one (bounds
-`barIndex + 1` forward, `barIndex - 1` backward); `addGroupSplits` (`:354-386`)
-then uses that maximum to limit new voices. Our port examined the current bar
-only, allowing an extra voice in some bars. Reduced test
-`voice::max_voice_tests::voix_occupee_dans_la_mesure_voisine` was written
-first (failing with 0 instead of 1), then the neighbor bars were included.
-Re-measurement of both lots: upstream N stays **0.9780** (two files gain,
-`ly-benoit_ave_maria` loses 0.002: 14 notes move from voice 1 to voice 2,
-while MuseScore 4.7.4 keeps voice 1 — a residual 5.0-vs-4.7.4 voice-option
-difference), LilyPond N stays **0.6950**, notation score stays **0.6798** with
-the same three files below MuseScore (`lily-bd83d4c2` 0.026,
+`MidiVoice::findMaxOccupiedVoiceInBar` (`importmidi_voice.cpp:754-784`,
+**identical in 4.7.4 and 5.0**) scans the previous and next bars only to bound
+its two loops; `maxVoice` is updated **only** when
+`chord.barIndex == barIndex`. Counting neighbouring voices as well was a
+misreading of those bounds: it allowed an extra voice in `addGroupSplits`
+(`:354-386`) and moved 14 notes of `benoit_ave_maria` from voice 1 to voice 2,
+against MuseScore 4.7.4. Reduced test
+`voice::max_voice_tests::voix_voisine_non_comptee_dans_max_occupe` pins that
+neighbouring voices are ignored. After correction the two lots are unchanged:
+upstream **0.9780**, LilyPond **0.6950**, notation score **0.6798** with the
+same three files below MuseScore (`lily-bd83d4c2` 0.026,
 `Promo_Foucauld` 0.0015, `Patrick-Doyle…` 0.001).
-
-The file is deduplicated: a single copy of the overview, import and export
-sections remains, with the latest figures and English prose throughout.
 
 ## MIDI import: status (2026-11-21)
 

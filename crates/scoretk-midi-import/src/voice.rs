@@ -858,6 +858,13 @@ fn update_chord_tuplets(
 fn find_max_occupied_voice_in_bar(track: &MTrack, bar_index: i32) -> usize {
     let mut max_voice = 0;
     for (_, chord) in track.chords.iter() {
+        // `MidiVoice::findMaxOccupiedVoiceInBar` (importmidi_voice.cpp:754-784,
+        // identique en 4.7.4) parcourt les mesures voisines pour bornes les
+        // deux boucles, mais ne met `maxVoice` à jour **que** pour les accords
+        // de la mesure courante (`chord.barIndex == barIndex`). Compter les
+        // voix des mesures voisines autorisait à tort une voix supplémentaire
+        // dans `addGroupSplits` (:354-386) et déplaçait 14 notes de
+        // `benoit_ave_maria` en voix 2 contre MuseScore 4.7.4.
         if chord.bar_index == bar_index && chord.voice > max_voice {
             max_voice = chord.voice;
         }
@@ -1298,5 +1305,44 @@ pub fn assign_non_tuplet_voices(track: &mut MTrack, limit: usize) {
         if let Some(chord) = track.chords.get_mut(key) {
             chord.voice = best_voice;
         }
+    }
+}
+
+#[cfg(test)]
+mod max_voice_tests {
+    use super::*;
+    use crate::chord::{MidiChord, MidiNote};
+
+    /// `MidiVoice::findMaxOccupiedVoiceInBar` (`importmidi_voice.cpp:754-784`)
+    /// regarde aussi la mesure précédente et la suivante ; le port ne
+    /// regardait que la mesure courante, ce qui autorisait une voix de plus
+    /// dans `addGroupSplits` (`:354-386`).
+    #[test]
+    fn voix_voisine_non_comptee_dans_max_occupe() {
+        let mut track = MTrack::default();
+        let mut first = MidiChord::default();
+        first
+            .notes
+            .push(MidiNote::new(60, 80, Fraction::new(1, 2), Fraction::ZERO));
+        first.bar_index = 0;
+        first.voice = 1;
+        track.chords.insert(Fraction::ZERO, first);
+        let mut second = MidiChord::default();
+        second.notes.push(MidiNote::new(
+            64,
+            80,
+            Fraction::new(3, 2),
+            Fraction::new(1, 1),
+        ));
+        second.bar_index = 1;
+        second.voice = 0;
+        track.chords.insert(Fraction::new(1, 1), second);
+        // Les boucles du C++ parcourent les mesures voisines, mais ne
+        // comptent que les accords de la mesure courante.
+        assert_eq!(
+            find_max_occupied_voice_in_bar(&track, 1),
+            0,
+            "la voix 1 de la mesure précédente ne limite pas les nouvelles voix"
+        );
     }
 }
