@@ -163,6 +163,8 @@ def reference(args, lot: str, src: str, dest: str) -> str:
     if fourni and fourni.is_file():
         shutil.copyfile(fourni, dest)
         return ""
+    if args.refs_only:
+        return "référence MIDI absente (--refs-only)"
     base = str(Path(dest).with_suffix(""))
     code, _, err = lancer(
         ["timeout", str(TIMEOUT_LY), "prlimit", "--as=2000000000",
@@ -358,6 +360,16 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--out", default="", help="dossier des sorties brutes (hors dépôt)")
     p.add_argument("--refs", default="", help="racine des ly.midi (préfixe + lot + md5_nom)")
+    p.add_argument(
+        "--refs-only",
+        action="store_true",
+        help="ne pas régénérer une référence absente : le fichier est exclu",
+    )
+    p.add_argument(
+        "--refs-only",
+        action="store_true",
+        help="ne pas régénérer une référence absente : le fichier est exclu",
+    )
     p.add_argument("--refs-prefix", default="out3", help="préfixe des dossiers de lot (out3mus, …)")
     p.add_argument("--scoretk", default="", help="binaire scoretk")
     p.add_argument("--python-ly", default="ly", help="commande python-ly")
