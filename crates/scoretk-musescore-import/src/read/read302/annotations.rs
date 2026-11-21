@@ -311,6 +311,7 @@ fn read_harmony(node: &Node, placement: Option<Placement>) -> Harmony {
             }
             "name" => name = child.trimmed_text(),
             "function" => harmony.function = Some(child.trimmed_text()),
+            "play" => harmony.play = child.int_text().is_none_or(|value| value != 0),
             "text" => custom_text = Some(child.text().trim().to_owned()),
             "degree" => {
                 if let Some(degree) = read_harmony_degree(child) {

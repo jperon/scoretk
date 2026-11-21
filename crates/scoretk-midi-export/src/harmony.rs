@@ -98,6 +98,12 @@ pub(crate) fn events(score: &Score, staff: StaffId) -> Vec<(i64, i64, Vec<u8>)> 
                     continue;
                 }
                 if let Annotation::Harmony(harmony) = &entry.annotation {
+                    // `renderHarmony` n'est appelé que si `h->play()`
+                    // (`compatmidirenderinternal.cpp:1196-1208`) : un symbole
+                    // désactivé reste affiché mais ne sonne pas.
+                    if !harmony.play {
+                        continue;
+                    }
                     let pitches = realize(harmony);
                     if !pitches.is_empty() {
                         found.push((

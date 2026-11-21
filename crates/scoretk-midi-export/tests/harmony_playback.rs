@@ -92,6 +92,45 @@ fn mscx() -> String {
     .to_owned()
 }
 
+fn mscx_desactive() -> String {
+    r#"<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="4.10">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <trackName>Piano</trackName>
+      <Instrument id="keyboard.piano">
+        <longName>Piano</longName><shortName>Pno.</shortName><trackName>Piano</trackName>
+        <instrumentId>keyboard.piano</instrumentId>
+        <Channel><program value="0"/></Channel>
+      </Instrument>
+    </Part>
+    <Staff id="1">
+      <Measure><voice>
+        <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+        <Tempo><tempo>2</tempo><followText>1</followText></Tempo>
+        <Harmony><root>16</root><name>m</name><play>0</play></Harmony>
+        <Chord><durationType>whole</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+      </voice></Measure>
+    </Staff>
+  </Score>
+</museScore>
+"#
+    .to_owned()
+}
+
+/// `<play>0</play>` coupe la réalisation (`renderHarmony` teste
+/// `h->play()`, `compatmidirenderinternal.cpp:1196-1208`) : seule la note
+/// écrite sonne, alors que la partition de Marusia en porte 23 ainsi.
+#[test]
+fn accord_chiffre_desactive_ne_joue_pas() {
+    let container = MsczContainer::from_bytes(mscx_desactive().as_bytes()).expect("conteneur");
+    let score = scoretk_musescore_import::read::read_score(&container).expect("lecture");
+    let midi = scoretk_midi_export::write_midi(&score).expect("écriture MIDI");
+    assert_eq!(notes(&midi), vec![(0, 60, 1919)]);
+}
+
 fn mscx_bemol() -> String {
     r#"<?xml version="1.0" encoding="UTF-8"?>
 <museScore version="4.10">

@@ -446,6 +446,12 @@ pub struct Harmony {
     pub degrees: Vec<HarmonyDegree>,
     /// Placement.
     pub placement: Placement,
+    /// Lecture MIDI du symbole (`<play>`, `Harmony::m_play`).
+    ///
+    /// MuseScore l'ignore dans `renderHarmony` : `Harmony::play()` faux
+    /// (`dom/harmony.h:225`) ou `harmonyPlay` faux dans le style coupent la
+    /// réalisation, alors que le symbole reste affiché.
+    pub play: bool,
 }
 
 /// Degré d'un accord chiffré (`<degree>` de MuseScore).
@@ -482,6 +488,7 @@ impl Harmony {
             function: None,
             degrees: Vec::new(),
             placement: Placement::Above,
+            play: true,
         }
     }
 }

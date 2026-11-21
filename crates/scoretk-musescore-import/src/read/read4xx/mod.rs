@@ -312,6 +312,10 @@ impl Reader {
         harmony.name = name;
         harmony.function = child.child("function").map(|node| node.text().to_owned());
         harmony.placement = placement(child.child("placement"));
+        harmony.play = child
+            .child("play")
+            .and_then(Element::int)
+            .is_none_or(|value| value != 0);
         // `TRead::read(Harmony*)` : `<harmonyType>` conserve
         // l'écriture (standard, romaine, Nashville), dont dépend
         // toute la branche d'export MusicXML.
