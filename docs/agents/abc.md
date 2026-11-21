@@ -1842,6 +1842,45 @@ The remaining categories are structural (one part per voice in
 (`<words>` vs `<harmony>`, lyrics melisma, clefs emitted on every staff),
 documented above.
 
+### ABC import: second pass — decorations classified (2026-11-21)
+
+Classification of the 185 remaining decoration deficits showed that **all
+185 were missing `<words>`** (fermatas, tremolos and mordents were already
+fixed), 210 words in total across 55 distinct strings. The three dominant
+groups were: text-only `Q:` tempo labels (`Slow` 59, `Moderato` 14,
+`Very Slow` 7, `Lively` 6, …), repeat directions starting with A–G
+(`End`, `BREAK`, `DANCE`, `left`, …) misread as chord symbols, and
+`!D.C.!/!Fine!/!D.S.!` directions. Four reader fixes, each with a reduced
+test written first and clippy clean before commit:
+
+6. **Trailing `Q:` tempo label** (`6eede8e1`) — `abc2xml.py::doTempo`
+   (line 1886) finds the quoted label anywhere in `Q:`; `parse_tempo` only
+   looked for a leading one. Also attach the tempo annotation to a
+   `ChordRest` segment instead of `TimeTick`: the exporter only visits
+   annotated segments that carry an element. ABC 2.1 §4.7.
+7. **Inline `[M:x/y]` fields** (`9f256b86`) — several at the same tick
+   (`y` spacers do not advance time) were collapsed into the last value;
+   emit one `TimeSig` segment per recorded change. `abc2xml.py::mkMeasure`,
+   ABC 2.1 §3.2.
+8. **Text beginning with A–G** (`015bb264`) — `looks_like_chord` accepted
+   any alphanumeric suffix, turning `"End"` into an empty `<harmony>`;
+   validate kind/degrees/bass against `abc2xml.py:411-416` (`chord_sym ^
+   text_expression`). ABC 2.1 §4.2.
+9. **`!D.C.!/!Fine!/!D.S.!`** (`91e576ff`) — dropped as unknown
+   decorations; add `Decoration::Text` for `abc2xml.py:1100` `capoMap`
+   entries and route them to annotations so a direction after the final
+   note survives. `abc2xml.py:1680-1684`, ABC 2.1 §4.3.
+
+Full campaign re-run (`/tmp/abc-n3-import2` vs `/tmp/abc-n3-import`, 1 402
+files / 4 756 tunes): N3 decoration tunes **185 → 23**. The `svg.test
+__abcTimeSigList` tune went from 1 to 3 `<time>` (alt 4); other `times`,
+keys, slurs, clefs, voices, voltas and lyrics deficits are unchanged and
+are structural (`abc2xml.py` emits one part per voice, ABC 2.1 §7) or
+representation differences documented above. Tune-by-tune: **542 N3
+entries improved, 2 reduced a `<harmony>` excess to parity** (no deficit
+regressed); **N1 exact 4 460 / 0 losses / 0 gains** and **0 note-count
+changes** across all 4 755 common tunes. No per-tune loss to explain.
+
 ## 27. Écriture ABC : mesure complète et deux correctifs (2026-11-21)
 
 ### 27.1 Oracle et protocole
