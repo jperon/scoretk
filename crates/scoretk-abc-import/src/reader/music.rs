@@ -1562,24 +1562,67 @@ fn natural_semitone(letter: char) -> i32 {
 
 /// Vrai si un texte ressemble à un accord chiffré (`C`, `Am7`, `F/A`…).
 fn looks_like_chord(text: &str) -> bool {
-    let mut characters = text.chars();
-    let Some(first) = characters.next() else {
+    // `abc2xml.py:411-416`: `chord_sym ^ text_expression` chooses the longest
+    // match. A chord is `root + kind + degrees + /bass`; arbitrary words that
+    // merely start with A-G (`End`, `Fine`, `BREAK`) are text. The old test
+    // accepted any alphanumeric suffix and misread them as `<harmony>`.
+    const KINDS: &[&str] = &[
+        "m7b5", "mi7b5", "maj7", "Maj7", "ma7", "min7", "mi7", "dim7", "aug7", "sus2", "sus4",
+        "maj9", "Maj9", "ma9", "min9", "mi9", "maj11", "Maj11", "ma11", "min11", "mi11", "maj13",
+        "Maj13", "ma13", "min13", "mi13", "m6", "ma6", "min6", "mi6", "sus", "maj", "Maj", "min",
+        "dim", "aug", "mi", "ma", "m7", "M7", "o7", "-7", "+7", "m9", "M6", "11", "13", "min",
+        "tri", "7", "6", "9", "m", "M", "o", "+", "-",
+    ];
+    const DEGREES: &[&str] = &["11", "13", "2", "4", "5", "6", "7", "9"];
+
+    let mut rest = text;
+    let Some(first) = rest.chars().next() else {
         return false;
     };
     if !('A'..='G').contains(&first) {
         return false;
     }
-    let rest: String = characters.collect();
-    if rest.len() > 12 {
-        return false;
+    rest = &rest[first.len_utf8()..];
+    if rest.starts_with(['#', 'b', '=']) {
+        rest = &rest[1..];
     }
-    rest.chars().all(|character| {
-        character.is_ascii_alphanumeric()
-            || matches!(
-                character,
-                '#' | 'b' | '/' | '+' | '-' | '(' | ')' | ',' | '\'' | '°' | 'ø' | '∆'
-            )
-    })
+    // Optional chord kind, longest first (abc2xml.py:412 `seventh|sixth|…|triad`).
+    if let Some(kind) = KINDS.iter().find(|kind| rest.starts_with(**kind)) {
+        rest = &rest[kind.len()..];
+        if rest.starts_with("sus") && !kind.starts_with("sus") {
+            rest = &rest[3..];
+        }
+    }
+    // Zero or more degrees, each with an optional accidental.
+    loop {
+        let token = rest.trim_start_matches(['#', 'b', '=']);
+        let skipped = rest.len() - token.len();
+        if let Some(degree) = DEGREES.iter().find(|degree| token.starts_with(**degree)) {
+            rest = &token[degree.len()..];
+        } else {
+            if skipped > 0 {
+                return false;
+            }
+            break;
+        }
+    }
+    // Optional bass after `/`.
+    if let Some(bass) = rest.strip_prefix('/') {
+        let mut bass = bass;
+        if let Some(root) = bass.chars().next() {
+            if !('A'..='G').contains(&root) {
+                return false;
+            }
+            bass = &bass[root.len_utf8()..];
+        } else {
+            return false;
+        }
+        if bass.starts_with(['#', 'b', '=']) {
+            bass = &bass[1..];
+        }
+        rest = bass;
+    }
+    rest.is_empty()
 }
 
 #[cfg(test)]
