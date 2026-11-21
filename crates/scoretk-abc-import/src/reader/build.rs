@@ -81,7 +81,16 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
                 segment.set_element(track, SegmentItem::TimeSig(time_at(voice, index)));
                 measure.add_segment(segment);
             }
-            if index == 0 || key_at(voice, index) != key_at(voice, index - 1) {
+            // `abc2xml.py` writes a `<key>` for every K: field, even when the
+            // key is unchanged (ABC 2.1 §3.2: a repeated field is a
+            // replacement). A K: at a measure start lands in `key_changes` at
+            // tick zero; keep its segment even if `key_at` did not change.
+            let key_field_here = index > 0
+                && voice
+                    .key_changes
+                    .iter()
+                    .any(|(measure, tick, _)| *measure == index && tick.is_zero());
+            if index == 0 || key_field_here || key_at(voice, index) != key_at(voice, index - 1) {
                 let mut segment = Segment::new(SegmentType::KeySig, start, staff_count);
                 segment.set_element(track, SegmentItem::KeySig(key_at(voice, index)));
                 measure.add_segment(segment);

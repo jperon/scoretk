@@ -903,6 +903,18 @@ impl Reader {
                         }
                     }
                 };
+                eprintln!(
+                    "DEBUG K field value={} voices={} header_done={}",
+                    value,
+                    self.voices.len(),
+                    self.header_done
+                );
+                eprintln!(
+                    "DEBUG K field value={} voices={} header_done={}",
+                    value,
+                    self.voices.len(),
+                    self.header_done
+                );
                 self.seen_key = true;
                 if !self.header_done {
                     self.header_key = parsed.key.clone();
@@ -914,12 +926,13 @@ impl Reader {
                         format!("mode {mode} ramené à son armure majeure"),
                     ));
                 }
+                // `abc2xml.py` writes a `<key>` for every K: field, even an
+                // identical one (ABC 2.1 §3.2 "Repeated information fields":
+                // it is a replacement). Keep each occurrence as a key change
+                // so the exporter emits one `<key>` per field; the previous
+                // change-only condition dropped redundant fields.
                 for voice in &mut self.voices {
-                    if voice.key.transposed_key != parsed.key.transposed_key
-                        || voice.key.mode != parsed.key.mode
-                    {
-                        voice.schedule_key(parsed.key.clone());
-                    }
+                    voice.schedule_key(parsed.key.clone());
                 }
                 if let Some(transpose) =
                     parse_transpose_parameter(&parsed.parameters, number, &mut self.warnings)
