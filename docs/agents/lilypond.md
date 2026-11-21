@@ -3212,3 +3212,60 @@ Mesure complète avec les trois lots (références constantes, borne 30 s) :
 `BWV-827-5` (−144), `14title-hub` (−75), `rimsky-korsakov-op11-1` (−50) et
 trois pertes ≤ 15 notes, toutes sur des fichiers dont le décalage d'attaque
 était déjà classé dans la table des causes.
+
+### Sous-classification de la cause « voix / `\\` »
+
+La cause « voix / `\\` » (~25 000 notes dans la table précédente, 129
+fichiers) a été décomposée sur les fichiers perdants du lot `mut` (références
+fraîches, relevé avant les deux correctifs ci-dessous). Chaque fichier est
+classé dans la première catégorie applicable ; les nombres sont les notes N2
+non appariées.
+
+| Sous-classe | Fichiers | Notes perdues | Exemples |
+| --- | ---: | ---: | --- |
+| Accord ou silence franchissant une barre | 132 | 63 679 | `violin_concerto_1` (12198), `Symphony5_2` (6082), `Violinsonata_No7_1` (4199), `ricercare6` (2160) |
+| `\oneVoice` / `\voiceOne`…`\voiceFour` | 69 | 13 098 | `BWV533` (1238), `Rumores_de_la-caleta` (691), `benoit_ave_maria` (486) |
+| Plus de quatre voix simultanées | 24 | 8 743 | `Beatus_vir_primo` (2579), `fuga2` (665), `bwv670` (637) |
+| `partCombine` | 0 | 0 | aucun fichier du lot (`scm/part-combiner.scm`, `lily/part-combine-iterator.cc`) |
+| `<< >>` sans `\\` | 0 | 0 | pas de perte attribuable à cette seule construction |
+| Fin de voix en mesure | 0 | 0 | couverte par la première ligne après examen des sources réduites |
+
+Les deux dernières lignes ne sont pas des oublis : les sources réduites
+correspondantes (`<< … >>` à branches sans `\\`, voix terminée avant la fin
+de mesure) donnent des attaques identiques côté LilyPond 2.26 et côté lecteur.
+
+#### Cause 1 : accord à cheval sur une barre
+
+`lily/tie-performer.cc` (`acknowledge_audio_element`) relie les deux têtes
+d'une même note de part et d'autre de la barre (`an->tie_to (th, skip)`) : le
+MIDI n'émet qu'une note couvrant les deux mesures. Le lecteur, lui, mettait
+l'accord entier dans la mesure où il commence, écrivant une mesure plus longue
+que sa signature et décalant toutes les attaques suivantes à la relecture.
+L'accord est désormais coupé à la frontière, chaque morceau portant le même
+contenu et des liens `tie_forward`/`tie_back`. Test réduit
+`accord_a_cheval_coupe_a_la_barre` : la mesure 1 contenait auparavant
+`c'2 b4 g'2` (5/4 dans une mesure de 4/4). Les tests d'artefact qui comptaient
+les prolongations comme des attaques ont été mis à jour avec des helpers
+`hauteurs_attaques`/`durees_attaques`.
+
+Mesure complète, dénominateur constant : mus 93,96 → **97,38 %**, ra
+82,58 → 83,20 %, mut 85,11 → **88,06 %** ; 153 gains `mut`, 13 pertes
+résiduelles (toutes ≤ 65 notes, sur des fichiers dont le décalage était déjà
+classé : `bwv1011_transposed`, `prelude`, `bwv660`, `Symphony5_1`…).
+
+#### Cause 2 : durée par défaut après `\new Voice`
+
+`ly/property-init.ly` (lignes 966-970) définit `\voiceOne`…`\voiceFour` et
+`\oneVoice` comme de la musique de spécification de contexte ; `lily/parser.yy`
+(`NEWCONTEXT`) en fait un élément de la séquence. La musique qui suit un
+`\new Voice` hérite donc de la **dernière** durée par défaut posée dans cette
+voix. Sur `c'4 \new Voice { d'2 e'2 } f' g'`, LilyPond 2.26 joue la dernière
+note au tick 7 (noires) ; le lecteur la plaçait au tick 6. Le test
+`duree_par_defaut_apres_un_new_voice` échouait avant. `nested_context`
+propage maintenant `child.default_duration` comme `simultaneous` le fait déjà
+pour les branches de `<< … >>`.
+
+Mesure complète après les deux causes : mus 97,38 %, ra **83,21 %**, mut
+**88,20 %** ; huit gains `mut` sans aucune perte (`Cellosonata_No3_3` +1727,
+`Symphony7_1` +849, `Violinsonata_No7_1` +816, `bwv660` +554,
+`5.Inquietude` +346).

@@ -51,6 +51,40 @@ fn hauteurs(score: &scoretk_core::model::Score) -> Vec<u8> {
     score.notes.iter().map(|note| note.pitch).collect()
 }
 
+/// Durées des attaques seules (les prolongations d'un accord coupé à une
+/// barre portent `tie_back`).
+fn durees_attaques(score: &scoretk_core::model::Score) -> Vec<Fraction> {
+    score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .filter(|chord_rest| match &chord_rest.kind {
+            ChordRestKind::Chord(chord) => chord
+                .notes
+                .iter()
+                .all(|&id| score.note(id).tie_back.is_none()),
+            _ => true,
+        })
+        .map(|chord_rest| {
+            chord_rest
+                .ticks
+                .unwrap_or_else(|| chord_rest.duration.ticks())
+        })
+        .collect()
+}
+
+/// Hauteurs des attaques seules : les prolongations issues d'un accord
+/// coupé à une barre portent `tie_back` et ne sont pas des attaques MIDI.
+fn hauteurs_attaques(score: &scoretk_core::model::Score) -> Vec<u8> {
+    score
+        .notes
+        .iter()
+        .filter(|note| note.tie_back.is_none())
+        .map(|note| note.pitch)
+        .collect()
+}
+
 /// Paroles de la piste 0, avec la hauteur de leur accord, le couplet, la
 /// syllabisation, le texte et la prolongation, dans l'ordre.
 fn paroles(score: &scoretk_core::model::Score) -> Vec<(u8, usize, LyricsSyllabic, String, bool)> {
@@ -199,7 +233,10 @@ fn relative_accord_reference_premiere_note() {
     // référence pour la suite : `<f d'>` vaut fa' ré'', `<d b'>` ré' si', et
     // le `c` qui suit se place par rapport au ré' de la première note.
     let score = lire("\\relative c' { <f d'>4 <d b'>8 c4 | <c e g>2 r2 }");
-    assert_eq!(hauteurs(&score), vec![65, 74, 62, 71, 60, 60, 64, 67]);
+    assert_eq!(
+        hauteurs_attaques(&score),
+        vec![65, 74, 62, 71, 60, 60, 64, 67]
+    );
     assert_eq!(score.measures.len(), 2);
     assert_eq!(
         durees_ecrites(&score),
@@ -207,7 +244,8 @@ fn relative_accord_reference_premiere_note() {
             Fraction::QUARTER,
             Fraction::new(1, 8),
             Fraction::QUARTER,
-            Fraction::HALF,
+            Fraction::new(3, 8),
+            Fraction::new(1, 8),
             Fraction::HALF
         ]
     );
@@ -494,10 +532,10 @@ fn transposition_ne_consomme_pas_une_note_de_la_musique() {
     // ajoutait une note et faussait tout l'état `\relative` d'une octave.
     let avec = read_lilypond(&source_transposition("\\transposition c'")).expect("lecture");
     let sans = read_lilypond(&source_transposition("")).expect("lecture");
-    let attendu = vec![74, 79, 81, 82, 81, 79, 84, 82, 81, 74, 79, 96, 112, 93, 93];
+    let attendu = vec![74, 79, 81, 82, 81, 79, 84, 82, 81, 74, 79, 96, 112, 93];
     // Cas non concerné : sans `\transposition`, la musique reste identique.
-    assert_eq!(hauteurs(&sans), attendu);
-    assert_eq!(hauteurs(&avec), attendu);
+    assert_eq!(hauteurs_attaques(&sans), attendu);
+    assert_eq!(hauteurs_attaques(&avec), attendu);
     assert_eq!(avec.measures.len(), 4);
     assert_eq!(
         durees_ecrites(&avec),
@@ -518,7 +556,8 @@ fn transposition_ne_consomme_pas_une_note_de_la_musique() {
             Fraction::new(1, 8),
             Fraction::QUARTER,
             Fraction::new(1, 8),
-            Fraction::HALF,
+            Fraction::new(3, 8),
+            Fraction::new(1, 8),
             Fraction::HALF,
         ]
     );
@@ -1483,7 +1522,7 @@ fn fonction_signature_ancienne_nom_de_fonction() {
     )
     .expect("lecture");
     assert_eq!(
-        hauteurs(&score),
+        hauteurs_attaques(&score),
         vec![57, 62, 66, 50, 62, 54, 62, 45, 61, 69, 61, 33, 45, 49, 55]
     );
     assert_eq!(score.measures.len(), 2);
@@ -1777,8 +1816,18 @@ fn scale_durations() {
     // `\scaleDurations 2/3` vaut `c4*2/3` sur chaque note : 1/6 de ronde,
     // sans crochet de n-olet.
     let score = lire_absolue("\\time 3/4 \\scaleDurations 2/3 { c'4 d' e' f' g' a' }");
-    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 69]);
-    assert_eq!(durees(&score), vec![Fraction::new(1, 6); 6]);
+    assert_eq!(hauteurs_attaques(&score), vec![60, 62, 64, 65, 67, 69]);
+    assert_eq!(
+        durees_attaques(&score),
+        vec![
+            Fraction::new(1, 6),
+            Fraction::new(1, 6),
+            Fraction::new(1, 6),
+            Fraction::new(1, 6),
+            Fraction::new(1, 16),
+            Fraction::new(1, 6),
+        ]
+    );
     assert_eq!(score.measures[0].len, Fraction::new(3, 4));
     assert_eq!(score.measures[0].nominal_len, Fraction::new(3, 4));
 }
@@ -3292,7 +3341,7 @@ fn durees_nues_repetent_la_note_ou_l_accord_precedent() {
     // répétition de l'élément précédent, comme `q` (lily/parser.yy).
     let score = lire("\\time 4/4 c8 8 d4 4 r4 | <e g>8 8 <f a>4 4 | c2 2");
     assert_eq!(
-        hauteurs(&score),
+        hauteurs_attaques(&score),
         vec![60, 60, 62, 62, 64, 67, 64, 67, 65, 69, 65, 69, 60, 60]
     );
     assert_eq!(score.measures.len(), 3);
@@ -3308,14 +3357,15 @@ fn durees_nues_repetent_la_note_ou_l_accord_precedent() {
             Fraction::new(1, 8),
             Fraction::QUARTER,
             Fraction::QUARTER,
-            Fraction::HALF,
+            Fraction::QUARTER,
+            Fraction::QUARTER,
             Fraction::HALF,
         ]
     );
 
     // Cas non concerné : `q` et les durées données restent inchangés.
     let score = lire("\\time 4/4 c4 q8 q8 d4 e4");
-    assert_eq!(hauteurs(&score), vec![60, 60, 60, 62, 64]);
+    assert_eq!(hauteurs_attaques(&score), vec![60, 60, 60, 62, 64]);
 }
 
 #[test]
@@ -3840,7 +3890,7 @@ fn markup_avec_argument_entre_accolades_laisse_la_musique_suivante() {
     // Voix 0 : do4 ré4 | mi2 silence | accord do-mi-sol2 do3 | do3,
     // puis les trois notes de la seconde portée (do5 ré5 mi5).
     assert_eq!(
-        hauteurs(&score),
+        hauteurs_attaques(&score),
         vec![60, 62, 64, 60, 64, 67, 48, 48, 72, 74, 76]
     );
     assert_eq!(
@@ -3852,7 +3902,8 @@ fn markup_avec_argument_entre_accolades_laisse_la_musique_suivante() {
             Fraction::new(1, 2),
             Fraction::new(1, 2),
             Fraction::new(1, 4),
-            Fraction::new(1, 1),
+            Fraction::new(3, 4),
+            Fraction::new(1, 4),
         ],
         "durées de la première portée"
     );
@@ -3864,7 +3915,11 @@ fn markup_avec_argument_entre_accolades_laisse_la_musique_suivante() {
          \\language \"english\"\n\
          \\score { \\new Staff { c'4 ^\\markup \\tiny \"No Art.\" d'4 e'2 } }";
     let score = read_lilypond(source).expect("lecture chaîne");
-    assert_eq!(hauteurs(&score), vec![60, 62, 64], "musique après chaîne");
+    assert_eq!(
+        hauteurs_attaques(&score),
+        vec![60, 62, 64],
+        "musique après chaîne"
+    );
     assert_eq!(score.measures.len(), 1, "mesures après chaîne");
 }
 
@@ -3955,10 +4010,10 @@ fn mark_markup_entre_accolades_ne_devient_pas_une_note() {
     // Première voix : do4 ré4 | mi4 silence | accord do-mi-sol lié à lui-même
     // puis do4. La seconde portée ajoute do5 ré5 | mi5 silence.
     assert_eq!(
-        hauteurs(&score),
+        hauteurs_attaques(&score),
         vec![
-            60, 62, 64, 60, 64, 67, 60, 64, 67, 60, // dessus
-            60, 62, 64, 60, 60, // accompagnement
+            60, 62, 64, 60, 64, 67, 60, 60, // dessus
+            62, 64, 60, // accompagnement
             72, 74, 76, // seconde portée
         ],
         "hauteurs : le « A » du markup ne doit pas apparaître"
@@ -3973,7 +4028,8 @@ fn mark_markup_entre_accolades_ne_devient_pas_une_note() {
             Fraction::new(1, 2),
             Fraction::new(1, 2),
             Fraction::new(1, 2),
-            Fraction::new(1, 1),
+            Fraction::new(1, 2),
+            Fraction::new(1, 2),
         ],
         "durées de la première portée"
     );
@@ -3984,7 +4040,7 @@ fn mark_markup_entre_accolades_ne_devient_pas_une_note() {
          \\mark \\markup { \\box { \\bold { Z } } } c''1 } } }";
     let score = read_lilypond(source).expect("lecture imbriquée");
     assert_eq!(
-        hauteurs(&score),
+        hauteurs_attaques(&score),
         vec![72, 74, 76, 84],
         "musique après markup imbriqué"
     );
@@ -3996,7 +4052,11 @@ fn mark_markup_entre_accolades_ne_devient_pas_une_note() {
         "\\score { \\new Staff { \\fixed c' { c'4 \\mark \\markup \"A\" d'4 e'2 } } }",
     )
     .expect("lecture chaîne");
-    assert_eq!(hauteurs(&score), vec![72, 74, 76], "musique après chaîne");
+    assert_eq!(
+        hauteurs_attaques(&score),
+        vec![72, 74, 76],
+        "musique après chaîne"
+    );
     assert_eq!(score.measures.len(), 1, "mesures après chaîne");
 }
 
@@ -4514,7 +4574,7 @@ bas = \fixed c {
         Fraction::new(1, 4),
         "levée d'un quart"
     );
-    assert_eq!(hauteurs(&score), vec![65, 67, 67, 48, 50]);
+    assert_eq!(hauteurs_attaques(&score), vec![65, 67, 48, 50]);
     assert_eq!(
         durees_ecrites(&score),
         vec![
@@ -4529,12 +4589,12 @@ bas = \fixed c {
 
     // Cas limite : commande sans argument en fin de musique.
     let fin = lire("c4 \\autoBeamOff");
-    assert_eq!(hauteurs(&fin), vec![60]);
+    assert_eq!(hauteurs_attaques(&fin), vec![60]);
     assert_eq!(fin.measures.len(), 1);
 
     // Cas non concerné : la note suivant la commande reste lue.
     let note = lire("\\autoBeamOff c4 d4");
-    assert_eq!(hauteurs(&note), vec![60, 62]);
+    assert_eq!(hauteurs_attaques(&note), vec![60, 62]);
 }
 
 /// Notation Reference §2.2.2 « Invisible rests » : avec un silence invisible
@@ -4700,7 +4760,9 @@ fn elements_a_travers_les_barres_sont_decoupes() {
                 if let Some(chord_rest) = segment.chord_rest(Track::from_raw(track)) {
                     if let Some(chord) = chord_rest.chord_ref() {
                         for id in &chord.notes {
-                            notes.push((score.note(*id).pitch, segment.tick));
+                            if score.note(*id).tie_back.is_none() {
+                                notes.push((score.note(*id).pitch, segment.tick));
+                            }
                         }
                     }
                 }
@@ -5079,6 +5141,7 @@ fn accord_a_cheval_sur_une_barne_pas_de_calage_supplementaire() {
             Fraction::ZERO,
             Fraction::new(1, 2),
             Fraction::new(3, 4),
+            Fraction::new(1, 1),
             Fraction::new(5, 4),
         ]
     );
@@ -5155,6 +5218,37 @@ fn duree_par_defaut_apres_passage_polyphonique_suit_derniere_branche() {
             Fraction::new(3, 4),
             Fraction::new(1, 1),
             Fraction::new(3, 2),
+        ]
+    );
+}
+
+/// La musique qui suit un `\new Voice` continue avec la durée par défaut
+/// posée dans cette voix (`lily/parser.yy` `NEWCONTEXT` : le contexte est un
+/// élément de la séquence). Ici `d'2 e'2` la fixe à la blanche : la dernière
+/// note attaque au tick 7 (en noires), pas 6. Les ticks 4 et 8 viennent des
+/// accord coupés aux barres.
+#[test]
+fn duree_par_defaut_apres_un_new_voice() {
+    let score =
+        read_lilypond("\\score { \\new Staff { \\time 4/4 c'4 \\new Voice { d'2 e'2 } f' g' } }")
+            .expect("lecture");
+    let mut ticks: Vec<Fraction> = (0..8)
+        .flat_map(|voice| accords_de_voix(&score, voice))
+        .filter(|(_, notes, _)| !notes.is_empty())
+        .map(|(tick, _, _)| tick)
+        .collect();
+    ticks.sort();
+    ticks.dedup();
+    assert_eq!(
+        ticks,
+        vec![
+            Fraction::ZERO,
+            Fraction::new(1, 4),
+            Fraction::new(3, 4),
+            Fraction::ONE,
+            Fraction::new(5, 4),
+            Fraction::new(7, 4),
+            Fraction::new(2, 1),
         ]
     );
 }

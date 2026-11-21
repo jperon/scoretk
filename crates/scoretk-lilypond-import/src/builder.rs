@@ -1338,6 +1338,112 @@ fn place_chord(
             return;
         }
     }
+    // Un accord qui franchit une barre est coupé à la frontière et ses
+    // morceaux sont liés : le modèle n'a qu'une durée par mesure. Sans cela,
+    // l'accord allonge sa mesure dans le MusicXML et décale toutes les
+    // attaques suivantes (`lily/tie-performer.cc` joue les morceaux liés
+    // comme une seule note).
+    if matches!(
+        event.content,
+        ChordContent::Notes(_) | ChordContent::Rest { .. }
+    ) && event.actual.is_positive()
+    {
+        let end = tick + event.actual;
+        let depasse = measure_at(slots, tick)
+            .is_some_and(|index| end > slots[index].start + slots[index].len);
+        if depasse {
+            let mut cursor = tick;
+            let mut precedent: Option<Vec<NoteId>> = None;
+            let mut garde = 0;
+            while cursor < end && garde < 1000 {
+                garde += 1;
+                let Some(index) = measure_at(slots, cursor) else {
+                    warnings.push(0, 0, "accord hors mesure ignoré".to_owned());
+                    break;
+                };
+                let piece_end = end.min(slots[index].start + slots[index].len);
+                if piece_end <= cursor {
+                    break;
+                }
+                for figure in to_duration_list(piece_end - cursor, true, 4, false) {
+                    let len = figure.ticks();
+                    if !len.is_positive() {
+                        continue;
+                    }
+                    let segment_index =
+                        ensure_segment(score, index, SegmentType::ChordRest, cursor);
+                    let mut chord_rest = ChordRest {
+                        duration: figure,
+                        ticks: None,
+                        tuplet: event.tuplet.and_then(|n| tuplets.get(n).copied()),
+                        lyrics: Vec::new(),
+                        beam_mode: Default::default(),
+                        beam_direction: None,
+                        kind: ChordRestKind::Rest(Rest {
+                            full_measure: false,
+                            gap: false,
+                            visible: true,
+                        }),
+                    };
+                    match &event.content {
+                        ChordContent::Notes(notes) => {
+                            let mut chord = Chord {
+                                stem: event.stem,
+                                staff_move,
+                                articulations: articulation_objects(&event.articulations),
+                                ornaments: ornament_objects(&event.ornaments),
+                                arpeggio: event.arpeggio.map(arpeggio_object),
+                                tremolo: event.tremolo,
+                                chord_line: event.chord_line,
+                                ..Chord::default()
+                            };
+                            for note in notes {
+                                let id = score.add_note(build_note(note, &event.fingerings));
+                                chord.notes.push(id);
+                            }
+                            if cursor == tick {
+                                for grace in &event.grace_before {
+                                    chord.grace_chords.push(build_grace(score, grace));
+                                }
+                            }
+                            if cursor + len == end {
+                                for grace in &event.grace_after {
+                                    chord.grace_chords.push(build_grace(score, grace));
+                                }
+                            }
+                            chord_rest.kind = ChordRestKind::Chord(chord);
+                        }
+                        ChordContent::Rest { visible } => {
+                            chord_rest.kind = ChordRestKind::Rest(Rest {
+                                full_measure: false,
+                                gap: false,
+                                visible: *visible,
+                            });
+                        }
+                        _ => unreachable!("cas filtré avant la coupure"),
+                    }
+                    if let ChordRestKind::Chord(chord) = &chord_rest.kind {
+                        let ids = chord.notes.clone();
+                        if let Some(previous) = precedent.take() {
+                            for (avant, apres) in previous.iter().zip(ids.iter()) {
+                                score.note_mut(*avant).tie_forward = Some(*apres);
+                                score.note_mut(*apres).tie_back = Some(*avant);
+                            }
+                        }
+                        precedent = Some(ids);
+                    }
+                    if let Some(segment) = score.measures[index].segments.get_mut(segment_index) {
+                        segment.set_element(voice_track, SegmentItem::ChordRest(chord_rest));
+                    }
+                    cursor += len;
+                }
+            }
+            if let Some(breath) = event.breath {
+                place_breath(score, slots, voice_track, tick, breath);
+            }
+            return;
+        }
+    }
     let Some(measure_index) = measure_at(slots, tick) else {
         warnings.push(0, 0, "événement hors mesure ignoré".to_owned());
         return;
