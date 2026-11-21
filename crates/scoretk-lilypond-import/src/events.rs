@@ -341,6 +341,9 @@ struct SpawnResult {
     /// Durée par défaut à la fin de la voix, propagée à la musique qui
     /// suit le `<< … >>` (`lily/music-sequence.cc`).
     default_duration: Duration,
+    /// Multiplicateur `*` de la durée par défaut, propagé aux notes sans
+    /// durée explicite (`c4*3/2 d` vaut `d4*3/2`).
+    default_multiplier: Fraction,
 }
 
 /// Ornements d'agrément en cours.
@@ -375,6 +378,8 @@ pub(crate) struct Interpreter<'a> {
     grace_after_target: Option<usize>,
     /// Durée par défaut.
     default_duration: Duration,
+    /// Multiplicateur `*` associé à la durée par défaut.
+    default_multiplier: Fraction,
     /// Hampe explicite en attente.
     stem_override: Option<StemDirection>,
     /// Portée cible courante d'un `\change` (nom du contexte).
@@ -411,6 +416,7 @@ impl<'a> Interpreter<'a> {
             pending_grace: Vec::new(),
             grace_after_target: None,
             default_duration: Duration::quarter(),
+            default_multiplier: Fraction::ONE,
             stem_override: None,
             staff_target: None,
             tuplet_scale: Fraction::ONE,
@@ -522,6 +528,7 @@ impl<'a> Interpreter<'a> {
                 self.octave = child.octave;
                 self.last_chord_notes = child.last_chord_notes;
                 last_duration = child.default_duration;
+                self.default_multiplier = child.default_multiplier;
             }
         }
         // La musique du contexte fait partie de la séquence : elle avance la
@@ -587,6 +594,7 @@ impl<'a> Interpreter<'a> {
             self.octave = child.octave;
             self.last_chord_notes = child.last_chord_notes;
             last_duration = child.default_duration;
+            self.default_multiplier = child.default_multiplier;
         }
         self.cursor = end.max(start);
         self.default_duration = last_duration;
@@ -616,6 +624,7 @@ impl<'a> Interpreter<'a> {
             pending_grace: Vec::new(),
             grace_after_target: None,
             default_duration: self.default_duration,
+            default_multiplier: self.default_multiplier,
             last_chord_notes: self.last_chord_notes.clone(),
             stem_override: self.stem_override,
             staff_target: None,
@@ -633,6 +642,7 @@ impl<'a> Interpreter<'a> {
             octave: child.octave,
             last_chord_notes: child.last_chord_notes,
             default_duration: child.default_duration,
+            default_multiplier: child.default_multiplier,
         };
         self.voice.spawned.push(SpawnedVoice {
             name,
@@ -945,7 +955,14 @@ impl<'a> Interpreter<'a> {
     /// Émet un accord, un silence ou un ornement.
     fn emit_chord(&mut self, chord: &Chord) {
         let written = chord.duration.unwrap_or(self.default_duration);
-        let multiplier = chord.multiplier.unwrap_or(Fraction::ONE);
+        // Un `*n/d` explicite devient la durée par défaut des notes suivantes
+        // (`lily/parser.yy` `DURATION` : `c4*3/2 d` vaut `d4*3/2`). Écrire une
+        // durée réinitialise le multiplicateur, comme chez LilyPond.
+        let multiplier = chord.multiplier.unwrap_or(if chord.duration.is_some() {
+            Fraction::ONE
+        } else {
+            self.default_multiplier
+        });
         let tuplet_factor = self.tuplet_scale * self.open_tuplet_scale();
         let mut actual = written.ticks() * multiplier * tuplet_factor;
 
@@ -975,6 +992,7 @@ impl<'a> Interpreter<'a> {
                 }
             }
             self.default_duration = written;
+            self.default_multiplier = multiplier;
             return;
         }
 
@@ -1098,6 +1116,7 @@ impl<'a> Interpreter<'a> {
             self.cursor += actual;
             if sets_default {
                 self.default_duration = written;
+                self.default_multiplier = multiplier;
             }
             return;
         }
@@ -1151,6 +1170,7 @@ impl<'a> Interpreter<'a> {
             self.order += 1;
         }
         self.default_duration = written;
+        self.default_multiplier = multiplier;
     }
 
     /// Applique un post-événement.

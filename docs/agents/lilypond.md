@@ -3453,3 +3453,19 @@ et n'étaient plus comptés comme attaques MIDI. `lily/tie-performer.cc`
 (`stop_translation_timestep`) retire au contraire les liaisons pendantes dès
 que leur fin est passée. Les liaisons ne sont maintenant fermées qu'au pas de
 temps où la note liée se termine ; celles sans correspondance sont abandonnées.
+
+### Réduction réelle de `contrapunctusXIV.ly` : multiplicateur de durée par défaut
+
+La réduction part du fichier réel, dont toutes les durées sont écrites
+`n4*3/2` ou `n2*3/2` (`\time 12/8`). Un extrait de trois notes
+(`a4*3/2 d2*3/2 f4*3/2~ f`) suffit à reproduire le décalage : le lecteur
+donne une noire à la note sans durée après `~` là où LilyPond joue 3/2.
+Le test `multiplicateur_de_duree_propage_aux_notes_nues` échoue avant le
+correctif.
+
+`emit_chord` ne conservait que la figure (`written`) comme durée par défaut,
+pas son multiplicateur `*n/d`. `lily/parser.yy` (`DURATION`) retient les deux :
+`c4*3/2 d e` joue trois notes de 3/2 noire ; écrire une figure sans `*` remet
+le multiplicateur à un. Le champ `default_multiplier` suit désormais la durée
+par défaut dans l'interprète et les voix ouvertes. `contrapunctusXIV` passe de
+65 à 1397 notes appariées sur 1397.

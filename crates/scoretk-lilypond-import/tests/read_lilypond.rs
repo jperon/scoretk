@@ -5603,3 +5603,25 @@ fn liaison_accord_sans_correspondance_ne_se_propage_pas() {
         "seul le fa est lié au fa de l'accord suivant"
     );
 }
+
+/// Réduction réelle de `contrapunctusXIV.ly` : un `*n/d` explicite devient la
+/// durée par défaut des notes qui suivent (`lily/parser.yy`, `DURATION`).
+#[test]
+fn multiplicateur_de_duree_propage_aux_notes_nues() {
+    let score = lire("c4*3/2 d e");
+    let touches: Vec<_> = accords_de_voix(&score, 0)
+        .iter()
+        .map(|(tick, _, _)| *tick)
+        .collect();
+    assert!(
+        touches.len() >= 3,
+        "les trois notes sont là : {:?}",
+        touches
+    );
+    assert_eq!(
+        (touches[1] - touches[0], touches[2] - touches[1]),
+        (Fraction::new(3, 8), Fraction::new(3, 8)),
+        "le multiplicateur 3/2 vaut pour les deux notes nues : {:?}",
+        touches
+    );
+}
