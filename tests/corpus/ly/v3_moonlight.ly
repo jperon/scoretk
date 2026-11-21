@@ -1429,61 +1429,32 @@ staffOneVoiceTwo = \fixed c' {
   s1 |
   s1 |
   \once \override Rest.transparent = ##t r2 r4 gs8. gs16 |
-  \once \override Stem.direction = #UP gs2. gs8. gs16 |
-  \once \override Stem.direction = #UP gs2 \=7(
-  \once \override Stem.direction = #UP a2 |
-  \once \override Stem.direction = #UP gs2
-  \once \override Stem.direction = #UP fs4
-  \once \override Stem.direction = #UP b4 \=7) |
-  \once \override Stem.direction = #UP e4 r4 r2 |
+  \once \stemUp gs2. gs8. gs16 |
+  \once \stemUp gs2 \=7( \once \stemUp a2 |
+  \once \stemUp gs2 \once \stemUp fs4 \once \stemUp b4 \=7) |
+  \once \stemUp e4 r4 r2 |
   r2 r4 g8. g16 |
-  \once \override Stem.direction = #UP g2. g8. g16 |
-  \once \override Stem.direction = #UP g2. \=8(
-  \once \override Stem.direction = #UP fs?4 \=8) |
-  \once \override Stem.direction = #UP fs2 \=9(
-  \once \override Stem.direction = #UP g4
-  \once \override Stem.direction = #UP e4 \=9) |
-  \once \override Stem.direction = #UP fs2
-  \once \override Stem.direction = #UP fs2 |
-  \once \override Stem.direction = #UP b,4 r4 r4
-  \once \override Stem.direction = #UP b4 \=12( |
-  \once \override Stem.direction = #UP c'2.
-  \once \override Stem.direction = #UP as4 \=12) |
-  \once \override Stem.direction = #UP b2.
-  \once \override Stem.direction = #UP b4 \=15( |
-  \once \override Stem.direction = #UP c'2.
-  \once \override Stem.direction = #UP as4 \=15) |
-  \once \override Stem.direction = #UP b2
-  \once \override Stem.direction = #UP b2 |
-  \once \override Stem.direction = #UP b2
-  \once \override Stem.direction = #UP a?2 |
-  \once \override Stem.direction = #UP g2 \=16(
-  \once \override Stem.direction = #UP fs2 \=16) |
-  \once \override Stem.direction = #UP cs2
-  \once \override Stem.direction = #UP cs4
-  \once \override Stem.direction = #UP cs4 |
+  \once \stemUp g2. g8. g16 |
+  \once \stemUp g2. \=8( \once \stemUp fs?4 \=8) |
+  \once \stemUp fs2 \=9( \once \stemUp g4 \once \stemUp e4 \=9) |
+  \once \stemUp fs2 \once \stemUp fs2 |
+  \once \stemUp b,4 r4 r4 \once \stemUp b4 \=12( |
+  \once \stemUp c'2. \once \stemUp as4 \=12) |
+  \once \stemUp b2. \once \stemUp b4 \=15( |
+  \once \stemUp c'2. \once \stemUp as4 \=15) |
+  \once \stemUp b2 \once \stemUp b2 |
+  \once \stemUp b2 \once \stemUp a?2 |
+  \once \stemUp g2 \=16( \once \stemUp fs2 \=16) |
+  \once \stemUp cs2 \once \stemUp cs4 \once \stemUp cs4 |
   r2 r4 cs'8. cs'16 |
-  \once \override Stem.direction = #UP cs'2. cs'8. cs'16 |
-  \once \override Stem.direction = #UP cs'2 \=17(
-  \once \override Stem.direction = #UP bs4
-  \once \override Stem.direction = #UP cs'4 \=17) |
-  \once \override Stem.direction = #UP ds'2.
-  \once \override Stem.direction = #UP ds'4 |
-  \once \override Stem.direction = #UP e'2 \=18(
-  \once \override Stem.direction = #UP ds'4
-  \once \override Stem.direction = #UP cs'4 \=18) |
-  s4 \once \override Stem.direction = #UP gs4 \=21(
-  \once \override Stem.direction = #UP a4
-  \once \override Stem.direction = #UP fs4 \=21) |
-  s4 \once \override Stem.direction = #UP gs,4 \=24(
-  \once \override Stem.direction = #UP a,4
-  \once \override Stem.direction = #UP fs,4 \=24) |
-  s4 \once \override Stem.direction = #UP cs'4
-  \once \override Stem.direction = #UP e'4
-  \once \override Stem.direction = #UP cs'4 |
-  s4 \once \override Stem.direction = #UP cs4
-  \once \override Stem.direction = #UP e4
-  \once \override Stem.direction = #UP cs4 |
+  \once \stemUp cs'2. cs'8. cs'16 |
+  \once \stemUp cs'2 \=17( \once \stemUp bs4 \once \stemUp cs'4 \=17) |
+  \once \stemUp ds'2. \once \stemUp ds'4 |
+  \once \stemUp e'2 \=18( \once \stemUp ds'4 \once \stemUp cs'4 \=18) |
+  s4 \once \stemUp gs4 \=21( \once \stemUp a4 \once \stemUp fs4 \=21) |
+  s4 \once \stemUp gs,4 \=24( \once \stemUp a,4 \once \stemUp fs,4 \=24) |
+  s4 \once \stemUp cs'4 \once \stemUp e'4 \once \stemUp cs'4 |
+  s4 \once \stemUp cs4 \once \stemUp e4 \once \stemUp cs4 |
   s1 |
   s1 |
   s1 |
@@ -1494,54 +1465,30 @@ staffOneVoiceTwo = \fixed c' {
   bs,,2 d,4 \=37( cs,4 \=37) |
   bs,,2 s2 |
   s1 |
-  s2 s4 \once \override Stem.direction = #UP gs8. gs16 |
-  \once \override Stem.direction = #UP gs2.
-  \once \override Stem.direction = #UP gs8. gs16 |
-  \once \override Stem.direction = #UP gs2 \=38(
-  \once \override Stem.direction = #UP a2 |
-  \once \override Stem.direction = #UP gs2
-  \once \override Stem.direction = #UP fs4
-  \once \override Stem.direction = #UP b4 \=38) |
-  \once \override Stem.direction = #UP e4 r4 r4
-  \once \override Stem.direction = #UP b8. b16 |
-  \once \override Stem.direction = #UP b2.
-  \once \override Stem.direction = #UP b8. b16 |
-  \once \override Stem.direction = #UP b2 \=39(
-  \once \override Stem.direction = #UP bs4
-  \once \override Stem.direction = #UP cs'4 \=39) |
-  \once \override Stem.direction = #UP ds'2 \=40(
-  \once \override Stem.direction = #UP e'2 |
-  \once \override Stem.direction = #UP d'2
-  \once \override Stem.direction = #UP bs2 \=40) |
-  \once \override Stem.direction = #UP cs'2.
-  \once \override Stem.direction = #UP cs'4 \=43( |
-  \once \override Stem.direction = #UP d'2.
-  \once \override Stem.direction = #UP bs4 \=43) |
-  \once \override Stem.direction = #UP cs'2.
-  \once \override Stem.direction = #UP cs'4 \=46( |
-  \once \override Stem.direction = #UP d'2.
-  \once \override Stem.direction = #UP bs4 \=46) |
-  \once \override Stem.direction = #UP cs'2
-  \once \override Stem.direction = #UP cs'2 |
-  \once \override Stem.direction = #UP b?2.
-  \once \override Stem.direction = #UP b4 |
-  \once \override Stem.direction = #UP a4
-  \once \override Stem.direction = #UP a4
-  \once \override Stem.direction = #UP gs4
-  \once \override Stem.direction = #UP gs4 |
-  \once \override Stem.direction = #UP fs2 \=47(
-  \once \override Stem.direction = #UP gs4
-  \once \override Stem.direction = #UP a4 \=47) |
-  \once \override Stem.direction = #UP gs2
-  \once \override Stem.direction = #UP gs2 |
-  \once \override Stem.direction = #UP cs4 s4 s2 |
+  s2 s4 \once \stemUp gs8. gs16 |
+  \once \stemUp gs2. \once \stemUp gs8. gs16 |
+  \once \stemUp gs2 \=38( \once \stemUp a2 |
+  \once \stemUp gs2 \once \stemUp fs4 \once \stemUp b4 \=38) |
+  \once \stemUp e4 r4 r4 \once \stemUp b8. b16 |
+  \once \stemUp b2. \once \stemUp b8. b16 |
+  \once \stemUp b2 \=39( \once \stemUp bs4 \once \stemUp cs'4 \=39) |
+  \once \stemUp ds'2 \=40( \once \stemUp e'2 |
+  \once \stemUp d'2 \once \stemUp bs2 \=40) |
+  \once \stemUp cs'2. \once \stemUp cs'4 \=43( |
+  \once \stemUp d'2. \once \stemUp bs4 \=43) |
+  \once \stemUp cs'2. \once \stemUp cs'4 \=46( |
+  \once \stemUp d'2. \once \stemUp bs4 \=46) |
+  \once \stemUp cs'2 \once \stemUp cs'2 |
+  \once \stemUp b?2. \once \stemUp b4 |
+  \once \stemUp a4 \once \stemUp a4 \once \stemUp gs4 \once \stemUp gs4 |
+  \once \stemUp fs2 \=47( \once \stemUp gs4 \once \stemUp a4 \=47) |
+  \once \stemUp gs2 \once \stemUp gs2 |
+  \once \stemUp cs4 s4 s2 |
   s1 |
   s1 |
-  \once \override Rest.transparent = ##t r2.
-  \once \override Stem.direction = #UP bs,4 |
+  \once \override Rest.transparent = ##t r2. \once \stemUp bs,4 |
   s1 |
-  \once \override Rest.transparent = ##t r2.
-  \once \override Stem.direction = #UP bs,4 |
+  \once \override Rest.transparent = ##t r2. \once \stemUp bs,4 |
   s1 |
   s1 |
   s1 |
@@ -1566,27 +1513,21 @@ staffTwoVoiceOne = \fixed c' {
   <d,, d,>1 |
   \break
   <c,, c,>4 \=60( <b,,, b,,>4 <as,,, as,,>2 \=60) |
-  \once \override Stem.direction = #DOWN <b,,, b,,>2 \=61(
-  \once \override Stem.direction = #DOWN e,,4
-  \once \override Stem.direction = #DOWN g,,4 \=61) |
-  \once \override Stem.direction = #DOWN fs,,2
-  \once \override Stem.direction = #DOWN <fs,,, fs,,>2 |
+  \once \stemDown <b,,, b,,>2 \=61( \once \stemDown e,,4
+  \once \stemDown g,,4 \=61) |
+  \once \stemDown fs,,2 \once \stemDown <fs,,, fs,,>2 |
   <b,,,~ b,,~>1 |
   \break
-  <b,,, b,,>4 \=62( \once \override Stem.direction = #DOWN <e,, e,>4
-  \once \override Stem.direction = #DOWN <g,, g,>4
-  \once \override Stem.direction = #DOWN <e,, e,>4 \=62) |
+  <b,,, b,,>4 \=62( \once \stemDown <e,, e,>4 \once \stemDown <g,, g,>4
+  \once \stemDown <e,, e,>4 \=62) |
   <b,,,~ b,,~>1 |
-  <b,,, b,,>4 \=63( \once \override Stem.direction = #DOWN <e,, e,>4
-  \once \override Stem.direction = #DOWN <g,, g,>4
-  \once \override Stem.direction = #DOWN <e,, e,>4 \=63) |
+  <b,,, b,,>4 \=63( \once \stemDown <e,, e,>4 \once \stemDown <g,, g,>4
+  \once \stemDown <e,, e,>4 \=63) |
   <b,,, b,,>2 <gs,,,? gs,,?>2 |
   \break
   <es,,, es,,>2 <fs,,, fs,,>2 |
-  \once \override Stem.direction = #DOWN <b,,, b,,>2
-  \once \override Stem.direction = #DOWN <bs,,, bs,,>2 |
-  \once \override Stem.direction = #DOWN cs,,2
-  \once \override Stem.direction = #DOWN cs,,2 |
+  \once \stemDown <b,,, b,,>2 \once \stemDown <bs,,, bs,,>2 |
+  \once \stemDown cs,,2 \once \stemDown cs,,2 |
   <fs,,, cs,, fs,,>1 |
   <es,, cs, es,>1 |
   <fs,, fs,>2 \=64( <ds,, ds,>4 <cs,, cs,>4 \=64) |
@@ -1622,23 +1563,19 @@ staffTwoVoiceOne = \fixed c' {
   \break
   <fs,,, fs,,>2 \=69( <gs,,, gs,,>2 \=69) |
   <cs,,~ cs,~>1 |
-  <cs,, cs,>4 \=70( \once \override Stem.direction = #DOWN <fs,, fs,>4
-  \once \override Stem.direction = #DOWN <a,, a,>4
-  \once \override Stem.direction = #DOWN <fs,, fs,>4 \=70) |
+  <cs,, cs,>4 \=70( \once \stemDown <fs,, fs,>4 \once \stemDown <a,, a,>4
+  \once \stemDown <fs,, fs,>4 \=70) |
   <cs,,~ cs,~>1 |
   \break
-  <cs,, cs,>4 \=71( \once \override Stem.direction = #DOWN <fs,, fs,>4
-  \once \override Stem.direction = #DOWN <a,, a,>4
-  \once \override Stem.direction = #DOWN <fs,, fs,>4 \=71) |
+  <cs,, cs,>4 \=71( \once \stemDown <fs,, fs,>4 \once \stemDown <a,, a,>4
+  \once \stemDown <fs,, fs,>4 \=71) |
   <cs,, cs,>2 <fs,,, fs,,>2 \=72( \=73( |
   <ds,, ds,>2. \=72) \=73) <e,, e,>4 |
   \break
   <cs,, cs,>4 \=74( <ds,, ds,>4 <bs,,, bs,,>4 <cs,, cs,>4 \=74) |
-  \once \override Stem.direction = #DOWN <a,,, a,,>2 \=75(
-  \once \override Stem.direction = #DOWN <gs,,, gs,,>4
-  \once \override Stem.direction = #DOWN <fs,,, fs,,>4 \=75) |
-  \once \override Stem.direction = #DOWN <gs,,, gs,,>2
-  \once \override Stem.direction = #DOWN <gs,,, gs,,>2 |
+  \once \stemDown <a,,, a,,>2 \=75( \once \stemDown <gs,,, gs,,>4
+  \once \stemDown <fs,,, fs,,>4 \=75) |
+  \once \stemDown <gs,,, gs,,>2 \once \stemDown <gs,,, gs,,>2 |
   cs,,1 |
   \break
   bs,,,1 |
@@ -1719,20 +1656,14 @@ staffTwoVoiceTwo = \fixed c' {
   s1 |
   s1 |
   s1 |
-  \once \override Stem.direction = #UP gs,,2.
-  \once \override Stem.direction = #UP gs,,8. gs,,16 |
-  \once \override Stem.direction = #UP gs,,2.
-  \once \override Stem.direction = #UP gs,,8. gs,,16 |
-  \once \override Stem.direction = #UP gs,,2.
-  \once \override Stem.direction = #UP gs,,8. gs,,16 |
-  \once \override Stem.direction = #UP gs,,2.
-  \once \override Stem.direction = #UP gs,,8. gs,,16 |
-  \once \override Stem.direction = #UP gs,,2.
-  \once \override Stem.direction = #UP gs,,8. gs,,16 |
-  \once \override Stem.direction = #UP gs,,2. gs,,8. gs,,16 |
-  \once \override Stem.direction = #UP gs,,2
-  \once \override Stem.direction = #UP cs,2 |
-  \once \override Stem.direction = #UP gs,,2
+  \once \stemUp gs,,2. \once \stemUp gs,,8. gs,,16 |
+  \once \stemUp gs,,2. \once \stemUp gs,,8. gs,,16 |
+  \once \stemUp gs,,2. \once \stemUp gs,,8. gs,,16 |
+  \once \stemUp gs,,2. \once \stemUp gs,,8. gs,,16 |
+  \once \stemUp gs,,2. \once \stemUp gs,,8. gs,,16 |
+  \once \stemUp gs,,2. gs,,8. gs,,16 |
+  \once \stemUp gs,,2 \once \stemUp cs,2 |
+  \once \stemUp gs,,2
   \override TupletNumber.stencil = ##f
   \tuplet 3/2 {
   gs,,8 \=76( cs,8 gs,,8

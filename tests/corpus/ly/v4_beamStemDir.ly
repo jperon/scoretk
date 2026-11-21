@@ -3,10 +3,8 @@
 
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
-  \once \override Stem.direction = #DOWN c'8
-  \once \override Stem.direction = #DOWN c'8
-  \once \override Stem.direction = #DOWN c'8
-  \once \override Stem.direction = #DOWN c'8 r2 |
+  \once \stemDown c'8 \once \stemDown c'8 \once \stemDown c'8
+  \once \stemDown c'8 r2 |
   g8 g8 g8 g8 r2 |
   R1 |
   R1 |

@@ -3775,3 +3775,14 @@ Sur `00- Veni veni Emmanuel - chant piano.mscz` la sortie passe de 37 971 à
 compacité, pas en notes — la perte de 493 notes de ce fichier est un artefact
 de notes à l'unisson (le MIDI LilyPond en fusionne une sur cinq, le MIDI
 MuseScore de référence les joue toutes, §20).
+
+### Écriture : hampe explicite compacte
+
+`\once \override Stem.direction = #UP` (39 octets) était écrit devant
+**chaque** accord portant une direction de hampe. `ly/property-init.ly`
+définit `\stemUp`/`\stemDown` comme alias de cet override ; avec `\once`
+ils gardent la même portée ponctuelle pour 13 octets. Test
+`correction_de_hampe_compacte` (échoue avant). Sur
+`Vingt_danses_enfantines_pour_piano(1).mxl` la sortie passe de 695 013 à
+370 197 octets (−46,7 %) et le MIDI compilé est identique (23 625 notes,
+N2 8 754 des deux côtés) : gain de compacité sans changement musical.

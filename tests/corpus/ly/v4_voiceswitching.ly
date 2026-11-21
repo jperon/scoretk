@@ -9,20 +9,17 @@ staffOneVoiceOne = \fixed c' {
   c'2 <\tweak style #'cross f c'>2 |
   \break
   \tuplet 3/2 {
-    \once \override Stem.direction = #UP c'2 ^\markup { "Tuplets in voice 1:" }
-    \once \override Stem.direction = #UP c'2
-  \once \override Stem.direction = #UP c'2
+    \once \stemUp c'2 ^\markup { "Tuplets in voice 1:" } \once \stemUp c'2
+  \once \stemUp c'2
   }
   |
-  \once \override Stem.direction = #UP c'2
+  \once \stemUp c'2
   \tuplet 3/2 {
-    \once \override Stem.direction = #UP \tweak style #'cross c'4
+    \once \stemUp \tweak style #'cross c'4
     \tuplet 3/2 {
-      \once \override Stem.direction = #UP c'8
-      \once \override Stem.direction = #UP c'8
-    \once \override Stem.direction = #UP c'8
+    \once \stemUp c'8 \once \stemUp c'8 \once \stemUp c'8
     }
-  \once \override Stem.direction = #UP c'4
+  \once \stemUp c'4
   }
   |
   \break
@@ -54,25 +51,21 @@ staffOneVoiceTwo = \fixed c' {
   s1 |
   \tweak style #'cross f4 f2 f4 |
   f4 f2 f4 |
-  \once \override Stem.direction = #UP c'2
+  \once \stemUp c'2
   \tuplet 3/2 {
-    \once \override Stem.direction = #UP \tweak style #'cross c'4
-    \once \override Stem.direction = #UP c'4
-  \once \override Stem.direction = #UP c'4
+  \once \stemUp \tweak style #'cross c'4 \once \stemUp c'4 \once \stemUp c'4
   }
   |
   \tuplet 3/2 {
-    \once \override Stem.direction = #UP \tweak style #'cross c'2
+    \once \stemUp \tweak style #'cross c'2
     \tuplet 3/2 {
-      \once \override Stem.direction = #UP c'4
+      \once \stemUp c'4
       \tuplet 3/2 {
-        \once \override Stem.direction = #UP c'8
-        \once \override Stem.direction = #UP c'8
-      \once \override Stem.direction = #UP c'8
+      \once \stemUp c'8 \once \stemUp c'8 \once \stemUp c'8
       }
-    \once \override Stem.direction = #UP c'4
+    \once \stemUp c'4
     }
-  \once \override Stem.direction = #UP c'2
+  \once \stemUp c'2
   }
   |
   \tuplet 4/4 {

@@ -154,8 +154,8 @@ fn is_after_grace(grace: Option<GraceType>) -> bool {
 /// Correction de hampe explicite.
 fn stem_override(stem: StemDirection) -> Option<&'static str> {
     match stem {
-        StemDirection::Up => Some("\\once \\override Stem.direction = #UP"),
-        StemDirection::Down => Some("\\once \\override Stem.direction = #DOWN"),
+        StemDirection::Up => Some("\\once \\stemUp"),
+        StemDirection::Down => Some("\\once \\stemDown"),
         StemDirection::Auto => None,
     }
 }
@@ -445,6 +445,19 @@ mod tests {
         measure.add_segment(segment);
         score.add_measure(measure);
         score
+    }
+
+    /// `\stemUp`/`\stemDown` sont les alias de LilyPond pour
+    /// `\override Stem.direction` (`ly/property-init.ly`) : avec `\once`
+    /// ils restent ponctuels mais divisent la sortie par trois.
+    #[test]
+    fn correction_de_hampe_compacte() {
+        assert_eq!(stem_override(StemDirection::Up), Some("\\once \\stemUp"));
+        assert_eq!(
+            stem_override(StemDirection::Down),
+            Some("\\once \\stemDown")
+        );
+        assert_eq!(stem_override(StemDirection::Auto), None);
     }
 
     #[test]
