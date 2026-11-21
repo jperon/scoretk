@@ -1965,6 +1965,42 @@ replaced by a minimal inline ABC (five voices, foreign tie on V:5) that
 panics at `ids.rs:132` without the `% 4` clamp; other absolute-path test
 dependencies were inlined or removed. Workspace tests and clippy are clean.
 
+### ABC import: fifth pass — decoration causes and structural classes (2026-11-21)
+
+References read first: ABC 2.1 §4.8–§4.10 (repeats/voltas), §5.1 (lyrics),
+§7 (voices), §4.19 (annotations), §4.7 (tempo), and `abc2xml.py`
+(`:1911-1937` `mkBarline`, `:951` `mergePartMeasure`, `:1584,1607-1608`
+lyric extends, `:2426-2445` one part per voice). Three tunes per class were
+inspected with source line, both emissions, and part counts:
+
+| Class | 3 tunes (source) | `abc2xml.py` emits | We emit | Verdict |
+| --- | --- | --- | --- | --- |
+| repeats 22 | `flattener.test__abcTempoThreeVoices` (3 voices, `:|`), `flattener.test__abcVolumeInChords` (`\|:[cD]:|`), `layout.test__abcVoiceEndings` (`[1 … :\|`) | one `<repeat>` per voice's barline (`:1911-1937`, merged at `:951`); default parts per voice (`:2426-2445`) | one `<repeat>` per measure (parts 1/1 or 1/2) | **structural** — per-voice barline counting |
+| voltas 15 | `layout.test__abcVoiceEndings` (`[1`/`[2`), `mouse-click.test__abcMultiple`, `selection.test__abcMultiple` | `<ending type=start/stop>` per voice (`:1915-1933`) | one `<ending>` per measure | **structural** — same cause |
+| voices 18 | `directives.test__abcMaxStaves`, `flattener.test__abcTripletChords`, `flattener.test__abcVolumeInChords` | `<voice>` per part (`:2426-2445`) | no scoretk XML for all 18 (oracle failures, parts 0/1) | **structural** — not a reader deficit |
+| lyrics 10 | `4vPerIlludAveProlatum` (`w: … _ …`), `laDeploration…` X1/X2 (`w: … _ _ …`) | `<lyric><extend/></lyric>` on melisma notes (`:1584,1607-1608`) | melisma stored as duration (`Lyrics::melisma`), no extend elements | **representation** — both valid; changing the pivot breaks ABC round-trip |
+| decorations 15 | `mouse-click…`, `selection…`, `book3` X:0444 (`"^F"`, `[Q:"left" …"right"]`) | `<words>` per text annotation (`:2022`) and per Q: field (`:1886`) | 10 lost | **2 real reader bugs** fixed; 5 remain (oracle failures, empty `<words/>`, D.C. after final bar) |
+
+Two real decoration causes, each with a reduced failing test and one commit:
+
+1. **Second quoted label in `Q:`** — `parse_tempo` removed only the first
+   quoted segment, so `[Q:"left" 1/4=170"right"]` fed `"170\"right\""` to
+   the bpm parser and dropped the direction. Strip all quoted segments.
+   `abc2xml.py:1886`, ABC 2.1 §4.7.
+2. **Placed annotation misread as chord** — `parse_annotation` stripped a
+   placement prefix (`^`, `_`, `<`, `>`, `@`) then ran `looks_like_chord` on
+   the bare text, so `"^F"` became an F chord instead of `<words>F</words>`.
+   `abc2xml.py:415,2022`, ABC 2.1 §4.19.
+
+**Fresh measurement** (`target/n3-annfix`, `abc2xml.py` 269 in `target/abcchk/`,
+no stale outputs): decorations **15 → 5**; all other classes unchanged
+(repeats 22, voltas 15, voices 18, lyrics 10, keys 29, times 25, clefs 19,
+tuplets 5, harmony 2, graces 2). Tune-by-tune: **10 N3 entries improved**,
+1 reduced a `<harmony>` excess to parity, **0 N1 exact losses, 0 gains,
+0 note-count changes**. The only remaining N3 deficits are the structural
+per-voice counting above (now normalised per part in `n3.py`), the valid
+melisma representation, 3 oracle failures and 2 edge-case annotations.
+
 ## 27. Écriture ABC : mesure complète et deux correctifs (2026-11-21)
 
 ### 27.1 Oracle et protocole
