@@ -1121,14 +1121,29 @@ impl Reader {
             self.voices.push(voice);
         }
         for voice in &mut self.voices {
+            let end = voice
+                .current
+                .events
+                .last()
+                .map(|event| Position {
+                    measure: voice.measure_index(),
+                    tick: event.tick,
+                })
+                .unwrap_or_else(|| voice.position());
             if !voice.current.events.is_empty() || voice.measures.is_empty() {
                 voice.finish_measure(BarLineType::Normal);
             }
+            // `abc2xml.py:1516-1525` writes `<slur type="start">` on the note
+            // after `(` even when no `)` closes it (ABC 2.1 §4.11). Close
+            // those spanners at the last event so the start is not lost.
             if !voice.open_slurs.is_empty() {
                 self.warnings.push(Warning::new(
                     0,
                     format!("slur non fermé dans la voix {}", voice.number),
                 ));
+                while let Some(start) = voice.open_slurs.pop() {
+                    voice.slurs.push((start, end));
+                }
             }
             if !voice.open_hairpins.is_empty() {
                 self.warnings.push(Warning::new(
