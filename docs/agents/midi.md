@@ -2428,71 +2428,60 @@ wired (see the BeatRoot section). `02_02_Segura_L-aigle-mexicain` is unchanged
 (voice 0.9073): its first fragments were already equal, so its voice loss comes
 from another part of the tie chains, not from the missing split.
 
-## Decision: tuplet notation stays opt-in (2026-11-21)
+## Decision: tuplet notation stays opt-in (2026-11-21, after beat ties)
 
 Requirement: make detection the default only if the full measurement shows no
 per-file loss without explanation, with insertion at MuseScore's stage
 (`convertMidi`: `findAllTuplets` inside `quantizeAllTracks`).
 
-Final figures, same manifests and oracle, after the beat-tie fix:
+Final figures after the beat-tie fix and `addChordsBetweenTupletNotes`, same
+manifests and oracle:
 
 | Setting | LilyPond N | onset loss | duration loss | tuplet loss | upstream N |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| default (old detector) | **0.9821** | **26.0** | **350.8** | 11 778.0 | 0.7662 |
-| `tuplet_notation` (late) | 0.9819 | 154.0 | 535.9 | **6 216.0** | **0.7743** |
+| default (old detector, MuseScore stage) | **0.9821** | **26.0** | **350.8** | 11 778.0 | 0.7662 |
+| literal detector + filter (late insertion) | 0.9819 | 154.0 | 535.9 | **6 216.0** | **0.7743** |
 
-With the DFS filter the notation gain is real (tuplet loss −47 %, upstream
-+0.0081) but the opt-in path loses two files (`OSalutarisHostia` and its
-duplicate, −0.0244, notated `<duration>` values) and worsens attacks/durations
-(it passes an empty tuplet list to `toDurationList`). Inserted at MuseScore's
-early stage, `v4/timesig-09` — whose source has **no** `<Tuplet>` — receives
-**182** invented time modifications (DFS filter, `/tmp/scoretk-filter`). That is
-a per-file divergence without an explanation, so:
+The notation gain is real (tuplet loss −47 %, upstream +0.0081) but the literal
+path loses two files (`OSalutarisHostia` and its duplicate, −0.0244: MuseScore
+notates 4/3, 2/3, 1/3 where we keep the sounding values) and worsens
+attacks/durations (it passes an empty tuplet list to `toDurationList`).
+Inserted at MuseScore's early stage, `v4/timesig-09` — whose source has **no**
+`<Tuplet>` — receives **182** invented time modifications with the DFS filter.
+That is a per-file divergence without an explanation, so **detection stays
+opt-in** (`ImportOptions::tuplet_notation` / `--midi-tuplet-notation`). To flip
+it: `assignVoices`'s tuplet part must reject those, and `OSalutarisHostia`
+must keep MuseScore's notated durations (or the oracle must compare sounding
+durations).
 
-- **default off**; the detector and filter stay behind
-  `ImportOptions::tuplet_notation` / `--midi-tuplet-notation`;
-- turning it on requires porting `addChordsBetweenTupletNotes` and the
-  voice/tuplet interplay (`importmidi_tuplet.cpp:533-575`,
-  `assignVoices`) so that `timesig-09` produces no tuplet and `OSalutarisHostia`
-  keeps MuseScore's notated durations.
+## `human_tempo`: beat tracking is used upstream, our glue is regressive
 
-## `tuplet_off_time_other_bar2`: a spurious triplet, not `preserveLegato` (2026-11-21)
+MuseScore does use the beat tracker on import when the performance is detected
+as human: `Quantize::setIfHumanPerformance` calls `MidiBeat::findBeatLocations`
+(`importmidi_quant.cpp:399-480`) and `convertMidi` always calls
+`MidiBeat::adjustChordsToBeats` (`importmidi.cpp`, after `collectChords`),
+which is a no-op for non-human files. Our port detects the same human
+performances (`quant::is_human_performance`) and contains the BeatRoot glue,
+but it is **not wired**: the measured wiring changed `human_tempo` from 0.5000
+to 0.2958 before the beat-tie fix, and the induction/anchoring
+(`updateFirstLastBeats`) does not reproduce MuseScore's grid. After the
+beat-tie fix the file scores 0.3813 (default), so the remaining cause is the
+tracker itself; wiring it without a correct anchoring would regress the row
+again. Documented as an open cause, not enabled.
 
-The upstream row scored 0.8333 after the `dontSimplify` oracle fix. The first
-hypothesis — an end-of-note overlap that `preserveLegato`
-(`importmidi_quant.cpp:488-517`) should cut (2.677 against the next chord at
-2.667) — is **wrong**: the note's off time is quantised correctly. The file's
-attacks (0, 2.003, 2.667, 3.336, …) form a triplet grid, and the previous
-simplified detector accepted a 3:2 tuplet; `toDurationList` then split the note
-74 into 2/3-quarter fragments, giving 1.25 quarters instead of MuseScore's
-0.75 (the reference is built with `dontSimplify` + `V_1`, `midiimport_tests.cpp:79-92`).
+## MIDI import: status (2026-11-21)
 
-With the literal detector and `filterTuplets`, the tuplet no longer affects the
-durations (`--midi-tuplet-notation`, late insertion): the first fragment of note
-74 is 0.75 quarter and the upstream row reaches **1.0** within the oracle
-tolerance (0.25 quarter). Reduced test `tuplet_off_time.rs` (written first)
-checks the first fragment of note 74 at 2.0 quarters and that no longer
-fragment extends it. The default pipeline still scores 0.8333 until the tuplet
-insertion stage is decided (see the next section).
-
-## Tuplet insertion: `addChordsBetweenTupletNotes` (2026-11-21)
-
-The C++ adds the chords between two tuplet positions to the tuplet after
-filtering (`addChordsBetweenTupletNotes`, `importmidi_tuplet.cpp:533-575`): a
-chord that starts after the tuplet's on time, whose interval intersects the
-tuplet, joins it when its tuplet quantisation error is lower than its regular
-one (`findOnTimeTupletQuantError` + `findOffTimeTupletQuantError`,
-`importmidi_quant.cpp`). `apply_tuplets` now ports this literally
-(`add_chords_between_tuplet_notes`), with `MTrack::max_off_time` as the chord
-interval end.
-
-The tuplet part of `assignVoices` (`importmidi_tuplet_voice.cpp:872-926`) —
-`setBackTiedVoices`, `setTupletVoices`, `excludeExtraVoiceTuplets` — is **not**
-ported: the detector already fixes a tuplet's voice from its first chord when
-it is inserted (`insert_detected_tuplet`), and
-`assign_non_tuplet_voices` ports `setNonTupletVoices` (`:171-206`). An
-ablation measurement (option enabled, with and without
-`addChordsBetweenTupletNotes`) gives **identical** scores on both lots
-(opt-in N 0.9819, tuplet dimension 6 216.0, upstream 0.7743), so the missing
-pieces do not change the measured output today; they remain required before
-tuplet detection can become the default.
+- **Default pipeline**: LilyPond N **0.9821** (1 020 files), upstream N
+  **0.7662** (96 files). Losses: voice 1 076.1, duration 350.8, onset 26.0,
+  pitch 0.0, tuplet flag 11 778.0.
+- **Instrument template selection**: literal port (previous turn).
+- **Duration simplification**: literal port of `lengthenNote` /
+  `minimizeNumberOfRests` (previous turn).
+- **Voices**: literal port of `separateVoices` (previous turn).
+- **Beat ties**: literal `metricDivisionsOfBar` subdivisions (this turn):
+  18 files gain, none loses; upstream `human_tempo` −0.1439.
+- **Tuplets**: literal detector + `filterTuplets` + `addChordsBetweenTupletNotes`,
+  opt-in; `tuplet_off_time_other_bar2` reaches 1.0 under the option.
+- **Open**: `assignVoices` tuplet part, tuplet-aware `toDurationList` default,
+  `human_tempo` beat tracker, `02_02_Segura` voice tie chains, `preserveLegato`
+  on 0.01-quarter overlaps (not the cause of `tuplet_off_time_other_bar2`).
