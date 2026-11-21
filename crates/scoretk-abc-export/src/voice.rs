@@ -326,6 +326,14 @@ fn collect_items(score: &Score, staff: usize, voice: usize) -> Vec<Item<'_>> {
             let Some(chord_rest) = segment.chord_rest(track) else {
                 continue;
             };
+            // Un silence « gap » est un placement sans durée musicale (par
+            // exemple le complément d'un `<forward>` MusicXML). L'écrivain
+            // MusicXML ne l'écrit pas (`write_measure_tracks`) : l'écrire en
+            // ABC allongerait la mesure et décalerait toutes les attaques
+            // suivantes à la relecture (ABC 2.1 § 4.5).
+            if chord_rest.rest_ref().is_some_and(|rest| rest.gap) {
+                continue;
+            }
             if last_tick == Some(segment.tick) {
                 continue;
             }
