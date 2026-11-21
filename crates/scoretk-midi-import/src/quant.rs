@@ -231,6 +231,36 @@ pub fn find_min_quantized_on_time(
     }
 }
 
+/// Plus grande fin quantifiée d'un accord sur la grille d'un n-olet
+/// (`findMaxQuantizedTupletOffTime`, `importmidi_quant.cpp:314-332`).
+pub fn find_max_quantized_tuplet_off_time(
+    chord: &super::chord::MidiChord,
+    on_time: Fraction,
+    tuplet_len: Fraction,
+    tuplet_ratio: Fraction,
+    range_start: Fraction,
+) -> Fraction {
+    let tuplet = super::tuplet::TupletData {
+        voice: 0,
+        on_time: range_start,
+        len: tuplet_len,
+        tuplet_number: 0,
+        element_count: 0,
+    };
+    let mut max_off = Fraction::ZERO;
+    for note in &chord.notes {
+        if note.off_time <= range_start {
+            continue;
+        }
+        let off =
+            find_quantized_tuplet_note_off_time(on_time, note.off_time, &tuplet, tuplet_ratio).0;
+        if off > max_off {
+            max_off = off;
+        }
+    }
+    max_off
+}
+
 /// Plus grande fin quantifiée des notes d'un accord (`findMaxQuantizedOffTime`).
 pub fn find_max_quantized_off_time(
     chord: &super::chord::MidiChord,

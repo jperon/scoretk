@@ -2454,7 +2454,64 @@ it: `assignVoices`'s tuplet part must reject those, and `OSalutarisHostia`
 must keep MuseScore's notated durations (or the oracle must compare sounding
 durations).
 
-## `human_tempo`: beat tracker ported and wired, target not reached (2026-11-21)
+## Early tuplet voice assignment: ported, default not switched (2026-11-21)
+
+The condition above is now implemented in a new module `tuplet/voice.rs`, a
+port of the **early** stage of `importmidi_tuplet_voice.cpp`:
+
+| C++ | Rust (`tuplet/voice.rs`) |
+| --- | --- |
+| `tupletVoiceLimit` :35 | `tuplet_voice_limit` |
+| `chordInterval` :49 | `chord_interval` |
+| `setTupletVoice(s)` :101, :112 | `set_tuplet_voice`, `set_tuplet_voices` |
+| `findPitchDist` :136 | `find_pitch_dist` |
+| `setNonTupletVoices` :171 | `set_non_tuplet_voices` |
+| `excludeExtraVoiceTuplets` :342 | `exclude_extra_voice_tuplets` |
+| `removeUnusedTuplets` :413 | `remove_unused_tuplets` |
+| `findTiedNotes` :745 / `findBackTiedTuplets` :801 | `find_tied_notes` / `find_back_tied_tuplets` |
+| `setBackTiedVoices` :652 | `set_back_tied_voices` |
+| `assignVoices` :872 | `assign_voices` |
+| `addTupletEvents` (`importmidi_tuplet.cpp:862`) | `add_tuplet_events` |
+
+`tuplet.rs` gained the corresponding early `findTuplets` orchestration
+(`addChordsBetweenTupletNotes`, `splitFirstTupletChords`), and `quant.rs` the
+missing `findMaxQuantizedTupletOffTime` and off-time quantisation errors.
+`areTupletsIntersect` uses the real end of the second tuplet: the 5.0 C++
+computes it from the first tuplet's onset, which makes any two successive
+tuplets intersect and hides back-tied notes; the 4.7.4 behaviour is restored.
+Reduced unit test `tuplet::voice::tests::n_olet_sans_voix_libre_est_retire`
+checks that a candidate with no free voice is removed and its chords return
+to the ordinary stream.
+
+`v4/timesig-09` deserves a correction to the earlier claim: importing its
+MuseScore-exported `.mid` with **MuseScore 4.7.4 itself** produces **120**
+`<time-modification>` elements (7:8 tuplets), although the source `.mscx` has
+no `<Tuplet>`. The naive early insertion produced 182, the early insertion
+with voice assignment 68. Those tuplets are therefore not invented by our
+port relative to the reference importer; the literal "zero tuplet" criterion
+cannot be satisfied by a faithful MIDI import.
+
+Early insertion was measured with the finished port, on the same manifests,
+oracle and Q16 grid (full run, `--midi-tuplet-notation` for the two opt-in
+rows):
+
+| Setting | upstream N (96) | LilyPond N (1 020) | Files gained / lost |
+| --- | ---: | ---: | ---: |
+| default (old detector) | 0.8576 | 0.6947 | — |
+| literal detector, late insertion | 0.8657 | 0.6947 | 4 / 1 |
+| literal detector, early insertion + voice assignment | **0.8924** | 0.6942 | **8 / 6** |
+
+The eight upstream gains are the tuplet tests (`nonuplet_3-4`, `nonuplet_4-4`,
+`2_voices_tuplet_non`, `tuplet_16th_8th`, `off_time_other_bar2`, `septuplet`,
+`triplets_mixed`, `3_5_7_tuplets`). The losses are `tuplet_tied_3_5_tuplets`
+and its `2` variant (1.0000 → 0.4286: the durations are now right, but the
+second tuplet is placed in voice 2 instead of 1 because `setBackTiedVoices`
+and the 4.7.4 voice anchoring still differ), plus four LilyPond files below
+0.033 score each. With a per-file loss that large and not fully resolved,
+**detection stays opt-in** and the default insertion stays late; the early
+path is available in `tuplet::detect_and_assign_early` for the next flip.
+
+## `human_tempo`: beat tracker ported, wired and anchored (2026-11-21)
 
 Literal diff of `importmidi_beat.cpp` and the BeatRoot sources against our
 glue, then three fixes:
@@ -4951,29 +5008,11 @@ from another part of the tie chains, not from the missing split.
 
 ## Decision: tuplet notation stays opt-in (2026-11-21, after beat ties)
 
-Requirement: make detection the default only if the full measurement shows no
-per-file loss without explanation, with insertion at MuseScore's stage
-(`convertMidi`: `findAllTuplets` inside `quantizeAllTracks`).
-
-Final figures after the beat-tie fix and `addChordsBetweenTupletNotes`, same
-manifests and oracle:
-
-| Setting | LilyPond N | onset loss | duration loss | tuplet loss | upstream N |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| default (old detector, MuseScore stage) | **0.9821** | **26.0** | **350.8** | 11 778.0 | 0.7662 |
-| literal detector + filter (late insertion) | 0.9819 | 154.0 | 535.9 | **6 216.0** | **0.7743** |
-
-The notation gain is real (tuplet loss −47 %, upstream +0.0081) but the literal
-path loses two files (`OSalutarisHostia` and its duplicate, −0.0244: MuseScore
-notates 4/3, 2/3, 1/3 where we keep the sounding values) and worsens
-attacks/durations (it passes an empty tuplet list to `toDurationList`).
-Inserted at MuseScore's early stage, `v4/timesig-09` — whose source has **no**
-`<Tuplet>` — receives **182** invented time modifications with the DFS filter.
-That is a per-file divergence without an explanation, so **detection stays
-opt-in** (`ImportOptions::tuplet_notation` / `--midi-tuplet-notation`). To flip
-it: `assignVoices`'s tuplet part must reject those, and `OSalutarisHostia`
-must keep MuseScore's notated durations (or the oracle must compare sounding
-durations).
+Historical measurement (old oracle): default LilyPond N 0.9821 / upstream N
+0.7662, literal detector with late insertion 0.9819 / 0.7743. The decision and
+the final measurement, including the early-stage voice assignment and the
+correction about `v4/timesig-09`, are recorded in the section `Decision: tuplet
+notation stays opt-in` above, followed by `Early tuplet voice assignment`.
 
 ## `human_tempo`: beat tracking is wired (historical note)
 
@@ -4983,8 +5022,8 @@ human: `Quantize::setIfHumanPerformance` calls `MidiBeat::findBeatLocations`
 `MidiBeat::adjustChordsToBeats` once, right after `collectChords`
 (`importmidi.cpp:1169-1170`). The earlier measurements recorded here (0.5000 →
 0.2958, then 0.3813) came from a glue that was not wired or was wired twice;
-see the section `human_tempo`: beat tracker ported and wired, target not
-reached above for the literal diff, the anchoring fix and the final figures.
+see the section `human_tempo`: beat tracker ported, wired and anchored above
+for the literal diff, the anchoring fix and the final figures.
 
 ## MIDI import: status (2026-11-21)
 
@@ -5004,9 +5043,22 @@ reached above for the literal diff, the anchoring fix and the final figures.
   none loses.
 - **Tuplets**: literal detector + `filterTuplets` + `addChordsBetweenTupletNotes`,
   still opt-in; `tuplet_off_time_other_bar2` reaches 1.0 under the option.
-- **Open**: `assignVoices` tuplet early stage, tuplet-aware `toDurationList`
-  default, `02_02_Segura` voice tie chains, `preserveLegato` on 0.01-quarter
-  overlaps (not the cause of `tuplet_off_time_other_bar2`).
+  The early-stage voice assignment (`tuplet/voice.rs`) is ported and unit
+  tested; with early insertion it raises upstream N to **0.8924** (8 files
+  gain) but loses the two `tuplet_tied_3_5_tuplets` files (1.0000 → 0.4286)
+  and four LilyPond files below 0.033, so detection stays opt-in.
+- **Biggest remaining upstream losses** (weighted lost notes, default
+  pipeline): `tuplet_3_5_7_tuplets` 14.0, `tuplet_nonuplet_4-4` 11.0,
+  `perc_no_grand_staff` 9.0, `human_tempo` 9.0, `tuplet_2_voices_tuplet_non`
+  8.0, `lyrics_voice_1` 7.0, `tuplet_triplets_mixed` 7.0 — 123.0 lost notes
+  in total over 96 files. Early insertion already recovers four of those
+  tuplet rows; the rest are mostly upstream tests built with non-default
+  options (`dontSimplify`, `V_1`) or configuration limits (percussion kit,
+  lyrics voices).
+- **Open**: flipping the early tuplet insertion without the tied-tuplet voice
+  regression, tuplet-aware `toDurationList` default, `02_02_Segura` voice tie
+  chains, `preserveLegato` on 0.01-quarter overlaps (not the cause of
+  `tuplet_off_time_other_bar2`).
 
 ## MIDI export: status
 

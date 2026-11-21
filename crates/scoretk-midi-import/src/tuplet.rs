@@ -35,6 +35,7 @@ use super::timesigmap::{fraction_from_ticks, TimeSigMap};
 
 mod detect;
 mod filter;
+pub mod voice;
 
 /// N-olet candidat pendant la détection (`MidiTuplet::TupletInfo`).
 #[derive(Clone, Debug, Default)]
@@ -118,6 +119,93 @@ pub fn detect_all_tuplets(
     candidates
 }
 
+/// Détection et insertion **précoces** des n-olets, à l'endroit où MuseScore
+/// appelle `MidiTuplet::findAllTuplets` (`importmidi.cpp:265`, puis
+/// `findTuplets`, `importmidi_tuplet.cpp:1076-1141`).
+///
+/// contrairement à [`apply_tuplets`] (insertion tardive), les candidats sont
+/// filtrés par l'attribution des voix : `assignVoices` retire ceux qui ne
+/// trouvent pas de voix libre et rend leurs accords au flux ordinaire. C'est
+/// ce qui évite les n-olets inventés dans `v4/timesig-09`.
+pub fn detect_and_assign_early(
+    track: &mut MTrack,
+    sigmap: &TimeSigMap,
+    basic_quant: Fraction,
+    options: &super::operations::ImportOptions,
+    is_human: bool,
+) {
+    if track.chords.is_empty() || track.drum_track {
+        return;
+    }
+    let mut candidates = detect_all_tuplets(track, sigmap, basic_quant, options, is_human);
+    if candidates.is_empty() {
+        return;
+    }
+    let mut by_bar: std::collections::BTreeMap<i32, Vec<TupletInfo>> =
+        std::collections::BTreeMap::new();
+    for tuplet in candidates.drain(..) {
+        let bar_index = super::simplify::find_bar_start(sigmap, tuplet.on_time);
+        let index = sigmap
+            .tick_values(bar_index.ticks(super::midifile::UNITS_PER_WHOLE as u32))
+            .0;
+        by_bar.entry(index as i32).or_default().push(tuplet);
+    }
+    let mut next_seq = track
+        .tuplets
+        .keys()
+        .map(|key| key.1)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1);
+    for (bar_index, mut tuplets) in by_bar {
+        let bar_start = fraction_from_ticks(sigmap.bar2tick(i64::from(bar_index), 0));
+        let bar_end = fraction_from_ticks(sigmap.bar2tick(i64::from(bar_index) + 1, 0));
+        let bar_len = bar_end - bar_start;
+        let mut non_tuplets: Vec<ChordKey> = track
+            .chords
+            .keys()
+            .into_iter()
+            .filter(|key| {
+                key.0 >= bar_start
+                    && key.0 < bar_end
+                    && !tuplets.iter().any(|tuplet| tuplet.chords.contains(key))
+            })
+            .collect();
+        // `addChordsBetweenTupletNotes` (`importmidi_tuplet.cpp:1113`) : un
+        // accord **hors n-olet** dont l'intervalle recoupe le n-olet rejoint
+        // celui-ci si son erreur sur sa grille est plus faible. À faire avant
+        // l'attribution des voix, qui utilise les intervalles des accords.
+        add_chords_between_early(
+            track,
+            &mut tuplets,
+            &mut non_tuplets,
+            bar_start,
+            basic_quant,
+        );
+        split_first_tuplet_chords(track, &mut tuplets);
+        let prev_bar_start = (bar_start - bar_len).max(Fraction::ZERO);
+        let mut back_tied = voice::find_back_tied_tuplets(
+            track,
+            &tuplets,
+            prev_bar_start,
+            bar_start,
+            basic_quant,
+            bar_index,
+        );
+        voice::assign_voices(
+            track,
+            &mut tuplets,
+            &mut non_tuplets,
+            &mut back_tied,
+            bar_start,
+            basic_quant,
+            bar_index,
+            options.max_voice_count.limit(),
+        );
+        voice::add_tuplet_events(track, &tuplets, &back_tied, &mut next_seq);
+    }
+}
+
 /// Ajoute les accords intermédiaires d'un n-olet (`addChordsBetweenTupletNotes`,
 /// `importmidi_tuplet.cpp:533-575`) : un accord non rattaché, dont l'intervalle
 /// recoupe le n-olet, rejoint celui-ci si son erreur de n-olet est inférieure à
@@ -173,6 +261,121 @@ fn add_chords_between_tuplet_notes(
     }
     chords.sort();
     chords
+}
+
+/// `splitFirstTupletChords`/`splitTupletChord` (`importmidi_tuplet.cpp:401-440`) :
+/// quand deux n-olets partagent leur premier accord, celui-ci est scindé en
+/// deux accords à la même date — le premier garde une note (pour le n-olet
+/// précédent), l'autre les notes restantes (pour le n-olet courant).
+fn split_first_tuplet_chords(track: &mut MTrack, tuplets: &mut [TupletInfo]) {
+    for now in 0..tuplets.len() {
+        if tuplets[now].first_chord_index != 0 || tuplets[now].chords.is_empty() {
+            continue;
+        }
+        let key = tuplets[now].chords[0];
+        let Some(previous) = (0..now).rev().find(|index| {
+            tuplets[*index].first_chord_index == 0 && tuplets[*index].chords.first() == Some(&key)
+        }) else {
+            continue;
+        };
+        let Some(original) = track.chords.get(key).cloned() else {
+            continue;
+        };
+        let mut first = original.clone();
+        if first.notes.is_empty() {
+            continue;
+        }
+        first.notes.truncate(1);
+        let mut rest = original;
+        rest.notes.remove(0);
+        if rest.notes.is_empty() {
+            continue;
+        }
+        let new_key = track.chords.insert(key.0, first);
+        track.chords.insert_at(key, rest);
+        tuplets[previous].chords[0] = new_key;
+    }
+}
+
+/// Version de `addChordsBetweenTupletNotes` utilisée à l'étape précoce :
+/// seuls les accords **hors n-olet** peuvent rejoindre un n-olet, et ils sont
+/// retirés de la liste après adoption (`importmidi_tuplet.cpp:533-575`).
+/// Cela empêche un n-olet de capturer les accords d'un autre n-olet, ce qui
+/// faisait perdre six notes sur `tuplet_2_voices_3_5_tuplets`.
+fn add_chords_between_early(
+    track: &MTrack,
+    tuplets: &mut [TupletInfo],
+    non_tuplets: &mut Vec<ChordKey>,
+    bar_start: Fraction,
+    basic_quant: Fraction,
+) {
+    for tuplet in tuplets {
+        let ratio = tuplet_limits(tuplet.tuplet_number).ratio;
+        let mut index = 0;
+        while index < non_tuplets.len() {
+            let key = non_tuplets[index];
+            let on_time = key.0;
+            let end = tuplet.on_time + tuplet.len;
+            let Some(chord) = track.chords.get(key) else {
+                index += 1;
+                continue;
+            };
+            let interval = (
+                crate::quant::find_min_quantized_on_time(chord, on_time, basic_quant),
+                MTrack::max_off_time(chord),
+            );
+            if on_time > tuplet.on_time && interval.1 > tuplet.on_time && end > interval.0 {
+                let mut tuplet_error = (on_time
+                    - super::quant::find_quantized_tuplet_chord_on_time(
+                        on_time,
+                        &TupletData {
+                            voice: 0,
+                            on_time: bar_start,
+                            len: tuplet.len,
+                            tuplet_number: tuplet.tuplet_number,
+                            element_count: 0,
+                        },
+                        ratio,
+                    ))
+                .abs();
+                let mut regular_error =
+                    super::quant::find_on_time_quant_error(on_time, chord, basic_quant);
+                let off_time = MTrack::max_off_time(chord);
+                if off_time < end {
+                    tuplet_error += (off_time
+                        - super::quant::find_quantized_tuplet_note_off_time(
+                            on_time,
+                            off_time,
+                            &TupletData {
+                                voice: 0,
+                                on_time: bar_start,
+                                len: tuplet.len,
+                                tuplet_number: tuplet.tuplet_number,
+                                element_count: 0,
+                            },
+                            ratio,
+                        )
+                        .0)
+                        .abs();
+                    regular_error += (off_time
+                        - super::quant::find_quantized_note_off_time(
+                            on_time,
+                            off_time,
+                            basic_quant,
+                        )
+                        .0)
+                        .abs();
+                }
+                if tuplet_error < regular_error {
+                    tuplet.chords.push(key);
+                    tuplet.chords.sort();
+                    non_tuplets.remove(index);
+                    continue;
+                }
+            }
+            index += 1;
+        }
+    }
 }
 
 /// Insère les n-olets détectés dans la piste (`addTupletEvents`).
