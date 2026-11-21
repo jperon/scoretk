@@ -1328,6 +1328,15 @@ impl Parser<'_> {
                     Some(':') => {
                         self.bump();
                         start_repeat = true;
+                        // `|:|` is one combined start+end repeat token
+                        // (`abc2xml.py:428-429`, `bars = ':')* '['* '|'+`).
+                        // Without consuming the trailing `|`, a second empty
+                        // bar is parsed and resets the end barline to Normal,
+                        // losing the repeat entirely (ABC 2.1 §4.9).
+                        if self.peek() == Some('|') {
+                            self.bump();
+                            end = BarLineType::EndStartRepeat;
+                        }
                     }
                     _ => {}
                 }
