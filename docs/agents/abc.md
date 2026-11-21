@@ -1744,3 +1744,62 @@ sur elle. L'exporteur le supprimait (`grace.is_none()`), perdant 6 des 24
 `<time-modification>` sur toutes les notes ; il reste sans effet hors n-olet
 (actual == normal). Test réduit écrit d'abord, échouant avant le correctif
 (1 au lieu de 2). Sur X:1574 : 24/24 comme l'alternative, contre 18 avant.
+
+## 26. ABC import : état final (2026-11-21)
+
+### Mesure
+
+Campagne complète rejouée (1 402 fichiers, 4 756 `X:` tunes) avec le binaire
+de ce worktree (`/tmp/abc-n3-final4`). Comparaison air par air avec
+`/tmp/abc-n3-final3` (avant les trois correctifs ci-dessous).
+
+| Catégorie | Avant | Après | Gain |
+| --- | ---: | ---: | ---: |
+| decorations | 437 | **213** | 224 |
+| tuplets | 26 | **5** | 21 |
+
+Table N3 complète après (airs où scoretk a moins que l'alternative) :
+decorations 213, keys 39, repeats 35, times 32, slurs 27, clefs 21,
+voices 18, voltas 15, lyrics 10, tuplets 5, ties 3, harmony 2, graces 2.
+
+Aucune perte air par air : N1 et N2 strictement inchangés sur 4 755 tunes
+communs (0 gain, 0 perte), et aucune catégorie N3 ne voit son écart se creuser.
+`abc2xml.py` lui-même, jugé contre abc2midi, est à N1 96,56 % / N2 90,44 % ;
+scoretk est à N1 96,69 % / N2 90,70 % (4 465 contre 4 418 airs exacts en N1).
+
+Unités des chiffres historiques : les « 3 055 slurs / 3 075 ornements » de
+§ 18.2 comptaient des **airs** avec un compteur ad hoc qui rangeait le
+conteneur générique `<notations>` dans les ornements (2 997 airs had fewer
+`<notations>` avant le correctif `doSlurs`). Le comparateur `n3.py` exclut
+`<notations>` : le déficit réel d'ornements était 661 airs, puis 437, puis 213.
+
+### Causes corrigées dans cette passe
+
+- Annotations de fin de mesure conservées dans leur mesure (§ 23).
+- Annotations de placement vides `">"` écrites comme `<words/>` (§ 24).
+- Agréments dans les n-olets gardent leur `<time-modification>` (§ 25).
+
+### Restes classés
+
+- **clefs** (21 manquants, 4 583 en excès) : `abc2xml.py` n'écrit presque
+  jamais de `<clef>` ; le port écrit la clef de chaque portée, comme l'impose
+  la structure MusicXML (ABC 2.1 § 4.6 « Clefs and transposition »).
+- **keys** (39) : presque tous des champs `K:` répétés avec la même tonalité ;
+  ABC 2.1 § 3.2 « Repeated information fields » les traite comme un
+  remplacement, et le port n'écrit un `<key>` que lors d'un changement réel.
+- **multi-voice, voltas, repeats, voices** : les airs concernés
+  (`Canzonetta`, `layout.test__abcVoiceEnd`, …) écrivent plusieurs voix ;
+  `abc2xml.py` produit une partie par voix (ABC 2.1 § 7), le port les
+  rassemble en une seule partie. Les compteurs de reprises et de voltas
+  sont donc multipliés par le nombre de voix chez l'alternative.
+- **lyrics** (10) : écart de représentation, pas de contenu. Un `_` ABC est
+  écrit par `abc2xml.py` comme un `<lyric><extend/></lyric>` sur la note,
+  alors que le modèle pivot porte le mélisme comme durée sur la syllabe
+  précédente (ABC 2.1 § 5.1). Les deux formes sont valides ; changer le
+  modèle casserait le test de round-trip ABC (`abc_aller_retour.rs`).
+- **times** (32) : principalement des `[M:x/y]` en ligne au tick 0 d'une même
+  mesure ; ABC 2.1 § 3.2 demande un remplacement, le port ne garde que la
+  dernière valeur là où `abc2xml.py` émet chaque occurrence.
+- **harmony** (2 manquants, 43 en excès) : les 2 manquants sont des échecs
+  d'oracle partagés ; l'excès vient de l'interprétation de chaînes entre
+  guillemets comme accords, que l'alternative traite comme du texte.
