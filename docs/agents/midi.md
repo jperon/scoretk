@@ -5107,10 +5107,36 @@ the staff-split option and from 123.0 before early tuplet insertion became
 the default. The remaining rows are mostly non-default upstream test options
 or local voice/hand-assignment choices.
 
+## Hand separation: full `LRHand::findSplits` port (2026-11-21)
+
+The notation comparison exposed a real porting defect: `lrhand::split_point`
+used a fixed threshold (single note below MIDI 58 to the left hand, largest
+pitch gap otherwise), while MuseScore chooses each chord's split point with
+a dynamic programming over all chords (`LRHand::findSplits`,
+`importmidi_lrhand.cpp:318-403`) with pitch-width, duration, note-count,
+similarity and intersection penalties (`:158-316`), then walks the solution
+back with `splitChords` (`:327-365`). On `SaintJosephQuiLessive` the low G3
+was moved to the left staff and lengthened to a quarter instead of staying
+on the right staff as an eighth; `lyrics_voice_1` and `human_tempo` had the
+same hand-allocation error.
+
+Reduced test `lrhand::tests::note_seule_sous_la_mediane_reste_a_droite`
+(written first, failing with the note in the left track) now checks the
+single low note stays in the right hand. Full re-measurement: upstream N
+0.9653 → **0.9780** (`human_tempo` 0.9353 → 1, `lyrics_voice_1` 0.5 → 1),
+LilyPond N 0.6943 → 0.6950, notation score on the 255-file sample 0.6772 →
+**0.6798** (MuseScore: 0.6800), scoretk below MuseScore on 5 → 3 files.
+`LRHand::splitStaff` (`:411-417`) also only inserts the left-hand track when
+the DP assigned at least one chord to it; the port's empty-left guard is
+covered by reduced test `separation_sans_accord_a_gauche` (no measurable
+change on the two lots). The one upstream file that regresses, `tuplet_3_5_7_tuplets` 0.5 → 0.2222,
+is scored 0.2222 by MuseScore 4.7.4 as well with the same default options:
+it is a shared reference/option difference, not a scoretk-only loss.
+
 ## MIDI import: status (2026-11-21)
 
-- **Default pipeline**: LilyPond N **0.6943** (1 020 files), upstream N
-  **0.9653** (96 files), after the beat-tracker anchoring fix, the default
+- **Default pipeline**: LilyPond N **0.6950** (1 020 files), upstream N
+  **0.9780** (96 files), after the beat-tracker anchoring fix, the default
   early tuplet detection, the locked staff-split option and the `<dots>`
   oracle fix. The four LilyPond rows that lose less than 0.033 are explained
   attribute-only differences (see above); the former 0.9821/0.7662 figures
@@ -5118,52 +5144,65 @@ or local voice/hand-assignment choices.
 ### Comparison with other MIDI importers (same oracle)
 
 `scripts/oracle/midi/mesure.py --lecture ... --mscore mscore --midi2ly`
-on the three reading lots; the reference is the source MIDI itself, N1 =
-pitch multiset and N2 = pitch + onset on the Q16 grid (±1/16 quarter).
+on the three reading lots; the reference is the source MIDI itself. N1 =
+pitch multiset, N2 = pitch + onset, N2d = pitch + onset + duration on the
+Q16 grid (±1/16 quarter), and **exact** means
+`reference count == produced count == N1 == N2 == N2d`
+(`midi_notes.py::compare`): no extra, missing, shifted or wrongly held note.
+The **notation score** is the separate model-to-model metric of
+`import_mesure.py` against the `.ly` source (pitch, onset, duration, voice,
+Q16), i.e. the 0.6943 figure quoted for the LilyPond lot; `midi2ly` output is
+read through our LilyPond reader, as the `.ly` reference is.
 Alternatives are sampled deterministically (`--alt-stride 4` on the main
 LilyPond lot, 10 on the two others); the rows below use only the files where
 **all three** converters ran:
 
-| Lot | Converter | Files | N1 % | N2 % | Exact |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `lecture_musique` — LilyPond, 1 020 files (102 sampled) | scoretk | 102 | 100.00 | 100.00 | 47 |
-| | MuseScore 4.7.4 (`mscore -o`) | 102 | 100.00 | 100.00 | 47 |
-| | `midi2ly` → `lilypond -s` | 90 | 99.11 | 99.11 | 87 |
-| **same lot, 1/4 sample (255 same files)** | scoretk | 255 | **100.00** | **100.00** | 121 |
-| | MuseScore 4.7.4 | 255 | **100.00** | **100.00** | 121 |
-| | `midi2ly` → `lilypond -s` | 245 | 99.93 | 99.93 | 242 |
-| `lecture_mutopia` (13 sampled) | scoretk | 13 | 100.00 | 83.16 | 3 |
-| | MuseScore 4.7.4 | 12 | 100.00 | 83.67 | 2 |
-| | `midi2ly` → `lilypond -s` | 12 | 97.84 | 96.67 | 11 |
+| Lot | Converter | Files | N1 % | N2 % | N2d % | Notation | Exact |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `lecture_musique` — LilyPond, 1 020 files (102 sampled) | scoretk | 102 | 100.00 | 100.00 | — | — | 47 |
+| | MuseScore 4.7.4 (`mscore -o`) | 102 | 100.00 | 100.00 | — | — | 47 |
+| | `midi2ly` → `lilypond -s` | 90 | 99.11 | 99.11 | — | — | 87 |
+| **same lot, 1/4 sample (255 same files)** | scoretk | 255 | **100.00** | **100.00** | 97.66 | 0.6798 | 122 |
+| | MuseScore 4.7.4 | 255 | **100.00** | **100.00** | 97.67 | 0.6800 | 121 |
+| | `midi2ly` → `lilypond -s` | 245 | 99.93 | 99.93 | 99.93 | **0.7942** | 242 |
+| `lecture_mutopia` (13 sampled) | scoretk | 13 | 100.00 | 83.16 | — | — | 3 |
+| | MuseScore 4.7.4 | 12 | 100.00 | 83.67 | — | — | 2 |
+| | `midi2ly` → `lilypond -s` | 12 | 97.84 | 96.67 | — | — | 11 |
 
-**No file in the 255-file LilyPond comparison puts scoretk below MuseScore
-4.7.4** (both N2 100.00, 121 exact each; scoretk also reaches N2 100.00 on all
-1 020 files). There is therefore no porting defect to repair on that lot:
-neither `importmidi_quant.cpp` onset quantisation nor the voice/hand stages
-lose an attack relative to MuseScore at the Q16 tolerance. `midi2ly` is
-slightly behind there (99.93, with 10 conversions rejected).
+N1/N2 are saturated on the main lot: the real gap is the **exact** column
+(242 vs 122) and the notation score (0.7942 vs 0.68). Classifying the
+255-file sample:
 
-On `lecture_mutopia` scoretk is 0.51 point below MuseScore and 13.51 below
-`midi2ly`, again from a single human performance, `KV331_2_1_menuetto`
-(2 660 notes): both MIDI importers reinterpret the onsets (scoretk N2 15.68,
-MuseScore 18.53). Only `midi2ly` is meaningfully ahead. The reference
-explains why: LilyPond's `midi2ly` keeps the raw tick onsets (`end_note(pitches,
-notes, t, e)` inserts at `lt`, with `duration_quant_clocks = 0` by default —
-`midi2ly` script `:103`, `:727-731`, `:1097-1099`, LilyPond 2.27.0 wrapped
-script), then `lilypond -s` renders those exact positions back to MIDI.
-MuseScore instead quantises onsets and, for human performances, runs the beat
-tracker (`Quantize::setIfHumanPerformance`, `importmidi_quant.cpp:455-481`,
-`Quantize::quantizeChords`, `:1487-1516`); our port follows that pipeline.
-Matching `midi2ly` would mean keeping off-grid onsets instead of quantising,
-i.e. **diverging from the 4.7.4 behaviour that is the compliance target**,
-and it would regress the upstream lot — so it is deliberately not attempted.
-The other sampled Mutopia differences are an octave error on
-`SchubertF-D899-2-Impromptu` and a failed `midi2ly` run on `KingCotton`.
+- 123 files are exact for `midi2ly` but not for scoretk; all 123 are flagged
+  `duree_seule` (right pitches and onsets, wrong durations), and **MuseScore
+  4.7.4 is not exact on any of them either** — a shared import choice, not a
+  scoretk-only defect.
+- With the notation oracle, 103 files are exact for `midi2ly` but not for
+  scoretk: duration only 67, pitch only 21, pitch+duration 10,
+  duration+voice 2, pitch+duration+voice 2, voice only 1. Again MuseScore is
+  not exact on any of them. `midi2ly` preserves the notated durations and
+  voices of the `.ly` it writes; both MIDI importers recover the sounding
+  MIDI instead and necessarily differ from the engraved reference.
+- The one remaining scoretk-only notation difference after the hand-split
+  port below is `lily-bd83d4c2` (0.583 vs MuseScore 0.609): local voice
+  arrangement of three simultaneous lines, not an onset/pitch loss.
+
+On `lecture_mutopia`, scoretk is 0.51 point below MuseScore on N2 and 13.51
+below `midi2ly`, from one human performance, `KV331_2_1_menuetto`
+(2 660 notes): both MIDI importers reinterpret the onsets (15.68 / 18.53)
+while `midi2ly` round-trips through notation (100). The cause is documented
+in the LilyPond 2.27.0 `midi2ly` script (`duration_quant_clocks = 0` by
+default at `:103`, `end_note` keeps `lt` at `:727-731`, option at
+`:1097-1099`) versus MuseScore's quantisation and beat tracker
+(`importmidi_quant.cpp:455-481`, `:1487-1516`). Matching `midi2ly` would mean
+keeping off-grid onsets instead of quantising, i.e. diverging from the 4.7.4
+behaviour that is the compliance target; it is deliberately not attempted.
 
 - **Instrument template selection**: literal port of `importmidi_instrument.cpp`.
 - **Duration simplification**: literal port of `lengthenNote` /
   `minimizeNumberOfRests`.
-- **Voices**: literal port of `separateVoices`.
+- **Voices**: literal port of `separateVoices`; hand separation now uses the
+  full `LRHand::findSplits` dynamic programming (see above).
 - **Beat ties**: literal `metricDivisionsOfBar` subdivisions; 18 files gained,
   none lost at the time of that change.
 - **Beat tracker**: `findBeatLocations` wired and literal; the duplicated
@@ -5177,11 +5216,11 @@ The other sampled Mutopia differences are an octave error on
   four explained tuplet-attribute differences; the two tied-tuplet files are
   back to 1.0 after porting `setTiedChordVoice` (`importmidi_tuplet_voice.cpp:542`).
 - **Biggest remaining upstream losses** (weighted lost notes, default
-  pipeline): `tuplet_3_5_7_tuplets` 9.0, `human_tempo` 9.0,
-  `lyrics_voice_1` 7.0, then four files at 1.0–2.0 — **30.0** lost notes in
-  total over 96 files, down from 85.0 and from 123.0 before early tuplet
-  insertion. The rest are mostly non-default upstream options (`Q_4`) or
-  local voice/hand-assignment choices.
+  pipeline): `tuplet_3_5_7_tuplets` 14.0 (MuseScore 4.7.4 also scores 0.2222
+  with these options), `tuplet_2_voices_3_5_tuplets` 2.0, then four files at
+  1.0 — **19.0** lost notes in total over 96 files, down from 30.0 before
+  the full `LRHand::findSplits` port and from 123.0 before early tuplet
+  insertion.
 - **Open**: tuplet-aware `toDurationList` default, `02_02_Segura` voice tie
   chains, `preserveLegato` on 0.01-quarter overlaps (not the cause of
   `tuplet_off_time_other_bar2`).
