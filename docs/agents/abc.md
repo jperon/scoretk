@@ -1647,3 +1647,16 @@ Les déficits N3 restants les plus gros sont les ornements (661 airs),
 `clefs` (4 582 airs où scoretk écrit une clef et pas l'alternative — choix
 différent, pas un manque) et les triolets (26). Les 3 écarts N2 spécifiques
 restent à diagnostiquer séparément.
+
+## 19. N3 — ornements (décorations) 2026-11-21
+
+Le lecteur ABC transforme `!fermata!`, `H`, `!trill!`, `.`, `~`… en
+articulations/ornements sur la note (`push_event`), mais l'export MusicXML
+n'écrivait le `<fermata>` que depuis `Annotation::Fermata` : les points d'orgue
+ABC étaient silencieusement perdus (`notations.rs::articulations` sautait
+`is_ornament`). Port de `abc2xml.py::doDecos` (lignes 1491-1492) : une
+articulation `Fermata*` s'écrit désormais `<fermata type="upright"/>` (ou
+`inverted` si l'ancre est basse). Test réduit (articulation Fermata sur un
+accord) écrit d'abord, échouant avant le correctif. Sur
+`decorations.test__abcFermata` : 12 `<fermata>` produits, comme l'alternative.
+

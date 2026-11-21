@@ -219,6 +219,33 @@ pub(crate) fn chord_attributes(
         }
     }
 
+    // Les points d'orgue issus d'articulations (`!fermata!` ABC) s'écrivent
+    // comme `<fermata>` (`abc2xml.py::doDecos`, lignes 1491-1492), pas comme
+    // une articulation technique. Seuls les `Annotation::Fermata` étaient
+    // écrits auparavant.
+    for articulation in &chord.articulations {
+        if is_ornament(&articulation.kind) {
+            let kind = match articulation.kind {
+                ArticulationType::FermataShort => FermataType::Short,
+                ArticulationType::FermataLong => FermataType::Long,
+                ArticulationType::FermataVeryShort => FermataType::VeryShort,
+                ArticulationType::FermataVeryLong => FermataType::VeryLong,
+                _ => FermataType::Normal,
+            };
+            let fermata = Fermata {
+                kind,
+                placement: if articulation.anchor == ArticulationAnchor::Down {
+                    Placement::Below
+                } else {
+                    Placement::Above
+                },
+                visible: articulation.visible,
+            };
+            notations.tag_element(xml, None, articulation.visible);
+            write_fermata(xml, &fermata);
+        }
+    }
+
     // Puis les articulations, dont les enfants vont dans `<articulations>`.
     for articulation in &chord.articulations {
         if is_technical(&articulation.kind) || is_ornament(&articulation.kind) {

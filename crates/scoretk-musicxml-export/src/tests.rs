@@ -3096,3 +3096,43 @@ fn tempo_invisible_sans_chordrest_non_exporte() {
         "tempo sur segment vide exporté à tort :\n{xml}"
     );
 }
+
+/// Une articulation `Fermata` issue d'un `!fermata!` ABC doit être écrite
+/// comme `<fermata type="upright"/>` : `abc2xml.py::doDecos` (lignes
+/// 1491-1492). Le port ne l'écrivait que depuis `Annotation::Fermata`, donc
+/// les points d'orgue ABC étaient silencieusement perdus.
+#[test]
+fn point_dorgue_articulation_abc() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(60, tpc::C)],
+    );
+    if let Some(chord_rest) = measure
+        .segments
+        .iter_mut()
+        .find_map(|segment| segment.chord_rest_mut(track))
+    {
+        if let Some(chord) = chord_rest.chord_mut() {
+            chord
+                .articulations
+                .push(Articulation::new(ArticulationType::Fermata));
+        }
+    }
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<fermata type=\"upright\"/>"),
+        "point d'orgue perdu :\n{xml}"
+    );
+}
