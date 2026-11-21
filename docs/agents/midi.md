@@ -1642,3 +1642,31 @@ use `dontSimplify` (`midiimport_tests.cpp:302, 334`),
 `simplify_8th_dont` uses `simplification()` with `maxVoiceCount V_1` (`:640`).
 Their expected `.mscx` therefore describes a different import configuration
 than the CLI defaults; the raw divisions now make that difference visible.
+
+## BeatRoot port (2026-11-21)
+
+BeatRoot, bundled by MuseScore under
+`src/importexport/midi/thirdparty/beatroot/`, is GPL-2.0-or-later (authors
+Simon Dixon, Chris Cannam, QMUL, 2011). It has been rewritten in Rust under
+GPL-3.0-only, one module per C++ file:
+`beatroot/{event,agent,agent_list,induction,beat_tracker}.rs` plus the
+`importmidi_beat.cpp` glue in `beat_locator.rs`. The original licence and
+authorship are declared in `NOTICE`; no C++ file is distributed.
+
+Reduced tests first (`tests/beatroot.rs`): a regular 0.5 s onset grid must
+produce at least six regularly spaced beats, and a single onset cannot induce
+a tempo. Both pass with the port.
+
+The glue was measured against the corrected oracle before being enabled:
+calling `MidiBeat::findBeatLocations` + `adjustChordsToBeats` from
+`convertMidi` changes only `human_tempo`, from 0.5000 to 0.2958 (29 notes
+lost), and nothing in the LilyPond lot. The detected beat set for that file
+has 17 beats spanning 1.93–23.8 quarters with a 3/4 candidate, whereas the
+reference expects the first note at 4.0 quarters; the scaling of the raw beat
+grid to whole quarters therefore moves it to 2.5 quarters. The remaining
+`updateFirstLastBeats` step of `MidiBeat::setTimeSignature` is not yet
+reproduced and is needed to anchor the grid to the bar. The glue is therefore
+kept in the crate but **not wired** into `convertMidi`, so both lots stay at
+upstream loss 258.0 and LilyPond loss 31 614.9. This is a measured, explained
+non-gain rather than an untested module; wiring it back in requires finishing
+that anchoring step first.

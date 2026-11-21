@@ -50,6 +50,8 @@
 
 pub mod midifile;
 
+pub mod beat_locator;
+pub mod beatroot;
 pub mod chord;
 pub mod clef;
 pub mod drum;

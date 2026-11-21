@@ -54,6 +54,23 @@ Correspondence of the main sets:
 | `crates/scoretk-musescore-export/src/` | `engraving/rw/write/` (`writer.cpp`, `staffwrite.cpp`, `measurewrite.cpp`, `twrite.cpp`, `connectorinfowriter.cpp`), `engraving/rw/xmlwriter.cpp` and `engraving/infrastructure/mscwriter.cpp` |
 | `crates/scoretk-abc-{common,import,export}/src/` | semantics of the `engraving/dom/` model; no MuseScore source for ABC (MuseScore has neither ABC import nor export); behaviour of `xml2abc.py`/`abc2xml.py` (see below) |
 
+### Third-party code bundled by MuseScore: BeatRoot
+
+The modules `crates/scoretk-midi-import/src/beatroot/` and
+`beat_locator.rs` are Rust rewrites of the BeatRoot beat tracker that
+MuseScore vendors under `src/importexport/midi/thirdparty/beatroot/`
+(`Agent.{h,cpp}`, `AgentList.{h,cpp}`, `BeatTracker.{h,cpp}`, `Event.h`,
+`Induction.{h,cpp}`, used by `importmidi_beat.cpp`):
+
+- Original authors and copyright: **Simon Dixon, Chris Cannam and QMUL**
+  (Centre for Digital Music, Queen Mary, University of London), 2011.
+- Original licence: **GNU General Public License, version 2 or (at your
+  option) any later version** (`thirdparty/beatroot/COPYING`). It is
+  redistributed here under GPL-3.0-only, which the "or later" clause
+  permits.
+- No C++ source is distributed: each Rust module carries the SPDX
+  identifier and the porting notice naming its C++ counterpart.
+
 The name conversion tables (`read302/tables.rs`, `read4xx/names.rs`)
 follow `TConv::fromXml` of `engraving/rw/types/typesconv.cpp` — a file
 **generated** at build time by MuseScore and therefore absent from the
