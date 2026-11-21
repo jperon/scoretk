@@ -399,23 +399,22 @@ résidus de 1 à 2 fichiers (`tie`, `clef`, `dot`, `measure-style`, `staff`,
 `harmony`, `backup`, `type`, `actual-notes`). La catégorie `lyric` a disparu
 du classement ; le trou de 129 paroles est comblé.
 
-## 20. `duration` (9 fichiers) — anomalie d'amont prouvée
+## 20. `duration` (9 fichiers) — corrigé
 
-Les 7 fichiers de la série Douce nuit ont pour première différence
-`<duration>12</duration>` (référence) contre `24` (sortie). Vérification
-systématique : les **séquences de durées par (mesure, voix) sont identiques**
-entre référence et sortie. L'écart vient uniquement de `<forward>` : la
-référence en écrit 75 et notre export 71 sur `Douce nuit — chant piano`, avec
-une granularité différente (par ex. mesure 45 : `12, 12, 24, 12` attendu contre
-`12, 24` produit). Ces `<forward>` ne sont pas des notes : ils résultent du
-déplacement du curseur d'export entre les silences « gap » insérés par
-`Measure::fillGap` (`engraving/dom/check.cpp:276-296`, qui découpe le trou via
-`toRhythmicDurationList`). L'écrivain est fidèle à `ExportMusicXml::moveToTick`
-(`exportmusicxml.cpp:2160-2186`) ; la différence est la segmentation des silences
-gap du modèle (`gap_rests.rs`), donc une donnée d'amont, sans effet sur le
-contenu musical (N1/N2 inchangés). Le même constat vaut pour les 2 autres
-fichiers (`Minuit chrétien — Chant`, `Dixit Dominus — Gloria Patri`). Aucun
-correctif d'écriture n'est applicable.
+Les 7 fichiers Douce nuit avaient des `<forward>` plus grossiers que la
+référence (75 vs 71 sur `Douce nuit — chant piano`). La cause était dans notre
+port de `Measure::checkMeasure` : `timesig_at` (`gap_rests.rs`) s'arrêtait à la
+mesure précédente lorsqu'elle ne portait pas d'indication, alors que
+`TimeSigMap` du C++ maintient l'indication en vigueur. Dans ces partitions,
+seul le premier `<Measure>` porte `<sigN>6</sigN>` : toutes les mesures
+suivantes retombaient sur le 4/4 par défaut, ce qui changeait la découpe des
+silences gap par `toRhythmicDurationList` (`durationtype.cpp:511-537`, appelée
+par `check.cpp:276-296`) et donc les `<forward>` de `moveToTick`
+(`exportmusicxml.cpp:2160-2186`).
+
+Test réduit (mesure 0 avec 6/8, mesure 2 sans indication) écrit d'abord,
+échouant avant le correctif (4/4 au lieu de 6/8). Oracle ciblé sur les 9
+fichiers : **9 gains, 0 perte**, dont 92 → 72 et 398 → 378 lignes divergentes.
 
 ## 21. `sound` (6 fichiers) — anomalie d'amont prouvée
 

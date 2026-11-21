@@ -492,9 +492,6 @@ fn timesig_at(score: &Score, index: usize) -> Sig {
         numerator: 4,
         denominator: 4,
     };
-    let Some(measure) = score.measures.get(index) else {
-        return fallback;
-    };
     for candidate in score.measures[..=index].iter().rev() {
         for segment in candidate.segments.iter().rev() {
             if segment.kind != SegmentType::TimeSig {
@@ -511,9 +508,10 @@ fn timesig_at(score: &Score, index: usize) -> Sig {
                 }
             }
         }
-        if candidate.start_tick < measure.start_tick {
-            break;
-        }
+        // Ne pas s'arrêter à la mesure précédente : l'indication peut avoir
+        // été écrite dans une mesure bien antérieure et rester en vigueur
+        // (`TimeSigMap` du C++). Cas réel : douze portées de Douce nuit où
+        // seul le premier `<Measure>` porte `<sigN>6</sigN>`.
     }
     fallback
 }
@@ -690,6 +688,38 @@ fn add_gap_rest(
 mod tests {
     use super::*;
 
+    /// La mesure 45 de Douce nuit est en 6/8, mais l'indication est portée
+    /// par la mesure 0 : la recherche doit remonter jusqu'à elle. Le portage
+    /// s'arrêtait à la mesure précédente et retombait sur 4/4, changeant la
+    /// segmentation des silences gap (et les `<forward>` de l'export).
+    #[test]
+    fn indication_de_mesure_heritee_dune_mesure_anterior() {
+        let mut score = crate::model::Score::new();
+        let part = score.add_part(crate::model::Part::new("P", "P"));
+        let staff = score.add_staff(part);
+        let mut first = crate::model::Measure::new(0, crate::model::Tick::ZERO, Fraction::ONE);
+        let mut segment = crate::model::Segment::new(
+            crate::model::SegmentType::TimeSig,
+            crate::model::Tick::ZERO,
+            score.staves.len(),
+        );
+        segment.set_element(
+            crate::model::Track::new(staff, 0),
+            crate::model::SegmentItem::TimeSig(crate::model::TimeSig::new(6, 8)),
+        );
+        first.add_segment(segment);
+        score.add_measure(first);
+        for index in 1..3 {
+            score.add_measure(crate::model::Measure::new(
+                index,
+                Fraction::from_integer(index as i64),
+                Fraction::new(3, 4),
+            ));
+        }
+        let sig = timesig_at(&score, 2);
+        assert_eq!((sig.numerator, sig.denominator), (6, 8));
+    }
+
     #[test]
     fn decoupe_un_trou_sur_les_temps_forts() {
         // Trois noires de trou à partir du deuxième temps en 4/4 : MuseScore
@@ -711,6 +741,33 @@ mod tests {
         };
         let kinds = to_rhythmic_duration_list(Fraction::HALF, Fraction::ZERO, sig, Fraction::HALF);
         assert_eq!(kinds, vec![DurationType::Measure]);
+    }
+
+    /// Douce nuit — chant piano, mesure 45 (6/8) : la référence MuseScore
+    /// découpe le trou de 5/8 à partir du deuxième huitième en
+    /// `1/8, 1/8, 1/4, 1/8` (les `<forward> 12,12,24,12` de l'export).
+    #[test]
+    fn trou_croche_en_mesure_6_8() {
+        let sig = Sig {
+            numerator: 6,
+            denominator: 8,
+        };
+        let kinds = to_rhythmic_duration_list(
+            Fraction::new(5, 8),
+            Fraction::new(1, 8),
+            sig,
+            Fraction::new(3, 4),
+        );
+        eprintln!("SPLIT {:?}", kinds);
+        assert_eq!(
+            kinds,
+            vec![
+                DurationType::Eighth,
+                DurationType::Eighth,
+                DurationType::Quarter,
+                DurationType::Eighth,
+            ]
+        );
     }
 
     #[test]
