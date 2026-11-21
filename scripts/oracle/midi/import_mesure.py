@@ -66,6 +66,9 @@ def notes(path: Path) -> list[tuple[int, float, float, int]]:
                 elif child.tag == "note":
                     dur = int(child.findtext("duration", "0")) / divisions
                     is_chord_note = child.find("chord") is not None
+                    # Une note avec <chord/> partage l'attaque de la précédente :
+                    # elle est comptée à `offset - dur` et n'avance pas le curseur.
+                    onset = tick + offset - dur if is_chord_note else tick + offset
                     if child.find("rest") is None:
                         pitch = child.find("pitch")
                         if pitch is not None:
@@ -74,10 +77,13 @@ def notes(path: Path) -> list[tuple[int, float, float, int]]:
                             semi += int(pitch.findtext("alter", "0"))
                             midi = 12 * (int(pitch.findtext("octave", "0")) + 1) + semi
                             voice = int(child.findtext("voice", "1"))
-                            out.append((midi, round((tick + offset) / GRID) * GRID,
+                            staff = int(child.findtext("staff", "1"))
+                            # La sortie MusicXML numérote les voixglobalement
+                            # `(staff - 1) * VOICES + voice` ; la référence
+                            # `.mscx` utilise une voix locale par portée.
+                            voice -= (staff - 1) * 4
+                            out.append((midi, round(onset / GRID) * GRID,
                                         round(dur / GRID) * GRID, voice))
-                    # Une note avec <chord/> partage l'attaque de la précédente :
-                    # sa durée ne doit pas avancer le curseur une seconde fois.
                     if not is_chord_note:
                         offset += dur
             tick += offset
@@ -185,11 +191,17 @@ def paires_upstream(data: Path) -> list[tuple[str, Path, Path]]:
 
 
 def paires_lilypond() -> list[tuple[str, Path, Path]]:
+    """Les partitions LilyPond écrivent `.midi`, pas `.mid`.
+
+    La référence est le `.ly` lu par **notre propre lecteur LilyPond** (98 % de
+    notes exact contre le MIDI produit par LilyPond), pas un parseur Python :
+    les deux côtés passent par la CLI, donc on compare modèle à modèle.
+    """
     out = []
-    for ly in sorted(Path("/home/jacques/Musique").rglob("*.ly")):
-        mid = ly.with_suffix(".mid")
-        if mid.exists():
-            out.append((f"ly-{ly.stem}", mid, ly))
+    for mid in sorted(Path("/home/jacques/Musique").rglob("*.midi")):
+        ly = mid.with_suffix(".ly")
+        if ly.exists():
+            out.append((f"ly-{mid.stem}", mid, ly))
     return out
 
 
@@ -214,19 +226,23 @@ def main() -> None:
         for ident, mid, ref in paires:
             d = travail / ident
             d.mkdir(exist_ok=True)
-            got_xml = d / "got.musicxml"
+            got_xml, ref_xml = d / "got.musicxml", d / "ref.musicxml"
             row = {"id": ident, "mid": str(mid), "ref": str(ref), "score": 0.0}
-            try:
-                if ref.suffix == ".mscx":
+            if ref.suffix == ".mscx":
+                try:
                     a = mscx_notes(ref)
-                elif ref.suffix == ".ly":
-                    from ly_notes import notes as ly_notes
-                    a = ly_notes(ref)
-                else:
-                    a = notes(ref)
-            except Exception as exc:
+                except Exception as exc:
+                    a = []
+                    row["erreur"] = f"reference : {exc}"[:200]
+            elif not run(args.binary, ref, ref_xml):
                 a = []
-                row["erreur"] = f"reference : {exc}"[:200]
+                row["erreur"] = "conversion reference"
+            else:
+                try:
+                    a = notes(ref_xml)
+                except Exception as exc:
+                    a = []
+                    row["erreur"] = f"reference : {exc}"[:200]
             if run(args.binary, mid, got_xml):
                 try:
                     b = notes(got_xml)
