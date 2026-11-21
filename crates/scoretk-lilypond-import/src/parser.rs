@@ -854,11 +854,21 @@ impl<'a> Parser<'a> {
                 lyrics: vec![*block],
             }],
             Music::Sim(items) => {
-                // Un `<< … >>` sans contexte est une seule portée anonyme,
-                // comme `{ … }` : on ne descend que si un `\new` (même sous
-                // une fonction musicale) y définit la structure.
+                // Au niveau d'un `\score`, un `<< … >>` sans contexte ouvre
+                // un contexte par élément : c'est l'idiome des partitions
+                // chorales Mutopia (`<< \soprano \alto … >>` dans le score
+                // MIDI), que LilyPond joue sur une piste par élément
+                // (`lily/parser.yy` `context_prefix`, `lily/context.cc`).
+                // Dans une portée, les mêmes éléments sont des voix : cette
+                // distinction est faite par `collect_staves`.
                 if !items.iter().any(has_context) {
-                    return vec![anonymous_group(wrap_all(wrappers, Music::Sim(items)))];
+                    if items.len() <= 1 {
+                        return vec![anonymous_group(wrap_all(wrappers, Music::Sim(items)))];
+                    }
+                    return items
+                        .into_iter()
+                        .map(|item| anonymous_group(wrap_all(wrappers, item)))
+                        .collect();
                 }
                 self.context_groups(items, wrappers, Music::Sim)
             }

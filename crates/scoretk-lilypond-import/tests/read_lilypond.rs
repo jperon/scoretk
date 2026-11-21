@@ -2511,12 +2511,14 @@ fn polyphonie_temporaire_avec_double_barre() {
 }
 
 #[test]
-fn simultane_sans_contexte_une_seule_portee() {
-    // Un `<< … >>` de `\score` sans aucun `\new` est une musique simultanée
-    // d'une seule portée anonyme, comme un `{ … }` : les deux éléments y sont
-    // deux voix, pas deux portées.
+fn simultane_sans_contexte_une_portee_par_element() {
+    // Un `<< … >>` de `\score` sans aucun `\new` ouvre un contexte par
+    // élément : LilyPond grave deux portées et joue deux pistes MIDI
+    // (`lily/parser.yy` `context_prefix`, `lily/context.cc`). C'est l'idiome
+    // des partitions chorales Mutopia. Dans une portée, les mêmes éléments
+    // restent des voix (`collect_staves`).
     let score = lire_score("\\score { << { c'4 } { e'4 } >> }");
-    assert_eq!(score.staves.len(), 1);
+    assert_eq!(score.staves.len(), 2);
     assert_eq!(hauteurs(&score), vec![60, 64]);
 }
 
