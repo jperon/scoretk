@@ -10,37 +10,6 @@
 
 use scoretk_core::model::*;
 
-fn write_tuplet() -> String {
-    let mut score = Score::new();
-    let p = score.add_part(Part::new("V", "V"));
-    let s = score.add_staff(p);
-    let t = Track::new(StaffId::from_index(s.index()), 0);
-    let mut m = Measure::new(0, Fraction::ZERO, Fraction::ONE);
-    m.len = Fraction::ONE;
-    let mut clef = Segment::new(SegmentType::HeaderClef, Fraction::ZERO, score.staves.len());
-    clef.set_element(t, SegmentItem::Clef(Clef::new(ClefType::G)));
-    m.add_segment(clef);
-    let tup = score.add_tuplet(Tuplet::new(
-        Fraction::new(2, 3),
-        Fraction::new(1, 8),
-        Fraction::new(1, 4),
-        Fraction::new(1, 4),
-    ));
-    // Two consecutive tuplet notes at ticks 0 and 1/8 (the unscaled note
-    // figure); their scaled ends are 3/16 and 3/8 respectively.
-    for (tick, pitch) in [(Fraction::ZERO, 67u8), (Fraction::new(1, 8), 65)] {
-        let id = score.add_note(Note::new(pitch, 14));
-        let mut cr = ChordRest::chord(Duration::eighth());
-        cr.tuplet = Some(tup);
-        cr.chord_mut().unwrap().notes.push(id);
-        let mut sg = Segment::new(SegmentType::ChordRest, tick, score.staves.len());
-        sg.set_element(t, SegmentItem::ChordRest(cr));
-        m.add_segment(sg);
-    }
-    score.add_measure(m);
-    scoretk_abc_export::write_abc(&score).expect("écriture")
-}
-
 #[test]
 fn tuplet_round_trip_stable() {
     // A tuplet whose written figure is shorter than the group's time, so
