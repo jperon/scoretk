@@ -29,7 +29,7 @@
 use scoretk_core::model::Fraction;
 
 use super::chord::{max_note_off_time, MTrack, MidiNote};
-use super::meter::{beat_length, meter_to_duration_list, DurationKind};
+use super::meter::{beat_length_raw, meter_to_duration_list_with_sig, DurationKind};
 use super::midifile::UNITS_PER_WHOLE;
 use super::quant::quantize_to_large;
 use super::timesigmap::{fraction_from_ticks, TimeSigMap};
@@ -72,6 +72,7 @@ fn lengthen_note(
     end_time: Fraction,
     bar_start: Fraction,
     bar_fraction: Fraction,
+    bar_numerator: i64,
     tuplets: &std::collections::BTreeMap<super::tuplet::TupletKey, TupletData>,
     track: &MTrack,
     is_drum_track: bool,
@@ -91,18 +92,20 @@ fn lengthen_note(
         end_time - note.off_time,
     );
 
-    let orig_note_durations = meter_to_duration_list(
+    let orig_note_durations = meter_to_duration_list_with_sig(
         duration_start - bar_start,
         note.off_time - bar_start,
         bar_fraction,
+        bar_numerator,
         &tuplets_for_duration,
         DurationKind::Note,
         use_dots,
     );
-    let orig_rest_durations = meter_to_duration_list(
+    let orig_rest_durations = meter_to_duration_list_with_sig(
         note.off_time - bar_start,
         end_time - bar_start,
         bar_fraction,
+        bar_numerator,
         &tuplets_for_duration,
         DurationKind::Rest,
         use_dots,
@@ -119,10 +122,11 @@ fn lengthen_note(
     };
     let mut off_time = note.off_time + step;
     while off_time <= end_time {
-        let note_durations = meter_to_duration_list(
+        let note_durations = meter_to_duration_list_with_sig(
             duration_start - bar_start,
             off_time - bar_start,
             bar_fraction,
+            bar_numerator,
             &tuplets_for_duration,
             DurationKind::Note,
             use_dots,
@@ -130,10 +134,11 @@ fn lengthen_note(
         let note_duration_count = duration_count(&note_durations);
         let mut rest_duration_count = 0.0;
         if off_time < end_time {
-            let rest_durations = meter_to_duration_list(
+            let rest_durations = meter_to_duration_list_with_sig(
                 off_time - bar_start,
                 end_time - bar_start,
                 bar_fraction,
+                bar_numerator,
                 &tuplets_for_duration,
                 DurationKind::Rest,
                 use_dots,
@@ -315,16 +320,10 @@ fn minimize_number_of_rests(
                     }
                 }
             }
-            let beat_len = if is_drum_track {
-                // Les pistes de percussion utilisent la signature non réduite
-                // (`ReducedFraction` C++) ; les autres gardent la lecture actuelle.
-                super::meter::beat_length_raw(bar_fraction, timesig.numerator)
-            } else if timesig.numerator == 12 {
-                // 12/8 se réduit en 3/4 : `beatLength` doit voir le numérateur
-                // brut 12 (`importmidi_meter.cpp:135-147`) pour le temps pointé.
-                super::meter::beat_length_raw(bar_fraction, timesig.numerator)
+            let beat_len = if is_drum_track || timesig.numerator == 12 {
+                beat_length_raw(bar_fraction, timesig.numerator)
             } else {
-                beat_length(bar_fraction)
+                super::meter::beat_length(bar_fraction)
             };
             let beat_time = bar_start + quantize_to_large(note.off_time - bar_start, beat_len);
             if end_time > beat_time {
@@ -350,6 +349,7 @@ fn minimize_number_of_rests(
                 end_time,
                 bar_start,
                 bar_fraction,
+                timesig.numerator,
                 &track.tuplets,
                 track,
                 is_drum_track,

@@ -62,6 +62,14 @@ pub struct Measure {
     pub len: Fraction,
     /// Durée nominale donnée par l'indication de mesure.
     pub nominal_len: Fraction,
+    /// Numérateur **non réduit** de l'indication de mesure.
+    ///
+    /// `ReducedFraction` de MuseScore conserve 4/4 comme `(4, 4)`, alors que
+    /// [`Fraction`] le réduit à `1/1`. Les fonctions `isDuple`, `isCompound`,
+    /// `beatLength`… (`importmidi_meter.cpp`) dépendent de ce numérateur brut.
+    pub time_sig_numerator: i64,
+    /// Dénominateur non réduit de l'indication de mesure.
+    pub time_sig_denominator: i64,
     /// Mesure exclue de la numérotation (`Measure::excludeFromNumbering()`),
     /// c'est-à-dire une anacrouse ou une mesure irrégulière marquée
     /// `<irregular>1</irregular>` (3.x) ou `@len` (4.x). MuseScore l'exporte
@@ -121,6 +129,8 @@ impl Measure {
             start_tick,
             len: nominal_len,
             nominal_len,
+            time_sig_numerator: nominal_len.numerator(),
+            time_sig_denominator: nominal_len.denominator(),
             exclude_from_numbering: false,
             start_bar_line: BarLineType::Normal,
             end_bar_line: BarLineType::Normal,
@@ -138,6 +148,16 @@ impl Measure {
     /// Remplace la durée réelle (mesure d'anacrouse, mesure irrégulière).
     pub fn with_len(mut self, len: Fraction) -> Self {
         self.len = len;
+        self
+    }
+
+    /// Pose l'indication de mesure non réduite (4/4, 12/8…).
+    ///
+    /// La durée nominale reste la valeur réduite ; seul le numérateur brut est
+    /// conservé pour les calculs métriques de l'import MIDI.
+    pub fn with_raw_timesig(mut self, numerator: i64, denominator: i64) -> Self {
+        self.time_sig_numerator = numerator;
+        self.time_sig_denominator = denominator;
         self
     }
 

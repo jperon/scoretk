@@ -30,7 +30,7 @@
 use scoretk_core::model::Fraction;
 
 use super::chord::{min_allowed_duration, MTrack};
-use super::meter::{divisions_of_bar_for_tuplets, is_simple_note_duration};
+use super::meter::{divisions_of_bar_for_tuplets_raw, is_simple_note_duration};
 use super::timesigmap::TimeSigMap;
 
 /// Clé d'un n-olet dans [`MTrack::tuplets`] : date et rang.
@@ -168,15 +168,14 @@ pub fn find_all_tuplets(track: &mut MTrack, sigmap: &TimeSigMap, basic_quant: Fr
     for bar_index in 0..bar_count {
         let bar_start =
             super::timesigmap::fraction_from_ticks(sigmap.bar2tick(i64::from(bar_index), 0));
-        let bar_len = sigmap
-            .timesig(sigmap.bar2tick(i64::from(bar_index), 0))
-            .measure_len();
-        let mut spans = divisions_of_bar_for_tuplets(bar_len);
+        let timesig = sigmap.timesig(sigmap.bar2tick(i64::from(bar_index), 0));
+        let bar_len = timesig.measure_len();
+        let mut spans = divisions_of_bar_for_tuplets_raw(bar_len, timesig.numerator);
         spans.retain(|span| !span.is_zero());
         spans.sort_by(|left, right| right.cmp(left));
 
         for span in spans {
-            let beat = super::meter::beat_length(bar_len);
+            let beat = super::meter::beat_length_raw(bar_len, timesig.numerator);
             let step = if beat.is_positive() {
                 span.min(beat)
             } else {

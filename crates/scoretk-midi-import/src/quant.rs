@@ -284,10 +284,9 @@ pub fn is_human_performance(track: &MTrack, sigmap: &super::timesigmap::TimeSigM
         let on_time = quantize_value(on_time, quant);
         let (bar_index, _, _) = sigmap.tick_values(on_time.ticks(UNITS_PER_WHOLE as u32));
         let bar_start = super::timesigmap::fraction_from_ticks(sigmap.bar2tick(bar_index, 0));
-        let bar_fraction = sigmap
-            .timesig(bar_start.ticks(UNITS_PER_WHOLE as u32))
-            .measure_len();
-        let beat_len = super::meter::beat_length(bar_fraction);
+        let ts = sigmap.timesig(bar_start.ticks(UNITS_PER_WHOLE as u32));
+        let bar_fraction = ts.measure_len();
+        let beat_len = super::meter::beat_length_raw(bar_fraction, ts.numerator);
         if beat_len.is_zero() {
             continue;
         }

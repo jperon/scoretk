@@ -1608,3 +1608,37 @@ all compound meters) was also measured and rejected: 197 gains but 120 losses,
 including `simplify_8th_dont` 1.0 → 0.33 and `meter_chord_example` 0.53 → 0.07.
 Porting it correctly requires carrying the raw numerator in the model's
 `Measure`, which is the next step of the `importmidi_meter.cpp` port.
+
+## Raw time signature numerator in `Measure` (2026-11-21)
+
+MuseScore's `TimeSigMap` keeps `ReducedFraction(4, 4)` rather than the reduced
+`1/1`; `Meter::isDuple`, `isCompound`, `beatLength` and
+`metricDivisionsOfBar` (`importmidi_meter.cpp:35-108, 135-164`) all depend on
+that numerator. `Fraction` reduced it, so 4/4 fell into the "other meter"
+branch and produced duplicate bar divisions. Failing test first:
+`raw_timesig_in_measure` in `scoretk-core` (method and fields absent before
+the fix).
+
+`Measure` now carries `time_sig_numerator` / `time_sig_denominator`, set by
+`with_raw_timesig` in `createMeasures`; `meter.rs` gained
+`metric_divisions_of_bar_raw`, `divisions_of_bar_for_tuplets_raw`,
+`division_info_raw` and `meter_to_duration_list_with_sig`. They are used by
+the duration simplifier, the n-olet detector and the human-performance
+classifier. `beat_length_raw` remains limited to drums and 12/8: applying it
+to every meter regressed the LilyPond source lot by 768 notes and the MIDI
+round-trip test on `v3/testTuplets8` (2/4), because those oracles preserve the
+source durations while `lengthenNote` now legitimately simplifies them; that
+wider propagation is left for a dedicated fidelity decision.
+
+Measured with the corrected oracle: upstream loss 261.0 → 258.0,
+LilyPond loss 31 775.2 → 31 614.9, no per-file loss unexplained. Gains:
+`up-human_tempo` 0.4366 → 0.5000, `up-meter_12-8` 0.3636 → 0.8182,
+`up-tuplet_16th_8th` 0.7273 → 0.8182, `up-tuplet_off_time_other_bar2`
+0.7143 → 1.0000. The six upstream losses are all upstream tests compiled
+with non-default options: `meter_chord_example` and `meter_two_beats_over`
+use `dontSimplify` (`midiimport_tests.cpp:302, 334`),
+`tuplet_triplet_first_tied`/`2` use `dontSimplify` (`:441`),
+`tuplet_3_5_7_tuplets` disables `simplifyDurations`/`changeClef` (`:368`) and
+`simplify_8th_dont` uses `simplification()` with `maxVoiceCount V_1` (`:640`).
+Their expected `.mscx` therefore describes a different import configuration
+than the CLI defaults; the raw divisions now make that difference visible.

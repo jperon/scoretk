@@ -113,6 +113,9 @@ pub fn is_triple_num(n: i64) -> bool {
 pub fn is_quadruple_num(n: i64) -> bool {
     n % 4 == 0
 }
+pub fn is_compound_num(n: i64) -> bool {
+    n % 3 == 0 && n > 3
+}
 pub fn is_complex_num(n: i64) -> bool {
     n == 5 || n == 7
 }
@@ -228,6 +231,96 @@ pub fn metric_divisions_of_tuplet(
         info.div_lengths.push((len, tuplet_start_level));
     }
     info
+}
+
+/// `metricDivisionsOfBar` avec le numérateur non réduit
+/// (`importmidi_meter.cpp:63-108`). Les classifications sur `numerator`
+/// reproduisent `isDuple`, `isTriple`, `isQuadruple`, `isCompound`…
+pub fn metric_divisions_of_bar_raw(bar_fraction: Fraction, numerator: i64) -> DivisionInfo {
+    let mut info = DivisionInfo {
+        on_time: Fraction::ZERO,
+        len: bar_fraction,
+        is_tuplet: false,
+        div_lengths: vec![(bar_fraction, 0)],
+    };
+    let mut level = 0_i32;
+    if is_duple_num(numerator) {
+        level -= 1;
+        info.div_lengths
+            .push((bar_fraction * Fraction::HALF, level));
+    } else if is_triple_num(numerator) {
+        level -= 1;
+        info.div_lengths
+            .push((bar_fraction / Fraction::from_integer(3), level));
+    } else if is_quadruple_num(numerator) {
+        level -= 1;
+        info.div_lengths
+            .push((bar_fraction * Fraction::HALF, level));
+        level -= 1;
+        info.div_lengths
+            .push((bar_fraction * Fraction::new(1, 4), level));
+    } else if numerator % 5 == 0 {
+        level -= 1;
+        info.div_lengths
+            .push((bar_fraction / Fraction::from_integer(5), level));
+    } else if numerator % 7 == 0 {
+        level -= 1;
+        info.div_lengths
+            .push((bar_fraction / Fraction::from_integer(7), level));
+    } else {
+        level -= 1;
+        info.div_lengths
+            .push((bar_fraction / Fraction::from_integer(numerator), level));
+    }
+    if is_compound_num(numerator) {
+        level -= 1;
+        let last = info
+            .div_lengths
+            .last()
+            .map(|(len, _)| *len)
+            .unwrap_or(bar_fraction);
+        level -= 1;
+        info.div_lengths
+            .push((last / Fraction::from_integer(3), level));
+    }
+    info
+}
+
+/// `divisionsOfBarForTuplets` avec le numérateur non réduit
+/// (`importmidi_meter.cpp:150-164`).
+pub fn divisions_of_bar_for_tuplets_raw(bar_fraction: Fraction, numerator: i64) -> Vec<Fraction> {
+    let info = metric_divisions_of_bar_raw(bar_fraction, numerator);
+    let beat_len = beat_length_raw(bar_fraction, numerator);
+    info.div_lengths
+        .into_iter()
+        .filter(|(len, _)| {
+            !((is_compound_num(numerator) || is_complex_num(numerator)) && *len > beat_len)
+        })
+        .map(|(len, _)| len)
+        .collect()
+}
+
+/// `Meter::divisionInfo` avec le numérateur non réduit.
+pub fn division_info_raw(
+    bar_fraction: Fraction,
+    numerator: i64,
+    tuplets_in_bar: &[TupletData],
+) -> Vec<DivisionInfo> {
+    let bar_info = metric_divisions_of_bar_raw(bar_fraction, numerator);
+    let mut result = Vec::new();
+    for tuplet in tuplets_in_bar {
+        let mut start_level = 0;
+        for (len, level) in &bar_info.div_lengths {
+            if *len == tuplet.len {
+                start_level = *level;
+                break;
+            }
+        }
+        start_level -= 1;
+        result.push(metric_divisions_of_tuplet(tuplet, start_level));
+    }
+    result.push(bar_info);
+    result
 }
 
 /// Longueurs de division de la mesure où un n-olet peut commencer
@@ -399,11 +492,12 @@ fn is_23_end_of_beat_in_compound_meter(
     start_tick: Fraction,
     end_tick: Fraction,
     bar_fraction: Fraction,
+    numerator: i64,
 ) -> bool {
-    if end_tick <= start_tick || !is_compound(bar_fraction) {
+    if end_tick <= start_tick || !is_compound_num(numerator) {
         return false;
     }
-    let beat_len = beat_length(bar_fraction);
+    let beat_len = beat_length_raw(bar_fraction, numerator);
     let div_len = beat_len / Fraction::from_integer(3);
     let ratio1 = start_tick / beat_len;
     let ratio2 = end_tick / beat_len;
@@ -418,11 +512,12 @@ fn is_2of3_rest_in_triple_meter(
     start_tick: Fraction,
     end_tick: Fraction,
     bar_fraction: Fraction,
+    numerator: i64,
 ) -> bool {
     if end_tick - start_tick <= Fraction::ZERO {
         return false;
     }
-    is_triple(bar_fraction)
+    is_triple_num(numerator)
         && (start_tick == Fraction::ZERO || end_tick == bar_fraction)
         && end_tick - start_tick
             == (bar_fraction * Fraction::from_integer(2)) / Fraction::from_integer(3)
@@ -518,13 +613,34 @@ pub fn meter_to_duration_list(
     kind: DurationKind,
     use_dots: bool,
 ) -> Vec<(Fraction, Duration)> {
+    meter_to_duration_list_with_sig(
+        start_tick_in_bar,
+        end_tick_in_bar,
+        bar_fraction,
+        bar_fraction.numerator(),
+        tuplets_in_bar,
+        kind,
+        use_dots,
+    )
+}
+
+/// Variante avec le numérateur non réduit de l'indication de mesure.
+pub fn meter_to_duration_list_with_sig(
+    start_tick_in_bar: Fraction,
+    end_tick_in_bar: Fraction,
+    bar_fraction: Fraction,
+    numerator: i64,
+    tuplets_in_bar: &[TupletData],
+    kind: DurationKind,
+    use_dots: bool,
+) -> Vec<(Fraction, Duration)> {
     if start_tick_in_bar < Fraction::ZERO
         || end_tick_in_bar <= start_tick_in_bar
         || end_tick_in_bar > bar_fraction
     {
         return Vec::new();
     }
-    let div_info = division_info(bar_fraction, tuplets_in_bar);
+    let div_info = division_info_raw(bar_fraction, numerator, tuplets_in_bar);
     let min_duration = min_allowed_duration() * Fraction::from_integer(2);
 
     let mut nodes: BTreeMap<Fraction, Node> = BTreeMap::new();
@@ -567,9 +683,9 @@ pub fn meter_to_duration_list(
             effective_level - start_node.edge_level,
             effective_level - end_node.edge_level,
             0,
-        ) || is_2of3_rest_in_triple_meter(first, second, bar_fraction)
+        ) || is_2of3_rest_in_triple_meter(first, second, bar_fraction, numerator)
             || (kind == DurationKind::Rest
-                && is_23_end_of_beat_in_compound_meter(first, second, bar_fraction))
+                && is_23_end_of_beat_in_compound_meter(first, second, bar_fraction, numerator))
         {
             let edge_level = adjust_edge_level_if_tuplet(&split_point, &div_info);
             nodes.insert(

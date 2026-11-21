@@ -309,3 +309,12 @@ fn modele_send_et_sync() {
     verifie::<Segment>();
     verifie::<Spanner>();
 }
+#[test]
+fn raw_timesig_in_measure() {
+    let measure =
+        crate::model::Measure::new(0, crate::model::Fraction::ZERO, crate::model::Fraction::ONE)
+            .with_raw_timesig(4, 4);
+    assert_eq!(measure.time_sig_numerator, 4);
+    assert_eq!(measure.time_sig_denominator, 4);
+    assert_eq!(measure.nominal_len, crate::model::Fraction::ONE);
+}

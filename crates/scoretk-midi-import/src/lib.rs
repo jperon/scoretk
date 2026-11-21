@@ -78,7 +78,7 @@ use chord::{
     merge_chords_with_equal_on_time_and_voice, remove_overlapping_notes, split_unequal_chords,
     MTrack, MidiChord, MidiNote,
 };
-use meter::{meter_to_duration_list, DurationKind};
+use meter::{meter_to_duration_list_with_sig, DurationKind};
 use midifile::{decode_meta_text, meta, EventKind, MidiFile, UNITS_PER_WHOLE};
 use operations::ImportOptions;
 use timesigmap::{fraction_from_ticks, TimeSigMap, Timesig};
@@ -464,7 +464,8 @@ fn create_measures(
     // `isPickupWithLessTimeSig` : première mesure plus courte que la suivante.
     let _ = first_tick;
     if bar_count > 1 && first_timesig < second_timesig {
-        let mut measure = Measure::new(0, Fraction::ZERO, second_timesig);
+        let mut measure = Measure::new(0, Fraction::ZERO, second_timesig)
+            .with_raw_timesig(first_timesig.numerator(), first_timesig.denominator());
         measure.len = first_timesig;
         score.add_measure(measure);
         begin = 1;
@@ -477,7 +478,8 @@ fn create_measures(
             index,
             fraction_from_ticks(start_ticks),
             timesig.measure_len(),
-        );
+        )
+        .with_raw_timesig(timesig.numerator, timesig.denominator);
         score.add_measure(measure);
     }
     score.end_tick()
@@ -1006,10 +1008,11 @@ fn duration_list(
     let measure = &score.measures[measure_index];
     let bar_tick = measure.start_tick;
     let tuplets = tuplet::find_tuplets_in_bar_for_duration(track, voice, bar_tick, start_tick, len);
-    meter_to_duration_list(
+    meter_to_duration_list_with_sig(
         start_tick - bar_tick,
         start_tick - bar_tick + len,
         measure.nominal_len,
+        measure.time_sig_numerator,
         &tuplets,
         kind,
         options.use_dots,
