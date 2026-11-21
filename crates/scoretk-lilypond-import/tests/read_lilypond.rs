@@ -5252,3 +5252,14 @@ fn duree_par_defaut_apres_un_new_voice() {
         ]
     );
 }
+
+/// `\transposition` est une propriété de Staff posée dans le temps
+/// (`lily/audio-item.cc` instrumentTransposition) : elle ne s'applique qu'aux
+/// notes écrites **après** elle. Sur `c'4 \transposition a d'4 e'4 f'4`,
+/// LilyPond 2.26 joue 60, 59, 61, 62.
+#[test]
+fn transposition_a_partir_de_sa_declaration() {
+    let score = read_lilypond("\\score { \\new Staff { c'4 \\transposition a d'4 e'4 f'4 } }")
+        .expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![60, 59, 61, 62]);
+}

@@ -259,7 +259,8 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 if let Some((pitch, a_decaler)) = transposition {
                     if a_decaler {
                         let (_, chromatic) = crate::pitch::instrument_transpose(&pitch);
-                        decaler_vers_concert(&mut staves[staff_start..], chromatic);
+                        let depuis = transposition_depuis(&staves[staff_start..]);
+                        decaler_vers_concert(&mut staves[staff_start..], chromatic, depuis);
                     }
                 }
             }
@@ -294,11 +295,14 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 });
                 if a_des_notes {
                     let (diatonic, chromatic) = crate::pitch::instrument_transpose(&pitch);
+                    let depuis = transposition_depuis(&staves[first_staff_index..]);
                     if a_decaler {
-                        decaler_vers_concert(&mut staves[first_staff_index..], chromatic);
+                        decaler_vers_concert(&mut staves[first_staff_index..], chromatic, depuis);
                     }
-                    score.part_mut(part_id).instrument.transpose =
-                        Some(Transpose::new(diatonic, chromatic));
+                    if depuis.is_zero() {
+                        score.part_mut(part_id).instrument.transpose =
+                            Some(Transpose::new(diatonic, chromatic));
+                    }
                     // La propriété vaut pour toute la portée : les voix
                     // musicales suivantes la reçoivent aussi. Un groupe
                     // structural (`Staff`, `StaffGroup…`) la referme plus haut.
@@ -696,6 +700,19 @@ fn instrument_transpose(music: &Music) -> Option<(PitchSpec, bool)> {
     }
 }
 
+/// Premier tick où `\transposition` est posé dans un ensemble de portées.
+fn transposition_depuis(staves: &[StaffBuild]) -> Fraction {
+    staves
+        .iter()
+        .flat_map(|staff| staff.voices.iter())
+        .flat_map(|voice| voice.interpreted.events.iter())
+        .find_map(|event| match &event.kind {
+            EventKind::Meta(MetaEvent::Transposition(_)) => Some(event.tick),
+            _ => None,
+        })
+        .unwrap_or(Fraction::ZERO)
+}
+
 /// Décale d'un intervalle chromatique les hauteurs d'une portée transpositrice.
 ///
 /// `\transposition` ne change pas la notation : la hauteur écrite reste celle
@@ -705,10 +722,13 @@ fn instrument_transpose(music: &Music) -> Option<(PitchSpec, bool)> {
 /// partie porte effectivement `<transpose>`, sinon la hauteur écrite doit
 /// rester intacte (cas des orchestres, où plusieurs portées de transpositions
 /// différentes partagent la même partie MusicXML).
-fn decaler_vers_concert(staves: &mut [StaffBuild], chromatic: i32) {
+fn decaler_vers_concert(staves: &mut [StaffBuild], chromatic: i32, depuis: Fraction) {
     for staff in staves {
         for voice in &mut staff.voices {
             for event in &mut voice.interpreted.events {
+                if event.tick < depuis {
+                    continue;
+                }
                 if let EventKind::Chord(chord) = &mut event.kind {
                     decaler_accord(&mut chord.content, chromatic);
                     for grace in chord
@@ -1688,7 +1708,10 @@ fn place_meta(
                 measure.line_break = true;
             }
         }
-        MetaEvent::Partial(_) | MetaEvent::MeasureLength(_) | MetaEvent::Cadenza(_) => {}
+        MetaEvent::Partial(_)
+        | MetaEvent::MeasureLength(_)
+        | MetaEvent::Cadenza(_)
+        | MetaEvent::Transposition(_) => {}
     }
 }
 

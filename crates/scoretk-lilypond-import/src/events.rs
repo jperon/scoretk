@@ -102,6 +102,8 @@ pub(crate) enum MetaEvent {
     Partial(Fraction),
     /// `\set Timing.measureLength`.
     MeasureLength(Fraction),
+    /// `\transposition` : hauteur jouée par un do écrit, datée.
+    Transposition(PitchSpec),
     /// `\cadenzaOn` (`true`) / `\cadenzaOff` (`false`) : fin des barres
     /// automatiques pendant la cadence.
     Cadenza(bool),
@@ -785,7 +787,7 @@ impl<'a> Interpreter<'a> {
             }
             // `\transposition` de portée : le décalage concert est appliqué
             // par le constructeur, seulement si la partie porte `<transpose>`.
-            Context::InstrumentTranspose(_) => {}
+            Context::InstrumentTranspose(pitch) => self.meta(MetaEvent::Transposition(*pitch)),
             // `\transposition` du bloc `\midi` : vaut pour toute la partition
             // et s'applique ici à toutes les voix, même si la partie ne porte
             // pas `<transpose>` (plusieurs portées dans le même groupe).
