@@ -3632,3 +3632,12 @@ Dix gains `ra` (`divisi-staves` +399, `accidental-ledger` +171,
 `persian-accidental-glyphs` +15, `accidental-quarter` +8, `midi-microtone`
 +4), trois gains `mut` (`rach-prelude23-05` +140, `BuxWv185` +78,
 `rach-prelude23-10` +36), **aucune perte** dans aucun lot.
+
+### Réduction réelle de `chord-names-languages*.ly` (lot `ra`) : octave de la basse
+
+La basse d'un accord `/b` doit être **strictement** sous la fondamentale
+(`process-inversion`, `scm/chord-entry.scm`). Le lecteur ne descendait d'une
+octave que si le degré de la basse était supérieur, laissant `b/b` sur si4 au
+lieu de si3 ; le chemin `c1/g` (basse après durée) court-circuitait en plus la
+règle. Test `basse_daccord_strictement_sous_la_fondamentale` (échoue avant).
+Les deux fichiers `chord-names-languages` passent à 133/133 notes appariées.

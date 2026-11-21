@@ -5754,3 +5754,34 @@ fn basse_daccord_apres_la_duree() {
         debut
     );
 }
+
+/// La basse d'un accord est toujours strictement sous la fondamentale :
+/// si le degré est égal ou supérieur, elle descend d'une octave.
+#[test]
+fn basse_daccord_strictement_sous_la_fondamentale() {
+    let source = r#"\version "2.26.0"
+\score { \new Staff { \chordmode { c1/g b1/b } } \midi {} }
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    let notes: Vec<u8> = accords_de_voix(&score, 0)
+        .iter()
+        .take(1)
+        .flat_map(|(_, notes, _)| notes.iter().copied())
+        .collect();
+    assert!(
+        notes.contains(&55),
+        "la basse de C/G est sol3 (55) : {:?}",
+        notes
+    );
+    let notes2: Vec<u8> = accords_de_voix(&score, 0)
+        .iter()
+        .skip(1)
+        .take(1)
+        .flat_map(|(_, notes, _)| notes.iter().copied())
+        .collect();
+    assert!(
+        notes2.contains(&59),
+        "la basse de B/B est si3 (59) : {:?}",
+        notes2
+    );
+}

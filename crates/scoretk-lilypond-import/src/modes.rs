@@ -223,15 +223,23 @@ pub(crate) fn chord_pitches(language: Language, name: &str) -> Option<(Vec<u8>, 
         .filter_map(|ecart| i32::from(root).checked_add(i32::from(*ecart)))
         .filter_map(|p| u8::try_from(p).ok())
         .collect();
-    let basse_midi = basse.and_then(|b| {
-        let (step_b, alter_b) = language.parse(b)?;
-        let naturel = i32::from(midi_of(step_b, alter_b, 4)?);
-        // Sous la fondamentale : même octave si le degré est plus aigu, sinon
-        // une octave plus bas (règle de `pitch-octavated-strictly-below`).
-        let dessous = if step_b > step { naturel - 12 } else { naturel };
-        u8::try_from(dessous).ok()
-    });
+    let basse_midi = basse.and_then(|b| chord_bass_pitch(language, step, b));
     Some((notes, basse_midi))
+}
+
+/// Hauteur de la basse d'un accord `/b`, strictement sous la fondamentale
+/// (`process-inversion` dans `scm/chord-entry.scm`). Quand le degré de la
+/// basse est égal ou supérieur à celui de la racine, la basse descend d'une
+/// octave : `b/b` joue si3, pas si4.
+pub(crate) fn chord_bass_pitch(language: Language, root_step: u8, bass: &str) -> Option<u8> {
+    let (step, alter) = language.parse(bass)?;
+    let naturel = i32::from(midi_of(step, alter, 4)?);
+    let dessous = if step >= root_step {
+        naturel - 12
+    } else {
+        naturel
+    };
+    u8::try_from(dessous).ok()
 }
 
 #[cfg(test)]

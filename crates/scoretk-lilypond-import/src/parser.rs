@@ -3194,12 +3194,15 @@ impl<'a> Parser<'a> {
                     }) = self.peek().cloned()
                     {
                         self.position += 1;
-                        if let Some((step, alter)) = self.language.parse(&text) {
-                            if let Some(basse) = pitch::midi_of(step, alter, 4) {
-                                let posts = Vec::new();
+                        let racine = nom.split('/').next().unwrap_or(&nom);
+                        let racine = racine.split(':').next().unwrap_or(racine);
+                        if let Some((root_step, _)) = self.language.parse(racine) {
+                            if let Some(basse) =
+                                crate::modes::chord_bass_pitch(self.language, root_step, &text)
+                            {
                                 notes.push(NoteSpec {
                                     pitch: PitchSpec::default(),
-                                    posts,
+                                    posts: Vec::new(),
                                     head_group: NoteHeadGroup::default(),
                                     midi: Some(basse),
                                 });
