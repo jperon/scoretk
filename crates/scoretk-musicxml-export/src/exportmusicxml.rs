@@ -1092,7 +1092,7 @@ impl<'a> Context<'a> {
                     }
                     if annotation_track(segment, staff_id) == Some(track) {
                         self.harmonies(out, measure, segment, staff_id, track);
-                        self.annotations(out, segment, staff_id, xml_staff);
+                        self.annotations(out, segment, staff_id, xml_staff, false);
                         if let SegmentItem::ChordRest(chord_rest) = item {
                             figured_bass::write(
                                 self,
@@ -2446,12 +2446,25 @@ impl Context<'_> {
     ///
     /// MuseScore rattache toutes les annotations d'une portée à la première
     /// voix occupée du segment (`findTrackForAnnotations`).
-    fn annotations(&self, out: &mut Out, segment: &Segment, staff_id: StaffId, xml_staff: usize) {
+    fn annotations(
+        &self,
+        out: &mut Out,
+        segment: &Segment,
+        staff_id: StaffId,
+        xml_staff: usize,
+        skip_invisible_tempo: bool,
+    ) {
         for entry in &segment.annotations {
             if entry.track.staff() != staff_id {
                 continue;
             }
             if !entry.annotation.visible() {
+                // `findTrackForAnnotations` (`exportmusicxml.cpp:6375-6392`)
+                // renvoie `nidx` sur un segment sans accord ni silence : le C++
+                // n'écrit alors aucun `<sound tempo>` d'un tempo invisible.
+                if skip_invisible_tempo && matches!(entry.annotation, Annotation::Tempo(_)) {
+                    continue;
+                }
                 // `commonAnnotations` : un tempo invisible n'exporte que son
                 // `<sound tempo>` ; un texte système invisible exporte son
                 // swing avec un offset.
@@ -2534,7 +2547,7 @@ impl Context<'_> {
                     continue;
                 }
                 let xml_staff = if staves > 1 { position + 1 } else { 0 };
-                self.annotations(out, segment, *staff_id, xml_staff);
+                self.annotations(out, segment, *staff_id, xml_staff, true);
             }
         }
     }

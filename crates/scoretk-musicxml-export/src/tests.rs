@@ -3060,3 +3060,39 @@ fn alteration_reduite_size_cue() {
         "taille d'altération perdue :\n{xml}"
     );
 }
+
+/// `findTrackForAnnotations` (`exportmusicxml.cpp:6375-6392`) renvoie `nidx`
+/// pour un segment sans accord ni silence dans la portée : l'annotation est
+/// alors ignorée. Notre `annotations_without_note` écrivait à tort le
+/// `<sound tempo>` d'un tempo invisible attaché à un tel segment (les 3
+/// sons supplémentaires de The Petite Waltz : 160, 175, 165).
+#[test]
+fn tempo_invisible_sans_chordrest_non_exporte() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    let mut empty = Segment::new(SegmentType::ChordRest, Fraction::HALF, score.staves.len());
+    empty.add_annotation(
+        track,
+        Annotation::Tempo(Tempo {
+            text: RichText::new("♩ = 160"),
+            beats_per_second: Some(160.0 / 60.0),
+            follow_text: true,
+            placement: Placement::Above,
+            visible: false,
+            kind: TempoKind::Normal,
+        }),
+    );
+    measure.add_segment(empty);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        !xml.contains("<sound tempo="),
+        "tempo sur segment vide exporté à tort :\n{xml}"
+    );
+}

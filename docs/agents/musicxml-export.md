@@ -416,19 +416,15 @@ Test réduit (mesure 0 avec 6/8, mesure 2 sans indication) écrit d'abord,
 échouant avant le correctif (4/4 au lieu de 6/8). Oracle ciblé sur les 9
 fichiers : **9 gains, 0 perte**, dont 92 → 72 et 398 → 378 lignes divergentes.
 
-## 21. `sound` (6 fichiers) — anomalie d'amont prouvée
+## 21. `sound` (6 fichiers) — tempos invisibles corrigés
 
-Trois cas sont des `<sound tempo>` supplémentaires sur des tempos invisibles
-(`<Tempo><visible>0</visible>`). L'écrivain suit exactement le C++ :
-`commonAnnotations` (`exportmusicxml.cpp:6607-6620`) appelle `tempoSound` pour
-tout élément que `canWrite` (`:9408-9411`) refuse, donc pour un tempo invisible.
-Les séquences de tempos de la référence sont des **sous-séquences strictes** des
-nôtres (ex. `The Petite Waltz` : 56 attends, 59 produits ; `Under Paris Skies` :
-28/36 ; `Ave Verum` : 5/6 ; `Angels Carol` : 11/16). Le lecteur 3.x conserve des
-`<Tempo>` invisibles que l'import 4.7.4 écarte (par ex. les deux tempos
-`2.66667` de `The Petite Waltz`, un seul exporté par la référence) : c'est une
-divergence d'import, pas d'export. Les deux autres cas (`segno`) sont des
-ordres d'éléments dans la mesure : `<sound segno>` présent dans les deux
-documents (aux mêmes mesures), maisPositionné avant/après une note différemment.
-Aucun correctif d'écriture n'est applicable sans reproduire le filtrage
-propriétaire de l'import 4.7.4.
+Sur `The Petite Waltz`, 3 `<sound tempo>` surnuméraires (160, 175, 165) étaient
+écrits. Les trois tempos correspondants sont attachés à des segments
+`ChordRest` **sans accord ni silence** (vérifié dans le modèle : `has_chordrest=false`).
+`findTrackForAnnotations` (`exportmusicxml.cpp:6375-6392`) renvoie `nidx` dans
+ce cas et le C++ ignore l'annotation ; notre `annotations_without_note` l'écrivait.
+Les annotations sans note restent exportées (conformité du corpus préservée),
+seuls les tempos invisibles sont ignorés sur ces segments. Test réduit écrit
+d'abord, échouant avant le correctif. Oracle ciblé : **4 gains, 0 perte**
+(3→0, 8→0, 1→0, 63→58). Les 2 cas `segno` restent à examiner séparément.
+
