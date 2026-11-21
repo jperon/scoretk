@@ -36,7 +36,8 @@
 use std::collections::BTreeMap;
 
 use scoretk_core::model::{
-    Annotation, ArticulationType, Chord, ChordRest, ChordRestKind, Fraction, GraceType, Instrument,
+    Annotation, ArpeggioType, ArticulationType, Chord, ChordRest, ChordRestKind, Fraction, GraceType,
+    Instrument,
     KeyMode, KeySig, LyricsSyllabic, Measure, Note, OrnamentType, OttavaType, PartId, Score,
     SegmentItem, SegmentType, SpannerNotation, SpannerType, StaffId, TimeSig, Track, TremoloKind,
     TrillType, VeloType, VOICES,
@@ -50,6 +51,10 @@ use super::pause_map::PauseMap;
 use super::repeat_list::{RepeatList, DIVISION, UNITS_PER_WHOLE};
 use super::timemap::{Attack, Builder, Timemap};
 use super::velocity::{ChangeDirection, ChangeMethod, VelocityMaps};
+
+/// Tempo de référence de MuseScore (`Constants::DEFAULT_TEMPO`), en
+/// battements par seconde, pour le rapport de tempo de `renderArpeggio`.
+const DEFAULT_TEMPO: f64 = 2.0;
 
 /// Valeurs des articulations intégrées (`s_builtInArticulationsValues`).
 const BUILTIN_ARTICULATIONS: &[(&str, f64, i32)] = &[
@@ -1405,6 +1410,34 @@ fn render_chord(
         _ => None,
     };
 
+    // Arpège : `renderArpeggio` (`compatmidirender.cpp:283-313`). Le pas part
+    // de 64 et vaut 2/3 du précédent tant qu'il ne tient pas dans `playTicks`
+    // (durée liée de la note supérieure) ; chaque note est retardée de
+    // `pas × rang × 1000 / playTicks` millièmes, sans `gateTime` : toutes
+    // finissent à la fin de l'accord.
+    let arpeggio_delays = chord.arpeggio.map(|arpeggio| {
+        let note_count = chord.notes.len() as i64;
+        let mut order: Vec<usize> = (0..chord.notes.len()).collect();
+        order.sort_by_key(|index| score.notes[chord.notes[*index].index()].pitch);
+        if arpeggio.kind == ArpeggioType::Down {
+            order.reverse();
+        }
+        let up_index = *order.last().unwrap_or(&0);
+        let up_note = &score.notes[chord.notes[up_index].index()];
+        let play_ticks = tied_span_ticks(score, staff, up_note, ticks).max(1);
+        let mut step = 64i64;
+        while step > 0 && step * note_count > play_ticks {
+            step = 2 * step / 3;
+        }
+        let tempo_ratio = beats_per_second_at(score, source_tick) / DEFAULT_TEMPO;
+        let mut delays = vec![0i64; chord.notes.len()];
+        for (rank, index) in order.into_iter().enumerate() {
+            let ot = ((step * rank as i64 * 1000 / play_ticks) as f64 * tempo_ratio) as i64;
+            delays[index] = (ot + ontime).clamp(0, 1000);
+        }
+        delays
+    });
+
     for (note_index, note) in chord.notes.iter().enumerate() {
         let note = &score.notes[note.index()];
         if !note.play {
@@ -1476,6 +1509,39 @@ fn render_chord(
                     continue;
                 }
             }
+        }
+        if let Some(delays) = &arpeggio_delays {
+            let ot = delays[note_index];
+            let start = utick + ticks * ot / 1000;
+            let mut off = utick + ticks - 1;
+            off += tie_length(score, staff, note, instrument, source_tick);
+            let end = off.max(start + 1);
+            out.push(Event {
+                tick: start,
+                kind: EventKind::NoteOn {
+                    channel,
+                    key,
+                    velocity,
+                },
+            });
+            context.attack(
+                start,
+                end - start,
+                AttackNote {
+                    chord: context.chord,
+                    note: note_index,
+                    pitch: key,
+                    grace: false,
+                    grace_index: None,
+                    grace_before: false,
+                    tremolo: false,
+                },
+            );
+            out.push(Event {
+                tick: end,
+                kind: EventKind::NoteOff { channel, key },
+            });
+            continue;
         }
         // Trille : `renderNoteArticulation` (`compatmidirender.cpp:668-810`)
         // remplace la note tenue par l'excitation de l'ornement. Les grâces
