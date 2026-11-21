@@ -3641,3 +3641,14 @@ octave que si le degré de la basse était supérieur, laissant `b/b` sur si4 au
 lieu de si3 ; le chemin `c1/g` (basse après durée) court-circuitait en plus la
 règle. Test `basse_daccord_strictement_sous_la_fondamentale` (échoue avant).
 Les deux fichiers `chord-names-languages` passent à 133/133 notes appariées.
+
+### Réduction réelle de `carcassi-op60-15.ly` : `\context Staff` sans musique
+
+La réduction isole `midiStuff = \context Staff = "guitar" { \transposition c }`
+puis `{ \midiStuff \mus }`. LilyPond retrouve ce contexte existant : il ne crée
+pas une seconde portée, il pose la propriété sur la portée qui suit. Le lecteur
+créait une partie vide porteuse de la transposition et laissait les notes dans
+une partie sans `<transpose>`, soit une octave trop haut. Un groupe
+`\context` sans accord joué ne referme plus la transposition en attente.
+Test `transposition_dun_contexte_sans_musique` (échoue avant). Le fichier passe
+de 11 à 129 notes appariées.

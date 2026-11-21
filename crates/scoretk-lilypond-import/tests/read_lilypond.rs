@@ -5785,3 +5785,20 @@ fn basse_daccord_strictement_sous_la_fondamentale() {
         notes2
     );
 }
+/// Réduction réelle de `carcassi-op60-15.ly` : un `\context Staff` qui ne
+/// contient que des propriétés (`\transposition c`) ne crée pas une portée
+/// séparée ; sa transposition vaut pour la musique qui suit.
+#[test]
+fn transposition_dun_contexte_sans_musique() {
+    let source = r#"\version "2.26.0"
+midiStuff = \context Staff = "guitar" { \transposition c }
+mus = { c'4 d' e' f' }
+\score { { \midiStuff \mus } \midi {} }
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(
+        hauteurs(&score),
+        vec![48, 50, 52, 53],
+        "la transposition c descend d'une octave"
+    );
+}

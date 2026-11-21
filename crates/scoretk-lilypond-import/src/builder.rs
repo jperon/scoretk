@@ -154,6 +154,11 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     // suivent portent la musique. On retient alors l'intervalle jusqu'à ce
     // qu'un groupe musical le reçoive.
     let mut pending_transposition: Option<(PitchSpec, bool)> = None;
+    // Un `\context Staff` ne contenant que des propriétés (par exemple
+    // `\transposition c` de `midiStuff`) est retrouvé par LilyPond : il ne
+    // crée pas une nouvelle portée, il configure celle qui suit. Son
+    // intervalle doit donc survivre au groupe musical suivant.
+    let mut pending_from_empty_context = false;
     for group in &score_ast.groups {
         if group.staves.is_empty() {
             // Portée précédente : c'est elle qui porte la voix la plus proche
@@ -190,9 +195,16 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
         } else {
             None
         };
+        let a_des_notes = group.staves.iter().any(|staff| {
+            staff
+                .voices
+                .iter()
+                .any(|voice| music_has_chords(&voice.music))
+        });
         if propre.is_some() {
             pending_transposition = propre;
-        } else if !matches!(group.kind, GroupKind::Voice) {
+            pending_from_empty_context = !a_des_notes && group.existing;
+        } else if !matches!(group.kind, GroupKind::Voice) && !pending_from_empty_context {
             // Un nouveau groupe structural (StaffGroup, Staff…) ferme la
             // portée qui portait la propriété : ne pas la propager au-delà.
             pending_transposition = None;
@@ -306,6 +318,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                     })
                 });
                 if a_des_notes {
+                    pending_from_empty_context = false;
                     let interval = interval_from_pitch(&pitch);
                     let depuis = transposition_depuis(&staves[first_staff_index..]);
                     if a_decaler {
@@ -682,6 +695,33 @@ fn group_bracket(kind: GroupKind, position: usize, count: usize) -> Option<Staff
 /// sous-ensemble lu : les noms d'instrument sont le seul indice. La table
 /// couvre les instruments courants du corpus ; à défaut, l'instrument garde
 /// son nom et aucun programme.
+/// Vrai si une musique AST contient au moins un accord joué (pas seulement
+/// des propriétés de contexte comme `\transposition`).
+fn music_has_chords(music: &crate::ast::Music) -> bool {
+    use crate::ast::Music;
+    match music {
+        Music::Chord(_) => true,
+        Music::Seq(items) | Music::Sim(items) => items.iter().any(music_has_chords),
+        Music::Context(crate::ast::Context::Transpose { music, .. })
+        | Music::Context(crate::ast::Context::Fixed { music, .. })
+        | Music::Context(crate::ast::Context::Relative { music, .. })
+        | Music::Context(crate::ast::Context::NonRelative { music })
+        | Music::Context(crate::ast::Context::Tuplet { music, .. })
+        | Music::Context(crate::ast::Context::Grace { music, .. })
+        | Music::Context(crate::ast::Context::Repeat { body: music, .. }) => {
+            music_has_chords(music)
+        }
+        Music::New(group) => group.staves.iter().any(|staff| {
+            staff
+                .voices
+                .iter()
+                .any(|voice| music_has_chords(&voice.music))
+        }),
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => music_has_chords(music),
+        _ => false,
+    }
+}
+
 /// Cherche un `\transposition` dans une musique de voix.
 ///
 /// La propriété est posée par une commande sans musique, souvent au début
