@@ -2941,3 +2941,62 @@ fn staff_size_des_portees_reduites() {
         "staff-size de la portée réduite absent :\n{xml}"
     );
 }
+
+/// Un triolet de doubles-croches contenant un silence garde son crochet sur
+/// une portée visible (`tuplet.cpp:232-234`) mais pas sur une portée masquée,
+/// que la mise en page ne dispose pas (`hasBracket` reste faux). Douce nuit
+/// (12 fichiers) montre les deux cas : portée Femmes visible (31 crochets)
+/// et portées masquées (31 triolets identiques sans crochet).
+fn tuplet_avec_silence(visible: bool) -> String {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    score.staff_mut(staff).visible = visible;
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    let tuplet = score.add_tuplet(Tuplet::new(
+        Fraction::new(3, 2),
+        Duration::new(DurationType::Sixteenth).ticks(),
+        Fraction::ZERO,
+        Fraction::ONE,
+    ));
+    for index in 0..3 {
+        let mut chord_rest = if index == 0 {
+            ChordRest::rest(Duration::new(DurationType::Sixteenth))
+        } else {
+            let note = score.add_note(Note::new(62 + index as u8, tpc::D));
+            let mut chord = ChordRest::chord(Duration::new(DurationType::Sixteenth));
+            chord.chord_mut().expect("accord").notes.push(note);
+            chord
+        };
+        chord_rest.tuplet = Some(tuplet);
+        ajouter_element(
+            &mut score,
+            &mut measure,
+            track,
+            Fraction::new(index as i64, 24),
+            chord_rest,
+        );
+    }
+    score.add_measure(measure);
+    export_musicxml(&score).expect("export")
+}
+
+#[test]
+fn crochet_triolet_silence_portee_visible() {
+    let xml = tuplet_avec_silence(true);
+    assert!(
+        xml.contains("<tuplet type=\"start\" bracket=\"yes\""),
+        "crochet attendu sur portée visible :\n{xml}"
+    );
+}
+
+#[test]
+fn crochet_triolet_silence_portee_masquee() {
+    let xml = tuplet_avec_silence(false);
+    assert!(
+        xml.contains("<tuplet type=\"start\" bracket=\"no\""),
+        "crochet supprimé attendu sur portée masquée :\n{xml}"
+    );
+}

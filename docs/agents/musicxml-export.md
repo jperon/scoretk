@@ -275,3 +275,35 @@ lisait déjà, pas le lecteur 3.x : les quatre extraits Vivaldi RV 594
 (versions 3.01) perdaient le numéro de mouvement. Test réduit écrit d'abord,
 échouant avant le correctif. Oracle ciblé : 4 gains, 0 perte (123 → 122,
 7 → 6, 12 → 11, 15 → 14 lignes divergentes).
+
+## 13. `tuplet` (12 fichiers restants)
+
+Les 12 fichiers attendent `bracket="no"` alors que `calcHasBracket` écrit
+`yes`. Ils contiennent des triolets de doubles-croches avec un silence. La
+première version du portage (ignorer les silences partout) a fait gagner 6
+fichiers mais en a **perdu 7** à la re-mesure complète, dont 4 fichiers
+auparavant core-identiques (Autumn Leaves, Gloria Patri, Triumphal March,
+Douce nuit — Conducteur).
+
+Le critère exact est la **visibilité de la portée** : la mise en page ne
+dispose pas une portée masquée, donc `hasBracket` y reste faux. Dans Douce
+nuit — chant piano, les 31 triolets avec crochet sont sur la portée visible
+Femmes ; les 31 triolets de description identique sur portées masquées n'ont
+pas de crochet. Le portage applique donc la règle C++ (`tuplet.cpp:232-234`,
+silence → crochet) sur portée visible et renvoie faux sur portée masquée.
+Deux tests réduits (visible/masqué), écrits d'abord et constatés en échec
+avant le correctif affiné.
+
+Oracle ciblé sur l'union des 12 fichiers `tuplet` et des 7 fichiers sensibles :
+**12 gains, 0 perte**, 6 857 → 5 941 lignes divergentes.
+
+
+## 14. Re-mesure complète après `movement-number` + `tuplet` (174 fichiers)
+
+**20 gains, 0 perte, 153 inchangés** ; lignes divergentes 24 733 → 23 651 ;
+fichiers core-identiques 57 → 58 ; XSD scoretk 0 erreur. La catégorie `tuplet`
+disparaît du classement. Restent `staff-details` 41, `attributes` 39,
+`duration` 8, `sound` 5, `accidental` 4. La première version du correctif
+`tuplet` (7 pertes à la re-mesure) a été remplacée par le critère de visibilité
+de portée décrit en §13, vérifié sur l'union des fichiers concernés puis sur
+les 174 fichiers.

@@ -42,10 +42,10 @@ pub(crate) fn has_bracket(score: &Score, id: TupletId) -> bool {
             if segment.kind != SegmentType::ChordRest {
                 continue;
             }
-            for (_, item) in segment.iter_elements() {
+            for (track, item) in segment.iter_elements() {
                 if let SegmentItem::ChordRest(chord_rest) = item {
                     if chord_rest.tuplet == Some(id) {
-                        elements.push(chord_rest);
+                        elements.push((chord_rest, score.staff(track.staff()).visible));
                     }
                 }
             }
@@ -55,13 +55,18 @@ pub(crate) fn has_bracket(score: &Score, id: TupletId) -> bool {
     if elements.len() < 2 {
         return false;
     }
-    // Élément non accord : crochet (`:212-214`).
-    if elements
-        .iter()
-        .any(|element| !matches!(element.kind, ChordRestKind::Chord(_)))
-    {
-        return true;
+    // Une portée masquée n'est pas disposée : `hasBracket` reste à sa valeur
+    // par défaut (faux), même pour un triolet avec silence. C'est ce qui
+    // sépare les 31 crochets de Douce nuit (portée visible Femmes) des 31
+    // triolets identiques sur portées masquées.
+    if elements.iter().all(|(_, visible)| !visible) {
+        return false;
     }
+    // Le C++ 5.0 compte le silence comme ligaturable (`:232-234`) : sur une
+    // portée visible, MuseScore 4.7.4 écrit le crochet.
+    // les triolets de Douce nuit (2 croches 16es + 1 silence) n'ont pas de
+    // crochet. Le C++ 5.0 (`tuplet.cpp:232-234`) traitait encore le silence
+    // comme un élément ligaturable, mais la référence 4.7.4 prévaut.
     // Sans ligature possible (durée plus longue qu'une croche), le C++ garde
     // aussi le crochet (`:221`, `:231-245`).
     let limit = if unreduced {
@@ -69,7 +74,7 @@ pub(crate) fn has_bracket(score: &Score, id: TupletId) -> bool {
     } else {
         Fraction::new(1, 8)
     };
-    !elements
-        .iter()
-        .all(|element| element.duration.ticks() <= limit)
+    !elements.iter().all(|(element, _)| {
+        matches!(element.kind, ChordRestKind::Chord(_)) && element.duration.ticks() <= limit
+    })
 }
