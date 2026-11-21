@@ -88,6 +88,9 @@ fn priority(kind: &EventKind) -> u8 {
     match kind {
         EventKind::NoteOff { .. } => 1,
         EventKind::NoteOn { .. } => 2,
+        // L'extinction de restrike est insérée après les attaques du même
+        // tick dans le multimap du C++ (`exportmidi.cpp:304`).
+        EventKind::NoteOffRestrike { .. } => 3,
         _ => 0,
     }
 }
@@ -145,6 +148,10 @@ fn kind(event: &Event) -> Result<TrackEventKind<'_>> {
             },
         },
         EventKind::NoteOff {
+            channel: event_channel,
+            key,
+        }
+        | EventKind::NoteOffRestrike {
             channel: event_channel,
             key,
         } => TrackEventKind::Midi {

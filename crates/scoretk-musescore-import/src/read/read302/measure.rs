@@ -537,6 +537,15 @@ fn read_breath(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
                 breath.placement = tables::placement(&child.trimmed_text());
                 explicit_placement = true;
             }
+            // `Breath::pause()` : durée en secondes, conservée en
+            // millisecondes. `PauseMap` l'utilise pour insérer des ticks.
+            "pause" => {
+                breath.pause_ms = child
+                    .trimmed_text()
+                    .parse::<f64>()
+                    .ok()
+                    .map(|seconds| (seconds.max(0.0) * 1000.0).round() as u32);
+            }
             _ => {}
         }
     }

@@ -171,6 +171,9 @@ pub struct Ornament {
     pub interval_below: Option<String>,
     /// Vrai si l'ornement est visible.
     pub visible: bool,
+    /// Vrai si l'ornement agit sur la lecture
+    /// (`Articulation::playArticulation()`, `<play>0</play>` pour le couper).
+    pub play: bool,
 }
 
 impl Ornament {
@@ -183,6 +186,7 @@ impl Ornament {
             interval_above: None,
             interval_below: None,
             visible: true,
+            play: true,
         }
     }
 }

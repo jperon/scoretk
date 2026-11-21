@@ -186,7 +186,16 @@ fn exporte_les_respirations() {
             start,
             Duration::new(DurationType::Whole),
         );
-        add_breath(&mut measure, &score, staff, Breath { kind, placement });
+        add_breath(
+            &mut measure,
+            &score,
+            staff,
+            Breath {
+                kind,
+                placement,
+                pause_ms: None,
+            },
+        );
         score.add_measure(measure);
     }
 

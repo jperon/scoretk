@@ -95,6 +95,14 @@ pub struct Measure {
     /// MuseScore recommence alors la numérotation affichée à 1 et réécrit les
     /// `<attributes>` de début de section (`<divisions>` compris).
     pub section_break_before: bool,
+    /// Durée de la pause du saut de section, en secondes
+    /// (`LayoutBreak::pause()`, propriété `Pid::PAUSE`, défaut
+    /// `Sid::sectionPause` = 3 s ; `layoutbreak.cpp:138-140, 209`).
+    ///
+    /// `None` quand le saut ne porte pas de `<pause>` explicite : la valeur par
+    /// défaut du style s'applique. Un fichier peut la mettre à `0` pour ne pas
+    /// interrompre la lecture (`Dominus_fredipi`, 3.x).
+    pub section_pause: Option<f64>,
     /// Un saut de section avec `startWithMeasureOne="0"` conserve la
     /// numérotation au lieu de la relancer à 1
     /// (`MeasureNumberStateHandler::updateForMeasure`, `exportmusicxml.cpp:8274-8286`).
@@ -137,6 +145,7 @@ impl Measure {
             repeat_count: 0,
             multi_measure_rest: None,
             section_break_before: false,
+            section_pause: None,
             section_keeps_numbering: false,
             measure_repeat: None,
             line_break: false,

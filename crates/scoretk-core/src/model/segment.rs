@@ -517,6 +517,13 @@ pub struct Breath {
     /// Placement vertical (`ChordRest::hasBreathMark` : la voix 0 est
     /// au-dessus, la voix 1 au-dessous).
     pub placement: Placement,
+    /// Durée de la pause en millisecondes (`Breath::pause()`,
+    /// `<pause>` en secondes, `engraving/dom/breath.cpp`).
+    ///
+    /// `None` quand le fichier n'en donne pas : la respiration ne rallonge
+    /// alors pas la lecture MIDI. Une césure de 0,5 s insère une mesure de
+    /// ticks dans `PauseMap` (`Vingt_danses`, `El_Choclo`).
+    pub pause_ms: Option<u32>,
 }
 
 /// Type de segment.

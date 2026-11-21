@@ -1209,6 +1209,7 @@ mod tests {
             SegmentItem::Breath(Breath {
                 kind: BreathType::CaesuraCurved,
                 placement: Placement::Below,
+                pause_ms: None,
             }),
         );
         score.measures[0].add_segment(segment);

@@ -44,6 +44,10 @@ pub(crate) fn read_articulations(element: &Element) -> Vec<Articulation> {
         .child("visible")
         .and_then(Element::int)
         .is_some_and(|value| value == 0);
+    let play = !element
+        .child("play")
+        .and_then(Element::int)
+        .is_some_and(|value| value == 0);
     let explicit_anchor = if let Some(anchor) = element.child("anchor").and_then(Element::int) {
         match anchor {
             1 => ArticulationAnchor::Up,
@@ -77,6 +81,7 @@ pub(crate) fn read_articulations(element: &Element) -> Vec<Articulation> {
             anchor: explicit_anchor,
             visible,
             up,
+            play,
         })
         .collect()
 }
@@ -99,6 +104,10 @@ pub(crate) fn read_ornament(element: &Element) -> Option<scoretk_core::model::Or
         .map(|child| placement(Some(child)));
     ornament.visible = !element
         .child("visible")
+        .and_then(Element::int)
+        .is_some_and(|value| value == 0);
+    ornament.play = !element
+        .child("play")
         .and_then(Element::int)
         .is_some_and(|value| value == 0);
     for accidental in element.children_named("Accidental") {

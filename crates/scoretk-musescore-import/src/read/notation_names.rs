@@ -247,10 +247,15 @@ pub(crate) fn ornament_from_articulation(articulation: &Articulation) -> Option<
     let ArticulationType::Other(name) = &articulation.kind else {
         return None;
     };
+    // Noms d'articulation 2.x (`articulationNames2SymId206`,
+    // `rw/read206/read206.cpp:615-642`) : `<subtype>trill</subtype>` y vaut
+    // `SymId::ornamentTrill`, et de même pour les autres ornements.
+    let name = legacy_ornament_name(name).unwrap_or(name);
     if !name.starts_with("ornament") {
         return None;
     }
     let mut ornament = Ornament::new(ornament_type(name));
+    ornament.play = articulation.play;
     // MuseScore 4.7 écrit un ornement invisible comme visible (`Notations`
     // ne tient pas compte de `<visible>` pour les ornements).
     let _ = articulation.visible;
@@ -260,4 +265,26 @@ pub(crate) fn ornament_from_articulation(articulation: &Articulation) -> Option<
         ArticulationAnchor::Auto => None,
     };
     Some(ornament)
+}
+
+/// Nom SMuFL correspondant à un ancien nom d'articulation 2.x
+/// (`articulationNames2SymId206`, `rw/read206/read206.cpp:615-642`).
+fn legacy_ornament_name(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "trill" => "ornamentTrill",
+        "prall" => "ornamentShortTrill",
+        "mordent" => "ornamentMordent",
+        "turn" => "ornamentTurn",
+        "reverseturn" => "ornamentTurnInverted",
+        "tremblement" => "ornamentTremblement",
+        "prallmordent" => "ornamentPrallMordent",
+        "upprall" => "ornamentUpPrall",
+        "upmordent" => "ornamentUpMordent",
+        "downmordent" => "ornamentDownMordent",
+        "pralldown" => "ornamentPrallDown",
+        "prallup" => "ornamentPrallUp",
+        "lineprall" => "ornamentLinePrall",
+        "schleifer" => "ornamentPrecompSlide",
+        _ => return None,
+    })
 }

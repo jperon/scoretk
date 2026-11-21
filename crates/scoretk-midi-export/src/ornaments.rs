@@ -96,17 +96,25 @@ fn step_pitch(note: &Note, steps: i32, fifths: i8) -> u8 {
 
 /// Évènements d'un trille sur `note` : `(décalage en ticks, hauteur, durée)`.
 ///
-/// `ticks` est la durée totale de l'accord (liaisons comprises), `beats` le
-/// tempo en battements par seconde au tick source. Le style est celui par
-/// défaut de MuseScore ; le style baroque (préfixe `{1,0}`) n'est pas encore
-/// modélisé dans le pivot.
+/// `span` est la durée **totale de la chaîne de liaisons**
+/// (`totalTiedNoteTicks`, `compatmidirender.cpp:1196-1204`) : elle détermine le
+/// nombre d'évènements, qui traversent donc les mesures liées. `chord_ticks`
+/// est la durée effective de l'accord qui porte l'ornement : c'est elle que
+/// `makeEvent` divise (`ontime / chord->actualTicks().ticks()`), si bien que
+/// chaque évènement tombe à `k × pas` ticks. `beats` est le tempo en
+/// battements par seconde au tick source. Le style est celui par défaut de
+/// MuseScore ; le style baroque (préfixe `{1,0}`) n'est pas encore modélisé
+/// dans le pivot.
 pub(crate) fn trill(
     note: &Note,
-    ticks: i64,
+    span: i64,
+    chord_ticks: i64,
+    graces_before: usize,
+    graces_after: usize,
     beats_per_second: f64,
     fifths: i8,
 ) -> Vec<(i64, u8, i64)> {
-    if ticks <= 0 {
+    if span <= 0 || chord_ticks <= 0 {
         return Vec::new();
     }
     let ticks_per_second = (beats_per_second * f64::from(DIVISION)).round() as i64;
@@ -120,44 +128,65 @@ pub(crate) fn trill(
         step = min_ticks;
     }
     if max_ticks > 0 && step > max_ticks {
-        step = max_ticks.max(min_ticks);
+        step = THIRTY_SECOND;
+        while step > max_ticks && step > 1 {
+            step /= 2;
+        }
+        if step < min_ticks {
+            step = min_ticks;
+        }
+    }
+    // Préfixe `{0,1}`, corps `{0,1}` et les places des ornements d'agrément
+    // fusionnés (`gnb + p + b + s + gna`, `compatmidirender.cpp:691-696`). Si
+    // le total ne tient pas dans la durée, `renderNoteArticulation` divise le
+    // pas par leur nombre (division entière), ou renonce. `graces_before` et
+    // `graces_after` ne produisent aucune note : l'excursion est seulement
+    // raccourcie d'autant (les places restent silencieuses en fin d'accord).
+    let graces = (graces_before + graces_after) as i64;
+    let nombre = 4 + graces;
+    if step * nombre > span {
+        if step == min_ticks {
+            return Vec::new();
+        }
+        step = span / nombre;
+        if step < min_ticks {
+            return Vec::new();
+        }
     }
     if step <= 0 {
         return Vec::new();
     }
 
-    // Préfixe `{0,1}`, corps `{0,1}` (style par défaut) et aucune note de
-    // grâce fusionnée : 2+2+n*2 évènements remplissent la durée.
-    let milles = 1000 * step / ticks;
-    if milles <= 0 || 2 * milles > 1000 {
-        return Vec::new();
-    }
-    let repeats = (1000 - 2 * milles) / (2 * milles);
-    let sustain = 1000 - milles * (2 + repeats * 2);
+    // Toutes les quantités ci-dessous sont en millièmes de `span`
+    // (`millespernote`, `space = 1000 * maxticks`).
+    let milles = 1000 * step;
+    let repeats = (1000 * span - milles * (graces + 2)) / (milles * 2);
+    let sustain = 1000 * span - milles * (graces + 2 + repeats * 2);
 
     let mut events = Vec::new();
     let mut ontime = 0i64;
-    let mut emit = |degre: i32, duree: i64, events: &mut Vec<(i64, u8, i64)>| {
-        events.push((
-            ticks * ontime / 1000,
-            step_pitch(note, degre, fifths),
-            duree,
-        ));
+    let mut emit = |degre: i32, duration: i64, events: &mut Vec<(i64, u8, i64)>| {
+        // `makeEvent` : `e.ontime = ontime / chord->actualTicks()` puis
+        // `on = tick1 + ticks * e.ontime / 1000` (`collectNote`).
+        let per_mille = ontime / chord_ticks;
+        let offset = chord_ticks * per_mille / 1000;
+        let length = chord_ticks * (duration / chord_ticks) / 1000 - 1;
+        if length > 0 {
+            events.push((offset, step_pitch(note, degre, fifths), length));
+        }
         ontime += milles;
     };
-    emit(0, milles * ticks / 1000 - 1, &mut events);
-    emit(1, milles * ticks / 1000 - 1, &mut events);
-    for _ in 0..repeats {
-        emit(0, milles * ticks / 1000 - 1, &mut events);
-        emit(1, milles * ticks / 1000 - 1, &mut events);
+    emit(0, milles, &mut events);
+    emit(1, milles, &mut events);
+    // `renderNoteArticulation` (`compatmidirender.cpp:868-881`) : toutes les
+    // répétitions du corps sauf la dernière, puis le corps sans sa dernière
+    // note, puis cette dernière note prolongée de `sustain`.
+    for _ in 0..repeats.saturating_sub(1) {
+        emit(0, milles, &mut events);
+        emit(1, milles, &mut events);
     }
-    if sustain > 0 {
-        events.push((
-            ticks * ontime / 1000,
-            step_pitch(note, 1, fifths),
-            sustain * ticks / 1000 - 1,
-        ));
-    }
+    emit(0, milles, &mut events);
+    emit(1, milles + sustain, &mut events);
     events
 }
 
@@ -175,9 +204,23 @@ mod tests {
         assert_eq!(step_pitch(&si, 1, 0), 72); // si → do
         let fis = Note::new(78, tpc::F_SHARP);
         assert_eq!(step_pitch(&fis, 1, 2), 79); // ré majeur : fa# → sol naturel
-        let events = trill(&note, i64::from(DIVISION), 2.0, 0);
+        let events = trill(&note, 480, 480, 0, 0, 2.0, 0);
         assert_eq!(events.len(), 8);
         assert_eq!(events[0], (0, 72, 59));
         assert_eq!(events[1], (60, 74, 59));
+    }
+
+    #[test]
+    fn trille_sur_une_chaine_de_liaisons() {
+        // Quatre blanches pointées liées (1440 ticks chacune) : `span` vaut
+        // 5760 et le trille remplit la chaîne entière, 96 évènements de 60
+        // ticks, comme MuseScore 4.7.4 (`totalTiedNoteTicks`).
+        let note = Note::new(72, tpc::C);
+        let events = trill(&note, 5760, 1440, 0, 0, 2.0, 0);
+        assert_eq!(events.len(), 96);
+        assert_eq!(events[0], (0, 72, 58));
+        assert_eq!(events[1], (59, 74, 58));
+        assert_eq!(events[2], (119, 72, 58));
+        assert_eq!(events[95], (5699, 74, 58));
     }
 }

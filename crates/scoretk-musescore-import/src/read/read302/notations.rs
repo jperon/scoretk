@@ -46,6 +46,10 @@ pub(crate) fn read_articulations(node: &Node) -> Vec<Articulation> {
     let Some(subtype) = node.child("subtype").map(Node::trimmed_text) else {
         return Vec::new();
     };
+    let play = node
+        .child("play")
+        .and_then(Node::int_text)
+        .is_none_or(|value| value != 0);
     // L'ancre du suffixe ne fixe pas `ArticulationAnchor` dans MuseScore :
     // elle donne seulement le sens du glyphe (`Articulation::up()`).
     let (_, suffix_anchor) = names::split_anchor(&subtype);
@@ -65,6 +69,7 @@ pub(crate) fn read_articulations(node: &Node) -> Vec<Articulation> {
             anchor: explicit_anchor,
             visible,
             up,
+            play,
         })
         .collect()
 }
@@ -134,6 +139,10 @@ pub(crate) fn read_ornament(node: &Node) -> Ornament {
         .map(|child| tables::placement(&child.trimmed_text()));
     ornament.visible = node
         .child("visible")
+        .and_then(Node::int_text)
+        .is_none_or(|value| value != 0);
+    ornament.play = node
+        .child("play")
         .and_then(Node::int_text)
         .is_none_or(|value| value != 0);
     for accidental in node.children_named("Accidental") {

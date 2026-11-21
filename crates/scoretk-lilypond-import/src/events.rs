@@ -1565,5 +1565,9 @@ pub(crate) fn arpeggio_object(kind: ArpeggioType) -> Arpeggio {
 
 /// Construit la respiration d'un accord.
 pub(crate) fn breath_object(kind: BreathType, placement: Placement) -> Breath {
-    Breath { kind, placement }
+    Breath {
+        kind,
+        placement,
+        pause_ms: None,
+    }
 }

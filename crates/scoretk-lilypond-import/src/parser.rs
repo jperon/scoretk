@@ -463,8 +463,12 @@ impl<'a> Parser<'a> {
             }
             Kind::Command if token.text == "language" => {
                 self.position += 1;
+                // LilyPond accepte le nom entre guillemets (`\language
+                // "deutsch"`, `ly/music-functions-init.ly:982-993`) ou comme
+                // simple mot (`\language deutsch`, écrit par certains
+                // fichiers, dont `Lassus_Alleluja`).
                 if let Some(Token {
-                    kind: Kind::Str,
+                    kind: Kind::Str | Kind::Word,
                     text,
                     ..
                 }) = self.bump()
@@ -2479,8 +2483,9 @@ impl<'a> Parser<'a> {
             "language" => {
                 // `\language` vaut aussi au milieu de la musique, comme le
                 // fichier de langue inclus par `\include "italiano.ly"`.
+                // Le nom peut être un mot, comme au niveau du document.
                 if let Some(Token {
-                    kind: Kind::Str,
+                    kind: Kind::Str | Kind::Word,
                     text,
                     ..
                 }) = self.bump()

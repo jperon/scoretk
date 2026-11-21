@@ -341,6 +341,7 @@ fn parse_articulations(element: &Element, notations_visible: bool, parsed: &mut 
                     } else {
                         Placement::Above
                     },
+                    pause_ms: None,
                 });
                 continue;
             }
@@ -359,6 +360,7 @@ fn parse_articulations(element: &Element, notations_visible: bool, parsed: &mut 
                     } else {
                         Placement::Above
                     },
+                    pause_ms: None,
                 });
                 continue;
             }

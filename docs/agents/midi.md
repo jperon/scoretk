@@ -134,16 +134,16 @@ remain out of scope, for lack of information in the model:
   the volta ending before it (`repeatlist.cpp:581-588` and `:525-543`):
   a volta overrunning the `endRepeat` ends on that measure, as in
   the C++. Covered by `repeat_list::tests::volta_debordant_le_repeat_end`.
-- **Fermata and breath pauses**: none is applied, which is
-  faithful. `engraving/compat/midi/` mentions no fermata (only
-  `CTRL_BREATH` appears, `compatmidirender.cpp:55`), and
-  `Breath::BREATH_LIST` (`breath.cpp:33-44`) is used only for `isCaesura()`
-  (`breath.cpp:64-74`): caesura seconds live in the `PausesMap`
-  (`tempotimeline.h:33`) filled by the *playback* module, absent from
-  `ref-musescore/`. `PauseMap` therefore handles only section jumps (default
-  pause of 3 s). Kept by
-  `pause_map::tests::points_d_orgue_et_respirations_n_allongent_pas_le_rendu`,
-  to be reconfirmed on 4.7.4 if the *playback* module becomes available.
+- **Fermata and breath pauses**: a fermata does not move the tick grid in
+  the 4.7.4 MIDI export (its `timeStretch` is a tempo change, not inserted
+  ticks; the reduced `fermata_no_stretch` test still holds). A breath **does**
+  when it carries `<pause>`: `Score::rebuildTempoAndTimeSigMaps`
+  (`score.cpp:531-545`) puts the seconds in the tempomap and `PauseMap`
+  inserts `quarterNotesPerMeasure` ticks at `quarterNotesPerMeasure / pause`
+  (see the follow-up section below; `El_Choclo` has a 0.5 s caesura). A breath
+  without `<pause>` (the reduced test) still adds nothing. The old reading
+  that all breath pauses were absent came from the unported playback module;
+  the 4.7.4 sources show the tempomap path.
 - **Gradual dynamics embedded in dynamics** (`fp`, `sfz`…): the velocity
   decrease after the attack is not modelled; the initial velocity is
   correct.
@@ -2646,16 +2646,16 @@ remain out of scope, for lack of information in the model:
   the volta ending before it (`repeatlist.cpp:581-588` and `:525-543`):
   a volta overrunning the `endRepeat` ends on that measure, as in
   the C++. Covered by `repeat_list::tests::volta_debordant_le_repeat_end`.
-- **Fermata and breath pauses**: none is applied, which is
-  faithful. `engraving/compat/midi/` mentions no fermata (only
-  `CTRL_BREATH` appears, `compatmidirender.cpp:55`), and
-  `Breath::BREATH_LIST` (`breath.cpp:33-44`) is used only for `isCaesura()`
-  (`breath.cpp:64-74`): caesura seconds live in the `PausesMap`
-  (`tempotimeline.h:33`) filled by the *playback* module, absent from
-  `ref-musescore/`. `PauseMap` therefore handles only section jumps (default
-  pause of 3 s). Kept by
-  `pause_map::tests::points_d_orgue_et_respirations_n_allongent_pas_le_rendu`,
-  to be reconfirmed on 4.7.4 if the *playback* module becomes available.
+- **Fermata and breath pauses**: a fermata does not move the tick grid in
+  the 4.7.4 MIDI export (its `timeStretch` is a tempo change, not inserted
+  ticks; the reduced `fermata_no_stretch` test still holds). A breath **does**
+  when it carries `<pause>`: `Score::rebuildTempoAndTimeSigMaps`
+  (`score.cpp:531-545`) puts the seconds in the tempomap and `PauseMap`
+  inserts `quarterNotesPerMeasure` ticks at `quarterNotesPerMeasure / pause`
+  (see the follow-up section below; `El_Choclo` has a 0.5 s caesura). A breath
+  without `<pause>` (the reduced test) still adds nothing. The old reading
+  that all breath pauses were absent came from the unported playback module;
+  the 4.7.4 sources show the tempomap path.
 - **Gradual dynamics embedded in dynamics** (`fp`, `sfz`…): the velocity
   decrease after the attack is not modelled; the initial velocity is
   correct.
@@ -4997,3 +4997,382 @@ again. Documented as an open cause, not enabled.
 - **Open**: `assignVoices` tuplet part, tuplet-aware `toDurationList` default,
   `human_tempo` beat tracker, `02_02_Segura` voice tie chains, `preserveLegato`
   on 0.01-quarter overlaps (not the cause of `tuplet_off_time_other_bar2`).
+
+## MIDI export: status
+
+Campaign of 2026-11-21 on branch `midi-export`, measured at HEAD before the
+first change (**baseline**) and after the four causes below (**current**).
+The oracle is the existing writer oracle, unchanged:
+`scripts/oracle/midi/mesure.py` (MIDI ↔ MIDI; pitch, onset, duration and
+track; Q16 grid, ±1/16-quarter tolerance) through the same
+`timeout 10 prlimit --as=2000000000` bound. Unsupported inputs are recorded as
+failures, not as silent zeros; the only remaining failure is the MuseScore
+2.06 `.mscz` file (`Canon_in_D`, code 1) that the reader does not accept.
+
+Lots and references (manifests outside the repository):
+
+* **`ecriture_mscz` — 174 `.mscz` from `~/Musique` vs MuseScore 4.7.4.**
+  The references are produced by `scripts/oracle/midi/mscz-refs.sh <out>`
+  (new, reproducible: parallel headless export, out-of-repository cache keyed
+  by a hash of the source path, `done.txt` written at the end) and consumed as
+  a two-column manifest.
+* **`ecriture_ly` — 1 020 `.ly` vs LilyPond's own MIDI** (`lots.sh`
+  pairs each `.midi` with its `.ly`).
+* **`ecriture_mscz_corpus` — the 21 versioned corpus files**
+  (`tests/corpus/midi/*.ref.mid`, MuseScore 4.7.4).
+
+```sh
+nix develop -c cargo build -p scoretk-cli
+scripts/oracle/midi/mscz-refs.sh /tmp/midi-mscz-refs
+scripts/oracle/midi/lots.sh /tmp/midi-ws-final
+nix-shell -p python3Packages.mido --run "python3 scripts/oracle/midi/mesure.py \
+  --out /tmp/midi-ws-final --scoretk target/debug/scoretk \
+  --ecriture ecriture_mscz=/tmp/midi-mscz-refs/manifest.tsv \
+  --ecriture ecriture_ly=/tmp/midi-ws-final/manifestes/ecriture_ly.txt"
+```
+
+### Results
+
+| Lot | Files | Exact baseline → current | N1 % | N2 % | N2d % | Avg size |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ecriture_mscz` | 174 (173 read) | 41 (23.6 %) → **42 (24.1 %)** | 99.71 → **99.89** | 94.97 → **95.15** | 89.40 → **89.62** | 18 201 → 18 217 B |
+| `ecriture_ly` | 1 020 | 706 (69.2 %) → 700 (68.6 %) | 96.32 → 96.32 | 93.14 → 93.14 | 92.13 → 92.04 | 1 806 → 1 805 B |
+| `ecriture_mscz_corpus` | 21 | 17 → 17 (four empty references) | 100.00 | 100.00 | 100.00 | 248 B |
+
+The `.mscz` lot gains **698 N2 matches and 819 N2d matches**, with 13 files
+gaining attacks and **no file losing N1, N2 or N2d**. The `.ly` exact count
+drops by 6 and N2d by 115 matches, all for one explained reason (the
+acciaccatura divergence, below); N1 and N2 are unchanged on all 1 020 files.
+The 21 corpus files are unchanged at 21/21 identical (`corpus_midi`).
+
+Output size is measured against the reference of each lot. scoretk's MIDI is
+smaller than both alternatives:
+
+| Lot | scoretk total | Reference total | Ratio (total / median file) | Avg scoretk / avg reference |
+| --- | ---: | ---: | ---: | ---: |
+| `ecriture_mscz` (173) | 3 169 709 B | 5 122 359 B (MuseScore) | **0.619 / 0.636** | 18 322 / 29 609 B |
+| `ecriture_ly` (1 020) | 1 841 594 B | 2 121 359 B (LilyPond) | **0.868 / 0.862** | 1 805 / 2 079 B |
+
+The four fixes add no empty or padded events: the only size movement is the
+trill events that MuseScore also writes (Under_Paris +142 notes, Hallelujah
++117, the nine Minuit chrétien files +43 each), while the 2.x anchoring fix
+removes the 122 notes that the combined reader/writer change had produced.
+Maximum conversion time is 6.64 s with the debug CLI (Vingt_danses); an
+intermediate run on a loaded machine put four files over the 10 s bound, none
+of which reproduces in isolation.
+
+### Cause 1 — acciaccatura shortens the preceding chord
+
+`CompatMidiRender::adjustTrailtime` (`engraving/compat/midi/compatmidirender.cpp:1035-1078`,
+called from `createPlayEvents` at `:169`) adds
+`min(first acciaccatura ticks, current ticks / 2)` to the current chord's
+`trailtime` when the next chord carries an acciaccatura; `renderChord`
+(`:263`) then applies `1000 - trailtime` to the note event. The writer had no
+such look-ahead, so the note before an acciaccatura kept its full length.
+
+Fix: `render.rs::acciaccatura_trail`, with the next chord of the track found
+as `Navigation::nextChordRest` (skip grace, `skipGrace = true`) plus the
+`nextMeasure->first()` fallback (`:126-136`). `tie_length` applies the same
+adjustment to the tail of a tied chain. Reduced test
+`tests/acciaccatura_trail.rs` (quarter, acciaccatura, quarters) expects
+MuseScore 4.7.4's `72` at 0–239 instead of 0–479. Measured: **22 `.mscz`
+files improve N2d (+81 matches), one becomes exact, no loss.**
+
+On `ecriture_ly`, 37 files lose N2d matches (6 stop being exact, N2d −115):
+LilyPond does not shorten the note before an acciaccatura, while MuseScore
+4.7.4 does (verified on the reduced score exported by 4.7.4). The reference of
+that lot is LilyPond's MIDI, so this is an expected divergence between the two
+playback models, not a regression; the target remains MuseScore 4.7.4.
+
+### Cause 2 — a trill fills the whole tied chain
+
+`renderNoteArticulation` (`compatmidirender.cpp:660-810`) fills
+`totalTiedNoteTicks(note)` (`:1196-1204`), so a trill on a tied note crosses
+every measure of the tie. The port bounded the excursion to one chord
+(≈24 events instead of 96 on four tied dotted halves).
+
+Fix: `ornaments.rs::trill` now takes the tied span for the number of events
+and the chord's own duration for the per-event conversion, exactly as
+`makeEvent` (`ontime / chord->actualTicks()`) and `collectNote`
+(`ticks * e.ontime() / 1000`) do; the step is reduced to `span / 4` when four
+events do not fit, then refused below the minimum frequency, as upstream.
+`render.rs::tied_span_ticks` walks `tie_forward`. Reduced tests:
+`ornaments::tests::trille_sur_une_chaine_de_liaisons` (96 events at 0, 59,
+119 … 5699) and the note length is now `off = on + len - 1` (58 ticks instead
+of 59). Measured: **Under_Paris 89.26 → 100 % N2 (+142), Missa in Es
+Benedictus +45, Gloria +6, Credo +1; no loss.**
+
+### Cause 3 — trill spanners were not rendered
+
+A `<Spanner type="Trill">` is looked up by
+`CompatMidiRender::findFirstTrill` (`compatmidirender.cpp:1010-1030`) and
+replaces the sustained note by the excursion
+(`createPlayEvents`, `:480-482`; `createTrill`, `:913-927`). The model already
+stores these spans (2.x/3.x/4.x readers); the MIDI writer ignored them.
+
+Fix: `render.rs::trill_spans` (per staff; `play` honoured; the chord carrying
+the end anchor is excluded, matching `findOverlapping(tick + 1, end-1)`;
+`TRILL_LINE` and `PRALLPRALL_LINE`, the two types mapped to `ornamentTrill`,
+are rendered). Reduced test `tests/trill_spanner.rs` (two half notes, trill
+from the first to the second: 16 attacks then the second half note at 960).
+Measured: **Hallelujah N2 4 204 → 4 321 (+117) and the nine Minuit chrétien
+files +43 each.**
+
+### Cause 4 — 2.x trill start is anchored at the current tick
+
+`readMeasure206` (`src/engraving/rw/read206/read206.cpp:2818-2837` in v4.7.4)
+sets a measure-level `<Trill id>` at `ctx.tick()`, i.e. after the chords
+already read. `read206/transform.rs` anchored it on the measure start, so the
+trill covered the preceding chords. It now uses the same `SpanKey::Chord`
+anchoring as the ottava (current chord ordinal), and the test
+`trille_2x_ancre_au_tick_courant` in `read206_corpus.rs` asserts start +1/2
+and end +3/4 in a 4/4 measure. This is what removes the spurious trill notes
+on Hallelujah: **4 443 → 4 321 produced notes (exactly the reference) and N2d
+4 255 → 4 277**; no N2 change (the extra chords were already matched by the
+harmonics rule, but they were not in the reference).
+
+### Remaining causes (measured, not fixed)
+
+The 28 files that still lose N2 concentrate almost all the remaining 18 333
+lost attacks:
+
+| File | Lost N2 | Cause already identified |
+| --- | ---: | --- |
+| `Vingt_danses_enfantines_pour_piano.mscz` | 16 114 | 2.x D.S. jump: one-quarter gap at tick 1507 (section-pause tempo) — see the pause-map sections above |
+| `Vivaldi … 06-Dominus_fredipi.mscz` | 897 | trill auxiliary spelling + unmodelled fermata time stretch |
+| `El_Choclo.mscz` | 775 | same D.S./fine jump gap |
+| `Dieu_seul_suffit_-_Du_Jonchay.mscz` | 102 | chord-symbol voicing differs from 4.7.4's `RealizedHarmony` default style |
+| `Magnificat__Prt.mscz` | 61 | attack offsets after a repeat/pause boundary |
+| `Triumphal_March`, `Autumn_Leaves`, `Czardas`, … | ≤48 each | octave-class pitch choices (accordion registration / 2.x ottava ends) |
+
+The `.ly` lot's dominant flags remain `notes_supp` (198 files), `duree_seule`
+(113), `attaque_decalee` (81) and `octave` (51); most are LilyPond-vs-MuseScore
+playback differences already documented in the earlier sections, and the
+`notes_supp` class includes chord symbols that LilyPond does not realise.
+
+### Follow-up campaign (2026-11-21): section and breath pauses, muted ornaments
+
+Rebased on master (`7f68a884`), same oracle, same two lots
+(`ecriture_mscz` = 173 readable `.mscz` against the MuseScore 4.7.4
+references produced by `mscz-refs.sh`, `ecriture_ly` = 1 020 `.ly` against
+LilyPond) and the same 10 s/2 GB bounds. The baseline of this campaign is the
+table above (N2 95.15 %), not the older survey.
+
+| Lot | Exact | N1 % | N2 % | N2d % | Max time |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `ecriture_mscz` | 42 → **43 (24.9 %)** | 99.89 → 99.89 | 95.15 → **98.84** | 89.62 → **93.42** | 6.04 s |
+| `ecriture_ly` | 700 → 700 | 96.32 | 93.14 | 92.04 | 0.45 s |
+| `ecriture_mscz_corpus` | 17 → 17 | 100.00 | 100.00 | 100.00 | — |
+
+Four files gain attacks, **none loses** one; `Magnificat__Prt` becomes exact.
+Output size stays at **0.618** of MuseScore's (median per file 0.636). The
+`.ly` lot is byte-for-byte unchanged in its measurements: none of these
+constructs occurs there in a way that departs from LilyPond.
+
+#### Cause 5 — the section pause belongs at the jump, not at the next raw measure
+
+`PauseMap::calculate` (`engraving/compat/midi/pausemap.cpp:47-90`) receives a
+tempomap pause list built by `Score::rebuildTempoAndTimeSigMaps`
+(`engraving/dom/score.cpp:522-530`): a pause is stored at the **raw tick of
+the measure that follows the break**, and each `RepeatSegment` maps it with
+`s->tick + (s->utick - s->tick)`, scanning `[tick, endTick]` with the end
+included (`ee = lower_bound(endTick + 1)`); a pause at the first tick of a
+segment is skipped because the previous segment already emitted it.
+
+The port placed the pause at the opening of the segment that *contains* the
+marked measure. For `Vingt_danses` the D.S. measure (474) carries the break,
+so the marked measure is 475; the jump from 474 lands on segno4 (measure 346),
+and the segment containing 475 only starts much later. The reference inserts
+the pause at the end of the jump-source segment instead (tick 722880, 480
+ticks at 20 BPM, the 1/4 pickup's length), and the port was 240 measures late.
+
+Port: `pause_map.rs::raw_pauses` (source ticks) + `unfold_pauses` (per
+segment, end included, skip at the segment's first tick); the pause tick is
+carried in `TempoPoint::pause_source` so `quarter_notes_at` reads the raw
+measure. Reduced test `pause_du_saut_au_moment_du_saut` (six 4/4 measures, a
+jump whose measure carries a section break: one 1920-tick pause at 80 BPM at
+7680, as exported by MuseScore 4.7.4 for the reduced `jump.mscx`).
+
+**Measured: `Vingt_danses` N2 10 363 → 22 558 (39.14 → 85.20 %), N2d 9 682 →
+22 212; no loss.** The remaining 3 919 lost attacks in that file start after
+quarter 2 193 and are trill/ornament contexts (32nd excursions in the
+reference, a sustained note in ours), not pauses.
+
+#### Cause 6 — the per-break and per-breath `<pause>` durations
+
+`LayoutBreak::pause()` (`engraving/dom/layoutbreak.cpp:138-140`, property
+`Pid::PAUSE`, default `Sid::sectionPause` = 3 s) is stored per break, and
+`Breath::pause()` (`score.cpp:531-545`) per breath. Both were ignored: every
+section break inserted a 3 s pause and every breath nothing.
+
+* `Measure::section_pause: Option<f64>` (seconds; `None` = style default) and
+  `Breath::pause_ms: Option<u32>` (milliseconds) are now read from `<pause>`
+  by the 2.x/3.x (`read302`) and 4.x (`read4xx`) readers.
+* `raw_pauses` skips a zero pause and merges breath pauses at their segment
+  tick (longest breath wins, as `score.cpp` does); `PauseMap` inserts
+  `quarterNotesPerMeasure` ticks at `quarterNotesPerMeasure / pause`.
+
+Reduced tests: `saut_de_section_2x_garde_sa_pause` and
+`respiration_2x_garde_sa_pause` (readers);
+`pause_de_section_nulle_n_insere_rien` and
+`respiration_avec_pause_insere_une_mesure_de_ticks` (`PauseMap`, 720 ticks at
+180 BPM for a 0.5 s caesura before a 3/8 measure).
+
+**Measured: `Dominus_fredipi` N2 616 → 1 513 (+897; the file writes
+`<pause>0</pause>` on its only section break), `El_Choclo` 386 → 1 161
+(+775; 0.5 s caesura before the 3/8 pickup), `Magnificat__Prt` 694 → 755 and
+becomes exact. No loss.**
+
+#### Cause 7 — a muted ornament still played
+
+`Articulation::playArticulation()` is read by `renderArticulation`
+(`compatmidirender.cpp:483-490`): an articulation with `<play>0</play>` stays
+engraved but is silent. The port created an `Ornament` from the articulation
+name and dropped the flag, so it rendered the trill.
+
+`Articulation` and `Ornament` now carry `play`; the 3.x/4.x readers parse
+`<play>` and `ornament_from_articulation` forwards it; the MIDI writer
+requires `ornament.play` before replacing a note by the trill excursion.
+Reduced test `trill_play` (a muted trilled half note then a normal half note:
+two notes, the reference of the same reduced `.mscx` exported by 4.7.4).
+
+**Measured: `Dominus_fredipi` produced 1 548 notes instead of 1 513; it now
+matches the reference exactly and N2d goes from 1 503 to 1 508 (99.67 %).**
+
+### Final status (2026-11-21, end of the MIDI-export campaign)
+
+Same oracle, same manifests, same 10 s/2 GB bounds. The campaign started after
+the previous merge at 43/173 exact, N1 99.89 %, N2 98.84 %, N2d 93.42 % on
+`ecriture_mscz`, and 700/1 020 exact, N1 96.32 %, N2 93.14 %, N2d 92.04 % on
+`ecriture_ly`.
+
+| Lot | Files | Exact | N1 % | N2 % | N2d % | Avg size | Max time |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `.mscz` vs MuseScore 4.7.4 MIDI | 173 read | **141 (81.5 %)** | **99.93** | **99.91** | **99.09** | 18 328 B | 6.86 s |
+| `.ly` vs LilyPond's own MIDI | 1 020 | 661 (64.8 %) | 96.34 | 93.38 | 90.86 | 1 806 B | 0.95 s |
+| corpus vs MuseScore `.ref.mid` | 21 | 17 (4 empty refs) | 100.00 | 100.00 | 100.00 | 248 B | — |
+
+The `.mscz` lot goes from 43 to **141 exact files**, with **98 files gaining
+and no file losing** an attack, a duration or an exact flag. N2 moves from
+377 706 to 377 782 matched attacks (99.89 → 99.91 %) and N2d from 357 329 to
+374 675 (94.50 → 99.09 %). Two files (`Vivaldi … 05 Juravit`, `… 07
+Judicabit`) exceeded the 10 s bound under machine load during the batch run
+but complete in isolation (118 s bound) at 100 % N1/N2/N2d; the batch
+aggregate above includes them. `Canon_in_D` (MuseScore 1.14) remains the only
+unsupported input.
+
+**Size**: `.mscz` output **3 113 879 B** against MuseScore's **5 121 966 B**
+(ratio **0.608**, median file 0.636); `.ly` output **1 841 696 B** against
+LilyPond's **2 121 207 B** (ratio **0.868**, median 0.863). No padding.
+
+#### Cause 11 — same-pitch overlaps on a channel: `fixupMIDI`
+
+The task that opened this pass named trill durations (`Minuit chrétien` ×9,
+639 N2d). Reducing the file note by note shows the **trills are already
+identical** to the reference (same 32nd excursions, same lengths); the N2d
+class was the organ's two staves playing the same pitch on one channel.
+`EventsHolder::fixupMIDI` (`engraving/compat/midi/event.cpp:263-306`, called
+`compatmidirenderinternal.cpp:1570`, applied at `exportmidi.cpp:304-323`)
+counts playing notes by (internal channel, pitch): a new attack of a pitch
+already sounding gets `discard = previous staff + 1`, the exporter writes an
+immediate note-off at that tick on the previous track (restrike), and the
+previous note's own note-off is dropped or hoisted to the track of the last
+attack. `fixup.rs` ports this, with `EventKind::NoteOffRestrike` written after
+the attacks of the same tick (the multimap insertion order) and a reduced
+test `fixup_midi` (two staff organ, unison 55: 0-length note on the first
+track, 960-tick note on the second).
+
+The first version indexed by **output channel**; MuseScore indexes by
+**internal channel of the part**, and two parts may share an output channel.
+That over-merged the nine “Ô Notre Dame” extracts (71 durations each); the
+writer now passes the part of each staff, so only unisons of two staves of the
+same part (organ, piano) merge. Measured: `Minuit chrétien` N2d 4 602 → 5 227
+(99.73 %), the nine extracts exact again, and **98 `.mscz` files become
+exact** with no loss.
+
+On `ecriture_ly`, 39 files lose their exact flag (N1/N2 unchanged, N2 **+0.24**
+points, N2d −1.18): LilyPond keeps voices on separate tracks and does not
+restrike a repeated pitch, while MuseScore merges unisons of one part. This is
+the same MuseScore-vs-LilyPond playback convention documented for other
+constructs; the writer follows MuseScore, the reference of the `.mscz` lot.
+
+#### Cause 12 — unquoted `\language` (LilyPond reader)
+
+`Lassus_Alleluja._Dies_sanctificatus.ly` writes `\language deutsch` without
+quotes. LilyPond defines `\language` as a music function taking a string
+(`ly/music-functions-init.ly:982-993`) but its parser accepts the bare word;
+the reader only accepted `Kind::Str`, silently kept Dutch, so `h` was unknown,
+`b` was B natural and every pitch of the motet was wrong. Both `\language`
+handlers (document level and inside music) now accept `Kind::Word` too.
+Reduced test `language_sans_guillemets` (`h'4 b'4` → 71, 70). Measured:
+**N1 674 → 707 (100 %), N2 384 → 707 (100 %), N2d 341 → 669.**
+
+#### Cause 13 — chromatic glissandos
+
+`Autumn_Leaves` (38 lost attacks) and `Czardas` (36) are `Glissando` runs, not
+accordion registers: the reference plays every chromatic step in the last
+third of the chord. `renderGlissando` (`compatmidirender.cpp:646-658`) calls
+`renderNoteArticulation` with `Glissando::pitchSteps`
+(`engraving/dom/glissando.cpp:162-248`, default style `CHROMATIC`),
+`requestedTicksPerNote = DIVISION`, `fastestFreq = 16`, `slowestFreq = 0` and
+`glissandoPart = 0.33` (`:795-870`); the linear `EaseInOut::timeList`
+(`dom/easeInOut.cpp:140-154`) places the run and the last note holds to the
+end of the chord. New `glissando.rs`; `render.rs` replaces the starting note
+(the highest note of the chord, the only one the model can identify without
+the note link) by the run. Reduced test `glissando` (quarter 64 → 81:
+65…80 at 1278…1426, 81 at 1920, values from MuseScore 4.7.4). Measured:
+**Autumn_Leaves N1/N2 894 → 932 (100 %), Czardas +30 attacks, N2d +31.**
+`Triumphal_March` has no glissando; its remaining 48 attacks are chord-symbol
+voicing.
+
+#### The three other `.ly` files named by the ranking
+
+These are **not** reader defects; each has a separate playback `\score`:
+
+* `LaMouetteGrise`: the first (engraved) score is one staff; the `\midi`
+  score lays the same music in **three parallel voices** (`{ \voiceI \voiceII
+  … }` in three braces) and repeats it. Our output follows the engraved score
+  (444 notes); the paired `.midi` has 532.
+* `gaudete`: the last score is `\unfoldRepeats` with `\repeat volta 4`
+  around every voice and a different staff set; our pivot is the first
+  (PianoStaff) score. 110 produced notes against 440.
+* `UztaiDantza`: the `\midi` score is `\transpose c f` plus extra
+  `\unfoldRepeats` material, the same class as the documented
+  `playback_transposition` limit (354 against 392 notes).
+
+`Veni, Creator Spiritus` (2 977) and `Laudate_pueri` (971) remain the two
+**bad LilyPond references** documented in the previous status: our `.ly`
+matches MuseScore's export of the sibling `.mscz` at 100 % and 99.94 % N2
+respectively, while the paired `.midi` files are stale (3 134 notes vs 249;
+organ tracks delayed by the whole vocal duration).
+
+#### Remaining classes and their reason
+
+`ecriture_mscz` — N2 loss 344 attacks in total:
+
+| File / class | Lost N2 | Reason |
+| --- | ---: | --- |
+| `Dieu_seul_suffit_-_Du_Jonchay` | 102 | chord-symbol realisation (`<Harmony>` voicing differs from 4.7.4's `RealizedHarmony` default style) |
+| `Triumphal_March` | 48 | same chord-symbol voicing; the file has 95 `<Harmony>` and no glissando |
+| nine `Minuit chrétien` extracts | 14 each | residual trill auxiliary spelling |
+| `Angels_Carol` | 19 | attack offsets around a repeat boundary |
+| all others | ≤ 8 each | individual cases |
+
+N2d loss 3 451 in total, concentrated in accordion files with `<Harmony>` or
+register-dependent articulations: `Czardas` 684, `Marusia` 413, `ZORBA THE
+GREEK` 349, `La Partida` 318, `El_Choclo` 251, `Vingt_danses` 249,
+`Triumphal` 237, `Adios Muchachos` 186. Their attacks and pitches match
+(N2 = 100 % except `Czardas` 99.72); only durations differ, so the next
+writer cause is the chord-symbol/articulation duration, not the note grid.
+
+`ecriture_ly` — N2 loss 9 025 in total; the top rows are the reference and
+convention cases above (`Veni Creator` 2 977, `Ackermans` 1 071 — 3-pass volta
+convention, `Laudate` 971, `MakilTxikiak` 565, `LaMouetteGrise` 434,
+`gaudete` 330, `UztaiDantza` 267). The first real remaining reader cases are
+`Ave_Verum…Saint-Saëns` (473, attack shifts), `MarieJeanneGabrielle` (228,
+octave class) and `franck_ave_maria_D-a4` (116, attack shifts and extra
+notes).
+
+No mscz file regressed: 98 exact gains, 0 exact loss, 0 N1/N2/N2d loss; the 21
+corpus files stay at 21/21 (`corpus_midi`), including the four with empty
+references.

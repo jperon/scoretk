@@ -292,12 +292,23 @@ fn adapt_measure(
                 }
             }
             "Trill" => {
-                // `Read206::readTrill206` (`read206.cpp:2362-2376`) puis
-                // `readMeasure206` (`:2871-2892`) : le `<Trill id>` est fermé
-                // par un `<endSpanner id>` porté par une mesure suivante.
+                // `Read206::readTrill206` (`read206.cpp:2307-2330`) puis
+                // `readMeasure206` (`:2818-2837`) : `<Trill id>` est posé à
+                // `ctx.tick()`, c'est-à-dire au tick courant, et refermé par un
+                // `<endSpanner id>`. Un trille qui suit des accords dans la
+                // mesure commence donc sur le prochain accord, pas au début de
+                // la mesure.
                 if let Some(id) = node.attr_i32("id") {
                     let mut link = SpannerLink::new(id, SpanFamily::Trill);
-                    link.start = Some(measure_key(index, staff));
+                    link.start = Some(if chord_ordinals[voice] == 0 {
+                        measure_key(index, staff)
+                    } else {
+                        SpanKey::Chord {
+                            measure: index,
+                            track: ((staff * 4) + voice) as u32,
+                            ordinal: chord_ordinals[voice],
+                        }
+                    });
                     link.trill_type = node
                         .child("subtype")
                         .map(|child| notation_names::trill_type(&child.trimmed_text()));

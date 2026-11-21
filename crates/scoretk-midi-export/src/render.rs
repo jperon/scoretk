@@ -38,10 +38,12 @@ use std::collections::BTreeMap;
 use scoretk_core::model::{
     Annotation, ArticulationType, Chord, ChordRest, ChordRestKind, Fraction, GraceType, Instrument,
     KeyMode, KeySig, LyricsSyllabic, Measure, Note, OrnamentType, OttavaType, PartId, Score,
-    SegmentItem, SegmentType, SpannerType, StaffId, TimeSig, Track, TremoloKind, VeloType, VOICES,
+    SegmentItem, SegmentType, SpannerNotation, SpannerType, StaffId, TimeSig, Track, TremoloKind,
+    TrillType, VeloType, VOICES,
 };
 
 use super::error::Result;
+use super::glissando;
 use super::harmony;
 use super::ornaments;
 use super::pause_map::PauseMap;
@@ -97,6 +99,13 @@ pub(crate) enum EventKind {
         channel: u8,
         key: u8,
     },
+    /// Extinction immédiate insérée par `fixupMIDI` sur la piste de la note
+    /// précédente (`exportmidi.cpp:304-308`) ; écrite **après** les attaques
+    /// du même tick.
+    NoteOffRestrike {
+        channel: u8,
+        key: u8,
+    },
 }
 
 /// Piste MIDI.
@@ -131,6 +140,8 @@ pub(crate) fn render(
     let channels = channels(score);
     let velocities = build_velocities(score);
     let pitch_offsets = pitch_offsets(score);
+    let trills = trill_spans(score);
+    let glissandos = glissando_spans(score);
     let time_sigs = time_signature_events(score);
     let key_sigs = key_signature_events(score);
     let pause_map = PauseMap::build(score, repeat_list, &time_sigs);
@@ -314,6 +325,8 @@ pub(crate) fn render(
                     &pause_map,
                     &velocities,
                     offsets,
+                    &trills[staff_index],
+                    &glissandos[staff_index],
                     &mut notes,
                     &mut prev_chords,
                     &mut timemap,
@@ -322,6 +335,15 @@ pub(crate) fn render(
         }
         track.events.extend(notes);
     }
+
+    // `events.fixupMIDI()` (`compatmidirenderinternal.cpp:1570`) : fusionne
+    // les unissons d'un même canal interne (partie) avant l'écriture.
+    let part_of_track: Vec<usize> = score
+        .staves
+        .iter()
+        .map(|staff| staff.part.index())
+        .collect();
+    super::fixup::fixup_midi(&mut performance, &part_of_track);
 
     Ok(Rendered {
         performance,
@@ -544,6 +566,100 @@ fn pitch_offsets(score: &Score) -> Vec<BTreeMap<i64, i32>> {
     result
 }
 
+/// Trille en spanner qui agit sur le rendu MIDI.
+struct TrillSpan {
+    /// Tick source du début du spanner.
+    start: i64,
+    /// Tick source de la fin (exclu : l'accord qui la porte n'est pas trillé).
+    end: i64,
+    /// Piste du spanner (`Trill::track()`).
+    track: Track,
+}
+
+/// Trilles en spanner de chaque portée (`CompatMidiRender::findFirstTrill`,
+/// `engraving/compat/midi/compatmidirender.cpp:1010-1030`).
+///
+/// Seuls les types que `createTrill` (`:913-927`) mappe sur
+/// `ornamentTrill` sont retenus : `TRILL_LINE` et `PRALLPRALL_LINE`. Les
+/// lignes `UPPRALL_LINE`/`DOWNPRALL_LINE` utilisent un autre symbole, dont
+/// l'excursion n'est pas modélisée ; `PURE_LINE` ne joue pas.
+fn trill_spans(score: &Score) -> Vec<Vec<TrillSpan>> {
+    let mut result: Vec<Vec<TrillSpan>> = (0..score.staves.len()).map(|_| Vec::new()).collect();
+    for spanner in &score.spanners {
+        if spanner.kind != SpannerType::Trill || !spanner.play {
+            continue;
+        }
+        let Some(SpannerNotation::Trill(trill)) = &spanner.notation else {
+            continue;
+        };
+        if !matches!(trill.kind, TrillType::TrillLine | TrillType::PrallPrallLine) {
+            continue;
+        }
+        let Some(list) = result.get_mut(spanner.start.track.staff().index()) else {
+            continue;
+        };
+        list.push(TrillSpan {
+            start: segment_tick(spanner.start.tick),
+            end: segment_tick(spanner.end.tick),
+            track: spanner.start.track,
+        });
+    }
+    result
+}
+
+/// Glissando en spanner qui agit sur le rendu MIDI.
+struct GlissandoSpan {
+    /// Tick source du début (la note qui porte le glissando).
+    start: i64,
+    /// Tick source de l'arrivée (la note visée).
+    end: i64,
+    /// Piste du spanner.
+    track: Track,
+}
+
+/// Glissandos en spanner de chaque portée (`CompatMidiRender::renderGlissando`,
+/// `engraving/compat/midi/compatmidirender.cpp:646-658`).
+fn glissando_spans(score: &Score) -> Vec<Vec<GlissandoSpan>> {
+    let mut result: Vec<Vec<GlissandoSpan>> = (0..score.staves.len()).map(|_| Vec::new()).collect();
+    for spanner in &score.spanners {
+        if spanner.kind != SpannerType::Glissando || !spanner.play {
+            continue;
+        }
+        let Some(list) = result.get_mut(spanner.start.track.staff().index()) else {
+            continue;
+        };
+        list.push(GlissandoSpan {
+            start: segment_tick(spanner.start.tick),
+            end: segment_tick(spanner.end.tick),
+            track: spanner.start.track,
+        });
+    }
+    result
+}
+
+/// Hauteur la plus aiguë de l'accord au tick source et sur la piste donnés
+/// (`Glissando::pitchSteps` lit la note d'arrivée du spanner).
+fn highest_pitch_at(score: &Score, tick: i64, track: Track) -> Option<u8> {
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            if segment_tick(segment.tick) != tick {
+                continue;
+            }
+            let Some(chord_rest) = segment.chord_rest(track) else {
+                continue;
+            };
+            if let ChordRestKind::Chord(chord) = &chord_rest.kind {
+                return chord
+                    .notes
+                    .iter()
+                    .map(|id| score.notes[id.index()].pitch)
+                    .max();
+            }
+        }
+    }
+    None
+}
+
 /// Dernier décalage inscrit à un tick ≤ `tick` (`Staff::pitchOffset`,
 /// `engraving/dom/staff.cpp:1293-1301` : `findLessOrEqual`).
 fn pitch_offset(map: &BTreeMap<i64, i32>, tick: i64) -> i32 {
@@ -688,6 +804,8 @@ fn render_measure(
     pause_map: &PauseMap,
     velocities: &VelocityMaps,
     offsets: &BTreeMap<i64, i32>,
+    trills: &[TrillSpan],
+    glissandos: &[GlissandoSpan],
     out: &mut Vec<Event>,
     prev_chords: &mut [i64; VOICES],
     timemap: &mut Builder<'_>,
@@ -776,6 +894,20 @@ fn render_measure(
                 continue;
             }
 
+            let next_chord = next_chord_for_adjust(score, measure_index, segment_index, track);
+            // `findFirstTrill` (`compatmidirender.cpp:1010-1030`) : un trille en
+            // spanner recouvre l'accord sur la même piste et ne s'applique pas
+            // à l'accord qui porte sa fin (`findOverlapping(tick + 1, end - 1)`).
+            let spanner_trill = trills.iter().any(|span| {
+                span.track == track && source_tick >= span.start && source_tick < span.end
+            });
+            // `Glissando::pitchSteps` part de la note qui porte le spanner :
+            // dans les fichiers du corpus c'est la note la plus aiguë de
+            // l'accord (le modèle ne conserve pas le lien vers la note).
+            let glissando_end = glissandos
+                .iter()
+                .find(|span| span.track == track && span.start == source_tick)
+                .map(|span| span.end);
             render_chord(
                 score,
                 staff,
@@ -784,6 +916,9 @@ fn render_measure(
                 utick,
                 ticks,
                 *previous,
+                next_chord,
+                spanner_trill,
+                glissando_end,
                 channel,
                 track_raw(staff.id, voice),
                 source_tick,
@@ -1041,6 +1176,9 @@ fn render_chord(
     utick: i64,
     ticks: i64,
     previous_chord_ticks: i64,
+    next_chord: Option<&Chord>,
+    spanner_trill: bool,
+    glissando_end: Option<i64>,
     channel: u8,
     track: u32,
     source_tick: i64,
@@ -1066,13 +1204,25 @@ fn render_chord(
         }
     }
 
+    // `graceNotesMerged` (`compatmidirenderinternal.cpp:1702-1718`) : quand
+    // l'accord porte un trille rendu, les ornements d'agrément sont déjà
+    // fusionnés dans l'excursion ; `createGraceNotesPlayEvents`
+    // (`compatmidirender.cpp:531-541`) ne les émet pas.
+    let trilled = spanner_trill
+        || chord
+            .ornaments
+            .iter()
+            .any(|ornament| ornament.kind == OrnamentType::TrillMark && ornament.play);
+
     let mut ontime = 0i64;
     let mut trailtime = 0i64;
 
     let acciaccatura = before.first().is_some_and(|index| {
         chord.grace_chords[*index].chord.grace == Some(GraceType::Acciaccatura)
     });
-    if acciaccatura {
+    if trilled {
+        // Rien : les grâces sont fusionnées dans le trille.
+    } else if acciaccatura {
         // `collectGraceBeforeChordEvents` : les acciaccaturas occupent au plus
         // la moitié de l'accord précédent, avant le temps.
         let grace_ticks = before.first().map_or(0, |index| {
@@ -1144,7 +1294,7 @@ fn render_chord(
         }
     }
 
-    if !after.is_empty() {
+    if !after.is_empty() && !trilled {
         // Notes d'ornement après l'accord (`createGraceNotesPlayEvents`).
         let weight = after.len() as f64 / (before.len() + after.len()) as f64;
         trailtime = match duration.dots {
@@ -1177,6 +1327,11 @@ fn render_chord(
             on += each;
         }
     }
+
+    // `adjustTrailtime` (`compatmidirender.cpp:1035-1078`) : l'accord qui
+    // précède une acciaccatura lui réserve `min(première acciaccatura, moitié
+    // de l'accord courant)` ticks, retirés de sa fin.
+    trailtime += acciaccatura_trail(next_chord, duration);
 
     let length = (1000 - trailtime).max(0) * gate / 100;
     let on = utick + ticks * ontime / 1000;
@@ -1212,20 +1367,68 @@ fn render_chord(
         // note (`compatmidirenderinternal.cpp:887-893`, puis `playNote`).
         let velocity = customize_velocity((velocity.round() as i32).clamp(1, 127), note) as u8;
         let key = played_pitch(score, note, source_tick, offsets);
+        // Glissando : `renderGlissando` (`compatmidirender.cpp:646-658`) a la
+        // priorité sur les autres articulations (`collectNote`, :860-866).
+        if let Some(end_tick) = glissando_end {
+            let highest = chord
+                .notes
+                .iter()
+                .map(|id| score.notes[id.index()].pitch)
+                .max();
+            if highest == Some(note.pitch) && note.tie_back.is_none() {
+                if let Some(end_pitch) = highest_pitch_at(score, end_tick, Track::from_raw(track)) {
+                    let span = tied_span_ticks(score, staff, note, ticks);
+                    for (offset, key, length) in glissando::glissando(
+                        key,
+                        end_pitch,
+                        span,
+                        ticks,
+                        beats_per_second_at(score, source_tick),
+                    ) {
+                        let start = on + offset;
+                        let end = start + length.max(1);
+                        out.push(Event {
+                            tick: start,
+                            kind: EventKind::NoteOn {
+                                channel,
+                                key,
+                                velocity,
+                            },
+                        });
+                        context.attack(
+                            start,
+                            end - start,
+                            AttackNote {
+                                chord: context.chord,
+                                note: note_index,
+                                pitch: key,
+                                grace: true,
+                                grace_index: None,
+                                grace_before: true,
+                                tremolo: false,
+                            },
+                        );
+                        out.push(Event {
+                            tick: end,
+                            kind: EventKind::NoteOff { channel, key },
+                        });
+                    }
+                    continue;
+                }
+            }
+        }
         // Trille : `renderNoteArticulation` (`compatmidirender.cpp:668-810`)
         // remplace la note tenue par l'excitation de l'ornement. Les grâces
         // attachées à un trille sont déjà fusionnées dans l'ornement
         // (`graceNotesMerged`, `compatmidirenderinternal.cpp:1736-1754`).
-        if chord
-            .ornaments
-            .iter()
-            .any(|ornament| ornament.kind == OrnamentType::TrillMark)
-            && chord.grace_chords.is_empty()
-            && tremolo.is_none()
-        {
+        if trilled && tremolo.is_none() {
+            let span = tied_span_ticks(score, staff, note, ticks);
             for (offset, trill_key, length) in ornaments::trill(
                 note,
+                span,
                 ticks,
+                before.len(),
+                after.len(),
                 beats_per_second_at(score, source_tick),
                 key_fifths_at(score, source_tick),
             ) {
@@ -1391,6 +1594,31 @@ fn render_grace_notes(
     }
 }
 
+/// Durée totale de la chaîne de liaisons partant de `note`
+/// (`totalTiedNoteTicks`, `compatmidirender.cpp:1196-1204`), sans `gateTime`.
+fn tied_span_ticks(
+    score: &Score,
+    staff: &scoretk_core::model::Staff,
+    note: &Note,
+    first_ticks: i64,
+) -> i64 {
+    let mut total = first_ticks;
+    let mut tie = note.tie_forward;
+    let mut guard = 0;
+    while let Some(next_id) = tie {
+        if guard > 64 {
+            break;
+        }
+        let Some((next_rest, _)) = find_chord_rest_of_note(score, next_id) else {
+            break;
+        };
+        total += actual_ticks_of_chord(score, staff, next_rest);
+        tie = score.notes[next_id.index()].tie_forward;
+        guard += 1;
+    }
+    total
+}
+
 /// Durée ajoutée par une chaîne de liaisons de prolongation
 /// (`calculateTieLength`, `compatmidirenderinternal.cpp:771-786`).
 ///
@@ -1414,7 +1642,7 @@ fn tie_length(
         if guard > 64 {
             break;
         }
-        let Some(next_rest) = find_chord_rest_of_note(score, next_id) else {
+        let Some((next_rest, next_track)) = find_chord_rest_of_note(score, next_id) else {
             break;
         };
         let next_ticks = actual_ticks_of_chord(score, staff, next_rest);
@@ -1422,12 +1650,19 @@ fn tie_length(
             break;
         }
         // La note liée n'est pas attaquée : seule la durée de son évènement de
-        // jeu (ornements après et `gateTime` déjà appliqués) prolonge la note.
+        // jeu (ornements après, acciaccatura suivante et `gateTime` déjà
+        // appliqués) prolonge la note.
         let (next_trail, next_gate) = match &next_rest.kind {
-            ChordRestKind::Chord(next_chord) => (
-                trail_time(next_chord, next_rest.duration, next_ticks),
-                gate_time(score, staff, instrument, next_chord, source_tick),
-            ),
+            ChordRestKind::Chord(next_chord) => {
+                let next_adjust = chord_rest_position(score, next_rest, next_track).and_then(
+                    |(measure, segment)| next_chord_for_adjust(score, measure, segment, next_track),
+                );
+                (
+                    trail_time(next_chord, next_rest.duration, next_ticks)
+                        + acciaccatura_trail(next_adjust, next_rest.duration),
+                    gate_time(score, staff, instrument, next_chord, source_tick),
+                )
+            }
             ChordRestKind::Rest(_) => (0, 100),
         };
         let next_len = (1000 - next_trail) * next_gate / 100;
@@ -1475,6 +1710,91 @@ fn trail_time(chord: &Chord, duration: scoretk_core::model::Duration, ticks: i64
     trail
 }
 
+/// Millième de temps réservé à l'acciaccatura de l'accord suivant
+/// (`CompatMidiRender::adjustTrailtime`, `compatmidirender.cpp:1035-1078`).
+///
+/// Seule la **première** acciaccatura de l'accord suivant compte
+/// (`graceNotesBeforeBar[0]`), et elle ne peut prendre que la moitié de
+/// l'accord courant (`currentTicks / 2`).
+fn acciaccatura_trail(next: Option<&Chord>, duration: scoretk_core::model::Duration) -> i64 {
+    let current = duration.ticks().ticks(UNITS_PER_WHOLE);
+    if current <= 0 {
+        return 0;
+    }
+    let Some(next) = next else {
+        return 0;
+    };
+    let Some(first) = next
+        .grace_chords
+        .iter()
+        .find(|grace| grace.chord.grace == Some(GraceType::Acciaccatura))
+    else {
+        return 0;
+    };
+    let grace_ticks = first.duration.ticks().ticks(UNITS_PER_WHOLE);
+    grace_ticks.min(current / 2) * 1000 / current
+}
+
+/// Premier accord ou silence suivant dans la piste
+/// (`Navigation::nextChordRest`, `skipGrace = true`).
+fn next_chord_rest_from(
+    score: &Score,
+    measure_index: usize,
+    segment_index: usize,
+    track: Track,
+) -> Option<&ChordRest> {
+    for (offset, measure) in score.measures.get(measure_index..)?.iter().enumerate() {
+        let start = if offset == 0 { segment_index + 1 } else { 0 };
+        for segment in measure.segments.iter().skip(start) {
+            if let Some(next) = segment.chord_rest(track) {
+                return Some(next);
+            }
+        }
+    }
+    None
+}
+
+/// Accord suivant utilisé par `adjustTrailtime` : l'accord suivant de la piste,
+/// ou à défaut le premier élément de la mesure suivante
+/// (`CompatMidiRender::getChordFromSegment(nextMeasure->first(st), track)`).
+fn next_chord_for_adjust(
+    score: &Score,
+    measure_index: usize,
+    segment_index: usize,
+    track: Track,
+) -> Option<&Chord> {
+    if let Some(next) = next_chord_rest_from(score, measure_index, segment_index, track) {
+        if let ChordRestKind::Chord(chord) = &next.kind {
+            return Some(chord);
+        }
+    }
+    let measure = score.measures.get(measure_index + 1)?;
+    for segment in &measure.segments {
+        if let Some(next) = segment.chord_rest(track) {
+            return match &next.kind {
+                ChordRestKind::Chord(chord) => Some(chord),
+                ChordRestKind::Rest(_) => None,
+            };
+        }
+    }
+    None
+}
+
+/// Position (mesure, segment) d'un accord ou silence donné.
+fn chord_rest_position(score: &Score, target: &ChordRest, track: Track) -> Option<(usize, usize)> {
+    for (measure_index, measure) in score.measures.iter().enumerate() {
+        for (segment_index, segment) in measure.segments.iter().enumerate() {
+            if segment
+                .chord_rest(track)
+                .is_some_and(|rest| std::ptr::eq(rest, target))
+            {
+                return Some((measure_index, segment_index));
+            }
+        }
+    }
+    None
+}
+
 /// Instrument en vigueur au tick source (`Part::instrument(tick)`).
 fn instrument_for(score: &Score, part: PartId, source_tick: i64) -> &Instrument {
     let tick = Fraction::from_ticks(source_tick, UNITS_PER_WHOLE);
@@ -1483,14 +1803,17 @@ fn instrument_for(score: &Score, part: PartId, source_tick: i64) -> &Instrument 
 
 /// Accord ou silence qui porte une note (recherche linéaire : les chaînes de
 /// liaisons sont courtes).
-fn find_chord_rest_of_note(score: &Score, note: scoretk_core::model::NoteId) -> Option<&ChordRest> {
+fn find_chord_rest_of_note(
+    score: &Score,
+    note: scoretk_core::model::NoteId,
+) -> Option<(&ChordRest, Track)> {
     for measure in &score.measures {
         for segment in &measure.segments {
-            for (_, item) in segment.iter_elements() {
+            for (track, item) in segment.iter_elements() {
                 if let scoretk_core::model::SegmentItem::ChordRest(chord_rest) = item {
                     if let ChordRestKind::Chord(chord) = &chord_rest.kind {
                         if chord.notes.contains(&note) {
-                            return Some(chord_rest);
+                            return Some((chord_rest, track));
                         }
                     }
                 }

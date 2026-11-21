@@ -195,6 +195,9 @@ pub struct Articulation {
     /// Sens du symbole (`Articulation::up()`), tiré du suffixe `Above` /
     /// `Below` du nom SMuFL. Sert à l'attribut `type` de `strong-accent`.
     pub up: bool,
+    /// Vrai si l'articulation agit sur la lecture
+    /// (`Articulation::playArticulation()`, `<play>0</play>` pour la couper).
+    pub play: bool,
 }
 
 impl Articulation {
@@ -205,6 +208,7 @@ impl Articulation {
             anchor: ArticulationAnchor::Auto,
             visible: true,
             up: true,
+            play: true,
         }
     }
 }

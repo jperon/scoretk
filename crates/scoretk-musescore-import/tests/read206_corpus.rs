@@ -25,7 +25,7 @@
 //! La syntaxe est vérifiée contre `read206.cpp` (aucune spécification publiée
 //! du format, voir `docs/agents/format-ref/musescore.md`).
 
-use scoretk_core::model::{ChordRestKind, Fraction, Score, SegmentItem, Track};
+use scoretk_core::model::{ChordRestKind, Fraction, Score, SegmentItem, SegmentType, Track};
 use scoretk_musescore_import::read::read_score;
 use scoretk_musescore_import::MsczContainer;
 
@@ -228,6 +228,98 @@ fn ottava_2x_appariee_par_id() {
     );
     assert_eq!(ottavas[0].start.tick, score.measures[0].start_tick);
     assert_eq!(ottavas[0].end.tick, score.measures[1].start_tick);
+}
+
+#[test]
+fn plusieurs_layout_break_dans_une_mesure() {
+    // Une mesure peut porter un saut de ligne puis un saut de section
+    // (`Vingt_danses`, mesure 164). `LayoutBreak::pause()` ne doit lire que le
+    // saut de section, pas le premier `<LayoutBreak>` venu.
+    let score = score(
+        r#"<Staff id="1">
+  <Measure number="1">
+    <Chord><durationType>whole</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+    <LayoutBreak><subtype>line</subtype></LayoutBreak>
+    <LayoutBreak><subtype>section</subtype></LayoutBreak></Measure>
+  <Measure number="2">
+    <Chord><durationType>whole</durationType><Note><pitch>62</pitch><tpc>16</tpc></Note></Chord></Measure>
+  </Staff>"#,
+    );
+    assert!(score.measures[1].section_break_before);
+}
+
+#[test]
+fn respiration_2x_garde_sa_pause() {
+    // `<Breath><pause>0.5</pause>` : `Breath::pause()` est une durée en
+    // secondes ; `Score::rebuildTempoAndTimeSigMaps` l'inscrit dans le
+    // tempomap et `PauseMap` l'insère dans le MIDI (`El_Choclo`).
+    let score = score(
+        r#"<Staff id="1">
+  <Measure number="1">
+    <Chord><durationType>half</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+    <Breath><symbol>caesuraCurved</symbol><pause>0.5</pause></Breath>
+    <Chord><durationType>half</durationType><Note><pitch>62</pitch><tpc>16</tpc></Note></Chord>
+  </Measure>
+  </Staff>"#,
+    );
+    let breath = score.measures[0]
+        .segments
+        .iter()
+        .find(|segment| segment.kind == SegmentType::Breath)
+        .and_then(|segment| {
+            segment.iter_elements().find_map(|(_, item)| match item {
+                SegmentItem::Breath(breath) => Some(*breath),
+                _ => None,
+            })
+        })
+        .expect("respiration lue");
+    assert_eq!(breath.pause_ms, Some(500));
+}
+
+#[test]
+fn saut_de_section_2x_garde_sa_pause() {
+    // `LayoutBreak::pause()` (`layoutbreak.cpp:138-140`) : la propriété
+    // `Pid::PAUSE` vaut 0 dans `Dominus_fredipi`, ce qui supprime la pause de
+    // section. Le lecteur ne doit pas la remplacer par le défaut de 3 s.
+    let score = score(
+        r#"<Staff id="1">
+  <Measure number="1">
+    <Chord><durationType>whole</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+    <LayoutBreak><subtype>section</subtype><pause>0</pause></LayoutBreak></Measure>
+  <Measure number="2">
+    <Chord><durationType>whole</durationType><Note><pitch>62</pitch><tpc>16</tpc></Note></Chord></Measure>
+  </Staff>"#,
+    );
+    assert!(score.measures[1].section_break_before);
+    assert_eq!(score.measures[1].section_pause, Some(0.0));
+}
+
+#[test]
+fn trille_2x_ancre_au_tick_courant() {
+    // `readMeasure206` (read206.cpp:2818-2837) : `<Trill id>` est posé à
+    // `ctx.tick()`, c'est-à-dire après les accords déjà lus. Un trille placé
+    // après deux noires commence à la troisième, pas au début de la mesure.
+    let score = score(
+        r#"<Staff id="1">
+  <Measure number="1">
+    <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+    <Chord><durationType>quarter</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+    <Chord><durationType>quarter</durationType><Note><pitch>62</pitch><tpc>16</tpc></Note></Chord>
+    <Trill id="9"><subtype>trill</subtype></Trill>
+    <Chord><durationType>quarter</durationType><Note><pitch>64</pitch><tpc>18</tpc></Note></Chord>
+    <endSpanner id="9"/>
+    <Chord><durationType>quarter</durationType><Note><pitch>65</pitch><tpc>13</tpc></Note></Chord>
+  </Measure></Staff>"#,
+    );
+    let trills: Vec<_> = score
+        .spanners
+        .iter()
+        .filter(|spanner| spanner.kind == scoretk_core::model::SpannerType::Trill)
+        .collect();
+    assert_eq!(trills.len(), 1, "un trille reconstruit");
+    let start = score.measures[0].start_tick;
+    assert_eq!(trills[0].start.tick, start + Fraction::new(1, 2));
+    assert_eq!(trills[0].end.tick, start + Fraction::new(3, 4));
 }
 
 #[test]

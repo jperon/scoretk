@@ -627,6 +627,7 @@ impl Reader {
         // Un saut de section porte sur la mesure suivante.
         let mut section_break = false;
         let mut section_keeps_numbering = false;
+        let mut section_pause: Option<f64> = None;
         for child in &element.children {
             match child.name.as_str() {
                 "Measure" => {
@@ -653,10 +654,12 @@ impl Reader {
                         let measure = &mut self.score.measures[measure_index];
                         measure.section_break_before = true;
                         measure.section_keeps_numbering = section_keeps_numbering;
+                        measure.section_pause = section_pause;
                     }
                     section_break = Self::has_section_break(child);
                     if section_break {
                         section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                        section_pause = Self::section_break_pause(child);
                     }
                     measure_index += 1;
                 }
@@ -668,6 +671,7 @@ impl Reader {
                     if Self::has_section_break(child) {
                         section_break = true;
                         section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                        section_pause = Self::section_break_pause(child);
                     }
                     if staff_index == 0 {
                         self.read_vbox(child, page);
@@ -677,6 +681,7 @@ impl Reader {
                     if Self::has_section_break(child) {
                         section_break = true;
                         section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                        section_pause = Self::section_break_pause(child);
                     }
                     // Texte de cadre exporté en `<words>` au début de la mesure
                     // qui suit (`tboxTextAsWords`) ; un cadre suivi d'un saut
@@ -715,18 +720,34 @@ impl Reader {
     }
 
     /// Vrai si un cadre ou une mesure porte un saut de section.
+    /// Le `<LayoutBreak>` de section d'une mesure ou d'un cadre. Une mesure
+    /// peut en porter plusieurs (saut de ligne + saut de section) :
+    /// `MeasureBase::sectionBreakElement()` (`measurebase.cpp:741-752`) choisit
+    /// celui dont le sous-type est `section`.
+    fn section_layout_break(element: &Element) -> Option<&Element> {
+        element.children_named("LayoutBreak").find(|layout_break| {
+            layout_break
+                .child("subtype")
+                .is_some_and(|subtype| subtype.text() == "section")
+        })
+    }
+
     fn has_section_break(element: &Element) -> bool {
-        element
-            .child("LayoutBreak")
-            .and_then(|layout_break| layout_break.child("subtype"))
-            .is_some_and(|subtype| subtype.text() == "section")
+        Self::section_layout_break(element).is_some()
+    }
+
+    /// Durée de la pause du saut de section (`LayoutBreak::pause()`,
+    /// `layoutbreak.cpp:138-140`) : `<pause>` en secondes, `None` si absent.
+    fn section_break_pause(element: &Element) -> Option<f64> {
+        Self::section_layout_break(element)
+            .and_then(|layout_break| layout_break.child("pause"))
+            .and_then(|pause| pause.text().parse().ok())
     }
 
     /// `startWithMeasureOne` du saut de section porté par l'élément.
     /// Absent, le corpus MuseScore 4.7.4 relance la numérotation à 1.
     fn section_break_starts_at_one(element: &Element) -> bool {
-        element
-            .child("LayoutBreak")
+        Self::section_layout_break(element)
             .and_then(|layout_break| layout_break.child("startWithMeasureOne"))
             .and_then(Element::int)
             .unwrap_or(1)
@@ -1172,12 +1193,20 @@ impl Reader {
                         None if track.voice() % 2 == 1 => Placement::Below,
                         None => Placement::Above,
                     };
+                    let pause_ms = child
+                        .child("pause")
+                        .and_then(|node| node.text().parse::<f64>().ok())
+                        .map(|seconds| (seconds.max(0.0) * 1000.0).round() as u32);
                     self.insert_item(
                         measure_index,
                         SegmentType::Breath,
                         tick,
                         track,
-                        SegmentItem::Breath(Breath { kind, placement }),
+                        SegmentItem::Breath(Breath {
+                            kind,
+                            placement,
+                            pause_ms,
+                        }),
                     );
                 }
                 "Dynamic" => {

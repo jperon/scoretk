@@ -241,6 +241,7 @@ impl Reader {
         // recommence la numérotation à 1 (et les `<attributes>` MusicXML).
         let mut section_break = false;
         let mut section_keeps_numbering = false;
+        let mut section_pause: Option<f64> = None;
         for child in node.children() {
             match child.name() {
                 "Measure" => {
@@ -264,10 +265,12 @@ impl Reader {
                         self.score.measures[measure].section_break_before = true;
                         self.score.measures[measure].section_keeps_numbering =
                             section_keeps_numbering;
+                        self.score.measures[measure].section_pause = section_pause;
                     }
                     section_break = Self::has_section_break(child);
                     if section_break {
                         section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                        section_pause = Self::section_break_pause(child);
                     }
                     tick = measure::read_measure(self, measure, child, staff);
                     index += 1;
@@ -284,6 +287,7 @@ impl Reader {
                     if Self::has_section_break(child) {
                         section_break = true;
                         section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                        section_pause = Self::section_break_pause(child);
                     }
                     let below = index > 0 && credits::page_break(child);
                     if let Some(mut text) = textlines::read_tbox(child, index, below) {
@@ -298,6 +302,7 @@ impl Reader {
                     if Self::has_section_break(child) {
                         section_break = true;
                         section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                        section_pause = Self::section_break_pause(child);
                     }
                     // Les textes d'un `VBox` deviennent des `<credit>` ; les
                     // autres cadres n'en portent pas.
@@ -310,6 +315,7 @@ impl Reader {
                 "HBox" | "FBox" if Self::has_section_break(child) => {
                     section_break = true;
                     section_keeps_numbering = !Self::section_break_starts_at_one(child);
+                    section_pause = Self::section_break_pause(child);
                 }
                 "HBox" | "FBox" => {}
                 _ => {}
@@ -322,17 +328,37 @@ impl Reader {
         }
     }
 
+    /// Le `<LayoutBreak>` de section d'une mesure ou d'un cadre.
+    ///
+    /// Une mesure peut en porter plusieurs : `Vingt_danses`, mesure 164, a un
+    /// saut de ligne **puis** un saut de section. `MeasureBase::pause()` lit
+    /// celui dont `isSectionBreak()` est vrai (`measurebase.cpp:741-752`), pas
+    /// le premier de la liste.
+    fn section_layout_break<'a, 'b>(node: &'a Node<'b>) -> Option<&'a Node<'b>> {
+        node.children_named("LayoutBreak").find(|layout_break| {
+            layout_break
+                .child("subtype")
+                .is_some_and(|subtype| subtype.trimmed_text() == "section")
+        })
+    }
+
     /// Vrai si un cadre ou une mesure porte un saut de section.
     fn has_section_break(node: &Node) -> bool {
-        node.child("LayoutBreak")
-            .and_then(|layout_break| layout_break.child("subtype"))
-            .is_some_and(|subtype| subtype.trimmed_text() == "section")
+        Self::section_layout_break(node).is_some()
+    }
+
+    /// Durée de la pause du saut de section (`LayoutBreak::pause()`,
+    /// `layoutbreak.cpp:138-140`) : `<pause>` en secondes, `None` si absent.
+    fn section_break_pause(node: &Node) -> Option<f64> {
+        Self::section_layout_break(node)
+            .and_then(|layout_break| layout_break.child("pause"))
+            .and_then(|pause| pause.trimmed_text().parse().ok())
     }
 
     /// `startWithMeasureOne` du saut de section. Absent, le corpus 4.7.4
     /// recommence la numérotation à 1.
     fn section_break_starts_at_one(node: &Node) -> bool {
-        node.child("LayoutBreak")
+        Self::section_layout_break(node)
             .and_then(|layout_break| layout_break.child("startWithMeasureOne"))
             .and_then(Node::int_text)
             .unwrap_or(1)

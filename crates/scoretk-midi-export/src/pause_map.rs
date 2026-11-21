@@ -36,7 +36,7 @@
 
 use std::collections::BTreeMap;
 
-use scoretk_core::model::{Annotation, Score, TimeSig};
+use scoretk_core::model::{Annotation, Score, SegmentItem, SegmentType, TimeSig};
 
 use super::repeat_list::{RepeatList, DIVISION, UNITS_PER_WHOLE};
 
@@ -57,6 +57,9 @@ struct TempoPoint {
     bps: f64,
     /// Durée de la pause maintenue, ou `0` pour un changement de tempo ordinaire.
     pause: f64,
+    /// Tick source de la pause, pour relire l'indication de mesure
+    /// (`pausemap.cpp:68-71`). `None` pour un changement de tempo ordinaire.
+    pause_source: Option<i64>,
 }
 
 /// Pause insérée dans la performance.
@@ -108,11 +111,11 @@ impl PauseMap {
                 continue;
             }
 
-            // Pause : le C++ relit l'indication de mesure au tick source
-            // correspondant à l'utick déroulé (`repeatlist.cpp:239-258`), pas
-            // au tick de la mesure qui suit la rupture.
-            let tick = repeat_list.utick2tick(utick);
-            let quarter_notes = quarter_notes_at(score, time_signatures, tick);
+            // Pause : `PauseMap::calculate` (`pausemap.cpp:66-75`) relit
+            // l'indication de mesure au **tick source** de la pause, pas à
+            // l'utick déroulé.
+            let quarter_notes =
+                quarter_notes_at(score, time_signatures, point.pause_source.unwrap_or(0));
             // pausemap.cpp:70 : `int ticksPerMeasure = quarterNotesPerMeasure
             // * Constants::DIVISION;` — le double est TRONQUÉ en int (pas
             // arrondi). Le tempo (`:71`) garde la valeur fractionnaire.
@@ -191,32 +194,81 @@ fn source_tempos(score: &Score) -> BTreeMap<i64, f64> {
     values
 }
 
-/// Pauses enregistrées pour chaque mesure de chaque segment
-/// (`ScoreAutomationController::collectPauses`,
-/// `src/engraving/automation/internal/scoreautomationcontroller.cpp:1100-1131`).
-/// La rupture de section est portée par la mesure précédente dans l'ordre
-/// brut (`measure->prev()`, `:1105-1111`) et inscrite au `startUtick` de la
-/// mesure courante, avec le décalage du segment : la pause est ainsi rejouée
-/// à chaque passage qui contient la mesure, y compris après un saut.
-fn pauses_by_segment(score: &Score, repeat_list: &RepeatList) -> BTreeMap<i64, f64> {
+/// Pauses de section, indexées par tick **source** (`Score::rebuildTempoAndTimeSigMaps`,
+/// `engraving/dom/score.cpp:522-530` dans 4.7.4 : la rupture est portée par la
+/// mesure précédente et la pause est inscrite au tick de la mesure suivante).
+/// Le modèle marque déjà la mesure qui suit la rupture (`section_break_before`).
+fn raw_pauses(score: &Score) -> BTreeMap<i64, f64> {
     let mut pauses = BTreeMap::new();
-    for segment in &repeat_list.segments {
-        let offset = segment.utick - segment.tick;
-        for &index in &segment.measures {
-            if index == 0 {
+    for (index, measure) in score.measures.iter().enumerate() {
+        // `can't start with a pause` (`pausemap.cpp:56`) et pas de
+        // `measure->prev()` pour la première mesure.
+        if index == 0 || !measure.section_break_before {
+            continue;
+        }
+        // `LayoutBreak::pause()` (`layoutbreak.cpp:138-140`) : la propriété
+        // `Pid::PAUSE` peut valoir 0, ce qui supprime la pause.
+        let seconds = measure.section_pause.unwrap_or(SECTION_PAUSE_SECONDS);
+        if seconds <= 0.0 {
+            continue;
+        }
+        pauses.insert(measure.start_tick.ticks(UNITS_PER_WHOLE), seconds);
+    }
+    // Respiration avec `<pause>` (`rebuildTempoAndTimeSigMaps`,
+    // `score.cpp:531-545`) : la plus longue respiration du tick gagne et
+    // écrase une éventuelle pause de section au même tick.
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            if segment.kind != SegmentType::Breath {
                 continue;
             }
-            let Some(measure) = score.measures.get(index) else {
-                continue;
-            };
-            if !measure.section_break_before {
-                continue;
+            let mut pause_ms = 0u32;
+            for (_, item) in segment.iter_elements() {
+                if let SegmentItem::Breath(breath) = item {
+                    if let Some(value) = breath.pause_ms {
+                        pause_ms = pause_ms.max(value);
+                    }
+                }
             }
-            let at = measure.start_tick.ticks(UNITS_PER_WHOLE) + offset;
-            pauses.insert(at, SECTION_PAUSE_SECONDS);
+            if pause_ms > 0 {
+                pauses.insert(
+                    segment.tick.ticks(UNITS_PER_WHOLE),
+                    f64::from(pause_ms) / 1000.0,
+                );
+            }
         }
     }
     pauses
+}
+
+/// Déroule les pauses brutes comme `PauseMap::calculate` (`pausemap.cpp:62-90`) :
+/// chaque segment parcourt `[tick, endTick]` **borne incluse** (`ee =
+/// lower_bound(endTick + 1)`) et la pause tombe à `tick + (utick - tick)`.
+///
+/// Le C++ saute une pause au premier tick du segment courant (« incluse dans
+/// le précédent »). Cette hypothèse ne tient pas quand un saut rompt la
+/// contiguïté : `Vingt_danses` a une pause à la fin du segment 15 (722880)
+/// **et** à l'ouverture du segment 17 (837600), que MuseScore 4.7.4 écrit
+/// toutes les deux. On ne saute donc que si le segment précédent finissait
+/// réellement sur ce tick.
+fn unfold_pauses(score: &Score, repeat_list: &RepeatList) -> Vec<(i64, i64, f64)> {
+    let raw = raw_pauses(score);
+    let mut result = Vec::new();
+    for segment in &repeat_list.segments {
+        let end = repeat_list.segment_end(segment);
+        let offset = segment.utick - segment.tick;
+        for (tick, seconds) in &raw {
+            if *tick < segment.tick || *tick > end {
+                continue;
+            }
+            if *tick == segment.tick {
+                continue; // déjà émise par le segment précédent
+            }
+            result.push((tick + offset, *tick, *seconds));
+        }
+    }
+    result.sort_by_key(|(utick, _, _)| *utick);
+    result
 }
 
 /// Déroule une carte indexée par tick source à travers [`RepeatList`].
@@ -238,8 +290,9 @@ fn unfold(values: &BTreeMap<i64, f64>, repeat_list: &RepeatList) -> BTreeMap<i64
 /// `tempotimeline.cpp:134-180`). Un point de pause porte le bps du point qui
 /// le précède, éventuellement le changement de tempo de ce même tick.
 fn tempo_timeline(score: &Score, repeat_list: &RepeatList) -> Vec<TempoPoint> {
-    let tempos = unfold(&source_tempos(score), repeat_list);
-    let pauses = pauses_by_segment(score, repeat_list);
+    let raw_tempos = source_tempos(score);
+    let tempos = unfold(&raw_tempos, repeat_list);
+    let pauses = unfold_pauses(score, repeat_list);
     let mut values = tempos.into_iter().peekable();
     let mut rests = pauses.into_iter().peekable();
     let mut points = Vec::new();
@@ -258,15 +311,23 @@ fn tempo_timeline(score: &Score, repeat_list: &RepeatList) -> Vec<TempoPoint> {
                 utick: at,
                 bps: bps.clamp(MIN_BPS, MAX_BPS),
                 pause: 0.0,
+                pause_source: None,
             });
         }
         if rests.peek().is_some() && rests.peek().as_ref().unwrap().0 == utick {
-            let (at, seconds) = rests.next().unwrap();
-            let bps = points.last().map_or(DEFAULT_BPS, |point| point.bps);
+            let (at, source, seconds) = rests.next().unwrap();
+            // `it->second.tempo` (`pausemap.cpp:73`) : le tempo écrit en
+            // vigueur au tick source de la pause.
+            let bps = raw_tempos
+                .range(..=source)
+                .next_back()
+                .map_or(DEFAULT_BPS, |(_, bps)| *bps)
+                .clamp(MIN_BPS, MAX_BPS);
             points.push(TempoPoint {
                 utick: at,
                 bps,
                 pause: seconds,
+                pause_source: Some(source),
             });
         }
     }
@@ -317,7 +378,8 @@ mod tests {
     use crate::repeat_list::RepeatList;
     use scoretk_core::model::{
         BarLineType, Breath, BreathType, ChordRest, Duration, DurationType, Fermata, FermataType,
-        Fraction, Measure, Placement, Segment, SegmentItem, SegmentType, TimeSig, Track,
+        Fraction, Measure, Placement, RepeatMark, Segment, SegmentItem, SegmentType, TimeSig,
+        Track,
     };
 
     /// Partition de deux rondes 4/4, la première portant un point d'orgue et
@@ -350,6 +412,7 @@ mod tests {
                     SegmentItem::Breath(Breath {
                         kind: BreathType::CaesuraCurved,
                         placement: Placement::Above,
+                        pause_ms: None,
                     }),
                 );
                 measure.add_segment(breath);
@@ -421,5 +484,102 @@ mod tests {
         // ignorée : c'est la longueur réelle de la mesure qui fait foi (4.7.4).
         assert_eq!(map.tempo_events.get(&960), Some(&(2.0 / 3.0)));
         assert_eq!(map.tempo_events.get(&1920), Some(&2.0));
+    }
+
+    /// Une respiration avec `<pause>0.5</pause>` insère une mesure de ticks
+    /// au tempo `quarterNotesPerMeasure / pause` (`El_Choclo` : césure de
+    /// 0,5 s avant une mesure de 3/8, 720 ticks à 180 BPM).
+    #[test]
+    fn respiration_avec_pause_insere_une_mesure_de_ticks() {
+        let mut score = score_avec_point_d_orgue_et_cesure(Fraction::ONE);
+        score.measures[1].len = Fraction::new(3, 8);
+        let breath = score.measures[0]
+            .segments
+            .iter_mut()
+            .find(|segment| segment.kind == SegmentType::Breath)
+            .expect("respiration");
+        breath.set_element(
+            Track::from_raw(0),
+            SegmentItem::Breath(Breath {
+                kind: BreathType::CaesuraCurved,
+                placement: Placement::Above,
+                pause_ms: Some(500),
+            }),
+        );
+        let repeat_list = RepeatList::unwind(&score);
+        let map = PauseMap::build(&score, &repeat_list, &[]);
+        assert_eq!(map.spans().len(), 1, "pauses {:?}", map.spans());
+        assert_eq!(map.spans()[0].base_utick, 1920);
+        assert_eq!(map.spans()[0].inserted, 720);
+        assert_eq!(map.tempo_events.get(&1920), Some(&3.0));
+        assert_eq!(map.tempo_events.get(&2640), Some(&2.0));
+    }
+
+    /// Une pause de section explicitement nulle (`<pause>0</pause>`,
+    /// `Dominus_fredipi`) n'insère ni tick ni changement de tempo.
+    #[test]
+    fn pause_de_section_nulle_n_insere_rien() {
+        let mut score = score_avec_point_d_orgue_et_cesure(Fraction::ONE);
+        score.measures[1].section_break_before = true;
+        score.measures[1].section_pause = Some(0.0);
+        let repeat_list = RepeatList::unwind(&score);
+        let map = PauseMap::build(&score, &repeat_list, &[]);
+        assert!(map.spans().is_empty());
+        assert_eq!(map.tick_with_pauses(1920), 1920);
+    }
+
+    fn marqueur(label: &str) -> scoretk_core::model::Marker {
+        scoretk_core::model::Marker {
+            kind: scoretk_core::model::MarkerType::Segno,
+            label: label.into(),
+            text: label.into(),
+            placement: Placement::Above,
+            track: Track::from_raw(0),
+            visible: true,
+        }
+    }
+
+    /// Saut dont la mesure porte aussi la rupture de section : MuseScore 4.7.4
+    /// joue la pause **au moment du saut** (fin du segment qui contient la
+    /// mesure du saut), pas à l'ouverture de la section suivante.
+    ///
+    /// Réduction du cas `Vingt_danses` : le fichier réduit
+    /// `jump-ref/jump.mscx` exporté par 4.7.4 donne six mesures de 4/4, une
+    /// pause de 1920 ticks à 80 BPM (4/3 bps) à 7680, puis la cible du saut.
+    #[test]
+    fn pause_du_saut_au_moment_du_saut() {
+        let mut score = Score::new();
+        let whole = Fraction::ONE;
+        for number in 0..6 {
+            let mut measure =
+                Measure::new(number, whole * Fraction::from_integer(number as i64), whole);
+            match number {
+                0 => measure.repeat_marks = vec![RepeatMark::Marker(marqueur("A"))],
+                2 => measure.repeat_marks = vec![RepeatMark::Marker(marqueur("B"))],
+                3 => {
+                    measure.repeat_marks = vec![RepeatMark::Jump(scoretk_core::model::Jump::new(
+                        "D.C.",
+                        "A",
+                        "B",
+                        "C",
+                        Placement::Above,
+                        Track::from_raw(0),
+                    ))]
+                }
+                4 => {
+                    measure.section_break_before = true;
+                    measure.repeat_marks = vec![RepeatMark::Marker(marqueur("C"))];
+                }
+                _ => {}
+            }
+            score.add_measure(measure);
+        }
+        let repeat_list = RepeatList::unwind(&score);
+        let map = PauseMap::build(&score, &repeat_list, &[]);
+        assert_eq!(map.spans().len(), 1, "pauses {:?}", map.spans());
+        assert_eq!(map.spans()[0].base_utick, 4 * 1920);
+        assert_eq!(map.spans()[0].inserted, 1920);
+        assert_eq!(map.tempo_events.get(&(4 * 1920)), Some(&(4.0 / 3.0)));
+        assert_eq!(map.tempo_events.get(&(5 * 1920)), Some(&2.0));
     }
 }

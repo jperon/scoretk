@@ -1638,6 +1638,16 @@ fn language_espagnol() {
 }
 
 #[test]
+fn language_sans_guillemets() {
+    // LilyPond accepte `\language deutsch` sans guillemets (le fichier de
+    // l'Alléluia de Lassus l'écrit ainsi) : `h` est si naturel, `b` si bémol.
+    let score = lire_sans_avertissement_d_include(
+        "\\version \"2.18.2\"\n\\language deutsch\n\\score { \\new Staff { h'4 b'4 } }\n",
+    );
+    assert_eq!(hauteurs(&score), vec![71, 70]);
+}
+
+#[test]
 fn language_francais_precompose_et_decompose() {
     let precompose = lire_sans_avertissement_d_include(
         "\\language \"français\"\n\
