@@ -1804,6 +1804,44 @@ conteneur générique `<notations>` dans les ornements (2 997 airs had fewer
   d'oracle partagés ; l'excès vient de l'interprétation de chaînes entre
   guillemets comme accords, que l'alternative traite comme du texte.
 
+### ABC import: final status (2026-11-21)
+
+Full campaign re-run (`/tmp/abc-n3-import`, 1 402 files / 4 756 `X:` tunes)
+against the previous baseline (`/tmp/abc-n3-final4`). Five reader fixes,
+each with a reduced test written first and failing before the fix, clippy
+clean before each commit:
+
+1. **Fermata on a rest** (`91dc7623`) — `Hz`/`Hx`/`!fermata!z`. Articulations
+   were pushed only onto `Chord`; add `AnnotationSpec::Fermata` mapped to
+   `Annotation::Fermata` on the segment, which `rest_notations` already
+   writes as `<fermata>`. ABC 2.1 §4.3; `abc2xml.py::doDecos` lines
+   1491-1492.
+2. **Single-note tremolo** (`9fbfeadb`) — `!/!`, `!//!`, `!///!`. Add
+   `Decoration::Tremolo(count)` → `Chord::tremolo = Tremolo { Single, count }`.
+   ABC 2.1 §4.14; `abc2xml.py:1688` and `abc2xml.py:1464-1469`.
+3. **`!lowermordent!`** (`dc418a26`) — the long name (`M`) was dropped;
+   map it to `<mordent>` like `!mordent!`. ABC 2.1 §4.14;
+   `abc2xml.py:1095` (`ornMap`/`uSyms`).
+4. **Repeated `K:` field** (`d84ad02d`) — schedule a key change on every
+   `K:` and emit a `KeySig` segment at the measure start even when the key
+   is unchanged. ABC 2.1 §3.2; `abc2xml.py` writes a `<key>` per field.
+5. **`|:|` combined repeat** (`26be5e1f`) — the trailing `|` was parsed as
+   a second empty bar that reset the end barline to Normal, dropping the
+   repeat. Consume all three characters as `EndStartRepeat`. ABC 2.1 §4.9;
+   `abc2xml.py:428-429` (`bars`).
+
+N3 tunes where scoretk has fewer musical functions than `abc2xml.py`
+(before → after): decorations **213 → 185**, repeats **35 → 24**, keys
+**39 → 37**, ties **3 → 0**; unchanged: times 32, clefs 21, voices 18,
+voltas 15, slurs 27, lyrics 10, tuplets 5, harmony 2, graces 2.
+Tune-by-tune: **61 N3 deficits improved, 0 regressed**; N1 unchanged on
+4 751 of 4 755 common tunes, **4 gains, 0 losses** (scoretk 4 460 exact
+N1 tunes versus 4 406 for `abc2xml.py`). No per-tune loss to explain.
+The remaining categories are structural (one part per voice in
+`abc2xml.py`, ABC 2.1 §7) or deliberate representation differences
+(`<words>` vs `<harmony>`, lyrics melisma, clefs emitted on every staff),
+documented above.
+
 ## 27. Écriture ABC : mesure complète et deux correctifs (2026-11-21)
 
 ### 27.1 Oracle et protocole
