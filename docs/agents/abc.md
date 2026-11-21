@@ -2114,10 +2114,10 @@ therefore now shows real writing losses only.
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | corpus | scoretk | **46** (82 %) | **99.57** | **66.02** | **65.47** | 295 |
 | corpus | xml2abc | 42 (75 %) | 80.87 | 34.91 | 32.58 | 334 |
-| mscz | scoretk | **92** (53.2 %) | **99.59** | **80.11** | **78.05** | 11 974 |
-| mscz | xml2abc | 20 (11.6 %) | 83.33 | 43.57 | 38.80 | 13 375 |
-| xml | scoretk | **13** (41 %) | **98.59** | 36.71 | 34.84 | 12 517 |
-| xml | xml2abc | 6 (19 %) | 88.16 | **81.68** | **80.56** | 13 216 |
+| mscz | scoretk | **99** (57.2 %) | 99.07 | **81.10** | **79.22** | 11 974 |
+| mscz | xml2abc | 20 (11.6 %) | 83.88 | 43.21 | 38.40 | 13 375 |
+| xml | scoretk | **13** (41 %) | **98.69** | 39.59 | 37.84 | 12 517 |
+| xml | xml2abc | 6 (19 %) | 88.37 | 77.52 | 76.37 | 13 216 |
 
 Per file: corpus 6 / 50 / 0, mscz **119 / 38 / 16**, xml 13 / 11 / 8
 (scoretk > = < xml2abc). Following the three causes below, exact mscz files go
@@ -2164,6 +2164,19 @@ checked against the actual `<programVersion>` inside each `.mscz`:
 The earlier panics came from a stale binary, not from the current reader. The
 re-run (`/tmp/abc-vcheck-run`) has 173 mscz files, 173 ABC OK for both
 candidates, the same 92 exact files and N1 99.59 %: no writer regression.
+
+### Voice-index fix (2026-11-21 update)
+
+`reader/music.rs::drop_foreign_ties` built a `Track` with the reader's voice-list
+index (`self.voice`) as the model voice number. Organ scores with 15 voices
+(`V:5`…`V:15`) then panicked with "voix hors plage : MuseScore n'a que quatre
+voix par portée" on the ABC round trip, so two mscz sources had no reference at
+all. The index is now clamped to 0-3, as `create_parts` already does. Reduced test
+`voice_number_range.rs` written first, failing before the fix (`a933546b`).
+
+Re-run (`/tmp/abc-finalv`): **14 files gain N1/N2/N2d, 0 losses**; exact mscz
+files 92 → 99, N2d 78.05 % → 79.22 %, N1 99.59 % → 99.07 % (the two recovered
+scores have lower N1, which lowers the average while adding exact files).
 
 ### Remaining losses, classified
 
