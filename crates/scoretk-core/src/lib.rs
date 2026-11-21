@@ -31,6 +31,7 @@
 pub mod duration_list;
 mod error;
 pub mod gap_rests;
+pub mod instruments;
 pub mod model;
 
 pub use error::{Error, Result};

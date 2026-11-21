@@ -3,8 +3,10 @@
 #
 # Copyright (C) 2026 jperon
 #
-# Données de `share/instruments/instruments.xml` de MuseScore Studio,
-# Copyright (C) MuseScore Limited and others, converties en 2026.
+# Données de `share/instruments/instruments.xml` et de
+# `src/importexport/midi/internal/midiimport/importmidi_instrument.cpp`
+# de MuseScore Studio, Copyright (C) MuseScore Limited and others,
+# converties en Rust (fichier généré) en 2026.
 #
 # This program is free software: you can redistribute it and/or modify it
 # under the terms of the GNU General Public License version 3 as published by
@@ -19,75 +21,176 @@
 # this program. If not, see the LICENSE file at the root of this repository or
 # <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Génère la table Rust des instruments à partir de share/instruments/instruments.xml."""
+"""Génère la table partagée des instruments dans `scoretk-core`.
+
+Usage : gen-instruments-table.py <instruments.xml> <importmidi_instrument.cpp> <dst.rs>
+
+La table sert à la lecture MuseScore (reconnaissance des instruments) et à
+l'import MIDI (choix du gabarit et transposition) : c'est une donnée de
+modèle, sans logique de format, donc elle vit dans `scoretk-core`.
+"""
+import re
 import sys
 import xml.etree.ElementTree as ET
 
-src, dst = sys.argv[1], sys.argv[2]
-tree = ET.parse(src)
-root = tree.getroot()
+src_xml, src_cpp, dst = sys.argv[1], sys.argv[2], sys.argv[3]
+root = ET.parse(src_xml).getroot()
+
+
+def _pitch_range(text, upper=False):
+    """`'36-67'` → 36 ou 67."""
+    if not text or '-' not in text:
+        return -1
+    try:
+        parts = [int(part) for part in text.split('-')[:2]]
+    except ValueError:
+        return -1
+    return parts[1] if upper else parts[0]
+
 
 rows = []
 for group in root.iter('InstrumentGroup'):
     for instr in group.findall('Instrument'):
-        iid = instr.get('id', '')
-        track = instr.findtext('trackName', '')
-        long_name = instr.findtext('longName', '')
-        short = instr.findtext('shortName', '')
-        mxml = instr.findtext('musicXMLid', '')
-        program = None
-        chan = instr.find('Channel')
-        if chan is not None:
-            p = chan.find('program')
-            if p is not None:
-                program = int(p.get('value', '-1'))
-        rows.append((iid, track, long_name, short, mxml, program))
+        programs = []
+        for chan in instr.findall('Channel'):
+            for prog in chan.findall('program'):
+                try:
+                    programs.append(int(prog.get('value', '-1')))
+                except ValueError:
+                    pass
+        rows.append({
+            'id': instr.get('id', ''),
+            'track_name': instr.findtext('trackName', ''),
+            'long_name': instr.findtext('longName', ''),
+            'short_name': instr.findtext('shortName', ''),
+            'music_xml_id': instr.findtext('musicXMLid', ''),
+            'programs': sorted(set(programs)),
+            'transpose_diatonic': int(instr.findtext('transposeDiatonic', '0') or 0),
+            'transpose_chromatic': int(instr.findtext('transposeChromatic', '0') or 0),
+            'clef': instr.findtext('clef', ''),
+            'staff_group': instr.findtext('staffGroup', ''),
+            'use_drumset': instr.find('Drumset') is not None,
+            'min_pitch': _pitch_range(instr.findtext('pPitchRange', '')),
+            'max_pitch': _pitch_range(instr.findtext('pPitchRange', ''), upper=True),
+            'common_genre': 'common' in [g.text for g in instr.findall('genre')],
+        })
 
-def esc(s):
-    return s.replace('\\', '\\\\').replace('"', '\\"')
+# GM1_SOUND_DATA de importmidi_instrument.cpp : l'ordre du tableau est le
+# numéro de programme GM (0-127).
+cpp = open(src_cpp, encoding='utf-8').read()
+preferred = re.findall(r'GM1ProgramData\{\s*GM1Program::\w+,\s*"([^"]*)"sv\s*\}', cpp)
+assert len(preferred) == 128, f'128 entrées attendues dans GM1_SOUND_DATA, obtenu {len(preferred)}'
+
+
+def esc(value):
+    return value.replace('\\', '\\\\').replace('"', '\\"')
+
 
 out = []
-out.append('//! Table des instruments de MuseScore.')
-out.append('//!')
-out.append('//! Fichier **généré** à partir de `share/instruments/instruments.xml` de')
-out.append('//! MuseScore 4.4 (`scripts/gen-instruments-table.py`). Les partitions 3.x')
-out.append('//! antérieures à 3.6 ne stockent ni identifiant MusicXML ni programme MIDI :')
-out.append('//! `Instrument::updateInstrumentId` les retrouve par le nom de piste puis par')
-out.append('//! le programme (`engraving/dom/instrument.cpp`).')
+out.append('''// SPDX-License-Identifier: GPL-3.0-only
+//
+// Copyright (C) 2026 jperon
+//
+// Table dérivée de `share/instruments/instruments.xml` et de
+// `src/importexport/midi/internal/midiimport/importmidi_instrument.cpp`
+// de MuseScore Studio, Copyright (C) MuseScore Limited and others,
+// convertie en Rust (fichier généré) en 2026.
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License version 3 as published by
+// the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+// more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// this program. If not, see the LICENSE file at the root of this repository or
+// <https://www.gnu.org/licenses/gpl-3.0.html>.
+
+//! Catalogue des instruments de MuseScore (données partagées).
+//!
+//! Fichier **généré** par `scripts/gen-instruments-table.py` à partir de
+//! `share/instruments/instruments.xml` et de `GM1_SOUND_DATA` de
+//! `importmidi_instrument.cpp`. Ne pas éditer à la main. Utilisé par la
+//! lecture MuseScore (reconnaissance) et par l'import MIDI (gabarit,
+//! transposition, clefs).''')
 out.append('')
-out.append('/// Instrument du catalogue de MuseScore.')
-out.append('#[derive(Clone, Copy, Debug)]')
-out.append('pub(crate) struct Template {')
-out.append('    /// Identifiant MuseScore (`Instrument::id`).')
-out.append('    pub id: &\'static str,')
-out.append('    /// Nom de piste (`trackName`), premier critère de reconnaissance.')
-out.append('    pub track_name: &\'static str,')
-out.append('    /// Nom long affiché.')
-out.append('    pub long_name: &\'static str,')
-out.append('    /// Nom court affiché.')
-out.append('    pub short_name: &\'static str,')
-out.append('    /// Identifiant MusicXML (`instrument-sound`).')
-out.append('    pub music_xml_id: &\'static str,')
-out.append('    /// Programme MIDI du premier canal, si connu.')
-out.append('    pub program: Option<i16>,')
-out.append('}')
+out.append('''/// Gabarit d'instrument de MuseScore (`InstrumentTemplate`).
+#[derive(Clone, Copy, Debug)]
+pub struct Template {
+    /// Identifiant MuseScore (`Instrument::id`).
+    pub id: &'static str,
+    /// Nom de piste (`trackName`).
+    pub track_name: &'static str,
+    /// Nom long.
+    pub long_name: &'static str,
+    /// Nom court.
+    pub short_name: &'static str,
+    /// Identifiant MusicXML (`musicXMLid`).
+    pub music_xml_id: &'static str,
+    /// Tous les programmes MIDI des canaux du gabarit.
+    pub programs: &'static [i16],
+    /// Transposition diatonique (`transposeDiatonic`).
+    pub transpose_diatonic: i32,
+    /// Transposition chromatique (`transposeChromatic`).
+    pub transpose_chromatic: i32,
+    /// Clef principale (`clef`).
+    pub clef: &'static str,
+    /// Groupe de portée (`staffGroup`), `"TAB"` pour les tablatures.
+    pub staff_group: &'static str,
+    /// Vrai si le gabarit utilise un jeu de percussion.
+    pub use_drumset: bool,
+    /// Hauteur minimale du gabarit (`minPitchP`), -1 si absente.
+    pub min_pitch: i32,
+    /// Hauteur maximale du gabarit (`maxPitchP`), -1 si absente.
+    pub max_pitch: i32,
+    /// Vrai si le gabarit appartient au genre `common`.
+    pub common_genre: bool,
+}''')
 out.append('')
-out.append('/// Catalogue, dans l\'ordre du fichier source : à force égale, le premier')
-out.append('/// instrument l\'emporte, comme `searchTemplateForInstrNameList`.')
-out.append('pub(crate) const TEMPLATES: &[Template] = &[')
-for iid, track, long_name, short, mxml, program in rows:
-    prog = 'None' if program is None or program < 0 else f'Some({program})'
+out.append('''/// Catalogue, dans l'ordre du fichier source : à force égale, le premier
+/// instrument l'emporte (`searchTemplateForInstrNameList`).
+pub const TEMPLATES: &[Template] = &[''')
+for row in rows:
+    programs = '&[' + ', '.join(str(p) for p in row['programs']) + ']'
     out.append('    Template {')
-    out.append(f'        id: "{esc(iid)}",')
-    out.append(f'        track_name: "{esc(track)}",')
-    out.append(f'        long_name: "{esc(long_name)}",')
-    out.append(f'        short_name: "{esc(short)}",')
-    out.append(f'        music_xml_id: "{esc(mxml)}",')
-    out.append(f'        program: {prog},')
+    out.append(f"        id: \"{esc(row['id'])}\",")
+    out.append(f"        track_name: \"{esc(row['track_name'])}\",")
+    out.append(f"        long_name: \"{esc(row['long_name'])}\",")
+    out.append(f"        short_name: \"{esc(row['short_name'])}\",")
+    out.append(f"        music_xml_id: \"{esc(row['music_xml_id'])}\",")
+    out.append(f'        programs: {programs},')
+    out.append(f"        transpose_diatonic: {row['transpose_diatonic']},")
+    out.append(f"        transpose_chromatic: {row['transpose_chromatic']},")
+    out.append(f"        clef: \"{esc(row['clef'])}\",")
+    out.append(f"        staff_group: \"{esc(row['staff_group'])}\",")
+    out.append(f"        use_drumset: {str(row['use_drumset']).lower()},")
+    out.append(f"        min_pitch: {row['min_pitch']},")
+    out.append(f"        max_pitch: {row['max_pitch']},")
+    out.append(f"        common_genre: {str(row['common_genre']).lower()},")
     out.append('    },')
 out.append('];')
 out.append('')
+out.append('''/// Identifiant du gabarit préféré pour chaque programme GM 0-127
+/// (`GM1_SOUND_DATA` de `importmidi_instrument.cpp:60-190`).
+pub const GM1_PREFERRED_IDS: [&str; 128] = [''')
+for preferred_id in preferred:
+    out.append(f'    "{esc(preferred_id)}",')
+out.append('];')
+out.append('')
+out.append('''/// Premier gabarit portant l'identifiant MuseScore donné.
+pub fn template_for_id(id: &str) -> Option<&'static Template> {
+    TEMPLATES.iter().find(|template| template.id == id)
+}
 
-with open(dst, 'w') as f:
-    f.write('\n'.join(out))
-print(f'{len(rows)} instruments, {len(out)} lignes')
+/// Gabarit préféré pour un programme GM, comme `getPreferredInstrument`.
+pub fn preferred_template_for_program(program: u8) -> Option<&'static Template> {
+    let id = GM1_PREFERRED_IDS[usize::from(program)];
+    if id.is_empty() {
+        return None;
+    }
+    template_for_id(id)
+}''')
+open(dst, 'w', encoding='utf-8').write('\n'.join(out) + '\n')

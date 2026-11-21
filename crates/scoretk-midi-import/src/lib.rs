@@ -434,7 +434,19 @@ fn create_instruments(score: &mut Score, tracks: &mut [MTrack], options: &Import
                 .unwrap_or("")
                 .to_owned();
         part.instrument.track_name = name.clone();
-        part.instrument.transpose = instrument::transpose_for_program(tracks[index].program);
+        if let Some(template) = instrument::template_for_track(&tracks[index]) {
+            part.instrument.transpose = if template.transpose_chromatic == 0 {
+                None
+            } else {
+                Some(scoretk_core::model::Transpose::new(
+                    template.transpose_diatonic,
+                    template.transpose_chromatic,
+                ))
+            };
+            if !template.music_xml_id.is_empty() {
+                part.instrument.id = template.music_xml_id.to_owned();
+            }
+        }
         part.instrument.midi_program = Some(if tracks[index].drum_track {
             0
         } else {
@@ -776,6 +788,7 @@ fn process_pending_notes(
     options: &ImportOptions,
 ) {
     let track_id = Track::new(staff, voice as u8);
+    let transpose = score.part(score.staff(staff).part).instrument.transpose;
     let mut tick = start_tick;
     while !pending.is_empty() {
         let mut len = next_chord_tick - tick;
@@ -828,7 +841,7 @@ fn process_pending_notes(
                 let mut done = !midi_chord.notes.is_empty();
                 for note_index in 0..midi_chord.notes.len() {
                     let note = midi_chord.notes[note_index].clone();
-                    let note_id = add_note(score, chord_model, &note, tick);
+                    let note_id = add_note(score, chord_model, &note, tick, transpose);
                     if note.off_time - tick <= len {
                         // Dernière note de la chaîne de liaisons.
                     } else {
@@ -868,10 +881,25 @@ fn add_note(
     chord: &mut Chord,
     midi_note: &MidiNote,
     tick: Fraction,
+    transpose: Option<scoretk_core::model::Transpose>,
 ) -> scoretk_core::model::NoteId {
     let key = chord_key_at(score, tick);
     let tpc = pitch_to_tpc(midi_note.pitch, key);
     let mut note = Note::new(midi_note.pitch.clamp(0, 127) as u8, tpc);
+    // `Part::initFromInstrTemplate` transpose le Tpc de chaque note d'un
+    // instrument transpositeur ; la hauteur concert reste inchangée.
+    if let Some(interval) = transpose {
+        // Une transposition d'octave pure ne change pas le nom de la note :
+        // seul `written_pitch` décale l'octave. Les autres transpositions
+        // écrivent le Tpc transposé (`write_pitch` soustrait
+        // `transpose_chromatic`, donc l'intervalle est inversé ici).
+        if interval.chromatic.rem_euclid(12) != 0 {
+            note.tpc_transposed = scoretk_core::model::transpose_tpc(
+                tpc,
+                scoretk_core::model::Transpose::new(-interval.diatonic, -interval.chromatic),
+            );
+        }
+    }
     note.velocity = u8::try_from(midi_note.velocity.clamp(0, 127)).ok();
     note.tie_back = midi_note.tie.map(scoretk_core::model::NoteId::from_index);
     let note_id = score.add_note(note);

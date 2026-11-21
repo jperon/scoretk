@@ -79,17 +79,79 @@ pub fn set_grand_staff_program(tracks: &mut [MTrack]) {
     }
 }
 
-/// Transposition écrite d'un instrument GM (`InstrumentTemplate::transpose`).
-///
-/// Les gabarits de MuseScore portent un intervalle de transposition ; pour
-/// l'import MIDI, le seul utilisé ici est celui de la contrebasse
-/// (`share/instruments/instruments.xml`, instrument `contrabass` :
-/// `<transposeDiatonic>-7</transposeDiatonic>`,
-/// `<transposeChromatic>-12</transposeChromatic>`, programmes GM 32 et 43).
-/// Un instrument non transpositeur garde `None`.
-pub fn transpose_for_program(program: u8) -> Option<scoretk_core::model::Transpose> {
-    match program {
-        32 | 43 => Some(scoretk_core::model::Transpose::new(-7, -12)),
-        _ => None,
+/// Choisit le gabarit d'instrument d'une piste, comme
+/// `MidiInstr::findInstrumentsForProgram` + `sortInstrumentTemplates`
+/// (`importmidi_instrument.cpp:409-566`). Le premier candidat est retenu,
+/// comme le `msInstrIndex` par défaut de MuseScore.
+pub fn template_for_track(track: &MTrack) -> Option<&'static scoretk_core::instruments::Template> {
+    use scoretk_core::instruments::{preferred_template_for_program, Template, TEMPLATES};
+    let program = i16::from(track.program);
+    let drum = track.drum_track;
+    let preferred = if drum {
+        None
+    } else {
+        preferred_template_for_program(track.program)
+    };
+    let mut candidates: Vec<&'static Template> = Vec::new();
+    if let Some(pref) = preferred {
+        candidates.push(pref);
     }
+    for template in TEMPLATES {
+        if preferred.is_some_and(|pref| pref.id == template.id) {
+            continue;
+        }
+        if template.staff_group == "TAB" || template.use_drumset != drum {
+            continue;
+        }
+        if template.programs.contains(&program) {
+            candidates.push(template);
+        }
+    }
+    if candidates.is_empty() {
+        // `findClosestInstrument` : plus grand programme inférieur à celui de
+        // la piste, hors tablatures et avec le même type de jeu.
+        let mut best: Option<(i16, &'static Template)> = None;
+        for template in TEMPLATES {
+            if template.staff_group == "TAB" || template.use_drumset != drum {
+                continue;
+            }
+            for candidate_program in template.programs.iter().copied() {
+                if candidate_program < program
+                    && best.is_none_or(|(current, _)| candidate_program > current)
+                {
+                    best = Some((candidate_program, template));
+                }
+            }
+        }
+        if let Some((_, template)) = best {
+            candidates.push(template);
+        }
+    }
+    if candidates.is_empty() {
+        return None;
+    }
+    let (min_pitch, max_pitch) = track
+        .chords
+        .iter()
+        .flat_map(|(_, chord)| chord.notes.iter().map(|note| note.pitch))
+        .fold((i32::MAX, i32::MIN), |(low, high), pitch| {
+            (low.min(pitch), high.max(pitch))
+        });
+    candidates.sort_by(|left, right| {
+        let diff = |template: &&'static scoretk_core::instruments::Template| -> i32 {
+            if min_pitch == i32::MAX {
+                return 0;
+            }
+            let mut value = 0;
+            if template.min_pitch > 0 && min_pitch < template.min_pitch {
+                value = template.min_pitch - min_pitch;
+            }
+            if template.max_pitch > 0 && max_pitch > template.max_pitch {
+                value = value.max(max_pitch - template.max_pitch);
+            }
+            value
+        };
+        diff(left).cmp(&diff(right))
+    });
+    candidates.first().copied()
 }

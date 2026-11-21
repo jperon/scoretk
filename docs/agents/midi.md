@@ -1795,3 +1795,63 @@ contrebasse (programmes 32/43) a fait passer `GaudeteChristusEstNatus…` de
 changement** mesuré : la transposition n'est pas appliquée par notre
 exporteur pour ce cas ; elle est révertie. Les 15 pires fichiers et la
 ventilation complète sont dans `/tmp/oracle-midi-import/ms-cat/categories_ms.md`.
+
+## Choix du gabarit d'instrument (remplace le cas spécial)
+
+Le `match program { 32 | 43 => … }` introduit pour la contrebasse est supprimé.
+`scripts/gen-instruments-table.py` génère désormais, dans
+`crates/scoretk-core/src/instruments.rs` (donnée partagée, sans logique de
+format, conformément à la règle des crates `-common`) :
+
+- tous les programmes MIDI de chaque gabarit (`&Channel/<program>`), et non
+  plus seulement le premier ;
+- `transposeDiatonic` / `transposeChromatic` ;
+- `clef`, `staffGroup`, jeu de percussion, plages `pPitchRange` et genre
+  `common` (utiles au tri) ;
+- `GM1_PREFERRED_IDS`, les 128 identifiants préférés de `GM1_SOUND_DATA`
+  (`importmidi_instrument.cpp:60-190`).
+
+`scoretk-musescore-import/src/read/instruments.rs` ne garde que la logique de
+reconnaissance et consulte la table partagée. `MidiInstr::template_for_track`
+porte `findInstrumentsForProgram` (gabarit préféré, gabarits du même
+programme, repli sur le programme inférieur), et `createInstruments` applique
+le `transpose` du gabarit à l'instrument de la partie.
+
+Le point qui empêchait la transposition d'agir sur les hauteurs était le Tpc :
+`write_pitch` soustrait `transpose_chromatic` à la hauteur, mais le
+`tpc_transposed` devait être transposé par l'intervalle **opposé** ; une
+transposition d'octave pure ne touche pas le Tpc. Tests réduits :
+`instrument_transpose`, `instrument_template` (cor 60 → -7, contrebasse 43 →
+octave, ocarina 79 → aucun). Sur les six fichiers réduits du lot LilyPond qui
+avaient un cor (score 0,1060 contre MuseScore), le passage aux gabarits
+donne **0,9908** ; `GaudeteChristusEstNatus…` reste à 1,0000.
+
+`MidiInstr::sortInstrumentTemplates` est également porté : les gabarits
+candidates sont triés par écart entre la plage `pPitchRange` du gabarit et
+les hauteurs réelles de la piste (tri stable, le gabarit préféré restant
+premier à écart égal). Sans ce tri, 14 fichiers du lot LilyPond régressaient
+(gabarit `piccolo` à l'octave choisi à la place d'un gabarit non transpositeur)
+: `Marc-Pinget-Tyrolienne` 0,0057 → 1,0000,
+`Caifa_BeataVirgoMaria` 0,7417 → 0,9963, etc. Un fichier régresse en
+contrepartie, `GaudeteChristusEstNatus…` (1,0000 → 0,9299) : le tri choisit
+un gabarit d'ocarina transposé là où MuseScore garde l'ocarina préféré.
+L'écart résiduel est documenté, pas masqué.
+
+### Mesure finale du port des gabarits
+
+Oracle complet contre MuseScore 4.7.4 (1 020 fichiers), avant → après :
+
+- **N : 0,8018 → 0,8264** ;
+- perte totale : 29 049,8 → 25 440,8 notes ;
+- catégorie **pitch** : 18 702,9 → **15 359,0** notes (gain 3 343,9) ;
+- durée 5 210 → 5 234, voix 3 030,8 → 3 030,8 (bruit de classement).
+
+16 fichiers gagnent, dont six passent de 0,0/0,1060 à 1,0/0,9908 (cors),
+et `Marc-Pinget-Tyrolienne` de 0,0057 à 1,0000. Trois fichiers perdent :
+`GaudeteChristusEstNatus`, `…_abrege` et `…_abrege_a4` (1,0000 → 0,8569 /
+0,9299 / 0,9299). Cause unique expliquée : le tri par plage de hauteur
+choisit pour l'ocarina (programme 79) un gabarit transposé d'une quinte,
+alors que MuseScore 4.7.4 conserve le gabarit `ocarina` préféré non
+transpositeur. Le gain net reste largement positif ; l'écart ocarina est un
+point connu du tri à affiner (`minPitchP`/`maxPitchP` ajustés par la
+transposition dans le C++, pas encore reproduits).
