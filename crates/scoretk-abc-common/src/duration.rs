@@ -96,7 +96,10 @@ pub fn figure_for(len: Fraction) -> (Duration, bool) {
             if candidate.ticks() == len {
                 return (candidate, true);
             }
-            if candidate.ticks() <= len {
+            // Keep the *largest* figure that fits: the loop runs from long
+            // to short, so overwriting unconditionally would leave the
+            // smallest (e.g. a triple-dotted 1024th for a 9/8 rest).
+            if candidate.ticks() <= len && candidate.ticks() > best.ticks() {
                 best = candidate;
             }
         }
