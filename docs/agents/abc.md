@@ -1836,7 +1836,7 @@ séparément (`cbe47d9`). Tout tourne sous `timeout 10 prlimit --as=2000000000`.
 | xml | scoretk | 32 | 32 | 92.99 | 31.14 | 27.21 | 12 548 |
 | xml | xml2abc | 32 | 32 | 93.11 | 27.19 | 24.28 | 13 516 |
 
-scoretk est déjà devant `xml2abc.py` sur la musiqueécrite (N2/N2d) sur le
+scoretk est déjà devant `xml2abc.py` sur la musique écrite (N2/N2d) sur le
 corpus et le lot XML, et produit des fichiers 7 à 13 % plus petits. Sur les
 174 `.mscz`, l'alternative reste légèrement devant (−0,7 pt de N1, −1,3 pt de
 N2d), surtout à cause des causes déjà diagnostiquées en § 17.5 (lecteur MuseScore
@@ -1875,5 +1875,5 @@ vérification de l'aller-retour, écrit d'abord et échouant avant le correctif.
 Les scores musicaux sont strictement inchangés (0 perte N1/N2/N2d sur les
 262 fichiers communs). L'aller-retour passe de **37 à 75 fichiers stables**
 (corpus 31 → 46, mscz 4 → 21, xml 2 → 8) avec **0 régression**, et la taille
-moyenne du `.abc** baisse encore légèrement. La comparaison par fichier avec
+moyenne du `.abc` baisse encore légèrement. La comparaison par fichier avec
 `xml2abc.py` est inchangée (corpus 2/50/4, mscz 22/94/57, xml 8/16/8).
