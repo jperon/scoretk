@@ -2207,7 +2207,33 @@ syntax issue, documented for a later pass). One stability loss
 (`Magnificat__Prt`, index 55): a short measure gains a `z2` fill on re-read;
 no pitch is lost.
 
+### Final causes (2026-11-21, run `/tmp/abc-oct`)
+
+1. **Tuplet end covers scaled duration** (`305302d0`). The writer's item end
+   tick now covers the tuplet-scaled duration so no `z` filler is emitted
+   between tuplet notes (ABC 2.1 §4.13; `abc2xml.py::mkNote` line 1366).
+   The Veni, Creator Spiritus round trip is now stable. +11 files N2d,
+   0 losses.
+2. **Octave clef shift applied once** (`db6697c0`, `41620201`). A `V: clef=treble-8`
+   plus a redundant inline `[K:… clef=treble-8]` applied the -12 shift twice,
+   putting those voices two octaves too low. Snapshot the clefs before the
+   K: loops; skip voices already on the new clef; keep `midi_transpose` when
+   no voice exists yet. ABC 2.1 §4.6, `abc2xml.py::doClef` lines 1736-1744.
+   +9 files N2d, +8 N1, 0 N2d losses (one small N1 trade-off on
+   `JMHaydn_Viderunt_omnes`, 80.13 → 79.69, while its N2d improved
+   58.09 → 59.35).
+
 ### Remaining losses, classified
+
+Ranking of non-exact files after these fixes (mscz 16, xml 10):
+
+| Class | mscz | xml | Reason |
+| --- | ---: | ---: | --- |
+| `octave` (residual) | 12 | 6 | Most are within 0.5 pt of exact (one note off by an octave); the larger ones (`Sancta_Maria_*`, `JMHaydn_*`, `Angels_Carol`) are mixed octave/transposition voices where MuseScore's written pitch and the clef octave interact; analysed, not fully reproduced. |
+| `attaque_decalee` | 0 | 4 | Chordal continuo parts (`Anerio`, `Perosi`, `CanonDeLaPaix`, `Vivaldi -10`) whose written measure lengths are not preserved on re-read; pitches all correct (N1 = 100 %). |
+| `notes_manquantes` | 4 | 1 | Overlapping-voice/orphan-tie artefacts, mostly already within 0.3 pt. |
+| reader failures / excluded | 3 | 2 | Unsupported MuseScore 1.2 (exit 3) and two unreadable mxl sources; out of writing scope. |
+| stability-only | 1 (`Magnificat__Prt`) | 0 | Short-measure `z2` filler added on re-read; N2d = 100 % (no musical discrepancy), predates all current-pass fixes. |
 
 - **Two xml files lose a few N1/N2d points** (`Sancta_Maria_KV_273`,
   `Tibie_Paiom`): these are voices with octave clefs whose residual compensation
