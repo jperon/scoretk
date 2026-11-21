@@ -144,10 +144,13 @@ pub struct Score {
     /// un tenuto. Seul l'écrivain MIDI s'en sert ; les autres écrivains
     /// gardent la partition gravée.
     pub playback_articulate: bool,
-    /// La partition a été lue sous `\unfoldRepeats` : les reprises doivent
-    /// être dépliées. Sans ce drapeau, le MIDI de LilyPond joue la musique
-    /// écrite une fois (corps puis blocs `\alternative`), donc le modèle ne
-    /// porte pas de marques de reprise.
+    /// La partition a été lue sous `\unfoldRepeats`.
+    ///
+    /// Drapeau de **lecture** : le lecteur LilyPond déplie alors les reprises
+    /// dans le modèle. L'écrivain MIDI n'en dépend pas, il obéit à
+    /// `MidiOptions::expand_repeats` ; l'oracle LilyPond passe
+    /// `--no-expand-repeats` aux sources sans `\unfoldRepeats` pour jouer le
+    /// fichier tel qu'écrit.
     pub playback_unfold_repeats: bool,
     /// Arène des notes.
     pub notes: Vec<Note>,

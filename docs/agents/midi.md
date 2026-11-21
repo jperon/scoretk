@@ -2732,8 +2732,11 @@ under `\unfoldRepeats` and distributes the k blocks **contiguously**
 (`ly/music-functions-init.ly`, verified on N = 3..5, k = 2..3). The reader now
 unfolds the passes itself, each body restarting from the `\relative` reference
 at the repeat start; without `\unfoldRepeats` the model keeps the notation for
-the round trip but the MIDI writer plays the body and endings once
-(`Score::playback_unfold_repeats`, `RepeatList::flatten`). Measured: `Tollite`
+the round trip. The MIDI writer always obeys the caller's
+`expand_repeats`; the LilyPond oracle passes `--no-expand-repeats` to the
+sources that have no `\unfoldRepeats` in their score music, so their reference
+is played as written. `Score::playback_unfold_repeats` records the source flag
+for the reader and the oracle, not for the writer. Measured: `Tollite`
 512 → 591, `Ackermans` 2 002 → 3 081, `Makil` 143 → 732, `gaudete` 108 → 432,
 `UztaiDantza` 108 → 379, `LaMouetteGrise` 40 → 249.
 

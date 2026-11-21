@@ -122,10 +122,11 @@ fn write_midi_impl(
     options: MidiOptions,
     capture: bool,
 ) -> Result<(Vec<u8>, Timemap)> {
-    // LilyPond ne déplie les reprises que sous `\unfoldRepeats` : un score
-    // `.ly` sans ce drapeau doit être joué tel qu'écrit (corps + endings),
-    // même quand l'appelant demande le déroulement par défaut.
-    let repeat_list = if options.expand_repeats && score.playback_unfold_repeats {
+    // L'écrivain obéit uniquement à l'appelant : un consommateur qui demande
+    // `expandRepeats: true` doit obtenir les reprises dépliées, même pour un
+    // `.ly` sans `\unfoldRepeats`. L'oracle LilyPond, lui, joue le fichier tel
+    // qu'écrit en passant `--no-expand-repeats` (voir `scripts/oracle/midi`).
+    let repeat_list = if options.expand_repeats {
         RepeatList::unwind(score)
     } else {
         RepeatList::flatten(score)

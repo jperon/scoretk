@@ -964,7 +964,9 @@ the model kept repeat marks and the MIDI writer expanded them with MuseScore's
 the `\relative` reference of an alternative was the previous alternative
 instead of the end of the body. They are fixed in
 `crates/scoretk-lilypond-import` (`NoteSpec::transposable`, the `repeat` arm of
-`Interpreter`, `Score::playback_unfold_repeats`); the `.ly` MIDI lot goes from
+`Interpreter`; `Score::playback_unfold_repeats` records the source flag for
+the reader, and the MIDI oracle passes `--no-expand-repeats` when the score
+music has no `\unfoldRepeats`); the `.ly` MIDI lot goes from
 662/1 020 exact and N2d 91.21 % to **711/1 020 exact and N2d 93.88 %**.
 
 The **`mus`** lot of the reading oracle was re-run in full after the fixes:

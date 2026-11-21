@@ -71,11 +71,76 @@ def lancer(commande: list[str], env: dict | None = None, budget: int = TIMEOUT_S
         return 124, time.monotonic() - debut, "dépassement de la borne de temps"
 
 
-def cmd_scoretk(binaire: str, src: str, dst: str, entree: str, sortie: str) -> list[str]:
+def cmd_scoretk(
+    binaire: str, src: str, dst: str, entree: str, sortie: str, extra: list[str] | None = None
+) -> list[str]:
     return [
         "timeout", str(TIMEOUT_SCORETK), "prlimit", "--as=2000000000",
         binaire, src, "--from", entree, "--to", sortie, "-o", dst,
+        *(extra or []),
     ]
+
+
+def _sans_lyricmode(text: str) -> str:
+    """Retire les blocs `\\lyricmode { … }` (un `\\unfoldRepeats` y est inerte)."""
+    morceaux = []
+    i = 0
+    while True:
+        j = text.find("\\lyricmode", i)
+        if j < 0:
+            morceaux.append(text[i:])
+            break
+        morceaux.append(text[i:j])
+        k = text.find("{", j)
+        if k < 0:
+            break
+        profondeur = 0
+        while k < len(text):
+            if text[k] == "{":
+                profondeur += 1
+            elif text[k] == "}":
+                profondeur -= 1
+                if profondeur == 0:
+                    k += 1
+                    break
+            k += 1
+        i = k
+    return "".join(morceaux)
+
+
+def sans_unfold(src: str) -> bool:
+    r"""Vrai pour un `.ly` sans `\unfoldRepeats` (MIDI de LilyPond non déplié).
+
+    LilyPond ne déplie `\repeat volta` que sous `\unfoldRepeats` ; l'oracle
+    doit donc demander `--no-expand-repeats` pour ces sources. Le drapeau est
+    cherché dans la source et ses `\include` directs (même convention que
+    `scripts/oracle/lilypond/ly_notes.py`).
+    """
+    if not src.endswith(".ly"):
+        return False
+    try:
+        text = Path(src).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    text = _sans_lyricmode(text)
+    if "\\unfoldRepeats" in text:
+        return False
+    base = Path(src).parent
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("\\include"):
+            continue
+        debut = line.find('"')
+        fin = line.find('"', debut + 1)
+        if debut == -1 or fin == -1:
+            continue
+        try:
+            include = (base / line[debut + 1:fin]).read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if "\\unfoldRepeats" in include:
+            return False
+    return True
 
 
 def cmd_mscore(binaire: str, src: str, dst: str) -> tuple[list[str], dict]:
@@ -222,8 +287,9 @@ def mesurer_ecriture(args, lot: str, manifeste: str, fichier_sortie) -> None:
         dst = work / "tk.mid"
         r = base_releve(lot, "ecriture", "scoretk", src)
         entree = "mscx" if src.endswith(".mscx") else "mscz" if src.endswith(".mscz") else "ly"
+        extra = ["--no-expand-repeats"] if sans_unfold(src) else None
         code, duree, erreur = lancer(
-            cmd_scoretk(args.scoretk, src, str(dst), entree, "midi")
+            cmd_scoretk(args.scoretk, src, str(dst), entree, "midi", extra)
         )
         r["code"], r["temps"] = code, round(duree, 3)
         if common.est_non_pris_en_charge(code):
