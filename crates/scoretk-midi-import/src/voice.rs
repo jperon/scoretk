@@ -43,6 +43,15 @@ use super::timesigmap::TimeSigMap;
 /// cette étape, toutes les couches rythmiques partageraient la voix 0 et la
 /// détection des n-olets serait impossible.
 pub fn assign_initial_voices(track: &mut MTrack, limit: usize) {
+    assign_voices_impl(track, limit, None);
+}
+
+/// Variante après quantification : les fins de note sont alors sur la grille.
+pub fn assign_initial_voices_quantized(track: &mut MTrack, limit: usize, basic_quant: Fraction) {
+    assign_voices_impl(track, limit, Some(basic_quant));
+}
+
+fn assign_voices_impl(track: &mut MTrack, limit: usize, basic_quant: Option<Fraction>) {
     if track.drum_track || track.chords.is_empty() {
         return;
     }
@@ -54,7 +63,23 @@ pub fn assign_initial_voices(track: &mut MTrack, limit: usize) {
             continue;
         };
         let on_time = key.0;
-        let chord_end = MTrack::max_off_time(chord);
+        // `MidiTuplet::chordInterval` utilise `findMaxQuantizedOffTime` : une fin
+        // de note à 44,542 tombe sur 44,5 et ne chevauche pas l'accord suivant
+        // attaqué à 44,5. Comparer les fins brutes répartirait ces accords sur
+        // deux voix et `minimizeNumberOfRests` allongerait ensuite la première
+        // note d'un temps au lieu d'un croche (`chord_collect.mid`).
+        let chord_end = match basic_quant {
+            Some(bq) => chord
+                .notes
+                .iter()
+                .map(|note| {
+                    let quant = super::quant::quant_for_len(note.off_time - on_time, bq);
+                    super::quant::quantize_value(note.off_time, quant)
+                })
+                .max()
+                .unwrap_or(on_time),
+            None => MTrack::max_off_time(chord),
+        };
         let free = (0..limit).find(|voice| voice_ends[*voice].is_none_or(|end| end <= on_time));
         let voice = free.unwrap_or_else(|| {
             (0..limit)

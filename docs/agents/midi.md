@@ -1437,12 +1437,18 @@ apply the instrument's transposition and shift the reference by an octave
 (`instrument_clef` is the instructive case). For the `.ly` lot the `.ly` itself
 is the ideal-quantisation reference.
 
-Baseline on 98 upstream files: **N = 0.3637**; the largest losses are
-`human_tempo` (142 notes, score 0.014), `chord_collect` (48, 0.0), the
-tuplet tests and the percussion tests. Many upstream tests set non-default
-import options (`dontSimplify`, `maxVoiceCount V_1`), so their expected `.mscx`
-cannot be matched by the CLI's default options; those files are documented,
-not chased as importer bugs.
+The oracle initially skipped `<chord/>` notes on the "got" side, undercounting
+chords (three notes became one). That bug is fixed: a `<chord/>` note is now
+counted at the previous note's onset without advancing the cursor. All numbers
+below use the corrected oracle; with the earlier version the baseline read
+0.3637 and the first fix 0.3648, which are not comparable.
+
+Baseline on 98 upstream files: **N = 0.3989** (0.4000 after the SMPTE fix);
+the largest losses are `human_tempo` (142 notes, score 0.035), `chord_collect`
+(48, 0.0), the tuplet tests and the percussion tests. Many upstream tests set
+non-default import options (`dontSimplify`, `maxVoiceCount V_1`), so their
+expected `.mscx` cannot be matched by the CLI's default options; those files
+are documented, not chased as importer bugs.
 
 ### Cause fixed: SMPTE ticks
 
@@ -1452,4 +1458,39 @@ time division. The Rust port converted SMPTE ticks to quarters at a fixed
 120 BPM, distorting every onset and duration. Reduced test `smpte_ticks`
 (written first, failed before the fix): `to_muse_score_ticks(1000, 80, true)`
 now gives the raw 1000 ticks. Measured gain on `up-division` (an SMPTE file):
-score 0.0000 → 0.2500; on the full upstream lot N goes from 0.3637 to 0.3648.
+score 0.0000 → 0.2500; on the corrected oracle N goes from 0.3989 to 0.4000.
+
+### Cause fixed: chord collection and voice occupancy before simplification
+
+Two faithful-port gaps combined to lose the whole `chord_collect` file (48
+notes, score 0.0):
+
+1. `quantizeAllTracks` calls `MChord::collectChords(mtrack, { 2, 1 }, { 4, 3 })`
+   just before `quantizeChords` (`importmidi.cpp:274`) — a non-human tolerance
+   of 4/3 of the smallest duration, "less sensitive to on time inaccuracies
+   than 1/2 earlier". The port only did the earlier 1/2 pass, so six notes
+   staggered by one MIDI tick stayed in three pairs. Reduced test
+   `quant_collect_chords` (written first, failed before the fix) reproduces
+   the six-note arpeggio.
+2. `MidiTuplet::chordInterval` uses `Quantize::findMaxQuantizedOffTime`
+   (`importmidi_tuplet_voice.cpp:50-66`): the voice occupancy of a chord is
+   computed from its **quantised** note-offs. The port used raw off-times;
+   in `chord_collect.mid` the last note ends at 44.542 quarters, which
+   quantises to 44.5, so the next chord at 44.5 was considered overlapping.
+   Chords were spread over two voices, and `minimizeNumberOfRests` then
+   lengthened every other note from an eighth to a quarter. `assign_initial_voices_quantized`
+   now recomputes voices after `quantizeChords` using
+   `quantize_value(off_time, quant_for_len(...))`.
+
+Measured on the corrected oracle: N 0.4000 → **0.4516**; `up-chord_collect`
+0.0000 → 0.8958, `up-chord_legato` 0.3333 → 1.0000, `up-clef_melody`
+0.6667 → 1.0000, `up-tuplet_7_staccato` 0.1429 → 0.7143,
+`up-tuplet_duplet` 0.1667 → 0.3333 and `up-human_tempo` 0.0352 → 0.0493.
+
+Five files lose score, all tuplet tests: `up-tuplet_3_5_7_tuplets` (0.2222 →
+0.1667), `up-tuplet_2_voices_3_5_tuplets` (0.6364 → 0.5455), `up-voice_tuplet`
+(0.5000 → 0.3333), `up-tuplet_tied_3_5_tuplets` (0.3333 → 0.0) and
+`up-tuplet_tied_3_5_tuplets2` (0.3750 → 0.0). Their expected `.mscx` contains
+`<Tuplet>` (Q32 quantisation in upstream tests) that our CLI defaults do not
+detect; the voice renumbering changes their (already non-conformant) layout.
+Their combined loss is about 9 notes against 53 gained elsewhere.

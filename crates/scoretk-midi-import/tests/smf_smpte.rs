@@ -86,8 +86,10 @@ fn division_smpte_convertie_en_temps_puis_en_noires() {
     assert_eq!(firsts, vec![60, 64, 67, 72]);
     let onsets: Vec<_> = notes_smpte.iter().map(|n| n.1).collect();
     assert!(onsets.windows(2).all(|w| w[0] <= w[1]));
-    assert!(notes_smpte.last().unwrap().1 > Fraction::from_integer(1),
-            "avec des ticks bruts, la dernière attaque dépasse une noire");
+    assert!(
+        notes_smpte.last().unwrap().1 > Fraction::from_integer(1),
+        "avec des ticks bruts, la dernière attaque dépasse une noire"
+    );
 
     let drop = read_midi(&smpte(Fps::Fps29, 40, 1199)).expect("lecture drop-frame");
     assert!(!notes(&drop).is_empty(), "drop-frame 29,97");

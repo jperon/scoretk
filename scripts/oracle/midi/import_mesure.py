@@ -65,7 +65,8 @@ def notes(path: Path) -> list[tuple[int, float, float, int]]:
                     offset += -delta if child.tag == "backup" else delta
                 elif child.tag == "note":
                     dur = int(child.findtext("duration", "0")) / divisions
-                    if child.find("rest") is None and child.find("chord") is None:
+                    is_chord_note = child.find("chord") is not None
+                    if child.find("rest") is None:
                         pitch = child.find("pitch")
                         if pitch is not None:
                             step = pitch.findtext("step", "C")
@@ -75,7 +76,10 @@ def notes(path: Path) -> list[tuple[int, float, float, int]]:
                             voice = int(child.findtext("voice", "1"))
                             out.append((midi, round((tick + offset) / GRID) * GRID,
                                         round(dur / GRID) * GRID, voice))
-                    offset += dur
+                    # Une note avec <chord/> partage l'attaque de la précédente :
+                    # sa durée ne doit pas avancer le curseur une seconde fois.
+                    if not is_chord_note:
+                        offset += dur
             tick += offset
     return out
 

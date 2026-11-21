@@ -135,7 +135,14 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     drum::split_drum_tracks(&mut tracks);
 
     let last_tick = find_last_chord_tick(&tracks);
-    quantize_all_tracks(&mut tracks, &sigmap, last_tick, quant_value, options);
+    quantize_all_tracks(
+        &mut tracks,
+        &sigmap,
+        last_tick,
+        quant_value,
+        options,
+        is_human,
+    );
 
     for track in &mut tracks {
         remove_overlapping_notes(track);
@@ -312,6 +319,7 @@ fn quantize_all_tracks(
     last_tick: Fraction,
     quant_value: operations::QuantValue,
     options: &ImportOptions,
+    is_human: bool,
 ) {
     let basic_quant = quant::quant_value_to_fraction(quant_value);
     for track in tracks {
@@ -319,6 +327,15 @@ fn quantize_all_tracks(
             continue;
         }
         chord::set_bar_indexes(track, basic_quant, last_tick, sigmap);
+        // `importmidi.cpp:274` : tolérance 4/3 juste avant la quantification.
+        // Ici, avant l'attribution simplifiée des voix, sinon les notes d'un
+        // accord échelonné portent déjà des voix distinctes et ne fusionnent plus.
+        collect_chords(
+            track,
+            Fraction::from_integer(2),
+            Fraction::new(4, 3),
+            is_human,
+        );
         voice::assign_initial_voices(track, options.max_voice_count.limit());
         if track.drum_track {
             drum::find_all_tuplets_for_drums(track, sigmap, basic_quant);
@@ -326,6 +343,7 @@ fn quantize_all_tracks(
             tuplet::find_all_tuplets(track, sigmap, basic_quant);
         }
         quant::quantize_chords(track, basic_quant);
+        voice::assign_initial_voices_quantized(track, options.max_voice_count.limit(), basic_quant);
         tuplet::remove_empty_tuplets(track);
     }
 }
