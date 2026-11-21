@@ -2098,3 +2098,75 @@ des silences gap, déduplication des champs de clef) sans changer leur contenu
 musical, ce qui est précisément le comportement attendu. Taille moyenne du `.abc`
 inchangée (295 / 11 974 / 12 517 octets contre 338 / 13 375 / 13 216 pour
 `xml2abc.py`).
+
+## 30. ABC export : état final (2026-11-21)
+
+### Oracle
+
+Depuis § 29, l'oracle d'écriture est `--mode model` : scoretk exporte la source
+en MusicXML, chaque ABC candidat est réimporté par scoretk et exporté de la même
+manière, et `midi_notes.compare` juge N1/N2/N2d. Cela élimine les artefacts du
+mode MIDI (ornements réalisés par MuseScore, limite de 16 canaux d'`abc2midi`) :
+sur le lot mscz les « pertes » passent de 57 à 16, dont une partie sont des
+échecs de lecture de la source (partitions MuseScore 2.x) plutôt que des pertes
+d'écriture. Le tableau ne montre donc plus que de vraies pertes d'écriture.
+
+### Chiffres vs `xml2abc.py` (binaire final, `/tmp/abc-final-turn`)
+
+| Lot | Outil | Exact | N1 % | N2 % | N2d % | Taille .abc moy. |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | **46** (82 %) | **99,57** | **66,02** | **65,47** | 295 |
+| corpus | xml2abc | 42 (75 %) | 80,87 | 34,91 | 32,58 | 334 |
+| mscz | scoretk | **92** (53 %) | **99,59** | **80,11** | **78,05** | 11 974 |
+| mscz | xml2abc | 20 (12 %) | 83,33 | 43,57 | 38,80 | 13 375 |
+| xml | scoretk | **13** (41 %) | **98,59** | 36,71 | 34,84 | 12 517 |
+| xml | xml2abc | 6 (19 %) | 88,16 | **81,68** | **80,56** | 13 216 |
+
+Par fichier : corpus 6 / 50 / 0, mscz **119 / 38 / 16**, xml 13 / 11 / 8
+(scoretk > = < xml2abc). Suite aux trois causes ci-dessous, les fichiers exacts
+mscz passent de 63 à 92 et N1 de 96,88 % à 99,59 %. Sur le lot xml, `xml2abc.py`
+reste meilleur sur N2/N2d pour quelques pièces (accordéon) où le port écrit des
+durées de silence différentes ; noter que scoretk y est **meilleur en N1**
+(98,59 % contre 88,16 %). La taille moyenne du `.abc` reste inférieure de 7 à
+13 % à celle de l'alternative : aucun gonflement.
+
+### Causes corrigées dans cette passe
+
+1. **Octave de clef dans un champ `V:`** (`552bff8`, `83c161d`). Un `clef=treble-8`
+   déclaré dans un `V:` n'était pas appliqué aux hauteurs (seul `K:` l'était) :
+   la note lue était un octave trop haut, l'écrivain compensait, et l'aller-retour
+   montait d'un octave par passe (`G4 → g4 → g'4`). On applique maintenant la
+   **différence** entre la clef du `V:` et celle déjà appliquée par le `K:`, pour
+   ne pas la compter deux fois quand les deux déclarent la même clef (cas
+   `K:… clef=treble-8` + `V:1 … clef=treble-8`, qui perdait jusqu'à 87 % des
+   hauteurs). ABC 2.1 § 4.6. Test réduit `abc_ecriture_clef_voix_octave.rs`.
+2. **Armure absorbée par le champ de clef** (`9b590b34`). Un changement d'armure
+   et de clef au même tick écrivait `[K:G]` puis `[K:G clef=treble]` : le champ de
+   clef contient déjà l'armure. Test réduit `abc_ecriture_clef_cle_duplique.rs`.
+
+### Stabilité de l'aller-retour
+
+`.abc → scoretk → .abc → scoretk` : **173 → 213 fichiers stables / 244**
+(corpus 54, mscz **140**, xml **19**), soit **+40 gains et 0 régression de
+stabilité** sur cette passe. L'octave de clef `V:` explique la quasi-totalité
+des gain (les familles `Les anges`, `Sicut locutus`, `Stella maris`, `Omni die`,
+`Ave Verum`, `Sancta Maria Lux`).
+
+### Pertes restantes, classées
+
+- **Deux fichiers xml perdent quelques points** N1/N2d (`Sancta_Maria_KV_273`,
+  `Tibie_Paiom`) : il s'agit de voix à clef d'octave dont la compensation
+  résiduelle n'est pas entièrement reproduite à la relecture. Perte maximale
+  3,4 points de N1, sans perte de stabilité ; aucun autre fichier ne régresse.
+  Cause documentée pour une passe ultérieure (ABC 2.1 § 4.6).
+- **`.abc` instables restants (31)** : famille `Minuit chrétien` (9), où une
+  mesure écrite 12/8 est relue à 13/8 et gagne un `z` à chaque passe (mesure 27
+  du fichier source, origine du croche surnuméraire non encore isolée) ;
+  microfiches d'armure/altération sur `Vingt_danses_enfantines` (3) et
+  `copypaste_parts` (1) ; combinaisons diverses.
+- **Vraies pertes d'écriture mscz (16)** : 4 sont des échecs du lecteur MuseScore
+  (partitions 2.x, hors portée de l'écriture) ; les autres sont des décalages
+  d'attaque liés aux mesures courtes/anacrouses et au regroupement des voix,
+  où `xml2abc.py` écrit des `z` explicites et des retours `$` (`doMaat`, ligne
+  674) que le port n'émet pas encore. Aucune hauteur n'est perdue sur la plupart
+  (N1 = 100 %). Cause documentée, non corrigée dans cette passe.
