@@ -1011,6 +1011,10 @@ impl Reader {
                         self.voices[index].name = fields.name;
                     }
                     if let Some(clef) = fields.clef {
+                        // Un suffixe d'octave sur la clef d'un `V:` décale les
+                        // hauteurs, comme celui d'un `K:` (ABC 2.1 § 4.6). Le
+                        // modèle porte la hauteur réelle : écrite + ce décalage.
+                        self.voices[index].transpose += 12 * i32::from(clef.octave_change());
                         self.voices[index].clef = Some(clef);
                     }
                     if let Some(transpose) = fields.transpose {
@@ -1034,7 +1038,10 @@ impl Reader {
                         self.header_time.clone(),
                         self.header_key.clone(),
                     );
-                    voice.transpose = transpose;
+                    voice.transpose = transpose
+                        + fields
+                            .clef
+                            .map_or(0, |clef| 12 * i32::from(clef.octave_change()));
                     voice.instrument_transpose = instrument_transpose;
                     self.current = self.voices.len();
                     self.voices.push(voice);
