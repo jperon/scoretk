@@ -1936,6 +1936,35 @@ The residual key/time/clef counts are the `abc2xml.py:2423` default field
 and oracle failures (no `K:`), not missing music; voices/voltas/repeats are
 one-part-per-voice layout, now normalised above.
 
+### ABC import: fourth pass — unmatched slurs (2026-11-21)
+
+The largest remaining real class was slurs (24 tunes). Three tunes
+(`americanfifeopus.abc` X:18/X:118, `0001-0050.abc` X:31) showed the same
+source pattern: an opening `(` left unclosed at the end of the tune.
+`abc2xml.py:1516-1525` writes `<slur type="start">` on the note after `(`
+whether or not a `)` follows; ABC 2.1 §4.11 defines the phrase mark. The
+reader kept unmatched `(` in `open_slurs` and dropped them with a warning.
+
+Fix (`slur_non_ferme`, commit in this pass): at end of tune, close each
+remaining open slur at the last event so its `<slur type="start">` is
+written. Reduced test written first, failing before the fix.
+
+**Fresh measurement** (`target/n3-sluropen`, `abc2xml.py` 269 downloaded
+again into `target/abcchk/`, not reused): N3 per-voice deficits now keys 29,
+times 25, clefs 19, voices 18, repeats 22, voltas 15, decorations 15,
+tuplets 5, harmony 2, graces 2, lyrics 10 — **slurs 24 → 0**. Tune-by-tune
+versus the previous run: **25 N3 entries improved, 0 regressed; 0 N1 exact
+losses, 0 gains, 0 note-count changes**. The fresh alt run reproduces the
+earlier figures for every other category, confirming the prior reused alt
+XMLs were equivalent. The remaining classes are the `abc2xml.py:2423`
+default field and one-part-per-voice layout, normalised per part by `n3.py`,
+or oracle failures (tunes without `K:`).
+
+The committed test that read a deleted `/tmp/abc-vcheck-run/...` file was
+replaced by a minimal inline ABC (five voices, foreign tie on V:5) that
+panics at `ids.rs:132` without the `% 4` clamp; other absolute-path test
+dependencies were inlined or removed. Workspace tests and clippy are clean.
+
 ## 27. Écriture ABC : mesure complète et deux correctifs (2026-11-21)
 
 ### 27.1 Oracle et protocole
