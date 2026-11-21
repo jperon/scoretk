@@ -598,8 +598,15 @@ impl Voice {
     pub(crate) fn schedule_key(&mut self, key: KeySig) {
         let measure = self.measure_index();
         let tick = self.tick;
+        // Un champ `K:` répété identique est un remplacement (ABC 2.1 §3.2,
+        // `abc2xml.py::doKey`) : il doit produire son propre `<key>`, mais ne
+        // doit pas effacer les altérations déjà vues dans la mesure (§4.2).
+        // `finish_measure` réinitialise déjà l'état à chaque barre.
+        let changed = self.key.transposed_key != key.transposed_key || self.key.mode != key.mode;
         self.key = key.clone();
-        self.accidental = pitch::AccidentalState::new(key.transposed_key.fifths());
+        if changed {
+            self.accidental = pitch::AccidentalState::new(key.transposed_key.fifths());
+        }
         self.key_changes.push((measure, tick, Some(key)));
     }
 
@@ -1372,6 +1379,18 @@ mod clef_octave_tests {
     /// absolue : un `[K: clef=bass]` en cours d'air annule le `-8` d'un
     /// `V:1 clef=treble-8`. Le port ne recalculait que l'écart global et
     /// laissait la voix un octave trop bas après le changement de clef.
+    /// `abc2xml.py` écrit un `<key>` pour chaque champ `K:` répété
+    /// (ABC 2.1 §3.2 : un champ répété est un remplacement), mais un champ
+    /// identique ne doit pas effacer la mémoire des altérations de la mesure
+    /// (§4.2) : un `=B` reste valable jusqu'à la barre suivante.
+    #[test]
+    fn k_repetee_identique_garde_les_alterations_de_mesure() {
+        let score = crate::reader::read_abc("X:1\nM:4/4\nL:1/8\nK:F\n=B c [K:F] B c |]\n")
+            .expect("lecture");
+        let pitches: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+        assert_eq!(pitches, vec![71, 72, 71, 72], "hauteurs: {:?}", pitches);
+    }
+
     #[test]
     fn changement_de_clef_annule_octave_de_la_voix() {
         let score = crate::reader::read_abc(
