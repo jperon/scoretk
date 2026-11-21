@@ -1287,6 +1287,15 @@ impl<'a> Interpreter<'a> {
         // `\transposition` de portée ne s'appliquent (le performer MIDI de
         // LilyPond joue directement la hauteur de son table d'instruments).
         if let Some(pitch) = note.midi {
+            // Un nom de `\chordmode` se transpose : `\transpose c g,` décale
+            // la fondamentale et tous les degrés (LilyPond transpose la
+            // musique avant de réaliser l'accord). La percussion, elle, garde
+            // la hauteur de sa table.
+            let pitch = if note.transposable {
+                u8::try_from((i32::from(pitch) + self.transpose.1).clamp(0, 127)).unwrap_or(pitch)
+            } else {
+                pitch
+            };
             let naturels = [0, 2, 4, 5, 7, 9, 11];
             let semiton = i32::from(pitch) % 12;
             let step = naturels

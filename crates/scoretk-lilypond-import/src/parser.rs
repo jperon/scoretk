@@ -3194,6 +3194,7 @@ impl<'a> Parser<'a> {
                         posts: posts.clone(),
                         head_group: head.clone(),
                         midi: Some(pitch),
+                        transposable: self.note_mode == NoteMode::Chords,
                     })
                     .collect();
                 let (duration, multiplier) = self.parse_optional_duration_spec();
@@ -3222,6 +3223,7 @@ impl<'a> Parser<'a> {
                                     posts: Vec::new(),
                                     head_group: NoteHeadGroup::default(),
                                     midi: Some(basse),
+                                    transposable: true,
                                 });
                             }
                         }
@@ -3263,6 +3265,7 @@ impl<'a> Parser<'a> {
             posts: std::mem::take(&mut note_posts),
             head_group: head,
             midi: None,
+            transposable: false,
         }];
         let (duration, multiplier) = self.parse_optional_duration_spec();
         // Les post-événements peuvent suivre la durée d'un accord.
@@ -3300,6 +3303,7 @@ impl<'a> Parser<'a> {
                 posts,
                 head_group: head,
                 midi: None,
+                transposable: false,
             });
             self.guard_progress(before);
         }

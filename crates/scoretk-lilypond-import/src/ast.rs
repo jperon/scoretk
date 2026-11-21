@@ -104,6 +104,10 @@ pub(crate) struct NoteSpec {
     /// noms ne sont pas des hauteurs diatoniques et l'interprète n'applique
     /// ni octave relative ni transposition.
     pub midi: Option<u8>,
+    /// Vrai pour un nom de `\chordmode` : `\transpose` décale bien la
+    /// hauteur réalisée (contrairement à `\drummode`, dont la table de
+    /// percussion ne se transpose pas).
+    pub transposable: bool,
 }
 
 /// Contenu rythmique d'un élément.
