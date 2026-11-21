@@ -5117,32 +5117,48 @@ or local voice/hand-assignment choices.
   came from a different oracle and are not comparable.
 ### Comparison with other MIDI importers (same oracle)
 
-`scripts/oracle/midi/mesure.py --lecture ... --mscore mscore --midi2ly
---alt-stride 10` on the two reading lots: the reference is the source MIDI
-itself, N1 = pitch multiset and N2 = pitch + onset on the Q16 grid (±1/16
-quarter). Alternatives are measured on one file in ten; the rows below use
-only the files where **all three** converters were run:
+`scripts/oracle/midi/mesure.py --lecture ... --mscore mscore --midi2ly`
+on the three reading lots; the reference is the source MIDI itself, N1 =
+pitch multiset and N2 = pitch + onset on the Q16 grid (±1/16 quarter).
+Alternatives are sampled deterministically (`--alt-stride 4` on the main
+LilyPond lot, 10 on the two others); the rows below use only the files where
+**all three** converters ran:
 
 | Lot | Converter | Files | N1 % | N2 % | Exact |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `lecture_musique` (102 sampled) | scoretk | 102 | 100.00 | 100.00 | 47 |
+| `lecture_musique` — LilyPond, 1 020 files (102 sampled) | scoretk | 102 | 100.00 | 100.00 | 47 |
 | | MuseScore 4.7.4 (`mscore -o`) | 102 | 100.00 | 100.00 | 47 |
 | | `midi2ly` → `lilypond -s` | 90 | 99.11 | 99.11 | 87 |
+| **same lot, 1/4 sample (255 same files)** | scoretk | 255 | **100.00** | **100.00** | 121 |
+| | MuseScore 4.7.4 | 255 | **100.00** | **100.00** | 121 |
+| | `midi2ly` → `lilypond -s` | 245 | 99.93 | 99.93 | 242 |
 | `lecture_mutopia` (13 sampled) | scoretk | 13 | 100.00 | 83.16 | 3 |
 | | MuseScore 4.7.4 | 12 | 100.00 | 83.67 | 2 |
 | | `midi2ly` → `lilypond -s` | 12 | 97.84 | 96.67 | 11 |
 
-scoretk ties MuseScore on `lecture_musique` and beats `midi2ly` on N2
-(100.00 vs 99.11). On `lecture_mutopia` scoretk is 0.51 point below MuseScore
-and 13.51 below `midi2ly`, but the cause is identified: a single human
-performance, `KV331_2_1_menuetto` (2 660 notes), where both MIDI importers
-reinterpret the onsets (scoretk N2 15.68, MuseScore 18.53) while `midi2ly`
-round-trips the MIDI through notation and keeps N2 100. All other sampled
-Mutopia files are at N2 100 for both scoretk and MuseScore (the remaining
-`midi2ly` differences are an octave error on `SchubertF-D899-2-Impromptu`
-and a failure on `KingCotton`). This is a difference of interpretation, not
-an importer defect; changing the beat tracker to match a notation round-trip
-would regress the upstream lot.
+**No file in the 255-file LilyPond comparison puts scoretk below MuseScore
+4.7.4** (both N2 100.00, 121 exact each; scoretk also reaches N2 100.00 on all
+1 020 files). There is therefore no porting defect to repair on that lot:
+neither `importmidi_quant.cpp` onset quantisation nor the voice/hand stages
+lose an attack relative to MuseScore at the Q16 tolerance. `midi2ly` is
+slightly behind there (99.93, with 10 conversions rejected).
+
+On `lecture_mutopia` scoretk is 0.51 point below MuseScore and 13.51 below
+`midi2ly`, again from a single human performance, `KV331_2_1_menuetto`
+(2 660 notes): both MIDI importers reinterpret the onsets (scoretk N2 15.68,
+MuseScore 18.53). Only `midi2ly` is meaningfully ahead. The reference
+explains why: LilyPond's `midi2ly` keeps the raw tick onsets (`end_note(pitches,
+notes, t, e)` inserts at `lt`, with `duration_quant_clocks = 0` by default —
+`midi2ly` script `:103`, `:727-731`, `:1097-1099`, LilyPond 2.27.0 wrapped
+script), then `lilypond -s` renders those exact positions back to MIDI.
+MuseScore instead quantises onsets and, for human performances, runs the beat
+tracker (`Quantize::setIfHumanPerformance`, `importmidi_quant.cpp:455-481`,
+`Quantize::quantizeChords`, `:1487-1516`); our port follows that pipeline.
+Matching `midi2ly` would mean keeping off-grid onsets instead of quantising,
+i.e. **diverging from the 4.7.4 behaviour that is the compliance target**,
+and it would regress the upstream lot — so it is deliberately not attempted.
+The other sampled Mutopia differences are an octave error on
+`SchubertF-D899-2-Impromptu` and a failed `midi2ly` run on `KingCotton`.
 
 - **Instrument template selection**: literal port of `importmidi_instrument.cpp`.
 - **Duration simplification**: literal port of `lengthenNote` /
