@@ -58,13 +58,12 @@ fn time2tick(time: f64, ticks_per_sec: f64) -> Fraction {
 
 /// `MidiTempo::findBasicTempo(..., isHumanPerformance=true)` : les pistes sans
 /// accord sont ignorées pour les fichiers humains (`importmidi_tempo.cpp:38-52`).
-fn basic_tempo(midi: &MidiFile, tracks: &[MTrack]) -> f64 {
-    for (index, track) in midi.tracks.iter().enumerate() {
-        if false
-            && tracks
-                .get(index)
-                .is_none_or(|mtrack| mtrack.chords.is_empty())
-        {
+fn basic_tempo(_midi: &MidiFile, tracks: &[MTrack]) -> f64 {
+    // `findBasicTempo(..., isHumanPerformance=true)` : ne pas lire le tempo
+    // des pistes sans accords, souvent complètement erroné
+    // (`importmidi_tempo.cpp:38-52`).
+    for track in tracks {
+        if track.chords.is_empty() {
             continue;
         }
         for (_, raw) in &track.events {
@@ -209,11 +208,14 @@ fn match_rank(
         let mut relations = 0;
         let mut matches = 0;
         for i in 0..bar.len() - 1 {
-            let Some(s1) = saliences.get(&bar[i]) else {
-                continue;
-            };
+            // `relationCount` compte toutes les paires, même sans saillance
+            // (importmidi_beat.cpp:241-255).
+            let s1 = saliences.get(&bar[i]);
             for j in (i + 1)..bar.len() {
                 relations += 1;
+                let Some(s1) = s1 else {
+                    continue;
+                };
                 let Some(s2) = saliences.get(&bar[j]) else {
                     continue;
                 };
@@ -455,4 +457,42 @@ pub fn ticks_per_second(midi: &MidiFile, tracks: &[MTrack]) -> f64 {
 /// Référence de la première mesure (pour les tests).
 pub fn first_bar_fraction(sigmap: &TimeSigMap) -> Fraction {
     fraction_from_ticks(sigmap.bar2tick(0, 0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chord::{MTrack, MidiChord, MidiNote};
+
+    #[test]
+    fn tempo_humain_ignore_la_piste_sans_accords() {
+        // `human_tempo.mid` : piste 0 sans note avec des tempos erronés,
+        // piste 1 avec les notes et sans tempo. `findBasicTempo(..., true)`
+        // (`importmidi_tempo.cpp:38-52`) doit retomber sur 2 battements/s.
+        let mef = MidiFile {
+            tracks: vec![Default::default(), Default::default()],
+            division: DIVISION,
+            is_division_in_tps: false,
+            format: 1,
+        };
+        let mut tempo_track = MTrack::default();
+        tempo_track.events.push((
+            0,
+            crate::midifile::RawEvent {
+                channel: 0,
+                kind: EventKind::Meta {
+                    kind: crate::midifile::meta::TEMPO,
+                    data: vec![0x03, 0x93, 0x87], // 234375 µs
+                },
+            },
+        ));
+        let mut chord_track = MTrack::default();
+        let mut chord = MidiChord::default();
+        chord
+            .notes
+            .push(MidiNote::new(60, 90, Fraction::new(1, 4), Fraction::ZERO));
+        chord_track.chords.insert(Fraction::ZERO, chord);
+        let tps = ticks_per_second(&mef, &[tempo_track, chord_track]);
+        assert!((tps - 960.0).abs() < 1e-9, "ticks/s {tps}");
+    }
 }

@@ -2454,60 +2454,51 @@ it: `assignVoices`'s tuplet part must reject those, and `OSalutarisHostia`
 must keep MuseScore's notated durations (or the oracle must compare sounding
 durations).
 
-## `human_tempo`: beat tracking is used upstream, our glue is regressive
+## `human_tempo`: beat tracker ported and wired, target not reached (2026-11-21)
 
-MuseScore does use the beat tracker on import when the performance is detected
-as human: `Quantize::setIfHumanPerformance` calls `MidiBeat::findBeatLocations`
-(`importmidi_quant.cpp:399-480`) and `convertMidi` always calls
-`MidiBeat::adjustChordsToBeats` (`importmidi.cpp`, after `collectChords`),
-which is a no-op for non-human files. Our port detects the same human
-performances (`quant::is_human_performance`) and contains the BeatRoot glue,
-but it is **not wired**: the measured wiring changed `human_tempo` from 0.5000
-to 0.2958 before the beat-tie fix, and the induction/anchoring
-(`updateFirstLastBeats`) does not reproduce MuseScore's grid. After the
-beat-tie fix the file scores 0.3813 (default), so the remaining cause is the
-tracker itself; wiring it without a correct anchoring would regress the row
-again. Documented as an open cause, not enabled.
+Literal diff of `importmidi_beat.cpp` and the BeatRoot sources against our
+glue, then three fixes:
 
-## Tuplet notation: MuseScore's notated durations (2026-11-21)
+1. **Tempo source.** `MidiTempo::findBasicTempo(tracks, isHumanPerformance)`
+   (`importmidi_tempo.cpp:38-52`) skips tracks **without chords** for human
+   performances. Our `basic_tempo` had that test disabled (`if false && …`), so
+   `human_tempo` read its first track — which has no notes and two tempos
+   (234375 and 491803 µs) — instead of falling back to 2 beats/s. Reduced unit
+   test `beat_locator::tests::tempo_humain_ignore_la_piste_sans_accords` builds
+   exactly that configuration and expects 960 ticks/s.
+2. **Match rank.** `findMatchRank` (`importmidi_beat.cpp:219-269`) counts every
+   (i, j) pair in `relationCount`, even when the first beat has no salience;
+   the port skipped those, changing the denominator.
+3. **Wiring.** `findBeatLocations` replaces the file's time signature
+   (`setTimeSig`, `importmidi_beat.cpp:305-309`); `adjustChordsToBeats`
+   (`:412-480`) runs right after `collectChords`, as in
+   `convertMidi` (`importmidi.cpp:1169-1170`). The `Q_8`/`V_2` defaults for
+   human performances were already applied.
 
-With the literal detector and `filterTuplets`, the remaining difference on
-`OSalutarisHostia` was the model duration of tuplet notes: MixeScore writes
-notated durations (`toDurationList` is called with the tuplet ratios,
-`processPendingNotes`, `importmidi.cpp:553-611`), while the opt-in path passed
-an empty tuplet list and kept the sounding values. `duration_list` now always
-uses `find_tuplets_in_bar_for_duration`; with the option, `OSalutarisHostia`
-has **4 time modifications, exactly the reference's 4**, and its notes match
-(one duration at 1.5 against 1.25, within the oracle tolerance).
+Measurement (same manifests and oracle):
 
-Measurement with the option (same manifests, same oracle):
-
-| Metric | Default | `tuplet_notation` |
+| Metric | Before | After |
 | --- | ---: | ---: |
-| LilyPond N | 0.9821 | 0.9821 (identical file by file) |
-| files with N gain / loss | — | **0 / 0** |
-| `tuplet` dimension loss | 11 778.0 | **6 216.0** |
-| `onset` / `duration` dimensions | 26.0 / 350.8 | 154.0 / 656.9 |
-| upstream N | 0.7662 | **0.7743** |
+| `human_tempo` | 0.3813 | **0.4820** |
+| upstream N (96 files) | 0.7662 | **0.7824** |
+| LilyPond lot (1 020 files) | — | unchanged, file by file |
 
-The option is now **lossless per file** on both lots and gains the tuplet
-notation and the upstream row. It is **still not the default** because:
+`human_tempo` is the only upstream file that changes; no file loses anything.
+**The 0.5000 target is not reached.** Exact divergence, as requested:
 
-- `v4/timesig-09` (source without `<Tuplet>`) receives 182 invented time
-  modifications if the tuplets are inserted at MuseScore's early stage;
-- the tuplet part of `assignVoices` (`setTupletVoices`,
-  `importmidi_tuplet_voice.cpp:112-134`) was implemented and measured on the
-  late path: moving already-sorted voices after `separateVoices` loses notes on
-  **221 files** (worst −0.28, `UztaiDantza`), so it is not applied; it belongs
-  to the early stage, together with `removeUnusedTuplets` /
-  `excludeExtraVoiceTuplets` and the back-tied tuplets
-  (`findBackTiedTuplets`, `:802-870`), which need the tie chains of the early
-  model.
-
-So the decision stays opt-in, now with a measured lossless option and a
-precise condition to flip it: port the early tuplet voice assignment and the
-back-tied tuplets, then the early insertion must leave `timesig-09` without
-tuplets.
+- BeatRoot's beat list starts at **29/64 whole = 1.8125 quarters** (first beat
+  870 ticks); spacing is **0.48 s ≈ 0.96 quarter** instead of one quarter.
+- The first chord is at 2726 ticks (**5.679 quarters**); after
+  `adjustChordsToBeats` it maps near 3.9 quarters, and the score's first note
+  lands at **9.0 quarters**, while the reference has it at **16.0 quarters**
+  (four leading 4/4 measures of rests).
+- The diverging step is therefore the beat list **start** and the leading-rest
+  anchoring: `Agent::fillBeats` (`Agent.cpp`) / `addFirstBeats`
+  (`importmidi_beat.cpp:140-162`) do not produce the earlier beats MuseScore
+  has, and `createMeasures` starts the score at the first chord
+  (`findFirstChordTick`) rather than at the first beat. This is a structural
+  difference, not a parameter: nothing in the literal diff of the induction
+  (`Induction::beatInduction`) or the agent (`Agent::beatTrack`) differs.
 
 ## MIDI import: status (2026-11-21)
 retk-midi-import`, `scoretk-midi-export`)

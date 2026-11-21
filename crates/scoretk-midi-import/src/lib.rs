@@ -116,12 +116,14 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     lengthen_too_short_notes(&mut tracks);
 
     // Détection d'une performance humaine, comme `Quantize::setIfHumanPerformance`.
-    let (is_human, quant_value, max_voice_count, mut beat_data) =
+    let (is_human, quant_value, max_voice_count, beat_data) =
         detect_human_performance(midi, &tracks, &sigmap, options);
-    // Le câblage de `MidiBeat::setTimeSignature`/`adjustChordsToBeats` est
-    // mesuré comme régressif (voir docs/agents/midi.md) : on garde la glue
-    // disponible mais inactive tant que l'ancrage de barre n'est pas fidèle.
-    let _ = &mut beat_data;
+    // `MidiBeat::findBeatLocations` remplace la mesure du fichier par la
+    // signature retenue (`setTimeSig`, importmidi_beat.cpp:305-309).
+    if let Some(data) = &beat_data {
+        sigmap = TimeSigMap::new();
+        sigmap.add(0, data.time_sig);
+    }
 
     for track in &mut tracks {
         collect_chords(
@@ -130,6 +132,11 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
             Fraction::from_integer(1) / Fraction::from_integer(2),
             is_human,
         );
+    }
+    // `MidiBeat::adjustChordsToBeats` juste après `collectChords`
+    // (importmidi.cpp:1169-1170).
+    if let Some(data) = &beat_data {
+        beat_locator::adjust_chords_to_beats(&mut tracks, data);
     }
     for track in &mut tracks {
         merge_chords_with_equal_on_time_and_voice(track);
@@ -153,6 +160,11 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
 
     for track in &mut tracks {
         remove_overlapping_notes(track);
+    }
+    // `MidiBeat::adjustChordsToBeats` juste après `collectChords`
+    // (importmidi.cpp:1169-1170).
+    if let Some(data) = &beat_data {
+        beat_locator::adjust_chords_to_beats(&mut tracks, data);
     }
     for track in &mut tracks {
         merge_chords_with_equal_on_time_and_voice(track);
