@@ -2514,3 +2514,20 @@ random, making one file lose all its notes from one run to the next. The
 budget is now 45 s in `scripts/oracle/lilypond/ecriture.py` and
 `scripts/oracle/abc/ecriture.py`; the timeout is a maximum, so fast files are
 unchanged.
+
+### Final figures (binary with the clef fix, stable oracle, `--mode model`)
+
+| Lot | Tool | Exact | N1 % | N2 % | N2d % | ABC OK |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | **46** (82.1 %) | **99.51** | **99.40** | **99.40** | 56/56 |
+| corpus | xml2abc | 42 (75.0 %) | 80.87 | 35.50 | 32.74 | 56/56 |
+| mscz | scoretk | **164** (94.8 %) | **99.97** | **99.97** | **99.97** | 173/173 |
+| mscz | xml2abc | 21 (12.1 %) | 83.93 | 41.86 | 37.15 | 173/173 |
+| xml | scoretk | **23** (71.9 %) | **99.97** | **97.06** | **96.97** | 32/32 |
+| xml | xml2abc | 6 (18.8 %) | 87.73 | 66.80 | 64.74 | 32/32 |
+
+Per-file comparison with the pre-fix run: **4 gains and 0 losses** across all
+three lots — the three `Vingt_danses` copies (up from a timeout, each 100 %)
+and `Vivaldi…_09_Gloria_Patri_orgue` (+2.92 N2d, still short of exact because
+of the residual tenor octave-clef cases above). No compile error or warning
+is left on either candidate.
