@@ -1877,3 +1877,147 @@ Les scores musicaux sont strictement inchangés (0 perte N1/N2/N2d sur les
 (corpus 31 → 46, mscz 4 → 21, xml 2 → 8) avec **0 régression**, et la taille
 moyenne du `.abc` baisse encore légèrement. La comparaison par fichier avec
 `xml2abc.py` est inchangée (corpus 2/50/4, mscz 22/94/57, xml 8/16/8).
+
+
+## 28. Écriture ABC : classement des 57 défaites mscz et de l'aller-retour (2026-11-21)
+
+### 28.1 Les 57 fichiers où `xml2abc.py` gagne (lot mscz)
+
+Liste complète, triée par écart de N2d. `N1 tk/alt` et `N2d tk/alt` en
+pourcentages ; les drapeaux sont ceux de `midi_notes.py`.
+
+| Fichier | N1 tk | N1 alt | N2d tk | N2d alt | Écart | Drapeaux |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Vivaldi_-_Dixit_Dominus-RV_594__-_03-VirgamVirtutis_ | 99.2 | 99.2 | 51.1 | 97.9 | 46.7 | octave,notes_manquantes |
+| Vivaldi_-_Dixit_Dominus-RV_594__-_02_Donec_ponam_de_ | 100.0 | 100.0 | 25.9 | 59.1 | 33.2 | attaque_decalee |
+| Vivaldi_-_Dixit_Dominus-RV_594__-_09_Gloria_Patri.ms | 77.2 | 98.0 | 68.3 | 97.3 | 29.0 | octave,notes_manquantes |
+| Veni, Creator Spiritus_Courtial_v3_SATB.mscz | 96.0 | 100.0 | 60.5 | 82.6 | 22.1 | octave |
+| Vivaldi_-_Dixit_Dominus-RV_594__-_09_Gloria_Patri.ms | 77.2 | 98.0 | 76.6 | 97.3 | 20.7 | octave,notes_manquantes |
+| 00- Adeste fideles - choeur.mscz | 100.0 | 100.0 | 79.6 | 98.2 | 18.6 | attaque_decalee |
+| Autumn_Leaves_Frank_Marocco.mscz | 79.1 | 79.2 | 49.6 | 66.0 | 16.4 | octave,notes_manquantes |
+| Buenos_dias,_Mexico_!.mscz | 98.8 | 98.8 | 87.2 | 97.9 | 10.7 | octave,notes_manquantes |
+| Wellerman_-_Misc_Traditional.mscz | 25.0 | 25.0 | 13.2 | 23.8 | 10.5 | octave,notes_manquantes |
+| Waltz_No._2.mscz | 100.0 | 99.9 | 76.6 | 87.1 | 10.5 | attaque_decalee |
+| Vivaldi_-_Dixit_Dominus-RV_594__-_08-DeTorrente_fred | 98.8 | 98.8 | 81.7 | 91.7 | 9.9 | octave,notes_manquantes |
+| Vivaldi_-_Dixit_Dominus-RV_594__-_09_Gloria_Patri_or | 36.0 | 38.0 | 27.5 | 37.2 | 9.7 | octave,notes_manquantes |
+| 00- Adeste fideles - chant piano.mscz | 69.0 | 72.8 | 63.2 | 72.5 | 9.2 | octave,notes_manquantes |
+| 00- Adeste fideles - conducteur.mscz | 69.0 | 72.8 | 63.2 | 72.5 | 9.2 | octave,notes_manquantes |
+| 02- Adeste fideles - Alto.mscz | 69.0 | 72.8 | 63.2 | 72.5 | 9.2 | octave,notes_manquantes |
+| 03- Adeste fideles - Vcl - Cb - Timb.mscz | 69.0 | 72.8 | 63.2 | 72.5 | 9.2 | octave,notes_manquantes |
+| 04- Adeste fideles - Flûtes 1 et 2.mscz | 69.0 | 72.8 | 63.2 | 72.5 | 9.2 | octave,notes_manquantes |
+| 05- Adeste fideles - Hautbois 1 et 2.mscz | 69.0 | 72.8 | 63.2 | 72.5 | 9.2 | octave,notes_manquantes |
+| 06- Adeste fideles - Basson.mscz | 69.0 | 72.8 | 63.2 | 72.5 | 9.2 | octave,notes_manquantes |
+| 07- Adeste fideles - Trompettes 1, 2 et 3.mscz | 69.0 | 72.8 | 63.2 | 72.5 | 9.2 | octave,notes_manquantes |
+| 01- Adeste fideles - Violons 1 et 2.mscz | 69.0 | 72.8 | 63.2 | 72.4 | 9.2 | octave,notes_manquantes |
+| Stella_maris_instruments - SiB.mscz | 99.8 | 99.8 | 90.3 | 98.6 | 8.3 | octave,notes_manquantes |
+| Triumphal_March.mscz | 67.6 | 67.6 | 56.8 | 64.0 | 7.1 | octave,notes_manquantes |
+| JMHaydn_Viderunt_omnes.mscz | 90.7 | 95.9 | 86.7 | 92.6 | 5.9 | octave,notes_manquantes |
+| Under_Paris_Skies_accordion_Solo.mscz | 85.6 | 85.6 | 76.2 | 81.0 | 4.8 | octave,notes_manquantes |
+| 00- God rest you merry, gentlemen - choeur.mscz | 87.6 | 87.6 | 45.5 | 48.8 | 3.3 | octave,notes_manquantes |
+| 01- God rest you - Violons 1 et 2.mscz | 87.6 | 87.6 | 45.5 | 48.8 | 3.3 | octave,notes_manquantes |
+| 02- God rest you - Alto.mscz | 87.6 | 87.6 | 45.5 | 48.8 | 3.3 | octave,notes_manquantes |
+| 04- God rest you - Hautbois 1 et 2.mscz | 87.6 | 87.6 | 45.5 | 48.8 | 3.3 | octave,notes_manquantes |
+| 05- God rest you - Basson.mscz | 87.6 | 87.6 | 45.5 | 48.8 | 3.3 | octave,notes_manquantes |
+| 06- God rest you - Trompettes 1,2 et 3.mscz | 87.6 | 87.6 | 45.5 | 48.8 | 3.3 | octave,notes_manquantes |
+| 03- God rest you - Vcl et Cb.mscz | 87.6 | 87.6 | 45.5 | 48.7 | 3.3 | octave,notes_manquantes |
+| 00- Veni veni Emmanuel - choeur.mscz | 99.3 | 100.0 | 58.2 | 60.4 | 2.2 | octave |
+| 00- Il est né le divin enfant - Rutter - Conducteur. | 97.3 | 98.5 | 89.7 | 91.2 | 1.5 | octave,notes_manquantes |
+| 01- Il est né - Violons.mscz | 97.3 | 98.5 | 89.7 | 91.2 | 1.5 | octave,notes_manquantes |
+| 02- Il est né - Alto.mscz | 97.3 | 98.5 | 89.7 | 91.2 | 1.5 | octave,notes_manquantes |
+| 03- Il est né - Vcl - Cb - Bas.mscz | 97.3 | 98.5 | 89.7 | 91.2 | 1.5 | octave,notes_manquantes |
+| 04- Il est né - Flûtes.mscz | 97.3 | 98.5 | 89.7 | 91.2 | 1.5 | octave,notes_manquantes |
+| 05- Il est né - Hautbois.mscz | 97.3 | 98.5 | 89.7 | 91.2 | 1.5 | octave,notes_manquantes |
+| Tarentella_Napoletana_Accordion_Solo.mscz | 99.9 | 99.9 | 95.6 | 96.3 | 0.7 | octave |
+| Vingt_danses_enfantines_pour_piano.mscz | 66.2 | 66.2 | 3.5 | 4.2 | 0.7 | octave,notes_manquantes |
+| Laudate_pueri_Op._39_No._2_-_Felix_Mendelssohn.mscz | 99.6 | 99.6 | 97.9 | 98.5 | 0.5 | octave,notes_supp |
+| Por_Una_Cabeza_accordion_solo.mscz | 99.4 | 99.7 | 98.5 | 99.0 | 0.5 | octave,notes_manquantes |
+| Sancta_Maria_KV_273__Wolfgang_Amadeus_Mozart_orgue.m | 98.0 | 98.2 | 96.5 | 96.8 | 0.3 | octave,notes_manquantes |
+| Sancta_Maria_Lux_tempestiva_Alfonso_X_el_Sabio_1221- | 99.7 | 100.0 | 99.7 | 100.0 | 0.3 | octave |
+| Missa_in_Es_Hob._XXII4_II._Gloria_-_Haydn.mscz | 96.0 | 96.0 | 94.7 | 94.9 | 0.2 | octave,notes_manquantes |
+| 00- Minuit chretien - Chant - piano.mscz | 56.1 | 56.1 | 32.4 | 32.5 | 0.1 | octave,notes_manquantes |
+| 00- Minuit chretien - conducteur.mscz | 56.1 | 56.1 | 32.4 | 32.5 | 0.1 | octave,notes_manquantes |
+| 01- Minuit chretien - Violons 1 et 2.mscz | 56.1 | 56.1 | 32.4 | 32.5 | 0.1 | octave,notes_manquantes |
+| 02- Minuit chretien - Alto.mscz | 56.1 | 56.1 | 32.4 | 32.5 | 0.1 | octave,notes_manquantes |
+| 03- Minuit chretien - Vcl - Cb - Timb.mscz | 56.1 | 56.1 | 32.4 | 32.5 | 0.1 | octave,notes_manquantes |
+| 04- Minuit chretien - Flûtes 1 et 2.mscz | 56.1 | 56.1 | 32.4 | 32.5 | 0.1 | octave,notes_manquantes |
+| 05- Minuit chretien - Hautbois 1 et 2.mscz | 56.1 | 56.1 | 32.4 | 32.5 | 0.1 | octave,notes_manquantes |
+| 06- Minuit chretien - Basson.mscz | 56.1 | 56.1 | 32.4 | 32.5 | 0.1 | octave,notes_manquantes |
+| 07- Minuit chretien - Trompettes 1, 2 et 3.mscz | 56.1 | 56.1 | 32.4 | 32.5 | 0.1 | octave,notes_manquantes |
+| The_Petite_Waltz_accordion_solo.mscz | 99.5 | 99.7 | 42.4 | 42.5 | 0.1 | octave,notes_manquantes |
+| Sancta_Maria_Mater_Dei_Mozart.mscz | 98.1 | 98.3 | 97.3 | 97.3 | 0.1 | octave,notes_manquantes |
+Classification (mutuellement exclusive, par première cause) :
+
+| Cause | Fichiers | Responsabilité | Traitement |
+| --- | ---: | --- | --- |
+| `octave, notes_manquantes`, N1 identique | 36 | **Oracle** : le MIDI de référence réalise des ornements/voltas que ni l'ABC écrit ni `abc2midi -NGRA` ne contiennent (§ 15.3, § 17.5). Familles `Adeste fideles`, `Il est né`, `God rest you`, `Minuit chretien`, Vivaldi. | Hors portée. |
+| `octave, notes_manquantes`, N1 inférieur | 13 | **Mélangé** : orchidées d'orchestre (>16 voix, `abc2midi` plafonne à 16 canaux) + artefacts d'oracle. Le N1 manquant est partagé ou non imputable à l'écrivain. | Documenté. |
+| `octave` seul | 4 | **Oracle** : écarts d'attaque sous la limite de canaux, N1 quasi identique. | Documenté. |
+| `attaque_decalee` | 3 | **Écrivain** : mesures courtes et retours à la ligne `$` de `xml2abc.py::doMaat` (ligne 674) ; le port écrit `Z`/notes de remplissage, que `abc2midi` bourre autrement. Aucune hauteur perdue (N1 = 100 % sur `Adeste - choeur`). | Cause restante, non corrigée dans cette passe. |
+| `octave, notes_supp` | 1 | **Oracle** : une note surnuméraire dans le MIDI de référence. | Documenté. |
+
+Un seul fichier (`Canon_in_D_Pachelbel…mscz`) n'a aucun ABC : c'est le
+**lecteur MuseScore** qui rejette une partition 2.x (`version MuseScore non
+prise en charge : 2.06`), hors portée de l'écriture ; il n'entre pas dans
+les 57. Aucun de ces 57 fichiers n'a été perdu ni régénéré.
+
+### 28.2 Aller-retour : causes corrigées
+
+L'aller-retour `.abc → scoretk → .abc → scoretk` est mesuré depuis la passe
+précédente (75/244 stables). Trois causes ont été traitées :
+
+1. **`%%score` avec espaces** (`0825b12`). Un groupe sans accolade ni crochet
+   était encadré par deux espaces (`%%score  1 2 `) : `writer.rs::score_line`
+   utilisait `(' ', ' ')` comme délimiteurs. `xml2abc.py::prgrouplist`
+   (lignes 856-866) n'écrit que des délimiteurs effectifs. Test réduit
+   (`abc_ecriture_score.rs`) écrit d'abord, échouant avant le correctif.
+2. **Fin de soufflet à cheval sur une barre** (`6f72119`). Un soufflet se
+   terminant au début de la mesure suivante était écrit dans la précédente :
+   `!>(!` et `!>)!` se retrouvaient sur la même note, puis le token de fin
+   était perdu à la relecture. Le token va maintenant dans la mesure qui
+   contient son tick, comme les liaisons. Test réduit
+   (`abc_ecriture_soufflet_barre.rs`) écrit d'abord, échouant avant le
+   correctif ; 10 instantanés corrigés.
+3. **Transposition cumulée avec l'octave de clef** (`4cb286d`). Le lecteur
+   ajoutait le `-8` de `clef=treble-8` à `voice.transpose`, que le modèle
+   portait dans `Instrument::transpose` ; l'écrivain ajoutait ensuite le
+   suffixe de clef, si bien qu'à la relecture le décalage était ajouté une
+   seconde fois (`-24 → -48 → -60`). On sépare `instrument_transpose` du
+   décalage de clef. Test réduit (`abc_ecriture_transpose_clef.rs`) écrit
+   d'abord, échouant avant le correctif. ABC 2.1 § 4.6 et § 3.1.14 ;
+   `xml2abc.py::doAttr` lignes 1319-1331.
+
+### 28.3 Relevé final (`/tmp/abc-ecriture-f4`)
+
+| Lot | Stables avant | Stables après | N1 | N2 | N2d |
+| --- | ---: | ---: | --- | --- | --- |
+| corpus | 31/56 | **54/56** | inchangé | inchangé | inchangé |
+| mscz | 4/160 | **36/160** | 1 perte expliquée | inchangé | inchangé |
+| xml | 2/28 | **10/28** | inchangé | inchangé | inchangé |
+
+Soit **+25 fichiers stables, 0 régression de stabilité**, et N1/N2/N2d
+inchangés sur les 262 fichiers (une seule perte N1, 33,38 % → 31,6 % sur
+`Mater_alma.mscz` : ce fichier a 17+ voix et dépasse la limite de 16 canaux
+d'`abc2midi` ; déplacer le token de fin de soufflet modifie l'allocation de
+canaux et donc l'attribution des hauteurs, tandis que N2d reste identique —
+Oracle, déjà classé `octave, notes_manquantes`).
+
+Le correctif de transposition supprime le doublement dans 9 fichiers (4 mscz,
+5 xml) sans changer leur statut de stabilité : ceux-ci restent instables pour
+une autre cause (frontières de n-olets et dérive d'octave de clef, documentées
+ci-dessous). Il n'y a donc pas de gain de stabilité mesurable à ce correctif,
+mais la faute de lecture qu'il corrige est réelle et couverte par son test.
+
+### 28.4 Instabilités restantes (143 fichiers)
+
+Classées par première ligne ABC différante :
+
+| Première différence | Fichiers | Cause |
+| --- | ---: | --- |
+| `(cdeN)fNgN` → `(cdeNfN)gN` | ~60 | Frontière de slur : un `)` lu après une note est rattaché à la note suivante par `reader/music.rs::close_slur` (le tick a déjà été avancé). Tentative de correctif avortée : elle régresse `abc_ecriture_soufflet_barre` (interaction avec les liaisons issues de liaisons de hauteurs différentes, § 20). ABC 2.1 § 4.11. |
+| `[M:N/N] (AcBA)GA` → `(AcBAG)A` | ~18 | Même cause de frontière de slur, avec un champ de mesure en ligne. |
+| `ENzNz` → `ENzNzz` | ~18 | Durée des silences courts (`z`/`Z`) et retour à la ligne `$` de `xml2abc.py::doMaat`. |
+| `eN[K:D clef=treble-N]EN` → `e'N[K:D clef=treble-N]EN` | ~9 | Dérive d'octave autour d'un changement de clef en ligne : la compensation `12 * clef_octave` de `voice.rs` et le suffixe `-8` se cumulent. ABC 2.1 § 4.6. |
+| diverse | ~38 | Combinaisons des quatre causes ci-dessus. |
+
+Aucune de ces causes n'est corrigée dans cette passe ; elles sont documentées
+avec leur référence ABC 2.1 / `xml2abc.py` pour une passe ultérieure.
