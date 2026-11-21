@@ -12,7 +12,7 @@ V:1 name="Piano" clef=treble
 "_Expression"!<(!G2G4AB |
 {/=G}!fermata!"^Change Instr."!<)![K:E clef=mezzosoprano]^^F8 ||
 A2B2c2z2 |
-[K:E clef=varbaritone]Z |
+[K:E clef=varbaritone]z8 |
 [M:12/8] [K:F clef=varbaritone] !arpeggio!!1!!3!!5!"^A"[C,E,G,]2C,2G,2z2"^B"z4 |
 !arpeggio!!1!!3!!5!"^A"[C,E,G,]2C,2G,2z2z4 |]
 V:2 name="Piano" clef=treble
@@ -22,9 +22,9 @@ c2e2f2e2 |
 w: Ly- rics _ ly-
 c2e2E4 |
 w: * rics- ly
-Z ||
-Z |
-Z |
+z8 ||
+z8 |
+z8 |
 [M:12/8] [K:F clef=treble] a2B2c2d2e2f2 |
 w: * * * * * *
 "C"[Ace]8"D"z4 |]

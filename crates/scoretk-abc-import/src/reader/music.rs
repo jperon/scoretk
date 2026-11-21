@@ -360,7 +360,16 @@ impl Parser<'_> {
             let nominal = self.parse_length(&length_text)?;
             let (nominal, actual) = self.apply_rhythm(nominal)?;
             let duration = duration::figure_for(nominal);
-            let mut chord_rest = ChordRest::rest(duration.0);
+            // An explicit `z` covering a whole measure is the same musical
+            // object as `Z`: keep the measure-rest figure so the model does
+            // not gain a spurious `<type>`/`<dot>` on re-read. Its written
+            // duration still comes from the explicit multiplier via
+            // `chord_rest.ticks`/measure length.
+            let mut chord_rest = if actual == self.voice().time.measure_len() && tick.is_zero() {
+                ChordRest::full_measure_rest()
+            } else {
+                ChordRest::rest(duration.0)
+            };
             if !visible {
                 if let Some(rest) = chord_rest.rest_mut() {
                     rest.visible = false;

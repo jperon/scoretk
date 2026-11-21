@@ -123,8 +123,10 @@ fn nuances_non_tablees_ne_sont_pas_des_decorations() {
     );
     // Les deux voix et leurs deux mesures restent présentes (régression).
     assert_eq!(abc.lines().filter(|l| l.starts_with("V:")).count(), 2);
+    // Full-measure rests are written as explicit z multipliers, following
+    // `xml2abc.py::doMaat` (line 674 in v269); `Z` is no longer emitted.
     assert!(
-        abc.contains("Z |]"),
+        abc.contains("z8 |]"),
         "silence de mesure pleine témoin : {abc}"
     );
 }

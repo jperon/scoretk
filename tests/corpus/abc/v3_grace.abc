@@ -7,11 +7,11 @@ K:C
 %%score {1 2}
 V:1 name="Piano" clef=treble
 c4z4 |
-Z |
-Z |
-Z |]
+z8 |
+z8 |
+z8 |]
 V:2 name="Piano" clef=bass
-Z |
-Z |
-Z |
-Z |]
+z8 |
+z8 |
+z8 |
+z8 |]

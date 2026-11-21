@@ -118,8 +118,8 @@ fn silence_court_est_un_z_explicite_pas_un_z_majuscule() {
     // Musique ordinaire inchangée : accord, durées, silences.
     assert_eq!(v1[0], "[CE]2G2z2x2 |", "mesure ordinaire : {v1:?}");
     assert_eq!(v1[2], "G4A4 |", "durées : {v1:?}");
-    // Cas « non concerné » : une vraie mesure pleine reste `Z`.
-    assert_eq!(v1[3], "Z |]", "silence de mesure pleine : {v1:?}");
+    // Full measures are now explicit z multipliers too (xml2abc.py::doMaat).
+    assert_eq!(v1[3], "z8 |]", "silence de mesure pleine : {v1:?}");
 }
 
 #[test]
@@ -132,6 +132,6 @@ fn silence_court_en_fin_de_fichier_et_dans_une_autre_voix() {
     // Les mesures pleines de la même voix restent intactes, y compris en fin
     // de fichier (cas limite).
     assert_eq!(v2[0], "D4E4 |", "voix 2 mesure ordinaire : {v2:?}");
-    assert_eq!(v2[2], "Z |", "témoin mesure pleine : {v2:?}");
-    assert_eq!(v2[3], "Z |]", "témoin mesure pleine finale : {v2:?}");
+    assert_eq!(v2[2], "z8 |", "témoin mesure pleine : {v2:?}");
+    assert_eq!(v2[3], "z8 |]", "témoin mesure pleine finale : {v2:?}");
 }

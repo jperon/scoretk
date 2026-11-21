@@ -10,10 +10,10 @@ V:1 name="Piano" clef=treble
 c2e2g2e2 ||
 c2G2c2e2 |
 "^1"g2z2z4 |
-Z |
-Z ||
-"^Staff text"!fermata!Z |
-Z |
-"^System text"Z |
-[M:3/4] Z |
-Z |]
+z8 |
+z8 ||
+"^Staff text"!fermata!z8 |
+z8 |
+"^System text"z8 |
+[M:3/4] z6 |
+z6 |]

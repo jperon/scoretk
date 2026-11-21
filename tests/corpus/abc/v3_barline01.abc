@@ -8,8 +8,8 @@ K:C
 V:1 name="Flute 1" clef=treble
 c8 |
 d8 |
-Z |
-Z |
+z8 |
+z8 |
 e8 |
 f8 |
 e8 |
@@ -19,8 +19,8 @@ e8 |
 f8 |
 e8 |
 f8 |
-Z |
-Z |
+z8 |
+z8 |
 c8 |
 c8 |]
 V:3 name="Flute 3" clef=treble
@@ -30,5 +30,5 @@ e8 |
 f8 |
 e8 |
 d8 |
-Z |
-Z |]
+z8 |
+z8 |]

@@ -8,16 +8,16 @@ K:C
 V:1 name="Piano" clef=treble
 C,2D,2E,2 |
 E,2z4 |
-Z |
-Z |
-Z |
-Z |
-Z |]
+z6 |
+z6 |
+z6 |
+z6 |
+z6 |]
 V:2 name="Piano" clef=bass
 c2d2e2 |
-Z |
-Z |
-Z |
-Z |
-Z |
-Z |]
+z6 |
+z6 |
+z6 |
+z6 |
+z6 |
+z6 |]

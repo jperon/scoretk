@@ -96,6 +96,6 @@ fn chaque_ligne_avec_notes_a_sa_ligne_de_paroles() {
     assert_eq!(lignes[4], "d2e2f2g2 |");
     assert_eq!(lignes[5], "w: mi mi mi mi");
     // Cas « non concerné » : une mesure sans notes ne reçoit pas de `w:`.
-    assert_eq!(lignes[6], "Z |]");
+    assert_eq!(lignes[6], "z8 |]"); // explicit z fill (xml2abc.py::doMaat)
     assert_eq!(lignes.len(), 7, "aucune ligne supplémentaire : {abc}");
 }

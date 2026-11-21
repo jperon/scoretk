@@ -202,7 +202,7 @@ pub(crate) fn render_voice(
                 measure.nominal_len
             };
             if len.is_positive() {
-                line.push('Z');
+                line.push_str(&rest_token(len, measure));
             }
         } else {
             let mut cursor_tick = measure.start_tick;
@@ -407,12 +407,11 @@ pub(crate) fn voice_has_content(score: &Score, staff: usize, voice: usize) -> bo
 /// plus courte (ou plus longue) que `M:` doit être remplie par un `z` explicite
 /// avec son multiplicateur ; sinon `abc2midi` décalerait toutes les attaques
 /// suivantes d'autant.
-fn rest_token(len: Fraction, measure: &Measure) -> String {
-    if len == measure.nominal_len {
-        "Z".to_owned()
-    } else {
-        format!("z{}", duration::multiplier(len, duration::unit()))
-    }
+fn rest_token(len: Fraction, _measure: &Measure) -> String {
+    // `xml2abc.py` writes an explicit `z` with the full multiplier for a
+    // full-measure rest (e.g. `z12` in 12/8), never `Z`: the written length
+    // must survive a re-read independently of the current `M:`.
+    format!("z{}", duration::multiplier(len, duration::unit()))
 }
 
 /// Remplit un trou par un silence de la bonne longueur.
@@ -1112,7 +1111,7 @@ mod tests {
         let measure = Measure::new(0, Fraction::ZERO, Fraction::ONE);
         let mut line = String::new();
         push_fill_rest(&mut line, Fraction::ZERO, Fraction::ONE, &measure);
-        assert_eq!(line, "Z");
+        assert_eq!(line, "z8"); // explicit full-measure fill (xml2abc.py::doMaat)
         let mut line = String::new();
         push_fill_rest(&mut line, Fraction::ZERO, Fraction::QUARTER, &measure);
         assert_eq!(line, "z2");
