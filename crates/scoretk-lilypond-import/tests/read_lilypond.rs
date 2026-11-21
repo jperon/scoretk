@@ -2001,15 +2001,31 @@ fn change_vers_portee_d_autre_partie() {
 
 #[test]
 fn change_dans_beam_cross_staff() {
-    // Source de régression externe : le test n'a pas d'effet si elle est
-    // absente (extraction fraîche du dépôt, sans la copie LilyPond).
-    let Ok(source) = std::fs::read_to_string(
-        "/home/jacques/programmes/musique/lilypond-ref/input/regression/beam-cross-staff.ly",
-    ) else {
-        return;
-    };
+    // Reduced inline copy of LilyPond's `input/regression/beam-cross-staff.ly`
+    // (SPDX-License-Identifier: GPL-3.0-or-later). The previous version read
+    // an absolute home path and silently skipped when the file was absent.
+    let source = r#"\version "2.16.0"
+\context PianoStaff <<
+  \new Staff = "one" \relative c'{
+    \stemUp  c8[ c \change Staff=two \stemUp c c]
+    c[ c c c]
+    \change Staff=one
+    \stemDown  f8[ f \change Staff=two \stemUp c c]
+    r2
+    \stemDown  c8[ c \change Staff=one \stemDown c c]
+    r2
+    \change Staff=two
+    \stemUp  c8[ c \change Staff=one \stemDown f f]
+    r2
+  }
+  \new Staff = "two" \relative c'{
+    \clef bass
+    s1 s1 s1 s1
+  }
+>>
+"#;
     assert!(source.contains("\\change"), "source de régression attendue");
-    let (score, warnings) = read_lilypond_reporting(&source).expect("lecture");
+    let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
     assert!(!score.notes.is_empty());
     assert!(
         !warnings
