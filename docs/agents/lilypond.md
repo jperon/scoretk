@@ -3913,14 +3913,18 @@ arrangement, exit code 3). The oracle compiles with LilyPond 2.26.0 (its
 | Lot | Tool | Files | Compiled | Exact | N1 % | N2 % | N2d % | Errors | Warn. | Mean bytes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | corpus | scoretk | 56 | 56 | 48 | 99.78 | 99.78 | 99.78 | 0 | 11 | 1326 |
-| corpus | musicxml2ly | 56 | 51 | 27 | 95.31 | 89.38 | 83.91 | 79 | 20 | 2906 |
-| mscz | scoretk | 173 | 170 | 147 | 100.00 | 100.00 | 99.98 | 6 | 1557 | 26 756 |
-| mscz | musicxml2ly | 173 | 156 | 34 | 99.69 | 93.52 | 92.36 | 69 499 | 5184 | 47 207 |
-| xml | scoretk | 32 | 29 | 24 | 99.98 | 95.84 | 95.60 | 2 | 252 | 54 019 |
-| xml | musicxml2ly | 32 | 27 | 9 | 93.10 | 67.38 | 65.36 | 78 | 430 | 31 905 |
+| corpus | musicxml2ly | 56 | 51 | 27 | 95.31 | 89.38 | 83.91 | 79 | 20 | 2908 |
+| mscz | scoretk | 173 | 169 | 146 | 100.00 | 100.00 | 99.98 | 6 | 1530 | 25 429 |
+| mscz | musicxml2ly | 173 | 155 | 34 | 99.69 | 93.94 | 92.78 | 35 901 | 4578 | 45 671 |
+| xml | scoretk | 32 | 29 | 23 | 99.98 | 93.94 | 93.60 | 2 | 252 | 32 940 |
+| xml | musicxml2ly | 32 | 27 | 9 | 93.10 | 67.38 | 65.36 | 78 | 430 | 24 421 |
 
 scoretk is above musicxml2ly on every lot, compiles more files, and emits
-far fewer errors and warnings.
+far fewer errors and warnings. The xml aggregate varies between 93.60 % and
+95.60 % from one run to the next: three copies of
+`Vingt_danses_enfantines_pour_piano.mxl` (17 616 notes each) compete for the
+oracle's per-file timeout and one or two of them intermittently produce no
+reference; every copy that completes scores 100 %.
 
 Relative to the model-mode run before this campaign (252 files in common):
 **16 gains, 0 losses**. The gains are all nine `Minuit chrétien` parts
