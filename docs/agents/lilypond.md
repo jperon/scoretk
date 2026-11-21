@@ -3684,3 +3684,16 @@ les formes littérales (`#(make-music 'SequentialMusic 'elements …)` avec
 propriétés constantes, `\repeat unfold`, `\relative` à l'intérieur de fonctions)
 mais pas les évaluations `(define-music-function … (ly:music?))` ni
 `(make-relative …)` : la majorité resterait hors sous-ensemble.
+
+#### Mesure des deux causes
+
+Mesure complète (mus 1447, ra 1726, mut 1377) : mus 98,28 % (inchangé),
+ra 86,92 → **87,17 %**, mut 92,31 → **92,35 %**. Quatre gains, aucune perte :
+`carcassi-op60-15` +118 et `carcassi-op60-09` +104 (transposition de contexte),
+`chord-names-languages` et `…2` +28 chacun (octave de la basse).
+
+Solde `mut` hors paniers après ces deux causes :
+- brut sans reprise : **92,35 %** (724 fichiers, 602 801 notes) ;
+- hors sources obsolètes : **95,55 %** (711 fichiers, 555 209 notes) ;
+- hors sources obsolètes **et** anomalies MIDI : **96,01 %**
+  (706 fichiers, 539 347 notes, 517 804 appariées).
