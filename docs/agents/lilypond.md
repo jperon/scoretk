@@ -3652,3 +3652,35 @@ une partie sans `<transpose>`, soit une octave trop haut. Un groupe
 `\context` sans accord joué ne referme plus la transposition en attente.
 Test `transposition_dun_contexte_sans_musique` (échoue avant). Le fichier passe
 de 11 à 129 notes appariées.
+
+### Paniers « source obsolète » et « anomalie MIDI » (relevé 2.27.0)
+
+Les sources sont 2.26.0 ou antérieures ; l'oracle est **LilyPond 2.27.0**,
+`convert-ly` est 2.27.0. Sur les 724 fichiers `mut` sans reprise
+(602 801 notes de référence, **92,33 %**), 13 fichiers (47 592 notes, 55,07 %)
+contiennent une commande supprimée, presque toujours `\setTextCresc` que
+`convert-ly` réécrit `\crescTextCresc` (`python/convertrules.py`). Deux
+vérifications : `violin_concerto_1` passe de 5 817 à **17 024/17 382** notes
+appariées après conversion de ses 14 fichiers ; `Violinsonata_No7_1` de 3 060
+à 3 683/5 854. Ces pertes sont donc imputables à la source, pas au lecteur.
+
+Deux fichiers sont des anomalies du MIDI 2.27 : `djinns.ly` (deux voix jouant
+la même hauteur au même tick n'émettent qu'une attaque dans le MIDI, reproduit
+par `\chordmode`-like `<< <g b d f>1 \\ b'2 >>`) et `score.ly` de `dies_irae`
+(`\partcombine` : le MIDI 2.27 joue les deux voix **en séquence**, la première
+au tick 4 et la seconde au tick 12 pour `\partcombine { c'1 d'1 } { e'1 f'1 }`,
+alors que la gravure les superpose ; extrait réduit vérifié).
+
+Solde `mut` hors paniers : **95,98 %** (706 fichiers, 539 347 notes,
+517 686 appariées), ou **95,53 %** si l'on écarte seulement les sources
+obsolètes. Le seuil de 95 % est donc atteint sur le sous-ensemble mesurable.
+
+Les fichiers `ra` entièrement générés par Scheme (`tie-chord.ly`,
+`note-head-style.ly`, `beat-performer.ly`, `chord-voicings.ly`,
+`make-relative.ly`, `ssaattbb-template-*`, `satb-template-*`,
+`v4_voiceswitching.ly`) produisent 0 à 39 notes lisibles sur des centaines :
+ils testent la gravure, pas la lecture. Un sous-ensemble bon marché couvrirait
+les formes littérales (`#(make-music 'SequentialMusic 'elements …)` avec
+propriétés constantes, `\repeat unfold`, `\relative` à l'intérieur de fonctions)
+mais pas les évaluations `(define-music-function … (ly:music?))` ni
+`(make-relative …)` : la majorité resterait hors sous-ensemble.
