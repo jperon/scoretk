@@ -903,18 +903,6 @@ impl Reader {
                         }
                     }
                 };
-                eprintln!(
-                    "DEBUG K field value={} voices={} header_done={}",
-                    value,
-                    self.voices.len(),
-                    self.header_done
-                );
-                eprintln!(
-                    "DEBUG K field value={} voices={} header_done={}",
-                    value,
-                    self.voices.len(),
-                    self.header_done
-                );
                 self.seen_key = true;
                 if !self.header_done {
                     self.header_key = parsed.key.clone();
@@ -1247,15 +1235,33 @@ fn parse_unit(text: &str, line: usize) -> Result<Fraction> {
 
 /// Analyse un tempo `Q:`.
 fn parse_tempo(text: &str) -> Option<(f64, String)> {
-    let mut rest = text.trim();
-    let mut label = String::new();
-    if let Some(stripped) = rest.strip_prefix('"') {
-        if let Some(end) = stripped.find('"') {
-            label = stripped[..end].to_owned();
-            rest = stripped[end + 1..].trim();
+    let text = text.trim();
+    // `abc2xml.py::doTempo` (ligne 1886) finds the quoted label anywhere in
+    // the field, not just as a leading prefix: `Q:1/4=80 "Slow"` is common.
+    let (label, rest) = if let Some(start) = text.find('"') {
+        let after = &text[start + 1..];
+        if let Some(end) = after.find('"') {
+            let label = after[..end].to_owned();
+            let rest = format!("{} {}", &text[..start], &after[end + 1..]);
+            (label, rest)
+        } else {
+            (String::new(), text.to_owned())
         }
-    }
-    let (_, bpm) = rest.split_once('=')?;
+    } else {
+        (String::new(), text.to_owned())
+    };
+    let (_, bpm) = match rest.split_once('=') {
+        Some(parts) => parts,
+        None => {
+            // A label-only `Q:` still produces a tempo direction; the
+            // alternative defaults to 120 bpm (`abc2xml.py::doTempo`,
+            // lignes 1890-1895). An empty field is not a tempo at all.
+            if label.is_empty() {
+                return None;
+            }
+            return Some((120.0 / 60.0, label));
+        }
+    };
     let bpm: f64 = bpm.trim().parse().ok()?;
     if bpm <= 0.0 {
         return None;

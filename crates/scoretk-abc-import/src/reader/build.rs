@@ -167,14 +167,35 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
         score.add_measure(measure);
     }
 
-    // Tempo global sur la première mesure.
+    // Tempo global sur la première mesure. `abc2xml.py::doTempo`
+    // (lignes 1884-1906) écrit la direction sur la mesure qui porte le
+    // champ Q: ; l'exporteur ne parcourt les annotations que des segments
+    // `ChordRest` (`annotation_track`). Poser le tempo sur un `TimeTick`
+    // le rendait invisible : attacher au premier accord de la mesure, où
+    // `annotateTracks` le trouve.
     if let Some((bps, text)) = &reader.tempo {
         if let Some(measure) = score.measures.first_mut() {
             let mut tempo = scoretk_core::model::Tempo::new(text.clone());
             tempo.beats_per_second = Some(*bps);
-            let segment = segment_at(measure, SegmentType::TimeTick, Fraction::ZERO, staff_count);
             let track = Track::new(scoretk_core::model::StaffId::from_index(0), 0);
-            segment.add_annotation(track, Annotation::Tempo(tempo));
+            let index = measure
+                .segments
+                .iter()
+                .position(|segment| {
+                    segment.tick.is_zero()
+                        && segment.kind == SegmentType::ChordRest
+                        && segment.element(track).is_some()
+                })
+                .unwrap_or_else(|| {
+                    measure
+                        .segments
+                        .iter()
+                        .position(|segment| {
+                            segment.tick.is_zero() && segment.kind == SegmentType::ChordRest
+                        })
+                        .unwrap_or(0)
+                });
+            measure.segments[index].add_annotation(track, Annotation::Tempo(tempo));
         }
     }
 
