@@ -2460,3 +2460,57 @@ Ranking of non-exact files after these fixes (mscz 8, xml 8):
   empty/near-empty score). The former reader failure and four
   `notes_manquantes` cases are now fixed; only the unsupported MuseScore 1.2
   score remains excluded.
+
+## 31. ABC export: final investigation round (2026-11-21)
+
+### References read first
+
+- ABC 2.1 § 4.6 (`specs/abc/abc-standard-v2.1.wiki.txt:915-935`) defines
+  `clef=…+8/-8` as an **absolute** playback octave for the player and
+  `octave=<n>` as a shift of the music code; `abc2xml.py::doClef`
+  (`xml2abc_269/abc2xml.py:1706-1738`) sets `s.gtrans = gtrans` at every clef
+  field and then adds `+n` only for `+8`/`-8`. An inline `[K:… clef=…]`
+  therefore *replaces* the previous clef's octave, it does not accumulate.
+- `xml2abc.py::doAttr` (`xml2abc_177/xml2abc.py:1324-1332`) stores
+  `clefOct[n] = -clef-octave-change`, and `mkNote` (line 1154) adds it to the
+  ABC octave written for each note; the writer mirrors this in
+  `voice.rs:174-177`.
+
+### Cause fixed — inline clef change resets a voice's clef octave
+
+`K:` handling in `reader/mod.rs` computed `delta = new_shift − old_shift` from
+the **global** `K:` clef. With `V:1 clef=treble-8` under a plain `K:D`, the
+inline `[K:C clef=bass]` gave `delta = 0`, so the voice kept the `−12`
+octave shift and every later note was an octave too low. Per `abc2xml.py`
+line 1730 the shift is absolute, so the reader now computes the delta from
+each voice's current clef (falling back to the global clef for voices without
+one). Failing reduced test `changement_de_clef_annule_octave_de_la_voix`
+first (`C4` → 48 then 60 instead of 48 then 48). On the mscz lot this gains
+2.92 N2d points on `Vivaldi…_09_Gloria_Patri_orgue` with zero per-file loss.
+
+### Classification of the remaining mscz non-exact files
+
+| File | N2d % | Cause |
+| --- | ---: | --- |
+| `Vivaldi…_09_Gloria_Patri_orgue` | 95.94 | Residual octave on a subset of the tenor voices (`clef=treble-8` with no inline clef change); `xml2abc.py` keeps the same shift, the pivot's clef changes come from other voices of the same staff. ABC 2.1 § 4.6. |
+| `Veni, Creator Spiritus_Courtial_v3_SATB` | 96.05 | Residual one-note octave differences in mixed octave-clef voices; ABC 2.1 § 4.6. |
+| `Sancta_Maria_Lux_tempestiva…` | 99.72 | Two notes an octave off in an octave-clef voice; ABC 2.1 § 4.6. |
+| `Veni veni Emmanuel - choeur` | 99.27 | Eight notes an octave off, same octave-clef interaction. |
+| `Sancta_Maria_KV_273…orgue` | 99.97 | One note an octave off. |
+| `Laudate_pueri…Mendelssohn` | 99.88 | Two *extra* notes (`notes_supp`, N1 = 100 %): a chord tie/voice duplication, not a pitch loss. |
+| `Chant_de_la_Promotion`, `…_Saint_Michel` | 0 | The scores contain no playable notes (`ref = 0`); not a writing loss. |
+| `Canon_in_D_Pachelbel…` | 0 | MuseScore 1.2, rejected by the reader (exit 3), excluded from the comparison. |
+
+The xml lot additionally keeps the measure-length/negative-tick cases
+(`Anerio`, `Perosi`, `CanonDeLaPaix`, `Vivaldi -10`, `Byrd_Dies`) already
+classified in §25: the pivot's `<backup>` chains cannot be expressed in ABC
+(ABC 2.1 § 4.3 durations, § 4.5 rests).
+
+### Measurement stability
+
+Both oracles used a 10 s per-conversion budget. The three copies of
+`Vingt_danses_enfantines_pour_piano` (17 616 notes, ~23 s each) timed out at
+random, making one file lose all its notes from one run to the next. The
+budget is now 45 s in `scripts/oracle/lilypond/ecriture.py` and
+`scripts/oracle/abc/ecriture.py`; the timeout is a maximum, so fast files are
+unchanged.
