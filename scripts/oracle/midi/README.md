@@ -83,3 +83,21 @@ python3 scripts/oracle/midi/import_mesure.py \
   --binary target/debug/scoretk --out /tmp/oracle-midi-import/full \
   --upstream /home/jacques/programmes/musique/musescore/ref-musescore/src/importexport/midi/tests/midiimport_data
 ```
+
+## Unsupported inputs (exit code 3)
+
+`scoretk` exits with **3** when the input is deliberately unsupported: a
+MuseScore version outside the ported subset, or a format without a converter in
+the requested direction (see `scoretk --help` and `docs/agents/scoretk.md`).
+This is **not** a conversion failure. The drivers apply the same rule through
+`scripts/oracle/common.py`, never copied per script:
+
+- `mesure.py --lecture`: the input is a MIDI, which has no "unsupported
+  version" variant today; the guard is nonetheless in place (a code 3 stops the
+  file before any alternative row).
+- `mesure.py --ecriture` and `--robustesse`: a `.mscz` score whose version is
+  not ported is marked `exclu`, removed from every numerator and denominator,
+  and reported once in `resume.md` plus one warning line on stderr. Example:
+  the MuseScore 1.14 `Canon_in_D_Pachelbel_-_arranged_for_accordion.mscz` file.
+- `import_mesure.py`: a pair is excluded as soon as the MIDI **or** its
+  reference (`.mscx`/`.ly`) returns code 3; both sides leave the survey.

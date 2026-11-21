@@ -170,3 +170,25 @@ This removes two artefacts of the legacy MIDI mode: MuseScore's reference MIDI
 realises ornaments/voltas that neither written ABC contains, and `abc2midi`
 caps voices at 16 channels (orchestral scores then misattribute pitches).
 `--mode midi` stays available for continuity with the earlier campaigns.
+
+## Unsupported inputs (exit code 3)
+
+`scoretk` exits with **3** when the input is deliberately unsupported: a
+MuseScore version outside the ported subset, or a format without a converter in
+the requested direction (see `scoretk --help` and `docs/agents/scoretk.md`).
+Such a file is *not* a conversion failure. Both drivers apply the same rule
+through `scripts/oracle/common.py`, never copied per script:
+
+- `mesure.py` (reading): a tune for which `scoretk` returns 3 is written in
+  `mesures.tsv` with status `NON_PRIS_EN_CHARGE` for both candidates;
+  `aggreg.py` drops those rows from every numerator and denominator and prints
+  the `Unsupported (excluded): N` line. ABC sources have no "unsupported
+  version" variant today, so nothing is expected to be excluded on an `.abc`
+  lot; the guard is in place for a future one.
+- `ecriture.py` (writing): on the `.mscz` lot, a score whose MuseScore version
+  is not ported is recorded with an `exclu` marker, excluded from the batch for
+  scoretk and `xml2abc.py` alike, and reported once in `resume.md` plus one
+  warning line on stderr. The rule holds in both `--mode midi` and
+  `--mode model`: the model-mode reference comes from the same scoretk
+  conversion, so an unsupported source is excluded there too. Example: the
+  MuseScore 1.14 `Canon_in_D_Pachelbel_-_arranged_for_accordion.mscz`.

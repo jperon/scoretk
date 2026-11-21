@@ -225,3 +225,23 @@ around a transient nixpkgs MuseScore/alsa-lib glibc mismatch through the
 overridable `MSCORE_LIBS` variable. Freeze the scoretk binary under a stable
 path for a campaign (`--scoretk /tmp/scoretk-base`) so a rebuild cannot mix two
 versions in one report.
+
+## Unsupported inputs (exit code 3)
+
+`scoretk` exits with **3** when the input is deliberately unsupported: a
+MuseScore version outside the ported subset, or a format without a converter in
+the requested direction (see `scoretk --help` and `docs/agents/scoretk.md`).
+Such a file is *not* a conversion failure. Both drivers apply the same rule
+through `scripts/oracle/common.py`, never copied per script:
+
+- `mesure.py` (reading): the input is a `.ly`, for which the reader has no
+  "unsupported version" variant today, so nothing is expected to be excluded
+  on the `.ly` lots; the guard is still in place and stops the file before any
+  alternative row is written if `scoretk` ever returns 3.
+- `ecriture.py` (writing): on the `.mscz` lot, a score whose MuseScore version
+  is not ported is recorded with an `exclu` marker, excluded from every
+  numerator and denominator **for both candidates** (only what scoretk refuses
+  leaves the batch, so the comparison stays fair), and reported once as
+  `Unsupported (excluded): N` in `resume.md` plus one warning line on stderr.
+  Example: the MuseScore 1.14
+  `Canon_in_D_Pachelbel_-_arranged_for_accordion.mscz`.

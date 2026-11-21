@@ -51,6 +51,21 @@ Three measurements follow:
 the genuine MusicXML of `~/Musique`, a deterministic 1/5 sample of `.ly`; it
 adds the same 1/5 sample of `.abc`. Path lists only, no file is versioned.
 
+## Unsupported inputs
+
+`scoretk` exits with **3** when the input is deliberately unsupported: a
+MuseScore version outside the ported subset, or a format without a converter in
+the requested direction (see `scoretk --help` and `docs/agents/scoretk.md`).
+Such a file is *not* a conversion failure. `mesure.py` records it with an
+`exclu` marker in the raw `.jsonl`, drops it from every numerator and
+denominator (and from the alternatives measured on the same batch), prints one
+`AVERTISSEMENT : … non prise(s) en charge (exclues)` line and writes
+`Unsupported (excluded): N` into `resume.md`. The rule is shared through
+`scripts/oracle/common.py`, never copied per script. Example: the MuseScore
+1.14 `Canon_in_D_Pachelbel_-_arranged_for_accordion.mscz` of the `mscz` lot is
+excluded, and the score of every other file is unchanged.
+
+
 ## Usage
 
 ```sh

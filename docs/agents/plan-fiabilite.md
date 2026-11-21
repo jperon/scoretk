@@ -49,6 +49,13 @@ measurement and no tolerated regression).
    of paths + derived references outside the repository. A **versioned sub-batch**
    (files with compatible licences, declared in `NOTICE`) feeds the blocking
    `cargo test` tests.
+7. **Deliberately unsupported inputs never count as failures.** `scoretk`
+   exits with code 3 (MuseScore version outside the ported subset, format
+   without a converter: `docs/agents/scoretk.md` § 4); the measurement scripts
+   exclude such a file from numerator *and* denominator, for every tool of the
+   batch, and report it once as `Unsupported (excluded)`. Shared helper:
+   `scripts/oracle/common.py`. A reader bug or a parse error keeps code 1 and
+   stays a failure.
 
 ## 2. Infrastructure (phase 0, prerequisite)
 
