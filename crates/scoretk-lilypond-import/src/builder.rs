@@ -159,6 +159,9 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     // crée pas une nouvelle portée, il configure celle qui suit. Son
     // intervalle doit donc survivre au groupe musical suivant.
     let mut pending_from_empty_context = false;
+    // Les ruptures de section sont posées après la création des mesures :
+    // `section_break_before` force l'export MusicXML à réécrire `<transpose>`.
+    let mut transposition_breaks: Vec<Fraction> = Vec::new();
     for group in &score_ast.groups {
         if group.staves.is_empty() {
             // Portée précédente : c'est elle qui porte la voix la plus proche
@@ -283,10 +286,9 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                     lyrics: sœur.lyrics,
                 });
             }
-            if let Some((pitch, true)) = staff_transposition {
-                let interval = interval_from_pitch(&pitch);
-                let depuis = transposition_depuis(&staves[staff_start..]);
-                decaler_vers_concert(&mut staves[staff_start..], interval, depuis);
+            if let Some((_pitch, true)) = staff_transposition {
+                let changes = transpositions(&staves[staff_start..]);
+                decaler_vers_concert(&mut staves[staff_start..], &changes);
             }
         }
         // Paroles du groupe (hors portée) : rattachées à sa première portée.
@@ -318,15 +320,38 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                     })
                 });
                 if a_des_notes {
-                    pending_from_empty_context = false;
                     let interval = interval_from_pitch(&pitch);
                     let depuis = transposition_depuis(&staves[first_staff_index..]);
                     if a_decaler {
-                        decaler_vers_concert(&mut staves[first_staff_index..], interval, depuis);
+                        let mut changes = transpositions(&staves[first_staff_index..]);
+                        // Un `\context Staff` sans musique a posé la
+                        // propriété dans un groupe précédent : la retrouver
+                        // quand le groupe musical ne la porte pas lui-même.
+                        if pending_from_empty_context
+                            && !changes.iter().any(|(tick, _)| tick.is_zero())
+                        {
+                            changes.insert(0, (Fraction::ZERO, interval));
+                        }
+                        decaler_vers_concert(&mut staves[first_staff_index..], &changes);
                     }
                     if depuis.is_zero() {
                         score.part_mut(part_id).instrument.transpose = Some(interval);
                     }
+                    // Un changement de `\transposition` en cours de pièce est
+                    // aussi un changement d'instrument : le modèle le porte
+                    // avec `set_instrument_at`, comme l'import MuseScore
+                    // (`read302/measure.rs`, `read4xx/mod.rs`).
+                    let base = score.part(part_id).instrument.clone();
+                    for (tick, change) in transpositions(&staves[first_staff_index..]) {
+                        if tick.is_zero() {
+                            continue;
+                        }
+                        let mut instrument = base.clone();
+                        instrument.transpose = Some(change);
+                        score.part_mut(part_id).set_instrument_at(tick, instrument);
+                        transposition_breaks.push(tick);
+                    }
+                    pending_from_empty_context = false;
                     // La propriété vaut pour toute la portée : les voix
                     // musicales suivantes la reçoivent aussi. Un groupe
                     // structural (`Staff`, `StaffGroup…`) la referme plus haut.
@@ -349,6 +374,13 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     apply_initial_clefs(&mut score, &staves);
     let slots = plan_measures(&staves, document.staff_local_timing, warnings);
     create_measures(&mut score, &slots);
+    for tick in transposition_breaks {
+        if let Some(index) = score.measures.iter().position(|measure| {
+            tick >= measure.start_tick && tick < measure.start_tick + measure.len
+        }) {
+            score.measures[index].section_break_before = true;
+        }
+    }
     place_measures(&mut score, &staves, &slots, warnings);
     apply_accidentals(&mut score);
     place_spanners(&mut score, &staves);
@@ -773,13 +805,22 @@ fn transposition_depuis(staves: &[StaffBuild]) -> Fraction {
 /// partie porte effectivement `<transpose>`, sinon la hauteur écrite doit
 /// rester intacte (cas des orchestres, où plusieurs portées de transpositions
 /// différentes partagent la même partie MusicXML).
-fn decaler_vers_concert(staves: &mut [StaffBuild], interval: Transpose, depuis: Fraction) {
+fn decaler_vers_concert(staves: &mut [StaffBuild], changes: &[(Fraction, Transpose)]) {
     for staff in staves {
         for voice in &mut staff.voices {
             for event in &mut voice.interpreted.events {
-                if event.tick < depuis {
+                // `\transposition` est une propriété de contexte : elle peut
+                // changer en cours de partition (clarinette en la puis en si
+                // bémol). Chaque accord prend le dernier intervalle posé avant
+                // lui (Notation Reference §1.3.4).
+                let interval = changes
+                    .iter()
+                    .take_while(|(tick, _)| *tick <= event.tick)
+                    .last()
+                    .map(|(_, interval)| *interval);
+                let Some(interval) = interval else {
                     continue;
-                }
+                };
                 if let EventKind::Chord(chord) = &mut event.kind {
                     decaler_accord(&mut chord.content, interval, true);
                     for grace in chord
@@ -793,6 +834,24 @@ fn decaler_vers_concert(staves: &mut [StaffBuild], interval: Transpose, depuis: 
             }
         }
     }
+}
+
+/// Tous les changements de `\transposition` d'un ensemble de portées, triés.
+fn transpositions(staves: &[StaffBuild]) -> Vec<(Fraction, Transpose)> {
+    let mut changes: Vec<_> = staves
+        .iter()
+        .flat_map(|staff| staff.voices.iter())
+        .flat_map(|voice| voice.interpreted.events.iter())
+        .filter_map(|event| match &event.kind {
+            EventKind::Meta(MetaEvent::Transposition(pitch)) => {
+                Some((event.tick, interval_from_pitch(pitch)))
+            }
+            _ => None,
+        })
+        .collect();
+    changes.sort_by_key(|(tick, _)| *tick);
+    changes.dedup_by_key(|(tick, _)| *tick);
+    changes
 }
 
 /// Intervalle diatonique/chromatique d'une hauteur de `\transposition`.

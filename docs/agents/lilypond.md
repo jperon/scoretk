@@ -3873,3 +3873,20 @@ The `--mode model` oracle (§22) removes those artefacts: on the five largest
  artefact files both tools go from 57.09 % N2 to 100 % N2. The remaining
  gaps are therefore measured in that mode rather than attributed to the
  reference MIDI.
+
+### Mid-piece `\transposition` (LilyPond reader) and `<transpose>` (MusicXML writer)
+
+`\transposition` may change during a piece (Notation Reference §1.3.4:
+"may be changed during a piece", "may change from staff to staff"). The
+LilyPond reader applied only the first interval to every note and stored a
+single `Part.instrument.transpose`. It now collects every transposition event,
+shifts each chord by the interval in force at its tick — the same tick-aware
+model MuseScore's importer uses (`read302/measure.rs`, `read4xx/mod.rs`,
+`Part::set_instrument_at`) — records the later intervals as instrument changes,
+and marks their measure as a section break so the MusicXML writer re-emits
+`<transpose>` at the new value (`write_measure`, `is_first`). The MusicXML
+writer now reads `part.instrument_at(tick)` instead of the base instrument.
+
+Failing reduced test `changement_de_transposition_en_cours_de_piece` first.
+On `testMultiInstrumentPart3.mscx`, model-mode N2 for scoretk goes from
+**50 % to 100 %** (8 notes, one file); musicxml2ly also reaches 100 %.

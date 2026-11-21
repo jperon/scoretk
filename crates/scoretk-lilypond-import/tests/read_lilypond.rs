@@ -5824,3 +5824,21 @@ fn commandes_musicales_obsoletes_acceptées() {
         ignorees.iter().map(|w| &w.message).collect::<Vec<_>>()
     );
 }
+
+/// `\transposition` peut changer en cours de partitions (clarinette en la
+/// puis en si bémout) : chaque accord prend l'intervalle en vigueur à son tick.
+#[test]
+fn changement_de_transposition_en_cours_de_piece() {
+    let source = r#"\version "2.26.0"
+\language "english"
+\score { \new Staff { \transposition a c'1 \transposition bf d'1 } \midi {} }
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    let pitches: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+    assert_eq!(
+        pitches,
+        vec![57, 60],
+        "la seconde note suit le nouvel intervalle : {:?}",
+        pitches
+    );
+}

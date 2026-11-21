@@ -924,7 +924,7 @@ impl<'a> Context<'a> {
         self.write_measure_clefs(out, measure, measure_index, part);
         if is_first {
             self.write_staff_details(out, measure_index, part);
-            self.write_instrument_details(out, part);
+            self.write_instrument_details(out, part, measure.start_tick);
         } else {
             // Portées masquées du système (`hideEmptyStaves`) : MuseScore les
             // signale à la première mesure du système, une `<attributes>` par
@@ -2342,8 +2342,11 @@ impl Context<'_> {
     }
 
     /// Écrit `<transpose>` (`writeInstrumentDetails`).
-    fn write_instrument_details(&self, out: &mut Out, part: &Part) {
-        let Some(transpose) = part.instrument.transpose else {
+    fn write_instrument_details(&self, out: &mut Out, part: &Part, tick: Tick) {
+        // Un instrument peut changer en cours de partition (clarinette en la
+        // puis en si bémol) : `<transpose>` suit l'instrument en vigueur à la
+        // mesure, pas l'instrument initial de la partie.
+        let Some(transpose) = part.instrument_at(tick).transpose else {
             return;
         };
         if transpose.chromatic == 0 {
