@@ -5115,6 +5115,35 @@ or local voice/hand-assignment choices.
   oracle fix. The four LilyPond rows that lose less than 0.033 are explained
   attribute-only differences (see above); the former 0.9821/0.7662 figures
   came from a different oracle and are not comparable.
+### Comparison with other MIDI importers (same oracle)
+
+`scripts/oracle/midi/mesure.py --lecture ... --mscore mscore --midi2ly
+--alt-stride 10` on the two reading lots: the reference is the source MIDI
+itself, N1 = pitch multiset and N2 = pitch + onset on the Q16 grid (±1/16
+quarter). Alternatives are measured on one file in ten; the rows below use
+only the files where **all three** converters were run:
+
+| Lot | Converter | Files | N1 % | N2 % | Exact |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `lecture_musique` (102 sampled) | scoretk | 102 | 100.00 | 100.00 | 47 |
+| | MuseScore 4.7.4 (`mscore -o`) | 102 | 100.00 | 100.00 | 47 |
+| | `midi2ly` → `lilypond -s` | 90 | 99.11 | 99.11 | 87 |
+| `lecture_mutopia` (13 sampled) | scoretk | 13 | 100.00 | 83.16 | 3 |
+| | MuseScore 4.7.4 | 12 | 100.00 | 83.67 | 2 |
+| | `midi2ly` → `lilypond -s` | 12 | 97.84 | 96.67 | 11 |
+
+scoretk ties MuseScore on `lecture_musique` and beats `midi2ly` on N2
+(100.00 vs 99.11). On `lecture_mutopia` scoretk is 0.51 point below MuseScore
+and 13.51 below `midi2ly`, but the cause is identified: a single human
+performance, `KV331_2_1_menuetto` (2 660 notes), where both MIDI importers
+reinterpret the onsets (scoretk N2 15.68, MuseScore 18.53) while `midi2ly`
+round-trips the MIDI through notation and keeps N2 100. All other sampled
+Mutopia files are at N2 100 for both scoretk and MuseScore (the remaining
+`midi2ly` differences are an octave error on `SchubertF-D899-2-Impromptu`
+and a failure on `KingCotton`). This is a difference of interpretation, not
+an importer defect; changing the beat tracker to match a notation round-trip
+would regress the upstream lot.
+
 - **Instrument template selection**: literal port of `importmidi_instrument.cpp`.
 - **Duration simplification**: literal port of `lengthenNote` /
   `minimizeNumberOfRests`.
