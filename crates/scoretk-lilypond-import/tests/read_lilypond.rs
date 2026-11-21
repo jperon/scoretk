@@ -5715,3 +5715,18 @@ musA = { \tricky c'1 d'1 }
         "les deux notes de musA sont lues"
     );
 }
+
+/// Réduction réelle de `accidental-ledger.ly` (lot `ra`) : les noms
+/// néerlandais à quarts de ton sont des notes, pas des commandes inconnues.
+/// LilyPond 2.27 arrondit leur hauteur MIDI au demi-ton pair le plus proche.
+#[test]
+fn noms_neerlandais_a_quarts_de_ton() {
+    let source = "\\version \"2.26.0\"\n\\language \"nederlands\"\n\
+        \\score { \\new Staff { \\relative c''' { gisis1 gisih gis gih g geh ges geseh geses gis? } } }";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(
+        hauteurs(&score),
+        vec![81, 80, 80, 80, 79, 78, 78, 78, 77, 80],
+        "hauteurs MIDI des quarts de ton néerlandais"
+    );
+}

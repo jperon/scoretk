@@ -3558,3 +3558,15 @@ devenait vide. Un chemin est une suite de mots **séparés par des points**
 (`lily/parser.yy` `property_path`), le lecteur s'arrête donc après le dernier
 mot non suivi d'un point. Test `chemin_de_propriete_ne_mange_pas_la_variable_suivante`
 (échoue avant). Le fichier passe de 400 à 799 notes appariées sur 799.
+
+### Réduction réelle de `accidental-ledger.ly` (lot `ra`) : noms à quarts de ton
+
+Le fichier (source 2.19.21, oracle 2.27.0) perdait 171 notes : les noms
+néerlandais `gisih`, `gih`, `geh`, `geseh` n'étaient pas reconnus et les notes
+étaient silencieusement écartées (TEST 108 notes sur 180). La réduction isole
+`gisis1 gisih gis gih g geh ges geseh geses gis?`. `scm/define-note-names.scm`
+(2.26/2.27) définit ces noms comme des altérations d'un quart de ton ; le MIDI
+de LilyPond 2.27 arrondit leur hauteur au demi-ton **pair** le plus proche
+(vérifié sur les 28 noms). La table `NEDERLANDS` contient désormais ces 28
+noms avec l'alter arrondi. Test `noms_neerlandais_a_quarts_de_ton` (échoue
+avant). Le fichier passe à 180/180 notes appariées.
