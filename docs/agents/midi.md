@@ -2489,7 +2489,10 @@ assignment). The faithful functions are `findOptimalSplitPoint` (:231-283),
    (`importmidi_tuplet.cpp:1100-1102`), so `MidiTuplet::assignVoices`
    (`:872-924`) is not called and non-tuplet chords stay at voice 0 until
    `doVoiceSeparation`. Our extra layering pass gives overlapping chords
-   distinct voices before that stage.
+   distinct voices before that stage. **Fixed**: `assign_voices_impl` now
+   leaves every chord at voice 0, as in 4.7.4; reduced test
+   `voice::max_voice_tests::accords_qui_se_chevauchent_restent_en_voix_0`.
+   No file changes on either lot.
 4. **`assign_non_tuplet_voices`** (`voice.rs:1237-1300`) — approximation of
    `setNonTupletVoices`: C++ uses `chordInterval`, which relies on
    `findMaxQuantizedOffTime` and `findOnTimeBetweenChords`

@@ -1148,38 +1148,17 @@ fn assign_voices_impl(track: &mut MTrack, limit: usize, basic_quant: Option<Frac
     }
     let limit = limit.clamp(1, VOICES);
     let keys = track.chords.keys();
-    let mut voice_ends: Vec<Option<Fraction>> = vec![None; limit];
+    let _ = (limit, basic_quant);
     for key in keys {
         let Some(chord) = track.chords.get(key) else {
             continue;
         };
-        let on_time = key.0;
-        // `MidiTuplet::chordInterval` utilise `findMaxQuantizedOffTime` : une fin
-        // de note à 44,542 tombe sur 44,5 et ne chevauche pas l'accord suivant
-        // attaqué à 44,5. Comparer les fins brutes répartirait ces accords sur
-        // deux voix et `minimizeNumberOfRests` allongerait ensuite la première
-        // note d'un temps au lieu d'un croche (`chord_collect.mid`).
-        let chord_end = match basic_quant {
-            Some(bq) => chord
-                .notes
-                .iter()
-                .map(|note| {
-                    let quant = super::quant::quant_for_len(note.off_time - on_time, bq);
-                    super::quant::quantize_value(note.off_time, quant)
-                })
-                .max()
-                .unwrap_or(on_time),
-            None => MTrack::max_off_time(chord),
-        };
-        let free = (0..limit).find(|voice| voice_ends[*voice].is_none_or(|end| end <= on_time));
-        let voice = free.unwrap_or_else(|| {
-            (0..limit)
-                .min_by_key(|index| voice_ends[*index].unwrap_or(Fraction::ZERO))
-                .unwrap_or(0)
-        });
-        voice_ends[voice] = Some(voice_ends[voice].map_or(chord_end, |end| end.max(chord_end)));
+        let _ = chord;
+        // En 4.7.4 il n'y a pas de passe de repartition ici : `findTuplets`
+        // sort sans n-olet (importmidi_tuplet.cpp:1100-1102) et les accords
+        // restent a la voix 0 jusqu'a `doVoiceSeparation`.
         if let Some(chord) = track.chords.get_mut(key) {
-            chord.voice = voice;
+            chord.voice = 0;
         }
     }
 }
@@ -1315,6 +1294,38 @@ mod max_voice_tests {
     /// cherchait d'abord un n-olet de la nouvelle voix a la meme date, puis
     /// n'importe quel n-olet de cette date : avec deux n-olets simultanes, il
     /// copiait le mauvais.
+    /// En 4.7.4, `findTuplets` sort des qu'il n'y a pas de n-olet dans la
+    /// mesure (`importmidi_tuplet.cpp:1100-1102`) : `assignVoices`
+    /// (`importmidi_tuplet_voice.cpp:872-924`) n'est pas appele et les accords
+    /// restent a la voix 0 jusqu'a `doVoiceSeparation`. Le port ajoutait une
+    /// passe de repartition par chevauchement avant cette etape.
+    #[test]
+    fn accords_qui_se_chevauchent_restent_en_voix_0() {
+        let mut track = MTrack::default();
+        let mut first = MidiChord::default();
+        first
+            .notes
+            .push(MidiNote::new(60, 80, Fraction::new(3, 2), Fraction::ZERO));
+        track.chords.insert(Fraction::ZERO, first);
+        let mut second = MidiChord::default();
+        second.notes.push(MidiNote::new(
+            64,
+            80,
+            Fraction::new(2, 1),
+            Fraction::new(1, 1),
+        ));
+        track.chords.insert(Fraction::new(1, 1), second);
+
+        super::assign_initial_voices(&mut track, 4);
+
+        let voices: Vec<usize> = track.chords.iter().map(|(_, chord)| chord.voice).collect();
+        assert_eq!(
+            voices,
+            vec![0, 0],
+            "le port n'a pas de passe equivalente dans le C++ 4.7.4"
+        );
+    }
+
     #[test]
     fn copie_du_nolet_scinde_pas_d_un_autre_a_la_meme_date() {
         use crate::tuplet::TupletData;
