@@ -151,7 +151,9 @@ pub fn parse_decoration(name: &str) -> Option<Decoration> {
         "snap" => Decoration::Articulation(ArticulationType::SnapPizzicato),
         "emphasis" => Decoration::Articulation(ArticulationType::Stress),
         "trill" | "t" => Decoration::Ornament(OrnamentType::TrillMark),
-        "mordent" | "m" => Decoration::Ornament(OrnamentType::Mordent),
+        // `abc2xml.py:1095` (`ornMap`) and §4.14: `lowermordent` (`M`) and
+        // `mordent` are both written as MusicXML `<mordent>`.
+        "mordent" | "m" | "lowermordent" => Decoration::Ornament(OrnamentType::Mordent),
         // § 4.14 : `!uppermordent!` est le nom long de l'abréviation `P`,
         // accepté aussi bien à la lecture qu'à l'écriture.
         "invertedmordent" | "uppermordent" | "p" => {
