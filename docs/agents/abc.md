@@ -2024,7 +2024,7 @@ avec leur référence ABC 2.1 / `xml2abc.py` pour une passe ultérieure.
 
 ## 29. Écriture ABC : oracle « like with like » et causes d'aller-retour (2026-11-21)
 
-### 29.1 Oracle — 53 artefacts éliminés (`2f123c4`, `e58a...`)
+### 29.1 Oracle — 53 artefacts éliminés (`2f123c4`, `9bfc6f6`)
 
 Le mode MIDI historique comparait l'ABC joué par `abc2midi` au MIDI de référence de
 MuseScore. Deux artefacts rendaient la comparaison invalide sur 53 des 57 « pertes »
