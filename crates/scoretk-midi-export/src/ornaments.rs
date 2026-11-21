@@ -252,6 +252,59 @@ pub(crate) fn trill(
     events
 }
 
+/// Évènements d'un mordant supérieur court (`ornamentShortTrill`,
+/// « prall ») : `(décalage, hauteur, durée)`.
+///
+/// La table `excursions` (`compatmidirenderinternal.h:95-106`) donne pour
+/// `ornamentShortTrill` et le style par défaut un corps `{0, 1, 0}`, sans
+/// répétition, avec prolongation de la dernière note. C'est le même calcul
+/// de pas et de millièmes que le trille.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn short_trill(
+    note: &Note,
+    span: i64,
+    chord_ticks: i64,
+    beats_per_second: f64,
+    fifths: i8,
+    auxiliary: Option<u8>,
+) -> Vec<(i64, u8, i64)> {
+    if span <= 0 || chord_ticks <= 0 {
+        return Vec::new();
+    }
+    let ticks_per_second = (beats_per_second * f64::from(DIVISION)).round() as i64;
+    if ticks_per_second <= 0 {
+        return Vec::new();
+    }
+    let min_ticks = (ticks_per_second / FASTEST_HZ).max(1);
+    let mut step = THIRTY_SECOND.max(min_ticks);
+    if step * 3 > span {
+        step = span / 3;
+        if step < min_ticks {
+            return Vec::new();
+        }
+    }
+    let milles = 1000 * step;
+    let sustain = (1000 * span - milles * 3).max(0);
+    let mut events = Vec::new();
+    let mut emit = |degree: i32, ontime: i64, duration: i64| {
+        let per_mille = ontime / chord_ticks;
+        let offset = chord_ticks * per_mille / 1000;
+        let length = chord_ticks * (duration / chord_ticks) / 1000 - 1;
+        if length > 0 {
+            let pitch = if degree == 0 {
+                note.pitch
+            } else {
+                auxiliary.unwrap_or_else(|| step_pitch(note, degree, fifths))
+            };
+            events.push((offset, pitch, length));
+        }
+    };
+    emit(0, 0, milles);
+    emit(1, milles, milles);
+    emit(0, 2 * milles, milles + sustain);
+    events
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1274,6 +1274,12 @@ fn render_chord(
             .ornaments
             .iter()
             .any(|ornament| ornament.kind == OrnamentType::TrillMark && ornament.play);
+    // `ornamentShortTrill` (2.x/3.x « prall ») : corps `{0, 1, 0}` de la table
+    // `excursions` (`compatmidirenderinternal.h:95-106`).
+    let short_trilled = chord
+        .ornaments
+        .iter()
+        .any(|ornament| ornament.kind == OrnamentType::InvertedMordent && ornament.play);
 
     let mut ontime = 0i64;
     let mut trailtime = 0i64;
@@ -1590,6 +1596,48 @@ fn render_chord(
                         channel,
                         key: trill_key,
                     },
+                });
+            }
+            continue;
+        }
+        if short_trilled && !trilled && tremolo.is_none() {
+            let span = tied_span_ticks(score, staff, note, ticks);
+            let auxiliary =
+                ornaments::previous_accidental_auxiliary(score, staff, source_tick, note);
+            for (offset, key, length) in ornaments::short_trill(
+                note,
+                span,
+                ticks,
+                beats_per_second_at(score, source_tick),
+                key_fifths_at(score, source_tick),
+                auxiliary,
+            ) {
+                let start = on + offset;
+                let end = start + length.max(1);
+                out.push(Event {
+                    tick: start,
+                    kind: EventKind::NoteOn {
+                        channel,
+                        key,
+                        velocity,
+                    },
+                });
+                context.attack(
+                    start,
+                    end - start,
+                    AttackNote {
+                        chord: context.chord,
+                        note: note_index,
+                        pitch: key,
+                        grace: true,
+                        grace_index: None,
+                        grace_before: true,
+                        tremolo: false,
+                    },
+                );
+                out.push(Event {
+                    tick: end,
+                    kind: EventKind::NoteOff { channel, key },
                 });
             }
             continue;
