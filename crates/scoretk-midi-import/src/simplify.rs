@@ -319,6 +319,10 @@ fn minimize_number_of_rests(
                 // Les pistes de percussion utilisent la signature non réduite
                 // (`ReducedFraction` C++) ; les autres gardent la lecture actuelle.
                 super::meter::beat_length_raw(bar_fraction, timesig.numerator)
+            } else if timesig.numerator == 12 {
+                // 12/8 se réduit en 3/4 : `beatLength` doit voir le numérateur
+                // brut 12 (`importmidi_meter.cpp:135-147`) pour le temps pointé.
+                super::meter::beat_length_raw(bar_fraction, timesig.numerator)
             } else {
                 beat_length(bar_fraction)
             };

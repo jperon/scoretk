@@ -1576,3 +1576,35 @@ signature — making both sides consistent is the next step of that port.
 
 Measured: N 0.2558 → **0.2588** with no per-file loss; `up-perc_drums`
 0.8462 → 1.0000 and `up-perc_short_notes` 0.7000 → 0.8000.
+
+## LilyPond lot and second pass (2026-11-21, continued)
+
+The LilyPond lot is now built correctly: LilyPond writes `.midi` (1 228 under
+`~/Musique`, 1 020 with a same-stem `.ly`). `import_mesure.py` uses **our own
+LilyPond reader** as reference (`.ly` → CLI → model), not a Python parser; the
+`ly_notes.py` experiment is removed. Baseline with the corrected oracle:
+**upstream N = 0.7132 / 96 files, LilyPond N = 0.7592 / 1 020 files**.
+
+Three oracle bugs were fixed before attributing any gain: `<chord/>` notes must
+be counted at the previous note's onset, MusicXML voices are global
+`(staff-1)*4 + local voice` and must be normalised before comparison, and
+`.mscx` measure lengths come from the carried `<TimeSig>`. Together they raise
+N from 0.6200 to 0.7589 on the combined lot; all figures above use the
+corrected oracle.
+
+### Cause: unreduced 12/8 numerator in duration simplification
+
+`Fraction` reduces 12/8 to 3/4, but MuseScore's `ReducedFraction` keeps
+`(12, 8)`; `beatLength` (`importmidi_meter.cpp:135-147`) therefore gives a
+dotted-eighth pulse, not a quarter. `minimizeNumberOfRests` now uses
+`beat_length_raw` when the raw numerator is 12 (drum tracks were already
+handled by the previous commit). Regression test `compound_128` covers 12/8.
+Measured: LilyPond loss 31 778.2 → 31 775.2 notes (one file, 0.6792 → 0.6906),
+upstream unchanged, no per-file loss. The other narrow numerators were tested
+and rejected: 6/8 regresses three upstream files, 15/8 and 9/8 have no effect.
+
+The full unreduced-numerator propagation (`division_info`, `meter_to_duration_list`,
+all compound meters) was also measured and rejected: 197 gains but 120 losses,
+including `simplify_8th_dont` 1.0 → 0.33 and `meter_chord_example` 0.53 → 0.07.
+Porting it correctly requires carrying the raw numerator in the model's
+`Measure`, which is the next step of the `importmidi_meter.cpp` port.
