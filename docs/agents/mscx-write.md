@@ -974,3 +974,60 @@ writer fixes. Three `.mscz` scores lose core-identical status (mscz-93, 94,
 master's `Staff::visible` fix and not reproduced by MuseScore's re-export —
 an external change, not a regression from `concertPitch` or
 `startWithMeasureOne` (neither tag is present in those three sources).
+
+### Eleventh pass — bisecting the reported regressions (English)
+
+The two regressions reported after pass 10 were traced before changing code.
+
+**Three `.mscz` losing core identity (mscz-93/94/157).** Bisected with the
+oracle as the test (`direct has <staff-details> AND MuseScore's re-export has
+none`) between `e62e557` and the rebased master. The first bad commit was
+`926b862b088fc6324485195b5fd2f5ae9d9cb1b3` ("Visibilité de portée : round trip
+.mscx et lecture MusicXML"), which added the `<isStaffVisible>0</isStaffVisible>`
+writer (`TWrite::write(Staff*)`, `write/twrite.cpp:2945-2947`). On the current
+rebased tree the criterion no longer holds: writing the `.mscz` for mscz-93 and
+reopening it yields 24 `<staff-details>` as in the good revision. The pass-10
+binary had been built before those master fixes; the "regression" was an
+outdated binary, not a defect in the merged code.
+
+**`xml` N2w 0.9276 → 0.8992.** No file's N2w changed between the two runs
+(file-by-file comparison is identical). The count of measured files went from
+25 to 27: two more MusicXML scores became importable, among them the very long
+`Vingt danses` files whose writer-only N2 is 0.8738. Their inclusion lowers the
+lot average; it is increased coverage, not a playback regression.
+
+**Octave-classified losses.** The `octave` label from `midi_notes` is a pitch
+multiset heuristic, not proof of an octave bug: on corpus-8/32/50 and mscz-33
+the actual missing notes are fast glissando/trill notes (0.035–0.12 s) and
+notes whose duration was written as one long instead of many short values.
+Adding `<diagonal>1</diagonal>` to the written `<Glissando>` (the `SLine`
+property written by `TWrite::writeProperties`, `write/twrite.cpp:1619`) by hand
+did not change playback, so no speculative writer change was made for it.
+The one genuine octave-classified cause already fixed is
+`<concertPitch>` (`Sid::concertPitch`, `style/styledef.cpp:567`,
+`MscWriter::writeStyleFile`, `infrastructure/mscwriter.cpp:135`): mscz-165 has
+`<concertPitch>1</concertPitch>` in its source, and the fix (commit b16d51b)
+reduced its core diff from 121 to 89 lines in a hand check.
+
+### Eleventh pass — final table
+
+Binary `/tmp/scoretk-mscz-pass11-final` (sha256 `c4e3ff8e…`), full 638-score
+run on the rebased tree. The table is identical to pass 10 on every fidelity
+column, confirming that the reported xml N2w and `<staff-details>` regressions
+were artifacts of the older binary and of counting two additional MusicXML
+files, not losses introduced by the two writer fixes.
+
+| Lot | Scores | .mscz written | Opened | Core-identical | N1 | N2 | N1w | N2w | Load err/warn | Alt core-identical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | 56 | 56 | 56 | 54/56 | 0.9882 | 0.9873 | 0.9836 | 0.9733 | 0 | 56/56 |
+| mscz | 174 | 172 | 172 | 49/172 | 0.9974 | 0.9973 | 0.9987 | 0.9936 | 0 | 42/172 |
+| xml | 32 | 27 | 27 | 0/27 | 0.9983 | 0.9908 | 0.9066 | 0.8992 | 0 | 0/27 |
+| ly | 375 | 345 | 345 | 1/345 | 0.9997 | 0.9971 | — | — | 0 | 0/0 |
+| abc | 1 | 1 | 1 | 0/1 | 1.0000 | 1.0000 | — | — | 0 | 0/0 |
+| **Total** | **638** | **601** | **601** | **104/601** | **0.9977** | **0.9963** | **0.9816** | **0.9761** | **0** | **98/255** |
+
+The only change is the alternative column (96 → 98 core-identical), from the
+master staff-visibility fixes. No file loses a core line or writer-only N2
+compared with pass 10. The remaining octave-classified writer-only losses
+need the model to distinguish MuseScore's playback of glissando/trill notes
+from the long written values; no speculative writer change was applied.

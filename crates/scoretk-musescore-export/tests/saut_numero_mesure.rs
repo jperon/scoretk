@@ -21,7 +21,11 @@ use scoretk_core::model::Score;
 use scoretk_musescore_import::MsczContainer;
 
 fn partition(flag_value: &str) -> Score {
-    let flag = if flag_value.is_empty() { String::new() } else { format!("<startWithMeasureOne>{flag_value}</startWithMeasureOne>") };
+    let flag = if flag_value.is_empty() {
+        String::new()
+    } else {
+        format!("<startWithMeasureOne>{flag_value}</startWithMeasureOne>")
+    };
     let mscx = format!(
         r#"<museScore version="4.70"><Score>
   <Division>480</Division>
