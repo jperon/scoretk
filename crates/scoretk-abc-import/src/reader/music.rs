@@ -204,9 +204,10 @@ impl Parser<'_> {
             Some('<') | Some('>') | Some('@') => (true, trimmed[1..].trim()),
             _ => (true, trimmed),
         };
-        if text.is_empty() {
-            return;
-        }
+        // Un texte vide après un préfixe de placement (`">"`) est une
+        // annotation à part entière : `abc2xml.py` (`text_expression`, lignes
+        // 402/487, `convert` ligne 2022) écrit un `<words/>` vide. Leport
+        // la supprimait silencieusement.
         let harmony = looks_like_chord(text);
         self.voice().annotations.push(AnnotationSpec::Text {
             text: text.to_owned(),

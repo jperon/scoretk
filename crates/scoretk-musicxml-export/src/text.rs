@@ -615,11 +615,14 @@ fn write_words_metronome(out: &mut Out, text: &RichText, style: &StyleFormat, of
             }
         }
         None => {
-            if text.fragments().is_empty() {
-                return;
-            }
             out.xml.start_element("direction-type", &[]);
-            write_fragments(out, "words", &[], text.fragments(), style);
+            // Un texte vide (`">"` ABC) est une annotation à part entière :
+            // `abc2xml.py::convert` (ligne 2022) écrit `<words/>` vide.
+            if text.fragments().is_empty() {
+                out.xml.tag_empty("words", &[]);
+            } else {
+                write_fragments(out, "words", &[], text.fragments(), style);
+            }
             out.xml.end_element();
         }
     }
@@ -667,9 +670,6 @@ pub(crate) fn write_words_styled(
     offset: i64,
     style: &StyleFormat,
 ) {
-    if text.is_empty() {
-        return;
-    }
     out.attr(false);
     let mut attributes: Vec<(&str, &str)> = vec![("placement", placement_name(placement))];
     if system {

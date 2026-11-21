@@ -1724,3 +1724,13 @@ annotations en attente au dernier événement dans `finish_bar` (branche mesure
 non vide). Tests réduits `C D "Segno"| / E F|` et `C D "Segno"|` écrits
 d'abord, échouant avant le correctif (0 au lieu de 1) ; sur
 `552ce87b8d6f_t76`, 2/2 `<words>Segno</words>` produits comme l'alternative.
+
+## 24. N3 — annotations de placement vides `"..."` (2026-11-21)
+
+`abc2xml.py` (`text_expression` lignes 402/487, `convert` ligne 2022) traite
+`">"` comme une annotation de texte vide placée sous la portée et écrit un
+`<words/>`. Le lecteur ABC supprimait le texte vide (`text.is_empty()`) et
+l'exporteur supprimait les `RichText` vides : deux silences. Le correctif
+conserve l'annotation vide et écrit `<words/>` pour un texte vide. Tests
+réduits des deux côtés écrits d'abord, échouant avant le correctif. Sur
+`9629d955e64a_t578`, 12 `<words/>` vides produits comme l'alternative.

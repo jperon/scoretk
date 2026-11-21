@@ -3136,3 +3136,37 @@ fn point_dorgue_articulation_abc() {
         "point d'orgue perdu :\n{xml}"
     );
 }
+
+/// Un texte vide issu d'une annotation ABC `">"` doit être écrit comme
+/// `<words/>` vide (`abc2xml.py::convert`, ligne 2022). L'exporteur le
+/// supprimait silencieusement (`text.is_empty()`).
+#[test]
+fn annotation_vide_ecrite_en_words() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(60, tpc::C)],
+    );
+    ajouter_annotation(
+        &mut measure,
+        score.staves.len(),
+        track,
+        Fraction::ZERO,
+        Annotation::StaffText(StaffText::new("")),
+    );
+    score.add_measure(measure);
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<words/>") || xml.contains("<words></words>"),
+        "annotation vide perdue :\n{xml}"
+    );
+}
