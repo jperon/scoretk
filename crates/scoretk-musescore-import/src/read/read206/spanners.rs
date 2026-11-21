@@ -32,7 +32,7 @@
 
 use scoretk_core::model::{
     Fraction, Hairpin, HairpinType, OttavaType, Placement, Score, SegmentType, Slur, Spanner,
-    SpannerAnchor, SpannerNotation, SpannerType, Track, VoltaInfo,
+    SpannerAnchor, SpannerNotation, SpannerType, Track, Trill, TrillType, VoltaInfo,
 };
 
 /// Ancrage d'une extrémité de spanner dans le fichier 2.x.
@@ -56,6 +56,7 @@ pub(super) enum SpanFamily {
     Slur,
     Hairpin,
     Ottava,
+    Trill,
 }
 
 /// Moitié d'un spanner 2.x ; les deux moitiés sont appariées par `id`.
@@ -77,6 +78,8 @@ pub(super) struct SpannerLink {
     pub(super) hairpin_direction: Option<String>,
     /// Type d'ottava 2.x (`<subtype>`, `readOttava`).
     pub(super) ottava_type: Option<OttavaType>,
+    /// Type de trille 2.x (`<subtype>`, `readTrill206`, read206.cpp:2362).
+    pub(super) trill_type: Option<TrillType>,
 }
 
 impl SpannerLink {
@@ -95,6 +98,7 @@ impl SpannerLink {
             hairpin_niente: false,
             hairpin_direction: None,
             ottava_type: None,
+            trill_type: None,
         }
     }
 }
@@ -138,6 +142,7 @@ pub(super) fn fix_spanners(score: &mut Score, links: &[SpannerLink]) {
                 SpanFamily::Ottava => {
                     SpannerType::Ottava(link.ottava_type.unwrap_or(OttavaType::OctaveUp))
                 }
+                SpanFamily::Trill => SpannerType::Trill,
             },
             SpannerAnchor::new(start_tick, start_track),
             SpannerAnchor::new(end_tick, end_track),
@@ -164,6 +169,11 @@ pub(super) fn fix_spanners(score: &mut Score, links: &[SpannerLink]) {
             SpanFamily::Ottava => {
                 // Le type est déjà porté par `SpannerType::Ottava` : aucun
                 // complément à renseigner dans le modèle.
+            }
+            SpanFamily::Trill => {
+                spanner.notation = Some(SpannerNotation::Trill(Trill::new(
+                    link.trill_type.unwrap_or(TrillType::TrillLine),
+                )));
             }
             SpanFamily::Slur => {
                 let mut slur = Slur::new();

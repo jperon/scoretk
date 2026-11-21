@@ -34,6 +34,7 @@
 use super::spanners::{SpanFamily, SpanKey, SpannerLink};
 use super::xml::{Content, Node};
 use super::NoteKey;
+use crate::read::notation_names;
 
 /// Balises qui restent des enfants directs de `<Measure>` en 3.x.
 ///
@@ -287,6 +288,19 @@ fn adapt_measure(
                     }
                     link.start = Some(key);
                     link.slur_up = node.child("up").map(Node::trimmed_text);
+                    links.push(link);
+                }
+            }
+            "Trill" => {
+                // `Read206::readTrill206` (`read206.cpp:2362-2376`) puis
+                // `readMeasure206` (`:2871-2892`) : le `<Trill id>` est fermé
+                // par un `<endSpanner id>` porté par une mesure suivante.
+                if let Some(id) = node.attr_i32("id") {
+                    let mut link = SpannerLink::new(id, SpanFamily::Trill);
+                    link.start = Some(measure_key(index, staff));
+                    link.trill_type = node
+                        .child("subtype")
+                        .map(|child| notation_names::trill_type(&child.trimmed_text()));
                     links.push(link);
                 }
             }
