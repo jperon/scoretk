@@ -3622,3 +3622,13 @@ fonctions Scheme (`define-music-function`) — ce sont des sources hors sous-
 ensemble, pas des régressions de lecture. Les traitements utiles ont porté sur
 celles qui produisent des notes : `divisi-staves`, `accidental-ledger`,
 `bend-spanner-simple` et `chord-names-languages`.
+
+#### Mesure des trois causes
+
+Mesure complète à dénominateur constant (mus 1447, ra 1726, mut 1377) :
+mus 98,28 % (inchangé), ra 84,78 → **86,92 %**, mut 92,31 → **92,33 %**.
+Dix gains `ra` (`divisi-staves` +399, `accidental-ledger` +171,
+`bend-spanner-simple` +112, `chord-names-languages` et `…2` +84 chacun,
+`persian-accidental-glyphs` +15, `accidental-quarter` +8, `midi-microtone`
++4), trois gains `mut` (`rach-prelude23-05` +140, `BuxWv185` +78,
+`rach-prelude23-10` +36), **aucune perte** dans aucun lot.
