@@ -3995,17 +3995,20 @@ the remaining loss of the accordion files (`Under_Paris_Skies`,
 `silence_de_mesure_invisible_en_3_4` first; both files re-read with zero
 lost notes and the whole mscz lot reaches 99.98 % N2d.
 
-### Hairpin commands precede the note they cover
+### Dynamic-event placement: investigated and reverted
 
-`render_body` attached spanner events with `attach_post` for everything except
-`\ottava`. `\<`/`\cresc` and `\!` are context properties too
-(`lily/parser.yy` `DYNAMIC`, `ly/property-init.ly`), so writing them after the
-note starts/ends the dynamic spanner one note too late. On
-`Angels_Carol__John_Rutter.mscz` this made LilyPond 2.26 report four times
-« Spanner `DynamicTextSpanner' is not fully contained in parent spanner »
-because the `\cresc` spanner outlasted the slur enclosing it. Hairpin events
-now go through `attach_pre`, like `\ottava`; the four errors disappear.
-Failing reduced test `soufflet_se_terminne_avant_la_note_du_tick_de_fin` first.
+Moving `\cresc`/`\!` before their note looked like a fix for the four
+`DynamicTextSpanner is not fully contained in parent spanner` errors on
+`Angels_Carol__John_Rutter.mscz`, and it did remove them — but LilyPond 2.26
+requires dynamic events to be **post**-events on a note (`lily/parser.yy`
+`post_events`, NR §3.1.2 Dynamics). Writing them before the first note gives
+« CrescendoEvent non attaché » on `testHairpinDynamics` and `layout_elements`,
+and moving `\<` before its note gives twelve « Hairpin is not fully contained
+in parent spanner » errors on `Tibie_Paiom`. The only variant that compiled
+both real files cleanly replaced `\cresc`/`\decresc` with `\<`/`\>`, losing
+MuseScore's dashed text hairpins. The placement change was therefore
+**reverted**: the writer keeps dynamics where `musicxml2ly` puts them, and the
+four messages stay documented below as a layout-only discrepancy.
 
 ### Remaining classes: investigation (LilyPond 2.26 / 2.27.0)
 
@@ -4048,8 +4051,11 @@ missing LilyPond construct:
 ### Compile messages
 
 * `Angels_Carol__John_Rutter.mscz`: four LilyPond 2.26 errors
-  « Spanner `DynamicTextSpanner' is not fully contained in parent spanner »;
-  fixed by the hairpin placement above.
+  « Spanner `DynamicTextSpanner' is not fully contained in parent spanner »:
+  the text hairpin's end tick falls after the slur that encloses it. Only a
+  replacement of `\cresc` by `\<` removes them, at the cost of the dashed
+  text-hairpin appearance; no note is affected, so the faithful `\cresc` is
+  kept (see the reverted placement note above).
 * `Amazing_Grace_-_String_Quartet.mscz`: two errors from Ghostscript
   rejecting the `NotoSerifCJKjp` CFF2 font selected for the score's Japanese
   text (`イ ギ ス リ`) during PDF conversion. The `.ly` itself is valid and
