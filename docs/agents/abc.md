@@ -1677,3 +1677,15 @@ Le correctif conserve la position d'origine de chaque liaison
 Test réduit `C-D|` écrit d'abord et échouant avant le correctif
 (`tests/foreign_ties.rs`). Sur `0001-0050.abc` X:16 (`A4-B2`…) : 24 slurs
 start / 24 stop produits, comme l'alternative, contre 0 avant.
+
+## 21. N3 — fin de reprise `:|` suivie d'une barre double `||` (2026-11-21)
+
+Une mesure vide ouverte par la barre double `||` qui suit `:|` écrasait
+`end_bar_line` de la mesure précédente (`finish_bar`, branche mesure vide) :
+le `:|` devenait `Double`, perdant le `<repeat direction="backward"/>`.
+`abc2xml.py::mergePartMeasure` conserve la répétition, comme le montre
+`0701-0720.abc` X:708 (7 `:|` suivis de `||` → 7 repeats dans l'alternative,
+1 seul dans le port). Le correctif empêche une barre `Double` d'écraser une fin
+de reprise déjà posée (ABC 2.1 §4.9). Test réduit
+`C D:| / ||E F:| / ||G A:|` écrit d'abord, échouant avant le correctif (1 au
+lieu de 3) ; sur X:708, 7/7 repeats produits comme l'alternative.

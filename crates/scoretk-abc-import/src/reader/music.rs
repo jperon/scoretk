@@ -1337,12 +1337,18 @@ impl Parser<'_> {
         let voice = &mut self.reader.voices[self.voice];
         let empty = voice.current.events.is_empty() && voice.tick.is_zero();
         if empty {
-            // Une barre de **début** de reprise (`|:`) sur une mesure vide ne
-            // doit pas écraser la barre de fin de la mesure précédente : `:|`
-            // suivi de `|:` porte les deux répétitions (ABC 2.1 §4.9).
+            // Une barre sans reprise sur une mesure vide ne doit pas écraser
+            // la barre de fin de la mesure précédente : `:|` suivi de `|:`
+            // porte les deux répétitions, et `:|` suivi de `||` garde le `:|`
+            // (ABC 2.1 §4.9, `abc2xml.py::mergePartMeasure`).
             if end != BarLineType::Normal {
                 if let Some(last) = voice.measures.last_mut() {
-                    last.end_bar = end;
+                    if !last.end_bar.is_repeat_end()
+                        || end.is_repeat_end()
+                        || end != BarLineType::Double
+                    {
+                        last.end_bar = end;
+                    }
                 }
             }
             if start_repeat {
