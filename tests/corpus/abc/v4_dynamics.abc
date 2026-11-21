@@ -7,7 +7,7 @@ L:1/8
 K:C clef=treble
 V:1 name="Violin" clef=treble
 !p!d2d2d2d2 |
-!<(!d2d2d2!<)!d2 |
-!f!d2d2d2d2 |
-!<(!d2d2d2!<)!d2 |
-!pp!d2d2d2d2 |]
+!<(!d2d2d2d2 |
+!f!!<)!d2d2d2d2 |
+!<(!d2d2d2d2 |
+!pp!!<)!d2d2d2d2 |]

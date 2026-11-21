@@ -6,14 +6,14 @@ M:4/4
 L:1/8
 K:C clef=treble
 V:1 name="Voice" clef=treble
-!mf!!<(!G2A2B2!<)!c2 |
+!mf!!<(!G2A2B2c2 |
 w: dyn hairpin * *
-!<(!G2A2B2!<)!c2 |
+!<)!!<(!G2A2B2c2 |
 w: combined * * *
-!<(!G2A2B2!<)!c2 |
+!<)!!<(!G2A2B2c2 |
 w: * * * *
-!<(!G2A2B2!<)!c2 |
+!<)!!<(!G2A2B2c2 |
 w: * * * *
-!<(!G2A2B2!<)!c2 |
+!<)!!<(!G2A2B2c2 |
 w: * * * *
-Z |]
+!<)!Z |]

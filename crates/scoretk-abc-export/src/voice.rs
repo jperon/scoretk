@@ -123,6 +123,7 @@ pub(crate) fn render_voice(
             range.clone(),
             &mut before,
             &mut after,
+            measure_index + 1 == score.measures.len(),
         );
         draw_context_changes(
             score,
@@ -713,6 +714,7 @@ fn draw_spanners(
     range: std::ops::Range<usize>,
     before: &mut [Vec<String>],
     after: &mut [Vec<String>],
+    last_measure: bool,
 ) {
     for spanner in &score.spanners {
         if spanner.start.track.staff().index() != staff || !spanner.visible {
@@ -757,9 +759,17 @@ fn draw_spanners(
                         before[offset].push(start.to_owned());
                     }
                 }
-                if spanner.end.tick > measure.start_tick && spanner.end.tick <= measure.end_tick() {
-                    if let Some(offset) = item_at_or_before(items, range.clone(), spanner.end.tick)
-                    {
+                // Un soufflet qui se termine exactement au début de la mesure
+                // suivante appartenait à cette mesure-là : l'écrire dans la
+                // précédente collait le `!>)!` au `!>(!` de la première note
+                // et rendait l'aller-retour instable. On vise donc la mesure
+                // qui contient le tick de fin (sauf en fin de partition, où
+                // le tick vaut la fin de la dernière mesure).
+                if spanner.end.tick >= measure.start_tick
+                    && (spanner.end.tick < measure.end_tick()
+                        || (last_measure && spanner.end.tick <= measure.end_tick()))
+                {
+                    if let Some(offset) = item_at_or_after(items, range.clone(), spanner.end.tick) {
                         before[offset].push(end.to_owned());
                     }
                 }
