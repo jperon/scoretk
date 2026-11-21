@@ -2559,6 +2559,48 @@ upstream **0.9780**, LilyPond **0.6950**, notation score **0.6798** with the
 same three files below MuseScore (`lily-bd83d4c2` 0.026,
 `Promo_Foucauld` 0.0015, `Patrick-Doyle…` 0.001).
 
+## MIDI import: closing status (2026-11-21)
+
+Final three-tool comparison on the 255-file LilyPond lot
+(`target/midi-final3/`, same oracle as §"Comparison with other MIDI
+importers"):
+
+| Tool | N2d (source MIDI) | Exact files | Notation score (vs `.ly`) |
+| --- | ---: | ---: | ---: |
+| scoretk | **0.9767** | 122 | **0.6800** |
+| MuseScore 4.7.4 | **0.9767** | 121 | **0.6800** |
+| `midi2ly` + `lilypond` | 0.9993 | 242 | 0.7942 |
+
+**Every file where scoretk still differs from MuseScore 4.7.4 on any metric**
+(N1, N2, N2d, exact, octave, transposition, flags), over all 255 files:
+
+| File | Metric | scoretk | MuseScore | Verdict |
+| --- | --- | --- | --- | --- |
+| `TotusTuus.midi` | N2d / exact | 100.0 / exact | 99.19 / not exact | scoretk better (one MuseScore duration split) |
+
+The separate notation comparison against the engraved `.ly` differs on two
+files, both voice-only and both below 0.002 overall:
+
+- `Promo_Foucauld` — voice partial 0.7617 vs MuseScore 0.7648 (score
+  0.6698 vs 0.6713); 168 tuplets in the file.
+- `TotusTuus` — same overall score 0.2741, voice partial 0.2741 vs
+  MuseScore 0.3037. No missing or shifted note on either side.
+
+All three files that were below MuseScore before the last campaigns
+(`lily-bd83d4c2`, `lily-691782a0`, `Patrick-Doyle…`) now match its notation
+score exactly: 0.6089, 0.5544 and 0.7477 respectively. Against the upstream
+`.ly` oracle, the files that appear to lose are sampled matches of MuseScore's
+own conversion (direct score 1.0 on `AveMaria-midi`, `SanctePieX`,
+`lily-5d32e270`) — MuseScore's voice layout is not the engraved reference.
+
+**Intentionally not matched**: `midi2ly` round-trips notated onsets/durations
+through notation (N2d 0.9993, notation 0.7942) by keeping the off-grid timings
+of its source `.ly`; MuseScore 4.7.4 quantises to the grid and runs its beat
+tracker (`importmidi_quant.cpp:455-481`, `:1487-1516`). Reproducing `midi2ly`
+would mean diverging from the 4.7.4 behaviour that is the compliance target,
+so no change is attempted. Layout, hidden staves and playback ornaments are
+likewise outside the importer's scope. The MIDI importer is closed.
+
 ## MIDI import: status (2026-11-21)
 
 - **Default pipeline**: LilyPond N **0.6950** (1 020 files), upstream N
