@@ -996,8 +996,8 @@ impl Reader {
                         if previous == Some(clef) {
                             continue;
                         }
-                        let voice_old = previous
-                            .map_or(old_shift, |clef| 12 * i32::from(clef.octave_change()));
+                        let voice_old =
+                            previous.map_or(old_shift, |clef| 12 * i32::from(clef.octave_change()));
                         voice.transpose += new_shift - voice_old;
                     }
                 }
