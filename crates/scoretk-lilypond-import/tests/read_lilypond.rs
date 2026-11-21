@@ -5730,3 +5730,27 @@ fn noms_neerlandais_a_quarts_de_ton() {
         "hauteurs MIDI des quarts de ton néerlandais"
     );
 }
+
+/// Réduction réelle de `chord-names-languages.ly` (lot `ra`) : la basse d'un
+/// accord peut être écrite après la durée (`e1/d`) ; elle appartient à
+/// l'accord courant, elle n'ouvre pas un nouvel accord.
+#[test]
+fn basse_daccord_apres_la_duree() {
+    let source = r#"\version "2.26.0"
+\score { \new Staff { \chordmode { e1/d c:m } } \midi {} }
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    let debut: Vec<_> = accords_de_voix(&score, 0)
+        .iter()
+        .take(1)
+        .flat_map(|(_, notes, _)| notes.iter().copied())
+        .collect();
+    let mut debut = debut;
+    debut.sort_unstable();
+    assert_eq!(
+        debut,
+        vec![62, 64, 68, 71],
+        "l'accord E/D contient le do grave : {:?}",
+        debut
+    );
+}

@@ -3570,3 +3570,13 @@ de LilyPond 2.27 arrondit leur hauteur au demi-ton **pair** le plus proche
 (vérifié sur les 28 noms). La table `NEDERLANDS` contient désormais ces 28
 noms avec l'alter arrondi. Test `noms_neerlandais_a_quarts_de_ton` (échoue
 avant). Le fichier passe à 180/180 notes appariées.
+
+### Réduction réelle de `chord-names-languages.ly` (lot `ra`) : basse après durée
+
+Le fichier (source 2.25.35, oracle 2.27.0) écrivait `e1/d` : le lexer coupe
+`e`, `1`, `/`, `d`, et `parse_chord_name` s'arrêtait sur le chiffre de durée.
+La basse `/d` devenait alors un accord D majeur séparé au tick suivant. Test
+`basse_daccord_apres_la_duree` (échoue avant). Le lecteur consomme maintenant
+la basse juste après la durée et l'ajoute à l'accord courant :
+`chord-names-languages` passe de 21 à 105 notes appariées sur 133, et
+l'extrait `\chordmode { e1/d c:m }` de 3 à 7 sur 7.

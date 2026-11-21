@@ -3170,7 +3170,7 @@ impl<'a> Parser<'a> {
                 }
                 let head = std::mem::take(&mut self.pending_head);
                 let posts = self.parse_posts_until_note_end();
-                let notes = pitches
+                let mut notes: Vec<NoteSpec> = pitches
                     .into_iter()
                     .map(|pitch| NoteSpec {
                         pitch: PitchSpec::default(),
@@ -3180,6 +3180,33 @@ impl<'a> Parser<'a> {
                     })
                     .collect();
                 let (duration, multiplier) = self.parse_optional_duration_spec();
+                // `e1/d` : le lexer coupe la durée avant la basse. Celle-ci
+                // appartient encore à l'accord courant (`lily/parser.yy`
+                // `chord_body`), elle ne doit pas devenir un accord suivant.
+                if self.note_mode == NoteMode::Chords
+                    && self.peek().is_some_and(|token| token.is_punct('/'))
+                {
+                    self.position += 1;
+                    if let Some(Token {
+                        kind: Kind::Word,
+                        text,
+                        ..
+                    }) = self.peek().cloned()
+                    {
+                        self.position += 1;
+                        if let Some((step, alter)) = self.language.parse(&text) {
+                            if let Some(basse) = pitch::midi_of(step, alter, 4) {
+                                let posts = Vec::new();
+                                notes.push(NoteSpec {
+                                    pitch: PitchSpec::default(),
+                                    posts,
+                                    head_group: NoteHeadGroup::default(),
+                                    midi: Some(basse),
+                                });
+                            }
+                        }
+                    }
+                }
                 let chord_posts = self.parse_posts();
                 return Music::Chord(Chord {
                     kind: ChordKind::Notes(notes),
