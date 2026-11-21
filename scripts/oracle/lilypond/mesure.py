@@ -45,7 +45,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import common  # noqa: E402
 from ly_notes import (
-    GRID, TOL, a_des_repetitions, compare, lire_graces, read_midi, read_xml,
+    GRID, TOL, a_des_repetitions, compare, lire_graces, nombre_portees,
+    read_midi, read_xml,
 )
 
 TIMEOUT = 30
@@ -233,7 +234,14 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     ecrire(out, r)
                     continue
                 try:
-                    test = read_xml(str(dst), with_grace=True)
+                    # Le MIDI de référence a une piste par contexte ; le
+                    # MusicXML peut replier plusieurs pistes sur une portée
+                    # (lecteur ou source sans structure explicite). Dans ce
+                    # cas, fusionner les unissons de voix effacerait des notes
+                    # distinctes : on ne le fait que si le XML sépare au moins
+                    # autant de portées que la référence a de pistes.
+                    fusion = nombre_portees(str(dst)) >= len({n[3] for n in ref})
+                    test = read_xml(str(dst), with_grace=True, merge_unisons=fusion)
                 except Exception as exc:
                     r["erreur"] = f"XML illisible : {exc}"
                     marquer_echec(r)
@@ -360,11 +368,6 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--out", default="", help="dossier des sorties brutes (hors dépôt)")
     p.add_argument("--refs", default="", help="racine des ly.midi (préfixe + lot + md5_nom)")
-    p.add_argument(
-        "--refs-only",
-        action="store_true",
-        help="ne pas régénérer une référence absente : le fichier est exclu",
-    )
     p.add_argument(
         "--refs-only",
         action="store_true",

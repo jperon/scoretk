@@ -110,7 +110,30 @@ def read_midi(path: str) -> list[tuple[int, float, float, int]]:
     return notes
 
 
-def read_xml(path: str, with_grace: bool = False) -> list[tuple]:
+def nombre_portees(path: str) -> int:
+    """Nombre de couples (partie, portée) qui portent au moins une note.
+
+    Sert à décider si les unissons de voix peuvent être fusionnés : si le
+    MusicXML sépare moins de portées que le MIDI de référence n'a de pistes,
+    plusieurs pistes ont été repliées sur une même portée et la fusion
+    masquerait des notes distinctes.
+    """
+    racine = ET.parse(path).getroot()
+    portees: set[tuple[int, str]] = set()
+    for numero_part, part in enumerate(racine.findall("part")):
+        for measure in part.findall("measure"):
+            for elem in measure:
+                if elem.tag != "note":
+                    continue
+                if elem.find("pitch") is None and elem.find("unpitched") is None:
+                    continue
+                portees.add((numero_part, elem.findtext("staff", "1")))
+    return len(portees)
+
+
+def read_xml(
+    path: str, with_grace: bool = False, merge_unisons: bool = True
+) -> list[tuple]:
     """Notes d'un MusicXML partwise : hauteur concert, attaque, durée, partie.
 
     Avec ``with_grace=True``, chaque note porte un cinquième élément indiquant
@@ -142,6 +165,7 @@ def read_xml(path: str, with_grace: bool = False) -> list[tuple]:
     """
     racine = ET.parse(path).getroot()
     notes: list[tuple[int, float, float, int]] = []
+    meta: list[tuple[int, str, str, bool]] = []  # (part, portée, voix, grâce)
     for numero_part, part in enumerate(racine.findall("part")):
         divisions = 1
         transposition = 0
@@ -225,6 +249,8 @@ def read_xml(path: str, with_grace: bool = False) -> list[tuple]:
                                           est_grace) if with_grace else
                                          (hauteur_u + transposition + octave_shift, attaque,
                                           0.0 if est_grace else duree, numero_part))
+                            meta.append((numero_part, elem.findtext("staff", "1"),
+                                         elem.findtext("voice", "1"), est_grace))
                     continue  # silence : le curseur a déjà avancé
                 step = pitch.findtext("step")
                 octave_txt = pitch.findtext("octave")
@@ -237,7 +263,43 @@ def read_xml(path: str, with_grace: bool = False) -> list[tuple]:
                              if with_grace else
                              (hauteur + transposition + octave_shift, attaque,
                               0.0 if est_grace else duree, numero_part))
+                meta.append((numero_part, elem.findtext("staff", "1"),
+                             elem.findtext("voice", "1"), est_grace))
+    if merge_unisons:
+        return _fusionner_unissons(notes, meta)
     return notes
+
+
+def _fusionner_unissons(
+    notes: list[tuple], meta: list[tuple[int, str, str, bool]]
+) -> list[tuple]:
+    """Fusionne les unissons de voix différentes d'une même portée.
+
+    Le MIDI de LilyPond ne peut pas porter deux attaques de même hauteur au
+    même tick sur une même piste : deux voix qui jouent l'unisson n'émettent
+    qu'une note (``lily/midi-walker.cc``, ``lily/note-performer.cc``). Le
+    MusicXML, lui, écrit les deux voix, et chacune est une note gravée
+    légitime. L'oracle compare le **son**, pas la gravure : il ne garde qu'une
+    attaque par (partie, portée, hauteur, attaque, grâce) quand les voix
+    diffèrent. Deux portées différentes restent deux pistes MIDI distinctes et
+    ne sont jamais fusionnées ; une même voix qui répète la même hauteur à la
+    même attaque reste une anomalie du candidat et n'est pas masquée.
+    """
+    groupes: dict[tuple, list[int]] = {}
+    for index, note in enumerate(notes):
+        if index >= len(meta):
+            continue
+        numero_part, portee, voix, grace = meta[index]
+        cle = (numero_part, portee, note[0], round(note[1], 6), grace)
+        groupes.setdefault(cle, []).append(index)
+    supprimer: set[int] = set()
+    for indices in groupes.values():
+        voix = {meta[i][2] for i in indices}
+        if len(voix) > 1:
+            supprimer.update(indices[1:])
+    if not supprimer:
+        return notes
+    return [note for index, note in enumerate(notes) if index not in supprimer]
 
 
 def compter_paires(
@@ -535,6 +597,38 @@ def selftest() -> None:
         with open(p, "w", encoding="utf-8") as f:
             f.write(flux)
         assert read_xml(p)[-2:] == [(77, 2.0, 1.0, 0), (81, 3.0, 1.0, 0)], read_xml(p)
+
+        # Unissons entre voix d'une même portée : LilyPond n'émet qu'une
+        # attaque par piste MIDI (`lily/midi-walker.cc`), le MusicXML écrit les
+        # deux voix. L'oracle compare le son : une seule note. Deux portées
+        # restent deux pistes ; une même voix qui répète la hauteur à la même
+        # attaque n'est pas fusionnée (ce serait masquer un défaut du lecteur).
+        unisson = """<score-partwise version="4.0">
+          <part id="P1">
+            <measure number="1">
+              <attributes><divisions>1</divisions></attributes>
+              <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>
+                <voice>1</voice><staff>1</staff></note>
+              <backup><duration>1</duration></backup>
+              <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>
+                <voice>2</voice><staff>1</staff></note>
+              <backup><duration>1</duration></backup>
+              <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>
+                <voice>1</voice><staff>2</staff></note>
+            </measure>
+            <measure number="2">
+              <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>
+                <voice>1</voice><staff>1</staff></note>
+              <backup><duration>1</duration></backup>
+              <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>
+                <voice>1</voice><staff>1</staff></note>
+            </measure>
+          </part></score-partwise>"""
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(unisson)
+        attendu_unisson = [(60, 0.0, 1.0, 0), (60, 0.0, 1.0, 0),
+                           (60, 1.0, 1.0, 0), (60, 1.0, 1.0, 0)]
+        assert read_xml(p) == attendu_unisson, read_xml(p)
 
         # Correction 6 — changement de <divisions>, accord et extension de
         # mesure. La mesure 1 avance le curseur à 3 noires (forward 2 + note
