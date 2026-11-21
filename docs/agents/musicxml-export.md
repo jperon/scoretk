@@ -441,3 +441,26 @@ l'export écrit le `<sound>` seul pour un marqueur invisible. Test réduit écri
 d'abord, échouant avant le correctif. Oracle ciblé : 7→6 et 314→306 lignes
 divergentes, 0 perte.
 
+
+## 23. Bilan final (174 fichiers) — contenu musical
+
+Re-mesure après les trois correctifs code (indication 6/8 héritée,
+`findTrackForAnnotations` pour les tempos, marqueurs invisibles) :
+**26 gains, 1 perte, 146 inchangés** ; lignes divergentes 22 955 → 22 300 ;
+fichiers core-identiques 58 → **63** ; XSD scoretk 0 erreur ; N1 0,9971,
+N2 0,9497. La catégorie `duration` disparaît du classement, `sound` tombe à 1
+résidu.
+
+L'unique perte est `Tarentella_Napoletana_Accordion_Solo` (5 → 8 lignes) :
+dans sa mesure 101, la référence n'écrit aucun `<forward>` alors que notre
+export en écrit 2. L'héritage corrigé du 6/8 change la découpe des silences gap
+de cette mesure ; le port de `toRhythmicDurationList` ne reproduit pas encore
+tous ses paramètres (`maxDots`, `timeStretch`, contexte de n-olet,
+`durationtype.cpp:511-537`). Le gain net reste de 655 lignes sur le lot et
+cette mesure est la seule régression observée.
+
+Reste : `attributes` 46 et `staff-details` 43 (portées masquées par la mise en
+page, laissées pour la fin par priorité), puis des résidus de 1 à 3 fichiers
+(`clef`, `tie`, `dot`, `measure-style`, `tuplet`, `staff`, `harmony`, `forward`,
+`sound`). Pour le contenu musical porté par le modèle, l'export MusicXML est
+déclaré terminé.
