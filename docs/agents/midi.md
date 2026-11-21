@@ -1898,3 +1898,32 @@ D4=62 concert. `import_mesure.py` convertit désormais nos hauteurs vers le
 repère concert quand la référence est un `.mscx`. Mesure : **3 gains
 (0,0/0,909 → 1,0), 0 perte** sur le lot amont ; le lot LilyPond est
 inchangé (ses références MuseScore sont déjà en hauteur écrite).
+
+## Causes ouvertes (2026-11-21)
+
+### Simplification de trois notes — stationnée
+
+Test réduit `simplify_order.rs` (ignoré, raison en attribut) : une piste,
+trois notes 57@5,0→6,5, 60@6,0→6,5, 62@6,5→7,0. MuseScore 4.7.4 donne
+2,0 / 0,5 / 0,5 ; nous donnons 57 en deux notes liées 1,0 + 0,5, 60 et 62
+à 0,5 (le test attendu porte ces trois valeurs). Éliminé par la réduction
+mécanique : le grand-staff (deux pistes, même canal), le canal (deux pistes,
+canaux différents), et le nombre de pistes (deux notes sur une seule piste
+donnent le même résultat des deux côtés). Le dump temporaire `MIDI_DUMP`
+(retiré) montre que la première divergence apparaît dans
+`simplify_durations_not_drums`, avec des voix déjà conformes à MuseScore
+(57/62 en voix 2, 60 en voix 1). Piste du split métrique vérifiée et
+éliminée : `split_unequal_chords` (`chord.rs:598-640`) ne regroupe que les
+notes d'un même accord ayant des fins différentes ; ici chaque accord n'a
+qu'une note. `lengthenNote` (`importmidi_simplify.cpp:64-166`) expliquerait
+l'allongement de 60 mais pas pourquoi MuseScore allonge 57 à la place.
+Deux passes n'ayant pas trouvé l'intrant qui diffère, la cause est
+stationnée rather que corrigée au hasard.
+
+## Classement des causes restantes (lots MuseScore)
+
+Du relevé complet (1 020 fichiers) : pitch 15 137 notes, durée 5 234,
+voix 3 031, n-olets 1 928, attaque 178. Le poste « pitch » restant est
+majoritairement le choix de gabarit (transpositions encore mal classées
+pour quelques programmes), déjà partiellement traité ; la prochaine cause
+vise la plus grande classe hors simplification ci-dessus.
