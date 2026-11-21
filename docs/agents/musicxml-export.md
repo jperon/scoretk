@@ -417,3 +417,19 @@ contenu musical (N1/N2 inchangés). Le même constat vaut pour les 2 autres
 fichiers (`Minuit chrétien — Chant`, `Dixit Dominus — Gloria Patri`). Aucun
 correctif d'écriture n'est applicable.
 
+## 21. `sound` (6 fichiers) — anomalie d'amont prouvée
+
+Trois cas sont des `<sound tempo>` supplémentaires sur des tempos invisibles
+(`<Tempo><visible>0</visible>`). L'écrivain suit exactement le C++ :
+`commonAnnotations` (`exportmusicxml.cpp:6607-6620`) appelle `tempoSound` pour
+tout élément que `canWrite` (`:9408-9411`) refuse, donc pour un tempo invisible.
+Les séquences de tempos de la référence sont des **sous-séquences strictes** des
+nôtres (ex. `The Petite Waltz` : 56 attends, 59 produits ; `Under Paris Skies` :
+28/36 ; `Ave Verum` : 5/6 ; `Angels Carol` : 11/16). Le lecteur 3.x conserve des
+`<Tempo>` invisibles que l'import 4.7.4 écarte (par ex. les deux tempos
+`2.66667` de `The Petite Waltz`, un seul exporté par la référence) : c'est une
+divergence d'import, pas d'export. Les deux autres cas (`segno`) sont des
+ordres d'éléments dans la mesure : `<sound segno>` présent dans les deux
+documents (aux mêmes mesures), maisPositionné avant/après une note différemment.
+Aucun correctif d'écriture n'est applicable sans reproduire le filtrage
+propriétaire de l'import 4.7.4.
