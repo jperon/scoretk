@@ -760,12 +760,42 @@ impl Reader {
                 // Port de `abc2xml.py::splitHeaderVoices` (lignes 833-837) :
                 // tout ce qui précède le champ `K:` est un en-tête. Une ligne
                 // sans champ (`3/8=120` par exemple) est signalée et sautée,
-                // au lieu de faire rejeter l'air entier.
+                // au lieu de faire rejeter l'air entier. Une ligne de musique
+                // (notes ou barres) sans K: est tolérée avec l'armure C
+                // fournie par défaut par `abc2xml.py:2423` (ABC 2.1 §3.1
+                // exige K:, mais l'alternative lit ces airs).
+                // A prose line (e.g. `N bars 13 and 21 are |f2ed| …`) is not
+                // music even though it mentions notes: require the FIRST
+                // token to be made only of ABC music characters.
+                const MUSIC_CHARS: &str = "ABCDEFGabcdefgzZxX0123456789|[]():,!'\"^+_=<>/-\\";
+                let tokens: Vec<&str> = text.split_whitespace().collect();
+                let music_token = |token: &str| {
+                    !token.is_empty() && token.chars().all(|c| MUSIC_CHARS.contains(c))
+                };
+                let music_line = tokens.first().is_some_and(|first| {
+                    if first.len() >= 2 {
+                        music_token(first)
+                    } else {
+                        // `C D E F |` starts with spaced single notes; a
+                        // prose line `N bars …` does not.
+                        music_token(first)
+                            && tokens.get(1).is_some_and(|second| music_token(second))
+                    }
+                });
+                if !music_line {
+                    self.warnings.push(Warning::new(
+                        line.number,
+                        format!("ligne « {text} » avant K: ignorée"),
+                    ));
+                    continue;
+                }
                 self.warnings.push(Warning::new(
                     line.number,
-                    format!("ligne « {text} » avant K: ignorée"),
+                    "champ K: absent, do majeur pris par défaut".to_owned(),
                 ));
-                continue;
+                self.seen_key = true;
+                self.header_key = scoretk_core::model::KeySig::new(scoretk_core::model::Key::C);
+                self.key = self.header_key.clone();
             }
             if self.voices.is_empty() {
                 let fields = VoiceFields {
@@ -791,11 +821,8 @@ impl Reader {
             let current = self.current;
             music::parse_line(self, current, text, line.number)?;
         }
-        // Un air sans champ `K:` reste invalide, même si toutes ses lignes
-        // avant cette clé ont été tolérées comme en-tête (voir plus haut).
-        if !self.seen_key {
-            return Err(Error::EnTeteIncomplet("K:"));
-        }
+        // A tune with no music line at all and no K: is empty; the default
+        // C major key from `abc2xml.py:2423` still yields a valid score.
         Ok(())
     }
 

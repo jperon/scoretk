@@ -76,7 +76,9 @@ fn mscx_vers_abc_puis_retour() {
 
 #[test]
 fn abc_invalide_renvoie_une_erreur() {
-    let error = read(b"X:1\nM:4/4\nL:1/8\nC D E F |", Format::Abc).expect_err("ABC invalide");
+    // Un fichier vide reste invalide ; un K: absent est désormais toléré
+    // comme dans abc2xml.py:2423.
+    let error = read(b"", Format::Abc).expect_err("ABC invalide");
     assert!(error.to_string().contains("ABC"), "{error}");
 }
 
