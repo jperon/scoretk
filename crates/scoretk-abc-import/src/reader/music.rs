@@ -30,7 +30,8 @@
 use scoretk_core::model::{
     Accidental, AccidentalType, Articulation, ArticulationType, BarLineType, ChordRest, Duration,
     DurationType, Fermata, FermataType, Fraction, GraceChord, GraceType, Note, NoteId, Ornament,
-    OrnamentType, Slur, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Track,
+    OrnamentType, Slur, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Track, Tremolo,
+    TremoloKind,
 };
 
 use crate::reader::{
@@ -759,6 +760,16 @@ impl Parser<'_> {
                 Decoration::Ornament(kind) => {
                     if let Some(chord) = chord_rest.chord_mut() {
                         chord.ornaments.push(Ornament::new(kind));
+                    }
+                }
+                Decoration::Tremolo(count) => {
+                    // `abc2xml.py:1464-1469` writes a single-note tremolo on
+                    // the note carrying `!/!` (`abc2xml.py:1688`).
+                    if let Some(chord) = chord_rest.chord_mut() {
+                        chord.tremolo = Some(Tremolo {
+                            kind: TremoloKind::Single,
+                            count,
+                        });
                     }
                 }
                 Decoration::Dynamic(text) => annotations.push(AnnotationSpec::Dynamic(text)),

@@ -50,6 +50,8 @@ pub enum Decoration {
     Articulation(ArticulationType),
     /// Ornement.
     Ornament(OrnamentType),
+    /// Trémolo sur une note (nombre de barres : `!/!` = 1, `!///!` = 3).
+    Tremolo(u8),
     /// Début de soufflet (`!<(!`, `!>(!`).
     HairpinStart(HairpinType),
     /// Fin de soufflet (`!<)!`, `!>)!`, `!diminuendo!`…).
@@ -159,6 +161,10 @@ pub fn parse_decoration(name: &str) -> Option<Decoration> {
         "invertedturn" => Decoration::Ornament(OrnamentType::InvertedTurn),
         "haydn" => Decoration::Ornament(OrnamentType::Haydn),
         "schleifer" => Decoration::Ornament(OrnamentType::Schleifer),
+        // ABC 2.1 §4.14, `abc2xml.py:1688`: `s.trem = -len(d)` for `/`,
+        // `//`, `///`; `abc2xml.py:1464-1469` writes
+        // `<tremolo type="single">n</tremolo>`.
+        "/" | "//" | "///" | "////" => Decoration::Tremolo(lowered.len() as u8),
         "<(" => Decoration::HairpinStart(HairpinType::Crescendo),
         "<)" => Decoration::HairpinEnd,
         ">(" => Decoration::HairpinStart(HairpinType::Diminuendo),
