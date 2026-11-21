@@ -954,6 +954,31 @@ Raw rows, converters and the generated summaries are in the out-of-repo
 measurement directories `lyn3-avant`, `lyn3-oracle` and `lyn3-final`;
 `scripts/oracle/lilypond/README.md` documents how to reproduce them.
 
+### Second pass (2026-11-21): transpose, repeats and alternatives
+
+The `.ly` MIDI comparison exposed three reader defects in the largest lot:
+`\chordmode` pitches were not transposed by `\transpose`
+(`NoteSpec.midi` bypassed the interval), `\unfoldRepeats` was transparent so
+the model kept repeat marks and the MIDI writer expanded them with MuseScore's
+`<endings>` while LilyPond distributes `\alternative` blocks contiguously, and
+the `\relative` reference of an alternative was the previous alternative
+instead of the end of the body. They are fixed in
+`crates/scoretk-lilypond-import` (`NoteSpec::transposable`, the `repeat` arm of
+`Interpreter`, `Score::playback_unfold_repeats`); the `.ly` MIDI lot goes from
+662/1 020 exact and N2d 91.21 % to **711/1 020 exact and N2d 93.88 %**.
+
+The **`mus`** lot of the reading oracle was re-run in full after the fixes:
+
+| Lot | Step | Files | Repeats | OK | Fail | Empty | Exact | N1 % (all) | N2 % (no repeat) | Max time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| mus | before (first pass) | 1447 | 113 | 1444 | 3 | 0 | 1072 (74.1 %) | 99.09 | 88.62 | 0.28 s |
+| mus | transpose + repeats + alternatives | 1447 | 113 | 1423 | 24 | 0 | **1148 (79.3 %)** | **99.06** | **98.59** | 1.11 s |
+
+The `ra` and `mut` lots were not re-run to completion in this pass (the full
+three-lot run was interrupted); their previous figures and rows stand. The
+`mus` gain (+76 exact, N2 88.62 → 98.59) is the same reader change measured on
+the MIDI lot.
+
 ## 13. Writing export: baseline against musicxml2ly (2026-11-19)
 
 ### Method

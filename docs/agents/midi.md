@@ -2612,15 +2612,15 @@ behaviour that is the compliance target; it is deliberately not attempted.
 
 ## MIDI export: status
 
-Fourth pass of the MIDI-export campaign (2026-11-21), same oracle and
-manifests. Baseline is the state merged on `master` (`221873eb`):
-**161/173 exact, N1/N2 99.99 %, N2d 99.98 %** on `ecriture_mscz`; the `.ly`
-lot was at **661/1 020 exact, N1 96.34 %, N2 93.38 %, N2d 90.86 %**.
+Fifth pass of the MIDI-export campaign (2026-11-21), same oracle and
+manifests. The `.mscz` lot is unchanged from the previous pass; the `.ly`
+baseline is **662/1 020 exact, N1 96.34 %, N2 93.38 %, N2d 91.21 %**, and the
+LilyPond reader fixes below move it to the figures in the table.
 
 | Lot | Files | Exact | N1 % | N2 % | N2d % | Avg size | Max time |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `.mscz` vs MuseScore 4.7.4 MIDI | 173 | **169 (97.7 %)** | **100.00** | **100.00** | **100.00** | 18 323 B | 7.04 s |
-| `.ly` vs LilyPond's own MIDI | 1 020 | **662 (64.9 %)** | 96.34 | 93.38 | **91.21** | 1 806 B | 0.49 s |
+| `.ly` vs LilyPond's own MIDI | 1 020 | **711 (69.7 %)** | **97.42** | **95.97** | **93.88** | 1 768 B | 0.68 s |
 | corpus vs MuseScore `.ref.mid` | 21 | 17 (4 empty refs) | 100.00 | 100.00 | 100.00 | 248 B | — |
 
 `ecriture_mscz` loses 10 notes in total (N2d 378 116/378 126): `Adios
@@ -2629,14 +2629,15 @@ five files named by the previous ranking (`Angels_Carol`, `Waltz No. 2`,
 `Czardas`, `Espana_Cani`, `La foule`) are now exact. `Canon_in_D` remains the
 only unsupported input.
 
-`ecriture_ly` gains **20 files (+474 N2d notes, +1 exact)** and loses one
-(`Wellerman`, 10 durations; see below). N2d moves from 123 783 to **124 257
-(91.21 %)**. The reference, reader and convention classes are unchanged; the
-new gains are the LilyPond performance fixes below.
+`ecriture_ly` gains **58 files** and loses two: `Maiana` (124 durations) and
+`Encantada` (83), both explained below. N2d moves from 124 257/136 236 to
+**127 892 (93.88 %)**, exact from 662 to **711**. The gains are the LilyPond
+reader fixes of this pass: `Ackermans` +1 079, `Makil` +589, `gaudete` +324,
+`UztaiDantza` +271, `MarieJeanne` +223, `LaMouetteGrise` +209, `Tollite` +79.
 
 **Size**: `.mscz` output **3 169 537 B** against MuseScore's **5 121 966 B**
-(ratio **0.619**, median 0.636); `.ly` output **1 841 826 B** against
-LilyPond's **2 121 207 B** (ratio **0.868**, median 0.863).
+(ratio **0.619**, median 0.636); `.ly` output **1 803 331 B** against
+LilyPond's **2 121 207 B** (ratio **0.850**, median 0.860).
 
 ### Cause 22 — arpeggiated chords
 
@@ -2713,6 +2714,43 @@ one tick, inside the oracle's 1/16 tolerance, and is not a measured loss; the
 writer keeps the MuseScore convention because `ecriture_mscz` is its primary
 target.
 
+### The `.ly` reader causes fixed in this pass
+
+**Cause 27 — `\transpose` and `\chordmode`.** A chord name is realised to MIDI
+pitches at parse time (`NoteSpec::midi`); `note_event` returned them unchanged,
+so `\transpose c g,` did not move the chord grids. `MarieJeanneGabrielle`
+played its C-major grids instead of G-major (233 notes, octave class).
+`NoteSpec::transposable` is true for `\chordmode` (false for `\drummode`,
+whose table is not transposed); `note_event` adds the chromatic interval.
+Reduced test in `scoretk-lilypond-import` (`\transpose c g,` → 55/59/62).
+Measured: `MarieJeanne` N2d 139 → 246 at this stage, 362 after the repeat fix.
+
+**Cause 28 — `\repeat volta` and `\unfoldRepeats`.** `\unfoldRepeats` was
+transparent: the model kept repeat marks and the MIDI writer expanded them with
+MuseScore's `<endings>` rule `i, i+k, i+2k`, whereas LilyPond expands only
+under `\unfoldRepeats` and distributes the k blocks **contiguously**
+(`ly/music-functions-init.ly`, verified on N = 3..5, k = 2..3). The reader now
+unfolds the passes itself, each body restarting from the `\relative` reference
+at the repeat start; without `\unfoldRepeats` the model keeps the notation for
+the round trip but the MIDI writer plays the body and endings once
+(`Score::playback_unfold_repeats`, `RepeatList::flatten`). Measured: `Tollite`
+512 → 591, `Ackermans` 2 002 → 3 081, `Makil` 143 → 732, `gaudete` 108 → 432,
+`UztaiDantza` 108 → 379, `LaMouetteGrise` 40 → 249.
+
+**Cause 29 — `\relative` reference across `\alternative`.** The alternative
+blocks inherited the `\relative` reference of the previous block instead of
+the end of the body (the written order); the octave could drift from one
+alternative to the next. The reference is saved after the body and restored
+before every alternative. This is what turns `Ackermans` from the octave class
+into an exact file after the repeat fix.
+
+The two losses are the limits of this pass: `Maiana` (622 → 498) and
+`Encantada` (538 → 453) combine two scores, `\transpose` and
+`\unfoldRepeats`; the previous MuseScore over-expansion happened to match some
+of their notes, and the remaining second-score/transpose interaction is not
+reduced yet. They are the only per-file losses; every other `.ly` file that
+changed gained notes or became exact.
+
 ### Remaining classes
 
 `ecriture_mscz`:
@@ -2724,15 +2762,15 @@ target.
 
 All other `.mscz` files are exact.
 
-`ecriture_ly` — N2d loss 11 979; the top rows are the reference/reader cases
-already documented: `Veni Creator` 3 119 (bad reference: 3 134 notes against
-249 for the sibling `.mscz`), `Ackermans` 1 080 (volta convention),
-`Laudate_pueri` 1 058 (bad reference), `MakilTxikiak` 589 (octave/reader),
-`LaMouetteGrise` 492 (separate playback score), `Ave_Verum` 473 (attack shifts,
-reader), `gaudete` 332 (separate playback score), `UztaiDantza` 284 (separate
-playback score), `MarieJeanneGabrielle` 233 (octave), `Vincent` 109 (unison
-convention). The first remaining writer case after `Wellerman` is the
-`\repeat`/`\transpose` reader group (1 010 notes).
+`ecriture_ly` — N2d loss 8 344; the top rows are now `Veni Creator` 3 119
+(bad reference: 3 134 notes against 249 for the sibling `.mscz`),
+`Laudate_pueri` 1 058 (bad reference), `Ave_Verum` 473 (attack shifts, reader),
+`LaMouetteGrise` 283 (separate playback score), `Maiana` 124 and `Encantada`
+85 (the two losses above), `franck_ave_maria` 123 (attack shifts), `Vincent`
+109 (unison convention), `01_06_ChanteOMaLangue` 88 (octave/reader), `Promo`
+73 (tuplets/repeat). `Ackermans`, `MakilTxikiak`, `gaudete` and `UztaiDantza`
+are no longer in the top rows: their remaining differences are under 10 notes
+or gone.
 
 No `.mscz` file regressed: 0 loss, and the 21 corpus files stay at 21/21
 (`corpus_midi`), including the four with empty references.
