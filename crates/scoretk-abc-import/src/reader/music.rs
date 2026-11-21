@@ -421,7 +421,15 @@ impl Parser<'_> {
                         self.pos += 1;
                         let _ = self.read_length_text();
                     }
-                    Some('(' | ')' | '.' | '!' | '+' | '~' | ',' | '`' | '$' | '<' | '>' | '"') => {
+                    // ABC 2.1 §4.11: slurs may begin/end inside chords;
+                    // `abc2xml.py:371-387` allows `slur_beg` as a chord
+                    // note decoration. The old code dropped these.
+                    Some('(') => self.parse_paren(),
+                    Some(')') => {
+                        self.close_slur();
+                        self.pos += 1;
+                    }
+                    Some('.' | '!' | '+' | '~' | ',' | '`' | '$' | '<' | '>' | '"') => {
                         self.warn("symbole égaré dans un accord ignoré");
                         self.pos += 1;
                     }
@@ -581,8 +589,18 @@ impl Parser<'_> {
         // (lignes 377/384) : un phrasé ou un staccato peut séparer l'altération
         // de la note (`= (ed)`). Ces décorations sont signalées et sautées.
         while matches!(self.peek(), Some('(' | ')' | '.')) {
-            self.warn("décoration entre altération et note ignorée");
-            self.pos += 1;
+            // `abc2xml.py:377,384` (`dec_note = decorations + pitch`): a
+            // slur can sit between an accidental and its note, including
+            // inside a chord (`[E4(e4]`, ABC 2.1 §4.11). Honour it instead
+            // of silently dropping the phrase mark.
+            match self.peek() {
+                Some('(') => self.parse_paren(),
+                Some(')') => {
+                    self.close_slur();
+                    self.pos += 1;
+                }
+                _ => self.pos += 1,
+            }
             self.skip_spaces();
         }
         let letter = self.bump().ok_or(Error::LigneInvalide {
@@ -1261,7 +1279,16 @@ impl Parser<'_> {
                     self.pos += 1;
                     let _ = self.read_length_text();
                 }
-                Some('(' | ')' | '.' | '!' | '+' | '~' | ',' | '`' | '$' | '<' | '>' | '"') => {
+                // ABC 2.1 §4.11 allows a slur into a chord (`[C(E]`);
+                // `abc2xml.py:371-387` parses `(` as a chord-note
+                // decoration. Open/close the phrase here instead of
+                // dropping it as a stray symbol.
+                Some('(') => self.parse_paren(),
+                Some(')') => {
+                    self.close_slur();
+                    self.pos += 1;
+                }
+                Some('.' | '!' | '+' | '~' | ',' | '`' | '$' | '<' | '>' | '"') => {
                     self.warn("symbole égaré dans un accord ignoré");
                     self.pos += 1;
                 }
