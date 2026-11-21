@@ -52,6 +52,8 @@ pub enum Decoration {
     Ornament(OrnamentType),
     /// Trémolo sur une note (nombre de barres : `!/!` = 1, `!///!` = 3).
     Tremolo(u8),
+    /// Direction textuelle (`!D.C.!`, `!Fine!`, `!segno!`…).
+    Text(String),
     /// Début de soufflet (`!<(!`, `!>(!`).
     HairpinStart(HairpinType),
     /// Fin de soufflet (`!<)!`, `!>)!`, `!diminuendo!`…).
@@ -167,6 +169,14 @@ pub fn parse_decoration(name: &str) -> Option<Decoration> {
         // `//`, `///`; `abc2xml.py:1464-1469` writes
         // `<tremolo type="single">n</tremolo>`.
         "/" | "//" | "///" | "////" => Decoration::Tremolo(lowered.len() as u8),
+        // `abc2xml.py:1100` (`capoMap`) and lines 1680-1684: repeat/coda
+        // directions are written as `<words>` (ABC 2.1 §4.3).
+        "fine" => Decoration::Text("Fine".to_owned()),
+        "d.s." => Decoration::Text("D.S.".to_owned()),
+        "d.c." | "dacapo" => Decoration::Text("D.C.".to_owned()),
+        "dacoda" => Decoration::Text("To Coda".to_owned()),
+        "coda" => Decoration::Text("coda".to_owned()),
+        "segno" => Decoration::Text("segno".to_owned()),
         "<(" => Decoration::HairpinStart(HairpinType::Crescendo),
         "<)" => Decoration::HairpinEnd,
         ">(" => Decoration::HairpinStart(HairpinType::Diminuendo),

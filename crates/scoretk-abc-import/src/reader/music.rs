@@ -261,6 +261,15 @@ impl Parser<'_> {
                     }
                 }
             }
+            // A direction such as `!D.C.!` is often written after the last
+            // note of a measure. Decorations are only flushed by `push_event`,
+            // so route text directions to annotations, which `finish_bar`
+            // attaches to the last event of the measure.
+            Decoration::Text(text) => self.voice().annotations.push(AnnotationSpec::Text {
+                text,
+                above: true,
+                harmony: false,
+            }),
             other => self.push_decoration(other),
         }
     }
@@ -773,6 +782,11 @@ impl Parser<'_> {
                     }
                 }
                 Decoration::Dynamic(text) => annotations.push(AnnotationSpec::Dynamic(text)),
+                Decoration::Text(text) => annotations.push(AnnotationSpec::Text {
+                    text,
+                    above: true,
+                    harmony: false,
+                }),
                 Decoration::HairpinStart(_) | Decoration::HairpinEnd => {}
             }
         }
