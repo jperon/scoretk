@@ -1212,7 +1212,7 @@ impl Parser<'_> {
 
     fn parse_chord(&mut self) -> Result<()> {
         // Le crochet a déjà été consommé par `parse_bracket`.
-        let mut notes: Vec<(scoretk_core::model::Note, Fraction)> = Vec::new();
+        let mut notes: Vec<(scoretk_core::model::Note, Fraction, bool)> = Vec::new();
         loop {
             self.skip_spaces();
             match self.peek() {
@@ -1239,14 +1239,16 @@ impl Parser<'_> {
                     break;
                 }
                 _ => {
-                    let (note, _, _) = self.read_note()?;
+                    // `abc2xml.py:383,387`: `chord_note = dec_note` carries its
+                    // own `Optional(tie)`, e.g. `[C-EG]` ties only the C.
+                    let (note, _, note_tie) = self.read_note()?;
                     // Port de `abc2xml.py::convertChord` (ligne 651) : la
                     // durée écrite d'une note d'accord est le PRODUIT de sa
                     // durée propre et de celle de l'accord. `[G2G,2]` vaut
                     // donc une noire, et non un croche comme si l'on ignorait
                     // les `2` internes (cause des airs `book1.abc` X:0142/0177).
                     let propre = self.parse_mult(&self.last_length.clone())?;
-                    notes.push((note, propre));
+                    notes.push((note, propre, note_tie));
                 }
             }
         }
@@ -1254,7 +1256,7 @@ impl Parser<'_> {
         let chord_mult = self.parse_mult(&length_text)?;
         let multiple = notes
             .first()
-            .map_or(chord_mult, |(_, propre)| *propre * chord_mult);
+            .map_or(chord_mult, |(_, propre, _)| *propre * chord_mult);
         let nominal = self.voice().unit * multiple;
         let tie = self.eat_tie();
         let (nominal, _) = self.apply_rhythm(nominal)?;
@@ -1263,13 +1265,15 @@ impl Parser<'_> {
         let mut chord_rest = ChordRest::chord(duration.0);
         let mut ids = Vec::new();
         let mut pitches = Vec::new();
-        for (note, _) in notes {
+        for (note, _, note_tie) in notes {
             let pitch = note.pitch;
             let id = self.reader.score.add_note(note);
             if let Some(chord) = chord_rest.chord_mut() {
                 chord.notes.push(id);
             }
-            ids.push((id, pitch, tie));
+            // A chord-level `-` still ties every note; a per-note `-` inside
+            // the brackets ties only that one.
+            ids.push((id, pitch, note_tie || tie));
             pitches.push(pitch);
         }
         self.link_ties(&ids);

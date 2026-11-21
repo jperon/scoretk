@@ -1019,17 +1019,26 @@ fn render_chord(
         notes
     };
 
+    let mut single_tie = false;
     if notes.is_empty() {
         token.push('z');
     } else if notes.len() == 1 {
         let note = notes[0];
         let (letter, alter, octave) = pitch::note_spelling(note, transpose);
         token.push_str(&pitch::abc_note(letter, alter, octave, accidental_state));
+        single_tie = note.tie_forward.is_some();
     } else {
+        // ABC 2.1 §4.2 (`abc2xml.py:383,387`): `chord_note = dec_note` and
+        // `dec_note` carries `Optional(tie)`, so a tie belonging to one note
+        // is written inside the brackets (`[C-EG]`). A chord-level `-` would
+        // tie every note and merge separate attacks on re-read.
         token.push('[');
         for note in &notes {
             let (letter, alter, octave) = pitch::note_spelling(note, transpose);
             token.push_str(&pitch::abc_note(letter, alter, octave, accidental_state));
+            if note.tie_forward.is_some() {
+                token.push('-');
+            }
         }
         token.push(']');
     }
@@ -1037,8 +1046,7 @@ fn render_chord(
     let length = duration::chord_rest_length(chord_rest);
     token.push_str(&duration::multiplier(length, duration::unit()));
 
-    let tied = notes.iter().any(|note| note.tie_forward.is_some());
-    if tied {
+    if single_tie {
         token.push('-');
     }
     token
