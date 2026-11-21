@@ -3827,3 +3827,19 @@ Aucune de ces causes n'est un défaut de l'écrivain au sens du round-trip :
 une vingtaine de fichiers vérifiés ont un modèle identique au `.ly` relu.
 Les deux causes traitées ici sont donc de **compacité** (§ above) :
 `measureLength` sur une mesure partielle, et l'override de hampe verbeux.
+
+### Oracle d'écriture : mode modèle (comparaison like with like)
+
+L'oracle `ecriture.py` gagne `--mode model` (calqué sur `abc/ecriture.py`) :
+la référence est le modèle pivot exporté depuis la source, et chaque candidat
+est **relu par scoretk** en MusicXML avant comparaison. Le même MusicXML de
+modèle est donné aux deux outils. Cela supprime les artefacts du mode MIDI :
+fusion des unissons par LilyPond, couplage d'octaves de MuseScore, et
+`\unfoldRepeats` injecté chez le seul candidat. La compilation reste mesurée
+(erreurs/avertissements) dans les deux modes.
+
+Mesure réduite sur cinq fichiers à artefacts (`Vingt_danses…` ×2, `Veni veni
+Emmanuel`, `À-Notre-Dame`, `0301_AccourezPeupleFidele`) : mode MIDI N2
+**57,09 %** pour les deux outils ; mode modèle N2 **100 %**, 3/3 fichiers
+exactifs pour les deux. Le gain de +42,91 points vient de la comparaison
+d'artefacts, pas une amélioration de l'écrivain.

@@ -63,7 +63,7 @@ sys.path.insert(0, str(HERE.parent / "midi"))
 sys.path.insert(0, str(HERE.parent))
 
 import common  # noqa: E402
-from ly_notes import a_des_repetitions  # noqa: E402
+from ly_notes import a_des_repetitions, read_xml  # noqa: E402
 from midi_notes import GRID, TOL, compare, read_midi  # noqa: E402
 
 TIMEOUT = 10
@@ -306,6 +306,23 @@ def ecrire(fichier, r: dict) -> None:
     fichier.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
+def noter_modele(args, ly: Path, dest: Path) -> tuple[int, list, str]:
+    """Relit un `.ly` avec scoretk et en retire les notes du modèle pivot.
+
+    Mode « modèle » de l'oracle : la référence est le modèle exporté depuis la
+    source, les deux candidats sont relus par le même lecteur. Cela élimine
+    les artefacts du mode MIDI : fusion des unissons par LilyPond, couplage
+    d'octaves de MuseScore, `\\unfoldRepeats` injecté chez un seul candidat.
+    """
+    code, ok, erreur = convertir_scoretk(args, str(ly), dest, "musicxml")
+    if not ok:
+        return code, [], erreur
+    try:
+        return 0, read_xml(str(dest)), ""
+    except Exception as exc:
+        return 0, [], f"XML illisible : {exc}"
+
+
 def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
     fichiers = lire_manifest(manifeste)
     if args.stride > 1:
@@ -320,49 +337,76 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
             repetition = a_des_repetitions(texte_source(src)) if src.endswith(".ly") else False
             work = Path(args.out) / "travail" / lot / str(i)
             work.mkdir(parents=True, exist_ok=True)
-            ref_mid = caches / f"{h}.mid"
-            err_ref = reference_midi(args, src, ref_mid, caches, not src.endswith(".ly"))
-            if err_ref or not ref_mid.is_file():
-                for outil in ("scoretk", "musicxml2ly"):
-                    r = base_releve(lot, outil, src, repetition)
-                    r["erreur"] = err_ref or "référence MIDI absente"
-                    r["drapeaux"] = ["echec"]
-                    ecrire(out, r)
-                out.flush()
-                continue
-            try:
-                ref = read_midi(str(ref_mid))
-            except Exception as exc:
-                for outil in ("scoretk", "musicxml2ly"):
-                    r = base_releve(lot, outil, src, repetition)
-                    r["erreur"] = f"MIDI illisible : {exc}"
-                    r["drapeaux"] = ["echec"]
-                    ecrire(out, r)
-                out.flush()
-                continue
+            debut = time.monotonic()
 
             tk_ly = work / "tk.ly"
             tk_xml = work / "tk.musicxml"
             code_ly, ok_ly, err_ly = convertir_scoretk(args, src, tk_ly, "ly")
             code_xml, ok_xml, _ = convertir_scoretk(args, src, tk_xml, "musicxml")
-            # Entrée délibérément non prise en charge : le fichier sort du lot,
-            # pour scoretk comme pour musicxml2ly (même dénominateur).
+            # Entrée délibérément non prise en charge : même exclusion pour les
+            # deux outils et dans les deux modes (la référence vient du modèle).
             if common.est_non_pris_en_charge(code_ly) or common.est_non_pris_en_charge(code_xml):
                 for outil in ("scoretk", "musicxml2ly"):
                     r = base_releve(lot, outil, src, repetition)
                     common.marquer_exclu(r, src)
                     r["erreur"] = "entrée non prise en charge"
+                    r["temps"] = round(time.monotonic() - debut, 3)
                     ecrire(out, r)
                 out.flush()
                 continue
-            ref_xml = caches / f"{h}.musicxml"
-            origine = reference_xml(args, src, ref_xml, tk_xml, caches) if ok_xml or Path(src).suffix.lower() in (".mscz", ".mscx", ".xml", ".musicxml", ".mxl") else "absent"
-            m2ly = work / "m2ly.ly"
 
+            if args.mode == "model":
+                if not ok_xml:
+                    for outil in ("scoretk", "musicxml2ly"):
+                        r = base_releve(lot, outil, src, repetition)
+                        r["erreur"] = "référence modèle absente"
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                    out.flush()
+                    continue
+                try:
+                    ref = read_xml(str(tk_xml))
+                except Exception as exc:
+                    for outil in ("scoretk", "musicxml2ly"):
+                        r = base_releve(lot, outil, src, repetition)
+                        r["erreur"] = f"modèle illisible : {exc}"
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                    out.flush()
+                    continue
+                # Les deux candidats partent du même MusicXML de modèle :
+                # c'est la comparaison « like with like » du mode ABC.
+                ref_xml = tk_xml
+                origine = "modele (scoretk)"
+            else:
+                ref_mid = caches / f"{h}.mid"
+                err_ref = reference_midi(args, src, ref_mid, caches, not src.endswith(".ly"))
+                if err_ref or not ref_mid.is_file():
+                    for outil in ("scoretk", "musicxml2ly"):
+                        r = base_releve(lot, outil, src, repetition)
+                        r["erreur"] = err_ref or "référence MIDI absente"
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                    out.flush()
+                    continue
+                try:
+                    ref = read_midi(str(ref_mid))
+                except Exception as exc:
+                    for outil in ("scoretk", "musicxml2ly"):
+                        r = base_releve(lot, outil, src, repetition)
+                        r["erreur"] = f"MIDI illisible : {exc}"
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                    out.flush()
+                    continue
+                ref_xml = caches / f"{h}.musicxml"
+                origine = reference_xml(args, src, ref_xml, tk_xml, caches) if ok_xml or Path(src).suffix.lower() in (".mscz", ".mscx", ".xml", ".musicxml", ".mxl") else "absent"
+
+            m2ly = work / "m2ly.ly"
             for outil in ("scoretk", "musicxml2ly"):
                 r = base_releve(lot, outil, src, repetition)
                 r["xml_source"] = origine if outil == "musicxml2ly" else ""
-                debut = time.monotonic()
+                debut_outil = time.monotonic()
                 if outil == "musicxml2ly":
                     if "absent" in origine or not ref_xml.is_file():
                         r["erreur"] = origine or "MusicXML de référence absent"
@@ -377,7 +421,7 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     if not r["ok"]:
                         r["erreur"] = err[-300:] or f"code {code}"
                         r["drapeaux"] = ["echec"]
-                        r["temps"] = round(time.monotonic() - debut, 3)
+                        r["temps"] = round(time.monotonic() - debut_outil, 3)
                         ecrire(out, r)
                         continue
                     ly = m2ly
@@ -389,22 +433,29 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                         continue
                     ly = tk_ly
                 r.update(compiler_lilypond(args, ly, work / f"{outil}.mid"))
-                r["temps"] = round(time.monotonic() - debut, 3)
-                # Un échec de compilation est enregistré, mais si LilyPond a
-                # quand même écrit un MIDI on le mesure : les deux informations
-                # sont complémentaires, pas exclusives.
+                r["temps"] = round(time.monotonic() - debut_outil, 3)
                 if not r["compile_ok"]:
                     r["drapeaux"] = ["compilation"]
-                if not (work / f"{outil}.mid").is_file():
-                    ecrire(out, r)
-                    continue
-                try:
-                    test = read_midi(str(work / f"{outil}.mid"))
-                except Exception as exc:
-                    r["erreur"] = f"MIDI illisible : {exc}"
-                    r["drapeaux"] = ["echec"]
-                    ecrire(out, r)
-                    continue
+                if args.mode == "model":
+                    code_notes, test, err_notes = noter_modele(
+                        args, ly, work / f"{outil}.model.musicxml"
+                    )
+                    if err_notes:
+                        r["erreur"] = err_notes
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                        continue
+                else:
+                    if not (work / f"{outil}.mid").is_file():
+                        ecrire(out, r)
+                        continue
+                    try:
+                        test = read_midi(str(work / f"{outil}.mid"))
+                    except Exception as exc:
+                        r["erreur"] = f"MIDI illisible : {exc}"
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                        continue
                 r.update(compare(ref, test, args.grid, args.tol))
                 if r["ref"] and not r["test"]:
                     r["drapeaux"] = ["sortie_vide"]
@@ -412,7 +463,6 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     r["drapeaux"].insert(0, "compilation")
                 ecrire(out, r)
             out.flush()
-
 
 def charger(out: str) -> list[dict]:
     releves: list[dict] = []
@@ -424,7 +474,7 @@ def charger(out: str) -> list[dict]:
     return releves
 
 
-def resume(releves: list[dict]) -> str:
+def resume(releves: list[dict], mode: str = "midi") -> str:
     exclus = common.noms_exclus(releves)
     # Une entrée non prise en charge sort du numérateur et du dénominateur.
     releves = common.filtrer(releves)
@@ -434,10 +484,16 @@ def resume(releves: list[dict]) -> str:
     lignes = [
         "# Relevé écriture LilyPond — résumé",
         "",
-        "Grille 1/16 de noire (Q16). N1/N2/N2d comparent le MIDI du `.ly` compilé",
-        "par LilyPond 2.26 au MIDI de référence (MuseScore pour les partitions,",
-        "LilyPond pour les aller-retours `.ly`). `xml_source` indique le MusicXML",
-        "donné à musicxml2ly : `ref.musicxml`, `mscore`, `source`, `scoretk`.",
+        ("Mode modèle : N1/N2/N2d comparent les notes du modèle pivot relu depuis"
+         " le `.ly` de chaque candidat à celles du modèle exporté depuis la source."
+         if mode == "model" else
+         "Grille 1/16 de noire (Q16). N1/N2/N2d comparent le MIDI du `.ly` compilé"
+         " par LilyPond 2.26 au MIDI de référence (MuseScore pour les partitions,"
+         " LilyPond pour les aller-retours `.ly`)."),
+        "`xml_source` indique le MusicXML donné à musicxml2ly : `ref.musicxml`,"
+        " `mscore`, `source`, `scoretk`."
+        if mode != "model" else
+        "Les deux candidats partent du même modèle (comparaison like with like).",
         "Un `\\unfoldRepeats` est injecté dans les deux candidats avant compilation.",
         "",
         "| Lot | Outil | Fichiers | Compilés OK | Exacts | N1 % | N2 % | N2d % | Erreurs | Avert. | Taille .ly moy. | Temps max |",
@@ -514,6 +570,10 @@ def selftest() -> None:
     ]
     texte = resume(ex)
     assert "| 55.00 | 55.00 | 55.00 |" in texte, texte
+    # Le mode modèle compare les notes du modèle pivot, pas les artefacts
+    # d'unisson/octave du MIDI : le résumé doit le dire explicitement.
+    texte_modele = resume(ex, "model")
+    assert "Mode modèle" in texte_modele and "like with like" in texte_modele, texte_modele
     print("selftest ecriture : OK")
 
 
@@ -529,6 +589,10 @@ def main() -> None:
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--grid", type=float, default=GRID)
     p.add_argument("--tol", type=float, default=TOL)
+    p.add_argument("--mode", choices=("midi", "model"), default="midi",
+                   help="midi : MIDI LilyPond vs MIDI de référence (hérité) ; model : "
+                        "aller-retour par le modèle pivot, sans artefacts d'unisson, "
+                        "d'octave ni de dépliage de reprises")
     p.add_argument("--resume", action="store_true")
     p.add_argument("--selftest", action="store_true")
     args = p.parse_args()
@@ -542,7 +606,7 @@ def main() -> None:
         for spec in args.lot:
             lot, manifeste = spec.split("=", 1)
             mesurer_lot(args, lot, manifeste, Path(args.out) / f"{lot}.jsonl")
-    texte = resume(charger(args.out))
+    texte = resume(charger(args.out), args.mode)
     (Path(args.out) / "resume.md").write_text(texte, encoding="utf-8")
     print(texte)
 
