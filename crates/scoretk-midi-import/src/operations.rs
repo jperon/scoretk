@@ -111,6 +111,10 @@ pub struct ImportOptions {
     pub show_staccato: bool,
     /// Sépare la main droite et la main gauche d'un piano.
     pub do_staff_split: bool,
+    /// autorise `setLeftRightHandSplit` à redéfinir `do_staff_split` piste par
+    /// piste (`TrackOp::canRedefineDefaultLater`). Les tests amont qui
+    /// verrouillent l'option la mettent à `false`.
+    pub allow_staff_split_redefinition: bool,
     /// Nombre maximal de voix.
     pub max_voice_count: VoiceCount,
     /// Change la clef selon la hauteur des notes.
@@ -140,6 +144,7 @@ impl Default for ImportOptions {
             use_dots: true,
             show_staccato: true,
             do_staff_split: false,
+            allow_staff_split_redefinition: true,
             max_voice_count: VoiceCount::V4,
             change_clef: true,
             show_tempo_text: true,

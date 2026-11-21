@@ -2539,6 +2539,27 @@ of `tuplet_nonuplet_3-4`. The full default measurement is byte-for-byte the
 same as the opt-in early run above: upstream N **0.9016**, LilyPond N
 **0.6942**, 8 files gain and only the 4 explained attribute-only rows lose.
 
+## Staff split locked by upstream tests (2026-11-21)
+
+`ImportOptions::do_staff_split` existed but was ignored: `lrhand::find_splits`
+always let `setLeftRightHandSplit` override it. The C++ helper is skipped when
+`doStaffSplit.setDefaultValue(..., false)` locks the option
+(`importmidi_operations.h:85-95`, `importmidi.cpp:1076-1099`). Added
+`allow_staff_split_redefinition` (true by default, so the normal MIDI import
+is unchanged) and the CLI flags `--midi-no-staff-split` / `--midi-staff-split`.
+The import oracle now replays the locked configuration of the upstream tests
+(`voiceSeparation`, `dontSimplify`, `staffSplit`, `simplification`); reduced
+test `staff_split_option.rs` (written first, failing with two staves) checks
+that a locked `false` keeps one staff and two voices.
+
+Six upstream files recover completely (`voice_central` 0 → 1, `voice_acid`
+0.5 → 1, `split_acid`, `split_2_melodies`, `split_nontuplet`, `split_octave`),
+upstream N 0.9016 → **0.9144** (LilyPond N unchanged 0.6943). The
+`tuplet_3_5_7_tuplets` test is deliberately kept on the normal setting: its
+reference places the low notes in a third voice that our no-split path does
+not reproduce (0.5 → 0.1667 with the locked option), so replaying that flag
+would be a per-file regression; excluding it gives upstream N **0.9248**.
+
 ## `human_tempo`: beat tracker ported, wired and anchored (2026-11-21)
 
 Literal diff of `importmidi_beat.cpp` and the BeatRoot sources against our

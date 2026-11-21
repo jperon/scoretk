@@ -107,6 +107,14 @@ struct Cli {
     /// Import MIDI : détecter et noter les n-olets (`<time-modification>`)
     #[arg(long)]
     midi_tuplet_notation: bool,
+
+    /// Import MIDI : verrouiller `doStaffSplit` sur false (tests amont)
+    #[arg(long, conflicts_with = "midi_staff_split")]
+    midi_no_staff_split: bool,
+
+    /// Import MIDI : verrouiller `doStaffSplit` sur true (tests amont)
+    #[arg(long)]
+    midi_staff_split: bool,
 }
 
 fn main() -> ExitCode {
@@ -144,6 +152,16 @@ fn main() -> ExitCode {
     }
     if cli.midi_tuplet_notation {
         midi_options.tuplet_notation = true;
+        custom_midi = true;
+    }
+    if cli.midi_no_staff_split {
+        midi_options.do_staff_split = false;
+        midi_options.allow_staff_split_redefinition = false;
+        custom_midi = true;
+    }
+    if cli.midi_staff_split {
+        midi_options.do_staff_split = true;
+        midi_options.allow_staff_split_redefinition = false;
         custom_midi = true;
     }
     if let Some(voices) = cli.midi_voices {

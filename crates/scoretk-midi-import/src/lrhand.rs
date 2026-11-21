@@ -53,9 +53,17 @@ pub fn need_to_split(track: &MTrack) -> bool {
 /// Décide quelles pistes doivent être scindées (`setLeftRightHandSplit`).
 ///
 /// Une piste dont la suivante forme déjà un grand staff n'est pas scindée.
-pub fn find_splits(tracks: &[MTrack], _options: &ImportOptions) -> Vec<bool> {
+pub fn find_splits(tracks: &[MTrack], options: &ImportOptions) -> Vec<bool> {
     let mut result = Vec::with_capacity(tracks.len());
     for (index, track) in tracks.iter().enumerate() {
+        if !options.allow_staff_split_redefinition {
+            // `setLeftRightHandSplit` (`importmidi.cpp:1076-1099`) n'est pas
+            // appelé quand l'option est verrouillée (`canRedefineDefaultLater`
+            // faux) : la valeur par défaut s'applique alors à toutes les
+            // pistes, exactement comme les tests amont `voiceSeparation`.
+            result.push(options.do_staff_split && need_to_split(track));
+            continue;
+        }
         let already_grand_staff =
             index + 1 < tracks.len() && is_grand_staff(track, &tracks[index + 1]);
         result.push(!already_grand_staff && need_to_split(track));

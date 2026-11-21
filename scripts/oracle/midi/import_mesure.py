@@ -254,6 +254,36 @@ def run(binary: str, src: Path, dst: Path, extra: list[str] | None = None) -> in
     return subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
 
 
+def upstream_test_options(tests_dir: Path) -> dict[str, list[str]]:
+    """Options CLI reproduisant la configuration de chaque test amont.
+
+    Les helpers de `midiimport_tests.cpp` verrouillent certaines valeurs :
+    `dontSimplify` (V1, sans simplification), `staffSplit` (V1, sans
+    simplification, séparation forcée), `voiceSeparation` (V4, sans
+    simplification), `simplification` (V1, simplification active).
+    """
+    source = tests_dir / "midiimport_tests.cpp"
+    if not source.exists():
+        return {}
+    texte = source.read_text(encoding="utf-8")
+    result: dict[str, list[str]] = {}
+    for helper, options in (
+        ("dontSimplify", ["--midi-no-simplify", "--midi-voices", "1"]),
+        ("staffSplit", ["--midi-no-simplify", "--midi-voices", "1"]),
+        ("voiceSeparation", ["--midi-no-simplify"]),
+        ("simplification", ["--midi-voices", "1"]),
+    ):
+        for nom in re.findall(rf'{helper}\(\s*"([^"]+)"\s*\)', texte):
+            result[nom] = list(options)
+    if "changeClef.setDefaultValue(false, false)" in texte:
+        result["tuplet_3_5_7_tuplets"] = ["--midi-no-simplify"]
+    for nom, options in staff_split_tests(tests_dir).items():
+        result.setdefault(nom, []).append(
+            "--midi-staff-split" if options else "--midi-no-staff-split"
+        )
+    return result
+
+
 def dont_simplify_tests(tests_dir: Path) -> set[str]:
     """Tests amont compilés avec ``dontSimplify`` (``midiimport_tests.cpp``).
 
@@ -268,6 +298,26 @@ def dont_simplify_tests(tests_dir: Path) -> set[str]:
     if not source.exists():
         return set()
     return set(re.findall(r'dontSimplify\(\s*"([^"]+)"\s*\)', source.read_text(encoding="utf-8")))
+
+
+def staff_split_tests(tests_dir: Path) -> dict[str, bool]:
+    """Tests amont qui **verrouillent** `doStaffSplit` (`canRedefine=false`).
+
+    `voiceSeparation`, `dontSimplify` et `simplification` posent la valeur
+    `false` et interdisent à `setLeftRightHandSplit` de la redéfinir ;
+    `staffSplit` pose `true`. La valeur verrouillée s'applique alors à toutes
+    les pistes (`midiimport.cpp:1076-1099`).
+    """
+    source = tests_dir / "midiimport_tests.cpp"
+    if not source.exists():
+        return {}
+    texte = source.read_text(encoding="utf-8")
+    result: dict[str, bool] = {}
+    for helper, value in (("voiceSeparation", False), ("dontSimplify", False),
+                          ("simplification", False), ("staffSplit", True)):
+        for nom in re.findall(rf'{helper}\(\s*"([^"]+)"\s*\)', texte):
+            result[nom] = value
+    return result
 
 
 def paires_upstream(data: Path) -> list[tuple[str, Path, Path]]:
@@ -329,11 +379,11 @@ def main() -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     paires = []
-    no_simplify: set[str] = set()
+    test_options: dict[str, list[str]] = {}
     if args.upstream:
         upstream = Path(args.upstream)
         paires += paires_upstream(upstream)
-        no_simplify = dont_simplify_tests(upstream.parent)
+        test_options = upstream_test_options(upstream.parent)
     paires += paires_lilypond()
     if args.limit:
         paires = paires[:args.limit]
@@ -368,8 +418,9 @@ def main() -> None:
                         row["erreur"] = f"reference : {exc}"[:200]
             if not exclu:
                 extra = list(args.extra_arg) or None
-                if ident.startswith("up-") and ident[3:] in no_simplify:
-                    extra = (extra or []) + ["--midi-no-simplify", "--midi-voices", "1"]
+                nom = ident[3:] if ident.startswith("up-") else ""
+                if nom in test_options:
+                    extra = (extra or []) + test_options[nom]
                 code_mid = run(args.binary, mid, got_xml, extra)
                 if common.est_non_pris_en_charge(code_mid):
                     common.marquer_exclu(row, str(mid))
