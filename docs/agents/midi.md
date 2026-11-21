@@ -1941,4 +1941,83 @@ choisir un gabarit `alto-flute` (-5, plage 55-91) plutôt que `flute` (0,
 plage 59-98). Tentatives mesurées et rejetées : l'ajustement de plage
 appliqué aux transpositions vers le bas (aucun gain sur ces fichiers, et
 -0,07 sur `Gaudete…`), donc réverti. Ce classement et ces échecs sont
-consignés ici pour la prochaine passe.
+consignés ici pour la prochaine passe ; corrigés par le port littéral de la
+sélection (§ « Sélection du gabarit » ci-dessous).
+
+## Sélection du gabarit : port littéral de `importmidi_instrument.cpp` (2026-11-21)
+
+La sélection précédente était une reconstitution partielle : tri par écart de
+plage **ajusté** de `transposeChromatic` quand le gabarit préféré n'était pas
+transpositeur, repli unique sur le programme inférieur, `useDrumset` toujours
+faux dans la table générée (le générateur cherchait `<Drumset>` alors que le
+format écrit `<drumset>`), ni genres, ni ordre des canaux, ni replis
+« synthé » / « caisse claire ». Le port reprend la fonction C++ par fonction :
+
+| C++ `importmidi_instrument.cpp` | Rust `instrument.rs` |
+| --- | --- |
+| `getPreferredInstrument` :195 | `preferred_template_for_program` (table) |
+| `instrumentName` :207 | `instrument_name` |
+| `isGrandStaff` :216 / `isSameChannel` :223 | `is_grand_staff` / `is_same_channel` |
+| `is3StaffOrgan` :228 | `is_3_staff_organ` |
+| `areNext2GrandStaff` :234 / `areNext3OrganStaff` :242 | `are_next_2_grand_staff` / `are_next_3_organ_staff` |
+| `concatenateWithComma` :255 | `concatenate_with_comma` |
+| `setGrandStaffProgram` :269 | `set_grand_staff_program` (grand staff, orgue 3 portées, noms) |
+| `findAllPitches` :294 | `find_all_pitches` |
+| `findNotEmptyDrumPitches` :305 | `find_not_empty_drum_pitches` |
+| `hasNotDefinedDrumPitch` :317 | `has_not_defined_drum_pitch` |
+| `findInstrument` :328 | `find_instrument` |
+| `countMissingPitches` :347 | `count_missing_pitches` |
+| `findClosestInstrument` :359 | `find_closest_instrument` |
+| `findInstrumentsForProgram` :409 | `find_instruments_for_program` |
+| `findMinMaxPitch` :498 | `find_min_max_pitch` |
+| `findMaxPitchDiff` :512 | `find_max_pitch_diff` |
+| `hasCommonGenre` :525 | `has_common_genre` |
+| `sortInstrumentTemplates` :535 | `sort_instrument_templates` |
+| `findSuitableInstruments` :569 | `template_for_track` (`msInstrIndex` = 0) |
+
+Points fidèles qui changent le résultat :
+
+- `findInstrumentsForProgram` parcourt **tous** les gabarits du catalogue,
+  dans l'ordre de `instruments.xml` (groupes puis instruments), après le
+  gabarit préféré ; `sortInstrumentTemplates` est un **tri stable** sur
+  l'écart de plage brut (`minPitchP`/`maxPitchP` comparés aux hauteurs
+  concert de la piste, **sans** ajustement de transposition), puis jeu de
+  percussion explicite, genre `common`, nombre de genres décroissant.
+- Replis exacts : programme 80–103 → `effect-synth` (ou
+  `percussion-synthesizer`), programme ≥ 112 → `snare-drum`, sinon
+  `findClosestInstrument` (programme de canal maximal **inférieur**, premier
+  canal satisfaisant dans l'ordre du fichier, et pour les percussions le
+  moins de hauteurs manquantes).
+- `findNotEmptyDrumPitches` utilise un masque `drum_pitch_mask` (bit `p` si
+  `<Drum pitch="p">` a un `<name>` non vide) ; `has_drumset` distingue un jeu
+  explicite du jeu commun.
+
+La table `crates/scoretk-core/src/instruments.rs` (toujours générée par
+`scripts/gen-instruments-table.py`, jamais éditée) porte désormais le groupe,
+les programmes de canaux **dans l'ordre**, les genres, `use_drumset`
+(corrigé), `has_drumset` et `drum_pitch_mask`, et les plages absentes valent
+`MIN_PITCH`/`MAX_PITCH` (0/127) comme `InstrumentTemplate`.
+
+Test réduit (`instrument_template.rs::plage_de_la_piste_departage_les_gabarits`) :
+programme 73 avec les plages réelles de `Transeamus` (58–70) et de
+`lily-ced0e264` (55–75) → `alto-flute` (-3, -5) ; 60–90 (dans la plage de la
+flûte) → gabarit préféré `flute`.
+
+Mesure (mêmes manifestes, oracle MuseScore 4.7.4, binaire gelé
+`/tmp/scoretk-pitch-base`, `timeout 10 prlimit --as=2000000000`) :
+
+| Lot | Avant | Après |
+| --- | --- | --- |
+| LilyPond (1 020 fichiers), N contre MuseScore | 0,8279 | **0,9241** |
+| perte totale | 25 218,8 notes | **11 117,8** |
+| dimension `pitch` (pertes) | 11 211,9 | **1 897,7** |
+| lot amont (96 fichiers), N contre `.mscx` | 0,7165 | 0,7165 |
+
+159 fichiers gagnent des hauteurs, **aucun n'en perd** ; `Transeamus` et
+`Transeamus_a3` passent de 0,742 à 1,0000, `W-A-Mozart-Ave-Maria` de 0,474 à
+0,9950. Les autres dimensions (attaque, durée, voix) sont inchangées.
+Le score contre le `.ly` du lot LilyPond baisse (0,7352 → 0,6561) : c'est
+attendu et déjà documenté — le `.ly` est en hauteur concert sans
+`<transpose>`, alors que MuseScore (et désormais le port) écrit la hauteur
+écrite de l'instrument choisi ; l'oracle de référence pour ce lot reste
+MuseScore 4.7.4.

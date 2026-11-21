@@ -38,19 +38,23 @@ root = ET.parse(src_xml).getroot()
 
 
 def _pitch_range(text, upper=False):
-    """`'36-67'` → 36 ou 67."""
+    """`'36-67'` → 36 ou 67 ; absente ou invalide → `MIN_PITCH`/`MAX_PITCH`."""
+    defaut = 127 if upper else 0
     if not text or '-' not in text:
-        return -1
+        return defaut
     try:
         parts = [int(part) for part in text.split('-')[:2]]
     except ValueError:
-        return -1
+        return defaut
     return parts[1] if upper else parts[0]
 
 
 rows = []
 for group in root.iter('InstrumentGroup'):
     for instr in group.findall('Instrument'):
+        # `InstrumentTemplate::read` : les programmes sont ceux des canaux,
+        # dans l'ordre du fichier (`channel.program()`), et `useDrumset` vient
+        # de `<drumset>`, pas de la présence des tambours.
         programs = []
         for chan in instr.findall('Channel'):
             for prog in chan.findall('program'):
@@ -58,21 +62,37 @@ for group in root.iter('InstrumentGroup'):
                     programs.append(int(prog.get('value', '-1')))
                 except ValueError:
                     pass
+        # `drumset` n'est créé que sur un `<Drum>` explicite (ou
+        # `<percussionPanelColumns>`), et `Drumset::name(i)` est vide sans
+        # `<name>` : c'est ce que teste `findNotEmptyDrumPitches`.
+        drum_mask = 0
+        for drum in instr.findall('Drum'):
+            try:
+                pitch = int(drum.get('pitch', '-1'))
+            except ValueError:
+                continue
+            if 0 <= pitch < 128 and (drum.findtext('name') or '').strip():
+                drum_mask |= 1 << pitch
         rows.append({
             'id': instr.get('id', ''),
+            'group': group.get('id', ''),
             'track_name': instr.findtext('trackName', ''),
             'long_name': instr.findtext('longName', ''),
             'short_name': instr.findtext('shortName', ''),
             'music_xml_id': instr.findtext('musicXMLid', ''),
             'programs': sorted(set(programs)),
+            'channel_programs': programs,
             'transpose_diatonic': int(instr.findtext('transposeDiatonic', '0') or 0),
             'transpose_chromatic': int(instr.findtext('transposeChromatic', '0') or 0),
             'clef': instr.findtext('clef', ''),
             'staff_group': instr.findtext('staffGroup', ''),
-            'use_drumset': instr.find('Drumset') is not None,
+            'use_drumset': int(instr.findtext('drumset', '0') or 0) != 0,
+            'has_drumset': bool(instr.findall('Drum'))
+            or instr.find('percussionPanelColumns') is not None,
+            'drum_pitch_mask': drum_mask,
+            'genres': [g.text for g in instr.findall('genre') if g.text],
             'min_pitch': _pitch_range(instr.findtext('pPitchRange', '')),
             'max_pitch': _pitch_range(instr.findtext('pPitchRange', ''), upper=True),
-            'common_genre': 'common' in [g.text for g in instr.findall('genre')],
         })
 
 # GM1_SOUND_DATA de importmidi_instrument.cpp : l'ordre du tableau est le
@@ -122,6 +142,8 @@ out.append('''/// Gabarit d'instrument de MuseScore (`InstrumentTemplate`).
 pub struct Template {
     /// Identifiant MuseScore (`Instrument::id`).
     pub id: &'static str,
+    /// Groupe d'instruments (`InstrumentGroup::id`), dans l'ordre du fichier.
+    pub group: &'static str,
     /// Nom de piste (`trackName`).
     pub track_name: &'static str,
     /// Nom long.
@@ -130,38 +152,63 @@ pub struct Template {
     pub short_name: &'static str,
     /// Identifiant MusicXML (`musicXMLid`).
     pub music_xml_id: &'static str,
+    /// Programmes MIDI des canaux, dans l'ordre du fichier.
+    pub channel_programs: &'static [u8],
     /// Masque des programmes MIDI des canaux (bit `n` = programme `n`).
     pub program_mask: u128,
+    /// Genres du gabarit (`<genre>`), dans l'ordre du fichier.
+    pub genres: &'static [&'static str],
     /// Transposition diatonique (`transposeDiatonic`).
     pub transpose_diatonic: i32,
     /// Transposition chromatique (`transposeChromatic`).
     pub transpose_chromatic: i32,
     /// Groupe de portée (`staffGroup`), `"TAB"` pour les tablatures.
     pub staff_group: &'static str,
-    /// Vrai si le gabarit utilise un jeu de percussion.
+    /// Vrai si le gabarit utilise un jeu de percussion (`<drumset>`).
     pub use_drumset: bool,
+    /// Vrai si le gabarit porte un jeu de percussion explicite (`drumset`).
+    pub has_drumset: bool,
+    /// Hauteurs non vides du jeu de percussion (`findNotEmptyDrumPitches`).
+    pub drum_pitch_mask: u128,
     /// Hauteur minimale du gabarit (`minPitchP`), -1 si absente.
     pub min_pitch: i32,
     /// Hauteur maximale du gabarit (`maxPitchP`), -1 si absente.
     pub max_pitch: i32,
 }''')
 out.append('')
-out.append('''/// Catalogue, dans l'ordre du fichier source : à force égale, le premier
-/// instrument l'emporte (`searchTemplateForInstrNameList`).
+out.append('''/// Catalogue, dans l'ordre du fichier source (groupes puis instruments) :
+/// c'est l'ordre de `instrumentGroups`, dont dépend le tri stable de
+/// `sortInstrumentTemplates`.
 pub const TEMPLATES: &[Template] = &[''')
 for row in rows:
     mask = sum(1 << p for p in row['programs'] if 0 <= p < 128)
     out.append('    Template {')
     out.append(f"        id: \"{esc(row['id'])}\",")
+    out.append(f"        group: \"{esc(row['group'])}\",")
     out.append(f"        track_name: \"{esc(row['track_name'])}\",")
     out.append(f"        long_name: \"{esc(row['long_name'])}\",")
     out.append(f"        short_name: \"{esc(row['short_name'])}\",")
     out.append(f"        music_xml_id: \"{esc(row['music_xml_id'])}\",")
+    channel = ', '.join(str(p) for p in row['channel_programs'])
+    out.append(f"        channel_programs: &[{channel}],")
     out.append(f'        program_mask: {mask},')
+    # `rustfmt` éclate les tableaux de plus de 60 colonnes (`array_width`).
+    genres = ', '.join(f"\"{esc(g)}\"" for g in row['genres'])
+    if row['genres'] and len(genres) <= 60:
+        out.append(f"        genres: &[{genres}],")
+    elif row['genres']:
+        out.append("        genres: &[")
+        for genre in row['genres']:
+            out.append(f"            \"{esc(genre)}\",")
+        out.append("        ],")
+    else:
+        out.append("        genres: &[],")
     out.append(f"        transpose_diatonic: {row['transpose_diatonic']},")
     out.append(f"        transpose_chromatic: {row['transpose_chromatic']},")
     out.append(f"        staff_group: \"{esc(row['staff_group'])}\",")
     out.append(f"        use_drumset: {str(row['use_drumset']).lower()},")
+    out.append(f"        has_drumset: {str(row['has_drumset']).lower()},")
+    out.append(f"        drum_pitch_mask: {row['drum_pitch_mask']},")
     out.append(f"        min_pitch: {row['min_pitch']},")
     out.append(f"        max_pitch: {row['max_pitch']},")
     out.append('    },')
@@ -181,7 +228,9 @@ pub fn template_has_program(template: &Template, program: u8) -> bool {
 
 /// Premier programme MIDI du gabarit, pour la lecture des partitions 3.x.
 pub fn template_first_program(template: &Template) -> Option<i16> {
-    (0..128).find(|program| template_has_program(template, *program as u8)).map(|program| program as i16)
+    (0..128)
+        .find(|program| template_has_program(template, *program as u8))
+        .map(|program| program as i16)
 }
 
 /// Premier gabarit portant l'identifiant MuseScore donné.
