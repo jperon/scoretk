@@ -190,6 +190,9 @@ fn write_repeat_mark(xml: &mut XmlWriter, mark: &RepeatMark) {
             if !jump.continue_at.is_empty() {
                 xml.tag("continueAt", &jump.continue_at);
             }
+            if jump.play_repeats {
+                xml.tag("playRepeats", "1");
+            }
             xml.tag("placement", placement_name(jump.placement));
             xml.end_element();
         }

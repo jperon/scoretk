@@ -216,6 +216,13 @@ pub struct Jump {
     pub play_until: String,
     /// Marqueur où la lecture reprend (`codab`, libellé…).
     pub continue_at: String,
+    /// Rejoue les reprises de la cible (`<playRepeats>`, `Jump::m_playRepeats`,
+    /// `dom/jump.h:68,85`).
+    ///
+    /// Faux par défaut : le saut force alors le dernier passage et la reprise
+    /// de la cible n'est plus honorée (`RepeatList::unwind`,
+    /// `dom/repeatlist.cpp:985-993`).
+    pub play_repeats: bool,
     /// Placement.
     pub placement: Placement,
     /// Piste d'attache.
@@ -241,6 +248,7 @@ impl Jump {
             jump_to,
             play_until,
             continue_at,
+            play_repeats: false,
             placement,
             track,
         }

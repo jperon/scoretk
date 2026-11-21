@@ -77,14 +77,19 @@ pub(crate) fn read_jump(node: &Node, staff: usize) -> Jump {
         .child("placement")
         .map(|child| tables::placement(&child.trimmed_text()))
         .unwrap_or(Placement::Above);
-    Jump::new(
+    let mut jump = Jump::new(
         text("text"),
         text("jumpTo"),
         text("playUntil"),
         text("continueAt"),
         placement,
         measure_track(staff),
-    )
+    );
+    jump.play_repeats = node
+        .child("playRepeats")
+        .and_then(Node::int_text)
+        .is_some_and(|value| value != 0);
+    jump
 }
 
 /// Lit les propriétés d'une `<Volta>` contenue dans un `<Spanner>`.

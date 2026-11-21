@@ -39,8 +39,8 @@
 //!
 //! Limites connues par rapport au C++ : les cadres (`VBox`/`HBox`) n'existent
 //! pas dans le modèle, donc une section commence toujours sur une mesure ; le
-//! `playRepeats` d'un saut n'est pas modélisé et vaut faux (valeur par défaut
-//! de MuseScore, celle des fichiers du corpus) ; les chevauchements de voltas
+//! le `playRepeats` d'un saut est porté par [`Jump::play_repeats`] ; les
+//! chevauchements de voltas
 //! sont traités de façon simplifiée (les voltas du corpus ne se chevauchent
 //! pas) ; la pause d'une barre de section n'est pas conservée.
 
@@ -496,14 +496,19 @@ impl RepeatList {
                             if let Some(target) = jump_to {
                                 self.push_segment(&mut segment);
                                 active_jump = Some(jump_index);
-                                let (count, volta, start) =
-                                    perform_jump(sections, voltas, target, false, start_repeat);
+                                let (count, volta, start) = perform_jump(
+                                    sections,
+                                    voltas,
+                                    target,
+                                    jump.play_repeats,
+                                    start_repeat,
+                                );
                                 playback_count = count;
                                 active_volta = volta;
                                 start_repeat = start;
                                 section = target.0;
                                 it = target.1;
-                                force_final_repeat = true;
+                                force_final_repeat = !jump.play_repeats;
 
                                 if play_until.is_some() {
                                     let mut index = it + 1;

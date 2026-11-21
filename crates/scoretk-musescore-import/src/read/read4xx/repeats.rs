@@ -86,14 +86,19 @@ pub(super) fn read_jump(element: &Element, staff_index: usize) -> Jump {
             .map(|node| node.text().to_owned())
             .unwrap_or_default()
     };
-    Jump::new(
+    let mut jump = Jump::new(
         text("text"),
         text("jumpTo"),
         text("playUntil"),
         text("continueAt"),
         placement(element.child("placement")),
         measure_track(staff_index),
-    )
+    );
+    jump.play_repeats = element
+        .child("playRepeats")
+        .and_then(Element::int)
+        .is_some_and(|value| value != 0);
+    jump
 }
 
 /// Lit un `<BarLine>` enfant d'une voix (`TRead::read(BarLine*)`).
