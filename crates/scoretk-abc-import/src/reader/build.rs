@@ -76,10 +76,31 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
         for (voice_index, voice) in voices.iter().enumerate() {
             let (staff, model_voice) = voice_tracks[voice_index];
             let track = Track::new(staff, model_voice);
-            if index == 0 || time_at(voice, index) != time_at(voice, index - 1) {
-                let mut segment = Segment::new(SegmentType::TimeSig, start, staff_count);
-                segment.set_element(track, SegmentItem::TimeSig(time_at(voice, index)));
-                measure.add_segment(segment);
+            // `abc2xml.py::mkMeasure` writes a `<time>` for every M: field,
+            // even several at the same tick (`y` spacers do not advance it).
+            // Emit one segment per recorded change at the bar start rather
+            // than collapsing them into the last value (ABC 2.1 §3.2).
+            let inline_times: Vec<TimeSig> = voice
+                .time_changes
+                .iter()
+                .filter(|(measure, tick, _)| *measure == index && tick.is_zero())
+                .filter_map(|(_, _, value)| value.clone())
+                .collect();
+            if index == 0
+                || time_at(voice, index) != time_at(voice, index - 1)
+                || !inline_times.is_empty()
+            {
+                if inline_times.is_empty() {
+                    let mut segment = Segment::new(SegmentType::TimeSig, start, staff_count);
+                    segment.set_element(track, SegmentItem::TimeSig(time_at(voice, index)));
+                    measure.add_segment(segment);
+                } else {
+                    for time in inline_times {
+                        let mut segment = Segment::new(SegmentType::TimeSig, start, staff_count);
+                        segment.set_element(track, SegmentItem::TimeSig(time));
+                        measure.add_segment(segment);
+                    }
+                }
             }
             // `abc2xml.py` writes a `<key>` for every K: field, even when the
             // key is unchanged (ABC 2.1 §3.2: a repeated field is a
