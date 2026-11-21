@@ -198,6 +198,17 @@ pub fn find_quantized_tuplet_note_off_time(
     }
 }
 
+/// Erreur d'attaque par rapport à la quantification régulière
+/// (`findOnTimeQuantError`, `importmidi_quant.cpp:359-365`).
+pub fn find_on_time_quant_error(
+    on_time: Fraction,
+    chord: &super::chord::MidiChord,
+    basic_quant: Fraction,
+) -> Fraction {
+    let quantized = find_quantized_chord_on_time(on_time, chord, basic_quant);
+    (on_time - quantized).abs()
+}
+
 /// Plus petite attaque quantifiée des notes d'un accord
 /// (`findMinQuantizedOnTime`).
 pub fn find_min_quantized_on_time(

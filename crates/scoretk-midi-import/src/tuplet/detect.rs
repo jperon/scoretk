@@ -30,7 +30,7 @@ use scoretk_core::model::Fraction;
 use crate::chord::{min_allowed_duration, ChordKey, MTrack};
 use crate::meter::{beat_length_raw, divisions_of_bar_for_tuplets_raw, is_compound_num};
 use crate::quant::{
-    find_quantized_chord_on_time, find_quantized_tuplet_chord_on_time,
+    find_on_time_quant_error, find_quantized_tuplet_chord_on_time,
     find_quantized_tuplet_note_off_time, quant_for_len,
 };
 
@@ -47,17 +47,6 @@ pub(super) struct DetectOptions {
     pub search_9plets: bool,
     pub is_human: bool,
     pub simplify_durations: bool,
-}
-
-/// Erreur d'attaque par rapport à la quantification régulière
-/// (`findOnTimeQuantError`, `importmidi_quant.cpp:359-365`).
-fn find_on_time_quant_error(
-    on_time: Fraction,
-    chord: &crate::chord::MidiChord,
-    basic_quant: Fraction,
-) -> Fraction {
-    let quantized = find_quantized_chord_on_time(on_time, chord, basic_quant);
-    (on_time - quantized).abs()
 }
 
 /// Plus courte durée de note quantifiée d'un intervalle

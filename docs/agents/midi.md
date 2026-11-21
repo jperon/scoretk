@@ -2332,4 +2332,73 @@ notes (MuseScore writes 4/3, 2/3, 1/3; we keep the sounding values up to
 tolerance), not lost pitches. `OSalutarisHostia` now carries tuplets where it
 had none; `OCheftaine…` gets the reference's 8 time modifications.
 
-## Next class: filtering and the remaining duration/voice losses
+## Tuplet filtering: literal port of `filterTuplets` (2026-11-21)
+
+The greedy selection is replaced by the upstream DFS:
+
+| C++ `importmidi_tuplet_filter.cpp` | Rust `tuplet/filter.rs` |
+| --- | --- |
+| `isMoreTupletVoicesAllowed` :34 | `is_more_tuplet_voices_allowed` |
+| `TupletErrorResult` :39 | `TupletErrorResult` (+ `less`) |
+| `haveCommonChords` :75 | `have_common_chords` |
+| `removeUselessTuplets` :105 | `remove_useless_tuplets` |
+| `findLongestUncommonGroup` :143 | `find_longest_uncommon_group` |
+| `areInCommons` :207 | `are_in_commons` |
+| `findTupletCommons` :224 | `find_tuplet_commons` |
+| `isInCommonIndexes` :238 | `is_in_common_indexes` |
+| `findTupletError` :264 | `find_tuplet_error` |
+| `findAvailableVoice` :346 | `find_available_voice` |
+| `prepareUsedFirstChords` :366 | `prepare_used_first_chords` |
+| `findUnusedIndexes` :386 | `find_unused_indexes` |
+| `canUseIndex` :400 | `can_use_index` |
+| `tryUpdateBestIndexes` :470 | `try_update_best_indexes` |
+| `prepareVoiceIntervals` :488 | `prepare_voice_intervals` |
+| `ValidTuplets` :503 | `ValidTuplets` |
+| `findNextTuplet` :576 | `find_next_tuplet` |
+| `moveUncommonTupletsToEnd` :673 | `move_uncommon_tuplets_to_end` |
+| `findBestTuplets` :691 | `find_best_tuplets` |
+| `removeExtraTuplets` :710 | `remove_extra_tuplets` |
+| `filterTuplets` :747 | `filter_tuplets` |
+
+`tupletInterval` (`importmidi_tuplet.cpp:252`) uses
+`findMaxQuantizedOffTime`; `tupletVoiceLimit` (`importmidi_tuplet_voice.cpp:35`)
+reserves one voice for non-tuplets (`maxVoiceCount - 1`).
+
+Reduced test `tuplet::filter::tests::nolet_englobant_retire` (unit test,
+targeting `removeUselessTuplets`, which the greedy version lacked): of two
+tuplets of the same number with the same chords, the larger is removed and the
+smaller kept.
+
+Measurement with the option (same manifests, same oracle):
+
+| Metric | Greedy | DFS |
+| --- | ---: | ---: |
+| LilyPond N | 0.9819 | 0.9819 |
+| `tuplet` dimension loss | 9 390.0 | 9 390.0 |
+| upstream N | 0.7975 | 0.7975 |
+| files with a different time-modification count | — | 1 (`Ad_te_Suspiramus`, 162 → 102; reference 186) |
+
+The scores are identical; the DFS removes over-detected tuplets without any
+per-file loss. `v4/timesig-09` has no `<Tuplet>` in its source: inserted at
+MuseScore's early stage it still receives **182** invented time modifications,
+so the option stays opt-in and the insertion stays after the duration stages.
+
+## Beat-tie splitting in `processPendingNotes`
+
+MuseScore does **not** split notes at beats before `separateVoices`: the split
+is in `MTrack::processPendingNotes` (`importmidi.cpp:553-611`), at model
+creation, and is already ported in `process_pending_notes` (`lib.rs`):
+
+- `splitDurationOnBarBoundary` (`importmidi.cpp:426-437`) clamps the chunk to
+  the measure end;
+- `toDurationList` returns the figures of the gap; only the **first** figure is
+  used (`chord->setTicks(d.fraction())`) and the note is cut there;
+- `setTies` (`importmidi.cpp:541-551`) ties the continuation, which re-enters
+  the loop with the remaining duration.
+
+The reduced test `beat_ties.rs` fixes this: a 3-quarter note starting on the
+second eighth of a 4/4 bar comes out as **tied fragments**, not one long note.
+The `02_02_Segura` voice difference is therefore not a missing split: our
+first fragment lengths differ from MuseScore's because `toDurationList` gives
+another first figure (the file has 161 tie starts in the reference), and that
+is the remaining cause of its `voice` loss.

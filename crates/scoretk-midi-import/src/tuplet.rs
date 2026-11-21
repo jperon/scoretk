@@ -109,7 +109,12 @@ pub fn detect_all_tuplets(
             detect_options,
         ));
     }
-    filter::filter_tuplets(&mut candidates);
+    filter::filter_tuplets(
+        track,
+        &mut candidates,
+        basic_quant,
+        options.max_voice_count.limit(),
+    );
     candidates
 }
 

@@ -176,9 +176,9 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
         split_unequal_chords(track);
     }
 
-    // N-olets détectés sur les accords bruts puis insérés ici, pour la
-    // notation seule : le filtre complet (`filterTuplets`) n'étant pas porté,
-    // une insertion précoce retime les notes (`v4/timesig-09`).
+    // N-olets détectés sur les accords bruts puis insérés après les étapes de
+    // durée : le filtre complet est porté, mais la détection précoce invente
+    // encore 182 n-olets dans `v4/timesig-09` (aucun dans la source).
     if options.tuplet_notation {
         for (index, track) in tracks.iter_mut().enumerate() {
             if let Some(candidates) = detected_tuplets.get(index) {
@@ -186,7 +186,6 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
             }
         }
     }
-
     let mut track_list = prepare_track_list(tracks);
     instrument::set_grand_staff_program(&mut track_list);
     create_instruments(score, &mut track_list, options);
