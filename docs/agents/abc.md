@@ -1864,29 +1864,29 @@ et l'écriture n'était pas stable. Un tokenizer respectant les guillemets
 restaure le nom complet (ABC 2.1 § 8.2 « Text strings »). Test réduit avec
 vérification de l'aller-retour, écrit d'abord et échouant avant le correctif.
 
-### 27.5 Campagne finale (binaire `ly95-abc-export-final`)
+### 27.5 Final campaign (binary `ly95-abc-export-final`)
 
-| Lot | Outil | Fichiers | ABC OK | N1 % | N2 % | N2d % | Taille .abc moy. |
+| Lot | Tool | Files | ABC OK | N1 % | N2 % | N2d % | Mean .abc B |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | corpus | scoretk | 56 | 56 | 79.01 | 73.06 | 69.31 | 295 |
 | mscz (174) | scoretk | 174 | 173 | 83.12 | 67.85 | 63.20 | 11 980 |
 | xml | scoretk | 32 | 32 | 92.99 | 31.14 | 27.21 | 12 518 |
 
-Les scores musicaux sont strictement inchangés (0 perte N1/N2/N2d sur les
-262 fichiers communs). L'aller-retour passe de **37 à 75 fichiers stables**
-(corpus 31 → 46, mscz 4 → 21, xml 2 → 8) avec **0 régression**, et la taille
-moyenne du `.abc` baisse encore légèrement. La comparaison par fichier avec
-`xml2abc.py` est inchangée (corpus 2/50/4, mscz 22/94/57, xml 8/16/8).
+The musical scores are strictly unchanged (0 N1/N2/N2d loss over the 262
+common files). The round trip goes from **37 to 75 stable files**
+(corpus 31 → 46, mscz 4 → 21, xml 2 → 8) with **0 regression**, and the mean
+`.abc` size drops slightly further. The per-file comparison with `xml2abc.py`
+is unchanged (corpus 2/50/4, mscz 22/94/57, xml 8/16/8).
 
 
-## 28. Écriture ABC : classement des 57 défaites mscz et de l'aller-retour (2026-11-21)
+## 28. ABC writing: classification of the 57 mscz losses and the round trip (2026-11-21)
 
-### 28.1 Les 57 fichiers où `xml2abc.py` gagne (lot mscz)
+### 28.1 The 57 files where `xml2abc.py` wins (mscz lot)
 
-Liste complète, triée par écart de N2d. `N1 tk/alt` et `N2d tk/alt` en
-pourcentages ; les drapeaux sont ceux de `midi_notes.py`.
+Full list, sorted by N2d gap. `N1 tk/alt` and `N2d tk/alt` are percentages;
+the flags are those of `midi_notes.py`.
 
-| Fichier | N1 tk | N1 alt | N2d tk | N2d alt | Écart | Drapeaux |
+| File | N1 tk | N1 alt | N2d tk | N2d alt | Gap | Flags |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | Vivaldi_-_Dixit_Dominus-RV_594__-_03-VirgamVirtutis_ | 99.2 | 99.2 | 51.1 | 97.9 | 46.7 | octave,notes_manquantes |
 | Vivaldi_-_Dixit_Dominus-RV_594__-_02_Donec_ponam_de_ | 100.0 | 100.0 | 25.9 | 59.1 | 33.2 | attaque_decalee |
@@ -1945,228 +1945,224 @@ pourcentages ; les drapeaux sont ceux de `midi_notes.py`.
 | 07- Minuit chretien - Trompettes 1, 2 et 3.mscz | 56.1 | 56.1 | 32.4 | 32.5 | 0.1 | octave,notes_manquantes |
 | The_Petite_Waltz_accordion_solo.mscz | 99.5 | 99.7 | 42.4 | 42.5 | 0.1 | octave,notes_manquantes |
 | Sancta_Maria_Mater_Dei_Mozart.mscz | 98.1 | 98.3 | 97.3 | 97.3 | 0.1 | octave,notes_manquantes |
-Classification (mutuellement exclusive, par première cause) :
+Classification (mutually exclusive, by first cause):
 
-| Cause | Fichiers | Responsabilité | Traitement |
+| Cause | Files | Responsibility | Handling |
 | --- | ---: | --- | --- |
-| `octave, notes_manquantes`, N1 identique | 36 | **Oracle** : le MIDI de référence réalise des ornements/voltas que ni l'ABC écrit ni `abc2midi -NGRA` ne contiennent (§ 15.3, § 17.5). Familles `Adeste fideles`, `Il est né`, `God rest you`, `Minuit chretien`, Vivaldi. | Hors portée. |
-| `octave, notes_manquantes`, N1 inférieur | 13 | **Mélangé** : orchidées d'orchestre (>16 voix, `abc2midi` plafonne à 16 canaux) + artefacts d'oracle. Le N1 manquant est partagé ou non imputable à l'écrivain. | Documenté. |
-| `octave` seul | 4 | **Oracle** : écarts d'attaque sous la limite de canaux, N1 quasi identique. | Documenté. |
-| `attaque_decalee` | 3 | **Écrivain** : mesures courtes et retours à la ligne `$` de `xml2abc.py::doMaat` (ligne 674) ; le port écrit `Z`/notes de remplissage, que `abc2midi` bourre autrement. Aucune hauteur perdue (N1 = 100 % sur `Adeste - choeur`). | Cause restante, non corrigée dans cette passe. |
-| `octave, notes_supp` | 1 | **Oracle** : une note surnuméraire dans le MIDI de référence. | Documenté. |
+| `octave, notes_manquantes`, N1 equal | 36 | **Oracle**: the reference MIDI realizes ornaments/voltas that neither the written ABC nor `abc2midi -NGRA` contains (§ 15.3, § 17.5). Families `Adeste fideles`, `Il est né`, `God rest you`, `Minuit chretien`, Vivaldi. | Out of scope. |
+| `octave, notes_manquantes`, N1 lower | 13 | **Mixed**: large orchestral scores (>16 voices, `abc2midi` caps at 16 channels) + oracle artefacts. The missing N1 is shared or not attributable to the writer. | Documented. |
+| `octave` only | 4 | **Oracle**: attack differences under the channel limit, N1 almost identical. | Documented. |
+| `attaque_decalee` | 3 | **Writer**: short measures and `$` line breaks of `xml2abc.py::doMaat` (line 674); the port writes `Z`/fill notes, which `abc2midi` pads differently. No pitch lost (N1 = 100 % on `Adeste - choeur`). | Remaining cause, not fixed in this pass. |
+| `octave, notes_supp` | 1 | **Oracle**: one extra note in the reference MIDI. | Documented. |
 
-Un seul fichier (`Canon_in_D_Pachelbel…mscz`) n'a aucun ABC : c'est le
-**lecteur MuseScore** qui rejette une partition 2.x (`version MuseScore non
-prise en charge : 2.06`), hors portée de l'écriture ; il n'entre pas dans
-les 57. Aucun de ces 57 fichiers n'a été perdu ni régénéré.
+Only one file (`Canon_in_D_Pachelbel…mscz`) has no ABC: the **MuseScore reader**
+rejects a 2.x score (`version MuseScore non prise en charge : 2.06`), which is out
+of scope for writing; it is not one of the 57. None of these 57 files was lost or
+regenerated.
 
-### 28.2 Aller-retour : causes corrigées
+### 28.2 Round trip: causes fixed
 
-L'aller-retour `.abc → scoretk → .abc → scoretk` est mesuré depuis la passe
-précédente (75/244 stables). Trois causes ont été traitées :
+The `.abc → scoretk → .abc → scoretk` round trip has been measured since the
+previous pass (75/244 stable). Three causes were addressed:
 
-1. **`%%score` avec espaces** (`0825b12`). Un groupe sans accolade ni crochet
-   était encadré par deux espaces (`%%score  1 2 `) : `writer.rs::score_line`
-   utilisait `(' ', ' ')` comme délimiteurs. `xml2abc.py::prgrouplist`
-   (lignes 856-866) n'écrit que des délimiteurs effectifs. Test réduit
-   (`abc_ecriture_score.rs`) écrit d'abord, échouant avant le correctif.
-2. **Fin de soufflet à cheval sur une barre** (`6f72119`). Un soufflet se
-   terminant au début de la mesure suivante était écrit dans la précédente :
-   `!>(!` et `!>)!` se retrouvaient sur la même note, puis le token de fin
-   était perdu à la relecture. Le token va maintenant dans la mesure qui
-   contient son tick, comme les liaisons. Test réduit
-   (`abc_ecriture_soufflet_barre.rs`) écrit d'abord, échouant avant le
-   correctif ; 10 instantanés corrigés.
-3. **Transposition cumulée avec l'octave de clef** (`4cb286d`). Le lecteur
-   ajoutait le `-8` de `clef=treble-8` à `voice.transpose`, que le modèle
-   portait dans `Instrument::transpose` ; l'écrivain ajoutait ensuite le
-   suffixe de clef, si bien qu'à la relecture le décalage était ajouté une
-   seconde fois (`-24 → -48 → -60`). On sépare `instrument_transpose` du
-   décalage de clef. Test réduit (`abc_ecriture_transpose_clef.rs`) écrit
-   d'abord, échouant avant le correctif. ABC 2.1 § 4.6 et § 3.1.14 ;
-   `xml2abc.py::doAttr` lignes 1319-1331.
+1. **`%%score` with spaces** (`0825b12`). A group without brace or bracket was
+   surrounded by two spaces (`%%score  1 2 `): `writer.rs::score_line` used
+   `(' ', ' ')` as delimiters. `xml2abc.py::prgrouplist` (lines 856-866) only
+   writes actual delimiters. Reduced test (`abc_ecriture_score.rs`) written
+   first, failing before the fix.
+2. **Hairpin ending across a barline** (`6f72119`). A hairpin ending at the start
+   of the next measure was written in the previous one: `!>(!` and `!>)!` ended
+   up on the same note, then the end token was lost on re-reading. The token now
+   goes in the measure containing its tick, as slurs do. Reduced test
+   (`abc_ecriture_soufflet_barre.rs`) written first, failing before the fix;
+   10 snapshots corrected.
+3. **Transposition compounded with clef octave** (`4cb286d`). The reader added
+   the `-8` of `clef=treble-8` to `voice.transpose`, which the model carried in
+   `Instrument::transpose`; the writer then added the clef suffix, so on
+   re-reading the shift was applied a second time (`-24 → -48 → -60`). We
+   separate `instrument_transpose` from the clef shift. Reduced test
+   (`abc_ecriture_transpose_clef.rs`) written first, failing before the fix.
+   ABC 2.1 § 4.6 and § 3.1.14; `xml2abc.py::doAttr` lines 1319-1331.
 
-### 28.3 Relevé final (`/tmp/abc-ecriture-f4`)
+### 28.3 Final survey (`/tmp/abc-ecriture-f4`)
 
-| Lot | Stables avant | Stables après | N1 | N2 | N2d |
+| Lot | Stable before | Stable after | N1 | N2 | N2d |
 | --- | ---: | ---: | --- | --- | --- |
-| corpus | 31/56 | **54/56** | inchangé | inchangé | inchangé |
-| mscz | 4/160 | **36/160** | 1 perte expliquée | inchangé | inchangé |
-| xml | 2/28 | **10/28** | inchangé | inchangé | inchangé |
+| corpus | 31/56 | **54/56** | unchanged | unchanged | unchanged |
+| mscz | 4/160 | **36/160** | 1 explained loss | unchanged | unchanged |
+| xml | 2/28 | **10/28** | unchanged | unchanged | unchanged |
 
-Soit **+25 fichiers stables, 0 régression de stabilité**, et N1/N2/N2d
-inchangés sur les 262 fichiers (une seule perte N1, 33,38 % → 31,6 % sur
-`Mater_alma.mscz` : ce fichier a 17+ voix et dépasse la limite de 16 canaux
-d'`abc2midi` ; déplacer le token de fin de soufflet modifie l'allocation de
-canaux et donc l'attribution des hauteurs, tandis que N2d reste identique —
-Oracle, déjà classé `octave, notes_manquantes`).
+That is **+25 stable files, 0 stability regression**, and unchanged N1/N2/N2d
+over the 262 files (the single N1 loss, 33.38 % → 31.6 % on `Mater_alma.mscz`,
+is explained: the file has 17+ voices and exceeds `abc2midi`'s 16-channel limit;
+moving the hairpin end token changes channel allocation and hence pitch
+attribution, while N2d stays identical — an oracle artefact, already classified
+`octave, notes_manquantes`).
 
-Le correctif de transposition supprime le doublement dans 9 fichiers (4 mscz,
-5 xml) sans changer leur statut de stabilité : ceux-ci restent instables pour
-une autre cause (frontières de n-olets et dérive d'octave de clef, documentées
-ci-dessous). Il n'y a donc pas de gain de stabilité mesurable à ce correctif,
-mais la faute de lecture qu'il corrige est réelle et couverte par son test.
+The transposition fix removes the doubling in 9 files (4 mscz, 5 xml) without
+changing their stability status: they remain unstable for another cause (tuplet
+boundaries and clef-octave drift, documented below). There is therefore no
+measurable stability gain from that fix, but the reading fault it corrects is real
+and covered by its test.
 
-### 28.4 Instabilités restantes (143 fichiers)
+### 28.4 Remaining instabilities (143 files)
 
-Classées par première ligne ABC différante :
+Classified by first differing ABC line:
 
-| Première différence | Fichiers | Cause |
+| First difference | Files | Cause |
 | --- | ---: | --- |
-| `(cdeN)fNgN` → `(cdeNfN)gN` | ~60 | Frontière de slur : un `)` lu après une note est rattaché à la note suivante par `reader/music.rs::close_slur` (le tick a déjà été avancé). Tentative de correctif avortée : elle régresse `abc_ecriture_soufflet_barre` (interaction avec les liaisons issues de liaisons de hauteurs différentes, § 20). ABC 2.1 § 4.11. |
-| `[M:N/N] (AcBA)GA` → `(AcBAG)A` | ~18 | Même cause de frontière de slur, avec un champ de mesure en ligne. |
-| `ENzNz` → `ENzNzz` | ~18 | Durée des silences courts (`z`/`Z`) et retour à la ligne `$` de `xml2abc.py::doMaat`. |
-| `eN[K:D clef=treble-N]EN` → `e'N[K:D clef=treble-N]EN` | ~9 | Dérive d'octave autour d'un changement de clef en ligne : la compensation `12 * clef_octave` de `voice.rs` et le suffixe `-8` se cumulent. ABC 2.1 § 4.6. |
-| diverse | ~38 | Combinaisons des quatre causes ci-dessus. |
+| `(cdeN)fNgN` → `(cdeNfN)gN` | ~60 | Slur boundary: a `)` read after a note is attached to the next note by `reader/music.rs::close_slur` (the tick has already advanced). An attempted fix was abandoned because it regressed `abc_ecriture_soufflet_barre` (interaction with slurs from different-pitch ties, § 20). ABC 2.1 § 4.11. |
+| `[M:N/N] (AcBA)GA` → `(AcBAG)A` | ~18 | Same slur-boundary cause, with an inline meter field. |
+| `ENzNz` → `ENzNzz` | ~18 | Duration of short rests (`z`/`Z`) and the `$` line break of `xml2abc.py::doMaat`. |
+| `eN[K:D clef=treble-N]EN` → `e'N[K:D clef=treble-N]EN` | ~9 | Octave drift around an inline clef change: `voice.rs`'s `12 * clef_octave` compensation and the `-8` suffix compound. ABC 2.1 § 4.6. |
+| misc | ~38 | Combinations of the four causes above. |
 
-Aucune de ces causes n'est corrigée dans cette passe ; elles sont documentées
-avec leur référence ABC 2.1 / `xml2abc.py` pour une passe ultérieure.
+None of these causes was fixed in this pass; they are documented with their ABC
+2.1 / `xml2abc.py` reference for a later pass.
 
-## 29. Écriture ABC : oracle « like with like » et causes d'aller-retour (2026-11-21)
+## 29. ABC writing: "like with like" oracle and round-trip causes (2026-11-21)
 
-### 29.1 Oracle — 53 artefacts éliminés (`2f123c4`, `9bfc6f6`)
+### 29.1 Oracle - 53 artefacts eliminated (`2f123c4`, `9bfc6f6`)
 
-Le mode MIDI historique comparait l'ABC joué par `abc2midi` au MIDI de référence de
-MuseScore. Deux artefacts rendaient la comparaison invalide sur 53 des 57 « pertes »
-mscz classées en § 28.1 :
+The legacy MIDI mode compared the ABC played by `abc2midi` to MuseScore's
+reference MIDI. Two artefacts made the comparison invalid for 53 of the 57
+"losses" mscz classified in § 28.1:
 
-1. le MIDI de MuseScore **réalise** les ornements et les voltas (notes supplémentaires)
-   que ni l'ABC de scoretk ni celui de `xml2abc.py` ne contiennent ;
-2. `abc2midi` plafonne à **16 canaux** : sur les partitions orchestrales à 17+ voix,
-   les hauteurs sont mal attribuées (`octave`, `notes_manquantes`).
+1. MuseScore's reference MIDI **realizes** ornaments and voltas (extra notes)
+   that neither scoretk's ABC nor `xml2abc.py`'s contains;
+2. `abc2midi` caps at **16 channels**: on orchestral scores with 17+ voices,
+   pitches are misattributed (`octave`, `notes_manquantes`).
 
-`ecriture.py --mode model` juge désormais **like with like** au niveau du modèle
-pivot : scoretk exporte la source en MusicXML (référence), chaque ABC candidat est
-réimporté par scoretk puis exporté de la même manière, et `midi_notes.compare` porte
-sur les notes (N1/N2/N2d). `xml2abc.py` reçoit le même MusicXML que scoretk. Le mode
-MIDI reste disponible pour la continuité des campagnes précédentes.
+`ecriture.py --mode model` now judges **like with like** at the pivot-model
+level: scoretk exports the source to MusicXML (reference), each candidate ABC is
+re-imported by scoretk and exported the same way, and `midi_notes.compare` judges
+the notes (N1/N2/N2d). `xml2abc.py` receives the same MusicXML as scoretk. The
+MIDI mode remains available for continuity with earlier campaigns.
 
-Table mscz, même binaire, ancien → nouveau oracle :
+mscz table, same binary, old → new oracle:
 
 | Oracle | scoretk > xml2abc | = | < |
 | --- | ---: | ---: | ---: |
 | MIDI (§ 28) | 22 | 94 | **57** |
-| Modèle | **119** | 38 | **16** |
+| Model | **119** | 38 | **16** |
 
-Les 53 artefacts disparaissent : N1 scoretk passe de 83,12 % à **96,88 %**. Les 16
-pertes restantes sont de vraies pertes d'écriture. Le mode modèle sert désormais de
-référence ; le tableau complet est dans `/tmp/abc-ecriture-final-all/resume.md`.
+The 53 artefacts disappear: scoretk N1 goes from 83.12 % to **96.88 %**. The 16
+remaining losses are real writing losses. The model mode is now the reference;
+the full table is in `/tmp/abc-ecriture-final-all/resume.md`.
 
-### 29.2 Cause 1 — frontière de slur (`cc4890fe`)
+### 29.2 Cause 1 - slur boundary (`cc4890fe`)
 
-`reader/music.rs::close_slur` utilisait le tick courant, déjà avancé par
-`parse_chord_or_note` : le `)` d'un `(cde)f` était rattaché à `f`, donc
-`(cde)f → (cdef)g → (cdefg)` à chaque aller-retour. On prend le tick du dernier
-événement. À l'écriture, la fin n'est émise que dans la mesure qui contient son
-tick (même règle que les soufflets de § 28.2) : sans cela un slur finissant sur une
-barre écrivait son `)` dans les deux mesures adjacentes. C'est cette règle commune
-aux deux files de tokens attachés aux notes qui résout l'interaction avec le test
-des soufflets, qui avait fait avorter la tentative de § 28.4. ABC 2.1 § 4.11.
+`reader/music.rs::close_slur` used the current tick, already advanced by
+`parse_chord_or_note`: the `)` of `(cde)f` was attached to `f`, so
+`(cde)f → (cdef)g → (cdefg)` on every round trip. We now take the tick of the
+last event. On writing, the end is emitted only in the measure containing its
+tick (same rule as hairpins in § 28.2): otherwise a slur ending on a barline
+wrote its `)` in both adjacent measures. This rule shared by the two queues of
+note-attached tokens resolves the interaction with the hairpin test that had
+aborted the attempt in § 28.4. ABC 2.1 § 4.11.
 
-Test réduit `abc_ecriture_slur_fin.rs` écrit d'abord, échouant avant le correctif.
+Reduced test `abc_ecriture_slur_fin.rs` written first, failing before the fix.
 
-### 29.3 Cause 2 — silences « gap » (`588ad0c2`)
+### 29.3 Cause 2 - gap rests (`588ad0c2`)
 
-`collect_items` écrivait les `Rest { gap: true }` comme des `z` ordinaires. Un tel
-silence ne compte pas dans la mesure (l'écrivain MusicXML le saute déjà dans
-`write_measure_tracks`) : l'écrire allongeait la mesure (ex. `E6z6z` = 13 croches
-dans un 12/8) et décalait les attaques suivantes à la relecture. ABC 2.1 § 4.5.
-Test réduit `abc_ecriture_silence_gap.rs` écrit d'abord, échouant avant le
-correctif ; l'instantané `v3_moonlight` fusionne correctement `z4z2 → z6`.
+`collect_items` wrote `Rest { gap: true }` as ordinary `z`. Such a rest does not
+count in the measure (the MusicXML writer already skips it in
+`write_measure_tracks`): writing it lengthened the measure (e.g. `E6z6z` = 13
+eighth-notes in 12/8) and shifted subsequent attacks on re-reading. ABC 2.1
+§ 4.5. Reduced test `abc_ecriture_silence_gap.rs` written first, failing before
+the fix; the `v3_moonlight` snapshot correctly merges `z4z2 → z6`.
 
-### 29.4 Cause 3 — champs de clef consécutifs dupliqués (`66e307bd`)
+### 29.4 Cause 3 - duplicated consecutive clef fields (`66e307bd`)
 
-Deux changements de clef sans note intermédiaire se rattachent au même `offset` de
-la file de tokens : `draw_context_changes` écrivait deux fois `[K:… clef=…]`, et
-l'aller-retour en ajoutait un à chaque lecture (`…[K:G clef=bass][K:G clef=bass]…`).
-On déduplique les tokens par offset. Test réduit `abc_ecriture_clef_duplique.rs`
-écrit d'abord, échouant avant le correctif (2 au lieu de 1) ; sur la famille
-`Il est né` la duplication disparaît. ABC 2.1 § 4.6.
+Two clef changes with no note in between attach to the same `offset` of the
+token queue: `draw_context_changes` wrote `[K:… clef=…]` twice, and the round
+trip added one more on each read (`…[K:G clef=bass][K:G clef=bass]…`). Tokens are
+now deduplicated by offset. Reduced test `abc_ecriture_clef_duplique.rs` written
+first, failing before the fix (2 instead of 1); the duplication disappears for
+the `Il est né` family. ABC 2.1 § 4.6.
 
-### 29.5 Relevé final
+### 29.5 Final survey
 
-| Lot | Stables avant cette passe | Stables après | N1/N2/N2d |
+| Lot | Stable before this pass | Stable after | N1/N2/N2d |
 | --- | ---: | ---: | --- |
-| corpus | 54/56 | **54/56** | inchangés |
-| mscz | 4/160 | **106/160** | inchangés |
-| xml | 2/28 | **13/28** | inchangés |
+| corpus | 54/56 | **54/56** | unchanged |
+| mscz | 4/160 | **106/160** | unchanged |
+| xml | 2/28 | **13/28** | unchanged |
 
-Sur la fin de passe (après le slur), le détail donne **73 gains de stabilité au
-total** (65 pour le slur, 8 pour la déduplication de clef), **0 régression**, et
-aucune variation de N1/N2/N2d. 68 fichiers `.abc` ont changé de texte (suppression
-des silences gap, déduplication des champs de clef) sans changer leur contenu
-musical, ce qui est précisément le comportement attendu. Taille moyenne du `.abc`
-inchangée (295 / 11 974 / 12 517 octets contre 338 / 13 375 / 13 216 pour
-`xml2abc.py`).
+In the end of this pass (after the slur), the detail is **73 stability gains in
+total** (65 for the slur, 8 for clef deduplication), **0 regression**, and no
+change to N1/N2/N2d. 68 `.abc` files changed text (gap-rest removal, clef-field
+deduplication) without changing their musical content, which is precisely the
+expected behaviour. Mean `.abc` size unchanged (295 / 11 974 / 12 517 bytes
+versus 338 / 13 375 / 13 216 for `xml2abc.py`).
 
-## 30. ABC export : état final (2026-11-21)
+## 30. ABC export: final status (2026-11-21)
 
 ### Oracle
 
-Depuis § 29, l'oracle d'écriture est `--mode model` : scoretk exporte la source
-en MusicXML, chaque ABC candidat est réimporté par scoretk et exporté de la même
-manière, et `midi_notes.compare` juge N1/N2/N2d. Cela élimine les artefacts du
-mode MIDI (ornements réalisés par MuseScore, limite de 16 canaux d'`abc2midi`) :
-sur le lot mscz les « pertes » passent de 57 à 16, dont une partie sont des
-échecs de lecture de la source (partitions MuseScore 2.x) plutôt que des pertes
-d'écriture. Le tableau ne montre donc plus que de vraies pertes d'écriture.
+Since § 29, the writing oracle is `--mode model`: scoretk exports the source to
+MusicXML, each candidate ABC is re-imported by scoretk and exported the same
+way, and `midi_notes.compare` judges N1/N2/N2d. This removes the artefacts of
+the MIDI mode (ornaments realized by MuseScore, `abc2midi`'s 16-channel limit):
+on the mscz lot the "losses" drop from 57 to 16, some of which are source
+reading failures (MuseScore 2.x scores) rather than writing losses. The table
+therefore now shows real writing losses only.
 
-### Chiffres vs `xml2abc.py` (binaire final, `/tmp/abc-final-turn`)
+### Figures vs `xml2abc.py` (final binary, `/tmp/abc-final-turn`)
 
-| Lot | Outil | Exact | N1 % | N2 % | N2d % | Taille .abc moy. |
+| Lot | Tool | Exact | N1 % | N2 % | N2d % | Mean .abc B |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| corpus | scoretk | **46** (82 %) | **99,57** | **66,02** | **65,47** | 295 |
-| corpus | xml2abc | 42 (75 %) | 80,87 | 34,91 | 32,58 | 334 |
-| mscz | scoretk | **92** (53 %) | **99,59** | **80,11** | **78,05** | 11 974 |
-| mscz | xml2abc | 20 (12 %) | 83,33 | 43,57 | 38,80 | 13 375 |
-| xml | scoretk | **13** (41 %) | **98,59** | 36,71 | 34,84 | 12 517 |
-| xml | xml2abc | 6 (19 %) | 88,16 | **81,68** | **80,56** | 13 216 |
+| corpus | scoretk | **46** (82 %) | **99.57** | **66.02** | **65.47** | 295 |
+| corpus | xml2abc | 42 (75 %) | 80.87 | 34.91 | 32.58 | 334 |
+| mscz | scoretk | **92** (53 %) | **99.59** | **80.11** | **78.05** | 11 974 |
+| mscz | xml2abc | 20 (12 %) | 83.33 | 43.57 | 38.80 | 13 375 |
+| xml | scoretk | **13** (41 %) | **98.59** | 36.71 | 34.84 | 12 517 |
+| xml | xml2abc | 6 (19 %) | 88.16 | **81.68** | **80.56** | 13 216 |
 
-Par fichier : corpus 6 / 50 / 0, mscz **119 / 38 / 16**, xml 13 / 11 / 8
-(scoretk > = < xml2abc). Suite aux trois causes ci-dessous, les fichiers exacts
-mscz passent de 63 à 92 et N1 de 96,88 % à 99,59 %. Sur le lot xml, `xml2abc.py`
-reste meilleur sur N2/N2d pour quelques pièces (accordéon) où le port écrit des
-durées de silence différentes ; noter que scoretk y est **meilleur en N1**
-(98,59 % contre 88,16 %). La taille moyenne du `.abc` reste inférieure de 7 à
-13 % à celle de l'alternative : aucun gonflement.
+Per file: corpus 6 / 50 / 0, mscz **119 / 38 / 16**, xml 13 / 11 / 8
+(scoretk > = < xml2abc). Following the three causes below, exact mscz files go
+from 63 to 92 and N1 from 96.88 % to 99.59 %. On the xml lot, `xml2abc.py` stays
+better on N2/N2d for a few pieces (accordion) where the port writes different
+rest durations; note that scoretk is **better on N1** there (98.59 % versus
+88.16 %). Mean `.abc` size remains 7 to 13 % smaller than the alternative: no
+bloat.
 
-### Causes corrigées dans cette passe
+### Causes fixed in this pass
 
-1. **Octave de clef dans un champ `V:`** (`552bff8`, `83c161d`). Un `clef=treble-8`
-   déclaré dans un `V:` n'était pas appliqué aux hauteurs (seul `K:` l'était) :
-   la note lue était un octave trop haut, l'écrivain compensait, et l'aller-retour
-   montait d'un octave par passe (`G4 → g4 → g'4`). On applique maintenant la
-   **différence** entre la clef du `V:` et celle déjà appliquée par le `K:`, pour
-   ne pas la compter deux fois quand les deux déclarent la même clef (cas
-   `K:… clef=treble-8` + `V:1 … clef=treble-8`, qui perdait jusqu'à 87 % des
-   hauteurs). ABC 2.1 § 4.6. Test réduit `abc_ecriture_clef_voix_octave.rs`.
-2. **Armure absorbée par le champ de clef** (`9b590b34`). Un changement d'armure
-   et de clef au même tick écrivait `[K:G]` puis `[K:G clef=treble]` : le champ de
-   clef contient déjà l'armure. Test réduit `abc_ecriture_clef_cle_duplique.rs`.
+1. **Clef octave in a `V:` field** (`552bff8`, `83c161d`). A `clef=treble-8`
+   declared in a `V:` was not applied to pitches (only `K:` was): the note read
+   was an octave too high, the writer compensated, and the round trip rose by an
+   octave per pass (`G4 → g4 → g'4`). We now apply the **difference** between the
+   `V:` clef and the clef already applied by `K:`, so it is not counted twice
+   when both declare the same clef (the `K:… clef=treble-8` + `V:1 … clef=treble-8`
+   case lost up to 87 % of pitches). ABC 2.1 § 4.6. Reduced test
+   `abc_ecriture_clef_voix_octave.rs`.
+2. **Key absorbed by the clef field** (`9b590b34`). A key and clef change at the
+   same tick wrote `[K:G]` then `[K:G clef=treble]`: the clef field already
+   carries the key. Reduced test `abc_ecriture_clef_cle_duplique.rs`.
 
-### Stabilité de l'aller-retour
+### Round-trip stability
 
-`.abc → scoretk → .abc → scoretk` : **173 → 213 fichiers stables / 244**
-(corpus 54, mscz **140**, xml **19**), soit **+40 gains et 0 régression de
-stabilité** sur cette passe. L'octave de clef `V:` explique la quasi-totalité
-des gain (les familles `Les anges`, `Sicut locutus`, `Stella maris`, `Omni die`,
-`Ave Verum`, `Sancta Maria Lux`).
+`.abc → scoretk → .abc → scoretk`: **173 → 213 stable files / 244**
+(corpus 54, mscz **140**, xml **19**), that is **+40 gains and 0 stability
+regression** in this pass. The `V:` clef octave accounts for nearly all of the
+gains (the `Les anges`, `Sicut locutus`, `Stella maris`, `Omni die`, `Ave Verum`,
+`Sancta Maria Lux` families).
 
-### Pertes restantes, classées
+### Remaining losses, classified
 
-- **Deux fichiers xml perdent quelques points** N1/N2d (`Sancta_Maria_KV_273`,
-  `Tibie_Paiom`) : il s'agit de voix à clef d'octave dont la compensation
-  résiduelle n'est pas entièrement reproduite à la relecture. Perte maximale
-  3,4 points de N1, sans perte de stabilité ; aucun autre fichier ne régresse.
-  Cause documentée pour une passe ultérieure (ABC 2.1 § 4.6).
-- **`.abc` instables restants (31)** : famille `Minuit chrétien` (9), où une
-  mesure écrite 12/8 est relue à 13/8 et gagne un `z` à chaque passe (mesure 27
-  du fichier source, origine du croche surnuméraire non encore isolée) ;
-  microfiches d'armure/altération sur `Vingt_danses_enfantines` (3) et
-  `copypaste_parts` (1) ; combinaisons diverses.
-- **Vraies pertes d'écriture mscz (16)** : 4 sont des échecs du lecteur MuseScore
-  (partitions 2.x, hors portée de l'écriture) ; les autres sont des décalages
-  d'attaque liés aux mesures courtes/anacrouses et au regroupement des voix,
-  où `xml2abc.py` écrit des `z` explicites et des retours `$` (`doMaat`, ligne
-  674) que le port n'émet pas encore. Aucune hauteur n'est perdue sur la plupart
-  (N1 = 100 %). Cause documentée, non corrigée dans cette passe.
+- **Two xml files lose a few N1/N2d points** (`Sancta_Maria_KV_273`,
+  `Tibie_Paiom`): these are voices with octave clefs whose residual compensation
+  is not fully reproduced on re-reading. Maximum loss 3.4 N1 points, with no
+  stability loss; no other file regresses. Cause documented for a later pass
+  (ABC 2.1 § 4.6).
+- **Remaining unstable `.abc` (31)**: `Minuit chrétien` family (9), where a
+  measure written 12/8 is re-read as 13/8 and gains a `z` on each pass (measure
+  27 of the source file, origin of the extra eighth not yet isolated);
+  key/accidental micro-fields on `Vingt_danses_enfantines` (3) and
+  `copypaste_parts` (1); miscellaneous combinations.
+- **Real mscz writing losses (16)**: 4 are MuseScore reader failures (2.x
+  scores, out of scope for writing); the others are attack shifts linked to
+  short/pickup measures and voice grouping, where `xml2abc.py` writes explicit
+  `z` and `$` line breaks (`doMaat`, line 674) that the port does not emit yet.
+  Most lose no pitch (N1 = 100 %). Cause documented, not fixed in this pass.
