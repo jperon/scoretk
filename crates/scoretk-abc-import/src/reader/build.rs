@@ -116,9 +116,19 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
                 segment.set_element(track, SegmentItem::KeySig(key_at(voice, index)));
                 measure.add_segment(segment);
             }
+            // A K:/V: clef change after the first measure is a mid-tune
+            // clef (`abc2xml.py:1734-1744` writes one `<clef>` per field).
+            // Use `SegmentType::Clef` so the exporter's `writeElement` path
+            // emits it; `HeaderClef` is only read for the first measure
+            // (`exportmusicxml.rs::clef_at_start`). ABC 2.1 §4.6.
             if index == 0 || clef_at(voice, index) != clef_at(voice, index - 1) {
                 if let Some(clef) = clef_at(voice, index) {
-                    let mut segment = Segment::new(SegmentType::HeaderClef, start, staff_count);
+                    let kind = if index == 0 {
+                        SegmentType::HeaderClef
+                    } else {
+                        SegmentType::Clef
+                    };
+                    let mut segment = Segment::new(kind, start, staff_count);
                     segment.set_element(track, SegmentItem::Clef(Clef::new(clef)));
                     measure.add_segment(segment);
                 }
