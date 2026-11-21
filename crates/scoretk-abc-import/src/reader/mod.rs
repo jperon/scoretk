@@ -983,16 +983,25 @@ impl Reader {
                     for voice in &mut self.voices {
                         voice.schedule_clef(clef);
                     }
-                }
-                if delta != 0 {
+                    // `abc2xml.py::doClef` (lignes 1730-1738) repose
+                    // `s.gtrans = gtrans` : le décalage d'octave est **absolu**,
+                    // pas un incrément global. Une voix dont le `V:` porte
+                    // `clef=treble-8` a déjà reçu -12 : un `[K:… clef=bass]`
+                    // doit le lui retirer, alors que `delta` (clef du `K:`
+                    // global) vaut 0. Calculer l'écart depuis la clef courante
+                    // de chaque voix, même quand le décalage global est nul.
                     for (voice, previous) in self.voices.iter_mut().zip(previous_clefs) {
                         // A voice already on the new clef (e.g. from V:) has
                         // already received this shift.
-                        if new_clef.is_some_and(|clef| previous == Some(clef)) {
+                        if previous == Some(clef) {
                             continue;
                         }
-                        voice.transpose += delta;
+                        let voice_old = previous
+                            .map_or(old_shift, |clef| 12 * i32::from(clef.octave_change()));
+                        voice.transpose += new_shift - voice_old;
                     }
+                }
+                if delta != 0 {
                     self.midi_transpose += delta;
                 }
             }
@@ -1330,6 +1339,20 @@ mod clef_octave_tests {
             crate::reader::read_abc("X:1\nM:4/4\nL:1/4\nK:C\n[K: treble+8]C4|\n").expect("lecture");
         let pitches: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
         assert_eq!(pitches, vec![72], "hauteurs: {:?}", pitches);
+    }
+
+    /// `abc2xml.py::doClef` (ligne 1730) pose `s.gtrans = gtrans` de façon
+    /// absolue : un `[K: clef=bass]` en cours d'air annule le `-8` d'un
+    /// `V:1 clef=treble-8`. Le port ne recalculait que l'écart global et
+    /// laissait la voix un octave trop bas après le changement de clef.
+    #[test]
+    fn changement_de_clef_annule_octave_de_la_voix() {
+        let score = crate::reader::read_abc(
+            "X:1\nM:4/4\nL:1/4\nK:C\nV:1 clef=treble-8\nC4|\n[K:C clef=bass]C4|\n",
+        )
+        .expect("lecture");
+        let pitches: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+        assert_eq!(pitches, vec![48, 60], "hauteurs: {:?}", pitches);
     }
 }
 
