@@ -1050,6 +1050,7 @@ fn read_repeats(
             text: String::new(),
             placement,
             track,
+            visible: true,
         }));
     } else if let Some(label) = coda {
         mark = Some(RepeatMark::Marker(Marker {
@@ -1058,6 +1059,7 @@ fn read_repeats(
             text: String::new(),
             placement,
             track,
+            visible: true,
         }));
     } else if fine {
         mark = Some(RepeatMark::Marker(Marker {
@@ -1070,6 +1072,7 @@ fn read_repeats(
             },
             placement,
             track,
+            visible: true,
         }));
     } else if let Some(label) = to_coda {
         mark = Some(RepeatMark::Marker(Marker {
@@ -1082,6 +1085,7 @@ fn read_repeats(
             },
             placement,
             track,
+            visible: true,
         }));
     } else if da_capo {
         let (kind, play_until) = jump_kind(&text, true);

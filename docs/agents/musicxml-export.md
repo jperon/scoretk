@@ -426,5 +426,18 @@ ce cas et le C++ ignore l'annotation ; notre `annotations_without_note` l'écriv
 Les annotations sans note restent exportées (conformité du corpus préservée),
 seuls les tempos invisibles sont ignorés sur ces segments. Test réduit écrit
 d'abord, échouant avant le correctif. Oracle ciblé : **4 gains, 0 perte**
-(3→0, 8→0, 1→0, 63→58). Les 2 cas `segno` restent à examiner séparément.
+(3→0, 8→0, 1→0, 63→58). Les 2 cas `segno` sont traités en §22.
+
+
+## 22. `sound segno` (2 fichiers) — marqueurs invisibles
+
+`directionMarker` (`exportmusicxml.cpp:6354-6365`) n'écrit un
+`<direction><direction-type><segno/></…>` que si `canWrite(marker)` est vrai ;
+pour un marqueur invisible (`<visible>0</visible>`), il n'écrit que
+`<sound segno="…"/>`. Nos lectures 2.x/3.x/4.x ne portaient pas la visibilité
+du `Marker`, et l'export écrivait toujours le `<direction>`, décalant la
+première différence. `Marker::visible` est ajouté et lu par les trois lecteurs ;
+l'export écrit le `<sound>` seul pour un marqueur invisible. Test réduit écrit
+d'abord, échouant avant le correctif. Oracle ciblé : 7→6 et 314→306 lignes
+divergentes, 0 perte.
 

@@ -63,6 +63,10 @@ pub(crate) fn read_marker(node: &Node, staff: usize) -> Marker {
             .unwrap_or_default(),
         placement,
         track: measure_track(staff),
+        visible: node
+            .child("visible")
+            .and_then(Node::int_text)
+            .is_none_or(|value| value != 0),
     }
 }
 

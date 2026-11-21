@@ -458,6 +458,36 @@ fn sound(out: &mut Out, attributes: &[(&str, &str)]) {
 
 /// Écrit un marqueur (`directionMarker`).
 fn direction_marker(out: &mut Out, marker: &Marker, kind: MarkerType, jumps: &[&Jump]) {
+    // `directionMarker` (`exportmusicxml.cpp:6354-6365`) : `canWrite(marker)`
+    // est faux pour un marqueur invisible, donc seul le `<sound>` est écrit.
+    if !marker.visible {
+        let label = if marker.label.is_empty() {
+            "1"
+        } else {
+            marker.label.as_str()
+        };
+        match kind {
+            MarkerType::VarSegno | MarkerType::Segno => sound(out, &[("segno", label)]),
+            MarkerType::VarCoda | MarkerType::Coda | MarkerType::Codetta => {
+                sound(out, &[("coda", label)]);
+            }
+            MarkerType::Fine => sound(out, &[("fine", "yes")]),
+            MarkerType::ToCoda
+            | MarkerType::ToCodaSym
+            | MarkerType::DaCoda
+            | MarkerType::DaDoubleCoda => {
+                sound(
+                    out,
+                    &[(
+                        "tocoda",
+                        find_coda_label(jumps, &marker.label).unwrap_or("1"),
+                    )],
+                );
+            }
+            MarkerType::User => {}
+        }
+        return;
+    }
     let placement = placement_name(marker.placement);
     match kind {
         MarkerType::VarSegno | MarkerType::Segno => {
@@ -688,7 +718,38 @@ mod tests {
             text: text.to_owned(),
             placement: Placement::Above,
             track,
+            visible: true,
         })
+    }
+
+    /// `directionMarker` (`exportmusicxml.cpp:6354-6365`) : un marqueur
+    /// invisible (`<visible>0</visible>`) n'écrit que `<sound segno="…"/>`,
+    /// sans `<direction><direction-type><segno/></…>`. Cas réels : Les anges
+    /// dans nos campagnes (54) et Vingt danses enfantines (173).
+    #[test]
+    fn marqueur_segno_invisible_sans_direction() {
+        let mut score = Score::new();
+        let track = portee(&mut score);
+        let first = ajouter_mesure(&mut score, 0, track);
+        let marker = Marker {
+            kind: MarkerType::Segno,
+            label: "segno".to_owned(),
+            text: "segno".to_owned(),
+            placement: Placement::Above,
+            track,
+            visible: false,
+        };
+        score.measures[first].repeat_marks = vec![RepeatMark::Marker(marker)];
+
+        let xml = export_musicxml(&score).expect("export");
+        assert!(
+            xml.contains("<sound segno=\"segno\"/>"),
+            "son du segno perdu :\n{xml}"
+        );
+        assert!(
+            !xml.contains("<segno/>"),
+            "direction du segno invisible écrite à tort :\n{xml}"
+        );
     }
 
     #[test]

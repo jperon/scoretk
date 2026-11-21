@@ -71,6 +71,10 @@ pub(super) fn read_marker(element: &Element, staff_index: usize) -> Marker {
             .unwrap_or_default(),
         placement: placement(element.child("placement")),
         track: measure_track(staff_index),
+        visible: element
+            .child("visible")
+            .and_then(Element::int)
+            .is_none_or(|value| value != 0),
     }
 }
 

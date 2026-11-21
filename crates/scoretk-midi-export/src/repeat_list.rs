@@ -1015,6 +1015,7 @@ mod tests {
             text: "Segno".into(),
             placement: Placement::Above,
             track: Track::from_raw(0),
+            visible: true,
         }
     }
 

@@ -117,6 +117,9 @@ pub struct Marker {
     pub placement: Placement,
     /// Piste d'attache (`staffIdx * VOICES`, comme `MeasureRead`).
     pub track: Track,
+    /// Visibilité du marqueur (`<visible>0</visible>`) : un marqueur invisible
+    /// n'écrit que son `<sound>`, sans `<direction>` (`exportmusicxml.cpp:6354`).
+    pub visible: bool,
 }
 
 /// Type d'un saut.
