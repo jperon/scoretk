@@ -35,6 +35,17 @@ CATEGORIES = (
     "harmony", "repeats", "voltas", "keys", "times", "clefs", "voices",
 )
 
+# `abc2xml.py:2426-2445` creates one MusicXML part per ABC voice, and
+# `abc2xml.py:2423` gives every part a default K:/M:. Elements that live in
+# `<attributes>` or in a part's barlines (key, time, clef, repeat, ending)
+# are therefore emitted once per voice by the alternative, whereas scoretk
+# groups the voices into one part. Compare those categories per part so the
+# count does not measure the part layout instead of the musical content.
+# Note-level categories (slurs, ties, tuplets, graces, decorations, harmony,
+# lyrics) are written once per event regardless of the part layout and keep
+# their raw counts.
+PER_PART = ("keys", "times", "clefs", "repeats", "voltas")
+
 
 def features(path):
     """Compteurs des catégories N3 d'un document MusicXML partwise."""
@@ -43,6 +54,7 @@ def features(path):
         root = ET.parse(path).getroot()
     except (ET.ParseError, OSError):
         return out
+    out["parts"] = sum(1 for _ in root.iter("part"))
     for part in root.iter("part"):
         voices = set()
         for element in part.iter():
@@ -91,15 +103,21 @@ def main():
     target = os.path.join(args.out, "n3.tsv")
     with open(target, "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t")
-        writer.writerow(("lot", "id", "fichier", "x", "categorie", "scoretk", "alternatif"))
+        writer.writerow(("lot", "id", "fichier", "x", "categorie",
+                         "scoretk", "alternatif", "scoretk_voice", "alternatif_voice"))
         for row in rows:
             base = os.path.join(args.out, "brut", row["id"])
             tk = features(os.path.join(base, "score.musicxml"))
             alt = features(os.path.join(base, "alt", "air.xml"))
             for category in CATEGORIES:
                 if tk[category] or alt[category]:
+                    if category in PER_PART:
+                        tkv = round(tk[category] / max(tk["parts"], 1))
+                        altv = round(alt[category] / max(alt["parts"], 1))
+                    else:
+                        tkv, altv = tk[category], alt[category]
                     writer.writerow((row["lot"], row["id"], row["fichier"], row["x"],
-                                     category, tk[category], alt[category]))
+                                     category, tk[category], alt[category], tkv, altv))
     print(f"N3 : {target}")
 
 
