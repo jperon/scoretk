@@ -3907,7 +3907,8 @@ differences with the MuseScore model, documented in §20.
 `--mode model` on the final state: the oracle's reference is the pivot model
 exported from the source; both candidates start from the same model and are
 re-read by scoretk. One unsupported input is excluded (the Pachelbel accordion
-arrangement, exit code 3). LilyPond 2.27.0 compiles both candidates.
+arrangement, exit code 3). The oracle compiles with LilyPond 2.26.0 (its
+`nix-shell -p lilypond`); the system binary used for manual checks is 2.27.0.
 
 | Lot | Tool | Files | Compiled | Exact | N1 % | N2 % | N2d % | Errors | Warn. | Mean bytes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -4066,3 +4067,11 @@ missing LilyPond construct:
   Removing the `\once \stemUp`/`\stemDown` overrides makes them disappear but
   would discard MuseScore's stem directions; no note is affected, so they are
   kept.
+
+This is the final status: the last investigation round changed no exported
+music. The dynamic-event placement experiment above was reverted after
+measurement showed it traded four messages on one file for new warnings on
+three others, so the table remains the measurement of the shipped writer.
+All remaining losses and messages have a documented cause in the sections
+above; none is an unexplained per-file regression (the per-file comparison
+with the pre-campaign run shows 16 gains and 0 losses).
