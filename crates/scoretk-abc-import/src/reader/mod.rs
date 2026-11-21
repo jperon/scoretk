@@ -249,19 +249,6 @@ fn field_value(line: &Line) -> Option<(char, &str)> {
     Some((letter, trimmed[offset..].trim()))
 }
 
-/// Décalage en demi-tons d'un suffixe de clef ABC (`+8` = un octave,
-/// `-15` = deux octaves vers le bas), d'après `abc2xml.py::doClef`
-/// (lignes 1736-1744) et la norme ABC 2.1 §4.1.
-fn clef_octave_semitones(token: &str) -> Option<i32> {
-    let token = token.trim().to_ascii_lowercase();
-    for (suffix, octaves) in [("+15", 2), ("-15", -2), ("+8", 1), ("-8", -1)] {
-        if token.ends_with(suffix) {
-            return Some(octaves * 12);
-        }
-    }
-    None
-}
-
 /// Définition d'une voix `V:`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct VoiceFields {
@@ -944,72 +931,44 @@ impl Reader {
                 // toutes les hauteurs d'un ou deux octaves (`s.gtrans`).
                 // Le champ peut être nu (`K: treble+8`) ou en paramètre
                 // `clef=treble+8` : ne traiter que les Jetons sans `=`.
-                // Snapshot the clefs before the loops below change them: a
-                // voice already on the new octave clef has received its shift
-                // from the `V:` field and must not receive it twice.
+                // A K: clef change carries an absolute octave shift, not an
+                // increment: `[K:... clef=treble-8]` then `[K:... clef=treble]`
+                // must cancel out. Applying -12 every time treble-8 reappears
+                // accumulated -48 and made later notes negative (Veni veni
+                // Emmanuel). ABC 2.1 §4.6; `abc2xml.py::doClef` lines 1736-1744.
                 let previous_clefs: Vec<_> = self.voices.iter().map(|voice| voice.clef).collect();
-                let mut octave_shift = 0;
-                for token in value.split_whitespace() {
-                    if token.contains('=') {
-                        continue;
-                    }
-                    if let Some(shift) = clef_octave_semitones(token) {
-                        octave_shift += shift;
-                        if let Some(clef) = pitch::parse_clef(token) {
-                            self.default_clef = Some(clef);
-                            for voice in &mut self.voices {
-                                if voice.clef != Some(clef) {
-                                    voice.schedule_clef(clef);
-                                }
-                            }
-                        }
-                    }
-                }
-                for (name, value) in &parsed.parameters {
-                    if name == "clef" {
-                        if let Some(shift) = clef_octave_semitones(value) {
-                            octave_shift += shift;
-                        }
-                        if let Some(clef) = pitch::parse_clef(value) {
-                            self.default_clef = Some(clef);
-                            for voice in &mut self.voices {
-                                if voice.clef != Some(clef) {
-                                    voice.schedule_clef(clef);
-                                }
-                            }
-                        }
+                let old_shift = self
+                    .default_clef
+                    .map_or(0, |clef| 12 * i32::from(clef.octave_change()));
+                let new_clef = parsed
+                    .parameters
+                    .iter()
+                    .find(|(name, _)| name == "clef")
+                    .and_then(|(_, value)| pitch::parse_clef(value))
+                    .or_else(|| {
+                        value
+                            .split_whitespace()
+                            .find(|token| pitch::parse_clef(token).is_some())
+                            .and_then(pitch::parse_clef)
+                    });
+                let new_shift = new_clef.map_or(0, |clef| 12 * i32::from(clef.octave_change()));
+                let delta = new_shift - old_shift;
+                if let Some(clef) = new_clef {
+                    self.default_clef = Some(clef);
+                    for voice in &mut self.voices {
+                        voice.schedule_clef(clef);
                     }
                 }
-                if octave_shift != 0 {
-                    let new_clef = parsed
-                        .parameters
-                        .iter()
-                        .find(|(name, _)| name == "clef")
-                        .and_then(|(_, value)| pitch::parse_clef(value))
-                        .or_else(|| {
-                            value
-                                .split_whitespace()
-                                .find(|token| pitch::parse_clef(token).is_some())
-                                .and_then(pitch::parse_clef)
-                        });
-                    // A voice already on this clef (e.g. from its `V:` field)
-                    // has already received the octave shift: do not apply it
-                    // a second time for a redundant inline `[K: clef=...]`.
-                    let had_voices = !previous_clefs.is_empty();
-                    let mut applied_any = false;
+                if delta != 0 {
                     for (voice, previous) in self.voices.iter_mut().zip(previous_clefs) {
+                        // A voice already on the new clef (e.g. from V:) has
+                        // already received this shift.
                         if new_clef.is_some_and(|clef| previous == Some(clef)) {
                             continue;
                         }
-                        voice.transpose += octave_shift;
-                        applied_any = true;
+                        voice.transpose += delta;
                     }
-                    // No voices yet: the shift must go to midi_transpose so
-                    // voices declared later inherit it. With voices already
-                    // present but none needing the shift, it is redundant.
-                    if applied_any || !had_voices {
-                        self.midi_transpose += octave_shift;
-                    }
+                    self.midi_transpose += delta;
                 }
             }
             'V' => {
