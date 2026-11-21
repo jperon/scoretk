@@ -137,7 +137,16 @@ pub(crate) fn render_body(
                         // `measureLength` garde la mesure réelle, sinon
                         // LilyPond signale un contrôle de mesure raté.
                         let mut command = format!("\\time {}/{}", time.numerator, time.denominator);
-                        if time.measure_len() != measure.len && measure.len.is_positive() {
+                        // Une première mesure raccourcie par `\partial` ne
+                        // doit pas poser `measureLength` : LilyPond garderait
+                        // cette longueur pour toutes les mesures qui suivent.
+                        let levee_partielle = measure_index == 0
+                            && measure.len.is_positive()
+                            && measure.len < measure.nominal_len;
+                        if !levee_partielle
+                            && time.measure_len() != measure.len
+                            && measure.len.is_positive()
+                        {
                             command.push_str(&format!(
                                 " \\set Timing.measureLength = #{}/{}",
                                 measure.len.numerator(),
@@ -1350,6 +1359,39 @@ mod tests {
         assert_eq!(items.len(), 3);
         // Les trois noires du triolet durent 1/6 chacune, pas 1/4.
         assert_eq!(items[2].end_tick, Fraction::new(1, 2));
+    }
+
+    /// Une première mesure raccourcie par `\partial` ne doit pas poser
+    /// `Timing.measureLength` sur le `\\time` : LilyPond garderait cette
+    /// longueur pour toutes les mesures suivantes.
+    #[test]
+    fn mesure_partielle_ne_fixe_pas_measure_length() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Choeur", "Ch."));
+        score.add_staff(part);
+        let mut first = Measure::new(0, Fraction::ZERO, Fraction::new(3, 2));
+        first.nominal_len = Fraction::new(3, 2);
+        first.len = Fraction::new(1, 8);
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+        segment.set_element(
+            Track::from_raw(0),
+            SegmentItem::TimeSig(scoretk_core::model::TimeSig::new(6, 4)),
+        );
+        first.add_segment(segment);
+        score.add_measure(first);
+        let mut second = Measure::new(1, Fraction::new(3, 2), Fraction::new(3, 2));
+        second.nominal_len = Fraction::new(3, 2);
+        score.add_measure(second);
+        let structure = crate::structure::Structure {
+            before: vec![Vec::new(); 2],
+            after: vec![Vec::new(); 2],
+        };
+        let body = render_body(&score, &structure, 0, 0, 1);
+        assert!(
+            !body.contains("measureLength"),
+            "la mesure partielle ne doit pas figer measureLength : {}",
+            body
+        );
     }
 
     #[test]

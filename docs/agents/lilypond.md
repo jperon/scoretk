@@ -3762,3 +3762,16 @@ artificiellement plus de correspondances avec le MIDI tronqué.
 L'import LilyPond est considéré comme terminé : les causes au-dessus de
 0,3 point sont soit classées, soit corrigées. La campagne suivante porte sur
 l'écriture (`crates/scoretk-lilypond-export`).
+
+### Écriture : première mesure partielle et `Timing.measureLength`
+
+Le écrivain ajoutait `\set Timing.measureLength = #1/8` au `\time 6/4`
+quand la première mesure était raccourcie par `\partial`. LilyPond garde
+cette longueur pour les mesures suivantes : le réglage est trompeur et
+alourdit la sortie. Test `mesure_partielle_ne_fixe_pas_measure_length`
+(échoue avant : `\time 6/4 \set Timing.measureLength = #1/8 \partial 8`).
+Sur `00- Veni veni Emmanuel - chant piano.mscz` la sortie passe de 37 971 à
+37 376 octets (−595) sans changer le MIDI ni le N2 : le gain est en
+compacité, pas en notes — la perte de 493 notes de ce fichier est un artefact
+de notes à l'unisson (le MIDI LilyPond en fusionne une sur cinq, le MIDI
+MuseScore de référence les joue toutes, §20).
