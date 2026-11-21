@@ -1157,7 +1157,18 @@ impl<'a> Parser<'a> {
                     lyrics: Vec::new(),
                 };
                 let content = self.parse_music();
+                let vide = matches!(&content, Music::Sim(items) | Music::Seq(items) if items.is_empty())
+                    || matches!(&content, Music::Empty);
+                if vide {
+                    return None;
+                }
                 self.collect_staves(content, &mut group.staves, &mut group.lyrics);
+                if group.staves.is_empty() && group.lyrics.is_empty() {
+                    // Un groupe vide (`\new PianoStaff << >>`) n'engrave
+                    // aucune portée chez LilyPond : la déclarer créerait une
+                    // portée fantôme dans la partie MusicXML.
+                    return None;
+                }
                 if group.staves.is_empty() {
                     group.staves.push(StaffBlock::new());
                 }

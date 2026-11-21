@@ -5263,3 +5263,61 @@ fn transposition_a_partir_de_sa_declaration() {
         .expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![60, 59, 61, 62]);
 }
+#[test]
+fn export_concert_sans_transpose_de_partie() {
+    let score = read_lilypond(
+        r#"\version "2.24.0"
+\score {
+ \new StaffGroup <<
+  \new Staff { \transposition a \clef treble \key f \major \time 4/4
+    R1 <a' c''>2 <bes' d''> <g' bes'>2. <f' a'>4 }
+  \new PianoStaff << \new Staff { s1 } >>
+ >>
+ \midi {}
+}
+"#,
+    )
+    .expect("lecture");
+    let xml = scoretk_musicxml_export::export_musicxml(&score).expect("export");
+    let pitches: Vec<String> = xml
+        .split("<pitch>")
+        .skip(1)
+        .map(|fragment| {
+            let step = fragment
+                .split("<step>")
+                .nth(1)
+                .unwrap()
+                .chars()
+                .next()
+                .unwrap();
+            let octave = fragment
+                .split("<octave>")
+                .nth(1)
+                .unwrap()
+                .chars()
+                .next()
+                .unwrap();
+            let alter = if fragment.contains("<alter>1</alter>") {
+                "#"
+            } else {
+                ""
+            };
+            format!("{step}{alter}{octave}")
+        })
+        .collect();
+    assert_eq!(
+        pitches,
+        vec!["F#4", "A4", "G4", "B4", "E4", "G4", "D4", "F#4"]
+    );
+}
+
+/// Un `\new PianoStaff << >>` vide n'engrave aucune portée : le modèle ne
+/// doit en créer qu'une pour l'unique `\new Staff` portant la musique.
+#[test]
+fn groupe_de_portees_vide_ne_cree_pas_de_portee() {
+    let score = read_lilypond(
+        "\\score { \\new StaffGroup << \\new Staff { c'1 d'1 } \\new PianoStaff << >> >> }",
+    )
+    .expect("lecture");
+    assert_eq!(score.staves.len(), 1);
+}

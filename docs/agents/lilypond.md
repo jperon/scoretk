@@ -3349,3 +3349,36 @@ mécaniques identifiables ; les décalages restants nécessitent une réduction
 source par source et ne peuvent pas être réglés par une règle globale sans
 risquer de régressions. Aucun nouveau correctif global n'a été appliqué lors
 de cette passe, afin de ne pas introduire de perte par fichier.
+
+### Réduction mécanique de `violin_concerto_1`
+
+Un outil de comparaison couple MIDI LilyPond et MusicXML scoretk sur les
+attaques Q16 (`/tmp/ly95lect-check.py`), et un script d'isolement ne garde
+qu'une portée du `\score` à la fois. La dérive apparaît déjà sur la portée
+clarinette seule ; la réduction aboutit à :
+
+```lilypond
+\new StaffGroup <<
+  \new Staff { \transposition a \key f \major \time 4/4
+    R1 <a' c''>2 <bes' d''> <g' bes'>2. <f' a'>4 }
+  \new PianoStaff << >>
+>>
+```
+
+Le modèle est correct (66/69/67/71/64/67/62/66) mais l'export écrivait
+69/60/71/62/67/71/65/69 : avec une portée vide en plus de la portée
+transpositrice, la partie n'a pas de `<transpose>` et `write_pitch` utilisait
+le `tpc` écrit avec la hauteur concert. Le test
+`export_concert_sans_transpose_de_partie` échouait avant. L'export revient
+maintenant à la hauteur MIDI quand le tpc écrit ne redonne pas la hauteur du
+modèle ; le comportement MuseScore avec `<transpose>` est inchangé.
+
+Mesure complète, dénominateur constant : mus 97,38 %, ra 83,21 %, mut
+**88,89 %** ; quatorze gains `mut` et aucune perte, notamment
+`Symphony7_1` +3058 N2/+2333 N1, `Violin_Concerto_3` +1604/+1116,
+`Concerto_No3` +705/+356, `violin_concerto_1` +513/+995.
+
+Un `\new PianoStaff << >>` vide ne crée désormais plus de portée du tout
+(`parse_new_context` renvoie `None` pour un contenu `Sim`/`Seq` vide) : test
+`groupe_de_portees_vide_ne_cree_pas_de_portee`. Cette correction structurelle
+ne change aucune note du corpus.
