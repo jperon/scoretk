@@ -2001,6 +2001,45 @@ tuplets 5, harmony 2, graces 2). Tune-by-tune: **10 N3 entries improved**,
 per-voice counting above (now normalised per part in `n3.py`), the valid
 melisma representation, 3 oracle failures and 2 edge-case annotations.
 
+### ABC import: closing status (2026-11-21)
+
+The "voices 18" and decoration "oracle failures" were **scoretk errors**, not
+structural: all 18 tunes (and both decoration cases) failed with
+`en-tête ABC incomplet : K:`. The file list was `directives.test__abcMaxStaves`,
+`flattener.test__abcTripletChords`, `flattener.test__abcVolumeInChords`,
+`layout.test__abcMinSpacing`, `misc.test__abcBarNumberCrash`,
+`misc.test__abcDirectives`, `misc.test__abcDirectives2`,
+`misc.test__abcGlissando`, `misc.test__abcLineWidth`,
+`note.test__abcZeroLength`, `parsing.test__abc3`–`abc9` (X:360) and
+`tablature.test__extraVertical` — `abc2xml.py` succeeded on every one.
+ABC 2.1 §3.1 requires `K:`, but `abc2xml.py:2423` defaults `K:C treble`; the
+reader now accepts a music line without `K:` with that default and a warning
+(commit `4f0ed5d6`). The first token must look like music so a prose `N:`
+line mentioning notes is still skipped. Reduced test written first.
+
+**Final full campaign** (`target/n3-nok-final`, fresh `abc2xml.py` 269 in
+`target/abcchk/`, 1 402 files / 4 756 tunes):
+
+| Candidate | Exact N1 tunes | Notes correct | N1 % |
+| --- | ---: | ---: | ---: |
+| scoretk | **4 460** | 470 250 / 471 379 | **99.8 %** |
+| `abc2xml.py` | 4 406 | 469 976 / 471 379 | 99.7 % |
+
+N3 per-voice deficits: decorations 5, times 8, keys 12, clefs 2, graces 2,
+tuplets 4, repeats 22, voices 12, voltas 15, lyrics 10, harmony 0, slurs 0,
+ties 0. From the start of the ABC import campaign: decorations **661 → 5**,
+slurs **27 → 0**, keys keeps only the `abc2xml.py:2423` default-field cases.
+Tune-by-tune: **0 N1 exact losses, 0 gains, 0 note-count changes**.
+
+The remaining N3 deficits are all proven structural or representational:
+repeats/voltas come from `abc2xml.py:1911-1937,951` writing one barline per
+voice; voices from `abc2xml.py:2426-2445` one part per voice; lyrics from
+`abc2xml.py:1584,1607-1608` `<lyric><extend/></lyric>` versus the pivot's
+`Lyrics::melisma` duration; the few keys/times/clefs from the default field
+at `abc2xml.py:2423`; and 5 decorations are 3 oracle failures, an empty
+`<words/>`, and a D.C. annotation after the final bar. `n3.py` normalises
+the per-part categories. ABC import is complete.
+
 ## 27. Écriture ABC : mesure complète et deux correctifs (2026-11-21)
 
 ### 27.1 Oracle et protocole
