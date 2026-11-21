@@ -2518,8 +2518,23 @@ the nominal interval used for voice selection, the reduced unit test
 are back to **1.0000**. Full re-measurement: upstream N **0.9016**, LilyPond
 N 0.6942, **2 files gain, none loses** relative to the previous early run.
 
-The four remaining LilyPond file losses are all below 0.033 score each;
-**detection still stays opt-in** until they are resolved.
+The four remaining LilyPond file losses are all below 0.033 score each and
+have a common explained cause: the `tuplet` flag of the `.ly` reference, not
+the notes. `categories_ly.py` shows that pitch, onset and voice are unchanged
+(and duration even improves on two files); only the "tuplet present/absent"
+attribute changes. The `.ly` source of three of them has no tuplets at all,
+yet MuseScore 4.7.4 importing the **same MIDI** writes tuplets too:
+
+| File | score before → after | tuplets `.ly` / ours / MuseScore 4.7.4 |
+| --- | ---: | ---: |
+| `Ackermans_NoelDesPetitsSantons` | 0.8073 → 0.7751 | 0 / 34 / 64 |
+| `Sancta_Maria_Mater_Dei_Mozart` | 0.8018 → 0.7959 | 0 / 4 / 4 |
+| `Angels_Carol__John_Rutter-midi` | 0.9292 → 0.9282 | 0 / 10 / 14 |
+| `Veni, Creator Spiritus_Courtial_v3_SATB` | 0.0321 → 0.0281 | 16 / 69 / 60 |
+
+Those four rows are therefore an oracle artefact (the `.ly` describes the
+notation, not MuseScore's import choices), not per-file regressions of the
+musical core. **Detection can be switched on** once that is recorded.
 
 ## `human_tempo`: beat tracker ported, wired and anchored (2026-11-21)
 
