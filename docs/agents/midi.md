@@ -2455,3 +2455,22 @@ a per-file divergence without an explanation, so:
   voice/tuplet interplay (`importmidi_tuplet.cpp:533-575`,
   `assignVoices`) so that `timesig-09` produces no tuplet and `OSalutarisHostia`
   keeps MuseScore's notated durations.
+
+## `tuplet_off_time_other_bar2`: a spurious triplet, not `preserveLegato` (2026-11-21)
+
+The upstream row scored 0.8333 after the `dontSimplify` oracle fix. The first
+hypothesis — an end-of-note overlap that `preserveLegato`
+(`importmidi_quant.cpp:488-517`) should cut (2.677 against the next chord at
+2.667) — is **wrong**: the note's off time is quantised correctly. The file's
+attacks (0, 2.003, 2.667, 3.336, …) form a triplet grid, and the previous
+simplified detector accepted a 3:2 tuplet; `toDurationList` then split the note
+74 into 2/3-quarter fragments, giving 1.25 quarters instead of MuseScore's
+0.75 (the reference is built with `dontSimplify` + `V_1`, `midiimport_tests.cpp:79-92`).
+
+With the literal detector and `filterTuplets`, the tuplet no longer affects the
+durations (`--midi-tuplet-notation`, late insertion): the first fragment of note
+74 is 0.75 quarter and the upstream row reaches **1.0** within the oracle
+tolerance (0.25 quarter). Reduced test `tuplet_off_time.rs` (written first)
+checks the first fragment of note 74 at 2.0 quarters and that no longer
+fragment extends it. The default pipeline still scores 0.8333 until the tuplet
+insertion stage is decided (see the next section).
