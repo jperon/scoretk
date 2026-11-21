@@ -205,9 +205,16 @@ fn strip_comment(line: &str) -> &str {
 fn split_tunes(lines: &[Line]) -> Vec<Vec<Line>> {
     let mut tunes: Vec<Vec<Line>> = Vec::new();
     let mut current: Vec<Line> = Vec::new();
+    let mut seen_x = false;
     for line in lines {
-        if is_field(line, 'X') && !current.is_empty() {
+        // `abc2xml.py::splitHeaderVoices` (ligne 789) : le premier `X:` ouvre
+        // le premier air ; les champs globaux qui le précèdent (`M:`, `O:`,
+        // `R:`…) en font partie. Seul un `X:` suivant sépare un nouvel air.
+        if is_field(line, 'X') && seen_x && !current.is_empty() {
             tunes.push(std::mem::take(&mut current));
+        }
+        if is_field(line, 'X') {
+            seen_x = true;
         }
         current.push(line.clone());
     }
@@ -1139,6 +1146,37 @@ fn parse_tempo(text: &str) -> Option<(f64, String)> {
         return None;
     }
     Some((bpm / 60.0, label))
+}
+
+#[cfg(test)]
+mod preamble_tests {
+    use super::*;
+
+    /// `abc2xml.py::splitHeaderVoices` (ligne 789) : le premier `X:` ouvre le
+    /// premier air ; les champs globaux qui le précèdent (`M:`, `O:`, `R:`…)
+    /// appartiennent à cet air. Le port les traitait comme un air séparé,
+    /// sans `K:`, ce qui rejetait 8 airs entiers (English.abc, Reels.abc…).
+    #[test]
+    fn champs_globaux_avant_premier_x_appartiennent_au_premier_air() {
+        let text = "M:4/4\nO:Scottish\nR:Strathspey\n\nX:1\nT:Test\nK:D\ne<A A2|\n";
+        let lines = prepare(text);
+        let tunes = split_tunes(&lines);
+        assert_eq!(
+            tunes.len(),
+            1,
+            "airs: {:?}",
+            tunes.iter().map(|t| &t[0].text).collect::<Vec<_>>()
+        );
+        assert_eq!(tunes[0][0].text, "M:4/4");
+    }
+
+    /// Le deuxième `X:` ouvre bien un air distinct.
+    #[test]
+    fn deux_airs_avec_preambule() {
+        let text = "M:4/4\nX:1\nK:C\nC|\nX:2\nK:G\nG|\n";
+        let tunes = split_tunes(&prepare(text));
+        assert_eq!(tunes.len(), 2);
+    }
 }
 
 #[cfg(test)]
