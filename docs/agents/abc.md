@@ -1803,3 +1803,77 @@ conteneur générique `<notations>` dans les ornements (2 997 airs had fewer
 - **harmony** (2 manquants, 43 en excès) : les 2 manquants sont des échecs
   d'oracle partagés ; l'excès vient de l'interprétation de chaînes entre
   guillemets comme accords, que l'alternative traite comme du texte.
+
+## 27. Écriture ABC : mesure complète et deux correctifs (2026-11-21)
+
+### 27.1 Oracle et protocole
+
+`scripts/oracle/abc/ecriture.py` mesure, pour chaque source `S` des trois lots
+(56 `.mscx` versionnés, 174 `.mscz` de `~/Musique`, 32 vrais MusicXML) :
+
+- le `.abc` écrit par scoretk directement depuis `S` ;
+- celui de `xml2abc.py` 177 depuis le même MusicXML de référence (colonne
+  `xml_source` : `ref.musicxml`, export MuseScore, source XML, ou repli scoretk) ;
+- les deux sont joués par `abc2midi -silent -NGRA -NGUI` après le nettoyage
+  habituel (reprises et ornements retirés sur une copie), puis comparés au MIDI
+  de référence de `S` avec N1 (hauteurs), N2 (attaques), N2d (+ durées) sur la
+  grille 1/16 de noire ;
+- **nouveau** : aller-retour `.abc → scoretk → .abc → scoretk`, deux écritures
+  successives depuis le modèle relu comparées octet par octet (`rt_ok`,
+  `rt_stable`, résumé par lot). Taille du `.abc` relevée pour les deux outils.
+
+L'oracle a été étendu de la mesure d'aller-retour et ce changement est commité
+séparément (`cbe47d9`). Tout tourne sous `timeout 10 prlimit --as=2000000000`.
+
+### 27.2 Baseline (binaire `ly95-abc-export-base`)
+
+| Lot | Outil | Fichiers | ABC OK | N1 % | N2 % | N2d % | Taille .abc moy. |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 79.01 | 73.06 | 69.31 | 299 |
+| corpus | xml2abc | 56 | 56 | 78.96 | 68.23 | 64.79 | 338 |
+| mscz (174) | scoretk | 174 | 173 | 83.12 | 67.85 | 63.20 | 11 993 |
+| mscz (174) | xml2abc | 174 | 174 | 83.84 | 69.16 | 64.83 | 13 370 |
+| xml | scoretk | 32 | 32 | 92.99 | 31.14 | 27.21 | 12 548 |
+| xml | xml2abc | 32 | 32 | 93.11 | 27.19 | 24.28 | 13 516 |
+
+scoretk est déjà devant `xml2abc.py` sur la musiqueécrite (N2/N2d) sur le
+corpus et le lot XML, et produit des fichiers 7 à 13 % plus petits. Sur les
+174 `.mscz`, l'alternative reste légèrement devant (−0,7 pt de N1, −1,3 pt de
+N2d), surtout à cause des causes déjà diagnostiquées en § 17.5 (lecteur MuseScore
+1.x/2.x, mesures courtes, ornaments de la référence). L'aller-retour était en
+revanche très instable : corpus 31/56 stables, mscz 4/160, xml 2/28.
+
+### 27.3 Cause 1 — texte de tempo dupliqué (`24c1d3f`)
+
+`writer.rs::tempo_field` écrit le champ `Q:` avec le texte du tempo, et
+`voice.rs::annotation_token` réécrivait le même `Annotation::Tempo` en
+`"^texte"` sur la première note. La relecture créait alors un `StaffText` en
+plus du `Tempo`, et le texte était dupliqué à chaque aller-retour
+(`"^Tempo text""^Tempo text"…`). `xml2abc.py::doDirection` (lignes 1435-1478)
+écrit bien `Q:` depuis `<metronome>` et l'annotation depuis `<words>`, mais le
+modèle pivot fusionne les deux en un seul `Annotation::Tempo` : écrire les deux
+est une duplication. Test réduit `Q:"Tempo text" 1/4=120` écrit d'abord,
+échouant avant le correctif (2 occurrences au lieu de 1). 18 instantanés mis à
+jour (retrait du `"^texte"` de tempo). ABC 2.1 § 3.1.8.
+
+### 27.4 Cause 2 — nom de voix entre guillemets (`16e85f1`)
+
+`parse_voice_fields` (`reader/mod.rs`) découpait la valeur de `V:` avec
+`split_whitespace()` : `V:1 name="Voix 1" clef=treble` devenait `name="Voix"`,
+et l'écriture n'était pas stable. Un tokenizer respectant les guillemets
+restaure le nom complet (ABC 2.1 § 8.2 « Text strings »). Test réduit avec
+vérification de l'aller-retour, écrit d'abord et échouant avant le correctif.
+
+### 27.5 Campagne finale (binaire `ly95-abc-export-final`)
+
+| Lot | Outil | Fichiers | ABC OK | N1 % | N2 % | N2d % | Taille .abc moy. |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 79.01 | 73.06 | 69.31 | 295 |
+| mscz (174) | scoretk | 174 | 173 | 83.12 | 67.85 | 63.20 | 11 980 |
+| xml | scoretk | 32 | 32 | 92.99 | 31.14 | 27.21 | 12 518 |
+
+Les scores musicaux sont strictement inchangés (0 perte N1/N2/N2d sur les
+262 fichiers communs). L'aller-retour passe de **37 à 75 fichiers stables**
+(corpus 31 → 46, mscz 4 → 21, xml 2 → 8) avec **0 régression**, et la taille
+moyenne du `.abc** baisse encore légèrement. La comparaison par fichier avec
+`xml2abc.py` est inchangée (corpus 2/50/4, mscz 22/94/57, xml 8/16/8).
