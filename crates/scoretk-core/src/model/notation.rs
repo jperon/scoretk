@@ -246,6 +246,12 @@ pub struct Arpeggio {
     pub kind: ArpeggioType,
     /// Vrai si l'arpège est visible.
     pub visible: bool,
+    /// Vrai si l'arpège agit sur la lecture (`Arpeggio::playArpeggio`).
+    ///
+    /// LilyPond ne réalise pas `\arpeggio` au MIDI (pas de performeur
+    /// d'arpège) : son lecteur le laisse faux pour que l'écrivain MIDI ne
+    /// décale pas les notes, alors que MuseScore le joue.
+    pub play: bool,
 }
 
 impl Arpeggio {
@@ -254,6 +260,7 @@ impl Arpeggio {
         Self {
             kind,
             visible: true,
+            play: true,
         }
     }
 }

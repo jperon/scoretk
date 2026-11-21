@@ -137,6 +137,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     score.playback_transposition = document
         .playback_transposition
         .map(scoretk_core::model::PlaybackTransposition::new);
+    score.playback_articulate = document.playback_articulate;
     write_metadata(&mut score, document);
 
     let mut staves: Vec<StaffBuild> = Vec::new();
@@ -387,6 +388,35 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     place_repeats(&mut score, &staves);
     place_lyrics(&mut score, &staves, document.melisma_busy_disabled);
     link_ties(&mut score, &staves);
+    // LilyPond ne réalise pas \arpeggio au MIDI ; ses ornements ne sont
+    // développés que par `\articulate` (`ly/articulate.ly`), pas par le
+    // performeur de note (`lily/note-performer.cc`).
+    let staff_ids: Vec<scoretk_core::model::StaffId> =
+        score.staves.iter().map(|staff| staff.id).collect();
+    for staff in staff_ids {
+        for measure in &mut score.measures {
+            for segment in &mut measure.segments {
+                for voice in 0..scoretk_core::model::VOICES {
+                    let track = scoretk_core::model::Track::new(staff, voice as u8);
+                    let Some(chord_rest) = segment.chord_rest_mut(track) else {
+                        continue;
+                    };
+                    let scoretk_core::model::ChordRestKind::Chord(chord) = &mut chord_rest.kind
+                    else {
+                        continue;
+                    };
+                    if let Some(arpeggio) = &mut chord.arpeggio {
+                        arpeggio.play = false;
+                    }
+                    if !document.playback_articulate {
+                        for ornament in &mut chord.ornaments {
+                            ornament.play = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
     score
 }
 

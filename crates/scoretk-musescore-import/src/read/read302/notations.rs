@@ -201,6 +201,10 @@ pub(crate) fn read_arpeggio(node: &Node) -> Arpeggio {
         .child("visible")
         .and_then(Node::int_text)
         .is_none_or(|value| value != 0);
+    arpeggio.play = node
+        .child("play")
+        .and_then(Node::int_text)
+        .is_none_or(|value| value != 0);
     arpeggio
 }
 

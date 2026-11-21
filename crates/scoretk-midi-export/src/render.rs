@@ -1420,6 +1420,7 @@ fn render_chord(
     trailtime += acciaccatura_trail(next_chord, duration);
 
     let length = (1000 - trailtime).max(0) * gate / 100;
+    let slurred = slurred_at(score, staff, source_tick);
     let on = utick + ticks * ontime / 1000;
     let velocity_base = velocities.val(track, source_tick);
 
@@ -1440,7 +1441,7 @@ fn render_chord(
     // (durée liée de la note supérieure) ; chaque note est retardée de
     // `pas × rang × 1000 / playTicks` millièmes, sans `gateTime` : toutes
     // finissent à la fin de l'accord.
-    let arpeggio_delays = chord.arpeggio.map(|arpeggio| {
+    let arpeggio_delays = chord.arpeggio.filter(|arpeggio| arpeggio.play).map(|arpeggio| {
         let note_count = chord.notes.len() as i64;
         let mut order: Vec<usize> = (0..chord.notes.len()).collect();
         order.sort_by_key(|index| score.notes[chord.notes[*index].index()].pitch);
@@ -1694,7 +1695,12 @@ fn render_chord(
             }
             continue;
         }
-        let mut off = on + ticks * length / 1000 - 1;
+        let mut note_length = length;
+        if score.playback_articulate {
+            let (numerator, denominator) = articulate_factor(chord, slurred);
+            note_length = note_length * numerator / denominator;
+        }
+        let mut off = on + ticks * note_length / 1000 - 1;
         // Prolongation des liaisons : chaque note liée ajoute sa durée.
         off += tie_length(score, staff, note, instrument, source_tick);
         out.push(Event {
@@ -2053,6 +2059,39 @@ fn chord_velocity_multiplier(chord: &Chord, instrument: &Instrument) -> f64 {
     multiplier
 }
 
+/// Vrai si `source_tick` tombe sous une liaison d'expression de la portée.
+fn slurred_at(score: &Score, staff: &scoretk_core::model::Staff, source_tick: i64) -> bool {
+    score.spanners.iter().any(|spanner| {
+        matches!(spanner.kind, SpannerType::Slur)
+            && spanner.start.track.staff() == staff.id
+            && segment_tick(spanner.start.tick) <= source_tick
+            && source_tick < segment_tick(spanner.end.tick)
+    })
+}
+
+/// Facteur de durée de `\articulate` (`ly/articulate.ly`).
+///
+/// Défaut 7/8 ; staccato 1/2 (3/4 sous liaison), staccatissimo 1/4, portato
+/// 3/4, tenuto 1. Une note sous liaison sans articulation n'est pas raccourcie.
+fn articulate_factor(chord: &Chord, slurred: bool) -> (i64, i64) {
+    let has = |kind: ArticulationType| chord.articulations.iter().any(|a| a.kind == kind);
+    if has(ArticulationType::Staccatissimo) {
+        (1, 4)
+    } else if has(ArticulationType::Staccato) {
+        if slurred {
+            (3, 4)
+        } else {
+            (1, 2)
+        }
+    } else if has(ArticulationType::Portato) {
+        (3, 4)
+    } else if has(ArticulationType::Tenuto) || slurred {
+        (1, 1)
+    } else {
+        (7, 8)
+    }
+}
+
 /// Durée de tenue de l'accord (`gateTime`, `updateGateTime`).
 fn gate_time(
     score: &Score,
@@ -2061,13 +2100,13 @@ fn gate_time(
     chord: &Chord,
     source_tick: i64,
 ) -> i64 {
+    // `\articulate` remplace le système de `gateTime` de MuseScore par ses
+    // propres facteurs (`ly/articulate.ly`) : la durée de base reste pleine.
+    if score.playback_articulate {
+        return 100;
+    }
     // Sous une liaison d'expression, la durée reste pleine.
-    let slurred = score.spanners.iter().any(|spanner| {
-        matches!(spanner.kind, SpannerType::Slur)
-            && spanner.start.track.staff() == staff.id
-            && segment_tick(spanner.start.tick) <= source_tick
-            && source_tick < segment_tick(spanner.end.tick)
-    });
+    let slurred = slurred_at(score, staff, source_tick);
     let mut gate = 100;
     if !slurred {
         if let Some(default) = instrument

@@ -136,6 +136,14 @@ pub struct Score {
     /// `None` pour toutes les autres sources. Ignoré par tous les écrivains
     /// sauf l'écrivain MIDI : la partition gravée reste la référence du modèle.
     pub playback_transposition: Option<PlaybackTransposition>,
+    /// La partition est enveloppée dans `\articulate` (`ly/articulate.ly`).
+    ///
+    /// LilyPond remplace alors chaque note par une note plus courte et un
+    /// silence : facteur 7/8 par défaut, 1/2 pour un staccato, 1/4 pour un
+    /// staccatissimo, 3/4 pour un portato ou un staccato sous liaison, 1 pour
+    /// un tenuto. Seul l'écrivain MIDI s'en sert ; les autres écrivains
+    /// gardent la partition gravée.
+    pub playback_articulate: bool,
     /// Arène des notes.
     pub notes: Vec<Note>,
     /// Arène des n-olets.
@@ -170,6 +178,7 @@ impl Score {
             credits: Vec::new(),
             tbox_texts: Vec::new(),
             playback_transposition: None,
+            playback_articulate: false,
             notes: Vec::new(),
             tuplets: Vec::new(),
             spanners: Vec::new(),

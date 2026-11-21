@@ -634,6 +634,7 @@ dependencies = [
  "midly",
  "quick-xml",
  "scoretk-core",
+ "scoretk-lilypond-import",
  "scoretk-midi-common",
  "scoretk-midi-import",
  "scoretk-musescore-import",

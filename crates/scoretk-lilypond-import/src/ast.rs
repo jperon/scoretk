@@ -508,6 +508,9 @@ pub(crate) struct Document {
     /// (Notation Reference §1.2.2, §24.3). `None` sinon : seul l'écrivain MIDI
     /// s'en sert, les autres écrivains gardent la partition gravée.
     pub playback_transposition: Option<i32>,
+    /// `\articulate` a été rencontré : l'écrivain MIDI applique les facteurs
+    /// de `ly/articulate.ly`.
+    pub playback_articulate: bool,
     /// `\set melismaBusyProperties = #'()` a été lu : `\lyricsto` ne saute
     /// alors aucune note. Par défaut, les notes sous une liaison
     /// d'expression et les continuations de liaison sont sautées.

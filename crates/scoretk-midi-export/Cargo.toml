@@ -26,3 +26,4 @@ scoretk-musicxml-import = { path = "../scoretk-musicxml-import" }
 quick-xml = { workspace = true }
 # `roundtrip_midi` exerce les deux sens : dépendance de test uniquement.
 scoretk-midi-import = { path = "../scoretk-midi-import" }
+scoretk-lilypond-import = { path = "../scoretk-lilypond-import" }

@@ -212,6 +212,10 @@ pub(crate) fn read_arpeggio(element: &Element) -> Arpeggio {
         .child("visible")
         .and_then(Element::int)
         .is_some_and(|value| value == 0);
+    arpeggio.play = !element
+        .child("play")
+        .and_then(Element::int)
+        .is_some_and(|value| value == 0);
     arpeggio
 }
 

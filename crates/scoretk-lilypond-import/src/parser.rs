@@ -69,6 +69,8 @@ pub(crate) struct Parser<'a> {
     partitions: Vec<Partition>,
     /// `\transposition` trouvé dans le bloc `\midi` de la partition courante.
     midi_transposition: Option<PitchSpec>,
+    /// `\articulate` a été rencontré (`ly/articulate.ly`).
+    playback_articulate: bool,
     /// Fonctions musicales définies en Scheme (`define-music-function`…).
     music_functions: BTreeMap<String, MusicFunction>,
     /// Profondeur d'expansion des blocs embarqués et des fonctions.
@@ -253,6 +255,7 @@ pub(crate) fn parse(
         pending_invisible_rest: false,
         partitions: Vec::new(),
         midi_transposition: None,
+        playback_articulate: false,
         music_functions: BTreeMap::new(),
         expansion_depth: 0,
         melisma_busy_disabled: false,
@@ -376,6 +379,7 @@ impl<'a> Parser<'a> {
         }
         document.melisma_busy_disabled = self.melisma_busy_disabled;
         document.staff_local_timing = self.staff_local_timing;
+        document.playback_articulate = self.playback_articulate;
 
         // Choix de la partition : un bloc `\score` explicite l'emporte sur la
         // musique de haut niveau ; à égalité, la première rencontrée gagne.
@@ -2353,7 +2357,10 @@ impl<'a> Parser<'a> {
             // (`\transpose … \unfoldRepeats \articulate << … >>` de
             // `musicxml2ly`). Le consommer comme une commande inconnue
             // interrompait la musique et perdait la transposition.
-            "articulate" => self.parse_music(),
+            "articulate" => {
+                self.playback_articulate = true;
+                self.parse_music()
+            }
             // `transposition` (`ly/music-functions-init.ly`) est une fonction
             // musicale à un argument `ly:pitch?` qui pose la propriété
             // `instrumentTransposition` du contexte Staff. Elle n'ajoute aucune
@@ -4971,6 +4978,7 @@ mod tests {
             pending_invisible_rest: false,
             partitions: Vec::new(),
             midi_transposition: None,
+            playback_articulate: false,
             music_functions: BTreeMap::new(),
             expansion_depth: 0,
             melisma_busy_disabled: false,
@@ -5010,6 +5018,7 @@ mod tests {
                 pending_invisible_rest: false,
                 partitions: Vec::new(),
                 midi_transposition: None,
+                playback_articulate: false,
                 music_functions: BTreeMap::new(),
                 expansion_depth: 0,
                 melisma_busy_disabled: false,
