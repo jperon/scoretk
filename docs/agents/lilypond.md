@@ -3786,3 +3786,44 @@ ils gardent la même portée ponctuelle pour 13 octets. Test
 `Vingt_danses_enfantines_pour_piano(1).mxl` la sortie passe de 695 013 à
 370 197 octets (−46,7 %) et le MIDI compilé est identique (23 625 notes,
 N2 8 754 des deux côtés) : gain de compacité sans changement musical.
+
+### Écriture : remesure sur master et classement (2026-11-21)
+
+Oracle : MIDI LilyPond 2.27 du `.ly` produit (avec `\unfoldRepeats` injecté),
+comparé au MIDI de référence (MuseScore pour partitions, LilyPond pour les
+aller-retours `.ly`). Remesure du binaire de master, lots complets sauf `.ly`
+(227/375 fichiers traités) :
+
+| Lot | Fichiers | N1 % | N2 % | Exact |
+| --- | ---: | ---: | ---: | ---: |
+| corpus | 56 | 79,91 | 78,36 | 28/56 |
+| `.mscz` | 174 | 91,83 | 85,89 | 36/174 |
+| `.xml` | 32 | 99,07 | 57,91 | 12/32 |
+| `.ly` (partiel) | 227 | 98,65 | 96,62 | 177/227 |
+
+Le 57,91 % du lot `.xml` est dû à deux fichiers,
+`Vingt_danses_enfantines_pour_piano(1).mxl` et `(2).mxl` (12 200 notes
+perdues chacun) : le MIDI MuseScore de référence joue des notes à l'unisson
+que le MIDI LilyPond fusionne, et l'écart d'attaque est amplifié par la
+taille du fichier. **Hors ces deux artefacts, le lot `.xml` est à 95,60 %**
+(27 fichiers, 17 612 notes).
+
+Causes d'écart classées, par ordre de notes perdues (contrôle systématique
+du modèle avant attribution) :
+1. **notes à l'unisson / octave** — `Vingt_danses…` (2 × 12 200),
+   `Hallelujah_-_Haendel` (50), les neuf `Veni veni Emmanuel` (493 chacun) :
+   le modèle et le `.ly` écrit coïncident (aller-retour exact) ; le MIDI
+   MuseScore de référence joue chaque voix d'un unisson, LilyPond n'en joue
+   qu'une. Artefact de référence, §20.
+2. **lecture** — `Espana_Cani` (1 544), `El_Choclo` (867),
+   `Angels_Carol.ly` (1 568) : le modèle lui-même diffère de la référence.
+3. **dépliage des reprises** — `À-Notre-Dame.ly` (108), `lily-9025ee30.ly`
+   (74), `0301_AccourezPeupleFidele.ly` (48) : l'oracle déplie les reprises
+   chez le candidat mais pas dans le MIDI de référence ; modèle à 100 %.
+4. **accordéon** — `Under_Paris_Skies` (48), `Tarentella_Napoletana` (22) :
+   couplage d'octaves du MIDI MuseScore, §20.
+
+Aucune de ces causes n'est un défaut de l'écrivain au sens du round-trip :
+une vingtaine de fichiers vérifiés ont un modèle identique au `.ly` relu.
+Les deux causes traitées ici sont donc de **compacité** (§ above) :
+`measureLength` sur une mesure partielle, et l'override de hampe verbeux.
