@@ -1095,15 +1095,16 @@ pub(crate) fn write_tuplet(xml: &mut XmlWriter, tuplet: &Tuplet) {
         TupletNumberType::Ratio => xml.tag("numberType", "1"),
         TupletNumberType::None => xml.tag("numberType", "2"),
     }
-    // `calcHasBracket` n'est qu'une mise en page, mais MuseScore 3 écrivait le
-    // choix dans `<bracket>` et le lecteur le relit : on le conserve.
-    xml.tag("bracket", if tuplet.bracket { "1" } else { "0" });
-    // `TWrite::write(const Tuplet*)` (`write/twrite.cpp:3500-3525`) écrit aussi
-    // `Pid::BRACKET_TYPE` via `writeStyledProperties` : `SHOW_BRACKET = 1`,
-    // `SHOW_NO_BRACKET = 2` (`types.h:1604-1607`). Le lecteur 4.6+ ignore
-    // `<bracket>` et ne consulte que cette propriété dans `calcHasBracket`
-    // (`dom/tuplet.cpp:204-208`).
-    xml.tag("bracketType", if tuplet.bracket { "1" } else { "2" });
+    // `TWrite::write(const Tuplet*)` (`write/twrite.cpp:3500-3525`) n'écrit
+    // `Pid::BRACKET_TYPE` (`SHOW_BRACKET = 1`, `SHOW_NO_BRACKET = 2`,
+    // `types.h:1604-1607`) que si l'utilisateur l'a explicitée. Sans elle,
+    // `Tuplet::calcHasBracket()` (`:204-208`) recalcule le crochet à la
+    // lecture. Écrire une valeur implicite fige le calcul de MuseScore et
+    // casse l'aller-retour (mscz-18 : 12 `bracket="yes"` attendus, `no` obtenus).
+    if tuplet.bracket_explicit {
+        xml.tag("bracket", if tuplet.bracket { "1" } else { "0" });
+        xml.tag("bracketType", if tuplet.bracket { "1" } else { "2" });
+    }
     xml.end_element();
 }
 

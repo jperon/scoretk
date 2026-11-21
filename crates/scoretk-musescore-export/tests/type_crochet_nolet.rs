@@ -46,7 +46,9 @@ fn type_crochet_nolet_ecrit_et_relu() {
     let mut partition = lire(&source);
     assert!(partition.tuplets.len() >= 2, "le corpus porte des n-olets");
     partition.tuplets[0].bracket = true;
+    partition.tuplets[0].bracket_explicit = true;
     partition.tuplets[1].bracket = false;
+    partition.tuplets[1].bracket_explicit = true;
     let notes = partition.notes.len();
     let mesures = partition.measures.len();
 
