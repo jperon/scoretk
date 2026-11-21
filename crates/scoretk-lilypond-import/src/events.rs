@@ -500,6 +500,7 @@ impl<'a> Interpreter<'a> {
         }
         let start = self.cursor;
         let mut end = start;
+        let mut last_duration = self.default_duration;
         for staff in &group.staves {
             let mut lyrics: Vec<LyricsBlock> = staff.lyrics.clone();
             lyrics.extend(group.lyrics.iter().cloned());
@@ -514,14 +515,17 @@ impl<'a> Interpreter<'a> {
                 end = end.max(child.end);
                 // La musique d'un contexte est un élément de la séquence :
                 // LilyPond poursuit la lecture relative à sa dernière note
-                // (`generic_to_relative_octave`, `lily/music.cc`).
+                // (`generic_to_relative_octave`, `lily/music.cc`) et avec sa
+                // durée par défaut (`lily/parser.yy` `NEWCONTEXT`).
                 self.octave = child.octave;
                 self.last_chord_notes = child.last_chord_notes;
+                last_duration = child.default_duration;
             }
         }
         // La musique du contexte fait partie de la séquence : elle avance la
         // voix d'origine de sa durée, comme LilyPond.
         self.cursor = end;
+        self.default_duration = last_duration;
     }
 
     /// Musique simultanée `<< … >>` d'une voix.
