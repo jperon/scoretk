@@ -2466,6 +2466,40 @@ the tuplet-note call were ported. Re-measurement of both lots: upstream
 losing — the overlapping tuplet case is rare in these corpora, but the port
 now matches the reference behaviour.
 
+## Voice assignment: divergences found against 4.7.4 (2026-11-21)
+
+Line-by-line comparison of `crates/scoretk-midi-import/src/voice.rs` with
+`git show v4.7.4:src/importexport/midi/internal/midiimport/importmidi_voice.cpp`
+(plus `importmidi_tuplet.cpp`/`importmidi_tuplet_voice.cpp` for the initial
+assignment). The faithful functions are `findOptimalSplitPoint` (:231-283),
+`findDurationCount` (:204-229), `findPossibleVoiceSplits` (:398-451),
+`findBestSplit` (:530-571) and its cost functions (:453-528),
+`splitChordToVoice` (:788-866), `doVoiceSeparation` (:895-953) and
+`sortVoices` (:1031-1063). Divergences, in fix order:
+
+1. **`findMaxOccupiedVoiceInBar`** (`:754-784`) — fixed in the previous
+   commit: the neighbour-bar loops are bounds only, `maxVoice` is updated
+   for the current bar alone.
+2. **`insertNewTuplet`** (`:573-602`) — C++ copies `tuplet->second`, the
+   exact tuplet being split. Our port searches by `(onTime, voice)` and then
+   by `onTime` alone (`voice.rs:601-612`), so a different tuplet at the same
+   date can be copied. Only reached for tuplet chords.
+3. **`assign_initial_voices`** (`voice.rs:1143-1197`) — no C++ counterpart.
+   `findTuplets` returns early when a bar has no tuplet
+   (`importmidi_tuplet.cpp:1100-1102`), so `MidiTuplet::assignVoices`
+   (`:872-924`) is not called and non-tuplet chords stay at voice 0 until
+   `doVoiceSeparation`. Our extra layering pass gives overlapping chords
+   distinct voices before that stage.
+4. **`assign_non_tuplet_voices`** (`voice.rs:1237-1300`) — approximation of
+   `setNonTupletVoices`: C++ uses `chordInterval`, which relies on
+   `findMaxQuantizedOffTime` and `findOnTimeBetweenChords`
+   (`importmidi_tuplet_voice.cpp:182`); the port uses the raw maximum off
+   time and the chord on time. It also approximates `findPitchDist` by the
+   average pitch of the first tuplet of a voice.
+5. **`sort_notes_by_length`** (`chord.rs:609-613`) — Rust's `sort_by_key` is
+   stable, C++ uses `std::sort` (unstable). Notes with equal off times can
+   land in a different order, which changes the low/high split group.
+
 ## Voice limit from neighbouring bars (2026-11-21)
 
 `MidiVoice::findMaxOccupiedVoiceInBar` (`importmidi_voice.cpp:754-784`,

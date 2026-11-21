@@ -595,22 +595,15 @@ fn find_best_split(
 /// `importmidi_voice.cpp:573-602`).
 fn insert_new_tuplet(
     track: &mut MTrack,
-    tuplet_on_time: Fraction,
+    source_key: TupletKey,
     new_voice: usize,
     inserted: &mut BTreeMap<Fraction, Vec<TupletKey>>,
 ) -> Option<TupletKey> {
-    let model = track
-        .tuplets
-        .iter()
-        .find(|(key, tuplet)| key.0 == tuplet_on_time && tuplet.voice == new_voice)
-        .or_else(|| {
-            track
-                .tuplets
-                .iter()
-                .find(|(_, tuplet)| tuplet.on_time == tuplet_on_time)
-        })
-        .map(|(_, tuplet)| tuplet.clone());
-    let mut data = model?;
+    // `importmidi_voice.cpp:578-580` copie `tuplet->second`, c'est-a-dire le
+    // n-olet precis en cours de scission. Une recherche par date pouvait
+    // choisir un autre n-olet simultane et copier sa longueur.
+    let mut data = track.tuplets.get(&source_key)?.clone();
+    let tuplet_on_time = data.on_time;
     data.voice = new_voice;
     let seq = track
         .tuplets
@@ -724,7 +717,7 @@ fn split_tuplet(
         need_insert_tuplet && need_delete_old_tuplet
     };
     if can_insert_tuplet {
-        if let Some(key) = insert_new_tuplet(track, tuplet_on_time, new_voice, inserted) {
+        if let Some(key) = insert_new_tuplet(track, old_key, new_voice, inserted) {
             current_key = key;
             *is_in_tuplet = true;
         }
@@ -1317,6 +1310,64 @@ mod max_voice_tests {
     /// regarde aussi la mesure précédente et la suivante ; le port ne
     /// regardait que la mesure courante, ce qui autorisait une voix de plus
     /// dans `addGroupSplits` (`:354-386`).
+    /// `MidiVoice::insertNewTuplet` (`importmidi_voice.cpp:573-602`) copie
+    /// `tuplet->second`, le n-olet precise en cours de scission. Le port
+    /// cherchait d'abord un n-olet de la nouvelle voix a la meme date, puis
+    /// n'importe quel n-olet de cette date : avec deux n-olets simultanes, il
+    /// copiait le mauvais.
+    #[test]
+    fn copie_du_nolet_scinde_pas_d_un_autre_a_la_meme_date() {
+        use crate::tuplet::TupletData;
+        let mut track = MTrack::default();
+        // Cle (date 0, rang 1) : le n-olet source, longueur 3/4, voix 0.
+        let source = (Fraction::ZERO, 1);
+        track.tuplets.insert(
+            source,
+            TupletData {
+                voice: 0,
+                on_time: Fraction::ZERO,
+                len: Fraction::new(3, 4),
+                tuplet_number: 3,
+                element_count: 3,
+            },
+        );
+        // Cle (date 0, rang 0) : un autre n-olet, deja dans la voix 2,
+        // longueur 1/2. C'est celui que le port cherchait a tort.
+        track.tuplets.insert(
+            (Fraction::ZERO, 0),
+            TupletData {
+                voice: 2,
+                on_time: Fraction::ZERO,
+                len: Fraction::new(1, 2),
+                tuplet_number: 3,
+                element_count: 3,
+            },
+        );
+        let notes = [MidiNote::new(60, 80, Fraction::new(1, 4), Fraction::ZERO)];
+        let mut is_in_tuplet = true;
+        let mut inserted = BTreeMap::new();
+        super::split_tuplet(
+            &mut track,
+            source,
+            2,
+            Fraction::ZERO,
+            &notes,
+            &mut is_in_tuplet,
+            &mut inserted,
+            Fraction::new(1, 1),
+            true,
+            false,
+        );
+
+        assert!(
+            track
+                .tuplets
+                .values()
+                .any(|tuplet| tuplet.voice == 2 && tuplet.len == Fraction::new(3, 4)),
+            "le nouveau n-olet doit copier la longueur 3/4 du n-olet scinde"
+        );
+    }
+
     #[test]
     fn voix_voisine_non_comptee_dans_max_occupe() {
         let mut track = MTrack::default();
