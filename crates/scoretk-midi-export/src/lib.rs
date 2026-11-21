@@ -122,7 +122,10 @@ fn write_midi_impl(
     options: MidiOptions,
     capture: bool,
 ) -> Result<(Vec<u8>, Timemap)> {
-    let repeat_list = if options.expand_repeats {
+    // LilyPond ne déplie les reprises que sous `\unfoldRepeats` : un score
+    // `.ly` sans ce drapeau doit être joué tel qu'écrit (corps + endings),
+    // même quand l'appelant demande le déroulement par défaut.
+    let repeat_list = if options.expand_repeats && score.playback_unfold_repeats {
         RepeatList::unwind(score)
     } else {
         RepeatList::flatten(score)

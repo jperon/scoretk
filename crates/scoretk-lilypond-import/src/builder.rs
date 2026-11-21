@@ -138,6 +138,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
         .playback_transposition
         .map(scoretk_core::model::PlaybackTransposition::new);
     score.playback_articulate = document.playback_articulate;
+    score.playback_unfold_repeats = document.playback_unfold_repeats;
     write_metadata(&mut score, document);
 
     let mut staves: Vec<StaffBuild> = Vec::new();
@@ -263,7 +264,14 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 staff.brackets.push(bracket);
             }
             let staff_id = score.add_staff_with(staff_part_id, staff);
-            let built = build_voices(&mut score, staff_id, staff_part_id, staff_block, warnings);
+            let built = build_voices(
+                &mut score,
+                staff_id,
+                staff_part_id,
+                staff_block,
+                document.playback_unfold_repeats,
+                warnings,
+            );
             let mut built = built.into_iter();
             if let Some(premiere) = built.next() {
                 let mut lyrics: Vec<LyricsBuild> =
@@ -626,6 +634,7 @@ fn build_voices(
     staff: StaffId,
     part: PartId,
     staff_block: &StaffBlock,
+    unfold_repeats: bool,
     warnings: &mut Warnings,
 ) -> Vec<BuiltVoices> {
     let mut queue: VecDeque<PendingVoice> = VecDeque::new();
@@ -634,7 +643,7 @@ fn build_voices(
             name: block.name.clone(),
             lyrics: Vec::new(),
             temporary: false,
-            interpreted: Interpreter::run(&block.music, warnings),
+            interpreted: Interpreter::run(&block.music, unfold_repeats, warnings),
         });
     }
     let mut kept: Vec<PendingVoice> = Vec::new();

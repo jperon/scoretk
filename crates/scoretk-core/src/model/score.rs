@@ -144,6 +144,11 @@ pub struct Score {
     /// un tenuto. Seul l'écrivain MIDI s'en sert ; les autres écrivains
     /// gardent la partition gravée.
     pub playback_articulate: bool,
+    /// La partition a été lue sous `\unfoldRepeats` : les reprises doivent
+    /// être dépliées. Sans ce drapeau, le MIDI de LilyPond joue la musique
+    /// écrite une fois (corps puis blocs `\alternative`), donc le modèle ne
+    /// porte pas de marques de reprise.
+    pub playback_unfold_repeats: bool,
     /// Arène des notes.
     pub notes: Vec<Note>,
     /// Arène des n-olets.
@@ -179,6 +184,7 @@ impl Score {
             tbox_texts: Vec::new(),
             playback_transposition: None,
             playback_articulate: false,
+            playback_unfold_repeats: true,
             notes: Vec::new(),
             tuplets: Vec::new(),
             spanners: Vec::new(),

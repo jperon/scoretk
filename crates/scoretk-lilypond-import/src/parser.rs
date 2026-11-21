@@ -71,6 +71,8 @@ pub(crate) struct Parser<'a> {
     midi_transposition: Option<PitchSpec>,
     /// `\articulate` a été rencontré (`ly/articulate.ly`).
     playback_articulate: bool,
+    /// `\unfoldRepeats` a été rencontré : le MIDI déplie les reprises.
+    playback_unfold_repeats: bool,
     /// Fonctions musicales définies en Scheme (`define-music-function`…).
     music_functions: BTreeMap<String, MusicFunction>,
     /// Profondeur d'expansion des blocs embarqués et des fonctions.
@@ -256,6 +258,7 @@ pub(crate) fn parse(
         partitions: Vec::new(),
         midi_transposition: None,
         playback_articulate: false,
+        playback_unfold_repeats: false,
         music_functions: BTreeMap::new(),
         expansion_depth: 0,
         melisma_busy_disabled: false,
@@ -380,6 +383,7 @@ impl<'a> Parser<'a> {
         document.melisma_busy_disabled = self.melisma_busy_disabled;
         document.staff_local_timing = self.staff_local_timing;
         document.playback_articulate = self.playback_articulate;
+        document.playback_unfold_repeats = self.playback_unfold_repeats;
 
         // Choix de la partition : un bloc `\score` explicite l'emporte sur la
         // musique de haut niveau ; à égalité, la première rencontrée gagne.
@@ -2310,7 +2314,13 @@ impl<'a> Parser<'a> {
             // `unfoldRepeats` (`music-functions-init.ly`) déplie les reprises
             // et écarte les alternatives ; le lecteur déplie déjà les reprises,
             // la commande est donc transparente.
-            "unfoldRepeats" => self.parse_music(),
+            "unfoldRepeats" => {
+                // LilyPond ne déplie les reprises que sous cette fonction
+                // (`ly/music-functions-init.ly`) ; le MIDI d'un score sans
+                // elle joue le corps et les `\alternative` une fois.
+                self.playback_unfold_repeats = true;
+                self.parse_music()
+            }
             // `\partcombine` (ancien nom de `\partCombine`, ainsi que
             // `\partCombineUp`/`\partCombineDown`) est défini dans
             // `ly/music-functions-init.ly` : `make-directed-part-combine-music`
@@ -4983,6 +4993,7 @@ mod tests {
             partitions: Vec::new(),
             midi_transposition: None,
             playback_articulate: false,
+            playback_unfold_repeats: false,
             music_functions: BTreeMap::new(),
             expansion_depth: 0,
             melisma_busy_disabled: false,
@@ -5023,6 +5034,7 @@ mod tests {
                 partitions: Vec::new(),
                 midi_transposition: None,
                 playback_articulate: false,
+                playback_unfold_repeats: false,
                 music_functions: BTreeMap::new(),
                 expansion_depth: 0,
                 melisma_busy_disabled: false,

@@ -391,6 +391,8 @@ pub(crate) struct Interpreter<'a> {
     /// contextes qui y sont ouverts en héritent et pourront partager une piste
     /// avec ceux d'un autre passage.
     temporary: bool,
+    /// `\unfoldRepeats` : déplier les reprises volta.
+    unfold_repeats: bool,
     /// Pile des tags des expressions tag traversees.
     tag_stack: Vec<Vec<String>>,
     /// Pile des filtres keepWithTag/removeWithTag actifs.
@@ -403,7 +405,11 @@ pub(crate) struct Interpreter<'a> {
 
 impl<'a> Interpreter<'a> {
     /// Interprète une voix.
-    pub(crate) fn run(music: &Music, warnings: &'a mut Warnings) -> InterpretedVoice {
+    pub(crate) fn run(
+        music: &Music,
+        unfold_repeats: bool,
+        warnings: &'a mut Warnings,
+    ) -> InterpretedVoice {
         let mut interpreter = Self {
             voice: InterpretedVoice::default(),
             cursor: Fraction::ZERO,
@@ -421,6 +427,7 @@ impl<'a> Interpreter<'a> {
             staff_target: None,
             tuplet_scale: Fraction::ONE,
             temporary: false,
+            unfold_repeats,
             tag_stack: Vec::new(),
             filter_stack: Vec::new(),
             order: 0,
@@ -630,6 +637,7 @@ impl<'a> Interpreter<'a> {
             staff_target: None,
             tuplet_scale: self.tuplet_scale * self.open_tuplet_scale(),
             temporary,
+            unfold_repeats: self.unfold_repeats,
             tag_stack: self.tag_stack.clone(),
             filter_stack: self.filter_stack.clone(),
             order: 0,
@@ -924,30 +932,62 @@ impl<'a> Interpreter<'a> {
             // construit à la main ; on lit alors le corps tel quel.
             RepeatKind::Tremolo => self.walk(body),
             RepeatKind::Volta => {
-                let start = self.cursor;
-                self.walk(body);
-                let body_end = self.cursor;
-                let mut sections = Vec::new();
-                let mut end = body_end;
-                for (index, alternative) in alternatives.iter().enumerate() {
-                    let alt_start = self.cursor;
-                    self.walk(alternative);
-                    let alt_end = self.cursor;
-                    if index == 0 {
-                        end = alt_end;
+                let start_octave = self.octave;
+                let blocks = alternatives.len();
+                if self.unfold_repeats {
+                    // `\unfoldRepeats` : le MIDI de LilyPond joue les N
+                    // passages ; on les déroule dans le modèle, chaque corps
+                    // repartant de la même référence relative et chaque
+                    // ending de la fin du corps de son passage.
+                    let plays = count.max(2);
+                    let threshold = plays.saturating_sub(blocks as u32) + 1;
+                    for pass in 1..=plays {
+                        self.octave = start_octave;
+                        self.walk(body);
+                        let body_end = self.octave;
+                        if blocks > 0 {
+                            let index = if pass <= threshold {
+                                0
+                            } else {
+                                (pass - threshold) as usize
+                            };
+                            if let Some(alternative) = alternatives.get(index.min(blocks - 1)) {
+                                self.octave = body_end;
+                                self.walk(alternative);
+                            }
+                        }
                     }
-                    sections.push(AlternativeSection {
-                        start: alt_start,
-                        end: alt_end,
-                        number: u8::try_from(index + 1).unwrap_or(u8::MAX),
+                } else {
+                    // Sans `\unfoldRepeats`, le MIDI joue le corps et les
+                    // endings une fois, mais la partition gravée garde ses
+                    // marques de reprise : on les modélise pour l'export.
+                    let start = self.cursor;
+                    self.walk(body);
+                    let body_end = self.cursor;
+                    let body_octave = self.octave;
+                    let mut sections = Vec::new();
+                    let mut end = body_end;
+                    for (index, alternative) in alternatives.iter().enumerate() {
+                        let alt_start = self.cursor;
+                        self.octave = body_octave;
+                        self.walk(alternative);
+                        let alt_end = self.cursor;
+                        if index == 0 {
+                            end = alt_end;
+                        }
+                        sections.push(AlternativeSection {
+                            start: alt_start,
+                            end: alt_end,
+                            number: u8::try_from(index + 1).unwrap_or(u8::MAX),
+                        });
+                    }
+                    self.voice.repeats.push(RepeatSection {
+                        start,
+                        end,
+                        count: u8::try_from(count.clamp(1, 255)).unwrap_or(2),
+                        alternatives: sections,
                     });
                 }
-                self.voice.repeats.push(RepeatSection {
-                    start,
-                    end,
-                    count: u8::try_from(count.clamp(1, 255)).unwrap_or(2),
-                    alternatives: sections,
-                });
             }
         }
     }

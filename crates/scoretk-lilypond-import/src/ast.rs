@@ -515,6 +515,8 @@ pub(crate) struct Document {
     /// `\articulate` a été rencontré : l'écrivain MIDI applique les facteurs
     /// de `ly/articulate.ly`.
     pub playback_articulate: bool,
+    /// `\unfoldRepeats` a été rencontré : les reprises sont dépliées.
+    pub playback_unfold_repeats: bool,
     /// `\set melismaBusyProperties = #'()` a été lu : `\lyricsto` ne saute
     /// alors aucune note. Par défaut, les notes sous une liaison
     /// d'expression et les continuations de liaison sont sautées.
