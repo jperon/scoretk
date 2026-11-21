@@ -50,6 +50,27 @@ pub struct Element {
     pub children: Vec<Element>,
 }
 
+/// Retire le balisage d'un contenu mixte, en gardant le texte des enfants.
+fn strip_markup(raw: &str) -> String {
+    let mut plain = String::new();
+    let mut rest = raw;
+    while let Some(position) = rest.find('<') {
+        plain.push_str(&rest[..position]);
+        let Some(end) = rest[position..].find('>') else {
+            break;
+        };
+        let tag = rest[position + 1..position + end]
+            .trim()
+            .trim_end_matches('/');
+        if tag == "br" {
+            plain.push('\n');
+        }
+        rest = &rest[position + end + 1..];
+    }
+    plain.push_str(rest);
+    plain
+}
+
 impl Element {
     /// Valeur d'un attribut.
     pub fn attr(&self, name: &str) -> Option<&str> {
@@ -92,24 +113,18 @@ impl Element {
     /// ne garde que du texte, on produit donc directement ce texte, avec les
     /// sauts de ligne. La norme MusicXML est muette sur cette lecture : on
     /// suit le comportement de MuseScore 4.7.4.
+    /// Texte de l'élément sans balisage inline (`<i>`, `<b>`, `<font>`…).
+    ///
+    /// `TRead::read(Lyrics*)` (`read500/tread.cpp`) lit `<text>` avec
+    /// `XmlReader::readXml()`, qui conserve le texte imbriqué. Notre modèle
+    /// garde du texte plat : on retire les balises, `<br/>` devenant un saut
+    /// de ligne comme `lineBreakFromTag` (`tread.cpp:3812`).
+    pub fn plain_text(&self) -> String {
+        strip_markup(&self.raw_inner)
+    }
+
     pub fn legacy_staff_name(&self) -> String {
-        let mut plain = String::new();
-        let mut rest = self.raw_inner.as_str();
-        while let Some(position) = rest.find('<') {
-            plain.push_str(&rest[..position]);
-            let Some(end) = rest[position..].find('>') else {
-                break;
-            };
-            let tag = rest[position + 1..position + end]
-                .trim()
-                .trim_end_matches('/');
-            if tag == "br" {
-                plain.push('\n');
-            }
-            rest = &rest[position + end + 1..];
-        }
-        plain.push_str(rest);
-        unescape(plain.trim())
+        unescape(strip_markup(&self.raw_inner).trim())
     }
 
     /// Texte direct converti en entier.

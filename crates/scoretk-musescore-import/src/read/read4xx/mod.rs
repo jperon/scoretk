@@ -2227,9 +2227,12 @@ fn read_lyrics(element: &Element, default_placement: Placement) -> Lyrics {
         .child("syllabic")
         .map(Element::text)
         .map_or(LyricsSyllabic::Single, names::syllabic);
+    // `TRead::read(Lyrics*)` lit `<text>` avec `readXml()` : le texte peut être
+    // dans un enfant (`<text><i>…</i></text>`, 129 paroles de Veni Creator).
+    // `Element::text` ne garderait que le texte direct et perdrait la syllabe.
     let text = element
         .child("text")
-        .map(|node| node.text.clone())
+        .map(|node| node.plain_text())
         .unwrap_or_default();
     let mut lyrics = Lyrics::new(verse, syllabic, text);
     lyrics.melisma = element

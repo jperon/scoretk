@@ -364,3 +364,16 @@ Après les deux causes musicales : **5 gains, 0 perte, 168 inchangés** ;
 lignes divergentes 23 651 → 23 609 ; 58 fichiers core-identiques sur 173 ;
 XSD scoretk 0 erreur, N1 0,9966, N2 0,9492. Les catégories `accidental` et
 `lyric` sortent du classement des premières différences.
+
+## 18. Lecteur 4.x : paroles avec balisage inline
+
+Sur `Veni, Creator Spiritus_Courtial_v3_SATB`, 129 paroles sur 398 avaient un
+`<text><i>…</i></text>` ; `Element::text()` ne renvoyant que le texte direct,
+elles devenaient vides et l'export les supprimait (`write_lyric`,
+`exportmusicxml.rs:2746`). Le C++ lit `<text>` avec `XmlReader::readXml()`
+(`read500/tread.cpp:4622-4624`) : le texte imbriqué est conservé. Le nouveau
+`Element::plain_text()` retire le balisage (et convertit `<br/>` en saut de
+ligne comme `lineBreakFromTag`, `tread.cpp:3812`) et est utilisé par
+`read_lyrics`. Test réduit (corpus v4 modifié avec `<i>`) écrit d'abord,
+échouant avant le correctif. Oracle ciblé : 524 → 8 lignes divergentes,
+0 perte.
