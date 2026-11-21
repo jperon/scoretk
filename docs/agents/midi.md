@@ -5025,6 +5025,26 @@ human: `Quantize::setIfHumanPerformance` calls `MidiBeat::findBeatLocations`
 see the section `human_tempo`: beat tracker ported, wired and anchored above
 for the literal diff, the anchoring fix and the final figures.
 
+## Biggest remaining upstream losses, ranked (2026-11-21)
+
+Default pipeline, same 96-file upstream manifest and oracle; losses are
+`reference notes × (1 − score)`:
+
+| Rank | File | Lost notes | Score | Main cause |
+| ---: | --- | ---: | ---: | --- |
+| 1 | `up-tuplet_3_5_7_tuplets` | 14.0 | 0.2222 | Tuplet notation / non-default test options |
+| 2 | `up-tuplet_nonuplet_4-4` | 11.0 | 0.0833 | Tuplet durations (fixed by early insertion) |
+| 3 | `up-perc_no_grand_staff` | 9.0 | 0.2500 | Drum table / grand-staff option |
+| 4 | `up-human_tempo` | 9.0 | 0.9353 | Residual beat-grid anchor (1 of 139 notes) |
+| 5 | `up-tuplet_2_voices_tuplet_non` | 8.0 | 0.0000 | Two-voice tuplets (fixed by early insertion) |
+| 6 | `up-lyrics_voice_1` | 7.0 | 0.5000 | Lyrics voice attribution |
+| 7 | `up-tuplet_triplets_mixed` | 7.0 | 0.7667 | Mixed tuplets (fixed by early insertion) |
+
+Total: **123.0 lost notes** over the 96 upstream files. Four of the seven
+rows are already recovered by the early insertion measured above; the others
+are mostly upstream tests compiled with non-default options (`dontSimplify`,
+`V_1`) or configuration limits (drum kit, lyrics voices).
+
 ## MIDI import: status (2026-11-21)
 
 - **Default pipeline**: LilyPond N **0.6947** (1 020 files), upstream N
