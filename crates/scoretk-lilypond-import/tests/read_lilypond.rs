@@ -5802,3 +5802,25 @@ mus = { c'4 d' e' f' }
         "la transposition c descend d'une octave"
     );
 }
+
+/// Commandes musicales supprimées, réécrites par `python/convertrules.py`
+/// règle (2,11,51) et (2,11,52) : le lecteur les accepte telles quelles.
+#[test]
+fn commandes_musicales_obsoletes_acceptées() {
+    let source = r#"\version "2.26.0"
+\score { \new Staff {
+  c'1 \setTextCresc d'1 \setHairpinDim e'1 \sustainDown f'1
+  \sustainUp g'1 \arpeggioUp a'1 \setTextDecresc b'1
+} }
+"#;
+    let (_, warnings) = read_lilypond_reporting(source).expect("lecture");
+    let ignorees: Vec<_> = warnings
+        .iter()
+        .filter(|w| w.message.contains("commande ignorée"))
+        .collect();
+    assert!(
+        ignorees.is_empty(),
+        "aucune commande ne doit être ignorée : {:?}",
+        ignorees.iter().map(|w| &w.message).collect::<Vec<_>>()
+    );
+}

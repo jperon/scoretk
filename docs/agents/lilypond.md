@@ -3697,3 +3697,23 @@ Solde `mut` hors paniers après ces deux causes :
 - hors sources obsolètes : **95,55 %** (711 fichiers, 555 209 notes) ;
 - hors sources obsolètes **et** anomalies MIDI : **96,01 %**
   (706 fichiers, 539 347 notes, 517 804 appariées).
+
+### Acceptation des commandes musicales supprimées (sources anciennes)
+
+Les sources 2.10/2.16 utilisent des commandes que LilyPond 2.27 ne connaît
+plus. `python/convertrules.py` (arbre 2.26/2.27) les réécrit dans la règle
+`@rule((2, 11, 51))` — complétée par `@rule((2, 11, 52))` pour
+`\setHairpinDim` : `\setTextCresc -> \crescTextCresc`,
+`\setTextDecresc -> \dimTextDecresc`, `\setHairpinCresc -> \crescHairpin`,
+`\sustainDown -> \sustainOn`, `\arpeggioUp -> \arpeggioArrowUp`, etc. Le
+lecteur accepte désormais ces 15 noms exactement comme leur réécriture, sans
+porter le reste de `convert-ly` : les commandes de style d'agrément et de
+dynamique sont des no-ops musicalement, `\sustain*` devient une pédale et
+`\arpeggio*` un arpège. Test `commandes_musicales_obsoletes_acceptées`
+(échoue avant : quatre « commande ignorée »).
+
+Le MIDI de référence produit par l'oracle 2.27 sur la source **non convertie**
+reste anormal pour ces fichiers (par exemple `violin_concerto_1` 5817 → 17024
+notes appariées quand on lui fournit la source convertie). La mesure « brute »
+de `mut` ne peut donc pas bouger tant que la référence n'est pas normalisée ;
+on publie les deux chiffres (§ « État final »).

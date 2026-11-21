@@ -2226,7 +2226,7 @@ impl<'a> Parser<'a> {
             return self.expand_music_function(&name);
         }
         let context = |context| Music::Context(context);
-        match name.as_str() {
+        match obsolete_music_command(&name).unwrap_or(name.as_str()) {
             "fixed" => {
                 let reference = self.parse_optional_pitch();
                 Music::Context(Context::Fixed {
@@ -2471,6 +2471,11 @@ impl<'a> Parser<'a> {
                 self.parse_parallel_music();
                 Music::Empty
             }
+            // Commandes de style d'agrément ou de dynamique : elles ne
+            // changent ni les hauteurs ni les durées, seulement la gravure.
+            "crescTextCresc" | "dimTextDecresc" | "dimTextDecr" | "dimTextDim" | "crescHairpin"
+            | "dimHairpin" | "arpeggioArrowUp" | "arpeggioArrowDown" | "arpeggioNormal"
+            | "octaveCheck" => Music::Empty,
             "language" => {
                 // `\language` vaut aussi au milieu de la musique, comme le
                 // fichier de langue inclus par `\include "italiano.ly"`.
@@ -4503,6 +4508,34 @@ fn is_mode_head(name: &str) -> bool {
 
 /// Vrai si la commande ouvre une expression musicale reconnue par
 /// `parse_music` (hors variables musicales, testées à part).
+/// Noms de commandes musicales supprimés, acceptés tels quels par le lecteur.
+///
+/// `python/convertrules.py` des sources LilyPond 2.26/2.27 les réécrit dans
+/// la règle `@rule((2, 11, 51))` (et `(2, 11, 52)` pour `setHairpinDim`) :
+/// `\setTextCresc -> \crescTextCresc`, `\sustainDown -> \sustainOn`, etc.
+/// Seuls les noms qui changent la musique jouée sont couverts ici ; c'est un
+/// alias de lecture, pas un port de `convert-ly`.
+fn obsolete_music_command(name: &str) -> Option<&'static str> {
+    match name {
+        "octave" => Some("octaveCheck"),
+        "arpeggioUp" => Some("arpeggioArrowUp"),
+        "arpeggioDown" => Some("arpeggioArrowDown"),
+        "arpeggioNeutral" => Some("arpeggioNormal"),
+        "setTextCresc" => Some("crescTextCresc"),
+        "setTextDecresc" => Some("dimTextDecresc"),
+        "setTextDecr" => Some("dimTextDecr"),
+        "setTextDim" => Some("dimTextDim"),
+        "setHairpinCresc" => Some("crescHairpin"),
+        "setHairpinDecresc" => Some("dimHairpin"),
+        "setHairpinDim" => Some("dimHairpin"),
+        "sustainUp" => Some("sustainOff"),
+        "sustainDown" => Some("sustainOn"),
+        "sostenutoDown" => Some("sostenutoOn"),
+        "sostenutoUp" => Some("sostenutoOff"),
+        _ => None,
+    }
+}
+
 fn starts_music_command(name: &str) -> bool {
     is_mode_head(name)
         || matches!(
