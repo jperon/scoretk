@@ -1555,6 +1555,7 @@ fn build_note(note: &crate::events::NoteEvent, fingerings: &[String]) -> Note {
             parentheses: false,
             visible: true,
             user: true,
+            small: false,
         });
     }
     value.fingerings = fingerings
@@ -2267,6 +2268,7 @@ fn apply_accidentals(score: &mut Score) {
                             parentheses: false,
                             visible: true,
                             user: false,
+                            small: false,
                         });
                     }
                 }

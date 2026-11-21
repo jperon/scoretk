@@ -2940,7 +2940,10 @@ fn write_accidental(out: &mut Out, accidental: &Accidental) {
         attributes.push(("cautionary", "yes"));
         attributes.push(("parentheses", "no"));
     }
-    // TODO(parité): smufl pour les altérations exotiques, taille, couleur.
+    if accidental.small {
+        attributes.push(("size", "cue"));
+    }
+    // TODO(parité): smufl pour les altérations exotiques, couleur.
     out.xml.tag_with("accidental", &attributes, name);
 }
 

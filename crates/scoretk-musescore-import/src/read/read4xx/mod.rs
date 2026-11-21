@@ -1596,6 +1596,10 @@ impl Reader {
                                 .child("role")
                                 .and_then(Element::int)
                                 .is_some_and(|value| value == 1);
+                            accidental.small = child
+                                .child("small")
+                                .and_then(Element::int)
+                                .is_some_and(|value| value != 0);
                             accidental.parentheses = child
                                 .child("parens")
                                 .or_else(|| child.child("parentheses"))

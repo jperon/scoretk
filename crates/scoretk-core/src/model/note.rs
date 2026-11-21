@@ -241,6 +241,8 @@ pub struct Accidental {
     /// Vrai quand l'altération a le rôle « utilisateur » (`AccidentalRole::USER`) :
     /// MuseScore l'exporte en `cautionary` (ou `editorial` avec des crochets).
     pub user: bool,
+    /// Altération réduite (`<small>1</small>`) : exportée avec `size="cue"`.
+    pub small: bool,
 }
 
 impl Accidental {
@@ -252,6 +254,7 @@ impl Accidental {
             parentheses: false,
             visible: true,
             user: false,
+            small: false,
         }
     }
 }

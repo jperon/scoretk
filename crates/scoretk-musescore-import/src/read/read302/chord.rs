@@ -384,6 +384,7 @@ fn read_accidental(node: &Node) -> Accidental {
             // `AccidentalRole::USER` vaut 1 ; le rôle par défaut est AUTO.
             "role" => accidental.user = child.int_text().is_some_and(|value| value == 1),
             "visible" => accidental.visible = child.int_text().unwrap_or(1) != 0,
+            "small" => accidental.small = child.int_text().unwrap_or(0) != 0,
             _ => {}
         }
     }

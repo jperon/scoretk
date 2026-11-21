@@ -317,3 +317,50 @@ La référence 4.7.4 prévalant, l'export suit son comportement. Test réduit
 écrit d'abord, échouant avant le correctif. Oracle ciblé : 3 gains, 0 perte
 (2→0, 75→63, 11→7 ; le 4e fichier a un écart de taille `size="cue"`, non
 lié à cette règle).
+
+## 16. Dernier écart `accidental` : `size="cue"`
+
+Une altération `<small>1</small>` s'exporte `size="cue"` (`writeAccidental`,
+`exportmusicxml.cpp:2887-2892`). `Accidental`porte `small`, lu par les lecteurs
+3.x et 4.x ; test réduit écrit d'abord, échouant avant le correctif. Sur
+`JMHaydn_Viderunt_omnes`, les 5 `size="cue"` de la référence sont retrouvés
+(325 → 315 lignes divergentes).
+
+## 17. Status — contenu musical terminé
+
+**Identique** : au dernier relevé complet, 59 fichiers sur 173 sont
+core-identiques à MuseScore 4.7.4, la validation XSD est à 0 erreur côté
+scoretk, N1 = 0,9966 et N2 = 0,9492. Les causes musicales traitées pendant la
+campagne couvrent : noms de parties, visibilité des portées, `staff-size`,
+canaux MIDI, numérotation des mesures, crochets de n-olets, points de silences,
+`movement-number` et altérations (`cautionary`/`parentheses`, `size`).
+
+**Reste, par choix de priorité** : `staff-details` (41) et `attributes` (39)
+sont des portées masquées par la mise en page. Le C++ les cache dans
+`SystemLayout::hideEmptyStaves` (`systemlayout.cpp:736-830`) à partir de
+systèmes calculés par la gravure ; le pivot ne connaît que les sauts explicites.
+Reprendre `hideEmptyStaves` du style a été tenté et rejeté (13 gains, 15 pertes)
+parce que notre découpage sur-masque les portées. Ce sont des écarts de mise en
+page, pas de contenu musical.
+
+**Reste, côté lecture** : les petites catégories résiduelles (`duration` 9,
+`sound` 6, `harmony` 2, `tie` 2, `dot` 2, `clef` 2, `measure-style` 2,
+`staff` 2, `backup` 1, `lyric` 1) ne sont pas des règles d'écriture manquantes :
+l'export suit ici fidèlement le C++ — durée depuis `globalTicks`
+(`exportmusicxml.cpp:4636-4641`), `<sound>` des tempos invisibles via
+`commonAnnotations` (`:6607-6620`) et `canWrite` (`:9408-9411`). Les différences
+viennent d'éléments que le lecteur 3.x/4.x ne matérialise pas (notes, paroles,
+harmonies ou tempos absents : ex. 4 993 vs 4 999 durées, 398 vs 269 paroles),
+et qui décalent ensuite l'alignement des lignes canoniques. Les corriger
+demande des travaux de lecture, hors du périmètre de l'écrivain.
+
+Pour le contenu musical que le modèle porte, l'export MusicXML peut donc être
+déclaré terminé : il ne reste que des écarts de mise en page et des données non
+représentées dans le modèle pivot.
+
+### Re-mesure finale (174 fichiers)
+
+Après les deux causes musicales : **5 gains, 0 perte, 168 inchangés** ;
+lignes divergentes 23 651 → 23 609 ; 58 fichiers core-identiques sur 173 ;
+XSD scoretk 0 erreur, N1 0,9966, N2 0,9492. Les catégories `accidental` et
+`lyric` sortent du classement des premières différences.

@@ -3031,3 +3031,32 @@ fn alteration_crochetee_et_utilisateur() {
         "altération user+crochet mal exportée :\n{xml}"
     );
 }
+
+/// `writeAccidental` (`exportmusicxml.cpp:2887-2892`) écrit `size="cue"`
+/// quand l'altération est plus petite que la tête de note (`<small>1</small>`).
+/// Cas réel : JMHaydn Viderunt omnes (5 altérations réduites).
+#[test]
+fn alteration_reduite_size_cue() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let ids = ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(61, tpc::C)],
+    );
+    let mut accidental = Accidental::new(AccidentalType::Flat);
+    accidental.small = true;
+    score.note_mut(ids[0]).accidental = Some(accidental);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<accidental size=\"cue\">flat</accidental>"),
+        "taille d'altération perdue :\n{xml}"
+    );
+}
