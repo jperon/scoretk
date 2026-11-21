@@ -1464,6 +1464,21 @@ impl Parser<'_> {
             if let Some(numbers) = volta {
                 voice.current.volta = Some(numbers);
             }
+            // Annotations between barlines (`"Segno"[|]"_D.S."[|]`) belong
+            // to an empty measure with no event to carry them. ABC 2.1 §4.19
+            // and `abc2xml.py:2022` still write them as `<words>`: attach to
+            // the previous measure's last event before returning, just as
+            // the non-empty branch does for end-of-measure annotations.
+            let annotations = std::mem::take(&mut voice.annotations);
+            if !annotations.is_empty() {
+                if let Some(event) = voice
+                    .measures
+                    .last_mut()
+                    .and_then(|measure| measure.events.last_mut())
+                {
+                    event.annotations.extend(annotations);
+                }
+            }
             // Après la barre, la musique revient à la voix racine : les notes
             // qui suivent ne sont plus des superpositions.
             self.voice = root;
