@@ -1881,6 +1881,61 @@ entries improved, 2 reduced a `<harmony>` excess to parity** (no deficit
 regressed); **N1 exact 4 460 / 0 losses / 0 gains** and **0 note-count
 changes** across all 4 755 common tunes. No per-tune loss to explain.
 
+### ABC import: third pass — proving the residual classes (2026-11-21)
+
+Before any change, each remaining class was checked against the ABC 2.1
+spec (`/home/jacques/programmes/musique/specs/abc/abc-standard-v2.1.wiki.txt`)
+and `abc2xml.py` 269. Three tunes per class were inspected (source line,
+emission, section). Evidence:
+
+| Class | ABC source (3 tunes) | What `abc2xml.py` emits | What we emitted | Section |
+| --- | --- | --- | --- | --- |
+| keys | `K: C` in `flattener.test__abcTempoThreeVoices`; `K:GMin` twice in `layout.test__abcNotCollision2`; `K:D` in `book1` X:0020 | `<key>` per field (`abc2xml.py:1829-1854`) plus a default `C` from `abc2xml.py:2423`; one part per voice (`abc2xml.py:2426-2445`) | one `<key>` per part, no default | §3.2 |
+| times | `M:2/4 … M:4/4` in `flattener.test__abcAllTimeSigs`; `M: 4/4` in `flattener.test__abcTempoThreeVoices`; `[M:...]` in `svg.test__abcTimeSigList` | `<time>` per field (`abc2xml.py:1795-1808`) + default `4/4` (`abc2xml.py:2423`) | one `<time>` per field, no default | §3.2 |
+| clefs | `[K: treble+8]…[K: bass]` in `flattener.test__abcOctaveClefs`; seven `K:...clef=` in `selection.test__abcClefs`; `K:C clef=treble` in `multi-voice.test__abcLyricsTwoVoices` | one `<clef>` per K:/V: field (`abc2xml.py:1734-1744`) | first clef only — **real missing element** | §4.6 |
+| slurs | `[E4(e4]c2)` in `book6` X:1062; `(gfg … g2)` in `americanfifeopus` X:18/X:118 | slur from a chord note (`abc2xml.py:371-387`, `:1516`) | slur inside `[...]` dropped — **real missing element** | §4.11 |
+
+Two classes were real reader bugs and were fixed:
+
+- **Mid-tune clef** (`d81e34c7`) — `K:...clef=` after measure 0 was stored on
+  `HeaderClef`, which the exporter only reads for the first measure. Use
+  `SegmentType::Clef`; the exporter's `mid_measure_clef` then writes it.
+  `abc2xml.py:1734-1744`, ABC 2.1 §4.6. Reduced test first.
+- **Slur into/out of a chord** (`3aa402c7`) — `(`/`)` inside `[...]` were
+  discarded as stray symbols. Handle them as slur open/close in both chord
+  loops and `read_note`'s pre-letter decoration skip. `abc2xml.py:371-387`,
+  ABC 2.1 §4.11 (explicitly allows slurs "into, out of and between chords").
+
+The one-part-per-voice claim was then made measurable: `n3.py` (`02cdf317`)
+adds per-voice columns that divide `<key>`, `<time>`, `<clef>`, `<repeat>`,
+`<ending>` counts by the part count (`abc2xml.py:2423,2426-2445`); note-level
+categories keep raw counts. On the unchanged corpus this removes 8 keys,
+7 times and 2 repeats of pure layout inflation.
+
+Remaining 23 decorations were reclassified: 5 header `Q:` labels erased by
+an inline `[Q:]`, 9 annotations between barlines, 4 duplicate `Segno`
+annotations, and 5 assorted. Three more reader fixes:
+
+- **Every `Q:` field** (`fc350243`) — `AnnotationSpec::Tempo` per field and a
+  separate `header_tempo` so an inline `[Q:]` no longer erases the header.
+  `abc2xml.py:1884-1906`, ABC 2.1 §4.7.
+- **Annotations between barlines** (`00f6ee84`, `5ecfa45a`) — `finish_bar`
+  dropped pending annotations in an empty measure; flush them to the last
+  event, keeping them pending when no previous event exists.
+  `abc2xml.py:2022`, ABC 2.1 §4.19.
+- (The duplicate-Segno correction is part of the same empty-measure fix.)
+
+Final full campaign (`/tmp/abc-n3-verify`, 1 402 files / 4 756 tunes; alt XMLs
+reused from the equivalent run because `abc2xml.py` was removed from `/tmp`
+mid-campaign): N3 per-voice deficits keys 29, times 25, clefs 19, voices 18,
+repeats 22, voltas 15, slurs 24, **decorations 15** (from 23 this pass),
+tuplets 5, harmony 2, graces 2, lyrics 10. From the start of the campaign:
+decorations 661 → 15. Tune-by-tune versus the previous run: **4 N3 entries
+improved, 0 regressed; 0 N1 exact losses, 0 gains, 0 note-count changes**.
+The residual key/time/clef counts are the `abc2xml.py:2423` default field
+and oracle failures (no `K:`), not missing music; voices/voltas/repeats are
+one-part-per-voice layout, now normalised above.
+
 ## 27. Écriture ABC : mesure complète et deux correctifs (2026-11-21)
 
 ### 27.1 Oracle et protocole
