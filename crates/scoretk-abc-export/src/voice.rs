@@ -876,7 +876,12 @@ fn draw_context_changes(
         let Some(offset) = item_at_or_after(items, range.clone(), tick) else {
             continue;
         };
-        before[offset].push(token);
+        // Deux changements successifs sans note intermédiaire se rattachent
+        // au même `offset` : n'écrire le champ qu'une seule fois, sinon
+        // l'aller-retour ajoute un `[K:… clef=…]` à chaque lecture.
+        if !before[offset].iter().any(|existing| existing == &token) {
+            before[offset].push(token);
+        }
     }
 }
 
