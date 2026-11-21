@@ -5263,6 +5263,10 @@ fn transposition_a_partir_de_sa_declaration() {
         .expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![60, 59, 61, 62]);
 }
+/// Une portée transpositrice dans un StaffGroup devient son propre Part,
+/// avec `<transpose>` : le modèle garde `pitch` concert et son tpc cohérent,
+/// et l'export écrit la hauteur notée. LilyPond 2.26 joue
+/// 66/69/67/71/64/67/62/66.
 #[test]
 fn export_concert_sans_transpose_de_partie() {
     let score = read_lilypond(
@@ -5278,6 +5282,25 @@ fn export_concert_sans_transpose_de_partie() {
 "#,
     )
     .expect("lecture");
+    assert_eq!(
+        hauteurs_attaques(&score),
+        vec![66, 69, 67, 71, 64, 67, 62, 66]
+    );
+    assert!(score
+        .parts
+        .iter()
+        .any(|part| part.instrument.transpose.is_some()));
+    // pitch concert et tpc cohérent : l'alter du tpc redonne la hauteur.
+    for note in score.notes.iter() {
+        let spiral = (i32::from(note.tpc) + 8).rem_euclid(7) as usize;
+        let base = [5, 0, 7, 2, 9, 4, 11][spiral];
+        let alter = (i32::from(note.tpc) + 8).div_euclid(7) - 3;
+        assert_eq!(
+            (base + alter).rem_euclid(12),
+            i32::from(note.pitch % 12),
+            "pitch et tpc incohérents"
+        );
+    }
     let xml = scoretk_musicxml_export::export_musicxml(&score).expect("export");
     let pitches: Vec<String> = xml
         .split("<pitch>")
@@ -5297,17 +5320,12 @@ fn export_concert_sans_transpose_de_partie() {
                 .chars()
                 .next()
                 .unwrap();
-            let alter = if fragment.contains("<alter>1</alter>") {
-                "#"
-            } else {
-                ""
-            };
-            format!("{step}{alter}{octave}")
+            format!("{step}{octave}")
         })
         .collect();
     assert_eq!(
         pitches,
-        vec!["F#4", "A4", "G4", "B4", "E4", "G4", "D4", "F#4"]
+        vec!["A4", "C5", "B4", "D5", "G4", "B4", "F4", "A4"]
     );
 }
 

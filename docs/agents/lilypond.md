@@ -3382,3 +3382,21 @@ Un `\new PianoStaff << >>` vide ne crée désormais plus de portée du tout
 (`parse_new_context` renvoie `None` pour un contenu `Sim`/`Seq` vide) : test
 `groupe_de_portees_vide_ne_cree_pas_de_portee`. Cette correction structurelle
 ne change aucune note du corpus.
+
+### Refaire le correctif de transposition dans le lecteur
+
+La version précédente corrigeait l'export MusicXML : un accord de la portée
+transpositrice avait un `pitch` concert et un `tpc` écrit, et l'export
+devinait la hauteur depuis le MIDI. Le modèle doit rester cohérent
+(`Note::pitch` concert, tpc concert, tpc transposé écrit, comme
+`engraving/dom/note.cpp`), et l'export ne doit pas deviner.
+
+`lily/staff-performer.cc` porte `instrumentTransposition` par portée : dans
+un `\new StaffGroup`, une portée transpositrice est donc un instrument
+distinct. Le lecteur crée désormais un Part propre pour cette portée, avec
+`instrument.transpose` posé, tout en gardant les hauteurs concert dans le
+modèle et en transposant le `tpc` du même intervalle
+(`engraving/dom/pitchspelling.cpp`). Le test
+`export_concert_sans_transpose_de_partie` vérifie la cohérence pitch/tpc, le
+Part muni d'une transposition et la sortie MusicXML. Mesure complète :
+mus 97,38 %, ra 83,21 %, mut **88,90 %**, 14 gains et aucune perte.

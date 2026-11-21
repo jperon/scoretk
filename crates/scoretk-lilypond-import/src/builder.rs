@@ -217,12 +217,37 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
         let first_staff_index = staves.len();
         for (position, staff_block) in group.staves.iter().enumerate() {
             let staff_start = staves.len();
-            let mut staff = Staff::new(part_id);
+            let staff_transposition = if group.staves.len() > 1 {
+                staff_block
+                    .voices
+                    .iter()
+                    .find_map(|voice| instrument_transpose(&voice.music))
+            } else {
+                None
+            };
+            let staff_part_id = if let Some((pitch, true)) = staff_transposition {
+                // Portée transpositrice dans un groupe : instrument distinct,
+                // transposition portée par le Part, hauteurs du modèle écrites.
+                let (diatonic, chromatic) = crate::pitch::instrument_transpose(&pitch);
+                let nom = staff_block.name.clone().unwrap_or_default();
+                let court = staff_block
+                    .short_instrument_name
+                    .clone()
+                    .unwrap_or_default();
+                let mut part = Part::new(nom.clone(), court.clone());
+                part.name = nom;
+                part.instrument = instrument_for(&part.name, &court);
+                part.instrument.transpose = Some(Transpose::new(diatonic, chromatic));
+                score.add_part(part)
+            } else {
+                part_id
+            };
+            let mut staff = Staff::new(staff_part_id);
             if let Some(bracket) = group_bracket(group.kind.clone(), position, group.staves.len()) {
                 staff.brackets.push(bracket);
             }
-            let staff_id = score.add_staff_with(part_id, staff);
-            let built = build_voices(&mut score, staff_id, part_id, staff_block, warnings);
+            let staff_id = score.add_staff_with(staff_part_id, staff);
+            let built = build_voices(&mut score, staff_id, staff_part_id, staff_block, warnings);
             let mut built = built.into_iter();
             if let Some(premiere) = built.next() {
                 let mut lyrics: Vec<LyricsBuild> =
@@ -246,23 +271,10 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                     lyrics: sœur.lyrics,
                 });
             }
-            // Un groupe de plusieurs portées ne peut pas porter un seul
-            // `<transpose>` de partie : LilyPond applique `	ransposition`
-            // à la portée qui le déclare (`lily/audio-item.cc`,
-            // `instrumentTransposition`). On décale donc cette portée seule
-            // dans le modèle, où les hauteurs sont concert.
-            if group.staves.len() > 1 {
-                let transposition = staff_block
-                    .voices
-                    .iter()
-                    .find_map(|voice| instrument_transpose(&voice.music));
-                if let Some((pitch, a_decaler)) = transposition {
-                    if a_decaler {
-                        let (_, chromatic) = crate::pitch::instrument_transpose(&pitch);
-                        let depuis = transposition_depuis(&staves[staff_start..]);
-                        decaler_vers_concert(&mut staves[staff_start..], chromatic, depuis);
-                    }
-                }
+            if let Some((pitch, true)) = staff_transposition {
+                let (_, chromatic) = crate::pitch::instrument_transpose(&pitch);
+                let depuis = transposition_depuis(&staves[staff_start..]);
+                decaler_vers_concert(&mut staves[staff_start..], chromatic, depuis);
             }
         }
         // Paroles du groupe (hors portée) : rattachées à sa première portée.
@@ -730,7 +742,7 @@ fn decaler_vers_concert(staves: &mut [StaffBuild], chromatic: i32, depuis: Fract
                     continue;
                 }
                 if let EventKind::Chord(chord) = &mut event.kind {
-                    decaler_accord(&mut chord.content, chromatic);
+                    decaler_accord(&mut chord.content, chromatic, true);
                     for grace in chord
                         .grace_before
                         .iter_mut()
@@ -744,10 +756,25 @@ fn decaler_vers_concert(staves: &mut [StaffBuild], chromatic: i32, depuis: Fract
     }
 }
 
+/// Tpc d'une hauteur concert, avec l'altération la plus simple
+/// (`pitchspelling.cpp` : spirale des quintes fa do sol ré la mi si).
+fn tpc_from_midi(pitch: u8) -> i8 {
+    const SPIRAL: [i32; 7] = [0, 1, 2, 3, 4, 5, 6];
+    const ALTER: [i32; 12] = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
+    const STEP: [usize; 12] = [1, 1, 3, 3, 5, 0, 0, 2, 2, 4, 4, 6];
+    let index = usize::from(pitch % 12);
+    i8::try_from(-8 + 7 * (ALTER[index] + 3) + SPIRAL[STEP[index]]).unwrap_or(14)
+}
+
 /// Décale les notes d'un accord (les silences n'ont pas de hauteur).
-fn decaler_accord(content: &mut ChordContent, chromatic: i32) {
+fn decaler_accord(content: &mut ChordContent, chromatic: i32, concert_tpc: bool) {
     if let ChordContent::Notes(notes) = content {
         decaler_notes(notes, chromatic);
+        if concert_tpc {
+            for note in notes {
+                note.tpc = tpc_from_midi(note.pitch);
+            }
+        }
     }
 }
 
