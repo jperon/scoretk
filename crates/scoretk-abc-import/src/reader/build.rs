@@ -29,8 +29,8 @@
 
 use scoretk_core::model::{
     Annotation, BarLineType, Clef, ClefType, Dynamic, Fraction, Harmony, KeySig, Measure, Part,
-    Placement, RichText, Score, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor,
-    SpannerType, Staff, TimeSig, Track, Transpose, Tuplet, TupletId, VoltaInfo,
+    Placement, RichText, Score, Segment, SegmentItem, SegmentType, Slur, Spanner, SpannerAnchor,
+    SpannerNotation, SpannerType, Staff, TimeSig, Track, Transpose, Tuplet, TupletId, VoltaInfo,
 };
 
 use crate::reader::{AnnotationSpec, Position, Reader, Voice};
@@ -611,11 +611,17 @@ fn add_spanner(
 ) {
     let start_tick = starts.get(start.measure).copied().unwrap_or(Fraction::ZERO) + start.tick;
     let end_tick = starts.get(end.measure).copied().unwrap_or(Fraction::ZERO) + end.tick;
-    let spanner = Spanner::new(
+    let mut spanner = Spanner::new(
         kind,
         SpannerAnchor::new(start_tick, track),
         SpannerAnchor::new(end_tick, track),
     );
+    // `abc2xml.py::doSlurs` (lignes 1566-1580) écrit `<slur type="start"/>`
+    // pour chaque `( … )` ABC. L'export MusicXML n'écrit les slurs que si le
+    // spanner porte une `SpannerNotation::Slur` (`notations.rs::slurs`).
+    if spanner.kind == SpannerType::Slur {
+        spanner.notation = Some(SpannerNotation::Slur(Slur::new()));
+    }
     score.add_spanner(spanner);
 }
 
