@@ -3901,3 +3901,45 @@ same corpus was at 99.6 % with only two imperfect files; the fix recovers
 `testMultiInstrumentPart3.mscx` (8 notes, 50 % → 100 % N2 on that file).
 The remaining 8 imperfect corpus files are ottava and instrument-convention
 differences with the MuseScore model, documented in §20.
+
+## 25. LilyPond export: final status (2026-11-21)
+
+`--mode model` on current master (the oracle's reference is the pivot model
+exported from the source; both candidates start from the same MusicXML and
+are re-read by scoretk). One unsupported input is excluded (the Pachelbel
+accordion arrangement, exit code 3). LilyPond 2.27.0 compiles both candidates.
+
+| Lot | Tool | Files | Compiled | Exact | N1 % | N2 % | N2d % | Errors | Warn. | Mean bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 48 | 99.78 | 99.78 | 99.78 | 0 | 11 | 1326 |
+| corpus | musicxml2ly | 56 | 51 | 27 | 95.31 | 89.22 | 83.75 | 79 | 20 | 2906 |
+| mscz | scoretk | 173 | 162 | 143 | 99.99 | 98.11 | 97.73 | 6 | 1070 | 26 390 |
+| mscz | musicxml2ly | 173 | 150 | 34 | 99.67 | 92.66 | 91.41 | 69 600 | 4736 | 46 234 |
+| xml | scoretk | 32 | 29 | 21 | 99.90 | 96.69 | 96.51 | 2 | 252 | 54 019 |
+| xml | musicxml2ly | 32 | 27 | 9 | 93.10 | 67.38 | 65.36 | 78 | 430 | 38 906 |
+
+scoretk is above musicxml2ly on every lot, compiles more files, and emits
+far fewer errors and warnings.
+
+### Remaining scoretk losses, ranked by class
+
+1. **Long tuplet/voice drift** — `Vingt_danses_enfantines_pour_piano.mscz`
+   (4379 notes), `Vivaldi…Dixit Dominus` (1374) : a single local timing
+   shift cascades through thousands of notes; the first divergence is at
+   tick 665 and 0 respectively. Not a writer feature, requires reader-side
+   tuplet/negative-tick work.
+2. **Staff-text/unison groups** — seven `Minuit chrétien` parts (279 each) :
+   large chord grids with duplicated pitches.
+3. **Ottava** — `Byrd_Dies` (320), `CanonDeLaPaix` (218), `Salazar` (4).
+   LilyPond has `\ottava` (`ly/property-init.ly`, `scm/music-functions.scm`
+   `make-ottava-set`) and MuseScore has `Ottava` ; the writer already emits
+   `\ottava 1`. An experimental reader-side concert-pitch shift was measured
+   and **reverted** : it dropped the corpus from 99.78 % to 99.19 % because
+   the spanner range written from the MuseScore model differs by one beat
+   from the range expected on re-read. Fixing this properly requires
+   aligning the spanner ticks on both sides, not just adding the shift.
+4. **Accordion registers** — `Under_Paris_Skies` (48), `Tarentella` (22),
+   `Waltz_No._2` (14). They *are* text in MuseScore (`StaffText` "m", "7"…)
+   and the writer emits all 72 of them as `^\markup { … }`. The remaining
+   loss is a chord/timing issue around tick 229, not a missing register.
+5. Measure-length irregularities — `Anerio` (284), `Perosi` (137).
