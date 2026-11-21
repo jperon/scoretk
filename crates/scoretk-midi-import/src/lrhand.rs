@@ -355,9 +355,14 @@ pub fn split_into_left_right_hands(tracks: &mut Vec<MTrack>, splits: &[bool]) {
             left.chords.insert_at(key, chord);
         }
         right.had_initial_notes = true;
-        left.had_initial_notes = true;
         result.push(right);
-        result.push(left);
+        // `LRHand::splitStaff` (`:411-417`) n'insère la portée de main
+        // gauche que si la programmation dynamique lui a attribué au moins
+        // un accord ; sinon MuseScore ne crée pas de portée vide.
+        if !left.chords.is_empty() {
+            left.had_initial_notes = true;
+            result.push(left);
+        }
     }
     *tracks = result;
 }
