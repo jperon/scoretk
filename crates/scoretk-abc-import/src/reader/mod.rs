@@ -371,7 +371,7 @@ pub(crate) struct Position {
 }
 
 /// Annotation en attente, posée sur l'accord suivant.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum AnnotationSpec {
     /// Texte libre (`"^texte"`).
     Text {
@@ -389,6 +389,9 @@ pub(crate) enum AnnotationSpec {
     /// `Annotation::Fermata` de segment sur chaque note, silence compris
     /// (`notations.rs::rest_notations` ; `abc2xml.py::doDecos` 1491-1492).
     Fermata(Fermata),
+    /// Champ Q: en cours d'air (`abc2xml.py::doTempo`, 1884-1906) : chaque
+    /// occurrence produit sa propre direction, pas seulement la dernière.
+    Tempo(f64, String),
 }
 
 /// Accord d'agrément en attente.
@@ -662,6 +665,8 @@ pub(crate) struct Reader {
     pub instrument_transpose: i32,
     /// Tempo global `(battements par seconde, texte)`.
     pub tempo: Option<(f64, String)>,
+    /// Premier champ Q: (en-tête), conservé même si un Q: en ligne suit.
+    pub header_tempo: Option<(f64, String)>,
     /// Symboles redéfinis par `U:` (lettre → nom de décoration).
     pub user_symbols: BTreeMap<char, String>,
     /// Numéros attribués aux voix nommées `V:S`, `V:A`… (port de
@@ -707,6 +712,7 @@ impl Default for Reader {
             midi_transpose: 0,
             instrument_transpose: 0,
             tempo: None,
+            header_tempo: None,
             user_symbols: BTreeMap::new(),
             voice_ids: BTreeMap::new(),
             overlay_pool: BTreeMap::new(),
@@ -879,6 +885,19 @@ impl Reader {
             }
             'Q' => {
                 self.tempo = parse_tempo(value);
+                if !self.header_done {
+                    self.header_tempo = self.tempo.clone();
+                }
+                // `abc2xml.py::doTempo` writes a direction for every Q:
+                // field. A single `tempo` slot kept only the last one, so an
+                // inline [Q:] erased the header label.
+                if let Some((bps, text)) = &self.tempo {
+                    if !self.voices.is_empty() {
+                        self.voices[self.current]
+                            .annotations
+                            .push(AnnotationSpec::Tempo(*bps, text.clone()));
+                    }
+                }
             }
             'K' => {
                 // Port de `abc2xml.py::doHeaderField` (lignes 1812-1813,

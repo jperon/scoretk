@@ -204,7 +204,7 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
     // `ChordRest` (`annotation_track`). Poser le tempo sur un `TimeTick`
     // le rendait invisible : attacher au premier accord de la mesure, où
     // `annotateTracks` le trouve.
-    if let Some((bps, text)) = &reader.tempo {
+    if let Some((bps, text)) = reader.header_tempo.as_ref().or(reader.tempo.as_ref()) {
         if let Some(measure) = score.measures.first_mut() {
             let mut tempo = scoretk_core::model::Tempo::new(text.clone());
             tempo.beats_per_second = Some(*bps);
@@ -634,6 +634,11 @@ fn segment_at(
 fn annotation_object(spec: &AnnotationSpec) -> Annotation {
     match spec {
         AnnotationSpec::Fermata(fermata) => Annotation::Fermata(*fermata),
+        AnnotationSpec::Tempo(bps, text) => {
+            let mut tempo = scoretk_core::model::Tempo::new(text.clone());
+            tempo.beats_per_second = Some(*bps);
+            Annotation::Tempo(tempo)
+        }
         AnnotationSpec::Dynamic(text) => Annotation::Dynamic(Dynamic::new(text.clone())),
         AnnotationSpec::Text {
             text,
