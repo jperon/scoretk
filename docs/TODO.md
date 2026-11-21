@@ -75,3 +75,4 @@ Leads:
   `../cantus`, Android, no fs or threads, and no C dependency.
 - **Schedule.** To be undertaken once mscz → MusicXML parity is reached.
   The first deliverable remains the scoretk facade in wasm for cantus.
+- **Do not port `read114` (MuseScore 1.x reader) without a real need.** One 1.14 file in a 1 401-file corpus; such files get a clear "unsupported version" error.
