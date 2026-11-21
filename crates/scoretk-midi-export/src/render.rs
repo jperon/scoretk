@@ -1298,6 +1298,12 @@ fn render_chord(
         .ornaments
         .iter()
         .any(|ornament| ornament.kind == OrnamentType::InvertedMordent && ornament.play);
+    // `ornamentTurn` (`compatmidirenderinternal.h:88`) : corps
+    // `{1, 0, -1, 0}`, joué comme quatre croches doubles.
+    let turned = chord
+        .ornaments
+        .iter()
+        .any(|ornament| ornament.kind == OrnamentType::Turn && ornament.play);
 
     let mut ontime = 0i64;
     let mut trailtime = 0i64;
@@ -1633,6 +1639,45 @@ fn render_chord(
                 beats_per_second_at(score, source_tick),
                 key_fifths_at(score, source_tick),
                 auxiliary,
+            ) {
+                let start = on + offset;
+                let end = start + length.max(1);
+                out.push(Event {
+                    tick: start,
+                    kind: EventKind::NoteOn {
+                        channel,
+                        key,
+                        velocity,
+                    },
+                });
+                context.attack(
+                    start,
+                    end - start,
+                    AttackNote {
+                        chord: context.chord,
+                        note: note_index,
+                        pitch: key,
+                        grace: true,
+                        grace_index: None,
+                        grace_before: true,
+                        tremolo: false,
+                    },
+                );
+                out.push(Event {
+                    tick: end,
+                    kind: EventKind::NoteOff { channel, key },
+                });
+            }
+            continue;
+        }
+        if turned && !trilled && !short_trilled && tremolo.is_none() {
+            let span = tied_span_ticks(score, staff, note, ticks);
+            for (offset, key, length) in ornaments::turn(
+                note,
+                span,
+                ticks,
+                beats_per_second_at(score, source_tick),
+                key_fifths_at(score, source_tick),
             ) {
                 let start = on + offset;
                 let end = start + length.max(1);

@@ -94,6 +94,19 @@ fn step_pitch(note: &Note, steps: i32, fifths: i8) -> u8 {
     (i32::from(note.pitch) + if delta == 0 { 12 } else { delta }).clamp(0, 127) as u8
 }
 
+/// Degré diatonique **descendant** (`steps < 0`) : `step_pitch` cherche
+/// toujours vers le haut, ce qui donnerait l'octave supérieure pour
+/// l'auxiliaire inférieur d'un gruppetto (`{1, 0, -1, 0}`).
+fn step_pitch_below(note: &Note, steps: i32, fifths: i8) -> u8 {
+    let accidentals = key_accidentals(fifths);
+    let step = diatonic_step(note.tpc);
+    let target = (step as i32 + steps).rem_euclid(7) as usize;
+    let target_pc = (NATURAL_PITCH_CLASS[target] + accidentals[target]).rem_euclid(12);
+    let note_pc = i32::from(note.pitch).rem_euclid(12);
+    let delta = (note_pc - target_pc).rem_euclid(12);
+    (i32::from(note.pitch) - if delta == 0 { 12 } else { delta }).clamp(0, 127) as u8
+}
+
 /// Hauteur du degré supérieur quand un accidentique a déjà été écrit sur la
 /// même ligne dans la mesure (`chromaticPitchSteps`, `dom/utils.cpp:807`).
 ///
@@ -302,6 +315,56 @@ pub(crate) fn short_trill(
     emit(0, 0, milles);
     emit(1, milles, milles);
     emit(0, 2 * milles, milles + sustain);
+    events
+}
+
+/// Évènements d'un gruppetto (`ornamentTurn`) : `(décalage, hauteur, durée)`.
+///
+/// La table `excursions` (`compatmidirenderinternal.h:88`) donne un corps
+/// `{ 1, 0, -1, 0 }` en croches doubles, sans répétition, avec prolongation
+/// de la dernière note (`sustainp=true`),
+/// `compatmidirender.cpp:665-800`. Comme pour `short_trill`, si la durée ne
+/// contient pas quatre croches doubles, le pas est divisé par quatre.
+pub(crate) fn turn(
+    note: &Note,
+    span: i64,
+    chord_ticks: i64,
+    beats_per_second: f64,
+    fifths: i8,
+) -> Vec<(i64, u8, i64)> {
+    if span <= 0 || chord_ticks <= 0 {
+        return Vec::new();
+    }
+    let ticks_per_second = (beats_per_second * f64::from(DIVISION)).round() as i64;
+    if ticks_per_second <= 0 {
+        return Vec::new();
+    }
+    let min_ticks = (ticks_per_second / FASTEST_HZ).max(1);
+    let mut step = THIRTY_SECOND.max(min_ticks);
+    if step * 4 > span {
+        step = span / 4;
+        if step < min_ticks {
+            return Vec::new();
+        }
+    }
+    let milles = 1000 * step;
+    let sustain = (1000 * span - milles * 4).max(0);
+    let mut events = Vec::new();
+    for (index, degree) in [1, 0, -1, 0].into_iter().enumerate() {
+        let ontime = (index as i64) * milles;
+        let duration = if index == 3 { milles + sustain } else { milles };
+        let per_mille = ontime / chord_ticks;
+        let offset = chord_ticks * per_mille / 1000;
+        let length = chord_ticks * (duration / chord_ticks) / 1000 - 1;
+        if length > 0 {
+            let pitch = if degree < 0 {
+                step_pitch_below(note, degree, fifths)
+            } else {
+                step_pitch(note, degree, fifths)
+            };
+            events.push((offset, pitch, length));
+        }
+    }
     events
 }
 
