@@ -1927,3 +1927,18 @@ voix 3 031, n-olets 1 928, attaque 178. Le poste « pitch » restant est
 majoritairement le choix de gabarit (transpositions encore mal classées
 pour quelques programmes), déjà partiellement traité ; la prochaine cause
 vise la plus grande classe hors simplification ci-dessus.
+
+### Classement complémentaire (mesure hybrid, 1 020 fichiers)
+
+Hors cause stationnée, les plus grosses pertes par classe sont :
+pitch — `Transeamus` 160 notes (0,742), `W-A-Mozart-Ave-Maria` 111 (0,474),
+six fichiers à 96 (`lily-ced0e264`…, 0,372) ; durée — `Ad_te_Suspiramus`
+199 (0,825), `LaMouetteGrise…` 168 (0,758) ; voix —
+`Sancta_Maria_Mater_Dei_Mozart` 200 (0,938), `Maiana` 140 (0,779).
+Pour le groupe `lily-ced0e264`/`Transeamus`, la référence MuseScore porte
+`<transpose chromatic="-5">`而我们 aucun : le programme MIDI 73 devrait
+choisir un gabarit `alto-flute` (-5, plage 55-91) plutôt que `flute` (0,
+plage 59-98). Tentatives mesurées et rejetées : l'ajustement de plage
+appliqué aux transpositions vers le bas (aucun gain sur ces fichiers, et
+-0,07 sur `Gaudete…`), donc réverti. Ce classement et ces échecs sont
+consignés ici pour la prochaine passe.

@@ -325,7 +325,6 @@ fn detect_human_performance(
             sigmap,
             beat_locator::ticks_per_second(midi, tracks),
         );
-        eprintln!("TPS {}", beat_locator::ticks_per_second(midi, tracks));
         (
             true,
             operations::QuantValue::Q8,
