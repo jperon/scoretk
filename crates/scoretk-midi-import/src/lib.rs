@@ -1104,11 +1104,9 @@ fn duration_list(
     let measure = &score.measures[measure_index];
     let bar_tick = measure.start_tick;
     // En mode notation seule, les n-olets ne découpent pas les durées.
-    let tuplets = if options.tuplet_notation {
-        Vec::new()
-    } else {
-        tuplet::find_tuplets_in_bar_for_duration(track, voice, bar_tick, start_tick, len)
-    };
+    // Durées **notées** de MuseScore pour les notes de n-olet : le découpage
+    // utilise le ratio du n-olet (`toDurationList`, importmidi.cpp:553-611).
+    let tuplets = tuplet::find_tuplets_in_bar_for_duration(track, voice, bar_tick, start_tick, len);
     meter_to_duration_list_with_sig(
         start_tick - bar_tick,
         start_tick - bar_tick + len,
