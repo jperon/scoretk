@@ -31,7 +31,12 @@ from __future__ import annotations
 import argparse
 import collections
 from pathlib import Path
+import sys
 import xml.etree.ElementTree as ET
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import common  # noqa: E402
 
 from import_mesure import GRID, TOL, mscx_notes, notes
 
@@ -111,7 +116,7 @@ def main() -> None:
                     "ref-musescore/src/importexport/midi/tests/midiimport_data")
     lignes = []
     for row in map(__import__("json").loads, (src / "import.jsonl").read_text().splitlines()):
-        if "erreur" in row or not row["id"].startswith("up-"):
+        if "erreur" in row or common.est_exclu(row) or not row["id"].startswith("up-"):
             continue
         ident = row["id"][3:]
         d = src / "travail" / row["id"]

@@ -41,6 +41,10 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import common  # noqa: E402
+
 GRID = 0.25
 TOL = 0.25
 LIMITE = 15
@@ -192,10 +196,11 @@ def score(ref: list[tuple], got: list[tuple]) -> float:
     return found / len(ref)
 
 
-def run(binary: str, src: Path, dst: Path) -> bool:
+def run(binary: str, src: Path, dst: Path) -> int:
+    """Lit ``src`` avec la CLI ; renvoie son code (3 = non prise en charge)."""
     cmd = ["timeout", str(LIMITE), "prlimit", "--as=2000000000",
            binary, str(src), "--to", "musicxml", "-o", str(dst)]
-    return subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    return subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
 
 
 def paires_upstream(data: Path) -> list[tuple[str, Path, Path]]:
@@ -241,43 +246,58 @@ def main() -> None:
             d.mkdir(exist_ok=True)
             got_xml, ref_xml = d / "got.musicxml", d / "ref.musicxml"
             row = {"id": ident, "mid": str(mid), "ref": str(ref), "score": 0.0}
+            exclu = False
             if ref.suffix == ".mscx":
                 try:
                     a = mscx_notes(ref)
                 except Exception as exc:
                     a = []
                     row["erreur"] = f"reference : {exc}"[:200]
-            elif not run(args.binary, ref, ref_xml):
-                a = []
-                row["erreur"] = "conversion reference"
             else:
-                try:
-                    a = notes(ref_xml)
-                except Exception as exc:
+                code = run(args.binary, ref, ref_xml)
+                if common.est_non_pris_en_charge(code):
+                    common.marquer_exclu(row, str(ref))
+                    a, exclu = [], True
+                elif code != 0:
                     a = []
-                    row["erreur"] = f"reference : {exc}"[:200]
-            if run(args.binary, mid, got_xml):
-                try:
-                    b = notes(got_xml, to_concert=ref.suffix == ".mscx")
-                    row.update(ref_notes=len(a), got_notes=len(b), score=round(score(a, b), 4))
-                except Exception as exc:
-                    row["erreur"] = str(exc)[:200]
-            else:
-                row["erreur"] = "conversion"
+                    row["erreur"] = "conversion reference"
+                else:
+                    try:
+                        a = notes(ref_xml)
+                    except Exception as exc:
+                        a = []
+                        row["erreur"] = f"reference : {exc}"[:200]
+            if not exclu:
+                code_mid = run(args.binary, mid, got_xml)
+                if common.est_non_pris_en_charge(code_mid):
+                    common.marquer_exclu(row, str(mid))
+                elif code_mid == 0:
+                    try:
+                        b = notes(got_xml, to_concert=ref.suffix == ".mscx")
+                        row.update(ref_notes=len(a), got_notes=len(b), score=round(score(a, b), 4))
+                    except Exception as exc:
+                        row["erreur"] = str(exc)[:200]
+                else:
+                    row["erreur"] = "conversion"
             fic.write(json.dumps(row, ensure_ascii=False) + "\n")
             fic.flush()
     rows = [json.loads(l) for l in (out / "import.jsonl").read_text().splitlines()]
+    exclus = common.noms_exclus(rows)
+    # Une entrée non prise en charge sort du numérateur et du dénominateur.
+    rows = common.filtrer(rows)
     ok = [r for r in rows if "erreur" not in r]
     total = sum(r.get("ref_notes", 0) for r in ok)
     found = sum(r.get("ref_notes", 0) * r["score"] for r in ok)
     resume = [f"# MIDI import oracle — {len(ok)}/{len(rows)} files",
               f"# N (pitch+onset+duration+voice, Q{int(1/GRID)}, tol {TOL}): "
               f"{found/total:.4f}" if total else "",
+              f"# {common.ligne_resume(exclus)}",
               "", "| File | Ref notes | Got notes | Score |", "| --- | ---: | ---: | ---: |"]
     for r in sorted(rows, key=lambda r: r["score"]):
         resume.append(f"| {r['id']} | {r.get('ref_notes', 0)} | {r.get('got_notes', 0)} | "
                       f"{r['score']:.4f} |")
     (out / "resume.md").write_text("\n".join(resume) + "\n", encoding="utf-8")
+    common.avertir(exclus)
     print("\n".join(l for l in resume if l.startswith("#")))
 
 

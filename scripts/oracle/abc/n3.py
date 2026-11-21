@@ -23,7 +23,12 @@ import argparse
 import collections
 import csv
 import os
+import sys
 import xml.etree.ElementTree as ET
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import common  # noqa: E402
 
 CATEGORIES = (
     "lyrics", "ties", "slurs", "tuplets", "graces", "decorations",
@@ -82,7 +87,7 @@ def main():
     args = parser.parse_args()
     mesures = args.mesures or os.path.join(args.out, "mesures.tsv")
     rows = [r for r in csv.DictReader(open(mesures, encoding="utf-8"), delimiter="\t")
-            if r["candidat"] == "scoretk"]
+            if r["candidat"] == "scoretk" and r.get("statut") != common.STATUT]
     target = os.path.join(args.out, "n3.tsv")
     with open(target, "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t")

@@ -3,9 +3,11 @@
 # Copyright (C) 2026 jperon
 """Ventilation des pertes du lot LilyPond (deux exports MusicXML du modèle)."""
 from __future__ import annotations
-import argparse, collections, json
+import argparse, collections, json, sys
 from pathlib import Path
 import xml.etree.ElementTree as ET
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import common  # noqa: E402
 from import_mesure import GRID, TOL, notes
 
 CATS = ("voice", "duration", "onset", "pitch", "staff split", "tuplet", "clef", "key")
@@ -33,7 +35,7 @@ def main():
     dst.mkdir(parents=True, exist_ok=True)
     lignes = []
     for row in map(json.loads, (src/'import.jsonl').read_text().splitlines()):
-        if 'erreur' in row or not row['id'].startswith('ly-'): continue
+        if 'erreur' in row or common.est_exclu(row) or not row['id'].startswith('ly-'): continue
         d = src/'travail'/row['id']
         ref = notes(d/'ref.musicxml'); got = notes(d/'got.musicxml')
         a, b = attrs(d/'ref.musicxml'), attrs(d/'got.musicxml')

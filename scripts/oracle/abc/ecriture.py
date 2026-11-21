@@ -62,7 +62,9 @@ HERE = Path(__file__).resolve().parent
 # (qui porte le même nom) dans le chemin de recherche.
 sys.path.insert(0, str(HERE.parent / "midi"))  # midi_notes.py
 sys.path.insert(0, str(HERE))                  # mesure.py, cmp.py
+sys.path.insert(0, str(HERE.parent))           # common.py
 
+import common  # noqa: E402
 import mesure  # noqa: E402
 from midi_notes import GRID, TOL, compare, read_midi, read_xml  # noqa: E402
 
@@ -107,10 +109,15 @@ def ecrire(fichier, releve: dict) -> None:
     fichier.write(json.dumps(releve, ensure_ascii=False) + "\n")
 
 
-def reference_midi(args, src: str, dest: Path, log: Path) -> str:
-    """MIDI de référence de S (MuseScore pour les partitions, scoretk pour XML)."""
+def reference_midi(args, src: str, dest: Path, log: Path) -> tuple[str, int | None]:
+    """MIDI de référence de S (MuseScore pour les partitions, scoretk pour XML).
+
+    Renvoie ``(message, code)`` : le code de scoretk permet à l'appelant de
+    reconnaître une entrée non prise en charge (le MusicXML est alors sa propre
+    référence, produite par scoretk).
+    """
     if dest.is_file() and dest.stat().st_size:
-        return ""
+        return "", None
     kind = Path(src).suffix.lower().lstrip(".")
     if kind in ("mscx", "mscz"):
         commande = [args.mscore, "-o", str(dest), src]
@@ -120,8 +127,8 @@ def reference_midi(args, src: str, dest: Path, log: Path) -> str:
         commande = [args.scoretk, src, "-o", str(dest)]
     code, _, message = lancer(commande, log)
     if dest.is_file() and dest.stat().st_size:
-        return ""
-    return f"référence MIDI absente (code {code}) {message[-200:]}"
+        return "", code
+    return f"référence MIDI absente (code {code}) {message[-200:]}", code
 
 
 def reference_xml(args, src: str, dest: Path, tk_xml: Path, log: Path) -> str:
@@ -178,11 +185,11 @@ def reference_xml(args, src: str, dest: Path, tk_xml: Path, log: Path) -> str:
     return "absent"
 
 
-def ecrire_abc_scoretk(args, src: str, dst: Path, log: Path) -> tuple[bool, str]:
-    """Écrit le ``.abc`` de scoretk sous timeout/prlimit."""
+def ecrire_abc_scoretk(args, src: str, dst: Path, log: Path) -> tuple[int, bool, str]:
+    """Écrit le ``.abc`` de scoretk sous timeout/prlimit ; renvoie (code, ok, message)."""
     code, _, message = lancer([args.scoretk, src, "-o", str(dst)], log)
     ok = code == 0 and dst.is_file() and dst.stat().st_size > 0
-    return ok, "" if ok else (message[-300:] or f"code {code}, sortie absente")
+    return code, ok, "" if ok else (message[-300:] or f"code {code}, sortie absente")
 
 
 def verifier_aller_retour(args, abc: Path, work: Path, log: Path) -> dict:
@@ -195,10 +202,10 @@ def verifier_aller_retour(args, abc: Path, work: Path, log: Path) -> dict:
     """
     rt1 = work / "rt1.abc"
     rt2 = work / "rt2.abc"
-    ok1, _ = ecrire_abc_scoretk(args, str(abc), rt1, log)
+    _, ok1, _ = ecrire_abc_scoretk(args, str(abc), rt1, log)
     if not ok1:
         return {"rt_ok": False, "rt_stable": False}
-    ok2, _ = ecrire_abc_scoretk(args, str(rt1), rt2, log)
+    _, ok2, _ = ecrire_abc_scoretk(args, str(rt1), rt2, log)
     if not ok2:
         return {"rt_ok": False, "rt_stable": False}
     stable = rt1.read_bytes() == rt2.read_bytes()
@@ -246,7 +253,7 @@ def jouer_abc(abc: Path, midi: Path, log: Path) -> dict:
     }
 
 
-def noter_modele(args, abc: Path, dest: Path, log: Path) -> tuple[bool, list, str]:
+def noter_modele(args, abc: Path, dest: Path, log: Path) -> tuple[int, list, str]:
     """Releit l'ABC avec scoretk et en retire les notes du modèle.
 
     Mode « modèle » de l'oracle : on compare les notes du modèle pivot avant
@@ -255,14 +262,17 @@ def noter_modele(args, abc: Path, dest: Path, log: Path) -> tuple[bool, list, st
     MuseScore (absente des deux ABC) et la limite de 16 canaux d'abc2midi sur
     les partitions orchestrales. Les deux candidats sont jugés avec le même
     lecteur, exactement comme ils l'étaient avec le même abc2midi.
+
+    Renvoie ``(code, notes, message)`` : le code de sortie permet à l'appelant
+    de reconnaître une entrée non prise en charge, comme partout ailleurs.
     """
-    ok, erreur = ecrire_abc_scoretk(args, str(abc), dest, log)
+    code, ok, erreur = ecrire_abc_scoretk(args, str(abc), dest, log)
     if not ok:
-        return False, [], erreur
+        return code, [], erreur
     try:
-        return True, read_xml(str(dest)), ""
+        return 0, read_xml(str(dest)), ""
     except Exception as exc:  # XML illisible
-        return False, [], f"XML illisible : {exc}"
+        return 0, [], f"XML illisible : {exc}"
 
 
 def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
@@ -282,8 +292,21 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
             debut = time.monotonic()
             tk_abc = work / "tk.abc"
             tk_xml = work / "tk.musicxml"
-            ok_tk, err_tk = ecrire_abc_scoretk(args, src, tk_abc, log)
-            ok_xml, err_xml = ecrire_abc_scoretk(args, src, tk_xml, log)
+            code_tk, ok_tk, err_tk = ecrire_abc_scoretk(args, src, tk_abc, log)
+            code_xml, ok_xml, err_xml = ecrire_abc_scoretk(args, src, tk_xml, log)
+            # Entrée délibérément non prise en charge : le fichier sort du lot,
+            # pour scoretk comme pour xml2abc.py (même dénominateur). Le modèle
+            # de référence du mode model vient de la même conversion, donc
+            # l'exclusion y vaut aussi.
+            if common.est_non_pris_en_charge(code_tk) or common.est_non_pris_en_charge(code_xml):
+                for outil in ("scoretk", "xml2abc"):
+                    r = base_releve(lot, outil, src)
+                    common.marquer_exclu(r, src)
+                    r["erreur"] = "entrée non prise en charge"
+                    r["temps"] = round(time.monotonic() - debut, 3)
+                    ecrire(out, r)
+                out.flush()
+                continue
 
             if args.mode == "model":
                 # Référence = notes du modèle pivot exporté par scoretk depuis
@@ -308,7 +331,15 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     continue
             else:
                 ref_mid = caches / f"{h}.mid"
-                err_ref = reference_midi(args, src, ref_mid, log)
+                err_ref, code_ref = reference_midi(args, src, ref_mid, log)
+                if common.est_non_pris_en_charge(code_ref):
+                    for outil in ("scoretk", "xml2abc"):
+                        r = base_releve(lot, outil, src)
+                        common.marquer_exclu(r, src)
+                        r["erreur"] = "entrée non prise en charge"
+                        ecrire(out, r)
+                    out.flush()
+                    continue
                 if err_ref or not ref_mid.is_file():
                     for outil in ("scoretk", "xml2abc"):
                         r = base_releve(lot, outil, src)
@@ -363,11 +394,16 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                 if outil == "scoretk":
                     r.update(verifier_aller_retour(args, abc, work, log))
                 if args.mode == "model":
-                    ok_notes, test, err_notes = noter_modele(
+                    code_notes, test, err_notes = noter_modele(
                         args, abc, work / f"{outil}.musicxml", log
                     )
                     r["temps"] = round(time.monotonic() - debut, 3)
-                    if not ok_notes:
+                    if common.est_non_pris_en_charge(code_notes):
+                        common.marquer_exclu(r, src)
+                        r["erreur"] = "entrée non prise en charge"
+                        ecrire(out, r)
+                        continue
+                    if err_notes:
                         r["erreur"] = err_notes
                         r["drapeaux"] = ["echec"]
                         ecrire(out, r)
@@ -408,6 +444,9 @@ def charger(out: str) -> list[dict]:
 
 
 def resume(releves: list[dict]) -> str:
+    exclus = common.noms_exclus(releves)
+    # Une entrée non prise en charge sort du numérateur et du dénominateur.
+    releves = common.filtrer(releves)
     groupes: dict[tuple, list[dict]] = {}
     for r in releves:
         groupes.setdefault((r["lot"], r["outil"]), []).append(r)
@@ -443,6 +482,7 @@ def resume(releves: list[dict]) -> str:
             f"{sum(r.get('erreurs', 0) for r in rs)} | {sum(r.get('avertissements', 0) for r in rs)} | "
             f"{(sum(tailles)/len(tailles)) if tailles else 0:.0f} | {tmax:.2f} s |"
         )
+    lignes += ["", common.ligne_resume(exclus)]
     lignes += ["", "## Aller-retour `.abc → scoretk → .abc → scoretk`", "",
                "| Lot | Testés | Relus | Stables | Instables |",
                "| --- | ---: | ---: | ---: | ---: |"]
@@ -483,6 +523,7 @@ def resume(releves: list[dict]) -> str:
                "| Cause | Fichiers | Exemple |", "| --- | ---: | --- |"]
     for cause, fichiers in sorted(causes.items(), key=lambda kv: -len(kv[1]))[:10]:
         lignes.append(f"| {cause} | {len(fichiers)} | `{fichiers[0]}` |")
+    common.avertir(exclus)
     return "\n".join(lignes) + "\n"
 
 

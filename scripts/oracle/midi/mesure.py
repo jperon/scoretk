@@ -36,9 +36,14 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import time
 
 from midi_notes import GRID, TOL, compare, read_midi, read_xml
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import common  # noqa: E402
 
 TIMEOUT_SCORETK = 10
 TIMEOUT_MSCORE = 20
@@ -173,6 +178,13 @@ def mesurer_lecture(args, lot: str, manifeste: str, fichier_sortie) -> None:
             r = base_releve(lot, "lecture", outil, src)
             code, duree, erreur = lancer_chaine(chaine, budget)
             r["code"], r["temps"] = code, round(duree, 3)
+            # `scoretk` est le premier candidat : l'entrée non prise en charge
+            # exclut le fichier pour tous les outils du lot.
+            if outil == "scoretk" and common.est_non_pris_en_charge(code):
+                common.marquer_exclu(r, src)
+                r["erreur"] = f"entrée non prise en charge (code {code})"
+                ecrire_ligne(fichier_sortie, r)
+                break
             r["ok"] = code == 0 and sortie.exists() and sortie.stat().st_size > 0
             r["taille"] = sortie.stat().st_size if sortie.exists() else 0
             if not r["ok"]:
@@ -214,6 +226,11 @@ def mesurer_ecriture(args, lot: str, manifeste: str, fichier_sortie) -> None:
             cmd_scoretk(args.scoretk, src, str(dst), entree, "midi")
         )
         r["code"], r["temps"] = code, round(duree, 3)
+        if common.est_non_pris_en_charge(code):
+            common.marquer_exclu(r, src)
+            r["erreur"] = f"entrée non prise en charge (code {code})"
+            ecrire_ligne(fichier_sortie, r)
+            continue
         r["ok"] = code == 0 and dst.exists() and dst.stat().st_size > 0
         r["taille"] = dst.stat().st_size if dst.exists() else 0
         if not r["ok"]:
@@ -244,6 +261,12 @@ def mesurer_robustesse(args, lot: str, manifeste: str, fichier_sortie) -> None:
         )
         r["code"], r["temps"] = code, round(duree, 3)
         r["taille"] = dst.stat().st_size if dst.exists() else 0
+        if common.est_non_pris_en_charge(code):
+            common.marquer_exclu(r, src)
+            r["erreur"] = f"entrée non prise en charge (code {code})"
+            ecrire_ligne(fichier_sortie, r)
+            fichier_sortie.flush()
+            continue
         r["ok"] = code == 0 and r["taille"] > 0
         if not r["ok"]:
             r["erreur"] = erreur or "sortie vide ou absente"
@@ -276,6 +299,9 @@ def charger(out: str) -> list[dict]:
 
 
 def resume(relevés: list[dict]) -> str:
+    exclus = common.noms_exclus(relevés)
+    # Une entrée non prise en charge sort du numérateur et du dénominateur.
+    relevés = common.filtrer(relevés)
     groupes: dict[tuple, list[dict]] = {}
     for r in relevés:
         groupes.setdefault((r["lot"], r["sens"], r["outil"]), []).append(r)
@@ -312,9 +338,11 @@ def resume(relevés: list[dict]) -> str:
     for r in relevés:
         if r.get("drapeaux"):
             causes.setdefault(r["drapeaux"][0], []).append(r["fichier"])
-    lignes += ["", "## Causes d'écart (les plus fréquentes)", "", "| Cause | Fichiers | Exemple |", "| --- | ---: | --- |"]
+    lignes += ["", common.ligne_resume(exclus), "",
+               "## Causes d'écart (les plus fréquentes)", "", "| Cause | Fichiers | Exemple |", "| --- | ---: | --- |"]
     for cause, fichiers in sorted(causes.items(), key=lambda kv: -len(kv[1]))[:10]:
         lignes.append(f"| {cause} | {len(fichiers)} | `{fichiers[0]}` |")
+    common.avertir(exclus)
     return "\n".join(lignes) + "\n"
 
 

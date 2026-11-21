@@ -44,8 +44,10 @@ import time
 
 DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(DIR))
+sys.path.insert(0, str(DIR.parent))
 sys.path.insert(0, str(DIR.parent / "midi"))
 
+import common  # noqa: E402
 from midi_notes import compare, read_midi  # noqa: E402
 from validite import preparer_xsd, valider  # noqa: E402
 
@@ -106,9 +108,19 @@ def mesure(args, schema, env_xsd, paires, fichier) -> None:
         for nom, commande, env in etapes:
             code, duree, erreur = lancer(commande, env)
             r["temps"] += round(duree, 3)
+            # Entrée délibérément non prise en charge : exclue de la mesure,
+            # jamais comptée comme un échec de conversion.
+            if nom.startswith("scoretk") and common.est_non_pris_en_charge(code):
+                common.marquer_exclu(r, src)
+                r["erreur"] = f"{nom} : entrée non prise en charge (code {code})"
+                ecrire(fichier, r)
+                fichier.flush()
+                break
             if code != 0:
                 r["erreur"] = f"{nom} : code {code} {erreur}"
                 break
+        if common.est_exclu(r):
+            continue
         cibles = [tkxml, msxml, tkmid, msmid]
         if r["erreur"] or any(not p.exists() or p.stat().st_size == 0 for p in cibles):
             r["erreur"] = r["erreur"] or "sortie absente ou vide"
@@ -190,7 +202,10 @@ def resume(args) -> str:
     rows = []
     chemin = Path(args.out) / "mesure.jsonl"
     with chemin.open(encoding="utf-8") as f:
-        rows = [json.loads(l) for l in f if l.strip()]
+        toutes = [json.loads(l) for l in f if l.strip()]
+    exclus = common.noms_exclus(toutes)
+    # Une entrée non prise en charge sort du numérateur et du dénominateur.
+    rows = common.filtrer(toutes)
     n = len(rows)
     ok = sum(r["ok"] for r in rows)
     invalides_tk = sum(r.get("xsd_tk", {}).get("erreurs", 0) for r in rows)
@@ -220,6 +235,7 @@ def resume(args) -> str:
         f"Core-identical to MuseScore: {core_ok}/{ok}",
         f"N1 (pitch multiset): {n1/notes_ref if notes_ref else 0:.4f} | "
         f"N2 (pitch+attack): {n2/notes_ref if notes_ref else 0:.4f}",
+        common.ligne_resume(exclus),
         "",
         "## XSD error messages (count)",
         "",
@@ -231,6 +247,7 @@ def resume(args) -> str:
                "| Family | Lines |", "| --- | ---: |"]
     for f, count in sorted(familles.items(), key=lambda kv: -kv[1]):
         lignes.append(f"| {f} | {count} |")
+    common.avertir(exclus)
     return "\n".join(lignes) + "\n"
 
 

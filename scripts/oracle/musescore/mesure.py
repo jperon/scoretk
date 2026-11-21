@@ -45,8 +45,10 @@ import time
 
 DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(DIR))
+sys.path.insert(0, str(DIR.parent))
 sys.path.insert(0, str(DIR.parent / "midi"))
 
+import common  # noqa: E402
 from midi_notes import compare, read_midi  # noqa: E402
 
 LIMITE = 30  # secondes, pour MuseScore comme pour scoretk
@@ -137,9 +139,20 @@ def mesure_lot(lot: str, args, fichier) -> None:
                 r["averts"] += len(Mot_avert.findall(erreur))
                 if code == 0:
                     r["ouvert"] = True
+            # Entrée délibérément non prise en charge (version MuseScore hors
+            # sous-ensemble, convertisseur absent) : exclue de la mesure, pas
+            # comptée comme un échec d'écriture.
+            if nom.startswith("scoretk") and common.est_non_pris_en_charge(code):
+                common.marquer_exclu(r, src)
+                r["erreur"] = f"{nom} : entrée non prise en charge (code {code})"
+                ecrire(fichier, r)
+                fichier.flush()
+                break
             if code != 0:
                 r["erreur"] = f"{nom} : code {code} {erreur}"
                 break
+        if common.est_exclu(r):
+            continue
         cibles = [tk_mscz, ms_xml, ms_mid, tk_xml, tk_mid]
         if r["erreur"] or any(not p.exists() or p.stat().st_size == 0 for p in cibles):
             r["erreur"] = r["erreur"] or "sortie absente ou vide"
@@ -269,9 +282,13 @@ def resume(args) -> str:
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     totaux: dict[str, list[float]] = {}
+    exclus: list[str] = []
     for lot in args.lots:
         chemin = Path(args.out) / f"{lot}.jsonl"
-        rows = [json.loads(l) for l in chemin.read_text(encoding="utf-8").splitlines()]
+        toutes = [json.loads(l) for l in chemin.read_text(encoding="utf-8").splitlines()]
+        exclus += common.noms_exclus(toutes)
+        # Une entrée non prise en charge sort du numérateur et du dénominateur.
+        rows = common.filtrer(toutes)
         n = len(rows)
         ecrits = sum(1 for r in rows if r.get("ok"))
         ouverts = sum(1 for r in rows if r.get("ouvert"))
@@ -325,6 +342,8 @@ def resume(args) -> str:
         "MuseScore's own import of the source against scoretk's direct "
         "MusicXML, on the same files.",
         "",
+        common.ligne_resume(exclus),
+        "",
         "## Writer-only N2 below 1.0",
         "",
         "| File | Ref notes | N1w | N2w | Cause |",
@@ -336,7 +355,7 @@ def resume(args) -> str:
             continue
         for ligne in chemin.read_text(encoding="utf-8").splitlines():
             r = json.loads(ligne)
-            if not r.get("refw") or "n2w" not in r:
+            if common.est_exclu(r) or not r.get("refw") or "n2w" not in r:
                 continue
             pct_w = r["n2w"] / r["refw"]
             if pct_w >= 1.0:
@@ -346,6 +365,7 @@ def resume(args) -> str:
                 f"{pct(r.get('n1w', 0), r['refw'])} | {pct_w:.4f} | "
                 f"{cause_n2w(r)} |"
             )
+    common.avertir(exclus)
     return "\n".join(lignes) + "\n"
 
 

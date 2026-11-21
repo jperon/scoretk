@@ -21,6 +21,12 @@
 import argparse
 import collections
 import csv
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import common  # noqa: E402
 
 
 def resume(rows, key):
@@ -69,8 +75,16 @@ def principal():
     args = parser.parse_args()
     with open(args.tsv, newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
+    # Un morceau non pris en charge sort du numérateur et du dénominateur ;
+    # il est signalé une fois, jamais compté comme un échec.
+    exclus = sorted({f"{r['fichier']} X:{r['x']}" for r in rows
+                     if r.get("statut") == common.STATUT})
+    rows = [r for r in rows if r.get("statut") != common.STATUT]
     lots = [(lot, lot) for lot in sorted({r["lot"] for r in rows})]
     affiche(rows, lots)
+    print()
+    print(common.ligne_resume(exclus))
+    common.avertir(exclus)
 
 
 if __name__ == "__main__":

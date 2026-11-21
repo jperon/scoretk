@@ -38,8 +38,12 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import common  # noqa: E402
 from ly_notes import (
     GRID, TOL, a_des_repetitions, compare, lire_graces, read_midi, read_xml,
 )
@@ -211,6 +215,14 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                 r = base_releve(lot, outil, src, repetitions)
                 code, duree, erreur = lancer(commande)
                 r["code"], r["temps"] = code, round(duree, 3)
+                # `scoretk` est le premier candidat : une entrée non prise en
+                # charge exclut le fichier avant qu'aucune ligne d'alternative
+                # ne soit écrite, donc tout le lot reste comparable.
+                if outil == "scoretk" and common.est_non_pris_en_charge(code):
+                    common.marquer_exclu(r, src)
+                    r["erreur"] = f"entrée non prise en charge (code {code})"
+                    ecrire(out, r)
+                    break
                 r["taille"] = dst.stat().st_size if dst.is_file() else 0
                 r["ok"] = code == 0 and r["taille"] > 0
                 if not r["ok"]:
@@ -249,6 +261,9 @@ def charger(out: str) -> list[dict]:
 
 
 def resume(releves: list[dict]) -> str:
+    exclus = common.noms_exclus(releves)
+    # Une entrée non prise en charge sort du numérateur et du dénominateur.
+    releves = common.filtrer(releves)
     groupes: dict[tuple, list[dict]] = {}
     for r in releves:
         groupes.setdefault((r["lot"], r["outil"]), []).append(r)
@@ -287,6 +302,7 @@ def resume(releves: list[dict]) -> str:
             f"{n2/tot_sans if tot_sans else 0:.2f} | "
             f"{n2g/tot_sans if tot_sans else 0:.2f} | {tmax:.2f} s |"
         )
+    lignes += ["", common.ligne_resume(exclus)]
     causes: dict[str, list[str]] = {}
     for r in releves:
         if r["outil"] == "scoretk" and r.get("drapeaux"):
@@ -295,6 +311,7 @@ def resume(releves: list[dict]) -> str:
                "| Cause | Fichiers | Exemple |", "| --- | ---: | --- |"]
     for cause, fichiers in sorted(causes.items(), key=lambda kv: -len(kv[1]))[:10]:
         lignes.append(f"| {cause} | {len(fichiers)} | `{fichiers[0]}` |")
+    common.avertir(exclus)
     return "\n".join(lignes) + "\n"
 
 

@@ -43,8 +43,12 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 
-import cmp
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import cmp  # noqa: E402
+import common  # noqa: E402
 
 FIELD = re.compile(r"^[A-Za-z]\s*:")
 TUNE = re.compile(r"^X\s*:\s*\d+")
@@ -189,6 +193,7 @@ def principal():
     os.makedirs(brut, exist_ok=True)
     rows = []
     saw_error = []
+    exclus = []
     with open(args.liste, encoding="utf-8") as handle:
         entries = [line.rstrip("\n").split("\t") for line in handle if line.strip()]
     for entry in entries:
@@ -232,6 +237,16 @@ def principal():
                 ["timeout", "10", "prlimit", "--as=2000000000", args.scoretk,
                  air, "-o", xml], log
             )
+            # Entrée délibérément non prise en charge : le morceau sort du
+            # numérateur et du dénominateur, pour scoretk comme pour
+            # l'alternative mesurée sur le même morceau.
+            if common.est_non_pris_en_charge(r_tk):
+                for name in ("scoretk", "alternatif"):
+                    rows.append((lot, os.path.basename(source), number, tag, name,
+                                 0, 0, 0, 0, 0.0, 0, 0.0, common.STATUT,
+                                 common.STATUT, source))
+                exclus.append(f"{os.path.basename(source)} X:{number}")
+                continue
             r_alt = 1
             if args.abc2xml:
                 r_alt, _ = lance(
@@ -286,6 +301,7 @@ def principal():
             handle.write("\t".join(str(v) for v in row) + "\n")
     with open(os.path.join(args.out, "erreurs.log"), "w", encoding="utf-8") as handle:
         handle.write("\n".join(saw_error) + ("\n" if saw_error else ""))
+    common.avertir(exclus)
     print(f"{len(rows)} mesures dans {tsv}")
 
 

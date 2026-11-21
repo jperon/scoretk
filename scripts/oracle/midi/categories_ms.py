@@ -3,9 +3,11 @@
 # Copyright (C) 2026 jperon
 """Mesure du lot LilyPond contre l'import MIDI de MuseScore 4.7.4."""
 from __future__ import annotations
-import argparse, collections, json
+import argparse, collections, json, sys
 from pathlib import Path
 import xml.etree.ElementTree as ET
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import common  # noqa: E402
 from import_mesure import notes, score as note_score
 
 CATS = ("pitch", "onset", "duration", "voice", "staff split", "tuplet", "clef", "key")
@@ -43,7 +45,7 @@ def main():
     dst.mkdir(parents=True, exist_ok=True)
     lignes = []
     for row in map(json.loads, (src / "import.jsonl").read_text().splitlines()):
-        if "erreur" in row or not row["id"].startswith("ly-"):
+        if "erreur" in row or common.est_exclu(row) or not row["id"].startswith("ly-"):
             continue
         ident = row["id"]
         safe = ident.replace("/", "_").replace(" ", "_")

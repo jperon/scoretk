@@ -60,7 +60,9 @@ import time
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "midi"))
+sys.path.insert(0, str(HERE.parent))
 
+import common  # noqa: E402
 from ly_notes import a_des_repetitions  # noqa: E402
 from midi_notes import GRID, TOL, compare, read_midi  # noqa: E402
 
@@ -212,11 +214,11 @@ def compiler_lilypond(args, ly: Path, sortie: Path) -> dict:
     return resultat
 
 
-def convertir_scoretk(args, src: str, dst: Path, to: str) -> tuple[bool, str]:
-    """Lance scoretk sous timeout/prlimit ; renvoie (succès, message)."""
+def convertir_scoretk(args, src: str, dst: Path, to: str) -> tuple[int, bool, str]:
+    """Lance scoretk sous timeout/prlimit ; renvoie (code, succès, message)."""
     code, _, err = lancer(borne([args.scoretk, src, "--to", to, "-o", str(dst)]))
     ok = code == 0 and dst.is_file() and dst.stat().st_size > 0
-    return ok, "" if ok else (err[-300:] or f"code {code}, sortie absente")
+    return code, ok, "" if ok else (err[-300:] or f"code {code}, sortie absente")
 
 
 def reference_midi(args, src: str, dest: Path, caches: Path, extensible: bool) -> str:
@@ -341,8 +343,18 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
 
             tk_ly = work / "tk.ly"
             tk_xml = work / "tk.musicxml"
-            ok_ly, err_ly = convertir_scoretk(args, src, tk_ly, "ly")
-            ok_xml, _ = convertir_scoretk(args, src, tk_xml, "musicxml")
+            code_ly, ok_ly, err_ly = convertir_scoretk(args, src, tk_ly, "ly")
+            code_xml, ok_xml, _ = convertir_scoretk(args, src, tk_xml, "musicxml")
+            # Entrée délibérément non prise en charge : le fichier sort du lot,
+            # pour scoretk comme pour musicxml2ly (même dénominateur).
+            if common.est_non_pris_en_charge(code_ly) or common.est_non_pris_en_charge(code_xml):
+                for outil in ("scoretk", "musicxml2ly"):
+                    r = base_releve(lot, outil, src, repetition)
+                    common.marquer_exclu(r, src)
+                    r["erreur"] = "entrée non prise en charge"
+                    ecrire(out, r)
+                out.flush()
+                continue
             ref_xml = caches / f"{h}.musicxml"
             origine = reference_xml(args, src, ref_xml, tk_xml, caches) if ok_xml or Path(src).suffix.lower() in (".mscz", ".mscx", ".xml", ".musicxml", ".mxl") else "absent"
             m2ly = work / "m2ly.ly"
@@ -413,6 +425,9 @@ def charger(out: str) -> list[dict]:
 
 
 def resume(releves: list[dict]) -> str:
+    exclus = common.noms_exclus(releves)
+    # Une entrée non prise en charge sort du numérateur et du dénominateur.
+    releves = common.filtrer(releves)
     groupes: dict[tuple, list[dict]] = {}
     for r in releves:
         groupes.setdefault((r["lot"], r["outil"]), []).append(r)
@@ -445,6 +460,7 @@ def resume(releves: list[dict]) -> str:
             f"{pct('pct_n1'):.2f} | {pct('pct_n2'):.2f} | {pct('pct_n2d'):.2f} | "
             f"{errs} | {av} | {(sum(tailles)/len(tailles)) if tailles else 0:.0f} | {tmax:.2f} s |"
         )
+    lignes += ["", common.ligne_resume(exclus)]
     # Comparaison fichier par fichier : pertes de scoretk face à musicxml2ly.
     paires: dict[tuple, dict] = {}
     for r in releves:
@@ -477,6 +493,7 @@ def resume(releves: list[dict]) -> str:
                "| Cause | Fichiers | Exemple |", "| --- | ---: | --- |"]
     for cause, fichiers in sorted(causes.items(), key=lambda kv: -len(kv[1]))[:10]:
         lignes.append(f"| {cause} | {len(fichiers)} | `{fichiers[0]}` |")
+    common.avertir(exclus)
     return "\n".join(lignes) + "\n"
 
 

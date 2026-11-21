@@ -160,6 +160,9 @@ struct TagStat {
 struct FullReport {
     /// Number of differing lines per file, in alphabetical order.
     rows: Vec<(String, usize)>,
+    /// Files whose input is deliberately unsupported (never counted, never a
+    /// failure): their conversion stops with `Error::is_unsupported`.
+    excluded: Vec<String>,
     /// Discrepancies grouped by tag name, with examples.
     tags: BTreeMap<String, TagStat>,
     /// Diffs unifiés, pour le diagnostic.
@@ -239,6 +242,7 @@ fn run_full_corpus(version: &str) -> FullReport {
 
     let mut report = FullReport {
         rows: Vec::new(),
+        excluded: Vec::new(),
         tags: BTreeMap::new(),
         diffs: String::new(),
     };
@@ -259,6 +263,10 @@ fn run_full_corpus(version: &str) -> FullReport {
         let input = fs::read(path).expect("lecture du .mscx");
         let actual = match convert(&input, &options) {
             Ok(bytes) => normalize_full(&String::from_utf8(bytes).expect("MusicXML UTF-8")),
+            Err(error) if error.is_unsupported() => {
+                report.excluded.push(name.clone());
+                continue;
+            }
             Err(error) => {
                 report.rows.push((name.clone(), usize::MAX));
                 report
@@ -304,6 +312,15 @@ fn print_full_report(version: &str, report: &FullReport) {
         } else {
             println!("  {name}: {changed} differing lines");
         }
+    }
+    for name in &report.excluded {
+        println!("  {name}: unsupported (excluded)");
+    }
+    if !report.excluded.is_empty() {
+        println!(
+            "unsupported (excluded): {} file(s), not counted in the corpus",
+            report.excluded.len()
+        );
     }
     println!("discrepancies grouped by tag:");
     print_tag_stats(&report.tags);
@@ -371,6 +388,9 @@ fn ecarts_complets_document() {
             } else {
                 println!("| {name} | {changed} |");
             }
+        }
+        for name in &report.excluded {
+            println!("| {name} | unsupported (excluded) |");
         }
         println!();
     }
@@ -478,6 +498,7 @@ fn run_corpus(version: &str, expected_conformant: &[&str]) {
 
     let mut names = Vec::new();
     let mut identical = Vec::new();
+    let mut excluded = Vec::new();
     let mut rows = Vec::new();
     let mut diffs = String::new();
 
@@ -498,6 +519,13 @@ fn run_corpus(version: &str, expected_conformant: &[&str]) {
         let input = fs::read(path).expect("lecture du .mscx");
         let actual = match convert(&input, &options) {
             Ok(bytes) => normalize(&String::from_utf8(bytes).expect("MusicXML UTF-8")),
+            Err(error) if error.is_unsupported() => {
+                // Entrée délibérément non prise en charge : exclue du corpus
+                // mesuré, jamais comptée comme un échec de conversion.
+                excluded.push(name.clone());
+                rows.push(format!("{name}: unsupported (excluded)"));
+                continue;
+            }
             Err(error) => {
                 rows.push(format!("{name}: ERROR ({error})"));
                 diffs.push_str(&format!("\n=== {name}: ERROR ===\n{error}\n"));
@@ -521,10 +549,22 @@ fn run_corpus(version: &str, expected_conformant: &[&str]) {
     for row in &rows {
         println!("  {row}");
     }
+    if !excluded.is_empty() {
+        println!(
+            "unsupported (excluded): {} fichier(s), hors numérateur et dénominateur",
+            excluded.len()
+        );
+    }
     if !diffs.is_empty() {
         println!("{diffs}");
     }
 
+    for name in &excluded {
+        assert!(
+            !expected_conformant.contains(&name.as_str()),
+            "{name} est listé dans EXPECTED_CONFORMANT mais son entrée n'est pas prise en charge"
+        );
+    }
     for name in expected_conformant {
         assert!(
             names.iter().any(|candidate| candidate == name),
