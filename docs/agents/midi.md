@@ -1769,3 +1769,29 @@ Sur les 15 pires fichiers du lot comparés à MuseScore 4.7.4, `GaudeteChristus�
 ` passe de **0,6495 à 1,0000** (150 notes retrouvées) et aucun autre fichier
 ne régresse ; perte totale 2 776 → 2 626 notes. La mesure complète sur les
 1 020 fichiers est en cours avec le nouvel oracle MuseScore.
+
+## Oracle MuseScore complet (1 020 fichiers)
+
+`ms-oracle.sh` a converti les 1 020 paires en parallèle (990 conversions,
+30 reprises depuis le cache) ; `categories_ms.py` donne :
+
+**N pondéré par les notes contre MuseScore 4.7.4 = 0,8018**
+(29 049,8 notes perdues sur 146 573).
+
+| Catégorie | Fichiers | Pertes (notes) |
+| --- | ---: | ---: |
+| pitch | 625 | 18 702,9 |
+| duration | 295 | 5 210,0 |
+| voice | 78 | 3 030,8 |
+| n-olets | 15 | 1 928,0 |
+| attaque | 7 | 178,0 |
+
+La catégorie « pitch » domine : elle correspond presque entièrement aux
+instruments transpositeurs dont MuseScore remplit `Instrument::transpose` et
+que notre import MIDI ne renseigne pas encore. La correction de la
+contrebasse (programmes 32/43) a fait passer `GaudeteChristusEstNatus…` de
+0,6495 à 1,0000 sur les 15 fichiers de départ. Une tentative sur le programme
+73 (transposition -5 d'après la référence MuseScore) n'a produit **aucun
+changement** mesuré : la transposition n'est pas appliquée par notre
+exporteur pour ce cas ; elle est révertie. Les 15 pires fichiers et la
+ventilation complète sont dans `/tmp/oracle-midi-import/ms-cat/categories_ms.md`.
