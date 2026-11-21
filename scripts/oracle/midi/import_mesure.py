@@ -208,6 +208,31 @@ def paires_upstream(data: Path) -> list[tuple[str, Path, Path]]:
             for p in sorted(data.glob("*.mid")) if p.with_name(p.stem + "-ref.mscx").exists()]
 
 
+def identifiants_lilypond(chemins: list[Path]) -> list[tuple[str, Path]]:
+    """Associe un identifiant **unique** à chaque MIDI LilyPond.
+
+    Deux partitions de même nom vivent dans des dossiers différents
+    (`SanctePieX` grégorien et `SanctePieX` des cantiques, trois `AStMichel`).
+    Un identifiant fondé sur le seul nom de fichier faisait écrire les deux
+    conversions et la même référence MuseScore au même endroit : la seconde
+    écrasait la première, et les deux lignes étaient comparées au même
+    fichier. La première occurrence garde l'identifiant historique (dont la
+    référence existe déjà), les suivantes reçoivent `-2`, `-3`… dans l'ordre
+    trié des chemins, donc de façon déterministe.
+    """
+    vus: dict[str, int] = {}
+    out = []
+    for mid in chemins:
+        ident = f"ly-{mid.stem}"
+        if ident in vus:
+            vus[ident] += 1
+            ident = f"{ident}-{vus[ident]}"
+        else:
+            vus[ident] = 1
+        out.append((ident, mid))
+    return out
+
+
 def paires_lilypond() -> list[tuple[str, Path, Path]]:
     """Les partitions LilyPond écrivent `.midi`, pas `.mid`.
 
@@ -215,12 +240,10 @@ def paires_lilypond() -> list[tuple[str, Path, Path]]:
     notes exact contre le MIDI produit par LilyPond), pas un parseur Python :
     les deux côtés passent par la CLI, donc on compare modèle à modèle.
     """
-    out = []
-    for mid in sorted(Path("/home/jacques/Musique").rglob("*.midi")):
-        ly = mid.with_suffix(".ly")
-        if ly.exists():
-            out.append((f"ly-{mid.stem}", mid, ly))
-    return out
+    chemins = [mid for mid in sorted(Path("/home/jacques/Musique").rglob("*.midi"))
+               if mid.with_suffix(".ly").exists()]
+    return [(ident, mid, mid.with_suffix(".ly"))
+            for ident, mid in identifiants_lilypond(chemins)]
 
 
 def main() -> None:

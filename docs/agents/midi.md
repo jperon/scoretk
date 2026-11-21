@@ -2004,20 +2004,65 @@ programme 73 avec les plages réelles de `Transeamus` (58–70) et de
 flûte) → gabarit préféré `flute`.
 
 Mesure (mêmes manifestes, oracle MuseScore 4.7.4, binaire gelé
-`/tmp/scoretk-pitch-base`, `timeout 10 prlimit --as=2000000000`) :
+`/tmp/scoretk-pitch-base`, `timeout 10 prlimit --as=2000000000` ; chiffres
+corrigés par la réparation d'identifiants du § suivant) :
 
 | Lot | Avant | Après |
 | --- | --- | --- |
-| LilyPond (1 020 fichiers), N contre MuseScore | 0,8279 | **0,9241** |
-| perte totale | 25 218,8 notes | **11 117,8** |
-| dimension `pitch` (pertes) | 11 211,9 | **1 897,7** |
+| LilyPond (1 020 fichiers), N contre MuseScore | 0,8288 | **0,9251** |
+| perte totale | 25 076,8 notes | **10 975,8** |
+| dimension `pitch` (pertes) | 11 224,9 | **1 825,7** |
 | lot amont (96 fichiers), N contre `.mscx` | 0,7165 | 0,7165 |
 
-159 fichiers gagnent des hauteurs, **aucun n'en perd** ; `Transeamus` et
+161 fichiers gagnent des hauteurs, **aucun n'en perd** ; `Transeamus` et
 `Transeamus_a3` passent de 0,742 à 1,0000, `W-A-Mozart-Ave-Maria` de 0,474 à
-0,9950. Les autres dimensions (attaque, durée, voix) sont inchangées.
+0,9950. Les autres dimensions (attaque 2 313,0 ; durée 5 649,2 ; voix
+4 034,0) sont inchangées au dixième près. La catégorie `pitch` disparaît du
+classement des pires catégories.
 Le score contre le `.ly` du lot LilyPond baisse (0,7352 → 0,6561) : c'est
 attendu et déjà documenté — le `.ly` est en hauteur concert sans
 `<transpose>`, alors que MuseScore (et désormais le port) écrit la hauteur
 écrite de l'instrument choisi ; l'oracle de référence pour ce lot reste
 MuseScore 4.7.4.
+
+## Oracle d'import : identifiants uniques pour les partitions homonymes (2026-11-21)
+
+Quinze MIDI du lot LilyPond partagent leur nom de fichier avec un autre
+(`SanctePieX` grégorien et `SanctePieX` des cantiques, trois `AStMichel`,
+douze doublons de `Partitions/Cantiques`) : neuf sont identiques octet pour
+octet, trois non. L'identifiant `ly-<nom>` de `import_mesure.py` faisait donc
+écrire la conversion **et** la référence MuseScore au même chemin : la seconde
+ligne était comparée à la référence de la première, et `SanctePieX` pesait
+82 notes fantômes dans le poste « pitch ».
+
+`identifiants_lilypond` (test réduit `test_ids.py`) attribue un identifiant
+unique et déterministe : la première occurrence dans l'ordre trié garde
+`ly-<nom>` (sa référence MuseScore existe déjà), les suivantes reçoivent
+`-2`, `-3`… Les quinze références manquantes ont été regénérées avec
+MuseScore 4.7.4. Aucun autre chiffre ne change : N du lot amont 0,7165 et
+N2d du lot LilyPond sont identiques fichier par fichier.
+
+### Le poste « pitch » restant n'est pas une erreur de hauteur
+
+Comparaison équitable (même lot, mêmes fichiers, `midi_notes.read_xml` :
+liaisons fusionnées en une note tenue, hauteurs ramenées en concert par le
+`<transpose>` de chaque portée) : le multiplicité des hauteurs est
+**exacte à 100,00 %** sur les 1 020 fichiers (132 844 notes de référence),
+avant comme après le port précédent, et N2 (hauteur + attaque) vaut
+**100,00 %**. Le gain du port est donc bien la **hauteur écrite** (11 224,9 →
+1 825,7 notes) : les hauteurs concert étaient déjà justes, MuseScore leur
+applique la transposition du gabarit choisi et le port fait de même.
+
+Les 1 825,7 notes encore comptées « pitch » par l'oracle officiel sont des
+**fragments de liaison** : MuseScore découpe une note qui franchit un temps
+en deux notes liées (`<tie type="start"/>`), l'oracle les compte séparément
+alors que notre import écrit une seule note de même durée totale. Exemple
+réduit `LaMarcheAuCamp` : MIDI 67 de 1,5 à 2,5 noires → MuseScore 1,5–2,0 et
+2,0–2,5 liées, nous 1,5–2,5. Ce n'est ni une hauteur fausse ni une note
+perdue : la musique rendue est identique.
+
+**Il n'y a donc plus de sous-classe « pitch » à corriger.** La prochaine
+classe réelle est la durée : N2d équitable (liaisons fusionnées, concert)
+vaut 98,31 %, et les 1,69 % restants sont des notes plus courtes que dans la
+référence (exemple `01_01_Etudiants` : accords de 1,5 noire chez MuseScore
+contre 0,5 puis 1,0 chez nous, `lengthenNote`/`minimizeNumberOfRests`).
