@@ -1130,9 +1130,15 @@ impl<'a> Interpreter<'a> {
         }
         let stem = self.stem_override.take().unwrap_or(StemDirection::Auto);
         let grace_before = std::mem::take(&mut self.pending_grace);
-        // Seul un multiplicateur explicite devient `ticks` dans le modèle :
-        // la mise à l'échelle d'un n-olet est portée par le `Tuplet`.
-        let explicit_ticks = chord.multiplier.map(|_| actual);
+        // Un multiplicateur `*n/d`, écrit ou hérité de la durée par défaut,
+        // change la durée réelle : elle doit être portée par `ticks`, sinon
+        // l'export écrit la figure nue et décale toutes les attaques suivantes.
+        // La mise à l'échelle d'un n-olet reste portée par le `Tuplet`.
+        let explicit_ticks = if multiplier != Fraction::ONE {
+            Some(actual)
+        } else {
+            None
+        };
         if !actual.is_positive() {
             actual = Fraction::ZERO;
         }

@@ -3497,3 +3497,15 @@ place déjà mal ; le correctif est validé sur les extraits minimaux
 (`R1*3 c d e`, `c8*2/3 \rest d e`) où il reproduit exactement le MIDI de
 LilyPond. `ToccataFugue` (−1911 avec la première version du correctif) est
 revenu à 3433 appariements après `from_scale`.
+
+### Réduction réelle de `16title-hub.ly` / `liszt-consolation-no3.ly` : durée héritée
+
+La réduction part des fichiers réels : isolement des voix, puis groupes minimaux
+de quatre silences notés `c8*2/3 \rest d bf' …`. Les six notes nues après le
+premier `*2/3` héritent bien du multiplicateur dans le curseur du lecteur, mais
+`explicit_ticks` n'était posé que pour un `*` **écrit** : l'export MusicXML
+écrivait la figure nue (1/2 noire) au lieu de 1/3, décalant toutes les attaques
+suivantes. Le champ `ticks` est maintenant posé dès que le multiplicateur
+effectif diffère de un. Test `duree_heritee_du_multiplicateur_ecrite_dans_le_modele`
+(échoue avant). Sur les fichiers réels : `16title-hub` 16 → 324/324,
+`liszt-consolation-no3` 87 → 997, `Mazurka-Op6-No1` 623 → 761.

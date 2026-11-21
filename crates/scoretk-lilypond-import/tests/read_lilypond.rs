@@ -5643,3 +5643,35 @@ fn echelle_de_durees_ne_change_pas_la_duree_par_defaut() {
         touches
     );
 }
+
+/// Réduction réelle de `16title-hub.ly` : une note nue qui hérite d'un
+/// multiplicateur `*n/d` doit écrire sa durée réelle, sinon l'export décale
+/// toutes les attaques suivantes d'une double croche.
+#[test]
+fn duree_heritee_du_multiplicateur_ecrite_dans_le_modele() {
+    let source = r#"\version "2.24.0"
+\language "english"
+\score { \new Staff { \time 4/4 \relative c' {
+  c8*2/3 \rest d bf' c, \rest d bf' c, \rest d bf' c, \rest d bf'
+} } \midi {} }
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    let xml = scoretk_musicxml_export::export_musicxml(&score).expect("export");
+    let durees: Vec<i64> = xml
+        .split("<duration>")
+        .skip(1)
+        .map(|fragment| {
+            fragment
+                .split("</duration>")
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap()
+        })
+        .collect();
+    assert!(
+        durees.iter().all(|d| *d == durees[0]),
+        "toutes les notes ont la même durée réelle : {:?}",
+        durees
+    );
+}
