@@ -3580,3 +3580,45 @@ La basse `/d` devenait alors un accord D majeur séparé au tick suivant. Test
 la basse juste après la durée et l'ajoute à l'accord courant :
 `chord-names-languages` passe de 21 à 105 notes appariées sur 133, et
 l'extrait `\chordmode { e1/d c:m }` de 3 à 7 sur 7.
+
+### Versions et déficits (relevé du 2026-11-21)
+
+Toutes les mesures de ce relevé utilisent le binaire **LilyPond 2.27.0**
+comme oracle (`ly.midi`) ; les fichiers du corpus `mutopia` et de
+`input/regression` sont des sources **2.26.0 ou antérieures**, et les
+citations de `lily/`, `scm/` et `ly/` ci-dessus viennent de l'arbre des
+sources **2.26.0**. Quand une affirmation porte sur un comportement du MIDI,
+elle est donc relative à l'oracle 2.27.0.
+
+`\setTextCresc` (Violinsonata_No7_1, source 2.10.3) est une commande supprimée
+: `convert-ly` **2.27.0** la réécrit en `\crescTextCresc`
+(`python/convertrules.py` 2.26/2.27). Sur la source convertie, le lecteur
+passe de 3060 à 3683 notes appariées sur 5854 (+623), precisément le groupe
+décalé de 1/2 noire : le fichier doit donc être compté dans un panier
+« source obsolète » séparé, pas dans le déficit du lecteur.
+
+Quinze plus gros déficits du relevé `mut` (notes perdues, premier tick
+divergent) : `violin_concerto_1.ly` 11565 @84,5 ; `Symphony25_1.ly` 7363
+@328,5 ; `LVB_Sonate_57_3.ly` 5624 @3 ; `Symphony5_1.ly` 5490 @2 ;
+`Violinsonata_No9_1.ly` 5458 @288,25 ; `ballade.ly` 5224 @366 ;
+`Cellosonata_No3_1.ly` 5098 @171,25 ; `QuartetOpus18_No4_1.ly` 4467 @3,25 ;
+`troldhaugen.ly` 3425 @17,5 ; `QuartetOpus18_No4_4.ly` 3380 @32 ;
+`Symphony5_2.ly` 3326 @0,5 ; `bwv663-let.ly` et `bwv663-a4.ly` 3076 @204 ;
+`Quartet_Opus_59No3_2.ly` 2994 @18 ;
+`Sommernachtstraum-wedding-march.ly` 2871 @68.
+
+Quinze plus gros déficits du relevé `ra` (même convention) :
+`divisi-staves.ly` 399 @0 ; `beat-performer.ly` 190 @0 ;
+`accidental-ledger.ly` 171 @8 ; `note-head-style.ly` 160 @0 ;
+`tie-chord.ly` 147 @2 ; `mensural-ligatures.ly` 119 @284 ;
+`slur-scoring.ly` 112 @7 ; `chord-names-languages*.ly` 112 @0 ;
+`bend-spanner-simple.ly` 112 @5 ; `make-relative.ly` 99 @0,25 ;
+`grace-auto-beam-engraver.ly` 84 @0,25 ;
+`ssaattbb-template-*.ly` 78 @0 ; `beam-collision-basic.ly` 78 @1.
+Le lot `ra` est la suite de régression de LilyPond, sous forme de petites
+sources 2.26 qui testent surtout la gravure : beaucoup ne produisent aucune
+note lisible par notre lecteur parce que la musique est générée par des
+fonctions Scheme (`define-music-function`) — ce sont des sources hors sous-
+ensemble, pas des régressions de lecture. Les traitements utiles ont porté sur
+celles qui produisent des notes : `divisi-staves`, `accidental-ledger`,
+`bend-spanner-simple` et `chord-names-languages`.
