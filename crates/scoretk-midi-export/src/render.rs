@@ -36,11 +36,10 @@
 use std::collections::BTreeMap;
 
 use scoretk_core::model::{
-    Annotation, ArpeggioType, ArticulationType, Chord, ChordRest, ChordRestKind, Fraction, GraceType,
-    Instrument,
-    KeyMode, KeySig, LyricsSyllabic, Measure, Note, OrnamentType, OttavaType, PartId, Score,
-    SegmentItem, SegmentType, SpannerNotation, SpannerType, StaffId, TimeSig, Track, TremoloKind,
-    TrillType, VeloType, VOICES,
+    Annotation, ArpeggioType, ArticulationType, Chord, ChordRest, ChordRestKind, Fraction,
+    GraceType, Instrument, KeyMode, KeySig, LyricsSyllabic, Measure, Note, OrnamentType,
+    OttavaType, PartId, Score, SegmentItem, SegmentType, SpannerNotation, SpannerType, StaffId,
+    TimeSig, Track, TremoloKind, TrillType, VeloType, VOICES,
 };
 
 use super::error::Result;
@@ -1441,28 +1440,31 @@ fn render_chord(
     // (durée liée de la note supérieure) ; chaque note est retardée de
     // `pas × rang × 1000 / playTicks` millièmes, sans `gateTime` : toutes
     // finissent à la fin de l'accord.
-    let arpeggio_delays = chord.arpeggio.filter(|arpeggio| arpeggio.play).map(|arpeggio| {
-        let note_count = chord.notes.len() as i64;
-        let mut order: Vec<usize> = (0..chord.notes.len()).collect();
-        order.sort_by_key(|index| score.notes[chord.notes[*index].index()].pitch);
-        if arpeggio.kind == ArpeggioType::Down {
-            order.reverse();
-        }
-        let up_index = *order.last().unwrap_or(&0);
-        let up_note = &score.notes[chord.notes[up_index].index()];
-        let play_ticks = tied_span_ticks(score, staff, up_note, ticks).max(1);
-        let mut step = 64i64;
-        while step > 0 && step * note_count > play_ticks {
-            step = 2 * step / 3;
-        }
-        let tempo_ratio = beats_per_second_at(score, source_tick) / DEFAULT_TEMPO;
-        let mut delays = vec![0i64; chord.notes.len()];
-        for (rank, index) in order.into_iter().enumerate() {
-            let ot = ((step * rank as i64 * 1000 / play_ticks) as f64 * tempo_ratio) as i64;
-            delays[index] = (ot + ontime).clamp(0, 1000);
-        }
-        delays
-    });
+    let arpeggio_delays = chord
+        .arpeggio
+        .filter(|arpeggio| arpeggio.play)
+        .map(|arpeggio| {
+            let note_count = chord.notes.len() as i64;
+            let mut order: Vec<usize> = (0..chord.notes.len()).collect();
+            order.sort_by_key(|index| score.notes[chord.notes[*index].index()].pitch);
+            if arpeggio.kind == ArpeggioType::Down {
+                order.reverse();
+            }
+            let up_index = *order.last().unwrap_or(&0);
+            let up_note = &score.notes[chord.notes[up_index].index()];
+            let play_ticks = tied_span_ticks(score, staff, up_note, ticks).max(1);
+            let mut step = 64i64;
+            while step > 0 && step * note_count > play_ticks {
+                step = 2 * step / 3;
+            }
+            let tempo_ratio = beats_per_second_at(score, source_tick) / DEFAULT_TEMPO;
+            let mut delays = vec![0i64; chord.notes.len()];
+            for (rank, index) in order.into_iter().enumerate() {
+                let ot = ((step * rank as i64 * 1000 / play_ticks) as f64 * tempo_ratio) as i64;
+                delays[index] = (ot + ontime).clamp(0, 1000);
+            }
+            delays
+        });
 
     for (note_index, note) in chord.notes.iter().enumerate() {
         let note = &score.notes[note.index()];

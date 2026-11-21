@@ -61,7 +61,10 @@ fn notes(ly: &str) -> Vec<(u8, i64, i64)> {
 fn arpege_lilypond_ne_decale_pas_les_notes() {
     let source = "\\version \"2.27.0\"\n\
                   \\score { \\new Staff { <c' e' g'>4\\arpeggio } \\midi{} }\n";
-    assert_eq!(notes(source), vec![(60, 0, 479), (64, 0, 479), (67, 0, 479)]);
+    assert_eq!(
+        notes(source),
+        vec![(60, 0, 479), (64, 0, 479), (67, 0, 479)]
+    );
 }
 
 #[test]

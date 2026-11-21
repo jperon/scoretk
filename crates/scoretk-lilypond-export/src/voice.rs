@@ -1480,8 +1480,8 @@ mod tests {
 mod ottava_roundtrip_tests {
     use super::*;
     use scoretk_core::model::{
-        ChordRest, Duration, Measure, OttavaType, Part, Segment, SegmentItem, SegmentType,
-        Spanner, SpannerAnchor, SpannerType,
+        ChordRest, Duration, Measure, OttavaType, Part, Segment, SegmentItem, SegmentType, Spanner,
+        SpannerAnchor, SpannerType,
     };
 
     #[test]
