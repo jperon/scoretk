@@ -8,8 +8,6 @@
 
 #![cfg(feature = "abc-export")]
 
-use scoretk_core::model::*;
-
 #[test]
 fn tuplet_round_trip_stable() {
     // A tuplet whose written figure is shorter than the group's time, so
