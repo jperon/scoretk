@@ -130,14 +130,12 @@ pub struct Template {
     pub short_name: &'static str,
     /// Identifiant MusicXML (`musicXMLid`).
     pub music_xml_id: &'static str,
-    /// Tous les programmes MIDI des canaux du gabarit.
-    pub programs: &'static [i16],
+    /// Masque des programmes MIDI des canaux (bit `n` = programme `n`).
+    pub program_mask: u128,
     /// Transposition diatonique (`transposeDiatonic`).
     pub transpose_diatonic: i32,
     /// Transposition chromatique (`transposeChromatic`).
     pub transpose_chromatic: i32,
-    /// Clef principale (`clef`).
-    pub clef: &'static str,
     /// Groupe de portée (`staffGroup`), `"TAB"` pour les tablatures.
     pub staff_group: &'static str,
     /// Vrai si le gabarit utilise un jeu de percussion.
@@ -146,30 +144,26 @@ pub struct Template {
     pub min_pitch: i32,
     /// Hauteur maximale du gabarit (`maxPitchP`), -1 si absente.
     pub max_pitch: i32,
-    /// Vrai si le gabarit appartient au genre `common`.
-    pub common_genre: bool,
 }''')
 out.append('')
 out.append('''/// Catalogue, dans l'ordre du fichier source : à force égale, le premier
 /// instrument l'emporte (`searchTemplateForInstrNameList`).
 pub const TEMPLATES: &[Template] = &[''')
 for row in rows:
-    programs = '&[' + ', '.join(str(p) for p in row['programs']) + ']'
+    mask = sum(1 << p for p in row['programs'] if 0 <= p < 128)
     out.append('    Template {')
     out.append(f"        id: \"{esc(row['id'])}\",")
     out.append(f"        track_name: \"{esc(row['track_name'])}\",")
     out.append(f"        long_name: \"{esc(row['long_name'])}\",")
     out.append(f"        short_name: \"{esc(row['short_name'])}\",")
     out.append(f"        music_xml_id: \"{esc(row['music_xml_id'])}\",")
-    out.append(f'        programs: {programs},')
+    out.append(f'        program_mask: {mask},')
     out.append(f"        transpose_diatonic: {row['transpose_diatonic']},")
     out.append(f"        transpose_chromatic: {row['transpose_chromatic']},")
-    out.append(f"        clef: \"{esc(row['clef'])}\",")
     out.append(f"        staff_group: \"{esc(row['staff_group'])}\",")
     out.append(f"        use_drumset: {str(row['use_drumset']).lower()},")
     out.append(f"        min_pitch: {row['min_pitch']},")
     out.append(f"        max_pitch: {row['max_pitch']},")
-    out.append(f"        common_genre: {str(row['common_genre']).lower()},")
     out.append('    },')
 out.append('];')
 out.append('')
@@ -180,7 +174,17 @@ for preferred_id in preferred:
     out.append(f'    "{esc(preferred_id)}",')
 out.append('];')
 out.append('')
-out.append('''/// Premier gabarit portant l'identifiant MuseScore donné.
+out.append('''/// Vrai si le gabarit porte le programme MIDI donné.
+pub fn template_has_program(template: &Template, program: u8) -> bool {
+    template.program_mask & (1u128 << u32::from(program)) != 0
+}
+
+/// Premier programme MIDI du gabarit, pour la lecture des partitions 3.x.
+pub fn template_first_program(template: &Template) -> Option<i16> {
+    (0..128).find(|program| template_has_program(template, *program as u8)).map(|program| program as i16)
+}
+
+/// Premier gabarit portant l'identifiant MuseScore donné.
 pub fn template_for_id(id: &str) -> Option<&'static Template> {
     TEMPLATES.iter().find(|template| template.id == id)
 }

@@ -30,9 +30,7 @@ fn gabarit_prefere_et_transposition() {
     assert_eq!(transpose(60), Some((-4, -7)));
     // Contrebasse (GM 43) : octave.
     assert_eq!(transpose(43), Some((-7, -12)));
-    // Ocarina (GM 79) : le tri par plage de hauteur choisit ici un gabarit
-    // transposé d'une quinte. C'est le comportement du port de
-    // `sortInstrumentTemplates` ; MuseScore 4.7.4 garde l'ocarina préféré sur
-    // `GaudeteChristusEstNatus…`, écart documenté dans `midi.md`.
-    assert_eq!(transpose(79), Some((-4, -7)));
+    // Ocarina (GM 79) : MuseScore 4.7.4 garde le gabarit préféré non
+    // transpositeur (les trois fichiers `GaudeteChristusEstNatus…`).
+    assert_eq!(transpose(79), None);
 }

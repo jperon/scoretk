@@ -1855,3 +1855,32 @@ alors que MuseScore 4.7.4 conserve le gabarit `ocarina` préféré non
 transpositeur. Le gain net reste largement positif ; l'écart ocarina est un
 point connu du tri à affiner (`minPitchP`/`maxPitchP` ajustés par la
 transposition dans le C++, pas encore reproduits).
+
+## Correction ocarina et compacité de la table (2026-11-21, suite)
+
+Test réduit d'abord : `instrument_template` exige que le programme 79
+(ocarina) garde le gabarit préféré non transpositeur. Le test échouait avec
+le tri par plage simple (0,106 → 0,930 sur `Gaudete…`).
+
+`minPitchP`/`maxPitchP` des gabarits sont des hauteurs **écrites**, alors que
+les accords MIDI sont en hauteur concert. `sortInstrumentTemplates` compare
+les deux ; notre port comparait sans conversion. Le correctif applique
+`+ transposeChromatic` à la plage de la piste **uniquement** quand le gabarit
+préféré n'est pas transpositeur — précisément le cas ocarina, mais pas le cor
+ni la contrebasse, dont le gabarit préféré est transpositeur et doit rester
+choisi. Un test intermédiaire avec la conversion appliquée à tous les
+gabarits a été mesuré et rejeté : il cassait 12 fichiers (piccolo notamment,
+`Marc-Pinget-Tyrolienne` 1,0000 → 0,0114).
+
+Mesure complète contre MuseScore 4.7.4 : **N 0,8264 → 0,8279**, pitch
+15 359,0 → 15 137,0, **3 gains (`GaudeteChristusEstNatus` et ses deux
+variantes, 0,8569/0,9299 → 1,0000), 0 perte**.
+
+Taille wasm : `nix build .#wasm` donne 1 938 223 octets bruts / 779 376 gzip
+avec la table détaillée. La table a été compactée : `programs: &[i16]` devient
+un `program_mask: u128` avec `template_has_program`/`template_first_program`,
+et les champs inutilisés `clef` et `common_genre` sont retirés du générateur.
+Nouvelle mesure : **1 924 312 octets / 783 580 gzip** (le gzip augmente
+légèrement, le brut baisse de 13,9 Ko). Le fichier généré passe de 8 580 à
+8 870 lignes mais de 300 Ko à 261 Ko de source ; la donnée reste générée,
+jamais éditée à la main.

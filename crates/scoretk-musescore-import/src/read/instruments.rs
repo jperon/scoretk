@@ -21,7 +21,7 @@
 //! servent aussi à l'import MIDI (choix du gabarit, transposition). Ici ne
 //! subsiste que la logique de reconnaissance propre au lecteur 3.x.
 
-use scoretk_core::instruments::{template_for_id, Template, TEMPLATES};
+use scoretk_core::instruments::{template_first_program, template_for_id, Template, TEMPLATES};
 
 /// Reconnaît l'identifiant MusicXML et le programme d'un instrument
 /// (`Instrument::updateInstrumentId`).
@@ -49,11 +49,8 @@ pub(crate) fn recognize(
     let program = program.or_else(|| {
         by_name
             .filter(|template| template.music_xml_id == music_xml_id)
-            .and_then(|template| template.programs.first().copied())
-            .or_else(|| {
-                template_for_music_xml_id(music_xml_id)
-                    .and_then(|template| template.programs.first().copied())
-            })
+            .and_then(template_first_program)
+            .or_else(|| template_for_music_xml_id(music_xml_id).and_then(template_first_program))
     });
 
     (music_xml_id.to_owned(), program)
@@ -92,9 +89,10 @@ fn template_for_names(names: &[&str; 3]) -> Option<&'static Template> {
 
 /// Premier gabarit dont un canal porte le programme donné.
 fn template_for_program(program: i16) -> Option<&'static Template> {
-    TEMPLATES
-        .iter()
-        .find(|template| template.programs.contains(&program) && !template.music_xml_id.is_empty())
+    TEMPLATES.iter().find(|template| {
+        scoretk_core::instruments::template_has_program(template, program as u8)
+            && !template.music_xml_id.is_empty()
+    })
 }
 
 /// Instrument le plus générique portant un identifiant MusicXML donné.

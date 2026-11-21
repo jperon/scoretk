@@ -84,7 +84,9 @@ pub fn set_grand_staff_program(tracks: &mut [MTrack]) {
 /// (`importmidi_instrument.cpp:409-566`). Le premier candidat est retenu,
 /// comme le `msInstrIndex` par défaut de MuseScore.
 pub fn template_for_track(track: &MTrack) -> Option<&'static scoretk_core::instruments::Template> {
-    use scoretk_core::instruments::{preferred_template_for_program, Template, TEMPLATES};
+    use scoretk_core::instruments::{
+        preferred_template_for_program, template_has_program, Template, TEMPLATES,
+    };
     let program = i16::from(track.program);
     let drum = track.drum_track;
     let preferred = if drum {
@@ -103,7 +105,7 @@ pub fn template_for_track(track: &MTrack) -> Option<&'static scoretk_core::instr
         if template.staff_group == "TAB" || template.use_drumset != drum {
             continue;
         }
-        if template.programs.contains(&program) {
+        if template_has_program(template, track.program) {
             candidates.push(template);
         }
     }
@@ -115,7 +117,9 @@ pub fn template_for_track(track: &MTrack) -> Option<&'static scoretk_core::instr
             if template.staff_group == "TAB" || template.use_drumset != drum {
                 continue;
             }
-            for candidate_program in template.programs.iter().copied() {
+            for candidate_program in
+                (0..=127_i16).filter(|candidate| template_has_program(template, *candidate as u8))
+            {
                 if candidate_program < program
                     && best.is_none_or(|(current, _)| candidate_program > current)
                 {
@@ -143,11 +147,25 @@ pub fn template_for_track(track: &MTrack) -> Option<&'static scoretk_core::instr
                 return 0;
             }
             let mut value = 0;
-            if template.min_pitch > 0 && min_pitch < template.min_pitch {
-                value = template.min_pitch - min_pitch;
+            // `minPitchP`/`maxPitchP` du gabarit sont en hauteur écrite, la
+            // piste est en hauteur concert. MuseScore ne compare directement
+            // que lorsqu'un gabarit préféré non transpositeur existe (c'est le
+            // cas de l'ocarina) : les gabarits transpositeurs sont alors
+            // ramenés au repère concert. Pour un instrument préféré
+            // transpositeur (cor, contrebasse), la plage sert telle quelle.
+            let adjust = preferred.is_some_and(|pref| pref.transpose_chromatic == 0);
+            let shift = if adjust {
+                template.transpose_chromatic
+            } else {
+                0
+            };
+            let written_min = min_pitch + shift;
+            let written_max = max_pitch + shift;
+            if template.min_pitch > 0 && written_min < template.min_pitch {
+                value = template.min_pitch - written_min;
             }
-            if template.max_pitch > 0 && max_pitch > template.max_pitch {
-                value = value.max(max_pitch - template.max_pitch);
+            if template.max_pitch > 0 && written_max > template.max_pitch {
+                value = value.max(written_max - template.max_pitch);
             }
             value
         };
