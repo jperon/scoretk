@@ -88,7 +88,7 @@ measurement and no tolerated regression).
 
 | Direction | Batch | Oracle | State / target |
 |---|---|---|---|
-| Writing | 174 `.mscz`; corpus; **`.ly`/`.midi` pairs from `~/Musique`** (1 228 LilyPond MIDIs) | MuseScore 4.7.4 MIDI (for mscz); LilyPond MIDI (for ly: tests the ly → model → MIDI chain); N2 notes | 148/173 exact, N1 99.95 %, N2 99.92 %, N2d 99.90 % (mscz); 661/1 020 exact, N1 96.34 %, N2 93.38 % (ly); 17/21 corpus — see `midi.md` § "MIDI export: status" |
+| Writing | 174 `.mscz`; corpus; **`.ly`/`.midi` pairs from `~/Musique`** (1 228 LilyPond MIDIs) | MuseScore 4.7.4 MIDI (for mscz); LilyPond MIDI (for ly: tests the ly → model → MIDI chain); N2 notes | 161/173 exact, N1 99.99 %, N2 99.99 %, N2d 99.98 % (mscz); 661/1 020 exact, N1 96.34 %, N2 93.38 % (ly); 17/21 corpus — see `midi.md` § "MIDI export: status" |
 | Reading | **MuseScore upstream tests** (`importexport/midi/tests`, 118 `.mid` + expected `.mscx`); 1 228 MIDIs from `~/Musique` (whose `.ly` source we have) | MuseScore's expected `.mscx`; and for LilyPond MIDIs: source pitches/onsets (N1–N2 after quantisation) | 4/21; measure on ~1 350 files |
 
 ### LilyPond (`.ly`)

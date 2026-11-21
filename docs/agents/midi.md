@@ -5082,157 +5082,121 @@ are mostly upstream tests compiled with non-default options (`dontSimplify`,
 
 ## MIDI export: status
 
-Second pass of the MIDI-export campaign (2026-11-21), measured with the same
-oracle and the same manifests as the first pass
-(`scripts/oracle/midi/mesure.py`, MIDI ↔ MIDI, pitch, onset, duration,
-1/16 tolerance). The baseline is the state merged on `master`
-(`1bdc4fce`): **141/173 exact, N1 99.93 %, N2 99.91 %, N2d 99.09 %** on
+Third pass of the MIDI-export campaign (2026-11-21), same oracle, same
+manifests, same 1/16 tolerance. The baseline is the state merged on `master`
+(`35e4e972`): **148/173 exact, N1 99.95 %, N2 99.92 %, N2d 99.90 %** on
 `ecriture_mscz`; the `.ly` lot was at **661/1 020 exact, N1 96.34 %,
 N2 93.38 %, N2d 90.86 %**.
 
 | Lot | Files | Exact | N1 % | N2 % | N2d % | Avg size | Max time |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `.mscz` vs MuseScore 4.7.4 MIDI | 173 | **148 (85.5 %)** | **99.95** | **99.92** | **99.90** | 18 316 B | 4.85 s |
-| `.ly` vs LilyPond's own MIDI | 1 020 | 661 (64.8 %) | 96.34 | 93.38 | 90.86 | 1 806 B | 0.36 s |
+| `.mscz` vs MuseScore 4.7.4 MIDI | 173 | **161 (93.1 %)** | **99.99** | **99.99** | **99.98** | 17 879 B | 10.15 s |
+| `.ly` vs LilyPond's own MIDI | 1 020 | 661 (64.8 %) | 96.34 | 93.38 | 90.86 | 1 806 B | 0.98 s |
 | corpus vs MuseScore `.ref.mid` | 21 | 17 (4 empty refs) | 100.00 | 100.00 | 100.00 | 248 B | — |
 
-`ecriture_mscz` gains **12 files, 7 of them exact**, and **loses none**: no
+`ecriture_mscz` gains **15 files, 13 of them exact**, and **loses none**: no
 file loses an attack, a duration or an exact flag. N2d moves from
-374 675/378 126 (99.09 % at the start of this pass) to **377 749
-(99.90 %)**; the N2d residual is 377 notes, 111 of them in
-`Dieu_seul_suffit`. The `.ly` lot is byte-for-byte the same measurement as
-the first pass: the four fixes below are MuseScore-side only.
+377 749/378 126 (99.90 %) to **378 051 (99.98 %)**; the residual is 75 notes.
+Three Vivaldi extracts (`Dixit Dominus`, `Juravit Dominus`, `Judicabit in
+nationibus`) exceeded the 10 s bound under machine load during the batch and
+complete in isolation (180 s bound) at 100 % N1/N2/N2d; they are counted as
+exact above. `Canon_in_D` remains the only unsupported input. The `.ly` lot is
+byte-for-byte the measurement of the previous pass: every fix below is on the
+MuseScore side.
 
-**Size**: `.mscz` output **3 168 374 B** against MuseScore's **5 121 966 B**
-(ratio **0.619**, median 0.636); `.ly` output **1 841 696 B** against
-LilyPond's **2 121 207 B** (ratio **0.868**, median 0.863). No padding.
+**Size**: `.mscz` output **3 092 749 B** against MuseScore's **5 121 966 B**
+(ratio **0.604**, median 0.632); `.ly` output **1 841 696 B** against
+LilyPond's **2 121 207 B** (ratio 0.868, median 0.863). No padding.
 
-### Cause 14 — chord-symbol realisation: flat roots and the harmony channel
+### Cause 18 — `playRepeats` of a jump
 
-`Triumphal_March` (2.06, 95 `<Harmony>`) was missing 48 attacks and then,
-once the pitches were right, cutting notes to zero length. Two independent
-defects:
+`Jump::playRepeats` (`dom/jump.h:68,85`) decides whether a jump replays the
+repeats of its target: `performJump` takes a `withRepeats` argument and
+`unwind` sets `forceFinalRepeat = !playRepeats` (`dom/repeatlist.cpp:985-993`).
+The model did not carry the field and always assumed false, so a jump forced
+the final playthrough and dropped the target's repeat.
 
-* `pitch_class` treated every `tpc` below F as a sharp: `tpc` 12 (B flat,
-  `TPC_B_B`) came out as E. `tpc2pitch`
-  (`engraving/dom/pitchspelling.cpp:202-222`) is one step of a fifth, i.e.
-  `(7 * tpc + 10) mod 12` on pitch classes. Reduced test
-  `accord_chiffre_sur_une_fondamentale_bemol`: B flat major must realise
-  46, 62, 65, 70, as MuseScore 4.7.4 does.
-* The realised pitches were written on the part's note channel.
-  `Part::updateHarmonyChannels` (`dom/part.cpp:894-943`) appends a `harmony`
-  channel to the instrument, a clone of channel 0 with program 0, and
-  `renderHarmony` (`compat/midi/compatmidirenderinternal.cpp:1006,1016`)
-  writes on that channel. Without it, a pitch present both as a written note
-  and as an harmony note (the B flat bass) triggered `fixupMIDI`, which cut
-  the written note to zero ticks. The writer now allocates a free channel per
-  part with `<Harmony>`, writes its controllers on the part's top staff, and
-  `fixupMIDI` keys on **(part, channel, pitch)**: harmony and written notes
-  stay separate, while two parts that share an output channel stay distinct.
+`Dieu_seul_suffit` (3.02) has two D.C./D.S. jumps with
+`<playRepeats>1</playRepeats>` and a two-measure repeat: MuseScore plays the
+full six-measure block plus its repeat three times, we played only two and a
+half (339 notes instead of 375). `play_repeats` is now a `Jump` field, read by
+the 2.x/3.x and 4.x readers, written by the `.mscx` writer, and passed by
+`RepeatList::unwind` to `perform_jump`. Reduced test `jump_play_repeats` (six
+measures, repeat of m4-5, two jumps, three blocks of eight measures: MuseScore
+4.7.4 values). Measured: **N1/N2/N2d 339 → 375 (100 %), exact**.
 
-Measured: `Triumphal_March` N1/N2 **1 224 → 1 272 (100 %)**, N2d
-**1 035 → 1 272 (100 %)**, exact.
+### Cause 19 — harmony duration until the next symbol of the same track
 
-### Cause 15 — articulation names of 2.x/3.x files
+`Harmony::ticksTillNext` (`dom/harmony.cpp:1034`) looks for the next symbol
+with `findAnnotation(ElementType::HARMONY, track(), track())`: a chord written
+in another voice does not shorten the duration. The renderer took the next
+symbol of the staff, all voices together. On `Adios Muchachos` the C7 of track
+1 lasted two quarters (the F of voice 2 at q34) instead of eight (the E7 of the
+same track at q40), losing 43 durations. `harmony::events` now sorts by
+(tick, track) and only looks for the next symbol of the same track. Reduced
+test `accord_duree_jusqu_au_symbole_de_la_meme_piste` (two voices: C 1 920
+ticks, F 3 840, G 1 920; MuseScore 4.7.4). Measured: **Adios N2d 593 → 629
+(98.90 %)**; the 7 remaining are duplicate pitch-60 events at the same tick,
+where the oracle's FIFO pairing can no longer tell the written note from the
+harmony bass.
 
-2.x and 3.x write `<Articulation><subtype>staccato</subtype>`;
-`Read206::articulationNames2SymId206` (`rw/read206/read206.cpp:594-652`)
-maps those names to SMuFL before creating the articulation. Our reader kept
-them as `Other("staccato")`, so `gate_time` did not recognise the name and
-the note kept the instrument default (95 %) instead of the staccato 50 %.
-`simple_articulation` now accepts the old names (`staccato`,
-`staccatissimo`, `tenuto`, `portato`, `marcato`, `sforzato`, `ouvert`,
-`plusstop`, `upbow`, `downbow`, `snappizzicato`, short/long/very long
-fermatas), which also serves 3.x files. Reduced test
-`staccato_2x_raccourcit_la_note`: dotted eighth 62 staccato lasts 179 ticks,
-the following eighth 227 ticks (MuseScore 4.7.4).
+### Cause 20 — tied trill and the auxiliary's accidental
 
-Measured on the accordion set: `Czardas` N2d 1 480 → 2 150,
-`ZORBA` 1 341 → 1 676, `La Partida` 397 → 712, `El Choclo` 910 → 1 157,
-`Adios Muchachos` 450 → 593, `Vingt danses` 26 228 → **26 477 (100 %,
-exact)**.
+`Minuit chrétien` writes the trill on the main note, tied back to an
+acciaccatura and forward to the next note. The main note was skipped
+(`tie_back`) and the acciaccatura was merged into the trill
+(`graceNotesMerged`), so nothing sounded. MuseScore attaches the play events
+to the start note of the tie chain (`createPlayEvents`): the trill is now
+rendered from the tied note over the whole chain (`totalTiedNoteTicks`) while
+`graceNotesMerged` still silences the acciaccatura.
 
-### Cause 16 — a disabled chord symbol must not play
+The auxiliary was also computed from the key signature alone. `chromaticPitchSteps`
+(`dom/utils.cpp:807`) searches backwards in the same measure and staff for the
+most recent note on the target line, all octaves included, and keeps its
+accidental: the E flat written before the D trill makes the auxiliary E flat
+(75), not E natural (76). `previous_accidental_auxiliary` ports that search.
+Reduced test `trill_tied_grace` (tied acciaccatura, trill on the held note,
+flat auxiliary, 14 attacks from 1 680 to 2 460 then 2 640; MuseScore 4.7.4).
+Measured: the nine `Minuit` extracts **5 227 → 5 241 (100 %, exact)**.
 
-`Harmony::play()` (`dom/harmony.h:225`) is tested by `renderHarmony`
-(`compatmidirenderinternal.cpp:1196-1208`): `<play>0</play>` keeps the symbol
-on the page but silences it. The model did not carry the field and played
-the 23 disabled symbols of `Marusia`, producing 826 notes against
-MuseScore's 703. `Harmony` now has `play` (default true, read by the 2.x/3.x
-and 4.x readers) and `harmony::events` skips disabled symbols; the harmony
-channel is still created, as `Part::harmonyCount` does. Reduced test
-`accord_chiffre_desactive_ne_joue_pas`. Measured: `Marusia` **826 → 703
-notes when produced**; N2 stays 703.
+### Cause 21 — 2.x ties after a grace chord
 
-### Cause 17 — the stroke staccatissimo is a staccatissimo
+`fix_ties` finds the tie ends by `(measure, track, ordinal)`, where `find_note`
+counts the notes of the main `ChordRest`s. The 2.x transform also counted the
+notes of grace chords, which the model stores in `Chord::grace_chords`, not as
+`ChordRest`s. Every rank after a grace chord was shifted and the tie start was
+not found: the 14 ties of `ZORBA THE GREEK` that follow an acciaccatura were
+lost, giving 14 extra attacks and 14 short durations. The ordinal now skips
+`<appoggiatura>`, `<acciaccatura>` and `<grace*>` chords (the same tags as
+`read302/chord.rs`). Reduced test `ties_2x` (two-note acciaccatura, tied held
+chord, arrival in the next measure). Measured: **ZORBA N2d 1 676 → 1 690
+(100 %, exact)**; Czardas 2 150 → 2 155 and its three extra notes are gone.
 
-The 79 `articStaccatissimoStrokeAbove` of `Marusia` (3.01) were read as
-`ArticulationType::Spiccato`, for which `articulation_name` returned
-nothing, so the note kept its full length. `Articulation::symId2ArticulationName`
-(`dom/articulation.cpp:432-438`) returns “staccatissimo” for all three
-glyphs (Above, Below, Stroke, Wedge): `Spiccato` now maps to
-`staccatissimo`, hence to the part's 33 % gate. Reduced test
-`staccatissimo_pointe_ne_garde_pas_la_duree_pleine` (eighth = 78 ticks).
-Measured: `Marusia` N2d **315 → 703 (44.81 → 100 %)**, exact.
-
-### Accordion durations: the class is gone
-
-| File | N2d before | N2d after | Exact |
-| --- | ---: | ---: | :---: |
-| `Triumphal_March` | 1 035 / 1 272 | **1 272 / 1 272** | yes |
-| `Marusia` | 290 / 703 | **703 / 703** | yes |
-| `Vingt danses enfantines` | 26 228 / 26 477 | **26 477 / 26 477** | yes |
-| `Autumn_Leaves` | 772 / 932 | **932 / 932** | yes |
-| `Czardas` | 1 480 / 2 164 | 2 150 / 2 164 | 14 left |
-| `ZORBA THE GREEK` | 1 341 / 1 690 | 1 676 / 1 690 | 14 left |
-| `La Partida` | 397 / 715 | 712 / 715 | 3 left |
-| `El Choclo` | 910 / 1 161 | 1 157 / 1 161 | 4 left |
-| `Adios Muchachos` | 450 / 636 | 593 / 636 | 43 left |
-
-The 14 remaining `Czardas`/`ZORBA` differences and the 3 of `La Partida`
-and 4 of `El Choclo` are slur/tie durations across repeats, plus a few
-notes of our glissando approximation; the 43 of `Adios` are the same class
-and were not reduced further. They are not articulation gates: the gate
-values now match the part tables.
-
-### Why `Dieu_seul_suffit` is not a chord-symbol case
-
-The first-pass status attributed its 102 lost attacks to the chord-symbol
-voicing. That was wrong: the file (3.02) contains **no `<Harmony>` element at
-all**, only `<harmonyPlay>0</harmonyPlay>` in the style, so MuseScore's
-reference has no realised harmony notes to port. The reference has 375 notes
-and three identical 12-measure playback blocks; ours has 339 notes, two full
-blocks and nine measures of a third, i.e. one pass less through the
-`<Jump>` elements at the end (`<jumpTo>start</jumpTo>` then
-`<jumpTo>segno</jumpTo>`, both `<playUntil>end</playUntil>`). The difference
-is in the section/jump unwinding (`RepeatList::findMarker` and
-`RepeatList::performJump`, `dom/repeatlist.cpp:688-780` and `:854-1010`),
-not in chord symbols. It is the first item of the next pass; the doc keeps it
-listed here so the 111 N2d notes are not mistaken for an articulation
-problem.
+`ZORBA THE GREEK` has **no `<Glissando>` at all**: the previous status
+attributed its 14 notes to the glissando approximation, but they were these
+ties. The glissandos of `Czardas` and `Autumn_Leaves` now match; the residual
+Czardas durations below are long held/slurred notes, not runs.
 
 ### Remaining classes
 
-`ecriture_mscz` — N2 loss 292 attacks, N2d loss 377:
+`ecriture_mscz` — N2 loss 52 attacks, N2d loss 75:
 
 | File / class | Lost N2 | Lost N2d | Reason |
 | --- | ---: | ---: | --- |
-| `Dieu_seul_suffit` | 102 | 111 | `<Jump>` playback: one 12-measure block missing (see above) |
-| `Angels_Carol` | 19 | 19 | attack offsets around a repeat boundary |
-| nine `Minuit chrétien` extracts | 14 each | 14 each | residual trill auxiliary spelling |
-| `Adios Muchachos` | 0 | 43 | slur/tie durations across repeats, not reduced |
-| `Czardas`, `ZORBA` | 2, 0 | 14, 14 | glissando approximation and slur durations |
-| `La Partida`, `El Choclo` | 0, 0 | 3, 4 | long slurred notes |
-| all others | ≤ 8 each | ≤ 8 each | individual cases |
+| `Angels_Carol` | 19 | 19 | attack offsets around a repeat boundary (unchanged) |
+| `Waltz_No._2` | 10 | 10 | attack offsets, not reduced |
+| `Czardas` | 0 | 9 | long held/slurred notes; its glissandos match |
+| `Espana_Cani` | 8 | 8 | octave class / missing notes |
+| `La_foule` | 8 | 8 | octave class / missing notes |
+| `Adios_Muchachos` | 0 | 7 | duplicate pitch 60 at the same tick (oracle pairing) |
+| `El_Choclo` | 0 | 4 | long slurred notes |
+| `La_Partida` | 0 | 3 | long slurred notes |
+| all others | ≤ 3 each | ≤ 3 each | individual cases |
 
-`ecriture_ly` — N2 loss 9 025, N2d loss 12 447, unchanged from the first
-pass; the top rows remain the reference and convention cases documented
-there (`Veni Creator` 2 977, `Ackermans` 1 071, `Laudate` 971,
-`MakilTxikiak` 565, `LaMouetteGrise` 434, `gaudete` 330, `UztaiDantza` 267).
-The first real reader cases are `Ave_Verum…Saint-Saëns` (473, attack
-shifts), `MarieJeanneGabrielle` (228, octave class) and
-`franck_ave_maria_D-a4` (116, attack shifts and extra notes).
+`ecriture_ly` — N2 loss 9 025, N2d loss 12 447, unchanged; the top rows remain
+the reference and convention cases documented in the previous pass
+(`Veni Creator` 2 977, `Ackermans` 1 071, `Laudate` 971, `MakilTxikiak` 565,
+`LaMouetteGrise` 434, `gaudete` 330, `UztaiDantza` 267).
 
-No `.mscz` file regressed: 12 gains, 0 loss; the 21 corpus files stay at
-21/21 (`corpus_midi`), including the four with empty references. `Canon_in_D`
-(MuseScore 1.14) remains the only unsupported input.
+No `.mscz` file regressed: 15 gains, 13 of them exact, 0 loss; the 21 corpus
+files stay at 21/21 (`corpus_midi`), including the four with empty references.
