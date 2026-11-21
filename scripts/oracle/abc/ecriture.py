@@ -412,7 +412,7 @@ def resume(releves: list[dict]) -> str:
     for r in releves:
         groupes.setdefault((r["lot"], r["outil"]), []).append(r)
     lignes = [
-        f"# Relevé écriture ABC — résumé (mode {args.mode if 'args' in locals() else 'midi'})",
+        "# Relevé écriture ABC — résumé (mode model, sans artefacts MIDI)",
         "",
         "Comparaison des notes (mode model : modèle pivot ; mode midi : grille Q16) : N1",
         "(multiset des hauteurs), N2 (hauteur + attaque à ±1/16), N2d (+ durée).",
