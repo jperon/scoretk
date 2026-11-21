@@ -316,38 +316,189 @@ pub fn find_back_tied_tuplets(
     tied
 }
 
-/// Donne une voix aux n-olets liés en arrière (`setBackTiedVoices`,
-/// `:652-718`). Une liaison sans voix disponible est abandonnée : le n-olet
-/// reste à placer par `setTupletVoices`.
+/// `findTupletWithChord` (`:69-80`).
+fn find_tuplet_with_chord(tuplets: &[TupletInfo], key: ChordKey) -> Option<usize> {
+    tuplets
+        .iter()
+        .position(|tuplet| tuplet.chords.contains(&key))
+}
+
+/// `setVoiceOfConnectedBackTied` (`:594-612`) : propage une voix déjà
+/// choisie aux autres liaisons en arrière qui partagent un accord du n-olet.
+fn set_voice_of_connected_back_tied(
+    back_tied: &mut [TiedTuplet],
+    voice: usize,
+    pending: &BTreeSet<usize>,
+    tuplet: &TupletInfo,
+    index: usize,
+) {
+    for chord in &tuplet.chords {
+        for other in back_tied.iter_mut().skip(index + 1) {
+            if !pending.contains(&other.tuplet_id) {
+                continue;
+            }
+            if other.chord == *chord && other.voice.is_none() {
+                other.voice = Some(voice);
+                break;
+            }
+        }
+    }
+}
+
+/// `setTiedChordVoice` (`:542-592`). Quand l'accord lié appartient à un
+/// n-olet déjà détecté (et non à un accord ordinaire), ce n-olet **père**
+/// reçoit la voix du n-olet lié : c'est précisément ce qui manquait pour
+/// `tuplet_tied_3_5_tuplets`, où le triolet restait en voix 1 alors que le
+/// quintuplet lié était en voix 0.
+#[allow(clippy::too_many_arguments)]
+fn set_tied_chord_voice(
+    track: &mut MTrack,
+    back_tied: &mut [TiedTuplet],
+    tuplets: &[TupletInfo],
+    pending: &mut BTreeSet<usize>,
+    pending_non: &mut BTreeSet<ChordKey>,
+    intervals: &mut VoiceIntervals,
+    back_intervals: &mut BTreeMap<i32, Vec<Interval>>,
+    index: usize,
+    is_non_tuplet: bool,
+    tuplet_limit: usize,
+    basic_quant: Fraction,
+    bar_start: Fraction,
+) {
+    let tied = back_tied[index].clone();
+    let voice = tied.voice.expect("voix choisie avant setTiedChordVoice");
+    if is_non_tuplet {
+        let interval = chord_interval(track, tied.chord, basic_quant, bar_start);
+        back_intervals
+            .entry(voice as i32)
+            .or_default()
+            .push(interval);
+        if let Some(chord) = track.chords.get_mut(tied.chord) {
+            chord.voice = voice;
+        }
+        if tuplet_limit > 1 {
+            intervals.entry(voice).or_default().push(interval);
+        }
+        pending_non.remove(&tied.chord);
+    } else if let Some(i) = find_tuplet_with_chord(tuplets, tied.chord) {
+        let connected = back_tied
+            .iter_mut()
+            .skip(index + 1)
+            .find(|other| other.tuplet_id == tuplets[i].id);
+        if let Some(other) = connected {
+            if other.voice.is_none() {
+                other.voice = Some(voice);
+            }
+        } else {
+            set_tuplet_voice(track, &tuplets[i], voice);
+            let interval = tuplet_interval(track, &tuplets[i], basic_quant);
+            intervals.entry(voice).or_default().push(interval);
+            back_intervals
+                .entry(voice as i32)
+                .or_default()
+                .push(interval);
+            pending.remove(&tuplets[i].id);
+        }
+    }
+}
+
+/// `eraseBackTiedTuplet(it, …)` (`:463-478`) : retire la liaison courante
+/// et celles qui utilisent un accord du n-olet.
+fn erase_back_tied_tuplet(back_tied: &mut Vec<TiedTuplet>, tuplet: &TupletInfo, index: usize) {
+    let current = back_tied[index].clone();
+    let mut i = 0;
+    while i < back_tied.len() {
+        let tied = &back_tied[i];
+        let is_current = tied.tuplet_id == current.tuplet_id && tied.chord == current.chord;
+        let uses_chord = tuplet.chords.contains(&tied.chord) && !is_current;
+        if is_current || uses_chord {
+            back_tied.remove(i);
+        } else {
+            i += 1;
+        }
+    }
+}
+
+/// `setBackTiedVoices` (`:652-718`), avec `findBackTupletIntervals` (`:638`),
+/// `setVoicesFromPrevBars` (`:480`), `findVoiceForBackTied` (`:614`) et
+/// `setTiedChordVoice` (`:542`). Une liaison sans voix disponible est
+/// abandonnée : le n-olet reste à placer par `setTupletVoices`.
 #[allow(clippy::too_many_arguments)]
 fn set_back_tied_voices(
     track: &mut MTrack,
     back_tied: &mut Vec<TiedTuplet>,
     tuplets: &[TupletInfo],
     pending: &mut BTreeSet<usize>,
+    pending_non: &mut BTreeSet<ChordKey>,
     intervals: &mut VoiceIntervals,
     bar_start: Fraction,
     basic_quant: Fraction,
     limit: usize,
+    tuplet_limit: usize,
 ) {
-    let mut used: BTreeMap<usize, Vec<Interval>> = BTreeMap::new();
+    // `findBackTupletIntervals` (`:638-650`) ; la clé -1 correspond au `-1`
+    // du C++ pour une voix pas encore choisie.
+    let mut back_intervals: BTreeMap<i32, Vec<Interval>> = BTreeMap::new();
     for tied in back_tied.iter() {
-        let Some(tuplet) = tuplets.iter().find(|t| t.id == tied.tuplet_id) else {
-            continue;
-        };
-        let interval = (tuplet.on_time, tuplet.on_time + tuplet.len);
-        if let Some(voice) = tied.voice {
-            used.entry(voice).or_default().push(interval);
+        if let Some(tuplet) = tuplets.iter().find(|t| t.id == tied.tuplet_id) {
+            let voice = tied.voice.map_or(-1, |voice| voice as i32);
+            back_intervals
+                .entry(voice)
+                .or_default()
+                .push((tuplet.on_time, tuplet.on_time + tuplet.len));
         }
     }
 
+    // `setVoicesFromPrevBars` (`:480-540`) : voix déjà fixées par une mesure
+    // précédente.
     let mut index = 0;
     while index < back_tied.len() {
-        let Some(tuplet) = tuplets
-            .iter()
-            .find(|t| t.id == back_tied[index].tuplet_id)
-            .cloned()
-        else {
+        let tied = back_tied[index].clone();
+        let Some(voice) = tied.voice else {
+            index += 1;
+            continue;
+        };
+        let Some(tuplet) = tuplets.iter().find(|t| t.id == tied.tuplet_id).cloned() else {
+            index += 1;
+            continue;
+        };
+        let nominal = (tuplet.on_time, tuplet.on_time + tuplet.len);
+        if back_intervals
+            .get(&(voice as i32))
+            .is_some_and(|used| used.iter().any(|u| have_intersection(nominal, *u)))
+        {
+            back_tied.remove(index);
+            continue;
+        }
+        for chord in &tuplet.chords {
+            for other in back_tied.iter_mut().skip(index + 1) {
+                if other.chord == *chord && other.voice.is_none() {
+                    other.voice = Some(voice);
+                    break;
+                }
+            }
+        }
+        set_tuplet_voice(track, &tuplet, voice);
+        back_intervals
+            .entry(voice as i32)
+            .or_default()
+            .push(nominal);
+        intervals.entry(voice).or_default().push(nominal);
+        intervals.entry(voice).or_default().push(chord_interval(
+            track,
+            tied.chord,
+            basic_quant,
+            bar_start,
+        ));
+        pending.remove(&tied.tuplet_id);
+        index += 1;
+    }
+
+    // Voix encore indéterminées (`:668-717`).
+    let mut index = 0;
+    while index < back_tied.len() {
+        let tied = back_tied[index].clone();
+        let Some(tuplet) = tuplets.iter().find(|t| t.id == tied.tuplet_id).cloned() else {
             index += 1;
             continue;
         };
@@ -355,31 +506,59 @@ fn set_back_tied_voices(
             index += 1;
             continue;
         }
-        let interval = tuplet_interval(track, &tuplet, basic_quant);
-        let voice = match back_tied[index].voice {
-            Some(voice) if voice < limit => Some(voice),
-            Some(_) => None,
-            None => (0..limit).find(|voice| {
-                !used
-                    .get(voice)
-                    .is_some_and(|list| list.iter().any(|used| have_intersection(interval, *used)))
-            }),
+        let nominal = (tuplet.on_time, tuplet.on_time + tuplet.len);
+        let chord_interval_value = chord_interval(track, tied.chord, basic_quant, bar_start);
+        let is_non_tuplet = pending_non.contains(&tied.chord);
+        let voice = {
+            let occupied = |voice: usize| {
+                let key = voice as i32;
+                let nominal_conflict = back_intervals
+                    .get(&key)
+                    .is_some_and(|used| used.iter().any(|u| have_intersection(nominal, *u)));
+                let chord_conflict = is_non_tuplet
+                    && back_intervals.get(&key).is_some_and(|used| {
+                        used.iter()
+                            .any(|u| have_intersection(chord_interval_value, *u))
+                    });
+                nominal_conflict || chord_conflict
+            };
+            match tied.voice {
+                Some(voice) if voice < limit && !occupied(voice) => Some(voice),
+                Some(voice) if voice < limit => None,
+                Some(_) => None,
+                None => (0..limit).find(|voice| !occupied(*voice)),
+            }
         };
         let Some(voice) = voice else {
-            back_tied.remove(index);
+            erase_back_tied_tuplet(back_tied, &tuplet, index);
             continue;
         };
         back_tied[index].voice = Some(voice);
+        set_voice_of_connected_back_tied(back_tied, voice, pending, &tuplet, index);
         set_tuplet_voice(track, &tuplet, voice);
-        intervals.entry(voice).or_default().push(chord_interval(
+        back_intervals
+            .entry(voice as i32)
+            .or_default()
+            .push(nominal);
+        intervals
+            .entry(voice)
+            .or_default()
+            .push(tuplet_interval(track, &tuplet, basic_quant));
+        pending.remove(&tuplet.id);
+        set_tied_chord_voice(
             track,
-            back_tied[index].chord,
+            back_tied,
+            tuplets,
+            pending,
+            pending_non,
+            intervals,
+            &mut back_intervals,
+            index,
+            is_non_tuplet,
+            tuplet_limit,
             basic_quant,
             bar_start,
-        ));
-        intervals.entry(voice).or_default().push(interval);
-        used.entry(voice).or_default().push(interval);
-        pending.remove(&tuplet.id);
+        );
         index += 1;
     }
 }
@@ -546,9 +725,11 @@ pub fn assign_voices(
         back_tied,
         tuplets,
         &mut pending,
+        &mut pending_non,
         &mut intervals,
         bar_start,
         basic_quant,
+        tuplet_limit,
         tuplet_limit,
     );
     set_tuplet_voices(
@@ -726,6 +907,81 @@ mod tests {
         assert!(
             non_tuplets.contains(&second),
             "les accords des n-olets retirés reviennent au flux ordinaire"
+        );
+    }
+
+    /// Réduction de `tuplet_tied_3_5_tuplets.mid` : un triolet dont la
+    /// dernière note est liée au premier accord d'un quintuplet suivant.
+    /// `setTiedChordVoice` (`importmidi_tuplet_voice.cpp:542-592`) doit
+    /// placer **les deux** n-olets dans la voix du n-olet lié, pas seulement
+    /// le second.
+    #[test]
+    fn accord_lie_dans_un_n_olet_recupere_la_voix_du_n_olet_suivant() {
+        let mut track = MTrack::default();
+        let mut add = |on: Fraction, pitch: i32, off: Fraction| {
+            let mut chord = chord(on, pitch);
+            chord.notes[0].off_time = off;
+            track.chords.insert(on, chord)
+        };
+        // Triolet 0..1/4, le dernier accord (72) tient jusqu'à 35/64.
+        let a0 = add(Fraction::ZERO, 67, Fraction::new(21, 256));
+        let a1 = add(Fraction::new(1, 12), 71, Fraction::new(21, 128));
+        let a2 = add(Fraction::new(1, 6), 72, Fraction::new(35, 64));
+        // Quintuplet 1/2..3/4, lié en arrière à l'accord 72.
+        let b0 = add(Fraction::new(11, 20), 67, Fraction::new(115, 192));
+        let b1 = add(Fraction::new(1153, 1920), 71, Fraction::new(499, 768));
+        let b2 = add(Fraction::new(1249, 1920), 65, Fraction::new(67, 96));
+        let b3 = add(Fraction::new(269, 384), 69, Fraction::new(287, 384));
+        let mut tuplets = vec![
+            TupletInfo {
+                id: 1,
+                tuplet_number: 3,
+                on_time: Fraction::ZERO,
+                len: Fraction::new(1, 4),
+                chords: vec![a0, a1, a2],
+                first_chord_index: 0,
+                ..TupletInfo::default()
+            },
+            TupletInfo {
+                id: 2,
+                tuplet_number: 5,
+                on_time: Fraction::new(1, 2),
+                len: Fraction::new(1, 4),
+                chords: vec![b0, b1, b2, b3],
+                first_chord_index: 0,
+                ..TupletInfo::default()
+            },
+        ];
+        let quant = Fraction::new(1, 16);
+        let mut back_tied =
+            find_back_tied_tuplets(&track, &tuplets, Fraction::ZERO, Fraction::ZERO, quant, 0);
+        assert_eq!(
+            back_tied.len(),
+            1,
+            "le quintuplet doit être lié à l'accord 72 : {back_tied:?}"
+        );
+        assert_eq!(back_tied[0].tuplet_id, 2);
+        assert_eq!(back_tied[0].chord, a2);
+
+        let mut non_tuplets = Vec::new();
+        assign_voices(
+            &mut track,
+            &mut tuplets,
+            &mut non_tuplets,
+            &mut back_tied,
+            Fraction::ZERO,
+            quant,
+            0,
+            4,
+        );
+        let voices: Vec<_> = [a0, a1, a2, b0, b1, b2, b3]
+            .iter()
+            .map(|key| track.chords.get(*key).unwrap().voice)
+            .collect();
+        assert_eq!(
+            voices,
+            vec![0; 7],
+            "les deux n-olets doivent rester dans la même voix (MuseScore 4.7.4)"
         );
     }
 }

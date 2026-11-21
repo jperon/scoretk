@@ -393,13 +393,8 @@ fn quantize_all_tracks(
         );
         voice::assign_initial_voices(track, options.max_voice_count.limit());
         if options.tuplet_notation && (options.search_tuplets || track.drum_track) {
-            detected_tuplets.push(tuplet::detect_all_tuplets(
-                track,
-                sigmap,
-                basic_quant,
-                options,
-                is_human,
-            ));
+            tuplet::detect_and_assign_early(track, sigmap, basic_quant, options, is_human);
+            detected_tuplets.push(Vec::new());
         } else if track.drum_track {
             drum::find_all_tuplets_for_drums(track, sigmap, basic_quant);
         } else if options.search_tuplets {

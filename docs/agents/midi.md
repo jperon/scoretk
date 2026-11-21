@@ -2503,13 +2503,23 @@ rows):
 
 The eight upstream gains are the tuplet tests (`nonuplet_3-4`, `nonuplet_4-4`,
 `2_voices_tuplet_non`, `tuplet_16th_8th`, `off_time_other_bar2`, `septuplet`,
-`triplets_mixed`, `3_5_7_tuplets`). The losses are `tuplet_tied_3_5_tuplets`
-and its `2` variant (1.0000 → 0.4286: the durations are now right, but the
-second tuplet is placed in voice 2 instead of 1 because `setBackTiedVoices`
-and the 4.7.4 voice anchoring still differ), plus four LilyPond files below
-0.033 score each. With a per-file loss that large and not fully resolved,
-**detection stays opt-in** and the default insertion stays late; the early
-path is available in `tuplet::detect_and_assign_early` for the next flip.
+`triplets_mixed`, `3_5_7_tuplets`). The two `tuplet_tied_3_5_tuplets` files
+lost 0.5714 because the tuplet whose chord was tied back kept the voice
+assigned by `setTupletVoices` (voice 1) while the back-tied tuplet took voice
+0. The C++ `setBackTiedVoices` (`:652-718`) finishes by calling
+`setTiedChordVoice` (`:542-592`): when the tied chord belongs to another
+tuplet, that **parent** tuplet must receive the back-tied voice too. The port
+only assigned the back-tied tuplet itself. After porting `findTupletWithChord`
+(`:69`), `setVoiceOfConnectedBackTied` (`:594`), `setTiedChordVoice`,
+`setVoicesFromPrevBars` (`:480`) and `findBackTupletIntervals` (`:638`), with
+the nominal interval used for voice selection, the reduced unit test
+`tuplet::voice::tests::accord_lie_dans_un_n_olet_recupere_la_voix_du_n_olet_suivant`
+(first written, failing with voices `[1,1,1,0,0,0,0]`) passes and both files
+are back to **1.0000**. Full re-measurement: upstream N **0.9016**, LilyPond
+N 0.6942, **2 files gain, none loses** relative to the previous early run.
+
+The four remaining LilyPond file losses are all below 0.033 score each;
+**detection still stays opt-in** until they are resolved.
 
 ## `human_tempo`: beat tracker ported, wired and anchored (2026-11-21)
 
