@@ -3904,45 +3904,51 @@ differences with the MuseScore model, documented in §20.
 
 ## 25. LilyPond export: final status (2026-11-21)
 
-`--mode model` on current master (the oracle's reference is the pivot model
-exported from the source; both candidates start from the same MusicXML and
-are re-read by scoretk). One unsupported input is excluded (the Pachelbel
-accordion arrangement, exit code 3). LilyPond 2.27.0 compiles both candidates.
+`--mode model` on the final state: the oracle's reference is the pivot model
+exported from the source; both candidates start from the same model and are
+re-read by scoretk. One unsupported input is excluded (the Pachelbel accordion
+arrangement, exit code 3). LilyPond 2.27.0 compiles both candidates.
 
 | Lot | Tool | Files | Compiled | Exact | N1 % | N2 % | N2d % | Errors | Warn. | Mean bytes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | corpus | scoretk | 56 | 56 | 48 | 99.78 | 99.78 | 99.78 | 0 | 11 | 1326 |
-| corpus | musicxml2ly | 56 | 51 | 27 | 95.31 | 89.22 | 83.75 | 79 | 20 | 2906 |
-| mscz | scoretk | 173 | 162 | 143 | 99.99 | 98.11 | 97.73 | 6 | 1070 | 26 390 |
-| mscz | musicxml2ly | 173 | 150 | 34 | 99.67 | 92.66 | 91.41 | 69 600 | 4736 | 46 234 |
-| xml | scoretk | 32 | 29 | 21 | 99.90 | 96.69 | 96.51 | 2 | 252 | 54 019 |
-| xml | musicxml2ly | 32 | 27 | 9 | 93.10 | 67.38 | 65.36 | 78 | 430 | 38 906 |
+| corpus | musicxml2ly | 56 | 51 | 27 | 95.31 | 89.38 | 83.91 | 79 | 20 | 2906 |
+| mscz | scoretk | 173 | 170 | 147 | 100.00 | 100.00 | 99.98 | 6 | 1557 | 26 756 |
+| mscz | musicxml2ly | 173 | 156 | 34 | 99.69 | 93.52 | 92.36 | 69 499 | 5184 | 47 207 |
+| xml | scoretk | 32 | 29 | 24 | 99.98 | 95.84 | 95.60 | 2 | 252 | 54 019 |
+| xml | musicxml2ly | 32 | 27 | 9 | 93.10 | 67.38 | 65.36 | 78 | 430 | 31 905 |
 
 scoretk is above musicxml2ly on every lot, compiles more files, and emits
 far fewer errors and warnings.
 
+Relative to the model-mode run before this campaign (252 files in common):
+**16 gains, 0 losses**. The gains are all nine `Minuit chrétien` parts
+(93.87 % → 100 % each, ~280 notes each), `Vingt_danses_enfantines_pour_piano`
+and its `.mxl` copies (100 %), `Under_Paris_Skies` (95.49 % → 100 %),
+`Tarentella` (97.39 % → 99.5 %), `Waltz_No._2` (99.43 % → 100 %),
+`Salazar` (99.68 % → 100 %), two `Puer_natus_est_nobis` parts
+(98.04 % → 100 %) and `testMultiInstrumentPart3` (50 % → 100 %). The ottava
+placement fix restores the four files that the rejected reader-side shift had
+regressed (`layout_elements`, `copypaste_parts`, `partExclusion`,
+`testExcludeInvisibleElements`) to their baseline values.
+
 ### Remaining scoretk losses, ranked by class
 
-1. **Long tuplet/voice drift** — `Vingt_danses_enfantines_pour_piano.mscz`
-   (4379 notes), `Vivaldi…Dixit Dominus` (1374) : a single local timing
-   shift cascades through thousands of notes; the first divergence is at
-   tick 665 and 0 respectively. Not a writer feature, requires reader-side
-   tuplet/negative-tick work.
-2. **Staff-text/unison groups** — seven `Minuit chrétien` parts (279 each) :
-   large chord grids with duplicated pitches.
-3. **Ottava** — `Byrd_Dies` (320), `CanonDeLaPaix` (218), `Salazar` (4).
-   LilyPond has `\ottava` (`ly/property-init.ly`, `scm/music-functions.scm`
-   `make-ottava-set`) and MuseScore has `Ottava` ; the writer already emits
-   `\ottava 1`. An experimental reader-side concert-pitch shift was measured
-   and **reverted** : it dropped the corpus from 99.78 % to 99.19 % because
-   the spanner range written from the MuseScore model differs by one beat
-   from the range expected on re-read. Fixing this properly requires
-   aligning the spanner ticks on both sides, not just adding the shift.
-4. **Accordion registers** — `Under_Paris_Skies` (48), `Tarentella` (22),
-   `Waltz_No._2` (14). They *are* text in MuseScore (`StaffText` "m", "7"…)
-   and the writer emits all 72 of them as `^\markup { … }`. The remaining
-   loss is a chord/timing issue around tick 229, not a missing register.
-5. Measure-length irregularities — `Anerio` (284), `Perosi` (137).
+1. **Irregular measure lengths / negative ticks (XML/MXL lot)** —
+   `Vivaldi…_10._Sicut_erat_in_principio` (1390), `Anerio_Ascendit_Deus`
+   (320), `Perosi…Laudate_Dominum` (190). The pivot model of the Vivaldi file
+   starts at negative ticks (−55 quarters), which the re-read voice does not
+   reproduce (first divergence at note 0); Anerio and Perosi diverge first at
+   ticks 4 and 21 with duplicated chord notes. These need reader-side work on
+   `\partial`/`Timing.measureLength` and negative ticks, not a writer feature.
+2. **Pickup in `Byrd_Dies.mxl`** (336) — the writer emits `\partial 2` plus
+   two transparent `r4` in the first measure; the model's first notes are at
+   tick 1.5, the re-read ones at 2.0 (first divergence at note 0).
+3. **Tuplets in `CanonDeLaPaix.xml`** (229) — first divergence at tick 67.75,
+   a quarter-beat drift with no further local feature.
+4. Small residuals — `Magnificat__Prt` (49, duration only),
+   `Angels_Carol` (9), `Tarentella` (5), `testExcludeInvisibleElements` (4),
+   two `Omni_die_dic_Mariae` parts (1 each). No single-writer feature left.
 
 ### Ottava: place the command before the note it covers
 
@@ -3971,10 +3977,10 @@ direction (`^`, `_`, `-`). That consumed the following command as a script:
 after `c'8 \!`, a written `\acciaccatura { e'8 }` became a plain `{ e'8 }`,
 so the grace was read as an ordinary note and shifted every later attack by
 half a beat — the local cause of the long tuplet/voice drift class on
-`Vingt_danses_enfantines_pour_piano.mscz`. These tokens are
-`direction_less_event`s in `lily/parser.yy` (no argument), so
-`parse_post_event` now returns their `PostEvent` directly. Failing reduced
-test `acciaccature_apres_arret_de_soufflet` first.
+`Vingt_danses_enfantines_pour_piano.mscz` and of all nine `Minuit chrétien`
+parts. These tokens are `direction_less_event`s in `lily/parser.yy` (no
+argument), so `parse_post_event` now returns their `PostEvent` directly.
+Failing reduced test `acciaccature_apres_arret_de_soufflet` first.
 
 ### Invisible full-measure rest follows the measure length
 
@@ -3987,4 +3993,4 @@ the remaining loss of the accordion files (`Under_Paris_Skies`,
 `Tarentella`). The writer now emits
 `\once \override Rest.transparent = ##t R2.` in 3/4. Failing reduced test
 `silence_de_mesure_invisible_en_3_4` first; both files re-read with zero
-lost notes.
+lost notes and the whole mscz lot reaches 99.98 % N2d.
