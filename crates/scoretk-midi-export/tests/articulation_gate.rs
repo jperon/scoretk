@@ -112,6 +112,43 @@ fn notes(mscx: &str) -> Vec<(u8, u32, u32)> {
     resultat
 }
 
+/// `articStaccatissimoStrokeAbove` est un staccatissimo :
+/// `Articulation::symId2ArticulationName` (`dom/articulation.cpp:432-438`)
+/// rend le même nom pour les trois glyphes, donc le même `gateTime`.
+#[test]
+fn staccatissimo_pointe_ne_garde_pas_la_duree_pleine() {
+    let source = r#"<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="4.10">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <trackName>Accordion</trackName>
+      <Instrument id="free-reed.accordion">
+        <longName>Accordion</longName><shortName>Acc.</shortName><trackName>Accordion</trackName>
+        <instrumentId>free-reed.accordion</instrumentId>
+        <Channel><program value="21"/></Channel>
+        <Articulation><velocity>100</velocity><gateTime>100</gateTime></Articulation>
+        <Articulation name="staccatissimo"><velocity>100</velocity><gateTime>33</gateTime></Articulation>
+      </Instrument>
+    </Part>
+    <Staff id="1">
+      <Measure><voice>
+        <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+        <Tempo><tempo>2</tempo><followText>1</followText></Tempo>
+        <Chord><durationType>eighth</durationType>
+          <Articulation><subtype>articStaccatissimoStrokeAbove</subtype></Articulation>
+          <Note><pitch>62</pitch><tpc>16</tpc></Note>
+        </Chord>
+        <Chord><durationType>eighth</durationType><Note><pitch>64</pitch><tpc>18</tpc></Note></Chord>
+      </voice></Measure>
+    </Staff>
+  </Score>
+</museScore>
+"#;
+    assert_eq!(notes(source), vec![(62, 0, 78), (64, 240, 239)]);
+}
+
 #[test]
 fn staccato_2x_raccourcit_la_note() {
     assert_eq!(

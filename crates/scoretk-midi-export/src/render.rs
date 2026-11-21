@@ -2011,7 +2011,10 @@ fn velocity_multiplier(instrument: &Instrument, name: &str) -> f64 {
 fn articulation_name(kind: &ArticulationType) -> Option<&'static str> {
     match kind {
         ArticulationType::Staccato => Some("staccato"),
-        ArticulationType::Staccatissimo => Some("staccatissimo"),
+        // `Articulation::symId2ArticulationName` (`dom/articulation.cpp:432-438`)
+        // rend « staccatissimo » pour les trois glyphes, y compris celui à
+        // trait (`articStaccatissimoStrokeAbove`, Spiccato dans le modèle).
+        ArticulationType::Staccatissimo | ArticulationType::Spiccato => Some("staccatissimo"),
         ArticulationType::Portato => Some("portato"),
         ArticulationType::Tenuto => Some("tenuto"),
         ArticulationType::Accent | ArticulationType::SoftAccent => Some("accent"),
