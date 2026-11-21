@@ -66,7 +66,13 @@ import common  # noqa: E402
 from ly_notes import a_des_repetitions, read_xml  # noqa: E402
 from midi_notes import GRID, TOL, compare, read_midi  # noqa: E402
 
-TIMEOUT = 10
+# Budget des conversions scoretk. Les trois copies de
+# `Vingt_danses_enfantines_pour_piano.mxl` (17 616 notes) prennent ~23 s chacune
+# avec le binaire optimisé : un budget de 10 s faisait échouer tantôt l'une,
+# tantôt l'autre, et l'agrégat du lot xml variait de 93.60 % à 95.60 % d'une
+# mesure à l'autre. 45 s laisse une marge sans allonger les fichiers rapides
+# (la borne est un maximum, pas un délai).
+TIMEOUT = 45
 TIMEOUT_LY = 20
 
 # Erreurs/avertissements LilyPond (messages localisés FR et EN).

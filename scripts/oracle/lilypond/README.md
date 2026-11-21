@@ -4,7 +4,10 @@ The independent oracle is the MIDI produced by **LilyPond** from the same
 `.ly` source. Neither this oracle nor the alternatives define scoretk's
 behaviour: they are measurement instruments only. No corpus file and no
 third-party script is copied into the repository. Every binary is launched
-under `timeout` and `prlimit --as=2000000000`.
+under `timeout` and `prlimit --as=2000000000`. The scoretk budget is 45 s:
+the 17 616-note `Vingt_danses_enfantines_pour_piano` copies need about 23 s,
+and a shorter budget made the xml aggregate fluctuate with which copy timed
+out.
 
 ## Levels
 
