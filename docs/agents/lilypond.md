@@ -3269,3 +3269,52 @@ Mesure complète après les deux causes : mus 97,38 %, ra **83,21 %**, mut
 **88,20 %** ; huit gains `mut` sans aucune perte (`Cellosonata_No3_3` +1727,
 `Symphony7_1` +849, `Violinsonata_No7_1` +816, `bwv660` +554,
 `5.Inquietude` +346).
+
+### Nouveau classement après le correctif de barre
+
+Sur le relevé `mut` à dénominateur constant après la coupe des accords aux
+barres (226 fichiers perdants, 71 102 notes non appariées) :
+
+| Cause (classification exclusive, priorité décroissante) | Fichiers | Notes | Exemples |
+| --- | ---: | ---: | --- |
+| Transposition / octave | 39 | 23 624 | `violin_concerto_1` (12078), `djinns` (2384), `Violin_Concerto_3` (1609) |
+| Autre / non classé | 66 | 15 824 | `Violinsonata_No7_1` (2795), `Cellosonata_No3_2` (2039) |
+| Références avec avertissements de contrôle de mesure | 4 | 10 137 | `Symphony5_2` (5947), `Beatus_vir_primo` (2579) |
+| Silences multi-mesures `R1*n` | 42 | 10 106 | `miserere-mei-deus` (1357), `contrapunctusXIV` (1332) |
+| `\oneVoice` / `\voiceOne`…`\voiceFour` | 47 | 5 770 | `BWV533` (1238), `Rumores_de_la-caleta` (691) |
+| Plus de quatre voix | 16 | 3 356 | `fuga2` (665), `bwv670` (637) |
+| `\partial` | 10 | 1 747 | `SongWW_opus53no5` (1213) |
+| `\tag` | 2 | 538 | deux `score.ly` |
+
+`ly/property-init.ly` lignes 966-970 confirme que `\voiceOne`…`\voiceFour`
+et `\oneVoice` sont uniquement `context-spec-music (make-voice-props-set n)`
+: réglages de hampe, liaison et direction, **aucune création de voix**. Le
+lecteur les traverse déjà sans ouvrir de contexte (`Context::Voice(_) => {}`)
+et une source réduite `\relative c' { \voiceOne c4 d4 \oneVoice e4 f4
+\voiceTwo g4 a4 }` donne les mêmes hauteurs et attaques que LilyPond 2.26 :
+les 5 770 notes de cette ligne sont des décalages d'attaque dont la vraie
+cause est ailleurs (bar-check ou silence multi-mesure), pas un défaut de
+création/fusion de voix. De même, au-delà de quatre voix réellement
+simultanées, le lecteur répartit le surplus sur des portées sœurs (le modèle
+n'a que quatre pistes) et une source réduite à six voix joue les douze notes
+aux mêmes ticks que LilyPond : les 3 356 notes de cette ligne ne sont pas
+perdues par manque de voix.
+
+### Cause transposition : effet à partir de la déclaration
+
+`lily/audio-item.cc`/`lily/note-performer.cc` appliquent
+`instrumentTransposition` quand la propriété est posée ; `\transposition`
+n'agit donc que sur les notes écrites **ensuite**. Sur
+
+```lilypond
+\new Staff { c'4 \transposition a d'4 e'4 f'4 }
+```
+
+LilyPond 2.26 joue 60, 59, 61, 62 ; le lecteur appliquait -3 semitons dès la
+première note (57, 59, 61, 62). Le test
+`transposition_a_partir_de_sa_declaration` échouait avant. Un `MetaEvent::Transposition`
+daté est désormais émis, et `decaler_vers_concert` ignore les événements
+antérieurs ; le `<transpose>` de partie n'est posé que si la propriété vaut
+depuis le début. Aucun fichier du corpus n'a de `\transposition` en cours de
+portée : la mesure complète reste mus 97,38 %, ra 83,21 %, mut 88,20 %, sans
+gain ni perte.
