@@ -1712,3 +1712,15 @@ Aucune perte air par air : sur 4 755 tunes communs, N1 et N2 sont strictement
 inchangés (0 gain, 0 perte) et aucune catégorie N3 ne voit son écart se creuser
 (0 perte). Les 3 causes corrigées ne touchent que l'écriture des ornements,
 des slurs de liaisons invalides et des fins de reprise.
+
+## 23. N3 — annotations de fin de mesure (2026-11-21)
+
+Une annotation lue après la dernière note d'une mesure — `(gf)"Segno"||` —
+restait dans `voice.annotations` : `push_event` ne la consommait qu'à la note
+suivante, donc elle dérivait vers la mesure suivante ou était perdue en fin
+d'air. `abc2xml.py::convert` (branche `x.name == 'text'`) l'écrit au contraire
+dans la mesure courante, juste avant la barre. Le correctif rattache les
+annotations en attente au dernier événement dans `finish_bar` (branche mesure
+non vide). Tests réduits `C D "Segno"| / E F|` et `C D "Segno"|` écrits
+d'abord, échouant avant le correctif (0 au lieu de 1) ; sur
+`552ce87b8d6f_t76`, 2/2 `<words>Segno</words>` produits comme l'alternative.

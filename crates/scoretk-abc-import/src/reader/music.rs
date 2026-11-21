@@ -1369,6 +1369,17 @@ impl Parser<'_> {
         if let Some(numbers) = voice.current.volta.clone() {
             voice.voltas.push((measure, measure, numbers));
         }
+        // Une annotation lue après la dernière note (`(gf)"Segno"||`) restait
+        // en attente et dérivait vers la mesure suivante, ou était perdue en
+        // fin d'air. `abc2xml.py::convert` (x.name == 'text') l'écrit dans la
+        // mesure courante, juste avant la barre : on la rattache au dernier
+        // événement.
+        let annotations = std::mem::take(&mut voice.annotations);
+        if !annotations.is_empty() {
+            if let Some(event) = voice.current.events.last_mut() {
+                event.annotations.extend(annotations);
+            }
+        }
         voice.finish_measure(end);
         self.reader.voices[self.voice].current.volta = volta;
         if start_repeat {
