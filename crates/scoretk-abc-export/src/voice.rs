@@ -343,6 +343,24 @@ fn collect_items(score: &Score, staff: usize, voice: usize) -> Vec<Item<'_>> {
             } else {
                 duration::chord_rest_length(chord_rest)
             };
+            // A tuplet note's written figure is unscaled; the reader applies
+            // `(p:q:r` on top of it. The item's end must therefore cover the
+            // scaled duration, otherwise the render loop inserts a z filler
+            // that the reader counts as an extra tuplet token (ABC 2.1 §4.13,
+            // `abc2xml.py::mkNote` line 1366: rests are tuplet notes too).
+            let length = if let Some(id) = chord_rest.tuplet {
+                let mut scale = scoretk_core::model::Fraction::ONE;
+                for tid in tuplet_chain(score, id) {
+                    let t = score.tuplet(tid);
+                    scale *= scoretk_core::model::Fraction::new(
+                        t.ratio.denominator(),
+                        t.ratio.numerator(),
+                    );
+                }
+                length * scale
+            } else {
+                length
+            };
             items.push(Item {
                 measure: measure_index,
                 tick: segment.tick,
