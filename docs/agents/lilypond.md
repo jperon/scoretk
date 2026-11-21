@@ -3975,3 +3975,16 @@ half a beat — the local cause of the long tuplet/voice drift class on
 `direction_less_event`s in `lily/parser.yy` (no argument), so
 `parse_post_event` now returns their `PostEvent` directly. Failing reduced
 test `acciaccature_apres_arret_de_soufflet` first.
+
+### Invisible full-measure rest follows the measure length
+
+`chord::render` emitted an invisible full-measure rest as
+`\once \override Rest.transparent = ##t r1` before checking
+`is_full_measure_rest()`. `r1` lasts four quarters whatever the time
+signature, while `R<length>` fills the measure (`lily/parser.yy`,
+`MULTI_MEASURE_REST`). In 3/4 this shifted every later attack by a quarter —
+the remaining loss of the accordion files (`Under_Paris_Skies`,
+`Tarentella`). The writer now emits
+`\once \override Rest.transparent = ##t R2.` in 3/4. Failing reduced test
+`silence_de_mesure_invisible_en_3_4` first; both files re-read with zero
+lost notes.

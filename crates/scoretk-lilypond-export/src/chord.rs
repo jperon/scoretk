@@ -60,6 +60,21 @@ pub(crate) fn render(
         if rest.gap {
             return format!("s{}", rest_duration(chord_rest));
         }
+        if chord_rest.is_full_measure_rest() {
+            // Un silence de mesure entière s'écrit `R` suivi de la durée réelle
+            // de la mesure (`ly/parser.yy`, `MULTI_MEASURE_REST`), y compris
+            // quand il est invisible : `r1` vaudrait quatre noires en 3/4 et
+            // décalerait tout ce qui suit d'une noire.
+            let length = length_token(if measure_len.is_positive() {
+                measure_len
+            } else {
+                chord_rest.ticks()
+            });
+            if !rest.visible {
+                return format!("\\once \\override Rest.transparent = ##t R{length}");
+            }
+            return format!("R{length}");
+        }
         if !rest.visible {
             // Silence invisible : `s` sert déjà aux trous que l'écrivain
             // comble ; un `Rest` transparent garde la distinction, que la
@@ -67,16 +82,6 @@ pub(crate) fn render(
             return format!(
                 "\\once \\override Rest.transparent = ##t r{}",
                 rest_duration(chord_rest)
-            );
-        }
-        if chord_rest.is_full_measure_rest() {
-            return format!(
-                "R{}",
-                length_token(if measure_len.is_positive() {
-                    measure_len
-                } else {
-                    chord_rest.ticks()
-                })
             );
         }
         return format!("r{}", rest_duration(chord_rest));
@@ -490,6 +495,22 @@ mod tests {
         let score = score_avec_accord(chord_rest.clone());
         assert_eq!(render(&score, &chord_rest, Fraction::ONE, 0), "R1");
         assert_eq!(render(&score, &chord_rest, Fraction::new(3, 4), 0), "R2.");
+    }
+
+    #[test]
+    fn silence_de_mesure_invisible_en_3_4() {
+        // Un silence de mesure entière invisible s'écrit `R<durée de mesure>` :
+        // `r1` vaut quatre noires et décale d'une noire tout ce qui suit dans
+        // une mesure à 3/4 (réduction `Under_Paris_Skies`, mesure 76).
+        let mut chord_rest = ChordRest::full_measure_rest();
+        if let Some(rest) = chord_rest.rest_mut() {
+            rest.visible = false;
+        }
+        let score = score_avec_accord(chord_rest.clone());
+        assert_eq!(
+            render(&score, &chord_rest, Fraction::new(3, 4), 0),
+            "\\once \\override Rest.transparent = ##t R2."
+        );
     }
 
     #[test]

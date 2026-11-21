@@ -29,7 +29,7 @@ staffOneVoiceOne = \fixed c' {
   \key e \major \time 3/4
   R2. |
   \key af \major \time 4/4
-  \once \override Rest.transparent = ##t r1 \bar "|."
+  \once \override Rest.transparent = ##t R1 \bar "|."
 }
 
 \score {
