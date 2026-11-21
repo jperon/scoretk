@@ -249,6 +249,19 @@ fn field_value(line: &Line) -> Option<(char, &str)> {
     Some((letter, trimmed[offset..].trim()))
 }
 
+/// Décalage en demi-tons d'un suffixe de clef ABC (`+8` = un octave,
+/// `-15` = deux octaves vers le bas), d'après `abc2xml.py::doClef`
+/// (lignes 1736-1744) et la norme ABC 2.1 §4.1.
+fn clef_octave_semitones(token: &str) -> Option<i32> {
+    let token = token.trim().to_ascii_lowercase();
+    for (suffix, octaves) in [("+15", 2), ("-15", -2), ("+8", 1), ("-8", -1)] {
+        if token.ends_with(suffix) {
+            return Some(octaves * 12);
+        }
+    }
+    None
+}
+
 /// Définition d'une voix `V:`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct VoiceFields {
@@ -885,8 +898,33 @@ impl Reader {
                         voice.transpose = transpose;
                     }
                 }
+                // `abc2xml.py::doClef` (lignes 1736-1744) : un suffixe
+                // d'octave sur la clef (`treble+8`, `bass-8`, `+15`…) décale
+                // toutes les hauteurs d'un ou deux octaves (`s.gtrans`).
+                // Le champ peut être nu (`K: treble+8`) ou en paramètre
+                // `clef=treble+8` : ne traiter que les Jetons sans `=`.
+                let mut octave_shift = 0;
+                for token in value.split_whitespace() {
+                    if token.contains('=') {
+                        continue;
+                    }
+                    if let Some(shift) = clef_octave_semitones(token) {
+                        octave_shift += shift;
+                        if let Some(clef) = pitch::parse_clef(token) {
+                            self.default_clef = Some(clef);
+                            for voice in &mut self.voices {
+                                if voice.clef != Some(clef) {
+                                    voice.schedule_clef(clef);
+                                }
+                            }
+                        }
+                    }
+                }
                 for (name, value) in &parsed.parameters {
                     if name == "clef" {
+                        if let Some(shift) = clef_octave_semitones(value) {
+                            octave_shift += shift;
+                        }
                         if let Some(clef) = pitch::parse_clef(value) {
                             self.default_clef = Some(clef);
                             for voice in &mut self.voices {
@@ -895,6 +933,12 @@ impl Reader {
                                 }
                             }
                         }
+                    }
+                }
+                if octave_shift != 0 {
+                    self.midi_transpose += octave_shift;
+                    for voice in &mut self.voices {
+                        voice.transpose += octave_shift;
                     }
                 }
             }
@@ -1146,6 +1190,20 @@ fn parse_tempo(text: &str) -> Option<(f64, String)> {
         return None;
     }
     Some((bpm / 60.0, label))
+}
+
+#[cfg(test)]
+mod clef_octave_tests {
+    /// `abc2xml.py::doClef` (lignes 1736-1744) : `treble+8` décale d'un
+    /// octave toutes les hauteurs (`s.gtrans += 1`). Le port ne lisait que la
+    /// clef graphique et perdait le décalage (4 airs RV/ABC octave clef).
+    #[test]
+    fn clef_avec_octave_decale_les_hauteurs() {
+        let score =
+            crate::reader::read_abc("X:1\nM:4/4\nL:1/4\nK:C\n[K: treble+8]C4|\n").expect("lecture");
+        let pitches: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+        assert_eq!(pitches, vec![72], "hauteurs: {:?}", pitches);
+    }
 }
 
 #[cfg(test)]

@@ -1545,3 +1545,30 @@ reference and `xml2abc.py` do not realize it, so this is the oracle artefact of
 
 No corpus reference was regenerated, no file was dropped from a lot, and the
 only snapshot changes are the 12 blank-syllable `w:` lines of § 17.8.1.
+
+## 17. Import ABC — campagne 2026-11-21
+
+Oracle ABC rétabli sur les 1 402 fichiers / 4 756 airs (`liste.txt`,
+`abc2midi` + `abc2xml.py` 269) : scoretk **4 447 airs exacts**, N1 99,6 %,
+alternative 4 406 exacts. Les 125 `NOTES_MANQUANTES` sont **tous** également
+manquants chez l'alternative (0 cas spécifique à scoretk) : sur-décompte de
+l'oracle sur les ornements, pas un défaut du lecteur. Les 109 `SANS_X` sont
+exclus par construction.
+
+### 17.1 Préambule avant le premier `X:` (commit 4679d5e)
+
+`split_tunes` traitait les champs globaux (`M:`, `O:`, `R:`…) précédant le
+premier `X:` comme un air séparé, sans `K:`, ce qui rejetait l'air entier.
+`abc2xml.py::splitHeaderVoices` (ligne 789) ouvre le premier air sur `X:` et y
+inclut le préambule. Deux tests réduits écrits d'abord, échouant avant le
+correctif. 8 airs précédemment rejetés (`English.abc`, `Reels.abc`,
+`Strspys.abc`, `wrap.test__abcShortMeasures`) sont désormais lus.
+
+### 17.2 Octave des clefs `K:` (commit en cours)
+
+`abc2xml.py::doClef` (lignes 1736-1744) décale toutes les hauteurs d'un ou
+deux octaves pour `treble+8`, `bass-8`, `+15`… (`s.gtrans`). Le lecteur ne
+prenait que la clef graphique. Test réduit `[K: treble+8]C4|` écrit d'abord,
+échouant avant le correctif (60 au lieu de 72). Sur les 4 airs concernés :
+**1 air devient exact**, les autres passent de N1 0,09/0,43/0,56 à
+0,45/0,71/0,56, aucun cas nouveau en échec.

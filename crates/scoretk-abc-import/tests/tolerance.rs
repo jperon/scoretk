@@ -97,8 +97,8 @@ fn en_tete_toleree_et_controle() {
     let source = "X:1\nM:4/4\nL:1/8\nK:treble+8\nC D E F |]\n";
     assert_eq!(
         content(&read_abc(source).expect("K:treble+8")),
-        (vec![60, 62, 64, 65], vec![0.125; 4]),
-        " champ sans tonique : armure par défaut"
+        (vec![72, 74, 76, 77], vec![0.125; 4]),
+        " K:treble+8 : armure par défaut, mais hauteurs d'un octave au-dessus (doClef, abc2xml.py:1736-1744)"
     );
 
     let source = "X:1\nM:2+3/8\nL:1/8\nK:C\nC D E F G |]\n";
