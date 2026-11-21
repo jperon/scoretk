@@ -3544,3 +3544,17 @@ que LilyPond 2.27 ne connaît plus (`python/convertrules.py` la convertit en
 : le MIDI 2.27 joue le premier accord au tick 1 au lieu de 1/2, bien que la
 commande ne consomme aucun temps dans la partition source. Le lecteur suit la
 partition (2.10), pas cette anomalie du MIDI de référence.
+
+### Réduction réelle de `divisi-staves.ly` (lot `ra`) : chemin de propriété
+
+Le lot `ra` est la suite de régression de LilyPond (`input/regression/`, sources
+2.26.0) mesurée avec l'oracle 2.27.0 ; c'est désormais le lot le plus faible.
+`divisi-staves.ly` (source 2.19.13) perdait 399 notes : la troisième portée,
+`<< \violI \\ \violII >>`, disparaissait. La réduction (100 → 2 mesures,
+retrait des overrides un à un) isole `tricky = \unset Staff.keepAliveInterfaces`
+puis `musA = { \tricky c'1 d'1 }`. `skip_property_path` consommait tous les
+mots consécutifs, y compris le nom `musA` de la variable suivante : `musA`
+devenait vide. Un chemin est une suite de mots **séparés par des points**
+(`lily/parser.yy` `property_path`), le lecteur s'arrête donc après le dernier
+mot non suivi d'un point. Test `chemin_de_propriete_ne_mange_pas_la_variable_suivante`
+(échoue avant). Le fichier passe de 400 à 799 notes appariées sur 799.

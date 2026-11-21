@@ -3861,23 +3861,22 @@ impl<'a> Parser<'a> {
     /// Saute un chemin de propriété (`Stem.direction`), et le renvoie.
     fn skip_property_path(&mut self) -> Vec<String> {
         let mut parts = Vec::new();
+        // Un chemin de propriété est une suite de mots séparés par des points,
+        // pas une suite de mots consécutifs : `\unset Staff.keepAliveInterfaces`
+        // suivi de `musA = …` doit laisser `musA` au lecteur de variables.
         while let Some(token) = self.peek().cloned() {
-            match &token.kind {
-                Kind::Word => {
-                    // Un nom de note est le début de la musique qui suit, pas
-                    // un élément du chemin : `\unset melismaBusyProperties f1`
-                    // doit laisser `f1` au lecteur de notes. L'avaler décalait
-                    // l'octave relative de toute la mesure suivante.
-                    if self.is_pitch_word(&token.text) {
-                        break;
-                    }
-                    parts.push(token.text.clone());
-                    self.position += 1;
-                }
-                Kind::Punct('.') => {
-                    self.position += 1;
-                }
-                _ => break,
+            let Kind::Word = token.kind else {
+                break;
+            };
+            // Un nom de note est le début de la musique qui suit, pas un
+            // élément du chemin (`\unset melismaBusyProperties f1`).
+            if self.is_pitch_word(&token.text) {
+                break;
+            }
+            parts.push(token.text.clone());
+            self.position += 1;
+            if !self.eat_punct('.') {
+                break;
             }
         }
         parts

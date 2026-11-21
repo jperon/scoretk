@@ -5697,3 +5697,21 @@ fn markup_sans_accolades_ne_mange_pas_les_silences() {
         touches
     );
 }
+
+/// Réduction réelle de `divisi-staves.ly` : un chemin de propriété s'arrête
+/// après son dernier mot ; `\unset …` ne doit pas avaler le nom de variable
+/// qui définit la musique suivante.
+#[test]
+fn chemin_de_propriete_ne_mange_pas_la_variable_suivante() {
+    let source = r#"\version "2.26.0"
+tricky = \unset Staff.keepAliveInterfaces
+musA = { \tricky c'1 d'1 }
+\score { \new Staff \musA }
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(
+        accords_de_voix(&score, 0).len(),
+        2,
+        "les deux notes de musA sont lues"
+    );
+}
