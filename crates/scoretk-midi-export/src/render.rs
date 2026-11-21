@@ -272,19 +272,38 @@ pub(crate) fn render(
         // réalisées du symbole courant jusqu'au symbole suivant. Leur
         // déroulement suit les mêmes segments que les notes.
         let harmony_channel = channels.harmony[staff.part.index()];
-        for (tick, duration, pitches) in harmony::events(score, staff.id) {
-            let Some(harmony_channel) = harmony_channel else {
-                break;
-            };
+        if let Some(harmony_channel) = harmony_channel {
+            // Déroulement des symboles dans l'ordre de lecture, comme
+            // `renderHarmony` : `ticksTillNext` (`dom/harmony.cpp:1011-1085`)
+            // mesure la durée en uticks et traverse les segments de reprise.
+            let symbols = harmony::events(score, staff.id);
+            let mut occurrences: Vec<(i64, Track, Vec<u8>)> = Vec::new();
             for segment in &repeat_list.segments {
                 let end = repeat_list.segment_end(segment);
-                if tick < segment.tick || tick >= end {
-                    continue;
+                for (tick, symbol_track, pitches) in &symbols {
+                    if *tick >= segment.tick && *tick < end {
+                        occurrences.push((
+                            segment.utick + (*tick - segment.tick),
+                            *symbol_track,
+                            pitches.clone(),
+                        ));
+                    }
                 }
-                let offset = segment.utick - segment.tick;
-                let on = pause_map.tick_with_pauses(tick + offset);
-                let off = pause_map.tick_with_pauses(tick + duration + offset);
-                for key in &pitches {
+            }
+            let last_end = repeat_list.segments.last().map_or(0, |segment| {
+                segment.utick + (repeat_list.segment_end(segment) - segment.tick)
+            });
+            for (index, (utick, symbol_track, pitches)) in occurrences.iter().enumerate() {
+                // Prochain symbole de **la même piste** (`findAnnotation`,
+                // `dom/harmony.cpp:1034`), dans l'ordre de lecture.
+                let next = occurrences[index + 1..]
+                    .iter()
+                    .find(|(_, next_track, _)| next_track == symbol_track)
+                    .map_or(last_end, |(next_utick, _, _)| *next_utick);
+                let duration = (next - utick).max(1);
+                let on = pause_map.tick_with_pauses(*utick);
+                let off = pause_map.tick_with_pauses(*utick + duration);
+                for key in pitches {
                     track.events.push(Event {
                         tick: on,
                         kind: EventKind::NoteOn {

@@ -84,13 +84,14 @@ pub(crate) fn realize(harmony: &Harmony) -> Vec<u8> {
     pitches
 }
 
-/// `(tick source, durée en ticks source, hauteurs)` pour une portée.
+/// `(tick source, piste, hauteurs)` pour une portée, triés par tick.
 ///
-/// La durée est celle du symbole courant jusqu'au suivant **de la même piste**
-/// (ou la fin du dernier mesure), comme `getActualDuration` avec
-/// `HDuration::UNTIL_NEXT_CHORD_SYMBOL` et `Harmony::ticksTillNext`
-/// (`dom/harmony.cpp:1034`).
-pub(crate) fn events(score: &Score, staff: StaffId) -> Vec<(i64, i64, Vec<u8>)> {
+/// La durée n'est pas calculée ici : `ticksTillNext`
+/// (`dom/harmony.cpp:1011-1085`) la mesure en **uticks**, en traversant les
+/// segments de reprise. Le rendu déroule donc ces symboles avec
+/// [`crate::repeat_list::RepeatList`] et prend le prochain symbole de la même
+/// piste dans l'ordre de lecture.
+pub(crate) fn events(score: &Score, staff: StaffId) -> Vec<(i64, Track, Vec<u8>)> {
     let mut found: Vec<(i64, Track, Vec<u8>)> = Vec::new();
     for measure in &score.measures {
         for segment in &measure.segments {
@@ -118,23 +119,7 @@ pub(crate) fn events(score: &Score, staff: StaffId) -> Vec<(i64, i64, Vec<u8>)> 
         }
     }
     found.sort_by_key(|(tick, track, _)| (*tick, track.raw()));
-    let end = score.measures.last().map_or(0, |measure| {
-        measure
-            .end_tick()
-            .ticks(crate::repeat_list::UNITS_PER_WHOLE)
-    });
-    let mut result = Vec::new();
-    for (index, (tick, track, pitches)) in found.iter().enumerate() {
-        // `Harmony::ticksTillNext` ne s'arrête qu'au symbole de **la même
-        // piste** (`dom/harmony.cpp:1034`, `findAnnotation(HARMONY, track(),
-        // track())`) : un accord d'une autre voix ne raccourcit pas la durée.
-        let next = found[index + 1..]
-            .iter()
-            .find(|(_, next_track, _)| next_track == track)
-            .map_or(end, |(next_tick, _, _)| *next_tick);
-        result.push((*tick, (next - tick).max(1), pitches.clone()));
-    }
-    result
+    found
 }
 
 #[cfg(test)]
