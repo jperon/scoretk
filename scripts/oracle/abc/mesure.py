@@ -128,14 +128,18 @@ def ecrit(path, lines):
         handle.write("\n".join(lines) + "\n")
 
 
-def lance(command, log):
-    """Exécute une commande avec plafond de temps ; renvoie (code, message)."""
+def lance(command, log, budget=45):
+    """Exécute une commande avec plafond de temps ; renvoie (code, message).
+
+    Le plafond est configurabledepuis ``ecriture.TIMEOUT`` : les copies de
+    `Vingt_danses` (17 616 notes) dépassent 10 s et échouaient au hasard.
+    """
     try:
         done = subprocess.run(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            timeout=10,
+            timeout=budget,
             check=False,
         )
     except subprocess.TimeoutExpired:

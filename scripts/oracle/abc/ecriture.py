@@ -85,7 +85,7 @@ def borne(commande: list[str]) -> list[str]:
 def lancer(commande: list[str], log: Path) -> tuple[int, float, str]:
     """Lance une commande bornée ; renvoie (code, secondes, message)."""
     debut = time.monotonic()
-    code, message = mesure.lance(borne(commande), str(log))
+    code, message = mesure.lance(borne(commande), str(log), TIMEOUT)
     return code, time.monotonic() - debut, message
 
 
