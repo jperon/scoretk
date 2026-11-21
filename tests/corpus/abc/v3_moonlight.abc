@@ -7,7 +7,7 @@ Q:"Adagio sostenuto" 1/4=54
 K:E
 %%score {(1 2) (3 4)}
 V:1 name="Piano" clef=treble
-(3"^Adagio sostenuto""^Si deve suonare tutto questo pezzo delicatissimamente e senza sordini"G,CE(3G,CE(3G,CE(3G,CE |
+(3"^Si deve suonare tutto questo pezzo delicatissimamente e senza sordini"G,CE(3G,CE(3G,CE(3G,CE |
 (3G,CE(3G,CE(3G,CE(3G,CE |
 (3(A,CE(3A,CE)(3(A,=DF(3A,DF) |
 (3(G,^B,F(3G,CE(3G,CD(3F,B,D) |

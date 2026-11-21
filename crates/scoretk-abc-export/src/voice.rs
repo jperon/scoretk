@@ -664,10 +664,12 @@ fn annotation_token(annotation: &Annotation) -> Option<String> {
             let value = text::escape_annotation(&harmony.text);
             return (!value.is_empty()).then(|| format!("\"{value}\""));
         }
-        Annotation::Tempo(tempo) => {
-            let value = text::escape_annotation(tempo.text.plain());
-            return (!value.is_empty()).then(|| format!("\"^{value}\""));
-        }
+        // Le champ `Q:` de l'en-tête porte déjà le texte du tempo
+        // (`writer.rs::tempo_field`). L'écrire aussi en annotation le
+        // dupliquerait à chaque aller-retour : la relecture crée un
+        // `StaffText` en plus du `Tempo`. Le modèle pivot fusionne ce que
+        // `xml2abc.py::doDirection` écrit depuis `<metronome>` et `<words>`.
+        Annotation::Tempo(_) => return None,
         Annotation::RehearsalMark(mark) => {
             let value = text::escape_annotation(mark.text.plain());
             return (!value.is_empty()).then(|| format!("\"^{value}\""));
