@@ -2108,24 +2108,22 @@ on the mscz lot the "losses" drop from 57 to 16, some of which are source
 reading failures (MuseScore 2.x scores) rather than writing losses. The table
 therefore now shows real writing losses only.
 
-### Figures vs `xml2abc.py` (final binary, `/tmp/abc-final-turn`)
+### Figures vs `xml2abc.py` (final binary, `/tmp/abc-tie`)
 
 | Lot | Tool | Exact | N1 % | N2 % | N2d % | Mean .abc B |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| corpus | scoretk | **46** (82 %) | **99.57** | **66.02** | **65.47** | 295 |
-| corpus | xml2abc | 42 (75 %) | 80.87 | 34.91 | 32.58 | 334 |
-| mscz | scoretk | **99** (57.2 %) | 99.07 | **81.10** | **79.22** | 11 974 |
-| mscz | xml2abc | 20 (11.6 %) | 83.88 | 43.21 | 38.40 | 13 375 |
-| xml | scoretk | **13** (41 %) | **98.69** | 39.59 | 37.84 | 12 517 |
-| xml | xml2abc | 6 (19 %) | 88.37 | 77.52 | 76.37 | 13 216 |
+| corpus | scoretk | **47** (83.9 %) | **99.57** | **99.46** | **99.46** | 300 |
+| corpus | xml2abc | 42 (75 %) | 80.87 | 35.50 | 32.74 | 334 |
+| mscz | scoretk | **165** (95.4 %) | **99.96** | **99.95** | **99.95** | 12 391 |
+| mscz | xml2abc | 21 (12.1 %) | 83.93 | 41.86 | 37.15 | 13 375 |
+| xml | scoretk | **24** (75 %) | **99.98** | **97.07** | **96.98** | 12 795 |
+| xml | xml2abc | 6 (18.8 %) | 87.87 | 76.69 | 75.61 | 13 204 |
 
-Per file: corpus 6 / 50 / 0, mscz **119 / 38 / 16**, xml 13 / 11 / 8
-(scoretk > = < xml2abc). Following the three causes below, exact mscz files go
-from 63 to 92 and N1 from 96.88 % to 99.59 %. On the xml lot, `xml2abc.py` stays
-better on N2/N2d for a few pieces (accordion) where the port writes different
-rest durations; note that scoretk is **better on N1** there (98.59 % versus
-88.16 %). Mean `.abc` size remains 7 to 13 % smaller than the alternative: no
-bloat.
+Over the course of this campaign, exact mscz files go from 148 to **165** and
+N2d from 98.27 % to **99.95 %**; exact xml files go from 22 to **24**. Every
+fix was measured with zero per-file loss (the single N1 trade-off on
+`JMHaydn_Viderunt_omnes` is documented below). Mean `.abc` size remains 7 to 13 %
+smaller than the alternative: no bloat.
 
 ### Causes fixed in this pass
 
@@ -2207,7 +2205,7 @@ syntax issue, documented for a later pass). One stability loss
 (`Magnificat__Prt`, index 55): a short measure gains a `z2` fill on re-read;
 no pitch is lost.
 
-### Final causes (2026-11-21, run `/tmp/abc-oct`)
+### Final causes (2026-11-21, final run `/tmp/abc-tie`)
 
 1. **Tuplet end covers scaled duration** (`305302d0`). The writer's item end
    tick now covers the tuplet-scaled duration so no `z` filler is emitted
@@ -2222,17 +2220,33 @@ no pitch is lost.
    +9 files N2d, +8 N1, 0 N2d losses (one small N1 trade-off on
    `JMHaydn_Viderunt_omnes`, 80.13 → 79.69, while its N2d improved
    58.09 → 59.35).
+3. **Octave clef is absolute, not incremental** (`eaddf4e`). The reader
+   applied -12 every time `[K:G clef=treble-8]` reappeared, accumulating -48
+   across an alternating `treble-8`/`treble` sequence and making later notes
+   negative (`Veni veni Emmanuel`, line 366: `B,,` → pitch -1: a file we wrote
+   could not be read back). Compute the shift as `new_shift - old_shift` so
+   the alternation cancels. ABC 2.1 §4.6, `abc2xml.py::doClef` lines
+   1736-1744. +9 N1, +9 N2/N2d, 0 losses; the one genuine reader failure is
+   fixed (the remaining exclusion is a MuseScore 1.2 score, exit 3).
+4. **Per-note ties in chords** (`971b289`). The writer appended a chord-level
+   `-` whenever *any* note was tied, tying every note of the chord and merging
+   separate attacks on re-read (`notes_manquantes` in `Por_Una_Cabeza`,
+   `The_Petite_Waltz`, both `Vivaldi -01/-02` mscz). ABC 2.1 §4.2 allows a tie
+   on each `chord_note` (`abc2xml.py:383,387`), written inside the brackets
+   (`[C-EG]`); the reader now keeps `read_note`'s per-note tie flag in
+   `parse_chord` in addition to the chord-level `-`. +6 files N1/N2/N2d,
+   0 losses; 4 of the 5 `notes_manquantes` files are now exact.
 
 ### Remaining losses, classified
 
-Ranking of non-exact files after these fixes (mscz 16, xml 10):
+Ranking of non-exact files after these fixes (mscz 8, xml 8):
 
 | Class | mscz | xml | Reason |
 | --- | ---: | ---: | --- |
-| `octave` (residual) | 12 | 6 | Most are within 0.5 pt of exact (one note off by an octave); the larger ones (`Sancta_Maria_*`, `JMHaydn_*`, `Angels_Carol`) are mixed octave/transposition voices where MuseScore's written pitch and the clef octave interact; analysed, not fully reproduced. |
+| `octave` (residual) | 7 | 5 | Most are within 0.5 pt of exact (one note off by an octave); the larger ones (`Sancta_Maria_*`, `JMHaydn_*`, `Angels_Carol`) are mixed octave/transposition voices where MuseScore's written pitch and the clef octave interact; analysed, not fully reproduced. |
 | `attaque_decalee` | 0 | 4 | Chordal continuo parts (`Anerio`, `Perosi`, `CanonDeLaPaix`, `Vivaldi -10`) whose written measure lengths are not preserved on re-read; pitches all correct (N1 = 100 %). |
-| `notes_manquantes` | 4 | 1 | Overlapping-voice/orphan-tie artefacts, mostly already within 0.3 pt. |
-| reader failures / excluded | 3 | 2 | Unsupported MuseScore 1.2 (exit 3) and two unreadable mxl sources; out of writing scope. |
+| `notes_manquantes` | 0 | 1 | 4 of 5 fixed by per-note chord ties; the remaining xml case (`Angels_Carol`) mixes octave and orphan-tie artefacts (N2d 99.17 %). |
+| reader failures / excluded | 1 | 0 | Only one unsupported MuseScore 1.2 score (exit 3); out of writing scope. The former Veni veni Emmanuel re-read failure is fixed. |
 | stability-only | 1 (`Magnificat__Prt`) | 0 | Short-measure `z2` filler added on re-read; N2d = 100 % (no musical discrepancy), predates all current-pass fixes. |
 
 - **Two xml files lose a few N1/N2d points** (`Sancta_Maria_KV_273`,
@@ -2240,13 +2254,12 @@ Ranking of non-exact files after these fixes (mscz 16, xml 10):
   is not fully reproduced on re-reading. Maximum loss 3.4 N1 points, with no
   stability loss; no other file regresses. Cause documented for a later pass
   (ABC 2.1 § 4.6).
-- **Remaining unstable `.abc` (31)**: `Minuit chrétien` family (9), where a
-  measure written 12/8 is re-read as 13/8 and gains a `z` on each pass (measure
-  27 of the source file, origin of the extra eighth not yet isolated);
-  key/accidental micro-fields on `Vingt_danses_enfantines` (3) and
-  `copypaste_parts` (1); miscellaneous combinations.
-- **Real mscz writing losses (16)**: 4 are MuseScore reader failures (2.x
-  scores, out of scope for writing); the others are attack shifts linked to
-  short/pickup measures and voice grouping, where `xml2abc.py` writes explicit
-  `z` and `$` line breaks (`doMaat`, line 674) that the port does not emit yet.
-  Most lose no pitch (N1 = 100 %). Cause documented, not fixed in this pass.
+- **Round-trip stability**: corpus 56/56, mscz 168/174, xml 25/32. The
+  remaining unstable cases are short-measure `z` fillers (`Magnificat__Prt`,
+  N2d = 100 %), and `Minuit chrétien` family measures written 12/8 but re-read
+  as 13/8 (extra eighth not yet isolated).
+- **Real mscz writing losses (8)**: residual one-note octave differences
+  (mostly within 0.5 pt of exact), plus `Chant_de_la_Promotion` (N1 = 0, an
+  empty/near-empty score). The former reader failure and four
+  `notes_manquantes` cases are now fixed; only the unsupported MuseScore 1.2
+  score remains excluded.
