@@ -135,6 +135,18 @@ nix develop -c cargo build -p scoretk-musescore-export --target wasm32-unknown-u
 scripts/check-mscx-rewrite.sh
 ```
 
+### Non-regression oracle
+
+`compare.sh <root>` rebuilds the current CLI, regenerates its outputs and
+compares them with master's reference. That reference must be refreshed with
+the master binary and the **same procedure** whenever a fix legitimately
+changes outputs; otherwise the oracle measures nothing (498 `DIFF` against a
+stale reference). `scripts/oracle/refresh-reference.sh [<dir>]` does exactly
+that: it builds the repository CLI, converts every corpus `.mscx` and
+`.ref.musicxml` to the seven output formats, then replaces the reference
+directory atomically. Only the script and this note are versioned; the
+generated data stays outside the repository, like the rest of the oracle.
+
 `scripts/check-mscx-rewrite.sh` rewrites each corpus file as `.mscx` and
 `.mscz`, then asks MuseScore 4.7.4 (`QT_QPA_PLATFORM=offscreen`) to open and
 export it. It checks opening, not graphical parity: as of 2026-11-17,
