@@ -3434,3 +3434,22 @@ Mesure complète, dénominateur constant : mus 97,38 → **98,09 %**, ra 83,21 %
 mut 88,90 → **91,37 %** ; 32 gains `mut` (`bwv652` +3408, `Symphony5_2` +2603,
 `Beatus_vir_primo` +2579, `ricercare6` +1532) et deux pertes d'une ou deux
 notes, sur des fichiers déjà à forte dérive.
+
+### Réduction réelle de `djinns.ly` : liaison d'accord pendante
+
+La réduction part du fichier réel : retrait des portées une à une (seul
+`pianoGauche` conserve une dérive), découpe des mesures par la fin (48 mesures
+suffisent), puis retrait des constructions une à une. Le groupe
+`<< { … } \\ { … } >>` des mesures 11–17 reproduit à lui seul la dérive
+(`MISS=2 EXTRA=1`) ; la suppression du `~` de `<sol sib reb fa>2~ <lab do fa>`
+la fait disparaître. Le test
+`liaison_accord_sans_correspondance_ne_se_propage_pas` échoue avant le correctif.
+
+`link_ties` gardait chaque liaison ouverte jusqu'à la première note de même
+hauteur, même plusieurs mesures plus tard. Ici le `~` d'accord marquait `sol`,
+`sib` et `fa` ; seul `fa` était repris par l'accord suivant, mais `sol` (tick 26)
+et `sib` (tick 27,75) de la mesure suivante héritaient à tort d'un `tie_back`
+et n'étaient plus comptés comme attaques MIDI. `lily/tie-performer.cc`
+(`stop_translation_timestep`) retire au contraire les liaisons pendantes dès
+que leur fin est passée. Les liaisons ne sont maintenant fermées qu'au pas de
+temps où la note liée se termine ; celles sans correspondance sont abandonnées.

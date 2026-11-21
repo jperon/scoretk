@@ -2348,7 +2348,11 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
     }
     for staff in staves {
         for voice in &staff.voices {
-            let mut sequence: Vec<(Fraction, NoteId, bool)> = Vec::new();
+            // Une liaison n'attend que le pas de temps où la note liée se
+            // termine : `Tie_performer::stop_translation_timestep` retire les
+            // liaisons pendantes dont la fin est passée. Une note de même
+            // hauteur plusieurs mesures plus tard ne peut donc pas la fermer.
+            let mut sequence: Vec<(Fraction, Fraction, NoteId, bool)> = Vec::new();
             for event in &voice.interpreted.events {
                 let EventKind::Chord(chord) = &event.kind else {
                     continue;
@@ -2366,21 +2370,35 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     .and_then(ChordRest::chord_ref)
                     .map(|chord| chord.notes.clone())
                     .unwrap_or_default();
+                let end = event.tick + chord.actual;
                 for (note, id) in notes.iter().zip(ids) {
-                    sequence.push((event.tick, id, note.tie));
+                    sequence.push((event.tick, end, id, note.tie));
                 }
             }
-            sequence.sort_by_key(|(tick, _, _)| *tick);
-            let mut open: BTreeMap<u8, NoteId> = BTreeMap::new();
-            for (_, id, tie) in sequence {
-                let pitch = score.note(id).pitch;
-                if let Some(previous) = open.remove(&pitch) {
-                    score.note_mut(previous).tie_forward = Some(id);
-                    score.note_mut(id).tie_back = Some(previous);
+            sequence.sort_by_key(|(tick, end, _, _)| (*tick, *end));
+            let mut open: BTreeMap<u8, (NoteId, Fraction)> = BTreeMap::new();
+            let mut index = 0usize;
+            while index < sequence.len() {
+                let (tick, _, _, _) = sequence[index];
+                let mut fin = index;
+                while fin < sequence.len() && sequence[fin].0 == tick {
+                    fin += 1;
                 }
-                if tie {
-                    open.insert(pitch, id);
+                for &(_, _, id, _) in &sequence[index..fin] {
+                    let pitch = score.note(id).pitch;
+                    if open.get(&pitch).is_some_and(|&(_, end)| end == tick) {
+                        let (previous, _) = open.remove(&pitch).expect("liaison à fermer");
+                        score.note_mut(previous).tie_forward = Some(id);
+                        score.note_mut(id).tie_back = Some(previous);
+                    }
                 }
+                open.retain(|_, (_, end)| *end > tick);
+                for &(_, end, id, tie) in &sequence[index..fin] {
+                    if tie {
+                        open.insert(score.note(id).pitch, (id, end));
+                    }
+                }
+                index = fin;
             }
         }
     }

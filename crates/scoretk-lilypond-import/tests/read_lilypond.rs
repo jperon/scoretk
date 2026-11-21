@@ -5575,3 +5575,31 @@ staffBC = \new FiguredBass {
             .collect::<Vec<_>>()
     );
 }
+
+/// Réduction réelle de `djinns.ly` : un `~` d'accord ne lie que les notes
+/// dont la hauteur est reprise par l'accord suivant. Les liaisons sans
+/// correspondance sont abandonnées au pas de temps suivant
+/// (`lily/tie-performer.cc`, `stop_translation_timestep`), pas propagées
+/// jusqu'à une note de même hauteur plusieurs mesures plus tard.
+#[test]
+fn liaison_accord_sans_correspondance_ne_se_propage_pas() {
+    let source = r#"\version "2.24.0"
+\language "english"
+\score { \new Staff { \time 4/4 \clef bass \relative c {
+  <g bf df f>2~ <af c f> |
+  s4 c8. af16 g4 af8. bf16 |
+} } \midi {} }
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    let ties: Vec<_> = score
+        .notes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, note)| note.tie_back.map(|_| index))
+        .collect();
+    assert_eq!(
+        ties.len(),
+        1,
+        "seul le fa est lié au fa de l'accord suivant"
+    );
+}
