@@ -3843,3 +3843,33 @@ Emmanuel`, `À-Notre-Dame`, `0301_AccourezPeupleFidele`) : mode MIDI N2
 **57,09 %** pour les deux outils ; mode modèle N2 **100 %**, 3/3 fichiers
 exactifs pour les deux. Le gain de +42,91 points vient de la comparaison
 d'artefacts, pas une amélioration de l'écrivain.
+
+## 24. LilyPond export: status (2026-11-21)
+
+Measured on current master with `scripts/oracle/lilypond/ecriture.sh`,
+LilyPond 2.27.0 as compiler, scoretk binary `ly95-obsolete-bin` (import
+fixes included). `N2d` is the reference-weighted mean over all files with a
+candidate MIDI; "exact" counts byte-identical note sets. The `.ly` lot of the
+earlier run was only 227/375 files and is reported separately.
+
+| Lot | Tool | Files | Compiled | Exact | N1 % | N2 % | N2d % | Errors | Warn. | Mean bytes | Max time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| corpus | scoretk | 56 | 56 | 28 | 79.91 | 78.36 | 75.90 | 0 | 11 | 1396 | 7.14 s |
+| corpus | musicxml2ly | 56 | 51 | 28 | 94.52 | 91.98 | 89.29 | 79 | 20 | 2928 | 20.00 s |
+| mscz | scoretk | 174 | 167 | 36 | 91.83 | 85.89 | 83.96 | 6 | 1524 | 28 084 | 23.95 s |
+| mscz | musicxml2ly | 174 | 141 | 34 | 93.12 | 91.45 | 90.90 | 80 988 | 3709 | 40 172 | 40.07 s |
+| xml | scoretk | 32 | 26 | 12 | 99.07 | 57.90 | 55.28 | 0 | 168 | 103 900 | 23.25 s |
+| xml | musicxml2ly | 32 | 2 | 1 | 98.79 | 98.79 | 98.79 | 326 | 24 | 19 386 | 3.13 s |
+| ly (partial) | scoretk | 227 | 190 | 177 | 98.65 | 96.62 | 96.42 | 0 | 42 | 1763 | 7.41 s |
+| ly (partial) | musicxml2ly | 227 | 190 | 167 | 98.65 | 94.72 | 94.37 | 0 | 311 | 3309 | 7.45 s |
+
+Per-file against musicxml2ly: corpus 1 win / 27 ties / 1 loss, mscz 5 / 31 / 3,
+xml 11 / 1 / 0, ly 10 / 167 / 0. scoretk compiles far more sources (especially
+`.xml`) and produces less than half the warnings, but musicxml2ly still leads
+on N2 for `corpus` and `mscz`; the `xml` figure is dominated by two files whose
+reference MIDI plays unisons that LilyPond merges (§22).
+
+The `--mode model` oracle (§22) removes those artefacts: on the five largest
+ artefact files both tools go from 57.09 % N2 to 100 % N2. The remaining
+ gaps are therefore measured in that mode rather than attributed to the
+ reference MIDI.
