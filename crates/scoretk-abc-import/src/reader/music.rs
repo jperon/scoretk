@@ -199,6 +199,7 @@ impl Parser<'_> {
         if trimmed.is_empty() {
             return;
         }
+        let prefixed = matches!(trimmed.chars().next(), Some('^' | '_' | '<' | '>' | '@'));
         let (above, text) = match trimmed.chars().next() {
             Some('^') => (true, trimmed[1..].trim()),
             Some('_') => (false, trimmed[1..].trim()),
@@ -209,7 +210,9 @@ impl Parser<'_> {
         // annotation à part entière : `abc2xml.py` (`text_expression`, lignes
         // 402/487, `convert` ligne 2022) écrit un `<words/>` vide. Leport
         // la supprimait silencieusement.
-        let harmony = looks_like_chord(text);
+        // An explicit placement prefix forces `text_expression` in
+        // `abc2xml.py:415`; `"^F"` is a text annotation, not an F chord.
+        let harmony = !prefixed && looks_like_chord(text);
         self.voice().annotations.push(AnnotationSpec::Text {
             text: text.to_owned(),
             above,
