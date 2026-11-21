@@ -377,3 +377,24 @@ ligne comme `lineBreakFromTag`, `tread.cpp:3812`) et est utilisé par
 `read_lyrics`. Test réduit (corpus v4 modifié avec `<i>`) écrit d'abord,
 échouant avant le correctif. Oracle ciblé : 524 → 8 lignes divergentes,
 0 perte.
+
+## 19. Lecteur 4.x : `<Harmony>` dans un `<FretDiagram>`
+
+`readMeasure206` (`read500/measureread.cpp:448-450`) construit un `FretDiagram`
+et lit son `<Harmony>` enfant. Le lecteur 4.x ignorait l'élément
+(`read4xx/mod.rs`, TODO `<FretDiagram>`) : les 23 accords de
+`bransle-de-chevaux` (root 15/16) étaient perdus. Le bloc de lecture de
+`<Harmony>` a été extrait dans `read_harmony_annotation` et appelé aussi depuis
+`<FretDiagram>`. Test réduit (corpus v4 avec un FretDiagram injecté) écrit
+d'abord, échouant avant le correctif. Oracle ciblé : 696 → 558 lignes
+divergentes sur ce fichier, 0 perte.
+
+### Re-mesure finale (174 fichiers)
+
+Après les deux causes lecteur : **1 gain, 0 perte, 172 inchangés** ; lignes
+divergentes 23 093 → 22 955 ; N1 0,9966 → 0,9971, N2 0,9492 → 0,9497 ;
+58 fichiers core-identiques ; XSD scoretk 0 erreur. Le classement restant est
+`staff-details` 42, `attributes` 40, `duration` 9, `sound` 6, puis des
+résidus de 1 à 2 fichiers (`tie`, `clef`, `dot`, `measure-style`, `staff`,
+`harmony`, `backup`, `type`, `actual-notes`). La catégorie `lyric` a disparu
+du classement ; le trou de 129 paroles est comblé.

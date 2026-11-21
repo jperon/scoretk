@@ -286,6 +286,54 @@ impl Reader {
         Ok(())
     }
 
+    /// Lit un `<Harmony>` et l'ajoute comme annotation (`readMeasure206` :
+    /// `read500/measureread.cpp:448-450` lit aussi celui d'un `FretDiagram`).
+    fn read_harmony_annotation(
+        &mut self,
+        child: &Element,
+        measure_index: usize,
+        tick: Fraction,
+        track: Track,
+    ) {
+        let name = child
+            .child("name")
+            .map(|node| node.text().to_owned())
+            .unwrap_or_default();
+        let mut harmony = Harmony::new(name.clone());
+        harmony.root_tpc = child
+            .child("root")
+            .and_then(Element::int)
+            .and_then(|value| i8::try_from(value).ok())
+            .unwrap_or(tpc::INVALID);
+        harmony.bass_tpc = child
+            .child("bass")
+            .and_then(Element::int)
+            .and_then(|value| i8::try_from(value).ok());
+        harmony.name = name;
+        harmony.function = child.child("function").map(|node| node.text().to_owned());
+        harmony.placement = placement(child.child("placement"));
+        // `TRead::read(Harmony*)` : `<harmonyType>` conserve
+        // l'écriture (standard, romaine, Nashville), dont dépend
+        // toute la branche d'export MusicXML.
+        if let Some(kind) = child.child("harmonyType").and_then(Element::int) {
+            harmony.kind = match kind {
+                1 => "roman",
+                2 => "nashville",
+                _ => "normal",
+            }
+            .to_owned();
+        }
+        for degree in child.children_named("degree") {
+            if let Some(degree) = read_harmony_degree(degree) {
+                harmony.degrees.push(degree);
+            }
+        }
+        if let Some(text) = child.child("text") {
+            harmony.text = text.text.clone();
+        }
+        self.add_annotation(measure_index, tick, track, Annotation::Harmony(harmony));
+    }
+
     fn read_meta_tag(&mut self, element: &Element) {
         let name = element.attr("name").unwrap_or_default();
         let value = element.text().to_owned();
@@ -1263,43 +1311,16 @@ impl Reader {
                     );
                 }
                 "Harmony" => {
-                    let name = child
-                        .child("name")
-                        .map(|node| node.text().to_owned())
-                        .unwrap_or_default();
-                    let mut harmony = Harmony::new(name.clone());
-                    harmony.root_tpc = child
-                        .child("root")
-                        .and_then(Element::int)
-                        .and_then(|value| i8::try_from(value).ok())
-                        .unwrap_or(tpc::INVALID);
-                    harmony.bass_tpc = child
-                        .child("bass")
-                        .and_then(Element::int)
-                        .and_then(|value| i8::try_from(value).ok());
-                    harmony.name = name;
-                    harmony.function = child.child("function").map(|node| node.text().to_owned());
-                    harmony.placement = placement(child.child("placement"));
-                    // `TRead::read(Harmony*)` : `<harmonyType>` conserve
-                    // l'écriture (standard, romaine, Nashville), dont dépend
-                    // toute la branche d'export MusicXML.
-                    if let Some(kind) = child.child("harmonyType").and_then(Element::int) {
-                        harmony.kind = match kind {
-                            1 => "roman",
-                            2 => "nashville",
-                            _ => "normal",
-                        }
-                        .to_owned();
+                    self.read_harmony_annotation(child, measure_index, tick, track);
+                }
+                // `readMeasure206` (`read500/measureread.cpp:448-450`) crée un
+                // `FretDiagram` et lit son `<Harmony>` : c'est la seule source
+                // de l'accord dans les partitions de guitare (23 accords de
+                // `bransle-de-chevaux` ignorés jusqu'ici).
+                "FretDiagram" => {
+                    if let Some(harmony) = child.child("Harmony") {
+                        self.read_harmony_annotation(harmony, measure_index, tick, track);
                     }
-                    for degree in child.children_named("degree") {
-                        if let Some(degree) = read_harmony_degree(degree) {
-                            harmony.degrees.push(degree);
-                        }
-                    }
-                    if let Some(text) = child.child("text") {
-                        harmony.text = text.text.clone();
-                    }
-                    self.add_annotation(measure_index, tick, track, Annotation::Harmony(harmony));
                 }
                 "Fermata" => {
                     // `MeasureRead::readVoice` fixe le placement de la piste
