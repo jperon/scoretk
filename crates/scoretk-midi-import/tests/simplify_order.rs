@@ -32,9 +32,9 @@ fn durations(score: &Score) -> Vec<(Fraction, u8, Fraction)> {
 }
 
 #[test]
-#[ignore = "deux passes sans cause identifiée : voir docs/agents/midi.md, causes ouvertes"]
+#[ignore = "cause : répartition en voix (importmidi_voice.cpp), pas simplify : voir docs/agents/midi.md"]
 fn trois_notes_une_piste_durees_musescore() {
-    let mut events = vec![(0, Ev::TimeSig(4, 4))];
+    let mut events = vec![(0, Ev::TimeSig(4, 2))]; // 4/4 (2e champ = puissance de deux)
     for (pitch, on, off) in [(57, 5.0, 6.5), (60, 6.0, 6.5), (62, 6.5, 7.0)] {
         events.push(((on * 480.0) as u32, Ev::NoteOn(0, pitch, 90)));
         events.push(((off * 480.0) as u32, Ev::NoteOff(0, pitch)));

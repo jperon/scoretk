@@ -1917,8 +1917,13 @@ donnent le même résultat des deux côtés). Le dump temporaire `MIDI_DUMP`
 notes d'un même accord ayant des fins différentes ; ici chaque accord n'a
 qu'une note. `lengthenNote` (`importmidi_simplify.cpp:64-166`) expliquerait
 l'allongement de 60 mais pas pourquoi MuseScore allonge 57 à la place.
-Deux passes n'ayant pas trouvé l'intrant qui diffère, la cause est
-stationnée rather que corrigée au hasard.
+**Cause identifiée (2026-11-21) : la répartition en voix, pas la
+simplification.** La référence MuseScore 4.7.4 du cas réduit (regénérée par
+`mscore`) place A3 (57) en voix 2 et C4/D4 (60/62) en voix 1 ; notre
+répartition place 57/62 en voix 2 et 60 en voix 1. `lengthenNote` suit alors
+des accords « suivants » différents et allonge 60 au lieu de 57. Le port
+littéral de `importmidi_simplify.cpp` ne corrige donc pas ce cas (voir
+« Durations: literal port » et le prochain chantier `importmidi_voice.cpp`).
 
 ## Classement des causes restantes (lots MuseScore)
 
@@ -2010,10 +2015,10 @@ the tie-merging and unique-identifier oracle described below):
 
 | Lot | Before | After |
 | --- | --- | --- |
-| LilyPond (1 020 files), N against MuseScore | 0,8536 | **0,9491** |
-| total loss | 19 949,1 notes | **6 941,0** |
+| LilyPond (1 020 files), N against MuseScore | 0,8536 | **0.9491** |
+| total loss | 19 949,1 notes | **6 941.0** |
 | `pitch` dimension (lost notes) | 8 676,9 | **0,0** |
-| upstream lot (96 files), N against `.mscx` | 0,7350 | 0,7350 |
+| upstream lot (96 files), N against `.mscx` | 0.7350 | 0.7350 |
 
 161 files gain pitches, **none loses any**; `Transeamus` and `Transeamus_a3`
 go from 0.742 to 1.0000, `W-A-Mozart-Ave-Maria` from 0.474 to 0.9950. The other
@@ -2061,28 +2066,91 @@ Re-measurement (same manifests, same frozen binary):
 | Metric | Fragment counting | Tie-merged |
 | --- | --- | --- |
 | reference notes, LilyPond lot | 146 492 | 136 236 |
-| LilyPond N, after the port | 0,9251 | **0,9491** |
+| LilyPond N, after the port | 0,9251 | **0.9491** |
 | `pitch` dimension, after the port | 1 825,7 | **0,0** |
-| upstream N (`up-` lot) | 0,7165 (910 notes) | **0,7350** (864 notes) |
+| upstream N (`up-` lot) | 0,7165 (910 notes) | **0.7350** (864 notes) |
 
 The upstream figures are not comparable with the previous ones (46 tie
 fragments removed from its references); they are unchanged between the two
 binaries. The categories are now real: the remaining loss is voice (2 451.0),
 duration (2 450.3), tuplet (930 as a worst category) and onset (142.0).
 
-## Next real class: durations (N2d fair 98.31 %)
+## Durations: literal port of `importmidi_simplify.cpp` (2026-11-21)
 
-With ties merged and both sides in concert pitch, N1 (pitch multiset) and N2
-(pitch + attack) are **100.00 %** on the 1 020 files (132 844 reference notes):
-there is no pitch class left to fix. N2d (adding duration) is 98.31 %; the
-1.69 % are notes shorter than the reference. Two reduced cases point at
-`importmidi_simplify.cpp`:
+The simplifier was already close, but three upstream details were missing. The
+port now mirrors the file function by function:
 
-- `01_01_Etudiants`: the MIDI chord at 1.5 lasts 0.5 quarter, the next chord
-  in the same voice starts at 3.0. MuseScore lengthens the chord to 1.5
-  quarters (`lengthenNote` / `minimizeNumberOfRests`); we keep 0.5 (and 1.0
-  for other chords).
-- `simplify_order.rs` (currently `#[ignore]`d, three notes): MuseScore gives
-  2.0 / 0.5 / 0.5, we give 57 as two tied notes 1.0 + 0.5 and 60/62 as 0.5.
+| C++ `importmidi_simplify.cpp` | Rust `simplify.rs` |
+| --- | --- |
+| `hasComplexBeamedDurations` :40 | `has_complex_beamed_durations` |
+| `lengthenNote` :56 | `lengthen_note` |
+| `shortenDrumNote` :170 | `shorten_drum_note` |
+| `minimizeNumberOfRests` :211 | `minimize_number_of_rests` |
+| `simplifyDurations` :281 | `simplify_durations` |
+| `simplifyDurationsForDrums` :318 | `simplify_durations_for_drums` |
+| `simplifyDurationsNotDrums` :323 | `simplify_durations_not_drums` |
 
-Both are the same `lengthenNote` / `minimizeNumberOfRests` cause.
+What changed:
+
+- **`beatLength` always uses the raw measure.** `Meter::beatLength`
+  (`importmidi_meter.cpp:135-147`) receives the unreduced bar fraction
+  (`ReducedFraction(6, 8)`, `(2, 4)`, `(4, 4)`), which `ReducedFraction` keeps
+  as is. `beat_length_raw(bar_fraction, timesig.numerator)` was previously
+  limited to drum tracks and 12/8; it is now used for every meter. For 6/8 the
+  beat is 3/8 whole (1.5 quarters), for 2/4 it is 1/4 whole (1 quarter).
+- **`next` is recomputed per note** and only keeps chords of the same voice
+  that start **at or after** the note's off time
+  (`next->first < note.offTime` filter, `importmidi_simplify.cpp:257-262`).
+  `ChordMap::next_in_voice_at_or_after` implements this. The previous version
+  used the first same-voice chord after the current chord, which clamped
+  `endTime` on a chord that starts before the note ends.
+- **`isHumanPerformance`** is threaded from `convertMidi` and used in both
+  conditions of `lengthenNote` (`opers.isHumanPerformance.value() || isDrumTrack
+  || noteDurationCount <= 1.5`, and `!opers.isHumanPerformance.value()` in the
+  accuracy guard).
+
+Reduced tests, written first:
+
+- `simplify_lengthen_68.rs` (new): a 6/8 bar with 0.5-quarter chords every 1.5
+  quarters (`01_01_Etudiants`, track 4). Before the fix the chords stay 0.5 and
+  1.0 quarters; they are now 1.5 quarters, as in MuseScore 4.7.4.
+- `simplify_order.rs`: un-ignored for this cause, but it still fails for a
+  **different** reason. The literal simplifier cannot fix it: MuseScore puts
+  A3 (57) in voice 2 and C4/D4 (60/62) in voice 1, while our voice allocation
+  puts 57/62 in voice 2 and 60 in voice 1; lengthening then follows different
+  `next` chords. The cause is `importmidi_voice.cpp`, not the simplifier, so
+  the test stays `#[ignore]`d with that reason until the voice port.
+  (`Ev::TimeSig`'s second field is the denominator's power of two; the parked
+  test used `(4, 4)`, i.e. 4/16, and now uses `(4, 2)`.)
+
+Measurement (same manifests, MuseScore 4.7.4 oracle with ties merged, frozen
+`/tmp/scoretk-pitch-tpl`, `timeout 10 prlimit --as=2000000000`):
+
+| Metric | Before | After |
+| --- | --- | --- |
+| LilyPond N (1 020 files, 136 236 notes) | 0.9491 | **0.9566** |
+| total loss | 6 941.0 | **5 913.9** |
+| `duration` dimension | 2 450.3 | **1 254.2** |
+| `voice` dimension | 2 451.0 | 2 446.9 |
+| `pitch` / `onset` | 0.0 / 142.0 | 0.0 / 142.0 |
+| upstream N (96 files, 864 notes) | 0.7350 | 0.7315 |
+
+227 files gain and 42 lose. The gains are the intended lengthenings
+(`01_01_Etudiants` gains 0.4348 alone). The 42 losses are small (worst 0.0421,
+`GaiDuguesclin` and its five duplicates): the literal `next` filter now
+extends a note past a chord that our voice allocation places in the same voice
+but MuseScore places in another voice — the same voice-allocation cause as
+`simplify_order`. The three upstream losses are the tests whose expected
+`.mscx` is built **without** simplification (`dontSimplify`):
+`meter_last_quarter_rest_compound`, `tuplet_duplet`, `tuplet_quadruplet`
+(`midiimport_tests.cpp:326, 391, 425`); a faithful simplifier must diverge
+from a reference that disabled it.
+
+Round trip `roundtrip_midi`: `v3/testTuplets8` has one difference that is now
+fixed by value in the test (`KNOWN_MISMATCH`): the second-measure tuplet is
+not detected by the import, so D4 is moved by 40 ticks and shortened, where
+MuseScore detects the tuplet and keeps 2/3 quarter. This is the documented
+n-olet limitation, not a lost note; the exact pair is asserted, so any other
+change fails. All other 20 files are unchanged.
+
+## Next class: voices (`importmidi_voice.cpp`)

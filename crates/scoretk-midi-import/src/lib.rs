@@ -156,11 +156,11 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     for track in &mut tracks {
         merge_chords_with_equal_on_time_and_voice(track);
     }
-    simplify::simplify_durations_not_drums(&mut tracks, &sigmap, options.use_dots);
+    simplify::simplify_durations_not_drums(&mut tracks, &sigmap, is_human, options.use_dots);
     if voice::separate_voices(&mut tracks, &sigmap, max_voice_count) {
-        simplify::simplify_durations_not_drums(&mut tracks, &sigmap, options.use_dots);
+        simplify::simplify_durations_not_drums(&mut tracks, &sigmap, is_human, options.use_dots);
     }
-    simplify::simplify_durations_for_drums(&mut tracks, &sigmap, options.use_dots);
+    simplify::simplify_durations_for_drums(&mut tracks, &sigmap, is_human, options.use_dots);
     drum::split_unequal_drum_chords(&mut tracks);
     for track in &mut tracks {
         split_unequal_chords(track);

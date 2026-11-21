@@ -76,6 +76,7 @@ fn lengthen_note(
     tuplets: &std::collections::BTreeMap<super::tuplet::TupletKey, TupletData>,
     track: &MTrack,
     is_drum_track: bool,
+    is_human: bool,
     use_dots: bool,
 ) {
     if end_time <= note.off_time {
@@ -147,7 +148,7 @@ fn lengthen_note(
         }
         if note_duration_count + rest_duration_count
             < min_note_duration_count + min_rest_duration_count
-            && (is_drum_track || note_duration_count <= 1.5)
+            && (is_human || is_drum_track || note_duration_count <= 1.5)
         {
             min_note_duration_count = note_duration_count;
             min_rest_duration_count = rest_duration_count;
@@ -179,6 +180,7 @@ fn lengthen_note(
     }
 
     if !is_drum_track
+        && !is_human
         && has_loss_of_accuracy
         && (orig_note_durations.len() + orig_rest_durations.len()) as f64
             - (min_note_duration_count + min_rest_duration_count)
@@ -238,6 +240,7 @@ fn minimize_number_of_rests(
     track: &mut MTrack,
     sigmap: &TimeSigMap,
     is_drum_track: bool,
+    is_human: bool,
     use_dots: bool,
 ) {
     let keys = track.chords.keys();
@@ -251,9 +254,9 @@ fn minimize_number_of_rests(
             .tuplet
             .and_then(|key| track.tuplets.get(&key))
             .cloned();
-        // La table est ordonnée par date : le premier accord de même voix après
-        // `key` est le plus proche. Un `iter()` complet coûtait O(n²).
-        let next = track
+        // `shortenDrumNote` prend le premier accord de la voix après `it`,
+        // sans condition de date (`std::next` + filtre de voix).
+        let next_in_voice = track
             .chords
             .next_in_voice(key, voice)
             .map(|(next_key, next_chord)| {
@@ -282,7 +285,7 @@ fn minimize_number_of_rests(
                     key.0,
                     chord_is_in_tuplet,
                     chord_tuplet.as_ref(),
-                    next.clone(),
+                    next_in_voice.clone(),
                 );
             }
             let bar_start = find_bar_start(sigmap, note.off_time);
@@ -320,15 +323,29 @@ fn minimize_number_of_rests(
                     }
                 }
             }
-            let beat_len = if is_drum_track || timesig.numerator == 12 {
-                beat_length_raw(bar_fraction, timesig.numerator)
-            } else {
-                super::meter::beat_length(bar_fraction)
-            };
+            // `Meter::beatLength` reçoit la mesure non réduite (6/8, 2/4…) :
+            // le numérateur brut est nécessaire (voir `beat_length_raw`).
+            let beat_len = beat_length_raw(bar_fraction, timesig.numerator);
             let beat_time = bar_start + quantize_to_large(note.off_time - bar_start, beat_len);
             if end_time > beat_time {
                 end_time = beat_time;
             }
+            // `next` est recalculé pour chaque note, après `shortenDrumNote` :
+            // seuls comptent les accords de la voix qui commencent au plus tôt
+            // à la fin de la note (`next->first < note.offTime`).
+            let next = track
+                .chords
+                .next_in_voice_at_or_after(key, voice, note.off_time)
+                .map(|(next_key, next_chord)| {
+                    (
+                        next_key.0,
+                        next_chord.is_in_tuplet,
+                        next_chord
+                            .tuplet
+                            .and_then(|key| track.tuplets.get(&key))
+                            .cloned(),
+                    )
+                });
             if let Some((next_on_time, next_is_in_tuplet, next_tuplet)) = &next {
                 if *next_on_time < end_time {
                     end_time = *next_on_time;
@@ -353,6 +370,7 @@ fn minimize_number_of_rests(
                 &track.tuplets,
                 track,
                 is_drum_track,
+                is_human,
                 use_dots,
             );
             if let Some(chord) = track.chords.get_mut(key) {
@@ -367,23 +385,39 @@ fn minimize_number_of_rests(
 
 /// Simplifie les durées des pistes non percussives
 /// (`simplifyDurationsNotDrums`).
-pub fn simplify_durations_not_drums(tracks: &mut [MTrack], sigmap: &TimeSigMap, use_dots: bool) {
-    simplify_durations(tracks, sigmap, false, use_dots);
+pub fn simplify_durations_not_drums(
+    tracks: &mut [MTrack],
+    sigmap: &TimeSigMap,
+    is_human: bool,
+    use_dots: bool,
+) {
+    simplify_durations(tracks, sigmap, false, is_human, use_dots);
 }
 
 /// Simplifie les durées des pistes de percussion
 /// (`simplifyDurationsForDrums`).
-pub fn simplify_durations_for_drums(tracks: &mut [MTrack], sigmap: &TimeSigMap, use_dots: bool) {
-    simplify_durations(tracks, sigmap, true, use_dots);
+pub fn simplify_durations_for_drums(
+    tracks: &mut [MTrack],
+    sigmap: &TimeSigMap,
+    is_human: bool,
+    use_dots: bool,
+) {
+    simplify_durations(tracks, sigmap, true, is_human, use_dots);
 }
 
 /// Simplifie les durées des pistes du type demandé (`simplifyDurations`).
-fn simplify_durations(tracks: &mut [MTrack], sigmap: &TimeSigMap, drums: bool, use_dots: bool) {
+fn simplify_durations(
+    tracks: &mut [MTrack],
+    sigmap: &TimeSigMap,
+    drums: bool,
+    is_human: bool,
+    use_dots: bool,
+) {
     for track in tracks {
         if track.drum_track != drums || track.chords.is_empty() {
             continue;
         }
-        minimize_number_of_rests(track, sigmap, drums, use_dots);
+        minimize_number_of_rests(track, sigmap, drums, is_human, use_dots);
         super::tuplet::remove_empty_tuplets(track);
     }
 }

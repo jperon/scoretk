@@ -227,6 +227,25 @@ impl ChordMap {
             .find(|(_, chord)| chord.voice == voice)
             .map(|(key, chord)| (*key, chord))
     }
+
+    /// Premier accord de `voice` dont la date est au moins `from`, en partant
+    /// de l'accord `key` exclu.
+    ///
+    /// Équivalent du `std::next(it)` puis du filtre
+    /// `next->second.voice != voice || next->first < note.offTime` de
+    /// `minimizeNumberOfRests` (`importmidi_simplify.cpp:257-262`) : un accord
+    /// qui commence avant la fin de la note est ignoré, même dans la même voix.
+    pub fn next_in_voice_at_or_after(
+        &self,
+        key: ChordKey,
+        voice: usize,
+        from: Fraction,
+    ) -> Option<(ChordKey, &MidiChord)> {
+        self.entries
+            .range((from, 0)..)
+            .find(|(next_key, chord)| **next_key != key && chord.voice == voice)
+            .map(|(next_key, chord)| (*next_key, chord))
+    }
 }
 
 /// Piste MIDI en cours d'import (`MTrack`).
