@@ -1421,3 +1421,35 @@ de la même partition — le mécanisme exact qui place cette anacrouse dans la
 `RepeatSegment` de 4.7.4 n'est pas dans le portage. Un gain net sur master
 n'est donc pas démontrable sans ce mécanisme ; le correctif de troncature est
 conservé pour sa conformité à `pausemap.cpp:68-71`, sans gain de mesure.
+
+## MIDI import oracle — upstream tests and LilyPond MIDIs (2026-11-21)
+
+Phase 4 of `docs/agents/plan-fiabilite.md` asks for a reading measurement with
+two lots: MuseScore's upstream `importexport/midi/tests/midiimport_data`
+(`.mid` + expected `.mscx`) and the LilyPond MIDIs whose `.ly` source we read.
+
+`scripts/oracle/midi/import_mesure.py` builds both manifests at run time (no
+third-party data is committed), converts each MIDI with the frozen CLI under
+`timeout`/`prlimit`, and compares the result with the reference on
+`(pitch, onset, duration, voice)` at the Q16 grid (±1/16 quarter). The expected
+`.mscx` is parsed directly: sending it through our MusicXML exporter would
+apply the instrument's transposition and shift the reference by an octave
+(`instrument_clef` is the instructive case). For the `.ly` lot the `.ly` itself
+is the ideal-quantisation reference.
+
+Baseline on 98 upstream files: **N = 0.3637**; the largest losses are
+`human_tempo` (142 notes, score 0.014), `chord_collect` (48, 0.0), the
+tuplet tests and the percussion tests. Many upstream tests set non-default
+import options (`dontSimplify`, `maxVoiceCount V_1`), so their expected `.mscx`
+cannot be matched by the CLI's default options; those files are documented,
+not chased as importer bugs.
+
+### Cause fixed: SMPTE ticks
+
+`toMuseScoreTicks` (`importexport/midi/internal/midiimport/importmidi_fraction.cpp:350-354`)
+returns `ReducedFraction::fromTicks(tick)` unchanged when the SMF header uses a
+time division. The Rust port converted SMPTE ticks to quarters at a fixed
+120 BPM, distorting every onset and duration. Reduced test `smpte_ticks`
+(written first, failed before the fix): `to_muse_score_ticks(1000, 80, true)`
+now gives the raw 1000 ticks. Measured gain on `up-division` (an SMPTE file):
+score 0.0000 → 0.2500; on the full upstream lot N goes from 0.3637 to 0.3648.

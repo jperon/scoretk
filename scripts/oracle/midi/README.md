@@ -67,3 +67,19 @@ ne pas donner le même poids à un court et à un long morceau. Les causes sont
 classées par priorité (échec, délai, vide, octave, transposition, attaque
 décalée, notes manquantes/supplémentaires, durée seule) : la première cause
 d'un fichier sert à regrouper les écarts.
+
+## Import oracle
+
+`import_mesure.py` measures MIDI **reading** (plan-fiabilite phase 4). It pairs
+the MuseScore upstream tests (`importexport/midi/tests/midiimport_data/*.mid`
+with their `-ref.mscx`) and the LilyPond MIDIs whose `.ly` source exists. For
+each pair the CLI reads the MIDI, and the notes `(pitch, onset, duration,
+voice)` are compared at the Q16 grid (±1/16 quarter) with the expected
+`.mscx` (parsed directly) or the `.ly`. No file is copied into the repository.
+
+```sh
+nix develop -c cargo build -p scoretk-cli
+python3 scripts/oracle/midi/import_mesure.py \
+  --binary target/debug/scoretk --out /tmp/oracle-midi-import/full \
+  --upstream /home/jacques/programmes/musique/musescore/ref-musescore/src/importexport/midi/tests/midiimport_data
+```
