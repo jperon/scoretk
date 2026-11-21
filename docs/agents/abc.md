@@ -2114,8 +2114,8 @@ therefore now shows real writing losses only.
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | corpus | scoretk | **46** (82 %) | **99.57** | **66.02** | **65.47** | 295 |
 | corpus | xml2abc | 42 (75 %) | 80.87 | 34.91 | 32.58 | 334 |
-| mscz | scoretk | **92** (53 %) | **99.59** | **80.11** | **78.05** | 11 974 |
-| mscz | xml2abc | 20 (12 %) | 83.33 | 43.57 | 38.80 | 13 375 |
+| mscz | scoretk | **92** (53.2 %) | **99.59** | **80.11** | **78.05** | 11 974 |
+| mscz | xml2abc | 20 (11.6 %) | 83.33 | 43.57 | 38.80 | 13 375 |
 | xml | scoretk | **13** (41 %) | **98.59** | 36.71 | 34.84 | 12 517 |
 | xml | xml2abc | 6 (19 %) | 88.16 | **81.68** | **80.56** | 13 216 |
 
@@ -2148,6 +2148,22 @@ bloat.
 regression** in this pass. The `V:` clef octave accounts for nearly all of the
 gains (the `Les anges`, `Sicut locutus`, `Stella maris`, `Omni die`, `Ave Verum`,
 `Sancta Maria Lux` families).
+
+### MuseScore version check (2026-11-21 update)
+
+The four files previously counted as "MuseScore 2.x reader failures" were
+checked against the actual `<programVersion>` inside each `.mscz`:
+
+| File | Real version | Status now |
+| --- | --- | --- |
+| `Canon_in_D_Pachelbel…mscz` | 1.2 | Below 1.15: master's `scripts/oracle/common.py` treats CLI exit code 3 as unsupported and excludes it (1 file excluded from the mscz lot: 174 → 173). |
+| `AnthemChristmas_Lullaby.mscz` | 2.0.3 | Within 1.15–2.07 (`read206`): now reads successfully (exit 0). |
+| `Vivaldi … RV 594 -02` | 3.5.2 | Within 3.x (`read302`): now reads successfully (exit 0). |
+| `Vivaldi … RV 594 -05` | 2.0.3 | Within 1.15–2.07 (`read206`): now reads successfully (exit 0). |
+
+The earlier panics came from a stale binary, not from the current reader. The
+re-run (`/tmp/abc-vcheck-run`) has 173 mscz files, 173 ABC OK for both
+candidates, the same 92 exact files and N1 99.59 %: no writer regression.
 
 ### Remaining losses, classified
 
