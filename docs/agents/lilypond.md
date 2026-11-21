@@ -3943,3 +3943,22 @@ far fewer errors and warnings.
    and the writer emits all 72 of them as `^\markup { … }`. The remaining
    loss is a chord/timing issue around tick 229, not a missing register.
 5. Measure-length irregularities — `Anerio` (284), `Perosi` (137).
+
+### Ottava: place the command before the note it covers
+
+MuseScore stores an `Ottava` spanner with `tick`/`tick2` anchored on the
+ChordRest segments (`read400/connectorinforeader.cpp`, `setTick2(item->tick()
++ l.frac())`); our importer mirrors this in `read4xx/ottava.rs::resolve`.
+`ly/music-functions-init.ly` defines `\ottava` as an `OttavaEvent`, i.e. a
+context property, so it must be written **before** the note from which the
+octave applies. `render_body` attached every spanner event with `attach_post`
+(the last note at or before the tick), which placed `\ottava 1` one quarter
+late and made the re-read spanner one quarter off — the cause of the four
+regressing files in the rejected attempt. Ottava events now go through
+`attach_pre`, like `\clef`/`\key`.
+
+Failing reduced test `ottava_commence_avant_la_note_du_tick_de_depart` first
+(two measures, one ottava). On `testExcludeInvisibleElements.mscx` the
+written `.ly` now has `\ottava 1` before the first note of the covered
+measure and `\ottava 0` before the next measure, matching the reference
+`<octave-shift>` positions.

@@ -39,7 +39,7 @@ staffTwoVoiceOne = \fixed c' {
   R1 |
   \break
   \key f \major \time 12/8
-  a4 \ottava 1 bf4 \ottava 0 c'4 d'4 e'4 f'4 |
+  \ottava 1 a4 \ottava 0 bf4 c'4 d'4 e'4 f'4 |
   <a c' e'>1 ^\markup { "C" } ^\markup { "D" } r2 \bar "|."
 }
 

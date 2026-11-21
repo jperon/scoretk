@@ -13,7 +13,7 @@ staffOneVoiceOne = \fixed c' {
   c4 ^\markup { "Staff text" } c4 c4 ^\markup { "System text" } c4 |
   \clef bass
   c4 c4 c4 c4 |
-  c,4 \ottava 1 c,4 c,4 c,4 \ottava 0 \bar "|."
+  \ottava 1 c,4 c,4 c,4 \ottava 0 c,4 \bar "|."
 }
 
 \score {

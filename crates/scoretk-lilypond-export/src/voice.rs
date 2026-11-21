@@ -425,8 +425,19 @@ pub(crate) fn render_body(
                 }
             }
         }
+        // `\ottava` est une propriété de contexte : elle doit précéder la
+        // note à partir de laquelle elle s'applique, comme `\clef`/`\key`
+        // (`lily/parser.yy`, `OTTAWA` / `ly/music-functions-init.ly`). Les
+        // autres spanners (pédale, soufflet, liaison) s'attachent après la
+        // note. Un `\ottava` placé après la note décale d'un tick la portée
+        // relue et toutes les notes qu'elle couvre.
+        let before = matches!(spanner.kind, SpannerType::Ottava(_));
         for event in crate::spanners::events(spanner, spanner_index + 1) {
-            attach_post(&mut post_by_item, &items, event);
+            if before {
+                attach_pre(&mut pre_by_item, &items, event);
+            } else {
+                attach_post(&mut post_by_item, &items, event);
+            }
         }
     }
 
@@ -1462,5 +1473,52 @@ mod tests {
 
         let verses = lyrics_verses(&score, 0, 0);
         assert_eq!(verses[&0], vec!["de".to_owned(), "\\skip 1".to_owned()]);
+    }
+}
+
+#[cfg(test)]
+mod ottava_roundtrip_tests {
+    use super::*;
+    use scoretk_core::model::{
+        ChordRest, Duration, Measure, OttavaType, Part, Segment, SegmentItem, SegmentType,
+        Spanner, SpannerAnchor, SpannerType,
+    };
+
+    #[test]
+    fn ottava_commence_avant_la_note_du_tick_de_depart() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno."));
+        let staff = score.add_staff(part);
+        for index in 0..2 {
+            let mut measure = Measure::new(index, Fraction::new(index as i64, 1), Fraction::ONE);
+            for beat in 0..4 {
+                let tick = Fraction::new(index as i64, 1) + Fraction::new(beat as i64, 4);
+                let mut segment = Segment::new(SegmentType::ChordRest, tick, 1);
+                segment.set_element(
+                    Track::new(staff, 0),
+                    SegmentItem::ChordRest(ChordRest::rest(Duration::quarter())),
+                );
+                measure.add_segment(segment);
+            }
+            score.add_measure(measure);
+        }
+        score.add_spanner(Spanner::new(
+            SpannerType::Ottava(OttavaType::OctaveUp),
+            SpannerAnchor::new(Fraction::new(1, 4), Track::new(staff, 0)),
+            SpannerAnchor::new(Fraction::new(6, 4), Track::new(staff, 0)),
+        ));
+        let structure = crate::structure::Structure {
+            before: vec![Vec::new(); 2],
+            after: vec![Vec::new(); 2],
+        };
+        let body = render_body(&score, &structure, 0, 0, 1);
+        let position = body.find("\\ottava 1").expect("commande ottava");
+        let before = &body[..position];
+        let notes_before = before.matches("r4").count();
+        assert_eq!(
+            notes_before, 1,
+            "\\ottava 1 doit précéder la note au tick 1/4 : {}",
+            body
+        );
     }
 }

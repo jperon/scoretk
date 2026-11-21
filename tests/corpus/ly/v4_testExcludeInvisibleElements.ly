@@ -17,8 +17,8 @@ staffOneVoiceOne = \fixed c' {
   e4 \< e4 e4 e4 \! |
   c4 \sustainOn \=5( d4 e4 f4 \=5) |
   c4 \sustainOff \sustainOn \=6( d4 e4 f4 \=6) |
-  f4 \sustainOff \ottava 1 f4 f4 f4 |
-  f4 \ottava 0 f4 f4 f4 |
+  \ottava 1 f4 \sustainOff f4 f4 f4 |
+  \ottava 0 f4 f4 f4 f4 |
   \break
   c4 \glissando a4 c4 \glissando a4 |
   <c e g>4 <c e g>4 r4 a4~-4 |
