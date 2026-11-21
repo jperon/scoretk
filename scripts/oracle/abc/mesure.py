@@ -131,7 +131,7 @@ def ecrit(path, lines):
 def lance(command, log, budget=45):
     """Exécute une commande avec plafond de temps ; renvoie (code, message).
 
-    Le plafond est configurabledepuis ``ecriture.TIMEOUT`` : les copies de
+    Le plafond est configurable depuis ``ecriture.TIMEOUT`` : les copies de
     `Vingt_danses` (17 616 notes) dépassent 10 s et échouaient au hasard.
     """
     try:
