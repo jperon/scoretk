@@ -995,6 +995,7 @@ impl Reader {
                     // A voice already on this clef (e.g. from its `V:` field)
                     // has already received the octave shift: do not apply it
                     // a second time for a redundant inline `[K: clef=...]`.
+                    let had_voices = !previous_clefs.is_empty();
                     let mut applied_any = false;
                     for (voice, previous) in self.voices.iter_mut().zip(previous_clefs) {
                         if new_clef.is_some_and(|clef| previous == Some(clef)) {
@@ -1003,7 +1004,10 @@ impl Reader {
                         voice.transpose += octave_shift;
                         applied_any = true;
                     }
-                    if applied_any || new_clef.is_none() {
+                    // No voices yet: the shift must go to midi_transpose so
+                    // voices declared later inherit it. With voices already
+                    // present but none needing the shift, it is redundant.
+                    if applied_any || !had_voices {
                         self.midi_transpose += octave_shift;
                     }
                 }
