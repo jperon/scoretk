@@ -2178,6 +2178,35 @@ Re-run (`/tmp/abc-finalv`): **14 files gain N1/N2/N2d, 0 losses**; exact mscz
 files 92 → 99, N2d 78.05 % → 79.22 %, N1 99.59 % → 99.07 % (the two recovered
 scores have lower N1, which lowers the average while adding exact files).
 
+### Three causes fixed (2026-11-21, final run `/tmp/abc-final3`)
+
+1. **Rests scaled inside tuplets** (`28ee8c89`). ABC 2.1 §4.13 defines
+   `(p:q:r` with q=3 in compound meter; `abc2xml.py` scales every tuplet
+   event, rests included, by `tmden/tmnum` (line 1366) and counts rests toward
+   `ntup` (line 1306). Our reader scaled notes only: `(2:3ez/2fz/2` in 12/8
+   was read as 7/16 instead of 15/32, causing the Minuit chrétien family's
+   measure to be re-read as 13/8. Reduced test `tuplet_rest_scale.rs` written
+   first, failing before the fix.
+2. **Explicit `z` full-measure fill** (`94e34fd6`). `xml2abc.py::doMaat`
+   writes explicit `z` multipliers (`z12` in 12/8), never `Z`: the written
+   duration must survive re-reading independently of `M:`. On re-read an
+   explicit `z` covering a whole measure is treated as a measure rest so no
+   spurious `<type>`/`<dot>` appears. Reduced test `abc_ecriture_z_explicite.rs`
+   written first, failing before the fix. This is the biggest single gain:
+   mscz exact files 99 → 148, N2d 79.22 % → 91.74 %.
+3. **`figure_for` largest fallback** (`ddbd2b11`). For an inexact length such
+   as 9/8, the helper kept the last fitting candidate (a triple-dotted
+   1024th) instead of the largest (whole). Reduced test `figure_for_long.rs`
+   written first, failing before the fix.
+
+Against the previous state, **66 files gain N1/N2/N2d, 2 lose**; N1 is
+unchanged (0 gain/loss). The two losses are both `Veni, Creator Spiritus`
+(SATB): their tuplets contain rest tokens whose count exceeds the declared
+`r`, so scaling them per §4.13 changes their durations (writer-side tuplet
+syntax issue, documented for a later pass). One stability loss
+(`Magnificat__Prt`, index 55): a short measure gains a `z2` fill on re-read;
+no pitch is lost.
+
 ### Remaining losses, classified
 
 - **Two xml files lose a few N1/N2d points** (`Sancta_Maria_KV_273`,
