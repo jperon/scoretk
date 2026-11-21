@@ -955,9 +955,14 @@ impl Parser<'_> {
             let voice = self.voice();
             let start_tick = Self::voice_tick(&voice.measures, &origin);
             let end_tick = Self::voice_tick(&voice.measures, &destination);
+            // `self.voice` indexes the ABC reader's voice list, not the
+            // model's 0-3 voice slots: scores with more than four voices
+            // would panic here (ABC 2.1 § 7; MuseScore has four voices per
+            // staff). Clamp to a valid model voice; the spanner's staff is
+            // refined when the parts are built.
             let track = Track::new(
                 scoretk_core::model::StaffId::from_index(0),
-                self.voice as u8,
+                (self.voice % 4) as u8,
             );
             let mut spanner = Spanner::new(
                 SpannerType::Slur,
