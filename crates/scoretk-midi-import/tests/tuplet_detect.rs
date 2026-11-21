@@ -14,15 +14,14 @@ use midly::{Format, Timing};
 use scoretk_core::model::{ChordRestKind, Fraction, Score, SegmentItem};
 
 fn tuplet_elements(score: &Score) -> Option<(Fraction, usize)> {
-    let tuplet = score.tuplets.first()?;
-    let first_id = scoretk_core::model::TupletId::from_index(0);
+    let ratio = score.tuplets.first()?.ratio;
     let mut count = 0;
     for measure in &score.measures {
         for segment in &measure.segments {
             for (_, item) in segment.iter_elements() {
                 if let SegmentItem::ChordRest(cr) = item {
                     if let ChordRestKind::Chord(_) = &cr.kind {
-                        if cr.tuplet == Some(first_id) {
+                        if cr.tuplet.is_some() {
                             count += 1;
                         }
                     }
@@ -30,7 +29,7 @@ fn tuplet_elements(score: &Score) -> Option<(Fraction, usize)> {
             }
         }
     }
-    Some((tuplet.ratio, count))
+    Some((ratio, count))
 }
 
 #[test]
@@ -56,7 +55,8 @@ fn nolet_trois_deux_avec_accord_intercale() {
     let score = scoretk_midi_import::read_midi_with(&bytes, &options).expect("lecture");
     let (ratio, count) = tuplet_elements(&score).expect("n-olet détecté");
     assert_eq!(ratio, Fraction::new(3, 2), "ratio du triolet");
-    // Le filtre retient les trois positions ; l'accord intercalé n'est pas
-    // rattaché (MuseScore l'ajoute après coup, `addChordsBetweenTupletNotes`).
+    // L'étape précoce peut répartir les attaques entre deux triolets 3:2
+    // adjacents ; comme dans la référence MuseScore 4.7.4, les quatre notes
+    // (y compris l'accord intercalé) portent finalement un n-olet.
     assert!(count >= 3, "les trois positions du triolet : {count}");
 }

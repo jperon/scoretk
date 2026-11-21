@@ -26,7 +26,7 @@ fn durations(score: &Score) -> Vec<(Fraction, u8, Fraction)> {
                             out.push((
                                 segment.tick,
                                 score.notes[id.index()].pitch,
-                                cr.ticks.unwrap_or_else(|| cr.duration.ticks()),
+                                cr.duration.ticks(),
                             ));
                         }
                     }
@@ -40,44 +40,61 @@ fn durations(score: &Score) -> Vec<(Fraction, u8, Fraction)> {
 
 #[test]
 fn triolet_parasite_rejete_durees_de_la_reference() {
+    // Évènements exacts de `tuplet_off_time_other_bar2.mid` (384 ticks/noire,
+    // 4/4) : la réduction précédente arrondissait les attaques et masquait
+    // l'écart d'une demi-croche entre les deux pipelines.
+    // `Ev::TimeSig` prend l'exposant du dénominateur SMF : 2 = 4/4.
     let mut events = vec![(0, Ev::TimeSig(4, 2)), (0, Ev::Tempo(500_000))];
-    for (on, off, pitch) in [
-        (0.0, 2.0, 72u8),
-        (2.003, 2.677, 74),
-        (2.667, 3.333, 67),
-        (3.336, 4.656, 69),
-        (4.669, 5.333, 74),
-        (5.333, 6.0, 67),
+    for (tick, pitch, on) in [
+        (0, 72, true),
+        (768, 72, false),
+        (769, 74, true),
+        (1024, 67, true),
+        (1028, 74, false),
+        (1280, 67, false),
+        (1281, 69, true),
+        (1788, 69, false),
+        (1793, 74, true),
+        (2048, 74, false),
+        (2048, 67, true),
+        (2304, 67, false),
     ] {
-        events.push(((on * 480.0) as u32, Ev::NoteOn(0, pitch, 90)));
-        events.push(((off * 480.0) as u32, Ev::NoteOff(0, pitch)));
+        events.push((
+            tick,
+            if on {
+                Ev::NoteOn(0, pitch, 80)
+            } else {
+                Ev::NoteOff(0, pitch)
+            },
+        ));
     }
     events.sort_by_key(|(tick, _)| *tick);
-    let bytes = smf_with(Format::Parallel, Timing::Metrical(u15::new(480)), &[events]);
+    let bytes = smf_with(Format::Parallel, Timing::Metrical(u15::new(384)), &[events]);
     let options = ImportOptions {
         simplify_durations: false,
         max_voice_count: VoiceCount::V1,
-        tuplet_notation: true,
         ..ImportOptions::default()
     };
     let score = read_midi_with(&bytes, &options).expect("lecture");
     let got = durations(&score);
-    // Le n-olet parasite allongeait la note 74 de 2,0 à 3,25 (1,25 noire) ;
-    // sans lui, son premier fragment dure 3/16 de ronde, comme la référence.
+    // Le n-olet parasite allongeait la note 74 de 1,0 à 1,25 noire (5/16 de
+    // ronde). Avec l'insertion précoce, le modèle stocke la durée sonore
+    // (1/4 de ronde) ; l'export MusicXML la note 3/16 avec le ratio 3:2,
+    // comme la référence (vérifié par l'oracle sur le fichier complet).
     let note = got
         .iter()
         .find(|(tick, pitch, _)| *tick == Fraction::new(1, 2) && *pitch == 74)
         .expect("note 74 à 2,0 noires");
     assert_eq!(
         note.2,
-        Fraction::new(3, 16),
-        "durée de la note 74 (0,75 noire) : {got:?}"
+        Fraction::new(1, 4),
+        "durée sonore de la note 74 : {got:?}"
     );
     assert!(
         !got.iter()
             .any(|(tick, pitch, len)| *tick == Fraction::new(1, 2)
                 && *pitch == 74
-                && *len > Fraction::new(3, 16)),
+                && *len > Fraction::new(1, 4)),
         "la note ne doit plus être allongée par un triolet : {got:?}"
     );
 }
