@@ -1586,3 +1586,64 @@ elles ne sont pas imputables au lecteur. La catégorie `OCTAVE` passe de 2 à 3
 après la correction partielle des clefs : les 2 airs restants combinent
 plusieurs changements de clef inline et demandent un port plus complet de
 `doClef` (notamment `clef-octave-change` et `gtrans` par voix).
+
+## 18. N2 (attaques) et N3 (fonctions musicales) — 2026-11-21
+
+### 18.1 N2
+
+N2 est déjà mesuré par `cmp.py` : `abc2midi` fournit les temps en ticks SMF,
+l'attaque est convertie en quarts (`tick/tpq`) puis quantifiée au 1/24 de
+quart ; le MusicXML cumule `<duration>/<divisions>` en quarts avec
+`<backup>`/`<forward>`. Aucune conversion en secondes (tempo/gate d'`abc2midi`)
+n'intervient. Sur la campagne de référence, **825 airs N1-exacts ont N2 < 0,99**
+(music21 803, abcjs 21, std 1) ; mais seulement 3 airs ont une alternative
+correcte (N2 ≥ 0,9) et scoretk mauvais (N2 < 0,8). Le déficit N2 est donc
+presque entièrement partagé avec `abc2xml.py` : il vient de l'oracle/tempo,
+pas du lecteur. Les 3 écarts spécifiques (X:637, X:1185, X:1649 de music21)
+restent à diagnostiquer.
+
+### 18.2 N3 — comparateur et déficits
+
+Nouveau comparateur `scripts/oracle/abc/n3.py` : il extrait de chaque paire
+`score.musicxml` / `alt/air.xml` les compteurs de lyrics, liaisons (ties),
+slurs, triolets, notes de grâce, ornements, harmonies, reprises, voltas,
+armures, indications de mesure, clefs et voix, puis écrit `n3.tsv`.
+
+Déficits par catégorie (airs où scoretk a moins que l'alternative) : slurs
+**3 055**, ornements **3 075**, reprises **1 250**, armures 39, indications de
+mesure 32, triolets 26, clefs 21 (mais 4 583 de plus : l'alternative n'écrit
+presque jamais de `<clef>`), voix 18, voltas 15, paroles 10, liaisons 3.
+
+### 18.3 Cause 1 — slurs (commit a5b14f1)
+
+`add_spanner` (`reader/build.rs`) créait les slurs ABC sans
+`SpannerNotation::Slur`. L'export MusicXML n'écrit les `<slur>` que lorsque le
+spanner porte cette notation (`notations.rs::slurs`) : **0 fichier avec un
+`<slur>`** sur toute la campagne, contre 3 055 chez l'alternative. Port de
+`abc2xml.py::doSlurs` (lignes 1566-1580). Test réduit modèle écrit d'abord,
+échouant avant le correctif.
+
+### 18.4 Cause 2 — `:|` puis `|:` (commit en cours)
+
+Dans `finish_bar`, une mesure vide ouverte par `|:` écrasait `end_bar` de la
+mesure précédente avec `Normal`, effaçant le `:|` qui la fermait. La norme ABC
+2.1 §4.9 définit `:|` et `|:` comme deux barres distinctes ; `abc2xml.py`
+écrit les deux `<repeat>` (lignes 1566-1603). Le port ne conserve plus que
+l'écrasement quand `end` n'est pas `Normal`. Test réduit
+`C D:|` / `|: E F|` écrit d'abord, échouant avant le correctif.
+
+### 18.5 Campagne finale N1/N2/N3
+
+Après les deux causes, la campagne complète (1 402 fichiers / 4 756 airs)
+donne : **N1 0 gain / 0 perte**, **N2 0 gain / 0 perte**, **N3 : 2 976 airs
+gagnent des slurs, 1 077 gagnent des `<repeat>`, 0 perte dans toutes les
+catégories**. Les nombres d'airs exacts et les N1/N2 globaux sont inchangés
+(4 456, 99,8 %) : ces deux causes ne modifient pas les hauteurs ni les
+attaques, seulement les fonctions musicales mesurées par N3. Le comparateur
+N3 ne compte pas le conteneur générique `<notations>` comme un ornement
+(sinon l'ajout des slurs gonflait faussement la catégorie `decorations`).
+
+Les déficits N3 restants les plus gros sont les ornements (661 airs),
+`clefs` (4 582 airs où scoretk écrit une clef et pas l'alternative — choix
+différent, pas un manque) et les triolets (26). Les 3 écarts N2 spécifiques
+restent à diagnostiquer séparément.
