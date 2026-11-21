@@ -64,7 +64,7 @@ sys.path.insert(0, str(HERE.parent / "midi"))  # midi_notes.py
 sys.path.insert(0, str(HERE))                  # mesure.py, cmp.py
 
 import mesure  # noqa: E402
-from midi_notes import GRID, TOL, compare, read_midi  # noqa: E402
+from midi_notes import GRID, TOL, compare, read_midi, read_xml  # noqa: E402
 
 TIMEOUT = 10
 RE_ERREUR = re.compile(r"\b(?:erreur|error)\b", re.IGNORECASE)
@@ -246,6 +246,25 @@ def jouer_abc(abc: Path, midi: Path, log: Path) -> dict:
     }
 
 
+def noter_modele(args, abc: Path, dest: Path, log: Path) -> tuple[bool, list, str]:
+    """Releit l'ABC avec scoretk et en retire les notes du modèle.
+
+    Mode « modèle » de l'oracle : on compare les notes du modèle pivot avant
+    et après écriture, sans abc2midi ni MIDI de MuseScore. Cela élimine deux
+    artefacts du mode MIDI : la réalisation des ornements/voltas par
+    MuseScore (absente des deux ABC) et la limite de 16 canaux d'abc2midi sur
+    les partitions orchestrales. Les deux candidats sont jugés avec le même
+    lecteur, exactement comme ils l'étaient avec le même abc2midi.
+    """
+    ok, erreur = ecrire_abc_scoretk(args, str(abc), dest, log)
+    if not ok:
+        return False, [], erreur
+    try:
+        return True, read_xml(str(dest)), ""
+    except Exception as exc:  # XML illisible
+        return False, [], f"XML illisible : {exc}"
+
+
 def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
     fichiers = lire_manifest(manifeste)
     if args.stride > 1:
@@ -260,36 +279,66 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
             work = Path(args.out) / "travail" / lot / str(i)
             work.mkdir(parents=True, exist_ok=True)
             log = work / "journal.log"
-            ref_mid = caches / f"{h}.mid"
-            err_ref = reference_midi(args, src, ref_mid, log)
-            if err_ref or not ref_mid.is_file():
-                for outil in ("scoretk", "xml2abc"):
-                    r = base_releve(lot, outil, src)
-                    r["erreur"] = err_ref or "référence MIDI absente"
-                    r["drapeaux"] = ["echec"]
-                    ecrire(out, r)
-                out.flush()
-                continue
-            try:
-                ref = read_midi(str(ref_mid))
-            except Exception as exc:
-                for outil in ("scoretk", "xml2abc"):
-                    r = base_releve(lot, outil, src)
-                    r["erreur"] = f"MIDI illisible : {exc}"
-                    r["drapeaux"] = ["echec"]
-                    ecrire(out, r)
-                out.flush()
-                continue
-
             debut = time.monotonic()
             tk_abc = work / "tk.abc"
             tk_xml = work / "tk.musicxml"
             ok_tk, err_tk = ecrire_abc_scoretk(args, src, tk_abc, log)
-            ok_xml, _ = ecrire_abc_scoretk(args, src, tk_xml, log)
+            ok_xml, err_xml = ecrire_abc_scoretk(args, src, tk_xml, log)
+
+            if args.mode == "model":
+                # Référence = notes du modèle pivot exporté par scoretk depuis
+                # la source. Aucun MIDI : ni ornements réalisés, ni canal 16.
+                if not ok_xml:
+                    for outil in ("scoretk", "xml2abc"):
+                        r = base_releve(lot, outil, src)
+                        r["erreur"] = err_xml or "référence modèle absente"
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                    out.flush()
+                    continue
+                try:
+                    ref = read_xml(str(tk_xml))
+                except Exception as exc:
+                    for outil in ("scoretk", "xml2abc"):
+                        r = base_releve(lot, outil, src)
+                        r["erreur"] = f"XML référence illisible : {exc}"
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                    out.flush()
+                    continue
+            else:
+                ref_mid = caches / f"{h}.mid"
+                err_ref = reference_midi(args, src, ref_mid, log)
+                if err_ref or not ref_mid.is_file():
+                    for outil in ("scoretk", "xml2abc"):
+                        r = base_releve(lot, outil, src)
+                        r["erreur"] = err_ref or "référence MIDI absente"
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                    out.flush()
+                    continue
+                try:
+                    ref = read_midi(str(ref_mid))
+                except Exception as exc:
+                    for outil in ("scoretk", "xml2abc"):
+                        r = base_releve(lot, outil, src)
+                        r["erreur"] = f"MIDI illisible : {exc}"
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                    out.flush()
+                    continue
             ref_xml = caches / f"{h}.musicxml"
-            origine = reference_xml(args, src, ref_xml, tk_xml, log) if Path(src).suffix.lower() in (
-                ".mscx", ".mscz", ".xml", ".musicxml", ".mxl"
-            ) else "absent"
+            if args.mode == "model":
+                # Les deux candidats partent du même modèle : scoretk exporte
+                # la source en MusicXML, qui sert de référence et d'entrée à
+                # xml2abc.py. C'est la comparaison « like with like ».
+                origine = "modele (scoretk)" if ok_xml else "absent"
+                if ok_xml:
+                    ref_xml = tk_xml
+            else:
+                origine = reference_xml(args, src, ref_xml, tk_xml, log) if Path(src).suffix.lower() in (
+                    ".mscx", ".mscz", ".xml", ".musicxml", ".mxl"
+                ) else "absent"
             alt_abc = work / "alt"
             ok_alt, err_alt, chemin_alt = (False, "MusicXML de référence absent", Path())
             if "absent" not in origine and ref_xml.is_file():
@@ -313,23 +362,34 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                 r["taille_abc"] = abc.stat().st_size
                 if outil == "scoretk":
                     r.update(verifier_aller_retour(args, abc, work, log))
-                r.update(jouer_abc(abc, work / f"{outil}.mid", log))
-                r["temps"] = round(time.monotonic() - debut, 3)
-                if not r["midi_ok"]:
-                    r["erreur"] = r.get("message_abc2midi") or "MIDI abc2midi absent"
-                    r["drapeaux"] = ["echec"]
-                    ecrire(out, r)
-                    continue
-                try:
-                    test = read_midi(str(work / f"{outil}.mid"))
-                except Exception as exc:
-                    r["erreur"] = f"MIDI illisible : {exc}"
-                    r["drapeaux"] = ["echec"]
-                    ecrire(out, r)
-                    continue
-                if r["code"] not in (0, None) and r["midi_ok"]:
-                    # Comme dans l'oracle de lecture : le MIDI produit fait foi.
-                    r["drapeaux"] = ["avertissement_abc2midi"]
+                if args.mode == "model":
+                    ok_notes, test, err_notes = noter_modele(
+                        args, abc, work / f"{outil}.musicxml", log
+                    )
+                    r["temps"] = round(time.monotonic() - debut, 3)
+                    if not ok_notes:
+                        r["erreur"] = err_notes
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                        continue
+                else:
+                    r.update(jouer_abc(abc, work / f"{outil}.mid", log))
+                    r["temps"] = round(time.monotonic() - debut, 3)
+                    if not r["midi_ok"]:
+                        r["erreur"] = r.get("message_abc2midi") or "MIDI abc2midi absent"
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                        continue
+                    try:
+                        test = read_midi(str(work / f"{outil}.mid"))
+                    except Exception as exc:
+                        r["erreur"] = f"MIDI illisible : {exc}"
+                        r["drapeaux"] = ["echec"]
+                        ecrire(out, r)
+                        continue
+                    if r["code"] not in (0, None) and r["midi_ok"]:
+                        # Comme dans l'oracle de lecture : le MIDI produit fait foi.
+                        r["drapeaux"] = ["avertissement_abc2midi"]
                 r.update(compare(ref, test, args.grid, args.tol))
                 if r.get("ref") and not r.get("test"):
                     r["drapeaux"] = ["sortie_vide"]
@@ -352,9 +412,9 @@ def resume(releves: list[dict]) -> str:
     for r in releves:
         groupes.setdefault((r["lot"], r["outil"]), []).append(r)
     lignes = [
-        "# Relevé écriture ABC — résumé",
+        f"# Relevé écriture ABC — résumé (mode {args.mode if 'args' in locals() else 'midi'})",
         "",
-        "Comparaison MIDI ↔ MIDI sur la grille 1/16 de noire (Q16) : N1",
+        "Comparaison des notes (mode model : modèle pivot ; mode midi : grille Q16) : N1",
         "(multiset des hauteurs), N2 (hauteur + attaque à ±1/16), N2d (+ durée).",
         "Le MIDI de référence vient de MuseScore 4.7.4 pour `.mscx`/`.mscz`,",
         "de scoretk pour les fichiers MusicXML. `xml_source` indique le MusicXML",
@@ -454,6 +514,9 @@ def main() -> None:
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--grid", type=float, default=GRID)
     p.add_argument("--tol", type=float, default=TOL)
+    p.add_argument("--mode", choices=("midi", "model"), default="midi",
+                   help="midi : abc2midi vs MuseScore (hérité) ; model : aller-retour "
+                        "par le modèle pivot, sans artefact d'ornement ni de canaux")
     p.add_argument("--resume", action="store_true")
     p.add_argument("--selftest", action="store_true")
     args = p.parse_args()

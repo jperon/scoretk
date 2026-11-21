@@ -154,3 +154,19 @@ and candidate), `resume.md`, `refs/` (cached reference MIDI/MusicXML), and
 `travail/<lot>/<i>/` (`tk.abc`, `alt/*.abc`, the cleaned `*.plain.abc`, both
 `*.mid`, and `journal.log`). A non-zero `abc2midi` exit is accepted when a
 non-empty MIDI was written, exactly as in the reading oracle.
+
+## Model mode (no MIDI artefacts)
+
+`--mode model` judges **like with like** at the pivot-model level instead of
+going through `abc2midi` and the MuseScore reference MIDI:
+
+* scoretk exports the source to MusicXML; `midi_notes.read_xml` turns it into
+  the reference note list (pitch, onset, duration per voice/staff);
+* each candidate's `.abc` is re-imported by scoretk, exported to MusicXML and
+  read the same way; `midi_notes.compare` yields N1/N2/N2d;
+* `xml2abc.py` receives the **same** model-derived MusicXML as scoretk.
+
+This removes two artefacts of the legacy MIDI mode: MuseScore's reference MIDI
+realises ornaments/voltas that neither written ABC contains, and `abc2midi`
+caps voices at 16 channels (orchestral scores then misattribute pitches).
+`--mode midi` stays available for continuity with the earlier campaigns.
