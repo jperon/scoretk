@@ -2886,3 +2886,81 @@ diatonic auxiliary helper (`step_pitch_below`); reduced test in
 (169 before), 1 gain, **0 losses**, N1/N2 100 %. The `.ly` lot figures are
 not part of this pass: they mostly measure the LilyPond reader, owned
 elsewhere.
+
+## Oracle pairing and the xml/corpus lots (2026-11-22)
+
+### Order-independent note pairing
+
+`midi_notes.py::read_midi` paired note-ons and note-offs with a FIFO per
+(channel, pitch) in raw message order. MuseScore 4.7.4 writes the note-off
+*before* the note-on of a zero-length note (e.g. `Adios_Muchachos.mscz`,
+tick 32, pitch 60), so the FIFO dropped that off and assigned the following
+note-offs to the wrong onsets: 8 N2d differences on a score whose pitch and
+onset multisets were otherwise identical. The oracle — not the export — was
+wrong. `read_midi` now groups events by tick and processes all note-offs
+before all note-ons, making the pairing depend only on the tick and pitch.
+Reduced test `scripts/oracle/midi/test_same_tick.py` writes both orderings
+and fails before the fix. Re-measure of all lots (`target/midi-full`):
+**0 exact losses, 55 exact gains** (`.ly` 662 → 717, N1 96.34 → 97.10,
+N2 93.38 → 95.26); the mscz and corpus lots are unchanged. `Adios_Muchachos`
+goes from 8 N2d differences to 1 (a genuine duration difference at tick 36).
+
+### MusicXML and corpus export lots
+
+A fresh `ecriture_xml` lot was built from the versioned corpus
+`*.ref.musicxml` files (plus one real `SanctePieX.xml`), each with a MuseScore
+4.7.4 MIDI exported into `target/midi-xml/refs/` by `mscore`. The harness
+initially mislabelled `.musicxml` sources as LilyPond (`--from ly`), producing
+one note per file; `mesure.py` now routes `.musicxml/.mxl/.xml` through the
+MusicXML reader. Re-measure (`target/midi-xml-run2`): **10/13 exact**,
+N1/N2 100 %. The corpus `.mscx` lot stays **17/21 exact**, N1/N2 100 %.
+
+Non-exact files, classified:
+
+| Lot | File | Cause |
+| --- | --- | --- |
+| xml | `keysig_78216.ref.musicxml` | empty score (0 notes in reference and output) |
+| xml | `layout_elements.ref.musicxml` | 9 extra notes (chords at ticks 30/31.5) — MuseScore skips non-played grace/ornament events that our writer emits |
+| xml | `moonlight.ref.musicxml` | 0.25-quarter gate-time differences on a handful of notes (N2d 99.74 %) |
+| corpus | `mmrest.mscx`, `repeat68/69.mscx`, `testTempoPrecision.mscx` | empty or silent scores (0 notes both sides) |
+
+The `.ly` figures measure the LilyPond reader, owned by another agent, and
+are not part of this export work. The plan (`docs/agents/plan-fiabilite.md`)
+names music21, LilyPond and `abc2midi` as score→MIDI alternatives; none of
+them is available in this worktree for a same-oracle comparison, so the
+tables above compare scoretk against the MuseScore 4.7.4 oracle only.
+
+## Oracle pairing and MusicXML input (2026-11-22)
+
+**Oracle fix.** `read_midi` used the raw message order for FIFO note-on/off
+pairing. MuseScore 4.7.4 writes the note-off before the note-on of a
+zero-length note (`Adios_Muchachos.mscz`, tick 32, pitch 60), so the same
+written notes got different durations depending on the exporter. Process all
+events of a tick with note-offs before note-ons: `Adios` N2d differences go
+from 8 to 1 (the remaining one is a genuine extra note-off in the reference).
+Reduced test `scripts/oracle/midi/test_same_tick.py`, failing before the fix.
+Full re-measure (`target/midi-full`): **0 exact losses**, 55 exact gains in
+the `.ly` lot (662 → 717, N1 96.34 → 97.10, N2 93.38 → 95.26); the other
+lots are unchanged.
+
+**MusicXML input.** The MIDI oracle labelled every non-`.mscx`/`.mscz`
+source as LilyPond, so a new `.musicxml` lot was fed through `--from ly` and
+produced one note per score. Detect `.musicxml`/`.mxl`/`.xml` as MusicXML.
+Fresh xml lot (`target/midi-xml-run2`, 13 files, MuseScore 4.7.4 MIDI
+references generated with `mscore`): **10/13 exact, N1/N2 100 %** (0/13
+before the harness fix). Corpus lot: 17/21 exact, the 4 non-exact files
+having empty references in both outputs.
+
+Remaining xml differences, classified:
+- `keysig_78216.ref.musicxml` — empty score (0 notes in both), oracle artefact;
+- `layout_elements.ref.musicxml` — 9 extra notes from an accordion rank symbol
+  and grace notes that MuseScore does not play (N1 100 %, two chords in the
+  reference absent from ours);
+- `moonlight.ref.musicxml` — 3 notes with a 0.25-quarter gate-time difference
+  (N2d 99.74 %), MuseScore 4.7.4 shortens sustained notes slightly more than
+  our generic gate (`compatmidirender.cpp:145-179,263`); the same score from
+  `.mscx` is exact, so this is a MusicXML-import expression difference.
+
+`docs/agents/plan-fiabilite.md` names music21, LilyPond and `abc2midi` as
+alternatives for score → MIDI; none is installed in the project shell, so
+the comparison here is against MuseScore 4.7.4 alone.
