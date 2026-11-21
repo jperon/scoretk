@@ -5675,3 +5675,25 @@ fn duree_heritee_du_multiplicateur_ecrite_dans_le_modele() {
         durees
     );
 }
+
+/// Réduction réelle de `Faure-Cantique_De_Jean_Racine-basse.ly` : un texte
+/// `^\markup "x"` ne doit pas avaler les silences `r2 r4` qui suivent.
+#[test]
+fn markup_sans_accolades_ne_mange_pas_les_silences() {
+    let source = r#"\version "2.24.0"
+\score { \new Staff { \relative c' {
+  R1*14^\markup "x"
+  r2 r4 aes des c
+} } \midi {} }
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    let touches: Vec<_> = accords_de_voix(&score, 0)
+        .iter()
+        .map(|(tick, _, _)| *tick)
+        .collect();
+    assert!(
+        touches.iter().any(|tick| *tick == Fraction::new(59, 4)),
+        "la première note suit les deux silences (tick 59/4) : {:?}",
+        touches
+    );
+}

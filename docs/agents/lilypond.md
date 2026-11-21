@@ -3509,3 +3509,13 @@ suivantes. Le champ `ticks` est maintenant posé dès que le multiplicateur
 effectif diffère de un. Test `duree_heritee_du_multiplicateur_ecrite_dans_le_modele`
 (échoue avant). Sur les fichiers réels : `16title-hub` 16 → 324/324,
 `liszt-consolation-no3` 87 → 997, `Mazurka-Op6-No1` 623 → 761.
+
+### Réduction réelle de `Faure-Cantique_De_Jean_Racine-basse.ly` : markup sans accolades
+
+La réduction isole la voix `tenor`, puis le passage `R1*14^\markup "x" r2 r4 aes`.
+Sans accolades, `parse_markup_text` collectait les jetons suivants tant qu'ils
+n'étaient pas des hauteurs : les silences `r2 r4` étaient avalés comme texte et
+la note `aes` jouée au tick 56 au lieu de 59. Un mot `r`/`R`/`s` est désormais
+une frontière du texte, comme une hauteur. Test
+`markup_sans_accolades_ne_mange_pas_les_silences` (échoue avant). La voix, puis
+le fichier entier, passent à 721/721 notes appariées.

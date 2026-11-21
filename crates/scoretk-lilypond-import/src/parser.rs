@@ -3732,7 +3732,13 @@ impl<'a> Parser<'a> {
                     }
                     Kind::Str => self.collect_markup_atom(&mut pieces),
                     Kind::Word => {
-                        if self.is_pitch_word(&token.text) {
+                        // Silences et temps réservés : ce sont de la musique,
+                        // pas du texte. Sans cela `\markup "x" r2 r4 aes`
+                        // avale les deux silences dans l'annotation et la
+                        // note suivante est jouée quatre noires trop tôt.
+                        if self.is_pitch_word(&token.text)
+                            || matches!(token.text.as_str(), "r" | "R" | "s")
+                        {
                             break;
                         }
                         self.collect_markup_atom(&mut pieces);
