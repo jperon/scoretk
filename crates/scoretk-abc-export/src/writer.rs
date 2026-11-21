@@ -231,12 +231,19 @@ impl<'a> Writer<'a> {
                         .and_then(|staff| staff.brackets.first())
                 })
                 .map_or(-1, |bracket| i32::from(bracket.kind));
-            let (open, close) = match bracket {
-                1 => ('{', '}'),
-                0 | 3 => ('[', ']'),
-                _ => (' ', ' '),
+            let delimiters = match bracket {
+                1 => Some(('{', '}')),
+                0 | 3 => Some(('[', ']')),
+                // Sans accolade ni crochet, écrire des espaces comme
+                // délimiteurs produisait `%%score  1 2 ` (doubles espaces et
+                // espace final) et rendait l'aller-retour instable.
+                _ => None,
             };
-            groups.push(format!("{open}{}{close}", staves.join(" ")));
+            let joined = staves.join(" ");
+            groups.push(match delimiters {
+                Some((open, close)) => format!("{open}{joined}{close}"),
+                None => joined,
+            });
         }
         (!groups.is_empty()).then(|| format!("%%score {}", groups.join(" ")))
     }
