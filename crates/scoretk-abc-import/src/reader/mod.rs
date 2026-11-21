@@ -944,6 +944,10 @@ impl Reader {
                 // toutes les hauteurs d'un ou deux octaves (`s.gtrans`).
                 // Le champ peut être nu (`K: treble+8`) ou en paramètre
                 // `clef=treble+8` : ne traiter que les Jetons sans `=`.
+                // Snapshot the clefs before the loops below change them: a
+                // voice already on the new octave clef has received its shift
+                // from the `V:` field and must not receive it twice.
+                let previous_clefs: Vec<_> = self.voices.iter().map(|voice| voice.clef).collect();
                 let mut octave_shift = 0;
                 for token in value.split_whitespace() {
                     if token.contains('=') {
@@ -977,12 +981,30 @@ impl Reader {
                     }
                 }
                 if octave_shift != 0 {
-                    self.midi_transpose += octave_shift;
-                    for voice in &mut self.voices {
+                    let new_clef = parsed
+                        .parameters
+                        .iter()
+                        .find(|(name, _)| name == "clef")
+                        .and_then(|(_, value)| pitch::parse_clef(value))
+                        .or_else(|| {
+                            value
+                                .split_whitespace()
+                                .find(|token| pitch::parse_clef(token).is_some())
+                                .and_then(pitch::parse_clef)
+                        });
+                    // A voice already on this clef (e.g. from its `V:` field)
+                    // has already received the octave shift: do not apply it
+                    // a second time for a redundant inline `[K: clef=...]`.
+                    let mut applied_any = false;
+                    for (voice, previous) in self.voices.iter_mut().zip(previous_clefs) {
+                        if new_clef.is_some_and(|clef| previous == Some(clef)) {
+                            continue;
+                        }
                         voice.transpose += octave_shift;
-                        // Le suffixe de clef ne fait PAS partie de la
-                        // transposition d'instrument : il sera réécrit tel
-                        // quel dans la clef et ne doit pas être cumulé.
+                        applied_any = true;
+                    }
+                    if applied_any || new_clef.is_none() {
+                        self.midi_transpose += octave_shift;
                     }
                 }
             }
