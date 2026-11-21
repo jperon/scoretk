@@ -165,7 +165,7 @@
 
           for module in $out/esm/scoretk_wasm_bg.wasm $out/classic/scoretk_wasm_bg.wasm; do
             echo "avant wasm-opt : $(stat -c%s "$module") octets ($module)"
-            wasm-opt -Oz --strip-debug "$module" -o "$module.opt"
+            wasm-opt -Oz --strip-debug --converge "$module" -o "$module.opt"
             mv "$module.opt" "$module"
           done
 

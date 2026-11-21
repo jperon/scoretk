@@ -58,7 +58,7 @@ cat result/SIZE
 node crates/scoretk-wasm/tests/node-smoke.mjs
 ```
 
-`nix build .#wasm` compiles `scoretk-wasm` for `wasm32-unknown-unknown`, runs `wasm-bindgen` twice (ES module and classic script), optimizes both binaries with `wasm-opt -Oz --strip-debug`, and assembles `result/`. The Node smoke test exercises the generated ESM package on real corpus files; the flake check `wasm-node-smoke` runs it in Nix. Two minimal browser demos live in `examples/web/` (serve the repository root with a static HTTP server, then open `examples/web/index.html` or `examples/web/worker-demo.html`).
+`nix build .#wasm` compiles `scoretk-wasm` for `wasm32-unknown-unknown`, runs `wasm-bindgen` twice (ES module and classic script), optimizes both binaries with `wasm-opt -Oz --strip-debug --converge`, and assembles `result/`. The Node smoke test exercises the generated ESM package on real corpus files; the flake check `wasm-node-smoke` runs it in Nix. Two minimal browser demos live in `examples/web/` (serve the repository root with a static HTTP server, then open `examples/web/index.html` or `examples/web/worker-demo.html`).
 
 ### Package contents
 
@@ -132,7 +132,7 @@ If the wrapper cannot locate its files from its own URL, define `self.SCORETK_BA
 
 ### Sizes
 
-After `wasm-opt -Oz --strip-debug` the binary is roughly 1.9 MB raw (784 KB gzipped, 599 KB brotli) at commit `fdf22443`; `cat result/SIZE` gives the exact raw and gzip figures for the current build. The package stays below the roughly 2.5 MB raw budget of cantus. See [the wasm reference, section 2](agents/wasm.md) for the measurement method and breakdown.
+After `wasm-opt -Oz --strip-debug --converge` the binary is roughly 1.92 MB raw (782 KB gzipped, 598 KB brotli) at commit `fdf22443`; `cat result/SIZE` gives the exact raw and gzip figures for the current build. The package stays below the roughly 2.5 MB raw budget of cantus. See [the wasm reference, section 2](agents/wasm.md) for the measurement method and breakdown.
 
 ### Stability contract for cantus
 

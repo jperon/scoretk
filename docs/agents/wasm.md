@@ -44,13 +44,14 @@ SIZE                          raw and gzip measurement of the .wasm
 
 Measurement (wasm-bindgen 0.2.130, binaryen 133 / `wasm-opt`, rustc 1.100.0,
 `opt-level = "z"`, `lto = true`, `codegen-units = 1`, `wasm-opt -Oz
---strip-debug`), state of commit `fdf22443` (2026-11-21):
+--strip-debug --converge`), state of commit `fdf22443` plus the `--converge`
+pass (2026-11-21):
 
 | Binary | Raw | Gzip -9 | Brotli -q 11 |
 | --- | --- | --- | --- |
 | cdylib `scoretk_wasm.wasm` (rustc output) | 4 472 499 bytes | — | — |
 | `scoretk_wasm_bg.wasm` (after wasm-bindgen) | 4 223 436 bytes | — | — |
-| `scoretk_wasm_bg.wasm` (after `wasm-opt`) | **1 924 924 bytes** | **783 883 bytes** | **599 312 bytes** |
+| `scoretk_wasm_bg.wasm` (after `wasm-opt -Oz --strip-debug --converge`) | **1 924 141 bytes** | **782 198 bytes** | **597 632 bytes** |
 
 The two `esm` and `classic` variants share the same binary byte for byte.
 The package remains **complete, all features enabled**: it stays below
@@ -63,9 +64,11 @@ build regression (§ "Composition" below).
 
 `panic = "abort"` was **measured then discarded** on an earlier version of the
 package: it removed only 20 raw bytes (1 468 917 instead of 1 468 937,
-i.e. 0.001 %) and 34 gzip bytes, well below the 2 % threshold. It is in fact
-the **default strategy of the `wasm32-unknown-unknown` target**: the profile
-setting is a no-op there (§ "Build settings evaluated on 2026-11-21").
+i.e. 0.001 %) and 34 gzip bytes. Re-measured on 2026-11-21: −2 566 raw bytes
+(−0.13 %), −1 162 gzip bytes but +117 brotli bytes. `wasm32-unknown-unknown`
+cannot unwind, so only the residual cleanup shims disappear and a panic still
+traps into a JavaScript `RuntimeError`; the gain stays below the 2 % threshold
+(§ "Build settings evaluated on 2026-11-21").
 
 The additions measured since the reference size of 1 472 792 raw bytes
 brought the binary to 1 482 794 raw bytes / 621 633 gzip bytes. Three
@@ -128,9 +131,10 @@ across crates.
 ## Binary composition — measurement of 2026-11-21
 
 State: commit `fdf22443`, delivered binary of **1 924 924 raw / 783 883 gzip /
-599 312 brotli** bytes. `.rodata.2837` and `.rodata.1419` figures below come
-from the raw data section; twiggy reports 10 bytes more per segment
-(alignment).
+599 312 brotli** bytes, i.e. **before** the `--converge` pass adopted below
+(it removes 783 raw, 1 685 gzip and 1 680 brotli bytes, 0.04 % of the binary).
+`.rodata.2837` and `.rodata.1419` figures below come from the raw data section;
+twiggy reports 10 bytes more per segment (alignment).
 
 ### Reproduction method
 
@@ -243,6 +247,84 @@ The root is the `convert` export (and `convertWithTimeline`); it dominates
 `scoretk::read` (946 487 retained bytes, 34.76 %), itself dominating the five
 readers, of which `musescore_import::read_score` is the largest
 (171 697 bytes, 6.31 %). No abnormal cycle.
+
+### Build settings evaluated on 2026-11-21
+
+All candidates below were measured on the same state; each one was kept only if
+the conversion outputs stayed **byte-identical** (checked for the ten
+directions with `scripts/check-wasm-identity.mjs`, § 6).
+
+| Candidate | Raw | Gzip -9 | Brotli -q 11 | Decision |
+| --- | ---: | ---: | ---: | --- |
+| `wasm-opt -Oz --strip-debug` (baseline) | 1 924 924 | 783 883 | 599 312 | reference |
+| `+ --converge` | **1 924 141** | **782 198** | **597 632** | **kept** (−783 / −1 685 / −1 680) |
+| `+ --strip-producers --strip-target-features` (without `--converge`) | 1 924 658 | 783 666 | 599 248 | not kept (−266 raw, loses feature metadata) |
+| `+ --converge --strip-producers --strip-target-features` | 1 923 875 | 781 993 | 597 167 | not kept (−266 more, same metadata loss) |
+| `--gufa` | 1 926 572 | 784 469 | 599 730 | worse |
+| `--gufa --converge` | 1 925 741 | 782 489 | 597 963 | worse than `--converge` |
+| `-O3 --converge` | 1 958 850 | 783 492 | 597 751 | worse raw, no compression gain |
+| `--closed-world` | 1 924 924 | 783 891 | 599 312 | no effect |
+| `wasm-opt --strip-debug` twice (second pass) | — | — | — | no effect (`--converge` already reaches the fixpoint) |
+
+`--converge` is a pure optimisation fixpoint (no semantic flag): it is applied
+in `flake.nix` for both variants.
+
+Two profile levers were evaluated with the same local pipeline (cargo +
+wasm-bindgen + wasm-opt; the local cdylib is 2 224 bytes smaller than the Nix
+one, so only the deltas are meaningful):
+
+| Candidate | Raw | Gzip -9 | Brotli -q 11 | Δ vs local baseline |
+| --- | ---: | ---: | ---: | --- |
+| local baseline (`opt-level = "z"`, `lto = true`, `codegen-units = 1`) | 1 922 703 | 783 813 | 599 062 | — |
+| `panic = "abort"` (`CARGO_PROFILE_RELEASE_PANIC=abort`) | 1 920 137 | 782 651 | 599 179 | −2 566 raw (−0.13 %), −1 162 gzip, **+117 brotli** |
+| `opt-level = "s"` | 2 186 037 | 891 997 | 668 537 | +263 334 raw (+13.7 %), much worse |
+
+- **`panic = "abort"` is not kept**: the gain stays far below the 2 % threshold
+  of the wasm contract, brotli slightly regresses (the dominant HTTP encoding),
+  and applying the profile setting globally would also change the CLI's panic
+  behaviour for an internal bug. On a two-line test program, `-C panic=abort`
+  changes the cdylib by 2 bytes only: `wasm32-unknown-unknown` cannot unwind, so
+  the full-package delta is just the residual cleanup shims. A panic would still trap
+  into a JavaScript `RuntimeError` (not a silent failure).
+- **`opt-level = "s"` is not kept**: after `wasm-opt -Oz`, `"z"` is
+  decisively smaller (13.7 % raw). `lto = "thin"` was already documented as a
+  tie with `lto = true`; `codegen-units = 1` is already in
+  `[profile.release]`.
+- **`strip` gives nothing**: the release cdylib has no name or DWARF sections
+  (the 3 824 function names appear only in the `--debuginfo` twiggy variant);
+  `--strip-debug` is therefore already the minimal form. The `producers` and
+  `target_features` custom sections weigh 266 bytes together; removing them
+  would drop the engine-facing feature declaration for a 0.01 % gain, so it was
+  rejected.
+
+### Data candidates inspected
+
+- **Instruments table** (`scoretk_core::instruments`, generated,
+  `.rodata.2837`): 644 templates, 41 371 bytes of string payload in the source.
+  Every field is read by one of the two consumers (MuseScore recognition,
+  MIDI import) — verified field by field. Exact duplicate literals are already
+  merged by rustc (two identical `&'static str` in a test cdylib leave a single
+  copy in the data section), so the remaining duplication is semantic
+  (`track_name` vs `long_name` differing only by case or abbreviation) and
+  cannot be folded without changing recognition. The compaction attempt
+  documented in `docs/agents/performance.md` § 4 already measured the ceiling:
+  **−13 ko raw but +189 bytes gzip**, because DEFLATE exploits the repeated
+  strings better than an index does. Not applied.
+- **Tables shared between crates** are already factored: instruments in
+  `scoretk-core` (MuseScore + MIDI), `tpc`/clefs in `scoretk-lilypond-common`
+  (both directions), pitches/keys/ornaments/lyrics in `scoretk-abc-common`.
+  The remaining large tables (`.rodata.1419`, `.rodata.13`, `.rodata.2821`,
+  `.rodata.2833`) belong to one format and one direction each; moving them
+  would only add a crate boundary.
+- **Panic and assertion messages** (`.rodata.14`, `.rodata.4243`, 47.5 ko
+  together) come from `std`/`core` and from `miniz_oxide`'s internal `assert!`s.
+  They cannot be removed without changing user-visible error messages or the
+  dependency, and they compress to a few kilobytes. Not applied.
+- **`core::fmt`** (31 983 bytes, 1.66 %) is dominated by `f64` `Display`
+  (14 010 bytes) and `FromStr` (4 063 bytes), reached by the `.mscx` and ABC
+  readers/writers that print and parse real-number values. Suppressing it would
+  change numeric formatting: forbidden.
+
 
 ## Binary composition (twiggy) — historical measurement (a7f690c)
 
