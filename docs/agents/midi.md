@@ -2449,6 +2449,23 @@ change on the two lots). The one upstream file that regresses, `tuplet_3_5_7_tup
 is scored 0.2222 by MuseScore 4.7.4 as well with the same default options:
 it is a shared reference/option difference, not a scoretk-only loss.
 
+## `preserveLegato` for tuplet off times (2026-11-21)
+
+`Quantize::preserveLegato` (`importmidi_quant.cpp:486-510`) has two branches:
+the tuplet one (`:496-505`) cuts an off time that crosses the next chord of
+the same tuplet by less than one tuplet note length, and the non-tuplet one
+(`:506-509`) uses half the inter-onset and half the basic quant. The C++ calls
+it in **both** off-time quantizers: `quantizeOffTimeForTuplet` (`:529`, with
+`isOffTimeInTuplet = true`) and `quantizeOffTimeForNonTuplet` (`:564`, with
+`false`). The Rust port called it only for non-tuplet notes, so a tuplet note
+whose quantized off time lightly overlapped the next tuplet chord kept the
+overlap. Reduced test `quant::tests::preserve_legato_note_de_nolet` was written
+first (failing: 3/8 instead of the expected 1/4), then the tuplet branch and
+the tuplet-note call were ported. Re-measurement of both lots: upstream
+**0.9780**, LilyPond **0.6950**, notation score **0.6798**, no file gaining or
+losing — the overlapping tuplet case is rare in these corpora, but the port
+now matches the reference behaviour.
+
 ## Voice limit from neighbouring bars (2026-11-21)
 
 `MidiVoice::findMaxOccupiedVoiceInBar` (`importmidi_voice.cpp:754-784`,

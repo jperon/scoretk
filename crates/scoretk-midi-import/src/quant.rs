@@ -347,26 +347,44 @@ pub fn is_human_performance(track: &MTrack, sigmap: &super::timesigmap::TimeSigM
     matched < 0.6
 }
 
+/// Prochain accord de la même voix pour `preserveLegato` : attaque
+/// quantifiée, appartenance à un n-olet, et (longueur, nombre de notes) du
+/// n-olet du prochain accord.
+type LegatoNext = (Fraction, bool, Option<(Fraction, i32)>);
+
 /// Préserve un léger legato en coupant la fin de note au prochain accord de
-/// la même voix (`preserveLegato`, cas non-n-olet).
+/// la même voix (`preserveLegato`, importmidi_quant.cpp:486-510).
+///
+/// Deux branches, comme le C++ (`:496-505` et `:506-509`) :
+/// - les deux notes sont dans un n-olet : l'empiètement ne doit pas être plus
+///   petit qu'une note de n-olet (le n-olet n'est pas encore réparti en voix) ;
+/// - les deux notes sont hors n-olet : l'empiètement doit être plus petit que
+///   la moitié de l'intervalle et de la grille de quantification.
 fn preserve_legato(
     off_time: &mut Fraction,
     on_time: Fraction,
     voice: usize,
-    next: Option<(Fraction, bool)>,
+    next: Option<LegatoNext>,
+    is_off_time_in_tuplet: bool,
     basic_quant: Fraction,
 ) {
-    if let Some((next_on_time, next_is_in_tuplet)) = next {
-        if next_is_in_tuplet {
-            return;
-        }
-        let inter_onset = next_on_time - on_time;
+    if let Some((next_on_time, next_is_in_tuplet, next_tuplet)) = next {
         let cross = *off_time - next_on_time;
-        if cross > Fraction::ZERO
-            && cross < inter_onset * Fraction::HALF
-            && cross < basic_quant * Fraction::HALF
-        {
-            *off_time = next_on_time;
+        if next_is_in_tuplet && is_off_time_in_tuplet {
+            if let Some((tuplet_len, tuplet_number)) = next_tuplet {
+                let tuplet_note_len = tuplet_len / Fraction::from_integer(i64::from(tuplet_number));
+                if cross > Fraction::ZERO && cross < tuplet_note_len {
+                    *off_time = next_on_time;
+                }
+            }
+        } else if !next_is_in_tuplet && !is_off_time_in_tuplet {
+            let inter_onset = next_on_time - on_time;
+            if cross > Fraction::ZERO
+                && cross < inter_onset * Fraction::HALF
+                && cross < basic_quant * Fraction::HALF
+            {
+                *off_time = next_on_time;
+            }
         }
     }
     let _ = voice;
@@ -418,7 +436,16 @@ pub fn quantize_chords(track: &mut MTrack, basic_quant: Fraction) {
             .iter()
             .skip(position + 1)
             .find(|(_, _, other)| other.voice == chord.voice)
-            .map(|(_, next_q_on, next_chord)| (*next_q_on, next_chord.is_in_tuplet));
+            .map(|(_, next_q_on, next_chord)| {
+                (
+                    *next_q_on,
+                    next_chord.is_in_tuplet,
+                    next_chord
+                        .tuplet
+                        .and_then(|key| track.tuplets.get(&key))
+                        .map(|t| (t.len, t.tuplet_number)),
+                )
+            });
         for note in &mut new_chord.notes {
             let (mut q_off, quant) = if note.is_in_tuplet {
                 match note
@@ -434,9 +461,17 @@ pub fn quantize_chords(track: &mut MTrack, basic_quant: Fraction) {
             } else {
                 find_quantized_note_off_time(q_on, note.off_time, basic_quant)
             };
-            if !note.is_in_tuplet {
-                preserve_legato(&mut q_off, q_on, new_chord.voice, next, basic_quant);
-            }
+            // Le C++ appelle `preserveLegato` pour les deux cas :
+            // `quantizeOffTimeForTuplet` (:529) avec isOffTimeInTuplet = true,
+            // `quantizeOffTimeForNonTuplet` (:564) avec false.
+            preserve_legato(
+                &mut q_off,
+                q_on,
+                new_chord.voice,
+                next,
+                note.is_in_tuplet,
+                basic_quant,
+            );
             if q_off - q_on < min_allowed_duration() {
                 q_off = q_on + min_allowed_duration();
             }
@@ -516,5 +551,72 @@ fn remove_useless_tuplet_references(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chord::{MidiChord, MidiNote};
+
+    /// `Quantize::preserveLegato` (importmidi_quant.cpp:486-510, branche
+    /// n-olet :496-505) ramène la fin d'une note de n-olet à l'attaque du
+    /// prochain accord du même n-olet quand l'empiètement est inférieur à une
+    /// note de n-olet. Le port appelait `preserveLegato` uniquement pour les
+    /// notes hors n-olet : la fin restait à 3/8 au lieu d'être ramenée à 1/4.
+    #[test]
+    fn preserve_legato_note_de_nolet() {
+        let mut track = MTrack::default();
+        let tuplet_key = (Fraction::ZERO, 0);
+        track.tuplets.insert(
+            tuplet_key,
+            TupletData {
+                voice: 0,
+                on_time: Fraction::ZERO,
+                len: Fraction::new(3, 4),
+                tuplet_number: 3,
+                element_count: 2,
+            },
+        );
+
+        let first = MidiChord {
+            voice: 0,
+            is_in_tuplet: true,
+            tuplet: Some(tuplet_key),
+            notes: vec![MidiNote {
+                is_in_tuplet: true,
+                tuplet: Some(tuplet_key),
+                ..MidiNote::new(60, 80, Fraction::new(5, 16), Fraction::ZERO)
+            }],
+            ..MidiChord::default()
+        };
+        track.chords.insert(Fraction::ZERO, first);
+
+        let second = MidiChord {
+            voice: 0,
+            is_in_tuplet: true,
+            tuplet: Some(tuplet_key),
+            notes: vec![MidiNote {
+                is_in_tuplet: true,
+                tuplet: Some(tuplet_key),
+                ..MidiNote::new(62, 80, Fraction::new(1, 2), Fraction::new(1, 4))
+            }],
+            ..MidiChord::default()
+        };
+        track.chords.insert(Fraction::new(1, 4), second);
+
+        quantize_chords(&mut track, Fraction::new(1, 16));
+
+        let first_after = track
+            .chords
+            .iter()
+            .find(|(on_time, _)| *on_time == Fraction::ZERO)
+            .expect("premier accord toujours présent")
+            .1;
+        assert_eq!(
+            first_after.notes[0].off_time,
+            Fraction::new(1, 4),
+            "la fin de la note de n-olet doit être ramenée à l'attaque suivante"
+        );
     }
 }
