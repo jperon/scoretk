@@ -2603,8 +2603,7 @@ Re-measurement (same manifests and oracle, full run):
 The three gains are `up-human_tempo`, `ly-Lassus_Alleluja…` (0.5177 → 0.9915)
 and `up-tuplet_3_5_7_tuplets` (0.1111 → 0.2222).
 
-## MIDI import: status (2026-11-21)
-retk-midi-import`, `scoretk-midi-export`)
+# MIDI (`scoretk-midi-common`, `scoretk-midi-import`, `scoretk-midi-export`)
 
 The MIDI format is split across three crates with no cross dependency between the
 two directions:
