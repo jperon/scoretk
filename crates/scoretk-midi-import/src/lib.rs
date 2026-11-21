@@ -115,8 +115,12 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     lengthen_too_short_notes(&mut tracks);
 
     // Détection d'une performance humaine, comme `Quantize::setIfHumanPerformance`.
-    let (is_human, quant_value, max_voice_count) =
-        detect_human_performance(&tracks, &sigmap, options);
+    let (is_human, quant_value, max_voice_count, mut beat_data) =
+        detect_human_performance(midi, &tracks, &sigmap, options);
+    // Le câblage de `MidiBeat::setTimeSignature`/`adjustChordsToBeats` est
+    // mesuré comme régressif (voir docs/agents/midi.md) : on garde la glue
+    // disponible mais inactive tant que l'ancrage de barre n'est pas fidèle.
+    let _ = &mut beat_data;
 
     for track in &mut tracks {
         collect_chords(
@@ -295,10 +299,16 @@ fn lengthen_too_short_notes(tracks: &mut [MTrack]) {
 /// Détecte une performance humaine et en déduit les options
 /// (`Quantize::setIfHumanPerformance`).
 fn detect_human_performance(
+    midi: &MidiFile,
     tracks: &[MTrack],
     sigmap: &TimeSigMap,
     options: &ImportOptions,
-) -> (bool, operations::QuantValue, operations::VoiceCount) {
+) -> (
+    bool,
+    operations::QuantValue,
+    operations::VoiceCount,
+    Option<beat_locator::BeatData>,
+) {
     let mut all = MTrack::default();
     for track in tracks {
         for (on_time, chord) in track.chords.iter() {
@@ -308,9 +318,22 @@ fn detect_human_performance(
     collect_chords(&mut all, Fraction::from_integer(2), Fraction::HALF, false);
     let is_human = quant::is_human_performance(&all, sigmap);
     if is_human {
-        (true, operations::QuantValue::Q8, operations::VoiceCount::V2)
+        // `Quantize::setIfHumanPerformance` appelle `MidiBeat::findBeatLocations`
+        // avec la piste agrégée construite ci-dessus (`importmidi_quant.cpp:474`).
+        let beat_data = beat_locator::find_beat_locations(
+            &all,
+            sigmap,
+            beat_locator::ticks_per_second(midi, tracks),
+        );
+        eprintln!("TPS {}", beat_locator::ticks_per_second(midi, tracks));
+        (
+            true,
+            operations::QuantValue::Q8,
+            operations::VoiceCount::V2,
+            beat_data,
+        )
     } else {
-        (false, options.quant_value, options.max_voice_count)
+        (false, options.quant_value, options.max_voice_count, None)
     }
 }
 

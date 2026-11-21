@@ -1670,3 +1670,49 @@ kept in the crate but **not wired** into `convertMidi`, so both lots stay at
 upstream loss 258.0 and LilyPond loss 31 614.9. This is a measured, explained
 non-gain rather than an untested module; wiring it back in requires finishing
 that anchoring step first.
+
+## Ancrage BeatRoot et mesure (2026-11-21, suite)
+
+`BeatData` porte désormais `firstChordTick`, `lastChordTick` et les nombres de
+temps ajoutés ; `set_time_sig` reproduit
+`MidiBeat::setTimeSignature` + `updateFirstLastBeats`
+(`importmidi_beat.cpp:472-511`) : la carte de mesure est remplacée par la
+signature retenue, puis les temps ajoutés avec l'ancienne signature sont
+retirés et recalculés. Le bug d'index de `Agent::fillBeats` (l'insertion
+d'un temps interpolé faisait sauter l'événement suivant) est corrigé.
+
+Le câblage complet a été mesuré dans `convertMidi`, exactement à l'endroit
+où MuseScore l'appelle (`setIfHumanPerformance` puis `adjustChordsToBeats`
+avant la seconde collecte) : **aucun gain, `human_tempo` perd 29 notes
+(0,5000 → 0,2958)**, lot LilyPond inchangé. Diagnostic chiffré : le fichier
+donne 71 attaques, BeatRoot produit 11 temps espacés de ~0,32 s, et
+`addFirstBeats` étend la grille à 17 temps de 1,93 à 23,8 croches. La
+première attaque (1,30 s) tombe alors à 2,5 croches après mise à l'échelle,
+alors que la référence l'attend à 3,875 croches. L'hypothèse de tempo
+devrait être proche de 0,234 s (480 ticks) et ne l'est pas : il reste un
+écart entre notre induction et celle de MuseScore sur ce fichier, et le
+branchement fidèle ne peut donc pas être fusionné sans régression. La glue
+est conservée mais **inactive** ; c'est un résultat mesuré, pas un port
+non testé.
+
+## Lot LilyPond : la référence `.ly` n'est pas MuseScore
+
+MuseScore 4.7.4 est disponible et fonctionne avec
+`env -u LD_LIBRARY_PATH QT_QPA_PLATFORM=offscreen mscore`. Première
+vérification « like with like » sur le pire fichier du lot
+(`Laudate_pueri…`) :
+
+- import MuseScore 4.7.4 du même `.midi` → 1 826 notes ;
+- notre import → 1 836 notes ; score **0,8587** contre MuseScore ;
+- la référence `.ly` (notre lecteur LilyPond) → 1 796 notes ; score de
+  MuseScore contre elle : **0,4014**.
+
+Donc les 1 063 notes « perdues » de ce fichier contre le `.ly` sont
+majoritairement des choix d'import de MuseScore (transposition, répartition
+en voix/portées, mesure d'anacrouse), pas des erreurs de notre port. Le
+score N = 0,7592 du lot LilyPond contre le `.ly` ne doit pas être lu comme
+une fidélité à MuseScore ; chaque cause doit être confirmée contre
+l'import 4.7.4 du même MIDI. Ventilation du lot (référence `.ly`), pour
+information : voix 17 967 notes, attaque 6 645, durée 6 041, n-olets 827,
+hauteur 605 ; pires fichiers : `Laudate_pueri…`, `Sancta_Maria_Mater_Dei_Mozart`,
+`Vincent-Lecornier-Jeanne-d-Arc`, `Lassus_Alleluja…`, `benoit_ave_maria`.

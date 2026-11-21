@@ -156,8 +156,9 @@ impl Agent {
             let current_interval = (next_beat - prev_beat) / beats;
             while next_beat > start && beats > 1.5 {
                 prev_beat += current_interval;
+                // `events.insert(it, …)` insère avant l'itérateur : l'élément
+                // courant reste `index`, on ne l'avance surtout pas ici.
                 self.events.insert(index, Event::new(prev_beat, 0.0));
-                index += 1;
                 beats -= 1.0;
             }
             prev_beat = next_beat;

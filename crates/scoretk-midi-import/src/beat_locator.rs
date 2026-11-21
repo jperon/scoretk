@@ -37,6 +37,14 @@ pub struct BeatData {
     pub beat_set: Vec<Fraction>,
     pub measure_count_2x_less: bool,
     pub time_sig: Timesig,
+    /// `HumanBeatData::firstChordTick`.
+    pub first_chord_tick: Fraction,
+    /// `HumanBeatData::lastChordTick`.
+    pub last_chord_tick: Fraction,
+    /// `HumanBeatData::addedFirstBeats`.
+    pub added_first_beats: i32,
+    /// `HumanBeatData::addedLastBeats`.
+    pub added_last_beats: i32,
 }
 
 fn ticks(fraction: Fraction) -> i64 {
@@ -293,8 +301,15 @@ pub fn find_beat_locations(
                     beat_set: set.into_iter().collect(),
                     measure_count_2x_less: false,
                     time_sig,
+                    first_chord_tick: track
+                        .chords
+                        .keys()
+                        .first()
+                        .map_or(Fraction::ZERO, |key| key.0),
+                    last_chord_tick: last_chord_tick(track),
+                    added_first_beats: added_first,
+                    added_last_beats: added_last,
                 });
-                let _ = (added_first, added_last);
             }
         }
     }
@@ -397,13 +412,39 @@ pub fn adjust_chords_to_beats(tracks: &mut [MTrack], data: &BeatData) {
     }
 }
 
-/// `MidiBeat::setTimeSig` (`importmidi_beat.cpp:499-511`).
-pub fn set_time_sig(sigmap: &mut TimeSigMap, data: &BeatData) {
+/// `MidiBeat::updateFirstLastBeats` (`importmidi_beat.cpp:472-497`) : les
+/// temps ajoutés avec l'ancienne signature sont retirés puis recalculés avec
+/// la nouvelle, afin que la grille commence et finisse sur une mesure entière.
+fn update_first_last_beats(data: &mut BeatData) {
+    for _ in 0..data.added_first_beats {
+        if data.beat_set.is_empty() {
+            break;
+        }
+        data.beat_set.remove(0);
+    }
+    for _ in 0..data.added_last_beats {
+        if data.beat_set.is_empty() {
+            break;
+        }
+        data.beat_set.pop();
+    }
+    let bar_fraction = data.time_sig.measure_len();
+    let beat_len = beat_length_raw(bar_fraction, data.time_sig.numerator);
+    let beats_in_bar = (bar_fraction / beat_len).numerator();
+    let mut set: BTreeSet<Fraction> = data.beat_set.iter().copied().collect();
+    data.added_first_beats = add_first_beats(&mut set, data.first_chord_tick, beats_in_bar as i32);
+    data.added_last_beats = add_last_beats(&mut set, data.last_chord_tick, beats_in_bar as i32);
+    data.beat_set = set.into_iter().collect();
+}
+
+/// `MidiBeat::setTimeSignature` (`importmidi_beat.cpp:499-511`).
+pub fn set_time_sig(sigmap: &mut TimeSigMap, data: &mut BeatData) {
     if data.beat_set.is_empty() {
         return;
     }
     *sigmap = TimeSigMap::new();
     sigmap.add(0, data.time_sig);
+    update_first_last_beats(data);
 }
 
 /// Temps en ticks par seconde pour `findBeatLocations`.
