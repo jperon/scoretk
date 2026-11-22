@@ -3943,11 +3943,21 @@ impl<'a> Parser<'a> {
 
     /// Durée écrite : `\breve`, `\longa`, chiffre, points, multiplicateur.
     fn parse_duration(&mut self) -> Option<(Duration, Option<Fraction>)> {
+        let mut est_maxima = false;
         let mut duration = if let Some(token) = self.peek().cloned() {
             if token.is_command("breve") {
                 self.position += 1;
                 Some(Duration::new(DurationType::Breve))
-            } else if token.is_command("longa") || token.is_command("maxima") {
+            } else if token.is_command("maxima") {
+                self.position += 1;
+                // `scm/define-music-display-methods.scm:114` : `\maxima` a
+                // log2 = -3, donc 8 rondes, contre 4 pour `\longa`. Le modèle
+                // n'a pas de type « maxima » : on porte le facteur ×2 dans le
+                // multiplicateur, qui devient aussi celui de la durée par
+                // défaut (une note nue après `\maxima` vaut 8 rondes).
+                est_maxima = true;
+                Some(Duration::new(DurationType::Long))
+            } else if token.is_command("longa") {
                 self.position += 1;
                 Some(Duration::new(DurationType::Long))
             } else if let Some(value) = token.as_integer() {
@@ -3978,8 +3988,22 @@ impl<'a> Parser<'a> {
         // Écrire une durée réinitialise le multiplicateur (`c4*3/2 d4` : `d4`
         // vaut 1/4) ; sans multiplicateur écrit, la durée par défaut n'en a
         // pas non plus.
-        self.default_multiplier = multiplier.unwrap_or(Fraction::ONE);
-        Some((duration, multiplier))
+        let multiplier = multiplier.map_or(
+            if est_maxima {
+                Fraction::new(2, 1)
+            } else {
+                Fraction::ONE
+            },
+            |ecrit| {
+                if est_maxima {
+                    ecrit * Fraction::new(2, 1)
+                } else {
+                    ecrit
+                }
+            },
+        );
+        self.default_multiplier = multiplier;
+        Some((duration, Some(multiplier)))
     }
 
     /// Fraction `n/d` ou `n`.

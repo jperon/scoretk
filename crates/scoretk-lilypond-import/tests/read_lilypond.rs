@@ -6534,3 +6534,17 @@ fn skip_avec_musique_ne_joue_pas_cette_musique() {
         "seules les deux notes a doivent être jouées"
     );
 }
+
+#[test]
+fn maxima_vaut_huit_rondes() {
+    // `scm/define-music-display-methods.scm:114` : `\maxima` a log2 = -3,
+    // donc 2^3 = 8 rondes. Le lecteur le confondait avec `\longa` (4 rondes).
+    let score = read_lilypond("\\version \"2.24.0\"\n{ c'\\maxima d'1 }").expect("lecture");
+    let attaques = accords_de_voix(&score, 0);
+    assert_eq!(
+        attaques.last().map(|(tick, _, _)| *tick),
+        Some(Fraction::from_integer(8)),
+        "la maxima doit durer 8 rondes, pas 4 : {:?}",
+        attaques
+    );
+}
