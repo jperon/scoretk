@@ -5532,3 +5532,51 @@ Mesures ciblées : 1 gain exact / 0 perte (causes 1–2), 3 gains / 0 perte
 1724 (86,7 %)**, 8 fichiers gagnés et aucune perte. Restent 90
 `attaque_decalee`, 54 `notes_supp`, 34 `octave`, 24 `notes_manquantes`, 19
 `sortie_vide`, 5 `transposition`, 4 `autre`, 1 `echec`.
+
+## `ra` — sous-classification de `attaque_decalee` et `notes_supp` (lot 87,6 %)
+
+Même script `scripts/oracle/lilypond/subdivise.py`, sur les 144 fichiers
+`attaque_decalee`/`notes_supp` du lot 86,7 % :
+
+| Constructeur à la première divergence | Fichiers | Exemple |
+| --- | ---: | --- |
+| markup/tweak | 31 | `accidental-styles.ly` |
+| repeat/volta | 24 | `auto-beam-exceptions.ly` |
+| relative | 22 | `accidental-single-double.ly` |
+| grace | 17 | `after.ly` |
+| voices | 15 | `accidental-placement-samepitch.ly` |
+| transpose/clef/key | 14 | `accidental.ly` |
+| sans-construct | 8 | `chord-X-align-on-main-noteheads.ly` |
+| score/book | 6 | `chord-changes-alternative.ly` |
+| scheme | 6 | `collision-merge-dots-hidden.ly` |
+| tuplet | 3 | `alignment-order.ly` |
+| cue/quote | 2 | `quote-cue-during.ly` |
+| lyrics | 1 | `lyrics-includegraces.ly` |
+
+Avec le tableau précédent, les plus grands groupes communs sont
+`markup/tweak` (44), `repeat/volta` (33), `relative` (31), `voices` (26).
+
+Quatre causes visant `voices` et `markup/tweak`, test réduit échouant d'abord,
+mesurées face à `/tmp/ly-ra-final11` :
+
+1. **`\partCombine` au niveau supérieur** — la commande étant absente de
+   `starts_music_command`, ses deux branches devenaient deux partitions dont
+   une seule était retenue. Test
+   `part_combine_au_niveau_superieur_joue_les_deux_voix`. Gain :
+   `duration-line-and-partCombine` et N2 sur `part-combine(-global)`.
+2. **`\new NoteNames`** (`lily/note-name-engraver.cc`) : contexte de gravure
+   sans performer MIDI ; sa musique n'est pas jouée. Test
+   `note_names_contexte_grave_mais_non_joue`. Gain : `accidental-tie`.
+   `ChordNames` reste joué (vérifié avec LilyPond 2.26).
+3. **`FretBoards` et `NullVoice`** (`ly/performer-init.ly:229`) : même règle
+   que `NoteNames`, étendue à ces deux contextes. Test
+   `fret_boards_contexte_grave_mais_non_joue`. Gain : `fret-boards`.
+4. **Unissons de `\partCombine`** — deux voix strictement identiques ne sont
+   jouées qu'une fois. Test `part_combine_voix_identiques_fusionnees` ; évite
+   la régression `part-combine-slur`.
+
+Mesure ciblée `voices`/`markup/tweak` : gains N2 sans perte. La mesure
+complète (`/tmp/ly-ra-final13`) donne **1510 exacts sur 1724 (87,6 %)**, 15
+fichiers gagnés et aucune perte par rapport aux 1495. Restent 84
+`attaque_decalee`, 48 `notes_supp`, 32 `octave`, 22 `notes_manquantes`, 19
+`sortie_vide`, 5 `transposition`, 4 `autre`, 1 `echec`.
