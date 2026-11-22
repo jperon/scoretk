@@ -3870,8 +3870,8 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact Q16 | Exact Q16 **or** n2_grace | Exact % (either) | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 443 | **1 488** | 68.1 | 98.83 | — | — |
-| measured (reference present, non-reader faults excluded) | 1 655 | 1 443 | **1 488** | **89.9** | **98.83** | **97.63** | **98.45** |
+| all rows | 2 186 | 1 455 | **1 501** | 68.7 | 98.84 | — | — |
+| measured (reference present, non-reader faults excluded) | 1 657 | 1 455 | **1 501** | **90.6** | **98.84** | **97.77** | **98.72** |
 
 The two exact columns are kept side by side since Cause 18: **Exact Q16** is
 the historical criterion (`r == t == n1 == n2`), **Exact Q16 or n2_grace** adds
@@ -3891,9 +3891,9 @@ denominator; on `mut` this excludes 520 rows (the obsolete basket, unusable
 references and the sources scoretk deliberately does not support; the
 `\compressMusic`, `\compressFullBarRests` and `\fermataMarkup` sources are
 no longer excluded, their references being regenerated from a converted
-copy) and leaves 1 665 source rows in the lot. Of those, 1 661 convert; six
-have an empty reference (purely graphical scores), which leaves 1 655
-comparable rows.
+copy) and leaves 1 665 source rows in the lot. Of those, 1 663 convert after
+Cause 41 (two more sources read); six have an empty reference (purely
+graphical scores), which leaves 1 657 comparable rows.
 
 The previous campaign reported 692/2 186 exact (31.7 %; 39.9 % on the 1 735
 rows that had a reference) and N2 93.49 on the old references. The exact rate was low because 595 files had **all** their
@@ -3984,6 +3984,15 @@ the empty-chord cursor), and `fuga2` joins them. `No03_Albumblatt`, exact
 before the writer change, was temporarily lost when that change revealed a
 `\set Timing.beatStructure = 1,1` leak; Cause 38 restores it, so the net
 file balance is +4 with no loss.
+
+The next pass (Causes 39–42) adds **13 exact files and no loss** (1,488 →
+1,501; N2 97.63 → 97.77, no-repeat 98.45 → 98.72); Cause 42 corrects a
+tremolo parsing bug without changing any measured file: the parallel branch inside
+a tuplet (waltz-op39-15, rimsky-korsakov-op11-1, rach-prelude-op3-no2), the
+`q` reference (eight Czerny/carcassi/In_dulci_jubilo files) and the
+non-nesting block comments (Chop-28-20 and debussy_Arabesque_1, which also
+become measurable: the comparable denominator grows from 1 655 to 1 657).
+No file regresses.
 
 ### Where the remaining `notes_supp` files start
 
@@ -4658,6 +4667,98 @@ consumed after the fraction. Test
 (614/614); the writer fix of Cause 37 had exposed this latent reader bug,
 which is why the file was exact only through the previous invalid XML
 stream.
+
+### Cause 39: a parallel branch inside a tuplet carries its real duration
+
+`\times 2/3 { << { s8 s s } \\ { c'8[ d' e'] } >> }` (waltz-op39-15,
+rimsky-korsakov-op11-1, rach-prelude-op3-no2): the first branch continues in
+the current voice and belongs to the `Tuplet`, the next ones open a sister
+voice (`simultaneous`, `lily/parser.yy` l. 1581-1588) that has no `Tuplet`
+of its own. The interpreter applied the inherited scale to the cursor (1/3
+of a quarter) but the event carried neither `Tuplet` nor `ticks`, so the
+MusicXML writer fell back to the bare figure (1/2) and lengthened the measure
+by 1/12, shifting everything after it. `ticks` is now
+`figure × multiplier × tuplet_scale` (the inherited part), the `Tuplet`
+remaining the sole carrier of the open tuplets. Test
+`branche_parallele_dans_un_nolet_porte_sa_duree_reelle`. The three files
+become exact (720, 1218 and 1725 notes).
+
+### Cause 40: `q` repeats a bracketed chord only
+
+`expand-repeat-chords!` (`scm/music-functions.scm` l. 920-945) only updates
+the repeated chord for an `EventChord`, i.e. music written `< … >`: a bare
+note is a `NoteEvent` and leaves the reference unchanged. `g4 < b d > q g q
+q` therefore repeats `< b d >` at both `q` after `g` (czerny-op840-4 and -6,
+whose chords had become lone `g`s: 75 and 51 notes out of place). After a
+bare note with no chord before it, LilyPond warns "Bad chord repetition" and
+emits no note. The two repetition mechanisms are now distinct:
+`ChordKind::Repeat` (`q`) reads the last `EventChord`, the new
+`ChordKind::PitchRepeat` (bare duration, `expand-repeat-notes!` l. 972-1015)
+reads the last played element, note or chord. Test
+`q_ne_repete_que_le_dernier_accord_entre_chevrons`; the `c4 q8 q8` case of
+the bare-duration test now follows the reference. Both Czerny pieces, plus
+`In_dulci_jubilo`, `carcassi-op1n02`, `carcassi-op60-10`,
+`czerny-op840-2/3/9`, become exact.
+
+### Cause 41: block comments do not nest
+
+The `longcomment` state of the upstream lexer only closes on `"%"+"}"`: a
+`%{` inside is text and a lone `}` closes nothing (`lily/lexer.ll:303-313`).
+The reader counted depths, so an old comment of the form `%{ … }` (closed
+further down by the `%}` of a `%{ %}`) swallowed the rest of the file:
+`debussy_Arabesque_1`, `Chop-28-20` and `Egmont` reported "no music in the
+LilyPond source". `skip_lilypond_block_comment` (embedded `#{ … #}` music)
+follows the same rule. The lexer test that expected the wrong nesting now
+expects the `x` of the code, matching LilyPond (checked on a reduced file:
+c, d, e played). Test `commentaire_de_bloc_ne_s_imbrique_pas`.
+`debussy_Arabesque_1` (1458/1458) and `Chop-28-20` (286/286) join the
+comparable set and are exact; `Egmont` was still unreadable after this fix
+(see Cause 42).
+
+### Cause 42: `:` alone keeps the last tremolo type and consumes nothing
+
+`tremolo_type` (`lily/parser.yy:3584-3596`) accepts an `UNSIGNED` only when
+it is written: `':'` alone reuses `parser->default_tremolo_type_` (8 at
+first), and the next token is read normally. The reader bumped the next
+token in every case, so in `c4: d4` the pitch `d` was swallowed, the `4`
+became a bare duration and repeated `c`. The same damage in
+`a'''2.:8 a''':` (`Egmont`, `violinoone.ly`) made the whole variable
+unreadable ("no music"). The number is now consumed only when it is an
+integer, and the last written type is remembered. Test
+`tremolo_sans_nombre_ne_mange_pas_la_note_suivante` (60,60,60,65 before,
+60,62,64,65 after). `Egmont` reads again (15 068 notes); its MIDI reference
+still cannot be decoded by the oracle (key signature with 8 sharps), so it
+stays outside the comparable denominator and the `mut` figures do not move.
+
+### Remaining `mut` groups (first divergence, non-exact files)
+
+`scripts/oracle/lilypond/subdivise.py --ecarts` on the 2 186-row lot, after
+the four passes above:
+
+| Construct at the first divergence | Files |
+| --- | ---: |
+| markup/tweak | 56 |
+| grace | 33 |
+| repeat/volta | 20 |
+| transpose/clef/key | 12 |
+| scheme | 10 |
+| tuplet | 9 |
+| voices | 7 |
+| include | 6 |
+| relative | 5 |
+| score/book | 3 |
+| erreur (no classification) | 2 |
+| lyrics | 1 |
+
+The first three groups are the `ra` campaign's areas (markup/tweak,
+repeat/volta, grace timing) and are left to it; `voices` and `relative` are
+too. Among the `mut`-specific groups, several `tuplet` files
+(chopin_nocturne_op9_n3, ballade-4) diverge only through LilyPond's MIDI
+arpeggio spread, which crosses the 0.25 grid boundary and is not a notation
+difference; `bwv617` shifts by ±0.25 on `\times 4/3`/`10/9` positions for
+the same grid reason. The `scheme`, `transpose/clef/key` and `include`
+groups are heterogeneous (named `GrandStaff`, `\change Staff`, arpeggios,
+duplicate staff names in the MIDI score); each needs a new reduction.
 
 ### Cause 5: `\octaveCheck` consumes its pitch
 
