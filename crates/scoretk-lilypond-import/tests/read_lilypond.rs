@@ -7169,3 +7169,17 @@ fn parallel_music_avec_enveloppe_fixe() {
         vec![72, 76, 74, 77]
     );
 }
+
+#[test]
+fn repeat_unfold_avec_alternatives() {
+    // `repeat-unfold.ly` : sous `\unfoldRepeats`, le corps est rejoué `n`
+    // fois et les alternatives se répartissent sur les passages, la première
+    // étant multipliée s'il y en a moins que de reprises.
+    let src = "\\version \"2.24.0\"\n\
+         \\unfoldRepeats { \\repeat unfold 4 { c'4 d'4 } \\alternative { e'4 f'4 } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62, 64, 60, 62, 64, 60, 62, 64, 60, 62, 65]
+    );
+}

@@ -1011,9 +1011,40 @@ impl<'a> Interpreter<'a> {
                 // référence ; la laisser avancer ferait monter les notes
                 // marquées d'une octave à chaque reprise.
                 let reference = self.octave;
-                for _ in 0..count.max(1) {
+                let blocks = alternatives.len();
+                let mut alt_ends: Vec<OctaveState> = Vec::new();
+                for tour in 1..=count.max(1) {
                     self.octave = reference;
                     self.walk(body);
+                    let corps_fin = self.octave;
+                    if blocks == 0 {
+                        continue;
+                    }
+                    // `lily/parser.yy` (REPEAT ALTERNATIVE) : moins
+                    // d'alternatives que de reprises, la première est
+                    // multipliée ; l'excédent est ignoré sinon
+                    // (`repeat-unfold.ly`).
+                    let seuil = count.max(1).saturating_sub(blocks as u32) + 1;
+                    let index = if tour <= seuil {
+                        0
+                    } else {
+                        (tour - seuil) as usize
+                    }
+                    .min(blocks - 1);
+                    if let Some(alternative) = alternatives.get(index) {
+                        self.octave = if index == 0 {
+                            corps_fin
+                        } else {
+                            alt_ends.get(index - 1).copied().unwrap_or(corps_fin)
+                        };
+                        self.walk(alternative);
+                        let fin = self.octave;
+                        if alt_ends.len() == index {
+                            alt_ends.push(fin);
+                        } else if let Some(emplacement) = alt_ends.get_mut(index) {
+                            *emplacement = fin;
+                        }
+                    }
                 }
             }
             RepeatKind::Ignored => {
