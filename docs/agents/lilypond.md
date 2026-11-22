@@ -4767,3 +4767,47 @@ lost (the five `repeat-dc`/`repeat-ds` files and `chord-name-minor`).
 scoretk is 90 files ahead of musicxml2ly on this lot and emits ~45 % fewer
 bytes; the `.ly` round trip is reported apart from the reader's own score
 (the reader's `mus` figure is not changed by export work).
+
+## `ra` — tournée après les remarques de relecture
+
+Les trois remarques ont été corrigées dans un seul commit : commentaire
+contradictoire retiré dans `events.rs::spawn_at`, `min` traité comme
+modificateur leading dans `modes.rs` (`min11`, `min13`, `min7.9` couverts, test
+`accord_chordmode_min11` ajouté, ainsi que la règle du 11 implicite retiré de
+`c:13` mais gardé dans `c:min13`, vérifiés sur le MIDI de LilyPond 2.24), et
+`\makeClusters` détecté sur tout l'intervalle de jetons de la musique de la
+portée, y compris avec une référence de variable. Le modèle n'ayant pas de
+mute par voix, une portée partiellement clusterisée est muette entièrement :
+limite documentée ici.
+
+Trois causes supplémentaires, chacune avec un test réduit échouant d'abord :
+
+1. **Accolades après une commande de markup** (`lily/parser.yy:4160-4165`,
+   `markup_braced_list`) : laissées telles quelles, `{ "0" "0" }` devenait une
+   partition parasite et la vraie portée était écartée comme « partition
+   supplémentaire ». Seules les commandes dont la signature accepte une liste
+   entre accolades (`scm/define-markup-commands.scm` : `line`,
+   `right-column`, `rhythm`, `note`…) consomment l'accolade ; `\foo` sans
+   argument et `\etc` laissent la musique (`markup-invalid-stencil.ly`,
+   `textetc.ly`). Test `liste_markup_entre_accolades_ne_cree_pas_une_partition_vide`.
+   Mesure ciblée sur 201 fichiers avec `\markup` : **3 gains exacts, 0 perte**.
+2. **`#name` dans `#{ … #}`** (`lily/parser.yy:3221-3225`, `embedded_scm`) :
+   une variable assignée en syntaxe LilyPond (`music = \relative { … }`) est
+   une variable Scheme insérable par `#music` dans le corps de
+   `\testVisibility`. Test `interpolation_scheme_dune_variable_musicale`.
+   Mesure ciblée : **6 gains exacts** (les six `bar-number-visibility`),
+   0 perte ; sur les 51 fichiers `sortie_vide`, 15 deviennent exacts.
+3. **`\skip <musique>`** (`ly/music-functions-init.ly:2267-2274`,
+   `duration-or-music?`) : la musique argument est parcourue en silence, ses
+   durées avançant le temps (`skip-music.ly`). Test
+   `skip_avec_musique_ne_joue_pas_cette_musique`. Mesure ciblée sur 26 fichiers
+   avec `\skip` : **1 gain exact** (`skip-music.ly`), 0 perte.
+
+La mesure complète après ces trois causes (`/tmp/ly-ra-final2`) donne
+**1397 exacts sur 1724 mesurés (81,0 %)**, soit **25 fichiers gagnés et aucune
+perte** par rapport aux 1372 précédents. Après le rebase sur les commits de
+`master` sur `measurePosition`, les noms de contexte et la basse d'accord
+explicite, la mesure finale (`/tmp/ly-ra-final3`) donne **1402 exacts (81,3 %)**,
+cinq fichiers de plus gagnés et aucune perte. Il reste 33 `sortie_vide`, 108
+`attaque_decalee`, 62 `octave`, 62 `notes_manquantes`, 55 `notes_supp`,
+4 `transposition`, 3 `autre`, 1 `echec`.
