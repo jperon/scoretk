@@ -6503,3 +6503,19 @@ fn markup_commande_sans_argument_laisse_la_musique() {
         vec![60]
     );
 }
+
+#[test]
+fn interpolation_scheme_dune_variable_musicale() {
+    // `lily/parser.yy:3221-3225` : `embedded_scm` est un élément musical dans
+    // un corps `#{ … #}`. `#musique` désigne la variable Scheme `musique`
+    // assignée en syntaxe LilyPond (`bar-number-visibility.ily` : le corps de
+    // `\testVisibility` insère `#music`).
+    let src = "\\version \"2.24.0\"\nmusique = \\fixed c' { c'4 d' }\n\
+fonction =\n#(define-music-function (visibilite) (procedure?)\n\
+   #{ #musique #})\n\\fonction#quelquechose\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![72, 74]
+    );
+}

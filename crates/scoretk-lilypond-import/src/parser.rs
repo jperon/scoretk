@@ -1966,12 +1966,18 @@ impl<'a> Parser<'a> {
                 self.parse_embedded_music(&token.text)
             }
             // Expression Scheme isolée dans la musique, lue d'un seul tenant.
-            // `$nom` insère une variable définie par `#(define nom #{ … #})`
-            // (Extending §1) ; les autres datum sont ignorés sans bruit.
+            // `$nom`/`#nom` insèrent une variable définie par
+            // `#(define nom #{ … #})` (Extending §1) ou par une assignation
+            // LilyPond ordinaire (`music = \relative { … }`) : dans un corps
+            // `#{ … #}`, `embedded_scm` est un élément musical
+            // (`lily/parser.yy:3221-3225`) et `#music` y désigne cette
+            // variable Scheme. Les autres datum sont ignorés sans bruit.
             Kind::Scheme => {
                 let datum = token.text.clone();
                 self.position += 1;
                 if let Some(music) = self.scheme_variables.get(&datum).cloned() {
+                    music
+                } else if let Some(music) = self.variables.get(&datum).cloned() {
                     music
                 } else {
                     let _ = self.record_scheme_define(&datum);
