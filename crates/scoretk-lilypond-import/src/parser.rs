@@ -3291,6 +3291,13 @@ impl<'a> Parser<'a> {
                 }) => {
                     self.position += 1;
                     nom.push('/');
+                    // `/ +d` : basse explicite (`scm/chord-entry.scm`
+                    // l. 46-53, `interpret-bass`). Le `+` doit rester dans le
+                    // nom, sinon le `d` devient un accord séparé au temps
+                    // suivant (`bes/+d` décalait toute la grille).
+                    if self.eat_punct('+') {
+                        nom.push('+');
+                    }
                     if let Some(Token {
                         kind: Kind::Word,
                         text,

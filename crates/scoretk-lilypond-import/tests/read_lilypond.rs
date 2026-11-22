@@ -237,6 +237,23 @@ fn signe_apres_direction_est_une_articulation() {
     );
 }
 
+/// `bes/+d` : le `+` marque une basse explicite (`scm/chord-entry.scm`
+/// l. 46-53, `interpret-bass`). Le lecteur s'arretait sur le `+`, laissait
+/// `d` dans le flux et jouait un accord de re au temps suivant : la grille
+/// d'accords de WinchesterNew gagnait des notes et se decalait d'un temps.
+#[test]
+fn accord_basse_explicite_avec_plus() {
+    let score = read_lilypond(
+        "\\version \"2.18.2\"\n\\score { \\new Staff { \\chordmode { bes4 bes/+d } } }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![70, 74, 77, 70, 74, 77, 62]);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![Fraction::new(1, 4), Fraction::new(1, 4)]
+    );
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");

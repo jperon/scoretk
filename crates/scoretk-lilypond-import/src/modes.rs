@@ -215,6 +215,9 @@ pub(crate) fn chord_pitches(language: Language, name: &str) -> Option<(Vec<u8>, 
     let (head, basse) = name
         .split_once('/')
         .map_or((name, None), |(h, b)| (h, Some(b)));
+    // `/+d` : basse explicite (`scm/chord-entry.scm` l. 46-53,
+    // `interpret-bass`). Le `+` est un marqueur de basse, pas une altération.
+    let basse = basse.map(|b| b.strip_prefix('+').unwrap_or(b));
     let (racine, qualite) = head.split_once(':').map_or((head, "maj"), |(r, q)| (r, q));
     let (step, alter) = language.parse(racine)?;
     let root = midi_of(step, alter, 4)?;
@@ -280,6 +283,13 @@ mod tests {
         assert_eq!(
             chord_pitches(langue, "c/g"),
             Some((vec![60, 64, 67], Some(55)))
+        );
+        // `/+d` : basse explicite (`scm/chord-entry.scm` l. 46-53,
+        // `interpret-bass`), distincte d'un ajout. Le `+` ne fait pas partie
+        // du nom de hauteur.
+        assert_eq!(
+            chord_pitches(langue, "bes/+d"),
+            Some((vec![70, 74, 77], Some(62)))
         );
         assert_eq!(chord_pitches(langue, "inconnu"), None);
     }
