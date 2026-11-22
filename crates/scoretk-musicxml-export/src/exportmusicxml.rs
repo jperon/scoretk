@@ -525,10 +525,16 @@ impl<'a> Context<'a> {
         let metadata = &self.score.metadata;
 
         out.xml.start_element("identification", &[]);
+        // `identification` (`exportmusicxml.cpp:7237-7244`) : les cinq types
+        // de créateurs sont rangés dans un `std::set`, donc par ordre
+        // alphabétique. `poet` et `translator` sont des metaTags distincts de
+        // `lyricist` dans les fichiers 4.x.
         for (kind, value) in [
             ("arranger", &metadata.arranger),
             ("composer", &metadata.composer),
             ("lyricist", &metadata.lyricist),
+            ("poet", &metadata.poet),
+            ("translator", &metadata.translator),
         ] {
             if !value.is_empty() {
                 out.xml.tag_with("creator", &[("type", kind)], value);

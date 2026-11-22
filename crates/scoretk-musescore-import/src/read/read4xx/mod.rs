@@ -348,7 +348,9 @@ impl Reader {
             "movementNumber" => metadata.movement_number = value,
             "workNumber" => metadata.work_number = value,
             "composer" => metadata.composer = value,
-            "lyricist" | "poet" => metadata.lyricist = value,
+            "lyricist" => metadata.lyricist = value,
+            "poet" => metadata.poet = value,
+            "translator" => metadata.translator = value,
             "arranger" => metadata.arranger = value,
             "copyright" => metadata.copyright = value,
             "source" => metadata.source = value,
@@ -356,7 +358,6 @@ impl Reader {
             "platform" => metadata.platform = value,
             "subtitle" => metadata.subtitle = value,
             "mscVersion" => metadata.msc_version = value,
-            // TODO(parité): translator.
             _ => {}
         }
     }

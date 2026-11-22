@@ -214,6 +214,8 @@ impl Reader {
             "workNumber" => metadata.work_number = text,
             "composer" => metadata.composer = text,
             "lyricist" => metadata.lyricist = text,
+            "poet" => metadata.poet = text,
+            "translator" => metadata.translator = text,
             "arranger" => metadata.arranger = text,
             "copyright" => metadata.copyright = text,
             "source" => metadata.source = text,

@@ -59,8 +59,12 @@ pub struct ScoreMetadata {
     pub work_number: String,
     /// Compositeur.
     pub composer: String,
-    /// Parolier.
+    /// Parolier (`metaTag` `lyricist`).
     pub lyricist: String,
+    /// Poète (`metaTag` `poet`), distinct de `lyricist` dans MuseScore 4.
+    pub poet: String,
+    /// Traducteur (`metaTag` `translator`).
+    pub translator: String,
     /// Arrangeur.
     pub arranger: String,
     /// Mention de copyright.
@@ -96,6 +100,8 @@ impl Default for ScoreMetadata {
             work_number: String::new(),
             composer: String::new(),
             lyricist: String::new(),
+            poet: String::new(),
+            translator: String::new(),
             arranger: String::new(),
             copyright: String::new(),
             source: String::new(),

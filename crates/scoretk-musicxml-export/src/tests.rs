@@ -1877,6 +1877,43 @@ fn formats_de_texte_dans_words() {
     assert!(xml.contains("<words underline=\"1\">e</words>"));
 }
 
+/// `identification` (`exportmusicxml.cpp:7237-7244`) écrit les créateurs
+/// dans l'ordre alphabétique : `arranger`, `composer`, `lyricist`, `poet`,
+/// `translator`. Le port ignorait `poet` et `translator`, pourtant présents
+/// dans les metaTags des fichiers 4.x (cas réel : Vivaldi Dixit Dominus,
+/// `poet` = « Psaume 109 », `translator` = « fredipi »).
+#[test]
+fn createurs_poet_et_translator() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    score.metadata.composer = "Compositrice".to_owned();
+    score.metadata.lyricist = "Parolier".to_owned();
+    score.metadata.poet = "Poete".to_owned();
+    score.metadata.translator = "Traducteur".to_owned();
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<creator type=\"poet\">Poete</creator>"),
+        "poet absent :\n{xml}"
+    );
+    assert!(
+        xml.contains("<creator type=\"translator\">Traducteur</creator>"),
+        "translator absent :\n{xml}"
+    );
+    let poet = xml.find("<creator type=\"poet\"").expect("poet");
+    let translator = xml
+        .find("<creator type=\"translator\"")
+        .expect("translator");
+    assert!(
+        poet < translator,
+        "ordre alphabétique des créateurs :\n{xml}"
+    );
+}
+
 #[test]
 fn credits_et_metadonnees_de_page_de_titre() {
     let mut score = Score::new();
