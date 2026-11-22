@@ -389,6 +389,115 @@ nix develop -c cargo test -p scoretk-midi-import --test import_corpus -- --nocap
 nix develop -c cargo test -p scoretk-midi-export --test roundtrip_midi -- --nocapture
 ```
 
+## MIDI import: measured state (2026-11-22)
+
+Measured with `scripts/oracle/midi/import_mesure.py` on the two lots of
+phase 4 of `plan-fiabilite.md`:
+
+- **upstream** — the 96 MuseScore tests that have a `.mid` and its expected
+  `-ref.mscx` (`importexport/midi/tests/midiimport_data`, 4.7.4 reference);
+  each test is replayed with the options `midiimport_tests.cpp` pins
+  (`dontSimplify`, `staffSplit`, `voiceSeparation`, `simplification`, and the
+  `canRedefine` values of `staff_split_tests`).
+- **LilyPond** — the 1 020 MIDI files of `~/Musique` that have their `.ly`
+  source; the reference is that source read by **our own LilyPond reader**
+  (model against model, the same binary), with `--midi-no-simplify`: the
+  written durations are not simplified, and `simplifyDurations` would
+  legitimately lengthen them. A source that uses `\repeat`/`\unfoldRepeats`
+  is excluded: LilyPond's MIDI is unfolded, the written source is not
+  (`ly_notes.a_des_repetitions`, the rule of the LilyPond oracle); 87 pairs
+  are excluded for this reason.
+
+Two normalisations make the comparison mean the same thing on both sides:
+
+- **concert pitch**: a MIDI carries only the sounding pitch, and the import
+  invents an instrument (hence a `<transpose>`) from the General MIDI program;
+  both sides are brought back with `<transpose>` applied
+  (`notes(to_concert=True)`), as already done for the `.mscx` references.
+- **one attack per (pitch, onset)**: two voices doubling a pitch cannot be
+  notated twice in a chord — `MChord::collectChords`/`hasNotesWithEqualPitch`
+  drops the second and `removeOverlappingNotes` keeps the longest
+  (`importmidi_chord.cpp:176-240, 391-465`). The reference is deduplicated the
+  same way, keeping the **longest** duration.
+
+Voice and duration are compared only against the `.mscx` references (an
+import of MuseScore itself). Against a `.ly` source they are not a truth of
+the MIDI: voices are inferred from overlaps (`importmidi_voice.cpp`) and
+LilyPond writes performance note-offs (gate time, articulations, irregular
+measures), so the source-notes comparison is pitch + onset.
+
+| Lot | Files | Exact | N1 % | N2 % | N2d % | N2v % |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| upstream `.mscx` | 96 | 92 (95,8 %) | 100,00 | 99,88 | 99,88 | 97,77 |
+| LilyPond `.ly` (87 excluded) | 932 | 914 (98,1 %) | 99,95 | 99,84 | — | — |
+| all comparable | 1 028 | **1 006 (97,9 %)** | **99,95** | **99,84** | — | — |
+
+Percentages are weighted by the reference notes (100 028). On the `.mscx` lot
+the exactness includes voice and duration; on the `.ly` lot it is
+pitch + onset (see above). N2d/N2v are not aggregated outside the `.mscx`
+lot. The one file with an empty reference (`LaRondeDeNuit`) is not counted
+exact. Before the oracle corrections below, the same binary scored
+682/1 116 on the raw comparison (voice required against the `.ly` sources,
+written pitch, duplicate unisons counted, repeats not excluded): that figure
+measured the oracle, not the importer.
+
+### Non-exact files by first divergence
+
+`import_mesure.py` matches on the strictest field set and reports the earliest
+unmatched note with the finest cause: `note sup` (extra note),
+`attaque` (same pitch, onset moved), `octave`, `voix`, `durée`,
+`note manquante`, `aucune` (empty reference).
+
+| First divergence | Files | Example |
+| --- | ---: | --- |
+| `attaque` | 8 | `up-human_4-4` |
+| `note sup` | 8 | `ly-lily-30ec2d9a` |
+| `voix` | 3 | `up-tuplet_2_voices_3_5_tuplets` |
+| `octave` | 2 | `ly-Kryshachok` |
+| `durée` | 1 | `up-quant_dotted_4th` |
+| `note manquante` | 1 | `ly-02_01_CommentLeSaisJe` |
+
+Three causes explain almost all of them, and two are measurement gaps rather
+than importer defects:
+
+- **per-test options** (fixed here): `quant_dotted_4th` runs with
+  `QuantValue::Q_4`, `tuplet_2_voices_3_5_tuplets` with `Q_32`
+  (`midiimport_tests.cpp:230-243, 349-357`; `Quantize::quantForLen`,
+  `reduceQuantIfDottedNote`, `importmidi_quant.cpp:155-190`), and
+  `tuplet_3_5_7_tuplets` pins `changeClef = false`, `doStaffSplit = false`
+  and `simplifyDurations = false` (`:366-379`). The CLI now exposes
+  `--midi-quant` (`quantValue`, re-exported `QuantValue`) and
+  `--midi-no-change-clef`; `upstream_test_options` parses the `TEST_F`
+  bodies, so `quant_dotted_4th` becomes exact. The two tuplet tests still
+  fail (see below).
+- **grace notes** (paired): the reference `.ly` writes the ornament as
+  `<grace>`, while a MIDI import has no grace module at all
+  (`importmidi_chord.cpp` has none) and produces a normal short note before
+  the beat. The oracle now pairs each reference grace with the nearest
+  unmatched import note of the same pitch before the main note, as the
+  LilyPond oracle does.
+- **remaining real defects** (not fixed): the two `tuplet_*` tests have the
+  **voice order inverted** (`sortVoicesByPitch`, `importmidi_voice.cpp:985-1029`:
+  the highest average pitch must become voice 1; our output keeps the low
+  voice first) and `tuplet_3_5_7_tuplets` emits **ultra-short durations**
+  (9 ticks) for the fifth-tuplet notes: a 15-tick note lengthened by
+  `lengthenTooShortNotes` (`importmidi.cpp:89-100`) is divided a second time
+  by the tuplet ratio at export, which gives `<duration>` under the minimum.
+  `Kryshachok` and `Lassus_Alleluja._Dies_sanctificatus` place notes an
+  octave away, and `Ad_te_Suspiramus` loses 12 of 1 072 notes. `human_4-4`
+  is a human performance, where our direct `findQuantizedChordOnTime`
+  differs from MuseScore's metric dynamic programming (documented in
+  `quant.rs`).
+
+The single `note manquante` file (`CommentLeSaisJe`) and the `note sup`
+files `Veni, Creator Spiritus` (1 619 notes against 245) and `Dechiffrage`
+(68 against 16) are repeats not caught by `a_des_repetitions` (a `\repeat`
+in a deeper include, or a `bar "|:"` written without `\repeat`); they are
+oracle artefacts. The seven `attaque` files of tick 3.0 (`lily-ed3284f3` and
+its copies, `LeCheminDeSaintJacques`) are the opposite: the source has
+successive identical notes whose tie our **LilyPond reader** fails to merge
+(the MIDI has a single attack), so the reference is wrong, not the import.
+
 ## Upgrading MuseScore's MIDI import
 
 Same upstream reference as the rest of the port (see `docs/agents/upstream.md`):

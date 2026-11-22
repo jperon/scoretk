@@ -100,6 +100,15 @@ struct Cli {
     #[arg(long)]
     midi_no_simplify: bool,
 
+    /// Import MIDI : plus petite valeur de quantification, en fraction de
+    /// ronde (`quantValue` : 4, 8, 16 par défaut, 32…)
+    #[arg(long, value_name = "N", value_parser = parse_quant_value)]
+    midi_quant: Option<u16>,
+
+    /// Import MIDI : ne pas changer de clef (`changeClef`)
+    #[arg(long)]
+    midi_no_change_clef: bool,
+
     /// Import MIDI : nombre maximal de voix, 1 à 4 (`maxVoiceCount`)
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(1..=4))]
     midi_voices: Option<u8>,
@@ -115,6 +124,20 @@ struct Cli {
     /// Import MIDI : verrouiller `doStaffSplit` sur true (tests amont)
     #[arg(long)]
     midi_staff_split: bool,
+}
+
+/// Valeur de quantification MIDI acceptée : une puissance de deux ≥ 4.
+fn parse_quant_value(valeur: &str) -> Result<u16, String> {
+    let quant: u16 = valeur
+        .parse()
+        .map_err(|_| format!("valeur de quantification invalide : {valeur}"))?;
+    if quant >= 4 && quant.is_power_of_two() {
+        Ok(quant)
+    } else {
+        Err(format!(
+            "valeur de quantification invalide : {valeur} (4, 8, 16, 32, 64, 128, 256, 512 ou 1024)"
+        ))
+    }
 }
 
 fn main() -> ExitCode {
@@ -148,6 +171,24 @@ fn main() -> ExitCode {
     let mut custom_midi = false;
     if cli.midi_no_simplify {
         midi_options.simplify_durations = false;
+        custom_midi = true;
+    }
+    if let Some(quant) = cli.midi_quant {
+        midi_options.quant_value = match quant {
+            4 => scoretk::QuantValue::Q4,
+            8 => scoretk::QuantValue::Q8,
+            16 => scoretk::QuantValue::Q16,
+            32 => scoretk::QuantValue::Q32,
+            64 => scoretk::QuantValue::Q64,
+            128 => scoretk::QuantValue::Q128,
+            256 => scoretk::QuantValue::Q256,
+            512 => scoretk::QuantValue::Q512,
+            _ => scoretk::QuantValue::Q1024,
+        };
+        custom_midi = true;
+    }
+    if cli.midi_no_change_clef {
+        midi_options.change_clef = false;
         custom_midi = true;
     }
     if cli.midi_tuplet_notation {

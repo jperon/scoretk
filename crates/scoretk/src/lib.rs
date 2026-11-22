@@ -110,7 +110,7 @@ pub use scoretk_midi_export::{MeasureSync, NoteSync, PauseSync, TempoChange, Tim
 /// oracles qui reproduisent une configuration de MuseScore
 /// (`simplifyDurations`, `maxVoiceCount`).
 #[cfg(feature = "midi-import")]
-pub use scoretk_midi_import::{ImportOptions as MidiImportOptions, VoiceCount};
+pub use scoretk_midi_import::{ImportOptions as MidiImportOptions, QuantValue, VoiceCount};
 #[cfg(feature = "musescore-import")]
 pub use scoretk_musescore_import::{detect_version, MscVersion, MsczContainer};
 #[cfg(feature = "musicxml-export")]

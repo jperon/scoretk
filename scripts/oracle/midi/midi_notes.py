@@ -244,6 +244,204 @@ def _rapprocher(
     return total
 
 
+def fusionner_unissons(notes: list[tuple]) -> list[tuple]:
+    """Ramène deux notes de même (hauteur, attaque) à une seule attaque.
+
+    Un MIDI ne permet pas de noter deux fois la même hauteur au même instant
+    dans un accord : `MChord::collectChords` fusionne les notes proches et
+    `hasNotesWithEqualPitch` **écarte** la seconde
+    (`importmidi_chord.cpp:391-465`). MuseScore perd donc les unissons de
+    deux voix, et un import fidèle aussi. Comparer un source `.ly` à deux
+    voix doublées sans cette normalisation compterait chaque doublure comme
+    une note manquante (l'oracle LilyPond applique déjà la même règle :
+    `test_same_tick.py`, « unisson = une attaque MIDI »).
+
+    La fusion garde la **durée la plus longue** : `removeOverlappingNotes`
+    (`MChord::removeOverlappingNotes(QList<MidiNote>&)`) reporte le plus grand
+    `offTime` sur la note conservée avant d'effacer l'autre. La voix retenue
+    est celle de la première occurrence dans l'ordre (attaque, voix).
+    """
+    index: dict[tuple[int, float], int] = {}
+    out: list[tuple] = []
+    for note in sorted(notes, key=lambda n: (n[1], n[3])):
+        cle = (note[0], note[1])
+        position = index.get(cle)
+        if position is None:
+            index[cle] = len(out)
+            out.append(note)
+        elif note[2] > out[position][2]:
+            out[position] = (note[0], note[1], note[2]) + tuple(out[position][3:])
+    return out
+
+
+def apparier_import(
+    reference: list[tuple], test: list[tuple], champs: frozenset[int], tol: float = TOL
+) -> tuple[list[tuple[int, int]], list[int], list[int]]:
+    """Appariement glouton de notes d'import, champ par champ.
+
+    ``champs`` énumère les indices comparés en plus de la hauteur : 1 attaque,
+    2 durée, 3 voix. Les notes sont triées par attaque ; chaque note de
+    référence prend la première note libre de même hauteur, à moins de ``tol``
+    d'attaque, dont les autres champs demandés sont égaux. Renvoie les paires
+    d'indices et les restes de chaque côté.
+    """
+    restes_test = sorted(range(len(test)), key=lambda i: test[i][1])
+    restes_ref: list[int] = []
+    paires: list[tuple[int, int]] = []
+    pris: set[int] = set()
+    for i in sorted(range(len(reference)), key=lambda i: reference[i][1]):
+        note = reference[i]
+        trouve = None
+        for j in restes_test:
+            if j in pris or test[j][0] != note[0]:
+                continue
+            candidat = test[j]
+            if abs(candidat[1] - note[1]) > tol:
+                continue
+            if 2 in champs and abs(candidat[2] - note[2]) > tol:
+                continue
+            if 3 in champs and candidat[3] != note[3]:
+                continue
+            trouve = j
+            break
+        if trouve is None:
+            restes_ref.append(i)
+        else:
+            pris.add(trouve)
+            paires.append((i, trouve))
+    return paires, restes_ref, [j for j in range(len(test)) if j not in pris]
+
+
+def premiere_divergence_import(
+    reference: list[tuple],
+    test: list[tuple],
+    tol: float = TOL,
+    avec_voix: bool = True,
+    avec_duree: bool = True,
+) -> tuple[float, str]:
+    """Première divergence (attaque, cause) entre référence et import.
+
+    L'appariement le plus strict (hauteur, attaque, durée, voix) laisse des
+    restes ; on prend le plus tôt et on cherche la différence la plus fine
+    avec une note libre de l'autre côté, pour regrouper les fichiers par
+    cause : ``voix`` (même note, autre voix), ``durée``, ``octave``,
+    ``attaque``, ``note manquante`` ou ``note sup``.
+    """
+    champs = {1}
+    if avec_duree:
+        champs.add(2)
+    if avec_voix:
+        champs.add(3)
+    _, restes_ref, restes_test = apparier_import(reference, test, frozenset(champs), tol)
+    evenements: list[tuple[float, int, int]] = []
+    for i in restes_ref:
+        evenements.append((reference[i][1], 0, i))
+    for j in restes_test:
+        evenements.append((test[j][1], 1, j))
+    if not evenements:
+        return 0.0, "aucune"
+    evenements.sort()
+    _, cote, index = evenements[0]
+    if cote == 1:
+        return test[index][1], "note sup"
+    note = reference[index]
+    # Même hauteur et même attaque : durée ou voix.
+    for cand in test:
+        if cand[0] != note[0] or abs(cand[1] - note[1]) > tol:
+            continue
+        if avec_duree and abs(cand[2] - note[2]) > tol:
+            return note[1], "durée"
+        if avec_voix and cand[3] != note[3]:
+            return note[1], "voix"
+    # Même attaque, hauteur à l'octave près.
+    for cand in test:
+        if abs(cand[1] - note[1]) > tol:
+            continue
+        if abs(cand[0] - note[0]) in (12, 24):
+            return note[1], "octave"
+    # Même hauteur, attaque déplacée (dans la noire) : note décalée.
+    for cand in test:
+        if cand[0] == note[0] and tol < abs(cand[1] - note[1]) <= 4.0:
+            return note[1], "attaque"
+    return note[1], "note manquante"
+
+
+def releve_import(
+    reference: list[tuple],
+    test: list[tuple],
+    tol: float = TOL,
+    avec_voix: bool = True,
+    avec_duree: bool = True,
+    graces: list[tuple[int, float]] | None = None,
+) -> dict:
+    """Relevé d'import : N1, N2, N2d, N2v, exactitude et première divergence.
+
+    ``avec_voix`` compare aussi la voix. Elle n'a de sens que face à une
+    référence d'import MuseScore (`.mscx`) : un MIDI ne porte aucune voix, et
+    les « notes de la source » d'un `.ly` n'en fixent pas non plus — l'import
+    déduit les voix des chevauchements (`importmidi_voice.cpp`), pas de la
+    partition d'origine.
+
+    ``avec_duree`` compare la durée. Face à un `.ly`, la durée écrite n'est pas
+    une vérité du MIDI : LilyPond écrit des note-off de *jeu* (gate time,
+    articulations, mesures irrégulières), et deux voix doublées sur la même
+    hauteur y sont indiscernables (`MChord::removeOverlappingNotes`). La
+    comparaison « notes de la source » porte donc sur hauteur + attaque ;
+    c'est le lot `.mscx` (import de MuseScore lui-même) qui juge les durées et
+    les voix.
+    """
+    r = len(reference)
+    t = len(test)
+    cr = Counter(n[0] for n in reference)
+    ct = Counter(n[0] for n in test)
+    n1 = sum((cr & ct).values())
+    n2 = r - len(apparier_import(reference, test, frozenset({1}), tol)[1])
+    n2d = r - len(apparier_import(reference, test, frozenset({1, 2}), tol)[1])
+    champs = {1}
+    if avec_duree:
+        champs.add(2)
+    if avec_voix:
+        champs.add(3)
+    _, restes_ref, restes_test = apparier_import(reference, test, frozenset(champs), tol)
+    n2v = r - len(restes_ref)
+    if graces:
+        # Les grâces ne sont appariées qu'aux notes **non appariées** de
+        # l'import : une grâce de même hauteur qu'une note principale ne doit
+        # pas lui voler son appariement.
+        libres = list(restes_test)
+        consommees = 0
+        for pitch, onset in graces:
+            meilleur = None
+            for index in libres:
+                candidat = test[index]
+                if candidat[0] != pitch:
+                    continue
+                if not (onset - 1.0 - tol <= candidat[1] <= onset + tol):
+                    continue
+                distance = abs(candidat[1] - onset)
+                if meilleur is None or distance < meilleur[0]:
+                    meilleur = (distance, index)
+            if meilleur is not None:
+                libres.remove(meilleur[1])
+                consommees += 1
+        restes_test = libres
+        t -= consommees
+    tick, cause = premiere_divergence_import(reference, test, tol, avec_voix, avec_duree)
+    return {
+        "ref": r,
+        "test": t,
+        "n1": n1,
+        "n2": n2,
+        "n2d": n2d,
+        "n2v": n2v,
+        "exact": bool(r and r == t == n1 == n2v),
+        "tick": tick,
+        "cause": cause,
+        "restes_ref": len(restes_ref),
+        "restes_test": len(restes_test),
+    }
+
+
 def compare(
     reference: list[tuple], test: list[tuple], grid: float = GRID, tol: float = TOL
 ) -> dict:

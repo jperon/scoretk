@@ -86,7 +86,7 @@ use midifile::{decode_meta_text, meta, EventKind, MidiFile, UNITS_PER_WHOLE};
 use timesigmap::{fraction_from_ticks, TimeSigMap, Timesig};
 
 /// Options d'import MIDI (`MidiOperations`) et nombre de voix.
-pub use operations::{ImportOptions, VoiceCount};
+pub use operations::{ImportOptions, QuantValue, VoiceCount};
 pub use scoretk_midi_common::Error;
 
 /// Lit un fichier MIDI et renvoie le modèle pivot, avec les options par défaut

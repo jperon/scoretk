@@ -45,19 +45,35 @@ import xml.etree.ElementTree as ET
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import common  # noqa: E402
+import midi_notes  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lilypond"))
+import ly_notes  # noqa: E402
 
 GRID = 0.25
 TOL = 0.25
 LIMITE = 15
 
 
-def notes(path: Path, to_concert: bool = False) -> list[tuple[int, float, float, int]]:
+def notes(
+    path: Path, to_concert: bool = False, graces: list | None = None
+) -> list[tuple[int, float, float, int]]:
     """Notes d'un MusicXML partwise : hauteur, attaque, durée, voix (noires).
 
     `to_concert` ramène les hauteurs écrites aux hauteurs concert en
-    annulant `<transpose>` : c'est nécessaire face à un `.mscx` de référence
-    (MuseScore y stocke la hauteur concert), mais pas face à un MusicXML
-    exporté par MuseScore (qui contient la hauteur écrite).
+    annulant `<transpose>`. La comparaison se fait **toujours** en concert :
+    le MIDI ne porte que la hauteur entendue, et l'import invente un
+    instrument (donc une transposition) à partir du programme General MIDI ;
+    comparer la hauteur écrite des deux côtés ferait apparaître un décalage
+    qui n'existe pas dans le fichier (une référence `.ly` avec
+    `\transposition` face à un import qui choisit un autre instrument). Le
+    `.mscx` de référence stocke déjà la hauteur concert.
+
+    Quand ``graces`` est une liste, les notes ``<grace>`` y sont ajoutées
+    (hauteur, attaque de la note principale) et retirées de la comparaison :
+    un MIDI n'a pas de grâce, l'import ne peut pas la noter
+    (`importmidi_chord.cpp` n'a pas de module de grâces) et elle devient une
+    note normale avant le temps.
 
     Les chaînes de liaisons sont fusionnées en **une** note dont la durée est
     la somme des fragments (`<tie type="start"/>` … `<tie type="stop"/>`), des
@@ -108,6 +124,14 @@ def notes(path: Path, to_concert: bool = False) -> list[tuple[int, float, float,
                             # `(staff - 1) * VOICES + voice` ; la référence
                             # `.mscx` utilise une voix locale par portée.
                             voice = raw_voice - (staff - 1) * 4
+                            if child.find("grace") is not None:
+                                # Grâce : pas de durée, l'attaque est celle de
+                                # la note principale. Un MIDI n'en a pas.
+                                if graces is not None:
+                                    graces.append((midi, onset))
+                                if not is_chord_note:
+                                    offset += dur
+                                continue
                             tie_types = [tie.get("type") for tie in child.findall("tie")]
                             tie_stop = "stop" in tie_types
                             tie_start = "start" in tie_types
@@ -126,8 +150,10 @@ def notes(path: Path, to_concert: bool = False) -> list[tuple[int, float, float,
                     if not is_chord_note:
                         offset += dur
             tick += offset
-    return [(pitch, round(onset / GRID) * GRID, round(dur / GRID) * GRID, voice)
-            for pitch, onset, dur, voice in raw]
+    return midi_notes.fusionner_unissons(
+        [(pitch, round(onset / GRID) * GRID, round(dur / GRID) * GRID, voice)
+         for pitch, onset, dur, voice in raw]
+    )
 
 
 DUREES = {
@@ -233,8 +259,10 @@ def mscx_notes(path: Path) -> list[tuple[int, float, float, int]]:
         racine[index] = debut
         raw[debut][2] += note[2]
         continuations.add(index)
-    return [(note[0], round(note[1] / GRID) * GRID, round(note[2] / GRID) * GRID, note[3])
-            for index, note in enumerate(raw) if index not in continuations]
+    return midi_notes.fusionner_unissons(
+        [(note[0], round(note[1] / GRID) * GRID, round(note[2] / GRID) * GRID, note[3])
+         for index, note in enumerate(raw) if index not in continuations]
+    )
 
 
 def score(ref: list[tuple], got: list[tuple]) -> float:
@@ -288,6 +316,50 @@ def upstream_test_options(tests_dir: Path) -> dict[str, list[str]]:
         result.setdefault(nom, []).append(
             "--midi-staff-split" if options else "--midi-no-staff-split"
         )
+    # Certains tests posent leurs options **dans le corps du TEST_F**, hors des
+    # helpers ci-dessus : `quantValue` (`Q_4`, `Q_32`…), `changeClef`,
+    # `doStaffSplit`, `simplifyDurations`, `maxVoiceCount`
+    # (`midiimport_tests.cpp:230-243, 349-379`). Sans elles, le test mesure une
+    # autre configuration d'import que sa référence.
+    for bloc_match in re.finditer(r"TEST_F\(\s*MidiImportTests\s*,\s*\w+\s*\)\s*\{", texte):
+        debut = bloc_match.end()
+        profondeur = 1
+        index = debut
+        while index < len(texte) and profondeur:
+            if texte[index] == "{":
+                profondeur += 1
+            elif texte[index] == "}":
+                profondeur -= 1
+            index += 1
+        bloc = texte[debut:index]
+        nom = re.search(r'midiFile(?:Path)?\(\s*(?:u)?"([^"]+)"', bloc) or re.search(
+            r'String\s+midiFile\s*\(\s*(?:u)?"([^"]+)"', bloc
+        )
+        if not nom:
+            continue
+        options = result.setdefault(nom.group(1), [])
+        # Helpers appelés avec une **variable** (`dontSimplify(midiFile…)`) :
+        # les options du helper s'ajoutent à celles du corps.
+        if re.search(r"dontSimplify\(", bloc):
+            options += ["--midi-no-simplify", "--midi-voices", "1", "--midi-no-staff-split"]
+        elif re.search(r"simplification\(", bloc):
+            options += ["--midi-no-staff-split", "--midi-voices", "1"]
+        elif re.search(r"voiceSeparation\(", bloc):
+            options += ["--midi-no-staff-split"]
+        for quant in re.findall(r"QuantValue::Q_(\d+)", bloc):
+            options += ["--midi-quant", quant]
+        if re.search(r"changeClef\.setDefaultValue\(\s*false", bloc):
+            options.append("--midi-no-change-clef")
+        if re.search(r"doStaffSplit\.setDefaultValue\(\s*false", bloc):
+            options.append("--midi-no-staff-split")
+        if re.search(r"doStaffSplit\.setDefaultValue\(\s*true", bloc):
+            options.append("--midi-staff-split")
+        if re.search(r"simplifyDurations\.setDefaultValue\(\s*false", bloc):
+            options.append("--midi-no-simplify")
+        for voix in re.findall(
+            r"maxVoiceCount\.setDefaultValue\(\s*MidiOperations::VoiceCount::V_(\d)", bloc
+        ):
+            options += ["--midi-voices", voix]
     return result
 
 
@@ -357,6 +429,29 @@ def identifiants_lilypond(chemins: list[Path]) -> list[tuple[str, Path]]:
     return out
 
 
+def a_des_repetitions(ly: Path) -> bool:
+    """Vrai si la source `.ly` (et ses inclusions directes) contient une reprise.
+
+    Le MIDI de LilyPond est **déplié**, la partition écrite non : comparer les
+    notes d'une source à reprise compterait chaque passage repris comme des
+    notes supplémentaires. `ly_notes.a_des_repetitions` porte la règle, comme
+    pour l'oracle LilyPond ; on lui concatène les inclusions directes du
+    dossier (meilleur effort, sans résolution LilyPond).
+    """
+    try:
+        texte = ly.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    for nom in re.findall(r'\\include\s+"([^"]+)"', texte):
+        inclus = ly.parent / nom
+        if inclus.exists():
+            try:
+                texte += inclus.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                pass
+    return ly_notes.a_des_repetitions(texte)
+
+
 def paires_lilypond() -> list[tuple[str, Path, Path]]:
     """Les partitions LilyPond écrivent `.midi`, pas `.mid`.
 
@@ -382,6 +477,16 @@ def main() -> None:
         default=[],
         help="argument ajouté à chaque conversion scoretk (reproductible)",
     )
+    ap.add_argument(
+        "--ly-arg",
+        action="append",
+        default=[],
+        help=(
+            "argument ajouté seulement aux conversions dont la référence est "
+            "un .ly (les notes de la source ne sont pas simplifiées : "
+            "--midi-no-simplify compare la notation écrite)"
+        ),
+    )
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -403,6 +508,13 @@ def main() -> None:
             got_xml, ref_xml = d / "got.musicxml", d / "ref.musicxml"
             row = {"id": ident, "mid": str(mid), "ref": str(ref), "score": 0.0}
             exclu = False
+            if ref.suffix == ".ly" and a_des_repetitions(ref):
+                # MIDI déplié, source écrite une fois : hors comparaison note
+                # à note (comme N2 de l'oracle LilyPond).
+                common.marquer_exclu(row, str(ref))
+                row["raison_exclusion"] = "reprise"
+                exclu = True
+            graces: list[tuple[int, float]] = []
             if ref.suffix == ".mscx":
                 try:
                     a = mscx_notes(ref)
@@ -419,22 +531,45 @@ def main() -> None:
                     row["erreur"] = "conversion reference"
                 else:
                     try:
-                        a = notes(ref_xml)
+                        a = notes(ref_xml, to_concert=True, graces=graces)
                     except Exception as exc:
                         a = []
                         row["erreur"] = f"reference : {exc}"[:200]
             if not exclu:
-                extra = list(args.extra_arg) or None
+                extra = list(args.extra_arg)
+                if ref.suffix == ".ly":
+                    extra += args.ly_arg
                 nom = ident[3:] if ident.startswith("up-") else ""
                 if nom in test_options:
-                    extra = (extra or []) + test_options[nom]
+                    # Un test peut rejouer une option déjà passée par
+                    # `--extra-arg` (`--midi-no-simplify`) : le CLI refuse le
+                    # doublon, on déduplique en gardant l'ordre.
+                    extra = list(dict.fromkeys(extra + test_options[nom]))
+                extra = extra or None
                 code_mid = run(args.binary, mid, got_xml, extra)
                 if common.est_non_pris_en_charge(code_mid):
                     common.marquer_exclu(row, str(mid))
                 elif code_mid == 0:
                     try:
-                        b = notes(got_xml, to_concert=ref.suffix == ".mscx")
-                        row.update(ref_notes=len(a), got_notes=len(b), score=round(score(a, b), 4))
+                        b = notes(got_xml, to_concert=True)
+                        releve = midi_notes.releve_import(
+                            a, b,
+                            avec_voix=ref.suffix == ".mscx",
+                            avec_duree=ref.suffix == ".mscx",
+                            graces=graces,
+                        )
+                        row.update(
+                            ref_notes=len(a),
+                            got_notes=len(b),
+                            score=round(releve["n2v"] / len(a), 4) if a else 1.0,
+                            n1=releve["n1"],
+                            n2=releve["n2"],
+                            n2d=releve["n2d"],
+                            n2v=releve["n2v"],
+                            exact=releve["exact"],
+                            tick=releve["tick"],
+                            cause=releve["cause"],
+                        )
                     except Exception as exc:
                         row["erreur"] = str(exc)[:200]
                 else:
@@ -447,18 +582,31 @@ def main() -> None:
     rows = common.filtrer(rows)
     ok = [r for r in rows if "erreur" not in r]
     total = sum(r.get("ref_notes", 0) for r in ok)
-    found = sum(r.get("ref_notes", 0) * r["score"] for r in ok)
+    found = sum(r.get("n2v", r.get("ref_notes", 0) * r["score"]) for r in ok)
+    exact = [r for r in ok if r.get("exact")]
+    causes: dict[str, list[dict]] = {}
+    for r in ok:
+        if r.get("exact"):
+            continue
+        causes.setdefault(r.get("cause", "?"), []).append(r)
     resume = [f"# MIDI import oracle — {len(ok)}/{len(rows)} files",
+              f"# Exact (pitch, onset, duration, voice): {len(exact)}/{len(ok)}"
+              f" ({100.0*len(exact)/len(ok):.1f} %)" if ok else "",
               f"# N (pitch+onset+duration+voice, Q{int(1/GRID)}, tol {TOL}): "
               f"{found/total:.4f}" if total else "",
               f"# {common.ligne_resume(exclus)}",
-              "", "| File | Ref notes | Got notes | Score |", "| --- | ---: | ---: | ---: |"]
-    for r in sorted(rows, key=lambda r: r["score"]):
+              "", "| Première divergence | Fichiers | Exemple |", "| --- | ---: | --- |"]
+    for cause, fichiers in sorted(causes.items(), key=lambda item: (-len(item[1]), item[0])):
+        resume.append(f"| {cause} | {len(fichiers)} | `{fichiers[0]['id']}` |")
+    resume += ["", "| File | Ref notes | Got notes | N2d | Cause |", "| --- | ---: | ---: | ---: | --- |"]
+    for r in sorted(rows, key=lambda r: (r.get("exact", False), r["score"])):
         resume.append(f"| {r['id']} | {r.get('ref_notes', 0)} | {r.get('got_notes', 0)} | "
-                      f"{r['score']:.4f} |")
+                      f"{r.get('n2d', 0)} | {r.get('cause', '')} |")
     (out / "resume.md").write_text("\n".join(resume) + "\n", encoding="utf-8")
     common.avertir(exclus)
     print("\n".join(l for l in resume if l.startswith("#")))
+    for cause, fichiers in sorted(causes.items(), key=lambda item: (-len(item[1]), item[0])):
+        print(f"| {cause} | {len(fichiers)} | `{fichiers[0]['id']}` |")
 
 
 if __name__ == "__main__":
