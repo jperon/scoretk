@@ -4751,6 +4751,15 @@ fn repeat_percent_sous_unfold_repeats_est_joue() {
     assert_eq!(score.measures.len(), 4);
 }
 
+#[test]
+fn repeat_tremolo_sous_unfold_repeats_est_joue() {
+    // `\unfoldRepeats` transforme `TremoloRepeatedMusic` en
+    // `UnfoldedRepeatedMusic` : le corps est rejoué n fois avec ses durées.
+    let score = lire("\\unfoldRepeats \\repeat tremolo 4 { c16 d16 } e2");
+    assert_eq!(hauteurs(&score), vec![60, 62, 60, 62, 60, 62, 60, 62, 64]);
+    assert_eq!(score.measures.len(), 1);
+}
+
 /// `lily/parser.yy` `context_prefix` (l. 1686-1690) : `\new Voice` crée une
 /// voix **dans le Staff courant**, pas une portée sœur. Les contextes Voice
 /// meurent à la fin de leur musique : quatre `\new Voice` successifs peuvent

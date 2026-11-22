@@ -948,10 +948,22 @@ impl<'a> Interpreter<'a> {
                     }
                 }
             }
-            // Le facteur de trémolo est déjà appliqué aux durées par le
-            // parseur (§4.2.2) : ce bras ne peut survenir que sur un arbre
-            // construit à la main ; on lit alors le corps tel quel.
-            RepeatKind::Tremolo => self.walk(body),
+            // Sans `\unfoldRepeats`, le facteur de trémolo est déjà appliqué
+            // aux durées par le parseur (§4.2.2) : ce bras ne peut survenir
+            // que sur un arbre construit à la main, on lit le corps tel quel.
+            // Sous `\unfoldRepeats`, `unfold-repeats` (`scm/music-functions.scm`)
+            // en fait `UnfoldedRepeatedMusic` : le corps est joué n fois.
+            RepeatKind::Tremolo => {
+                if self.unfold_repeats {
+                    let reference = self.octave;
+                    for _ in 0..count.max(1) {
+                        self.octave = reference;
+                        self.walk(body);
+                    }
+                } else {
+                    self.walk(body);
+                }
+            }
             RepeatKind::Volta => {
                 let start_octave = self.octave;
                 let blocks = alternatives.len();

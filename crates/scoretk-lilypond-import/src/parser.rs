@@ -2902,13 +2902,19 @@ impl<'a> Parser<'a> {
             });
         }
         let body = Box::new(self.parse_music());
-        if kind == RepeatKind::Tremolo {
+        if kind == RepeatKind::Tremolo && !self.playback_unfold_repeats {
             // Notation Reference §4.2.2 : « The duration of the tremolo equals
             // the duration of the braced expression multiplied by the number
             // of repeats ». Le MIDI de LilyPond joue les deux notes du corps
             // tenues `n ×` leur durée écrite, sans nouvelles attaques. Étirer
             // les durées conserve les hauteurs et décale correctement la musique
             // qui suit, sans déplier le trémolo en n passages.
+            //
+            // Sous `\unfoldRepeats`, `scm/music-functions.scm`
+            // (`unfold-repeats`, type `tremolo`) remplace au contraire le
+            // trémolo par `UnfoldedRepeatedMusic` : le corps est joué n fois
+            // avec ses durées écrites. On garde alors le contexte pour que
+            // l'interpréteur le rejoue.
             let mut body = *body;
             let factor = Fraction::from_integer(count.max(1) as i64);
             scale_music(&mut body, &factor);
