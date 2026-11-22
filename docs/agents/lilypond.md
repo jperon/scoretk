@@ -5173,3 +5173,38 @@ majorité des gains de grace viennent de la mise à jour de l'oracle sur
 `master` (`n2_grace` désormais admis dans `exact`), pas du lecteur. Restent 81
 `attaque_decalee`, 61 `octave`, 60 `notes_manquantes`, 47 `notes_supp`, 29
 `sortie_vide`, 4 `transposition`, 3 `autre`, 1 `echec`.
+
+## `ra` — notes manquantes et octave (lot 84,6 %)
+
+Quatre causes, test réduit échouant d'abord pour chacune, mesurées par rapport
+au bâti de `master` `00fee24d` (rebasé, sans ces corrections) :
+
+1. **Octave relative enchaînée** (`seconde_voix_relative_heritant_de_la_premiere`) :
+   `lily/music-sequence.cc:143-158` enchaîne les branches d'un `<< … >>`, et
+   `lily/relative-octave-check.cc` règle les marques d'octave. L'état relatif
+   final est mémorisé par l'interpréteur avant que le `Context::Relative`
+   englobant ne le restaure, puis transmis à la voix/portée suivante.
+   Affinage : un drapeau `chain` sur `Context::Relative`, posé seulement quand
+   le `\\relative` enveloppait directement un `<< … >>`, limite l'héritage aux
+   branches distribuées d'un même `<< >>` ; un `\\relative` propre à une
+   branche ou une portée sans `\\relative` repart en octave absolue.
+2. **`\\cueDuring` / `\\cueDuringWithClef`** (`ly/music-functions-init.ly:56-60,545-574`) :
+   la musique déclarée par `\\addQuote` est jouée à la place des silences de
+   l'argument principal, tronquée à sa durée. Dix fichiers de citation gagnent
+   des notes (les octaves restantes sont un autre sujet).
+3. **`\\*` et `\\%`** (`ly/music-functions-init.ly:742-751`) : raccourcis de
+   `\\repeat unfold` et `\\repeat percent`. Gain : `repeat-short-function-names`.
+4. **`\\textMark` / `\\textEndMark`** (`ly/music-functions-init.ly:2365-2373`) :
+   un seul argument de markup ; la durée nue suivante reste de la musique. Un
+   argument `\\markup` sans accolades est lu par `parse_markup_text`, pas
+   `skip_braced`, sinon `text-end-mark-break-visibility` et
+   `script-custom-definition` régressaient. Gain : `text-mark-marklengthon`.
+
+Mesures ciblées : 5 gains exacts / 2 pertes exactes pour les causes 1–2 avant
+affinage, ramenées à 17 gains / 0 perte après restriction du drapeau `chain` ;
+2 gains / 0 perte pour les causes 3–4 après correction du markup.
+
+La mesure complète (`/tmp/ly-ra-final7`) donne **1459 exacts sur 1724 (84,6 %)**,
+**18 fichiers gagnés et aucune perte** par rapport au bâti `master` `00fee24d`
+(1441). Restent 88 `attaque_decalee`, 54 `notes_manquantes`, 52 `notes_supp`,
+38 `octave`, 28 `sortie_vide`, 4 `transposition`, 1 `autre`, 1 `echec`.
