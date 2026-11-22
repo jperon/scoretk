@@ -35,6 +35,7 @@ use super::timesigmap::{fraction_from_ticks, TimeSigMap};
 
 mod detect;
 mod filter;
+mod split;
 pub mod voice;
 
 /// N-olet candidat pendant la détection (`MidiTuplet::TupletInfo`).
@@ -182,7 +183,17 @@ pub fn detect_and_assign_early(
             bar_start,
             basic_quant,
         );
-        split_first_tuplet_chords(track, &mut tuplets);
+        // `findTuplets` (`importmidi_tuplet.cpp:1116-1119`) : notes triées par
+        // hauteur, n-olets triés par hauteur moyenne, puis partage des
+        // premiers accords — seulement si plus d'une voix de n-olet est
+        // permise (`tupletVoiceLimit() > 1`, `importmidi_tuplet_voice.cpp:35-49`).
+        let allowed = options.max_voice_count.limit();
+        let tuplet_voice_limit = if allowed == 1 { 1 } else { allowed - 1 };
+        if tuplet_voice_limit > 1 {
+            split::sort_notes_by_pitch(track, bar_start, bar_end);
+            split::sort_tuplets_by_average_pitch(track, &mut tuplets);
+            split::split_first_tuplet_chords(track, &mut tuplets);
+        }
         let prev_bar_start = (bar_start - bar_len).max(Fraction::ZERO);
         let mut back_tied = voice::find_back_tied_tuplets(
             track,
@@ -261,40 +272,6 @@ fn add_chords_between_tuplet_notes(
     }
     chords.sort();
     chords
-}
-
-/// `splitFirstTupletChords`/`splitTupletChord` (`importmidi_tuplet.cpp:401-440`) :
-/// quand deux n-olets partagent leur premier accord, celui-ci est scindé en
-/// deux accords à la même date — le premier garde une note (pour le n-olet
-/// précédent), l'autre les notes restantes (pour le n-olet courant).
-fn split_first_tuplet_chords(track: &mut MTrack, tuplets: &mut [TupletInfo]) {
-    for now in 0..tuplets.len() {
-        if tuplets[now].first_chord_index != 0 || tuplets[now].chords.is_empty() {
-            continue;
-        }
-        let key = tuplets[now].chords[0];
-        let Some(previous) = (0..now).rev().find(|index| {
-            tuplets[*index].first_chord_index == 0 && tuplets[*index].chords.first() == Some(&key)
-        }) else {
-            continue;
-        };
-        let Some(original) = track.chords.get(key).cloned() else {
-            continue;
-        };
-        let mut first = original.clone();
-        if first.notes.is_empty() {
-            continue;
-        }
-        first.notes.truncate(1);
-        let mut rest = original;
-        rest.notes.remove(0);
-        if rest.notes.is_empty() {
-            continue;
-        }
-        let new_key = track.chords.insert(key.0, first);
-        track.chords.insert_at(key, rest);
-        tuplets[previous].chords[0] = new_key;
-    }
 }
 
 /// Version de `addChordsBetweenTupletNotes` utilisée à l'étape précoce :

@@ -428,9 +428,9 @@ measures), so the source-notes comparison is pitch + onset.
 
 | Lot | Files | Exact | N1 % | N2 % | N2d % | N2v % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| upstream `.mscx` | 96 | 92 (95,8 %) | 100,00 | 99,88 | 99,88 | 97,77 |
+| upstream `.mscx` | 96 | 93 (96,9 %) | 100,00 | 99,88 | 99,88 | 98,00 |
 | LilyPond `.ly` (87 excluded) | 932 | 914 (98,1 %) | 99,95 | 99,84 | — | — |
-| all comparable | 1 028 | **1 006 (97,9 %)** | **99,95** | **99,84** | — | — |
+| all comparable | 1 028 | **1 007 (98,0 %)** | **99,95** | **99,84** | — | — |
 
 Percentages are weighted by the reference notes (100 028). On the `.mscx` lot
 the exactness includes voice and duration; on the `.ly` lot it is
@@ -452,9 +452,8 @@ unmatched note with the finest cause: `note sup` (extra note),
 | --- | ---: | --- |
 | `attaque` | 8 | `up-human_4-4` |
 | `note sup` | 8 | `ly-lily-30ec2d9a` |
-| `voix` | 3 | `up-tuplet_2_voices_3_5_tuplets` |
+| `voix` | 2 | `up-tuplet_2_voices_tuplet_non` |
 | `octave` | 2 | `ly-Kryshachok` |
-| `durée` | 1 | `up-quant_dotted_4th` |
 | `note manquante` | 1 | `ly-02_01_CommentLeSaisJe` |
 
 Three causes explain almost all of them, and two are measurement gaps rather
@@ -476,13 +475,16 @@ than importer defects:
   the beat. The oracle now pairs each reference grace with the nearest
   unmatched import note of the same pitch before the main note, as the
   LilyPond oracle does.
-- **remaining real defects** (not fixed): the two `tuplet_*` tests need
-  `MidiTuplet::splitFirstTupletChords` (`importmidi_tuplet.cpp`), which splits
-  the first chord of overlapping tuplets into separate voices: the MIDI has
-  two notes on the *same* tick (64 and 67 at 0.0, channel 0) and
-  `collectChords` puts them in one chord, while MuseScore's reference writes
-  them in two voices. Our port keeps one voice, hence the `voix` group. In
-  addition `tuplet_3_5_7_tuplets` emits **ultra-short durations**
+- **`splitFirstTupletChords`** (fixed, new module `tuplet/split.rs`): the
+  first chord of overlapping tuplets is split at the same tick — the earlier
+  tuplet keeps the first note, the later the rest — after sorting the notes
+  by pitch and the tuplets by average pitch (`importmidi_tuplet.cpp:224-249,
+  401-440`, called at `:1116-1119`). **MuseScore 4.7.4 sorts the notes
+  descending** (`n1.pitch > n2.pitch`) while the 5.0.0 snapshot sorts them
+  ascending: the 4.7.4 order is ported, since it alone reproduces
+  `tuplet_2_voices_3_5_tuplets` (67 in the triolet, 64 in the quintuplet).
+  That test is now exact, and `voix` drops from 3 to 2 files. The two remaining
+  tuplet tests need **ultra-short durations**
   (9 ticks) for the fifth-tuplet notes: a 15-tick note lengthened by
   `lengthenTooShortNotes` (`importmidi.cpp:89-100`) is divided a second time
   by the tuplet ratio at export, which gives `<duration>` under the minimum.
