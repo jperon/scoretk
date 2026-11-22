@@ -2450,6 +2450,7 @@ impl<'a> Parser<'a> {
 
     /// Commande musicale.
     fn parse_command(&mut self) -> Music {
+        eprintln!("DEBUG CMD {:?}", self.peek());
         let Some(Token {
             kind: Kind::Command,
             text: name,
@@ -2486,6 +2487,7 @@ impl<'a> Parser<'a> {
         match obsolete_music_command(&name).unwrap_or(name.as_str()) {
             "fixed" => {
                 let reference = self.parse_optional_pitch();
+                eprintln!("DEBUG FIXED ref {:?} next {:?}", reference, self.peek());
                 Music::Context(Context::Fixed {
                     reference,
                     music: Box::new(self.parse_music()),
@@ -3167,8 +3169,8 @@ impl<'a> Parser<'a> {
                 self.saute_pitch_secondaire();
                 principale
             }
-            "cueDuring" | "cueDuringWithClef" => {
-                // `ly/music-functions-init.ly:545-574` : la citation est
+            "cueDuring" | "cueDuringWithClef" | "quoteDuring" => {
+                // `ly/music-functions-init.ly:545-574,2023-2032` : la citation est
                 // insérée dans une CueVoice ; le MIDI joue les notes de la
                 // citation pendant que l'argument principal (des silences)
                 // occupe le temps. On tronque la citation à la durée de cet

@@ -7013,3 +7013,23 @@ fn alternative_a_l_interieur_du_corps_de_reprise() {
         vec![60, 62]
     );
 }
+
+#[test]
+fn quote_during_joue_la_citation() {
+    // `ly/music-functions-init.ly:2023-2032` : `\quoteDuring` a la même
+    // sémantique MIDI que `\cueDuring`, sans direction ni armure.
+    let src = "\\version \"2.24.0\"\n\
+         src = \\fixed c' { g4 g4 g4 g4 }\n\
+         \\addQuote srcId { \\src }\n\
+         \\new Staff \\fixed c' { c4 \\quoteDuring \"srcId\" { r4 r4 r4 r4 } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 67, 67, 67, 67]
+    );
+    assert!(score
+        .notes
+        .iter()
+        .filter(|n| n.pitch == 67)
+        .all(|n| n.small));
+}
