@@ -3844,6 +3844,55 @@ files: N2 17,745 → 19,369 for 37,332 reference notes. No file becomes exact
 `SchubertF-D827-NachtUndTraeume` 426 → 752, keep other causes); no exact file
 regresses.
 
+### Classification of the 465 non-exact files (before this pass)
+
+The `mut` set outside the obsolete-source basket had 465 non-exact files.
+Symptoms overlap (a file can be both `octave` and `notes_supp`); the first
+table groups by the oracle's primary flag, the second counts the constructs
+present in the source and its direct includes. `ne`/`ex` are the files that
+were non-exact/exact with the construct **before** this pass; a construct is a
+cause only when the reader's handling is actually wrong.
+
+| Primary flag | Files |
+| --- | ---: |
+| `attaque_decalee` | 151 |
+| `octave` + `notes_manquantes` | 85 |
+| `notes_supp` | 64 |
+| `octave` | 57 |
+| `octave` + `notes_supp` | 47 |
+| `attaque_decalee` + `notes_supp` | 42 |
+| `octave` + `transposition` | 16 |
+| `sortie_vide` / `autre` | 3 |
+
+| Construct | ne | ex | Ratio ne/(ne+ex) |
+| --- | ---: | ---: | ---: |
+| `\repeat percent` | 16 | 0 | 1.00 |
+| `\afterGrace` | 25 | 0 | 1.00 |
+| `\repeat tremolo` | 25 | 1 | 0.96 |
+| `\ottava` | 53 | 12 | 0.82 |
+| `\tag` | 14 | 5 | 0.74 |
+| `\arpeggio` | 67 | 29 | 0.70 |
+| `\times` | 130 | 84 | 0.61 |
+| `\tuplet` | 61 | 38 | 0.62 |
+| `\grace`/`\appoggiatura` | 130 | 124 | 0.51 |
+| `\change` (cross-staff) | 144 | 148 | 0.49 |
+| `\repeat volta` | 205 | 325 | 0.39 |
+| `\partial` | 146 | 377 | 0.28 |
+| `\partcombine` | 7 | 70 | 0.09 |
+
+The two largest **confirmed reader defects** are `\repeat percent` (16
+files, none exact) and `\repeat tremolo` under `\unfoldRepeats` (25 files,
+one exact); they are fixed above. `\afterGrace` is 25 files with no exact
+file, but its playback places the notes at 1.635/1.693 where the following
+note starts at 2.0; MusicXML has no after-grace event, and the oracle's
+`<grace>` pairing attaches them to the following note, so this cannot be
+fixed in the reader without turning the graces into ordinary notes. `\ottava`
+is not a cause: the reader writes the written pitch plus `<octave-shift>`, and
+the oracle applies that shift to obtain the played pitch (probe: LilyPond MIDI
+keeps C4 under `\ottava 1`). `\partcombine` is 77 files in total but 70 are
+exact; only 7 are non-exact, far below the two causes, so its MIDI behaviour
+was not ported.
+
 ### Remaining `notes_supp` and `attaque_decalee` files
 
 `notes_supp` is now 69 primary files (176 files carry the flag), dominated by
