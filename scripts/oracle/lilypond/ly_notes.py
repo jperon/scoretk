@@ -464,7 +464,17 @@ def compare(
             "graces_test": n_gr_test,
             "graces_match": n_gr_match,
         })
-    resultat["exact"] = bool(r and r == t == n1 == n2)
+    # Exactitude : la grille ordinaire (Q16) ou la grille « graces appariées ».
+    # LilyPond écrit chaque grâce à un temps réel distinct *avant* l'attaque
+    # logique (`grace-iterator.cc`, `midi-walker.cc`) ; un MusicXML ne peut pas
+    # exprimer ce décalage (la grâce ne prend pas de temps logique). La règle
+    # n2_grace (attaque logique de la note principale) est donc l'autre modèle
+    # fidèle : un fichier parfait sous l'un des deux est exact. Les deux
+    # exigent le même nombre de notes et le même multiset de hauteurs.
+    exact = n2 == r
+    if graces is not None:
+        exact = exact or resultat.get("n2_grace") == r
+    resultat["exact"] = bool(r and r == t == n1 and exact)
     resultat["drapeaux"] = drapeaux(resultat)
     return resultat
 
@@ -612,6 +622,7 @@ def selftest() -> None:
         assert brut["n2"] == 2, brut
         assert rule["n2"] == 2 and rule["graces_match"] == 2, rule
         assert rule["n2_grace"] == 4 and rule["pct_n2_grace"] == 100.0, rule
+        assert rule["exact"], rule
         # Une grâce absente du candidat ne doit pas être inventée.
         absent = compare(ref_g, [(60, 0.25, 1.0, 0), (64, 1.25, 1.0, 0)],
                          graces=[])
