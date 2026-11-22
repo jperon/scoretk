@@ -388,6 +388,32 @@ fn looks_like_mode(word: &str) -> bool {
 pub fn parse_key(text: &str) -> Option<ParsedKey> {
     let mut parts = text.split_whitespace();
     let first = parts.next()?;
+    // Un champ ne contenant que des paramètres (`K:clef=treble-8`,
+    // `[K:octave=-1]`) n'a pas de tonique. `abc2xml.py::doClef` (1736-1744)
+    // lit quand même `clef=` ; ABC 2.1 §4.6 (spec 921-933) donne à ce
+    // paramètre le même sens que dans un champ avec tonique.
+    let first_name = first
+        .split_once('=')
+        .map(|(name, _)| name.to_ascii_lowercase());
+    if first_name.as_deref().is_some_and(|name| {
+        matches!(
+            name,
+            "clef" | "transpose" | "octave" | "stafflines" | "middle" | "m"
+        )
+    }) {
+        let parameters = std::iter::once(first)
+            .chain(parts)
+            .filter_map(|part| {
+                let (name, value) = part.split_once('=')?;
+                Some((name.to_ascii_lowercase(), value.to_owned()))
+            })
+            .collect();
+        return Some(ParsedKey {
+            key: KeySig::new(Key::C),
+            exotic_mode: None,
+            parameters,
+        });
+    }
     // Port de `abc2xml.py` 269, `doHeaderField`, branche `K:` (lignes 1808-1820)
     // : la regex `([A-G][#b]?)\s*([a-zA-Z]*)` lit la tonique **et** le mot de
     // mode qui la suit, même séparés par un espace. `K:E Minor` est donc
