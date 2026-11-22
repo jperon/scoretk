@@ -5902,3 +5902,32 @@ Mesure complète (`/tmp/ly-ra-final`) : **1532 exacts sur 1724 (88,9 %)**, 27
 gains et aucune perte par rapport au bâti `master` `7d31c559` (1505). Restent
 71 `attaque_decalee`, 46 `notes_supp`, 28 `octave`, 21 `notes_manquantes`, 17
 `sortie_vide`, 5 `transposition`, 4 `autre`.
+
+## Sous-classification des 192 écarts `ra` par première divergence
+
+`subdivise.py` (sur `/tmp/ly-ra-final`, 1724 fichiers, 192 non exacts) classe
+chaque écart par le constructeur relevé autour du premier tick divergent. Le
+classement est croisé avec le drapeau principal de `mesure.py` :
+
+| Constructeur | Total | attaque_decalee | notes_supp | octave | notes_manquantes | sortie_vide |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| markup/tweak | 38 | 18 | 17 | 7 | 8 | 1 |
+| relative | 30 | 10 | 16 | 3 | 4 | 4 |
+| repeat/volta | 21 | 9 | 14 | 0 | 5 | 0 |
+| voices | 20 | 3 | 11 | 6 | 2 | 1 |
+| grace | 18 | 16 | 4 | 0 | 1 | 0 |
+| transpose/clef/key | 17 | 4 | 10 | 8 | 2 | 0 |
+| scheme | 11 | 3 | 2 | 2 | 4 | 1 |
+| cue/quote | 9 | 0 | 2 | 0 | 3 | 1 |
+| include | 7 | 1 | 0 | 0 | 0 | 5 |
+| tuplet | 6 | 3 | 1 | 1 | 3 | 0 |
+| score/book | 5 | 1 | 5 | 0 | 0 | 0 |
+| sans-construct | 5 | 2 | 4 | 0 | 0 | 0 |
+| lyrics | 5 | 1 | 0 | 0 | 0 | 4 |
+
+Les colonnes se recoupent (un fichier porte plusieurs drapeaux). Par forme
+d'écart : 44 fichiers n'ont **que** des notes supplémentaires (toutes les notes
+de référence sont présentes), 28 que des notes manquantes, 119 sont mixtes.
+Les sous-groupes sont traités par taille décroissante ; les exclusions
+(artefacts d'oracle, tests de mise en page, hors sous-ensemble) sont justifiées
+au fur et à mesure pour garder un dénominateur honnête.
