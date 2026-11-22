@@ -3907,7 +3907,7 @@ the obsolete-source basket and by octave/transposition errors:
 | `troldhaugen.ly` | 3 397 | octave |
 | `rach-prelude23-05.ly` | 2 445 | octave |
 
-`attaque_decalee` is 223 files. The first group is the same obsolete-source
+`attaque_decalee` is 222 files. The first group is the same obsolete-source
 artifact (`violin_concerto_1` 11 593, `Violinsonata_No9_1` 6 176,
 `LVB_Sonate_57_3` 5 363, `Violinsonata_No7_1` 2 794, the three
 `Cellosonata_No3` movements); then large `\unfoldRepeats` works with
