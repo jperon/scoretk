@@ -567,3 +567,54 @@ Core-identical **66 → 68**. Eight files improved, **no file lost lines**:
 `Vivaldi … 10._Sicut_erat_in_principio` 223 → 187 (section-break cause).
 `cargo test --workspace`, `cargo fmt --all -- --check` and workspace clippy
 were green at both commits.
+
+## 28. Rebase, creator metaTags and a rejected tuplet cause (2026-11-22)
+
+### 28.1 Rebase
+
+The rebase on master conflicted in `scripts/oracle/common.py`: master had
+added `raison_hors_lecteur`/`commandes_obsoletes` and the generic
+`marquer_exclu` exclusion path. Both selftest blocks were kept. The empty-score
+basket now reuses `marquer_exclu` with `raison_exclusion = "empty score"`
+instead of a parallel `vide` flag; `filtrer` is master's single-path version
+and `noms_vides` selects by reason. `python3 -I scripts/oracle/common.py
+selftest`, the MIDI oracle test modules, workspace tests, fmt and clippy pass.
+
+The `None` branch of `mid_measure_clef` is now justified in a comment from
+`findAndExportClef` (`exportmusicxml.cpp:7699-7714`): at tick 0 the cs2/default
+fallback of `write_measure_clefs` has already emitted the clef, while later
+measures can legitimately write an `after-barline` clef.
+
+### 28.2 Poet and translator creators
+
+`identification` (`exportmusicxml.cpp:7237-7244`) iterates a `std::set` of
+creator metaTags — `arranger`, `composer`, `lyricist`, `poet`, `translator` —
+so the order is alphabetical. The pivot model folded `poet` into `lyricist`
+and dropped `translator`; both 3.x and 4.x readers are fixed, and the writer
+emits the five creators in order. The 4.x Vivaldi scores carry `poet` =
+`Psaume 109` and `translator` = `fredipi`; other scores only carry `lyricist`.
+The reduced test `createurs_poet_et_translator` (in the export crate) was
+written first and failed before the fix.
+
+Measurement (`target/xml-sec/` pre-fix against `target/xml-creators2/`
+post-fix, same 173-file manifest): core-identical stays **68/173** —
+`<identification>` is outside the musical core — N1/N2 remain 1.0000, 0
+XSD-invalid. At full level, **30 files lose 58 diff lines** (three files become
+fully identical); no core file changes. Five files show a higher full-level
+*sequence*-diff count because the added line changes `similar`'s alignment
+elsewhere: their added creator lines are verbatim from the reference, and the
+order-independent multiset difference strictly decreases (e.g. 9612 → 9611 on
+`01- Once in royal - Violons 1 et 2`), so there is no real regression.
+
+### 28.3 Rejected cause: tuplet bracket inside a longer beam
+
+`Tuplet::calcHasBracket` (`tuplet.cpp:204-275`) drops the bracket only when the
+tuplet starts and ends its beam. A reduced test was written first and the
+port was changed to keep the bracket when the reconstructed beam showed
+`continue` on either end. The full measurement (`target/xml-tuplet/`) went
+from 68 to **63** core-identical with **12 files losing lines** (e.g. file 166
+went from 84 to 524): the reconstructed beam groups do not match MuseScore's
+`Beam` objects closely enough for that rule. The fix and its test were
+reverted (`62ba0b86`) after the measurement; this is why the class remains
+open. Any future fix should derive the beam boundaries from `BeamLayout`
+rather than from the per-element `<beam>` text.
