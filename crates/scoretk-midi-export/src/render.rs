@@ -1283,6 +1283,19 @@ fn render_chord(
     let mut before: Vec<usize> = Vec::new();
     let mut after: Vec<usize> = Vec::new();
     for (index, grace) in chord.grace_chords.iter().enumerate() {
+        // `Chord::graceNotesBefore(true)` / `graceNotesAfter(true)` filter out
+        // unplayable grace chords (`chord.cpp:2121,2142`) via
+        // `isChordPlayable()` (`chord.cpp:1383-1400`): the first note's PLAY
+        // property decides for the whole chord. An unplayable grace must not
+        // consume half of the main note's time (`layout_elements`).
+        let playable = grace
+            .chord
+            .notes
+            .first()
+            .is_none_or(|id| score.notes[id.index()].play);
+        if !playable {
+            continue;
+        }
         match grace.chord.grace {
             Some(GraceType::Grace8After | GraceType::Grace16After | GraceType::Grace32After) => {
                 after.push(index)
