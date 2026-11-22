@@ -1044,10 +1044,17 @@ impl<'a> Parser<'a> {
     /// une seule portée anonyme.
     fn parse_context_list(&mut self) -> Vec<GroupBlock> {
         let mut items = Vec::new();
+        // `\\` (VoiceSeparator) crée des `Voice` dans la portée courante, pas
+        // des contextes frères : `<< { … } \\ { … } >>` au niveau du `\score`
+        // est **une** portée à deux voix, alors que `<< { … } { … } >>` (idiome
+        // Mutopia) ouvre un contexte par élément (`lily/parser.yy`
+        // `simultaneous_music`/`context_prefix`). La distinction se perdrait
+        // en gardant `Music::Sim` seul.
+        let mut voix = false;
         while !self.at_end() && !self.at_double_angle_close() {
-            // `\\` sépare des contextes simultanés : il ne produit rien.
             if self.peek().is_some_and(|token| token.is_command("\\")) {
                 self.position += 1;
+                voix = true;
                 continue;
             }
             let before = self.position;
@@ -1059,6 +1066,9 @@ impl<'a> Parser<'a> {
         }
         if self.at_double_angle_close() {
             self.position += 2;
+        }
+        if voix {
+            return vec![anonymous_group(Music::Sim(items))];
         }
         self.score_groups(Music::Sim(items))
     }

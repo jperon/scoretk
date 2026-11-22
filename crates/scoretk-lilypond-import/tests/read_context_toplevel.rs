@@ -66,3 +66,26 @@ fn contexte_staff_de_haut_niveau_garde_ses_deux_voix() {
         "les deux voix de la portée"
     );
 }
+
+/// `<< { … } \\ { … } >>` au niveau du `\score` : `\\` (VoiceSeparator)
+/// crée des `Voice` dans la portée courante (`lily/parser.yy`
+/// `simultaneous_music`), donc **une** portée à deux voix ; `<< { … } { … } >>`
+/// sans `\\` (idiome Mutopia) ouvre un contexte par élément. Vérifié sur le
+/// MIDI de LilyPond 2.27 : un seul `ly.midi` track dans le premier cas, deux
+/// dans le second.
+#[test]
+fn double_antislash_au_niveau_du_score_fait_des_voix() {
+    let voix_source = "\\version \"2.24.0\"\n\
+        \\score { << { c'4 d' } \\\\ { e'4 f' } >> }";
+    let score = scoretk_lilypond_import::read_lilypond(voix_source).expect("lecture voix");
+    assert_eq!(score.parts.len(), 1, "une partie");
+    assert_eq!(score.staves.len(), 1, "une portée pour `\\\\`");
+    assert_eq!(voix(&score), vec![(0, 60), (0, 62), (1, 64), (1, 65)]);
+
+    let staves_source = "\\version \"2.24.0\"\n\
+        \\score { << { c'4 d' } { e'4 f' } >> }";
+    let score = scoretk_lilypond_import::read_lilypond(staves_source).expect("lecture staves");
+    assert_eq!(score.parts.len(), 2, "un contexte par élément sans `\\\\`");
+    assert_eq!(score.staves.len(), 2, "deux portées");
+}
+
