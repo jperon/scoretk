@@ -1054,3 +1054,29 @@ Baseline `target/xml-emptyattr/`: 144/173 core-identical (was 70 with the old no
 | notehead | 1 | 3 | `Angels_Carol__John_Rutter.mscz` | 3 |
 | dot | 2 | 2 | `01- Minuit chretien - Violons 1 et 2.mscz` | 1 |
 | dot |  |  | `06- Minuit chretien - Basson.mscz` | 1 |
+
+## 35. Empty `<attributes>` wrappers and the re-checked mmrest claim
+
+After the layout reclassification (§33/§34), the first divergence of 91 of
+the 103 files was an **empty** `<attributes></attributes>` wrapper left behind
+when its only child (`<staff-details print-object="no">`) had been removed.
+Such an envelope has no musical content: the core normalizer now prunes empty
+`<attributes>` recursively (unit test added). Full measurement
+`target/xml-layout/` → `target/xml-emptyattr/` on the same 173 output pairs:
+core-identical **70 → 144**, **95 files improved, 0 regressed**, N1/N2 1.0000,
+0 XSD-invalid. The remaining 29 first divergences are tabled in §32.3.
+
+The multi-measure-rest claim was re-checked against `Measure::isEmpty(staffIdx)`
+(`measure.cpp:2286-2330`) and `validMMRestMeasure`/`createMMRest`
+(`mmrestlayout.cpp:428-495, 723-760`). MuseScore groups at least
+`minEmptyMeasures` (2) measures, skipping hidden staves, and a measure with
+more than one rest segment is invalid. In `Missa_in_Es_Hob._XXII4_I._Kyrie`
+every measure of the model carries both eight full-measure rests **and**
+notes on other staves, so no run exists in the pivot model — even though the
+reference writes 36 `<multiple-rest>` elements. The earlier run-based and
+per-staff hypotheses were both reverted; a real port would need the
+excerpt/staff layout relation, which the model does not carry.
+
+A resolved-`headType()` experiment for `<notehead>` (`exportmusicxml.cpp:3897-3902`)
+was also reverted: C++ keeps `HEAD_AUTO` for ordinary notes, and emitting
+`filled="yes"` from the duration broke both e2e corpus tests.
