@@ -5982,3 +5982,38 @@ pas être comptés comme des défauts du lecteur :
 Les 152 autres restent à classer ; ils ne sont pas exclus du dénominateur.
 Aucun test purement de mise en page n'a été trouvé dans ce lot : ceux qui
 n'ont pas de musique jouable sont comptés dans les catégories ci-dessus.
+
+### Campagne `attaque_decalee` : deux causes structurelles
+
+La table de première divergence donnait 16 fichiers `grace` et 6 fichiers
+`repeat/volta` dont les décalages venaient en fait de citations. Deux causes
+structurationnelles, chacune mesurée séparément :
+
+1. **Citation avec `\repeat unfold`** (`ly/music-functions-init.ly:545-557`) :
+   `QuoteMusic` ne joue que la tranche de la citation correspondant à
+   l'argument principal de `\cueDuring`. `music_duration()` renvoyait 0 pour
+   `Context::Repeat`, si bien que `tronque_musique()` jouait la citation
+   entière (`cue-clef.ly` : 36 notes au lieu de 16). Durée d'un repeat =
+   `count × durée du corps`, et un item trop long peut être tronqué
+   partiellement. **+6 exacts** (`cue-clef*`, `quote-tuplet`), 0 perte
+   (`/tmp/ly-cuefix`, 1544).
+2. **`\set Score.skipTypesetting`** (`scm/define-context-properties.scm:716`,
+   `lily/score-performer.cc:151-176`) : lorsqu'il est vrai, `PROCESS_MUSIC`
+   n'est pas appelé et le temps de la zone est replié (`midiSkipOffset`). Le
+   lecteur ignore maintenant les notes de la zone et ne les compte pas dans
+   le temps. **+3 exacts** (`skiptypesetting-bar-check`, `-break`, `-clef`),
+   0 perte (`/tmp/ly-skipfix`, **1547/1724, 89,7 %**).
+
+**Grâces et tolérance de l'oracle** : `scripts/oracle/lilypond/ly_notes.py:571`
+considère déjà un fichier exact si `n2 == ref` **ou** `n2_grace == ref` (avec
+`ref == test == n1`). Les 50 fichiers dont `n2_grace` est complet mais qui ne
+sont pas exacts ont **toutes** chaque note de référence présente **plus** des
+notes supplémentaires (`test > ref`) : le décalage des grâces n'est donc pas
+leur cause d'échec. Aucun de ces fichiers ne doit être compté comme exact au
+titre de `n2_grace` ; aucun changement d'oracle n'est nécessaire.
+
+Reste dans `attaque_decalee` : `flags-default/straight/in-scheme` (décalage
+constant de 0,25 ou 2,25, probablement lié aux durées de drapeaux Schemes),
+`bend-spanner-styles`, `finger-glide-*`, `offsets`, `incipit-*`,
+`skiptypesetting-show-*`. Ces groupes n'ont pas encore de cause commune
+identifiée ; ils ne sont pas exclus du dénominateur.
