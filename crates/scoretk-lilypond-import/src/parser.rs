@@ -3344,7 +3344,13 @@ impl<'a> Parser<'a> {
                 alternatives: Vec::new(),
             });
         }
-        let body = Box::new(self.parse_music());
+        let mut corps = self.parse_music();
+        // LilyPond accepte `\alternative` dans les accolades du corps
+        // (`\repeat volta n { … \alternative { … } }`) : le retirer du corps
+        // et l'enregistrer comme endings de la reprise.
+        let mut alternatives = Vec::new();
+        extract_alternatives(&mut corps, &mut alternatives);
+        let body = Box::new(corps);
         if kind == RepeatKind::Tremolo && !self.playback_unfold_repeats {
             // Notation Reference §4.2.2 : « The duration of the tremolo equals
             // the duration of the braced expression multiplied by the number
@@ -3363,8 +3369,7 @@ impl<'a> Parser<'a> {
             scale_music(&mut body, &factor);
             return body;
         }
-        let mut alternatives = Vec::new();
-        if self.eat_command("alternative") {
+        if alternatives.is_empty() && self.eat_command("alternative") {
             let content = self.parse_music();
             alternatives = blocks_of(content);
         }
@@ -5274,6 +5279,38 @@ fn obsolete_music_command(name: &str) -> Option<&'static str> {
 /// `shift-duration-log expr 0 1` au changement de durée uniquement, en
 /// laissant le log (la figure) intact, ce qui ajoute une mora de chant
 /// grégorien à chaque note.
+/// Retire les `\\alternative` imbriqués dans un corps de reprise etcollecte leurs
+/// endings dans `alternatives` (`lily/parser.yy` `REPEAT ... alternative`).
+fn extract_alternatives(music: &mut Music, alternatives: &mut Vec<Music>) {
+    match music {
+        Music::Seq(items) | Music::Sim(items) => {
+            let mut index = 0;
+            while index < items.len() {
+                if let Music::Context(Context::Alternative(blocks)) = &mut items[index] {
+                    alternatives.append(blocks);
+                    items.remove(index);
+                } else {
+                    extract_alternatives(&mut items[index], alternatives);
+                    index += 1;
+                }
+            }
+        }
+        Music::Context(Context::Relative { music, .. })
+        | Music::Context(Context::Fixed { music, .. })
+        | Music::Context(Context::NonRelative { music })
+        | Music::Context(Context::Cue { music })
+        | Music::Context(Context::Tuplet { music, .. })
+        | Music::Context(Context::Transpose { music, .. })
+        | Music::Context(Context::AfterGrace { main: music, .. }) => {
+            extract_alternatives(music, alternatives);
+        }
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => {
+            extract_alternatives(music, alternatives);
+        }
+        _ => {}
+    }
+}
+
 /// Duree d'une expression musicale, en ticks de ronde.
 fn music_duration(music: &Music, default: Duration) -> Fraction {
     match music {

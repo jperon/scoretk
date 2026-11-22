@@ -7001,3 +7001,15 @@ fn identifiant_pointedans_un_nom_de_variable() {
         vec![60, 62]
     );
 }
+
+#[test]
+fn alternative_a_l_interieur_du_corps_de_reprise() {
+    // `\repeat volta 1 { a1 \alternative { b1 } }` : LilyPond accepte
+    // l'`\alternative` à l'intérieur des accolades du corps.
+    let src = "\\version \"2.24.0\"\n{ \\repeat volta 1 { c'4 \\alternative { d'4 } } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62]
+    );
+}
