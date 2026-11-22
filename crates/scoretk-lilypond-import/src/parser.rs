@@ -1221,15 +1221,11 @@ impl<'a> Parser<'a> {
 
         // `\makeClusters` (`scm/music-functions.scm::note-to-cluster`)
         // remplace les notes par des `ClusterNoteEvent` que le performer MIDI
-        // ne joue pas : portée gravée mais muette.
-        if matches!(kind, GroupKind::Staff)
-            && self
-                .peek()
-                .is_some_and(|token| token.is_command("makeClusters"))
-        {
-            self.position += 1;
-            staff.muted = true;
-        }
+        // ne joue pas : portée gravée mais muette. La détection porte sur tout
+        // l'intervalle de jetons de la musique de la portée, pas seulement le
+        // premier, car la fonction peut s'appliquer à une expression plus
+        // tardive (y compris une référence de variable).
+        let debut_musique = self.position;
 
         match kind {
             GroupKind::PianoStaff | GroupKind::ChoirStaff | GroupKind::StaffGroup => {
@@ -1286,6 +1282,9 @@ impl<'a> Parser<'a> {
                 }
                 let content = self.parse_music();
                 self.note_mode = mode_precedent;
+                staff.muted |= self.tokens[debut_musique..self.position]
+                    .iter()
+                    .any(|token| token.is_command("makeClusters"));
                 // Une seule musique de portée, comme pour `\context Staff` :
                 // les voix sont ouvertes par l'interpréteur au tick courant,
                 // pas relues chacune depuis zéro.
@@ -2966,6 +2965,14 @@ impl<'a> Parser<'a> {
                 })
             }
             "fermata" | "shortfermata" | "longfermata" | "verylongfermata" => Music::Empty,
+            "makeClusters" => {
+                // `ly/music-functions-init.ly:1154-1157` : une fonction
+                // musicale appliquée à l'expression qui suit. On consomme
+                // seulement le nom : la musique qui suit (bloc ou référence
+                // de variable) reste lue normalement ; le mute est relevé sur
+                // l'intervalle de jetons dans `parse_new_context`.
+                Music::Empty
+            }
             _ if is_articulation_command(&name) || is_dynamic_command(&name) => {
                 // Événement isolé sans accord à décorer : ignoré.
                 Music::Empty

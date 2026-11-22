@@ -672,9 +672,6 @@ impl<'a> Interpreter<'a> {
             warnings: &mut *self.warnings,
         };
         child.walk(music);
-        // Un ornement en fin de voix n'a pas d'accord suivant : comme dans
-        // `run`, le rattacher au dernier accord de cette voix pour qu'il soit
-        // joué (`volta-spec-after-grace.ly`, `scm/music-functions.scm`).
         // Un ornement en fin de voix sans accord suivant est transféré à
         // la voix mère : il s'attachera au prochain accord (le `emit_chord`
         // de la voix mère consomme `pending_grace`). C'est le cas d'un

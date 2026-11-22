@@ -6423,3 +6423,39 @@ fn grace_dans_une_voix_simultanee_est_jouee() {
         pitches
     );
 }
+
+#[test]
+fn make_clusters_nimporte_où_dans_la_musique_de_portee() {
+    // `ly/music-functions-init.ly:1154-1157` : `\makeClusters` est une
+    // fonction musicale appliquée à l'expression qui suit, qui peut être une
+    // référence de variable. Le mute est relevé où que le commande apparaisse
+    // dans la musique de la portée (le modèle n'a pas de mute par voix).
+    let src = "\\version \"2.24.0\"\n\
+         fragment = { e'4 f'4 }\n\
+         \\new Staff { c'4 \\makeClusters \\fragment d'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(score.staves.len(), 1);
+    assert!(
+        score.staves[0].muted,
+        "\\makeClusters au milieu de la musique doit rendre la portée muette"
+    );
+    assert_eq!(
+        score.notes.len(),
+        4,
+        "les notes restent dans le modèle (pivot de tous les formats)"
+    );
+}
+
+#[test]
+fn accord_chordmode_min11() {
+    // `scm/chord-entry.scm:125-145` : `min` est un modificateur leading
+    // appliqué à l'accord de base construit depuis le degré qui suit, donc
+    // `c:min11` = do, mi♭, sol, si♭, ré, fa (vérifié dans le MIDI de
+    // référence produit par LilyPond 2.24).
+    let src = "\\version \"2.24.0\"\n\\chords { c:min11 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 63, 67, 70, 74, 77]
+    );
+}

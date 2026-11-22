@@ -180,17 +180,15 @@ pub(crate) fn drum_pitch(name: &str) -> Option<u8> {
 ///
 /// Les qualités couvertes sont celles de `scm/chord-entry.scm` les plus
 /// courantes ; les modificateurs composés (`:m7.5-`, `:7sus4`) sont acceptés.
+/// `m`/`min` ne figurent pas ici en entrées figées par degré : ce sont des
+/// modificateurs leading appliqués à la qualité qui suit (voir
+/// [`chord_pitches`]).
 const QUALITIES: &[(&str, &[i8])] = &[
     ("maj", &[0, 4, 7]),
     ("m", &[0, 3, 7]),
     ("min", &[0, 3, 7]),
     ("7", &[0, 4, 7, 10]),
     ("m7", &[0, 3, 7, 10]),
-    // `scm/chord-entry.scm:252` : `min` est synonyme de `m`, y compris
-    // devant un degré (`c:min7` = do, mi♭, sol, si♭).
-    ("min7", &[0, 3, 7, 10]),
-    ("min9", &[0, 3, 7, 10, 14]),
-    ("min6", &[0, 3, 7, 9]),
     ("maj7", &[0, 4, 7, 11]),
     ("dim", &[0, 3, 6]),
     ("aug", &[0, 4, 8]),
@@ -202,6 +200,14 @@ const QUALITIES: &[(&str, &[i8])] = &[
     ("m6", &[0, 3, 7, 9]),
     ("dim7", &[0, 3, 6, 9]),
     ("m7.5-", &[0, 3, 6, 10]),
+    // `the-canonical-chord` et `stack-thirds` (`scm/chord-entry.scm:270-278`)
+    // empilent les tierces jusqu'au degré demandé. Le 11 naturel est retiré
+    // plus bas quand la tierce majeure est présente sans 11 explicite
+    // (`scm/chord-entry.scm:154-159`) : `c:13` n'a donc pas de fa, mais
+    // `c:min11`/`c:min13` gardent le leur (vérifié sur le MIDI de LilyPond).
+    ("11", &[0, 4, 7, 10, 14, 17]),
+    ("13", &[0, 4, 7, 10, 14, 17, 21]),
+    ("7.9", &[0, 4, 7, 10, 14]),
     ("5", &[0, 7]),
     ("1", &[0]),
 ];
@@ -221,15 +227,43 @@ pub(crate) fn chord_pitches(language: Language, name: &str) -> Option<(Vec<u8>, 
     let (racine, qualite) = head.split_once(':').map_or((head, "maj"), |(r, q)| (r, q));
     let (step, alter) = language.parse(racine)?;
     let root = midi_of(step, alter, 4)?;
+    // `scm/chord-entry.scm:125-145` : un modificateur leading (`m`/`min`,
+    // `default-chord-modifier-list` l. 252) est extrait AVANT le degré, puis
+    // appliqué à l'accord de base construit depuis ce degré. On ne fige donc
+    // pas `min7`/`min9`/`min6` dans la table : `min11`, `min13` et `min7.9`
+    // fonctionnent de la même manière.
+    let mut base = qualite;
+    let mut mineur = false;
+    for prefixe in ["min", "m"] {
+        if let Some(reste) = base.strip_prefix(prefixe) {
+            let reste_connu =
+                reste.is_empty() || QUALITIES.iter().any(|(candidat, _)| *candidat == reste);
+            if reste_connu {
+                base = reste;
+                mineur = true;
+                break;
+            }
+        }
+    }
     let intervalles = QUALITIES
         .iter()
-        .find(|(candidat, _)| *candidat == qualite)
+        .find(|(candidat, _)| *candidat == base)
         .map(|(_, values)| *values)
         .unwrap_or(&[0, 4, 7]);
+    // `scm/chord-entry.scm:154-159` : un 11 naturel avec une tierce majeure
+    // non explicitée est retiré. Seul `:13` porte un 11 implicite dans notre
+    // table ; `:11` l'explicite et une tierce mineure n'est pas « naturelle ».
+    let retire_onzieme = base == "13" && !mineur;
     let notes: Vec<u8> = intervalles
         .iter()
-        .filter_map(|ecart| i32::from(root).checked_add(i32::from(*ecart)))
-        .filter_map(|p| u8::try_from(p).ok())
+        .filter(|ecart| !(retire_onzieme && **ecart == 17))
+        .map(|ecart| {
+            // `minor-modifier` (`scm/chord-entry.scm:235-236`) : la tierce
+            // majeure (+4) devient mineure (+3).
+            let ecart = if mineur && *ecart == 4 { 3 } else { *ecart };
+            i32::from(root).checked_add(i32::from(ecart))
+        })
+        .filter_map(|p| p.and_then(|p| u8::try_from(p).ok()))
         .collect();
     let basse_midi = basse.and_then(|b| chord_bass_pitch(language, step, b));
     Some((notes, basse_midi))
@@ -279,6 +313,30 @@ mod tests {
         assert_eq!(
             chord_pitches(langue, "d:maj7"),
             Some((vec![62, 66, 69, 73], None))
+        );
+        // `min` est un modificateur, pas une entrée figée : il s'applique à
+        // n'importe quel degré, y compris composé.
+        assert_eq!(
+            chord_pitches(langue, "c:min11"),
+            Some((vec![60, 63, 67, 70, 74, 77], None))
+        );
+        assert_eq!(
+            chord_pitches(langue, "c:min13"),
+            Some((vec![60, 63, 67, 70, 74, 77, 81], None))
+        );
+        assert_eq!(
+            chord_pitches(langue, "c:min7.9"),
+            Some((vec![60, 63, 67, 70, 74], None))
+        );
+        assert_eq!(
+            chord_pitches(langue, "c:13"),
+            Some((vec![60, 64, 67, 70, 74, 81], None)),
+            "le 11 implicite est retiré d'une tierce majeure"
+        );
+        assert_eq!(
+            chord_pitches(langue, "c:maj"),
+            Some((vec![60, 64, 67], None)),
+            "`maj` ne doit pas être pris pour le modificateur `m`"
         );
         assert_eq!(
             chord_pitches(langue, "c/g"),
