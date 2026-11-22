@@ -7693,3 +7693,21 @@ fn context_property_check_valeur_numerique_ne_devient_pas_une_duree() {
         notes
     );
 }
+
+#[test]
+fn allow_break_et_no_break_gardent_la_duree_nue() {
+    // `ly/declarations-init.ly:63-64` : `noBreak`/`allowBreak` sont des
+    // événements de rupture sans argument (`make-music 'LineBreakEvent`).
+    let src = "\\version \"2.24.0\"\n{ c'4 \\allowBreak 4 \\noBreak 4 c'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(accords_de_voix(&score, 0).len(), 4);
+}
+
+#[test]
+fn beam_exceptions_valeur_de_set_nest_pas_de_musique() {
+    // `ly/music-functions-init.ly:348-354` : `beamExceptions` est une
+    // fonction Scheme à argument musical ; sa valeur de `\set` ne joue pas.
+    let src = "\\version \"2.24.0\"\n{ \\set Score.beamExceptions = \\beamExceptions \\repeat unfold 4 { 32[ 32 32 32] } c'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(accords_de_voix(&score, 0).len(), 1);
+}

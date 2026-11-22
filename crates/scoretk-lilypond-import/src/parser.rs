@@ -3501,6 +3501,15 @@ impl<'a> Parser<'a> {
                     })
                     .unwrap_or(Music::Empty)
             }
+            // `ly/music-functions-init.ly:348-354` : `beamExceptions` est une
+            // fonction Scheme à argument musical. Elle produit une valeur de
+            // propriété pour `\set`, jamais de la musique : laisser son
+            // argument dans le flux créait 16 accords vides de 32e
+            // (`auto-beam-exceptions.ly`).
+            "beamExceptions" => {
+                let _ = self.parse_music();
+                Music::Empty
+            }
             "compressMMRests" => {
                 // `ly/music-functions-init.ly:452-459` : ne change que la
                 // gravure des silences ; les hauteurs et attaques restent.
@@ -3509,8 +3518,12 @@ impl<'a> Parser<'a> {
             // `ly/property-init.ly:140,970`, `ly/declarations-init.ly:78` :
             // commandes sans argument. Une durée nue qui suit est de la
             // musique, pas leur argument.
+            // `ly/declarations-init.ly:61-64` : `break`, `noBreak` et
+            // `allowBreak` sont des `LineBreakEvent` sans argument. Une durée
+            // nue qui suit reste de la musique (`allow-break.ly`).
             "oneVoice" | "autoBeamOff" | "autoBeamOn" | "noBeam" | "beamUp" | "beamDown"
-            | "beamNeutral" => Music::Empty,
+            | "beamNeutral" | "allowBreak" | "startStaff" | "stopStaff"
+            | "fine" | "breathe" | "caesura" => Music::Empty,
             "startMeasureCount" | "stopMeasureCount" => {
                 // `ly/spanners-init.ly:36-37` : événements de portée sans
                 // argument ; une durée nue qui suit reste de la musique.
