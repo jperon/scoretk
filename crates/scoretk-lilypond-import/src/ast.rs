@@ -258,6 +258,9 @@ pub(crate) enum Context {
     /// `\relative` : hauteurs relatives.
     Relative {
         reference: Option<PitchSpec>,
+        /// Vrai quand le `\relative` enveloppait un `<< … >>` : ses branches
+        /// s'enchaînent pour la conversion relative.
+        chain: bool,
         music: Box<Music>,
     },
     /// `make-non-relative-music` (`ly/music-functions-init.ly`) : musique

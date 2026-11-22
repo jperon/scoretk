@@ -459,6 +459,7 @@ impl<'a> Interpreter<'a> {
         let musique = match music {
             Music::Context(Context::Relative {
                 reference: None,
+                chain: true,
                 music: interior,
             }) if octave.relative && octave.previous.is_some() => interior.as_ref(),
             _ => music,
@@ -899,7 +900,9 @@ impl<'a> Interpreter<'a> {
                 self.walk(music);
                 self.octave = saved;
             }
-            Context::Relative { reference, music } => {
+            Context::Relative {
+                reference, music, ..
+            } => {
                 let saved = self.octave;
                 self.octave.start_relative(reference.as_ref());
                 self.walk(music);

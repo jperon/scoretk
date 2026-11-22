@@ -2460,9 +2460,16 @@ impl<'a> Parser<'a> {
             }
             "relative" => {
                 let reference = self.parse_optional_pitch();
+                let music = self.parse_music();
+                // Un `\\relative` appliqué à un `<< … >>` est distribué à ses
+                // branches par `score_groups_in` : leurs hauteurs s'enchaînent
+                // (`music_list_to_relative`). Un `\\relative` propre à une
+                // branche ré-ancre au contraire sa propre conversion.
+                let chain = matches!(&music, Music::Sim(_));
                 Music::Context(Context::Relative {
                     reference,
-                    music: Box::new(self.parse_music()),
+                    chain,
+                    music: Box::new(music),
                 })
             }
             "absolute" => {
@@ -5003,7 +5010,7 @@ enum Wrapper {
     /// `\fixed [référence]`.
     Fixed(Option<PitchSpec>),
     /// `\relative [référence]`.
-    Relative(Option<PitchSpec>),
+    Relative(Option<PitchSpec>, bool),
 }
 
 impl Wrapper {
@@ -5024,7 +5031,11 @@ impl Wrapper {
                 music,
             )),
             Context::Fixed { reference, music } => Some((Self::Fixed(*reference), music)),
-            Context::Relative { reference, music } => Some((Self::Relative(*reference), music)),
+            Context::Relative {
+                reference,
+                music,
+                chain,
+            } => Some((Self::Relative(*reference, *chain), music)),
             _ => None,
         }
     }
@@ -5040,7 +5051,11 @@ impl Wrapper {
                 music,
             },
             Self::Fixed(reference) => Context::Fixed { reference, music },
-            Self::Relative(reference) => Context::Relative { reference, music },
+            Self::Relative(reference, chain) => Context::Relative {
+                reference,
+                chain,
+                music,
+            },
         })
     }
 }
@@ -5281,8 +5296,13 @@ fn tronque_musique(music: &Music, budget: Fraction, default: Duration) -> Music 
                 .collect(),
         ),
         Music::Context(context) => Music::Context(match context {
-            Context::Relative { reference, music } => Context::Relative {
+            Context::Relative {
+                reference,
+                chain,
+                music,
+            } => Context::Relative {
                 reference: *reference,
+                chain: *chain,
                 music: Box::new(tronque_musique(music, budget, default)),
             },
             Context::Fixed { reference, music } => Context::Fixed {

@@ -663,11 +663,21 @@ fn build_voices(
     // `lily/music-sequence.cc:143-158` : les voix d'un `<< … >>` s'enchaînent
     // pour la conversion relative, chacune partant de la dernière hauteur de
     // la précédente. L'état est mémorisé par l'interpréteur avant que le
-    // `
+    // la précédente. L état est mémorisé avant restauration.
     let mut octave = octave;
     for block in &staff_block.voices {
+        // Seul un `\relative` distribué sur un `<< … >>` hérite de la voix
+        // précédente ; une portée sans ce wrapper reste en octave absolue.
+        let seme = match &block.music {
+            Music::Context(crate::ast::Context::Relative {
+                reference: None,
+                chain: true,
+                ..
+            }) => octave,
+            _ => OctaveState::default(),
+        };
         let (interpreted, octave_suivante) =
-            Interpreter::run(&block.music, unfold_repeats, warnings, octave);
+            Interpreter::run(&block.music, unfold_repeats, warnings, seme);
         octave = octave_suivante;
         queue.push_back(PendingVoice {
             name: block.name.clone(),

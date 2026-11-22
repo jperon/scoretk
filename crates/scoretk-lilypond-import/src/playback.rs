@@ -98,12 +98,17 @@ fn strip_transposes(music: &Music) -> (i32, Music) {
                 }),
             )
         }
-        Music::Context(Context::Relative { reference, music }) => {
+        Music::Context(Context::Relative {
+            reference,
+            chain,
+            music,
+        }) => {
             let (ecart, interieur) = strip_transposes(music);
             (
                 ecart,
                 Music::Context(Context::Relative {
                     reference: *reference,
+                    chain: *chain,
                     music: Box::new(interieur),
                 }),
             )
