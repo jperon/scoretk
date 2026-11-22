@@ -5776,6 +5776,14 @@ fn music_duration(music: &Music, default: Duration) -> Fraction {
             .iter()
             .map(|item| music_duration(item, default))
             .fold(Fraction::ZERO, |total, d| if d > total { d } else { total }),
+        // `\repeat unfold n` (et `volta`, déplié dans le MIDI) : la durée est
+        // celle du corps multipliée par le nombre de passages. Sans ce cas,
+        // `tronque_musique` mesurait 0 la citation d'un `\addQuote` contenant
+        // un repeat et jouait toute la citation au lieu de la tranche
+        // correspondant à l'argument de `\cueDuring` (`cue-clef*.ly`).
+        Music::Context(Context::Repeat { count, body, .. }) => {
+            music_duration(body, default) * Fraction::from_integer(*count as i64)
+        }
         Music::Context(context) => music_duration(context_music(context), default),
         Music::Tag { music, .. } | Music::Filtered { music, .. } => music_duration(music, default),
         _ => Fraction::ZERO,
@@ -5813,6 +5821,13 @@ fn tronque_musique(music: &Music, budget: Fraction, default: Duration) -> Music 
             for item in items {
                 let duree = music_duration(item, default);
                 if duree > restant {
+                    // Un contexte contenant un `epeat unfold` peut tenir
+                    // partiellement dans le budget : le tronquer au lieu de
+                    // jeter l'item entier (`cue-clef*.ly`).
+                    let partiel = tronque_musique(item, restant, default);
+                    if !matches!(partiel, Music::Empty) {
+                        gardes.push(partiel);
+                    }
                     break;
                 }
                 gardes.push(tronque_musique(item, restant, default));
@@ -5843,6 +5858,38 @@ fn tronque_musique(music: &Music, budget: Fraction, default: Duration) -> Music 
             Context::NonRelative { music } => Context::NonRelative {
                 music: Box::new(tronque_musique(music, budget, default)),
             },
+            // Une citation peut contenir un `\repeat unfold` : garder le
+            // nombre de passages qui tiennent dans le budget (le reste serait
+            // soit joué en entier, soit entièrement sauté).
+            Context::Repeat {
+                kind,
+                count,
+                body,
+                alternatives,
+                partial,
+            } => {
+                let d_un = music_duration(body, default);
+                if d_un <= Fraction::ZERO {
+                    Context::Repeat {
+                        kind: *kind,
+                        count: *count,
+                        body: body.clone(),
+                        alternatives: alternatives.clone(),
+                        partial: *partial,
+                    }
+                } else {
+                    let gardes = ((budget.as_f64() / d_un.as_f64()) as i64)
+                        .min(*count as i64)
+                        .max(0);
+                    Context::Repeat {
+                        kind: *kind,
+                        count: gardes as u32,
+                        body: Box::new(tronque_musique(body, d_un, default)),
+                        alternatives: alternatives.clone(),
+                        partial: *partial,
+                    }
+                }
+            }
             other => other.clone(),
         }),
         Music::Tag { tags, music } => Music::Tag {

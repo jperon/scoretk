@@ -7731,3 +7731,20 @@ fn evenements_sans_argument_gardent_la_duree_nue() {
     let score = read_lilypond(src).expect("lecture");
     assert_eq!(accords_de_voix(&score, 0).len(), 7);
 }
+
+#[test]
+fn cue_during_tronque_une_citation_avec_repeat_unfold() {
+    // `ly/music-functions-init.ly:545-557` : la citation est insérée pour la
+    // durée de l'argument principal. `music_duration()` ne savait pas mesurer
+    // un `\repeat unfold`, donc la citation entière était jouée
+    // (`cue-clef.ly`, `cue-clef-keysignature.ly`, …).
+    let src = "\\version \"2.24.0\"\n\
+         vI = \\fixed c' { \\repeat unfold 8 g4 }\n\
+         \\addQuote vIQuote { \\vI }\n\
+         \\new Staff \\fixed c' { c4 \\cueDuring \"vIQuote\" #DOWN { r4 r2 r4 } c4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 67, 67, 67, 67, 60]
+    );
+}
