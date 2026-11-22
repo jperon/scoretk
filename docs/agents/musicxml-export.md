@@ -1018,3 +1018,39 @@ Two import-side sub-groups were investigated and bounded:
   system starts, which the model does not carry.
 
 Core-identical stays **70/173**, N1/N2 1.0000, 0 XSD-invalid throughout.
+
+### 32.3 First-divergence inventory after the layout/empty-wrapper reclassification (2026-11-22)
+
+Baseline `target/xml-emptyattr/`: 144/173 core-identical (was 70 with the old normalizer). One line per file: `file | first core-divergence category | core-diff lines`. Groups: `tuplet` is beams (closed), `attributes` and layout-only wrappers are not musical.
+
+| Category | Files | Lines | File | Count |
+| --- | ---: | ---: | --- | ---: |
+| attributes | 13 | 1230 | `Missa_in_Es_Hob._XXII4_II._Gloria_-_Haydn.mscz` | 452 |
+| attributes |  |  | `Missa_in_Es_Hob._XXII4_III._Credo_-_Haydn.mscz` | 273 |
+| attributes |  |  | `Missa_in_Es_Hob._XXII4_VI._Agnus_Dei_-_Haydn.mscz` | 182 |
+| attributes |  |  | `07- Veni veni Emmanuel - Trompettes 1, 2 et 3.mscz` | 90 |
+| attributes |  |  | `05- Veni veni Emmanuel - Hautbois 1 et 2.mscz` | 78 |
+| attributes |  |  | `04- Veni veni Emmanuel - Flûtes 1 et 2.mscz` | 46 |
+| attributes |  |  | `06- Veni veni Emmanuel - Basson.mscz` | 32 |
+| attributes |  |  | `01- Veni veni Emmanuel - Violons 1 et 2.mscz` | 26 |
+| attributes |  |  | `Missa_in_Es_Hob._XXII4_IV._Sanctus_-_Haydn.mscz` | 25 |
+| attributes |  |  | `02- Veni veni Emmanuel - Alto.mscz` | 20 |
+| attributes |  |  | `05- Il est né - Hautbois.mscz` | 2 |
+| attributes |  |  | `04- Once in royal - Hautbois 1 et 2.mscz` | 2 |
+| attributes |  |  | `05- Once in royal - Basson.mscz` | 2 |
+| frame | 1 | 558 | `bransle-de-chevaux-bransle-de-chevaux-rc-3.mscz` | 558 |
+| measure-style | 2 | 241 | `Missa_in_Es_Hob._XXII4_I._Kyrie_-_Haydn.mscz` | 164 |
+| measure-style |  |  | `Missa_in_Es_Hob._XXII4_V._Benedictus_-_Haydn.mscz` | 77 |
+| clef | 1 | 186 | `Vingt_danses_enfantines_pour_piano.mscz` | 186 |
+| harmony | 1 | 81 | `Adios_Muchachos.mscz` | 81 |
+| staff | 4 | 48 | `Vivaldi_-_Dixit_Dominus-RV_594__-_01_Dixit_Dominus.mscz` | 18 |
+| staff |  |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_10._Sicut_erat_in_principio.mscz` | 14 |
+| staff |  |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_05_Juravit_Dominus.mscz` | 10 |
+| staff |  |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_09_Gloria_Patri.mscz` | 6 |
+| tuplet | 2 | 16 | `Vivaldi_-_Dixit_Dominus-RV_594__-_08-DeTorrente_fredipi.mscz` | 14 |
+| tuplet |  |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_04-TecumPrincipium_fredipi.mscz` | 2 |
+| time-modification | 1 | 8 | `Ave_Maria_Schubert_in_C_with_chords.mscz` | 8 |
+| figured-bass | 1 | 3 | `JMHaydn_Viderunt_omnes.mscz` | 3 |
+| notehead | 1 | 3 | `Angels_Carol__John_Rutter.mscz` | 3 |
+| dot | 2 | 2 | `01- Minuit chretien - Violons 1 et 2.mscz` | 1 |
+| dot |  |  | `06- Minuit chretien - Basson.mscz` | 1 |
