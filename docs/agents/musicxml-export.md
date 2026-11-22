@@ -687,3 +687,23 @@ The bracket rule needs more than beam start/end: C++ can still drop the
 bracket through `calcBeamBreaks` or `headSide`. The changes were reverted;
 no file regressed and the working tree is clean. This class remains a
 documented limit, not a 4.7.4-vs-5.0 divergence.
+
+## 31. Standalone `<sound>` for invisible jumps (2026-11-22)
+
+`writeJump` (`exportmusicxml.cpp:6218-6224`) writes the playback sound as a
+standalone `<sound …/>` when `canWrite` (`:9408-9411`) is false — for the
+default `exportInvisibleElements` setting, that means a `<Jump>` carrying
+`<visible>0</visible>`. The port always wrapped the sound inside a
+`<direction><words>`, which the musical-core normalizer drops, so the D.C. and
+D.S. sounds of `Dieu_seul_suffit_-_Du_Jonchay` were missing from the core.
+`Jump::visible` is now read by both MuseScore readers, and `direction_jump`
+takes the standalone-sound branch for an invisible jump. The analogous case
+for invisible markers was already covered (`marqueur_segno_invisible_sans_direction`).
+The reduced test `saut_invisible_sans_direction` (in `repeats.rs`) was written
+first and failed before the fix.
+
+Measurement (`target/xml-cue/` pre-fix vs `target/xml-jump/` post-fix, same
+173-file manifest): core-identical **69 → 70**, N1/N2 1.0000, 0 XSD-invalid.
+One file gained core lines (`Dieu_seul_suffit_-_Du_Jonchay` 2 → 0, now
+core-identical) and **no file lost any**. Workspace tests, fmt and clippy
+were green at the commit.
