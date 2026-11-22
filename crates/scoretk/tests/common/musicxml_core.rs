@@ -207,6 +207,27 @@ fn prune_empty_attributes(entries: &mut Vec<Entry>) {
     }
 }
 
+/// Deux blocs `<attributes>` consécutifs, sans musique entre eux, sont
+/// équivalents à leur concaténation : le schéma MusicXML 4.0
+/// (`musicxml-4.0.xsd:2815`) précise que les attributs modifiés en cours de
+/// mesure agissent « in score order, not in MusicXML document order ». La
+/// frontière entre deux blocs adjacents ne porte donc aucune information
+/// musicale ; MuseScore et les autres exporteurs la choisissent librement.
+fn merge_adjacent_attributes(lines: &mut Vec<String>) {
+    let original = std::mem::take(lines);
+    for line in original {
+        if line.trim() == "<attributes>"
+            && lines
+                .last()
+                .is_some_and(|previous| previous.trim() == "</attributes>")
+        {
+            lines.pop();
+            continue;
+        }
+        lines.push(line);
+    }
+}
+
 fn normalize_with_stats(xml: &str, level: Level) -> (Vec<String>, usize) {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
@@ -287,6 +308,9 @@ fn normalize_with_stats(xml: &str, level: Level) -> (Vec<String>, usize) {
     }
     let mut lines = Vec::new();
     render(&roots, 0, &mut lines);
+    if level == Level::Core {
+        merge_adjacent_attributes(&mut lines);
+    }
     (lines, hidden_staves)
 }
 
@@ -423,6 +447,25 @@ mod tests {
             "une enveloppe vide ne porte aucune information :\n{lines:?}"
         );
         assert!(lines.iter().any(|line| line.contains("<step>C</step>")));
+    }
+
+    #[test]
+    fn blocs_attributes_adjacents_fusionnes() {
+        let xml = r#"<score-partwise version="4.0"><part id="P1"><measure number="1">
+          <attributes><divisions>1</divisions></attributes>
+          <attributes><measure-style><multiple-rest>12</multiple-rest></measure-style></attributes>
+          <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note>
+        </measure></part></score-partwise>"#;
+        let other = r#"<score-partwise version="4.0"><part id="P1"><measure number="1">
+          <attributes><divisions>1</divisions>
+            <measure-style><multiple-rest>12</multiple-rest></measure-style></attributes>
+          <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note>
+        </measure></part></score-partwise>"#;
+        assert_eq!(
+            normalize(xml),
+            normalize(other),
+            "la frontière entre deux blocs adjacents n'est pas musicale"
+        );
     }
 
     #[test]
