@@ -6293,3 +6293,31 @@ inutilisables documentées ailleurs, ils sont comptés dans un bucket séparé
 « no valid reference » **hors du dénominateur** (`/tmp/ly95-no-ref.txt`).
 Mesure ajustée (`/tmp/ly-validmeas`) : **1568/1713 (91,5 %)**, 15 vides ;
 le chiffre 1568/1724 (91,0 %) reste valable avec le dénominateur complet.
+
+### Cause lecteur : gabarits SATB / SSAATTBB
+
+`ly/satb.ly:157-215` et `ly/ssaattbb.ly:280-330` portent le `\score` dans le
+fichier livré avec LilyPond et le construisent à partir des variables
+`*Music` définies par le fichier appelant. Le lecteur ignorait ces includes
+(`FICHIERS_LILYPOND`) et renvoyait une partition vide. Il injecte maintenant
+un score équivalent jouant chaque variable dans sa propre portée ; le MIDI
+de référence ne dépend que du multiset (hauteur, attaque), vérifié exactement
+sur deux fichiers du corpus (78/78 et 39/39) avant l'implémentation. Tests
+mis à jour et ajoutés.
+
+Mesure (`/tmp/ly-satbmeas`, arbre régénéré) : **1576/1724 (91,4 %)**, **+8
+exacts**, **0 perte**. Déduction du bucket « no valid reference » :
+**1576/1713 (92,0 %)**.
+
+**Preuve documentée pour l'absence de deuxième cause lecteur ce tour** :
+après cette correction, les groupes restants de `attaque_decalee`,
+`notes_manquantes` et `sortie_vide` sont dominés par (a) 4 tests de glyphes
+dont la musique est entièrement produite par la fonction Scheme `\test`
+(`accidental-glyphs-test.ily:12-90`, hauteurs microtonales), (b) des sources
+pilotées par Scheme sans score injectable (déjà comptées hors dénominateur),
+(c) des tests de mise en page dont les notes sont identiques mais les
+attaques décalées de moins d'un 1/16 (`flags-*`, `bend-spanner-*`) et
+(d) des références invalides. Aucun de ces groupes ne partage une commande
+lisible dans le sous-ensemble avec au moins 3 fichiers ; aucun correctif
+n'a été tenté au hasard. Les fichiers concernés restent dans le
+dénominateur (sauf le bucket documenté), sans exclusion silencieuse.
