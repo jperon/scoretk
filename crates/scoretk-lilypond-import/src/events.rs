@@ -1196,7 +1196,19 @@ impl<'a> Interpreter<'a> {
             // résoudre de nouveau depuis ses marques écrites les décalerait
             // d'une octave à chaque répétition.
             ChordKind::Repeat => match self.last_chord_notes.clone() {
-                Some(notes) => ChordContent::Notes(notes),
+                Some(mut notes) => {
+                    // `q` rejoue les hauteurs du dernier accord, pas ses
+                    // prolongations : `repetition-chord` ne pose que la durée
+                    // et les articulations (`scm/ly-syntax-constructors.scm`
+                    // l. 228-232) ; la note répétée *ferme* une liaison
+                    // éventuelle mais n'en commence pas une nouvelle. Sans
+                    // cela, `link_ties` prolongeait la liaison du `q` vers
+                    // l'accord suivant (`catacombae`, A3 avalé).
+                    for note in &mut notes {
+                        note.tie = false;
+                    }
+                    ChordContent::Notes(notes)
+                }
                 None => {
                     self.warn("q sans accord précédent : répétition ignorée");
                     ChordContent::Notes(Vec::new())

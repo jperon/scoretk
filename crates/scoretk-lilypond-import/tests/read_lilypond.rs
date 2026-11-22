@@ -309,6 +309,52 @@ fn simultaneous_est_simultane() {
     assert_eq!(attaques, vec![(60, true), (64, true)]);
 }
 
+/// `q` rejoue les hauteurs du dernier accord, pas ses prolongations : la
+/// note repetee ferme la liaison mais n'en commence pas une autre
+/// (`repetition-chord`, `scm/ly-syntax-constructors.scm` l. 228-232). Sans
+/// cela, la liaison du `q` s'etendait jusqu'a l'accord suivant et son A3
+/// etait ecrit en `tie stop`, donc perdu comme attaque (`catacombae`).
+#[test]
+fn q_ne_prolonge_pas_la_liaison_du_accord_precedent() {
+    let source = "\\version \"2.18.2\"\n\\score { \\new Staff \\relative c' {\n                  <e, _~ a ~ e' ^~>2. | q2. |\n                  <a ^~ f ^~ a, _~>2. | q2.\n} }";
+    let score = read_lilypond(source).expect("lecture");
+    let mut attaques: Vec<(u8, i64)> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .flat_map(|segment| {
+            segment
+                .iter_elements()
+                .filter_map(|(_, element)| match element {
+                    SegmentItem::ChordRest(chord_rest) => Some(
+                        chord_rest
+                            .chord_ref()
+                            .into_iter()
+                            .flat_map(|chord| chord.notes.iter().copied())
+                            .filter(|id| score.note(*id).tie_back.is_none())
+                            .map(|id| (score.note(id).pitch, segment.tick.ticks(1920)))
+                            .collect::<Vec<_>>(),
+                    ),
+                    _ => None,
+                })
+                .flatten()
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    attaques.sort_unstable();
+    assert_eq!(
+        attaques,
+        vec![
+            (45, 2880),
+            (52, 0),
+            (53, 2880),
+            (57, 0),
+            (57, 2880),
+            (64, 0),
+        ]
+    );
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");
