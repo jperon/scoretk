@@ -3870,11 +3870,12 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact | Exact % | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 348 | 61.7 | 98.77 | — | — |
-| measured (reference present, non-reader faults excluded) | 1 654 | **1 348** | **81.50** | **98.77** | **94.82** | **97.05** |
+| all rows | 2 186 | 1 365 | 62.4 | 98.78 | — | — |
+| measured (reference present, non-reader faults excluded) | 1 647 | **1 365** | **82.9** | **98.78** | **95.50** | **97.56** |
 
 The obsolete-source basket (60 files containing `\setTextCresc`, `\sustainDown`
-and the other commands removed after 2.10) is no longer counted separately:
+and the other commands removed after 2.10, plus the `\deprecatedcresc` family
+removed after 2.13.20) is no longer counted separately:
 `scripts/oracle/common.py::raison_hors_lecteur` classifies, once for every
 `.ly` oracle, the rows whose failure is not the reader's fault — unusable
 LilyPond MIDI, a LilyPond compile failure, or obsolete syntax that
@@ -3908,8 +3909,12 @@ files and 0 losses** on the current oracle (1,252 → 1,348; N2 93.83 →
 94.82, no-repeat 96.46 → 97.05): 63 from the floating-point-stable grid, 23
 from freezing the default duration at parse time and 12 from punctuation
 articulations after `^`/`_`. Of the 98 rows those three causes made exact, 96
-remain measured; two fall in the newly excluded non-reader-fault set. The
-remaining non-exact measured files go from 465 to **306**.
+remain measured; two fall in the newly excluded non-reader-fault set. The next
+pass (Causes 13–16) adds **17 exact files and 0 losses** (1,348 → 1,365; N2
+94.82 → 95.50, no-repeat 97.43 → 97.56): 11 from unquoted context names, 6 from
+the explicit `/+bass` chord syntax, none from `Timing.measurePosition` or the
+`\deprecated*` exclusion (which only removes rows from the denominator). The
+remaining non-exact measured files go from 465 to **282**.
 
 ### Cause 1: top-level `<< … >>` is one context per element
 
@@ -4154,6 +4159,55 @@ model) is consumed. Test `signe_apres_direction_est_une_articulation` (11
 notes before, 4 after). **12 exact gains, 0 losses**, N2 +4,700 — the six
 neighbouring Czerny exercises plus `Mazurka-Op6-No1`, `Tschaikowsky-op37.2`
 and four others.
+
+### Cause 13: `\deprecated*` commands are obsolete sources
+
+`\deprecatedcresc`, `\deprecateddim`, `\deprecatedendcresc` and
+`\deprecatedenddim` are the names `convert-ly` 2.13.20 gives to the postfix
+form of `\cresc`/`\dim` (`python/convertrules.py` l. 3058), removed since.
+LilyPond 2.27 reports "unknown command" and its error recovery inserts a
+one-beat rest: `paulus_9` drifts by a beat at bar 10 although the reader follows
+the source exactly. They join `common.py::COMMANDES_OBSOLETES`, so the generic
+`raison_hors_lecteur` excludes those rows from both numerator and denominator
+(7 measured rows on `mut`, all non-exact). Selftest extended.
+
+### Cause 14: `\set Timing.measurePosition`
+
+`\set Timing.measurePosition = #(ly:make-moment -1 4)` replaces the current
+position in the measure (`lily/timing-translator.cc` l. 470-505): a negative
+position `-d` makes the back-to-zero barline fall at `t + d` (the anacrusis
+before a repeat), a positive position `p` closes the current measure at
+`t + len - p`. The reader ignored it, so the 2/4 measures of the third repeat in
+`andre-sonatine` stayed aligned on the previous 2/2 frame. The parser emits
+`MetaEvent::MeasurePosition` and `plan_measures_global` closes the containing
+measure accordingly. Test
+`measure_position_negative_ferme_la_mesure_sur_l_anacrouse` (lengths `[1, 1,
+1/2, 1/2]` before, `[1, 1, 1/4, 1/2]` after). It fixes the frame but not the
+remaining extra note, so no row is gained; N2 is unchanged.
+
+### Cause 15: context names without quotes
+
+LilyPond accepts a bare symbol as a context identifier (`CHANGE STRING '='
+simple_string`, `lily/parser.yy`): old sources write `\new Staff = one`,
+`\context Voice = VA`, `\change Staff = up`. The reader only accepted
+`Kind::Str`, so the name was lost and `\change Staff = one` no longer found
+its staff ("portée inconnue"), leaving the notes on the wrong one. `parse_context_id`
+now accepts `Str` or `Word` for `\new` and `\context Staff`. Test
+`noms_de_contexte_sans_guillemets`. **11 exact gains, 0 losses**, N2 +5,199
+(BWV 656/671/677/693, French suites 5, `BWV-827-5`…).
+
+### Cause 16: explicit `/+bass` chord syntax
+
+`scm/chord-entry.scm` (l. 46-53, `interpret-bass`) defines `/+FOO` as an
+explicit bass, distinct from an addition. The chord-name lexer stopped at `+`:
+`bes/+d` produced the Bb chord and left `d` in the stream, played as a D chord
+on the next beat and shifting the whole grid (`WinchesterNew` and the hymns that
+write `bes/+d`). `parse_chord_name` keeps the `+` in the name and
+`chord_pitches` strips it before reading the bass pitch. Tests
+`accord_basse_explicite_avec_plus` (7 notes instead of 9) and
+`chord_pitches("bes/+d") == ([70, 74, 77], bass 62)`. **6 exact gains, 0
+losses**, N2 +911 (`Leoni`, `ToGodBeTheGlory`, `DukeSt`, `Austria`,
+`CwmRhondda`, `Foundation`).
 
 ### Cause 5: `\octaveCheck` consumes its pitch
 
