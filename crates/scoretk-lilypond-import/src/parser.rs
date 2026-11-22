@@ -2424,7 +2424,16 @@ impl<'a> Parser<'a> {
                     music: Box::new(self.parse_music()),
                 })
             }
-            "absolute" => self.parse_music(),
+            "absolute" => {
+                // `ly/music-functions-init.ly:32-36` : `bsolute` enveloppe
+                // sa musique dans un `RelativeOctaveMusic`, c'est-à-dire la
+                // soustrait au `elative`/`ixed` environnant. Les marques
+                // d'octave écrites restent littérales, et la référence relative
+                // de la musique qui suit est restaurée à la sortie.
+                Music::Context(Context::NonRelative {
+                    music: Box::new(self.parse_music()),
+                })
+            }
             // `\tag` marque la musique suivante ; `\keepWithTag` et
             // `\removeWithTag` filtrent récursivement les expressions ainsi
             // marquées (Notation Reference §22.2.2, `ly/music-functions-init.ly`).

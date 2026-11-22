@@ -6703,3 +6703,18 @@ fn pitched_trill_ne_joue_pas_la_note_secondaire() {
         "la note secondaire es ne doit pas être jouée"
     );
 }
+
+#[test]
+fn absolute_cache_la_musique_du_relative_entourant() {
+    // `ly/music-functions-init.ly:32-36` et Notation Reference §1.1.2 :
+    // `\absolute` soustrait sa musique au `\relative` environnant ; la
+    // note qui suit reprend la référence relative d'avant le bloc.
+    let src = "\\version \"2.24.0\"\n\
+         \\relative c' { c'4 g \\absolute { c'' } e' }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![72, 67, 72, 76],
+        "c'' absolu vaut do5 ; e' se règle sur sol, pas sur le bloc absolu"
+    );
+}
