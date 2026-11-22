@@ -3741,21 +3741,19 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact | Exact % | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 270 | 58.1 | 98.76 | — | — |
-| comparable (reference present) | 1 711 | **1 270** | **74.23** | **98.76** | **90.82** | **93.51** |
-| excluding obsolete-source basket | 1 651 | **1 253** | **75.89** | **98.83** | **93.96** | — |
-| obsolete-source basket | 60 | 17 | 28.3 | — | 62.36 | — |
+| all rows | 2 186 | 1 348 | 61.7 | 98.77 | — | — |
+| measured (reference present, non-reader faults excluded) | 1 654 | **1 348** | **81.50** | **98.77** | **94.82** | **97.05** |
 
-The obsolete-source basket is the 60 files that still contain a command
-removed after 2.10 (`\setTextCresc`, `\setTextDecresc`, `\setTextDim`,
-`\sustainDown`/`\sustainUp`, `\setHairpinCresc`/`\setHairpinDim`,
-`\arpeggioUp`/`\arpeggioDown`). `python/convertrules.py` (rules 2.11.51 and
-2.11.52) replaces them; the installed LilyPond does not, and its error
-recovery inserts 1/2- or 1/3-beat gaps (verified on `violin_concerto_1`:
-removing `\setTextCresc` at line 65 removes the 1/3 gap at 644.0 and the
-reader matches the rest of the staff). Those files are a source-side
-artifact, not a reader deficit; they are reported separately and are **not**
-removed from the raw figure.
+The obsolete-source basket (60 files containing `\setTextCresc`, `\sustainDown`
+and the other commands removed after 2.10) is no longer counted separately:
+`scripts/oracle/common.py::raison_hors_lecteur` classifies, once for every
+`.ly` oracle, the rows whose failure is not the reader's fault — unusable
+LilyPond MIDI, a LilyPond compile failure, or obsolete syntax that
+`convert-ly` would rewrite (the commands of `parser.rs::obsolete_music_command`).
+`mesure.py` marks those rows excluded, so they leave both numerator and
+denominator; on `mut` this excludes 521 rows (the obsolete basket, unusable
+references and the sources scoretk deliberately does not support) and leaves
+1 654 measured rows.
 
 The previous campaign reported 692/2 186 exact (31.7 %; 39.9 % on the 1 735
 rows that had a reference) and N2 93.49 on the old references. The exact rate was low because 595 files had **all** their
@@ -3776,8 +3774,13 @@ comparable rows (1,201 → 1,204 exact, N2 +4,491). The `\octaveCheck` and
 `\afterGrace` fixes below add **9 exact files and 0 losses** (1,204 → 1,213,
 N2 +1,230). The only per-file N2 decreases are the `JPSFotF` parts (at most
 −10) and `Chop-28-24` (−6), all already divergent at tick 0 or carrying other
-causes; no exact file regresses. The remaining non-exact files outside the
-obsolete basket go from 465 to 453.
+causes; no exact file regresses. The next pass (Causes 10–12) adds **98 exact
+files and 0 losses** on the current oracle (1,252 → 1,348; N2 93.83 →
+94.82, no-repeat 96.46 → 97.05): 63 from the floating-point-stable grid, 23
+from freezing the default duration at parse time and 12 from punctuation
+articulations after `^`/`_`. Of the 98 rows those three causes made exact, 96
+remain measured; two fall in the newly excluded non-reader-fault set. The
+remaining non-exact measured files go from 465 to **306**.
 
 ### Cause 1: top-level `<< … >>` is one context per element
 
@@ -3849,8 +3852,8 @@ regresses.
 ### Classification of the 465 non-exact files (before this pass)
 
 The `mut` set outside the obsolete-source basket had 465 non-exact files
-before the `\octaveCheck`/`\afterGrace` pass; 398 remain after the octave
-and transposition passes. Symptoms
+before the `\octaveCheck`/`\afterGrace` pass; 306 remain after the octave,
+transposition, duration and articulation passes. Symptoms
 overlap (a file can be both `octave` and `notes_supp`); the first
 table groups by the oracle's primary flag, the second counts the constructs
 present in the source and its direct includes. `ne`/`ex` are the files that
@@ -3967,6 +3970,61 @@ and the **written** pitch stays that of the source. Tests
 `<transpose>` and written C5). On the 25 non-exact files with
 `\transposition`: `milan-pavan2` becomes exact (23 → 204), N2 88,152 →
 88,650, no exact loss.
+
+### Cause 10: the grid must ignore floating-point noise
+
+MusicXML attacks are sums of `duration / divisions`; a triplet is 1/6 of a
+quarter and cannot be represented exactly, so a note at 6.625 is read as
+6.625000000000001 while LilyPond keeps exact rational moments
+(`lily/include/moment.hh`, `Moment::main_part_` is a `Rational`). `quant`
+rounded the quotient directly: a note exactly half a grid step away (26.5
+cells) fell on the next cell on one side and on the previous one on the other.
+The quotient is now rounded to 9 decimals before the round-half-to-even,
+which leaves exact values unchanged and makes the grid insensitive to the
+noise. Selftest: `quant(6.625000000000001) == 6.5`,
+`quant(6.875000000000001) == 7.0`. **63 exact gains, 0 losses**, N2 +3,168
+(`Czerny_Op_821_No_005`: 137 → 145).
+
+### Cause 11: the default duration is fixed at parse time
+
+LilyPond fixes the duration of a bare pitch when it parses it: `event_chord`
+sets `parser->default_duration_` (`lily/parser.yy` l. 4644) and
+`maybe_notemode_duration` (l. 3505) stores the whole `Duration`, `*n/d` factor
+included (`make_duration`, l. 4704). The reader resolved it while walking the
+tree, so a `\repeat` replaying its body started from the last duration of the
+previous pass: in `traditioner_af_swenska_folk_dansar.3.13`, `g,` was 2
+quarters (from `a2`) in the first pass and 3 (from the closing `e2.`) in the
+second, shifting the whole second pass. Durations and multipliers are now
+frozen in each chord, and the parser only updates them where LilyPond does:
+`\skip`, `\partial`, the grouping duration of `\tuplet` and a music-function
+argument leave the default untouched (verified with LilyPond 2.27:
+`\skip 4*3 c` and `\partial 8 c` leave `c` at a quarter). The argument of a
+music function is parsed only to find its end and the body is then re-read
+after substitution (`REPARSE`, l. 1949, undone by `MYREPARSE`), so that first
+read restores the parse state: without it, `\barre 3 { … g8 }` gave the
+duration 8 to the bare notes before the `g8` of the argument
+(`faure-sicilienne-guitare-doigtee`). Tests
+`unfold_ne_reprend_pas_la_duree_par_defaut_du_passage` and
+`arguments_de_fonction_ne_laissent_pas_leur_duree_par_defaut`. **23 exact
+gains, 0 losses**, N2 +9,061; the two N2 decreases (`rimsky-korsakov-op11-1`
+−102, `scarlatti-k491` −29) are files that were already non-exact and whose
+first divergence does not move.
+
+### Cause 12: a punctuation sign after a direction is an articulation
+
+`script_abbreviation` (`lily/parser.yy` l. 3469) turns a punctuation sign into
+an articulation after `^` or `_` (`dashDot`, `dashBang`, `dashLarger`,
+`dashDash`, `dashHat`, `dashUnderscore`), and `direction_reqd_event` (l. 3337)
+accepts it as a direction event. `parse_direction_event` only handled
+commands, numbers and strings: on `d''16^.` the dot stayed in the token
+stream, the `4` of the following `^4` fingering was read as a quarter-note
+duration replaying the chord, and the triplet gained extra notes
+(`Czerny_Op_821_No_016`, 155 notes instead of 149). The signs `.`, `!`, `>`,
+`-`, `^`, `_` are now articulations; `+` (`dashPlus`, no equivalent in the
+model) is consumed. Test `signe_apres_direction_est_une_articulation` (11
+notes before, 4 after). **12 exact gains, 0 losses**, N2 +4,700 — the six
+neighbouring Czerny exercises plus `Mazurka-Op6-No1`, `Tschaikowsky-op37.2`
+and four others.
 
 ### Cause 5: `\octaveCheck` consumes its pitch
 
