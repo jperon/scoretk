@@ -7711,3 +7711,23 @@ fn beam_exceptions_valeur_de_set_nest_pas_de_musique() {
     let score = read_lilypond(src).expect("lecture");
     assert_eq!(accords_de_voix(&score, 0).len(), 1);
 }
+
+#[test]
+fn string_tuning_valeur_de_set_nest_pas_de_musique() {
+    // `ly/string-tunings-init.ly:29-37` : `stringTuning` est une fonction
+    // Scheme à argument musical, utilisée comme valeur de `\set`.
+    let src =
+        "\\version \"2.24.0\"\n{ \\set TabStaff.stringTunings = \\stringTuning <c g d' a'> c'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(accords_de_voix(&score, 0).len(), 1);
+}
+
+#[test]
+fn evenements_sans_argument_gardent_la_duree_nue() {
+    // `ly/declarations-init.ly:68-72`, `ly/music-functions-init.ly:421` :
+    // `fine`, `section`, `startStaff`, `stopStaff`, `breathe` sont des
+    // événements sans argument ; la durée nue qui suit reste de la musique.
+    let src = "\\version \"2.24.0\"\n{ c'4 \\startStaff 4 \\stopStaff 4 \\section 4 \\fine 4 \\breathe 4 c'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(accords_de_voix(&score, 0).len(), 7);
+}

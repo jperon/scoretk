@@ -3510,6 +3510,12 @@ impl<'a> Parser<'a> {
                 let _ = self.parse_music();
                 Music::Empty
             }
+            // `ly/string-tunings-init.ly:29-37` : `stringTuning` convertit un
+            // accord en liste de hauteurs, valeur de `\set stringTunings`.
+            "stringTuning" => {
+                let _ = self.parse_music();
+                Music::Empty
+            }
             "compressMMRests" => {
                 // `ly/music-functions-init.ly:452-459` : ne change que la
                 // gravure des silences ; les hauteurs et attaques restent.
