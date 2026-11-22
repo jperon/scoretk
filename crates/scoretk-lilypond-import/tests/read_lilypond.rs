@@ -6977,3 +6977,15 @@ fn text_mark_ne_mange_pas_la_duree_nue_suivante() {
         vec![60, 60, 60]
     );
 }
+
+#[test]
+fn identifiant_numerique_scheme_dans_repeat_unfold() {
+    // `lily/parser.yy` : `num = #3` lie un identifiant Scheme au nombre 3,
+    // utilisable comme argument de `\repeat unfold \num`.
+    let src = "\\version \"2.24.0\"\nnum = #3\nmus = { c'4 }\n{ \\repeat unfold \\num \\mus }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 60, 60]
+    );
+}

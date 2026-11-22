@@ -112,6 +112,8 @@ pub(crate) struct Parser<'a> {
     /// Musiques déclarées par `\addQuote`, consultées par `\cueDuring`
     /// (`ly/music-functions-init.ly:56-60,545-574`).
     quotes: BTreeMap<String, Music>,
+    /// Identifiants Scheme liés à un entier (`num = #3`).
+    numbers: BTreeMap<String, i64>,
 }
 
 /// Profondeur d'expansion maximale (garde-fou contre la récursion).
@@ -290,6 +292,7 @@ pub(crate) fn parse(
         tag_groups: default_tag_groups(),
         scheme_variables: BTreeMap::new(),
         duration_identifiers: BTreeMap::new(),
+        numbers: BTreeMap::new(),
         quotes: BTreeMap::new(),
     };
     parser.document()
@@ -2048,6 +2051,12 @@ impl<'a> Parser<'a> {
             ..
         }) = self.peek().cloned()
         {
+            if let Ok(valeur) = text.trim().parse::<i64>() {
+                self.position += 1;
+                self.variables.remove(&name);
+                self.numbers.insert(name, valeur);
+                return;
+            }
             if let Some((duree, facteur)) = scheme_duration_definition(&text) {
                 self.position += 1;
                 self.variables.remove(&name);
@@ -3294,6 +3303,12 @@ impl<'a> Parser<'a> {
                 text,
                 ..
             }) => text.parse().unwrap_or(2),
+            // `num = #3` puis `\repeat unfold \num` (`lily/parser.yy`).
+            Some(Token {
+                kind: Kind::Command,
+                text,
+                ..
+            }) => self.numbers.get(&text).copied().unwrap_or(2) as u32,
             _ => 2,
         };
         if self.peek().is_some_and(|token| token.is_command("etc")) {
@@ -5920,6 +5935,7 @@ mod tests {
             tag_groups: default_tag_groups(),
             scheme_variables: BTreeMap::new(),
             duration_identifiers: BTreeMap::new(),
+            numbers: BTreeMap::new(),
             quotes: BTreeMap::new(),
         };
         parser.parse_music()
@@ -5966,6 +5982,7 @@ mod tests {
                 tag_groups: default_tag_groups(),
                 scheme_variables: BTreeMap::new(),
                 duration_identifiers: BTreeMap::new(),
+                numbers: BTreeMap::new(),
                 quotes: BTreeMap::new(),
             };
             let progresse = parser.guard_progress(0);
