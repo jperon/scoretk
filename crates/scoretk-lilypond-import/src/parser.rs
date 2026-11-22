@@ -4732,6 +4732,32 @@ impl<'a> Parser<'a> {
         // pas une suite de mots consécutifs : `\unset Staff.keepAliveInterfaces`
         // suivi de `musA = …` doit laisser `musA` au lecteur de variables.
         while let Some(token) = self.peek().cloned() {
+            // Ancienne syntaxe `\override Context #'prop = valeur` (avant
+            // 2.18, `python/convertrules.py`) : le nom de propriété est un
+            // symbole Scheme quoté, que le lexer livre en un seul jeton
+            // (`'expand-limit`). Ne pas le consommer laissait `= 1` dans la
+            // musique : le `1` devenait une durée de blanche ronde et
+            // décalait la suite de quatre noires (Symphony5_1/2,
+            // `\override MultiMeasureRest #'expand-limit = 1`).
+            if let Kind::Scheme = token.kind {
+                let Some(symbol) = token.text.trim_start().strip_prefix('\'') else {
+                    break;
+                };
+                let symbol = symbol.trim();
+                if symbol.is_empty()
+                    || !symbol.chars().all(|caractere| {
+                        caractere.is_alphanumeric() || matches!(caractere, '-' | '_')
+                    })
+                {
+                    break;
+                }
+                parts.push(symbol.to_owned());
+                self.position += 1;
+                if !self.eat_punct('.') {
+                    break;
+                }
+                continue;
+            }
             let Kind::Word = token.kind else {
                 break;
             };
@@ -4743,7 +4769,14 @@ impl<'a> Parser<'a> {
             parts.push(token.text.clone());
             self.position += 1;
             if !self.eat_punct('.') {
-                break;
+                // `Context #'prop` : le nom quoté suit le contexte sans
+                // point ; la boucle le lit à l'itération suivante.
+                let suite_scheme = self.peek().is_some_and(|suivant| {
+                    suivant.kind == Kind::Scheme && suivant.text.trim_start().starts_with('\'')
+                });
+                if !suite_scheme {
+                    break;
+                }
             }
         }
         parts

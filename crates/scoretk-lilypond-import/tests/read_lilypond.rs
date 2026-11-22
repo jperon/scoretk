@@ -478,6 +478,36 @@ fn une_redefinition_scheme_ne_masque_pas_une_commande_integree() {
         .any(|spanner| matches!(spanner.kind, scoretk_core::model::SpannerType::Ottava(_))));
 }
 
+/// Ancienne syntaxe `\override Context #'prop = valeur` (avant 2.18) :
+/// le nom quoté doit être consommé, sinon `= 1` reste dans la musique et
+/// le `1` devient une durée de blanche ronde qui décale la suite
+/// (Symphony5_1/2).
+#[test]
+fn override_ancienne_syntaxe_ne_consomme_pas_la_duree_suivante() {
+    let src = "\\version \"2.24.0\"\n\\score { \\new Staff { \\time 2/4 \\override MultiMeasureRest #'expand-limit = 1 \\repeat volta 2 { r8 c'8 c' c' } } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let mut attaques: Vec<i64> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .flat_map(|segment| {
+            segment
+                .iter_elements()
+                .filter_map(|(_, element)| match element {
+                    SegmentItem::ChordRest(chord_rest) => {
+                        chord_rest.chord_ref()?;
+                        Some(segment.tick.ticks(1920))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    attaques.sort_unstable();
+    // r8 (0,25 en blanches), puis trois croches à 0,5/1/1,5 noires.
+    assert_eq!(attaques, vec![240, 480, 720]);
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");
