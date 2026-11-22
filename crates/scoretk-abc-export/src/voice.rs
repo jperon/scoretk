@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use scoretk_core::model::{
     Annotation, Chord, ChordRest, Fraction, HairpinType, KeySig, LyricsSyllabic, Measure, Note,
-    Score, SegmentItem, SegmentType, SpannerType, StaffId, Tick, Track, TupletId,
+    Score, SpannerType, StaffId, Tick, Track, TupletId,
 };
 
 use crate::writer;
@@ -174,11 +174,7 @@ pub(crate) fn render_voice(
         // `clefOct[n] = -clef-octave-change`) et `mkNote` (ligne 1154 :
         // `oct += clefOct[...]`) : `abc2midi` ignore le `-8`/`+8` des clefs
         // ABC, donc xml2abc décale les hauteurs écrites d'autant d'octaves.
-        // `clef` a déjà été muté par `draw_context_changes` jusqu'à la
-        // dernière clef de la mesure : le décalage de départ doit venir de
-        // la clef **au début** de mesure ; les changements suivants sont
-        // pris en compte par `clef_octave_at` à chaque note.
-        let clef_octave = new_clef.map_or(0, |value| i32::from(value.transposed.octave_change()));
+        let clef_octave = clef.map_or(0, |value| i32::from(value.octave_change()));
         if key_changed || clef_changed {
             let mut field = format!("[K:{}", pitch::key_field(&key));
             if let Some(clef_value) =
@@ -227,12 +223,7 @@ pub(crate) fn render_voice(
                         }
                     }
                 }
-                // Un `[K:… clef=treble-8]` inséré en cours de mesure change
-                // l'octave de lecture (ABC 2.1 §4.6) : le décalage écrit doit
-                // suivre la clef **à la note**, pas celle du début de mesure.
-                let octave_here = clef_octave_at(score, measure, staff, model_voice, item.tick)
-                    .unwrap_or(clef_octave);
-                let transpose = transpose_at(score, staff, item.tick) + 12 * octave_here;
+                let transpose = transpose_at(score, staff, item.tick) + 12 * clef_octave;
                 let mut grace = String::new();
                 let token = render_item(
                     score,
@@ -914,30 +905,6 @@ fn draw_context_changes(
             before[offset].push(token);
         }
     }
-}
-
-/// `octave-change` de la dernière clef en vigueur à `tick` dans cette voix.
-fn clef_octave_at(
-    score: &Score,
-    measure: &Measure,
-    staff: usize,
-    voice: usize,
-    tick: Tick,
-) -> Option<i32> {
-    let track = Track::new(score.staves[staff].id, u8::try_from(voice).unwrap_or(0));
-    measure
-        .segments
-        .iter()
-        .filter(|segment| {
-            segment.tick <= tick
-                && matches!(segment.kind, SegmentType::Clef | SegmentType::HeaderClef)
-        })
-        .filter_map(|segment| segment.element(track))
-        .filter_map(|item| match item {
-            SegmentItem::Clef(clef) => Some(i32::from(clef.transposed.octave_change())),
-            _ => None,
-        })
-        .next_back()
 }
 
 /// Indice du premier élément au tick donné ou après.
