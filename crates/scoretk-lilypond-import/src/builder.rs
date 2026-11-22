@@ -1975,6 +1975,7 @@ fn place_meta(
         MetaEvent::Partial(_)
         | MetaEvent::MeasureLength(_)
         | MetaEvent::MeasurePosition(_)
+        | MetaEvent::TieWaitForNote(_)
         | MetaEvent::Cadenza(_)
         | MetaEvent::Transposition(_) => {}
     }
@@ -2579,10 +2580,34 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
     }
     for staff in staves {
         for voice in &staff.voices {
+            // `\\set tieWaitForNote = ##t` : `Tie_performer::
+            // stop_translation_timestep` ne retire plus les liaisons pendantes
+            // dont la fin est passée (`lily/tie-performer.cc` l. 166-180) ; une
+            // note de même hauteur, même plus tard, vient les fermer
+            // (`acknowledge_audio_element`, l. 116-150). Le reglage est lu au
+            // moment où la liaison serait jetée, d'où une chronologie par voix.
+            let mut tie_wait: Vec<(Fraction, bool)> = voice
+                .interpreted
+                .events
+                .iter()
+                .filter_map(|event| match &event.kind {
+                    EventKind::Meta(MetaEvent::TieWaitForNote(on)) => Some((event.tick, *on)),
+                    _ => None,
+                })
+                .collect();
+            tie_wait.sort_by_key(|(tick, _)| *tick);
+            let wait_for_note = |tick: Fraction| {
+                tie_wait
+                    .iter()
+                    .rev()
+                    .find(|(start, _)| *start <= tick)
+                    .is_some_and(|(_, on)| *on)
+            };
             // Une liaison n'attend que le pas de temps où la note liée se
             // termine : `Tie_performer::stop_translation_timestep` retire les
             // liaisons pendantes dont la fin est passée. Une note de même
-            // hauteur plusieurs mesures plus tard ne peut donc pas la fermer.
+            // hauteur plusieurs mesures plus tard ne peut donc pas la fermer,
+            // sauf sous `tieWaitForNote`.
             let mut sequence: Vec<(Fraction, Fraction, NoteId, bool)> = Vec::new();
             for event in &voice.interpreted.events {
                 let EventKind::Chord(chord) = &event.kind else {
@@ -2615,15 +2640,24 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                 while fin < sequence.len() && sequence[fin].0 == tick {
                     fin += 1;
                 }
+                let wait = wait_for_note(tick);
                 for &(_, _, id, _) in &sequence[index..fin] {
                     let pitch = score.note(id).pitch;
-                    if open.get(&pitch).is_some_and(|&(_, end)| end == tick) {
+                    // Sans `tieWaitForNote`, seule la note liée qui se termine
+                    // exactement ici peut être fermée. Avec, LilyPond cherche
+                    // n'importe quelle tête pendante de même hauteur.
+                    let closes = open
+                        .get(&pitch)
+                        .is_some_and(|&(_, end)| end == tick || wait);
+                    if closes {
                         let (previous, _) = open.remove(&pitch).expect("liaison à fermer");
                         score.note_mut(previous).tie_forward = Some(id);
                         score.note_mut(id).tie_back = Some(previous);
                     }
                 }
-                open.retain(|_, (_, end)| *end > tick);
+                if !wait {
+                    open.retain(|_, (_, end)| *end > tick);
+                }
                 for &(_, end, id, tie) in &sequence[index..fin] {
                     if tie {
                         open.insert(score.note(id).pitch, (id, end));

@@ -416,6 +416,20 @@ fn compress_music_est_scale_durations() {
     );
 }
 
+/// `\\set tieWaitForNote = ##t` : les liaisons pendantes ne sont plus jetees a
+/// la fin de leur note (`lily/tie-performer.cc` l. 166-180), la note de meme
+/// hauteur qui arrive plus tard les ferme (`acknowledge_audio_element`,
+/// l. 116-150). `Chop-28-1` : `\\tuplet 3/2 {c,16~ g,~ c~} s8 | <c, g, c>4`
+/// n'a que trois attaques avec le reglage, six sans.
+#[test]
+fn tie_wait_for_note_garde_les_liaisons_pendantes() {
+    let avec = lire("\\set tieWaitForNote = ##t \\tuplet 3/2 { c'16~ g'~ c''~ } s8 <c' g' c''>4");
+    assert_eq!(hauteurs_attaques(&avec), vec![72, 79, 84]);
+
+    let sans = lire("\\tuplet 3/2 { c'16~ g'~ c''~ } s8 <c' g' c''>4");
+    assert_eq!(hauteurs_attaques(&sans), vec![72, 79, 84, 72, 79, 84]);
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");

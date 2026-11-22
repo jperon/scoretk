@@ -105,6 +105,8 @@ pub(crate) enum MetaEvent {
     MeasureLength(Fraction),
     /// `\set Timing.measurePosition` : position dans la mesure courante.
     MeasurePosition(Fraction),
+    /// `\set tieWaitForNote = ##t/#f`.
+    TieWaitForNote(bool),
     /// `\transposition` : hauteur jouée par un do écrit, datée.
     Transposition(PitchSpec),
     /// `\cadenzaOn` (`true`) / `\cadenzaOff` (`false`) : fin des barres
@@ -744,6 +746,7 @@ impl<'a> Interpreter<'a> {
             Context::MeasurePosition(position) => {
                 self.meta(MetaEvent::MeasurePosition(*position));
             }
+            Context::TieWaitForNote(on) => self.meta(MetaEvent::TieWaitForNote(*on)),
             Context::Cadenza(on) => self.meta(MetaEvent::Cadenza(*on)),
             Context::Bar(text) => {
                 if let Some(kind) = bar_line_type(text) {

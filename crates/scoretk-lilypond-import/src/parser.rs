@@ -3275,6 +3275,25 @@ impl<'a> Parser<'a> {
         {
             self.melisma_busy_disabled = true;
         }
+        if path
+            .iter()
+            .any(|part| part.eq_ignore_ascii_case("tiewaitfornote"))
+        {
+            let value = self
+                .peek()
+                .filter(|token| token.is_scheme())
+                .and_then(
+                    |token| match token.text.trim().to_ascii_lowercase().as_str() {
+                        "#t" => Some(true),
+                        "#f" => Some(false),
+                        _ => None,
+                    },
+                );
+            if let Some(on) = value {
+                self.position += 1;
+                return Music::Context(Context::TieWaitForNote(on));
+            }
+        }
         let fraction = self.parse_scheme_fraction();
         let is_measure_length = path
             .iter()

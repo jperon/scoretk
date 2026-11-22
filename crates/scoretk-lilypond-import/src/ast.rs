@@ -167,6 +167,10 @@ pub(crate) enum Context {
     /// mesure courante (négative pour une anacrouse, `lily/timing-translator.cc`
     /// l. 470-505).
     MeasurePosition(scoretk_core::model::Fraction),
+    /// `\set tieWaitForNote = ##t` : une liaison attend une note de même
+    /// hauteur même si la note liée est déjà terminée (`lily/tie-performer.cc`
+    /// l. 166-180).
+    TieWaitForNote(bool),
     /// `\cadenzaOn` (`true`) / `\cadenzaOff` (`false`), ou
     /// `\set Timing.timing = ##f` / `##t`. La valeur `true` coupe les barres
     /// automatiques jusqu'au prochain `false` ou à une barre explicite.
