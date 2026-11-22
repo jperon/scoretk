@@ -3206,3 +3206,58 @@ Two writer hypotheses were tested and reverted:
 No writer change was committed in this pass. The corpus remains at
 235/261 exact with no size increase; MusicXML export (144/173) and ABC import
 (4 576/4 756) are unaffected.
+
+## 37. What the writing oracle actually reads, and why the sub-groups are blocked
+
+### 37.1 The oracle re-reads our ABC with our own reader
+
+`noter_modele` (`scripts/oracle/abc/ecriture.py:260-279`) calls
+`ecriture_abc_scoretk` on the candidate `.abc` and compares the re-imported
+model with the direct export. It does **not** use `abc2midi` or MuseScore in
+model mode. Therefore a writer change that is not mirrored by the reader is
+asymmetric by construction: the earlier per-note clef-octave experiment fixed
+its reduced test (which used the same pair) but changed 56 corpus files
+because the writer's `clef` had already been advanced by
+`draw_context_changes` and the reader does not re-apply an inline `[K:…
+clef=…]` octave the way it applies a `V:` header.
+
+### 37.2 What ABC 2.1 says about clef octaves
+
+The local standard (§4.6, text lines 921-933) states that `[+8|-8]` "*draws
+'8' above or below the staff. The player will transpose the notes one octave
+higher or lower*"; §7.1 line 1661 repeats that players transpose. The separate
+`octave=<number>` specifier raises or lowers the **music code**. So the
+suggestion that `clef=` octave is purely notational is not supported by the
+local v2.1 text. `transpose=<semitones>` is playback-only and does not affect
+the printed score (line 927). No writer change was committed on this point.
+
+### 37.3 Per-sub-group proof for the 15 files of §35
+
+- **semitone (4 files)** — `testMultiInstrumentPart3.mscx` exports one part
+  with `transpose=-3` while its ABC contains an A- and a B-flat clarinet;
+  the re-import creates two parts (`-3`, `-2`) and the second is a semitone
+  off. `copypaste_parts.mscx` diverges around explicit `^` accidentals next
+  to inline `[K:E clef=bass]` fields; the remaining two are orchestral scores
+  with the same inline-key pattern. A writer-only fix cannot round-trip a
+  transposition that is not in the source model.
+- **octave (4 files)** — proved in §36/§37.1: the reader used by the oracle
+  is ours, and the per-note writer fix regressed 56 files.
+- **extra (4) / missing (3)** — all seven diverge on voice-overlay or
+  grace-note boundaries (`(…)`, `{…}`, `w:`), where the ABC text has no
+  one-to-one counterpart in the pivot model; no write-only rule was found.
+
+### 37.4 The other 11 non-exact files
+
+From the same jsonl (files with no first pitch divergence in
+`export_sequence.py`): 8 have only the generic `autre` flag
+(`keysig_78216`, `testBreaksPage`, `mmrest`, …), 3 have `attaque_decalee`
+(`Perosi_-_Laudate_Dominum.mxl`, `Anerio_Ascendit_Deus.mxl`,
+`CanonDeLaNoel.xml`), and one is the deliberately unsupported accordion file
+already excluded from the denominator. These are duration/attack differences,
+not pitch differences; fixing them needs the time-map comparison rather than
+`sequence.py`.
+
+No writer cause was committed in this pass: the two candidate rules were
+each measured and reverted with evidence above. Export stays at 235/261
+exact, with no size growth; ABC import at 4 576/4 756; MusicXML export at
+144/173.
