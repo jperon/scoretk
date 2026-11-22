@@ -6989,3 +6989,15 @@ fn identifiant_numerique_scheme_dans_repeat_unfold() {
         vec![60, 60, 60]
     );
 }
+
+#[test]
+fn identifiant_pointedans_un_nom_de_variable() {
+    // `identifier-alists.ly` : les noms de variables peuvent contenir un
+    // point (`violin.1 = { … }` puis `\violin.1`).
+    let src = "\\version \"2.24.0\"\nviolin.1 = { c'4 }\n{ \\violin.1 d'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62]
+    );
+}

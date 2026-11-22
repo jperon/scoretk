@@ -572,10 +572,14 @@ impl<'a> Parser<'a> {
                 self.parse_parallel_music();
             }
             Kind::Word => {
-                // Assignation `nom = musique` ou mot isolé.
-                if self.peek_at(1).is_some_and(|next| next.is_punct('=')) {
-                    let name = token.text.clone();
-                    self.position += 2;
+                // Assignation `nom = musique`, y compris les noms pointés
+                // des alists (`violin.1 = { … }`, `lily/lexer.ll`).
+                let (name, extra) = self.nom_pointe(&token.text, 1);
+                if self
+                    .peek_at(1 + extra)
+                    .is_some_and(|next| next.is_punct('='))
+                {
+                    self.position += 2 + extra;
                     self.assign(name);
                 } else if self.at_toplevel_music() {
                     self.parse_toplevel_music(&token);
@@ -2425,6 +2429,25 @@ impl<'a> Parser<'a> {
         true
     }
 
+    /// Nom de variable pointé commençant à `position` (`violin.1`) et nombre
+    /// de jetons supplémentaires consommés après le premier.
+    fn nom_pointe(&self, premier: &str, depart: usize) -> (String, usize) {
+        let mut nom = premier.to_owned();
+        let mut extra = 0usize;
+        while self
+            .peek_at(depart + extra)
+            .is_some_and(|token| token.is_punct('.'))
+            && self
+                .peek_at(depart + 1 + extra)
+                .is_some_and(|token| matches!(token.kind, Kind::Word | Kind::Number))
+        {
+            nom.push('.');
+            nom.push_str(&self.peek_at(depart + 1 + extra).unwrap().text);
+            extra += 2;
+        }
+        (nom, extra)
+    }
+
     /// Commande musicale.
     fn parse_command(&mut self) -> Music {
         let Some(Token {
@@ -2439,12 +2462,13 @@ impl<'a> Parser<'a> {
         self.position += 1;
         // Une variable musicale masque les commandes intégrées, comme dans
         // LilyPond (`identifiant = { … }` puis `\identifiant`).
-        let lookup = name
+        let simple = name
             .strip_prefix('"')
             .and_then(|rest| rest.strip_suffix('"'))
-            .unwrap_or(&name)
-            .to_owned();
+            .unwrap_or(&name);
+        let (lookup, extra) = self.nom_pointe(simple, 0);
         if let Some(music) = self.variables.get(&lookup).cloned() {
+            self.position += extra;
             // Une valeur qui n'est pas de la musique utilisable (commande
             // inconnue) ne doit pas disparaître en silence au point d'appel ;
             // une musique vide est normale (`m = { }`).
