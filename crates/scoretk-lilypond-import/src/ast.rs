@@ -130,6 +130,11 @@ pub(crate) enum ChordKind {
     /// l'analyse syntaxique ne les connaît pas, contrairement à
     /// l'interprétation.
     Repeat,
+    /// Durée seule (`8`, `4`) : répète la hauteur de l'élément précédent,
+    /// note **ou** accord (`expand-repeat-notes!`, `scm/music-functions.scm`
+    /// l. 972-1015), contrairement à `q` qui ne reprend qu'un `EventChord`
+    /// (`< … >`).
+    PitchRepeat,
 }
 
 /// Accord, silence ou silence multi-mesures avec sa durée.
@@ -144,6 +149,13 @@ pub(crate) struct Chord {
     /// Le multiplicateur vient de `\scaleDurations`, pas d'un `*n/d` écrit :
     /// il ne devient pas la durée par défaut de la musique qui suit.
     pub from_scale: bool,
+    /// Écrit entre chevrons (`< … >`), donc `EventChord` pour LilyPond.
+    ///
+    /// Seul un `EventChord` sert de référence à `q` (`expand-repeat-chords!`,
+    /// `scm/music-functions.scm:920-945`) : une note nue est un `NoteEvent` et
+    /// ne met pas à jour le dernier accord répété (`czerny-op840-4` :
+    /// `g4 < b d > q g q q`, où les `q` après `g` reprennent `< b d >`).
+    pub bracketed: bool,
     /// Événements attachés à l'accord.
     pub posts: Vec<PostEvent>,
     /// Vrai pour un silence rendu invisible (`Rest.transparent`).

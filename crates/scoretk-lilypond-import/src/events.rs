@@ -347,8 +347,12 @@ struct SpawnResult {
     end: Fraction,
     /// État d'octave à la fin de la voix.
     octave: OctaveState,
-    /// Notes du dernier accord, pour la répétition `q`.
+    /// Notes du dernier élément joué (note ou accord), pour les durées
+    /// seules (`expand-repeat-notes!`).
     last_chord_notes: Option<Vec<NoteEvent>>,
+    /// Notes du dernier `EventChord` écrit entre chevrons, seule référence
+    /// de `q` (`expand-repeat-chords!`).
+    last_event_chord_notes: Option<Vec<NoteEvent>>,
     /// Durée par défaut à la fin de la voix, propagée à la musique qui
     /// suit le `<< … >>` (`lily/music-sequence.cc`).
     default_duration: Duration,
@@ -379,8 +383,12 @@ pub(crate) struct Interpreter<'a> {
     /// englobant ne restaure l'état d'origine. Sert à enchaîner les voix d'un
     /// `<< … \ … >>` comme `music_list_to_relative` (`lily/music-sequence.cc`).
     relative_final: Option<OctaveState>,
-    /// Notes résolues du dernier accord émis, pour la répétition `q`.
+    /// Notes résolues du dernier élément émis (note ou accord), pour les
+    /// durées seules.
     last_chord_notes: Option<Vec<NoteEvent>>,
+    /// Notes résolues du dernier `EventChord` (`< … >`), seule référence de
+    /// `q` : une note nue ne met pas à jour la répétition d'accord.
+    last_event_chord_notes: Option<Vec<NoteEvent>>,
     /// Transposition en vigueur (degrés diatoniques, demi-tons).
     transpose: (i32, i32),
     /// Décalage concert du `\transposition` du bloc `\midi`, en demi-tons.
@@ -445,6 +453,7 @@ impl<'a> Interpreter<'a> {
             octave,
             relative_final: None,
             last_chord_notes: None,
+            last_event_chord_notes: None,
             transpose: (0, 0),
             midi_instrument_transpose: 0,
             tuplets: Vec::new(),
@@ -599,6 +608,7 @@ impl<'a> Interpreter<'a> {
                 // durée par défaut (`lily/parser.yy` `NEWCONTEXT`).
                 self.octave = child.octave;
                 self.last_chord_notes = child.last_chord_notes;
+                self.last_event_chord_notes = child.last_event_chord_notes.clone();
                 last_duration = child.default_duration;
                 self.default_multiplier = child.default_multiplier;
             }
@@ -665,6 +675,7 @@ impl<'a> Interpreter<'a> {
             // `>>` de la dernière note de la dernière branche.
             self.octave = child.octave;
             self.last_chord_notes = child.last_chord_notes;
+            self.last_event_chord_notes = child.last_event_chord_notes.clone();
             last_duration = child.default_duration;
             self.default_multiplier = child.default_multiplier;
         }
@@ -702,6 +713,7 @@ impl<'a> Interpreter<'a> {
             default_duration: self.default_duration,
             default_multiplier: self.default_multiplier,
             last_chord_notes: self.last_chord_notes.clone(),
+            last_event_chord_notes: self.last_event_chord_notes.clone(),
             stem_override: self.stem_override,
             staff_target: None,
             tuplet_scale: self.tuplet_scale * self.open_tuplet_scale(),
@@ -724,6 +736,7 @@ impl<'a> Interpreter<'a> {
             end: child.cursor,
             octave: child.octave,
             last_chord_notes: child.last_chord_notes,
+            last_event_chord_notes: child.last_event_chord_notes,
             default_duration: child.default_duration,
             default_multiplier: child.default_multiplier,
         };
@@ -1287,14 +1300,23 @@ impl<'a> Interpreter<'a> {
                         visible: !chord.invisible,
                     }
                 } else {
+                    // Les durées seules reprennent la dernière note ou le
+                    // dernier accord (`expand-repeat-notes!`) ; `q` ne
+                    // reprend qu'un `EventChord` (`< … >`,
+                    // `expand-repeat-chords!`, `scm/music-functions.scm`
+                    // l. 920-945) : une note nue laisse la référence de `q`
+                    // inchangée (`czerny-op840-4` : `g4 < b d > q g q q`).
                     self.last_chord_notes = Some(notes.clone());
+                    if chord.bracketed {
+                        self.last_event_chord_notes = Some(notes.clone());
+                    }
                     ChordContent::Notes(notes)
                 }
             }
-            // `q` reprend les hauteurs déjà résolues du dernier accord : les
-            // résoudre de nouveau depuis ses marques écrites les décalerait
-            // d'une octave à chaque répétition.
-            ChordKind::Repeat => match self.last_chord_notes.clone() {
+            // `q` reprend les hauteurs déjà résolues du dernier `EventChord` :
+            // les résoudre de nouveau depuis ses marques écrites les
+            // décalerait d'une octave à chaque répétition.
+            ChordKind::Repeat => match self.last_event_chord_notes.clone() {
                 Some(mut notes) => {
                     // `q` rejoue les hauteurs du dernier accord, pas ses
                     // prolongations : `repetition-chord` ne pose que la durée
@@ -1306,10 +1328,31 @@ impl<'a> Interpreter<'a> {
                     for note in &mut notes {
                         note.tie = false;
                     }
+                    // Le `q` rempli est lui-même un accord : il devient la
+                    // référence des deux mécanismes de répétition.
+                    self.last_chord_notes = Some(notes.clone());
+                    self.last_event_chord_notes = Some(notes.clone());
                     ChordContent::Notes(notes)
                 }
                 None => {
+                    // `expand-repeat-chords!` avertit « Bad chord repetition »
+                    // et ne produit aucune note.
                     self.warn("q sans accord précédent : répétition ignorée");
+                    ChordContent::Notes(Vec::new())
+                }
+            },
+            // Durée seule : elle reprend la dernière note **ou** le dernier
+            // accord (`expand-repeat-notes!`, l. 972-1015) ; elle ne devient
+            // pas la référence de `q`.
+            ChordKind::PitchRepeat => match self.last_chord_notes.clone() {
+                Some(mut notes) => {
+                    for note in &mut notes {
+                        note.tie = false;
+                    }
+                    ChordContent::Notes(notes)
+                }
+                None => {
+                    self.warn("durée seule sans note précédente : répétition ignorée");
                     ChordContent::Notes(Vec::new())
                 }
             },

@@ -566,6 +566,50 @@ fn branche_parallele_dans_un_nolet_porte_sa_duree_reelle() {
     assert_eq!(nolet.count(), 3, "trois notes de 1/12 : {ticks:?}");
 }
 
+/// `q` ne répète que le dernier accord écrit entre chevrons : une note nue
+/// est un `NoteEvent` et ne met pas à jour la référence
+/// (`expand-repeat-chords!`, `scm/music-functions.scm` l. 920-945). Dans
+/// `< c e >4 b4 q4 g4`, les deux `q` reprennent `< c e >` (Czerny op. 840
+/// n° 4 et n° 6 : `g4 < b d > q g q q`).
+#[test]
+fn q_ne_repete_que_le_dernier_accord_entre_chevrons() {
+    let score = lire("\\relative c' { < c e >4 b4 q4 g4 | < d f >4 q4 b4 q4 }");
+    let attaques: Vec<(i64, Vec<u8>)> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| {
+            let (_, element) = segment.iter_elements().find(|(_, element)| {
+                matches!(element, SegmentItem::ChordRest(chord_rest) if chord_rest.chord_ref().is_some())
+            })?;
+            let SegmentItem::ChordRest(chord_rest) = element else {
+                return None;
+            };
+            let mut pitches: Vec<u8> = chord_rest
+                .chord_ref()?
+                .notes
+                .iter()
+                .map(|id| score.note(*id).pitch)
+                .collect();
+            pitches.sort_unstable();
+            Some((segment.tick.ticks(1920), pitches))
+        })
+        .collect();
+    assert_eq!(
+        attaques,
+        vec![
+            (0, vec![60, 64]),
+            (480, vec![59]),
+            (960, vec![60, 64]),
+            (1440, vec![55]),
+            (1920, vec![50, 53]),
+            (2400, vec![50, 53]),
+            (2880, vec![47]),
+            (3360, vec![50, 53]),
+        ]
+    );
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");
@@ -4010,9 +4054,11 @@ fn durees_nues_repetent_la_note_ou_l_accord_precedent() {
         ]
     );
 
-    // Cas non concerné : `q` et les durées données restent inchangés.
+    // `q` ne reprend qu'un accord entre chevrons : après une note nue,
+    // LilyPond avertit (« Bad chord repetition ») et n'émet aucune note
+    // (`expand-repeat-chords!`, `scm/music-functions.scm` l. 920-945).
     let score = lire("\\time 4/4 c4 q8 q8 d4 e4");
-    assert_eq!(hauteurs_attaques(&score), vec![60, 60, 60, 62, 64]);
+    assert_eq!(hauteurs_attaques(&score), vec![60, 62, 64]);
 }
 
 #[test]

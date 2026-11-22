@@ -3343,6 +3343,7 @@ impl<'a> Parser<'a> {
                     duration,
                     multiplier,
                     from_scale: false,
+                    bracketed: false,
                     posts: Vec::new(),
                     invisible: true,
                 })
@@ -3890,6 +3891,7 @@ impl<'a> Parser<'a> {
                         duration,
                         multiplier,
                         from_scale: false,
+                        bracketed: false,
                         posts,
                         invisible,
                     });
@@ -3904,6 +3906,7 @@ impl<'a> Parser<'a> {
                         duration,
                         multiplier,
                         from_scale: false,
+                        bracketed: false,
                         posts,
                         invisible: false,
                     });
@@ -3958,6 +3961,7 @@ impl<'a> Parser<'a> {
                     duration,
                     multiplier,
                     from_scale: false,
+                    bracketed: false,
                     posts: chord_posts,
                     invisible: false,
                 });
@@ -4004,6 +4008,7 @@ impl<'a> Parser<'a> {
             duration,
             multiplier,
             from_scale: false,
+            bracketed: false,
             posts,
             invisible: false,
         })
@@ -4047,6 +4052,7 @@ impl<'a> Parser<'a> {
             duration,
             multiplier,
             from_scale: false,
+            bracketed: true,
             posts,
             invisible: false,
         })
@@ -4071,10 +4077,11 @@ impl<'a> Parser<'a> {
             return Music::Empty;
         }
         Music::Chord(Chord {
-            kind: ChordKind::Repeat,
+            kind: ChordKind::PitchRepeat,
             duration,
             multiplier,
             from_scale: false,
+            bracketed: false,
             posts: self.parse_posts(),
             invisible: false,
         })
