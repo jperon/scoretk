@@ -7116,3 +7116,17 @@ fn quote_during_joue_la_citation() {
         .filter(|n| n.pitch == 67)
         .all(|n| n.small));
 }
+
+#[test]
+fn with_suivi_d_un_identifiant_de_contexte() {
+    // `ly/context-mods-init.ly:52` et `lily/parser.yy:1625` : `\with` accepte
+    // un `MUSIC_IDENTIFIER` (`\RemoveEmptyStaves`) comme modification de
+    // contexte, sans bloc entre accolades.
+    let src = "\\version \"2.24.0\"\n\
+         \\new Staff \\with \\RemoveEmptyStaves { c'1 r1 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60]
+    );
+}

@@ -1209,7 +1209,23 @@ impl<'a> Parser<'a> {
         let mut midi_silent = false;
         if self.eat_command("with") {
             let debut_with = self.position;
-            let properties = self.parse_with_block();
+            // `lily/parser.yy:1625` (`context_modification_arg`) : après
+            // `\with`, un identifiant musical (`\RemoveEmptyStaves`,
+            // `ly/context-mods-init.ly:52`) est une modification de contexte.
+            // Le consommer seul, sinon la musique suivante serait prise pour
+            // son argument (`remove-empty-context-mod.ly`).
+            let identifiant_mod = self.peek().is_some_and(|token| token.kind == Kind::Command)
+                && !self.peek().is_some_and(|token| token.is_command("with"));
+            if identifiant_mod {
+                self.position += 1;
+            }
+            let properties = if identifiant_mod {
+                // L'identifiant était l'unique argument de `\with` : le bloc
+                // qui suit est la musique de la portée, pas un second `\with`.
+                Vec::new()
+            } else {
+                self.parse_with_block()
+            };
             // `ly/performer-init.ly:32` : le `Staff_performer` rend la portée
             // audible dans le MIDI. Un `\with { \remove "Staff_performer" }`
             // (pianoReduction des partitions MuseScore) retire donc cette
