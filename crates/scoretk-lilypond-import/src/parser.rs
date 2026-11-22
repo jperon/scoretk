@@ -2846,6 +2846,19 @@ impl<'a> Parser<'a> {
                     fraction,
                 })
             }
+            "autoChange" => {
+                // `ly/music-functions-init.ly:278-303` : `\\autoChange`
+                // répartit la musique entre deux portées selon un seuil ; le
+                // MIDI joue toutes ses notes, on lit donc la musique une
+                // seule fois (les deux `\with` et la hauteur sont ignorés).
+                let _ = self.parse_optional_pitch();
+                for _ in 0..2 {
+                    if self.eat_command("with") {
+                        let _ = self.parse_with_block();
+                    }
+                }
+                self.parse_music()
+            }
             "repeat" => self.parse_repeat(),
             "*" | "%" => {
                 // `ly/music-functions-init.ly:742-751` : raccourcis de
@@ -5636,6 +5649,7 @@ fn starts_music_command(name: &str) -> bool {
             "relative"
                 | "fixed"
                 | "absolute"
+                | "autoChange"
                 | "unfoldRepeats"
                 | "transpose"
                 | "tuplet"

@@ -101,6 +101,14 @@ def analyse_ligne(args: tuple) -> dict:
         if re.search(patron, nettoye):
             construct = nom
             break
+    if construct == "sans-construct":
+        # L'extrait local ne porte souvent que l'en-tête : repli sur le
+        # constructeur dominant de la source entière.
+        entier = BOILERPLATE.sub("", texte)
+        for nom, patron in CONSTRUCTS:
+            if re.search(patron, entier):
+                construct = nom
+                break
     return {
         "fichier": fichier,
         "nom": Path(fichier).name,

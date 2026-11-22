@@ -7197,3 +7197,17 @@ fn repeat_avec_etc_applique_le_corps_a_l_appel() {
         vec![60, 60, 60, 60]
     );
 }
+
+#[test]
+fn auto_change_joue_toutes_les_notes() {
+    // `ly/music-functions-init.ly:278-303` : `\autoChange` répartit les
+    // notes entre deux portées, mais le MIDI joue toutes les notes.
+    let src = "\\version \"2.24.0\"\n\
+         \\autoChange c' \\with { \\clef treble } \\with { \\clef bass }\n\
+         { c'4 d' e' f' }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62, 64, 65]
+    );
+}
