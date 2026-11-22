@@ -124,8 +124,10 @@ pub fn find_all_tuplets_for_drums(
     track: &mut MTrack,
     sigmap: &super::timesigmap::TimeSigMap,
     basic_quant: scoretk_core::model::Fraction,
+    options: &super::operations::ImportOptions,
+    is_human: bool,
 ) {
-    super::tuplet::find_all_tuplets(track, sigmap, basic_quant);
+    super::tuplet::find_all_tuplets(track, sigmap, basic_quant, options, is_human);
     let _ = min_allowed_duration();
 }
 

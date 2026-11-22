@@ -31,7 +31,8 @@
 
 use scoretk_core::model::Fraction;
 
-use super::{min_allowed_duration, ChordKey, MTrack};
+use super::{ChordKey, MTrack};
+use crate::chord::min_allowed_duration;
 use crate::quant::find_min_quantized_on_time;
 
 /// Attaque resserrée d'un accord (`findOnTimeBetweenChords`).

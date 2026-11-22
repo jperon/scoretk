@@ -102,3 +102,81 @@ fn deux_n_olets_partagent_le_premier_accord() {
         "voix du triolet puis du quintuplet"
     );
 }
+
+/// `tuplet_3_5_7_tuplets` : trois n-olets superposés (3:2, 5:4, 7:8) qui
+/// partagent leur premier accord. MuseScore les détecte tous les trois
+/// (`detectTuplets`, `importmidi_tuplet_detect.cpp:354-426`) et les répartit
+/// sur trois voix (`assignVoices`, `importmidi_tuplet_voice.cpp:1065-1121`).
+///
+/// Les options reproduisent le test amont (`midiimport_tests.cpp:366-379`) :
+/// `Q_4`, pas de scission de portée, pas de simplification des durées. La
+/// tolérance 4/3 de `collectChords` doit rester **après** la détection
+/// (`quantizeAllTracks`, `importmidi.cpp:265-275`) : appliquée avant, elle
+/// fusionne les notes 5:4 et 7:8 de même attaque approchée et le filtre ne
+/// voit plus que 3:2 et 9:8.
+#[test]
+fn trois_n_olets_partagent_le_premier_accord() {
+    let notes: [(u32, u8, u32); 15] = [
+        (0, 77, 124),
+        (0, 72, 70),
+        (0, 52, 50),
+        (56, 47, 108),
+        (77, 74, 150),
+        (111, 50, 163),
+        (128, 81, 250),
+        (154, 72, 226),
+        (166, 47, 219),
+        (221, 50, 268),
+        (231, 74, 300),
+        (256, 79, 378),
+        (276, 50, 330),
+        (308, 76, 390),
+        (332, 53, 378),
+    ];
+    let mut events = vec![(0, Ev::TimeSig(4, 4)), (0, Ev::Tempo(500_000))];
+    for (on, pitch, off) in notes {
+        events.push((on, Ev::NoteOn(0, pitch, 80)));
+        events.push((off, Ev::NoteOff(0, pitch)));
+    }
+    // Mesures suivantes : la dernière note du mesure doit rester hors n-olet.
+    for (on, pitch, off) in [(385, 65, 760), (769, 64, 1140), (1152, 62, 1530)] {
+        events.push((on, Ev::NoteOn(0, pitch, 80)));
+        events.push((off, Ev::NoteOff(0, pitch)));
+    }
+    events.sort_by_key(|(tick, _)| *tick);
+    let bytes = smf_with(
+        Format::Parallel,
+        Timing::Metrical(u15::new(TPB as u16)),
+        &[events],
+    );
+    let options = scoretk_midi_import::ImportOptions {
+        tuplet_notation: true,
+        quant_value: scoretk_midi_import::QuantValue::Q4,
+        do_staff_split: false,
+        allow_staff_split_redefinition: false,
+        simplify_durations: false,
+        change_clef: false,
+        ..scoretk_midi_import::ImportOptions::default()
+    };
+    let score = scoretk_midi_import::read_midi_with(&bytes, &options).expect("lecture");
+    let ratios: Vec<(i64, i64)> = score
+        .tuplets
+        .iter()
+        .map(|tuplet| (tuplet.actual_notes, tuplet.normal_notes))
+        .collect();
+    assert_eq!(
+        ratios,
+        vec![(3, 2), (5, 4), (7, 8)],
+        "trois n-olets attendus"
+    );
+    // Les trois accords à l'attaque 0 sont répartis sur trois voix.
+    let mut voix = Vec::new();
+    for pitch in [77u8, 72, 52] {
+        voix.push(voix_de(&score, 0.0, pitch).map(|(voix, _)| voix));
+    }
+    assert_eq!(
+        voix,
+        vec![Some(0), Some(1), Some(2)],
+        "voix des trois n-olets"
+    );
+}

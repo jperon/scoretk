@@ -428,9 +428,9 @@ measures), so the source-notes comparison is pitch + onset.
 
 | Lot | Files | Exact | N1 % | N2 % | N2d % | N2v % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| upstream `.mscx` | 96 | 94 (97,9 %) | 100,00 | 99,88 | 99,88 | 98,71 |
-| LilyPond `.ly` (87 excluded) | 932 | 916 (98,3 %) | 99,97 | 99,87 | — | — |
-| all comparable | 1 028 | **1 010 (98,2 %)** | **99,97** | **99,87** | — | — |
+| upstream `.mscx` | 96 | 95 (99,0 %) | 100,00 | 99,88 | 99,88 | 99,88 |
+| LilyPond `.ly` (87 excluded) | 932 | 917 (98,4 %) | 99,98 | 99,89 | — | — |
+| all comparable | 1 028 | **1 012 (98,3 %)** | **99,98** | **99,89** | — | — |
 
 Percentages are weighted by the reference notes (100 028). On the `.mscx` lot
 the exactness includes voice and duration; on the `.ly` lot it is
@@ -450,10 +450,9 @@ unmatched note with the finest cause: `note sup` (extra note),
 
 | First divergence | Files | Example |
 | --- | ---: | --- |
-| `attaque` | 8 | `up-human_4-4` |
+| `attaque` | 7 | `up-human_4-4` |
 | `note sup` | 8 | `ly-lily-30ec2d9a` |
 | `octave` | 1 | `ly-Lassus_Alleluja._Dies_sanctificatus` |
-| `voix` | 1 | `up-tuplet_3_5_7_tuplets` |
 
 Two reader fixes of this pass show up here because the `.ly` references are
 converted to MusicXML by the same binary: `Kryshachok` (`\chordmode` octave
@@ -518,11 +517,22 @@ than importer defects:
   `voice.rs` instead of the duplicate approximation). Measured: 1 008 before
   and after, no loss — the corpus does not exercise an on-time collision
   through this path, so the fix is fidelity, not score.
-- **remaining tuplet defect**: `tuplet_3_5_7_tuplets` differs by **detection**,
-  not by voice assignment: the port detects two 7:8 tuplets where MuseScore
-  reads 3:2, 5:4 and 7:8 (`detectTuplets`, `importmidi_tuplet.cpp:1076-1141`,
-  simplified in the port). With one tuplet instead of three,
-  `MidiTuplet::assignVoices` has nothing to spread over three voices.
+- **`findAllTuplets` / `collectChords` order** (fixed): MuseScore detects the
+  tuplets **before** the 4/3 `collectChords` of `quantizeAllTracks`
+  (`importmidi.cpp:265-275`: `findAllTuplets`, then
+  `collectChords({4,3})`, then `quantizeChords`). The port applied the 4/3
+  collection first; on `tuplet_3_5_7_tuplets` it merged the 5:4 and 7:8 notes
+  whose attacks are 12 ticks apart (154 and 166) into one chord at
+  `193/1920`, so `findBestTuplets` (`importmidi_tuplet_filter.cpp:691-717`)
+  saw them as sharing a non-first chord and kept the 9:8 instead of 3:2 + 5:4
+  + 7:8. The collection now follows the detection, and the existing faithful
+  `detect_tuplets`/`filter_tuplets` are also wired into `find_all_tuplets`
+  (drums and the late-insertion path) instead of the old shortcut: the same
+  test now finds the three tuplets and spreads the shared first chord over
+  three voices. Measured: **1 010 → 1 012/1 028**, no per-file loss and no
+  N1/N2/N2v regression; gains `up-tuplet_3_5_7_tuplets` and
+  `ly-Ad_te_Suspiramus` (the latter was a Q16 grid artefact, now reproduced
+  exactly because the chord is no longer merged before quantisation).
 - **`Kryshachok`** is a **LilyPond reader** octave error: the MIDI has
   (46, 50, 53) at 4.0 and the reference written pitch is (58, 62, 65), with
   no `<transpose>` or octave clef between them — the reader resolved the bass

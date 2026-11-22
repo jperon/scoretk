@@ -24,13 +24,13 @@
 //! N-olets de l'import MIDI : limites, détection et rattachement des éléments.
 //!
 //! Portage de `MidiTuplet` : la table des ratios (`tupletsLimits`), la
-//! détection par mesure (`detectTuplets`, simplifiée) et les fonctions de
-//! recherche utilisées par la quantification et la création des notes.
+//! détection par mesure (`detectTuplets`, `importmidi_tuplet_detect.cpp`), le
+//! filtre (`filterTuplets`) et les fonctions de recherche utilisées par la
+//! quantification et la création des notes.
 
 use scoretk_core::model::Fraction;
 
-use super::chord::{min_allowed_duration, ChordKey, MTrack};
-use super::meter::{divisions_of_bar_for_tuplets_raw, is_simple_note_duration};
+use super::chord::{ChordKey, MTrack};
 use super::timesigmap::{fraction_from_ticks, TimeSigMap};
 
 mod detect;
@@ -102,7 +102,7 @@ pub fn detect_all_tuplets(
         if !bar_len.is_positive() {
             continue;
         }
-        candidates.extend(detect::detect_tuplets(
+        let mut bar_candidates = detect::detect_tuplets(
             track,
             &keys,
             bar_index,
@@ -111,14 +111,20 @@ pub fn detect_all_tuplets(
             timesig.numerator,
             basic_quant,
             detect_options,
-        ));
+        );
+        // `findTuplets` (`importmidi_tuplet.cpp:1097-1120`) filtre les
+        // n-olets **de la mesure courante** avant d'attribuer les voix, pas
+        // tous ceux du morceau : `findBestTuplets` compare des ensembles
+        // d'une même mesure et `findTupletError` y ajoute l'erreur des
+        // accords hors n-olet de la mesure.
+        filter::filter_tuplets(
+            track,
+            &mut bar_candidates,
+            basic_quant,
+            options.max_voice_count.limit(),
+        );
+        candidates.extend(bar_candidates);
     }
-    filter::filter_tuplets(
-        track,
-        &mut candidates,
-        basic_quant,
-        options.max_voice_count.limit(),
-    );
     candidates
 }
 
@@ -530,259 +536,36 @@ pub fn remove_empty_tuplets(track: &mut MTrack) {
 
 /// Cherche les n-olets d'une piste (`MidiTuplet::findAllTuplets`).
 ///
-/// La détection parcourt les divisions métriques de chaque mesure et accepte
-/// un groupe de `n` accords également répartis quand la durée d'une note du
-/// groupe n'est pas une figure binaire : c'est le cas des triolets, quintolet,
-/// septolet et nonolet. Les duolets et quadruolets, dont la grille est binaire,
-/// ne sont pas détectés (options `search2plets`/`search4plets` neutralisées).
-pub fn find_all_tuplets(track: &mut MTrack, sigmap: &TimeSigMap, basic_quant: Fraction) {
+/// `findAllTuplets` (`importmidi_tuplet.cpp:1076-1141`) parcourt chaque mesure,
+/// détecte les candidats (`detectTuplets`, `importmidi_tuplet_detect.cpp:354-426`)
+/// puis les filtre (`filterTuplets`, `:747-786`) **mesure par mesure** avant de
+/// les rattacher aux accords. C'est le même chemin que
+/// [`detect_and_assign_early`], sans l'attribution des voix : il sert aux
+/// percussions et à l'insertion tardive (`tuplet_notation = false`).
+pub fn find_all_tuplets(
+    track: &mut MTrack,
+    sigmap: &TimeSigMap,
+    basic_quant: Fraction,
+    options: &super::operations::ImportOptions,
+    is_human: bool,
+) {
     if track.chords.is_empty() {
         return;
     }
-    let bar_count = track
-        .chords
-        .iter()
-        .map(|(_, chord)| chord.bar_index)
-        .max()
-        .unwrap_or(-1)
-        + 1;
-    let mut next_seq = 0_u64;
-
-    for bar_index in 0..bar_count {
-        let bar_start =
-            super::timesigmap::fraction_from_ticks(sigmap.bar2tick(i64::from(bar_index), 0));
-        let timesig = sigmap.timesig(sigmap.bar2tick(i64::from(bar_index), 0));
-        let bar_len = timesig.measure_len();
-        let mut spans = divisions_of_bar_for_tuplets_raw(bar_len, timesig.numerator);
-        spans.retain(|span| !span.is_zero());
-        spans.sort_by(|left, right| right.cmp(left));
-
-        for span in spans {
-            let beat = super::meter::beat_length_raw(bar_len, timesig.numerator);
-            let step = if beat.is_positive() {
-                span.min(beat)
-            } else {
-                span
-            };
-            // Garde de progression : un fichier MIDI mal formé (mesure de
-            // longueur nulle ou division invalide) ne doit pas bloquer la
-            // boucle. `span` est déjà filtré non nul, mais une mesure
-            // incohérente peut rendre `step` non positif.
-            if !step.is_positive() {
-                continue;
-            }
-            let mut start = bar_start;
-            while start + span <= bar_start + bar_len {
-                if let Some((voice, tuplet_number, tolerance)) =
-                    detect_tuplet(track, bar_index, start, span, basic_quant)
-                {
-                    let key = (start, next_seq);
-                    next_seq += 1;
-                    track.tuplets.insert(
-                        key,
-                        TupletData {
-                            voice,
-                            on_time: start,
-                            len: span,
-                            tuplet_number,
-                            element_count: 0,
-                        },
-                    );
-                    mark_tuplet(track, key, start, span, tolerance);
-                }
-                start += step;
-            }
-        }
+    let candidates = detect_all_tuplets(track, sigmap, basic_quant, options, is_human);
+    if candidates.is_empty() {
+        return;
     }
+    let mut next_seq = track
+        .tuplets
+        .keys()
+        .map(|key| key.1)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1);
+    voice::add_tuplet_events(track, &candidates, &[], &mut next_seq);
     remove_empty_tuplets(track);
     let _ = basic_quant;
-}
-
-/// Cherche un n-olet de `n` notes également réparties dans un intervalle.
-///
-/// Renvoie la voix, le nombre de notes et la tolérance retenue pour le
-/// marquage. La détection cherche un accord sur chacun des `n` points d'une
-/// grille `span / n` ; les accords étrangers au n-olet peuvent s'intercaler
-/// (couche rythmique suivante, note piquée) à condition d'être plus courts que
-/// la case — c'est le cas de `MidiTuplet::detectTuplets`, qui accepte les
-/// notes de n-olet piquées et les sépare ensuite en voix. Une note finale plus
-/// courte que sa case est allongée au marquage (`applyTupletStaccato`).
-fn detect_tuplet(
-    track: &MTrack,
-    bar_index: i32,
-    start: Fraction,
-    span: Fraction,
-    basic_quant: Fraction,
-) -> Option<(usize, i32, Fraction)> {
-    let _ = basic_quant;
-    // Ne parcourt que les accords de l'intervalle, comme le C++ qui limite la
-    // recherche à la mesure courante. Un `iter()` complet coûtait O(nombre total
-    // d'accords) à chaque position candidate (quadratique sur les fichiers
-    // denses).
-    let chords: Vec<(Fraction, usize, Fraction, bool)> = track
-        .chords
-        .range(start, start + span)
-        .filter(|(_, chord)| chord.bar_index == bar_index)
-        .map(|((on_time, _), chord)| {
-            (
-                on_time,
-                chord.voice,
-                MTrack::max_off_time(chord),
-                chord.is_in_tuplet,
-            )
-        })
-        .collect();
-    if chords.len() < 3 {
-        return None;
-    }
-
-    for tuplet_number in [3, 5, 7, 9] {
-        let n = tuplet_number as usize;
-        let grid = span / Fraction::from_integer(i64::from(tuplet_number));
-        if is_simple_note_duration(grid) {
-            continue;
-        }
-        let tolerance =
-            (grid * Fraction::new(1, 8)).min(min_allowed_duration() * Fraction::from_integer(2));
-
-        let mut matched: Vec<usize> = Vec::with_capacity(n);
-        let mut ok = true;
-        for k in 0..n {
-            let expected = start + grid * Fraction::from_integer(k as i64);
-            let found = chords
-                .iter()
-                .enumerate()
-                .filter(|(_, (on_time, _, _, is_in_tuplet))| {
-                    !*is_in_tuplet && (*on_time - expected).abs() <= tolerance
-                })
-                .min_by(|left, right| {
-                    (left.1 .0 - expected)
-                        .abs()
-                        .cmp(&(right.1 .0 - expected).abs())
-                })
-                .map(|(index, _)| index);
-            match found {
-                Some(index) if !matched.contains(&index) => matched.push(index),
-                _ => {
-                    ok = false;
-                    break;
-                }
-            }
-        }
-        if !ok {
-            continue;
-        }
-
-        // `isTupletAllowed` (`importmidi_tuplet_detect.cpp:75-80`) n'exige
-        // qu'une note atteignant la moitié d'une case ; `detectStaccato`
-        // (`:265-278`) écarte ensuite les n-olets dont la majorité des notes
-        // sont piquées. Une seule note courte est tolérée : cela accepte le
-        // triolet lié de `tuplet_tied_3_5_tuplets.mid` sans confondre les
-        // notes staccato de `tuplet_7_staccato.mid`.
-        let short_count = matched
-            .iter()
-            .filter(|index| {
-                let (on_time, _, off_time, _) = chords[**index];
-                off_time - on_time < grid * Fraction::HALF
-            })
-            .count();
-        let main_line = short_count <= 1;
-        let foreign_are_short = chords
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| !matched.contains(index))
-            .all(|(_, (on_time, _, off_time, _))| *off_time - *on_time < grid - tolerance);
-        if !main_line || !foreign_are_short {
-            continue;
-        }
-        // Aucun accord étranger entre deux attaques du n-olet : une couche
-        // rythmique intercalée entre les notes rendrait la grille ambiguë
-        // (c'est le cas d'une suite de 32e qui contient les points d'un
-        // triolet). Les accords étrangers ne peuvent apparaître qu'après la
-        // dernière attaque, comme la couche suivante de `testTuplets8`.
-        let mut onsets: Vec<Fraction> = matched.iter().map(|index| chords[*index].0).collect();
-        onsets.sort();
-        let foreign_between = chords
-            .iter()
-            .enumerate()
-            .any(|(index, (on_time, _, _, _))| {
-                if matched.contains(&index) {
-                    return false;
-                }
-                onsets.windows(2).any(|window| {
-                    *on_time > window[0] + tolerance && *on_time < window[1] - tolerance
-                })
-            });
-        if foreign_between {
-            continue;
-        }
-        let voice = matched.first().map(|index| chords[*index].1).unwrap_or(0);
-        let same_voice = matched.iter().all(|index| chords[*index].1 == voice);
-        if !same_voice {
-            continue;
-        }
-        return Some((voice, tuplet_number, tolerance));
-    }
-    None
-}
-
-/// Marque les accords et notes d'un n-olet.
-fn mark_tuplet(
-    track: &mut MTrack,
-    key: TupletKey,
-    start: Fraction,
-    span: Fraction,
-    tolerance: Fraction,
-) {
-    let Some(tuplet) = track.tuplets.get(&key).cloned() else {
-        return;
-    };
-    let n = i64::from(tuplet.tuplet_number);
-    let grid = span / Fraction::from_integer(n);
-    let mut matched: Vec<TupletKey> = Vec::new();
-    for k in 0..n {
-        let expected = start + grid * Fraction::from_integer(k);
-        let found = track
-            .chords
-            .keys()
-            .into_iter()
-            .filter(|chord_key| {
-                (chord_key.0 - expected).abs() <= tolerance
-                    && track
-                        .chords
-                        .get(*chord_key)
-                        .is_some_and(|chord| chord.voice == tuplet.voice && !chord.is_in_tuplet)
-            })
-            .min_by(|left, right| (left.0 - expected).abs().cmp(&(right.0 - expected).abs()));
-        if let Some(found) = found {
-            if !matched.contains(&found) {
-                matched.push(found);
-            }
-        }
-    }
-    let count = matched.len();
-    for chord_key in matched {
-        let cell_end =
-            start + grid * Fraction::from_integer(((chord_key.0 - start) / grid).numerator() + 1);
-        if let Some(chord) = track.chords.get_mut(chord_key) {
-            chord.is_in_tuplet = true;
-            chord.tuplet = Some(key);
-            for note in &mut chord.notes {
-                if note.off_time < cell_end && note.off_time <= start + span {
-                    // `applyTupletStaccato` : une note de n-olet trop courte est
-                    // allongée à sa case.
-                    note.off_time = cell_end.min(start + span);
-                }
-                if note.off_time <= start + span + tolerance {
-                    note.is_in_tuplet = true;
-                    note.tuplet = Some(key);
-                }
-            }
-        }
-    }
-    if let Some(tuplet) = track.tuplets.get_mut(&key) {
-        tuplet.element_count = count;
-    }
 }
 
 /// Vrai si un accord ou silence appartient entièrement à un n-olet

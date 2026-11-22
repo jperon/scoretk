@@ -392,27 +392,31 @@ fn quantize_all_tracks(
             continue;
         }
         chord::set_bar_indexes(track, basic_quant, last_tick, sigmap);
-        // `importmidi.cpp:274` : tolérance 4/3 juste avant la quantification.
-        // Ici, avant l'attribution simplifiée des voix, sinon les notes d'un
-        // accord échelonné portent déjà des voix distinctes et ne fusionnent plus.
+        voice::assign_initial_voices(track, options.max_voice_count.limit());
+        if options.tuplet_notation && (options.search_tuplets || track.drum_track) {
+            tuplet::detect_and_assign_early(track, sigmap, basic_quant, options, is_human);
+            detected_tuplets.push(Vec::new());
+        } else if track.drum_track {
+            drum::find_all_tuplets_for_drums(track, sigmap, basic_quant, options, is_human);
+        } else if options.search_tuplets {
+            tuplet::find_all_tuplets(track, sigmap, basic_quant, options, is_human);
+            detected_tuplets.push(Vec::new());
+        } else {
+            detected_tuplets.push(Vec::new());
+        }
+        // `quantizeAllTracks` (`importmidi.cpp:274-275`) : la tolérance 4/3
+        // est appliquée **après** `findAllTuplets`, et juste avant
+        // `quantizeChords`. La placer avant la détection fusionnait des notes
+        // de n-olets différents (5:4 et 7:8 de `tuplet_3_5_7_tuplets`) en un
+        // même accord, que le filtre voyait alors comme incompatible. Les
+        // accords déjà rattachés à un n-olet sont ignorés par
+        // `collectChords` (test `isInTuplet`), donc leurs clés restent valides.
         collect_chords(
             track,
             Fraction::from_integer(2),
             Fraction::new(4, 3),
             is_human,
         );
-        voice::assign_initial_voices(track, options.max_voice_count.limit());
-        if options.tuplet_notation && (options.search_tuplets || track.drum_track) {
-            tuplet::detect_and_assign_early(track, sigmap, basic_quant, options, is_human);
-            detected_tuplets.push(Vec::new());
-        } else if track.drum_track {
-            drum::find_all_tuplets_for_drums(track, sigmap, basic_quant);
-        } else if options.search_tuplets {
-            tuplet::find_all_tuplets(track, sigmap, basic_quant);
-            detected_tuplets.push(Vec::new());
-        } else {
-            detected_tuplets.push(Vec::new());
-        }
         quant::quantize_chords(track, basic_quant);
         if track.tuplets.is_empty() {
             voice::assign_initial_voices_quantized(
