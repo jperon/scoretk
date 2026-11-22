@@ -660,6 +660,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     place_repeats(&mut score, &staves);
     place_lyrics(&mut score, &staves, document.melisma_busy_disabled);
     link_ties(&mut score, &staves);
+    resolve_after_grace_ties(&mut score);
     // LilyPond ne réalise pas \arpeggio au MIDI ; ses ornements ne sont
     // développés que par `\articulate` (`ly/articulate.ly`), pas par le
     // performeur de note (`lily/note-performer.cc`).
@@ -1949,11 +1950,13 @@ fn place_chord(
                             }
                             if cursor + len == end {
                                 for grace in &event.grace_after {
-                                    chord.grace_chords.push(build_grace(
-                                        score,
-                                        grace,
-                                        Some(len * grace.fraction),
-                                    ));
+                                    let built =
+                                        build_grace(score, grace, Some(len * grace.fraction));
+                                    // La cible d'un `~` d'agrément après est
+                                    // hors du bloc : laisser un marqueur à
+                                    // résoudre après la poses des mesures.
+                                    link_grace_block_tie(score, grace, &built, &[]);
+                                    chord.grace_chords.push(built);
                                 }
                             }
                             chord_rest.kind = ChordRestKind::Chord(chord);
@@ -2019,11 +2022,9 @@ fn place_chord(
                 .explicit_ticks
                 .unwrap_or_else(|| event.written.ticks());
             for grace in &event.grace_after {
-                chord.grace_chords.push(build_grace(
-                    score,
-                    grace,
-                    Some(main_ticks * grace.fraction),
-                ));
+                let built = build_grace(score, grace, Some(main_ticks * grace.fraction));
+                link_grace_block_tie(score, grace, &built, &[]);
+                chord.grace_chords.push(built);
             }
             ChordRest {
                 duration: event.written,
@@ -2136,7 +2137,59 @@ fn link_grace_block_tie(
         {
             score.note_mut(id).tie_forward = Some(main);
             score.note_mut(main).tie_back = Some(id);
+        } else {
+            // Agrément *après* la note : la cible est dans une mesure
+            // suivante, encore à construire. Marquer par une auto-liaison,
+            // résolue par `resolve_after_grace_ties`.
+            score.note_mut(id).tie_forward = Some(id);
         }
+    }
+}
+
+/// Relie les `~` d'agréments après (`\afterGrace`) à la prochaine note de
+/// même hauteur. Le `~` est émis par l'écrivain sur la dernière note du bloc
+/// (`def-grace-function`, `scm/music-functions.scm:1237-1248`) ; la cible est
+/// hors du bloc, dans une mesure suivante.
+fn resolve_after_grace_ties(score: &mut Score) {
+    let mut notes: Vec<(scoretk_core::model::NoteId, scoretk_core::model::Tick, u8)> = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (_track, item) in segment.iter_elements() {
+                let Some(chord_rest) = item.as_chord_rest() else {
+                    continue;
+                };
+                let Some(chord) = chord_rest.chord_ref() else {
+                    continue;
+                };
+                for grace in &chord.grace_chords {
+                    for &id in &grace.chord.notes {
+                        notes.push((id, segment.tick, score.note(id).pitch));
+                    }
+                }
+                for &id in &chord.notes {
+                    notes.push((id, segment.tick, score.note(id).pitch));
+                }
+            }
+        }
+    }
+    let pending: Vec<_> = notes
+        .iter()
+        .filter(|(id, _, _)| score.note(*id).tie_forward == Some(*id))
+        .cloned()
+        .collect();
+    for (id, tick, pitch) in pending {
+        let Some((next, _, _)) = notes
+            .iter()
+            .filter(|(other, other_tick, other_pitch)| {
+                *other != id && *other_tick > tick && *other_pitch == pitch
+            })
+            .min_by_key(|(_, other_tick, _)| *other_tick)
+        else {
+            score.note_mut(id).tie_forward = None;
+            continue;
+        };
+        score.note_mut(id).tie_forward = Some(*next);
+        score.note_mut(*next).tie_back = Some(id);
     }
 }
 

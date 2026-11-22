@@ -7493,3 +7493,24 @@ fn markup_map_ne_consomme_pas_la_musique() {
         vec![60, 62, 64]
     );
 }
+
+/// Une liaison portée par la dernière note d'un `\\afterGrace` doit joindre
+/// la prochaine note de même hauteur (`Il_Postino` : `\\afterGrace … { g8~ }`
+/// puis `g16`). Le lecteur ne reliait que les agréments *avant* la note.
+#[test]
+fn liaison_depuis_agrement_apres_vers_note_suivante() {
+    let src = "\\version \"2.24.0\"\n\\language \"english\"\n\
+\\score { \\new Staff { \\fixed c' { \\afterGrace 1 c'8 { d'8~ } d'16 r8 } } }";
+    let score = read_lilypond(src).expect("lecture \\afterGrace");
+    let tied: Vec<_> = score
+        .notes
+        .iter()
+        .filter(|note| note.tie_forward.is_some())
+        .map(|note| (note.pitch, score.note(note.tie_forward.unwrap()).pitch))
+        .collect();
+    assert_eq!(
+        tied,
+        vec![(74, 74)],
+        "l'agrément d' après doit être lié au d' suivant"
+    );
+}

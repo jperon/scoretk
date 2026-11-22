@@ -5338,6 +5338,24 @@ Mesure sur le lot `ly` complet (1 447 fichiers, deux binaires frères,
 La taille moyenne des `.ly` passe de 1 943 à 1 942 octets (−840 au total) :
 supprimer les `\repeat` fantômes réduit la sortie.
 
+### Liaison d'un agrément après vers la note suivante
+
+L'écrivain émet le `~` d'une liaison sur la dernière note d'un bloc
+d'agrément (`def-grace-function`, `scm/music-functions.scm:1237-1248`).
+Le lecteur ne l'appariait que pour les agréments *avant* la note : le `~`
+d'un `\afterGrace` était perdu, et la note cible réapparaissait comme une
+note distincte (`Il_Postino_accordion_solo.mscz`).
+
+`link_grace_block_tie` est maintenant appelé pour les deux familles ; une
+liaison sans cible dans le bloc est marquée par une auto-liaison, résolue
+après la pose des mesures sur la prochaine note de même hauteur. Test réduit
+écrit d'abord : `liaison_depuis_agrement_apres_vers_note_suivante`.
+
+Mesure sur le lot mscz (deux binaires frères, `--mode model`) : exacts
+155 → 155, `Il_Postino` passe de 470 à 469 notes relues (la note surnuméraire
+disparaît) mais n'atteint pas l'exactitude ; aucune perte, taille des `.ly`
+inchangée. Correctif structurel, sans gain d'exactitude mesuré.
+
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire
