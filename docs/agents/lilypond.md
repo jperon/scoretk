@@ -3870,8 +3870,8 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact Q16 | Exact Q16 **or** n2_grace | Exact % (either) | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 439 | **1 484** | 67.9 | 98.83 | — | — |
-| measured (reference present, non-reader faults excluded) | 1 655 | 1 439 | **1 484** | **89.7** | **98.83** | **96.76** | **97.88** |
+| all rows | 2 186 | 1 443 | **1 488** | 68.1 | 98.83 | — | — |
+| measured (reference present, non-reader faults excluded) | 1 655 | 1 443 | **1 488** | **89.9** | **98.83** | **97.63** | **98.45** |
 
 The two exact columns are kept side by side since Cause 18: **Exact Q16** is
 the historical criterion (`r == t == n1 == n2`), **Exact Q16 or n2_grace** adds
@@ -3975,6 +3975,15 @@ The next pass (Causes 31–34) adds **20 exact files and 0 losses** (1,464 →
   `petitefille`); `sonata3` and `gretchen` re-enter honestly non-exact.
   N2 no-repeat goes from 98.33 to 97.88 because these larger works join the
   computation.
+
+The next pass (Causes 35–38) adds **4 exact files and 0 net loss** (1,484 →
+1,488; N2 96.76 → 97.63, no-repeat 97.88 → 98.45): `Chop-28-19` comes back
+after the master `\autoChange` change (Cause 35), `Symphony5_1` and
+`Symphony5_2` become exact (Causes 36–37: old `#'prop` property syntax and
+the empty-chord cursor), and `fuga2` joins them. `No03_Albumblatt`, exact
+before the writer change, was temporarily lost when that change revealed a
+`\set Timing.beatStructure = 1,1` leak; Cause 38 restores it, so the net
+file balance is +4 with no loss.
 
 ### Where the remaining `notes_supp` files start
 
@@ -4594,6 +4603,61 @@ measurement), and five previously reference-less files re-enter
 `sonata3`, `gretchen` measured with their real gaps). Ten sources (headers,
 part-only files) still produce no MIDI after conversion and keep their prior
 state.
+
+### Cause 35: a Scheme redefinition does not hide a built-in command
+
+`#(define ottava (let ((orig-ottava ottava) …) (define-music-function …)))`
+(`Chop-28-19`) wraps `\ottava` around the original function. The reader
+cannot evaluate the Scheme function, but it stored the inner `#{ … #}` body
+as a Scheme identifier; once `\name` resolved such identifiers
+(`0d98662a`), `\ottava #1` returned that body instead of the built-in: six
+parasitic notes and no ottava bracket, and a file that had been exact.
+Scheme identifiers are now resolved **after** the built-in commands (the
+`_ =>` arm of `parse_command`), so `\ottava` keeps its behaviour while an
+unknown name still resolves (`variable_scheme_appellee_par_backslash`). Test
+`une_redefinition_scheme_ne_masque_pas_une_commande_integree` (six notes
+before, four plus an ottava spanner after). `Chop-28-19` is exact again.
+
+### Cause 36: old `#'prop` property paths
+
+Before 2.18, `\override Context #'prop = value` names the property with a
+quoted Scheme symbol (`python/convertrules.py` rewrites it to
+`Context.prop`). The lexer emits `#'prop` as one Scheme token (`'prop`);
+`skip_property_path` only read words separated by dots, stopped after the
+context, and left `= 1` in the music, where the `1` became a whole-note
+duration. Every part of `Symphony5_1/2` starts with
+`\override MultiMeasureRest #'expand-limit = 1`, so four beats were inserted
+before the first note and the whole piece shifted. The quoted symbol is now
+read as part of the path, and a context word without a dot no longer ends
+the loop when such a symbol follows. Test
+`override_ancienne_syntaxe_ne_consomme_pas_la_duree_suivante`.
+
+### Cause 37: an empty chord must not advance the cursor (MusicXML writer)
+
+A chord without pitch (a disguised silence, `\skip` carrying an annotation
+such as the opening tempo) writes no `<note>`, but `chord()` still advanced
+`out.tick`. The staff left a `<backup>` with no content at the start of the
+next measure; the oracle's reader started from a negative cursor, measures 1
+and 2 collapsed, and every following staff was shifted by two measures.
+`chord_entry` now returns before writing when the chord has neither notes
+nor grace chords; `move_to_tick` emits the correct `<forward>` to the next
+element. Test `accord_sans_note_n_avance_pas_le_curseur` (a `<backup>`
+before, none after). With Cause 36, `Symphony5_1` and `Symphony5_2` become
+exact (8295/8295 and 6619/6619).
+
+### Cause 38: `\set Timing.beatStructure = 1,1` is a value list
+
+`\set` may receive a comma-separated list of numbers
+(`\set Timing.beatStructure = 1,1`, the `\global` of `No03_Albumblatt`).
+The first number was read as a fraction and the `,1` stayed in the music
+stream, where the comma is an octave mark and the `1` a whole-note duration:
+a four-beat silence was inserted before the first note. The list is now
+consumed after the fraction. Test
+`set_beat_structure_ne_fuit_pas_dans_la_musique` (attacks at
+1920/2160/2520 before, 0/240/600 after). `No03_Albumblatt` returns to exact
+(614/614); the writer fix of Cause 37 had exposed this latent reader bug,
+which is why the file was exact only through the previous invalid XML
+stream.
 
 ### Cause 5: `\octaveCheck` consumes its pitch
 
