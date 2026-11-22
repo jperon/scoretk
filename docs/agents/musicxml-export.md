@@ -517,3 +517,53 @@ oracle) : aucun changement N1/N2/N2d, **aucune perte**, lignes centrales
 basket (out of numerator and denominator, like unsupported inputs), and the
 MusicXML-source detection in the MIDI harness. `docs/agents/midi.md` kept a
 single combined section after removing a duplicate.
+
+## 27. Measure-start clefs and numbering-keeping section breaks (2026-11-22)
+
+Two further musical-core export causes, both fixed from `exportmusicxml.cpp`
+and measured on the 173-file `.mscz` lot.
+
+### 27.1 One `<clef>` at a measure start
+
+`findAndExportClef` (`exportmusicxml.cpp:7693-7714`) writes the clef from cs1
+(the previous measure's `Clef`, or the first measure's `HeaderClef`) and falls
+back to cs2 (a `Clef` at the start of the current measure) when cs1 is absent;
+`writeElement` (`exportmusicxml.cpp:7986-8007`) skips a clef already written.
+
+The port did neither: when a staff had no `HeaderClef`, it wrote the staff's
+default clef and then the real `Clef` as an `after-barline="yes"` clef — two
+`<clef>` elements in `Stella_maris_instruments - La` and `... - SiB`. When a
+measure carried both a `HeaderClef` and an identical `Clef`, it also wrote
+both. `write_measure_clefs` now uses the measure-start `Clef` as the cs2
+fallback, and `mid_measure_clef` skips the clef already emitted for that track.
+The skip keeps the distinct values of a genuine mid-measure clef change (the
+`clef-1` corpus reference still passes). The reduced test
+`crates/scoretk/tests/clef_duplicate_at_start.rs` was written first and failed
+before the fix.
+
+### 27.2 No `<divisions>` rewrite when numbering continues
+
+`isFirstActualMeasure` (`exportmusicxml.cpp:8307-8310`) becomes true again only
+after `MeasureNumberStateHandler::init()`, called by `updateForMeasure`
+(`exportmusicxml.cpp:8281-8286`) only when the section break has
+`startWithMeasureOne`. The port keyed the rewrite on `section_break_before`
+alone, so a break whose `section_keeps_numbering` is true re-emitted
+`<attributes><divisions>…</divisions></attributes>` (and `<staves>`). It now
+checks `!section_keeps_numbering`, as the measure-numbering helper already
+did. Reduced test `saut_de_section_sans_reprise_ne_rewrite_pas_les_divisions`
+in `crates/scoretk-musicxml-export/src/tests.rs` was written first and failed
+before the fix.
+
+### Measurement
+
+Fresh baseline `target/xml-rebase/` (pre-fix binary `target/ly95-rebase`) and
+post-fix `target/xml-sec/` (binary `target/ly95-sec`), same 173-file manifest
+and oracle: 173 converted, 0 XSD-invalid, N1/N2 1.0000 unchanged.
+Core-identical **66 → 68**. Eight files improved, **no file lost lines**:
+`Stella_maris_instruments - La` and `- SiB` 4 → 0 (clef cause);
+`Vivaldi … 04-TecumPrincipium` 9 → 2, `… 06-Dominus_fredipi` 13 → 3,
+`… 03-VirgamVirtutis` 16 → 6, `… 08-DeTorrente` 21 → 14,
+`Sancta_Maria_KV_273` 279 → 256 and
+`Vivaldi … 10._Sicut_erat_in_principio` 223 → 187 (section-break cause).
+`cargo test --workspace`, `cargo fmt --all -- --check` and workspace clippy
+were green at both commits.
