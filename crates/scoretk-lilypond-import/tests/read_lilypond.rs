@@ -403,6 +403,19 @@ fn script_sans_equivalent_ne_mange_pas_le_nolet_suivant() {
     );
 }
 
+/// `\compressMusic` est l'ancien nom de `\scaleDurations`
+/// (`python/convertrules.py` l. 2765) : meme argument et memes durees
+/// multipliees par n/d (bwv631a et trois autres chorals).
+#[test]
+fn compress_music_est_scale_durations() {
+    let score = lire("\\compressMusic #'(3 . 2) { c'4 d' }");
+    assert_eq!(hauteurs(&score), vec![72, 74]);
+    assert_eq!(
+        durees_attaques(&score),
+        vec![Fraction::new(3, 8), Fraction::new(3, 8)]
+    );
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");

@@ -2647,7 +2647,10 @@ impl<'a> Parser<'a> {
                     music: Box::new(self.parse_music()),
                 })
             }
-            "scaleDurations" => {
+            // `\compressMusic` est l'ancien nom de `\scaleDurations`
+            // (`python/convertrules.py` l. 2765, règle 2.11.48) : même argument
+            // `#'(n . d)` et mêmes durées multipliées par n/d.
+            "scaleDurations" | "compressMusic" => {
                 // `\scaleDurations n/d` multiplie toutes les durées de la
                 // musique par n/d, exactement comme `c4*n/d`, sans n-olet.
                 // On réutilise donc le multiplicateur `*n/d` déjà interprété
@@ -5220,6 +5223,7 @@ fn starts_music_command(name: &str) -> bool {
                 | "tuplet"
                 | "times"
                 | "scaleDurations"
+                | "compressMusic"
                 | "grace"
                 | "slashedGrace"
                 | "acciaccatura"
