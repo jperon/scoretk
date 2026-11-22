@@ -269,6 +269,14 @@ pub struct GraceChord {
     /// Durée notée de l'accord d'agrément (points compris dans le type
     /// [`Duration`]).
     pub duration: Duration,
+    /// Position de lecture par rapport au début de la note principale, si
+    /// elle diffère de la position logique (ornement après la note).
+    ///
+    /// LilyPond joue `\afterGrace` à `afterGraceFraction` (3/4 par défaut) de
+    /// la durée de la note (`ly/music-functions-init.ly:86-115`) ; le
+    /// MusicXML porte ce décalage dans `<offset>`. `None` pour un ornement
+    /// ordinaire, ou pour un modèle non LilyPond.
+    pub played_offset: Option<Fraction>,
     /// Accord d'agrément ; son [`Chord::grace`] indique le type.
     pub chord: Chord,
 }
@@ -280,7 +288,11 @@ impl GraceChord {
             grace: Some(grace),
             ..Chord::default()
         };
-        Self { duration, chord }
+        Self {
+            duration,
+            played_offset: None,
+            chord,
+        }
     }
 
     /// Accès à l'accord d'agrément.

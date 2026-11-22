@@ -409,6 +409,14 @@ struct GraceRef<'a> {
     index: usize,
     /// Vrai si l'ornement précède l'accord principal.
     before: bool,
+    /// Décalage de lecture par rapport au curseur courant, en noires.
+    ///
+    /// Un ornement après l'accord (`GRACE8_AFTER`, `\afterGrace`) est écrit
+    /// après la note principale dans le flux, mais LilyPond le joue à
+    /// `afterGraceFraction` (3/4 par défaut) de la durée de cette note
+    /// (`ly/music-functions-init.ly:86-115`). Le `<offset>` MusicXML porte ce
+    /// décalage ; négatif après la note, il vaut −1/4 de sa durée.
+    offset: Option<Tick>,
     /// Ligature calculée pour cet ornement.
     beam: Option<&'a beams::GraceBeam>,
 }
@@ -1589,6 +1597,7 @@ impl Context<'_> {
                 duration: &grace.duration,
                 index: *index,
                 before: true,
+                offset: None,
                 beam: before_beams[position].as_ref(),
             };
             self.chord(
@@ -1605,10 +1614,12 @@ impl Context<'_> {
         self.chord(out, chord, None, chord_rest, measure, xml_staff, track, ids);
         for (position, index) in after.iter().enumerate() {
             let grace = &chord.grace_chords[*index];
+            let main_ticks = self.actual_ticks(chord_rest, measure, track.staff());
             let grace_ref = GraceRef {
                 duration: &grace.duration,
                 index: *index,
                 before: false,
+                offset: grace.played_offset.map(|offset| offset - main_ticks),
                 beam: after_beams[position].as_ref(),
             };
             self.chord(
@@ -1720,6 +1731,11 @@ impl Context<'_> {
             }
 
             write_pitch(out, note, self.concert_pitch, transpose, ottava);
+
+            if let Some(offset) = grace.and_then(|grace| grace.offset) {
+                out.xml
+                    .tag("offset", &out.duration_in_divisions(offset).to_string());
+            }
 
             if grace.is_none() {
                 out.xml.tag(

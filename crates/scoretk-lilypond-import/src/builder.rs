@@ -1597,12 +1597,13 @@ fn place_chord(
                             }
                             if cursor == tick {
                                 for grace in &event.grace_before {
-                                    chord.grace_chords.push(build_grace(score, grace));
+                                    chord.grace_chords.push(build_grace(score, grace, None));
                                 }
                             }
                             if cursor + len == end {
+                                let offset = Some(len * Fraction::new(3, 4));
                                 for grace in &event.grace_after {
-                                    chord.grace_chords.push(build_grace(score, grace));
+                                    chord.grace_chords.push(build_grace(score, grace, offset));
                                 }
                             }
                             chord_rest.kind = ChordRestKind::Chord(chord);
@@ -1660,10 +1661,14 @@ fn place_chord(
                 chord.notes.push(id);
             }
             for grace in &event.grace_before {
-                chord.grace_chords.push(build_grace(score, grace));
+                chord.grace_chords.push(build_grace(score, grace, None));
             }
+            let main_ticks = event
+                .explicit_ticks
+                .unwrap_or_else(|| event.written.ticks());
+            let offset = Some(main_ticks * Fraction::new(3, 4));
             for grace in &event.grace_after {
-                chord.grace_chords.push(build_grace(score, grace));
+                chord.grace_chords.push(build_grace(score, grace, offset));
             }
             ChordRest {
                 duration: event.written,
@@ -1753,8 +1758,13 @@ fn accidental_for(tpc: i8) -> AccidentalType {
 }
 
 /// Construit un accord d'agrément.
-fn build_grace(score: &mut Score, grace: &GraceEvent) -> GraceChord {
+fn build_grace(
+    score: &mut Score,
+    grace: &GraceEvent,
+    played_offset: Option<Fraction>,
+) -> GraceChord {
     let mut value = GraceChord::new(grace.kind, grace.duration);
+    value.played_offset = played_offset;
     value.chord.grace_slash = grace.slash;
     for note in &grace.notes {
         let id = score.add_note(build_note(note, &[]));

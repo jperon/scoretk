@@ -4775,6 +4775,30 @@ fn repeat_tremolo_sous_unfold_repeats_est_joue() {
 /// voix **dans le Staff courant**, pas une portée sœur. Les contextes Voice
 /// meurent à la fin de leur musique : quatre `\new Voice` successifs peuvent
 /// réutiliser le même emplacement de voix. Aucune note ne doit être perdue.
+/// `\afterGrace` : le modèle porte l'instant de lecture de l'ornement après
+/// la note (`afterGraceFraction` = 3/4 par défaut,
+/// `ly/music-functions-init.ly:86-115`). Le MusicXML l'écrit en `<offset>`.
+#[test]
+fn after_grace_porte_son_instant_de_lecture() {
+    let score = lire("c4 \\afterGrace d4 { e16 }");
+    let grace = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| {
+            let SegmentItem::ChordRest(chord_rest) = segment.element(Track::from_raw(0))? else {
+                return None;
+            };
+            let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                return None;
+            };
+            chord.grace_chords.first()
+        })
+        .next()
+        .expect("ornement après la note");
+    assert_eq!(grace.played_offset, Some(Fraction::new(3, 16)));
+}
+
 #[test]
 fn new_voice_reuse_un_emplacement_de_voix() {
     let source = r#"\version "2.24.0"

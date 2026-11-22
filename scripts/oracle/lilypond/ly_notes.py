@@ -231,6 +231,12 @@ def read_xml(
                         extension = max(extension, curseur - debut_mesure)
                 if any(t.get("type") == "stop" for t in elem.findall("tie")):
                     continue
+                # `<offset>` décale la lecture sans déplacer le curseur
+                # logique. L'écrivain s'en sert pour un ornement après
+                # l'accord (`\afterGrace`), joué à 3/4 de la note principale.
+                offset_texte = elem.findtext("offset")
+                offset = int(float(offset_texte)) / divisions if offset_texte else 0.0
+                jouee = attaque + offset
                 pitch = elem.find("pitch")
                 if pitch is None:
                     # Percussion `<unpitched>` : les écritures qui ne portent
@@ -244,10 +250,10 @@ def read_xml(
                         octave_u = unpitched.findtext("display-octave")
                         if step_u in STEPS and octave_u is not None:
                             hauteur_u = 12 * (int(octave_u) + 1) + STEPS[step_u]
-                            notes.append((hauteur_u + transposition + octave_shift, attaque,
+                            notes.append((hauteur_u + transposition + octave_shift, jouee,
                                           0.0 if est_grace else duree, numero_part,
                                           est_grace) if with_grace else
-                                         (hauteur_u + transposition + octave_shift, attaque,
+                                         (hauteur_u + transposition + octave_shift, jouee,
                                           0.0 if est_grace else duree, numero_part))
                             meta.append((numero_part, elem.findtext("staff", "1"),
                                          elem.findtext("voice", "1"), est_grace))
@@ -258,10 +264,10 @@ def read_xml(
                     continue
                 alter = pitch.findtext("alter", "0")
                 hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
-                notes.append((hauteur + transposition + octave_shift, attaque,
+                notes.append((hauteur + transposition + octave_shift, jouee,
                               0.0 if est_grace else duree, numero_part, est_grace)
                              if with_grace else
-                             (hauteur + transposition + octave_shift, attaque,
+                             (hauteur + transposition + octave_shift, jouee,
                               0.0 if est_grace else duree, numero_part))
                 meta.append((numero_part, elem.findtext("staff", "1"),
                              elem.findtext("voice", "1"), est_grace))
@@ -568,6 +574,24 @@ def selftest() -> None:
         assert absent["n2_grace"] == 2 and absent["graces_match"] == 0, absent
         # Sans graces déclarées, le relevé n'a pas de champ supplémentaire.
         assert "n2_grace" not in brut, brut
+
+        # `<offset>` d'un ornement après l'accord : le curseur est à la fin de
+        # la note principale (1,0), l'ornement est écrit après elle mais joué à
+        # 3/4 de sa durée (−1/4 depuis la fin). Sans l'offset, il serait lu à
+        # l'attaque de la note suivante.
+        apres = """<score-partwise version="4.0"><part id="P1"><measure number="1">
+          <attributes><divisions>4</divisions></attributes>
+          <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration>
+            <voice>1</voice></note>
+          <note><grace/><pitch><step>D</step><octave>4</octave></pitch>
+            <offset>-1</offset><voice>1</voice></note>
+          <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration>
+            <voice>1</voice></note>
+        </measure></part></score-partwise>"""
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(apres)
+        assert read_xml(p) == [(60, 0.0, 1.0, 0), (62, 0.75, 0.0, 0),
+                               (64, 1.0, 1.0, 0)], read_xml(p)
 
         # Correction 2 — <forward> avant la première note d'une voix (levée).
         # Le silence de deux noires décale l'entrée : F5 passe de 0,0 à 2,0.
