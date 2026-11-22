@@ -46,50 +46,63 @@ sys.path.insert(0, str(HERE))
 from mesure import nom_court  # noqa: E402
 
 
-def avec_midi(source: str) -> str | None:
-    """Ajoute un `\\score { … \\midi { } }` à une source sans `\score`."""
+def candidats_avec_midi(source: str) -> list[str]:
+    r"""Positions possibles d'un `\score { … \midi { } }` pour une source.
+
+    Les sources du corpus sont souvent des scores implicites avec des
+    définitions et des blocs `\paper`/`\layout` : selon le fichier, la
+    première expression musicale se trouve à des endroits variés. On propose
+    plusieurs points de coupe et `regenerer` garde celui qui compile.
+    """
+    candidats: list[str] = []
     if re.search(r"\\score\b", source):
-        # Injection dans le dernier `\score` : placer `\midi` avant sa
-        # fermeture, en comptant les accolades (les commentaires sont rares
-        # dans ces sources de test, mais on ignore les lignes `%`).
         debut = source.rfind("\\score")
         ouverture = source.find("{", debut)
-        if ouverture < 0:
-            return None
-        profondeur = 0
-        for i in range(ouverture, len(source)):
-            if source[i] == "{":
-                profondeur += 1
-            elif source[i] == "}":
-                profondeur -= 1
-                if profondeur == 0:
-                    return source[:i] + "\n  \\midi { }\n" + source[i:]
-        return None
-    # Dernière expression musicale de premier niveau : `\new …`, `<<` ou `{`.
+        if ouverture >= 0:
+            profondeur = 0
+            for i in range(ouverture, len(source)):
+                if source[i] == "{":
+                    profondeur += 1
+                elif source[i] == "}":
+                    profondeur -= 1
+                    if profondeur == 0:
+                        candidats.append(source[:i] + "\n  \\midi { }\n" + source[i:])
+                        break
+        return candidats
     lignes = source.splitlines(keepends=True)
-    debut = None
-    for motif in (r"\s*(<<|\{)\s*$", r".*(<<|\{)\s*$", r"\s*(<<|\{)"):
-        for i in range(len(lignes) - 1, -1, -1):
-            if re.match(motif, lignes[i]) and "=" not in lignes[i]:
-                debut = i
-                break
-        if debut is not None:
-            break
-    if debut is None:
-        return None
-    return (
-        "".join(lignes[:debut])
-        + "\n\\score {\n"
-        + "".join(lignes[debut:])
-        + "\n\\midi { }\n}\n"
+    tetes = re.compile(
+        r"\\(?:new|context|relative|fixed|chordmode|drummode|transpose|"
+        r"times|repeat|override|set|once|partial|time|key|clef|tempo|mark)\b|^\s*(<<|\{)"
     )
+    positions: list[int] = []
+    profondeur = 0
+    for i, ligne in enumerate(lignes):
+        nettoyee = ligne.split("%", 1)[0].strip()
+        if profondeur == 0 and tetes.search(nettoyee) and "=" not in nettoyee:
+            positions.append(i)
+        profondeur += ligne.count("{") - ligne.count("}")
+    # Essayer d'abord les positions les plus tardives (le cœur du score),
+    # puis les plus tôt (quand le score englobe tout).
+    for i in reversed(positions):
+        candidats.append(
+            "".join(lignes[:i])
+            + "\n\\score {\n"
+            + "".join(lignes[i:])
+            + "\n\\midi { }\n}\n"
+        )
+    return candidats
 
 
 def regenerer(tache: tuple) -> dict:
     src, refs, lot, out = tache
     source = Path(src)
-    texte = avec_midi(source.read_text(encoding="utf-8", errors="replace"))
-    if texte is None:
+    if not source.is_file():
+        return {"fichier": src, "ok": False, "erreur": "source absente"}
+    try:
+        candidats = candidats_avec_midi(source.read_text(encoding="utf-8", errors="replace"))
+    except OSError as exc:
+        return {"fichier": src, "ok": False, "erreur": str(exc)[:100]}
+    if not candidats:
         return {"fichier": src, "ok": False, "erreur": "pas de score injectable"}
     destination = Path(out) / lot / nom_court(src)
     destination.mkdir(parents=True, exist_ok=True)
@@ -100,22 +113,25 @@ def regenerer(tache: tuple) -> dict:
     # sinon on modifierait aussi l'arbre de références d'origine.
     midi.unlink(missing_ok=True)
     tmp = destination / "_regen.ly"
-    tmp.write_text(texte, encoding="utf-8")
-    cp = subprocess.run(
-        ["lilypond", "-dno-print-pages", "-dmidi-extension=midi",
-         "-o", str(destination / "ly"), str(tmp)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=120, check=False,
-    )
-    ok = midi.is_file() and midi.stat().st_size > 0
-    if ok:
-        (destination / "ly.midi.orig").write_bytes(ancien)
-    else:
+    erreur = "aucun candidat n'a compilé"
+    for texte in candidats:
+        tmp.write_text(texte, encoding="utf-8")
+        midi.unlink(missing_ok=True)
+        cp = subprocess.run(
+            ["lilypond", "-dno-print-pages", "-dmidi-extension=midi",
+             "-o", str(destination / "ly"), str(tmp)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=120, check=False,
+        )
+        if midi.is_file() and midi.stat().st_size > 0:
+            (destination / "ly.midi.orig").write_bytes(ancien)
+            tmp.unlink(missing_ok=True)
+            for reste in destination.glob("ly.*"):
+                if reste.suffix not in (".midi", ".orig"):
+                    reste.unlink()
+            return {"fichier": src, "ok": True, "erreur": ""}
         erreur = cp.stderr.decode("utf-8", "replace")[-200:]
     tmp.unlink(missing_ok=True)
-    for reste in destination.glob("ly.*"):
-        if reste.suffix not in (".midi", ".orig"):
-            reste.unlink()
-    return {"fichier": src, "ok": ok, "erreur": "" if ok else erreur}
+    return {"fichier": src, "ok": False, "erreur": erreur}
 
 
 def main() -> int:

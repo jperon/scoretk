@@ -6159,3 +6159,34 @@ le traite en ordre de parsing. Le test ignoré
 `<< { \set Score.skipTypesetting = ##t a4 … } \\ { c4 d4 } >>`. Aucun fichier
 du lot `ra` ne pose cette propriété dans une voix parallèle, donc la limite
 n'affecte pas la mesure.
+
+### Audit complet des références `ra` (LilyPond 2.26.0)
+
+Le cas ChordNames n'était pas isolé. Audit de **tous les 170 fichiers non
+exacts** de l'arbre corrigé (1556/1724) avec `regen-refs.py` (`--jobs 2`) et
+le compilateur installé, **GNU LilyPond 2.26.0 (Guile 3.0)**, dans un arbre
+séparé reconstruit depuis l'arbre corrigé (`/tmp/ly95lect-refs-audit2`) :
+
+- **146 références régénérées avec succès**, 24 échecs de régénération
+  (19 sources Scheme/templates sans expression musicale injectable, 3
+  erreurs de compilation, 2 sources absentes) ;
+- parmi les 146 : **24 références périmées** (contenu MIDI différent :
+  hauteur/attaque quantifiée) et **122 identiques** ;
+- les 3 références dont la régénération a échoué ont été restaurées depuis
+  l'arbre corrigé, pour garder un dénominateur de 1724.
+
+Aucune de ces 24 références périmées ne justifie un changement du lecteur.
+Mesure avec l'arbre régénéré : **1565/1724 (90,8 %)**, **+9 exacts**, **0
+perte** (`/tmp/ly-audit3meas`). Les gains viennent tous de références
+périmées : `breve-extent`, `custos`, `ledger-extra`,
+`v3_testMultiInstrumentPart3`, `v3_testTboxWords1`, `v4_hairpin_dynamic_inside`,
+`v4_hairpin_dynamic_jump`, `v4_hairpin_simple`, `v4_part-textlines`.
+
+**Bascule d'oracle** : la mesure de référence est désormais
+`/tmp/ly95lect-refs-audit2` (LilyPond 2.26.0), pas
+`/tmp/ly95lect-refs-fresh` (arbre d'origine, mélangé). Les chiffres à
+comparer sont : 1538 (arbre d'origine, avant audit), 1550 (arbre d'origine
+après `\incipit`), 1556 (11 références ChordNames corrigées), **1565 (audit
+complet)**. `regen-refs.py` a été durci : détection des expressions
+musicales de premier niveau, essai de plusieurs points d'injection `\score`,
+reprise sur source absente, `__jobs 2`.
