@@ -76,6 +76,27 @@ fn durees_attaques(score: &scoretk_core::model::Score) -> Vec<Fraction> {
 
 /// Hauteurs des attaques seules : les prolongations issues d'un accord
 /// coupé à une barre portent `tie_back` et ne sont pas des attaques MIDI.
+/// Décalage de lecture du premier ornement après la note.
+fn offset_grace_apres(score: &scoretk_core::model::Score) -> Option<Fraction> {
+    score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| {
+            let SegmentItem::ChordRest(chord_rest) = segment.element(Track::from_raw(0))? else {
+                return None;
+            };
+            let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                return None;
+            };
+            chord
+                .grace_chords
+                .iter()
+                .find_map(|grace| grace.played_offset)
+        })
+        .next()
+}
+
 fn hauteurs_attaques(score: &scoretk_core::model::Score) -> Vec<u8> {
     score
         .notes
@@ -4729,9 +4750,19 @@ fn repeat_tremolo_etire_les_durees() {
 /// note ni durée (`RelativeOctaveCheck`). Sans consommer l'argument, la
 /// hauteur était relue comme une note et décalait la référence `\relative`.
 #[test]
-fn octave_check_consomme_sa_hauteur() {
-    let score = lire("\\relative c' { c4 \\octaveCheck c'' d e }");
+fn octave_check_reussi_consomme_sa_hauteur() {
+    let score = lire("\\relative c' { c4 \\octaveCheck c' d e }");
     assert_eq!(hauteurs(&score), vec![60, 62, 64]);
+    assert_eq!(score.measures.len(), 1);
+}
+
+#[test]
+fn octave_check_echoue_decale_la_reference() {
+    // `lily/relative-octave-check.cc:33-60` : si la hauteur de contrôle n'est
+    // pas à l'octave obtenue, la référence est décalée de delta_oct ; le MIDI
+    // de LilyPond joue d/e une octave plus haut.
+    let score = lire("\\relative c' { c4 \\octaveCheck c'' d e }");
+    assert_eq!(hauteurs(&score), vec![60, 74, 76]);
     assert_eq!(score.measures.len(), 1);
 }
 
@@ -4778,25 +4809,57 @@ fn repeat_tremolo_sous_unfold_repeats_est_joue() {
 /// `\afterGrace` : le modèle porte l'instant de lecture de l'ornement après
 /// la note (`afterGraceFraction` = 3/4 par défaut,
 /// `ly/music-functions-init.ly:86-115`). Le MusicXML l'écrit en `<offset>`.
+/// `make-volta-set` (`scm/define-music-callbacks.scm`) renvoie le corps puis
+/// un `SequentialAlternativeMusic` : la deuxième alternative est relative à la
+/// fin de la première, pas à la fin du corps.
+#[test]
+fn alternative_relative_a_la_fin_de_la_precedente() {
+    let score = read_lilypond(
+        "\\relative c' { \\repeat volta 2 { c'4 } \\alternative { { c,,4 } { c4 } } }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![72, 48, 48]);
+}
+
+#[test]
+fn alternative_relative_sequentielle_sous_unfold() {
+    let score = read_lilypond(
+        "\\score { \\new Staff { \\unfoldRepeats \\relative c' { \\repeat volta 2 { c'4 } \\alternative { { c,,4 } { c4 } } } } }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![72, 48, 72, 48]);
+}
+
 #[test]
 fn after_grace_porte_son_instant_de_lecture() {
     let score = lire("c4 \\afterGrace d4 { e16 }");
-    let grace = score
-        .measures
-        .iter()
-        .flat_map(|measure| measure.segments.iter())
-        .filter_map(|segment| {
-            let SegmentItem::ChordRest(chord_rest) = segment.element(Track::from_raw(0))? else {
-                return None;
-            };
-            let ChordRestKind::Chord(chord) = &chord_rest.kind else {
-                return None;
-            };
-            chord.grace_chords.first()
-        })
-        .next()
-        .expect("ornement après la note");
-    assert_eq!(grace.played_offset, Some(Fraction::new(3, 16)));
+    assert_eq!(offset_grace_apres(&score), Some(Fraction::new(3, 16)));
+}
+
+#[test]
+fn after_grace_fraction_optionnelle() {
+    // `\\afterGrace 7/8 c1 { d16 }` : l'argument optionnel est une échelle
+    // (ly/music-functions-init.ly:86-115).
+    let score = lire("c4 \\afterGrace 7/8 d4 { e16 }");
+    assert_eq!(offset_grace_apres(&score), Some(Fraction::new(7, 32)));
+}
+
+#[test]
+fn after_grace_fraction_par_defaut_assignee() {
+    let score = read_lilypond(
+        "afterGraceFraction = 15/16 \\score { \\new Staff { c4 \\afterGrace d4 { e16 } } }",
+    )
+    .expect("lecture");
+    assert_eq!(offset_grace_apres(&score), Some(Fraction::new(15, 64)));
+}
+
+#[test]
+fn after_grace_fraction_par_defaut_scheme() {
+    let score = read_lilypond(
+        "#(define afterGraceFraction (cons 15 16)) \\score { \\new Staff { c4 \\afterGrace d4 { e16 } } }",
+    )
+    .expect("lecture");
+    assert_eq!(offset_grace_apres(&score), Some(Fraction::new(15, 64)));
 }
 
 #[test]

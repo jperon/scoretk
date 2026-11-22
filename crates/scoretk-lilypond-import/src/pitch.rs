@@ -837,6 +837,32 @@ impl OctaveState {
         octave
     }
 
+    /// `\octaveCheck` : place la hauteur de contrôle relative à la dernière
+    /// hauteur, et décale la référence de l'écart d'octave en cas d'échec
+    /// (`lily/relative-octave-check.cc:33-60`). Rend le message d'échec.
+    pub(crate) fn check_octave(&mut self, pitch: &PitchSpec) -> Option<String> {
+        let attendu = i16::from(pitch.octave) + 3;
+        let resultat = match self.previous {
+            Some((step, octave)) => i16::from(relative_octave(step, octave, pitch.step)),
+            None => i16::from(self.reference),
+        };
+        if resultat == attendu {
+            return None;
+        }
+        let delta = attendu - resultat;
+        let message = format!(
+            "Failed octave check, got: octave {} instead of {}",
+            resultat, attendu
+        );
+        match self.previous {
+            Some((step, octave)) => {
+                self.previous = Some((step, borne_octave(i16::from(octave) + delta)));
+            }
+            None => self.reference = borne_octave(i16::from(self.reference) + delta),
+        }
+        Some(message)
+    }
+
     /// Définit la référence à partir de la hauteur écrite en argument
     /// (`\fixed c'`, `\relative c''`).
     ///

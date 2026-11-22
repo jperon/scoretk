@@ -193,6 +193,8 @@ pub(crate) struct GraceEvent {
     pub kind: GraceType,
     /// Vrai si l'ornement est barré.
     pub slash: bool,
+    /// Fraction de la note principale écoulée avant l'ornement après.
+    pub fraction: Fraction,
 }
 
 /// Portée cible d'un `\change`, avec la position de la commande pour les
@@ -374,6 +376,8 @@ pub(crate) struct Interpreter<'a> {
     grace: Option<GraceFrame>,
     /// Ornements en attente de l'accord suivant.
     pending_grace: Vec<GraceEvent>,
+    /// Fraction par défaut des `\afterGrace` (`afterGraceFraction`).
+    after_grace_fraction: Fraction,
     /// Cible d'un `\afterGrace`.
     grace_after_target: Option<usize>,
     /// Durée par défaut.
@@ -420,6 +424,7 @@ impl<'a> Interpreter<'a> {
             tuplets: Vec::new(),
             grace: None,
             pending_grace: Vec::new(),
+            after_grace_fraction: Fraction::new(3, 4),
             grace_after_target: None,
             default_duration: Duration::quarter(),
             default_multiplier: Fraction::ONE,
@@ -629,6 +634,7 @@ impl<'a> Interpreter<'a> {
             tuplets: Vec::new(),
             grace: None,
             pending_grace: Vec::new(),
+            after_grace_fraction: self.after_grace_fraction,
             grace_after_target: None,
             default_duration: self.default_duration,
             default_multiplier: self.default_multiplier,
@@ -731,6 +737,11 @@ impl<'a> Interpreter<'a> {
                 }
             }
             Context::Ottava(shift) => self.event(EventKind::Ottava(*shift)),
+            Context::OctaveCheck(pitch) => {
+                if let Some(message) = self.octave.check_octave(pitch) {
+                    self.warn(message);
+                }
+            }
             Context::Sustain(on) => self.event(EventKind::Pedal(*on)),
             Context::Change { name, line, column } => {
                 self.staff_target = Some(StaffTarget {
@@ -751,7 +762,11 @@ impl<'a> Interpreter<'a> {
                 music,
             } => self.tuplet(*numerator, *denominator, *number_type, music),
             Context::Grace { kind, slash, music } => self.grace_scope(*kind, *slash, music),
-            Context::AfterGrace { main, grace } => {
+            Context::AfterGrace {
+                main,
+                grace,
+                fraction,
+            } => {
                 self.walk(main);
                 let target = self
                     .voice
@@ -760,6 +775,8 @@ impl<'a> Interpreter<'a> {
                     .rposition(|event| matches!(event.kind, EventKind::Chord(_)));
                 if let Some(target) = target {
                     let saved = self.grace_after_target.replace(target);
+                    let saved_fraction = self.after_grace_fraction;
+                    self.after_grace_fraction = *fraction;
                     self.grace = Some(GraceFrame {
                         // Seul un type « After » place l'ornement après la
                         // note à l'export.
@@ -768,6 +785,7 @@ impl<'a> Interpreter<'a> {
                     });
                     self.walk(grace);
                     self.grace = None;
+                    self.after_grace_fraction = saved_fraction;
                     self.grace_after_target = saved;
                 } else {
                     self.warn("\\afterGrace sans accord à décorer");
@@ -970,10 +988,15 @@ impl<'a> Interpreter<'a> {
                 if self.unfold_repeats {
                     // `\unfoldRepeats` : le MIDI de LilyPond joue les N
                     // passages ; on les déroule dans le modèle, chaque corps
-                    // repartant de la même référence relative et chaque
-                    // ending de la fin du corps de son passage.
+                    // repartant de la même référence relative. Les
+                    // alternatives sont relatives **séquentiellement** :
+                    // `make-volta-set` (scm/define-music-callbacks.scm)
+                    // renvoie le corps puis un `SequentialAlternativeMusic`,
+                    // et le parcours par défaut prend la fin de l'alternative
+                    // précédente comme référence de la suivante.
                     let plays = count.max(2);
                     let threshold = plays.saturating_sub(blocks as u32) + 1;
+                    let mut alt_ends: Vec<OctaveState> = Vec::new();
                     for pass in 1..=plays {
                         self.octave = start_octave;
                         self.walk(body);
@@ -984,9 +1007,20 @@ impl<'a> Interpreter<'a> {
                             } else {
                                 (pass - threshold) as usize
                             };
-                            if let Some(alternative) = alternatives.get(index.min(blocks - 1)) {
-                                self.octave = body_end;
+                            let index = index.min(blocks - 1);
+                            if let Some(alternative) = alternatives.get(index) {
+                                self.octave = if index == 0 {
+                                    body_end
+                                } else {
+                                    alt_ends.get(index - 1).copied().unwrap_or(body_end)
+                                };
                                 self.walk(alternative);
+                                let end = self.octave;
+                                if alt_ends.len() == index {
+                                    alt_ends.push(end);
+                                } else if let Some(slot) = alt_ends.get_mut(index) {
+                                    *slot = end;
+                                }
                             }
                         }
                     }
@@ -1000,10 +1034,12 @@ impl<'a> Interpreter<'a> {
                     let body_octave = self.octave;
                     let mut sections = Vec::new();
                     let mut end = body_end;
+                    let mut alt_octave = body_octave;
                     for (index, alternative) in alternatives.iter().enumerate() {
                         let alt_start = self.cursor;
-                        self.octave = body_octave;
+                        self.octave = alt_octave;
                         self.walk(alternative);
+                        alt_octave = self.octave;
                         let alt_end = self.cursor;
                         if index == 0 {
                             end = alt_end;
@@ -1059,6 +1095,7 @@ impl<'a> Interpreter<'a> {
                     duration: written,
                     kind,
                     slash,
+                    fraction: self.after_grace_fraction,
                 };
                 if let Some(target) = self.grace_after_target {
                     if let Some(VoiceEvent {
@@ -1516,7 +1553,7 @@ fn context_is_context_only(context: &Context) -> bool {
         | Context::Relative { music, .. }
         | Context::NonRelative { music, .. }
         | Context::Transpose { music, .. } => is_context_only(music),
-        Context::AfterGrace { main, grace } => is_context_only(main) && is_context_only(grace),
+        Context::AfterGrace { main, grace, .. } => is_context_only(main) && is_context_only(grace),
         Context::Repeat {
             body, alternatives, ..
         } => is_context_only(body) && alternatives.iter().all(is_context_only),

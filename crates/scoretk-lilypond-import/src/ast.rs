@@ -28,8 +28,8 @@
 //! dans le langage : c'est l'interpréteur qui les replace sur la trame.
 
 use scoretk_core::model::{
-    ArpeggioType, ArticulationType, ClefType, GraceType, KeyMode, NoteHeadGroup, OrnamentType,
-    Placement, TremoloKind, TupletNumberType,
+    ArpeggioType, ArticulationType, ClefType, Fraction, GraceType, KeyMode, NoteHeadGroup,
+    OrnamentType, Placement, TremoloKind, TupletNumberType,
 };
 
 /// Classe d'octave d'une hauteur écrite.
@@ -182,6 +182,8 @@ pub(crate) enum Context {
     Mark(String),
     /// `\ottava`.
     Ottava(i8),
+    /// `\octaveCheck` : hauteur de contrôle, sans note.
+    OctaveCheck(PitchSpec),
     /// `\sustainOn` / `\sustainOff`.
     Sustain(bool),
     /// `\voiceOne` … `\voiceFour`.
@@ -204,7 +206,13 @@ pub(crate) enum Context {
         music: Box<Music>,
     },
     /// `\afterGrace` : accord principal puis ornements.
-    AfterGrace { main: Box<Music>, grace: Box<Music> },
+    AfterGrace {
+        main: Box<Music>,
+        grace: Box<Music>,
+        /// Fraction de la note principale écoulée avant l'ornement
+        /// (`afterGraceFraction`, 3/4 par défaut).
+        fraction: Fraction,
+    },
     /// `\repeat`.
     Repeat {
         kind: RepeatKind,

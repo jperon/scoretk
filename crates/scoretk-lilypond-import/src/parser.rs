@@ -77,6 +77,9 @@ pub(crate) struct Parser<'a> {
     music_functions: BTreeMap<String, MusicFunction>,
     /// Profondeur d'expansion des blocs embarqués et des fonctions.
     expansion_depth: u32,
+    /// Fraction par défaut d'un `\afterGrace` sans argument
+    /// (`afterGraceFraction`, 3/4 dans `ly/music-functions-init.ly`).
+    after_grace_fraction: Fraction,
     /// `\set melismaBusyProperties = #'()` a été vu : les paroles ne sautent
     /// plus les notes occupées (liaisons d'expression, liaisons…).
     melisma_busy_disabled: bool,
@@ -262,6 +265,7 @@ pub(crate) fn parse(
         music_functions: BTreeMap::new(),
         expansion_depth: 0,
         melisma_busy_disabled: false,
+        after_grace_fraction: Fraction::new(3, 4),
         staff_local_timing: false,
         note_mode: NoteMode::Notes,
         in_relative_function: false,
@@ -560,7 +564,9 @@ impl<'a> Parser<'a> {
             Kind::Scheme => {
                 let datum = token.text.clone();
                 self.position += 1;
-                let _ = self.record_scheme_define(&datum);
+                if !self.record_after_grace_fraction(&datum) {
+                    let _ = self.record_scheme_define(&datum);
+                }
             }
             // Musique embarquée au niveau supérieur : une expression musicale.
             Kind::Embedded | Kind::Punct('{') | Kind::Punct('<') => {
@@ -1923,6 +1929,12 @@ impl<'a> Parser<'a> {
 
     /// Affectation `nom = …` : fonction musicale Scheme ou variable musicale.
     fn assign(&mut self, name: String) {
+        if name == "afterGraceFraction" {
+            if let Some(fraction) = self.parse_scale_fraction() {
+                self.after_grace_fraction = fraction;
+                return;
+            }
+        }
         if let Some(Token {
             kind: Kind::Scheme,
             text,
@@ -2210,6 +2222,26 @@ impl<'a> Parser<'a> {
     /// `#(define nom #{ … #})` : mémorise une variable musicale, insérable par
     /// `$nom` (Extending §1). Les autres datum Scheme sont consommés sans
     /// effet, comme le reste du sous-ensemble Scheme.
+    /// `#(define afterGraceFraction (cons 15 16))`.
+    fn record_after_grace_fraction(&mut self, datum: &str) -> bool {
+        let text = datum.trim();
+        let text = text.strip_prefix('#').unwrap_or(text);
+        let Some(name) = text
+            .strip_prefix("(define ")
+            .and_then(|rest| rest.split_whitespace().next())
+        else {
+            return false;
+        };
+        if name != "afterGraceFraction" {
+            return false;
+        }
+        if let Some((numerator, denominator)) = after_grace_pair(datum) {
+            self.after_grace_fraction = Fraction::new(numerator, denominator);
+            return true;
+        }
+        false
+    }
+
     fn record_scheme_define(&mut self, datum: &str) -> bool {
         let Some((name, body)) = scheme_music_definition(datum) else {
             return false;
@@ -2486,9 +2518,18 @@ impl<'a> Parser<'a> {
                 music: Box::new(self.parse_music()),
             }),
             "afterGrace" => {
+                // Argument optionnel `fraction` (échelle `7/8` ou paire
+                // Scheme) ; sinon `afterGraceFraction` (3/4 par défaut).
+                let fraction = self
+                    .parse_scale_fraction()
+                    .unwrap_or(self.after_grace_fraction);
                 let main = Box::new(self.parse_music());
                 let grace = Box::new(self.parse_music());
-                Music::Context(Context::AfterGrace { main, grace })
+                Music::Context(Context::AfterGrace {
+                    main,
+                    grace,
+                    fraction,
+                })
             }
             "repeat" => self.parse_repeat(),
             "alternative" => {
@@ -2506,10 +2547,13 @@ impl<'a> Parser<'a> {
             // qui prend une hauteur et produit un `RelativeOctaveCheck` :
             // aucune note, aucune durée, et la hauteur ne doit pas devenir la
             // référence `\relative` suivante.
-            "octaveCheck" => {
-                let _ = self.parse_pitch_spec();
-                Music::Empty
-            }
+            "octaveCheck" => match self.parse_optional_pitch() {
+                Some(pitch) => context(Context::OctaveCheck(pitch)),
+                None => {
+                    self.warn("\\octaveCheck sans hauteur ignoré");
+                    Music::Empty
+                }
+            },
             // Commandes de style d'agrément ou de dynamique : elles ne
             // changent ni les hauteurs ni les durées, seulement la gravure.
             "crescTextCresc" | "dimTextDecresc" | "dimTextDecr" | "dimTextDim" | "crescHairpin"
@@ -4726,6 +4770,16 @@ fn fraction_from_token(token: &Token) -> Option<Fraction> {
 /// Fraction portée par un datum Scheme de `\scaleDurations` : paire pointée
 /// `'(n . d)`, appel `(ly:make-moment n d)` ou `(ly:make-moment n/d)`, ou
 /// simple fraction `n/d`.
+fn after_grace_pair(datum: &str) -> Option<(i64, i64)> {
+    let start = datum.find("(cons")? + "(cons".len();
+    let inner = datum[start..].trim_start();
+    let close = inner.find(')')?;
+    let mut parts = inner[..close].split_whitespace();
+    let numerator = parts.next()?.parse().ok()?;
+    let denominator = parts.next()?.parse().ok()?;
+    Some((numerator, denominator))
+}
+
 fn scale_scheme_fraction(datum: &str) -> Option<Fraction> {
     let text = datum.trim();
     let body = text.strip_prefix('\'').unwrap_or(text).trim();
@@ -4791,7 +4845,7 @@ fn scale_context(context: &mut Context, factor: &Fraction) {
         | Context::Relative { music, .. }
         | Context::NonRelative { music, .. }
         | Context::Transpose { music, .. } => scale_music(music, factor),
-        Context::AfterGrace { main, grace } => {
+        Context::AfterGrace { main, grace, .. } => {
             scale_music(main, factor);
             scale_music(grace, factor);
         }
@@ -5022,6 +5076,7 @@ mod tests {
             music_functions: BTreeMap::new(),
             expansion_depth: 0,
             melisma_busy_disabled: false,
+            after_grace_fraction: Fraction::new(3, 4),
             staff_local_timing: false,
             note_mode: NoteMode::Notes,
             in_relative_function: false,
@@ -5063,6 +5118,7 @@ mod tests {
                 music_functions: BTreeMap::new(),
                 expansion_depth: 0,
                 melisma_busy_disabled: false,
+                after_grace_fraction: Fraction::new(3, 4),
                 staff_local_timing: false,
                 note_mode: NoteMode::Notes,
                 in_relative_function: false,

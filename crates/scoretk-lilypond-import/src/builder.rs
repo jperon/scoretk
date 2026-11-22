@@ -1601,9 +1601,12 @@ fn place_chord(
                                 }
                             }
                             if cursor + len == end {
-                                let offset = Some(len * Fraction::new(3, 4));
                                 for grace in &event.grace_after {
-                                    chord.grace_chords.push(build_grace(score, grace, offset));
+                                    chord.grace_chords.push(build_grace(
+                                        score,
+                                        grace,
+                                        Some(len * grace.fraction),
+                                    ));
                                 }
                             }
                             chord_rest.kind = ChordRestKind::Chord(chord);
@@ -1666,9 +1669,12 @@ fn place_chord(
             let main_ticks = event
                 .explicit_ticks
                 .unwrap_or_else(|| event.written.ticks());
-            let offset = Some(main_ticks * Fraction::new(3, 4));
             for grace in &event.grace_after {
-                chord.grace_chords.push(build_grace(score, grace, offset));
+                chord.grace_chords.push(build_grace(
+                    score,
+                    grace,
+                    Some(main_ticks * grace.fraction),
+                ));
             }
             ChordRest {
                 duration: event.written,
