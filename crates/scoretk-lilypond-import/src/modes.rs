@@ -223,7 +223,15 @@ pub(crate) fn chord_pitches(language: Language, name: &str) -> Option<(Vec<u8>, 
         .map_or((name, None), |(h, b)| (h, Some(b)));
     // `/+d` : basse explicite (`scm/chord-entry.scm` l. 46-53,
     // `interpret-bass`). Le `+` est un marqueur de basse, pas une altération.
-    let basse = basse.map(|b| b.strip_prefix('+').unwrap_or(b));
+    // `/+d` ajoute la basse à l'accord fondamental ; `/d` est un
+    // renversement (`process-inversion`).
+    let (basse, explicite) = match basse {
+        Some(b) => match b.strip_prefix('+') {
+            Some(rest) => (Some(rest), true),
+            None => (Some(b), false),
+        },
+        None => (None, false),
+    };
     let (racine, qualite) = head.split_once(':').map_or((head, "maj"), |(r, q)| (r, q));
     let (step, alter) = language.parse(racine)?;
     let root = midi_of(step, alter, 4)?;
@@ -266,6 +274,34 @@ pub(crate) fn chord_pitches(language: Language, name: &str) -> Option<(Vec<u8>, 
         .filter_map(|p| p.and_then(|p| u8::try_from(p).ok()))
         .collect();
     let basse_midi = basse.and_then(|b| chord_bass_pitch(language, step, b));
+    // Renversement : `process-inversion` retire la note de basse de l'accord
+    // et `make-chord-elements` (`chord-entry.scm` l. 100-140) ramène les
+    // autres notes dans l'octave au-dessus d'elle : `bes/d` = ré4, fa4, sib4,
+    // et non l'accord fondamental plus une basse. Une basse explicite
+    // (`/+d`) ou étrangère à l'accord garde l'accord fondamental.
+    let notes = match basse_midi {
+        Some(basse) if !explicite && notes.iter().any(|p| p % 12 == basse % 12) => {
+            let mut reste: Vec<u8> = notes
+                .iter()
+                .copied()
+                .filter(|p| p % 12 != basse % 12)
+                .collect();
+            let pc_basse = basse % 12;
+            reste.sort_by_key(|p| (p % 12 + 12 - pc_basse) % 12);
+            let mut curseur = basse;
+            let mut renverse = Vec::with_capacity(reste.len());
+            for note in reste {
+                let mut valeur = basse + (note % 12 + 12 - pc_basse) % 12;
+                if valeur <= curseur {
+                    valeur += 12;
+                }
+                renverse.push(valeur);
+                curseur = valeur;
+            }
+            renverse
+        }
+        _ => notes,
+    };
     Some((notes, basse_midi))
 }
 
@@ -338,16 +374,20 @@ mod tests {
             Some((vec![60, 64, 67], None)),
             "`maj` ne doit pas être pris pour le modificateur `m`"
         );
-        assert_eq!(
-            chord_pitches(langue, "c/g"),
-            Some((vec![60, 64, 67], Some(55)))
-        );
+        // `c/g` est un renversement : sol3, do4, mi4.
+        assert_eq!(chord_pitches(langue, "c/g"), Some((vec![60, 64], Some(55))));
         // `/+d` : basse explicite (`scm/chord-entry.scm` l. 46-53,
         // `interpret-bass`), distincte d'un ajout. Le `+` ne fait pas partie
         // du nom de hauteur.
         assert_eq!(
             chord_pitches(langue, "bes/+d"),
             Some((vec![70, 74, 77], Some(62)))
+        );
+        // Renversement : `bes/d` = ré4, fa4, sib4 (basse + notes ramenées
+        // au-dessus), pas l'accord fondamental plus une basse.
+        assert_eq!(
+            chord_pitches(langue, "bes/d"),
+            Some((vec![65, 70], Some(62)))
         );
         assert_eq!(chord_pitches(langue, "inconnu"), None);
     }

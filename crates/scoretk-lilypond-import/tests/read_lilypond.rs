@@ -264,6 +264,20 @@ fn commande_inconnue_ne_mange_pas_une_affectation() {
     assert_eq!(hauteurs(&score), vec![60]);
 }
 
+/// `/d` est un renversement (`scm/chord-entry.scm`, `process-inversion` et
+/// `make-chord-elements`) : la note de basse entre dans l'accord et les
+/// autres notes sont ramenees dans l'octave au-dessus, au lieu de garder
+/// l'accord fondamental et d'ajouter une basse (`bes/d` = re4 fa4 sib4).
+#[test]
+fn accord_renverse_place_les_notes_au_dessus_de_la_basse() {
+    let score =
+        read_lilypond("\\version \"2.18.2\"\n\\score { \\new Staff { \\chordmode { bes/d } } }")
+            .expect("lecture");
+    let mut hauteurs = hauteurs(&score);
+    hauteurs.sort_unstable();
+    assert_eq!(hauteurs, vec![62, 65, 70]);
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");
@@ -4449,11 +4463,11 @@ fn chordmode_dans_une_portee_joue_les_accords() {
       }
     "#;
     let score = read_lilypond(source).expect("lecture de la grille jouée");
-    // c = 60/64/67, c:m7 = 60/63/67/70, c/g = 60/64/67 + basse 55.
+    // c = 60/64/67, c:m7 = 60/63/67/70, c/g = 60/64 + basse 55 (renversement).
     // La seconde portée est en do central (60, 62, 64, 65, 67).
     assert_eq!(
         hauteurs(&score),
-        vec![60, 64, 67, 60, 63, 67, 70, 60, 64, 67, 55, 60, 62, 64, 65, 67,],
+        vec![60, 64, 67, 60, 63, 67, 70, 60, 64, 55, 60, 62, 64, 65, 67,],
         "notes des accords joués puis de la portée relative"
     );
     assert_eq!(score.measures.len(), 2, "deux mesures communes");
