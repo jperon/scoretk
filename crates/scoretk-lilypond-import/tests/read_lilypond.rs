@@ -7979,3 +7979,23 @@ should be a single measure with a B@tie{}note."
     assert_eq!(notes.len(), 1, "notes : {:?}", notes);
     assert_eq!(notes[0].0, Fraction::ZERO, "première note : {:?}", notes);
 }
+
+#[test]
+fn voices_consomme_sa_liste_de_cles() {
+    // `ly/music-functions-init.ly:2631-2640` : `\voices` prend une
+    // `key-list?` (numéros ou noms) puis la musique. La laisser dans le flux
+    // faisait de `1,3,4,2` des durées et décalait toutes les voix.
+    let src =
+        "\\version \"2.24.0\"\n{ \\voices 1,3,4,2 << a''2 \\\\ e''2 \\\\ c''2 \\\\ a'2 >> }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let notes: Vec<_> = (0..4)
+        .flat_map(|voix| accords_de_voix(&score, voix))
+        .filter(|(_, pitches, _)| !pitches.is_empty())
+        .collect();
+    assert_eq!(notes.len(), 4, "notes : {:?}", notes);
+    assert!(
+        notes.iter().all(|(tick, _, _)| *tick == Fraction::ZERO),
+        "notes : {:?}",
+        notes
+    );
+}

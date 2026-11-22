@@ -3572,6 +3572,19 @@ impl<'a> Parser<'a> {
                 let _ = self.parse_music();
                 Music::Empty
             }
+            // `ly/music-functions-init.ly:2631-2640` : `voices` prend une
+            // `key-list?` (numéros, noms, chaînes) puis la musique. La liste
+            // laissée dans le flux devenait des durées et décalait les voix
+            // (`voices-command.ly`).
+            "voices" => {
+                while self.peek().is_some_and(|token| {
+                    matches!(token.kind, Kind::Number | Kind::Str | Kind::Scheme)
+                        || token.is_punct(',')
+                }) {
+                    self.position += 1;
+                }
+                self.parse_music()
+            }
             "compressMMRests" => {
                 // `ly/music-functions-init.ly:452-459` : ne change que la
                 // gravure des silences ; les hauteurs et attaques restent.
