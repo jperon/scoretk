@@ -3741,9 +3741,9 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact | Exact % | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 253 | 57.3 | 98.69 | — | — |
-| comparable (reference present) | 1 711 | **1 253** | **73.23** | **98.69** | **90.73** | **93.44** |
-| excluding obsolete-source basket | 1 651 | **1 236** | **74.86** | **98.75** | **93.87** | — |
+| all rows | 2 186 | 1 269 | 58.1 | 98.75 | — | — |
+| comparable (reference present) | 1 711 | **1 269** | **74.17** | **98.75** | **90.81** | **93.51** |
+| excluding obsolete-source basket | 1 651 | **1 252** | **75.83** | **98.82** | **93.95** | — |
 | obsolete-source basket | 60 | 17 | 28.3 | — | 62.36 | — |
 
 The obsolete-source basket is the 60 files that still contain a command
@@ -3849,7 +3849,8 @@ regresses.
 ### Classification of the 465 non-exact files (before this pass)
 
 The `mut` set outside the obsolete-source basket had 465 non-exact files
-before the `\octaveCheck`/`\afterGrace` pass; 415 remain after the review. Symptoms
+before the `\octaveCheck`/`\afterGrace` pass; 399 remain after the octave
+pass. Symptoms
 overlap (a file can be both `octave` and `notes_supp`); the first
 table groups by the oracle's primary flag, the second counts the constructs
 present in the source and its direct includes. `ne`/`ex` are the files that
@@ -3926,6 +3927,29 @@ was not ported.
   (204/204). Across the lot this fix gives **40 exact files, 0 losses** and
   N2 +21,406 (Bach chorales, ragtime, airs).
 
+### Cause 7: chord quality after the duration
+
+In `\chordmode`, a duration may precede the quality (`a2:m`). The reader
+looked the pitches up before consuming the duration, so `parse_chord_name`
+stopped on the digit and the chord was read major: `a2:m` gave A C♯ E instead
+of A C E. The duration is now read before the name is recomposed, as in
+`chord_body` (`lily/parser.yy`); a bass after the duration (`e1/d`) stays in
+the name. Test `chordmode_qualite_apres_duree` (`69,72,76,69,73,76`). On the
+six files with the pattern, `SINIVALKOINEN` becomes exact (86 → 103 matched),
+N2 1,193 → 1,223 for 1,461 reference notes, no exact loss.
+
+### Cause 8: octave-shift is per staff
+
+`ly_notes.read_xml` kept one `octave_shift` for the whole part: an
+`<octave-shift>` on staff 1 (the `\ottava` of a piano) also transposed the
+notes of staff 2 at the same tick, which appeared an octave low (`Czerny
+Op.821` has three staves in one part). MusicXML defines the direction for the
+staff named by `<staff>`; the state is now a dictionary keyed by staff.
+Selftest: two staves, a shift on staff 1 only. On the 53 files containing
+`\ottava`, **14 become exact** (`turpinhar`, `25EF-11`, `hardtimes`,
+`Chop-28-3`, `Le_porteur`…), N2 68,482 → 70,970 for 84,966 reference notes, no
+exact loss.
+
 ### Cause 5: `\octaveCheck` consumes its pitch
 
 `\octaveCheck` is a music function taking a pitch and producing a
@@ -3963,7 +3987,7 @@ reference notes, no exact loss.
 
 ### Remaining `notes_supp` and `attaque_decalee` files
 
-`notes_supp` is now 75 primary files (176 files carry the flag), dominated by
+`notes_supp` is now 77 primary files (178 files carry the flag), dominated by
 the obsolete-source basket and by octave/transposition errors:
 
 | File | Lost notes | First cause |
@@ -3975,7 +3999,7 @@ the obsolete-source basket and by octave/transposition errors:
 | `troldhaugen.ly` | 3 397 | octave |
 | `rach-prelude23-05.ly` | 2 445 | octave |
 
-`attaque_decalee` is 234 files. The first group is the same obsolete-source
+`attaque_decalee` is 240 files. The first group is the same obsolete-source
 artifact (`violin_concerto_1` 11 593, `Violinsonata_No9_1` 6 176,
 `LVB_Sonate_57_3` 5 363, `Violinsonata_No7_1` 2 794, the three
 `Cellosonata_No3` movements); then large `\unfoldRepeats` works with
