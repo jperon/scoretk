@@ -2917,6 +2917,50 @@ fn crochet_de_nolet_sans_bracket_type() {
     }
 }
 
+/// `Tuplet::calcHasBracket` (`tuplet.cpp:204-275`) ne supprime le crochet
+/// que si le n-olet commence **et** finit sa ligature (`tupletStartsBeam` et
+/// `tupletEndsBeam` aux lignes 221-222, condition finale 273-275). Un n-olet
+/// au milieu d'une ligature plus longue garde donc son crochet. Portage
+/// réduit de `Vivaldi … 04-TecumPrincipium` : trois croches 16es ligaturées
+/// entre deux autres croches 16es, MuseScore écrit `bracket="yes"`.
+#[test]
+fn crochet_nolet_au_milieu_d_une_ligature() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::new(3, 8), Fraction::new(3, 8));
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    let tuplet = score.add_tuplet(Tuplet::new(
+        Fraction::new(3, 2),
+        Fraction::new(1, 16),
+        Fraction::ZERO,
+        Fraction::ONE,
+    ));
+    for index in 0..6 {
+        let note = score.add_note(Note::new(62 + index as u8, tpc::D));
+        let mut chord_rest = ChordRest::chord(Duration::new(DurationType::Sixteenth));
+        chord_rest.chord_mut().expect("accord").notes.push(note);
+        if (1..=3).contains(&index) {
+            chord_rest.tuplet = Some(tuplet);
+        }
+        ajouter_element(
+            &mut score,
+            &mut measure,
+            track,
+            Fraction::new(index as i64, 16),
+            chord_rest,
+        );
+    }
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<tuplet type=\"start\" bracket=\"yes\""),
+        "un n-olet au milieu d'une ligature garde son crochet :\n{xml}"
+    );
+}
+
 /// `Rest::checkDots()` n'est appelé que par le layout de la portée
 /// (`restlayout.cpp:148`) : une portée masquée (`<isStaffVisible>0`) n'a donc
 /// aucun `NoteDot`, et `writeRest` (`exportmusicxml.cpp:4655-4669`) n'écrit
