@@ -2981,6 +2981,29 @@ fn type_cue_sur_note_reduite() {
     );
 }
 
+/// `Staff::staffMag` (`staff.cpp:806-809`) multiplie `smallStaffMag` par
+/// `userMag`. `writeStaffDetails` (`exportmusicxml.cpp:8139-8144`) en déduit
+/// `<staff-size scaling=…>`. Le style d'un `.mscz` peut fixer 0.9 au lieu du
+/// défaut 0.7 (cas réel : Vivaldi Sicut erat, 8 portées à 90 au lieu de 70).
+#[test]
+fn staff_size_selon_small_staff_mag_du_style() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    score.staff_mut(staff).small = true;
+    score.style.small_staff_mag = 0.9;
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<staff-size scaling=\"90\">90</staff-size>"),
+        "staff-size doit suivre smallStaffMag du style :\n{xml}"
+    );
+}
+
 /// `Rest::checkDots()` n'est appelé que par le layout de la portée
 /// (`restlayout.cpp:148`) : une portée masquée (`<isStaffVisible>0`) n'a donc
 /// aucun `NoteDot`, et `writeRest` (`exportmusicxml.cpp:4655-4669`) n'écrit

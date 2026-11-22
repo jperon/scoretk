@@ -69,22 +69,36 @@ fn apply_style_file(score: &mut Score, mss: &[u8]) -> Result<()> {
     reader.config_mut().trim_text(true);
     let mut in_style = false;
     let mut in_flag = false;
+    let mut in_style_name = String::new();
     loop {
         match reader.read_event()? {
             Event::Start(element) => {
                 let local = element.name();
                 match local.as_ref() {
                     "Style" => in_style = true,
-                    "createMultiMeasureRests" if in_style => in_flag = true,
+                    "createMultiMeasureRests" if in_style => {
+                        in_flag = true;
+                        in_style_name = "createMultiMeasureRests".to_owned();
+                    }
+                    "smallStaffMag" if in_style => {
+                        in_flag = true;
+                        in_style_name = "smallStaffMag".to_owned();
+                    }
                     _ => {}
                 }
             }
             Event::Text(value) if in_flag => {
-                score.style.create_multi_measure_rests = value.as_ref().trim() == "1";
+                if in_style_name == "createMultiMeasureRests" {
+                    score.style.create_multi_measure_rests = value.as_ref().trim() == "1";
+                } else if in_style_name == "smallStaffMag" {
+                    if let Ok(mag) = value.as_ref().trim().parse::<f64>() {
+                        score.style.small_staff_mag = mag;
+                    }
+                }
             }
             Event::End(element) => match element.name().as_ref() {
                 "Style" => in_style = false,
-                "createMultiMeasureRests" => in_flag = false,
+                "createMultiMeasureRests" | "smallStaffMag" => in_flag = false,
                 _ => {}
             },
             Event::Eof => break,

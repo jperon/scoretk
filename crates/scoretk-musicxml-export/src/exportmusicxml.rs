@@ -2401,9 +2401,15 @@ impl Context<'_> {
             let staff = self.score.staff(*staff_id);
             let hidden_staff = !staff.visible || hidden.contains(&(staff_id.raw() as usize));
             // `staffMag = (small ? smallStaffMag : 1) * userMag`
-            // (`staff.cpp:806-809`), smallStaffMag = 0.7 (`styledef.cpp:529`).
-            let mag = (if staff.small { 70 } else { 100 }) * staff.user_mag_percent;
-            let size = mag / 100;
+            // (`staff.cpp:806-809`) ; `smallStaffMag` vient du style
+            // (défaut 0.7, mais un `.mscz` peut le fixer à 0.9).
+            let mag = if staff.small {
+                self.score.style.small_staff_mag
+            } else {
+                1.0
+            } * f64::from(staff.user_mag_percent)
+                / 100.0;
+            let size = (mag * 100.0).round() as i64;
             // TODO(parité): tablature et couleurs/visibilité des lignes.
             if staff.lines == 5 && !hidden_staff && size == 100 {
                 continue;

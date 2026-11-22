@@ -104,6 +104,11 @@ pub struct StyleSettings {
     pub concert_pitch: bool,
     /// Reconstruire les multi-repos à la mise en page (`Sid::createMultiMeasureRests`).
     pub create_multi_measure_rests: bool,
+    /// Agrandissement des portées en petit format (`Sid::smallStaffMag`,
+    /// défaut 0.7). `Staff::staffMag` (`staff.cpp:806-809`) le multiplie par
+    /// `userMag`, et `writeStaffDetails` (`exportmusicxml.cpp:8139-8144`) en
+    /// tire `<staff-size scaling=…>`.
+    pub small_staff_mag: f64,
 }
 
 impl StyleSettings {
@@ -150,6 +155,7 @@ impl StyleSettings {
             dont_hide_staves_in_first_system: true,
             concert_pitch: false,
             create_multi_measure_rests: false,
+            small_staff_mag: 0.7,
         }
     }
 
