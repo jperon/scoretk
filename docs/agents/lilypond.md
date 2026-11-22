@@ -5525,6 +5525,22 @@ Mesure sur le lot mscz (deux binaires frères, `--mode model`) : exacts
 disparaît) mais n'atteint pas l'exactitude ; aucune perte, taille des `.ly`
 inchangée. Correctif structurel, sans gain d'exactitude mesuré.
 
+### Notes invisibles de MuseScore : les écrire quand même
+
+`2e1aa03d` a appris au lecteur 3.x/2.x à conserver `<visible>0</visible>`
+(`exportmusicxml.cpp::writeNotehead` : une note invisible joue mais n'a pas de
+tête). L'écrivain LilyPond filtrait ces notes hors des accords
+(`chord.rs::chord_token`, `chord_notes`) : `Angels_Carol__John_Rutter.mscz`
+perdait six notes à la relecture après ce commit lecteur.
+
+Les notes visibles et invisibles sont désormais toutes écrites ; seule la
+tête de note n'est pas reproduite à l'écran (écart de gravure, pas de musique).
+Test réduit écrit d'abord : `note_invisible_ecrite_quand_meme`.
+
+Mesure sur le lot mscz (deux binaires frères, `--mode model`) : exacts
+155 → **156**, `Angels_Carol` retrouve ses 1974 notes, aucune perte ; +14
+octets sur les `.ly` du lot.
+
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire

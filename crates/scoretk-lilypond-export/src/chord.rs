@@ -191,17 +191,10 @@ fn chord_token(
     chord_rest: &ChordRest,
     transpose_chromatic: i32,
 ) -> String {
-    let notes: Vec<&Note> = chord
-        .notes
-        .iter()
-        .map(|id| score.note(*id))
-        .filter(|note| note.visible)
-        .collect();
-    let notes: Vec<&Note> = if notes.is_empty() {
-        chord.notes.iter().map(|id| score.note(*id)).collect()
-    } else {
-        notes
-    };
+    // MuseScore joue les notes `<visible>0</visible>` (seule la tête de note
+    // est masquée : `exportmusicxml.cpp::writeNotehead`). Les supprimer
+    // change la musique relue : écrire toutes les notes du accord.
+    let notes: Vec<&Note> = chord.notes.iter().map(|id| score.note(*id)).collect();
 
     let mut head = String::new();
     if notes.len() > 1 {
@@ -295,9 +288,6 @@ fn chord_notes(
     let mut rendered = String::new();
     for id in &chord.notes {
         let note = score.note(*id);
-        if !note.visible {
-            continue;
-        }
         rendered.push_str(&pitch::pitch_name(note, transpose_chromatic));
         rendered.push_str(&duration);
         // Le `{ ... }` d'un agrément est de la musique séquentielle
@@ -603,6 +593,29 @@ mod tests {
         assert!(
             rendered.starts_with("\\afterGrace 1 "),
             "le facteur 1 doit être explicite : {rendered}"
+        );
+    }
+
+    /// Une note `<visible>0</visible>` de MuseScore est jouée mais sans tête
+    /// de note (`exportmusicxml.cpp::writeNotehead`). L'écrivain ne doit pas
+    /// la supprimer de l'accord : le modèle la porte, et la relecture du
+    /// `.ly` doit la retrouver (`Angels_Carol__John_Rutter.mscz`).
+    #[test]
+    fn note_invisible_ecrite_quand_meme() {
+        let mut chord = ChordRest::chord(Duration::quarter());
+        let mut score = Score::new();
+        let id = score.add_note(Note::new(60, tpc::C));
+        let mut invisible = Note::new(64, tpc::E);
+        invisible.visible = false;
+        let invisible_id = score.add_note(invisible);
+        if let Some(inner) = chord.chord_mut() {
+            inner.notes.push(id);
+            inner.notes.push(invisible_id);
+        }
+        let rendered = render(&score, &chord, Fraction::ONE, 0);
+        assert!(
+            rendered.starts_with("<c e>"),
+            "les deux notes doivent être écrites : {rendered}"
         );
     }
 
