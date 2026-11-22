@@ -520,11 +520,23 @@ than importer defects:
 - **`Kryshachok`** is a **LilyPond reader** octave error: the MIDI has
   (46, 50, 53) at 4.0 and the reference written pitch is (58, 62, 65), with
   no `<transpose>` or octave clef between them — the reader resolved the bass
-  voice an octave too high. `Lassus_Alleluja._Dies_sanctificatus` loses 3
-  notes of a five-note chord (74 and 62 at 64.0), like `Ad_te_Suspiramus`
-  (12 of 1 072): an importer note-loss still to reduce. `human_4-4` is a
-  human performance, where our direct `findQuantizedChordOnTime` differs
-  from MuseScore's metric dynamic programming (documented in `quant.rs`).
+  voice an octave too high.
+- **`Lassus_Alleluja._Dies_sanctificatus`** is the same kind of inconsistent
+  pair, not an importer loss: at 64.0 the MIDI has three notes (66, 57, 50)
+  while the `.ly` reference has five (74, 66, 62, 57, 50); the two extra
+  written notes are exactly 12 semitones above MIDI pitches the source's
+  octave-clef staves should have produced. The import reproduces the MIDI.
+- **`Ad_te_Suspiramus`** (12 of 1 072) reduces to a **grid artefact**: the
+  missing attacks are consecutive same-pitch notes 1/6 of a quarter apart
+  (81 at 71.833 and 72.0, then 73.833 and 74.0, …). The importer keeps them
+  0.125 apart (71.875 and 72.0, its `quantForLen` halving for the short
+  note); the reference's written 1/6 positions quantise to 71.75 and 72.0.
+  On the oracle's Q16 comparison grid both collapse to 72.0 and
+  `fusionner_unissons` keeps one, while the reference keeps two — the import
+  is not losing a note.
+- **`human_4-4`** is a human performance, where our direct
+  `findQuantizedChordOnTime` differs from MuseScore's metric dynamic
+  programming (documented in `quant.rs`).
 
 The single `note manquante` file (`CommentLeSaisJe`) and the `note sup`
 files `Veni, Creator Spiritus` (1 619 notes against 245) and `Dechiffrage`
