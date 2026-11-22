@@ -6017,3 +6017,47 @@ constant de 0,25 ou 2,25, probablement lié aux durées de drapeaux Schemes),
 `bend-spanner-styles`, `finger-glide-*`, `offsets`, `incipit-*`,
 `skiptypesetting-show-*`. Ces groupes n'ont pas encore de cause commune
 identifiée ; ils ne sont pas exclus du dénominateur.
+
+### `\incipit` et correction de l'oracle ChordNames
+
+**`\incipit`** (`ly/property-init.ly:439-490`) : l'argument est placé dans un
+`\score` de `\markup` (MensuralStaff) : c'est une image gravée, absente du
+MIDI. Le lecteur le consommait comme de la musique (9 notes au lieu de 5 sur
+`incipit.ly`). Corrigé, avec tests réduits pour la forme simple et la forme
+`\new Contexte` : **+3 exacts** (`incipit`, `incipit-modern`,
+`incipit-other-context`), 0 perte (`/tmp/ly-incfix`, 1550). L'ancien test
+`new_staff_imbrique_garde_sa_propre_voix` pédait jouer l'incipit : il a été
+corrigé vers le comportement de l'oracle.
+
+**ChordNames — le côté en tort était l'oracle, pas le lecteur.** J'avais
+auparavant classé à tort ces 11 fichiers comme « artefact d'oracle » sans
+vérifier le contenu. Vidage réel (`mido`) :
+
+- référence `chord-changes.ly` : **1 piste, 30 notes**, toutes transposées
+  (72/75/79…) ;
+- compilation de la même source par le LilyPond installé avec `\midi {}` :
+  **3 pistes, 60 notes** — piste 1 = grille ChordNames (60/63/67…), piste 2 =
+  portée transposée (72/75/79…).
+
+LilyPond 2.26 joue donc bien `\new ChordNames` (cf. les tests
+`grille_daccords_jouee_dans_le_midi`), et la référence a été produite par un
+autre compilateur ou un autre choix de `\score`. Conformément au README de
+l'oracle (« a `ly.midi` produced by another version … is not a reader
+oracle »), la référence est régénérée avec l'outil versionné
+`scripts/oracle/lilypond/regen-refs.py` (copie par liens durs de l'arbre,
+`--jobs 2`, injection de `\midi {}`). Les 11 `ly.midi` régénérés sont dans
+`/tmp/ly95lect-refs-fixed` ; les originaux restent intacts.
+
+Mesure avec l'oracle corrigé : **1556/1724 (90,3 %)**, **+6 exacts**, 0 perte
+(`/tmp/ly-oraclefix`). Les 5 autres fichiers ChordNames gardent d'autres
+écarts et ne sont pas inclus dans ce gain. Le chiffre 1550 restait valable
+avec l'ancien arbre de références ; les deux chiffres ne sont pas comparables
+sans préciser l'oracle utilisé.
+
+**Limite documentée** : `skipTypesetting` est évalué par LilyPond dans l'ordre
+du temps et au niveau Score (`lily/score-performer.cc:151-176`) ; le lecteur
+le traite en ordre de parsing. Le test ignoré
+`skip_typesetting_dans_une_voix_parallele` montre l'écart sur
+`<< { \set Score.skipTypesetting = ##t a4 … } \\ { c4 d4 } >>`. Aucun fichier
+du lot `ra` ne pose cette propriété dans une voix parallèle, donc la limite
+n'affecte pas la mesure.
