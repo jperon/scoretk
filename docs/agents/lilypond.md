@@ -3741,10 +3741,10 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact | Exact % | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 204 | 55.1 | 97.51 | — | — |
-| comparable (reference present) | 1 711 | **1 204** | **70.37** | **97.51** | **89.13** | **93.33** |
-| excluding obsolete-source basket | 1 651 | **1 189** | **72.02** | **97.54** | **92.24** | — |
-| obsolete-source basket | 60 | 15 | 25.0 | — | 61.06 | — |
+| all rows | 2 186 | 1 213 | 55.5 | 97.58 | — | — |
+| comparable (reference present) | 1 711 | **1 213** | **70.89** | **97.58** | **89.22** | **93.44** |
+| excluding obsolete-source basket | 1 651 | **1 198** | **72.56** | **97.62** | **92.33** | — |
+| obsolete-source basket | 60 | 15 | 25.0 | — | 61.09 | — |
 
 The obsolete-source basket is the 60 files that still contain a command
 removed after 2.10 (`\setTextCresc`, `\setTextDecresc`, `\setTextDim`,
@@ -3771,11 +3771,13 @@ instrument's note at the same pitch and attack (for example `Symphony5_1`,
 `eugenia`, `Symphony5_2`); the kept note still matches, and no file lost
 exactness.
 
-The two repeat fixes below add **3 exact files and 0 losses** on the same
-1,711 comparable rows (1,201 → 1,204 exact, N2 +4,491). The only per-file N2
-decreases are the `JPSFotF` parts (at most −10), already divergent at tick 0;
-no exact file regresses. The remaining non-exact files outside the obsolete
-basket go from 465 to 462.
+The repeat fixes added **3 exact files and 0 losses** on the same 1,711
+comparable rows (1,201 → 1,204 exact, N2 +4,491). The `\octaveCheck` and
+`\afterGrace` fixes below add **9 exact files and 0 losses** (1,204 → 1,213,
+N2 +1,230). The only per-file N2 decreases are the `JPSFotF` parts (at most
+−10) and `Chop-28-24` (−6), all already divergent at tick 0 or carrying other
+causes; no exact file regresses. The remaining non-exact files outside the
+obsolete basket go from 465 to 453.
 
 ### Cause 1: top-level `<< … >>` is one context per element
 
@@ -3846,8 +3848,9 @@ regresses.
 
 ### Classification of the 465 non-exact files (before this pass)
 
-The `mut` set outside the obsolete-source basket had 465 non-exact files.
-Symptoms overlap (a file can be both `octave` and `notes_supp`); the first
+The `mut` set outside the obsolete-source basket had 465 non-exact files
+before the `\octaveCheck`/`\afterGrace` pass; 453 remain after it. Symptoms
+overlap (a file can be both `octave` and `notes_supp`); the first
 table groups by the oracle's primary flag, the second counts the constructs
 present in the source and its direct includes. `ne`/`ex` are the files that
 were non-exact/exact with the construct **before** this pass; a construct is a
@@ -3893,9 +3896,44 @@ keeps C4 under `\ottava 1`). `\partcombine` is 77 files in total but 70 are
 exact; only 7 are non-exact, far below the two causes, so its MIDI behaviour
 was not ported.
 
+### Cause 5: `\octaveCheck` consumes its pitch
+
+`\octaveCheck` is a music function taking a pitch and producing a
+`RelativeOctaveCheck` (`ly/music-functions-init.ly:1274-1281`,
+`lily/relative-octave-check.cc`): no note, no duration, and the pitch must not
+become the next `\relative` reference. The reader treated it as an
+argument-less style command, so the following pitch was read as a note and
+reset the relative octave (for example `no7` played 79 instead of 67, `no2`
+96 instead of 72). The parser now consumes the pitch with `parse_pitch_spec`
+without touching the relative state. Test
+`octave_check_consomme_sa_hauteur` (failed: `[60, 84, 86, 88]` instead of
+`[60, 62, 64]`). On the five `mut` files: four become exact (`no7` 89 → 170,
+`no2` 47 → 189, `no8` 82 → 236, `tallis-ordinal` 32 → 56);
+`rach-prelude-op3-no2` goes from 212 to 894 matched notes out of 1,725, with
+no exact loss.
+
+### Cause 6: `\afterGrace` carries its played onset
+
+`\afterGrace` places the ornament after `afterGraceFraction` (3/4 by default)
+of the main note (`ly/music-functions-init.ly:86-115`); `lily/grace-iterator.cc`
+puts it in the grace part and `lily/audio-item.cc:122` scales grace time by
+9/40. The reader already modelled it as `Grace8After`
+(`engraving/dom/chord.h`, `isGraceAfter`), but the MusicXML wrote it after the
+main note with no offset, and the oracle attached it to the next note's
+attack. `GraceChord` now carries `played_offset` (3/4 of the main ticks), the
+MusicXML writer emits it as `<offset>` on the after-grace (negative from the
+end of the note), and `ly_notes.read_xml` applies `<offset>` without moving
+the logical cursor. MuseScore after-graces keep `played_offset: None`, so the
+`linked-ties` corpus snapshot is unchanged. Test
+`after_grace_porte_son_instant_de_lecture` (3/16 whole for a quarter note);
+oracle selftest with `<offset>`. On the 25 `\afterGrace` files: **5 exact**
+(`Symphony7_1`, `Violinsonata_No7_4`, `QuartetOpus18_No4_3`,
+`Violin_Concerto_3`, `reger_grosser_gott…`), N2 89,147 → 89,252 for 90,360
+reference notes, no exact loss.
+
 ### Remaining `notes_supp` and `attaque_decalee` files
 
-`notes_supp` is now 69 primary files (176 files carry the flag), dominated by
+`notes_supp` is now 70 primary files (173 files carry the flag), dominated by
 the obsolete-source basket and by octave/transposition errors:
 
 | File | Lost notes | First cause |
@@ -3907,7 +3945,7 @@ the obsolete-source basket and by octave/transposition errors:
 | `troldhaugen.ly` | 3 397 | octave |
 | `rach-prelude23-05.ly` | 2 445 | octave |
 
-`attaque_decalee` is 222 files. The first group is the same obsolete-source
+`attaque_decalee` is 217 files. The first group is the same obsolete-source
 artifact (`violin_concerto_1` 11 593, `Violinsonata_No9_1` 6 176,
 `LVB_Sonate_57_3` 5 363, `Violinsonata_No7_1` 2 794, the three
 `Cellosonata_No3` movements); then large `\unfoldRepeats` works with
