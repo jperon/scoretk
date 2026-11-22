@@ -4724,6 +4724,33 @@ fn repeat_tremolo_etire_les_durees() {
     );
 }
 
+/// `lily/percent-repeat-iterator.cc` : `\repeat percent n { … }` joue le
+/// corps une fois, puis émet n−1 `PercentEvent` de la longueur du corps : le
+/// temps avance de n × la durée du corps, mais les répétitions ne sont pas
+/// rejouées. Le lecteur les ignorait entièrement et plaçait la suite trop tôt.
+#[test]
+fn repeat_percent_avance_les_repetitions() {
+    let score = lire("\\time 4/4 \\repeat percent 3 { c4 d e f } g1");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67]);
+    assert_eq!(
+        score.measures.len(),
+        4,
+        "les deux répétitions de pourcent occupent deux mesures"
+    );
+}
+
+#[test]
+fn repeat_percent_sous_unfold_repeats_est_joue() {
+    // `\unfoldRepeats` transforme `PercentRepeatedMusic` en
+    // `UnfoldedRepeatedMusic` (`scm/music-functions.scm`, `unfold-repeats`).
+    let score = lire("\\unfoldRepeats \\repeat percent 3 { c4 d e f } g1");
+    assert_eq!(
+        hauteurs(&score),
+        vec![60, 62, 64, 65, 60, 62, 64, 65, 60, 62, 64, 65, 67]
+    );
+    assert_eq!(score.measures.len(), 4);
+}
+
 /// `lily/parser.yy` `context_prefix` (l. 1686-1690) : `\new Voice` crée une
 /// voix **dans le Staff courant**, pas une portée sœur. Les contextes Voice
 /// meurent à la fin de leur musique : quatre `\new Voice` successifs peuvent

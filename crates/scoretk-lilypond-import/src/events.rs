@@ -924,8 +924,29 @@ impl<'a> Interpreter<'a> {
                 }
             }
             RepeatKind::Ignored => {
-                self.warn("\\repeat non pris en charge : musique lue une fois");
-                self.walk(body);
+                if self.unfold_repeats {
+                    // `\unfoldRepeats` remplace les `PercentRepeatedMusic`
+                    // par `UnfoldedRepeatedMusic` (`scm/music-functions.scm`,
+                    // `unfold-repeats` : type `percent`), donc le corps est
+                    // réellement joué n fois.
+                    let reference = self.octave;
+                    for _ in 0..count.max(1) {
+                        self.octave = reference;
+                        self.walk(body);
+                    }
+                } else {
+                    // `lily/percent-repeat-iterator.cc` : le corps est joué
+                    // une fois, puis n−1 `PercentEvent` de la longueur du
+                    // corps sont seulement des places occupées (la gravure
+                    // affiche des `%`). Le temps avance de n × la durée du
+                    // corps, sans rejouer les notes.
+                    let debut = self.cursor;
+                    self.walk(body);
+                    let longueur = self.cursor - debut;
+                    if count > 1 && longueur > Fraction::ZERO {
+                        self.cursor += longueur * Fraction::new(i64::from(count - 1), 1);
+                    }
+                }
             }
             // Le facteur de trémolo est déjà appliqué aux durées par le
             // parseur (§4.2.2) : ce bras ne peut survenir que sur un arbre
