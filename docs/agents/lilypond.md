@@ -4389,3 +4389,22 @@ output format), marks it `Staff::muted`, and the MIDI writer skips its notes
 (`NPlayEvent::isMuted`, `compatmidirenderinternal.cpp`). Failing reduced test
 `portee_sans_staff_performer_est_muette_et_le_midi_ne_la_joue_pas` written
 first: two staves in the model, one muted, four notes in the MIDI.
+
+### Cause fixed — `\unfoldRepeats` belongs to one `\score`
+
+`scm/midi.scm::write-performances-midis` writes one MIDI per performance:
+`<base>.midi` for the first score with `\midi`, `<base>-1.midi`, `-2.midi` for
+the following ones (`scm/lily-library.scm::get-outfile-name` adds the counter).
+The oracle keeps `base.midi`, i.e. score 0. The reader stored a file-global
+`playback_unfold_repeats` flag: a later `\score` containing `\unfoldRepeats`
+unfolded the repeats of score 0 as well. `Wellerman_-_Misc_Traditional.ly`
+then produced 732 notes (183 × 4) against the 183-note reference. The flag is
+now captured per `Partition`, both for explicit `\score` and implicit
+top-level music, and only the chosen score's value reaches `Score`.
+Failing reduced test `unfold_repeats_dun_score_ne_sapplique_pas_a_un_autre`
+first. Full `mus`/`ra` re-measure against the same cached references:
+**mus 1387 → 1389 exact, ra 1350 → 1362 exact, 0 exact losses**. Three
+already non-exact repeat-flagged `ra` files lose a few N2 points
+(`autobeam-3-4-rules-shortened-measure`, `repeat-dc-al-segno`,
+`volta-bracket-warning-end-prematurely`) because their reference came from a
+different `\score`; none was exact before or after.
