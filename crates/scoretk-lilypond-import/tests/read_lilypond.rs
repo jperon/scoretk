@@ -610,6 +610,18 @@ fn q_ne_repete_que_le_dernier_accord_entre_chevrons() {
     );
 }
 
+/// Les commentaires de bloc ne s'imbriquent pas : dans l'état `longcomment`
+/// du lexer amont, seul `"%"+"}"` referme le commentaire
+/// (`lily/lexer.ll:303-313`) ; un `%{` intérieur est du texte. Un lecteur
+/// qui compte les profondeurs avale la fin du fichier (debussy_Arabesque_1,
+/// Chop-28-20, Egmont : « aucune musique »).
+#[test]
+fn commentaire_de_bloc_ne_s_imbrique_pas() {
+    let src = "\\version \"2.24.0\"\n%{\n  ancien bloc : le } ne ferme pas\n%{ %}\n\\score { \\new Staff { c'4 d' } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62]);
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");

@@ -224,24 +224,21 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             continue;
         }
 
-        // Commentaire de bloc `%{ … %}`, imbricable comme `longcomment`.
+        // Commentaire de bloc `%{ … %}`. Comme l'état `longcomment` du lexer
+        // amont (`lily/lexer.ll:303-313`), il **ne s'imbrique pas** : seul
+        // `"%"+"}"` referme le commentaire, un `%{` intérieur est du texte et
+        // un `}` isolé ne ferme rien. Compter les profondeurs avalait la fin
+        // du fichier dès qu'un ancien commentaire contenait un `}` avant le
+        // `%}` suivant (debussy_Arabesque_1, Chop-28-20, Egmont : « aucune
+        // musique »).
         if character == '%' && characters.get(index + 1) == Some(&'{') {
-            let mut depth = 0usize;
+            index += 2;
+            column += 2;
             while index < characters.len() {
-                if characters[index] == '%' && characters.get(index + 1) == Some(&'{') {
-                    depth += 1;
-                    index += 2;
-                    column += 2;
-                    continue;
-                }
-                if characters[index] == '%' && characters.get(index + 1) == Some(&'}') {
-                    depth -= 1;
-                    index += 2;
-                    column += 2;
-                    if depth == 0 {
-                        break;
-                    }
-                    continue;
+                if characters[index] == '}' && index > 0 && characters[index - 1] == '%' {
+                    index += 1;
+                    column += 1;
+                    break;
                 }
                 if characters[index] == '\n' {
                     line += 1;
@@ -779,24 +776,17 @@ fn scheme_embedded_music_end(characters: &[char], start: usize) -> usize {
     characters.len()
 }
 
-/// Indice qui suit le commentaire LilyPond `%{ … %}` commençant à `start`
-/// (imbricable, comme `longcomment`).
+/// Indice qui suit le commentaire LilyPond `%{ … %}` commençant à `start`.
+///
+/// Comme l'état `longcomment` du lexer amont (`lily/lexer.ll:303-313`), le
+/// commentaire ne s'imbrique pas : seul `"%"+"}"` le referme.
 fn skip_lilypond_block_comment(characters: &[char], start: usize) -> usize {
-    let mut depth = 0usize;
-    let mut index = start;
+    let mut index = start + 2;
     while index < characters.len() {
-        if characters[index] == '%' && matches!(characters.get(index + 1), Some(&'{')) {
-            depth += 1;
-            index += 2;
-        } else if characters[index] == '%' && matches!(characters.get(index + 1), Some(&'}')) {
-            depth = depth.saturating_sub(1);
-            index += 2;
-            if depth == 0 {
-                return index;
-            }
-        } else {
-            index += 1;
+        if characters[index] == '}' && characters[index - 1] == '%' {
+            return index + 1;
         }
+        index += 1;
     }
     characters.len()
 }
@@ -868,9 +858,12 @@ mod tests {
 
     #[test]
     fn commentaires() {
+        // `longcomment` ne s'imbrique pas (`lily/lexer.ll:303-313`) : le
+        // premier `%}` ferme le commentaire, `x` est du code et le `%}`
+        // final ouvre un commentaire de ligne.
         assert_eq!(
             texts("c4 % commentaire\nd4 %{ bloc\n%{ imbriqué %} x %}\ne4"),
-            vec!["c", "4", "d", "4", "e", "4"]
+            vec!["c", "4", "d", "4", "x", "e", "4"]
         );
     }
 
