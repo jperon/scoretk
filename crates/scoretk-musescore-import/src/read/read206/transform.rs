@@ -436,6 +436,18 @@ struct AdaptCtx<'a> {
 }
 
 fn adapt_element(node: &mut Node, ctx: &mut AdaptCtx<'_>) {
+    // `readChordRestProperties206` (`read206.cpp:1821-1822`) : le champ 2.x
+    // `<move>` est l'ancien nom de `staffMove`, que `read302` sait lire. Sans
+    // ce port, les notes entre portées des partitions 2.x perdent leur
+    // `staffMove` et l'export MusicXML écrit `<staff>1</staff>` au lieu de
+    // `<staff>2</staff>` (`exportmusicxml.cpp:4469`).
+    if matches!(node.name.as_str(), "Chord" | "Rest") {
+        for child in node.children_mut() {
+            if child.name == "move" {
+                child.name = "staffMove".to_owned();
+            }
+        }
+    }
     match node.name.as_str() {
         "Text" | "StaffText" => {
             let system = node
