@@ -4984,6 +4984,40 @@ Reduced tests: `chordmode_modificateur_apres_degre` (69/72/76/79) and
 Measured on the MIDI writing lot: 897 → **898/1 019**, no loss, no N1/N2
 regression; the LilyPond reading lots are unchanged.
 
+### §22 groups `notes_supp` / `octave`: top-level `\context Staff`
+
+The `ra` groups `notes_supp` (41 files in the current run) and `octave` (28)
+were sequence-diffed file by file. The first shared construct was the
+`collision-*`/`cluster-*` family: sources whose top level is
+`\context Staff \relative << { … } \\ { … } >>`, with no enclosing
+`\score`. `lily/parser.yy` `context_prefix` (l. 1685-1690) treats `CONTEXT`
+like `NEWCONTEXT`: both create/enter a context
+(`Context::find_create_context`, `lily/context.cc:269-272`), and
+`ly/engraver-init.ly:114-116` makes `Staff` accept `Voice`. The block after
+the command is therefore the **content of one staff**, and `<< … \\ … >>`
+its two voices.
+
+The reader only listed `\new` (not `\context`) in
+`starts_music_command`, so a top-level `\context Staff` was skipped and the
+following `\relative << … >>` was read as top-level music, where
+`score_groups_in` turns each `<< >>` branch into a separate anonymous staff
+(the Mutopia `<< \soprano \alto >>` idiom): one part per voice, no unison
+merge in the oracle. `\context` is now a music-starting command like
+`\new`. Failing reduced test
+`contexte_staff_de_haut_niveau_garde_ses_deux_voix`
+(`crates/scoretk-lilypond-import/tests/read_context_toplevel.rs`) asserts one
+part, one staff, voices 0 and 1.
+
+Measured (`scripts/oracle/lilypond/mesure.py`, refs `/tmp/ly95lect-refs-fixed`,
+prefix `out3`, `--refs-only`): `ra` **1 557 → 1 563/1 724** exact, six files
+gain (`collision-dots`, `collision-heads`,
+`collision-merge-differently-dotted`, `collision-merge-differently-headed`,
+`collision-single-head`, `completion-heads-polyphony`), **no loss and no
+N1/N2 regression**. `mut` is byte-identical per file (1 186 exact before and
+after, same N1/N2/N2-grace; the 1 377-file manifest with the fresh refs).
+The MIDI lots are unchanged: `ecriture_ly` 899/1 019, corpus 17/17,
+`.mscz` 3/8, MIDI import 1 012/1 029, no per-file loss.
+
 ## 24. LilyPond export: status (2026-11-21)
 
 Measured on current master with `scripts/oracle/lilypond/ecriture.sh`,

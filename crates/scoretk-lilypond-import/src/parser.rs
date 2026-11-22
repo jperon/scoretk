@@ -6187,6 +6187,12 @@ fn starts_music_command(name: &str) -> bool {
                 | "repeat"
                 | "alternative"
                 | "new"
+                // `\context Staff …` est le jumeau de `\new Staff` au niveau
+                // supérieur : sans lui, la portée demandée était sautée et le
+                // `\relative << { } \\ { } >>` qui suit était lu comme
+                // plusieurs portées (idiome Mutopia), perdant la polyphonie
+                // (`collision-heads`, `cluster`…).
+                | "context"
                 | "with"
                 | "key"
                 | "time"
