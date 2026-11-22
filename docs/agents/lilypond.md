@@ -4546,3 +4546,16 @@ separate basket duplicated. Selftest covers the three rules. On `ra` the
 fresh run (`/tmp/ly-ra-excl`) excludes 2 files with unusable references and
 reports **1366 exact of 1724 measured, 0 exact losses** versus the previous
 run; `mut`'s obsolete basket is detected by the same helper.
+
+### `ra` next groups — cause 1: `\repeat segno` uses the volta iterator
+
+`scm/music-functions.scm::make-repeat` maps `segno` to `SegnoRepeatedMusic`,
+whose `iterator-ctor` is `ly:volta-repeat-iterator::constructor`
+(`scm/define-music-types.scm`). The reader mapped it to `Ignored` (`percent`
+behaviour): it advanced the cursor by n × the body length, delaying the music
+after the repeat. Failing reduced test `repeat_segno_ne_decale_pas_la_suite`
+first. Focused re-measure on the 15 `ra` files using `\repeat segno`: **5 N2
+gains, 0 exact losses**, 5 files become exact (`repeat-dc-then-*`,
+`repeat-dc-unaligned`, `repeat-ds-bar-line`). Three already non-exact D.C.
+files lose a few N2 points (their D.C. section is absent from the reference
+MIDI); none was exact.
