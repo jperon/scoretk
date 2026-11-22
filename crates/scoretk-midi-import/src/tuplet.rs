@@ -35,6 +35,8 @@ use super::timesigmap::{fraction_from_ticks, TimeSigMap};
 
 mod detect;
 mod filter;
+mod off_time;
+pub(crate) mod on_time;
 mod split;
 pub mod voice;
 
@@ -193,6 +195,16 @@ pub fn detect_and_assign_early(
             split::sort_notes_by_pitch(track, bar_start, bar_end);
             split::sort_tuplets_by_average_pitch(track, &mut tuplets);
             split::split_first_tuplet_chords(track, &mut tuplets);
+            // `findTuplets` : les notes trop longues du premier accord sortent
+            // du n-olet avant l'attribution des voix
+            // (`importmidi_tuplet.cpp:1118-1119`).
+            off_time::minimize_off_time_error(
+                track,
+                &mut tuplets,
+                &mut non_tuplets,
+                bar_start,
+                basic_quant,
+            );
         }
         let prev_bar_start = (bar_start - bar_len).max(Fraction::ZERO);
         let mut back_tied = voice::find_back_tied_tuplets(

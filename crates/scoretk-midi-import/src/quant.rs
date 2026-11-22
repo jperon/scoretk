@@ -181,12 +181,35 @@ pub fn find_quantized_tuplet_note_off_time(
     tuplet: &TupletData,
     tuplet_ratio: Fraction,
 ) -> (Fraction, Fraction) {
-    if off_time <= tuplet.on_time {
-        return (tuplet.on_time, tuplet.len);
+    find_quantized_tuplet_note_off_time_from(
+        on_time,
+        off_time,
+        tuplet.len,
+        tuplet_ratio,
+        tuplet.on_time,
+    )
+}
+
+/// Fin de note quantifiée dans un n-olet, à partir d'une origine explicite
+/// (`findQuantizedTupletNoteOffTime`, `importmidi_quant.cpp:248-276`).
+///
+/// `minimizeOffTimeError` (`importmidi_tuplet.cpp:454-503`) passe la **borne
+/// de mesure** comme origine (`rangeStart = startBarTick`), pas le début du
+/// n-olet : la quantification d'une note du premier accord se fait donc par
+/// rapport à la mesure.
+pub fn find_quantized_tuplet_note_off_time_from(
+    on_time: Fraction,
+    off_time: Fraction,
+    tuplet_len: Fraction,
+    tuplet_ratio: Fraction,
+    range_start: Fraction,
+) -> (Fraction, Fraction) {
+    if off_time <= range_start {
+        return (range_start, tuplet_len);
     }
-    let mut quant = quant_for_tuplet(tuplet.len, tuplet_ratio);
+    let mut quant = quant_for_tuplet(tuplet_len, tuplet_ratio);
     loop {
-        let mut q_off = tuplet.on_time + quantize_value(off_time - tuplet.on_time, quant);
+        let mut q_off = range_start + quantize_value(off_time - range_start, quant);
         if q_off <= on_time {
             if quant >= min_allowed_duration() * Fraction::from_integer(2) {
                 quant *= Fraction::HALF;
@@ -196,6 +219,39 @@ pub fn find_quantized_tuplet_note_off_time(
         }
         return (q_off, quant);
     }
+}
+
+/// Erreur de fin de note quantifiée (`findOffTimeQuantError`,
+/// `importmidi_quant.cpp` avant `findQuantizedNoteOffTime`).
+pub fn find_off_time_quant_error(
+    on_time: Fraction,
+    chord: &super::chord::MidiChord,
+    off_time: Fraction,
+    basic_quant: Fraction,
+) -> Fraction {
+    let _ = chord;
+    let quantized = find_quantized_note_off_time(on_time, off_time, basic_quant).0;
+    (off_time - quantized).abs()
+}
+
+/// Erreur de fin de note quantifiée dans un n-olet
+/// (`findOffTimeTupletQuantError`, `importmidi_quant.cpp`).
+pub fn find_off_time_tuplet_quant_error(
+    on_time: Fraction,
+    off_time: Fraction,
+    tuplet_len: Fraction,
+    tuplet_ratio: Fraction,
+    range_start: Fraction,
+) -> Fraction {
+    let quantized = find_quantized_tuplet_note_off_time_from(
+        on_time,
+        off_time,
+        tuplet_len,
+        tuplet_ratio,
+        range_start,
+    )
+    .0;
+    (off_time - quantized).abs()
 }
 
 /// Erreur d'attaque par rapport à la quantification régulière
