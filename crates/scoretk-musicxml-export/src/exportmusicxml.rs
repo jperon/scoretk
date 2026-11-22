@@ -2258,7 +2258,7 @@ impl Context<'_> {
         for (position, staff_id) in part.staves.iter().enumerate() {
             let track = Track::new(*staff_id, 0);
             let xml_staff = if staves > 1 { position + 1 } else { 0 };
-            let start_clef = segment
+            let explicit = segment
                 .and_then(|segment| segment.element(track))
                 .or_else(|| {
                     // `findAndExportClef` (`exportmusicxml.cpp:7693-7714`) retombe
@@ -2271,9 +2271,23 @@ impl Context<'_> {
                     find_segment(measure, SegmentType::Clef, measure.start_tick)
                         .and_then(|segment| segment.element(track))
                 });
+            // Une mesure qui ouvre une section porte son `HeaderClef`, que
+            // `writeElement` (`:8001-8003`) écrit avec `after-barline="yes"`.
+            let section = if explicit.is_none() && measure.section_break_before {
+                find_segment(measure, SegmentType::HeaderClef, measure.start_tick)
+                    .and_then(|segment| segment.element(track))
+            } else {
+                None
+            };
+            let start_clef = explicit.or(section);
             match start_clef {
                 Some(SegmentItem::Clef(clef)) => {
-                    self.clef(out, xml_staff, self.active_clef(clef), &[]);
+                    let extra: &[(&str, &str)] = if section.is_some() {
+                        &[("after-barline", "yes")]
+                    } else {
+                        &[]
+                    };
+                    self.clef(out, xml_staff, self.active_clef(clef), extra);
                 }
                 // Aucune clef n'ouvre la partition : la mise en page en génère
                 // une du type par défaut de la portée (`Staff::clefType`), que
