@@ -2450,7 +2450,6 @@ impl<'a> Parser<'a> {
 
     /// Commande musicale.
     fn parse_command(&mut self) -> Music {
-        eprintln!("DEBUG CMD {:?}", self.peek());
         let Some(Token {
             kind: Kind::Command,
             text: name,
@@ -2487,7 +2486,6 @@ impl<'a> Parser<'a> {
         match obsolete_music_command(&name).unwrap_or(name.as_str()) {
             "fixed" => {
                 let reference = self.parse_optional_pitch();
-                eprintln!("DEBUG FIXED ref {:?} next {:?}", reference, self.peek());
                 Music::Context(Context::Fixed {
                     reference,
                     music: Box::new(self.parse_music()),
