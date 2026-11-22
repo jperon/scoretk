@@ -155,6 +155,10 @@ COMMANDES_OBSOLETES = (
     # depuis ; LilyPond 2.27 signale « commande inconnue » et son rattrapage
     # insère un silence d'un temps.
     "deprecatedcresc", "deprecateddim", "deprecatedendcresc", "deprecatedenddim",
+    # `\compressMusic` est l'ancien nom de `\scaleDurations`
+    # (`python/convertrules.py` l. 2765, règle 2.11.48) ; LilyPond 2.27 le
+    # signale « commande inconnue » et son rattrapage insère un silence.
+    "compressMusic", "compressmusic",
 )
 
 
@@ -229,6 +233,7 @@ def selftest() -> None:
     assert commandes_obsoletes("\\setTextCresc c4") == ["setTextCresc"]
     assert commandes_obsoletes("\\crescTextCresc c4") == []
     assert commandes_obsoletes("\\deprecatedcresc c4") == ["deprecatedcresc"]
+    assert commandes_obsoletes("\\compressMusic #'(3 . 2) { c4 }") == ["compressMusic"]
     assert raison_hors_lecteur({"code": 0}, "\\deprecatedcresc c4").startswith(
         "source obsolète"
     )
