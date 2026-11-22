@@ -4408,3 +4408,37 @@ already non-exact repeat-flagged `ra` files lose a few N2 points
 (`autobeam-3-4-rules-shortened-measure`, `repeat-dc-al-segno`,
 `volta-bracket-warning-end-prematurely`) because their reference came from a
 different `\score`; none was exact before or after.
+
+### §22 — `ra`: classification by first-divergence construction
+
+Of the 1726 `ra` files, 1362 are exact and 364 are not. Classifying each by
+the distinctive construct present in its source at the first divergent attack
+(not merely its flag):
+
+| Construct at first divergence | Files |
+| --- | ---: |
+| no distinctive construct (layout-only regression) | 96 |
+| `\repeat` / `\volta` / `\alternative` | 85 |
+| `\markup` / `\tweak` / `\override` | 55 |
+| `\grace` / `\afterGrace` / `\acciaccatura` | 46 |
+| multiple `\score` / `\book` | 34 |
+| `\transpose` / clef changes | 16 |
+| `\chordmode` / `\chordNames` | 13 |
+| polyphony (`\voiceOne`…, `\partCombine`) | 7 |
+| lyrics, tuplets, tag filters (rest) | 12 |
+
+Flags split as `attaque_decalee` 119, `notes_manquantes` 66, `octave` 64,
+`notes_supp` 54, `sortie_vide` 52, other 9.
+
+### Cause — grace at the end of an expression is still played
+
+`scm/music-functions.scm::def-grace-function` wraps the whole argument in
+`GraceMusic`; a `\grace`/`\acciaccatura` at the end of an expression has no
+following chord to attach to. The reader kept such graces in `pending_grace`
+forever, so `grace-end-expression.ly` (`{ e' \acciaccatura << e'8 \\ cis' >> }`)
+read one note instead of the reference's three. `Interpreter::run` now flushes
+pending graces onto the last chord as `grace_after` (`played_offset`), which
+the MIDI writer plays (`createGraceNotesPlayEvents`). Failing reduced test
+`acciaccatura_avec_accord_simultane_garde_toutes_les_notes` first. Focused
+re-measure on the 110 grace files: **4 files gain N2, 0 lose**, one becomes
+exact (`spacing-loose-grace-linebreak`).
