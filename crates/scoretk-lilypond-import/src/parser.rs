@@ -2513,8 +2513,9 @@ impl<'a> Parser<'a> {
             // Commandes de style d'agrément ou de dynamique : elles ne
             // changent ni les hauteurs ni les durées, seulement la gravure.
             "crescTextCresc" | "dimTextDecresc" | "dimTextDecr" | "dimTextDim" | "crescHairpin"
-            | "dimHairpin" | "arpeggioArrowUp" | "arpeggioArrowDown" | "arpeggioNormal"
-            => Music::Empty,
+            | "dimHairpin" | "arpeggioArrowUp" | "arpeggioArrowDown" | "arpeggioNormal" => {
+                Music::Empty
+            }
             "language" => {
                 // `\language` vaut aussi au milieu de la musique, comme le
                 // fichier de langue inclus par `\include "italiano.ly"`.
