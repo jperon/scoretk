@@ -571,7 +571,7 @@ changes.
 | Lot | Files | Exact | N1 % | N2 % | N2d % | Ref. notes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `ecriture_mscz_corpus` | 17 | **17 (100,0 %)** | 100,00 | 100,00 | 100,00 | 483 |
-| `ecriture_ly` | 1 019 | **894 (87,7 %)** | 97,66 | 97,42 | 96,63 | 131 736 |
+| `ecriture_ly` | 1 019 | **897 (88,0 %)** | 97,81 | 97,65 | 96,90 | 131 736 |
 | `ecriture_mscz_musique` | 8 | 3 (37,5 %) | 63,87 | 53,63 | 51,22 | 9 325 |
 
 ### Comparison rule for a writing lot (oracle)
@@ -621,8 +621,7 @@ duration, no voice): `durée`, `note manquante`, `note sup`, `attaque`,
 
 | Lot | First divergence | Files |
 | --- | --- | ---: |
-| `ecriture_ly` | `durée` | 120 |
-| `ecriture_ly` | `octave` | 2 |
+| `ecriture_ly` | `durée` | 119 |
 | `ecriture_ly` | `attaque` | 1 |
 | `ecriture_ly` | `note manquante` | 1 |
 | `ecriture_ly` | `note sup` | 1 |
@@ -655,9 +654,11 @@ reader class:
   MuseScore-faithful (ratio 0.5 on those notes). The reference MIDI cannot
   represent the articulation, so the oracle cannot decide which side is
   short; the writer keeps MuseScore's behaviour.
-- **reader residue** — `Kryshachok` and `VolgaVolga` (octave,
-  `\chordmode { \fixed c, … }`), one attack, one missing and one extra
-  note; the chain `.ly` → reader is measured here on purpose.
+- **reader residue** — one attack, one missing and one extra note; the chain
+  `.ly` → reader is measured here on purpose. The two `octave` files
+  (`Kryshachok`, `VolgaVolga`) were fixed by Cause 43 of
+  `docs/agents/lilypond.md`: `\chordmode` ignored the written octave marks
+  (`bes,`) and the duration that follows them.
 
 ## Upgrading MuseScore's MIDI import
 

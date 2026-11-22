@@ -4938,6 +4938,29 @@ Emmanuel`, `À-Notre-Dame`, `0301_AccourezPeupleFidele`): MIDI mode N2
 **57.09 %** for both tools; model mode N2 **100 %**, 3/3 exact files for both.
 The +42.91 points come from comparing artifacts, not from a writer change.
 
+### Cause 43: `\chordmode` — octave marks and the following duration
+
+`\chordmode { \fixed c, { bes,2 f } }` (Kryshachok) gave Bb3/D4/F4 instead of
+Bb2/D3/F3 and placed `f` at q3 instead of q2. Two mistakes in the same branch
+of `parser.rs`:
+
+- the lexer splits `bes,2` into `bes`, `,`, `2`; the reader read the duration
+  **before** the chord name, saw `,` (not a number) and left both tokens to the
+  music that follows, so the `2` became a bare duration that replayed the chord
+  and the `,` was lost. LilyPond's grammar makes the octave marks part of the
+  pitch (`pitch_or_tonic_pitch` in `chord_body`, `lily/parser.yy:3165-3195`),
+  then the duration, then the quality; the reader now consumes them in that
+  order and shifts the table's root by 12 semitones per mark.
+- the `\fixed` reference was applied (`events.rs`, `fixed_shift`) but the
+  written mark was not, so `bes,` stayed one octave high.
+
+Reduced test `chordmode_marque_octave_et_duree` (Bb2/Ré3/Fa3 then
+Fa3/La3/Do4, two quarters each, reference LilyPond 2.24). Measured on the MIDI
+writing lot: 894 → **897/1 019** exact, no loss, no N1/N2 regression; the three
+files are `Kryshachok`, `VolgaVolga` (the two `octave` cases) and
+`LaMouetteGrise`. The LilyPond reading lots are unchanged
+(`lecture_musique` 922, `lecture_mutopia` 78).
+
 ## 24. LilyPond export: status (2026-11-21)
 
 Measured on current master with `scripts/oracle/lilypond/ecriture.sh`,

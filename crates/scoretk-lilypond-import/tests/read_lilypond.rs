@@ -4916,6 +4916,60 @@ fn chordmode_qualite_apres_duree() {
     assert_eq!(hauteurs(&score), vec![81, 84, 88, 81, 85, 88]);
 }
 
+/// `\chordmode { \fixed c, { bes,2 f } }` (Kryshachok) : la marque d'octave
+/// du nom (`bes,`) et la durée qui la suit doivent être lues avant la
+/// qualité, et la marque décaler l'accord d'une octave sous la référence
+/// `\fixed`. Référence : LilyPond 2.24 joue Bb2/Ré3/Fa3 puis Fa3/La3/Do4,
+/// chacun 2 noires, quand la portée `\fixed c''` tient un do5 (72).
+#[test]
+fn chordmode_marque_octave_et_duree() {
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\
+         \\score { <<\n\
+           \\new ChordNames \\chordmode { \\fixed c, { bes,2 f } }\n\
+           \\new Staff \\fixed c\'\' { c1 }\n\
+         >> }",
+    )
+    .expect("lecture de la grille Kryshachok");
+    let mut evenements: Vec<(Fraction, Fraction, Vec<u8>)> = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (_track, item) in segment.iter_elements() {
+                if let SegmentItem::ChordRest(chord_rest) = item {
+                    let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                        continue;
+                    };
+                    let hauteurs: Vec<u8> =
+                        chord.notes.iter().map(|id| score.note(*id).pitch).collect();
+                    evenements.push((
+                        segment.tick,
+                        chord_rest
+                            .ticks
+                            .unwrap_or_else(|| chord_rest.duration.ticks()),
+                        hauteurs,
+                    ));
+                }
+            }
+        }
+    }
+    evenements.sort_by(|gauche, droite| {
+        gauche
+            .0
+            .partial_cmp(&droite.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| gauche.2.first().cmp(&droite.2.first()))
+    });
+    assert_eq!(
+        evenements,
+        vec![
+            (Fraction::ZERO, Fraction::new(1, 2), vec![46, 50, 53]),
+            (Fraction::ZERO, Fraction::new(1, 1), vec![72]),
+            (Fraction::new(1, 2), Fraction::new(1, 2), vec![53, 57, 60]),
+        ],
+        "Bb2/Ré3/Fa3 puis Fa3/La3/Do4, deux noires chacun"
+    );
+}
+
 #[test]
 fn chordmode_dans_une_portee_joue_les_accords() {
     // `\chordmode` est joué par LilyPond dans un Staff (chord-changes.ly),

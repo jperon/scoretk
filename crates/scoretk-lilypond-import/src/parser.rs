@@ -4122,6 +4122,23 @@ impl<'a> Parser<'a> {
         // garantie) et avertit, comme pour un mot ordinaire.
         if self.note_mode != NoteMode::Notes {
             self.position += 1;
+            // Les marques d'octave font partie du nom (`bes,`, `f''`,
+            // `chord_body` de `lily/parser.yy` : `pitch_or_tonic_pitch` les
+            // porte, puis la durée). Le lexer les coupe en ponctuation : les
+            // lire avant la durée, sinon `bes,2` laisse `,` et `2` à la
+            // musique suivante, qui rejoue l'accord une octave trop haut.
+            let mut octave_marks = 0i32;
+            while let Some(token) = self.peek() {
+                if token.is_punct('\'') {
+                    octave_marks += 1;
+                    self.position += 1;
+                } else if token.is_punct(',') {
+                    octave_marks -= 1;
+                    self.position += 1;
+                } else {
+                    break;
+                }
+            }
             // `a2:m` : la durée peut précéder la qualité (`chord_body` de
             // `lily/parser.yy`). La consommer avant de recomposer le nom, sinon
             // `parse_chord_name` s'arrête sur le chiffre et l'accord est lu
@@ -4143,6 +4160,15 @@ impl<'a> Parser<'a> {
             if let Some((mut pitches, basse)) = eventuelles {
                 if let Some(basse) = basse {
                     pitches.push(basse);
+                }
+                // La table donne la fondamentale à l'octave 4 ; les marques du
+                // nom décalent l'accord (`bes,` = un Bb plus bas), le `\fixed`
+                // environnant étant appliqué ensuite par `events.rs`.
+                if octave_marks != 0 {
+                    let shift = octave_marks * 12;
+                    for pitch in &mut pitches {
+                        *pitch = (i32::from(*pitch) + shift).clamp(0, 127) as u8;
+                    }
                 }
                 let head = std::mem::take(&mut self.pending_head);
                 let posts = self.parse_posts_until_note_end();
