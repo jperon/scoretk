@@ -3741,9 +3741,9 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact | Exact % | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 201 | 54.9 | 97.40 | — | — |
-| comparable (reference present) | 1 711 | **1 201** | **70.19** | **97.40** | **88.82** | **93.32** |
-| excluding obsolete-source basket | 1 648 | **1 183** | **71.78** | **97.44** | **91.87** | — |
+| all rows | 2 186 | 1 204 | 55.1 | 97.51 | — | — |
+| comparable (reference present) | 1 711 | **1 204** | **70.37** | **97.51** | **89.13** | **93.33** |
+| excluding obsolete-source basket | 1 651 | **1 189** | **72.02** | **97.54** | **92.24** | — |
 | obsolete-source basket | 60 | 15 | 25.0 | — | 61.06 | — |
 
 The obsolete-source basket is the 60 files that still contain a command
@@ -3770,6 +3770,12 @@ decrease is the removal of duplicates that had accidentally matched another
 instrument's note at the same pitch and attack (for example `Symphony5_1`,
 `eugenia`, `Symphony5_2`); the kept note still matches, and no file lost
 exactness.
+
+The two repeat fixes below add **3 exact files and 0 losses** on the same
+1,711 comparable rows (1,201 → 1,204 exact, N2 +4,491). The only per-file N2
+decreases are the `JPSFotF` parts (at most −10), already divergent at tick 0;
+no exact file regresses. The remaining non-exact files outside the obsolete
+basket go from 465 to 462.
 
 ### Cause 1: top-level `<< … >>` is one context per element
 
@@ -3805,6 +3811,38 @@ staves give two, and a repeated pitch in the **same** voice stays two notes.
 lost notes (70 exact files), already documented as a reading limit (`scm/part-combiner.scm`,
 `lily/part-combine-iterator.cc`, one combined voice). It ranks below the two
 causes above and was not ported.
+
+### Cause 3: `\repeat percent` plays once but occupies n bodies
+
+`\repeat percent n { … }` is a `PercentRepeatedMusic`. Without
+`\unfoldRepeats`, `lily/percent-repeat-iterator.cc` plays the body **once**
+and then emits `n−1` `PercentEvent`s carrying `body_length_` (lines 60-68 and
+98-112): the cursor must advance by `n × body length`, not one body. The
+reader left the cursor on a single body, so every following note was early
+(16 files). Under `\unfoldRepeats`, `scm/music-functions.scm:408`
+(`unfold-repeats`, type `percent`, line 418) replaces the music with
+`UnfoldedRepeatedMusic`; the body is then really played n times
+(`ly/music-functions-init.ly:2622`). Both branches are now distinct. Tests
+`repeat_percent_avance_les_repetitions` and
+`repeat_percent_sous_unfold_repeats_est_joue` (fail before). On the 16 files
+of the lot: N2 3,597 → 6,165 for 21,139 reference notes; three files become
+exact (`boije_835…` 275 → 2,719, `stille-orig` 116 → 214,
+`traditioner…1.23` 396 → 712).
+
+### Cause 4: `\repeat tremolo` under `\unfoldRepeats`
+
+Without `\unfoldRepeats`, the duration of `\repeat tremolo n { a b }` is n
+times the written body and LilyPond plays two held notes (Notation Reference
+§4.2.2); the parser still stretches the durations. Under `\unfoldRepeats`,
+`scm/music-functions.scm:408` (`unfold-repeats`, type `tremolo`) replaces it
+with `UnfoldedRepeatedMusic`: the body is replayed n times with its written
+durations. The parser no longer stretches it and keeps the repeat context for
+the interpreter. Test `repeat_tremolo_sous_unfold_repeats_est_joue` (9 notes
+instead of 3); `repeat_tremolo_etire_les_durees` is unchanged. On the 25
+files: N2 17,745 → 19,369 for 37,332 reference notes. No file becomes exact
+(the largest gains, `SchubertF-D706-Psalm23` 1,549 → 2,606 and
+`SchubertF-D827-NachtUndTraeume` 426 → 752, keep other causes); no exact file
+regresses.
 
 ### Remaining `notes_supp` and `attaque_decalee` files
 
