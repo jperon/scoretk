@@ -65,7 +65,11 @@ TUNE = re.compile(r"^X\s*:\s*\d+")
 ORNEMENT_LONG = re.compile(
     r"[!+](?:trill|turn|invertedturn|mordent|lowermordent|uppermordent|pralltriller|roll|T)[!+]"
 )
-ORNEMENT_COURT = re.compile(r"(?<![A-Za-z])[TMP~](?=[=^_]?[A-Ga-g])")
+# Un agrément court peut suivre immédiatement une note (`EATA>G`) : l'ancien
+# lookbehind `(?<![A-Za-z])` ratait ce cas, abc2midi réalisait alors le trille
+# en cinq notes et le relevé signalait des notes « manquantes » chez les deux
+# candidats (ABC 2.1 §4.14 ; abc2xml.py 269 `ornMap` lignes 1096-1097).
+ORNEMENT_COURT = re.compile(r"[TMP~](?=[=^_]?[A-Ga-g])")
 
 
 def decoupe(src):
