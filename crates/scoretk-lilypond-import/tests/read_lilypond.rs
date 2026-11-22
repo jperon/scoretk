@@ -4150,7 +4150,7 @@ fn parser_include_string_injecte_la_musique() {
     // (`lily/lexer.ll`) : la musique injectée doit être lue, pas ignorée
     // (régression `include-string`).
     let source = "\\version \"2.19.22\"\n\
-         #(ly:parser-include-string \"\\relative { a4 b c d }\")";
+         #(ly:parser-include-string \"\\\\relative { a4 b c d }\")";
     let score = read_lilypond(source).expect("lecture");
     assert_eq!(hauteurs(&score), vec![57, 59, 60, 62]);
     assert_eq!(

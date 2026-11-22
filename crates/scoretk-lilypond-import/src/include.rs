@@ -261,7 +261,34 @@ fn parser_include_string(datum: &str) -> Option<String> {
     if fin == 0 {
         return None;
     }
-    Some(reste[..fin].to_owned())
+    Some(decode_scheme_escapes(&reste[..fin]))
+}
+
+/// Décode les échappements d'une chaîne Scheme (`lily/lily-lexer.cc:302-315`
+/// `escaped_char`) : `\\` vaut un seul backslash, `\"` une guillemet, `\n` une
+/// newline et `\t` une tabulation. Sans cela `\\relative` reste deux
+/// backslashes et la commande n'est pas reconnue.
+fn decode_scheme_escapes(texte: &str) -> String {
+    let mut decode = String::with_capacity(texte.len());
+    let mut caracteres = texte.chars();
+    while let Some(caractere) = caracteres.next() {
+        if caractere != '\\' {
+            decode.push(caractere);
+            continue;
+        }
+        match caracteres.next() {
+            Some('n') => decode.push('\n'),
+            Some('t') => decode.push('\t'),
+            Some('r') => decode.push('\r'),
+            Some(suivant @ ('\\' | '"' | '\'')) => decode.push(suivant),
+            Some(suivant) => {
+                decode.push('\\');
+                decode.push(suivant);
+            }
+            None => decode.push('\\'),
+        }
+    }
+    decode
 }
 
 /// Langue d'un fichier de langue livré par LilyPond.
