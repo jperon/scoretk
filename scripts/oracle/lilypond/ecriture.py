@@ -370,6 +370,18 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                         r = base_releve(lot, outil, src, repetition)
                         r["erreur"] = "référence modèle absente"
                         r["drapeaux"] = ["echec"]
+                        # Une référence MIDI inutilisable n'est pas un échec
+                        # du convertisseur : l'exclure des deux dénominateurs.
+                        # `lilypond référence : code …` : LilyPond a réussi
+                        # mais n'a produit aucun MIDI (source sans musique
+                        # jouable) — même classe que « référence MIDI absente ».
+                        if (
+                            common.raison_hors_lecteur(r, texte_source(src))
+                            or (r.get("erreur") or "").startswith(
+                                ("lilypond référence :", "mscore référence :")
+                            )
+                        ):
+                            common.marquer_exclu(r, src)
                         ecrire(out, r)
                     out.flush()
                     continue
@@ -380,6 +392,18 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                         r = base_releve(lot, outil, src, repetition)
                         r["erreur"] = f"modèle illisible : {exc}"
                         r["drapeaux"] = ["echec"]
+                        # Une référence MIDI inutilisable n'est pas un échec
+                        # du convertisseur : l'exclure des deux dénominateurs.
+                        # `lilypond référence : code …` : LilyPond a réussi
+                        # mais n'a produit aucun MIDI (source sans musique
+                        # jouable) — même classe que « référence MIDI absente ».
+                        if (
+                            common.raison_hors_lecteur(r, texte_source(src))
+                            or (r.get("erreur") or "").startswith(
+                                ("lilypond référence :", "mscore référence :")
+                            )
+                        ):
+                            common.marquer_exclu(r, src)
                         ecrire(out, r)
                     out.flush()
                     continue
@@ -395,6 +419,18 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                         r = base_releve(lot, outil, src, repetition)
                         r["erreur"] = err_ref or "référence MIDI absente"
                         r["drapeaux"] = ["echec"]
+                        # Une référence MIDI inutilisable n'est pas un échec
+                        # du convertisseur : l'exclure des deux dénominateurs.
+                        # `lilypond référence : code …` : LilyPond a réussi
+                        # mais n'a produit aucun MIDI (source sans musique
+                        # jouable) — même classe que « référence MIDI absente ».
+                        if (
+                            common.raison_hors_lecteur(r, texte_source(src))
+                            or (r.get("erreur") or "").startswith(
+                                ("lilypond référence :", "mscore référence :")
+                            )
+                        ):
+                            common.marquer_exclu(r, src)
                         ecrire(out, r)
                     out.flush()
                     continue
@@ -405,6 +441,18 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                         r = base_releve(lot, outil, src, repetition)
                         r["erreur"] = f"MIDI illisible : {exc}"
                         r["drapeaux"] = ["echec"]
+                        # Une référence MIDI inutilisable n'est pas un échec
+                        # du convertisseur : l'exclure des deux dénominateurs.
+                        # `lilypond référence : code …` : LilyPond a réussi
+                        # mais n'a produit aucun MIDI (source sans musique
+                        # jouable) — même classe que « référence MIDI absente ».
+                        if (
+                            common.raison_hors_lecteur(r, texte_source(src))
+                            or (r.get("erreur") or "").startswith(
+                                ("lilypond référence :", "mscore référence :")
+                            )
+                        ):
+                            common.marquer_exclu(r, src)
                         ecrire(out, r)
                     out.flush()
                     continue
@@ -420,6 +468,18 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     if "absent" in origine or not ref_xml.is_file():
                         r["erreur"] = origine or "MusicXML de référence absent"
                         r["drapeaux"] = ["echec"]
+                        # Une référence MIDI inutilisable n'est pas un échec
+                        # du convertisseur : l'exclure des deux dénominateurs.
+                        # `lilypond référence : code …` : LilyPond a réussi
+                        # mais n'a produit aucun MIDI (source sans musique
+                        # jouable) — même classe que « référence MIDI absente ».
+                        if (
+                            common.raison_hors_lecteur(r, texte_source(src))
+                            or (r.get("erreur") or "").startswith(
+                                ("lilypond référence :", "mscore référence :")
+                            )
+                        ):
+                            common.marquer_exclu(r, src)
                         ecrire(out, r)
                         continue
                     code, _, err = lancer(
@@ -438,6 +498,18 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     if not ok_ly:
                         r["erreur"] = err_ly
                         r["drapeaux"] = ["echec"]
+                        # Une référence MIDI inutilisable n'est pas un échec
+                        # du convertisseur : l'exclure des deux dénominateurs.
+                        # `lilypond référence : code …` : LilyPond a réussi
+                        # mais n'a produit aucun MIDI (source sans musique
+                        # jouable) — même classe que « référence MIDI absente ».
+                        if (
+                            common.raison_hors_lecteur(r, texte_source(src))
+                            or (r.get("erreur") or "").startswith(
+                                ("lilypond référence :", "mscore référence :")
+                            )
+                        ):
+                            common.marquer_exclu(r, src)
                         ecrire(out, r)
                         continue
                     ly = tk_ly
@@ -452,6 +524,18 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     if err_notes:
                         r["erreur"] = err_notes
                         r["drapeaux"] = ["echec"]
+                        # Une référence MIDI inutilisable n'est pas un échec
+                        # du convertisseur : l'exclure des deux dénominateurs.
+                        # `lilypond référence : code …` : LilyPond a réussi
+                        # mais n'a produit aucun MIDI (source sans musique
+                        # jouable) — même classe que « référence MIDI absente ».
+                        if (
+                            common.raison_hors_lecteur(r, texte_source(src))
+                            or (r.get("erreur") or "").startswith(
+                                ("lilypond référence :", "mscore référence :")
+                            )
+                        ):
+                            common.marquer_exclu(r, src)
                         ecrire(out, r)
                         continue
                 else:
@@ -463,6 +547,18 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     except Exception as exc:
                         r["erreur"] = f"MIDI illisible : {exc}"
                         r["drapeaux"] = ["echec"]
+                        # Une référence MIDI inutilisable n'est pas un échec
+                        # du convertisseur : l'exclure des deux dénominateurs.
+                        # `lilypond référence : code …` : LilyPond a réussi
+                        # mais n'a produit aucun MIDI (source sans musique
+                        # jouable) — même classe que « référence MIDI absente ».
+                        if (
+                            common.raison_hors_lecteur(r, texte_source(src))
+                            or (r.get("erreur") or "").startswith(
+                                ("lilypond référence :", "mscore référence :")
+                            )
+                        ):
+                            common.marquer_exclu(r, src)
                         ecrire(out, r)
                         continue
                 r.update(compare(ref, test, args.grid, args.tol))
@@ -576,6 +672,12 @@ def selftest() -> None:
     # Une accolade dans un commentaire ou une chaîne ne doit pas tromper le comptage.
     src2 = '\\score {\n  << c\'1 >> % }\n  \\markup { "}" }\n  \\layout { }\n}\n'
     assert injecter_midi(src2), "accolade de commentaire mal comptée"
+    # Une référence MIDI inutilisable est exclue des deux dénominateurs, pas
+    # comptée comme un échec du convertisseur.
+    mauvais = {"fichier": "vieux.ly", "outil": "scoretk",
+               "erreur": "référence MIDI absente", "drapeaux": ["echec"]}
+    assert common.raison_hors_lecteur(mauvais, "c'4"), mauvais
+    assert common.est_exclu(common.marquer_exclu(mauvais, "vieux.ly"))
     # L'agrégation pondère bien par le nombre de notes de référence.
     base = {"lot": "corpus", "outil": "scoretk", "ok": True, "taille_ly": 100,
             "erreurs": 0, "avertissements": 0, "temps": 0.1, "drapeaux": []}

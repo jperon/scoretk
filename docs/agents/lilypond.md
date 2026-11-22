@@ -5558,6 +5558,25 @@ Mesure sur le lot `ly` complet (1 447 fichiers, deux binaires frères) :
 exacts 1 348 → **1 381**, **33 fichiers gagnés, aucune perte**. C'est une
 correction de mesure : elle ne change aucun `.ly` produit.
 
+### Oracle : exclure les références MIDI inutilisables
+
+Trente lignes du lot `ly` portaient `drapeaux = ["echec"]` parce que
+LilyPond/MuseScore n'avait produit **aucun MIDI de référence** (`lilypond
+référence : code …`, `mscore référence : code 40` pour `Sonis`, `Veni,`,
+`entre_`). `scripts/oracle/common.py::raison_hors_lecteur` classifie déjà ces
+références comme hors lecture dans l'oracle de *lecture*, mais l'oracle
+*d'écriture* ne l'appelait pas : ces lignes comptaient comme des échecs du
+convertisseur et masquaient les résultats.
+
+Les branches `echec` appellent maintenant `raison_hors_lecteur` et excluent
+la ligne des deux dénominateurs ; le préfixe `lilypond référence :` /
+`mscore référence :` est reconnu comme référence inutilisable. Selftest
+d'abord, étendu au nouveau cas.
+
+Mesure ciblée sur les 30 lignes concernées plus 10 fichiers exacts : **30
+exclues, 10 comparées, 0 perte**, scoretk 10/10 contre musicxml2ly 8/10.
+C'est une correction de mesure : la taille des `.ly` ne change pas.
+
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire
