@@ -2893,6 +2893,35 @@ impl<'a> Parser<'a> {
                     fraction,
                 })
             }
+            "markupMap" => {
+                // `ly/music-functions-init.ly:1173-1174` : chemin, fonction
+                // de markup, puis la musique qui reste jouée telle quelle.
+                if self.peek().is_some_and(|token| {
+                    matches!(token.kind, Kind::Word | Kind::Scheme) || token.is_punct('.')
+                }) {
+                    self.position += 1;
+                    while self.eat_punct('.') {
+                        if self.peek().is_some_and(|token| token.kind == Kind::Word) {
+                            self.position += 1;
+                        }
+                    }
+                }
+                if self.peek().is_some_and(|token| token.is_scheme()) {
+                    self.position += 1;
+                } else if self.eat_command("markup") {
+                    while !self.at_end()
+                        && !self.peek().is_some_and(|token| token.is_command("etc"))
+                    {
+                        if self.eat_punct('{') {
+                            self.skip_braced();
+                        } else {
+                            self.position += 1;
+                        }
+                    }
+                    self.eat_command("etc");
+                }
+                self.parse_music()
+            }
             "autoChange" => {
                 // `ly/music-functions-init.ly:278-303` : `\\autoChange`
                 // répartit la musique entre deux portées selon un seuil ; le

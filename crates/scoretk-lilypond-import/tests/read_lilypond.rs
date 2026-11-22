@@ -7480,3 +7480,16 @@ fn scheme_music_map_joue_sa_musique() {
         vec![60, 62, 64]
     );
 }
+
+#[test]
+fn markup_map_ne_consomme_pas_la_musique() {
+    // `ly/music-functions-init.ly:1173` : `\markupMap` prend un chemin, une
+    // fonction de markup et une musique ; la musique reste jouée.
+    let src = "\\version \"2.24.0\"\n\
+         \\markupMap TextScriptEvent.text #italic-markup { c'4 d'4 e'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62, 64]
+    );
+}
