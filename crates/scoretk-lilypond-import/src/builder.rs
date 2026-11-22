@@ -372,12 +372,11 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 // Une portée source a été dépliée en plusieurs portées (voix
                 // nommées d'une guitare) : `\transposition` est une propriété
                 // du Staff (`lily/staff-performer.cc`, `instrumentTransposition`),
-                // donc elle vaut pour chacune de ses voix. Une partie MusicXML
-                // n'a qu'un `<transpose>` ; on décale les hauteurs concert de
-                // toutes les portées du groupe, sans `<transpose>` de partie.
+                // donc elle vaut pour chacune de ses voix. Le modèle reste en
+                // hauteurs concert ; la partie reçoit `instrument.transpose`
+                // (une partie MusicXML n'a qu'un `<transpose>`) et le MusicXML
+                // écrit la hauteur écrite.
                 let interval = interval_from_pitch(&pitch);
-                // Le modèle reste en hauteurs concert ; le MusicXML écrit la
-                // hauteur écrite et un `<transpose>` unique pour la partie.
                 decaler_vers_concert(
                     &mut staves[first_staff_index..],
                     &[(Fraction::ZERO, interval)],
