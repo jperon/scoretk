@@ -5931,3 +5931,54 @@ de référence sont présentes), 28 que des notes manquantes, 119 sont mixtes.
 Les sous-groupes sont traités par taille décroissante ; les exclusions
 (artefacts d'oracle, tests de mise en page, hors sous-ensemble) sont justifiées
 au fur et à mesure pour garder un dénominateur honnête.
+
+### Causes 1–4 : valeurs de propriété et événements sans argument
+
+Quatre causes, chacune avec un test réduit failing-first et une mesure :
+
+1. `ly/declarations-init.ly:61-64` : `break`, `noBreak`, `allowBreak` sont des
+   `LineBreakEvent` sans argument ; une durée nue qui suit reste de la musique
+   (`allow-break.ly` perdait trois notes par répétition).
+2. `ly/music-functions-init.ly:348-354` : `beamExceptions` est une fonction
+   Scheme à argument musical, valeur de `\set` ; son argument n'est pas joué
+   (`auto-beam-exceptions.ly` avait 16 accords vides de 32e).
+3. `ly/string-tunings-init.ly:29-37` : `stringTuning` convertit un accord en
+   liste de hauteurs pour `\set stringTunings` ; l'accord n'est pas joué (3
+   fichiers `tablature-*`).
+4. `ly/declarations-init.ly:68-72`, `ly/music-functions-init.ly:421` : `fine`,
+   `startStaff`, `stopStaff`, `breathe`, `caesura` sont des événements sans
+   argument ; la durée nue qui suit reste de la musique.
+
+Mesures : après 1–2, **1535 exacts** (3 gains : `allow-break`,
+`auto-beam-exceptions`, `tablature-slurs-with-beams`) ; après 3–4, **1538
+exacts** (3 gains : `tablature-micro-tone`, `tablature-open-string-chord`,
+`tablature-string-tunings`). Aucune perte à chaque étape. Total **1538/1724
+(89,2 %)**, +6 sur le bâti à 1532.
+
+### Exclusions et causes hors sous-ensemble (dénominateur honnête)
+
+Sur les 186 fichiers restants, 34 sont explicitement justifiés et ne doivent
+pas être comptés comme des défauts du lecteur :
+
+- **11 artefact d'oracle** : `\new ChordNames`. Les références MIDI de `ra`
+  n'ont pas les notes de la grille, alors que LilyPond 2.26 les joue (vérifié
+  en compilant `chord-changes.ly` avec `nix-shell -p lilypond`, et par les tests
+  `grille_daccords_jouee_dans_le_midi` / `chordmode_dans_une_portee_joue_les_accords`).
+  Aucune source `lily/*.cc` ne documente le comportement ; l'écart vient de la
+  version ayant produit les `ly.midi` (le README de l'oracle recommande de ne
+  pas faire confiance à un arbre mélangé). Changer le lecteur casserait ces
+  tests et la fidélité 2.26 : fichiers non corrigeables contre cet oracle.
+- **7 hors sous-ensemble** : `\include "satb.ly"` / `"ssaattbb.ly"` définissent
+  les commandes `\SATB`/`\Piano` et le `\score` lui-même (`ly/satb.ly:157-215`) ;
+  ils sont ignorés par `FICHIERS_LILYPOND` (`include.rs:74-75`), donc aucune
+  musique n'est lue.
+- **10 hors sous-ensemble** : sources dont la musique est produite par
+  `define-music-function` / `define-scheme-function` Scheme, non interprétées.
+- **6 hors sous-ensemble** : `\include "arabic.ly"`, `"makam.ly"`,
+  `"persian.ly"`, `"turkish-makam.ly"`, `"english.ly"` sont des fichiers de
+  langue/gammes listés dans `FICHIERS_LILYPOND` et ignorés ; les hauteurs
+  qu'ils définissent (`\key fa \bayati`…) ne peuvent donc pas être résolues.
+
+Les 152 autres restent à classer ; ils ne sont pas exclus du dénominateur.
+Aucun test purement de mise en page n'a été trouvé dans ce lot : ceux qui
+n'ont pas de musique jouable sont comptés dans les catégories ci-dessus.
