@@ -260,29 +260,20 @@ pub(crate) fn chord_pitches(language: Language, name: &str) -> Option<(Vec<u8>, 
     let (racine, qualite) = head.split_once(':').map_or((head, "maj"), |(r, q)| (r, q));
     let (step, alter) = language.parse(racine)?;
     let root = midi_of(step, alter, 4)?;
-    // `scm/chord-entry.scm:125-145` : un modificateur leading (`m`/`min`,
-    // `default-chord-modifier-list` l. 252) est extrait AVANT le degré, puis
-    // appliqué à l'accord de base construit depuis ce degré. On ne fige donc
-    // pas `min7`/`min9`/`min6` dans la table : `min11`, `min13` et `min7.9`
-    // fonctionnent de la même manière.
-    let mut base = qualite;
-    let mut mineur = false;
-    for prefixe in ["min", "m"] {
-        if let Some(reste) = base.strip_prefix(prefixe) {
-            let reste_connu =
-                reste.is_empty() || QUALITIES.iter().any(|(candidat, _)| *candidat == reste);
-            if reste_connu {
-                base = reste;
-                mineur = true;
-                break;
-            }
-        }
-    }
+    // `scm/chord-entry.scm:122-152` : le modificateur mineur (`m`/`min`,
+    // `default-chord-modifier-list` l. 252) est appliqué à l'accord de base,
+    // **où qu'il soit écrit**. Leading (`m7`), trailing (`7m`, le cas de
+    // `a:7m` dans le corpus) et entre deux degrés (`7m.9`) donnent le même
+    // accord : `interpret-additions` applique les procédures rencontrées
+    // dans l'ordre (`:67-78`). On extrait donc les modificateurs avant de
+    // consulter la table ; `maj` n'est pas un `m` suivi d'une lettre et
+    // reste dans la qualité.
+    let (base, mineur) = strip_minor_modifier(qualite);
     // `scm/chord-entry.scm:67-78` (`interpret-additions`) : les degrés
     // séparés par un point ajoutent des notes à la base et rendent le 11
     // explicite (`explicit-11`, l. 137). `:13.11` garde donc son fa.
     let mut segments = base.split('.');
-    let base = segments.next().unwrap_or(base);
+    let base = segments.next().unwrap_or(&base);
     let ajouts: Vec<&str> = segments.collect();
     let mut ecarts: Vec<i8> = QUALITIES
         .iter()
@@ -345,6 +336,53 @@ pub(crate) fn chord_pitches(language: Language, name: &str) -> Option<(Vec<u8>, 
     Some((notes, basse_midi))
 }
 
+/// Retire les modificateurs mineurs `m`/`min` d'une qualité, où qu'ils
+/// soient, et dit si l'accord est mineur (`default-chord-modifier-list` de
+/// `scm/chord-entry.scm:251-257`, appliqué par `interpret-additions` et
+/// `minor-modifier`).
+///
+/// `maj` est un autre modificateur (`maj7-modifier`) et reste dans la
+/// qualité ; un `m` suivi d'une lettre appartient toujours à un mot (`maj`,
+/// `min` traité avant) et n'est pas un modificateur isolé.
+fn strip_minor_modifier(qualite: &str) -> (String, bool) {
+    let mut sortie = String::with_capacity(qualite.len());
+    let mut mineur = false;
+    let mut reste = qualite;
+    while let Some(caractere) = reste.chars().next() {
+        if let Some(suite) = reste.strip_prefix("min") {
+            mineur = true;
+            reste = suite;
+        } else if let Some(suite) = reste.strip_prefix("maj") {
+            sortie.push_str("maj");
+            reste = suite;
+        } else if let Some(suite) = reste.strip_prefix('m') {
+            // Un `m` au milieu d'un mot appartient à ce mot (`dim7`), pas à
+            // un modificateur : il faut être en début de qualité ou après un
+            // degré (`7m`).
+            let dans_un_mot = sortie
+                .chars()
+                .last()
+                .is_some_and(|precedent| precedent.is_ascii_alphabetic());
+            if dans_un_mot
+                || suite
+                    .chars()
+                    .next()
+                    .is_some_and(|suite| suite.is_ascii_alphabetic())
+            {
+                sortie.push('m');
+                reste = &reste[1..];
+            } else {
+                mineur = true;
+                reste = suite;
+            }
+        } else {
+            sortie.push(caractere);
+            reste = &reste[caractere.len_utf8()..];
+        }
+    }
+    (sortie, mineur)
+}
+
 /// Hauteur de la basse d'un accord `/b`, strictement sous la fondamentale
 /// (`process-inversion` dans `scm/chord-entry.scm`). Quand le degré de la
 /// basse est égal ou supérieur à celui de la racine, la basse descend d'une
@@ -385,6 +423,21 @@ mod tests {
         assert_eq!(
             chord_pitches(langue, "c:dim7"),
             Some((vec![60, 63, 66, 69], None))
+        );
+        // Le modificateur `m` s'applique même après le degré : `7m` est un
+        // accord de septième mineure, comme `m7` (LilyPond 2.24, MIDI de
+        // `a:7m` : 69/72/76/79).
+        assert_eq!(
+            chord_pitches(langue, "c:7m"),
+            Some((vec![60, 63, 67, 70], None))
+        );
+        assert_eq!(
+            chord_pitches(langue, "c:m7"),
+            Some((vec![60, 63, 67, 70], None))
+        );
+        assert_eq!(
+            chord_pitches(langue, "a:7m"),
+            Some((vec![69, 72, 76, 79], None))
         );
         assert_eq!(
             chord_pitches(langue, "d:maj7"),

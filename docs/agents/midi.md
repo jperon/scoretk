@@ -571,7 +571,7 @@ changes.
 | Lot | Files | Exact | N1 % | N2 % | N2d % | Ref. notes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `ecriture_mscz_corpus` | 17 | **17 (100,0 %)** | 100,00 | 100,00 | 100,00 | 483 |
-| `ecriture_ly` | 1 019 | **897 (88,0 %)** | 97,81 | 97,65 | 96,90 | 131 736 |
+| `ecriture_ly` | 1 019 | **898 (88,1 %)** | 97,81 | 97,65 | 96,90 | 131 736 |
 | `ecriture_mscz_musique` | 8 | 3 (37,5 %) | 63,87 | 53,63 | 51,22 | 9 325 |
 
 ### Comparison rule for a writing lot (oracle)
@@ -623,7 +623,6 @@ duration, no voice): `durée`, `note manquante`, `note sup`, `attaque`,
 | --- | --- | ---: |
 | `ecriture_ly` | `durée` | 119 |
 | `ecriture_ly` | `attaque` | 1 |
-| `ecriture_ly` | `note manquante` | 1 |
 | `ecriture_ly` | `note sup` | 1 |
 | `ecriture_mscz_musique` | `durée` | 2 |
 | `ecriture_mscz_musique` | `attaque` | 1 |

@@ -3970,6 +3970,27 @@ impl<'a> Parser<'a> {
     /// Recompose un nom d'accord coupé par le lexer (`c:m7`, `c/g`,
     /// `c:m7.5-`). La durée qui suit (un nombre sans `:` ni `/`) n'en fait pas
     /// partie et reste pour `parse_optional_duration_spec`.
+    /// Consomme un modificateur d'accord qui suit un degré (`7m`, `7sus`),
+    /// s'il y en a un (`default-chord-modifier-list`,
+    /// `scm/chord-entry.scm:251-257`).
+    fn consume_chord_modifier(&mut self, nom: &mut String) {
+        let Some(Token {
+            kind: Kind::Word,
+            text,
+            ..
+        }) = self.peek().cloned()
+        else {
+            return;
+        };
+        if matches!(
+            text.as_str(),
+            "m" | "min" | "maj" | "dim" | "aug" | "sus" | "add"
+        ) {
+            nom.push_str(&text);
+            self.position += 1;
+        }
+    }
+
     fn parse_chord_name(&mut self, first: &str) -> String {
         let mut nom = first.to_string();
         loop {
@@ -3988,6 +4009,11 @@ impl<'a> Parser<'a> {
                             Kind::Number => {
                                 nom.push_str(&text);
                                 self.position += 1;
+                                // `c:7m` : un modificateur peut suivre le
+                                // degré (`chord_item` de `lily/parser.yy`
+                                // l. 3886-3898, modificateurs et degrés dans
+                                // l'ordre écrit).
+                                self.consume_chord_modifier(&mut nom);
                             }
                             // `c:m7`, `c:maj7` : le lexer coupe la lettre et
                             // le chiffre ; les deux font partie de la qualité.
@@ -4003,6 +4029,7 @@ impl<'a> Parser<'a> {
                                     nom.push_str(&chiffre);
                                     self.position += 1;
                                 }
+                                self.consume_chord_modifier(&mut nom);
                             }
                             _ => {}
                         }
@@ -4023,6 +4050,7 @@ impl<'a> Parser<'a> {
                             self.position += 1;
                             nom.push('-');
                         }
+                        self.consume_chord_modifier(&mut nom);
                     }
                 }
                 Some(Token {

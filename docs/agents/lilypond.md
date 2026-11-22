@@ -4961,6 +4961,29 @@ files are `Kryshachok`, `VolgaVolga` (the two `octave` cases) and
 `LaMouetteGrise`. The LilyPond reading lots are unchanged
 (`lecture_musique` 922, `lecture_mutopia` 78).
 
+### Cause 44: `\chordmode` — the minor modifier after the degree (`a:7m`)
+
+`CommentLeSaisJe` writes `a:7m`; the reference MIDI plays a minor seventh
+(69/72/76/79) while the reader produced the dominant seventh (69/73/76/79).
+Two linked gaps, both from `scm/chord-entry.scm`:
+
+- `parse_chord_name` consumed a quality `:7` and stopped, leaving the `m`
+  word to the music (where it is not a pitch); LilyPond's `chord_item`
+  (`lily/parser.yy:3886-3898`) reads steps **and** modifiers in written
+  order. A modifier word (`m`, `min`, `maj`, `dim`, `aug`, `sus`, `add`) is
+  now consumed after a degree and after each `.` addition.
+- `modes::chord_pitches` only stripped a **leading** `m`/`min`; `7m` therefore
+  looked up the quality `7m`, unknown, and fell back to a major triad. The
+  modifier is now extracted wherever it is written
+  (`interpret-additions` applies procedures in order, `:67-78`;
+  `default-chord-modifier-list`, `:251-257`), while `maj` and the `m` of
+  `dim` stay part of the quality word.
+
+Reduced tests: `chordmode_modificateur_apres_degre` (69/72/76/79) and
+`modes::tests::noms_daccords` (`c:7m` = C/E♭/G/B♭, `c:dim7` unchanged).
+Measured on the MIDI writing lot: 897 → **898/1 019**, no loss, no N1/N2
+regression; the LilyPond reading lots are unchanged.
+
 ## 24. LilyPond export: status (2026-11-21)
 
 Measured on current master with `scripts/oracle/lilypond/ecriture.sh`,

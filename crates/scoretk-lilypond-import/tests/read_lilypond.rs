@@ -4921,6 +4921,20 @@ fn chordmode_qualite_apres_duree() {
 /// qualité, et la marque décaler l'accord d'une octave sous la référence
 /// `\fixed`. Référence : LilyPond 2.24 joue Bb2/Ré3/Fa3 puis Fa3/La3/Do4,
 /// chacun 2 noires, quand la portée `\fixed c''` tient un do5 (72).
+/// `a:7m` : le modificateur mineur est écrit **après** le degré
+/// (`CommentLeSaisJe`, `chord-entry.scm` l. 67-78 : `interpret-additions`
+/// applique les procédures dans l'ordre écrit). LilyPond 2.24 joue
+/// 69/72/76/79 (la mineure), ni 73 ni 76.
+#[test]
+fn chordmode_modificateur_apres_degre() {
+    // Pas de `\fixed c'` ici : la table donne la fondamentale à l'octave 4,
+    // comme le MIDI de LilyPond pour ce nom seul.
+    let score =
+        read_lilypond("\\version \"2.24.0\"\n\\score { \\new Staff { \\chordmode { a:7m } } }")
+            .expect("lecture de a:7m");
+    assert_eq!(hauteurs(&score), vec![69, 72, 76, 79]);
+}
+
 #[test]
 fn chordmode_marque_octave_et_duree() {
     let score = read_lilypond(
