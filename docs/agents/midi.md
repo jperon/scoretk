@@ -2974,38 +2974,3 @@ are not part of this export work. The plan (`docs/agents/plan-fiabilite.md`)
 names music21, LilyPond and `abc2midi` as score→MIDI alternatives; none of
 them is available in this worktree for a same-oracle comparison, so the
 tables above compare scoretk against the MuseScore 4.7.4 oracle only.
-
-## Oracle pairing and MusicXML input (2026-11-22)
-
-**Oracle fix.** `read_midi` used the raw message order for FIFO note-on/off
-pairing. MuseScore 4.7.4 writes the note-off before the note-on of a
-zero-length note (`Adios_Muchachos.mscz`, tick 32, pitch 60), so the same
-written notes got different durations depending on the exporter. Process all
-events of a tick with note-offs before note-ons: `Adios` N2d differences go
-from 8 to 1 (the remaining one is a genuine extra note-off in the reference).
-Reduced test `scripts/oracle/midi/test_same_tick.py`, failing before the fix.
-Full re-measure (`target/midi-full`): **0 exact losses**, 55 exact gains in
-the `.ly` lot (662 → 717, N1 96.34 → 97.10, N2 93.38 → 95.26); the other
-lots are unchanged.
-
-**MusicXML input.** The MIDI oracle labelled every non-`.mscx`/`.mscz`
-source as LilyPond, so a new `.musicxml` lot was fed through `--from ly` and
-produced one note per score. Detect `.musicxml`/`.mxl`/`.xml` as MusicXML.
-Fresh xml lot (`target/midi-xml-run2`, 13 files, MuseScore 4.7.4 MIDI
-references generated with `mscore`): **10/13 exact, N1/N2 100 %** (0/13
-before the harness fix). Corpus lot: 17/21 exact, the 4 non-exact files
-having empty references in both outputs.
-
-Remaining xml differences, classified:
-- `keysig_78216.ref.musicxml` — empty score (0 notes in both), oracle artefact;
-- `layout_elements.ref.musicxml` — 9 extra notes from an accordion rank symbol
-  and grace notes that MuseScore does not play (N1 100 %, two chords in the
-  reference absent from ours);
-- `moonlight.ref.musicxml` — 3 notes with a 0.25-quarter gate-time difference
-  (N2d 99.74 %), MuseScore 4.7.4 shortens sustained notes slightly more than
-  our generic gate (`compatmidirender.cpp:145-179,263`); the same score from
-  `.mscx` is exact, so this is a MusicXML-import expression difference.
-
-`docs/agents/plan-fiabilite.md` names music21, LilyPond and `abc2midi` as
-alternatives for score → MIDI; none is installed in the project shell, so
-the comparison here is against MuseScore 4.7.4 alone.
