@@ -21,6 +21,11 @@ def test_trille_en_debut_de_groupe():
     assert mesure.sans_ornements(["(gTfe) d2|"])[0] == "(gfe) d2|"
 
 
+def test_trille_avec_coup_darchet():
+    # `TvG3` : T est le trille, v le coup d'archet ; abc2midi réalise le trille.
+    assert mesure.sans_ornements(["TvG3 BGB|"])[0] == "vG3 BGB|"
+
+
 def test_champ_non_touche():
     assert mesure.sans_ornements(["M:4/4", "T:Titre", "TAc|"])[:2] == ["M:4/4", "T:Titre"]
 
