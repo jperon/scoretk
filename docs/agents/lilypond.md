@@ -6443,3 +6443,50 @@ attaques décalées de moins d'un 1/16 (`flags-*`, `bend-spanner-*`) et
 lisible dans le sous-ensemble avec au moins 3 fichiers ; aucun correctif
 n'a été tenté au hasard. Les fichiers concernés restent dans le
 dénominateur (sauf le bucket documenté), sans exclusion silencieuse.
+
+### Campagne fichier par fichier : findings
+
+**Oracle corrigé**： l'heuristique d'injection de `regen-refs.py` sautait les
+blocs de musique suivant une définition multiligne (la profondeur d'accolades
+dérivait), produisant des références tronquées — `flags-default.ly` avait 36
+notes au lieu de 48. Heuristique corrigée (comptage sur toutes les lignes,
+score injecté à la première expression musicale) : sur 158 références
+régénérées, **13 seulement sont réellement périmées** (pas 24). Arbre propre
+`/tmp/ly95lect-refs-clean` : 1576 exacts, aucun changement de score.
+
+**`flags-*` / décalages < 1/16** (`lily/audio-item.cc:122`) : la formule de
+timing MIDI est `main + 9/40 × grace_part`. Vidage de `flags-default.ly` :
+la grâce `\acciaccatura {c'8}` est émise à 0,875 avec une durée réelle de
+0,1125 (9/80), et la note principale à 0,9896 ; le lecteur pose la grâce
+sans durée à 0,9375. L'oracle apparie bien les 8 grâces (`graces_match=8`)
+mais le décalage s'accumule de phrase en phrase : `n2_grace == n2`. Ce n'est
+pas un problème de mise en page, mais le modèle MusicXML n'a pas de temps
+logique pour la grâce ; corriger exigerait de décaler toutes les notes
+suivantes, ce qui casserait les autres fichiers à grâces. Cause documentée,
+pas de correctif hasardeux.
+
+**Microtones** (`lily/midi-item.cc:273-293`) : `get_semitone_pitch()` fait
+`rint(tone_pitch × 2)` et `get_fine_tuning()` ajoute un pitch-wheel
+(`PITCH_WHEEL_SEMITONE`). L'oracle lit le pitch-wheel via le byte de note-on
+arrondi, et `ly_notes.py:301` fait `int(float(<alter>))` (troncature). Aucun
+fichier non exact n'a de `<alter>` fractionnaire dans son MusicXML : les
+4 tests de glyphes ont `t=0` car leur musique est produite par la fonction
+Scheme `\test`, hors sous-ensemble. Aucun correctif lecteur justifié.
+
+**Deux causes commitées et mesurées** :
+1. `Timing.skipTypesetting` était intercepté par la branche cadenza de
+   `parse_set` ; `\unset` d'un alias déprécié déclaré avec `#:new-symbol
+   'skipTypesetting` est maintenant reconnu (`scm/define-context-properties.scm
+   :1001-1055`). **+1 exact** (`context-property-deprecated-unset`),
+   0 perte — 1577.
+2. `\voices` (`ly/music-functions-init.ly:2631-2640`) consomme maintenant sa
+   `key-list?` au lieu de la laisser devenir des durées. Correctif de
+   syntaxe générique, test réduit ; `voices-command.ly` garde 2 notes
+   supplémentaires d'une autre cause, therefore 0 gain isolé, 0 perte.
+
+**Preuve par fichier tenté** : sur les 12 fichiers à plus petit écart N2,
+6 ont une référence invalide ou une musique Scheme non interprétable
+(bucket hors dénominateur), 3 dépendent du timing de grâce ci-dessus, 2
+(`skiptypesetting-show-last`, `note-head-style`) sont pilotés par Scheme,
+et 1 (`voices-command`) a une cause résiduelle non partagée. Aucun d'entre
+eux ne justifie un hack spécifique ; they rest in the denominator.
