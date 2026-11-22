@@ -3868,10 +3868,16 @@ manifest rows are excluded, four of them duplicate paths.
 
 ### Final `mut` figures
 
-| Set | Files | Exact | Exact % | N1 % | N2 % | N2 no-repeat % |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 430 | 65.4 | 98.86 | — | — |
-| measured (reference present, non-reader faults excluded) | 1 647 | **1 430** | **86.8** | **98.86** | **96.03** | **97.77** |
+| Set | Files | Exact Q16 | Exact Q16 **or** n2_grace | Exact % (either) | N1 % | N2 % | N2 no-repeat % |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| all rows | 2 186 | 1 387 | **1 430** | 65.4 | 98.86 | — | — |
+| measured (reference present, non-reader faults excluded) | 1 647 | 1 387 | **1 430** | **86.8** | **98.86** | **96.03** | **97.77** |
+
+The two exact columns are kept side by side since Cause 18: **Exact Q16** is
+the historical criterion (`r == t == n1 == n2`), **Exact Q16 or n2_grace** adds
+the files whose graces only miss the plain grid because LilyPond plays them at
+a distinct real time. The latter is the headline figure; the former is never
+hidden, and the 43-file difference is exactly the grace-timing model.
 
 The obsolete-source basket (60 files containing `\setTextCresc`, `\sustainDown`
 and the other commands removed after 2.10, plus the `\deprecatedcresc` family
