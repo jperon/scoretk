@@ -2715,6 +2715,29 @@ impl<'a> Parser<'a> {
                 })
             }
             "repeat" => self.parse_repeat(),
+            "*" | "%" => {
+                // `ly/music-functions-init.ly:742-751` : raccourcis de
+                // `\\repeat unfold` (`\\*`) et `\\repeat percent` (`\\%`).
+                let count = match self.bump() {
+                    Some(Token {
+                        kind: Kind::Number,
+                        text,
+                        ..
+                    }) => text.parse().unwrap_or(2),
+                    _ => 2,
+                };
+                let kind = if name == "*" {
+                    RepeatKind::Unfold
+                } else {
+                    RepeatKind::Ignored
+                };
+                Music::Context(Context::Repeat {
+                    kind,
+                    count,
+                    body: Box::new(self.parse_music()),
+                    alternatives: Vec::new(),
+                })
+            }
             "alternative" => {
                 let content = self.parse_music();
                 Music::Context(Context::Alternative(blocks_of(content)))

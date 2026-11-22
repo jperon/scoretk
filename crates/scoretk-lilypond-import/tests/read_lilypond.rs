@@ -6906,6 +6906,8 @@ musique = { \fixed c' { c4 d e f } }
     assert!(
         !score.playback_articulate,
         "la partition retenue n'est pas articulée"
+    );
+}
 
 #[test]
 fn seconde_voix_relative_heritant_de_la_premiere() {
@@ -6933,5 +6935,17 @@ fn cue_during_joue_la_citation() {
     assert_eq!(
         score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
         vec![60, 67, 67, 67, 67, 60]
+    );
+}
+
+#[test]
+fn abbreviations_repeat_unfold_et_percent() {
+    // `ly/music-functions-init.ly:742-751` : `\*n` = `\repeat unfold n`,
+    // `\%n` = `\repeat percent n`.
+    let src = "\\version \"2.24.0\"\n{ \\*4 c'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 60, 60, 60]
     );
 }
