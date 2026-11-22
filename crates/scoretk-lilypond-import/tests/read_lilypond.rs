@@ -7285,3 +7285,16 @@ fn measure_count_sans_argument_ne_mange_pas_la_duree() {
         vec![60, 60, 60]
     );
 }
+
+#[test]
+fn part_combine_au_niveau_superieur_joue_les_deux_voix() {
+    // `\partCombine` est une fonction musicale : au niveau supérieur, les
+    // deux branches forment une seule partition, pas deux partitions dont
+    // une seule serait retenue.
+    let src = "\\version \"2.24.0\"\n\\partCombine { c'4 d' } { e'4 f' }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62, 64, 65]
+    );
+}

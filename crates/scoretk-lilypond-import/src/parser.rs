@@ -5689,6 +5689,7 @@ fn starts_music_command(name: &str) -> bool {
                 | "fixed"
                 | "absolute"
                 | "autoChange"
+                | "partCombine"
                 | "unfoldRepeats"
                 | "transpose"
                 | "tuplet"
