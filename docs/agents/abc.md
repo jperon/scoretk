@@ -3147,3 +3147,39 @@ have regressed other tunes.
 
 Core-identical MusicXML export (144/173) and the two ABC oracle causes are
 unchanged by this pass.
+
+## 35. ABC export: model-mode baseline (2026-11-22)
+
+Measurement `target/abc-ex-base/` (3 lots, mode `model`, `xml2abc.py` 177 as
+alternative). The oracle re-imports each `.abc` and compares the resulting
+model to the direct export; `export_sequence.py` (reusing `cmp.musicxml_notes`
+and `sequence.first_difference`) localises the first divergent note.
+
+| Lot | scoretk exact | Files | xml2abc exact | scoretk mean `.abc` B | xml2abc mean B |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| corpus | 47 | 56 | — | — | — |
+| mscz | 164 | 174 | — | — | — |
+| xml | 24 | 32 | — | — | — |
+
+Full per-lot figures and sizes are in `target/abc-ex-base/resume.md`:
+scoretk 47/56 corpus, 164/173 mscz, 24/32 xml (235/261 exact) with mean
+`.abc` sizes 300 / 12 408 / 12 795 B, versus xml2abc 44/56, 21/173, 6/32
+(71/261) at 334 / 13 397 / 13 205 B: scoretk outputs are 7–13 % smaller.
+
+| Group | Tunes | File | ref pitch | candidate | Bar |
+| --- | ---: | --- | ---: | ---: | --- |
+| semiton | 4 | `testMultiInstrumentPart3.mscx` | 60 | 61 | 3 |
+| semiton |  | `copypaste_parts.mscx` | 66 | 65 | 3 |
+| semiton |  | `Veni, Creator Spiritus_Courtial_v3_SATB.mscz` | 63 | 62 | 14 |
+| semiton |  | `Vingt_danses_enfantines_pour_piano.mscz` | 80 | 79 | 53 |
+| note manquante apres aller-retour | 4 | `voiceswitching.mscx` | None | 65 | 2 |
+| note manquante apres aller-retour |  | `Angels_Carol__John_Rutter.mscz` | None | 60 | 66 |
+| note manquante apres aller-retour |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_09_Gloria_Patri_orgue.mscz` | None | 69 | 505 |
+| note manquante apres aller-retour |  | `Angels_Carol__John_Rutter.mxl` | None | 60 | 66 |
+| octave | 4 | `00- Veni veni Emmanuel - choeur.mscz` | 76 | 64 | 8 |
+| octave |  | `Sancta_Maria_Lux_tempestiva_Alfonso_X_el_Sabio_1221-1284.mscz` | 64 | 52 | 48 |
+| octave |  | `Byrd_Dies.mxl` | 76 | 64 | 4 |
+| octave |  | `Sancta_Maria_Lux_tempestiva_Alfonso_X_el_Sabio_1221-1284.mxl` | 64 | 52 | 48 |
+| note supplementaire apres aller-retour | 3 | `Laudate_pueri_Op._39_No._2_-_Felix_Mendelssohn.mscz` | 75 | None | 19 |
+| note supplementaire apres aller-retour |  | `Laudate_pueri_Op._39_No._2_-_Felix_Mendelssohn.mxl` | 70 | None | 104 |
+| note supplementaire apres aller-retour |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_10._Sicut_erat_in_principio.mxl` | 45 | None | 70 |

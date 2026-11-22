@@ -97,7 +97,7 @@ def bar_lines(air):
 
 def first_difference(reference, candidate):
     """Premier bloc modifié entre deux suites de hauteurs."""
-    a = [pitch for _tick, pitch in reference]
+    a = [item[1] for item in reference]
     b = [item[1] for item in candidate]
     matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
