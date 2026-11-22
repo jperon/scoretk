@@ -289,6 +289,11 @@ impl RepeatKind {
     pub(crate) fn from_word(word: &str) -> Self {
         match word {
             "volta" => Self::Volta,
+            // `scm/music-functions.scm::make-repeat` maps `segno` to
+            // `SegnoRepeatedMusic`, whose iterator is the volta one
+            // (`scm/define-music-types.scm`) : play the body once when not
+            // unfolding, without advancing the cursor for the skipped passes.
+            "segno" => Self::Volta,
             "unfold" => Self::Unfold,
             "tremolo" => Self::Tremolo,
             _ => Self::Ignored,

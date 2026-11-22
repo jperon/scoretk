@@ -6282,3 +6282,27 @@ fn identifiant_entre_guillemets_echappes() {
         vec![72, 72]
     );
 }
+
+#[test]
+fn repeat_segno_ne_decale_pas_la_suite() {
+    // `scm/music-functions.scm::make-repeat` construit un `SegnoRepeatedMusic`
+    // avec le même itérateur qu'un volta (`scm/define-music-types.scm`) : le
+    // MIDI d'un score non déplié joue le corps une seule fois, sans avancer
+    // la mesure suivante du nombre de reprises.
+    let src = "\\version \"2.24.0\"\n\\
+         \\new Voice \\fixed c' { \\repeat segno 2 { a1 } b1 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let attaques: Vec<_> = accords_de_voix(&score, 0)
+        .iter()
+        .map(|(tick, pitches, _)| (*tick, pitches.clone()))
+        .collect();
+    assert_eq!(
+        attaques,
+        vec![
+            (scoretk_core::model::Fraction::ZERO, vec![69]),
+            (scoretk_core::model::Fraction::from_integer(1), vec![71])
+        ],
+        "attaques: {:?}",
+        attaques
+    );
+}
