@@ -1200,95 +1200,6 @@ pub fn separate_voices(
     changed
 }
 
-/// Temps d'attaque situe entre les accords voisins (`findOnTimeBetweenChords`,
-/// `importmidi_tuplet.cpp:957-1043`). La quantification est affinee jusqu'a ce
-/// que l'attaque ne soit pas avant le precedent ni apres le suivant.
-fn find_on_time_between_chords(
-    track: &MTrack,
-    key: ChordKey,
-    basic_quant: Fraction,
-    bar_start: Fraction,
-) -> Fraction {
-    let Some(chord) = track.chords.get(key) else {
-        return key.0;
-    };
-    if key.0 < bar_start {
-        return bar_start;
-    }
-    let voice = chord.voice;
-    let mut quant = basic_quant;
-    loop {
-        let on_time = super::quant::find_min_quantized_on_time(chord, key.0, quant);
-        let mut changed = false;
-
-        // Accord precedent de la meme voix, dans une fenetre de 2 * basicQuant.
-        let window = key.0 - basic_quant * Fraction::from_integer(2);
-        let all_keys = track.chords.keys();
-        let mut candidate_index = all_keys
-            .iter()
-            .position(|candidate| *candidate >= key)
-            .unwrap_or(all_keys.len());
-        while candidate_index > 0 {
-            candidate_index -= 1;
-            let candidate = all_keys[candidate_index];
-            if candidate.0 < window {
-                break;
-            }
-            if candidate.0 == key.0 {
-                continue;
-            }
-            let Some(previous) = track.chords.get(candidate) else {
-                continue;
-            };
-            if previous.voice != voice {
-                continue;
-            }
-            let previous_on =
-                super::quant::find_min_quantized_on_time(previous, candidate.0, quant);
-            if on_time < previous_on {
-                if quant < chord::min_allowed_duration() * Fraction::from_integer(2) {
-                    return on_time;
-                }
-                quant *= Fraction::HALF;
-                changed = true;
-            }
-            break;
-        }
-
-        if !changed {
-            let following: Vec<ChordKey> = track
-                .chords
-                .keys()
-                .into_iter()
-                .skip_while(|candidate| *candidate <= key)
-                .take_while(|candidate| {
-                    candidate.0 < key.0 + basic_quant * Fraction::from_integer(2)
-                })
-                .collect();
-            for candidate in following {
-                let Some(next) = track.chords.get(candidate) else {
-                    continue;
-                };
-                if next.voice != voice {
-                    continue;
-                }
-                let next_on = super::quant::find_min_quantized_on_time(next, candidate.0, quant);
-                if on_time > next_on {
-                    if quant < chord::min_allowed_duration() * Fraction::from_integer(2) {
-                        return on_time;
-                    }
-                    quant *= Fraction::HALF;
-                    changed = true;
-                }
-                break;
-            }
-        }
-        if !changed {
-            return on_time;
-        }
-    }
-}
-
 /// Intervalle d'un accord (`chordInterval`,
 /// `importmidi_tuplet_voice.cpp:50-68`).
 fn chord_interval(
@@ -1300,7 +1211,8 @@ fn chord_interval(
     let Some(chord) = track.chords.get(key) else {
         return (key.0, key.0);
     };
-    let on_time = find_on_time_between_chords(track, key, basic_quant, bar_start);
+    let on_time =
+        crate::tuplet::on_time::find_on_time_between_chords(track, key, basic_quant, bar_start);
     let mut off_time = super::quant::find_max_quantized_off_time(chord, key.0, basic_quant);
     if off_time < on_time {
         off_time = on_time;

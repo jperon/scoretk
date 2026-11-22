@@ -428,9 +428,9 @@ measures), so the source-notes comparison is pitch + onset.
 
 | Lot | Files | Exact | N1 % | N2 % | N2d % | N2v % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| upstream `.mscx` | 96 | 93 (96,9 %) | 100,00 | 99,88 | 99,88 | 98,00 |
+| upstream `.mscx` | 96 | 94 (97,9 %) | 100,00 | 99,88 | 99,88 | 98,71 |
 | LilyPond `.ly` (87 excluded) | 932 | 914 (98,1 %) | 99,95 | 99,84 | — | — |
-| all comparable | 1 028 | **1 007 (98,0 %)** | **99,95** | **99,84** | — | — |
+| all comparable | 1 028 | **1 008 (98,1 %)** | **99,95** | **99,84** | — | — |
 
 Percentages are weighted by the reference notes (100 028). On the `.mscx` lot
 the exactness includes voice and duration; on the `.ly` lot it is
@@ -452,8 +452,8 @@ unmatched note with the finest cause: `note sup` (extra note),
 | --- | ---: | --- |
 | `attaque` | 8 | `up-human_4-4` |
 | `note sup` | 8 | `ly-lily-30ec2d9a` |
-| `voix` | 2 | `up-tuplet_2_voices_tuplet_non` |
 | `octave` | 2 | `ly-Kryshachok` |
+| `voix` | 1 | `up-tuplet_3_5_7_tuplets` |
 | `note manquante` | 1 | `ly-02_01_CommentLeSaisJe` |
 
 Three causes explain almost all of them, and two are measurement gaps rather
@@ -498,11 +498,25 @@ than importer defects:
   `<duration>` is the sounding value (2/18 of a quarter in a 9:8 tuplet) and
   `<time-modification>` carries the notation, which is correct; the earlier
   « 9 ticks » came from reading `<duration>` as the notated figure.
-- **remaining tuplet defect**: the two tests differ by **voice assignment**
-  (N2v = 3/18 and 7/8): three overlapping tuplets (3:2, 5:4, 7:8) must get
-  three voices (`MidiTuplet::assignVoices`, `importmidi_tuplet_voice.cpp`),
-  our `assign_voices` keeps fewer. `MidiTuplet::minimizeOffTimeError`
-  (`importmidi_tuplet.cpp:454-503`) is also not ported.
+- **`minimizeOffTimeError`** (fixed, new module `tuplet/off_time.rs`, from
+  `importmidi_tuplet.cpp:454-503`): a note of the first chord that belongs to
+  an ordinary voice (62 at 0.0 beside the triplet's 67 in
+  `tuplet_2_voices_tuplet_non`) is moved out of the tuplet when the regular
+  grid gives it a smaller off-time error, then `setNonTupletVoices` puts it
+  in another voice. Test `note_hors_nolet_sur_la_meme_attaque_reste_hors_du_nolet`
+  (62 was in voice 1 as a triplet eighth; now voice 2, plain eighth). That
+  test becomes exact: 1 007 → 1 008 files, no loss.
+- **`assignVoices` fidelity**: `chordInterval` (`importmidi_tuplet_voice.cpp:49-67`)
+  now uses a faithful port of `findOnTimeBetweenChords`
+  (`importmidi_tuplet.cpp:957-1041`, new `tuplet/on_time.rs`, shared with
+  `voice.rs` instead of the duplicate approximation). Measured: 1 008 before
+  and after, no loss — the corpus does not exercise an on-time collision
+  through this path, so the fix is fidelity, not score.
+- **remaining tuplet defect**: `tuplet_3_5_7_tuplets` differs by **detection**,
+  not by voice assignment: the port detects two 7:8 tuplets where MuseScore
+  reads 3:2, 5:4 and 7:8 (`detectTuplets`, `importmidi_tuplet.cpp:1076-1141`,
+  simplified in the port). With one tuplet instead of three,
+  `MidiTuplet::assignVoices` has nothing to spread over three voices.
 - **`Kryshachok`** is a **LilyPond reader** octave error: the MIDI has
   (46, 50, 53) at 4.0 and the reference written pitch is (58, 62, 65), with
   no `<transpose>` or octave clef between them — the reader resolved the bass

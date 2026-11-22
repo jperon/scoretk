@@ -34,11 +34,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use scoretk_core::model::Fraction;
 
 use super::{TupletInfo, TupletKey};
-use crate::chord::{chord_average_pitch, min_allowed_duration, ChordKey, MTrack};
+use crate::chord::{chord_average_pitch, min_note_len, ChordKey, MTrack};
 use crate::quant::{
-    find_max_quantized_off_time, find_max_quantized_tuplet_off_time, find_min_quantized_on_time,
-    find_quantized_note_off_time, find_quantized_tuplet_chord_on_time,
-    find_quantized_tuplet_note_off_time, quant_for_len,
+    find_max_quantized_off_time, find_max_quantized_tuplet_off_time, find_quantized_note_off_time,
+    find_quantized_tuplet_chord_on_time, find_quantized_tuplet_note_off_time, quant_for_len,
 };
 
 /// Paire `(début, fin)` d'un intervalle occupé dans une voix.
@@ -87,9 +86,8 @@ fn tuplet_interval(track: &MTrack, tuplet: &TupletInfo, basic_quant: Fraction) -
 
 /// `chordInterval` (`importmidi_tuplet_voice.cpp:49-67`).
 ///
-/// `findOnTimeBetweenChords` (`:957-1041`) n'est pas porté : l'attaque de
-/// l'accord est utilisée, bornée par le début de mesure, comme dans le reste
-/// du port. Les fins sont quantifiées, comme dans le C++.
+/// L'attaque vient de `findOnTimeBetweenChords` (`importmidi_tuplet.cpp:957-1041`),
+/// porté dans `tuplet/on_time.rs` et partagé avec `voice.rs`.
 fn chord_interval(
     track: &MTrack,
     key: ChordKey,
@@ -99,14 +97,13 @@ fn chord_interval(
     let Some(chord) = track.chords.get(key) else {
         return (bar_start, bar_start + basic_quant);
     };
-    let mut on_time = key.0.max(bar_start);
+    let on_time = super::on_time::find_on_time_between_chords(track, key, basic_quant, bar_start);
     let mut off_time = find_max_quantized_off_time(chord, key.0, basic_quant);
     if off_time < on_time {
-        on_time = find_min_quantized_on_time(chord, key.0, basic_quant).max(bar_start);
         off_time = on_time;
     }
     if off_time == on_time {
-        off_time += quant_for_len(min_allowed_duration(), basic_quant);
+        off_time += quant_for_len(min_note_len(key.0, chord), basic_quant);
     }
     (on_time, off_time)
 }
