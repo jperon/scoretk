@@ -67,6 +67,9 @@ pub(crate) struct Parser<'a> {
     pending_head: NoteHeadGroup,
     /// Affichage du nombre du prochain n-olet (`\override TupletNumber…`).
     pending_tuplet_number: Option<TupletNumberType>,
+    /// Dernier type de trémolo écrit (`:8`), comme
+    /// `parser->default_tremolo_type_` (`lily/parser.yy:3584-3596`).
+    default_tremolo_type: u8,
     /// Silence invisible demandé par `\once \override Rest.transparent`.
     pending_invisible_rest: bool,
     /// Crochet d'ottava masqué par `\override OttavaBracket.transparent`.
@@ -276,6 +279,7 @@ pub(crate) fn parse(
         warnings,
         pending_head: NoteHeadGroup::Normal,
         pending_tuplet_number: None,
+        default_tremolo_type: 8,
         pending_invisible_rest: false,
         pending_invisible_ottava: false,
         partitions: Vec::new(),
@@ -4144,16 +4148,22 @@ impl<'a> Parser<'a> {
                 Vec::new()
             }
             Kind::Punct(':') => {
-                // Trémolo `:8`.
+                // `tremolo_type` (`lily/parser.yy:3584-3596`) : `':'` seul
+                // reprend le dernier type écrit (8 au départ), `':' UNSIGNED`
+                // le fixe. Le nombre n'est consommé que s'il est écrit : sinon
+                // `c4: d4` avalait la hauteur `d`, qui devenait une durée nue
+                // répétant `c` (Egmont, `violinoone.ly` : `a'''2.:8 a''':`).
                 self.position += 1;
-                let value = self
-                    .bump()
-                    .and_then(|token| token.as_integer())
-                    .unwrap_or(8);
-                vec![PostEvent::Tremolo(
-                    TremoloKind::Single,
-                    u8::try_from(value.clamp(1, 1024)).unwrap_or(8),
-                )]
+                let value = match self.peek().and_then(|token| token.as_integer()) {
+                    Some(value) => {
+                        self.position += 1;
+                        let value = u8::try_from(value.clamp(1, 1024)).unwrap_or(8);
+                        self.default_tremolo_type = value;
+                        value
+                    }
+                    None => self.default_tremolo_type,
+                };
+                vec![PostEvent::Tremolo(TremoloKind::Single, value)]
             }
             Kind::Punct('^') | Kind::Punct('_') | Kind::Punct('-') => {
                 let placement = if token.is_punct('_') || token.is_punct('-') {
@@ -6315,6 +6325,7 @@ mod tests {
             warnings: &mut warnings,
             pending_head: NoteHeadGroup::Normal,
             pending_tuplet_number: None,
+            default_tremolo_type: 8,
             pending_invisible_rest: false,
             pending_invisible_ottava: false,
             partitions: Vec::new(),
@@ -6362,6 +6373,7 @@ mod tests {
                 warnings: &mut warnings,
                 pending_head: NoteHeadGroup::Normal,
                 pending_tuplet_number: None,
+                default_tremolo_type: 8,
                 pending_invisible_rest: false,
                 pending_invisible_ottava: false,
                 partitions: Vec::new(),

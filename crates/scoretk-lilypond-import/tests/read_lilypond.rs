@@ -622,6 +622,15 @@ fn commentaire_de_bloc_ne_s_imbrique_pas() {
     assert_eq!(hauteurs(&score), vec![60, 62]);
 }
 
+/// `c4: d4` : le `:` du trémolo ne consomme pas la note suivante.
+/// `tremolo_type` n'accepte un nombre que s'il est écrit
+/// (`lily/parser.yy:3584-3596`) ; le jeton qui suit peut être une hauteur.
+#[test]
+fn tremolo_sans_nombre_ne_mange_pas_la_note_suivante() {
+    let score = lire("c4: d4: e4 f4");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65]);
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");
