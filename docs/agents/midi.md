@@ -689,10 +689,15 @@ reader class:
   and reports 3.0 + 0.5. The **union of the sounding intervals is identical**
   (checked on all 149 files: 423 of the mismatched notes have the same union),
   so the performance is the same. Extending each note to its union end in the
-  oracle would cover it, but it also merges 1-tick gaps and loses exact files
-  (measured on the 1 019 `.ly`: +199 exact but 1 loss with a small gap
-  tolerance, 177 losses with the matching tolerance), so it is left as a
-  documented limit rather than a rule that hides real differences.
+  oracle was tried: **exact zero-gap** (touch or overlap only) gains 28 files
+  but loses **17** on the 1 019 `.ly` (net 899 → 882). The cause is MuseScore's
+  `end-1` note-off: our notes end one tick before the next same-pitch attack,
+  so a zero-gap union fuses the reference's touching notes but not ours (and
+  the reverse for `\articulate` `7/8` lengths); a small gap tolerance fuses
+  ours too but then hides real articulation rests, and a matching tolerance
+  (`1/16`) loses 177. The rule is therefore **not** applied: the current
+  normalisation (same-onset fusion only) keeps 899, and the restrike split
+  stays the 4.7.4-faithful export.
 - **articulations without `\articulate`** (261 mismatched notes, 42 files,
   e.g. `LaChansonDuPleinAir.ly`, staccato `-.` and no `\articulate`). LilyPond
   plays the written length (`note-performer.cc` ignores articulations unless
