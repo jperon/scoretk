@@ -4941,6 +4941,24 @@ deux binaires frères, `--mode midi`) : exacts 56 → 59, n2d en hausse sur
 7 fichiers, aucune perte. Le lot mscz ne contient aucun `\chordmode` :
 son écriture n'est pas modifiée.
 
+### `\articulate` appartient au `\score` qui le porte
+
+`playback_articulate` était collecté globalement pendant l'analyse : un
+second `\score` contenant `\articulate` (partition MIDI de répétition)
+marquait aussi la partition gravée retenue. L'écrivain LilyPond enveloppait
+alors toute la musique dans `\articulate`, raccourcissant les notes d'une
+partition qui ne l'était pas (`Wellerman…`, `benoit_ave_maria.ly`).
+
+Comme `playback_unfold_repeats`, le drapeau est maintenant porté par chaque
+`Partition` (`parser.rs`) et n'est recopié dans le modèle que pour la
+partition effectivement choisie. Test réduit écrit d'abord :
+`articulate_du_second_score_ne_contamine_pas_le_premier`.
+
+Mesure ciblée sur les 159 fichiers du lot `ly` (deux binaires frères,
+`--mode midi`) : exacts 59 → 60, `benoit_ave_maria.ly` gagné, `Wellerman…`
+récupère ses 5 notes perdues par le correctif d'écriture de `\articulate`,
+aucune perte.
+
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire

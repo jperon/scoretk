@@ -6806,3 +6806,30 @@ fn accordmode_sous_fixed_decale_les_hauteurs() {
         "f sous \\fixed c, doit jouer F3/A3/C4"
     );
 }
+
+/// `\articulate` est propre au `\score` où il apparaît, comme
+/// `\unfoldRepeats` (`scm/music-functions.scm`). Un second score qui
+/// articule sa musique ne doit pas faire croire que la partition retenue
+/// (la première avec `\midi`) est articulée : l'écrivain LilyPond
+/// envelopperait alors toutes ses notes dans `\articulate`.
+#[test]
+fn articulate_du_second_score_ne_contamine_pas_le_premier() {
+    let source = r#"\version "2.24.0"
+\language "english"
+musique = { \fixed c' { c4 d e f } }
+\score {
+  << \new Staff { \musique } >>
+  \layout { }
+  \midi { }
+}
+\score {
+  << \new Staff { \articulate { \musique } } >>
+  \midi { }
+}
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert!(
+        !score.playback_articulate,
+        "la partition retenue n'est pas articulée"
+    );
+}

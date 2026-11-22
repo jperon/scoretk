@@ -167,6 +167,8 @@ struct Partition {
     has_midi: bool,
     /// `\unfoldRepeats` vu dans cette partition seulement.
     unfold_repeats: bool,
+    /// `\articulate` vu dans cette partition seulement.
+    articulate: bool,
     /// Ligne du premier jeton.
     line: u32,
     /// Colonne du premier jeton.
@@ -400,7 +402,6 @@ impl<'a> Parser<'a> {
         }
         document.melisma_busy_disabled = self.melisma_busy_disabled;
         document.staff_local_timing = self.staff_local_timing;
-        document.playback_articulate = self.playback_articulate;
         document.playback_unfold_repeats = self.playback_unfold_repeats;
 
         // Choix de la partition : un bloc `\score` explicite l'emporte sur la
@@ -464,6 +465,7 @@ impl<'a> Parser<'a> {
             if self.partitions.get(chosen).is_some() {
                 let partition = self.partitions.swap_remove(chosen);
                 document.playback_unfold_repeats = partition.unfold_repeats;
+                document.playback_articulate = partition.articulate;
                 document.score = Some(partition.score);
             }
         }
@@ -516,13 +518,14 @@ impl<'a> Parser<'a> {
             }
             Kind::Command if token.text == "score" => {
                 self.position += 1;
-                let (score, has_layout, has_midi, unfold_repeats) = self.parse_score();
+                let (score, has_layout, has_midi, unfold_repeats, articulate) = self.parse_score();
                 self.partitions.push(Partition {
                     score,
                     explicit: true,
                     has_layout,
                     has_midi,
                     unfold_repeats,
+                    articulate,
                     line: token.line,
                     column: token.column,
                 });
@@ -653,8 +656,10 @@ impl<'a> Parser<'a> {
         // Comme pour un `\score` explicite, `\unfoldRepeats` lu dans cette
         // musique de haut niveau ne concerne que cette partition implicite.
         self.playback_unfold_repeats = false;
+        self.playback_articulate = false;
         let mut groups = self.parse_score_element();
         let unfold_repeats = self.playback_unfold_repeats;
+        let articulate = self.playback_articulate;
         if groups.is_empty() {
             return;
         }
@@ -670,6 +675,7 @@ impl<'a> Parser<'a> {
             has_layout: false,
             has_midi: false,
             unfold_repeats,
+            articulate,
             line: token.line,
             column: token.column,
         });
@@ -744,7 +750,7 @@ impl<'a> Parser<'a> {
     //------------------------------------------------------------------
 
     /// Bloc `\score { … }`, avec les blocs de sortie vus (`\layout`, `\midi`).
-    fn parse_score(&mut self) -> (ScoreAst, bool, bool, bool) {
+    fn parse_score(&mut self) -> (ScoreAst, bool, bool, bool, bool) {
         let mut score = ScoreAst::default();
         let mut has_layout = false;
         let mut has_midi = false;
@@ -754,9 +760,10 @@ impl<'a> Parser<'a> {
         // reprises ne doit pas déplier celles du premier, dont l'oracle
         // retient le MIDI (`scm/midi.scm`, `base.midi`).
         self.playback_unfold_repeats = false;
+        self.playback_articulate = false;
         if !self.eat_punct('{') {
             self.warn("\\score sans accolade");
-            return (score, has_layout, has_midi, false);
+            return (score, has_layout, has_midi, false, false);
         }
         while !self.at_end() {
             if self.eat_punct('}') {
@@ -789,7 +796,13 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        (score, has_layout, has_midi, self.playback_unfold_repeats)
+        (
+            score,
+            has_layout,
+            has_midi,
+            self.playback_unfold_repeats,
+            self.playback_articulate,
+        )
     }
 
     /// Un élément du corps de `\score`, également une expression musicale de
