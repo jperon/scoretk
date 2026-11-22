@@ -2332,12 +2332,12 @@ impl Context<'_> {
         if segment.tick != measure.start_tick && segment.tick != measure.end_tick() {
             self.clef(out, xml_staff, self.active_clef(clef), &[]);
         } else if segment.tick == measure.start_tick {
-            // `findAndExportClef` (`exportmusicxml.cpp:7693-7705`) chooses cs1
+            // `findAndExportClef` (`exportmusicxml.cpp:7693-7714`) chooses cs1
             // (the previous measure's Clef, or the first measure's
             // HeaderClef) over cs2 (a Clef in this measure at the same tick)
-            // and `writeElement` skips the one already written. Without this
-            // guard a measure carrying both segments emitted two <clef>
-            // elements (4 spurious lines in Stella_maris_instruments - La).
+            // and writes exactly one clef per staff. Without this guard a
+            // measure carrying both segments emitted two <clef> elements
+            // (4 spurious lines in Stella_maris_instruments - La).
             let header = measure.segments.iter().find(|other| {
                 other.kind == SegmentType::HeaderClef
                     && other.tick == segment.tick
@@ -2349,9 +2349,17 @@ impl Context<'_> {
                         if other_clef.concert == clef.concert
                             && other_clef.transposed == clef.transposed)
                 }),
-                // Sans HeaderClef pour cette portée, `write_measure_clefs`
-                // vient d'écrire cette même clef (repli cs2 ou clef par
-                // défaut) : `writeElement` ne doit pas la réécrire.
+                // No HeaderClef on this track at tick 0: `findAndExportClef`
+                // falls back to cs2 (`exportmusicxml.cpp:7699-7714`) and, when
+                // cs2 is absent too, to the staff's generated default clef
+                // (`exportDefaultClef`). `write_measure_clefs` implements that
+                // same cs2/default fallback for `measure.start_tick.is_zero()`,
+                // so it has already emitted this clef and `writeElement`
+                // (`exportmusicxml.cpp:8001-8003`) must not write it again.
+                // For later measures cs1 comes from the *previous* measure;
+                // a Clef at the current start tick is then a genuine new
+                // system clef and `writeElement` writes it with
+                // `after-barline="yes"` — so the skip stays limited to tick 0.
                 None => measure.start_tick.is_zero(),
             };
             if already_written {
