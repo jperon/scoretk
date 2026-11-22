@@ -7468,3 +7468,15 @@ fn scheme_parser_set_note_names_change_la_langue() {
         vec![58]
     );
 }
+#[test]
+fn scheme_music_map_joue_sa_musique() {
+    // `music-map-articulations.ly` : `$(music-map … #{ c\ff #})` transforme
+    // des événements mais laisse les hauteurs et le temps.
+    let src = "\\version \"2.24.0\"\n\
+         { $(music-map (lambda (m) m) #{ c'4 d'4 #}) e'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62, 64]
+    );
+}

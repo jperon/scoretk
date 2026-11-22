@@ -2109,6 +2109,13 @@ impl<'a> Parser<'a> {
                     music
                 } else if let Some(music) = self.variables.get(&datum).cloned() {
                     music
+                } else if datum.contains("music-map") {
+                    // `music-map` transforme des événements (nuances,
+                    // articulations) mais garde hauteurs et attaques
+                    // (`music-map-articulations.ly`).
+                    crate::lexer::embedded_music_body(&datum)
+                        .map(|corps| self.parse_embedded_music(&corps))
+                        .unwrap_or(Music::Empty)
                 } else {
                     let _ = self.record_scheme_define(&datum);
                     Music::Empty
