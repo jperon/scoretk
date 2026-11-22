@@ -93,17 +93,80 @@ def candidats_avec_midi(source: str) -> list[str]:
     return candidats
 
 
+def avec_midi_dans_scores(texte: str) -> str:
+    r"""Injecte `\midi { }` dans chaque `\score` qui n'en a pas déjà un."""
+    resultat: list[str] = []
+    i = 0
+    while True:
+        debut = texte.find("\\score", i)
+        if debut < 0:
+            resultat.append(texte[i:])
+            break
+        ouverture = texte.find("{", debut)
+        if ouverture < 0:
+            resultat.append(texte[i:])
+            break
+        profondeur = 0
+        fin = None
+        for j in range(ouverture, len(texte)):
+            if texte[j] == "{":
+                profondeur += 1
+            elif texte[j] == "}":
+                profondeur -= 1
+                if profondeur == 0:
+                    fin = j
+                    break
+        if fin is None:
+            resultat.append(texte[i:])
+            break
+        corps = texte[ouverture:fin]
+        resultat.append(texte[i:fin])
+        if "\\midi" not in corps:
+            resultat.append("\n  \\midi { }\n")
+        i = fin
+    return "".join(resultat)
+
+
+def prepare_includes(source: Path, destination: Path) -> list[str]:
+    r"""Copie locale des includes porteurs de `\score`, avec MIDI injecté.
+
+    Les modèles (`satb.ly`, `accidental-glyphs-test.ily`, …) définissent le
+    `\score` dans un fichier inclus. LilyPond résolvant les includes depuis
+    le dossier du fichier compilé, une copie locale avec `\midi { }` permet
+    d'obtenir une référence avec le compilateur installé.
+    """
+    texte = source.read_text(encoding="utf-8", errors="replace")
+    racines = [source.parent, Path("/home/jacques/programmes/musique/lilypond-ref/ly")]
+    copies = 0
+    for nom in re.findall(r'\\include\s*"([^"]+)"', texte):
+        original = next((r / nom for r in racines if (r / nom).is_file()), None)
+        if original is None:
+            continue
+        contenu = original.read_text(encoding="utf-8", errors="replace")
+        if "\\score" not in contenu:
+            continue
+        modifie = avec_midi_dans_scores(contenu)
+        if modifie == contenu:
+            continue
+        (destination / nom).write_text(modifie, encoding="utf-8")
+        copies += 1
+    return ["-I", str(destination)] if copies else []
+
+
 def regenerer(tache: tuple) -> dict:
     src, refs, lot, out = tache
     source = Path(src)
     if not source.is_file():
         return {"fichier": src, "ok": False, "erreur": "source absente"}
     try:
-        candidats = candidats_avec_midi(source.read_text(encoding="utf-8", errors="replace"))
+        texte_source = source.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         return {"fichier": src, "ok": False, "erreur": str(exc)[:100]}
+    candidats = candidats_avec_midi(texte_source)
     if not candidats:
-        return {"fichier": src, "ok": False, "erreur": "pas de score injectable"}
+        # Le `\score` peut venir d'un `\include` (modèles satb/ssaattbb) :
+        # compiler la source telle quelle avec les includes locaux préparés.
+        candidats = [texte_source]
     destination = Path(out) / lot / nom_court(src)
     destination.mkdir(parents=True, exist_ok=True)
     midi = destination / "ly.midi"
@@ -114,11 +177,12 @@ def regenerer(tache: tuple) -> dict:
     midi.unlink(missing_ok=True)
     tmp = destination / "_regen.ly"
     erreur = "aucun candidat n'a compilé"
+    include_args = prepare_includes(source, destination)
     for texte in candidats:
         tmp.write_text(texte, encoding="utf-8")
         midi.unlink(missing_ok=True)
         cp = subprocess.run(
-            ["lilypond", "-dno-print-pages", "-dmidi-extension=midi",
+            ["lilypond", *include_args, "-dno-print-pages", "-dmidi-extension=midi",
              "-o", str(destination / "ly"), str(tmp)],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=120, check=False,
         )

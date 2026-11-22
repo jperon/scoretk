@@ -6268,3 +6268,28 @@ des fins de s'appliquer. Test réduit failing-first.
 Mesure (`/tmp/ly-altfix`, oracle régénéré) : **1568/1724 (91,0 %)**, **+3
 exacts** (`lyric-repeat-count-alternatives`, `repeat-petrucci-alternatives`,
 `volta-spec-ossia`), **0 perte**.
+
+### Références non régénérables et dénominateur ajusté
+
+La doc en ligne de LilyPond 2.26 (`lilypond --help`) expose `-e/--evaluate`,
+`-i/--init` et `-I/--include` ; `lily/main.cc:128` ne fait que déclarer
+`-e`, et `lily/lily-parser-scheme.cc:256-271` indique que
+`ly:parser-parse-string` n'est valable que sur un parseur neuf : aucun de ces
+mécanismes ne permet d'ajouter un `\midi { }` à un `\score` implicite déjà
+en cours d'analyse. En revanche, une **copie locale du fichier inclus**
+porteur du `\score` (`satb.ly`, `accidental-glyphs-test.ily`) avec
+`\midi { }` injecté, compilée avec `-I <copie>`, donne une référence valide.
+`regen-refs.py` implémente cette reprise : 11 des 24 fichiers précédemment
+irrégénérables ont maintenant une référence valide (7 modèles
+satb/ssaattbb, 4 tests de glyphes), sans changement du score mesuré
+(1568, 0 gain/perte).
+
+Restent **11 fichiers sans référence valide** (sources pilotées par des
+fonctions Scheme ou dont le `\score` ne peut être injecté) :
+`chord-name-major7`, `chord-names-languages{,2}`, `drum-scripts`,
+`ledger-line-properties`, `part-combine{, -cross, -global}`, `retrograde`,
+`satb-template-with-keyboard-reduction`, `tag-filter`. Comme les références
+inutilisables documentées ailleurs, ils sont comptés dans un bucket séparé
+« no valid reference » **hors du dénominateur** (`/tmp/ly95-no-ref.txt`).
+Mesure ajustée (`/tmp/ly-validmeas`) : **1568/1713 (91,5 %)**, 15 vides ;
+le chiffre 1568/1724 (91,0 %) reste valable avec le dénominateur complet.
