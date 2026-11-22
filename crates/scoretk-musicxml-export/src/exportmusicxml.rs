@@ -886,8 +886,14 @@ impl<'a> Context<'a> {
         let staves = part.staves.len();
         // Un saut de section rouvre une section : la numérotation repart à 1
         // et les `<attributes>` de début de section sont réécrits
-        // (`MeasureNumberStateHandler`).
-        let is_first = measure_index == 0 || measure.section_break_before;
+        // (`MeasureNumberStateHandler`). `isFirstActualMeasure`
+        // (`exportmusicxml.cpp:8307-8310`) ne redevient vrai qu'après
+        // `init()`, appelé seulement si le saut porte `startWithMeasureOne`
+        // (`updateForMeasure`, `exportmusicxml.cpp:8281-8286`). Un saut qui
+        // conserve la numérotation ne réécrit donc ni `<divisions>` ni
+        // `<staves>` (« TecumPrincipium fredipi » : 2 blocs en trop).
+        let is_first = measure_index == 0
+            || (measure.section_break_before && !measure.section_keeps_numbering);
 
         let (number, implicit) = self.measure_number(measure_index);
         // `stable_ids` ajoute `id` et `xml:id` de mesure (même valeur),
@@ -2253,9 +2259,9 @@ impl Context<'_> {
                     // sur cs2, la clef posée au début de la mesure courante,
                     // quand cs1 (en-tête ou mesure précédente) est absent.
                     // Sans ce repli, une clef 8va posée sur une portée sans
-                    // HeaderClef était remplacée par la clef par défaut puis
-                    // réécrite par `writeElement` : deux `<clef>` dans
-                    // `Stella_maris_instruments - La`.
+                    // HeaderClef était remplacée par la clef par défaut et
+                    // réécrite ensuite par `writeElement` (deux `<clef>` dans
+                    // `Stella_maris_instruments - La`).
                     find_segment(measure, SegmentType::Clef, measure.start_tick)
                         .and_then(|segment| segment.element(track))
                 });
@@ -2344,8 +2350,8 @@ impl Context<'_> {
                             && other_clef.transposed == clef.transposed)
                 }),
                 // Sans HeaderClef pour cette portée, `write_measure_clefs`
-                // vient d'écrire cette clef (repli cs2 ou clef par défaut) :
-                // `writeElement` ne doit pas la réécrire.
+                // vient d'écrire cette même clef (repli cs2 ou clef par
+                // défaut) : `writeElement` ne doit pas la réécrire.
                 None => measure.start_tick.is_zero(),
             };
             if already_written {

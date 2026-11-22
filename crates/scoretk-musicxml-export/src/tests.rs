@@ -2743,6 +2743,43 @@ fn saut_de_section_sans_reprise_garde_le_numero() {
     );
 }
 
+/// `isFirstActualMeasure` (`exportmusicxml.cpp:8307-8310`) n'est vrai
+/// qu'après une remise à zéro du compteur, c'est-à-dire seulement quand le
+/// saut de section porte `startWithMeasureOne`
+/// (`MeasureNumberStateHandler::updateForMeasure`, `exportmusicxml.cpp:8281-8286`).
+/// Un saut qui conserve la numérotation ne doit donc pas réécrire
+/// `<divisions>` : cas réel « TecumPrincipium fredipi » (deux blocs
+/// `<attributes><divisions>24</divisions></attributes>` en trop).
+#[test]
+fn saut_de_section_sans_reprise_ne_rewrite_pas_les_divisions() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    let track = Track::new(score.staff(staff).id, 0);
+    for index in 0..2 {
+        let mut measure = ajouter_mesure(
+            index,
+            Fraction::from_integer(index as i64),
+            Fraction::ONE,
+            Fraction::ONE,
+        );
+        if index == 1 {
+            measure.section_break_before = true;
+            measure.section_keeps_numbering = true;
+        }
+        ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+        ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+        score.add_measure(measure);
+    }
+
+    let xml = export_musicxml(&score).expect("export");
+    assert_eq!(
+        xml.matches("<divisions>").count(),
+        1,
+        "un saut sans startWithMeasureOne ne doit pas réécrire divisions :\n{xml}"
+    );
+}
+
 /// `midiInstrument` (`exportmusicxml.cpp:7337-7346`) utilise le canal alloué
 /// au **premier** `<Channel>` de l'instrument dans `rebuildMidiMapping`, qui
 /// parcourt tous les canaux secondaires (mute, harmony…). Trois canaux par
