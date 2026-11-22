@@ -2925,11 +2925,30 @@ impl<'a> Parser<'a> {
                 }
                 music
             }
-            // `\lyrics`, `\simultaneous`, `\notemode`… ne font que changer le
-            // mode de lecture des jetons suivants ; la musique enveloppée
-            // reste la même. Sans ce cas, la commande était traitée comme
-            // inconnue et sa musique sautée, laissant le fichier sans
-            // partition.
+            // `\simultaneous { … }` est le jumeau de `<< … >>`
+            // (`SIMULTANEOUS braced_music_list`, `lily/parser.yy` l. 1581-1588 ;
+            // `scm/define-music-types.scm` l. 719) : les éléments du bloc sont
+            // simultanés, alors que le lire comme une séquence décalait la
+            // seconde voix après la première (`bach_air_bmv_1068`, guitare).
+            "simultaneous" => {
+                if self.peek().is_some_and(|token| token.is_punct('{')) {
+                    self.position += 1;
+                    let mut items = Vec::new();
+                    while !self.at_end() && !self.eat_punct('}') {
+                        let before = self.position;
+                        let item = self.parse_music();
+                        if !item.is_empty() {
+                            items.push(item);
+                        }
+                        self.guard_progress(before);
+                    }
+                    Music::Sim(items)
+                } else {
+                    self.parse_music()
+                }
+            }
+            // `\lyrics`, `\notemode`… ne font que changer le mode de lecture
+            // des jetons suivants ; la musique enveloppée reste la même.
             _ if is_mode_head(&name) => self.parse_music(),
             // `\markup` accepte une chaîne, une commande de mise en forme ou un
             // bloc entre accolades. Sans accolade, on s'arrête devant la
@@ -4973,6 +4992,9 @@ fn is_mode_head(name: &str) -> bool {
             | "figures"
             | "lyrics"
             | "drums"
+            // `parse_command` a une branche explicite pour `\simultaneous`
+            // (bloc simultané) ; le garder ici le fait reconnaître comme
+            // musique au niveau supérieur (`at_toplevel_music`).
             | "simultaneous"
     )
 }

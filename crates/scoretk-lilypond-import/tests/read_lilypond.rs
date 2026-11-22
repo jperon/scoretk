@@ -278,6 +278,37 @@ fn accord_renverse_place_les_notes_au_dessus_de_la_basse() {
     assert_eq!(hauteurs, vec![62, 65, 70]);
 }
 
+/// `\simultaneous { … }` est le jumeau de `<< … >>` (`SIMULTANEOUS
+/// braced_music_list`, `lily/parser.yy` l. 1581-1588) : les elements du bloc
+/// sont simultanes. Lire le bloc comme une sequence decalait la seconde voix
+/// apres la premiere (`bach_air_bmv_1068`, guitare).
+#[test]
+fn simultaneous_est_simultane() {
+    let source =
+        "\\version \"2.18.2\"\n\\score { \\new Staff { \\simultaneous { { c'4 } { e'4 } } } }";
+    let score = read_lilypond(source).expect("lecture");
+    let mut attaques: Vec<(u8, bool)> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .flat_map(|segment| {
+            segment
+                .iter_elements()
+                .filter_map(|(_, element)| match element {
+                    SegmentItem::ChordRest(chord_rest) => {
+                        let chord = chord_rest.chord_ref()?;
+                        let pitch = score.note(*chord.notes.first()?).pitch;
+                        Some((pitch, segment.tick.ticks(1920) == 0))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    attaques.sort_unstable();
+    assert_eq!(attaques, vec![(60, true), (64, true)]);
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");
