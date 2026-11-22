@@ -5541,6 +5541,23 @@ Mesure sur le lot mscz (deux binaires frères, `--mode model`) : exacts
 155 → **156**, `Angels_Carol` retrouve ses 1974 notes, aucune perte ; +14
 octets sur les `.ly` du lot.
 
+### Oracle : ne déplier les reprises que pour les sources non-`.ly`
+
+L'oracle d'écriture injectait systématiquement `\unfoldRepeats` autour du
+`\score` des candidats. Pour une source `.ly`, la référence est le MIDI de
+cette même source, compilée sans injection : un `\repeat volta` y joue une
+fois, contre deux chez le candidat. C'est l'artefact qui classait à tort 33
+fichiers du lot `ly` comme non-exacts (`notes_supp`, `attaque_decalee`).
+
+`injecter_midi(texte, unfold)` et `compiler_lilypond(..., unfold)` prennent
+maintenant `unfold = not src.endswith(".ly")`. Les sources MuseScore/MusicXML
+gardent l'injection (leur référence MIDI déplie les reprises). Selftest
+d'abord : `injecter_midi(src, unfold=False)` n'émet pas de `\unfoldRepeats`.
+
+Mesure sur le lot `ly` complet (1 447 fichiers, deux binaires frères) :
+exacts 1 348 → **1 381**, **33 fichiers gagnés, aucune perte**. C'est une
+correction de mesure : elle ne change aucun `.ly` produit.
+
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire

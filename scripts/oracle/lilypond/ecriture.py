@@ -129,7 +129,7 @@ def texte_source(src: str) -> str:
     return texte
 
 
-def injecter_midi(texte: str) -> str | None:
+def injecter_midi(texte: str, unfold: bool = True) -> str | None:
     """Ajoute un ``\\midi`` et déplie les reprises dans le dernier ``\\score``.
 
     On insère ``\\unfoldRepeats { … }`` autour de la musique du ``\\score``,
@@ -182,17 +182,20 @@ def injecter_midi(texte: str) -> str | None:
     corps = texte[ouverture + 1 : i]
     # Le \\layout global précède le \\score ; on ne regarde que son corps.
     layout = re.search(r"\n[ \t]*\\layout\b", corps)
-    if layout:
-        nouveau = "\\unfoldRepeats {\n" + corps[: layout.start()] + "\n}\n" + corps[layout.start() :]
+    if unfold:
+        if layout:
+            nouveau = "\\unfoldRepeats {\n" + corps[: layout.start()] + "\n}\n" + corps[layout.start() :]
+        else:
+            nouveau = "\\unfoldRepeats {\n" + corps + "\n}"
     else:
-        nouveau = "\\unfoldRepeats {\n" + corps + "\n}"
+        nouveau = corps
     nouveau += "\n\\midi { }\n"
     return texte[: ouverture + 1] + nouveau + texte[i:]
 
 
-def compiler_lilypond(args, ly: Path, sortie: Path) -> dict:
+def compiler_lilypond(args, ly: Path, sortie: Path, unfold: bool = True) -> dict:
     """Compile un ``.ly`` ; renvoie état, erreurs/avertissements, MIDI."""
-    injecte = injecter_midi(ly.read_text(encoding="utf-8", errors="replace"))
+    injecte = injecter_midi(ly.read_text(encoding="utf-8", errors="replace"), unfold)
     resultat = {
         "compile_ok": False, "code_ly": None, "erreurs": 0, "avertissements": 0,
         "erreur": "", "taille_ly": ly.stat().st_size if ly.is_file() else 0,
@@ -438,7 +441,7 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                         ecrire(out, r)
                         continue
                     ly = tk_ly
-                r.update(compiler_lilypond(args, ly, work / f"{outil}.mid"))
+                r.update(compiler_lilypond(args, ly, work / f"{outil}.mid", unfold=not src.endswith(".ly")))
                 r["temps"] = round(time.monotonic() - debut_outil, 3)
                 if not r["compile_ok"]:
                     r["drapeaux"] = ["compilation"]
@@ -564,6 +567,12 @@ def selftest() -> None:
     src = '\\version "2.24"\n\\score {\n  << c\'1 >>\n  \\layout { }\n}\n'
     injecte = injecter_midi(src)
     assert injecte and "\\unfoldRepeats {" in injecte and "\\midi { }" in injecte, injecte
+    # Une source `.ly` est comparée au MIDI de cette même source, compilée sans
+    # injection : le candidat ne doit pas déplier ses reprises (sinon les
+    # `
+    # repeat volta : deux fois dun cote et une de lautre).
+    brut = injecter_midi(src, unfold=False)
+    assert brut and "\\unfoldRepeats" not in brut and "\\midi { }" in brut, brut
     # Une accolade dans un commentaire ou une chaîne ne doit pas tromper le comptage.
     src2 = '\\score {\n  << c\'1 >> % }\n  \\markup { "}" }\n  \\layout { }\n}\n'
     assert injecter_midi(src2), "accolade de commentaire mal comptée"
