@@ -5658,6 +5658,37 @@ Mesure sur le lot mscz (deux binaires frères, `--mode model`) : exacts
 156 → **159**, `Magnificat__Prt` et les deux `Omni_die_dic_Mariae` gagnés,
 aucune perte ; taille des `.ly` inchangée (26 614 octets).
 
+### Liaisons inter-voix : alternatives LilyPond évaluées (preuve conservée)
+
+La Notation Reference §2.1.4 (« Ties ») documente trois sorties de liaison
+unilatérale : `\laissezVibrer` (liaison vers rien), `\repeatTie` (liaison
+depuis rien, notamment en seconda volta), et `tieWaitForNote = ##t` qui garde
+une liaison en attente — mais son exemple (`lilypond-ref` doc, §2.1.4) reste
+**dans une seule voix**. Le §7.1.4 (« Hidden notes ») et le renvoi du chapitre
+clavier (« Hidden notes can be used to produce ties that cross voices »)
+proposent d'ajouter une note cachée dans la voix de départ : cela **ajoute une
+tête au modèle relu**, donc une note surnuméraire pour l'oracle, et fait
+croître la sortie — contraire à la consigne.
+
+**Tentative mesurée et revertée** : écrire `\repeatTie` (`ly/declarations-init.ly:104`)
+sur la note d'arrivée avec un appariement global par hauteur côté lecteur.
+Résultat sur le lot mscz : exacts **155 → 155**, `Il_Postino` passe de 470 à
+469 notes relues mais n'atteint pas l'exactitude ; `Ave_Verum` (liaison
+`E4` voix 2 mesure 32 → voix 1 mesure 33) reste à +1 note ; la sortie
+grossissait de 35 jetons `\repeatTie` sur ce seul fichier. Revertée : aucun
+gain, croissance de taille. La preuve est donc conservée pour les 12 fichiers
+mscz concernés.
+
+**`02_01_CommentLeSaisJe.ly`** : le défaut est dans le **lecteur LilyPond**,
+pas dans l'écrivain. `parser.rs:3122` calcule `fifths` avec
+`pitch::fifths_of(tonic)` pour les deux modes ; pour une armure mineure il
+faut prendre la relative majeure (tonic + 3 demi-tons). `\key d \minor` est
+ainsi lu `fifths = +1` (arrondi au modèle +2) au lieu de −1 : un fichier
+minimal ne contenant que cette armure produit déjà `<fifths>2</fifths>` et
+`\key b \minor` à la réécriture, sans passer par le writer. À signaler pour
+ly95 ; l'écrivain se contente de recopier l'armure du modèle
+(`pitch.rs::key_signature`).
+
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire
