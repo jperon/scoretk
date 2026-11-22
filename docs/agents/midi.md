@@ -429,8 +429,8 @@ measures), so the source-notes comparison is pitch + onset.
 | Lot | Files | Exact | N1 % | N2 % | N2d % | N2v % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | upstream `.mscx` | 96 | 94 (97,9 %) | 100,00 | 99,88 | 99,88 | 98,71 |
-| LilyPond `.ly` (87 excluded) | 932 | 914 (98,1 %) | 99,95 | 99,84 | — | — |
-| all comparable | 1 028 | **1 008 (98,1 %)** | **99,95** | **99,84** | — | — |
+| LilyPond `.ly` (87 excluded) | 932 | 916 (98,3 %) | 99,97 | 99,87 | — | — |
+| all comparable | 1 028 | **1 010 (98,2 %)** | **99,97** | **99,87** | — | — |
 
 Percentages are weighted by the reference notes (100 028). On the `.mscx` lot
 the exactness includes voice and duration; on the `.ly` lot it is
@@ -452,11 +452,17 @@ unmatched note with the finest cause: `note sup` (extra note),
 | --- | ---: | --- |
 | `attaque` | 8 | `up-human_4-4` |
 | `note sup` | 8 | `ly-lily-30ec2d9a` |
-| `octave` | 2 | `ly-Kryshachok` |
+| `octave` | 1 | `ly-Lassus_Alleluja._Dies_sanctificatus` |
 | `voix` | 1 | `up-tuplet_3_5_7_tuplets` |
-| `note manquante` | 1 | `ly-02_01_CommentLeSaisJe` |
 
-Three causes explain almost all of them, and two are measurement gaps rather
+Two reader fixes of this pass show up here because the `.ly` references are
+converted to MusicXML by the same binary: `Kryshachok` (`\chordmode` octave
+marks, Cause 43 of `lilypond.md`) and `02_01_CommentLeSaisJe` (`a:7m`, Cause
+44) become exact, 1 008 → **1 010/1 028**, no per-file loss and no N1/N2/N2v
+regression. `Lassus_Alleluja` stays `octave` (inconsistent `.ly`/MIDI pair,
+documented below).
+
+Three causes explain almost all the rest, and two are measurement gaps rather
 than importer defects:
 
 - **per-test options** (fixed here): `quant_dotted_4th` runs with
