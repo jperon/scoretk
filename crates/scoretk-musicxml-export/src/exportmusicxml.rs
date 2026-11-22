@@ -1571,6 +1571,15 @@ impl Context<'_> {
         track: Track,
         ids: StableIds,
     ) {
+        // Un accord sans hauteur (silence déguisé, `\skip` portant une
+        // annotation comme le tempo d'ouverture) n'écrit aucune note : sans
+        // cette sortie, `chord()` avançait quand même le curseur et la
+        // portée laissait un `<backup>` sans contenu, qui décalait la
+        // lecture de toutes les portées suivantes (Symphony5_1/2, deux
+        // mesures perdues à l'ouverture).
+        if chord.notes.is_empty() && chord.grace_chords.is_empty() {
+            return;
+        }
         let before: Vec<usize> = (0..chord.grace_chords.len())
             .filter(|index| {
                 let kind = chord.grace_chords[*index]

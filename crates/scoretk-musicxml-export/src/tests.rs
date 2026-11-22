@@ -276,6 +276,40 @@ fn divisions_et_triolet() {
 }
 
 #[test]
+fn accord_sans_note_n_avance_pas_le_curseur() {
+    // Un accord sans hauteur (silence déguisé portant une annotation) n'écrit
+    // aucune note : il ne doit pas avancer le curseur, sinon la portée laisse
+    // un `<backup>` sans contenu qui décale la lecture (Symphony5_1/2).
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_element(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        ChordRest::chord(Duration::whole()),
+    );
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::HALF,
+        Duration::half(),
+        &[(72, tpc::C)],
+    );
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(!xml.contains("<backup>"), "aucun retour en arrière : {xml}");
+    assert!(xml.contains("<forward>"));
+    assert!(xml.contains("<step>C</step>"));
+}
+
+#[test]
 fn deux_voix_backup() {
     let mut score = Score::new();
     let (_, staff) = piano(&mut score);
