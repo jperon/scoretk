@@ -236,6 +236,11 @@ def selftest() -> None:
     # Les deux familles converties par convert-ly ne sont plus exclues.
     assert commandes_obsoletes("\\compressMusic #'(3 . 2) { c4 }") == []
     assert commandes_obsoletes("\\compressFullBarRests c4") == []
+    # `\\fermataMarkup` (converti en `\\fermata` par `convertrules.py` l. 4237)
+    # n'est pas exclu non plus : `references.py` le convertit. La distinction
+    # « isolé » (le rattrapage insère un silence) / « post-événement »
+    # (`R1^\\fermataMarkup`, sans effet sur la durée) est donc sans objet.
+    assert commandes_obsoletes("\\fermataMarkup c4") == []
     assert commandes_obsoletes("\\compressEmptyMeasures c4") == []
     assert raison_hors_lecteur({"code": 0}, "\\deprecatedcresc c4").startswith(
         "source obsolète"
