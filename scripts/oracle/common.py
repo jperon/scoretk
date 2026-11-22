@@ -50,6 +50,36 @@ STATUT = "NON_PRIS_EN_CHARGE"
 """Status written in the ABC reading table for an excluded tune."""
 
 
+def lire_midi(path: str):
+    """Lit un SMF avec mido, en tolérant une armure hors norme.
+
+    L'armure (`FF 59 02 sf mi`) n'intervient pas dans l'extraction des notes,
+    mais mido lève `KeySignatureError` dès que `sf` sort de −7…+7
+    (`mido/midifiles/meta.py`, `KeySignature.decode` et
+    `_key_signature_decode`). LilyPond en écrit par exemple 8 (`Egmont`,
+    armure de lab majeur enharmonique). On complète la table de décodage pour
+    toutes les valeurs signées d'un octet, sans toucher aux notes ; les
+    entrées valides ne sont pas remplacées (`setdefault`).
+
+    Le correctif est appliqué ici, et non dans chaque oracle, pour que
+    `midi_notes.py` (écriture/robustesse) et `ly_notes.py` (lecture LilyPond)
+    partagent le même comportement.
+    """
+    import mido
+    from mido.midifiles import meta
+
+    for key in range(-128, 128):
+        for mode in (0, 1):
+            if (key, mode) in meta._key_signature_decode:
+                continue
+            # `KeySignature.check` valide la valeur contre la table d'encodage :
+            # on nomme l'armure hors norme comme la plus proche armure valide
+            # (8 dièses → « C# »), sans effet sur les notes.
+            proche = max(-7, min(7, key))
+            meta._key_signature_decode[(key, mode)] = meta._key_signature_decode[(proche, mode)]
+    return mido.MidiFile(path)
+
+
 def est_non_pris_en_charge(code: int | None) -> bool:
     """True when ``code`` is the CLI's "unsupported input" exit code."""
     return code == EXIT_UNSUPPORTED

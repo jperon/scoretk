@@ -40,7 +40,12 @@ from collections import Counter, defaultdict, deque
 import json
 import xml.etree.ElementTree as ET
 
-import mido
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import common  # noqa: E402
 
 GRID = 0.25  # pas de quantification : une double croche = 1/16 de noire
 TOL = 0.25  # tolérance de rapprochement : ±1/16 de noire
@@ -68,7 +73,7 @@ def read_midi(path: str) -> list[tuple[int, float, float, int]]:
     encore libre de cette hauteur et le marque consommé (FIFO). Une table
     simple écrasait l'attaque précédente et perdait la note la plus ancienne.
     """
-    mid = mido.MidiFile(path)
+    mid = common.lire_midi(path)
     tpb = mid.ticks_per_beat or 480
     notes: list[tuple[int, float, float, int]] = []
     for index, track in enumerate(mid.tracks):

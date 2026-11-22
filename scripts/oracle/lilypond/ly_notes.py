@@ -60,7 +60,13 @@ import argparse
 from collections import Counter
 import json
 import re
+import sys
+from pathlib import Path
 import xml.etree.ElementTree as ET
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import common  # noqa: E402
 
 GRID = 0.25  # pas de quantification : une double croche = 1/16 de noire
 TOL = 0.25  # tolérance de rapprochement : ±1/16 de noire
@@ -95,10 +101,9 @@ def read_midi(path: str) -> list[tuple[int, float, float, int]]:
     `midishared/midifile.cpp` apparie chaque note-on au premier note-off
     encore libre). Une table simple écraserait l'attaque précédente.
     """
-    import mido
     from collections import defaultdict, deque
 
-    mid = mido.MidiFile(path)
+    mid = common.lire_midi(path)
     tpb = mid.ticks_per_beat or 480
     notes: list[tuple[int, float, float, int]] = []
     for index, track in enumerate(mid.tracks):
