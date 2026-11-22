@@ -1670,6 +1670,12 @@ impl Context<'_> {
         let transpose = self.transpose_chromatic(track.staff(), segment_tick);
         // Hauteur écrite : une ottava décale l'octave exportée.
         let ottava = ottava::shift(self.score, track.staff(), segment_tick);
+        // `attack` (MusicXML 4.0, attribut de `<note>`) décale la lecture sans
+        // déplacer le curseur logique ; `<offset>` n'est pas autorisé sur une
+        // note (xsd, complexType note, attribut attack).
+        let attack = grace
+            .and_then(|grace| grace.offset)
+            .map(|offset| out.duration_in_divisions(offset).to_string());
 
         for (index, note_id) in chord.notes.iter().enumerate() {
             let note = self.score.note(*note_id);
@@ -1711,6 +1717,9 @@ impl Context<'_> {
                 note_attributes.push(("id", id));
                 note_attributes.push(("xml:id", id));
             }
+            if let Some(attack) = &attack {
+                note_attributes.push(("attack", attack));
+            }
             out.xml.start_element("note", &note_attributes);
 
             if grace.is_some() {
@@ -1731,11 +1740,6 @@ impl Context<'_> {
             }
 
             write_pitch(out, note, self.concert_pitch, transpose, ottava);
-
-            if let Some(offset) = grace.and_then(|grace| grace.offset) {
-                out.xml
-                    .tag("offset", &out.duration_in_divisions(offset).to_string());
-            }
 
             if grace.is_none() {
                 out.xml.tag(

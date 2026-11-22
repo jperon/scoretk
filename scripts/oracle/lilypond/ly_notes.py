@@ -234,8 +234,14 @@ def read_xml(
                 # `<offset>` décale la lecture sans déplacer le curseur
                 # logique. L'écrivain s'en sert pour un ornement après
                 # l'accord (`\afterGrace`), joué à 3/4 de la note principale.
+                # MusicXML 4.0 : l'attribut `attack` d'une note décale sa
+                # lecture (en divisions, positif ou négatif). L'ancien
+                # `<offset>` enfant n'est pas valide sur une note ; il reste lu
+                # pour les sorties d'autres outils qui l'utilisent.
+                attack_texte = elem.get("attack")
                 offset_texte = elem.findtext("offset")
-                offset = int(float(offset_texte)) / divisions if offset_texte else 0.0
+                decalage = attack_texte if attack_texte is not None else offset_texte
+                offset = int(float(decalage)) / divisions if decalage else 0.0
                 jouee = attaque + offset
                 pitch = elem.find("pitch")
                 if pitch is None:
@@ -583,8 +589,8 @@ def selftest() -> None:
           <attributes><divisions>4</divisions></attributes>
           <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration>
             <voice>1</voice></note>
-          <note><grace/><pitch><step>D</step><octave>4</octave></pitch>
-            <offset>-1</offset><voice>1</voice></note>
+          <note attack="-1"><grace/><pitch><step>D</step><octave>4</octave></pitch>
+            <voice>1</voice></note>
           <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration>
             <voice>1</voice></note>
         </measure></part></score-partwise>"""
