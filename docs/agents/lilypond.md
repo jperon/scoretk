@@ -4811,3 +4811,40 @@ explicite, la mesure finale (`/tmp/ly-ra-final3`) donne **1402 exacts (81,3 %)**
 cinq fichiers de plus gagnés et aucune perte. Il reste 33 `sortie_vide`, 108
 `attaque_decalee`, 62 `octave`, 62 `notes_manquantes`, 55 `notes_supp`,
 4 `transposition`, 3 `autre`, 1 `echec`.
+
+## `ra` — attaques décalées (lot de 108)
+
+Sous-classification des 108 fichiers `attaque_decalee` de la mesure
+`/tmp/ly-ra-final3` par constructeur dominant (première divergence, le plus
+gros groupe d'abord) : `grace` 36, `markup`/`tweak` 22, `repeat`/`volta` 20,
+sans constructeur distinctif 20, `book`/`score` 5, `transpose`/`clef` 2,
+voix 2, tuplet 1 (44 fichiers contiennent en fait un ornement). La première
+attaque diverge dès le début pour 13 fichiers seulement ; pour les 95 autres
+elle est juste et l'écart apparaît plus tard.
+
+Quatre causes, test réduit échouant d'abord pour chacune :
+
+1. **`\maxima`** (`scm/define-music-display-methods.scm:114` : log2 = −3,
+   donc 8 rondes) était lu comme un `\longa` (4 rondes). Le facteur ×2 est
+   porté par le multiplicateur, y compris pour la durée par défaut. Test
+   `maxima_vaut_huit_rondes`. Mesure ciblée (33 fichiers avec durées longues) :
+   **3 gains exacts**, 0 perte.
+2. **Identifiant de durée Scheme** (`lily/duration-scheme.cc:53-99`) :
+   `nom = #(ly:make-duration 0 0 1/2)` puis `c'\nom` porte un facteur de
+   compression 1/2 sur une ronde, et fixe la durée par défaut suivante. Test
+   `identifiant_de_duree_compresse`. Même mesure : **1 gain exact**
+   (`duration-identifier-compressed.ly`), 0 perte.
+3. **`\augmentum`** (`ly/ancient-init.ly:124-130` : `shift-duration-log expr 0 1`)
+   ajoute une mora (un point) à chaque durée de l'expression suivante, y
+   compris aux notes nues (leur durée est alors prise au parseur). Test
+   `augmentum_ajoute_un_point_a_la_duree`. Mesure ciblée : **2 gains exacts**
+   (`augmentum`, `mensural-ligatures`), 0 perte.
+4. **`\pitchedTrill`** (`ly/music-functions-init.ly:1707-1712`) : le second
+   argument est la tête de note entre parenthèses, gravée mais non jouée.
+   Test `pitched_trill_ne_joue_pas_la_note_secondaire`. Mesure ciblée (5
+   fichiers) : **3 gains exacts**, 0 perte.
+
+La mesure complète finale (`/tmp/ly-ra-final4`) donne **1410 exacts sur 1724
+(81,8 %)**, huit fichiers gagnés et aucune perte par rapport aux 1402. Restent
+101 `attaque_decalee`, 62 `octave`, 62 `notes_manquantes`, 49 `notes_supp`,
+33 `sortie_vide`, 4 `transposition`, 3 `autre`, 1 `echec`.
