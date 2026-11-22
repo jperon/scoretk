@@ -4760,6 +4760,28 @@ the same grid reason. The `scheme`, `transpose/clef/key` and `include`
 groups are heterogeneous (named `GrandStaff`, `\change Staff`, arpeggios,
 duplicate staff names in the MIDI score); each needs a new reduction.
 
+### The 7 `attaque` files of the MIDI import lot: not a reader tie defect
+
+In the MIDI import measurement (`docs/agents/midi.md`), seven files
+(`lily-ed3284f3` and its copies, `LeCheminDeSaintJacques`) have three notes
+in the `.ly` reference that the MIDI does not attack. Minimal reproduction:
+
+```
+VoixI = \relative do' { re4 re | fa4 fa8 r | ... }
+```
+
+At tick 2 the reference has `fa4` (1 quarter) **and** `fa8` (1/2) as two
+attacks; the stored `lily-ed3284f3.midi` has a single `fa` of 1.5 quarters.
+Regenerating the MIDI from the stored `.ly` with LilyPond gives the same
+single 1.5 note, so the MIDI genuinely lacks the attack — it was produced from
+a version of the source where the note was tied (the original
+`Partitions/LeCheminDeSaintJacques/LeCheminDeSaintJacques.ly` no longer
+exists, only the `lilypond-book` excerpt). Our reader reads the stored `.ly`
+faithfully (two attacks; ties are merged elsewhere: the second voice's
+`la4~ la8` is merged as expected), so there is **no reader tie defect to fix**
+here; the pair (stored `.ly`, stored `.midi`) is inconsistent. The import
+itself is faithful to the MIDI.
+
 ### Cause 5: `\octaveCheck` consumes its pitch
 
 `\octaveCheck` is a music function taking a pitch and producing a
