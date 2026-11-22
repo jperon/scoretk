@@ -2909,3 +2909,210 @@ gap is in their interaction, not a missing clause.
 
 No per-file regression was introduced: this pass added only the §32 table and
 these notes. Core-identical counts for MusicXML export are untouched.
+
+### 32.1 Inventory after the two oracle fixes (2026-11-22)
+
+After the two preprocessing fixes below, **4 575 / 4 756 tunes are exact**
+(4 460 at the §32 baseline). One line per remaining non-exact tune.
+
+| Group | Tunes | File | X |
+| --- | ---: | --- | --- |
+| SANS_X | 109 | `decorations.test__abcTrills.abc` | `sans X:` |
+| SANS_X |  | `directives.test__voiceColorAbc.abc` | `sans X:` |
+| SANS_X |  | `directives.test__voiceColorAbc2.abc` | `sans X:` |
+| SANS_X |  | `example-002.abc` | `sans X:` |
+| SANS_X |  | `example-003.abc` | `sans X:` |
+| SANS_X |  | `example-004.abc` | `sans X:` |
+| SANS_X |  | `example-005.abc` | `sans X:` |
+| SANS_X |  | `example-010.abc` | `sans X:` |
+| SANS_X |  | `example-011.abc` | `sans X:` |
+| SANS_X |  | `flattener.test__abc8vaTest.abc` | `sans X:` |
+| SANS_X |  | `flattener.test__abcMultiple.abc` | `sans X:` |
+| SANS_X |  | `flattener.test__abcTrillTest.abc` | `sans X:` |
+| SANS_X |  | `layout.test__equalSpacing.abc` | `sans X:` |
+| SANS_X |  | `layout.test__lineTooWide.abc` | `sans X:` |
+| SANS_X |  | `multi-voice.test__abcChordsSecondVoice.abc` | `sans X:` |
+| SANS_X |  | `multi-voice.test__abcOverlayRests.abc` | `sans X:` |
+| SANS_X |  | `multi-voice.test__abcRestPlacementBug.abc` | `sans X:` |
+| SANS_X |  | `multi-voice.test__abcRestPlacementOne.abc` | `sans X:` |
+| SANS_X |  | `multi-voice.test__abcRestPlacementTwoStaff.abc` | `sans X:` |
+| SANS_X |  | `multi-voice.test__abcTripletBrackets.abc` | `sans X:` |
+| SANS_X |  | `multi-voice.test__abcTripletSecondLine.abc` | `sans X:` |
+| SANS_X |  | `multi-voice.test__abcTwoVoiceRestsTripletsWords.abc` | `sans X:` |
+| SANS_X |  | `options.test__abcBasic.abc` | `sans X:` |
+| SANS_X |  | `parsing.test__abcKeyWarn.abc` | `sans X:` |
+| SANS_X |  | `start-char.test__abcSlurs.abc` | `sans X:` |
+| SANS_X |  | `svg.test__abcGraceNotes.abc` | `sans X:` |
+| SANS_X |  | `synth.test__abcThatsAPlenty.abc` | `sans X:` |
+| SANS_X |  | `tablature.test__graceNotes.abc` | `sans X:` |
+| SANS_X |  | `tablature.test__guitarCapo.abc` | `sans X:` |
+| SANS_X |  | `tablature.test__skipStaff.abc` | `sans X:` |
+| SANS_X |  | `tablature.test__twoStaves.abc` | `sans X:` |
+| SANS_X |  | `tablature.test__twoVoices.abc` | `sans X:` |
+| SANS_X |  | `tablature.test__violinCrossTune.abc` | `sans X:` |
+| SANS_X |  | `tablature.test__violinDoubleStops.abc` | `sans X:` |
+| SANS_X |  | `tablature.test__violinKeySigs.abc` | `sans X:` |
+| SANS_X |  | `tablature.test__violinUnusualAccidentals.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcAeolian.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcAeolianExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcAll.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcAllExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcBagpipes.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcBagpipesExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcChords.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcChordsExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcChordsSpaced.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcChordsSpacedExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooley.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected0.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected1.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected10.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected11.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected12.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected13.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected2.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected3.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected4.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected5.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected6.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected7.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected8.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected9.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_1.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_10.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_11.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_12.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_13.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_14.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_2.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_3.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_4.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_5.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_6.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_7.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_8.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcCooleyExpected_9.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDimChords.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDimChordsExpected1.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDimChordsExpected10.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDimChordsExpected11.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDimChordsExpected2.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDimChordsExpected3.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDimChordsExpected4.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDimChordsExpected5.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDimChordsExpected6.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDimChordsExpected7.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDimChordsExpected8.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDimChordsExpected9.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDorian.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcDorianExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcGrace.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcGraceExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcInline.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcInlineExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcKeyChange.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcKeyChangeExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcMeasureAccidental.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcMeasureAccidentalExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcMinor.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcMinorExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcMissesAccidental.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcMissesAccidentalExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcNone.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcNoneExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcPerc.abc` | `sans X:` |
+| SANS_X |  | `transpose-output.test__abcPercExpected.abc` | `sans X:` |
+| SANS_X |  | `transpose.test__abcDimChords.abc` | `sans X:` |
+| SANS_X |  | `transpose.test__abcInline.abc` | `sans X:` |
+| SANS_X |  | `transpose.test__abcMissesAccidental.abc` | `sans X:` |
+| SANS_X |  | `wrap.test__abcSplitByText.abc` | `sans X:` |
+| ORACLE_ECHEC | 21 | `directives.test__abcMaxStaves.abc` | `1` |
+| ORACLE_ECHEC |  | `flattener.test__abcTripletChords.abc` | `1` |
+| ORACLE_ECHEC |  | `flattener.test__abcVolumeInChords.abc` | `1` |
+| ORACLE_ECHEC |  | `layout.test__abcMinSpacing.abc` | `1` |
+| ORACLE_ECHEC |  | `midi.test__abcStaccato.abc` | `1` |
+| ORACLE_ECHEC |  | `misc.test__abcBarNumberCrash.abc` | `1` |
+| ORACLE_ECHEC |  | `misc.test__abcDirectives.abc` | `1` |
+| ORACLE_ECHEC |  | `misc.test__abcDirectives2.abc` | `1` |
+| ORACLE_ECHEC |  | `misc.test__abcGlissando.abc` | `1` |
+| ORACLE_ECHEC |  | `misc.test__abcLineWidth.abc` | `1` |
+| ORACLE_ECHEC |  | `note-id.test__abcOctave1.abc` | `1` |
+| ORACLE_ECHEC |  | `note.test__abcZeroLength.abc` | `1` |
+| ORACLE_ECHEC |  | `parsing.test__abc3.abc` | `360` |
+| ORACLE_ECHEC |  | `parsing.test__abc4.abc` | `360` |
+| ORACLE_ECHEC |  | `parsing.test__abc5.abc` | `360` |
+| ORACLE_ECHEC |  | `parsing.test__abc6.abc` | `360` |
+| ORACLE_ECHEC |  | `parsing.test__abc7.abc` | `360` |
+| ORACLE_ECHEC |  | `parsing.test__abc8.abc` | `360` |
+| ORACLE_ECHEC |  | `parsing.test__abc9.abc` | `360` |
+| ORACLE_ECHEC |  | `tablature.test__clefNone.abc` | `1` |
+| ORACLE_ECHEC |  | `tablature.test__extraVertical.abc` | `1` |
+| ORACLE_VIDE | 15 | `example-007.abc` | `2` |
+| ORACLE_VIDE |  | `flattener.test__abcAllTimeSigs.abc` | `1` |
+| ORACLE_VIDE |  | `flattener.test__abcCancelGChord.abc` | `1` |
+| ORACLE_VIDE |  | `flattener.test__abcChangeGChord.abc` | `1` |
+| ORACLE_VIDE |  | `flattener.test__abcChordArpeggio.abc` | `1` |
+| ORACLE_VIDE |  | `flattener.test__abcChordOctave.abc` | `1` |
+| ORACLE_VIDE |  | `flattener.test__abcChordSwing.abc` | `1` |
+| ORACLE_VIDE |  | `flattener.test__abcGuitarChordParams.abc` | `1` |
+| ORACLE_VIDE |  | `flattener.test__abcIgnoreAlternateChords.abc` | `1` |
+| ORACLE_VIDE |  | `flattener.test__abcPowerChord.abc` | `1` |
+| ORACLE_VIDE |  | `layout.test__abcBarLinesBass.abc` | `1` |
+| ORACLE_VIDE |  | `layout.test__abcBarLinesTreble.abc` | `1` |
+| ORACLE_VIDE |  | `misc.test__prelude.abc` | `1` |
+| ORACLE_VIDE |  | `svg.test__abcTimeSigList.abc` | `1` |
+| ORACLE_VIDE |  | `transpose-output.test__abcChordSymbolsExpected.abc` | `1` |
+| DESACCORD_PARTIEL | 14 | `Canzonetta.abc` | `1` |
+| DESACCORD_PARTIEL |  | `HOnTheWabashJig.abc` | `1` |
+| DESACCORD_PARTIEL |  | `HeadlightJig.abc` | `1` |
+| DESACCORD_PARTIEL |  | `book5.abc` | `0860` |
+| DESACCORD_PARTIEL |  | `book6.abc` | `1101` |
+| DESACCORD_PARTIEL |  | `flattener.test__abcOctaveClefs.abc` | `1` |
+| DESACCORD_PARTIEL |  | `laDeplorationDeLaMorteDeJohannesOckeghem.abc` | `1` |
+| DESACCORD_PARTIEL |  | `laDeplorationDeLaMorteDeJohannesOckeghem.abc` | `2` |
+| DESACCORD_PARTIEL |  | `laDeplorationDeLaMorteDeJohannesOckeghem.abc` | `3` |
+| DESACCORD_PARTIEL |  | `laDeplorationDeLaMorteDeJohannesOckeghem.abc` | `5` |
+| DESACCORD_PARTIEL |  | `laPlusDesPlus.abc` | `3` |
+| DESACCORD_PARTIEL |  | `milleRegrets.abc` | `1` |
+| DESACCORD_PARTIEL |  | `petiteCamusette.abc` | `1` |
+| DESACCORD_PARTIEL |  | `petiteCamusette.abc` | `3` |
+| NOTES_MANQUANTES | 10 | `0351-0400.abc` | `381` |
+| NOTES_MANQUANTES |  | `0351-0400.abc` | `399` |
+| NOTES_MANQUANTES |  | `0501-0550.abc` | `507` |
+| NOTES_MANQUANTES |  | `0550-0625.abc` | `612` |
+| NOTES_MANQUANTES |  | `0626-0635.abc` | `631` |
+| NOTES_MANQUANTES |  | `AnnieHughesJig.abc` | `1` |
+| NOTES_MANQUANTES |  | `CampMeetingJigNo2.abc` | `1` |
+| NOTES_MANQUANTES |  | `MardiGrasReel.abc` | `1` |
+| NOTES_MANQUANTES |  | `WindUpReel.abc` | `1` |
+| NOTES_MANQUANTES |  | `americanfifeopus.abc` | `111` |
+| NOTES_SUPPLEMENTAIRES | 6 | `0981-1000.abc` | `994` |
+| NOTES_SUPPLEMENTAIRES |  | `1116-1135_mh.abc` | `1127` |
+| NOTES_SUPPLEMENTAIRES |  | `1116-1135_mh.abc` | `1131` |
+| NOTES_SUPPLEMENTAIRES |  | `book6.abc` | `1091` |
+| NOTES_SUPPLEMENTAIRES |  | `book6.abc` | `1110` |
+| NOTES_SUPPLEMENTAIRES |  | `flattener.test__abcRepeat3.abc` | `1` |
+| REPRISE_OU_TRONCATURE | 2 | `flattener.test__abcDrum.abc` | `1` |
+| REPRISE_OU_TRONCATURE |  | `flattener.test__abcMetronome.abc` | `1` |
+| TRANSPOSITION | 2 | `flattener.test__abcQuarterTones.abc` | `1` |
+| TRANSPOSITION |  | `parsing.test__abcInlineKeyPerVoice.abc` | `1` |
+| DESACCORD_TOTAL | 1 | `flattener.test__abcSnare.abc` | `1` |
+| OCTAVE | 1 | `example-006.abc` | `1` |
+
+### 32.2 Two oracle causes (each committed and measured)
+
+1. `ORNEMENT_COURT` used a lookbehind rejecting a trill after a note letter
+   (`EATA>G`): the oracle copy kept the trill and `abc2midi` realized it into
+   extra notes, so both candidates looked short. ABC 2.1 §4.14, `abc2xml.py`
+   269 `ornMap`/`uSyms` lines 1096-1097 and 1115-1116. Reduced test written
+   first. Measurement `target/abc-mesure-orn/`: **112 tunes gained, 0 lost**
+   (4 460 → 4 572 exact; `NOTES_MANQUANTES` 125 → 13).
+2. `TvG3` puts a down-bow after the trill; the court regex required a note
+   immediately and missed it. The bowing is now kept by a lookahead. Reduced
+   test written first. Measurement `target/abc-mesure-orn2/`: **3 gained, 0
+   lost** (4 572 → 4 575 exact; `NOTES_MANQUANTES` 13 → 10).
+
+Both fixes are in the oracle, not in the reader: they remove notes that
+`abc2midi` *performs* and that neither candidate writes, as documented in
+the oracle README. No scoretk code changed, so `e2e_corpus` is unaffected.
+
