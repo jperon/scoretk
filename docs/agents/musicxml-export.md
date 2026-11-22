@@ -618,3 +618,51 @@ went from 84 to 524): the reconstructed beam groups do not match MuseScore's
 reverted (`62ba0b86`) after the measurement; this is why the class remains
 open. Any future fix should derive the beam boundaries from `BeamLayout`
 rather than from the per-element `<beam>` text.
+
+## 29. Poet round trip, cue notes and the beam boundary question (2026-11-22)
+
+### 29.1 Review remark: poet in the other formats
+
+The 4.x reader used to fold `poet` into `lyricist`; after splitting the fields,
+every consumer was audited. The mscx writer now writes the `poet` and
+`translator` metaTags back in alphabetical order; the LilyPond writer uses
+`poet` for `\header poet` when `lyricist` is empty (`titling-init.ly:87`, and
+MuseScore's own fallback `importmusicxmlpass1.cpp:1143-1146`); the MusicXML
+reader maps each `creator` type to its own metaTag (`setMetaTag(type, text)`,
+`importmusicxmlpass1.cpp:1527-1528`). ABC has no poet field, and MIDI's
+`META_POET` remains the lyricist text style (`importmidi.cpp:358-360`).
+The reduced facade test `crates/scoretk/tests/poet_metadata.rs` covers the
+mscx/LilyPond writers and the MusicXML reader, and failed before the fix.
+
+### 29.2 Cue size for individually small notes
+
+`isSmallNote` (`exportmusicxml.cpp:4181-4184`) is
+`note->isSmall() || note->chord()->isSmall()`, and `isCueNote` (`:4191-4193`)
+is built from it. The pivot model only kept the chord-level `<small>`, so
+notes carrying their own `<small>1</small>` lost their `size="cue"` type
+attribute. `Note::small` is now read by both MuseScore readers and OR-ed in
+`write_type`/`is_cue_note`. The reduced test
+`type_cue_sur_note_reduite` (export crate) was written first and failed before
+the fix.
+
+Measurement (`target/xml-creators2/` pre-fix vs `target/xml-cue/` post-fix,
+same 173-file manifest): core-identical **68 → 69**, 0 XSD-invalid, N1/N2
+1.0000. Three files gained core lines and **no file lost any**:
+`Angels_Carol__John_Rutter` 58 → 42, `Dieu_seul_suffit_-_Du_Jonchay` 6 → 2,
+`AnthemChristmas_Lullaby` 24 → 0 (now core-identical). Workspace tests, fmt
+and clippy were green at the commit.
+
+### 29.3 Beam boundaries: why no second beam fix was attempted
+
+The remaining two first-divergence tuplet files are still open. The 5.0
+`Groups::baseBeamMode` tuplet-change rule (`groups.cpp:139-145`) is already
+ported in `beams.rs`, and the beam groups reconstructed from the model are
+those of the ported `BeamLayout` (`beamlayout.cpp:653-800`). In the 4.7.4
+reference for `Vivaldi … 04-TecumPrincipium`, a `<tuplet bracket="yes">`
+sits in the middle of a six-note beam, while the ported 5.0 grouping breaks
+the beam at the tuplet's first note; the reference behaviour therefore comes
+from a 4.7.4 layout decision that the 5.0 snapshot no longer encodes. The
+previous per-element `<beam>`-text heuristic was measured (`target/xml-tuplet/`)
+and lost lines in 12 files, so it was reverted (§28.3). Deriving those
+boundaries would need a 4.7.4 `BeamLayout` reference, which is not in
+`ref-musescore/`; no safe fix was submitted for this class.
