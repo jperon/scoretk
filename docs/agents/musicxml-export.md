@@ -990,3 +990,31 @@ pivot model does not carry (a part with `<isStaffVisible>0</isStaffVisible>`
 is not necessarily hidden on every system). The change was reverted. The
 sub-classification stands; this group remains layout-bound, not fixable from
 the model alone.
+
+## 34. Layout classification measured, import-side sub-groups bounded
+
+The oracle change (§33) was measured on the same 173-file lot with the same
+binary (`target/xml-style/` → `target/xml-layout/`): core-identical is
+**70/173 before and after**, 95 files lose core-diff lines and none gains.
+Four core-identical files contain layout-hidden `<staff-details>` on both
+sides (`03- Veni veni Emmanuel - Vcl et Cb`, `04- Douce nuit - Contrebasse`,
+`03- Once in royal - Vcl - Cb`, `03- God rest you - Vcl et Cb`): they were
+already identical before the reclassification, so the counter reports their
+presence, not new agreement. N1/N2 remain 1.0000, 0 XSD-invalid.
+
+Two import-side sub-groups were investigated and bounded:
+
+- **Multi-measure rests** (`measure-style`, 2 files). `createMultiMeasureRestsIfNeed`
+  (`mmrestlayout.cpp:723-760`) groups at least `minEmptyMeasures` (default 2,
+  `legacy-style-defaults-v302.mss:329`) consecutive measures. A reduced test
+  first, then a run-based port, still found no group in
+  `Missa_in_Es_Hob._XXII4_I._Kyrie`: inspection of the model shows each measure
+  carries **eight** full-measure rests (one per staff) together with notes on
+  other staves. MuseScore groups multi-rests per `Staff`, while the pivot model
+  stores one `Measure::multi_measure_rest` for the whole measure. The change
+  was reverted; fixing it needs a per-staff field in the model and reader.
+- **Layout-hidden staves** (`staff-details`, 41 files) remain layout-bound, as
+  recorded in §32.2: the hidden set comes from `System`/`SysStaff` at automatic
+  system starts, which the model does not carry.
+
+Core-identical stays **70/173**, N1/N2 1.0000, 0 XSD-invalid throughout.
