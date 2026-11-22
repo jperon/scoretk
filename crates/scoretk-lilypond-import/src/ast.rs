@@ -163,6 +163,10 @@ pub(crate) enum Context {
     Partial(scoretk_core::model::Fraction),
     /// `\set Timing.measureLength = #n/d`.
     MeasureLength(scoretk_core::model::Fraction),
+    /// `\set Timing.measurePosition = #n/d` : position, en ticks, dans la
+    /// mesure courante (négative pour une anacrouse, `lily/timing-translator.cc`
+    /// l. 470-505).
+    MeasurePosition(scoretk_core::model::Fraction),
     /// `\cadenzaOn` (`true`) / `\cadenzaOff` (`false`), ou
     /// `\set Timing.timing = ##f` / `##t`. La valeur `true` coupe les barres
     /// automatiques jusqu'au prochain `false` ou à une barre explicite.

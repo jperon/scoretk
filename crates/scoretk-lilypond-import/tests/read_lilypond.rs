@@ -2169,6 +2169,27 @@ fn longueurs(score: &scoretk_core::model::Score) -> Vec<Fraction> {
     score.measures.iter().map(|measure| measure.len).collect()
 }
 
+/// `\set Timing.measurePosition = #(ly:make-moment -1 4)` : LilyPond replace
+/// la position courante dans la mesure (`lily/timing-translator.cc` l. 470-505).
+/// Une position negative fait tomber la barre de retour a zero a `t + 1/4` :
+/// l'anacrouse de deux croches forme sa propre mesure, puis les 2/4 suivent.
+#[test]
+fn measure_position_negative_ferme_la_mesure_sur_l_anacrouse() {
+    let score = lire(
+        "\\time 2/2 c1 d1 \\set Timing.measurePosition = #(ly:make-moment -1 4)          \\time 2/4 e8 f g4 a4",
+    );
+    assert_eq!(
+        longueurs(&score),
+        vec![
+            Fraction::new(1, 1),
+            Fraction::new(1, 1),
+            Fraction::new(1, 4),
+            Fraction::new(1, 2),
+        ]
+    );
+    assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 69]);
+}
+
 #[test]
 fn timing_translator_dans_staff_rend_le_temps_local() {
     // Extrait de `skiptypesetting-show-first-and-last.ly` : le bloc `\layout`

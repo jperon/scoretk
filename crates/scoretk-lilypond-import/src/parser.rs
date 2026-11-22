@@ -3140,8 +3140,15 @@ impl<'a> Parser<'a> {
         let is_measure_length = path
             .iter()
             .any(|part| part.eq_ignore_ascii_case("measurelength"));
-        match (is_measure_length, fraction) {
-            (true, Some(fraction)) => Music::Context(Context::MeasureLength(fraction)),
+        let is_measure_position = path
+            .iter()
+            .any(|part| part.eq_ignore_ascii_case("measureposition"));
+        match (is_measure_length, is_measure_position, fraction) {
+            (true, _, Some(fraction)) => Music::Context(Context::MeasureLength(fraction)),
+            // `\set Timing.measurePosition = #(ly:make-moment -1 4)` : la
+            // position dans la mesure courante (lily/timing-translator.cc
+            // l. 470-505). La valeur négative est conservée.
+            (_, true, Some(fraction)) => Music::Context(Context::MeasurePosition(fraction)),
             _ => Music::Empty,
         }
     }

@@ -1171,6 +1171,8 @@ fn plan_measures_polymetric(staves: &[StaffBuild], warnings: &mut Warnings) -> V
 
 fn plan_measures_global(staves: &[StaffBuild], warnings: &mut Warnings) -> Vec<MeasureSlot> {
     let mut meter: BTreeMap<Fraction, MeterAt> = BTreeMap::new();
+    // `\set Timing.measurePosition` par tick (dernier écrit gagne).
+    let mut measure_position: BTreeMap<Fraction, Fraction> = BTreeMap::new();
     for (staff_index, staff) in staves.iter().enumerate() {
         for voice in &staff.voices {
             for event in &voice.interpreted.events {
@@ -1197,6 +1199,12 @@ fn plan_measures_global(staves: &[StaffBuild], warnings: &mut Warnings) -> Vec<M
                     }
                     MetaEvent::Partial(length) => {
                         entry.partial = Some(*length);
+                    }
+                    MetaEvent::MeasurePosition(position) => {
+                        measure_position
+                            .entry(event.tick)
+                            .and_modify(|value| *value = *position)
+                            .or_insert(*position);
                     }
                     _ => {}
                 }
@@ -1234,6 +1242,24 @@ fn plan_measures_global(staves: &[StaffBuild], warnings: &mut Warnings) -> Vec<M
         {
             if *tick < start + len {
                 len = *tick - start;
+            }
+        }
+        // `\set Timing.measurePosition = #n/d` : LilyPond remplace la position
+        // courante dans la mesure (`lily/timing-translator.cc` l. 470-505).
+        // Une position négative `-d` fait tomber la barre de retour à zéro à
+        // `t + d` (anacrouse avant une reprise) ; une position positive `p`
+        // ferme la mesure courante à `t + len - p`.
+        if let Some((tick, position)) = measure_position
+            .range(start..)
+            .find(|(tick, _)| **tick < start + len)
+        {
+            let end = if *position >= Fraction::ZERO {
+                *tick + len - *position
+            } else {
+                *tick - *position
+            };
+            if end > *tick && end != start + len {
+                len = end - start;
             }
         }
         // Pendant une cadence, aucune barre automatique : la mesure en cours
@@ -1918,6 +1944,7 @@ fn place_meta(
         }
         MetaEvent::Partial(_)
         | MetaEvent::MeasureLength(_)
+        | MetaEvent::MeasurePosition(_)
         | MetaEvent::Cadenza(_)
         | MetaEvent::Transposition(_) => {}
     }

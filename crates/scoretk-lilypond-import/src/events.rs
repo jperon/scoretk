@@ -102,6 +102,8 @@ pub(crate) enum MetaEvent {
     Partial(Fraction),
     /// `\set Timing.measureLength`.
     MeasureLength(Fraction),
+    /// `\set Timing.measurePosition` : position dans la mesure courante.
+    MeasurePosition(Fraction),
     /// `\transposition` : hauteur jouée par un do écrit, datée.
     Transposition(PitchSpec),
     /// `\cadenzaOn` (`true`) / `\cadenzaOff` (`false`) : fin des barres
@@ -740,6 +742,9 @@ impl<'a> Interpreter<'a> {
                 if length.is_positive() {
                     self.meta(MetaEvent::MeasureLength(*length));
                 }
+            }
+            Context::MeasurePosition(position) => {
+                self.meta(MetaEvent::MeasurePosition(*position));
             }
             Context::Cadenza(on) => self.meta(MetaEvent::Cadenza(*on)),
             Context::Bar(text) => {
