@@ -62,29 +62,6 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
         cursor += measure_len(&voices, index);
     }
 
-    // `abc2xml.py` écrit un `<transpose>` par `<attributes>` ; ABC 2.1 §4.6
-    // permet à `transpose=` de changer en cours de morceau. Sans ces
-    // changements, l'export MusicXML appliquerait la dernière valeur à toutes
-    // les mesures et transposerait faussement les premières notes.
-    let mut part_changes: std::collections::BTreeMap<(usize, Fraction), i32> =
-        std::collections::BTreeMap::new();
-    for (voice_index, voice) in voices.iter().enumerate() {
-        let (staff, _) = voice_tracks[voice_index];
-        let part_id = score.staff(staff).part;
-        for (measure, tick, value) in &voice.transpose_changes {
-            let absolute = starts.get(*measure).copied().unwrap_or(Fraction::ZERO) + *tick;
-            if absolute.is_positive() {
-                part_changes.insert((part_id.index(), absolute), *value);
-            }
-        }
-    }
-    for ((part_index, tick), value) in part_changes {
-        let part_id = scoretk_core::model::PartId::from_index(part_index);
-        let mut instrument = score.part(part_id).instrument.clone();
-        instrument.transpose = Some(Transpose::new(0, value));
-        score.part_mut(part_id).set_instrument_at(tick, instrument);
-    }
-
     let tuplet_ids = create_tuplets(&mut score, &voices, &starts);
 
     for (index, &start) in starts.iter().enumerate() {
@@ -502,8 +479,8 @@ fn create_parts(
         // `<transpose>`, exactement comme `abc2xml.py`.
         let transpose = first_voice
             .and_then(|number| voices.iter().find(|voice| voice.number == number))
-            .filter(|voice| voice.initial_transpose != 0)
-            .map(|voice| Transpose::new(0, voice.initial_transpose));
+            .filter(|voice| voice.instrument_transpose != 0)
+            .map(|voice| Transpose::new(0, voice.instrument_transpose));
         if let Some(transpose) = transpose {
             score.part_mut(part).instrument.transpose = Some(transpose);
         }

@@ -485,14 +485,6 @@ pub(crate) struct Voice {
     pub transpose: i32,
     /// Transposition d'instrument seule, sans les decalages d'octave des clefs.
     pub instrument_transpose: i32,
-    /// Transposition d'instrument à l'origine de la voix (en-tête `V:`/`K:`).
-    pub initial_transpose: i32,
-    /// Changements de transposition d'instrument `(mesure, tick, valeur)`.
-    ///
-    /// ABC 2.1 §4.6 autorise `transpose=` dans un champ en ligne ; le modèle
-    /// doit alors changer d'instrument en cours de partition, sinon l'export
-    /// MusicXML applique la dernière valeur à toutes les mesures.
-    pub transpose_changes: Vec<(usize, Fraction, i32)>,
     /// Indication de mesure initiale.
     pub initial_time: TimeSig,
     /// Armure initiale.
@@ -560,8 +552,6 @@ impl Voice {
             key: key.clone(),
             transpose: 0,
             instrument_transpose: 0,
-            initial_transpose: 0,
-            transpose_changes: Vec::new(),
             initial_time: time,
             accidental: pitch::AccidentalState::new(key.concert_key.fifths()),
             initial_key: key,
@@ -634,16 +624,6 @@ impl Voice {
         let tick = self.tick;
         self.clef = Some(clef);
         self.clef_changes.push((measure, tick, Some(clef)));
-    }
-
-    /// Enregistre un changement de transposition d'instrument à la position.
-    pub(crate) fn schedule_transpose(&mut self, value: i32) {
-        if self.instrument_transpose == value {
-            return;
-        }
-        let measure = self.measure_index();
-        self.instrument_transpose = value;
-        self.transpose_changes.push((measure, self.tick, value));
     }
 
     /// Termine la mesure en cours et en ouvre une nouvelle.
@@ -839,7 +819,6 @@ impl Reader {
                 );
                 voice.transpose = self.midi_transpose;
                 voice.instrument_transpose = self.instrument_transpose;
-                voice.initial_transpose = self.instrument_transpose;
                 self.voices.push(voice);
             }
             if !self.seen_key {
@@ -885,7 +864,7 @@ impl Reader {
                     // les voix suivantes héritent de `midi_transpose`.
                     for voice in &mut self.voices {
                         voice.transpose = transpose;
-                        voice.schedule_transpose(transpose);
+                        voice.instrument_transpose = transpose;
                     }
                 }
             }
@@ -1099,7 +1078,7 @@ impl Reader {
                     if let Some(transpose) = fields.transpose {
                         self.voices[index].transpose =
                             transpose + self.midi_transpose - self.instrument_transpose;
-                        self.voices[index].schedule_transpose(transpose);
+                        self.voices[index].instrument_transpose = transpose;
                     }
                 } else {
                     let instrument_transpose =
@@ -1126,7 +1105,6 @@ impl Reader {
                             .map_or(0, |clef| 12 * i32::from(clef.octave_change()))
                         - applied;
                     voice.instrument_transpose = instrument_transpose;
-                    voice.initial_transpose = instrument_transpose;
                     self.current = self.voices.len();
                     self.voices.push(voice);
                 }
@@ -1183,7 +1161,6 @@ impl Reader {
             );
             voice.transpose = self.midi_transpose;
             voice.instrument_transpose = self.instrument_transpose;
-            voice.initial_transpose = self.instrument_transpose;
             self.voices.push(voice);
         }
         for voice in &mut self.voices {
