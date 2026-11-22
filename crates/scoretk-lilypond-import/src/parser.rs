@@ -4072,7 +4072,18 @@ impl<'a> Parser<'a> {
         // pas non plus.
         let multiplier = multiplier.map_or(facteur_initial, |ecrit| ecrit * facteur_initial);
         self.default_multiplier = multiplier;
-        Some((duration, Some(multiplier)))
+        // Aucun appelant ne distingue `None` de `Some(1)` (tous passent par
+        // `map_or(ticks, …)` ou `unwrap_or(Fraction::ONE)`) : on conserve la
+        // convention historique d'un multiplicateur absent pour un facteur
+        // implicite de 1, plutôt que de renvoyer systématiquement `Some`.
+        Some((
+            duration,
+            if multiplier == Fraction::ONE {
+                None
+            } else {
+                Some(multiplier)
+            },
+        ))
     }
 
     /// Fraction `n/d` ou `n`.
