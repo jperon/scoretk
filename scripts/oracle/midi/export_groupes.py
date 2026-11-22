@@ -82,8 +82,8 @@ def analyse(args: tuple[Path, dict, Path, str]) -> dict:
         if not sortie.exists() or not reference:
             continue
         try:
-            ours = midi_notes.read_midi(str(sortie))
-            theirs = midi_notes.read_midi(str(reference))
+            ours = midi_notes.normaliser_ecriture(midi_notes.read_midi(str(sortie)))
+            theirs = midi_notes.normaliser_ecriture(midi_notes.read_midi(str(reference)))
         except Exception as exc:  # noqa: BLE001 - relevé, pas de conversion
             resultats.append({"fichier": ligne["fichier"], "cause": f"lecture : {exc}"})
             continue

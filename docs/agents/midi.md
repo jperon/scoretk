@@ -571,38 +571,93 @@ changes.
 | Lot | Files | Exact | N1 % | N2 % | N2d % | Ref. notes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `ecriture_mscz_corpus` | 17 | **17 (100,0 %)** | 100,00 | 100,00 | 100,00 | 483 |
-| `ecriture_ly` | 1 019 | 723 (71,0 %) | 97,36 | 96,68 | 88,60 | 136 236 |
-| `ecriture_mscz_musique` | 8 | 3 (37,5 %) | 69,81 | 57,14 | 51,53 | 10 333 |
+| `ecriture_ly` | 1 019 | **894 (87,7 %)** | 97,66 | 97,42 | 96,63 | 131 736 |
+| `ecriture_mscz_musique` | 8 | 3 (37,5 %) | 63,87 | 53,63 | 51,22 | 9 325 |
+
+### Comparison rule for a writing lot (oracle)
+
+A writing comparison puts two *performances* face to face, not two scores.
+Two of MuseScore's export conventions make them differ note by note without
+changing what is heard; the writing oracle now normalises both sides before
+`compare` (`midi_notes.normaliser_ecriture`):
+
+- **Cross-track note-offs.** MuseScore writes one SMF track per staff, but
+  `EventsHolder::fixupMIDI` (`ref-musescore/src/engraving/compat/midi/event.cpp:263-306`,
+  tag `v4.7.4`) counts the notes **per internal channel**: a same-pitch
+  attack while another sounds gets `discard = originatingStaff + 1`, and
+  `exportmidi.cpp:304-323` writes the restrike (a velocity-0 note-on) on the
+  previous staff's track while the surviving note-off is hoisted to the last
+  attack's track. A note can therefore start on one track and end on another.
+  `midi_notes.read_midi` now merges the tracks **by channel** in file order
+  before pairing FIFO, like a synthesiser (and like LilyPond's one channel per
+  staff, `lily/staff-performer.cc:165-181`, `midiChannelMapping = #'staff`,
+  `ly/performer-init.ly:257`). Reading track by track left the emitted note
+  open until a much later note-off and produced durations of several measures
+  (e.g. `benoit_ave_maria.ly`: a G4 of 2 quarters measured at 34).
+- **Simultaneous unisons.** For the same reason, two same-pitch notes at the
+  same onset sound as one. MuseScore keeps one (`fixupMIDI`) and writes the
+  other as a zero-length restrike; LilyPond merges them when they start at
+  the same tick of a track and keeps the longest stop
+  (`lily/midi-walker.cc:94-115`, `midiMergeUnisons`,
+  `scm/define-context-properties.scm:555`). The normaliser drops
+  zero-duration restrikes and collapses notes with the same `(pitch, onset)`
+  to the longest duration, as `fusionner_unissons` already does for the import
+  direction (`importmidi_chord.cpp:391-465`).
+
+Measured effect on the three writing lots (same binary, same manifests):
+`ecriture_ly` 723 → **894** exact (+171, no file lost), `durée` 149 → 120,
+`note sup` 143 → 1; `ecriture_mscz_corpus` 17/17 unchanged;
+`ecriture_mscz_musique` 3/8 unchanged. The oracle's own tests
+(`scripts/oracle/midi/test_same_tick.py`, `test_overlap.py`, …) pass.
 
 ### Non-exact files by first divergence
 
-`scripts/oracle/midi/export_groupes.py` (new) reads the JSONL, the manifests
-and the `travail/<lot>/<index>/tk.mid` outputs, and classifies each non-exact
+`scripts/oracle/midi/export_groupes.py` reads the JSONL, the manifests and
+the `travail/<lot>/<index>/tk.mid` outputs, and classifies each non-exact
 file by the first note where the output differs from the reference, using
-`midi_notes.releve_import` with pitch + onset + duration (no voice):
-`durée`, `note manquante`, `note sup`, `attaque`, `octave`.
+`midi_notes.releve_import` on the same normalised lists (pitch + onset +
+duration, no voice): `durée`, `note manquante`, `note sup`, `attaque`,
+`octave`.
 
 | Lot | First divergence | Files |
 | --- | --- | ---: |
-| `ecriture_ly` | `durée` | 149 |
-| `ecriture_ly` | `note sup` | 143 |
+| `ecriture_ly` | `durée` | 120 |
 | `ecriture_ly` | `octave` | 2 |
 | `ecriture_ly` | `attaque` | 1 |
 | `ecriture_ly` | `note manquante` | 1 |
+| `ecriture_ly` | `note sup` | 1 |
 | `ecriture_mscz_musique` | `durée` | 2 |
-| `ecriture_mscz_musique` | `note sup` | 2 |
 | `ecriture_mscz_musique` | `attaque` | 1 |
+| `ecriture_mscz_musique` | `note sup` | 1 |
+| `ecriture_mscz_musique` | `octave` | 1 |
 
-The corpus lot is exact everywhere. On the LilyPond lot the first cause is
-the **hold duration** (the `gateTime` difference already documented above:
-LilyPond writes performance note-offs, the writer uses the notated duration
-and the instrument's gate time), then **extra notes**: the chain includes our
-LilyPond reader, and its unresolved cases (voices, octave resolution,
-graces at a shifted onset) appear as an extra or missing note at the first
-divergence. `Kryshachok` (octave) and `VolgaVolga` (octave) are the reader's
-octave errors, not the writer's. The `.mscz` lot of `~/Musique` remains the
-weakest (unsupported MuseScore 2.06 files, linked staves), as in the earlier
-campaign.
+The corpus lot is exact everywhere. The 120 remaining `durée` files of
+`ecriture_ly` split into two **performance conventions** and one residual
+reader class:
+
+- **overlapping same-pitch notes** (423 mismatched notes, 78 files, e.g.
+  `01_01_Etudiants.ly` at q10.5: a held A2 and a second voice attacking the
+  same A2 at q12). MuseScore cuts the held note at the restrike
+  (`fixupMIDI`): ours reports 1.5 + 1.5 quarters; LilyPond keeps two channels
+  and reports 3.0 + 0.5. The **union of the sounding intervals is identical**
+  (checked on all 149 files: 423 of the mismatched notes have the same union),
+  so the performance is the same. Extending each note to its union end in the
+  oracle would cover it, but it also merges 1-tick gaps and loses exact files
+  (measured on the 1 019 `.ly`: +199 exact but 1 loss with a small gap
+  tolerance, 177 losses with the matching tolerance), so it is left as a
+  documented limit rather than a rule that hides real differences.
+- **articulations without `\articulate`** (261 mismatched notes, 42 files,
+  e.g. `LaChansonDuPleinAir.ly`, staccato `-.` and no `\articulate`). LilyPond
+  plays the written length (`note-performer.cc` ignores articulations unless
+  `\articulate` replaces the notes, `ly/articulate.ly`); MuseScore applies its
+  `gateTime` table (staccato 50 %, staccatissimo 30 %, portato 75 %,
+  `dom/articulation.cpp`, `compatmidirender.cpp:263`). Ours is
+  MuseScore-faithful (ratio 0.5 on those notes). The reference MIDI cannot
+  represent the articulation, so the oracle cannot decide which side is
+  short; the writer keeps MuseScore's behaviour.
+- **reader residue** — `Kryshachok` and `VolgaVolga` (octave,
+  `\chordmode { \fixed c, … }`), one attack, one missing and one extra
+  note; the chain `.ly` → reader is measured here on purpose.
 
 ## Upgrading MuseScore's MIDI import
 

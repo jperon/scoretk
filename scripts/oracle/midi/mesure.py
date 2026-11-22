@@ -39,7 +39,7 @@ import subprocess
 import sys
 import time
 
-from midi_notes import GRID, TOL, compare, read_midi, read_xml
+from midi_notes import GRID, TOL, compare, normaliser_ecriture, read_midi, read_xml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -279,7 +279,7 @@ def mesurer_ecriture(args, lot: str, manifeste: str, fichier_sortie) -> None:
     for i, ligne in enumerate(lire_manifest(manifeste)[: args.limit or None]):
         src, ref_path = ligne.split("\t", 1)
         try:
-            ref = read_midi(ref_path)
+            ref = normaliser_ecriture(read_midi(ref_path))
         except Exception as exc:
             r = base_releve(lot, "ecriture", "oracle", src)
             r["erreur"] = f"oracle MIDI : {exc}"
@@ -319,7 +319,7 @@ def mesurer_ecriture(args, lot: str, manifeste: str, fichier_sortie) -> None:
             ecrire_ligne(fichier_sortie, r)
             continue
         try:
-            test = read_midi(str(dst))
+            test = normaliser_ecriture(read_midi(str(dst)))
         except Exception as exc:
             r["erreur"] = f"MIDI illisible : {exc}"
             marquer_echec(r)

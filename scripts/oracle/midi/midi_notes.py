@@ -72,36 +72,84 @@ def read_midi(path: str) -> list[tuple[int, float, float, int]]:
     `midishared/midifile.cpp`, chaque note-on cherche le premier note-off
     encore libre de cette hauteur et le marque consommé (FIFO). Une table
     simple écrasait l'attaque précédente et perdait la note la plus ancienne.
+
+    Les **pistes sont fusionnées par canal** avant l'appariement, dans l'ordre
+    du fichier (tick, piste, position). Un synthétiseur ne connaît que le
+    canal : c'est aussi ce que fait l'export MuseScore, dont
+    `EventsHolder::fixupMIDI` (`engraving/compat/midi/event.cpp:263-306`)
+    répartit les attaques d'unisson sur la piste de la dernière attaque et
+    `exportmidi.cpp:304-323` écrit l'extinction sur la piste de l'attaque
+    précédente. Lire piste par piste laissait alors la note de la piste
+    émettrice ouverte jusqu'à une extinction lointaine d'une autre note, d'où
+    des durées de plusieurs mesures ; le fichier doit être lu comme le jeu le
+    fait. L'ordre des messages au même tick est celui du fichier (les
+    extinctions de restrike sont écrites après les attaques, `exportmidi.cpp`
+    les insère dans le multimap).
     """
     mid = common.lire_midi(path)
     tpb = mid.ticks_per_beat or 480
-    notes: list[tuple[int, float, float, int]] = []
+    flux: list[tuple[int, int, int, bool, int, int]] = []
     for index, track in enumerate(mid.tracks):
         tick = 0
-        ouvertes: dict[tuple[int, int], deque[int]] = defaultdict(deque)
-        # Ordre canonique à chaque tick : les note-off avant les note-on.
-        # L'ordre des messages au même tick dépend de l'exporteur (MuseScore
-        # écrit parfois l'off avant le on d'une note de durée nulle) ; le
-        # figer rend l'appariement FIFO indépendant de cet ordre.
-        par_tick: dict[int, list] = defaultdict(list)
-        for msg in track:
+        for position, msg in enumerate(track):
             tick += msg.time
             if not msg.is_meta and hasattr(msg, "note"):
-                par_tick[tick].append(msg)
-        for instant in sorted(par_tick):
-            messages = sorted(par_tick[instant], key=lambda m: 0 if (
-                m.type == "note_off" or (m.type == "note_on" and m.velocity == 0)
-            ) else 1)
-            for msg in messages:
-                cle = (msg.channel, msg.note)
-                if msg.type == "note_on" and msg.velocity > 0:
-                    ouvertes[cle].append(instant)
-                else:
-                    file_attentes = ouvertes.get(cle)
-                    if file_attentes:
-                        debut = file_attentes.popleft()
-                        notes.append((msg.note, debut / tpb, (instant - debut) / tpb, index))
+                extinction = msg.type == "note_off" or (
+                    msg.type == "note_on" and msg.velocity == 0
+                )
+                flux.append((tick, index, position, extinction, msg.note, msg.channel))
+    flux.sort(key=lambda evenement: (evenement[0], evenement[1], evenement[2]))
+    ouvertes: dict[tuple[int, int], deque[int]] = defaultdict(deque)
+    notes: list[tuple[int, float, float, int]] = []
+    for tick, index, _position, extinction, hauteur, canal in flux:
+        cle = (canal, hauteur)
+        if extinction:
+            file_attentes = ouvertes.get(cle)
+            if file_attentes:
+                debut = file_attentes.popleft()
+                notes.append((hauteur, debut / tpb, (tick - debut) / tpb, index))
+        else:
+            ouvertes[cle].append(tick)
     return notes
+
+
+def normaliser_ecriture(notes: list[tuple]) -> list[tuple]:
+    """Notes d'une écriture, ramenées à ce qui s'entend réellement.
+
+    Deux conventions d'écriture rendent deux MIDI musicalement égaux sans
+    être identiques note à note ; la comparaison d'écriture les ramène donc à
+    la même forme, symétriquement des deux côtés :
+
+    - **unissons simultanés** : même hauteur et même attaque. MuseScore les
+      fusionne par canal interne (`EventsHolder::fixupMIDI`,
+      `engraving/compat/midi/event.cpp:263-306`) et écrit l'attaque écartée
+      comme un restrike de durée nulle (`exportmidi.cpp:304-323`) ; LilyPond
+      les fusionne aussi quand ils tombent sur le même tick d'une même piste,
+      en gardant la plus longue extinction (`lily/midi-walker.cc:94-115`,
+      propriété `midiMergeUnisons`, `scm/define-context-properties.scm:555`).
+      Deux attaques de même hauteur au même instant s'entendent comme une
+      seule : on garde la durée la plus longue, comme `fusionner_unissons`
+      pour l'import.
+    - **durée nulle** : un restrike de MuseScore est inaudible et n'a pas de
+      contrepartie chez LilyPond. Une note de durée nulle est écartée.
+
+    La fusion ne touche ni l'attaque ni la hauteur : une note réellement
+    différente (autre attaque, autre hauteur, autre durée au-delà de tolérance)
+    reste comptée comme un écart.
+    """
+    index: dict[tuple[int, float], int] = {}
+    out: list[tuple] = []
+    for note in sorted(notes, key=lambda n: (n[1], n[3])):
+        if note[2] <= 0:
+            continue
+        cle = (note[0], note[1])
+        position = index.get(cle)
+        if position is None:
+            index[cle] = len(out)
+            out.append(note)
+        elif note[2] > out[position][2]:
+            out[position] = note
+    return out
 
 
 def read_xml(path: str) -> list[tuple[int, float, float, int]]:
