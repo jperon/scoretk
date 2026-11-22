@@ -4442,3 +4442,17 @@ the MIDI writer plays (`createGraceNotesPlayEvents`). Failing reduced test
 `acciaccatura_avec_accord_simultane_garde_toutes_les_notes` first. Focused
 re-measure on the 110 grace files: **4 files gain N2, 0 lose**, one becomes
 exact (`spacing-loose-grace-linebreak`).
+
+### Cause — quoted string identifiers (`lily/parser.yy`)
+
+`lily/parser.yy` accepts quoted strings as identifiers: `"|" = \bar "||"`
+redefines a bar-check token, and `"violin1" = { … }` is read back with
+`\"violin1"`. At top level the reader skipped the `Kind::Str` token, leaving
+`=` and the following music to be swallowed by the next command
+(`bar-check-redefine.ly`: 2 reference notes, 0 read). The lexer now builds a
+`Kind::Command` token for `\"name"`, the parser handles `Str = value`
+assignments at top level, and `parse_command` strips the quotes when looking
+up the variable. Failing reduced tests
+`affectation_identifiant_ponctuation` and `identifiant_entre_guillemets_echappes`
+first. Focused re-measure on the 3 affected `ra` files:
+**both non-exact files become exact, no loss** (the third stays exact).
