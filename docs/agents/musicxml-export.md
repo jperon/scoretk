@@ -1131,3 +1131,93 @@ the `.mscx` has no `<parentheses>` but the 4.7.4 reference writes
 
 Core-identical stays **144/173**, N1/N2 1.0000, 0 XSD-invalid; no file was
 regressed by any of the tested candidate rules (all were reverted).
+
+## 37. Final groups: staff, attributes and mmrest (2026-11-22)
+
+### 37.1 `staff` — 2.x `<move>` ported, 4 files gained (committed, measured)
+
+The hypothesis that this group was a **MusicXML import** defect was checked
+and rejected with evidence: re-reading the reference MusicXML of
+`Vivaldi 05-Juravit_Dominus` with scoretk and re-exporting it leaves all 3 027
+note `<staff>` values unchanged (0 differences), because `resolve_voice`
+(`pass1.rs:187-215`) already implements `MusicXmlParserPass1::determineStaffMoveVoice`
+(`importmusicxmlpass1.cpp:578-624`) and `msMove` is passed to
+`findOrCreateChord` (`importmusicxmlpass2.cpp:7263-7270, 7328-7337`).
+
+The real defect is on the **MuseScore 2.x reading** side. The four Vivaldi
+sources are 2.06 scores whose cross-staff chords carry `<move>1</move>`
+(45 occurrences in `05-Juravit_Dominus`); `Read206::readChordRestProperties206`
+(`read206.cpp:1821-1822`) maps that 2.x tag to `staffMove`, while the shared
+reader used after the 2.x adaptation only knows `staffMove`. The fix in
+`read206::transform` renames `<move>` to `<staffMove>` on `Chord`/`Rest`;
+reduced test `crates/scoretk-musescore-import/tests/staff_move_2x.rs` written
+first, failing before the fix.
+
+Full oracle `target/xml-sm-out/` against `target/xml-emptyattr/`:
+**144 → 148/173 core-identical**, exactly the four `staff` files gained
+(`01_Dixit_Dominus`, `05_Juravit_Dominus`, `09_Gloria_Patri`,
+`10._Sicut_erat_in_principio`), **0 losses**, N1/N2 1.0000, 0 XSD-invalid.
+The MusicXML import round trip
+(`scoretk-musicxml-import --test aller_retour`) stays 4/4 passing.
+
+### 37.2 `attributes` — oracle artefact fixed in the normalizer (committed, measured)
+
+A dump of the canonical lines of `Once in royal - Hautbois 1 et 2` shows the
+only difference at that point:
+
+```
+  </attributes>          <attributes>          <measure-style>
+  <attributes>       vs   <measure-style>  vs   ...   (merged form)
+  <measure-style>
+```
+
+MuseScore closes and reopens `<attributes>` immediately before
+`<measure-style><multiple-rest>`; scoretk keeps one block. The MusicXML 4.0
+schema states that changed attributes act « in score order, not in MusicXML
+document order » (`musicxml-4.0.xsd:2815`), so a boundary between two adjacent
+blocks with no music between them carries no musical information. The core
+normalizer now merges such boundaries (`merge_adjacent_attributes`) with a unit
+test; no writer change. Recomputed on the same 173 output pairs:
+**148 → 157/173 core-identical**, **9 gains, 0 losses** (the Veni veni/Douce
+nuit and Once in royal/Hautbois files). N1/N2 and XSD results unchanged.
+
+### 37.3 mmrest — precise model gap and proposed change (doc only, not implemented)
+
+What the model lacks is **not** a count field: `Measure::multi_measure_rest:
+Option<u16>` already stores one (`measure.rs:87-92`), the style flag
+`create_multi_measure_rests` exists (`style.rs:106`), and the MusicXML writer
+emits `<measure-style><multiple-rest>N</multiple-rest></measure-style>`
+(`exportmusicxml.rs:980-984`, C++ `measureStyle`
+`exportmusicxml.cpp:6580-6595`). The gap is the **staff association**:
+
+- MuseScore groups empty measures **per staff** (`Measure::isEmpty(staffIdx)`,
+  `measure.cpp:2286-2330`) and `MMRestLayout::createMMRest` acts on one staff
+  (`mmrestlayout.cpp:161-206`), with `validMMRestMeasure` (`:428`) and
+  `minEmptyMeasures` (`:758`). The writer then emits `<multiple-rest>` only
+  for the part that displays the rest.
+- Our pivot stores a single global `Option<u16>` per measure, so the writer
+  applies it to every part. In `Missa_in_Es_Hob...I._Kyrie`, each measure
+  contains eight full-measure rests **and** notes on other staves: no run is
+  empty on all staves, yet the reference writes 36 `<multiple-rest>` elements.
+  A global field cannot express "staff A has the rest, staff B has notes".
+
+Proposed generic change (not implemented here):
+1. Replace `Measure::multi_measure_rest` by
+   `Vec<(StaffId, u16)>`, with an accessor `(staff) -> Option<u16>`; migrate the
+   nine existing call sites (`measure.rs`, LilyPond import/export, MuseScore
+   3.x/4.x readers).
+2. In the MuseScore readers, set the entry for the `<Staff id>` whose
+   `<Measure>` carries the mm-rest count; in the MusicXML reader, associate the
+   `<measure-style><multiple-rest>` parsed in `pass2.rs:371-380` with the
+   current part's staff.
+3. In the MusicXML writer, emit `<measure-style>` only for the part whose staff
+   has an entry, instead of for every part; adapt the LilyPond writer to the
+   primary staff.
+4. Do **not** try to derive the groups from emptiness alone: that needs the
+   excerpt/staff visibility relation and the layout's `minEmptyMeasures`
+   grouping, neither of which is in the pivot model. Storing and replaying the
+   per-staff facts read from the input is the small, generic change; deriving
+   them is a separate layout-port task.
+
+Core-identical is **157/173** after the two committed causes; N1/N2 1.0000,
+0 XSD-invalid, and no file was regressed.
