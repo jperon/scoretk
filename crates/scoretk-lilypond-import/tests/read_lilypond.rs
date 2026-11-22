@@ -7902,3 +7902,35 @@ fn gabarit_satb_joue_les_variables_musicales() {
         vec![72, 74, 76, 77, 55, 57, 59, 72]
     );
 }
+
+/// `\set Timing.measureLength` est une propriété de contexte : elle reste
+/// en vigueur pour les mesures suivantes jusqu'au prochain `\time` ou
+/// `\set`. Le lecteur ne la conservait qu'à la mesure où le méta était posé,
+/// si bien que `g2` d'une mesure de 1/2 était coupé en deux noires liées
+/// (`Omni_die_dic_Mariae`, `Magnificat__Prt`).
+#[test]
+fn measure_length_sur_la_measure_suivante() {
+    let src = "\\version \"2.24.0\"\n\\language \"english\"\n\
+\\score { \\new Staff { \\fixed c' { \\
+\\time 4/4 b4 b4 a4 d'4 | \\
+g4 a4 fs4 d4 | \\
+\\set Timing.measureLength = #3/4 g4 d4 e8 g8 | \\
+g4 g4 fs4 | \\
+\\set Timing.measureLength = #1/2 g2 | \\
+\\set Timing.measureLength = #1/1 b4 b4 a4 d'4 } } }";
+    let score = read_lilypond(src).expect("lecture measureLength");
+    let durees: Vec<i64> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| {
+            segment
+                .chord_rest(scoretk_core::model::Track::new(score.staves[0].id, 0))
+                .map(|cr| cr.duration.ticks().ticks(1920))
+        })
+        .collect();
+    assert!(
+        durees.contains(&960),
+        "g2 doit durer une blanche : {durees:?}"
+    );
+}

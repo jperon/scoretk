@@ -1526,15 +1526,24 @@ fn plan_measures_global(staves: &[StaffBuild], warnings: &mut Warnings) -> Vec<M
     let mut slots = Vec::new();
     let mut start = Fraction::ZERO;
     let mut nominal = Fraction::ONE;
+    // `measureLength` est une propriété de contexte (`lily/timing-translator.cc`
+    // l. 170) : elle reste en vigueur jusqu'au prochain `\time` ou `\set`.
+    // La conserver ici évite de couper une note qui dépasse la mesure
+    // suivante quand le `\set` n'est posé qu'à la première mesure concernée.
+    let mut measure_length: Option<Fraction> = None;
 
     while start < end_tick && slots.len() < 100_000 {
         if let Some(at) = meter.get(&start) {
             if let Some(value) = at.nominal {
                 nominal = value;
+                measure_length = None;
+            }
+            if let Some(value) = at.length {
+                measure_length = Some(value);
             }
         }
         let at = meter.get(&start).copied().unwrap_or_default();
-        let mut len = at.length.or(at.partial).unwrap_or(nominal);
+        let mut len = measure_length.or(at.partial).unwrap_or(nominal);
         if !len.is_positive() {
             warnings.push(0, 0, "mesure de longueur nulle ignorée".to_owned());
             break;

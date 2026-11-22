@@ -5640,6 +5640,24 @@ restante n'est imputable au writers : chaque groupe a été ramené à une
 liaison inter-voix, un méta `Timing.measureLength` mal daté, une transposition
 de `\score` MIDI ou une référence invalide, tous dans le lecteur ou l'oracle.
 
+### `measureLength` persistant (lecteur LilyPond, pas writer)
+
+`lily/timing-translator.cc:170` : `measureLength` est une propriété de
+contexte, elle reste en vigueur jusqu'au prochain `	ime` ou `\set`.
+`builder.rs::plan_measures_global` ne la conservait qu'à la mesure où le
+méta-événement était posé (`events.rs::event` le date au curseur courant,
+qui est bien le début de cette mesure) : la mesure suivante retombait à la
+durée nominale, et une note la dépassant était coupée en deux noires liées.
+
+`measure_length: Option<Fraction>` est désormais conservé d'une mesure à
+l'autre, remis à `None` sur `	ime`. Test réduit d'abord :
+`measure_length_sur_la_measure_suivante` (`g2` d'une mesure de 1/2 coupé en
+deux noires avant, blanche après).
+
+Mesure sur le lot mscz (deux binaires frères, `--mode model`) : exacts
+156 → **159**, `Magnificat__Prt` et les deux `Omni_die_dic_Mariae` gagnés,
+aucune perte ; taille des `.ly` inchangée (26 614 octets).
+
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire
