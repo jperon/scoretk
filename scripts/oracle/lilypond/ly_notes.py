@@ -68,8 +68,17 @@ STEPS = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 
 
 def quant(x: float, grid: float = GRID) -> float:
-    """Ramène une position à la grille de quantification."""
-    return round(x / grid) * grid
+    """Ramène une position à la grille de quantification.
+
+    Les attaques MusicXML sont des sommes de ``duration / divisions`` : un
+    triolet vaut 1/6 de noire, non représentable exactement, et la somme peut
+    donner 6.625000000000001 là où le MIDI LilyPond porte le tick exact 6.625.
+    Un ``round`` direct sur un demi-pas (26,5 cases) basculerait alors la note
+    vers la case suivante. On ramène d'abord le quotient à 9 décimales, ce qui
+    ne change pas le résultat des valeurs exactes (arrondi au pair inchangé)
+    et rend la quantification insensible au bruit flottant.
+    """
+    return round(round(x / grid, 9)) * grid
 
 
 def read_midi(path: str) -> list[tuple[int, float, float, int]]:
@@ -552,6 +561,15 @@ def selftest() -> None:
         with open(p2, "w", encoding="utf-8") as f:
             f.write(ottava)
         assert read_xml(p2) == [(62, 0.0, 1.0, 0), (67, 1.0, 1.0, 0)]
+
+        # Quantification : une attaque à un demi-pas de la grille doit être
+        # insensible au bruit flottant des sommes de durées MusicXML. Le
+        # triolet 1/6 + croches donne 6.625000000000001 côté XML et 6.625
+        # côté MIDI ; sans arrondi préalable du quotient, l'un tombe sur 6,5
+        # et l'autre sur 6,75.
+        assert quant(6.625) == quant(6.625000000000001) == 6.5
+        assert quant(6.875) == quant(6.875000000000001) == 7.0
+        assert quant(0.49999999999999994) == 0.5
 
         # Cas « non concerné » : XML lisible, hauteur et attaque exactes.
         relevant = compare(att, lu)
