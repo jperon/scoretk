@@ -511,23 +511,9 @@ oracle) : aucun changement N1/N2/N2d, **aucune perte**, lignes centrales
 `Czardas_Monti` 12 → **0** (devient core-identique) et
 `Ave_Maria_Schubert_in_C` 720 → **8**. `e2e_corpus` reste vert (5/5).
 
-## 25. `normal-type` et numérateur brut du ratio (2026-11-22)
+## 26. Export-adjacent oracle work (2026-11-22)
 
-Suite directe de la section 24 : `determineTupletNormalTicks`
-(`exportmusicxml.cpp:3752-3771`) compare le nombre d'éléments du n-olet au
-numérateur du ratio **tel que le C++ le conserve**, c'est-à-dire non réduit
-(6 pour un 6:4). Le port comparait à `tuplet.ratio.numerator()` (3 après
-réduction), donc il écrivait un `<normal-type>16th</normal-type>` sur chaque
-note d'un n-olet 6:4 complet — 712 lignes sur
-`Ave_Maria_Schubert_in_C_with_chords`, 12 sur `Czardas_Monti`.
-
-Correction : utiliser `tuplet.actual_notes` (le nombre brut lu du fichier,
-déjà utilisé à la section 24 pour `<actual-notes>`). Assertion ajoutée au
-test réduit de la section 24 (6:4 complet avec 6 enfants → aucun
-`<normal-type>`), échouait avant le correctif.
-
-Re-mesure complète (`target/export-head/` vs `target/export-normal/`, deux
-binaires frères du même HEAD, même oracle) : **aucune perte**, fichiers
-core-identiques 65 → **66** ; `Czardas` 12 → **0** lignes centrales,
-`Ave_Maria_Schubert` 720 → **8**. N1/N2/N2d inchangés (la numération n'est
-pas de la hauteur). `cargo test -p scoretk --test e2e_corpus` vert (5/5).
+`midi.md` records the order-independent MIDI note pairing, the empty-score
+basket (out of numerator and denominator, like unsupported inputs), and the
+MusicXML-source detection in the MIDI harness. `docs/agents/midi.md` kept a
+single combined section after removing a duplicate.
