@@ -3595,6 +3595,20 @@ impl<'a> Parser<'a> {
             }
         }
         let fraction = self.parse_scheme_fraction();
+        // `\set Timing.beatStructure = 1,1` : liste de nombres séparés par
+        // des virgules. Le premier est lu comme fraction ; laisser `,1` dans
+        // le flux musical en faisait une marque d'octave suivie d'une durée
+        // de blanche ronde, décalant la suite de quatre noires
+        // (No03_Albumblatt, `\global`).
+        if fraction.is_some() || self.peek().is_some_and(|token| token.kind == Kind::Number) {
+            while self.eat_punct(',') {
+                if self.peek().is_some_and(|token| token.kind == Kind::Number) {
+                    self.position += 1;
+                } else {
+                    break;
+                }
+            }
+        }
         let is_measure_length = path
             .iter()
             .any(|part| part.eq_ignore_ascii_case("measurelength"));

@@ -508,6 +508,37 @@ fn override_ancienne_syntaxe_ne_consomme_pas_la_duree_suivante() {
     assert_eq!(attaques, vec![240, 480, 720]);
 }
 
+/// `\set Timing.beatStructure = 1,1` : la liste de nombres est une valeur,
+/// pas de la musique. Laisser `,1` dans le flux en faisait une marque
+/// d'octave et une blanche ronde, décalant la suite de quatre noires
+/// (No03_Albumblatt).
+#[test]
+fn set_beat_structure_ne_fuit_pas_dans_la_musique() {
+    let src = "\\version \"2.24.0\"\n\\language \"english\"\n\\score { \\new Staff { \\key e \\minor \\time 2/4 \\set Timing.beatStructure = 1,1 \\partial 8 { b'8 } \\repeat volta 2 { e'8. fs'16 } } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let mut attaques: Vec<(u8, i64)> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .flat_map(|segment| {
+            segment
+                .iter_elements()
+                .filter_map(|(_, element)| match element {
+                    SegmentItem::ChordRest(chord_rest) => {
+                        let chord = chord_rest.chord_ref()?;
+                        let pitch = score.note(*chord.notes.first()?).pitch;
+                        Some((pitch, segment.tick.ticks(1920)))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    attaques.sort_unstable();
+    // `b'` = B4 (71), `e'` = E4 (64), `fs'` = F#4 (66) en notation absolue.
+    assert_eq!(attaques, vec![(64, 240), (66, 600), (71, 0)]);
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");
