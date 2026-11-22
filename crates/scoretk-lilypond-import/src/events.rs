@@ -187,6 +187,8 @@ pub(crate) struct NoteEvent {
     pub head_group: NoteHeadGroup,
     /// Vrai pour une note de cue (musique insérée par `\cueDuring`).
     pub small: bool,
+    /// Faux pour les notes d'un `NullVoice` : invisibles mais datées.
+    pub visible: bool,
 }
 
 /// Accord d'agrément.
@@ -371,6 +373,8 @@ pub(crate) struct Interpreter<'a> {
     octave: OctaveState,
     /// Vrai pendant la lecture d'une musique de cue insérée par `\cueDuring`.
     cue: bool,
+    /// Vrai sous un `NullVoice` : les notes restent datées mais invisibles.
+    invisible_notes: bool,
     /// Dernier état relatif atteint, avant que le `Context::Relative`
     /// englobant ne restaure l'état d'origine. Sert à enchaîner les voix d'un
     /// `<< … \ … >>` comme `music_list_to_relative` (`lily/music-sequence.cc`).
@@ -437,6 +441,7 @@ impl<'a> Interpreter<'a> {
             voice: InterpretedVoice::default(),
             cursor: start,
             cue: false,
+            invisible_notes: false,
             octave,
             relative_final: None,
             last_chord_notes: None,
@@ -684,6 +689,7 @@ impl<'a> Interpreter<'a> {
             voice: InterpretedVoice::default(),
             cursor: start,
             cue: self.cue,
+            invisible_notes: self.invisible_notes,
             octave: self.octave,
             relative_final: None,
             transpose: self.transpose,
@@ -914,6 +920,12 @@ impl<'a> Interpreter<'a> {
                 self.octave.start_relative(reference.as_ref());
                 self.walk(music);
                 self.octave = saved;
+            }
+            Context::Invisible { music } => {
+                let saved = self.invisible_notes;
+                self.invisible_notes = true;
+                self.walk(music);
+                self.invisible_notes = saved;
             }
             Context::NonRelative { music } => {
                 // `make-non-relative-music` soustrait la musique à la
@@ -1571,6 +1583,7 @@ impl<'a> Interpreter<'a> {
                 cautionary: note.pitch.cautionary,
                 head_group: note.head_group.clone(),
                 small: self.cue,
+                visible: !self.invisible_notes,
             });
         }
         let octave = self.octave.resolve(&note.pitch);
@@ -1621,6 +1634,7 @@ impl<'a> Interpreter<'a> {
             cautionary: note.pitch.cautionary,
             head_group: note.head_group.clone(),
             small: self.cue,
+            visible: !self.invisible_notes,
         })
     }
 

@@ -1210,13 +1210,36 @@ impl<'a> Parser<'a> {
         };
         // Contextes de gravure sans performer MIDI (`lily/note-name-engraver.cc`,
         // `lily/figured-bass-engraver.cc`) : leur musique n'est pas jouée.
-        if name == "NoteNames"
-            || name == "FiguredBass"
-            || name == "FretBoards"
-            || name == "NullVoice"
-        {
+        if name == "NoteNames" || name == "FiguredBass" || name == "FretBoards" {
             self.skip_nonplaying_grid(&name);
             return None;
+        }
+        // `NullVoice` (`ly/performer-init.ly:225-234`, `ly/engraver-init.ly`)
+        // n'a pas de Note_performer : ses notes sont invisibles et muettes,
+        // mais sa trame porte les paroles alignées par `\lyricsto "nom"`. On
+        // garde donc la voix (nommée) dans une portée `muted` : le MIDI la
+        // saute, les autres écrivains gardent les paroles.
+        if name == "NullVoice" {
+            let context_name = self.parse_context_id();
+            let music = Music::Context(Context::Invisible {
+                music: Box::new(self.parse_music()),
+            });
+            let mut staff = StaffBlock::new();
+            staff.muted = true;
+            staff.name = context_name.clone();
+            staff.voices.push(VoiceBlock {
+                name: context_name,
+                music,
+            });
+            return Some(GroupBlock {
+                kind: GroupKind::Staff,
+                existing,
+                sequence_start: false,
+                instrument_name: None,
+                short_instrument_name: None,
+                staves: vec![staff],
+                lyrics: Vec::new(),
+            });
         }
         let kind = GroupKind::from_name(&name);
         let context_name = self.parse_context_id();

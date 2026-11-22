@@ -2083,6 +2083,7 @@ fn build_note(note: &crate::events::NoteEvent, fingerings: &[String]) -> Note {
     value.tpc_transposed = note.tpc_transposed;
     value.head_group = note.head_group.clone();
     value.small = note.small;
+    value.visible = note.visible;
     if note.cautionary {
         value.accidental = Some(Accidental {
             kind: accidental_for(note.tpc),

@@ -275,6 +275,9 @@ pub(crate) enum Context {
     /// (`ly/music-functions-init.ly:545-574`), gravées en petit dans les
     /// autres formats via `Note::small` / `Chord::small`.
     Cue { music: Box<Music> },
+    /// Musique dont les notes sont invisibles et silencieuses (`NullVoice`) :
+    /// la trame et les paroles restent dans le modèle, seul le MIDI les ignore.
+    Invisible { music: Box<Music> },
     /// `\alternative` isolé (déjà consommé par `\repeat`).
     Alternative(Vec<Music>),
     /// `\change <Contexte> = <nom>` : les notes qui suivent passent sur la

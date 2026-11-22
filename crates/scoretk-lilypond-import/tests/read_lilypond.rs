@@ -7418,3 +7418,37 @@ fn part_combine_voix_identiques_fusionnees() {
         vec![60, 62, 62, 65]
     );
 }
+
+#[test]
+fn nullvoice_garde_les_paroles_et_est_muette_dans_le_midi() {
+    // `ly/performer-init.ly:225-234` : NullVoice n'a pas de Note_performer,
+    // mais sa trame sert d'ancrage à `\lyricsto`. Les paroles doivent
+    // survivre dans le modèle et le MusicXML ; seul le MIDI les ignore.
+    let src = "\\version \"2.24.0\"\n\
+         << \\new Voice = \"mel\" { c'4 d'4 e'4 f'4 }\n\
+            \\new NullVoice = \"aligner\" { c'4 d'4 e'4 f'4 }\n\
+            \\new Lyrics \\lyricsto \"aligner\" { la la la la } >>\n";
+    let score = read_lilypond(src).expect("lecture");
+    let xml = scoretk_musicxml_export::export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<lyric"),
+        "les paroles doivent rester dans le XML"
+    );
+    let midi = scoretk_midi_export::write_midi(&score).expect("midi");
+    let smf = midly::Smf::parse(&midi).expect("SMF valide");
+    let attaques: u32 = smf
+        .tracks
+        .iter()
+        .flat_map(|piste| piste.iter())
+        .filter(|evenement| {
+            matches!(
+                evenement.kind,
+                midly::TrackEventKind::Midi {
+                    message: midly::MidiMessage::NoteOn { vel, .. },
+                    ..
+                } if vel > 0
+            )
+        })
+        .count() as u32;
+    assert_eq!(attaques, 4, "seule la voix mel est jouée");
+}
