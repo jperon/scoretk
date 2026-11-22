@@ -4895,6 +4895,29 @@ Tests réduits écrits d'abord : `ottava_invisible_porte_quand_meme_le_decalage`
 binaires frères sur le lot corpus (`--mode model`) : exact 48 → 49,
 `testExcludeInvisibleElements.mscx` passe de 49 à 53 notes appariées, aucune
 perte ; le lot mscz reste à 155 exacts (aucune régression).
+
+### `\articulate` du MIDI doit être réécrit à l'export
+
+Sur le lot `ly → model → ly`, la première divergence des six fichiers
+`duree_seule` est une durée multipliée par 8/7 : par exemple
+`22_StMichel.ly` joue des noires de 7/8 dans la référence et de 4/4 dans le
+`.ly` écrit. La source enveloppe sa musique dans
+`\unfoldRepeats \articulate { … }` (`ly/articulate.ly`) ; le lecteur pose
+`Score::playback_articulate`, mais l'écrivain n'émettait ni `\include` ni
+l'enveloppe, donc LilyPond rejouait des durées pleines.
+
+L'écrivain émet maintenant `\include "articulate.ly"` et enveloppe le contenu
+de `\score` dans `\articulate { … }` quand le modèle porte ce drapeau. Le
+correctif ne touche que les 13 sources du lot qui contiennent `\articulate`
+(aucune ne l'obtient uniquement par `\include`).
+
+Test réduit écrit d'abord : `articulation_du_midi_ecrite`. Mesure ciblée sur
+ces 13 fichiers (`--mode midi`, deux binaires frères) : exacts 1 → 8, n2d en
+hausse sur 12 fichiers, aucune nouvelle perte d'exactitude. `Wellerman…`
+(reference 183 notes, réécrit 732 : le lecteur fusionne deux `\score` dont le
+second transpose) voit son n2d reculer de 5 (183 → 178) : ce fichier était
+déjà hors d'atteinte par cette cause structurelle, pas une régression
+d'exactitude.
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire

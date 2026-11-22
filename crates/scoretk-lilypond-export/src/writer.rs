@@ -63,6 +63,13 @@ impl<'a> Writer<'a> {
 
         let _ = writeln!(out, "\\version \"{LILYPOND_VERSION}\"");
         out.push_str("\\language \"english\"\n\n");
+        // `ly/articulate.ly` définit le music-function qui raccourcit les
+        // notes jouées. Le lecteur pose `playback_articulate` quand le source
+        // utilise `\articulate` (`ly/articulate.ly`) ; l'écrire ici conserve
+        // les durées MIDI à la relecture du `.ly`.
+        if self.score.playback_articulate {
+            out.push_str("\\include \"articulate.ly\"\n");
+        }
 
         self.write_header(&mut out);
         self.write_variables(&mut out, &structure);
@@ -163,7 +170,11 @@ impl<'a> Writer<'a> {
 
     /// Bloc `\score` avec les regroupements de portées.
     fn write_score(&self, out: &mut String) {
-        out.push_str("\\score {\n  <<\n");
+        out.push_str("\\score {\n");
+        if self.score.playback_articulate {
+            out.push_str("  \\articulate {\n");
+        }
+        out.push_str("  <<\n");
         let mut written = vec![false; self.score.staves.len()];
 
         for part in &self.score.parts {
@@ -205,7 +216,11 @@ impl<'a> Writer<'a> {
             }
         }
 
-        out.push_str("  >>\n  \\layout { }\n}\n");
+        out.push_str("  >>\n");
+        if self.score.playback_articulate {
+            out.push_str("  }\n");
+        }
+        out.push_str("  \\layout { }\n}\n");
     }
 
     /// Une portée, ses voix et ses blocs de paroles.
@@ -353,6 +368,27 @@ mod tests {
         assert_eq!(group_of(&staff, 2), Some("ChoirStaff"));
         staff.brackets.clear();
         assert_eq!(group_of(&staff, 2), Some("StaffGroup"));
+    }
+
+    /// `ly/articulate.ly` raccourcit les notes jouées d'un facteur 7/8. Le
+    /// modèle porte ce réglage dans `Score::playback_articulate` ; si
+    /// l'écriture l'omet, la relecture du `.ly` rejoue des durées pleines
+    /// (`22_StMichel.ly`, `GaudeteChristusEstNatus.ly`).
+    #[test]
+    fn articulation_du_midi_ecrite() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno."));
+        score.add_staff(part);
+        score.playback_articulate = true;
+        let rendered = Writer::new(&score).render().expect("écriture");
+        assert!(
+            rendered.contains("\\include \"articulate.ly\""),
+            "l'include doit être écrit : {rendered}"
+        );
+        assert!(
+            rendered.contains("\\articulate {"),
+            "la musique doit être enveloppée : {rendered}"
+        );
     }
 
     #[test]
