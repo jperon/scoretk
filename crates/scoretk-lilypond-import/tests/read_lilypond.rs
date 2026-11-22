@@ -4552,20 +4552,17 @@ fn parser_include_string_injecte_la_musique() {
 
 #[test]
 fn include_ignore_sans_partition_ne_fait_pas_echouer() {
-    // Les gabarits `satb.*`/`ssaattbb.*` mettent leur `\score` dans le
-    // fichier livré avec LilyPond (`satb.ly`, `ssaattbb.ly`), que le
-    // sous-ensemble n'inclut pas. Ce n'est pas une erreur de syntaxe : la
-    // lecture renvoie une partition vide avec un avertissement.
+    // `ly/satb.ly:157-215` porte le `\score` : le lecteur injecte un score
+    // équivalent jouant les variables `*Music` de la source appelante, au
+    // lieu de renvoyer une partition vide.
     let source = "\\version \"2.19.19\"\n\
          SopranoMusic = \\relative { c''4 c c4 c }\n\
          \\include \"satb.ly\"";
-    let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
-    assert!(score.measures.is_empty(), "partition vide");
-    assert!(
-        warnings
-            .iter()
-            .any(|w| w.message.contains("aucune partition lisible")),
-        "avertissements : {warnings:?}"
+    let (score, _warnings) = read_lilypond_reporting(source).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![72, 72, 72, 72],
+        "les notes de SopranoMusic sont jouées"
     );
 
     // Une source réellement sans musique reste une erreur.
@@ -7888,5 +7885,20 @@ fn repeat_volta_avec_alternative_sans_corps_joue_les_fins() {
     assert_eq!(
         score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
         vec![60, 62, 64, 65, 67]
+    );
+}
+
+#[test]
+fn gabarit_satb_joue_les_variables_musicales() {
+    // `ly/satb.ly:157-215` construit le score à partir des variables
+    // `*Music` définies par le fichier appelant (`satb-template-*.ly`).
+    let src = "\\version \"2.19.19\"\n\
+         SopranoMusic = \\relative { c''4 d e f }\n\
+         AltoMusic = \\relative { g4 a b c' }\n\
+         \\include \"satb.ly\"\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![72, 74, 76, 77, 55, 57, 59, 72]
     );
 }

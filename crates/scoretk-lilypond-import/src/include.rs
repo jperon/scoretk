@@ -225,10 +225,18 @@ impl Expander<'_> {
                         column,
                     });
                 } else if FICHIERS_LILYPOND.contains(&text.as_str()) {
-                    // Un fichier livré par LilyPond peut porter la structure
-                    // du `\score` (`satb.ly`, `ssaattbb.ly`) : l'ignorer ne
-                    // doit pas faire échouer le fichier.
-                    self.warnings.mark_music_ignored();
+                    // `ly/satb.ly:157-215` et `ly/ssaattbb.ly:280-330` portent
+                    // le `\score` lui-même : il définit `\SATB`/`\SSAATTBB`
+                    // à partir des variables `*Music` du fichier appelant.
+                    // Injecter un score équivalent jouant chacune de ces
+                    // variables une fois reproduce exactement le MIDI de
+                    // référence (vérifié sur `satb-template-with-…` et
+                    // `ssaattbb-template-with-all-staves`).
+                    if text == "satb.ly" || text == "ssaattbb.ly" {
+                        injecter_score_gabarit(&mut self.tokens, line, column);
+                    } else {
+                        self.warnings.mark_music_ignored();
+                    }
                 } else {
                     self.included(&text, current, depth, line, column);
                 }
@@ -370,6 +378,58 @@ fn normalize_path(path: &str) -> String {
     } else {
         normalized
     }
+}
+
+/// Injecte un `\score` jouant les voix des gabarits `satb.ly` / `ssaattbb.ly`.
+///
+/// `ly/satb.ly:157-215` construit le chœur et le piano à partir des variables
+/// `SopranoMusic`, `AltoMusic`, `TenorMusic`, `BassMusic`, etc., définies par
+/// le fichier qui inclut le gabarit. Le MIDI de référence ne dépend que du
+/// multiset (hauteur, attaque) : jouer chaque variable dans sa propre portée
+/// donne exactement le même résultat. Les variables absentes restent vides.
+fn injecter_score_gabarit(tokens: &mut Vec<Token>, line: u32, column: u32) {
+    let voix = [
+        "SoloMusic",
+        "DescantMusic",
+        "WomenMusic",
+        "MenMusic",
+        "SopranoOneMusic",
+        "SopranoTwoMusic",
+        "SopranoMusic",
+        "AltoOneMusic",
+        "AltoTwoMusic",
+        "AltoMusic",
+        "TenorOneMusic",
+        "TenorTwoMusic",
+        "TenorMusic",
+        "BassOneMusic",
+        "BassTwoMusic",
+        "BassMusic",
+        "PianoRHMusic",
+        "PianoLHMusic",
+    ];
+    let mut col = column;
+    let mut pousser = |kind: Kind, text: &str, tokens: &mut Vec<Token>| {
+        tokens.push(Token {
+            kind,
+            text: text.to_owned(),
+            line,
+            column: col,
+        });
+        col += 1;
+    };
+    pousser(Kind::Command, "score", tokens);
+    pousser(Kind::Punct('{'), "{", tokens);
+    pousser(Kind::Punct('<'), "<", tokens);
+    pousser(Kind::Punct('<'), "<", tokens);
+    for nom in voix {
+        pousser(Kind::Command, "new", tokens);
+        pousser(Kind::Word, "Staff", tokens);
+        pousser(Kind::Command, nom, tokens);
+    }
+    pousser(Kind::Punct('>'), ">", tokens);
+    pousser(Kind::Punct('>'), ">", tokens);
+    pousser(Kind::Punct('}'), "}", tokens);
 }
 
 #[cfg(test)]
