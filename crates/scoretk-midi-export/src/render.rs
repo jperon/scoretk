@@ -322,6 +322,14 @@ pub(crate) fn render(
             }
         }
 
+        // Une portée gravée mais muette (`Part::mute`, `Staff_performer`
+        // retiré) garde tous ses évènements de mise en page et de canal, mais
+        // ne joue aucune note (`NPlayEvent::isMuted`,
+        // `compatmidirenderinternal.cpp`).
+        if staff.muted {
+            continue;
+        }
+
         // Note events.
         let mut notes = Vec::new();
         let mut prev_chords = [0i64; VOICES];

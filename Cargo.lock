@@ -612,9 +612,11 @@ dependencies = [
 name = "scoretk-lilypond-import"
 version = "0.1.0"
 dependencies = [
+ "midly",
  "quick-xml",
  "scoretk-core",
  "scoretk-lilypond-common",
+ "scoretk-midi-export",
  "scoretk-musescore-import",
  "scoretk-musicxml-export",
  "thiserror",

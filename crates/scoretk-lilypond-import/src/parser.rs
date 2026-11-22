@@ -1186,6 +1186,7 @@ impl<'a> Parser<'a> {
 
         // Contenu du contexte.
         let mut staff = StaffBlock::new();
+        staff.muted = midi_silent;
         staff.name = context_name.clone();
         staff.instrument_name = instrument_name.clone();
         staff.short_instrument_name = short_instrument_name.clone();
@@ -1245,18 +1246,6 @@ impl<'a> Parser<'a> {
                 }
                 let content = self.parse_music();
                 self.note_mode = mode_precedent;
-                if midi_silent {
-                    // Portée gravée mais silencieuse dans le MIDI : on consomme
-                    // sa musique sans créer de portée jouée dans le modèle.
-                    return Some(GroupBlock {
-                        kind: GroupKind::Other,
-                        existing,
-                        instrument_name: None,
-                        short_instrument_name: None,
-                        staves: Vec::new(),
-                        lyrics: Vec::new(),
-                    });
-                }
                 // Une seule musique de portée, comme pour `\context Staff` :
                 // les voix sont ouvertes par l'interpréteur au tick courant,
                 // pas relues chacune depuis zéro.

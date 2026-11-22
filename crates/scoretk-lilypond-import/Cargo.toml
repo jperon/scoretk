@@ -19,4 +19,6 @@ thiserror.workspace = true
 [dev-dependencies]
 scoretk-musescore-import = { path = "../scoretk-musescore-import" }
 scoretk-musicxml-export = { path = "../scoretk-musicxml-export" }
+scoretk-midi-export = { path = "../scoretk-midi-export" }
+midly = { version = "0.5.3", default-features = false, features = ["alloc", "std"] }
 quick-xml = { workspace = true }

@@ -359,6 +359,11 @@ pub struct Staff {
     /// Une portée invisible est signalée `print-object="no"` dans
     /// `<staff-details>` à l'export MusicXML (`writeStaffDetails`).
     pub visible: bool,
+    /// Portée gravée mais muette en lecture (`Part::mute` /
+    /// `staff->playbackVoice()` dans `compatmidirenderinternal.cpp`).
+    /// Le modèle reste complet pour tous les formats : seul l'écrivain MIDI
+    /// ignore ses notes.
+    pub muted: bool,
     /// Vrai si la portée est en petit format.
     pub small: bool,
     /// Agrandissement utilisateur en pourcentage (`StaffType::userMag`,
@@ -389,6 +394,7 @@ impl Staff {
             part,
             lines: 5,
             visible: true,
+            muted: false,
             small: false,
             user_mag_percent: 100,
             bar_line_span: false,

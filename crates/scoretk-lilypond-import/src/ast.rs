@@ -440,6 +440,9 @@ pub(crate) struct StaffBlock {
     pub instrument_name: Option<String>,
     /// Nom abrégé (`shortInstrumentName`).
     pub short_instrument_name: Option<String>,
+    /// Vrai si la portée est gravée mais absente du MIDI
+    /// (`\with { \remove "Staff_performer" }`).
+    pub muted: bool,
     /// Voix de la portée.
     pub voices: Vec<VoiceBlock>,
     /// Paroles attachées à une voix de la portée.
@@ -453,6 +456,7 @@ impl StaffBlock {
             name: None,
             instrument_name: None,
             short_instrument_name: None,
+            muted: false,
             voices: Vec::new(),
             lyrics: Vec::new(),
         }
