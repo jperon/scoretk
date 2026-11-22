@@ -1080,3 +1080,54 @@ excerpt/staff layout relation, which the model does not carry.
 A resolved-`headType()` experiment for `<notehead>` (`exportmusicxml.cpp:3897-3902`)
 was also reverted: C++ keeps `HEAD_AUTO` for ordinary notes, and emitting
 `filled="yes"` from the duration broke both e2e corpus tests.
+
+## 36. Group-by-group disposition of the 29 remaining files
+
+### 36.1 `attributes` (13 files) — diff alignment, not a musical element
+
+After the empty-wrapper pruning (§35), none of the normalized documents
+contains an `<attributes>` block with no children (checked on the largest
+file, `01- Veni veni Emmanuel - Violons 1 et 2`: 0 empty blocks on both sides).
+The first differing lines are only `<attributes>`/`</attributes>` pairs while
+the children between them are `Equal` lines: `similar`'s edit script aligns
+two identical attribute blocks at different positions. For the seven `Veni
+veni Emmanuel`/`Douce nuit` files, the extra reference blocks contain only a
+`<staff-details print-object="no">` produced by `writeMeasure`
+(`exportmusicxml.cpp:8694-8707`) from `m_hiddenStaves`
+(`:7559-7575`) — already classified as layout in §33. The four Haydn files
+have `<measure-style><multiple-rest>` as their real first differing child
+(see below). No writer change follows from this group.
+
+### 36.2 `staff` (4 files) — reader cannot derive the staff move
+
+The reference writes `<staff>2</staff>` on five notes of
+`Vivaldi 05-Juravit_Dominus` and `09-Gloria_Patri`; `writeNote`
+(`exportmusicxml.cpp:4469`) computes `staff + chord->staffMove()`. The `.mscx`
+files contain no `<staffMove>` element at all, and their `<track>` elements
+belong to slurs, not to notes. The pivot model therefore has `staff_move = 0`
+and the writer cannot recover the value. Classified as an importer/model gap.
+
+### 36.3 `dot` (2 files) — no rule found without regressions
+
+`writeRest` (`exportmusicxml.cpp:4655-4669`) writes `<dot>` only from
+`rest->dotList()`. The two extra dots are dotted whole rests on visible
+staves in `Minuit chretien - Basson/Violons`, but the references legitimately
+contain dotted whole rests on visible staves in other scores (e.g.
+`Veni veni Emmanuel - chant piano`). A blanket "no dot on whole rest" rule
+gained the 2 files and lost 6 (§33.4); no narrower rule from the model was
+found. Classified as layout/import-dependent.
+
+### 36.4 Singletons
+
+`harmony` (`Adios_Muchachos`): `harmony()` returns early only when
+`chords().empty()` (`exportmusicxml.cpp:9162-9164`); the model has 44
+harmonies, none with both `name` and `text` empty, so that rule does not
+apply. `notehead`: a resolved-`headType()` experiment broke both e2e corpus
+tests (§35) — C++ keeps `HEAD_AUTO` for ordinary notes. `figured-bass`:
+`writeMusicXml(const FiguredBass*)` (`:6834-6850`) follows `parenthesesMode()`;
+the `.mscx` has no `<parentheses>` but the 4.7.4 reference writes
+`parentheses="yes"`, a style default not carried in the model. `time-modification`,
+`frame` and `clef` remain as recorded in §32.3.
+
+Core-identical stays **144/173**, N1/N2 1.0000, 0 XSD-invalid; no file was
+regressed by any of the tested candidate rules (all were reverted).
