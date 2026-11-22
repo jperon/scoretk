@@ -93,7 +93,9 @@ def ecrire(fichier, releve: dict) -> None:
 
 def mesure(args, schema, env_xsd, paires, fichier) -> None:
     for i, src in enumerate(lire_manifest(args.manifest, args.limit)):
-        travail = Path(args.out) / "travail" / str(i)
+        # Absolute: the core helper runs in a nested `nix develop` whose cwd
+        # is the repository root, not the caller's worktree subdirectory.
+        travail = (Path(args.out) / "travail" / str(i)).resolve()
         travail.mkdir(parents=True, exist_ok=True)
         r = {"fichier": src, "ok": False, "erreur": "", "temps": 0.0}
         tkxml, msxml = travail / "tk.musicxml", travail / "ms.musicxml"
@@ -147,8 +149,10 @@ def mesure(args, schema, env_xsd, paires, fichier) -> None:
 
 def fusionner_core(args) -> None:
     """Lance l'aide Rust une fois, puis fusionne ses résultats dans le relevé."""
-    manifeste = Path(args.out) / "paires.tsv"
-    sortie = Path(args.out) / "core.tsv"
+    # Absolute paths: the helper is launched through a nested `nix develop`
+    # whose working directory is the repository root, not the caller's.
+    manifeste = (Path(args.out) / "paires.tsv").resolve()
+    sortie = (Path(args.out) / "core.tsv").resolve()
     env = dict(os.environ)
     env["SCORETK_ORACLE_MANIFEST"] = str(manifeste)
     env["SCORETK_ORACLE_OUTPUT"] = str(sortie)
