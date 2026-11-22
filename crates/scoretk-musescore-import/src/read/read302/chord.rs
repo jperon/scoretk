@@ -289,6 +289,7 @@ fn read_note(
     let mut accidental = None;
     let mut head = NoteHeadType::Auto;
     let mut ghost = false;
+    let mut small = false;
     let mut play = true;
     let mut parentheses = false;
     let mut fingerings = Vec::new();
@@ -308,6 +309,7 @@ fn read_note(
             "Accidental" => accidental = Some(read_accidental(child)),
             "head" => head = tables::note_head(child.int_text()),
             "ghost" | "dead" => ghost = child.int_text().unwrap_or(0) != 0,
+            "small" => small = child.int_text().unwrap_or(0) != 0,
             "play" => play = child.int_text().unwrap_or(1) != 0,
             "Symbol" => {
                 if let Some(name) = child.child("name") {
@@ -367,6 +369,7 @@ fn read_note(
     note.accidental = accidental;
     note.head = head;
     note.ghost = ghost;
+    note.small = small;
     note.play = play;
     note.fingerings = fingerings;
     id

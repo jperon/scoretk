@@ -304,6 +304,9 @@ pub struct Note {
     pub parentheses: bool,
     /// Vrai pour une note fantôme (note morte, guitare).
     pub ghost: bool,
+    /// `<small>1</small>` de la note : `isSmallNote` (`exportmusicxml.cpp:4181-4184`)
+    /// l'ajoute au `<small>` de l'accord pour écrire `size="cue"`.
+    pub small: bool,
     /// Vrai si la note est jouée.
     pub play: bool,
     /// Vélocité importée du MIDI, valeur absolue 1-127.
@@ -355,6 +358,7 @@ impl Note {
             visible: true,
             parentheses: false,
             ghost: false,
+            small: false,
             play: true,
             velocity: None,
             user_velocity: None,

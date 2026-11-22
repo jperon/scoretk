@@ -2954,6 +2954,33 @@ fn crochet_de_nolet_sans_bracket_type() {
     }
 }
 
+/// `isSmallNote` (`exportmusicxml.cpp:4181-4184`) vaut
+/// `note->isSmall() || note->chord()->isSmall()`. Le port ne regardait que
+/// `chord.small`, donc les notes réduites individuellement (cas réel :
+/// `Angels_Carol__John_Rutter`, 8 notes) perdaient leur `size="cue"`.
+#[test]
+fn type_cue_sur_note_reduite() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    let mut note = Note::new(62, tpc::D);
+    note.small = true;
+    let id = score.add_note(note);
+    let mut chord_rest = ChordRest::chord(Duration::half());
+    chord_rest.chord_mut().expect("accord").notes.push(id);
+    ajouter_element(&mut score, &mut measure, track, Fraction::ZERO, chord_rest);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<type size=\"cue\">half</type>"),
+        "la note réduite doit être marquée cue :\n{xml}"
+    );
+}
+
 /// `Rest::checkDots()` n'est appelé que par le layout de la portée
 /// (`restlayout.cpp:148`) : une portée masquée (`<isStaffVisible>0`) n'a donc
 /// aucun `NoteDot`, et `writeRest` (`exportmusicxml.cpp:4655-4669`) n'écrit

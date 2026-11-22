@@ -1631,6 +1631,7 @@ impl Reader {
                         note.tpc_transposed = value;
                     }
                 }
+                "small" => note.small = child.int().unwrap_or(0) != 0,
                 "tpc2" => {
                     if let Some(value) = child.int().and_then(|value| i8::try_from(value).ok()) {
                         note.tpc_transposed = value;

@@ -2798,7 +2798,9 @@ fn write_pitch(
 
 /// Écrit `<type>` et les `<dot>` (`writeType`, `tick2xml`).
 fn write_type(out: &mut Out, notated: Fraction, chord: &Chord, note: &Note, grace: bool) {
-    let small = chord.small;
+    // `isSmallNote` (`exportmusicxml.cpp:4181-4184`) : la note elle-même ou
+    // son accord peut porter `<small>1</small>`.
+    let small = chord.small || note.small;
     let cue = is_cue_note(chord, note);
     let Some((name, dots)) = pitch::tick_to_xml(notated) else {
         return;
@@ -3108,7 +3110,8 @@ fn grace_is_after(kind: GraceType) -> bool {
 
 /// Vrai pour une petite note jouée comme repère (`isCueNote`).
 fn is_cue_note(chord: &Chord, note: &Note) -> bool {
-    chord.small && !note.play
+    // `isCueNote` (`exportmusicxml.cpp:4191-4193`) : `isSmallNote && !play`.
+    (chord.small || note.small) && !note.play
 }
 
 fn syllabic_name(syllabic: LyricsSyllabic) -> &'static str {
