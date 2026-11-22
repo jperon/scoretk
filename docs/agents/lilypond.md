@@ -4341,3 +4341,51 @@ three others, so the table remains the measurement of the shipped writer.
 All remaining losses and messages have a documented cause in the sections
 above; none is an unexplained per-file regression (the per-file comparison
 with the pre-campaign run shows 16 gains and 0 losses).
+
+### Reading campaign, seventh pass (2026-11-22) — classification
+
+Re-measured all three import lots on current master with the cached LilyPond 2.26
+MIDI references (`/tmp/ly-import-base`, scoretk binary of this commit):
+
+| Lot | Files | scoretk exact | Non-exact | N1 % | N2 % (no repeats) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| mus | 1447 | 1175 (81.2 %) | 272 | 99.32 | 98.73 |
+| ra | 1726 | 1328 (76.9 %) | 398 | 93.60 | 87.60 |
+| mut | 1377 | 535 (38.9 %) | 842 | 98.28 | 92.67 |
+
+Classification of the non-exact files by first flag (`mesure.py` / `midi_notes.compare`):
+
+| Cause | mus | ra | mut | Total |
+| --- | ---: | ---: | ---: | ---: |
+| `notes_supp` | 226 | 87 | 493 | **806** |
+| `attaque_decalee` | 17 | 130 | 204 | **351** |
+| `octave` | 24 | 55 | 144 | **223** |
+| `sortie_vide` | 0 | 52 | 0 | 52 |
+| `echec` | 3 | 2 | 1 | 6 |
+| `transposition` | 0 | 4 | 0 | 4 |
+| `autre` | 2 | 4 | 0 | 6 |
+
+**Why `mut` is so far below the other lots**: `notes_supp` alone accounts for
+493 of its 842 non-exact files (59 %), followed by `attaque_decalee` (204) and
+`octave` (144). 652 of its 1377 files contain repeats; N2 is not scored on
+those, so an exact match depends entirely on reproducing the written MusicXML
+one-for-one. The dominant construct is the **piano-reduction / book-score
+layout of the Mutopia sources**: a second copy of the same music in a
+`\new PianoStaff` or a `\book { \score }`, often with
+`\remove "Staff_performer"`. LilyPond's MIDI plays one copy; our reader builds
+both, so the model has extra notes (`notes_supp`).
+
+### Cause fixed — `\remove Staff_performer` makes a staff silent
+
+`ly/performer-init.ly:32` lists `Staff_performer` among the performers of an
+audible staff; a `\with { \remove "Staff_performer" }` removes it from the MIDI
+(NR §24.3). The reader treated such a group as an ordinary staff and added its
+notes to the model, duplicating the music already present in the choir staff.
+`parse_new_context` now detects the removal in the `\with` token range,
+consumes the group's music and creates no played staff. Failing reduced test
+`portee_sans_staff_performer_ne_joue_pas` written first. On the 40 files
+containing the construct (8 mus, 1 ra, 31 mut), the focused run
+(`/tmp/ly-import-silent-run`) gains **one exact file and loses none**;
+N2 does not change (the extra notes were duplicates at the same pitch/attack).
+The remaining two large classes (`notes_supp` from other constructs and
+`attaque_decalee`) are not yet isolated to a single reference-backed rule.
