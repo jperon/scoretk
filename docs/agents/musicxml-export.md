@@ -830,3 +830,51 @@ Baseline `target/xml-jump/` (70/173 core-identical). One line per file:
 | staff | | | `Vivaldi_-_Dixit_Dominus-RV_594__-_05_Juravit_Dominus.mscz` | 10 |
 | time-modification (group) | 1 | 8 | | |
 | time-modification | | | `Ave_Maria_Schubert_in_C_with_chords.mscz` | 8 |
+
+## 33. Three causes from the inventory (2026-11-22)
+
+The grouped inventory (§32) was taken in order, skipping beams (`tuplet`) and
+pure layout (`attributes`, `staff-details`).
+
+### 33.1 Note-level `<visible>` in 2.x/3.x scores
+
+`writeNotehead` (`exportmusicxml.cpp:3910-3913`) writes
+`<notehead>none</notehead>` for an invisible note on a normal staff. The 4.x
+reader already read `<visible>` on `<Note>`, but the 2.x/3.x reader did not.
+Adding it removed 12 spurious `<notehead>none</notehead>` gaps: reduced facade
+test first (failing before the fix). Measurement `target/xml-notevis/` vs
+`target/xml-jump/`: **3 gains, 0 losses** — `Angels_Carol` 42 → 27,
+`Vivaldi 01-Dixit_Dominus` 198 → 186, `Vivaldi 09-Gloria_Patri` 75 → 69.
+
+### 33.2 `smallStaffMag` from `score_style.mss`
+
+`Staff::staffMag` (`staff.cpp:806-809`) is
+`(small ? smallStaffMag : 1) * userMag` and `writeStaffDetails`
+(`exportmusicxml.cpp:8139-8144`) derives `<staff-size scaling=…>` from it.
+The port hardcoded 0.7 and ignored `<smallStaffMag>` in the `.mscz`'s
+`score_style.mss`: eight small staves of `Vivaldi Sicut erat` were written at
+70 instead of 90. Reading the style value fixed them: reduced test first.
+Measurement `target/xml-mag/` vs `target/xml-notevis/`: **1 gain, 0 losses** —
+that file 187 → 171.
+
+### 33.3 Inline `<Style>` `smallStaffMag`
+
+`StyleSettings::set_value` now also accepts `smallStaffMag` from an inline
+`<Style>` in an `.mscx` (the `.mss` path is §33.2); unit test added.
+Measurement `target/xml-style/` vs `target/xml-mag/`: **0 gain, 0 loss** — the
+173-file lot carries the value in `score_style.mss`, so no file changes. This
+closes the inline path without altering the corpus.
+
+### 33.4 Rejected attempts (measured, reverted)
+
+- Section-start `HeaderClef` with `after-barline` (`target/xml-clefsec/`):
+  one file gained 2 wrong lines (186 → 188) because the clef landed in the
+  wrong `<attributes>` block. Reverted.
+- Skipping dots on whole rests (`target/xml-restdot/`): fixed the two `dot`
+  files but lost lines in 6 files — references do contain dotted whole rests
+  (`00- Veni veni Emmanuel - chant piano` has `<type>whole</type><dot/>`).
+  Reverted.
+- Broadening `assign_multiple_rests` to all empty runs regressed
+  `e2e_corpus` and was reverted before measurement.
+
+Core-identical remains **70/173**, N1/N2 1.0000, 0 XSD-invalid throughout.
