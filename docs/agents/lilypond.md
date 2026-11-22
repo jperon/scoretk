@@ -4952,3 +4952,52 @@ La mesure complète finale (`/tmp/ly-ra-final4`) donne **1410 exacts sur 1724
 (81,8 %)**, huit fichiers gagnés et aucune perte par rapport aux 1402. Restent
 101 `attaque_decalee`, 62 `octave`, 62 `notes_manquantes`, 49 `notes_supp`,
 33 `sortie_vide`, 4 `transposition`, 3 `autre`, 1 `echec`.
+
+## `ra` — notes manquantes, octave et remarque sur `parse_duration`
+
+Remarque de relecture vérifiée : aucun appelant de `parse_duration` ne
+distingue `None` de `Some(1)` (tous passent par `map_or(ticks, |v| ticks*v)`
+ou `unwrap_or(Fraction::ONE)`). La fonction renvoie donc de nouveau `None`
+pour un facteur implicite de 1, sans changement de comportement.
+
+Quatre causes, test réduit échouant d'abord pour chacune :
+
+1. **`c:13.11`** (`chord-name-11-entry.ly`) : `scm/chord-entry.scm:67-78,137`
+   traite les degrés après un point comme des ajouts et rend le 11 explicite.
+   `chord_pitches` les ajoute désormais à la base et ne supprime plus le 11
+   de `:13` quand il est explicite. Test unitaire `noms_daccords`.
+2. **`\absolute`** (`ly/music-functions-init.ly:32-36`, Notation Reference
+   §1.1.2) : la musique est soustraite au `\relative`/`\fixed` environnant,
+   et la référence de la suite reste celle d'avant le bloc. Test
+   `absolute_cache_la_musique_du_relative_entourant`. Gain : `relative.ly`.
+3. **Échappements Scheme dans `ly:parser-include-string`**
+   (`lily/lily-lexer.cc:302-315`) : `\\` dans la chaîne vaut un seul
+   backslash. Sans décodage, `\\relative` n'était pas reconnu et les hauteurs
+   tombaient à l'octave absolue. Test existant `parser_include_string_injecte_la_musique`
+   corrigé vers la syntaxe réelle. Gain : `include-string.ly`.
+4. **`\include \identifiant`** (`lily/lexer.ll:340-350`) : un identifiant
+   assigné à une chaîne sert de nom de fichier. Le préprocesseur retient ces
+   assignations ; `\version "…"` inclus au milieu d'une musique ne doit pas
+   avaler la durée nue suivante. Tests `include_avec_identifiant_de_chaine` et
+   `version_dans_un_include_musical_garde_la_duree_nue`. Gain :
+   `include-identifier.ly`.
+
+Tentative non retenue : faire hériter à la seconde voix de `<< … \\ … >>` la
+référence relative de la première (`lily/music-sequence.cc:143-158`). Les
+voix sont construites séparément par `builder.rs` et l'état d'octave est
+restauré par le `Context::Relative` englobant : le corriger demanderait de
+restructurer `build_voices`, hors périmètre. Test réduit retiré.
+
+Mesure ciblée sur 46 fichiers `\relative`/accords : **3 gains exacts, 0 perte**.
+Mesure ciblée sur 162 fichiers avec `\include` : **2 gains exacts, 0 perte
+exacte**. Les deux baisses N2 sur `chord-names-languages*.ly` viennent des
+commits de `master` récupérés au rebase (`\simultaneous`, `q`, octave-shift)
+et non de ces causes : un bâti à `4a2c244d` sans mes modifications donne le
+même résultat.
+
+La mesure complète finale (`/tmp/ly-ra-final5`) donne **1439 exacts sur 1724
+(83,5 %)**, 29 fichiers gagnés et aucune perte par rapport aux 1402. La
+majorité des gains de grace viennent de la mise à jour de l'oracle sur
+`master` (`n2_grace` désormais admis dans `exact`), pas du lecteur. Restent 81
+`attaque_decalee`, 61 `octave`, 60 `notes_manquantes`, 47 `notes_supp`, 29
+`sortie_vide`, 4 `transposition`, 3 `autre`, 1 `echec`.
