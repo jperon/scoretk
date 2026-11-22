@@ -5208,3 +5208,34 @@ La mesure complète (`/tmp/ly-ra-final7`) donne **1459 exacts sur 1724 (84,6 %)*
 **18 fichiers gagnés et aucune perte** par rapport au bâti `master` `00fee24d`
 (1441). Restent 88 `attaque_decalee`, 54 `notes_manquantes`, 52 `notes_supp`,
 38 `octave`, 28 `sortie_vide`, 4 `transposition`, 1 `autre`, 1 `echec`.
+
+## `ra` — cue, identifiants et alternatives (lot 86,0 %)
+
+Remarque de relecture traitée : les notes insérées par `\cueDuring` portent
+désormais `Note::small = true` dans le modèle (`NoteEvent::small` dans le
+lecteur, propagé par `build_note`), afin que les écrivains gravent des notes
+de cue (`MuseScore exportmusicxml.cpp:4181-4193`, `size="cue"`) au lieu de
+notes ordinaires. Test `cue_during_joue_la_citation` complété.
+
+Quatre causes, test réduit échouant d'abord, mesurées face à `/tmp/ly-ra-final7` :
+
+1. **Identifiant Scheme numérique** (`num = #3`, `lily/parser.yy`) : le nombre
+   sert d'argument à `\repeat unfold \num`. Test
+   `identifiant_numerique_scheme_dans_repeat_unfold`. Gain : `identifiers`.
+2. **Identifiants pointés** (`violin.1 = { … }`, `identifier-alists.ly`) : les
+   noms de variables alistes sont reconnus à l'assignation et à l'appel. Test
+   `identifiant_pointedans_un_nom_de_variable`. Gain : `identifier-alists`.
+3. **`\alternative` dans le corps d'une reprise**
+   (`\repeat volta n { … \alternative { … } }`) : retirer le contexte
+   `Alternative` du corps pour l'enregistrer comme endings. Tests
+   `alternative_a_l_interieur_du_corps_de_reprise` ; gains sur les
+   `repeat-*-count-one`, `bar-number-*alternative*`, etc.
+4. **`\quoteDuring`** (`ly/music-functions-init.ly:2023-2032`) : même
+   sémantique MIDI que `\cueDuring`, sans direction ni armure. Test
+   `quote_during_joue_la_citation`.
+
+Mesures ciblées : 2 gains / 0 perte (causes 1–2), 22 gains / 0 perte (causes
+3–4). La mesure complète (`/tmp/ly-ra-final8`) donne **1482 exacts sur 1724
+(86,0 %)**, 23 fichiers gagnés et aucune perte par rapport aux 1459. Restent
+91 `attaque_decalee`, 53 `notes_supp`, 35 `octave`, 29 `notes_manquantes`, 25
+`sortie_vide`, 5 `transposition`, 4 `autre`, 1 `echec`.
