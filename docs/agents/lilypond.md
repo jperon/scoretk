@@ -4588,3 +4588,7 @@ The "no distinctive construct" group (94 files) sub-classifies by flag as
 `sortie_vide` 26, `attaque_decalee` 22, `notes_supp` 17, `octave` 16,
 `notes_manquantes` 9, other 4; by ref/test count: 26 empty test, 20 same count,
 10 doubled, 36 other.
+
+After the four causes above, the full `ra` re-measure (`/tmp/ly-ra-final`)
+reports **1372 exact of 1724 measured (79.6 %)**, six files gained and none
+lost (the five `repeat-dc`/`repeat-ds` files and `chord-name-minor`).
