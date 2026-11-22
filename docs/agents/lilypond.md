@@ -5577,6 +5577,69 @@ Mesure ciblée sur les 30 lignes concernées plus 10 fichiers exacts : **30
 exclues, 10 comparées, 0 perte**, scoretk 10/10 contre musicxml2ly 8/10.
 C'est une correction de mesure : la taille des `.ly` ne change pas.
 
+### Séquence des restes : 18 mscz et 36 ly (2026-11-22, relevé final)
+
+Chaque fichier non-exact a été différencié par première divergence sur les
+notes (`tk.musicxml` contre `scoretk.model.musicxml` en `--mode model`, listes
+de notes MIDI en `--mode midi`). Le but était de dégager une cause écrivain
+avec gain mesurable ; aucune n'a été trouvée, et voici la preuve documentée.
+Aucun `.ly` produit n'a grandi : `\afterGrace 1` +4 octets au total sur le
+lot mscz, fin de reprise orphelin −840 sur le lot `ly`, notes invisibles +14
+sur mscz (moyennes 26622 et 1943 octets), agrément après et correctifs
+d'oracle : 0 octet.
+
+**Lot mscz (18).** `attaque_decalee` 6, `hauteur` 6, `autre` 3 (durée seule),
+`notes_supp` 2 (partitions vides, 0 note des deux côtés), 1 entrée exclue.
+Les douze premiers groupes sont des **notes surnuméraires à la relecture** :
+par exemple `Vivaldi … DeTorrente` a un `A4` de plus au tick 172 dans la
+portée 8 (le `A4` long du tick 170 est suivi d'un accord `A4/B4/E5` ; la
+référence ne compte pas le premier `A4` de l'accord), `Ave_Verum__Stopford`
+a un `E4` de plus au tick 128, et quatre Vivaldi (`Sicut erat` ×3, `Donec
+ponam`) ont +3 notes en voix 8. Ce sont des **liaisons inter-voix** : une
+liaison dont le départ et l'arrivée sont dans deux voix distinctes ne peut pas
+être reconstruite par `Tie_engraver` (`lily/tie-engraver.cc`), qui apparie les
+têtes dans une même voix. Le modèle MuseScore porte bien les deux extrémités
+(`engraving/dom/chord.h`, `tieForward`/`tieBack`) ; l'écrivain ne peut pas
+exprimer cette liaison en LilyPond sans changer la distribution des voix.
+La tentative `\repeatTie` (Notation §2.1.4) a été faite puis **revertée** :
+le lecteur ne le reconnaissait pas et la sortie grossissait de 35 jetons sur
+un seul fichier, sans gain d'exactitude. Les trois `autre`
+(`Magnificat__Prt`, `Omni_die_dic_Mariae` ×2) sont un décalage de durée
+`g2` lu comme une noire sous `\set Timing.measureLength = #1/2` : retirer
+tous les `\set` du `.ly` corrige la première mesure mais décale toutes les
+suivantes de 2 temps (vérifié sur `Omni_die_dic_Mariae`) — c'est l'**affectation
+du tick du méta-événement** dans `events.rs::event` (`self.cursor` avale la
+fin de mesure précédente), cause lecteur, pas écrivain.
+
+**Lot `ly` (36).** Causes lecteur laissées à ly95 (avec les noms de fichiers) :
+
+* `notes_supp` 14 — `22_StMichel_ChantPromo`, `Lassus_In_pace`,
+  `Lassus_Alleluja._Dies_sanctificatus`, `Laudate_pueri_Op._39…`,
+  `Anerio_Ascendit_Deus`, `Salazar_ALaEstrellaQueEsmalta`,
+  `CEtaientTroisJoyeuxRoutiers`, `ChantProvincialDeFlandre`, `lily-*` :
+  liaisons inter-voix et `Timing.measureLength`, même mécanisme que mscz.
+* `octave`/`notes_manquantes` 13 — `Dechiffrage` (Scheme `$(let …)` non
+  évalué : 68 notes de référence contre 16 lues), `Sonis`, `Maiana`,
+  `MakilarianII`, `SanctePieX`, `lily-e4b904e2`, `lily-fba5e0bb`,
+  `lily-58283073`, `lily-098c2192`, `lily-e92edf38`, `GaiDuguesclin` :
+  second `\score` MIDI transposé ou musique Scheme, documenté §7/§14.
+* `octave`/`notes_supp` 5 — `01_03_Miguel_AyQueDolor_partition`,
+  `02_04_Policier_Un-bon-agent…`, `LaMouetteGrise_EtBerceDansLaBrise`,
+  `Kryshachok`, `VolgaVolga` : même transposition de partition MIDI.
+* `attaque_decalee` 2 — `01_01_Buenos-dias-Mexico_partition`,
+  `Sancta_Maria_KV_273…` : `\partial` et mesures incomplètes, lecture.
+* `octave` 1 — `02_01_CommentLeSaisJe` : armure lue à 2 dièses pour
+  `\key d \minor` dans le modèle (fifths +2 au lieu de −1), lecteur.
+* `duree_seule` 1 — `Angels_Carol__John_Rutter-midi` : la référence est un
+  MIDI généré par un autre chemin (durée 4 contre 3,2578), artefact de
+  référence.
+
+La seule cause écrivain de ce relevé — la fin de reprise orphelin — avait
+déjà été corrigée et mesurée (21 fichiers gagnés). Aucune des 54 divergences
+restante n'est imputable au writers : chaque groupe a été ramené à une
+liaison inter-voix, un méta `Timing.measureLength` mal daté, une transposition
+de `\score` MIDI ou une référence invalide, tous dans le lecteur ou l'oracle.
+
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire
