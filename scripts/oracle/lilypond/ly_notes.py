@@ -169,7 +169,7 @@ def read_xml(
     for numero_part, part in enumerate(racine.findall("part")):
         divisions = 1
         transposition = 0
-        octave_shift = 0
+        octave_shifts: dict[str, int] = {}
         curseur = 0.0             # position courante de la partie, en noires
         debut_mesure = 0.0        # attache de la mesure en cours
         extension = 0.0           # extension maximale de la mesure en cours
@@ -191,9 +191,10 @@ def read_xml(
                         transposition = int(float(chromatique)) + 12 * int(float(octave))
                     continue
                 if elem.tag == "direction":
-                    # `<octave-shift>` porte sur la hauteur *jouée*, pas sur
-                    # la hauteur écrite : l'export MuseScore écrit l'octave
-                    # corrigée, le MIDI de LilyPond joue la hauteur concert.
+                    # `<octave-shift>` porte sur la hauteur *jouée* de la
+                    # portée indiquée par `<staff>` : un changement sur la
+                    # portée 1 ne doit pas décaler la portée 2 du même part.
+                    staff = elem.findtext("staff", "1")
                     for type_element in elem.findall("direction-type"):
                         shift = type_element.find("octave-shift")
                         if shift is None:
@@ -201,12 +202,13 @@ def read_xml(
                         size = shift.findtext("size", "8")
                         amount = 24 if size == "15" else 12
                         kind = shift.get("type")
+                        courant = octave_shifts.get(staff, 0)
                         if kind == "down":
-                            octave_shift -= amount
+                            octave_shifts[staff] = courant - amount
                         elif kind == "up":
-                            octave_shift += amount
+                            octave_shifts[staff] = courant + amount
                         elif kind == "stop":
-                            octave_shift = 0
+                            octave_shifts[staff] = 0
                     continue
                 if elem.tag in ("backup", "forward"):
                     valeur = elem.findtext("duration")
@@ -243,6 +245,8 @@ def read_xml(
                 decalage = attack_texte if attack_texte is not None else offset_texte
                 offset = int(float(decalage)) / divisions if decalage else 0.0
                 jouee = attaque + offset
+                staff = elem.findtext("staff", "1")
+                decalage_octave = octave_shifts.get(staff, 0)
                 pitch = elem.find("pitch")
                 if pitch is None:
                     # Percussion `<unpitched>` : les écritures qui ne portent
@@ -256,10 +260,10 @@ def read_xml(
                         octave_u = unpitched.findtext("display-octave")
                         if step_u in STEPS and octave_u is not None:
                             hauteur_u = 12 * (int(octave_u) + 1) + STEPS[step_u]
-                            notes.append((hauteur_u + transposition + octave_shift, jouee,
+                            notes.append((hauteur_u + transposition + decalage_octave, jouee,
                                           0.0 if est_grace else duree, numero_part,
                                           est_grace) if with_grace else
-                                         (hauteur_u + transposition + octave_shift, jouee,
+                                         (hauteur_u + transposition + decalage_octave, jouee,
                                           0.0 if est_grace else duree, numero_part))
                             meta.append((numero_part, elem.findtext("staff", "1"),
                                          elem.findtext("voice", "1"), est_grace))
@@ -270,10 +274,10 @@ def read_xml(
                     continue
                 alter = pitch.findtext("alter", "0")
                 hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
-                notes.append((hauteur + transposition + octave_shift, jouee,
+                notes.append((hauteur + transposition + decalage_octave, jouee,
                               0.0 if est_grace else duree, numero_part, est_grace)
                              if with_grace else
-                             (hauteur + transposition + octave_shift, jouee,
+                             (hauteur + transposition + decalage_octave, jouee,
                               0.0 if est_grace else duree, numero_part))
                 meta.append((numero_part, elem.findtext("staff", "1"),
                              elem.findtext("voice", "1"), est_grace))
@@ -552,6 +556,22 @@ def selftest() -> None:
         # Cas « non concerné » : XML lisible, hauteur et attaque exactes.
         relevant = compare(att, lu)
         assert relevant["exact"] and relevant["n1"] == 5 and relevant["n2"] == 5
+
+        # `<octave-shift>` par portée : un décalage sur la portée 1 ne doit
+        # pas atteindre la portée 2 du même part (piano, Czerny).
+        deux_portees = """<score-partwise version="4.0"><part id="P1"><measure number="1">
+          <attributes><divisions>1</divisions></attributes>
+          <direction><direction-type><octave-shift type="down" size="8"/>
+            </direction-type><staff>1</staff></direction>
+          <note><pitch><step>C</step><octave>6</octave></pitch><duration>1</duration>
+            <voice>1</voice><staff>1</staff></note>
+          <backup><duration>1</duration></backup>
+          <note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration>
+            <voice>2</voice><staff>2</staff></note>
+        </measure></part></score-partwise>"""
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(deux_portees)
+        assert read_xml(p) == [(72, 0.0, 1.0, 0), (72, 0.0, 1.0, 0)], read_xml(p)
 
         # Correction 1 — grâce absente du candidat : LilyPond la joue dans son
         # MIDI, N1 et N2 doivent chuter. Le relevé précédent l'écartait à tort.
