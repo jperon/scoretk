@@ -186,6 +186,11 @@ const QUALITIES: &[(&str, &[i8])] = &[
     ("min", &[0, 3, 7]),
     ("7", &[0, 4, 7, 10]),
     ("m7", &[0, 3, 7, 10]),
+    // `scm/chord-entry.scm:252` : `min` est synonyme de `m`, y compris
+    // devant un degré (`c:min7` = do, mi♭, sol, si♭).
+    ("min7", &[0, 3, 7, 10]),
+    ("min9", &[0, 3, 7, 10, 14]),
+    ("min6", &[0, 3, 7, 9]),
     ("maj7", &[0, 4, 7, 11]),
     ("dim", &[0, 3, 6]),
     ("aug", &[0, 4, 8]),

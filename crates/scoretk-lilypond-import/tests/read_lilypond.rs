@@ -6335,3 +6335,15 @@ fn make_clusters_ne_joue_pas_de_notes() {
         .count() as u32;
     assert_eq!(attaques, 0, "le MIDI ne joue pas les clusters");
 }
+
+#[test]
+fn accord_chordmode_min7() {
+    // `scm/chord-entry.scm:235,252` : `min` est un modificateur appliqué à
+    // l'accord de base `7`, donc `c:min7` = do, mi♭, sol, si♭.
+    let src = "\\version \"2.24.0\"\n\\chords { c:min7 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 63, 67, 70]
+    );
+}
