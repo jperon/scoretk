@@ -430,6 +430,16 @@ fn tie_wait_for_note_garde_les_liaisons_pendantes() {
     assert_eq!(hauteurs_attaques(&sans), vec![72, 79, 84, 72, 79, 84]);
 }
 
+/// `-"texte"` reste une direction textuelle (`lily/parser.yy` `post_event:
+/// '-' fingering`, `direction_reqd_event: gen_text_def` qui accepte STRING) :
+/// la consommer laisse le `~` qui suit sans note et casse la liaison
+/// (`Lobt.ly`, `re2-"4--5" \fermata ~re4`).
+#[test]
+fn texte_apres_tiret_garde_la_liaison_suivante() {
+    let score = lire("c'2-\"4--5\" ~c'4 c'2");
+    assert_eq!(hauteurs_attaques(&score), vec![72, 72]);
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");

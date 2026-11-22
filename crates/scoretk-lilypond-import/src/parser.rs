@@ -4037,6 +4037,18 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 return vec![PostEvent::Fingering(token.text)];
             }
+            // `-"texte"` : ancienne écriture du doigté textuel, encore
+            // acceptée (`lily/parser.yy` `post_event: '-' fingering` ;
+            // `fingering` ne prend qu'un `UNSIGNED`, mais
+            // `post_event_nofinger: script_dir direction_reqd_event` et
+            // `direction_reqd_event: gen_text_def`, or `gen_text_def` accepte
+            // `STRING`, l. 3435-3445). Ne pas consommer la chaîne laissait le
+            // `~` qui suivait sans note : `Lobt.ly`, `re2-"4--5" \\fermata
+            // ~re4`, perdait sa liaison (attaque en trop à la mesure 4).
+            if token.kind == Kind::Str {
+                self.position += 1;
+                return vec![PostEvent::Text(token.text.clone(), placement)];
+            }
             // `-\markup { … }` : doigté textuel.
             if token.is_command("markup") {
                 self.position += 1;
