@@ -932,6 +932,7 @@ impl<'a> Parser<'a> {
             Music::Lyrics(block) => vec![GroupBlock {
                 kind: GroupKind::Other,
                 existing: false,
+                sequence_start: false,
                 instrument_name: None,
                 short_instrument_name: None,
                 staves: Vec::new(),
@@ -954,7 +955,7 @@ impl<'a> Parser<'a> {
                         .map(|item| anonymous_group(wrap_all(wrappers, item)))
                         .collect();
                 }
-                self.context_groups(items, wrappers, Music::Sim)
+                self.context_groups(items, wrappers, Music::Sim, false)
             }
             Music::Seq(items) => {
                 // Un `{ … }` peut lui aussi contenir des contextes : LilyPond
@@ -965,7 +966,7 @@ impl<'a> Parser<'a> {
                     return vec![anonymous_group(wrap_all(wrappers, Music::Seq(items)))];
                 }
                 self.warn_sequential_contexts(&items);
-                self.context_groups(items, wrappers, Music::Seq)
+                self.context_groups(items, wrappers, Music::Seq, true)
             }
             other => vec![anonymous_group(wrap_all(wrappers, other))],
         }
@@ -982,6 +983,7 @@ impl<'a> Parser<'a> {
         items: Vec<Music>,
         wrappers: &mut Vec<Wrapper>,
         combine: fn(Vec<Music>) -> Music,
+        sequential: bool,
     ) -> Vec<GroupBlock> {
         let rest: Vec<Music> = items
             .iter()
@@ -990,12 +992,25 @@ impl<'a> Parser<'a> {
             .collect();
         let mut rest = if rest.is_empty() { None } else { Some(rest) };
         let mut groups = Vec::new();
+        let mut premier = true;
         for item in items {
+            let avant = groups.len();
             if has_context(&item) {
                 groups.extend(self.score_groups_in(item, wrappers));
             } else if let Some(rest) = rest.take() {
                 groups.push(anonymous_group(wrap_all(wrappers, combine(rest))));
             }
+            // Dans une séquence `{ … }`, la musique d'un élément commence
+            // après celle des éléments précédents (`lily/parser.yy`
+            // `sequential_music`) : les contextes nommés qui reparaissent
+            // continuent dans le temps, au lieu de repartir du tick 0 comme
+            // les frères d'un `<< … >>`.
+            if sequential && !premier {
+                for group in &mut groups[avant..] {
+                    group.sequence_start = true;
+                }
+            }
+            premier = false;
         }
         groups
     }
@@ -1114,6 +1129,7 @@ impl<'a> Parser<'a> {
                 return Music::New(Box::new(GroupBlock {
                     kind: GroupKind::Staff,
                     existing,
+                    sequence_start: false,
                     instrument_name,
                     short_instrument_name,
                     staves: vec![staff],
@@ -1255,6 +1271,7 @@ impl<'a> Parser<'a> {
             return Some(GroupBlock {
                 kind: GroupKind::Other,
                 existing,
+                sequence_start: false,
                 instrument_name: None,
                 short_instrument_name: None,
                 staves: Vec::new(),
@@ -1282,6 +1299,7 @@ impl<'a> Parser<'a> {
                 let mut group = GroupBlock {
                     kind,
                     existing,
+                    sequence_start: false,
                     instrument_name,
                     short_instrument_name,
                     staves: Vec::new(),
@@ -1317,6 +1335,7 @@ impl<'a> Parser<'a> {
                     // imbriquée (`Music::New`).
                     kind: GroupKind::Voice,
                     existing,
+                    sequence_start: false,
                     instrument_name,
                     short_instrument_name,
                     staves: vec![staff],
@@ -1348,6 +1367,7 @@ impl<'a> Parser<'a> {
                 Some(GroupBlock {
                     kind: GroupKind::Staff,
                     existing,
+                    sequence_start: false,
                     instrument_name,
                     short_instrument_name,
                     staves: vec![staff],
@@ -5216,6 +5236,7 @@ fn anonymous_group(music: Music) -> GroupBlock {
     GroupBlock {
         kind: GroupKind::Staff,
         existing: false,
+        sequence_start: false,
         instrument_name: None,
         short_instrument_name: None,
         staves: vec![staff],

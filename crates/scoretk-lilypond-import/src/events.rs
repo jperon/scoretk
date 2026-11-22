@@ -421,18 +421,21 @@ pub(crate) struct Interpreter<'a> {
 }
 
 impl<'a> Interpreter<'a> {
-    /// Interprète une voix.
     /// Interprète une voix et rend son état relatif final, pour enchaîner les
     /// voix ou portées d'un même `<< … >>` (`lily/music-sequence.cc`).
+    /// `start` est le tick de départ : zéro pour une voix neuve, la fin de la
+    /// musique précédente pour un contexte nommé retrouvé dans une séquence
+    /// `{ … }`.
     pub(crate) fn run(
         music: &Music,
         unfold_repeats: bool,
         warnings: &'a mut Warnings,
         octave: OctaveState,
+        start: Fraction,
     ) -> (InterpretedVoice, OctaveState) {
         let mut interpreter = Self {
             voice: InterpretedVoice::default(),
-            cursor: Fraction::ZERO,
+            cursor: start,
             cue: false,
             octave,
             relative_final: None,

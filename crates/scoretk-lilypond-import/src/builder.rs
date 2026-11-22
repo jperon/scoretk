@@ -179,6 +179,91 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
             );
             continue;
         }
+        // `\context Staff = "x"` retrouve la portée nommée déjà construite
+        // (`lily/context.cc`, `Context::find_create_context` →
+        // `find (FIND_CREATE)` : un contexte nommé est retrouvé, pas
+        // dupliqué), alors que `\new Staff = "x"` en ouvre toujours une
+        // nouvelle. La musique retrouvée s'ajoute donc à la **même** portée,
+        // comme voix simultanée : c'est un seul `Audio_staff` MIDI
+        // (`lily/staff-performer.cc`, `get_audio_staff`), où
+        // `Midi_walker::do_start_note` fusionne les unissons d'attaque
+        // (`lily/midi-walker.cc` l. 95-115). Les chorals de Mutopia écrivent
+        // ainsi deux fois `\context Staff = "right"` pour ajouter une
+        // registration transposée (bwv633, bwv544, bwv679…).
+        // Seules les portées sont concernées ici : un `\context Voice = "x"`
+        // qui reparaît dans une section ultérieure continue une voix dans le
+        // temps (voir la reprise de contextes nommés) et ne doit pas être
+        // empilé au tick 0.
+        if group.existing && group.kind == GroupKind::Staff && group.staves.len() == 1 {
+            let staff_block = &group.staves[0];
+            if let Some(nom) = staff_block.name.clone() {
+                if let Some(index) = staves
+                    .iter()
+                    .position(|staff| staff.name.as_deref() == Some(nom.as_str()))
+                {
+                    let staff_id = staves[index].staff;
+                    let part_id = score.staff(staff_id).part;
+                    // Les voix déjà construites occupent leur emplacement :
+                    // les nouvelles musiques sont simultanées (même tick de
+                    // départ), elles doivent donc prendre d'autres
+                    // emplacements au lieu d'écraser les premières pistes.
+                    let mut occupied: Vec<Option<Fraction>> = vec![None; VOICES];
+                    for voice in &staves[index].voices {
+                        let slot = (voice.track.raw() % VOICES as u32) as usize;
+                        if slot < VOICES {
+                            occupied[slot] = Some(voice.interpreted.end);
+                        }
+                    }
+                    // `\context Staff = "x"` dans deux éléments successifs
+                    // d'une séquence `{ … }` continue après la musique déjà
+                    // écrite sur la portée ; dans un même `<< … >>`, les
+                    // deux éléments sont simultanés et partent du tick 0.
+                    let start = if group.sequence_start {
+                        staves[index]
+                            .voices
+                            .iter()
+                            .map(|voice| voice.interpreted.end)
+                            .max()
+                            .unwrap_or(Fraction::ZERO)
+                    } else {
+                        Fraction::ZERO
+                    };
+                    let (built, octave_suivante) = build_voices(
+                        &mut score,
+                        staff_id,
+                        part_id,
+                        staff_block,
+                        document.playback_unfold_repeats,
+                        warnings,
+                        octave_relatif,
+                        &occupied,
+                        start,
+                    );
+                    octave_relatif = octave_suivante;
+                    let mut built = built.into_iter();
+                    if let Some(premiere) = built.next() {
+                        let cible = &mut staves[index];
+                        cible.voices.extend(premiere.voices);
+                        cible
+                            .lyrics
+                            .extend(staff_block.lyrics.iter().map(lyrics_build));
+                        cible.lyrics.extend(premiere.lyrics);
+                    }
+                    // Au-delà de quatre voix simultanées, `build_voices` a
+                    // ouvert des portées sœurs : elles restent dans la même
+                    // partie, comme pour un groupe neuf.
+                    for sœur in built {
+                        staves.push(StaffBuild {
+                            staff: sœur.staff,
+                            name: None,
+                            voices: sœur.voices,
+                            lyrics: sœur.lyrics,
+                        });
+                    }
+                    continue;
+                }
+            }
+        }
         // `\transposition` est une propriété de Staff. Une partie MusicXML
         // n'a qu'un `<transpose>` : on ne le porte donc que si le groupe ne
         // contient qu'une portée, seul cas où l'on sait à quel instrument
@@ -275,6 +360,8 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 document.playback_unfold_repeats,
                 warnings,
                 octave_relatif,
+                &[],
+                Fraction::ZERO,
             );
             octave_relatif = octave_suivante;
             let mut built = built.into_iter();
@@ -586,9 +673,10 @@ fn assign_voice_slots(
     score: &mut Score,
     staff: StaffId,
     pending: Vec<PendingVoice>,
+    mut ends: Vec<Option<Fraction>>,
 ) -> (Vec<VoiceBuild>, Vec<LyricsBuild>, Vec<PendingVoice>) {
     // Fin du dernier événement occupant chaque emplacement, ou `None` si libre.
-    let mut ends: Vec<Option<Fraction>> = vec![None; VOICES];
+    ends.resize(VOICES, None);
     let mut voices = Vec::new();
     let mut lyrics = Vec::new();
     let mut overflow = Vec::new();
@@ -650,6 +738,7 @@ fn assign_voice_slots(
 /// ajoutées à la portée, dans l'ordre d'ouverture. Une voix sans aucun
 /// événement (simple conteneur d'un `\new Voice`, par exemple) est ignorée
 /// pour ne pas décaler les pistes du modèle.
+#[allow(clippy::too_many_arguments)]
 fn build_voices(
     score: &mut Score,
     staff: StaffId,
@@ -658,6 +747,8 @@ fn build_voices(
     unfold_repeats: bool,
     warnings: &mut Warnings,
     octave: OctaveState,
+    occupied: &[Option<Fraction>],
+    start: Fraction,
 ) -> (Vec<BuiltVoices>, OctaveState) {
     let mut queue: VecDeque<PendingVoice> = VecDeque::new();
     // `lily/music-sequence.cc:143-158` : les voix d'un `<< … >>` s'enchaînent
@@ -677,7 +768,7 @@ fn build_voices(
             _ => OctaveState::default(),
         };
         let (interpreted, octave_suivante) =
-            Interpreter::run(&block.music, unfold_repeats, warnings, seme);
+            Interpreter::run(&block.music, unfold_repeats, warnings, seme, start);
         octave = octave_suivante;
         queue.push_back(PendingVoice {
             name: block.name.clone(),
@@ -745,7 +836,7 @@ fn build_voices(
         None => kept,
     };
 
-    let (voices, lyrics, mut overflow) = assign_voice_slots(score, staff, kept);
+    let (voices, lyrics, mut overflow) = assign_voice_slots(score, staff, kept, occupied.to_vec());
     let mut built = vec![BuiltVoices {
         staff,
         voices,
@@ -763,7 +854,8 @@ fn build_voices(
             "plus de quatre voix simultanées : voix reportée sur une portée sœur".to_owned(),
         );
         let extra_staff = score.add_staff_with(part, Staff::new(part));
-        let (voices, lyrics, reste) = assign_voice_slots(score, extra_staff, overflow);
+        let (voices, lyrics, reste) =
+            assign_voice_slots(score, extra_staff, overflow, vec![None; VOICES]);
         if !voices.is_empty() {
             built.push(BuiltVoices {
                 staff: extra_staff,

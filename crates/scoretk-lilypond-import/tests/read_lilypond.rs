@@ -1332,6 +1332,70 @@ fn context_staff_ouvre_une_portee() {
     assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 69, 71, 72]);
 }
 
+/// Deux `\context Staff = "x"` du même `\score` retrouvent la **même**
+/// portée (`lily/context.cc`, `Context::find_create_context` →
+/// `find (FIND_CREATE)` : un contexte nommé est retrouvé, pas dupliqué).
+/// La seconde musique devient une voix simultanée de la portée, sur le même
+/// `Audio_staff` MIDI (`lily/staff-performer.cc`, `get_audio_staff`).
+#[test]
+fn context_staff_de_meme_nom_est_retrouve() {
+    let source = "\\score { << \
+                  \\context Staff = \"x\" { \\fixed c' { c4 d e f } } \
+                  \\context Staff = \"x\" { \\fixed c' { g4 a b c' } } >> }";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.parts.len(), 1, "une seule partie");
+    assert_eq!(score.staves.len(), 1, "une seule portee nommee x");
+    let mut hauteurs = hauteurs(&score);
+    hauteurs.sort_unstable();
+    assert_eq!(hauteurs, vec![60, 62, 64, 65, 67, 69, 71, 72]);
+}
+
+/// Dans une séquence `{ … }`, un `\context Staff` retrouvé plus tard
+/// continue **dans le temps** (`lily/parser.yy` `sequential_music`) : la
+/// seconde section commence après la première, elle ne repart pas du tick 0
+/// (alas.ly, deux `<< … >>` successifs sur les mêmes portées nommées).
+#[test]
+fn context_staff_retrouve_continue_dans_le_temps() {
+    let source = "\\score { { \
+        << \\context Staff = \"x\" { \\fixed c' { c4 d e f } } >> \
+        << \\context Staff = \"x\" { \\fixed c' { g4 a b c' } } >> } }";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.parts.len(), 1);
+    assert_eq!(score.staves.len(), 1);
+    let mut attaques: Vec<(u8, i64)> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .flat_map(|segment| {
+            segment
+                .iter_elements()
+                .filter_map(|(_, element)| match element {
+                    SegmentItem::ChordRest(chord_rest) => {
+                        let chord = chord_rest.chord_ref()?;
+                        let pitch = score.note(*chord.notes.first()?).pitch;
+                        Some((pitch, segment.tick.ticks(1920)))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    attaques.sort_unstable();
+    assert_eq!(
+        attaques,
+        vec![
+            (60, 0),
+            (62, 480),
+            (64, 960),
+            (65, 1440),
+            (67, 1920),
+            (69, 2400),
+            (71, 2880),
+            (72, 3360),
+        ]
+    );
+}
+
 #[test]
 fn context_staff_au_dela_de_quatre_voix() {
     // Cinq `\context Staff` ne doivent pas se faire écraser par la limite de

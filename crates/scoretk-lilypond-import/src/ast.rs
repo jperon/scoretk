@@ -493,6 +493,12 @@ pub(crate) struct GroupBlock {
     /// `\new` : seul le premier peut prolonger la voix courante sans ouvrir
     /// une nouvelle piste.
     pub existing: bool,
+    /// Vrai quand ce groupe ouvre un élément d'une séquence `{ … }` après un
+    /// élément précédent. Sa musique commence alors après celle du précédent
+    /// (`lily/parser.yy` `sequential_music`), et non au tick 0 comme les
+    /// éléments simultanés d'un `<< … >>`. Sert à la reprise de contextes
+    /// nommés (`\context Staff = "x"` réapparaissant plus loin).
+    pub sequence_start: bool,
     /// Nom d'instrument du groupe (`\with`).
     pub instrument_name: Option<String>,
     /// Nom abrégé du groupe.
