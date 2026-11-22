@@ -6347,3 +6347,19 @@ fn accord_chordmode_min7() {
         vec![60, 63, 67, 70]
     );
 }
+
+#[test]
+fn grace_dans_une_voix_simultanee_est_jouee() {
+    // `scm/music-functions.scm::volta-spec-music` enveloppe la musique
+    // d'un `\volta` dans une voix de la `<< … >>`; un ornement en fin de
+    // cette voix doit être joué comme dans la voix principale.
+    let src = "\\version \"2.24.0\"\n\\
+         \\new Voice \\fixed c' { << e2 \\volta 1 { s4... \\grace { g8 f } } >> b1 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let pitches: Vec<u8> = score.notes.iter().map(|n| n.pitch).collect();
+    assert!(
+        pitches.contains(&67) && pitches.contains(&65),
+        "les agréments g et f doivent être présents : {:?}",
+        pitches
+    );
+}
