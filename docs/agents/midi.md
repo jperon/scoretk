@@ -535,6 +535,63 @@ its copies, `LeCheminDeSaintJacques`) are the opposite: the source has
 successive identical notes whose tie our **LilyPond reader** fails to merge
 (the MIDI has a single attack), so the reference is wrong, not the import.
 
+## MIDI export: measured state (2026-11-22)
+
+Measured with `scripts/oracle/midi/mesure.py --ecriture` on the writing lots
+of `scripts/oracle/midi/lots.sh`, one reference per source:
+
+- **`ecriture_ly`** — the 1 019 `.ly` of `~/Musique` that have a LilyPond
+  `.midi` next to them; the reference is that MIDI. The chain measured is
+  `.ly` → our LilyPond reader → model → MIDI writer, so a reader error shows
+  up here too (that is the point of this lot).
+- **`ecriture_mscz_corpus`** — the 21 `tests/corpus/{v3,v4}/*.mscx` that have
+  a `*.ref.mid`, i.e. MuseScore 4.7.4's own MIDI export.
+- **`ecriture_mscz_musique`** — the 8 `.mscz` of `~/Musique` with a MuseScore
+  MIDI beside them.
+
+Five inputs are excluded as unsupported or empty (a `.ly` with no notes and
+four corpus scores whose reference MIDI has no notes: `mmrest`, `repeat68`,
+`repeat69`, `testTempoPrecision`). Notes are compared after the oracle's
+normalisation (pitch, onset, duration; simultaneous events unordered;
+note-on/off paired; Q16 grid, ±1/16 of a quarter), plus the effective tempo
+changes.
+
+| Lot | Files | Exact | N1 % | N2 % | N2d % | Ref. notes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ecriture_mscz_corpus` | 17 | **17 (100,0 %)** | 100,00 | 100,00 | 100,00 | 483 |
+| `ecriture_ly` | 1 019 | 723 (71,0 %) | 97,36 | 96,68 | 88,60 | 136 236 |
+| `ecriture_mscz_musique` | 8 | 3 (37,5 %) | 69,81 | 57,14 | 51,53 | 10 333 |
+
+### Non-exact files by first divergence
+
+`scripts/oracle/midi/export_groupes.py` (new) reads the JSONL, the manifests
+and the `travail/<lot>/<index>/tk.mid` outputs, and classifies each non-exact
+file by the first note where the output differs from the reference, using
+`midi_notes.releve_import` with pitch + onset + duration (no voice):
+`durée`, `note manquante`, `note sup`, `attaque`, `octave`.
+
+| Lot | First divergence | Files |
+| --- | --- | ---: |
+| `ecriture_ly` | `durée` | 149 |
+| `ecriture_ly` | `note sup` | 143 |
+| `ecriture_ly` | `octave` | 2 |
+| `ecriture_ly` | `attaque` | 1 |
+| `ecriture_ly` | `note manquante` | 1 |
+| `ecriture_mscz_musique` | `durée` | 2 |
+| `ecriture_mscz_musique` | `note sup` | 2 |
+| `ecriture_mscz_musique` | `attaque` | 1 |
+
+The corpus lot is exact everywhere. On the LilyPond lot the first cause is
+the **hold duration** (the `gateTime` difference already documented above:
+LilyPond writes performance note-offs, the writer uses the notated duration
+and the instrument's gate time), then **extra notes**: the chain includes our
+LilyPond reader, and its unresolved cases (voices, octave resolution,
+graces at a shifted onset) appear as an extra or missing note at the first
+divergence. `Kryshachok` (octave) and `VolgaVolga` (octave) are the reader's
+octave errors, not the writer's. The `.mscz` lot of `~/Musique` remains the
+weakest (unsupported MuseScore 2.06 files, linked staves), as in the earlier
+campaign.
+
 ## Upgrading MuseScore's MIDI import
 
 Same upstream reference as the rest of the port (see `docs/agents/upstream.md`):
