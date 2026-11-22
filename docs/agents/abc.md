@@ -3158,7 +3158,7 @@ and `sequence.first_difference`) localises the first divergent note.
 | Lot | scoretk exact | Files | xml2abc exact | scoretk mean `.abc` B | xml2abc mean B |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | corpus | 47 | 56 | — | — | — |
-| mscz | 164 | 174 | — | — | — |
+| mscz | 164 | 173 | — | — | — |
 | xml | 24 | 32 | — | — | — |
 
 Full per-lot figures and sizes are in `target/abc-ex-base/resume.md`:
@@ -3168,21 +3168,21 @@ scoretk 47/56 corpus, 164/173 mscz, 24/32 xml (235/261 exact) with mean
 
 | Group | Tunes | File | ref pitch | candidate | Bar |
 | --- | ---: | --- | ---: | ---: | --- |
-| semiton | 4 | `testMultiInstrumentPart3.mscx` | 60 | 61 | 3 |
-| semiton |  | `copypaste_parts.mscx` | 66 | 65 | 3 |
-| semiton |  | `Veni, Creator Spiritus_Courtial_v3_SATB.mscz` | 63 | 62 | 14 |
-| semiton |  | `Vingt_danses_enfantines_pour_piano.mscz` | 80 | 79 | 53 |
-| note manquante apres aller-retour | 4 | `voiceswitching.mscx` | None | 65 | 2 |
-| note manquante apres aller-retour |  | `Angels_Carol__John_Rutter.mscz` | None | 60 | 66 |
-| note manquante apres aller-retour |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_09_Gloria_Patri_orgue.mscz` | None | 69 | 505 |
-| note manquante apres aller-retour |  | `Angels_Carol__John_Rutter.mxl` | None | 60 | 66 |
-| octave | 4 | `00- Veni veni Emmanuel - choeur.mscz` | 76 | 64 | 8 |
-| octave |  | `Sancta_Maria_Lux_tempestiva_Alfonso_X_el_Sabio_1221-1284.mscz` | 64 | 52 | 48 |
-| octave |  | `Byrd_Dies.mxl` | 76 | 64 | 4 |
-| octave |  | `Sancta_Maria_Lux_tempestiva_Alfonso_X_el_Sabio_1221-1284.mxl` | 64 | 52 | 48 |
-| note supplementaire apres aller-retour | 3 | `Laudate_pueri_Op._39_No._2_-_Felix_Mendelssohn.mscz` | 75 | None | 19 |
-| note supplementaire apres aller-retour |  | `Laudate_pueri_Op._39_No._2_-_Felix_Mendelssohn.mxl` | 70 | None | 104 |
-| note supplementaire apres aller-retour |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_10._Sicut_erat_in_principio.mxl` | 45 | None | 70 |
+| semiton | 4 | `testMultiInstrumentPart3.mscx` | 61 | 60 | 3 |
+| semiton |  | `copypaste_parts.mscx` | 65 | 66 | 3 |
+| semiton |  | `Veni, Creator Spiritus_Courtial_v3_SATB.mscz` | 62 | 63 | 14 |
+| semiton |  | `Vingt_danses_enfantines_pour_piano.mscz` | 79 | 80 | 717 |
+| note manquante apres aller-retour | 4 | `voiceswitching.mscx` | 65 | None | 2 |
+| note manquante apres aller-retour |  | `Angels_Carol__John_Rutter.mscz` | 60 | None | 67 |
+| note manquante apres aller-retour |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_09_Gloria_Patri_orgue.mscz` | 69 | None | 11 |
+| note manquante apres aller-retour |  | `Angels_Carol__John_Rutter.mxl` | 60 | None | 67 |
+| octave | 4 | `00- Veni veni Emmanuel - choeur.mscz` | 64 | 76 | 10 |
+| octave |  | `Sancta_Maria_Lux_tempestiva_Alfonso_X_el_Sabio_1221-1284.mscz` | 52 | 64 | 48 |
+| octave |  | `Byrd_Dies.mxl` | 64 | 76 | 4 |
+| octave |  | `Sancta_Maria_Lux_tempestiva_Alfonso_X_el_Sabio_1221-1284.mxl` | 52 | 64 | 48 |
+| note supplementaire apres aller-retour | 3 | `Laudate_pueri_Op._39_No._2_-_Felix_Mendelssohn.mscz` | None | 75 | 19 |
+| note supplementaire apres aller-retour |  | `Laudate_pueri_Op._39_No._2_-_Felix_Mendelssohn.mxl` | None | 70 | 104 |
+| note supplementaire apres aller-retour |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_10._Sicut_erat_in_principio.mxl` | None | 45 | 70 |
 
 ## 36. Writer pass after the baseline (2026-11-22)
 
