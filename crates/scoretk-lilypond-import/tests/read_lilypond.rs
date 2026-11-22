@@ -355,6 +355,54 @@ fn q_ne_prolonge_pas_la_liaison_du_accord_precedent() {
     );
 }
 
+/// Un script de `ly/script-init.ly` est un post-evenement : `\downprall`
+/// ne doit pas faire sortir la commande du post-evenement, sinon le `~` qui
+/// suit est avale et la liaison est perdue (`bwv-988-v22`, g1 \downprall ~).
+#[test]
+fn script_d_ornement_garde_la_liaison_suivante() {
+    let score = lire("g'1 \\downprall ~ g'1");
+    assert_eq!(score.notes.len(), 2, "les deux notes sont liees");
+    assert_eq!(
+        hauteurs_attaques(&score),
+        vec![79],
+        "une seule attaque : la liaison tient"
+    );
+}
+
+/// Un script sans equivalent dans le modele est consomme seul : passer par
+/// parse_direction_event avalait la commande suivante (`\downprall
+/// \times 2/3 { … }` perdait le n-olet, BWV-830-4).
+#[test]
+fn script_sans_equivalent_ne_mange_pas_le_nolet_suivant() {
+    let score = lire("c'8 \\downprall \\times 2/3 { e'16 f' g' } d'4");
+    assert_eq!(hauteurs(&score), vec![72, 76, 77, 79, 74],);
+    let mut attaques: Vec<(u8, i64)> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .flat_map(|segment| {
+            segment
+                .iter_elements()
+                .filter_map(|(_, element)| match element {
+                    SegmentItem::ChordRest(chord_rest) => {
+                        let chord = chord_rest.chord_ref()?;
+                        let pitch = score.note(*chord.notes.first()?).pitch;
+                        Some((pitch, segment.tick.ticks(1920)))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    attaques.sort_unstable();
+    // 1/8, puis trois 1/24 (nolet 3:2), puis 1/4 ; sans le nolet les
+    // attaques seraient à 240, 360, 480 et 600.
+    assert_eq!(
+        attaques,
+        vec![(72, 0), (74, 480), (76, 240), (77, 320), (79, 400)]
+    );
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");

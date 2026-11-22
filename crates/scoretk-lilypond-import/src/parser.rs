@@ -3814,6 +3814,13 @@ impl<'a> Parser<'a> {
                 if let Some(post) = post_event_for_command(&name, Placement::Below) {
                     return vec![post];
                 }
+                if is_articulation_command(&name) {
+                    // Script connu (`ly/script-init.ly`) mais sans équivalent
+                    // dans le modèle : le consommer seul. Passer par
+                    // `parse_direction_event` avalait la commande suivante
+                    // (`\downprall \times 2/3 { … }` perdait le n-olet).
+                    return Vec::new();
+                }
                 self.parse_direction_event(&format!("\\{name}"), Placement::Below)
             }
             _ => Vec::new(),
@@ -5475,6 +5482,36 @@ fn is_articulation_command(name: &str) -> bool {
             | "glissando"
             | "startTrillSpan"
             | "stopTrillSpan"
+            // `ly/script-init.ly` : `make-articulation` définit ces scripts
+            // comme post-événements. En omettre un faisait sortir la commande
+            // du post-événement, et le `~` (ou la parenthèse de liaison) qui
+            // la suivait était avalé : `g1 \downprall ~ g1` perdait sa
+            // liaison (bwv-988-v22, attaque en trop à la mesure 12).
+            | "downmordent"
+            | "downprall"
+            | "upprall"
+            | "prallup"
+            | "pralldown"
+            | "prallmordent"
+            | "lineprall"
+            | "bachschleifer"
+            | "coda"
+            | "varcoda"
+            | "segno"
+            | "signumcongruentiae"
+            | "halfopen"
+            | "heel"
+            | "toe"
+            | "lheel"
+            | "rheel"
+            | "ltoe"
+            | "rtoe"
+            | "heelcircle"
+            | "varheel"
+            | "vartoe"
+            | "henzelongfermata"
+            | "henzeshortfermata"
+            | "veryshortfermata"
     )
 }
 
@@ -5541,7 +5578,17 @@ fn post_event_for_command(name: &str, placement: Placement) -> Option<PostEvent>
         "prall" => PostEvent::Ornament(OrnamentType::InvertedMordent),
         "prallprall" => PostEvent::Ornament(OrnamentType::InvertedMordentLong),
         "haydnturn" => PostEvent::Ornament(OrnamentType::Haydn),
-        "upmordent" => PostEvent::Ornament(OrnamentType::Schleifer),
+        "upmordent" | "bachschleifer" => PostEvent::Ornament(OrnamentType::Schleifer),
+        "downmordent" => PostEvent::Ornament(OrnamentType::Mordent),
+        "henzelongfermata" => PostEvent::Articulation(ArticulationType::FermataLong),
+        "henzeshortfermata" => PostEvent::Articulation(ArticulationType::FermataShort),
+        "veryshortfermata" => PostEvent::Articulation(ArticulationType::FermataVeryShort),
+        // Les variantes de prall et les scripts de cordes (talon, pointe,
+        // demi-ouvert) n'ont pas d'équivalent exact dans le modèle : la
+        // commande est consommée comme post-événement, sans ornement inventé.
+        "downprall" | "upprall" | "prallup" | "pralldown" | "prallmordent" | "lineprall"
+        | "coda" | "varcoda" | "segno" | "signumcongruentiae" | "halfopen" | "heel" | "toe"
+        | "lheel" | "rheel" | "ltoe" | "rtoe" | "heelcircle" | "varheel" | "vartoe" => return None,
         "arpeggio" => PostEvent::Arpeggio(ArpeggioType::Normal),
         "arpeggioArrowUp" => PostEvent::Arpeggio(ArpeggioType::Up),
         "arpeggioArrowDown" => PostEvent::Arpeggio(ArpeggioType::Down),
