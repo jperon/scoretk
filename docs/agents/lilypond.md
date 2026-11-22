@@ -3870,8 +3870,8 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact Q16 | Exact Q16 **or** n2_grace | Exact % (either) | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 419 | **1 464** | 67.0 | 98.80 | — | — |
-| measured (reference present, non-reader faults excluded) | 1 636 | 1 419 | **1 464** | **89.5** | **98.80** | **96.96** | **98.33** |
+| all rows | 2 186 | 1 439 | **1 484** | 67.9 | 98.83 | — | — |
+| measured (reference present, non-reader faults excluded) | 1 655 | 1 439 | **1 484** | **89.7** | **98.83** | **96.76** | **97.88** |
 
 The two exact columns are kept side by side since Cause 18: **Exact Q16** is
 the historical criterion (`r == t == n1 == n2`), **Exact Q16 or n2_grace** adds
@@ -3887,12 +3887,13 @@ removed after 2.13.20) is no longer counted separately:
 LilyPond MIDI, a LilyPond compile failure, or obsolete syntax that
 `convert-ly` would rewrite (the commands of `parser.rs::obsolete_music_command`).
 `mesure.py` marks those rows excluded, so they leave both numerator and
-denominator; on `mut` this excludes 539 rows (the obsolete basket, unusable
-references, the sources scoretk deliberately does not support, the four
-`\compressMusic` scores and the `\compressFullBarRests` scores whose
-reference LilyPond 2.27 cannot produce) and leaves 1 646 source rows in the
-lot. Of those, 1 642 convert; six have an empty reference (purely graphical
-scores), which leaves 1 636 comparable rows.
+denominator; on `mut` this excludes 520 rows (the obsolete basket, unusable
+references and the sources scoretk deliberately does not support; the
+`\compressMusic`, `\compressFullBarRests` and `\fermataMarkup` sources are
+no longer excluded, their references being regenerated from a converted
+copy) and leaves 1 665 source rows in the lot. Of those, 1 661 convert; six
+have an empty reference (purely graphical scores), which leaves 1 655
+comparable rows.
 
 The previous campaign reported 692/2 186 exact (31.7 %; 39.9 % on the 1 735
 rows that had a reference) and N2 93.49 on the old references. The exact rate was low because 595 files had **all** their
@@ -3957,6 +3958,23 @@ N2-grace 98.35; the remaining non-exact measured files are **172**. Four
 `franck_ave_maria` variants lose 117 N1 notes each: `\(` no longer swallows
 the following pitch, so the relative octave of the notes after it changes;
 they were not exact under either parse and no exact file regresses.
+
+The next pass (Causes 31–34) adds **20 exact files and 0 losses** (1,464 →
+1,484) while 19 rows come back into the denominator:
+- 4 `franck_ave_maria` variants become exact once `\markup \bold {a Tempo}`
+  no longer leaks `a` as a note (Cause 31);
+- 8 of the `\compressMusic`/`\compressFullBarRests` sources re-enter and are
+  exact, because their reference is now compiled from a `convert-ly` copy
+  (Cause 32);
+- `enfantillages_pittoresques` (sequence of contexts), then
+  `carcassi-op60-09/15` become exact with the continued named voices and
+  the staff-wide `\transposition` (Cause 33);
+- `gnomus` and `scarlatti-k491` become exact once their `\fermataMarkup`
+  reference is converted (Cause 34), and three previously reference-less
+  files re-enter as exact (`brahms-sapphische-ode`, `cornelius-ein-ton`,
+  `petitefille`); `sonata3` and `gretchen` re-enter honestly non-exact.
+  N2 no-repeat goes from 98.33 to 97.88 because these larger works join the
+  computation.
 
 ### Where the remaining `notes_supp` files start
 
@@ -4489,6 +4507,93 @@ variants lose 117 N1 notes each because the token after `\(` is now parsed
 as music (grammar-correct), which changes the relative octave of the
 following notes; they were not exact under either parse, and no exact file
 regresses.
+
+### Cause 31: a markup command's braced list is its argument
+
+`\markup \bold {a Tempo}`: in markup mode a `{ … }` following a markup
+command is that command's argument (`lily/parser.yy`, `markup_braced_list`,
+l. 4174-4186). The reader only recognised a short list of layout commands
+(`column`, `line`…), so the braced list stayed in the music stream, `a`
+became a note and the following measure was displaced. On the last page of
+`franck_ave_maria` this extra note changed the final `bis'` octave; because
+the second voice of a `<< … >>` chains from the first voice's last pitch,
+the whole bass voice dropped an octave (117 N1 notes per variant). The
+text-style commands (`bold`, `italic`, `bold-italic`, `underline`, `box`,
+`circle`, `rounded-box`, `smallCaps`, `large`, `small`, `smaller`, `huge`,
+`tiny`, `whiteout`, `transparent`) and `center-align`, `wordwrap-center`
+join the list. Test
+`markup_de_style_consomme_sa_liste_entre_accolades` (three pitches before,
+two after). The four variants recover 681/681 N1 and become exact.
+
+### Cause 32: references from a `convert-ly` copy, not exclusion
+
+LilyPond 2.27 refuses commands removed after 2.10/2.16 and its recovery
+inserts rests, shifting the whole staff: `\compressMusic` (old
+`\scaleDurations`, `python/convertrules.py` l. 2765) and
+`\compressFullBarRests` (now `\compressEmptyMeasures`, l. 4239). Excluding
+the files was a fallback. `references.py` now compiles the source as is, and
+when the journal reports an unknown command, copies the source directory
+(relative `\include`s keep working), runs the installed `convert-ly -e` on
+every `.ly`/`.ily`, and compiles that copy; the status line records
+`"converti": true`. The reference is therefore the installed LilyPond on the
+source `convert-ly` would produce — reproducible, not a silent exemption.
+15 references were regenerated in `refs27` (Symphony5_1/2, mozart-hrn-3,
+O_Mistress_Mine, bridge, the two Telemann concertos, bwv612, bwv617,
+bwv631a, bwv641, bwv652, bwv667, dvorak, Schubert D935-4) and the two
+command families left `COMMANDES_OBSOLETES`. Honest measurement: 14 rows
+come back (8 exact: bwv612, bwv631a, bwv641, bwv667, bridge,
+O_Mistress_Mine, the two concertos); Symphony5_1/2 stay non-exact (N2 53 %
+and 49 %), which is their real gap rather than a broken reference.
+
+### Cause 33: continued named voices and the staff-wide `\transposition`
+
+Two linked defects in a sequence of sections (carcassi-op60-09/15,
+`{ \midiStuff \aSectionMusic \bSectionMusic … }`):
+
+* a named voice reappearing in a later section is the **same** context
+  (`lily/context.cc`, `find_create_context`, l. 269-273), and its music
+  resumes at the date of its element in the sequence (`lily/parser.yy`,
+  `sequential_music`). The builder opened a new part at tick 0. The first
+  group of each `{ … }` element is now marked (`sequence_start`), the
+  builder derives `element_start` from the end of the previous element, and
+  every music of the element starts there; a continued voice keeps its slot
+  in the staff.
+* the `\context Voice` groups following an empty `\context Staff`
+  (`midiStuff`) are that staff's voices — one `Audio_staff`
+  (`lily/staff-performer.cc`, `get_audio_staff`), where
+  `Midi_walker::do_start_note` merges unison attacks (l. 95-115) — and the
+  `\transposition c` set by the empty staff stays pending and applies to
+  **all** following voices (`instrumentTransposition` is a Staff property),
+  not just the first; the bass of carcassi sounded an octave too high. An
+  anonymous group without pitch (`\global` of a section, only skips) no
+  longer closes the pending transposition.
+
+Tests `context_voice_de_meme_nom_continue_dans_le_temps` (all attacks at
+tick 0 before, 0/480/960 after) and
+`transposition_d_un_contexte_vide_vaut_pour_les_voix_suivantes` (57 instead
+of 45 before). `enfantillages_pittoresques` gains 749 N2 notes and becomes
+exact; `carcassi-op60-09` and `carcassi-op60-15` become exact (830/830 and
+645/645).
+
+### Cause 34: `\fermataMarkup` is converted, not special-cased
+
+`\fermataMarkup` became `\fermata` (`python/convertrules.py` l. 4237) and
+no longer exists in 2.27. The recovery depends on the form: isolated
+(`R2. \fermataMarkup`) inserts a one-beat rest and shifts the staff
+(`gnomus`, `scarlatti-k491`), while as a post-event
+(`R1^\fermataMarkup`) the rest falls inside the whole-measure rest already
+there and changes nothing (`il-vecchio-castello`, `promenade-5`…). Excluding
+on mere presence would have lost 19 exact files, and a syntactic
+isolated/post-event rule would be fragile. The answer is upstream:
+`references.py` converts the source (Cause 32), so 37 references were
+regenerated in `refs27` and no rule is needed; `common.py`'s selftest records
+that the command is not in the exclusion list. **4 exact gains, 0 losses**
+(`gnomus`, `scarlatti-k491`, plus the two carcassi of Cause 33 for the same
+measurement), and five previously reference-less files re-enter
+(`brahms-sapphische-ode`, `cornelius-ein-ton`, `petitefille` exact;
+`sonata3`, `gretchen` measured with their real gaps). Ten sources (headers,
+part-only files) still produce no MIDI after conversion and keep their prior
+state.
 
 ### Cause 5: `\octaveCheck` consumes its pitch
 
