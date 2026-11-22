@@ -4521,7 +4521,10 @@ fn drummode_et_drumstaff_jouent_des_percussions() {
 #[test]
 fn chordmode_qualite_apres_duree() {
     let score = lire("\\chordmode { a2:m a2 }");
-    assert_eq!(hauteurs(&score), vec![69, 72, 76, 69, 73, 76]);
+    // `lire()` enveloppe la musique dans `\fixed c'` : la table des accords
+    // est elle aussi décalée d'une octave (vérifié sur le MIDI de LilyPond
+    // 2.24 pour `\fixed c' { \chordmode { a2:m a2 } }`).
+    assert_eq!(hauteurs(&score), vec![81, 84, 88, 81, 85, 88]);
 }
 
 #[test]
@@ -6779,5 +6782,27 @@ fn ottava_invisible_depuis_override() {
     assert!(
         !ottavas[0].visible,
         "le crochet d'ottava doit rester masqué"
+    );
+}
+
+/// En `chordmode`, `\fixed c,` décale d'une octave les notes de la table
+/// d'accords (`ly/parser.yy`, `chord_body` ; `scm/chord-entry.scm` applique
+/// l'octave de référence à la fondamentale). Sans ce décalage, un
+/// `ChordNames` sous `\fixed c,` sonne une octave trop haut (vérifié sur le
+/// MIDI de LilyPond 2.24).
+#[test]
+fn accordmode_sous_fixed_decale_les_hauteurs() {
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\\score { \\new Staff { \\chordmode { \\fixed c, { f2 } } } }",
+    )
+    .expect("lecture \\chordmode");
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .map(|note| note.pitch)
+            .collect::<Vec<_>>(),
+        vec![53, 57, 60],
+        "f sous \\fixed c, doit jouer F3/A3/C4"
     );
 }

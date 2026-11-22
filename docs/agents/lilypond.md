@@ -4918,6 +4918,29 @@ hausse sur 12 fichiers, aucune nouvelle perte d'exactitude. `Wellerman…`
 second transpose) voit son n2d reculer de 5 (183 → 178) : ce fichier était
 déjà hors d'atteinte par cette cause structurelle, pas une régression
 d'exactitude.
+### `\chordmode` sous `\fixed` : la table d'accords suit l'octave
+
+Les noms d'accords de `scm/chord-entry.scm` sont donnés à l'octave 4 dans
+`modes.rs::chord_pitches`. LilyPond applique ensuite l'octave de référence
+posée par `\fixed` : `ly/parser.yy` (`chord_body`) lit `f` à F3 sous
+`\fixed c,` et à F5 sous `\fixed c'` (vérifié sur le MIDI de LilyPond 2.24).
+Le lecteur laissait `NoteEvent::midi` inchangé, donc un `ChordNames` sous
+`\fixed c,` rejoué une octave trop haut.
+
+L'événement décale maintenant les hauteurs de la table de
+`(octave.reference − 3) × 12` demi-tons, comme `pitch.rs::set_reference`
+le fait pour les noms ordinaires ; la percussion (table absolue) est
+épargnée. Test réduit écrit d'abord :
+`accordmode_sous_fixed_decale_les_hauteurs`. L'ancien test
+`chordmode_qualite_apres_duree` attendait l'octave non décalée sous le
+`\fixed c'` de `lire()` ; son attente est corrigée d'après le MIDI de
+LilyPond.
+
+Mesure ciblée sur les 159 fichiers du lot `ly` (exacts + non-exacts,
+deux binaires frères, `--mode midi`) : exacts 56 → 59, n2d en hausse sur
+7 fichiers, aucune perte. Le lot mscz ne contient aucun `\chordmode` :
+son écriture n'est pas modifiée.
+
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire

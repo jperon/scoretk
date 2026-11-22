@@ -1463,7 +1463,18 @@ impl<'a> Interpreter<'a> {
             // musique avant de réaliser l'accord). La percussion, elle, garde
             // la hauteur de sa table.
             let pitch = if note.transposable {
-                u8::try_from((i32::from(pitch) + self.transpose.1).clamp(0, 127)).unwrap_or(pitch)
+                // La table des accords donne la fondamentale à l'octave 4.
+                // Sous `\fixed`, LilyPond déplace cette octave de référence :
+                // `\fixed c,` joue `f` à F3 (`set_reference` dans
+                // `pitch.rs`, `ly/parser.yy` `chord_body`). La percussion,
+                // elle, garde la hauteur absolue de sa table.
+                let fixed_shift = if self.octave.relative {
+                    0
+                } else {
+                    (i32::from(self.octave.reference) - 3) * 12
+                };
+                u8::try_from((i32::from(pitch) + self.transpose.1 + fixed_shift).clamp(0, 127))
+                    .unwrap_or(pitch)
             } else {
                 pitch
             };
