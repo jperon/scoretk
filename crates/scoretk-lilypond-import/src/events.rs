@@ -439,6 +439,26 @@ impl<'a> Interpreter<'a> {
             warnings,
         };
         interpreter.walk(music);
+        // Un ornement écrit en fin d'expression n'a pas d'accord suivant auquel
+        // s'attacher (`grace-end-expression.ly`) : `scm/music-functions.scm`
+        // le joue quand même. Le rattacher au dernier accord comme ornement
+        // « après » le rend audible dans le MIDI sans décaler la mesure.
+        let pending = std::mem::take(&mut interpreter.pending_grace);
+        if !pending.is_empty() {
+            if let Some(event) =
+                interpreter
+                    .voice
+                    .events
+                    .iter_mut()
+                    .rev()
+                    .find_map(|event| match &mut event.kind {
+                        EventKind::Chord(chord) => Some(chord),
+                        _ => None,
+                    })
+            {
+                event.grace_after.extend(pending);
+            }
+        }
         interpreter.voice.end = interpreter.cursor;
         interpreter.voice
     }

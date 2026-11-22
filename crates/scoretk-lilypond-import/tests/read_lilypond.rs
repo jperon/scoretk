@@ -6127,3 +6127,15 @@ fn unfold_repeats_dun_score_ne_sapplique_pas_a_un_autre() {
         "le premier score garde sa reprise non dépliée"
     );
 }
+
+#[test]
+fn acciaccatura_avec_accord_simultane_garde_toutes_les_notes() {
+    // `scm/music-functions.scm::def-grace-function` enveloppe la musique
+    // entière dans `GraceMusic`; `lily/parser.yy::simultaneous_music` fait de
+    // `<< a \\ b >>` une musique simultanée dont les deux branches doivent
+    // rester des accords d'agrément.
+    let src = "\\version \"2.24.0\"\n{ e' \\acciaccatura << e'8 \\ cis' >> }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let pitches: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+    assert_eq!(pitches, vec![64, 64, 61], "hauteurs: {:?}", pitches);
+}
