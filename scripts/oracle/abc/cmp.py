@@ -47,31 +47,29 @@ def _varlen(data, pos):
             return value, pos
 
 
-def midi(path):
-    """Renvoie (compteurs hauteur, compteur (hauteur, attaque), nombre de pistes)."""
+def midi_notes(path):
+    """Suite ordonnée des notes non liées : (tick, hauteur). Partagée avec
+    ``sequence.py`` pour le diff de suite, sans dupliquer le parseur SMF."""
     data = open(path, "rb").read()
     if data[:4] != b"MThd":
-        return collections.Counter(), collections.Counter(), 0
+        return []
     hlen = struct.unpack_from(">I", data, 4)[0]
     division = struct.unpack_from(">H", data, 12)[0]
-    tpq = division if division > 0 else 480  # SMPTE : repli arbitraire
+    tpq = division if division > 0 else 480
     pos = 8 + hlen
-    pitches = collections.Counter()
-    attacks = collections.Counter()
-    tracks = 0
+    notes = []
     while data[pos : pos + 4] == b"MTrk":
         length = struct.unpack_from(">I", data, pos + 4)[0]
         p = pos + 8
         end = p + length
         tick = 0
         running = None
-        tracks += 1
         while p < end:
             delta, p = _varlen(data, p)
             tick += delta
             byte = data[p]
             if byte < 0x80:
-                status = running  # status courant (running status SMF)
+                status = running
             else:
                 status = byte
                 p += 1
@@ -79,34 +77,64 @@ def midi(path):
             if status is None:
                 break
             kind = status & 0xF0
-            if status == 0xFF:  # méta-événement
-                p += 1  # type de méta
+            if status == 0xFF:
+                p += 1
                 length, p = _varlen(data, p)
                 p += length
                 continue
-            if kind in (0xF0, 0xF7):  # sysex
+            if kind in (0xF0, 0xF7):
                 length, p = _varlen(data, p)
                 p += length
                 continue
-            if kind == 0x90 and data[p + 1] > 0:  # note-on
-                note = data[p]
-                pitches[note] += 1
-                attacks[(note, round(tick / tpq * QUANT))] += 1
+            if kind == 0x90 and data[p + 1] > 0:
+                notes.append((tick, data[p]))
             p += 1 if kind in (0xC0, 0xD0) else 2
         pos = end
-    return pitches, attacks, tracks
+    return notes
 
 
-def musicxml(path):
-    """Renvoie les mêmes compteurs pour un MusicXML partwise."""
-    root = ET.parse(path).getroot()
+def midi(path):
+    """Renvoie (compteurs hauteur, compteur (hauteur, attaque), nombre de pistes)."""
     pitches = collections.Counter()
     attacks = collections.Counter()
+    for tick, note in midi_notes(path):
+        pitches[note] += 1
+        attacks[(note, round(tick / tpq_global(path) * QUANT))] += 1
+    return pitches, attacks, _midi_tracks(path)
+
+
+def tpq_global(path):
+    """Résolution SMF (mutualisée avec ``midi_notes``)."""
+    data = open(path, "rb").read()
+    division = struct.unpack_from(">H", data, 12)[0]
+    return division if division > 0 else 480
+
+
+def _midi_tracks(path):
+    data = open(path, "rb").read()
+    if data[:4] != b"MThd":
+        return 0
+    hlen = struct.unpack_from(">I", data, 4)[0]
+    pos = 8 + hlen
+    count = 0
+    while data[pos : pos + 4] == b"MTrk":
+        length = struct.unpack_from(">I", data, pos + 4)[0]
+        pos += 8 + length
+        count += 1
+    return count
+
+
+def musicxml_notes(path):
+    """Suite ordonnée (temps, hauteur, numéro de mesure) jouée par le même
+    parcours que ``musicxml`` ; utilisée par ``sequence.py``."""
+    root = ET.parse(path).getroot()
+    notes = []
     for part in root.iter("part"):
         divisions = 1
         transpose = 0
         time = 0.0
         for measure in part.findall("measure"):
+            number = measure.get("number", "?")
             for element in measure:
                 tag = element.tag
                 if tag == "attributes":
@@ -124,13 +152,6 @@ def musicxml(path):
                 elif tag == "note":
                     if element.find("grace") is not None:
                         continue
-                    # Une note en fin de liaison n'a pas de note-on dans le
-                    # MIDI : on ne la compte pas, mais sa durée appartient
-                    # toujours à la ligne de temps. L'ancien `continue`
-                    # sautait aussi la durée, ce qui décalait toutes les
-                    # attaques suivantes et masquait les `<forward>` de
-                    # remplissage (19 airs en phase 1). Les deux candidats
-                    # sont désormais mesurés de la même manière.
                     tied_stop = any(t.get("type") == "stop" for t in element.findall("tie"))
                     duration = int(float(element.findtext("duration", "0"))) / divisions
                     node = element.find("pitch")
@@ -148,10 +169,19 @@ def musicxml(path):
                             except ValueError:
                                 pitch = None
                             if pitch is not None:
-                                pitches[pitch] += 1
-                                attacks[(pitch, round(time * QUANT))] += 1
+                                notes.append((time, pitch, number))
                     if element.find("chord") is None:
                         time += duration
+    return notes
+
+
+def musicxml(path):
+    """Renvoie les mêmes compteurs pour un MusicXML partwise."""
+    pitches = collections.Counter()
+    attacks = collections.Counter()
+    for time, pitch, _measure in musicxml_notes(path):
+        pitches[pitch] += 1
+        attacks[(pitch, round(time * QUANT))] += 1
     return pitches, attacks
 
 
