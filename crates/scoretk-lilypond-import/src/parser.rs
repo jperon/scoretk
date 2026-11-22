@@ -104,6 +104,9 @@ pub(crate) struct Parser<'a> {
     /// Variables musicales définies en Scheme (`#(define nom #{ … #})`) et
     /// insérées par `$nom` (Extending §1).
     scheme_variables: BTreeMap<String, Music>,
+    /// Identifiants de durée définis par `#(ly:make-duration …)` :
+    /// durée de base et facteur de compression (`lily/duration-scheme.cc`).
+    duration_identifiers: BTreeMap<String, (Duration, Fraction)>,
 }
 
 /// Profondeur d'expansion maximale (garde-fou contre la récursion).
@@ -278,6 +281,7 @@ pub(crate) fn parse(
         in_relative_function: false,
         tag_groups: default_tag_groups(),
         scheme_variables: BTreeMap::new(),
+        duration_identifiers: BTreeMap::new(),
     };
     parser.document()
 }
@@ -2005,6 +2009,12 @@ impl<'a> Parser<'a> {
             ..
         }) = self.peek().cloned()
         {
+            if let Some((duree, facteur)) = scheme_duration_definition(&text) {
+                self.position += 1;
+                self.variables.remove(&name);
+                self.duration_identifiers.insert(name, (duree, facteur));
+                return;
+            }
             if let Some(function) = music_function_definition(&text) {
                 self.position += 1;
                 self.variables.remove(&name);
@@ -3943,7 +3953,7 @@ impl<'a> Parser<'a> {
 
     /// Durée écrite : `\breve`, `\longa`, chiffre, points, multiplicateur.
     fn parse_duration(&mut self) -> Option<(Duration, Option<Fraction>)> {
-        let mut est_maxima = false;
+        let mut facteur_initial = Fraction::ONE;
         let mut duration = if let Some(token) = self.peek().cloned() {
             if token.is_command("breve") {
                 self.position += 1;
@@ -3955,11 +3965,22 @@ impl<'a> Parser<'a> {
                 // n'a pas de type « maxima » : on porte le facteur ×2 dans le
                 // multiplicateur, qui devient aussi celui de la durée par
                 // défaut (une note nue après `\maxima` vaut 8 rondes).
-                est_maxima = true;
+                facteur_initial = Fraction::new(2, 1);
                 Some(Duration::new(DurationType::Long))
             } else if token.is_command("longa") {
                 self.position += 1;
                 Some(Duration::new(DurationType::Long))
+            } else if token.kind == Kind::Command
+                && self.duration_identifiers.contains_key(&token.text)
+            {
+                // `\wholeHalved` après une note : identifiant de durée Scheme
+                // (`lily/duration-scheme.cc`), avec son facteur de
+                // compression. La durée écrite suivante (ou son absence)
+                // devient la durée par défaut, facteur compris.
+                let (duree, facteur) = self.duration_identifiers[&token.text];
+                self.position += 1;
+                facteur_initial = facteur;
+                Some(duree)
             } else if let Some(value) = token.as_integer() {
                 self.position += 1;
                 duration_from_value(value)
@@ -3988,20 +4009,7 @@ impl<'a> Parser<'a> {
         // Écrire une durée réinitialise le multiplicateur (`c4*3/2 d4` : `d4`
         // vaut 1/4) ; sans multiplicateur écrit, la durée par défaut n'en a
         // pas non plus.
-        let multiplier = multiplier.map_or(
-            if est_maxima {
-                Fraction::new(2, 1)
-            } else {
-                Fraction::ONE
-            },
-            |ecrit| {
-                if est_maxima {
-                    ecrit * Fraction::new(2, 1)
-                } else {
-                    ecrit
-                }
-            },
-        );
+        let multiplier = multiplier.map_or(facteur_initial, |ecrit| ecrit * facteur_initial);
         self.default_multiplier = multiplier;
         Some((duration, Some(multiplier)))
     }
@@ -4485,6 +4493,57 @@ fn scheme_music_definition(datum: &str) -> Option<(String, String)> {
     }
     let body = crate::lexer::embedded_music_body(datum)?;
     Some((name, body))
+}
+
+/// Reconnaît un identifiant de durée Scheme `#(ly:make-duration …)`.
+///
+/// `lily/duration-scheme.cc:53-99` : le premier argument est le logarithme
+/// base 2 de la durée (−1 = brève, −2 = longue, 0 = ronde, 1 = blanche…),
+/// le second le nombre de points, puis vient un facteur de compression
+/// (`num/den` ou deux entiers). Le facteur est porté à part, comme
+/// `TDuration::compressed()` du C++.
+fn scheme_duration_definition(datum: &str) -> Option<(Duration, Fraction)> {
+    let inner = datum.trim().strip_prefix('(')?.strip_suffix(')')?;
+    let mots: Vec<&str> = inner.split_whitespace().collect();
+    if mots.first().map(|mot| mot.trim_start_matches('(')) != Some("ly:make-duration") {
+        return None;
+    }
+    let log: i32 = mots.get(1)?.parse().ok()?;
+    let points: u8 = mots.get(2).and_then(|mot| mot.parse().ok()).unwrap_or(0);
+    let facteur = match (mots.get(3), mots.get(4)) {
+        (Some(rational), _) if rational.contains('/') => {
+            let (num, den) = rational.trim_end_matches(')').split_once('/')?;
+            Fraction::try_new(num.parse().ok()?, den.parse().ok()?)?
+        }
+        (Some(num), Some(den)) => {
+            Fraction::try_new(num.parse().ok()?, den.trim_end_matches(')').parse().ok()?)?
+        }
+        (Some(entier), _) => Fraction::from_integer(entier.trim_end_matches(')').parse().ok()?),
+        _ => Fraction::ONE,
+    };
+    // Le modèle n'a pas de type « maxima » : log2 = -3 est une longue
+    // multipliée par deux, comme dans `parse_duration`.
+    let facteur = if log == -3 {
+        facteur * Fraction::new(2, 1)
+    } else {
+        facteur
+    };
+    let kind = match log {
+        -3 | -2 => DurationType::Long,
+        -1 => DurationType::Breve,
+        0 => DurationType::Whole,
+        1 => DurationType::Half,
+        2 => DurationType::Quarter,
+        3 => DurationType::Eighth,
+        4 => DurationType::Sixteenth,
+        5 => DurationType::ThirtySecond,
+        6 => DurationType::SixtyFourth,
+        7 => DurationType::OneHundredTwentyEighth,
+        _ => return None,
+    };
+    let mut duree = Duration::new(kind);
+    duree.dots = points;
+    Some((duree, facteur))
 }
 
 /// Reconnaît une définition de fonction musicale dans un datum Scheme
@@ -5396,6 +5455,7 @@ mod tests {
             in_relative_function: false,
             tag_groups: default_tag_groups(),
             scheme_variables: BTreeMap::new(),
+            duration_identifiers: BTreeMap::new(),
         };
         parser.parse_music()
     }
@@ -5439,6 +5499,7 @@ mod tests {
                 in_relative_function: false,
                 tag_groups: default_tag_groups(),
                 scheme_variables: BTreeMap::new(),
+                duration_identifiers: BTreeMap::new(),
             };
             let progresse = parser.guard_progress(0);
             let bloque = parser.guard_progress(1);

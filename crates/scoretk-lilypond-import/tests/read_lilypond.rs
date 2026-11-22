@@ -6548,3 +6548,23 @@ fn maxima_vaut_huit_rondes() {
         attaques
     );
 }
+
+#[test]
+fn identifiant_de_duree_compresse() {
+    // `lily/duration-scheme.cc:53-99` : `ly:make-duration 0 0 1/2` porte un
+    // facteur de compression 1/2 sur une ronde. L'identifiant utilisé derrière
+    // une note (`c'\wholeHalved`) fixe aussi la durée par défaut suivante.
+    let src =
+        "\\version \"2.24.0\"\nwholeHalved = #(ly:make-duration 0 0 1/2)\n{ c'\\wholeHalved c }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let attaques: Vec<_> = accords_de_voix(&score, 0)
+        .iter()
+        .map(|(tick, _, _)| *tick)
+        .collect();
+    assert_eq!(
+        attaques,
+        vec![Fraction::ZERO, Fraction::new(1, 2)],
+        "attaques: {:?}",
+        attaques
+    );
+}
