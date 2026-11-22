@@ -584,6 +584,22 @@ fn transposition_ne_consomme_pas_une_note_de_la_musique() {
     );
 }
 
+/// `\transposition` est une propriété du Staff (`lily/staff-performer.cc`,
+/// `instrumentTransposition`) : quand une portée source est dépliée en deux
+/// portées par le modèle (voix nommées), le décalage vaut pour les deux.
+#[test]
+fn transposition_sur_portee_depliee_decale_toutes_les_voix() {
+    let score = read_lilypond(
+        "\\score { \\context Staff = \"g\" << \\context Staff = \"g\" { \\transposition c } { c''4 } { e''4 } >> }",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 64]);
+    assert_eq!(
+        score.parts[0].instrument.transpose,
+        Some(Transpose::new(-7, -12))
+    );
+}
+
 #[test]
 fn transposition_de_staff_decale_la_concert() {
     // Portage de `instrumentTransposition` (`ly/engraver-init.ly`) : la valeur
