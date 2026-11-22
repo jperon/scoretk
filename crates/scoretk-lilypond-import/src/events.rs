@@ -775,6 +775,9 @@ impl<'a> Interpreter<'a> {
             }
             Context::Sustain(on) => self.event(EventKind::Pedal(*on)),
             Context::Change { name, line, column } => {
+                if self.cursor >= Fraction::new(27, 1) && self.cursor <= Fraction::new(32, 1) {
+                    eprintln!("CHG tick {:?} -> {}", self.cursor, name);
+                }
                 self.staff_target = Some(StaffTarget {
                     name: name.clone(),
                     line: *line,

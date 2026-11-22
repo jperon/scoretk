@@ -254,6 +254,16 @@ fn accord_basse_explicite_avec_plus() {
     );
 }
 
+/// `nom = …` est une affectation, pas un argument : `\tieUp` (commande sans
+/// argument ignoree par le lecteur) avalait le `td` de `td = ...`, puis toute
+/// la chaine de definitions, dont `su` (`\change Staff = up`) dans bwv798.
+#[test]
+fn commande_inconnue_ne_mange_pas_une_affectation() {
+    let source = "\\version \"2.18.2\"\ntu = \\tieUp\ntd = { c'4 }\n                  \\score { \\new Staff { \\td } }";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60]);
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");

@@ -4387,6 +4387,14 @@ impl<'a> Parser<'a> {
                     {
                         return;
                     }
+                    // `nom = …` est une affectation de variable musicale, pas
+                    // un argument. `\tieUp` (commande sans argument que le
+                    // lecteur ignore) avalait le `td` de `td = …` : les
+                    // definitions suivantes disparaissaient, dont `su`
+                    // (`\change Staff = up`) dans bwv798.
+                    if self.peek_at(1).is_some_and(|next| next.is_punct('=')) {
+                        return;
+                    }
                     self.position += 1;
                     return;
                 }
