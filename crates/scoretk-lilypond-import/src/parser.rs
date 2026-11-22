@@ -3067,6 +3067,16 @@ impl<'a> Parser<'a> {
                 ajoute_point(music, self.default_duration)
             }
             "fermata" | "shortfermata" | "longfermata" | "verylongfermata" => Music::Empty,
+            "version" => {
+                // `\version "x"` est une commande de haut niveau, mais un
+                // `\include` peut l'injecter au milieu d'une musique. Ne
+                // consommer que la chaîne : une durée nue qui suit est une
+                // musique à part entière (`include-identifier.ily`).
+                if self.peek().is_some_and(|token| token.kind == Kind::Str) {
+                    self.position += 1;
+                }
+                Music::Empty
+            }
             "makeClusters" => {
                 // `ly/music-functions-init.ly:1154-1157` : une fonction
                 // musicale appliquée à l'expression qui suit. On consomme

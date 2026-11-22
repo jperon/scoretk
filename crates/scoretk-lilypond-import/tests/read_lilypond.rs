@@ -6718,3 +6718,29 @@ fn absolute_cache_la_musique_du_relative_entourant() {
         "c'' absolu vaut do5 ; e' se règle sur sol, pas sur le bloc absolu"
     );
 }
+
+#[test]
+fn include_avec_identifiant_de_chaine() {
+    // `lily/lexer.ll:340-350` : apres `\\include`, un identifiant dont la
+    // valeur est une chaine designe le fichier a inclure.
+    let fichiers = HashMap::from([("notes.ly", "d'4")]);
+    let (score, warnings) = read_lilypond_with_includes(
+        "\\version \"2.24.0\"\nwhatToInclude = \"notes.ly\"\n{ c'4 \\include \\whatToInclude e'4 }\n",
+        &mut resolveur(&fichiers),
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64], "{warnings:?}");
+}
+
+#[test]
+fn version_dans_un_include_musical_garde_la_duree_nue() {
+    // Un fichier inclus peut commencer par `\version "…"` puis une durée nue
+    // (`include-identifier.ily`) : la commande ne doit pas avaler cette durée.
+    let fichiers = HashMap::from([("avecversion.ly", "\\version \"2.24\" 4")]);
+    let (score, warnings) = read_lilypond_with_includes(
+        "{ c'4 \\include \"avecversion.ly\" e'4 }\n",
+        &mut resolveur(&fichiers),
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 60, 64], "{warnings:?}");
+}

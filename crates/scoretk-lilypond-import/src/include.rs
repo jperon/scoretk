@@ -36,6 +36,8 @@
 //! - les fichiers livrés avec LilyPond qui ne portent pas de musique sont
 //!   ignorés sans avertissement (liste [`FICHIERS_LILYPOND`]).
 
+use std::collections::HashMap;
+
 use crate::lexer::{tokenize, Kind, Token};
 use crate::pitch::Language;
 use crate::warnings::Warnings;
@@ -98,6 +100,7 @@ pub(crate) fn expand(
         warnings,
         tokens: Vec::new(),
         stack: Vec::new(),
+        strings: HashMap::new(),
     };
     expander.source(source, None, 0);
     expander.tokens
@@ -113,6 +116,9 @@ struct Expander<'a> {
     tokens: Vec<Token>,
     /// Chemins des fichiers en cours d'inclusion, pour détecter les cycles.
     stack: Vec<String>,
+    /// Identifiants assignés à une chaîne (`nom = "fichier.ly"`), pour
+    /// `\include \nom` (`lily/lexer.ll:340-350`).
+    strings: HashMap<String, String>,
 }
 
 impl Expander<'_> {
@@ -143,6 +149,29 @@ impl Expander<'_> {
                     continue;
                 }
             }
+            // `nom = "chaîne"` : retenu pour un `\include \nom` plus loin.
+            if let (
+                Some(Token {
+                    kind: Kind::Word,
+                    text: nom,
+                    ..
+                }),
+                Some(Token {
+                    kind: Kind::Punct('='),
+                    ..
+                }),
+                Some(Token {
+                    kind: Kind::Str,
+                    text: valeur,
+                    ..
+                }),
+            ) = (
+                source_tokens.get(index),
+                source_tokens.get(index + 1),
+                source_tokens.get(index + 2),
+            ) {
+                self.strings.insert(nom.clone(), valeur.clone());
+            }
             if !token.is_command("include") {
                 self.tokens.push(token.clone());
                 index += 1;
@@ -150,50 +179,58 @@ impl Expander<'_> {
             }
             let (line, column) = (token.line, token.column);
             let ignored = "\\include ignoré : le fichier inclus n'est pas lu";
-            match source_tokens.get(index + 1) {
+            // `lily/lexer.ll:333-350` : l'argument est une chaîne littérale ou
+            // un identifiant dont la valeur est une chaîne.
+            let demande = match source_tokens.get(index + 1) {
                 Some(Token {
                     kind: Kind::Str,
                     text,
                     ..
-                }) => {
-                    if let Some(language) = language_argument(text) {
-                        // `\include "italiano.ly"` vaut `\language "italiano"`.
-                        self.tokens.push(Token {
-                            kind: Kind::Command,
-                            text: "language".to_owned(),
-                            line,
-                            column,
-                        });
-                        self.tokens.push(Token {
-                            kind: Kind::Str,
-                            text: language.to_owned(),
-                            line,
-                            column,
-                        });
-                    } else if FICHIERS_LILYPOND.contains(&text.as_str()) {
-                        // Un fichier livré par LilyPond peut porter la
-                        // structure du `\score` (`satb.ly`, `ssaattbb.ly`) :
-                        // l'ignorer ne doit pas faire échouer le fichier.
-                        self.warnings.mark_music_ignored();
-                    } else {
-                        self.included(text, current, depth, line, column);
-                    }
-                }
+                }) => Some(text.clone()),
+                Some(Token {
+                    kind: Kind::Command,
+                    text,
+                    ..
+                }) => self.strings.get(text).cloned(),
                 Some(Token {
                     kind: Kind::Scheme, ..
                 }) => {
-                    // `\include #fichier` : la valeur Scheme n'est pas connue
-                    // de la lecture, on ne peut pas l'inclure.
                     self.warnings.push(
                         line,
                         column,
                         "\\include d'une expression Scheme ignoré : la valeur n'est pas connue",
                     );
                     self.warnings.mark_music_ignored();
+                    None
                 }
                 _ => {
                     self.warnings.push(line, column, ignored);
                     self.warnings.mark_music_ignored();
+                    None
+                }
+            };
+            if let Some(text) = demande {
+                if let Some(language) = language_argument(&text) {
+                    // `\include "italiano.ly"` vaut `\language "italiano"`.
+                    self.tokens.push(Token {
+                        kind: Kind::Command,
+                        text: "language".to_owned(),
+                        line,
+                        column,
+                    });
+                    self.tokens.push(Token {
+                        kind: Kind::Str,
+                        text: language.to_owned(),
+                        line,
+                        column,
+                    });
+                } else if FICHIERS_LILYPOND.contains(&text.as_str()) {
+                    // Un fichier livré par LilyPond peut porter la structure
+                    // du `\score` (`satb.ly`, `ssaattbb.ly`) : l'ignorer ne
+                    // doit pas faire échouer le fichier.
+                    self.warnings.mark_music_ignored();
+                } else {
+                    self.included(&text, current, depth, line, column);
                 }
             }
             // La commande et son argument sont consommés, même ignorés.
