@@ -291,6 +291,7 @@ fn read_note(
     let mut ghost = false;
     let mut small = false;
     let mut play = true;
+    let mut visible = true;
     let mut parentheses = false;
     let mut fingerings = Vec::new();
 
@@ -311,6 +312,7 @@ fn read_note(
             "ghost" | "dead" => ghost = child.int_text().unwrap_or(0) != 0,
             "small" => small = child.int_text().unwrap_or(0) != 0,
             "play" => play = child.int_text().unwrap_or(1) != 0,
+            "visible" => visible = child.int_text().unwrap_or(1) != 0,
             "Symbol" => {
                 if let Some(name) = child.child("name") {
                     if name.trimmed_text().starts_with("noteheadParenthesis") {
@@ -370,6 +372,7 @@ fn read_note(
     note.head = head;
     note.ghost = ghost;
     note.small = small;
+    note.visible = visible;
     note.play = play;
     note.fingerings = fingerings;
     id
