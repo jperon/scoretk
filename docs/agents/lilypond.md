@@ -3870,8 +3870,8 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact | Exact % | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 419 | 64.9 | 98.86 | — | — |
-| measured (reference present, non-reader faults excluded) | 1 647 | **1 419** | **86.2** | **98.86** | **95.96** | **97.67** |
+| all rows | 2 186 | 1 430 | 65.4 | 98.86 | — | — |
+| measured (reference present, non-reader faults excluded) | 1 647 | **1 430** | **86.8** | **98.86** | **96.03** | **97.77** |
 
 The obsolete-source basket (60 files containing `\setTextCresc`, `\sustainDown`
 and the other commands removed after 2.10, plus the `\deprecatedcresc` family
@@ -3919,8 +3919,12 @@ The next pass (Causes 17–20) adds **54 exact files and 0 losses** (1,365 →
 1,419; N2 95.50 → 95.96, no-repeat 97.56 → 97.67): 7 from an assignment no
 longer being taken as a command argument, 30 from the grace-aware exactness
 model (Cause 18 changes the definition of *exact*, see below), 14 from the
-leading-grace SMF shift, 3 from chord inversions. The remaining non-exact
-measured files go from 465 to **228**.
+leading-grace SMF shift, 3 from chord inversions.
+
+The next pass (Causes 21–23) adds **11 exact files and 0 losses** (1,419 →
+1,430; N2 95.96 → 96.03, no-repeat 97.67 → 97.77): 5 from `\simultaneous`, 1
+from `q` and its tie, 4 from the octave-shift ordering. The remaining non-exact
+measured files go from 465 to **217**.
 
 ### Cause 1: top-level `<< … >>` is one context per element
 
@@ -3992,9 +3996,9 @@ regresses.
 ### Classification of the 465 non-exact files (before this pass)
 
 The `mut` set outside the obsolete-source basket had 465 non-exact files
-before the `\octaveCheck`/`\afterGrace` pass; 228 remain after the octave,
-transposition, duration, articulation, context-name, chord and assignment
-passes. Symptoms
+before the `\octaveCheck`/`\afterGrace` pass; 217 remain after the octave,
+transposition, duration, articulation, context-name, chord, assignment,
+`\simultaneous` and ottava passes. Symptoms
 overlap (a file can be both `octave` and `notes_supp`); the first
 table groups by the oracle's primary flag, the second counts the constructs
 present in the source and its direct includes. `ne`/`ex` are the files that
@@ -4267,6 +4271,47 @@ the root-position chord. Tests
 `accord_renverse_place_les_notes_au_dessus_de_la_basse` (4 notes before, 3
 after), `chord_pitches("bes/d")`, `chord_pitches("c/g")`. **3 exact gains, 0
 losses**, N2 +9 (`Easter`, `WinchesterNew`, `Thaxted`).
+
+### Cause 21: `\simultaneous` is simultaneous
+
+`\simultaneous { … }` is the twin of `<< … >>` (`SIMULTANEOUS
+braced_music_list`, `lily/parser.yy` l. 1581-1588; `scm/define-music-types.scm`
+l. 719). The reader treated it as a mode head and read the block sequentially:
+in `bach_air_bmv_1068` the second guitar voice
+(`\context Voice="guitarLower"`) started after the first and every one of its
+attacks was shifted. The block is now `Music::Sim` (while staying a music
+command for `at_toplevel_music`). Test `simultaneous_est_simultane`: before, E4
+fell at beat 1 (60 true, 64 false); after, both notes are at 0. **5 exact
+gains, 0 losses**, N2 +799 (`bach_siciliano_bmv_1031`, `bach_air_bmv_1068`,
+`faure_dolly_berceuse`, `Suite7`, `Ich_grolle_nicht`).
+
+### Cause 22: `q` does not prolong the previous tie
+
+`q` replays the pitches of the last chord, not its ties: `repetition-chord`
+only carries the duration and articulations (`scm/ly-syntax-constructors.scm`
+l. 228-232), and the repeated note closes a pending tie without starting a new
+one. The clone of `last_chord_notes` kept the `tie` flag, so `link_ties`
+extended the `q`'s tie to the next chord, whose note of the same pitch was
+written as a `tie stop` and lost as an attack (`catacombae`, A3 of bars 16-18).
+The tie flag of repeated notes is cleared (a `q~` still sets its own tie through
+`chord_tie`). Test `q_ne_prolonge_pas_la_liaison_du_accord_precedent` (A3 at
+2880 absent before, present after). **1 exact gain, 0 losses**; `catacombae`
+becomes exact (134/134).
+
+### Cause 23: `\octave-shift` applies by tick, not by document order
+
+`<octave-shift>` is a dated direction: it applies from its position in the
+measure. The writer emits it in the stream of the voice that carries it, so
+notes of another voice written after a `<backup>` may precede it in the
+document while being earlier in time (`Sa_Taille`: the end of the ottava in
+voice 1 is written before the notes of voice 3 at the same tick, which lost
+their shift — E6 instead of E5). `read_xml` now collects `(tick, staff, value)`
+and applies it after reading each part, per tick: a note takes the last event
+of its staff whose tick is at or before its attack. A global application only
+treated the last part, hence the per-part call. Selftest: a `stop` direction
+written before an earlier note of another voice; the note keeps its shift (74
+instead of 86 before the fix). **4 exact gains, 0 losses** (`Sa_Taille`,
+`GiulianiOp100No16`, `rach-prelude23-08`, `rach-prelude23-09`).
 
 ### Cause 5: `\octaveCheck` consumes its pitch
 
