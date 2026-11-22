@@ -863,6 +863,7 @@ impl<'a> Interpreter<'a> {
                 count,
                 body,
                 alternatives,
+                ..
             } => self.repeat(*kind, *count, body, alternatives),
             Context::Transpose {
                 from,

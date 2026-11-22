@@ -7183,3 +7183,17 @@ fn repeat_unfold_avec_alternatives() {
         vec![60, 62, 64, 60, 62, 64, 60, 62, 64, 60, 62, 65]
     );
 }
+
+#[test]
+fn repeat_avec_etc_applique_le_corps_a_l_appel() {
+    // `repeat-etc.ly` : `\repeat unfold 4 \etc` définit une fonction
+    // partielle dont le corps est fourni à l'appel de la variable.
+    let src = "\\version \"2.24.0\"\n\
+         testQuad = \\repeat unfold 4 \\etc\n\
+         { \\testQuad c'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 60, 60, 60]
+    );
+}

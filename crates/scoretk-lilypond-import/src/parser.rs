@@ -2543,6 +2543,24 @@ impl<'a> Parser<'a> {
             if matches!(music, Music::Unknown(_)) {
                 self.warn(format!("variable \\{name} sans musique utilisable ignorée"));
             }
+            // `\repeat … \etc` : la musique qui suit l'appel de la variable
+            // est le corps manquant de la fonction partielle.
+            let music = match music {
+                Music::Context(Context::Repeat {
+                    kind,
+                    count,
+                    alternatives,
+                    partial: true,
+                    ..
+                }) => Music::Context(Context::Repeat {
+                    kind,
+                    count,
+                    body: Box::new(self.parse_music()),
+                    alternatives,
+                    partial: false,
+                }),
+                other => other,
+            };
             return music;
         }
         // `#(define nom #{ … #})` crée un identifiant LilyPond : `\nom` le
@@ -2850,6 +2868,7 @@ impl<'a> Parser<'a> {
                     count,
                     body: Box::new(self.parse_music()),
                     alternatives: Vec::new(),
+                    partial: false,
                 })
             }
             "alternative" => {
@@ -3394,6 +3413,7 @@ impl<'a> Parser<'a> {
                 count: 2,
                 body: Box::new(Music::Empty),
                 alternatives: Vec::new(),
+                partial: true,
             });
         }
         let count = match self.bump() {
@@ -3417,6 +3437,7 @@ impl<'a> Parser<'a> {
                 count,
                 body: Box::new(Music::Empty),
                 alternatives: Vec::new(),
+                partial: true,
             });
         }
         let mut corps = self.parse_music();
@@ -3453,6 +3474,7 @@ impl<'a> Parser<'a> {
             count,
             body,
             alternatives,
+            partial: false,
         })
     }
 

@@ -228,6 +228,9 @@ pub(crate) enum Context {
         count: u32,
         body: Box<Music>,
         alternatives: Vec<Music>,
+        /// `\repeat … \etc` : fonction partielle, le corps est fourni à
+        /// l'appel de la variable (`lily/parser.yy` `REPEAT ... partial_function`).
+        partial: bool,
     },
     /// `\transpose`.
     Transpose {
