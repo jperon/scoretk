@@ -7324,3 +7324,16 @@ fn fret_boards_contexte_grave_mais_non_joue() {
         vec![64, 65]
     );
 }
+
+#[test]
+fn part_combine_voix_identiques_fusionnees() {
+    // `part-combine-slur.ly` : deux voix strictement identiques sont jouées
+    // une seule fois par le part combiner (unissons fusionnés).
+    let src = "\\version \"2.24.0\"\n\
+         \\partCombine { c'4( d'4~ d'4 f'4) } { c'4( d'4~ d'4 f'4) }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62, 62, 65]
+    );
+}

@@ -2724,7 +2724,9 @@ impl<'a> Parser<'a> {
                 let second = non_relative(self.parse_music());
                 if first.is_empty() {
                     second
-                } else if second.is_empty() {
+                } else if second.is_empty() || second == first {
+                    // Deux voix strictement identiques sont des unissons :
+                    // le part combiner ne les joue qu'une fois.
                     first
                 } else {
                     Music::Sim(vec![first, second])
