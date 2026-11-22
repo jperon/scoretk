@@ -52,37 +52,86 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mesure import nom_court  # noqa: E402
 
 
+def _lancer(source: Path, sortie: Path, lilypond: str, timeout: int) -> tuple:
+    """Compile ``source`` vers ``sortie`` ; (code, erreur, midi)."""
+    try:
+        p = subprocess.run(
+            [
+                "timeout",
+                str(timeout),
+                "prlimit",
+                "--as=4000000000",
+                lilypond,
+                "-dno-print-pages",
+                "-dmidi-extension=midi",
+                "-o",
+                str(sortie),
+                str(source),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=timeout + 5,
+            check=False,
+        )
+        return p.returncode, p.stderr.decode("utf-8", "replace"), sortie.with_suffix(".midi")
+    except subprocess.TimeoutExpired:
+        return 124, "dépassement de la borne de temps", sortie.with_suffix(".midi")
+
+
+def _convertir(source: Path, racine: Path) -> Path | None:
+    """Copie le dossier de ``source`` et le passe par ``convert-ly``.
+
+    LilyPond 2.27 refuse les commandes supprimées après 2.10/2.16
+    (`\\compressMusic`, `\\compressFullBarRests`, `\\setTextCresc`…) et son
+    rattrapage insère des silences : la référence MIDI serait fausse. Le
+    ``convert-ly`` de la même installation applique les règles de
+    `python/convertrules.py` (par exemple l. 2765 et l. 4239) à une **copie**
+    du dossier (les `\\include` restent relatifs), puis on compile la copie.
+    """
+    convert_ly = shutil.which("convert-ly")
+    if not convert_ly:
+        return None
+    copie = racine / "src"
+    shutil.copytree(source.parent, copie, dirs_exist_ok=True)
+    for fichier in sorted(copie.rglob("*")):
+        if fichier.suffix not in (".ly", ".ily"):
+            continue
+        subprocess.run(
+            [convert_ly, "-e", str(fichier)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=60,
+            check=False,
+        )
+    converti = copie / source.name
+    return converti if converti.exists() else None
+
+
 def compiler(
     source: Path, destination: Path, lilypond: str, timeout: int
 ) -> dict:
-    """Compile une source et copie son MIDI ; renvoie une ligne de statut."""
+    """Compile une source et copie son MIDI ; renvoie une ligne de statut.
+
+    Si LilyPond signale une commande inconnue (syntaxe supprimée que
+    ``convert-ly`` sait réécrire), la source est convertie dans une copie et
+    recompilée : la référence reste alors celle du LilyPond installé, mais sur
+    le source que `convert-ly` produirait, au lieu d'être jetée.
+    """
     debut = time.monotonic()
+    converti = False
     with tempfile.TemporaryDirectory() as tmp:
         sortie = Path(tmp) / "ly"
-        try:
-            p = subprocess.run(
-                [
-                    "timeout",
-                    str(timeout),
-                    "prlimit",
-                    "--as=4000000000",
-                    lilypond,
-                    "-dno-print-pages",
-                    "-dmidi-extension=midi",
-                    "-o",
-                    str(sortie),
-                    str(source),
-                ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                timeout=timeout + 5,
-                check=False,
-            )
-            code = p.returncode
-            erreur = p.stderr.decode("utf-8", "replace")[-400:]
-        except subprocess.TimeoutExpired:
-            code, erreur = 124, "dépassement de la borne de temps"
-        midi = sortie.with_suffix(".midi")
+        code, journal, midi = _lancer(source, sortie, lilypond, timeout)
+        if "commande inconnue" in journal or "unknown command" in journal:
+            converti_source = _convertir(source, Path(tmp))
+            if converti_source is not None:
+                if midi.exists():
+                    midi.unlink()
+                code, journal, midi = _lancer(
+                    converti_source, sortie, lilypond, timeout
+                )
+                if midi.exists() and midi.stat().st_size > 0:
+                    converti = True
         if midi.exists() and midi.stat().st_size > 0:
             destination.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(midi, destination / "ly.midi")
@@ -93,8 +142,9 @@ def compiler(
         "fichier": str(source),
         "ok": ok,
         "code": code,
+        "converti": converti,
         "temps": round(time.monotonic() - debut, 3),
-        "erreur": "" if ok else erreur,
+        "erreur": "" if ok else journal[-400:],
     }
 
 

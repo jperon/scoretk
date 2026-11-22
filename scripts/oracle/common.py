@@ -155,17 +155,10 @@ COMMANDES_OBSOLETES = (
     # depuis ; LilyPond 2.27 signale « commande inconnue » et son rattrapage
     # insère un silence d'un temps.
     "deprecatedcresc", "deprecateddim", "deprecatedendcresc", "deprecatedenddim",
-    # `\compressMusic` est l'ancien nom de `\scaleDurations`
-    # (`python/convertrules.py` l. 2765, règle 2.11.48) ; LilyPond 2.27 le
-    # signale « commande inconnue » et son rattrapage insère un silence.
-    "compressMusic", "compressmusic",
-    # `\\compressFullBarRests` est devenu `\\compressEmptyMeasures`
-    # (`python/convertrules.py` l. 4239) et n'existe plus en 2.27 : le
-    # rattrapage insère un silence d'un temps **au début de la voix**, ce qui
-    # décale toute la portée. Vérifié sur `r8 g' g' g'` : notes à 1,5/2/2,5
-    # au lieu de 0,5/1/1,5. Les fichiers d'orchestre l'incluent depuis chaque
-    # partie instrumentale (Symphony5_1/2, mozart-hrn-3, O_Mistress_Mine…).
-    "compressFullBarRests",
+    # `\compressMusic` et `\compressFullBarRests` ne figurent plus ici :
+    # leurs références sont désormais produites sur une copie convertie par le
+    # `convert-ly` de la même installation (`references.py`, règles
+    # `python/convertrules.py` l. 2765 et l. 4239), donc mesurables.
 )
 
 
@@ -240,8 +233,9 @@ def selftest() -> None:
     assert commandes_obsoletes("\\setTextCresc c4") == ["setTextCresc"]
     assert commandes_obsoletes("\\crescTextCresc c4") == []
     assert commandes_obsoletes("\\deprecatedcresc c4") == ["deprecatedcresc"]
-    assert commandes_obsoletes("\\compressMusic #'(3 . 2) { c4 }") == ["compressMusic"]
-    assert commandes_obsoletes("\\compressFullBarRests c4") == ["compressFullBarRests"]
+    # Les deux familles converties par convert-ly ne sont plus exclues.
+    assert commandes_obsoletes("\\compressMusic #'(3 . 2) { c4 }") == []
+    assert commandes_obsoletes("\\compressFullBarRests c4") == []
     assert commandes_obsoletes("\\compressEmptyMeasures c4") == []
     assert raison_hors_lecteur({"code": 0}, "\\deprecatedcresc c4").startswith(
         "source obsolète"
