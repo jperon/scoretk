@@ -89,6 +89,7 @@ pub(crate) fn read_jump(node: &Node, staff: usize) -> Jump {
         .child("playRepeats")
         .and_then(Node::int_text)
         .is_some_and(|value| value != 0);
+    jump.visible = node.child("visible").and_then(Node::int_text).unwrap_or(1) != 0;
     jump
 }
 

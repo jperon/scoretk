@@ -98,6 +98,7 @@ pub(super) fn read_jump(element: &Element, staff_index: usize) -> Jump {
         .child("playRepeats")
         .and_then(Element::int)
         .is_some_and(|value| value != 0);
+    jump.visible = element.child("visible").and_then(Element::int).unwrap_or(1) != 0;
     jump
 }
 

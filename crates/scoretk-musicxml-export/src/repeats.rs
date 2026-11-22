@@ -591,7 +591,10 @@ fn direction_jump(out: &mut Out, jump: &Jump) {
         Vec::new()
     };
 
-    if words.is_empty() {
+    // `canWrite` (`exportmusicxml.cpp:9408-9411`) : un saut invisible ne
+    // produit pas de `<direction>` ; `writeJump` (`:6218-6224`) écrit alors
+    // uniquement le `<sound>` autonome.
+    if words.is_empty() || !jump.visible {
         if !sound_attributes.is_empty() {
             sound(out, &sound_attributes);
         }
@@ -749,6 +752,30 @@ mod tests {
         assert!(
             !xml.contains("<segno/>"),
             "direction du segno invisible écrite à tort :\n{xml}"
+        );
+    }
+
+    /// `writeJump` (`exportmusicxml.cpp:6218-6224`) : `canWrite`
+    /// (`:9408-9411`) est faux pour un saut invisible (`<visible>0</visible>`),
+    /// donc seul le `<sound>` est écrit, sans `<direction><words>`. Cas réel :
+    /// `Dieu_seul_suffit_-_Du_Jonchay` (D.C. et D.S. invisibles).
+    #[test]
+    fn saut_invisible_sans_direction() {
+        let mut score = Score::new();
+        let track = portee(&mut score);
+        let first = ajouter_mesure(&mut score, 0, track);
+        let mut jump = Jump::new("D.C.", "start", "end", "", Placement::Above, track);
+        jump.visible = false;
+        score.measures[first].repeat_marks = vec![RepeatMark::Jump(jump)];
+
+        let xml = export_musicxml(&score).expect("export");
+        assert!(
+            xml.contains("<sound dacapo=\"yes\"/>"),
+            "son du saut perdu :\n{xml}"
+        );
+        assert!(
+            !xml.contains("<words>D.C.</words>"),
+            "direction du saut invisible écrite à tort :\n{xml}"
         );
     }
 

@@ -223,6 +223,11 @@ pub struct Jump {
     /// de la cible n'est plus honorée (`RepeatList::unwind`,
     /// `dom/repeatlist.cpp:985-993`).
     pub play_repeats: bool,
+    /// Visibilité du texte du saut (`<visible>` du `.mscx`). Un saut invisible
+    /// n'est pas décrit par une `<direction>` (`canWrite`,
+    /// `exportmusicxml.cpp:9408-9411`) mais garde son `<sound>` autonome
+    /// (`writeJump`, `:6218-6224`).
+    pub visible: bool,
     /// Placement.
     pub placement: Placement,
     /// Piste d'attache.
@@ -249,6 +254,7 @@ impl Jump {
             play_until,
             continue_at,
             play_repeats: false,
+            visible: true,
             placement,
             track,
         }
