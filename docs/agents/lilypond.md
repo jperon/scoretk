@@ -3944,6 +3944,22 @@ files are **201**. The rebase on the merged master fixes then adds two more
 (`Field_Nocturne_5`, `Troldtog`), for **1 442 of 1 643 measured rows (87.8 %;
 1 398 under Q16 alone**, 85.1 %), N2 96.12, no-repeat 97.77.
 
+### Where the remaining `notes_supp` files start
+
+`scripts/oracle/lilypond/supp_first.py` (two workers by default) classifies
+the 86 measured files that carry the `notes_supp` flag but are not exact, by
+their **first extra attack** on the oracle grid (Q16), and describes that
+attack's neighbourhood in the candidate MusicXML. Only four start at tick 0,
+but they carry 7 014 of the 13 106 extra attacks: `carcassi-op60-09` (737)
+and `carcassi-op60-15` (532) are the deferred reuse of named contexts,
+`SpanishFandango1882` (526) and `JPSFotFConductorTransposed` (5 219) are
+structural. Of the other 82 files, 47 add at most five attacks (104 in
+total). At the first extra, 24 files have a written grace, 19 repeat the
+pitch at the same attack on another staff, voice or part, 4 repeat it inside
+one voice, and 1 falls on the last reference attack. This ranks the next
+causes; it is not a verdict, since a `notes_supp` file's first divergence
+often belongs to the same cause as a neighbouring `attaque_decalee` one.
+
 ### Cause 1: top-level `<< … >>` is one context per element
 
 A `<< … >>` at the level of a `\score`, without `\new`, was read as one
