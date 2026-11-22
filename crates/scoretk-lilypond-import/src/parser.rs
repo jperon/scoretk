@@ -1155,7 +1155,11 @@ impl<'a> Parser<'a> {
                 // `lily/note-name-engraver.cc` : NoteNames n'a pas de
                 // performer MIDI, contrairement à ChordNames (vérifié en
                 // 2.26). Sa musique est gravée mais non jouée.
-                if nom == "FiguredBass" || nom == "NoteNames" {
+                if nom == "FiguredBass"
+                    || nom == "NoteNames"
+                    || nom == "FretBoards"
+                    || nom == "NullVoice"
+                {
                     return self.skip_nonplaying_grid(&nom);
                 }
                 return self.parse_music();
@@ -1206,7 +1210,11 @@ impl<'a> Parser<'a> {
         };
         // Contextes de gravure sans performer MIDI (`lily/note-name-engraver.cc`,
         // `lily/figured-bass-engraver.cc`) : leur musique n'est pas jouée.
-        if name == "NoteNames" || name == "FiguredBass" {
+        if name == "NoteNames"
+            || name == "FiguredBass"
+            || name == "FretBoards"
+            || name == "NullVoice"
+        {
             self.skip_nonplaying_grid(&name);
             return None;
         }

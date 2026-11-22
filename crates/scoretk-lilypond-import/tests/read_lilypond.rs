@@ -7311,3 +7311,16 @@ fn note_names_contexte_grave_mais_non_joue() {
         vec![64, 65]
     );
 }
+
+#[test]
+fn fret_boards_contexte_grave_mais_non_joue() {
+    // `FretBoards` n'a pas de performer MIDI : sa musique est gravée mais
+    // n'ajoute pas de notes jouées (fret-boards.ly).
+    let src = "\\version \"2.24.0\"\n\
+         << \\new FretBoards { c'4 d' } \\new Voice { e'4 f' } >>\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![64, 65]
+    );
+}
