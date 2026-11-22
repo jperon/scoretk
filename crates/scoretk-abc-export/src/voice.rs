@@ -145,16 +145,6 @@ pub(crate) fn render_voice(
             range.clone(),
             &mut before,
         );
-        draw_instrument_changes(
-            score,
-            measure,
-            staff,
-            &key,
-            &items,
-            range.clone(),
-            &mut before,
-            measure_index == 0,
-        );
         // `abc2midi` refuse un jeton court (`.`, `u`, `v`) immédiatement suivi
         // d'une décoration `!…!` (`.!mp!d` est « malformed note »). Comme
         // `xml2abc.py` (`doDirection` puis `addChord`), les `!…!` sont écrits
@@ -929,51 +919,6 @@ fn draw_context_changes(
         if kind == 2 {
             before[offset].retain(|existing| !existing.starts_with("[K:"));
         }
-        if !before[offset].iter().any(|existing| existing == &token) {
-            before[offset].push(token);
-        }
-    }
-}
-
-/// Change de transposition d'instrument en cours de mesure.
-///
-/// `xml2abc.py::doAttr` (lignes 1278 et 1319-1332) lit `<transpose/chromatic>`
-/// dans chaque `<attributes>` et l'écrit en paramètre d'un champ `[K:…]`.
-/// ABC 2.1 §4.6 donne à `transpose=` la même portée dans un champ en ligne ;
-/// sans lui la lecture restitue la transposition initiale de l'en-tête `V:`.
-#[allow(clippy::too_many_arguments)]
-fn draw_instrument_changes(
-    score: &Score,
-    measure: &Measure,
-    staff: usize,
-    key: &KeySig,
-    items: &[Item<'_>],
-    range: std::ops::Range<usize>,
-    before: &mut [Vec<String>],
-    first_measure: bool,
-) {
-    let Some(staff_data) = score.staves.get(staff) else {
-        return;
-    };
-    let part = score.part(staff_data.part);
-    let end = measure.start_tick + measure.len;
-    for (tick, instrument) in &part.instrument_changes {
-        if *tick < measure.start_tick || *tick >= end {
-            continue;
-        }
-        if first_measure && *tick == measure.start_tick {
-            continue; // déjà porté par l'en-tête `V:`
-        }
-        let Some(transpose) = instrument.transpose.map(|value| value.chromatic) else {
-            continue;
-        };
-        if transpose == 0 {
-            continue;
-        }
-        let token = format!("[K:{} transpose={transpose}]", pitch::key_field(key));
-        let Some(offset) = item_at_or_after(items, range.clone(), *tick) else {
-            continue;
-        };
         if !before[offset].iter().any(|existing| existing == &token) {
             before[offset].push(token);
         }
