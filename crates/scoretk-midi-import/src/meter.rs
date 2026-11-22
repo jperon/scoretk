@@ -223,12 +223,15 @@ pub fn metric_divisions_of_tuplet(
         div_lengths: vec![(tuplet.len, TUPLET_BOUNDARY_LEVEL)],
     };
     let mut len = tuplet.len / Fraction::from_integer(i64::from(tuplet.tuplet_number));
-    tuplet_start_level -= 1;
+    // `push_back({ divLen, tupletStartLevel-- })` : le niveau **courant** est
+    // utilisé, puis décrémenté (`importmidi_meter.cpp:118-132`). Le caller l'a
+    // déjà décrémenté une fois (`--tupletStartLevel`, `:169-183`).
     info.div_lengths.push((len, tuplet_start_level));
+    tuplet_start_level -= 1;
     while len >= min_allowed_duration() * Fraction::from_integer(2) {
         len *= Fraction::HALF;
-        tuplet_start_level -= 1;
         info.div_lengths.push((len, tuplet_start_level));
+        tuplet_start_level -= 1;
     }
     info
 }

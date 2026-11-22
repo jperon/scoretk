@@ -483,16 +483,34 @@ than importer defects:
   descending** (`n1.pitch > n2.pitch`) while the 5.0.0 snapshot sorts them
   ascending: the 4.7.4 order is ported, since it alone reproduces
   `tuplet_2_voices_3_5_tuplets` (67 in the triolet, 64 in the quintuplet).
-  That test is now exact, and `voix` drops from 3 to 2 files. The two remaining
-  tuplet tests need **ultra-short durations**
-  (9 ticks) for the fifth-tuplet notes: a 15-tick note lengthened by
-  `lengthenTooShortNotes` (`importmidi.cpp:89-100`) is divided a second time
-  by the tuplet ratio at export, which gives `<duration>` under the minimum.
-  `Kryshachok` and `Lassus_Alleluja._Dies_sanctificatus` place notes an
-  octave away, and `Ad_te_Suspiramus` loses 12 of 1 072 notes. `human_4-4`
-  is a human performance, where our direct `findQuantizedChordOnTime`
-  differs from MuseScore's metric dynamic programming (documented in
-  `quant.rs`).
+  That test is now exact, and `voix` drops from 3 to 2 files.
+- **tuplet division levels** (fixed): `metricDivisionsOfTuplet`
+  (`importmidi_meter.cpp:118-132`) pushes each division with the **current**
+  `tupletStartLevel` and decrements afterwards (`tupletStartLevel--`), the
+  caller having already pre-decremented (`:169-183`). The port decremented
+  once more before the first push, so every tuplet division was one level too
+  low. Tested and measured: no file changes on either lot (the level list is
+  not read by the duration choice on the measured paths), so the fix is a
+  faithful-port correction without a score effect.
+- **the « ultra-short durations » were not a real defect**: after the oracle's
+  correction, `tuplet_3_5_7_tuplets` and `tuplet_2_voices_tuplet_non` match
+  the reference on duration (N2d = 18/18 and 8/8). The MusicXML
+  `<duration>` is the sounding value (2/18 of a quarter in a 9:8 tuplet) and
+  `<time-modification>` carries the notation, which is correct; the earlier
+  « 9 ticks » came from reading `<duration>` as the notated figure.
+- **remaining tuplet defect**: the two tests differ by **voice assignment**
+  (N2v = 3/18 and 7/8): three overlapping tuplets (3:2, 5:4, 7:8) must get
+  three voices (`MidiTuplet::assignVoices`, `importmidi_tuplet_voice.cpp`),
+  our `assign_voices` keeps fewer. `MidiTuplet::minimizeOffTimeError`
+  (`importmidi_tuplet.cpp:454-503`) is also not ported.
+- **`Kryshachok`** is a **LilyPond reader** octave error: the MIDI has
+  (46, 50, 53) at 4.0 and the reference written pitch is (58, 62, 65), with
+  no `<transpose>` or octave clef between them — the reader resolved the bass
+  voice an octave too high. `Lassus_Alleluja._Dies_sanctificatus` loses 3
+  notes of a five-note chord (74 and 62 at 64.0), like `Ad_te_Suspiramus`
+  (12 of 1 072): an importer note-loss still to reduce. `human_4-4` is a
+  human performance, where our direct `findQuantizedChordOnTime` differs
+  from MuseScore's metric dynamic programming (documented in `quant.rs`).
 
 The single `note manquante` file (`CommentLeSaisJe`) and the `note sup`
 files `Veni, Creator Spiritus` (1 619 notes against 245) and `Dechiffrage`
