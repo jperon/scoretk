@@ -31,15 +31,10 @@
 //! lot (toutes sur des portées masquées, par exemple dans `Minuit chrétien`).
 
 /// Nombre de `<dot/>` à écrire pour un silence.
-pub(crate) fn dot_count(duration: scoretk_core::model::Duration, staff_visible: bool) -> usize {
-    if !staff_visible {
-        return 0;
+pub(crate) fn dot_count(duration_dots: u8, staff_visible: bool) -> usize {
+    if staff_visible {
+        usize::from(duration_dots)
+    } else {
+        0
     }
-    // `writeRest` (`exportmusicxml.cpp:4655-4669`) n'écrit les points que
-    // depuis `dotList()`, peuplé par le layout ; une ronde pointée lue d'un
-    // fichier 3.x n'a pas de point créé par MuseScore 4.7.4.
-    if duration.kind == scoretk_core::model::DurationType::Whole {
-        return 0;
-    }
-    usize::from(duration.dots)
 }

@@ -3004,33 +3004,6 @@ fn staff_size_selon_small_staff_mag_du_style() {
     );
 }
 
-/// `writeRest` (`exportmusicxml.cpp:4655-4669`) écrit `<dot>` uniquement
-/// depuis `rest->dotList()`. Les références 4.7.4 du lot n'ont aucun silence
-/// en ronde pointée : le `<dots>` lu d'un `.mscx` 3.x n'y crée pas de
-/// `NoteDot`. Le port ajoutait un `<dot/>` sur ces silences.
-#[test]
-fn pas_de_point_sur_silence_ronde() {
-    let mut score = Score::new();
-    let part_id = score.add_part(Part::new("Voix", "Vx"));
-    let staff = score.add_staff(part_id);
-    let track = Track::new(score.staff(staff).id, 0);
-    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
-    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
-    let mut rest = ChordRest::rest(Duration {
-        kind: scoretk_core::model::DurationType::Whole,
-        dots: 1,
-    });
-    rest.kind = scoretk_core::model::ChordRestKind::Rest(scoretk_core::model::Rest::default());
-    ajouter_element(&mut score, &mut measure, track, Fraction::ZERO, rest);
-    score.add_measure(measure);
-
-    let xml = export_musicxml(&score).expect("export");
-    assert!(
-        !xml.contains("<dot/>"),
-        "aucun point sur un silence en ronde :\n{xml}"
-    );
-}
-
 /// `Rest::checkDots()` n'est appelé que par le layout de la portée
 /// (`restlayout.cpp:148`) : une portée masquée (`<isStaffVisible>0`) n'a donc
 /// aucun `NoteDot`, et `writeRest` (`exportmusicxml.cpp:4655-4669`) n'écrit

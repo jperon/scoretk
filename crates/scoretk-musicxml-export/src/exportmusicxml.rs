@@ -1990,8 +1990,7 @@ impl Context<'_> {
                 out.xml.tag("type", name);
             }
             let staff_visible = self.score.staff(track.staff()).visible;
-            let dots = rest_dots::dot_count(chord_rest.duration, staff_visible);
-            for _ in 0..dots {
+            for _ in 0..rest_dots::dot_count(chord_rest.duration.dots, staff_visible) {
                 out.xml.tag_empty("dot", &[]);
             }
         }
