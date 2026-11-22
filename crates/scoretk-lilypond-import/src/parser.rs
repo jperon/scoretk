@@ -156,6 +156,8 @@ struct Partition {
     /// signifie une partition qui ne produit que du MIDI).
     has_layout: bool,
     has_midi: bool,
+    /// `\unfoldRepeats` vu dans cette partition seulement.
+    unfold_repeats: bool,
     /// Ligne du premier jeton.
     line: u32,
     /// Colonne du premier jeton.
@@ -449,6 +451,7 @@ impl<'a> Parser<'a> {
             }
             if self.partitions.get(chosen).is_some() {
                 let partition = self.partitions.swap_remove(chosen);
+                document.playback_unfold_repeats = partition.unfold_repeats;
                 document.score = Some(partition.score);
             }
         }
@@ -501,12 +504,13 @@ impl<'a> Parser<'a> {
             }
             Kind::Command if token.text == "score" => {
                 self.position += 1;
-                let (score, has_layout, has_midi) = self.parse_score();
+                let (score, has_layout, has_midi, unfold_repeats) = self.parse_score();
                 self.partitions.push(Partition {
                     score,
                     explicit: true,
                     has_layout,
                     has_midi,
+                    unfold_repeats,
                     line: token.line,
                     column: token.column,
                 });
@@ -640,6 +644,7 @@ impl<'a> Parser<'a> {
             explicit: false,
             has_layout: false,
             has_midi: false,
+            unfold_repeats: false,
             line: token.line,
             column: token.column,
         });
@@ -714,14 +719,19 @@ impl<'a> Parser<'a> {
     //------------------------------------------------------------------
 
     /// Bloc `\score { … }`, avec les blocs de sortie vus (`\layout`, `\midi`).
-    fn parse_score(&mut self) -> (ScoreAst, bool, bool) {
+    fn parse_score(&mut self) -> (ScoreAst, bool, bool, bool) {
         let mut score = ScoreAst::default();
         let mut has_layout = false;
         let mut has_midi = false;
         self.midi_transposition = None;
+        // `\unfoldRepeats` est propre au score courant
+        // (`scm/music-functions.scm`) : un second `\score` qui déplie ses
+        // reprises ne doit pas déplier celles du premier, dont l'oracle
+        // retient le MIDI (`scm/midi.scm`, `base.midi`).
+        self.playback_unfold_repeats = false;
         if !self.eat_punct('{') {
             self.warn("\\score sans accolade");
-            return (score, has_layout, has_midi);
+            return (score, has_layout, has_midi, false);
         }
         while !self.at_end() {
             if self.eat_punct('}') {
@@ -754,7 +764,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        (score, has_layout, has_midi)
+        (score, has_layout, has_midi, self.playback_unfold_repeats)
     }
 
     /// Un élément du corps de `\score`, également une expression musicale de

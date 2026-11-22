@@ -6105,3 +6105,25 @@ fn portee_sans_staff_performer_est_muette_et_le_midi_ne_la_joue_pas() {
         .count() as u32;
     assert_eq!(attaques, 4, "le MIDI ne joue que la première portée");
 }
+
+#[test]
+fn unfold_repeats_dun_score_ne_sapplique_pas_a_un_autre() {
+    // `scm/lily-library.scm` (`get-outfile-name`) et `scm/midi.scm`
+    // (`write-performances-midis`) écrivent un MIDI par score : `base.midi`
+    // pour le premier, `base-1.midi` pour le suivant. L'oracle retient
+    // `base.midi`. Un `\unfoldRepeats` écrit dans le second score ne doit donc
+    // pas déplier les reprises du premier, qui fait référence.
+    let src = "\\version \"2.24.0\"\n\
+         \\score { \\new Staff { \\repeat volta 2 { c'4 d'4 } \\midi {} \\layout {} } }\n\
+         \\score { \\new Staff { \\unfoldRepeats { \\repeat volta 2 { e'4 f'4 } } \\midi {} } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .map(|note| note.pitch)
+            .collect::<Vec<_>>(),
+        vec![60, 62],
+        "le premier score garde sa reprise non dépliée"
+    );
+}
