@@ -193,6 +193,20 @@ fn is_hidden_staff_details(event: &quick_xml::events::BytesStart<'_>) -> bool {
     })
 }
 
+/// Un `<attributes></attributes>` vide ne porte aucune information musicale :
+/// il ne reste qu'une enveloppe après le filtrage des blocs de mise en page.
+fn prune_empty_attributes(entries: &mut Vec<Entry>) {
+    entries.retain(|entry| match entry {
+        Entry::Node(node) => node.name != "attributes" || !node.children.is_empty(),
+        Entry::Text(_) => true,
+    });
+    for entry in entries.iter_mut() {
+        if let Entry::Node(node) = entry {
+            prune_empty_attributes(&mut node.children);
+        }
+    }
+}
+
 fn normalize_with_stats(xml: &str, level: Level) -> (Vec<String>, usize) {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
@@ -268,6 +282,9 @@ fn normalize_with_stats(xml: &str, level: Level) -> (Vec<String>, usize) {
         }
     }
 
+    if level == Level::Core {
+        prune_empty_attributes(&mut roots);
+    }
     let mut lines = Vec::new();
     render(&roots, 0, &mut lines);
     (lines, hidden_staves)
@@ -393,6 +410,20 @@ pub fn diff(expected: &[String], actual: &[String]) -> (usize, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attributs_vides_ecartes_du_noyau() {
+        let xml = r#"<score-partwise version="4.0"><part id="P1"><measure number="1">
+          <attributes></attributes>
+          <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note>
+        </measure></part></score-partwise>"#;
+        let lines = normalize(xml);
+        assert!(
+            !lines.iter().any(|line| line.contains("attributes")),
+            "une enveloppe vide ne porte aucune information :\n{lines:?}"
+        );
+        assert!(lines.iter().any(|line| line.contains("<step>C</step>")));
+    }
 
     #[test]
     fn staff_details_masque_est_une_difference_de_mise_en_page() {
