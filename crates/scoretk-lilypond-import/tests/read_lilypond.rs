@@ -7452,3 +7452,19 @@ fn nullvoice_garde_les_paroles_et_est_muette_dans_le_midi() {
         .count() as u32;
     assert_eq!(attaques, 4, "seule la voix mel est jouée");
 }
+
+#[test]
+fn scheme_parser_set_note_names_change_la_langue() {
+    // `note-names.ly` : `#(ly:parser-set-note-names
+    // (ly:assoc-get 'nederlands language-pitch-names))` change la langue des
+    // noms de notes en cours de musique.
+    let src = "\\version \"2.24.0\"\n\
+         #(begin (set! pitchnames (ly:assoc-get 'english language-pitch-names))\n\
+                 (ly:parser-set-note-names pitchnames))\n\
+         { as4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![58]
+    );
+}

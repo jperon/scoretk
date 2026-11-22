@@ -622,6 +622,9 @@ impl<'a> Parser<'a> {
             Kind::Scheme => {
                 let datum = token.text.clone();
                 self.position += 1;
+                if let Some(langage) = scheme_note_names_language(&datum) {
+                    self.language = langage;
+                }
                 if !self.record_after_grace_fraction(&datum) {
                     let _ = self.record_scheme_define(&datum);
                 }
@@ -5042,6 +5045,27 @@ fn scheme_music_definition(datum: &str) -> Option<(String, String)> {
 /// le second le nombre de points, puis vient un facteur de compression
 /// (`num/den` ou deux entiers). Le facteur est porté à part, comme
 /// `TDuration::compressed()` du C++.
+/// Langue des noms de notes posée par `#(ly:parser-set-note-names
+/// (ly:assoc-get '<lang> language-pitch-names))` (`note-names.ly`,
+/// `lily/parser-scheme.cc`).
+fn scheme_note_names_language(datum: &str) -> Option<Language> {
+    if !datum.contains("ly:parser-set-note-names") || !datum.contains("language-pitch-names") {
+        return None;
+    }
+    for mot in datum.split_whitespace() {
+        if !mot.starts_with('\'') {
+            continue;
+        }
+        let nom = mot
+            .trim_start_matches('\'')
+            .trim_end_matches(|c: char| !c.is_alphanumeric());
+        if let Some(langage) = Language::from_name(nom) {
+            return Some(langage);
+        }
+    }
+    None
+}
+
 fn scheme_duration_definition(datum: &str) -> Option<(Duration, Fraction)> {
     let inner = datum.trim().strip_prefix('(')?.strip_suffix(')')?;
     let mots: Vec<&str> = inner.split_whitespace().collect();
