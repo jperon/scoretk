@@ -128,8 +128,10 @@ pub(crate) fn write_meta_tags(xml: &mut XmlWriter, metadata: &ScoreMetadata) {
         ("movementTitle", metadata.movement_title.as_str()),
         ("mscVersion", metadata.msc_version.as_str()),
         ("platform", metadata.platform.as_str()),
+        ("poet", metadata.poet.as_str()),
         ("source", metadata.source.as_str()),
         ("subtitle", metadata.subtitle.as_str()),
+        ("translator", metadata.translator.as_str()),
         ("workNumber", metadata.work_number.as_str()),
         ("workTitle", metadata.work_title.as_str()),
     ];

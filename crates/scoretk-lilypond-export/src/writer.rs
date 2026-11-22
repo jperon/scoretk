@@ -96,7 +96,18 @@ impl<'a> Writer<'a> {
             ("movementNumber", metadata.movement_number.clone()),
             ("workNumber", metadata.work_number.clone()),
             ("composer", metadata.composer.clone()),
-            ("poet", metadata.lyricist.clone()),
+            // `\header poet` est le champ du parolier (`titling-init.ly:87`).
+            // Le modèle distingue `lyricist` et `poet` depuis MuseScore 4 ;
+            // on reprend `poet` quand `lyricist` est vide, comme le fait
+            // l'import MusicXML de MuseScore (`importmusicxmlpass1.cpp:1143-1146`).
+            (
+                "poet",
+                if metadata.lyricist.trim().is_empty() {
+                    metadata.poet.clone()
+                } else {
+                    metadata.lyricist.clone()
+                },
+            ),
             ("arranger", metadata.arranger.clone()),
             ("copyright", metadata.copyright.clone()),
             ("source", metadata.source.clone()),

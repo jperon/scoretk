@@ -212,7 +212,13 @@ fn read_metadata(root: &Element) -> scoretk_core::model::ScoreMetadata {
             let value = creator.text_trimmed().to_owned();
             match creator.attribute("type") {
                 Some("composer") => metadata.composer = value,
-                Some("lyricist") | Some("poet") => metadata.lyricist = value,
+                // `MusicXmlParserPass1::identification` appelle
+                // `setMetaTag(type, texte)` pour chaque créateur
+                // (`importmusicxmlpass1.cpp:1527-1528`) : les trois types
+                // restent distincts dans le modèle.
+                Some("lyricist") => metadata.lyricist = value,
+                Some("poet") => metadata.poet = value,
+                Some("translator") => metadata.translator = value,
                 Some("arranger") => metadata.arranger = value,
                 _ => {}
             }
