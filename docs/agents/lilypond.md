@@ -3870,14 +3870,14 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact Q16 | Exact Q16 **or** n2_grace | Exact % (either) | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 387 | **1 430** | 65.4 | 98.86 | — | — |
-| measured (reference present, non-reader faults excluded) | 1 647 | 1 387 | **1 430** | **86.8** | **98.86** | **96.03** | **97.77** |
+| all rows | 2 186 | 1 398 | **1 442** | 66.0 | 98.86 | — | — |
+| measured (reference present, non-reader faults excluded) | 1 643 | 1 398 | **1 442** | **87.8** | **98.86** | **96.12** | **97.77** |
 
 The two exact columns are kept side by side since Cause 18: **Exact Q16** is
 the historical criterion (`r == t == n1 == n2`), **Exact Q16 or n2_grace** adds
 the files whose graces only miss the plain grid because LilyPond plays them at
 a distinct real time. The latter is the headline figure; the former is never
-hidden, and the 43-file difference is exactly the grace-timing model.
+hidden, and the 44-file difference is exactly the grace-timing model.
 
 The obsolete-source basket (60 files containing `\setTextCresc`, `\sustainDown`
 and the other commands removed after 2.10, plus the `\deprecatedcresc` family
@@ -3887,9 +3887,11 @@ removed after 2.13.20) is no longer counted separately:
 LilyPond MIDI, a LilyPond compile failure, or obsolete syntax that
 `convert-ly` would rewrite (the commands of `parser.rs::obsolete_music_command`).
 `mesure.py` marks those rows excluded, so they leave both numerator and
-denominator; on `mut` this excludes 521 rows (the obsolete basket, unusable
-references and the sources scoretk deliberately does not support) and leaves
-1 654 measured rows.
+denominator; on `mut` this excludes 533 rows (the obsolete basket, unusable
+references, the sources scoretk deliberately does not support and the four
+`\compressMusic` scores whose reference LilyPond 2.27 cannot produce) and
+leaves 1 653 sources in the lot. Of those, 1 649 convert; six have an empty
+reference (purely graphical scores), which leaves 1 643 comparable rows.
 
 The previous campaign reported 692/2 186 exact (31.7 %; 39.9 % on the 1 735
 rows that had a reference) and N2 93.49 on the old references. The exact rate was low because 595 files had **all** their
@@ -3931,6 +3933,16 @@ The next pass (Causes 21–23) adds **11 exact files and 0 losses** (1,419 →
 1,430; N2 95.96 → 96.03, no-repeat 97.67 → 97.77): 5 from `\simultaneous`, 1
 from `q` and its tie, 4 from the octave-shift ordering. The remaining non-exact
 measured files go from 465 to **217**.
+
+The next pass (Causes 24–26) adds **10 exact files and 0 losses** (1,430 →
+1,440; N2 96.03 → 96.12, no-repeat stable at 97.77): 8 from the
+`ly/script-init.ly` post-events, 2 from `tieWaitForNote`; the `\compressMusic`
+cause adds no exact file but removes 4 rows from the denominator, whose
+reference LilyPond 2.27 cannot produce. With the six empty references also
+left out, the denominator is 1 643 rows and the remaining non-exact measured
+files are **201**. The rebase on the merged master fixes then adds two more
+(`Field_Nocturne_5`, `Troldtog`), for **1 442 of 1 643 measured rows (87.8 %;
+1 398 under Q16 alone**, 85.1 %), N2 96.12, no-repeat 97.77.
 
 ### Cause 1: top-level `<< … >>` is one context per element
 
@@ -4318,6 +4330,57 @@ treated the last part, hence the per-part call. Selftest: a `stop` direction
 written before an earlier note of another voice; the note keeps its shift (74
 instead of 86 before the fix). **4 exact gains, 0 losses** (`Sa_Taille`,
 `GiulianiOp100No16`, `rach-prelude23-08`, `rach-prelude23-09`).
+
+### Cause 24: `ly/script-init.ly` scripts are post-events
+
+The articulation commands of `ly/script-init.ly` (`make-articulation`,
+l. 29-81: `downprall`, `upprall`, `prallup`, `pralldown`, `lineprall`,
+`prallmordent`, `downmordent`, `bachschleifer`, `coda`, `segno`, the
+heel/toe string scripts, the Henze fermatas…) were only partly in the
+reader's articulation list. An unknown command left the post-event path, and
+the `~` (or tie parenthesis) that followed it was swallowed, so the next note
+became a separate attack: `bwv-988-v22`, `g1 \downprall ~`, lost its tie at
+bar 12. The names now join `is_articulation_command` and
+`post_event_for_command` (Henze fermatas, `downmordent`, `bachschleifer`
+mapped; the prall variants without an exact model equivalent are consumed
+alone, without inventing an ornament). A recognized but unmapped script is
+consumed alone: going through `parse_direction_event` ate the following
+command and lost the `\times`/`\tuplet` (`BWV-830-4`: 757 → 786 matched
+notes). Tests `script_d_ornement_garde_la_liaison_suivante` (two attacks
+before, one after) and `script_sans_equivalent_ne_mange_pas_le_nolet_suivant`
+(attacks 240/360/480/600 before, 240/320/400/480 after). **8 exact gains, 0
+losses** (`bwv-988-v05/14/17/20/22/24`, `bwv848b`, `PFMUT`).
+
+### Cause 25: `\compressMusic` is `\scaleDurations`
+
+`\compressMusic #'(n . d)` is the old name of `\scaleDurations`
+(`python/convertrules.py` l. 2765, rule 2.11.48): same argument and the same
+durations multiplied by n/d. The reader treated it as an unknown command,
+skipped the Scheme argument and read the block uncompressed, so `bwv631a`
+(and three other chorals) shifted the whole piece by one beat from the
+anacrusis. The alias now goes through the `scaleDurations` branch; test
+`compress_music_est_scale_durations` (1/4 before, 3/8 after). The reference
+side had to change too: LilyPond 2.27 reports `\compressMusic` as an unknown
+command and its recovery inserts a rest, so the four measured sources that
+use it had an unusable MIDI; `common.py::COMMANDES_OBSOLETES` now excludes
+them like the other obsolete syntax. **No exact gain** (the four rows leave
+the denominator), 0 loss.
+
+### Cause 26: `\set tieWaitForNote` keeps dangling ties
+
+`Tie_performer::stop_translation_timestep` normally drops ties whose tied
+note has ended (`lily/tie-performer.cc` l. 166-180); under
+`tieWaitForNote = ##t` it keeps them, and `acknowledge_audio_element`
+(l. 116-150) closes the tie on the first note of the same pitch, however much
+later. The reader always dropped the dangling tie: `Chop-28-1` (bar 33,
+`\tuplet 3/2 {c,16~ g,~ c~} s8 | <c, g, c>4`) produced six attacks instead of
+three. The reader now records the setting (`Context::TieWaitForNote`,
+`MetaEvent::TieWaitForNote`, `\set` in `parser.rs`); `link_ties` builds the
+flag's timeline per voice, keeps pending ties when it is on and then accepts
+any head of the same pitch. Test
+`tie_wait_for_note_garde_les_liaisons_pendantes`: three attacks with the
+setting, six without, matching LilyPond 2.27's MIDI. **2 exact gains, 0
+losses** (`Chop-28-1`, `LVB_Sonate_10no1_3`).
 
 ### Cause 5: `\octaveCheck` consumes its pitch
 
