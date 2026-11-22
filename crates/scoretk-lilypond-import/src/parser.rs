@@ -1152,7 +1152,10 @@ impl<'a> Parser<'a> {
                 // dans le MIDI (vérifié en 2.26) : on laisse la musique nue
                 // devenir une portée anonyme, comme pour `\new ChordNames`.
                 // Seul FiguredBass reste une grille muette.
-                if nom == "FiguredBass" {
+                // `lily/note-name-engraver.cc` : NoteNames n'a pas de
+                // performer MIDI, contrairement à ChordNames (vérifié en
+                // 2.26). Sa musique est gravée mais non jouée.
+                if nom == "FiguredBass" || nom == "NoteNames" {
                     return self.skip_nonplaying_grid(&nom);
                 }
                 return self.parse_music();
@@ -1201,6 +1204,12 @@ impl<'a> Parser<'a> {
                 return None;
             }
         };
+        // Contextes de gravure sans performer MIDI (`lily/note-name-engraver.cc`,
+        // `lily/figured-bass-engraver.cc`) : leur musique n'est pas jouée.
+        if name == "NoteNames" || name == "FiguredBass" {
+            self.skip_nonplaying_grid(&name);
+            return None;
+        }
         let kind = GroupKind::from_name(&name);
         let context_name = self.parse_context_id();
 

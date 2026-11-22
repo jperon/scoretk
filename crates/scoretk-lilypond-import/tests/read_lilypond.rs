@@ -7298,3 +7298,16 @@ fn part_combine_au_niveau_superieur_joue_les_deux_voix() {
         vec![60, 62, 64, 65]
     );
 }
+
+#[test]
+fn note_names_contexte_grave_mais_non_joue() {
+    // `lily/note-name-engraver.cc` : NoteNames est un contexte de gravure,
+    // sans performer MIDI (accidental-tie.ly, note-name-context-custom.ly).
+    let src = "\\version \"2.24.0\"\n\
+         << \\new NoteNames { c'4 d' } \\new Voice { e'4 f' } >>\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![64, 65]
+    );
+}
