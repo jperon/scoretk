@@ -2559,6 +2559,51 @@ upstream **0.9780**, LilyPond **0.6950**, notation score **0.6798** with the
 same three files below MuseScore (`lily-bd83d4c2` 0.026,
 `Promo_Foucauld` 0.0015, `Patrick-Doyle…` 0.001).
 
+## Mechanical MIDI: intentional extension beyond 4.7.4 (2026-11-22)
+
+**Decision**: MuseScore 4.7.4 is the starting reference, not a ceiling. For
+mechanical MIDI (LilyPond writes attacks and releases exactly at the written
+values), applying MuseScore's human-performance heuristics to already-correct
+durations makes them wrong. `midi2ly` never reads the `.ly`: it round-trips
+the MIDI's exact on/off times, which is why it is exact on 123 files where
+neither our importer nor MuseScore is.
+
+**Prototype first** (no commit, `target/mech-proto/`): skipping
+`lengthenNote`/`minimizeNumberOfRests` on all 255 files made all 123 files
+exact (N2d 0.9671 → 1.0 on that subset, 0 loss).
+
+**Implementation**: new `crates/scoretk-midi-import/src/mechanical.rs`.
+`is_human_performance` (`importmidi_quant.cpp:399-439`) declares a human
+performance when fewer than 60% of on-beat onsets are already on the grid;
+our detector is its strict inverse on **both** ends of every note: all onsets
+and offsets must equal `quantize_value(t, basicQuant)`. Percussion tracks are
+excluded because `shortenDrumNote` (`importmidi_simplify.cpp:170-208`) must
+still run (`up-perc_drums`, `up-perc_remove_ties`). The three
+`simplify_durations_*` calls in `lib.rs` are guarded by one `mechanical`
+boolean; the MuseScore path is byte-for-byte unchanged for non-mechanical
+input. Reduced tests in `mechanical.rs` (grid / off-grid / drum) and a
+human-vs-mechanical pair in `simplify_lengthen_68.rs`; the two synthetic
+MuseScore tests `simplify_option` and `simplify_order` were given a 7-tick
+offset so they still exercise the human path.
+
+**Measurements** (`target/mech-check/`, `target/mech-final2/`):
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Upstream `up-` N (MuseScore test files, human MIDI) | 0.9780 | **0.9780** |
+| Upstream `ly-` N (1116 files) | 0.7085 | **0.7204** (348 gains, 4 losses) |
+| 255-lot N2d vs source MIDI | 0.9767 | **0.9932** |
+| 255-lot exact files vs source MIDI | 122 | **227** |
+| 255-lot notation score vs `.ly` | 0.6800 | **0.6923** |
+| 255-lot exact notation files | 81 | **138** |
+
+No file loses on the source-MIDI truth (105 gains, 0 loss on the 255 lot) and
+no human upstream file regresses. The four files that lose against the
+engraved `.ly` in the 1116-file oracle (`Dorogoi…`, `Gevaert…` ×2,
+`Wellerman…`) are explained: their source MIDI is now exact (e.g.
+`Dorogoi…` 99.53 → 100.0) and the residual difference is the engraved voice
+layout, which is not the mechanical MIDI's information.
+
 ## MIDI import: closing status (2026-11-21)
 
 Final three-tool comparison on the 255-file LilyPond lot
@@ -2567,8 +2612,8 @@ importers"):
 
 | Tool | N2d (source MIDI) | Exact files | Notation score (vs `.ly`) |
 | --- | ---: | ---: | ---: |
-| scoretk | **0.9767** | 122 | **0.6800** |
-| MuseScore 4.7.4 | **0.9767** | 121 | **0.6800** |
+| scoretk (mechanical extension) | **0.9932** | 227 | **0.6923** |
+| MuseScore 4.7.4 | 0.9767 | 121 | 0.6800 |
 | `midi2ly` + `lilypond` | 0.9993 | 242 | 0.7942 |
 
 **Every file where scoretk still differs from MuseScore 4.7.4 on any metric**

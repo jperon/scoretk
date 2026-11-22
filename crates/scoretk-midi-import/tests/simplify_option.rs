@@ -42,8 +42,12 @@ fn six_huit() -> Vec<u8> {
     let mut events = vec![(0, Ev::TimeSig(6, 3))]; // 6/8
     for (on, pitches) in [(1.5, [50u8, 53, 57]), (3.0, [45, 52, 57])] {
         for pitch in pitches {
-            events.push(((on * 480.0) as u32, Ev::NoteOn(0, pitch, 90)));
-            events.push((((on + 0.5) * 480.0) as u32, Ev::NoteOff(0, pitch)));
+            // Leger desalignement (7 ticks) : ce test porte sur l'option
+            // `simplifyDurations`, donc il doit rester sur la voie humaine
+            // de MuseScore, pas sur l'extension MIDI mecanique.
+            let shift = u32::from(pitch % 2 == 0) * 7;
+            events.push(((on * 480.0) as u32 + shift, Ev::NoteOn(0, pitch, 90)));
+            events.push((((on + 0.5) * 480.0) as u32 + shift, Ev::NoteOff(0, pitch)));
         }
     }
     events.sort_by_key(|(tick, _)| *tick);

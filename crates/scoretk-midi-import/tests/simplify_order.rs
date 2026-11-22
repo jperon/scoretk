@@ -35,8 +35,11 @@ fn durations(score: &Score) -> Vec<(Fraction, u8, Fraction)> {
 fn trois_notes_une_piste_durees_musescore() {
     let mut events = vec![(0, Ev::TimeSig(4, 2))]; // 4/4 (2e champ = puissance de deux)
     for (pitch, on, off) in [(57, 5.0, 6.5), (60, 6.0, 6.5), (62, 6.5, 7.0)] {
-        events.push(((on * 480.0) as u32, Ev::NoteOn(0, pitch, 90)));
-        events.push(((off * 480.0) as u32, Ev::NoteOff(0, pitch)));
+        // Leger desalignement pour rester sur la voie MuseScore : ce test
+        // verifie les durees de MuseScore, pas l'extension MIDI mecanique.
+        let shift = u32::from(pitch % 2 == 1) * 7;
+        events.push(((on * 480.0) as u32 + shift, Ev::NoteOn(0, pitch, 90)));
+        events.push(((off * 480.0) as u32 + shift, Ev::NoteOff(0, pitch)));
     }
     events.sort_by_key(|(tick, _)| *tick);
     let bytes = smf_with(Format::Parallel, Timing::Metrical(u15::new(480)), &[events]);

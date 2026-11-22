@@ -59,6 +59,7 @@ pub mod instrument;
 pub mod key;
 pub mod lrhand;
 pub mod lyrics;
+pub mod mechanical;
 pub mod meter;
 pub mod operations;
 pub mod quant;
@@ -118,6 +119,14 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     // Détection d'une performance humaine, comme `Quantize::setIfHumanPerformance`.
     let (is_human, quant_value, max_voice_count, beat_data) =
         detect_human_performance(midi, &tracks, &sigmap, options);
+    // Extension délibérée (docs/agents/midi.md) : un MIDI dont toutes les
+    // attaques ET fins de note sont déjà sur la grille est mécanique (par
+    // exemple gravé par LilyPond). Les heuristiques de `lengthenNote` et
+    // `minimizeNumberOfRests` (importmidi_simplify.cpp:56-165, :211-278)
+    // ont été conçues pour des performances humaines : elles altèrent des
+    // durées déjà justes. Le chemin MuseScore reste inchangé sinon.
+    let mechanical =
+        mechanical::is_mechanical_file(&tracks, quant::quant_value_to_fraction(quant_value));
     // `MidiBeat::findBeatLocations` remplace la mesure du fichier par la
     // signature retenue (`setTimeSig`, importmidi_beat.cpp:305-309).
     if let Some(data) = &beat_data {
@@ -164,15 +173,16 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     // `Simplify::simplifyDurations` teste l'option `simplifyDurations` de la
     // piste (`importmidi_simplify.cpp:298`) : les tests amont `dontSimplify`
     // l'ont à faux (`midiimport_tests.cpp:86`).
-    if options.simplify_durations {
+    if options.simplify_durations && !mechanical {
         simplify::simplify_durations_not_drums(&mut tracks, &sigmap, is_human, options.use_dots);
     }
     if voice::separate_voices(&mut tracks, &sigmap, max_voice_count, options.use_dots)
         && options.simplify_durations
+        && !mechanical
     {
         simplify::simplify_durations_not_drums(&mut tracks, &sigmap, is_human, options.use_dots);
     }
-    if options.simplify_durations {
+    if options.simplify_durations && !mechanical {
         simplify::simplify_durations_for_drums(&mut tracks, &sigmap, is_human, options.use_dots);
     }
     drum::split_unequal_drum_chords(&mut tracks);
