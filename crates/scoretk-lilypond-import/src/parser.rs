@@ -3162,6 +3162,18 @@ impl<'a> Parser<'a> {
                     .map(|quote| tronque_musique(quote, duree, self.default_duration))
                     .unwrap_or(Music::Empty)
             }
+            "textMark" | "textEndMark" => {
+                // `ly/music-functions-init.ly:2365-2373` : un argument de
+                // markup, rien de plus. La durée nue qui suit reste de la
+                // musique (`text-mark-marklengthon.ly`).
+                if self.peek().is_some_and(|token| token.is_command("markup")) {
+                    self.position += 1;
+                    self.parse_markup_text();
+                } else {
+                    self.read_function_argument("markup?");
+                }
+                Music::Empty
+            }
             "augmentum" => {
                 // `ly/ancient-init.ly:124-130` : `shift-duration-log expr 0 1`
                 // ajoute une mora (un point) à chaque durée de l'expression.

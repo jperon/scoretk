@@ -6949,3 +6949,15 @@ fn abbreviations_repeat_unfold_et_percent() {
         vec![60, 60, 60, 60]
     );
 }
+
+#[test]
+fn text_mark_ne_mange_pas_la_duree_nue_suivante() {
+    // `ly/music-functions-init.ly:2365-2368` : `\textMark` prend un seul
+    // argument de markup ; la durée nue qui suit est une musique à jouer.
+    let src = "\\version \"2.24.0\"\n{ c'4 \\textMark \"marque\" 4 4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 60, 60]
+    );
+}
