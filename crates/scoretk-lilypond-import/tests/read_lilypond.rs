@@ -1414,6 +1414,57 @@ fn context_staff_retrouve_continue_dans_le_temps() {
     );
 }
 
+/// `\context Voice = "x"` qui reparaît dans une section ultérieure continue
+/// la même voix (`lily/context.cc` `find_create_context`) : la musique de la
+/// section se place à la date de son élément dans la séquence
+/// (`lily/parser.yy` `sequential_music`), pas au tick 0 (carcassi-op60-09).
+#[test]
+fn context_voice_de_meme_nom_continue_dans_le_temps() {
+    let source = "\\score { { \
+        \\context Staff = \"g\" { \\set Staff.midiInstrument = \"acoustic guitar (nylon)\" } \
+        << \\context Voice = \"a\" { \\fixed c' { c4 } } >> \
+        << \\context Voice = \"b\" { \\fixed c' { d4 } } >> \
+        << \\context Voice = \"a\" { \\fixed c' { e4 } } >> } }";
+    let score = read_lilypond(source).expect("lecture");
+    let mut attaques: Vec<(u8, i64)> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .flat_map(|segment| {
+            segment
+                .iter_elements()
+                .filter_map(|(_, element)| match element {
+                    SegmentItem::ChordRest(chord_rest) => {
+                        let chord = chord_rest.chord_ref()?;
+                        let pitch = score.note(*chord.notes.first()?).pitch;
+                        Some((pitch, segment.tick.ticks(1920)))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    attaques.sort_unstable();
+    assert_eq!(attaques, vec![(60, 0), (62, 480), (64, 960)]);
+}
+
+/// `\transposition` est une propriété de Staff : posée dans un
+/// `\context Staff` sans musique (`midiStuff`), elle vaut pour **toutes** les
+/// voix qui suivent sur cette portée, pas seulement la première
+/// (`lily/staff-performer.cc`, `instrumentTransposition`).
+#[test]
+fn transposition_d_un_contexte_vide_vaut_pour_les_voix_suivantes() {
+    let source = "\\score { { \
+        \\context Staff = \"g\" { \\transposition c } \
+        << \\context Voice = \"a\" { \\relative c'' { c4 } } \
+           \\context Voice = \"b\" { \\relative c' { a2 } } >> } }";
+    let score = read_lilypond(source).expect("lecture");
+    let mut hauteurs = hauteurs(&score);
+    hauteurs.sort_unstable();
+    // `\transposition c` : un do' écrit sonne un do (une octave plus bas).
+    assert_eq!(hauteurs, vec![45, 60]);
+}
+
 #[test]
 fn context_staff_au_dela_de_quatre_voix() {
     // Cinq `\context Staff` ne doivent pas se faire écraser par la limite de
@@ -3545,10 +3596,11 @@ fn sequence_de_groupe_dans_une_variable() {
 
 #[test]
 fn contextes_multiples_dans_une_sequence() {
-    // Plusieurs contextes dans un même `{ … }` sont rares et sans ordre
-    // séquentiel naturel : ils deviennent des portées parallèles, avec un
-    // avertissement. La musique nue qui les accompagne reste une portée
-    // anonyme, et un `{ … }` sans aucun contexte ne change pas.
+    // Plusieurs contextes dans un même `{ … }` sont rares : LilyPond les
+    // crée successivement (`sequential_music`), la seconde portée commençant
+    // après la musique de la première ; un avertissement le signale. La
+    // musique nue qui les accompagne reste la première portée anonyme, et un
+    // `{ … }` sans aucun contexte ne change pas.
     let (score, warnings) = read_lilypond_reporting(
         "\\version \"2.24.0\"\n\\language \"english\"\n\
          v = { \\new Staff { c4 d } \\new Staff { e f } }\n\
@@ -3564,7 +3616,8 @@ fn contextes_multiples_dans_une_sequence() {
     assert_eq!(score.staves.len(), 3);
     let mut hauteurs = hauteurs(&score);
     hauteurs.sort_unstable();
-    assert_eq!(hauteurs, vec![48, 50, 52, 53, 60]);
+    // `f` (3,5) franchit la barre de mesure à 4 et devient deux notes liées.
+    assert_eq!(hauteurs, vec![48, 50, 52, 53, 53, 60]);
 
     // Un `{ … }` sans contexte ne change pas : une portée anonyme, la barre
     // de contrôle est consommée comme avant.

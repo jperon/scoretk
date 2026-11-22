@@ -166,7 +166,24 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     // Les ruptures de section sont posées après la création des mesures :
     // `section_break_before` force l'export MusicXML à réécrire `<transpose>`.
     let mut transposition_breaks: Vec<Fraction> = Vec::new();
+    // Début de l'élément courant d'une séquence `{ … }` : les contextes
+    // nommés qui y reparaissent continuent à cette date. Les éléments d'un
+    // `<< … >>` ne portent pas la marque et gardent zéro.
+    let mut element_start = Fraction::ZERO;
+    // Portée du dernier `\context Staff = "…"` sans musique : les
+    // `\context Voice` qui suivent sont ses voix (idiome `midiStuff` de
+    // carcassi-op60-09/15), pas des portées séparées.
+    let mut contexte_portee: Option<(StaffId, PartId, String)> = None;
+    let mut derniere_portee: Option<(StaffId, PartId, String)> = None;
     for group in &score_ast.groups {
+        if group.sequence_start {
+            element_start = staves
+                .iter()
+                .flat_map(|staff| staff.voices.iter())
+                .map(|voice| voice.interpreted.end)
+                .max()
+                .unwrap_or(Fraction::ZERO);
+        }
         if group.staves.is_empty() {
             // Portée précédente : c'est elle qui porte la voix la plus proche
             // quand les paroles n'ont pas de cible explicite.
@@ -178,6 +195,129 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                     .map(|block| (previous, lyrics_build(block))),
             );
             continue;
+        }
+        // `\context Voice = "x"` qui reparaît dans une section ultérieure
+        // continue la **même** voix : `find_create_context`
+        // (`lily/context.cc` l. 269-273) retrouve le contexte nommé, et la
+        // musique de la section reprend à la date de son élément dans la
+        // séquence (`lily/parser.yy` `sequential_music`). La voix garde sa
+        // piste (carcassi-op60-09/15 : `melodyVoiceA` rejoue la section C
+        // après la section B).
+        if group.existing && group.kind == GroupKind::Voice && group.staves.len() == 1 {
+            let staff_block = &group.staves[0];
+            if let Some(nom) = staff_block.name.clone() {
+                // Portée cible : celle du dernier `\context Staff` vide
+                // (`midiStuff`), sinon la portée portant le nom de la voix.
+                let portee = contexte_portee.clone().or_else(|| {
+                    staves
+                        .iter()
+                        .position(|staff| {
+                            staff.name.as_deref() == Some(nom.as_str())
+                                && staff
+                                    .voices
+                                    .iter()
+                                    .any(|voice| voice.name.as_deref() == Some(nom.as_str()))
+                        })
+                        .map(|index| {
+                            let staff_id = staves[index].staff;
+                            (staff_id, score.staff(staff_id).part, nom.clone())
+                        })
+                });
+                if let Some((staff_id, part_id, _nom_portee)) = portee {
+                    let index = match staves.iter().position(|staff| staff.staff == staff_id) {
+                        Some(index) => index,
+                        None => {
+                            staves.push(StaffBuild {
+                                staff: staff_id,
+                                name: Some(nom.clone()),
+                                voices: Vec::new(),
+                                lyrics: Vec::new(),
+                            });
+                            staves.len() - 1
+                        }
+                    };
+                    // Emplacement stable par nom de voix dans la portée :
+                    // une voix continuée reprend sa piste, une nouvelle voix
+                    // prend le premier emplacement libre.
+                    let slot = staves[index]
+                        .voices
+                        .iter()
+                        .find(|voice| voice.name.as_deref() == Some(nom.as_str()))
+                        .map(|voice| (voice.track.raw() % VOICES as u32) as usize)
+                        .or_else(|| {
+                            let utilises: Vec<bool> = (0..VOICES)
+                                .map(|slot| {
+                                    staves[index].voices.iter().any(|voice| {
+                                        (voice.track.raw() % VOICES as u32) as usize == slot
+                                    })
+                                })
+                                .collect();
+                            (0..VOICES).find(|slot| !utilises[*slot])
+                        });
+                    // La piste de la voix continuée doit être reprise : on
+                    // bloque les autres emplacements pour `build_voices`, qui
+                    // choisit le premier libre.
+                    let mut occupied: Vec<Option<Fraction>> = vec![None; VOICES];
+                    for (autre, value) in occupied.iter_mut().enumerate() {
+                        if Some(autre) != slot {
+                            *value = Some(element_start + Fraction::ONE);
+                        }
+                    }
+                    let (built, octave_suivante) = build_voices(
+                        &mut score,
+                        staff_id,
+                        part_id,
+                        staff_block,
+                        document.playback_unfold_repeats,
+                        warnings,
+                        octave_relatif,
+                        &occupied,
+                        element_start,
+                    );
+                    octave_relatif = octave_suivante;
+                    let mut built = built.into_iter();
+                    if let Some(premiere) = built.next() {
+                        // La voix continuée reste sous la transposition de la
+                        // portée (`\transposition` est une propriété de
+                        // Staff) : sans ce décalage, la section rejouée
+                        // sonnait une octave au-dessus (carcassi-op60-09,
+                        // seconde section B).
+                        let transposition = instrument_transpose(&staff_block.voices[0].music)
+                            .or(pending_transposition);
+                        let mut nouveau = StaffBuild {
+                            staff: staff_id,
+                            name: None,
+                            voices: premiere.voices,
+                            lyrics: premiere.lyrics,
+                        };
+                        if let Some((pitch, true)) = transposition {
+                            let interval = interval_from_pitch(&pitch);
+                            let mut changes = transpositions(std::slice::from_ref(&nouveau));
+                            if !changes.iter().any(|(tick, _)| tick.is_zero()) {
+                                changes.insert(0, (Fraction::ZERO, interval));
+                            }
+                            decaler_vers_concert(std::slice::from_mut(&mut nouveau), &changes);
+                            if transposition_depuis(std::slice::from_ref(&nouveau)).is_zero() {
+                                score.part_mut(part_id).instrument.transpose = Some(interval);
+                            }
+                        }
+                        staves[index].voices.extend(nouveau.voices);
+                        staves[index]
+                            .lyrics
+                            .extend(staff_block.lyrics.iter().map(lyrics_build));
+                        staves[index].lyrics.extend(nouveau.lyrics);
+                    }
+                    for sœur in built {
+                        staves.push(StaffBuild {
+                            staff: sœur.staff,
+                            name: None,
+                            voices: sœur.voices,
+                            lyrics: sœur.lyrics,
+                        });
+                    }
+                    continue;
+                }
+            }
         }
         // `\context Staff = "x"` retrouve la portée nommée déjà construite
         // (`lily/context.cc`, `Context::find_create_context` →
@@ -215,19 +355,11 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                         }
                     }
                     // `\context Staff = "x"` dans deux éléments successifs
-                    // d'une séquence `{ … }` continue après la musique déjà
-                    // écrite sur la portée ; dans un même `<< … >>`, les
-                    // deux éléments sont simultanés et partent du tick 0.
-                    let start = if group.sequence_start {
-                        staves[index]
-                            .voices
-                            .iter()
-                            .map(|voice| voice.interpreted.end)
-                            .max()
-                            .unwrap_or(Fraction::ZERO)
-                    } else {
-                        Fraction::ZERO
-                    };
+                    // d'une séquence `{ … }` continue après la musique de
+                    // l'élément précédent ; dans un même `<< … >>`, les deux
+                    // éléments sont simultanés et partent du tick 0
+                    // (`element_start` vaut alors zéro).
+                    let start = element_start;
                     let (built, octave_suivante) = build_voices(
                         &mut score,
                         staff_id,
@@ -296,11 +428,27 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
         if propre.is_some() {
             pending_transposition = propre;
             pending_from_empty_context = !a_des_notes && group.existing;
-        } else if !matches!(group.kind, GroupKind::Voice) && !pending_from_empty_context {
+        } else if (group.staves.iter().any(|staff| {
+            staff
+                .voices
+                .iter()
+                .any(|voice| music_has_pitched(&voice.music))
+        }) || group.staves.iter().any(|staff| staff.name.is_some()))
+            && !matches!(group.kind, GroupKind::Voice)
+            && !pending_from_empty_context
+        {
             // Un nouveau groupe structural (StaffGroup, Staff…) ferme la
             // portée qui portait la propriété : ne pas la propager au-delà.
+            // Un groupe anonyme sans note (le `\global` d'une section,
+            // simple préambule de silences) ne ferme rien : il ne crée pas
+            // de portée qui recevrait la musique (carcassi-op60-09, section B).
             pending_transposition = None;
+            contexte_portee = None;
         }
+        // `pendante` : la propriété vient d'un groupe précédent (un
+        // `\context Staff` sans musique, idiome `\global`/`midiStuff`) et
+        // vaut pour les voix qui suivent sur la même portée.
+        let pendante = propre.is_none();
         let transposition = propre.or(pending_transposition);
         let first = &group.staves[0];
         let long_name = group
@@ -352,6 +500,11 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 staff.brackets.push(bracket);
             }
             let staff_id = score.add_staff_with(staff_part_id, staff);
+            derniere_portee = Some((
+                staff_id,
+                staff_part_id,
+                staff_block.name.clone().unwrap_or_default(),
+            ));
             let (built, octave_suivante) = build_voices(
                 &mut score,
                 staff_id,
@@ -361,7 +514,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 warnings,
                 octave_relatif,
                 &[],
-                Fraction::ZERO,
+                element_start,
             );
             octave_relatif = octave_suivante;
             let mut built = built.into_iter();
@@ -428,9 +581,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                         // Un `\context Staff` sans musique a posé la
                         // propriété dans un groupe précédent : la retrouver
                         // quand le groupe musical ne la porte pas lui-même.
-                        if pending_from_empty_context
-                            && !changes.iter().any(|(tick, _)| tick.is_zero())
-                        {
+                        if pendante && !changes.iter().any(|(tick, _)| tick.is_zero()) {
                             changes.insert(0, (Fraction::ZERO, interval));
                         }
                         decaler_vers_concert(&mut staves[first_staff_index..], &changes);
@@ -476,6 +627,11 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                     score.part_mut(part_id).instrument.transpose = Some(interval);
                 }
             }
+        }
+        // Un `\context Staff` existant sans musique reste la portée courante :
+        // les `\context Voice` qui suivent lui appartiennent (midiStuff).
+        if pending_from_empty_context {
+            contexte_portee = derniere_portee.clone();
         }
     }
 
@@ -900,6 +1056,37 @@ fn group_bracket(kind: GroupKind, position: usize, count: usize) -> Option<Staff
 /// son nom et aucun programme.
 /// Vrai si une musique AST contient au moins un accord joué (pas seulement
 /// des propriétés de contexte comme `\transposition`).
+/// Vrai si la musique porte une **hauteur** (un accord non vide), par
+/// opposition à un `\skip` ou un silence : un préambule de silences ne crée
+/// pas de portée et ne ferme donc pas une transposition en attente.
+fn music_has_pitched(music: &crate::ast::Music) -> bool {
+    use crate::ast::Music;
+    match music {
+        Music::Chord(chord) => {
+            matches!(&chord.kind, crate::ast::ChordKind::Notes(notes) if !notes.is_empty())
+                || matches!(&chord.kind, crate::ast::ChordKind::Repeat)
+        }
+        Music::Seq(items) | Music::Sim(items) => items.iter().any(music_has_pitched),
+        Music::Context(crate::ast::Context::Transpose { music, .. })
+        | Music::Context(crate::ast::Context::Fixed { music, .. })
+        | Music::Context(crate::ast::Context::Relative { music, .. })
+        | Music::Context(crate::ast::Context::NonRelative { music })
+        | Music::Context(crate::ast::Context::Tuplet { music, .. })
+        | Music::Context(crate::ast::Context::Grace { music, .. })
+        | Music::Context(crate::ast::Context::Repeat { body: music, .. }) => {
+            music_has_pitched(music)
+        }
+        Music::New(group) => group.staves.iter().any(|staff| {
+            staff
+                .voices
+                .iter()
+                .any(|voice| music_has_pitched(&voice.music))
+        }),
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => music_has_pitched(music),
+        _ => false,
+    }
+}
+
 fn music_has_chords(music: &crate::ast::Music) -> bool {
     use crate::ast::Music;
     match music {

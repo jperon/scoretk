@@ -1005,10 +1005,11 @@ impl<'a> Parser<'a> {
             // `sequential_music`) : les contextes nommés qui reparaissent
             // continuent dans le temps, au lieu de repartir du tick 0 comme
             // les frères d'un `<< … >>`.
-            if sequential && !premier {
-                for group in &mut groups[avant..] {
-                    group.sequence_start = true;
-                }
+            if sequential && !premier && avant < groups.len() {
+                // Seul le **premier** groupe de l'élément porte la marque :
+                // les suivants (autres portées/voix du même élément) en
+                // héritent et ne doivent pas rouvrir un nouvel élément.
+                groups[avant].sequence_start = true;
             }
             premier = false;
         }
@@ -1020,7 +1021,7 @@ impl<'a> Parser<'a> {
     /// parallèles plutôt que rien.
     fn warn_sequential_contexts(&mut self, items: &[Music]) {
         if items.iter().filter(|item| has_context(item)).count() > 1 {
-            self.warn("plusieurs contextes dans une séquence `{ … }` : portées parallèles");
+            self.warn("plusieurs contextes dans une séquence `{ … }` : portées successives");
         }
     }
 
