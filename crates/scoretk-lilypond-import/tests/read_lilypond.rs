@@ -6057,3 +6057,26 @@ fn acciaccature_apres_arret_de_soufflet() {
         ]
     );
 }
+
+#[test]
+fn portee_sans_staff_performer_ne_joue_pas() {
+    // `ly/performer-init.ly:32` : le `Staff_performer` est ce qui rend une
+    // portée audible dans le MIDI. `\remove "Staff_performer"` (pratique
+    // courante des partitions MuseScore avec pianoReduction) retire donc
+    // cette portée du MIDI de référence, même si elle est gravée.
+    let src = "\\version \"2.24.0\"\n\
+         \\score { << \
+           \\new Staff { c'4 d'4 e'4 f'4 } \
+           \\new Staff \\with { \\remove \"Staff_performer\" } { c'4 d'4 e'4 f'4 } \
+         >> }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .map(|note| note.pitch)
+            .collect::<Vec<_>>(),
+        vec![60, 62, 64, 65],
+        "la portée sans Staff_performer ne doit pas ajouter de notes jouées"
+    );
+}

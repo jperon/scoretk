@@ -1114,8 +1114,24 @@ impl<'a> Parser<'a> {
         let mut instrument_name = None;
         let mut short_instrument_name = None;
         let mut verse = None;
+        let mut midi_silent = false;
         if self.eat_command("with") {
+            let debut_with = self.position;
             let properties = self.parse_with_block();
+            // `ly/performer-init.ly:32` : le `Staff_performer` rend la portée
+            // audible dans le MIDI. Un `\with { \remove "Staff_performer" }`
+            // (pianoReduction des partitions MuseScore) retire donc cette
+            // portée du MIDI de référence : la lecture ne doit pas ajouter
+            // ses notes au modèle compare au MIDI.
+            midi_silent = self.tokens[debut_with..self.position]
+                .iter()
+                .enumerate()
+                .any(|(index, token)| {
+                    token.is_command("remove")
+                        && self.tokens.get(debut_with + index + 1).is_some_and(|next| {
+                            next.kind == Kind::Str && next.text.contains("Staff_performer")
+                        })
+                });
             for (property, value) in properties {
                 match property.as_str() {
                     "instrumentName" => instrument_name = Some(value),
@@ -1229,6 +1245,18 @@ impl<'a> Parser<'a> {
                 }
                 let content = self.parse_music();
                 self.note_mode = mode_precedent;
+                if midi_silent {
+                    // Portée gravée mais silencieuse dans le MIDI : on consomme
+                    // sa musique sans créer de portée jouée dans le modèle.
+                    return Some(GroupBlock {
+                        kind: GroupKind::Other,
+                        existing,
+                        instrument_name: None,
+                        short_instrument_name: None,
+                        staves: Vec::new(),
+                        lyrics: Vec::new(),
+                    });
+                }
                 // Une seule musique de portée, comme pour `\context Staff` :
                 // les voix sont ouvertes par l'interpréteur au tick courant,
                 // pas relues chacune depuis zéro.
