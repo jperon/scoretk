@@ -291,7 +291,8 @@ def read_xml(
                                          (hauteur_u + transposition, jouee,
                                           0.0 if est_grace else duree, numero_part))
                             meta.append((numero_part, elem.findtext("staff", "1"),
-                                         elem.findtext("voice", "1"), est_grace))
+                                         elem.findtext("voice", "1"), est_grace,
+                                         elem.find("chord") is not None))
                     continue  # silence : le curseur a déjà avancé
                 step = pitch.findtext("step")
                 octave_txt = pitch.findtext("octave")
@@ -305,7 +306,8 @@ def read_xml(
                              (hauteur + transposition, jouee,
                               0.0 if est_grace else duree, numero_part))
                 meta.append((numero_part, elem.findtext("staff", "1"),
-                             elem.findtext("voice", "1"), est_grace))
+                             elem.findtext("voice", "1"), est_grace,
+                             elem.find("chord") is not None))
         # Chaque partie a ses propres directions : les appliquer à ses notes
         # avant de passer à la suivante (les variables du début de boucle sont
         # réinitialisées à chaque partie).
@@ -352,31 +354,38 @@ def _appliquer_octave(
 
 
 def _fusionner_unissons(
-    notes: list[tuple], meta: list[tuple[int, str, str, bool]]
+    notes: list[tuple], meta: list[tuple[int, str, str, bool, bool]]
 ) -> list[tuple]:
-    """Fusionne les unissons de voix différentes d'une même portée.
+    """Fusionne les unissons (voix différentes ou même accord).
 
     Le MIDI de LilyPond ne peut pas porter deux attaques de même hauteur au
     même tick sur une même piste : deux voix qui jouent l'unisson n'émettent
-    qu'une note (``lily/midi-walker.cc``, ``lily/note-performer.cc``). Le
-    MusicXML, lui, écrit les deux voix, et chacune est une note gravée
-    légitime. L'oracle compare le **son**, pas la gravure : il ne garde qu'une
-    attaque par (partie, portée, hauteur, attaque, grâce) quand les voix
-    diffèrent. Deux portées différentes restent deux pistes MIDI distinctes et
-    ne sont jamais fusionnées ; une même voix qui répète la même hauteur à la
-    même attaque reste une anomalie du candidat et n'est pas masquée.
+    qu'une note (``lily/midi-walker.cc``, ``lily/note-performer.cc``). Un
+    **accord** qui répète la même hauteur (``<c' c'>``) est dédupliqué par
+    LilyPond avant le MIDI (`Chord::add`/`Note_performer` : vérifié sur 2.27,
+    ``<c' c'>4 <c' e' c'>4`` joue 60 puis 60/64, un seul do chaque fois). Le
+    MusicXML, lui, écrit les deux voix ou les deux têtes, et chacune est une
+    note gravée légitime. L'oracle compare le **son**, pas la gravure : il ne
+    garde qu'une attaque par (partie, portée, hauteur, attaque, grâce) quand
+    les voix diffèrent **ou** quand les doublons sont des notes successives du
+    même accord (la seconde porte ``<chord/>``). Deux portées différentes
+    restent deux pistes MIDI distinctes et ne sont jamais fusionnées ; une
+    même voix qui répète la même hauteur à la même attaque **hors accord**
+    reste une anomalie du candidat et n'est pas masquée.
     """
     groupes: dict[tuple, list[int]] = {}
     for index, note in enumerate(notes):
         if index >= len(meta):
             continue
-        numero_part, portee, voix, grace = meta[index]
+        numero_part, portee, voix, grace, _accord = meta[index]
         cle = (numero_part, portee, note[0], round(note[1], 6), grace)
         groupes.setdefault(cle, []).append(index)
     supprimer: set[int] = set()
     for indices in groupes.values():
         voix = {meta[i][2] for i in indices}
-        if len(voix) > 1:
+        # Unisson d'accord : les doublons après le premier portent `<chord/>`.
+        unisson_accord = all(meta[i][4] for i in indices[1:])
+        if len(voix) > 1 or unisson_accord:
             supprimer.update(indices[1:])
     if not supprimer:
         return notes

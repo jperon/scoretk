@@ -258,6 +258,15 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     # distinctes : on ne le fait que si le XML sépare au moins
                     # autant de portées que la référence a de pistes.
                     fusion = nombre_portees(str(dst)) >= len({n[3] for n in ref})
+                    # Fusionner les unissons (voix ou accord, `read_xml`) ne se
+                    # justifie que si le candidat a **plus** de notes brutes que
+                    # la référence : c'est ce qui explique un `notes_supp`. Un
+                    # fichier qui a déjà moins de notes (`notes_manquantes`,
+                    # `monochords`) garde ses doublons : les fusionner ferait
+                    # baisser N1 sans rapprocher aucune note de la référence.
+                    if fusion:
+                        brut = read_xml(str(dst), with_grace=True, merge_unisons=False)
+                        fusion = len(brut) > len(ref)
                     test = read_xml(str(dst), with_grace=True, merge_unisons=fusion)
                 except Exception as exc:
                     r["erreur"] = f"XML illisible : {exc}"
