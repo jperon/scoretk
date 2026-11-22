@@ -2560,10 +2560,19 @@ unchanged.
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | corpus | scoretk | **46** (82.1 %) | **99.51** | **99.40** | **99.40** | 56/56 |
 | corpus | xml2abc | 42 (75.0 %) | 80.87 | 35.50 | 32.74 | 56/56 |
-| mscz | scoretk | **164** (94.8 %) | **99.97** | **99.97** | **99.97** | 173/173 |
+| mscz | scoretk | **165** (95.4 %) | **99.97** | **99.97** | **99.97** | 173/173 |
 | mscz | xml2abc | 21 (12.1 %) | 83.93 | 41.86 | 37.15 | 173/173 |
 | xml | scoretk | **23** (71.9 %) | **99.97** | **97.06** | **96.97** | 32/32 |
 | xml | xml2abc | 6 (18.8 %) | 87.73 | 66.80 | 64.74 | 32/32 |
+
+A later upstream commit (`b1fe7b30`) exposed a reader bug by scheduling a
+`<key>` on repeated `K:` fields: `schedule_key` also reset the measure's
+accidental state, so a `=B` before a mid-measure `[K:F]` was lost
+(`Sancta_Maria_KV_273…orgue` fell from exact to 99.97 %). `abc2xml.py::doKey`
+writes one `<key>` per field (ABC 2.1 §3.2) but accidentals last to the bar
+(§4.2): the reset is now done only when the key actually changes. Reduced test
+`k_repetee_identique_garde_les_alterations_de_mesure` first. The file is exact
+again and mscz is back to **165** exact, with no per-file loss.
 
 Per-file comparison with the pre-fix run: **4 gains and 0 losses** across all
 three lots — the three `Vingt_danses` copies (up from a timeout, each 100 %)
