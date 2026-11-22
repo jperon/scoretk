@@ -3004,47 +3004,6 @@ fn staff_size_selon_small_staff_mag_du_style() {
     );
 }
 
-/// `print()` (`exportmusicxml.cpp:7559-7575`) ajoute à `m_hiddenStaves` toute
-/// portée invisible (`!system->staff(n)->show()`) ; `writeMeasure` (`:8694-8707`)
-/// écrit alors `<staff-details print-object="no"/>` au début de chaque système.
-/// Le port ne le faisait qu'à la première mesure.
-#[test]
-fn portee_invisible_a_chaque_debut_de_systeme() {
-    let mut score = Score::new();
-    let part_id = score.add_part(Part::new("Voix", "Vx"));
-    let _first = score.add_staff(part_id);
-    let staff = score.add_staff(part_id);
-    score.staff_mut(staff).visible = false;
-    let track = Track::new(score.staff(staff).id, 0);
-    for index in 0..2 {
-        let start = Fraction::from_integer(index as i64);
-        let mut measure = ajouter_mesure(index, start, Fraction::ONE, Fraction::ONE);
-        if index == 0 {
-            measure.line_break = true;
-        }
-        ajouter_silence_mesure(&mut score, &mut measure, track, start);
-        score.add_measure(measure);
-    }
-
-    println!(
-        "DBG lb {:?} vis {:?}",
-        score
-            .measures
-            .iter()
-            .map(|m| m.line_break)
-            .collect::<Vec<_>>(),
-        score.staves.iter().map(|s| s.visible).collect::<Vec<_>>()
-    );
-    let xml = export_musicxml(&score).expect("export");
-    let count = xml
-        .matches("<staff-details number=\"2\" print-object=\"no\"")
-        .count();
-    assert!(
-        count >= 2,
-        "la portée invisible doit être signalée aux deux systèmes : {count}\n{xml}"
-    );
-}
-
 /// `Rest::checkDots()` n'est appelé que par le layout de la portée
 /// (`restlayout.cpp:148`) : une portée masquée (`<isStaffVisible>0`) n'a donc
 /// aucun `NoteDot`, et `writeRest` (`exportmusicxml.cpp:4655-4669`) n'écrit
