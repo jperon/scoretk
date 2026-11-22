@@ -3716,7 +3716,19 @@ impl<'a> Parser<'a> {
                 partial: true,
             });
         }
-        let mut corps = self.parse_music();
+        // `lily/parser.yy:1560-1569` : le corps peut être vide quand
+        // `\alternative` suit directement `\repeat volta n`. Appeler
+        // `parse_music()` ici consommerait le `\alternative` comme un
+        // événement vide et perdrait toutes les fins (`repeat-petrucci-
+        // alternatives.ly`).
+        let mut corps = if self
+            .peek()
+            .is_some_and(|token| token.is_command("alternative"))
+        {
+            Music::Empty
+        } else {
+            self.parse_music()
+        };
         // LilyPond accepte `\alternative` dans les accolades du corps
         // (`\repeat volta n { … \alternative { … } }`) : le retirer du corps
         // et l'enregistrer comme endings de la reprise.

@@ -7877,3 +7877,16 @@ fn incipit_avec_contexte_new_ne_joue_pas_la_musique() {
         vec![60, 62]
     );
 }
+
+#[test]
+fn repeat_volta_avec_alternative_sans_corps_joue_les_fins() {
+    // `lily/parser.yy:1560-1569` : `\repeat volta n \alternative { … }`
+    // admet un corps vide ; les alternatives sont alors la musique jouée
+    // (`repeat-petrucci-alternatives.ly`, `lyric-repeat-count-alternatives.ly`).
+    let src = "\\version \"2.24.0\"\n\\new Staff \\fixed c' { c1 \\repeat volta 10 \\alternative { \\volta 1,2,3,4 d1 \\volta 5,6,7 e1 \\volta 8,9 f1 \\volta 10 g1 } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62, 64, 65, 67]
+    );
+}
