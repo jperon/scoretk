@@ -7934,3 +7934,48 @@ g4 g4 fs4 | \\
         "g2 doit durer une blanche : {durees:?}"
     );
 }
+
+#[test]
+fn unset_alias_deprecie_de_skip_typesetting_rend_le_temps() {
+    // `scm/define-context-properties.scm:1001-1055` : les propriétés
+    // dépréciées se redéfinissent avec `#:new-symbol`. Ici l'alias
+    // `deprecatedLyUnset` pointe sur `skipTypesetting`
+    // (`context-property-deprecated-unset.ly`) ; `\unset` de l'alias doit
+    // rétablir le temps, sinon la note suivante est décalée d'une mesure.
+    let src = r###"\version "2.25.22"
+
+\header {
+  texidoc = "@code{\\unset} works on a deprecated context property.  The output
+should be a single measure with a B@tie{}note."
+}
+
+%#(ly:set-option 'warning-as-error #t)
+#(ly:expect-warning
+  (ly:translate-cpp-warning-scheme
+   "the property '%s' is deprecated; use '%s'")
+  "deprecatedLyUnset" "skipTypesetting")
+
+%% This ad-hoc property name should be unique within the full set of test cases
+%% because the deprecation warning is issued only once per lilypond process.  If
+%% multiple tests are run in the same process, they won't all be able to observe
+%% a warning for the same property.
+#(define-deprecated-property
+  'translation-type? 'deprecatedLyUnset boolean?
+  #:new-symbol 'skipTypesetting)
+
+\fixed c' {
+  \set Timing.skipTypesetting = ##t
+  R1^"FAIL"
+  \unset Timing.deprecatedLyUnset
+  b1
+}
+"###;
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![71]
+    );
+    let notes = accords_de_voix(&score, 0);
+    assert_eq!(notes.len(), 1, "notes : {:?}", notes);
+    assert_eq!(notes[0].0, Fraction::ZERO, "première note : {:?}", notes);
+}

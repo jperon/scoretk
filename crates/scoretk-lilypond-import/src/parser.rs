@@ -3292,7 +3292,25 @@ impl<'a> Parser<'a> {
             "stemDown" => context(Context::Stem(StemDirection::Down)),
             "set" => self.parse_set(),
             "unset" => {
-                self.skip_property_path();
+                let chemin = self.skip_property_path();
+                // `define-deprecated-property` (scm/define-context-properties.scm
+                // :1001-1055) peut aliaser une propriété sur `skipTypesetting`
+                // (`context-property-deprecated-unset.ly`). `\unset` de
+                // l'alias doit rétablir le temps comme `\set … = ##f`.
+                if chemin
+                    .iter()
+                    .any(|part| part.eq_ignore_ascii_case("skiptypesetting"))
+                    || self.tokens.iter().any(|token| {
+                        token.kind == Kind::Scheme
+                            && token.text.contains("define-deprecated-property")
+                            && token.text.contains("skipTypesetting")
+                            && chemin
+                                .iter()
+                                .any(|part| token.text.contains(&format!("'{part}")))
+                    })
+                {
+                    self.skip_typesetting = false;
+                }
                 Music::Empty
             }
             "once" => {
@@ -3785,7 +3803,11 @@ impl<'a> Parser<'a> {
         // `\set Timing.timing = ##f` / `##t` a le même effet que
         // `\cadenzaOn` / `\cadenzaOff`. Le lexer lit `##f` comme le jeton
         // Scheme `#f` (et `##t` comme `#t`).
-        if path.iter().any(|part| part.eq_ignore_ascii_case("timing")) {
+        if path.iter().any(|part| part.eq_ignore_ascii_case("timing"))
+            && !path
+                .iter()
+                .any(|part| part.eq_ignore_ascii_case("skiptypesetting"))
+        {
             let cadenza =
                 self.peek()
                     .filter(|token| token.is_scheme())
