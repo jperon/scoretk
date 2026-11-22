@@ -4246,6 +4246,14 @@ fn drummode_et_drumstaff_jouent_des_percussions() {
     assert_eq!(hauteurs(&ordinaire), hauteurs(&score)[7..]);
 }
 
+/// `a2:m` : la durée est écrite avant la qualité (`chord_body` de
+/// `lily/parser.yy`) ; elle ne doit pas faire perdre le `:m`.
+#[test]
+fn chordmode_qualite_apres_duree() {
+    let score = lire("\\chordmode { a2:m a2 }");
+    assert_eq!(hauteurs(&score), vec![69, 72, 76, 69, 73, 76]);
+}
+
 #[test]
 fn chordmode_dans_une_portee_joue_les_accords() {
     // `\chordmode` est joué par LilyPond dans un Staff (chord-changes.ly),

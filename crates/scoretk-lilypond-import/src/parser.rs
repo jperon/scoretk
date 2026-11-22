@@ -3248,6 +3248,11 @@ impl<'a> Parser<'a> {
         // garantie) et avertit, comme pour un mot ordinaire.
         if self.note_mode != NoteMode::Notes {
             self.position += 1;
+            // `a2:m` : la durée peut précéder la qualité (`chord_body` de
+            // `lily/parser.yy`). La consommer avant de recomposer le nom, sinon
+            // `parse_chord_name` s'arrête sur le chiffre et l'accord est lu
+            // majeur.
+            let (duration, multiplier) = self.parse_optional_duration_spec();
             // Le lexer coupe `c:m7` en `c`, `:`, `m7` et `c/g` en `c`, `/`,
             // `g` : recomposer le nom complet avant de consulter la table.
             let nom = if self.note_mode == NoteMode::Chords {
@@ -3266,7 +3271,7 @@ impl<'a> Parser<'a> {
                 }
                 let head = std::mem::take(&mut self.pending_head);
                 let posts = self.parse_posts_until_note_end();
-                let mut notes: Vec<NoteSpec> = pitches
+                let notes: Vec<NoteSpec> = pitches
                     .into_iter()
                     .map(|pitch| NoteSpec {
                         pitch: PitchSpec::default(),
@@ -3276,38 +3281,6 @@ impl<'a> Parser<'a> {
                         transposable: self.note_mode == NoteMode::Chords,
                     })
                     .collect();
-                let (duration, multiplier) = self.parse_optional_duration_spec();
-                // `e1/d` : le lexer coupe la durée avant la basse. Celle-ci
-                // appartient encore à l'accord courant (`lily/parser.yy`
-                // `chord_body`), elle ne doit pas devenir un accord suivant.
-                if self.note_mode == NoteMode::Chords
-                    && self.peek().is_some_and(|token| token.is_punct('/'))
-                {
-                    self.position += 1;
-                    if let Some(Token {
-                        kind: Kind::Word,
-                        text,
-                        ..
-                    }) = self.peek().cloned()
-                    {
-                        self.position += 1;
-                        let racine = nom.split('/').next().unwrap_or(&nom);
-                        let racine = racine.split(':').next().unwrap_or(racine);
-                        if let Some((root_step, _)) = self.language.parse(racine) {
-                            if let Some(basse) =
-                                crate::modes::chord_bass_pitch(self.language, root_step, &text)
-                            {
-                                notes.push(NoteSpec {
-                                    pitch: PitchSpec::default(),
-                                    posts: Vec::new(),
-                                    head_group: NoteHeadGroup::default(),
-                                    midi: Some(basse),
-                                    transposable: true,
-                                });
-                            }
-                        }
-                    }
-                }
                 let chord_posts = self.parse_posts();
                 return Music::Chord(Chord {
                     kind: ChordKind::Notes(notes),
