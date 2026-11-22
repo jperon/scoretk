@@ -1404,26 +1404,16 @@ fn contexte_staff_simple_garde_trame_et_grace() {
 
 #[test]
 fn new_staff_imbrique_garde_sa_propre_voix() {
-    // Extrait de `incipit-modern.ly` : `\incipit \new Staff { … }` crée une
-    // vraie portée, pas un contexte existant. Ses notes gardent leur piste et
-    // leur trame ; les fondre dans la voix principale ferait chevaucher les
-    // attaques des deux groupes (N2 4/4 → 0/4 dans l'oracle).
+    // `ly/property-init.ly:439-490` : l'incipit est un `\score` de `\markup`
+    // (MensuralStaff), donc une image gravée, absente du MIDI. Les notes de
+    // la portée principale gardent leurs attaques à partir de zéro.
     let source = concat!(
         "\\score { \\new Staff { \\fixed c' { ",
         "\\incipit \\new Staff \\with { firstClef = ##f } { c4 e g c' } ",
         "d4 f a d' } } }"
     );
     let score = read_lilypond(source).expect("lecture");
-    assert_eq!(score.measures.len(), 2);
-    let incipit = accords_de_voix(&score, 1);
-    assert_eq!(
-        incipit
-            .iter()
-            .map(|(_, pitches, _)| pitches.clone())
-            .collect::<Vec<_>>(),
-        vec![vec![60], vec![64], vec![67], vec![72]]
-    );
-    assert_eq!(incipit[0].0, Fraction::ZERO);
+    assert_eq!(score.measures.len(), 1);
     let principal = accords_de_voix(&score, 0);
     assert_eq!(
         principal
@@ -1432,7 +1422,11 @@ fn new_staff_imbrique_garde_sa_propre_voix() {
             .collect::<Vec<_>>(),
         vec![vec![62], vec![65], vec![69], vec![74]]
     );
-    assert_eq!(principal[0].0, Fraction::ONE);
+    assert_eq!(principal[0].0, Fraction::ZERO);
+    assert!(
+        accords_de_voix(&score, 1).is_empty(),
+        "l'incipit ne joue pas"
+    );
 }
 
 #[test]
@@ -7769,4 +7763,49 @@ fn skip_typesetting_coupe_les_notes_et_le_temps() {
         .map(|s| s.tick)
         .collect();
     assert_eq!(positions, vec![Fraction::new(0, 1), Fraction::new(1, 4)]);
+}
+
+#[test]
+#[ignore = "limite connue : skipTypesetting est time-ordered dans le Score, le lecteur le traite en ordre de parsing"]
+fn skip_typesetting_dans_une_voix_parallele() {
+    // `lily/score-performer.cc:151-176` : `skipTypesetting` est une propriété
+    // de Score évaluée à chaque instant. Ici `##t` est posé à zéro dans la
+    // première voix : LilyPond 2.26 ne joue que 2 notes (b et d, repliées à
+    // zéro), tandis que le lecteur — qui parcourt les voix les unes après les
+    // autres — a déjà remis le drapeau à `##f` quand il lit la seconde voix
+    // et en garde 3. Limite documentée : aucun fichier du lot `ra` ne pose
+    // `skipTypesetting` dans une voix parallèle.
+    let src = "\\version \"2.24.0\"\n<< { \\set Score.skipTypesetting = ##t a4 \\set Score.skipTypesetting = ##f b4 } \\\\ { c4 d4 } >>\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![71, 62],
+        "attendu : seulement b et d (temps replié)"
+    );
+}
+
+#[test]
+fn incipit_est_une_image_typee_pas_de_la_musique() {
+    // `ly/property-init.ly:439-490` : `\incipit [offset] music` place la
+    // musique dans un `\score` de `\markup` (MensuralStaff) : c'est une image
+    // gravée, absente du MIDI (`incipit.ly`, `incipit-modern.ly`).
+    let src = "\\version \"2.24.0\"\n\\new Staff { \\incipit #1 { c'4 d'4 } c'4 d'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62],
+        "seules les notes de la portée principale"
+    );
+}
+
+#[test]
+fn incipit_avec_contexte_new_ne_joue_pas_la_musique() {
+    // `incipit-other-context.ly` : `\incipit \new KievanStaff { … }`.
+    let src =
+        "\\version \"2.24.0\"\n\\new Staff { \\incipit \\new KievanStaff { c'4 d'4 } c'4 d'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62]
+    );
 }

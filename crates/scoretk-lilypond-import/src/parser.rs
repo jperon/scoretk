@@ -3521,6 +3521,29 @@ impl<'a> Parser<'a> {
                 let _ = self.parse_music();
                 Music::Empty
             }
+            // `ly/property-init.ly:439-490` : `\incipit [offset] music`
+            // grave la musique dans un `\score` de `\markup`
+            // (MensuralStaff). C'est une image, absente du MIDI. L'argument
+            // peut être un `\new Contexte \with { … } { … }`
+            // (`incipit-other-context.ly`).
+            "incipit" => {
+                if self
+                    .peek()
+                    .is_some_and(|token| token.kind == Kind::Number || token.is_scheme())
+                {
+                    self.position += 1;
+                }
+                if self.eat_command("new") || self.eat_command("context") {
+                    if self.peek().is_some_and(|token| token.kind == Kind::Word) {
+                        self.position += 1;
+                    }
+                    if self.eat_command("with") {
+                        self.parse_with_block();
+                    }
+                }
+                let _ = self.parse_music();
+                Music::Empty
+            }
             "compressMMRests" => {
                 // `ly/music-functions-init.ly:452-459` : ne change que la
                 // gravure des silences ; les hauteurs et attaques restent.
