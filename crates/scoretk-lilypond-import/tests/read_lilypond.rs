@@ -440,6 +440,15 @@ fn texte_apres_tiret_garde_la_liaison_suivante() {
     assert_eq!(hauteurs_attaques(&score), vec![72, 72]);
 }
 
+/// `\\(` et `\\)` sont des post-événements (`lily/parser.yy`
+/// `direction_less_event`) : les omettre coupait la lecture après elles et
+/// le `~` suivant était perdu (`Chop-28-4`, `gs4->\(~ gs4`).
+#[test]
+fn commande_de_liaison_d_expression_garde_le_tie_suivant() {
+    let score = lire("b'4\\(~ b'4");
+    assert_eq!(hauteurs_attaques(&score), vec![83]);
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");

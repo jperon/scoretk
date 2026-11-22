@@ -5629,6 +5629,8 @@ fn starts_post_event(token: &Token) -> bool {
                 || token.text == ">"
                 || token.text == "!"
                 || token.text == "markup"
+                || token.text == "("
+                || token.text == ")"
                 || token.text == "rest"
                 || is_articulation_command(&token.text)
                 || is_dynamic_command(&token.text)
@@ -5894,6 +5896,12 @@ fn is_dynamic_command(name: &str) -> bool {
 /// Événement d'une commande de post-traitement connue.
 fn post_event_for_command(name: &str, placement: Placement) -> Option<PostEvent> {
     let event = match name {
+        // `\\(`/`\\)` sont des commandes ponctuelles (`lily/parser.yy`
+        // `direction_less_event`) ; les laisser hors des post-événements
+        // coupait la lecture juste après elles, et le `~` qui suivait était
+        // avalé (`Chop-28-4`, `gs4->\(~ gs4` perdait sa liaison).
+        "(" => PostEvent::SlurStart(0),
+        ")" => PostEvent::SlurStop(0),
         "rest" => PostEvent::Rest,
         "staccato" => PostEvent::Articulation(ArticulationType::Staccato),
         "staccatissimo" => PostEvent::Articulation(ArticulationType::Staccatissimo),
