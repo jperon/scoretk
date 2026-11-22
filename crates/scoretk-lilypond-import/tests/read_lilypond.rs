@@ -6936,6 +6936,22 @@ fn cue_during_joue_la_citation() {
         score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
         vec![60, 67, 67, 67, 67, 60]
     );
+    assert!(
+        score
+            .notes
+            .iter()
+            .filter(|n| n.pitch == 67)
+            .all(|n| n.small),
+        "les notes de cue sont en petit format"
+    );
+    assert!(
+        score
+            .notes
+            .iter()
+            .filter(|n| n.pitch == 60)
+            .all(|n| !n.small),
+        "les notes de la voix principale restent normales"
+    );
 }
 
 #[test]

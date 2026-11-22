@@ -268,6 +268,10 @@ pub(crate) enum Context {
     /// écrites gardent l'octave absolue par défaut). `\partCombine` enveloppe
     /// ainsi ses deux parties (`make-directed-part-combine-music`).
     NonRelative { music: Box<Music> },
+    /// Musique insérée par `\cueDuring` : ses notes sont des notes de cue
+    /// (`ly/music-functions-init.ly:545-574`), gravées en petit dans les
+    /// autres formats via `Note::small` / `Chord::small`.
+    Cue { music: Box<Music> },
     /// `\alternative` isolé (déjà consommé par `\repeat`).
     Alternative(Vec<Music>),
     /// `\change <Contexte> = <nom>` : les notes qui suivent passent sur la

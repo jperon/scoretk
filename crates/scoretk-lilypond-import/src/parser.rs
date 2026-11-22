@@ -3166,7 +3166,11 @@ impl<'a> Parser<'a> {
                 let duree = music_duration(&principal, self.default_duration);
                 self.quotes
                     .get(&nom)
-                    .map(|quote| tronque_musique(quote, duree, self.default_duration))
+                    .map(|quote| {
+                        Music::Context(Context::Cue {
+                            music: Box::new(tronque_musique(quote, duree, self.default_duration)),
+                        })
+                    })
                     .unwrap_or(Music::Empty)
             }
             "textMark" | "textEndMark" => {

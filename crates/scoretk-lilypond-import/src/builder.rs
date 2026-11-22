@@ -1803,6 +1803,7 @@ fn build_note(note: &crate::events::NoteEvent, fingerings: &[String]) -> Note {
     let mut value = Note::new(note.pitch, note.tpc);
     value.tpc_transposed = note.tpc_transposed;
     value.head_group = note.head_group.clone();
+    value.small = note.small;
     if note.cautionary {
         value.accidental = Some(Accidental {
             kind: accidental_for(note.tpc),

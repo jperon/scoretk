@@ -185,6 +185,8 @@ pub(crate) struct NoteEvent {
     pub cautionary: bool,
     /// Groupe de tête.
     pub head_group: NoteHeadGroup,
+    /// Vrai pour une note de cue (musique insérée par `\cueDuring`).
+    pub small: bool,
 }
 
 /// Accord d'agrément.
@@ -367,6 +369,8 @@ pub(crate) struct Interpreter<'a> {
     cursor: Fraction,
     /// État d'octave.
     octave: OctaveState,
+    /// Vrai pendant la lecture d'une musique de cue insérée par `\cueDuring`.
+    cue: bool,
     /// Dernier état relatif atteint, avant que le `Context::Relative`
     /// englobant ne restaure l'état d'origine. Sert à enchaîner les voix d'un
     /// `<< … \ … >>` comme `music_list_to_relative` (`lily/music-sequence.cc`).
@@ -429,6 +433,7 @@ impl<'a> Interpreter<'a> {
         let mut interpreter = Self {
             voice: InterpretedVoice::default(),
             cursor: Fraction::ZERO,
+            cue: false,
             octave,
             relative_final: None,
             last_chord_notes: None,
@@ -675,6 +680,7 @@ impl<'a> Interpreter<'a> {
         let mut child = Interpreter {
             voice: InterpretedVoice::default(),
             cursor: start,
+            cue: self.cue,
             octave: self.octave,
             relative_final: None,
             transpose: self.transpose,
@@ -919,6 +925,12 @@ impl<'a> Interpreter<'a> {
                 self.octave = saved.sans_relative();
                 self.walk(music);
                 self.octave = saved;
+            }
+            Context::Cue { music } => {
+                let saved = self.cue;
+                self.cue = true;
+                self.walk(music);
+                self.cue = saved;
             }
             Context::Alternative(_) => {
                 self.warn("\\alternative sans \\repeat ignoré");
@@ -1526,6 +1538,7 @@ impl<'a> Interpreter<'a> {
                 tie: note.posts.iter().any(|post| matches!(post, PostEvent::Tie)),
                 cautionary: note.pitch.cautionary,
                 head_group: note.head_group.clone(),
+                small: self.cue,
             });
         }
         let octave = self.octave.resolve(&note.pitch);
@@ -1575,6 +1588,7 @@ impl<'a> Interpreter<'a> {
             tie,
             cautionary: note.pitch.cautionary,
             head_group: note.head_group.clone(),
+            small: self.cue,
         })
     }
 
