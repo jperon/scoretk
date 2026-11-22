@@ -97,6 +97,11 @@ COMMANDES_OBSOLETES = (
     "setHairpinCresc", "setHairpinDecresc", "setHairpinDim",
     "sustainUp", "sustainDown", "sostenutoUp", "sostenutoDown",
     "arpeggioUp", "arpeggioDown", "arpeggioNeutral", "octave",
+    # `\deprecated*` : noms posés par `convert-ly` 2.13.20 sur la forme
+    # postfixe de `\cresc`/`\dim` (`python/convertrules.py` l. 3058), retirés
+    # depuis ; LilyPond 2.27 signale « commande inconnue » et son rattrapage
+    # insère un silence d'un temps.
+    "deprecatedcresc", "deprecateddim", "deprecatedendcresc", "deprecatedenddim",
 )
 
 
@@ -170,6 +175,10 @@ def selftest() -> None:
     assert not est_non_pris_en_charge(1) and not est_non_pris_en_charge(None)
     assert commandes_obsoletes("\\setTextCresc c4") == ["setTextCresc"]
     assert commandes_obsoletes("\\crescTextCresc c4") == []
+    assert commandes_obsoletes("\\deprecatedcresc c4") == ["deprecatedcresc"]
+    assert raison_hors_lecteur({"code": 0}, "\\deprecatedcresc c4").startswith(
+        "source obsolète"
+    )
     assert raison_hors_lecteur({"erreur": "référence MIDI absente"}, "") == "référence MIDI inutilisable"
     assert raison_hors_lecteur({"code": 0}, "\\sustainDown c4").startswith("source obsolète")
     assert raison_hors_lecteur({"code": 0}, "c4 d4") == ""
