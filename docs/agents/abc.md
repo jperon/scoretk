@@ -3183,3 +3183,26 @@ scoretk 47/56 corpus, 164/173 mscz, 24/32 xml (235/261 exact) with mean
 | note supplementaire apres aller-retour | 3 | `Laudate_pueri_Op._39_No._2_-_Felix_Mendelssohn.mscz` | 75 | None | 19 |
 | note supplementaire apres aller-retour |  | `Laudate_pueri_Op._39_No._2_-_Felix_Mendelssohn.mxl` | 70 | None | 104 |
 | note supplementaire apres aller-retour |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_10._Sicut_erat_in_principio.mxl` | 45 | None | 70 |
+
+## 36. Writer pass after the baseline (2026-11-22)
+
+The baseline table (§35) gives 235/261 exact files for scoretk against 71/261
+for `xml2abc.py`, with mean `.abc` output 7–13 % smaller. The 15 files with a
+first divergent note are split evenly between semitone, octave, extra and
+missing notes (one line each in §35).
+
+Two writer hypotheses were tested and reverted:
+
+1. Per-note clef octave in `voice.rs` (ABC 2.1 §4.6, `xml2abc.py::doAttr`
+   1329-1331 / `mkNote` 1154): using the clef in force at each note fixed the
+   reduced round-trip test but the full oracle dropped mscz exact 164 → 118
+   and xml 24 → 14 (`target/abc-ex-clef/`). MuseScore's reader evidently does
+   not apply the octave of *inline* `[K:… clef=…]` fields the way it applies a
+   `V:` header, so the writer's existing compensation is correct for the
+   reference corpus.
+2. Measure-start fallback only: still failed the same reduced test, hence not
+   a fix.
+
+No writer change was committed in this pass. The corpus remains at
+235/261 exact with no size increase; MusicXML export (144/173) and ABC import
+(4 576/4 756) are unaffected.
