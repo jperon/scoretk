@@ -456,7 +456,11 @@ fn push_fill_rest(line: &mut String, start: Tick, end: Tick, measure: &Measure) 
     if !len.is_positive() {
         return;
     }
-    line.push_str(&rest_token(len, measure));
+    // `xml2abc.py:724` comble un trou de voix par un silence **invisible**
+    // `x`, pas par un `z` imprimé (ABC 2.1 §4.3, spec ligne 897). Un `z`
+    // réintroduit à la relecture un silence visible absent du modèle source.
+    let _ = measure;
+    line.push_str(&format!("x{}", duration::multiplier(len, duration::unit())));
 }
 
 /// Chaîne des n-olets d'un accord, du plus externe au plus interne.
@@ -1179,9 +1183,9 @@ mod tests {
         let measure = Measure::new(0, Fraction::ZERO, Fraction::ONE);
         let mut line = String::new();
         push_fill_rest(&mut line, Fraction::ZERO, Fraction::ONE, &measure);
-        assert_eq!(line, "z8"); // explicit full-measure fill (xml2abc.py::doMaat)
+        assert_eq!(line, "x8"); // xml2abc.py:724 fills a gap with an invisible rest
         let mut line = String::new();
         push_fill_rest(&mut line, Fraction::ZERO, Fraction::QUARTER, &measure);
-        assert_eq!(line, "z2");
+        assert_eq!(line, "x2");
     }
 }
