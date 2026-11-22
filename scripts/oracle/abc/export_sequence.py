@@ -4,8 +4,9 @@
 
 """First pitch-sequence divergence for the ABC *writing* oracle (model mode).
 
-The writing oracle keeps, for each source file, `scoretk.musicxml` (the model
-as exported directly) and `tk.musicxml` (the model after an ABC round trip).
+The writing oracle keeps, for each source file, `tk.musicxml` (the model as
+exported directly, the reference) and `scoretk.musicxml` (the model after an
+ABC round trip, the candidate).
 Both are read with `cmp.musicxml_notes`; the first difference is found by
 `sequence.first_difference`. No parser is duplicated.
 
@@ -34,8 +35,8 @@ def main():
         if row.get('outil') != 'scoretk' or row.get('exact'):
             continue
         folder = os.path.join(travail, lot, str(index // 2))
-        ref = os.path.join(folder, 'scoretk.musicxml')
-        cand = os.path.join(folder, 'tk.musicxml')
+        ref = os.path.join(folder, 'tk.musicxml')
+        cand = os.path.join(folder, 'scoretk.musicxml')
         if not (os.path.exists(ref) and os.path.exists(cand)):
             continue
         a = cmp.musicxml_notes(ref)
