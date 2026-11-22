@@ -4559,3 +4559,32 @@ gains, 0 exact losses**, 5 files become exact (`repeat-dc-then-*`,
 `repeat-dc-unaligned`, `repeat-ds-bar-line`). Three already non-exact D.C.
 files lose a few N2 points (their D.C. section is absent from the reference
 MIDI); none was exact.
+
+### `ra` next groups — causes 2–4 (measured)
+
+2. **`\makeClusters` staff** (`scm/music-functions.scm::note-to-cluster`):
+   `NoteEvent`s become `ClusterNoteEvent`s, which the MIDI performer does not
+   play. The staff stays in the model (pivot of every format) with
+   `Staff::muted`, and the MIDI writer skips it. Reduced test
+   `make_clusters_ne_joue_pas_de_notes` first. On the 3 affected `ra` files the
+   import oracle (which reads MusicXML, not our MIDI) shows no change; the
+   model/MIDI fidelity fix is verified by the reduced test.
+3. **`\chordmode` `min7`/`min9`/`min6`** (`scm/chord-entry.scm:235,252`:
+   `min` is a modifier applied to the base chord). The `QUALITIES` table had
+   `m7` but not `min7`, so `c:min7` fell back to a major triad. Reduced test
+   `accord_chordmode_min7` first. Focused run: **`chord-name-minor.ly` becomes
+   exact** (N2 71.43 → 100), no loss.
+4. **Grace at the end of a simultaneous voice** (`scm/music-functions.scm::
+   volta-spec-music`): when a `<< … >>` branch ends with an ornement and has
+   no chord of its own, pending graces were lost. `spawn_at` now transfers
+   them to the parent voice's next chord. Reduced test
+   `grace_dans_une_voix_simultanee_est_jouee` first. Focused run on the 3
+   `\volta`-and-grace files: `volta-spec-after-grace.ly` goes from 3 to 5
+   notes, **N1 100 %, n2_grace 100 %** (N2 stays 60 % because the grace
+   attacks differ from the raw reference ticks — the grace-aware metric is the
+   one that applies here); no exact loss.
+
+The "no distinctive construct" group (94 files) sub-classifies by flag as
+`sortie_vide` 26, `attaque_decalee` 22, `notes_supp` 17, `octave` 16,
+`notes_manquantes` 9, other 4; by ref/test count: 26 empty test, 20 same count,
+10 doubled, 36 other.
