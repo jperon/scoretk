@@ -5305,6 +5305,22 @@ Mesure ciblée sur les 159 fichiers du lot `ly` (deux binaires frères,
 récupère ses 5 notes perdues par le correctif d'écriture de `\articulate`,
 aucune perte.
 
+### `\afterGrace` : écrire le facteur `1`
+
+`ly/music-functions-init.ly:86-97` : `\afterGrace` place l'agrément après
+3/4 de la note principale par défaut. Le pivot MuseScore place son agrément
+« après » à la fin de la note (`Funicul_Funicul_accordion_solo.mscz` :
+agrément `C6` au tick 210, non pas 209,5). L'écrivain émettait
+`\afterGrace <note> { <agrément> }` sans facteur ; la relecture posait alors
+`played_offset = 3/4`, exporté en `attack="-1"` dans le MusicXML et décalant
+l'agrément d'un quart de note.
+
+L'écrivain émet maintenant `\afterGrace 1 <note> { <agrément> }`. Test réduit
+écrit d'abord : `apres_agrément_a_la_fin_de_la_note`. Mesure sur le lot mscz
+(deux binaires frères, `--mode model`) : exacts 155 → 156,
+`Funicul_Funicul_accordion_solo.mscz` gagné, aucune perte ; taille moyenne des
+`.ly` inchangée (26622 octets, +4 octets au total).
+
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire

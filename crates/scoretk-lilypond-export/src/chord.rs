@@ -134,7 +134,12 @@ pub(crate) fn render(
             ));
             graces.push(' ');
         }
-        parts.push(format!("\\afterGrace {core} {{ {} }}", graces.trim_end()));
+        // Le pivot place l'agrément après la note (fin de sa durée), alors
+        // que `\afterGrace` le place à 3/4 par défaut
+        // (`ly/music-functions-init.ly:86-97`). Écrire le facteur `1`
+        // explicitement évite le `played_offset` d'un quart de note à la
+        // relecture.
+        parts.push(format!("\\afterGrace 1 {core} {{ {} }}", graces.trim_end()));
     }
 
     token.push_str(&parts.join(" "));
@@ -571,6 +576,33 @@ mod tests {
         assert_eq!(
             render(&score, &chord, Fraction::ONE, 0),
             "c4-.\\fermata\\trill"
+        );
+    }
+
+    /// `ly/music-functions-init.ly:86-97` : `\afterGrace` place l'agrément
+    /// après 3/4 de la note principale par défaut. Le pivot place l'agrément
+    /// de MuseScore à la fin de cette note : il faut écrire le facteur `1`
+    /// explicitement, sinon la relecture décale l'agrément d'un quart de note.
+    #[test]
+    fn apres_agrément_a_la_fin_de_la_note() {
+        use scoretk_core::model::GraceChord;
+        let mut chord = ChordRest::chord(Duration::new(scoretk_core::model::DurationType::Eighth));
+        let mut grace = GraceChord::new(
+            scoretk_core::model::GraceType::Grace16After,
+            Duration::new(scoretk_core::model::DurationType::Sixteenth),
+        );
+        let mut score = Score::new();
+        let id = score.add_note(Note::new(84, tpc::C));
+        grace.chord.notes.push(id);
+        if let Some(inner) = chord.chord_mut() {
+            inner.grace_chords.push(grace);
+            let main = score.add_note(Note::new(84, tpc::C));
+            inner.notes.push(main);
+        }
+        let rendered = render(&score, &chord, Fraction::ONE, 0);
+        assert!(
+            rendered.starts_with("\\afterGrace 1 "),
+            "le facteur 1 doit être explicite : {rendered}"
         );
     }
 
