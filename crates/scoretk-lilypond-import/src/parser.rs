@@ -57,6 +57,10 @@ pub(crate) struct Parser<'a> {
     variables: BTreeMap<String, Music>,
     /// Durée par défaut (celle du dernier jeton de durée).
     default_duration: Duration,
+    /// Multiplicateur `*n/d` de cette durée par défaut : chez LilyPond le
+    /// facteur fait partie de `parser->default_duration_` (`Duration`,
+    /// `lily/parser.yy` l. 4644), donc une note nue hérite aussi de lui.
+    default_multiplier: Fraction,
     /// Avertissements collectés.
     warnings: &'a mut Warnings,
     /// Groupe de tête posé par `\tweak style`.
@@ -256,6 +260,7 @@ pub(crate) fn parse(
         language: Language::default(),
         variables: BTreeMap::new(),
         default_duration: Duration::quarter(),
+        default_multiplier: Fraction::ONE,
         warnings,
         pending_head: NoteHeadGroup::Normal,
         pending_tuplet_number: None,
@@ -1821,8 +1826,10 @@ impl<'a> Parser<'a> {
         // `parse_duration` change la durée par défaut du flux musical : les
         // paroles ne doivent pas la modifier pour la musique qui suit.
         let previous = self.default_duration;
+        let previous_multiplier = self.default_multiplier;
         let parsed = self.parse_duration();
         self.default_duration = previous;
+        self.default_multiplier = previous_multiplier;
         let (duration, multiplier) = parsed?;
         let ticks = duration.ticks();
         Some(multiplier.map_or(ticks, |value| ticks * value))
@@ -2130,7 +2137,24 @@ impl<'a> Parser<'a> {
             ));
             return Music::Empty;
         }
+        // La lecture des arguments analyse leur musique pour en trouver la
+        // fin, puis le corps est **relu** après substitution
+        // (`function_arglist_reparse` / `REPARSE`, `lily/parser.yy` l. 1949 :
+        // la première analyse est annulée par `MYREPARSE`). Cette première
+        // lecture ne doit donc laisser aucun état d'analyse derrière elle :
+        // sinon `\barre 3 { a b c' d' g8 }` donnait aux notes nues la durée 8
+        // lue à la fin de l'argument.
+        let saved_duration = self.default_duration;
+        let saved_multiplier = self.default_multiplier;
+        let saved_head = self.pending_head.clone();
+        let saved_invisible_rest = self.pending_invisible_rest;
+        let saved_tuplet_number = self.pending_tuplet_number;
         let arguments = self.read_function_arguments(&function);
+        self.default_duration = saved_duration;
+        self.default_multiplier = saved_multiplier;
+        self.pending_head = saved_head;
+        self.pending_invisible_rest = saved_invisible_rest;
+        self.pending_tuplet_number = saved_tuplet_number;
         let Some(body) = function.body else {
             // Fonction Scheme pure : rien à jouer, avertissement une seule
             // fois par fonction.
@@ -2180,7 +2204,13 @@ impl<'a> Parser<'a> {
             return;
         }
         if predicate.ends_with("duration?") {
+            // Un prédicat ne consomme pas la durée : `duration?` sert à
+            // vérifier un argument, pas à fixer la durée par défaut.
+            let duration = self.default_duration;
+            let multiplier = self.default_multiplier;
             let _ = self.parse_duration();
+            self.default_duration = duration;
+            self.default_multiplier = multiplier;
             return;
         }
         if predicate == "markup?" || predicate == "ly:markup?" {
@@ -2508,6 +2538,7 @@ impl<'a> Parser<'a> {
                 // devient pas la durée par défaut des notes suivantes. La
                 // consommer évite qu'une durée nue soit lue comme une note.
                 let default = self.default_duration;
+                let default_multiplier = self.default_multiplier;
                 if self.peek().is_some_and(|token| {
                     token.as_integer().is_some()
                         || token.is_command("breve")
@@ -2516,6 +2547,7 @@ impl<'a> Parser<'a> {
                 }) {
                     let _ = self.parse_duration();
                     self.default_duration = default;
+                    self.default_multiplier = default_multiplier;
                 }
                 let number_type = self.pending_tuplet_number.take().unwrap_or_default();
                 Music::Context(Context::Tuplet {
@@ -2681,21 +2713,31 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
-            "partial" => match self.parse_duration() {
-                // Notation Reference §2.3.3 « Upbeats » : l'argument de
-                // `\partial` est une durée, multiplicateur `*n/d` compris
-                // (`\partial 8*5` = cinq croches). Comme pour les durées de
-                // paroles (§ parse_lyric_duration), on applique ici le
-                // multiplicateur : la figure seule ne peut pas représenter
-                // 5/8 et le multiplicateur était jusqu'ici perdu, laissant la
-                // mesure plus courte que la somme de ses accords.
-                Some((duration, multiplier)) => {
-                    let ticks = duration.ticks();
-                    let len = multiplier.map_or(ticks, |value| ticks * value);
-                    context(Context::Partial(len))
+            "partial" => {
+                // `\partial` ne change pas la durée par défaut : la musique
+                // qui suit `\partial 8` garde la figure écrite sur ses notes
+                // (Notation Reference §2.3.3 « Upbeats »).
+                let duration = self.default_duration;
+                let multiplier = self.default_multiplier;
+                let parsed = self.parse_duration();
+                self.default_duration = duration;
+                self.default_multiplier = multiplier;
+                match parsed {
+                    // Notation Reference §2.3.3 « Upbeats » : l'argument de
+                    // `\partial` est une durée, multiplicateur `*n/d` compris
+                    // (`\partial 8*5` = cinq croches). Comme pour les durées de
+                    // paroles (§ parse_lyric_duration), on applique ici le
+                    // multiplicateur : la figure seule ne peut pas représenter
+                    // 5/8 et le multiplicateur était jusqu'ici perdu, laissant la
+                    // mesure plus courte que la somme de ses accords.
+                    Some((duration, multiplier)) => {
+                        let ticks = duration.ticks();
+                        let len = multiplier.map_or(ticks, |value| ticks * value);
+                        context(Context::Partial(len))
+                    }
+                    None => Music::Empty,
                 }
-                None => Music::Empty,
-            },
+            }
             // `property-init.ly` : `cadenzaOn` pose `Timing.timing = ##f`
             // (plus de barre automatique) et `cadenzaOff` le remet à `##t`.
             "cadenzaOn" => context(Context::Cadenza(true)),
@@ -2895,10 +2937,18 @@ impl<'a> Parser<'a> {
                 }
             }
             "skip" => {
+                // Notation Reference §2.2.2 : `s4` fixe la durée des notes
+                // suivantes, `\skip 4` non. Le parseur ne doit donc pas
+                // laisser la durée de l'argument dans la durée par défaut.
+                let previous_duration = self.default_duration;
+                let previous_multiplier = self.default_multiplier;
                 let (duration, multiplier) = self.parse_optional_duration_spec();
+                self.default_duration = previous_duration;
+                self.default_multiplier = previous_multiplier;
+                let (duration, multiplier) = self.resolve_chord_duration(duration, multiplier);
                 Music::Chord(Chord {
                     kind: ChordKind::SkipNumeric,
-                    duration: Some(duration.unwrap_or(self.default_duration)),
+                    duration,
                     multiplier,
                     from_scale: false,
                     posts: Vec::new(),
@@ -3257,6 +3307,7 @@ impl<'a> Parser<'a> {
                 "r" | "R" | "s" => {
                     self.position += 1;
                     let (duration, multiplier) = self.parse_optional_duration_spec();
+                    let (duration, multiplier) = self.resolve_chord_duration(duration, multiplier);
                     let posts = self.parse_posts();
                     let invisible = std::mem::take(&mut self.pending_invisible_rest);
                     return Music::Chord(Chord {
@@ -3275,6 +3326,7 @@ impl<'a> Parser<'a> {
                 "q" => {
                     self.position += 1;
                     let (duration, multiplier) = self.parse_optional_duration_spec();
+                    let (duration, multiplier) = self.resolve_chord_duration(duration, multiplier);
                     let posts = self.parse_posts();
                     return Music::Chord(Chord {
                         kind: ChordKind::Repeat,
@@ -3300,6 +3352,7 @@ impl<'a> Parser<'a> {
             // `parse_chord_name` s'arrête sur le chiffre et l'accord est lu
             // majeur.
             let (duration, multiplier) = self.parse_optional_duration_spec();
+            let (duration, multiplier) = self.resolve_chord_duration(duration, multiplier);
             // Le lexer coupe `c:m7` en `c`, `:`, `m7` et `c/g` en `c`, `/`,
             // `g` : recomposer le nom complet avant de consulter la table.
             let nom = if self.note_mode == NoteMode::Chords {
@@ -3339,8 +3392,13 @@ impl<'a> Parser<'a> {
                 });
             }
             // Consommer la durée et les événements qui suivent le nom inconnu
-            // pour qu'ils ne se transforment pas en note parasite.
+            // pour qu'ils ne se transforment pas en note parasite. Une durée
+            // consommée pour un nom ignoré ne fixe pas la durée par défaut.
+            let previous_duration = self.default_duration;
+            let previous_multiplier = self.default_multiplier;
             let _ = self.parse_optional_duration_spec();
+            self.default_duration = previous_duration;
+            self.default_multiplier = previous_multiplier;
             let _ = self.parse_posts();
             self.warn(format!("nom de mode ignoré dans la musique : {text}"));
             return Music::Empty;
@@ -3367,6 +3425,7 @@ impl<'a> Parser<'a> {
             transposable: false,
         }];
         let (duration, multiplier) = self.parse_optional_duration_spec();
+        let (duration, multiplier) = self.resolve_chord_duration(duration, multiplier);
         // Les post-événements peuvent suivre la durée d'un accord.
         let posts = self.parse_posts();
         Music::Chord(Chord {
@@ -3410,6 +3469,7 @@ impl<'a> Parser<'a> {
             return Music::Empty;
         }
         let (duration, multiplier) = self.parse_optional_duration_spec();
+        let (duration, multiplier) = self.resolve_chord_duration(duration, multiplier);
         let posts = self.parse_posts();
         Music::Chord(Chord {
             kind: ChordKind::Notes(notes),
@@ -3768,6 +3828,22 @@ impl<'a> Parser<'a> {
         self.language.parse(word).is_some()
     }
 
+    /// Durée d'un accord : à défaut de durée écrite, la durée par défaut
+    /// **de l'analyse**, multiplicateur compris (`parser->default_duration_`,
+    /// `lily/parser.yy` l. 4644, où le facteur fait partie de la `Duration`).
+    /// La figer ici évite qu'un `\repeat` rejoue un corps dont la première
+    /// note nue hérite de la dernière durée du passage précédent.
+    fn resolve_chord_duration(
+        &self,
+        duration: Option<Duration>,
+        multiplier: Option<Fraction>,
+    ) -> (Option<Duration>, Option<Fraction>) {
+        match duration {
+            Some(duration) => (Some(duration), multiplier),
+            None => (Some(self.default_duration), Some(self.default_multiplier)),
+        }
+    }
+
     /// Durée et multiplicateur, si le jeton courant en porte une.
     fn parse_optional_duration_spec(&mut self) -> (Option<Duration>, Option<Fraction>) {
         match self.parse_duration() {
@@ -3810,6 +3886,10 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+        // Écrire une durée réinitialise le multiplicateur (`c4*3/2 d4` : `d4`
+        // vaut 1/4) ; sans multiplicateur écrit, la durée par défaut n'en a
+        // pas non plus.
+        self.default_multiplier = multiplier.unwrap_or(Fraction::ONE);
         Some((duration, multiplier))
     }
 
@@ -5085,6 +5165,7 @@ mod tests {
             language: Language::English,
             variables: BTreeMap::new(),
             default_duration: Duration::quarter(),
+            default_multiplier: Fraction::ONE,
             warnings: &mut warnings,
             pending_head: NoteHeadGroup::Normal,
             pending_tuplet_number: None,
@@ -5127,6 +5208,7 @@ mod tests {
                 language: Language::English,
                 variables: BTreeMap::new(),
                 default_duration: Duration::quarter(),
+                default_multiplier: Fraction::ONE,
                 warnings: &mut warnings,
                 pending_head: NoteHeadGroup::Normal,
                 pending_tuplet_number: None,

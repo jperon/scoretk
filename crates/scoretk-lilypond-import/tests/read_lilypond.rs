@@ -144,6 +144,80 @@ fn durees_ecrites(score: &scoretk_core::model::Score) -> Vec<Fraction> {
         .collect()
 }
 
+/// La durée par défaut d'une note nue est fixée à l'analyse
+/// (`parser->default_duration_`, `lily/parser.yy` l. 4644), pas au parcours :
+/// le second passage d'une reprise ne doit pas hériter de la dernière durée du
+/// premier passage. Réduction de `traditioner_af_swenska_folk_dansar.3.13` :
+/// `g,` valait 2 (venu de `a2`) puis 3 (venu de `e2.` qui termine le passage).
+#[test]
+fn unfold_ne_reprend_pas_la_duree_par_defaut_du_passage() {
+    let score = lire("\\unfoldRepeats { a2 \\repeat volta 2 { g, g4 e2. } }");
+    let attaques: Vec<(i64, u8)> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| {
+            let chord_rest = segment.chord_rest(Track::from_raw(0))?;
+            let pitch = chord_rest
+                .chord_ref()
+                .and_then(|chord| chord.notes.first().copied())?;
+            // Les prolongations d'une note coupée par une barre ne sont pas
+            // des attaques.
+            if score.note(pitch).tie_back.is_some() {
+                return None;
+            }
+            Some((segment.tick.ticks(480), score.note(pitch).pitch))
+        })
+        .collect();
+    // Passages en noires (1 noire = 120 ticks pour 480 par ronde) :
+    // `a2` (0), `g,` (2), `g4` (4), `e2.` (5), puis la reprise : `g,` (8),
+    // `g4` (10), `e2.` (11). Avant correctif, `g,` de la reprise durait 3
+    // (durée de `e2.`) et décalait le passage à 11/13/14.
+    assert_eq!(
+        attaques,
+        vec![
+            (0, 69),
+            (240, 55),
+            (480, 67),
+            (600, 64),
+            (960, 55),
+            (1200, 67),
+            (1320, 64)
+        ]
+    );
+}
+
+/// La lecture des arguments d'une fonction musicale sert seulement à trouver
+/// leur fin ; le corps est ensuite relu après substitution (`REPARSE`,
+/// `lily/parser.yy` l. 1949, annulé par `MYREPARSE`). Cette première lecture
+/// ne doit pas laisser sa durée par défaut derrière elle : dans
+/// `faure-sicilienne-guitare-doigtee`, `\barre 3 { … g8 }` donnait la durée 8
+/// aux notes nues qui précédaient le `g8` de l'argument.
+#[test]
+fn arguments_de_fonction_ne_laissent_pas_leur_duree_par_defaut() {
+    let source = r#"\version "2.24.0"
+\language "english"
+barre = #(define-music-function (parser location strg music)(number? ly:music?)
+  #{ $music #})
+\score { \new Staff { \fixed c' { c16 d e f \barre3 { a b c' d' g8 } } } }
+"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::new(1, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 8),
+        ]
+    );
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");
