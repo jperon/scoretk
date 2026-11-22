@@ -3261,3 +3261,69 @@ No writer cause was committed in this pass: the two candidate rules were
 each measured and reverted with evidence above. Export stays at 235/261
 exact, with no size growth; ABC import at 4 576/4 756; MusicXML export at
 144/173.
+
+## 38. Reader/writer symmetry pass (2026-11-22)
+
+### 38.1 Cause 1 — parameter-only inline `K:` fields (committed, measured)
+
+`parse_key` rejected a field with no tonic (`[K:clef=treble-8]`), so
+`abc2xml.py::doClef` (1736-1744) semantics and ABC 2.1 §4.6 (spec 921-933)
+were lost for that form. The fix in `scoretk-abc-common/src/pitch.rs` treats
+`K:clef=…`, `K:octave=…`, `K:transpose=…` etc. as C major plus parameters.
+Reduced test: `crates/scoretk-abc-import/tests/inline_clef_octave.rs` (written
+first, failing before the fix). ABC import measurement `target/abc-mesure-inline8/`:
+**4 576/4 756 exact**, gains 0, losses 0 against `target/abc-mesure-key/`.
+
+### 38.2 Cause 2 — per-note clef octave (committed, measured, net gain)
+
+The earlier attempt failed because its fallback used `new_clef.map_or(0, …)`
+and dropped the clef inherited from preceding measures. The corrected fix
+captures the effective measure-start clef **before** `draw_context_changes`
+advances it, then uses the clef in force at each note for the written
+transposition (ABC 2.1 §4.6; `xml2abc.py::doAttr` 1329-1331 / `mkNote` 1154).
+Two reduced tests in `crates/scoretk/tests/abc_export_clef_octave.rs`: the
+second one fails on the earlier broken version, which had escaped the first
+test. Measurement `target/abc-ex-clef3/` versus `target/abc-ex-base/`:
+
+| Lot | Exact before | Exact after | Gains | Losses | Mean `.abc` B |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| corpus | 47 | 47 | 0 | 0 | 300 → 300 |
+| mscz | 164 | **165** | 1 (`00- Veni veni Emmanuel`) | 0 | 12 408 → 12 408 |
+| xml | 24 | 24 | 0 | 0 | 12 795 → 12 795 |
+
+Total **236/261 exact**, no per-file loss, no size growth.
+
+### 38.3 Semitone sub-group — instrument changes (proof, reverted)
+
+`testMultiInstrumentPart3.mscx` has one part whose instrument changes from
+A clarinet (`transpose=-3`) to B♭ clarinet (`transpose=-2`) at bar 3. The
+writer emitted only the header `V:1 … transpose=-3`, so the round trip kept
+-3 and the bar-3 notes were a semitone low. Two fixes were implemented,
+committed and measured:
+
+1. Writer: `[K:Eb transpose=-2]` at the instrument-change tick
+   (ABC 2.1 §4.6; `xml2abc.py::doAttr` 1278, 1319-1332), reduced test
+   `crates/scoretk/tests/abc_export_instrument_change.rs`.
+   `target/abc-ex-instr/`: exact 236/261 unchanged, gains 0, losses 0 — but
+   the first divergence moved from bar 3 to bar 1, because the reader
+   collapses the last `instrument_transpose` into the part's single
+   instrument and the exporter then applies it to every measure.
+2. Reader: record transpose changes with `(measure, tick)` and call
+   `Part::set_instrument_at` (mod.rs/build.rs). `target/abc-ex-trchg/`:
+   exact 236/261 unchanged, gains 0, losses 0, and `pct_n1` for the file
+   stays 10/16 (62.5 %); the first divergence returns to `autre` but the
+   note pitches still disagree. It also produced a single-note octave jump
+   (bar 4 first note) in that file.
+
+Both were reverted: no measured gain, and the underlying mismatch is not a
+writer-only defect. The other three semitone files have no `transpose=`
+field at all (`copypaste_parts.mscx` around inline `[K:E clef=bass]` fields,
+`Veni, Creator Spiritus…`, `Vingt danses…`), so they are accidental/clef
+carrying cases, not instrument changes.
+
+### 38.4 Oracle helper corrected
+
+`export_sequence.py` had the reference and candidate swapped: in model mode
+`tk.musicxml` is the direct export (reference) and `scoretk.musicxml` is the
+ABC round trip (candidate). The §35 table was regenerated with the corrected
+direction and the mscz file count fixed to 173.
