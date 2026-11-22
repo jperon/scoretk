@@ -17,7 +17,7 @@
 
 //! CLI `scoretk` et ABC : lecture, écriture, stdin/stdout.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 fn binary() -> Command {
@@ -28,6 +28,17 @@ fn corpus(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/corpus/v4")
         .join(name)
+}
+
+/// Chemin de sortie propre à ce binaire de test.
+///
+/// `CARGO_TARGET_TMPDIR` est créé par Cargo pour les tests d'intégration :
+/// plusieurs agents peuvent lancer la suite en parallèle sans se disputer un
+/// nom fixe sous `/tmp` (`scoretk-cli-abc.abc`).
+fn sortie_temporaire(nom: &str) -> PathBuf {
+    let dossier = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("abc");
+    std::fs::create_dir_all(&dossier).expect("dossier temporaire");
+    dossier.join(nom)
 }
 
 const AIR: &str = "\
@@ -41,11 +52,11 @@ C D E F | G4 z4 |
 
 #[test]
 fn mscx_vers_abc() {
-    let sortie = Path::new("/tmp/scoretk-cli-abc.abc");
+    let sortie = sortie_temporaire("mscx_vers_abc.abc");
     let output = binary()
         .arg(corpus("dynamics.mscx"))
         .arg("-o")
-        .arg(sortie)
+        .arg(&sortie)
         .output()
         .expect("exécution");
     assert!(
@@ -53,22 +64,22 @@ fn mscx_vers_abc() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let texte = std::fs::read_to_string(sortie).expect("sortie ABC");
+    let texte = std::fs::read_to_string(&sortie).expect("sortie ABC");
     assert!(texte.starts_with("%abc-2.1\nX:1\n"), "{texte}");
     assert!(texte.contains("\nK:"), "{texte}");
-    let _ = std::fs::remove_file(sortie);
+    let _ = std::fs::remove_file(&sortie);
 }
 
 #[test]
 fn abc_vers_musicxml() {
-    let entree = Path::new("/tmp/scoretk-cli-abc-entree.abc");
-    let sortie = Path::new("/tmp/scoretk-cli-abc-sortie.musicxml");
-    std::fs::write(entree, AIR).expect("entrée");
+    let entree = sortie_temporaire("abc_vers_musicxml.abc");
+    let sortie = sortie_temporaire("abc_vers_musicxml.musicxml");
+    std::fs::write(&entree, AIR).expect("entrée");
     let output = binary()
-        .arg(entree)
+        .arg(&entree)
         .args(["--encoding-date", "2026-11-17"])
         .arg("-o")
-        .arg(sortie)
+        .arg(&sortie)
         .output()
         .expect("exécution");
     assert!(
@@ -76,11 +87,11 @@ fn abc_vers_musicxml() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let texte = std::fs::read_to_string(sortie).expect("sortie MusicXML");
+    let texte = std::fs::read_to_string(&sortie).expect("sortie MusicXML");
     assert!(texte.contains("<score-partwise"), "{texte}");
     assert!(texte.contains("<step>G</step>"), "{texte}");
-    let _ = std::fs::remove_file(entree);
-    let _ = std::fs::remove_file(sortie);
+    let _ = std::fs::remove_file(&entree);
+    let _ = std::fs::remove_file(&sortie);
 }
 
 #[test]
