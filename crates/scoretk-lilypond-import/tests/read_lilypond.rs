@@ -7211,3 +7211,15 @@ fn auto_change_joue_toutes_les_notes() {
         vec![60, 62, 64, 65]
     );
 }
+
+#[test]
+fn measure_count_sans_argument_ne_mange_pas_la_duree() {
+    // `ly/spanners-init.ly:36-37` : `\startMeasureCount` et
+    // `\stopMeasureCount` sont des événements sans argument.
+    let src = "\\version \"2.24.0\"\n{ c'1 \\startMeasureCount 1 \\stopMeasureCount 1 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 60, 60]
+    );
+}

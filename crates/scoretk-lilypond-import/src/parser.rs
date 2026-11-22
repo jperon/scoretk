@@ -3313,6 +3313,16 @@ impl<'a> Parser<'a> {
                     })
                     .unwrap_or(Music::Empty)
             }
+            "compressMMRests" => {
+                // `ly/music-functions-init.ly:452-459` : ne change que la
+                // gravure des silences ; les hauteurs et attaques restent.
+                self.parse_music()
+            }
+            "startMeasureCount" | "stopMeasureCount" => {
+                // `ly/spanners-init.ly:36-37` : événements de portée sans
+                // argument ; une durée nue qui suit reste de la musique.
+                Music::Empty
+            }
             "textMark" | "textEndMark" => {
                 // `ly/music-functions-init.ly:2365-2373` : un argument de
                 // markup, rien de plus. La durée nue qui suit reste de la
