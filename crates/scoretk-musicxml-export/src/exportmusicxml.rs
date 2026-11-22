@@ -1203,7 +1203,7 @@ impl<'a> Context<'a> {
     ) {
         match item {
             SegmentItem::Clef(clef) => {
-                self.mid_measure_clef(out, segment, clef, measure, xml_staff);
+                self.mid_measure_clef(out, segment, clef, measure, xml_staff, track);
             }
             SegmentItem::ChordRest(chord_rest) => match &chord_rest.kind {
                 ChordRestKind::Chord(chord) => {
@@ -2246,7 +2246,20 @@ impl Context<'_> {
         for (position, staff_id) in part.staves.iter().enumerate() {
             let track = Track::new(*staff_id, 0);
             let xml_staff = if staves > 1 { position + 1 } else { 0 };
-            match segment.and_then(|segment| segment.element(track)) {
+            let start_clef = segment
+                .and_then(|segment| segment.element(track))
+                .or_else(|| {
+                    // `findAndExportClef` (`exportmusicxml.cpp:7693-7714`) retombe
+                    // sur cs2, la clef posée au début de la mesure courante,
+                    // quand cs1 (en-tête ou mesure précédente) est absent.
+                    // Sans ce repli, une clef 8va posée sur une portée sans
+                    // HeaderClef était remplacée par la clef par défaut puis
+                    // réécrite par `writeElement` : deux `<clef>` dans
+                    // `Stella_maris_instruments - La`.
+                    find_segment(measure, SegmentType::Clef, measure.start_tick)
+                        .and_then(|segment| segment.element(track))
+                });
+            match start_clef {
                 Some(SegmentItem::Clef(clef)) => {
                     self.clef(out, xml_staff, self.active_clef(clef), &[]);
                 }
@@ -2304,6 +2317,7 @@ impl Context<'_> {
         clef: &Clef,
         measure: &Measure,
         xml_staff: usize,
+        track: Track,
     ) {
         // MuseScore n'écrit ni les clefs générées ni celles de l'en-tête.
         if segment.kind == SegmentType::HeaderClef {
@@ -2312,6 +2326,31 @@ impl Context<'_> {
         if segment.tick != measure.start_tick && segment.tick != measure.end_tick() {
             self.clef(out, xml_staff, self.active_clef(clef), &[]);
         } else if segment.tick == measure.start_tick {
+            // `findAndExportClef` (`exportmusicxml.cpp:7693-7705`) chooses cs1
+            // (the previous measure's Clef, or the first measure's
+            // HeaderClef) over cs2 (a Clef in this measure at the same tick)
+            // and `writeElement` skips the one already written. Without this
+            // guard a measure carrying both segments emitted two <clef>
+            // elements (4 spurious lines in Stella_maris_instruments - La).
+            let header = measure.segments.iter().find(|other| {
+                other.kind == SegmentType::HeaderClef
+                    && other.tick == segment.tick
+                    && other.element(track).is_some()
+            });
+            let already_written = match header {
+                Some(header) => header.element(track).is_some_and(|item| {
+                    matches!(item, SegmentItem::Clef(other_clef)
+                        if other_clef.concert == clef.concert
+                            && other_clef.transposed == clef.transposed)
+                }),
+                // Sans HeaderClef pour cette portée, `write_measure_clefs`
+                // vient d'écrire cette clef (repli cs2 ou clef par défaut) :
+                // `writeElement` ne doit pas la réécrire.
+                None => measure.start_tick.is_zero(),
+            };
+            if already_written {
+                return;
+            }
             // `Attributes::doAttr` referme `<attributes>` avant d'écrire une
             // clef de reprise : la XSD 4.0 exige toutes les clefs avant les
             // `<staff-details>`/`<measure-style>` du bloc courant.
