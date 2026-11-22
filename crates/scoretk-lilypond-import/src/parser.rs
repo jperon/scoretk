@@ -5649,12 +5649,34 @@ fn markup_prend_liste_entre_accolades(name: &str) -> bool {
             | "concat"
             | "justify"
             | "wordwrap"
+            | "wordwrap-center"
             | "overlay"
             | "column"
             | "dir-column"
             | "center-column"
             | "left-column"
             | "right-column"
+            | "center-align"
+            // Commandes de style : elles prennent un argument markup, qui
+            // peut être une liste entre accolades (`lily/parser.yy`
+            // `markup_braced_list`). `\markup \bold {a Tempo}` laissait la
+            // liste dans le flux musical : `a` (la note la) était jouée et
+            // la suite décalée (franck_ave_maria, fin de la main droite).
+            | "bold"
+            | "italic"
+            | "bold-italic"
+            | "underline"
+            | "box"
+            | "circle"
+            | "rounded-box"
+            | "smallCaps"
+            | "large"
+            | "small"
+            | "smaller"
+            | "huge"
+            | "tiny"
+            | "whiteout"
+            | "transparent"
     )
 }
 

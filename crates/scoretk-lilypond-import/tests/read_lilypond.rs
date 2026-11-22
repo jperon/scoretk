@@ -449,6 +449,15 @@ fn commande_de_liaison_d_expression_garde_le_tie_suivant() {
     assert_eq!(hauteurs_attaques(&score), vec![83]);
 }
 
+/// Une liste entre accolades qui suit une commande de style de markup est son
+/// argument (`lily/parser.yy` `markup_braced_list`) : `\markup \bold {a
+/// Tempo}` ne doit pas laisser `a` devenir une note.
+#[test]
+fn markup_de_style_consomme_sa_liste_entre_accolades() {
+    let score = lire("c'2 ^\\markup \\bold {a Tempo} d'4");
+    assert_eq!(hauteurs(&score), vec![72, 74]);
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");
