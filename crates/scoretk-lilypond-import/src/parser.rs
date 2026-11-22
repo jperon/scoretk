@@ -629,7 +629,11 @@ impl<'a> Parser<'a> {
     /// Expression musicale de haut niveau : une partition implicite, comme le
     /// `scorify-music` de `toplevel-music-handler`.
     fn parse_toplevel_music(&mut self, token: &Token) {
+        // Comme pour un `\score` explicite, `\unfoldRepeats` lu dans cette
+        // musique de haut niveau ne concerne que cette partition implicite.
+        self.playback_unfold_repeats = false;
         let mut groups = self.parse_score_element();
+        let unfold_repeats = self.playback_unfold_repeats;
         if groups.is_empty() {
             return;
         }
@@ -644,7 +648,7 @@ impl<'a> Parser<'a> {
             explicit: false,
             has_layout: false,
             has_midi: false,
-            unfold_repeats: false,
+            unfold_repeats,
             line: token.line,
             column: token.column,
         });
