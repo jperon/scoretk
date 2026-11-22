@@ -647,10 +647,18 @@ impl Reader {
                         // Le marqueur suit la première mesure du groupe qu'il
                         // remplace (`Measure::mmRestFirst`) : la mesure
                         // précédente ouvre le `<multiple-rest>`.
-                        if staff_index == 0 && measure_index > 0 {
+                        if measure_index > 0 {
                             let previous = measure_index - 1;
-                            self.score.measures[previous].multi_measure_rest =
-                                Some(u16::try_from(count).unwrap_or(u16::MAX));
+                            let count = u16::try_from(count).unwrap_or(u16::MAX);
+                            // `createMMRest` (mmrestlayout.cpp:161-206) crée un
+                            // `<multiple-rest>` pour la portée du `<Staff>` qui
+                            // porte le marqueur, pas pour toute la mesure.
+                            self.score.measures[previous]
+                                .mmrests
+                                .set(StaffId::from_index(staff_index), count);
+                            if staff_index == 0 {
+                                self.score.measures[previous].multi_measure_rest = Some(count);
+                            }
                         }
                         continue;
                     }
@@ -828,6 +836,11 @@ impl Reader {
             }
             if is_empty_measure(&self.score.measures[index]) {
                 self.score.measures[index].multi_measure_rest = Some(1);
+                for staff in 0..self.score.staves.len() {
+                    self.score.measures[index]
+                        .mmrests
+                        .set(StaffId::from_index(staff), 1);
+                }
                 covered_until = index + 1;
             }
         }

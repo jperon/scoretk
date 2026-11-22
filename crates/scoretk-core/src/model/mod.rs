@@ -80,6 +80,7 @@ pub mod hairpin;
 pub mod ids;
 pub mod lyrics;
 pub mod measure;
+pub mod mmrest;
 pub mod notation;
 pub mod note;
 pub mod part;
@@ -110,6 +111,7 @@ pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::{Measure, MeasureRepeatMark};
+pub use mmrest::MultiMeasureRests;
 pub use notation::{
     Arpeggio, ArpeggioType, ChordLineType, Fermata, FermataType, Fingering, Glissando,
     GlissandoType, LineStyle, Ornament, OrnamentAccidental, OrnamentType, Slur, SpannerNotation,

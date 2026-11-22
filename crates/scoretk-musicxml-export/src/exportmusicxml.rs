@@ -976,8 +976,16 @@ impl<'a> Context<'a> {
             }
         }
         // `measureStyle` : un `<measure-style>` ouvre le groupe de silences
-        // multi-mesures, sur la première mesure du groupe.
-        if let Some(count) = measure.multi_measure_rest {
+        // multi-mesures, sur la première mesure du groupe. Le regroupement est
+        // propre à une portée (`measure.cpp:2286-2330`, `mmrestlayout.cpp:161-206`)
+        // : on prend la valeur de la portée de cette partie, puis le champ
+        // global pour les partitions qui n'en portent pas encore.
+        let count = part
+            .staves
+            .iter()
+            .find_map(|staff| measure.mmrests.count_for(*staff))
+            .or(measure.multi_measure_rest);
+        if let Some(count) = count {
             out.attr(true);
             out.xml.start_element("measure-style", &[]);
             out.xml.tag("multiple-rest", &count.to_string());

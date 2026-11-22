@@ -29,6 +29,7 @@
 
 use super::fraction::{Fraction, Tick};
 use super::ids::StaffId;
+use super::mmrest::MultiMeasureRests;
 use super::repeat::RepeatMark;
 use super::segment::{BarLineType, Segment, SegmentType};
 
@@ -90,6 +91,8 @@ pub struct Measure {
     /// `Measure::mmRestCount()` sur la mesure qui remplace le groupe ; `None`
     /// quand la mesure n'ouvre aucun `<multiple-rest>`.
     pub multi_measure_rest: Option<u16>,
+    /// Silences multi-mesures ouvrant ici, **par portée** (`mmrest.rs`).
+    pub mmrests: MultiMeasureRests,
     /// Vrai quand un saut de section précède la mesure.
     ///
     /// MuseScore recommence alors la numérotation affichée à 1 et réécrit les
@@ -144,6 +147,7 @@ impl Measure {
             end_bar_line: BarLineType::Normal,
             repeat_count: 0,
             multi_measure_rest: None,
+            mmrests: MultiMeasureRests::new(),
             section_break_before: false,
             section_pause: None,
             section_keeps_numbering: false,

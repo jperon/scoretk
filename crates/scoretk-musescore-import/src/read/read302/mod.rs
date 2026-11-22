@@ -61,8 +61,8 @@ mod xml;
 use crate::container::MscVersion;
 use crate::Result;
 use scoretk_core::model::{
-    BarLineType, Clef, ClefType, Fraction, Measure, Score, SegmentItem, SegmentType, StyleSettings,
-    Track, Transpose, TupletId, VOICES,
+    BarLineType, Clef, ClefType, Fraction, Measure, Score, SegmentItem, SegmentType, StaffId,
+    StyleSettings, Track, Transpose, TupletId, VOICES,
 };
 
 use xml::Node;
@@ -256,9 +256,18 @@ impl Reader {
                         .and_then(Node::int_text)
                         .filter(|count| *count > 0)
                     {
-                        if staff == 0 && index > 0 {
-                            self.score.measures[index - 1].multi_measure_rest =
-                                Some(u16::try_from(count).unwrap_or(u16::MAX));
+                        if index > 0 {
+                            let count = u16::try_from(count).unwrap_or(u16::MAX);
+                            // `Measure::isEmpty(staffIdx)` (measure.cpp:2286-2330)
+                            // : le regroupement est propre à une portée. Le
+                            // marqueur n'est lu que dans le `<Staff>` qui le
+                            // porte ; conserver cette association.
+                            self.score.measures[index - 1]
+                                .mmrests
+                                .set(StaffId::from_index(staff), count);
+                            if staff == 0 {
+                                self.score.measures[index - 1].multi_measure_rest = Some(count);
+                            }
                         }
                         continue;
                     }
@@ -393,6 +402,11 @@ impl Reader {
             }
             if is_empty_measure(&self.score.measures[index]) {
                 self.score.measures[index].multi_measure_rest = Some(1);
+                for staff in 0..self.score.staves.len() {
+                    self.score.measures[index]
+                        .mmrests
+                        .set(StaffId::from_index(staff), 1);
+                }
                 covered_until = index + 1;
             }
         }
