@@ -6139,3 +6139,21 @@ fn acciaccatura_avec_accord_simultane_garde_toutes_les_notes() {
     let pitches: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
     assert_eq!(pitches, vec![64, 64, 61], "hauteurs: {:?}", pitches);
 }
+
+#[test]
+fn affectation_identifiant_ponctuation_barre() {
+    // `lily/parser.yy` accepte une chaîne comme identifiant : `"|" = \bar "||"`
+    // redéfinit le contrôle de mesure. Le lecteur sautait la chaîne, laissant
+    // `=` et `\bar` avaler la musique qui suit.
+    let src = "\\version \"2.24.0\"\n\"|\" = \\bar \"||\"\n{ c'2 | c'2 | }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .map(|note| note.pitch)
+            .collect::<Vec<_>>(),
+        vec![60, 60],
+        "la musique suit l'affectation"
+    );
+}

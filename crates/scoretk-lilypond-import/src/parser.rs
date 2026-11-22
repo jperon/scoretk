@@ -558,6 +558,15 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
+            // `lily/parser.yy` accepte une chaîne comme identifiant :
+            // `"|" = \bar "||"` redéfinit le contrôle de mesure. Sans ce cas,
+            // la chaîne est sautée et `=` puis `\bar` avalent la musique qui
+            // suit (bar-check-redefine.ly).
+            Kind::Str if self.peek_at(1).is_some_and(|next| next.is_punct('=')) => {
+                let name = token.text.clone();
+                self.position += 2;
+                self.assign(name);
+            }
             Kind::Punct(';') => {
                 self.position += 1;
             }
