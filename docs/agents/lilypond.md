@@ -5377,3 +5377,53 @@ soit une exclusion justifiée :
   `note-head-style.ly` : commandes purement gravures (`\compressMMRests`,
   `Measure_counter_engraver`, `\caesura`, styles de têtes) qui masquent la
   musique au lecteur. Écarts de lecteur.
+
+## `ra` — sous-classification par première divergence (lot 86,7 %)
+
+Script `scripts/oracle/lilypond/subdivise.py` (`--jobs`, défaut
+`min(2, cpu_count)`) : pour chaque écart, il compare les couples
+(hauteur, attaque) du MIDI de référence et de notre MusicXML, repère le premier
+tick qui diffère, puis relève le constructeur de la source autour de ce tick
+(repli sur le constructeur dominant de la source si l'extrait ne porte que
+l'en-tête). Sur les 64 fichiers `octave`/`notes_manquantes` du lot 86,3 % :
+
+| Constructeur à la première divergence | Fichiers | Exemple |
+| --- | ---: | --- |
+| markup/tweak | 13 | `approximate-pitch-head-direction-tweak.ly` |
+| voices | 11 | `autochange-inside-scale-durations.ly` |
+| repeat/volta | 9 | `allow-break.ly` |
+| transpose/clef/key | 9 | `autochange-clefs.ly` |
+| relative | 9 | `monochords.ly` |
+| scheme | 6 | `bar-line-define-bar-glyph.ly` |
+| tuplet | 3 | `metronome-mark-broken-bound.ly` |
+| cue/quote | 3 | `quote-cyclic.ly` |
+| grace | 1 | `bend-after-start-in-grace.ly` |
+| include | 1 | `chord-names-languages2.ly` |
+
+Quatre causes visant les groupes `repeat/volta` et `voices`, test réduit
+échouant d'abord, mesurées face à `/tmp/ly-ra-final9` :
+
+1. **`\repeat unfold` avec alternatives** (`lily/parser.yy` REPEAT ALTERNATIVE)
+   : les alternatives se répartissent sur les passages, la première étant
+   multipliée s'il y en a moins que de reprises. Test
+   `repeat_unfold_avec_alternatives`. Gain : `repeat-unfold`.
+2. **`\repeat … \etc`** (`repeat-etc.ly`) : fonction partielle, le corps est
+   fourni à l'appel de la variable (`partial` sur `Context::Repeat`). Test
+   `repeat_avec_etc_applique_le_corps_a_l_appel`. Gain N2 sur `repeat-etc`.
+3. **`\autoChange`** (`ly/music-functions-init.ly:278-303`) : le MIDI joue
+   toutes les notes des deux portées ; les hauteurs sont finales et un
+   `\relative` extérieur ne les recalcule pas. Test
+   `auto_change_joue_toutes_les_notes`. Gains : `autochange-clefs`,
+   `autochange-inside-scale-durations`, `autochange-turning-pitch`.
+4. **Événements sans argument avalant la musique** — `\startMeasureCount` /
+   `\stopMeasureCount` (`ly/spanners-init.ly:36-37`) et `\compressMMRests`
+   (`ly/music-functions-init.ly:452-459`). Test
+   `measure_count_sans_argument_ne_mange_pas_la_duree`. Gains :
+   `measure-counter-event-order`, `measure-counter-alternative-numbering`,
+   `measure-counter-compressed-mmrest`.
+
+Mesures ciblées : 1 gain exact / 0 perte (causes 1–2), 3 gains / 0 perte
+(causes 3–4). La mesure complète (`/tmp/ly-ra-final11`) donne **1495 exacts sur
+1724 (86,7 %)**, 8 fichiers gagnés et aucune perte. Restent 90
+`attaque_decalee`, 54 `notes_supp`, 34 `octave`, 24 `notes_manquantes`, 19
+`sortie_vide`, 5 `transposition`, 4 `autre`, 1 `echec`.
