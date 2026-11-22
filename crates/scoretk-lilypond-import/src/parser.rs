@@ -4029,8 +4029,36 @@ impl<'a> Parser<'a> {
         } else {
             // Markup sans accolades (`\markup \italic "x"`) : on collecte
             // tant que les jetons restent du texte.
+            // Nom de la dernière commande de markup lue, pour décider si une
+            // accolade qui suit est son argument ou le début de la musique.
+            let mut derniere_commande: Option<String> = None;
             while let Some(token) = self.peek().cloned() {
                 match token.kind {
+                    Kind::Punct('{')
+                        if derniere_commande
+                            .as_deref()
+                            .is_some_and(markup_prend_liste_entre_accolades) =>
+                    {
+                        // `lily/parser.yy:4160-4165` : une liste entre
+                        // accolades qui suit une commande de markup est son
+                        // argument (`markup_braced_list`), pas de la musique.
+                        // La laisser en place créait une partition parasite
+                        // (`\markup \right-column { "0" "0" }` dans un
+                        // `\with` ou au niveau supérieur) et la vraie portée
+                        // était écartée comme « partition supplémentaire ».
+                        self.position += 1;
+                        let mut profondeur = 1usize;
+                        while !self.at_end() && profondeur > 0 {
+                            if self.eat_punct('}') {
+                                profondeur -= 1;
+                            } else if self.eat_punct('{') {
+                                profondeur += 1;
+                            } else {
+                                self.collect_markup_atom(&mut pieces);
+                            }
+                        }
+                        derniere_commande = None;
+                    }
                     Kind::Command => {
                         // Une commande qui est une variable, une fonction
                         // musicale ou une commande de musique n'appartient
@@ -4044,8 +4072,12 @@ impl<'a> Parser<'a> {
                             break;
                         }
                         self.collect_markup_atom(&mut pieces);
+                        derniere_commande = Some(token.text.clone());
                     }
-                    Kind::Str => self.collect_markup_atom(&mut pieces),
+                    Kind::Str => {
+                        self.collect_markup_atom(&mut pieces);
+                        derniere_commande = None;
+                    }
                     Kind::Word => {
                         // Silences et temps réservés : ce sont de la musique,
                         // pas du texte. Sans cela `\markup "x" r2 r4 aes`
@@ -4057,8 +4089,12 @@ impl<'a> Parser<'a> {
                             break;
                         }
                         self.collect_markup_atom(&mut pieces);
+                        derniere_commande = None;
                     }
-                    Kind::Number => self.collect_markup_atom(&mut pieces),
+                    Kind::Number => {
+                        self.collect_markup_atom(&mut pieces);
+                        derniere_commande = None;
+                    }
                     _ => break,
                 }
             }
@@ -4814,6 +4850,34 @@ fn obsolete_music_command(name: &str) -> Option<&'static str> {
         "sostenutoUp" => Some("sostenutoOff"),
         _ => None,
     }
+}
+
+/// Commandes de markup dont l'argument peut être une liste entre accolades.
+///
+/// Listées d'après les signatures de `scm/define-markup-commands.scm` :
+/// `(markup-list?)`, `(ly:music?)` pour `rhythm` et `(ly:duration?)` pour
+/// `note`. Une accolade qui suit une autre commande (`\foo` sans argument,
+/// `\etc` partiel) ouvre au contraire la musique : la consommer ferait
+/// disparaître la partition (`markup-invalid-stencil.ly`, `textetc.ly`).
+fn markup_prend_liste_entre_accolades(name: &str) -> bool {
+    matches!(
+        name,
+        "line"
+            | "rhythm"
+            | "note"
+            | "first-visible"
+            | "fill-line"
+            | "justify-line"
+            | "concat"
+            | "justify"
+            | "wordwrap"
+            | "overlay"
+            | "column"
+            | "dir-column"
+            | "center-column"
+            | "left-column"
+            | "right-column"
+    )
 }
 
 fn starts_music_command(name: &str) -> bool {

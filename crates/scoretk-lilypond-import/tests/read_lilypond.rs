@@ -6459,3 +6459,47 @@ fn accord_chordmode_min11() {
         vec![60, 63, 67, 70, 74, 77]
     );
 }
+
+#[test]
+fn liste_markup_entre_accolades_ne_cree_pas_une_partition_vide() {
+    // `lily/parser.yy:4160-4165` : les accolades qui suivent une commande de
+    // markup sont son argument (`markup_braced_list`), pas une musique à
+    // jouer. Sinon le faux `{ "0" "0" }` devenait la première partition et
+    // la vraie portée était écartée comme « partition supplémentaire ».
+    let src = "\\version \"2.24.0\"\n\
+         \\markup \\right-column { \"X\" \"Y\" }\n\
+         \\new Staff { c'1 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60]
+    );
+}
+
+#[test]
+fn markup_dans_with_conserve_la_musique() {
+    // `arpeggio-positions.ily` : `instrumentName = \markup \tiny
+    // \right-column { "0" "0" }` dans un `\with`, puis la musique de portée.
+    let src = "\\version \"2.24.0\"\n\
+         \\new Staff \\with { instrumentName = \\markup \\tiny \\right-column { \"0\" \"0\" } } { c'1 d'1 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62]
+    );
+}
+
+#[test]
+fn markup_commande_sans_argument_laisse_la_musique() {
+    // `scm/define-markup-commands.scm` : `\foo` n'a aucun argument ; le bloc
+    // qui suit est la musique, pas une liste de markup
+    // (`markup-invalid-stencil.ly`, `textetc.ly` avec `\etc`).
+    let src = "\\version \"2.24.0\"\n\\
+         \\markup \\foo\n\\
+         { c'1 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60]
+    );
+}
