@@ -2502,11 +2502,19 @@ impl<'a> Parser<'a> {
                 self.parse_parallel_music();
                 Music::Empty
             }
+            // `\octaveCheck` est une fonction musicale (`ly/music-functions-init.ly:1274`)
+            // qui prend une hauteur et produit un `RelativeOctaveCheck` :
+            // aucune note, aucune durée, et la hauteur ne doit pas devenir la
+            // référence `\relative` suivante.
+            "octaveCheck" => {
+                let _ = self.parse_pitch_spec();
+                Music::Empty
+            }
             // Commandes de style d'agrément ou de dynamique : elles ne
             // changent ni les hauteurs ni les durées, seulement la gravure.
             "crescTextCresc" | "dimTextDecresc" | "dimTextDecr" | "dimTextDim" | "crescHairpin"
             | "dimHairpin" | "arpeggioArrowUp" | "arpeggioArrowDown" | "arpeggioNormal"
-            | "octaveCheck" => Music::Empty,
+            => Music::Empty,
             "language" => {
                 // `\language` vaut aussi au milieu de la musique, comme le
                 // fichier de langue inclus par `\include "italiano.ly"`.

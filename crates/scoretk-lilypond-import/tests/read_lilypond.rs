@@ -4724,6 +4724,17 @@ fn repeat_tremolo_etire_les_durees() {
     );
 }
 
+/// `ly/music-functions-init.ly:1274` : `\octaveCheck` est une fonction
+/// musicale qui consomme une **hauteur** (`ly:pitch?`) et ne produit aucune
+/// note ni durée (`RelativeOctaveCheck`). Sans consommer l'argument, la
+/// hauteur était relue comme une note et décalait la référence `\relative`.
+#[test]
+fn octave_check_consomme_sa_hauteur() {
+    let score = lire("\\relative c' { c4 \\octaveCheck c'' d e }");
+    assert_eq!(hauteurs(&score), vec![60, 62, 64]);
+    assert_eq!(score.measures.len(), 1);
+}
+
 /// `lily/percent-repeat-iterator.cc` : `\repeat percent n { … }` joue le
 /// corps une fois, puis émet n−1 `PercentEvent` de la longueur du corps : le
 /// temps avance de n × la durée du corps, mais les répétitions ne sont pas
