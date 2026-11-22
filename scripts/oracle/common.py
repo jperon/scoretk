@@ -89,6 +89,47 @@ def compte_exclus(releves: list[dict]) -> int:
     return len(noms_exclus(releves))
 
 
+# Commandes LilyPond supprimées après 2.10 que `convert-ly` réécrit
+# (`python/convertrules.py`, règles 2.11.51/52 ; mêmes noms que la table du
+# lecteur `crates/scoretk-lilypond-import/src/parser.rs`).
+COMMANDES_OBSOLETES = (
+    "setTextCresc", "setTextDecresc", "setTextDecr", "setTextDim",
+    "setHairpinCresc", "setHairpinDecresc", "setHairpinDim",
+    "sustainUp", "sustainDown", "sostenutoUp", "sostenutoDown",
+    "arpeggioUp", "arpeggioDown", "arpeggioNeutral", "octave",
+)
+
+
+def commandes_obsoletes(texte: str) -> list[str]:
+    """Obsolete commands present in a LilyPond source, without duplication."""
+    import re
+    presents = set(re.findall(r"\\([A-Za-z]+)", texte))
+    return [name for name in COMMANDES_OBSOLETES if name in presents]
+
+
+def reference_lilypond_inutilisable(message: str) -> bool:
+    return message.startswith("lilypond : code ")
+
+
+def raison_hors_lecteur(releve: dict, texte: str) -> str:
+    """Why a row is not the reader's fault, or an empty string.
+
+    Reusable by every `.ly` reading oracle: a missing/unusable MIDI reference,
+    a LilyPond compile failure on the source, or obsolete syntax that
+    `convert-ly` would rewrite. Such inputs are excluded from both numerator
+    and denominator via `marquer_exclu`, exactly like unsupported ones.
+    """
+    message = releve.get("erreur") or ""
+    if "référence MIDI absente" in message or reference_lilypond_inutilisable(message):
+        return "référence MIDI inutilisable"
+    if releve.get("code") == 124:
+        return "délai sur la référence LilyPond"
+    obsolete = commandes_obsoletes(texte)
+    if obsolete:
+        return "source obsolète : " + ", ".join("\\" + name for name in obsolete[:3])
+    return ""
+
+
 def avertir(noms: list[str], prefix: str = "") -> None:
     """Print the single warning line, once per run; no-op when nothing is excluded."""
     if not noms:
@@ -127,6 +168,11 @@ def selftest() -> None:
     assert ligne_resume(["a.mscz"]).startswith("Unsupported (excluded): 1")
     assert est_non_pris_en_charge(EXIT_UNSUPPORTED)
     assert not est_non_pris_en_charge(1) and not est_non_pris_en_charge(None)
+    assert commandes_obsoletes("\\setTextCresc c4") == ["setTextCresc"]
+    assert commandes_obsoletes("\\crescTextCresc c4") == []
+    assert raison_hors_lecteur({"erreur": "référence MIDI absente"}, "") == "référence MIDI inutilisable"
+    assert raison_hors_lecteur({"code": 0}, "\\sustainDown c4").startswith("source obsolète")
+    assert raison_hors_lecteur({"code": 0}, "c4 d4") == ""
     print("selftest common : OK")
 
 

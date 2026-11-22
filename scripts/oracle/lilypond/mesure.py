@@ -193,11 +193,28 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
             work.mkdir(parents=True, exist_ok=True)
             ref_path = work / "ref.mid"
             err_ref = reference(args, lot, src, str(ref_path))
+            texte_src = texte_source(src)
             if err_ref or not ref_path.is_file():
                 for outil in outils(args):
                     r = base_releve(lot, outil, src, repetitions)
                     r["erreur"] = err_ref or "référence MIDI absente"
                     marquer_echec(r)
+                    # Une référence inutilisable n'est pas un défaut du
+                    # lecteur : exclure des deux dénominateurs (comme code 3).
+                    common.marquer_exclu(r, src)
+                    r["raison_exclusion"] = common.raison_hors_lecteur(r, texte_src)
+                    ecrire(out, r)
+                out.flush()
+                continue
+            # Source obsolète que `convert-ly` réécrirait : son MIDI de
+            # référence est troué, la comparer pénaliserait le lecteur à tort.
+            raison_obsolete = common.raison_hors_lecteur({"code": 0}, texte_src)
+            if raison_obsolete.startswith("source obsolète"):
+                for outil in outils(args):
+                    r = base_releve(lot, outil, src, repetitions)
+                    r["erreur"] = raison_obsolete
+                    common.marquer_exclu(r, src)
+                    r["raison_exclusion"] = raison_obsolete
                     ecrire(out, r)
                 out.flush()
                 continue
