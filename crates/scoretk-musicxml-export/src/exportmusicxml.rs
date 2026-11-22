@@ -1475,7 +1475,11 @@ impl Context<'_> {
                 return Some(tuplet.base_len);
             }
         }
-        if children.len() as i64 != tuplet.ratio.numerator() {
+        // `determineTupletNormalTicks` (`exportmusicxml.cpp:3767`) compare
+        // `elements().size()` au numérateur du ratio tel que le C++ le stocke,
+        // c'est-à-dire **non réduit** (6 pour un 6:4). `Fraction::numerator()`
+        // renvoie 3 ici et ferait écrire un `<normal-type>` superflu.
+        if children.len() as i64 != tuplet.actual_notes.max(1) {
             return Some(tuplet.base_len);
         }
         None

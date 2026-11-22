@@ -491,3 +491,43 @@ bruts 6/4 ; échouait avec `<actual-notes>3</actual-notes>`. Re-mesure complète
 numération écrite ne change pas la lecture MIDI), **aucune perte** ; lignes
 centrales `Czardas_Monti` 60 → **12**, `Ave_Maria_Schubert_in_C` 3560 →
 **720**. `cargo test -p scoretk --test e2e_corpus` reste vert (5/5).
+
+## 25. `normal-type` des n-olets 6:4 (2026-11-22)
+
+Suite de la cause 24 sur les nombres bruts : `determineTupletNormalTicks`
+(`exportmusicxml.cpp:3752-3771`) compare `elements().size()` au numérateur du
+ratio **tel que le C++ le stocke** (`t->ratio().numerator()`, non réduit), et
+pas au ratio réduit de `Fraction`. Le port utilisait `tuplet.ratio.numerator()`
+(3 pour un 6:4) : avec 6 enfants il en déduisait qu'un `<normal-type>` était
+nécessaire et en écrivait un sur chaque note, alors que MuseScore n'en écrit
+aucun. La garde utilise maintenant `tuplet.actual_notes.max(1)` (le nombre
+brut du fichier).
+
+L'assertion `!xml.contains("<normal-type>")` a été ajoutée d'abord au test
+réduit `rapport_de_nolet_non_reduit_dans_time_modification` (n-olet 6:4
+complet) : elle échouait avant le correctif. Re-mesure complète avec deux
+binaires frères (`target/export-head/` contre `target/export-normal/`, même
+oracle) : aucun changement N1/N2/N2d, **aucune perte**, lignes centrales
+`Czardas_Monti` 12 → **0** (devient core-identique) et
+`Ave_Maria_Schubert_in_C` 720 → **8**. `e2e_corpus` reste vert (5/5).
+
+## 25. `normal-type` et numérateur brut du ratio (2026-11-22)
+
+Suite directe de la section 24 : `determineTupletNormalTicks`
+(`exportmusicxml.cpp:3752-3771`) compare le nombre d'éléments du n-olet au
+numérateur du ratio **tel que le C++ le conserve**, c'est-à-dire non réduit
+(6 pour un 6:4). Le port comparait à `tuplet.ratio.numerator()` (3 après
+réduction), donc il écrivait un `<normal-type>16th</normal-type>` sur chaque
+note d'un n-olet 6:4 complet — 712 lignes sur
+`Ave_Maria_Schubert_in_C_with_chords`, 12 sur `Czardas_Monti`.
+
+Correction : utiliser `tuplet.actual_notes` (le nombre brut lu du fichier,
+déjà utilisé à la section 24 pour `<actual-notes>`). Assertion ajoutée au
+test réduit de la section 24 (6:4 complet avec 6 enfants → aucun
+`<normal-type>`), échouait avant le correctif.
+
+Re-mesure complète (`target/export-head/` vs `target/export-normal/`, deux
+binaires frères du même HEAD, même oracle) : **aucune perte**, fichiers
+core-identiques 65 → **66** ; `Czardas` 12 → **0** lignes centrales,
+`Ave_Maria_Schubert` 720 → **8**. N1/N2/N2d inchangés (la numération n'est
+pas de la hauteur). `cargo test -p scoretk --test e2e_corpus` vert (5/5).

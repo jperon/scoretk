@@ -3276,4 +3276,11 @@ fn rapport_de_nolet_non_reduit_dans_time_modification() {
         xml.contains("<normal-notes>4</normal-notes>"),
         "le nombre brut 4 doit être écrit :\n{xml}"
     );
+    // `determineTupletNormalTicks` (`exportmusicxml.cpp:3752-3771`) compare
+    // le nombre d'enfants au numérateur **brut** du ratio (ici 6), pas au
+    // ratio réduit (3). Avec 6 enfants, MuseScore n'écrit aucun normal-type.
+    assert!(
+        !xml.contains("<normal-type>"),
+        "aucun normal-type attendu pour un 6:4 complet :\n{xml}"
+    );
 }
