@@ -4456,3 +4456,17 @@ up the variable. Failing reduced tests
 `affectation_identifiant_ponctuation` and `identifiant_entre_guillemets_echappes`
 first. Focused re-measure on the 3 affected `ra` files:
 **both non-exact files become exact, no loss** (the third stays exact).
+
+### Generic separation of non-reader faults (reused from §23)
+
+`scripts/oracle/common.py::raison_hors_lecteur` now classifies, once for every
+`.ly` oracle, a row whose input is **not** the reader's fault: an unusable
+LilyPond MIDI reference, a LilyPond compile failure on the source, or obsolete
+syntax that `convert-ly` would rewrite (`setTextCresc`, `sustainDown`, …
+the same commands as `parser.rs::obsolete_music_command`). `mesure.py` marks
+those rows with `common.marquer_exclu`, so `resume()` drops them from both
+numerator and denominator — the same mechanism already used for code 3, no
+separate basket duplicated. Selftest covers the three rules. On `ra` the
+fresh run (`/tmp/ly-ra-excl`) excludes 2 files with unusable references and
+reports **1366 exact of 1724 measured, 0 exact losses** versus the previous
+run; `mut`'s obsolete basket is detected by the same helper.
