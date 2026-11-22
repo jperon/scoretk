@@ -539,6 +539,33 @@ fn set_beat_structure_ne_fuit_pas_dans_la_musique() {
     assert_eq!(attaques, vec![(64, 240), (66, 600), (71, 0)]);
 }
 
+/// `\times 2/3 { << { s8 s s } \\ { c'8[ d' e'] } >> }` : la branche
+/// parallèle est lue par une voix sœur, qui n'a pas le `Tuplet` dans ses
+/// propres n-olets. Sa durée réelle (1/3 de noire) doit être portée par
+/// `ticks`, sinon l'écrivain MusicXML émet la croche nue (1/2) et allonge la
+/// mesure (waltz-op39-15, rimsky-korsakov-op11-1).
+#[test]
+fn branche_parallele_dans_un_nolet_porte_sa_duree_reelle() {
+    let src = "\\version \"2.24.0\"\n\\score { \\new Staff { \\time 3/4 \\times 2/3 { << { s8 s s } \\\\ { c'8[ d' e'] } >> } c'4 d'4 } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let ticks: Vec<_> = score.measures[0]
+        .segments
+        .iter()
+        .flat_map(|segment| segment.iter_elements())
+        .filter_map(|(_, element)| match element {
+            SegmentItem::ChordRest(chord_rest) if chord_rest.chord_ref().is_some() => {
+                Some(chord_rest.ticks)
+            }
+            _ => None,
+        })
+        .collect();
+    // 1/3 de noire = 1/12 de ronde dans le modèle.
+    let nolet = ticks
+        .iter()
+        .filter(|ticks| **ticks == Some(Fraction::new(1, 12)));
+    assert_eq!(nolet.count(), 3, "trois notes de 1/12 : {ticks:?}");
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");

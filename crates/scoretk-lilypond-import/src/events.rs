@@ -1388,9 +1388,15 @@ impl<'a> Interpreter<'a> {
         // Un multiplicateur `*n/d`, écrit ou hérité de la durée par défaut,
         // change la durée réelle : elle doit être portée par `ticks`, sinon
         // l'export écrit la figure nue et décale toutes les attaques suivantes.
-        // La mise à l'échelle d'un n-olet reste portée par le `Tuplet`.
-        let explicit_ticks = if multiplier != Fraction::ONE {
-            Some(actual)
+        // La mise à l'échelle d'un n-olet reste portée par le `Tuplet`, sauf
+        // celle qui vient d'un n-olet **extérieur à la voix** : une branche de
+        // `<< >>` ouverte dans un `\times` est lue par une voix sœur qui n'a
+        // pas le `Tuplet` dans ses propres n-olets (`tuplet_scale` seul). Sans
+        // `ticks`, l'export écrivait la figure nue (0,5 au lieu de 1/3) et
+        // allongeait la mesure (waltz-op39-15, rimsky-korsakov-op11-1).
+        let base_ticks = written.ticks() * multiplier * self.tuplet_scale;
+        let explicit_ticks = if base_ticks != written.ticks() {
+            Some(base_ticks)
         } else {
             None
         };
