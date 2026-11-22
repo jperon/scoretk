@@ -212,6 +212,31 @@ const QUALITIES: &[(&str, &[i8])] = &[
     ("1", &[0]),
 ];
 
+/// Écart en demi-tons d'un degré ajouté après un point dans un nom d'accord.
+///
+/// `scm/chord-entry.scm:270-278` construit l'accord canonique empilé par
+/// tierces ; ces degrés sont les mêmes, avec les altérations courantes.
+fn addition_interval(ajout: &str) -> Option<i8> {
+    Some(match ajout {
+        "1" => 0,
+        "2" => 2,
+        "3" => 4,
+        "4" | "5/" => 5,
+        "5" => 7,
+        "6" => 9,
+        "7" | "b7" => 10,
+        "b9" => 13,
+        "9" => 14,
+        "#9" => 15,
+        "b11" => 16,
+        "11" => 17,
+        "#11" => 18,
+        "b13" => 20,
+        "13" => 21,
+        _ => return None,
+    })
+}
+
 /// Hauteurs MIDI d'un nom d'accord LilyPond (`c`, `c:m7`, `c/g`, `d:maj7`).
 ///
 /// La fondamentale est toujours au do central (60 pour `c`), comme dans le
@@ -253,16 +278,30 @@ pub(crate) fn chord_pitches(language: Language, name: &str) -> Option<(Vec<u8>, 
             }
         }
     }
-    let intervalles = QUALITIES
+    // `scm/chord-entry.scm:67-78` (`interpret-additions`) : les degrés
+    // séparés par un point ajoutent des notes à la base et rendent le 11
+    // explicite (`explicit-11`, l. 137). `:13.11` garde donc son fa.
+    let mut segments = base.split('.');
+    let base = segments.next().unwrap_or(base);
+    let ajouts: Vec<&str> = segments.collect();
+    let mut ecarts: Vec<i8> = QUALITIES
         .iter()
         .find(|(candidat, _)| *candidat == base)
-        .map(|(_, values)| *values)
-        .unwrap_or(&[0, 4, 7]);
+        .map(|(_, values)| values.to_vec())
+        .unwrap_or_else(|| vec![0, 4, 7]);
+    for ajout in &ajouts {
+        if let Some(ecart) = addition_interval(ajout) {
+            if !ecarts.contains(&ecart) {
+                ecarts.push(ecart);
+            }
+        }
+    }
     // `scm/chord-entry.scm:154-159` : un 11 naturel avec une tierce majeure
-    // non explicitée est retiré. Seul `:13` porte un 11 implicite dans notre
-    // table ; `:11` l'explicite et une tierce mineure n'est pas « naturelle ».
-    let retire_onzieme = base == "13" && !mineur;
-    let notes: Vec<u8> = intervalles
+    // non explicitée est retiré. Un `:11` ajouté explicitement l'explicite ;
+    // une tierce mineure n'est pas « naturelle » non plus.
+    let onzieme_explicite = ajouts.iter().any(|ajout| ajout.contains("11"));
+    let retire_onzieme = base == "13" && !mineur && !onzieme_explicite;
+    let mut notes: Vec<u8> = ecarts
         .iter()
         .filter(|ecart| !(retire_onzieme && **ecart == 17))
         .map(|ecart| {
@@ -273,6 +312,7 @@ pub(crate) fn chord_pitches(language: Language, name: &str) -> Option<(Vec<u8>, 
         })
         .filter_map(|p| p.and_then(|p| u8::try_from(p).ok()))
         .collect();
+    notes.sort_unstable();
     let basse_midi = basse.and_then(|b| chord_bass_pitch(language, step, b));
     // Renversement : `process-inversion` retire la note de basse de l'accord
     // et `make-chord-elements` (`chord-entry.scm` l. 100-140) ramène les
@@ -368,6 +408,11 @@ mod tests {
             chord_pitches(langue, "c:13"),
             Some((vec![60, 64, 67, 70, 74, 81], None)),
             "le 11 implicite est retiré d'une tierce majeure"
+        );
+        assert_eq!(
+            chord_pitches(langue, "c:13.11"),
+            Some((vec![60, 64, 67, 70, 74, 77, 81], None)),
+            ":13.11 explicite le 11, sinon retiré (:13 sans fa)"
         );
         assert_eq!(
             chord_pitches(langue, "c:maj"),
