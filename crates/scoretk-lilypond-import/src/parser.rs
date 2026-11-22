@@ -1135,8 +1135,10 @@ impl<'a> Parser<'a> {
             // `ly/performer-init.ly:32` : le `Staff_performer` rend la portée
             // audible dans le MIDI. Un `\with { \remove "Staff_performer" }`
             // (pianoReduction des partitions MuseScore) retire donc cette
-            // portée du MIDI de référence : la lecture ne doit pas ajouter
-            // ses notes au modèle compare au MIDI.
+            // portée du MIDI de référence. La portée et ses notes restent dans
+            // le modèle (pivot de tous les formats) ; on relève seulement le
+            // drapeau `Staff::muted` que l'écrivain MIDI utilisera pour ne pas
+            // les jouer.
             midi_silent = self.tokens[debut_with..self.position]
                 .iter()
                 .enumerate()
