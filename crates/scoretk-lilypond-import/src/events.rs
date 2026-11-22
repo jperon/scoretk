@@ -79,8 +79,9 @@ pub(crate) enum EventKind {
     TrillStart,
     /// Fin de trille.
     TrillStop,
-    /// Changement d'ottava (`\ottava n`), 0 pour la fin.
-    Ottava(i8),
+    /// Changement d'ottava (`\ottava n`), 0 pour la fin ; le booléen indique
+    /// si le crochet est affiché (`\override OttavaBracket.transparent`).
+    Ottava(i8, bool),
     /// Pédale (`true` pour `\sustainOn`).
     Pedal(bool),
     /// Glissando sur l'accord courant.
@@ -767,7 +768,7 @@ impl<'a> Interpreter<'a> {
                     self.annotation(AnnotationEvent::Mark(text.clone()));
                 }
             }
-            Context::Ottava(shift) => self.event(EventKind::Ottava(*shift)),
+            Context::Ottava(shift, visible) => self.event(EventKind::Ottava(*shift, *visible)),
             Context::OctaveCheck(pitch) => {
                 if let Some(message) = self.octave.check_octave(pitch) {
                     self.warn(message);

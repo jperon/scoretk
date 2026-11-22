@@ -6758,4 +6758,26 @@ fn liaison_depuis_agrément_vers_note_principale() {
     );
 }
 
-
+/// `\once \override OttavaBracket.transparent = ##t` masque le crochet sans
+/// changer la hauteur écrite (`scm/define-grobs.scm:2708`). La relecture doit
+/// conserver `visible = faux` sur le spanner, sinon l'export MusicXML ajoute
+/// un `<octave-shift>` qui n'existe pas dans la référence.
+#[test]
+fn ottava_invisible_depuis_override() {
+    use scoretk_core::model::SpannerType;
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\\language \"english\"\n\
+         \\score { \\new Staff { \\fixed c' { c4 \\once \\override OttavaBracket.transparent = ##t \\ottava 1 d4 \\ottava 0 e4 } } }",
+    )
+    .expect("lecture \\override OttavaBracket");
+    let ottavas: Vec<_> = score
+        .spanners
+        .iter()
+        .filter(|spanner| matches!(spanner.kind, SpannerType::Ottava(_)))
+        .collect();
+    assert_eq!(ottavas.len(), 1, "une seule ottava");
+    assert!(
+        !ottavas[0].visible,
+        "le crochet d'ottava doit rester masqué"
+    );
+}

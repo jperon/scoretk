@@ -4872,6 +4872,29 @@ scoretk is 90 files ahead of musicxml2ly on this lot and emits ~45 % fewer
 bytes; the `.ly` round trip is reported apart from the reader's own score
 (the reader's `mus` figure is not changed by export work).
 
+### Ottava invisible : le crochet se masque, pas l'événement
+
+Dans `testExcludeInvisibleElements.mscx`, la seconde ottava porte
+`<visible>0</visible>` : aucun `<octave-shift>` n'est écrit à l'export MusicXML
+(`scoretk-musicxml-export/src/ottava.rs::write_start`) mais la hauteur écrite
+reste décalée d'une octave (`shift`, qui n'examine pas `visible`). L'écrivain
+LilyPond écartait purement et simplement les ottavas invisibles
+(`spanners.rs::events`), si bien que la relecture du `.ly` perdait le décalage :
+F4 au lieu de F5 aux ticks 36–39.
+
+Références : `scm/define-grobs.scm:2708` (`OttavaBracket`, propriété
+`transparent`) et `ly/music-functions-init.ly:1342-1349` (`\ottava` produit un
+`OttavaEvent`). L'écrivain émet maintenant `\ottava n` même pour une ottava
+invisible, précédé de `\once \override OttavaBracket.transparent = ##t` ; le
+lecteur reconnaît cet override (`parser.rs::parse_override`, sur le modèle de
+`Rest.transparent`) et conserve `spanner.visible = false` au lieu de poser un
+`<octave-shift>` visible à la relecture.
+
+Tests réduits écrits d'abord : `ottava_invisible_porte_quand_meme_le_decalage`
+(écriture) et `ottava_invisible_depuis_override` (lecture). Mesure avec deux
+binaires frères sur le lot corpus (`--mode model`) : exact 48 → 49,
+`testExcludeInvisibleElements.mscx` passe de 49 à 53 notes appariées, aucune
+perte ; le lot mscz reste à 155 exacts (aucune régression).
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire

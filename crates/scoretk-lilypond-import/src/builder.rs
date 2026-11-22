@@ -1991,7 +1991,7 @@ fn place_spanners(score: &mut Score, staves: &[StaffBuild]) {
             let mut open_slurs: BTreeMap<u8, Fraction> = BTreeMap::new();
             let mut hairpin: Option<(Fraction, HairpinType)> = None;
             let mut trill: Option<Fraction> = None;
-            let mut ottava: Option<(Fraction, i8)> = None;
+            let mut ottava: Option<(Fraction, i8, bool)> = None;
             let mut pedal: Option<Fraction> = None;
             let mut pending_glissando: Option<Fraction> = None;
 
@@ -2073,9 +2073,9 @@ fn place_spanners(score: &mut Score, staves: &[StaffBuild]) {
                             }
                         }
                     }
-                    EventKind::Ottava(shift) => {
+                    EventKind::Ottava(shift, visible) => {
                         if *shift == 0 {
-                            if let Some((start, shift)) = ottava.take() {
+                            if let Some((start, shift, visible)) = ottava.take() {
                                 if start < tick {
                                     if let Some(kind) = ottava_type(shift) {
                                         add_spanner(
@@ -2087,13 +2087,16 @@ fn place_spanners(score: &mut Score, staves: &[StaffBuild]) {
                                             // `\ottava` ne transpose pas le MIDI
                                             // LilyPond (Notation Reference §1.3.3)
                                             // : la portée ne joue pas ce spanner.
-                                            |spanner| spanner.play = false,
+                                            |spanner| {
+                                                spanner.play = false;
+                                                spanner.visible = visible;
+                                            },
                                         );
                                     }
                                 }
                             }
                         } else {
-                            ottava = Some((tick, *shift));
+                            ottava = Some((tick, *shift, *visible));
                         }
                     }
                     EventKind::Pedal(on) => {

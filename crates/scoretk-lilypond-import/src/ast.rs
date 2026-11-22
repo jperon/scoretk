@@ -184,8 +184,9 @@ pub(crate) enum Context {
     },
     /// `\mark`.
     Mark(String),
-    /// `\ottava`.
-    Ottava(i8),
+    /// `\ottava`, avec le drapeau de visibilité posé par
+    /// `\override OttavaBracket.transparent`.
+    Ottava(i8, bool),
     /// `\octaveCheck` : hauteur de contrôle, sans note.
     OctaveCheck(PitchSpec),
     /// `\sustainOn` / `\sustainOff`.

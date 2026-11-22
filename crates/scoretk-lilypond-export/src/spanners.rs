@@ -63,23 +63,31 @@ pub(crate) fn events(spanner: &Spanner, number: usize) -> Vec<Event> {
             ]
         }
         SpannerType::Ottava(kind) => {
-            if !spanner.visible {
-                return Vec::new();
-            }
             let shift = match kind {
                 OttavaType::OctaveUp => 1,
                 OttavaType::OctaveDown => -1,
                 OttavaType::FifteenthUp => 2,
                 OttavaType::FifteenthDown => -2,
             };
-            vec![
-                Event::new(
+            let mut result = Vec::new();
+            if !spanner.visible {
+                // Une ottava `<visible>0</visible>` ne dessine pas son crochet
+                // (`scm/define-grobs.scm:2708`, `OttavaBracket`), mais décale
+                // quand même la hauteur écrite. Omettre les événements ferait
+                // perdre ce décalage à la relecture : le masquer suffit.
+                result.push(Event::new(
                     spanner.start.tick,
                     before::OTTAVA,
-                    format!("\\ottava {shift}"),
-                ),
-                Event::new(spanner.end.tick, before::OTTAVA, "\\ottava 0"),
-            ]
+                    "\\once \\override OttavaBracket.transparent = ##t",
+                ));
+            }
+            result.push(Event::new(
+                spanner.start.tick,
+                before::OTTAVA,
+                format!("\\ottava {shift}"),
+            ));
+            result.push(Event::new(spanner.end.tick, before::OTTAVA, "\\ottava 0"));
+            result
         }
         SpannerType::Pedal => vec![
             Event::new(spanner.start.tick, after::PEDAL, "\\sustainOn"),
@@ -165,5 +173,30 @@ mod tests {
         let events = events(&spanner(SpannerType::Ottava(OttavaType::OctaveDown)), 1);
         assert_eq!(events[0].text, "\\ottava -1");
         assert_eq!(events[1].text, "\\ottava 0");
+    }
+
+    /// Une ottava `<visible>0</visible>` ne dessine pas de crochet mais décale
+    /// quand même la hauteur écrite (`scoretk-core/src/model/spanner.rs`,
+    /// champ `visible`). Si l'écriture l'omet, la relecture perd le décalage :
+    /// `testExcludeInvisibleElements.mscz` repasse de F5 à F4 sous l'ottava.
+    #[test]
+    fn ottava_invisible_porte_quand_meme_le_decalage() {
+        let mut invisible = spanner(SpannerType::Ottava(OttavaType::OctaveUp));
+        invisible.visible = false;
+        let written: Vec<_> = events(&invisible, 1)
+            .into_iter()
+            .map(|event| event.text)
+            .collect();
+        assert!(
+            written.iter().any(|text| text == "\\ottava 1"),
+            "le décalage doit être écrit : {written:?}"
+        );
+        assert!(written.iter().any(|text| text == "\\ottava 0"));
+        assert!(
+            written
+                .iter()
+                .any(|text| text.contains("OttavaBracket.transparent")),
+            "le crochet reste masqué : {written:?}"
+        );
     }
 }

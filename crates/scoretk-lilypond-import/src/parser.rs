@@ -69,6 +69,8 @@ pub(crate) struct Parser<'a> {
     pending_tuplet_number: Option<TupletNumberType>,
     /// Silence invisible demandé par `\once \override Rest.transparent`.
     pending_invisible_rest: bool,
+    /// Crochet d'ottava masqué par `\override OttavaBracket.transparent`.
+    pending_invisible_ottava: bool,
     /// Partitions rencontrées au niveau supérieur, dans l'ordre du fichier.
     partitions: Vec<Partition>,
     /// `\transposition` trouvé dans le bloc `\midi` de la partition courante.
@@ -268,6 +270,7 @@ pub(crate) fn parse(
         pending_head: NoteHeadGroup::Normal,
         pending_tuplet_number: None,
         pending_invisible_rest: false,
+        pending_invisible_ottava: false,
         partitions: Vec::new(),
         midi_transposition: None,
         playback_articulate: false,
@@ -2173,12 +2176,14 @@ impl<'a> Parser<'a> {
         let saved_multiplier = self.default_multiplier;
         let saved_head = self.pending_head.clone();
         let saved_invisible_rest = self.pending_invisible_rest;
+        let saved_invisible_ottava = self.pending_invisible_ottava;
         let saved_tuplet_number = self.pending_tuplet_number;
         let arguments = self.read_function_arguments(&function);
         self.default_duration = saved_duration;
         self.default_multiplier = saved_multiplier;
         self.pending_head = saved_head;
         self.pending_invisible_rest = saved_invisible_rest;
+        self.pending_invisible_ottava = saved_invisible_ottava;
         self.pending_tuplet_number = saved_tuplet_number;
         let Some(body) = function.body else {
             // Fonction Scheme pure : rien à jouer, avertissement une seule
@@ -2860,7 +2865,8 @@ impl<'a> Parser<'a> {
                         .unwrap_or(0),
                 };
                 let shift = if negative { -magnitude } else { magnitude };
-                context(Context::Ottava(shift.clamp(-2, 2) as i8))
+                let visible = !std::mem::take(&mut self.pending_invisible_ottava);
+                context(Context::Ottava(shift.clamp(-2, 2) as i8, visible))
             }
             "sustainOn" => context(Context::Sustain(true)),
             "sustainOff" => context(Context::Sustain(false)),
@@ -3278,6 +3284,17 @@ impl<'a> Parser<'a> {
             self.eat_punct('=');
             self.skip_scheme_value();
             self.pending_invisible_rest = true;
+            return Music::Empty;
+        }
+        if path.iter().any(|part| part == "OttavaBracket")
+            && path.iter().any(|part| part == "transparent")
+        {
+            // Un crochet transparent (`scm/define-grobs.scm:2708`) ne change
+            // pas la hauteur écrite, mais l'ottava qu'il précède ne doit pas
+            // être réécrite avec un `<octave-shift>` visible à l'export.
+            self.eat_punct('=');
+            self.skip_scheme_value();
+            self.pending_invisible_ottava = true;
             return Music::Empty;
         }
         if path.iter().any(|part| part == "TupletNumber") {
@@ -5592,6 +5609,7 @@ mod tests {
             pending_head: NoteHeadGroup::Normal,
             pending_tuplet_number: None,
             pending_invisible_rest: false,
+            pending_invisible_ottava: false,
             partitions: Vec::new(),
             midi_transposition: None,
             playback_articulate: false,
@@ -5636,6 +5654,7 @@ mod tests {
                 pending_head: NoteHeadGroup::Normal,
                 pending_tuplet_number: None,
                 pending_invisible_rest: false,
+                pending_invisible_ottava: false,
                 partitions: Vec::new(),
                 midi_transposition: None,
                 playback_articulate: false,
