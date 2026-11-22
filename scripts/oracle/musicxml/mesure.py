@@ -244,7 +244,7 @@ def resume(args) -> str:
         f"Scores: {n} | converted: {ok} | XSD-invalid (scoretk): {fichiers_invalides}",
         f"XSD errors — scoretk: {invalides_tk} | MuseScore 4.7.4: {invalides_ms}",
         f"Core-identical to MuseScore: {core_ok}/{ok}",
-        f"Core-identical only after hidden-staff layout reclassification: "
+        f"Core-identical files containing layout-hidden staff-details: "
         f"{len(reclassifies)}/{ok}",
         f"N1 (pitch multiset): {n1/notes_ref if notes_ref else 0:.4f} | "
         f"N2 (pitch+attack): {n2/notes_ref if notes_ref else 0:.4f}",
@@ -257,7 +257,7 @@ def resume(args) -> str:
     for message, count in sorted(messages.items(), key=lambda kv: -kv[1])[:20]:
         lignes.append(f"| {count} | {message} |")
     if reclassifies:
-        lignes += ["", "## Files core-identical only via hidden-staff reclassification", ""]
+        lignes += ["", "## Core-identical files containing layout-hidden staff-details", ""]
         for r in reclassifies[:40]:
             c = r["core"]
             lignes.append(
