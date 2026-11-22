@@ -30,16 +30,14 @@
 
 use scoretk_core::model::{ChordRestKind, Fraction, Score, SegmentItem, SegmentType, TupletId};
 
-use super::beams::Beams;
-
 /// Vrai si MuseScore dessinerait un crochet autour du n-olet.
-pub(crate) fn has_bracket(score: &Score, beams: &Beams, id: TupletId) -> bool {
+pub(crate) fn has_bracket(score: &Score, id: TupletId) -> bool {
     let tuplet = &score.tuplets[id.index()];
     // Un ratio non réduit gardé tel quel (`4:4`) est traité comme un n-olet
     // spécial par le C++ : ses groupes de ligatures ne le font pas disparaître.
     let unreduced = tuplet.actual_notes > 1 && tuplet.actual_notes == tuplet.normal_notes;
     let mut elements = Vec::new();
-    for (measure_index, measure) in score.measures.iter().enumerate() {
+    for measure in &score.measures {
         for segment in &measure.segments {
             if segment.kind != SegmentType::ChordRest {
                 continue;
@@ -47,13 +45,7 @@ pub(crate) fn has_bracket(score: &Score, beams: &Beams, id: TupletId) -> bool {
             for (track, item) in segment.iter_elements() {
                 if let SegmentItem::ChordRest(chord_rest) = item {
                     if chord_rest.tuplet == Some(id) {
-                        elements.push((
-                            chord_rest,
-                            measure_index,
-                            track,
-                            segment.tick,
-                            score.staff(track.staff()).visible,
-                        ));
+                        elements.push((chord_rest, score.staff(track.staff()).visible));
                     }
                 }
             }
@@ -67,7 +59,7 @@ pub(crate) fn has_bracket(score: &Score, beams: &Beams, id: TupletId) -> bool {
     // par défaut (faux), même pour un triolet avec silence. C'est ce qui
     // sépare les 31 crochets de Douce nuit (portée visible Femmes) des 31
     // triolets identiques sur portées masquées.
-    if elements.iter().all(|(_, _, _, _, visible)| !visible) {
+    if elements.iter().all(|(_, visible)| !visible) {
         return false;
     }
     // Le C++ 5.0 compte le silence comme ligaturable (`:232-234`) : sur une
@@ -82,30 +74,7 @@ pub(crate) fn has_bracket(score: &Score, beams: &Beams, id: TupletId) -> bool {
     } else {
         Fraction::new(1, 8)
     };
-    let all_short_chords = elements.iter().all(|(element, _, _, _, _)| {
+    !elements.iter().all(|(element, _)| {
         matches!(element.kind, ChordRestKind::Chord(_)) && element.duration.ticks() <= limit
-    });
-    if !all_short_chords {
-        return true;
-    }
-    // `calcHasBracket` (`tuplet.cpp:221-222, 273-275`) only drops the bracket
-    // when the tuplet starts *and* ends its beam. A `continue` on either end
-    // means the beam extends beyond the tuplet, so MuseScore writes the
-    // bracket (real case: `Vivaldi … 04-TecumPrincipium`, three 16ths inside
-    // a longer 16th beam). Beam groups are reconstructed by `beams::Beams`
-    // (`writeBeam`, `exportmusicxml.cpp`), which is computed for the whole
-    // score by the export context.
-    let continues = |element: &(
-        &scoretk_core::model::ChordRest,
-        usize,
-        scoretk_core::model::Track,
-        Fraction,
-        bool,
-    )| {
-        beams
-            .texts(element.1, element.2, element.3)
-            .first()
-            .is_some_and(|text| text == "continue")
-    };
-    elements.first().is_some_and(continues) || elements.last().is_some_and(continues)
+    })
 }
