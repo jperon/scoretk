@@ -92,6 +92,10 @@ pub(crate) struct Parser<'a> {
     /// `\set melismaBusyProperties = #'()` a été vu : les paroles ne sautent
     /// plus les notes occupées (liaisons d'expression, liaisons…).
     melisma_busy_disabled: bool,
+    /// `\set Score.skipTypesetting = ##t` : `lily/score-performer.cc:151-176`
+    /// n'appelle pas `PROCESS_MUSIC` et replie le temps (`midiSkipOffset`) ;
+    /// les notes de la zone ne sont ni jouées ni comptées dans le temps.
+    skip_typesetting: bool,
     /// `\layout` déplace explicitement `Timing_translator` de `Score` vers
     /// `Staff` : les indications `\time` deviennent propres à chaque portée.
     staff_local_timing: bool,
@@ -289,6 +293,7 @@ pub(crate) fn parse(
         music_functions: BTreeMap::new(),
         expansion_depth: 0,
         melisma_busy_disabled: false,
+        skip_typesetting: false,
         after_grace_fraction: Fraction::new(3, 4),
         staff_local_timing: false,
         note_mode: NoteMode::Notes,
@@ -3786,6 +3791,28 @@ impl<'a> Parser<'a> {
                 return Music::Context(Context::TieWaitForNote(on));
             }
         }
+        // `scm/define-context-properties.scm:716` et
+        // `lily/score-performer.cc:151-176` : `skipTypesetting` coupe
+        // l'interprétation MIDI et replie le temps de la zone sautée.
+        if path
+            .iter()
+            .any(|part| part.eq_ignore_ascii_case("skiptypesetting"))
+        {
+            if let Some(on) = self
+                .peek()
+                .filter(|token| token.is_scheme())
+                .and_then(
+                    |token| match token.text.trim().to_ascii_lowercase().as_str() {
+                        "#t" => Some(true),
+                        "#f" => Some(false),
+                        _ => None,
+                    },
+                )
+            {
+                self.position += 1;
+                self.skip_typesetting = on;
+            }
+        }
         let fraction = self.parse_scheme_fraction();
         // `\set Timing.beatStructure = 1,1` : liste de nombres séparés par
         // des virgules. Le premier est lu comme fraction ; laisser `,1` dans
@@ -4006,6 +4033,15 @@ impl<'a> Parser<'a> {
 
     /// Accord, silence, silence multi-mesures ou répétition d'accord.
     fn parse_chord(&mut self, in_chord: bool) -> Music {
+        let music = self.parse_chord_inner(in_chord);
+        if self.skip_typesetting {
+            Music::Empty
+        } else {
+            music
+        }
+    }
+
+    fn parse_chord_inner(&mut self, in_chord: bool) -> Music {
         let Some(Token {
             kind: Kind::Word,
             text,
@@ -5821,7 +5857,7 @@ fn tronque_musique(music: &Music, budget: Fraction, default: Duration) -> Music 
             for item in items {
                 let duree = music_duration(item, default);
                 if duree > restant {
-                    // Un contexte contenant un `epeat unfold` peut tenir
+                    // Un contexte contenant un `\repeat unfold` peut tenir
                     // partiellement dans le budget : le tronquer au lieu de
                     // jeter l'item entier (`cue-clef*.ly`).
                     let partiel = tronque_musique(item, restant, default);
@@ -6520,6 +6556,7 @@ mod tests {
             music_functions: BTreeMap::new(),
             expansion_depth: 0,
             melisma_busy_disabled: false,
+            skip_typesetting: false,
             after_grace_fraction: Fraction::new(3, 4),
             staff_local_timing: false,
             note_mode: NoteMode::Notes,
@@ -6568,6 +6605,7 @@ mod tests {
                 music_functions: BTreeMap::new(),
                 expansion_depth: 0,
                 melisma_busy_disabled: false,
+                skip_typesetting: false,
                 after_grace_fraction: Fraction::new(3, 4),
                 staff_local_timing: false,
                 note_mode: NoteMode::Notes,

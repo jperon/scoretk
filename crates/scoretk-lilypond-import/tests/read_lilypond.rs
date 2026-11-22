@@ -7748,3 +7748,25 @@ fn cue_during_tronque_une_citation_avec_repeat_unfold() {
         vec![60, 67, 67, 67, 67, 60]
     );
 }
+
+#[test]
+fn skip_typesetting_coupe_les_notes_et_le_temps() {
+    // `lily/score-performer.cc:151-176` : tant que `skipTypesetting` est vrai,
+    // `PROCESS_MUSIC` n'est pas appelé et le temps est replié
+    // (`midiSkipOffset`). Les notes de la zone sautée ne sont pas jouées et
+    // ne décalent pas la suite (`skiptypesetting-bar-check.ly`).
+    let src = "\\version \"2.24.0\"\n{ c'4 \\set Score.skipTypesetting = ##t c'4 c'4 \\set Score.skipTypesetting = ##f d'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62]
+    );
+    let positions: Vec<_> = score
+        .measures
+        .iter()
+        .flat_map(|m| m.segments.iter())
+        .filter(|s| s.chord_rest(Track::from_raw(0)).is_some())
+        .map(|s| s.tick)
+        .collect();
+    assert_eq!(positions, vec![Fraction::new(0, 1), Fraction::new(1, 4)]);
+}
