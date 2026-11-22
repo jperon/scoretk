@@ -976,3 +976,17 @@ From the 70/173 baseline `target/xml-style/`. One line per file: `file | group`;
 | ('attributes child count', 4, 3) | 1 | layout/other | `Sancta_Maria_Mater_Dei_Mozart.mscz` |
 | ('attributes child count', 8, 6) | 1 | layout/other | `00- Veni veni Emmanuel - chant piano.mscz` |
 | ('staff-details', 'no', ('staff-lines',), None, ('diatonic', 'chromatic', 'octave-change')) | 1 | semantic | `07- Violoncelle et Contrebasse.mscz` |
+
+### 32.2 Measured and reverted invisible-staff attempt
+
+Following §32.1, the largest semantic sub-group is hidden-staff
+`<staff-details print-object="no"/>`: 72 files have such a block in the
+reference only. `print()` (`exportmusicxml.cpp:7559-7575`) adds every staff
+with `!show()` to `m_hiddenStaves`, so a first attempt reported all invisible
+staves at every explicit system start. The reduced test passed, but the full
+oracle (`target/xml-invis/`) gave **35 gains and 29 losses**: the actual set
+of hidden staves per system comes from MuseScore's automatic layout, which the
+pivot model does not carry (a part with `<isStaffVisible>0</isStaffVisible>`
+is not necessarily hidden on every system). The change was reverted. The
+sub-classification stands; this group remains layout-bound, not fixable from
+the model alone.
