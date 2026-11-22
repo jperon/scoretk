@@ -6190,3 +6190,18 @@ après `\incipit`), 1556 (11 références ChordNames corrigées), **1565 (audit
 complet)**. `regen-refs.py` a été durci : détection des expressions
 musicales de premier niveau, essai de plusieurs points d'injection `\score`,
 reprise sur source absente, `__jobs 2`.
+
+### Cause lecteur sur l'arbre régénéré : `\alternative` sans corps
+
+Sur l'oracle régénéré (1565), le plus gros sous-groupe encore cohérent était
+`repeat/volta` (12 fichiers). `lily/parser.yy:1560-1569` autorise
+`REPEAT … music alternative_music` avec un `music` vide : dans
+`\repeat volta 10 \alternative { … }`, `parse_music()` consommait le jeton
+`\alternative` comme événement vide et la reprise entière disparaissait
+(`repeat-petrucci-alternatives.ly` : 2 notes au lieu de 10). Laisser le corps
+vide quand le prochain jeton est `\alternative` permet au traitement existant
+des fins de s'appliquer. Test réduit failing-first.
+
+Mesure (`/tmp/ly-altfix`, oracle régénéré) : **1568/1724 (91,0 %)**, **+3
+exacts** (`lyric-repeat-count-alternatives`, `repeat-petrucci-alternatives`,
+`volta-spec-ossia`), **0 perte**.
