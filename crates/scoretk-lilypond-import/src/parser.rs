@@ -109,6 +109,9 @@ pub(crate) struct Parser<'a> {
     /// Identifiants de durée définis par `#(ly:make-duration …)` :
     /// durée de base et facteur de compression (`lily/duration-scheme.cc`).
     duration_identifiers: BTreeMap<String, (Duration, Fraction)>,
+    /// Musiques déclarées par `\addQuote`, consultées par `\cueDuring`
+    /// (`ly/music-functions-init.ly:56-60,545-574`).
+    quotes: BTreeMap<String, Music>,
 }
 
 /// Profondeur d'expansion maximale (garde-fou contre la récursion).
@@ -287,6 +290,7 @@ pub(crate) fn parse(
         tag_groups: default_tag_groups(),
         scheme_variables: BTreeMap::new(),
         duration_identifiers: BTreeMap::new(),
+        quotes: BTreeMap::new(),
     };
     parser.document()
 }
@@ -515,6 +519,25 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 let header = self.parse_header();
                 document.header.entries.extend(header.entries);
+            }
+            Kind::Command if token.text == "addQuote" => {
+                // `ly/music-functions-init.ly:56-60` : `addQuote` déclare une
+                // musique citable ; elle n'est pas jouée ici, seulement
+                // mémorisée pour un `\cueDuring` ultérieur.
+                self.position += 1;
+                let nom = match self.peek().cloned() {
+                    Some(Token {
+                        kind: Kind::Str | Kind::Word,
+                        text,
+                        ..
+                    }) => {
+                        self.position += 1;
+                        text
+                    }
+                    _ => String::new(),
+                };
+                let music = self.parse_music();
+                self.quotes.insert(nom, music);
             }
             Kind::Command if token.text == "score" => {
                 self.position += 1;
@@ -2443,11 +2466,10 @@ impl<'a> Parser<'a> {
                 })
             }
             "absolute" => {
-                // `ly/music-functions-init.ly:32-36` : `bsolute` enveloppe
-                // sa musique dans un `RelativeOctaveMusic`, c'est-à-dire la
-                // soustrait au `elative`/`ixed` environnant. Les marques
-                // d'octave écrites restent littérales, et la référence relative
-                // de la musique qui suit est restaurée à la sortie.
+                // ly/music-functions-init.ly:32-36 : \absolute enveloppe sa
+                // musique dans un RelativeOctaveMusic, la soustrayant au
+                // contexte relatif environnant. Les marques d'octave restent
+                // littérales et la référence de la suite est restaurée.
                 Music::Context(Context::NonRelative {
                     music: Box::new(self.parse_music()),
                 })
@@ -3081,6 +3103,41 @@ impl<'a> Parser<'a> {
                 let principale = self.parse_chord(false);
                 self.saute_pitch_secondaire();
                 principale
+            }
+            "cueDuring" | "cueDuringWithClef" => {
+                // `ly/music-functions-init.ly:545-574` : la citation est
+                // insérée dans une CueVoice ; le MIDI joue les notes de la
+                // citation pendant que l'argument principal (des silences)
+                // occupe le temps. On tronque la citation à la durée de cet
+                // argument.
+                let nom = match self.peek().cloned() {
+                    Some(Token {
+                        kind: Kind::Str | Kind::Word,
+                        text,
+                        ..
+                    }) => {
+                        self.position += 1;
+                        text
+                    }
+                    _ => String::new(),
+                };
+                // Direction `#DOWN`/`#UP`, puis l'armure pour la variante
+                // `cueDuringWithClef` : ce sont des arguments Scheme ou des
+                // chaînes, sans effet sur le temps joué.
+                if self.peek().is_some_and(|token| token.is_scheme()) {
+                    self.position += 1;
+                }
+                if name == "cueDuringWithClef"
+                    && self.peek().is_some_and(|token| token.kind == Kind::Str)
+                {
+                    self.position += 1;
+                }
+                let principal = self.parse_music();
+                let duree = music_duration(&principal, self.default_duration);
+                self.quotes
+                    .get(&nom)
+                    .map(|quote| tronque_musique(quote, duree, self.default_duration))
+                    .unwrap_or(Music::Empty)
             }
             "augmentum" => {
                 // `ly/ancient-init.ly:124-130` : `shift-duration-log expr 0 1`
@@ -5124,6 +5181,103 @@ fn obsolete_music_command(name: &str) -> Option<&'static str> {
 /// `shift-duration-log expr 0 1` au changement de durée uniquement, en
 /// laissant le log (la figure) intact, ce qui ajoute une mora de chant
 /// grégorien à chaque note.
+/// Duree d'une expression musicale, en ticks de ronde.
+fn music_duration(music: &Music, default: Duration) -> Fraction {
+    match music {
+        Music::Chord(chord) => {
+            chord.duration.unwrap_or(default).ticks() * chord.multiplier.unwrap_or(Fraction::ONE)
+        }
+        Music::Seq(items) => items
+            .iter()
+            .map(|item| music_duration(item, default))
+            .fold(Fraction::ZERO, |total, d| total + d),
+        Music::Sim(items) => items
+            .iter()
+            .map(|item| music_duration(item, default))
+            .fold(Fraction::ZERO, |total, d| if d > total { d } else { total }),
+        Music::Context(context) => music_duration(context_music(context), default),
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => music_duration(music, default),
+        _ => Fraction::ZERO,
+    }
+}
+
+/// Musique contenue dans un contexte, pour le calcul de duree des citations.
+fn context_music(context: &Context) -> &Music {
+    match context {
+        Context::Relative { music, .. }
+        | Context::Fixed { music, .. }
+        | Context::NonRelative { music }
+        | Context::Tuplet { music, .. }
+        | Context::Transpose { music, .. } => music,
+        _ => &Music::Empty,
+    }
+}
+
+/// Garde le debut d'une citation jusqu'a epuisement de `budget`.
+fn tronque_musique(music: &Music, budget: Fraction, default: Duration) -> Music {
+    if budget <= Fraction::ZERO {
+        return Music::Empty;
+    }
+    match music {
+        Music::Chord(_) | Music::Empty | Music::Unknown(_) => {
+            if music_duration(music, default) <= budget {
+                music.clone()
+            } else {
+                Music::Empty
+            }
+        }
+        Music::Seq(items) => {
+            let mut restant = budget;
+            let mut gardes = Vec::new();
+            for item in items {
+                let duree = music_duration(item, default);
+                if duree > restant {
+                    break;
+                }
+                gardes.push(tronque_musique(item, restant, default));
+                restant -= duree;
+            }
+            Music::Seq(gardes)
+        }
+        Music::Sim(items) => Music::Sim(
+            items
+                .iter()
+                .map(|item| tronque_musique(item, budget, default))
+                .collect(),
+        ),
+        Music::Context(context) => Music::Context(match context {
+            Context::Relative { reference, music } => Context::Relative {
+                reference: *reference,
+                music: Box::new(tronque_musique(music, budget, default)),
+            },
+            Context::Fixed { reference, music } => Context::Fixed {
+                reference: *reference,
+                music: Box::new(tronque_musique(music, budget, default)),
+            },
+            Context::NonRelative { music } => Context::NonRelative {
+                music: Box::new(tronque_musique(music, budget, default)),
+            },
+            other => other.clone(),
+        }),
+        Music::Tag { tags, music } => Music::Tag {
+            tags: tags.clone(),
+            music: Box::new(tronque_musique(music, budget, default)),
+        },
+        Music::Filtered {
+            filter,
+            wanted,
+            groups,
+            music,
+        } => Music::Filtered {
+            filter: *filter,
+            wanted: wanted.clone(),
+            groups: groups.clone(),
+            music: Box::new(tronque_musique(music, budget, default)),
+        },
+        Music::New(_) | Music::Lyrics(_) => Music::Empty,
+    }
+}
+
 fn ajoute_point(music: Music, default_duration: Duration) -> Music {
     match music {
         Music::Chord(mut chord) => {
@@ -5707,6 +5861,7 @@ mod tests {
             tag_groups: default_tag_groups(),
             scheme_variables: BTreeMap::new(),
             duration_identifiers: BTreeMap::new(),
+            quotes: BTreeMap::new(),
         };
         parser.parse_music()
     }
@@ -5752,6 +5907,7 @@ mod tests {
                 tag_groups: default_tag_groups(),
                 scheme_variables: BTreeMap::new(),
                 duration_identifiers: BTreeMap::new(),
+                quotes: BTreeMap::new(),
             };
             let progresse = parser.guard_progress(0);
             let bloque = parser.guard_progress(1);

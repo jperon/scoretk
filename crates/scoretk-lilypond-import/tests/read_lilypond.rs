@@ -6919,3 +6919,19 @@ fn seconde_voix_relative_heritant_de_la_premiere() {
         vec![72, 60, 72]
     );
 }
+
+#[test]
+fn cue_during_joue_la_citation() {
+    // `ly/music-functions-init.ly:545-557,560-574` : `\cueDuring` insère la
+    // musique citée par `\addQuote` dans une voix de cue ; le MIDI joue ces
+    // notes à la place des silences de l'argument principal.
+    let src = "\\version \"2.24.0\"\n\
+         vI = \\fixed c' { g4 g4 g4 g4 }\n\
+         \\addQuote vIQuote { \\vI }\n\
+         \\new Staff \\fixed c' { c4 \\cueDuring \"vIQuote\" #DOWN { r4 r4 r4 r4 } c4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 67, 67, 67, 67, 60]
+    );
+}
