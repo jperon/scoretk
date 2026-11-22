@@ -3870,8 +3870,8 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact | Exact % | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 365 | 62.4 | 98.78 | — | — |
-| measured (reference present, non-reader faults excluded) | 1 647 | **1 365** | **82.9** | **98.78** | **95.50** | **97.56** |
+| all rows | 2 186 | 1 419 | 64.9 | 98.86 | — | — |
+| measured (reference present, non-reader faults excluded) | 1 647 | **1 419** | **86.2** | **98.86** | **95.96** | **97.67** |
 
 The obsolete-source basket (60 files containing `\setTextCresc`, `\sustainDown`
 and the other commands removed after 2.10, plus the `\deprecatedcresc` family
@@ -3913,8 +3913,14 @@ remain measured; two fall in the newly excluded non-reader-fault set. The next
 pass (Causes 13–16) adds **17 exact files and 0 losses** (1,348 → 1,365; N2
 94.82 → 95.50, no-repeat 97.43 → 97.56): 11 from unquoted context names, 6 from
 the explicit `/+bass` chord syntax, none from `Timing.measurePosition` or the
-`\deprecated*` exclusion (which only removes rows from the denominator). The
-remaining non-exact measured files go from 465 to **282**.
+`\deprecated*` exclusion (which only removes rows from the denominator).
+
+The next pass (Causes 17–20) adds **54 exact files and 0 losses** (1,365 →
+1,419; N2 95.50 → 95.96, no-repeat 97.56 → 97.67): 7 from an assignment no
+longer being taken as a command argument, 30 from the grace-aware exactness
+model (Cause 18 changes the definition of *exact*, see below), 14 from the
+leading-grace SMF shift, 3 from chord inversions. The remaining non-exact
+measured files go from 465 to **228**.
 
 ### Cause 1: top-level `<< … >>` is one context per element
 
@@ -3986,8 +3992,9 @@ regresses.
 ### Classification of the 465 non-exact files (before this pass)
 
 The `mut` set outside the obsolete-source basket had 465 non-exact files
-before the `\octaveCheck`/`\afterGrace` pass; 306 remain after the octave,
-transposition, duration and articulation passes. Symptoms
+before the `\octaveCheck`/`\afterGrace` pass; 228 remain after the octave,
+transposition, duration, articulation, context-name, chord and assignment
+passes. Symptoms
 overlap (a file can be both `octave` and `notes_supp`); the first
 table groups by the oracle's primary flag, the second counts the constructs
 present in the source and its direct includes. `ne`/`ex` are the files that
@@ -4208,6 +4215,58 @@ write `bes/+d`). `parse_chord_name` keeps the `+` in the name and
 `chord_pitches("bes/+d") == ([70, 74, 77], bass 62)`. **6 exact gains, 0
 losses**, N2 +911 (`Leoni`, `ToGodBeTheGlory`, `DukeSt`, `Austria`,
 `CwmRhondda`, `Foundation`).
+
+### Cause 17: an assignment is not a command argument
+
+`skip_command_arguments` consumed the word following an unknown command. On
+`tu = \tieUp` followed by `td = { … }`, the `td` of the assignment was taken
+as `\tieUp`'s argument: the `=` was left behind and the chain of definitions
+disappeared, including `su = { \change Staff = up }` in `bwv798`. Every later
+`\su` was then unknown, so `\change Staff` never returned to the upper staff
+and notes landed on the wrong one. LilyPond only gives arguments to a
+`music_function_call`; a symbol followed by `=` starts an assignment
+(`lily/parser.yy`). A word followed by `=` is no longer consumed. Test
+`commande_inconnue_ne_mange_pas_une_affectation` (0 notes before, 60 after).
+**7 exact gains, 0 losses**, N2 +1,124 (`bwv599`, `bwv789`, `bwv794`,
+`bwv797`–`bwv800`).
+
+### Cause 18: exactness under either grace model
+
+LilyPond writes each grace at a distinct real time, *before* the logical
+attack of its main note (`grace-iterator.cc`, `midi-walker.cc`); MusicXML
+cannot express that offset (a grace takes no logical time). The plain Q16 grid
+(`n2`) therefore loses those files, while the `n2_grace` rule — which pairs
+candidate graces by pitch inside the main note's window — finds them:
+`n2_grace` is 100 % on 30 files still counted `attaque_decalee`. *Exact* now
+accepts `n2 == r` **or** `n2_grace == r` (with `r == t == n1`). Both are
+faithful models, and the union keeps the two files that are perfect under
+`n2` but not under `n2_grace` (`KV331_1_6_var5`, `SchubertF-D686B`). Selftest:
+`rule["exact"]`. **30 exact gains, 0 losses**, N2 unchanged. This changes the
+definition of *exact* for every previous figure.
+
+### Cause 19: leading graces shift the whole MIDI file
+
+An SMF cannot encode a negative time: graces before the first chord shift the
+whole piece by their total duration, whereas LilyPond keeps them in the
+"grace" part of the moment, before zero (`lily/midi-walker.cc` writes deltas).
+`ly_notes.recaler_graces_initiales` shifts the reference back onto the first
+main note when the candidate starts with graces and the first `k` MIDI notes
+are exactly those graces. Selftest: three leading graces and two main notes.
+**14 exact gains, 0 losses**, N2 +4,718 — the whole `JPSFotF` family,
+`bayadere-acteII`, `harpaallegro`.
+
+### Cause 20: chord inversions put the notes above the bass
+
+`bes/d` is not the root-position chord plus a bass: `process-inversion`
+(`scm/chord-entry.scm` l. 67-160) removes the bass pitch from the chord and
+`make-chord-elements` (l. 100-140) brings the other notes into the octave
+above it. The reader added the bass to the root-position chord, so `bes/d`
+played Bb4-D5-F5 + D4 instead of D4-F4-Bb4; same for `c/g`, `f/a`,
+`g:m/bes`. The explicit `/+d` bass (`interpret-bass`) still adds the bass to
+the root-position chord. Tests
+`accord_renverse_place_les_notes_au_dessus_de_la_basse` (4 notes before, 3
+after), `chord_pitches("bes/d")`, `chord_pitches("c/g")`. **3 exact gains, 0
+losses**, N2 +9 (`Easter`, `WinchesterNew`, `Thaxted`).
 
 ### Cause 5: `\octaveCheck` consumes its pitch
 
