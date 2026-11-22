@@ -1640,7 +1640,9 @@ fn place_chord(
                             }
                             if cursor == tick {
                                 for grace in &event.grace_before {
-                                    chord.grace_chords.push(build_grace(score, grace, None));
+                                    let built = build_grace(score, grace, None);
+                                    link_grace_block_tie(score, grace, &built, &chord.notes);
+                                    chord.grace_chords.push(built);
                                 }
                             }
                             if cursor + len == end {
@@ -1707,7 +1709,9 @@ fn place_chord(
                 chord.notes.push(id);
             }
             for grace in &event.grace_before {
-                chord.grace_chords.push(build_grace(score, grace, None));
+                let built = build_grace(score, grace, None);
+                link_grace_block_tie(score, grace, &built, &chord.notes);
+                chord.grace_chords.push(built);
             }
             let main_ticks = event
                 .explicit_ticks
@@ -1803,6 +1807,32 @@ fn accidental_for(tpc: i8) -> AccidentalType {
         1 => AccidentalType::Sharp,
         2 => AccidentalType::DoubleSharp,
         _ => AccidentalType::None,
+    }
+}
+
+/// Relie la dernière note d'un bloc d'agrément dont le `~` est encore
+/// pendant à la note principale de même hauteur. `def-grace-function`
+/// (`scm/music-functions.scm:1237-1248`) enveloppe le bloc dans une musique
+/// séquentielle : le `~` de la dernière note d'agrément vise la note qui
+/// suit le bloc, mais `link_ties` ne voit pas les notes d'agrément (elles ne
+/// sont pas dans les événements datés de la voix).
+fn link_grace_block_tie(
+    score: &mut Score,
+    grace: &crate::events::GraceEvent,
+    built: &GraceChord,
+    main_notes: &[NoteId],
+) {
+    for (note, &id) in grace.notes.iter().zip(built.chord.notes.iter()) {
+        if !note.tie {
+            continue;
+        }
+        if let Some(&main) = main_notes
+            .iter()
+            .find(|&&candidate| score.note(candidate).pitch == score.note(id).pitch)
+        {
+            score.note_mut(id).tie_forward = Some(main);
+            score.note_mut(main).tie_back = Some(id);
+        }
     }
 }
 

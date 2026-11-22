@@ -6744,3 +6744,18 @@ fn version_dans_un_include_musical_garde_la_duree_nue() {
     .expect("lecture");
     assert_eq!(hauteurs(&score), vec![60, 60, 64], "{warnings:?}");
 }
+/// Une liaison portée par la dernière note d'un bloc d'agrément
+/// (`def-grace-function`, `scm/music-functions.scm:1237-1248`) doit rejoindre
+/// la note principale : la note d'agrément ne consomme pas de temps propre,
+/// donc `link_ties` (qui apparie par tick) ne peut pas la voir.
+#[test]
+fn liaison_depuis_agrément_vers_note_principale() {
+    let score = lire("\\acciaccatura { d8~ } d4");
+    assert_eq!(
+        liaisons(&score),
+        vec![(62, 62)],
+        "la note d'agrément doit être liée à la note principale"
+    );
+}
+
+

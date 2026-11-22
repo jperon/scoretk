@@ -1119,10 +1119,24 @@ impl<'a> Interpreter<'a> {
 
         // Un ornement ne prend pas de temps dans la mesure.
         if let Some((kind, slash)) = self.grace.as_ref().map(|frame| (frame.kind, frame.slash)) {
-            let notes = match &chord.kind {
+            let mut notes = match &chord.kind {
                 ChordKind::Notes(notes) => self.chord_notes(notes),
                 _ => Vec::new(),
             };
+            // `def-grace-function` (`scm/music-functions.scm:1237-1248`) place
+            // le `~` sur le accord du bloc d'agrément (`event_chord` +
+            // `Tie_engraver`) ; comme pour un accord normal (`:1209-1213`), il
+            // doit marquer toutes ses notes, sinon la liaison vers la note
+            // principale est perdue avant même le constructeur.
+            let grace_tie = chord
+                .posts
+                .iter()
+                .any(|post| matches!(post, PostEvent::Tie));
+            if grace_tie {
+                for note in &mut notes {
+                    note.tie = true;
+                }
+            }
             if !notes.is_empty() {
                 let grace = GraceEvent {
                     notes,
