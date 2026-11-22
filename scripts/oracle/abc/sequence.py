@@ -159,3 +159,22 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+def first_event_difference(reference, candidate):
+    """Première divergence d'attaque, de durée ou de hauteur entre deux suites.
+
+    Les suites sont des tuples ``(temps, durée, hauteur, mesure)`` produits par
+    :func:`cmp.musicxml_events`. Renvoie ``(index, genre, ref, cand)`` ou None.
+    """
+    for index in range(min(len(reference), len(candidate))):
+        a, b = reference[index], candidate[index]
+        if a[0] != b[0]:
+            return index, 'attaque', a[0], b[0]
+        if a[1] != b[1]:
+            return index, 'duree', a[1], b[1]
+        if a[2] != b[2]:
+            return index, 'hauteur', a[2], b[2]
+    if len(reference) != len(candidate):
+        return min(len(reference), len(candidate)), 'compte', len(reference), len(candidate)
+    return None

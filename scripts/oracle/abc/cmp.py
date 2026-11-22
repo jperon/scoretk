@@ -175,6 +175,61 @@ def musicxml_notes(path):
     return notes
 
 
+def musicxml_events(path):
+    """Suite ordonnée ``(temps, durée, hauteur, mesure)`` d'un MusicXML.
+
+    Même parcours que :func:`musicxml_notes`, mais conserve la durée et les
+    silences : l'oracle d'écriture compare ainsi les attaques et les longueurs,
+    pas seulement les hauteurs. Une silence a ``pitch = None``.
+    """
+    root = ET.parse(path).getroot()
+    events = []
+    for part in root.iter("part"):
+        divisions = 1
+        transpose = 0
+        time = 0.0
+        for measure in part.findall("measure"):
+            number = measure.get("number", "?")
+            for element in measure:
+                tag = element.tag
+                if tag == "attributes":
+                    value = element.findtext("divisions")
+                    if value:
+                        divisions = int(float(value))
+                    node = element.find("transpose")
+                    if node is not None:
+                        transpose = int(float(node.findtext("chromatic", "0"))) + 12 * int(
+                            float(node.findtext("octave-change", "0"))
+                        )
+                elif tag in ("backup", "forward"):
+                    delta = int(float(element.findtext("duration", "0"))) / divisions
+                    time += -delta if tag == "backup" else delta
+                elif tag == "note":
+                    if element.find("grace") is not None:
+                        continue
+                    duration = int(float(element.findtext("duration", "0"))) / divisions
+                    tied_stop = any(t.get("type") == "stop" for t in element.findall("tie"))
+                    node = element.find("pitch")
+                    pitch = None
+                    if not tied_stop and node is not None:
+                        step = node.findtext("step")
+                        octave = node.findtext("octave")
+                        if step in STEP and octave is not None:
+                            try:
+                                pitch = (
+                                    12 * (int(octave) + 1)
+                                    + STEP[step]
+                                    + round(float(node.findtext("alter", "0")))
+                                    + transpose
+                                )
+                            except ValueError:
+                                pitch = None
+                    events.append((round(time, 6), round(duration, 6), pitch, number))
+                    if element.find("chord") is None:
+                        time += duration
+    return events
+
+
 def musicxml(path):
     """Renvoie les mêmes compteurs pour un MusicXML partwise."""
     pitches = collections.Counter()
