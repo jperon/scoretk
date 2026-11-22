@@ -6587,3 +6587,18 @@ fn augmentum_ajoute_un_point_a_la_duree() {
         attaques
     );
 }
+
+#[test]
+fn pitched_trill_ne_joue_pas_la_note_secondaire() {
+    // `ly/music-functions-init.ly:1707-1712` : le second argument de
+    // `\pitchedTrill` est une tête de note entre parenthèses, seulement
+    // gravée ; le MIDI n'en tient pas compte.
+    let src = "\\version \"2.24.0\"\n\\
+         \\fixed c' { \\pitchedTrill c'4.\\startTrillSpan es' f' }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![72, 77],
+        "la note secondaire es ne doit pas être jouée"
+    );
+}

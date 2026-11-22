@@ -2217,6 +2217,33 @@ impl<'a> Parser<'a> {
         arguments
     }
 
+    /// Consomme la hauteur secondaire d'un `\pitchedTrill`.
+    ///
+    /// C'est un `ly:music?` d'un seul événement : une hauteur, ses marques
+    /// d'octave et une durée éventuelle. La laisser dans le flux la ferait
+    /// jouer comme une note ordinaire (`trill-spanner-pitched.ly`).
+    fn saute_pitch_secondaire(&mut self) {
+        let est_hauteur = self.peek().is_some_and(|token| {
+            token.kind == Kind::Word && self.language.parse(&token.text).is_some()
+        });
+        if !est_hauteur {
+            return;
+        }
+        self.position += 1;
+        while self.peek().is_some_and(|token| {
+            token.is_punct('\'')
+                || token.is_punct(',')
+                || token.is_punct('!')
+                || token.is_punct('?')
+        }) {
+            self.position += 1;
+        }
+        if self.peek().is_some_and(|token| token.kind == Kind::Number) {
+            self.position += 1;
+        }
+        while self.eat_punct('.') {}
+    }
+
     /// Consomme un argument selon son prédicat de fonction musicale.
     fn read_function_argument(&mut self, predicate: &str) {
         let predicate = predicate.trim();
@@ -2995,6 +3022,15 @@ impl<'a> Parser<'a> {
                     posts: Vec::new(),
                     invisible: true,
                 })
+            }
+            "pitchedTrill" => {
+                // `ly/music-functions-init.ly:1707-1712` : le second argument
+                // est la tête de note entre parenthèses du trille, seulement
+                // gravée ; elle ne joue pas dans le MIDI. La note principale
+                // (avec `\startTrillSpan`) est lue normalement.
+                let principale = self.parse_chord(false);
+                self.saute_pitch_secondaire();
+                principale
             }
             "augmentum" => {
                 // `ly/ancient-init.ly:124-130` : `shift-duration-log expr 0 1`
