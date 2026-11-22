@@ -6568,3 +6568,22 @@ fn identifiant_de_duree_compresse() {
         attaques
     );
 }
+
+#[test]
+fn augmentum_ajoute_un_point_a_la_duree() {
+    // `ly/ancient-init.ly:124-130` : `augmentum` vaut
+    // `shift-duration-log expr 0 1`, c'est-à-dire un point de plus sur chaque
+    // durée de l'expression (les morae du chant grégorien).
+    let src = "\\version \"2.24.0\"\n{ \\augmentum c'4 \\augmentum d'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let attaques: Vec<_> = accords_de_voix(&score, 0)
+        .iter()
+        .map(|(tick, _, _)| *tick)
+        .collect();
+    assert_eq!(
+        attaques,
+        vec![Fraction::ZERO, Fraction::new(3, 8)],
+        "attaques: {:?}",
+        attaques
+    );
+}

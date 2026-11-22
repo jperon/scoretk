@@ -2996,6 +2996,12 @@ impl<'a> Parser<'a> {
                     invisible: true,
                 })
             }
+            "augmentum" => {
+                // `ly/ancient-init.ly:124-130` : `shift-duration-log expr 0 1`
+                // ajoute une mora (un point) à chaque durée de l'expression.
+                let music = self.parse_music();
+                ajoute_point(music, self.default_duration)
+            }
             "fermata" | "shortfermata" | "longfermata" | "verylongfermata" => Music::Empty,
             "makeClusters" => {
                 // `ly/music-functions-init.ly:1154-1157` : une fonction
@@ -4954,6 +4960,54 @@ fn obsolete_music_command(name: &str) -> Option<&'static str> {
         "sostenutoDown" => Some("sostenutoOn"),
         "sostenutoUp" => Some("sostenutoOff"),
         _ => None,
+    }
+}
+
+/// Ajoute un point à chaque durée d'une musique.
+///
+/// `ly/ancient-init.ly:124-130` : `\augmentum` applique
+/// `shift-duration-log expr 0 1` au changement de durée uniquement, en
+/// laissant le log (la figure) intact, ce qui ajoute une mora de chant
+/// grégorien à chaque note.
+fn ajoute_point(music: Music, default_duration: Duration) -> Music {
+    match music {
+        Music::Chord(mut chord) => {
+            // Une note nue n'a pas de figure propre dans l'AST : la reprendre
+            // à la durée par défaut du parseur, comme `lily/parser.yy` le fait
+            // avant d'appliquer `shift-duration-log`.
+            let mut duration = chord.duration.unwrap_or(default_duration);
+            duration.dots = duration.dots.saturating_add(1);
+            chord.duration = Some(duration);
+            Music::Chord(chord)
+        }
+        Music::Seq(items) => Music::Seq(
+            items
+                .into_iter()
+                .map(|item| ajoute_point(item, default_duration))
+                .collect(),
+        ),
+        Music::Sim(items) => Music::Sim(
+            items
+                .into_iter()
+                .map(|item| ajoute_point(item, default_duration))
+                .collect(),
+        ),
+        Music::Tag { tags, music } => Music::Tag {
+            tags,
+            music: Box::new(ajoute_point(*music, default_duration)),
+        },
+        Music::Filtered {
+            filter,
+            wanted,
+            groups,
+            music,
+        } => Music::Filtered {
+            filter,
+            wanted,
+            groups,
+            music: Box::new(ajoute_point(*music, default_duration)),
+        },
+        other => other,
     }
 }
 
