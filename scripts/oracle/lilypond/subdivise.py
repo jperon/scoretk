@@ -126,6 +126,11 @@ def main() -> int:
     p.add_argument("--travail", required=True, help="dossier travail/ de la mesure")
     p.add_argument("--lot", help="manifeste du lot (pour les index de dossiers)")
     p.add_argument("--drapeau", action="append", help="drapeau à classer (répétable)")
+    p.add_argument(
+        "--ecarts",
+        action="store_true",
+        help="ne garder que les fichiers non exacts",
+    )
     p.add_argument("--json", help="où écrire le JSON détaillé")
     p.add_argument("--table", help="où écrire la table markdown")
     p.add_argument(
@@ -143,6 +148,7 @@ def main() -> int:
         for r in releves
         if r.get("outil") == "scoretk"
         and not r.get("exclu")
+        and (not args.ecarts or not r.get("exact"))
         and (not args.drapeau or any(f in (r.get("drapeaux") or []) for f in args.drapeau))
     ]
     travail = Path(args.travail)
