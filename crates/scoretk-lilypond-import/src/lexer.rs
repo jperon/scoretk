@@ -350,6 +350,20 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
                     index += 1;
                     column += 1;
                 }
+            } else if characters.get(index) == Some(&'"') {
+                // Identifiant entre guillemets échappés : `\"violin1"`
+                // (`lily/parser.yy` `identifier`), utilisé pour les noms
+                // contenant des caractères arbitraires.
+                index += 1;
+                column += 1;
+                while index < characters.len() && characters[index] != '"' {
+                    index += 1;
+                    column += 1;
+                }
+                if index < characters.len() {
+                    index += 1;
+                    column += 1;
+                }
             } else if index < characters.len() {
                 // Commande ponctuelle : `\!`, `\(`, `\\`, `\=`, `\<`…
                 index += 1;

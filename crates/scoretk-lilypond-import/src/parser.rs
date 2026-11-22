@@ -2307,7 +2307,12 @@ impl<'a> Parser<'a> {
         self.position += 1;
         // Une variable musicale masque les commandes intégrées, comme dans
         // LilyPond (`identifiant = { … }` puis `\identifiant`).
-        if let Some(music) = self.variables.get(&name).cloned() {
+        let lookup = name
+            .strip_prefix('"')
+            .and_then(|rest| rest.strip_suffix('"'))
+            .unwrap_or(&name)
+            .to_owned();
+        if let Some(music) = self.variables.get(&lookup).cloned() {
             // Une valeur qui n'est pas de la musique utilisable (commande
             // inconnue) ne doit pas disparaître en silence au point d'appel ;
             // une musique vide est normale (`m = { }`).

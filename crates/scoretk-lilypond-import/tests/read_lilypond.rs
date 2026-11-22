@@ -6157,3 +6157,19 @@ fn affectation_identifiant_ponctuation_barre() {
         "la musique suit l'affectation"
     );
 }
+
+#[test]
+fn identifiant_entre_guillemets_echappes() {
+    // `lily/parser.yy` accepte `\"nom"` comme identifiant ; les variables
+    // assignées avec une chaîne (`"nom" = { … }`) doivent être retrouvées.
+    let src = "\\version \"2.24.0\"\n\"violin1\" = { c''4 c'' }\n{ \\\"violin1\" }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .map(|note| note.pitch)
+            .collect::<Vec<_>>(),
+        vec![72, 72]
+    );
+}
