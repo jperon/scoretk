@@ -5644,3 +5644,38 @@ complète (`/tmp/ly-ra-final13`) donne **1510 exacts sur 1724 (87,6 %)**, 15
 fichiers gagnés et aucune perte par rapport aux 1495. Restent 84
 `attaque_decalee`, 48 `notes_supp`, 32 `octave`, 22 `notes_manquantes`, 19
 `sortie_vide`, 5 `transposition`, 4 `autre`, 1 `echec`.
+
+## `ra` — remarque NullVoice et causes Scheme (lot 87,7 %)
+
+Remarque de relecture traitée (bloquante) : `NullVoice` n'était pas jouée mais
+était supprimée du modèle, ce qui perdait les paroles alignées par
+`\lyricsto "nom"`. `ly/performer-init.ly:225-234` et `ly/engraver-init.ly`
+en font un `Performer_group` sans `Note_performer` : sa musique est invisible
+et silencieuse, mais sa trame porte les paroles. Le lecteur crée désormais une
+portée `Staff::muted` dont la voix porte le nom du contexte ; les notes y sont
+marquées `Note::visible = false` via `Context::Invisible`. Test
+`nullvoice_garde_les_paroles_et_est_muette_dans_le_midi` : paroles présentes
+dans le MusicXML, quatre notes jouées (la voix mélodique seulement). Sur le
+lot, `lyric-combine-nullvoice.ly` garde ses quatre `<lyric>` avant et après.
+
+Trois causes, test réduit échouant d'abord, mesurées face à
+`/tmp/ly-ra-final14` :
+
+1. **`#(ly:parser-set-note-names (ly:assoc-get '<lang> language-pitch-names))`**
+   (`note-names.ly`, `lily/parser-scheme.cc`) : la langue des noms de notes change
+   en cours de musique. Test `scheme_parser_set_note_names_change_la_langue`.
+2. **`$(music-map … #{ … #})`** (`music-map-articulations.ly`) : la carte
+   transforme des événements (nuances, articulations) mais garde hauteurs et
+   attaques ; le corps embarqué est lu. Test `scheme_music_map_joue_sa_musique`.
+3. **`\markupMap`** (`ly/music-functions-init.ly:1173`) : chemin, fonction de
+   markup et musique ; le consommer comme commande inconnue faisait disparaître
+   la musique. Test `markup_map_ne_consomme_pas_la_musique`.
+
+Mesure ciblée : 2 gains exacts / 0 perte. Après rebase sur les commits de
+`master` (`\set Timing.beatStructure`, export MusicXML d'un accord vide), la
+mesure complète (`/tmp/ly-ra-final16`) donne **1507 exacts sur 1724 (87,4 %)**.
+Rapportée au bâti `master` `7d31c559` (`/tmp/ly-ra-base16`, 1505 exacts), elle
+montre **2 gains** (`markup-map`, `music-map-articulations`) et **aucune perte**
+: les autres écarts viennent des commits de `master`, pas de ces causes. Restent
+84 `attaque_decalee`, 48 `notes_supp`, 32 `octave`, 22 `notes_manquantes`, 17
+`sortie_vide`, 5 `transposition`, 4 `autre`, 1 `echec`.
