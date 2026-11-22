@@ -2121,6 +2121,37 @@ impl<'a> Parser<'a> {
     /// `parallelMusic`).
     fn parse_parallel_music(&mut self) {
         let names = self.parse_parallel_voice_names();
+        // Une enveloppe (`\fixed c'`, `\relative …`) peut séparer les noms
+        // de voix du bloc (`parallelmusic-partial.ly`) : elle s'applique à
+        // chacune des voix produites.
+        let mut wrappers = Vec::new();
+        loop {
+            let wrapper = match self.peek().cloned() {
+                Some(Token {
+                    kind: Kind::Command,
+                    text,
+                    ..
+                }) if text == "fixed" || text == "relative" => {
+                    self.position += 1;
+                    let reference = self.parse_optional_pitch();
+                    if text == "fixed" {
+                        Wrapper::Fixed(reference)
+                    } else {
+                        Wrapper::Relative(reference, false)
+                    }
+                }
+                Some(Token {
+                    kind: Kind::Command,
+                    text,
+                    ..
+                }) if text == "absolute" => {
+                    self.position += 1;
+                    Wrapper::Relative(None, false)
+                }
+                _ => break,
+            };
+            wrappers.push(wrapper);
+        }
         let block = self.take_braced_tokens();
         if names.is_empty() {
             self.warn("\\parallelMusic sans nom de voix ignoré");
@@ -2143,6 +2174,7 @@ impl<'a> Parser<'a> {
         }
         for (name, tokens) in names.into_iter().zip(voices) {
             let music = self.parse_token_stream(tokens);
+            let music = wrap_all(&wrappers, music);
             self.music_functions.remove(&name);
             self.variables.insert(name, music);
         }

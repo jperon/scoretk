@@ -7154,3 +7154,18 @@ fn variable_scheme_appellee_par_backslash() {
         vec![60]
     );
 }
+
+#[test]
+fn parallel_music_avec_enveloppe_fixe() {
+    // `parallelMusic-partial.ly` : une enveloppe `\fixed` peut précéder le
+    // bloc de `\parallelMusic`; elle s'applique à chaque voix produite.
+    let src = "\\version \"2.24.0\"\n\
+         \\parallelMusic vI,vII \\fixed c'\n\
+         { c'2 | d'2 | e'2 | f'2 | }\n\
+         { \\vI \\vII }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![72, 76, 74, 77]
+    );
+}
