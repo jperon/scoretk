@@ -1233,6 +1233,7 @@ impl<'a> Parser<'a> {
             });
             let mut staff = StaffBlock::new();
             staff.muted = true;
+            staff.visible = false;
             staff.name = context_name.clone();
             staff.voices.push(VoiceBlock {
                 name: context_name,
@@ -3405,6 +3406,11 @@ impl<'a> Parser<'a> {
                 // gravure des silences ; les hauteurs et attaques restent.
                 self.parse_music()
             }
+            // `ly/property-init.ly:140,970`, `ly/declarations-init.ly:78` :
+            // commandes sans argument. Une durée nue qui suit est de la
+            // musique, pas leur argument.
+            "oneVoice" | "autoBeamOff" | "autoBeamOn" | "noBeam" | "beamUp" | "beamDown"
+            | "beamNeutral" => Music::Empty,
             "startMeasureCount" | "stopMeasureCount" => {
                 // `ly/spanners-init.ly:36-37` : événements de portée sans
                 // argument ; une durée nue qui suit reste de la musique.
@@ -3742,7 +3748,16 @@ impl<'a> Parser<'a> {
                 }
                 _ => {
                     self.position = value_start;
-                    self.skip_scheme_value();
+                    // `markup-note-grob-style.ly` : une valeur de propriété
+                    // est un markup (`\markup { \note {16} #UP }`) ; le
+                    // consommer entièrement évite que son `{16}` soit relu
+                    // comme une durée nue, créant un accord vide.
+                    if self.peek().is_some_and(|token| token.is_command("markup")) {
+                        self.position += 1;
+                        self.parse_markup_text();
+                    } else {
+                        self.skip_scheme_value();
+                    }
                 }
             }
         }

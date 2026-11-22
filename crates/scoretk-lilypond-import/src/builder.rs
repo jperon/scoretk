@@ -496,6 +496,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
             };
             let mut staff = Staff::new(staff_part_id);
             staff.muted = staff_block.muted;
+            staff.visible = staff_block.visible;
             if let Some(bracket) = group_bracket(group.kind.clone(), position, group.staves.len()) {
                 staff.brackets.push(bracket);
             }

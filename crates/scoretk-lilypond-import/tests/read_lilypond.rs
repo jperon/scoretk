@@ -7528,6 +7528,10 @@ fn nullvoice_garde_les_paroles_et_est_muette_dans_le_midi() {
         xml.contains("<lyric"),
         "les paroles doivent rester dans le XML"
     );
+    assert!(
+        xml.contains("print-object=\"no\""),
+        "la portée muette du NullVoice doit être masquée"
+    );
     let midi = scoretk_midi_export::write_midi(&score).expect("midi");
     let smf = midly::Smf::parse(&midi).expect("SMF valide");
     let attaques: u32 = smf
@@ -7606,5 +7610,30 @@ fn liaison_depuis_agrement_apres_vers_note_suivante() {
         tied,
         vec![(74, 74)],
         "l'agrément d' après doit être lié au d' suivant"
+    );
+}
+
+#[test]
+fn note_dans_un_markup_ne_cree_pas_daccord_vide() {
+    // `scm/define-markup-commands.scm` : `\note {16} #UP` dessine une tête de
+    // note dans un markup ; ce n'est pas une musique jouée
+    // (`markup-note-grob-style.ly`).
+    let src = "\\version \"2.24.0\"\n{ \\override TextSpanner.bound-details.left.text = \\markup { \\note {16} #UP } c'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let attaques = accords_de_voix(&score, 0);
+    assert_eq!(attaques.len(), 1, "un seul accord joué : {:?}", attaques);
+}
+
+#[test]
+fn commandes_sans_argument_gardent_la_duree_nue() {
+    // `ly/property-init.ly:140,970` et `ly/declarations-init.ly:78` :
+    // `\autoBeamOff`, `\oneVoice` et `\noBeam` n'ont pas d'argument ; la
+    // durée nue qui suit est de la musique.
+    let src = "\\version \"2.24.0\"\n{ c4 \\oneVoice 4 \\autoBeamOff 4 \\noBeam 4 d4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        accords_de_voix(&score, 0).len(),
+        5,
+        "cinq notes : c, trois durées nues, d"
     );
 }

@@ -482,6 +482,9 @@ pub(crate) struct StaffBlock {
     /// Vrai si la portée est gravée mais absente du MIDI
     /// (`\with { \remove "Staff_performer" }`).
     pub muted: bool,
+    /// Faux pour une portée de type NullVoice : gravée dans le modèle mais
+    /// masquée à l'export (`Staff::visible`, `<staff-details print-object="no">`).
+    pub visible: bool,
     /// Voix de la portée.
     pub voices: Vec<VoiceBlock>,
     /// Paroles attachées à une voix de la portée.
@@ -496,6 +499,7 @@ impl StaffBlock {
             instrument_name: None,
             short_instrument_name: None,
             muted: false,
+            visible: true,
             voices: Vec::new(),
             lyrics: Vec::new(),
         }
