@@ -2882,9 +2882,10 @@ impl<'a> Parser<'a> {
                 })
             }
             "time" => match self.parse_ratio() {
-                // Un dénominateur nul ferait paniquer `Fraction::new` dans le
-                // constructeur : on rejette l'indication ici.
-                Some((_, 0)) => {
+                // Un dénominateur nul ferait paniquer `Fraction::new` ; un
+                // numérateur nul est signalé « unsupported time signature »
+                // par LilyPond et l'indication est ignorée (mesure par défaut).
+                Some((0, _)) | Some((_, 0)) => {
                     self.warn("indication de mesure invalide ignorée");
                     Music::Empty
                 }

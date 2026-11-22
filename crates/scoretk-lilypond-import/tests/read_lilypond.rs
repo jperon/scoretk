@@ -7130,3 +7130,15 @@ fn with_suivi_d_un_identifiant_de_contexte() {
         vec![60]
     );
 }
+
+#[test]
+fn time_numerateur_nul_ignore() {
+    // LilyPond avertit « unsupported time signature » et garde la mesure
+    // par défaut quand le numérateur est nul (`time-numerator-zero.ly`).
+    let src = "\\version \"2.24.0\"\n{ \\time 0/1 c'1 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60]
+    );
+}
