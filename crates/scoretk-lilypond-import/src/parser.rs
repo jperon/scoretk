@@ -3528,8 +3528,8 @@ impl<'a> Parser<'a> {
             // `allowBreak` sont des `LineBreakEvent` sans argument. Une durée
             // nue qui suit reste de la musique (`allow-break.ly`).
             "oneVoice" | "autoBeamOff" | "autoBeamOn" | "noBeam" | "beamUp" | "beamDown"
-            | "beamNeutral" | "allowBreak" | "startStaff" | "stopStaff"
-            | "fine" | "breathe" | "caesura" => Music::Empty,
+            | "beamNeutral" | "allowBreak" | "startStaff" | "stopStaff" | "fine" | "breathe"
+            | "caesura" => Music::Empty,
             "startMeasureCount" | "stopMeasureCount" => {
                 // `ly/spanners-init.ly:36-37` : événements de portée sans
                 // argument ; une durée nue qui suit reste de la musique.
