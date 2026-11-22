@@ -355,6 +355,43 @@ def lire_graces(notes: list[tuple]) -> list[tuple[int, float]]:
     return [(note[0], note[1]) for note in notes if len(note) >= 5 and note[4]]
 
 
+def recaler_graces_initiales(
+    reference: list[tuple], test: list[tuple], graces: list[tuple[int, float]],
+    tolerance: float = 1e-6,
+) -> tuple[list[tuple], float]:
+    """Décale la référence du temps des grâces placées avant le premier temps.
+
+    Le SMF ne peut pas écrire un temps négatif : les grâces qui précèdent le
+    premier accord décalent tout le morceau de leur durée totale
+    (`lily/midi-walker.cc` écrit des deltas ; LilyPond, lui, place ces grâces
+    dans la partie « grâce » du moment, avant zéro). Le MusicXML les pose à
+    l'attaque de la note principale, sans avancer le curseur. On ne compense
+    que ce cas : le candidat commence par les grâces à l'attaque 0, et les
+    `k` premières notes MIDI sont exactement ces grâces ; la suivante est la
+    première note principale, son attaque est le décalage.
+
+    Renvoie la référence décalée et le décalage appliqué (0.0 sinon).
+    """
+    principales = [n for n in test if not (len(n) >= 5 and n[4])]
+    if not principales or not graces:
+        return reference, 0.0
+    premiere = min(n[1] for n in principales)
+    if abs(premiere) > tolerance:
+        return reference, 0.0
+    entete = [hauteur for hauteur, attaque in graces if abs(attaque - premiere) <= tolerance]
+    if not entete:
+        return reference, 0.0
+    notes = sorted(reference, key=lambda n: (n[1], n[0]))
+    if len(notes) <= len(entete):
+        return reference, 0.0
+    if Counter(n[0] for n in notes[: len(entete)]) != Counter(entete):
+        return reference, 0.0
+    decalage = notes[len(entete)][1] - premiere
+    if decalage <= tolerance:
+        return reference, 0.0
+    return [(n[0], n[1] - decalage, *n[2:]) for n in reference], decalage
+
+
 def apparier_graces(
     reference: list[tuple], graces: list[tuple[int, float]], grid: float = GRID,
     window: float = 1.0,
@@ -413,6 +450,8 @@ def compare(
     Notation Reference, `grace-iterator.cc`, `midi-walker.cc`). Les notes
     principales gardent exactement la même règle que pour ``n2``.
     """
+    if graces is not None:
+        reference, _ = recaler_graces_initiales(reference, test, graces)
     r = len(reference)
     t = len(test)
     cr = Counter(n[0] for n in reference)
@@ -627,6 +666,18 @@ def selftest() -> None:
         absent = compare(ref_g, [(60, 0.25, 1.0, 0), (64, 1.25, 1.0, 0)],
                          graces=[])
         assert absent["n2_grace"] == 2 and absent["graces_match"] == 0, absent
+        # Grâces initiales : le SMF décale tout le morceau de leur durée
+        # totale (pas de temps négatif) ; on recale la référence sur la
+        # première note principale avant de comparer.
+        ref_lead = [(79, 0.0, 0.05, 0), (81, 0.05, 0.05, 0),
+                    (83, 0.1, 0.05, 0), (84, 0.15, 1.0, 0),
+                    (86, 1.15, 1.0, 0)]
+        test_lead = [(79, 0.0, 0.0, 0, True), (81, 0.0, 0.0, 0, True),
+                     (83, 0.0, 0.0, 0, True), (84, 0.0, 1.0, 0, False),
+                     (86, 1.0, 1.0, 0, False)]
+        lead = compare(ref_lead, test_lead,
+                       graces=[(79, 0.0), (81, 0.0), (83, 0.0)])
+        assert lead["n2_grace"] == 5 and lead["exact"], lead
         # Sans graces déclarées, le relevé n'a pas de champ supplémentaire.
         assert "n2_grace" not in brut, brut
 
