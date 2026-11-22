@@ -3741,10 +3741,10 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact | Exact % | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 213 | 55.5 | 97.58 | — | — |
-| comparable (reference present) | 1 711 | **1 213** | **70.89** | **97.58** | **89.22** | **93.44** |
-| excluding obsolete-source basket | 1 651 | **1 198** | **72.56** | **97.62** | **92.33** | — |
-| obsolete-source basket | 60 | 15 | 25.0 | — | 61.09 | — |
+| all rows | 2 186 | 1 253 | 57.3 | 98.69 | — | — |
+| comparable (reference present) | 1 711 | **1 253** | **73.23** | **98.69** | **90.73** | **93.44** |
+| excluding obsolete-source basket | 1 651 | **1 236** | **74.86** | **98.75** | **93.87** | — |
+| obsolete-source basket | 60 | 17 | 28.3 | — | 62.36 | — |
 
 The obsolete-source basket is the 60 files that still contain a command
 removed after 2.10 (`\setTextCresc`, `\setTextDecresc`, `\setTextDim`,
@@ -3849,7 +3849,7 @@ regresses.
 ### Classification of the 465 non-exact files (before this pass)
 
 The `mut` set outside the obsolete-source basket had 465 non-exact files
-before the `\octaveCheck`/`\afterGrace` pass; 453 remain after it. Symptoms
+before the `\octaveCheck`/`\afterGrace` pass; 415 remain after the review. Symptoms
 overlap (a file can be both `octave` and `notes_supp`); the first
 table groups by the oracle's primary flag, the second counts the constructs
 present in the source and its direct includes. `ne`/`ex` are the files that
@@ -3896,6 +3896,36 @@ keeps C4 under `\ottava 1`). `\partcombine` is 77 files in total but 70 are
 exact; only 7 are non-exact, far below the two causes, so its MIDI behaviour
 was not ported.
 
+### Review fixes (2026-11-22): `attack`, fractions, `\octaveCheck`, alternatives
+
+- **MusicXML validity**: `<offset>` is not allowed as a child of `<note>`
+  (`specs/musicxml/musicxml-4.0.xsd`, `complexType note`); the performance
+  shift is the `attack` attribute, in divisions, possibly negative. The writer
+  now emits `attack` on the after-grace and `ly_notes.read_xml` reads it
+  (keeping `<offset>` only as a fallback for other tools). The reduced case
+  `\afterGrace 7/8 d'4 { e'16 }` validates with
+  `xmllint --schema musicxml-4.0.xsd` (with the W3C `xml.xsd`/`xlink.xsd`)
+  and contains `attack="-1"`, no `<offset>`.
+- **`afterGraceFraction`**: `\afterGrace` accepts an optional scale
+  (`\afterGrace 7/8 c1 { d16 }`) and the default can be assigned
+  (`afterGraceFraction = 15/16`) or defined in Scheme
+  (`#(define afterGraceFraction (cons 15 16))`). Tests cover the default,
+  the optional argument and both top-level forms
+  (`ly/music-functions-init.ly:86-115`).
+- **`\octaveCheck` callback**: the check pitch is placed relative to the last
+  pitch; on failure the reference shifts by `delta_oct = check.octave −
+  result.octave` (`lily/relative-octave-check.cc:33-60`). The earlier fix only
+  consumed the pitch; tests now cover a passing check (`[60, 62, 64]`) and a
+  failing one (`[60, 74, 76]`).
+- **`\repeat volta` alternatives** (the `\repeat volta` class, 75 files): the
+  default relative traversal of `make-volta-set`
+  (`scm/define-music-callbacks.scm`) visits the body and then the
+  `SequentialAlternativeMusic`, so the second alternative is relative to the
+  end of the first, not to the end of the body. Tests cover the sequential
+  order with and without `\unfoldRepeats`; `13-air` becomes exact
+  (204/204). Across the lot this fix gives **40 exact files, 0 losses** and
+  N2 +21,406 (Bach chorales, ragtime, airs).
+
 ### Cause 5: `\octaveCheck` consumes its pitch
 
 `\octaveCheck` is a music function taking a pitch and producing a
@@ -3933,7 +3963,7 @@ reference notes, no exact loss.
 
 ### Remaining `notes_supp` and `attaque_decalee` files
 
-`notes_supp` is now 70 primary files (173 files carry the flag), dominated by
+`notes_supp` is now 75 primary files (176 files carry the flag), dominated by
 the obsolete-source basket and by octave/transposition errors:
 
 | File | Lost notes | First cause |
@@ -3945,7 +3975,7 @@ the obsolete-source basket and by octave/transposition errors:
 | `troldhaugen.ly` | 3 397 | octave |
 | `rach-prelude23-05.ly` | 2 445 | octave |
 
-`attaque_decalee` is 217 files. The first group is the same obsolete-source
+`attaque_decalee` is 234 files. The first group is the same obsolete-source
 artifact (`violin_concerto_1` 11 593, `Violinsonata_No9_1` 6 176,
 `LVB_Sonate_57_3` 5 363, `Violinsonata_No7_1` 2 794, the three
 `Cellosonata_No3` movements); then large `\unfoldRepeats` works with
