@@ -108,13 +108,58 @@ def _sans_lyricmode(text: str) -> str:
     return "".join(morceaux)
 
 
+def premier_score(text: str) -> str | None:
+    r"""Corps de la première commande `\score` (accolades équilibrées).
+
+    Le lecteur retient la première partition gravée du fichier (« first
+    engraved score wins », `docs/agents/lilypond.md` §7) ; l'oracle doit
+    juger `\unfoldRepeats` sur **cette** partition, pas sur le fichier
+    entier : un `.ly` peut définir des `\book` de répétition qui déplient
+    leurs reprises alors que la partition principale ne le fait pas
+    (`ATiTeCantamos`).
+    """
+    index = 0
+    while True:
+        index = text.find("\\score", index)
+        if index == -1:
+            return None
+        if index > 0 and text[index - 1].isalnum():
+            index += 1
+            continue
+        position = index + len("\\score")
+        while position < len(text) and text[position].isspace():
+            position += 1
+        if position >= len(text) or text[position] != "{":
+            index += 1
+            continue
+        profondeur = 0
+        while position < len(text):
+            caractere = text[position]
+            if caractere == '"':
+                position += 1
+                while position < len(text) and text[position] != '"':
+                    position += 2 if text[position] == "\\" else 1
+            elif caractere == "%":
+                while position < len(text) and text[position] != "\n":
+                    position += 1
+            elif caractere == "{":
+                profondeur += 1
+            elif caractere == "}":
+                profondeur -= 1
+                if profondeur == 0:
+                    return text[index:position + 1]
+            position += 1
+        return None
+
+
 def sans_unfold(src: str) -> bool:
     r"""Vrai pour un `.ly` sans `\unfoldRepeats` (MIDI de LilyPond non déplié).
 
     LilyPond ne déplie `\repeat volta` que sous `\unfoldRepeats` ; l'oracle
     doit donc demander `--no-expand-repeats` pour ces sources. Le drapeau est
-    cherché dans la source et ses `\include` directs (même convention que
-    `scripts/oracle/lilypond/ly_notes.py`).
+    cherché dans la **première partition** (celle que le lecteur retient) et,
+    à défaut de `\score`, dans la source et ses `\include` directs (même
+    convention que `scripts/oracle/lilypond/ly_notes.py`).
     """
     if not src.endswith(".ly"):
         return False
@@ -123,6 +168,9 @@ def sans_unfold(src: str) -> bool:
     except OSError:
         return False
     text = _sans_lyricmode(text)
+    partition = premier_score(text)
+    if partition is not None:
+        return "\\unfoldRepeats" not in partition
     if "\\unfoldRepeats" in text:
         return False
     base = Path(src).parent
