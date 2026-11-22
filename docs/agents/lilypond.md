@@ -5331,3 +5331,49 @@ Mesures ciblées : 2 gains / 0 perte (causes 1–2), 22 gains / 0 perte (causes
 (86,0 %)**, 23 fichiers gagnés et aucune perte par rapport aux 1459. Restent
 91 `attaque_decalee`, 53 `notes_supp`, 35 `octave`, 29 `notes_manquantes`, 25
 `sortie_vide`, 5 `transposition`, 4 `autre`, 1 `echec`.
+
+## `ra` — sortie_vide (lot 86,3 %)
+
+Quatre causes, test réduit échouant d'abord, mesurées face à `/tmp/ly-ra-final8` :
+
+1. **`\with \identifiant`** (`lily/parser.yy:1625`, `ly/context-mods-init.ly:52`)
+   : l'identifiant de modification de contexte est consommé seul ; le bloc
+   suivant reste la musique de la portée. Test
+   `with_suivi_d_un_identifiant_de_contexte`. Gain : `remove-empty-context-mod`.
+2. **Armure à numérateur nul** : LilyPond avertit « unsupported time
+   signature » et garde la mesure par défaut. Test `time_numerateur_nul_ignore`.
+   Gain : `time-numerator-zero`.
+3. **Identifiant Scheme appelé par `\nom`** (`#(define nom #{ … #})` est un
+   identifiant LilyPond, pas seulement `$nom`/`#nom`). Test
+   `variable_scheme_appellee_par_backslash`. Gain : `utf-8-scheme`.
+4. **Enveloppe avant le bloc de `\parallelMusic`** (`\parallelMusic vI,vII
+   \fixed c' { … }`) : l'enveloppe est appliquée à chaque voix. Test
+   `parallel_music_avec_enveloppe_fixe`. Gain : `parallelmusic-partial`.
+
+Mesure ciblée sur les 25 `sortie_vide` : **3 gains exacts, 0 perte** ; la
+mesure complète (`/tmp/ly-ra-final9`) donne **1487 exacts sur 1724 (86,3 %)**,
+5 gagnés (dont `trill-spanner-pitched-forced`) et aucune perte.
+
+Restaient 21 `sortie_vide` ; chacune est soit un écart de lecteur documenté,
+soit une exclusion justifiée :
+
+- **8 modèles `\include "satb.ly"` / `"ssaattbb.ly"`** (`satb-template-*`,
+  `ssaattbb-template-*`) : modèles installés du répertoire `ly/` de LilyPond
+  que le résolveur ne peut ouvrir ; cf. §11 et la remarque de §22 sur
+  `satb-template-with-keyboard-reduction`. Exclusion justifiée, pas une faute
+  du lecteur.
+- **4 fichiers `*-accidental-glyphs` / `alteration-glyphs`** : le fichier inclus
+  `accidental-glyphs-test.ily` définit un `define-scheme-function` qui appelle
+  `add-score` ; le lecteur n'évalue pas Scheme. Écart de lecteur (t40).
+- `midi-key-signature.ly` : `\key fa \bayati` défini dans `ly/arabic.ly`,
+  gamme non tempérée hors du sous-ensemble du lecteur. Écart de lecteur.
+- `music-map-articulations.ly`, `markup-map.ly`, `scheme-list-splicing.ly` :
+  `$(music-map …)`, `\markupMap` et `#@(map …)` requièrent une évaluation
+  Scheme. Écart de lecteur.
+- `quote-tie.ly` : citation avec `\addQuote "cueI" { \cueI }` et
+  `\cueDuring` dans deux voix ; la musique citée reste vide. Écart de lecteur.
+- `measure-counter-compressed-mmrest.ly`,
+  `measure-counter-alternative-numbering.ly`, `bar-line-caesura-double.ly`,
+  `note-head-style.ly` : commandes purement gravures (`\compressMMRests`,
+  `Measure_counter_engraver`, `\caesura`, styles de têtes) qui masquent la
+  musique au lecteur. Écarts de lecteur.
