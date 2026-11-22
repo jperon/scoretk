@@ -78,12 +78,18 @@ def candidats_avec_midi(source: str) -> list[str]:
     profondeur = 0
     for i, ligne in enumerate(lignes):
         nettoyee = ligne.split("%", 1)[0].strip()
-        if profondeur == 0 and tetes.search(nettoyee) and "=" not in nettoyee:
+        definition = bool(re.match(r"[\w]+\s*=", nettoyee)) or bool(
+            re.match(r"\\(?:version|header|paper|layout|include)\b", nettoyee)
+        ) or nettoyee.startswith("#")
+        if profondeur == 0 and nettoyee and not definition and tetes.search(nettoyee):
             positions.append(i)
-        profondeur += ligne.count("{") - ligne.count("}")
-    # Essayer d'abord les positions les plus tardives (le cœur du score),
-    # puis les plus tôt (quand le score englobe tout).
-    for i in reversed(positions):
+        # Compter les accolades de TOUTES les lignes, y compris les
+        # définitions multilignes, sinon la profondeur dérive et les blocs
+        # suivants ne sont plus reconnus comme musique.
+        profondeur += nettoyee.count("{") - nettoyee.count("}")
+    # Essayer d'abord la position la plus tôt : elle englobe tous les blocs
+    # de musique de premier niveau (un score implicite peut en avoir plusieurs).
+    for i in positions:
         candidats.append(
             "".join(lignes[:i])
             + "\n\\score {\n"
