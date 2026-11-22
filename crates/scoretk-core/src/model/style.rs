@@ -168,6 +168,7 @@ impl StyleSettings {
         let value = value.trim();
         match name {
             "Spatium" => Self::set_positive(&mut self.spatium_mm, value),
+            "smallStaffMag" => Self::set_positive(&mut self.small_staff_mag, value),
             "pageWidth" => Self::set_positive(&mut self.page_width_in, value),
             "pageHeight" => Self::set_positive(&mut self.page_height_in, value),
             "pageEvenLeftMargin" => Self::set_number(&mut self.page_even_left_margin_in, value),
@@ -306,6 +307,13 @@ fn flag(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn small_staff_mag_depuis_le_style() {
+        let mut style = StyleSettings::default();
+        style.set_value("smallStaffMag", "0.9");
+        assert!((style.small_staff_mag - 0.9).abs() < 1e-9);
+    }
 
     #[test]
     fn marges_par_defaut_selon_la_version() {
