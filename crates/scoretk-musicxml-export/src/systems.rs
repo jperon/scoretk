@@ -56,6 +56,20 @@ impl Systems {
         }
 
         let mut hidden = vec![Vec::new(); count];
+        // `print()` (`exportmusicxml.cpp:7559-7575`) range `m_hiddenStaves`
+        // pour chaque portée que `system->staff(n)->show()` cache, indépendamment
+        // de `hideEmptyStaves` : une portée invisible est signalée au début de
+        // chaque système (`writeMeasure`, `:8694-8707`).
+        for (index, start) in starts.iter().enumerate() {
+            if !*start {
+                continue;
+            }
+            for (staff_index, staff) in score.staves.iter().enumerate() {
+                if !staff.visible && !hidden[index].contains(&staff_index) {
+                    hidden[index].push(staff_index);
+                }
+            }
+        }
         if score.style.hide_empty_staves {
             // `SystemLayout::hideEmptyStaves` : le premier système n'est pas
             // concerné quand `dontHideStavesInFirstSystem` est actif.
@@ -89,7 +103,11 @@ fn hide_system(score: &Score, hidden: &mut [Vec<usize>], begin: usize, end: usiz
     if first_system && score.style.dont_hide_staves_in_first_system {
         return;
     }
-    hidden[begin] = hidden_staves(score, begin, end);
+    for staff_index in hidden_staves(score, begin, end) {
+        if !hidden[begin].contains(&staff_index) {
+            hidden[begin].push(staff_index);
+        }
+    }
 }
 
 /// Portées vides sur tout le système `[begin, end)` (`hideEmptyStaves`).
