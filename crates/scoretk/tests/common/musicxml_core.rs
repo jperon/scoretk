@@ -154,31 +154,67 @@ fn filter_for(parent: Option<Filter>, name: &str, level: Level) -> Filter {
 
 /// Réduit un document MusicXML à ses lignes canoniques, au niveau noyau.
 pub fn normalize(xml: &str) -> Vec<String> {
-    normalize_with(xml, Level::Core)
+    normalize_core_with_stats(xml).0
+}
+
+/// Normalise le noyau et compte les `<staff-details>` masqués écartés.
+///
+/// `writeMeasure` (`exportmusicxml.cpp:8694-8707`) écrit un
+/// `<staff-details print-object="no"/>` par `m_hiddenStaves` au début de
+/// chaque système. Ce vecteur vient de `print()` (`:7559-7575`) : il y a
+/// notamment les `SysStaff` dont `show()` est faux, donc des éléments de mise
+/// en page système et non des propriétés de portée. `writeStaffDetails`
+/// (`:8059-8075`) applique le même critère `!st->show()`. Ces blocs sont
+/// classés comme différence de mise en page, et comptés séparément pour ne
+/// pas les rendre invisibles.
+pub fn normalize_core_with_stats(xml: &str) -> (Vec<String>, usize) {
+    let (lines, hidden) = normalize_with_stats(xml, Level::Core);
+    (lines, hidden)
 }
 
 /// Réduit un document MusicXML en ne retirant que la mise en page pure.
 pub fn normalize_full(xml: &str) -> Vec<String> {
-    normalize_with(xml, Level::Full)
+    normalize_with_stats(xml, Level::Full).0
 }
 
 /// Réduit un document MusicXML à ses lignes canoniques.
 ///
 /// Chaque élément retenu devient une ligne ; un élément purement textuel tient
 /// sur une seule ligne (`<sign>G</sign>`), ce qui garde les diffs lisibles.
-fn normalize_with(xml: &str, level: Level) -> Vec<String> {
+/// Vrai pour un `<staff-details print-object="no">`, c'est-à-dire un
+/// `SysStaff` non affiché décrit par `print()`/`writeMeasure` (voir
+/// [`normalize_core_with_stats`]).
+fn is_hidden_staff_details(event: &quick_xml::events::BytesStart<'_>) -> bool {
+    if local_name(event) != "staff-details" {
+        return false;
+    }
+    event.attributes().flatten().any(|attribute| {
+        attribute.key.as_ref() == "print-object" && attribute.value.as_ref() == "no"
+    })
+}
+
+fn normalize_with_stats(xml: &str, level: Level) -> (Vec<String>, usize) {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
 
     // Pile des éléments ouverts : filtre + nœud retenu éventuel.
     let mut stack: Vec<(Filter, Option<Node>)> = Vec::new();
     let mut roots: Vec<Entry> = Vec::new();
+    let mut hidden_staves = 0usize;
 
     loop {
         match reader.read_event() {
             Ok(Event::Start(event)) => {
                 let name = local_name(&event);
-                let filter = filter_for(stack.last().map(|(filter, _)| *filter), &name, level);
+                let hidden = level == Level::Core && is_hidden_staff_details(&event);
+                if hidden {
+                    hidden_staves += 1;
+                }
+                let filter = if hidden {
+                    Filter::Drop
+                } else {
+                    filter_for(stack.last().map(|(filter, _)| *filter), &name, level)
+                };
                 let node = matches!(filter, Filter::Keep).then(|| Node {
                     head: format_head(&event, level),
                     name,
@@ -189,7 +225,15 @@ fn normalize_with(xml: &str, level: Level) -> Vec<String> {
             }
             Ok(Event::Empty(event)) => {
                 let name = local_name(&event);
-                let filter = filter_for(stack.last().map(|(filter, _)| *filter), &name, level);
+                let hidden = level == Level::Core && is_hidden_staff_details(&event);
+                if hidden {
+                    hidden_staves += 1;
+                }
+                let filter = if hidden {
+                    Filter::Drop
+                } else {
+                    filter_for(stack.last().map(|(filter, _)| *filter), &name, level)
+                };
                 if let Filter::Keep = filter {
                     let node = Node {
                         head: format_head(&event, level),
@@ -226,7 +270,7 @@ fn normalize_with(xml: &str, level: Level) -> Vec<String> {
 
     let mut lines = Vec::new();
     render(&roots, 0, &mut lines);
-    lines
+    (lines, hidden_staves)
 }
 
 /// Ajoute une entrée à l'élément retenu le plus proche dans la pile, ou à la
@@ -344,4 +388,30 @@ pub fn diff(expected: &[String], actual: &[String]) -> (usize, String) {
     let mut unified = text_diff.unified_diff();
     unified.context_radius(2).header("reference", "sortie");
     (changed, unified.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn staff_details_masque_est_une_difference_de_mise_en_page() {
+        let xml = r#"<score-partwise version="4.0"><part id="P1"><measure number="1">
+          <attributes>
+            <divisions>1</divisions>
+            <staff-details print-object="no"><staff-lines>5</staff-lines></staff-details>
+            <staff-details><staff-size scaling="70">70</staff-size></staff-details>
+          </attributes>
+        </measure></part></score-partwise>"#;
+        let (lines, hidden) = normalize_core_with_stats(xml);
+        assert_eq!(hidden, 1, "un seul bloc masqué doit être compté");
+        assert!(
+            lines.iter().any(|line| line.contains("<staff-size")),
+            "les propriétés réelles de portée restent dans le noyau"
+        );
+        assert!(
+            !lines.iter().any(|line| line.contains("<staff-lines")),
+            "le bloc print-object=no ne doit pas rester dans le noyau"
+        );
+    }
 }

@@ -35,7 +35,7 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-use common::musicxml_core::{normalize, normalize_full};
+use common::musicxml_core::normalize_full;
 use similar::{ChangeTag, TextDiff};
 
 /// Nom de balise d'une ligne canonique, pour grouper les écarts par famille.
@@ -137,8 +137,9 @@ fn compare_paires() {
         let (id, reference, sortie_xml) = (champs[0], champs[1], champs[2]);
         let ref_xml = fs::read_to_string(reference).expect("référence lisible");
         let sortie_xml = fs::read_to_string(sortie_xml).expect("sortie lisible");
-        let ref_core = normalize(&ref_xml);
-        let sortie_core = normalize(&sortie_xml);
+        let (ref_core, ref_hidden) = common::musicxml_core::normalize_core_with_stats(&ref_xml);
+        let (sortie_core, sortie_hidden) =
+            common::musicxml_core::normalize_core_with_stats(&sortie_xml);
         let noyau = compare(&ref_core, &sortie_core);
         let plein = compare(&normalize_full(&ref_xml), &normalize_full(&sortie_xml));
         let tags: Vec<String> = plein
@@ -147,12 +148,14 @@ fn compare_paires() {
             .map(|(tag, n)| format!("{tag}:{n}"))
             .collect();
         resultats.push_str(&format!(
-            "{id}\t{}\t{}\t{}\t{}\t{}\n",
+            "{id}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
             noyau.changees,
             plein.changees,
             tags.join(","),
             colonne(&noyau.premier),
             colonne(&plein.premier),
+            ref_hidden,
+            sortie_hidden,
         ));
     }
     fs::write(Path::new(&sortie), resultats).expect("résultats écrits");

@@ -175,6 +175,8 @@ def fusionner_core(args) -> None:
                 "tags": dict(t.split(":") for t in champs[3].split(",") if ":" in t),
                 "premier_noyau": champs[4],
                 "premier_plein": champs[5],
+                "hide_ref": int(champs[6]) if len(champs) > 6 else 0,
+                "hide_tk": int(champs[7]) if len(champs) > 7 else 0,
             }
     chemin = Path(args.out) / "mesure.jsonl"
     lignes = []
@@ -221,6 +223,11 @@ def resume(args) -> str:
     n1 = sum(r.get("n1", 0) for r in rows)
     n2 = sum(r.get("n2", 0) for r in rows)
     core_ok = sum(1 for r in rows if r.get("core", {}).get("noyau_lignes") == 0)
+    reclassifies = [
+        r for r in rows
+        if r.get("core", {}).get("noyau_lignes") == 0
+        and (r["core"].get("hide_ref", 0) or r["core"].get("hide_tk", 0))
+    ]
     familles: dict[str, int] = {}
     messages: dict[str, int] = {}
     for r in rows:
@@ -237,6 +244,8 @@ def resume(args) -> str:
         f"Scores: {n} | converted: {ok} | XSD-invalid (scoretk): {fichiers_invalides}",
         f"XSD errors — scoretk: {invalides_tk} | MuseScore 4.7.4: {invalides_ms}",
         f"Core-identical to MuseScore: {core_ok}/{ok}",
+        f"Core-identical only after hidden-staff layout reclassification: "
+        f"{len(reclassifies)}/{ok}",
         f"N1 (pitch multiset): {n1/notes_ref if notes_ref else 0:.4f} | "
         f"N2 (pitch+attack): {n2/notes_ref if notes_ref else 0:.4f}",
         common.ligne_resume(exclus),
@@ -247,6 +256,15 @@ def resume(args) -> str:
     ]
     for message, count in sorted(messages.items(), key=lambda kv: -kv[1])[:20]:
         lignes.append(f"| {count} | {message} |")
+    if reclassifies:
+        lignes += ["", "## Files core-identical only via hidden-staff reclassification", ""]
+        for r in reclassifies[:40]:
+            c = r["core"]
+            lignes.append(
+                f"- `{Path(r['fichier']).name}` "
+                f"(hidden staff-details: ref {c.get('hide_ref', 0)}, "
+                f"scoretk {c.get('hide_tk', 0)})"
+            )
     lignes += ["", "## Core differences by family (changed lines)", "",
                "| Family | Lines |", "| --- | ---: |"]
     for f, count in sorted(familles.items(), key=lambda kv: -kv[1]):
