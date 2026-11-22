@@ -2572,6 +2572,23 @@ impl<'a> Parser<'a> {
         (nom, extra)
     }
 
+    /// Consomme une structure de temps en tête de `\time`
+    /// (`\time 1,2,3,1 4/4`, `ly/property-init.ly`) : une suite de nombres
+    /// séparés par des virgules, uniquement si elle est suivie d'une armure.
+    fn consume_beat_structure(&mut self) {
+        let debut = self.position;
+        let mut vu = false;
+        while self.peek().is_some_and(|token| {
+            (token.kind == Kind::Number && !token.text.contains('/')) || token.is_punct(',')
+        }) {
+            vu = true;
+            self.position += 1;
+        }
+        if !vu || !self.peek().is_some_and(|token| token.kind == Kind::Number) {
+            self.position = debut;
+        }
+    }
+
     /// Commande musicale.
     fn parse_command(&mut self) -> Music {
         let Some(Token {
@@ -2927,6 +2944,69 @@ impl<'a> Parser<'a> {
                 }
                 self.parse_music()
             }
+            // `ly/music-functions-init.ly:462` : `contextPropertyCheck` prend
+            // un chemin de propriété et une valeur Scheme. Un nombre nu est une
+            // valeur Scheme valide (`Staff.meterScalingFactor 1`,
+            // `polymetric-time-warning-measure-length-irregular.ly`) : le
+            // laisser dans le flux créait une durée d'un temps et décalait
+            // toutes les notes.
+            "contextPropertyCheck" => {
+                let mut parties = 0;
+                while parties < 3
+                    && self
+                        .peek()
+                        .is_some_and(|token| token.kind == Kind::Word || token.is_punct('.'))
+                {
+                    self.position += 1;
+                    parties += 1;
+                }
+                if self.peek().is_some_and(|token| {
+                    matches!(
+                        token.kind,
+                        Kind::Scheme | Kind::Number | Kind::Word | Kind::Str | Kind::Command
+                    )
+                }) {
+                    self.position += 1;
+                }
+                Music::Empty
+            }
+            "volta" => {
+                // `\volta 2,1 musique` : liste de numéros, puis la musique
+                // (`volta-bracket-warning-start-conflicting-numbers.ly`).
+                if self.peek().is_some_and(|token| token.is_scheme()) {
+                    self.position += 1;
+                } else {
+                    while self
+                        .peek()
+                        .is_some_and(|token| token.kind == Kind::Number || token.is_punct(','))
+                    {
+                        self.position += 1;
+                    }
+                }
+                self.parse_music()
+            }
+            // `ly/music-functions-init.ly:1351` : quatre arguments
+            // (armure, base, structure de temps, exceptions de liaison).
+            // Les laisser dans le flux créaient une durée nue et un accord
+            // vide (`time-signature-settings-by-staff.ly`).
+            "overrideTimeSignatureSettings" => {
+                for _ in 0..2 {
+                    if self.peek().is_some_and(|token| {
+                        token.kind == Kind::Number || token.is_scheme() || token.kind == Kind::Word
+                    }) {
+                        self.position += 1;
+                    }
+                }
+                while self.peek().is_some_and(|token| {
+                    token.kind == Kind::Number || token.is_punct(',') || token.kind == Kind::Word
+                }) {
+                    self.position += 1;
+                }
+                if self.peek().is_some_and(|token| token.is_scheme()) {
+                    self.position += 1;
+                }
+                Music::Empty
+            }
             "autoChange" => {
                 // `ly/music-functions-init.ly:278-303` : `\\autoChange`
                 // répartit la musique entre deux portées selon un seuil ; le
@@ -3038,20 +3118,40 @@ impl<'a> Parser<'a> {
                     mode,
                 })
             }
-            "time" => match self.parse_ratio() {
-                // Un dénominateur nul ferait paniquer `Fraction::new` ; un
-                // numérateur nul est signalé « unsupported time signature »
-                // par LilyPond et l'indication est ignorée (mesure par défaut).
-                Some((0, _)) | Some((_, 0)) => {
-                    self.warn("indication de mesure invalide ignorée");
-                    Music::Empty
+            "timeAbbrev" => {
+                // `\timeAbbrev [structure] [armure]` : la structure est une
+                // liste de nombres séparés par des virgules, sans armure
+                // obligatoire (`break-alignment-anchor-average-clamp.ly`).
+                while self.peek().is_some_and(|token| {
+                    (token.kind == Kind::Number && !token.text.contains('/')) || token.is_punct(',')
+                }) {
+                    self.position += 1;
                 }
-                Some((numerator, denominator)) => context(Context::Time {
-                    numerator: i32::try_from(numerator).unwrap_or(4),
-                    denominator: i32::try_from(denominator).unwrap_or(4),
-                }),
-                None => Music::Empty,
-            },
+                if self
+                    .peek()
+                    .is_some_and(|token| token.kind == Kind::Number && token.text.contains('/'))
+                {
+                    let _ = self.parse_ratio();
+                }
+                Music::Empty
+            }
+            "time" => {
+                self.consume_beat_structure();
+                match self.parse_ratio() {
+                    // Un dénominateur nul ferait paniquer `Fraction::new` ; un
+                    // numérateur nul est signalé « unsupported time signature »
+                    // par LilyPond et l'indication est ignorée (mesure par défaut).
+                    Some((0, _)) | Some((_, 0)) => {
+                        self.warn("indication de mesure invalide ignorée");
+                        Music::Empty
+                    }
+                    Some((numerator, denominator)) => context(Context::Time {
+                        numerator: i32::try_from(numerator).unwrap_or(4),
+                        denominator: i32::try_from(denominator).unwrap_or(4),
+                    }),
+                    None => Music::Empty,
+                }
+            }
             "clef" => {
                 let name = match self.bump() {
                     Some(Token {
@@ -3755,6 +3855,10 @@ impl<'a> Parser<'a> {
                     if self.peek().is_some_and(|token| token.is_command("markup")) {
                         self.position += 1;
                         self.parse_markup_text();
+                    } else if self.eat_command("musicLength") {
+                        // `\musicLength 16` : valeur de propriété
+                        // (`spacing-space-to-barline.ly`).
+                        let _ = self.parse_duration();
                     } else {
                         self.skip_scheme_value();
                     }

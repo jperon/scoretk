@@ -7637,3 +7637,59 @@ fn commandes_sans_argument_gardent_la_duree_nue() {
         "cinq notes : c, trois durées nues, d"
     );
 }
+
+#[test]
+fn override_time_signature_settings_consomme_quatre_arguments() {
+    // `ly/music-functions-init.ly:1351` : \overrideTimeSignatureSettings
+    // prend quatre arguments ; les laisser dans le flux crée des accords
+    // vides (`time-signature-settings-by-staff.ly`).
+    let src = "\\version \"2.24.0\"\n\
+         \\new Staff { \\overrideTimeSignatureSettings 4/4 1/4 3,1 #'() \\time 4/4 c'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let n = accords_de_voix(&score, 0);
+    assert_eq!(n.len(), 1, "une seule note : {:?}", n);
+}
+
+#[test]
+fn time_avec_structure_de_temps_ne_laisse_pas_de_duree_nue() {
+    // `\time 1,1,1,2 5/8` : la structure de temps précède l'armure
+    // (`partial-polymetric.ly`).
+    let src = "\\version \"2.24.0\"\n\\new Staff { \\time 1,1,1,2 5/8 c'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(accords_de_voix(&score, 0).len(), 1);
+}
+
+#[test]
+fn volta_avec_liste_de_numes() {
+    // `\volta 2,1 c''1` (`volta-bracket-warning-start-conflicting-numbers.ly`).
+    let src = "\\version \"2.24.0\"\n\\repeat volta 2 { \\alternative { \\volta 2,1 c'1 \\volta 3 d'1 } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(accords_de_voix(&score, 0).len(), 2);
+}
+
+#[test]
+fn override_music_length_consomme_sa_valeur() {
+    // `spacing-space-to-barline.ly` : `\musicLength 16` est une valeur de
+    // propriété, pas une durée nue.
+    let src = "\\version \"2.24.0\"\n{ \\override Score.SpacingSpanner.common-shortest-duration = \\musicLength 16 c'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(accords_de_voix(&score, 0).len(), 1);
+}
+
+#[test]
+fn context_property_check_valeur_numerique_ne_devient_pas_une_duree() {
+    // `ly/music-functions-init.ly:462` : le second argument est un Scheme,
+    // qui peut être un nombre nu (`Staff.meterScalingFactor 1`,
+    // `polymetric-time-warning-measure-length-irregular.ly`). Laissé dans le
+    // flux, il devient une durée et décale toutes les notes.
+    let src = "\\version \"2.24.0\"\n\\new Staff { \\contextPropertyCheck Staff.meterScalingFactor 1 c'4 c'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let notes = accords_de_voix(&score, 0);
+    assert_eq!(notes.len(), 2, "notes : {:?}", notes);
+    assert_eq!(
+        notes[0].0,
+        Fraction::new(0, 1),
+        "première note : {:?}",
+        notes
+    );
+}
