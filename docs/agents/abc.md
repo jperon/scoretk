@@ -3116,3 +3116,34 @@ Both fixes are in the oracle, not in the reader: they remove notes that
 `abc2midi` *performs* and that neither candidate writes, as documented in
 the oracle README. No scoretk code changed, so `e2e_corpus` is unaffected.
 
+
+## 34. Reader pass after the sequence diff (2026-11-22)
+
+`sequence.py` was run on the whole 4 756-tune baseline (`target/abc-mesure-key/seq-all.tsv`).
+
+**Cause committed — clef-only `K:` field** (`3937ee7`). `parse_key` accepted a
+lowercase tonic, so `[K: bass-8]` was read as B-flat major instead of "no key,
+bass clef". `abc2xml.py::doHeaderField` line 1811 matches only `[A-G][#b]?`.
+Reduced unit test written first, failing before the fix. Measurement
+`target/abc-mesure-key/`: **1 tune gained, 0 lost** (`4ecdf7776cd5_t1`,
+clef-octave fragment of the ABC 2.1 standard); exact count 4 575 → 4 576 with
+no per-tune loss.
+
+**`SANS_X` (109 files) is not ours.** ABC 2.1 §3.1.1 requires `X:` to start a
+tune; §"embedded tune" (standard text line 404) only says an *internal* parser
+may notionally add empty X/T/K fields. Running the oracle directly on
+`decorations.test__abcTrills.abc` gives `Error in line-char 4-0 : No tune
+processed. Possible missing X: field` with no MIDI output. Neither reference
+tool nor the oracle can read these files, so their exclusion from the
+denominator stays; scoretk's refusal to read them is consistent.
+
+**Remaining real gaps.** The 13 `DESACCORD_PARTIEL` tunes are one-semitone
+differences on accidentals in files with embedded `B:db:`/historical key
+headers; the six `NOTES_SUPPLEMENTAIRES` and the `OCTAVE` tune diverge on
+grace/voice interactions that the sequence diff localises but the model does
+not yet expose. No reader change was committed for them: attempts that
+looked plausible (uppercase-only `K:` was the one real defect found) would
+have regressed other tunes.
+
+Core-identical MusicXML export (144/173) and the two ABC oracle causes are
+unchanged by this pass.
