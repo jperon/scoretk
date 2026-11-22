@@ -3742,6 +3742,42 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 vec![PostEvent::SlurStop(0)]
             }
+            // `script_abbreviation` (`lily/parser.yy` l. 3469) : après `^` ou
+            // `_`, un signe de ponctuation est lui-même une articulation
+            // (`dash` + nom du signe). Sans cette branche, `d''16^.` laissait
+            // le `.` dans le flux : le `4` du doigté suivant `^4` était alors
+            // lu comme une durée de noire et rejouait l'accord, décalant la
+            // suite du triolet.
+            Kind::Punct('.') => {
+                self.position += 1;
+                vec![PostEvent::Articulation(ArticulationType::Staccato)]
+            }
+            Kind::Punct('!') => {
+                self.position += 1;
+                vec![PostEvent::Articulation(ArticulationType::Staccatissimo)]
+            }
+            Kind::Punct('>') => {
+                self.position += 1;
+                vec![PostEvent::Articulation(ArticulationType::Accent)]
+            }
+            Kind::Punct('-') => {
+                self.position += 1;
+                vec![PostEvent::Articulation(ArticulationType::Tenuto)]
+            }
+            Kind::Punct('^') => {
+                self.position += 1;
+                vec![PostEvent::Articulation(ArticulationType::Marcato)]
+            }
+            Kind::Punct('_') => {
+                self.position += 1;
+                vec![PostEvent::Articulation(ArticulationType::Portato)]
+            }
+            // `dashPlus` (signe `+`) n'a pas d'équivalent dans le modèle :
+            // consommer le signe suffit à ne pas le laisser dans le flux.
+            Kind::Punct('+') => {
+                self.position += 1;
+                Vec::new()
+            }
             Kind::Number => {
                 self.position += 1;
                 vec![PostEvent::Fingering(token.text)]

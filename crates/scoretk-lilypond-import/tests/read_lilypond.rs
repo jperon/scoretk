@@ -218,6 +218,25 @@ barre = #(define-music-function (parser location strg music)(number? ly:music?)
     );
 }
 
+/// `script_abbreviation` (`lily/parser.yy` l. 3469) : après `^` ou `_`, le
+/// signe de ponctuation est une articulation. `d''16^.^4` laissait le `.`
+/// dans le flux, et le `4` du doigté était lu comme une noire qui rejouait
+/// l'accord : le triolet de `Czerny_Op_821_No_016` gagnait des notes.
+#[test]
+fn signe_apres_direction_est_une_articulation() {
+    let score = lire("\\time 2/4 \\times 2/3 { d''16^.^4 [ d''^.^3 d''^.^2 ] } d''8^.^1");
+    assert_eq!(hauteurs(&score), vec![86, 86, 86, 86]);
+    assert_eq!(
+        durees_ecrites(&score),
+        vec![
+            Fraction::new(1, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 16),
+            Fraction::new(1, 8),
+        ]
+    );
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");
