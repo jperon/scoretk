@@ -179,6 +179,16 @@ def read_xml(
         divisions = 1
         transposition = 0
         octave_shifts: dict[str, int] = {}
+        # `<octave-shift>` est un événement de direction : il vaut à partir de
+        # sa position dans la mesure, pas à partir de sa position dans l'ordre
+        # du document. L'écrivain émet la direction dans le flux de la voix qui
+        # la porte ; une voix écrite plus loin (après un `<backup>`) peut avoir
+        # des notes antérieures à la direction (Sa_Taille : la fin de
+        # l'ottava, écrite après la voix 1, ne doit pas annuler le décalage des
+        # notes de la voix 3 du même tick). On collecte (tick, portée, valeur)
+        # et on applique après lecture, par tick.
+        octave_events: list[tuple[float, str, int]] = []
+        debut_notes_part = len(notes)
         curseur = 0.0             # position courante de la partie, en noires
         debut_mesure = 0.0        # attache de la mesure en cours
         extension = 0.0           # extension maximale de la mesure en cours
@@ -213,11 +223,13 @@ def read_xml(
                         kind = shift.get("type")
                         courant = octave_shifts.get(staff, 0)
                         if kind == "down":
-                            octave_shifts[staff] = courant - amount
+                            courant -= amount
                         elif kind == "up":
-                            octave_shifts[staff] = courant + amount
+                            courant += amount
                         elif kind == "stop":
-                            octave_shifts[staff] = 0
+                            courant = 0
+                        octave_shifts[staff] = courant
+                        octave_events.append((curseur, staff, courant))
                     continue
                 if elem.tag in ("backup", "forward"):
                     valeur = elem.findtext("duration")
@@ -255,7 +267,6 @@ def read_xml(
                 offset = int(float(decalage)) / divisions if decalage else 0.0
                 jouee = attaque + offset
                 staff = elem.findtext("staff", "1")
-                decalage_octave = octave_shifts.get(staff, 0)
                 pitch = elem.find("pitch")
                 if pitch is None:
                     # Percussion `<unpitched>` : les écritures qui ne portent
@@ -269,10 +280,10 @@ def read_xml(
                         octave_u = unpitched.findtext("display-octave")
                         if step_u in STEPS and octave_u is not None:
                             hauteur_u = 12 * (int(octave_u) + 1) + STEPS[step_u]
-                            notes.append((hauteur_u + transposition + decalage_octave, jouee,
+                            notes.append((hauteur_u + transposition, jouee,
                                           0.0 if est_grace else duree, numero_part,
                                           est_grace) if with_grace else
-                                         (hauteur_u + transposition + decalage_octave, jouee,
+                                         (hauteur_u + transposition, jouee,
                                           0.0 if est_grace else duree, numero_part))
                             meta.append((numero_part, elem.findtext("staff", "1"),
                                          elem.findtext("voice", "1"), est_grace))
@@ -283,16 +294,56 @@ def read_xml(
                     continue
                 alter = pitch.findtext("alter", "0")
                 hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
-                notes.append((hauteur + transposition + decalage_octave, jouee,
+                notes.append((hauteur + transposition, jouee,
                               0.0 if est_grace else duree, numero_part, est_grace)
                              if with_grace else
-                             (hauteur + transposition + decalage_octave, jouee,
+                             (hauteur + transposition, jouee,
                               0.0 if est_grace else duree, numero_part))
                 meta.append((numero_part, elem.findtext("staff", "1"),
                              elem.findtext("voice", "1"), est_grace))
+        # Chaque partie a ses propres directions : les appliquer à ses notes
+        # avant de passer à la suivante (les variables du début de boucle sont
+        # réinitialisées à chaque partie).
+        _appliquer_octave(notes, meta, debut_notes_part, octave_events)
     if merge_unisons:
         return _fusionner_unissons(notes, meta)
     return notes
+
+
+def _appliquer_octave(
+    notes: list[tuple], meta: list[tuple], debut: int,
+    evenements: list[tuple[float, str, int]],
+) -> None:
+    """Applique les `<octave-shift>` par tick, pas dans l'ordre du document.
+
+    Une direction vaut à partir de sa position dans la mesure
+    (MusicXML, `<direction>`) ; l'écrivain l'émet dans le flux de la voix qui
+    la porte, si bien que les notes d'une autre voix écrites après un
+    `<backup>` peuvent la précéder dans le document tout en étant avant elle
+    dans le temps. On prend donc, pour chaque note, le dernier événement de sa
+    portée dont le tick est antérieur ou égal à son attaque.
+    """
+    if not evenements:
+        return
+    par_portee: dict[str, list[tuple[float, int]]] = {}
+    for tick, staff, valeur in evenements:
+        par_portee.setdefault(staff, []).append((tick, valeur))
+    for liste in par_portee.values():
+        liste.sort(key=lambda evenement: evenement[0])
+    for index in range(debut, len(notes)):
+        note = notes[index]
+        if index >= len(meta):
+            continue
+        portee = meta[index][1]
+        attaque = note[1]
+        valeur = 0
+        for tick, candidate in par_portee.get(portee, ()):
+            if tick <= attaque + 1e-9:
+                valeur = candidate
+            else:
+                break
+        if valeur:
+            notes[index] = (note[0] + valeur, *note[1:])
 
 
 def _fusionner_unissons(
@@ -639,6 +690,27 @@ def selftest() -> None:
         with open(p, "w", encoding="utf-8") as f:
             f.write(deux_portees)
         assert read_xml(p) == [(72, 0.0, 1.0, 0), (72, 0.0, 1.0, 0)], read_xml(p)
+
+        # `<octave-shift>` est une direction datée : l'écrivain l'émet dans le
+        # flux de la voix qui la porte, si bien que les notes d'une voix écrite
+        # après un `<backup>` peuvent la précéder dans le document tout en
+        # étant avant elle dans le temps (Sa_Taille). Elles gardent le
+        # décalage de leur tick.
+        ordre = """<score-partwise version="4.0"><part id="P1"><measure number="1">
+          <attributes><divisions>1</divisions></attributes>
+          <direction><direction-type><octave-shift type="down" size="8"/>
+            </direction-type><staff>1</staff></direction>
+          <note><pitch><step>C</step><octave>6</octave></pitch><duration>1</duration>
+            <voice>1</voice><staff>1</staff></note>
+          <direction><direction-type><octave-shift type="stop" size="8"/>
+            </direction-type><staff>1</staff></direction>
+          <backup><duration>1</duration></backup>
+          <note><pitch><step>D</step><octave>6</octave></pitch><duration>1</duration>
+            <voice>2</voice><staff>1</staff></note>
+        </measure></part></score-partwise>"""
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(ordre)
+        assert read_xml(p) == [(72, 0.0, 1.0, 0), (74, 0.0, 1.0, 0)], read_xml(p)
 
         # Correction 1 — grâce absente du candidat : LilyPond la joue dans son
         # MIDI, N1 et N2 doivent chuter. Le relevé précédent l'écartait à tort.
