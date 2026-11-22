@@ -6306,3 +6306,32 @@ fn repeat_segno_ne_decale_pas_la_suite() {
         attaques
     );
 }
+
+#[test]
+fn make_clusters_ne_joue_pas_de_notes() {
+    // `scm/music-functions.scm::note-to-cluster` remplace les `NoteEvent` par
+    // des `ClusterNoteEvent`, que le performer MIDI ne joue pas. La portée est
+    // gravée mais muette, comme un `Staff_performer` retiré.
+    let src = "\\version \"2.24.0\"\n\\
+         \\new Staff \\makeClusters { c'4 d'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(score.staves.len(), 1);
+    assert!(score.staves[0].muted, "la portée de clusters est muette");
+    let octets = scoretk_midi_export::write_midi(&score).expect("écriture MIDI");
+    let smf = midly::Smf::parse(&octets).expect("SMF valide");
+    let attaques: u32 = smf
+        .tracks
+        .iter()
+        .flat_map(|piste| piste.iter())
+        .filter(|evenement| {
+            matches!(
+                evenement.kind,
+                midly::TrackEventKind::Midi {
+                    message: midly::MidiMessage::NoteOn { vel, .. },
+                    ..
+                } if vel > 0
+            )
+        })
+        .count() as u32;
+    assert_eq!(attaques, 0, "le MIDI ne joue pas les clusters");
+}

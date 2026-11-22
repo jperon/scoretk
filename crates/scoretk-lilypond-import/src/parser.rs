@@ -1221,6 +1221,18 @@ impl<'a> Parser<'a> {
         staff.instrument_name = instrument_name.clone();
         staff.short_instrument_name = short_instrument_name.clone();
 
+        // `\makeClusters` (`scm/music-functions.scm::note-to-cluster`)
+        // remplace les notes par des `ClusterNoteEvent` que le performer MIDI
+        // ne joue pas : portée gravée mais muette.
+        if matches!(kind, GroupKind::Staff)
+            && self
+                .peek()
+                .is_some_and(|token| token.is_command("makeClusters"))
+        {
+            self.position += 1;
+            staff.muted = true;
+        }
+
         match kind {
             GroupKind::PianoStaff | GroupKind::ChoirStaff | GroupKind::StaffGroup => {
                 let mut group = GroupBlock {
