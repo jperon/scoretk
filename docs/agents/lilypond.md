@@ -3870,14 +3870,14 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact Q16 | Exact Q16 **or** n2_grace | Exact % (either) | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 398 | **1 442** | 66.0 | 98.86 | — | — |
-| measured (reference present, non-reader faults excluded) | 1 643 | 1 398 | **1 442** | **87.8** | **98.86** | **96.12** | **97.77** |
+| all rows | 2 186 | 1 419 | **1 464** | 67.0 | 98.80 | — | — |
+| measured (reference present, non-reader faults excluded) | 1 636 | 1 419 | **1 464** | **89.5** | **98.80** | **96.96** | **98.33** |
 
 The two exact columns are kept side by side since Cause 18: **Exact Q16** is
 the historical criterion (`r == t == n1 == n2`), **Exact Q16 or n2_grace** adds
 the files whose graces only miss the plain grid because LilyPond plays them at
 a distinct real time. The latter is the headline figure; the former is never
-hidden, and the 44-file difference is exactly the grace-timing model.
+hidden, and the 45-file difference is exactly the grace-timing model.
 
 The obsolete-source basket (60 files containing `\setTextCresc`, `\sustainDown`
 and the other commands removed after 2.10, plus the `\deprecatedcresc` family
@@ -3887,11 +3887,12 @@ removed after 2.13.20) is no longer counted separately:
 LilyPond MIDI, a LilyPond compile failure, or obsolete syntax that
 `convert-ly` would rewrite (the commands of `parser.rs::obsolete_music_command`).
 `mesure.py` marks those rows excluded, so they leave both numerator and
-denominator; on `mut` this excludes 533 rows (the obsolete basket, unusable
-references, the sources scoretk deliberately does not support and the four
-`\compressMusic` scores whose reference LilyPond 2.27 cannot produce) and
-leaves 1 653 sources in the lot. Of those, 1 649 convert; six have an empty
-reference (purely graphical scores), which leaves 1 643 comparable rows.
+denominator; on `mut` this excludes 539 rows (the obsolete basket, unusable
+references, the sources scoretk deliberately does not support, the four
+`\compressMusic` scores and the `\compressFullBarRests` scores whose
+reference LilyPond 2.27 cannot produce) and leaves 1 646 source rows in the
+lot. Of those, 1 642 convert; six have an empty reference (purely graphical
+scores), which leaves 1 636 comparable rows.
 
 The previous campaign reported 692/2 186 exact (31.7 %; 39.9 % on the 1 735
 rows that had a reference) and N2 93.49 on the old references. The exact rate was low because 595 files had **all** their
@@ -3943,6 +3944,19 @@ left out, the denominator is 1 643 rows and the remaining non-exact measured
 files are **201**. The rebase on the merged master fixes then adds two more
 (`Field_Nocturne_5`, `Troldtog`), for **1 442 of 1 643 measured rows (87.8 %;
 1 398 under Q16 alone**, 85.1 %), N2 96.12, no-repeat 97.77.
+
+The next pass (Causes 27–30) adds **22 exact files and 0 losses** (1,442 →
+1,464) and removes 7 rows from the denominator, whose MIDI reference is
+shifted by LilyPond's recovery on obsolete commands: 8 from `-"texte"` and
+slur commands as post-events, 1 from the named-staff continuation
+(`alas`), 17 from `\(`/`\)` no longer eating the following tie;
+`\compressFullBarRests` excludes 7 sources (one of them was exact, so the
+net gain of the last pass is 17). The denominator is now 1 636 rows, **1 464
+exact (89.5 %), 1 419 under Q16 alone (86.7 %)**, N2 96.96, no-repeat 98.33,
+N2-grace 98.35; the remaining non-exact measured files are **172**. Four
+`franck_ave_maria` variants lose 117 N1 notes each: `\(` no longer swallows
+the following pitch, so the relative octave of the notes after it changes;
+they were not exact under either parse and no exact file regresses.
 
 ### Where the remaining `notes_supp` files start
 
@@ -4397,6 +4411,84 @@ any head of the same pitch. Test
 `tie_wait_for_note_garde_les_liaisons_pendantes`: three attacks with the
 setting, six without, matching LilyPond 2.27's MIDI. **2 exact gains, 0
 losses** (`Chop-28-1`, `LVB_Sonate_10no1_3`).
+
+### Cause 27: `-"texte"` is a direction, not a lost token
+
+`lily/parser.yy` accepts `-"texte"`: `post_event: '-' fingering` only takes
+an `UNSIGNED`, but `post_event_nofinger: script_dir direction_reqd_event`
+also admits `direction_reqd_event: gen_text_def`, and `gen_text_def` accepts
+`STRING` (l. 3435-3445). This is the old spelling of textual fingering and
+is still valid. The reader did not consume the string in the `-` branch: it
+stayed in the stream and the `~` that followed had no note to attach to
+(`Lobt.ly`, `re2-"4--5" \fermata ~re4`, attack added at bar 4). The string
+now becomes a low `PostEvent::Text`, like `^"texte"`. Test
+`texte_apres_tiret_garde_la_liaison_suivante` (three attacks before, two
+after). The two reader fixes 27–28 together give **6 exact gains and 0
+losses** (`Lobt`, `bwv633`, `moonlight1-a4`, `moonlight1-let`, `BuxWv185`,
+`alas`); the two causes were committed before the same measurement, so they
+are not attributed file by file.
+
+### Cause 28: `\context Staff = "x"` finds the existing staff
+
+`Context::find_create_context` looks up a named context before creating it
+(`lily/context.cc` l. 269-273, `find (FIND_CREATE)`), whereas `\new Staff`
+always opens a new one. Two `\context Staff = "right"` in one `\score` add
+their music to the **same** staff: they are voices of one `Audio_staff`
+(`lily/staff-performer.cc`, `get_audio_staff`), where
+`Midi_walker::do_start_note` merges attack unisons (`lily/midi-walker.cc`
+l. 95-115). The builder opened one part and one staff per group, so the
+Mutopia chorales that stack a transposed registration (bwv633, bwv544,
+bwv679, bwv632, bwv627…) had twice too many staves.
+
+An `existing` Staff group whose single staff has an already-built name now
+appends its voices to that staff instead of creating a part. Built voices
+keep their slot (the new music takes free slots, otherwise it would overwrite
+the first tracks); beyond four simultaneous voices, `build_voices` opens a
+sister staff in the same part. The starting moment depends on the enclosing
+form (`lily/parser.yy` `sequential_music`): siblings of a `<< … >>` are
+simultaneous and start at tick 0 (bwv633), while a `\context Staff` in a
+later element of a `{ … }` sequence continues after the music already
+written (`GroupBlock::sequence_start`, `Interpreter::run` receiving a start
+tick; `alas`, two successive `<< … >>` on the same named staves). `\context
+Voice` does not take this path: its reappearance continues a voice in time
+and is still to be done; `\new Staff = "x"` twice still opens two staves
+(checked with LilyPond 2.27). Tests
+`context_staff_de_meme_nom_est_retrouve` and
+`context_staff_retrouve_continue_dans_le_temps`. Causes 27–28 give **6 exact
+gains and 0 losses** (files listed under Cause 27); the sequence continuation
+alone makes `alas` exact.
+
+### Cause 29: `\compressFullBarRests` is an obsolete reference
+
+`\compressFullBarRests` became `\compressEmptyMeasures`
+(`python/convertrules.py` l. 4239) and no longer exists in 2.27: LilyPond
+reports an unknown command and its recovery inserts a one-beat rest at the
+start of the voice, shifting the whole staff. Checked on
+`r8 g'8[ g' g'] ees'2`: notes at 1.5/2/2.5 with the old command, at 0.5/1/1.5
+with `\compressEmptyMeasures` (same source, 2.27). Orchestra scores include
+it from every instrumental part: `Symphony5_1/2`, `mozart-hrn-3`,
+`O_Mistress_Mine`, `bridge`, `Concerto_a_4_G_score` were all non-exact for
+this reference shift, not for a reader error. `common.py::COMMANDES_OBSOLETES`
+now excludes it, like the 2.10 families and `\compressMusic`; the selftest
+checks that the current `\compressEmptyMeasures` stays accepted. **7 rows
+removed from the denominator, no reader change.**
+
+### Cause 30: `\(` and `\)` are post-events
+
+`\(` and `\)` are punctuation commands (`lily/parser.yy`,
+`direction_less_event`), not directions. `starts_post_event` did not
+recognise them, so the post-event loop stopped right after them and the
+following `~` was swallowed: `Chop-28-4` (bar 8, `gs4->\(~ gs4`) lost its tie
+and produced one extra attack (one note, hence a non-exact file), and so did
+`lani`, `scriabine-op16-no1`, `prelude`, `intermezzo` and others whose held
+note follows `\(`. Both commands now join `starts_post_event` and
+`post_event_for_command` (`SlurStart(0)`/`SlurStop(0)`, like bare `(`/`)`).
+Test `commande_de_liaison_d_expression_garde_le_tie_suivant` (two attacks
+before, one after). **17 exact gains, 0 losses**. Four `franck_ave_maria`
+variants lose 117 N1 notes each because the token after `\(` is now parsed
+as music (grammar-correct), which changes the relative octave of the
+following notes; they were not exact under either parse, and no exact file
+regresses.
 
 ### Cause 5: `\octaveCheck` consumes its pitch
 
