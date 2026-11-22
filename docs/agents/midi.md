@@ -476,10 +476,13 @@ than importer defects:
   the beat. The oracle now pairs each reference grace with the nearest
   unmatched import note of the same pitch before the main note, as the
   LilyPond oracle does.
-- **remaining real defects** (not fixed): the two `tuplet_*` tests have the
-  **voice order inverted** (`sortVoicesByPitch`, `importmidi_voice.cpp:985-1029`:
-  the highest average pitch must become voice 1; our output keeps the low
-  voice first) and `tuplet_3_5_7_tuplets` emits **ultra-short durations**
+- **remaining real defects** (not fixed): the two `tuplet_*` tests need
+  `MidiTuplet::splitFirstTupletChords` (`importmidi_tuplet.cpp`), which splits
+  the first chord of overlapping tuplets into separate voices: the MIDI has
+  two notes on the *same* tick (64 and 67 at 0.0, channel 0) and
+  `collectChords` puts them in one chord, while MuseScore's reference writes
+  them in two voices. Our port keeps one voice, hence the `voix` group. In
+  addition `tuplet_3_5_7_tuplets` emits **ultra-short durations**
   (9 ticks) for the fifth-tuplet notes: a 15-tick note lengthened by
   `lengthenTooShortNotes` (`importmidi.cpp:89-100`) is divided a second time
   by the tuplet ratio at export, which gives `<duration>` under the minimum.
