@@ -67,9 +67,62 @@ def est_exclu(releve: dict) -> bool:
     return bool(releve.get("exclu"))
 
 
+RAISON_VIDE = "empty score"
+"""``raison_exclusion`` of a row with no note on either side."""
+
+
+def marquer_vide(releve: dict, source: str = "") -> dict:
+    """Mark an empty score as an exclusion, with a specific reason.
+
+    An empty score is not a conversion failure: both sides agree that there
+    is nothing to play. It leaves the numerator AND the denominator like any
+    other exclusion, using the same ``marquer_exclu`` mechanism as master's
+    out-of-reader-fault basket; the reason only distinguishes the summary
+    line.
+    """
+    marquer_exclu(releve, source)
+    releve["raison_exclusion"] = RAISON_VIDE
+    return releve
+
+
+def est_vide(releve: dict) -> bool:
+    """True when the row is an empty-score exclusion."""
+    return est_exclu(releve) and releve.get("raison_exclusion") == RAISON_VIDE
+
+
 def filtrer(releves: list[dict]) -> list[dict]:
     """Drop excluded rows before aggregating: neither numerator nor denominator."""
     return [r for r in releves if not est_exclu(r)]
+
+
+def noms_vides(releves: list[dict]) -> list[str]:
+    """Distinct empty-score inputs among the rows, in stable order."""
+    noms: list[str] = []
+    for r in releves:
+        if not est_vide(r):
+            continue
+        nom = r.get("exclu_fichier") or r.get("fichier") or r.get("id") or ""
+        if nom not in noms:
+            noms.append(nom)
+    return noms
+
+
+def compte_vides(releves: list[dict]) -> int:
+    """Number of distinct empty-score inputs."""
+    return len(noms_vides(releves))
+
+
+def ligne_resume_vides(noms: list[str]) -> str:
+    """Markdown line for ``resume.md`` describing the empty-score basket."""
+    if not noms:
+        return "Empty scores (excluded): 0"
+    apercu = ", ".join(f"`{nom}`" for nom in noms[:5])
+    if len(noms) > 5:
+        apercu += " …"
+    return (
+        f"Empty scores (excluded): {len(noms)} — no note in the reference nor "
+        f"in the output, not counted in numerators or denominators: {apercu}"
+    )
 
 
 def noms_exclus(releves: list[dict]) -> list[str]:
@@ -182,6 +235,15 @@ def selftest() -> None:
     assert raison_hors_lecteur({"erreur": "référence MIDI absente"}, "") == "référence MIDI inutilisable"
     assert raison_hors_lecteur({"code": 0}, "\\sustainDown c4").startswith("source obsolète")
     assert raison_hors_lecteur({"code": 0}, "c4 d4") == ""
+    # Empty scores (no note in either the reference or the output) are a
+    # third basket, outside numerator and denominator like unsupported ones.
+    vide = marquer_vide({"fichier": "empty.mscz", "ok": True}, "empty.mscz")
+    assert est_vide(vide) and not est_vide(ok)
+    assert filtrer([ok, exclu, vide]) == [ok]
+    assert noms_vides([vide, dict(vide)]) == ["empty.mscz"]
+    assert compte_vides([ok]) == 0
+    assert ligne_resume_vides([]) == "Empty scores (excluded): 0"
+    assert ligne_resume_vides(["a.mscz"]).startswith("Empty scores (excluded): 1")
     print("selftest common : OK")
 
 

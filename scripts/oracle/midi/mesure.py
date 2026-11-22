@@ -265,6 +265,10 @@ def mesurer_lecture(args, lot: str, manifeste: str, fichier_sortie) -> None:
                 marquer_echec(r)
                 ecrire_ligne(fichier_sortie, r)
                 continue
+            if not ref and not test:
+                common.marquer_vide(r, src)
+                ecrire_ligne(fichier_sortie, r)
+                continue
             r.update(compare(ref, test, args.grid, args.tol))
             ecrire_ligne(fichier_sortie, r)
         fichier_sortie.flush()
@@ -320,6 +324,11 @@ def mesurer_ecriture(args, lot: str, manifeste: str, fichier_sortie) -> None:
             r["erreur"] = f"MIDI illisible : {exc}"
             marquer_echec(r)
             ecrire_ligne(fichier_sortie, r)
+            continue
+        if not ref and not test:
+            common.marquer_vide(r, src)
+            ecrire_ligne(fichier_sortie, r)
+            fichier_sortie.flush()
             continue
         r.update(compare(ref, test, args.grid, args.tol))
         ecrire_ligne(fichier_sortie, r)
@@ -377,7 +386,8 @@ def charger(out: str) -> list[dict]:
 
 def resume(relevés: list[dict]) -> str:
     exclus = common.noms_exclus(relevés)
-    # Une entrée non prise en charge sort du numérateur et du dénominateur.
+    vides_noms = common.noms_vides(relevés)
+    # Unsupported inputs and empty scores leave the numerator and denominator.
     relevés = common.filtrer(relevés)
     groupes: dict[tuple, list[dict]] = {}
     for r in relevés:
@@ -415,7 +425,7 @@ def resume(relevés: list[dict]) -> str:
     for r in relevés:
         if r.get("drapeaux"):
             causes.setdefault(r["drapeaux"][0], []).append(r["fichier"])
-    lignes += ["", common.ligne_resume(exclus), "",
+    lignes += ["", common.ligne_resume(exclus), common.ligne_resume_vides(vides_noms), "",
                "## Causes d'écart (les plus fréquentes)", "", "| Cause | Fichiers | Exemple |", "| --- | ---: | --- |"]
     for cause, fichiers in sorted(causes.items(), key=lambda kv: -len(kv[1]))[:10]:
         lignes.append(f"| {cause} | {len(fichiers)} | `{fichiers[0]}` |")
