@@ -1221,3 +1221,74 @@ Proposed generic change (not implemented here):
 
 Core-identical is **157/173** after the two committed causes; N1/N2 1.0000,
 0 XSD-invalid, and no file was regressed.
+
+## 38. Per-staff mmrest implemented; remaining 16 files inventoried (2026-11-23)
+
+### 38.1 Item 1 — per-staff multi-measure rests (committed, measured)
+
+`scoretk-core/src/model/mmrest.rs` now stores `(StaffId, count)` pairs on
+`Measure::mmrests`; the legacy global `multi_measure_rest` and all other
+writers keep their previous behaviour. The 3.x/4.x readers attach each
+`<multiMeasureRest>` marker to the `<Staff>` that carries it instead of
+dropping it outside staff 0 (`measure.cpp:2286-2330`, `mmrestlayout.cpp:161-206`);
+the MusicXML writer emits `<multiple-rest>` from the part's staff, falling
+back to the global field. Reduced tests written first: one marker on staff 2
+only, and a run of empty measures.
+
+Measurements: 173-file export oracle `target/xml-mmrest-out/`
+**157/173 core-identical**, gains 0, losses 0, N1/N2 1.0000, 0 XSD-invalid —
+the per-staff markers do not occur in that lot, so the change is neutral
+there. MuseScore round trip `roundtrip.rs`: 26/26 v4 + 30/30 v3, both `.mscx`
+and `.mscz`. `cargo build -p scoretk-core --target wasm32-unknown-unknown`: OK.
+
+### 38.2 Canonical diff of every remaining file
+
+The 16 non-identical files were dumped with the shared core normalizer and
+diffed individually (`/tmp/xml16-dump/`); first differences and line counts:
+
+| Group | Files | Lines | First divergent element |
+| --- | ---: | ---: | --- |
+| Haydn `attributes`/`measure-style` | 6 | 25–452 | `<multiple-rest>` absent from scoretk |
+| `Adios_Muchachos` | 1 | 3 213 | scoretk writes 44 extra `<harmony print-frame="no">` |
+| `Vingt_danses_enfantines` | 1 | 184 | 92 `<clef after-barline="yes">` absent |
+| `frame` (`bransle-de-chevaux`) | 1 | 558 | 186 `<frame>` lines absent |
+| Vivaldi tuplets | 2 | 2 + 14 | `bracket="yes"` (ref) vs `"no"` (scoretk) |
+| `dot` (Minuit chretien) | 2 | 1 + 1 | one extra `<dot/>` on a whole rest |
+| `figured-bass`, `notehead`, `time-modification` | 3 | 3 + 3 + 8 | see §36.4 |
+
+### 38.3 Why no further writer cause was committed this turn
+
+- **Haydn `multiple-rest` (largest group, 6 files)** — the `.mscx` has
+  `createMultiMeasureRests` but **no** `<multiMeasureRest>` marker, so the
+  groups must be derived from emptiness. In `Gloria` measures 21–22, staves
+  0–7 contain only rests while staves 8–9 contain chords, yet the reference
+  writes `<multiple-rest>` for **all nine parts**. A run-based derivation is
+  therefore not a function of the pivot model's per-staff emptiness.
+  Implemented and measured anyway: grouping runs of ≥2 empty measures
+  (`mmrestlayout.cpp:722-760`) with the `Measure::isEmpty` predicate regressed
+  the `mmrest` corpus file (it duplicated the explicit groups) and produced
+  no `<multiple-rest>` in `Gloria`; reverted before committing. This confirms
+  §35/§37.3: the excerpt/layout relation is required.
+- **tuplets (2 files)** — `Tuplet::calcHasBracket` (`tuplet.cpp:204-268`)
+  decides from **beam-group membership** (`beamStart == beamEnd`, tuplet
+  starts/ends the beam). The pivot model carries only `Chord::beam_mode`, not
+  beam groups; the current duration threshold cannot distinguish a tuplet
+  that owns its beam from one inside a longer beam (Vivaldi 04 has three
+  dotted eighths beamed before the triplet). No safe rule from the model.
+- **`dot` (2 files)** — `writeRest` emits `<dot>` from `rest->dotList()`
+  (`exportmusicxml.cpp:4655-4669`); the two extra dots are whole rests of
+  duration 48 filling their measure, but the eight sibling Minuit chretien
+  references legitimately keep dots on similar rests (79–83 per file). The
+  blanket rule was already measured and reverted (§33.4); no narrower
+  predicate derived from the model matches only the two files.
+- **`clef after-barline` (1 file)** — 92 clefs at a measure start are written
+  without the attribute; the C++ condition (`exportmusicxml.cpp:7996-8004`)
+  excludes `HeaderClef` and distinguishes tick 0, both already implemented
+  (`exportmusicxml.rs:2375-2404`). The section-start `HeaderClef` variant was
+  measured and reverted in §33.4 (2 lines lost).
+- **`harmony`/`frame`/`notehead`/`figured-bass`/`time-modification`** — already
+  classified in §36.4; none has a rule derivable from the model without the
+  regressions recorded there.
+
+Core-identical stays **157/173**; N1/N2 1.0000, 0 XSD-invalid, no file
+regressed.
