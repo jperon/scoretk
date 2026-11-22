@@ -97,30 +97,27 @@ pub(crate) fn build(score: &Score) -> Structure {
     }
 
     let voltas = collect_voltas(score);
-    let mut section_start = 0usize;
+    // Une barre de fin de reprise (`:|`) sans barre de début (`|:`) n'est pas
+    // une reprise : LilyPond joue la musique une seule fois (`lily/parser.yy`,
+    // `bar_line`). Sans cette garde, `section_start` vaudrait 0 et le writer
+    // inventerait un `\repeat volta 2` depuis la première mesure.
+    let mut section_start: Option<usize> = None;
     let mut index = 0usize;
 
     while index < count {
         let measure = &score.measures[index];
         if measure.repeat_start() {
-            section_start = index;
+            section_start = Some(index);
         }
         if measure.repeat_end() {
-            let end_repeat_starts = measure.start_bar_line.is_repeat_start();
-            let next_index = build_section(
-                &mut structure,
-                &score.measures,
-                &voltas,
-                section_start,
-                index,
-            );
-            index = next_index.max(index + 1);
-            if end_repeat_starts {
-                section_start = index - 1;
-            } else {
-                section_start = index;
+            if let Some(start) = section_start {
+                let end_repeat_starts = measure.start_bar_line.is_repeat_start();
+                let next_index =
+                    build_section(&mut structure, &score.measures, &voltas, start, index);
+                index = next_index.max(index + 1);
+                section_start = Some(if end_repeat_starts { index - 1 } else { index });
+                continue;
             }
-            continue;
         }
         index += 1;
     }
@@ -264,6 +261,32 @@ mod tests {
             score.add_measure(measure);
         }
         score
+    }
+
+    /// Une barre de fin de reprise sans barre de début n'est pas une
+    /// reprise (`lily/parser.yy` `bar_line` : `:|` seul ne joue qu'une fois).
+    /// Le writer ne doit pas inventer un `\repeat volta 2` depuis la mesure 1.
+    #[test]
+    fn fin_de_reprise_sans_debut_ignoree() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno."));
+        score.add_staff(part);
+        for index in 0..4 {
+            let mut measure =
+                Measure::new(index, Fraction::from_integer(index as i64), Fraction::ONE);
+            if index == 3 {
+                measure.end_bar_line = BarLineType::EndRepeat;
+                measure.repeat_count = 2;
+            }
+            score.add_measure(measure);
+        }
+        let structure = build(&score);
+        assert!(
+            structure.before_measure(0).is_empty(),
+            "aucune reprise ne doit être ouverte : {:?}",
+            structure.before_measure(0)
+        );
+        assert!(structure.after_measure(3).is_empty());
     }
 
     #[test]

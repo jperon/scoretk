@@ -5321,6 +5321,23 @@ L'écrivain émet maintenant `\afterGrace 1 <note> { <agrément> }`. Test rédui
 `Funicul_Funicul_accordion_solo.mscz` gagné, aucune perte ; taille moyenne des
 `.ly` inchangée (26622 octets, +4 octets au total).
 
+### Fin de reprise sans début : ne pas inventer `\repeat volta`
+
+`lily/parser.yy` (`bar_line`) : un `\bar ":|"` est une barre de **fin** de
+reprise ; sans `|:` correspondant, LilyPond joue la musique une seule fois.
+`structure.rs::build` initialisait `section_start = 0` : une fin de reprise
+orphaline faisait donc écrire un `\repeat volta 2` depuis la première mesure,
+et le `\unfoldRepeats` injecté par l'oracle doublait toute la musique.
+
+`section_start` est désormais un `Option<usize>` : une section n'est construite
+que si une barre de début a réellement été vue. Test réduit écrit d'abord :
+`fin_de_reprise_sans_debut_ignoree`.
+
+Mesure sur le lot `ly` complet (1 447 fichiers, deux binaires frères,
+`--mode midi`) : exacts 1 327 → 1 348, **21 fichiers gagnés, aucune perte**.
+La taille moyenne des `.ly` passe de 1 943 à 1 942 octets (−840 au total) :
+supprimer les `\repeat` fantômes réduit la sortie.
+
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire
