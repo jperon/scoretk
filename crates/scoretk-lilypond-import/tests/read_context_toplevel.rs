@@ -88,4 +88,3 @@ fn double_antislash_au_niveau_du_score_fait_des_voix() {
     assert_eq!(score.parts.len(), 2, "un contexte par élément sans `\\\\`");
     assert_eq!(score.staves.len(), 2, "deux portées");
 }
-
