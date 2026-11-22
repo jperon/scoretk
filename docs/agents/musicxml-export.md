@@ -878,3 +878,101 @@ closes the inline path without altering the corpus.
   `e2e_corpus` and was reverted before measurement.
 
 Core-identical remains **70/173**, N1/N2 1.0000, 0 XSD-invalid throughout.
+
+### 32.1 Sub-classification of `attributes` (46) and `staff-details` (43) by first differing element
+
+From the 70/173 baseline `target/xml-style/`. One line per file: `file | group`; groups marked *layout* are excluded from further fixes.
+
+| First differing element | Files | Class | File |
+| --- | ---: | --- | --- |
+| attributes block missing in tk | 41 | layout/other | `Ad_te_Suspiramus.mscz` |
+|  |  |  | `Sancta_Maria_KV_273__Wolfgang_Amadeus_Mozart_orgue.mscz` |
+|  |  |  | `00- Douce nuit - chant piano.mscz` |
+|  |  |  | `01- Douce nuit - Violons.mscz` |
+|  |  |  | `02- Douce nuit - Alto.mscz` |
+|  |  |  | `03- Douce nuit - Violoncelle - Basson.mscz` |
+|  |  |  | `00- Il est né le divin enfant - Rutter - Chant et orgue.mscz` |
+|  |  |  | `00- Il est né le divin enfant - Rutter - Conducteur.mscz` |
+|  |  |  | `01- Il est né - Violons.mscz` |
+|  |  |  | `02- Il est né - Alto.mscz` |
+|  |  |  | `03- Il est né - Vcl - Cb - Bas.mscz` |
+|  |  |  | `04- Il est né - Flûtes.mscz` |
+|  |  |  | `05- Il est né - Hautbois.mscz` |
+|  |  |  | `00- Les anges dans nos campagnes - Conducteur.mscz` |
+|  |  |  | `00- Once in royal David_s city - conducteur.mscz` |
+|  |  |  | `02- Once in royal - Alto.mscz` |
+|  |  |  | `00- Minuit chretien - Chant - piano.mscz` |
+|  |  |  | `00- Minuit chretien - conducteur.mscz` |
+|  |  |  | `02- Minuit chretien - Alto.mscz` |
+|  |  |  | `03- Minuit chretien - Vcl - Cb - Timb.mscz` |
+|  |  |  | `00- God rest you merry, gentlemen - chant - piano.mscz` |
+|  |  |  | `00- God rest you merry, gentlemen - choeur.mscz` |
+|  |  |  | `00- God rest you merry, gentlemen - conducteur.mscz` |
+|  |  |  | `01- God rest you - Violons 1 et 2.mscz` |
+|  |  |  | `02- God rest you - Alto.mscz` |
+|  |  |  | `05- God rest you - Basson.mscz` |
+|  |  |  | `00- Adeste fideles - chant piano.mscz` |
+|  |  |  | `00- Adeste fideles - choeur.mscz` |
+|  |  |  | `00- Adeste fideles - conducteur.mscz` |
+|  |  |  | `01- Adeste fideles - Violons 1 et 2.mscz` |
+|  |  |  | `02- Adeste fideles - Alto.mscz` |
+|  |  |  | `03- Adeste fideles - Vcl - Cb - Timb.mscz` |
+|  |  |  | `00- Conducteur - Ô Notre Dame.mscz` |
+|  |  |  | `JMHaydn_Viderunt_omnes.mscz` |
+|  |  |  | `Angels_Carol__John_Rutter.mscz` |
+|  |  |  | `Missa_in_Es_Hob._XXII4_II._Gloria_-_Haydn.mscz` |
+|  |  |  | `Missa_in_Es_Hob._XXII4_III._Credo_-_Haydn.mscz` |
+|  |  |  | `Missa_in_Es_Hob._XXII4_IV._Sanctus_-_Haydn.mscz` |
+|  |  |  | `Missa_in_Es_Hob._XXII4_VI._Agnus_Dei_-_Haydn.mscz` |
+|  |  |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_09_Gloria_Patri_orgue.mscz` |
+|  |  |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_10._Sicut_erat_in_principio_orgue.mscz` |
+| ('staff-details', 'no', (), None, ('multiple-rest',)) | 15 | semantic | `01- Veni veni Emmanuel - Violons 1 et 2.mscz` |
+|  |  |  | `05- Douce nuit - Flûtes.mscz` |
+|  |  |  | `06- Douce nuit - Hautbois.mscz` |
+|  |  |  | `01- Les anges - Violons 1 et 2.mscz` |
+|  |  |  | `02- Les anges - Alto.mscz` |
+|  |  |  | `03- Les anges - Vcl - Basson.mscz` |
+|  |  |  | `04- Les anges - Contrebasse.mscz` |
+|  |  |  | `05- Les anges - Hautbois 1 et 2.mscz` |
+|  |  |  | `05- Once in royal - Basson.mscz` |
+|  |  |  | `04- Minuit chretien - Flûtes 1 et 2.mscz` |
+|  |  |  | `05- Minuit chretien - Hautbois 1 et 2.mscz` |
+|  |  |  | `07- Minuit chretien - Trompettes 1, 2 et 3.mscz` |
+|  |  |  | `06- Adeste fideles - Basson.mscz` |
+|  |  |  | `04- Basson.mscz` |
+|  |  |  | `06- Alto.mscz` |
+| ('attributes child count', 5, 4) | 11 | layout/other | `Marusia.mscz` |
+|  |  |  | `04- Veni veni Emmanuel - Flûtes 1 et 2.mscz` |
+|  |  |  | `05- Veni veni Emmanuel - Hautbois 1 et 2.mscz` |
+|  |  |  | `07- Veni veni Emmanuel - Trompettes 1, 2 et 3.mscz` |
+|  |  |  | `00- Once in royal David_s city - chant piano.mscz` |
+|  |  |  | `00- Once in royal David_s city - choeur.mscz` |
+|  |  |  | `04- God rest you - Hautbois 1 et 2.mscz` |
+|  |  |  | `06- God rest you - Trompettes 1,2 et 3.mscz` |
+|  |  |  | `04- Adeste fideles - Flûtes 1 et 2.mscz` |
+|  |  |  | `05- Adeste fideles - Hautbois 1 et 2.mscz` |
+|  |  |  | `07- Adeste fideles - Trompettes 1, 2 et 3.mscz` |
+| ('staff-details', 'no', ('staff-lines',), None, ('multiple-rest',)) | 9 | semantic | `00- Douce nuit - Choeur.mscz` |
+|  |  |  | `00- Il est né le divin enfant - Rutter - choeur.mscz` |
+|  |  |  | `00- Les anges dans nos campagnes - choeur.mscz` |
+|  |  |  | `01- Once in royal - Violons 1 et 2.mscz` |
+|  |  |  | `04- Once in royal - Hautbois 1 et 2.mscz` |
+|  |  |  | `01- Trompettes 1, 2 et 3.mscz` |
+|  |  |  | `02- Flûtes 1 et 2.mscz` |
+|  |  |  | `03- Hautbois 1 et 2.mscz` |
+|  |  |  | `05- Violons 1 et 2.mscz` |
+| attributes block missing in ref | 7 | layout/other | `Magnificat__Prt.mscz` |
+|  |  |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_01_Dixit_Dominus.mscz` |
+|  |  |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_02_Donec_ponam_de_Antonio_Vivaldi.mscz` |
+|  |  |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_03-VirgamVirtutis_fredipi.mscz` |
+|  |  |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_06-Dominus_fredipi.mscz` |
+|  |  |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_07_Judicabit_in_nationibus.mscz` |
+|  |  |  | `Vivaldi_-_Dixit_Dominus-RV_594__-_09_Gloria_Patri.mscz` |
+| ('attributes child count', 2, 1) | 5 | layout/other | `Veni, Creator Spiritus_Courtial_v3_SATB.mscz` |
+|  |  |  | `00- Veni veni Emmanuel - choeur.mscz` |
+|  |  |  | `00- Veni veni Emmanuel - conducteur.mscz` |
+|  |  |  | `02- Veni veni Emmanuel - Alto.mscz` |
+|  |  |  | `06- Veni veni Emmanuel - Basson.mscz` |
+| ('attributes child count', 4, 3) | 1 | layout/other | `Sancta_Maria_Mater_Dei_Mozart.mscz` |
+| ('attributes child count', 8, 6) | 1 | layout/other | `00- Veni veni Emmanuel - chant piano.mscz` |
+| ('staff-details', 'no', ('staff-lines',), None, ('diatonic', 'chromatic', 'octave-change')) | 1 | semantic | `07- Violoncelle et Contrebasse.mscz` |
