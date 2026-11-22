@@ -3741,9 +3741,9 @@ manifest rows are excluded, four of them duplicate paths.
 
 | Set | Files | Exact | Exact % | N1 % | N2 % | N2 no-repeat % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| all rows | 2 186 | 1 269 | 58.1 | 98.75 | — | — |
-| comparable (reference present) | 1 711 | **1 269** | **74.17** | **98.75** | **90.81** | **93.51** |
-| excluding obsolete-source basket | 1 651 | **1 252** | **75.83** | **98.82** | **93.95** | — |
+| all rows | 2 186 | 1 270 | 58.1 | 98.76 | — | — |
+| comparable (reference present) | 1 711 | **1 270** | **74.23** | **98.76** | **90.82** | **93.51** |
+| excluding obsolete-source basket | 1 651 | **1 253** | **75.89** | **98.83** | **93.96** | — |
 | obsolete-source basket | 60 | 17 | 28.3 | — | 62.36 | — |
 
 The obsolete-source basket is the 60 files that still contain a command
@@ -3849,8 +3849,8 @@ regresses.
 ### Classification of the 465 non-exact files (before this pass)
 
 The `mut` set outside the obsolete-source basket had 465 non-exact files
-before the `\octaveCheck`/`\afterGrace` pass; 399 remain after the octave
-pass. Symptoms
+before the `\octaveCheck`/`\afterGrace` pass; 398 remain after the octave
+and transposition passes. Symptoms
 overlap (a file can be both `octave` and `notes_supp`); the first
 table groups by the oracle's primary flag, the second counts the constructs
 present in the source and its direct includes. `ne`/`ex` are the files that
@@ -3949,6 +3949,24 @@ Selftest: two staves, a shift on staff 1 only. On the 53 files containing
 `\ottava`, **14 become exact** (`turpinhar`, `25EF-11`, `hardtimes`,
 `Chop-28-3`, `Le_porteur`…), N2 68,482 → 70,970 for 84,966 reference notes, no
 exact loss.
+
+### Cause 9: `\transposition` on a staff split into several model staves
+
+`\transposition` is a **Staff** property (`lily/staff-performer.cc`,
+`instrumentTransposition`). When one source Staff is unfolded into several
+model staves (named voices of a guitar), the transposition applies to every
+one of them. The builder only applied it when `staves.len() == 1` and silently
+dropped it otherwise, leaving `milan-pavan2` an octave high. If the
+transposition comes from a single `StaffBlock` (`propre`) and the group was
+split, the model keeps **concert** pitches and the part receives
+`instrument.transpose`: the staves belong to one Part, with one `<transpose>`,
+and the **written** pitch stays that of the source. Tests
+`transposition_sur_portee_depliee_decale_toutes_les_voix` (concert 60, 64,
+`Transpose(-7, -12)`) and
+`transposition_de_portee_depliee_garde_la_hauteur_ecrite` (MusicXML with
+`<transpose>` and written C5). On the 25 non-exact files with
+`\transposition`: `milan-pavan2` becomes exact (23 → 204), N2 88,152 →
+88,650, no exact loss.
 
 ### Cause 5: `\octaveCheck` consumes its pitch
 
