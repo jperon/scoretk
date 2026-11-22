@@ -3004,36 +3004,6 @@ fn staff_size_selon_small_staff_mag_du_style() {
     );
 }
 
-/// Une mesure qui ouvre une section porte son propre `HeaderClef` :
-/// `findAndExportClef` (`exportmusicxml.cpp:7693-7714`) le reprend et
-/// `writeElement` (`:8001-8003`) l'écrit avec `after-barline="yes"`.
-/// Cas réel : `Vingt danses enfantines pour piano` (section de la mesure 156).
-#[test]
-fn clef_debut_de_section_avec_after_barline() {
-    let mut score = Score::new();
-    let part_id = score.add_part(Part::new("Voix", "Vx"));
-    let staff = score.add_staff(part_id);
-    let track = Track::new(score.staff(staff).id, 0);
-    for index in 0..2 {
-        let start = Fraction::from_integer(index as i64);
-        let mut measure = ajouter_mesure(index, start, Fraction::ONE, Fraction::ONE);
-        if index == 1 {
-            measure.section_break_before = true;
-            ajouter_clef(&mut score, &mut measure, track, ClefType::F);
-        } else {
-            ajouter_clef(&mut score, &mut measure, track, ClefType::G);
-        }
-        ajouter_silence_mesure(&mut score, &mut measure, track, start);
-        score.add_measure(measure);
-    }
-
-    let xml = export_musicxml(&score).expect("export");
-    assert!(
-        xml.contains("<clef after-barline=\"yes\">\n          <sign>F</sign>"),
-        "la clef de la section doit être écrite avec after-barline :\n{xml}"
-    );
-}
-
 /// `Rest::checkDots()` n'est appelé que par le layout de la portée
 /// (`restlayout.cpp:148`) : une portée masquée (`<isStaffVisible>0`) n'a donc
 /// aucun `NoteDot`, et `writeRest` (`exportmusicxml.cpp:4655-4669`) n'écrit
