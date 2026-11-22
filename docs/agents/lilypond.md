@@ -5009,14 +5009,20 @@ merge in the oracle. `\context` is now a music-starting command like
 part, one staff, voices 0 and 1.
 
 Measured (`scripts/oracle/lilypond/mesure.py`, refs `/tmp/ly95lect-refs-fixed`,
-prefix `out3`, `--refs-only`): `ra` **1 557 → 1 563/1 724** exact, six files
-gain (`collision-dots`, `collision-heads`,
-`collision-merge-differently-dotted`, `collision-merge-differently-headed`,
-`collision-single-head`, `completion-heads-polyphony`), **no loss and no
-N1/N2 regression**. `mut` is byte-identical per file (1 186 exact before and
-after, same N1/N2/N2-grace; the 1 377-file manifest with the fresh refs).
-The MIDI lots are unchanged: `ecriture_ly` 899/1 019, corpus 17/17,
-`.mscz` 3/8, MIDI import 1 012/1 029, no per-file loss.
+prefix `out3`, `--refs-only`). On the base of this campaign the `\context`
+fix alone took `ra` **1 557 → 1 563/1 724** (six files: `collision-dots`,
+`collision-heads`, `collision-merge-differently-dotted`,
+`collision-merge-differently-headed`, `collision-single-head`,
+`completion-heads-polyphony`), **no loss and no N1/N2 regression**; `mut` was
+byte-identical per file. After rebasing on the later master (`06b51733`,
+which already carries ly95's `\measureLength`/alternatives and
+`\makeClusters` fixes), the two reader fixes of this section together give
+`ra` **1 570 → 1 578/1 724** (+8, the six `collision-*`/`completion-*` plus
+the two below), **no loss and no N1/N2 regression**; `mut` is identical
+(1 192 exact on both sides, same N1/N2/N2-grace; 1 377-file manifest, fresh
+refs). The MIDI lots are unchanged on both bases: `ecriture_ly` 899/1 019,
+corpus 17/17, `.mscz` 3/8, MIDI import 1 013/1 029, no per-file loss
+(measured master vs branch with the same oracle).
 
 ### `\` at score level, and chord unisons in the reading oracle
 
@@ -5028,9 +5034,9 @@ item. Verified on LilyPond 2.27: the first writes one MIDI track, the second
 two. The reader dropped the `\\` token, so each branch became a separate
 anonymous staff. `parse_context_list` now records the separator and returns
 one enclosing staff; reduced test
-`double_antislash_au_niveau_du_score_fait_des_voix`. `ra` **1 563 → 1 565**,
-`flag-stem-begin-position` and `text-spanner-override-order` become exact,
-no loss; `mut` unchanged.
+`double_antislash_au_niveau_du_score_fait_des_voix`. On the campaign base
+`ra` **1 563 → 1 565**, `flag-stem-begin-position` and
+`text-spanner-override-order` become exact, no loss; `mut` unchanged.
 
 The same LilyPond rule explains the **chord unisons**: `lily/midi-walker.cc`
 merges two same-pitch note-ons at the same tick of a track, including the two
@@ -5040,12 +5046,16 @@ successive notes of the same chord (the second carries `<chord/>`) on top of
 the existing different-voice unison rule. The merge is gated on the raw
 candidate having **more** notes than the reference: on a `notes_manquantes`
 file such as `monochords` the duplicates are not the cause, and merging would
-lower N1 without matching a reference note. Measured: `ra` **1 565 → 1 568**
+lower N1 without matching a reference note. Measured against the **previous**
+oracle on the same binary: `ra` **1 565 → 1 568**
 (`accidental-placement-samepitch`, `arpeggio-no-overshoot`,
 `note-head-chord`), no exact loss and no N1/N2 regression; `mut` **1 186 →
 1 192** (`aguado-op03n07`, `fleur_jetee`, `Lieder-ohne-Worte…Gondellied`,
 `Symphony25_1`, `corni`, `k522-mv1`), no loss and no N1/N2 regression.
-The MIDI lots are untouched (this is the LilyPond reading oracle).
+On the later master the corrected oracle is applied to **both** binaries
+(the 1 570 baseline already includes it), so the master-vs-branch figure
+above isolates the two reader fixes (+8). The MIDI lots are untouched (this
+is the LilyPond reading oracle).
 
 ## 24. LilyPond export: status (2026-11-21)
 
