@@ -367,6 +367,10 @@ pub(crate) struct Interpreter<'a> {
     cursor: Fraction,
     /// État d'octave.
     octave: OctaveState,
+    /// Dernier état relatif atteint, avant que le `Context::Relative`
+    /// englobant ne restaure l'état d'origine. Sert à enchaîner les voix d'un
+    /// `<< … \ … >>` comme `music_list_to_relative` (`lily/music-sequence.cc`).
+    relative_final: Option<OctaveState>,
     /// Notes résolues du dernier accord émis, pour la répétition `q`.
     last_chord_notes: Option<Vec<NoteEvent>>,
     /// Transposition en vigueur (degrés diatoniques, demi-tons).
@@ -414,15 +418,19 @@ pub(crate) struct Interpreter<'a> {
 
 impl<'a> Interpreter<'a> {
     /// Interprète une voix.
+    /// Interprète une voix et rend son état relatif final, pour enchaîner les
+    /// voix ou portées d'un même `<< … >>` (`lily/music-sequence.cc`).
     pub(crate) fn run(
         music: &Music,
         unfold_repeats: bool,
         warnings: &'a mut Warnings,
-    ) -> InterpretedVoice {
+        octave: OctaveState,
+    ) -> (InterpretedVoice, OctaveState) {
         let mut interpreter = Self {
             voice: InterpretedVoice::default(),
             cursor: Fraction::ZERO,
-            octave: OctaveState::default(),
+            octave,
+            relative_final: None,
             last_chord_notes: None,
             transpose: (0, 0),
             midi_instrument_transpose: 0,
@@ -443,7 +451,19 @@ impl<'a> Interpreter<'a> {
             order: 0,
             warnings,
         };
-        interpreter.walk(music);
+        // Une référence relative transmise par la voix précédente d'un
+        // `<< … >>` tient lieu du `\relative` sans argument qui enveloppe
+        // chaque branche : `music_list_to_relative` (`lily/music-sequence.cc`)
+        // enchaîne leurs dernières hauteurs. Les `\relative` internes aux
+        // branches gardent leur propre ré-ancrage.
+        let musique = match music {
+            Music::Context(Context::Relative {
+                reference: None,
+                music: interior,
+            }) if octave.relative && octave.previous.is_some() => interior.as_ref(),
+            _ => music,
+        };
+        interpreter.walk(musique);
         // Un ornement écrit en fin d'expression n'a pas d'accord suivant auquel
         // s'attacher (`grace-end-expression.ly`) : `scm/music-functions.scm`
         // le joue quand même. Le rattacher au dernier accord comme ornement
@@ -465,7 +485,8 @@ impl<'a> Interpreter<'a> {
             }
         }
         interpreter.voice.end = interpreter.cursor;
-        interpreter.voice
+        let octave_finale = interpreter.relative_final.unwrap_or(interpreter.octave);
+        (interpreter.voice, octave_finale)
     }
 
     /// Parcourt une expression musicale.
@@ -654,6 +675,7 @@ impl<'a> Interpreter<'a> {
             voice: InterpretedVoice::default(),
             cursor: start,
             octave: self.octave,
+            relative_final: None,
             transpose: self.transpose,
             midi_instrument_transpose: self.midi_instrument_transpose,
             tuplets: Vec::new(),
@@ -1450,6 +1472,11 @@ impl<'a> Interpreter<'a> {
         }
         if let Some(reference) = reference {
             self.octave.previous = Some(reference);
+            // Capturer avant que le contexte relatif englobant ne restaure
+            // son état : la voix suivante en hérite.
+            if self.octave.relative {
+                self.relative_final = Some(self.octave);
+            }
         }
         events
     }

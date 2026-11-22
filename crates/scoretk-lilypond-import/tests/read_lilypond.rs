@@ -6906,5 +6906,16 @@ musique = { \fixed c' { c4 d e f } }
     assert!(
         !score.playback_articulate,
         "la partition retenue n'est pas articulée"
+
+#[test]
+fn seconde_voix_relative_heritant_de_la_premiere() {
+    // `lily/music-sequence.cc:143-158` : `music_list_to_relative` enchaîne
+    // les branches de `<< … >>`, la seconde part de la dernière hauteur de la
+    // première (`lily/relative-octave-check.cc` pour les marques d'octave).
+    let src = "\\version \"2.24.0\"\n\\relative << { c''8 r } \\\\ { c,8.[ c'16] } >>\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![72, 60, 72]
     );
 }

@@ -47,6 +47,7 @@ use crate::events::{
     AnnotationEvent, ChordContent, ChordEvent, EventKind, GraceEvent, InterpretedVoice, MetaEvent,
     RepeatSection, StaffTarget, VoiceEvent,
 };
+use crate::pitch::OctaveState;
 use crate::warnings::Warnings;
 use crate::Interpreter;
 
@@ -142,6 +143,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     write_metadata(&mut score, document);
 
     let mut staves: Vec<StaffBuild> = Vec::new();
+    let mut octave_relatif = OctaveState::default();
     let Some(score_ast) = &document.score else {
         return score;
     };
@@ -265,14 +267,16 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 staff.brackets.push(bracket);
             }
             let staff_id = score.add_staff_with(staff_part_id, staff);
-            let built = build_voices(
+            let (built, octave_suivante) = build_voices(
                 &mut score,
                 staff_id,
                 staff_part_id,
                 staff_block,
                 document.playback_unfold_repeats,
                 warnings,
+                octave_relatif,
             );
+            octave_relatif = octave_suivante;
             let mut built = built.into_iter();
             if let Some(premiere) = built.next() {
                 let mut lyrics: Vec<LyricsBuild> =
@@ -653,14 +657,23 @@ fn build_voices(
     staff_block: &StaffBlock,
     unfold_repeats: bool,
     warnings: &mut Warnings,
-) -> Vec<BuiltVoices> {
+    octave: OctaveState,
+) -> (Vec<BuiltVoices>, OctaveState) {
     let mut queue: VecDeque<PendingVoice> = VecDeque::new();
+    // `lily/music-sequence.cc:143-158` : les voix d'un `<< … >>` s'enchaînent
+    // pour la conversion relative, chacune partant de la dernière hauteur de
+    // la précédente. L'état est mémorisé par l'interpréteur avant que le
+    // `
+    let mut octave = octave;
     for block in &staff_block.voices {
+        let (interpreted, octave_suivante) =
+            Interpreter::run(&block.music, unfold_repeats, warnings, octave);
+        octave = octave_suivante;
         queue.push_back(PendingVoice {
             name: block.name.clone(),
             lyrics: Vec::new(),
             temporary: false,
-            interpreted: Interpreter::run(&block.music, unfold_repeats, warnings),
+            interpreted,
         });
     }
     let mut kept: Vec<PendingVoice> = Vec::new();
@@ -757,7 +770,7 @@ fn build_voices(
             "voix surnuméraires non placées : trop de portées simultanées".to_owned(),
         );
     }
-    built
+    (built, octave)
 }
 
 /// Accolade d'un groupe de portées.
