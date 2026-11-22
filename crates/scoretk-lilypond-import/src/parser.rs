@@ -2581,12 +2581,6 @@ impl<'a> Parser<'a> {
             };
             return music;
         }
-        // `#(define nom #{ … #})` crée un identifiant LilyPond : `\nom` le
-        // désigne aussi bien que `$nom` ou `#nom` (`utf-8-scheme.ly`).
-        if let Some(music) = self.scheme_variables.get(&lookup).cloned() {
-            self.position += extra;
-            return music;
-        }
         // Une fonction musicale définie en Scheme prend le pas sur les
         // commandes intégrées du même nom.
         if self.music_functions.contains_key(&name) {
@@ -3391,6 +3385,19 @@ impl<'a> Parser<'a> {
                 Music::Empty
             }
             _ => {
+                // `#(define nom #{ … #})` crée un identifiant LilyPond :
+                // `\nom` le désigne aussi bien que `$nom` ou `#nom`
+                // (`utf-8-scheme.ly`). La résolution vient **après** les
+                // commandes intégrées : `#(define ottava (let … (define-music-function
+                // … #)))` (`Chop-28-19`) enveloppe la commande d'origine, et
+                // le lecteur ne sait pas évaluer la fonction Scheme ; prendre
+                // le corps stocké perdait l'octavation (une note en trop,
+                // cinq attaques décalées). La commande intégrée reste donc
+                // prioritaire, la variable Scheme servant de repli.
+                if let Some(music) = self.scheme_variables.get(&lookup).cloned() {
+                    self.position += extra;
+                    return music;
+                }
                 self.warn(format!("commande ignorée : \\{name}"));
                 // Dans la musique, le bloc `{ … }` qui suit une commande
                 // inconnue est de la musique ordinaire et non son argument.

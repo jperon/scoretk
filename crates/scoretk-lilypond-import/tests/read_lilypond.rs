@@ -458,6 +458,26 @@ fn markup_de_style_consomme_sa_liste_entre_accolades() {
     assert_eq!(hauteurs(&score), vec![72, 74]);
 }
 
+/// Une redefinition Scheme d'une commande integree (`#(define ottava
+/// (let … (define-music-function …)))`, Chop-28-19) enveloppe la commande
+/// d'origine : le lecteur ne sait pas evaluer la fonction, la commande
+/// integree doit rester prioritaire et non le corps `#{ … #}` stocke.
+#[test]
+fn une_redefinition_scheme_ne_masque_pas_une_commande_integree() {
+    let src = "\\version \"2.24.0\"\n#(define ottava #{ { d''4 } #})\n\\relative c' { c4 \\ottava #1 e4 f \\ottava #0 g4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    // Le corps Scheme stocké (`d''4`) ne doit pas devenir une note ; `\ottava`
+    // reste la convention d'écriture de LilyPond (pas de transposition du son).
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 64, 65, 67]
+    );
+    assert!(score
+        .spanners
+        .iter()
+        .any(|spanner| matches!(spanner.kind, scoretk_core::model::SpannerType::Ottava(_))));
+}
+
 #[test]
 fn relative_et_octaves() {
     let score = lire("\\relative c' { c4 d e f g a b c }");
