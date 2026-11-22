@@ -2857,7 +2857,13 @@ impl<'a> Parser<'a> {
                         let _ = self.parse_with_block();
                     }
                 }
-                self.parse_music()
+                // `autochange-relative.ly` : les hauteurs données à
+                // `\autoChange` sont finales, un `\relative` extérieur ne
+                // doit pas les recalculer ; un `\relative` à l'intérieur, lui,
+                // s'applique.
+                Music::Context(Context::NonRelative {
+                    music: Box::new(self.parse_music()),
+                })
             }
             "repeat" => self.parse_repeat(),
             "*" | "%" => {
