@@ -666,3 +666,24 @@ previous per-element `<beam>`-text heuristic was measured (`target/xml-tuplet/`)
 and lost lines in 12 files, so it was reverted (§28.3). Deriving those
 boundaries would need a 4.7.4 `BeamLayout` reference, which is not in
 `ref-musescore/`; no safe fix was submitted for this class.
+
+## 30. 4.7.4 beam audit and the rejected `<Groups>` port (2026-11-22)
+
+Section 29.3 recorded the open tuplet-bracket class. The 4.7.4 source was
+fetched read-only outside the repository and diffed against the 5.0 snapshot:
+`groups.cpp` (including `baseBeamMode` and its tuplet-change rule),
+`tuplet.cpp::calcHasBracket` and `beamlayout.cpp::createBeams` carry the same
+rules for pitched staves (details in `docs/agents/upstream.md`, appendix A).
+The reference's beam across the tuplet therefore comes from score data —
+staff `<Groups>` with `action=0x110` and explicit `<BeamMode>` — and from
+layout predicates (`calcBeamBreaks`, `headSide`, `isCross`) that the pivot
+model does not carry.
+
+A reduced test first, then a port of `<Groups>` plus a beam-boundary check
+based on the reconstructed beam groups made that test pass, but the full
+oracle (`target/xml-beam474/`) went from 69 to **64** core-identical with
+**12 files losing lines** — the same files as the earlier rejected heuristic.
+The bracket rule needs more than beam start/end: C++ can still drop the
+bracket through `calcBeamBreaks` or `headSide`. The changes were reverted;
+no file regressed and the working tree is clean. This class remains a
+documented limit, not a 4.7.4-vs-5.0 divergence.

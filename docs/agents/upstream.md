@@ -363,3 +363,29 @@ with an independent parity fix.
 `nix flake check` pass, and e2e compliance is not degraded compared
 to the previous state. Any degradation must be fixed in the batch, or
 documented and explicitly validated before merging.
+
+## A. 4.7.4 beam/tuplet audit (2026-11-22)
+
+To test whether invariant 2 (4.7.4 behaviour prevails) could explain the
+remaining `tuplet bracket` divergences, tag `v4.7.4`
+(`7688c005ad963ba09ee715aae53dbc7e8c9d5ef8`) was fetched **read-only and
+outside the repository** (sparse clone under the session's scratch directory).
+No 4.7.4 source was copied into `ref-musescore/` or versioned.
+
+| File | 4.7.4 | 5.0 snapshot | Result |
+| --- | --- | --- | --- |
+| `src/engraving/dom/groups.cpp` | `baseBeamMode` `:107-161`, tuplet-change rule `:143-151` | identical | no diff |
+| `src/engraving/dom/tuplet.cpp` | `calcHasBracket` `:206-280` | identical | no diff |
+| `src/engraving/rendering/score/beamlayout.cpp` | `createBeams` `:624+` | `createBeams` `:653+` | only Jianpu rests and a `createBeamIfNeed` refactor |
+
+**Conclusion:** the 4.7.4 *rules* for beams and tuplets are the same as the
+ported 5.0 ones. The observed difference is input data, not code: the scores
+carry staff `<Groups>` (read at 4.7.4
+`src/engraving/rw/read400/tread.cpp:4084`, `:4035-4038` in the 5.0 snapshot)
+and explicit `<BeamMode>` values, neither of which is in the pivot model, and
+`calcHasBracket` additionally uses `calcBeamBreaks`, `headSide` and `isCross`
+from the layout. An attempt to port `<Groups>` and approximate the
+beam-boundary check lost lines in 12 files (69 → 64 core-identical,
+`target/xml-beam474/`) and was reverted: the simplified check omitted those
+layout predicates. This class stays open until the relevant layout data is
+modelled; it is **not** a 4.7.4-vs-5.0 behavioural divergence.
