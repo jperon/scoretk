@@ -2890,3 +2890,22 @@ first divergence (`cause` column). One line per tune: `file | X | group`.
 | TRANSPOSITION |  | `parsing.test__abcInlineKeyPerVoice.abc` | `1` |
 | DESACCORD_TOTAL | 1 | `flattener.test__abcSnare.abc` | `1` |
 | OCTAVE | 1 | `example-006.abc` | `1` |
+
+## 33. What the offline baseline rules out
+
+The `NOTES_MANQUANTES` group (125 tunes, 124 from `music21/airdsAirs`) is not
+one grammar defect: sampled reductions lose 1–33 written pitches per tune
+across mixed constructs (`T` decorations, broken rhythm `>`/`<`, backtick
+graces, `::` repeats). A minimal tune with `TAB c Tf2 G6` reads all five
+written notes, so the single-letter decoration path itself is sound. Isolating
+the responsible clause needs a per-tune pitch-sequence diff rather than the
+multiset N1 reported by the oracle; that work was not completed here, so no
+reader change was committed.
+
+The `OCTAVE` singleton (`example-006.abc X:1`, `com1=23`, `oct=49`) uses
+`clef=treble-8` and `V:… transpose=-24`. Both features are already handled in
+`reader/mod.rs` (clef octave `:989-1035`, voice transpose `:1079-1102`), so the
+gap is in their interaction, not a missing clause.
+
+No per-file regression was introduced: this pass added only the §32 table and
+these notes. Core-identical counts for MusicXML export are untouched.
