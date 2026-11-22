@@ -11,7 +11,7 @@
 staffOneVoiceOne = \fixed c' {
   \clef treble \key c \major \time 4/4
   b4~ b4 r2 |
-  \appoggiatura { b8 } b4 r4 \afterGrace b4~ { b8 } r4 \bar "|."
+  \appoggiatura { b8~ } b4 r4 \afterGrace b4~ { b8 } r4 \bar "|."
 }
 
 \score {

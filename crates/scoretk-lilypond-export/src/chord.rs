@@ -295,6 +295,14 @@ fn chord_notes(
         }
         rendered.push_str(&pitch::pitch_name(note, transpose_chromatic));
         rendered.push_str(&duration);
+        // Le `{ ... }` d'un agrément est de la musique séquentielle
+        // (`def-grace-function`, `scm/music-functions.scm:1237-1248`) : le
+        // `~` doit être porté par la dernière note du bloc pour que le lien
+        // atteigne la note principale. Sans lui la relecture perd le
+        // `tie stop` de cette dernière (9 fichiers `Minuit chrétien`).
+        if note.tie_forward.is_some() {
+            rendered.push('~');
+        }
         rendered.push(' ');
     }
     rendered.trim_end().to_owned()
@@ -455,6 +463,36 @@ mod tests {
     /// `\stemUp`/`\stemDown` sont les alias de LilyPond pour
     /// `\override Stem.direction` (`ly/property-init.ly`) : avec `\once`
     /// ils restent ponctuels mais divisent la sortie par trois.
+    /// Une note d'agrément liée à la note principale doit porter le `~`
+    /// dans le `{ ... }` de l'agrément : LilyPond attache le lien à la
+    /// dernière note du bloc. Le port ne le mettait que sur la note
+    /// principale, ce qui perdait le `tie stop` à la relecture.
+    #[test]
+    fn agrément_lié_porte_le_tilde() {
+        let mut score = Score::new();
+        let continuation = score.add_note(Note::new(62, tpc::D));
+        let mut grace_note = Note::new(62, tpc::D);
+        grace_note.tie_forward = Some(continuation);
+        let grace_id = score.add_note(grace_note);
+        let mut grace = scoretk_core::model::GraceChord::new(
+            scoretk_core::model::GraceType::Acciaccatura,
+            Duration::eighth(),
+        );
+        grace.chord.notes.push(grace_id);
+
+        let mut chord = ChordRest::chord(Duration::quarter());
+        let main = score.add_note(Note::new(62, tpc::D));
+        if let Some(inner) = chord.chord_mut() {
+            inner.notes.push(main);
+            inner.grace_chords.push(grace);
+        }
+        let out = render(&score, &chord, Fraction::ONE, 0);
+        assert!(
+            out.contains("\\acciaccatura { d8~ }"),
+            "le tilde doit être dans le bloc d'agrément : {out}"
+        );
+    }
+
     #[test]
     fn correction_de_hampe_compacte() {
         assert_eq!(stem_override(StemDirection::Up), Some("\\once \\stemUp"));
