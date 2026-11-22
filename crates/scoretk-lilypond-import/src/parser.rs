@@ -2957,9 +2957,25 @@ impl<'a> Parser<'a> {
                 // laisser la durée de l'argument dans la durée par défaut.
                 let previous_duration = self.default_duration;
                 let previous_multiplier = self.default_multiplier;
+                // Un nombre invalide (`\skip 0`) est tout de même consommé
+                // comme durée : il ne doit pas être relu comme musique.
+                let argument_est_duree = self.peek().is_some_and(|token| {
+                    token.kind == Kind::Number
+                        || token.is_command("breve")
+                        || token.is_command("longa")
+                        || token.is_command("maxima")
+                });
                 let (duration, multiplier) = self.parse_optional_duration_spec();
                 self.default_duration = previous_duration;
                 self.default_multiplier = previous_multiplier;
+                if duration.is_none() && !argument_est_duree && self.at_toplevel_music() {
+                    // `ly/music-functions-init.ly:2267-2274` : l'argument de
+                    // `\skip` peut être une musique (`duration-or-music?`),
+                    // enveloppée dans un `SkippedMusic` : elle avance le temps
+                    // sans jouer ses notes (skip-music.ly).
+                    let music = self.parse_music();
+                    return silence_music(music);
+                }
                 let (duration, multiplier) = self.resolve_chord_duration(duration, multiplier);
                 Music::Chord(Chord {
                     kind: ChordKind::SkipNumeric,
@@ -4855,6 +4871,42 @@ fn obsolete_music_command(name: &str) -> Option<&'static str> {
         "sostenutoDown" => Some("sostenutoOn"),
         "sostenutoUp" => Some("sostenutoOff"),
         _ => None,
+    }
+}
+
+/// Rend une musique silencieuse en conservant ses durées.
+///
+/// `ly/music-functions-init.ly:2267-2274` : `\skip <musique>` construit un
+/// `SkippedMusic`, dont l'élément est traversé sans produire de notes, mais
+/// en avançant le temps de ses accord. Chaque accord devient donc un
+/// `SkipNumeric` de même durée. Limite : les contextes imbriqués ne sont pas
+/// parcourus (le temps qu'ils portent est ignoré).
+fn silence_music(music: Music) -> Music {
+    match music {
+        Music::Chord(chord) => Music::Chord(Chord {
+            kind: ChordKind::SkipNumeric,
+            posts: Vec::new(),
+            invisible: true,
+            ..chord
+        }),
+        Music::Seq(items) => Music::Seq(items.into_iter().map(silence_music).collect()),
+        Music::Sim(items) => Music::Sim(items.into_iter().map(silence_music).collect()),
+        Music::Tag { tags, music } => Music::Tag {
+            tags,
+            music: Box::new(silence_music(*music)),
+        },
+        Music::Filtered {
+            filter,
+            wanted,
+            groups,
+            music,
+        } => Music::Filtered {
+            filter,
+            wanted,
+            groups,
+            music: Box::new(silence_music(*music)),
+        },
+        _ => Music::Empty,
     }
 }
 

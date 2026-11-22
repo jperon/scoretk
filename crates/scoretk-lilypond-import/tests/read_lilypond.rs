@@ -6519,3 +6519,18 @@ fonction =\n#(define-music-function (visibilite) (procedure?)\n\
         vec![72, 74]
     );
 }
+
+#[test]
+fn skip_avec_musique_ne_joue_pas_cette_musique() {
+    // `ly/music-functions-init.ly:2267-2274` : `\skip` accepte une durée ou
+    // une musique (`duration-or-music?`). Avec une musique, les notes sont
+    // traversées silencieusement ; seul le temps est avancé.
+    let src = "\\version \"2.24.0\"\nmusiqueSautee = { c1 | e1 }\n\
+\\fixed c' { a1 | \\skip \\musiqueSautee | a1 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![69, 69],
+        "seules les deux notes a doivent être jouées"
+    );
+}
