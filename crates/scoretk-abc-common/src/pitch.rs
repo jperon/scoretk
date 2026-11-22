@@ -439,7 +439,14 @@ pub fn parse_key(text: &str) -> Option<ParsedKey> {
     }
 
     let mut chars = tonic_text.chars();
-    let letter = chars.next()?.to_ascii_uppercase();
+    // La tonique doit être une lettre **majuscule** (`abc2xml.py`,
+    // `doHeaderField`, regex ligne 1811) : un champ `K: bass-8`/`K: treble+8`
+    // ne porte que des paramètres et laisse C majeur par défaut.
+    let first_letter = chars.next()?;
+    if !first_letter.is_ascii_uppercase() {
+        return None;
+    }
+    let letter = first_letter.to_ascii_uppercase();
     if !('A'..='G').contains(&letter) {
         return None;
     }
@@ -578,6 +585,16 @@ pub fn parse_clef(text: &str) -> Option<ClefType> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn clef_seule_n_est_pas_une_tonique() {
+        // `abc2xml.py::doHeaderField` (ligne 1811, regex
+        // `([A-G][#b]?)\s*([a-zA-Z]*)`) n'accepte qu'une tonique majuscule :
+        // `K: bass-8` est un champ de clef, pas une armure en si bémol.
+        assert!(parse_key("bass-8").is_none());
+        assert!(parse_key("treble+8").is_none());
+        assert!(parse_key("C clef=bass").is_some());
+    }
+
     use super::*;
     use scoretk_core::model::{tpc, Note};
 
