@@ -1371,6 +1371,49 @@ fn render_chord(
                 context,
             );
         }
+    } else if before.first().is_some_and(|index| {
+        matches!(
+            chord.grace_chords[*index].chord.grace,
+            Some(GraceType::Grace4 | GraceType::Grace16 | GraceType::Grace32)
+        )
+    }) {
+        // Notes d'agrément de valeur (`GRACE4`/`GRACE16`/`GRACE32`) : MuseScore
+        // les place **avant le temps** et ne retire pas leur durée à la note
+        // principale (`createGraceNotesPlayEvents`,
+        // `compatmidirender.cpp:559-590` : `ontime` espace le groupe,
+        // `trailtime` ne concerne que les ornements après). La largeur du
+        // groupe est `min(500, durée de la première grâce / durée de
+        // l'accord)` en millièmes, comme `ontime`.
+        let grace_ticks = before.first().map_or(0, |index| {
+            chord.grace_chords[*index]
+                .duration
+                .ticks()
+                .ticks(UNITS_PER_WHOLE)
+        });
+        let ontime = (grace_ticks * 1000 / ticks.max(1)).min(500);
+        let each = ontime / before.len().max(1) as i64;
+        let total = ticks * ontime / 1000;
+        for (position, index) in before.iter().enumerate() {
+            let on = utick - total + ticks * each * position as i64 / 1000;
+            let off = on + ticks * each / 1000 - 1;
+            render_grace_notes(
+                score,
+                staff,
+                &chord.grace_chords[*index].chord,
+                *index,
+                true,
+                on,
+                off,
+                channel,
+                track,
+                &chord_velocity,
+                velocities,
+                source_tick,
+                offsets,
+                out,
+                context,
+            );
+        }
     } else if !before.is_empty() {
         // Appoggiatures : au plus la moitié de l'accord principal, les unes
         // après les autres en prenant le temps de l'accord.

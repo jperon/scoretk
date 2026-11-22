@@ -454,6 +454,13 @@ unmatched note with the finest cause: `note sup` (extra note),
 | `note sup` | 8 | `ly-lily-30ec2d9a` |
 | `octave` | 1 | `ly-Lassus_Alleluja._Dies_sanctificatus` |
 
+`ATiTeCantamos` (55 extra notes) is fixed by the **oracle**: the file defines
+rehearsal `\book` blocks with `\unfoldRepeats` after its main score, and
+`sans_unfold` checked the whole text, so the writer expanded the main score's
+`\repeat volta 2` (200 notes) where LilyPond's reference plays it once (145).
+`sans_unfold` now judges the **first `\score`** (the one the reader keeps,
+`premier_score`); test `test_sans_unfold.py`. 898 → 899 exact.
+
 Two reader fixes of this pass show up here because the `.ly` references are
 converted to MusicXML by the same binary: `Kryshachok` (`\chordmode` octave
 marks, Cause 43 of `lilypond.md`) and `02_01_CommentLeSaisJe` (`a:7m`, Cause
@@ -587,8 +594,8 @@ changes.
 | Lot | Files | Exact | N1 % | N2 % | N2d % | Ref. notes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `ecriture_mscz_corpus` | 17 | **17 (100,0 %)** | 100,00 | 100,00 | 100,00 | 483 |
-| `ecriture_ly` | 1 019 | **898 (88,1 %)** | 97,81 | 97,65 | 96,90 | 131 736 |
-| `ecriture_mscz_musique` | 8 | 3 (37,5 %) | 63,87 | 53,63 | 51,22 | 9 325 |
+| `ecriture_ly` | 1 019 | **899 (88,2 %)** | 97,81 | 97,65 | 96,90 | 131 736 |
+| `ecriture_mscz_musique` | 8 | 3 (37,5 %) | 63,87 | 53,63 | 51,26 | 9 325 |
 
 ### Comparison rule for a writing lot (oracle)
 
@@ -639,11 +646,37 @@ duration, no voice): `durée`, `note manquante`, `note sup`, `attaque`,
 | --- | --- | ---: |
 | `ecriture_ly` | `durée` | 119 |
 | `ecriture_ly` | `attaque` | 1 |
-| `ecriture_ly` | `note sup` | 1 |
-| `ecriture_mscz_musique` | `durée` | 2 |
+| `ecriture_mscz_musique` | `note sup` | 2 |
 | `ecriture_mscz_musique` | `attaque` | 1 |
-| `ecriture_mscz_musique` | `note sup` | 1 |
+| `ecriture_mscz_musique` | `durée` | 1 |
 | `ecriture_mscz_musique` | `octave` | 1 |
+
+### The five non-exact `.mscz` files of `~/Musique`
+
+Classified with the same normalised sequence diff (pitch + onset + duration):
+
+- **`Wellerman`** (ref 178, ours 704): the score has `<endRepeat>4</endRepeat>`
+  and the reference `.midi` beside the `.mscz` was exported **without**
+  expanding it (our `--no-expand-repeats` output has 176 notes, expanded 704).
+  Export-option mismatch of the reference, not a writer cause; the `.mscz`
+  does not record the export option.
+- **`Veni, Creator Spiritus_Courtial_v3_SATB`** (ref 3 040, ours 249): the
+  reference is a different/stale score — the sibling `.ly` had the same
+  3 134-versus-249 pair, already documented in `lilypond.md` §14 as a stale
+  MIDI. Reader/reference, not the writer.
+- **`Laudate_pueri`** (ref 1 611, ours 1 297, N1 80,5 %): MuseScore 3.2.3
+  linked staves/parts, like the rest of the `.mscz` lot; the model is missing
+  notes before the writer runs.
+- **`Sancta_Maria_Mater_Dei`** (ref 2 370, ours 2 420, N1/N2 100 %, N2d
+  2 364): **writer cause fixed** — `GRACE4`/`GRACE16`/`GRACE32` were treated
+  as appoggiaturas (on the beat, shortening the main note);
+  `createGraceNotesPlayEvents` (`compatmidirender.cpp:559-590`) places them
+  **before** the beat and does not shorten the main note. Test
+  `grace16_before_beat` (grâce 360–479, noire 480–959). N2d 2 360 → 2 364,
+  six durations remain (other grace/articulation constructs) so the file is
+  not yet exact.
+- **`Sancta_Maria_Lux_tempestiva`** (ref 467, ours 560, N1 44,5 %): MuseScore
+  4.0.1 model/reference disagreement before the writer (pitch/voice layout).
 
 The corpus lot is exact everywhere. The 120 remaining `durée` files of
 `ecriture_ly` split into two **performance conventions** and one residual
