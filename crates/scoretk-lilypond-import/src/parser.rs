@@ -2513,6 +2513,12 @@ impl<'a> Parser<'a> {
             }
             return music;
         }
+        // `#(define nom #{ … #})` crée un identifiant LilyPond : `\nom` le
+        // désigne aussi bien que `$nom` ou `#nom` (`utf-8-scheme.ly`).
+        if let Some(music) = self.scheme_variables.get(&lookup).cloned() {
+            self.position += extra;
+            return music;
+        }
         // Une fonction musicale définie en Scheme prend le pas sur les
         // commandes intégrées du même nom.
         if self.music_functions.contains_key(&name) {

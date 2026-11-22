@@ -7142,3 +7142,15 @@ fn time_numerateur_nul_ignore() {
         vec![60]
     );
 }
+
+#[test]
+fn variable_scheme_appellee_par_backslash() {
+    // `#(define nom #{ … #})` définit un identifiant LilyPond, utilisable
+    // aussi bien par `$nom`/`#nom` que par `\nom` (`utf-8-scheme.ly`).
+    let src = "\\version \"2.24.0\"\n#(define musique #{ { c'4 } #})\n\\new Staff \\musique\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60]
+    );
+}
