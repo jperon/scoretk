@@ -5831,3 +5831,52 @@ montre **2 gains** (`markup-map`, `music-map-articulations`) et **aucune perte**
 : les autres écarts viennent des commits de `master`, pas de ces causes. Restent
 84 `attaque_decalee`, 48 `notes_supp`, 32 `octave`, 22 `notes_manquantes`, 17
 `sortie_vide`, 5 `transposition`, 4 `autre`, 1 `echec`.
+
+## `ra` — récupération des pertes par le lecteur (lot 88,9 %)
+
+Le passage de 1510 (avant fusion) à 1505 sur `master` `7d31c559` venait de
+`e2d7a276` (writer MusicXML : court-circuit des accords sans note, correctif
+de `Symphony5_1/2`). Une tentative de correction côté writer (ne court-circuiter
+un accord vide que s'il porte une articulation ou si sa portée n'a aucune note)
+a été **rejetée** : elle compensait un artefact de lecture dans l'écrivain,
+faisait dépendre le comportement des articulations (sans base MusicXML ni
+MuseScore) et introduisait un balayage quadratique `staff_has_notes`. La règle
+uniforme a été restaurée : un accord sans note n'écrit rien et n'avance pas le
+curseur ; c'est `move_to_tick` qui émet le `<forward>` (`exportmusicxml.cpp`).
+
+Toutes les causes réelles étaient donc dans le lecteur :
+
+1. **Valeur `\markup` d'`\override` non consommée** : son `{16}` devenait un
+   accord vide. `parse_override` consomme maintenant la valeur `\markup`.
+2. **Durée nue après une liste de markup** (`trivial-path.ly`) :
+   `parse_markup_text` s'arrête à la fin de la liste au lieu d'avaler le `4`
+   suivant. Test `duree_nue_apres_markup_avec_path_est_jouee`.
+3. **Commandes sans argument** (`oneVoice`, `autoBeamOff`, `autoBeamOn`,
+   `noBeam`, `beamUp`, `beamDown`, `beamNeutral` ; `ly/property-init.ly:140,970`,
+   `ly/declarations-init.ly:78`) : la durée nue qui suit reste de la musique.
+   Test `commandes_sans_argument_gardent_la_duree_nue`.
+4. **`NullVoice`** : portée muette **et** cachée (`Staff::visible = false`,
+   `print-object="no"` à l'export). Test
+   `nullvoice_garde_les_paroles_et_est_muette_dans_le_midi`.
+5. **Réglages de mesure laissés dans le flux** : `\overrideTimeSignatureSettings`
+   (4 arguments, `ly/music-functions-init.ly:1351`), structure de temps de
+   `	ime`/`	imeAbbrev` avant l'armure (`ly/property-init.ly`), liste de numéros
+   `olta`, `\musicLength` comme valeur de propriété, et
+   `\contextPropertyCheck` (`ly/music-functions-init.ly:462`) dont la valeur
+   Scheme peut être un nombre nu (`Staff.meterScalingFactor 1`). Chacun
+   laissait une durée ou un accord vide qui décalait toutes les notes. Un test
+   réduit par cause a été ajouté.
+
+Récupérés : `break-alignment-anchor-average-clamp`, `markup-note-grob-style`,
+`multiple-time-sig-settings`, `partial-polymetric`,
+`polymetric-time-warning-measure-length-irregular`, `spacing-space-to-barline`,
+`time-signature-settings-by-staff`, `volta-bracket-warning-start-conflicting-numbers`,
+sans perdre `rhythm-sets-default-duration` ni `span-bar-no-bar`. Les quatre
+fichiers `mut` protégés (`Chop-28-19`, `Symphony5_1/2`, `No03_Albumblatt`)
+restent exacts (références reconstruites depuis `refs27`, `--refs-prefix ''`,
+`/tmp/ly-mut-final2` : 4/4 exacts, N1 et N2 à 100 %).
+
+Mesure complète (`/tmp/ly-ra-final`) : **1532 exacts sur 1724 (88,9 %)**, 27
+gains et aucune perte par rapport au bâti `master` `7d31c559` (1505). Restent
+71 `attaque_decalee`, 46 `notes_supp`, 28 `octave`, 21 `notes_manquantes`, 17
+`sortie_vide`, 5 `transposition`, 4 `autre`.
