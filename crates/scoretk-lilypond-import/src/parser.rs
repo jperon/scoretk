@@ -995,6 +995,25 @@ impl<'a> Parser<'a> {
     /// d'une seule portée (au plus quatre dans le modèle), perdant la musique
     /// des portées suivantes. Les autres noms (`\context { \Staff … }` d'un
     /// `\midi`, `\context Score`, `\context Lyrics`…) restent traversés.
+    /// Nom de contexte après `=`, chaîne (`"up"`) ou symbole nu (`up`) :
+    /// LilyPond accepte les deux (`CHANGE STRING '=' simple_string`,
+    /// `lily/parser.yy` ; les sources anciennes écrivent `\new Staff = one`
+    /// et `\context Voice = VA`). Ne lire que `Kind::Str` perdait le nom et
+    /// cassait la résolution de `\change`/`\context` vers cette portée.
+    fn parse_context_id(&mut self) -> Option<String> {
+        if !self.eat_punct('=') {
+            return None;
+        }
+        match self.bump() {
+            Some(Token {
+                kind: Kind::Str | Kind::Word,
+                text,
+                ..
+            }) => Some(text),
+            _ => None,
+        }
+    }
+
     fn parse_context_command(&mut self, existing: bool) -> Music {
         if existing {
             // Un `\context Staff` dont le contenu porte des voix nommées
@@ -1007,18 +1026,7 @@ impl<'a> Parser<'a> {
                 token.kind == Kind::Word && GroupKind::from_name(&token.text) == GroupKind::Staff
             }) {
                 self.bump();
-                let context_name = if self.eat_punct('=') {
-                    match self.bump() {
-                        Some(Token {
-                            kind: Kind::Str,
-                            text,
-                            ..
-                        }) => Some(text),
-                        _ => None,
-                    }
-                } else {
-                    None
-                };
+                let context_name = self.parse_context_id();
                 let mut instrument_name = None;
                 let mut short_instrument_name = None;
                 if self.eat_command("with") {
@@ -1127,17 +1135,7 @@ impl<'a> Parser<'a> {
             }
         };
         let kind = GroupKind::from_name(&name);
-        let mut context_name = None;
-        if self.eat_punct('=') {
-            if let Some(Token {
-                kind: Kind::Str,
-                text,
-                ..
-            }) = self.bump()
-            {
-                context_name = Some(text);
-            }
-        }
+        let context_name = self.parse_context_id();
 
         let mut instrument_name = None;
         let mut short_instrument_name = None;

@@ -2129,6 +2129,28 @@ fn change_vers_portee_d_autre_partie() {
     );
 }
 
+/// Les noms de contexte peuvent etre ecrits sans guillemets : LilyPond
+/// accepte un symbole nu (`CHANGE STRING '=' simple_string`, `lily/parser.yy`).
+/// `\new Staff = one` perdait son nom, et `\change Staff = one` ne trouvait
+/// plus la portee (avertissement « portee inconnue »).
+#[test]
+fn noms_de_contexte_sans_guillemets() {
+    let source = r#"\version "2.18.2"
+\score { \context PianoStaff <<
+  \new Staff = one { c'4 }
+  \new Staff = two { \change Staff = one e'4 }
+>> }
+"#;
+    let (score, warnings) = read_lilypond_reporting(source).expect("lecture");
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.message.contains("portée inconnue")),
+        "avertissements : {warnings:?}"
+    );
+    assert_eq!(hauteurs(&score), vec![60, 64]);
+}
+
 #[test]
 fn change_dans_beam_cross_staff() {
     // Reduced inline copy of LilyPond's `input/regression/beam-cross-staff.ly`
