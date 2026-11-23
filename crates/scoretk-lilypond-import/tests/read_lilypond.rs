@@ -8719,3 +8719,15 @@ fn voix_ouverte_dans_une_sequence_reste_sur_la_portee() {
     hauteurs.sort();
     assert_eq!(hauteurs, vec![60, 62, 64]);
 }
+
+#[test]
+fn accord_renverse_sur_la_fondamentale_garde_ses_octaves() {
+    // `b/b` : `make-chord-elements` (`scm/chord-entry.scm:205-215`) garde les
+    // autres notes à leur octave d'origine (« turning f/f into <f a' c''> »)
+    // et n'ajoute que la basse ; les ramener au-dessus de la basse donnait
+    // si3, ré4, fa#4 au lieu de si3, ré5, fa#5 (`chord-names-languages.ly`).
+    let score = read_lilypond("\\version \"2.24.0\"\n\\chordmode { b1/b }\n").expect("lecture");
+    let mut hauteurs = hauteurs_attaques(&score);
+    hauteurs.sort();
+    assert_eq!(hauteurs, vec![59, 75, 78]);
+}

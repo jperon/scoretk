@@ -333,6 +333,16 @@ pub(crate) fn chord_pitches(language: Language, name: &str) -> Option<(Vec<u8>, 
     // et non l'accord fondamental plus une basse. Une basse explicite
     // (`/+d`) ou étrangère à l'accord garde l'accord fondamental.
     let notes = match basse_midi {
+        // Renversement sur la fondamentale (`b/b`, `f/f`) : LilyPond garde les
+        // autres notes à leur octave d'origine — `make-chord-elements`
+        // (`scm/chord-entry.scm:205-215`) : « turning f/f into <f a' c''> » —
+        // et n'ajoute que la basse. Les ramener au-dessus de la basse
+        // donnait `b/b` = si3, ré4, fa#4 au lieu de si3, ré5, fa#5.
+        Some(basse) if !explicite && basse % 12 == root % 12 => notes
+            .iter()
+            .copied()
+            .filter(|note| note % 12 != basse % 12)
+            .collect(),
         Some(basse) if !explicite && notes.iter().any(|p| p % 12 == basse % 12) => {
             let mut reste: Vec<u8> = notes
                 .iter()
