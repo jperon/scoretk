@@ -2326,6 +2326,18 @@ impl<'a> Parser<'a> {
                     let item = self.parse_music();
                     if !item.is_empty() {
                         items.push(item);
+                    } else if self.peek().is_some_and(|token| token.is_punct('~')) {
+                        // Élément vide (variable sans musique, `\testVshape`)
+                        // entre un accord et sa liaison : le `~` porte sur la
+                        // musique précédente (`c1\testVshape~ c`, `vshape.ly`).
+                        // Sans cela il répétait la note. On ne rattache que la
+                        // liaison : les autres post-événements d'un bloc lu
+                        // comme musique (`\markup { 8 … }` de `ottava.ly`)
+                        // doivent garder leur lecture.
+                        let posts = self.parse_posts();
+                        if let Some(Music::Chord(chord)) = items.last_mut() {
+                            chord.posts.extend(posts);
+                        }
                     }
                     self.guard_progress(before);
                 }
@@ -3162,6 +3174,24 @@ impl<'a> Parser<'a> {
             // pour le modèle. Ignorée, la commande décalait les notes qui
             // suivent (`approximate-pitch-head-direction-tweak.ly`).
             "approximatePitch" => self.parse_music(),
+            // `\shape` et `\vshape` (`ly/music-functions-init.ly:2191-2230`
+            // et `:2675-2681`) décalent les points de contrôle d'un grob :
+            // une liste Scheme de décalages, puis une liste de clés ou la
+            // musique qui suit. Sans effet MIDI ; laissés dans le flux, la
+            // liste et l'item produisaient des notes en trop (`vshape.ly`).
+            "shape" | "vshape" => {
+                self.skip_scheme_value();
+                if self.eat_command("etc") {
+                    // `\vshape #'(…) \etc` : fonction partielle, l'item
+                    // viendra à l'appel (`vshape.ly`).
+                    Music::Empty
+                } else if self.at_offset_key_list() {
+                    let _ = self.skip_property_path();
+                    Music::Empty
+                } else {
+                    self.parse_music()
+                }
+            }
             "offset" => {
                 self.parse_offset_arguments();
                 if self.at_offset_key_list() {
@@ -5148,6 +5178,13 @@ impl<'a> Parser<'a> {
                     }
                     return Vec::new();
                 }
+                if name == "shape" || name == "vshape" {
+                    self.skip_scheme_value();
+                    if self.at_offset_key_list() {
+                        let _ = self.skip_property_path();
+                    }
+                    return Vec::new();
+                }
                 if name == "tweak" {
                     // `\tweak propriété valeur` en position de post-événement
                     // (`lily/parser.yy` : `tweak` est une musique *et* un
@@ -5181,6 +5218,14 @@ impl<'a> Parser<'a> {
                             }
                         }
                     }
+                    return Vec::new();
+                }
+                if !name.is_empty() && name.chars().all(|c| c.is_ascii_digit()) {
+                    // `\5` : numéro de corde (`stringNumber`), post-événement
+                    // sans argument. Passer par `parse_direction_event`
+                    // consommait le `-` du doigté qui suit comme un tenuto
+                    // et laissait son chiffre comme durée nue, répétant la
+                    // note (`script-stack-order1.ly`).
                     return Vec::new();
                 }
                 if name == "glide" {
@@ -7294,6 +7339,15 @@ fn starts_post_event(token: &Token) -> bool {
                 || token.text == "rest"
                 || token.text == "bendAfter"
                 || token.text == "single"
+                // `\5` : numéro de corde, post-événement sans argument
+                // (`stringNumber`, `ly/declarations-init.ly`).
+                || (!token.text.is_empty()
+                    && token.text.chars().all(|c| c.is_ascii_digit()))
+                // `\shape`/`\vshape` entre une note et ses post-événements
+                // (`c1 \vshape #'(…) ~ (`, `vshape.ly`) : consommer les
+                // décalages et laisser la boucle lire `~` et `(`.
+                || token.text == "shape"
+                || token.text == "vshape"
                 // `\tweak` est aussi un post-événement (`lily/parser.yy`) :
                 // `b2 \tweak color #red ^1` modifie l'événement qui suit.
                 || token.text == "tweak"
