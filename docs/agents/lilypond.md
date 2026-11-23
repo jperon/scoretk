@@ -6893,3 +6893,37 @@ Mesure strictement contrôlée : binaire de master `6229fcec`
 `backend-exercise.ly`), **0 perte**. Le chiffre +20 annoncé précédemment
 comparait des binaires séparés par de nombreux commits master et n'était pas
 contrôlé ; il est remplacé par +3.
+
+### Voix simultanées et fonctions Scheme définies dans le fichier
+
+**Chronologie `<< { } { } { } >>`** : `lily/simultaneous-music-iterator.cc:96-131`
+exécute chaque enfant à son propre `pending_moment` (pas de séquencement), et
+`events.rs::simultaneous` marche la première branche sur place puis `spawn_at(start)`
+les autres — toutes au même tick. Reduced cases vérifiés :
+`{ c'1 << { d'4 } { e'4 } { f'4 } >> }` et la variante avec `\parenthesize`/`\tweak`
+donnent bien les trois notes de la deuxième mesure au même tick. L'écart de
+`parenthesize-chords.ly` (ticks 1 vs 3) ne vient donc pas de la règle Sim mais
+du contenu propre de la troisième branche (`<c' e>` après `\tweak` dans un
+contexte `\new TabVoice`) ; pas de cause commune avec les 16 fichiers du
+groupe `voices`, dont les divergences sont des constructeurs distincts
+(`caesura`, `defineBarLine`, `featherDurations`, `chordmode`, `germanChords`,
+`partCombine`, …). Aucun correctif global justifié, aucun fichier exclu.
+
+**Inventaire des fonctions Scheme locales** : 9 fichiers inexacts définissent
+`define-music-function`/`define-scheme-function` dans le fichier.
+Corps `#{ … #}` présents dans 7, mais après lecture :
+- `make-relative.ly`, `make-relative-music.ly` : corps `make-relative` (logique
+  d'octave complète, pas une simple substitution) ;
+- `scheme-list-splicing.ly` : `map`/`iota`/`ly:make-pitch` Scheme ;
+- `note-head-style.ly` : `string->symbol`, `\with #style`, paramètres context-mod ;
+- `optional-args.ly` : **le seul** corps réellement simple (`#{ \relative $ref $music #}`
+  avec arguments optionnels) ;
+- `accidental-styles.ly`, `tie-chord.ly`, `music-function-string-markup.ly` :
+  corps `make-music`/Scheme, sans `#{ }`.
+
+Built-ins `ly/music-functions-init.ly`/`scm/music-functions.scm:2144-2188`
+(`skip-of-length`, `mmrest-of-length`) : un seul fichier (`skip-of-length.ly`),
+avec en plus `musicMap #skip->rest`. **Total tractable par un évaluateur
+minimal `$x`/`#x` + ces built-ins : 2 fichiers**, sous le seuil de 5 fixé :
+implémentation non justifiée, documentée ici. Aucun fichier exclu ;
+`persian-key-signatures.ly` est laissé à msx4 (clés).
