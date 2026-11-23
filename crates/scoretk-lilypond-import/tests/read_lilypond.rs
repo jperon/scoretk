@@ -8557,3 +8557,16 @@ fn single_omit_reste_un_post_evenement() {
         .expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![67]);
 }
+
+#[test]
+fn override_valeur_negative_ne_change_pas_la_duree() {
+    // `fingering-y-offset-new.ly` : `\once \override Fingering.Y-offset = -2`
+    // ; la valeur signée est consommée d'un bloc, sinon le `2` devenait une
+    // durée et allongeait l'accord.
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\
+         { c''4 \\once \\override Fingering.Y-offset = -2 c''4 d''4 }\n",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![72, 72, 74]);
+}

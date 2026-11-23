@@ -5665,6 +5665,20 @@ impl<'a> Parser<'a> {
     /// Le cas courant est l'unique jeton [`Kind::Scheme`] du lexer ; une liste
     /// écrite sans `#` reste sautée par équilibrage des parenthèses.
     fn skip_scheme_value(&mut self) {
+        // Valeur signée `-2`/`+2` : le signe et le nombre forment une seule
+        // valeur (`\once \override Fingering.Y-offset = -2`). Ne consommer
+        // que le signe laissait le `2` dans la musique, qui devenait une
+        // durée et allongeait l'accord (`fingering-y-offset-new.ly`).
+        if self
+            .peek()
+            .is_some_and(|token| token.is_punct('-') || token.is_punct('+'))
+            && self
+                .peek_at(1)
+                .is_some_and(|token| token.kind == Kind::Number || token.is_scheme())
+        {
+            self.position += 2;
+            return;
+        }
         match self.peek() {
             Some(token) if token.is_scheme() => {
                 self.position += 1;
