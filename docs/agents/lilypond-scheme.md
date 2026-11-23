@@ -557,3 +557,59 @@ the denominator is stable. The run summary is `resume.md` in `--out`.
 
 No production test campaign was run for this study; the existing campaign
 logs above are quoted as-is, with their own oracle and manifest.
+
+## 7. Lot « réel » (`rw`) : Mutopia + openLilyLib + LSR
+
+Contexte : la décision retenue pour ce lot est d'évaluer le **niveau B** de
+cette étude sur la **robustesse** (formes Scheme réelles non vues par le
+lecteur), pas sur le seul gain de fichiers `ra`.
+
+### 7.1 Composition et licences
+
+Construit par `scripts/oracle/lilypond/lot-reel.py` (téléchargement seul, aucune
+exécution des fichiers récupérés) :
+
+| Source | Fichiers | Licence |
+| --- | ---: | --- |
+| Mutopia (corpus local `corpus/mutopia`, manifeste `mut.txt`) | 1 377 | licence propre à chaque pièce dans son `\header` (domaine public, CC BY/CC BY-SA, GPL…) |
+| openLilyLib (`openlilylib/openlilylib`, commit `3d6a145ab094a1d6e7f3c52e0a7f44da9dd56a34`), fichiers portant un `\score` | 31 | GPL-3.0-or-later |
+| LSR (`lilypond/lilypond`, `Documentation/snippets`, 40 premiers par ordre alphabétique) | 40 | GPL-3.0-or-later / GFDL selon le fichier |
+
+Les données restent hors dépôt (`/tmp/rw-corpus`) ; `lot-reel.py` écrit
+`/tmp/ly-import-lots/manifestes/rw.txt` (chemins absolus, format des autres
+lots). Les références MIDI sont générées par `regen-refs.py` (même chaîne que
+`ra` : `\midi { }` injecté dans un `\score`, LilyPond 2.27), dans
+`/tmp/ly95lect-refs-fresh/out3rw` : 1 377 références Mutopia liées à `out3mut`
++ 49 références pour les nouveaux fichiers. 22 fichiers openLilyLib/LSR ne
+compilent pas (chargeur `oll-core`, includes absents, ou extrait sans
+`\score` compilable) : sans référence, ils sont hors dénominateur
+(`--refs-only`), comme les fichiers sans `\midi` des autres lots.
+
+### 7.2 Mesure de départ (lecteur actuel, master `7988e20d`)
+
+| Lot | Fichiers mesurés | Exact | N1 | N2 | N2-grace |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `ra` | 1 724 | 1 682 (97,6 %) | 98,19 | 95,83 | 96,80 |
+| `mut` (Mutopia) | 1 316 | 1 216 (92,4 %) | 99,64 | 97,50 | 96,47 |
+| `rw` (réel) | 1 365 | 1 258 (92,2 %) | 99,63 | 97,48 | 96,46 |
+
+Commande (jamais deux mesures à la fois, 2 fils au plus) :
+
+```sh
+python3 scripts/oracle/lilypond/mesure.py --out /tmp/meas-rw \
+  --refs /tmp/ly95lect-refs-fresh --refs-prefix out3 --refs-only \
+  --scoretk target/debug/scoretk --python-ly /bin/false --lot rw=…/rw.txt
+```
+
+Ces trois chiffres sont les critères « 0 perte » du niveau B : l'évaluateur ne
+doit dégrader ni `ra`, ni `mut`, ni `rw`.
+
+### 7.3 Suite de variantes (avant tout évaluateur)
+
+`crates/scoretk-lilypond-import/tests/scheme_variants/` : 14 paires
+`orig`/`variant`, équivalence vérifiée en compilant les deux avec LilyPond 2.27
+(même MIDI). `tests/scheme_variants.rs` compare le modèle pivot complet et
+tient la liste des échecs connus. Départ : **7/14 identiques** — échecs sur les
+corps de fonction musicale réduits à une expression Scheme générale (`let`,
+`if`) et sur les nombres calculés (`#(+ 2 2)`, `#(* 20 4)`, `#(+ 1/4 1/4)`,
+`#(+ 4 4)`, `*#(+ 1 1)`).
