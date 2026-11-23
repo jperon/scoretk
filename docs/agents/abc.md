@@ -3798,3 +3798,25 @@ mesure (Anerio 431 → 309 attaques justes), et émettre `[M:…]` quand la mesu
 est plus longue que l'en-tête (Anerio inchangé à 334, +160 octets sur le lot).
 Elles ne sont pas committées. Aucun fichier n'a été gagné ni perdu dans cette
 recherche ; la mesure de référence reste celle de `target/abc-ex-clef2/`.
+
+## 52. Écriture : silence tronqué à la fin de barre (2026-11-23)
+
+En réduisant la voix 3 de Perosi, le modèle porte un silence invisible dont
+`ticks = 1` (une ronde) dans une mesure de 3/4. Le writer l'écrivait `x8`,
+soit 8 unités dans une barre de 6 : la relecture allongeait la barre et
+décalait les attaques. ABC 2.1 §4.3/§4.5 impose que la barre totalise la
+mesure ; `xml2abc.py::sortMeasure` (lignes 714-760) remplace exactement le
+trou par un `x` de la durée restante.
+
+`render_item` reçoit désormais le tick de l'événement et borne la durée d'un
+silence non plein au reste de la barre (`measure.start_tick + measure.len -
+tick`). Test réduit `abc_export_silence_depasse_barre.rs` : échoue avant
+(`x8` dans une barre de 6), passe après (`x6`), et vérifie la longueur de la
+barre relue.
+
+Mesure contrôlée, même oracle, même lot : **0 gain, 0 perte**, 250/261 exact,
+taille totale des `.abc` strictement inchangée (2 566 704 octets). Ce
+correctif est donc une mise en conformité avec la norme, pas une explication
+du décalage de Perosi : les restes `x8` de ses mesures 9+ viennent de la
+branche « silence de mesure entière », qui écrit `measure.len` (1 = 4/4) sous
+un en-tête `M:3/4`. La cause complète reste ouverte (§51).

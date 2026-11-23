@@ -247,6 +247,7 @@ pub(crate) fn render_voice(
                 let token = render_item(
                     score,
                     measure,
+                    item.tick,
                     item.chord_rest,
                     &mut accidental_state,
                     transpose,
@@ -1010,6 +1011,7 @@ fn item_at_or_before(
 fn render_item(
     score: &Score,
     measure: &Measure,
+    tick: Fraction,
     chord_rest: &ChordRest,
     accidental_state: &mut pitch::AccidentalState,
     transpose: i32,
@@ -1024,6 +1026,19 @@ fn render_item(
         }
         let head = if rest.visible { 'z' } else { 'x' };
         let length = duration::chord_rest_length(chord_rest);
+        // ABC 2.1 §4.3/§4.5 : un silence ne peut pas dépasser la fin de sa
+        // barre. Les modèles MuseScore portent parfois un silence invisible
+        // d'une ronde dans une mesure 3/4 (Perosi, voix 3, mesure 8) :
+        // l'écrire tel quel donne `z8` dans une barre de 6 unités, et la
+        // relecture décale toutes les attaques suivantes d'une mesure.
+        // `xml2abc.py::sortMeasure` (lignes 714-760) remplace précisément le
+        // trou par un `x` de la durée restante.
+        let remaining = measure.start_tick + measure.len - tick;
+        let length = if remaining.is_positive() {
+            length.min(remaining)
+        } else {
+            length
+        };
         return format!("{head}{}", duration::multiplier(length, duration::unit()));
     }
     let Some(chord) = chord_rest.chord_ref() else {
