@@ -1750,6 +1750,18 @@ fn place_measures(
     slots: &[MeasureSlot],
     warnings: &mut Warnings,
 ) {
+    // `Devnull` (et `NullVoice`) jette la musique qu'on lui donne
+    // (`ly/engraver-init.ly:1125-1133`). Les notes déplacées par
+    // `\change Staff` vers une telle portée ne sonnent pas : elles restent
+    // dans le modèle, silencieuses (comme `Context::Silent`).
+    let silent_staff_names: BTreeSet<String> = staves
+        .iter()
+        .filter(|candidate| {
+            let staff = score.staff(candidate.staff);
+            staff.muted && !staff.visible
+        })
+        .filter_map(|candidate| candidate.name.clone())
+        .collect();
     for (staff_index, staff) in staves.iter().enumerate() {
         // `Chord::staffMove` ne traverse que les portées d'une même partie :
         // un `\change` ne peut atteindre que les portées nommées de la partie
@@ -1770,9 +1782,23 @@ fn place_measures(
             for event in &events {
                 match &event.kind {
                     EventKind::Chord(chord) => {
-                        let staff_move = chord.staff.as_ref().map_or(0, |target| {
-                            staff_move_of(&local_names, staff_index, target, &mut warned, warnings)
-                        });
+                        let silent = chord
+                            .staff
+                            .as_ref()
+                            .is_some_and(|target| silent_staff_names.contains(&target.name));
+                        let staff_move = if silent {
+                            0
+                        } else {
+                            chord.staff.as_ref().map_or(0, |target| {
+                                staff_move_of(
+                                    &local_names,
+                                    staff_index,
+                                    target,
+                                    &mut warned,
+                                    warnings,
+                                )
+                            })
+                        };
                         place_chord(
                             score,
                             slots,
@@ -1781,6 +1807,7 @@ fn place_measures(
                             event.tick,
                             chord,
                             staff_move,
+                            silent,
                             warnings,
                         );
                     }
@@ -1843,6 +1870,7 @@ fn place_chord(
     tick: Fraction,
     event: &ChordEvent,
     staff_move: i8,
+    silent: bool,
     warnings: &mut Warnings,
 ) {
     let voice_track = staff.voices[voice_index].track;
@@ -2096,6 +2124,18 @@ fn place_chord(
     chord_rest.ticks = chord_rest
         .ticks
         .filter(|ticks| *ticks != chord_rest.duration.ticks());
+    if silent {
+        if let ChordRestKind::Chord(chord) = &chord_rest.kind {
+            for id in &chord.notes {
+                score.note_mut(*id).play = false;
+            }
+            for grace in &chord.grace_chords {
+                for id in &grace.chord.notes {
+                    score.note_mut(*id).play = false;
+                }
+            }
+        }
+    }
     if let Some(segment) = score.measures[measure_index]
         .segments
         .get_mut(segment_index)

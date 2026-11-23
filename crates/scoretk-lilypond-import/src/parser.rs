@@ -1282,6 +1282,32 @@ impl<'a> Parser<'a> {
                 lyrics: Vec::new(),
             });
         }
+        // `Devnull` (`ly/engraver-init.ly:1125-1133`) jette silencieusement
+        // toute la musique qu'on lui donne : la portée reste comme cible de
+        // `\change Staff`, mais ses notes ne sonnent pas.
+        if name.eq_ignore_ascii_case("devnull") {
+            let context_name = self.parse_context_id();
+            let music = Music::Context(Context::Silent {
+                music: Box::new(self.parse_music()),
+            });
+            let mut staff = StaffBlock::new();
+            staff.muted = true;
+            staff.visible = false;
+            staff.name = context_name.clone();
+            staff.voices.push(VoiceBlock {
+                name: context_name,
+                music,
+            });
+            return Some(GroupBlock {
+                kind: GroupKind::Staff,
+                existing,
+                sequence_start: false,
+                instrument_name: None,
+                short_instrument_name: None,
+                staves: vec![staff],
+                lyrics: Vec::new(),
+            });
+        }
         let mut kind = GroupKind::from_name(&name);
         // `\new Dynamics` ne porte que des silences (et des indications de
         // nuance) : le jouer comme une portée ordinaire plutôt que comme un

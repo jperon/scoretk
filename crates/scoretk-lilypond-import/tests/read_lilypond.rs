@@ -8343,3 +8343,23 @@ fn grace_de_fin_de_voix_sort_apres_la_note() {
     }
     assert_eq!(trouvees, 2, "les deux doubles croches de la grâce");
 }
+
+#[test]
+fn devnull_jette_la_musique_changee_de_portee() {
+    // `vertical-alignment-spanner-only.ly` : `Devnull` jette silencieusement
+    // toute la musique qu'on lui donne (`ly/engraver-init.ly:1125-1133`) ;
+    // une note déplacée par `\change Staff` vers ce contexte ne sonne pas.
+    let source = "\\version \"2.24.0\"\n\
+         << \\new Devnull = \"a\" { s }\n\
+            \\new Staff { c'4 \\change Staff = \"a\" c'4 } >>\n";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .map(|note| (note.pitch, note.play))
+            .collect::<Vec<_>>(),
+        vec![(60, true), (60, false)],
+        "la note changée vers Devnull reste dans le modèle mais muette"
+    );
+}
