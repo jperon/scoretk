@@ -4272,6 +4272,12 @@ impl<'a> Parser<'a> {
                             Kind::Number => {
                                 nom.push_str(&text);
                                 self.position += 1;
+                                // `c:7+` : le `+` est un CHORD_MODIFIER
+                                // (lily/lexer.ll:1062-1067) qui rend la
+                                // septième majeure (chord-name-major7.ly).
+                                if self.eat_punct('+') {
+                                    nom.push('+');
+                                }
                                 // `c:7m` : un modificateur peut suivre le
                                 // degré (`chord_item` de `lily/parser.yy`
                                 // l. 3886-3898, modificateurs et degrés dans

@@ -188,6 +188,8 @@ const QUALITIES: &[(&str, &[i8])] = &[
     ("m", &[0, 3, 7]),
     ("min", &[0, 3, 7]),
     ("7", &[0, 4, 7, 10]),
+    // `7+` : septième majeure (chord-name-major7.ly, ly/property-init.ly:299)
+    ("7+", &[0, 4, 7, 11]),
     ("m7", &[0, 3, 7, 10]),
     ("maj7", &[0, 4, 7, 11]),
     ("dim", &[0, 3, 6]),
@@ -442,6 +444,12 @@ mod tests {
         assert_eq!(
             chord_pitches(langue, "d:maj7"),
             Some((vec![62, 66, 69, 73], None))
+        );
+        // `c:7+` est la notation alternative du majeur 7
+        // (`chord-name-major7.ly`) : la septième est majeure, pas mineure.
+        assert_eq!(
+            chord_pitches(langue, "c:7+"),
+            Some((vec![60, 64, 67, 71], None))
         );
         // `min` est un modificateur, pas une entrée figée : il s'applique à
         // n'importe quel degré, y compris composé.
