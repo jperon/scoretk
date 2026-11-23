@@ -56,7 +56,11 @@ enum Decision {
 /// peut envoyer deux parties sur le même canal MIDI de sortie. Deux portées
 /// d'une même partie (orgue, piano) fusionnent donc leurs unissons, deux
 /// parties distinctes non.
-pub(crate) fn fixup_midi(performance: &mut Performance, part_of_track: &[usize]) {
+pub(crate) fn fixup_midi(
+    performance: &mut Performance,
+    part_of_track: &[usize],
+    part_channels: &[Vec<u8>],
+) {
     let tracks = &performance.tracks;
     // Ordre d'insertion du `std::multimap` du C++ : par tick, puis par ordre
     // de collecte. Les portées sont rendues dans l'ordre, donc
@@ -147,16 +151,25 @@ pub(crate) fn fixup_midi(performance: &mut Performance, part_of_track: &[usize])
                 }
                 Decision::Restrike(target) => {
                     rebuilt[track_index].push(event.clone());
-                    if let (Some(destination), EventKind::NoteOn { channel, key, .. }) =
+                    if let (Some(destination), EventKind::NoteOn { key, .. }) =
                         (restrikes.get_mut(target), &event.kind)
                     {
-                        destination.push(Event {
-                            tick: event.tick,
-                            kind: EventKind::NoteOffRestrike {
-                                channel: *channel,
-                                key: *key,
-                            },
-                        });
+                        // `exportmidi.cpp:297-308` : l'extinction du restrike
+                        // est insérée pour chaque canal de la partie avant le
+                        // filtre de canal des lignes 331-334. La piste `target`
+                        // est celle de la note précédente : on prend ses
+                        // canaux de sortie (notes + harmonies).
+                        let part = part_of_track.get(target).copied().unwrap_or(track_index);
+                        let channels = part_channels.get(part).map(Vec::as_slice).unwrap_or(&[]);
+                        for channel in channels.iter().copied() {
+                            destination.push(Event {
+                                tick: event.tick,
+                                kind: EventKind::NoteOffRestrike {
+                                    channel,
+                                    key: *key,
+                                },
+                            });
+                        }
                     }
                 }
             }
@@ -167,5 +180,39 @@ pub(crate) fn fixup_midi(performance: &mut Performance, part_of_track: &[usize])
     }
     for (track, events) in performance.tracks.iter_mut().zip(rebuilt) {
         track.events = events;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render::TrackData;
+
+    fn on(tick: i64, channel: u8, key: u8) -> Event {
+        Event { tick, kind: EventKind::NoteOn { channel, key, velocity: 80 } }
+    }
+    fn off(tick: i64, channel: u8, key: u8) -> Event {
+        Event { tick, kind: EventKind::NoteOff { channel, key } }
+    }
+
+    /// `Veni veni Emmanuel`, tick 22 080 : la référence écrit sur la piste de
+    /// la note précédente un restrike sur **chaque canal de la partie**
+    /// (`exportmidi.cpp:297-308` place l'insertion avant le filtre de canal
+    /// des lignes 331-334). Notre écrivain n'en met qu'un.
+    #[test]
+    fn restrike_ecrit_un_off_par_canal_de_la_partie() {
+        let mut performance = Performance {
+            tracks: vec![
+                TrackData { events: vec![on(0, 0, 67), on(100, 0, 67), off(200, 0, 67)] },
+                TrackData { events: vec![on(50, 1, 67), off(150, 1, 67)] },
+            ],
+        };
+        fixup_midi(&mut performance, &[0, 0], &[vec![0, 1]]);
+        let restrikes: Vec<(i64, u8)> = performance.tracks.iter().flat_map(|t| t.events.iter())
+            .filter_map(|e| match e.kind {
+                EventKind::NoteOffRestrike { channel, key: 67 } => Some((e.tick, channel)),
+                _ => None,
+            }).collect();
+        assert_eq!(restrikes, vec![(100, 0), (100, 1)], "un off par canal");
     }
 }

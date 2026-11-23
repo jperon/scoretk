@@ -389,7 +389,21 @@ pub(crate) fn render(
         .iter()
         .map(|staff| staff.part.index())
         .collect();
-    super::fixup::fixup_midi(&mut performance, &part_of_track);
+    // Canaux de sortie de chaque partie : le principal et, si la partie porte
+    // des accords chiffrés, celui des harmonies (`exportmidi.cpp:248-255`).
+    let part_channels: Vec<Vec<u8>> = score
+        .parts
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            let mut canaux = vec![channels.notes[index]];
+            if let Some(harmony) = channels.harmony[index] {
+                canaux.push(harmony);
+            }
+            canaux
+        })
+        .collect();
+    super::fixup::fixup_midi(&mut performance, &part_of_track, &part_channels);
 
     Ok(Rendered {
         performance,
