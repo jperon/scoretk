@@ -54,16 +54,17 @@ use crate::container::MsczContainer;
 use crate::{Error, Result};
 use scoretk_core::model::{Measure, Score};
 
-/// Reprend du `<Style>` séparé d'un `.mscz` la seule valeur que le pivot ne
-/// peut pas déduire du `.mscx`.
+/// Reprend du `<Style>` séparé d'un `.mscz` les valeurs que le pivot ne peut
+/// pas déduire du `.mscx`.
 ///
 /// `MscLoader::read` (`rw/mscloader.cpp:86-94`) appelle
 /// `MscReader::readStyleFile()` (`infrastructure/mscreader.cpp:127-132`) et
 /// `masterScore->style().read(&buf)` *avant* de lire la partition : le style
 /// inline du `.mscx` l'emporte ensuite. Comme le lecteur lit déjà le style
-/// inline, on ne reprend ici que `createMultiMeasureRests` (`styledef.cpp:571`)
-/// — seule valeur nécessaire à la reconstruction des multi-repos
-/// (`dom/measure.cpp:2899`) — afin de ne pas écraser les autres réglages.
+/// inline, on ne reprend ici que `createMultiMeasureRests` (`styledef.cpp:571`),
+/// `smallStaffMag` et `minEmptyMeasures` — les valeurs nécessaires à la
+/// reconstruction des multi-repos (`measurelayout.cpp:849-902`) — afin de ne
+/// pas écraser les autres réglages.
 fn apply_style_file(score: &mut Score, mss: &[u8]) -> Result<()> {
     let mut reader = quick_xml::Reader::from_reader(mss);
     reader.config_mut().trim_text(true);
@@ -84,6 +85,10 @@ fn apply_style_file(score: &mut Score, mss: &[u8]) -> Result<()> {
                         in_flag = true;
                         in_style_name = "smallStaffMag".to_owned();
                     }
+                    "minEmptyMeasures" if in_style => {
+                        in_flag = true;
+                        in_style_name = "minEmptyMeasures".to_owned();
+                    }
                     _ => {}
                 }
             }
@@ -94,11 +99,15 @@ fn apply_style_file(score: &mut Score, mss: &[u8]) -> Result<()> {
                     if let Ok(mag) = value.as_ref().trim().parse::<f64>() {
                         score.style.small_staff_mag = mag;
                     }
+                } else if in_style_name == "minEmptyMeasures" {
+                    if let Ok(count) = value.as_ref().trim().parse::<usize>() {
+                        score.style.min_empty_measures = count.max(1);
+                    }
                 }
             }
             Event::End(element) => match element.name().as_ref() {
                 "Style" => in_style = false,
-                "createMultiMeasureRests" | "smallStaffMag" => in_flag = false,
+                "createMultiMeasureRests" | "smallStaffMag" | "minEmptyMeasures" => in_flag = false,
                 _ => {}
             },
             Event::Eof => break,

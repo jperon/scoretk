@@ -538,6 +538,9 @@ impl Reader {
         part.long_name = long_name;
         part.short_name = short_name;
         part.instrument = instrument;
+        // `TRead::read(Part*)` (`read500/tread.cpp`) : `<show>0</show>` masque
+        // toute la partie ; `Staff::show()` en dépend (`staff.cpp:1420-1423`).
+        part.visible = element.child("show").and_then(Element::int).unwrap_or(1) != 0;
         // TODO(parité): <preferSharpFlat>, <show>, <soloist>.
     }
 

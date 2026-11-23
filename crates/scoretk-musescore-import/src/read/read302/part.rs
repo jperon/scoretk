@@ -116,6 +116,9 @@ pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
 
     let mut part = Part::new(long_name.clone(), short_name.clone());
     part.name = name;
+    // `TRead::read(Part*)` : `<show>0</show>` masque la partie ;
+    // `Staff::show()` en dépend (`staff.cpp:1420-1423`).
+    part.visible = node.child("show").and_then(Node::int_text).unwrap_or(1) != 0;
     part.instrument = Instrument {
         long_name: long_name.clone(),
         short_name: short_name.clone(),

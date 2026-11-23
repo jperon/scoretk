@@ -91,8 +91,10 @@ git clone --depth 1 --filter=blob:none --sparse --branch v4.7.4 \
     https://github.com/musescore/MuseScore ref-musescore/.474
 git -C ref-musescore/.474 sparse-checkout set \
     src/importexport/mei src/importexport/capella src/importexport/guitarpro \
+    src/importexport/musicxml \
     src/engraving/dom src/engraving/types src/engraving/style \
     src/engraving/infrastructure src/engraving/rw src/engraving/editing \
+    src/engraving/rendering src/engraving/data/styles \
     src/engraving/tests/utils
 git -C ref-musescore/.474 rev-parse HEAD   # 7688c005ad963ba09ee715aae53dbc7e8c9d5ef8
 git -C ref-musescore/.474 describe --tags --exact-match HEAD   # v4.7.4
@@ -102,8 +104,11 @@ The tag hash is the same one already used for the 4.7.4 beam/tuplet audit
 (§ A). The engraving sets are the transitive `#include` closure of the three
 modules: without `src/engraving/editing` and `src/engraving/tests/utils`, four
 headers (`bracketItem.h`, `transpose.h`, `scorecomp.h`, `scorerw.h`) are
-missing. Verified locally: `find src/importexport/{mei,capella,guitarpro}`
-finds 884 files, and no `engraving/…` include is unresolved. `ref-musescore/.474`
+missing. `src/importexport/musicxml`, `src/engraving/rendering` and
+`src/engraving/data/styles` were added for the MusicXML export campaign
+(`measurelayout.cpp`, `exportmusicxml.cpp`, the legacy style defaults).
+Verified locally: `find src/importexport/{mei,capella,guitarpro}` finds 884
+files, and no `engraving/…` include is unresolved. `ref-musescore/.474`
 is read-only reference data (unversioned, like its parent); do not compile, run
 or copy code from it into the distributed sources.
 

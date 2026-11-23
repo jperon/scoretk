@@ -371,6 +371,11 @@ pub(crate) struct Context<'a> {
     beams: beams::Beams,
     /// Systèmes explicites : portées masquées et barres de courtoisie.
     systems: systems::Systems,
+    /// Groupes de silences multi-mesures déduits des mesures vides
+    /// (`derived_mmrest_runs`) : MuseScore les reconstruit à la mise en page
+    /// et les écrit dans toutes les parties (`measureStyle`,
+    /// `exportmusicxml.cpp`).
+    mmrests: Vec<Option<u16>>,
 }
 
 /// État des spanners d'une partie (`spannersStopped` et compteur d'instruments
@@ -434,6 +439,7 @@ impl<'a> Context<'a> {
             tuplets: TupletIndex::new(score),
             beams: beams::Beams::new(score, concert_pitch),
             systems: systems::Systems::new(score),
+            mmrests: scoretk_core::model::derived_mmrest_runs(score),
         }
     }
 
@@ -977,14 +983,17 @@ impl<'a> Context<'a> {
         }
         // `measureStyle` : un `<measure-style>` ouvre le groupe de silences
         // multi-mesures, sur la première mesure du groupe. Le regroupement est
-        // propre à une portée (`measure.cpp:2286-2330`, `mmrestlayout.cpp:161-206`)
-        // : on prend la valeur de la portée de cette partie, puis le champ
-        // global pour les partitions qui n'en portent pas encore.
+        // global à la partition : `MeasureLayout::createMultiMeasureRestsIfNeed`
+        // remplace une suite de mesures vides et `measureStyle`
+        // (`exportmusicxml.cpp:6581-6601`) l'écrit pour chaque partie. Les
+        // marqueurs `<multiMeasureRest>` lus restent prioritaires ; sinon le
+        // groupe est déduit des mesures vides (`derived_mmrest_runs`).
         let count = part
             .staves
             .iter()
             .find_map(|staff| measure.mmrests.count_for(*staff))
-            .or(measure.multi_measure_rest);
+            .or(measure.multi_measure_rest)
+            .or_else(|| self.mmrests.get(measure_index).copied().flatten());
         if let Some(count) = count {
             out.attr(true);
             out.xml.start_element("measure-style", &[]);

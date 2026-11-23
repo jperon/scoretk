@@ -104,6 +104,15 @@ pub struct StyleSettings {
     pub concert_pitch: bool,
     /// Reconstruire les multi-repos à la mise en page (`Sid::createMultiMeasureRests`).
     pub create_multi_measure_rests: bool,
+    /// Nombre minimal de mesures vides regroupées en un silence multi-mesures
+    /// (`Sid::minEmptyMeasures`).
+    ///
+    /// MuseScore 4.7.4 vaut 1 (`engraving/style/styledef.cpp:520`), mais les
+    /// fichiers 3.x et antérieurs reçoivent 2 par les styles de compatibilité
+    /// (`engraving/data/styles/legacy-style-defaults-v302.mss:329`,
+    /// `:305` pour v1/v2). Cf. `MeasureLayout::createMultiMeasureRestsIfNeed`
+    /// (`engraving/rendering/score/measurelayout.cpp:886-894`).
+    pub min_empty_measures: usize,
     /// Agrandissement des portées en petit format (`Sid::smallStaffMag`,
     /// défaut 0.7). `Staff::staffMag` (`staff.cpp:806-809`) le multiplie par
     /// `userMag`, et `writeStaffDetails` (`exportmusicxml.cpp:8139-8144`) en
@@ -155,6 +164,7 @@ impl StyleSettings {
             dont_hide_staves_in_first_system: true,
             concert_pitch: false,
             create_multi_measure_rests: false,
+            min_empty_measures: if legacy { 2 } else { 1 },
             small_staff_mag: 0.7,
         }
     }
@@ -198,6 +208,11 @@ impl StyleSettings {
             "hairpinHeight" => Self::set_positive(&mut self.hairpin_height_sp, value),
             "concertPitch" | "displayInConcertPitch" => self.concert_pitch = flag(value),
             "createMultiMeasureRests" => self.create_multi_measure_rests = flag(value),
+            "minEmptyMeasures" => {
+                if let Ok(count) = value.trim().parse::<usize>() {
+                    self.min_empty_measures = count.max(1);
+                }
+            }
             "hideEmptyStaves" => self.hide_empty_staves = flag(value),
             "dontHideStavesInFirstSystem" => {
                 self.dont_hide_staves_in_first_system = flag(value);

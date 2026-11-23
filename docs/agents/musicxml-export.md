@@ -1293,9 +1293,7 @@ diffed individually (`/tmp/xml16-dump/`); first differences and line counts:
 Core-identical stays **157/173**; N1/N2 1.0000, 0 XSD-invalid, no file
 regressed.
 
-## 39. `<cue/>` sur les notes `play=0` : retour à `isCueNote` (2026-11-23)
-
-Le binaire reconstruit sur le master courant donnait **153/173**, quatre
+## 39. `<cue/>` sur les notes `play=0` : retour à `isCueNote` (2026-11-23)Le binaire reconstruit sur le master courant donnait **153/173**, quatre
 fichiers de moins que le chiffre figé de §38 : quatre partitions Vivaldi
 (`01_Dixit_Dominus`, `09_Gloria_Patri` ×3) dont la première divergence noyau
 était `cue||<cue/>`. Le `.mscx` porte bien `<play>0</play>` (24 occurrences
@@ -1327,3 +1325,59 @@ devenir exacts. XSD invalide 0, N1/N2 1.0000. Les sorties MusicXML de
 `vertical-alignment-spanner-only.ly` sont **octet pour octet identiques**
 avant/après : l'oracle LilyPond n'est pas touché. `cargo test --workspace`
 et clippy `-D warnings` verts.
+
+## 40. Multi-repos déduits des mesures vides (2026-11-23)
+
+Le groupe Haydn (`Missa_in_Es_…` : Gloria, Credo, Kyrie, Sanctus, Benedictus,
+Agnus Dei) avait pour première divergence `<measure-style><multiple-rest>`
+absent : 452, 273, 164, 25, 77 et 182 lignes canoniques. Le `.mscx` 3.02 de ces
+six fichiers porte `<createMultiMeasureRests>1</createMultiMeasureRests>` mais
+**aucun** marqueur `<multiMeasureRest>` : MuseScore reconstruit les groupes à la
+mise en page, pas notre lecteur.
+
+### 40.1 Règle portée
+
+`MeasureLayout::createMultiMeasureRestsIfNeed` et `validMMRestMeasure`
+(`engraving/rendering/score/measurelayout.cpp:849-902` et `:580-641`), plus
+`breakMultiMeasureRest` (`:649-822`), sont portés dans
+`scoretk-core/src/model/mmrest.rs::derived_mmrest_runs`, sans mise en page :
+
+- `validMMRestMeasure` n'examine que les portées **affichées**. `Staff::show()`
+  vaut `part()->show() && visible()` (`engraving/dom/staff.cpp:1420-1423`) : la
+  partie piano cachée (`<show>0</show>`) des messes Haydn contient des accords
+  qui ne comptent donc pas. `Part::visible` est ajouté au modèle, lu par les
+  lecteurs 3.x/4.x (`<show>`) et réécrit par l'écrivain `.mscx`
+  (`write/twrite.cpp:2684-2686`, juste après les portées).
+- Une mesure valide n'a que des silences sur les portées affichées, un seul
+  segment porteur de silence, ni mesure irrégulière ni `measure-repeat`, et
+  aucune annotation de `BREAK_TYPES` (`:147-163`) hors du début de mesure.
+  Les accords d'une portée masquée sont ignorés (`:590-620`).
+- `breakMultiMeasureRest` est appliqué à partir de la deuxième mesure : début
+  de reprise, fin de reprise précédente, saut de section, marqueur/saut,
+  barre de fin inhabituelle, annotation de rupture, armure ou indication de
+  mesure (`m->tick() != 0`, même au début de la mesure), clef hors de la fin
+  de mesure (`:785-800`).
+- Le minimum vient de `Sid::minEmptyMeasures` : 2 pour les fichiers 3.x
+  (`engraving/data/styles/legacy-style-defaults-v302.mss:329`, `v1`/`v2`
+  `:305`), 1 pour 4.x (`styledef.cpp:520`, `legacy-style-defaults-v450.mss:411`).
+  `StyleSettings::min_empty_measures` est lu dans le `<Style>` inline et dans
+  `score_style.mss` (au même titre que `createMultiMeasureRests`).
+- Le regroupement est **global** à la partition : `measureStyle`
+  (`exportmusicxml.cpp:6581-6601`) écrit le même `<multiple-rest>` dans chaque
+  partie, ce que les six références Haydn confirment.
+
+Un `.mscx` qui porte déjà des marqueurs `<multiMeasureRest>` n'est pas complété :
+`testTboxWords1` (3.01) attend un groupe de 2 là où la règle de vacuité en
+trouve 3 (les cadres et les systèmes de la mise en page déplacent le groupe).
+Les marqueurs lus restent prioritaires ; `derived_mmrest_runs` renvoie alors
+tout à `None`.
+
+### 40.2 Mesure
+
+Les 173 paires du relevé `target/xml-cue2` (157/173) ont été reconverties côté
+scoretk avec le nouveau binaire (mêmes `ms.musicxml` 4.7.4, même normalisation
+`oracle_core`) : **6 gains, 0 perte**, 157 → **158/173** core-exacts, lignes
+canoniques 2 028 → 946. Gains : Gloria 452 → 2, Credo 273 → 3, Kyrie 164 → 2,
+Sanctus 25 → **0**, Agnus Dei 182 → 7 ; Benedictus reste à 77 (marqueurs
+partiels, voir §40.1). `cargo test -p scoretk --test e2e_corpus`, le workspace,
+`cargo fmt --check` et clippy `-D warnings` sont verts.

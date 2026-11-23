@@ -113,7 +113,7 @@ pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VO
 pub use instrument_channel::InstrumentChannel;
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::{Measure, MeasureRepeatMark};
-pub use mmrest::MultiMeasureRests;
+pub use mmrest::{derived_mmrest_runs, MultiMeasureRests};
 pub use notation::{
     Arpeggio, ArpeggioType, ChordLineType, Fermata, FermataType, Fingering, Glissando,
     GlissandoType, LineStyle, Ornament, OrnamentAccidental, OrnamentType, Slur, SpannerNotation,

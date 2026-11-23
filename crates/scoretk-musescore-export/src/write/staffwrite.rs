@@ -185,6 +185,11 @@ fn write_part(xml: &mut XmlWriter, ctx: &WriteContext<'_>, index: usize, part: &
         }
         xml.end_element();
     }
+    // `TWrite::writeProperties(const Part*)` (`write/twrite.cpp:2684-2686`) :
+    // une partie masquée écrit `<show>0</show>` après ses portées.
+    if !part.visible {
+        xml.tag("show", "0");
+    }
     xml.end_element();
 }
 

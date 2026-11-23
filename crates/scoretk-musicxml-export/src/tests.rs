@@ -3639,3 +3639,89 @@ fn ottava_invisible_de_lilypond_ne_décale_pas_la_hauteur_écrite() {
     assert!(xml.contains("<octave>5</octave>"), "{xml}");
     assert!(!xml.contains("octave-shift"), "{xml}");
 }
+
+#[test]
+fn multi_repos_deduit_des_mesures_vides() {
+    // Un fichier 3.x : `createMultiMeasureRests`, minimum 2 mesures
+    // (`legacy-style-defaults-v302.mss:329`) et aucune marque
+    // `<multiMeasureRest>`. `MeasureLayout::createMultiMeasureRestsIfNeed`
+    // remplace la suite de mesures vides, et `measureStyle`
+    // (`exportmusicxml.cpp:6581-6601`) écrit le groupe sur sa première mesure.
+    let mut score = Score::new();
+    score.style = scoretk_core::model::StyleSettings::for_version(3);
+    score.style.create_multi_measure_rests = true;
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    for index in 0..4usize {
+        let tick = Fraction::from_integer(index as i64);
+        let mut measure = ajouter_mesure(index, tick, Fraction::ONE, Fraction::ONE);
+        if index == 0 || index == 3 {
+            ajouter_accord(
+                &mut score,
+                &mut measure,
+                track,
+                tick,
+                Duration::quarter(),
+                &[(60, tpc::C)],
+            );
+        } else {
+            ajouter_silence_mesure(&mut score, &mut measure, track, tick);
+        }
+        score.add_measure(measure);
+    }
+
+    let xml = export_musicxml(&score).expect("export");
+    assert_eq!(
+        xml.matches("<multiple-rest>2</multiple-rest>").count(),
+        1,
+        "un seul groupe de deux mesures attendu :\n{xml}"
+    );
+}
+
+#[test]
+fn multi_repos_ignore_une_partie_masquee() {
+    // Deux portées ; la seconde appartient à une partie `<show>0</show>`.
+    // `Staff::show()` vaut `part()->show() && visible()`
+    // (`staff.cpp:1420-1423`), donc ses accords ne rendent pas la mesure
+    // non vide et le groupe couvre les deux mesures.
+    let mut score = Score::new();
+    score.style = scoretk_core::model::StyleSettings::for_version(3);
+    score.style.create_multi_measure_rests = true;
+    let (_, visible) = piano(&mut score);
+    let hidden_part = score.add_part(Part::new("Klaver", "Kl."));
+    score.part_mut(hidden_part).visible = false;
+    let hidden = score.add_staff(hidden_part);
+    for index in 0..4usize {
+        let tick = Fraction::from_integer(index as i64);
+        let mut measure = ajouter_mesure(index, tick, Fraction::ONE, Fraction::ONE);
+        if index == 0 || index == 3 {
+            ajouter_accord(
+                &mut score,
+                &mut measure,
+                Track::new(visible, 0),
+                tick,
+                Duration::quarter(),
+                &[(60, tpc::C)],
+            );
+        } else {
+            ajouter_silence_mesure(&mut score, &mut measure, Track::new(visible, 0), tick);
+            // Accords sur la partie masquée : sans effet sur le regroupement.
+            ajouter_accord(
+                &mut score,
+                &mut measure,
+                Track::new(hidden, 0),
+                tick,
+                Duration::quarter(),
+                &[(48, tpc::C)],
+            );
+        }
+        score.add_measure(measure);
+    }
+
+    let xml = export_musicxml(&score).expect("export");
+    assert_eq!(
+        xml.matches("<multiple-rest>2</multiple-rest>").count(),
+        2,
+        "le groupe doit apparaître dans les deux parties :\n{xml}"
+    );
+}

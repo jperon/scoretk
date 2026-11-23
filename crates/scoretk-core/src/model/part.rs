@@ -255,6 +255,14 @@ pub struct Part {
     pub short_name: String,
     /// Instrument principal de la partie.
     pub instrument: Instrument,
+    /// Vrai si la partie est affichée dans la partition (`Part::show`,
+    /// `<show>`).
+    ///
+    /// `Staff::show()` vaut `part()->show() && visible()`
+    /// (`engraving/dom/staff.cpp:1420-1423`) : une partie masquée l'est pour
+    /// toutes ses portées, même sans `<isStaffVisible>`. La mise en page
+    /// l'ignore, notamment pour le regroupement des silences multi-mesures.
+    pub visible: bool,
     /// Changements d'instrument, triés par tick.
     ///
     /// Correspond aux entrées supplémentaires de `Part::instruments()` dans
@@ -287,6 +295,7 @@ impl Part {
             short_name,
             instrument_changes: Vec::new(),
             staves: Vec::new(),
+            visible: true,
         }
     }
 
