@@ -3816,11 +3816,13 @@ impl<'a> Parser<'a> {
                 Music::Empty
             }
             "makeClusters" => {
-                // `ly/music-functions-init.ly:1154-1157` : une fonction
-                // musicale appliquée à l'expression qui suit. On consomme
-                // seulement le nom : la musique qui suit (bloc ou référence
-                // de variable) reste lue normalement ; le mute est relevé sur
-                // l'intervalle de jetons dans `parse_new_context`.
+                // `scm/music-functions.scm` (`note-to-cluster`) remplace les
+                // NoteEvent par des ClusterNoteEvent, que le performer MIDI
+                // ignore : la piste d'une portée Cluster est vide dans le
+                // MIDI de référence (`cluster.ly`). Consommer l'argument
+                // musical sans l'émettre fait correspondre le modèle pivot
+                // à ce que l'oracle compare.
+                let _ = self.parse_music();
                 Music::Empty
             }
             _ if is_articulation_command(&name) || is_dynamic_command(&name) => {

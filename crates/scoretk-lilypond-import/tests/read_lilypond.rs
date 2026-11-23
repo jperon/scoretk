@@ -6998,9 +6998,10 @@ fn make_clusters_nimporte_où_dans_la_musique_de_portee() {
         "\\makeClusters au milieu de la musique doit rendre la portée muette"
     );
     assert_eq!(
-        score.notes.len(),
-        4,
-        "les notes restent dans le modèle (pivot de tous les formats)"
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62],
+        "seules c' et d' sont jouées ; \\fragment devient des ClusterNoteEvent \
+         sans performer MIDI (scm/music-functions.scm::note-to-cluster)"
     );
 }
 
@@ -8033,4 +8034,21 @@ fn duree_breve_seule_reprend_la_note_precedente() {
             "durées : {src}"
         );
     }
+}
+
+#[test]
+fn make_clusters_absent_du_modele_comme_dans_le_midi() {
+    // `scm/music-functions.scm::note-to-cluster` transforme les NoteEvent en
+    // ClusterNoteEvent, sans performer MIDI : la piste de la portée Cluster
+    // est vide dans le MIDI de référence (`cluster.ly`, 14 notes sur une seule
+    // piste). Les notes ne doivent donc pas entrer dans le modèle pivot.
+    let src = "\\version \"2.24.0\"\n\
+         fragment = { c'4 d'4 }\n\
+         << \\new Staff \\fragment \\new Staff \\makeClusters \\fragment >>\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![60, 62],
+        "seules les notes de la portée ordinaire"
+    );
 }
