@@ -3773,3 +3773,28 @@ d'écrire le `ticks` du silence de mesure (`Z2`) a au contraire fait passer
 `Anerio` de 431 à 309 notes justes : la mesure réduite a été annulée. Ces
 fichiers restent donc comptés et documentés ici plutôt que « corrigés » au
 prix d'une régression.
+
+## 51. Écriture ABC : les 11 exceptions restantes, une par une (2026-11-23)
+
+État : 250/261 exact, contre 101 pour xml2abc.py 177 sur les mêmes lots.
+Chaque fichier non exact a été réduit ; le tableau ci-dessous consigne la
+cause **observée**, pas une étiquette générique.
+
+| Fichier | Cause réduite | Disposition |
+| --- | --- | --- |
+| `Byrd_Dies.mxl` | La référence porte un son de 1/16 à 67,75 qui chevauche une note longue à 68. Le texte ABC doit écrire les notes séquentiellement : `xml2abc.py` fait un accord `[AF]8`, notre writer `A8F/2`, et les deux perdent l'attaque à 67,75. | Exception acceptée : chevauchement non représentable en ABC 2.1 (§4.3, §4.17). |
+| `CanonDeLaPaix.xml` | Même chevauchement (note courte avant le temps), 587/813 attaques retrouvées. | Exception acceptée, même raison. |
+| `Angels_Carol…` (mscz, mxl) | abc2midi réalise la grâce en notes supplémentaires ; l'oracle d'import compare le modèle écrit (§41.1). | Exception acceptée : référence d'oracle. |
+| `Anerio_Ascendit_Deus.mxl` | Voix 3 éparse : ses silences explicites dans le modèle produisent, à la relecture ABC, des mesures de longueur 3/2 puis 1 au lieu de 3/4 (mesures 6-9), d'où un décalage de 3 temps. | Défaut ouvert, non corrigé : aucune règle testée ne le résout sans régression. |
+| `Perosi_-_Laudate_Dominum.mxl` | Même décalage (334/447 attaques) : mesure 8 avec un silence de voix 3 supplémentaire, fin de mesure décalée dans `read_xml`. | Défaut ouvert, même cause. |
+| `Vivaldi_-_Dixit_Dominus…Sicut_erat…mxl` | Même décalage de voix éparse, avec en plus des notes surnuméraires (2297/3671). | Défaut ouvert, même cause. |
+| `Laudate_pueri…` (mscz, mxl) | Parties à voix vides : notre `%%score (1 2) 3 4 (5 6)` diffère du `%%score [ 1 \| 2 \| 3 ] { ( 4 7 8 ) \| ( 5 6 ) }` de xml2abc (lignes 405-418, 842-870). | Défaut ouvert : regroupement de portées, sans conséquence musicale dans le pivot (§43.2). |
+| `voiceswitching.mscx` | Tuplets imbriqués + ordre des événements dans la mesure ; hauteurs et ticks corrects (62/63), seul l'ordre diffère. | Défaut ouvert : tri des événements de `outVoice` (xml2abc 639-700). |
+| `testMultiInstrumentPart3.mscx` | Changement d'instrument A→B♭ clarinet au sein de la mesure 3 ; 10 hauteurs sur 16 comptées. | Défaut ouvert : représentation `[I:…]`/transposition, non couverte par ABC 2.1 §4.6. |
+
+Deux corrections tentées et **annulées** après mesure contrôlée, sans gain et
+avec régression ou croissance : écrire `Z2` d'après les `ticks` d'un silence de
+mesure (Anerio 431 → 309 attaques justes), et émettre `[M:…]` quand la mesure
+est plus longue que l'en-tête (Anerio inchangé à 334, +160 octets sur le lot).
+Elles ne sont pas committées. Aucun fichier n'a été gagné ni perdu dans cette
+recherche ; la mesure de référence reste celle de `target/abc-ex-clef2/`.
