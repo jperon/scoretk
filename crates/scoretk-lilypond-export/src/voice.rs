@@ -521,10 +521,14 @@ pub(crate) fn render_body(
                     .iter()
                     .take_while(|item| item.measure == measure_index)
                     .count();
-            if items[item_index..fin]
+            let covered = items[item_index..fin]
                 .iter()
-                .all(|item| item.chord_rest.is_rest())
-            {
+                .all(|item| item.chord_rest.is_rest());
+            // Une mesure vide pour cette voix n'a aucun silence à couvrir :
+            // elle doit garder son propre `s1`, sinon le `R1*N` précédent
+            // l'absorbe et la musique suivante arrive une mesure trop tôt
+            // (cas `Sancta_Maria_KV_273`, §31).
+            if covered && fin > item_index {
                 multi_rest_left -= 1;
                 item_index = fin;
                 for token in structure.after_measure(measure_index) {
