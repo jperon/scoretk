@@ -971,11 +971,52 @@ impl<'a> Interpreter<'a> {
                 self.walk(music);
                 self.octave = saved;
             }
-            Context::Cue { music, .. } => {
+            // `Quote_iterator::process` (`lily/quote-iterator.cc:161-211`) :
+            // la citation est jouée au **temps absolu** de la partition. À
+            // l'instant T du `\cueDuring`, `start_mom = now_mom()` et
+            // `event_idx_` saute les événements antérieurs ; la citation
+            // s'arrête à `T + durée de l'argument principal`. On interprète
+            // donc la citation complète depuis zéro et on ne garde que les
+            // accords de `[T, T + duration)`, dans la voix courante (piste de
+            // la portée), avec le drapeau de cue pour les têtes réduites.
+            Context::Cue {
+                music, duration, ..
+            } => {
+                let debut = self.cursor;
+                let fin = debut + *duration;
                 let saved = self.cue;
                 self.cue = true;
-                self.walk(music);
+                let _ = self.spawn_at(Fraction::ZERO, None, music, Vec::new(), false);
                 self.cue = saved;
+                if let Some(enfant) = self.voice.spawned.pop() {
+                    let child = enfant.interpreted;
+                    // Les n-olets de la citation sont recopiés avec leur
+                    // parent décalé ; seuls les accords de la fenêtre sont
+                    // gardés.
+                    let base = self.voice.tuplets.len();
+                    for mut tuplet in child.tuplets {
+                        if let Some(parent) = tuplet.parent {
+                            tuplet.parent = Some(base + parent);
+                        }
+                        self.voice.tuplets.push(tuplet);
+                    }
+                    for mut event in child.events {
+                        if event.tick < debut || event.tick >= fin {
+                            continue;
+                        }
+                        if let EventKind::Chord(chord) = &mut event.kind {
+                            if let Some(index) = chord.tuplet {
+                                chord.tuplet = Some(base + index);
+                            }
+                        } else {
+                            continue;
+                        }
+                        event.order = self.order;
+                        self.order += 1;
+                        self.voice.events.push(event);
+                    }
+                }
+                self.cursor = fin;
             }
             // `\volta n, m musique` : LilyPond ne joue la musique que pour les
             // passages listés (`lily/unfolded-repeat-iterator.cc`,

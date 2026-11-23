@@ -7306,7 +7306,10 @@ fn seconde_voix_relative_heritant_de_la_premiere() {
 fn cue_during_joue_la_citation() {
     // `ly/music-functions-init.ly:545-557,560-574` : `\cueDuring` insère la
     // musique citée par `\addQuote` dans une voix de cue ; le MIDI joue ces
-    // notes à la place des silences de l'argument principal.
+    // notes à la place des silences de l'argument principal. La citation est
+    // prise au temps absolu de la partition (`lily/quote-iterator.cc`) : la
+    // cue commençant après `c4`, elle joue les notes de la citation aux temps
+    // 1, 2 et 3, pas les quatre.
     let src = "\\version \"2.24.0\"\n\
          vI = \\fixed c' { g4 g4 g4 g4 }\n\
          \\addQuote vIQuote { \\vI }\n\
@@ -7314,7 +7317,7 @@ fn cue_during_joue_la_citation() {
     let score = read_lilypond(src).expect("lecture");
     assert_eq!(
         score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
-        vec![60, 67, 67, 67, 67, 60]
+        vec![60, 67, 67, 67, 60]
     );
     assert!(
         score
@@ -7397,7 +7400,8 @@ fn alternative_a_l_interieur_du_corps_de_reprise() {
 #[test]
 fn quote_during_joue_la_citation() {
     // `ly/music-functions-init.ly:2023-2032` : `\quoteDuring` a la même
-    // sémantique MIDI que `\cueDuring`, sans direction ni armure.
+    // sémantique MIDI que `\cueDuring` — citation au temps absolu de la
+    // partition (`lily/quote-iterator.cc`) —, sans direction ni armure.
     let src = "\\version \"2.24.0\"\n\
          src = \\fixed c' { g4 g4 g4 g4 }\n\
          \\addQuote srcId { \\src }\n\
@@ -7405,7 +7409,7 @@ fn quote_during_joue_la_citation() {
     let score = read_lilypond(src).expect("lecture");
     assert_eq!(
         score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
-        vec![60, 67, 67, 67, 67]
+        vec![60, 67, 67, 67]
     );
     assert!(score
         .notes

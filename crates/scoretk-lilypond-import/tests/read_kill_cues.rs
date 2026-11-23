@@ -47,21 +47,33 @@ fn notes(score: &scoretk_core::model::Score) -> Vec<u8> {
 
 #[test]
 fn kill_cues_retire_les_cues_et_garde_les_citations() {
-    let source = "\\version \"2.24.0\"\n\
-        mus = \\relative { c'2 c c c }\n\
-        \\addQuote \"M\" \\mus\n\
-        quot = \\relative { d'2 \\quoteDuring \"M\" { s1 } e2 \\cueDuring \"M\" #UP { s1 } f2 }\n\
-        \\score { << \\killCues \\quot >> }";
-    let score = scoretk_lilypond_import::read_lilypond(source).expect("lecture");
-    // d2, les deux notes de \quoteDuring, e2, f2 ; les deux cue notes de
-    // \cueDuring sont remplacées par un silence de même durée.
-    assert_eq!(notes(&score), vec![62, 60, 60, 64, 65]);
-
+    // Citation de quatre noires ; la cue commence après d2 et joue donc les
+    // notes de la citation aux temps 2 et 4 (c, c), au temps absolu de la
+    // partition (`lily/quote-iterator.cc`).
     let sans = "\\version \"2.24.0\"\n\
         mus = \\relative { c'2 c c c }\n\
         \\addQuote \"M\" \\mus\n\
-        quot = \\relative { d'2 \\quoteDuring \"M\" { s1 } e2 \\cueDuring \"M\" #UP { s1 } f2 }\n\
+        quot = \\relative { d'2 \\cueDuring \"M\" #UP { s1 } e2 }\n\
         \\score { << \\quot >> }";
     let score = scoretk_lilypond_import::read_lilypond(sans).expect("lecture");
-    assert_eq!(notes(&score), vec![62, 60, 60, 64, 60, 60, 65]);
+    assert_eq!(notes(&score), vec![62, 60, 60, 64]);
+
+    // `\killCues` retire les deux notes de cue, en gardant leur durée : e2
+    // reste après le silence de quatre noires.
+    let tue = "\\version \"2.24.0\"\n\
+        mus = \\relative { c'2 c c c }\n\
+        \\addQuote \"M\" \\mus\n\
+        quot = \\relative { d'2 \\cueDuring \"M\" #UP { s1 } e2 }\n\
+        \\score { << \\killCues \\quot >> }";
+    let score = scoretk_lilypond_import::read_lilypond(tue).expect("lecture");
+    assert_eq!(notes(&score), vec![62, 64]);
+
+    // Une citation de `\quoteDuring` n'est pas une note de cue : elle reste.
+    let quote = "\\version \"2.24.0\"\n\
+        mus = \\relative { c'2 c c c }\n\
+        \\addQuote \"M\" \\mus\n\
+        quot = \\relative { d'2 \\quoteDuring \"M\" { s1 } e2 }\n\
+        \\score { << \\killCues \\quot >> }";
+    let score = scoretk_lilypond_import::read_lilypond(quote).expect("lecture");
+    assert_eq!(notes(&score), vec![62, 60, 60, 64]);
 }

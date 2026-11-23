@@ -3702,9 +3702,16 @@ impl<'a> Parser<'a> {
                 self.quotes
                     .get(&nom)
                     .map(|quote| {
+                        // La citation n'est pas tronquée ici : `Quote_iterator`
+                        // la découpe au temps absolu de la partition
+                        // (`quote-iterator.cc:161-211`, `start_mom`). Le
+                        // parseur ne connaît pas ce temps ; l'interpréteur
+                        // garde les événements de la fenêtre
+                        // `[curseur, curseur + durée)`.
                         Music::Context(Context::Cue {
                             cue_notes: name != "quoteDuring",
-                            music: Box::new(tronque_musique(quote, duree, self.default_duration)),
+                            music: Box::new(quote.clone()),
+                            duration: duree,
                         })
                     })
                     .unwrap_or(Music::Empty)
@@ -6208,10 +6215,9 @@ fn music_duration(music: &Music, default: Duration) -> Fraction {
             .map(|item| music_duration(item, default))
             .fold(Fraction::ZERO, |total, d| if d > total { d } else { total }),
         // `\repeat unfold n` (et `volta`, déplié dans le MIDI) : la durée est
-        // celle du corps multipliée par le nombre de passages. Sans ce cas,
-        // `tronque_musique` mesurait 0 la citation d'un `\addQuote` contenant
-        // un repeat et jouait toute la citation au lieu de la tranche
-        // correspondant à l'argument de `\cueDuring` (`cue-clef*.ly`).
+        // celle du corps multipliée par le nombre de passages. Sans ce cas, la
+        // durée de l'argument de `\cueDuring` était fausse quand la citation
+        // contenait un repeat (`cue-clef*.ly`).
         Music::Context(Context::Repeat { count, body, .. }) => {
             music_duration(body, default) * Fraction::from_integer(*count as i64)
         }
@@ -6230,115 +6236,6 @@ fn context_music(context: &Context) -> &Music {
         | Context::Tuplet { music, .. }
         | Context::Transpose { music, .. } => music,
         _ => &Music::Empty,
-    }
-}
-
-/// Garde le debut d'une citation jusqu'a epuisement de `budget`.
-fn tronque_musique(music: &Music, budget: Fraction, default: Duration) -> Music {
-    if budget <= Fraction::ZERO {
-        return Music::Empty;
-    }
-    match music {
-        Music::Chord(_) | Music::Empty | Music::Unknown(_) => {
-            if music_duration(music, default) <= budget {
-                music.clone()
-            } else {
-                Music::Empty
-            }
-        }
-        Music::Seq(items) => {
-            let mut restant = budget;
-            let mut gardes = Vec::new();
-            for item in items {
-                let duree = music_duration(item, default);
-                if duree > restant {
-                    // Un contexte contenant un `\repeat unfold` peut tenir
-                    // partiellement dans le budget : le tronquer au lieu de
-                    // jeter l'item entier (`cue-clef*.ly`).
-                    let partiel = tronque_musique(item, restant, default);
-                    if !matches!(partiel, Music::Empty) {
-                        gardes.push(partiel);
-                    }
-                    break;
-                }
-                gardes.push(tronque_musique(item, restant, default));
-                restant -= duree;
-            }
-            Music::Seq(gardes)
-        }
-        Music::Sim(items) => Music::Sim(
-            items
-                .iter()
-                .map(|item| tronque_musique(item, budget, default))
-                .collect(),
-        ),
-        Music::Context(context) => Music::Context(match context {
-            Context::Relative {
-                reference,
-                chain,
-                music,
-            } => Context::Relative {
-                reference: *reference,
-                chain: *chain,
-                music: Box::new(tronque_musique(music, budget, default)),
-            },
-            Context::Fixed { reference, music } => Context::Fixed {
-                reference: *reference,
-                music: Box::new(tronque_musique(music, budget, default)),
-            },
-            Context::NonRelative { music } => Context::NonRelative {
-                music: Box::new(tronque_musique(music, budget, default)),
-            },
-            // Une citation peut contenir un `\repeat unfold` : garder le
-            // nombre de passages qui tiennent dans le budget (le reste serait
-            // soit joué en entier, soit entièrement sauté).
-            Context::Repeat {
-                kind,
-                count,
-                body,
-                alternatives,
-                partial,
-            } => {
-                let d_un = music_duration(body, default);
-                if d_un <= Fraction::ZERO {
-                    Context::Repeat {
-                        kind: *kind,
-                        count: *count,
-                        body: body.clone(),
-                        alternatives: alternatives.clone(),
-                        partial: *partial,
-                    }
-                } else {
-                    let gardes = ((budget.as_f64() / d_un.as_f64()) as i64)
-                        .min(*count as i64)
-                        .max(0);
-                    Context::Repeat {
-                        kind: *kind,
-                        count: gardes as u32,
-                        body: Box::new(tronque_musique(body, d_un, default)),
-                        alternatives: alternatives.clone(),
-                        partial: *partial,
-                    }
-                }
-            }
-            other => other.clone(),
-        }),
-        Music::Tag { tags, music } => Music::Tag {
-            tags: tags.clone(),
-            music: Box::new(tronque_musique(music, budget, default)),
-        },
-        Music::Filtered {
-            filter,
-            wanted,
-            groups,
-            music,
-        } => Music::Filtered {
-            filter: *filter,
-            wanted: wanted.clone(),
-            groups: groups.clone(),
-            music: Box::new(tronque_musique(music, budget, default)),
-        },
-        Music::New(_) | Music::Lyrics(_) => Music::Empty,
     }
 }
 
@@ -6397,16 +6294,33 @@ fn ajoute_point(music: Music, default_duration: Duration) -> Music {
 /// restent jouées.
 fn kill_cues(music: Music) -> Music {
     match music {
+        // Le silence garde la durée de l'argument principal (la citation
+        // n'est plus tronquée dans l'AST).
         Music::Context(Context::Cue {
-            music,
             cue_notes: true,
-        }) => silence_music(*music),
+            duration,
+            ..
+        }) => Music::Chord(Chord {
+            kind: ChordKind::SkipNumeric,
+            duration: Some(Duration::whole()),
+            multiplier: if duration == Fraction::ONE {
+                None
+            } else {
+                Some(duration)
+            },
+            from_scale: false,
+            bracketed: false,
+            posts: Vec::new(),
+            invisible: true,
+        }),
         Music::Context(Context::Cue {
             music,
             cue_notes: false,
+            duration,
         }) => Music::Context(Context::Cue {
             music: Box::new(kill_cues(*music)),
             cue_notes: false,
+            duration,
         }),
         Music::Seq(items) => Music::Seq(items.into_iter().map(kill_cues).collect()),
         Music::Sim(items) => Music::Sim(items.into_iter().map(kill_cues).collect()),

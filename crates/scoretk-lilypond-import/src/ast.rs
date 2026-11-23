@@ -289,7 +289,15 @@ pub(crate) enum Context {
     /// `cue_notes` distingue les vraies notes de cue (`\cueDuring`), que
     /// `\killCues` retire, des citations ordinaires (`\quoteDuring`), qu'il
     /// conserve (`ly/music-functions-init.ly:955-964`).
-    Cue { music: Box<Music>, cue_notes: bool },
+    Cue {
+        music: Box<Music>,
+        cue_notes: bool,
+        /// Durée de l'argument principal de `\cueDuring`/`\quoteDuring`
+        /// (le fragment à citer). La citation est découpée à l'exécution sur
+        /// cette fenêtre, au temps absolu de la partition
+        /// (`lily/quote-iterator.cc:161-211`).
+        duration: Fraction,
+    },
     /// Musique dont les notes sont invisibles et silencieuses (`NullVoice`) :
     /// la trame et les paroles restent dans le modèle, seul le MIDI les ignore.
     Invisible { music: Box<Music> },
