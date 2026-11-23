@@ -5208,6 +5208,65 @@ rel = \relative c' { \tag #'a { c4 d } \tag #'b { e4 f } | }
     assert_eq!(score.measures.len(), 3);
 }
 
+/// Un `\tag` peut marquer un **contexte** entier au niveau d'un `\score`
+/// (`contrapunctusXVI/…-lys/score.ly` : `<< \keepWithTag #'rectus \music
+/// \keepWithTag #'inversus \music >>`, où `\music` contient deux groupes de
+/// portées étiquetés). `music-filter` retire le sous-arbre refusé avant
+/// l'interprétation : chaque branche ne joue qu'une version, soit huit notes
+/// sur deux portées (vérifié en compilant la source réduite avec LilyPond
+/// 2.27). Sans le filtre structurel, les deux branches jouaient les deux
+/// versions, soit seize notes.
+#[test]
+fn tags_sur_contextes_au_niveau_score_filtrent_chaque_branche() {
+    let source = r#"\version "2.27.0"
+\language "english"
+mus = {
+  \tag #'a \new Staff { \fixed c' { c4 d e f } }
+  \tag #'b \new Staff { \fixed c' { g4 a b c' } }
+}
+\score {
+  << \keepWithTag #'a \mus \keepWithTag #'b \mus >>
+  \midi {}
+}
+"#;
+    let score = read_lilypond(source).expect("lecture des contextes étiquetés");
+    let piste = |staff: u32| Track::new(StaffId::from_raw(staff), 0).raw();
+    assert_eq!(score.parts.len(), 2, "une portée par branche filtrée");
+    assert_eq!(
+        hauteurs_par_accord(&score, piste(0)),
+        vec![vec![60], vec![62], vec![64], vec![65]]
+    );
+    assert_eq!(
+        hauteurs_par_accord(&score, piste(1)),
+        vec![vec![67], vec![69], vec![71], vec![72]]
+    );
+}
+
+/// `\removeWithTag` retire aussi les contextes entiers : la branche gardée ne
+/// doit laisser ni portée vide ni décalage de la portée suivante.
+#[test]
+fn remove_with_tag_retire_un_contexte_entier() {
+    let source = r#"\version "2.27.0"
+\language "english"
+mus = {
+  \tag #'a \new Staff { \fixed c' { c4 d e f } }
+  \tag #'b \new Staff { \fixed c' { g4 a b c' } }
+}
+\score {
+  << \removeWithTag #'a \mus \new Staff { \fixed c' { c''1 } } >>
+  \midi {}
+}
+"#;
+    let score = read_lilypond(source).expect("lecture de removeWithTag sur un contexte");
+    let piste = |staff: u32| Track::new(StaffId::from_raw(staff), 0).raw();
+    assert_eq!(score.parts.len(), 2, "la portée étiquetée a est retirée");
+    assert_eq!(
+        hauteurs_par_accord(&score, piste(0)),
+        vec![vec![67], vec![69], vec![71], vec![72]]
+    );
+    assert_eq!(hauteurs_par_accord(&score, piste(1)), vec![vec![84]]);
+}
+
 /// Notation Reference §22.2.2, « Using tag groups » : avec `\tagGroup`, un
 /// `\keepWithTag` ne retire que les tags du même groupe que ceux qu'il garde.
 /// Un tag sans groupe (ici `other`) n'est pas touché ; réciproquement garder un

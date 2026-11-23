@@ -246,6 +246,69 @@ pub(crate) fn tags_kept(
     }
 }
 
+type FiltreTags = (TagFilter, Vec<String>, Vec<Vec<String>>);
+
+/// Filtre structurel des étiquettes, avant l'extraction des portées d'un
+/// `\score`.
+///
+/// `keepWithTag`/`removeWithTag` sont des fonctions musicales
+/// (`ly/music-functions-init.ly:919-933`, `:2090-2100`) qui appellent
+/// `music-filter` (`scm/lily/music-functions.scm:110-112`) : le prédicat est
+/// appliqué à **chaque** expression, et une expression refusée disparaît avec
+/// tout son sous-arbre. Le filtrage différé de `Music::Filtered` dans
+/// `events.rs` ne suffit pas lorsque l'expression marquée est un contexte : la
+/// portée refusée resterait dans le modèle, et les deux versions d'un
+/// `\keepWithTag` seraient jouées (`contrapunctusXVI/…-lys/score.ly`).
+///
+/// On ne descend pas dans `Music::Context` : `\relative` doit encore voir
+/// toutes ses branches pour choisir la hauteur de référence
+/// (`Chop-28-16`, cf. `ast.rs` `Music::Filtered`). Le filtre différé continue
+/// de juger les événements de ces branches.
+fn filtrer_structures_tags(music: Music, filtres: &mut Vec<FiltreTags>) -> Music {
+    let mut filtre_seq = |items: Vec<Music>| -> Vec<Music> {
+        items
+            .into_iter()
+            .map(|item| filtrer_structures_tags(item, filtres))
+            .filter(|item| !item.is_empty())
+            .collect()
+    };
+    match music {
+        Music::Tag { tags, music } => {
+            let garde = filtres
+                .iter()
+                .all(|(filter, wanted, groups)| tags_kept(&tags, wanted, *filter, groups));
+            if garde {
+                Music::Tag {
+                    tags,
+                    music: Box::new(filtrer_structures_tags(*music, filtres)),
+                }
+            } else {
+                Music::Empty
+            }
+        }
+        Music::Filtered {
+            filter,
+            wanted,
+            groups,
+            music,
+        } => {
+            filtres.push((filter, wanted.clone(), groups.clone()));
+            let interieur = filtrer_structures_tags(*music, filtres);
+            filtres.pop();
+            Music::Filtered {
+                filter,
+                wanted,
+                groups,
+                music: Box::new(interieur),
+            }
+        }
+        Music::Seq(items) => Music::Seq(filtre_seq(items)),
+        Music::Sim(items) => Music::Sim(filtre_seq(items)),
+        Music::SimVoices(items) => Music::SimVoices(filtre_seq(items)),
+        other => other,
+    }
+}
+
 /// Noms de tags d'un argument Scheme : `#'a`, `#'(a b)`, ou une liste à
 /// virgules. Les guillemets Scheme sont retirés (`scm/music-functions.scm`
 /// attend des symboles, pas des chaînes).
@@ -916,6 +979,8 @@ impl<'a> Parser<'a> {
     /// quelconque, contextes compris : la structure de portées est donc celle
     /// du contenu, et chaque voix reçoit les enveloppes qui la précèdent.
     fn score_groups(&mut self, music: Music) -> Vec<GroupBlock> {
+        let mut filtres = Vec::new();
+        let music = filtrer_structures_tags(music, &mut filtres);
         self.score_groups_in(music, &mut Vec::new())
     }
 
