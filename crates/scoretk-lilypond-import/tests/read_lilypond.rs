@@ -8627,3 +8627,20 @@ fn tweak_en_post_evenement_ne_repete_pas_la_note() {
         .expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![71, 72]);
 }
+
+#[test]
+fn offset_consomme_propriete_et_valeurs() {
+    // `\offset` (`ly/music-functions-init.ly:1283-1317`) prend une propriété,
+    // des valeurs et un item. Une liste de clés (`BreathingSign`,
+    // `Voice.Beam`) ne produit aucune musique ; sinon l'item est la musique
+    // qui suit. Sans consommation, la valeur devenait une durée et répétait
+    // la note (`offsets.ly`).
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n{ c'4 \\offset Y-offset 1 BreathingSign \\breathe c'4 }\n",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![60, 60]);
+    let score = read_lilypond("\\version \"2.24.0\"\n{ c'4 \\offset Stem.thickness 4.0 d'4 }\n")
+        .expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![60, 62]);
+}

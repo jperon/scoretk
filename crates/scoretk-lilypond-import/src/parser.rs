@@ -3118,6 +3118,22 @@ impl<'a> Parser<'a> {
             "retrograde" => Music::Context(Context::Retrograde {
                 music: Box::new(self.parse_music()),
             }),
+            // `\offset` (`ly/music-functions-init.ly:1283-1317`) déplace une
+            // propriété de grob : `\offset propriété valeurs item`. Un item
+            // qui est une liste de clés (`BreathingSign`, `Voice.Beam`,
+            // `Slur`) produit un override ; sinon c'est la musique qui suit
+            // (elle reçoit un tweak). Sans cette lecture, la propriété et les
+            // valeurs restaient dans le flux et devenaient des notes ou des
+            // durées (`offsets.ly`).
+            "offset" => {
+                self.parse_offset_arguments();
+                if self.at_offset_key_list() {
+                    let _ = self.skip_property_path();
+                    Music::Empty
+                } else {
+                    self.parse_music()
+                }
+            }
             // `transposition` (`ly/music-functions-init.ly`) est une fonction
             // musicale à un argument `ly:pitch?` qui pose la propriété
             // `instrumentTransposition` du contexte Staff. Elle n'ajoute aucune
@@ -4512,6 +4528,34 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Arguments de `\offset` : la propriété (`symbol-list-or-symbol?`) et la
+    /// valeur de décalage (`scheme?`). L'item n'est pas consommé.
+    fn parse_offset_arguments(&mut self) {
+        // Propriété : un symbole (éventuellement pointé) ou une liste Scheme.
+        if self.peek().is_some_and(|token| token.is_scheme()) {
+            self.position += 1;
+        } else {
+            let _ = self.skip_property_path();
+        }
+        // Valeurs : datum Scheme, nombre (éventuellement signé) ou liste.
+        self.skip_scheme_value();
+    }
+
+    /// Vrai si le jeton courant commence une liste de clés de grob
+    /// (`BreathingSign`, `Voice.Beam`, `Slur`…) et non une musique. Les noms
+    /// de grob et de contexte commencent par une majuscule, à la différence
+    /// des hauteurs et des variables usuelles.
+    fn at_offset_key_list(&self) -> bool {
+        match self.peek() {
+            Some(Token {
+                kind: Kind::Word,
+                text,
+                ..
+            }) => text.chars().next().is_some_and(char::is_uppercase),
+            _ => false,
+        }
+    }
+
     //------------------------------------------------------------------
     // Accords et durées
     //------------------------------------------------------------------
@@ -5238,6 +5282,14 @@ impl<'a> Parser<'a> {
             Kind::Command => {
                 self.position += 1;
                 let name = token.text.clone();
+                if name == "offset" {
+                    // `-\offset propriété valeurs item` : le `-` en fait un
+                    // tweak dirigé (`ly/music-functions-init.ly:1283-1317`).
+                    // La propriété et les valeurs sont consommées, l'item
+                    // (post-événement) suit dans la boucle.
+                    self.parse_offset_arguments();
+                    return Vec::new();
+                }
                 if let Some(post) = post_event_for_command(&name, placement) {
                     return vec![post];
                 }
