@@ -3782,7 +3782,7 @@ cause **observée**, pas une étiquette générique.
 
 | Fichier | Cause réduite | Disposition |
 | --- | --- | --- |
-| `Byrd_Dies.mxl` | La référence porte un son de 1/16 à 67,75 qui chevauche une note longue à 68. Le texte ABC doit écrire les notes séquentiellement : `xml2abc.py` fait un accord `[AF]8`, notre writer `A8F/2`, et les deux perdent l'attaque à 67,75. | Exception acceptée : chevauchement non représentable en ABC 2.1 (§4.3, §4.17). |
+| `Byrd_Dies.mxl` | La référence porte un son de 1/16 à 67,75 qui chevauche une note longue à 68. Le texte ABC doit écrire les notes séquentiellement : `xml2abc.py` fait un accord `[AF]8`, notre writer `A8F/2`, et les deux perdent l'attaque à 67,75. Le décalage d'attaque de la mesure 1, lui, était un défaut d'import (§56.1), corrigé. | Exception acceptée : chevauchement non représentable en ABC 2.1 (§4.3, §4.17). |
 | `CanonDeLaPaix.xml` | Même chevauchement (note courte avant le temps), 587/813 attaques retrouvées. | Exception acceptée, même raison. |
 | `Angels_Carol…` (mscz, mxl) | abc2midi réalise la grâce en notes supplémentaires ; l'oracle d'import compare le modèle écrit (§41.1). | Exception acceptée : référence d'oracle. |
 | `Anerio_Ascendit_Deus.mxl` | Voix 3 éparse : ses silences explicites dans le modèle produisent, à la relecture ABC, des mesures de longueur 3/2 puis 1 au lieu de 3/4 (mesures 6-9), d'où un décalage de 3 temps. | Défaut ouvert, non corrigé : aucune règle testée ne le résout sans régression. |
@@ -3881,7 +3881,7 @@ premier écart entre la référence pivot et la relecture de notre `.abc` ;
 | `voiceswitching` | attendu `(65, 6, 2, 0)`, obtenu `(72, 6, 2, 0)` | barre 5 `"^Tuplets in voice 2:"F2F4F2` | (b) la relecture place au temps 6 la note `c` du n-olet de la voix 1 au lieu du `F` de la voix 2 ; défaut de lecture des n-olets imbriqués/voix, pas d'écriture. Non corrigé ici. |
 | `Laudate_pueri` (mscz, mxl) | attendu `(74, 410.5, 2.5, 3)`, obtenu `(74, 410.5, 0.5, 3)` | voix 4, mesure autour de 410,5 | (b) hauteur et attaque justes, durée raccourcie : chaîne de liaisons non fusionnée à la relecture. Non corrigé ici. |
 | `Angels_Carol` (mscz, mxl) | attendu `(60, 260, 4, 4)`, obtenu `(62, 264, 2, 4)` | voix 5, mesure ~65 | (c) grâces réalisées en notes par abc2midi ; oracle écrit (§41.1). Exception. |
-| `Byrd_Dies` | attendu `(71, 1,5, 4, 0)`, obtenu `(71, 2, 4, 0)` | barre 1 `"_Q""_:"x2"_S"x2` | (b) le modèle issu du MXL porte deux silences invisibles à 0 et 1 noire ; xml2abc, avec les `<backup>` du MusicXML, les place à 0 ; 0,5 et 1 noire. L'écart naît avant le writer. Non corrigé ici. |
+| `Byrd_Dies` | attendu `(71, 1,5, 4, 0)`, obtenu `(71, 2, 4, 0)` | barre 1 `"_Q""_:"x2"_S"x2` | (b) le modèle issu du MXL porte deux silences invisibles à 0 et 1 noire ; xml2abc, avec les `<backup>` du MusicXML, les place à 0 ; 0,5 et 1 noire. L'écart naît avant le writer. **Corrigé en §56.1** (étirement de portée parasite dans l'importeur). |
 | `Perosi` | attendu `(71, 21, 3, 0)`, obtenu `(71, 23, 3, 0)` | barre 8 `B6` (après 7 barres de 3/4) | (c) la barre 7 de la voix 7 porte `x6D4-` (5 noires) sous `M:3/4` dans les deux writers ; xml2abc écrit `x4 D2-` (6 noires), également surchargée. ABC 2.1 §4.3/§4.8 : barre non conforme dans la sortie de référence. Exception. L'essai `[M:4/4]`/`[M:3/4]` déplaçait l'écart sans le résoudre (cause empilée). |
 | `Vivaldi Sicut erat` | attendu `(61, 4, 4, 6)`, obtenu `(61, 16, 4, 6)` | voix 7 `!mf!D8x24` | (b) même silences de mesure empilés que Perosi ; l'écart est de 12 noires. Non corrigé ici. |
 | `Anerio` | attendu `(50, 8, 2, 1)`, obtenu `(50, 6, 2, 1)` | voix 2, barre 1 `z8` | (b) silence de mesure d'une ronde dans une mesure 3/4 du modèle ; même cause empilée. Non corrigé ici. |
@@ -4058,9 +4058,55 @@ devient exact, ce qui est analysé ci-dessous. Aucune croissance des `.abc`.
 | `Anerio_Ascendit_Deus.mxl` | Voix 2 (Tenor), mesure 1 : pause de mesure dont `ticks = 2` rondes dans une mesure 4/4. La référence fait avancer l'horloge de cette partie de 2 mesures (D3 à 8 temps), les autres parties de 1 (Soprano à 4 temps). Écrire `z16` décale toutes les autres voix de 4 temps (N2 431 → 309) ; écrire `z8` laisse le Tenor 2 temps en avance (N2 431). Aucun texte ABC ne peut donner deux horloges à la même barre. | Exception : référence à horloges par partie, non représentable. |
 | `Perosi_-_Laudate_Dominum.mxl` | Voix 7 (orgue), mesure 7 : silence invisible de 4 temps puis Ré à 4 temps dans une mesure `M:3/4`. La référence avance l'orgue de 6 temps et les voix chantées de 3. Après port de `sortMeasure`, N2 140 → 334, mais les 113 attaques restantes sont décalées de 3 temps : écrire `x8` (durée complète) corrige l'orgue, écrire `x6` corrige le chant. | Exception : même conflit d'horloges, Partie orgue. |
 | `Vivaldi…_10._Sicut_erat…mxl` | Voix 7 : silences invisibles empilés (`x24` = 12 temps) dans des mesures dont le modèle porte déjà 12 temps. Le port corrige bien les silences qui précèdent une note (`x4` → `x2` par endroits), mais N2 reste 2297/3671 : les chevauchements restants sont entre voix distinctes, pas dans une même voix. | Exception : référence à horloges par partie, identique à Perosi. |
-| `Byrd_Dies.mxl` | Mesure 1 : le modèle porte deux silences invisibles à 0 et 1/2 temps dans des voix **différentes** ; `xml2abc.py::sortMeasure` ne les réorganise que dans une même voix. Notre port n'y change aucun jeton (`diff` vide) et N2 reste 131/451 ; le premier écart est (71, 1,5) attendu contre (71, 2) obtenu. | Exception : l'écart naît dans le modèle MusicXML importé, avant le writer. |
+| `Byrd_Dies.mxl` | Mesure 1 : les deux silences invisibles étaient relus à 0 et 1/2 noire au lieu de 0 et 1, puis la note 71 à 1 au lieu de 2. Cause trouvée dans l'importeur (§56.1), pas une limite de référence : le port de `sortMeasure` n'y change aucun jeton. | **Corrigé** en §56.1. |
 
-Les quatre fichiers restent comptés dans le relevé. `xml2abc.py` 177 produit
+### 56.1 Correction : l'étirement local n'appartient qu'à sa mesure (importeur)
+
+Le modèle du lecteur avait les bons ticks (silences à 0 et 1/4 de ronde,
+note 71 à 1/2) : c'est le MusicXML **exporté depuis ce modèle**, utilisé
+comme référence par l'oracle, qui les décalait. `read_time`
+(`crates/scoretk-musicxml-import/src/pass2.rs:971`) calculait
+`stretch = local_len / global_len` à chaque `<time>` et l'écrivait dans
+`score.staff_mut(staff_id).time_stretch`. Dans `Byrd_Dies.mxl`, la mesure 5
+porte `4/2` mais ne dure que 4 noires contre 5 dans la mesure globale :
+`stretch = 4/5` restait affecté à toute la portée, y compris à l'anacrouse.
+L'export avançait alors son curseur de `duration / (4/5)` tout en écrivant
+`<duration>` non étirée : `<backup>` parasite et attaque déplacée d'une
+noire.
+
+Références lues avant modification :
+
+- `ref-musescore/src/importexport/musicxml/internal/import/importmusicxmlpass2.cpp:6481-6531` :
+  `MusicXmlParserPass2::time` pose la métrique sur le segment, sans jamais
+  écrire d'étirement ;
+- `ref-musescore/src/engraving/dom/staff.cpp:560-562` et `570-582` :
+  `Staff::timeStretch(tick)` cherche la **dernière indication de mesure au
+  tick ou avant** et renvoie son `stretch`, pas une valeur globale ;
+- `crates/scoretk-musescore-export/src/write/twrite.rs:528-530` :
+  l'étirement est sérialisé dans l'indication (`<stretchN>/<stretchD>`), ce
+  que relit `read4xx/mod.rs:1175-1201` ; c'est bien une propriété de la
+  métrique, pas de la portée.
+
+`read_time` ne pose donc `Staff::time_stretch` que si la signature lue
+**diffère** de celle en vigueur dans la partition (`MeasureData::
+time_sig_in_effect`) : une mesure raccourcie sous la même métrique est une
+anacrouse, pas un `TimeSig::stretch`. Le `TimeSig::stretch` local reste porté
+sur le segment, comme dans le C++. Test réduit écrit d'abord
+`crates/scoretk-musicxml-import/tests/local_timesig_stretch.rs` : il échoue
+avant (`Staff::time_stretch = 4/5` et `<backup>` dans la première mesure) et
+passe après.
+
+Mesure contrôlée, mêmes manifestes, même oracle, un seul lancement à la
+fois, binaire figé avant/après (`CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2`,
+`nice -n 10`) : lot d'écriture ABC **251 → 252 exact / 261**, un gain
+(`Byrd_Dies.mxl`), **zéro perte**, texte ABC du fichier inchangé (5 371
+octets). Aller-retour MusicXML : 26/30 (v3) et 26/26 (v4) au niveau noyau,
+23/30 et 21/26 en parité complète, 56/56 pour le lot `.mxl` : aucun
+changement. `e2e_corpus` (8 tests), `cargo test --workspace`, `clippy -D
+warnings` et `fmt --check` passent. Les trois autres fichiers du tableau
+restent des exceptions d'horloges par partie.
+
+Les trois exceptions restent comptées dans le relevé. `xml2abc.py` 177 produit
 lui aussi des barres surchargées (§53) : sa durée de silence n'est pas un oracle
 utilisable ici.
 

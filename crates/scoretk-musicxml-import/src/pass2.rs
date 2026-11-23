@@ -967,8 +967,15 @@ fn read_time(
     };
     let mut time = time_sig(signature, element);
     // Indication de mesure locale : sa longueur diffère de la longueur
-    // globale de la mesure, et l'étirement de portée vaut leur rapport
-    // (`TimeSig::stretch`, `Staff::timeStretch`).
+    // globale de la mesure, et l'étirement vaut leur rapport. Seule une
+    // *autre* métrique que celle en vigueur dans la partition est un
+    // `TimeSig::stretch` (`<stretchN>/<stretchD>` du .mscx, lu par
+    // `read4xx/mod.rs:1175-1201`) : `Staff::timeStretch(tick)` le cherche sur
+    // l'indication au tick (`ref-musescore/src/engraving/dom/staff.cpp:560-562`).
+    // Une mesure plus courte que sa propre métrique (anacrouse de
+    // `Byrd_Dies.mxl`) n'est pas un étirement ; l'écrire sur la portée
+    // étirerait toutes les mesures, y compris celles qui le précèdent
+    // (test `local_timesig_stretch.rs`).
     let local_len = analysis
         .parts
         .get(part_index)
@@ -986,13 +993,22 @@ fn read_time(
         Fraction::ONE
     };
     time.stretch = stretch;
+    // Une mesure raccourcie sous une métrique inchangée (anacrouse) n'est pas
+    // une métrique locale : le C++ n'étire alors aucune portée. Seul un
+    // changement de métrique porte un `stretch` que l'export et le MIDI
+    // appliquent à la portée.
+    let global_sig = analysis
+        .measures
+        .get(measure_index)
+        .map(|measure| measure.time_sig_in_effect);
+    let local_sig = global_sig.is_some_and(|global| global != signature);
 
     for staff_id in staff_ids(score, analysis, part_index, element) {
         let track = Track::new(staff_id, 0);
         let index = get_segment(score, measure_index, SegmentType::TimeSig, tick);
         score.measures[measure_index].segments[index]
             .set_element(track, SegmentItem::TimeSig(time.clone()));
-        if stretch != Fraction::ONE {
+        if local_sig && stretch != Fraction::ONE {
             score.staff_mut(staff_id).time_stretch = stretch;
         }
     }
