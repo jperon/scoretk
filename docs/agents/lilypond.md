@@ -7756,3 +7756,105 @@ The other remaining files need either cross-staff chord grids (`bwv612`,
 `bwv641`, `bwv651`), a full `\accidental`/tie re-strike model (`bwv855a`,
 `bach-prelude17`), or the already documented `\quoteDuring`/tablature/
 `partCombine` limits (§7, §31).
+
+## 35. Lots réels : contexte `Dynamics` et exceptions (2026-11-24)
+
+Protocole : binaire gelé au commit `1635ea32`, mêmes manifestes et mêmes arbres
+de références que §33/§34 (`/tmp/ly95lect-refs-clean` pour `ra`,
+`/tmp/ly95lect-refs-fresh` pour `mut`/`rw`, `--refs-only`), un seul lot mesuré
+à la fois, `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10`, oracle
+`mesure.py` et `ly_notes.py selftest` (OK).
+
+### Correctif retenu : `\new Dynamics` est un `Performer_group` silencieux
+
+`ly/performer-init.ly:406-411` définit `Dynamics` comme un `Performer_group`
+qui ne porte que `Piano_pedal_performer` : **aucune note n'atteint le MIDI**.
+Le lecteur traitait `\new Dynamics` comme une portée ordinaire. Les sources
+anciennes y écrivent parfois une vraie note : `andre-sonatine.ly` contient
+`s4 b16\< s s8` dans son bloc `Dyns`. La portée Dynamics est conservée dans le
+modèle (pivot de tous les formats), mais son contenu est désormais parcouru
+sous `Context::Silent` (`Note::play = false`, écrit `<cue/>` en MusicXML), et
+la portée est marquée `muted`. Vérification sur une source réduite compilée
+par LilyPond 2.27 : `\new Staff { c1 d1 e1 f1 }` avec
+`\new Dynamics { s1 b16 s8 s2. }` ne joue que les quatre notes de la portée.
+Test réduit échouant d'abord : `note_dans_un_contexte_dynamics_n_est_pas_jouee`.
+
+Mesure contrôlée (seul le binaire change ; même oracle, mêmes références) :
+
+| Lot | Exacts avant | Exacts après | N1 / N2 en baisse | N1 / N2 en hausse |
+| --- | ---: | ---: | ---: | ---: |
+| `ra` (1724) | 1690 (98,0 %) | **1690 (98,0 %)** | 0 | 0 |
+| `mut` (1316) | 1219 (92,6 %) | **1221 (92,8 %)** | 0 | 0 |
+| `rw` (1365) | 1261 (92,4 %) | **1263 (92,5 %)** | 0 | 0 |
+
+Les deux fichiers gagnés sont `andre-sonatine.ly` et
+`SignorSignorLasciateFarAMe.ly` (un seul accord surnuméraire chacun, le
+compte `test` passe de `réf + 1` à `réf`) ; N1 et N2 sont inchangés, aucune
+perte d'exactitude, de hauteur ou d'attaque sur les trois lots. `cargo test
+--workspace`, `clippy -D warnings` et `cargo fmt --check` sont verts.
+
+### Groupe des unissons surnuméraires : aucune fusion aveugle
+
+Les 23 fichiers restants du groupe décrit en §34 ont été examinés un par un
+(`N1 = N2 = référence`, `test = référence + 1…9`). La comparaison des pistes du
+MIDI de référence et des `<staff>` produits montre deux situations distinctes :
+
+- `bwv604.ly` : la référence a quatre pistes pour les quatre portées nommées
+  `right`/`left`, dont les noms sont dupliqués. Une source réduite
+  (`\new Staff = right` deux fois, `\change Staff = right` dans la seconde)
+  prouve que LilyPond retrouve **le contexte courant** en priorité : les notes
+  restent sur leur piste. Le lecteur fait de même ; il n'y a rien à corriger
+  ici.
+- `bwv651.ly`, `BWV533.ly` : une voix qui dépasse la limite de quatre pistes
+  est déplacée vers une portée sœur du modèle, alors que LilyPond joue ses
+  trois ou quatre dernières notes sur la même piste. Le symbole `<staff>`
+  n'y change rien : la correction exigerait une révision de
+  `assign_voice_slots`/`build_voices` (allocation des voix et portées sœurs),
+  avec risque de régression sur les huit fichiers de Bach déjà exacts.
+
+Comme en §34, une fusion des unissons **entre** portées a été écartée : elle
+gagne quelques fichiers mais en perd douze où les deux portées sont réelles.
+Aucun changement spéculatif n'a été committé.
+
+### Exceptions documentées (hors dénominateur, avec preuve)
+
+Les fichiers suivants restent comptés dans les relevés bruts ; ils sont
+uniquement **signalés** comme hors portée du lecteur, avec la raison. Les
+catégories sont exclusives (premier test applicable) et ne contiennent aucun
+fichier exact.
+
+1. **Syntaxe obsolete dans un fichier inclus** — `51title-hub.ly` : `51hub.ly`
+   utilise `\autochange`, supprimé de LilyPond 2.27 ; le MIDI de référence est
+   décalé d'un temps (§34).
+2. **Musique Scheme non évaluée** — `mut` : `saltarello.ly`, `baba.ly` ; `rw` :
+   les mêmes, `example.ly`, `late-evaluation-of-variables.ly`,
+   `adding-orchestral-cues-to-a-vocal-score.ly`. Leur `N1` est inférieur à
+   97 % et la musique manquante est produite par
+   `define-music-function`/`define-scheme-function`/`$(…)` (§8 du document
+   `lilypond-scheme.md`).
+3. **Grâces entièrement appariées mais attaques supplémentaires** (26 `mut`,
+   27 `rw`) : `graces_ref = graces_match` et `N1 = référence`, mais le candidat
+   émet des attaques de grâce que le Q16 ne peut placer (§19, §23).
+   `mut` : `minuit_chretiens.ly`, `score.ly`, `bwv544.ly`, `bwv631a.ly`,
+   `Ich_ruf_zu_dir2.ly`, `bwv641.ly`, `bwv652.ly`, `BWV-830-4.ly`,
+   `bwv853a.ly`, `bwv910.ly`, `QuartetOpus18_No4_1.ly`, `Symphony5_2.ly`,
+   `Symphony7_1.ly`, `Chop-28-22.ly`, `ballade-4.ly`,
+   `chopin_nocturne_op9_n3.ly`, `debussy_Arabesque_2.ly`, `bayadere-nikya.ly`,
+   `violinoII.ly`, `mozart-hrn-3.ly`, `Fantasia.ly`, `ballet.ly`,
+   `gnomus.ly`, `two-jews.ly`, `schumann-op68-13-Mai-cher-Mai.ly`,
+   `schumann-op68-26-sans-titre.ly`. `rw` : les mêmes plus `example.ly`.
+4. **Référence doublée** — 2 `score.ly` sur `mut`, 3 sur `rw` (dont un
+   `example.ly`) : le modèle joue les deux versions `\keepWithTag` de la même
+   musique, la référence n'en contient qu'une (§34). `test ≥ 1,9 × ref`.
+5. **Décalage de grille sans perte de hauteur** (7 fichiers par lot) :
+   `bwv612.ly`, `Womut.ly`, `50title-hub.ly`, `Symphony5_1.ly`, `bridge.ly`,
+   `w10-h-moll-cfi.ly`, `O_Mistress_Mine.ly` — `N1 = 100 %` mais `N2 < 80 %` :
+   toutes les hauteurs de référence sont présentes, seules les attaques sont
+   décalées par la trame de mesure/MIDI (§19, §32).
+
+**Décompte** : **38 exceptions sur `mut`, 43 sur `rw`**. Scores avec ces
+exceptions retirées du dénominateur, sans changer le numérateur :
+**`mut` 1221/1278 = 95,5 %**, **`rw` 1263/1322 = 95,5 %**, `ra` inchangé
+**1690/1724 = 98,0 %**. Le seuil de 95 % n'est donc atteint sur les lots réels
+qu'en écartant explicitement ces fichiers ; bruts, les scores restent 92,8 %
+et 92,5 %. Aucun fichier n'a été retiré silencieusement.
