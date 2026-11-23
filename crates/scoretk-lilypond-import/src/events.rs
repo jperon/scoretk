@@ -1323,7 +1323,12 @@ impl<'a> Interpreter<'a> {
                     let mut sections = Vec::new();
                     let mut end = body_end;
                     let mut alt_octave = body_octave;
-                    for (index, alternative) in alternatives.iter().enumerate() {
+                    // `\repeat volta n` avec plus de n alternatives :
+                    // « More alternatives than repeats. Junking excess
+                    // alternatives » (`lily/parser.yy` REPEAT ALTERNATIVE) ;
+                    // les surnuméraires ne sont ni gravées ni jouées.
+                    let gardees = alternatives.len().min(count.max(1) as usize);
+                    for (index, alternative) in alternatives.iter().take(gardees).enumerate() {
                         let alt_start = self.cursor;
                         self.octave = alt_octave;
                         self.walk(alternative);
