@@ -367,8 +367,8 @@ report. On wasm, add an **additive** `convertDetailed(...)` returning
   (`capxml.cpp:936-990`), confirming that Capella carries rich layout in a
   proprietary binary alongside dynamics, lyrics and instrument definitions.
 - **Missing today:** the pivot has no per-element coordinates at all — the
-  common gap #3 of MusicXML and MuseScore mapping
-  (`format-mapping/musicxml.md:54-56`, `format-mapping/musescore.md:49-51`).
+  first gap of the MusicXML mapping and the third of the MuseScore mapping
+  (`format-mapping/musicxml.md:54-55`, `format-mapping/musescore.md:52-56`).
 - **Layer:** parse musical content into L0–L4, put every page/system position
   into L5 `Engraving` as *opaque* per-object offsets, and report the rest as
   `Loss`. Import-only means no round-trip obligation, but the report must say
