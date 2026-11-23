@@ -1,109 +1,139 @@
 # GABC — reader/writer campaign (phase 0: references and oracle)
 
 No scoretk GABC reader or writer exists yet. This page records the
-**reference sources**, the **measurement lot** and the **oracle** prepared
-before any pivot-model change. The architectural decision (optional L6
-Gregorian layer) is recorded in
-[model-modularisation.md](model-modularisation.md) §7.1 and awaits the user's
-decision; nothing here assumes it has been taken. Syntax and mapping are in
-[format-ref/gabc.md](format-ref/gabc.md) and
+**reference sources**, the **measurement lot**, the **corrected oracle** and
+its sanity baseline. The architectural decision (optional L6 Gregorian
+layer) is in [model-modularisation.md](model-modularisation.md) §7.1 and
+awaits the user's decision; nothing here assumes it has been taken. Syntax
+and mapping are in [format-ref/gabc.md](format-ref/gabc.md) and
 [format-mapping/gabc.md](format-mapping/gabc.md).
 
 ## 1. References and licences
 
 All files are local, read-only and unversioned under
 `/home/jacques/programmes/musique/specs/`, catalogued in `specs/README.md`
-§ GABC / Gregorian chant. No script from them was executed except the
-recorded `gabctk.py` CLI, run under `python3 -I` in a dedicated venv.
+§ GABC / Gregorian chant. Only the two recorded executables are run; no
+downloaded script is imported or sourced.
 
 | Source | Version | Licence | Use |
 | --- | --- | --- | --- |
-| Gregorio `doc/Gabc.tex`, `src/gabc/*.y/.l` | `b63f074` | GPL-3.0-or-later | normative syntax and grammar |
-| gabctk `gabctk.py`, bundled `abc2xml.py`/`midiutil` | tag `v240107`, `40b58b62` | **GPL-2.0-or-later** | modern-notation mapping and oracle reference |
+| Gregorio `doc/Gabc.tex`, `src/gabc/*.y/.l`, `src/dump/dump.c`, `src/struct.c` | `b63f074` ("6.2.0-develop") | GPL-3.0-or-later (`gregorio/COPYING.md`) | **syntax, parser and reference truth** |
+| gabctk `gabctk.py`, bundled `abc2xml.py`/`midiutil` | tag `v240107`, `40b58b62` | **GPL-2.0-or-later** (`gabctk/LICENSE`) | candidate mapping, characterised against Gregorio |
 | GregoBase SQL dump | `8851677e`, 2024-01-05 | **no site-wide licence statement** | corpus source, only `copyrighted = 0` rows, private reference |
 | Gregorio `doc/`, `examples/` | `b63f074` | GPL-3.0-or-later | nine parsing exercises |
 
-The GregoBase repository's README and SQL contain no licence grant; per-entry
-`gregobase_chants.copyrighted` is the only usable filter (`scripts/oracle/gabc/build_lot.py`
-keeps `copyrighted = 0`). The extracted corpus must stay outside the
-repository and must not be redistributed. gabctk is GPL-**2.0-or-later**, so
-the “or later” clause permits GPL-3.0-only reuse **with attribution** if any
-of its logic is ever ported; note this in `NOTICE` and
-`docs/licences-tierces.md` at that time.
+GregoBase has no licence grant; `build_lot.py` uses the per-entry
+`gregobase_chants.copyrighted` flag as the only filter and keeps the lot
+outside the repository. gabctk is GPL-2.0-**or-later**, so the "or later"
+clause permits GPL-3.0-only reuse **with attribution** if any logic is ever
+ported; record it in `NOTICE` and `docs/licences-tierces.md` then.
 
 ## 2. Lot
 
-`build_lot.py` parses the SQL dump as **data** (`csv` + `json`, no downloaded
-code), keeps non-copyrighted chants, normalises them into self-contained
-`.gabc` files (`name:`, `language: latin;`, `staff-lines: 4;`, optional
-`mode:` — the four-line staff is required by gabctk's fixed table at
-`gabctk.py:1214-1261`), and copies the nine Gregorio files. With
-`--count 180 --stride 97` this yields **202 files** (193 GregoBase + 9
-Gregorio) in `specs/gabc/lot/`, with `lot.tsv` (`id<TAB>path`). The manifest
-is regenerable and deterministic.
+`build_lot.py` parses the SQL dump as **data** (`csv` + `json`), normalises
+non-copyrighted chants into self-contained `.gabc` files (`name:`,
+`language: latin;`, `staff-lines: 4;`, optional `mode:` — the four-line staff
+is required by gabctk's fixed table at `gabctk.py:1214-1261`), and copies the
+nine Gregorio files. With `--count 180 --stride 97` this yields **202 files**
+(193 GregoBase + 9 Gregorio) in `specs/gabc/lot/`, with a deterministic
+`lot.tsv`.
 
-## 3. Oracle design
+## 3. Why the first oracle was wrong
 
-`scripts/oracle/gabc/mesure.py` (companion `mesure.sh`, `README.md`):
+The earlier `mesure.py` compared gabctk's **MIDI** (`-o`) with its
+**MusicXML** (`-x`) and reported `n1 = ref` on 130/148 and **0 fully exact,
+N2 ≈ 40 %**. That is not a defect of either exporter:
 
-1. For each source, run gabctk `python3 -I gabctk.py -i src -o ref.mid -x
-   ref.xml -c ref.abc`. `-I` ignores ambient `PYTHONPATH`/user site; gabctk
-   appends its own directory at `gabctk.py:22`, so its bundled modules still
-   resolve. Failures are recorded, not fatal.
-2. Extract notes with the existing shared extractor
-   `scripts/oracle/midi/midi_notes.py:60` (`read_midi`) and `:247`
-   (`read_xml`), and compare with `:658` (`compare`) to obtain N1 (pitch
-   multiset), N2 (pitch + onset) and N2d (plus duration).
-3. `cmp_ref` is **gabctk MusicXML vs gabctk MIDI** — a characterisation of
-   the reference, not a scoretk result. `n1 = ref` is expected; `n2 < ref`
-   is reference noise from gabctk's two independent exporters
-   (`gabctk.py:1390-1410` for MusicXML via ABC→`abc2xml`, `:1413-1471` for
-   MIDI with `int(duree)` truncation).
-4. Determinism is checked on the first three files by running gabctk twice
-   and comparing SHA-256 of both outputs.
-5. Import direction (later): `--scoretk <cli>` converts the same `.gabc` to
-   MusicXML/MIDI and `cmp_import_*` compares each to the matching reference.
-6. Export direction (later): `--roundtrip --refs <dir>` compares a GABC file
-   **exported by scoretk** against references produced from the original.
-   The writer must preserve the L6 neume payload; the derived projection is
-   not a round-trip target (see §4).
+- the MusicXML is produced through **ABC → `abc2xml.py`**
+  (`gabctk.py:1390-1410`), with `M: none` and `L: 1/8` (`:38-48`);
+- the MIDI truncates durations with `int(note.duree)` and writes a tempo per
+  note (`gabctk.py:1443-1454`);
+- **GABC has no fixed durations** at all (`docs/agents/format-ref/gabc.md` §7;
+  rhythmic signs at `Gabc.tex:742-797`).
 
-Parallelism is capped: `--jobs` defaults to `min(2, os.cpu_count())` and the
-pool is clamped to two workers. No other measurement runs concurrently.
+Comparing the two therefore measures a *duration interpretation* that GABC
+does not contain. It cannot be a 100 % sanity test and was removed as a truth
+comparator.
 
-## 4. Measured sanity baseline (2026-11-23)
+## 4. Corrected oracle: Gregorio is the reference
 
-Command (full lot, two workers, determinism check):
+`scripts/oracle/gabc/canonical.py` defines the truth on what GABC carries:
+
+1. **pitch sequence with the clef applied** — Gregorio's staff heights
+   (`src/struct.h:809-813`), its `o → p` letter mapping (`src/dump/dump.c:78-88`)
+   and its clef key `2*line-1` (C) / `2*line-4` (F) (`src/struct.c:1273-1288`),
+   giving `step = height - key - 5` with C = 0;
+2. **syllable/lyric text**, normalised the way both tools print it (braces,
+   TeX protrusion commands and repeated `~` removed);
+3. **neume grouping** — GABC's parenthesised groups, compared between our
+   source reader and gabctk's `-m` (Gregorio dumps layout *glyphs*, which are
+   a different granularity: 109 glyphs versus 34 GABC groups on `gb1`);
+4. **separation bars**, normalised to Gregorio's `B_*` names
+   (`src/dump/dump.c:805-821`);
+5. **rhythmic signs** (punctum mora, ictus, liquescents) as optional N2.
+
+Primary reference: Gregorio's own C parser, built by
+`build_gregorio.sh` with `nix-shell -p autoconf automake flex bison`, `-j2`,
+in `specs/gabc/gregorio-buildtree/`, and invoked as
+`gregorio -f gabc -F dump` (`src/gregorio-utils.c:184-218`). Secondary
+reference: our own reader of the source (diagnostic only). Candidate:
+gabctk's `-m` re-emission plus `-e` lyrics. Where they disagree, Gregorio
+prevails. Each divergence is classified by the failing check and written to
+`mesure.jsonl`; nothing is silently dropped.
+
+Parallelism is capped at two workers (`--jobs`, default
+`min(2, os.cpu_count())`); no other measurement runs concurrently.
+
+## 5. Sanity baseline (2026-11-23, full lot, two workers)
 
 ```sh
 scripts/oracle/gabc/mesure.sh \
-  /home/jacques/programmes/musique/specs/gabc/lot/lot.tsv /tmp/gabc-oracle-full \
+  /home/jacques/programmes/musique/specs/gabc/lot/lot.tsv /tmp/gabc-oracle-greg3 \
   /home/jacques/programmes/musique/specs/gabc/gabctk/gabctk.py - \
   --verifier-determinisme --jobs 2
 ```
 
-Result: **202 files, 148 references produced, 54 gabctk failures**;
-`n1 = ref` on **130/148**; **0 fully exact** (N2 mean 40.2 %); determinism
-**3/3** on the checked files. The earlier 12-file sample gave 12/12
-references, 9/12 N1-exact, 3/3 deterministic — same pattern.
+- **Gregorio vs itself: 197/197 = 100 %** (SHA-256 of two dumps per valid
+  file). Five files are rejected by Gregorio itself (`gb6036`, `gb8251`,
+  `gb9426`, `gb11321`, `gb18361`: "clef change is not supported on the first
+  syllable", "syntax error", "unrecognized character u") and are excluded
+  from both sides — they are bad corpus data, not converter failures.
+- Our source reader vs Gregorio (diagnostic): **132/197** core-exact; the
+  residual differences are layout tags `[…]` inside note code, clef changes
+  embedded in a bar group, and markup normalisation — classified, not hidden.
+- **gabctk vs Gregorio: 122/163 core-exact** (36 fully exact including signs).
+  Disagreements: signs only 86, bars 23, pitch 10, text 8. Neume grouping
+  (source vs gabctk) agrees on 150/202.
 
-Failure causes (gabctk limits, not scoretk): `IndexError` 23 (fixed ABC pitch
-table `gabctk.py:1186-1194` indexed by `hauteur - 58`), `UnicodeEncodeError`
-14 (`abc2xml.py` latin-1 output), `KeyError` 12 (bar `` ` `` missing from
-`gabctk.py:928-936`), 5 others. N1 mismatches are also the out-of-range ABC
-pitch table: on `gb195`, two notes are pitch 60 in MIDI and 96 in MusicXML,
-i.e. a 36-semitone transposition wrapped to the wrong tuple index. Those
-rows remain in `mesure.jsonl` with their flags; none is silently discarded.
+### Gabctk defects found (for upstream fixing)
 
-**Consequence:** the oracle can serve as a musical-N1/N2 comparator, but
-scoretk must be measured against the **MIDI** reference for pitch and onset
-and against the MusicXML reference for written notes, with `cmp_ref` quoted
-alongside every figure so reference noise is never read as a regression.
+Where gabctk is the candidate, these are defects **in gabctk**, not in the
+format or in Gregorio:
 
-## 5. How to run
+1. **Dropped note after a clef change inside a bar group** — `gb98`: at note
+   index 124 Gregorio has step `-4` (letter `d` under the new `c3` clef) that
+   gabctk's `-m` omits; the rest of the sequence is shifted by one.
+2. **Out-of-range ABC pitch table** — `gabctk.py:1186-1194` indexes a fixed
+   tuple by `hauteur - 58`; GregoBase chants with very low/high tessiture wrap
+   to the wrong pitch (also the source of the earlier 36-semitone anomaly on
+   `gb195`).
+3. **Extra separation bar** — `gb4276`: gabctk emits one more
+   `DIVISIO_MINOR` than Gregorio (8 vs 7).
+4. **Lyric marker reordering** — `gb1`: `-e` text has `.ij.*~` where Gregorio
+   (and the source) have `.*ij.~`; the Euouae `*` marker is moved.
+5. **Latin-1 encoder and unsupported bars** — `abc2xml.py` raises
+   `UnicodeEncodeError` on `U+01FD`/`U+2020`, and `gabctk.py:928-936` has no
+   mapping for the virgula `` ` `` (`KeyError`). These affect the legacy
+   MusicXML/MIDI path, no longer the canonical oracle.
 
-See `scripts/oracle/gabc/README.md` § Usage. In short: build the lot, run
-`--selftest`, run the full measurement, then (once a reader exists) add
-`--scoretk <binary>`; for the writer, use `--roundtrip --refs`. Always report
-gains and losses **per file**, never only totals, as for the other nine
-directions (`docs/agents/plan-fiabilite.md`).
+None of these blocks writing a scoretk reader: the reader must follow
+Gregorio (the reference implementation of the format), and the oracle now
+measures against it.
+
+## 6. How to run
+
+See `scripts/oracle/gabc/README.md` § Usage: build the lot, build Gregorio,
+run `--selftest`, run the full measurement; report gains and losses **per
+file** as for the other nine directions (`docs/agents/plan-fiabilite.md`).
+Import/export hooks in `mesure.py` are intentionally absent until there is a
+reader/writer to measure.
