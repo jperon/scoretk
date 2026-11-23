@@ -25,16 +25,27 @@ carry or silently drop?".
    "Model gaps" sections are the authoritative statement of what the pivot
    cannot express today (`docs/agents/format-mapping/musescore.md:39-58`,
    `musicxml.md:50-64`, `midi.md:56-71`, `lilypond.md:42-63`, `abc.md:35-55`).
-4. **References first.** For the five *coming* formats there is **no local
-   normative specification and no reference implementation**: `specs/README.md`
-   lists only ABC, LilyPond, MIDI, MuseScore and MusicXML; `ref-musescore/`
-   contains only `src/importexport/{midi,musicxml}` (`docs/TODO.md:44-46`). The
-   GABC claims below are grounded in real chants under
-   `/home/jacques/Musique/Gregorien/gabc-chants/` and in `docs/TODO.md:33-35`,
-   which names Gregorio's grammar and `jperon/gabctk` but does not vendor them.
-   MEI, Capella, Guitar Pro and Humdrum statements are therefore *requirements
-   inferred from the format's public data model and from the MuseScore import
-   TODO*, not ports of a cited source. This limitation is explicit.
+4. **References first.** At audit time (2026-11-22) the five *coming* formats
+   had no local specification: `docs/TODO.md:33-46` named the sources but did
+   not vendor them. **This has since been corrected (2026-11-23)**; the sources
+   are now local, read-only and unversioned:
+   - GABC: Gregorio commit `b63f074` (`doc/Gabc.tex:21-742`, grammar in
+     `src/gabc/gabc-score-determination.y`) and gabctk tag `v240107`
+     (`40b58b62`, GPL-2.0-or-later);
+   - MEI: Guidelines/schema **5.1** (`mei/cmn.html`, `mei/mei-all-5.1.rng`,
+     ECL-2.0 for the schema; the Guidelines' licence is not stated on the
+     retrieved pages);
+   - Humdrum: humlib `b9d67cfe` (BSD-2-Clause), Verovio `bfbcec3`
+     (`src/iohumdrum.cpp`, LGPL-3.0) and the `**kern` reference at
+     `humdrum/kern-reference.html` (licence not stated on the page);
+   - Capella and Guitar Pro: **no public format specification exists**, but the
+     4.7.4 MuseScore C++ modules are now available at
+     `ref-musescore/.474/src/importexport/{capella,guitarpro}` (tag `v4.7.4`,
+     `7688c005`, see `docs/agents/upstream.md` §2.1).
+   Paths, commits and licences are recorded in `specs/README.md` (outside the
+   repository). Sections 7.1, 7.2 and 7.5 were re-checked against the new
+   sources; §7.3/§7.4 now cite the 4.7.4 C++. No script from any downloaded
+   source was executed.
 
 ## 2. What is already a real common core
 
@@ -300,14 +311,18 @@ report. On wasm, add an **additive** `convertDetailed(...)` returning
 
 ### 7.1 GABC (first, import and export)
 
-- **Source evidence:** `docs/TODO.md:33-35` chooses `jperon/gabctk` for the
-  mapping and Gregorio's grammar for syntax; no grammar is vendored and the
-  web reference was unreachable from this environment (§1.4). Real input:
+- **Source evidence (now local, §1.4):** `docs/TODO.md:33-35` chooses
+  `jperon/gabctk` for the mapping and Gregorio's grammar for syntax. Both are
+  now present: `gabc/gabctk` at tag `v240107` (`40b58b62`) and Gregorio at
+  `b63f074`. The normative syntax is `gabc/gregorio/doc/Gabc.tex:21-742`:
+  file structure `:36`, headers `:67` (`office-part` at `:141`), note syntax
+  `:403` (pitch letters `a`–`n`/`p`), one-note neumes `:452`, complex neumes
+  `:556`, neume fusion `:603`, rhythmic signs `:742` (punctum mora `.`, ictus
+  `'`). The grammar and lexer are
+  `gabc/gregorio/src/gabc/gabc-score-determination.{y,l}`. Real input
   `/home/jacques/Musique/Gregorien/gabc-chants/DeusInAdjutorium.gabc:1-22`
-  shows a `name:`/`office-part:`/`occasion:`/`date:`/`transcriber:` header,
-  `%%`, then syllables such as `DE(c3h)us(h'_)` with inline pitches
-  (`c3`, `h`, `g`), neume signs (`'` ictus, `_`, `~`, `.`), separators `(,)`,
-  `(;)`, `(:)`, `(::)` and rubrics `<sp>R/</sp>`.
+  shows the same header fields, `%%`, and syllables such as `DE(c3h)us(h'_)`
+  with separators `(,)`, `(;)`, `(:)`, `(::)` and rubrics `<sp>R/</sp>`.
 - **Missing today:** no neume/punctum/syllable type anywhere in the model
   (`mod.rs:99-145` has none); `Score::metadata` has no `office-part`/`occasion`/
   `annotation` (`score.rs:51-91`); no notion of a text-less, measure-less
@@ -324,15 +339,19 @@ report. On wasm, add an **additive** `convertDetailed(...)` returning
 
 ### 7.2 MEI (import and export)
 
-- **Source evidence:** `docs/TODO.md:36` ("port MuseScore 4.7.4's MEI module");
-  that module is **absent** from `ref-musescore/` (§1.4), so no C++ line can be
-  cited. MEI's `<scoreDef>/<staffDef>`, `<measure>`, `<staff>/<layer>` with
-  `@tstamp`/`@dur`, `<note>` with `@pname/@octave/@dur/@dots`, `<beam>`,
+- **Source evidence (now local, §1.4):** `docs/TODO.md:36` ("port MuseScore
+  4.7.4's MEI module"); the module is now at
+  `ref-musescore/.474/src/importexport/mei/internal/`, with beam mapping at
+  `meiconverter.cpp:626-667` and `@tstamp` ↔ `Fraction` at `:3828-3853`.
+  The format specification is MEI **5.1**: `mei/introduction.html`,
+  `mei/cmn.html` and `mei/mei-all-5.1.rng`. MEI's `<scoreDef>/<staffDef>`,
+  `<measure>`, `<staff>/<layer>` with `@tstamp`/`@dur`, `<note>` with `@pname/@octave/@dur/@dots`, `<beam>`,
   `<tuplet>`, `<slur>`, `<verse>`, `<harm>`, `<anl>` map to L1–L3 and are
   already representable (`segment.rs:118-486`, `chord.rs:339-363`,
   `lyrics.rs:36-63`, `annotation.rs:428-479`).
 - **Missing today:** MEI's separation of **written** and **gestural/perform**
-  time (`@tstamp.ges`, `@dur.ges`, `@ppq`) has no analogue: `ChordRest` has only
+  time (`@tstamp.ges`, `@dur.ges` in `mei/cmn.html`, `@ppq` in
+  `mei/mei-all-5.1.rng`) has no analogue: `ChordRest` has only
   `duration` + `ticks` (`chord.rs:341-348`); `@copyof`/excerpt links have no
   model counterpart (`format-mapping/musescore.md:43-45`); `@facs` facsimile
   references and `<timeline>`/`<expansion>` are not representable.
@@ -341,9 +360,12 @@ report. On wasm, add an **additive** `convertDetailed(...)` returning
 
 ### 7.3 Capella (import only)
 
-- **Source evidence:** `docs/TODO.md:37`; 4.7.4 import source absent (§1.4).
-  Capella stores rich layout (system/page positions), dynamics, lyrics and
-  instrument definitions in a proprietary binary.
+- **Source evidence:** `docs/TODO.md:37`; no public format specification
+  exists, but the 4.7.4 importer is now local at
+  `ref-musescore/.474/src/importexport/capella/internal/`. It defines its own
+  beam mode (`capella.h:55`) and resolves systems/staff layouts
+  (`capxml.cpp:936-990`), confirming that Capella carries rich layout in a
+  proprietary binary alongside dynamics, lyrics and instrument definitions.
 - **Missing today:** the pivot has no per-element coordinates at all — the
   common gap #3 of MusicXML and MuseScore mapping
   (`format-mapping/musicxml.md:54-56`, `format-mapping/musescore.md:49-51`).
@@ -354,9 +376,14 @@ report. On wasm, add an **additive** `convertDetailed(...)` returning
 
 ### 7.4 Guitar Pro (import only)
 
-- **Source evidence:** `docs/TODO.md:38`; 4.7.4 import source absent (§1.4).
-  Guitar Pro is tablature-centric: string/fret pairs, bend curves, slides,
-  hammer-ons, palm mute, let-ring, stroke directions, and per-track effects.
+- **Source evidence:** `docs/TODO.md:38`; no public format specification
+  exists, but the 4.7.4 importer is now local at
+  `ref-musescore/.474/src/importexport/guitarpro/`. It includes
+  `engraving/dom/{bend,fret,guitarbend}.h`, builds MuseScore `StringData`
+  (`internal/gtp/gpconverter.cpp:1152-1167`) and reads `note->string()`/
+  `note->fret()` plus `GuitarBend` chains (`:1280-1304`), confirming that
+  tablature (string/fret pairs, bend curves, slides, hammer-ons, palm mute,
+  let-ring, stroke directions, per-track effects) is the primary data.
 - **Missing today:** `ClefSign` has `Tab` variants (`segment.rs:214-319`) and
   `Staff::lines` exists (`part.rs:361`), but there is **no string/fret field**
   on `Note` (`note.rs:266-351`). `TremoloBar` (`tremolo_bar.rs:77-84`) is a
@@ -371,12 +398,18 @@ report. On wasm, add an **additive** `convertDetailed(...)` returning
 
 ### 7.5 Humdrum `**kern` (last)
 
-- **Source evidence:** `docs/TODO.md:39-41` names humlib (BSD-2) and Verovio's
-  `iohumdrum.cpp` (LGPL-3) with a licence check; neither is present locally.
-- **`**kern` necessities:** parallel spines with *exclusive interpretations*
-  (`**kern`, `**bar`, `**harm`, `**lyr`, `**dyn`) and spine paths (`*>`/`*v`),
-  durations encoded in the token (`4`, `4.`, `8`, `DDD`), no required key or
-  time signature, and `!LODX`/`!LODE` local comments.
+- **Source evidence (now local, §1.4):** `docs/TODO.md:39-41` names humlib
+  (BSD-2) and Verovio's `iohumdrum.cpp` (LGPL-3) with a licence check. Both
+  are present (`humdrum/humlib` at `b9d67cfe`, `humdrum/verovio` at `bfbcec3`
+  with `src/iohumdrum.cpp`), plus the reference
+  `humdrum/kern-reference.html` from <https://www.humdrum.org/rep/kern.html>.
+- **`**kern` necessities:** confirmed by `humdrum/kern-reference.html`
+  §2.2 (interpretations), §4.1 (spine paths `*>`/`*v`), §3.2.7 (duration),
+  §3.2.8 (n-tuplets), §3.4 (barlines), §2.4 (comments) and §3.2.3-3.2.6
+  (ornaments/articulation/stems): parallel spines with *exclusive
+  interpretations* (`**kern`, `**bar`, `**harm`, `**lyr`, `**dyn`), durations
+  encoded in the token (`4`, `4.`, `8`, `DDD`), no required key or time
+  signature, and `!LODX`/`!LODE` local comments.
 - **Missing today:** `Track` is staff × voice with `VOICES = 4`
   (`ids.rs:123`, `mod.rs:31-35`), which cannot represent an arbitrary number of
   parallel spines with different interpretations; `Measure` requires
@@ -429,16 +462,21 @@ directions green before any data moves. Steps 2–4 each move one layer, so a
 regression can be attributed to a single crate group. No step changes a file
 format or the wasm API.
 
-## 9. Open questions / where no reference exists
+## 9. Open questions / remaining reference gaps
 
-- No local GABC grammar, MEI guideline, Capella/Guitar Pro format document or
-  Humdrum user guide exists (`specs/README.md`, §1.4). The web reference for
-  GABC was unreachable; the format-specific claims in §7 are therefore
-  grounded in real sample files and `docs/TODO.md`, and must be re-checked
-  against the actual upstream source when each format is ported.
-- The 4.7.4 MuseScore MEI/Capella/Guitar Pro modules must be sparse-fetched
-  before those ports (`docs/TODO.md:44-46`); until then no C++ line can be
-  cited for them.
+- **Resolved since the audit (2026-11-23):** the GABC grammar/docs, MEI 5.1
+  guidelines/schema, humlib, Verovio `iohumdrum.cpp`, the `**kern` reference
+  and the 4.7.4 MuseScore MEI/Capella/Guitar Pro modules are now local
+  (§1.4, `specs/README.md`, `docs/agents/upstream.md` §2.1). Section 7 was
+  re-checked against them; the "no local reference" conclusion no longer
+  holds except where stated below.
+- **Still open:** Capella and Guitar Pro have no published format
+  specification; the sole reference is the 4.7.4 C++ import source. The
+  licence column of `specs/README.md` is **unverified** for the MEI Guidelines
+  HTML and the `**kern` reference page — neither retrieved file states a
+  licence, so those two are private reference copies until confirmed. Verovio
+  is LGPL-3.0: a clean-room rewrite of the format mapping is compatible with
+  GPL-3.0-only, but no library source may be copied verbatim.
 - `Note::unperformed` (`note.rs:322`) is a deliberate non-MuseScore extension
   added in the current session (`docs/agents/musicxml-export.md` §39). It is
   the first L6-style field in the common model and the concrete precedent for

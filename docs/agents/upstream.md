@@ -79,6 +79,41 @@ git -C ref-musescore checkout 2b9e82df847111d673c2051a93deeaaeea3f5a29
 copy a C++ file into the distributed sources (the port is a
 rewrite, see `NOTICE`).
 
+### 2.1 4.7.4 modules for MEI, Capella and Guitar Pro (2026-11-23)
+
+The 5.0 snapshot of §2 does not contain those import/export modules. They are
+kept in a **second, independent sparse checkout** *inside* the already-ignored
+`ref-musescore/` tree, so the 5.0 checkout is untouched and nothing is
+versioned:
+
+```sh
+git clone --depth 1 --filter=blob:none --sparse --branch v4.7.4 \
+    https://github.com/musescore/MuseScore ref-musescore/.474
+git -C ref-musescore/.474 sparse-checkout set \
+    src/importexport/mei src/importexport/capella src/importexport/guitarpro \
+    src/engraving/dom src/engraving/types src/engraving/style \
+    src/engraving/infrastructure src/engraving/rw src/engraving/editing \
+    src/engraving/tests/utils
+git -C ref-musescore/.474 rev-parse HEAD   # 7688c005ad963ba09ee715aae53dbc7e8c9d5ef8
+git -C ref-musescore/.474 describe --tags --exact-match HEAD   # v4.7.4
+```
+
+The tag hash is the same one already used for the 4.7.4 beam/tuplet audit
+(§ A). The engraving sets are the transitive `#include` closure of the three
+modules: without `src/engraving/editing` and `src/engraving/tests/utils`, four
+headers (`bracketItem.h`, `transpose.h`, `scorecomp.h`, `scorerw.h`) are
+missing. Verified locally: `find src/importexport/{mei,capella,guitarpro}`
+finds 884 files, and no `engraving/…` include is unresolved. `ref-musescore/.474`
+is read-only reference data (unversioned, like its parent); do not compile, run
+or copy code from it into the distributed sources.
+
+Useful entry points: MEI mapping
+`src/importexport/mei/internal/meiconverter.cpp:626-667` (beam modes) and
+`:3828-3853` (`@tstamp` ↔ `Fraction`); Capella staff layouts
+`src/importexport/capella/internal/capxml.cpp:936-990`; Guitar Pro tablature
+and bends `src/importexport/guitarpro/internal/gtp/gpconverter.cpp:1152-1167`
+(`StringData`), `:1280-1304` (`note->string()/fret()`, `GuitarBend`).
+
 ## 3. C++ → Rust correspondence
 
 Upstream paths are relative to `ref-musescore/src/`. The Rust column is relative to the
@@ -370,7 +405,8 @@ To test whether invariant 2 (4.7.4 behaviour prevails) could explain the
 remaining `tuplet bracket` divergences, tag `v4.7.4`
 (`7688c005ad963ba09ee715aae53dbc7e8c9d5ef8`) was fetched **read-only and
 outside the repository** (sparse clone under the session's scratch directory).
-No 4.7.4 source was copied into `ref-musescore/` or versioned.
+A persistent 4.7.4 sparse checkout now lives at `ref-musescore/.474` (§2.1);
+it is inside the ignored reference tree and therefore still unversioned.
 
 | File | 4.7.4 | 5.0 snapshot | Result |
 | --- | --- | --- | --- |
