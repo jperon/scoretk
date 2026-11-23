@@ -19,7 +19,12 @@
 # un groupe de plusieurs grâces peut donc insérer plus d'un temps avant sa
 # note principale (`grace-auto-beam-engraver.ly` : 1,2 temps).
 
-from ly_notes import apparier_graces
+from ly_notes import (
+    apparier_graces,
+    decalage_graces_reference,
+    lire_graces,
+    retirer_temps_graces,
+)
 
 
 def test_groupe_de_graces_plus_long_qu_un_temps():
@@ -34,6 +39,84 @@ def test_groupe_de_graces_plus_long_qu_un_temps():
     assert (refs, tests, matched) == (3, 3, 3), (refs, tests, matched)
 
 
+def test_decalage_par_groupe():
+    """Le temps inséré se calcule par groupe, depuis les durées écrites.
+
+    `lily/audio-item.cc:118-129` : une grâce de durée écrite `d` sonne
+    `9/40 × d` ronde, soit `0.9 × d` noire, avant sa note principale. Elle est
+    découpée dans la note précédente, raccourcie ; seul l'excédent quand cette
+    note ne suffit pas décale la suite :
+
+        inséré = max(0, 0.9 × Σd − (attaque − début de la note précédente))
+
+    `flags-default` : un 64e (0.0625 noire) précède un accord orné d'une
+    croche (0.1125 réelle) -> 0.05 inséré.
+    """
+    notes = [
+        (60, 0.0, 0.5, 0, 0, 0.0),
+        (62, 0.5, 0.25, 0, 0, 0.0),
+        (60, 0.75, 0.125, 0, 0, 0.0),
+        (62, 0.875, 0.0625, 0, 0, 0.0),
+        (60, 0.9375, 0.0, 0, 1, 0.125),  # grâce (croche)
+        (62, 0.9375, 0.0625, 0, 0, 0.0),
+    ]
+    graces = lire_graces(notes)
+    assert graces == [(60, 0.9375, False, 0.125)], graces
+    paliers = decalage_graces_reference([], graces, notes=notes)
+    assert len(paliers) == 1, paliers
+    seuil, cumul = paliers[0]
+    assert abs(cumul - 0.05) < 1e-9, paliers
+    assert abs(seuil - 0.9375) < 1e-9, paliers
+    # La note précédente garde son attaque ; la note principale et la suite
+    # sont ramenées à leur place logique.
+    reference = [
+        (62, 0.875, 0.0026, 0),
+        (60, 0.875, 0.112, 0),
+        (62, 0.9896, 0.0625, 0),
+        (72, 1.0521, 0.5, 0),
+    ]
+    corrigee = retirer_temps_graces(reference, paliers)
+    assert [round(note[1], 4) for note in corrigee] == [0.875, 0.875, 0.9396, 1.0021]
+
+    # Une note précédente assez longue absorbe la grâce : rien n'est inséré.
+    notes = [
+        (60, 0.0, 1.0, 0, 0, 0.0),
+        (60, 1.0, 0.0, 0, 1, 0.125),
+        (62, 1.0, 1.0, 0, 0, 0.0),
+    ]
+    assert decalage_graces_reference([], lire_graces(notes), notes=notes) == []
+
+    # Deux doubles croches forment un groupe de 0.125 : même total qu'une
+    # croche, et la seconde note d'un accord d'agrément (durée écrite nulle,
+    # `<chord/>`) ne compte pas deux fois.
+    notes = [
+        (62, 0.875, 0.0625, 0, 0, 0.0),
+        (60, 0.9375, 0.0, 0, 1, 0.0625),
+        (64, 0.9375, 0.0, 0, 1, 0.0625),
+        (60, 0.9375, 0.0, 0, 1, 0.0),  # seconde tête de l'accord de grâce
+        (62, 0.9375, 0.0625, 0, 0, 0.0),
+    ]
+    paliers = decalage_graces_reference([], lire_graces(notes), notes=notes)
+    assert len(paliers) == 1 and abs(paliers[0][1] - 0.05) < 1e-9, paliers
+
+    # Le seuil est un temps de référence : après un premier groupe, la note
+    # précédente du second garde son attaque (déjà décalée) et ne reçoit pas
+    # le temps inséré par sa propre grâce.
+    notes = [
+        (62, 0.875, 0.0625, 0, 0, 0.0),
+        (60, 0.9375, 0.0, 0, 1, 0.125),
+        (62, 0.9375, 0.0625, 0, 0, 0.0),
+        (62, 1.875, 0.0625, 0, 0, 0.0),
+        (60, 1.9375, 0.0, 0, 1, 0.125),
+        (62, 1.9375, 0.0625, 0, 0, 0.0),
+    ]
+    paliers = decalage_graces_reference([], lire_graces(notes), notes=notes)
+    assert len(paliers) == 2, paliers
+    assert abs(paliers[1][0] - 1.9875) < 1e-9, paliers
+    assert abs(paliers[1][1] - 0.1) < 1e-9, paliers
+
+
 if __name__ == "__main__":
     test_groupe_de_graces_plus_long_qu_un_temps()
+    test_decalage_par_groupe()
     print("ly_notes test_graces_groupe_long : OK")

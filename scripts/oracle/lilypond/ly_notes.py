@@ -70,6 +70,33 @@ import common  # noqa: E402
 
 GRID = 0.25  # pas de quantification : une double croche = 1/16 de noire
 TOL = 0.25  # tolérance de rapprochement : ±1/16 de noire
+
+# Durées écrites des `<type>` MusicXML, en rondes (ronde = 1).
+TYPE_DUREE = {
+    "maxima": 8.0,
+    "longa": 4.0,
+    "breve": 2.0,
+    "whole": 1.0,
+    "half": 0.5,
+    "quarter": 0.25,
+    "eighth": 0.125,
+    "16th": 0.0625,
+    "32nd": 0.03125,
+    "64th": 0.015625,
+    "128th": 0.0078125,
+    "256th": 0.00390625,
+    "512th": 0.001953125,
+    "1024th": 0.0009765625,
+}
+
+
+def duree_notee(elem) -> float:
+    """Durée écrite d'une note (ronde = 1), d'après `<type>` et ses points."""
+    base = TYPE_DUREE.get((elem.findtext("type") or "").strip())
+    if base is None:
+        return 0.0
+    points = len(elem.findall("dot"))
+    return base * (2.0 - 1.0 / (2**points)) if points else base
 STEPS = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 
 
@@ -321,7 +348,9 @@ def read_xml(
                             hauteur_u = 12 * (int(octave_u) + 1) + STEPS[step_u]
                             notes.append((hauteur_u + transposition, jouee,
                                           0.0 if est_grace else duree, numero_part,
-                                          genre) if with_grace else
+                                          genre,
+                                          0.0 if est_accord else duree_notee(elem))
+                                         if with_grace else
                                          (hauteur_u + transposition, jouee,
                                           0.0 if est_grace else duree, numero_part))
                             if not joue:
@@ -341,7 +370,8 @@ def read_xml(
                 alter = pitch.findtext("alter", "0")
                 hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
                 notes.append((hauteur + transposition, jouee,
-                              0.0 if est_grace else duree, numero_part, genre)
+                              0.0 if est_grace else duree, numero_part, genre,
+                              0.0 if est_accord else duree_notee(elem))
                              if with_grace else
                              (hauteur + transposition, jouee,
                               0.0 if est_grace else duree, numero_part))
@@ -466,7 +496,7 @@ def lire_graces(notes: list[tuple]) -> list[tuple[int, float, bool]]:
     temps réel (`attack`/`offset` positif).
     """
     return [
-        (note[0], note[1], note[4] == 2)
+        (note[0], note[1], note[4] == 2, note[5] if len(note) > 5 else 0.0)
         for note in notes
         if len(note) >= 5 and note[4]
     ]
@@ -496,9 +526,9 @@ def recaler_graces_initiales(
     if abs(premiere) > tolerance:
         return reference, 0.0
     entete = [
-        hauteur
-        for hauteur, attaque, apres in graces
-        if not apres and abs(attaque - premiere) <= tolerance
+        grace[0]
+        for grace in graces
+        if not grace[2] and abs(grace[1] - premiere) <= tolerance
     ]
     if not entete:
         return reference, 0.0
@@ -514,73 +544,78 @@ def recaler_graces_initiales(
 
 
 def decalage_graces_reference(
-    reference: list[tuple], graces: list[tuple[int, float]], grid: float = GRID,
-    window: float = 1.0,
+    reference: list[tuple], graces: list[tuple], grid: float = GRID,
+    window: float = 1.0, notes: list[tuple] | None = None,
 ) -> list[tuple[float, float]]:
-    """Pas de temps inséré par les grâces, calculé sur le MIDI seul.
+    """Temps inséré par les groupes de grâces, calculé sur le candidat.
 
-    `lily/grace-iterator.cc:25-40` place la grâce dans la partie « grâce »
-    du moment ; `lily/audio-item.cc:118-129` convertit ce moment en temps
-    réel (`main + 9/40 × grace`), et `lily/audio-column.cc:32-34` l'utilise
-    pour l'horodatage de chaque colonne audio. Une grâce écrite à l'attaque
-    d'une note principale occupe donc un temps MIDI réel qui décale toutes
-    les colonnes suivantes (`lily/midi-walker.cc:92-95`).
+    `lily/grace-iterator.cc:25-40` met une grâce dans la partie « grâce » du
+    moment (`grace_part` négatif) et `lily/audio-item.cc:118-129` la convertit
+    en temps réel : ``moment_to_real(m) = main + 9/40 × grace`` (en rondes).
+    Une grâce de durée écrite `d` (somme du groupe) sonne donc
+    ``9/40 × d`` ronde, soit ``0.9 × d`` noire, *avant* sa note principale.
 
-    On retire à chaque grâce la durée nominale qu'elle remplace (une
-    double-croche, GRID/4 : c'est la valeur volée dans les tests `flags-*`) :
-    seul l'excédent est du temps inséré. Le résultat est une fonction en escalier
-    S(t) : somme des excédents des grâces d'attaque <= t. Les attaques du
-    candidat ne servent qu'à *identifier* les grâces du MIDI (par hauteur et
-    fenêtre), jamais à calculer le décalage.
+    LilyPond la découpe dans la note qui précède : celle-ci est raccourcie
+    d'autant. Quand elle ne suffit pas, la note principale et toute la suite
+    sont décalées de l'excédent. Pour un groupe à l'attaque `A` dont la note
+    principale précédente commence à `P` :
+
+        inséré = max(0, 0.9 × Σd − (A − P))
+
+    Le calcul ne consulte que le candidat (durées `<type>` du MusicXML) : le
+    MIDI de référence ne sert plus à deviner le décalage, ce qui évitait de
+    perdre le fil après quelques grâces (l'écart s'accumulait). Le résultat
+    est la fonction en escalier S(t) : somme des temps insérés par les
+    groupes d'attaque <= t, retranchée ensuite de chaque attaque de référence
+    (`retirer_temps_graces`). Les grâces initiales restent traitées par
+    `recaler_graces_initiales` (temps négatif impossible en SMF).
     """
-    utilises: set[int] = set()
-    intervalles: list[tuple[float, float]] = []
-    for hauteur, attaque, apres in graces:
-        borne = attaque + grid / 2 if apres else attaque
-        candidats = [
-            i for i, note in enumerate(reference)
-            if i not in utilises and note[0] == hauteur
-            and attaque - window <= note[1] < borne
-            # Une grâce est jouée brièvement dans le MIDI (audio-item.cc:122) :
-            # ne pas confondre une note longue de même hauteur dans la fenêtre.
-            and len(note) >= 3 and note[2] <= grid / 2
-        ]
-        if not candidats:
+    if not graces:
+        return []
+    principales = sorted(
+        (note for note in (notes or []) if not (len(note) >= 5 and note[4])),
+        key=lambda note: note[1],
+    )
+    # Groupes : grâces consécutives de même attaque logique et de même genre.
+    # Les notes d'un accord d'agrément partagent leur durée (`<chord/>` : durée
+    # écrite nulle), donc la somme ne les compte qu'une fois.
+    groupes: list[tuple[float, bool, float]] = []
+    for grace in graces:
+        attaque, apres = grace[1], grace[2]
+        notee = grace[3] if len(grace) > 3 else 0.0
+        if groupes and abs(groupes[-1][0] - attaque) < 1e-9 and groupes[-1][1] == apres:
+            groupes[-1] = (attaque, apres, groupes[-1][2] + notee)
+        else:
+            groupes.append((attaque, apres, notee))
+    insertions: list[tuple[float, float]] = []
+    for attaque, apres, notee in groupes:
+        if apres:
+            # `\afterGrace` : la grâce sonne dans la durée de la note
+            # principale, son attaque MusicXML est déjà le temps réel et elle
+            # n'ajoute pas de temps à la mesure.
             continue
-        i = max(candidats, key=lambda j: (reference[j][1], -j))
-        utilises.add(i)
-        note = reference[i]
-        # Une grâce ne décale la mesure que si elle partage son attaque
-        # avec une note principale qu'elle ampute (cas `flags-*` : les deux
-        # note-on au tick 336). Une grâce jouée seule avant sa note ne
-        # décale pas le temps principal.
-        coupes = [
-            other for j, other in enumerate(reference)
-            if j != i and other[1] == note[1] and len(other) >= 3
-            and other[2] < grid / 4
-        ]
-        if not coupes:
+        reelle = 0.9 * notee
+        if reelle <= 1e-9:
             continue
-        coupe = min(coupes, key=lambda n: n[2])
-        # Durée nominale de la note amputée : mode des durées courtes de
-        # même hauteur dans le MIDI, c'est-à-dire celle qu'aurait eue la
-        # note sans la grâce (lily/midi-walker.cc:92-95 raccourcit la note
-        # au profit de la grâce).
-        courtes = [
-            n[2] for n in reference
-            if n[0] == coupe[0] and grid / 4 <= n[2] <= grid / 2
-        ]
-        nominal = Counter(round(d, 6) for d in courtes).most_common(1)[0][0] if courtes else grid / 4
-        vole = max(0.0, nominal - coupe[2])
-        excedent = max(0.0, note[2] - vole)
-        if excedent:
-            intervalles.append((note[1], excedent))
-    intervalles.sort()
+        precedentes = [note for note in principales if note[1] < attaque - 1e-9]
+        if not precedentes:
+            continue
+        debut = precedentes[-1][1]
+        insere = max(0.0, reelle - (attaque - debut))
+        if insere > 1e-9:
+            insertions.append((attaque, insere))
+    insertions.sort()
     cumul = 0.0
     paliers: list[tuple[float, float]] = []
-    for att, excedent in intervalles:
-        cumul += excedent
-        paliers.append((att, cumul))
+    for attaque, insere in insertions:
+        # Le seuil est un temps de *référence* : la note qui précède garde son
+        # attaque (seule sa durée est rognée), les suivantes sont déjà
+        # décalées de `cumul`. Sans ce décalage du seuil, la note précédente
+        # d'un groupe, quand elle tombait après l'attaque logique du groupe
+        # (l'écart accumulé dépasse un pas), recevait à tort le temps inséré
+        # par sa propre grâce (`flags-default`, blocs suivants).
+        paliers.append((attaque + cumul, cumul + insere))
+        cumul += insere
     return paliers
 
 
@@ -623,7 +658,8 @@ def apparier_graces(
     restants = list(reference)
     utilises: set[int] = set()
     apparies = 0
-    for hauteur, attaque, apres in graces:
+    for grace in graces:
+        hauteur, attaque, apres = grace[:3]
         # Grâce avant : strictement avant l'attaque (elle sonne dans la partie
         # « grâce » négative). Grâce après (`\afterGrace`) : son attaque
         # MusicXML est le temps réel, et LilyPond la place juste avant ce
@@ -712,7 +748,7 @@ def compare(
     resultat["pct_n1"] = round(100.0 * n1 / r, 2) if r else 0.0
     resultat["pct_n2"] = round(100.0 * n2 / r, 2) if r else 0.0
     if graces is not None:
-        paliers = decalage_graces_reference(reference, graces, grid)
+        paliers = decalage_graces_reference(reference, graces, grid, notes=test)
         reference_sans_temps_grace = retirer_temps_graces(reference, paliers)
         # Un groupe de grâces long insère plus d'un temps réel avant sa
         # note principale : `lily/audio-item.cc:122` place chaque grâce à
@@ -819,7 +855,7 @@ def selftest() -> None:
         # Le même passage avec le marqueur de grâce : le B4 est bien signalé.
         lu_graces = read_xml(p, with_grace=True)
         assert [note[4] for note in lu_graces] == [False] * 4 + [True]
-        assert lire_graces(lu_graces) == [(61, 2.0, False)]
+        assert lire_graces(lu_graces) == [(61, 2.0, False, 0.0)]
 
         # `<octave-shift>` : l'écriture est décalée d'une octave, la hauteur
         # jouée (comparée au MIDI) ne l'est pas.
