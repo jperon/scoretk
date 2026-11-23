@@ -448,8 +448,24 @@ fn read_time_sig(reader: &mut Reader, ctx: &VoiceCtx, node: &Node, irregular: bo
             "stretchD" => stretch_denominator = child.int_text(),
             "visible" => time_sig.visible = child.int_text().unwrap_or(1) != 0,
             "isCourtesy" => time_sig.courtesy = child.int_text().unwrap_or(0) != 0,
-            // TODO(parité): `<textN>`/`<textD>` et `<Groups>` (affichage) ne
-            // sont pas modélisés.
+            // `TRead::read(TimeSig*)` lit les nœuds de `<Groups>` : ils
+            // commandent `Groups::beamMode` (`groups.cpp:266-307`) et donc la
+            // rupture des ligatures autour des n-olets.
+            "Groups" => {
+                let nodes: Vec<(i32, u16)> = child
+                    .children_named("Node")
+                    .filter_map(|node| {
+                        Some((
+                            node.attr_i32("pos")?,
+                            u16::try_from(node.attr_i32("action")?).ok()?,
+                        ))
+                    })
+                    .collect();
+                if !nodes.is_empty() {
+                    time_sig.groups = Some(nodes);
+                }
+            }
+            // TODO(parité): `<textN>`/`<textD>` (affichage) ne sont pas modélisés.
             _ => {}
         }
     }

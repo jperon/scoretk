@@ -2228,7 +2228,20 @@ fn read_time_sig(element: &Element) -> TimeSig {
         }
         _ => Fraction::ONE,
     };
-    // TODO(parité): <textN>/<textD>, <Groups>, <showCourtesySig>.
+    // `<Groups>` est lu par `TRead::read(TimeSig*)` et influe sur les
+    // ruptures de ligature (`Groups::beamMode`, `groups.cpp:266-307`).
+    let groups: Vec<(i32, u16)> = element
+        .child("Groups")
+        .into_iter()
+        .flat_map(|groups| groups.children_named("Node"))
+        .filter_map(|node| {
+            Some((
+                i32::try_from(node.attr_i64("pos")?).ok()?,
+                u16::try_from(node.attr_i64("action")?).ok()?,
+            ))
+        })
+        .collect();
+    // TODO(parité): <textN>/<textD>, <showCourtesySig>.
     TimeSig {
         numerator,
         denominator,
@@ -2239,6 +2252,7 @@ fn read_time_sig(element: &Element) -> TimeSig {
             .child("visible")
             .and_then(Element::int)
             .is_none_or(|value| value != 0),
+        groups: (!groups.is_empty()).then_some(groups),
     }
 }
 

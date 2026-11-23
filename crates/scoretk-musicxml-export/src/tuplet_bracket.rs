@@ -2,9 +2,12 @@
 //
 // Copyright (C) 2026 jperon
 //
-// Portage de `Tuplet::calcHasBracket` (`src/engraving/dom/tuplet.cpp:204-268`)
-// de MuseScore Studio, Copyright (C) MuseScore Limited and others, modifié
-// (réécrit en Rust) en 2026.
+// Portage de `Tuplet::calcHasBracket` (`src/engraving/dom/tuplet.cpp:204-277`),
+// de `Beam::calcBeamBreaks` (`src/engraving/dom/beam.cpp:248-297`) et de
+// `TupletLayout::computeDirection` (4.7.4
+// `src/engraving/rendering/score/tupletlayout.cpp:213-245`) de MuseScore
+// Studio, Copyright (C) MuseScore Limited and others, modifié (réécrit en
+// Rust) en 2026.
 //
 // This program is free software: you can redistribute it and/or modify it
 // under the terms of the GNU General Public License version 3 as published by
@@ -21,27 +24,50 @@
 
 //! Décision de crochet des n-olets quand `<bracketType>` est `AUTO_BRACKET`.
 //!
-//! `Tuplet::calcHasBracket` (`tuplet.cpp:204-268`) dépend des ligatures
-//! construites par la mise en page : un n-olet entièrement ligaturé n'a pas de
-//! crochet. Le modèle pivot ne porte pas les groupes de ligatures, mais porte
-//! les durées notées : une ligature n'est possible que pour une croche ou plus
-//! court (`:237-245`, `beamCount < 1` → crochet). On reproduit ce cas, les
-//! autres conduisant au crochet comme dans le C++ (`:209-221`, `:231-236`).
+//! `Tuplet::calcHasBracket` ne retire le crochet que si le n-olet possède son
+//! propre objet `Beam` (ou si les ruptures de ligature délimitent le n-olet),
+//! et seulement quand `!headSide || isCross`. On porte ici la chaîne complète
+//! des prédicats (`tuplet.cpp:218-277`, `beam.cpp:248-297`) sur les objets
+//! `Beam` reconstitués par `beams.rs`.
 
 use scoretk_core::model::{
-    Chord, ChordRest, ChordRestKind, Fraction, Placement, Score, SegmentItem, SegmentType, Tick,
-    TupletId,
+    Chord, ChordRest, Fraction, Placement, Score, SegmentItem, SegmentType, StaffId, StemDirection,
+    Tick, Track, TupletId,
 };
 
 use super::{beams, stems};
 
+/// Élément rythmique et sa position, pour les prédicats de ligature.
+struct Elem<'a> {
+    measure: usize,
+    track: Track,
+    tick: Fraction,
+    rest: &'a ChordRest,
+    visible: bool,
+}
+
+impl Elem<'_> {
+    fn cr_ref(&self) -> beams::CrRef {
+        beams::CrRef {
+            measure: self.measure,
+            track: self.track,
+            tick: self.tick,
+        }
+    }
+
+    fn beam_cr(&self) -> beams::BeamCr<'_> {
+        beams::BeamCr {
+            measure: self.measure,
+            track: self.track,
+            tick: self.tick,
+            rest: self.rest,
+        }
+    }
+}
+
 /// Vrai si MuseScore dessinerait un crochet autour du n-olet.
 pub(crate) fn has_bracket(score: &Score, id: TupletId, concert_pitch: bool) -> bool {
-    let tuplet = &score.tuplets[id.index()];
-    // Un ratio non réduit gardé tel quel (`4:4`) est traité comme un n-olet
-    // spécial par le C++ : ses groupes de ligatures ne le font pas disparaître.
-    let unreduced = tuplet.actual_notes > 1 && tuplet.actual_notes == tuplet.normal_notes;
-    let mut elements = Vec::new();
+    let mut all = Vec::new();
     for (measure_index, measure) in score.measures.iter().enumerate() {
         for segment in &measure.segments {
             if segment.kind != SegmentType::ChordRest {
@@ -49,20 +75,32 @@ pub(crate) fn has_bracket(score: &Score, id: TupletId, concert_pitch: bool) -> b
             }
             for (track, item) in segment.iter_elements() {
                 if let SegmentItem::ChordRest(chord_rest) = item {
-                    if chord_rest.tuplet == Some(id) {
-                        elements.push((
-                            measure_index,
-                            track,
-                            segment.tick,
-                            chord_rest,
-                            score.staff(track.staff()).visible,
-                        ));
-                    }
+                    all.push(Elem {
+                        measure: measure_index,
+                        track,
+                        tick: segment.tick,
+                        rest: chord_rest,
+                        visible: score.staff(track.staff()).visible,
+                    });
                 }
             }
         }
     }
-    // `cr1 == cr2` (n-olet dégénéré) : pas de crochet (`:209-211`).
+    // `Tuplet::elements()` contient aussi les n-olets imbriqués ;
+    // `TupletLayout::computeStartEndCR` (4.7.4 `tupletlayout.cpp:244-265`)
+    // descend jusqu'au premier et dernier accord réel, qui peuvent appartenir
+    // à un n-olet fils et donc à une ligature différente.
+    let elements: Vec<&Elem<'_>> = all
+        .iter()
+        .filter(|element| {
+            element
+                .rest
+                .tuplet
+                .is_some_and(|member| belongs_to(score, member, id))
+        })
+        .collect();
+
+    // `cr1 == cr2` (n-olet dégénéré) : pas de crochet (`tuplet.cpp:209-211`).
     if elements.len() < 2 {
         return false;
     }
@@ -70,87 +108,203 @@ pub(crate) fn has_bracket(score: &Score, id: TupletId, concert_pitch: bool) -> b
     // par défaut (faux), même pour un triolet avec silence. C'est ce qui
     // sépare les 31 crochets de Douce nuit (portée visible Femmes) des 31
     // triolets identiques sur portées masquées.
-    if elements.iter().all(|(_, _, _, _, visible)| !visible) {
+    if elements.iter().all(|element| !element.visible) {
         return false;
     }
-    // Le C++ 5.0 compte le silence comme ligaturable (`:232-234`) : sur une
-    // portée visible, MuseScore 4.7.4 écrit le crochet.
-    // les triolets de Douce nuit (2 croches 16es + 1 silence) n'ont pas de
-    // crochet. Le C++ 5.0 (`tuplet.cpp:232-234`) traitait encore le silence
-    // comme un élément ligaturable, mais la référence 4.7.4 prévaut.
-    // Sans ligature possible (durée plus longue qu'une croche), le C++ garde
-    // aussi le crochet (`:221`, `:231-245`).
-    let limit = if unreduced {
-        Fraction::new(1, 16)
-    } else {
-        Fraction::new(1, 8)
+
+    let first = elements[0];
+    let last = *elements.last().expect("au moins deux éléments");
+    // `!cr1->isChord() || !cr2->isChord()` (`tuplet.cpp:212-214`).
+    if first.rest.is_rest() || last.rest.is_rest() {
+        return true;
+    }
+
+    let beams = beams::Beams::new(score, concert_pitch);
+    let beam_start = beams.group_of(first.measure, first.track, first.tick);
+    let beam_end = beams.group_of(last.measure, last.track, last.tick);
+    // `!beamStart || !beamEnd || beamStart != beamEnd` (`tuplet.cpp:218-222`).
+    let (Some(beam_start), Some(beam_end)) = (beam_start, beam_end) else {
+        return true;
     };
-    if elements.iter().all(|(_, _, _, element, _)| {
-        matches!(element.kind, ChordRestKind::Chord(_)) && element.duration.ticks() <= limit
-    }) {
-        // Le n-olet est entièrement ligaturé. `calcHasBracket` ne retire le
-        // crochet que si `!headSide || isCross` (`tuplet.cpp:224-228`) :
-        // `headSide` compare le sens du n-olet (`isUp`) à celui de ses
-        // premier et dernier accords.
-        let beams = beams::Beams::new(score, concert_pitch);
-        let up_of = |measure_index: usize, track, tick: Tick, element: &ChordRest| {
-            let Some(chord) = element.chord_ref() else {
-                return true;
-            };
-            stem_up(
-                score,
-                chord,
-                measure_index,
-                track,
-                tick,
-                element.duration.ticks(),
-                concert_pitch,
-                &beams,
-            )
-        };
-        let (first_measure, first_track, first_tick, first, _) = elements[0];
-        let (last_measure, last_track, last_tick, last, _) =
-            *elements.last().expect("au moins deux éléments");
-        let first_up = up_of(first_measure, first_track, first_tick, first);
-        let last_up = up_of(last_measure, last_track, last_tick, last);
-        let direction_up = match tuplet.placement {
-            Some(Placement::Above) => true,
-            Some(Placement::Below) => false,
-            None => {
-                let sum: i32 = elements
-                    .iter()
-                    .map(|(measure_index, track, tick, element, _)| {
-                        if up_of(*measure_index, *track, *tick, element) {
-                            1
-                        } else {
-                            -1
-                        }
-                    })
-                    .sum();
-                if sum == 0 {
-                    first_track.voice() % 2 == 0
-                } else {
-                    sum > 0
-                }
-            }
-        };
-        let head_side = direction_up != (first_up || last_up);
-        let cross = vstaff(first_track, first) != vstaff(last_track, last);
-        if head_side && !cross {
+    if beam_start.start != beam_end.start || beam_start.end != beam_end.end {
+        return true;
+    }
+
+    // `beamStart->elements().front() == c1`, `.back() == c2`
+    // (`tuplet.cpp:223-224`) : le n-olet possède-t-il toute la ligature ?
+    let tuplet_starts_beam = beam_start.start == first.cr_ref();
+    let tuplet_ends_beam = beam_start.end == last.cr_ref();
+
+    let is_up = tuplet_direction_up(score, &elements, concert_pitch, &beams);
+    let first_up = chord_up(score, first, concert_pitch, &beams);
+    let last_up = chord_up(score, last, concert_pitch, &beams);
+    // `headSide = isUp() != (c1->up() || c2->up())` (`tuplet.cpp:225`).
+    let head_side = is_up != (first_up || last_up);
+    // `isCross = c1->vStaffIdx() != c2->vStaffIdx()` (`tuplet.cpp:226`).
+    let cross = vstaff(first.track, first.rest) != vstaff(last.track, last.rest);
+    if tuplet_starts_beam && tuplet_ends_beam && (!head_side || cross) {
+        return false;
+    }
+
+    // `for (DurationElement* e : m_currentElements)` (`tuplet.cpp:231-249`) :
+    // silence, n-olet imbriqué, élément sans beam ou nombre de crochets
+    // différent → crochet conservé.
+    let beam_count = beams::stems_hooks(first.rest.duration.kind);
+    for element in &elements {
+        if element.rest.tuplet != Some(id)
+            || element.rest.is_rest()
+            || beams
+                .group_of(element.measure, element.track, element.tick)
+                .is_none()
+            || beams::stems_hooks(element.rest.duration.kind) != beam_count
+        {
             return true;
         }
-        return false;
     }
-    true
+    if beam_count < 1 {
+        return true;
+    }
+
+    let level = i32::from(beam_count) - 1;
+    let previous = previous_cr(&all, first);
+    let next = next_cr(&all, last);
+    let start_breaks = previous.is_some_and(|previous| {
+        beams::calc_beam_breaks(score, &first.beam_cr(), &previous.beam_cr(), level)
+            != (false, false)
+    });
+    let end_breaks = next.is_some_and(|next| {
+        beams::calc_beam_breaks(score, &next.beam_cr(), &last.beam_cr(), level) != (false, false)
+    });
+    let start_defines = start_breaks
+        || tuplet_starts_beam
+        || previous
+            .is_some_and(|previous| beams::stems_hooks(previous.rest.duration.kind) < beam_count);
+    let end_defines = end_breaks
+        || tuplet_ends_beam
+        || next.is_some_and(|next| beams::stems_hooks(next.rest.duration.kind) < beam_count);
+
+    // `tuplet.cpp:273-275`.
+    !(start_defines && end_defines && (!head_side || cross))
+}
+
+/// Vrai si `member` est `id` ou descend de `id` (`Tuplet::tuplet()`).
+fn belongs_to(score: &Score, member: TupletId, id: TupletId) -> bool {
+    let mut current = Some(member);
+    for _ in 0..32 {
+        match current {
+            Some(candidate) if candidate == id => return true,
+            Some(candidate) => {
+                current = score
+                    .tuplets
+                    .get(candidate.index())
+                    .and_then(|tuplet| tuplet.parent);
+            }
+            None => return false,
+        }
+    }
+    false
+}
+
+/// `Chord::prev()` : élément rythmique précédent de la même piste.
+fn previous_cr<'a>(all: &'a [Elem<'a>], element: &Elem<'_>) -> Option<&'a Elem<'a>> {
+    all.iter()
+        .rposition(|candidate| same_position(candidate, element))
+        .and_then(|position| {
+            all[..position]
+                .iter()
+                .rev()
+                .find(|candidate| candidate.track == element.track)
+        })
+}
+
+/// `Chord::next()` : élément rythmique suivant de la même piste.
+fn next_cr<'a>(all: &'a [Elem<'a>], element: &Elem<'_>) -> Option<&'a Elem<'a>> {
+    all.iter()
+        .skip_while(|candidate| !same_position(candidate, element))
+        .skip(1)
+        .find(|candidate| candidate.track == element.track)
+}
+
+fn same_position(left: &Elem<'_>, right: &Elem<'_>) -> bool {
+    left.cr_ref() == right.cr_ref()
+}
+
+/// `TupletLayout::computeDirection` (`tupletlayout.cpp:213-245`, 4.7.4).
+fn tuplet_direction_up(
+    score: &Score,
+    elements: &[&Elem<'_>],
+    concert_pitch: bool,
+    beams: &beams::Beams,
+) -> bool {
+    if let Some(placement) = elements[0]
+        .rest
+        .tuplet
+        .and_then(|id| score.tuplets.get(id.index()))
+    {
+        if let Some(direction) = placement.placement {
+            return direction == Placement::Above;
+        }
+    }
+    let mut up = 0;
+    for element in elements {
+        let Some(chord) = element.rest.chord_ref() else {
+            continue;
+        };
+        up += if chord.stem != StemDirection::Auto {
+            if chord.stem == StemDirection::Up {
+                1000
+            } else {
+                -1000
+            }
+        } else if chord_up(score, element, concert_pitch, beams) {
+            1
+        } else {
+            -1
+        };
+    }
+    if up == 0 {
+        let measure = &score.measures[elements[0].measure];
+        let staff: StaffId = elements[0].track.staff();
+        let has_voices = measure
+            .segments
+            .iter()
+            .filter(|segment| segment.kind == SegmentType::ChordRest)
+            .any(|segment| {
+                segment.element(Track::new(staff, 1)).is_some()
+                    || segment.element(Track::new(staff, 2)).is_some()
+                    || segment.element(Track::new(staff, 3)).is_some()
+            });
+        if has_voices {
+            return elements[0].track.voice().is_multiple_of(2);
+        }
+        return true;
+    }
+    up > 0
 }
 
 /// `Chord::up()` effectif, calculé comme à l'écriture de la hampe.
+fn chord_up(score: &Score, element: &Elem<'_>, concert_pitch: bool, beams: &beams::Beams) -> bool {
+    let Some(chord) = element.rest.chord_ref() else {
+        return true;
+    };
+    stem_up(
+        score,
+        chord,
+        element.measure,
+        element.track,
+        element.tick,
+        element.rest.duration.ticks(),
+        concert_pitch,
+        beams,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn stem_up(
     score: &Score,
     chord: &Chord,
     measure_index: usize,
-    track: scoretk_core::model::Track,
+    track: Track,
     tick: Tick,
     actual_ticks: Fraction,
     concert_pitch: bool,
@@ -178,7 +332,7 @@ fn stem_up(
 }
 
 /// `Chord::vStaffIdx()` : portée réelle après `staffMove`.
-fn vstaff(track: scoretk_core::model::Track, element: &ChordRest) -> i32 {
+fn vstaff(track: Track, element: &ChordRest) -> i32 {
     let staff_move = element
         .chord_ref()
         .map_or(0, |chord| i32::from(chord.staff_move));

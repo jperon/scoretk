@@ -40,8 +40,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use scoretk_core::model::{
-    BeamMode, Chord, ChordRest, DurationType, Fraction, Measure, Score, SegmentItem, SegmentType,
-    TimeSig, Track, VOICES,
+    BeamMode, Chord, ChordRest, Duration, DurationType, Fraction, Measure, Score, SegmentItem,
+    SegmentType, TimeSig, Track, VOICES,
 };
 
 use super::stems;
@@ -55,12 +55,33 @@ pub(crate) struct BeamInfo {
     pub up: bool,
     /// Texte de chaque niveau, du niveau 1 au plus haut (`begin`, `continue`…).
     pub texts: Vec<String>,
+    /// Index de l'objet `Beam` auquel appartient l'élément.
+    pub group: usize,
+}
+
+/// Un objet `Beam` reconstitué (`Beam::elements()`).
+#[derive(Clone, Debug)]
+pub(crate) struct BeamGroup {
+    /// Premier élément de la ligature (`beam->elements().front()`).
+    pub start: CrRef,
+    /// Dernier élément de la ligature (`beam->elements().back()`).
+    pub end: CrRef,
+}
+
+/// Position d'un élément rythmique dans la partition.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CrRef {
+    pub measure: usize,
+    pub track: Track,
+    pub tick: Fraction,
 }
 
 /// Ligatures calculées pour toute la partition.
 pub(crate) struct Beams {
     /// `entries[mesure][piste][tick]`.
     entries: Vec<Vec<BTreeMap<Fraction, BeamInfo>>>,
+    /// Objets `Beam` reconstitués, dans l'ordre de création.
+    groups: Vec<BeamGroup>,
 }
 
 impl Beams {
@@ -69,6 +90,7 @@ impl Beams {
         let tracks = score.staves.len() * VOICES;
         let mut beams = Self {
             entries: vec![vec![BTreeMap::new(); tracks]; score.measures.len()],
+            groups: Vec::new(),
         };
         for track in 0..tracks {
             beams.compute_track(score, Track::from_raw(track as u32), concert_pitch);
@@ -96,6 +118,24 @@ impl Beams {
             .map_or(&[], |info| &info.texts)
     }
 
+    /// Objet `Beam` auquel appartient un élément, pour
+    /// `Tuplet::calcHasBracket` (`tuplet.cpp:218-224`).
+    pub(crate) fn group_of(
+        &self,
+        measure: usize,
+        track: Track,
+        tick: Fraction,
+    ) -> Option<&BeamGroup> {
+        let index = self
+            .entries
+            .get(measure)
+            .and_then(|row| row.get(track.index()))
+            .and_then(|map| map.get(&tick))
+            .filter(|info| info.beamed)
+            .map(|info| info.group)?;
+        self.groups.get(index)
+    }
+
     /// Reconstitue les ligatures d'une piste (portée + voix), mesure après
     /// mesure.
     fn compute_track(&mut self, score: &Score, track: Track, concert_pitch: bool) {
@@ -118,7 +158,7 @@ impl Beams {
         let mut prev: Option<Element> = None;
 
         for (measure_index, measure) in score.measures.iter().enumerate() {
-            let elements = self.measure_elements(score, measure, measure_index, track);
+            let elements = measure_elements(score, measure, measure_index, track);
             let time_sig = time_sig_at(score, staff, measure_index, measure);
             let subdivision = beat_subdivision(&elements, measure, &time_sig);
 
@@ -207,6 +247,11 @@ impl Beams {
             }
             let up = beam_up(score, group, track, concert_pitch, transpose);
             let texts = beam_texts(group);
+            let group_index = self.groups.len();
+            self.groups.push(BeamGroup {
+                start: cr_ref(group.first().expect("groupe non vide")),
+                end: cr_ref(group.last().expect("groupe non vide")),
+            });
             for (position, element) in group.iter().enumerate() {
                 let Some(row) = self
                     .entries
@@ -221,42 +266,43 @@ impl Beams {
                         beamed: true,
                         up,
                         texts: texts[position].clone(),
+                        group: group_index,
                     },
                 );
             }
         }
     }
+}
 
-    /// Éléments rythmiques d'une mesure pour une piste, dans l'ordre.
-    fn measure_elements(
-        &self,
-        _score: &Score,
-        measure: &Measure,
-        measure_index: usize,
-        track: Track,
-    ) -> Vec<Element> {
-        let mut elements = Vec::new();
-        for segment in &measure.segments {
-            if segment.kind != SegmentType::ChordRest {
-                continue;
-            }
-            let Some(SegmentItem::ChordRest(chord_rest)) = segment.element(track) else {
-                continue;
-            };
-            elements.push(Element {
-                measure: measure_index,
-                track: track.index(),
-                tick: segment.tick,
-                duration: chord_rest.duration.kind,
-                actual: global_ticks(_score, chord_rest, measure),
-                is_rest: chord_rest.is_rest(),
-                mode: chord_rest.beam_mode,
-                beam_direction: chord_rest.beam_direction,
-                tuplet: chord_rest.tuplet,
-            });
+/// Éléments rythmiques d'une mesure pour une piste, dans l'ordre.
+fn measure_elements(
+    score: &Score,
+    measure: &Measure,
+    measure_index: usize,
+    track: Track,
+) -> Vec<Element> {
+    let mut elements = Vec::new();
+    for segment in &measure.segments {
+        if segment.kind != SegmentType::ChordRest {
+            continue;
         }
-        elements
+        let Some(SegmentItem::ChordRest(chord_rest)) = segment.element(track) else {
+            continue;
+        };
+        elements.push(Element {
+            measure: measure_index,
+            track: track.index(),
+            tick: segment.tick,
+            duration: chord_rest.duration.kind,
+            dots: chord_rest.duration.dots,
+            actual: global_ticks(score, chord_rest, measure),
+            is_rest: chord_rest.is_rest(),
+            mode: chord_rest.beam_mode,
+            beam_direction: chord_rest.beam_direction,
+            tuplet: chord_rest.tuplet,
+        });
     }
+    elements
 }
 
 /// Élément rythmique retenu pour le groupement des ligatures.
@@ -266,6 +312,10 @@ struct Element {
     track: usize,
     tick: Fraction,
     duration: DurationType,
+    /// Points de la figure : `TDuration` compare la figure *et* les points
+    /// (`durationtype.h:57`), y compris dans la règle de changement de n-olet
+    /// de `Groups::baseBeamMode` (`groups.cpp:143`).
+    dots: u8,
     actual: Fraction,
     is_rest: bool,
     mode: BeamMode,
@@ -288,7 +338,7 @@ fn is_quarter_or_longer(element: &Element) -> bool {
 
 /// Nombre de crochets d'une figure (`TDuration::hooks`), donc de niveaux de
 /// ligature (`ChordRest::beams()`).
-fn stems_hooks(kind: DurationType) -> u8 {
+pub(crate) fn stems_hooks(kind: DurationType) -> u8 {
     match kind {
         DurationType::Long
         | DurationType::Breve
@@ -526,8 +576,22 @@ fn base_beam_mode(
 }
 
 /// Vrai si les deux éléments appartiennent à des n-olets différents.
+///
+/// Le C++ compare des `TDuration` complètes (`groups.cpp:143`), pas seulement
+/// `DurationType` : une croche pointée et une croche non pointée sont
+/// différentes, ce qui empêche le triolet de Vivaldi 04 de rompre sa ligature.
 fn element_is_tuplet_change(element: &Element, previous: &Element) -> bool {
-    element.tuplet != previous.tuplet && element.duration == previous.duration
+    element.tuplet != previous.tuplet
+        && element.duration == previous.duration
+        && element.dots == previous.dots
+}
+
+fn cr_ref(element: &Element) -> CrRef {
+    CrRef {
+        measure: element.measure,
+        track: Track::from_raw(element.track as u32),
+        tick: element.tick,
+    }
 }
 
 /// Vrai si la figure est une croche ou plus longue (`crDuration >= V_EIGHTH`).
@@ -570,6 +634,16 @@ impl Groups {
     /// Groupes par défaut de `4/4`, `6/8`, etc., avec le repli du C++ pour les
     /// signatures absentes de la table.
     fn of(time_sig: &TimeSig) -> Self {
+        // `<TimeSig><Groups>` du `.mscx` l'emporte sur la table par défaut,
+        // comme dans `Staff::group` (`groups.cpp:315-345`).
+        if let Some(nodes) = &time_sig.groups {
+            return Self {
+                nodes: nodes
+                    .iter()
+                    .map(|(position, action)| (Fraction::new(i64::from(*position), 32), *action))
+                    .collect(),
+            };
+        }
         let signature = (time_sig.numerator, time_sig.denominator);
         if let Some(nodes) = default_groups(signature) {
             return Self {
@@ -892,6 +966,7 @@ pub(crate) fn grace_beams(
                     track: 0,
                     tick: Fraction::ZERO,
                     duration: duration.kind,
+                    dots: duration.dots,
                     actual: duration.ticks(),
                     is_rest: false,
                     mode: BeamMode::Auto,
@@ -988,6 +1063,114 @@ fn beam_texts(group: &[Element]) -> Vec<Vec<String>> {
     result
 }
 
+/// Élément rythmique et sa position, pour `Beam::calcBeamBreaks`.
+#[derive(Clone, Copy)]
+pub(crate) struct BeamCr<'a> {
+    pub measure: usize,
+    pub track: Track,
+    pub tick: Fraction,
+    pub rest: &'a ChordRest,
+}
+
+/// Port de `Beam::calcBeamBreaks` (`engraving/dom/beam.cpp:248-297`).
+///
+/// Les deux booléens sont `isBroken16` et `isBroken32` (`startChordBreaks32`
+/// et `startChordBreaks64` chez l'appelant, `tuplet.cpp:251-267`).
+pub(crate) fn calc_beam_breaks(
+    score: &Score,
+    cr: &BeamCr<'_>,
+    prev: &BeamCr<'_>,
+    level: i32,
+) -> (bool, bool) {
+    let element = element_from(score, cr);
+    let previous = element_from(score, prev);
+
+    if element.is_rest
+        && matches!(
+            element.mode,
+            BeamMode::Mid | BeamMode::Begin16 | BeamMode::Begin32
+        )
+    {
+        return match element.mode {
+            BeamMode::Mid => (false, false),
+            BeamMode::Begin16 => (level > 0, false),
+            BeamMode::Begin32 => (false, level > 1),
+            _ => unreachable!("mode filtré ci-dessus"),
+        };
+    }
+
+    let measure = &score.measures[element.measure];
+    let time_sig = time_sig_at(score, cr.track.staff(), element.measure, measure);
+    let default_mode = base_beam_mode(&element, Some(&previous), measure, &time_sig, None);
+
+    let mut broken16 = level >= 1
+        && (element.mode == BeamMode::Begin16
+            || (element.mode == BeamMode::Auto && default_mode == BeamMode::Begin16));
+    let mut broken32 = level >= 2
+        && (element.mode == BeamMode::Begin32
+            || (element.mode == BeamMode::Auto && default_mode == BeamMode::Begin32));
+
+    // `deal with beam-embedded triplets` (`beam.cpp:275-296`) : les n-olets
+    // dont la durée totale vaut moins de `level` crochets rompent le beam.
+    if level > 0 && element.mode == BeamMode::Auto && element.tuplet != previous.tuplet {
+        let tuplet_id = element.tuplet.or(previous.tuplet);
+        if let Some(id) = tuplet_id {
+            if let Some(tuplet) = score.tuplets.get(id.index()) {
+                let beams = truncated_hooks(tuplet.len).max(1);
+                if beams <= level {
+                    broken16 = level == 1;
+                    broken32 = level >= 2;
+                }
+            }
+        }
+    }
+
+    (broken16, broken32)
+}
+
+fn element_from(score: &Score, cr: &BeamCr<'_>) -> Element {
+    let measure = &score.measures[cr.measure];
+    Element {
+        measure: cr.measure,
+        track: cr.track.index(),
+        tick: cr.tick,
+        duration: cr.rest.duration.kind,
+        dots: cr.rest.duration.dots,
+        actual: global_ticks(score, cr.rest, measure),
+        is_rest: cr.rest.is_rest(),
+        mode: cr.rest.beam_mode,
+        beam_direction: cr.rest.beam_direction,
+        tuplet: cr.rest.tuplet,
+    }
+}
+
+/// `TDuration(fraction, /* truncate */ true).hooks()` (`durationtype.cpp:406-449`).
+fn truncated_hooks(len: Fraction) -> i32 {
+    const KINDS: &[DurationType] = &[
+        DurationType::Long,
+        DurationType::Breve,
+        DurationType::Whole,
+        DurationType::Half,
+        DurationType::Quarter,
+        DurationType::Eighth,
+        DurationType::Sixteenth,
+        DurationType::ThirtySecond,
+        DurationType::SixtyFourth,
+        DurationType::OneHundredTwentyEighth,
+        DurationType::TwoHundredFiftySixth,
+        DurationType::FiveHundredTwelfth,
+        DurationType::OneThousandTwentyFourth,
+    ];
+    for kind in KINDS {
+        for dots in (0..=4).rev() {
+            if Duration::with_dots(*kind, dots).ticks() <= len {
+                return i32::from(stems_hooks(*kind));
+            }
+        }
+    }
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1041,6 +1224,7 @@ mod tests {
             track: 0,
             tick: Fraction::ZERO,
             duration: hooks,
+            dots: 0,
             actual: hooks.ticks(),
             is_rest: false,
             mode: BeamMode::Auto,

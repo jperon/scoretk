@@ -3869,6 +3869,8 @@ fn triolet_avec_hampe(placement: Option<Placement>, stem: StemDirection) -> Stri
         let tick = Fraction::new(1, 2) + Fraction::new(index, 8);
         let mut chord_rest = ChordRest::chord(Duration::eighth());
         chord_rest.tuplet = Some(tuplet);
+        // Une ligature explicite isole le test des groupes de signature.
+        chord_rest.beam_mode = BeamMode::Mid;
         let chord = chord_rest.chord_mut().expect("accord");
         chord.stem = stem;
         chord.notes.push(score.add_note(Note::new(64, tpc::E)));
@@ -3897,4 +3899,52 @@ fn nolet_place_au_dessus_de_hampes_hausse_perd_le_crochet() {
         xml.contains("<tuplet type=\"start\" bracket=\"no\""),
         "pas de crochet attendu :\n{xml}"
     );
+}
+
+/// Triolet au milieu d'une ligature de six croches, avec `headSide` faux :
+/// `Tuplet::calcHasBracket` garde le crochet parce que le n-olet ne commence
+/// pas la ligature (`beamStart->elements().front() != c1`,
+/// `tuplet.cpp:223-228`). Cas réduit de Vivaldi 04-TecumPrincipium.
+fn triolet_au_milieu_d_une_ligature() -> String {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let tuplet = score.add_tuplet(Tuplet::new(
+        Fraction::new(3, 2),
+        Fraction::new(1, 8),
+        Fraction::new(3, 8),
+        Fraction::new(1, 4),
+    ));
+    score.tuplet_mut(tuplet).placement = Some(Placement::Above);
+    for index in 0..6 {
+        let tick = Fraction::new(index, 8);
+        let mut chord_rest = ChordRest::chord(Duration::eighth());
+        chord_rest.beam_mode = if index == 0 {
+            BeamMode::Begin
+        } else {
+            BeamMode::Mid
+        };
+        if index >= 3 {
+            chord_rest.tuplet = Some(tuplet);
+        }
+        let chord = chord_rest.chord_mut().expect("accord");
+        chord.stem = StemDirection::Up;
+        chord.notes.push(score.add_note(Note::new(64, tpc::E)));
+        ajouter_element(&mut score, &mut measure, track, tick, chord_rest);
+    }
+    score.add_measure(measure);
+    export_musicxml(&score).expect("export")
+}
+
+#[test]
+fn nolet_au_milieu_d_une_ligature_garde_le_crochet() {
+    // `tupletStartsBeam` est faux : la première note de la ligature précède
+    // le triolet (`tuplet.cpp:223`, `:257`, `:268`).
+    let xml = triolet_au_milieu_d_une_ligature();
+    assert!(
+        xml.contains("<tuplet type=\"start\" bracket=\"yes\""),
+        "crochet attendu au milieu de la ligature :\n{xml}"
+    );
+    assert_eq!(xml.matches("<beam number=\"1\">").count(), 6);
 }

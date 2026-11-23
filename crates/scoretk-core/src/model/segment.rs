@@ -176,6 +176,14 @@ pub struct TimeSig {
     pub courtesy: bool,
     /// Vrai si l'indication de mesure est visible.
     pub visible: bool,
+    /// Groupes de ligature explicites du `.mscx` (`<TimeSig><Groups>`), en
+    /// positions de trente-deuxièmes et actions (`Groups::endings`).
+    ///
+    /// `None` signifie « utiliser les groupes par défaut de la signature ».
+    /// MuseScore lit ces nœuds dans `TRead::read(TimeSig*)` ; ils modifient
+    /// `Groups::baseBeamMode` (`groups.cpp:135-150`) et donc les objets
+    /// `Beam` vus par `Tuplet::calcHasBracket`.
+    pub groups: Option<Vec<(i32, u16)>>,
 }
 
 impl TimeSig {
@@ -188,6 +196,7 @@ impl TimeSig {
             stretch: Fraction::ONE,
             courtesy: false,
             visible: true,
+            groups: None,
         }
     }
 
