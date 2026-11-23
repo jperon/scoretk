@@ -15,19 +15,23 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Note d'agrément de valeur (`GRACE4`/`GRACE16`/`GRACE32`) : avant le temps.
+//! Notes d'agrément de valeur (`<grace16/>`, `<grace32/>`) : elles se jouent
+//! **sur le temps** de l'accord, qui est retardé de la largeur du groupe ; la
+//! note principale finit au même endroit que sans grâces.
 //!
-//! MuseScore place ces ornements **avant** la note principale et ne retire pas
-//! leur durée à celle-ci (`createGraceNotesPlayEvents`,
-//! `engraving/compat/midi/compatmidirender.cpp:559-590` ; la position vient du
-//! tick de l'accord d'agrément, posé avant le temps par la gravure). Le
-//! lecteur les traitait comme des appoggiatures, sur le temps et en
-//! raccourcissant la note principale, ce qui décalait la main de
-//! `Sancta_Maria_Mater_Dei` (Mozart, `.mscz` 3.02).
+//! Port de `createGraceNotesPlayEvents` (`engraving/compat/midi/
+//! compatmidirender.cpp:530-606`) : `ontime = min(500, actualTicks(grâce) /
+//! actualTicks(accord) * 1000)` est transmis à `renderChord` (`:193-252`,
+//! `NoteEvent(0, ontime, 1000 - trailtime)`), puis converti en ticks par
+//! `collectNote` (`compatmidirenderinternal.cpp:861-862`). Les grâces sont
+//! émises par `createGraceNotesPlayEvents` (`:591-606`) avec des `ontime` de
+//! `0, graceDuration, …` ; elles ne sont donc pas « volées » à la note
+//! précédente, et `trailtime += ontime` raccourcit la note principale.
 //!
-//! Valeurs attendues : une noire 72 (0–479), une grâce de double croche 74 sur
-//! les 120 ticks qui précèdent le temps (360–479), puis la noire 76 pleine
-//! (480–959).
+//! Références : MuseScore 4.7.4 (`mscore <partition>.mscx -o <fichier>.mid`),
+//! PPQ 480. Une grâce16 seule devant une noire en 480 : grâce 480–599, note
+//! 600–959. Deux grâces32 devant une noire en 480 : grâces 480–508 et
+//! 509–537, note 540–959.
 
 use midly::{MidiMessage, Smf, TrackEventKind};
 use scoretk_musescore_import::MsczContainer;
@@ -105,14 +109,59 @@ fn notes(mscx: &str) -> Vec<(u8, u32, u32)> {
 }
 
 #[test]
-fn grace16_avant_le_temps_et_note_pleine() {
+fn grace16_sur_le_temps_et_note_raccourcie() {
     assert_eq!(
         notes(mscx()),
         vec![
             (72, 0, 479),
-            (74, 360, 479),
-            (76, 480, 959),
+            (74, 480, 599),
+            (76, 600, 959),
             (77, 960, 1919),
+        ]
+    );
+}
+
+/// Partition à deux grâces32, pour la largeur de groupe divisée par `nb`.
+fn mscx_deux_graces() -> &'static str {
+    r#"<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="4.10">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <trackName>Piano</trackName>
+      <Instrument id="keyboard.piano">
+        <longName>Piano</longName><shortName>Pno.</shortName><trackName>Piano</trackName>
+        <instrumentId>keyboard.piano</instrumentId><Channel><program value="0"/></Channel>
+      </Instrument>
+    </Part>
+    <Staff id="1">
+      <Measure>
+        <voice>
+          <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+          <Chord><durationType>quarter</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+          <Chord><durationType>32nd</durationType><grace32/><Note><pitch>74</pitch><tpc>20</tpc></Note></Chord>
+          <Chord><durationType>32nd</durationType><grace32/><Note><pitch>72</pitch><tpc>18</tpc></Note></Chord>
+          <Chord><durationType>quarter</durationType><Note><pitch>70</pitch><tpc>18</tpc></Note></Chord>
+          <Chord><durationType>half</durationType><Note><pitch>67</pitch><tpc>16</tpc></Note></Chord>
+        </voice>
+      </Measure>
+    </Staff>
+  </Score>
+</museScore>
+"#
+}
+
+#[test]
+fn deux_graces32_se_jouent_sur_le_temps() {
+    assert_eq!(
+        notes(mscx_deux_graces()),
+        vec![
+            (60, 0, 479),
+            (74, 480, 508),
+            (72, 509, 537),
+            (70, 540, 959),
+            (67, 960, 1919),
         ]
     );
 }

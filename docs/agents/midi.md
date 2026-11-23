@@ -668,13 +668,9 @@ Classified with the same normalised sequence diff (pitch + onset + duration):
   linked staves/parts, like the rest of the `.mscz` lot; the model is missing
   notes before the writer runs.
 - **`Sancta_Maria_Mater_Dei`** (ref 2 370, ours 2 420, N1/N2 100 %, N2d
-  2 364): **writer cause fixed** — `GRACE4`/`GRACE16`/`GRACE32` were treated
-  as appoggiaturas (on the beat, shortening the main note);
-  `createGraceNotesPlayEvents` (`compatmidirender.cpp:559-590`) places them
-  **before** the beat and does not shorten the main note. Test
-  `grace16_before_beat` (grâce 360–479, noire 480–959). N2d 2 360 → 2 364,
-  six durations remain (other grace/articulation constructs) so the file is
-  not yet exact.
+  2 364): an early interpretation put the value graces *before* the beat
+  (`compatmidirender.cpp:559-590` read too narrowly); a fresh MuseScore 4.7.4
+  reference disproved it, see §"Value graces" below. The file is now exact.
 - **`Sancta_Maria_Lux_tempestiva`** (ref 467, ours 560, N1 44,5 %): MuseScore
   4.0.1 model/reference disagreement before the writer (pitch/voice layout).
 
@@ -3657,3 +3653,42 @@ know (notes + harmony), **144/171** on the enlarged lot and **17/17** on the
 corpus. Reproducing the remaining off requires the instrument's *explicit*
 `<midiChannel>` values plus a writer that preserves them across round trips —
 a model change with its own snapshot update, not a renderer-only tweak.
+
+## Value graces are played on the beat (2026-11-23)
+
+Re-reading `createGraceNotesPlayEvents` (`compatmidirender.cpp:530-606`)
+together with `renderChord` (`:193-252`, `NoteEvent(0, ontime, 1000 -
+trailtime)`) and `collectNote` (`compatmidirenderinternal.cpp:861-862`)
+settles the placement of non-acciaccatura grace-before chords: **all** of
+them, including `GRACE4`/`GRACE16`/`GRACE32`, get
+`ontime = min(500, actualTicks(grace) / actualTicks(chord) * 1000)`; the
+graces are emitted with `ontime` `0, graceDuration, …` at the chord's tick,
+the main note is delayed by `ontime`, and `trailtime += ontime` shortens it so
+it still ends at the same tick. The C++ never checks `NoteType::APPOGGIATURA`
+here — only `ACCIACCATURA` (and grace bends) are exempt (`:576-588`).
+
+Two fresh MuseScore 4.7.4 references (`mscore … -o …`, PPQ 480) confirmed it:
+one `grace16` before a quarter gives grace 480–599 and main 600–959; two
+`grace32` give graces 480–508 / 509–537 and main 540–959. The writer used to
+place them at 360–479 and 420/449 with the main note at 480. Reduced tests:
+`crates/scoretk-midi-export/tests/grace_on_beat.rs` (the old
+`grace16_before_beat` expectation was wrong and was corrected).
+
+The fix removes the `Grace4 | Grace16 | Grace32` branch of `render.rs` so all
+non-acciaccatura before-graces share the faithful `ontime`/`trailtime` path.
+Controlled measurement, same oracle and refs, writer only:
+
+| Lot | Exact before | Exact after | Gains | Losses | Mean size |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| corpus | 17/17 | **17/17** | 0 | 0 | 281 B |
+| `.mscz` 171 | 144/171 | **154/171 (90.1 %)** | **10** | **0** | 18 220.7 → 18 220.2 B |
+
+Gains: `Czardas_Monti`, `Stella_maris - La`, `Stella_maris - SiB`,
+`Sancta_Maria_KV_273 … orgue`, `Sancta_Maria_Mater_Dei`,
+`JMHaydn_Viderunt_omnes`, `Missa_in_Es … Gloria`, `Missa_in_Es … Kyrie`,
+`Ave_Maria_Schubert_in_C_with_chords`, `Vivaldi … Dixit_Dominus`. N1 and N2
+both go from 99.99 % to **100.00 %**; no file grows by more than 100 B.
+
+The 17 remaining non-exact files are all `Veni veni Emmanuel` / `Once in
+royal David's city` instrument-channel cases (tick 22 080 / 117 840), left
+aside as decided.
