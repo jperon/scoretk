@@ -6781,7 +6781,7 @@ fn scale_scheme_fraction(datum: &str) -> Option<Fraction> {
     )
 }
 
-/// Applique `eatherDurations` (ly/music-functions-init.ly:655-670) :
+/// Applique `\featherDurations` (ly/music-functions-init.ly:655-670) :
 /// facteur `scale^i` sur la i-ème note, puis normalisation de la durée totale.
 fn feather_music(music: &mut Music, scale: &Fraction) {
     fn visiter(music: &mut Music, scale: &Fraction, index: &mut usize) {
@@ -6794,25 +6794,22 @@ fn feather_music(music: &mut Music, scale: &Fraction) {
             Music::Chord(chord) => {
                 let mut facteur = Fraction::ONE;
                 for _ in 0..*index {
-                    facteur = facteur * *scale;
+                    facteur *= *scale;
                 }
                 let multiplicateur = chord.multiplier.unwrap_or(Fraction::ONE) * facteur;
                 chord.multiplier = Some(multiplicateur);
                 chord.from_scale = true;
                 *index += 1;
             }
-            Music::Context(context) => match context {
-                Context::Tuplet { music, .. }
-                | Context::Grace { music, .. }
-                | Context::Fixed { music, .. }
-                | Context::Relative { music, .. }
-                | Context::NonRelative { music }
-                | Context::Transpose { music, .. }
-                | Context::Silent { music }
-                | Context::Cue { music, .. }
-                | Context::Invisible { music } => visiter(music, scale, index),
-                _ => {}
-            },
+            Music::Context(Context::Tuplet { music, .. })
+            | Music::Context(Context::Grace { music, .. })
+            | Music::Context(Context::Fixed { music, .. })
+            | Music::Context(Context::Relative { music, .. })
+            | Music::Context(Context::NonRelative { music })
+            | Music::Context(Context::Transpose { music, .. })
+            | Music::Context(Context::Silent { music })
+            | Music::Context(Context::Cue { music, .. })
+            | Music::Context(Context::Invisible { music }) => visiter(music, scale, index),
             Music::Tag { music, .. } | Music::Filtered { music, .. } => {
                 visiter(music, scale, index)
             }
