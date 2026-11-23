@@ -27,6 +27,7 @@ L=$1
 O=$2
 G=$3
 V=${4:-}
+GREG=${GABC_GREGORIO:-/home/jacques/programmes/musique/specs/gabc/gregorio-buildtree/src/gregorio-6_2_0}
 shift 4 || true
 if [ -z "$V" ] || [ "$V" = "-" ]; then
   V=$O/.venv
@@ -40,4 +41,4 @@ if [ "$L" != "-" ]; then
   LISTE="--liste '$L'"
 fi
 exec nix-shell -p python3Packages.mido --run \
-  "python3 '$D/mesure.py' $LISTE --out '$O' --gabctk '$G' --python '$V/bin/python' $*"
+  "python3 '$D/mesure.py' $LISTE --out '$O' --gabctk '$G' --gregorio '$GREG' --python '$V/bin/python' $*"
