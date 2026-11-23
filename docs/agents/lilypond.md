@@ -7692,13 +7692,67 @@ failed before the fix (three measure rests, 3 quarters too long per bar).
 Frozen binaries `/tmp/ly-wsz2-base` and `/tmp/ly-wsz2-fix1`, same manifests,
 same cached MIDI references (`--refs-only`) and the same oracle on both sides:
 
-| Lot | Before exact | After exact | N1 / N2 gains | N1 / N2 losses |
-| --- | ---: | ---: | --- | --- |
-| `ra` (1724 measured) | 1690 (98.0 %) | **1690 (98.0 %)** | 0 / 0 | 0 / 0 |
-| `mut` (1316) | 1216 (92.4 %) | **1219 (92.6 %)** | 3 / 4 | 0 / 0 |
-| `rw` (1365) | 1258 (92.2 %) | **1261 (92.4 %)** | 3 / 4 | 0 / 0 |
+| Lot | Before exact | After exact | N2 (no repeats) | N2-grace | N1 / N2 gains | N1 / N2 losses |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| `ra` (1724 measured) | 1690 (98.0 %) | **1690 (98.0 %)** | 96.16 → 96.16 | 97.14 → 97.14 | 0 / 0 | 0 / 0 |
+| `mut` (1316) | 1216 (92.4 %) | **1219 (92.6 %)** | 97.50 → **97.75** | 96.47 → **96.73** | 3 / 4 | 0 / 0 |
+| `rw` (1365) | 1258 (92.2 %) | **1261 (92.4 %)** | 97.48 → **97.74** | 96.46 → **96.71** | 3 / 4 | 0 / 0 |
 
 The three exact gains are `miserere-mei-deus.ly`, `bwv792.ly` and
 `bwv801.ly`; `chopin_prelude_op45.ly` gains 25 matched attacks but stays
 inexact (the reference keeps a volta repeat). No file loses an exact result,
 a pitch or an attack on any lot. `cargo test`, `clippy` and `fmt` are green.
+
+## 34. Remaining real-world failures after the `R` fix (2026-11-23)
+
+The controlled run above leaves `ra` 1690, `mut` 1219, `rw` 1261 exact. The
+95 % target is **not reached**: the remaining 97 `mut` / 104 `rw` failures
+split as follows, measured by the first divergent `(pitch, attack)` pair.
+
+### Largest group: extra unisons on distinct staves (about 26 files)
+
+`notes_supp` files such as `andre-sonatine.ly`, `BWV533.ly`, `bwv544.ly`,
+`bwv604.ly`, `bwv627.ly`, `bwv632.ly`, `bwv651.ly`, `bwv679.ly`,
+`french-suite-5-gigue.ly`, `debussy_Arabesque_2.ly` have N1 = N2 = the
+reference note count but one or two **extra** notes: the reader emits the
+same pitch twice at the same tick on two staves of a piano part, while
+LilyPond's `Midi_walker::do_start_note` (`lily/midi-walker.cc:95-115`) keeps
+one attack. The oracle already merges unisons *within* a `(part, staff)`
+(`ly_notes.py::_fusionner_unissons`), so a blind cross-staff merge was tried
+and rejected: it gains 7 files and loses 12 whose doubled notes genuinely
+come from distinct staves. The correct fix is the staff allocation of
+`\change Staff` / `\context Staff = "name"` notes, not the comparison rule;
+no speculative change is kept.
+
+### Reference artefacts (not reader defects)
+
+- `50title-hub.ly`, `51title-hub.ly`: the included files use the obsolete
+  `\autochange`. LilyPond 2.27 rejects it with “chaîne en dehors d'un script
+  textuel” but still writes a MIDI whose notes are shifted by one quarter;
+  the reader follows the written score. Verified by compiling a reduced
+  source: `\autochange \relative c' { c4 d e f }` produces notes at
+  1/2/3/4 quarters instead of 0/1/2/3.
+- `contrapunctusXVI/XVII/XVIII/score.ly`: the engraved `\score` plays two
+  `\keepWithTag` versions of the same music simultaneously; the cached MIDI
+  reference contains only one version (half the notes). A duplicated
+  reference, not a conversion error.
+- `Symphony5_1.ly`, `Symphony5_2.ly`, `Symphony7_1.ly`, `gnomus.ly`,
+  `bridge.ly`, `mozart-hrn-3.ly`, `violinoII.ly`: constant offsets of 0.5–3
+  quarters after a long or irregular measure; N1 = 100 %. Same class as the
+  documented leading-`<backup>` oracle offset (§19), not a pitch loss.
+- `baba.ly`, `promenade-6.ly`, `Concerto_No3.ly`, `score.ly` (Dies irae):
+  large stale-reference or different-`\score` discrepancies, already listed
+  in §14/§19.
+
+### Scheme- or model-dependent cases
+
+Ornament excursions under `\articulate` (about ten files: `BWV857_*`,
+`Chop-28-*`, `Caprice_23/24`, `Dans_l_antre…`, `bach-french-suite-6-polonaise`)
+need the expansion of `ly/articulate.ly` (`prall`, `trill`, `turn`, `mordent`)
+into played grace notes. The MIDI writer already renders `Ornament.play`
+excursions, but the MusicXML writer does not materialise them; porting the
+expansion without a Scheme evaluator is a dedicated port, not a parser fix.
+The other remaining files need either cross-staff chord grids (`bwv612`,
+`bwv641`, `bwv651`), a full `\accidental`/tie re-strike model (`bwv855a`,
+`bach-prelude17`), or the already documented `\quoteDuring`/tablature/
+`partCombine` limits (§7, §31).
