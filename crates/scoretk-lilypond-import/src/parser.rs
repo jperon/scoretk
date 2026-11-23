@@ -159,6 +159,9 @@ struct MusicFunction {
     predicates: Vec<String>,
     /// Corps musical (`#{ … #}`), absent pour une fonction Scheme pure.
     body: Option<Vec<Token>>,
+    /// Fonction dont le corps Scheme est un seul paramètre (`music`) : elle
+    /// renvoie cet argument (`music-function-string-markup.ly`).
+    returns: Option<usize>,
     /// Vrai si la définition utilise `make-relative` : les arguments sont
     /// lus dans le contexte relatif environnant avant d'être insérés dans le
     /// corps (`scm/music-functions.scm`), y compris sous un `\transpose`.
@@ -2597,6 +2600,12 @@ impl<'a> Parser<'a> {
         self.pending_invisible_ottava = saved_invisible_ottava;
         self.pending_tuplet_number = saved_tuplet_number;
         let Some(body) = function.body else {
+            if let Some(index) = function.returns {
+                // Le corps est un paramètre : la fonction rend cet argument,
+                // relu comme musique (`function_arglist_reparse`).
+                let tokens = arguments.get(index).cloned().unwrap_or_default();
+                return self.parse_token_stream(tokens);
+            }
             // Fonction Scheme pure : rien à jouer, avertissement une seule
             // fois par fonction.
             if function.kind == FunctionKind::Music && !function.warned {
@@ -6234,14 +6243,43 @@ fn music_function_definition(datum: &str) -> Option<MusicFunction> {
         .is_some_and(|(prefix, _)| prefix.contains("make-relative"));
     let body =
         crate::lexer::embedded_music_body(&body_source).map(|body| crate::lexer::tokenize(&body));
+    // Corps Scheme réduit à un paramètre (`#(define-music-function (text music)
+    // (markup? ly:music?) music)`) : la fonction renvoie cette musique. Sans
+    // cela elle passait pour une fonction sans corps et ne produisait rien
+    // (`music-function-string-markup.ly`).
+    let returns = if body.is_none() {
+        scheme_body_parameter(&body_source, &params)
+    } else {
+        None
+    };
     Some(MusicFunction {
         kind,
         params,
         predicates,
         body,
+        returns,
         relative_body,
         warned: false,
     })
+}
+
+/// Indice du paramètre renvoyé par une fonction dont le corps Scheme est un
+/// seul nom (`music`), `None` pour tout autre corps.
+fn scheme_body_parameter(body_source: &str, params: &[String]) -> Option<usize> {
+    let characters: Vec<char> = body_source.chars().collect();
+    let (word, next) = read_scheme_word(&characters, 0);
+    if word.is_empty() {
+        return None;
+    }
+    // Le reste du datum ne doit être que la ou les parenthèses fermantes.
+    let rest: String = characters[next.min(characters.len())..].iter().collect();
+    if !rest
+        .chars()
+        .all(|character| character.is_whitespace() || character == ')')
+    {
+        return None;
+    }
+    params.iter().position(|param| *param == word)
 }
 
 /// Saute espaces et commentaires de ligne Scheme.

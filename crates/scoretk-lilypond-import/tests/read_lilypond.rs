@@ -8644,3 +8644,18 @@ fn offset_consomme_propriete_et_valeurs() {
         .expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![60, 62]);
 }
+
+#[test]
+fn fonction_musicale_corps_est_un_parametre() {
+    // `music-function-string-markup.ly` : le corps Scheme d'une fonction
+    // musicale est un seul paramètre (`music`) ; elle renvoie cet argument au
+    // lieu de passer pour une fonction sans corps.
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\
+         testFunc = #(define-music-function (text music) (markup? ly:music?)\n\
+         music)\n\
+         \\relative c' { \\testFunc \"test string\" c2 }\n",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![60]);
+}
