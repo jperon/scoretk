@@ -3450,19 +3450,30 @@ impl<'a> Parser<'a> {
                 // dans le flux et, traité comme de la musique, l'argument de
                 // `\box { A }` devient une note parasite qui décale toutes les
                 // mesures suivantes (régression Angels_Carol).
-                if self.peek().is_some_and(|token| token.is_command("markup")) {
+                // L'argument de `\mark` est **un** markup
+                // (`lily/parser.yy`, `markup` → `simple_markup`) : un mot nu
+                // (`\mark A`), une chaîne, une commande (`\mark \default`) ou
+                // une commande `\markup` suivie de son bloc. Après cet
+                // argument, la musique reprend : `\mark \default 4` doit
+                // répéter l'accord précédent, pas avaler le `4` dans
+                // l'étiquette.
+                let explicit = self.peek().is_some_and(|token| token.is_command("markup"));
+                if explicit {
                     self.position += 1;
                 }
-                // `\mark` reçoit un *markup* : un nom de note nu en est un
-                // (`\mark A`, `lily/parser.yy` : `markup` → `simple_markup`).
-                // `parse_markup_text` s'arrête sur un mot de hauteur pour ne
-                // pas avaler la musique suivante (`\markup "x" r2`) ; ici, le
-                // mot est l'argument du `\mark` et non une note.
                 let text = match self.peek().cloned() {
                     Some(token)
                         if token.kind == Kind::Word
                             && !matches!(token.text.as_str(), "r" | "R" | "s") =>
                     {
+                        self.position += 1;
+                        token.text
+                    }
+                    Some(token) if token.kind == Kind::Str => {
+                        self.position += 1;
+                        token.text
+                    }
+                    Some(token) if token.kind == Kind::Command && !explicit => {
                         self.position += 1;
                         token.text
                     }

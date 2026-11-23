@@ -8261,3 +8261,16 @@ fn voix_separees_dans_un_simultane_restent_une_portee() {
     attaques.sort_unstable();
     assert_eq!(attaques, vec![(60, 0), (76, 0)], "deux voix au même temps");
 }
+
+#[test]
+fn mark_default_ne_mange_pas_la_duree_suivante() {
+    // `\mark` prend **un** markup (`lily/parser.yy`, `markup` →
+    // `simple_markup`) : `\default` est l'étiquette et le `4` qui suit est la
+    // répétition de l'accord précédent (`c'4 4`), pas un nombre de l'étiquette.
+    let score = lire("c'4 \\mark \\default 4");
+    assert_eq!(
+        hauteurs_attaques(&score),
+        vec![72, 72],
+        "le 4 après le mark répète l'accord"
+    );
+}
