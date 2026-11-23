@@ -1299,7 +1299,13 @@ impl Parser<'_> {
                     self.close_slur();
                     self.pos += 1;
                 }
-                Some('.' | '!' | '+' | '~' | ',' | '`' | '$' | '<' | '>' | '"') => {
+                // ABC 2.1 §4.17 : une décoration longue peut précéder chaque
+                // note d'un accord. La consommer comme jeton entier (`!pppp!`)
+                // et non lettre par lettre : sinon le `p` est lu comme une
+                // hauteur et l'accord est rejeté (`VolumeInChords`). Port de
+                // `abc2xml.py::chord_note`/`dec_note` (lignes 383-385).
+                Some('!' | '+') => self.parse_decoration(),
+                Some('.' | '~' | ',' | '`' | '$' | '<' | '>' | '"') => {
                     self.warn("symbole égaré dans un accord ignoré");
                     self.pos += 1;
                 }

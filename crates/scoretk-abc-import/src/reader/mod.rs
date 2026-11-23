@@ -777,7 +777,27 @@ impl Reader {
                 const MUSIC_CHARS: &str = "ABCDEFGabcdefgzZxX0123456789|[]():,!'\"^+_=<>/-\\";
                 let tokens: Vec<&str> = text.split_whitespace().collect();
                 let music_token = |token: &str| {
-                    !token.is_empty() && token.chars().all(|c| MUSIC_CHARS.contains(c))
+                    // Une décoration longue `!pppp!` contient des lettres
+                    // quelconques (ABC 2.1 §4.14) : la retirer avant de
+                    // décider si la ligne est de la musique, sinon un accord
+                    // `[!pppp!c!ffff!D]` est pris pour de la prose et l'air
+                    // entier est lu sans notes (`VolumeInChords`).
+                    let mut nu = String::new();
+                    let mut decoration = None;
+                    for c in token.chars() {
+                        if let Some(delimiter) = decoration {
+                            if c == delimiter {
+                                decoration = None;
+                            }
+                            continue;
+                        }
+                        if c == '!' || c == '+' {
+                            decoration = Some(c);
+                            continue;
+                        }
+                        nu.push(c);
+                    }
+                    !nu.is_empty() && nu.chars().all(|c| MUSIC_CHARS.contains(c))
                 };
                 let music_line = tokens.first().is_some_and(|first| {
                     if first.len() >= 2 {

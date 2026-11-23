@@ -3715,3 +3715,24 @@ Mesure contrôlée, même oracle, même lot, seul le writer change :
 Gains : `Veni Creator Spiritus`, `Sancta Maria` (mscz **et** mxl),
 `Vivaldi Gloria Patri`, `Vingt danses enfantines`. Octets `.abc` :
 2 572 746 → 2 566 704 (aucune croissance). L'alternative reste à 101/261.
+
+## 48. Lecture : décoration longue dans un accord (2026-11-23)
+
+Quatre des 11 airs `VIDE` ont pour cause une décoration longue `!…!`
+collée à une note d'accord, réduite de
+`flattener.test__abcVolumeInChords.abc` (`[!pppp!c!ffff!D]`). Deux défauts :
+`parse_chord` sautait `!` lettre par lettre (le `p` devenait une hauteur et
+l'accord était rejeté), et le garde-fou « ligne de prose » de `reader/mod.rs`
+refusait la ligne entière parce que `p` n'est pas un caractère de musique.
+ABC 2.1 §4.17 autorise explicitement les décorations sur chaque note d'un
+accord ; `abc2xml.py::chord_note`/`dec_note` (lignes 383-385) les accepte.
+
+- `music.rs::parse_chord` consomme `!…!` / `+…+` avec `parse_decoration()` ;
+- `mod.rs` retire le contenu des décorations longues avant de décider si une
+  ligne est de la musique (les textes `N:` restent exclus).
+
+Test réduit `crates/scoretk-abc-import/tests/chord_decoration_longue.rs`
+(deux cas, échouent avant, passent après). Mesure contrôlée, même binaire,
+seul le lecteur change, même oracle : 4 712 → **4 716 exact / 4 756**,
+4 gains (`VolumeInChords`, `abcDirectives`, `abcDirectives2`, `abcGlissando`),
+0 perte. L'alternative reste à 4 655.
