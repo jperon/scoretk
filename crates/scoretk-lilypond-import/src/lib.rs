@@ -70,7 +70,6 @@ mod parser;
 mod partcombine;
 mod pitch;
 mod playback;
-mod scheme;
 mod warnings;
 
 pub use warnings::Warning;
