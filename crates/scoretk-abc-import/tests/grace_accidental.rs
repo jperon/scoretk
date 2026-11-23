@@ -39,3 +39,16 @@ fn alterne_dun_agrangement_ne_se_propage_pas() {
     );
     assert_eq!(pitches(&with_grace), vec![74, 79, 72]);
 }
+
+#[test]
+fn naturel_explicite_dun_agrangement_reste_en_vigueur() {
+    // K:Eb rend E bémol ; le `=e` de l'agrément doit neutraliser E pour la
+    // suite de la mesure (Haydn, Credo/Kyrie : `=e{g/2}fe/2`).
+    let header = "X:1\nM:3/4\nL:1/8\nK:Eb\n";
+    let source = format!("{header}_e2 {{=e/2}}f2 e2 |]");
+    assert_eq!(
+        pitches(&source),
+        vec![75, 77, 76],
+        "le =e de l'agrément doit laisser E naturel"
+    );
+}

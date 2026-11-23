@@ -1605,7 +1605,17 @@ impl Parser<'_> {
                 }
             }
         }
+        // Un `=` explicite dans l'agrément lève l'altération courante pour
+        // la suite de la mesure (ABC 2.1 §4.2, spec 853-855 ; Haydn
+        // `=e{g/2}fe/2` en K:Eb). On ne garde que ces remises à zéro : un
+        // dièse ou un bémol d'agrément reste local à la note d'agrément.
+        let grace_state = self.voice().accidental.clone();
         self.voice().accidental = accidental;
+        for letter in ['C', 'D', 'E', 'F', 'G', 'A', 'B'] {
+            if grace_state.current(letter) == 0 {
+                self.voice().accidental.set(letter, 0);
+            }
+        }
         match &mut self.voice().grace {
             Some(existing) => existing.notes.extend(notes),
             None => self.voice().grace = Some(GraceData { notes }),
