@@ -8053,3 +8053,33 @@ fn make_clusters_absent_du_modele_comme_dans_le_midi() {
         "les notes de cluster restent dans le pivot mais ne sont pas jouées"
     );
 }
+
+/// LilyPond calcule l'armure depuis la tonique **et le mode**
+/// (`ly/scale-definitions-init.ly` : `minor` a 3 bémols, `dorian` 2,
+/// `mixolydian` 1 — décalages −3, −2, −1 par rapport au majeur). Le lecteur
+/// ne considérait que la tonique : `\key d \minor` donnait +2 au lieu de −1.
+#[test]
+fn armure_selon_le_mode() {
+    for (mode, attendu) in [
+        ("major", 2),
+        ("minor", -1),
+        ("dorian", 0),
+        ("mixolydian", 1),
+        ("phrygian", -2),
+        ("lydian", 3),
+        ("locrian", -3),
+        ("aeolian", -1),
+        ("ionian", 2),
+    ] {
+        let src = format!(
+            "\\version \"2.24.0\"\\n\\language \"english\"\\n\
+\\score {{ \\new Staff {{ \\fixed c' {{ \\key d \\{mode} c4 }} }} }}"
+        );
+        let score = read_lilypond(&src).unwrap_or_else(|e| panic!("{mode} : {e}"));
+        assert_eq!(
+            armures(&score),
+            vec![attendu],
+            "\\key d \\{mode} doit donner {attendu} quintes"
+        );
+    }
+}

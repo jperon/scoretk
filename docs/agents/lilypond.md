@@ -5867,6 +5867,36 @@ minimal ne contenant que cette armure produit déjà `<fifths>2</fifths>` et
 ly95 ; l'écrivain se contente de recopier l'armure du modèle
 (`pitch.rs::key_signature`).
 
+### Armure LilyPond : le mode modifie le nombre de quintes
+
+`parser.rs:3122` calculait `fifths` avec `fifths_of(tonique)` pour tous les
+modes. Or `ly/scale-definitions-init.ly` donne les altérations de chaque
+gamme : `minor`/`aeolian` a trois bémols de plus que le majeur, `dorian`
+deux, `phrygian` quatre, `locrian` cinq ; `lydian` un dièse de plus,
+`mixolydian` un bémol de plus. `\key d \minor` devait donc donner −1
+(relative majeure fa) et non +2 (ré majeur). Le writer se contentant de
+recopier l'armure du modèle (`pitch.rs::key_signature`), l'erreur venait
+bien du lecteur.
+
+`pitch.rs::mode_fifths_offset` ajoute le décalage du mode (0 pour
+`major`/`ionian`) à la tonique. Tests réduits d'abord, pour le mineur et
+deux modes d'église (`dorian`, `mixolydian`) plus les six autres modes.
+
+Mesures (deux binaires frères) :
+
+* import `ra` : 1560/1724 → 1560/1724, import `mut` : 1186/1316 → 1186/1316,
+  aucune perte ni gain (la comparaison porte sur les notes MIDI).
+* export LilyPond lot `ly` : 1389 → 1389 exacts, aucune perte.
+* export LilyPond lot `mscz` : 158 → 158 exacts, aucune perte.
+* export MusicXML lot `ly` : non mesurable ici — le `mscore` disponible
+  refuse les sources `.ly` (code 40), 0 fichier converti des deux côtés.
+* taille des `.ly` : inchangée (19 990 octets sur `ly`, 26 614 sur `mscz`).
+
+Le défaut ne changeait pas les notes des corpus mesurés (armure = décoration,
+les hauteurs écrites sont explicites), mais corrige l'armure du modèle et la
+réécriture `\key` pour 66 sources du lot `ly` et le fichier signalé
+`02_01_CommentLeSaisJe`.
+
 ## `ra` — tournée après les remarques de relecture
 
 Les trois remarques ont été corrigées dans un seul commit : commentaire

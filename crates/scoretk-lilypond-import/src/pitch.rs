@@ -752,6 +752,22 @@ pub(crate) fn fifths_of(step: u8, alter: i8) -> i8 {
     FIFTH_OFFSETS[usize::from(step)] + 7 * alter
 }
 
+/// Décalage en quintes du mode par rapport au majeur
+/// (`ly/scale-definitions-init.ly`) : `minor`/`aeolian` a 3 bémols de plus,
+/// `dorian` 2, `phrygian` 4, `locrian` 5 ; `lydian` a 1 dièse de plus et
+/// `mixolydian` 1 bémol de plus. Le nom sans mode (déjà majeur) garde 0.
+pub(crate) fn mode_fifths_offset(word: &str) -> i8 {
+    match word {
+        "minor" | "aeolian" => -3,
+        "dorian" => -2,
+        "phrygian" => -4,
+        "locrian" => -5,
+        "lydian" => 1,
+        "mixolydian" => -1,
+        _ => 0,
+    }
+}
+
 /// Intervalle de `\transposition` par rapport au do central écrit.
 ///
 /// Le réglage amont vaut `c'` : `\transposition c` fait donc sonner une octave

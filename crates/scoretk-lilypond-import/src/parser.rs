@@ -3288,21 +3288,22 @@ impl<'a> Parser<'a> {
                 let Some(pitch) = self.parse_optional_pitch() else {
                     return Music::Empty;
                 };
-                let mode = match self.bump() {
+                let mode_word = match self.bump() {
                     Some(Token {
-                        kind: Kind::Command,
-                        text,
+                        kind: Kind::Command | Kind::Word,
+                        ref text,
                         ..
-                    })
-                    | Some(Token {
-                        kind: Kind::Word,
-                        text,
-                        ..
-                    }) => pitch::key_mode(&text),
-                    _ => KeyMode::Major,
+                    }) => text.clone(),
+                    _ => String::new(),
+                };
+                let mode = if mode_word.is_empty() {
+                    KeyMode::Major
+                } else {
+                    pitch::key_mode(&mode_word)
                 };
                 context(Context::Key {
-                    fifths: pitch::fifths_of(pitch.step, pitch.alter),
+                    fifths: pitch::fifths_of(pitch.step, pitch.alter)
+                        + pitch::mode_fifths_offset(&mode_word),
                     mode,
                 })
             }
