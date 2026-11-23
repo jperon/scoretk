@@ -8446,3 +8446,13 @@ fn parenthesize_dans_grace_reste_une_grace() {
     }
     assert_eq!(graces, 1, "la note entre parenthèses reste une grâce");
 }
+
+#[test]
+fn bend_after_consomme_son_argument() {
+    // `\bendAfter` prend un argument (`ly/music-functions-init.ly:357`) et
+    // reste un post-événement de la note précédente ; le `4` suivant répète
+    // l'accord au lieu d'être avalé (`bend-after.ly`).
+    let score = read_lilypond("\\version \"2.24.0\"\n\\relative { d'4 \\bendAfter 2 4 }\n")
+        .expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![62, 62]);
+}

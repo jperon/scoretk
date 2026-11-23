@@ -4948,6 +4948,28 @@ impl<'a> Parser<'a> {
                 // disparaître un `\times`/`\tuplet` placé après un post-événement.
                 let name = token.text.clone();
                 self.position += 1;
+                // `bendAfter` prend un argument (ton de la chute,
+                // `ly/music-functions-init.ly:357`), écrit `#10` ou `10`.
+                // Le laisser dans le flux en faisait une durée nue qui
+                // répétait la note et décalait tout
+                // (`bend-after-start-in-grace.ly`).
+                if name == "bendAfter" {
+                    let delta = match self.peek().cloned() {
+                        Some(token) if token.is_scheme() => {
+                            self.position += 1;
+                            token.text.trim().parse().unwrap_or(0)
+                        }
+                        Some(token) => match token.as_integer() {
+                            Some(value) => {
+                                self.position += 1;
+                                i8::try_from(value).unwrap_or(0)
+                            }
+                            None => 0,
+                        },
+                        None => 0,
+                    };
+                    return vec![PostEvent::BendAfter(delta)];
+                }
                 if let Some(post) = post_event_for_command(&name, Placement::Below) {
                     return vec![post];
                 }
@@ -6898,6 +6920,7 @@ fn starts_post_event(token: &Token) -> bool {
                 || token.text == "("
                 || token.text == ")"
                 || token.text == "rest"
+                || token.text == "bendAfter"
                 || is_articulation_command(&token.text)
                 || is_dynamic_command(&token.text)
         }
