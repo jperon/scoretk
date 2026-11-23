@@ -710,7 +710,7 @@ fn scheme_list_end(characters: &[char], start: usize) -> usize {
 }
 
 /// Indice qui suit la chaîne Scheme commençant à `start` (guillemet inclus).
-fn scheme_string_end(characters: &[char], start: usize) -> usize {
+pub(crate) fn scheme_string_end(characters: &[char], start: usize) -> usize {
     let mut index = start + 1;
     while index < characters.len() {
         match characters[index] {
@@ -743,7 +743,7 @@ fn scheme_character_end(characters: &[char], start: usize) -> usize {
 }
 
 /// Indice qui suit le bloc `#| … |#` commençant à `start` (imbricable).
-fn skip_scheme_block_comment(characters: &[char], start: usize) -> usize {
+pub(crate) fn skip_scheme_block_comment(characters: &[char], start: usize) -> usize {
     let mut depth = 0usize;
     let mut index = start;
     while index < characters.len() {

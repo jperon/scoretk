@@ -3134,6 +3134,11 @@ impl<'a> Parser<'a> {
             // (elle reçoit un tweak). Sans cette lecture, la propriété et les
             // valeurs restaient dans le flux et devenaient des notes ou des
             // durées (`offsets.ly`).
+            // `\approximatePitch` (`ly/music-functions-init.ly:239-246`)
+            // pose `pitch-approximate` sur la note et la renvoie : transparent
+            // pour le modèle. Ignorée, la commande décalait les notes qui
+            // suivent (`approximate-pitch-head-direction-tweak.ly`).
+            "approximatePitch" => self.parse_music(),
             "offset" => {
                 self.parse_offset_arguments();
                 if self.at_offset_key_list() {
@@ -6247,7 +6252,7 @@ fn music_function_definition(datum: &str) -> Option<MusicFunction> {
     // (markup? ly:music?) music)`) : la fonction renvoie cette musique. Sans
     // cela elle passait pour une fonction sans corps et ne produisait rien
     // (`music-function-string-markup.ly`).
-    let returns = if body.is_none() {
+    let returns = if body.is_none() && kind == FunctionKind::Music {
         scheme_body_parameter(&body_source, &params)
     } else {
         None
@@ -6263,22 +6268,81 @@ fn music_function_definition(datum: &str) -> Option<MusicFunction> {
     })
 }
 
-/// Indice du paramètre renvoyé par une fonction dont le corps Scheme est un
-/// seul nom (`music`), `None` pour tout autre corps.
+/// Indice du paramètre renvoyé par une fonction dont la **dernière** forme du
+/// corps Scheme est un nom de paramètre (`music`, `note`), `None` sinon.
+///
+/// Les formes qui précèdent (mise en garde, `set!` d'une propriété de grob)
+/// ne produisent pas de musique : la valeur de la fonction est sa dernière
+/// expression (`#(define-music-function (note) (ly:music?) … note)`,
+/// `approximatePitch`, `ly/music-functions-init.ly:239-246`).
 fn scheme_body_parameter(body_source: &str, params: &[String]) -> Option<usize> {
+    use crate::lexer::{scheme_string_end, skip_scheme_block_comment};
     let characters: Vec<char> = body_source.chars().collect();
-    let (word, next) = read_scheme_word(&characters, 0);
-    if word.is_empty() {
-        return None;
+    let mut index = 0;
+    let mut last: Option<String> = None;
+    while index < characters.len() {
+        index = skip_scheme_space(&characters, index);
+        let Some(&character) = characters.get(index) else {
+            break;
+        };
+        match character {
+            ')' | ']' => break,
+            '(' | '[' => {
+                // Sauter la forme (liste) équilibrée.
+                let mut depth = 0usize;
+                while let Some(&current) = characters.get(index) {
+                    match current {
+                        '(' | '[' => {
+                            depth += 1;
+                            index += 1;
+                        }
+                        ')' | ']' => {
+                            depth = depth.saturating_sub(1);
+                            index += 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                        '"' => index = scheme_string_end(&characters, index),
+                        ';' => {
+                            while characters.get(index).is_some_and(|c| *c != '\n') {
+                                index += 1;
+                            }
+                        }
+                        '#' if characters.get(index + 1) == Some(&'|') => {
+                            index = skip_scheme_block_comment(&characters, index);
+                        }
+                        _ => index += 1,
+                    }
+                }
+                last = None;
+            }
+            '"' => {
+                index = scheme_string_end(&characters, index);
+                last = None;
+            }
+            ';' => {
+                while characters.get(index).is_some_and(|c| *c != '\n') {
+                    index += 1;
+                }
+            }
+            '#' if characters.get(index + 1) == Some(&'|') => {
+                index = skip_scheme_block_comment(&characters, index);
+                last = None;
+            }
+            _ => {
+                let (word, next) = read_scheme_word(&characters, index);
+                if word.is_empty() {
+                    index += 1;
+                    last = None;
+                } else {
+                    index = next;
+                    last = Some(word);
+                }
+            }
+        }
     }
-    // Le reste du datum ne doit être que la ou les parenthèses fermantes.
-    let rest: String = characters[next.min(characters.len())..].iter().collect();
-    if !rest
-        .chars()
-        .all(|character| character.is_whitespace() || character == ')')
-    {
-        return None;
-    }
+    let word = last?;
     params.iter().position(|param| *param == word)
 }
 

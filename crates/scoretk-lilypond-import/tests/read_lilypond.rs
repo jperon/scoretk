@@ -8659,3 +8659,14 @@ fn fonction_musicale_corps_est_un_parametre() {
     .expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![60]);
 }
+
+#[test]
+fn approximate_pitch_est_transparent() {
+    // `\approximatePitch` (`ly/music-functions-init.ly:239-246`) renvoie sa
+    // note ; ignorée, la commande décalait les notes qui suivent
+    // (`approximate-pitch-head-direction-tweak.ly`).
+    let score =
+        read_lilypond("\\version \"2.24.0\"\n{ \\approximatePitch c'4 \\approximatePitch 4 }\n")
+            .expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![60, 60]);
+}
