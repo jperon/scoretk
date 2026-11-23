@@ -2782,6 +2782,15 @@ impl<'a> Parser<'a> {
         else {
             return Music::Empty;
         };
+        // `\breve`, `\longa` et `\maxima` employés seuls sont des durées
+        // nues : ils répètent la note ou l'accord précédent, comme le ferait
+        // un chiffre (`lily/parser.yy` `event_chord: duration`,
+        // `scm/music-functions.scm::expand-repeat-notes!`). Le lecteur les
+        // ignorait, perdant les reprises `\longa \breve 1 2 4 8 8` de
+        // `monochords.ly` (7 attaques par groupe dans la référence).
+        if matches!(name.as_str(), "breve" | "longa" | "maxima") {
+            return self.parse_bare_duration();
+        }
         self.position += 1;
         // Une variable musicale masque les commandes intégrées, comme dans
         // LilyPond (`identifiant = { … }` puis `\identifiant`).
@@ -3790,36 +3799,10 @@ impl<'a> Parser<'a> {
                 ajoute_point(music, self.default_duration)
             }
             "fermata" | "shortfermata" | "longfermata" | "verylongfermata" => Music::Empty,
-            // `lily/parser.yy:1518-1525` : une durée seule produit un
-            // `NoteEvent` sans hauteur, résolu en répétition du dernier
-            // accord par `expand-repeat-notes!`
-            // (scm/music-functions.scm l. 972-1015). `\breve`, `\longa`
-            // et `\maxima` sont des durées, pas des commandes inconnues.
-            "breve" | "longa" | "maxima" => {
-                // `parse_command` a déjà consommé le nom : ne pas appeler
-                // `parse_duration()` ici, il lirait la durée *suivante*
-                // comme multiplicateur du nom.
-                let (duree, facteur) = match name.as_str() {
-                    "breve" => (Duration::new(DurationType::Breve), Fraction::ONE),
-                    "longa" => (Duration::new(DurationType::Long), Fraction::ONE),
-                    _ => (Duration::new(DurationType::Long), Fraction::new(2, 1)),
-                };
-                self.default_duration = duree;
-                self.default_multiplier = facteur;
-                Music::Chord(Chord {
-                    kind: ChordKind::PitchRepeat,
-                    duration: Some(duree),
-                    multiplier: if facteur == Fraction::ONE {
-                        None
-                    } else {
-                        Some(facteur)
-                    },
-                    from_scale: false,
-                    bracketed: false,
-                    posts: self.parse_posts(),
-                    invisible: false,
-                })
-            }
+            // Les durées nues `\breve`, `\longa`, `\maxima` sont traitées en
+            // amont de `parse_command`, avant consommation du jeton, par
+            // `parse_bare_duration` (durée, points et multiplicateurs lus par
+            // `parse_duration`).
             "version" => {
                 // `\version "x"` est une commande de haut niveau, mais un
                 // `\include` peut l'injecter au milieu d'une musique. Ne

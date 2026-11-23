@@ -8002,22 +8002,35 @@ fn voices_consomme_sa_liste_de_cles() {
 
 #[test]
 fn duree_breve_seule_reprend_la_note_precedente() {
-    // `lily/parser.yy:1518-1525` : une durée seule crée un `NoteEvent` sans
-    // hauteur, résolu en répétition par `expand-repeat-notes!`
-    // (scm/music-functions.scm l. 972-1015). `lily/parser.yy:3518-3535` :
-    // `steno_duration dots multipliers`, donc `\breve.` et `\breve*2`.
-    for src in [
-        "\\version \"2.24.0\"\n{ <a' a>4 \\breve 2 4 }\n",
-        "\\version \"2.24.0\"\n{ <a' a>4 \\breve. 2 4 }\n",
-        "\\version \"2.24.0\"\n{ <a' a>4 \\breve*2 2 4 }\n",
+    // `lily/parser.yy:647` et `:1518` (`duration post_events`) : une durée
+    // seule crée un `NoteEvent` sans hauteur, résolu en répétition par
+    // `expand-repeat-notes!` (`scm/music-functions.scm` l. 971-1015).
+    // `lily/parser.yy:3518` `steno_duration: DURATION_IDENTIFIER dots` et
+    // `:3532` `duration: steno_duration multipliers` : `\breve.` vaut trois
+    // rondes, `\breve*2` quatre. Les durées sont celles des attaques
+    // (l'accord initial de blanche, puis la répétition, la blanche et la
+    // noire finales), en fractions de ronde.
+    let quart = Fraction::new(1, 4);
+    let demi = Fraction::new(1, 2);
+    for (src, repetition) in [
+        (
+            "\\version \"2.24.0\"\n{ \\time 8/1 <a' a>4 \\breve 2 4 }\n",
+            Fraction::new(2, 1),
+        ),
+        (
+            "\\version \"2.24.0\"\n{ \\time 8/1 <a' a>4 \\breve. 2 4 }\n",
+            Fraction::new(3, 1),
+        ),
+        (
+            "\\version \"2.24.0\"\n{ \\time 8/1 <a' a>4 \\breve*2 2 4 }\n",
+            Fraction::new(4, 1),
+        ),
     ] {
         let score = read_lilypond(src).expect("lecture");
-        // Une durée avalée ferait disparaître les accords suivants.
-        assert!(
-            score.notes.len() >= 8,
-            "notes : {:?} / {}",
-            score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
-            src
+        assert_eq!(
+            durees_attaques(&score),
+            vec![quart, repetition, demi, quart],
+            "durées : {src}"
         );
     }
 }
