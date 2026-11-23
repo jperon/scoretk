@@ -122,8 +122,10 @@ pub(crate) enum ChordKind {
     /// `\skip <durée numérique>` : sa durée ne change pas la durée par défaut
     /// (Notation Reference §2.2.2, compatibilité avec l'implémentation historique).
     SkipNumeric,
-    /// Silence multi-mesures (`R`).
-    MultiRest,
+    /// Silence multi-mesures (`R`). `explicit` distingue un `R1*3` d'un `R`
+    /// nu : une figure plus courte qu'une mesure est un silence daté
+    /// (`lily/parser.yy:3117`), pas un silence de mesure entière.
+    MultiRest { explicit: bool },
     /// Répétition du dernier accord (`q`).
     ///
     /// Les hauteurs sont celles, déjà résolues, du dernier accord joué :

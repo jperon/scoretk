@@ -7656,3 +7656,49 @@ trame des mesures. Test réduit
 69 après ; contrôle sans propriété : 69, 69). Mesure contrôlée :
 `ra` **1 689 → 1 690/1 724 (98,0 %)**, `mut` 1 216/1 316 et
 `rw` 1 258/1 365 inchangés ; **1 gain, 0 perte**, N1/N2 identiques.
+
+## 33. Real-world reading campaign: `R` with a short explicit duration (2026-11-23)
+
+### Cause
+
+`lily/parser.yy:3117` (`MULTI_MEASURE_REST optional_notemode_duration`) puts
+the written figure on the rest event. LilyPond only extends a multi-measure
+rest to the measure grid when the duration covers whole measures; an explicit
+figure shorter than the measure stays a **timed** rest. Verified with
+LilyPond 2.27: `R4 R4 R4 R4 | c1` in 4/4 plays `c1` at 4 quarters, and
+`R4. R4. R4. | c4 …` in 9/8 plays `c4` at 4.5 quarters (a bar-check warning
+is emitted, but the MIDI timing is exact).
+
+The reader mapped every `R` to a `ChordContent::MultiRest`, rendered as
+`Rest::full_measure = true` with `Duration::measure()`. Three `R4.` in one
+9/8 measure therefore became three `<rest measure="yes"/>` of 4.5 quarters
+each with two `<backup>`s; the oracle's per-measure cursor extent grew by
+3 quarters and every later attack was shifted. `bwv792.ly` kept only 30 of
+507 matched attacks, `bwv801.ly` 313 of 670, `miserere-mei-deus.ly` 1013 of
+1549 (all with N1 = 100 %).
+
+### Fix
+
+`ChordKind::MultiRest` and `ChordEvent` now record whether a figure followed
+`R`. In `builder::place_chord`, an explicit rest whose actual duration is
+strictly shorter than its measure is written with that figure and
+`full_measure = false`; bare `R` and `R1*N` keep the measure/multi-measure
+rest path. Reduced test `r_avec_duree_courte_est_un_silence_date` (three
+dated 3/8 rests covering a 9/8 measure, plus the unchanged note attacks)
+failed before the fix (three measure rests, 3 quarters too long per bar).
+
+### Controlled measurement
+
+Frozen binaries `/tmp/ly-wsz2-base` and `/tmp/ly-wsz2-fix1`, same manifests,
+same cached MIDI references (`--refs-only`) and the same oracle on both sides:
+
+| Lot | Before exact | After exact | N1 / N2 gains | N1 / N2 losses |
+| --- | ---: | ---: | --- | --- |
+| `ra` (1724 measured) | 1690 (98.0 %) | **1690 (98.0 %)** | 0 / 0 | 0 / 0 |
+| `mut` (1316) | 1216 (92.4 %) | **1219 (92.6 %)** | 3 / 4 | 0 / 0 |
+| `rw` (1365) | 1258 (92.2 %) | **1261 (92.4 %)** | 3 / 4 | 0 / 0 |
+
+The three exact gains are `miserere-mei-deus.ly`, `bwv792.ly` and
+`bwv801.ly`; `chopin_prelude_op45.ly` gains 25 matched attacks but stays
+inexact (the reference keeps a volta repeat). No file loses an exact result,
+a pitch or an attack on any lot. `cargo test`, `clippy` and `fmt` are green.

@@ -9059,3 +9059,72 @@ fn chordmode_repete_l_accord_nomme() {
     hauteurs.sort();
     assert_eq!(hauteurs, vec![60, 60, 61, 64, 64, 65, 67, 67, 68, 72, 75]);
 }
+
+/// Un `R` suivi d'une durée **explicite plus courte qu'une mesure** est un
+/// silence daté, pas un silence de mesure entière : `lily/parser.yy:3117`
+/// (`MULTI_MEASURE_REST optional_notemode_duration`) porte la figure sur
+/// l'événement, et LilyPond ne l'étend qu'à cette durée (vérifié avec 2.27 :
+/// `R4. R4. R4. | c'4 …` en 9/8 joue `c'` à 4,5 noires ; `R` nu et `R1*3`
+/// restent des silences de mesure).
+#[test]
+fn r_avec_duree_courte_est_un_silence_date() {
+    let source = r#"\version "2.24.0"
+\language "english"
+\score { \new Staff { \time 9/8 R4. R4. R4. | c'4 d'4 e'4 | f'2. } }"#;
+    let score = read_lilypond(source).expect("lecture");
+    let mut notes: Vec<(u8, Fraction)> = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            if let Some(chord_rest) = segment.chord_rest(Track::from_raw(0)) {
+                if let Some(chord) = chord_rest.chord_ref() {
+                    for id in &chord.notes {
+                        if score.note(*id).tie_back.is_none() {
+                            notes.push((score.note(*id).pitch, segment.tick));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    notes.sort();
+    assert_eq!(
+        notes,
+        vec![
+            (60, Fraction::new(9, 8)),
+            (62, Fraction::new(11, 8)),
+            (64, Fraction::new(13, 8)),
+            (65, Fraction::new(15, 8)),
+        ],
+        "attaques absolues en rondes"
+    );
+    assert_eq!(
+        score.measures.iter().map(|m| m.len).collect::<Vec<_>>(),
+        vec![
+            Fraction::new(9, 8),
+            Fraction::new(9, 8),
+            Fraction::new(9, 8)
+        ],
+        "la première mesure ne doit pas être allongée de 3 noires"
+    );
+    let silences: Vec<_> = score.measures[0]
+        .segments
+        .iter()
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .filter(|rest| rest.chord_ref().is_none())
+        .map(|rest| (rest.duration.ticks(), rest.is_full_measure_rest()))
+        .collect();
+    assert_eq!(silences.len(), 3, "un silence par `R4.`");
+    assert!(
+        silences
+            .iter()
+            .all(|(ticks, full)| *ticks > Fraction::ZERO && !*full),
+        "chaque silence porte sa propre durée, pas un silence de mesure : {silences:?}"
+    );
+    assert_eq!(
+        silences
+            .iter()
+            .fold(Fraction::ZERO, |total, (ticks, _)| total + *ticks),
+        Fraction::new(9, 8),
+        "trois fois 3/8 de ronde couvrent la mesure de 9/8"
+    );
+}

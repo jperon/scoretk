@@ -1763,7 +1763,7 @@ fn multi_rest_length(staves: &[StaffBuild], start: Fraction) -> Option<Fraction>
                 }
                 if let EventKind::Chord(chord) = &event.kind {
                     match chord.content {
-                        ChordContent::MultiRest => local = Some(chord.actual),
+                        ChordContent::MultiRest { .. } => local = Some(chord.actual),
                         // Une portée joue à ce tick : les mesures ne peuvent
                         // pas être fusionnées pour les autres portées.
                         ChordContent::Notes(_) | ChordContent::Rest { .. } => return None,
@@ -1964,7 +1964,7 @@ fn place_chord(
     // mesure entière : ces silences ne sont pas dans le modèle d'origine.
     // Les relire créerait des `<rest measure="yes"/>` que la référence
     // n'a pas. On les ignore pour les voix autres que la première.
-    if matches!(event.content, ChordContent::MultiRest) && voice_index > 0 {
+    if matches!(event.content, ChordContent::MultiRest { .. }) && voice_index > 0 {
         return;
     }
     // `Timing` est un alias de `Score` (`ly/engraver-init.ly`) : toutes les
@@ -1973,7 +1973,7 @@ fn place_chord(
     // barre. Découper le silence à chaque frontière donne à l'écrivain des
     // durées explicites, au lieu d'un `<rest measure="yes"/>` tronqué à la
     // longueur de la mesure levée (NR §2.2.3, §2.3.3).
-    if matches!(event.content, ChordContent::MultiRest) {
+    if matches!(event.content, ChordContent::MultiRest { .. }) {
         let end = tick + event.actual;
         let fits = measure_at(slots, tick)
             .map(|index| end <= slots[index].start + slots[index].len)
@@ -2196,7 +2196,30 @@ fn place_chord(
             }),
         },
         ChordContent::Skip { .. } => return,
-        ChordContent::MultiRest => ChordRest {
+        // `R4.` (figure explicite plus courte que la mesure) est un silence
+        // daté chez LilyPond (`lily/parser.yy:3117`) : l'écrivain doit lui
+        // donner sa figure, sinon il émet trois `<rest measure="yes"/>` dans
+        // la même mesure et l'oracle décale toutes les attaques suivantes.
+        ChordContent::MultiRest { .. }
+            if event.multi_rest_explicit
+                && measure_at(slots, tick).is_some_and(|index| event.actual < slots[index].len) =>
+        {
+            ChordRest {
+                duration: event.written,
+                ticks: event.explicit_ticks,
+                tuplet: None,
+                lyrics: Vec::new(),
+                beam_mode: Default::default(),
+                beam_direction: None,
+                kind: ChordRestKind::Rest(Rest {
+                    full_measure: false,
+                    gap: false,
+                    visible: true,
+                    note_dots: Vec::new(),
+                }),
+            }
+        }
+        ChordContent::MultiRest { .. } => ChordRest {
             duration: Duration::measure(),
             ticks: None,
             tuplet: None,

@@ -5022,12 +5022,13 @@ impl<'a> Parser<'a> {
                 "r" | "R" | "s" => {
                     self.position += 1;
                     let (duration, multiplier) = self.parse_optional_duration_spec();
+                    let explicit = duration.is_some();
                     let (duration, multiplier) = self.resolve_chord_duration(duration, multiplier);
                     let posts = self.parse_posts();
                     let invisible = std::mem::take(&mut self.pending_invisible_rest);
                     return Music::Chord(Chord {
                         kind: match text.as_str() {
-                            "R" => ChordKind::MultiRest,
+                            "R" => ChordKind::MultiRest { explicit },
                             "s" => ChordKind::Skip,
                             _ => ChordKind::Rest,
                         },

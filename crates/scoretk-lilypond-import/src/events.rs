@@ -166,8 +166,9 @@ pub(crate) enum ChordContent {
         /// faux pour `\skip <durée numérique>` (Notation Reference §2.2.2).
         sets_default: bool,
     },
-    /// Silence de mesure entière ou multi-mesures.
-    MultiRest,
+    /// Silence de mesure entière ou multi-mesures ; `explicit` indique qu'une
+    /// figure a été écrite après `R` (`R4.`, `R1*3`…).
+    MultiRest { explicit: bool },
 }
 
 /// Note datée d'un accord.
@@ -235,6 +236,8 @@ pub(crate) struct ChordEvent {
     pub explicit_ticks: Option<Fraction>,
     /// Durée réelle en fractions de ronde (n-olet compris).
     pub actual: Fraction,
+    /// Vrai pour un `R` suivi d'une figure explicite (`R4.`, `R1*3`).
+    pub multi_rest_explicit: bool,
     /// N-olet le plus interne, index local dans [`InterpretedVoice::tuplets`].
     pub tuplet: Option<usize>,
     /// Articulations.
@@ -561,6 +564,7 @@ impl<'a> Interpreter<'a> {
                         written: Duration::quarter(),
                         explicit_ticks: None,
                         actual: Duration::quarter().ticks(),
+                        multi_rest_explicit: false,
                         tuplet: None,
                         articulations: Vec::new(),
                         ornaments: Vec::new(),
@@ -1588,7 +1592,10 @@ impl<'a> Interpreter<'a> {
             .iter()
             .any(|post| matches!(post, PostEvent::Tie));
         // Un silence de mesure entière couvre toute la mesure : le
-        // constructeur le reconnaîtra d'après le silence multi-mesures.
+        // constructeur le reconnaîtra d'après le silence multi-mesures. La
+        // figure explicite est conservée pour distinguer `R4.` (silence daté)
+        // de `R` nu (`lily/parser.yy:3117`).
+        let multi_rest_explicit = matches!(&chord.kind, ChordKind::MultiRest { explicit: true });
         let mut content = match &chord.kind {
             ChordKind::Notes(notes) => {
                 // La référence relative est celle de la première note de
@@ -1663,7 +1670,9 @@ impl<'a> Interpreter<'a> {
             ChordKind::SkipNumeric => ChordContent::Skip {
                 sets_default: false,
             },
-            ChordKind::MultiRest => ChordContent::MultiRest,
+            ChordKind::MultiRest { explicit } => ChordContent::MultiRest {
+                explicit: *explicit,
+            },
         };
         if let ChordContent::Notes(notes) = &mut content {
             for note in notes {
@@ -1761,6 +1770,7 @@ impl<'a> Interpreter<'a> {
             written,
             explicit_ticks,
             actual,
+            multi_rest_explicit,
             tuplet: self.tuplets.last().copied(),
             articulations,
             ornaments,
