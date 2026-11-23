@@ -7293,3 +7293,31 @@ ties of the same pitch in two voices (the queue was deliberately designed
 to avoid that, `builder.rs:3113-3117`). Given the user's target and the
 no-regression requirement, this is left as a documented reader limitation
 rather than an unmeasured change.
+
+## 30. Manifest fix measured: 1444/1447 (2026-11-23)
+
+`lots.sh:31` fixed (§29) and manifests regenerated. Same frozen binary
+(`ly95-final-bin`) and same oracle; corrected manifest
+`/tmp/ly95-lots-fixed/manifestes/mus.txt` (still 1 447 files, but three real
+paths with spaces replace the three truncated ones).
+
+| Tool | Files | Compiled | Exact | N1/N2/N2d | Mean `.ly` bytes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| scoretk | 1447 | 1446 | **1444 (99.8 %)** | 100.00 / 99.99 / 99.99 | 2 052 |
+| musicxml2ly | 1447 | 1446 | 1285 (88.8 %) | 99.69 / 95.44 / 94.86 | 3 839 |
+
+The three repaired rows are now exact: `Sonis (copie 1).ly` (258 notes),
+`Veni, Creator Spiritus_Courtial_v3_SATB.ly` (249), `entre_ le_ boeuf.ly`
+(95). No file regressed. Raw: `target/ly95-lotsfixed-run/`.
+
+Only three files remain, all requiring writer changes that could not be
+isolated safely: `Salazar` and `CanonDeLaPaix` (tie chains whose two heads
+are emitted in separate `\voiceN` streams after the writer redistributes the
+model voices) and `Sancta_Maria_KV_273` (the global `multi_measure_rest`
+marker is written into the fifth voice together with that voice's own rest
+grid; replacing the extra `R1*2` by two `s1` did not move the first note at
+all — 399.5 quarters — so the token is not the cause; the two extra bars
+come from the reader's `merge_multi_rests` over the writer's 69 `s1` + `R1*2`
++ 40 `s1` padding). Both need a structural change to the writer's voice /
+measure rendering with a full-lot re-measurement; no speculative change was
+committed.
