@@ -55,3 +55,20 @@ fn volta_selectionne_le_passage_dans_repeat_unfold() {
     let score = scoretk_lilypond_import::read_lilypond(source).expect("lecture");
     assert_eq!(notes(&score), vec![60, 64]);
 }
+
+#[test]
+fn alternative_imbriquee_garde_ses_fins() {
+    // `volta-bracket-nest` : les alternatives de la portée d'un
+    // `\repeat volta` empilent leurs crochets ; toutes leurs notes restent
+    // dans le modèle gravé (d, e, f, g, a, b).
+    let source = "\\version \"2.24.0\"\n\
+        \\fixed c' {\n\
+          \\repeat volta 6 { d1 \\alternative {\n\
+            \\volta 1 e1\n\
+            \\volta 2,3,4,5,6 { f1 \\alternative { \\volta 2,3,4,5 g1 \\volta 6 a1 } }\n\
+          } }\n\
+          b1\n\
+        }";
+    let score = scoretk_lilypond_import::read_lilypond(source).expect("lecture");
+    assert_eq!(notes(&score), vec![62, 64, 65, 67, 69, 71]);
+}

@@ -977,8 +977,16 @@ impl<'a> Interpreter<'a> {
                     self.walk(music);
                 }
             }
-            Context::Alternative(_) => {
-                self.warn("\\alternative sans \\repeat ignoré");
+            // Un `\\alternative` imbriqué dans une fin de reprise (alternatives
+            // de la portée d'un `\\repeat volta`) n'est pas réclamé par un
+            // `\\repeat` interne : LilyPond l'utilise pour empiler les
+            // crochets (`volta-bracket-nest`, Notation Reference §4.1
+            // « Nested repeats »). Le modèle gravé garde toutes ses fins ;
+            // les ignorer perdait leurs notes (`g1`, `a1`).
+            Context::Alternative(items) => {
+                for item in items {
+                    self.walk(item);
+                }
             }
         }
     }
