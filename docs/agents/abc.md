@@ -3444,3 +3444,64 @@ export change was committed.
 Counts remain: ABC export **236/261 exact** (mean `.abc` sizes unchanged),
 ABC import **4 579/4 756 exact** (plus 109 SANS_X and 36 oracle-failure files
 in the separate "no valid reference" bucket, outside both numerators).
+
+## 41. Graces, microtonal prefixes and repeat endings (2026-11-23)
+
+### 41.1 NOTES_MANQUANTES — n2_grace in the ABC oracle (committed, measured)
+
+`cmp.py` now mirrors the LilyPond oracle (`ly_notes.py:500-580`):
+`musicxml_graces()` reads each candidate `<grace/>` as `(pitch, logical main
+attack)`; `apparier_graces()` finds the same-pitch MIDI note in a one-quarter
+window before that attack, removes it from the reference and counts it apart.
+**Candidate onsets are never copied.** A wrong grace pitch cannot pair, and
+`cmp.py`'s selftest asserts that case stays unmatched. `n2`, `exact1` and all
+existing statuses are unchanged, so no file can lose its status. Full
+measurement `target/abc-mesure-gracen2/`: **4 578/4 756 exact**, gains 0,
+losses 0; 674 files have at least one paired grace (669 of them already OK),
+so the metric is exercised. 10 `NOTES_MANQUANTES` remain: the tiny offsets
+(35.002 vs 35.0) are abc2midi's playback placement, which ABC 2.1 §4.20
+(spec line 1070) explicitly leaves "to the software".
+
+### 41.2 DESACCORD_PARTIEL — per-file evidence (one reader fix, measured)
+
+For each of the 10 cases, first divergent note / source bar / reference
+behaviour / abc2xml.py 269 behaviour (run manually on `brut/<id>/air.abc`)
+/ disposition:
+
+| File (X:) | ref→ours | Bar | Standard | abc2midi | abc2xml.py | Disposition |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| `laDeploration…` 1 | 71→70 | 1 | §4.2, spec 853-855 (^ = one sharp) | B natural after `_B4` | n1 0.904 = ours | abc2midi quirk |
+| `laDeploration…` 2 | 71→70 | 1 | §4.4, 875-891 (`>`) | B natural | n1 0.963 = ours | abc2midi quirk |
+| `laDeploration…` 3 | 59→58 | 1 | §4.2, 853-855 | B natural after `_B3` | n1 0.895 ≈ ours 0.890 | abc2midi quirk |
+| `laDeploration…` 5 | 48→49 | 1 | §4.2, 853-855 (`^c2`) | C natural | n1 0.769 = ours | abc2midi quirk |
+| `laPlusDesPlus` 3 | 59→58 | 1 | §4.2, 853-855 (`_b2`) | B natural | first divergence also 58 (n1 0.956 vs 0.899 later) | abc2midi quirk |
+| `milleRegrets` 1 | 65→66 | 1 | §4.2, 853-855 | F natural | n1 0.863 = ours | abc2midi quirk |
+| `petiteCamusette` 1 | 67→68 | 1 | §4.3, 859-865 (`A/`) | G natural | n1 0.925 = ours | abc2midi quirk |
+| `petiteCamusette` 3 | 67→68 | 1 | §4.3, 859-865 | G natural | n1 0.880 = ours | abc2midi quirk |
+| `HeadlightJig` 1 | 66→67 | 4 | §4.2, 853-855; `abc2xml.py:368-369,1241-1253` | F sharp | n1 1.000 (F sharp) | **reader defect, fixed** |
+| `Canzonetta` 1 | 77→— | 1 | §4.1, 837-851 | F sharp | n1 0.664 (worse than ours 0.958) | source-specific |
+
+The eight "abc2midi quirk" rows are a documented bucket: abc2xml.py agrees
+with scoretk on the first divergent note, so no reader-only change is
+justified. `HeadlightJig` was the genuine defect: `^3^FGA` was read as F
+double sharp (G) because `read_note()` added the second `^` after the
+microtonal fraction; abc2xml.py's `decTupAcc` keeps one sharp. Fixed with a
+failing-first reduced test (`microtonal_prefix.rs`). Measurement
+`target/abc-mesure-micro/` versus `target/abc-mesure-gracen2/`:
+**4 578 → 4 579 exact**, gain 1 (`HeadlightJig`), **0 losses**;
+`DESACCORD_PARTIEL` 10 → 9.
+
+### 41.3 Volta traversal — documented, not a reader defect
+
+`flattener.test__abcRepeat3.abc` writes three endings (`:|1 … :|2 … :|3`)
+with **no `P:` field**. ABC 2.1 §4.9 (spec 1003-1017) defines only `[1`/`[2`
+for first/second repeats; §4.10 (spec 1024-1046) says more than two variant
+endings are used "in combination with `P:` part notation" (e.g. `P:A4.B4`).
+With no `P:`, the number of passes is undefined; abc2midi plays endings 1 and
+2 and skips 3, while our reader writes the third ending as notated. Both are
+consistent with a different interpretation of an undefined construct, so no
+reader change is made. The 6 `NOTES_SUPPLEMENTAIRES` cases are documented in
+this bucket.
+
+Counts after both causes: ABC import **4 579/4 756 exact**, plus the 109
+SANS_X and 36 oracle-failure files in the no-valid-reference bucket.
