@@ -241,6 +241,7 @@ One line per document; read the one matching the subject before coding.
 - `docs/agents/plan-fiabilite.md` — reliability plan for the ten directions:
   reference batches, oracles, phases: read before a measurement campaign.
 - `docs/agents/model-modularisation.md` — audit of pivot-model field usage by the ten directions and proposal for common core + optional layers: read before adding GABC, MEI, Capella, Guitar Pro or Humdrum.
+- `docs/agents/gabc.md` — GABC reference lot, licence record, oracle design and measured sanity baseline: read before running or extending `scripts/oracle/gabc/`.
 - docs/agents/format-mapping/ — format ↔ model tables per format and model
   gaps: read before extending a reader or a writer.
 - `docs/agents/format-mapping/gabc.md` — GABC ↔ pivot model table from
