@@ -3298,3 +3298,62 @@ are not part of this export work. The plan (`docs/agents/plan-fiabilite.md`)
 names music21, LilyPond and `abc2midi` as score→MIDI alternatives; none of
 them is available in this worktree for a same-oracle comparison, so the
 tables above compare scoretk against the MuseScore 4.7.4 oracle only.
+
+## MIDI export: enlarged `.mscz` lot and classification (2026-11-23)
+
+### Measurement and oracle state
+
+The small `ecriture_mscz_musique` lot is 8 files (3/8 exact) and the versioned
+corpus lot 17/21 (17 exact, 4 empty references). The 8-file lot is too small to
+rank causes, so the existing MuseScore 4.7.4 reference set at
+`/tmp/midi-mscz-refs/manifest.tsv` (174 `.mscz`, one MIDI per source, generated
+by `mscz-refs.sh` with `PARALLEL=2`) was measured with the same oracle:
+
+```
+python3 scripts/oracle/midi/mesure.py --out target/midi-mscz-big \
+  --scoretk target/midi-base --ecriture mscz174=/tmp/midi-mscz-refs/manifest.tsv
+```
+
+The reference *is* MuseScore 4.7.4's MIDI export, so this is the
+scoretk-versus-alternative comparison required by `plan-fiabilite.md` §0.
+`target/midi-mscz-big/resume.md`: **171 measured files** (3 unsupported,
+2 empty scores excluded), **143 exact (83.6 %)**, N1/N2 **99.99 %**, mean
+output 18 535 B, max 1.63 s.
+
+### First-divergence classification
+
+`export_groupes.py --jobs 2` on the same outputs and references:
+
+| First divergence | Files | Example |
+| --- | ---: | --- |
+| duration | 19 | `00- Veni veni Emmanuel - chant piano` (tick 43.5, 7 notes) |
+| extra note | 7 | `Adios Muchachos` (1), `Czardas Monti` (5, tick 8) |
+| onset | 1 | `Vivaldi 04-TecumPrincipium` (tick 137.125) |
+| octave | 1 | `Sancta Maria Mater Dei Mozart` (tick 20.25) |
+
+Nine of the 19 duration files are the same `Veni veni Emmanuel` score exported
+for different voices/excerpts (7 notes each at the same tick); eight more are
+the same `Once in royal David's city` case (10 notes at tick 240). They are one
+cause, not 17.
+
+### Largest cause: restrike/unison pairing, not a writer ordering bug
+
+Raw SMF of `Veni veni Emmanuel - chant piano` at tick 43.5 (track 12):
+MuseScore writes `on(80), vel-0 restrike, on(80), vel-0 restrike on channel 1`;
+scoretk writes `on(80), on(80), vel-0 restrike`. The pitched notes and onsets
+are identical (N1/N2 100 %); only the note-off pairing differs, because the
+oracle groups by channel and processes note-offs before note-ons at a tick.
+
+The C++ ordering was tested faithfully: `fixupMIDI`
+(`engraving/compat/midi/event.cpp:263-306`) marks the restrike and
+`exportmidi.cpp:304-323` writes it via the same per-tick multimap; moving
+`NoteOffRestrike` from priority 3 (after attacks) to priority 1 (before them)
+in `writer.rs::priority` produced the exact byte order above. Measured on the
+**same enlarged lot**: **143 → 53 exact, 90 losses** (`target/midi-restrike-run/`).
+The change was reverted before any commit. The current priority-3 order is
+therefore the one that matches MuseScore's overall output; the residual
+duration differences are an oracle pairing convention for simultaneous
+restrikes, not a faithful-port defect. No writer cause was committed in this
+pass: the one experiment that could have fixed the largest group was measured
+and rejected with evidence, and the remaining groups are source-specific
+(harmony durations in `Czardas`, one octave and one onset) documented above.
