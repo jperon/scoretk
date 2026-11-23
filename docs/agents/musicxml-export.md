@@ -1569,3 +1569,22 @@ marqueur cercle, `first-fret`) et `fret_diagram_4x.rs` (lecture). Limite
 documentée : le lecteur 3.x/2.x ne lit pas encore `<FretDiagram>` (aucun
 fichier du lot en 3.x n'en porte) ; les marqueurs autres que le cercle ne sont
 pas conservés.
+
+## 49. Compléter les marqueurs de multi-repos partiels des fichiers 3.x (2026-11-23)
+
+Le Benedictus de Haydn (3.02) ne porte qu'un `<multiMeasureRest>` (le dernier
+groupe) alors que la référence en écrit trois : il restait 72 lignes
+`<measure-style>`. La règle est la même que §40, mais un fichier qui porte déjà
+des marqueurs était exclu de la déduction (`testTboxWords1` prouve qu'une
+complétion naïve sur-groupe quand des cadres coupent la disposition).
+
+La déduction est rétablie **pour les fichiers 3.x** quand des marqueurs
+existent, à condition qu'aucune mesure du groupe déduit ne soit déjà couverte
+par un marqueur : les groupes partiels sont complétés, un groupe déjà écrit
+n'est pas dupliqué. `testTboxWords1` (3.01) garde son groupe marqué, dont la
+déduction recouvre une mesure → écartée. Les fichiers 4.x et 2.x restent sur
+les seuls marqueurs.
+
+Mesure : Benedictus 72 → **0** (core-identique), 168 → **169/173**
+core-exacts, 8 lignes canoniques, 0 perte. Test réduit :
+`un_fichier_3x_complete_les_groupes_non_marques`.

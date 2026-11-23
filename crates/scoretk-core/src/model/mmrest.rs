@@ -116,16 +116,17 @@ pub fn derived_mmrest_runs(score: &Score) -> Vec<Option<u16>> {
         return runs;
     }
     // Un `.mscx` qui porte des marqueurs `<multiMeasureRest>` a déjà enregistré
-    // la disposition des multi-repos. La compléter depuis les mesures vides
-    // sur-groupe : les marqueurs d'un fichier 3.x peuvent être partiels, et la
-    // disposition dépend aussi des cadres et des systèmes (`testTboxWords1`
-    // attend un groupe de 2 là où la règle de vacuité en trouve 3). Les
-    // marqueurs lus restent donc la seule source quand ils existent.
-    if score
+    // une partie de la disposition. En 4.x elle est complète : la compléter
+    // depuis les mesures vides sur-groupe (cadres et systèmes, cf.
+    // `testTboxWords1`). Les marqueurs d'un fichier 3.x peuvent être partiels
+    // (une seule mesure marquée dans le Benedictus de Haydn, trois groupes dans
+    // la référence) : on complète alors uniquement les groupes dont aucune
+    // mesure n'est déjà couverte par un marqueur.
+    let has_explicit = score
         .measures
         .iter()
-        .any(|measure| measure.multi_measure_rest.is_some() || !measure.mmrests.is_empty())
-    {
+        .any(|measure| measure.multi_measure_rest.is_some() || !measure.mmrests.is_empty());
+    if has_explicit && !score.metadata.msc_version.starts_with("3.") {
         return runs;
     }
     let minimum = score.style.min_empty_measures.max(1);
@@ -148,6 +149,21 @@ pub fn derived_mmrest_runs(score: &Score) -> Vec<Option<u16>> {
             runs[first] = Some(u16::try_from(count).unwrap_or(u16::MAX));
         }
         index = last + 1;
+    }
+    if has_explicit {
+        let length = score.measures.len();
+        for (index, run) in runs.iter_mut().enumerate() {
+            let Some(count) = *run else {
+                continue;
+            };
+            let end = (index + usize::from(count)).min(length);
+            let covered = score.measures[index..end]
+                .iter()
+                .any(|measure| measure.multi_measure_rest.is_some() || !measure.mmrests.is_empty());
+            if covered {
+                *run = None;
+            }
+        }
     }
     runs
 }
@@ -464,6 +480,22 @@ mod tests {
             derived_mmrest_runs(&score),
             vec![None, None, Some(3), None, None, None]
         );
+    }
+
+    #[test]
+    fn un_fichier_3x_complete_les_groupes_non_marques() {
+        // Benedictus : un seul marqueur pour trois groupes. En 3.x, les groupes
+        // non couverts sont déduits ; en 4.x la disposition est complète.
+        let mut score = partition(&[(true, true)], 6, &[0, 1, 2, 4, 5], false);
+        score.metadata.msc_version = "3.02".to_owned();
+        score.measures[4].mmrests.set(StaffId::from_index(0), 2);
+        assert_eq!(
+            derived_mmrest_runs(&score),
+            vec![Some(3), None, None, None, None, None]
+        );
+        // Le même fichier en 4.x ne complète rien.
+        score.metadata.msc_version = "4.60".to_owned();
+        assert_eq!(derived_mmrest_runs(&score), vec![None; 6]);
     }
 
     #[test]
