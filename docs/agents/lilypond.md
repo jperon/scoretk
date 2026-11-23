@@ -6528,3 +6528,33 @@ merge-differently-headed, single-head}`, `completion-heads-polyphony`,
 `flag-stem-begin-position`, `note-head-chord`, `text-spanner-override-order`.
 L'ancien chiffre 1591 provenait de la règle incorrecte et n'est pas
 comparable ; le présent +11 est le gain réel et vérifié sans perte.
+
+### Vérification des gains : mesure contrôlée
+
+Les 11 fichiers annoncés comme gains de la règle de grâce ont été revérifiés
+un par un : **tous ont `graces=0` et `paliers=[]`**, donc la règle ne peut pas
+les avoir rendus exacts. Une mesure contrôlée avec **le même binaire** et
+**le même arbre de références**, en remplaçant seulement `ly_notes.py` par la
+version parente (`/tmp/oracle-old`, `/tmp/ly-controlled`), donne :
+
+- ancien oracle : 1588 exacts ;
+- nouvel oracle : 1588 exacts ;
+- **gain réel de la règle : 0 fichier, 0 perte**.
+
+Les +11 annoncés précédemment venaient d'un binaire lecteur différent
+(validations de master entre les deux mesures) et non de l'oracle. Le chiffre
+vérifié reste **1588/1724 (92,1 %)**. La règle est conservée parce qu'elle est
+correcte et que le selftest prouve qu'elle n'efface pas les rythmes, mais
+elle n'apporte aucun gain mesurable sur ce lot.
+
+`GRID/4` (une double-croche) a été remplacé par une valeur **mesurée dans le
+MIDI de référence** : la durée nominale de la note amputée est le mode des
+durées courtes de même hauteur dans le MIDI, et le temps volé est
+`nominal − durée_observée_de_la_coupe`. Le décalage inséré est alors
+`durée_grâce − temps_volé` (≈ 0,05208 noire sur `flags-default`).
+
+**Cause_reader non retenue** : `skiptypesetting-tuplet.ly` (r=2, t=2 mais
+octave décalée) montre que le lecteur avance la référence `\relative` sur les
+notes supprimées par `skipTypesetting` (d=50/48 au lieu de 62/60). Corriger
+demande de conserver les notes dans l'AST pour le calcul relatif tout en les
+excluant du MIDI : changement structurel, non tenté ici.

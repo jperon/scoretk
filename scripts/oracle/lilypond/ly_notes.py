@@ -497,15 +497,25 @@ def decalage_graces_reference(
         # avec une note principale qu'elle ampute (cas `flags-*` : les deux
         # note-on au tick 336). Une grâce jouée seule avant sa note ne
         # décale pas le temps principal.
-        partage = any(
-            j != i and other[1] == note[1] and len(other) >= 3
+        coupes = [
+            other for j, other in enumerate(reference)
+            if j != i and other[1] == note[1] and len(other) >= 3
             and other[2] < grid / 4
-            for j, other in enumerate(reference)
-        )
-        excedent = (
-            max(0.0, note[2] - GRID / 4)
-            if partage and len(note) >= 3 else 0.0
-        )
+        ]
+        if not coupes:
+            continue
+        coupe = min(coupes, key=lambda n: n[2])
+        # Durée nominale de la note amputée : mode des durées courtes de
+        # même hauteur dans le MIDI, c'est-à-dire celle qu'aurait eue la
+        # note sans la grâce (lily/midi-walker.cc:92-95 raccourcit la note
+        # au profit de la grâce).
+        courtes = [
+            n[2] for n in reference
+            if n[0] == coupe[0] and grid / 4 <= n[2] <= grid / 2
+        ]
+        nominal = Counter(round(d, 6) for d in courtes).most_common(1)[0][0] if courtes else grid / 4
+        vole = max(0.0, nominal - coupe[2])
+        excedent = max(0.0, note[2] - vole)
         if excedent:
             intervalles.append((note[1], excedent))
     intervalles.sort()
