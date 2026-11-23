@@ -89,7 +89,12 @@ pub(crate) fn note_length(text: &str) -> Option<Fraction> {
         chiffres.parse().ok()?
     };
     if num == 0 {
-        return None;
+        // ABC 2.1 §4.3 ne définit pas de durée nulle ; `abc2xml.py::abcdur`
+        // (ligne 502) renvoie une chaîne vide pour `dur == 0`, ce qui écrit
+        // la note sans multiplicateur, donc avec l'unité `L:` par défaut
+        // (`note.test__abcZeroLength.abc`).Suivre l'alternative plutôt que
+        // rejeter l'air entier.
+        return Some(Fraction::ONE);
     }
     // Action de grammaire (ligne 473) : `(den << slashs) >> 1`. Un décalage
     // qui déborde i64 est une durée invalide, pas un panic.

@@ -3750,3 +3750,26 @@ ligne avant de la classifier. Test réduit
 `crates/scoretk-abc-import/tests/inline_field_sans_k.rs` (avec et sans `K:`).
 Mesure contrôlée, même binaire, seul le lecteur change : 4 716 →
 **4 721 exact / 4 756**, 5 gains, 0 perte ; abc2xml.py reste à 4 655.
+
+## 50. Lecture : durée explicite `0` (2026-11-23)
+
+`note.test__abcZeroLength.abc` (`C0 D1 [EG]0 [FA]1`) était le dernier air
+`ECHEC_TK` : le lecteur rejetait la durée `0`. ABC 2.1 §4.3 ne définit pas de
+durée nulle, mais l'alternative `abc2xml.py::abcdur` (ligne 502) renvoie une
+chaîne vide pour `dur == 0`, c'est-à-dire une note sans multiplicateur, donc
+d'une unité `L:` — c'est le comportement adopté (`rhythm.rs::note_length`)
+plutôt que de rejeter tout l'air. Test réduit `duree_zero.rs`.
+
+Mesure contrôlée, même oracle, même binaire, seul le lecteur change :
+4 720 → **4 721 exact / 4 756**, 1 gain, 0 perte.
+
+Les Causes d'écriture encore ouvertes ont été réduites sans correctif
+probant : `Anerio`, `Perosi`, `Byrd_Dies`, `CanonDeLaPaix` et `Vivaldi Sicut
+erat` viennent de silences/chevauchements que le modèle pivot porte mais que
+le texte ABC ne peut pas représenter sans changer les attaques (par exemple
+une note de 1/16 chevauchant une noire entière : `xml2abc.py` écrit un accord
+`[AF]8`, notre writer `A8F/2`, et les deux perdent l'attaque à 67,75). Tenter
+d'écrire le `ticks` du silence de mesure (`Z2`) a au contraire fait passer
+`Anerio` de 431 à 309 notes justes : la mesure réduite a été annulée. Ces
+fichiers restent donc comptés et documentés ici plutôt que « corrigés » au
+prix d'une régression.
