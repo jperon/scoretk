@@ -240,7 +240,80 @@ def musicxml(path):
     return pitches, attacks
 
 
-def compare(ref_midi, candidate_xml):
+def midi_events(ref_midi):
+    """Notes de la référence MIDI sous forme ``(hauteur, attaque quantifiée)``."""
+    tpq = tpq_global(ref_midi)
+    return [(note, round(tick / tpq * QUANT)) for tick, note in midi_notes(ref_midi)]
+
+
+def musicxml_graces(candidate_xml):
+    """Graces du candidat : ``(hauteur, attaque de la note principale)``.
+
+    MusicXML place `<grace/>` à l'attaque courante, celle de la note
+    principale qui suit ; le SMF d'abc2midi les joue un peu avant. On ne lit
+    que la hauteur et l'attaque logique : les temps de lecture du MIDI ne sont
+    jamais copiés du candidat.
+    """
+    root = ET.parse(candidate_xml).getroot()
+    graces = []
+    for part in root.iter("part"):
+        divisions = 1
+        transpose = 0
+        time = 0.0
+        for measure in part.findall("measure"):
+            for element in measure:
+                tag = element.tag
+                if tag == "attributes":
+                    value = element.findtext("divisions")
+                    if value:
+                        divisions = int(float(value))
+                    node = element.find("transpose")
+                    if node is not None:
+                        transpose = int(float(node.findtext("chromatic", "0"))) + 12 * int(
+                            float(node.findtext("octave-change", "0"))
+                        )
+                elif tag in ("backup", "forward"):
+                    delta = int(float(element.findtext("duration", "0"))) / divisions
+                    time += -delta if tag == "backup" else delta
+                elif tag == "note" and element.find("grace") is not None:
+                    node = element.find("pitch")
+                    if node is not None:
+                        step, octave = node.findtext("step"), node.findtext("octave")
+                        if step in STEP and octave is not None:
+                            try:
+                                pitch = (12 * (int(octave) + 1) + STEP[step]
+                                         + round(float(node.findtext("alter", "0")))
+                                         + transpose)
+                                graces.append((pitch, round(time * QUANT)))
+                            except ValueError:
+                                pass
+                elif tag == "note" and element.find("chord") is None:
+                    time += int(float(element.findtext("duration", "0"))) / divisions
+    return graces
+
+
+def apparier_graces(reference, graces, window=float(QUANT)):
+    """Retire du MIDI les graces appariées par hauteur dans une fenêtre.
+
+    Même règle que l'oracle LilyPond (`ly_notes.py::apparier_graces`) : une
+    grace `(hauteur, attaque logique)` est appariée à la note MIDI de même
+    hauteur la plus proche par-dessous dans `[attaque-window, attaque+0.5]`,
+    sans réutilisation. Renvoie `(référence sans graces, graces MIDI,
+    graces XML, graces appariées)`.
+    """
+    restants = list(reference)
+    utilises = set()
+    for pitch, attack in graces:
+        candidates = [i for i, note in enumerate(restants)
+                      if i not in utilises and note[0] == pitch
+                      and attack - window <= note[1] <= attack + 0.5]
+        if candidates:
+            utilises.add(max(candidates, key=lambda i: (restants[i][1], -i)))
+    return ([note for i, note in enumerate(restants) if i not in utilises],
+            len(utilises), len(graces), len(utilises))
+
+
+def compare(ref_midi, candidate_xml, graces=None):
     """Mesure N1/N2 d'un candidat MusicXML contre un MIDI de référence."""
     ref_p, ref_a, tracks = midi(ref_midi)
     cand_p, cand_a = musicxml(candidate_xml)
@@ -260,7 +333,7 @@ def compare(ref_midi, candidate_xml):
             if other:
                 offsets[shift] += min(count, other)
     shift, shift_notes = offsets.most_common(1)[0] if offsets else (0, 0)
-    return {
+    resultat = {
         "ref": n_ref,
         "cand": n_cand,
         "com1": common1,
@@ -274,3 +347,49 @@ def compare(ref_midi, candidate_xml):
         "exact1": n_ref > 0 and n_ref == n_cand and common1 == n_ref,
         "exact2": n_ref > 0 and n_ref == n_cand and common2 == n_ref,
     }
+    if graces is not None:
+        ref_main, n_gr_ref, n_gr_cand, n_gr_match = apparier_graces(
+            midi_events(ref_midi), graces)
+        ref_p_main = collections.Counter(note[0] for note in ref_main)
+        ref_a_main = collections.Counter((note[0], note[1]) for note in ref_main)
+        cand_notes = [(note[1], round(note[0] * QUANT)) for note in musicxml_notes(candidate_xml)]
+        cand_p_main = collections.Counter(note[0] for note in cand_notes)
+        cand_a_main = collections.Counter(note for note in cand_notes)
+        n2_grace = sum((ref_a_main & cand_a_main).values()) + n_gr_match
+        n1_grace = sum((ref_p_main & cand_p_main).values()) + n_gr_match
+        resultat.update({
+            "n2_grace": n2_grace,
+            "pct_n2_grace": round(100.0 * n2_grace / n_ref, 2) if n_ref else 0.0,
+            "graces_ref": n_gr_ref,
+            "graces_cand": n_gr_cand,
+            "graces_match": n_gr_match,
+        })
+        # Une grâce mal hauteur ne doit jamais être inventée : elle ne peut
+        # s'apparier à aucune note MIDI de même hauteur dans la fenêtre.
+        exact = n_ref > 0 and n_ref == n_cand and (
+            common2 == n_ref or n2_grace == n_ref) and n1_grace == n_ref
+        resultat["exact"] = bool(exact)
+        # Règle ABC : N1 exact suffit (cause "OK"). On ajoute l'alternative
+        # n2_grace, sans durcir la règle existante : aucun fichier ne perd
+        # son statut exact.
+        resultat["exact_grace"] = bool(
+            n_ref > 0 and n_ref == n_cand and n1_grace == n_ref and n2_grace == n_ref)
+    return resultat
+
+
+def selftest():
+    """Règle n2_grace : une grace juste est retrouvée, une grace fausse échoue."""
+    # QUANT = 24 unités par noire : la grâce MIDI précède l'attaque logique.
+    ref = [(62, 21), (60, 24), (62, 48), (64, 54)]
+    graces_ok = [(62, 24)]
+    graces_wrong = [(61, 24)]
+    ref_main, matched, cand, pairs = apparier_graces(ref, graces_ok)
+    assert (matched, cand, pairs) == (1, 1, 1), (matched, cand, pairs)
+    assert ref_main == [(60, 24), (62, 48), (64, 54)], ref_main
+    _, matched2, _, pairs2 = apparier_graces(ref, graces_wrong)
+    assert (matched2, pairs2) == (0, 0), (matched2, pairs2)
+    print("selftest n2_grace : OK")
+
+
+if __name__ == "__main__":
+    selftest()

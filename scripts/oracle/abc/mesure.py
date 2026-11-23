@@ -159,7 +159,7 @@ def cause(status, m):
     """Regroupe les écarts en causes lisibles pour le relevé."""
     if status != "ok":
         return status
-    if m["exact1"]:
+    if m["exact1"] or m.get("exact_grace", False):
         return "OK"
     if m["ref"] == 0:
         return "ORACLE_VIDE"
@@ -210,9 +210,9 @@ def principal():
         header, tunes = decoupe(source)
         if not tunes:
             rows.append((lot, os.path.basename(source), "sans X:", "-", "alternatif",
-                         0, 0, 0, 0, 0.0, 0, 0.0, "SANS_X", "SANS_X", source))
+                         0, 0, 0, 0, 0.0, 0, 0.0, 0.0, 0, "SANS_X", "SANS_X", source))
             rows.append((lot, os.path.basename(source), "sans X:", "-", "scoretk",
-                         0, 0, 0, 0, 0.0, 0, 0.0, "SANS_X", "SANS_X", source))
+                         0, 0, 0, 0, 0.0, 0, 0.0, 0.0, 0, "SANS_X", "SANS_X", source))
             continue
         for number, body in tunes:
             if args.limite and len(rows) >= args.limite * 2:
@@ -251,7 +251,7 @@ def principal():
             if common.est_non_pris_en_charge(r_tk):
                 for name in ("scoretk", "alternatif"):
                     rows.append((lot, os.path.basename(source), number, tag, name,
-                                 0, 0, 0, 0, 0.0, 0, 0.0, common.STATUT,
+                                 0, 0, 0, 0, 0.0, 0, 0.0, 0.0, 0, common.STATUT,
                                  common.STATUT, source))
                 exclus.append(f"{os.path.basename(source)} X:{number}")
                 continue
@@ -285,26 +285,33 @@ def principal():
                     if status == "ok":
                         status = "ECHEC_" + ("ALT" if name == "alternatif" else "TK")
                     rows.append((lot, os.path.basename(source), number, tag, name,
-                                 ref_count, 0, 0, 0, 0.0, 0, 0.0, status, status, source))
+                                 ref_count, 0, 0, 0, 0.0, 0, 0.0, 0.0, 0, status, status, source))
                     if status.startswith("ECHEC") or status == "ORACLE_ECHEC":
                         saw_error.append(f"{tag} {name} {status}")
                     continue
                 try:
-                    m = cmp.compare(reference, candidate)
+                    # Les graces du candidat servent uniquement à retrouver
+                    # dans la référence MIDI les notes qu'abc2midi joue avant
+                    # l'attaque logique (cmp.apparier_graces) : on ne copie
+                    # jamais les temps du candidat. n2 reste inchangé ; une
+                    # grace de mauvaise hauteur ne peut pas s'apparier.
+                    graces = cmp.musicxml_graces(candidate)
+                    m = cmp.compare(reference, candidate, graces=graces)
                 except Exception as error:  # sortie mal formée
                     rows.append((lot, os.path.basename(source), number, tag, name,
-                                 ref_count, 0, 0, 0, 0.0, 0, 0.0, "PARSE_ECHEC",
+                                 ref_count, 0, 0, 0, 0.0, 0, 0.0, 0.0, 0, "PARSE_ECHEC",
                                  "PARSE_ECHEC", source))
                     saw_error.append(f"{tag} {name} PARSE_ECHEC {error}")
                     continue
                 rows.append((lot, os.path.basename(source), number, tag, name,
                              m["ref"], m["cand"], m["com1"], m["oct"], m["n1"],
-                             m["com2"], m["n2"], "ok", cause("ok", m), source))
+                             m["com2"], m["n2"], m.get("pct_n2_grace", 0.0),
+                             m.get("graces_match", 0), "ok", cause("ok", m), source))
 
     tsv = os.path.join(args.out, "mesures.tsv")
     with open(tsv, "w", encoding="utf-8") as handle:
         handle.write("lot\tfichier\tx\tid\tcandidat\tref\tcand\tcom1\toct\tn1\t"
-                     "com2\tn2\tstatut\tcause\tchemin\n")
+                     "com2\tn2\tpct_n2_grace\tgraces_match\tstatut\tcause\tchemin\n")
         for row in rows:
             handle.write("\t".join(str(v) for v in row) + "\n")
     with open(os.path.join(args.out, "erreurs.log"), "w", encoding="utf-8") as handle:
