@@ -3505,3 +3505,46 @@ this bucket.
 
 Counts after both causes: ABC import **4 579/4 756 exact**, plus the 109
 SANS_X and 36 oracle-failure files in the no-valid-reference bucket.
+
+## 42. Count reconciliation and the mid-bar key/clef state (2026-11-23)
+
+### 42.1 Reconciliation — no file was lost
+
+The 4 578 figure reported for `target/abc-mesure-gracen2/` was a **scripting
+error**, not a regression: a comparison dict keyed on `(fichier, x)` collapsed
+two rows (4 755 keys for 4 756 rows). Keying on row position (the list file is
+unchanged) gives the true counts:
+
+| Measurement | Rows | OK |
+| --- | ---: | ---: |
+| `abc-mesure-inline8` | 4 756 | 4 576 |
+| `abc-mesure-grace` (grace accidentals) | 4 756 | **4 579** (+3) |
+| `abc-mesure-gracen2` (n2_grace oracle) | 4 756 | 4 579 (0) |
+| `abc-mesure-micro` (microtonal prefix) | 4 756 | **4 580** (+1) |
+
+A positional diff of `gracen2` → `micro` shows exactly one gain
+(`HeadlightJig.abc` X:1, `DESACCORD_PARTIEL` → `OK`) and **0 losses**, with
+matching ids, `x` and file names on every row. The baseline before the current
+export work is therefore 4 580, not 4 578.
+
+### 42.2 Export: measure-start context applied before inline fields
+
+`draw_context_changes()` ran **before** the measure-start key update in
+`render_voice`, so a clef change inserted mid-bar reused the previous bar's
+key: `copypaste_parts.mscx` bar 3 wrote `[K:E clef=treble]` where the model has
+C major, turning the following F natural into F sharp. `xml2abc.py` writes
+`[K:C][K:treble]` for the same MusicXML. ABC 2.1 §4.6 (spec 921-933) makes
+`clef=` and the tonic independent `K:` parameters. The measure key/time/clef
+is now applied first, with the start-of-bar key and clef captured for the
+`[K:…]` header; failing-first test `abc_export_clef_key_state.rs` added and
+the `copypaste_parts` snapshot updated.
+
+### 42.3 Reader refinement required by the export oracle
+
+The first run of this change reported a net -1: `copypaste_parts` gained but
+two Haydn files lost. The ABC was byte-identical for those two files — the
+loss came from the earlier grace-accidental fix, which discarded **explicit
+naturals inside grace groups** (`=e{g/2}fe/2` in K:Eb). Refined rule: `#`/`b`
+in a grace stays local (book6, abc2midi), while `=` clears the current
+alteration for the rest of the bar (ABC 2.1 §4.2, spec 853-855), with a
+failing-first test. Both Haydn files are back to 100 % N2 with the refinement.
