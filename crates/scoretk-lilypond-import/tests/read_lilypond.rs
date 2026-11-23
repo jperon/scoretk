@@ -8273,4 +8273,28 @@ fn mark_default_ne_mange_pas_la_duree_suivante() {
         vec![72, 72],
         "le 4 après le mark répète l'accord"
     );
+fn skip_of_length_avance_le_temps_sans_jouer() {
+    // `scm/music-functions.scm:2144-2188` : skip-of-length et
+    // mmrest-of-length créent un silence de la durée de leur argument.
+    for src in [
+        "\\version \"2.24.0\"\n{ \\skip-of-length { c'4 d'4 } e'4 }\n",
+        "\\version \"2.24.0\"\n{ \\mmrest-of-length { c'4 d'4 } e'4 }\n",
+    ] {
+        let score = read_lilypond(src).expect("lecture");
+        assert_eq!(
+            score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+            vec![64],
+            "une seule note jouée / {}",
+            src
+        );
+        let tick = score
+            .measures
+            .iter()
+            .flat_map(|m| m.segments.iter())
+            .filter(|s| s.chord_rest(Track::from_raw(0)).is_some())
+            .map(|s| s.tick)
+            .next()
+            .expect("note");
+        assert_eq!(tick, Fraction::new(1, 2), "attaque (2 noires) / {}", src);
+    }
 }

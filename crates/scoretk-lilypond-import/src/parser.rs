@@ -3677,6 +3677,84 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
+            // `scm/music-functions.scm:2144-2188` : skip-of-length et
+            // mmrest-of-length produisent un silence de la durée exacte de
+            // leur argument musical, sans jouer ses notes.
+            // `ly/music-functions-init.ly` : applyMusic applique une
+            // procédure Scheme à la musique qui suit. Les deux procédures du
+            // corpus sont skip-of-length et mmrest-of-length
+            // (scm/music-functions.scm:2144-2188).
+            "applyMusic" => {
+                let proc = self
+                    .peek()
+                    .filter(|token| token.is_scheme())
+                    .map(|token| token.text.clone());
+                if proc.is_some() {
+                    self.position += 1;
+                }
+                let argument = self.parse_music();
+                if proc.as_deref().is_some_and(|text| {
+                    text.contains("skip-of-length") || text.contains("mmrest-of-length")
+                }) {
+                    let duree = music_duration(&argument, self.default_duration);
+                    Music::Chord(Chord {
+                        kind: ChordKind::SkipNumeric,
+                        duration: Some(Duration::whole()),
+                        multiplier: if duree == Fraction::ONE {
+                            None
+                        } else {
+                            Some(duree)
+                        },
+                        from_scale: false,
+                        bracketed: false,
+                        posts: Vec::new(),
+                        invisible: true,
+                    })
+                } else {
+                    argument
+                }
+            }
+            // `ly/music-functions-init.ly:1241-1245` : musicMap applique
+            // une procédure à la musique. Le cas du corpus est
+            // `#skip->rest` (skip-of-length.ly) : transformer les silences
+            // en silences visibles, sans changer les attaques.
+            "musicMap" => {
+                let proc = self
+                    .peek()
+                    .filter(|token| token.is_scheme())
+                    .map(|token| token.text.clone());
+                if proc.is_some() {
+                    self.position += 1;
+                }
+                let mut music = self.parse_music();
+                if proc
+                    .as_deref()
+                    .is_some_and(|text| text.contains("skip->rest"))
+                {
+                    skip_to_rest(&mut music);
+                }
+                music
+            }
+            "skip-of-length" | "mmrest-of-length" => {
+                let argument = self.parse_music();
+                let duree = music_duration(&argument, self.default_duration);
+                Music::Chord(Chord {
+                    // Les deux produisent un silence qui avance le temps ;
+                    // `SkipNumeric` garantit l'avance exacte de la durée
+                    // (une `MultiRest` est arrondie à la mesure entière).
+                    kind: ChordKind::SkipNumeric,
+                    duration: Some(Duration::whole()),
+                    multiplier: if duree == Fraction::ONE {
+                        None
+                    } else {
+                        Some(duree)
+                    },
+                    from_scale: false,
+                    bracketed: false,
+                    posts: Vec::new(),
+                    invisible: true,
+                })
+            }
             "skip" => {
                 // Notation Reference §2.2.2 : `s4` fixe la durée des notes
                 // suivantes, `\skip 4` non. Le parseur ne doit donc pas
@@ -6864,6 +6942,33 @@ fn scale_scheme_fraction(datum: &str) -> Option<Fraction> {
         numerator.trim().parse().ok()?,
         denominator.trim().parse().ok()?,
     )
+}
+
+/// `musicMap #skip->rest` : transformer les silences invisibles en silences
+/// visibles, récursivement (ly/music-functions-init.ly:1241-1245).
+fn skip_to_rest(music: &mut Music) {
+    match music {
+        Music::Seq(items) | Music::Sim(items) => {
+            for item in items {
+                skip_to_rest(item);
+            }
+        }
+        Music::Chord(chord) if matches!(chord.kind, ChordKind::Skip | ChordKind::SkipNumeric) => {
+            chord.kind = ChordKind::Rest;
+            chord.invisible = false;
+        }
+        Music::Context(Context::Tuplet { music, .. })
+        | Music::Context(Context::Grace { music, .. })
+        | Music::Context(Context::Fixed { music, .. })
+        | Music::Context(Context::Relative { music, .. })
+        | Music::Context(Context::NonRelative { music })
+        | Music::Context(Context::Transpose { music, .. })
+        | Music::Context(Context::Silent { music })
+        | Music::Context(Context::Cue { music, .. })
+        | Music::Context(Context::Invisible { music }) => skip_to_rest(music),
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => skip_to_rest(music),
+        _ => {}
+    }
 }
 
 /// Applique `\featherDurations` (ly/music-functions-init.ly:655-670) :
