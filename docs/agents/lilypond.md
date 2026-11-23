@@ -6558,3 +6558,12 @@ octave décalée) montre que le lecteur avance la référence `\relative` sur le
 notes supprimées par `skipTypesetting` (d=50/48 au lieu de 62/60). Corriger
 demande de conserver les notes dans l'AST pour le calcul relatif tout en les
 excluant du MIDI : changement structurel, non tenté ici.
+
+**Cause lecteur tentée puis retirée** : `monochords.ly` (r=14, t=2) perdait
+les durées nues après `\breve` : la commande était traitée comme inconnue et
+avalait les durées suivantes. Un traitement comme durée reprise a été tenté
+(`lily/parser.yy`, `expand-repeat-notes!` scm/music-functions.scm l. 972-1015)
+mais restait incomplet (3 accords au lieu de 4 sur le réduit) et n'apportait
+**aucun gain** sur `ra` ; le commit a été annulé (`git reset --hard HEAD~1`)
+plutôt que de conserver un test échouant. Le fichier reste dans le
+dénominateur, sans exclusion silencieuse.
