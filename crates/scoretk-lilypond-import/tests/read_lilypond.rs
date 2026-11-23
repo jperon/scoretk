@@ -8171,3 +8171,38 @@ fn portee_new_dans_une_sequence_commence_au_temps_courant() {
         "le Staff imbriqué commence au temps 4, avec le premier élément du << >>"
     );
 }
+
+
+#[test]
+fn repeat_etc_recoit_son_compte_a_l_appel() {
+    // `repeat-etc.ly` : `\repeat percent \etc` est une fonction musicale
+    // partielle (`lily/parser.yy`, `REPEAT simple_string partial_function`) ;
+    // le `4` de `\testPercent 4` est le compte manquant, puis
+    // `\testQuad c'4` fournit le corps. Le `4` ne doit pas être lu comme une
+    // durée (il décalait les notes de deux temps).
+    let source = "\\version \"2.24.0\"\n\
+         testPercent = \\repeat percent \\etc\n\
+         testQuad = \\repeat unfold 4 \\etc\n\
+         { \\testPercent 4 \\testQuad c'4 \\bar \"|\" }\n";
+    let score = read_lilypond(source).expect("lecture");
+    let mut onsets: Vec<i64> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter(|segment| {
+            segment.iter_elements().any(|(_, item)| {
+                matches!(item, SegmentItem::ChordRest(chord_rest)
+                    if matches!(chord_rest.kind, ChordRestKind::Chord(_)))
+            })
+        })
+        .map(|segment| segment.tick.ticks(1920))
+        .collect();
+    onsets.sort_unstable();
+    onsets.dedup();
+    assert_eq!(onsets, vec![0, 480, 960, 1440], "quatre noires à 0..3");
+    assert_eq!(
+        score.notes.iter().filter(|note| note.tie_back.is_none()).count(),
+        4,
+        "les trois mesures en pourcent ne rejouent pas le corps"
+    );
+}

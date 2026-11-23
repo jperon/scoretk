@@ -243,6 +243,10 @@ pub(crate) enum Context {
         /// `\repeat … \etc` : fonction partielle, le corps est fourni à
         /// l'appel de la variable (`lily/parser.yy` `REPEAT ... partial_function`).
         partial: bool,
+        /// Vrai quand le compte manque encore (`\repeat percent \etc`) :
+        /// le premier argument de l'appel de la variable est ce compte
+        /// (`lily/parser.yy`, `REPEAT simple_string partial_function`).
+        count_missing: bool,
     },
     /// `\transpose`.
     Transpose {

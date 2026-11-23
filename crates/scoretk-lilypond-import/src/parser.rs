@@ -2822,14 +2822,23 @@ impl<'a> Parser<'a> {
                     count,
                     alternatives,
                     partial: true,
+                    count_missing,
                     ..
-                }) => Music::Context(Context::Repeat {
-                    kind,
-                    count,
-                    body: Box::new(self.parse_music()),
-                    alternatives,
-                    partial: false,
-                }),
+                }) => {
+                    let count = if count_missing {
+                        self.parse_repeat_count()
+                    } else {
+                        count
+                    };
+                    Music::Context(Context::Repeat {
+                        kind,
+                        count,
+                        body: Box::new(self.parse_music()),
+                        alternatives,
+                        partial: false,
+                        count_missing: false,
+                    })
+                }
                 other => other,
             };
             return music;
@@ -3244,6 +3253,7 @@ impl<'a> Parser<'a> {
                     body: Box::new(self.parse_music()),
                     alternatives: Vec::new(),
                     partial: false,
+                    count_missing: false,
                 })
             }
             "alternative" => {
@@ -3934,6 +3944,31 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Compte d'une répétition partielle (`\repeat percent \etc` puis
+    /// `\testPercent 4`) : nombre ou identifiant lié à un entier
+    /// (`lily/parser.yy`, `REPEAT simple_string partial_function`).
+    fn parse_repeat_count(&mut self) -> u32 {
+        match self.peek().cloned() {
+            Some(Token {
+                kind: Kind::Number,
+                text,
+                ..
+            }) => {
+                self.position += 1;
+                text.parse().unwrap_or(2)
+            }
+            Some(Token {
+                kind: Kind::Command,
+                text,
+                ..
+            }) => {
+                self.position += 1;
+                self.numbers.get(&text).copied().unwrap_or(2) as u32
+            }
+            _ => 2,
+        }
+    }
+
     /// `\repeat`.
     fn parse_repeat(&mut self) -> Music {
         // Les partitions anciennes écrivent parfois le type entre guillemets :
@@ -3958,6 +3993,7 @@ impl<'a> Parser<'a> {
                 body: Box::new(Music::Empty),
                 alternatives: Vec::new(),
                 partial: true,
+                count_missing: true,
             });
         }
         let count = match self.bump() {
@@ -3982,6 +4018,7 @@ impl<'a> Parser<'a> {
                 body: Box::new(Music::Empty),
                 alternatives: Vec::new(),
                 partial: true,
+                count_missing: false,
             });
         }
         // `lily/parser.yy:1560-1569` : le corps peut être vide quand
@@ -4031,6 +4068,7 @@ impl<'a> Parser<'a> {
             body,
             alternatives,
             partial: false,
+            count_missing: false,
         })
     }
 
@@ -6449,12 +6487,14 @@ fn kill_cues(music: Music) -> Music {
             body,
             alternatives,
             partial,
+            count_missing,
         }) => Music::Context(Context::Repeat {
             kind,
             count,
             body: Box::new(kill_cues(*body)),
             alternatives: alternatives.into_iter().map(kill_cues).collect(),
             partial,
+            count_missing,
         }),
         Music::Context(Context::Alternative(items)) => Music::Context(Context::Alternative(
             items.into_iter().map(kill_cues).collect(),
@@ -6539,12 +6579,14 @@ fn silence_music(music: Music) -> Music {
             body,
             alternatives,
             partial,
+            count_missing,
         }) => Music::Context(Context::Repeat {
             kind,
             count,
             body: Box::new(silence_music(*body)),
             alternatives: alternatives.into_iter().map(silence_music).collect(),
             partial,
+            count_missing,
         }),
         Music::Context(Context::Tuplet {
             numerator,
