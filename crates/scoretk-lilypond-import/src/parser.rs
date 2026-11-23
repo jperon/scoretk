@@ -4453,12 +4453,26 @@ impl<'a> Parser<'a> {
     /// `\tweak` : propriété, valeur, puis musique décorée.
     fn parse_tweak(&mut self) {
         let path = self.skip_property_path();
-        if !self.eat_punct('=') {
-            return;
-        }
+        // `\tweak` s'écrit `\tweak propriété valeur` (`lily/parser.yy`),
+        // sans `=` ; certains fichiers gardent un `=` toléré.
+        let had_eq = self.eat_punct('=');
         let Some(token) = self.peek().cloned() else {
             return;
         };
+        // Valeur signée `-2` : le signe et le nombre doivent être consommés
+        // ensemble, même sans `=`, sinon le `-2` est lu comme musique et
+        // allonge l'accord d'un temps (`parenthesize-chords.ly`).
+        if token.is_punct('-')
+            && self
+                .peek_at(1)
+                .is_some_and(|suivant| suivant.kind == Kind::Number)
+        {
+            self.position += 2;
+            return;
+        }
+        if !had_eq {
+            return;
+        }
         if !token.is_scheme() {
             self.skip_scheme_value();
             return;

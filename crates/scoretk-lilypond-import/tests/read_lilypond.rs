@@ -8521,3 +8521,29 @@ fn voix_de_gruces_seule_garde_ses_ornements() {
     assert_eq!(graces, 1, "la grâce est conservée");
     assert_eq!(porteur, 1, "un accord porteur vide porte l'ornement");
 }
+
+#[test]
+fn tweak_negatif_ne_change_pas_la_duree() {
+    // `parenthesize-chords.ly` : `\tweak Parentheses.font-size -2` ; la
+    // valeur `-2` ne doit pas être lue comme musique (un `-` puis une durée
+    // 2 allongeait l'accord d'un temps et décalait la voix).
+    let source = "\\version \"2.24.0\"\n\
+         \\new Voice \\relative c { c'4 << { \\tweak Parentheses.font-size -2 \\parenthesize <c' e> } { g'4 } >> }\n";
+    let score = read_lilypond(source).expect("lecture");
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (_, item) in segment.iter_elements() {
+                let SegmentItem::ChordRest(chord_rest) = item else {
+                    continue;
+                };
+                if matches!(chord_rest.kind, ChordRestKind::Chord(_)) {
+                    assert_eq!(
+                        chord_rest.duration.ticks(),
+                        Fraction::new(1, 4),
+                        "toutes les notes restent des noires"
+                    );
+                }
+            }
+        }
+    }
+}
