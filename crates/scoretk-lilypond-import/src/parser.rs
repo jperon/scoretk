@@ -967,7 +967,7 @@ impl<'a> Parser<'a> {
                         .map(|item| anonymous_group(wrap_all(wrappers, item)))
                         .collect();
                 }
-                self.context_groups(items, wrappers, Music::Sim, false)
+                self.context_groups(items, wrappers, Music::Sim, false, true)
             }
             Music::Seq(items) => {
                 // Un `{ … }` peut lui aussi contenir des contextes : LilyPond
@@ -978,7 +978,7 @@ impl<'a> Parser<'a> {
                     return vec![anonymous_group(wrap_all(wrappers, Music::Seq(items)))];
                 }
                 self.warn_sequential_contexts(&items);
-                self.context_groups(items, wrappers, Music::Seq, true)
+                self.context_groups(items, wrappers, Music::Seq, true, false)
             }
             other => vec![anonymous_group(wrap_all(wrappers, other))],
         }
@@ -996,7 +996,25 @@ impl<'a> Parser<'a> {
         wrappers: &mut Vec<Wrapper>,
         combine: fn(Vec<Music>) -> Music,
         sequential: bool,
+        simultaneous: bool,
     ) -> Vec<GroupBlock> {
+        // Musique simultanée (`<< … >>`) : chaque élément sans contexte est un
+        // contexte à lui seul. `<< \relative … \addlyrics … \relative … >>`
+        // (le `\addlyrics` est un `Music::Lyrics`, donc un contexte) joue
+        // **deux portées** plus la piste de paroles ; les réunir en une portée
+        // à plusieurs voix faisait fusionner leurs unissons à l'oracle
+        // (`samia-a4`, `Nunc-dimittis`).
+        if simultaneous {
+            let mut groups = Vec::new();
+            for item in items {
+                if has_context(&item) {
+                    groups.extend(self.score_groups_in(item, wrappers));
+                } else {
+                    groups.push(anonymous_group(wrap_all(wrappers, item)));
+                }
+            }
+            return groups;
+        }
         let rest: Vec<Music> = items
             .iter()
             .filter(|item| !has_context(item))
@@ -1138,24 +1156,21 @@ impl<'a> Parser<'a> {
                 // ticks et libère leur piste quand elles finissent. Les
                 // n-ups de plus de quatre voix simultanées sont répartis sur
                 // des portées sœurs par le constructeur.
-                let mut staff = StaffBlock::new();
-                staff.name = context_name;
-                staff.instrument_name = instrument_name.clone();
-                staff.short_instrument_name = short_instrument_name.clone();
-                let addlyrics_target = last_voice_name(&content);
-                collect_lyrics_in_music(&content, &mut staff.lyrics);
-                staff.voices.push(VoiceBlock {
-                    name: None,
-                    music: content,
-                });
-                self.collect_addlyrics_target(&mut staff, addlyrics_target);
+                let staves = self.staff_blocks_from_content(
+                    content,
+                    context_name,
+                    instrument_name.clone(),
+                    short_instrument_name.clone(),
+                    false,
+                    false,
+                );
                 return Music::New(Box::new(GroupBlock {
                     kind: GroupKind::Staff,
                     existing,
                     sequence_start: false,
                     instrument_name,
                     short_instrument_name,
-                    staves: vec![staff],
+                    staves,
                     lyrics: Vec::new(),
                 }));
             }
@@ -1163,6 +1178,16 @@ impl<'a> Parser<'a> {
                 token.kind == Kind::Word && GroupKind::from_name(&token.text) != GroupKind::Other
             });
             if !structural {
+                // `\context ChordNames` (`context_find_or_create`,
+                // `lily/parser.yy` `context_prefix`) est un **contexte**
+                // enfant, une piste MIDI à part : dans un `\context Staff`
+                // c'est un enfant du `Staff` (`ly/engraver-init.ly` l. 492,
+                // `\accepts ChordNames`), pas une voix. Le relire comme un
+                // `\new` conserve son nom et sa musique propre.
+                // Seuls les contextes sans performer restent des grilles
+                // muettes (`lily/note-name-engraver.cc` : NoteNames n'a pas
+                // de performer MIDI, contrairement à ChordNames).
+                let debut = self.position;
                 let nom = self.bump().map(|token| token.text).unwrap_or_default();
                 if self.eat_punct('=') {
                     self.bump();
@@ -1170,13 +1195,6 @@ impl<'a> Parser<'a> {
                 if self.eat_command("with") {
                     self.parse_with_block();
                 }
-                // `\context ChordNames` arrive ici. LilyPond joue sa grille
-                // dans le MIDI (vérifié en 2.26) : on laisse la musique nue
-                // devenir une portée anonyme, comme pour `\new ChordNames`.
-                // Seul FiguredBass reste une grille muette.
-                // `lily/note-name-engraver.cc` : NoteNames n'a pas de
-                // performer MIDI, contrairement à ChordNames (vérifié en
-                // 2.26). Sa musique est gravée mais non jouée.
                 if nom == "FiguredBass"
                     || nom == "NoteNames"
                     || nom == "FretBoards"
@@ -1184,7 +1202,7 @@ impl<'a> Parser<'a> {
                 {
                     return self.skip_nonplaying_grid(&nom);
                 }
-                return self.parse_music();
+                self.position = debut;
             }
         }
         match self.parse_new_context(existing) {
@@ -1264,7 +1282,15 @@ impl<'a> Parser<'a> {
                 lyrics: Vec::new(),
             });
         }
-        let kind = GroupKind::from_name(&name);
+        let mut kind = GroupKind::from_name(&name);
+        // `\new Dynamics` ne porte que des silences (et des indications de
+        // nuance) : le jouer comme une portée ordinaire plutôt que comme un
+        // contexte inconnu, sinon son contenu resterait dans la portée
+        // englobante comme contexte ignoré et décalerait la musique voisine
+        // (`dynamics-text-dynamics-context`).
+        if name.eq_ignore_ascii_case("dynamics") {
+            kind = GroupKind::Staff;
+        }
         let context_name = self.parse_context_id();
 
         let mut instrument_name = None;
@@ -1340,6 +1366,24 @@ impl<'a> Parser<'a> {
                 self.eat_command("addlyrics");
                 String::new()
             };
+            // `\context Lyrics = nom` **sans paroles** est une déclaration de
+            // contexte (`lily/parser.yy` `context_prefix contexted_basic_music`
+            // imbrique la musique suivante) : au niveau du MIDI, le contexte
+            // suivant reste une piste à part (`Abendlied` : `\context Lyrics =
+            // SopranX` puis `\context Staff = women`). Ne pas consommer une
+            // musique qui n'est pas des paroles ; sinon elle était lue comme
+            // des syllabes (ou sautée), puis ses voix réparties en portées
+            // fantômes (`midi2ly` : `\context Lyrics=trackA \trackA`, où
+            // `\trackA` contient des `\context Voice`).
+            let paroles_suivent = self.peek().is_some_and(|token| {
+                token.is_punct('{')
+                    || token.is_command("lyricmode")
+                    || (token.kind == Kind::Command
+                        && matches!(self.variables.get(&token.text), Some(Music::Lyrics(_))))
+            });
+            if !paroles_suivent {
+                return None;
+            }
             let (syllables, block_verse, couplets) = self.parse_lyric_music();
             let block = LyricsBlock {
                 target,
@@ -1374,6 +1418,16 @@ impl<'a> Parser<'a> {
         // tardive (y compris une référence de variable).
         let debut_musique = self.position;
 
+        // `\new Score` est un contexte de niveau Score qui contient des
+        // portées (`lily/parser.yy` `context_prefix`, `lily/score.cc`) : son
+        // contenu doit être réparti en portées comme celui d'un
+        // `StaffGroup`, sinon les `\new Staff` enfants deviennent des voix
+        // d'une seule portée (`caesura-style.ily` : quatre `\new Staff`).
+        let kind = if name.eq_ignore_ascii_case("score") {
+            GroupKind::StaffGroup
+        } else {
+            kind
+        };
         match kind {
             GroupKind::PianoStaff | GroupKind::ChoirStaff | GroupKind::StaffGroup => {
                 let mut group = GroupBlock {
@@ -1385,13 +1439,18 @@ impl<'a> Parser<'a> {
                     staves: Vec::new(),
                     lyrics: Vec::new(),
                 };
-                let content = self.parse_music();
+                let (content, voix) = self.parse_group_content();
                 let vide = matches!(&content, Music::Sim(items) | Music::Seq(items) if items.is_empty())
                     || matches!(&content, Music::Empty);
                 if vide {
                     return None;
                 }
-                self.collect_staves(content, &mut group.staves, &mut group.lyrics);
+                if voix {
+                    // Un seul `Staff` implicite du groupe, à plusieurs voix.
+                    self.push_anonymous_staff(content, &[], &mut group.staves);
+                } else {
+                    self.collect_staves(content, &mut group.staves, &mut group.lyrics);
+                }
                 if group.staves.is_empty() && group.lyrics.is_empty() {
                     // Un groupe vide (`\new PianoStaff << >>`) n'engrave
                     // aucune portée chez LilyPond : la déclarer créerait une
@@ -1434,27 +1493,80 @@ impl<'a> Parser<'a> {
                 staff.muted |= self.tokens[debut_musique..self.position]
                     .iter()
                     .any(|token| token.is_command("makeClusters"));
-                // Une seule musique de portée, comme pour `\context Staff` :
-                // les voix sont ouvertes par l'interpréteur au tick courant,
-                // pas relues chacune depuis zéro.
-                let addlyrics_target = last_voice_name(&content);
-                collect_lyrics_in_music(&content, &mut staff.lyrics);
-                staff.voices.push(VoiceBlock {
-                    name: None,
-                    music: content,
-                });
-                self.collect_addlyrics_target(&mut staff, addlyrics_target);
+                // Un contexte de **portée** imbriqué (`\context ChordNames`,
+                // `\new Dynamics`…) est un contexte enfant de `Staff`, donc
+                // une piste MIDI distincte (`ly/engraver-init.ly` l. 492 :
+                // `Staff` accepte `ChordNames`). Il doit devenir une portée
+                // sœur ; le laisser dans les voix de la portée faisait
+                // fusionner ses unissons avec la mélodie à l'oracle
+                // (`LullabyBrahms-C` : 17 accords confondus avec la voix).
+                // Les `\new Voice` restent des voix de cette portée.
+                let staves = self.staff_blocks_from_content(
+                    content,
+                    staff.name.clone(),
+                    staff.instrument_name.clone(),
+                    staff.short_instrument_name.clone(),
+                    staff.muted,
+                    kind == GroupKind::Other,
+                );
                 Some(GroupBlock {
-                    kind: GroupKind::Staff,
+                    kind,
                     existing,
                     sequence_start: false,
                     instrument_name,
                     short_instrument_name,
-                    staves: vec![staff],
+                    staves,
                     lyrics: Vec::new(),
                 })
             }
         }
+    }
+
+    /// Portées d'un contexte de type `Staff` : une seule portée avec ses voix,
+    /// ou plusieurs si le contenu ouvre des contextes enfants de portée
+    /// (`\context ChordNames`, `\new Dynamics`…), qui sont des pistes MIDI
+    /// distinctes (`ly/engraver-init.ly` l. 492, `\accepts ChordNames`).
+    fn staff_blocks_from_content(
+        &mut self,
+        content: Music,
+        context_name: Option<String>,
+        instrument_name: Option<String>,
+        short_instrument_name: Option<String>,
+        muted: bool,
+        group_like: bool,
+    ) -> Vec<StaffBlock> {
+        let addlyrics_target = last_voice_name(&content);
+        if has_staff_context(&content, group_like) {
+            let mut staves = Vec::new();
+            let mut lyrics = Vec::new();
+            self.collect_staves(content, &mut staves, &mut lyrics);
+            if let Some(premiere) = staves.first_mut() {
+                premiere.name = premiere.name.clone().or(context_name);
+                premiere.instrument_name = premiere.instrument_name.clone().or(instrument_name);
+                premiere.short_instrument_name = premiere
+                    .short_instrument_name
+                    .clone()
+                    .or(short_instrument_name);
+                premiere.muted |= muted;
+                premiere.lyrics.splice(0..0, lyrics);
+                self.collect_addlyrics_target(premiere, addlyrics_target);
+            }
+            return staves;
+        }
+        // Une seule musique de portée : les voix sont ouvertes par
+        // l'interpréteur au tick courant, pas relues chacune depuis zéro.
+        let mut staff = StaffBlock::new();
+        staff.name = context_name;
+        staff.instrument_name = instrument_name;
+        staff.short_instrument_name = short_instrument_name;
+        staff.muted = muted;
+        collect_lyrics_in_music(&content, &mut staff.lyrics);
+        staff.voices.push(VoiceBlock {
+            name: None,
+            music: content,
+        });
+        self.collect_addlyrics_target(&mut staff, addlyrics_target);
+        vec![staff]
     }
 
     /// Répartit le contenu d'un groupe en portées.
@@ -1464,7 +1576,43 @@ impl<'a> Parser<'a> {
         staves: &mut Vec<StaffBlock>,
         lyrics: &mut Vec<LyricsBlock>,
     ) {
-        self.collect_staves_in(music, &mut Vec::new(), staves, lyrics);
+        self.collect_staves_in(music, &mut Vec::new(), staves, lyrics, true);
+    }
+
+    /// Contenu d'un groupe de portées (`\new StaffGroup`, `PianoStaff`,
+    /// `ChoirStaff`, `GrandStaff`, `OneStaff`, `\new Score`).
+    ///
+    /// Renvoie la musique et le drapeau « `\\` vu » : `<< { c } { e } >>`
+    /// joue deux portées, une par élément (le groupe accepte des `Staff`,
+    /// `ly/engraver-init.ly`), alors que `<< { c } \\ { e } >>`
+    /// (VoiceSeparator) crée deux `Voice` dans une seule portée. Vérifié sur
+    /// LilyPond 2.27 : deux pistes MIDI dans le premier cas, une dans le
+    /// second. Le jeton `\\` est consommé par `parse_music`, d'où cette
+    /// lecture au seul endroit où les jetons bruts du groupe sont encore là.
+    fn parse_group_content(&mut self) -> (Music, bool) {
+        if !self.at_double_angle_open() {
+            return (self.parse_music(), false);
+        }
+        self.position += 2;
+        let mut items = Vec::new();
+        let mut voix = false;
+        while !self.at_end() && !self.at_double_angle_close() {
+            if self.peek().is_some_and(|token| token.is_command("\\")) {
+                self.position += 1;
+                voix = true;
+                continue;
+            }
+            let before = self.position;
+            let item = self.parse_music();
+            if !item.is_empty() {
+                items.push(item);
+            }
+            self.guard_progress(before);
+        }
+        if self.at_double_angle_close() {
+            self.position += 2;
+        }
+        (Music::Sim(items), voix)
     }
 
     /// [`Self::collect_staves`], avec la pile des enveloppes rencontrées :
@@ -1476,26 +1624,35 @@ impl<'a> Parser<'a> {
         wrappers: &mut Vec<Wrapper>,
         staves: &mut Vec<StaffBlock>,
         lyrics: &mut Vec<LyricsBlock>,
+        // Vrai dans une séquence : les `\new Voice` y continuent la portée en
+        // cours. Faux entre éléments simultanés (`<< … >>`) : un `\new
+        // TabVoice` y est une portée à part (`bend-spanner-simple`).
+        merge_voice: bool,
     ) {
         match music {
             Music::Context(context) => match Wrapper::of(&context) {
                 Some((wrapper, inner)) => {
                     let inner = inner.clone();
                     wrappers.push(wrapper);
-                    self.collect_staves_in(inner, wrappers, staves, lyrics);
+                    self.collect_staves_in(inner, wrappers, staves, lyrics, merge_voice);
                     wrappers.pop();
                 }
                 None => self.push_anonymous_staff(Music::Context(context), wrappers, staves),
             },
             Music::Sim(items) => {
-                // Même règle que pour les groupes de `\score` : un `<< … >>`
-                // sans contexte ne fait qu'une portée, avec ses éléments
-                // simultanés (voix) ; un `\new` y définit la structure.
+                // Dans un groupe de portées, chaque élément simultané sans
+                // contexte a **sa** portée : `\new StaffGroup << { c } { e } >>`
+                // joue deux staves (deux pistes MIDI vérifiées sur 2.27).
+                // (`<< { c } \\ { e } >>` est traité plus haut, dans
+                // `parse_group_content`, car le jeton `\\` y est encore
+                // présent.)
                 if !items.iter().any(has_context) {
-                    self.push_anonymous_staff(Music::Sim(items), wrappers, staves);
+                    for item in items {
+                        self.push_anonymous_staff(item, wrappers, staves);
+                    }
                     return;
                 }
-                self.context_staves(items, wrappers, staves, lyrics, Music::Sim);
+                self.context_staves(items, wrappers, staves, lyrics, false, false);
             }
             Music::Seq(items) => {
                 // Un `{ … }` contenant un contexte décrit lui aussi la
@@ -1505,7 +1662,7 @@ impl<'a> Parser<'a> {
                     return;
                 }
                 self.warn_sequential_contexts(&items);
-                self.context_staves(items, wrappers, staves, lyrics, Music::Seq);
+                self.context_staves(items, wrappers, staves, lyrics, true, true);
             }
             Music::New(mut group) => {
                 wrap_staves(wrappers, &mut group.staves);
@@ -1517,7 +1674,7 @@ impl<'a> Parser<'a> {
                 // sœurs : c'est le constructeur qui répartit leurs emplacements
                 // et ouvre des portées supplémentaires seulement si plus de
                 // quatre voix sont simultanées.
-                if group.kind == GroupKind::Voice && group.staves.len() == 1 {
+                if merge_voice && group.kind == GroupKind::Voice && group.staves.len() == 1 {
                     let mut voice_staff = group.staves.remove(0);
                     if let Some(current) = staves.iter_mut().find(|staff| staff.name.is_none()) {
                         current.voices.append(&mut voice_staff.voices);
@@ -1573,20 +1730,28 @@ impl<'a> Parser<'a> {
         wrappers: &mut Vec<Wrapper>,
         staves: &mut Vec<StaffBlock>,
         lyrics: &mut Vec<LyricsBlock>,
-        combine: fn(Vec<Music>) -> Music,
+        sequential: bool,
+        merge_voice: bool,
     ) {
-        let rest: Vec<Music> = items
-            .iter()
-            .filter(|item| !has_context(item))
-            .cloned()
-            .collect();
-        let mut rest = if rest.is_empty() { None } else { Some(rest) };
+        // Chaque élément sans contexte du groupe est une portée à lui seul :
+        // `\new StaffGroup << \mus \new Dynamics { … } \mus >>` joue deux
+        // portées de notes (deux pistes MIDI) plus la portée Dynamics.
+        let mut premier = true;
         for item in items {
+            let avant = staves.len();
             if has_context(&item) {
-                self.collect_staves_in(item, wrappers, staves, lyrics);
-            } else if let Some(rest) = rest.take() {
-                self.push_anonymous_staff(combine(rest), wrappers, staves);
+                self.collect_staves_in(item, wrappers, staves, lyrics, merge_voice);
+            } else {
+                self.push_anonymous_staff(item, wrappers, staves);
             }
+            // Dans une séquence, l'élément suivant commence après le
+            // précédent (`lily/parser.yy` `sequential_music`) : la première
+            // portée qu'il crée porte la marque, comme les groupes de
+            // `\score` (`context_groups`).
+            if sequential && !premier && avant < staves.len() {
+                staves[avant].sequence_start = true;
+            }
+            premier = false;
         }
     }
 
@@ -1762,6 +1927,8 @@ impl<'a> Parser<'a> {
     /// referme donc pas le bloc courant, sinon la musique qui suit serait lue
     /// comme une portée supplémentaire.
     fn parse_lyric_music(&mut self) -> (Vec<Syllable>, Option<usize>, Vec<LyricsBlock>) {
+        // `\new Lyrics \lyricmode { … }` : le mode explicite précède le bloc.
+        self.eat_command("lyricmode");
         if !self.eat_punct('{') {
             // `\v` peut désigner un `\lyricmode { … }` mémorisé dans une
             // variable : `\new Lyrics \lyricsto "s" \v` doit relire ses
@@ -5777,6 +5944,39 @@ fn wrap_staves(wrappers: &[Wrapper], staves: &mut [StaffBlock]) {
             let music = std::mem::replace(&mut voice.music, Music::Empty);
             voice.music = wrap_all(wrappers, music);
         }
+    }
+}
+
+/// Vrai si la musique contient un contexte enfant de portée qui ouvre sa
+/// propre piste (`\context ChordNames`, `\new Dynamics`, `\new Staff` dans
+/// un groupe).
+///
+/// Un `\new Voice` reste une voix de la portée. Dans un **vrai** `Staff`, un
+/// `\context Staff` imbriqué ne crée pas de portée non plus : `\context`
+/// **retrouve** le contexte existant (`Context::find_create_context`,
+/// `lily/context.cc:269-272`), donc le Staff englobant ; le traiter comme une
+/// portée sœur dédoublait les portées de `air-tromb.ly` (12 au lieu de 4).
+/// Dans un contexte de groupe inconnu (`SemiChoirStaff` défini par un
+/// `\layout { \context { \ChoirStaff \name "SemiChoirStaff" } }`),
+/// `group_like` est vrai : ses `\new Staff` enfants sont les portées du
+/// groupe (`Nunc-dimittis`, `Mendelssohn-BartholdyF_op_23_No_1`).
+fn has_staff_context(music: &Music, group_like: bool) -> bool {
+    match music {
+        Music::New(group) => {
+            group.kind == GroupKind::ChordNames
+                || group.kind == GroupKind::Other
+                || (group_like && group.kind == GroupKind::Staff)
+        }
+        Music::Sim(items) | Music::Seq(items) => {
+            items.iter().any(|item| has_staff_context(item, group_like))
+        }
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => {
+            has_staff_context(music, group_like)
+        }
+        Music::Context(context) => {
+            Wrapper::of(context).is_some_and(|(_, inner)| has_staff_context(inner, group_like))
+        }
+        _ => false,
     }
 }
 

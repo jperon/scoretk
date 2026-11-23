@@ -412,6 +412,9 @@ pub(crate) enum GroupKind {
     StaffGroup,
     /// `\new Voice` directement dans le `\score`.
     Voice,
+    /// `\new ChordNames` / `\context ChordNames` : une grille d'accords
+    /// **jouée** dans sa propre piste (`ly/engraver-init.ly` l. 705).
+    ChordNames,
     /// Contexte inconnu (`\new Lyrics`, `\new FiguredBass`…).
     Other,
 }
@@ -423,12 +426,23 @@ impl GroupKind {
     /// `\new voice` et `\new Voice` désignent le même contexte. Les partitions
     /// Mutopia anciennes écrivent souvent `\new voice`, `\context staff`…
     pub(crate) fn from_name(name: &str) -> Self {
-        match name.to_ascii_lowercase().as_str() {
+        let minuscules = name.to_ascii_lowercase();
+        // Contextes dérivés de `Voice` (`CueVoice`, `DrumVoice`,
+        // `VaticanaVoice`, `GregorianTranscriptionVoice`…,
+        // `ly/engraver-init.ly`) : ce sont des voix de la portée, pas des
+        // contextes de portée. Les traiter comme `Other` les faisait ignorer
+        // par l'interpréteur (`nested_context`) et perdait leurs notes
+        // (`cue-clef-manually`, `midi-drums`, `lyric-combine-derived-voice`).
+        if minuscules.ends_with("voice") {
+            return Self::Voice;
+        }
+        match minuscules.as_str() {
             "staff" | "drumstaff" => Self::Staff,
-            "pianostaff" => Self::PianoStaff,
+            "pianostaff" | "grandstaff" => Self::PianoStaff,
             "choirstaff" => Self::ChoirStaff,
-            "staffgroup" => Self::StaffGroup,
+            "staffgroup" | "onestaff" => Self::StaffGroup,
             "voice" => Self::Voice,
+            "chordnames" => Self::ChordNames,
             _ => Self::Other,
         }
     }
@@ -485,6 +499,14 @@ pub(crate) struct StaffBlock {
     /// Faux pour une portée de type NullVoice : gravée dans le modèle mais
     /// masquée à l'export (`Staff::visible`, `<staff-details print-object="no">`).
     pub visible: bool,
+    /// Vrai si cette portée commence après la précédente du même groupe.
+    ///
+    /// Dans un groupe de portées, une **séquence** `{ \new Staff … \new Staff … }`
+    /// joue les portées l'une après l'autre (`lily/parser.yy`
+    /// `sequential_music`), alors qu'un `<< … >>` les joue ensemble. Vérifié
+    /// sur LilyPond 2.27 : `\new StaffGroup { \new Staff { c'1 } \new Staff { e'1 } }`
+    /// produit deux pistes, la seconde à partir du temps 4.
+    pub sequence_start: bool,
     /// Voix de la portée.
     pub voices: Vec<VoiceBlock>,
     /// Paroles attachées à une voix de la portée.
@@ -500,6 +522,7 @@ impl StaffBlock {
             short_instrument_name: None,
             muted: false,
             visible: true,
+            sequence_start: false,
             voices: Vec::new(),
             lyrics: Vec::new(),
         }

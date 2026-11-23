@@ -506,6 +506,19 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 staff_part_id,
                 staff_block.name.clone().unwrap_or_default(),
             ));
+            // Portée d'une séquence de groupe (`\new OneStaff { \new Staff …
+            // \new Staff … }`) : elle commence après les précédentes du même
+            // groupe (voir `StaffBlock::sequence_start`).
+            let debut_sequence = if staff_block.sequence_start {
+                staves[first_staff_index..]
+                    .iter()
+                    .flat_map(|staff| staff.voices.iter())
+                    .map(|voice| voice.interpreted.end)
+                    .max()
+                    .unwrap_or(element_start)
+            } else {
+                element_start
+            };
             let (built, octave_suivante) = build_voices(
                 &mut score,
                 staff_id,
@@ -515,7 +528,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 warnings,
                 octave_relatif,
                 &[],
-                element_start,
+                debut_sequence,
             );
             octave_relatif = octave_suivante;
             let mut built = built.into_iter();
