@@ -8696,3 +8696,12 @@ fn liaison_de_deux_tetes_de_meme_hauteur() {
         2
     );
 }
+
+#[test]
+fn tag_sur_un_post_evenement_ne_repete_pas_la_note() {
+    // `tag-filter.ly` : `c1-\tag #'part ^4` marque le doigté qui suit ; le
+    // nom du tag ne doit pas rester dans le flux et faire répéter la note.
+    let score =
+        read_lilypond("\\version \"2.24.0\"\n{ c'4-\\tag #'part ^1 d'4 }\n").expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![60, 62]);
+}

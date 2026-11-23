@@ -2986,9 +2986,17 @@ impl<'a> Parser<'a> {
             // marquées (Notation Reference §22.2.2, `ly/music-functions-init.ly`).
             "tag" => {
                 let tags = self.parse_tag_names();
-                Music::Tag {
-                    tags,
-                    music: Box::new(self.parse_music()),
+                if self.peek().is_some_and(starts_post_event) {
+                    // `\tag #'part ^4` : l'expression marquée est un
+                    // post-événement de la note précédente ; il ne produit
+                    // aucune musique (`tag-filter.ly`).
+                    let _ = self.parse_post_event();
+                    Music::Empty
+                } else {
+                    Music::Tag {
+                        tags,
+                        music: Box::new(self.parse_music()),
+                    }
                 }
             }
             "keepWithTag" | "removeWithTag" => {
@@ -5303,6 +5311,13 @@ impl<'a> Parser<'a> {
                     // (post-événement) suit dans la boucle.
                     self.parse_offset_arguments();
                     return Vec::new();
+                }
+                if name == "tag" {
+                    // `-\tag #'part ^4` (`tag-filter.ly`) : le tag marque le
+                    // post-événement qui suit. Sans consommation du nom, le
+                    // `^4` restait dans le flux et répétait la note.
+                    let _ = self.parse_tag_names();
+                    return self.parse_post_event();
                 }
                 if let Some(post) = post_event_for_command(&name, placement) {
                     return vec![post];
