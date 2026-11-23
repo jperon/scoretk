@@ -1588,3 +1588,43 @@ les seuls marqueurs.
 Mesure : Benedictus 72 → **0** (core-identique), 168 → **169/173**
 core-exacts, 8 lignes canoniques, 0 perte. Test réduit :
 `un_fichier_3x_complete_les_groupes_non_marques`.
+
+## 50. Bilan de la campagne (2026-11-23)
+
+Relevé de départ : `/tmp/xml-cue2` (157/173 core-identiques, 2 028 lignes
+canoniques, 302 919 lignes au niveau plein sur 173 paires). Relevé final :
+`/tmp/xml-final`, binaire construit sur ce commit, mêmes `ms.musicxml` 4.7.4
+et même normalisation `oracle_core`.
+
+| Cause | Commit | Fichiers | Core-exacts |
+| --- | --- | --- | ---: |
+| multi-repos déduits (§40) | `d03430b9` | 6 | 157 → 158 |
+| parenthèses du chiffrage (§41) | `7cbc1757` | 1 | 158 |
+| points de silence explicites (§42) | `c51d970d` | 6 | 158 → 163 |
+| `time-modification` des agréments (§43) | `01690765` | 1 | 163 → 164 |
+| `<headType>` 3.6 (§44) | `07b2a080` | 1 | 164 → 165 |
+| harmonies par piste (§45) | `35a7eb41` | 1 | 165 → 166 |
+| clefs 2.x (§46) | `f9cee47b` | 1 | 166 → 166 |
+| crochet de n-olet `headSide` (§47) | `d9ac472f` | 3 | 166 → 167 |
+| `FretDiagram` / `<frame>` (§48) | `e4009a2d` | 1 | 167 → 168 |
+| marqueurs de multi-repos 3.x (§49) | `e3252a48` | 1 | 168 → 169 |
+
+**Final : 169/173 core-identiques** (157 au départ), 8 lignes canoniques
+(2 028), 301 389 lignes de différence de séquence au niveau plein
+(302 919 ; le niveau plein reste dominé par les `<print>`, crédits et
+positions que le pivot ne porte pas), **0 fichier perdu** sur les 173 paires.
+
+### Exceptions restantes, documentées individuellement
+
+| Fichier | Lignes | Cause | Référence |
+| --- | ---: | --- | --- |
+| `01- Minuit chretien - Violons 1 et 2` | 1 | `<dot/>` surnuméraire : silence décalé hors de sa mesure, non disposé | §42 |
+| `06- Minuit chretien - Basson` | 1 | idem | §42 |
+| `Vivaldi … 04-TecumPrincipium` | 2 | `bracket="yes"` : n-olet dans une ligature plus longue que la reconstruction | §47, §29.3 |
+| `Vivaldi … 08-DeTorrente` | 4 | idem (deux n-olets) | §47, §30 |
+
+Ces quatre écarts sont des décisions de mise en page (décalage d'élément,
+groupes de ligatures `<Groups>` + `calcBeamBreaks`) que le modèle pivot ne
+porte pas ; les deux premiers sont prouvés par l'expérience de §42, les deux
+autres par les audits 4.7.4 de §29.3 et §30. Aucun n'est une erreur de
+référence : MuseScore 4.7.4 est correct dans les quatre cas.
