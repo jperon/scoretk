@@ -710,7 +710,60 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
             }
         }
     }
+    if document.show_first_length.is_some() || document.show_last_length.is_some() {
+        cut_score(
+            &mut score,
+            document.show_first_length.unwrap_or(Fraction::ZERO),
+            document.show_last_length.unwrap_or(Fraction::ZERO),
+        );
+    }
     score
+}
+
+/// Coupe la partition selon `showFirstLength`/`showLastLength`
+/// (`scm/music-functions.scm:1526-1600`) : garde le début de longueur
+/// `first` et la fin de longueur `last`, et replie le temps sauté
+/// (`lily/score-performer.cc:151-176`, `midiSkipOffset`) pour que la fin
+/// commence juste après le début.
+fn cut_score(score: &mut Score, first: Fraction, last: Fraction) {
+    if first <= Fraction::ZERO && last <= Fraction::ZERO {
+        return;
+    }
+    let total = score
+        .measures
+        .last()
+        .map_or(Fraction::ZERO, |measure| measure.start_tick + measure.len);
+    if first + last >= total {
+        return;
+    }
+    let suffix_start = total - last;
+    let shift = suffix_start - first;
+    let mut kept = Vec::new();
+    for mut measure in std::mem::take(&mut score.measures) {
+        let start = measure.start_tick;
+        if start < first {
+            kept.push(measure);
+        } else if start >= suffix_start {
+            measure.start_tick -= shift;
+            for segment in &mut measure.segments {
+                segment.tick -= shift;
+            }
+            measure.number = kept.len();
+            kept.push(measure);
+        }
+    }
+    let mut spanners = Vec::new();
+    for mut spanner in std::mem::take(&mut score.spanners) {
+        if spanner.start.tick < first {
+            spanners.push(spanner);
+        } else if spanner.start.tick >= suffix_start {
+            spanner.start.tick -= shift;
+            spanner.end.tick -= shift;
+            spanners.push(spanner);
+        }
+    }
+    score.measures = kept;
+    score.spanners = spanners;
 }
 
 /// Vrai si la voix porte au moins un accord, un silence ou un temps réservé

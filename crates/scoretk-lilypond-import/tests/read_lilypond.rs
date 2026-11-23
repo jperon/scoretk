@@ -8363,3 +8363,61 @@ fn devnull_jette_la_musique_changee_de_portee() {
         "la note changée vers Devnull reste dans le modèle mais muette"
     );
 }
+
+#[test]
+fn show_last_length_coupe_le_debut_et_replie_le_temps() {
+    // `skiptypesetting-show-last.ly` : `showLastLength = R1*3` ; le MIDI ne
+    // joue que les trois dernières mesures, à partir de 0
+    // (`scm/music-functions.scm:1526-1600`, `lily/score-performer.cc:151-176`).
+    let source = "\\version \"2.24.0\"\nshowLastLength = R1*3\n{ c1 d e f g a }\n";
+    let score = read_lilypond(source).expect("lecture");
+    // L'arène `score.notes` garde toutes les notes ; les portées hors mesures
+    // coupées ne sont plus référencées, on lit donc les segments.
+    let mut notes: Vec<(u8, i64)> = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (_, item) in segment.iter_elements() {
+                let SegmentItem::ChordRest(chord_rest) = item else {
+                    continue;
+                };
+                let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                    continue;
+                };
+                for id in &chord.notes {
+                    notes.push((score.note(*id).pitch, segment.tick.ticks(480)));
+                }
+            }
+        }
+    }
+    notes.sort_unstable();
+    assert_eq!(
+        notes,
+        vec![(53, 0), (55, 480), (57, 960)],
+        "fa sol la, temps replié"
+    );
+}
+
+#[test]
+fn show_first_length_ne_garde_que_le_debut() {
+    // `showFirstLength` seul : la partition est tronquée à cette longueur.
+    let source = "\\version \"2.24.0\"\nshowFirstLength = R1*2\n{ c1 d e f }\n";
+    let score = read_lilypond(source).expect("lecture");
+    let mut notes: Vec<(u8, i64)> = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (_, item) in segment.iter_elements() {
+                let SegmentItem::ChordRest(chord_rest) = item else {
+                    continue;
+                };
+                let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                    continue;
+                };
+                for id in &chord.notes {
+                    notes.push((score.note(*id).pitch, segment.tick.ticks(480)));
+                }
+            }
+        }
+    }
+    notes.sort_unstable();
+    assert_eq!(notes, vec![(48, 0), (50, 480)], "do ré");
+}

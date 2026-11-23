@@ -419,6 +419,18 @@ impl<'a> Parser<'a> {
         document.melisma_busy_disabled = self.melisma_busy_disabled;
         document.staff_local_timing = self.staff_local_timing;
         document.playback_unfold_repeats = self.playback_unfold_repeats;
+        // `showFirstLength`/`showLastLength` sont des variables musicales
+        // (`showLastLength = R1*3`) : `skip-as-needed`
+        // (`scm/music-functions.scm:1526-1600`) en prend la longueur et coupe
+        // la partition pour le MIDI.
+        document.show_first_length = self
+            .variables
+            .get("showFirstLength")
+            .map(|music| music_duration(music, Duration::whole()));
+        document.show_last_length = self
+            .variables
+            .get("showLastLength")
+            .map(|music| music_duration(music, Duration::whole()));
 
         // Choix de la partition : un bloc `\score` explicite l'emporte sur la
         // musique de haut niveau ; à égalité, la première rencontrée gagne.

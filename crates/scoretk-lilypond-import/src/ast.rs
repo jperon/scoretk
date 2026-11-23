@@ -655,4 +655,10 @@ pub(crate) struct Document {
     /// propres à chaque portée (polymétrie). Sans ce déplacement, tout
     /// `\time` vaut pour toutes les portées à partir de sa position.
     pub staff_local_timing: bool,
+    /// `showFirstLength` (`scm/music-functions.scm:1526-1600`) : longueur du
+    /// début conservée ; le MIDI ne joue que cette partie au début.
+    pub show_first_length: Option<Fraction>,
+    /// `showLastLength` : longueur de la fin conservée ; le temps sauté est
+    /// replié (`lily/score-performer.cc:151-176`, `midiSkipOffset`).
+    pub show_last_length: Option<Fraction>,
 }
