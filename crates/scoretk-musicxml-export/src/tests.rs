@@ -25,11 +25,11 @@ use scoretk_core::model::{
     tpc, Accidental, AccidentalType, Annotation, Articulation, ArticulationType, BarLineType,
     BeamMode, ChordRest, Clef, ClefType, Credit, CreditStyle, Duration, DurationType, Fraction,
     GraceChord, GraceType, Harmony, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
-    LyricsSyllabic, Measure, MeasureRepeatMark, Note, NoteHeadGroup, NoteId, Part, PartId,
-    Placement, RehearsalFrame, RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType,
-    Spanner, SpannerAnchor, SpannerType, Staff, StaffBracket, StaffId, StaffText, SwingParameters,
-    SwingUnit, SystemText, TboxText, Tempo, TempoKind, TextLineInfo, TimeSig, Track, Transpose,
-    Tuplet,
+    LyricsSyllabic, Measure, MeasureRepeatMark, Note, NoteHeadGroup, NoteId, OttavaType, Part,
+    PartId, Placement, RehearsalFrame, RehearsalMark, RichText, Score, Segment, SegmentItem,
+    SegmentType, Spanner, SpannerAnchor, SpannerType, Staff, StaffBracket, StaffId, StaffText,
+    SwingParameters, SwingUnit, SystemText, TboxText, Tempo, TempoKind, TextLineInfo, TimeSig,
+    Track, Transpose, Tuplet,
 };
 
 use super::{export_musicxml, export_musicxml_with, ExportOptions};
@@ -3591,4 +3591,51 @@ fn after_grace_offset_impose_les_divisions() {
         xml.contains("attack=\"-1\""),
         "attaque de la grâce après mal arrondie :\n{xml}"
     );
+}
+
+/// Partition d'une ronde fa4 (65) couverte par une ottava 8va.
+fn score_avec_ottava(visible: bool, play: bool) -> Score {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::new(DurationType::Whole),
+        &[(65, 13)],
+    );
+    score.add_measure(measure);
+    let mut spanner = Spanner::new(
+        SpannerType::Ottava(OttavaType::OctaveUp),
+        SpannerAnchor::new(Fraction::ZERO, track),
+        SpannerAnchor::new(Fraction::ONE, track),
+    );
+    spanner.visible = visible;
+    spanner.play = play;
+    score.add_spanner(spanner);
+    score
+}
+
+#[test]
+fn ottava_invisible_de_lilypond_ne_décale_pas_la_hauteur_écrite() {
+    // `play = false` (ottava de LilyPond, `\ottava` ne change pas la hauteur
+    // jouée), invisible : ni décalage écrit ni `<octave-shift>`
+    // (`v4/testExcludeInvisibleElements.ly`, `\once \override
+    // OttavaBracket.transparent = ##t`).
+    let xml = export_musicxml(&score_avec_ottava(false, false)).expect("export");
+    assert!(xml.contains("<octave>4</octave>"), "{xml}");
+    assert!(!xml.contains("octave-shift"), "{xml}");
+    // Visible : hauteur écrite décalée et direction écrite (l'oracle retire le
+    // décalage, `docs/agents/lilypond.md` § « Cause 2 »).
+    let xml = export_musicxml(&score_avec_ottava(true, false)).expect("export");
+    assert!(xml.contains("<octave>5</octave>"), "{xml}");
+    assert!(xml.contains("octave-shift"), "{xml}");
+    // Ottava de MuseScore invisible (`play = true`) : le décalage écrit est
+    // conservé, seule la direction est omise (référence 4.7.4).
+    let xml = export_musicxml(&score_avec_ottava(false, true)).expect("export");
+    assert!(xml.contains("<octave>5</octave>"), "{xml}");
+    assert!(!xml.contains("octave-shift"), "{xml}");
 }

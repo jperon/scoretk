@@ -78,7 +78,14 @@ pub(super) fn shift(score: &Score, staff: StaffId, tick: Tick) -> i32 {
     score
         .spanners
         .iter()
-        .filter(|spanner| covers(spanner, staff, tick))
+        // Le décalage écrit suit `play` : une ottava de MuseScore (`play`)
+        // décale la hauteur écrite même invisible — 4.7.4 omet alors la
+        // seule direction (`v4/testExcludeInvisibleElements.ref.musicxml`,
+        // mesure 10) ; celle de LilyPond ne change pas la hauteur jouée et,
+        // invisible, ne doit ni décaler ni produire de `<octave-shift>`
+        // (`\once \override OttavaBracket.transparent`, même fichier côté
+        // `.ly`).
+        .filter(|spanner| covers(spanner, staff, tick) && (spanner.play || spanner.visible))
         .map(|spanner| written_shift(spanner.kind.clone()))
         .sum()
 }
