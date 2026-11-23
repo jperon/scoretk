@@ -491,9 +491,9 @@ impl<'a> Interpreter<'a> {
         // branches gardent leur propre ré-ancrage.
         let musique = match music {
             Music::Context(Context::Relative {
-                reference: None,
                 chain: true,
                 music: interior,
+                ..
             }) if octave.relative && octave.previous.is_some() => interior.as_ref(),
             _ => music,
         };

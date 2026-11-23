@@ -8731,3 +8731,19 @@ fn accord_renverse_sur_la_fondamentale_garde_ses_octaves() {
     hauteurs.sort();
     assert_eq!(hauteurs, vec![59, 75, 78]);
 }
+
+#[test]
+fn relative_sur_un_groupe_de_portees_enchaine_les_portees() {
+    // `\relative \new StaffGroup << … >>` : `to_relative_octave` parcourt
+    // les voix des portées en séquence (`music_list_to_relative`), la
+    // première note de la seconde portée se résolvant depuis la dernière de
+    // la première (`bar-line-define-bar-glyph.ly`). Sans cela `c` valait
+    // do3 au lieu de do4.
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\\relative \\new StaffGroup << \\new Staff { c'4 c } \\new Staff { c4 } >>\n",
+    )
+    .expect("lecture");
+    let mut hauteurs = hauteurs_attaques(&score);
+    hauteurs.sort();
+    assert_eq!(hauteurs, vec![60, 60, 60]);
+}

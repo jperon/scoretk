@@ -6637,10 +6637,22 @@ fn wrap_staves(wrappers: &[Wrapper], staves: &mut [StaffBlock]) {
     if wrappers.is_empty() {
         return;
     }
+    // `\relative` appliqué à un groupe de portées : `to_relative_octave`
+    // parcourt leurs voix en séquence (`music_list_to_relative`,
+    // `lily/music-sequence.cc`), la première note d'une portée se résolvant
+    // depuis la dernière de la précédente. `chain` marque cette continuité
+    // (`bar-line-define-bar-glyph.ly` : `\relative \new StaffGroup << … >>`).
+    let wrappers: Vec<Wrapper> = wrappers
+        .iter()
+        .map(|wrapper| match wrapper {
+            Wrapper::Relative(reference, _) => Wrapper::Relative(*reference, true),
+            other => *other,
+        })
+        .collect();
     for staff in staves {
         for voice in &mut staff.voices {
             let music = std::mem::replace(&mut voice.music, Music::Empty);
-            voice.music = wrap_all(wrappers, music);
+            voice.music = wrap_all(&wrappers, music);
         }
     }
 }
