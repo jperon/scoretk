@@ -424,6 +424,9 @@ struct GraceRef<'a> {
     offset: Option<Tick>,
     /// Ligature calculée pour cet ornement.
     beam: Option<&'a beams::GraceBeam>,
+    /// Vrai si l'import ABC demande un `<time-modification>` sur l'agrément
+    /// (`GraceChord::in_tuplet`).
+    in_tuplet: bool,
 }
 
 impl<'a> Context<'a> {
@@ -1637,6 +1640,7 @@ impl Context<'_> {
                 before: true,
                 offset: None,
                 beam: before_beams[position].as_ref(),
+                in_tuplet: grace.in_tuplet,
             };
             self.chord(
                 out,
@@ -1659,6 +1663,7 @@ impl Context<'_> {
                 before: false,
                 offset: grace.played_offset.map(|offset| offset - main_ticks),
                 beam: after_beams[position].as_ref(),
+                in_tuplet: grace.in_tuplet,
             };
             self.chord(
                 out,
@@ -1822,11 +1827,13 @@ impl Context<'_> {
             if let Some(accidental) = &note.accidental {
                 write_accidental(out, accidental);
             }
-            // `abc2xml.py::mkNote` applique `ntup` à toutes les notes du
-            // groupe, y compris les agréments écrits à l'intérieur de `(3…)`.
-            // Écrire le `<time-modification>` sur un agrément sans n-olet est
-            // sans effet (`write_time_modification` sort si actual == normal).
-            self.write_time_modification(out, chord_rest);
+            // `writeTimeModification` lit `chord()->tuplet()` : un accord
+            // d'agrément n'appartient à aucun n-olet dans MuseScore, donc la
+            // référence n'écrit rien. L'import ABC, lui, marque les agréments
+            // du groupe `(3…)` (`abc2xml.py::mkNote`, `GraceChord::in_tuplet`).
+            if grace.is_none() || grace.is_some_and(|grace| grace.in_tuplet) {
+                self.write_time_modification(out, chord_rest);
+            }
 
             // Pas de hampe pour les rondes et les valeurs plus longues.
             // MuseScore écrit toujours une hampe dès qu'il y en a une ; la

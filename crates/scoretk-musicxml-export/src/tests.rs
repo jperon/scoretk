@@ -3398,9 +3398,11 @@ fn annotation_vide_ecrite_en_words() {
     );
 }
 
-/// Une note d'agrément dans un n-olet porte aussi le `<time-modification>`
-/// (`abc2xml.py::mkNote` applique `ntup` à toutes les notes du groupe, agréments
-/// compris). Le port l'omettait (`grace.is_none()`).
+/// Une note d'agrément d'un groupe ABC dans un n-olet porte aussi le
+/// `<time-modification>` (`abc2xml.py::mkNote` applique `ntup` à toutes les
+/// notes du groupe, agréments compris) : l'import ABC pose
+/// `GraceChord::in_tuplet`. La référence MuseScore, elle, n'en porte pas (voir
+/// `agrement_musescore_sans_time_modification`).
 #[test]
 fn agrement_dans_niolet_time_modification() {
     let mut score = Score::new();
@@ -3427,6 +3429,7 @@ fn agrement_dans_niolet_time_modification() {
             .chord_mut()
             .notes
             .push(score.add_note(Note::new(67, tpc::G)));
+        grace.in_tuplet = true;
         chord.grace_chords.push(grace);
     }
     ajouter_element(&mut score, &mut measure, piste, Fraction::ZERO, cr);
@@ -3787,5 +3790,63 @@ fn silence_masque_garde_un_point_explicite() {
         xml.matches("<dot/>").count(),
         1,
         "un point explicite attendu :\n{xml}"
+    );
+}
+
+/// Accord dans un n-olet 3:2 avec un agrément ; `agrement_dans_nolet` dit si
+/// l'import ABC demande un `<time-modification>` sur l'agrément.
+fn partition_avec_agrement_dans_nolet(agrement_dans_nolet: bool) -> String {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let tuplet = score.add_tuplet(Tuplet::new(
+        Fraction::new(3, 2),
+        Fraction::new(1, 8),
+        Fraction::new(1, 2),
+        Fraction::new(1, 4),
+    ));
+    let mut chord_rest = ChordRest::chord(Duration::eighth());
+    chord_rest.tuplet = Some(tuplet);
+    let mut grace = GraceChord::new(GraceType::Appoggiatura, Duration::eighth());
+    grace.in_tuplet = agrement_dans_nolet;
+    grace
+        .chord
+        .notes
+        .push(score.add_note(Note::new(72, tpc::C)));
+    chord_rest
+        .chord_mut()
+        .expect("accord")
+        .grace_chords
+        .push(grace);
+    chord_rest
+        .chord_mut()
+        .expect("accord")
+        .notes
+        .push(score.add_note(Note::new(60, tpc::C)));
+    ajouter_element(&mut score, &mut measure, track, Fraction::ZERO, chord_rest);
+    score.add_measure(measure);
+    export_musicxml(&score).expect("export")
+}
+
+#[test]
+fn agrement_musescore_sans_time_modification() {
+    // `writeTimeModification` lit `chord()->tuplet()` : un agrément n'a pas de
+    // n-olet dans MuseScore.
+    let xml = partition_avec_agrement_dans_nolet(false);
+    assert_eq!(
+        xml.matches("<time-modification>").count(),
+        1,
+        "seule la note principale porte le n-olet :\n{xml}"
+    );
+}
+
+#[test]
+fn agrement_abc_garde_time_modification() {
+    let xml = partition_avec_agrement_dans_nolet(true);
+    assert_eq!(
+        xml.matches("<time-modification>").count(),
+        2,
+        "l'import ABC marque l'agrément du groupe :\n{xml}"
     );
 }

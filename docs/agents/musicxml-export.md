@@ -1442,3 +1442,21 @@ point ; remplacer `createMultiMeasureRests` par 0 le fait aussi, alors que
 pivot ne porte ni les décalages d'élément ni la géométrie des systèmes : ces
 deux fichiers restent hors de portée, comme les écarts de mise en page déjà
 classés.
+
+## 43. `time-modification` des agrégations : `chord()->tuplet()` (2026-11-23)
+
+`Ave_Maria_Schubert_in_C_with_chords` avait deux `<time-modification>`
+surnuméraires (6:4) sur des notes d'agrément. `writeTimeModification`
+(`exportmusicxml.cpp:4248-4278`) lit `chord()->tuplet()` : un accord d'agrément
+n'appartient à aucun n-olet dans MuseScore, donc la référence n'écrit rien. Le
+portage appliquait le n-olet de l'accord principal à l'agrément, pour suivre
+`abc2xml.py::mkNote` qui marque toutes les notes du groupe `(3…)`.
+
+Les deux comportements sont séparés par `GraceChord::in_tuplet` : faux par
+défaut (MuseScore, aucune écriture), posé par l'import ABC quand l'accord hôte
+reçoit un n-olet. La sortie ABC est inchangée ; le test
+`agrement_dans_niolet_time_modification` pose désormais explicitement le champ.
+
+Mesure ciblée : `Ave_Maria_Schubert_in_C_with_chords` 8 → **0** ligne
+canonique (core-identique), 0 perte. Tests réduits :
+`agrement_musescore_sans_time_modification` et `agrement_abc_garde_time_modification`.

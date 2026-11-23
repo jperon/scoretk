@@ -277,6 +277,14 @@ pub struct GraceChord {
     /// MusicXML porte ce décalage dans `<offset>`. `None` pour un ornement
     /// ordinaire, ou pour un modèle non LilyPond.
     pub played_offset: Option<Fraction>,
+    /// Vrai si `abc2xml.py` écrit un `<time-modification>` sur l'agrément.
+    ///
+    /// `writeTimeModification` (`exportmusicxml.cpp:4248-4278`) lit
+    /// `chord()->tuplet()` : un accord d'agrément n'appartient à aucun n-olet
+    /// dans MuseScore, donc la référence MuseScore n'écrit rien. L'import ABC
+    /// marque au contraire les agréments écrits dans `(3… )`
+    /// (`abc2xml.py::mkNote`) : ce champ sépare les deux comportements.
+    pub in_tuplet: bool,
     /// Accord d'agrément ; son [`Chord::grace`] indique le type.
     pub chord: Chord,
 }
@@ -291,6 +299,7 @@ impl GraceChord {
         Self {
             duration,
             played_offset: None,
+            in_tuplet: false,
             chord,
         }
     }

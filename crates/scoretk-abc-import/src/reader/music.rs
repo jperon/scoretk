@@ -845,6 +845,16 @@ impl Parser<'_> {
         }
         let base_len = chord_rest.duration.ticks();
         let tuplet = self.assign_tuplet(base_len);
+        if tuplet.is_some() {
+            // `abc2xml.py::mkNote` applique `ntup` aux agréments du groupe :
+            // l'export écrit leur `<time-modification>` (voir
+            // `GraceChord::in_tuplet`). MuseScore, lui, n'en écrit pas.
+            if let Some(chord) = chord_rest.chord_mut() {
+                for grace in &mut chord.grace_chords {
+                    grace.in_tuplet = true;
+                }
+            }
+        }
         let voice = &mut self.reader.voices[self.voice];
         let measure = voice.measure_index();
         let index = voice.current.events.len();
