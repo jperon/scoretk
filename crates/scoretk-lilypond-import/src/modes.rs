@@ -209,6 +209,10 @@ const QUALITIES: &[(&str, &[i8])] = &[
     // `c:min11`/`c:min13` gardent le leur (vérifié sur le MIDI de LilyPond).
     ("11", &[0, 4, 7, 10, 14, 17]),
     ("13", &[0, 4, 7, 10, 14, 17, 21]),
+    // `stack-thirds` (`scm/chord-entry.scm:270-278`) : au-delà de la 13e,
+    // l'accord de base est la 13e entière (l'extension demandée n'est ajoutée
+    // que si elle est écrite après un point, `:15` = accord de 13e).
+    ("15", &[0, 4, 7, 10, 14, 17, 21]),
     ("7.9", &[0, 4, 7, 10, 14]),
     ("5", &[0, 7]),
     ("1", &[0]),
@@ -238,6 +242,12 @@ fn addition_interval(ajout: &str) -> Option<i8> {
         "#11" => 18,
         "b13" => 20,
         "13" => 21,
+        // Extensions au-delà de la 13e, dans les octaves suivantes du
+        // `the-canonical-chord` : `ly:make-pitch 2 0 0` pour la 15e.
+        "15" => 24,
+        "17" => 28,
+        "19" => 31,
+        "21" => 35,
         _ => return None,
     })
 }
@@ -313,7 +323,7 @@ pub(crate) fn chord_pitches(language: Language, name: &str) -> Option<(Vec<u8>, 
     // non explicitée est retiré. Un `:11` ajouté explicitement l'explicite ;
     // une tierce mineure n'est pas « naturelle » non plus.
     let onzieme_explicite = ajouts.iter().any(|ajout| ajout.contains("11"));
-    let retire_onzieme = base == "13" && !mineur && !onzieme_explicite;
+    let retire_onzieme = matches!(base, "13" | "15") && !mineur && !onzieme_explicite;
     let mut notes: Vec<u8> = ecarts
         .iter()
         .filter(|ecart| !(retire_onzieme && **ecart == 17))

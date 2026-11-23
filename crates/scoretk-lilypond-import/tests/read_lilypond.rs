@@ -8846,3 +8846,19 @@ fn voices_prolonge_la_voix_nommee() {
         1
     );
 }
+
+#[test]
+fn accord_quinzieme_est_un_accord_de_treizieme() {
+    // `stack-thirds` (`scm/chord-entry.scm:270-298`) : au-delà de la 13e,
+    // l'accord de base est la 13e entière ; `:15` ne garde donc que les
+    // tierces empilées jusqu'à la 13e, et `.15` ajoute la quinzième (deux
+    // octaves au-dessus de la fondamentale).
+    let score =
+        read_lilypond("\\version \"2.24.0\"\n\\chordmode { f1:15 f1:13.15 }\n").expect("lecture");
+    let mut hauteurs = hauteurs_attaques(&score);
+    hauteurs.sort();
+    assert_eq!(
+        hauteurs,
+        vec![65, 65, 69, 69, 72, 72, 75, 75, 79, 79, 86, 86, 89]
+    );
+}
