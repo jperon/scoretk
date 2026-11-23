@@ -782,9 +782,22 @@ impl Reader {
                     // décider si la ligne est de la musique, sinon un accord
                     // `[!pppp!c!ffff!D]` est pris pour de la prose et l'air
                     // entier est lu sans notes (`VolumeInChords`).
+                    // Un champ en ligne `[V:1]` peut ouvrir la ligne de
+                    // musique (ABC 2.1 §7.3) : le retirer avant la
+                    // classification, sinon son `V` fait croire à de la
+                    // prose (`parsing.test__abc3` X:360).
+                    let mut reste = token;
+                    while reste.starts_with('[') {
+                        let Some(fin) = reste.find(']') else { break };
+                        let champ = &reste[1..fin];
+                        if !champ.contains(':') {
+                            break; // accord `[CEG]`, pas un champ
+                        }
+                        reste = reste[fin + 1..].trim_start();
+                    }
                     let mut nu = String::new();
                     let mut decoration = None;
-                    for c in token.chars() {
+                    for c in reste.chars() {
                         if let Some(delimiter) = decoration {
                             if c == delimiter {
                                 decoration = None;

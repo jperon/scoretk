@@ -3736,3 +3736,17 @@ Test réduit `crates/scoretk-abc-import/tests/chord_decoration_longue.rs`
 seul le lecteur change, même oracle : 4 712 → **4 716 exact / 4 756**,
 4 gains (`VolumeInChords`, `abcDirectives`, `abcDirectives2`, `abcGlissando`),
 0 perte. L'alternative reste à 4 655.
+
+## 49. Lecture : champ `[V:…]` en tête de ligne sans `K:` (2026-11-23)
+
+Les 5 derniers airs `VIDE` restants sont `parsing.test__abc3..9` X:360 :
+`[V:1]f|` sans champ `K:`. Le garde-fou « ligne de prose » (ajouté pour les
+lignes `N bars 13 …`) classait la ligne comme du texte à cause du `V` du
+champ en ligne, et l'air entier était lu sans note. ABC 2.1 §7.3 place les
+champs en ligne dans le corps ; abc2xml.py leur donne l'armure C par défaut.
+
+`reader/mod.rs::music_token` retire désormais les champs `[X:…]` ouvrant la
+ligne avant de la classifier. Test réduit
+`crates/scoretk-abc-import/tests/inline_field_sans_k.rs` (avec et sans `K:`).
+Mesure contrôlée, même binaire, seul le lecteur change : 4 716 →
+**4 721 exact / 4 756**, 5 gains, 0 perte ; abc2xml.py reste à 4 655.
