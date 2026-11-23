@@ -618,9 +618,7 @@ fn scheme_datum_end(characters: &[char], start: usize) -> usize {
             // Un booléen s'arrête après `t`/`f`/`true`/`false` : le lecteur
             // Guile (`scm_read`, `lily/parse-scm.cc:243`) y voit un datum
             // complet, même collé à une commande (`##t\repeat`).
-            Some(&first) if matches!(first, 't' | 'T' | 'f' | 'F') => {
-                scheme_boolean_end(characters, index)
-            }
+            Some(&('t' | 'T' | 'f' | 'F')) => scheme_boolean_end(characters, index),
             _ => scheme_atom_end(characters, index),
         },
         _ => scheme_atom_end(characters, index),
