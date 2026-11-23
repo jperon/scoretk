@@ -8757,7 +8757,7 @@ fn after_retarde_l_evenement() {
     let mut attaques = Vec::new();
     for measure in &score.measures {
         for segment in &measure.segments {
-            for voice in 0..4u32 {
+            for voice in 0..(4 * score.staves.len() as u32) {
                 if let Some(chord_rest) = segment.chord_rest(Track::from_raw(voice)) {
                     if let ChordRestKind::Chord(chord) = &chord_rest.kind {
                         for id in &chord.notes {
@@ -8788,4 +8788,43 @@ fn relative_apres_un_contexte_de_voix_enchaine_la_portee_suivante() {
     let mut hauteurs = hauteurs_attaques(&score);
     hauteurs.sort();
     assert_eq!(hauteurs, vec![60, 60, 60]);
+}
+
+#[test]
+fn portee_ossia_dans_une_sequence_demarre_au_tick_de_l_element() {
+    // `c2 << { c2 } \new Staff { c2 } >> c2.` : l'élément simultané avance le
+    // curseur de sa durée (`sequential_music`) et la portée ouverte naît à ce
+    // tick (`lily/context-specced-music-iterator.cc:38-99`). La portée
+    // principale saute l'élément ; l'ossia démarre à deux temps
+    // (`staff-highlight-ossia.ly`, `staff-ossia-end-at-time-change.ly`).
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\\relative c'' { c2 << { c2 } \\new Staff { c2 } >> c2. }\n",
+    )
+    .expect("lecture");
+    let mut attaques = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for voice in 0..(4 * score.staves.len() as u32) {
+                if let Some(chord_rest) = segment.chord_rest(Track::from_raw(voice)) {
+                    if let ChordRestKind::Chord(chord) = &chord_rest.kind {
+                        for id in &chord.notes {
+                            attaques.push((segment.tick, score.note(*id).pitch));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    attaques.sort_by_key(|(tick, pitch)| (*tick, *pitch));
+    // La branche simple du `<< >>` et la portée ossia jouent toutes deux à
+    // deux temps, comme le MIDI de LilyPond (quatre attaques).
+    assert_eq!(
+        attaques,
+        vec![
+            (Fraction::ZERO, 72),
+            (Fraction::new(1, 2), 72),
+            (Fraction::new(1, 2), 72),
+            (Fraction::ONE, 72),
+        ]
+    );
 }

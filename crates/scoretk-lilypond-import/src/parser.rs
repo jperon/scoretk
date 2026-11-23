@@ -1045,18 +1045,63 @@ impl<'a> Parser<'a> {
         {
             return vec![anonymous_group(wrap_all(wrappers, combine(items)))];
         }
-        let rest: Vec<Music> = items
+        // Un `<< { … } \new Staff { … } >>` au milieu d'une séquence est un
+        // élément comme un autre : LilyPond avance le curseur de sa durée
+        // (`sequential_music`) et la portée du `\new Staff` naît à ce tick
+        // (`lily/context-specced-music-iterator.cc:38-99`). La musique
+        // environnante reçoit donc un silence de la durée de l'élément, et la
+        // portée ouverte un silence de la durée écoulée avant lui
+        // (`staff-*-ossia*.ly`).
+        let ossia: Vec<bool> = items.iter().map(is_ossia_block).collect();
+        let mut decalages: Vec<Fraction> = Vec::with_capacity(items.len());
+        let mut ecoule = Fraction::ZERO;
+        for (position, item) in items.iter().enumerate() {
+            decalages.push(ecoule);
+            ecoule += music_duration_with_contexts(item, self.default_duration);
+            let _ = position;
+        }
+        let rest_items: Vec<Music> = items
             .iter()
-            .filter(|item| !has_context(item))
-            .cloned()
+            .enumerate()
+            .filter_map(|(position, item)| {
+                if has_context(item) {
+                    ossia[position].then(|| {
+                        skip_music(music_duration_with_contexts(item, self.default_duration))
+                    })
+                } else {
+                    Some(item.clone())
+                }
+            })
             .collect();
-        let mut rest = if rest.is_empty() { None } else { Some(rest) };
+        let mut rest = if rest_items.is_empty() {
+            None
+        } else {
+            Some(rest_items)
+        };
         let mut groups = Vec::new();
         let mut premier = true;
-        for item in items {
+        for (position, item) in items.into_iter().enumerate() {
             let avant = groups.len();
             if has_context(&item) {
-                groups.extend(self.score_groups_in(item, wrappers));
+                let mut ouverts = self.score_groups_in(item, wrappers);
+                if ossia[position] {
+                    let decalage = decalages[position];
+                    for group in &mut ouverts {
+                        for staff in &mut group.staves {
+                            for voice in &mut staff.voices {
+                                voice.music = Music::Seq(vec![
+                                    skip_music(decalage),
+                                    std::mem::replace(&mut voice.music, Music::Empty),
+                                ]);
+                            }
+                        }
+                        // La portée démarre au début de la séquence puis saute
+                        // `decalage` : elle ne se chaîne pas après la musique
+                        // environnante.
+                        group.sequence_start = false;
+                    }
+                }
+                groups.extend(ouverts);
             } else if let Some(rest) = rest.take() {
                 groups.push(anonymous_group(wrap_all(wrappers, combine(rest))));
             }
@@ -1065,7 +1110,7 @@ impl<'a> Parser<'a> {
             // `sequential_music`) : les contextes nommés qui reparaissent
             // continuent dans le temps, au lieu de repartir du tick 0 comme
             // les frères d'un `<< … >>`.
-            if sequential && !premier && avant < groups.len() {
+            if sequential && !premier && avant < groups.len() && !ossia[position] {
                 // Seul le **premier** groupe de l'élément porte la marque :
                 // les suivants (autres portées/voix du même élément) en
                 // héritent et ne doivent pas rouvrir un nouvel élément.
@@ -7622,6 +7667,61 @@ fn scale_music(music: &mut Music, factor: &Fraction) {
         Music::Tag { music, .. } | Music::Filtered { music, .. } => scale_music(music, factor),
         Music::Empty | Music::New(_) | Music::Lyrics(_) | Music::Unknown(_) => {}
     }
+}
+
+/// Vrai pour un `<< … \\ … >>` mêlant musique et contextes (ossia) : la
+/// portée ouverte y naît au tick de l'élément, pas après lui.
+fn is_ossia_block(music: &Music) -> bool {
+    match music {
+        Music::Sim(items) | Music::SimVoices(items) => {
+            items.iter().any(has_context) && items.iter().any(|item| !has_context(item))
+        }
+        _ => false,
+    }
+}
+
+/// Durée d'un élément de séquence, contextes compris.
+fn music_duration_with_contexts(music: &Music, default: Duration) -> Fraction {
+    match music {
+        Music::New(group) => group
+            .staves
+            .iter()
+            .flat_map(|staff| staff.voices.iter())
+            .map(|voice| music_duration(&voice.music, default))
+            .fold(
+                Fraction::ZERO,
+                |total, duree| {
+                    if duree > total {
+                        duree
+                    } else {
+                        total
+                    }
+                },
+            ),
+        _ => music_duration(music, default),
+    }
+}
+
+/// Silence de `ticks` (en rondes), pour conserver le temps d'un élément de
+/// séquence (`\skip`, `ChordKind::SkipNumeric` : sa durée ne devient pas la
+/// durée par défaut).
+fn skip_music(ticks: Fraction) -> Music {
+    if !ticks.is_positive() {
+        return Music::Empty;
+    }
+    Music::Chord(Chord {
+        kind: ChordKind::SkipNumeric,
+        duration: Some(Duration::whole()),
+        multiplier: if ticks == Fraction::ONE {
+            None
+        } else {
+            Some(ticks)
+        },
+        from_scale: false,
+        bracketed: false,
+        posts: Vec::new(),
+        invisible: false,
+    })
 }
 
 /// Applique un facteur d'échelle aux musiques contenues dans une commande.
