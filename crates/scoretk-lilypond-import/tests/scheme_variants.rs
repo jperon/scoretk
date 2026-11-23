@@ -45,7 +45,8 @@ const EXPECTED_FAILURES: &[&str] = &[
     "04-repeat-computed",
     "05-tempo-computed",
     "06-measure-length-sum",
-    "12-tremolo-repeat-computed",
+    // 12-tremolo-repeat-computed est désormais lu : `\* #(+ 4 4)` est
+    // reconnu comme le compte 8 (variante 12 de la suite).
     "13-duration-multiplier",
     // Corps de fonction musicale sous `if`.
     "14-body-if-music",

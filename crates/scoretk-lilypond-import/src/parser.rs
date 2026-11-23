@@ -3548,6 +3548,15 @@ impl<'a> Parser<'a> {
                         text,
                         ..
                     }) => text.parse().unwrap_or(2),
+                    // `#(+ 4 32)` est un seul jeton Scheme pour le lexer ;
+                    // la fonction musicale reçoit la valeur évaluée 36.
+                    Some(Token {
+                        kind: Kind::Scheme,
+                        text,
+                        ..
+                    }) => scheme_integer_count(&text)
+                        .and_then(|value| u32::try_from(value).ok())
+                        .unwrap_or(2),
                     _ => 2,
                 };
                 let kind = if name == "*" {
@@ -7634,6 +7643,74 @@ fn scale_scheme_fraction(datum: &str) -> Option<Fraction> {
         numerator.trim().parse().ok()?,
         denominator.trim().parse().ok()?,
     )
+}
+
+/// Compte arithmétique d'une répétition abrégée, par exemple `#(+ 4 32)`.
+///
+/// `\*` et `\%` sont des fonctions musicales dont l'argument est de type
+/// `number?` (`ly/music-functions-init.ly:742-751`) : le lexer amont lit un
+/// **datum Scheme entier** (`lily/lexer.ll:407-419`, `parse_embedded_scheme`
+/// de `lily/parse-scm.cc:206-307`), et Guile évalue `(+ 4 32)` avant de
+/// l'envoyer à la fonction. Le lecteur ne dispose pas d'évaluateur Scheme
+/// (`docs/agents/lilypond-scheme.md` §8) ; on reconnaît donc uniquement les
+/// appels arithmétiques sur des littéraux entiers, qui suffisent à
+/// `beat-performer.ly`. Toute autre forme retombe sur le compte par défaut.
+fn scheme_integer_count(datum: &str) -> Option<i64> {
+    /// Découpe une liste Scheme en atomes en respectant les parenthèses.
+    fn atoms(list: &str) -> Vec<&str> {
+        let mut result = Vec::new();
+        let mut depth = 0usize;
+        let mut start = 0usize;
+        for (index, character) in list.char_indices() {
+            match character {
+                '(' => depth += 1,
+                ')' => depth = depth.saturating_sub(1),
+                c if c.is_whitespace() && depth == 0 => {
+                    if start < index {
+                        result.push(&list[start..index]);
+                    }
+                    start = index + c.len_utf8();
+                }
+                _ => {}
+            }
+        }
+        if start < list.len() {
+            result.push(&list[start..]);
+        }
+        result
+    }
+
+    let text = datum.trim();
+    let inner = text.strip_prefix('(')?.strip_suffix(')')?;
+    let parts = atoms(inner);
+    let (operator, operands) = parts.split_first()?;
+    if operands.is_empty() {
+        return None;
+    }
+    let mut values = Vec::with_capacity(operands.len());
+    for operand in operands {
+        let value = operand
+            .parse::<i64>()
+            .ok()
+            .or_else(|| scheme_integer_count(operand))?;
+        values.push(value);
+    }
+    match *operator {
+        "+" => values.into_iter().try_fold(0i64, i64::checked_add),
+        "-" => {
+            let (first, rest) = values.split_first()?;
+            rest.iter()
+                .try_fold(*first, |total, value| total.checked_sub(*value))
+        }
+        "*" => values.into_iter().try_fold(1i64, i64::checked_mul),
+        // Le quotient d'un compte doit être entier (`(/ (+ 4 32) 2)` vaut 18).
+        "/" => {
+            let (first, rest) = values.split_first()?;
+            rest.iter()
+                .try_fold(*first, |total, value| total.checked_div(*value))
+        }
+        _ => None,
+    }
 }
 
 /// `musicMap #skip->rest` : transformer les silences invisibles en silences

@@ -7476,3 +7476,36 @@ Mesure complète (`target/ly95-skipfix-full`, même manifeste corrigé, même or
 (+0,1 B ; le fichier corrigé grandit de 191 B, un autre de 21 B, les autres
 inchangés). Les deux seuls fichiers non exacts sont les exceptions de source
 documentées ci-dessus. Cible atteinte : export 100 % hors exceptions.
+
+## Campagne de lecture ciblée (2026-11-23, lot `ra` 1 682/1 724)
+
+Protocole : binaire gelé avant toute édition (`/tmp/ly-wsz-base`) et le même
+oracle pour les deux camps (`mesure.py --refs-only`, `--refs-prefix out3`,
+arbre `/tmp/ly95lect-refs-clean` pour `ra`, `/tmp/ly95lect-refs-fresh` pour
+`mut`/`rw`), un seul lot mesuré à la fois, aucun parallélisme dans le pilote.
+Chaque cause est portée avec un test réduit échouant d'abord, puis mesurée sur
+les trois lots ; un gain n'est accepté que si `ra`, `mut` et `rw` n'ont aucune
+perte fichier par fichier (exact, N1 et N2).
+
+### Cause : compte Scheme calculé de `\*` / `\%`
+
+`beat-performer.ly` écrit `\* #(+ 4 32) 32`. `ly/music-functions-init.ly:742-751`
+définit `\*` comme une fonction musicale dont le compte est un `number?` ; le
+lexer amont lit `#(+ 4 32)` comme **un seul datum** (`lily/lexer.ll:407-419`,
+`lily/parse-scm.cc:206-307`) et Guile évalue l'expression avant l'appel. Le
+lecteur ne reconnaissait que `Kind::Number` : le jeton Scheme était consommé
+avec la valeur par défaut 2, puis le `32` suivant devenait une durée nue qui
+rejouait le dernier accord. Le fichier ne jouait que 122 des 190 notes de
+référence (deux portées × 34 notes manquantes).
+
+`Parser::scheme_integer_count` reconnaît désormais les appels arithmétiques
+`+`, `-`, `*`, `/` sur des littéraux entiers (ou des appels imbriqués), sans
+évaluateur Scheme général (`docs/agents/lilypond-scheme.md` §8) ; les autres
+formes retombent sur le compte par défaut. Test réduit
+`abbreviation_repeat_compte_scheme_addition` (2 notes avant, 36 après). La
+variante 12 de `tests/scheme_variants/` (`\* #(+ 4 4)` contre `\* 8`) sort de
+la liste des échecs connus : **7/14 → 8/14** variantes identiques.
+
+Mesure contrôlée : `ra` **1 682 → 1 683/1 724**, `mut` 1 216/1 316 et
+`rw` 1 258/1 365 inchangés ; **1 gain, 0 perte**, N1/N2 identiques sur les
+cinq mille autres fichiers. Sur `beat-performer.ly`, N1 = N2 = 190/190.

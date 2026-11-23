@@ -7365,6 +7365,18 @@ fn abbreviations_repeat_unfold_et_percent() {
 }
 
 #[test]
+fn abbreviation_repeat_compte_scheme_addition() {
+    // `beat-performer.ly` (lot `ra`) : `\* #(+ 4 32) 32`. Le compte est un
+    // datum Scheme complet (`lily/lexer.ll:407-419`), lu par le lexer amont
+    // comme un seul jeton avant d'être passé à la fonction musicale `\*`
+    // (`ly/music-functions-init.ly:742-751`).
+    let src = "\\version \"2.24.0\"\n{ \\* #(+ 4 32) c'32 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(score.notes.len(), 36, "36 notes jouées par \\* #(+ 4 32)");
+    assert!(score.notes.iter().all(|note| note.pitch == 60));
+}
+
+#[test]
 fn text_mark_ne_mange_pas_la_duree_nue_suivante() {
     // `ly/music-functions-init.ly:2365-2368` : `\textMark` prend un seul
     // argument de markup ; la durée nue qui suit est une musique à jouer.
