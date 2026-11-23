@@ -2690,6 +2690,23 @@ impl<'a> Parser<'a> {
             }
             return;
         }
+        // `ly:context-mod?` : `\with { … }` (ou un contexte Scheme). La
+        // commande `\with` est consommée et le bloc seul devient l'argument,
+        // pour que le corps puisse la placer derrière son propre `\with`
+        // (`\new Voice \with #style { … }`, `note-head-style.ly`).
+        if predicate.contains("context-mod") {
+            if self.peek().is_some_and(|token| token.is_command("with")) {
+                self.position += 1;
+                if self.peek().is_some_and(|token| token.is_punct('{')) {
+                    self.skip_braced();
+                } else {
+                    self.bump();
+                }
+            } else {
+                self.bump();
+            }
+            return;
+        }
         if predicate.ends_with("number?")
             || predicate.ends_with("integer?")
             || predicate == "index?"

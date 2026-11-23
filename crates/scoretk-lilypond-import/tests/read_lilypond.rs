@@ -8592,3 +8592,18 @@ fn retrograde_retourne_la_liaison() {
         .expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![62, 60]);
 }
+
+#[test]
+fn fonction_musicale_argument_context_mod() {
+    // `note-head-style.ly` : un argument `ly:context-mod?` reçoit un
+    // `\with { … }` ; la commande est consommée et le bloc est remplacé dans
+    // le corps derrière son propre `\with` (`\new Voice \with #style …`).
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\
+         pattern = #(define-music-function (style) (ly:context-mod?)\n\
+         #{ \\new Voice \\with #style { c'4 d'2 } #})\n\
+         { \\pattern \\with { \\override NoteHead.style = #'cross } }\n",
+    )
+    .expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![60, 62]);
+}
