@@ -3479,3 +3479,43 @@ The 11 remaining non-exact files have first *audible* divergence ticks:
 `Czardas_Monti` at 3 720 (16 orphans); `Stella_maris - La/-SiB` at 21 060.
 They are genuine note/onset/duration differences, not pairing artefacts.
 All 16 `scripts/oracle/midi/` selftests pass.
+
+## Corrected audible replay: merged tracks (2026-11-23)
+
+`evenements_audibles()` was replaying each SMF track one after another. That
+is wrong for hoisted note-offs (`exportmidi.cpp:304-323`): whether an off on
+track 2 closes a note opened on track 1 depends on the arbitrary track order.
+It now merges **all** events by absolute tick (equivalent to
+`mido.merge_tracks`), then applies a fixed rule inside a tick: **offs before
+ons**, because note-on velocity zero is a note-off (`format-ref/midi.md`
+line 63) and a restrike ends the previous note before opening the new one
+(`fixupMIDI`, `engraving/compat/midi/event.cpp:263-306`). Two new selftests
+cover a cross-track off whose orphan status changed with track order (now
+stable) and a cross-track off that really cuts a sounding note (still a
+difference); 18 oracle selftests pass.
+
+**Controlled measurement** (same binary `midi-base`, only the oracle changed,
+`target/midi-merged`):
+
+| Lot | Exact before | Exact after | Gains | Losses |
+| --- | ---: | ---: | ---: | ---: |
+| corpus (`.mscx`) | 17/17 | **17/17** | 0 | 0 |
+| `.mscz` (171 files) | 143/171 | **143/171 (83.6 %)** | **0** | **0** |
+
+**The 17 files do NOT stay event-equal under correct replay.** The previous
+160/171 result was an artefact of sequential replay misclassifying hoisted
+offs as orphans. With merged replay the first *audible* divergence is:
+
+- `00- Veni veni Emmanuel - chant piano` — tick **22 080**: the reference has
+  `(channel 1, off, 67)` in addition to the channel-0 events; our output lacks
+  it (512 orphan offs on the reference side, 19 on ours overall).
+- `00- Once in royal David_s city - chant piano` — tick **117 840**, same
+  pattern on pitch 67.
+
+At tick 0 both sides now agree, so the earlier "real writer difference at
+tick 0" was itself an artefact. The remaining difference is a hoisted
+note-off on the previous staff's channel that our writer never emits. A
+`fixup.rs` attempt to carry the previous channel into `NoteOffRestrike` was
+reverted before commit: `playing` is already keyed by `(part, channel, key)`,
+so the "previous" channel is necessarily the current one and the edit was a
+no-op. This needs a separate, measured port of the cross-channel hoist.
