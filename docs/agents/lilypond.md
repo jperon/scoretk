@@ -6490,3 +6490,41 @@ Scheme `\test`, hors sous-ensemble. Aucun correctif lecteur justifié.
 (`skiptypesetting-show-last`, `note-head-style`) sont pilotés par Scheme,
 et 1 (`voices-command`) a une cause résiduelle non partagée. Aucun d'entre
 eux ne justifie un hack spécifique ; they rest in the denominator.
+### Temps de grâce : règle d'oracle dérivée du MIDI seul
+
+La première tentative (`recaler_graces_internes`) était **fausse** : elle
+calculait `delta = r - t` note par note puis soustrayait ce delta, rendant
+exact n'importe quel candidat de même hauteur. Elle a été retirée de
+l'historique (`git reset --hard master`).
+
+Vidage brut du MIDI de référence (`mido`, tpb 384) : la grâce
+`\acciaccatura {c'8}` est émise au tick 336 avec une durée de **43 ticks**,
+au même tick que le `d'64` précédent coupé de 24 à **1 tick** ; la note
+principale suit au 380, phrase suivante au **404** au lieu de 384. Le
+décalage est donc **+20 ticks (0,05208 noire) par grâce**.
+
+Pourquoi le temps suivant bouge alors que la grâce est hors temps principal :
+`lily/grace-iterator.cc:25-40` met la grâce dans la partie `grace_part_` du
+moment, `lily/audio-item.cc:118-129` convertit ce moment en temps réel
+(`main + 9/40 × grace_part`), `lily/audio-column.cc:32-34` l'applique à
+l'horodatage de la colonne audio, et `lily/midi-walker.cc:92-95` écrit les
+delta-ticks. C'est un **quirk du MIDI LilyPond** : le temps de grâce est
+audible et décale les colonnes suivantes, même si la notation le considère
+hors mesure.
+
+Règle conservée : `decalage_graces_reference()` identifie les grâces du MIDI
+par hauteur/fenêtre **uniquement pour les repérer** (durée MIDI courte
+`<= GRID/2`, attaque partagée avec une note amputée à `< GRID/4`), puis
+calcule l'excédent `durée_grace - GRID/4` et construit S(t) = somme cumulée
+des excédents. S(t) est soustrait des attaques de référence avant
+comparaison. **Aucune attaque du candidat n'entre dans le calcul.** Un
+selftest vérifie qu'un candidat avec grâces appariées mais une note
+principale décalée d'une croche reste inexact ; `ly_notes.py selftest` OK.
+
+Mesure (`/tmp/ly-refonly4`, arbre propre) : **1588/1724 (92,1 %)**,
+**+11 exacts**, **0 perte** — `accidental-placement-samepitch`,
+`arpeggio-no-overshoot`, `collision-{dots, heads, merge-differently-dotted,
+merge-differently-headed, single-head}`, `completion-heads-polyphony`,
+`flag-stem-begin-position`, `note-head-chord`, `text-spanner-override-order`.
+L'ancien chiffre 1591 provenait de la règle incorrecte et n'est pas
+comparable ; le présent +11 est le gain réel et vérifié sans perte.

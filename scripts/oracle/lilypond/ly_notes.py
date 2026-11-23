@@ -457,6 +457,83 @@ def recaler_graces_initiales(
     return [(n[0], n[1] - decalage, *n[2:]) for n in reference], decalage
 
 
+def decalage_graces_reference(
+    reference: list[tuple], graces: list[tuple[int, float]], grid: float = GRID,
+    window: float = 1.0,
+) -> list[tuple[float, float]]:
+    """Pas de temps inséré par les grâces, calculé sur le MIDI seul.
+
+    `lily/grace-iterator.cc:25-40` place la grâce dans la partie « grâce »
+    du moment ; `lily/audio-item.cc:118-129` convertit ce moment en temps
+    réel (`main + 9/40 × grace`), et `lily/audio-column.cc:32-34` l'utilise
+    pour l'horodatage de chaque colonne audio. Une grâce écrite à l'attaque
+    d'une note principale occupe donc un temps MIDI réel qui décale toutes
+    les colonnes suivantes (`lily/midi-walker.cc:92-95`).
+
+    On retire à chaque grâce la durée nominale qu'elle remplace (une
+    double-croche, GRID/4 : c'est la valeur volée dans les tests `flags-*`) :
+    seul l'excédent est du temps inséré. Le résultat est une fonction en escalier
+    S(t) : somme des excédents des grâces d'attaque <= t. Les attaques du
+    candidat ne servent qu'à *identifier* les grâces du MIDI (par hauteur et
+    fenêtre), jamais à calculer le décalage.
+    """
+    utilises: set[int] = set()
+    intervalles: list[tuple[float, float]] = []
+    for hauteur, attaque in graces:
+        candidats = [
+            i for i, note in enumerate(reference)
+            if i not in utilises and note[0] == hauteur
+            and attaque - window <= note[1] <= attaque + grid / 2
+            # Une grâce est jouée brièvement dans le MIDI (audio-item.cc:122) :
+            # ne pas confondre une note longue de même hauteur dans la fenêtre.
+            and len(note) >= 3 and note[2] <= grid / 2
+        ]
+        if not candidats:
+            continue
+        i = max(candidats, key=lambda j: (reference[j][1], -j))
+        utilises.add(i)
+        note = reference[i]
+        # Une grâce ne décale la mesure que si elle partage son attaque
+        # avec une note principale qu'elle ampute (cas `flags-*` : les deux
+        # note-on au tick 336). Une grâce jouée seule avant sa note ne
+        # décale pas le temps principal.
+        partage = any(
+            j != i and other[1] == note[1] and len(other) >= 3
+            and other[2] < grid / 4
+            for j, other in enumerate(reference)
+        )
+        excedent = (
+            max(0.0, note[2] - GRID / 4)
+            if partage and len(note) >= 3 else 0.0
+        )
+        if excedent:
+            intervalles.append((note[1], excedent))
+    intervalles.sort()
+    cumul = 0.0
+    paliers: list[tuple[float, float]] = []
+    for att, excedent in intervalles:
+        cumul += excedent
+        paliers.append((att, cumul))
+    return paliers
+
+
+def retirer_temps_graces(
+    reference: list[tuple], paliers: list[tuple[float, float]],
+) -> list[tuple]:
+    """Retranche S(t) de chaque attaque de référence."""
+    if not paliers:
+        return reference
+    resultat: list[tuple] = []
+    for note in reference:
+        decal = 0.0
+        for att, cumul in paliers:
+            if note[1] < att:
+                break
+            decal = cumul
+        resultat.append((note[0], round(note[1] - decal, 6), *note[2:]))
+    return resultat
+
+
 def apparier_graces(
     reference: list[tuple], graces: list[tuple[int, float]], grid: float = GRID,
     window: float = 1.0,
@@ -556,8 +633,10 @@ def compare(
     resultat["pct_n1"] = round(100.0 * n1 / r, 2) if r else 0.0
     resultat["pct_n2"] = round(100.0 * n2 / r, 2) if r else 0.0
     if graces is not None:
+        paliers = decalage_graces_reference(reference, graces, grid)
+        reference_sans_temps_grace = retirer_temps_graces(reference, paliers)
         ref_main, n_gr_ref, n_gr_test, n_gr_match = apparier_graces(
-            reference, graces, grid
+            reference_sans_temps_grace, graces, grid
         )
         test_main = [note for note in test if not (len(note) >= 5 and note[4])]
         n2_grace = compter_paires(ref_main, test_main, grid) + n_gr_match
@@ -764,6 +843,19 @@ def selftest() -> None:
         lead = compare(ref_lead, test_lead,
                        graces=[(79, 0.0), (81, 0.0), (83, 0.0)])
         assert lead["n2_grace"] == 5 and lead["exact"], lead
+        # Le temps inséré par une grâce est calculé sur le MIDI seul :
+        # une note principale déplacée d'une croche doit rester inexacte.
+        ref_retard = [(62, 0.0, 0.1375, 0), (60, 0.5, 1.0, 0),
+                      (64, 1.5, 1.0, 0)]
+        graces_retard = [(62, 0.5)]
+        juste = [(62, 0.5, 0.0, 0, True), (60, 0.5, 1.0, 0, False),
+                 (64, 1.5, 1.0, 0, False)]
+        faux = [(62, 0.5, 0.0, 0, True), (60, 1.0, 1.0, 0, False),
+                (64, 1.5, 1.0, 0, False)]
+        assert compare(ref_retard, juste, graces=graces_retard)["exact"]
+        faux_releve = compare(ref_retard, faux, graces=graces_retard)
+        assert not faux_releve["exact"] and faux_releve["n2_grace"] < 3, faux_releve
+
         # Sans graces déclarées, le relevé n'a pas de champ supplémentaire.
         assert "n2_grace" not in brut, brut
 
