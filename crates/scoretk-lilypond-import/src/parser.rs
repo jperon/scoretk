@@ -1246,6 +1246,7 @@ impl<'a> Parser<'a> {
                     short_instrument_name.clone(),
                     false,
                     false,
+                    false,
                 );
                 return Music::New(Box::new(GroupBlock {
                     kind: GroupKind::Staff,
@@ -1406,6 +1407,7 @@ impl<'a> Parser<'a> {
         let mut short_instrument_name = None;
         let mut verse = None;
         let mut midi_silent = false;
+        let mut merge_unisons = false;
         if self.eat_command("with") {
             let debut_with = self.position;
             // `lily/parser.yy:1625` (`context_modification_arg`) : après
@@ -1446,6 +1448,9 @@ impl<'a> Parser<'a> {
                     "instrumentName" => instrument_name = Some(value),
                     "shortInstrumentName" => short_instrument_name = Some(value),
                     "stanza" => verse = stanza_verse(&value),
+                    "midiMergeUnisons" => {
+                        merge_unisons = matches!(value.trim(), "#t" | "##t" | "t" | "true")
+                    }
                     _ => {}
                 }
             }
@@ -1515,6 +1520,7 @@ impl<'a> Parser<'a> {
         // Contenu du contexte.
         let mut staff = StaffBlock::new();
         staff.muted = midi_silent;
+        staff.merge_unisons = merge_unisons;
         staff.name = context_name.clone();
         staff.instrument_name = instrument_name.clone();
         staff.short_instrument_name = short_instrument_name.clone();
@@ -1616,6 +1622,7 @@ impl<'a> Parser<'a> {
                     staff.instrument_name.clone(),
                     staff.short_instrument_name.clone(),
                     staff.muted,
+                    merge_unisons,
                     kind == GroupKind::Other,
                 );
                 Some(GroupBlock {
@@ -1635,6 +1642,7 @@ impl<'a> Parser<'a> {
     /// ou plusieurs si le contenu ouvre des contextes enfants de portée
     /// (`\context ChordNames`, `\new Dynamics`…), qui sont des pistes MIDI
     /// distinctes (`ly/engraver-init.ly` l. 492, `\accepts ChordNames`).
+    #[allow(clippy::too_many_arguments)] // propriétés du contexte Staff à propager
     fn staff_blocks_from_content(
         &mut self,
         content: Music,
@@ -1642,6 +1650,7 @@ impl<'a> Parser<'a> {
         instrument_name: Option<String>,
         short_instrument_name: Option<String>,
         muted: bool,
+        merge_unisons: bool,
         group_like: bool,
     ) -> Vec<StaffBlock> {
         let addlyrics_target = last_voice_name(&content);
@@ -1657,6 +1666,7 @@ impl<'a> Parser<'a> {
                     .clone()
                     .or(short_instrument_name);
                 premiere.muted |= muted;
+                premiere.merge_unisons |= merge_unisons;
                 premiere.lyrics.splice(0..0, lyrics);
                 self.collect_addlyrics_target(premiere, addlyrics_target);
             }
@@ -1669,6 +1679,7 @@ impl<'a> Parser<'a> {
         staff.instrument_name = instrument_name;
         staff.short_instrument_name = short_instrument_name;
         staff.muted = muted;
+        staff.merge_unisons = merge_unisons;
         collect_lyrics_in_music(&content, &mut staff.lyrics);
         staff.voices.push(VoiceBlock {
             name: None,

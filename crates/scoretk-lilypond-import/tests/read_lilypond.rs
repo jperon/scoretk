@@ -4135,6 +4135,34 @@ fn tempo_pointe_ne_fait_pas_perdre_le_time_suivant() {
     assert_eq!(score.measures.len(), 2);
 }
 
+/// `midiMergeUnisons` (`scm/define-context-properties.scm:555`,
+/// `lily/midi-walker.cc:95-115`) ne joue qu'une attaque quand deux notes de
+/// même hauteur se chevauchent dans la même piste MIDI. Le modèle garde les
+/// deux notes, mais la seconde est marquée `unperformed` (écrite `<cue/>`),
+/// comme pour les autres musiques gravées sans performer.
+#[test]
+fn midi_merge_unisons_fusionne_les_unissons_qui_se_chevauchent() {
+    let src = "\\version \"2.24.0\"\n\\score { \\new Staff \\with { midiMergeUnisons = ##t } << { r8 a'4. } \\\\ { a'4. r8 } >> }";
+    let score = read_lilypond(src).expect("lecture midiMergeUnisons");
+    let jouees: Vec<u8> = score
+        .notes
+        .iter()
+        .filter(|note| !note.unperformed)
+        .map(|note| note.pitch)
+        .collect();
+    assert_eq!(jouees, vec![69]);
+    // Cas non concerné : sans la propriété, les deux attaques sont jouées.
+    let sans = "\\version \"2.24.0\"\n\\score { \\new Staff << { r8 a'4. } \\\\ { a'4. r8 } >> }";
+    let score_sans = read_lilypond(sans).expect("lecture");
+    let jouees_sans: Vec<u8> = score_sans
+        .notes
+        .iter()
+        .filter(|note| !note.unperformed)
+        .map(|note| note.pitch)
+        .collect();
+    assert_eq!(jouees_sans, vec![69, 69]);
+}
+
 #[test]
 fn partcombine_deux_voix_simultanees() {
     // `\partcombine` (ancien nom de `\partCombine`, `ly/music-functions-init.ly`)

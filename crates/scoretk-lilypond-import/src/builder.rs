@@ -1050,13 +1050,17 @@ fn build_voices(
     // `\cadenzaOn`…) n'occupe pas de piste : ses événements sont repliés en
     // tête de la première voix qui porte de la musique, les clefs et armures
     // appartenant à la portée et non à une voix.
-    let kept = match kept
+    let mut kept = match kept
         .iter()
         .position(|pending| has_chord_events(&pending.interpreted))
     {
         Some(target) => merge_preamble(kept, target),
         None => kept,
     };
+
+    if staff_block.merge_unisons {
+        fusionner_unissons(&mut kept);
+    }
 
     let (voices, lyrics, mut overflow) = assign_voice_slots(score, staff, kept, occupied.to_vec());
     let mut built = vec![BuiltVoices {
@@ -1095,6 +1099,43 @@ fn build_voices(
         );
     }
     (built, octave)
+}
+
+/// `midiMergeUnisons = ##t` (`lily/midi-walker.cc:95-115`) : deux notes de
+/// même hauteur qui se chevauchent dans une même piste ne donnent qu'une
+/// attaque. La note la plus tardive reste dans le modèle (gravure) mais est
+/// marquée `unperformed`, comme les musiques sans performer MIDI.
+fn fusionner_unissons(voix: &mut [PendingVoice]) {
+    let mut notes: Vec<(usize, usize, usize, Fraction, Fraction, u8)> = Vec::new();
+    for (v, pending) in voix.iter().enumerate() {
+        for (e, event) in pending.interpreted.events.iter().enumerate() {
+            let EventKind::Chord(chord) = &event.kind else {
+                continue;
+            };
+            let ChordContent::Notes(content) = &chord.content else {
+                continue;
+            };
+            for (n, note) in content.iter().enumerate() {
+                notes.push((v, e, n, event.tick, event.tick + chord.actual, note.pitch));
+            }
+        }
+    }
+    notes.sort_by_key(|(v, e, n, debut, _, _)| (*debut, *v, *e, *n));
+    let mut jouees: Vec<(Fraction, Fraction, u8)> = Vec::new();
+    for (v, e, n, debut, fin, pitch) in notes {
+        if jouees
+            .iter()
+            .any(|(d, f, p)| *p == pitch && *d <= debut && debut < *f)
+        {
+            if let EventKind::Chord(chord) = &mut voix[v].interpreted.events[e].kind {
+                if let ChordContent::Notes(content) = &mut chord.content {
+                    content[n].unperformed = true;
+                }
+            }
+        } else {
+            jouees.push((debut, fin, pitch));
+        }
+    }
 }
 
 /// Accolade d'un groupe de portées.

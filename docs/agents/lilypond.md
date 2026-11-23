@@ -7636,3 +7636,23 @@ Deux tests réduits, vérifiés contre le MIDI de LilyPond 2.26 :
 contrôlée : `ra` **1 688 → 1 689/1 724**, `mut` 1 216/1 316 et
 `rw` 1 258/1 365 inchangés ; **1 gain, 0 perte**, et N1/N2 de
 `ToccataFugue.ly` passent de 99,78/97,10 à 100/100 sur les deux lots réels.
+
+### Cause : `midiMergeUnisons` (unissons qui se chevauchent)
+
+`midi-unisons.ly` écrit deux portées avec la même polyphonie
+(`<< {r8 g'4.} \\ {g'4. r8} >>`) ; la seconde porte
+`\with { midiMergeUnisons = ##t }`. Cette propriété
+(`scm/define-context-properties.scm:555`, lue par
+`lily/staff-performer.cc:114-143` et `lily/midi-walker.cc:95-115`) ne joue
+qu'une attaque quand deux notes de même hauteur se chevauchent dans la même
+piste MIDI. Le lecteur jouait les deux notes de la seconde portée (4 notes
+au lieu de 3).
+
+La propriété est désormais mémorisée sur `StaffBlock` et propagée jusqu'à
+`build_voices`, qui marque `unperformed` la plus tardive des deux notes
+(le MusicXML l'écrit `<cue/>`, que l'oracle ne compte pas) sans changer la
+trame des mesures. Test réduit
+`midi_merge_unisons_fusionne_les_unissons_qui_se_chevauchent` (69, 69 avant,
+69 après ; contrôle sans propriété : 69, 69). Mesure contrôlée :
+`ra` **1 689 → 1 690/1 724 (98,0 %)**, `mut` 1 216/1 316 et
+`rw` 1 258/1 365 inchangés ; **1 gain, 0 perte**, N1/N2 identiques.

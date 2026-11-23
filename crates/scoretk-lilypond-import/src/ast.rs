@@ -598,6 +598,10 @@ pub(crate) struct StaffBlock {
     /// Vrai si la portée est gravée mais absente du MIDI
     /// (`\with { \remove "Staff_performer" }`).
     pub muted: bool,
+    /// `\with { midiMergeUnisons = ##t }` : le performer MIDI ne joue
+    /// qu'une attaque pour deux notes de même hauteur qui se chevauchent
+    /// (`lily/midi-walker.cc:95-115`).
+    pub merge_unisons: bool,
     /// Faux pour une portée de type NullVoice : gravée dans le modèle mais
     /// masquée à l'export (`Staff::visible`, `<staff-details print-object="no">`).
     pub visible: bool,
@@ -632,6 +636,7 @@ impl StaffBlock {
             instrument_name: None,
             short_instrument_name: None,
             muted: false,
+            merge_unisons: false,
             visible: true,
             sequence_start: false,
             sequence_continue: false,
