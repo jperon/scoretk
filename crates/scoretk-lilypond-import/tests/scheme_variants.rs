@@ -38,18 +38,7 @@ use scoretk_lilypond_import::read_lilypond;
 ///
 /// Mesuré avant tout évaluateur Scheme ; chaque entrée est une forme que
 /// l'analyse par motifs ne reconnaît pas.
-const EXPECTED_FAILURES: &[&str] = &[
-    // Corps de fonction musicale réduit à une expression Scheme générale.
-    "01-body-return-let",
-    // Nombres calculés là où une constante est attendue.
-    "04-repeat-computed",
-    "05-tempo-computed",
-    "06-measure-length-sum",
-    "12-tremolo-repeat-computed",
-    "13-duration-multiplier",
-    // Corps de fonction musicale sous `if`.
-    "14-body-if-music",
-];
+const EXPECTED_FAILURES: &[&str] = &[];
 
 fn variantes() -> Vec<(String, PathBuf, PathBuf)> {
     let dossier = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scheme_variants");

@@ -85,6 +85,8 @@ pub(crate) struct Parser<'a> {
     playback_unfold_repeats: bool,
     /// Fonctions musicales définies en Scheme (`define-music-function`…).
     music_functions: BTreeMap<String, MusicFunction>,
+    /// Environnement Scheme (`#(define …)`, valeurs calculées).
+    scheme: crate::scheme::Evaluator,
     /// Profondeur d'expansion des blocs embarqués et des fonctions.
     expansion_depth: u32,
     /// Fraction par défaut d'un `\afterGrace` sans argument
@@ -160,6 +162,8 @@ struct MusicFunction {
     predicates: Vec<String>,
     /// Corps musical (`#{ … #}`), absent pour une fonction Scheme pure.
     body: Option<Vec<Token>>,
+    /// Corps Scheme évalué (aucun `#{ … #}`) : formes du datum.
+    scheme_body: Option<Vec<crate::scheme::Value>>,
     /// Fonction dont le corps Scheme est un seul paramètre (`music`) : elle
     /// renvoie cet argument (`music-function-string-markup.ly`).
     returns: Option<usize>,
@@ -295,6 +299,7 @@ pub(crate) fn parse(
         playback_articulate: false,
         playback_unfold_repeats: false,
         music_functions: BTreeMap::new(),
+        scheme: crate::scheme::Evaluator::new(),
         expansion_depth: 0,
         melisma_busy_disabled: false,
         skip_typesetting: false,
@@ -2479,6 +2484,20 @@ impl<'a> Parser<'a> {
                 self.music_functions.insert(name, function);
                 return;
             }
+            // `#(define (double n) …)` / `#(define x (+ 1 2))` : valeur Scheme
+            // conservée dans l'environnement du parseur, comme Guile dans le
+            // module du parseur (`lily/parse-scm.cc:288-303`). Les définitions
+            // de musique (`#{ … #}`) suivent l'ancien chemin.
+            let commence = text.trim_start();
+            if (commence.starts_with("(define ") || commence.starts_with("(define ("))
+                && !commence.contains("#{")
+            {
+                self.position += 1;
+                if let Err(erreur) = self.scheme.eval(&text) {
+                    self.warn(format!("définition Scheme ignorée : {erreur}"));
+                }
+                return;
+            }
         }
         let music = self.parse_music();
         self.music_functions.remove(&name);
@@ -2672,24 +2691,23 @@ impl<'a> Parser<'a> {
         self.pending_invisible_rest = saved_invisible_rest;
         self.pending_invisible_ottava = saved_invisible_ottava;
         self.pending_tuplet_number = saved_tuplet_number;
+        // `define-void-function` / `define-scheme-function` : l'appel en
+        // place ne produit rien (`lily/parser.yy`, `MUSIC_FUNCTION` void) et
+        // n'avertit pas ; son corps peut en revanche ajouter une partition
+        // (`add-score`, p. ex. `input/regression/accidental-glyphs-test.ily`),
+        // que le parseur collecte en relisant le bloc `#{ … #}` du corps.
+        if function.kind == FunctionKind::Silent {
+            let Some(body) = function.body.clone() else {
+                return Music::Empty;
+            };
+            let tokens = substitute_function_tokens(&body, &function.params, &arguments);
+            return self.parse_token_stream(tokens);
+        }
+        if let Some(formes) = function.scheme_body.clone() {
+            return self.evaluer_corps_scheme(name, &function, &formes, &arguments);
+        }
         let Some(body) = function.body else {
-            if let Some(index) = function.returns {
-                // Le corps est un paramètre : la fonction rend cet argument,
-                // relu comme musique (`function_arglist_reparse`).
-                let tokens = arguments.get(index).cloned().unwrap_or_default();
-                return self.parse_token_stream(tokens);
-            }
-            // Fonction Scheme pure : rien à jouer, avertissement une seule
-            // fois par fonction.
-            if function.kind == FunctionKind::Music && !function.warned {
-                self.warn(format!(
-                    "fonction musicale sans corps musical ignorée : \\{name}"
-                ));
-            }
-            if let Some(stored) = self.music_functions.get_mut(name) {
-                stored.warned = true;
-            }
-            return Music::Empty;
+            return self.fonction_scheme_pure(name, &function, &arguments);
         };
         let tokens = substitute_function_tokens(&body, &function.params, &arguments);
         let relative_body = function.relative_body;
@@ -2700,6 +2718,81 @@ impl<'a> Parser<'a> {
         let music = self.parse_token_stream(tokens);
         self.in_relative_function = saved;
         music
+    }
+
+    /// Évalue le corps Scheme d'une fonction musicale.
+    ///
+    /// Les arguments musicaux sont des valeurs opaques ([`crate::scheme::Value::Music`]) ;
+    /// si le corps en renvoie une (identité, `let`, `if`), le parseur relit
+    /// les jetons de cet argument (`function_arglist_reparse`,
+    /// `lily/parser.yy:1949`). Un corps qui ne rend pas de musique avertit et
+    /// ne produit rien, comme une fonction Scheme pure.
+    fn evaluer_corps_scheme(
+        &mut self,
+        name: &str,
+        function: &MusicFunction,
+        formes: &[crate::scheme::Value],
+        arguments: &[Vec<Token>],
+    ) -> Music {
+        use crate::scheme::Value;
+        let mut liaisons = Vec::with_capacity(function.params.len());
+        for (index, nom) in function.params.iter().enumerate() {
+            let predicat = function
+                .predicates
+                .get(index)
+                .map(String::as_str)
+                .unwrap_or("ly:music?");
+            let valeur = if predicat.trim().ends_with("music?") {
+                Value::Music(index)
+            } else if let Some(tokens) = arguments.get(index) {
+                let texte: String = tokens.iter().map(|token| token.text.clone()).collect();
+                self.scheme.eval(&texte).unwrap_or(Value::Music(index))
+            } else {
+                Value::Unspecified
+            };
+            liaisons.push((nom.clone(), valeur));
+        }
+        match self.scheme.eval_with(&liaisons, formes) {
+            Ok(Value::Music(index)) => {
+                // Le corps rend un de ses arguments musicaux : le parseur le
+                // relit, comme `function_arglist_reparse`
+                // (`lily/parser.yy:1949`).
+                let tokens = arguments.get(index).cloned().unwrap_or_default();
+                self.parse_token_stream(tokens)
+            }
+            // Corps qui ne rend pas de musique : expression Scheme pure
+            // (`ly:message`…), ou primitive que l'évaluateur ne connaît pas.
+            // C'est le cas « sans corps musical » historique : rien à jouer,
+            // un seul avertissement par fonction.
+            _ => self.fonction_scheme_pure(name, function, arguments),
+        }
+    }
+
+    /// Fonction Scheme sans musique à jouer : elle rend son argument musical
+    /// quand son corps se réduit à ce paramètre (`returns`), sinon rien et un
+    /// avertissement unique par fonction (`define-music-function` seulement —
+    /// les fonctions void sont muettes).
+    fn fonction_scheme_pure(
+        &mut self,
+        name: &str,
+        function: &MusicFunction,
+        arguments: &[Vec<Token>],
+    ) -> Music {
+        if let Some(index) = function.returns {
+            // Le corps est un paramètre : la fonction rend cet argument, relu
+            // comme musique (`function_arglist_reparse`).
+            let tokens = arguments.get(index).cloned().unwrap_or_default();
+            return self.parse_token_stream(tokens);
+        }
+        if function.kind == FunctionKind::Music && !function.warned {
+            self.warn(format!(
+                "fonction musicale sans corps musical ignorée : \\{name}"
+            ));
+        }
+        if let Some(stored) = self.music_functions.get_mut(name) {
+            stored.warned = true;
+        }
+        Music::Empty
     }
 
     /// Lit les arguments d'un appel, un par prédicat.
@@ -3548,6 +3641,15 @@ impl<'a> Parser<'a> {
                         text,
                         ..
                     }) => text.parse().unwrap_or(2),
+                    Some(Token {
+                        kind: Kind::Scheme,
+                        text,
+                        ..
+                    }) => self
+                        .scheme
+                        .integer(&text)
+                        .and_then(|valeur| u32::try_from(valeur).ok())
+                        .unwrap_or(2),
                     _ => 2,
                 };
                 let kind = if name == "*" {
@@ -3782,15 +3884,22 @@ impl<'a> Parser<'a> {
                 let mut negative = self.eat_punct('-');
                 let magnitude = match self.peek().cloned() {
                     Some(token) if token.is_scheme() => {
-                        // `#1`, `#-1` : signe éventuellement porté par le datum.
+                        // `#1`, `#-1`, `#(+ 0 1)` : valeur calculée si possible.
                         self.position += 1;
-                        let text = token.text.trim();
-                        match text.strip_prefix('-') {
-                            Some(rest) => {
+                        if let Some(valeur) = self.scheme.integer(&token.text) {
+                            if valeur < 0 {
                                 negative = true;
-                                rest.parse().unwrap_or(0)
                             }
-                            None => text.parse().unwrap_or(0),
+                            valeur.checked_abs().unwrap_or(0)
+                        } else {
+                            let text = token.text.trim();
+                            match text.strip_prefix('-') {
+                                Some(rest) => {
+                                    negative = true;
+                                    rest.parse().unwrap_or(0)
+                                }
+                                None => text.parse().unwrap_or(0),
+                            }
                         }
                     }
                     _ => self
@@ -4355,7 +4464,7 @@ impl<'a> Parser<'a> {
         if self.eat_punct('=') {
             if let Some(token) = self.bump() {
                 beats_per_minute = if token.is_scheme() {
-                    token.scheme_decimal()
+                    self.scheme.number(&token.text)
                 } else {
                     token.as_decimal()
                 };
@@ -4388,6 +4497,17 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 self.numbers.get(&text).copied().unwrap_or(2) as u32
             }
+            Some(Token {
+                kind: Kind::Scheme,
+                text,
+                ..
+            }) => {
+                self.position += 1;
+                self.scheme
+                    .integer(&text)
+                    .and_then(|valeur| u32::try_from(valeur).ok())
+                    .unwrap_or(2)
+            }
             _ => 2,
         }
     }
@@ -4419,20 +4539,9 @@ impl<'a> Parser<'a> {
                 count_missing: true,
             });
         }
-        let count = match self.bump() {
-            Some(Token {
-                kind: Kind::Number,
-                text,
-                ..
-            }) => text.parse().unwrap_or(2),
-            // `num = #3` puis `\repeat unfold \num` (`lily/parser.yy`).
-            Some(Token {
-                kind: Kind::Command,
-                text,
-                ..
-            }) => self.numbers.get(&text).copied().unwrap_or(2) as u32,
-            _ => 2,
-        };
+        // Nombre, identifiant lié (`num = #3` puis `\repeat unfold \num`) ou
+        // datum Scheme calculé (`#(+ 2 2)`).
+        let count = self.parse_repeat_count();
         if self.peek().is_some_and(|token| token.is_command("etc")) {
             self.position += 1;
             return Music::Context(Context::Repeat {
@@ -4509,16 +4618,14 @@ impl<'a> Parser<'a> {
                 .iter()
                 .any(|part| part.eq_ignore_ascii_case("skiptypesetting"))
         {
-            let cadenza =
-                self.peek()
-                    .filter(|token| token.is_scheme())
-                    .and_then(
-                        |token| match token.text.trim().to_ascii_lowercase().as_str() {
-                            "#f" => Some(true),
-                            "#t" => Some(false),
-                            _ => None,
-                        },
-                    );
+            let jeton_cadenza = self.peek().filter(|token| token.is_scheme()).cloned();
+            let cadenza = jeton_cadenza.and_then(|token| {
+                match token.text.trim().to_ascii_lowercase().as_str() {
+                    "#f" => Some(true),
+                    "#t" => Some(false),
+                    _ => self.scheme.boolean(&token.text).map(|timing| !timing),
+                }
+            });
             if let Some(on) = cadenza {
                 self.position += 1;
                 return Music::Context(Context::Cadenza(on));
@@ -4544,16 +4651,14 @@ impl<'a> Parser<'a> {
             .iter()
             .any(|part| part.eq_ignore_ascii_case("tiewaitfornote"))
         {
-            let value = self
-                .peek()
-                .filter(|token| token.is_scheme())
-                .and_then(
-                    |token| match token.text.trim().to_ascii_lowercase().as_str() {
-                        "#t" => Some(true),
-                        "#f" => Some(false),
-                        _ => None,
-                    },
-                );
+            let jeton_valeur = self.peek().filter(|token| token.is_scheme()).cloned();
+            let value = jeton_valeur.and_then(|token| {
+                match token.text.trim().to_ascii_lowercase().as_str() {
+                    "#t" => Some(true),
+                    "#f" => Some(false),
+                    _ => self.scheme.boolean(&token.text),
+                }
+            });
             if let Some(on) = value {
                 self.position += 1;
                 return Music::Context(Context::TieWaitForNote(on));
@@ -4566,17 +4671,15 @@ impl<'a> Parser<'a> {
             .iter()
             .any(|part| part.eq_ignore_ascii_case("skiptypesetting"))
         {
-            if let Some(on) = self
-                .peek()
-                .filter(|token| token.is_scheme())
-                .and_then(
-                    |token| match token.text.trim().to_ascii_lowercase().as_str() {
-                        "#t" => Some(true),
-                        "#f" => Some(false),
-                        _ => None,
-                    },
-                )
-            {
+            let jeton_skip = self.peek().filter(|token| token.is_scheme()).cloned();
+            let valeur_skip = jeton_skip.and_then(|token| {
+                match token.text.trim().to_ascii_lowercase().as_str() {
+                    "#t" => Some(true),
+                    "#f" => Some(false),
+                    _ => self.scheme.boolean(&token.text),
+                }
+            });
+            if let Some(on) = valeur_skip {
                 self.position += 1;
                 self.skip_typesetting = on;
             }
@@ -4652,10 +4755,15 @@ impl<'a> Parser<'a> {
                 Some(token) if token.is_scheme() => {
                     self.position += 1;
                     if path.iter().any(|part| part == "direction") {
-                        let atom = token.text.trim().trim_start_matches('\'').trim();
-                        direction = match atom.to_ascii_uppercase().as_str() {
-                            "UP" => Some(StemDirection::Up),
-                            "DOWN" => Some(StemDirection::Down),
+                        // `#'UP`, `#UP`, `#(if … 'UP 'DOWN)` : la valeur est
+                        // le symbole rendu par l'évaluateur.
+                        direction = match self.scheme.symbol(&token.text) {
+                            Some(atom) if atom.eq_ignore_ascii_case("up") => {
+                                Some(StemDirection::Up)
+                            }
+                            Some(atom) if atom.eq_ignore_ascii_case("down") => {
+                                Some(StemDirection::Down)
+                            }
                             _ => None,
                         };
                     }
@@ -5392,7 +5500,10 @@ impl<'a> Parser<'a> {
                     let delta = match self.peek().cloned() {
                         Some(token) if token.is_scheme() => {
                             self.position += 1;
-                            token.text.trim().parse().unwrap_or(0)
+                            self.scheme
+                                .integer(&token.text)
+                                .and_then(|valeur| i8::try_from(valeur).ok())
+                                .unwrap_or(0)
                         }
                         Some(token) => match token.as_integer() {
                             Some(value) => {
@@ -5808,6 +5919,15 @@ impl<'a> Parser<'a> {
     /// Fraction `n/d` ou `n`.
     fn parse_ratio(&mut self) -> Option<(u32, u32)> {
         let token = self.peek()?.clone();
+        if token.is_scheme() {
+            // `\tuplet #(+ 1 2)/2`, `*#(/ 4 2)` : le nombre est calculé.
+            let fraction = self.scheme.fraction(&token.text)?;
+            self.position += 1;
+            return Some((
+                u32::try_from(fraction.numerator()).ok()?,
+                u32::try_from(fraction.denominator()).ok()?,
+            ));
+        }
         if token.kind != Kind::Number {
             return None;
         }
@@ -5999,9 +6119,10 @@ impl<'a> Parser<'a> {
         let token = self.peek().cloned()?;
         match token.kind {
             Kind::Scheme => {
+                // Datum évalué (R7RS + primitives LilyPond)
+                // : `#3/4`, `#(ly:make-moment 3 4)`, `#(+ 1/4 1/4)`.
                 self.position += 1;
-                let (numerator, denominator) = token.scheme_fraction()?;
-                Fraction::try_new(numerator, denominator)
+                self.scheme.fraction(&token.text)
             }
             Kind::Number => {
                 self.position += 1;
@@ -6021,8 +6142,10 @@ impl<'a> Parser<'a> {
                 fraction_from_token(&token)
             }
             Kind::Scheme => {
+                // `#3/4`, `#(ly:make-moment n d)`, `#'(n . d)` : la paire
+                // pointue est un nombre exact pour `\scaleDurations`.
                 self.position += 1;
-                scale_scheme_fraction(&token.text)
+                self.scheme.fraction(&token.text)
             }
             _ => None,
         }
@@ -6423,7 +6546,111 @@ fn scheme_duration_definition(datum: &str) -> Option<(Duration, Fraction)> {
 ///
 /// Le corps `#{ … #}` est mémorisé comme jetons ; sans lui, la fonction est
 /// Scheme pur et ses appels ne produiront rien.
+/// Texte du premier bloc `#{ … #}` contenu dans une forme Scheme, s'il y en
+/// a un (parcours récursif des paires et vecteurs).
+fn musique_embarquee(forme: &crate::scheme::Value) -> Option<String> {
+    use crate::scheme::Value;
+    match forme {
+        Value::Embedded(texte) => Some(texte.clone()),
+        Value::Pair(paire) => musique_embarquee(&paire.0).or_else(|| musique_embarquee(&paire.1)),
+        Value::Vector(elements) => elements.iter().find_map(musique_embarquee),
+        _ => None,
+    }
+}
+
+/// Définition de fonction musicale lue comme datum Scheme.
+///
+/// `(define-music-function (params…) (prédicats…) corps…)`
+/// (`lily/parser.yy`, `function_arglist` ; `ly/music-functions-init.ly` pour
+/// les formes usuelles). Un corps `#{ … #}` reste du LilyPond
+/// (`lily/lexer.ll:421-441`) et devient des jetons ; tout autre corps est une
+/// suite de formes Scheme évaluées à l'appel (niveau B).
+fn music_function_definition_datum(datum: &str) -> Option<MusicFunction> {
+    let formes = crate::scheme::read_all(datum).ok()?;
+    let elements = formes.into_iter().next()?.into_list()?;
+    let tete = match elements.first()? {
+        crate::scheme::Value::Symbol(symbole) => symbole.clone(),
+        _ => return None,
+    };
+    let kind = match tete.as_str() {
+        "define-music-function" => FunctionKind::Music,
+        "define-void-function" | "define-scheme-function" => FunctionKind::Silent,
+        _ => return None,
+    };
+    let mut params: Vec<String> = elements
+        .get(1)?
+        .clone()
+        .into_list()?
+        .into_iter()
+        .filter_map(|valeur| match valeur {
+            crate::scheme::Value::Symbol(nom) => Some(nom),
+            _ => None,
+        })
+        .collect();
+    if params.len() >= 2 && params[1] == "location" {
+        params.drain(..2);
+    }
+    let predicats = elements.get(2)?.clone().into_list()?;
+    // Prédicat optionnel `(prédicat défaut)` : ancien chemin, conservé.
+    if predicats
+        .iter()
+        .any(|predicat| !matches!(predicat, crate::scheme::Value::Symbol(_)))
+    {
+        return None;
+    }
+    let mut predicates: Vec<String> = predicats
+        .into_iter()
+        .filter_map(|valeur| match valeur {
+            crate::scheme::Value::Symbol(nom) => Some(nom),
+            _ => None,
+        })
+        .collect();
+    let arity = params.len().max(predicates.len());
+    params.resize(arity, String::new());
+    predicates.resize(arity, "ly:music?".to_owned());
+    let corps = elements.get(3..).unwrap_or_default().to_vec();
+    let (body, scheme_body) = match corps.as_slice() {
+        [crate::scheme::Value::Embedded(texte)] => (Some(crate::lexer::tokenize(texte)), None),
+        [] => (None, None),
+        formes => match formes.iter().find_map(musique_embarquee) {
+            // Corps Scheme qui contient un bloc `#{ … #}` : c'est ce bloc que
+            // le parseur relit après substitution, comme le faisait l'analyse
+            // textuelle (`make-relative … #{ \transpose … }`,
+            // `scm/music-functions.scm`). Le reste de l'expression
+            // (`make-relative`) n'a pas d'effet sur le modèle.
+            Some(texte) => (Some(crate::lexer::tokenize(&texte)), None),
+            None => (None, Some(formes.to_vec())),
+        },
+    };
+    let relative_body = datum.contains("make-relative");
+    let returns = if body.is_none() && scheme_body.is_none() && kind == FunctionKind::Music {
+        corps.last().and_then(|forme| match forme {
+            crate::scheme::Value::Symbol(nom) => params.iter().position(|param| param == nom),
+            _ => None,
+        })
+    } else {
+        None
+    };
+    Some(MusicFunction {
+        kind,
+        params,
+        predicates,
+        body,
+        scheme_body,
+        returns,
+        relative_body,
+        warned: false,
+    })
+}
+
 fn music_function_definition(datum: &str) -> Option<MusicFunction> {
+    // Analyse par datum (R7RS) : elle donne les paramètres, les prédicats et
+    // un corps Scheme évaluable. Repli sur l'analyse textuelle pour les
+    // prédicats optionnels `(prédicat défaut)`, que le lecteur d'arguments ne
+    // gère pas encore.
+    if let Some(fonction) = music_function_definition_datum(datum) {
+        return Some(fonction);
+    }
     let characters: Vec<char> = datum.chars().collect();
     let mut index = skip_scheme_space(&characters, 0);
     if characters.get(index) != Some(&'(') {
@@ -6488,6 +6715,7 @@ fn music_function_definition(datum: &str) -> Option<MusicFunction> {
         params,
         predicates,
         body,
+        scheme_body: None,
         returns,
         relative_body,
         warned: false,
@@ -7601,41 +7829,6 @@ fn after_grace_pair(datum: &str) -> Option<(i64, i64)> {
     Some((numerator, denominator))
 }
 
-fn scale_scheme_fraction(datum: &str) -> Option<Fraction> {
-    let text = datum.trim();
-    let body = text.strip_prefix('\'').unwrap_or(text).trim();
-    let inner = body
-        .strip_prefix('(')
-        .and_then(|text| text.strip_suffix(')'))
-        .map(str::trim);
-    let atom = if let Some(inner) = inner {
-        if let Some(args) = inner.strip_prefix("ly:make-moment") {
-            let args = args.trim();
-            if let Some((numerator, denominator)) = args.split_once(char::is_whitespace) {
-                return Fraction::try_new(
-                    numerator.trim().parse().ok()?,
-                    denominator.trim().parse().ok()?,
-                );
-            }
-            args
-        } else {
-            // Paire pointée `'(n . d)`.
-            let (numerator, denominator) = inner.split_once('.')?;
-            return Fraction::try_new(
-                numerator.trim().parse().ok()?,
-                denominator.trim().parse().ok()?,
-            );
-        }
-    } else {
-        body
-    };
-    let (numerator, denominator) = atom.split_once('/').unwrap_or((atom, "1"));
-    Fraction::try_new(
-        numerator.trim().parse().ok()?,
-        denominator.trim().parse().ok()?,
-    )
-}
-
 /// `musicMap #skip->rest` : transformer les silences invisibles en silences
 /// visibles, récursivement (ly/music-functions-init.ly:1241-1245).
 fn skip_to_rest(music: &mut Music) {
@@ -8077,6 +8270,7 @@ mod tests {
             playback_articulate: false,
             playback_unfold_repeats: false,
             music_functions: BTreeMap::new(),
+            scheme: crate::scheme::Evaluator::new(),
             expansion_depth: 0,
             melisma_busy_disabled: false,
             skip_typesetting: false,
@@ -8126,6 +8320,7 @@ mod tests {
                 playback_articulate: false,
                 playback_unfold_repeats: false,
                 music_functions: BTreeMap::new(),
+                scheme: crate::scheme::Evaluator::new(),
                 expansion_depth: 0,
                 melisma_busy_disabled: false,
                 skip_typesetting: false,
