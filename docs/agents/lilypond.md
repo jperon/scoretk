@@ -7039,3 +7039,20 @@ oracle, mêmes refs) :
 `(65,2)/(65,3)` — unissons que `scm/part-combiner.scm` fusionne ; portfolio
 complexe, non porté. `bar-line-caesura-double.ly` et `optional-args.ly`
 restent documentés. Aucun fichier exclu.
+
+### Session suivante : partCombine / Score-with (preuve)
+
+`scm/part-combiner.scm:339-360` (`determine-split-list`), `:436-480`
+(`chord-range`, unisson quand les deux hauteurs sont égales) et `:550-566`
+(état `unisono`) : la règle nécessaire est « même hauteur, même attaque, même
+durée dans les deux parties ⇒ une seule note ». Les 2 notes en trop de
+`part-combine.ly` (`(67,6)`, `(67,7)`) et `part-combine-cross.ly`
+(`(65,2)`, `(65,3)`) sont exactement ces unissons. Le portage demande de
+fusionner les événements des deux voices interprétées avant construction, et
+non une simple table de qualités : non tenté dans cette session.
+
+`\new Score \with { … } { \new PianoStaff << \staff \staff >> }` (cas réduit
+de `bar-line-caesura-double.ly`) produit bien les 8 notes attendues, avec et
+sans `\caesura` : le bloc `Score`/`with` n'est donc pas la cause. L'écart du
+fichier vient des autres décorations (`sectionBarType`, `\section`,
+`\codaMark 1`), non identifiées. Aucun fichier exclu.
