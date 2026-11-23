@@ -7442,6 +7442,20 @@ fn descend_to_context_sans_cible_joue_sa_musique() {
 }
 
 #[test]
+fn changement_d_instrument_transpose_la_suite() {
+    // `instrument-switch.ly` : `\addInstrumentDefinition` enregistre une
+    // aliste dont `instrumentTransposition` vaut `,(ly:make-pitch -1 6 FLAT)`
+    // (si bémol) ; `instrumentSwitch` pose cette propriété sur la portée
+    // (`ly/music-functions-init.ly:46-54,868-890`), comme `\transposition bes`.
+    let src = "\\version \"2.24.0\"\n\
+               \\addInstrumentDefinition \"bas\" \
+               #`((instrumentTransposition . ,(ly:make-pitch -1 6 FLAT)))\n\
+               { c'4 \\instrumentSwitch \"bas\" c'4 c'4 }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![60, 58, 58]);
+}
+
+#[test]
 fn text_mark_ne_mange_pas_la_duree_nue_suivante() {
     // `ly/music-functions-init.ly:2365-2368` : `\textMark` prend un seul
     // argument de markup ; la durée nue qui suit est une musique à jouer.

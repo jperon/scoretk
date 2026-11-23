@@ -7561,3 +7561,35 @@ le test existant `skip_typesetting_coupe_les_notes_et_le_temps` reste vert.
 
 Mesure contrôlée : `ra` **1 685 → 1 686/1 724**, `mut` 1 216/1 316 et
 `rw` 1 258/1 365 inchangés ; **1 gain, 0 perte**.
+
+### Cause : `\instrumentSwitch` en cours de mesure
+
+`instrument-switch.ly` déclare une aliste avec
+`\addInstrumentDefinition "bassClar" #\`((instrumentTransposition .
+,(ly:make-pitch -1 6 FLAT)) …)`, puis joue `c'4 \instrumentSwitch
+"bassClar" c2. c1 c`. `addInstrumentDefinition`
+(`ly/music-functions-init.ly:45-54`) enregistre l'aliste et
+`instrumentSwitch` (`:868-889`) pose ses propriétés sur la portée ; la seule
+propriété audible est `instrumentTransposition` (si bémol, −2 demi-tons).
+
+Le lecteur ignorait les deux commandes : la définition Scheme était perdue et
+le nom devenait une note parasite. Il mémorise désormais la paire
+`instrumentTransposition` de chaque définition (`instrument_transposition_datum`,
+qui lit le `(ly:make-pitch …)` du datum) et la pose à l'appel de
+`\instrumentSwitch`/`\switchInstrument`.
+
+Un premier essai avec `Context::InstrumentTranspose` (comme `\transposition`)
+décalait bien la concert dans le modèle, mais le changement intervient **en
+cours de mesure**, après `c'4` : l'écrivain ne pose `<transpose>` qu'au début
+d'une mesure (`exportmusicxml.rs:2467-2497`), si bien que le MusicXML gardait
+quatre `c'` et que l'oracle ne voyait aucun décalage. Le lecteur porte donc le
+changement comme transposition **écrite** persistante (`Context::InstrumentSwitch`,
+`events.rs`), à partir du tick du `\instrumentSwitch` : les notes suivantes
+sont écrites si bémol, sans `<transpose>` dans le MusicXML. Le son est exact
+(60, 58, 58, 58), au prix d'une écriture transposée pour cette commande
+dépréciée.
+
+Test réduit `changement_d_instrument_transpose_la_suite` (60, 60, 60 avant,
+60, 58, 58 après). Mesure contrôlée : `ra` **1 686 → 1 687/1 724**,
+`mut` 1 216/1 316 et `rw` 1 258/1 365 inchangés ; **1 gain, 0 perte**, N1/N2
+identiques sur les autres fichiers.

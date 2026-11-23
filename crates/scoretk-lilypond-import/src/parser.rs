@@ -85,6 +85,9 @@ pub(crate) struct Parser<'a> {
     playback_unfold_repeats: bool,
     /// Fonctions musicales définies en Scheme (`define-music-function`…).
     music_functions: BTreeMap<String, MusicFunction>,
+    /// Définitions `\addInstrumentDefinition` : nom → transposition
+    /// d'instrument (`ly/music-functions-init.ly:46-54`).
+    instrument_definitions: BTreeMap<String, PitchSpec>,
     /// Profondeur d'expansion des blocs embarqués et des fonctions.
     expansion_depth: u32,
     /// Fraction par défaut d'un `\afterGrace` sans argument
@@ -295,6 +298,7 @@ pub(crate) fn parse(
         playback_articulate: false,
         playback_unfold_repeats: false,
         music_functions: BTreeMap::new(),
+        instrument_definitions: BTreeMap::new(),
         expansion_depth: 0,
         melisma_busy_disabled: false,
         skip_typesetting: false,
@@ -592,6 +596,9 @@ impl<'a> Parser<'a> {
             // `\parallelMusic voix… { musique }` définit une variable par voix
             // (`ly/music-functions-init.ly`) : c'est une commande de haut
             // niveau, comme `\score`, et non une musique à jouer.
+            Kind::Command if token.text == "addInstrumentDefinition" => {
+                self.add_instrument_definition();
+            }
             Kind::Command if token.text == "parallelMusic" => {
                 self.position += 1;
                 self.parse_parallel_music();
@@ -2966,6 +2973,32 @@ impl<'a> Parser<'a> {
     }
 
     /// Commande musicale.
+    /// `\addInstrumentDefinition "nom" #\`(…)` : mémorise la transposition
+    /// de l'instrument (`ly/music-functions-init.ly:46-54`). Appelable au
+    /// niveau supérieur (forme courante) comme dans une musique.
+    fn add_instrument_definition(&mut self) {
+        self.position += 1; // `\addInstrumentDefinition`
+        let nom = match self.bump() {
+            Some(Token {
+                kind: Kind::Str | Kind::Word,
+                text,
+                ..
+            }) => text,
+            _ => String::new(),
+        };
+        let datum = match self.bump() {
+            Some(Token {
+                kind: Kind::Scheme,
+                text,
+                ..
+            }) => text,
+            _ => String::new(),
+        };
+        if let Some(pitch) = instrument_transposition_datum(&datum) {
+            self.instrument_definitions.insert(nom, pitch);
+        }
+    }
+
     fn parse_command(&mut self) -> Music {
         let Some(Token {
             kind: Kind::Command,
@@ -3268,6 +3301,36 @@ impl<'a> Parser<'a> {
             // `Instrument.transpose`. Sans argument, LilyPond prend `c'`, qui
             // est aussi la valeur par défaut. La consommer comme une commande
             // inconnue laissait l'argument devenir une note parasite.
+            // `ly/music-functions-init.ly:46-54` : enregistre une aliste
+            // d'instrument. On n'en extrait que `instrumentTransposition`,
+            // seule propriété audible, afin que `\instrumentSwitch` puisse
+            // poser la même transposition que `\transposition` (`:868-890`).
+            "addInstrumentDefinition" => {
+                self.add_instrument_definition();
+                Music::Empty
+            }
+            // `\instrumentSwitch` (`ly/music-functions-init.ly:868-890`) pose
+            // `instrumentTransposition` à partir de ce point. Voir
+            // `Context::InstrumentSwitch` (`ast.rs`) : la transposition est
+            // portée par les hauteurs écrites suivantes, et non par la
+            // propriété d'instrument, parce que le changement arrive en cours
+            // de mesure dans `instrument-switch.ly` et que l'écrivain MusicXML
+            // ne pose `<transpose>` qu'au début d'une mesure.
+            "instrumentSwitch" | "switchInstrument" => {
+                let nom = match self.bump() {
+                    Some(Token {
+                        kind: Kind::Str | Kind::Word,
+                        text,
+                        ..
+                    }) => text,
+                    _ => String::new(),
+                };
+                self.instrument_definitions
+                    .get(&nom)
+                    .copied()
+                    .map(|pitch| Music::Context(Context::InstrumentSwitch(pitch)))
+                    .unwrap_or(Music::Empty)
+            }
             "transposition" => {
                 let pitch = self.parse_optional_pitch().unwrap_or(PitchSpec {
                     step: 0,
@@ -7665,6 +7728,42 @@ fn scale_scheme_fraction(datum: &str) -> Option<Fraction> {
     )
 }
 
+/// `instrumentTransposition` d'une définition d'instrument
+/// (`ly/music-functions-init.ly:46-54`). La valeur est une paire Scheme
+/// `#`((instrumentTransposition . ,(ly:make-pitch -1 6 FLAT)) …)` : LilyPond
+/// range l'octave interne `-1` à la même hauteur que `\transposition bes`
+/// dans notre representation (`pitch::instrument_transpose` retranche 12).
+fn instrument_transposition_datum(datum: &str) -> Option<PitchSpec> {
+    let cle = "instrumentTransposition";
+    let debut_cle = datum.find(cle)? + cle.len();
+    let reste = &datum[debut_cle..];
+    let debut_pitch = reste.find("(ly:make-pitch")?;
+    let reste = &reste[debut_pitch..];
+    let fin = reste.find(')')?;
+    let mots: Vec<&str> = reste[1..fin].split_whitespace().collect();
+    if mots.first() != Some(&"ly:make-pitch") {
+        return None;
+    }
+    let octave: i8 = mots.get(1)?.parse().ok()?;
+    let step: u8 = mots.get(2)?.parse().ok()?;
+    let alteration = match mots.get(3).map(|mot| mot.to_ascii_uppercase()) {
+        Some(mot) if mot.contains("DOUBLE-FLAT") => -2,
+        Some(mot) if mot.contains("DOUBLE-SHARP") => 2,
+        Some(mot) if mot.contains("FLAT") => -1,
+        Some(mot) if mot.contains("SHARP") => 1,
+        _ => 0,
+    };
+    Some(PitchSpec {
+        step,
+        alter: alteration,
+        octave: octave.checked_add(1)?,
+        octave_check: None,
+        explicit_octave: true,
+        force: false,
+        cautionary: false,
+    })
+}
+
 /// Compte arithmétique d'une répétition abrégée, par exemple `#(+ 4 32)`.
 ///
 /// `\*` et `\%` sont des fonctions musicales dont l'argument est de type
@@ -8176,6 +8275,7 @@ mod tests {
             playback_articulate: false,
             playback_unfold_repeats: false,
             music_functions: BTreeMap::new(),
+            instrument_definitions: BTreeMap::new(),
             expansion_depth: 0,
             melisma_busy_disabled: false,
             skip_typesetting: false,
@@ -8225,6 +8325,7 @@ mod tests {
                 playback_articulate: false,
                 playback_unfold_repeats: false,
                 music_functions: BTreeMap::new(),
+                instrument_definitions: BTreeMap::new(),
                 expansion_depth: 0,
                 melisma_busy_disabled: false,
                 skip_typesetting: false,

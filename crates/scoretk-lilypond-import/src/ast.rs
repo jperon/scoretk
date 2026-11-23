@@ -269,6 +269,12 @@ pub(crate) enum Context {
     /// décalage est appliqué à toutes les voix sans déclarer `<transpose>`
     /// quand la partie réunit plusieurs portées.
     MidiInstrumentTranspose(PitchSpec),
+    /// `\instrumentSwitch` : transposition posée en cours de musique, qui
+    /// vaut pour toutes les notes suivantes (`ly/music-functions-init.ly`).
+    /// Portée comme transposition **écrite** persistante : le son est exact
+    /// dans le MusicXML exporté, qui ne peut pas poser `<transpose>` au
+    /// milieu d'une mesure.
+    InstrumentSwitch(PitchSpec),
     /// `\fixed` : octave de référence absolue.
     Fixed {
         reference: Option<PitchSpec>,

@@ -1013,6 +1013,17 @@ impl<'a> Interpreter<'a> {
             Context::MidiInstrumentTranspose(pitch) => {
                 self.midi_instrument_transpose = crate::pitch::instrument_transpose(pitch).1;
             }
+            // `\instrumentSwitch` pose `instrumentTransposition` à partir de
+            // ce point (`ly/music-functions-init.ly:868-890`). On transpose
+            // les hauteurs **écrites** des notes suivantes plutôt que de
+            // poser une propriété d'instrument : le changement arrive en
+            // cours de mesure (`instrument-switch.ly`) et l'écrivain MusicXML
+            // ne peut exprimer `<transpose>` qu'au début d'une mesure
+            // (`exportmusicxml.rs`, `write_instrument_details`).
+            Context::InstrumentSwitch(pitch) => {
+                let (diatonic, chromatic) = crate::pitch::instrument_transpose(pitch);
+                self.transpose = (self.transpose.0 + diatonic, self.transpose.1 + chromatic);
+            }
             Context::Fixed { reference, music } => {
                 let saved = self.octave;
                 self.octave.relative = false;
