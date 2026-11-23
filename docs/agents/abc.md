@@ -3363,7 +3363,7 @@ reference and are reported in a separate "no valid reference" bucket, not as
 reader failures. The same bucket holds 21 `ORACLE_ECHEC` (abc2midi error) and
 15 `ORACLE_VIDE` (empty reference MIDI) cases. The remaining **71** cases with
 a valid reference are: 13 `DESACCORD_PARTIEL`, 10 `NOTES_MANQUANTES`,
-6 `NOTES_SUPPLEMENTAIRES`, 2 `REPRISE_OU_TRONCATURE`, 2 `TRANSPOSITION`,
+5 `NOTES_SUPPLEMENTAIRES`, 2 `REPRISE_OU_TRONCATURE`, 2 `TRANSPOSITION`,
 1 `DESACCORD_TOTAL`, 1 `OCTAVE` (and the rest OK).
 
 ### 39.3 Import: grace-note accidentals (committed, measured, +3)
@@ -3391,7 +3391,7 @@ single file without a measured loss.
 ### 40.1 Import: the two largest classes are abc2midi realisations
 
 After §39 the 71 import cases with a valid reference split as 10
-`DESACCORD_PARTIEL`, 10 `NOTES_MANQUANTES`, 6 `NOTES_SUPPLEMENTAIRES`, and
+`DESACCORD_PARTIEL`, 10 `NOTES_MANQUANTES`, 5 `NOTES_SUPPLEMENTAIRES`, and
 smaller singletons. Both largest classes were diffed down to the note (`sequence.py`
 on `target/abc-mesure-grace/mesures.tsv`), then the actual reference MIDI and
 our MusicXML were compared with the shared `midi_notes` readers:
@@ -3500,7 +3500,7 @@ endings are used "in combination with `P:` part notation" (e.g. `P:A4.B4`).
 With no `P:`, the number of passes is undefined; abc2midi plays endings 1 and
 2 and skips 3, while our reader writes the third ending as notated. Both are
 consistent with a different interpretation of an undefined construct, so no
-reader change is made. The 6 `NOTES_SUPPLEMENTAIRES` cases are documented in
+reader change is made. The 5 `NOTES_SUPPLEMENTAIRES` cases are documented in
 this bucket.
 
 Counts after both causes: ABC import **4 579/4 756 exact**, plus the 109
@@ -3604,7 +3604,7 @@ exact tunes.
 measurement artefacts: 109 `SANS_X` fragments (no `X:` header, not a tune),
 21 `ORACLE_ECHEC` (abc2midi fails on the reference) and 15 `ORACLE_VIDE`.
 Of the 31 remaining, 21 are `NOTES_MANQUANTES`, 9 `DESACCORD_PARTIEL`,
-6 `NOTES_SUPPLEMENTAIRES`, 2 `REPRISE_OU_TRONCATURE`, 2 `TRANSPOSITION`,
+5 `NOTES_SUPPLEMENTAIRES`, 2 `REPRISE_OU_TRONCATURE`, 2 `TRANSPOSITION`,
 1 `OCTAVE` and 1 `DESACCORD_TOTAL`. In 29 of those 31 the alternative has
 exactly the same score as scoretk: the reference (abc2midi realising ornaments
 or repeats) disagrees with both readers, so they are not importer defects.
@@ -3612,3 +3612,47 @@ Only `parsing.test__abcInlineKeyPerVoice.abc` X:1 (21 missing pitch matches)
 and `laPlusDesPlus.abc` X:3 (9) showed the alternative strictly ahead; the
 first is fixed here, the second is a 9-note modal-key difference with no
 single construct isolated yet.
+
+## 45. Oracle ABC : les 145 artefacts du lot (2026-11-23)
+
+Les trois catégories signalées en §44 étaient des défauts de mesure, pas des
+airs impossibles. Causes et corrections dans `scripts/oracle/abc/mesure.py` :
+
+- **`SANS_X` (109)** : `decoupe()` exigeait un `X:` pour reconnaître un air.
+  ABC 2.1 §2.2 et §3.1.1 recommandent ce champ mais n'en font pas une
+  condition de lecture : abc2midi et abc2xml.py lisent ces fragments comme un
+  air unique. L'oracle synthétise désormais `X:1`.
+- **`ORACLE_ECHEC` (21)** : abc2midi refuse un air dont le premier `K:` n'a
+  pas de tonique (§3.1.14) — 18 fragments n'ont aucun `K:`, 3 ont `K:cm`,
+  `K: bass` ou `K: clef=none`. Les deux lecteurs prennent do majeur par
+  défaut. `cle_pour_oracle()` n'ajoute `K:C` (en conservant les paramètres de
+  clef) qu'à la copie destinée à abc2midi.
+- **`ORACLE_VIDE` (15)** : référence *et* candidat n'ont aucune note (airs
+  écrits uniquement en silences et en symboles d'accord). `cmp.compare()`
+  considère désormais l'égalité vraie par vacuité : ces airs restent dans le
+  dénominateur, comme l'exige `plan-fiabilite.md` §1 règle 7.
+- Un quatrième défaut, trouvé en confirmant les écarts « référence contre
+  les deux lecteurs » : `sans_reprises()` laissait les fins alternatives
+  composées (`[1,3`, `[1-3`, `|2,4`, `|3`), si bien qu'abc2midi ne jouait
+  qu'une partie des notes **écrites** (ABC 2.1 §4.9-§4.10). Elles sont
+  maintenant remplacées par une barre simple.
+
+Autotest : `scripts/oracle/abc/test_artefacts.py`. Mesure contrôlée, **même
+binaire** (commit d'import ABC précédent), seul l'oracle change : 4 581 →
+**4 712 exact / 4 756**, 472 423 notes de référence (au lieu de 470 566),
+aucune perte. L'alternative passe de 4 517 à 4 655 exact.
+
+Les 44 airs encore inexacts : 10 `NOTES_MANQUANTES`, 11 `VIDE` (référence
+non vide et lecture vide ; défaut de lecture nouvellement exposé), 9
+`DESACCORD_PARTIEL`, 5 `NOTES_SUPPLEMENTAIRES`, 3 `OCTAVE`, 2 `TRANSPOSITION`,
+2 `REPRISE_OU_TRONCATURE`, 1 `DESACCORD_TOTAL` et 1 `ECHEC_TK` (`C0` : durée
+nulle refusée par le lecteur, alors qu'abc2xml.py l'accepte). Sur un échantillon
+de la catégorie « référence contre les deux lecteurs », la référence est bien
+en tort : dans `flattener.test__abcRepeat3.abc`, la copie oracle jouée par
+abc2midi n'a que 13 notes alors que la source en écrit 17 (quatre fins
+alternatives avalées par l'ancien `sans_reprises`) ; la correction la rend
+exacte pour les deux candidats. Les jigs `CampMeetingJigNo2` et
+`AnnieHughesJig` gardent 2 notes de trop dans la référence : abc2midi y réalise
+des ornements que l'oracle ne supprime pas, alors que l'ABC 2.1 §4.12/§4.14
+les traite comme des ornements, pas comme des notes écrites — les deux lecteurs
+sont d'accord, la référence ne l'est pas.

@@ -344,8 +344,13 @@ def compare(ref_midi, candidate_xml, graces=None):
         "com2": common2,
         "n2": common2 / n_ref if n_ref else 0.0,
         "tracks": tracks,
-        "exact1": n_ref > 0 and n_ref == n_cand and common1 == n_ref,
-        "exact2": n_ref > 0 and n_ref == n_cand and common2 == n_ref,
+        # Deux partitions sans aucune note (air écrit uniquement en silences
+        # et en symboles d'accord) sont égales : la Référence vide n'est pas
+        # une erreur d'oracle, et exclure ces airs du dénominateur n'est pas
+        # autorisé par plan-fiabilite.md §1 règle 7. L'égalité est vraie par
+        # vacuité des deux côtés.
+        "exact1": n_ref == n_cand and common1 == n_ref,
+        "exact2": n_ref == n_cand and common2 == n_ref,
     }
     if graces is not None:
         ref_main, n_gr_ref, n_gr_cand, n_gr_match = apparier_graces(

@@ -78,7 +78,12 @@ def decoupe(src):
         lines = handle.read().splitlines()
     starts = [i for i, line in enumerate(lines) if TUNE.match(line)]
     if not starts:
-        return lines[:0], []
+        # ABC 2.1 §2.2 / §3.1.1 : `X:` est recommandé en tête de chaque air,
+        # mais abc2midi et abc2xml.py acceptent un air sans ce champ et le
+        # lisent comme un air unique. L'oracle doit faire de même : sans cela
+        # 109 fragments d'abcjs-tests sont comptés « sans X: » au lieu d'être
+        # comparés. On synthétise le numéro manquant dans l'en-tête.
+        return ["X:1"], [("1", lines)]
     header = lines[: starts[0]]
     tunes = []
     for n, begin in enumerate(starts):
@@ -102,7 +107,17 @@ def sans_reprises(lines):
         if FIELD.match(line) or line.lstrip().startswith("%"):
             out.append(line)
             continue
-        for pattern in (r"::", r"\|:", r":\s*\|+", r"\[[12]", r"\|[12]"):
+        # Les fins alternatives peuvent être composées (`[1,3`, `[1-3`,
+        # `|2,4`, `:|3`) : abc2midi ne joue alors que certaines fins et
+        # l'oracle perd des notes **écrites** (ABC 2.1 §4.9-§4.10). Toutes
+        # ces étiquettes deviennent de simples barres.
+        for pattern in (
+            r"\[[0-9][0-9,\-]*",
+            r"\|[0-9][0-9,\-]*",
+            r"::",
+            r"\|:",
+            r":\s*\|+",
+        ):
             line = re.sub(pattern, "|", line)
         out.append(line)
     return out
@@ -124,6 +139,39 @@ def sans_ornements(lines):
             out.append(line)
             continue
         out.append(ORNEMENT_COURT.sub("", ORNEMENT_LONG.sub("", line)))
+    return out
+
+
+def cle_pour_oracle(lines):
+    """Donne à abc2midi un `K:` valide quand la source n'en a pas.
+
+    Les deux lecteurs (abc2xml.py, scoretk) admettent un air sans tonicité
+    et prennent alors do majeur par défaut. abc2midi, lui, refuse tout air
+    dont le premier `K:` n'a pas de tonique (ABC 2.1 §3.1.14) : 18 fragments
+    n'ont aucun `K:`, et 3 ont un `K:` sans tonique (`K:cm`, `K: bass`,
+    `K: clef=none`). Seule la copie destinée à l'oracle est corrigée, avec
+    `K:C` — la même valeur que les deux lecteurs utilisent — ; les paramètres
+    de clef sont conservés. Les 21 airs restent ainsi dans le dénominateur.
+    """
+    out = list(lines)
+    for index, line in enumerate(out):
+        if not FIELD.match(line):
+            continue
+        letter, _, value = line.partition(":")
+        if letter.strip().upper() != "K":
+            continue
+        value = value.strip()
+        if re.match(r"^[A-G]", value):
+            return out
+        out[index] = f"K:C {value}".rstrip()
+        return out
+    # Aucun K: : l'insérer avant la première ligne de musique.
+    index = 0
+    while index < len(out) and (
+        not out[index].strip() or FIELD.match(out[index]) or out[index].lstrip().startswith("%")
+    ):
+        index += 1
+    out.insert(index, "K:C")
     return out
 
 
@@ -225,7 +273,10 @@ def principal():
             ecrit(air, header + body)
             # L'oracle reçoit une copie sans reprises ni ornements réalisés :
             # on mesure les notes ÉCRITES, une seule fois chacune.
-            ecrit(plain, sans_ornements(sans_reprises(header + body)))
+            ecrit(
+                plain,
+                cle_pour_oracle(sans_ornements(sans_reprises(header + body))),
+            )
             log = os.path.join(work, "journal.log")
             midi = os.path.join(work, "ref.mid")
             xml = os.path.join(work, "score.musicxml")
