@@ -153,7 +153,7 @@ with every new port.
 | `crates/scoretk-core/src/model/part.rs` | `engraving/dom/{part,staff,instrument}.h` |
 | `crates/scoretk-core/src/model/repeat.rs` | `engraving/dom/{marker,jump,volta}.h` |
 | `crates/scoretk-core/src/model/score.rs` | `engraving/dom/score.h` |
-| `crates/scoretk-core/src/model/segment.rs` | `engraving/dom/{segment,keysig,timesig,clef,barline}.h` |
+| `crates/scoretk-core/src/model/segment.rs` | `engraving/dom/{segment,keysig,timesig,clef,barline}.h`, `engraving/dom/groups.cpp` (`TimeSig::groups`) |
 | `crates/scoretk-core/src/model/spanner.rs` | `engraving/dom/spanner.h` |
 | `crates/scoretk-core/src/model/style.rs` | `engraving/style/style.h`, `importexport/musicxml/internal/export/exportmusicxml.cpp` |
 | `crates/scoretk-core/src/model/text.rs` | `engraving/dom/textbase.cpp`, `importexport/musicxml/internal/shared/musicxmlfonthandler.cpp`, `…/exportmusicxml.cpp` |
@@ -428,5 +428,7 @@ and explicit `<BeamMode>` values, neither of which is in the pivot model, and
 from the layout. An attempt to port `<Groups>` and approximate the
 beam-boundary check lost lines in 12 files (69 → 64 core-identical,
 `target/xml-beam474/`) and was reverted: the simplified check omitted those
-layout predicates. This class stays open until the relevant layout data is
-modelled; it is **not** a 4.7.4-vs-5.0 behavioural divergence.
+layout predicates. It is **not** a 4.7.4-vs-5.0 behavioural divergence. The
+class was closed in `docs/agents/musicxml-export.md` §51: the exact
+`calcHasBracket`/`calcBeamBreaks` predicates are portable once `TimeSig::groups`,
+`TDuration` dots and nested tuplets are modelled; 169 → 171/173 core-exact.

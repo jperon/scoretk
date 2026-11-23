@@ -1608,9 +1608,10 @@ et même normalisation `oracle_core`.
 | crochet de n-olet `headSide` (§47) | `d9ac472f` | 3 | 166 → 167 |
 | `FretDiagram` / `<frame>` (§48) | `e4009a2d` | 1 | 167 → 168 |
 | marqueurs de multi-repos 3.x (§49) | `e3252a48` | 1 | 168 → 169 |
+| crochets de n-olet : port exact (§51) | ce lot | 2 | 169 → **171** |
 
-**Final : 169/173 core-identiques** (157 au départ), 8 lignes canoniques
-(2 028), 301 389 lignes de différence de séquence au niveau plein
+**Final : 171/173 core-identiques** (157 au départ), 2 lignes canoniques
+(2 028), 300 331 lignes de différence de séquence au niveau plein
 (302 919 ; le niveau plein reste dominé par les `<print>`, crédits et
 positions que le pivot ne porte pas), **0 fichier perdu** sur les 173 paires.
 
@@ -1620,11 +1621,54 @@ positions que le pivot ne porte pas), **0 fichier perdu** sur les 173 paires.
 | --- | ---: | --- | --- |
 | `01- Minuit chretien - Violons 1 et 2` | 1 | `<dot/>` surnuméraire : silence décalé hors de sa mesure, non disposé | §42 |
 | `06- Minuit chretien - Basson` | 1 | idem | §42 |
-| `Vivaldi … 04-TecumPrincipium` | 2 | `bracket="yes"` : n-olet dans une ligature plus longue que la reconstruction | §47, §29.3 |
-| `Vivaldi … 08-DeTorrente` | 4 | idem (deux n-olets) | §47, §30 |
+| ~~`Vivaldi … 04-TecumPrincipium`~~ | ~~2~~ | `bracket="yes"` : résolu (§51) | §51 |
+| ~~`Vivaldi … 08-DeTorrente`~~ | ~~4~~ | idem : résolu (§51) | §51 |
 
-Ces quatre écarts sont des décisions de mise en page (décalage d'élément,
-groupes de ligatures `<Groups>` + `calcBeamBreaks`) que le modèle pivot ne
-porte pas ; les deux premiers sont prouvés par l'expérience de §42, les deux
-autres par les audits 4.7.4 de §29.3 et §30. Aucun n'est une erreur de
-référence : MuseScore 4.7.4 est correct dans les quatre cas.
+Les deux écarts restants sont les silences décalés de §42, prouvés par
+l'expérience ; les deux n-olets de Vivaldi ne sont plus des exceptions (§51).
+Aucun n'est une erreur de référence : MuseScore 4.7.4 est correct dans les
+deux cas.
+
+## 51. Crochets de n-olet : port exact de `calcHasBracket` (2026-11-23)
+
+Les §29.3/§30/§47 classaient les six lignes Vivaldi comme dépendantes de la
+mise en page. La relecture des références a infirmé cette conclusion : **les
+règles sont entièrement portables**, et trois omissions du port les cachaient.
+
+1. `Tuplet::calcHasBracket` (`ref-musescore/src/engraving/dom/tuplet.cpp:204-277`,
+   identique en 4.7.4 `.474/src/engraving/dom/tuplet.cpp:206-280`) teste
+   d'abord l'appartenance aux objets `Beam` (`:218-224`), puis les ruptures
+   calculées par `Beam::calcBeamBreaks`
+   (`engraving/dom/beam.cpp:248-297`) aux frontières du n-olet
+   (`tuplet.cpp:251-274`), et enfin `headSide`/`isCross` (`:225-228`).
+   Le port antérieur supposait « n-olet court ⇒ possède sa ligature » et
+   ignorait les deux objets `Beam` distincts : `beams.rs` expose désormais
+   `BeamGroup` (fronts/backs de `Beam::elements()`) et `tuplet_bracket.rs`
+   porte la chaîne complète des prédicats. Test réduit écrit avant le port :
+   `nolet_au_milieu_d_une_ligature_garde_le_crochet` (échouait avant).
+2. `Groups::baseBeamMode` compare des `TDuration`, figure **et points**
+   (`engraving/dom/durationtype.h:57`, `groups.cpp:143`) : une croche pointée
+   précédant le triolet n'est pas du même type qu'une croche, donc la règle
+   de changement de n-olet ne rompt pas la ligature. L'élément `beams.rs`
+   porte maintenant `dots`.
+3. Les `<Groups><Node pos action>` de `<TimeSig>` sont lus et modélisés
+   (`Read206/Read400 TRead::read(TimeSig*)` ; `Groups::beamMode`,
+   `groups.cpp:266-307`). Vivaldi 04 (3.01) porte `action=0x110` au nœud 16,
+   contre `0x111` dans la table par défaut 3/4 : sans cette donnée, le triolet
+   rompait sa ligature. Le portage ajoute `TimeSig::groups`, lu par les
+   lecteurs 3.x et 4.x et consommé par `Groups::of`.
+4. `TupletLayout::computeStartEndCR` (4.7.4
+   `engraving/rendering/score/tupletlayout.cpp:244-265`) descend dans les
+   n-olets imbriqués : le premier/dernier accord peut appartenir à un fils,
+   donc à un autre `Beam`. Sans cela, `voiceswitching.mscx` perdait 2 lignes
+   au test e2e ; le calcul des membres de `has_bracket` suit maintenant la
+   chaîne des parents.
+
+Mesure sur les 173 `.mscz` (`target/oracle-final/`, mêmes `ms.musicxml` 4.7.4
+et même normalisation `oracle_core`) : **169 → 171 core-exact**, 6 → 2 lignes
+canoniques, 301 389 → 300 331 lignes de différence de séquence au niveau
+plein, **0 perte** (seuls `163` Vivaldi 04 : 2 → 0 et `167` Vivaldi 08 : 4 → 0
+gagnent). `cargo test --workspace`, `cargo clippy --workspace --all-targets
+-- -D warnings`, `cargo fmt --all -- --check` et
+`cargo test -p scoretk --test e2e_corpus` : verts. Le relevé de mesure a été
+supprimé après lecture.
