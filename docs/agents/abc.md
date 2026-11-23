@@ -3548,3 +3548,38 @@ naturals inside grace groups** (`=e{g/2}fe/2` in K:Eb). Refined rule: `#`/`b`
 in a grace stays local (book6, abc2midi), while `=` clears the current
 alteration for the rest of the bar (ABC 2.1 §4.2, spec 853-855), with a
 failing-first test. Both Haydn files are back to 100 % N2 with the refinement.
+
+## 43. Final export measurement and per-file disposition (2026-11-23)
+
+### 43.1 Measured result
+
+`target/abc-ex-final/` (binary built from HEAD, all three lots, mode `model`):
+
+| Lot | Exact before | Exact after | Mean `.abc` B |
+| --- | ---: | ---: | ---: |
+| corpus | 47 | **48** | 300 → 300 |
+| mscz | 165 | **165** | 12 408 → 12 408 |
+| xml | 24 | **24** | 12 795 → 12 794 |
+
+**236 → 237/261 exact**, gain 1 (`copypaste_parts.mscx`), **0 losses**, no size
+growth. ABC import re-measured with the same binary: **4 580/4 756 exact**,
+0 gains, 0 losses — the three gains from the grace-accidental fix survive the
+natural-refinement.
+
+### 43.2 Per-file disposition of the other first divergences
+
+| File | Genre | Disposition |
+| --- | --- | --- |
+| `testMultiInstrumentPart3.mscx` | pitch, bar 3 | instrument change A→B♭ clarinet; both writer and reader fixes were implemented and measured neutral (§38.3) because the pitch table counts only 10/16 notes |
+| `voiceswitching.mscx` | missing note, bar 2 | voice overlay/ordering; §37.3, no write-only rule |
+| `Angels_Carol…` (mscz, mxl) | missing note, bar 1 | grace note realised by abc2midi; §41.1, oracle uses the written model |
+| `Sancta_Maria…` (mscz, mxl) | "pitch" 52→40, bar 48 | the **pitch sequence has no divergence at all** (3 876 and 1 467 notes identical); the events TSV flagged an earlier rest onset, so this is a classification artefact of index alignment |
+| `testLocalTimesig1.mscx` | duration 3.0→4.5 | `[M:3/4]` inside a 9/8 measure; `xml2abc.py` writes an empty file ("nothing written … has no notes") for this rest-only score, so it gives no reference; the model's 9/8 length is correct |
+| `Laudate_pueri…` (mscz, mxl) | duration 1.0→4.0 | organ part has empty voices; our `%%score 1 2 3 {(4 5 6) (7 8)}` vs `xml2abc.py`'s `%%score [ 1 \\| 2 \\| 3 ] { ( 4 7 8 ) \\| ( 5 6 ) }` — a staff/voice grouping difference, layout-dependent, no rule from the pivot model |
+
+The one writer cause committed with a measured gain is §42.2 (measure-start
+key applied before inline clef fields, ABC 2.1 §4.6 spec 921-933,
+`xml2abc.py` comparison). §42.3 documents the reader refinement needed to
+avoid two losses introduced by an earlier grace fix, with its own reduced
+test. No other writer-only rule among the ten first divergences produces a
+gain without changing correctly written music.
