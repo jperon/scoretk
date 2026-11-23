@@ -8547,3 +8547,13 @@ fn tweak_negatif_ne_change_pas_la_duree() {
         }
     }
 }
+
+#[test]
+fn single_omit_reste_un_post_evenement() {
+    // `fingering-no-stencil.ly` : `g'\single \omit Fingering -1` ; `\single`
+    // est un post-événement (`ly/music-functions-init.ly:2249-2264`, overrides
+    // convertis en tweaks) et ne doit pas dupliquer la note.
+    let score = read_lilypond("\\version \"2.24.0\"\n{ g'4 \\single \\omit Fingering -1 }\n")
+        .expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![67]);
+}

@@ -5022,6 +5022,19 @@ impl<'a> Parser<'a> {
                 // Le laisser dans le flux en faisait une durée nue qui
                 // répétait la note et décalait tout
                 // (`bend-after-start-in-grace.ly`).
+                if name == "single" {
+                    // `\single` (`ly/music-functions-init.ly:2249-2264`)
+                    // convertit ses overrides en tweaks sur la musique qui
+                    // suit ; en post-événement, consommer les overrides
+                    // (`\omit Fingering`, `\override …`) et continuer avec
+                    // les post-événements de la note (`fingering-no-stencil.ly`).
+                    if self.eat_command("omit") {
+                        let _ = self.skip_property_path();
+                    } else if self.eat_command("override") {
+                        let _ = self.parse_override(false);
+                    }
+                    return Vec::new();
+                }
                 if name == "bendAfter" {
                     let delta = match self.peek().cloned() {
                         Some(token) if token.is_scheme() => {
@@ -6995,6 +7008,7 @@ fn starts_post_event(token: &Token) -> bool {
                 || token.text == ")"
                 || token.text == "rest"
                 || token.text == "bendAfter"
+                || token.text == "single"
                 || is_articulation_command(&token.text)
                 || is_dynamic_command(&token.text)
         }
