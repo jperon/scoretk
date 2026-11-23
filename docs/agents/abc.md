@@ -4063,3 +4063,33 @@ devient exact, ce qui est analysé ci-dessous. Aucune croissance des `.abc`.
 Les quatre fichiers restent comptés dans le relevé. `xml2abc.py` 177 produit
 lui aussi des barres surchargées (§53) : sa durée de silence n'est pas un oracle
 utilisable ici.
+
+## 57. Écriture : note morte dans un accord (`voiceswitching`) (2026-11-23)
+
+Dernier écart du corpus, localisé à la mesure 3 de `voiceswitching.mscx` :
+l'accord porte un Fa4 avec `<head>cross</head><dead>1</dead>` (tête en croix,
+`<notehead>x</notehead>` dans la référence MusicXML) et un Do5 ordinaire.
+`render_chord` filtrait `!note.ghost`, donc n'écrivait que `c4` ; la référence
+compte **deux** notes à la même attaque, l'oracle relevait 62 notes au lieu de
+63 (`notes_manquantes`).
+
+Références lues avant modification :
+
+- `xml2abc.py::doNote` (lignes 1226-1241) ne transforme en silence que
+  `print-object="no"` ; toute note avec `<pitch>` garde sa hauteur, quelle que
+  soit sa tête. Le `<notehead>` n'intervient qu'au lignes 1242-1253, pour les
+  seules notes `<unpitched>` (tables de percussion) ;
+- ABC 2.1 §4.17 (`abc-standard-v2.1.wiki.txt`, ligne 1252) : `[Fc]4` est un
+  accord simultané, sans indication de tête de note dans le standard.
+
+Le filtre devient `note.visible` seulement. Test réduit
+`crates/scoretk/tests/abc_export_note_morte.rs` : échoue avant (`c8` seul),
+passe après (`[Fc]8` et deux notes relues). Instantané
+`tests/corpus/abc/v4_voiceswitching.abc` mis à jour.
+
+Mesure contrôlée, même oracle et même lot que §56 (un seul lancement à la
+fois, `CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2`, `nice -n 10`) : **250 →
+251 exact / 261**, un gain (`voiceswitching`), zéro perte, taille des `.abc`
+inchangée. La note avec tête en croix n'était pas masquée dans les autres
+fichiers : aucun autre accord n'a changé. `cargo test --workspace` et
+`clippy -D warnings` passent.

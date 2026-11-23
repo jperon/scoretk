@@ -1170,11 +1170,17 @@ fn render_chord(
     // `<pitch>` ; le `<notehead>` ne sert qu'aux instrumentations `unpitched`
     // (lignes 1242-1253). La référence MusicXML compte donc les deux notes
     // d'un accord comme `[FC]` (voiceswitching, mesure 3). ABC 2.1 §4.17.
+    // Une note morte (`dead=1` de MuseScore, `<notehead>x</notehead>`) reste
+    // une note écrite et jouée : `xml2abc.py::doNote` (lignes 1226-1241)
+    // n'écarte que `print-object="no"` et écrit la hauteur de toute note avec
+    // `<pitch>` ; le `<notehead>` ne sert qu'aux instrumentations `unpitched`
+    // (lignes 1242-1253). La référence MusicXML compte donc les deux notes
+    // d'un accord comme `[FC]` (voiceswitching, mesure 3). ABC 2.1 §4.17.
     let notes: Vec<&Note> = chord
         .notes
         .iter()
         .map(|id| score.note(*id))
-        .filter(|note| note.visible && !note.ghost)
+        .filter(|note| note.visible)
         .collect();
     let notes: Vec<&Note> = if notes.is_empty() {
         chord.notes.iter().map(|id| score.note(*id)).collect()
