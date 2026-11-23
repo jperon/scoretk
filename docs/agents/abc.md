@@ -3820,3 +3820,51 @@ correctif est donc une mise en conformité avec la norme, pas une explication
 du décalage de Perosi : les restes `x8` de ses mesures 9+ viennent de la
 branche « silence de mesure entière », qui écrit `measure.len` (1 = 4/4) sous
 un en-tête `M:3/4`. La cause complète reste ouverte (§51).
+
+## 53. Écriture : comparaison barre par barre avec xml2abc (2026-11-23)
+
+Méthode appliquée aux 8 fichiers ouverts : mêmes MusicXML d'entrée pour
+`xml2abc.py` 177 (déjà produit par l'oracle) et pour notre writer, puis
+alignement des voix et des barres, durées ramenées en noires (`L:1/8` côté
+scoretk, `L:1/4` côté xml2abc).
+
+**Perosi** (voix 1 à 3) : les 43 barres sont musicalement identiques. La
+barre 7 de la voix 7 est, à l'unité près :
+- scoretk : `x6D4-` (6+4 unités à `L:1/8`, soit 3+2 noires) ;
+- xml2abc : `x4 D2-` (4+2 unités à `L:1/4`, soit 4+2 noires).
+
+Les deux dépassent la mesure `M:3/4` (3 noires). `xml2abc.py::sortMeasure`
+(lignes 714-770) raccourcit bien les silences qui *chevauchent* une note,
+mais ceux qui précèdent une note sans chevauchement restent tels quels ;
+aucun des deux writer ne tronque la barre à la mesure. La référence `M:3/4`
+est donc en contradiction avec le modèle source (mesures de 4/4). Exception
+acceptée : la sortie de xml2abc elle-même viole ABC 2.1 §4.3/§4.8 (une barre
+doit totaliser sa mesure), donc elle ne peut pas servir d'oracle ici.
+
+**testMultiInstrumentPart3** : première barre, scoretk `"^A Clarinet"E2F2G2A2`,
+xml2abc `[K:Eb]"^A Clarinet" E F G A` — seule la forme du champ de tonalité
+diffère (`xml2abc.py::doAttr`, lignes 1287-1292). Après retrait des champs
+`[K:…]`, les 9 barres sont identiques. Le désaccord mesuré vient du
+changement d'instrument A→B♭ en cours de voix : ABC 2.1 §7.1 attache
+`transpose=` à la voix entière, pas à un segment ; ni xml2abc ni notre writer
+ne peuvent l'exprimer. Exception acceptée pour limite de format.
+
+**Laudate_pueri**, **Anerio**, **Vivaldi Sicut erat** : les voix 1-3 sont
+identiques barre à barre (110, 43 et 77 barres respectivement) ; les autres
+diffèrent par le numérotage des voix et le regroupement `%%score`, pas par le
+contenu musical. Le décalage d'attaques mesuré apparaît dans la comparaison
+modèle (`read_xml`), les deux `.abc` étant équivalents. Anerio et Vivaldi
+partagent la barre surchargée de Perosi (silence de mesure + note qui la
+dépasse).
+
+**voiceswitching** : barre 5, scoretk `c4(3c2c2c2`, xml2abc `c2 (3c c c`
+(mêmes hauteurs et mêmes durées à l'unité près) ; la différence est
+d'écriture des n-tuplets (`xml2abc.py::outVoice`, 639-660), pas de musique.
+
+**Byrd_Dies**, **CanonDeLaPaix**, **Angels_Carol** : exceptions déjà
+acceptées en §51 (chevauchement non représentable ; grâces réalisées par
+abc2midi).
+
+Aucun défaut de writer n'a été identifié par cette méthode sur les 8
+fichiers : les deux sorties ABC sont musicalement équivalentes là où elles
+sont comparables. Aucun code n'est modifié ; l'état reste 250/261.
