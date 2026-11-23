@@ -1750,6 +1750,13 @@ impl<'a> Parser<'a> {
             // `\score` (`context_groups`).
             if sequential && !premier && avant < staves.len() {
                 staves[avant].sequence_start = true;
+                // Les autres portées du même élément (un `<< … >>` qui
+                // contient un `\new Staff`) sont créées au même instant, pas
+                // après la première : elles héritent du début de l'élément
+                // (`lily/context-specced-music-iterator.cc:38-99`).
+                for staff in &mut staves[avant + 1..] {
+                    staff.sequence_continue = true;
+                }
             }
             premier = false;
         }

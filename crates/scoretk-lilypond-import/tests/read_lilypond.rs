@@ -8136,3 +8136,38 @@ fn feather_durations_echelonne_les_attakes() {
         ticks
     );
 }
+
+
+#[test]
+fn portee_new_dans_une_sequence_commence_au_temps_courant() {
+    // `staff-add-at-linebreak.ly` : un `\new Staff` dans un `<< … >>` qui
+    // suit de la musique d'une séquence est créé à la position courante
+    // (`lily/context-specced-music-iterator.cc:38-99`, `create_contexts`
+    // crée le contexte sur l'itérateur : il ne repart pas de zéro).
+    let source = "\\version \"2.24.0\"\n\
+         \\score { \\new StaffGroup \\relative c'' {\n\
+           \\new Staff c1 \\break\n\
+           << { c1 } \\new Staff { c1 } >>\n\
+           c1\n\
+         } }";
+    let score = read_lilypond(source).expect("lecture");
+    let mut ticks: Vec<i64> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter(|segment| {
+            segment.iter_elements().any(|(_, item)| {
+                matches!(item, SegmentItem::ChordRest(chord_rest)
+                    if matches!(chord_rest.kind, ChordRestKind::Chord(_)))
+            })
+        })
+        .map(|segment| segment.tick.ticks(480))
+        .collect();
+    ticks.sort_unstable();
+    ticks.dedup();
+    assert_eq!(
+        ticks,
+        vec![0, 480, 960],
+        "le Staff imbriqué commence au temps 4, avec le premier élément du << >>"
+    );
+}

@@ -531,6 +531,15 @@ pub(crate) struct StaffBlock {
     /// sur LilyPond 2.27 : `\new StaffGroup { \new Staff { c'1 } \new Staff { e'1 } }`
     /// produit deux pistes, la seconde à partir du temps 4.
     pub sequence_start: bool,
+    /// Vrai pour les autres portées du **même** élément de séquence que la
+    /// portée marquée `sequence_start`.
+    ///
+    /// `\new Staff c1 << { c1 } \new Staff { c1 } >>` : le `\new Staff`
+    /// imbriqué est créé au moment courant, comme le premier élément du
+    /// `<< … >>`, pas à zéro (`lily/context-specced-music-iterator.cc:38-99`,
+    /// `create_contexts` crée le contexte à la position de l'itérateur). Il
+    /// partage donc le début calculé pour son élément.
+    pub sequence_continue: bool,
     /// Voix de la portée.
     pub voices: Vec<VoiceBlock>,
     /// Paroles attachées à une voix de la portée.
@@ -547,6 +556,7 @@ impl StaffBlock {
             muted: false,
             visible: true,
             sequence_start: false,
+            sequence_continue: false,
             voices: Vec::new(),
             lyrics: Vec::new(),
         }

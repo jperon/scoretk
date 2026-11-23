@@ -467,6 +467,9 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
         let part_id = score.add_part(part);
 
         let first_staff_index = staves.len();
+        // Début du dernier élément de séquence rencontré : ses portées
+        // `sequence_continue` commencent au même instant que la première.
+        let mut element_start_current = element_start;
         for (position, staff_block) in group.staves.iter().enumerate() {
             let staff_start = staves.len();
             let staff_transposition = if group.staves.len() > 1 {
@@ -510,12 +513,15 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
             // \new Staff … }`) : elle commence après les précédentes du même
             // groupe (voir `StaffBlock::sequence_start`).
             let debut_sequence = if staff_block.sequence_start {
-                staves[first_staff_index..]
+                element_start_current = staves[first_staff_index..]
                     .iter()
                     .flat_map(|staff| staff.voices.iter())
                     .map(|voice| voice.interpreted.end)
                     .max()
-                    .unwrap_or(element_start)
+                    .unwrap_or(element_start);
+                element_start_current
+            } else if staff_block.sequence_continue {
+                element_start_current
             } else {
                 element_start
             };
