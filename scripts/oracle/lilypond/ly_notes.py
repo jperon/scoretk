@@ -754,9 +754,12 @@ def compare(
         # note principale : `lily/audio-item.cc:122` place chaque grâce à
         # `main + 9/40 × grace_part`, et la partie grâce d'un groupe de
         # plusieurs notes dépasse le temps d'une noire (vérifié sur
-        # `grace-auto-beam-engraver.ly` : 1,2 temps avant l'accord).
+        # `grace-auto-beam-engraver.ly` : 1,2 temps avant l'accord). Une
+        # grâce écrite à la fin d'une branche polyphonique est jouée à la fin
+        # de cette branche, jusqu'à deux temps avant la note suivante de la
+        # voix (`slur-scoring.ly` : 2,06 temps) : la fenêtre est de 2,5.
         ref_main, n_gr_ref, n_gr_test, n_gr_match = apparier_graces(
-            reference_sans_temps_grace, graces, grid, window=2.0
+            reference_sans_temps_grace, graces, grid, window=2.5
         )
         test_main = [note for note in test if not (len(note) >= 5 and note[4])]
         n2_grace = compter_paires(ref_main, test_main, grid) + n_gr_match
