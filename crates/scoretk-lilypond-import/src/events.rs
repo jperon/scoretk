@@ -667,6 +667,15 @@ impl<'a> Interpreter<'a> {
                 // (`generic_to_relative_octave`, `lily/music.cc`) et avec sa
                 // durée par défaut (`lily/parser.yy` `NEWCONTEXT`).
                 self.octave = child.octave;
+                // La musique d'un contexte est un élément de la séquence : la
+                // suite se résout depuis sa dernière hauteur
+                // (`generic_to_relative_octave`, `lily/music.cc`). Cet état
+                // doit aussi sortir du `\relative` englobant, sans quoi la
+                // portée suivante d'un groupe ré-ancre sur la référence par
+                // défaut (`spacing-multi-tuplet.ly` : si4 au lieu de si3).
+                if self.octave.relative {
+                    self.relative_final = Some(self.octave);
+                }
                 self.last_chord_notes = child.last_chord_notes;
                 self.last_event_chord_notes = child.last_event_chord_notes.clone();
                 last_duration = child.default_duration;

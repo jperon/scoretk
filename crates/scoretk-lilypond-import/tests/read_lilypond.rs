@@ -8773,3 +8773,19 @@ fn after_retarde_l_evenement() {
     assert_eq!(attaques[0], (Fraction::ZERO, 62));
     assert_eq!(attaques[1], (Fraction::new(3, 4), 60));
 }
+
+#[test]
+fn relative_apres_un_contexte_de_voix_enchaine_la_portee_suivante() {
+    // `\relative { \context StaffGroup << \new Staff \context Voice { … }
+    // \new Staff \context Voice { … } >> }` : la musique d'un contexte est un
+    // élément de la séquence, sa dernière hauteur sert de référence à la suite
+    // (`generic_to_relative_octave`, `lily/music.cc`), y compris pour la portée
+    // suivante (`spacing-multi-tuplet.ly` : si3 au lieu de si4).
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\\relative { \\context StaffGroup << \\new Staff \\context Voice { c'4 c } \\new Staff \\context Voice { c4 } >> }\n",
+    )
+    .expect("lecture");
+    let mut hauteurs = hauteurs_attaques(&score);
+    hauteurs.sort();
+    assert_eq!(hauteurs, vec![60, 60, 60]);
+}
