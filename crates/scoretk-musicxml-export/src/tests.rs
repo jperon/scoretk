@@ -3019,11 +3019,13 @@ fn type_cue_sur_note_reduite() {
     );
 }
 
-/// `<cue/>` est le mécanisme MusicXML standard des notes **non jouées**
-/// (`Note::play == false`, `ClusterNoteEvent`), pas des notes de cue : une
-/// note `small` mais jouée porte `<type size="cue">` et **pas** `<cue/>`.
-/// L'oracle LilyPond saute les `<cue/>` (`ly_notes.py`) ; en mettre sur les
-/// notes de `\cueDuring` les retirerait de la comparaison MIDI.
+/// `<cue/>` suit `isCueNote` (`exportmusicxml.cpp:4190-4193`) : une note
+/// `small` **et** non jouée, ou une musique gravée sans performer MIDI
+/// (`Note::unperformed`, cluster LilyPond). Une note `small` mais jouée porte
+/// `<type size="cue">` et pas `<cue/>` ; une note `play = false` ordinaire
+/// (MuseScore `<play>0</play>`) n'en porte pas davantage. L'oracle LilyPond
+/// saute les `<cue/>` (`ly_notes.py`), ce qui garde les clusters hors de la
+/// comparaison MIDI.
 #[test]
 fn cue_tag_seulement_pour_note_non_jouee() {
     let mut score = Score::new();
@@ -3041,7 +3043,8 @@ fn cue_tag_seulement_pour_note_non_jouee() {
     ajouter_element(&mut score, &mut measure, track, Fraction::ZERO, chord_rest);
 
     let mut muet = Note::new(62, tpc::D);
-    muet.play = false; // gravée mais non jouée (cluster)
+    muet.play = false;
+    muet.unperformed = true; // cluster LilyPond : gravé, sans performer MIDI
     let muet_id = score.add_note(muet);
     let mut chord_rest = ChordRest::chord(Duration::quarter());
     chord_rest.chord_mut().expect("accord").notes.push(muet_id);
@@ -3050,6 +3053,21 @@ fn cue_tag_seulement_pour_note_non_jouee() {
         &mut measure,
         track,
         Fraction::QUARTER,
+        chord_rest,
+    );
+
+    // `<play>0</play>` d'une partition MuseScore : non jouée, mais ni petite
+    // ni issue d'un performer absent. `isCueNote` (:4191-4193) n'écrit rien.
+    let mut sourd = Note::new(64, tpc::E);
+    sourd.play = false;
+    let sourd_id = score.add_note(sourd);
+    let mut chord_rest = ChordRest::chord(Duration::quarter());
+    chord_rest.chord_mut().expect("accord").notes.push(sourd_id);
+    ajouter_element(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::new(1, 2),
         chord_rest,
     );
     score.add_measure(measure);
@@ -3062,7 +3080,7 @@ fn cue_tag_seulement_pour_note_non_jouee() {
     assert_eq!(
         xml.matches("<cue/>").count(),
         1,
-        "seule la note `play = false` doit porter <cue/> :\n{xml}"
+        "seule la note sans performer MIDI doit porter <cue/> :\n{xml}"
     );
 }
 
@@ -3511,6 +3529,7 @@ fn note_non_jouee_liee_necrit_pas_de_tie_avec_cue() {
     let mut notes = [first, second];
     for note in &mut notes {
         note.play = false;
+        note.unperformed = true; // ClusterNoteEvent : la branche `cue` exclut `tie`
     }
     for (tick, note) in [(Fraction::ZERO, 0), (Fraction::HALF, 1)] {
         let id = score.add_note(notes[note].clone());

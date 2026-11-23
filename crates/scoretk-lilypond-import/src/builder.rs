@@ -2176,11 +2176,15 @@ fn place_chord(
     if silent {
         if let ChordRestKind::Chord(chord) = &chord_rest.kind {
             for id in &chord.notes {
-                score.note_mut(*id).play = false;
+                let note = score.note_mut(*id);
+                note.play = false;
+                note.unperformed = true; // musique déplacée vers une portée muette
             }
             for grace in &chord.grace_chords {
                 for id in &grace.chord.notes {
-                    score.note_mut(*id).play = false;
+                    let note = score.note_mut(*id);
+                    note.play = false;
+                    note.unperformed = true;
                 }
             }
         }
@@ -2204,6 +2208,7 @@ fn build_note(note: &crate::events::NoteEvent, fingerings: &[String]) -> Note {
     value.small = note.small;
     value.visible = note.visible;
     value.play = note.play;
+    value.unperformed = note.unperformed;
     if note.cautionary {
         value.accidental = Some(Accidental {
             kind: accidental_for(note.tpc),

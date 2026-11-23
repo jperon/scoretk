@@ -1760,14 +1760,18 @@ impl Context<'_> {
                     out.xml.tag_empty("grace", &[]);
                 }
             }
-            // `<cue/>` est le mécanisme MusicXML standard pour une note
-            // gravée mais non jouée. MuseScore l'écrit pour les petites notes
-            // non jouées (isCueNote, exportmusicxml.cpp:4190-4193) et notre
-            // importeur le relit en `Note::play = false` (pass2.rs:1249).
-            // XSD note : la branche `cue` exclut `tie` (musicxml-4.0.xsd
-            // :5182-5200) ; `cue` doit donc couvrir toutes les notes non
-            // jouées pour que le `<tie>` soit omis plus bas.
-            let cue = is_cue_note(chord, note) || !note.play;
+            // `isCueNote` (`exportmusicxml.cpp:4190-4193`) est
+            // `isSmallNote && !play` : MuseScore n'écrit **aucun** `<cue/>` pour
+            // une note ordinaires portant `<play>0</play>` (vérifié dans les
+            // références 4.7.4 Vivaldi et Angels_Carol). Émettre `<cue/>` dès
+            // que `!play` était donc une divergence d'export.
+            //
+            // `Note::unperformed` garde les seules musiques gravées sans
+            // performer MIDI (clusters/NullVoice de LilyPond), sans équivalent
+            // MuseScore : `<cue/>` les rend identifiables à l'oracle LilyPond
+            // sans toucher aux partitions MuseScore (XSD : la branche `cue`
+            // exclut `tie`, musicxml-4.0.xsd:5182-5200).
+            let cue = is_cue_note(chord, note) || note.unperformed;
             if cue {
                 out.xml.tag_empty("cue", &[]);
             }

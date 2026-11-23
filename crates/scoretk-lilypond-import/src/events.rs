@@ -191,6 +191,9 @@ pub(crate) struct NoteEvent {
     pub visible: bool,
     /// Faux pour une musique sans performer MIDI (`ClusterNoteEvent`).
     pub play: bool,
+    /// Vrai pour une musique gravée sans performer MIDI, construction
+    /// LilyPond que MuseScore ne peut pas exprimer (`Note::unperformed`).
+    pub unperformed: bool,
 }
 
 /// Accord d'agrément.
@@ -1809,6 +1812,7 @@ impl<'a> Interpreter<'a> {
                 small: self.cue,
                 visible: !self.invisible_notes,
                 play: !self.silent_notes,
+                unperformed: self.silent_notes || self.invisible_notes,
             });
         }
         let octave = self.octave.resolve(&note.pitch);
@@ -1861,6 +1865,7 @@ impl<'a> Interpreter<'a> {
             small: self.cue,
             visible: !self.invisible_notes,
             play: !self.silent_notes,
+            unperformed: self.silent_notes || self.invisible_notes,
         })
     }
 

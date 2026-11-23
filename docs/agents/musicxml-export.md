@@ -1292,3 +1292,38 @@ diffed individually (`/tmp/xml16-dump/`); first differences and line counts:
 
 Core-identical stays **157/173**; N1/N2 1.0000, 0 XSD-invalid, no file
 regressed.
+
+## 39. `<cue/>` sur les notes `play=0` : retour à `isCueNote` (2026-11-23)
+
+Le binaire reconstruit sur le master courant donnait **153/173**, quatre
+fichiers de moins que le chiffre figé de §38 : quatre partitions Vivaldi
+(`01_Dixit_Dominus`, `09_Gloria_Patri` ×3) dont la première divergence noyau
+était `cue||<cue/>`. Le `.mscx` porte bien `<play>0</play>` (24 occurrences
+dans `01_Dixit_Dominus`) mais aucun `<small>` ; la référence 4.7.4 n'écrit
+aucun `<cue/>` sur ces notes.
+
+Cause : l'export émettait `<cue/>` dès `!note.play`, alors que
+`isCueNote` (`exportmusicxml.cpp:4190-4193`, corps à `:4192`) est
+`isSmallNote(note) && !note->play()`. Un relevé des six partitions du lot
+avec `<play>0</play>` confirme qu'aucune référence n'y met de `<cue/>`
+(y compris `Angels_Carol` et `08-DeTorrente`, dont les notes sont visibles).
+
+Correctif : `cue = is_cue_note(chord, note) || note.unperformed`. Le champ
+`Note::unperformed` est distinct de `play` : il marque les seules musiques
+gravées sans performer MIDI (`ClusterNoteEvent`, `NullVoice`, `\change Staff`
+vers une portée muette), que MuseScore ne peut pas exprimer et que l'oracle
+LilyPond doit ignorer (`ly_notes.py` saute les `<cue/>`). Les trois chemins
+du lecteur LilyPond qui mettent `play = false` (`events.rs` interprète,
+`builder.rs` Devnull) le positionnent aussi. Tests réduits : la note
+`play=false` d'une partition MuseScore n'a plus de `<cue/>`, la note cluster
+en garde un, et le `<tie>` reste exclu avec `<cue/>`.
+
+Mesure contrôlée (binaire master reconstruit `/tmp/scoretk-xml-now` vs
+`/tmp/scoretk-xml-cue`, même oracle, mêmes refs, même manifeste de 174) :
+**153 → 157/173 core-exact**, **+4 gains, 0 perte** — les quatre Vivaldi
+ci-dessus ; `Angels_Carol` 15 → 3 et `08-DeTorrente` 16 → 14 lignes sans
+devenir exacts. XSD invalide 0, N1/N2 1.0000. Les sorties MusicXML de
+`cluster.ly`, `cluster-break.ly`, `lyric-combine-nullvoice.ly` et
+`vertical-alignment-spanner-only.ly` sont **octet pour octet identiques**
+avant/après : l'oracle LilyPond n'est pas touché. `cargo test --workspace`
+et clippy `-D warnings` verts.

@@ -309,6 +309,17 @@ pub struct Note {
     pub small: bool,
     /// Vrai si la note est jouée.
     pub play: bool,
+    /// Vrai pour une musique gravée mais sans performer MIDI
+    /// (`ClusterNoteEvent` de `scm/music-functions.scm`, `NullVoice`) : une
+    /// construction propre à LilyPond, que MuseScore ne peut pas exprimer.
+    ///
+    /// `play` seul ne suffit pas : les partitions MuseScore portent aussi
+    /// `<play>0</play>` sur des notes ordinaires, et `isCueNote`
+    /// (`exportmusicxml.cpp:4191-4193`) n'écrit alors aucun `<cue/>`. Ce
+    /// marqueur distinct permet à l'export MusicXML de réserver `<cue/>` aux
+    /// seules notes que MuseScore marquerait comme telles, tout en gardant
+    /// les notes silencieuses identifiables pour l'oracle LilyPond.
+    pub unperformed: bool,
     /// Vélocité importée du MIDI, valeur absolue 1-127.
     ///
     /// Renseignée par l'import MIDI ; l'export MusicXML en tire l'attribut
@@ -360,6 +371,7 @@ impl Note {
             ghost: false,
             small: false,
             play: true,
+            unperformed: false,
             velocity: None,
             user_velocity: None,
             velo_type: None,
