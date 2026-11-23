@@ -45,7 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import common  # noqa: E402
 from ly_notes import (
-    GRID, TOL, a_des_repetitions, compare, lire_graces, nombre_portees,
+    GRID, TOL, a_des_repetitions, compare, lire_graces,
     read_midi, read_xml,
 )
 
@@ -251,23 +251,13 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                     ecrire(out, r)
                     continue
                 try:
-                    # Le MIDI de référence a une piste par contexte ; le
-                    # MusicXML peut replier plusieurs pistes sur une portée
-                    # (lecteur ou source sans structure explicite). Dans ce
-                    # cas, fusionner les unissons de voix effacerait des notes
-                    # distinctes : on ne le fait que si le XML sépare au moins
-                    # autant de portées que la référence a de pistes.
-                    fusion = nombre_portees(str(dst)) >= len({n[3] for n in ref})
-                    # Fusionner les unissons (voix ou accord, `read_xml`) ne se
-                    # justifie que si le candidat a **plus** de notes brutes que
-                    # la référence : c'est ce qui explique un `notes_supp`. Un
-                    # fichier qui a déjà moins de notes (`notes_manquantes`,
-                    # `monochords`) garde ses doublons : les fusionner ferait
-                    # baisser N1 sans rapprocher aucune note de la référence.
-                    if fusion:
-                        brut = read_xml(str(dst), with_grace=True, merge_unisons=False)
-                        fusion = len(brut) > len(ref)
-                    test = read_xml(str(dst), with_grace=True, merge_unisons=fusion)
+                    # La fusion des unissons ne consulte que le candidat :
+                    # `Midi_walker::do_start_note` fusionne toujours deux
+                    # attaques de même hauteur au même tick d'une piste, que
+                    # ce soit deux voix ou deux têtes d'accord. Les grâces
+                    # gardent leur rang depuis la note principale (voir
+                    # `_fusionner_unissons`).
+                    test = read_xml(str(dst), with_grace=True)
                 except Exception as exc:
                     r["erreur"] = f"XML illisible : {exc}"
                     marquer_echec(r)

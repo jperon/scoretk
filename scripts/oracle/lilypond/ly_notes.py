@@ -180,6 +180,17 @@ def read_xml(
     racine = ET.parse(path).getroot()
     notes: list[tuple[int, float, float, int]] = []
     meta: list[tuple[int, str, str, bool]] = []  # (part, portée, voix, grâce)
+    # Rang de chaque grâce depuis la note principale qu'elle orne, par voix :
+    # le MusicXML pose toutes les grâces à l'attaque logique de cette note,
+    # alors que LilyPond les joue à des instants réels distincts, dans l'ordre
+    # de la voix (`lily/grace-iterator.cc`, §2.6.1). Deux grâces de même
+    # hauteur et de même rang (deux voix qui ornent le même accord,
+    # `Troldtog` mesure 111) tombent au même instant réel ; `midi-walker.cc`
+    # les fusionne alors. Le rang est calculé au fil du document, y compris
+    # quand la note principale est une continuation de liaison écartée plus
+    # bas.
+    rangs: list[int] = []
+    attente: dict[tuple[int, str, str], list[int]] = {}
     for numero_part, part in enumerate(racine.findall("part")):
         divisions = 1
         transposition = 0
@@ -250,6 +261,14 @@ def read_xml(
                 duree = int(float(duree_texte)) / divisions if duree_texte else 0.0
                 est_grace = elem.find("grace") is not None
                 est_accord = elem.find("chord") is not None
+                staff_note = elem.findtext("staff", "1")
+                voix_note = elem.findtext("voice", "1")
+                cle_voix = (numero_part, staff_note, voix_note)
+                if not est_grace and cle_voix in attente:
+                    file = attente.pop(cle_voix)
+                    total = len(file)
+                    for position, indice in enumerate(file):
+                        rangs[indice] = total - position
                 attaque = attaque_precedente if est_accord else curseur
                 if not est_accord:
                     attaque_precedente = attaque
@@ -291,8 +310,10 @@ def read_xml(
                                          (hauteur_u + transposition, jouee,
                                           0.0 if est_grace else duree, numero_part))
                             meta.append((numero_part, elem.findtext("staff", "1"),
-                                         elem.findtext("voice", "1"), est_grace,
-                                         elem.find("chord") is not None))
+                                         elem.findtext("voice", "1"), est_grace))
+                            rangs.append(0)
+                            if est_grace:
+                                attente.setdefault(cle_voix, []).append(len(notes) - 1)
                     continue  # silence : le curseur a déjà avancé
                 step = pitch.findtext("step")
                 octave_txt = pitch.findtext("octave")
@@ -306,14 +327,20 @@ def read_xml(
                              (hauteur + transposition, jouee,
                               0.0 if est_grace else duree, numero_part))
                 meta.append((numero_part, elem.findtext("staff", "1"),
-                             elem.findtext("voice", "1"), est_grace,
-                             elem.find("chord") is not None))
+                             elem.findtext("voice", "1"), est_grace))
+                rangs.append(0)
+                if est_grace:
+                    attente.setdefault(cle_voix, []).append(len(notes) - 1)
         # Chaque partie a ses propres directions : les appliquer à ses notes
         # avant de passer à la suivante (les variables du début de boucle sont
         # réinitialisées à chaque partie).
         _appliquer_octave(notes, meta, debut_notes_part, octave_events)
+    for file in attente.values():
+        total = len(file)
+        for position, indice in enumerate(file):
+            rangs[indice] = total - position
     if merge_unisons:
-        return _fusionner_unissons(notes, meta)
+        return _fusionner_unissons(notes, meta, rangs)
     return notes
 
 
@@ -354,39 +381,38 @@ def _appliquer_octave(
 
 
 def _fusionner_unissons(
-    notes: list[tuple], meta: list[tuple[int, str, str, bool, bool]]
+    notes: list[tuple],
+    meta: list[tuple[int, str, str, bool]],
+    rangs: list[int],
 ) -> list[tuple]:
-    """Fusionne les unissons (voix différentes ou même accord).
+    """Fusionne toutes les attaques de même hauteur au même tick d'une piste.
 
-    Le MIDI de LilyPond ne peut pas porter deux attaques de même hauteur au
-    même tick sur une même piste : deux voix qui jouent l'unisson n'émettent
-    qu'une note (``lily/midi-walker.cc``, ``lily/note-performer.cc``). Un
-    **accord** qui répète la même hauteur (``<c' c'>``) est dédupliqué par
-    LilyPond avant le MIDI (`Chord::add`/`Note_performer` : vérifié sur 2.27,
-    ``<c' c'>4 <c' e' c'>4`` joue 60 puis 60/64, un seul do chaque fois). Le
-    MusicXML, lui, écrit les deux voix ou les deux têtes, et chacune est une
-    note gravée légitime. L'oracle compare le **son**, pas la gravure : il ne
-    garde qu'une attaque par (partie, portée, hauteur, attaque, grâce) quand
-    les voix diffèrent **ou** quand les doublons sont des notes successives du
-    même accord (la seconde porte ``<chord/>``). Deux portées différentes
-    restent deux pistes MIDI distinctes et ne sont jamais fusionnées ; une
-    même voix qui répète la même hauteur à la même attaque **hors accord**
-    reste une anomalie du candidat et n'est pas masquée.
+    ``Midi_walker::do_start_note`` (``lily/midi-walker.cc``, branche
+    ``now_ticks == queued_ticks``) fusionne deux notes de même hauteur qui
+    commencent au même tick **d'une même piste** : il garde une attaque et la
+    plus longue extinction. Cela vaut pour deux voix d'une portée
+    (``midiChannelMapping = #'staff``) comme pour deux têtes d'un accord
+    ``<c' c'>``. Vérifié sur LilyPond 2.27 : ``<c' c'>4 <c' e' c'>4`` joue 60
+    puis 60/64, et ``monochords.ly`` a 14 attaques d'une note, jamais deux
+    exécutions simultanées de la même hauteur.
+
+    Le MusicXML, lui, garde les deux voix et les deux têtes : c'est une
+    gravure légitime. L'oracle compare le **son**, pas la gravure. La règle ne
+    regarde que le **candidat** (partie, portée, hauteur, tick, grâce) : elle
+    ne consulte pas la référence. Deux portées différentes restent deux pistes
+    MIDI distinctes et ne sont jamais fusionnées.
     """
     groupes: dict[tuple, list[int]] = {}
     for index, note in enumerate(notes):
         if index >= len(meta):
             continue
-        numero_part, portee, voix, grace, _accord = meta[index]
-        cle = (numero_part, portee, note[0], round(note[1], 6), grace)
+        numero_part, portee, _voix, grace = meta[index]
+        rang = rangs[index] if index < len(rangs) else 0
+        cle = (numero_part, portee, note[0], round(note[1], 6), grace, rang)
         groupes.setdefault(cle, []).append(index)
     supprimer: set[int] = set()
     for indices in groupes.values():
-        voix = {meta[i][2] for i in indices}
-        # Unisson d'accord : les doublons après le premier portent `<chord/>`.
-        unisson_accord = all(meta[i][4] for i in indices[1:])
-        if len(voix) > 1 or unisson_accord:
-            supprimer.update(indices[1:])
+        supprimer.update(indices[1:])
     if not supprimer:
         return notes
     return [note for index, note in enumerate(notes) if index not in supprimer]
