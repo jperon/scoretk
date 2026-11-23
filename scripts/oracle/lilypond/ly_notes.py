@@ -496,7 +496,13 @@ def lire_graces(notes: list[tuple]) -> list[tuple[int, float, bool]]:
     temps réel (`attack`/`offset` positif).
     """
     return [
-        (note[0], note[1], note[4] == 2, note[5] if len(note) > 5 else 0.0)
+        (
+            note[0],
+            note[1],
+            note[4] == 2,
+            note[5] if len(note) > 5 else 0.0,
+            note[3] if len(note) > 3 else 0,
+        )
         for note in notes
         if len(note) >= 5 and note[4]
     ]
@@ -579,16 +585,25 @@ def decalage_graces_reference(
     # Groupes : grâces consécutives de même attaque logique et de même genre.
     # Les notes d'un accord d'agrément partagent leur durée (`<chord/>` : durée
     # écrite nulle), donc la somme ne les compte qu'une fois.
-    groupes: list[tuple[float, bool, float]] = []
+    # Un groupe par portée (les voix d'une portée partagent leurs temps ; les
+    # portées d'un système les répètent) : sans la partie, les grâces de trois
+    # portées à la même attaque formaient un groupe de douze notes.
+    groupes: list[tuple[int, float, bool, float]] = []
     for grace in graces:
         attaque, apres = grace[1], grace[2]
+        partie = grace[4] if len(grace) > 4 else 0
         notee = grace[3] if len(grace) > 3 else 0.0
-        if groupes and abs(groupes[-1][0] - attaque) < 1e-9 and groupes[-1][1] == apres:
-            groupes[-1] = (attaque, apres, groupes[-1][2] + notee)
+        if (
+            groupes
+            and groupes[-1][0] == partie
+            and abs(groupes[-1][1] - attaque) < 1e-9
+            and groupes[-1][2] == apres
+        ):
+            groupes[-1] = (partie, attaque, apres, groupes[-1][3] + notee)
         else:
-            groupes.append((attaque, apres, notee))
+            groupes.append((partie, attaque, apres, notee))
     insertions: list[tuple[float, float]] = []
-    for attaque, apres, notee in groupes:
+    for _partie, attaque, apres, notee in groupes:
         if apres:
             # `\afterGrace` : la grâce sonne dans la durée de la note
             # principale, son attaque MusicXML est déjà le temps réel et elle
@@ -697,15 +712,21 @@ def apparier_graces(
         return True
 
     # Groupes de grâces consécutives de même attaque logique et de même genre.
-    groupes: list[tuple[float, bool, list[int]]] = []
+    groupes: list[tuple[int, float, bool, list[int]]] = []
     for index, grace in enumerate(graces):
         attaque, apres = grace[1], grace[2]
-        if groupes and abs(groupes[-1][0] - attaque) < 1e-9 and groupes[-1][1] == apres:
-            groupes[-1][2].append(index)
+        partie = grace[4] if len(grace) > 4 else 0
+        if (
+            groupes
+            and groupes[-1][0] == partie
+            and abs(groupes[-1][1] - attaque) < 1e-9
+            and groupes[-1][2] == apres
+        ):
+            groupes[-1][3].append(index)
         else:
-            groupes.append((attaque, apres, [index]))
+            groupes.append((partie, attaque, apres, [index]))
     apparies = 0
-    for attaque, apres, indices in groupes:
+    for _partie, attaque, apres, indices in groupes:
         notes = [graces[index] for index in indices]
         durées_connues = all(len(grace) > 3 and grace[3] > 0 for grace in notes)
         if apres or not durées_connues:

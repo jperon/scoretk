@@ -61,7 +61,7 @@ def test_decalage_par_groupe():
         (62, 0.9375, 0.0625, 0, 0, 0.0),
     ]
     graces = lire_graces(notes)
-    assert graces == [(60, 0.9375, False, 0.125)], graces
+    assert graces == [(60, 0.9375, False, 0.125, 0)], graces
     paliers = decalage_graces_reference([], graces, notes=notes)
     assert len(paliers) == 1, paliers
     seuil, cumul = paliers[0]
