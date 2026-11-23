@@ -35,6 +35,7 @@ use scoretk_core::model::{
     NoteHeadGroup, OrnamentType, Placement, StemDirection, TremoloKind, TupletNumberType,
 };
 
+use crate::ast::VoicesId;
 use crate::ast::{
     Chord, ChordKind, Context, Document, GroupBlock, GroupKind, HeaderAst, LyricsBlock, Music,
     NoteSpec, PitchSpec, PostEvent, RepeatKind, ScoreAst, StaffBlock, Syllable, TagFilter,
@@ -4190,13 +4191,39 @@ impl<'a> Parser<'a> {
             // laissée dans le flux devenait des durées et décalait les voix
             // (`voices-command.ly`).
             "voices" => {
-                while self.peek().is_some_and(|token| {
-                    matches!(token.kind, Kind::Number | Kind::Str | Kind::Scheme)
-                        || token.is_punct(',')
-                }) {
-                    self.position += 1;
+                // `ly/music-functions-init.ly:2631-2665` : liste de voix
+                // (numéros, noms, chaînes) puis la musique simultanée. Une
+                // branche affectée au nom de la voix courante la prolonge
+                // (liaisons comprises, `voices-command.ly`).
+                let mut ids = Vec::new();
+                while let Some(token) = self.peek().cloned() {
+                    match token.kind {
+                        Kind::Number => {
+                            if let Some(number) = token.as_integer() {
+                                ids.push(VoicesId::Number(u8::try_from(number).unwrap_or(0)));
+                            }
+                            self.position += 1;
+                        }
+                        Kind::Str | Kind::Scheme | Kind::Word => {
+                            let name = token
+                                .text
+                                .trim()
+                                .trim_start_matches('#')
+                                .trim_start_matches('\'')
+                                .trim_matches('"')
+                                .to_owned();
+                            ids.push(VoicesId::Name(name));
+                            self.position += 1;
+                        }
+                        Kind::Punct(',') => self.position += 1,
+                        _ => break,
+                    }
                 }
-                self.parse_music()
+                let music = self.parse_music();
+                Music::Context(Context::Voices {
+                    ids,
+                    music: Box::new(music),
+                })
             }
             "compressMMRests" => {
                 // `ly/music-functions-init.ly:452-459` : ne change que la
@@ -6964,7 +6991,8 @@ fn extract_alternatives(music: &mut Music, alternatives: &mut Vec<Music>) {
         | Music::Context(Context::Tuplet { music, .. })
         | Music::Context(Context::Transpose { music, .. })
         | Music::Context(Context::AfterGrace { main: music, .. })
-        | Music::Context(Context::After { music, .. }) => {
+        | Music::Context(Context::After { music, .. })
+        | Music::Context(Context::Voices { music, .. }) => {
             extract_alternatives(music, alternatives);
         }
         Music::Tag { music, .. } | Music::Filtered { music, .. } => {
@@ -7185,6 +7213,10 @@ fn kill_cues(music: Music) -> Music {
             event: Box::new(kill_cues(*event)),
             music: Box::new(kill_cues(*music)),
         }),
+        Music::Context(Context::Voices { ids, music }) => Music::Context(Context::Voices {
+            ids,
+            music: Box::new(kill_cues(*music)),
+        }),
         Music::Context(Context::Repeat {
             kind,
             count,
@@ -7324,6 +7356,10 @@ fn silence_music(music: Music) -> Music {
         }) => Music::Context(Context::After {
             delta,
             event: Box::new(silence_music(*event)),
+            music: Box::new(silence_music(*music)),
+        }),
+        Music::Context(Context::Voices { ids, music }) => Music::Context(Context::Voices {
+            ids,
             music: Box::new(silence_music(*music)),
         }),
         _ => Music::Empty,
@@ -7741,6 +7777,7 @@ fn scale_context(context: &mut Context, factor: &Fraction) {
             scale_music(event, factor);
             scale_music(music, factor);
         }
+        Context::Voices { music, .. } => scale_music(music, factor),
         Context::Repeat {
             body, alternatives, ..
         } => {

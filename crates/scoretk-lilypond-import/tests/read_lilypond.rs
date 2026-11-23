@@ -8828,3 +8828,21 @@ fn portee_ossia_dans_une_sequence_demarre_au_tick_de_l_element() {
         ]
     );
 }
+
+#[test]
+fn voices_prolonge_la_voix_nommee() {
+    // `voices-command.ly` : `\voices 1,"sop" << e''2 \\ { a'2~ } >>` dans
+    // `\new Voice = "sop"` — la branche affectée à « sop » prolonge la voix
+    // courante, donc la liaison `a'2~ … a'2` reste une seule attaque.
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n{ \\new Voice = \"sop\" { a'2~ \\voices 1,\"sop\" << e''2 \\\\ { a'2~ } >> a'2 } }\n",
+    )
+    .expect("lecture");
+    let la: Vec<_> = score.notes.iter().filter(|note| note.pitch == 69).collect();
+    assert_eq!(la.len(), 3);
+    assert_eq!(la.iter().filter(|note| note.tie_back.is_none()).count(), 1);
+    assert_eq!(
+        la.iter().filter(|note| note.tie_forward.is_none()).count(),
+        1
+    );
+}

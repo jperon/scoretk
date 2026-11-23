@@ -326,6 +326,15 @@ pub(crate) enum Context {
         numbers: Vec<u32>,
         music: Box<Music>,
     },
+    /// `\voices ids << … \\ … >>` (`ly/music-functions-init.ly:2631-2665`) :
+    /// chaque branche est affectée à une voix (numéro ou nom). Une branche
+    /// affectée au nom de la voix courante la prolonge.
+    Voices {
+        /// Identifiants, dans l'ordre des branches.
+        ids: Vec<VoicesId>,
+        /// Musique simultanée.
+        music: Box<Music>,
+    },
     /// `\after delta ev mus` (`ly/music-functions-init.ly:67-83`) :
     /// `\context Bottom << { \skip delta <> ev } #mus >>` — `ev` (souvent un
     /// post-événement) est posé à `delta` après le début de `mus`, dans un
@@ -355,6 +364,25 @@ pub(crate) enum Context {
         /// Colonne de la commande `\change`.
         column: u32,
     },
+}
+
+/// Identifiant de voix d'un `\voices`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum VoicesId {
+    /// Numéro de voix (1 à 4).
+    Number(u8),
+    /// Nom de contexte (`"sop"`, `sop`).
+    Name(String),
+}
+
+impl VoicesId {
+    /// Nom de voix, pour un identifiant nominal.
+    pub(crate) fn name(&self) -> Option<&str> {
+        match self {
+            Self::Name(name) => Some(name),
+            Self::Number(_) => None,
+        }
+    }
 }
 
 /// Nature d'une reprise.

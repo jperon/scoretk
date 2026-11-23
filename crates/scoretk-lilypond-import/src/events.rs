@@ -376,6 +376,8 @@ struct GraceFrame {
 pub(crate) struct Interpreter<'a> {
     /// Résultat en construction.
     voice: InterpretedVoice,
+    /// Nom du contexte Voice courant (`\new Voice = "sop"`), pour `\voices`.
+    voice_name: Option<String>,
     /// Position courante.
     cursor: Fraction,
     /// État d'octave.
@@ -456,9 +458,11 @@ impl<'a> Interpreter<'a> {
         warnings: &'a mut Warnings,
         octave: OctaveState,
         start: Fraction,
+        name: Option<&str>,
     ) -> (InterpretedVoice, OctaveState) {
         let mut interpreter = Self {
             voice: InterpretedVoice::default(),
+            voice_name: name.map(str::to_owned),
             cursor: start,
             cue: false,
             repeat_pass: None,
@@ -767,6 +771,7 @@ impl<'a> Interpreter<'a> {
         // seule durée de son interprétation, pas pour `'a`.
         let mut child = Interpreter {
             voice: InterpretedVoice::default(),
+            voice_name: name.clone(),
             cursor: start,
             cue: self.cue,
             repeat_pass: self.repeat_pass,
@@ -919,6 +924,8 @@ impl<'a> Interpreter<'a> {
                 music,
             } => self.tuplet(*numerator, *denominator, *number_type, music),
             Context::Grace { kind, slash, music } => self.grace_scope(*kind, *slash, music),
+            // `\voices` (`ly/music-functions-init.ly:2631-2665`).
+            Context::Voices { ids, music } => self.voices(ids, music),
             // `\after` : `mus` avance le curseur, `ev` est joué `delta` plus
             // loin dans un contexte parallèle.
             Context::After {
@@ -1909,6 +1916,56 @@ impl<'a> Interpreter<'a> {
         self.order += 1;
     }
 
+    /// `\voices` (`ly/music-functions-init.ly:2631-2665`) : chaque branche du
+    /// `<< … \\ … >>` est affectée à une voix. Une branche affectée au nom de
+    /// la voix courante la prolonge : ses événements restent dans la même
+    /// voix, donc ses liaisons se lient à la musique qui précède et suit
+    /// (`voices-command.ly`).
+    fn voices(&mut self, ids: &[crate::ast::VoicesId], music: &Music) {
+        let branches: &[Music] = match music {
+            Music::Sim(items) | Music::SimVoices(items) => items,
+            _ => {
+                self.walk(music);
+                return;
+            }
+        };
+        let start = self.cursor;
+        let mut end = start;
+        let mut prolongee = false;
+        let mut etat_continue = None;
+        for (index, branch) in branches.iter().enumerate() {
+            let nom = ids.get(index).and_then(crate::ast::VoicesId::name);
+            if !prolongee && nom.is_some() && nom == self.voice_name.as_deref() {
+                prolongee = true;
+                self.walk(branch);
+                end = end.max(self.cursor);
+                etat_continue = Some((
+                    self.octave,
+                    self.last_chord_notes.clone(),
+                    self.last_event_chord_notes.clone(),
+                    self.default_duration,
+                    self.default_multiplier,
+                ));
+                continue;
+            }
+            let child = self.spawn_at(start, nom.map(str::to_owned), branch, Vec::new(), true);
+            end = end.max(child.end);
+            self.octave = child.octave;
+            self.last_chord_notes = child.last_chord_notes;
+            self.last_event_chord_notes = child.last_event_chord_notes;
+            self.default_duration = child.default_duration;
+            self.default_multiplier = child.default_multiplier;
+        }
+        if let Some((octave, notes, accords, duree, multiplier)) = etat_continue {
+            self.octave = octave;
+            self.last_chord_notes = notes;
+            self.last_event_chord_notes = accords;
+            self.default_duration = duree;
+            self.default_multiplier = multiplier;
+        }
+        self.cursor = end.max(start);
+    }
+
     /// `\retrograde` (`ly/music-functions-init.ly:2138-2143`,
     /// `retrograde-music` dans `scm/modal-transforms.scm:183-290`).
     ///
@@ -1929,6 +1986,7 @@ impl<'a> Interpreter<'a> {
         // événements sont renversés avant d'être rendus à la voix courante.
         let mut child = Interpreter {
             voice: InterpretedVoice::default(),
+            voice_name: self.voice_name.clone(),
             cursor: start,
             cue: self.cue,
             repeat_pass: self.repeat_pass,
@@ -2169,6 +2227,7 @@ fn context_is_context_only(context: &Context) -> bool {
         | Context::Transpose { music, .. } => is_context_only(music),
         Context::AfterGrace { main, grace, .. } => is_context_only(main) && is_context_only(grace),
         Context::After { event, music, .. } => is_context_only(event) && is_context_only(music),
+        Context::Voices { music, .. } => is_context_only(music),
         Context::Volta { music, .. } => is_context_only(music),
         Context::Repeat {
             body, alternatives, ..

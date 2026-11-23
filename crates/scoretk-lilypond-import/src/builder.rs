@@ -993,8 +993,14 @@ fn build_voices(
             Music::Context(crate::ast::Context::Relative { chain: true, .. }) => octave,
             _ => OctaveState::default(),
         };
-        let (interpreted, octave_suivante) =
-            Interpreter::run(&block.music, unfold_repeats, warnings, seme, start);
+        let (interpreted, octave_suivante) = Interpreter::run(
+            &block.music,
+            unfold_repeats,
+            warnings,
+            seme,
+            start,
+            block.name.as_deref(),
+        );
         octave = octave_suivante;
         queue.push_back(PendingVoice {
             name: block.name.clone(),
