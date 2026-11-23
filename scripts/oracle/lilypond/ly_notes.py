@@ -294,6 +294,14 @@ def read_xml(
                 decalage = attack_texte if attack_texte is not None else offset_texte
                 offset = int(float(decalage)) / divisions if decalage else 0.0
                 jouee = attaque + offset
+                # Genre de la note : 0 = principale, 1 = grâce avant l'attaque,
+                # 2 = grâce après (`\afterGrace`, exportée avec `attack`/`offset`
+                # positif ; `ly/music-functions-init.ly:86-112`). Les grâces
+                # après sonnent à leur tour réel (`main + fraction × durée`),
+                # donc leur attaque MusicXML est déjà le temps réel.
+                genre = 0
+                if est_grace:
+                    genre = 2 if decalage and offset > 0 else 1
                 staff = elem.findtext("staff", "1")
                 pitch = elem.find("pitch")
                 if pitch is None:
@@ -310,7 +318,7 @@ def read_xml(
                             hauteur_u = 12 * (int(octave_u) + 1) + STEPS[step_u]
                             notes.append((hauteur_u + transposition, jouee,
                                           0.0 if est_grace else duree, numero_part,
-                                          est_grace) if with_grace else
+                                          genre) if with_grace else
                                          (hauteur_u + transposition, jouee,
                                           0.0 if est_grace else duree, numero_part))
                             if not joue:
@@ -330,7 +338,7 @@ def read_xml(
                 alter = pitch.findtext("alter", "0")
                 hauteur = 12 * (int(octave_txt) + 1) + STEPS[step] + int(float(alter))
                 notes.append((hauteur + transposition, jouee,
-                              0.0 if est_grace else duree, numero_part, est_grace)
+                              0.0 if est_grace else duree, numero_part, genre)
                              if with_grace else
                              (hauteur + transposition, jouee,
                               0.0 if est_grace else duree, numero_part))
@@ -442,16 +450,23 @@ def compter_paires(
     return sum((ref & essai).values())
 
 
-def lire_graces(notes: list[tuple]) -> list[tuple[int, float]]:
-    """Graces du candidat : (hauteur, attaque de la note principale).
+def lire_graces(notes: list[tuple]) -> list[tuple[int, float, bool]]:
+    """Graces du candidat : (hauteur, attaque, après la note principale ?).
 
     `lily/grace-iterator.cc` place les graces dans la *partie grace* du moment
     musical et `lily/midi-walker.cc` note que leur MIDI peut commencer à un
-    temps négatif ; la Notation Reference §2.6.1 rappelle qu'elles ne prennent
-    aucun temps logique. Côté MusicXML, `<grace/>` est donc placé à l'attaque
-    courante, celle de la note principale qui suit.
+    temps négatif ; la Notation Reference §1.3.1 rappelle qu'elles ne prennent
+    aucun temps logique. Côté MusicXML, `<grace/>` est placé à l'attaque
+    courante, celle de la note principale qui suit — sauf `\afterGrace`, dont
+    la grâce sonne **après** la note principale
+    (`ly/music-functions-init.ly:86-112`) et dont l'attaque MusicXML est le
+    temps réel (`attack`/`offset` positif).
     """
-    return [(note[0], note[1]) for note in notes if len(note) >= 5 and note[4]]
+    return [
+        (note[0], note[1], note[4] == 2)
+        for note in notes
+        if len(note) >= 5 and note[4]
+    ]
 
 
 def recaler_graces_initiales(
@@ -477,7 +492,11 @@ def recaler_graces_initiales(
     premiere = min(n[1] for n in principales)
     if abs(premiere) > tolerance:
         return reference, 0.0
-    entete = [hauteur for hauteur, attaque in graces if abs(attaque - premiere) <= tolerance]
+    entete = [
+        hauteur
+        for hauteur, attaque, apres in graces
+        if not apres and abs(attaque - premiere) <= tolerance
+    ]
     if not entete:
         return reference, 0.0
     notes = sorted(reference, key=lambda n: (n[1], n[0]))
@@ -513,11 +532,12 @@ def decalage_graces_reference(
     """
     utilises: set[int] = set()
     intervalles: list[tuple[float, float]] = []
-    for hauteur, attaque in graces:
+    for hauteur, attaque, apres in graces:
+        borne = attaque + grid / 2 if apres else attaque
         candidats = [
             i for i, note in enumerate(reference)
             if i not in utilises and note[0] == hauteur
-            and attaque - window <= note[1] <= attaque + grid / 2
+            and attaque - window <= note[1] < borne
             # Une grâce est jouée brièvement dans le MIDI (audio-item.cc:122) :
             # ne pas confondre une note longue de même hauteur dans la fenêtre.
             and len(note) >= 3 and note[2] <= grid / 2
@@ -600,11 +620,17 @@ def apparier_graces(
     restants = list(reference)
     utilises: set[int] = set()
     apparies = 0
-    for hauteur, attaque in graces:
+    for hauteur, attaque, apres in graces:
+        # Grâce avant : strictement avant l'attaque (elle sonne dans la partie
+        # « grâce » négative). Grâce après (`\afterGrace`) : son attaque
+        # MusicXML est le temps réel, et LilyPond la place juste avant ce
+        # temps (`main + 9/40 × grace_part`), donc dans `[attaque - window,
+        # attaque + grid/2]`.
+        borne = attaque + grid / 2 if apres else attaque
         candidats = [
             i for i, note in enumerate(restants)
             if i not in utilises and note[0] == hauteur
-            and attaque - window <= note[1] < attaque
+            and attaque - window <= note[1] < borne
         ]
         if candidats:
             utilises.add(max(candidats, key=lambda i: (restants[i][1], -i)))
@@ -785,7 +811,7 @@ def selftest() -> None:
         # Le même passage avec le marqueur de grâce : le B4 est bien signalé.
         lu_graces = read_xml(p, with_grace=True)
         assert [note[4] for note in lu_graces] == [False] * 4 + [True]
-        assert lire_graces(lu_graces) == [(61, 2.0)]
+        assert lire_graces(lu_graces) == [(61, 2.0, False)]
 
         # `<octave-shift>` : l'écriture est décalée d'une octave, la hauteur
         # jouée (comparée au MIDI) ne l'est pas.
@@ -870,7 +896,7 @@ def selftest() -> None:
                  (62, 1.0, 0.0625, 0), (64, 1.25, 1.0, 0)]
         test_g = [(62, 0.25, 0.0, 0), (60, 0.25, 1.0, 0),
                   (62, 1.25, 0.0, 0), (64, 1.25, 1.0, 0)]
-        graces_g = [(62, 0.25), (62, 1.25)]
+        graces_g = [(62, 0.25, False), (62, 1.25, False)]
         brut = compare(ref_g, test_g)
         rule = compare(ref_g, test_g, graces=graces_g)
         assert brut["n2"] == 2, brut
@@ -891,13 +917,14 @@ def selftest() -> None:
                      (83, 0.0, 0.0, 0, True), (84, 0.0, 1.0, 0, False),
                      (86, 1.0, 1.0, 0, False)]
         lead = compare(ref_lead, test_lead,
-                       graces=[(79, 0.0), (81, 0.0), (83, 0.0)])
+                       graces=[(79, 0.0, False), (81, 0.0, False),
+                               (83, 0.0, False)])
         assert lead["n2_grace"] == 5 and lead["exact"], lead
         # Le temps inséré par une grâce est calculé sur le MIDI seul :
         # une note principale déplacée d'une croche doit rester inexacte.
         ref_retard = [(62, 0.0, 0.1375, 0), (60, 0.5, 1.0, 0),
                       (64, 1.5, 1.0, 0)]
-        graces_retard = [(62, 0.5)]
+        graces_retard = [(62, 0.5, False)]
         juste = [(62, 0.5, 0.0, 0, True), (60, 0.5, 1.0, 0, False),
                  (64, 1.5, 1.0, 0, False)]
         faux = [(62, 0.5, 0.0, 0, True), (60, 1.0, 1.0, 0, False),
@@ -1138,7 +1165,7 @@ def selftest() -> None:
         # note principale de même hauteur.
         reference = [(60, 0.0, 1.0, 0), (60, -0.1, 0.0, 0)]
         restants, n_ref, n_test, matches = apparier_graces(
-            reference, [(60, 0.0)]
+            reference, [(60, 0.0, False)]
         )
         assert matches == 1, (restants, matches)
         assert (60, 0.0, 1.0, 0) in restants, restants
@@ -1152,6 +1179,16 @@ def selftest() -> None:
             graces=[],
         )
         assert not manquant["exact"], manquant
+        # `\afterGrace` : la grâce sonne après la note principale. Son attaque
+        # MusicXML est le temps réel ; l'appariement doit prendre la note MIDI
+        # de ce temps, pas la principale.
+        reference = [(60, 0.0, 1.0, 0), (60, 0.9, 0.0, 0)]
+        restants, _, _, matches = apparier_graces(
+            reference, [(60, 0.9, True)]
+        )
+        assert matches == 1, (restants, matches)
+        assert (60, 0.0, 1.0, 0) in restants, restants
+        assert (60, 0.9, 0.0, 0) not in restants, restants
 
     print("selftest : OK")
 

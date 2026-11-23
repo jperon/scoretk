@@ -3317,6 +3317,22 @@ fn compute_divisions(context: &Context<'_>) -> u32 {
                             if !length.is_zero() {
                                 fractions.insert(length.abs());
                             }
+                            // `\afterGrace` : l'attribut `attack` d'une grâce
+                            // après vaut `played_offset - durée principale`,
+                            // une fraction que les durées seules ne portent pas
+                            // (3/4 × une blanche = 3/8). Sans elle, les
+                            // divisions restaient à 1 par noire et l'attaque
+                            // était arrondie (lyrics-after-grace : 1.0 au lieu
+                            // de 1.5). `ly/music-functions-init.ly:86-112`.
+                            if let Some(chord) = chord_rest.chord_ref() {
+                                for grace in &chord.grace_chords {
+                                    if let Some(offset) = grace.played_offset {
+                                        if !offset.is_zero() {
+                                            fractions.insert(offset.abs());
+                                        }
+                                    }
+                                }
+                            }
                             tick += length;
                         }
                     }

@@ -3474,4 +3474,50 @@ fn note_non_jouee_liee_necrit_pas_de_tie_avec_cue() {
     let xml = export_musicxml(&score).expect("export");
     assert_eq!(xml.matches("<cue/>").count(), 2, "xml :\n{xml}");
     assert!(!xml.contains("<tie "), "aucun <tie> avec <cue/> :\n{xml}");
+
+/// `\afterGrace` : l'`attack` d'une grâce après vaut
+/// `played_offset - durée principale`, une fraction que les durées seules ne
+/// portent pas (`3/4 × blanche = 3/8`). La calcul des divisions doit
+/// l'inclure, sinon l'attaque est arrondie à la division (lyrics-after-grace :
+/// 1.0 au lieu de 1.5). `ly/music-functions-init.ly:86-112`.
+#[test]
+fn after_grace_offset_impose_les_divisions() {
+    let mut score = Score::new();
+    let part = score.add_part(Part::new("Test", "T"));
+    score.part_mut(part).instrument = piano_instrument();
+    let staff = score.add_staff(part);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    let id = score.add_note(Note::new(72, tpc::C));
+    let mut chord_rest = ChordRest::chord(Duration::half());
+    {
+        let chord = chord_rest.chord_mut().expect("accord");
+        chord.notes.push(id);
+        let mut grace = GraceChord::new(GraceType::Grace8After, Duration::eighth());
+        grace
+            .chord_mut()
+            .notes
+            .push(score.add_note(Note::new(76, tpc::E)));
+        grace.played_offset = Some(Fraction::new(3, 8));
+        chord.grace_chords.push(grace);
+    }
+    ajouter_element(&mut score, &mut measure, track, Fraction::ZERO, chord_rest);
+    ajouter_silence(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::HALF,
+        Duration::half(),
+    );
+    score.add_measure(measure);
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<divisions>2</divisions>"),
+        "divisions trop grossières :\n{xml}"
+    );
+    assert!(
+        xml.contains("attack=\"-1\""),
+        "attaque de la grâce après mal arrondie :\n{xml}"
+    );
 }
