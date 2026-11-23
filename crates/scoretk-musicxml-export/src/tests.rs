@@ -3015,6 +3015,53 @@ fn type_cue_sur_note_reduite() {
     );
 }
 
+/// `<cue/>` est le mécanisme MusicXML standard des notes **non jouées**
+/// (`Note::play == false`, `ClusterNoteEvent`), pas des notes de cue : une
+/// note `small` mais jouée porte `<type size="cue">` et **pas** `<cue/>`.
+/// L'oracle LilyPond saute les `<cue/>` (`ly_notes.py`) ; en mettre sur les
+/// notes de `\cueDuring` les retirerait de la comparaison MIDI.
+#[test]
+fn cue_tag_seulement_pour_note_non_jouee() {
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+
+    let mut cue = Note::new(60, tpc::C);
+    cue.small = true; // note de cue, jouée (play = true par défaut)
+    let cue_id = score.add_note(cue);
+    let mut chord_rest = ChordRest::chord(Duration::quarter());
+    chord_rest.chord_mut().expect("accord").notes.push(cue_id);
+    ajouter_element(&mut score, &mut measure, track, Fraction::ZERO, chord_rest);
+
+    let mut muet = Note::new(62, tpc::D);
+    muet.play = false; // gravée mais non jouée (cluster)
+    let muet_id = score.add_note(muet);
+    let mut chord_rest = ChordRest::chord(Duration::quarter());
+    chord_rest.chord_mut().expect("accord").notes.push(muet_id);
+    ajouter_element(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::QUARTER,
+        chord_rest,
+    );
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<type size=\"cue\">quarter</type>"),
+        "la note de cue doit rester `size=cue` :\n{xml}"
+    );
+    assert_eq!(
+        xml.matches("<cue/>").count(),
+        1,
+        "seule la note `play = false` doit porter <cue/> :\n{xml}"
+    );
+}
+
 /// `Staff::staffMag` (`staff.cpp:806-809`) multiplie `smallStaffMag` par
 /// `userMag`. `writeStaffDetails` (`exportmusicxml.cpp:8139-8144`) en déduit
 /// `<staff-size scaling=…>`. Le style d'un `.mscz` peut fixer 0.9 au lieu du
@@ -3474,6 +3521,7 @@ fn note_non_jouee_liee_necrit_pas_de_tie_avec_cue() {
     let xml = export_musicxml(&score).expect("export");
     assert_eq!(xml.matches("<cue/>").count(), 2, "xml :\n{xml}");
     assert!(!xml.contains("<tie "), "aucun <tie> avec <cue/> :\n{xml}");
+}
 
 /// `\afterGrace` : l'`attack` d'une grâce après vaut
 /// `played_offset - durée principale`, une fraction que les durées seules ne

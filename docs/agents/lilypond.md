@@ -6930,18 +6930,30 @@ implémentation non justifiée, documentée ici. Aucun fichier exclu ;
 
 ### Grace pairing, `\afterGrace`, quotations at absolute time (2026-11-23)
 
-Controlled measurements on the current tree (`/tmp/ly95lect-refs-clean`,
-same manifest, same oracle on both sides of each step). Base: master
-`ccafc891` at 1 596/1 724.
+Controlled measurements after rebasing on master `1405c31e`
+(`/tmp/ly95lect-refs-clean`, same manifest; each row uses the oracle named
+in it on both sides). Master carries ly95's `<cue/>` change (cluster notes
+are written `<cue/>` and the oracle skips them while advancing the cursor).
 
-| Step | `ra` exact |
+| Binary / oracle | `ra` exact |
 | --- | ---: |
-| master | 1 596 |
-| grace pairing (oracle) | **1 599** (+3) |
-| `\afterGrace` (divisions + oracle) | **1 602** (+3) |
-| quote at absolute time (reader) | **1 611** (+9) |
+| master `1405c31e` + master oracle | 1 599 |
+| master + **our** oracle (grace pairing only) | **1 602** (+3) |
+| ours + our oracle (`\afterGrace` +3, quotes +9) | **1 614** (+12) |
 
-**No exact loss and no N1/N2 regression** at any step.
+Total 1 599 → **1 614/1 724** (+15). **No exact loss and no N1/N2
+regression** at any step. The three oracle gains are
+`beam-subdivide-grace`, `spacing-loose-grace`, `v4_changevisibility`; the
+twelve reader gains are `cue-clef-transposition`,
+`cue-clef-transposition-optional`, `lyrics-after-grace`,
+`lyrics-includegraces`, `quote-cue-during`, `quote-cue-event-types`,
+`quote-during`, `quote-grace`, `quote`, `quote-tie`, `quote-tuplet-end`,
+`spacing-loose-grace-error`.
+
+Our cue notes (`small`, played) carry `<type size="cue">` but **not**
+`<cue/>`: `is_cue_note` requires `!play` (`exportmusicxml.cpp:4190-4193`),
+so only `play = false` (clusters) gets `<cue/>` and is skipped by the oracle.
+Test `cue_tag_seulement_pour_note_non_jouee`.
 
 1. **A grace cannot steal the main note (oracle).**
    `lily/audio-item.cc:118-129` places a grace at
