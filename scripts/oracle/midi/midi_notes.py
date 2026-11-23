@@ -148,24 +148,47 @@ def evenements_audibles(path: str) -> tuple[dict[int, Counter], int]:
     écartés de la comparaison, des deux côtés de la mesure.
     """
     mid = common.lire_midi(path)
-    ouvertes: Counter = Counter()
-    par_tick: dict[int, Counter] = defaultdict(Counter)
-    orphelins = 0
+    # Les pistes d'un SMF sont simultanées, pas séquentielles : on fusionne
+    # tous les événements par tick absolu (équivalent à `mido.merge_tracks`).
+    # Un off « hoisté » peut être écrit sur la piste de l'attaque précédente
+    # (`exportmidi.cpp:304-323`) : rejouer piste par piste le classerait orphelin
+    # ou non selon l'ordre arbitraire des pistes.
+    flux: list[tuple[int, int, int, int]] = []
     for track in mid.tracks:
         tick = 0
         for msg in track:
             tick += msg.time
             if msg.is_meta or not hasattr(msg, "note"):
                 continue
-            cle = (msg.channel, msg.note)
-            if msg.type == "note_on" and msg.velocity > 0:
-                ouvertes[cle] += 1
-                par_tick[tick][(msg.channel, "on", msg.note)] += 1
-            elif ouvertes[cle] > 0:
-                ouvertes[cle] -= 1
-                par_tick[tick][(msg.channel, "off", msg.note)] += 1
+            est_off = not (msg.type == "note_on" and msg.velocity > 0)
+            # À tick égal, les extinctions d'abord : un restrike éteint la note
+            # précédente avant d'en ouvrir une nouvelle (`fixupMIDI`,
+            # event.cpp:263-306) ; un note-on de vélocité nulle est un
+            # note-off (`format-ref/midi.md` ligne 63).
+            flux.append((tick, 0 if est_off else 1, msg.channel, msg.note))
+    flux.sort()
+
+    ouvertes: Counter = Counter()
+    par_tick: dict[int, Counter] = defaultdict(Counter)
+    orphelins = 0
+    position = 0
+    while position < len(flux):
+        tick = flux[position][0]
+        fin = position
+        while fin < len(flux) and flux[fin][0] == tick:
+            fin += 1
+        for _, priorite, canal, hauteur in flux[position:fin]:
+            cle = (canal, hauteur)
+            if priorite == 0:  # extinction (triée avant les attaques du tick)
+                if ouvertes[cle] > 0:
+                    ouvertes[cle] -= 1
+                    par_tick[tick][(canal, "off", hauteur)] += 1
+                else:
+                    orphelins += 1
             else:
-                orphelins += 1
+                ouvertes[cle] += 1
+                par_tick[tick][(canal, "on", hauteur)] += 1
+        position = fin
     return par_tick, orphelins
 
 

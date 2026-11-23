@@ -88,3 +88,34 @@ def test_velocity_et_canal_comptent():
         c = os.path.join(tmp, "duree.mid")
         ecrire(c, [[("note_on", 60, 0, 80), ("note_off", 60, 600, 0)]])
         assert evenements_audibles(a)[0] != evenements_audibles(c)[0]
+
+
+def test_extinction_inter_pistes_independante_de_lordre_des_pistes():
+    """Une extinction portée par une autre piste ferme la note qui sonne.
+
+    `exportmidi.cpp:304-323` écrit le restrike sur la piste de l'attaque
+    précédente : l'off peut être dans une piste numériquement antérieure à
+    celle de la note. Rejouer les pistes les unes après les autres faisait
+    dépendre le caractère orphelin de l'off de l'ordre des pistes.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        a = os.path.join(tmp, "off-dabord.mid")
+        b = os.path.join(tmp, "on-dabord.mid")
+        notes = [("note_on", 60, 0, 80), ("note_on", 60, 240, 80),
+                 ("note_off", 60, 240, 0)]
+        ecrire(a, [[("note_off", 60, 240, 0)], notes])
+        ecrire(b, [notes, [("note_off", 60, 240, 0)]])
+        ea = evenements_audibles(a)
+        eb = evenements_audibles(b)
+        assert ea == eb, (ea, eb)
+
+
+def test_extinction_inter_pistes_ecourte_une_note():
+    """Une vraie extinction sur une autre piste reste audible."""
+    with tempfile.TemporaryDirectory() as tmp:
+        a = os.path.join(tmp, "long.mid")
+        b = os.path.join(tmp, "coupe.mid")
+        ecrire(a, [[("note_on", 60, 0, 80), ("note_off", 60, 480, 0)]])
+        ecrire(b, [[("note_on", 60, 0, 80), ("note_off", 60, 480, 0)],
+                   [("note_off", 60, 240, 0)]])
+        assert compare_evenements(a, b)[0] is False
