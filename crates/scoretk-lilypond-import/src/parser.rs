@@ -4952,6 +4952,25 @@ impl<'a> Parser<'a> {
         // MIDI jouée par LilyPond. Un nom inconnu est consommé (progression
         // garantie) et avertit, comme pour un mot ordinaire.
         if self.note_mode != NoteMode::Notes {
+            if text == "q" {
+                // `q` répète le dernier accord (`expand-repeat-chords!`,
+                // `scm/music-functions.scm:920-945`). En `\chordmode`, le mot
+                // passait pour un nom d'accord inconnu et l'accord répété
+                // disparaissait (`chord-names-spanbar.ly`).
+                self.position += 1;
+                let (duration, multiplier) = self.parse_optional_duration_spec();
+                let (duration, multiplier) = self.resolve_chord_duration(duration, multiplier);
+                let posts = self.parse_posts();
+                return Music::Chord(Chord {
+                    kind: ChordKind::Repeat,
+                    duration,
+                    multiplier,
+                    from_scale: false,
+                    bracketed: false,
+                    posts,
+                    invisible: false,
+                });
+            }
             self.position += 1;
             // Les marques d'octave font partie du nom (`bes,`, `f''`,
             // `chord_body` de `lily/parser.yy` : `pitch_or_tonic_pitch` les
@@ -5019,7 +5038,12 @@ impl<'a> Parser<'a> {
                     duration,
                     multiplier,
                     from_scale: false,
-                    bracketed: false,
+                    // Un nom de `\chordmode` est un `EventChord`
+                    // (`chord_body` de `lily/parser.yy`), seule référence de
+                    // `q` (`expand-repeat-chords!`, `scm/music-functions.scm`
+                    // l. 920-945) : sans cela `q` après un accord nommé était
+                    // « Bad chord repetition » (`chord-names-spanbar.ly`).
+                    bracketed: self.note_mode == NoteMode::Chords,
                     posts: chord_posts,
                     invisible: false,
                 });

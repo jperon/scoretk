@@ -208,7 +208,13 @@ const QUALITIES: &[(&str, &[i8])] = &[
     // (`scm/chord-entry.scm:154-159`) : `c:13` n'a donc pas de fa, mais
     // `c:min11`/`c:min13` gardent le leur (vérifié sur le MIDI de LilyPond).
     ("11", &[0, 4, 7, 10, 14, 17]),
+    // `maj9` : le `maj7-modifier` appliqué au 9 (`maj7` + 9e).
+    ("maj9", &[0, 4, 7, 11, 14]),
+    ("maj7.9", &[0, 4, 7, 11, 14]),
+    ("maj11", &[0, 4, 7, 11, 14, 17]),
     ("13", &[0, 4, 7, 10, 14, 17, 21]),
+    // `maj13` : 13e majeure, sans le 11 naturel retiré comme pour `:13`.
+    ("maj13", &[0, 4, 7, 11, 14, 21]),
     // `stack-thirds` (`scm/chord-entry.scm:270-278`) : au-delà de la 13e,
     // l'accord de base est la 13e entière (l'extension demandée n'est ajoutée
     // que si elle est écrite après un point, `:15` = accord de 13e).

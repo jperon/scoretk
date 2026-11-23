@@ -8862,3 +8862,17 @@ fn accord_quinzieme_est_un_accord_de_treizieme() {
         vec![65, 65, 69, 69, 72, 72, 75, 75, 79, 79, 86, 86, 89]
     );
 }
+
+#[test]
+fn chordmode_repete_l_accord_nomme() {
+    // `q` répète le dernier `EventChord` (`expand-repeat-chords!`,
+    // `scm/music-functions.scm:920-945`) ; un nom de `\chordmode` en est un
+    // (`chord_body` de `lily/parser.yy`). `maj9` = `maj7` + 9e
+    // (`maj7-modifier`). Sans cela `q8.` était « Bad chord repetition » et
+    // `des16:maj9` un simple accord parfait (`chord-names-spanbar.ly`).
+    let score = read_lilypond("\\version \"2.24.0\"\n\\chordmode { c2. q8. des16:maj9 }\n")
+        .expect("lecture");
+    let mut hauteurs = hauteurs_attaques(&score);
+    hauteurs.sort();
+    assert_eq!(hauteurs, vec![60, 60, 61, 64, 64, 65, 67, 67, 68, 72, 75]);
+}
