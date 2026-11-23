@@ -4690,6 +4690,21 @@ fn commande_sans_argument_ne_veure_pas_le_bloc_musique_suivant() {
 }
 
 #[test]
+fn mark_mot_nu_est_un_markup_pas_une_note() {
+    // `\mark` reçoit un markup (`lily/parser.yy` : `markup` →
+    // `simple_markup`) : `\mark A` est l'étiquette A, pas la note la.
+    // `parse_markup_text` s'arrête sur un nom de hauteur pour ne pas avaler
+    // la musique suivante ; ici le mot est l'argument du `\mark`
+    // (generic-output-property.ly).
+    let score = lire("c'4 \\mark A d'4 \\mark \\default e'4");
+    assert_eq!(
+        hauteurs_attaques(&score),
+        vec![72, 74, 76],
+        "le « A » du mark ne doit pas devenir une note"
+    );
+}
+
+#[test]
 fn mark_markup_entre_accolades_ne_devient_pas_une_note() {
     // Régression Angels_Carol (musicxml2ly, Rutter) : les voix portent
     // `\mark \markup { \box { A } }`. Le gestionnaire de `\mark` laissait la

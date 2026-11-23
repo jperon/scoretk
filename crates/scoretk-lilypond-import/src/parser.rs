@@ -3425,7 +3425,21 @@ impl<'a> Parser<'a> {
                 if self.peek().is_some_and(|token| token.is_command("markup")) {
                     self.position += 1;
                 }
-                let text = self.parse_markup_text();
+                // `\mark` reçoit un *markup* : un nom de note nu en est un
+                // (`\mark A`, `lily/parser.yy` : `markup` → `simple_markup`).
+                // `parse_markup_text` s'arrête sur un mot de hauteur pour ne
+                // pas avaler la musique suivante (`\markup "x" r2`) ; ici, le
+                // mot est l'argument du `\mark` et non une note.
+                let text = match self.peek().cloned() {
+                    Some(token)
+                        if token.kind == Kind::Word
+                            && !matches!(token.text.as_str(), "r" | "R" | "s") =>
+                    {
+                        self.position += 1;
+                        token.text
+                    }
+                    _ => self.parse_markup_text(),
+                };
                 context(Context::Mark(text))
             }
             "ottava" => {
