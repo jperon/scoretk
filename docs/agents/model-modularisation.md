@@ -408,12 +408,13 @@ report. On wasm, add an **additive** `convertDetailed(...)` returning
   with `src/iohumdrum.cpp`), plus the reference
   `humdrum/kern-reference.html` from <https://www.humdrum.org/rep/kern.html>.
 - **`**kern` necessities:** confirmed by `humdrum/kern-reference.html`
-  §2.2 (interpretations), §4.1 (spine paths `*>`/`*v`), §3.2.7 (duration),
-  §3.2.8 (n-tuplets), §3.4 (barlines), §2.4 (comments) and §3.2.3-3.2.6
-  (ornaments/articulation/stems): parallel spines with *exclusive
-  interpretations* (`**kern`, `**bar`, `**harm`, `**lyr`, `**dyn`), durations
-  encoded in the token (`4`, `4.`, `8`, `DDD`), no required key or time
-  signature, and `!LODX`/`!LODE` local comments.
+  §2.2 (interpretations), §4.1 (spine manipulators `*+`, `*^`, `*v`, `*-`,
+  `*x`), §3.2.7 (duration), §3.2.8 (n-tuplets), §3.4 (barlines), §2.4
+  (comments) and §3.2.3-3.2.6 (ornaments/articulation/stems): parallel spines
+  with *exclusive interpretations* (`**kern`, `**bar`, `**harm`, `**silbe`,
+  `**dyn`), durations encoded in the token (`4`, `8.`, `3` for a quarter
+  triplet, `0` for a breve), no required key or time signature, and `!` local
+  / `!!` global comments.
 - **Missing today:** `Track` is staff × voice with `VOICES = 4`
   (`ids.rs:123`, `mod.rs:31-35`), which cannot represent an arbitrary number of
   parallel spines with different interpretations; `Measure` requires
