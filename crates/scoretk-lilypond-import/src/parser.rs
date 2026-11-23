@@ -5497,7 +5497,12 @@ impl<'a> Parser<'a> {
                                 self.collect_markup_atom(&mut pieces);
                             }
                         }
-                        derniere_commande = None;
+                        // `\line { … }` est **un** markup complet : le jeton
+                        // suivant appartient à la musique. Continuer la boucle
+                        // avalait la durée nue qui suit (`\path`/`#'()` dans
+                        // `trivial-path.ly` : le `4` de reprise disparaissait
+                        // avec la note finale).
+                        break;
                     }
                     Kind::Command => {
                         // Une commande qui est une variable, une fonction

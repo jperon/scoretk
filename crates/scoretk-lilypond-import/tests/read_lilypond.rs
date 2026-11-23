@@ -8479,3 +8479,15 @@ fn part_combine_fusionne_unissement_et_garde_les_autres_notes() {
         notes
     );
 }
+
+#[test]
+fn markup_line_ne_mange_pas_la_duree_suivante() {
+    // `trivial-path.ly` : `\markup \line { … \path #0.5 #'() … }` est un
+    // markup complet ; le `4` qui suit est une durée nue qui répète l'accord.
+    // Continuer la collecte après le bloc avalait cette durée et la note
+    // finale.
+    let source = "\\version \"2.24.0\"\n\
+         { b'4 a'4_\\markup \\line { x x \\path #0.5 #'() x } 4 b'4 }\n";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![71, 69, 69, 71]);
+}
