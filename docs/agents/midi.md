@@ -3607,3 +3607,25 @@ channel-indexed multimap; a correct change touches `render.rs` channel setup
 as well as `fixup.rs`. No writer change was committed in this pass: the two
 channel-scan variants were each measured (0 gains/0 losses and 55 losses),
 and neither reproduces the reference event. Counts remain 143/171 and 17/17.
+
+## Per-channel restrike port measured (2026-11-23)
+
+Commit `aff1e32e` ports the exact line-297/308 rule: `fixup_midi` now receives
+each part's output channels (notes + harmony, `ChannelMap` in `render.rs`) and
+writes one velocity-0 restrike off per channel of the **previous staff's**
+part. Reduced unit test from the `(ch1, off, 67)` case at tick 22 080.
+
+Controlled measurement (same oracle, writer only):
+
+| Lot | Exact before | Exact after | Gains | Losses | Mean size |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| corpus | 17/17 | **17/17** | 0 | 0 | 281 B |
+| `.mscz` 171 | 143/171 | **144/171 (84.2 %)** | **1** (`Adios_Muchachos`) | **0** | 18 535 → 18 538 B |
+
+The `Veni` divergence at tick 22 080 is unchanged: its part's secondary
+channel is not a `harmony` channel in the MusicXML sense, so `ChannelMap` has
+no second output channel to write the extra off on. The reference's ch1 off
+comes from an instrument channel (e.g. `open`/`mute`) that our model retains
+only as `channel_count` (`part.rs:81`), not as a map of MIDI channel numbers.
+A further port would need that channel table in the model. The committed port
+is lossless and follows `exportmidi.cpp` exactly for the channels we know.
