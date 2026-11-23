@@ -165,6 +165,7 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
         quant_value,
         options,
         is_human,
+        is_human && beat_data.is_none(),
     );
 
     for track in &mut tracks {
@@ -383,6 +384,7 @@ fn quantize_all_tracks(
     quant_value: operations::QuantValue,
     options: &ImportOptions,
     is_human: bool,
+    use_metric_snap: bool,
 ) -> Vec<Vec<tuplet::TupletInfo>> {
     let basic_quant = quant::quant_value_to_fraction(quant_value);
     let mut detected_tuplets: Vec<Vec<tuplet::TupletInfo>> = Vec::with_capacity(tracks.len());
@@ -417,7 +419,7 @@ fn quantize_all_tracks(
             Fraction::new(4, 3),
             is_human,
         );
-        quant::quantize_chords(track, basic_quant);
+        quant::quantize_chords(track, basic_quant, sigmap, use_metric_snap);
         if track.tuplets.is_empty() {
             voice::assign_initial_voices_quantized(
                 track,

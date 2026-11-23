@@ -446,12 +446,44 @@ fn preserve_legato(
     let _ = voice;
 }
 
+/// Attaque d'une performance humaine que le suivi de temps n'a pas alignée.
+///
+/// `Quantize::applyDynamicProgramming` (`importmidi_quant.cpp:1073-1129`) pénalise
+/// les positions éloignées d'un niveau métrique fort ; sur un fichier trop court
+/// pour `MidiBeat::findBeatLocations` (`importmidi_beat.cpp:316-330`), il ramène
+/// les attaques aux temps de la mesure. MuseScore 4.7.4 donne ainsi quatre noires
+/// sur `human_4-4.mid` (vérifié en relisant ce MIDI avec `mscore -o`).
+pub fn metric_on_time(on_time: Fraction, sigmap: &super::timesigmap::TimeSigMap) -> Fraction {
+    let ticks = on_time.ticks(UNITS_PER_WHOLE as u32);
+    let (bar_index, _, _) = sigmap.tick_values(ticks);
+    let bar_start = super::timesigmap::fraction_from_ticks(sigmap.bar2tick(bar_index, 0));
+    let timesig = sigmap.timesig(ticks);
+    let beat_len = super::meter::beat_length_raw(timesig.measure_len(), timesig.numerator);
+    if beat_len.is_zero() {
+        return on_time;
+    }
+    let ratio = (on_time - bar_start) / beat_len;
+    let n = ratio.numerator();
+    let d = ratio.denominator();
+    let steps = if n >= 0 {
+        (n + d / 2) / d
+    } else {
+        -((-n + d / 2) / d)
+    };
+    bar_start + beat_len * Fraction::from_integer(steps)
+}
+
 /// Quantifie tous les accords d'une piste (`Quantize::quantizeChords`).
 ///
 /// Deux passes, comme le C++ : les attaques sont d'abord toutes quantifiées
 /// (et fusionnées), puis les fins de notes sont quantifiées en tenant compte
 /// des attaques déjà quantifiées (`preserveLegato` lit `quantizedChords`).
-pub fn quantize_chords(track: &mut MTrack, basic_quant: Fraction) {
+pub fn quantize_chords(
+    track: &mut MTrack,
+    basic_quant: Fraction,
+    sigmap: &super::timesigmap::TimeSigMap,
+    use_metric_snap: bool,
+) {
     if track.chords.is_empty() {
         return;
     }
@@ -465,7 +497,9 @@ pub fn quantize_chords(track: &mut MTrack, basic_quant: Fraction) {
             continue;
         };
         let on_time = key.0;
-        let q_on = if chord.is_in_tuplet {
+        let q_on = if use_metric_snap && !chord.is_in_tuplet {
+            metric_on_time(on_time, sigmap)
+        } else if chord.is_in_tuplet {
             match chord
                 .tuplet
                 .and_then(|tuplet_key| track.tuplets.get(&tuplet_key))
@@ -661,7 +695,12 @@ mod tests {
         };
         track.chords.insert(Fraction::new(1, 4), second);
 
-        quantize_chords(&mut track, Fraction::new(1, 16));
+        quantize_chords(
+            &mut track,
+            Fraction::new(1, 16),
+            &crate::timesigmap::TimeSigMap::new(),
+            false,
+        );
 
         let first_after = track
             .chords
