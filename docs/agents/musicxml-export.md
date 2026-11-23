@@ -1381,3 +1381,30 @@ canoniques 2 028 → 946. Gains : Gloria 452 → 2, Credo 273 → 3, Kyrie 164 �
 Sanctus 25 → **0**, Agnus Dei 182 → 7 ; Benedictus reste à 77 (marqueurs
 partiels, voir §40.1). `cargo test -p scoretk --test e2e_corpus`, le workspace,
 `cargo fmt --check` et clippy `-D warnings` sont verts.
+
+
+
+## 41. `figured-bass` : parenthèses déduites des encadrements (2026-11-23)
+
+Le chiffrage de `JMHaydn_Viderunt_omnes` attend `parentheses="yes"` et notre
+sortie n'en avait pas. `writeMusicXml(const FiguredBass*)`
+(`importexport/musicxml/internal/export/exportmusicxml.cpp:6827-6834`) ne lit
+pas une propriété `<parentheses>` : il appelle `FiguredBass::parenthesesMode()`
+(`engraving/dom/figuredbass.cpp:1216-1224`), qui interroge `startsWithParenthesis`
+par chiffre (`:629-640`) : préfixe, sinon chiffre, sinon suffixe, et tout
+encadrement différent de `NONE` compte, y compris un crochet carré. Les
+encadrements sont les cinq attributs `b0..b4` de `<brackets>`
+(`TRead::read(FiguredBassItem*)`, `read400/tread.cpp:1322-1329`).
+
+Le lecteur 3.x/4.x les ignorait. `FiguredBassItem::brackets[5]` les conserve
+maintenant, `starts_with_parenthesis` porte la règle, l'export MusicXML l'ajoute
+au champ `<parentheses>` (relu depuis MusicXML) et l'écrivain `.mscx` réécrit
+`<brackets>` comme `TWrite::write(const FiguredBassItem*)`
+(`write/twrite.cpp:1428-1437`).
+
+Mesure ciblée (mêmes références 4.7.4) : `JMHaydn_Viderunt_omnes`
+3 → 1 ligne canonique, 0 perte ; le reste du lot ne contient qu'un seul
+`<brackets>` non nul, celui-ci. Tests réduits :
+`figuredbass_brackets.rs` (lecture) et `tests/figuredbass_export.rs`
+(écriture). La ligne restante du fichier est le point de silence de §42.
+

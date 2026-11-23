@@ -124,6 +124,31 @@ pub struct FiguredBassItem {
     pub suffix: Option<FiguredBassModifier>,
     /// Trait de prolongation.
     pub cont_line: FiguredBassContLine,
+    /// Encadrements `b0..b4` du `<brackets>` (`FiguredBassItem::Parenthesis` :
+    /// 0 aucun, 1 parenthèse ouvrante, 2 fermante, 3 crochet ouvrant,
+    /// 4 fermant). MuseScore en dérive `parenthesesMode()` : la présence d'un
+    /// encadrement sur la partie affichée (préfixe, chiffre ou suffixe) suffit
+    /// à écrire `parentheses="yes"` à l'export MusicXML
+    /// (`engraving/dom/figuredbass.cpp:629-640` et
+    /// `exportmusicxml.cpp:6832-6834`).
+    pub brackets: [u8; 5],
+}
+
+impl FiguredBassItem {
+    /// `FiguredBassItem::startsWithParenthesis`
+    /// (`engraving/dom/figuredbass.cpp:629-640`).
+    pub fn starts_with_parenthesis(&self) -> bool {
+        if self.prefix.is_some() {
+            return self.brackets[0] != 0;
+        }
+        if self.digit.is_some() {
+            return self.brackets[1] != 0;
+        }
+        if self.suffix.is_some() {
+            return self.brackets[2] != 0;
+        }
+        false
+    }
 }
 
 /// Chiffrage figuré attaché à un segment.

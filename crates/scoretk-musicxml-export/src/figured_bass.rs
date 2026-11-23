@@ -122,7 +122,15 @@ fn write_musicxml(
 ) {
     out.attr(false);
     let mut attributes: Vec<(&str, &str)> = Vec::new();
-    if bass.parentheses {
+    // `FiguredBass::parenthesesMode()` (`engraving/dom/figuredbass.cpp:1216-1224`)
+    // compte tout encadrement de la partie affichée ; le champ du modèle
+    // couvre en plus les chiffrages relus depuis MusicXML.
+    if bass.parentheses
+        || bass
+            .items
+            .iter()
+            .any(FiguredBassItem::starts_with_parenthesis)
+    {
         attributes.push(("parentheses", "yes"));
     }
     if bass.place_above {

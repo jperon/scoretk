@@ -61,6 +61,16 @@ pub(super) fn read_figured_bass(element: &Element) -> FiguredBass {
                             item.cont_line =
                                 FiguredBassContLine::from_mcsx(field.int().unwrap_or(0) as i32);
                         }
+                        // `TRead::read(FiguredBassItem*)` : `b0..b4` sont les
+                        // cinq encadrements (`read400/tread.cpp:1322-1329`).
+                        "brackets" => {
+                            for (slot, name) in ["b0", "b1", "b2", "b3", "b4"].iter().enumerate() {
+                                item.brackets[slot] = field
+                                    .attr_i64(name)
+                                    .map(|value| value.clamp(0, 4) as u8)
+                                    .unwrap_or(0);
+                            }
+                        }
                         _ => {}
                     }
                 }

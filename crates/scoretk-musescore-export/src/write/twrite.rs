@@ -886,6 +886,18 @@ fn write_figured_bass(xml: &mut XmlWriter, bass: &FiguredBass) {
     xml.tag("ticks", &fraction(bass.ticks));
     for item in &bass.items {
         xml.start_element("FiguredBassItem", &[]);
+        // `TWrite::write(const FiguredBassItem*)` (`write/twrite.cpp:1428-1437`) :
+        // les cinq encadrements sont toujours écrits.
+        let brackets: Vec<(&str, String)> = ["b0", "b1", "b2", "b3", "b4"]
+            .iter()
+            .enumerate()
+            .map(|(slot, name)| (*name, item.brackets[slot].to_string()))
+            .collect();
+        let brackets: Vec<(&str, &str)> = brackets
+            .iter()
+            .map(|(name, value)| (*name, value.as_str()))
+            .collect();
+        xml.tag_empty("brackets", &brackets);
         if let Some(prefix) = item.prefix {
             xml.tag("prefix", &names::figured_bass_modifier(prefix).to_string());
         }
