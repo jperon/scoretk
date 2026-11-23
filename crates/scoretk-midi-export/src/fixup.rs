@@ -160,7 +160,6 @@ pub(crate) fn fixup_midi(
                         },
                     ) = (restrikes.get_mut(target), &event.kind)
                     {
-                        let event_channel_of = |_kind: &EventKind| *source_channel;
                         // `exportmidi.cpp:297-308` : l'extinction du restrike
                         // est insérée pour chaque canal de la partie avant le
                         // filtre de canal des lignes 331-334. La piste `target`
@@ -171,7 +170,7 @@ pub(crate) fn fixup_midi(
                         // Repli : sans canal configuré pour la partie, on
                         // écrit l'extinction sur le canal de l'évènement,
                         // comme avant l'ajout du port par canal.
-                        let fallback = [event_channel_of(&event.kind)];
+                        let fallback = [*source_channel];
                         let channels = if configured.is_empty() {
                             &fallback[..]
                         } else {
