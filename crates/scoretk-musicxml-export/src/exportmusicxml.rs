@@ -1760,8 +1760,12 @@ impl Context<'_> {
                     out.xml.tag_empty("grace", &[]);
                 }
             }
+            // `<cue/>` est le mécanisme MusicXML standard pour une note
+            // gravée mais non jouée. MuseScore l'écrit pour les petites notes
+            // non jouées (isCueNote, exportmusicxml.cpp:4190-4193) et notre
+            // importeur le relit en `Note::play = false` (pass2.rs:1249).
             let cue = is_cue_note(chord, note);
-            if cue {
+            if cue || !note.play {
                 out.xml.tag_empty("cue", &[]);
             }
             if !first {
@@ -1927,14 +1931,6 @@ impl Context<'_> {
                 &mut notations,
             );
             notations.finish(&mut out.xml);
-
-            // `MusicXML` 4.0 : `<play>no</play>` marque une note qui ne doit
-            // pas être jouée (ClusterNoteEvent sans performer MIDI,
-            // scm/music-functions.scm note-to-cluster). La note reste écrite
-            // dans toutes les sorties ; seul le MIDI l'ignore.
-            if !note.play {
-                out.xml.tag("play", "no");
-            }
 
             if first && grace.is_none() {
                 for lyric in &chord_rest.lyrics {

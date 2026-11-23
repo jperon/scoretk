@@ -259,10 +259,10 @@ def read_xml(
                     continue
                 duree_texte = elem.findtext("duration")
                 duree = int(float(duree_texte)) / divisions if duree_texte else 0.0
-                # `<play>no</play>` : la note est gravée mais non jouée
+                # `<cue/>` : la note est gravée mais non jouée
                 # (ClusterNoteEvent). Le curseur avance quand même ; on ne
                 # l'ajoute pas à la comparaison avec le MIDI.
-                joue = elem.findtext("play") != "no"
+                joue = elem.find("cue") is None
                 est_grace = elem.find("grace") is not None
                 est_accord = elem.find("chord") is not None
                 staff_note = elem.findtext("staff", "1")
