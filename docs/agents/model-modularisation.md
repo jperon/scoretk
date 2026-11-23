@@ -384,13 +384,17 @@ report. On wasm, add an **additive** `convertDetailed(...)` returning
   `note->fret()` plus `GuitarBend` chains (`:1280-1304`), confirming that
   tablature (string/fret pairs, bend curves, slides, hammer-ons, palm mute,
   let-ring, stroke directions, per-track effects) is the primary data.
-- **Missing today:** `ClefSign` has `Tab` variants (`segment.rs:214-319`) and
-  `Staff::lines` exists (`part.rs:361`), but there is **no string/fret field**
-  on `Note` (`note.rs:266-351`). `TremoloBar` (`tremolo_bar.rs:77-84`) is a
-  single notation object with `(time, pitch)` points — it is not a MIDI bend
-  stream (`format-mapping/midi.md:60-62`) and cannot express "bend 2 semitones
-  then release". MusicXML mapping lists extended techniques as a model gap
-  (`format-mapping/musicxml.md:57-59`).
+- **Missing today:** `ClefSign` has a `Tab` variant and `ClefType` the tab
+  variants (`segment.rs:214-302`), and `Staff::lines` exists (`part.rs:361`),
+  but there is **no string/fret field** on `Note` (`note.rs:266-351`).
+  `TremoloBar` (`tremolo_bar.rs:66-99`) can hold the **curve** — its
+  `(time, pitch)` points express "bend 2 semitones then release" exactly — but
+  it is attached to a segment/track (`annotation.rs:104-105`), so it has no
+  string identity and no destination note; MuseScore's importer builds
+  `GuitarBend` chains instead (`gpconverter.cpp:1270-1305`), and the pivot has
+  no `GuitarBend`. It is not a MIDI bend stream either
+  (`format-mapping/midi.md:60-62`). MusicXML mapping lists extended techniques
+  as a model gap (`format-mapping/musicxml.md:57-58`).
 - **Layer:** new `L6::Tablature { string, fret, bend: Vec<BendPoint>,
   techniques }`, plus a MIDI bend sink in L4 for playback. Concert pitch is
   computed from string tuning + fret and stored in L0 `Note::pitch`, so all ten
