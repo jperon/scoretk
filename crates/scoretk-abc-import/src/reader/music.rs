@@ -521,6 +521,14 @@ impl Parser<'_> {
         let mut microtonal = false;
         loop {
             match self.peek() {
+                // Une fraction Microtonale (`^3^F`, `^/C`) appartient au
+                // même jeton que le premier signe : abc2xml.py
+                // (`alteration` 368-369, `decTupAcc` 1241-1253) ignore la
+                // fraction non supportée et garde UN seul dièse/bémol.
+                // Additionner le second `^` donnait F## (= G) au lieu de F#.
+                Some('^' | '_' | '=') if microtonal => {
+                    self.bump();
+                }
                 Some('^') => {
                     self.bump();
                     alter = Some(alter.unwrap_or(0) + 1);
