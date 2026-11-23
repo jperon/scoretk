@@ -3868,3 +3868,26 @@ abc2midi).
 Aucun défaut de writer n'a été identifié par cette méthode sur les 8
 fichiers : les deux sorties ABC sont musicalement équivalentes là où elles
 sont comparables. Aucun code n'est modifié ; l'état reste 250/261.
+
+## 54. Écriture : premier évènement divergent, fichier par fichier (2026-11-23)
+
+Oracle lancé fichier par fichier (mode `model`, binaire de l'état 250/261),
+premier écart entre la référence pivot et la relecture de notre `.abc` ;
+`(hauteur, attaque, durée, voix)` :
+
+| Fichier | Premier écart | Barre `.abc` concernée | Classe |
+| --- | --- | --- | --- |
+| `testMultiInstrumentPart3` | attendu `(61, 8, 1, 0)`, obtenu `(60, 8, 1, 0)` | barre 3 `"^B♭ Clarinet"E2F2G2A2` | (c) ABC 2.1 §7.1 attache `transpose=` à la voix entière ; le changement A→B♭ en cours de voix n'est pas exprimable. Exception. |
+| `voiceswitching` | attendu `(65, 6, 2, 0)`, obtenu `(72, 6, 2, 0)` | barre 5 `"^Tuplets in voice 2:"F2F4F2` | (b) la relecture place au temps 6 la note `c` du n-olet de la voix 1 au lieu du `F` de la voix 2 ; défaut de lecture des n-olets imbriqués/voix, pas d'écriture. Non corrigé ici. |
+| `Laudate_pueri` (mscz, mxl) | attendu `(74, 410.5, 2.5, 3)`, obtenu `(74, 410.5, 0.5, 3)` | voix 4, mesure autour de 410,5 | (b) hauteur et attaque justes, durée raccourcie : chaîne de liaisons non fusionnée à la relecture. Non corrigé ici. |
+| `Angels_Carol` (mscz, mxl) | attendu `(60, 260, 4, 4)`, obtenu `(62, 264, 2, 4)` | voix 5, mesure ~65 | (c) grâces réalisées en notes par abc2midi ; oracle écrit (§41.1). Exception. |
+| `Byrd_Dies` | attendu `(71, 1,5, 4, 0)`, obtenu `(71, 2, 4, 0)` | barre 1 `"_Q""_:"x2"_S"x2` | (b) le modèle issu du MXL porte deux silences invisibles à 0 et 1 noire ; xml2abc, avec les `<backup>` du MusicXML, les place à 0 ; 0,5 et 1 noire. L'écart naît avant le writer. Non corrigé ici. |
+| `Perosi` | attendu `(71, 21, 3, 0)`, obtenu `(71, 23, 3, 0)` | barre 8 `B6` (après 7 barres de 3/4) | (c) la barre 7 de la voix 7 porte `x6D4-` (5 noires) sous `M:3/4` dans les deux writers ; xml2abc écrit `x4 D2-` (6 noires), également surchargée. ABC 2.1 §4.3/§4.8 : barre non conforme dans la sortie de référence. Exception. L'essai `[M:4/4]`/`[M:3/4]` déplaçait l'écart sans le résoudre (cause empilée). |
+| `Vivaldi Sicut erat` | attendu `(61, 4, 4, 6)`, obtenu `(61, 16, 4, 6)` | voix 7 `!mf!D8x24` | (b) même silences de mesure empilés que Perosi ; l'écart est de 12 noires. Non corrigé ici. |
+| `Anerio` | attendu `(50, 8, 2, 1)`, obtenu `(50, 6, 2, 1)` | voix 2, barre 1 `z8` | (b) silence de mesure d'une ronde dans une mesure 3/4 du modèle ; même cause empilée. Non corrigé ici. |
+| `CanonDeLaPaix` | attendu `(65, 67,75, 0,25, 0)`, obtenu `(65, 68, 0,25, 0)` | barre 17 `A8F/2` | (c) note de 1/16 chevauchant une noire entière : non représentable en ABC 2.1 sans changer l'attaque (§4.3). Exception. |
+
+Les cas (b) sont des défauts de lecture ou du modèle pivot, pas du writer ABC ;
+aucun n'a été corrigé dans cette passe faute de port sûr avec mesure contrôlée
+sans perte. Les cas (c) sont des exceptions de format ou d'oracle, citées ci-dessus.
+État inchangé : 250/261 en écriture, 4 721/4 756 en lecture.
