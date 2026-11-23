@@ -7158,7 +7158,7 @@ Reference `tk.musicxml` versus candidate `scoretk.model.musicxml` (note tuple
 | `CanonDeLaPaix.ly` | `notes_supp` | `(72,93.5,.75,0)` → `(67,92.5,1,0)` | 2 extra attacks, same cross-voice tie mechanism |
 | `Sancta_Maria_KV_273…ly` | `attaque_decalee` | `(40,403.5,.5,1)` → `(40,399.5,.5,1)` | 14 attacks of a staff 4 quarters early after a long multi-measure rest |
 
-### Rejected writer cause: `Timing.measureLength` on a multi-rest
+### Restored writer fix: `Timing.measureLength` on a multi-rest
 
 Notation Reference §2.2.3: `R1` follows the current `\time`; LilyPond's
 `timing-translator.cc` keeps `measureLength` as a context property. A
@@ -7168,10 +7168,12 @@ LilyPond play each `R1` N times too long. Reduced test
 (`silence_multi_mesures_ne_fixe_pas_measure_length`, first failing) plus the
 same exception on the `\time` branch of `voice.rs`. Controlled three-file
 measurement (`target/ly95-multirest2-run`, frozen binary): **0 gains, 0
-losses**, `Sancta_Maria` N2d 1453 → 1453, first divergence unchanged at
-409.5/399.5; `.ly` size 22 788 → 21 913 B (the override disappears). The
-4-quarter shift therefore does not come from that command; reverting the
-change restores byte-for-byte output. As in §26, the two `notes_supp` files
-remain cross-voice ties that `Tie_engraver` (`lily/tie-engraver.cc`) cannot
-reconstruct, and the three `echec` files have no usable reference model. No
-writer change was committed.
+losses**, `Sancta_Maria` N2d 1453 → 1453, first divergence unchanged;
+`.ly` size 22 788 → 21 913 B (the override disappears). The 4-quarter shift
+therefore does not come from that command. The change is nevertheless kept:
+the old output is *wrong LilyPond* by §2.2.3 (each `R1` sounds N times too
+long in a real LilyPond MIDI), it has a failing-then-passing test, zero
+losses and smaller output. "No measured exact gain" is not a reason to keep
+a wrong output. As in §26, the two `notes_supp` files remain cross-voice
+ties that `Tie_engraver` (`lily/tie-engraver.cc`) cannot reconstruct, and the
+three `echec` files have no usable reference model.

@@ -143,7 +143,21 @@ pub(crate) fn render_body(
                         let levee_partielle = measure_index == 0
                             && measure.len.is_positive()
                             && measure.len < measure.nominal_len;
+                        // Un silence multi-mesures étale `measure.len` sur
+                        // plusieurs mesures nominales : le `R1*N` porte sur
+                        // la mesure nominale (Notation Reference §2.2.3),
+                        // pas sur l'étendue du silence.
+                        let multi_rest = measure
+                            .multi_measure_rest
+                            .filter(|count| *count > 1)
+                            .is_some_and(|count| {
+                                measure.nominal_len.is_positive()
+                                    && measure.len
+                                        == measure.nominal_len
+                                            * Fraction::from_integer(i64::from(count))
+                            });
                         if !levee_partielle
+                            && !multi_rest
                             && time.measure_len() != measure.len
                             && measure.len.is_positive()
                         {
@@ -809,14 +823,30 @@ fn measure_length_plan(score: &Score, staff: usize, voice: usize) -> Vec<Measure
                 _ => None,
             })
             .last();
+        // Un silence multi-mesures condense plusieurs mesures dans
+        // `measure.len` ; `R1*N` porte sur la mesure nominale (§2.2.3).
+        // Poser `measureLength = #N/1` ferait sonner chaque `R1` N fois
+        // trop long : la métrique nominale doit rester en vigueur.
+        let multi_rest = measure
+            .multi_measure_rest
+            .filter(|count| *count > 1)
+            .is_some_and(|count| {
+                measure.nominal_len.is_positive()
+                    && measure.len == measure.nominal_len * Fraction::from_integer(i64::from(count))
+            });
+        let written_len = if multi_rest {
+            measure.nominal_len
+        } else {
+            measure.len
+        };
         let mut expected = current;
         if let Some(time) = time {
             meter = time.measure_len();
             expected = meter;
             // L'événement `\time` de cette mesure pose déjà `measureLength`
             // quand l'indication locale diffère de la longueur réelle.
-            if time.measure_len() != measure.len && measure.len.is_positive() {
-                expected = measure.len;
+            if time.measure_len() != written_len && written_len.is_positive() {
+                expected = written_len;
             }
         }
         let partial = voice == 0
@@ -824,13 +854,13 @@ fn measure_length_plan(score: &Score, staff: usize, voice: usize) -> Vec<Measure
             && measure.len.is_positive()
             && measure.len < measure.nominal_len;
         if partial {
-            expected = measure.len;
+            expected = written_len;
         }
-        let set = measure.len.is_positive() && expected != measure.len;
+        let set = written_len.is_positive() && expected != written_len;
         if set {
-            expected = measure.len;
+            expected = written_len;
         }
-        let bar_check = !measure.len.is_positive() || expected == measure.len;
+        let bar_check = !written_len.is_positive() || expected == written_len;
         plan.push(MeasurePlan { set, bar_check });
 
         current = if partial {
@@ -1403,6 +1433,31 @@ mod tests {
             "la mesure partielle ne doit pas figer measureLength : {}",
             body
         );
+    }
+
+    /// Un silence multi-mesures condense `N` mesures nominales dans
+    /// `measure.len`. Le multiplicateur `R1*N` porte sur la mesure nominale
+    /// (`voice.rs`, écriture du silence) : poser
+    /// `Timing.measureLength = #N/1` ferait sonner chaque `R1` N fois plus
+    /// long. Référence : Notation Reference §2.2.3, `R1` suit la mesure
+    /// courante.
+    #[test]
+    fn silence_multi_mesures_ne_fixe_pas_measure_length() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Voix", "Vx."));
+        score.add_staff(part);
+        let nominal = Fraction::ONE; // 4/4
+        let mut measure = Measure::new(0, Fraction::ZERO, nominal * Fraction::from_integer(2));
+        measure.nominal_len = nominal;
+        measure.multi_measure_rest = Some(2);
+        score.add_measure(measure);
+
+        let plan = measure_length_plan(&score, 0, 0);
+        assert!(
+            !plan[0].set,
+            "R1*2 sous 4/4 ne doit pas figer measureLength sur #2/1"
+        );
+        assert!(plan[0].bar_check);
     }
 
     #[test]
