@@ -7463,4 +7463,16 @@ exige `fin > item_index` pour absorber la mesure.
 
 Effet mesuré sur les trois fichiers restants (binaire gelé, même oracle) :
 `Sancta_Maria_KV_273` **non exact → exact**, N2d 1453 → **1467**, taille
-21 913 → 22 104 B ; les deux exceptions inchangées. Mesure complète en cours.
+21 913 → 22 104 B ; les deux exceptions inchangées.
+
+Mesure complète (`target/ly95-skipfix-full`, même manifeste corrigé, même oracle) :
+
+| Outil | Fichiers | Exacts | N1/N2/N2d | Taille `.ly` moy. |
+| --- | ---: | ---: | ---: | ---: |
+| scoretk | 1447 | **1445 (99.9 %)** | **100.00 / 100.00 / 100.00** | 2 052 B |
+| musicxml2ly | 1447 | 1285 (88.8 %) | 99.69 / 95.44 / 94.86 | 3 838 B |
+
+**1 gain (`Sancta_Maria_KV_273`), 0 perte**, taille moyenne 2 051,6 → 2 051,8 B
+(+0,1 B ; le fichier corrigé grandit de 191 B, un autre de 21 B, les autres
+inchangés). Les deux seuls fichiers non exacts sont les exceptions de source
+documentées ci-dessus. Cible atteinte : export 100 % hors exceptions.
