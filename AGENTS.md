@@ -246,3 +246,5 @@ One line per document; read the one matching the subject before coding.
 - docs/agents/format-ref/ — synthetic syntax references (in English) for
   agents, one per format, with section numbers and pitfalls: read before writing
   or reviewing a reader/writer.
+- `docs/agents/format-ref/gabc.md` — GABC syntax reference from Gregorio's
+  `Gabc.tex` and grammar: read before writing or reviewing the GABC reader.
