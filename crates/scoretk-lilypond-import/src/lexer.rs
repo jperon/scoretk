@@ -615,9 +615,35 @@ fn scheme_datum_end(characters: &[char], start: usize) -> usize {
             // Commentaire seul : le datum commence après.
             Some(&'|') => skip_scheme_block_comment(characters, index),
             Some(&';') => scheme_datum_end(characters, index + 2),
+            // Un booléen s'arrête après `t`/`f`/`true`/`false` : le lecteur
+            // Guile (`scm_read`, `lily/parse-scm.cc:243`) y voit un datum
+            // complet, même collé à une commande (`##t\repeat`).
+            Some(&first) if matches!(first, 't' | 'T' | 'f' | 'F') => {
+                scheme_boolean_end(characters, index)
+            }
             _ => scheme_atom_end(characters, index),
         },
         _ => scheme_atom_end(characters, index),
+    }
+}
+
+/// Indice qui suit le booléen Scheme `#t`, `#true`, `#f` ou `#false`
+/// commençant à `start`.
+///
+/// Guile s'arrête dès le booléen lu : dans `##t\repeat`, le `\repeat` reste
+/// à lexer comme commande.
+fn scheme_boolean_end(characters: &[char], start: usize) -> usize {
+    let suffix: String = characters[start..]
+        .iter()
+        .take(6)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    if suffix.starts_with("#false") {
+        start + 6
+    } else if suffix.starts_with("#true") {
+        start + 5
+    } else {
+        start + 2
     }
 }
 
@@ -894,6 +920,14 @@ mod tests {
         assert_eq!(
             texts("##t #f ##(1 2) #-1 #0.5 #9/8 #UP"),
             vec!["##t", "#f", "##(1 2)", "#-1", "#0.5", "#9/8", "#UP"]
+        );
+        // Un booléen ne mange pas la commande collée : Guile arrête le datum
+        // après `#t` (`scm_read`, `lily/parse-scm.cc:243`) ; `##t\repeat`
+        // doit donc donner `##t` puis `\repeat`
+        // (`metronome-mark-broken-bound.ly`).
+        assert_eq!(
+            texts("##t\\repeat unfold 22 c'8"),
+            vec!["##t", "\\repeat", "unfold", "22", "c", "'", "8"]
         );
         assert_eq!(texts("#`x #,y #,@z"), vec!["#`x", "#,y", "#,@z"]);
         assert_eq!(
