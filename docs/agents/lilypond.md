@@ -7236,3 +7236,60 @@ excluded by the no-bloat requirement (§26 has the same measurement). Hence
 no writer-side fix was committed for these two files: the link is
 structurally impossible in LilyPond's tie engraver without moving notes
 between voices, which would change the model's voice assignment.
+
+## 29. Reader-side traces of the last six export files (2026-11-23)
+
+### Three `echec` rows are manifest errors, not reader failures
+
+The rows `23_Sonis/Sonis`, `Courtial/Veni,` and `EntreLeBoeuf/entre_` of
+`/tmp/ly-import-lots/manifestes/mus.txt` are not LilyPond sources:
+`…/Son is` is a UTF-8 lyrics text file (no `\score`), and `Veni,` / `entre_`
+are **truncated paths** — the real files are `Veni, Creator
+Spiritus_Courtial_v3_SATB.ly` and `entre_ le_ boeuf.ly`, both already present
+elsewhere in the same manifest. `lots.sh:31` builds the list with
+`awk 'NF >= 6 {print $6}'` from whitespace-separated base lists, so any path
+containing a space is cut at that space. LilyPond cannot compile these paths
+either (`mscore`/`lilypond` return no MIDI), so the user's condition "if
+LilyPond compiles them, our reader must too" is not met: these are bad
+references and belong in the excluded class. Fixing them is a manifest
+problem (`lots.sh` / the base lists), not a reader change.
+
+### `Sancta_Maria_KV_273`: the source reader gets it right; the writer does not
+
+LilyPond runs each `\score` as an independent timeline: `Score::book_rendering`
+(`lily/score.cc:110-157`) calls `ly_run_translator(music_, scaled)` once per
+score and each `Global_context` starts `now_mom_` at `-infinity`
+(`lily/global-context.cc:40-47`). Our reader mirrors this by choosing a single
+partition (`parser.rs:435-505`): the first engraved `\score`, or the first
+`\score` with `\midi` when structurally comparable.
+
+The source's second `\score` (five voices, `\midi`) is chosen. Reading the
+source directly gives the **correct** model: the bass part has a single
+27-bar rest (0–108 quarters), its first note at 111.5, and a 42-bar rest
+(`target/ly95-final-run/travail/ly/1043/tk.musicxml`, part P2). Re-reading
+scoretk's own `.ly` gives P2 a 29-bar grid (0–116) and the first note at
+119.5: the writer emits `R1*2` in **all five** voices (the first four have a
+real 2-bar rest at bar 31; the bass does not) plus 69 leading `s1` spacers,
+and the reader's `merge_multi_rests` (`builder.rs:1683-1720`) collapses them
+differently. Removing the bass's `R1*2` from the candidate `.ly` moves its
+first note to 391.5 quarters (worse), so that token is not the sole cause;
+the discrepancy is the interaction of the writer's per-voice grid with the
+reader's multi-rest merging (§26's `Timing.measureLength` fix does not touch
+it — N2d stayed at 1453). No single reader rule fixes it without changing
+the multi-rest grid for every score, so no change was committed.
+
+### Cross-voice ties: source ties are within one voice
+
+Both sources write their `~` at the end of a bar inside one voice variable
+(`Salazar`: `PartPThreeVoiceOne`, `~` at bars 65/69/116…; `CanonDeLaPaix`:
+`PartPOneVoiceOne`, `~` at bars 24/40/56…). `link_ties`
+(`builder.rs:3047-3155`) keys its pending `open` queue by **voice** and by
+pitch; when the writer redistributes these notes across `\voiceOne`…
+`\voiceThree` on re-read, the tie start and its continuation can land in
+different per-voice queues, and the tie never closes — hence one extra
+attack per file. A cross-voice fallback would have to merge pending heads
+per staff rather than per voice, which risks cross-linking two independent
+ties of the same pitch in two voices (the queue was deliberately designed
+to avoid that, `builder.rs:3113-3117`). Given the user's target and the
+no-regression requirement, this is left as a documented reader limitation
+rather than an unmeasured change.
