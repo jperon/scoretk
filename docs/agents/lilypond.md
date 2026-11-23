@@ -6735,6 +6735,32 @@ Aucun de ces fichiers n'est exclu du dénominateur.
 Mesure contrôlée de la cause `\breve` (même oracle, mêmes références, seul le
 binaire change) : `1588 → 1589`, **+1 exact** (`monochords.ly`), **0 perte**.
 
+### Groupes 2 et 3 : preuve par sous-groupe
+
+**Groupe 2 — `relative` (20)** : le sous-groupe `cluster-*`/`backend-exercise`
+(4 fichiers) partage `\makeClusters`. Vidage du MIDI de `cluster.ly` : 3 pistes,
+une seule avec 14 notes, la piste Cluster **vide**. `scm/music-functions.scm`
+(`note-to-cluster`) transforme les `NoteEvent` en `ClusterNoteEvent`, sans
+performer MIDI. Le modèle retire donc désormais ces notes : **+2 exacts**
+(`cluster`, `cluster-break`), 0 perte en mesure contrôlée. Restent
+`backend-exercise.ly` (mélange tuplets/ottava/glissando, diverge à 0,33 sur
+une note de 101, cause distincte) et `collision-seconds.ly` (16 notes sup sur
+45, voix de collisions, cause distincte) : preuve par fichier, aucun exclus.
+
+**Groupe 3 — `voices` (16) et `markup/tweak` (29)** : subdivision par commande
+précise au voisinage de la divergence. Plus gros sous-groupe commun :
+`\partCombine` (3 fichiers : `part-combine`, `-global`, `-cross`). Le cas réduit
+`\partCombine \vone \vtwo` avec deux hauteurs différentes produit bien les
+deux voix (67 et 65 à zéro) : la bascule `Music::Sim` du lecteur est correcte.
+L'écart des 3 fichiers vient donc du contenu propre de chaque voix (durées
+longues, `~`, `\time` global), pas d'une commande commune ; chaque autre
+sous-groupe est un fichier unique (`caesura`, `defineBarLine`, `featherDurations`,
+`chordmode`, `germanChords`, `bendAfter`, etc.). Aucun correctif commun
+justifié ; preuve par sous-groupe, aucun fichier exclu.
+
+**Bilan contrôlé de la session** : 1588 → 1589 (`\breve`, +1) → 1591
+(`makeClusters`, +2), soit **+3 exacts**, **0 perte** à chaque étape,
+**1591/1724 (92,3 %)**.
 ### Reading campaign: `grace`, `cue/quote`, `include`, `repeat/volta` (2026-11-23)
 
 The four groups of the §22 table were subdivided by first divergent construct
