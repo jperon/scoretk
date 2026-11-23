@@ -452,6 +452,10 @@ pub struct Harmony {
     /// (`dom/harmony.h:225`) ou `harmonyPlay` faux dans le style coupent la
     /// réalisation, alors que le symbole reste affiché.
     pub play: bool,
+    /// Grille d'accord portée par le `<FretDiagram>` parent, exportée en
+    /// `<frame>` dans `<harmony>` (`writeMusicXml(const FretDiagram*)`,
+    /// `exportmusicxml.cpp:9049-9122`).
+    pub fret_diagram: Option<super::fret_diagram::FretDiagram>,
 }
 
 /// Degré d'un accord chiffré (`<degree>` de MuseScore).
@@ -489,6 +493,7 @@ impl Harmony {
             degrees: Vec::new(),
             placement: Placement::Above,
             play: true,
+            fret_diagram: None,
         }
     }
 }

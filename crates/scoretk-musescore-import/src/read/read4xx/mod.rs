@@ -41,6 +41,7 @@
 
 mod dom;
 mod figures;
+mod fret;
 mod names;
 mod notations;
 mod nuances;
@@ -342,13 +343,7 @@ impl Reader {
 
     /// Lit un `<Harmony>` et l'ajoute comme annotation (`readMeasure206` :
     /// `read500/measureread.cpp:448-450` lit aussi celui d'un `FretDiagram`).
-    fn read_harmony_annotation(
-        &mut self,
-        child: &Element,
-        measure_index: usize,
-        tick: Fraction,
-        track: Track,
-    ) {
+    fn read_harmony_annotation(&mut self, child: &Element) -> Harmony {
         let name = child
             .child("name")
             .map(|node| node.text().to_owned())
@@ -389,7 +384,7 @@ impl Reader {
         if let Some(text) = child.child("text") {
             harmony.text = text.text.clone();
         }
-        self.add_annotation(measure_index, tick, track, Annotation::Harmony(harmony));
+        harmony
     }
 
     fn read_meta_tag(&mut self, element: &Element) {
@@ -1423,15 +1418,23 @@ impl Reader {
                     );
                 }
                 "Harmony" => {
-                    self.read_harmony_annotation(child, measure_index, tick, track);
+                    let harmony = self.read_harmony_annotation(child);
+                    self.add_annotation(measure_index, tick, track, Annotation::Harmony(harmony));
                 }
                 // `readMeasure206` (`read500/measureread.cpp:448-450`) crée un
                 // `FretDiagram` et lit son `<Harmony>` : c'est la seule source
                 // de l'accord dans les partitions de guitare (23 accords de
                 // `bransle-de-chevaux` ignorés jusqu'ici).
                 "FretDiagram" => {
-                    if let Some(harmony) = child.child("Harmony") {
-                        self.read_harmony_annotation(harmony, measure_index, tick, track);
+                    if let Some(node) = child.child("Harmony") {
+                        let mut harmony = self.read_harmony_annotation(node);
+                        harmony.fret_diagram = Some(fret::read_fret_diagram(child));
+                        self.add_annotation(
+                            measure_index,
+                            tick,
+                            track,
+                            Annotation::Harmony(harmony),
+                        );
                     }
                 }
                 "Fermata" => {
@@ -1489,8 +1492,8 @@ impl Reader {
                     }
                 }
                 // TODO(parité): <Beam>, <Ambitus>, <Segment>, <MeasureRepeat>,
-                // <Symbol>, <Image>, <FretDiagram>, <StaffState>,
-                // <PlayTechAnnotation>, <Sticking>, <HarpPedalDiagram>.
+                // <Symbol>, <Image>, <StaffState>, <PlayTechAnnotation>,
+                // <Sticking>, <HarpPedalDiagram>.
                 _ => {}
             }
         }

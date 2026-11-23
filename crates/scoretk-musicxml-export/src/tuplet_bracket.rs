@@ -145,6 +145,7 @@ pub(crate) fn has_bracket(score: &Score, id: TupletId, concert_pitch: bool) -> b
 }
 
 /// `Chord::up()` effectif, calculé comme à l'écriture de la hampe.
+#[allow(clippy::too_many_arguments)]
 fn stem_up(
     score: &Score,
     chord: &Chord,

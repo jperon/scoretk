@@ -46,6 +46,7 @@ pub use error::{Error, Result};
 mod beams;
 mod exportmusicxml;
 mod figured_bass;
+mod fret;
 mod harmony;
 mod layout;
 mod notations;

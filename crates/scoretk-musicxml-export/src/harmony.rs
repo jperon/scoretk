@@ -34,6 +34,7 @@
 use scoretk_core::model::{Harmony, HarmonyDegreeKind, Placement, Tick};
 
 use super::exportmusicxml::Out;
+use super::fret;
 use super::pitch;
 
 /// Écrit un accord chiffré.
@@ -64,6 +65,11 @@ pub(crate) fn write(out: &mut Out, harmony: &Harmony, offset: Tick) {
         if duration > 0 {
             out.xml.tag("offset", &duration.to_string());
         }
+    }
+
+    // `harmony()` écrit le `<frame>` après l'`<offset>` (`:9244-9249`).
+    if let Some(diagram) = &harmony.fret_diagram {
+        fret::write_frame(out, diagram);
     }
 
     out.xml.end_element();

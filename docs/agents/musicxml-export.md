@@ -1546,3 +1546,26 @@ core-exacts. `Vivaldi 04` (2) et `Vivaldi 08` (4) restent : leurs n-olets sont
 ne délimite pas comme MuseScore (`<Groups>` et prédicats de
 `calcBeamBreaks`/`headSide`, cf. §29.3 et §30). Classe de mise en page
 documentée, non corrigée.
+
+## 48. `<frame>` : lecture du `FretDiagram` 4.x (2026-11-23)
+
+`bransle-de-chevaux` (4.10) perdait 186 `<frame>` (558 lignes canoniques). Le
+lecteur 4.x ne lisait d'un `<FretDiagram>` que son `<Harmony>` (TODO §19) ; le
+`.mscx` porte la grille sous `<fretDiagram>` : `<string no>` avec `<dot
+fret>normal|cross|square</dot>` et `<marker>circle</marker>`, plus
+`<barre start end>fret</barre>`, `<strings>`, `<frets>`, `<fretOffset>`,
+`<showNut>` (`TRead::read(FretDiagram*)`,
+`engraving/rw/read460/tread.cpp:806-870`).
+
+Estimation : modèle `FretDiagram`/`FretDot`/`FretMarker`/`FretBarre` (~90
+lignes), lecture (~120), écriture `<frame>` (`writeMusicXml(const
+FretDiagram*)`, `exportmusicxml.cpp:9049-9122`, ~90), réécriture `.mscx` (~70)
+et tests (~120). Port borné, réalisé : `Harmony::fret_diagram`,
+`read4xx/fret.rs`, `musicxml-export/src/fret.rs`, `write_fret_diagram`.
+
+Mesure : `bransle-de-chevaux` 558 → **0** (core-identique), 168/173
+core-exacts, 0 perte. Tests réduits : `fret_diagram.rs` (écriture, barres,
+marqueur cercle, `first-fret`) et `fret_diagram_4x.rs` (lecture). Limite
+documentée : le lecteur 3.x/2.x ne lit pas encore `<FretDiagram>` (aucun
+fichier du lot en 3.x n'en porte) ; les marqueurs autres que le cercle ne sont
+pas conservés.

@@ -686,7 +686,12 @@ pub(crate) fn write_annotation(
             xml.end_element();
         }
         Annotation::Harmony(harmony) => {
-            write_harmony(xml, harmony, key_at(score, tick, track));
+            let key = key_at(score, tick, track);
+            if let Some(diagram) = &harmony.fret_diagram {
+                write_fret_diagram(xml, harmony, diagram, key);
+            } else {
+                write_harmony(xml, harmony, key);
+            }
         }
         Annotation::Fermata(fermata) => write_fermata(xml, fermata, track),
         Annotation::FiguredBass(bass) => write_figured_bass(xml, bass),
@@ -797,6 +802,75 @@ fn root_from_function(function: &str, key: Key) -> Option<i8> {
 }
 
 /// Écrit un symbole d'accord.
+/// Écrit un `<FretDiagram>` (grille d'accord) et son `<Harmony>`.
+///
+/// `TWrite::write(const FretDiagram*)` écrit les propriétés, puis l'accord et
+/// le bloc `<fretDiagram>` (`write/twrite.cpp:1370-1420`). Les seuls marqueurs
+/// conservés sont les cercles (`FretMarkerType::Circle`).
+fn write_fret_diagram(
+    xml: &mut XmlWriter,
+    harmony: &Harmony,
+    diagram: &scoretk_core::model::FretDiagram,
+    key: Key,
+) {
+    xml.start_element("FretDiagram", &[]);
+    if diagram.frets != 4 {
+        xml.tag("frets", &diagram.frets.to_string());
+    }
+    if diagram.strings != 6 {
+        xml.tag("strings", &diagram.strings.to_string());
+    }
+    if diagram.fret_offset > 0 {
+        xml.tag("fretOffset", &diagram.fret_offset.to_string());
+    }
+    if !diagram.show_nut {
+        xml.tag("showNut", "0");
+    }
+    write_harmony(xml, harmony, key);
+    xml.start_element("fretDiagram", &[]);
+    let mut strings: Vec<u8> = diagram
+        .dots
+        .iter()
+        .map(|dot| dot.string)
+        .chain(diagram.markers.iter().map(|marker| marker.string))
+        .collect();
+    strings.sort_unstable();
+    strings.dedup();
+    for string in strings {
+        xml.start_element("string", &[("no", &string.to_string())]);
+        for dot in diagram.dots.iter().filter(|dot| dot.string == string) {
+            let kind = match dot.kind {
+                scoretk_core::model::FretDotType::Normal => "normal",
+                scoretk_core::model::FretDotType::Cross => "cross",
+                scoretk_core::model::FretDotType::Square => "square",
+            };
+            xml.tag_with("dot", &[("fret", &dot.fret.to_string())], kind);
+        }
+        for marker in diagram
+            .markers
+            .iter()
+            .filter(|marker| marker.string == string)
+        {
+            if marker.kind == scoretk_core::model::FretMarkerType::Circle {
+                xml.tag("marker", "circle");
+            }
+        }
+        xml.end_element();
+    }
+    for barre in &diagram.barres {
+        xml.tag_with(
+            "barre",
+            &[
+                ("start", &barre.start.to_string()),
+                ("end", &barre.end.to_string()),
+            ],
+            &barre.fret.to_string(),
+        );
+    }
+    xml.end_element();
+    xml.end_element();
+}
+
 fn write_harmony(xml: &mut XmlWriter, harmony: &Harmony, key: Key) {
     xml.start_element("Harmony", &[]);
     // Port de `writeHarmonyInfo` (write/twrite.cpp:1786-1826) : depuis 4.6, le
