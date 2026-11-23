@@ -243,11 +243,8 @@ One line per document; read the one matching the subject before coding.
 - `docs/agents/model-modularisation.md` — audit of pivot-model field usage by the ten directions and proposal for common core + optional layers: read before adding GABC, MEI, Capella, Guitar Pro or Humdrum.
 - `docs/agents/gabc.md` — GABC reference lot, licence record, oracle design and measured sanity baseline: read before running or extending `scripts/oracle/gabc/`.
 - docs/agents/format-mapping/ — format ↔ model tables per format and model
-  gaps: read before extending a reader or a writer.
-- `docs/agents/format-mapping/gabc.md` — GABC ↔ pivot model table from
-  gabctk's mapping and the layer plan: read before writing the GABC reader.
+  gaps (musescore, musicxml, midi, lilypond, abc, gabc, mei, capella,
+  guitarpro, humdrum): read before extending a reader or a writer.
 - docs/agents/format-ref/ — synthetic syntax references (in English) for
-  agents, one per format, with section numbers and pitfalls: read before writing
-  or reviewing a reader/writer.
-- `docs/agents/format-ref/gabc.md` — GABC syntax reference from Gregorio's
-  `Gabc.tex` and grammar: read before writing or reviewing the GABC reader.
+  agents, one per format, with section numbers and pitfalls (same ten
+  formats): read before writing or reviewing a reader/writer.
