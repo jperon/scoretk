@@ -136,13 +136,50 @@ def evenements_par_tick(path: str) -> dict[int, Counter]:
     return par_tick
 
 
-def compare_evenements(reference: str, test: str) -> tuple[bool, int | None]:
-    """Égalité des événements à chaque tick ; premier tick divergent sinon."""
-    a, b = evenements_par_tick(reference), evenements_par_tick(test)
+def evenements_audibles(path: str) -> tuple[dict[int, Counter], int]:
+    """Événements qui changent réellement ce qui sonne, et offs orphelins.
+
+    On rejoue le SMF avec un compteur de notes ouvertes par (canal, hauteur) :
+    un `on` ouvre une note, un `off` ne ferme une note que s'il en reste une
+    ouverte. Un off sans note correspondante n'a aucun effet audible — c'est
+    le cas du note-off « hoisté » de `fixupMIDI`
+    (`engraving/compat/midi/event.cpp:263-306`) quand un restrike a déjà
+    éteint la note sur un autre canal. Ces offs orphelins sont comptés et
+    écartés de la comparaison, des deux côtés de la mesure.
+    """
+    mid = common.lire_midi(path)
+    ouvertes: Counter = Counter()
+    par_tick: dict[int, Counter] = defaultdict(Counter)
+    orphelins = 0
+    for track in mid.tracks:
+        tick = 0
+        for msg in track:
+            tick += msg.time
+            if msg.is_meta or not hasattr(msg, "note"):
+                continue
+            cle = (msg.channel, msg.note)
+            if msg.type == "note_on" and msg.velocity > 0:
+                ouvertes[cle] += 1
+                par_tick[tick][(msg.channel, "on", msg.note)] += 1
+            elif ouvertes[cle] > 0:
+                ouvertes[cle] -= 1
+                par_tick[tick][(msg.channel, "off", msg.note)] += 1
+            else:
+                orphelins += 1
+    return par_tick, orphelins
+
+
+def compare_evenements(reference: str, test: str) -> tuple[bool, int | None, int, int]:
+    """Égalité des événements *audibles* ; premier tick divergent sinon.
+
+    Renvoie aussi les nombres d'offs orphelins écartés (référence, candidat).
+    """
+    a, orphelins_ref = evenements_audibles(reference)
+    b, orphelins_test = evenements_audibles(test)
     for tick in sorted(set(a) | set(b)):
         if a.get(tick, Counter()) != b.get(tick, Counter()):
-            return False, tick
-    return True, None
+            return False, tick, orphelins_ref, orphelins_test
+    return True, None, orphelins_ref, orphelins_test
 
 
 def normaliser_ecriture(notes: list[tuple]) -> list[tuple]:

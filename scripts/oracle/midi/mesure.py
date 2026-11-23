@@ -386,11 +386,16 @@ def mesurer_ecriture(args, lot: str, manifeste: str, fichier_sortie) -> None:
         # exact à l'un ou l'autre de ces niveaux.
         if not r.get("exact"):
             try:
-                egaux, premier = compare_evenements(ref_path, str(dst))
+                egaux, premier, orphelins_ref, orphelins_test = compare_evenements(
+                    ref_path, str(dst))
             except Exception as exc:  # SMF illisible : pas de niveau événements
-                egaux, premier, r["erreur_evenements"] = False, None, str(exc)
+                egaux, premier = False, None
+                orphelins_ref = orphelins_test = 0
+                r["erreur_evenements"] = str(exc)
             r["exact_events"] = bool(egaux)
             r["premier_ecart_evenements"] = premier
+            r["offs_orphelins"] = orphelins_ref
+            r["offs_orphelins_test"] = orphelins_test
             if egaux:
                 r["exact"] = True
                 r["drapeaux"] = ["egalite_evenements"]
