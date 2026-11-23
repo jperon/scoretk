@@ -7321,3 +7321,57 @@ come from the reader's `merge_multi_rests` over the writer's 69 `s1` + `R1*2`
 + 40 `s1` padding). Both need a structural change to the writer's voice /
 measure rendering with a full-lot re-measurement; no speculative change was
 committed.
+
+## 31. Fichiers `input/regression` hors de portée du lot `ra` (2026-11-23)
+
+État mesuré : **1 682/1 724 (97,6 %)**, `clippy`/`fmt`/tests verts. Les
+42 fichiers restants sont hors de portée sans évaluation Scheme arbitraire,
+sans référence MIDI, ou sans un chantier dédié ; ils sont listés ici pour ne
+pas les reprendre par erreur.
+
+### Référence MIDI vide (7)
+
+`alteration-glyphs`, `arabic-accidental-glyphs`, `makam-accidental-glyphs`,
+`turkish-makam-accidental-glyphs`, `midi-key-signature`,
+`scheme-list-splicing`, `tie-chord` : LilyPond n'écrit aucun MIDI (pas de
+`\score` jouable, ou erreur Scheme), et `compare` exige `ref > 0` : ils ne
+peuvent jamais être « exacts ». Plafond réel du lot : **1 717/1 724**.
+
+### Évaluation Scheme arbitraire (13)
+
+- `music-map` : `\applyMusic #(lambda …)` (notes → silences).
+- `context-descend-only-not-found` : `#(descend-to-context #{ … #} …)`.
+- `ledger-line-properties` : `$@(map (lambda (x) #{ … #}) …)`.
+- `make-relative`, `make-relative-music` : `make-relative` avec arguments de
+  hauteur (`$p1`), résolus dans le contexte relatif avant insertion.
+- `swing-test` : `\tripletFeel`/`\applySwing` de `swing.ly` (temps réels).
+- `accidental-styles`, `optional-args` : arguments optionnels
+  `(prédicat défaut)` des fonctions musicales (le défaut est de la musique
+  Scheme, `#{ … #}` ou `*unspecified*`).
+- `note-names-makam`, `persian-key-signatures` : tables d'échelles makam en
+  Scheme.
+- `modal-transforms` : `\modalTranspose`/`\modalInvert` (`scm/modal-transforms.scm`).
+- `part-combine-global` : décisions non locales de `part-combiner.scm`.
+- `beat-performer` : `\beat` (performer Scheme de `beat-structure.scm`).
+
+### Chantiers structurels ou de modèle (22)
+
+- `polymetric-time-ossia-staff` : ossia dans une **branche simultanée** — la
+  base de séquence n'y est pas le zéro global (l'ossia d'une séquence simple
+  est traité ; voir `staff-highlight-ossia`, `staff-ossia-end-at-time-change`).
+- `quote-cyclic`, `quote-during-subvoice`, `quote-transposition` :
+  `\quoteDuring`/`\cueDuring` (fenêtre, transposition, sous-voix).
+- `tablature-tie-behaviour`, `tablature-full-notation`,
+  `tablature-harmonic-functions` : lecture de tablature (cordes,
+  harmoniques, liaisons de tablature).
+- `chord-voicings`, `chord-name-entry` : voicings au-delà de
+  `stack-thirds`/renversement (`scm/chord-entry.scm`).
+- `spacing-grace`, `spacing-strict-spacing-grace`, `bend-after-start-in-grace` :
+  temps réel des grâces et `\bendAfter` dans un ornement.
+- `midi-unisons` (`midiMergeUnisons`), `v4_linked-ties` (liaison inter-voix
+  du corpus v4).
+- `volta-spec-tie` (second `\score` + `\unfoldRepeats`), `repeat-unfold-all`
+  (alternatives/dépliage), `skiptypesetting-tuplet`, `drum-scripts`,
+  `instrument-switch`, `push-to-tag`, `alignment-order`, `beam-position`,
+  `volta-spec-tie`, `polymetric-time-ossia-staff` : cas particuliers de
+  trame ou de playback, un fichier chacun.
