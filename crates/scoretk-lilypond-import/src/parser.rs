@@ -3702,11 +3702,16 @@ impl<'a> Parser<'a> {
                     .get(&nom)
                     .map(|quote| {
                         Music::Context(Context::Cue {
+                            cue_notes: name != "quoteDuring",
                             music: Box::new(tronque_musique(quote, duree, self.default_duration)),
                         })
                     })
                     .unwrap_or(Music::Empty)
             }
+            // `ly/music-functions-init.ly:955-964` : `\killCues` retire les
+            // notes de cue de `\cueDuring` mais garde les citations de
+            // `\quoteDuring` ; le temps occupé reste (silences).
+            "killCues" => kill_cues(self.parse_music()),
             // `ly/music-functions-init.ly:348-354` : `beamExceptions` est une
             // fonction Scheme à argument musical. Elle produit une valeur de
             // propriété pour `\set`, jamais de la musique : laisser son
@@ -6171,7 +6176,7 @@ fn extract_alternatives(music: &mut Music, alternatives: &mut Vec<Music>) {
         Music::Context(Context::Relative { music, .. })
         | Music::Context(Context::Fixed { music, .. })
         | Music::Context(Context::NonRelative { music })
-        | Music::Context(Context::Cue { music })
+        | Music::Context(Context::Cue { music, .. })
         | Music::Context(Context::Volta { music, .. })
         | Music::Context(Context::Tuplet { music, .. })
         | Music::Context(Context::Transpose { music, .. })
@@ -6383,6 +6388,131 @@ fn ajoute_point(music: Music, default_duration: Duration) -> Music {
 /// en avançant le temps de ses accord. Chaque accord devient donc un
 /// `SkipNumeric` de même durée. Limite : les contextes imbriqués ne sont pas
 /// parcourus (le temps qu'ils portent est ignoré).
+/// `\killCues` (`ly/music-functions-init.ly:955-964`) : retire les notes de
+/// cue insérées par `\cueDuring` en conservant leur durée (silences) ; les
+/// citations de `\quoteDuring` (qui n'ont pas `quoted-context-id "cue"`)
+/// restent jouées.
+fn kill_cues(music: Music) -> Music {
+    match music {
+        Music::Context(Context::Cue {
+            music,
+            cue_notes: true,
+        }) => silence_music(*music),
+        Music::Context(Context::Cue {
+            music,
+            cue_notes: false,
+        }) => Music::Context(Context::Cue {
+            music: Box::new(kill_cues(*music)),
+            cue_notes: false,
+        }),
+        Music::Seq(items) => Music::Seq(items.into_iter().map(kill_cues).collect()),
+        Music::Sim(items) => Music::Sim(items.into_iter().map(kill_cues).collect()),
+        Music::Tag { tags, music } => Music::Tag {
+            tags,
+            music: Box::new(kill_cues(*music)),
+        },
+        Music::Filtered {
+            filter,
+            wanted,
+            groups,
+            music,
+        } => Music::Filtered {
+            filter,
+            wanted,
+            groups,
+            music: Box::new(kill_cues(*music)),
+        },
+        Music::New(mut group) => {
+            for staff in &mut group.staves {
+                for voice in &mut staff.voices {
+                    voice.music = kill_cues(std::mem::replace(&mut voice.music, Music::Empty));
+                }
+            }
+            Music::New(group)
+        }
+        Music::Context(Context::Relative {
+            reference,
+            chain,
+            music,
+        }) => Music::Context(Context::Relative {
+            reference,
+            chain,
+            music: Box::new(kill_cues(*music)),
+        }),
+        Music::Context(Context::Fixed { reference, music }) => Music::Context(Context::Fixed {
+            reference,
+            music: Box::new(kill_cues(*music)),
+        }),
+        Music::Context(Context::Transpose {
+            from,
+            to,
+            absolute,
+            music,
+        }) => Music::Context(Context::Transpose {
+            from,
+            to,
+            absolute,
+            music: Box::new(kill_cues(*music)),
+        }),
+        Music::Context(Context::NonRelative { music }) => {
+            Music::Context(Context::NonRelative {
+                music: Box::new(kill_cues(*music)),
+            })
+        }
+        Music::Context(Context::Invisible { music }) => Music::Context(Context::Invisible {
+            music: Box::new(kill_cues(*music)),
+        }),
+        Music::Context(Context::Tuplet {
+            numerator,
+            denominator,
+            number_type,
+            music,
+        }) => Music::Context(Context::Tuplet {
+            numerator,
+            denominator,
+            number_type,
+            music: Box::new(kill_cues(*music)),
+        }),
+        Music::Context(Context::Grace { kind, slash, music }) => Music::Context(Context::Grace {
+            kind,
+            slash,
+            music: Box::new(kill_cues(*music)),
+        }),
+        Music::Context(Context::AfterGrace {
+            main,
+            grace,
+            fraction,
+        }) => Music::Context(Context::AfterGrace {
+            main: Box::new(kill_cues(*main)),
+            grace: Box::new(kill_cues(*grace)),
+            fraction,
+        }),
+        Music::Context(Context::Repeat {
+            kind,
+            count,
+            body,
+            alternatives,
+            partial,
+        }) => Music::Context(Context::Repeat {
+            kind,
+            count,
+            body: Box::new(kill_cues(*body)),
+            alternatives: alternatives.into_iter().map(kill_cues).collect(),
+            partial,
+        }),
+        Music::Context(Context::Alternative(items)) => Music::Context(Context::Alternative(
+            items.into_iter().map(kill_cues).collect(),
+        )),
+        Music::Context(Context::Volta { numbers, music }) => {
+            Music::Context(Context::Volta {
+                numbers,
+                music: Box::new(kill_cues(*music)),
+            })
+        }
+        other => other,
+    }
+}
+
 fn silence_music(music: Music) -> Music {
     match music {
         Music::Chord(chord) => Music::Chord(Chord {
@@ -6408,6 +6538,87 @@ fn silence_music(music: Music) -> Music {
             groups,
             music: Box::new(silence_music(*music)),
         },
+        // `\skip \musique` et `\killCues` : une musique enveloppée
+        // (`\relative`, `\transpose`, reprise…) doit garder sa durée. La
+        // remplacer par `Empty` faisait disparaître le temps occupé
+        // (`quote-kill-cues` : la note suivante arrivait une mesure trop tôt).
+        Music::Context(Context::Relative {
+            reference,
+            chain,
+            music,
+        }) => Music::Context(Context::Relative {
+            reference,
+            chain,
+            music: Box::new(silence_music(*music)),
+        }),
+        Music::Context(Context::Fixed { reference, music }) => Music::Context(Context::Fixed {
+            reference,
+            music: Box::new(silence_music(*music)),
+        }),
+        Music::Context(Context::Transpose {
+            from,
+            to,
+            absolute,
+            music,
+        }) => Music::Context(Context::Transpose {
+            from,
+            to,
+            absolute,
+            music: Box::new(silence_music(*music)),
+        }),
+        Music::Context(Context::NonRelative { music }) => Music::Context(Context::NonRelative {
+            music: Box::new(silence_music(*music)),
+        }),
+        Music::Context(Context::Invisible { music }) => Music::Context(Context::Invisible {
+            music: Box::new(silence_music(*music)),
+        }),
+        Music::Context(Context::Volta { numbers, music }) => Music::Context(Context::Volta {
+            numbers,
+            music: Box::new(silence_music(*music)),
+        }),
+        Music::Context(Context::Alternative(items)) => Music::Context(Context::Alternative(
+            items.into_iter().map(silence_music).collect(),
+        )),
+        Music::Context(Context::Repeat {
+            kind,
+            count,
+            body,
+            alternatives,
+            partial,
+        }) => Music::Context(Context::Repeat {
+            kind,
+            count,
+            body: Box::new(silence_music(*body)),
+            alternatives: alternatives.into_iter().map(silence_music).collect(),
+            partial,
+        }),
+        Music::Context(Context::Tuplet {
+            numerator,
+            denominator,
+            number_type,
+            music,
+        }) => Music::Context(Context::Tuplet {
+            numerator,
+            denominator,
+            number_type,
+            music: Box::new(silence_music(*music)),
+        }),
+        Music::Context(Context::Grace { kind, slash, music }) => {
+            Music::Context(Context::Grace {
+                kind,
+                slash,
+                music: Box::new(silence_music(*music)),
+            })
+        }
+        Music::Context(Context::AfterGrace {
+            main,
+            grace,
+            fraction,
+        }) => Music::Context(Context::AfterGrace {
+            main: Box::new(silence_music(*main)),
+            grace: Box::new(silence_music(*grace)),
+            fraction,
+        }),
         _ => Music::Empty,
     }
 }

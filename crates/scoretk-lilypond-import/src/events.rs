@@ -959,7 +959,7 @@ impl<'a> Interpreter<'a> {
                 self.walk(music);
                 self.octave = saved;
             }
-            Context::Cue { music } => {
+            Context::Cue { music, .. } => {
                 let saved = self.cue;
                 self.cue = true;
                 self.walk(music);
