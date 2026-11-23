@@ -1554,6 +1554,10 @@ impl Parser<'_> {
 
     fn parse_grace(&mut self) -> Result<()> {
         self.pos += 1;
+        // `read_note()` enregistre les altérations explicites dans l'état de
+        // mesure (ABC 2.1 §4.2). Un `^c` dans `{^cde}` ne concerne que la note
+        // d'agrément : le restaurer empêche le `c` suivant d'hériter du dièse.
+        let accidental = self.voice().accidental.clone();
         let mut notes = Vec::new();
         loop {
             self.skip_spaces();
@@ -1593,6 +1597,7 @@ impl Parser<'_> {
                 }
             }
         }
+        self.voice().accidental = accidental;
         match &mut self.voice().grace {
             Some(existing) => existing.notes.extend(notes),
             None => self.voice().grace = Some(GraceData { notes }),
