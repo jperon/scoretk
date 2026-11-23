@@ -1476,3 +1476,21 @@ présents (ordre du fichier).
 
 Mesure ciblée : `Angels_Carol__John_Rutter` 3 → **0** ligne canonique
 (core-identique), 0 perte. Test réduit : `note_head_type.rs`.
+
+## 45. Harmonies par piste exacte (2026-11-23)
+
+`Adios_Muchachos` avait 7 harmonies surnuméraires (81 lignes). Le C++
+`segmentHarmonies` (`exportmusicxml.cpp:6667-6676`) cherche les annotations
+par piste exacte (`seg->findAnnotations(ElementType::HARMONY, track, track)`),
+et `writeMeasureTracks` (`:8498-8510`) n'appelle `harmonies` que pour une piste
+portant un élément : une harmonie attachée à une voix sans note n'est jamais
+écrite. Le portage filtrait par portée et n'appelait `harmonies` que pour la
+première piste du segment (`annotation_track`), ce qui exportait les harmonies
+de la voix vide et perdait celles de la voix 2.
+
+`segment_harmonies` filtre désormais `entry.track == track`, et `harmonies`
+est appelé pour chaque piste portant un élément. La voix 2 écrit donc ses
+propres harmonies (`harmonie_de_la_voix_2_est_exportee_avec_sa_note`).
+
+Mesure ciblée : `Adios_Muchachos` 81 → **0** ligne canonique (core-identique),
+0 perte. Tests réduits : `tests/harmony_voices.rs`.

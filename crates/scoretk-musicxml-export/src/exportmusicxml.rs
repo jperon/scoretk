@@ -1130,8 +1130,12 @@ impl<'a> Context<'a> {
                             spanners.next_instrument += 1;
                         }
                     }
+                    // `writeMeasureTracks` appelle `harmonies` pour **chaque**
+                    // piste portant un élément, avec cette piste : une harmonie
+                    // attachée à la voix 2 est écrite par la boucle de cette
+                    // voix, pas par celle de la voix 1.
+                    self.harmonies(out, measure, segment, staff_id, track);
                     if annotation_track(segment, staff_id) == Some(track) {
-                        self.harmonies(out, measure, segment, staff_id, track);
                         self.annotations(out, segment, staff_id, xml_staff, false);
                         if let SegmentItem::ChordRest(chord_rest) = item {
                             figured_bass::write(
@@ -2566,7 +2570,7 @@ impl Context<'_> {
         staff_id: StaffId,
         track: Track,
     ) {
-        self.segment_harmonies(out, segment, staff_id, Tick::ZERO);
+        self.segment_harmonies(out, segment, staff_id, track, Tick::ZERO);
         for next in &measure.segments {
             if !next.kind.is_chord_rest_type() || next.tick <= segment.tick {
                 continue;
@@ -2574,14 +2578,27 @@ impl Context<'_> {
             if next.element(track).is_some() {
                 break;
             }
-            self.segment_harmonies(out, next, staff_id, next.tick - segment.tick);
+            self.segment_harmonies(out, next, staff_id, track, next.tick - segment.tick);
         }
     }
 
     /// Écrit les accords d'un segment avec le décalage donné.
-    fn segment_harmonies(&self, out: &mut Out, segment: &Segment, staff_id: StaffId, offset: Tick) {
+    ///
+    /// `segmentHarmonies` cherche les annotations sur la piste exacte
+    /// (`seg->findAnnotations(ElementType::HARMONY, track, track)`) : une
+    /// harmonie attachée à une voix sans note n'est jamais écrite, car la
+    /// boucle du C++ ne visite que les pistes portant un élément
+    /// (`writeMeasureTracks`). Filtrer par portée seule les exportait à tort.
+    fn segment_harmonies(
+        &self,
+        out: &mut Out,
+        segment: &Segment,
+        staff_id: StaffId,
+        track: Track,
+        offset: Tick,
+    ) {
         for entry in &segment.annotations {
-            if entry.track.staff() != staff_id {
+            if entry.track != track || entry.track.staff() != staff_id {
                 continue;
             }
             if let Annotation::Harmony(harmony) = &entry.annotation {
