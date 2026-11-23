@@ -18,10 +18,11 @@
 
 """Canonical GABC truth: pitch with clef, syllables, neumes, bars, signs.
 
-MusicXML and MIDI are **not** the truth for GABC. GABC has no fixed durations
-(`docs/agents/format-ref/gabc.md` §7): gabctk exports MusicXML through ABC and
-exports MIDI with ``int(duree)`` truncation (`gabctk.py:1390-1471`), so their
-onsets differ by construction. What the format actually carries is:
+MusicXML and MIDI are **not** the truth for GABC. Separation bars divide
+*sections*, not metrical measures: Gregorio's syntax defines no time
+signature, no measure numbering and no fixed note duration
+(`doc/Gabc.tex:742-845`); the only rhythmic information is neume shape,
+punctum mora, episemata and bar weight. What the format actually carries is:
 
 1. a sequence of pitch positions **resolved by the clef**;
 2. the syllable text each neume is attached to;
@@ -38,11 +39,11 @@ C = 0 for both C and F clefs (verified on Gregorio's dump line
 ``initial_key 5 (c3)`` and on ``f3``). The absolute origin is arbitrary: only
 equality between references matters.
 
-Three independent producers of the same canonical form are provided:
+Two readers of the same canonical form are provided:
 
-* :func:`parse_source` — our own reader of the original ``.gabc`` (sanity);
-* :func:`parse_dump` — Gregorio's own parser, via ``gregorio -F dump``;
-* :func:`parse_gabctk` — gabctk's re-emitted ``-m`` notation (candidate).
+* :func:`parse_source` — our own reader of the original ``.gabc``;
+* :func:`parse_dump` — Gregorio's own parser, via ``gregorio -F dump``, the
+  reference implementation of the format.
 
 Only downloaded *text* is parsed here; no downloaded script is imported.
 """
@@ -145,32 +146,6 @@ def parse_source(text: str) -> dict:
     return canon(notes, bars, [s for s in syllables if s], signs)
 
 
-def parse_gabctk(text: str, lyrics: str = "") -> dict:
-    """Parse gabctk's ``-m`` re-emission (one whitespace token per neume)."""
-    notes, bars, syllables, signs = [], [], [], []
-    clef, neume = "c4", 0
-    for token in text.split():
-        token = BRACKET.sub("", token)
-        for found in CLEF.finditer(token):
-            clef = found.group(0)
-        token = CLEF.sub("", token)
-        for found in BAR.finditer(token):
-            bare = re.sub(r"0$", "", found.group(0))
-            bars.append(BAR_NAMES.get(bare, bare))
-        token = BAR.sub("", token)
-        if not PITCH.search(token):
-            continue
-        neume += 1
-        for char in token:
-            if PITCH.fullmatch(char):
-                notes.append({"step": step_of(char, clef), "letter": char.lower(), "neume": neume})
-            elif char in SIGNS and char != "_":
-                # `_` is an automatic episema: Gregorio resolves its placement
-                # in layout and does not dump it as an explicit sign.
-                signs.append(SIGN_NAMES[char])
-    return canon(notes, bars, syllables, signs, _clean_text(lyrics))
-
-
 def parse_dump(text: str) -> dict:
     """Parse ``gregorio -f gabc -F dump`` into the same canonical form."""
     notes, bars, syllables, signs = [], [], [], []
@@ -230,23 +205,9 @@ def _steps(c: dict) -> list[int]:
     return [n["step"] for n in c["notes"]]
 
 
-def _groups(c: dict) -> list[tuple]:
-    out, current, last = [], [], None
-    for note in c["notes"]:
-        if last is None or note["neume"] != last:
-            if current:
-                out.append(tuple(current))
-            current, last = [], note["neume"]
-        current.append(note["step"])
-    if current:
-        out.append(tuple(current))
-    return out
-
-
 def compare(a: dict, b: dict) -> dict:
     """Compare two canonical forms; the first divergence is classified."""
     sa, sb = _steps(a), _steps(b)
-    ga, gb = _groups(a), _groups(b)
     ca, cb = Counter(sa), Counter(sb)
     checks = {
         "pitch_multiset": ca == cb,
@@ -255,8 +216,8 @@ def compare(a: dict, b: dict) -> dict:
         "text": (not a["text"] or not b["text"]) or a["text"] == b["text"],
         "signs": Counter(a["signs"]) == Counter(b["signs"]),
     }
-    # Gregorio dumps layout glyphs, not GABC's parenthesised neume groups:
-    # grouping is compared between the source and gabctk, not against the dump.
+    # Gregorio dumps layout glyphs, which are a different granularity from
+    # GABC's parenthesised neume groups; grouping is not part of this check.
     core = all(checks[k] for k in ("pitch_multiset", "pitch_sequence", "bars", "text"))
     premier = next((k for k, ok in checks.items() if not ok), "")
     return {
@@ -267,14 +228,4 @@ def compare(a: dict, b: dict) -> dict:
         "ref_notes": len(sa),
         "test_notes": len(sb),
         "premier_divergence": premier,
-    }
-
-
-def compare_grouping(a: dict, b: dict) -> dict:
-    """Neume grouping of two readers of the same GABC (not Gregorio's glyphs)."""
-    ga, gb = _groups(a), _groups(b)
-    return {
-        "neume_grouping": ga == gb,
-        "ref_notes": len(a["notes"]),
-        "test_notes": len(b["notes"]),
     }

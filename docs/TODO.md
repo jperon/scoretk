@@ -30,9 +30,9 @@ symmetric `<fmt>-import` / `<fmt>-export` facade features, and wasm — with the
 specification read first and an oracle plus a controlled measurement from day
 one.
 
-1. **GABC** — import and export. Mapping to modern notation based on gabctk
-   (`jperon/gabctk`, the author's own project); Gregorio's grammar as the
-   syntax reference.
+1. **GABC** — import and export. Gregorio's grammar and `gregorio -F dump`
+   are the sole syntax and truth references; any mapping to modern notation
+   must be derived from Gregorio's structures, not from another converter.
 2. **MEI** — import and export. Port MuseScore 4.7.4's MEI module.
 3. **Capella** — import only. Port MuseScore 4.7.4's Capella import.
 4. **Guitar Pro** — import only. Port MuseScore 4.7.4's Guitar Pro import.

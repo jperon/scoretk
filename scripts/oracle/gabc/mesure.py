@@ -16,22 +16,22 @@
 # this program. If not, see the LICENSE file at the root of this repository or
 # <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""GABC oracle: Gregorio is the reference, gabctk is characterised against it.
+"""GABC oracle: Gregorio is the only reference.
 
-GABC has no fixed durations (`docs/agents/format-ref/gabc.md` §7), so comparing
-gabctk's MusicXML (derived from ABC) with its MIDI (``int(duree)`` truncation)
-cannot be a sanity test: their onsets differ by construction. The truth is
-defined by :mod:`canonical`: pitch **with the clef applied**, syllable text,
-neume grouping and separation bars; rhythmic signs are an optional N2.
+GABC separates *sections*, not metrical measures: Gregorio's syntax defines
+no time signature, no measure numbering and no fixed note duration
+(`doc/Gabc.tex:742-845`). MIDI/XML onset comparisons therefore cannot be a
+sanity test. The truth is defined by :mod:`canonical`: pitch **with the clef
+applied**, syllable text and separation bars; rhythmic signs are optional N2.
 
-Primary reference: **Gregorio's own parser**, ``gregorio -f gabc -F dump``.
-Secondary reference: our own reader of the source (sanity control).
-Candidate: gabctk's re-emitted notation (``-m`` plus ``-e`` for the lyrics).
-Where they disagree, Gregorio prevails and the divergence is classified by
-the failing check in :func:`canonical.compare`.
+Two measurements are made, both against Gregorio's own parser:
 
-The downloaded sources are data; only the two recorded executables run, each
-in its own build/venv directory. gabctk is invoked with ``python3 -I``.
+* Gregorio against itself (two runs, SHA-256 of the dumps) — must be 100 %;
+* our own reader of the source against ``gregorio -f gabc -F dump`` — the
+  remaining divergences are ours to fix, classified by failing check.
+
+The downloaded source is data; only the recorded Gregorio binary is run,
+in its own build directory. Nothing here is a converter under test yet.
 """
 
 from __future__ import annotations
@@ -101,18 +101,6 @@ def gregorio_ref(binary: Path, src: Path, work: Path, name: str = "ref") -> dict
     return {"ok": True, "dump": dump, "sha": _sha(dump)}
 
 
-def gabctk_ref(python: str, gabctk: Path, src: Path, work: Path) -> dict:
-    """Run gabctk once for its re-emitted notation and lyric text."""
-    work.mkdir(parents=True, exist_ok=True)
-    notation, lyrics = work / "cand.gabc", work / "cand.txt"
-    code, err = _run(
-        [python, "-I", str(gabctk), "-i", str(src), "-m", str(notation), "-e", str(lyrics)]
-    )
-    if code != 0 or not notation.exists():
-        return {"ok": False, "code": code, "erreur": _last_error(err)}
-    return {"ok": True, "notation": notation, "lyrics": lyrics}
-
-
 def measure_one(item: tuple[str, Path], args) -> dict:
     ident, src = item
     work = args.out / "travail" / ident
@@ -131,19 +119,8 @@ def measure_one(item: tuple[str, Path], args) -> dict:
 
     source = canonical.parse_source(src.read_text(encoding="utf-8", errors="replace"))
     releve["cmp_source"] = canonical.compare(source, canon_ref)
-
-    cand = gabctk_ref(args.python, args.gabctk, src, work)
-    if not cand["ok"]:
-        releve.update(cand)
-        return releve
-    canon_cand = canonical.parse_gabctk(
-        cand["notation"].read_text(encoding="utf-8", errors="replace"),
-        cand["lyrics"].read_text(encoding="utf-8", errors="replace"),
-    )
-    releve["cmp_grouping"] = canonical.compare_grouping(source, canon_cand)
-    releve["cmp_gabctk"] = canonical.compare(canon_cand, canon_ref)
-    releve["gabctk_defauts"] = [
-        k for k, ok in releve["cmp_gabctk"].items()
+    releve["divergences"] = [
+        k for k, ok in releve["cmp_source"].items()
         if k in ("pitch_multiset", "pitch_sequence", "bars", "text", "signs") and not ok
     ]
     return releve
@@ -156,26 +133,20 @@ def selftest(args) -> None:
     src.write_text(SELFGABC, encoding="utf-8")
     ref = gregorio_ref(args.gregorio, src, tmp / "ref")
     assert ref["ok"], f"Gregorio failed selftest: {ref}"
-    cand = gabctk_ref(args.python, args.gabctk, src, tmp / "cand")
-    assert cand["ok"], f"gabctk failed selftest: {cand}"
     a = canonical.parse_dump(ref["dump"].read_text(encoding="utf-8"))
-    b = canonical.parse_gabctk(
-        cand["notation"].read_text(encoding="utf-8"),
-        cand["lyrics"].read_text(encoding="utf-8"),
-    )
+    b = canonical.parse_source(SELFGABC)
     result = canonical.compare(b, a)
     assert result["core_exact"], result
-    assert canonical.compare(canonical.parse_source(SELFGABC), a)["core_exact"]
-    print(f"selftest : OK ({result['core_exact']=}, signs={result['signs']})")
+    again = gregorio_ref(args.gregorio, src, tmp / "again")
+    assert again.get("ok") and again["sha"] == ref["sha"], "Gregorio is not deterministic"
+    print(f"selftest : OK (core={result['core_exact']}, signs={result['signs']}, deterministic=True)")
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--liste", type=Path)
     p.add_argument("--out", type=Path, required=True)
-    p.add_argument("--gabctk", type=Path, required=True)
     p.add_argument("--gregorio", type=Path, required=True, help="built gregorio binary")
-    p.add_argument("--python", default=sys.executable, help="Python for -I (venv)")
     p.add_argument("--verifier-determinisme", action="store_true")
     p.add_argument("--jobs", type=int, default=min(2, os.cpu_count() or 1))
     p.add_argument("--selftest", action="store_true")
@@ -196,38 +167,35 @@ def main() -> None:
         for releve in releves:
             handle.write(json.dumps(releve, sort_keys=True, ensure_ascii=False, default=str) + "\n")
 
-    ok = [r for r in releves if r.get("cmp_gabctk")]
-    source_exact = sum(1 for r in releves if r.get("cmp_source", {}).get("core_exact"))
-    core = sum(1 for r in ok if r["cmp_gabctk"]["core_exact"])
-    signs = sum(1 for r in ok if r["cmp_gabctk"]["signs"])
-    grouping = sum(1 for r in releves if r.get("cmp_grouping", {}).get("neume_grouping"))
+    valides = [r for r in releves if "sha_dump" in r]
+    deterministes = sum(1 for r in valides if r.get("gregorio_deterministe"))
+    exacts = sum(1 for r in valides if r.get("cmp_source", {}).get("core_exact"))
     resume = [
         "# GABC oracle — Gregorio reference",
         "",
-        f"Files: {len(releves)} | Gregorio refs: {sum(1 for r in releves if 'sha_dump' in r)} | "
-        f"our reader == Gregorio: {source_exact} | "
-        f"gabctk core == Gregorio: {core} | gabctk signs == Gregorio: {signs} | "
-        f"gabctk grouping == source: {grouping}",
+        f"Files: {len(releves)} | Gregorio refs: {len(valides)} | "
+        f"Gregorio deterministic: {deterministes}/{len(valides)} | "
+        f"our reader core-exact: {exacts}/{len(valides)}",
         "",
-        "Truth: pitch with clef applied, syllable text, neume grouping, bars "
-        "(`canonical.py`); signs are optional N2. MIDI/MusicXML are not truth.",
+        "Truth: pitch with clef applied, syllable text and bars "
+        "(`canonical.py`); signs are optional N2. Gregorio is the only reference.",
         "",
-        "| id | source==greg | gabctk==greg | grouping | first divergence | gabctk defects |",
+        "| id | gregorio | deterministic | source core-exact | first divergence | signs |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
     for r in releves:
-        c = r.get("cmp_gabctk", {})
+        c = r.get("cmp_source", {})
         resume.append(
-            f"| {r['id']} | {'yes' if r.get('cmp_source', {}).get('core_exact') else 'no'} | "
+            f"| {r['id']} | {'ok' if 'sha_dump' in r else 'FAIL'} | "
+            f"{'yes' if r.get('gregorio_deterministe') else 'no'} | "
             f"{'yes' if c.get('core_exact') else 'no'} | "
-            f"{'yes' if r.get('cmp_grouping', {}).get('neume_grouping') else 'no'} | "
             f"{c.get('premier_divergence', r.get('erreur', ''))} | "
-            f"{','.join(r.get('gabctk_defauts', []))} |"
+            f"{'yes' if c.get('signs') else 'no'} |"
         )
     (args.out / "resume.md").write_text("\n".join(resume) + "\n", encoding="utf-8")
     print(
-        f"files={len(releves)} source_ok={source_exact} "
-        f"gabctk_core={core}/{len(ok)} gabctk_signs={signs}/{len(ok)} grouping={grouping}/{len(releves)}"
+        f"files={len(releves)} gregorio={len(valides)} "
+        f"deterministic={deterministes}/{len(valides)} source_core={exacts}/{len(valides)}"
     )
 
 

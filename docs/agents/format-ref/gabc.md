@@ -1,14 +1,14 @@
 # GABC — condensed reference for coding agents
 
-Target: **Gregorio's GABC** (the syntax used by Gregorio and by
-`jperon/gabctk`), as specified in the locally fetched Gregorio sources at
+Target: **Gregorio's GABC**, as specified in the locally fetched Gregorio sources at
 commit `b63f074253bd2f6b837f9f9778bba299ac139ec0`. Local sources:
 `specs/README.md` § GABC / Gregorian chant;
 `specs/gabc/gregorio/doc/Gabc.tex` (cited below as `Gabc.tex:<line>`), the
 grammar `specs/gabc/gregorio/src/gabc/gabc-score-determination.y`
-(`grammar:<line>`) and lexer `.l` (`lexer:<line>`); gabctk tag `v240107` is
-the practical parser used by the oracle. Licence: Gregorio GPL-3.0-or-later
-(`gregorio/COPYING.md`), gabctk GPL-2.0-or-later (`gabctk/LICENSE`). This is
+(`grammar:<line>`) and lexer `.l` (`lexer:<line>`), plus Gregorio's dump
+writer (`src/dump/dump.c`) and clef/key rules (`src/struct.c`). The oracle
+uses `gregorio -f gabc -F dump` as its only reference. Licence: Gregorio
+GPL-3.0-or-later (`gregorio/COPYING.md`). This is
 an original summary, not copied spec text. Companion:
 [GABC ↔ pivot model](../format-mapping/gabc.md). No scoretk reader/writer
 exists yet (phase 0).
@@ -82,7 +82,8 @@ range depends on `staff-lines`: 2 lines → `a`–`i` (`:415-416`), 3 → `a`–
 lowercase letter is a *punctum quadratum*; uppercase is a *punctum
 inclinatum*, with optional `0`/`1`/`2` for leaning direction
 (`:452-468`). This is why any mapping to concert pitch is **clef-dependent**
-(`gabctk.py:1196-1272`).
+(`Gabc.tex:847-870`; Gregorio's key rule `src/struct.c:1273-1288` and clef
+changes `src/gabc/gabc-score-determination.c:89-100`).
 
 ## 5. Neume shapes (`Gabc.tex:452-622`)
 
@@ -126,36 +127,39 @@ Bars: `` ` `` virgula, `` `0 ``, `^` divisio minimis, `,` divisio minima,
 Bars separate **sections**, not metrical measures: GABC has **no time
 signature, no measure numbering and no fixed note durations**. The only
 rhythmic information is the neume shape, punctum mora, episemata and bar
-weight (`:742-799`, `:801-845`). A converter that assigns durations must
-state the rule it used; gabctk does so with explicit constants
-(`gabctk.py:34-36`) and per-bar padding (`:902-914`).
+weight (`:742-799`, `:801-845`). A converter that assigns durations is
+making a choice external to GABC and must state the rule it used; Gregorio
+itself keeps staff positions and signs, not durations (`src/struct.h:809-813`,
+`src/dump/dump.c:78-88,435-455`).
 
 ## 8. Pitfalls for implementers
 
 1. **Spaces are music** in the notation section (`Gabc.tex:60-61,668-687`):
    dropping them changes neume grouping and therefore the derived shape.
-2. `z` is not a note: it is a line break/custos (`Gabc.tex:872-906`); gabctk
-   models it as `Fin` (`gabctk.py:746,946-954`).
+2. `z` is not a note: it is a line break/custos (`Gabc.tex:872-906`); the
+   grammar treats `)`, spaces and `|` as structural tokens, not pitches
+   (`grammar:854-925`, `lexer:386-401`).
 3. `w` after a pitch is a quilisma, `~` a liquescent, `'` an ictus, `_` an
    episema — all are signs attached to the preceding note, not separate
-   notes (`gabctk.py:992-1005`).
+   notes (`Gabc.tex:452-490,702-797`; `src/dump/dump.c:358-455`).
 4. Two-note primitives (`gf` flexus, `gh` pes) are one neume but two pitches;
    the GABC letter sequence, not the glyph count, defines the note count
    (`Gabc.tex:556-579,610-622`).
 5. Bracketed `[…]` material is Gregorio layout/tuning data or verbatim TeX,
-   not notes; gabctk removes `[^\[\]]*` before parsing
-   (`gabctk.py:378-379`).
+   not notes (`Gabc.tex:689-700,908-931,1093-1118`); it is parsed as an
+   `attribute`/definition, not as a note (`grammar:741-769`).
 6. The same letter means different concert pitches under different clefs
-   (`Gabc.tex:410-413`, `gabctk.py:1220-1261`); a clef change mid-score must
-   reset the mapping (`gabctk.py:749-766,939-944`).
-7. `::` is two `:` in the grammar but one final bar in gabctk
-   (`gabctk.py:881-885`): do not count bar characters naively.
-8. `M: none` in gabctk's ABC header (`gabctk.py:38-48`) records the absence of
-   metre; a target format that requires a time signature must invent one and
-   report it.
-9. The `<sp>`/`<v>` markup in lyrics is typography, not lyrics: gabctk maps
-   a fixed subset to Unicode (`gabctk.py:639-652,681-694`) and strips `<v>`
-   (`:621-623,663-665`).
+   (`Gabc.tex:410-413,847-870`); Gregorio resolves this with the clef key
+   (`src/struct.c:1273-1288`) and adjusts pitch differences at clef changes
+   (`src/gabc/gabc-score-determination.c:89-100`).
+7. `::` is the divisio finalis, not two divisio maiores (`Gabc.tex:815-817`);
+   Gregorio emits one `B_DIVISIO_FINALIS` element (`src/dump/dump.c:805-821`):
+   do not count bar characters naively.
+8. GABC records no metre at all (`Gabc.tex:801-845`); a target format that
+   requires a time signature must invent one and report it as derived.
+9. The `<sp>`/`<v>` markup in lyrics is typography, not lyrics
+   (`Gabc.tex:297-309,345-378`): Gregorio records style boundaries and
+   characters separately in its dump (`src/dump/dump.c:41-66`).
 
 ## 9. Model implications
 

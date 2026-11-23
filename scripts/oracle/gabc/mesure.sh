@@ -16,29 +16,24 @@
 # this program. If not, see the LICENSE file at the root of this repository or
 # <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-# mesure.sh <liste|-> <out> <gabctk.py> [venv|-] [mesure.py options...]
-# The driver needs mido (nix-shell); gabctk runs in its own venv with -I.
-# Use '-' for the manifest together with --selftest.
+# mesure.sh <liste|-> <out> [gregorio-binary] [mesure.py options...]
+# Gregorio is the only reference. Use '-' for the manifest with --selftest.
 set -u
 D=$(
   dirname "$0"
 )
 L=$1
 O=$2
-G=$3
-V=${4:-}
-GREG=${GABC_GREGORIO:-/home/jacques/programmes/musique/specs/gabc/gregorio-buildtree/src/gregorio-6_2_0}
-shift 4 || true
-if [ -z "$V" ] || [ "$V" = "-" ]; then
-  V=$O/.venv
-fi
+G=${3:-/home/jacques/programmes/musique/specs/gabc/gregorio-buildtree/src/gregorio-6_2_0}
+case $G in
+  --*)
+    G=/home/jacques/programmes/musique/specs/gabc/gregorio-buildtree/src/gregorio-6_2_0
+    shift 2 || true
+    ;;
+  *) shift 3 || true ;;
+esac
 mkdir -p "$O"
-if [ ! -x "$V/bin/python" ]; then
-  python3 -m venv "$V"
+if [ "$L" = "-" ]; then
+  exec python3 "$D/mesure.py" --out "$O" --gregorio "$G" "$@"
 fi
-LISTE=""
-if [ "$L" != "-" ]; then
-  LISTE="--liste '$L'"
-fi
-exec nix-shell -p python3Packages.mido --run \
-  "python3 '$D/mesure.py' $LISTE --out '$O' --gabctk '$G' --gregorio '$GREG' --python '$V/bin/python' $*"
+exec python3 "$D/mesure.py" --liste "$L" --out "$O" --gregorio "$G" "$@"

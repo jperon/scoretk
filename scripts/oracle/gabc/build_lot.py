@@ -96,11 +96,12 @@ def chants(sql: Path):
 
 
 def ecrire_gabc(path: Path, incipit: str, mode: str, code: str) -> None:
-    """Write a self-contained .gabc file with the headers gabctk needs.
+    """Write a self-contained .gabc file with the headers Gregorio needs.
 
-    ``gabctk.py:391-393`` reads only ``name``; ``gabctk.py:1220-1261`` assumes
-    a four-line staff and a clef inside the notation, so ``staff-lines: 4``
-    is made explicit. ``mode`` is recorded when the database has one.
+    ``name`` is the required header (`doc/Gabc.tex:79-82`), ``language`` is
+    documented at `:93`, the four-line staff is the default (`:128,434`) and
+    is made explicit, and ``mode`` is recorded when the database has one
+    (`:94-102,156-173`).
     """
     head = [f"name: {incipit or 'Inconnu'};", "language: latin;", "staff-lines: 4;"]
     if mode and mode != "NULL":

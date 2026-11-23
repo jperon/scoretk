@@ -30,8 +30,8 @@ carry or silently drop?".
    not vendor them. **This has since been corrected (2026-11-23)**; the sources
    are now local, read-only and unversioned:
    - GABC: Gregorio commit `b63f074` (`doc/Gabc.tex:21-742`, grammar in
-     `src/gabc/gabc-score-determination.y`) and gabctk tag `v240107`
-     (`40b58b62`, GPL-2.0-or-later);
+     `src/gabc/gabc-score-determination.y`, structures in `src/struct.h`,
+     clef keys in `src/struct.c:1273-1288`, dump in `src/dump/dump.c`);
    - MEI: Guidelines/schema **5.1** (`mei/cmn.html`, `mei/mei-all-5.1.rng`,
      ECL-2.0 for the schema; the Guidelines' licence is not stated on the
      retrieved pages);
@@ -311,10 +311,12 @@ report. On wasm, add an **additive** `convertDetailed(...)` returning
 
 ### 7.1 GABC (first, import and export)
 
-- **Source evidence (now local, §1.4):** `docs/TODO.md:33-35` chooses
-  `jperon/gabctk` for the mapping and Gregorio's grammar for syntax. Both are
-  now present: `gabc/gabctk` at tag `v240107` (`40b58b62`) and Gregorio at
-  `b63f074`. The normative syntax is `gabc/gregorio/doc/Gabc.tex:21-742`:
+- **Source evidence (now local, §1.4):** `docs/TODO.md:33-35` designates
+  Gregorio as the syntax reference, and its parser is the only reference of
+  truth (`docs/agents/gabc.md` §4). The normative source is
+  `gabc/gregorio/doc/Gabc.tex:21-742`, with the grammar in
+  `src/gabc/gabc-score-determination.{y,l}` and clef/key rules in
+  `src/struct.c:1273-1288`:
   file structure `:36`, headers `:67` (`office-part` at `:141`), note syntax
   `:403` (pitch letters `a`–`n`/`p`), one-note neumes `:452`, complex neumes
   `:556`, neume fusion `:603`, rhythmic signs `:742` (punctum mora `.`, ictus
