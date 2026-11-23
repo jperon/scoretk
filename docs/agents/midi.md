@@ -3692,3 +3692,46 @@ both go from 99.99 % to **100.00 %**; no file grows by more than 100 B.
 The 17 remaining non-exact files are all `Veni veni Emmanuel` / `Once in
 royal David's city` instrument-channel cases (tick 22 080 / 117 840), left
 aside as decided.
+
+## Instrument channel table: the completed port (2026-11-23)
+
+The two previously rejected paths (see above) are now superseded: the model
+really does keep the full channel table, **and** the `.mscx` writer writes it
+back faithfully, so the full-struct round trip stays green.
+
+- `crates/scoretk-core/src/model/instrument_channel.rs` — new
+  `InstrumentChannel { name, program, bank, midi_port, midi_channel, mute,
+  solo }`, ported from `InstrChannel` (`instrument.h:79-139`) and
+  `TRead::read(InstrChannel*)` (`read400/tread.cpp:926-1020`,
+  `read500/tread.cpp:1144-1238`). `Instrument::channels` is filled by both
+  readers and by MusicXML `<midi-instrument>` / `<midi-device port>`
+  (`exportmusicxml.cpp:7939-7947`).
+- `write_instrument` (`write/twrite.rs:~990`) now writes every stored channel
+  with its name, program, HBANK/LBANK controllers, port and channel, instead
+  of regenerating `channel-{index}`. `TWrite::write(InstrChannel*)`
+  (`write/twrite.cpp:2067-2122`) is the reference. The legacy
+  `Instrument.midi_*` fields still override channel 0 so callers that mutate
+  them (test `port_midi.rs`) keep working, and a 3.x program inferred from the
+  instrument id is preserved.
+- `ChannelMap::secondary` (`render.rs:423-480`) feeds `fixup_midi` every
+  explicit channel of the part, per `exportmidi.cpp:248-255,304-308` and
+  `MasterScore::updateMidiMapping` (`midimapping.cpp:259-340`). Channels
+  without an explicit `<midiChannel>` are ignored rather than invented.
+
+Reduced test: `restrike_sur_tous_les_canaux_de_la_partie`
+(`tests/fixup_midi.rs`), from the `Veni` tick 22 080 case (two trumpet
+channels, restrike off on both ch0 and ch1), checked against MuseScore 4.7.4.
+
+Controlled measurement, same oracle and refs, writer only:
+
+| Lot | Exact before | Exact after | Gains | Losses | Mean size |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| corpus | 17/17 | **17/17** | 0 | 0 | 281 B |
+| `.mscz` 171 | 154/171 | **171/171 (100 %)** | **17** | **0** | 18 220 → 18 586 B |
+
+All 17 remaining files (`Veni` ×9, `Once in royal` ×8) became exact; N1/N2
+stay at 100.00 %. 44 files grow by more than 100 B because MuseScore itself
+writes the restrike off on every channel — our output is still smaller than
+the reference for every file in the lot (mean −10 966 B, the historical gap
+being meta events). The `.mscx`/`.mscz` round trips, MusicXML e2e corpus and
+the full workspace test suite are unchanged and green.

@@ -1005,7 +1005,15 @@ fn read_instrument_change(
         midi_program: data.program,
         midi_channel: data.channel,
         channel_count: 1,
-        midi_port: None,
+        channels: data.channel.map_or_else(Vec::new, |channel| {
+            vec![scoretk_core::model::InstrumentChannel {
+                program: data.program,
+                midi_port: data.port,
+                midi_channel: Some(channel),
+                ..scoretk_core::model::InstrumentChannel::default()
+            }]
+        }),
+        midi_port: data.port,
         volume: data.volume,
         pan: data.pan,
         midi_articulations: Vec::new(),

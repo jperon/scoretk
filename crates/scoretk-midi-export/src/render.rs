@@ -397,9 +397,7 @@ pub(crate) fn render(
         .enumerate()
         .map(|(index, _)| {
             let mut canaux = vec![channels.notes[index]];
-            if let Some(harmony) = channels.harmony[index] {
-                canaux.push(harmony);
-            }
+            canaux.extend(channels.secondary[index].iter().copied());
             canaux
         })
         .collect();
@@ -425,6 +423,11 @@ struct ChannelMap {
     /// la fois comme note écrite et comme accord sans que `fixupMIDI` ne
     /// tronque l'une des deux.
     harmony: Vec<Option<u8>>,
+    /// Canaux MIDI secondaires déclarés par l'instrument (`open`/`mute`,
+    /// `arco`/`pizzicato`…) en plus du canal des notes et du canal `harmony`.
+    /// `exportmidi.cpp:248-255` parcourt `Instrument::channel()` et écrit le
+    /// restrike (`:304-308`) sur chacun d'eux.
+    secondary: Vec<Vec<u8>>,
 }
 
 /// Canaux MIDI de chaque partie : canal déclaré, sinon rang de la partie.
@@ -437,7 +440,7 @@ fn channels(score: &Score) -> ChannelMap {
         .collect();
     let used: std::collections::BTreeSet<u8> = notes.iter().copied().collect();
     let mut free = (0u8..16).filter(|channel| *channel != 9 && !used.contains(channel));
-    let harmony = score
+    let harmony: Vec<Option<u8>> = score
         .parts
         .iter()
         .enumerate()
@@ -445,7 +448,36 @@ fn channels(score: &Score) -> ChannelMap {
             part_has_harmony(score, part).then(|| free.next().unwrap_or(notes[index]))
         })
         .collect();
-    ChannelMap { notes, harmony }
+    // Canaux explicitement attribués dans le fichier (`<midiChannel>`).
+    // `MasterScore::updateMidiMapping` (`midimapping.cpp:259-340`) donne à
+    // chaque `<Channel>` son numéro MIDI ; les canaux sans numéro explicite
+    // sont alloués librement et ne peuvent pas être retrouvés ici, on les
+    // ignore plutôt que d'en inventer un.
+    let secondary: Vec<Vec<u8>> = score
+        .parts
+        .iter()
+        .enumerate()
+        .map(|(index, part)| {
+            let mut canaux: Vec<u8> = part
+                .instrument
+                .channels
+                .iter()
+                .filter_map(|channel| channel.midi_channel)
+                .filter(|channel| *channel != notes[index])
+                .collect();
+            if let Some(harmony_channel) = harmony[index] {
+                if harmony_channel != notes[index] && !canaux.contains(&harmony_channel) {
+                    canaux.push(harmony_channel);
+                }
+            }
+            canaux
+        })
+        .collect();
+    ChannelMap {
+        notes,
+        harmony,
+        secondary,
+    }
 }
 
 /// Vrai si la partie porte au moins un `<Harmony>` (`Part::harmonyCount`,

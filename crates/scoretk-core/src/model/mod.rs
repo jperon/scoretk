@@ -78,6 +78,7 @@ pub mod figured_bass;
 pub mod fraction;
 pub mod hairpin;
 pub mod ids;
+pub mod instrument_channel;
 pub mod lyrics;
 pub mod measure;
 pub mod mmrest;
@@ -109,6 +110,7 @@ pub use figured_bass::{FiguredBass, FiguredBassContLine, FiguredBassItem, Figure
 pub use fraction::{Fraction, Tick};
 pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
+pub use instrument_channel::InstrumentChannel;
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::{Measure, MeasureRepeatMark};
 pub use mmrest::MultiMeasureRests;

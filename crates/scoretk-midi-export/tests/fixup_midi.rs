@@ -120,3 +120,80 @@ fn un_unisson_sur_deux_portees_est_restrike() {
     );
     assert_eq!(pistes[1], vec![(55, 0, 960)]);
 }
+
+/// Partition de `mscx()` avec deux canaux déclarés (`open` en ch0, `mute`
+/// en ch1), comme les trompettes de `Veni veni Emmanuel` au tick 22 080.
+fn mscx_deux_canaux() -> &'static str {
+    r#"<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="4.10">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <Staff id="2"><StaffType group="pitched"><name>stdNormal</name></StaffType></Staff>
+      <trackName>Trumpet</trackName>
+      <Instrument id="brass.trumpet">
+        <longName>Trumpet</longName><shortName>Tr.</shortName><trackName>Trumpet</trackName>
+        <instrumentId>brass.trumpet</instrumentId>
+        <Channel name="open"><program value="56"/><midiPort>0</midiPort><midiChannel>0</midiChannel></Channel>
+        <Channel name="mute"><program value="59"/><midiPort>0</midiPort><midiChannel>1</midiChannel></Channel>
+      </Instrument>
+    </Part>
+    <Staff id="1">
+      <Measure>
+        <voice>
+          <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+          <Chord><durationType>eighth</durationType><Note><pitch>55</pitch><tpc>15</tpc></Note></Chord>
+          <Chord><durationType>eighth</durationType><Note><pitch>63</pitch><tpc>11</tpc></Note></Chord>
+          <Chord><durationType>quarter</durationType><Note><pitch>58</pitch><tpc>12</tpc></Note></Chord>
+          <Chord><durationType>half</durationType><Note><pitch>55</pitch><tpc>15</tpc></Note></Chord>
+        </voice>
+      </Measure>
+    </Staff>
+    <Staff id="2">
+      <Measure>
+        <voice>
+          <Chord><durationType>whole</durationType><Note><pitch>55</pitch><tpc>15</tpc></Note></Chord>
+        </voice>
+      </Measure>
+    </Staff>
+  </Score>
+</museScore>
+"#
+}
+
+/// Extinctions `(canal, tick)` de la hauteur 55 sur la première piste.
+fn extinctions_55(mscx: &str) -> Vec<(u8, u32)> {
+    let conteneur = MsczContainer::from_bytes(mscx.as_bytes()).expect("conteneur");
+    let partition = scoretk_musescore_import::read::read_score(&conteneur).expect("lecture");
+    let octets = scoretk_midi_export::write_midi(&partition).expect("écriture MIDI");
+    let smf = Smf::parse(&octets).expect("SMF valide");
+    let mut tick = 0u32;
+    let mut resultat = Vec::new();
+    for evenement in smf.tracks.first().expect("piste") {
+        tick += evenement.delta.as_int();
+        if let TrackEventKind::Midi {
+            message: MidiMessage::NoteOn { key, vel },
+            channel,
+        } = evenement.kind
+        {
+            if key.as_int() == 55 && vel.as_int() == 0 {
+                resultat.push((u8::from(channel), tick));
+            }
+        }
+    }
+    resultat.sort();
+    resultat
+}
+
+#[test]
+fn restrike_sur_tous_les_canaux_de_la_partie() {
+    // Référence MuseScore 4.7.4 sur cette partition : le restrike du tick 0
+    // est écrit sur les deux canaux de la trompette (`exportmidi.cpp:304-308`
+    // boucle sur `Instrument::channel()`).
+    assert_eq!(
+        extinctions_55(mscx_deux_canaux()),
+        vec![(0, 0), (0, 1919), (1, 0)],
+        "restrike sur ch0 et ch1 au tick 0, puis extinction normale en ch1"
+    );
+}

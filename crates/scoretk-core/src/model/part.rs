@@ -79,6 +79,10 @@ pub struct Instrument {
     /// (`Instrument::channels()`). `rebuildMidiMapping` alloue un canal MIDI
     /// à chacun d'eux ; seul le premier est exporté dans `<midi-channel>`.
     pub channel_count: usize,
+    /// Canaux MIDI déclarés par l'instrument (`Instrument::channel()`,
+    /// `instrument.h:319`), dans l'ordre du fichier. Le premier porte
+    /// `midi_channel` / `midi_port` / `volume` / `pan`.
+    pub channels: Vec<super::InstrumentChannel>,
     /// Port MIDI du premier canal de l'instrument (`<Channel><midiPort>`, base
     /// zéro), tel que lu dans le fichier. MuseScore l'exporte dans
     /// `<midi-device port>` après l'avoir incrémenté d'un (`midiMapping::port`).
@@ -114,6 +118,7 @@ impl Instrument {
             midi_program: None,
             midi_channel: None,
             channel_count: 1,
+            channels: Vec::new(),
             midi_port: None,
             volume: None,
             pan: None,

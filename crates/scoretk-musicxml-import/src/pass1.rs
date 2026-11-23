@@ -54,6 +54,8 @@ pub struct InstrumentData {
     pub channel: Option<u8>,
     /// `<midi-program>` moins un, si présent.
     pub program: Option<u8>,
+    /// `<midi-device port>` moins un, si présent (`Instrument::midi_port`).
+    pub port: Option<u8>,
     /// Volume du canal (0-127), si présent.
     pub volume: Option<u8>,
     /// Panoramique du canal (0-127), si présent.
@@ -444,6 +446,13 @@ fn part_data(score_part: &Element, id: &str) -> PartData {
         instrument.program = midi
             .child_int("midi-program")
             .and_then(|value| u8::try_from(value.saturating_sub(1)).ok());
+        // `<midi-device port>` est un frère de `<midi-instrument>` et vaut
+        // `Instrument::midi_port + 1` (`exportmusicxml.cpp:7939-7947`).
+        instrument.port = score_part
+            .child("midi-device")
+            .and_then(|device| device.attribute("port"))
+            .and_then(|value| value.parse::<u8>().ok())
+            .and_then(|value| value.checked_sub(1));
         instrument.volume = midi
             .child_f64("volume")
             .map(|percent| (percent / 100.0 * 127.0).round().clamp(0.0, 127.0) as u8);

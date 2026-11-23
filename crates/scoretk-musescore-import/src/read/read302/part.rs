@@ -33,6 +33,52 @@ use scoretk_core::model::{
 };
 
 /// Lit un `<Part>` : portées déclarées, noms et instrument principal.
+/// Lit un `<Channel>` d'instrument (`TRead::read(InstrChannel*)`,
+/// `read400/tread.cpp:926-1020`).
+fn read_instrument_channel(node: &Node<'_>) -> scoretk_core::model::InstrumentChannel {
+    use scoretk_core::model::InstrumentChannel;
+    let mut channel = InstrumentChannel {
+        name: node.attr("name").unwrap_or("").to_owned(),
+        ..InstrumentChannel::default()
+    };
+    channel.program = node.child("program").and_then(|program| {
+        program
+            .attr_i32("value")
+            .or_else(|| program.int_text())
+            .and_then(|value| u8::try_from(value).ok())
+    });
+    let mut bank = 0u16;
+    let mut has_bank = false;
+    for controller in node.children_named("controller") {
+        let Some(value) = controller.attr_i32("value") else {
+            continue;
+        };
+        match controller.attr_i32("ctrl") {
+            Some(0) => {
+                bank = (bank & 0x7f) | ((value as u16) << 7);
+                has_bank = true;
+            }
+            Some(32) => {
+                bank = (bank & !0x7f) | ((value as u16) & 0x7f);
+                has_bank = true;
+            }
+            _ => {}
+        }
+    }
+    channel.bank = has_bank.then_some(bank);
+    channel.midi_port = node
+        .child("midiPort")
+        .and_then(Node::int_text)
+        .and_then(|value| u8::try_from(value).ok());
+    channel.midi_channel = node
+        .child("midiChannel")
+        .and_then(Node::int_text)
+        .and_then(|value| u8::try_from(value).ok());
+    channel.mute = node.child("mute").and_then(Node::int_text);
+    channel.solo = node.child("solo").and_then(Node::int_text);
+    channel
+}
+
 pub(crate) fn read_part(reader: &mut Reader, node: &Node) {
     let instrument_node = node.child("Instrument");
     let instrument = instrument_node
@@ -200,6 +246,7 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
         midi_program: None,
         midi_channel: None,
         channel_count: 1,
+        channels: Vec::new(),
         midi_port: None,
         volume: None,
         pan: None,
@@ -218,6 +265,12 @@ pub(crate) fn read_instrument(reader: &Reader, node: &Node) -> Instrument {
     // Tous les `<Channel>` comptent dans `rebuildMidiMapping` (canaux
     // secondaires compris) : ils décalent le canal exporté.
     instrument.channel_count = node.children_named("Channel").count().max(1);
+    // Table complète des canaux (`TRead::read(InstrChannel*)`,
+    // read400/tread.cpp:926-1020), y compris les canaux secondaires.
+    instrument.channels = node
+        .children_named("Channel")
+        .map(read_instrument_channel)
+        .collect();
     // Programme MIDI du premier canal sonore (`<Channel><program value>`).
     for channel in node.children_named("Channel") {
         if let Some(program) = channel.child("program") {

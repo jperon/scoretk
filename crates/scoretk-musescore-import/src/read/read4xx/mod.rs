@@ -133,6 +133,60 @@ impl TieLocation {
 }
 
 /// Index de la mesure contenant un tick.
+/// Lit un `<Channel>` d'instrument (`TRead::read(InstrChannel*)`,
+/// `read400/tread.cpp:926-1020`).
+fn read_instrument_channel(node: &Element) -> scoretk_core::model::InstrumentChannel {
+    use scoretk_core::model::InstrumentChannel;
+    let mut channel = InstrumentChannel {
+        name: node.attr("name").unwrap_or("").to_owned(),
+        ..InstrumentChannel::default()
+    };
+    channel.program = node.child("program").and_then(|program| {
+        program
+            .attr_i64("value")
+            .or_else(|| program.int())
+            .and_then(|value| u8::try_from(value).ok())
+    });
+    // `CTRL_HBANK`/`CTRL_LBANK` (`tread.cpp:953-961`) : banque =
+    // `(hbank << 7) + lbank`, dans cet ordre d'écriture.
+    let mut bank = 0u16;
+    let mut has_bank = false;
+    for controller in node.children_named("controller") {
+        let Some(value) = controller.attr_i64("value") else {
+            continue;
+        };
+        match controller.attr_i64("ctrl") {
+            Some(0) => {
+                bank = (bank & 0x7f) | ((value as u16) << 7);
+                has_bank = true;
+            }
+            Some(32) => {
+                bank = (bank & !0x7f) | ((value as u16) & 0x7f);
+                has_bank = true;
+            }
+            _ => {}
+        }
+    }
+    channel.bank = has_bank.then_some(bank);
+    channel.midi_port = node
+        .child("midiPort")
+        .and_then(Element::int)
+        .and_then(|value| u8::try_from(value).ok());
+    channel.midi_channel = node
+        .child("midiChannel")
+        .and_then(Element::int)
+        .and_then(|value| u8::try_from(value).ok());
+    channel.mute = node
+        .child("mute")
+        .and_then(Element::int)
+        .map(|value| value as i32);
+    channel.solo = node
+        .child("solo")
+        .and_then(Element::int)
+        .map(|value| value as i32);
+    channel
+}
+
 fn measure_index_at(measures: &[scoretk_core::model::Measure], tick: Tick) -> Option<usize> {
     let index = measures.partition_point(|measure| measure.start_tick <= tick);
     index.checked_sub(1).filter(|index| *index < measures.len())
@@ -543,6 +597,12 @@ impl Reader {
         // MIDI à chaque `<Channel>` de tous les instruments, y compris les
         // canaux secondaires (mute, harmony…) qui ne sont pas exportés.
         instrument.channel_count = element.children_named("Channel").count().max(1);
+        // Table complète des canaux (`TRead::read(InstrChannel*)`,
+        // read400/tread.cpp:926-1020 ; read500/tread.cpp:1144-1238).
+        instrument.channels = element
+            .children_named("Channel")
+            .map(read_instrument_channel)
+            .collect();
         instrument.midi_program = element
             .child("Channel")
             .and_then(|channel| channel.child("program"))

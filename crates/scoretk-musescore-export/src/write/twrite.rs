@@ -986,47 +986,112 @@ pub(crate) fn write_instrument(xml: &mut XmlWriter, instrument: &Instrument) {
         xml.tag("transposeDiatonic", &transpose.diatonic.to_string());
         xml.tag("transposeChromatic", &transpose.chromatic.to_string());
     }
-    // Port de `TWrite::write(const Instrument*)` (`write/twrite.cpp:1947`) : un
-    // instrument MuseScore possède toujours au moins un canal. Le laisser vide
-    // fait échouer `PlaybackSetupDataResolver` et plantent MuseScore 4.7.4 à
-    // l'ouverture d'une partition issue de LilyPond/ABC.
-    // Tous les canaux de l'instrument comptent dans `rebuildMidiMapping`
-    // (`midimapping.cpp:286-310`) ; on les réécrit pour que le round trip
-    // `.mscx` → modèle → `.mscx` conserve leur nombre. Seul le premier porte
-    // les réglages détaillés, comme dans les fichiers de MuseScore.
-    for index in 0..instrument.channel_count.max(1) {
-        let name = (index > 0).then(|| format!("channel-{index}"));
-        let name = name.as_deref();
-        let attributes: Vec<(&str, &str)> =
-            name.map(|name| vec![("name", name)]).unwrap_or_default();
-        xml.start_element("Channel", &attributes);
-        if let Some(program) = instrument.midi_program {
-            xml.tag_empty("program", &[("value", &program.to_string())]);
+    // Port de `TWrite::write(const InstrChannel*)` (`write/twrite.cpp:2067-2122`)
+    // et de `TWrite::write(const Instrument*)` (`write/twrite.cpp:1947`) : un
+    // instrument MuseScore possède toujours au moins un canal, sinon
+    // `PlaybackSetupDataResolver` échoue et MuseScore 4.7.4 plante à
+    // l'ouverture d'une partition issue de LilyPond/ABC. Quand le modèle
+    // porte la table des canaux, on réécrit **chaque** canal avec son nom,
+    // son programme, sa banque et son attribution MIDI : c'est ce qui permet
+    // au round trip `.mscx` → modèle → `.mscx` de conserver la structure
+    // complète (`rebuildMidiMapping`, `midimapping.cpp:259-340`). Sans table
+    // (formats sans canaux explicites), on synthétise les canaux comme avant.
+    if instrument.channels.is_empty() {
+        for index in 0..instrument.channel_count.max(1) {
+            let name = (index > 0).then(|| format!("channel-{index}"));
+            let attributes: Vec<(&str, &str)> = name
+                .as_deref()
+                .map(|name| vec![("name", name)])
+                .unwrap_or_default();
+            xml.start_element("Channel", &attributes);
+            if let Some(program) = instrument.midi_program {
+                xml.tag_empty("program", &[("value", &program.to_string())]);
+            }
+            if index == 0 {
+                if let Some(port) = instrument.midi_port {
+                    xml.tag("midiPort", &port.to_string());
+                }
+                if let Some(channel) = instrument.midi_channel {
+                    xml.tag("midiChannel", &channel.to_string());
+                }
+                if let Some(volume) = instrument.volume {
+                    xml.tag_empty(
+                        "controller",
+                        &[("ctrl", "7"), ("value", &volume.to_string())],
+                    );
+                }
+                if let Some(pan) = instrument.pan {
+                    xml.tag_empty("controller", &[("ctrl", "10"), ("value", &pan.to_string())]);
+                }
+            }
+            xml.end_element();
         }
-        if index == 0 {
-            // Port de `TWrite::write(const InstrChannel*)` (`write/twrite.cpp:2111-2114`) :
-            // quand l'attribution MIDI est exportée, le port et le canal sont
-            // écrits ensemble. Sans `<midiPort>`, MuseScore recalcule le port
-            // au chargement et l'export MusicXML change `<midi-device port>`.
-            if let Some(port) = instrument.midi_port {
+    } else {
+        for (index, channel) in instrument.channels.iter().enumerate() {
+            // `twrite.cpp:2069-2073` : le nom par défaut est omis.
+            let name = (!channel.name.is_empty() && channel.name != "normal")
+                .then_some(channel.name.as_str());
+            let attributes: Vec<(&str, &str)> =
+                name.map(|name| vec![("name", name)]).unwrap_or_default();
+            xml.start_element("Channel", &attributes);
+            // Le programme du premier canal peut être inféré de
+            // l'instrument par le lecteur 3.x (`read302/part.rs`) quand le
+            // fichier n'écrit pas de `<program>` : le conserver évite de
+            // perdre `<midi-program>` à l'export MusicXML.
+            let program = if index == 0 {
+                instrument.midi_program.or(channel.program)
+            } else {
+                channel.program
+            };
+            if let Some(program) = program {
+                xml.tag_empty("program", &[("value", &program.to_string())]);
+            }
+            if let Some(bank) = channel.bank {
+                // `tread.cpp:953-961` : HBANK = banque >> 7, LBANK = banque & 0x7f.
+                let high = bank >> 7;
+                let low = bank & 0x7f;
+                xml.tag_empty("controller", &[("ctrl", "0"), ("value", &high.to_string())]);
+                xml.tag_empty("controller", &[("ctrl", "32"), ("value", &low.to_string())]);
+            }
+            if index == 0 {
+                if let Some(volume) = instrument.volume {
+                    xml.tag_empty(
+                        "controller",
+                        &[("ctrl", "7"), ("value", &volume.to_string())],
+                    );
+                }
+                if let Some(pan) = instrument.pan {
+                    xml.tag_empty("controller", &[("ctrl", "10"), ("value", &pan.to_string())]);
+                }
+            }
+            // `twrite.cpp:2111-2114` : port et canal sont écrits ensemble.
+            // Les champs historiques de `Instrument` font foi pour le
+            // premier canal : ils sont renseignés par le lecteur et peuvent
+            // être modifiés par l'appelant (y compris remis à `None`).
+            let port = if index == 0 {
+                instrument.midi_port
+            } else {
+                channel.midi_port
+            };
+            if let Some(port) = port {
                 xml.tag("midiPort", &port.to_string());
             }
-            if let Some(channel) = instrument.midi_channel {
-                // `Instrument::midiChannel` (base zéro) : l'export en dérive
-                // `<midi-channel>` (base un) et l'attribution des canaux libres.
-                xml.tag("midiChannel", &channel.to_string());
+            let midi_channel = if index == 0 {
+                instrument.midi_channel
+            } else {
+                channel.midi_channel
+            };
+            if let Some(midi_channel) = midi_channel {
+                xml.tag("midiChannel", &midi_channel.to_string());
             }
-            if let Some(volume) = instrument.volume {
-                xml.tag_empty(
-                    "controller",
-                    &[("ctrl", "7"), ("value", &volume.to_string())],
-                );
+            if let Some(mute) = channel.mute {
+                xml.tag("mute", &mute.to_string());
             }
-            if let Some(pan) = instrument.pan {
-                xml.tag_empty("controller", &[("ctrl", "10"), ("value", &pan.to_string())]);
+            if let Some(solo) = channel.solo {
+                xml.tag("solo", &solo.to_string());
             }
+            xml.end_element();
         }
-        xml.end_element();
     }
     for articulation in &instrument.midi_articulations {
         let attrs: Vec<(&str, &str)> = if articulation.name.is_empty() {

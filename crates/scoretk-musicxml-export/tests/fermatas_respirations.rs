@@ -44,6 +44,7 @@ fn piano(score: &mut Score) -> StaffId {
         transpose: None,
         midi_channel: None,
         channel_count: 1,
+        channels: Vec::new(),
         midi_port: None,
         midi_program: Some(0),
         volume: None,
