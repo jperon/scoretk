@@ -7056,3 +7056,38 @@ de `bar-line-caesura-double.ly`) produit bien les 8 notes attendues, avec et
 sans `\caesura` : le bloc `Score`/`with` n'est donc pas la cause. L'écart du
 fichier vient des autres décorations (`sectionBarType`, `\section`,
 `\codaMark 1`), non identifiées. Aucun fichier exclu.
+
+## `ra` — grâce de fin, Devnull et référence non reproductible (1 628 → 1 630)
+
+- `1 626 → 1 628` : une grâce sans accord suivant sonne après la note
+  précédente (`lily/grace-iterator.cc`, `lily/audio-item.cc:122`), type
+  `Grace16After`/`8After`/`32After` et fraction 1 ; +2
+  (`grace-end.ly`, `grace-end-expression.ly`), 0 perte.
+- `1 629 → 1 630` : `Devnull` jette silencieusement la musique
+  (`ly/engraver-init.ly:1125-1133`) ; les accords dont la cible
+  `\change Staff` est une portée muette restent dans le modèle avec
+  `play = false` ; +1 (`vertical-alignment-spanner-only.ly`), 0 perte.
+
+### `tablature-full-notation.ly` : référence non reproductible, pas de fusion
+
+Le fichier n'a **aucun bloc `\midi`** ; `scripts/oracle/lilypond/references.py`
+le refuse (0/1). Le `ly.midi` stocké a **une seule piste de notes** (23 notes,
+programme 24) : il correspond à la **deuxième** `\score` (un TabStaff), pas à
+la fusion des deux portées de la première, qui produirait deux pistes et
+46 notes (vérifié en ajoutant `\midi {}` dans une copie). Côté LilyPond,
+chaque `Staff` a son `Staff_performer` (`ly/performer-init.ly:24-33`) et son
+`Audio_staff` (`lily/staff-performer.cc:130-150`) ; `Performance::output`
+écrit une piste par `Audio_staff` (`lily/performance.cc:69-110`) et
+`midiMergeUnisons` ne fusionne que **dans une piste**
+(`lily/midi-walker.cc:106`). Il n'y a donc **pas** de fusion entre portées :
+l'oracle ne doit pas être modifié. Le fichier est laissé compté et documenté
+(le plan `plan-fiabilite.md` §1.7 ne permet l'exclusion que pour une entrée
+non supportée, pas pour une référence périmée).
+
+Cinq fichiers restent au motif `test = 2 × ref`, avec des causes distinctes :
+`satb-template-with-keyboard-reduction` (tags `print`/`play` et `\keepWithTag`
+dans `ly/satb.ly:194-215`), `skiptypesetting-show-last` et
+`skiptypesetting-show-first-and-last` (`showFirstLength`/`showLastLength`,
+`scm/music-functions.scm:1526-1600` : le MIDI est coupé et le temps replié,
+`lily/score-performer.cc:151-176`), `tablature-full-notation` (ci-dessus) et
+`vertical-alignment-spanner-only` (corrigé).
