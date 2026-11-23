@@ -39,7 +39,8 @@ import subprocess
 import sys
 import time
 
-from midi_notes import GRID, TOL, compare, normaliser_ecriture, read_midi, read_xml
+from midi_notes import (GRID, TOL, compare, compare_evenements,
+                        normaliser_ecriture, read_midi, read_xml)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -379,6 +380,20 @@ def mesurer_ecriture(args, lot: str, manifeste: str, fichier_sortie) -> None:
             fichier_sortie.flush()
             continue
         r.update(compare(ref, test, args.grid, args.tol))
+        # Niveau « événements » : si les multiusets de messages coïncident à
+        # chaque tick, les deux SMF sonnent identiquement même quand
+        # l'appariement FIFO des notes diffère (restrikes). Un fichier est
+        # exact à l'un ou l'autre de ces niveaux.
+        if not r.get("exact"):
+            try:
+                egaux, premier = compare_evenements(ref_path, str(dst))
+            except Exception as exc:  # SMF illisible : pas de niveau événements
+                egaux, premier, r["erreur_evenements"] = False, None, str(exc)
+            r["exact_events"] = bool(egaux)
+            r["premier_ecart_evenements"] = premier
+            if egaux:
+                r["exact"] = True
+                r["drapeaux"] = ["egalite_evenements"]
         ecrire_ligne(fichier_sortie, r)
         fichier_sortie.flush()
 

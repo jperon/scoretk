@@ -113,6 +113,38 @@ def read_midi(path: str) -> list[tuple[int, float, float, int]]:
     return notes
 
 
+def evenements_par_tick(path: str) -> dict[int, Counter]:
+    """Multiset des événements de canal par tick, sans appariement.
+
+    Un événement est ``(canal, "on"/"off", hauteur)``. Un note-on de vélocité
+    nulle est un note-off (`docs/agents/format-ref/midi.md` ligne 63), comme
+    dans `read_midi`. Deux SMF dont ces multiusets coïncident à chaque tick
+    produisent exactement la même performance sur n'importe quel synthétiseur :
+    seul l'ordre des messages à l'intérieur d'un tick diffère, ce qui est le
+    cas des restrikes de `exportmidi.cpp:304-323` selon la piste qui les porte.
+    """
+    mid = common.lire_midi(path)
+    par_tick: dict[int, Counter] = defaultdict(Counter)
+    for track in mid.tracks:
+        tick = 0
+        for msg in track:
+            tick += msg.time
+            if msg.is_meta or not hasattr(msg, "note"):
+                continue
+            type_ = "on" if msg.type == "note_on" and msg.velocity > 0 else "off"
+            par_tick[tick][(msg.channel, type_, msg.note)] += 1
+    return par_tick
+
+
+def compare_evenements(reference: str, test: str) -> tuple[bool, int | None]:
+    """Égalité des événements à chaque tick ; premier tick divergent sinon."""
+    a, b = evenements_par_tick(reference), evenements_par_tick(test)
+    for tick in sorted(set(a) | set(b)):
+        if a.get(tick, Counter()) != b.get(tick, Counter()):
+            return False, tick
+    return True, None
+
+
 def normaliser_ecriture(notes: list[tuple]) -> list[tuple]:
     """Notes d'une écriture, ramenées à ce qui s'entend réellement.
 
