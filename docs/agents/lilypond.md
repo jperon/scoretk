@@ -7177,3 +7177,53 @@ losses and smaller output. "No measured exact gain" is not a reason to keep
 a wrong output. As in §26, the two `notes_supp` files remain cross-voice
 ties that `Tie_engraver` (`lily/tie-engraver.cc`) cannot reconstruct, and the
 three `echec` files have no usable reference model.
+
+## 28. Remaining export causes: reduction and C++ analysis (2026-11-23)
+
+### `Sancta_Maria_KV_273` — a 4-beat shift, but not a short bar in the writer
+
+The 14 shifted onsets are in the fifth voice, whose source is in the **second
+`\score`** of the `.ly` (the first has four voices; §15). Reducing the source
+to `PartPFiveVoiceOne` alone (`/tmp/veni/sancta-reduced.ly`) round-trips
+exactly: first note at 111.5 quarters in both the reference model and the
+re-read model, i.e. `R1*27` = 27 × 4 beats followed by `r2 r4 r8`.
+
+Taking instead the writer's emitted `staffFiveVoiceOne` verbatim reproduces
+the shift (first note 399.5 instead of 111.5). It starts with 69 `s1 |`
+spacers, then `R1*2`, then 40 more `s1`, then `\section \clef bass … R1*27`:
+the model built from the two-`\score` source places that voice's music after
+the first score's measures. Dropping the 69 leading `s1` restores 111.5. The
+4-beat discrepancy in the full comparison is therefore a consequence of how
+the **reader** merges the two `\score` blocks and where it anchors the fifth
+voice, not of a bar that the writer shortened. No writer-only rule fixes it
+without redefining the model's measure grid; left for a reader-side change.
+
+### Cross-voice ties (`Salazar`, `CanonDeLaPaix`) — `Tie_engraver` analysis
+
+`Tie_engraver::tie_notehead` (`lily/tie-engraver.cc:140-207`) walks only
+`heads_to_tie_`, the open tie heads **of its own engraver instance**: it
+compares `left_ev`/`right_ev` pitches (`:161-167`), then calls
+`Tie::set_head(p, LEFT/RIGHT, …)` (`:178-179`) and erases the pending head
+(`:189`). `acknowledge_note_head` (`:210-225`) only ever sees note heads
+from the engraver's own Voice context. A `~` written on the last note of
+voice A therefore cannot be closed by the first note of voice B: the tie
+stays unterminated (`:104-113`) and both notes sound as separate attacks.
+
+`tieWaitForNote` is a **performer** property, not an engraver one:
+`Tie_performer::stop_translation_timestep` (`lily/tie-performer.cc:166-180`)
+keeps pending ties instead of dropping those whose end moment passed, and
+`define-context-properties.scm:796-798` describes it as writing tied notes
+that do not have to follow directly (arpeggios). The scoretk reader honours
+it (`builder.rs:2964-3040`) but matches pending heads **per voice** too, so it
+cannot reconstruct a voice-crossing tie either.
+
+Experiment: injecting `\set tieWaitForNote = ##t` at the start of all five
+voices of scoretk's `Salazar` `.ly` and re-reading it still yields **1242**
+notes against **1240** in the reference (unchanged from the unmodified
+output). The other LilyPond escapes for one-sided ties
+(`\laissezVibrer`, `\repeatTie`, Notation Reference §2.1.4; hidden notes,
+§7.1.4) either do not create a link or add a note head — the latter is
+excluded by the no-bloat requirement (§26 has the same measurement). Hence
+no writer-side fix was committed for these two files: the link is
+structurally impossible in LilyPond's tie engraver without moving notes
+between voices, which would change the model's voice assignment.
