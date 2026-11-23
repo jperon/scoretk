@@ -7129,3 +7129,49 @@ onsets interprétés, exclusion depuis l'état d'interprétation puis depuis les
 l'échelle ne sont pas portées par les événements de ces voix. La version
 commitée (contrôlée +5, 0 perte) a donc été restaurée ; le chiffre vérifié
 reste 1638. L'heuristique actuelle reste un point de dette technique connu.
+## 27. Full `ly` writing campaign on current master (2026-11-23)
+
+The 1 381/1 417 figure of §26 is no longer current: the reader fixes merged
+since then (`measureLength` persistence, mode-dependent key signatures,
+`\partial`, invisible notes, orphans at the end of repeats) bring the same
+oracle (`ecriture.py --mode model`, manifest
+`/tmp/ly-import-lots/manifestes/mus.txt`, 1 447 files, both candidates
+starting from the same scoretk model) to:
+
+| Tool | Files | Compiled | Exact | N1 % | N2 % | N2d % | Mean `.ly` bytes | Max time |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| scoretk | 1447 | 1443 | **1441 (99.6 %)** | 100.00 | 99.99 | 99.99 | **2043** | 9.05 s |
+| musicxml2ly | 1447 | 1443 | 1282 (88.6 %) | 99.69 | 95.42 | 94.84 | 3819 | 7.29 s |
+
+Per file: **159 wins, 0 losses** against the alternative. Output is 46.5 %
+smaller on average. Raw: `target/ly95-cur-run/`.
+
+### The six remaining files, by first divergence
+
+Reference `tk.musicxml` versus candidate `scoretk.model.musicxml` (note tuple
+`(pitch, attack, duration, track)` after `ly_notes.read_xml`):
+
+| File | Flag | First divergence | Cause |
+| --- | --- | --- | --- |
+| `23_Sonis/Sonis` (3 paths: `Sonis`, `Veni,`, `entre_`) | `echec` | no reference model | source cannot be read into a pivot model; not a writer failure |
+| `Salazar_ALaEstrellaQueEsmalta.ly` | `notes_supp` | `(67,332,1,0)` → `(69,331,1,0)` | 2 extra attacks: tie-stops at voices 9/13 missing on re-read (cross-voice ties, §26) |
+| `CanonDeLaPaix.ly` | `notes_supp` | `(72,93.5,.75,0)` → `(67,92.5,1,0)` | 2 extra attacks, same cross-voice tie mechanism |
+| `Sancta_Maria_KV_273…ly` | `attaque_decalee` | `(40,403.5,.5,1)` → `(40,399.5,.5,1)` | 14 attacks of a staff 4 quarters early after a long multi-measure rest |
+
+### Rejected writer cause: `Timing.measureLength` on a multi-rest
+
+Notation Reference §2.2.3: `R1` follows the current `\time`; LilyPond's
+`timing-translator.cc` keeps `measureLength` as a context property. A
+multi-measure rest condenses `N` nominal measures in `Measure.len`, so the
+writer emitted `\set Timing.measureLength = #N/1` *and* `R1*N` — which makes
+LilyPond play each `R1` N times too long. Reduced test
+(`silence_multi_mesures_ne_fixe_pas_measure_length`, first failing) plus the
+same exception on the `\time` branch of `voice.rs`. Controlled three-file
+measurement (`target/ly95-multirest2-run`, frozen binary): **0 gains, 0
+losses**, `Sancta_Maria` N2d 1453 → 1453, first divergence unchanged at
+409.5/399.5; `.ly` size 22 788 → 21 913 B (the override disappears). The
+4-quarter shift therefore does not come from that command; reverting the
+change restores byte-for-byte output. As in §26, the two `notes_supp` files
+remain cross-voice ties that `Tie_engraver` (`lily/tie-engraver.cc`) cannot
+reconstruct, and the three `echec` files have no usable reference model. No
+writer change was committed.
