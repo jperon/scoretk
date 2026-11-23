@@ -2299,6 +2299,12 @@ impl<'a> Parser<'a> {
             Kind::Scheme => {
                 let datum = token.text.clone();
                 self.position += 1;
+                // `#(ly:parser-set-note-names …)` vaut aussi au milieu d'une
+                // musique (`note-names.ly`), pas seulement au niveau
+                // supérieur.
+                if let Some(langage) = scheme_note_names_language(&datum) {
+                    self.language = langage;
+                }
                 if let Some(music) = self.scheme_variables.get(&datum).cloned() {
                     music
                 } else if let Some(music) = self.variables.get(&datum).cloned() {

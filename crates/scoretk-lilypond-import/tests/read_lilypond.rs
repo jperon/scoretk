@@ -8206,3 +8206,23 @@ fn repeat_etc_recoit_son_compte_a_l_appel() {
         "les trois mesures en pourcent ne rejouent pas le corps"
     );
 }
+
+
+#[test]
+fn scheme_note_names_dans_la_musique_change_la_langue() {
+    // `note-names.ly` : `#(ly:parser-set-note-names …)` est évalué au milieu
+    // d'un `\relative` ; `bes` et `fis` sont alors néerlandais (sib, fa#)
+    // et non des mots anglais inconnus.
+    let source = "\\version \"2.24.0\"\n\
+         \\include \"english.ly\"\n\
+         \\relative { g'4 bf d c\n\
+           #(begin (set! pitchnames (ly:assoc-get 'nederlands language-pitch-names))\n\
+                   (ly:parser-set-note-names pitchnames))\n\
+           bes4 a g fis }\n";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(
+        hauteurs_attaques(&score),
+        vec![67, 70, 74, 72, 70, 69, 67, 66],
+        "bes = sib et fis = fa dièse après le changement de langue"
+    );
+}
