@@ -7091,3 +7091,22 @@ dans `ly/satb.ly:194-215`), `skiptypesetting-show-last` et
 `scm/music-functions.scm:1526-1600` : le MIDI est coupé et le temps replié,
 `lily/score-performer.cc:151-176`), `tablature-full-notation` (ci-dessus) et
 `vertical-alignment-spanner-only` (corrigé).
+
+### Session partCombine : port corrigé
+
+Le port de la règle `unisono` a d'abord donné +2/−2 ; le problème était le
+périmètre, pas la règle. Deux correctifs :
+- seules les notes **principales** sont comparées (`grace_before`/`grace_after`
+  exclus) : le combiner garde les grâces distinctes ;
+- la règle est désactivée si le `\partCombine` est dans un `grace` (détection
+  de profondeur d'accolades depuis le début du flux) ou contient
+  `scaleDurations`/`times`/`tuplet`, où le moment du combiner diffère.
+
+Mesure contrôlée (master `81bfb164`, même oracle/refs) : **1627 → 1632**,
+**+5 exacts** (`part-combine`, `part-combine-cross`, `grace-end`,
+`grace-end-expression`, `vertical-alignment-spanner-only`), **0 perte**.
+
+Groupe `relative` : trois fichiers ouverts pour tentative — `generic-output-
+property.ly` (`\applyOutput` Scheme), `script-stack-order1.ly` (empilement
+d'articulations), `note-names.ly` (changement de `\language`, domaine wsz).
+Aucune cause simple commune ; pas de correctif tenté. Aucun fichier exclu.

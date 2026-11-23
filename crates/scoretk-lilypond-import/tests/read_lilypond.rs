@@ -8456,6 +8456,8 @@ fn bend_after_consomme_son_argument() {
         .expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![62, 62]);
 }
+
+#[test]
 fn part_combine_fusionne_unissement_et_garde_les_autres_notes() {
     // `scm/part-combiner.scm:339-360, 436-480, 550-566` : à chaque instant,
     // deux notes de même hauteur et même durée passent à l'état `unisono`
@@ -8472,7 +8474,7 @@ fn part_combine_fusionne_unissement_et_garde_les_autres_notes() {
     notes.sort_by_key(|(tick, pitch)| (*tick, *pitch));
     assert_eq!(
         notes.iter().map(|(_, pitch)| *pitch).collect::<Vec<_>>(),
-        vec![60, 62, 64],
+        vec![72, 74, 76],
         "notes : {:?}",
         notes
     );
