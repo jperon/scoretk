@@ -3802,6 +3802,20 @@ impl<'a> Parser<'a> {
                 }
                 Music::Empty
             }
+            // `ly/music-functions-init.ly:655-670` : featherDurations
+            // multiplie la durée de chaque note par `scale^i`, puis
+            // compresse le tout pour conserver la durée totale.
+            "featherDurations" => {
+                let scale = self
+                    .parse_ratio()
+                    .map(|(n, d)| {
+                        Fraction::try_new(i64::from(n), i64::from(d)).unwrap_or(Fraction::ONE)
+                    })
+                    .unwrap_or(Fraction::ONE);
+                let mut music = self.parse_music();
+                feather_music(&mut music, &scale);
+                music
+            }
             "augmentum" => {
                 // `ly/ancient-init.ly:124-130` : `shift-duration-log expr 0 1`
                 // ajoute une mora (un point) à chaque durée de l'expression.
@@ -6759,6 +6773,54 @@ fn scale_scheme_fraction(datum: &str) -> Option<Fraction> {
         numerator.trim().parse().ok()?,
         denominator.trim().parse().ok()?,
     )
+}
+
+/// Applique `eatherDurations` (ly/music-functions-init.ly:655-670) :
+/// facteur `scale^i` sur la i-ème note, puis normalisation de la durée totale.
+fn feather_music(music: &mut Music, scale: &Fraction) {
+    fn visiter(music: &mut Music, scale: &Fraction, index: &mut usize) {
+        match music {
+            Music::Seq(items) | Music::Sim(items) => {
+                for item in items {
+                    visiter(item, scale, index);
+                }
+            }
+            Music::Chord(chord) => {
+                let mut facteur = Fraction::ONE;
+                for _ in 0..*index {
+                    facteur = facteur * *scale;
+                }
+                let multiplicateur = chord.multiplier.unwrap_or(Fraction::ONE) * facteur;
+                chord.multiplier = Some(multiplicateur);
+                chord.from_scale = true;
+                *index += 1;
+            }
+            Music::Context(context) => match context {
+                Context::Tuplet { music, .. }
+                | Context::Grace { music, .. }
+                | Context::Fixed { music, .. }
+                | Context::Relative { music, .. }
+                | Context::NonRelative { music }
+                | Context::Transpose { music, .. }
+                | Context::Silent { music }
+                | Context::Cue { music, .. }
+                | Context::Invisible { music } => visiter(music, scale, index),
+                _ => {}
+            },
+            Music::Tag { music, .. } | Music::Filtered { music, .. } => {
+                visiter(music, scale, index)
+            }
+            _ => {}
+        }
+    }
+    let avant = music_duration(music, Duration::quarter());
+    let mut index = 0;
+    visiter(music, scale, &mut index);
+    let apres = music_duration(music, Duration::quarter());
+    if apres > Fraction::ZERO && avant != apres {
+        let normalisation = avant / apres;
+        scale_music(music, &normalisation);
+    }
 }
 
 /// Multiplie par `factor` le multiplicateur `*n/d` de chaque accord d'une

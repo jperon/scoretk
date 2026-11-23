@@ -8087,3 +8087,23 @@ fn armure_selon_le_mode() {
         );
     }
 }
+
+#[test]
+fn feather_durations_echelonne_les_attakes() {
+    // `ly/music-functions-init.ly:655-670` : chaque note voit sa durée
+    // multipliée par `factor^i`, puis la musique est compressée pour garder
+    // sa durée totale. Avec 3/4 sur 4 croches, les attaques ne sont plus
+    // régulières (0, 0.0914, 0.16, 0.2114 au lieu de 0, .25, .5, .75).
+    let src = "\\version \"2.25.28\"\n{ \\featherDurations 3/4 { c'16 c'16 c'16 c'16 } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let ticks: Vec<_> = accords_de_voix(&score, 0)
+        .into_iter()
+        .map(|(tick, _, _)| tick)
+        .collect();
+    assert_eq!(ticks.len(), 4, "ticks : {:?}", ticks);
+    assert!(
+        (ticks[1] - Fraction::new(7, 64)).abs() < Fraction::new(1, 32),
+        "deuxième attaque : {:?}",
+        ticks
+    );
+}
