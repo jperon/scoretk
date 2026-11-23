@@ -7375,3 +7375,64 @@ peuvent jamais être « exacts ». Plafond réel du lot : **1 717/1 724**.
   `instrument-switch`, `push-to-tag`, `alignment-order`, `beam-position`,
   `volta-spec-tie`, `polymetric-time-ossia-staff` : cas particuliers de
   trame ou de playback, un fichier chacun.
+## 31. Mechanical reduction of the last three files (2026-11-23)
+
+### Ties: orphan tie-stops, not voice streams
+
+Built `/tmp/crop_tie.py`: read the source `.ly` → `.mscx`, crop to the two
+measures around a tie, write `.ly`, dump each voice variable and its
+`\voiceN`. Cropping Salazar bar 65 shows the tie in `staffFourVoiceOne`'s
+own stream, with no other voice in the staff: **no stream split occurs**.
+
+Then compared tie spans directly in the source model and the model re-read
+from scoretk's `.ly` (`.mscx`, `Spanner type="Tie"`):
+
+| | source | re-read |
+| --- | ---: | ---: |
+| Salazar tie notes | 78 | 76 |
+| missing | `(m118, staff3, pitch67, stop)`, `(m110, staff4, pitch69, stop)` | — |
+
+Both missing notes are in **voice 0** (the same stream). The source model has
+two consecutive notes of the same pitch at both places, each with a `<prev>`
+tie-back but no `<next>`; both tie back to the *same* preceding tied note:
+
+```
+m117 staff3 G4 tie-start → m118 G4 (first, tie-stop) + m118 G4 (second, tie-stop)
+m109 staff4 A4 tie-start → m110 A4 (first, tie-stop) + m110 A4 (second, tie-stop)
+```
+
+A single tie-start cannot have two tie-ends in LilyPond (`Tie_engraver::
+tie_notehead`, `lily/tie-engraver.cc:140-207`, closes one pending head at
+`:189`). `link_ties` (`builder.rs:3113-3117`) correctly links one; the second
+note is re-read as a fresh attack, producing the one extra note per file.
+The reference itself carries an orphan second tie-stop, so this is a
+source-model anomaly, not a writer voice-allocation defect. Same mechanism in
+`CanonDeLaPaix`. No writer change can reproduce an impossible LilyPond tie
+without a non-standard command the reader does not support.
+
+### Sancta Maria: first diverging token is the 1st padding `s1`
+
+Built `/tmp/token_dump.py`: parse `staffFiveVoiceOne` of the writer's `.ly`
+and print the cumulative length (quarters) after every duration token.
+
+```
+28 × s1    → 112.0      (padding, 4 quarters each)
+R1*2       → 120.0
+44 × s1    → 288.0
+R1*27      → 396.0
+music      → 396.0–404.0   (first note re-read at 399.5)
+R1*42      → 572.0
+```
+
+The source model places the bass music at **111.5 quarters** (measured on
+`tk.musicxml`, part P2: one 27-bar rest 0–108, notes 108–113.5, 42-bar rest).
+The very first token already diverges: the writer emits `s1` for measure 1
+instead of the voice's own full-bar rest, and keeps padding until tick 396 —
+284.5 quarters before the music. These padding measures are the grid of the
+first `\score` that the reader merged into the model (§29); the model carries
+no `MultiMeasureRest` marker on them (verified: no `<MultiMeasureRest>` in
+the source `.mscx`). Replacing the extra `R1*2` by two `s1` leaves the first
+note at 399.5 exactly, so that token is not the cause. The correct fix is to
+stop padding a voice with `s1` before its first real item when the measure
+grid comes from another `\score`; the model does not mark that origin, so a
+writer-only rule cannot distinguish it safely.
