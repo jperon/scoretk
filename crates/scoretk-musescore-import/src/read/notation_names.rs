@@ -24,8 +24,24 @@
 
 use scoretk_core::model::{
     ArpeggioType, Articulation, ArticulationAnchor, ArticulationType, BreathType, ChordLineType,
-    FermataType, GlissandoType, LineStyle, Ornament, OrnamentType, Placement, TrillType,
+    FermataType, GlissandoType, LineStyle, NoteHeadType, Ornament, OrnamentType, Placement,
+    TrillType,
 };
+
+/// Tête de note demandée par `<headType>` (`NoteHeadType` résolu).
+///
+/// Le nom est celui qu'écrit `TConv::toXml` : il apparaît tel quel dans les
+/// `.mscx` 3.6 (`<headType>whole</headType>`) comme dans les 4.x.
+pub(crate) fn head_type(name: &str) -> Option<NoteHeadType> {
+    Some(match name {
+        "auto" => NoteHeadType::Auto,
+        "breve" => NoteHeadType::Breve,
+        "whole" => NoteHeadType::Whole,
+        "half" => NoteHeadType::Half,
+        "quarter" => NoteHeadType::Quarter,
+        _ => return None,
+    })
+}
 
 /// Découpe un nom SMuFL en base et ancre verticale.
 ///

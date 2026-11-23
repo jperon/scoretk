@@ -316,6 +316,19 @@ fn read_note(
             }
             "Accidental" => accidental = Some(read_accidental(child)),
             "head" => head = tables::note_head(child.int_text()),
+            // MuseScore 3.6 écrit aussi le type résolu en clair
+            // (`<headType>whole</headType>`, `TConv::toXml`) : il l'emporte
+            // sur l'entier `<head>` quand les deux sont présents.
+            "headType" => {
+                if let Some(value) = child
+                    .trimmed_text()
+                    .split_whitespace()
+                    .next()
+                    .and_then(crate::read::notation_names::head_type)
+                {
+                    head = value;
+                }
+            }
             "ghost" | "dead" => ghost = child.int_text().unwrap_or(0) != 0,
             "small" => small = child.int_text().unwrap_or(0) != 0,
             "play" => play = child.int_text().unwrap_or(1) != 0,

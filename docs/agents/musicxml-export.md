@@ -1460,3 +1460,19 @@ reçoit un n-olet. La sortie ABC est inchangée ; le test
 Mesure ciblée : `Ave_Maria_Schubert_in_C_with_chords` 8 → **0** ligne
 canonique (core-identique), 0 perte. Tests réduits :
 `agrement_musescore_sans_time_modification` et `agrement_abc_garde_time_modification`.
+
+## 44. `<headType>` des fichiers 3.6 (2026-11-23)
+
+`Angels_Carol__John_Rutter` (3.02) a trois notes `<headType>whole</headType>` :
+la référence écrit `<notehead filled="no">normal</notehead>`
+(`writeNotehead`, `exportmusicxml.cpp:3898-3902`), notre sortie rien. Le
+lecteur 3.x ne lisait que `<head>` (entier), alors que MuseScore 3.6 écrit
+déjà le type résolu en clair sous `<headType>` (`TRead::read(Note*)`,
+`read400/tread.cpp:3110-3111`, `Pid::HEAD_TYPE`).
+
+`notation_names::head_type` est partagé par les lecteurs 3.x et 4.x ; le
+lecteur 3.x lit `<headType>` et l'emporte sur `<head>` quand les deux sont
+présents (ordre du fichier).
+
+Mesure ciblée : `Angels_Carol__John_Rutter` 3 → **0** ligne canonique
+(core-identique), 0 perte. Test réduit : `note_head_type.rs`.

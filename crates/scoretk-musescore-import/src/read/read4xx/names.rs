@@ -229,16 +229,9 @@ pub fn note_head(name: &str) -> Option<NoteHeadGroup> {
     })
 }
 
-/// Tête de note demandée par `<headType>` (ronde, blanche, noire…).
+/// Tête de note demandée par `<headType>` (table partagée avec le lecteur 3.x).
 pub fn head_type(name: &str) -> Option<NoteHeadType> {
-    Some(match name {
-        "auto" => NoteHeadType::Auto,
-        "breve" => NoteHeadType::Breve,
-        "whole" => NoteHeadType::Whole,
-        "half" => NoteHeadType::Half,
-        "quarter" => NoteHeadType::Quarter,
-        _ => return None,
-    })
+    crate::read::notation_names::head_type(name)
 }
 
 /// Conversion d'une hauteur MIDI vers un `tpc` naturel.
