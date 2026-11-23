@@ -1004,12 +1004,22 @@ impl Parser<'_> {
     /// Abandonne les liaisons en attente dont la hauteur n'est pas présente.
     ///
     /// Portage de `abc2xml.py` 269, `MusicXml.doNotations` (lignes 1445-1460) :
-    /// à chaque note, toute liaison ouverte dont le tuple de hauteur ne
-    /// correspond pas à la note courante est signalée (« tie between different
-    /// pitches ») et supprimée (elle est convertie en phrasé). Sans ce contrôle
-    /// une liaison `G-A G` traverserait le `A` et relierait les deux `G`, alors
-    /// qu'abc2midi compte les deux notes : c'était les notes liées en fin de
-    /// liaison que le comparateur écarte (cause 78 airs, § 15.3 de abc.md).
+    /// une liaison ouverte n'est conservée que si elle appartient à une autre
+    /// superposition (1446), si sa hauteur est dans l'accord courant (1447,
+    /// `pitches` posé par `convertChord`, lignes 653-665), si la note courante
+    /// est une note d'accord non première (1448) ou un agrément (1450), ou si
+    /// sa hauteur est celle de la note courante (1449, `ptup` sans altération,
+    /// ligne 1370). Sinon elle est signalée (« tie between different pitches »)
+    /// et convertie en slur (1451-1460), jamais laissée en place : les voix
+    /// d'agrément et les superpositions ont ici leur propre `pending_ties`, et
+    /// le chemin accord transmet toutes les hauteurs de l'accord.
+    ///
+    /// Sans ce contrôle une liaison `G-A G` traverserait le `A` et relierait
+    /// les deux `G`, alors qu'abc2midi compte les deux notes : c'était les
+    /// notes liées en fin de liaison que le comparateur écarte (cause 78 airs,
+    /// § 15.3 de abc.md). Le changement naïf consistant à conserver *toutes*
+    /// les liaisons en attente casse cinq airs du lot de lecture (§ 55 de
+    /// abc.md) ; il est verrouillé par `tests/tie_chains.rs`.
     fn drop_foreign_ties(&mut self, pitches: &[u8]) {
         let foreign: Vec<u8> = self
             .voice()

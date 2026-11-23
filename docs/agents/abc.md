@@ -3891,3 +3891,124 @@ Les cas (b) sont des défauts de lecture ou du modèle pivot, pas du writer ABC 
 aucun n'a été corrigé dans cette passe faute de port sûr avec mesure contrôlée
 sans perte. Les cas (c) sont des exceptions de format ou d'oracle, citées ci-dessus.
 État inchangé : 250/261 en écriture, 4 721/4 756 en lecture.
+
+## 55. Lecture : chaînes de liaisons, règle exacte de `doNotations` (2026-11-23)
+
+Elle vérifie l'hypothèse d'une passe précédente selon laquelle le lecteur
+devrait conserver *toutes* les liaisons en attente pour réparer
+`Laudate_pueri`.
+
+### 55.1 Références et règle précise
+
+- ABC 2.1 §4.11 (`/home/jacques/programmes/musique/specs/abc/abc-standard-v2.1.wiki.txt`,
+  lignes 1046-1066 ; résumé dans `docs/agents/format-ref/abc.md`, lignes 82-86) :
+  une liaison `-` joint **deux notes successives de même hauteur**, placée
+  juste après la première. Le standard est **muet** sur le sort d'une liaison
+  quand une note de hauteur différente survient : c'est donc
+  `abc2xml.py` qui fait foi pour la lecture (§1).
+- `abc2xml.py` 269, `MusicXml.doNotations`, **lignes 1438-1460** (copie hors
+  dépôt `wt-lyx95/target/abcchk/abc2xml_269/abc2xml_269/abc2xml.py`) :
+  - 1445 : `for pt, (tie_alter, nts, vnum, ntelm) in sorted(list(s.ties.items()))` ;
+  - 1446 : `if vnum != s.overlayVnum: continue` — une liaison d'une autre
+    superposition est conservée ;
+  - 1447 : `if pts and pt in pts: continue` — une liaison dont la hauteur est
+    dans l'accord courant est conservée ;
+  - 1448 : `if getattr(n, 'chord', 0): continue` — les notes d'accord non
+    premières ne nettoient rien ;
+  - 1449 : `if pt == ptup: continue` — une liaison sur la note courante est
+    conservée ;
+  - 1450 : `if getattr(n, 'grace', 0): continue` — un agrément ne nettoie rien ;
+  - 1451-1460 : sinon `info('tie between different pitches: … converted to
+    slur')`, `del s.ties[pt]`, retrait de l'élément `tie type="start"`,
+    conversion de `tied` en `slur`, `pushSlur`, fermeture sur la note courante.
+- `abc2xml.py` 269, lignes 1370-1371 : `ptup = (step, oct)` est le tuple de
+  hauteur **sans altération** ; `tstop` exige en plus le même `overlayVnum`.
+- `abc2xml.py` 269, lignes 653-665 (`convertChord`) : `pitches` n'est posé que
+  sur la **première** note d'un accord et contient toutes ses hauteurs ; les
+  autres notes portent `chord = 1`. Une note seule n'a donc **aucun** `pitches`.
+- `abc2xml.py` 269, lignes 1481-1482 : la nouvelle liaison n'est enregistrée
+  dans `s.ties` qu'**après** ce nettoyage.
+
+**Règle.** Une liaison en attente est conservée si et seulement si elle
+appartient à une autre superposition, ou si sa hauteur est dans l'accord
+courant, ou si la note courante est une note d'accord non première, ou si sa
+hauteur (sans altération) est celle de la note courante, ou si la note courante
+est un agrément. Dans **tous les autres cas** — typiquement une note seule de
+hauteur différente — elle est **convertie en slur et retirée des liaisons en
+attente**, jamais laissée en place. C'est exactement ce que fait
+`reader/music.rs::drop_foreign_ties` (port déjà commité en `7b9009a5`, lignes
+1013-1054) : les agréments et les superpositions n'appellent pas le nettoyage
+(voix séparées), et le chemin accord transmet toutes les hauteurs de l'accord.
+
+### 55.2 Laudate : la limite est partagée avec `abc2xml.py`
+
+`target/abc-ex-clef2/travail/mscz/56/tk.abc`, voix 4, lignes 721-722 :
+
+```
+dfdBFd-B-F- |
+[DFBd]4z2[DFB-]2 |
+```
+
+`python3 abc2xml.py 269` sur cet extrait affiche :
+
+```
+-- tie between different pitches: d0 converted to slur
+-- tie between different pitches: B0 converted to slur
+```
+
+et écrit dans le MusicXML (`/tmp/tie-ref/out/laudate.xml`) `D5` et `B4` avec
+`<slur type="start">`, seul `F4` gardant `<tie type="start">` puis `<tie
+type="stop">` sur le `F4` de l'accord. La relecture de notre propre `.abc`
+donne la même chose (`rt1.abc` : `dfdBFdBF-`) ; `xml2abc.py` 177 écrit
+`dfdB Fd-B-F-` (mêmes liaisons). Le décalage de durée de la §54 n'est donc **pas**
+un défaut du lecteur : conserver les trois liaisons contrevient à ABC 2.1 §4.11
+et à `doNotations`, et `abc2xml.py` échoue pareil (N2 49 % sur Laudate dans
+l'oracle d'écriture). La vraie correction serait côté **writer** : écrire les
+trois notes liées simultanées sous forme d'accord (`[dBF]-`) ou en trois voix.
+
+### 55.3 Les quatre airs du lot de lecture, et pourquoi le changement naïf les casse
+
+Extraits réels (oneills1850), analysés avec `abc2xml.py` 269 sur l'`X:` isolé :
+
+| Air | Extrait | Messages `doNotations` |
+| --- | --- | --- |
+| `0981-1000.abc` X:988 | `dB/-c/-d/-B/ AGF\|GEF G2:\|` | `B0`, `c0`, `B0`, `c0`, `d0` convertis en slurs |
+| `1710-1750.abc` X:1715 | `(3A-B-c\|dAFA dfaf\|` | `A0`, `B0`, `A0`, `B0`, `d0`, `e0`, `f0`, `g0`, `a0`, `b0` convertis en slurs |
+| `1781-1800.abc` X:1782 | `e2 a2 a/-b/-a/-g/ a>g\|` | `a0`, `b0`, `a0` convertis en slurs |
+| `1781-1800.abc` X:1799 | `~g-f-g.e d2 dB\|` (et `E/-…`, `D/-…`) | `E0`, `G0`, `D0`, `g0`, `f0`, `g0`, `g0`, `G0`, `D0` convertis en slurs |
+
+Dans X:988, garder toutes les liaisons relie le premier `B/-` au dernier `B/`
+de la même mesure, en traversant `c/-d/-`. Le comparateur d'oracle (`cmp.py`)
+ignore les notes portant `<tie type="stop">` (pas de note-on dans le MIDI) :
+une note disparaît, N1 1.00 → 0.9928. Les mêmes mécanismes expliquent X:1715
+(N1 1.00 → 0.9746), X:1782 (0.9964) et X:1799 (0.9930) ; une cinquième perte,
+X:994 (0.9535), apparaît aussi dans la mesure naive `target/abc-tie/`.
+`abc2xml.py` convertit ces liaisons en slurs, donc les deux notes restent
+comptées ; c'est précisément la règle des lignes 1445-1460.
+
+### 55.4 Test réduit et mesure contrôlée
+
+`crates/scoretk-abc-import/tests/tie_chains.rs` contient cinq réductions des
+airs ci-dessus (Laudate, X:988, X:1715, X:1782, X:1799). Chacune vérifie que
+la note qui ne doit pas être traversée n'a pas de `tie_forward` et que les
+liaisons invalides sont devenues des `SpannerType::Slur` (2 pour Laudate, 9
+pour X:1799, comme les messages Python). Les cinq tests **échouent** quand
+`drop_foreign_ties` est rendu inopérant (expérience locale, source restaurée)
+et **passent** sur le lecteur actuel : ils verrouillent la règle contre le
+changement naïf.
+
+Mesures contrôlées (binaire release de ce worktree, mêmes listes et oracle que
+§16.7/§17, un seul lancement à la fois, `CARGO_BUILD_JOBS=2`,
+`RUST_TEST_THREADS=2`, `nice -n 10`) :
+
+| Mesure | Référence | Après vérification |
+| --- | ---: | ---: |
+| Lot de lecture (`target/abc-tie-final`, 4 756 airs) | 4 722 exact | **4 722 exact**, 0 perte |
+| Lot d'écriture (`target/abc-tie-final-ex`, 261 fichiers) | 250 exact | **250 exact**, 0 gain, 0 perte |
+
+Le résultat de la passe naive est conservé dans `target/abc-tie/mesures.tsv` :
+**4 718 exact**, soit 4 pertes sur le même lot. Aucun changement de
+comportement du lecteur n'est donc committé : la règle d'`abc2xml.py` y est
+déjà fidèlement portée, et le « correctif » consistant à garder toutes les
+liaisons est une régression mesurée. Le dossier Laudate reste ouvert, mais
+côté writer (§54), pas côté lecteur.
