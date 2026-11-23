@@ -585,8 +585,14 @@ def apparier_graces(
     """Retire du MIDI les graces appariées et les compte à part.
 
     Une grâce du candidat `(hauteur, attaque principale)` est appariée à la
-    note MIDI **de même hauteur** la plus proche par-dessous dans la fenêtre
-    `[attaque - window, attaque + grid/2]`, qui n'a pas déjà été utilisée.
+    note MIDI **de même hauteur** la plus proche **strictement avant**
+    l'attaque principale, dans la fenêtre `[attaque - window, attaque)`, qui
+    n'a pas déjà été utilisée. `lily/audio-item.cc:118-129` place en effet une
+    grâce à `main + 9/40 × grace_part`, avec un `grace_part` négatif
+    (`lily/grace-iterator.cc:24-27`) : une grâce sonne **avant** l'attaque de
+    la note qu'elle orne, jamais dessus. La borne haute `attaque + grid/2`
+    volait la note principale quand la grâce avait la même hauteur
+    (`grace-auto-beam-engraver` : les 28 `a1` étaient pris pour leurs grâces).
     L'appariement est déterministe (une seule note par grâce, la plus tardive
     en cas de doublon) et ne touche pas aux notes principales. Renvoie
     `(référence sans graces, graces MIDI, graces XML, graces appariées)`.
@@ -598,7 +604,7 @@ def apparier_graces(
         candidats = [
             i for i, note in enumerate(restants)
             if i not in utilises and note[0] == hauteur
-            and attaque - window <= note[1] <= attaque + grid / 2
+            and attaque - window <= note[1] < attaque
         ]
         if candidats:
             utilises.add(max(candidats, key=lambda i: (restants[i][1], -i)))
@@ -950,11 +956,11 @@ def selftest() -> None:
             f.write(flux)
         assert read_xml(p)[-2:] == [(77, 2.0, 1.0, 0), (81, 3.0, 1.0, 0)], read_xml(p)
 
-        # Unissons : LilyPond n'émet qu'une attaque par piste MIDI
-        # (`lily/midi-walker.cc` do_start_note, branche now_ticks ==
-        # queued_ticks). Depuis 51291b45 la fusion est inconditionnelle,
-        # sans consulter la référence : voix d'une même portée ET répétition
-        # dans une même voix fusionnent. Deux portées restent deux pistes.
+        # Unissons d'une même piste : `lily/midi-walker.cc` n'émet qu'une
+        # attaque par hauteur et par tick sur une piste, que les doublons
+        # viennent de deux voix ou de la même voix ; le MusicXML écrit les deux.
+        # L'oracle compare le son : une seule note. Deux portées restent deux
+        # pistes et ne sont jamais fusionnées.
         unisson = """<score-partwise version="4.0">
           <part id="P1">
             <measure number="1">
@@ -1125,6 +1131,27 @@ def selftest() -> None:
         with open(p, "w", encoding="utf-8") as f:
             f.write(partiel)
         assert read_xml(p) == [(65, 2.0, 1.0, 0), (67, 3.0, 1.0, 0)], read_xml(p)
+
+        # Grâces : `lily/audio-item.cc:118-129` place une grâce à
+        # `main + 9/40 × grace_part` (`grace_part` négatif), donc strictement
+        # avant l'attaque principale. L'appariement ne doit jamais prendre la
+        # note principale de même hauteur.
+        reference = [(60, 0.0, 1.0, 0), (60, -0.1, 0.0, 0)]
+        restants, n_ref, n_test, matches = apparier_graces(
+            reference, [(60, 0.0)]
+        )
+        assert matches == 1, (restants, matches)
+        assert (60, 0.0, 1.0, 0) in restants, restants
+        assert (60, -0.1, 0.0, 0) not in restants, restants
+        assert n_ref == n_test == 1
+        # Un candidat qui omet la grâce (une seule note principale) ne doit pas
+        # devenir exact : la grâce manque réellement.
+        manquant = compare(
+            [(60, 0.0, 1.0, 0), (60, -0.1, 0.0, 0)],
+            [(60, 0.0, 1.0, 0, False)],
+            graces=[],
+        )
+        assert not manquant["exact"], manquant
 
     print("selftest : OK")
 
