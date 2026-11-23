@@ -7173,8 +7173,17 @@ losses**, `Sancta_Maria` N2d 1453 → 1453, first divergence unchanged;
 therefore does not come from that command. The change is nevertheless kept:
 the old output is *wrong LilyPond* by §2.2.3 (each `R1` sounds N times too
 long in a real LilyPond MIDI), it has a failing-then-passing test, zero
-losses and smaller output. "No measured exact gain" is not a reason to keep
-a wrong output. As in §26, the two `notes_supp` files remain cross-voice
+losses and slightly smaller output on average. "No measured exact gain" is
+not a reason to keep a wrong output.
+
+Full-lot confirmation after committing (`target/ly95-final-run`, same manifest
+and oracle, frozen binary): scoretk **1441/1447 exact** (N1/N2/N2d 100.00 /
+99.99 / 99.99), musicxml2ly 1282/1447, **0 gains / 0 losses** against the
+pre-fix baseline, mean `.ly` size 2038.3 → 2037.5 B (−0.8 B/file; four files
+grow by 35–196 B where the removed override was replaced by explicit bars,
+while the long-rest files shrink by up to 875 B). The six remaining files are
+unchanged: three unreadable references, two cross-voice ties, one
+reader-side two-`\score` anchoring case. As in §26, the two `notes_supp` files remain cross-voice
 ties that `Tie_engraver` (`lily/tie-engraver.cc`) cannot reconstruct, and the
 three `echec` files have no usable reference model.
 
