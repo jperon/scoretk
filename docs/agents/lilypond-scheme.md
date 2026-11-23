@@ -612,4 +612,76 @@ doit dégrader ni `ra`, ni `mut`, ni `rw`.
 tient la liste des échecs connus. Départ : **7/14 identiques** — échecs sur les
 corps de fonction musicale réduits à une expression Scheme générale (`let`,
 `if`) et sur les nombres calculés (`#(+ 2 2)`, `#(* 20 4)`, `#(+ 1/4 1/4)`,
-`#(+ 4 4)`, `*#(+ 1 1)`).
+`#(+ 4 4)`, `*#(+ 1 1)`). L'évaluateur du niveau B a porté cette suite à
+**14/14** pendant l'expérience du § 8 ; l'expérience n'a pas été retenue.
+
+## 8. Niveau B évalué : implémenté, mesuré, non retenu (2026-11-23)
+
+Décision de l'utilisateur : évaluer le niveau B **sur la robustesse**
+(formes Scheme réelles non vues par le lecteur), pas sur le seul gain `ra`.
+L'évaluateur a été implémenté (commit `7689b989`, conservé dans l'historique
+pour reprise) puis retiré : les critères d'adoption ne sont pas tous remplis.
+
+### 8.1 Ce qui a été mesuré
+
+Même binaire pour toutes les mesures, un lot à la fois, 2 fils au plus
+(`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10`) ; comparaison **fichier
+par fichier** avec les relevés de référence (`/tmp/meas-rb`, `/tmp/meas-mut`,
+`/tmp/meas-rw`), pas seulement les totaux.
+
+| Critère | Avant | Après | Verdict |
+| --- | --- | --- | --- |
+| Suite de variantes (`scheme_variants`) | 7/14 | **14/14** | rempli |
+| `ra` identiques | 1 682/1 724 | **1 683/1 724** | +1, **0 perte** |
+| `mut` identiques | 1 216/1 316 | 1 216/1 316 | 0 gain, **0 perte** |
+| `rw` identiques | 1 258/1 365 | 1 258/1 365 | 0 gain, **0 perte** |
+| Fichiers qui ne compilent plus | 0 | 0 | aucune régression |
+| Taille de code nette | — | **+2 422 / −170 = +2 252 lignes** | critère non rempli |
+| wasm brut / gzip | 2 270 210 / 890 262 | 2 331 647 / 915 550 | **+61 437 / +25 288** |
+
+Le seul gain de corpus est `beat-performer.ly` (`\* #(+ 4 32)`), que le lot
+`ra` ne comptait pas. Les lots réels (`mut`, `rw`) sont **strictement
+inchangés** : la robustesse gagnée ne se traduit par aucun fichier
+supplémentaire, ni sur Mutopia ni sur openLilyLib/LSR.
+
+### 8.2 Ce que coûtent les octets
+
+L'évaluateur (2 113 lignes, dont ≈1 830 hors commentaires) pèse à lui seul
++61 Ko de wasm malgré `wasm-opt -Oz` : lecteur de datums (chaînes, vecteurs,
+paires pointues), évaluateur (environnements `HashMap` + `Rc`, formes
+spéciales), et catalogue de primitives (arithmétique exacte, listes,
+vecteurs, caractères, chaînes, `format`). Les réductions possibles —
+supprimer vecteurs/caractères/chaînes, `cond`/`case`/`letrec`/`every`/`any`/
+`iota`/`format`, table de primitives statique — sont estimées à −15 à −25 Ko,
+ce qui resterait au-dessus de la cible faible de +12 Ko. La cible est donc
+dépassée d'environ 5× même après élagage.
+
+### 8.3 Pourquoi le critère de taille n'est pas rempli
+
+L'étude promettait qu'un évaluateur **remplace** ≈1 250–1 400 lignes de
+reconnaisseurs de motifs. L'implémentation n'en a remplacé que **170**
+(`Token::scheme_fraction`, `Token::scheme_decimal`, `scale_scheme_fraction`,
+direction de hampe) : le reste de la surface (scanner de datums du lexer
+≈420 lignes, extraction des définitions de musique/durée/étiquettes, chemins
+`include`) demande des valeurs typées que le modèle n'expose pas encore
+(`Duration`, `Pitch`, partitions) ou des décisions d'architecture qui
+sortaient du niveau B. Le solde est donc fortement positif, à l'inverse de
+l'hypothèse de l'étude.
+
+### 8.4 Décision
+
+Les critères « 0 perte » et « suite de variantes » sont remplis ; le critère
+de taille ne l'est pas (ni la cible faible wasm). Conformément à la consigne,
+**seule la suite de variantes est conservée**, avec la liste de ses 7 échecs
+connus comme mesure de robustesse ; le lot `rw` et ce document restent. Le
+commit `7689b989` garde l'évaluateur complet pour une reprise si un besoin
+ultérieur (corpus plus Scheme-dépendant, remplacement effectif du scanner de
+datums) change le rapport coût/bénéfice.
+
+Pistes immédiates, sans évaluateur :
+
+- `beat-performer.ly` : `\* #(+ 4 32)` — une lecture du datum entier le
+  couvre ; idem `*#(+ 1 1)` (variantes 04/12/13), sans le module complet.
+- Les 7 échecs de variantes restants sont des formes ciblées (`let`, `if`
+  dans un corps de fonction, nombres calculés) : à traiter par motifs au cas
+  par cas, avec la suite comme filet.
