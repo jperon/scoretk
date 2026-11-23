@@ -28,8 +28,8 @@ use scoretk_core::model::{
     LyricsSyllabic, Measure, MeasureRepeatMark, Note, NoteHeadGroup, NoteId, OttavaType, Part,
     PartId, Placement, RehearsalFrame, RehearsalMark, RichText, Score, Segment, SegmentItem,
     SegmentType, Spanner, SpannerAnchor, SpannerType, Staff, StaffBracket, StaffId, StaffText,
-    SwingParameters, SwingUnit, SystemText, TboxText, Tempo, TempoKind, TextLineInfo, TimeSig,
-    Track, Transpose, Tuplet,
+    StemDirection, SwingParameters, SwingUnit, SystemText, TboxText, Tempo, TempoKind,
+    TextLineInfo, TimeSig, Track, Transpose, Tuplet,
 };
 
 use super::{export_musicxml, export_musicxml_with, ExportOptions};
@@ -3848,5 +3848,53 @@ fn agrement_abc_garde_time_modification() {
         xml.matches("<time-modification>").count(),
         2,
         "l'import ABC marque l'agrément du groupe :\n{xml}"
+    );
+}
+
+/// Triolet de trois croches avec un placement explicite et une direction de
+/// hampe donnée ; renvoie l'export MusicXML.
+fn triolet_avec_hampe(placement: Option<Placement>, stem: StemDirection) -> String {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let tuplet = score.add_tuplet(Tuplet::new(
+        Fraction::new(3, 2),
+        Fraction::new(1, 8),
+        Fraction::new(1, 2),
+        Fraction::new(1, 4),
+    ));
+    score.tuplet_mut(tuplet).placement = placement;
+    for index in 0..3 {
+        let tick = Fraction::new(1, 2) + Fraction::new(index, 8);
+        let mut chord_rest = ChordRest::chord(Duration::eighth());
+        chord_rest.tuplet = Some(tuplet);
+        let chord = chord_rest.chord_mut().expect("accord");
+        chord.stem = stem;
+        chord.notes.push(score.add_note(Note::new(64, tpc::E)));
+        ajouter_element(&mut score, &mut measure, track, tick, chord_rest);
+    }
+    score.add_measure(measure);
+    export_musicxml(&score).expect("export")
+}
+
+#[test]
+fn nolet_place_au_dessus_de_hampes_baisse_garde_le_crochet() {
+    // `headSide = isUp() != (c1->up() || c2->up())` (`tuplet.cpp:222-228`) :
+    // n-olet vers le haut, hampes vers le bas → crochet.
+    let xml = triolet_avec_hampe(Some(Placement::Above), StemDirection::Down);
+    assert!(
+        xml.contains("<tuplet type=\"start\" bracket=\"yes\""),
+        "crochet attendu :\n{xml}"
+    );
+}
+
+#[test]
+fn nolet_place_au_dessus_de_hampes_hausse_perd_le_crochet() {
+    // Même sens : `headSide` faux, le n-olet possède sa ligature.
+    let xml = triolet_avec_hampe(Some(Placement::Above), StemDirection::Up);
+    assert!(
+        xml.contains("<tuplet type=\"start\" bracket=\"no\""),
+        "pas de crochet attendu :\n{xml}"
     );
 }

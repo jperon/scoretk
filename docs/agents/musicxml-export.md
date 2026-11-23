@@ -1518,3 +1518,31 @@ identiques à la référence. Le niveau plein passe de 12 589 à 12 865 lignes d
 différence de **séquence** (alignement : `<print>` et crédits), sans écart de
 contenu. Les 6 lignes restantes sont le crochet de n-olet (§29.3). Test réduit :
 `clef_2x.rs`.
+
+## 47. Crochet de n-olet : `headSide` et sens des hampes (2026-11-23)
+
+Trois fichiers gardaient `bracket="no"` là où 4.7.4 écrit `bracket="yes"`
+(`Vivaldi 04` 2 lignes, `Vivaldi 08` 14, `Vingt_danses` 6). `calcHasBracket`
+(`tuplet.cpp:206-280`) retire le crochet d'un n-olet entièrement ligaturé
+seulement si `!headSide || isCross` (`:222-228`), avec
+`headSide = isUp() != (c1->up() || c2->up())` et
+`isCross = c1->vStaffIdx() != c2->vStaffIdx()`. `isUp()` vient de
+`TupletLayout::computeDirection` (`tupletlayout.cpp:212-245`) : direction
+explicite du n-olet, sinon signe de la somme des directions de hampe des
+accords. Le portage ignorait `headSide` : un triolet placé au-dessus de hampes
+vers le bas perdait son crochet.
+
+`tuplet_bracket::has_bracket` calcule désormais `is_up` (placement explicite,
+sinon `stems::stem_up` de chaque accord, direction de ligature comprise) et
+compare aux premier et dernier accords ; un accord croisé (`staff_move`) garde
+la règle `isCross`. Les deux tests réduits
+`nolet_place_au_dessus_de_hampes_baisse_garde_le_crochet` et
+`…_hausse_perd_le_crochet` couvrent les deux sens.
+
+Mesure sur les 173 `.mscz` : **2 gains, 0 perte** — `Vingt_danses` 6 → **0**
+(core-identique), `Vivaldi 08` 14 → 4, `Benedictus` 77 → 72 ; 166 → **167/173**
+core-exacts. `Vivaldi 04` (2) et `Vivaldi 08` (4) restent : leurs n-olets sont
+à l'intérieur d'une ligature plus longue, que la reconstruction de `beams.rs`
+ne délimite pas comme MuseScore (`<Groups>` et prédicats de
+`calcBeamBreaks`/`headSide`, cf. §29.3 et §30). Classe de mise en page
+documentée, non corrigée.
