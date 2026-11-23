@@ -6454,11 +6454,9 @@ fn kill_cues(music: Music) -> Music {
             absolute,
             music: Box::new(kill_cues(*music)),
         }),
-        Music::Context(Context::NonRelative { music }) => {
-            Music::Context(Context::NonRelative {
-                music: Box::new(kill_cues(*music)),
-            })
-        }
+        Music::Context(Context::NonRelative { music }) => Music::Context(Context::NonRelative {
+            music: Box::new(kill_cues(*music)),
+        }),
         Music::Context(Context::Invisible { music }) => Music::Context(Context::Invisible {
             music: Box::new(kill_cues(*music)),
         }),
@@ -6503,12 +6501,10 @@ fn kill_cues(music: Music) -> Music {
         Music::Context(Context::Alternative(items)) => Music::Context(Context::Alternative(
             items.into_iter().map(kill_cues).collect(),
         )),
-        Music::Context(Context::Volta { numbers, music }) => {
-            Music::Context(Context::Volta {
-                numbers,
-                music: Box::new(kill_cues(*music)),
-            })
-        }
+        Music::Context(Context::Volta { numbers, music }) => Music::Context(Context::Volta {
+            numbers,
+            music: Box::new(kill_cues(*music)),
+        }),
         other => other,
     }
 }
@@ -6603,13 +6599,11 @@ fn silence_music(music: Music) -> Music {
             number_type,
             music: Box::new(silence_music(*music)),
         }),
-        Music::Context(Context::Grace { kind, slash, music }) => {
-            Music::Context(Context::Grace {
-                kind,
-                slash,
-                music: Box::new(silence_music(*music)),
-            })
-        }
+        Music::Context(Context::Grace { kind, slash, music }) => Music::Context(Context::Grace {
+            kind,
+            slash,
+            music: Box::new(silence_music(*music)),
+        }),
         Music::Context(Context::AfterGrace {
             main,
             grace,

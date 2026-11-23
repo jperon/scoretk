@@ -972,7 +972,7 @@ impl<'a> Interpreter<'a> {
             Context::Volta { numbers, music } => {
                 let jouer = self
                     .repeat_pass
-                    .map_or(true, |passage| numbers.is_empty() || numbers.contains(&passage));
+                    .is_none_or(|passage| numbers.is_empty() || numbers.contains(&passage));
                 if jouer {
                     self.walk(music);
                 }

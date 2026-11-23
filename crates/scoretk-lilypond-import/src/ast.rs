@@ -289,10 +289,7 @@ pub(crate) enum Context {
     /// `cue_notes` distingue les vraies notes de cue (`\cueDuring`), que
     /// `\killCues` retire, des citations ordinaires (`\quoteDuring`), qu'il
     /// conserve (`ly/music-functions-init.ly:955-964`).
-    Cue {
-        music: Box<Music>,
-        cue_notes: bool,
-    },
+    Cue { music: Box<Music>, cue_notes: bool },
     /// Musique dont les notes sont invisibles et silencieuses (`NullVoice`) :
     /// la trame et les paroles restent dans le modèle, seul le MIDI les ignore.
     Invisible { music: Box<Music> },
