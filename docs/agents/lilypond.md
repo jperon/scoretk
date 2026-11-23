@@ -6841,3 +6841,25 @@ Remaining subgroups, with their proof (none excluded from the denominator):
   `\repeat … \etc` timing), `repeat-unfold-all` (nested unfold/alternative),
   `skiptypesetting-show-first-and-last` (`showFirstLength`/`showLastLength`
   truncation) — distinct causes, each with its own reference.
+
+### Vérification `play=false` et mesure contrôlée finale
+
+`<play>no</play>` était invalide : `musicxml-4.0.xsd:2747-2765` définit un
+type complexe (children `ipa`/`mute`/`semi-pitched`/`other-play`), sans texte.
+MuseScore n'écrit pas de `<play>` pour `play()==false`, sauf `<cue/>` sur les
+petites notes (`exportmusicxml.cpp:4190-4193`). Notre importeur relit déjà
+`<cue/>` en `Note.play=false` (`pass2.rs:1249`) : c'est le mécanisme standard
+retenu. `xmllint --schema musicxml-4.0.xsd` valide la sortie de `cluster.ly`.
+
+Aucun `.mscx` du corpus (`tests/corpus/v3`, `v4`) ne contient d'élément
+`<play>` (`grep -rl '<play>'` : 0 fichier) : le changement d'export ne peut
+donc pas modifier les références MusicXML 4.7.4, ni l'e2e corpus ni le
+rapport de parité complète. Aucun fichier concerné à nommer.
+
+Mesure strictement contrôlée : binaire de master `6229fcec`
+(`/tmp/wt-master-bin/target/debug/scoretk`) contre master + nos commits
+(`/tmp/ly-bin-cue`), **même oracle, mêmes références** (`/tmp/ly95lect-refs-clean`)
+: **1596 → 1599**, **+3 exacts** (`cluster.ly`, `cluster-break.ly`,
+`backend-exercise.ly`), **0 perte**. Le chiffre +20 annoncé précédemment
+comparait des binaires séparés par de nombreux commits master et n'était pas
+contrôlé ; il est remplacé par +3.
