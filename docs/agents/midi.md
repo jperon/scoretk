@@ -3402,3 +3402,45 @@ All eight are same-pitch/same-onset pairing or grace-placement cases in the
 writer-to-or comparison. None yields a writer-only rule that changes a file to
 exact without changing correctly written notes; the one such rule tested
 (restrike priority) lost 90 files. No writer change was committed.
+
+## Event-level oracle level (2026-11-23)
+
+### Implementation and controlled measurement
+
+`midi_notes.evenements_par_tick()` now compares, per channel, the multiset of
+`(tick, "on"/"off", pitch)` events without any note pairing; a note-on of
+velocity zero counts as an off (`format-ref/midi.md` line 63). `compare_evenements`
+returns the first divergent tick, and `mesure.py` sets `exact_events` and counts
+a file as exact if `exact or exact_events`. Selftests (`test_events.py`) verify
+that two SMFs differing only by the order of an off and an on at the same tick
+are event-equal (while their FIFO note pairing is *not*), and that a real
+one-tick change fails.
+
+Controlled measurement, **same binary** (`target/midi-base`), only the oracle
+changed (`target/midi-events2`):
+
+| Lot | Exact before | Exact after | Gains | Losses |
+| --- | ---: | ---: | ---: | ---: |
+| corpus (`.mscx`) | 17/17 | **17/17** | 0 | 0 |
+| `.mscz` (171 files) | 143/171 | **143/171** | 0 | 0 |
+
+### Result: the 17 files are not event-equal
+
+`exact_events` is true for **0** files; the 17 `Veni`/`Once in royal` files
+remain non-exact. Two examples, first divergent tick **0** in both:
+
+- `00- Veni veni Emmanuel - chant piano.mscz` (index 59): the reference has
+  `((1, "off", 64), 1)` at tick 0 in addition to the channel-0 events
+  (`off` ×1, `on` ×2); our output has only the channel-0 events.
+- `00- Once in royal David_s city - chant piano.mscz` (index 93): the
+  reference has `((1, "off", 62), 1)` at tick 0; our output lacks it.
+
+These are the note-offs hoisted by MuseScore's `fixupMIDI`
+(`engraving/compat/midi/event.cpp:263-306`) and written on the previous
+staff's channel by `exportmidi.cpp:304-323`. The event-level comparison thus
+confirms a **real writer difference** (an off on the previous note's channel
+at the restrike tick), not merely an order artefact. No writer change was
+attempted in this pass: the earlier restrike-priority experiment on the same
+lot lost 90 files, so the channel-hoisting rule needs its own measured port
+rather than a priority tweak. The oracle change is committed with no per-file
+loss; all 14 `scripts/oracle/midi/` selftests pass.
