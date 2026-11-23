@@ -4546,6 +4546,16 @@ impl<'a> Parser<'a> {
                                     self.position += 1;
                                 }
                                 self.consume_chord_modifier(&mut nom);
+                                // Le lexer fait de `m7.5` un seul mot : le
+                                // `-`/`+` qui altère le dernier degré
+                                // (`min7.5-`, `7+`) suit comme ponctuation
+                                // (`CHORD_MODIFIER`, `lily/lexer.ll:1062-1067`).
+                                if self.peek().is_some_and(|token| token.is_punct('-')) {
+                                    self.position += 1;
+                                    nom.push('-');
+                                } else if self.eat_punct('+') {
+                                    nom.push('+');
+                                }
                             }
                             _ => {}
                         }

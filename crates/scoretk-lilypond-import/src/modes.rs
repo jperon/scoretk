@@ -225,6 +225,9 @@ fn addition_interval(ajout: &str) -> Option<i8> {
         "3" => 4,
         "4" | "5/" => 5,
         "5" => 7,
+        // `5-` / `b5` : quinte diminuée (`scm/chord-entry.scm`,
+        // `interpret-removals` retire la quinte naturelle avant d'ajouter).
+        "5-" | "b5" => 6,
         "6" => 9,
         "7" | "b7" => 10,
         "b9" => 13,
@@ -235,6 +238,17 @@ fn addition_interval(ajout: &str) -> Option<i8> {
         "#11" => 18,
         "b13" => 20,
         "13" => 21,
+        _ => return None,
+    })
+}
+
+/// Intervalle naturel remplacé par une altération d'ajout.
+fn interval_remplace(ajout: &str) -> Option<i8> {
+    Some(match ajout {
+        "5-" | "b5" => 7,
+        "b9" | "#9" => 14,
+        "b11" | "#11" => 17,
+        "b13" => 21,
         _ => return None,
     })
 }
@@ -284,6 +298,12 @@ pub(crate) fn chord_pitches(language: Language, name: &str) -> Option<(Vec<u8>, 
         .unwrap_or_else(|| vec![0, 4, 7]);
     for ajout in &ajouts {
         if let Some(ecart) = addition_interval(ajout) {
+            // Une altération remplace le degré naturel
+            // (`scm/chord-entry.scm`, `interpret-removals`) : `7.5-` n'a
+            // que la quinte diminuée, pas la quinte naturelle en plus.
+            if let Some(remplace) = interval_remplace(ajout) {
+                ecarts.retain(|existant| *existant != remplace);
+            }
             if !ecarts.contains(&ecart) {
                 ecarts.push(ecart);
             }
@@ -412,6 +432,23 @@ mod tests {
         assert_eq!(drum_pitch("hh"), Some(42));
         assert_eq!(drum_pitch("cymr"), Some(51));
         assert_eq!(drum_pitch("inconnu"), None);
+    }
+
+    #[test]
+    fn quinte_diminuee_remplace_la_quinte() {
+        // `min7.5-` : la quinte diminuée **remplace** la quinte naturelle
+        // (`scm/chord-entry.scm`, `interpret-removals`) ; le lexer fait de
+        // `m7.5` un seul mot et le `-` suit comme ponctuation
+        // (`lily/lexer.ll:1062-1067`).
+        let langue = Language::Nederlands;
+        assert_eq!(
+            chord_pitches(langue, "b:m7.5-"),
+            Some((vec![71, 74, 77, 81], None))
+        );
+        assert_eq!(
+            chord_pitches(langue, "b:min7.5-"),
+            Some((vec![71, 74, 77, 81], None))
+        );
     }
 
     #[test]
