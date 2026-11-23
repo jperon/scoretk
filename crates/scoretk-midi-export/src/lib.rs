@@ -43,6 +43,7 @@
 
 // Les erreurs sont partagées avec la lecture MIDI (types neutres du format).
 pub use scoretk_midi_common as error;
+mod cross_channel;
 mod fixup;
 mod glissando;
 mod harmony;

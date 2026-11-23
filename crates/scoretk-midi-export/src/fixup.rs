@@ -34,10 +34,11 @@
 
 use std::collections::BTreeMap;
 
+use super::cross_channel;
 use super::render::{Event, EventKind, Performance};
 
 /// Sort de chaque évènement de note après `fixupMIDI`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Decision {
     /// Écrit sur sa propre piste.
     Keep,
@@ -45,8 +46,9 @@ enum Decision {
     Drop,
     /// Extinction déplacée sur la piste de la dernière attaque.
     Hoist(usize),
-    /// Attaque qui déclenche une extinction sur la piste `usize`.
-    Restrike(usize),
+    /// Attaque qui déclenche une extinction sur la piste `usize`, pour chaque
+    /// canal de la partie où une note de même hauteur sonne encore.
+    Restrike(usize, Vec<u8>),
 }
 
 /// Applique `EventsHolder::fixupMIDI` à la performance rendue.
@@ -97,13 +99,22 @@ pub(crate) fn fixup_midi(performance: &mut Performance, part_of_track: &[usize])
                     .get(track_index)
                     .copied()
                     .unwrap_or(track_index);
-                let state = playing
-                    .entry((part, *channel, *key))
-                    .or_insert((0, track_index));
-                if state.0 >= 1 {
+                let previous_track = {
+                    let state = playing
+                        .entry((part, *channel, *key))
+                        .or_insert((0, track_index));
+                    (state.0 >= 1).then_some(state.1)
+                };
+                if let Some(previous_track) = previous_track {
                     // `event.setDiscard(info[channel].event[pitch]->getOriginatingStaff()+1)`
-                    decisions[track_index][seq] = Decision::Restrike(state.1);
+                    // puis `exportmidi.cpp:304-323` écrit un off sur la piste
+                    // précédente, pour chaque canal de la partie qui porte
+                    // encore cette hauteur (cross_channel.rs).
+                    let channels = cross_channel::restrike_channels(
+                        &playing, part, *channel, *key);
+                    decisions[track_index][seq] = Decision::Restrike(previous_track, channels);
                 }
+                let state = playing.get_mut(&(part, *channel, *key)).expect("état présent");
                 state.0 += 1;
                 state.1 = track_index;
             }
@@ -134,29 +145,31 @@ pub(crate) fn fixup_midi(performance: &mut Performance, part_of_track: &[usize])
     let mut restrikes: Vec<Vec<Event>> = vec![Vec::new(); tracks.len()];
     for (track_index, track) in tracks.iter().enumerate() {
         for (seq, event) in track.events.iter().enumerate() {
-            match decisions[track_index][seq] {
+            match &decisions[track_index][seq] {
                 Decision::Keep => rebuilt[track_index].push(event.clone()),
                 Decision::Drop => {}
                 Decision::Hoist(target) => {
-                    let destination = if target < rebuilt.len() {
-                        target
+                    let destination = if *target < rebuilt.len() {
+                        *target
                     } else {
                         track_index
                     };
                     rebuilt[destination].push(event.clone());
                 }
-                Decision::Restrike(target) => {
+                Decision::Restrike(target, channels) => {
                     rebuilt[track_index].push(event.clone());
-                    if let (Some(destination), EventKind::NoteOn { channel, key, .. }) =
-                        (restrikes.get_mut(target), &event.kind)
+                    if let (Some(destination), EventKind::NoteOn { key, .. }) =
+                        (restrikes.get_mut(*target), &event.kind)
                     {
-                        destination.push(Event {
-                            tick: event.tick,
-                            kind: EventKind::NoteOffRestrike {
-                                channel: *channel,
-                                key: *key,
-                            },
-                        });
+                        for channel in channels.iter().copied() {
+                            destination.push(Event {
+                                tick: event.tick,
+                                kind: EventKind::NoteOffRestrike {
+                                    channel,
+                                    key: *key,
+                                },
+                            });
+                        }
                     }
                 }
             }
@@ -167,5 +180,41 @@ pub(crate) fn fixup_midi(performance: &mut Performance, part_of_track: &[usize])
     }
     for (track, events) in performance.tracks.iter_mut().zip(rebuilt) {
         track.events = events;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render::TrackData;
+
+    fn on(tick: i64, channel: u8, key: u8) -> Event {
+        Event { tick, kind: EventKind::NoteOn { channel, key, velocity: 80 } }
+    }
+    fn off(tick: i64, channel: u8, key: u8) -> Event {
+        Event { tick, kind: EventKind::NoteOff { channel, key } }
+    }
+
+    /// Une attaque sur le canal 0 d'une même partie éteint aussi la note de
+    /// même hauteur encore ouverte sur le canal 1 (harmonies, orgue) :
+    /// `exportmidi.cpp:304-323` écrit cet off sur la piste de la nouvelle
+    /// attaque avec le canal de la note éteinte. Cas de `Veni veni Emmanuel`
+    /// au tick 22 080, hauteur 67.
+    #[test]
+    fn restrike_ecrit_aussi_loff_de_lautre_canal() {
+        let mut performance = Performance {
+            tracks: vec![
+                TrackData { events: vec![on(0, 0, 67), on(100, 0, 67), off(200, 0, 67)] },
+                TrackData { events: vec![on(50, 1, 67), off(150, 1, 67)] },
+            ],
+        };
+        fixup_midi(&mut performance, &[0, 0]);
+        let restrikes: Vec<(i64, u8)> = performance.tracks.iter().flat_map(|t| t.events.iter())
+            .filter_map(|e| match e.kind {
+                EventKind::NoteOffRestrike { channel, key: 67 } => Some((e.tick, channel)),
+                _ => None,
+            }).collect();
+        assert!(restrikes.contains(&(100, 0)), "restrike du canal 0 manquant : {restrikes:?}");
+        assert!(restrikes.contains(&(100, 1)), "restrike du canal 1 manquant : {restrikes:?}");
     }
 }
