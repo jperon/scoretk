@@ -3626,7 +3626,7 @@ impl<'a> Parser<'a> {
             // `lily/parser.yy:1518-1525` : une durée seule produit un
             // `NoteEvent` sans hauteur, résolu en répétition du dernier
             // accord par `expand-repeat-notes!`
-            // (scm/music-functions.scm l. 972-1015). `reve`, `\longa`
+            // (scm/music-functions.scm l. 972-1015). `\breve`, `\longa`
             // et `\maxima` sont des durées, pas des commandes inconnues.
             "breve" | "longa" | "maxima" => {
                 // `parse_command` a déjà consommé le nom : ne pas appeler

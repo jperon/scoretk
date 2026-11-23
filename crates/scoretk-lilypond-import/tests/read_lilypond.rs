@@ -7999,3 +7999,25 @@ fn voices_consomme_sa_liste_de_cles() {
         notes
     );
 }
+
+#[test]
+fn duree_breve_seule_reprend_la_note_precedente() {
+    // `lily/parser.yy:1518-1525` : une durée seule crée un `NoteEvent` sans
+    // hauteur, résolu en répétition par `expand-repeat-notes!`
+    // (scm/music-functions.scm l. 972-1015). `lily/parser.yy:3518-3535` :
+    // `steno_duration dots multipliers`, donc `\breve.` et `\breve*2`.
+    for src in [
+        "\\version \"2.24.0\"\n{ <a' a>4 \\breve 2 4 }\n",
+        "\\version \"2.24.0\"\n{ <a' a>4 \\breve. 2 4 }\n",
+        "\\version \"2.24.0\"\n{ <a' a>4 \\breve*2 2 4 }\n",
+    ] {
+        let score = read_lilypond(src).expect("lecture");
+        // Une durée avalée ferait disparaître les accords suivants.
+        assert!(
+            score.notes.len() >= 8,
+            "notes : {:?} / {}",
+            score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+            src
+        );
+    }
+}
