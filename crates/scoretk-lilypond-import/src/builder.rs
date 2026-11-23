@@ -3112,7 +3112,12 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                 }
             }
             sequence.sort_by_key(|(tick, end, _, _)| (*tick, *end));
-            let mut open: BTreeMap<u8, (NoteId, Fraction)> = BTreeMap::new();
+            // Une file par hauteur : un accord peut contenir deux têtes de
+            // même hauteur (`<bis' bis>`, `tie-chord-broken-extremal.ly`),
+            // qu'une simple entrée par hauteur écrasait ; chaque tête lie
+            // alors la tête de même rang de l'accord suivant.
+            let mut open: BTreeMap<u8, std::collections::VecDeque<(NoteId, Fraction)>> =
+                BTreeMap::new();
             let mut index = 0usize;
             while index < sequence.len() {
                 let (tick, _, _, _) = sequence[index];
@@ -3126,21 +3131,28 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     // Sans `tieWaitForNote`, seule la note liée qui se termine
                     // exactement ici peut être fermée. Avec, LilyPond cherche
                     // n'importe quelle tête pendante de même hauteur.
-                    let closes = open
-                        .get(&pitch)
-                        .is_some_and(|&(_, end)| end == tick || wait);
-                    if closes {
-                        let (previous, _) = open.remove(&pitch).expect("liaison à fermer");
+                    let closes = open.get_mut(&pitch).and_then(|queue| {
+                        queue
+                            .iter()
+                            .position(|&(_, end)| end == tick || wait)
+                            .map(|position| queue.remove(position).expect("liaison à fermer"))
+                    });
+                    if let Some((previous, _)) = closes {
                         score.note_mut(previous).tie_forward = Some(id);
                         score.note_mut(id).tie_back = Some(previous);
                     }
                 }
                 if !wait {
-                    open.retain(|_, (_, end)| *end > tick);
+                    open.retain(|_, queue| {
+                        queue.retain(|&(_, end)| end > tick);
+                        !queue.is_empty()
+                    });
                 }
                 for &(_, end, id, tie) in &sequence[index..fin] {
                     if tie {
-                        open.insert(score.note(id).pitch, (id, end));
+                        open.entry(score.note(id).pitch)
+                            .or_default()
+                            .push_back((id, end));
                     }
                 }
                 index = fin;

@@ -8670,3 +8670,29 @@ fn approximate_pitch_est_transparent() {
             .expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![60, 60]);
 }
+
+#[test]
+fn liaison_de_deux_tetes_de_meme_hauteur() {
+    // `tie-chord-broken-extremal.ly` : `<bis' bis>1 ~ <bis bis>2.` — les deux
+    // têtes de même hauteur se lient chacune à la tête de même rang de
+    // l'accord suivant (une seule entrée par hauteur écrasait la seconde).
+    let score = read_lilypond("\\version \"2.24.0\"\n\\relative { <bis' bis>1~ <bis bis>2. }\n")
+        .expect("lecture");
+    assert_eq!(score.notes.len(), 4);
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .filter(|note| note.tie_forward.is_some())
+            .count(),
+        2
+    );
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .filter(|note| note.tie_back.is_some())
+            .count(),
+        2
+    );
+}
