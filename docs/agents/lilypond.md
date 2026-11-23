@@ -7024,3 +7024,18 @@ trop** (`t = ref + 2`) : l'écart n'est pas un accord manquant mais des notes
 supplémentaires du `\partCombine`, cause distincte de la réunion des voix ;
 `bar-line-caesura-double.ly` ($\new Score \with$), `defineBarLine`,
 `optional-args.ly` et `skip-of-length.ly` (constructs déjà documentés).
+
+### Session suivante (causes supplémentaires)
+
+Mesures strictement contrôlées (binaire master rebuildé à chaque fois, même
+oracle, mêmes refs) :
+- `1614 → 1617` : `\featherDurations` (+2 : `beam-feather`, `beam-french`) et
+  `c:7+` (+1 : `chord-name-major7`) ;
+- `1622 → 1623` : built-ins `skip-of-length`/`mmrest-of-length` et
+  `applyMusic`/`musicMap` (`scm/music-functions.scm:2144-2188`,
+  `ly/music-functions-init.ly:1241-1245`) : +1 `skip-of-length.ly`, 0 perte.
+
+`part-combine.ly`/`-cross.ly` : les 2 notes en trop sont `(67,6)/(67,7)` et
+`(65,2)/(65,3)` — unissons que `scm/part-combiner.scm` fusionne ; portfolio
+complexe, non porté. `bar-line-caesura-double.ly` et `optional-args.ly`
+restent documentés. Aucun fichier exclu.

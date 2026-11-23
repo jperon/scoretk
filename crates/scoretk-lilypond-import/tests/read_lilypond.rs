@@ -8273,6 +8273,9 @@ fn mark_default_ne_mange_pas_la_duree_suivante() {
         vec![72, 72],
         "le 4 après le mark répète l'accord"
     );
+}
+
+#[test]
 fn skip_of_length_avance_le_temps_sans_jouer() {
     // `scm/music-functions.scm:2144-2188` : skip-of-length et
     // mmrest-of-length créent un silence de la durée de leur argument.
