@@ -642,38 +642,88 @@ def apparier_graces(
 ) -> tuple[list[tuple], int, int, int]:
     """Retire du MIDI les graces appariées et les compte à part.
 
-    Une grâce du candidat `(hauteur, attaque principale)` est appariée à la
-    note MIDI **de même hauteur** la plus proche **strictement avant**
-    l'attaque principale, dans la fenêtre `[attaque - window, attaque)`, qui
-    n'a pas déjà été utilisée. `lily/audio-item.cc:118-129` place en effet une
-    grâce à `main + 9/40 × grace_part`, avec un `grace_part` négatif
-    (`lily/grace-iterator.cc:24-27`) : une grâce sonne **avant** l'attaque de
-    la note qu'elle orne, jamais dessus. La borne haute `attaque + grid/2`
-    volait la note principale quand la grâce avait la même hauteur
-    (`grace-auto-beam-engraver` : les 28 `a1` étaient pris pour leurs grâces).
-    L'appariement est déterministe (une seule note par grâce, la plus tardive
-    en cas de doublon) et ne touche pas aux notes principales. Renvoie
-    `(référence sans graces, graces MIDI, graces XML, graces appariées)`.
+    `lily/audio-item.cc:118-129` place une grâce à `main + 9/40 × grace_part`
+    (`grace_part` négatif, `lily/grace-iterator.cc:24-27`) : dans un groupe,
+    la grâce *i* sonne à `main − 0.9 × (d_i + … + d_n)` noires, où `d` est la
+    durée écrite en rondes. On apparie donc chaque grâce à la note MIDI de
+    même hauteur la plus proche de cette position attendue (à un pas de
+    grille), ce qui évite de voler une note principale de même hauteur dans
+    les groupes longs (`grace-auto-beam-engraver.ly`, où la note principale
+    précédente est un `la`) tout en gardant les grâces réparties sur tout le
+    groupe.
+
+    Repli, quand la durée écrite manque ou pour un `\afterGrace` : note de
+    même hauteur la plus tardive dans `[attaque − window, attaque)` (ou
+    `attaque + grid/2` pour une grâce après), l'attaque MusicXML d'un
+    `\afterGrace` étant déjà le temps réel. Renvoie `(référence sans graces,
+    graces MIDI, graces XML, graces appariées)`.
     """
     restants = list(reference)
     utilises: set[int] = set()
-    apparies = 0
-    for grace in graces:
-        hauteur, attaque, apres = grace[:3]
-        # Grâce avant : strictement avant l'attaque (elle sonne dans la partie
-        # « grâce » négative). Grâce après (`\afterGrace`) : son attaque
-        # MusicXML est le temps réel, et LilyPond la place juste avant ce
-        # temps (`main + 9/40 × grace_part`), donc dans `[attaque - window,
-        # attaque + grid/2]`.
+
+    def apparier(
+        attaque: float, hauteur: int, apres: bool, attendu: float | None,
+        duree: float = 0.0,
+    ) -> bool:
         borne = attaque + grid / 2 if apres else attaque
+        if attendu is not None:
+            tolerance = max(grid / 2, 0.25)
+            proches = [
+                i for i, note in enumerate(restants)
+                if i not in utilises and note[0] == hauteur
+                and attaque - window <= note[1] < borne
+                and abs(note[1] - attendu) <= tolerance
+                # Une grâce réelle a la durée réelle du groupe (9/40 × écrite) ;
+                # la note principale de même hauteur, elle, dure bien plus
+                # longtemps (`grace-auto-beam-engraver.ly` : 3,77 contre 0,11).
+                and len(note) >= 3 and note[2] <= 0.9 * duree + grid
+            ]
+            if proches:
+                # La plus tardive dans la fenêtre : c'est la grâce, et non une
+                # note principale de même hauteur qui la précède de peu
+                # (`flags-default` : l'écart calculé tombe entre les deux).
+                utilises.add(
+                    max(proches, key=lambda i: (restants[i][1], -abs(restants[i][1] - attendu)))
+                )
+                return True
         candidats = [
             i for i, note in enumerate(restants)
             if i not in utilises and note[0] == hauteur
             and attaque - window <= note[1] < borne
         ]
-        if candidats:
-            utilises.add(max(candidats, key=lambda i: (restants[i][1], -i)))
-            apparies += 1
+        if not candidats:
+            return False
+        utilises.add(max(candidats, key=lambda i: (restants[i][1], -i)))
+        return True
+
+    # Groupes de grâces consécutives de même attaque logique et de même genre.
+    groupes: list[tuple[float, bool, list[int]]] = []
+    for index, grace in enumerate(graces):
+        attaque, apres = grace[1], grace[2]
+        if groupes and abs(groupes[-1][0] - attaque) < 1e-9 and groupes[-1][1] == apres:
+            groupes[-1][2].append(index)
+        else:
+            groupes.append((attaque, apres, [index]))
+    apparies = 0
+    for attaque, apres, indices in groupes:
+        notes = [graces[index] for index in indices]
+        durées_connues = all(len(grace) > 3 and grace[3] > 0 for grace in notes)
+        if apres or not durées_connues:
+            for grace in notes:
+                if apparier(attaque, grace[0], apres, None):
+                    apparies += 1
+            continue
+        # Positions attendues, de la première à la dernière grâce du groupe.
+        suffixes: list[float] = []
+        cumul = 0.0
+        for grace in reversed(notes):
+            cumul += grace[3]
+            suffixes.append(cumul)
+        suffixes.reverse()
+        for grace, suffixe in zip(notes, suffixes):
+            attendu = attaque - 0.9 * suffixe
+            if apparier(attaque, grace[0], apres, attendu, grace[3]):
+                apparies += 1
     return ([note for i, note in enumerate(restants) if i not in utilises],
             len(utilises), len(graces), apparies)
 

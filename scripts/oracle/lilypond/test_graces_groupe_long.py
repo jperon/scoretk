@@ -116,7 +116,30 @@ def test_decalage_par_groupe():
     assert abs(paliers[1][1] - 0.1) < 1e-9, paliers
 
 
+def test_appariement_par_position_attendue():
+    """Chaque grâce est appariée à sa position réelle (`9/40 × durée écrite`).
+
+    Avec deux croches de grâce, positions `main − 0.225` et `main − 0.1125`.
+    Une note principale de même hauteur qui précède de peu ne doit pas être
+    volée (`flags-default` : l'écart tombe entre la note tronquée et la
+    grâce), et une note principale longue de même hauteur non plus
+    (`grace-auto-beam-engraver` : 3,77 contre 0,11).
+    """
+    reference = [
+        (60, 3.5, 0.5, 0),       # note principale précédente, même hauteur
+        (60, 3.775, 0.1125, 0),  # grâce 1
+        (60, 3.8875, 0.1125, 0), # grâce 2
+        (60, 4.0, 2.0, 0),       # note principale
+    ]
+    graces = [(60, 4.0, False, 0.125), (60, 4.0, False, 0.125)]
+    restants, refs, tests, matches = apparier_graces(reference, graces, window=2.5)
+    assert (refs, tests, matches) == (2, 2, 2), (refs, tests, matches)
+    assert (60, 3.5, 0.5, 0) in restants, restants
+    assert (60, 4.0, 2.0, 0) in restants, restants
+
+
 if __name__ == "__main__":
     test_groupe_de_graces_plus_long_qu_un_temps()
     test_decalage_par_groupe()
+    test_appariement_par_position_attendue()
     print("ly_notes test_graces_groupe_long : OK")
