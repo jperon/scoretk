@@ -324,7 +324,24 @@ pub(crate) fn measure_context(
     let Some(measure) = score.measures.get(measure_index) else {
         return (None, None, None);
     };
-    for segment in &measure.segments {
+    // MuseScore range les changements de contexte au tick de la barre
+    // **finale** : ils sont donc dans les segments de la mesure précédente,
+    // pas au début de celle où ils s'appliquent (`Sancta_Maria`, mesure 49).
+    // On lit les deux emplacements, exactement comme `xml2abc.py::doAttr`
+    // lit tout `<attributes>` avant les notes qu'il modifie (lignes 1279-1331).
+    let mut segments: Vec<&scoretk_core::model::Segment> = measure.segments.iter().collect();
+    if let Some(previous) = measure_index
+        .checked_sub(1)
+        .and_then(|i| score.measures.get(i))
+    {
+        segments.extend(
+            previous
+                .segments
+                .iter()
+                .filter(|segment| segment.tick == measure.start_tick),
+        );
+    }
+    for segment in segments {
         if segment.tick != measure.start_tick {
             continue;
         }

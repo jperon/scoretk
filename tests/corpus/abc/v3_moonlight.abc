@@ -28,7 +28,7 @@ x2(3(G,CE)(3(G,CE)(3!pp!(G,CE) |
 (3B,DF(3B,DF(3B,=D^E(3B,DE |
 (3B,CG(3B,CG(3A,CF(3A,CF |
 (3=G,B,=D(3G,B,D(3F,A,^D(3F,A,D |
-(3C,F,A,(3C,F,A,(3C,F,G,(3C,^E,[K:E clef=treble]G, |
+(3C,F,A,(3C,F,A,(3C,F,G,(3C,^E,G, |
 (3F,A,C(3A,CF(3CFA(3CFA |
 (3CGB(3CGB(3CGB(3CGB |
 (3"^cresc."CFA(3CFA(3^B,FA(3CFA |
@@ -98,7 +98,7 @@ B6(B2 |
 B4B4 |
 B4A4 |
 (=G4F4) |
-C4C2[K:E clef=treble]C2 |
+C4C2C2 |
 z4z2c3/2c/2 |
 c6c3/2c/2 |
 (c4^B2c2) |

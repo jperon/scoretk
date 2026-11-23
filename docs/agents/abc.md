@@ -3686,3 +3686,32 @@ le MusicXML de référence produit par scoretk ne le porte pas ; les écarts
 d'attaque viennent surtout de la gestion des silences invisibles `x` et des
 fins de mesure, pas d'une règle unique dont le port améliorerait le relevé
 sans dégrader les 244 airs déjà exacts.
+
+## 47. Écriture : changement de clef en fin de mesure (2026-11-23)
+
+Cause réduite de 5 des fichiers `octave` : MuseScore range le segment de
+clef au tick de la **barre finale**, donc dans la mesure précédente. Le writer
+l'émettait avant la dernière note de cette mesure ; l'aller-retour appliquait
+alors `clef=treble-8` une mesure trop tôt et descendait cette note d'un octave.
+ABC 2.1 §4.6 ; `xml2abc.py::doAttr` (lignes 1279-1331) applique tout
+`<attributes>` avant les notes qu'il modifie, `mkNote` (1154) décale la
+hauteur écrite de `-clef-octave-change`.
+
+- `writer.rs::measure_context` lit aussi les segments de la mesure précédente
+  au tick `measure.start_tick` ;
+- `voice.rs::draw_context_changes` ne réémet pas un changement au tick de la
+  barre finale (il appartient à la mesure suivante) ;
+- `voice.rs::clef_octave_at` cherche la dernière clé par portée et par tick,
+  sur toutes les mesures, comme `s.clefOct[n]` de xml2abc (1329-1331).
+
+Test réduit : `crates/scoretk/tests/abc_export_clef_octave_mesure.rs`
+(`clef_octave_en_fin_de_mesure_precedente`), échoue avant, passe après.
+Instantanés mis à jour : 3 fichiers (`layout_elements`, `moonlight`,
+`copypaste_parts`) — les champs de clef se déplacent au début de la mesure où
+ils s'appliquent ; deux champs redondants disparaissent.
+
+Mesure contrôlée, même oracle, même lot, seul le writer change :
+**244 → 249 exact / 261** (corpus 54, mscz 165→171, xml 24→25), 0 perte.
+Gains : `Veni Creator Spiritus`, `Sancta Maria` (mscz **et** mxl),
+`Vivaldi Gloria Patri`, `Vingt danses enfantines`. Octets `.abc` :
+2 572 746 → 2 566 704 (aucune croissance). L'alternative reste à 101/261.

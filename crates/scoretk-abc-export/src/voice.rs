@@ -854,6 +854,13 @@ fn draw_context_changes(
         if segment.tick <= measure.start_tick {
             continue;
         }
+        // Un changement au tick de la barre finale appartient à la mesure
+        // suivante : `measure_context` le lit en tête de cette mesure. L'écrire
+        // ici le placerait avant la dernière note de la mesure courante et
+        // transposerait cette note d'un octave (ABC 2.1 §4.6).
+        if measure.len.is_positive() && segment.tick >= measure.start_tick + measure.len {
+            continue;
+        }
         for (track, item) in segment.iter_elements() {
             let kind = match item {
                 scoretk_core::model::SegmentItem::KeySig(_) => 0u8,
@@ -935,23 +942,40 @@ fn clef_octave_at(
     score: &Score,
     measure: &Measure,
     staff: usize,
-    voice: usize,
+    _voice: usize,
     tick: Tick,
 ) -> Option<i32> {
-    let track = Track::new(score.staves[staff].id, u8::try_from(voice).unwrap_or(0));
-    measure
-        .segments
+    // `xml2abc.py::doAttr` (lignes 1329-1331) associe `clef-octave-change` à
+    // la **portée** (`s.clefOct[n]`) et `mkNote` (ligne 1154) décale la
+    // hauteur écrite de toutes ses voix. La clé n'est pas nécessairement dans
+    // la mesure courante : MuseScore la range dans les segments de la mesure
+    // **précédente**, au tick de la barre finale (`Sancta_Maria`, mesure 48).
+    // On remonte donc les mesures jusqu'à trouver la dernière clé en vigueur
+    // à `tick`, exactement comme `measure_context` le fait au début de mesure.
+    let index = score
+        .measures
         .iter()
-        .filter(|segment| {
-            segment.tick <= tick
-                && matches!(segment.kind, SegmentType::Clef | SegmentType::HeaderClef)
-        })
-        .filter_map(|segment| segment.element(track))
-        .filter_map(|item| match item {
-            SegmentItem::Clef(clef) => Some(i32::from(clef.transposed.octave_change())),
-            _ => None,
-        })
-        .next_back()
+        .position(|m| m.start_tick == measure.start_tick)?;
+    for current in score.measures[..=index].iter().rev() {
+        let found = current
+            .segments
+            .iter()
+            .filter(|segment| {
+                segment.tick <= tick
+                    && matches!(segment.kind, SegmentType::Clef | SegmentType::HeaderClef)
+            })
+            .flat_map(|segment| segment.iter_elements())
+            .filter(|(track, _)| track.staff().index() == staff)
+            .filter_map(|(_, item)| match item {
+                SegmentItem::Clef(clef) => Some(i32::from(clef.transposed.octave_change())),
+                _ => None,
+            })
+            .last();
+        if found.is_some() {
+            return found;
+        }
+    }
+    None
 }
 
 /// Indice du premier élément au tick donné ou après.
