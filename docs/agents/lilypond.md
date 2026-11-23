@@ -7610,3 +7610,29 @@ Test réduit `agrement_apres_lie_a_la_note_ne_donne_pas_de_seconde_attaque`
 (71, 71 avant ; 71 après ; contrôle sans `~` : 71, 71). Mesure contrôlée :
 `ra` **1 687 → 1 688/1 724**, `mut` 1 216/1 316 et `rw` 1 258/1 365
 inchangés ; **1 gain, 0 perte**.
+
+### Cause : portée de `\unfoldRepeats` (et `\articulate`)
+
+`repeat-unfold-all.ly` joue deux fois la même musique dans une seule
+expression, la seconde sous `\unfoldRepeats`. La définition amont
+(`ly/music-functions-init.ly:2616-2625`, `scm/music-functions.scm:408-438`)
+applique `unfold-repeats` **à l'argument** de la fonction ; le lecteur
+posait un drapeau global au score et dépliait aussi la première musique
+(10 notes au lieu de 9).
+
+Le lecteur porte désormais le dépliage par un `Context::UnfoldRepeats`
+enveloppant l'argument (`events.rs`), avec la musique *avant* la commande
+laissée telle quelle. Le drapeau `playback_unfold_repeats` reste posé sur le
+score pour l'export MIDI. `\articulate` déplie aussi son argument
+(`ly/articulate.ly:437-487` : `ac:unfoldMusic` appelle
+`unfold-repeats-fully`, via `ac:startup-replacements` :855-860) : il reçoit le
+même contexte, sinon `Caprice_23.ly` (Mutopia) perdait ses reprises jouées
+(N1 98,30 → 88,59). Les deux enveloppes sont transparentes pour la structure
+de portées (`Wrapper::of`, `music_has_chords`, `music_has_pitched`).
+
+Deux tests réduits, vérifiés contre le MIDI de LilyPond 2.26 :
+`unfold_repeats_ne_deplie_que_son_argument` (9 notes) et
+`articulate_deplie_les_reprises_de_son_argument` (2 attaques). Mesure
+contrôlée : `ra` **1 688 → 1 689/1 724**, `mut` 1 216/1 316 et
+`rw` 1 258/1 365 inchangés ; **1 gain, 0 perte**, et N1/N2 de
+`ToccataFugue.ly` passent de 99,78/97,10 à 100/100 sur les deux lots réels.

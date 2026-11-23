@@ -268,7 +268,6 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                         staff_id,
                         part_id,
                         staff_block,
-                        document.playback_unfold_repeats,
                         warnings,
                         octave_relatif,
                         &occupied,
@@ -365,7 +364,6 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                         staff_id,
                         part_id,
                         staff_block,
-                        document.playback_unfold_repeats,
                         warnings,
                         octave_relatif,
                         &occupied,
@@ -530,7 +528,6 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 staff_id,
                 staff_part_id,
                 staff_block,
-                document.playback_unfold_repeats,
                 warnings,
                 octave_relatif,
                 &[],
@@ -974,7 +971,6 @@ fn build_voices(
     staff: StaffId,
     part: PartId,
     staff_block: &StaffBlock,
-    unfold_repeats: bool,
     warnings: &mut Warnings,
     octave: OctaveState,
     occupied: &[Option<Fraction>],
@@ -993,14 +989,8 @@ fn build_voices(
             Music::Context(crate::ast::Context::Relative { chain: true, .. }) => octave,
             _ => OctaveState::default(),
         };
-        let (interpreted, octave_suivante) = Interpreter::run(
-            &block.music,
-            unfold_repeats,
-            warnings,
-            seme,
-            start,
-            block.name.as_deref(),
-        );
+        let (interpreted, octave_suivante) =
+            Interpreter::run(&block.music, warnings, seme, start, block.name.as_deref());
         octave = octave_suivante;
         queue.push_back(PendingVoice {
             name: block.name.clone(),
@@ -1149,9 +1139,8 @@ fn music_has_pitched(music: &crate::ast::Music) -> bool {
         | Music::Context(crate::ast::Context::NonRelative { music })
         | Music::Context(crate::ast::Context::Tuplet { music, .. })
         | Music::Context(crate::ast::Context::Grace { music, .. })
-        | Music::Context(crate::ast::Context::Repeat { body: music, .. }) => {
-            music_has_pitched(music)
-        }
+        | Music::Context(crate::ast::Context::Repeat { body: music, .. })
+        | Music::Context(crate::ast::Context::UnfoldRepeats { music }) => music_has_pitched(music),
         Music::New(group) => group.staves.iter().any(|staff| {
             staff
                 .voices
@@ -1174,9 +1163,8 @@ fn music_has_chords(music: &crate::ast::Music) -> bool {
         | Music::Context(crate::ast::Context::NonRelative { music })
         | Music::Context(crate::ast::Context::Tuplet { music, .. })
         | Music::Context(crate::ast::Context::Grace { music, .. })
-        | Music::Context(crate::ast::Context::Repeat { body: music, .. }) => {
-            music_has_chords(music)
-        }
+        | Music::Context(crate::ast::Context::Repeat { body: music, .. })
+        | Music::Context(crate::ast::Context::UnfoldRepeats { music }) => music_has_chords(music),
         Music::New(group) => group.staves.iter().any(|staff| {
             staff
                 .voices
@@ -1206,7 +1194,8 @@ fn instrument_transpose(music: &Music) -> Option<(PitchSpec, bool)> {
         | Music::Context(Context::NonRelative { music })
         | Music::Context(Context::Tuplet { music, .. })
         | Music::Context(Context::Grace { music, .. })
-        | Music::Context(Context::Repeat { body: music, .. }) => instrument_transpose(music),
+        | Music::Context(Context::Repeat { body: music, .. })
+        | Music::Context(Context::UnfoldRepeats { music }) => instrument_transpose(music),
         Music::Context(Context::AfterGrace { main, .. }) => instrument_transpose(main),
         Music::New(group) => group
             .staves

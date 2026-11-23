@@ -275,6 +275,9 @@ pub(crate) enum Context {
     /// dans le MusicXML exporté, qui ne peut pas poser `<transpose>` au
     /// milieu d'une mesure.
     InstrumentSwitch(PitchSpec),
+    /// `\unfoldRepeats` : ne déplie que les reprises de son argument
+    /// (`ly/music-functions-init.ly:2616-2625`, `scm/music-functions.scm:408-438`).
+    UnfoldRepeats { music: Box<Music> },
     /// `\fixed` : octave de référence absolue.
     Fixed {
         reference: Option<PitchSpec>,

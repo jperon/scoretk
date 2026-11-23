@@ -457,7 +457,6 @@ impl<'a> Interpreter<'a> {
     /// `{ … }`.
     pub(crate) fn run(
         music: &Music,
-        unfold_repeats: bool,
         warnings: &'a mut Warnings,
         octave: OctaveState,
         start: Fraction,
@@ -489,7 +488,12 @@ impl<'a> Interpreter<'a> {
             staff_target: None,
             tuplet_scale: Fraction::ONE,
             temporary: false,
-            unfold_repeats,
+            // `\unfoldRepeats` est une fonction musicale : elle ne concerne
+            // que son argument, porté par `Context::UnfoldRepeats`. Le
+            // dépliage n'est plus un état global de la voix, sinon la musique
+            // écrite *avant* la commande dans la même expression serait
+            // dépliée aussi (`repeat-unfold-all.ly`).
+            unfold_repeats: false,
             tag_stack: Vec::new(),
             filter_stack: Vec::new(),
             order: 0,
@@ -1023,6 +1027,12 @@ impl<'a> Interpreter<'a> {
             Context::InstrumentSwitch(pitch) => {
                 let (diatonic, chromatic) = crate::pitch::instrument_transpose(pitch);
                 self.transpose = (self.transpose.0 + diatonic, self.transpose.1 + chromatic);
+            }
+            Context::UnfoldRepeats { music } => {
+                let previous = self.unfold_repeats;
+                self.unfold_repeats = true;
+                self.walk(music);
+                self.unfold_repeats = previous;
             }
             Context::Fixed { reference, music } => {
                 let saved = self.octave;

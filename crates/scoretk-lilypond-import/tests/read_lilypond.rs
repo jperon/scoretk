@@ -7292,6 +7292,37 @@ fn accordmode_sous_fixed_decale_les_hauteurs() {
     );
 }
 
+/// `\unfoldRepeats` est une fonction musicale : elle ne déplie que son
+/// argument (`ly/music-functions-init.ly:2616-2625`,
+/// `scm/music-functions.scm:408-438`). Dans `repeat-unfold-all.ly`, la même
+/// musique est jouée deux fois dans une seule expression, la seconde sous
+/// `\unfoldRepeats` : la première doit garder sa reprise non dépliée.
+/// Vérifié avec le MIDI de LilyPond 2.26 sur cette source réduite.
+#[test]
+fn unfold_repeats_ne_deplie_que_son_argument() {
+    let src = "\\version \"2.24.0\"\n\\score { \\fixed c' { c'4 \\repeat volta 2 { d'4 } \\alternative { { e'4 } { f'4 } } \\unfoldRepeats \\repeat volta 2 { g'4 } \\alternative { { a'4 } { b'4 } } } }";
+    let score = read_lilypond(src).expect("lecture \\unfoldRepeats");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![72, 74, 76, 77, 79, 81, 79, 83]
+    );
+}
+
+/// `\articulate` déplie complètement les reprises de son argument
+/// (`ly/articulate.ly:437-487` : `ac:unfoldMusic` appelle
+/// `unfold-repeats-fully`, utilisé dans `ac:startup-replacements` :855-860).
+/// Vérifié avec le MIDI de LilyPond 2.26 sur `\articulate \repeat volta 2 d'4`
+/// (deux attaques, contre une sans `\articulate`).
+#[test]
+fn articulate_deplie_les_reprises_de_son_argument() {
+    let src = "\\version \"2.24.0\"\n\\score { \\fixed c' { \\articulate \\repeat volta 2 d'4 } }";
+    let score = read_lilypond(src).expect("lecture \\articulate");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![74, 74]
+    );
+}
+
 /// `\articulate` est propre au `\score` où il apparaît, comme
 /// `\unfoldRepeats` (`scm/music-functions.scm`). Un second score qui
 /// articule sa musique ne doit pas faire croire que la partition retenue

@@ -3165,15 +3165,18 @@ impl<'a> Parser<'a> {
                 let _ = self.parse_tag_names();
                 Music::Empty
             }
-            // `unfoldRepeats` (`music-functions-init.ly`) déplie les reprises
-            // et écarte les alternatives ; le lecteur déplie déjà les reprises,
-            // la commande est donc transparente.
+            // `\unfoldRepeats` est une fonction musicale : elle transforme
+            // **son argument** (`ly/music-functions-init.ly:2616-2625`,
+            // `scm/music-functions.scm:408-438`), pas toute la musique qui
+            // précède dans la même expression. Le drapeau de score reste
+            // posé pour l'export MIDI ; le dépliage effectif est porté par le
+            // contexte (`Context::UnfoldRepeats`).
             "unfoldRepeats" => {
-                // LilyPond ne déplie les reprises que sous cette fonction
-                // (`ly/music-functions-init.ly`) ; le MIDI d'un score sans
-                // elle joue le corps et les `\alternative` une fois.
                 self.playback_unfold_repeats = true;
-                self.parse_music()
+                let music = self.parse_music();
+                Music::Context(Context::UnfoldRepeats {
+                    music: Box::new(music),
+                })
             }
             // `\partcombine` (ancien nom de `\partCombine`, ainsi que
             // `\partCombineUp`/`\partCombineDown`) est défini dans
@@ -3244,7 +3247,13 @@ impl<'a> Parser<'a> {
             // interrompait la musique et perdait la transposition.
             "articulate" => {
                 self.playback_articulate = true;
-                self.parse_music()
+                // `ac:unfoldMusic` (`ly/articulate.ly:437-487`, appelé par
+                // `ac:startup-replacements` :855-860) déplie complètement les
+                // reprises de son argument avant d'articuler les notes.
+                let music = self.parse_music();
+                Music::Context(Context::UnfoldRepeats {
+                    music: Box::new(music),
+                })
             }
             // `\retrograde` (`ly/music-functions-init.ly:2138-2143`) renvoie
             // sa musique dans l'ordre inverse (`retrograde-music`,
@@ -6816,6 +6825,9 @@ enum Wrapper {
     Fixed(Option<PitchSpec>),
     /// `\relative [référence]`.
     Relative(Option<PitchSpec>, bool),
+    /// `\unfoldRepeats` : enveloppe transparente pour la structure, mais
+    /// porte le dépliage des reprises de son argument.
+    UnfoldRepeats,
 }
 
 impl Wrapper {
@@ -6841,6 +6853,7 @@ impl Wrapper {
                 music,
                 chain,
             } => Some((Self::Relative(*reference, *chain), music)),
+            Context::UnfoldRepeats { music } => Some((Self::UnfoldRepeats, music)),
             _ => None,
         }
     }
@@ -6861,6 +6874,7 @@ impl Wrapper {
                 chain,
                 music,
             },
+            Self::UnfoldRepeats => Context::UnfoldRepeats { music },
         })
     }
 }
