@@ -504,7 +504,7 @@ impl<'a> Interpreter<'a> {
         // « après » le rend audible dans le MIDI sans décaler la mesure.
         let pending = std::mem::take(&mut interpreter.pending_grace);
         if !pending.is_empty() {
-            if let Some(event) =
+            let target =
                 interpreter
                     .voice
                     .events
@@ -513,8 +513,8 @@ impl<'a> Interpreter<'a> {
                     .find_map(|event| match &mut event.kind {
                         EventKind::Chord(chord) => Some(chord),
                         _ => None,
-                    })
-            {
+                    });
+            if let Some(event) = target {
                 for mut grace in pending {
                     // Une grâce de fin de voix sonne **après** la note
                     // principale, à sa fin (`grace-end.ly`) : seul un type
@@ -531,6 +531,37 @@ impl<'a> Interpreter<'a> {
                     grace.fraction = Fraction::ONE;
                     event.grace_after.push(grace);
                 }
+            } else {
+                // Voix qui ne contient **que** des grâces
+                // (`grace-multiple.ly`) : LilyPond les joue au moment
+                // courant (`lily/grace-iterator.cc`). Sans accord porteur,
+                // elles étaient perdues ; on pose un accord vide au début de
+                // la voix, l'export écrit alors les `<grace>` (sans note
+                // principale).
+                interpreter.voice.events.push(VoiceEvent {
+                    tick: start,
+                    order: interpreter.order,
+                    kind: EventKind::Chord(Box::new(ChordEvent {
+                        content: ChordContent::Notes(Vec::new()),
+                        written: Duration::quarter(),
+                        explicit_ticks: None,
+                        actual: Duration::quarter().ticks(),
+                        tuplet: None,
+                        articulations: Vec::new(),
+                        ornaments: Vec::new(),
+                        arpeggio: None,
+                        tremolo: None,
+                        chord_line: None,
+                        stem: StemDirection::Auto,
+                        staff: None,
+                        fingerings: Vec::new(),
+                        grace_before: pending,
+                        grace_after: Vec::new(),
+                        breath: None,
+                    })),
+                });
+                interpreter.order += 1;
+                interpreter.cursor += Duration::quarter().ticks();
             }
         }
         interpreter.voice.end = interpreter.cursor;

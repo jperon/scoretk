@@ -8491,3 +8491,33 @@ fn markup_line_ne_mange_pas_la_duree_suivante() {
     let score = read_lilypond(source).expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![71, 69, 69, 71]);
 }
+
+#[test]
+fn voix_de_gruces_seule_garde_ses_ornements() {
+    // `grace-multiple.ly` : une voix qui ne contient que des `\grace`
+    // (aucun accord) doit garder ses ornements ; sans accord porteur,
+    // LilyPond les joue au moment courant (`lily/grace-iterator.cc`) et ils
+    // étaient perdus.
+    let source = "\\version \"2.24.0\"\n<< { \\grace c''8 } { c'1 } >>\n";
+    let score = read_lilypond(source).expect("lecture");
+    let mut graces = 0;
+    let mut porteur = 0;
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (_, item) in segment.iter_elements() {
+                let SegmentItem::ChordRest(chord_rest) = item else {
+                    continue;
+                };
+                let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                    continue;
+                };
+                graces += chord.grace_chords.len();
+                if chord.notes.is_empty() && !chord.grace_chords.is_empty() {
+                    porteur += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(graces, 1, "la grâce est conservée");
+    assert_eq!(porteur, 1, "un accord porteur vide porte l'ornement");
+}
