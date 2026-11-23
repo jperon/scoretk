@@ -6594,3 +6594,38 @@ n'est exclu du dénominateur) :
   la troncature de la partition, changement structurel ;
 - `bar-line-caesura-double.ly` : `\new Score \with { … }` avec deux portées
   partageant la même variable, cause distincte.
+
+### Table unique des 135 fichiers non exacts (première divergence)
+
+`subdivise.py` sur `/tmp/ly-ctrl-new` (1589 exacts) :
+
+| Constructeur | Fichiers | Exemple |
+| --- | ---: | --- |
+| markup/tweak | 29 | `accidental-styles.ly` |
+| relative | 20 | `backend-exercise.ly` |
+| grace | 18 | `after.ly` |
+| voices | 16 | `bar-line-caesura-double.ly` |
+| cue/quote | 10 | `quote-cue-during.ly` |
+| scheme | 9 | `bar-line-define-bar-glyph.ly` |
+| repeat/volta | 9 | `duration-multiplier-scheme.ly` |
+| include | 7 | `alteration-glyphs.ly` |
+| tuplet | 4 | `alignment-order.ly` |
+| sans-construct | 4 | `chord-X-align-on-main-noteheads.ly` |
+| score/book | 4 | `cue-clef-transposition.ly` |
+| transpose/clef/key | 4 | `music-map.ly` |
+| lyrics | 1 | `lyrics-includegraces.ly` |
+
+Le plus gros groupe (`markup/tweak`) est hétérogène : 29 fichiers mêlent
+Scheme, ornements MIDI et erreurs d'octave, sans commande lisible commune.
+Le groupe `relative` contient 4 fichiers `cluster-*`/`backend-exercise` dont
+le décalage vient de `\makeClusters` : la portée est muette dans le MIDI mais
+ses notes restent dans le MusicXML. Corriger exigerait de retirer les notes
+du modèle pivot (changement sémantique : les tests existants exigent de les
+conserver pour la gravure), donc non tenté. Le groupe `repeat/volta` contient
+4 fichiers `volta-spec-*` dont les numéros hors plage devraient être ignorés
+au dépliage (`lily/alternative-sequence-iterator.cc:86-117`) : le lecteur ne
+conserve pas ces numéros dans l'AST, changement structurel non tenté ici.
+Aucun de ces fichiers n'est exclu du dénominateur.
+
+Mesure contrôlée de la cause `\breve` (même oracle, mêmes références, seul le
+binaire change) : `1588 → 1589`, **+1 exact** (`monochords.ly`), **0 perte**.
