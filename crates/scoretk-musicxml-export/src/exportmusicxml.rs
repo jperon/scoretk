@@ -1460,7 +1460,7 @@ impl Context<'_> {
         let bracket = if tuplet.bracket_explicit {
             tuplet.bracket
         } else {
-            tuplet_bracket::has_bracket(self.score, id, self.concert_pitch())
+            tuplet_bracket::has_bracket(self.score, id, self.concert_pitch(), &self.beams)
         };
         attributes.push(("bracket", if bracket { "yes" } else { "no" }.to_owned()));
         match tuplet.number_type {

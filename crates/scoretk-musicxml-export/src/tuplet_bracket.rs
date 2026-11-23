@@ -66,7 +66,16 @@ impl Elem<'_> {
 }
 
 /// Vrai si MuseScore dessinerait un crochet autour du n-olet.
-pub(crate) fn has_bracket(score: &Score, id: TupletId, concert_pitch: bool) -> bool {
+///
+/// `beams` est l'index construit une fois par l'écrivain (`Export::beams`) :
+/// le reconstruire ici pour chaque n-olet rendait l'export quadratique sur
+/// les partitions denses en triolets (`contrapunctusXVI-lys/score.ly`).
+pub(crate) fn has_bracket(
+    score: &Score,
+    id: TupletId,
+    concert_pitch: bool,
+    beams: &beams::Beams,
+) -> bool {
     let mut all = Vec::new();
     for (measure_index, measure) in score.measures.iter().enumerate() {
         for segment in &measure.segments {
@@ -119,7 +128,6 @@ pub(crate) fn has_bracket(score: &Score, id: TupletId, concert_pitch: bool) -> b
         return true;
     }
 
-    let beams = beams::Beams::new(score, concert_pitch);
     let beam_start = beams.group_of(first.measure, first.track, first.tick);
     let beam_end = beams.group_of(last.measure, last.track, last.tick);
     // `!beamStart || !beamEnd || beamStart != beamEnd` (`tuplet.cpp:218-222`).
@@ -135,9 +143,9 @@ pub(crate) fn has_bracket(score: &Score, id: TupletId, concert_pitch: bool) -> b
     let tuplet_starts_beam = beam_start.start == first.cr_ref();
     let tuplet_ends_beam = beam_start.end == last.cr_ref();
 
-    let is_up = tuplet_direction_up(score, &elements, concert_pitch, &beams);
-    let first_up = chord_up(score, first, concert_pitch, &beams);
-    let last_up = chord_up(score, last, concert_pitch, &beams);
+    let is_up = tuplet_direction_up(score, &elements, concert_pitch, beams);
+    let first_up = chord_up(score, first, concert_pitch, beams);
+    let last_up = chord_up(score, last, concert_pitch, beams);
     // `headSide = isUp() != (c1->up() || c2->up())` (`tuplet.cpp:225`).
     let head_side = is_up != (first_up || last_up);
     // `isCross = c1->vStaffIdx() != c2->vStaffIdx()` (`tuplet.cpp:226`).
