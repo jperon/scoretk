@@ -907,6 +907,19 @@ impl<'a> Interpreter<'a> {
                 music,
             } => self.tuplet(*numerator, *denominator, *number_type, music),
             Context::Grace { kind, slash, music } => self.grace_scope(*kind, *slash, music),
+            // `\after` : `mus` avance le curseur, `ev` est joué `delta` plus
+            // loin dans un contexte parallèle.
+            Context::After {
+                delta,
+                event,
+                music,
+            } => {
+                let start = self.cursor;
+                if !event.is_empty() {
+                    self.spawn_at(start + *delta, None, event, Vec::new(), true);
+                }
+                self.walk(music);
+            }
             Context::AfterGrace {
                 main,
                 grace,
@@ -2141,6 +2154,7 @@ fn context_is_context_only(context: &Context) -> bool {
         | Context::Retrograde { music, .. }
         | Context::Transpose { music, .. } => is_context_only(music),
         Context::AfterGrace { main, grace, .. } => is_context_only(main) && is_context_only(grace),
+        Context::After { event, music, .. } => is_context_only(event) && is_context_only(music),
         Context::Volta { music, .. } => is_context_only(music),
         Context::Repeat {
             body, alternatives, ..

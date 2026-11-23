@@ -8747,3 +8747,29 @@ fn relative_sur_un_groupe_de_portees_enchaine_les_portees() {
     hauteurs.sort();
     assert_eq!(hauteurs, vec![60, 60, 60]);
 }
+
+#[test]
+fn after_retarde_l_evenement() {
+    // `\after 2. c'4 d'1` : `\context Bottom << { \skip 2. <> c'4 } d'1 >>`
+    // (`ly/music-functions-init.ly:67-83`) — la ronde occupe 0..4 et
+    // l'événement do4 sonne à trois temps.
+    let score = read_lilypond("\\version \"2.24.0\"\n{ \\after 2. c'4 d'1 }\n").expect("lecture");
+    let mut attaques = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for voice in 0..4u32 {
+                if let Some(chord_rest) = segment.chord_rest(Track::from_raw(voice)) {
+                    if let ChordRestKind::Chord(chord) = &chord_rest.kind {
+                        for id in &chord.notes {
+                            attaques.push((segment.tick, score.note(*id).pitch));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    attaques.sort_by_key(|(tick, pitch)| (*tick, *pitch));
+    assert_eq!(attaques.len(), 2);
+    assert_eq!(attaques[0], (Fraction::ZERO, 62));
+    assert_eq!(attaques[1], (Fraction::new(3, 4), 60));
+}

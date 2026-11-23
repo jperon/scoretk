@@ -326,6 +326,18 @@ pub(crate) enum Context {
         numbers: Vec<u32>,
         music: Box<Music>,
     },
+    /// `\after delta ev mus` (`ly/music-functions-init.ly:67-83`) :
+    /// `\context Bottom << { \skip delta <> ev } #mus >>` — `ev` (souvent un
+    /// post-événement) est posé à `delta` après le début de `mus`, dans un
+    /// contexte parallèle.
+    After {
+        /// Délai en ticks.
+        delta: Fraction,
+        /// Événement retardé.
+        event: Box<Music>,
+        /// Musique principale, jouée normalement.
+        music: Box<Music>,
+    },
     /// `\retrograde` (`ly/music-functions-init.ly:2138-2143`,
     /// `scm/modal-transforms.scm:183-290`) : musique renversée. LilyPond
     /// résout d'abord les octaves relatives dans l'ordre écrit

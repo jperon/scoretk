@@ -3174,6 +3174,28 @@ impl<'a> Parser<'a> {
             // pour le modèle. Ignorée, la commande décalait les notes qui
             // suivent (`approximate-pitch-head-direction-tweak.ly`).
             "approximatePitch" => self.parse_music(),
+            // `\voices` (`ly/music-functions-init.ly:2631-2665`) répartit les
+            // branches d'un `<< … \\ … >>` selon une liste de voix. Pour le
+            // MIDI la musique est la même dans un autre ordre : consommer la
+            // liste d'identifiants et lire la musique. Ignorée, la liste
+            // restait dans le flux et ajoutait deux notes
+            // (`voices-command.ly`).
+            "voices" => {
+                loop {
+                    match self.peek() {
+                        Some(token)
+                            if token.kind == Kind::Number
+                                || token.kind == Kind::Str
+                                || token.kind == Kind::Word
+                                || token.is_punct(',') =>
+                        {
+                            self.position += 1;
+                        }
+                        _ => break,
+                    }
+                }
+                self.parse_music()
+            }
             // `\shape` et `\vshape` (`ly/music-functions-init.ly:2191-2230`
             // et `:2675-2681`) décalent les points de contrôle d'un grob :
             // une liste Scheme de décalages, puis une liste de clés ou la
@@ -3310,6 +3332,61 @@ impl<'a> Parser<'a> {
                 slash: false,
                 music: Box::new(self.parse_music()),
             }),
+            "after" => {
+                // `\after delta ev mus` (`ly/music-functions-init.ly:67-83`) :
+                // `\context Bottom << { \skip delta <> ev } #mus >>`. `mus`
+                // avance le curseur ; `ev` (souvent un post-événement) est
+                // joué à part, `delta` plus loin. Ignoré, le délai devenait
+                // une durée qui décalait la musique (`after.ly`).
+                let saved_duration = self.default_duration;
+                let saved_multiplier = self.default_multiplier;
+                let delta = self
+                    .parse_duration()
+                    .map(|(duration, multiplier)| {
+                        duration.ticks() * multiplier.unwrap_or(Fraction::ONE)
+                    })
+                    .unwrap_or(Fraction::ZERO);
+                self.default_duration = saved_duration;
+                self.default_multiplier = saved_multiplier;
+                // Un `\tweak` porte sur la musique qui suit : c'est un
+                // événement (tweak + note), pas un simple post-événement.
+                let mut tweaked = false;
+                while self.eat_command("tweak") {
+                    self.parse_tweak();
+                    // `parse_tweak` ne consomme la valeur que dans les cas
+                    // qu'il connaît (`=`, `-2`) : sauter le datum restant,
+                    // sinon il devient un élément vide et la note tweakée
+                    // est lue comme musique principale.
+                    match self.peek() {
+                        Some(token)
+                            if token.is_scheme()
+                                || token.kind == Kind::Str
+                                || token.kind == Kind::Number =>
+                        {
+                            self.position += 1;
+                        }
+                        Some(token) if token.is_punct('-') || token.is_punct('+') => {
+                            self.skip_scheme_value();
+                        }
+                        _ => {}
+                    }
+                    tweaked = true;
+                }
+                let event = if tweaked {
+                    self.parse_music()
+                } else if self.peek().is_some_and(starts_post_event) {
+                    let _ = self.parse_posts();
+                    Music::Empty
+                } else {
+                    self.parse_music()
+                };
+                let music = self.parse_music();
+                Music::Context(Context::After {
+                    delta,
+                    event: Box::new(event),
+                    music: Box::new(music),
+                })
+            }
             "afterGrace" => {
                 // Argument optionnel `fraction` (échelle `7/8` ou paire
                 // Scheme) ; sinon `afterGraceFraction` (3/4 par défaut).
@@ -6863,7 +6940,8 @@ fn extract_alternatives(music: &mut Music, alternatives: &mut Vec<Music>) {
         | Music::Context(Context::Volta { music, .. })
         | Music::Context(Context::Tuplet { music, .. })
         | Music::Context(Context::Transpose { music, .. })
-        | Music::Context(Context::AfterGrace { main: music, .. }) => {
+        | Music::Context(Context::AfterGrace { main: music, .. })
+        | Music::Context(Context::After { music, .. }) => {
             extract_alternatives(music, alternatives);
         }
         Music::Tag { music, .. } | Music::Filtered { music, .. } => {
@@ -7075,6 +7153,15 @@ fn kill_cues(music: Music) -> Music {
             grace: Box::new(kill_cues(*grace)),
             fraction,
         }),
+        Music::Context(Context::After {
+            delta,
+            event,
+            music,
+        }) => Music::Context(Context::After {
+            delta,
+            event: Box::new(kill_cues(*event)),
+            music: Box::new(kill_cues(*music)),
+        }),
         Music::Context(Context::Repeat {
             kind,
             count,
@@ -7206,6 +7293,15 @@ fn silence_music(music: Music) -> Music {
             main: Box::new(silence_music(*main)),
             grace: Box::new(silence_music(*grace)),
             fraction,
+        }),
+        Music::Context(Context::After {
+            delta,
+            event,
+            music,
+        }) => Music::Context(Context::After {
+            delta,
+            event: Box::new(silence_music(*event)),
+            music: Box::new(silence_music(*music)),
         }),
         _ => Music::Empty,
     }
@@ -7562,6 +7658,10 @@ fn scale_context(context: &mut Context, factor: &Fraction) {
         Context::AfterGrace { main, grace, .. } => {
             scale_music(main, factor);
             scale_music(grace, factor);
+        }
+        Context::After { event, music, .. } => {
+            scale_music(event, factor);
+            scale_music(music, factor);
         }
         Context::Repeat {
             body, alternatives, ..
