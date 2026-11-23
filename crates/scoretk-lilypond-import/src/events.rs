@@ -1020,6 +1020,10 @@ impl<'a> Interpreter<'a> {
                 self.walk(music);
                 self.silent_notes = saved;
             }
+            // `\retrograde` (`ly/music-functions-init.ly:2138-2143`,
+            // `scm/modal-transforms.scm:183-290`) : la musique est lue dans
+            // l'ordre écrit (résolution relative comprise), puis renversée.
+            Context::Retrograde { music } => self.retrograde(music),
             Context::NonRelative { music } => {
                 // `make-non-relative-music` soustrait la musique à la
                 // conversion `\relative` environnante (`ly:make-music-relative!`
@@ -1873,9 +1877,215 @@ impl<'a> Interpreter<'a> {
         self.order += 1;
     }
 
+    /// `\retrograde` (`ly/music-functions-init.ly:2138-2143`,
+    /// `retrograde-music` dans `scm/modal-transforms.scm:183-290`).
+    ///
+    /// L'argument est d'abord interprété dans l'ordre écrit : LilyPond y
+    /// résout les octaves relatives avant de renverser la liste des éléments
+    /// (vérifié : `\relative c' { c4 \retrograde { b c } d }` joue C4 B3,
+    /// l'ordre écrit donnant `b` = B3 puis `c` = C4). Les événements datés
+    /// sont ensuite renversés par [`reverse_voice`].
+    fn retrograde(&mut self, music: &Music) {
+        if self.grace.is_some() {
+            self.warn("\\retrograde dans un ornement ignoré");
+            self.walk(music);
+            return;
+        }
+        let start = self.cursor;
+        // Même amorçage qu'une voix sœur (`spawn_at`) : l'argument hérite de
+        // l'octave, de la transposition et des durées par défaut, mais ses
+        // événements sont renversés avant d'être rendus à la voix courante.
+        let mut child = Interpreter {
+            voice: InterpretedVoice::default(),
+            cursor: start,
+            cue: self.cue,
+            repeat_pass: self.repeat_pass,
+            invisible_notes: self.invisible_notes,
+            silent_notes: self.silent_notes,
+            octave: self.octave,
+            relative_final: None,
+            transpose: self.transpose,
+            midi_instrument_transpose: self.midi_instrument_transpose,
+            tuplets: Vec::new(),
+            grace: None,
+            pending_grace: Vec::new(),
+            after_grace_fraction: self.after_grace_fraction,
+            grace_after_target: None,
+            default_duration: self.default_duration,
+            default_multiplier: self.default_multiplier,
+            last_chord_notes: self.last_chord_notes.clone(),
+            last_event_chord_notes: self.last_event_chord_notes.clone(),
+            stem_override: self.stem_override,
+            staff_target: None,
+            tuplet_scale: self.tuplet_scale * self.open_tuplet_scale(),
+            temporary: self.temporary,
+            unfold_repeats: self.unfold_repeats,
+            tag_stack: self.tag_stack.clone(),
+            filter_stack: self.filter_stack.clone(),
+            order: 0,
+            warnings: &mut *self.warnings,
+        };
+        child.walk(music);
+        child.voice.end = child.cursor;
+        self.pending_grace.append(&mut child.pending_grace);
+        let mut voice = child.voice;
+        let end = voice.end;
+        reverse_voice(&mut voice, start, end);
+        // La suite de la musique se résout à partir de la dernière note
+        // **écrite** de l'argument, comme sans `\retrograde`.
+        self.octave = child.octave;
+        if child.relative_final.is_some() {
+            self.relative_final = child.relative_final;
+        }
+        self.last_chord_notes = child.last_chord_notes;
+        self.last_event_chord_notes = child.last_event_chord_notes;
+        self.default_duration = child.default_duration;
+        self.default_multiplier = child.default_multiplier;
+        // Fusion dans la voix courante : les n-olets de l'argument gardent
+        // leurs index en décalant leurs parents.
+        let base = self.voice.tuplets.len();
+        for mut tuplet in voice.tuplets {
+            if let Some(parent) = tuplet.parent {
+                tuplet.parent = Some(parent + base);
+            }
+            self.voice.tuplets.push(tuplet);
+        }
+        for event in &mut voice.events {
+            if let EventKind::Chord(chord) = &mut event.kind {
+                if let Some(index) = chord.tuplet {
+                    chord.tuplet = Some(index + base);
+                }
+            }
+        }
+        self.voice.events.extend(voice.events);
+        self.voice.repeats.extend(voice.repeats);
+        self.voice.spawned.extend(voice.spawned);
+        self.voice.end = self.voice.end.max(voice.end);
+        self.cursor = self.cursor.max(voice.end);
+        for (order, event) in self.voice.events.iter_mut().enumerate() {
+            event.order = order;
+        }
+    }
+
     /// Avertissement.
     fn warn(&mut self, message: impl Into<String>) {
         self.warnings.push(0, 0, message);
+    }
+}
+
+/// Renverse une voix interprétée autour de l'intervalle `[start, end]`.
+///
+/// Port de `retrograde-music` (`scm/modal-transforms.scm:183-290`) au niveau
+/// des événements. La liste des éléments est lue à l'envers : chaque accord
+/// occupe le miroir de sa propre durée (les durées restent avec leur
+/// élément), et les événements ponctuels restent attachés à l'accord qui les
+/// portait. `reverse-span!` (l. 189-200) inverse le sens des soufflets, des
+/// liaisons d'expression et des pédales ; `filter-ties!` (l. 203-221) reporte
+/// les liaisons de prolongation sur la note qui les suit.
+fn reverse_voice(voice: &mut InterpretedVoice, start: Fraction, end: Fraction) {
+    let span = start + end;
+    // Durée de l'accord qui commence à chaque tick, pour replacer les
+    // événements ponctuels émis avec lui (liaisons, soufflets, pédales).
+    let mut durations: std::collections::BTreeMap<Fraction, Fraction> =
+        std::collections::BTreeMap::new();
+    // Notes de la voix dans l'ordre écrit, pour retrouver les liaisons.
+    let mut notes: Vec<(u8, usize, usize, Fraction, Fraction, bool)> = Vec::new();
+    for (event_index, event) in voice.events.iter().enumerate() {
+        let EventKind::Chord(chord) = &event.kind else {
+            continue;
+        };
+        durations.entry(event.tick).or_insert(chord.actual);
+        let ChordContent::Notes(chord_notes) = &chord.content else {
+            continue;
+        };
+        for (note_index, note) in chord_notes.iter().enumerate() {
+            notes.push((
+                note.pitch,
+                event_index,
+                note_index,
+                event.tick,
+                event.tick + chord.actual,
+                note.tie,
+            ));
+        }
+    }
+    notes.sort_by_key(|note| (note.3, note.1, note.2));
+    // Liaisons : la note liée vise la première note de même hauteur qui
+    // commence à sa fin (`lily/tie-performer.cc`, `link_ties`).
+    let mut edges: Vec<(usize, usize, usize, usize)> = Vec::new();
+    for (index, note) in notes.iter().enumerate() {
+        if !note.5 {
+            continue;
+        }
+        if let Some(offset) = notes[index + 1..]
+            .iter()
+            .position(|next| next.0 == note.0 && next.3 == note.4)
+        {
+            let target = &notes[index + 1 + offset];
+            edges.push((note.1, note.2, target.1, target.2));
+        }
+    }
+    for event in &mut voice.events {
+        if let EventKind::Chord(chord) = &mut event.kind {
+            if let ChordContent::Notes(chord_notes) = &mut chord.content {
+                for note in chord_notes {
+                    note.tie = false;
+                }
+            }
+        }
+    }
+    // Renversement des positions.
+    for event in &mut voice.events {
+        let original = event.tick;
+        let duration = durations.get(&original).copied();
+        let new_tick = match &event.kind {
+            EventKind::Chord(chord) => span - original - chord.actual,
+            _ => span - original - duration.unwrap_or(Fraction::ZERO),
+        };
+        // `reverse-span!` : un départ devient une fin, et réciproquement.
+        let swapped = match &event.kind {
+            EventKind::SlurStart(number) => Some(EventKind::SlurStop(*number)),
+            EventKind::SlurStop(number) => Some(EventKind::SlurStart(*number)),
+            EventKind::HairpinStart(_) => Some(EventKind::HairpinStop),
+            EventKind::HairpinStop => Some(EventKind::HairpinStart(HairpinType::Crescendo)),
+            EventKind::TrillStart => Some(EventKind::TrillStop),
+            EventKind::TrillStop => Some(EventKind::TrillStart),
+            EventKind::Pedal(on) => Some(EventKind::Pedal(!*on)),
+            _ => None,
+        };
+        if let Some(kind) = swapped {
+            event.kind = kind;
+        }
+        event.tick = new_tick;
+    }
+    // Liaisons retournées : la cible d'origine devient la note liée, et
+    // l'ancienne note liée la cible (elles restent adjacentes et de même
+    // hauteur après le miroir).
+    for (_, _, target_event, target_note) in edges {
+        if let Some(EventKind::Chord(chord)) =
+            voice.events.get_mut(target_event).map(|e| &mut e.kind)
+        {
+            if let ChordContent::Notes(chord_notes) = &mut chord.content {
+                if let Some(note) = chord_notes.get_mut(target_note) {
+                    note.tie = true;
+                }
+            }
+        }
+    }
+    voice.events.sort_by_key(|event| (event.tick, event.order));
+    for (order, event) in voice.events.iter_mut().enumerate() {
+        event.order = order;
+    }
+    // Chaque voix simultanée est renversée dans sa propre durée
+    // (`simultaneous-music`, l. 271-276 : les éléments sont parcourus un à
+    // un, sans croiser les branches). Le bloc garde sa place dans la
+    // séquence renversée : ses branches se replacent sur le miroir de leur
+    // durée, d'où le même intervalle que la voix englobante (une branche de
+    // longueur égale au bloc — le cas courant — se renverse exactement).
+    let spawned = std::mem::take(&mut voice.spawned);
+    for mut child in spawned {
+        reverse_voice(&mut child.interpreted, start, end);
+        voice.spawned.push(child);
     }
 }
 
@@ -1923,6 +2133,7 @@ fn context_is_context_only(context: &Context) -> bool {
         | Context::Fixed { music, .. }
         | Context::Relative { music, .. }
         | Context::NonRelative { music, .. }
+        | Context::Retrograde { music, .. }
         | Context::Transpose { music, .. } => is_context_only(music),
         Context::AfterGrace { main, grace, .. } => is_context_only(main) && is_context_only(grace),
         Context::Volta { music, .. } => is_context_only(music),

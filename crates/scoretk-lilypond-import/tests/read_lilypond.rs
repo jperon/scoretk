@@ -8570,3 +8570,25 @@ fn override_valeur_negative_ne_change_pas_la_duree() {
     .expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![72, 72, 74]);
 }
+
+#[test]
+fn retrograde_renverse_les_evenements() {
+    // `retrograde.ly` : `\retrograde` renvoie la musique dans l'ordre
+    // inverse (`retrograde-music`, `scm/modal-transforms.scm:183-290`). La
+    // conversion relative a lieu dans l'ordre écrit : `b` vaut B3 puis `c`
+    // C4, et le renversement joue C4 puis B3 (vérifié avec LilyPond).
+    let score =
+        read_lilypond("\\version \"2.24.0\"\n\\relative c' { c4 \\retrograde { b c } d }\n")
+            .expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![60, 60, 59, 62]);
+}
+
+#[test]
+fn retrograde_retourne_la_liaison() {
+    // `filter-ties!` (`scm/modal-transforms.scm:203-221`) reporte la liaison
+    // sur l'élément suivant : `c4~ c8 d8` devient `d8 c8~ c4`, la note liée
+    // restant la première des deux (même hauteur, attaques adjacentes).
+    let score = read_lilypond("\\version \"2.24.0\"\n{ \\retrograde { c'4~ c'8 d'8 } }\n")
+        .expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![62, 60]);
+}

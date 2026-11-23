@@ -3093,6 +3093,14 @@ impl<'a> Parser<'a> {
                 self.playback_articulate = true;
                 self.parse_music()
             }
+            // `\retrograde` (`ly/music-functions-init.ly:2138-2143`) renvoie
+            // sa musique dans l'ordre inverse (`retrograde-music`,
+            // `scm/modal-transforms.scm:183-290`). La conversion relative a
+            // lieu avant le renversement : la transformation se fait sur les
+            // événements interprétés, pas sur l'arbre (`events.rs`).
+            "retrograde" => Music::Context(Context::Retrograde {
+                music: Box::new(self.parse_music()),
+            }),
             // `transposition` (`ly/music-functions-init.ly`) est une fonction
             // musicale à un argument `ly:pitch?` qui pose la propriété
             // `instrumentTransposition` du contexte Staff. Elle n'ajoute aucune

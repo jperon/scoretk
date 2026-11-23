@@ -326,6 +326,13 @@ pub(crate) enum Context {
         numbers: Vec<u32>,
         music: Box<Music>,
     },
+    /// `\retrograde` (`ly/music-functions-init.ly:2138-2143`,
+    /// `scm/modal-transforms.scm:183-290`) : musique renversée. LilyPond
+    /// résout d'abord les octaves relatives dans l'ordre écrit
+    /// (`to_relative_octave`), puis renverse la liste des événements ; la
+    /// transformation est donc faite sur les événements interprétés
+    /// (`events.rs`).
+    Retrograde { music: Box<Music> },
     /// `\change <Contexte> = <nom>` : les notes qui suivent passent sur la
     /// portée nommée, sans changer de voix.
     Change {
