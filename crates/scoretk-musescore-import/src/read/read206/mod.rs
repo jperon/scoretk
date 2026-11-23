@@ -83,7 +83,11 @@ pub fn read(mscx: &[u8], _version: MscVersion) -> Result<Score> {
     transform::adapt(&mut root, &mut ties, &mut links);
     let mut adapted = String::new();
     root.write_xml(&mut adapted);
-    let mut score = read302::read(adapted.as_bytes(), MscVersion::from_raw(302))?;
+    let mut score = read302::read_with_origin(
+        adapted.as_bytes(),
+        MscVersion::from_raw(302),
+        MscVersion::from_raw(206),
+    )?;
     fix_ties(&mut score, &ties);
     spanners::fix_spanners(&mut score, &links);
     Ok(score)

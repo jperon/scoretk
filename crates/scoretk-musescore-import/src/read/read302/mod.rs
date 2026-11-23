@@ -73,11 +73,22 @@ use xml::Node;
 /// [`crate::container::detect_version`]) ; elle ne sert qu'aux corrections de
 /// compatibilité propres à 3.02.
 pub fn read(mscx: &[u8], version: MscVersion) -> Result<Score> {
+    read_with_origin(mscx, version, version)
+}
+
+/// Variante pour le lecteur 2.x, qui adapte l'arbre puis délègue ici avec une
+/// version 3.02 : `origin` garde la version réelle du fichier pour les règles
+/// de positionnement des clefs.
+pub(crate) fn read_with_origin(
+    mscx: &[u8],
+    version: MscVersion,
+    origin: MscVersion,
+) -> Result<Score> {
     // L'arbre XML emprunte le texte : il faut le garder vivant pendant toute
     // la lecture.
     let text = String::from_utf8_lossy(mscx);
     let document = xml::parse(&text)?;
-    let mut reader = Reader::new(version);
+    let mut reader = Reader::new(version, origin.major());
     let score_node = match document.name() {
         "museScore" => document.child("Score"),
         "Score" => Some(&document),
@@ -93,6 +104,8 @@ pub fn read(mscx: &[u8], version: MscVersion) -> Result<Score> {
 pub(crate) struct Reader {
     /// Version du format.
     pub(crate) version: MscVersion,
+    /// Version majeure du fichier d'origine (2 pour un `.mscx` 2.x adapté).
+    pub(crate) origin_major: u32,
     /// Partition en construction.
     pub(crate) score: Score,
     /// `<Division>` du fichier, pour les `<tick>` en ticks bruts.
@@ -126,11 +139,12 @@ pub(crate) struct VoiceCtx {
 }
 
 impl Reader {
-    fn new(version: MscVersion) -> Self {
+    fn new(version: MscVersion, origin_major: u32) -> Self {
         let mut score = Score::new();
         score.style = StyleSettings::for_version(version.major());
         Self {
             version,
+            origin_major,
             score,
             file_division: scoretk_core::model::DEFAULT_DIVISION,
             connectors: Vec::new(),

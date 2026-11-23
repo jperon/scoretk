@@ -350,7 +350,25 @@ fn read_clef(reader: &mut Reader, ctx: &VoiceCtx, node: &Node) {
         segment.tick == measure.start_tick
             && (segment.kind.is_key_sig_type() || segment.kind.is_time_sig_type())
     });
-    let header = ctx.tick == measure.start_tick && (!voice_has_segment || !has_key_or_time);
+    // `Read206::readMeasure` (`read206.cpp:2863-2874`) traite une clef au tick
+    // zéro comme la clef par défaut de la portée, puis la supprime : elle
+    // n'apparaît pas dans le segment et l'export écrit la clef générée, sans
+    // `after-barline` (`exportDefaultClef`).
+    if reader.origin_major <= 2 && ctx.tick == Fraction::ZERO {
+        if let Some(slot) = reader.staff_clefs.get_mut(ctx.staff) {
+            *slot = Some(clef);
+        }
+        return;
+    }
+    // `Read206::readMeasure` (`read206.cpp:2863-2905`) ne devine pas d'en-tête :
+    // une clef de mesure y est toujours un segment `Clef`, marqué
+    // `ClefToBarlinePosition::AFTER` ; l'export l'écrit `after-barline="yes"`
+    // (`findAndExportClef` ne la trouve pas dans la mesure précédente, puis
+    // `writeElement`, `exportmusicxml.cpp:7986-8007`). Le lecteur 3.x, lui,
+    // applique la devinette de `read400/measurerw.cpp:360-382`.
+    let header = reader.origin_major >= 3
+        && ctx.tick == measure.start_tick
+        && (!voice_has_segment || !has_key_or_time);
     let kind = if header {
         SegmentType::HeaderClef
     } else {

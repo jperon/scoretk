@@ -1494,3 +1494,27 @@ propres harmonies (`harmonie_de_la_voix_2_est_exportee_avec_sa_note`).
 
 Mesure ciblée : `Adios_Muchachos` 81 → **0** ligne canonique (core-identique),
 0 perte. Tests réduits : `tests/harmony_voices.rs`.
+
+## 46. Clefs des fichiers 2.x : `Clef` et non `HeaderClef` (2026-11-23)
+
+`Vingt_danses_enfantines_pour_piano` (2.06) avait 35 clefs de début de section
+écrites sans `after-barline="yes"` (184 lignes canoniques). Le lecteur 2.x
+adaptait l'arbre puis appelait `read302`, qui appliquait la devinette d'en-tête
+de `read400/measurerw.cpp:360-382` : une clef à la tête d'une mesure de section
+devenait `HeaderClef`. Or `Read206::readMeasure`
+(`read206.cpp:2863-2905`) ne devine pas d'en-tête : au tick 0 la clef devient
+la clef par défaut (puis est supprimée), ailleurs c'est un segment `Clef`
+marqué « après la barre ». `writeElement` (`exportmusicxml.cpp:7986-8007`)
+écrit alors `after-barline="yes"`.
+
+`read302::read_with_origin` transmet la version réelle du fichier (2.x), le
+lecteur 3.x garde sa devinette ; `write_measure_clefs` ne reprend la clef
+courante (cs2) qu'à la première mesure, `mid_measure_clef` écrivant les clefs
+de début des mesures suivantes avec `after-barline`.
+
+Mesure ciblée : `Vingt_danses…` 184 → **6** lignes canoniques, 0 perte ; les
+46 `<clef>`, 97 `<attributes>`, 2 040 mesures et 19 001 notes du document sont
+identiques à la référence. Le niveau plein passe de 12 589 à 12 865 lignes de
+différence de **séquence** (alignement : `<print>` et crédits), sans écart de
+contenu. Les 6 lignes restantes sont le crochet de n-olet (§29.3). Test réduit :
+`clef_2x.rs`.

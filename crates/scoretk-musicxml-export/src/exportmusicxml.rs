@@ -2319,9 +2319,14 @@ impl Context<'_> {
                     // Sans ce repli, une clef 8va posée sur une portée sans
                     // HeaderClef était remplacée par la clef par défaut et
                     // réécrite ensuite par `writeElement` (deux `<clef>` dans
-                    // `Stella_maris_instruments - La`).
-                    find_segment(measure, SegmentType::Clef, measure.start_tick)
-                        .and_then(|segment| segment.element(track))
+                    // `Stella_maris_instruments - La`). Au-delà de la première
+                    // mesure, c'est `mid_measure_clef` qui écrit cette clef de
+                    // début avec `after-barline="yes"` (`writeElement`) : la
+                    // reprendre ici la dupliquerait.
+                    measure.start_tick.is_zero().then(|| {
+                        find_segment(measure, SegmentType::Clef, measure.start_tick)
+                            .and_then(|segment| segment.element(track))
+                    })?
                 });
             match start_clef {
                 Some(SegmentItem::Clef(clef)) => {
