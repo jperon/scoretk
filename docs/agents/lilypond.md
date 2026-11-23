@@ -6927,3 +6927,70 @@ avec en plus `musicMap #skip->rest`. **Total tractable par un évaluateur
 minimal `$x`/`#x` + ces built-ins : 2 fichiers**, sous le seuil de 5 fixé :
 implémentation non justifiée, documentée ici. Aucun fichier exclu ;
 `persian-key-signatures.ly` est laissé à msx4 (clés).
+
+### Grace pairing, `\afterGrace`, quotations at absolute time (2026-11-23)
+
+Controlled measurements on the current tree (`/tmp/ly95lect-refs-clean`,
+same manifest, same oracle on both sides of each step). Base: master
+`ccafc891` at 1 596/1 724.
+
+| Step | `ra` exact |
+| --- | ---: |
+| master | 1 596 |
+| grace pairing (oracle) | **1 599** (+3) |
+| `\afterGrace` (divisions + oracle) | **1 602** (+3) |
+| quote at absolute time (reader) | **1 611** (+9) |
+
+**No exact loss and no N1/N2 regression** at any step.
+
+1. **A grace cannot steal the main note (oracle).**
+   `lily/audio-item.cc:118-129` places a grace at
+   `main + 9/40 × grace_part`, and `lily/grace-iterator.cc:24-27` gives
+   `grace_part` a negative value (the grace part of the moment): a grace
+   sounds **strictly before** the attack of the note it ornaments (Notation
+   Reference §1.3.1). `apparier_graces` accepted notes up to
+   `attaque + grid/2`; when the grace and the main note shared a pitch, it
+   paired the **main** note and left the grace in the reference
+   (`grace-auto-beam-engraver`: 28 `a1` stolen, `n2_grace` 112/140). The upper
+   bound is now strict. The oracle change was measured on two binaries:
+   current 1 596 → 1 599 and previous (`20e9c1bb`) 1 591 → 1 594, the same
+   three files (`beam-subdivide-grace`, `spacing-loose-grace`,
+   `v4_changevisibility`). Selftests: the pairing keeps the note at 0 and
+   matches the one at −0.1; a candidate missing the grace is still not exact.
+2. **`\afterGrace` (exporter + oracle).**
+   `ly/music-functions-init.ly:86-112` places the grace after
+   `fraction × main duration` (`afterGraceFraction = 3/4` by default), so its
+   real time is `main + 9/40 × grace_part`. The model timing was already
+   right, but the MusicXML divisions only counted durations and segment gaps:
+   the `attack` attribute of an after-grace is
+   `played_offset − main duration` (3/8 for 3/4 of a half note), a fraction
+   absent from the LCM. Divisions stayed at 1 per quarter and the attack was
+   rounded (`lyrics-after-grace`: 1.0 instead of 1.5, against 1.47 in the
+   MIDI). The grace `played_offset`s now enter the divisions; the oracle
+   distinguishes before-graces (strictly before) and after-graces
+   (`read_xml` sees the positive `attack`, window `[attaque − 1, attaque +
+   grid/2]`). The oracle alone gave no `ra` gain (1 599 → 1 599); with the
+   divisions fix: 1 599 → 1 602 (+3: `lyrics-after-grace`,
+   `lyrics-includegraces`, `spacing-loose-grace-error`). Rust test
+   `after_grace_offset_impose_les_divisions`.
+3. **Quotations at absolute score time (reader).**
+   `Quote_iterator::process` (`lily/quote-iterator.cc:161-211`) computes
+   `start_mom = now_mom()` and skips quoted events before it; the citation
+   stops at `T + duration of the principal argument`
+   (`ly/music-functions-init.ly:545-558`, `:2023-2032`). A quote after a
+   whole note therefore plays the **segment of the quote at the absolute
+   score time**, not its beginning (`quote-cue-during`: at 2 quarters, A/B,
+   not F♯/A). The reader used to truncate the quote from its start at parse
+   time. `Context::Cue` now keeps the full quote and the principal duration;
+   the interpreter walks it from zero, keeps the chords in
+   `[cursor, cursor + duration)` on the current track (tuplets reindexed, cue
+   notes small) and advances by the duration. `killCues` uses the stored
+   duration for its silence; the old `tronque_musique` is removed. Tests
+   `citation_au_temps_absolu_de_la_partition` and
+   `cue_during_suit_le_meme_temps_absolu` (read_quote.rs). Gains: 1 602 →
+   1 611 (+9: `cue-clef-transposition`, `cue-clef-transposition-optional`,
+   `quote-cue-during`, `quote-cue-event-types`, `quote-during`, `quote-grace`,
+   `quote`, `quote-tie`, `quote-tuplet-end`).
+
+`after.ly` remains inexact (one extra note from its `\after`/`\afterGrace`
+combination, a distinct cause).
