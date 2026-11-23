@@ -1393,12 +1393,17 @@ impl<'a> Parser<'a> {
             });
         }
         let mut kind = GroupKind::from_name(&name);
-        // `\new Dynamics` ne porte que des silences (et des indications de
-        // nuance) : le jouer comme une portée ordinaire plutôt que comme un
-        // contexte inconnu, sinon son contenu resterait dans la portée
-        // englobante comme contexte ignoré et décalerait la musique voisine
-        // (`dynamics-text-dynamics-context`).
-        if name.eq_ignore_ascii_case("dynamics") {
+        // `\new Dynamics` ne porte normalement que des silences (et des
+        // indications de nuance) : le jouer comme une portée ordinaire plutôt
+        // que comme un contexte inconnu, sinon son contenu resterait dans la
+        // portée englobante comme contexte ignoré et décalerait la musique
+        // voisine (`dynamics-text-dynamics-context`). Il reste cependant un
+        // `Performer_group` sans `Note_performer`
+        // (`ly/performer-init.ly:406-411`) : même une note écrite par erreur
+        // dans ce bloc (`andre-sonatine.ly` : `s4 b16\< s s8`) n'est pas
+        // jouée. Son contenu est donc lu en silence, tout en restant gravé.
+        let dynamics = name.eq_ignore_ascii_case("dynamics");
+        if dynamics {
             kind = GroupKind::Staff;
         }
         let context_name = self.parse_context_id();
@@ -1603,11 +1608,21 @@ impl<'a> Parser<'a> {
                 if name.eq_ignore_ascii_case("drumstaff") {
                     self.note_mode = NoteMode::Drums;
                 }
-                let content = self.parse_music();
+                let mut content = self.parse_music();
                 self.note_mode = mode_precedent;
                 staff.muted |= self.tokens[debut_musique..self.position]
                     .iter()
                     .any(|token| token.is_command("makeClusters"));
+                if dynamics {
+                    // `Dynamics` n'a que `Piano_pedal_performer`
+                    // (`ly/performer-init.ly:406-411`) : ses notes sont
+                    // gravées dans le modèle (`play = false`, écrit `<cue/>`
+                    // en MusicXML) mais n'émettent aucune attaque MIDI.
+                    content = Music::Context(Context::Silent {
+                        music: Box::new(content),
+                    });
+                    staff.muted = true;
+                }
                 // Un contexte de **portée** imbriqué (`\context ChordNames`,
                 // `\new Dynamics`…) est un contexte enfant de `Staff`, donc
                 // une piste MIDI distincte (`ly/engraver-init.ly` l. 492 :

@@ -9128,3 +9128,23 @@ fn r_avec_duree_courte_est_un_silence_date() {
         "trois fois 3/8 de ronde couvrent la mesure de 9/8"
     );
 }
+
+#[test]
+fn note_dans_un_contexte_dynamics_n_est_pas_jouee() {
+    // `ly/performer-init.ly:406-411` : `Dynamics` est un `Performer_group`
+    // qui ne contient que `Piano_pedal_performer`, pas de `Note_performer`.
+    // Une note écrite par erreur dans un bloc Dynamics (par exemple le `b16`
+    // de `andre-sonatine.ly`) est gravée mais n'émet aucune attaque MIDI.
+    // Vérifié avec LilyPond 2.27 : la source réduite ne joue que
+    // 60/62/64/65 de la portée de musique.
+    let src = "\\version \"2.24.0\"\n\
+         \\score { << { \\fixed c' { c'1 d'1 } }\n\
+                     \\new Dynamics { s1 b16 s8 s2. } >> }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let notes: Vec<(u8, bool)> = score
+        .notes
+        .iter()
+        .map(|note| (note.pitch, note.play))
+        .collect();
+    assert_eq!(notes, vec![(72, true), (74, true), (59, false)]);
+}
