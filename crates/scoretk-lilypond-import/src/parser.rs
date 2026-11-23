@@ -3623,6 +3623,36 @@ impl<'a> Parser<'a> {
                 ajoute_point(music, self.default_duration)
             }
             "fermata" | "shortfermata" | "longfermata" | "verylongfermata" => Music::Empty,
+            // `lily/parser.yy:1518-1525` : une durée seule produit un
+            // `NoteEvent` sans hauteur, résolu en répétition du dernier
+            // accord par `expand-repeat-notes!`
+            // (scm/music-functions.scm l. 972-1015). `reve`, `\longa`
+            // et `\maxima` sont des durées, pas des commandes inconnues.
+            "breve" | "longa" | "maxima" => {
+                // `parse_command` a déjà consommé le nom : ne pas appeler
+                // `parse_duration()` ici, il lirait la durée *suivante*
+                // comme multiplicateur du nom.
+                let (duree, facteur) = match name.as_str() {
+                    "breve" => (Duration::new(DurationType::Breve), Fraction::ONE),
+                    "longa" => (Duration::new(DurationType::Long), Fraction::ONE),
+                    _ => (Duration::new(DurationType::Long), Fraction::new(2, 1)),
+                };
+                self.default_duration = duree;
+                self.default_multiplier = facteur;
+                Music::Chord(Chord {
+                    kind: ChordKind::PitchRepeat,
+                    duration: Some(duree),
+                    multiplier: if facteur == Fraction::ONE {
+                        None
+                    } else {
+                        Some(facteur)
+                    },
+                    from_scale: false,
+                    bracketed: false,
+                    posts: self.parse_posts(),
+                    invisible: false,
+                })
+            }
             "version" => {
                 // `\version "x"` est une commande de haut niveau, mais un
                 // `\include` peut l'injecter au milieu d'une musique. Ne
