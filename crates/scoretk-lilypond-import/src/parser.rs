@@ -3171,6 +3171,11 @@ impl<'a> Parser<'a> {
                     fraction,
                 })
             }
+            // `\parenthesize` enveloppe la musique qui suit sans changer sa
+            // durée ni sa nature (`ly/music-functions-init.ly`). Le laisser
+            // au cas « commande inconnue » coupait le `\grace` en deux : la
+            // note devenait une note normale (`tablature-grace-notes.ly`).
+            "parenthesize" => self.parse_music(),
             "markupMap" => {
                 // `ly/music-functions-init.ly:1173-1174` : chemin, fonction
                 // de markup, puis la musique qui reste jouée telle quelle.

@@ -8421,3 +8421,28 @@ fn show_first_length_ne_garde_que_le_debut() {
     notes.sort_unstable();
     assert_eq!(notes, vec![(48, 0), (50, 480)], "do ré");
 }
+
+#[test]
+fn parenthesize_dans_grace_reste_une_grace() {
+    // `tablature-grace-notes.ly` : `\grace \parenthesize e8` doit rester
+    // une grâce. `\parenthesize` ne change ni la durée ni la nature de la
+    // musique (`ly/music-functions-init.ly`) ; le laisser en commande inconnue
+    // coupait le `\grace` et la note devenait une note normale.
+    let source = "\\version \"2.24.0\"\n\\relative { c4 \\grace \\parenthesize e8 c4 }\n";
+    let score = read_lilypond(source).expect("lecture");
+    let mut graces = 0;
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (_, item) in segment.iter_elements() {
+                let SegmentItem::ChordRest(chord_rest) = item else {
+                    continue;
+                };
+                let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                    continue;
+                };
+                graces += chord.grace_chords.len();
+            }
+        }
+    }
+    assert_eq!(graces, 1, "la note entre parenthèses reste une grâce");
+}
