@@ -6734,3 +6734,84 @@ Aucun de ces fichiers n'est exclu du dénominateur.
 
 Mesure contrôlée de la cause `\breve` (même oracle, mêmes références, seul le
 binaire change) : `1588 → 1589`, **+1 exact** (`monochords.ly`), **0 perte**.
+
+### Reading campaign: `grace`, `cue/quote`, `include`, `repeat/volta` (2026-11-23)
+
+The four groups of the §22 table were subdivided by first divergent construct
+(`subdivise.py` on the current run). Controlled measurements use the current
+reference tree (`/tmp/ly95lect-refs-clean`), the same oracle and the same
+manifest on both sides; only the reader changes (`mesure.py --refs-prefix
+out3 --refs-only`).
+
+| Step (same oracle) | `ra` exact |
+| --- | ---: |
+| master `20e9c1bb` | 1 591/1 724 |
+| + `\volta` selection | **1 594** (+3) |
+| + `\killCues` | **1 595** (+1) |
+| + nested alternatives | **1 596** (+1) |
+
+**No exact loss, no N1/N2 regression** at any step. Gains:
+`volta-spec-in-alternative`, `volta-spec-unfold-in-unfold`,
+`volta-spec-unused`, `quote-kill-cues`, `volta-bracket-nest`.
+
+1. **`\volta` (`repeat/volta`, 3 files).** `lily/parser.yy` (token VOLTA)
+   marks music with `volta-numbers`; `lily/unfolded-repeat-iterator.cc` and
+   `lily/alternative-sequence-iterator.cc` play it only on the listed passes.
+   The reader dropped the numbers and played every branch (`volta-spec-unused`
+   12 notes instead of 4). `Context::Volta` keeps the list; the interpreter
+   tracks the current pass when unfolding and filters. `\volta` belongs to
+   the **innermost** repeat: a non-unfolded repeat cancels an inherited pass
+   so its endings stay in the engraved model (`volta-spec-volta-in-unfold`,
+   still 12 notes). Tests: `read_volta.rs`.
+2. **`\killCues` (`cue/quote`, 1 file).** `ly/music-functions-init.ly:955-964`:
+   quotations with `quoted-context-id "cue"` are replaced by their principal
+   argument (silences), while `\quoteDuring` citations stay. The reader
+   ignored `\killCues`, doubling the cue in the “killCues” staff
+   (`quote-kill-cues` 14 → 12 notes). `Context::Cue` now records
+   `cue_notes`; `kill_cues` replaces cue contexts by `silence_music`. That
+   helper now recurses through wrappers (`\relative`, `\transpose`, repeats):
+   returning `Empty` made the silence last zero and shifted the next note by a
+   measure. Test: `read_kill_cues.rs`.
+3. **Nested `\alternative` (`repeat/volta`, 1 file).**
+   `volta-bracket-nest` (Notation Reference §4.1 “Nested repeats”) has an
+   `\alternative` inside a volta ending, not claimed by an inner `\repeat`;
+   the interpreter ignored it and lost `g1`/`a1` (4 notes instead of 6). The
+   engraved model now walks all its endings. Test:
+   `alternative_imbriquee_garde_ses_fins`.
+
+Remaining subgroups, with their proof (none excluded from the denominator):
+
+- **`grace` (18).** For 16 files the reader already produces the reference
+  notes (`n1 == ref`); the residual mismatch is the oracle's grace pairing.
+  A grace can share the main note's pitch, and `apparier_graces` may then
+  pair the **main** MIDI note instead of the grace (`grace-auto-beam-engraver`:
+  the 28 `a1` notes are stolen; `n2_grace` 112/140). Pairing strictly before
+  the main attack gives +3 exact files (`beam-subdivide-grace`,
+  `spacing-loose-grace`, `v4_changevisibility`) but changes the oracle for
+  both binaries, so it is not part of these reader commits. `\afterGrace`
+  graces are played **after** the main note (reference at 7/8 of it), outside
+  the `[attack - 1, attack + grid/2]` window, so `n2_grace` cannot match them
+  (`lyrics-after-grace`, `grace-end-expression`, `after.ly`,
+  `trill-spanner-grace`) — oracle limitation, not a reader loss.
+- **`cue/quote` (10).** Besides `killCues`, `quote-cue-during` shows that a
+  cue takes the quoted music at the **absolute score time**: at 2 quarters the
+  reference plays the quote's notes at 2 and 3 quarters (A, B), while the
+  reader inserts the quote from its start (F♯, A). `lily/quote-iterator.cc`
+  aligns the quotation with the enclosing time; fixing it requires slicing
+  the quote by the interpreter's cursor instead of truncating it at parse
+  time (not attempted here).
+- **`include` (7).** Four `sortie_vide` files
+  (`alteration-glyphs`, `arabic-accidental-glyphs`, `makam-accidental-glyphs`,
+  `turkish-makam-accidental-glyphs`) get their notes from a Scheme function
+  using `add-score` and `#{ … #}` (`accidental-glyphs-test.ily`), outside the
+  read subset. `satb-template-with-keyboard-reduction` diverges because the
+  **MIDI** reference drops the `\tag "print"` keyboard reduction while the
+  MusicXML keeps the engraved score (print/MIDI tag difference, not a
+  note-reading bug). `swing-test` needs the Scheme timing of `\tripletFeel` /
+  `\applySwing`.
+- **`repeat/volta` (9).** Besides the four fixed files: `repeat-volta` (one
+  extra note, alternative selection), `duration-multiplier-scheme` (Scheme
+  durations `#(ly:music-length …)` as multipliers), `repeat-etc` (partial
+  `\repeat … \etc` timing), `repeat-unfold-all` (nested unfold/alternative),
+  `skiptypesetting-show-first-and-last` (`showFirstLength`/`showLastLength`
+  truncation) — distinct causes, each with its own reference.
