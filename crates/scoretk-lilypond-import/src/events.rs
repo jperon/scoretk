@@ -377,6 +377,11 @@ pub(crate) struct Interpreter<'a> {
     octave: OctaveState,
     /// Vrai pendant la lecture d'une musique de cue insérée par `\cueDuring`.
     cue: bool,
+    /// Numéro du passage courant d'une reprise dépliée, pour filtrer les
+    /// `\volta` (`lily/unfolded-repeat-iterator.cc`,
+    /// `lily/alternative-sequence-iterator.cc`). `None` hors dépliage : la
+    /// musique `\volta` reste alors dans le modèle pour la gravure.
+    repeat_pass: Option<u32>,
     /// Vrai sous un `NullVoice` : les notes restent datées mais invisibles.
     invisible_notes: bool,
     /// Dernier état relatif atteint, avant que le `Context::Relative`
@@ -449,6 +454,7 @@ impl<'a> Interpreter<'a> {
             voice: InterpretedVoice::default(),
             cursor: start,
             cue: false,
+            repeat_pass: None,
             invisible_notes: false,
             octave,
             relative_final: None,
@@ -700,6 +706,7 @@ impl<'a> Interpreter<'a> {
             voice: InterpretedVoice::default(),
             cursor: start,
             cue: self.cue,
+            repeat_pass: self.repeat_pass,
             invisible_notes: self.invisible_notes,
             octave: self.octave,
             relative_final: None,
@@ -958,6 +965,18 @@ impl<'a> Interpreter<'a> {
                 self.walk(music);
                 self.cue = saved;
             }
+            // `\volta n, m musique` : LilyPond ne joue la musique que pour les
+            // passages listés (`lily/unfolded-repeat-iterator.cc`,
+            // `lily/alternative-sequence-iterator.cc`). Hors dépliage, la
+            // musique reste dans le modèle (gravure) : `repeat_pass` est `None`.
+            Context::Volta { numbers, music } => {
+                let jouer = self
+                    .repeat_pass
+                    .map_or(true, |passage| numbers.is_empty() || numbers.contains(&passage));
+                if jouer {
+                    self.walk(music);
+                }
+            }
             Context::Alternative(_) => {
                 self.warn("\\alternative sans \\repeat ignoré");
             }
@@ -1041,9 +1060,11 @@ impl<'a> Interpreter<'a> {
                 let mut alt_ends: Vec<OctaveState> = Vec::new();
                 for tour in 1..=count.max(1) {
                     self.octave = reference;
+                    let passage_sauve = self.repeat_pass.replace(tour);
                     self.walk(body);
                     let corps_fin = self.octave;
                     if blocks == 0 {
+                        self.repeat_pass = passage_sauve;
                         continue;
                     }
                     // `lily/parser.yy` (REPEAT ALTERNATIVE) : moins
@@ -1071,6 +1092,7 @@ impl<'a> Interpreter<'a> {
                             *emplacement = fin;
                         }
                     }
+                    self.repeat_pass = passage_sauve;
                 }
             }
             RepeatKind::Ignored => {
@@ -1131,6 +1153,7 @@ impl<'a> Interpreter<'a> {
                     let mut alt_ends: Vec<OctaveState> = Vec::new();
                     for pass in 1..=plays {
                         self.octave = start_octave;
+                        let passage_sauve = self.repeat_pass.replace(pass);
                         self.walk(body);
                         let body_end = self.octave;
                         if blocks > 0 {
@@ -1155,11 +1178,18 @@ impl<'a> Interpreter<'a> {
                                 }
                             }
                         }
+                        self.repeat_pass = passage_sauve;
                     }
                 } else {
                     // Sans `\unfoldRepeats`, le MIDI joue le corps et les
                     // endings une fois, mais la partition gravée garde ses
                     // marques de reprise : on les modélise pour l'export.
+                    // `\volta` appartient à la reprise **innermost** : on
+                    // annule le passage hérité d'un `\repeat unfold`
+                    // englobant, sinon ses numéros filtreraient les branches
+                    // de cette reprise non dépliée
+                    // (`volta-spec-volta-in-unfold`).
+                    let passage_sauve = self.repeat_pass.take();
                     let start = self.cursor;
                     self.walk(body);
                     let body_end = self.cursor;
@@ -1188,6 +1218,7 @@ impl<'a> Interpreter<'a> {
                         count: u8::try_from(count.clamp(1, 255)).unwrap_or(2),
                         alternatives: sections,
                     });
+                    self.repeat_pass = passage_sauve;
                 }
             }
         }
@@ -1768,6 +1799,7 @@ fn context_is_context_only(context: &Context) -> bool {
         | Context::NonRelative { music, .. }
         | Context::Transpose { music, .. } => is_context_only(music),
         Context::AfterGrace { main, grace, .. } => is_context_only(main) && is_context_only(grace),
+        Context::Volta { music, .. } => is_context_only(music),
         Context::Repeat {
             body, alternatives, ..
         } => is_context_only(body) && alternatives.iter().all(is_context_only),

@@ -283,15 +283,27 @@ pub(crate) enum Context {
     /// écrites gardent l'octave absolue par défaut). `\partCombine` enveloppe
     /// ainsi ses deux parties (`make-directed-part-combine-music`).
     NonRelative { music: Box<Music> },
-    /// Musique insérée par `\cueDuring` : ses notes sont des notes de cue
-    /// (`ly/music-functions-init.ly:545-574`), gravées en petit dans les
-    /// autres formats via `Note::small` / `Chord::small`.
+    /// Musique insérée par `\cueDuring` ou `\quoteDuring` : ses notes sont
+    /// des notes de cue (`ly/music-functions-init.ly:545-574`), gravées en
+    /// petit dans les autres formats via `Note::small` / `Chord::small`.
+    /// `cue_notes` distingue les vraies notes de cue (`\cueDuring`), que
+    /// `\killCues` retire, des citations ordinaires (`\quoteDuring`), qu'il
+    /// conserve (`ly/music-functions-init.ly:955-964`).
     Cue { music: Box<Music> },
     /// Musique dont les notes sont invisibles et silencieuses (`NullVoice`) :
     /// la trame et les paroles restent dans le modèle, seul le MIDI les ignore.
     Invisible { music: Box<Music> },
     /// `\alternative` isolé (déjà consommé par `\repeat`).
     Alternative(Vec<Music>),
+    /// `\volta n, m musique` : musique réservée aux passages n et m d'une
+    /// reprise (`lily/parser.yy`, `VOLTA`; `lily/alternative-sequence-iterator.cc`
+    /// et `lily/unfolded-repeat-iterator.cc` filtrent sur `volta-numbers`).
+    /// Les numéros sont sélectionnés au dépliage (`events.rs`) ; hors
+    /// dépliage la musique reste dans le modèle pour la gravure.
+    Volta {
+        numbers: Vec<u32>,
+        music: Box<Music>,
+    },
     /// `\change <Contexte> = <nom>` : les notes qui suivent passent sur la
     /// portée nommée, sans changer de voix.
     Change {

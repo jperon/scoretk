@@ -3164,17 +3164,14 @@ impl<'a> Parser<'a> {
             "volta" => {
                 // `\volta 2,1 musique` : liste de numéros, puis la musique
                 // (`volta-bracket-warning-start-conflicting-numbers.ly`).
-                if self.peek().is_some_and(|token| token.is_scheme()) {
-                    self.position += 1;
-                } else {
-                    while self
-                        .peek()
-                        .is_some_and(|token| token.kind == Kind::Number || token.is_punct(','))
-                    {
-                        self.position += 1;
-                    }
-                }
-                self.parse_music()
+                // LilyPond la marque `volta-numbers` ; le filtre s'applique au
+                // dépliage (`lily/unfolded-repeat-iterator.cc`,
+                // `lily/alternative-sequence-iterator.cc`).
+                let numbers = self.parse_volta_numbers();
+                Music::Context(Context::Volta {
+                    numbers,
+                    music: Box::new(self.parse_music()),
+                })
             }
             // `ly/music-functions-init.ly:1351` : quatre arguments
             // (armure, base, structure de temps, exceptions de liaison).
@@ -5057,6 +5054,48 @@ impl<'a> Parser<'a> {
         ))
     }
 
+    /// Numéros d'un `\volta n, m` (entiers séparés par des virgules) ou d'une
+    /// liste Scheme `#'(1 2)`. Lit les entiers de la forme Scheme.
+    fn parse_volta_numbers(&mut self) -> Vec<u32> {
+        let mut numbers = Vec::new();
+        if let Some(Token {
+            kind: Kind::Scheme,
+            text,
+            ..
+        }) = self.peek().cloned()
+        {
+            self.position += 1;
+            let mut courant = String::new();
+            for caractere in text.chars() {
+                if caractere.is_ascii_digit() {
+                    courant.push(caractere);
+                } else if !courant.is_empty() {
+                    if let Ok(value) = courant.parse::<u32>() {
+                        numbers.push(value);
+                    }
+                    courant.clear();
+                }
+            }
+            if let Ok(value) = courant.parse::<u32>() {
+                numbers.push(value);
+            }
+            return numbers;
+        }
+        while let Some(token) = self.peek().cloned() {
+            if token.kind == Kind::Number {
+                if let Some(value) = token.as_integer().and_then(|n| u32::try_from(n).ok()) {
+                    numbers.push(value);
+                }
+                self.position += 1;
+            } else if token.is_punct(',') {
+                self.position += 1;
+            } else {
+                break;
+            }
+        }
+        numbers
+    }
+
     /// Fraction `n/d` ou `n`.
     fn parse_ratio(&mut self) -> Option<(u32, u32)> {
         let token = self.peek()?.clone();
@@ -6133,6 +6172,7 @@ fn extract_alternatives(music: &mut Music, alternatives: &mut Vec<Music>) {
         | Music::Context(Context::Fixed { music, .. })
         | Music::Context(Context::NonRelative { music })
         | Music::Context(Context::Cue { music })
+        | Music::Context(Context::Volta { music, .. })
         | Music::Context(Context::Tuplet { music, .. })
         | Music::Context(Context::Transpose { music, .. })
         | Music::Context(Context::AfterGrace { main: music, .. }) => {
@@ -6646,6 +6686,7 @@ fn scale_context(context: &mut Context, factor: &Fraction) {
                 scale_music(item, factor);
             }
         }
+        Context::Volta { music, .. } => scale_music(music, factor),
         _ => {}
     }
 }
