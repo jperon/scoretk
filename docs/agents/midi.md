@@ -3444,3 +3444,38 @@ attempted in this pass: the earlier restrike-priority experiment on the same
 lot lost 90 files, so the channel-hoisting rule needs its own measured port
 rather than a priority tweak. The oracle change is committed with no per-file
 loss; all 14 `scripts/oracle/midi/` selftests pass.
+
+## Audible-event oracle: the 17 restrike files resolved (2026-11-23)
+
+Two defects in the previous event level were corrected and committed:
+`test_events.py` had a vacuous `assert … or True` (replaced by a real
+`evenements_audibles` inequality), and raw event multisets counted orphan
+note-offs. `evenements_audibles()` now replays each SMF with a per-
+`(channel, pitch)` counter of open notes: an on opens, an off only closes if a
+note is open, otherwise it is counted in `offs_orphelins` and discarded. The
+comparison therefore sees only what a synthesiser hears. This is the musical
+meaning of `fixupMIDI` (`engraving/compat/midi/event.cpp:263-306`) hoisting a
+note-off to the previous staff's channel (`exportmidi.cpp:304-323`): when a
+restrike already ended the note, the hoisted off closes nothing.
+
+**Controlled measurement** (same binary `midi-base`, only the oracle changed,
+`target/midi-audible`):
+
+| Lot | Exact before | Exact after | Gains | Losses |
+| --- | ---: | ---: | ---: | ---: |
+| corpus (`.mscx`) | 17/17 | **17/17** | 0 | 0 |
+| `.mscz` (171 files) | 143/171 | **160/171 (93.6 %)** | **17** | **0** |
+
+All **17** `Veni`/`Once in royal` files are now `exact_events` and exact: the
+channel-1 offs that the raw level flagged at tick 0 are orphans, not audible
+events. The earlier "real writer difference" conclusion is superseded. `N1/N2`
+stay at 99.99 %, mean output size unchanged (18 535 B).
+
+The 11 remaining non-exact files have first *audible* divergence ticks:
+`Sancta_Maria_Mater_Dei_Mozart` and `JMHaydn_Viderunt_omnes` at 0;
+`Sancta_Maria_KV_273 … orgue` at 4 681; `Vivaldi 04-TecumPrincipium` at
+4 854; `Missa … Gloria` at 7 080; `Ave_Maria_Schubert` at 7 140;
+`Adios_Muchachos` at 16 200 (36 orphan offs on the reference side);
+`Czardas_Monti` at 3 720 (16 orphans); `Stella_maris - La/-SiB` at 21 060.
+They are genuine note/onset/duration differences, not pairing artefacts.
+All 16 `scripts/oracle/midi/` selftests pass.
