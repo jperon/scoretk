@@ -7110,3 +7110,22 @@ Groupe `relative` : trois fichiers ouverts pour tentative — `generic-output-
 property.ly` (`\applyOutput` Scheme), `script-stack-order1.ly` (empilement
 d'articulations), `note-names.ly` (changement de `\language`, domaine wsz).
 Aucune cause simple commune ; pas de correctif tenté. Aucun fichier exclu.
+
+### Master courant et tentative de remplacement de l'heuristique
+
+Mesure du master courant `5c3ebbaa` (inclut les travaux de wsz), même oracle
+et mêmes références : **1638/1724 (95,0 %)** — cible atteinte. Les 5 gains du
+commit partCombine (`part-combine`, `part-combine-cross`, `grace-end`,
+`grace-end-expression`, `vertical-alignment-spanner-only`) sont tous exacts
+sur ce master : aucun chevauchement avec les gains de wsz.
+
+Tentative de remplacement du contrôle de périmètre heuristique par une règle
+sur les moments interprétés (`lily/moment.cc`, partie grâce + durées mises à
+l'échelle) : suppression du balayage de jetons, comparaison des `actual`/
+onsets interprétés, exclusion depuis l'état d'interprétation puis depuis les
+événements portant grâce/t-olet. Deux mesures contrôlées successives ont donné
+**+0 gain et 2 pertes** (`part-combine-inside-grace`,
+`part-combine-inside-scale-durations`) : les informations de grâce/mise à
+l'échelle ne sont pas portées par les événements de ces voix. La version
+commitée (contrôlée +5, 0 perte) a donc été restaurée ; le chiffre vérifié
+reste 1638. L'heuristique actuelle reste un point de dette technique connu.
