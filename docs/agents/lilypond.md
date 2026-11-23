@@ -7436,3 +7436,31 @@ note at 399.5 exactly, so that token is not the cause. The correct fix is to
 stop padding a voice with `s1` before its first real item when the measure
 grid comes from another `\score`; the model does not mark that origin, so a
 writer-only rule cannot distinguish it safely.
+
+## 32. Exceptions individuelles confirmées et correctif de bourrage (2026-11-23)
+
+### Exceptions définitives (2 fichiers)
+
+`Salazar_ALaEstrellaQueEsmalta.ly` et `CanonDeLaPaix.ly` sont classés comme
+**exceptions de source** : le modèle porte deux `<prev>` (tie-stops) pour un
+seul `<next>` (tie-start) sur la même hauteur (`Salazar` m118 staff3 G4 et
+m110 staff4 A4, §31). `Tie_engraver::tie_notehead`
+(`lily/tie-engraver.cc:140-207`) ne ferme qu'une tête pendante par liaison
+(`:189`) : une telle paire n'est pas exprimable en LilyPond standard sans
+commande non supportée. Aucun correctif d'écriture ; ces deux fichiers
+restent hors du objectif 100 %.
+
+### Correctif writer : ne pas absorber une mesure vide après `R1*N`
+
+`render_body` (`voice.rs:~517-538`) absorbait la mesure suivante d'un silence
+multi-mesures dès qu'elle ne contenait **aucun objet**, parce que
+`items[item_index..fin].iter().all(is_rest)` est vrai sur une tranche vide.
+Une mesure sans objet n'a pourtant aucun silence à couvrir : elle doit garder
+son propre `s1`. Le test réduit `bourrage_avant_premier_silence_multi_mesures`
+(deux portées de longueurs différentes, la seconde démarrant par un
+multi-silence) échouait avant le correctif (5 `s1` parasites). Le correctif
+exige `fin > item_index` pour absorber la mesure.
+
+Effet mesuré sur les trois fichiers restants (binaire gelé, même oracle) :
+`Sancta_Maria_KV_273` **non exact → exact**, N2d 1453 → **1467**, taille
+21 913 → 22 104 B ; les deux exceptions inchangées. Mesure complète en cours.
