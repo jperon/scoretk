@@ -3817,13 +3817,13 @@ impl<'a> Parser<'a> {
             }
             "makeClusters" => {
                 // `scm/music-functions.scm` (`note-to-cluster`) remplace les
-                // NoteEvent par des ClusterNoteEvent, que le performer MIDI
-                // ignore : la piste d'une portée Cluster est vide dans le
-                // MIDI de référence (`cluster.ly`). Consommer l'argument
-                // musical sans l'émettre fait correspondre le modèle pivot
-                // à ce que l'oracle compare.
-                let _ = self.parse_music();
-                Music::Empty
+                // NoteEvent par des ClusterNoteEvent, sans performer MIDI :
+                // la piste Cluster est vide dans le MIDI de référence.
+                // Conserver la musique dans le modèle avec `play = false`
+                // garde les notes pour tous les autres formats.
+                Music::Context(Context::Silent {
+                    music: Box::new(self.parse_music()),
+                })
             }
             _ if is_articulation_command(&name) || is_dynamic_command(&name) => {
                 // Événement isolé sans accord à décorer : ignoré.

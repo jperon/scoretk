@@ -189,6 +189,8 @@ pub(crate) struct NoteEvent {
     pub small: bool,
     /// Faux pour les notes d'un `NullVoice` : invisibles mais datées.
     pub visible: bool,
+    /// Faux pour une musique sans performer MIDI (`ClusterNoteEvent`).
+    pub play: bool,
 }
 
 /// Accord d'agrément.
@@ -384,6 +386,8 @@ pub(crate) struct Interpreter<'a> {
     repeat_pass: Option<u32>,
     /// Vrai sous un `NullVoice` : les notes restent datées mais invisibles.
     invisible_notes: bool,
+    /// Vrai dans une musique dont les notes ne sont pas jouées (clusters).
+    silent_notes: bool,
     /// Dernier état relatif atteint, avant que le `Context::Relative`
     /// englobant ne restaure l'état d'origine. Sert à enchaîner les voix d'un
     /// `<< … \ … >>` comme `music_list_to_relative` (`lily/music-sequence.cc`).
@@ -456,6 +460,7 @@ impl<'a> Interpreter<'a> {
             cue: false,
             repeat_pass: None,
             invisible_notes: false,
+            silent_notes: false,
             octave,
             relative_final: None,
             last_chord_notes: None,
@@ -708,6 +713,7 @@ impl<'a> Interpreter<'a> {
             cue: self.cue,
             repeat_pass: self.repeat_pass,
             invisible_notes: self.invisible_notes,
+            silent_notes: self.silent_notes,
             octave: self.octave,
             relative_final: None,
             transpose: self.transpose,
@@ -946,6 +952,12 @@ impl<'a> Interpreter<'a> {
                 self.invisible_notes = true;
                 self.walk(music);
                 self.invisible_notes = saved;
+            }
+            Context::Silent { music } => {
+                let saved = self.silent_notes;
+                self.silent_notes = true;
+                self.walk(music);
+                self.silent_notes = saved;
             }
             Context::NonRelative { music } => {
                 // `make-non-relative-music` soustrait la musique à la
@@ -1672,6 +1684,7 @@ impl<'a> Interpreter<'a> {
                 head_group: note.head_group.clone(),
                 small: self.cue,
                 visible: !self.invisible_notes,
+                play: !self.silent_notes,
             });
         }
         let octave = self.octave.resolve(&note.pitch);
@@ -1723,6 +1736,7 @@ impl<'a> Interpreter<'a> {
             head_group: note.head_group.clone(),
             small: self.cue,
             visible: !self.invisible_notes,
+            play: !self.silent_notes,
         })
     }
 

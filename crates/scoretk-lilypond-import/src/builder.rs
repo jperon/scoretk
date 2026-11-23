@@ -2108,6 +2108,7 @@ fn build_note(note: &crate::events::NoteEvent, fingerings: &[String]) -> Note {
     value.head_group = note.head_group.clone();
     value.small = note.small;
     value.visible = note.visible;
+    value.play = note.play;
     if note.cautionary {
         value.accidental = Some(Accidental {
             kind: accidental_for(note.tpc),

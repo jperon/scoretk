@@ -293,6 +293,10 @@ pub(crate) enum Context {
     /// Musique dont les notes sont invisibles et silencieuses (`NullVoice`) :
     /// la trame et les paroles restent dans le modèle, seul le MIDI les ignore.
     Invisible { music: Box<Music> },
+    /// Musique dont les notes restent dans le modèle mais ne sont pas jouées
+    /// (`ClusterNoteEvent`, scm/music-functions.scm note-to-cluster : aucun
+    /// performer MIDI). Les autres formats exportent normalement la musique.
+    Silent { music: Box<Music> },
     /// `\alternative` isolé (déjà consommé par `\repeat`).
     Alternative(Vec<Music>),
     /// `\volta n, m musique` : musique réservée aux passages n et m d'une

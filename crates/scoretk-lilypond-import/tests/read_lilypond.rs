@@ -6997,11 +6997,11 @@ fn make_clusters_nimporte_où_dans_la_musique_de_portee() {
         score.staves[0].muted,
         "\\makeClusters au milieu de la musique doit rendre la portée muette"
     );
+    let etats: Vec<_> = score.notes.iter().map(|n| (n.pitch, n.play)).collect();
     assert_eq!(
-        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
-        vec![60, 62],
-        "seules c' et d' sont jouées ; \\fragment devient des ClusterNoteEvent \
-         sans performer MIDI (scm/music-functions.scm::note-to-cluster)"
+        etats,
+        vec![(60, true), (64, false), (65, false), (62, true)],
+        "c' et d' jouées ; \\fragment est en ClusterNoteEvent (note-to-cluster)"
     );
 }
 
@@ -8046,9 +8046,10 @@ fn make_clusters_absent_du_modele_comme_dans_le_midi() {
          fragment = { c'4 d'4 }\n\
          << \\new Staff \\fragment \\new Staff \\makeClusters \\fragment >>\n";
     let score = read_lilypond(src).expect("lecture");
+    let etats: Vec<_> = score.notes.iter().map(|n| (n.pitch, n.play)).collect();
     assert_eq!(
-        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
-        vec![60, 62],
-        "seules les notes de la portée ordinaire"
+        etats,
+        vec![(60, true), (62, true), (60, false), (62, false)],
+        "les notes de cluster restent dans le pivot mais ne sont pas jouées"
     );
 }

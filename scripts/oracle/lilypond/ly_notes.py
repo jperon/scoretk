@@ -259,6 +259,10 @@ def read_xml(
                     continue
                 duree_texte = elem.findtext("duration")
                 duree = int(float(duree_texte)) / divisions if duree_texte else 0.0
+                # `<play>no</play>` : la note est gravée mais non jouée
+                # (ClusterNoteEvent). Le curseur avance quand même ; on ne
+                # l'ajoute pas à la comparaison avec le MIDI.
+                joue = elem.findtext("play") != "no"
                 est_grace = elem.find("grace") is not None
                 est_accord = elem.find("chord") is not None
                 staff_note = elem.findtext("staff", "1")
@@ -309,12 +313,16 @@ def read_xml(
                                           est_grace) if with_grace else
                                          (hauteur_u + transposition, jouee,
                                           0.0 if est_grace else duree, numero_part))
+                            if not joue:
+                                continue
                             meta.append((numero_part, elem.findtext("staff", "1"),
                                          elem.findtext("voice", "1"), est_grace))
                             rangs.append(0)
                             if est_grace:
                                 attente.setdefault(cle_voix, []).append(len(notes) - 1)
                     continue  # silence : le curseur a déjà avancé
+                if not joue:
+                    continue
                 step = pitch.findtext("step")
                 octave_txt = pitch.findtext("octave")
                 if step not in STEPS or octave_txt is None:

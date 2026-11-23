@@ -1928,6 +1928,14 @@ impl Context<'_> {
             );
             notations.finish(&mut out.xml);
 
+            // `MusicXML` 4.0 : `<play>no</play>` marque une note qui ne doit
+            // pas être jouée (ClusterNoteEvent sans performer MIDI,
+            // scm/music-functions.scm note-to-cluster). La note reste écrite
+            // dans toutes les sorties ; seul le MIDI l'ignore.
+            if !note.play {
+                out.xml.tag("play", "no");
+            }
+
             if first && grace.is_none() {
                 for lyric in &chord_rest.lyrics {
                     write_lyric(out, lyric);
