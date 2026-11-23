@@ -7006,3 +7006,21 @@ Test `cue_tag_seulement_pour_note_non_jouee`.
 
 `after.ly` remains inexact (one extra note from its `\after`/`\afterGrace`
 combination, a distinct cause).
+
+### Campagne fichier par fichier (session suivante)
+
+Deux causes portées, chacune avec reduced test et mesure strictement contrôlée
+(binaire master `20d7a9f0` dans `/tmp/wt-master2`, même oracle, mêmes refs) :
+- `\featherDurations` (`ly/music-functions-init.ly:655-670`) : facteur `scale^i`
+  sur chaque durée puis normalisation ; gain `beam-feather.ly`, `beam-french.ly` ;
+- `c:7+` (`ly/property-init.ly:299`, `lily/lexer.ll:1062-1067` CHORD_MODIFIER)
+  : septième majeure ; gain `chord-name-major7.ly`.
+
+Total contrôlé : **1614 → 1617**, +3 exacts, 0 perte.
+
+Fichiers examinés sans cause commune this session (preuve, aucun exclus) :
+`part-combine.ly`/`-cross.ly` ont `n2 = 100 %` et `n1 = ref` mais **2 notes en
+trop** (`t = ref + 2`) : l'écart n'est pas un accord manquant mais des notes
+supplémentaires du `\partCombine`, cause distincte de la réunion des voix ;
+`bar-line-caesura-double.ly` ($\new Score \with$), `defineBarLine`,
+`optional-args.ly` et `skip-of-length.ly` (constructs déjà documentés).
