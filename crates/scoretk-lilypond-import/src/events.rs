@@ -393,6 +393,9 @@ pub(crate) struct Interpreter<'a> {
     invisible_notes: bool,
     /// Vrai dans une musique dont les notes ne sont pas jouées (clusters).
     silent_notes: bool,
+    /// Zone `skipTypesetting` : les accords sont parcourus pour la résolution
+    /// relative mais aucun événement n'est émis et le temps est replié.
+    skip_event_emission: bool,
     /// Dernier état relatif atteint, avant que le `Context::Relative`
     /// englobant ne restaure l'état d'origine. Sert à enchaîner les voix d'un
     /// `<< … \ … >>` comme `music_list_to_relative` (`lily/music-sequence.cc`).
@@ -468,6 +471,7 @@ impl<'a> Interpreter<'a> {
             repeat_pass: None,
             invisible_notes: false,
             silent_notes: false,
+            skip_event_emission: false,
             octave,
             relative_final: None,
             last_chord_notes: None,
@@ -777,6 +781,7 @@ impl<'a> Interpreter<'a> {
             repeat_pass: self.repeat_pass,
             invisible_notes: self.invisible_notes,
             silent_notes: self.silent_notes,
+            skip_event_emission: self.skip_event_emission,
             octave: self.octave,
             relative_final: None,
             transpose: self.transpose,
@@ -1052,6 +1057,20 @@ impl<'a> Interpreter<'a> {
                 self.walk(music);
                 self.silent_notes = saved;
             }
+            Context::Skipped { music } => {
+                // `skipTypesetting` : les notes sont lues (leur octave
+                // relative est résolue) mais le temps de la zone est replié
+                // (`score-performer.cc:151-176`).
+                let saved_cursor = self.cursor;
+                let saved_silent = self.silent_notes;
+                let saved_emission = self.skip_event_emission;
+                self.silent_notes = true;
+                self.skip_event_emission = true;
+                self.walk(music);
+                self.cursor = saved_cursor;
+                self.silent_notes = saved_silent;
+                self.skip_event_emission = saved_emission;
+            }
             // `\retrograde` (`ly/music-functions-init.ly:2138-2143`,
             // `scm/modal-transforms.scm:183-290`) : la musique est lue dans
             // l'ordre écrit (résolution relative comprise), puis renversée.
@@ -1149,7 +1168,7 @@ impl<'a> Interpreter<'a> {
         number_type: scoretk_core::model::TupletNumberType,
         music: &Music,
     ) {
-        if numerator == 0 || denominator == 0 {
+        if numerator == 0 || denominator == 0 || self.skip_event_emission {
             self.walk(music);
             return;
         }
@@ -1597,6 +1616,15 @@ impl<'a> Interpreter<'a> {
                 note.tie |= chord_tie;
             }
         }
+        if self.skip_event_emission {
+            // `chord_notes` a déjà résolu les hauteurs et mis à jour la
+            // référence relative et la durée par défaut. Le performer ne
+            // traite pas la zone : ni événement, ni temps, mais l'octave
+            // relative de la suite est bien celle de la dernière note lue.
+            self.default_duration = written;
+            self.default_multiplier = default_multiplier;
+            return;
+        }
 
         let mut articulations = Vec::new();
         let mut ornaments = Vec::new();
@@ -2025,6 +2053,7 @@ impl<'a> Interpreter<'a> {
             repeat_pass: self.repeat_pass,
             invisible_notes: self.invisible_notes,
             silent_notes: self.silent_notes,
+            skip_event_emission: self.skip_event_emission,
             octave: self.octave,
             relative_final: None,
             transpose: self.transpose,

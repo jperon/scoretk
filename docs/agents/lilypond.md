@@ -7545,3 +7545,19 @@ comme musique, sans évaluer le reste du Scheme. Test réduit
 `descend_to_context_sans_cible_joue_sa_musique` (une note avant, deux après).
 Mesure contrôlée : `ra` **1 684 → 1 685/1 724**, `mut` 1 216/1 316 et
 `rw` 1 258/1 365 inchangés ; **1 gain, 0 perte**.
+
+### Cause : référence relative sous `skipTypesetting`
+
+`skiptypesetting-tuplet.ly` joue `d1 c` (62/60) après quatre tuplets de `c`
+que `skipTypesetting` masque ; le lecteur donnait 50/48. `ly:make-music-relative!`
+(`ly/music-functions-init.ly:2055-2075`) parcourt tout l'arbre avant le
+performer : les notes sautées avancent la référence relative ; en revanche
+`lily/score-performer.cc:151-176` replie leur temps (`midiSkipOffset`) et
+n'émet aucun événement. Le lecteur place désormais les accords sautés dans
+un `Context::Skipped` que l'interpréteur parcourt sans émettre ni avancer le
+curseur, mais en résolvant les hauteurs. Test réduit
+`skip_typesetting_garde_la_reference_relative` (50/48 avant, 62/60 après) ;
+le test existant `skip_typesetting_coupe_les_notes_et_le_temps` reste vert.
+
+Mesure contrôlée : `ra` **1 685 → 1 686/1 724**, `mut` 1 216/1 316 et
+`rw` 1 258/1 365 inchangés ; **1 gain, 0 perte**.

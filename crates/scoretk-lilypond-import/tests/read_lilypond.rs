@@ -7942,6 +7942,24 @@ fn skip_typesetting_coupe_les_notes_et_le_temps() {
 }
 
 #[test]
+fn skip_typesetting_garde_la_reference_relative() {
+    // `skiptypesetting-tuplet.ly` : `ly:make-music-relative!` parcourt tout
+    // l'arbre (`ly/music-functions-init.ly:2055-2075`), y compris les notes
+    // que le performer ignorera. La référence relative après la zone sautée
+    // doit donc être celle de la dernière note sautée, mais le temps de la
+    // zone est replié (`lily/score-performer.cc:151-176`).
+    let src = "\\version \"2.24.0\"\n\
+               \\new Staff \\relative { \\set Score.skipTypesetting = ##t \
+               \\tuplet 3/2 { c'8 c c } \\tuplet 3/2 { c c c } \
+               \\set Score.skipTypesetting = ##f d1 c }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![62, 60]
+    );
+}
+
+#[test]
 #[ignore = "limite connue : skipTypesetting est time-ordered dans le Score, le lecteur le traite en ordre de parsing"]
 fn skip_typesetting_dans_une_voix_parallele() {
     // `lily/score-performer.cc:151-176` : `skipTypesetting` est une propriété

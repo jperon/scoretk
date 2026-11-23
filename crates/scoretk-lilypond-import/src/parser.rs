@@ -4911,7 +4911,13 @@ impl<'a> Parser<'a> {
     fn parse_chord(&mut self, in_chord: bool) -> Music {
         let music = self.parse_chord_inner(in_chord);
         if self.skip_typesetting {
-            Music::Empty
+            // Le temps est replié, mais la résolution relative porte sur tout
+            // l'arbre (`ly/music-functions-init.ly:2055-2075`) : garder les
+            // accords dans une enveloppe silencieuse pour que
+            // `Interpreter::chord_notes` mette à jour la référence d'octave.
+            Music::Context(Context::Skipped {
+                music: Box::new(music),
+            })
         } else {
             music
         }
@@ -7082,7 +7088,8 @@ fn context_music(context: &Context) -> &Music {
         | Context::Fixed { music, .. }
         | Context::NonRelative { music }
         | Context::Tuplet { music, .. }
-        | Context::Transpose { music, .. } => music,
+        | Context::Transpose { music, .. }
+        | Context::Skipped { music } => music,
         _ => &Music::Empty,
     }
 }
@@ -7746,6 +7753,7 @@ fn skip_to_rest(music: &mut Music) {
         | Music::Context(Context::NonRelative { music })
         | Music::Context(Context::Transpose { music, .. })
         | Music::Context(Context::Silent { music })
+        | Music::Context(Context::Skipped { music })
         | Music::Context(Context::Cue { music, .. })
         | Music::Context(Context::Invisible { music }) => skip_to_rest(music),
         Music::Tag { music, .. } | Music::Filtered { music, .. } => skip_to_rest(music),
@@ -7780,6 +7788,7 @@ fn feather_music(music: &mut Music, scale: &Fraction) {
             | Music::Context(Context::NonRelative { music })
             | Music::Context(Context::Transpose { music, .. })
             | Music::Context(Context::Silent { music })
+            | Music::Context(Context::Skipped { music })
             | Music::Context(Context::Cue { music, .. })
             | Music::Context(Context::Invisible { music }) => visiter(music, scale, index),
             Music::Tag { music, .. } | Music::Filtered { music, .. } => {

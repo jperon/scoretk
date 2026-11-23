@@ -309,6 +309,11 @@ pub(crate) enum Context {
     /// (`ClusterNoteEvent`, scm/music-functions.scm note-to-cluster : aucun
     /// performer MIDI). Les autres formats exportent normalement la musique.
     Silent { music: Box<Music> },
+    /// Zone traversed while `skipTypesetting` is on: LilyPond still resolves
+    /// relative octaves over the whole tree but folds the skipped time
+    /// (`lily/score-performer.cc:151-176`, `midiSkipOffset`). The interpreter
+    /// walks it silently and restores the cursor afterwards.
+    Skipped { music: Box<Music> },
     /// `\partCombine` : deux parties simultanées dont les unissons sont
     /// fusionnés (scm/part-combiner.scm, état `unisono`).
     PartCombine {
