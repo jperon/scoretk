@@ -4012,3 +4012,54 @@ comportement du lecteur n'est donc committé : la règle d'`abc2xml.py` y est
 déjà fidèlement portée, et le « correctif » consistant à garder toutes les
 liaisons est une régression mesurée. Le dossier Laudate reste ouvert, mais
 côté writer (§54), pas côté lecteur.
+
+## 56. Écriture : silences chevauchants, port de `sortMeasure` et horloges de parties (2026-11-23)
+
+Cause commune des barres surchargées du type `x6D4-` (Perosi, Vivaldi, Byrd,
+Anerio) : le modèle issu du MusicXML porte des silences dont la `<duration>`
+dépasse la mesure, parfois suivis d'une note à un tick situé au-delà de la
+barre. ABC n'a qu'une horloge de mesure par partition, alors que la référence
+MusicXML en a une par partie (`read_xml` avance `temps_part` séparément pour
+chaque `<part>`) : deux writers écrivent donc des barres surchargées, et la
+relecture ABC prend la **longueur maximale des voix**, ce qui décale toutes
+les attaques de la mesure suivante.
+
+Références lues avant toute modification :
+
+- `xml2abc.py::abcdur` (lignes 501-521) convertit `<duration>` sans la borner à
+  `M:` ;
+- `xml2abc.py::sortMeasure` (lignes 714-769) trie par temps absolu (715),
+  écarte un silence chevauchant une note (740 : `if nx.ns[0] == 'z': continue`),
+  raccourcit un silence chevauché (742-750) et laisse sa durée complète à un
+  silence qui précède une note sans chevauchement ;
+- `xml2abc.py::doNote` (lignes 1208, 1229) lit la `<duration>` telle quelle ;
+- ABC 2.1 §4.3/§4.5 (`abc-standard-v2.1.wiki.txt`, lignes 857, 895) :
+  `x`/`z` acceptent un multiplicateur arbitraire.
+
+`voice.rs::written_lengths` porte ces règles. Deux garde-fous appris des
+mesures contrôlées : une figure de n-olet reste notée (`(p` porte l'échelle,
+`duration.rs:59-70`) et le curseur de remplissage avance de la durée **réelle**
+(sinon un duplet `(2:3` laisse des `x/2` entre ses notes, pertes sur `Veni,
+Creator Spiritus` et `Minuit chretien`) ; une pause de mesure seule garde la
+longueur de la barre (sinon Anerio perd 122 attaques). Le silence qui dépasse
+la barre n'est conservé entier que si l'événement suivant est au-delà de cette
+barre. Test réduit `crates/scoretk/tests/abc_export_silences_chevauchantes.rs`
+: deux tests échouent avant (`x6` au lieu de `x8`, deux silences chevauchants
+écrits), les quatre passent après.
+
+Mesure contrôlée (même oracle, mêmes 261 fichiers, un seul lancement à la
+fois, `CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2`, `nice -n 10`) : **250 exact
+avant et après, 0 gain, 0 perte**. L'effet mesurable est la moitié du décalage
+de Perosi corrigé (N2 140 → 334 attaques justes sur 447) ; aucun fichier ne
+devient exact, ce qui est analysé ci-dessous. Aucune croissance des `.abc`.
+
+| Fichier | Cause résiduelle, vérifiée sur le modèle | Disposition |
+| --- | --- | --- |
+| `Anerio_Ascendit_Deus.mxl` | Voix 2 (Tenor), mesure 1 : pause de mesure dont `ticks = 2` rondes dans une mesure 4/4. La référence fait avancer l'horloge de cette partie de 2 mesures (D3 à 8 temps), les autres parties de 1 (Soprano à 4 temps). Écrire `z16` décale toutes les autres voix de 4 temps (N2 431 → 309) ; écrire `z8` laisse le Tenor 2 temps en avance (N2 431). Aucun texte ABC ne peut donner deux horloges à la même barre. | Exception : référence à horloges par partie, non représentable. |
+| `Perosi_-_Laudate_Dominum.mxl` | Voix 7 (orgue), mesure 7 : silence invisible de 4 temps puis Ré à 4 temps dans une mesure `M:3/4`. La référence avance l'orgue de 6 temps et les voix chantées de 3. Après port de `sortMeasure`, N2 140 → 334, mais les 113 attaques restantes sont décalées de 3 temps : écrire `x8` (durée complète) corrige l'orgue, écrire `x6` corrige le chant. | Exception : même conflit d'horloges, Partie orgue. |
+| `Vivaldi…_10._Sicut_erat…mxl` | Voix 7 : silences invisibles empilés (`x24` = 12 temps) dans des mesures dont le modèle porte déjà 12 temps. Le port corrige bien les silences qui précèdent une note (`x4` → `x2` par endroits), mais N2 reste 2297/3671 : les chevauchements restants sont entre voix distinctes, pas dans une même voix. | Exception : référence à horloges par partie, identique à Perosi. |
+| `Byrd_Dies.mxl` | Mesure 1 : le modèle porte deux silences invisibles à 0 et 1/2 temps dans des voix **différentes** ; `xml2abc.py::sortMeasure` ne les réorganise que dans une même voix. Notre port n'y change aucun jeton (`diff` vide) et N2 reste 131/451 ; le premier écart est (71, 1,5) attendu contre (71, 2) obtenu. | Exception : l'écart naît dans le modèle MusicXML importé, avant le writer. |
+
+Les quatre fichiers restent comptés dans le relevé. `xml2abc.py` 177 produit
+lui aussi des barres surchargées (§53) : sa durée de silence n'est pas un oracle
+utilisable ici.

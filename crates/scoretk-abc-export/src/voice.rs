@@ -101,6 +101,7 @@ pub(crate) fn render_voice(
     let mut pending_word = false;
     for (measure_index, measure) in score.measures.iter().enumerate() {
         let range = ranges[measure_index].clone();
+        let lengths = written_lengths(&items[range.clone()], measure);
         let mut before: Vec<Vec<String>> = vec![Vec::new(); range.len()];
         let mut after: Vec<Vec<String>> = vec![Vec::new(); range.len()];
 
@@ -221,6 +222,11 @@ pub(crate) fn render_voice(
         } else {
             let mut cursor_tick = measure.start_tick;
             for (offset, item) in items[range.clone()].iter().enumerate() {
+                let length = lengths[offset];
+                if length.is_zero() {
+                    // Silence chevauchant écarté : aucun jeton, aucun remplissage.
+                    continue;
+                }
                 if item.tick > cursor_tick {
                     push_fill_rest(&mut line, cursor_tick, item.tick, measure);
                 }
@@ -246,8 +252,7 @@ pub(crate) fn render_voice(
                 let mut grace = String::new();
                 let token = render_item(
                     score,
-                    measure,
-                    item.tick,
+                    length,
                     item.chord_rest,
                     &mut accidental_state,
                     transpose,
@@ -269,7 +274,15 @@ pub(crate) fn render_voice(
                 for token in &after[offset] {
                     line.push_str(token);
                 }
-                cursor_tick = item.end_tick.max(item.tick);
+                // Le curseur de remplissage suit la durée réelle (mise à
+                // l'échelle d'un n-olet), pas la figure écrite : sinon un
+                // duplet `(2:3` laisserait un trou `x/2` entre ses notes.
+                let advance = if item.chord_rest.tuplet.is_some() {
+                    item.end_tick - item.tick
+                } else {
+                    length
+                };
+                cursor_tick = item.tick + advance;
             }
             if cursor_tick < measure.end_tick() {
                 push_fill_rest(&mut line, cursor_tick, measure.end_tick(), measure);
@@ -390,6 +403,74 @@ fn collect_items(score: &Score, staff: usize, voice: usize) -> Vec<Item<'_>> {
         }
     }
     items
+}
+
+/// Longueur à écrire pour chaque élément d'une mesure.
+///
+/// Port de `xml2abc.py::sortMeasure` (lignes 714-769) : les éléments sont
+/// placés à leur temps absolu (`tijd`, ligne 715), un silence qui chevauche
+/// une note est écarté (ligne 740 : `if nx.ns[0] == 'z': continue`), un
+/// silence chevauché par un événement ultérieur est raccourci (lignes
+/// 742-750), et la durée d'un silence non chevauché reste sa `<duration>`
+/// MusicXML (`abcdur`, lignes 501-521), sans être bornée à `M:`. Écrire les
+/// silences à leur durée modèle sans cette règle donne des barres surchargées
+/// du type `x6D4-` (Perosi, Vivaldi, Byrd) : à la relecture la longueur d'une
+/// barre est le maximum des voix, si bien que toutes les voix sont décalées.
+/// ABC 2.1 §4.3/§4.5 autorise un multiplicateur de silence quelconque.
+///
+/// Une pause de mesure entière reste écrite sur la longueur de la barre :
+/// son `ticks` modèle peut couvrir plusieurs mesures (Anerio, voix 2), et
+/// l'étendre décalerait toutes les autres voix de la première mesure.
+fn written_lengths(items: &[Item<'_>], measure: &Measure) -> Vec<Fraction> {
+    let mut out = vec![Fraction::ZERO; items.len()];
+    let mut cursor = measure.start_tick;
+    for (index, item) in items.iter().enumerate() {
+        let rest = item.chord_rest.rest_ref().is_some();
+        // Un silence déjà couvert par l'élément précédent n'écrit rien
+        // (`xml2abc.py:740`).
+        if rest && item.tick < cursor {
+            continue;
+        }
+        // Un silence de n-olet garde sa figure notée : c'est `(p` qui porte
+        // l'échelle, pas le multiplicateur du silence (`duration.rs:59-70`).
+        // `end_tick` est déjà mis à l'échelle par `collect_items`, donc ni le
+        // raccourcissement ni le bornage ne s'appliquent à sa figure écrite.
+        if item.chord_rest.tuplet.is_some() {
+            out[index] = duration::chord_rest_length(item.chord_rest);
+            cursor = item.end_tick;
+            continue;
+        }
+        let mut len = if item.chord_rest.is_full_measure_rest() {
+            measure.len
+        } else {
+            duration::chord_rest_length(item.chord_rest)
+        };
+        if rest {
+            // Un événement suivant qui commence avant la fin du silence
+            // raccourcit ce silence (`xml2abc.py:742-743`).
+            if let Some(next) = items.get(index + 1) {
+                if next.tick > item.tick && next.tick < item.tick + len {
+                    len = next.tick - item.tick;
+                }
+            }
+            // Un silence qui dépasse la barre est normalement borné à sa fin
+            // (comportement de `render_item` avant ce port, exigé par les
+            // n-olets de `12- Gloria Patri`). Il garde sa durée complète
+            // seulement quand un événement suit à son extrémité : son attaque
+            // dépend alors de la `<duration>` MusicXML complète, que
+            // `xml2abc.py::abcdur` n'écourte pas (Perosi, Vivaldi).
+            let remaining = measure.end_tick() - item.tick;
+            let beyond_bar = items
+                .get(index + 1)
+                .is_some_and(|next| next.tick > measure.end_tick());
+            if !beyond_bar && remaining.is_positive() {
+                len = len.min(remaining);
+            }
+        }
+        out[index] = len;
+        cursor = item.tick + len;
+    }
+    out
 }
 
 /// Transposition chromatique de l'instrument seul, sans compensation d'ottava.
@@ -1010,34 +1091,24 @@ fn item_at_or_before(
 /// Rend un accord ou un silence en jeton ABC.
 fn render_item(
     score: &Score,
-    measure: &Measure,
-    tick: Fraction,
+    length: Fraction,
     chord_rest: &ChordRest,
     accidental_state: &mut pitch::AccidentalState,
     transpose: i32,
     grace: &mut String,
 ) -> String {
     if let Some(rest) = chord_rest.rest_ref() {
-        if chord_rest.is_full_measure_rest() {
-            // Un `<Rest>` de mesure n'a pas de `ticks` propres dans le modèle :
-            // sa longueur écrite est celle de la mesure (le `ticks` de
-            // `ChordRest` peut être nul).
-            return rest_token(measure.len, measure);
-        }
-        let head = if rest.visible { 'z' } else { 'x' };
-        let length = duration::chord_rest_length(chord_rest);
-        // ABC 2.1 §4.3/§4.5 : un silence ne peut pas dépasser la fin de sa
-        // barre. Les modèles MuseScore portent parfois un silence invisible
-        // d'une ronde dans une mesure 3/4 (Perosi, voix 3, mesure 8) :
-        // l'écrire tel quel donne `z8` dans une barre de 6 unités, et la
-        // relecture décale toutes les attaques suivantes d'une mesure.
-        // `xml2abc.py::sortMeasure` (lignes 714-760) remplace précisément le
-        // trou par un `x` de la durée restante.
-        let remaining = measure.start_tick + measure.len - tick;
-        let length = if remaining.is_positive() {
-            length.min(remaining)
+        // `length` vient de `written_lengths`, port de `sortMeasure` : pour un
+        // silence suivi d'une note, c'est sa `<duration>` MusicXML complète
+        // (`xml2abc.py:501-521, 723-769`) ; pour une pause de mesure seule,
+        // c'est la longueur de la barre.
+        // Une pause de mesure reste `z`, même invisible : `rest_token` écrivait
+        // déjà `z` sans tenir compte de `visible` (xml2abc.py::doMaat). Le `x`
+        // est réservé aux silences invisibles ordinaires.
+        let head = if rest.visible || chord_rest.is_full_measure_rest() {
+            'z'
         } else {
-            length
+            'x'
         };
         return format!("{head}{}", duration::multiplier(length, duration::unit()));
     }
@@ -1093,6 +1164,12 @@ fn render_chord(
         grace.push('}');
     }
 
+    // Une note morte (`dead=1` de MuseScore, `<notehead>x</notehead>`) reste
+    // une note écrite et jouée : `xml2abc.py::doNote` (lignes 1226-1241)
+    // n'écarte que `print-object="no"` et écrit la hauteur de toute note avec
+    // `<pitch>` ; le `<notehead>` ne sert qu'aux instrumentations `unpitched`
+    // (lignes 1242-1253). La référence MusicXML compte donc les deux notes
+    // d'un accord comme `[FC]` (voiceswitching, mesure 3). ABC 2.1 §4.17.
     let notes: Vec<&Note> = chord
         .notes
         .iter()
