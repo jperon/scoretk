@@ -2435,6 +2435,19 @@ impl<'a> Parser<'a> {
                     crate::lexer::embedded_music_body(&datum)
                         .map(|corps| self.parse_embedded_music(&corps))
                         .unwrap_or(Music::Empty)
+                } else if datum.trim_start().starts_with("(descend-to-context")
+                    || datum.trim_start().starts_with("(ascend-to-context")
+                {
+                    // `descend-to-context`/`ascend-to-context`
+                    // (`scm/music-functions.scm:710-721`) posent une
+                    // recherche de contexte sur leur premier argument
+                    // musical. Quand le contexte n'existe pas, LilyPond
+                    // joue cette musique dans le contexte courant
+                    // (`context-descend-only-not-found.ly`) ; relire ce
+                    // premier `#{ … #}` suffit, sans évaluer le Scheme.
+                    crate::lexer::embedded_music_body(&datum)
+                        .map(|corps| self.parse_embedded_music(&corps))
+                        .unwrap_or(Music::Empty)
                 } else {
                     let _ = self.record_scheme_define(&datum);
                     Music::Empty

@@ -7429,6 +7429,19 @@ fn graces_liees_entre_elles_ne_doublent_pas_lattaque() {
 }
 
 #[test]
+fn descend_to_context_sans_cible_joue_sa_musique() {
+    // `context-descend-only-not-found.ly` : `descend-to-context`
+    // (`scm/music-functions.scm:715-721`) enveloppe sa musique dans un
+    // `ContextSpeccedMusic` dont la recherche descend ; si le contexte n'est
+    // pas trouvé, LilyPond la joue dans le contexte courant (deux notes ici).
+    let src = "\\version \"2.24.0\"\n\
+               \\new Staff { \\absolute f'' #(descend-to-context #{ \\absolute d'' #} \
+               'Staff \"fail\" #{ \\with { instrumentName = \"FAIL\" } #} ) }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![77, 74]);
+}
+
+#[test]
 fn text_mark_ne_mange_pas_la_duree_nue_suivante() {
     // `ly/music-functions-init.ly:2365-2368` : `\textMark` prend un seul
     // argument de markup ; la durée nue qui suit est une musique à jouer.

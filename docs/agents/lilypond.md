@@ -7532,3 +7532,16 @@ Deux tests réduits échouant d'abord :
 Mesure contrôlée (binaire de la cause précédente) : `ra` **1 683 →
 1 684/1 724**, `mut` 1 216/1 316 et `rw` 1 258/1 365 inchangés ; **1 gain,
 0 perte**, aucun N1/N2 en baisse.
+
+### Cause : `descend-to-context` sans contexte trouvé
+
+`context-descend-only-not-found.ly` appelle
+`#(descend-to-context #{ \absolute d'' #} 'Staff "fail" #{ … #})`.
+`scm/music-functions.scm:710-721` porte seulement le sens de recherche sur
+le premier argument musical (`ContextSpeccedMusic`) ; si le contexte n'est
+pas trouvé, LilyPond joue cette musique dans le contexte courant (deux notes
+dans le fichier). Le lecteur relit maintenant le premier `#{ … #}` du datum
+comme musique, sans évaluer le reste du Scheme. Test réduit
+`descend_to_context_sans_cible_joue_sa_musique` (une note avant, deux après).
+Mesure contrôlée : `ra` **1 684 → 1 685/1 724**, `mut` 1 216/1 316 et
+`rw` 1 258/1 365 inchangés ; **1 gain, 0 perte**.
