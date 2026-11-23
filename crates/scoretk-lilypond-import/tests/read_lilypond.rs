@@ -8137,7 +8137,6 @@ fn feather_durations_echelonne_les_attakes() {
     );
 }
 
-
 #[test]
 fn portee_new_dans_une_sequence_commence_au_temps_courant() {
     // `staff-add-at-linebreak.ly` : un `\new Staff` dans un `<< … >>` qui
@@ -8172,7 +8171,6 @@ fn portee_new_dans_une_sequence_commence_au_temps_courant() {
     );
 }
 
-
 #[test]
 fn repeat_etc_recoit_son_compte_a_l_appel() {
     // `repeat-etc.ly` : `\repeat percent \etc` est une fonction musicale
@@ -8201,12 +8199,15 @@ fn repeat_etc_recoit_son_compte_a_l_appel() {
     onsets.dedup();
     assert_eq!(onsets, vec![0, 480, 960, 1440], "quatre noires à 0..3");
     assert_eq!(
-        score.notes.iter().filter(|note| note.tie_back.is_none()).count(),
+        score
+            .notes
+            .iter()
+            .filter(|note| note.tie_back.is_none())
+            .count(),
         4,
         "les trois mesures en pourcent ne rejouent pas le corps"
     );
 }
-
 
 #[test]
 fn scheme_note_names_dans_la_musique_change_la_langue() {
@@ -8225,4 +8226,38 @@ fn scheme_note_names_dans_la_musique_change_la_langue() {
         vec![67, 70, 74, 72, 70, 69, 67, 66],
         "bes = sib et fis = fa dièse après le changement de langue"
     );
+}
+
+#[test]
+fn voix_separees_dans_un_simultane_restent_une_portee() {
+    // `collision-seconds.ly` : `<< { … } \\ { … } >>` (VoiceSeparator) crée
+    // deux voix d'une **même** portée (`lily/parser.yy`,
+    // `simultaneous_music`), que le MIDI fusionne par piste
+    // (`lily/midi-walker.cc`) ; ce n'est pas l'idiome Mutopia
+    // `<< \soprano \alto >>` qui ouvre une portée par élément.
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\
+         \\relative << { c'4 } \\\\ { e'4 } >>\n",
+    )
+    .expect("lecture");
+    assert_eq!(score.staves.len(), 1, "une seule portée pour les deux voix");
+    let mut attaques: Vec<(u8, i64)> = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            let tick = segment.tick.ticks(1920);
+            for (_, item) in segment.iter_elements() {
+                let SegmentItem::ChordRest(chord_rest) = item else {
+                    continue;
+                };
+                let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                    continue;
+                };
+                for id in &chord.notes {
+                    attaques.push((score.note(*id).pitch, tick));
+                }
+            }
+        }
+    }
+    attaques.sort_unstable();
+    assert_eq!(attaques, vec![(60, 0), (76, 0)], "deux voix au même temps");
 }

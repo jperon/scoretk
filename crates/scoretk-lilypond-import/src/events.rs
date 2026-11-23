@@ -533,7 +533,7 @@ impl<'a> Interpreter<'a> {
                     self.walk(item);
                 }
             }
-            Music::Sim(items) => self.simultaneous(items),
+            Music::Sim(items) | Music::SimVoices(items) => self.simultaneous(items),
             Music::Chord(chord) => self.emit_chord(chord),
             Music::Context(context) => self.context(context),
             Music::Tag { tags, music } => {
@@ -1851,7 +1851,9 @@ fn is_context_only(music: &Music) -> bool {
     match music {
         Music::Empty | Music::Unknown(_) | Music::Lyrics(_) => true,
         Music::Chord(_) | Music::New(_) => false,
-        Music::Seq(items) | Music::Sim(items) => items.iter().all(is_context_only),
+        Music::Seq(items) | Music::Sim(items) | Music::SimVoices(items) => {
+            items.iter().all(is_context_only)
+        }
         Music::Context(context) => context_is_context_only(context),
         Music::Tag { music, .. } | Music::Filtered { music, .. } => is_context_only(music),
     }

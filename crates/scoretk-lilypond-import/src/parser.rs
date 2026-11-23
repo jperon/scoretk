@@ -2224,9 +2224,11 @@ impl<'a> Parser<'a> {
         if self.at_double_angle_open() {
             self.position += 2;
             let mut items = Vec::new();
+            let mut voix = false;
             while !self.at_end() && !self.at_double_angle_close() {
                 if self.peek().is_some_and(|token| token.is_command("\\")) {
                     self.position += 1;
+                    voix = true;
                     continue;
                 }
                 let before = self.position;
@@ -2238,6 +2240,9 @@ impl<'a> Parser<'a> {
             }
             if self.at_double_angle_close() {
                 self.position += 2;
+            }
+            if voix {
+                return Music::SimVoices(items);
             }
             return Music::Sim(items);
         }
@@ -6900,7 +6905,7 @@ fn feather_music(music: &mut Music, scale: &Fraction) {
 /// allongées : aucune nouvelle durée n'est introduite.
 fn scale_music(music: &mut Music, factor: &Fraction) {
     match music {
-        Music::Seq(items) | Music::Sim(items) => {
+        Music::Seq(items) | Music::Sim(items) | Music::SimVoices(items) => {
             for item in items {
                 scale_music(item, factor);
             }

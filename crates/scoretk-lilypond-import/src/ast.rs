@@ -384,6 +384,13 @@ pub(crate) enum Music {
     /// sépare les passages polyphoniques temporaires (« Temporary polyphonic
     /// passages » de la référence de notation).
     Sim(Vec<Music>),
+    /// `<< … \\ … >>` : les éléments sont les **voix** d'une même portée
+    /// (`lily/parser.yy`, `simultaneous_music`), à distinguer de `Sim` pour la
+    /// structure : `\score { << \soprano \alto >> }` ouvre une piste par
+    /// élément (idiome Mutopia), mais `\relative << { … } \\ { … } >>` reste
+    /// une seule portée à plusieurs voix, dont le MIDI fusionne les unissons
+    /// (`lily/midi-walker.cc`).
+    SimVoices(Vec<Music>),
     /// Accord, silence ou silence multi-mesures.
     Chord(Chord),
     /// Bloc `\new …` rencontré dans le flux musical.
