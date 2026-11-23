@@ -1413,6 +1413,20 @@ impl<'a> Interpreter<'a> {
         if let Some((kind, slash)) = self.grace.as_ref().map(|frame| (frame.kind, frame.slash)) {
             let mut notes = match &chord.kind {
                 ChordKind::Notes(notes) => self.chord_notes(notes),
+                // Une durée nue (`\grace { 8 }`) est résolue par
+                // `expand-repeat-notes!` avant l'enveloppement dans
+                // `GraceMusic` (`scm/music-functions.scm:972-1015`,
+                // `:1237-1248`) : elle rejoue la note précédente, comme dans
+                // le flux normal (ci-dessous, `ChordKind::PitchRepeat`).
+                ChordKind::PitchRepeat => match self.last_chord_notes.clone() {
+                    Some(mut notes) => {
+                        for note in &mut notes {
+                            note.tie = false;
+                        }
+                        notes
+                    }
+                    None => Vec::new(),
+                },
                 _ => Vec::new(),
             };
             // `def-grace-function` (`scm/music-functions.scm:1237-1248`) place
@@ -1428,6 +1442,25 @@ impl<'a> Interpreter<'a> {
                 for note in &mut notes {
                     note.tie = true;
                 }
+            }
+            // `tie-grace.ly` : `c8 ~ 16 ~` est une chaîne de liaisons entre
+            // deux grâces de même hauteur. `Tie_performer` n'émet qu'une
+            // attaque pour cette chaîne (`lily/tie-performer.cc`), mais le
+            // MusicXML devrait sinon écrire deux `<grace>` : ne pas ajouter
+            // la seconde quand elle prolonge exactement la précédente.
+            if grace_tie
+                && self.pending_grace.last().is_some_and(|previous| {
+                    previous.notes.len() == notes.len()
+                        && previous
+                            .notes
+                            .iter()
+                            .zip(&notes)
+                            .all(|(before, after)| before.pitch == after.pitch)
+                })
+            {
+                self.default_duration = written;
+                self.default_multiplier = default_multiplier;
+                return;
             }
             if !notes.is_empty() {
                 let grace = GraceEvent {

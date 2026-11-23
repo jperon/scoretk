@@ -7509,3 +7509,26 @@ la liste des échecs connus : **7/14 → 8/14** variantes identiques.
 Mesure contrôlée : `ra` **1 682 → 1 683/1 724**, `mut` 1 216/1 316 et
 `rw` 1 258/1 365 inchangés ; **1 gain, 0 perte**, N1/N2 identiques sur les
 cinq mille autres fichiers. Sur `beat-performer.ly`, N1 = N2 = 190/190.
+
+### Cause : durée nue dans un bloc d'agrément
+
+`bend-after-start-in-grace.ly` écrit `\grace { 2. \bendAfter 10 }` et
+`\grace { 4 \bendAfter 2 4 \bendAfter 4 … }`. `expand-repeat-notes!`
+(`scm/music-functions.scm:972-1015`) résout la durée nue **avant** que
+`def-grace-function` (`:1237-1248`) enveloppe le bloc dans `GraceMusic`. Le
+constructeur ne traitait que `ChordKind::Notes` dans sa branche « grâce » :
+les quatre durées nues du fichier ne produisaient aucun ornement (8 notes au
+lieu de 12). Il reprend désormais `last_chord_notes`, comme le fait le flux
+ordinaire pour `PitchRepeat`.
+
+Une première mesure a gagné le fichier mais en a perdu un autre
+(`tie-grace.ly`) : `c8 ~ 16 ~` est une chaîne de liaisons entre deux grâces
+de même hauteur, une seule attaque chez LilyPond (`lily/tie-performer.cc`).
+Une grâce liée qui prolonge exactement la précédente n'est donc plus ajoutée.
+Deux tests réduits échouant d'abord :
+`duree_nue_dans_un_grace_rejoue_la_note_precedente` et
+`graces_liees_entre_elles_ne_doublent_pas_lattaque`.
+
+Mesure contrôlée (binaire de la cause précédente) : `ra` **1 683 →
+1 684/1 724**, `mut` 1 216/1 316 et `rw` 1 258/1 365 inchangés ; **1 gain,
+0 perte**, aucun N1/N2 en baisse.

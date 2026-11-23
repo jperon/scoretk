@@ -7377,6 +7377,58 @@ fn abbreviation_repeat_compte_scheme_addition() {
 }
 
 #[test]
+fn duree_nue_dans_un_grace_rejoue_la_note_precedente() {
+    // `bend-after-start-in-grace.ly` : `\grace { 4 \bendAfter 2 … }`. Une
+    // durée nue est résolue par `expand-repeat-notes!`
+    // (`scm/music-functions.scm:972-1015`) **avant** l'enveloppement dans
+    // `GraceMusic` (`def-grace-function`, `:1237-1248`) : elle doit donc
+    // devenir une grâce de la hauteur de la note précédente.
+    let score = lire("{ c'4 \\grace { 8 } d'4 }");
+    let mut graces = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (_, item) in segment.iter_elements() {
+                let SegmentItem::ChordRest(chord_rest) = item else {
+                    continue;
+                };
+                let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                    continue;
+                };
+                for grace in &chord.grace_chords {
+                    graces.extend(grace.chord.notes.iter().map(|&id| score.note(id).pitch));
+                }
+            }
+        }
+    }
+    assert_eq!(graces, vec![72], "la croche nue rejoue do5 en ornement");
+}
+
+#[test]
+fn graces_liees_entre_elles_ne_doublent_pas_lattaque() {
+    // `tie-grace.ly` : `c''4 \grace { c8 ~ 16 ~ } c4`. La durée nue rejoue
+    // la même hauteur, mais la chaîne de liaisons ne forme qu'une attaque
+    // (`lily/tie-performer.cc`) : elle ne doit pas ajouter une seconde grâce.
+    let score = lire("{ c'4 \\grace { 8 ~ 16 ~ } c'4 }");
+    let mut graces = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (_, item) in segment.iter_elements() {
+                let SegmentItem::ChordRest(chord_rest) = item else {
+                    continue;
+                };
+                let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                    continue;
+                };
+                for grace in &chord.grace_chords {
+                    graces.extend(grace.chord.notes.iter().map(|&id| score.note(id).pitch));
+                }
+            }
+        }
+    }
+    assert_eq!(graces, vec![72], "une seule attaque d'agrément liée");
+}
+
+#[test]
 fn text_mark_ne_mange_pas_la_duree_nue_suivante() {
     // `ly/music-functions-init.ly:2365-2368` : `\textMark` prend un seul
     // argument de markup ; la durée nue qui suit est une musique à jouer.
