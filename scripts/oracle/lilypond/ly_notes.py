@@ -234,7 +234,10 @@ def read_xml(
                         shift = type_element.find("octave-shift")
                         if shift is None:
                             continue
-                        size = shift.findtext("size", "8")
+                        # `size` est un attribut de `<octave-shift>`
+                        # (`musicxml-4.0.xsd:3925-3931`, défaut 8) : le lire
+                        # comme un élément enfant ramenait 15ma à 12.
+                        size = shift.get("size", "8")
                         amount = 24 if size == "15" else 12
                         kind = shift.get("type")
                         courant = octave_shifts.get(staff, 0)
