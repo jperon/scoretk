@@ -36,8 +36,8 @@
 
 use scoretk_core::model::{
     Arpeggio, ArpeggioType, Articulation, ArticulationType, BarLineType, Breath, BreathType,
-    ChordLineType, Duration, Fraction, GraceType, HairpinType, Key, KeySig, NoteHeadGroup,
-    Ornament, OrnamentType, OttavaType, Placement, StemDirection, Tremolo,
+    ChordLineType, Duration, DurationType, Fraction, GraceType, HairpinType, Key, KeySig,
+    NoteHeadGroup, Ornament, OrnamentType, OttavaType, Placement, StemDirection, Tremolo,
 };
 
 use crate::ast::{
@@ -515,7 +515,22 @@ impl<'a> Interpreter<'a> {
                         _ => None,
                     })
             {
-                event.grace_after.extend(pending);
+                for mut grace in pending {
+                    // Une grâce de fin de voix sonne **après** la note
+                    // principale, à sa fin (`grace-end.ly`) : seul un type
+                    // « After » la place après à l'export, et `fraction = 1`
+                    // la pose au bout de la durée de l'accord (le MIDI de
+                    // référence laisse la note principale plus courte et joue
+                    // les grâces sur la fin du temps).
+                    grace.kind = match grace.duration.kind {
+                        DurationType::Eighth => GraceType::Grace8After,
+                        DurationType::Sixteenth => GraceType::Grace16After,
+                        DurationType::ThirtySecond => GraceType::Grace32After,
+                        _ => grace.kind,
+                    };
+                    grace.fraction = Fraction::ONE;
+                    event.grace_after.push(grace);
+                }
             }
         }
         interpreter.voice.end = interpreter.cursor;

@@ -8301,3 +8301,45 @@ fn skip_of_length_avance_le_temps_sans_jouer() {
         assert_eq!(tick, Fraction::new(1, 2), "attaque (2 noires) / {}", src);
     }
 }
+
+#[test]
+fn grace_de_fin_de_voix_sort_apres_la_note() {
+    // `grace-end.ly` : une grâce sans accord suivant n'a pas de note à
+    // orner ; LilyPond la joue sur la fin du temps de la note précédente
+    // (`lily/grace-iterator.cc`, `lily/audio-item.cc:122`). Le modèle doit
+    // la marquer « après » et la poser à la fin de l'accord, sinon l'export
+    // l'écrit avant la note et l'oracle la place au début.
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\
+         \\context Voice \\relative { c'4 \\grace { d16 d16 } }\n",
+    )
+    .expect("lecture");
+    let mut trouvees = 0;
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (_, item) in segment.iter_elements() {
+                let SegmentItem::ChordRest(chord_rest) = item else {
+                    continue;
+                };
+                let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                    continue;
+                };
+                for grace in &chord.grace_chords {
+                    assert_eq!(
+                        grace.chord.grace,
+                        Some(GraceType::Grace16After),
+                        "grâce après la note"
+                    );
+                    // Noire = 1/4 de ronde : l'ornement est posé à la fin.
+                    assert_eq!(
+                        grace.played_offset,
+                        Some(Fraction::new(1, 4)),
+                        "à la fin de la noire"
+                    );
+                    trouvees += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(trouvees, 2, "les deux doubles croches de la grâce");
+}
