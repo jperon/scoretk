@@ -948,10 +948,16 @@ impl<'a> Interpreter<'a> {
                 self.octave = saved;
             }
             Context::Invisible { music } => {
-                let saved = self.invisible_notes;
+                // `NullVoice` (`ly/performer-init.ly:229-236`) n'a que
+                // Tie/Beam/Slur performers, pas de Note_performer : ses notes
+                // ne sonnent pas, en plus d'être invisibles.
+                let saved_visible = self.invisible_notes;
+                let saved_silent = self.silent_notes;
                 self.invisible_notes = true;
+                self.silent_notes = true;
                 self.walk(music);
-                self.invisible_notes = saved;
+                self.invisible_notes = saved_visible;
+                self.silent_notes = saved_silent;
             }
             Context::Silent { music } => {
                 let saved = self.silent_notes;

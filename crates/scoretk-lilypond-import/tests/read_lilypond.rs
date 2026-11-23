@@ -7587,10 +7587,24 @@ fn nullvoice_garde_les_paroles_et_est_muette_dans_le_midi() {
             \\new NullVoice = \"aligner\" { c'4 d'4 e'4 f'4 }\n\
             \\new Lyrics \\lyricsto \"aligner\" { la la la la } >>\n";
     let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .filter(|note| !note.play)
+            .map(|note| note.pitch)
+            .collect::<Vec<_>>(),
+        vec![60, 62, 64, 65],
+        "`ly/performer-init.ly:229-236` : les notes du NullVoice ne sonnent pas"
+    );
     let xml = scoretk_musicxml_export::export_musicxml(&score).expect("export");
     assert!(
         xml.contains("<lyric"),
         "les paroles doivent rester dans le XML"
+    );
+    assert!(
+        xml.contains("<cue/>"),
+        "les notes du NullVoice sont des cues, donc ignorées par l'oracle"
     );
     assert!(
         xml.contains("print-object=\"no\""),
