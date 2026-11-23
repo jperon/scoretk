@@ -431,10 +431,26 @@ def mesurer_lot(args, lot: str, manifeste: str, sortie: Path) -> None:
                         # Comme dans l'oracle de lecture : le MIDI produit fait foi.
                         r["drapeaux"] = ["avertissement_abc2midi"]
                 r.update(compare(ref, test, args.grid, args.tol))
+                corriger_exact(r)
                 if r.get("ref") and not r.get("test"):
                     r["drapeaux"] = ["sortie_vide"]
                 ecrire(out, r)
             out.flush()
+
+
+def corriger_exact(releve: dict) -> dict:
+    """Deux sorties sans aucune note sont égales par vacuité.
+
+    `midi_notes.compare` (partagé avec l'oracle d'import MIDI) exige une
+    référence non vide pour déclarer l'exactitude — un choix documenté pour
+    l'import. En écriture, 7 partitions du lot ne contiennent que des silences
+    et des symboles d'accord : la référence et le candidat ont tous deux zéro
+    note. Les compter comme inexactes mesurerait l'oracle, pas l'exporteur.
+    Aucune entrée n'est exclue du dénominateur (`plan-fiabilite.md` §1.7).
+    """
+    if releve.get("ref") == 0 and releve.get("test") == 0:
+        releve["exact"] = True
+    return releve
 
 
 def charger(out: str) -> list[dict]:
@@ -545,6 +561,10 @@ def selftest() -> None:
     ]
     texte = resume(ex)
     assert "| 55.00 | 55.00 | 55.00 |" in texte, texte
+    vide = {"ref": 0, "test": 0, "n1": 0, "n2": 0, "n2d": 0, "exact": False}
+    assert corriger_exact(vide)["exact"] is True
+    nonvide = {"ref": 10, "test": 0, "n1": 0, "n2": 0, "n2d": 0, "exact": False}
+    assert corriger_exact(nonvide)["exact"] is False
     print("selftest ecriture : OK")
 
 

@@ -3656,3 +3656,33 @@ exacte pour les deux candidats. Les jigs `CampMeetingJigNo2` et
 des ornements que l'oracle ne supprime pas, alors que l'ABC 2.1 §4.12/§4.14
 les traite comme des ornements, pas comme des notes écrites — les deux lecteurs
 sont d'accord, la référence ne l'est pas.
+
+## 46. Écriture ABC : relevé 2026-11-23 et références vides
+
+Relevé reconstruit sur le master courant (lots corpus 56 / mscz 174 / xml 32,
+mode `model`, binaire release, xml2abc.py 177) :
+`target/abc-ex-base/` donne **237/261 exact** pour scoretk contre 95 pour
+xml2abc.py ; `target/abc-ex-oracle/` (seul l'oracle change) donne **244/261**
+et 101 pour xml2abc.py — **7 gains, 0 perte**, sans croissance des `.abc`
+(taille moyenne identique : 300 / 12 408 / 12 794 octets).
+
+Cause corrigée : `midi_notes.compare`, partagé avec l'oracle d'import MIDI,
+exige `ref > 0` pour déclarer l'exactitude. En écriture, 7 partitions ne
+contiennent que des silences et des symboles d'accord : référence et sortie
+ont toutes deux zéro note. `ecriture.py::corriger_exact` reconnaît l'égalité
+par vacuité, sans exclure ces fichiers du dénominateur
+(`plan-fiabilite.md` §1.7). L'autotest `--selftest` couvre les deux cas
+(vide/vide exact, vide/non-vide inexact).
+
+Les 17 airs encore inexacts restent comptés. Causes documentées dans les
+sections précédentes et confirmées sur ce relevé : 5 `attaque_decalee`
+(Byrd_Dies, Perosi, Vivaldi Sicut erat, Anerio, CanonDeLaPaix — 431 à 587
+attaces justes sur 447 à 813, avec toutes les hauteurs correctes), 5 `octave`
+(instruments transpositeurs), 2 `notes_supp`, 1 `notes_manquantes`,
+1 `dessaccord_partiel`, 1 entrée non prise en charge (hors dénominateur).
+xml2abc.py 177 reste très en retrait sur les trois lots (95/261) : son
+`doNote` (1192) n'écrit les accords que si `<chord/>` est présent, alors que
+le MusicXML de référence produit par scoretk ne le porte pas ; les écarts
+d'attaque viennent surtout de la gestion des silences invisibles `x` et des
+fins de mesure, pas d'une règle unique dont le port améliorerait le relevé
+sans dégrader les 244 airs déjà exacts.

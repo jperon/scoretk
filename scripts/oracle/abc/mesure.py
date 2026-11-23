@@ -112,11 +112,11 @@ def sans_reprises(lines):
         # l'oracle perd des notes **écrites** (ABC 2.1 §4.9-§4.10). Toutes
         # ces étiquettes deviennent de simples barres.
         for pattern in (
-            r"\[[0-9][0-9,\-]*",
-            r"\|[0-9][0-9,\-]*",
             r"::",
             r"\|:",
             r":\s*\|+",
+            r"\[[0-9][0-9,\-]*",
+            r"\|[0-9][0-9,\-]*",
         ):
             line = re.sub(pattern, "|", line)
         out.append(line)
