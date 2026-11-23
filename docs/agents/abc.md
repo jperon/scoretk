@@ -3385,3 +3385,62 @@ ABC import `target/abc-mesure-grace/` versus `target/abc-mesure-inline8/`:
 abc2midi grace/ornament realisations (MIDI mode) and source-specific
 transcription differences; none has a reader-only rule covering more than a
 single file without a measured loss.
+
+## 40. Second pass over the classified import/export gaps (2026-11-23)
+
+### 40.1 Import: the two largest classes are abc2midi realisations
+
+After §39 the 71 import cases with a valid reference split as 10
+`DESACCORD_PARTIEL`, 10 `NOTES_MANQUANTES`, 6 `NOTES_SUPPLEMENTAIRES`, and
+smaller singletons. Both largest classes were diffed down to the note (`sequence.py`
+on `target/abc-mesure-grace/mesures.tsv`), then the actual reference MIDI and
+our MusicXML were compared with the shared `midi_notes` readers:
+
+- `NOTES_MANQUANTES` (10): the "missing" pitches are grace/trill notes that
+  **abc2midi realises** but that the oracle's `read_xml` deliberately skips
+  (it drops every `<note><grace/>`). Example `0501-0550` t507: the reference
+  has 81 at 35.002 with duration 0.123 (a realised grace), while our model
+  stores the `~` trill as an ornament and `read_xml` emits only the G at 35.0.
+  `AnnieHughesJig` shows the reverse count (109 reference vs 115 candidate)
+  because abc2midi retimes grace notes. Fixing this needs the **oracle** to
+  adopt abc2midi's exact (undocumented) grace duration, not the reader:
+  ABC 2.1 §4.20 (spec line 1323) explicitly says the grace unit "is not
+  specified by the abc file, but by the software".
+- `DESACCORD_PARTIEL` (10): remaining first divergences are ±1 semitone in
+  early music with `%%MIDI ratio 3 1`, explicit `_B`/`^c` and long ties
+  (`laDeplorationDeLaMorteDeJohannesOckeghem`), or broken-rhythm/tie
+  combinations (`A > B > G`); abc2xml.py reproduces the written accidentals
+  (default `%%propagate-accidentals pitch`, spec lines 2184-2188), which our
+  reader already implements (`AccidentalState` per letter). No reader-only
+  rule changes these without altering correctly read notes.
+- `NOTES_SUPPLEMENTAIRES` (6) are repeat/volta realisations: in
+  `flattener.test__abcRepeat3.abc` abc2midi plays endings 1 and 2 and skips
+  `:|3 F8`, while our reader emits the third ending as written — again an
+  abc2midi traversal convention, not a pitch-reading defect.
+
+No further reader cause was committed: every candidate would trade one
+artifact for another, and the previous grace-accidental fix remains the only
+measured gain in this class (+3, 0 losses).
+
+### 40.2 Export: first onset divergences of the 25 non-exact files
+
+Regenerating `export_sequence.py` on `target/abc-ex-fill/` gives 18 files with
+an event divergence: 8 onset, 7 pitch, 3 duration. Distribution of the onset
+group:
+
+| First onset divergence | Files | Example | Assessment |
+| --- | ---: | --- | --- |
+| extra rest at tick 0 (written as `x`/`z` fill) | 5 | `CanonDeLaPaix.xml`, `Perosi…`, `Vivaldi 09`, `Vingt danses` | the writer already emits `x` per `xml2abc.py:724`; the reference model simply has no rest there, so a writer-only change would remove a required bar fill |
+| anacrusis / fractional measure boundary | 2 | `Byrd_Dies.mxl` (0.5 vs 1.0), `Vivaldi 10` (276 vs 277.5) | source-specific pickup, no general rule from the model |
+| local time signature | 1 | `testLocalTimesig1.mscx` (`[M:3/4]` in a 9/8 measure) | MuseScore writes a 3-quarter rest although the model measure is 9/8; shortening it would shift all following attacks |
+
+The 7 pitch divergences are the already documented semitone/octave/missing
+sub-groups (§35, §37.3, §38). The fill-rest fix committed in §39.1 is the only
+writer change with a cited reference and no measured loss; it is neutral
+because rests are not sounding events. No other writer-only rule was found
+that gains a file without changing correctly written music, so no further
+export change was committed.
+
+Counts remain: ABC export **236/261 exact** (mean `.abc` sizes unchanged),
+ABC import **4 579/4 756 exact** (plus 109 SANS_X and 36 oracle-failure files
+in the separate "no valid reference" bucket, outside both numerators).
