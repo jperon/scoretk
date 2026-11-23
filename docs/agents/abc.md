@@ -3327,3 +3327,61 @@ carrying cases, not instrument changes.
 `tk.musicxml` is the direct export (reference) and `scoretk.musicxml` is the
 ABC round trip (candidate). The §35 table was regenerated with the corrected
 direction and the mscz file count fixed to 173.
+
+## 39. Onsets/durations of the export gaps; ABC import classification (2026-11-23)
+
+### 39.1 Export: the 11 files outside the pitch table
+
+`export_sequence.py` now writes a second TSV from `cmp.musicxml_events`
+(time, duration, pitch, measure). The 11 non-exact files of §37.4 without a
+pitch divergence split as follows:
+
+| First divergence | Files | Example |
+| --- | ---: | --- |
+| onset | 6 | `CanonDeLaPaix.xml`, `Perosi_-_Laudate_Dominum.mxl`, `Vivaldi 10` |
+| duration | 2 | `testLocalTimesig1.mscx`, `Laudate_pueri…` (mxl + mscz) |
+| onset inside a longer run | 2 | `Byrd_Dies.mxl`, `Anerio_Ascendit_Deus.mxl` |
+
+The common local pattern is a voice gap filled by the writer: `xml2abc.py:724`
+fills it with `x` (invisible rest, ABC 2.1 §4.3 line 897) while our
+`push_fill_rest` used `z`. Changed with a failing-first reduced test and a
+snapshot update. Full 3-lot measurement `target/abc-ex-fill/`:
+**236/261 exact**, gains 0, losses 0, mean `.abc` sizes unchanged
+(300 / 12 408 / 12 795 B). The writer is now faithful to the reference but
+the gap is not what moves our oracle's N1/N2 (rests are not sounding events),
+so it is a correctness fix with no measured gain. The remaining onset drifts
+come from anacrusis/measure-boundary handling in the source scores and from
+grace notes realised by abc2midi; no narrower writer-only rule was found.
+
+### 39.2 Import: reference buckets and classification
+
+Of the 4 756 ABC import cases, **109 SANS_X** are fragments without an `X:`
+field (abcjs tests such as `decorations.test__abcTrills.abc`, which start
+directly with `L:`/`K:`). `abc2midi` produces no MIDI for them (verified by
+running it through the oracle's `nix-shell -p abcmidi`); they have no valid
+reference and are reported in a separate "no valid reference" bucket, not as
+reader failures. The same bucket holds 21 `ORACLE_ECHEC` (abc2midi error) and
+15 `ORACLE_VIDE` (empty reference MIDI) cases. The remaining **71** cases with
+a valid reference are: 13 `DESACCORD_PARTIEL`, 10 `NOTES_MANQUANTES`,
+6 `NOTES_SUPPLEMENTAIRES`, 2 `REPRISE_OU_TRONCATURE`, 2 `TRANSPOSITION`,
+1 `DESACCORD_TOTAL`, 1 `OCTAVE` (and the rest OK).
+
+### 39.3 Import: grace-note accidentals (committed, measured, +3)
+
+`sequence.py` on `DESACCORD_PARTIEL` showed first divergences one semitone
+off immediately after grace notes with an explicit accidental
+(`book6.abc`: `{^cde}d2 g2 c2`, reference C natural, scoretk C sharp). ABC
+2.1 §4.20 (spec line 1323) places `<grace notes>` before the note's own
+accidental; §4.2 (lines 853-855) defines `^`/`=`/`_` on a note. `read_note()`
+records explicit accidentals in the measure state and `parse_grace()` called
+it, so the grace-note accidental leaked onto the following note. The reader
+now saves and restores `AccidentalState` around the grace group; reduced test
+`crates/scoretk-abc-import/tests/grace_accidental.rs` written first, failing
+before the fix.
+
+ABC import `target/abc-mesure-grace/` versus `target/abc-mesure-inline8/`:
+**4 576 → 4 579 exact**, gains 3 (`book5`, `book6`, `HOnTheWabashJig`),
+**0 losses**; `DESACCORD_PARTIEL` 13 → 10. The remaining groups are mostly
+abc2midi grace/ornament realisations (MIDI mode) and source-specific
+transcription differences; none has a reader-only rule covering more than a
+single file without a measured loss.
