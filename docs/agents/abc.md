@@ -3583,3 +3583,32 @@ key applied before inline clef fields, ABC 2.1 §4.6 spec 921-933,
 avoid two losses introduced by an earlier grace fix, with its own reduced
 test. No other writer-only rule among the ten first divergences produces a
 gain without changing correctly written music.
+
+## 44. ABC import on the 4 756-tune lot (2026-11-23)
+
+Rebuilt on current master with the frozen release binary and the same
+`abc2xml.py` 269 alternative (`scripts/oracle/abc/mesure.sh`, all three lots,
+1 402 files / 4 756 `X:` tunes):
+
+| Candidate | Exact tunes | N1 correct | N2 correct | Failures |
+| --- | ---: | ---: | ---: | ---: |
+| scoretk, before | 4 580 | 470 255 | — | 130 |
+| scoretk, after the inline-`K:` fix | **4 581** | 470 276 | — | 130 |
+| `abc2xml.py` 269, unchanged | 4 517 | 469 976 | — | 130 |
+
+Per-tune comparison: one gain (`parsing.test__abcInlineKeyPerVoice.abc` X:1,
+N1 0.5625 → 1.0), no loss. scoretk remains ahead of the alternative by 64
+exact tunes.
+
+**Classification of the 176 inexact tunes before the fix.** 145 are
+measurement artefacts: 109 `SANS_X` fragments (no `X:` header, not a tune),
+21 `ORACLE_ECHEC` (abc2midi fails on the reference) and 15 `ORACLE_VIDE`.
+Of the 31 remaining, 21 are `NOTES_MANQUANTES`, 9 `DESACCORD_PARTIEL`,
+6 `NOTES_SUPPLEMENTAIRES`, 2 `REPRISE_OU_TRONCATURE`, 2 `TRANSPOSITION`,
+1 `OCTAVE` and 1 `DESACCORD_TOTAL`. In 29 of those 31 the alternative has
+exactly the same score as scoretk: the reference (abc2midi realising ornaments
+or repeats) disagrees with both readers, so they are not importer defects.
+Only `parsing.test__abcInlineKeyPerVoice.abc` X:1 (21 missing pitch matches)
+and `laPlusDesPlus.abc` X:3 (9) showed the alternative strictly ahead; the
+first is fixed here, the second is a 9-note modal-key difference with no
+single construct isolated yet.

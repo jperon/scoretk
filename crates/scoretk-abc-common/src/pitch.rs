@@ -480,8 +480,14 @@ pub fn parse_key(text: &str) -> Option<ParsedKey> {
     let mut rest = String::new();
     for character in chars {
         match character {
-            '#' | '^' => alter += 1,
-            'b' | '_' => alter -= 1,
+            // `abc2xml.py::doHeaderField` (ligne 1811) lit la tonique avec
+            // `([A-G][#b]?)` : les altérations explicites collées à la
+            // tonique (`K:Bb^f`) ne font pas partie du nom de la tonique et
+            // sont ignorées (ABC 2.1 §3.1.14). Les traiter comme un `#`
+            // changeait `Bb` (2 bémols) en `B` (5 dièses).
+            '^' | '_' | '=' => break,
+            '#' => alter += 1,
+            'b' => alter -= 1,
             _ => rest.push(character),
         }
     }

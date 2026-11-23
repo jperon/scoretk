@@ -972,17 +972,29 @@ impl Reader {
                 // it is a replacement). Keep each occurrence as a key change
                 // so the exporter emits one `<key>` per field; the previous
                 // change-only condition dropped redundant fields.
-                for voice in &mut self.voices {
-                    voice.schedule_key(parsed.key.clone());
+                // ABC 2.1 §7.3 : un champ `[K:…]` dans le corps s'applique à
+                // la voix courante seulement, tandis que l'`K:` d'en-tête vaut
+                // pour toutes les voix. `abc2xml.py` traite les champs inline
+                // pendant `mkPart` (`doFields`, ligne 2029) et n'appelle
+                // `doHeaderField` (2271) que pour cette partie. Étendre un
+                // champ inline à toutes les voix ajoutait à chacune un
+                // changement d'armure à la mesure de l'autre voix.
+                let targeted: Vec<usize> = if self.header_done {
+                    vec![self.current]
+                } else {
+                    (0..self.voices.len()).collect()
+                };
+                for index in &targeted {
+                    self.voices[*index].schedule_key(parsed.key.clone());
                 }
                 if let Some(transpose) =
                     parse_transpose_parameter(&parsed.parameters, number, &mut self.warnings)
                 {
                     self.midi_transpose = transpose;
                     self.instrument_transpose = transpose;
-                    for voice in &mut self.voices {
-                        voice.transpose = transpose;
-                        voice.instrument_transpose = transpose;
+                    for index in &targeted {
+                        self.voices[*index].transpose = transpose;
+                        self.voices[*index].instrument_transpose = transpose;
                     }
                 }
                 // `abc2xml.py::doClef` (lignes 1736-1744) : un suffixe
@@ -1014,8 +1026,8 @@ impl Reader {
                 let delta = new_shift - old_shift;
                 if let Some(clef) = new_clef {
                     self.default_clef = Some(clef);
-                    for voice in &mut self.voices {
-                        voice.schedule_clef(clef);
+                    for index in &targeted {
+                        self.voices[*index].schedule_clef(clef);
                     }
                     // `abc2xml.py::doClef` (lignes 1730-1738) repose
                     // `s.gtrans = gtrans` : le décalage d'octave est **absolu**,
@@ -1024,7 +1036,9 @@ impl Reader {
                     // doit le lui retirer, alors que `delta` (clef du `K:`
                     // global) vaut 0. Calculer l'écart depuis la clef courante
                     // de chaque voix, même quand le décalage global est nul.
-                    for (voice, previous) in self.voices.iter_mut().zip(previous_clefs) {
+                    for index in &targeted {
+                        let voice = &mut self.voices[*index];
+                        let previous = previous_clefs[*index];
                         // A voice already on the new clef (e.g. from V:) has
                         // already received this shift.
                         if previous == Some(clef) {
