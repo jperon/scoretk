@@ -950,11 +950,11 @@ def selftest() -> None:
             f.write(flux)
         assert read_xml(p)[-2:] == [(77, 2.0, 1.0, 0), (81, 3.0, 1.0, 0)], read_xml(p)
 
-        # Unissons entre voix d'une même portée : LilyPond n'émet qu'une
-        # attaque par piste MIDI (`lily/midi-walker.cc`), le MusicXML écrit les
-        # deux voix. L'oracle compare le son : une seule note. Deux portées
-        # restent deux pistes ; une même voix qui répète la hauteur à la même
-        # attaque n'est pas fusionnée (ce serait masquer un défaut du lecteur).
+        # Unissons : LilyPond n'émet qu'une attaque par piste MIDI
+        # (`lily/midi-walker.cc` do_start_note, branche now_ticks ==
+        # queued_ticks). Depuis 51291b45 la fusion est inconditionnelle,
+        # sans consulter la référence : voix d'une même portée ET répétition
+        # dans une même voix fusionnent. Deux portées restent deux pistes.
         unisson = """<score-partwise version="4.0">
           <part id="P1">
             <measure number="1">
@@ -978,8 +978,11 @@ def selftest() -> None:
           </part></score-partwise>"""
         with open(p, "w", encoding="utf-8") as f:
             f.write(unisson)
+        # Mesure 1 : voix 1+2 de la portée 1 fusionnent (1 attaque), la
+        # portée 2 reste une piste distincte (2 attaques au total).
+        # Mesure 2 : les deux C de la même voix fusionnent (1 attaque).
         attendu_unisson = [(60, 0.0, 1.0, 0), (60, 0.0, 1.0, 0),
-                           (60, 1.0, 1.0, 0), (60, 1.0, 1.0, 0)]
+                           (60, 1.0, 1.0, 0)]
         assert read_xml(p) == attendu_unisson, read_xml(p)
 
         # Correction 6 — changement de <divisions>, accord et extension de
