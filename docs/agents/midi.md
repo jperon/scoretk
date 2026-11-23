@@ -3629,3 +3629,31 @@ comes from an instrument channel (e.g. `open`/`mute`) that our model retains
 only as `channel_count` (`part.rs:81`), not as a map of MIDI channel numbers.
 A further port would need that channel table in the model. The committed port
 is lossless and follows `exportmidi.cpp` exactly for the channels we know.
+
+## Instrument channel table: two rejected paths (2026-11-23)
+
+Following `InstrChannel` (`instrument.h:79-124`) and `TRead::read(InstrChannel*)`
+(`read400/tread.cpp:926-960`), two ways of giving `ChannelMap` the part's
+secondary channels were tried and rejected:
+
+1. **Full channel table in the model** (`crates/scoretk-core/src/model/instrument_channel.rs`,
+   `Instrument::channels`, filled by the 3.x/4.x readers with each `<Channel>`
+   name, `<midiChannel>` and `<program>`). It broke the full-struct round-trip
+   `mscz_est_un_conteneur_musescore` (`crates/scoretk/tests/mscx.rs:65-79`):
+   the MuseScore writer reconstructs names as `normal`/`channel-1`/`channel-2`,
+   so re-reading a written `.mscz` did not reproduce the stored names. Fixing
+   that would change `.mscx`/`.mscz` output and its snapshots. Reverted before
+   commit.
+2. **Derive secondary channels from the existing `channel_count`**
+   (`render.rs::channels`): allocate one free MIDI channel per extra
+   `<Channel>` and feed them to `fixup_midi`. Controlled measurement (same
+   oracle, writer only): **144/171 → 144/171, 0 gains, 0 losses**, corpus
+   17/17 unchanged, but mean output **18 538 → 18 644 B** (+106 B/file).
+   The `Veni` divergence stayed at tick 22 080: generic free channels do not
+   reproduce the reference's ch1. Reverted before commit.
+
+The committed, measured state stays: per-channel restrike for the channels we
+know (notes + harmony), **144/171** on the enlarged lot and **17/17** on the
+corpus. Reproducing the remaining off requires the instrument's *explicit*
+`<midiChannel>` values plus a writer that preserves them across round trips —
+a model change with its own snapshot update, not a renderer-only tweak.
