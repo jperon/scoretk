@@ -3519,3 +3519,32 @@ note-off on the previous staff's channel that our writer never emits. A
 reverted before commit: `playing` is already keyed by `(part, channel, key)`,
 so the "previous" channel is necessarily the current one and the edit was a
 no-op. This needs a separate, measured port of the cross-channel hoist.
+
+## Cross-channel restrike port: two measured attempts (2026-11-23)
+
+`Veni veni Emmanuel`, tick 22 080: the reference writes, on track 12,
+`on(ch0,67,vel0)`, `on(ch0,67,vel80)` ×2 and `off(ch1,67)`; our output lacks
+the `off(ch1,67)`. The ch1 note was opened at tick 21 840 on **track 7**, i.e.
+in another part. The reference has two more ch1 offs at 22 560 and 22 799.
+
+Port tried (commit `587e573a`, new `cross_channel.rs` wired into `fixup.rs`):
+on a restrike, emit a velocity-0 off on every channel of the **same part**
+still sounding that pitch, following `fixupMIDI` (`event.cpp:263-306`) and
+`exportmidi.cpp:304-323`. Reduced unit test from this case added. Controlled
+measurement (same oracle, writer only):
+**143/171 → 143/171, 0 gains, 0 losses**; corpus 17/17 unchanged. The target
+off was not emitted because the ch1 note belongs to another part.
+
+Diagnosis dump of `playing` at the restrike shows entries
+`(part 8, ch2, 67)`, `(part 9, ch5, 67)`, `(part 12, ch0, 67)` — no
+`(part 12, ch1, 67)`. Broadening the rule to **all parts** (as
+`EventsHolder::info` is indexed by channel alone) emitted many spurious offs:
+**143/171 → 88/171, 55 losses**, output size 18 535 → 18 995 B. That variant
+was reverted before commit.
+
+So the missing off is not a same-part restrike: it is a hoisted note-off from
+a note of another part whose own attack/write path differs in our renderer.
+A correct port needs the per-part `EventsHolder` write order of
+`exportmidi.cpp:296-323`, not a channel scan over `playing`. The committed
+same-part port is lossless and keeps its reduced test; the remaining
+divergence is unchanged at tick 22 080.
