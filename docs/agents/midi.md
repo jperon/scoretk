@@ -441,6 +441,39 @@ exact. Before the oracle corrections below, the same binary scored
 written pitch, duplicate unisons counted, repeats not excluded): that figure
 measured the oracle, not the importer.
 
+### Update 2026-11-23 — normalisation symétrique des liaisons
+
+With the frozen binary of the human-performance fix and the same references,
+`import_mesure.py` now measures **1 026/1 029 exact** (upstream 96/96,
+LilyPond 930/933), N = 0,9991. The 87 deliberately unsupported pairs stay
+outside both numerator and denominator (`plan-fiabilite.md` § 1, rule 7).
+
+A MIDI carries only note-on/note-off pairs: it cannot distinguish a written
+tie from two consecutive attacks of the same pitch. Depending on the source,
+the same sound is notated either as one long note or as two touching
+fragments. `midi_notes.reconcilier_chaines` now applies the **same rule to
+both lists before matching**: a pair of same-pitch/same-voice notes whose
+second onset is the first note's end is coalesced only when the other side
+has a single note covering the whole span **and no attack at the second
+onset** (duration match within half the tolerance, to avoid confusing a tie
+with a repeated note in another voice). Graces (zero duration after grid
+rounding) are never coalesced. Selftest: `scripts/oracle/midi/test_chaines_import.py`.
+Before this normalisation the same binary scored 1 014/1 029; the 12 gained
+files are the tie-related `lily-*` pairs and `LeCheminDeSaintJacques`, with
+no loss.
+
+Three files remain inexact and **stay in the denominator**: `plan-fiabilite.md`
+allows exclusion only for deliberately unsupported inputs (exit code 3) and
+for unusable `.ly` references, not for a reference that disagrees with its
+own MIDI.
+
+- `ly-Dechiffrage`: the `.ly` generates music with Scheme (`$(let …)`) that
+  our LilyPond reader does not evaluate (16 written notes against 68 played).
+- `ly-Veni, Creator Spiritus_Courtial_v3_SATB`: several `\score` blocks; the
+  MIDI is compiled from another one than the source the reader keeps
+  (245 against 1 619 notes).
+- `ly-LaRondeDeNuit`: empty reference (0 notes), never counted exact by design.
+
 ### Non-exact files by first divergence
 
 `import_mesure.py` matches on the strictest field set and reports the earliest

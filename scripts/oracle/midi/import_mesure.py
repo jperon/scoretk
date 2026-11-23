@@ -81,6 +81,7 @@ def notes(
     écrite par MuseScore comme deux notes liées, et compter les fragments
     pénaliserait tout import qui écrit une seule note. Les chaînes sont
     distinguées par (part, portée, voix, hauteur).
+
     """
     root = ET.parse(path).getroot()
     raw: list[list] = []  # [hauteur, attaque, durée, voix], mutables
@@ -171,7 +172,9 @@ def mscx_notes(path: Path) -> list[tuple[int, float, float, int]]:
     Les liaisons sont fusionnées comme dans `notes()` : une note continuée
     porte un `<Tie>` dont `<startElement>` est l'`<eid>` de la note précédente
     de la chaîne. La durée de chaque continuation est reportée sur le premier
-    fragment, et la continuation n'est pas comptée comme une attaque.
+    fragment, et la continuation n'est pas comptée comme une attaque. Les
+    chaînes que la source ne marque pas sont normalisées plus tard, sur les
+    deux listes à la fois, par `midi_notes.reconcilier_chaines`.
     """
     root = ET.parse(path).getroot()
     score_el = root.find("Score")
@@ -552,6 +555,10 @@ def main() -> None:
                 elif code_mid == 0:
                     try:
                         b = notes(got_xml, to_concert=True)
+                        # Normalisation symétrique avant toute comparaison :
+                        # même règle des deux côtés, pour les liaisons que la
+                        # source n'a pas marquées (un MIDI ne les encode pas).
+                        a, b = midi_notes.reconcilier_chaines(a, b)
                         releve = midi_notes.releve_import(
                             a, b,
                             avec_voix=ref.suffix == ".mscx",

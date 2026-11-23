@@ -414,6 +414,79 @@ def fusionner_unissons(notes: list[tuple]) -> list[tuple]:
     return out
 
 
+def reconcilier_chaines(
+    reference: list[tuple], test: list[tuple], grid: float = GRID, tol: float = TOL
+) -> tuple[list[tuple], list[tuple]]:
+    """Normalise les tenues représentées différemment des deux côtés.
+
+    Un MIDI ne porte que des évènements note-on/note-off : il ne peut pas
+    distinguer une liaison écrite (`<tie>` / `<Tie>`) de deux attaques
+    successives de même hauteur. Selon la source, le même son est donc noté
+    soit une note longue, soit deux fragments contigus. La normalisation doit
+    être **la même des deux côtés** et ne pas dépendre de la présence d'une
+    balise de liaison dans la référence : on compare l'enveloppe sonore
+    (hauteur, attaque, durée cumulée), pas le découpage en notation.
+
+    Une paire contiguë de même (hauteur, voix), dont la seconde note commence
+    à la fin de la première à ``tol`` près et dont les durées valent au moins
+    une grille (les grâces, à durée nulle après quantification, ne sont pas des
+    tenues), n'est fusionnée que si **l'autre côté** porte une seule note
+    couvrant le même intervalle. Quand les deux côtés ont deux attaques, rien
+    n'est changé : ce sont deux notes distinctes et le MIDI sait les encoder.
+    La règle est donc symétrique et ne peut pas inventer une fusion là où les
+    deux sources s'accordent déjà.
+
+    Appliquée avant tout appariement par `import_mesure.py`, elle rend
+    l'oracle insensible au seul aspect que le MIDI ne peut pas transmettre.
+    """
+    ref = list(reference)
+    got = list(test)
+
+    def fusion(note: tuple, suite: tuple) -> tuple:
+        pitch, onset, duree, voice = note
+        return (pitch, onset, max(duree, suite[1] + suite[2] - onset), voice)
+
+    def paires(notes: list[tuple]):
+        for i, premier in enumerate(notes):
+            for j, second in enumerate(notes):
+                if i == j or premier[0] != second[0] or premier[3] != second[3]:
+                    continue
+                if not (premier[1] < second[1] and premier[2] >= grid and second[2] >= grid):
+                    continue
+                if abs(premier[1] + premier[2] - second[1]) <= tol:
+                    yield i, j, fusion(premier, second)
+
+    def est_tenue(autre: list[tuple], cumul: tuple, second: tuple) -> bool:
+        """L'autre côté n'a qu'une note sur toute la chaîne, sans attaque
+        au début du second fragment : c'est bien une tenue, pas une répétition."""
+        if any(
+            note[0] == second[0] and abs(note[1] - second[1]) <= tol / 2
+            for note in autre
+        ):
+            return False
+        return any(
+            note[0] == cumul[0]
+            and note[3] == cumul[3]
+            and abs(note[1] - cumul[1]) <= tol
+            and abs(note[2] - cumul[2]) <= tol / 2
+            for note in autre
+        )
+
+    modifie = True
+    while modifie:
+        modifie = False
+        for source, autre in ((ref, got), (got, ref)):
+            for i, j, cumul in list(paires(source)):
+                if est_tenue(autre, cumul, source[j]):
+                    source[i] = cumul
+                    del source[j]
+                    modifie = True
+                    break
+            if modifie:
+                break
+    return ref, got
+
+
 def apparier_import(
     reference: list[tuple], test: list[tuple], champs: frozenset[int], tol: float = TOL
 ) -> tuple[list[tuple[int, int]], list[int], list[int]]:
