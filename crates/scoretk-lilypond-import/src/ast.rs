@@ -309,6 +309,12 @@ pub(crate) enum Context {
     /// (`ClusterNoteEvent`, scm/music-functions.scm note-to-cluster : aucun
     /// performer MIDI). Les autres formats exportent normalement la musique.
     Silent { music: Box<Music> },
+    /// `\partCombine` : deux parties simultanées dont les unissons sont
+    /// fusionnés (scm/part-combiner.scm, état `unisono`).
+    PartCombine {
+        first: Box<Music>,
+        second: Box<Music>,
+    },
     /// `\alternative` isolé (déjà consommé par `\repeat`).
     Alternative(Vec<Music>),
     /// `\volta n, m musique` : musique réservée aux passages n et m d'une

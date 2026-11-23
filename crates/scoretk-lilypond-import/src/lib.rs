@@ -67,6 +67,7 @@ mod lexer;
 mod modes;
 mod parallel;
 mod parser;
+mod partcombine;
 mod pitch;
 mod playback;
 mod warnings;

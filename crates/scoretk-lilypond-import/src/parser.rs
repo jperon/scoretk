@@ -2810,6 +2810,32 @@ impl<'a> Parser<'a> {
         (nom, extra)
     }
 
+    /// Vrai si le jeton courant est à l'intérieur d'un bloc `\grace { … }`.
+    fn dans_contexte_grace(&self) -> bool {
+        let mut profondeur = 0i32;
+        let mut grace_depuis = None;
+        for token in self.tokens.iter().take(self.position) {
+            if token.kind == Kind::Punct('{') {
+                profondeur += 1;
+                if grace_depuis.is_none() && token.text.is_empty() {
+                    // marqué à l'ouverture suivant le `\grace`
+                }
+            } else if token.kind == Kind::Punct('}') {
+                profondeur -= 1;
+                if let Some(d) = grace_depuis {
+                    if profondeur < d {
+                        grace_depuis = None;
+                    }
+                }
+            }
+            if token.is_command("grace") || token.is_command("slashedGrace") {
+                // Le `{` d'ouverture est le jeton suivant.
+                grace_depuis = Some(profondeur + 1);
+            }
+        }
+        grace_depuis.is_some_and(|d| profondeur >= d)
+    }
+
     /// Consomme une structure de temps en tête de `\time`
     /// (`\time 1,2,3,1 4/4`, `ly/property-init.ly`) : une suite de nombres
     /// séparés par des virgules, uniquement si elle est suivie d'une armure.
@@ -3025,16 +3051,35 @@ impl<'a> Parser<'a> {
                         })
                     }
                 };
+                let debut = self.position;
                 let first = non_relative(self.parse_music());
                 let second = non_relative(self.parse_music());
+                // Les grâces et les durées mises à l'échelle changent le
+                // moment utilisé par le combiner (`part-combiner.scm`) :
+                // notre règle simple ne s'applique pas à ces contextes
+                // (`part-combine-inside-grace`, `-inside-scale-durations`).
+                let hors_portee = self.dans_contexte_grace()
+                    || self.tokens[debut..self.position.min(self.tokens.len())]
+                        .iter()
+                        .any(|token| {
+                            token.is_command("grace")
+                                || token.is_command("scaleDurations")
+                                || token.is_command("times")
+                                || token.is_command("tuplet")
+                        });
                 if first.is_empty() {
                     second
                 } else if second.is_empty() || second == first {
                     // Deux voix strictement identiques sont des unissons :
                     // le part combiner ne les joue qu'une fois.
                     first
-                } else {
+                } else if hors_portee {
                     Music::Sim(vec![first, second])
+                } else {
+                    Music::Context(Context::PartCombine {
+                        first: Box::new(first),
+                        second: Box::new(second),
+                    })
                 }
             }
             // `\articulate` (`ly/articulate.ly`, `define-music-function

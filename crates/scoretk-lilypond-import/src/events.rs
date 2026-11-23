@@ -974,6 +974,15 @@ impl<'a> Interpreter<'a> {
                 self.invisible_notes = saved_visible;
                 self.silent_notes = saved_silent;
             }
+            Context::PartCombine { first, second } => {
+                let start = self.cursor;
+                self.walk(first);
+                self.spawn_at(start, None, second, Vec::new(), true);
+                let mut deuxieme = self.voice.spawned.pop().expect("deuxième partie");
+                crate::partcombine::retire_unissons(&self.voice.clone(), &mut deuxieme.interpreted);
+                self.cursor = self.cursor.max(deuxieme.interpreted.end);
+                self.voice.spawned.push(deuxieme);
+            }
             Context::Silent { music } => {
                 let saved = self.silent_notes;
                 self.silent_notes = true;
@@ -1890,6 +1899,7 @@ fn context_is_context_only(context: &Context) -> bool {
             body, alternatives, ..
         } => is_context_only(body) && alternatives.iter().all(is_context_only),
         Context::Alternative(items) => items.iter().all(is_context_only),
+        Context::PartCombine { .. } => false,
         _ => true,
     }
 }

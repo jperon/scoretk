@@ -8456,3 +8456,24 @@ fn bend_after_consomme_son_argument() {
         .expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![62, 62]);
 }
+fn part_combine_fusionne_unissement_et_garde_les_autres_notes() {
+    // `scm/part-combiner.scm:339-360, 436-480, 550-566` : à chaque instant,
+    // deux notes de même hauteur et même durée passent à l'état `unisono`
+    // et ne produisent qu'une attaque ; les autres notes des deux voix
+    // restent jouées.
+    let src =
+        "\\version \"2.24.0\"\n\\new Staff \\fixed c' { \\partCombine { c'4 d'4 } { c'4 e'4 } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let mut notes: Vec<_> = (0..4)
+        .flat_map(|voix| accords_de_voix(&score, voix))
+        .filter(|(_, pitches, _)| !pitches.is_empty())
+        .map(|(tick, pitches, _)| (tick, pitches[0]))
+        .collect();
+    notes.sort_by_key(|(tick, pitch)| (*tick, *pitch));
+    assert_eq!(
+        notes.iter().map(|(_, pitch)| *pitch).collect::<Vec<_>>(),
+        vec![60, 62, 64],
+        "notes : {:?}",
+        notes
+    );
+}
