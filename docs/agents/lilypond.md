@@ -6567,3 +6567,30 @@ mais restait incomplet (3 accords au lieu de 4 sur le réduit) et n'apportait
 **aucun gain** sur `ra` ; le commit a été annulé (`git reset --hard HEAD~1`)
 plutôt que de conserver un test échouant. Le fichier reste dans le
 dénominateur, sans exclusion silencieuse.
+
+### Cause lecteur contrôlée : durées nues `\breve`/`\longa`/`\maxima`
+
+`lily/parser.yy:1518-1525` crée un `NoteEvent` sans hauteur pour une durée
+seule ; `expand-repeat-notes!` (`scm/music-functions.scm` l. 972-1015) le
+résout en répétition du dernier accord. `\breve` était traité comme commande
+inconnue et avalait les durées suivantes. Le lecteur construit maintenant la
+durée directement (`parse_command` a déjà consommé le nom : appeler
+`parse_duration()` aurait lu la durée *suivante*). Test réduit : 4 accords.
+
+Mesure **contrôlée** (même oracle, mêmes références, seuls les binaires
+diffèrent : `/tmp/ly-bin-refonly` avant, `/tmp/ly-bin-new` après) :
+`1588 → 1589`, **+1 exact** (`monochords.ly`), **0 perte**. C'est désormais
+la méthode de mesure obligatoire.
+
+Fichiers tentés sans gain dans cette session (preuve documentée, aucun
+n'est exclu du dénominateur) :
+- `after.ly` : `\after` simple consomme bien sa durée ; le décalage vient des
+  `\after` chaînés avec hairpins, cause distincte non identifiée ;
+- `finger-glide-spanner-nested-line-break.ly` : notes décalées d'un temps
+  entier et hauteurs différentes, pas une durée nue ;
+- `tie-chord.ly`, `note-head-style.ly`, `scheme-list-splicing.ly` : musique
+  produite par des fonctions Scheme, hors sous-ensemble ;
+- `skiptypesetting-show-last.ly` (`showLastLength`) : nécessite de modéliser
+  la troncature de la partition, changement structurel ;
+- `bar-line-caesura-double.ly` : `\new Score \with { … }` avec deux portées
+  partageant la même variable, cause distincte.
