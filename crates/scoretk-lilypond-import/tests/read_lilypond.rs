@@ -8705,3 +8705,17 @@ fn tag_sur_un_post_evenement_ne_repete_pas_la_note() {
         read_lilypond("\\version \"2.24.0\"\n{ c'4-\\tag #'part ^1 d'4 }\n").expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![60, 62]);
 }
+
+#[test]
+fn voix_ouverte_dans_une_sequence_reste_sur_la_portee() {
+    // `{ c4 \new Voice { … } e4 }` : la voix est un enfant du `Staff`
+    // implicite (`lily/context.cc`), pas une portée sœur. La sortir en groupe
+    // séparé ouvrait une partie de plus et décalait la suite
+    // (`slur-scoring.ly`, `slur-broken-trend.ly`).
+    let score =
+        read_lilypond("\\version \"2.24.0\"\n{ c'4 \\new Voice { d'4 } e'4 }\n").expect("lecture");
+    assert_eq!(score.parts.len(), 1);
+    let mut hauteurs = hauteurs_attaques(&score);
+    hauteurs.sort();
+    assert_eq!(hauteurs, vec![60, 62, 64]);
+}

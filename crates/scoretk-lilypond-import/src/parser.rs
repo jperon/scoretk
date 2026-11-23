@@ -1030,6 +1030,21 @@ impl<'a> Parser<'a> {
             }
             return groups;
         }
+        // `{ c4 \new Voice { … } e4 }` : une voix ouverte dans une séquence
+        // est un `Voice` enfant du `Staff` implicite, pas une portée sœur
+        // (`lily/context.cc` : le contexte demandé se crée sous le contexte
+        // courant). La sortir en groupe séparé ouvrait une partie de plus et
+        // décalait la suite (`slur-scoring.ly`, `slur-broken-trend.ly`) ; la
+        // séquence entière reste donc une seule portée, l'interpréteur
+        // ouvrant la voix au bon tick (`nested_context`).
+        if sequential
+            && items.iter().any(has_context)
+            && items
+                .iter()
+                .all(|item| !has_context(item) || is_voice_context(item))
+        {
+            return vec![anonymous_group(wrap_all(wrappers, combine(items)))];
+        }
         let rest: Vec<Music> = items
             .iter()
             .filter(|item| !has_context(item))
@@ -6483,6 +6498,17 @@ fn substitute_function_tokens(
         tokens.push(token.clone());
     }
     tokens
+}
+
+/// Vrai si l'élément est un contexte `Voice` (`\new Voice` ou
+/// `\context Voice`), seul contexte qui s'imbrique dans une séquence sans
+/// ouvrir de portée.
+fn is_voice_context(music: &Music) -> bool {
+    match music {
+        Music::New(group) => group.kind == GroupKind::Voice,
+        Music::Tag { music, .. } => is_voice_context(music),
+        _ => false,
+    }
 }
 
 /// Fonction musicale qui enveloppe une musique quelconque, contextes compris.
