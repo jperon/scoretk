@@ -929,7 +929,10 @@ def selftest() -> None:
         # Le même passage avec le marqueur de grâce : le B4 est bien signalé.
         lu_graces = read_xml(p, with_grace=True)
         assert [note[4] for note in lu_graces] == [False] * 4 + [True]
-        assert lire_graces(lu_graces) == [(61, 2.0, False, 0.0)]
+        # `lire_graces` rend aussi la partie (groupes de grâces par portée,
+        # `slashed-beam-staff-size.ly`) ; cette grâce de test n'a pas de
+        # `<type>`, sa durée écrite vaut donc 0.
+        assert lire_graces(lu_graces) == [(61, 2.0, False, 0.0, 0)]
 
         # `<octave-shift>` : l'écriture est décalée d'une octave, la hauteur
         # jouée (comparée au MIDI) ne l'est pas.
