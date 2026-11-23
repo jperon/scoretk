@@ -3174,28 +3174,6 @@ impl<'a> Parser<'a> {
             // pour le modèle. Ignorée, la commande décalait les notes qui
             // suivent (`approximate-pitch-head-direction-tweak.ly`).
             "approximatePitch" => self.parse_music(),
-            // `\voices` (`ly/music-functions-init.ly:2631-2665`) répartit les
-            // branches d'un `<< … \\ … >>` selon une liste de voix. Pour le
-            // MIDI la musique est la même dans un autre ordre : consommer la
-            // liste d'identifiants et lire la musique. Ignorée, la liste
-            // restait dans le flux et ajoutait deux notes
-            // (`voices-command.ly`).
-            "voices" => {
-                loop {
-                    match self.peek() {
-                        Some(token)
-                            if token.kind == Kind::Number
-                                || token.kind == Kind::Str
-                                || token.kind == Kind::Word
-                                || token.is_punct(',') =>
-                        {
-                            self.position += 1;
-                        }
-                        _ => break,
-                    }
-                }
-                self.parse_music()
-            }
             // `\shape` et `\vshape` (`ly/music-functions-init.ly:2191-2230`
             // et `:2675-2681`) décalent les points de contrôle d'un grob :
             // une liste Scheme de décalages, puis une liste de clés ou la
