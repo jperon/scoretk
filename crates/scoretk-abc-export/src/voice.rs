@@ -125,15 +125,41 @@ pub(crate) fn render_voice(
             &mut after,
             measure_index + 1 == score.measures.len(),
         );
-        // Clef effective au début de mesure, avant que
-        // `draw_context_changes` n'avance `clef` jusqu'à la dernière clef de
-        // la mesure. Sans cette capture, un changement de clef en cours de
-        // mesure ferait transposer toutes les notes précédentes d'un octave.
-        let (measure_start_new_clef, _, _) =
-            writer::measure_context(score, measure_index, Some(staff));
-        let measure_start_clef = measure_start_new_clef
-            .map(|value| value.transposed)
-            .or(clef);
+        // Contexte de début de mesure. Il doit être appliqué AVANT
+        // `draw_context_changes` : sinon les champs en ligne insérés en cours
+        // de mesure utilisent la tonalité de la mesure précédente (copypaste_parts
+        // bar 3 : `[K:E clef=treble]` au lieu de `[K:C clef=treble]`, ce qui
+        // transformait le F naturel suivant en F dièse). ABC 2.1 §4.6,
+        // spec lignes 921-933 ; `xml2abc.py` écrit `[K:C][K:treble]`.
+        let (new_clef, _, _) = writer::measure_context(score, measure_index, Some(staff));
+        let (_, new_key, new_time) =
+            writer::measure_context(score, measure_index, Some(context_staff));
+        let mut key_changed = false;
+        if let Some(value) = new_key {
+            if value.concert_key != key.concert_key || value.mode != key.mode {
+                key = value;
+                key_changed = true;
+            }
+        }
+        let mut prefixes: Vec<String> = Vec::new();
+        if let Some(value) = new_time {
+            if value.is_valid()
+                && (value.numerator != time.numerator || value.denominator != time.denominator)
+            {
+                time = value;
+                prefixes.push(format!("[M:{}/{}]", time.numerator, time.denominator));
+            }
+        }
+        let clef_changed = new_clef.is_some_and(|value| Some(value.transposed) != clef);
+        if let Some(value) = new_clef {
+            clef = Some(value.transposed);
+        }
+        // Valeurs de début de mesure, conservées pour l'en-tête `[K:…]` :
+        // `draw_context_changes` avance `key` et `clef` jusqu'aux derniers
+        // changements de la mesure.
+        let prefix_key = key.clone();
+        let measure_start_clef = clef;
+
         draw_context_changes(
             score,
             measure,
@@ -155,43 +181,18 @@ pub(crate) fn render_voice(
         }
 
         let mut line = String::new();
-        let mut prefixes: Vec<String> = Vec::new();
 
-        let (new_clef, _, _) = writer::measure_context(score, measure_index, Some(staff));
-        let (_, new_key, new_time) =
-            writer::measure_context(score, measure_index, Some(context_staff));
-        let mut key_changed = false;
-        if let Some(value) = new_key {
-            if value.concert_key != key.concert_key || value.mode != key.mode {
-                key = value;
-                key_changed = true;
-            }
-        }
-        if let Some(value) = new_time {
-            if value.is_valid()
-                && (value.numerator != time.numerator || value.denominator != time.denominator)
-            {
-                time = value;
-                prefixes.push(format!("[M:{}/{}]", time.numerator, time.denominator));
-            }
-        }
-        let clef_changed = new_clef.is_some_and(|value| Some(value.transposed) != clef);
-        if let Some(value) = new_clef {
-            clef = Some(value.transposed);
-        }
         // Port de `xml2abc.py::doAttr` (lignes 1329-1331 :
         // `clefOct[n] = -clef-octave-change`) et `mkNote` (ligne 1154 :
         // `oct += clefOct[...]`) : `abc2midi` ignore le `-8`/`+8` des clefs
         // ABC, donc xml2abc décale les hauteurs écrites d'autant d'octaves.
-        // `clef` a déjà été muté par `draw_context_changes` jusqu'à la
-        // dernière clef de la mesure : le décalage de départ doit venir de
-        // la clef **au début** de mesure ; les changements suivants sont
-        // pris en compte par `clef_octave_at` à chaque note.
+        // Le décalage de départ vient de la clef au début de mesure ; les
+        // changements suivants sont pris en compte par `clef_octave_at`.
         let clef_octave = measure_start_clef.map_or(0, |value| i32::from(value.octave_change()));
         if key_changed || clef_changed {
-            let mut field = format!("[K:{}", pitch::key_field(&key));
-            if let Some(clef_value) =
-                clef.and_then(|clef| pitch::clef_name(&scoretk_core::model::Clef::new(clef)))
+            let mut field = format!("[K:{}", pitch::key_field(&prefix_key));
+            if let Some(clef_value) = measure_start_clef
+                .and_then(|value| pitch::clef_name(&scoretk_core::model::Clef::new(value)))
             {
                 field.push_str(&format!(" clef={clef_value}"));
             }
