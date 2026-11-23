@@ -1978,6 +1978,7 @@ fn place_chord(
                             full_measure: false,
                             gap: false,
                             visible: true,
+                            note_dots: Vec::new(),
                         }),
                     };
                     if let Some(segment) = score.measures[index].segments.get_mut(segment_index) {
@@ -2035,6 +2036,7 @@ fn place_chord(
                             full_measure: false,
                             gap: false,
                             visible: true,
+                            note_dots: Vec::new(),
                         }),
                     };
                     match &event.content {
@@ -2078,6 +2080,7 @@ fn place_chord(
                                 full_measure: false,
                                 gap: false,
                                 visible: *visible,
+                                note_dots: Vec::new(),
                             });
                         }
                         _ => unreachable!("cas filtré avant la coupure"),
@@ -2159,6 +2162,7 @@ fn place_chord(
                 full_measure: false,
                 gap: false,
                 visible: *visible,
+                note_dots: Vec::new(),
             }),
         },
         ChordContent::Skip { .. } => return,
@@ -2173,6 +2177,7 @@ fn place_chord(
                 full_measure: true,
                 gap: false,
                 visible: true,
+                note_dots: Vec::new(),
             }),
         },
     };

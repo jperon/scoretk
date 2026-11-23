@@ -133,10 +133,17 @@ pub(crate) fn read_chord_rest(
     }
 
     let kind = if is_rest {
+        // Les points déjà écrits dans le fichier survivent à un silence non
+        // affiché : `Rest::checkDots` n'est appelé que par le layout.
+        let note_dots = node
+            .children_named("NoteDot")
+            .map(|dot| dot.child("visible").and_then(Node::int_text).unwrap_or(1) != 0)
+            .collect();
         ChordRestKind::Rest(Rest {
             full_measure: duration.is_measure(),
             gap: false,
             visible,
+            note_dots,
         })
     } else {
         let mut chord = Chord {

@@ -318,6 +318,15 @@ pub struct Rest {
     pub gap: bool,
     /// Vrai si le silence est visible (`print-object="no"` sinon).
     pub visible: bool,
+    /// Points explicites `<NoteDot>` lus dans le fichier, avec leur visibilité.
+    ///
+    /// `Rest::checkDots` (`engraving/dom/rest.cpp:308-321`) ne crée les points
+    /// manquants que depuis la mise en page (`restlayout.cpp:148`), qui ignore
+    /// une portée masquée : une portée non affichée ne garde donc que les
+    /// `NoteDot` écrits dans le fichier, et `writeRest`
+    /// (`exportmusicxml.cpp:4655-4669`) n'écrit `<dot>` que depuis
+    /// `rest->dotList()`.
+    pub note_dots: Vec<bool>,
 }
 
 impl Default for Rest {
@@ -326,6 +335,7 @@ impl Default for Rest {
             full_measure: false,
             gap: false,
             visible: true,
+            note_dots: Vec::new(),
         }
     }
 }
@@ -400,6 +410,7 @@ impl ChordRest {
                 full_measure,
                 gap: false,
                 visible: true,
+                note_dots: Vec::new(),
             }),
         }
     }

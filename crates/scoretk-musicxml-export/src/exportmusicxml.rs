@@ -2026,8 +2026,12 @@ impl Context<'_> {
             if !name.is_empty() {
                 out.xml.tag("type", name);
             }
-            let staff_visible = self.score.staff(track.staff()).visible;
-            for _ in 0..rest_dots::dot_count(chord_rest.duration.dots, staff_visible) {
+            // `Rest::checkDots` n'est appelé que par la mise en page
+            // (`restlayout.cpp:148`), qui ignore une portée masquée :
+            // `Staff::show()` vaut `part()->show() && visible()`.
+            let staff_shown = self.score.staff_shown(track.staff());
+            let explicit_dots = chord_rest.rest_ref().map_or(0, |rest| rest.note_dots.len());
+            for _ in 0..rest_dots::dot_count(chord_rest.duration.dots, staff_shown, explicit_dots) {
                 out.xml.tag_empty("dot", &[]);
             }
         }

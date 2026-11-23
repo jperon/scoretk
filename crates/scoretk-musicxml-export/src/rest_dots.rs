@@ -31,10 +31,15 @@
 //! lot (toutes sur des portées masquées, par exemple dans `Minuit chrétien`).
 
 /// Nombre de `<dot/>` à écrire pour un silence.
-pub(crate) fn dot_count(duration_dots: u8, staff_visible: bool) -> usize {
-    if staff_visible {
+///
+/// Sur une portée affichée, `Rest::checkDots` aligne la liste des `NoteDot`
+/// sur `dots()` : le nombre est celui de la figure. Sur une portée masquée,
+/// la mise en page ne tourne pas et seuls les `<NoteDot>` explicites du
+/// fichier subsistent.
+pub(crate) fn dot_count(duration_dots: u8, staff_shown: bool, explicit_dots: usize) -> usize {
+    if staff_shown {
         usize::from(duration_dots)
     } else {
-        0
+        explicit_dots
     }
 }

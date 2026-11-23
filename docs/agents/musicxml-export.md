@@ -1408,3 +1408,37 @@ Mesure ciblée (mêmes références 4.7.4) : `JMHaydn_Viderunt_omnes`
 `figuredbass_brackets.rs` (lecture) et `tests/figuredbass_export.rs`
 (écriture). La ligne restante du fichier est le point de silence de §42.
 
+
+
+## 42. `dot` des silences : `NoteDot` explicites et portées masquées (2026-11-23)
+
+`writeRest` (`exportmusicxml.cpp:4655-4669`) écrit `<dot>` **depuis
+`rest->dotList()`**, et `Rest::checkDots` (`engraving/dom/rest.cpp:308-321`)
+n'aligne cette liste sur `dots()` que lorsqu'il est appelé — c'est-à-dire par
+la mise en page (`restlayout.cpp:148`), qui ignore une portée dont
+`Staff::show()` est faux (`part()->show() && visible()`,
+`staff.cpp:1420-1423`). Deux conséquences que le port ne distinguait pas :
+
+- une portée masquée ne garde que les `<NoteDot>` **écrits dans le fichier**
+  (`TRead::read(Rest*)`, `read400/tread.cpp:3500-3503`) ; `Rest::note_dots`
+  conserve leur visibilité, le lecteur `.mscx` les réécrit
+  (`TWrite::write(const Rest*)`, `write/twrite.cpp:2815-2830`) ;
+- sur une portée affichée, le nombre reste celui de la figure, comme avant.
+
+`Score::staff_shown` factorise `Part::visible && Staff::visible` (déjà lu pour
+les multi-repos §40). Mesure : `JMHaydn_Viderunt_omnes` devient
+**core-identique** et les cinq messes Haydn (§40) aussi, leurs derniers points
+étant ceux de parties masquées : 158 → **163/173** core-exacts, 0 perte,
+lignes canoniques 944 → 928 (les six fichiers `146`–`151` passent de
+2/3/2/0/5/7 à 0, sauf `150` à 76).
+
+**Limite documentée** : `01- Minuit chretien - Violons 1 et 2` et
+`06- Minuit chretien - Basson` gardent un `<dot/>` surnuméraire. Le silence
+concerné porte un `<offset x>` qui le place au-delà de sa mesure ; MuseScore ne
+le dispose pas et n'appelle donc pas `checkDots`. Expérience : retirer ce seul
+`<offset>` du `.mscx` puis reconvertir avec MuseScore 4.7.4 fait apparaître le
+point ; remplacer `createMultiMeasureRests` par 0 le fait aussi, alors que
+`hideEmptyStaves`, `minEmptyMeasures` et `spatium` sont sans effet. Le modèle
+pivot ne porte ni les décalages d'élément ni la géométrie des systèmes : ces
+deux fichiers restent hors de portée, comme les écarts de mise en page déjà
+classés.

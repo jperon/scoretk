@@ -290,6 +290,15 @@ impl Score {
         &mut self.staves[id.index()]
     }
 
+    /// Vrai si la portée est affichée, au sens de `Staff::show()`
+    /// (`engraving/dom/staff.cpp:1420-1423`) : la partie et la portée doivent
+    /// l'être. La mise en page ignore les portées masquées, notamment pour les
+    /// points de silence (`RestLayout`) et le regroupement des multi-repos.
+    pub fn staff_shown(&self, id: StaffId) -> bool {
+        let staff = self.staff(id);
+        staff.visible && self.part(staff.part).visible
+    }
+
     /// Accès à une mesure.
     pub fn measure(&self, id: MeasureId) -> &Measure {
         &self.measures[id.index()]

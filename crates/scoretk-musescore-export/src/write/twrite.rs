@@ -109,6 +109,15 @@ pub(crate) fn write_chord_rest(
         xml.tag("visible", "0");
     }
     write_lyrics(xml, &chord_rest.lyrics);
+    // `TWrite::write(const Rest*)` n'écrit que les `NoteDot` qui dévient du
+    // défaut ; le modèle ne garde que ceux-là, avec leur visibilité.
+    for visible in &rest.note_dots {
+        xml.start_element("NoteDot", &[]);
+        if !visible {
+            xml.tag("visible", "0");
+        }
+        xml.end_element();
+    }
     xml.end_element();
 }
 

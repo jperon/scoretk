@@ -1119,6 +1119,7 @@ impl Reader {
                     let duration = parsed.duration;
                     let gap = parsed.gap;
                     let visible = parsed.visible;
+                    let note_dots = parsed.note_dots;
                     let lyrics = parsed.lyrics;
 
                     let mut chord_rest = ChordRest::rest(duration);
@@ -1129,6 +1130,7 @@ impl Reader {
                     if let Some(rest) = chord_rest.rest_mut() {
                         rest.gap = gap;
                         rest.visible = visible;
+                        rest.note_dots = note_dots;
                     }
                     self.insert_item(
                         measure_index,
@@ -1636,6 +1638,12 @@ impl Reader {
         let mut gap = false;
         let mut visible = true;
         let mut lyrics = Vec::new();
+        // Les points explicites du fichier survivent à une portée masquée
+        // (`Rest::checkDots` n'est appelé que par le layout).
+        let note_dots: Vec<bool> = element
+            .children_named("NoteDot")
+            .map(|dot| dot.child("visible").and_then(Element::int).unwrap_or(1) != 0)
+            .collect();
 
         for child in &element.children {
             match child.name.as_str() {
@@ -1680,6 +1688,7 @@ impl Reader {
             explicit_ticks: explicit,
             gap,
             visible,
+            note_dots,
             lyrics,
         }
     }
@@ -2179,6 +2188,8 @@ struct ParsedRest {
     explicit_ticks: Option<Fraction>,
     gap: bool,
     visible: bool,
+    /// Points explicites `<NoteDot>` et leur visibilité.
+    note_dots: Vec<bool>,
     lyrics: Vec<Lyrics>,
 }
 

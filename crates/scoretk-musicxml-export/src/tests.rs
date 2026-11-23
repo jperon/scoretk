@@ -3725,3 +3725,67 @@ fn multi_repos_ignore_une_partie_masquee() {
         "le groupe doit apparaître dans les deux parties :\n{xml}"
     );
 }
+
+#[test]
+fn silence_pointe_sur_partie_masquee_sans_point() {
+    // `Rest::checkDots` n'est appelé que par le layout
+    // (`restlayout.cpp:148`), qui ignore une portée dont `Staff::show()` est
+    // faux (`part()->show() && visible()`, `staff.cpp:1420-1423`). Un point de
+    // silence dans une partie `<show>0</show>` n'existe donc pas.
+    let mut score = Score::new();
+    let (part, staff) = piano(&mut score);
+    score.part_mut(part).visible = false;
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let mut rest = ChordRest::rest(Duration::with_dots(DurationType::Half, 1));
+    rest.duration.dots = 1;
+    ajouter_element(&mut score, &mut measure, track, Fraction::ZERO, rest);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<type>half</type>"), "type absent :\n{xml}");
+    assert!(
+        !xml.contains("<dot/>"),
+        "point de silence écrit sur une partie masquée :\n{xml}"
+    );
+}
+
+#[test]
+fn silence_pointe_sur_partie_visible_garde_son_point() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let rest = ChordRest::rest(Duration::with_dots(DurationType::Half, 1));
+    ajouter_element(&mut score, &mut measure, track, Fraction::ZERO, rest);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert!(xml.contains("<type>half</type>"), "type absent :\n{xml}");
+    assert!(xml.contains("<dot/>"), "point absent :\n{xml}");
+}
+
+#[test]
+fn silence_masque_garde_un_point_explicite() {
+    // Le `<NoteDot>` écrit dans le fichier n'est pas recréé par le layout :
+    // `writeRest` (`exportmusicxml.cpp:4655-4669`) l'écrit quand même.
+    let mut score = Score::new();
+    let (part, staff) = piano(&mut score);
+    score.part_mut(part).visible = false;
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let mut rest = ChordRest::rest(Duration::with_dots(DurationType::Half, 1));
+    rest.duration.dots = 1;
+    if let Some(value) = rest.rest_mut() {
+        value.note_dots.push(false);
+    }
+    ajouter_element(&mut score, &mut measure, track, Fraction::ZERO, rest);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert_eq!(
+        xml.matches("<dot/>").count(),
+        1,
+        "un point explicite attendu :\n{xml}"
+    );
+}

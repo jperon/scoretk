@@ -683,6 +683,7 @@ fn add_gap_rest(
             full_measure,
             gap: true,
             visible: true,
+            note_dots: Vec::new(),
         }),
     };
     if let Some(segment) = measure.segments.get_mut(segment_index) {

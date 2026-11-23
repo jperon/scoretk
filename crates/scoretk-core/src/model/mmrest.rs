@@ -152,12 +152,6 @@ pub fn derived_mmrest_runs(score: &Score) -> Vec<Option<u16>> {
     runs
 }
 
-/// Vrai si la portée est affichée (`Staff::show()`, `staff.cpp:1420-1423`).
-fn staff_shown(score: &Score, staff: StaffId) -> bool {
-    let staff = score.staff(staff);
-    staff.visible && score.part(staff.part).visible
-}
-
 /// Vrai si `annotation` interdit le regroupement en multi-repos
 /// (`BREAK_TYPES`, `measurelayout.cpp:147-163`).
 fn is_break_type(annotation: &Annotation) -> bool {
@@ -196,7 +190,7 @@ fn valid_mmrest_measure(score: &Score, index: usize) -> bool {
     for segment in &measure.segments {
         let mid_measure = segment.tick > measure.start_tick;
         for entry in &segment.annotations {
-            if !staff_shown(score, entry.track().staff()) || !entry.annotation().visible() {
+            if !score.staff_shown(entry.track().staff()) || !entry.annotation().visible() {
                 continue;
             }
             // Une annotation qui coupe le multi-repos n'est admise qu'au
@@ -221,7 +215,7 @@ fn valid_mmrest_measure(score: &Score, index: usize) -> bool {
         let mut rest_found = false;
         for staff in 0..score.staves.len() {
             let staff_id = StaffId::from_index(staff);
-            if !staff_shown(score, staff_id) {
+            if !score.staff_shown(staff_id) {
                 continue;
             }
             for voice in 0..VOICES {
@@ -277,7 +271,7 @@ fn break_mmrest(score: &Score, index: usize) -> bool {
     // Annotation qui coupe le multi-repos, à n'importe quel tick.
     for segment in &measure.segments {
         for entry in &segment.annotations {
-            if staff_shown(score, entry.track().staff())
+            if score.staff_shown(entry.track().staff())
                 && entry.annotation().visible()
                 && is_break_type(entry.annotation())
             {
@@ -302,7 +296,7 @@ fn break_mmrest(score: &Score, index: usize) -> bool {
         let mut on_shown_staff = false;
         for staff in 0..score.staves.len() {
             let staff_id = StaffId::from_index(staff);
-            if staff_shown(score, staff_id) && segment.element(Track::new(staff_id, 0)).is_some() {
+            if score.staff_shown(staff_id) && segment.element(Track::new(staff_id, 0)).is_some() {
                 on_shown_staff = true;
                 break;
             }
