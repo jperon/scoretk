@@ -4993,6 +4993,13 @@ impl<'a> Parser<'a> {
             }
             Kind::Command if token.text == "=" => {
                 self.position += 1;
+                // `\= #'id` numérote un `FingerGlideSpanner`
+                // (`ly/music-functions-init.ly:767-770`) : l'identifiant est
+                // un datum Scheme, sans musique.
+                if self.peek().is_some_and(|token| token.is_scheme()) {
+                    self.position += 1;
+                    return Vec::new();
+                }
                 let number = self
                     .peek()
                     .and_then(|token| token.as_integer())
@@ -5058,6 +5065,50 @@ impl<'a> Parser<'a> {
                     } else if self.eat_command("override") {
                         let _ = self.parse_override(false);
                     }
+                    return Vec::new();
+                }
+                if name == "tweak" {
+                    // `\tweak propriété valeur` en position de post-événement
+                    // (`lily/parser.yy` : `tweak` est une musique *et* un
+                    // post-événement). Consommer la propriété et sa valeur,
+                    // puis laisser la boucle lire l'événement modifié (`^1`).
+                    // Sans cela la valeur restait dans le flux et `^1` était
+                    // lu comme une musique neuve qui répétait la note
+                    // (`finger-glide-spanner-id.ly`).
+                    self.position += 1;
+                    let path = self.skip_property_path();
+                    let _ = self.eat_punct('=');
+                    let value = self.peek().cloned();
+                    match &value {
+                        Some(token)
+                            if token.is_scheme()
+                                || token.kind == Kind::Str
+                                || token.kind == Kind::Number =>
+                        {
+                            self.position += 1;
+                        }
+                        Some(token) if token.is_punct('-') || token.is_punct('+') => {
+                            self.skip_scheme_value();
+                        }
+                        _ => {}
+                    }
+                    if let Some(token) = value {
+                        if token.is_scheme() && path.iter().any(|part| part == "style") {
+                            let style = token.text.trim().trim_start_matches('\'').trim();
+                            if let Some(group) = head_group_from_style(style) {
+                                self.pending_head = group;
+                            }
+                        }
+                    }
+                    return Vec::new();
+                }
+                if name == "glide" {
+                    // `glide = #(make-music 'FingerGlideEvent)`
+                    // (`ly/declarations-init.ly:79`) : post-événement sans
+                    // argument ni effet MIDI. Passer par
+                    // `parse_direction_event` consommait le `^` du doigté qui
+                    // suit et laissait son `1` comme durée nue, répétant la
+                    // note (`b2 \glide ^1`, `finger-glide-spanner-*`).
                     return Vec::new();
                 }
                 if name == "bendAfter" {
@@ -7048,6 +7099,14 @@ fn starts_post_event(token: &Token) -> bool {
                 || token.text == "rest"
                 || token.text == "bendAfter"
                 || token.text == "single"
+                // `\tweak` est aussi un post-événement (`lily/parser.yy`) :
+                // `b2 \tweak color #red ^1` modifie l'événement qui suit.
+                || token.text == "tweak"
+                // `glide = #(make-music 'FingerGlideEvent)`
+                // (`ly/declarations-init.ly:79`) : post-événement sans effet
+                // MIDI. Le laisser hors du post-événement cassait la suite
+                // (`b2 \glide ^1` dupliquait la note).
+                || token.text == "glide"
                 || is_articulation_command(&token.text)
                 || is_dynamic_command(&token.text)
         }

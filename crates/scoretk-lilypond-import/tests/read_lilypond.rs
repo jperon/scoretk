@@ -8607,3 +8607,23 @@ fn fonction_musicale_argument_context_mod() {
     .expect("lecture");
     assert_eq!(hauteurs_attaques(&score), vec![60, 62]);
 }
+
+#[test]
+fn glide_est_un_post_evenement() {
+    // `glide = #(make-music 'FingerGlideEvent)` (`ly/declarations-init.ly:79`) :
+    // post-événement sans argument. Le laisser hors du post-événement faisait
+    // consommer par `parse_direction_event` le `^` du doigté suivant, dont le
+    // `1` devenait une durée nue qui répétait la note
+    // (`finger-glide-spanner-*`).
+    let score = read_lilypond("\\version \"2.24.0\"\n{ b'2 \\glide ^1 }\n").expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![71]);
+}
+
+#[test]
+fn tweak_en_post_evenement_ne_repete_pas_la_note() {
+    // `\tweak` est aussi un post-événement (`lily/parser.yy`) :
+    // `b2 \tweak color #red ^1` modifie le doigté, sans créer de musique.
+    let score = read_lilypond("\\version \"2.24.0\"\n{ b'2 \\tweak color #red ^1 c''4 }\n")
+        .expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![71, 72]);
+}
