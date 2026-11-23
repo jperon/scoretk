@@ -5043,11 +5043,11 @@ merges two same-pitch note-ons at the same tick of a track, including the two
 notes of `<c' c'>` (verified on 2.27: `<c' c'>4 <c' e' c'>4` plays 60 then
 60/64). The MusicXML keeps both noteheads, so the reading oracle now merges
 successive notes of the same chord (the second carries `<chord/>`) on top of
-the existing different-voice unison rule. The merge is gated on the raw
-candidate having **more** notes than the reference: on a `notes_manquantes`
-file such as `monochords` the duplicates are not the cause, and merging would
-lower N1 without matching a reference note. Measured against the **previous**
-oracle on the same binary: `ra` **1 565 → 1 568**
+the existing different-voice unison rule. That first version gated the merge
+on the raw candidate having **more** notes than the reference; the next pass
+(see below) removed that gate, which consulted the reference, and fixed the
+`monochords` note loss in the reader instead. Measured against the
+**previous** oracle on the same binary: `ra` **1 565 → 1 568**
 (`accidental-placement-samepitch`, `arpeggio-no-overshoot`,
 `note-head-chord`), no exact loss and no N1/N2 regression; `mut` **1 186 →
 1 192** (`aguado-op03n07`, `fleur_jetee`, `Lieder-ohne-Worte…Gondellied`,
@@ -5056,6 +5056,111 @@ On the later master the corrected oracle is applied to **both** binaries
 (the 1 570 baseline already includes it), so the master-vs-branch figure
 above isolates the two reader fixes (+8). The MIDI lots are untouched (this
 is the LilyPond reading oracle).
+
+### Unconditional unison merge, staff structure, bare durations (2026-11-23)
+
+**Oracle rule.** `Midi_walker::do_start_note` (`lily/midi-walker.cc`, branch
+`now_ticks == queued_ticks`) merges two same-pitch note-ons that start at the
+same tick **of the same track**: one attack is kept, with the longest
+extinction. `_fusionner_unissons` (`scripts/oracle/lilypond/ly_notes.py`) now
+applies that rule to the candidate alone, grouping by (part, staff, pitch,
+onset) with **no reference gate**; `mesure.py` no longer computes
+`nombre_portees`. The two exceptions are modelled from the reference sources,
+not from the reference MIDI:
+
+- **Grace notes.** A MusicXML cannot express the real tick of a grace note:
+  `read_xml` puts every grace at the attack of its main note, so merging all
+  graces at that onset would collapse a run (`beam-grace-tuplet-bounds`:
+  24 `a64` in one voice, 80 → 12 notes). `read_xml` now records, per voice,
+  each grace's **rank** from the main note (`lily/grace-iterator.cc`, §2.6.1)
+  and the merge uses it in the key: two graces of the same pitch and rank in
+  different voices coincide in real time and LilyPond merges them
+  (`Troldtog` m111: two `\slashedGrace a,,8` voices, reference has one
+  attack), while different ranks (a three-note run against a single grace)
+  stay distinct. Same-voice graces are never merged.
+- **Chord unisons** (`<c' c'>`): kept from the previous pass; verified on
+  2.27 (`<c' c'>4 <c' e' c'>4` plays 60 then 60/64).
+
+`monochords` does **not** prove a missing reference merge: `\longa`, `\breve`
+and `\maxima` used **alone** are bare durations that repeat the previous
+chord (`lily/parser.yy` `event_chord: duration`,
+`scm/music-functions.scm::expand-repeat-notes!`), and `parse_command` ignored
+them (it only repeated for a numeric duration). The reader now routes them to
+`parse_bare_duration`; `monochords` has its 7 attacks per group and becomes
+exact. Reduced test `breve_et_longa_seuls_reprennent_l_accord_precedent`.
+
+**Staff structure.** With the reference gate gone, the remaining losses were
+reader-level: the oracle merged notes that LilyPond keeps on **different
+MIDI tracks**. Each cause below is verified against LilyPond 2.27 and has a
+reduced test in `crates/scoretk-lilypond-import/tests/read_staff_structure.rs`.
+
+1. **Elements of a staff group.** In `\new StaffGroup`/`PianoStaff`/
+   `ChoirStaff`/`GrandStaff`/`OneStaff`/`\new Score`, each simultaneous element
+   without a context opens **its own staff** (`ly/engraver-init.ly`, the group
+   accepts `Staff`): `<< { c } { e } >>` gives two MIDI tracks. A sequence
+   `{ \new Staff … \new Staff … }` plays the staves one after another
+   (`StaffBlock::sequence_start`, verified: second track starts at beat 4).
+   A `\\` (VoiceSeparator) gives one staff with two voices (one track), and
+   is read at the token level in `parse_group_content` before `parse_music`
+   discards it. Unknown group contexts defined by
+   `\layout { \context { \ChoirStaff \name "SemiChoirStaff" } }` are
+   recognised by their nested `\new Staff` children (`Nunc-dimittis`,
+   `Mendelssohn-BartholdyF_op_23_No_1`).
+2. **`\context ChordNames` inside a `Staff`.** `Staff` accepts `ChordNames`
+   (`ly/engraver-init.ly` l. 492): the chord grid is a **sister staff**, not
+   voices of the melody. Without it the oracle merged 17 chord tones with the
+   melody in `LullabyBrahms-C`. `\context` on a non-structural name now goes
+   through `parse_new_context` instead of being unwrapped, and a `Staff`
+   whose content holds such a child is split into several staves.
+3. **`\context Lyrics = name` without lyrics is a declaration.** The grammar
+   nests the *following* music inside it (`lily/parser.yy`
+   `context_prefix contexted_basic_music`), but for playback that music is its
+   own track. The reader no longer consumes a `\context`/`\new` (or a music
+   variable that is not `Music::Lyrics`) after such a declaration:
+   `Abendlied`, `EsistbestimmtinGottesRatM`, `RatundScheiden`, `AbschiedM`,
+   `SandmannM` keep their staves, and the `midi2ly`
+   `\context Lyrics=trackA \trackA` (where `trackA` holds `\context Voice`)
+   keeps its 11 parts (`Angels_Carol__John_Rutter-midi`).
+4. **Voice-derived contexts.** `CueVoice`, `DrumVoice`,
+   `GregorianTranscriptionVoice`… are `Voice` contexts
+   (`ly/engraver-init.ly`), not staff contexts: `GroupKind::from_name` maps
+   every name ending in `voice` to `Voice`. Otherwise the interpreter ignored
+   them (`nested_context`) and `cue-clef-manually`, `midi-drums`,
+   `lyric-combine-derived-voice` lost their notes; `TabVoice` at a group level
+   also stays a separate staff (`bend-spanner-simple`). `\new Dynamics`, which
+   carries only skips and marks, is played as a plain (silent) staff.
+
+**Controlled measurements (current reference tree).** Each row changes only
+the named part; both rows use the same reference tree
+(`/tmp/ly95lect-refs-clean`), the same manifest and the same oracle on both
+sides (`mesure.py --refs-prefix out3 --refs-only`). Binaries from `git
+archive` of `d67eb63c` (master, with ly95's bare-duration arm) and the
+rebased branch.
+
+| Step | `ra` exact |
+| --- | ---: |
+| master reader `d67eb63c` + master oracle | 1 589/1 724 |
+| our reader + master oracle (**same oracle**) | **1 591** (+2) |
+| our reader + our oracle (oracle change alone) | 1 591 (0) |
+
+Reader gains: `bar-line-caesura-double` and `collision-merge-dots-hidden`;
+**no exact loss, no N1/N2 regression**. The oracle change alone alters no
+exact file and no N1/N2 on `ra`. `mut` was not re-measured on this tree in
+this pass; on the previous tree the same reader changed 1 187 → 1 199 exact
+(same fixed oracle) and the oracle alone kept the exact files while lowering
+N1 on seven already-inexact files (`BWV857_Fuga12`, `bwv869b`, `saltarello`,
+`Dans_l_antre…`, `score.ly` (Dies irae), `baba`, `promenade-6`):
+`\partcombine` voices and folded tracks that the reference keeps on distinct
+MIDI tracks — a reader limit, not an oracle rule.
+
+Our bare-duration commit is behaviourally equivalent to ly95's arm for
+`\breve`, `\longa`, `\maxima` (both repeat the previous chord); it keeps
+dots and multipliers through `parse_bare_duration`, and its test now asserts
+the real durations: `\breve.` = three whole notes, `\breve*2` = four,
+`\breve` = two (lily/parser.yy:3518 `steno_duration: DURATION_IDENTIFIER
+dots`, :3532 `duration: steno_duration multipliers`). The MIDI lots are
+unchanged: `ecriture_ly` 899/1 019, corpus 17/17, `.mscz` 3/8, MIDI import
+1 013/1 029, no per-file loss or N1 regression.
 
 ## 24. LilyPond export: status (2026-11-21)
 
