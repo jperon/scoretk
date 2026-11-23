@@ -7593,3 +7593,20 @@ Test réduit `changement_d_instrument_transpose_la_suite` (60, 60, 60 avant,
 60, 58, 58 après). Mesure contrôlée : `ra` **1 686 → 1 687/1 724**,
 `mut` 1 216/1 316 et `rw` 1 258/1 365 inchangés ; **1 gain, 0 perte**, N1/N2
 identiques sur les autres fichiers.
+
+### Cause : agrément de fin lié à sa note principale
+
+`v4_linked-ties.ly` (corpus MuseScore) écrit `\afterGrace 1 b4~ { b8 }` : la
+liaison de la note principale se referme sur l'agrément de fin.
+`Tie_performer::listen_tie` (`lily/tie-performer.cc:94-135`) associe les têtes
+de même hauteur à leur fin et n'émet qu'une seule attaque. Le lecteur ajoutait
+un `<grace>` dans le MusicXML, que l'oracle comptait comme une note
+supplémentaire (3 notes au lieu de 2 sur la première mesure). Il ignore
+désormais l'agrément de fin dont toutes les notes sont déjà liées à la note
+principale, sans toucher au cas sans `~` (deux attaques, vérifié en compilant
+la source réduite avec LilyPond 2.26).
+
+Test réduit `agrement_apres_lie_a_la_note_ne_donne_pas_de_seconde_attaque`
+(71, 71 avant ; 71 après ; contrôle sans `~` : 71, 71). Mesure contrôlée :
+`ra` **1 687 → 1 688/1 724**, `mut` 1 216/1 316 et `rw` 1 258/1 365
+inchangés ; **1 gain, 0 perte**.

@@ -5586,6 +5586,21 @@ fn after_grace_porte_son_instant_de_lecture() {
     assert_eq!(offset_grace_apres(&score), Some(Fraction::new(3, 16)));
 }
 
+/// `v4_linked-ties.ly` : `\afterGrace 1 b4~ { b8 }` lie l'agrément de fin
+/// à sa note principale. `Tie_performer` ne joue alors qu'une attaque
+/// (`lily/tie-performer.cc:94-135`), vérifié sur la source réduite compilée
+/// avec LilyPond 2.26 (une seule note 71 ; sans `~`, deux notes 71).
+#[test]
+fn agrement_apres_lie_a_la_note_ne_donne_pas_de_seconde_attaque() {
+    let src = "\\version \"2.24.0\"\n\\score { \\fixed c' { \\afterGrace 1 b4~ { b8 } r4 } }";
+    let score = read_lilypond(src).expect("lecture \\afterGrace");
+    assert_eq!(hauteurs(&score), vec![71]);
+    // Cas non concerné : sans liaison, l'agrément joue bien sa propre attaque.
+    let sans = "\\version \"2.24.0\"\n\\score { \\fixed c' { \\afterGrace 1 b4 { b8 } r4 } }";
+    let score_sans = read_lilypond(sans).expect("lecture \\afterGrace");
+    assert_eq!(hauteurs(&score_sans), vec![71, 71]);
+}
+
 #[test]
 fn after_grace_fraction_optionnelle() {
     // `\\afterGrace 7/8 c1 { d16 }` : l'argument optionnel est une échelle

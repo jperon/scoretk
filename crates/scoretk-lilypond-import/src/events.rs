@@ -1492,6 +1492,39 @@ impl<'a> Interpreter<'a> {
                 self.default_multiplier = default_multiplier;
                 return;
             }
+            // Un agrément de fin lié à sa note principale ne joue pas de
+            // seconde attaque : `Tie_performer::listen_tie` referme la tête
+            // en attente sur la note suivante de même hauteur
+            // (`lily/tie-performer.cc:94-135`). Sans cette règle,
+            // `v4_linked-ties.ly` (`\afterGrace 1 b4~ { b8 }`) écrivait un
+            // `<grace>` supplémentaire que l'oracle comptait comme une note.
+            if let Some(target) = self.grace_after_target {
+                let main_tied: Option<Vec<u8>> = match self.voice.events.get(target) {
+                    Some(VoiceEvent {
+                        kind: EventKind::Chord(chord),
+                        ..
+                    }) => match &chord.content {
+                        ChordContent::Notes(main) => Some(
+                            main.iter()
+                                .filter(|note| note.tie)
+                                .map(|note| note.pitch)
+                                .collect(),
+                        ),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some(tied) = main_tied {
+                    if !tied.is_empty()
+                        && !notes.is_empty()
+                        && notes.iter().all(|note| tied.contains(&note.pitch))
+                    {
+                        self.default_duration = written;
+                        self.default_multiplier = default_multiplier;
+                        return;
+                    }
+                }
+            }
             if !notes.is_empty() {
                 let grace = GraceEvent {
                     notes,
