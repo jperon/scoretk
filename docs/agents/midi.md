@@ -3357,3 +3357,48 @@ restrikes, not a faithful-port defect. No writer cause was committed in this
 pass: the one experiment that could have fixed the largest group was measured
 and rejected with evidence, and the remaining groups are source-specific
 (harmony durations in `Czardas`, one octave and one onset) documented above.
+
+## Equal-tick pairing and the eight residual export files (2026-11-23)
+
+### Equal-tick note pairing — FIFO analysis, no change kept
+
+The 17 `Veni`/`Once in royal` files differ on same-pitch notes at the same
+tick. `read_midi` merges SMF tracks by channel and pairs note-ons/note-offs
+per `(channel, pitch)` with FIFO. A strict "all note-offs before note-ons at
+an equal tick" rule was implemented and rejected:
+
+1. It breaks `test_extinction_sur_une_autre_piste`: when a unison is attacked
+   at the tick, the restrike off has no older open note to close, so applying
+   it first leaves the first note open for two quarters instead of zero.
+   MuseScore's own exporter writes that restrike *after* the attack
+   (`exportmidi.cpp:304-323`, `fixupMIDI` `event.cpp:263-306`).
+2. A refined variant (prioritise only the offs that close a note opened
+   strictly before the tick, snapshot per pitch) keeps the 12 oracle tests
+   green, but a discriminating two-SMF selftest shows it cannot make pairing
+   order-independent: FIFO is already order-independent whenever the number
+   of offs does not exceed the number of older open notes; when it does, some
+   off necessarily closes a note attacked at that tick, and which one depends
+   on the order. No rule changes that without changing musical semantics.
+
+Both variants were reverted before any commit; `scripts/oracle/midi/` is
+unchanged and its 12 selftests pass. Reversing the writer's restrike priority
+was also measured earlier (143 → 53 exact, 90 losses, § previous), so the
+residual is a reference/export convention, not a faithful-port defect.
+
+### First divergence of the eight residual files
+
+| File | Class | First divergence | Verdict |
+| --- | --- | --- | --- |
+| `Adios_Muchachos` | extra note | tick 36, 574/574 notes | same pitch/onset/duration multisets after normalisation; zero-length restrike pairing |
+| `Czardas_Monti` | extra note | tick 8, 2 036/2 041 | harmony/treble-clef overlap at a chord attack (`harmony::ticksTillNext`, `dom/harmony.cpp:1011-1085`) |
+| `Stella_maris - La` | extra note | tick 44.875, 849/849 | same-onset unison of two staves, restrike paired differently |
+| `Stella_maris - SiB` | extra note | tick 44.875, 795/795 | same |
+| `Sancta_Maria_KV_273 … orgue` | extra note | tick 10, 2 442/2 447 | grace/ornament realisation at an organ chord |
+| `JMHaydn_Viderunt_omnes` | extra note | tick 41.5, 3 540/3 541 | one note in a tied chord; reference drops the duplicate voice |
+| `Ave_Maria_Schubert_in_C_with_chords` | extra note | tick 29.667, 1 567/1 567 | simultaneous same-pitch attacks across voices |
+| `Sancta_Maria_Mater_Dei_Mozart` | "octave" | tick 20.25, 2 413/2 420 | actually an onset shift: reference 20.2479 vs output 19.752 for the same pitches (grace placement), plus a note paired at tick 141.75 |
+
+All eight are same-pitch/same-onset pairing or grace-placement cases in the
+writer-to-or comparison. None yields a writer-only rule that changes a file to
+exact without changing correctly written notes; the one such rule tested
+(restrike priority) lost 90 files. No writer change was committed.
