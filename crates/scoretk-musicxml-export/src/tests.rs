@@ -3442,3 +3442,36 @@ fn rapport_de_nolet_non_reduit_dans_time_modification() {
         "aucun normal-type attendu pour un 6:4 complet :\n{xml}"
     );
 }
+
+#[test]
+fn note_non_jouee_liee_necrit_pas_de_tie_avec_cue() {
+    // XSD musicxml-4.0.xsd:5182-5200 : la branche `<cue/>` du choix `note`
+    // exclut `<tie>`. Une note ClusterNoteEvent (play=false) liée ne doit donc
+    // émettre que `<cue/>`, jamais `<tie>`.
+    let mut score = Score::new();
+    let part_id = score.add_part(Part::new("Voix", "Vx"));
+    let staff = score.add_staff(part_id);
+    let track = Track::new(score.staff(staff).id, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    let mut ids = Vec::new();
+    let first = Note::new(60, tpc::C);
+    let second = Note::new(60, tpc::C);
+    let mut notes = [first, second];
+    for note in &mut notes {
+        note.play = false;
+    }
+    for (tick, note) in [(Fraction::ZERO, 0), (Fraction::HALF, 1)] {
+        let id = score.add_note(notes[note].clone());
+        ids.push(id);
+        let mut chord_rest = ChordRest::chord(Duration::half());
+        chord_rest.chord_mut().expect("accord").notes.push(id);
+        ajouter_element(&mut score, &mut measure, track, tick, chord_rest);
+    }
+    score.note_mut(ids[1]).tie_back = Some(ids[0]);
+    score.add_measure(measure);
+
+    let xml = export_musicxml(&score).expect("export");
+    assert_eq!(xml.matches("<cue/>").count(), 2, "xml :\n{xml}");
+    assert!(!xml.contains("<tie "), "aucun <tie> avec <cue/> :\n{xml}");
+}

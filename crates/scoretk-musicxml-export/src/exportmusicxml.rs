@@ -1764,8 +1764,11 @@ impl Context<'_> {
             // gravée mais non jouée. MuseScore l'écrit pour les petites notes
             // non jouées (isCueNote, exportmusicxml.cpp:4190-4193) et notre
             // importeur le relit en `Note::play = false` (pass2.rs:1249).
-            let cue = is_cue_note(chord, note);
-            if cue || !note.play {
+            // XSD note : la branche `cue` exclut `tie` (musicxml-4.0.xsd
+            // :5182-5200) ; `cue` doit donc couvrir toutes les notes non
+            // jouées pour que le `<tie>` soit omis plus bas.
+            let cue = is_cue_note(chord, note) || !note.play;
+            if cue {
                 out.xml.tag_empty("cue", &[]);
             }
             if !first {
