@@ -420,6 +420,11 @@ fn injecter_score_gabarit(tokens: &mut Vec<Token>, line: u32, column: u32) {
     };
     pousser(Kind::Command, "score", tokens);
     pousser(Kind::Punct('{'), "{", tokens);
+    // `ly/satb.ly:203-215` : la partition MIDI est
+    // `\keepWithTag #'play << … >>` ; sans ce filtre, la réduction piano
+    // (`\tag "print"`) était jouée en plus des voix (`satb-template-…`).
+    pousser(Kind::Command, "keepWithTag", tokens);
+    pousser(Kind::Scheme, "'play", tokens);
     pousser(Kind::Punct('<'), "<", tokens);
     pousser(Kind::Punct('<'), "<", tokens);
     for nom in voix {
@@ -590,5 +595,21 @@ mod tests {
         let warnings = warnings.into_vec();
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(warnings[0].message.contains("Scheme"), "{warnings:?}");
+    }
+
+    #[test]
+    fn gabarit_satb_filtre_le_tag_play() {
+        // `ly/satb.ly:203-215` : la partition MIDI est `\keepWithTag #'play`
+        // ; la réduction piano est `\tag "print"`. Le score injecté doit
+        // garder ce filtre, sinon la réduction est jouée en plus des voix.
+        let tokens = texts("\\include \"satb.ly\"");
+        assert!(
+            tokens.iter().any(|token| token == "\\keepWithTag"),
+            "keepWithTag injecté : {tokens:?}"
+        );
+        assert!(
+            tokens.iter().any(|token| token == "#'play"),
+            "tag play injecté : {tokens:?}"
+        );
     }
 }
