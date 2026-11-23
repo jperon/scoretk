@@ -3548,3 +3548,62 @@ A correct port needs the per-part `EventsHolder` write order of
 `exportmidi.cpp:296-323`, not a channel scan over `playing`. The committed
 same-part port is lossless and keeps its reduced test; the remaining
 divergence is unchanged at tick 22 080.
+
+## ExportMidi/FixupMIDI data flow and the precise divergence (2026-11-23)
+
+### Exact C++ flow (line by line)
+
+`ExportMidi::write` (`exportmidi.cpp:216-235`) creates **one**
+`EventsHolder events` for the whole score (line 226) and fills it once with
+`CompatMidiRender::renderScore` (line 235). `EventsHolder::_channels` is a
+`std::vector<events_multimap_t>` indexed by **internal MIDI channel**
+(`event.h:183-185`) — not per part and not per staff. Each multimap maps a tick
+to `NPlayEvent`s; every event carries `channel()`, `pitch()`, `velo()`,
+`discard()` and `originatingStaff()`.
+
+`EventsHolder::fixupMIDI` (`event.cpp:263-306`) keeps `info[channel]` — a
+per-channel table of `nowPlaying[pitch]` and the last note-on event
+(lines 266-270). For each note-on event in channel order:
+- `velo() == 0` (a restrike off): if `np == 0 || --np > 0` it is discarded
+  (lines 275-278); otherwise it is **hoisted** — `setOriginatingStaff()` of
+  the earlier note-on (line 280).
+- `velo() > 0`: `++np > 1` means a restrike; `setDiscard(originatingStaff+1)`
+  on the new attack (lines 282-286). The last note-on per (channel, pitch) is
+  remembered at line 287.
+
+Writing (`exportmidi.cpp:239-335`): one SMF track per **staff** (line 222),
+`staffIdx` walking them (239-241). For each staff track, lines 297-299 iterate
+**all channel multimaps**; line 304 writes a velocity-0 note-on (the restrike
+off) on the *current staff's track* whenever `discard() == staffIdx + 1` and
+`velo() > 0`, using the `channel` variable of the instrument channel currently
+being written (lines 248-255). Line 317 then skips events not originating on
+this staff, so the real note-on is written only on its own track; lines 331-334
+filter by output port/channel. Thus two restrikes of the same pitch on two
+different internal channels both write an off on the previous staff's track,
+each with its own channel.
+
+### Our port and the precise divergence
+
+`fixup.rs` mirrors this with a single `Performance` (one event list per staff)
+but keys `playing` by **`(part, channel, key)`** (`fixup.rs:84-86`) rather than
+by channel alone, and builds `(tick, track, seq)` collection order rather than
+`events_multimap` channel order. On commit `587e573a` a same-part channel scan
+was added; it gained 0 files and was reverted (see the following section).
+
+At tick 22 080 in `Veni veni Emmanuel`, the reference writes on track 12
+`(ch0, off, 67)`, `(ch0, on, 67)` ×2 and `(ch1, off, 67)`. The ch1 note was
+opened at tick 21 840 on track 7. In our rendering there is **no ch1 note-on
+event at tick 22 080 at all** — only ch0 — because the second internal channel
+of that part is not rendered by our renderer at this point. Consequently
+`fixup_midi` has no second restrike to hoist. The missing off is therefore
+upstream of `fixup.rs`: it comes from the channel-level event production of
+`renderScore`, not from the channel scan at restrike time.
+
+A faithful port needs to render the part's secondary (harmony/accompaniment)
+channel into the same `EventsHolder` before `fixupMIDI`, as `renderScore` does,
+then let the existing per-channel `discard == staffIdx+1` rule hoist both offs.
+Our single `Performance`/`playing` structure has no equivalent of the global
+channel-indexed multimap; a correct change touches `render.rs` channel setup
+as well as `fixup.rs`. No writer change was committed in this pass: the two
+channel-scan variants were each measured (0 gains/0 losses and 55 losses),
+and neither reproduces the reference event. Counts remain 143/171 and 17/17.
