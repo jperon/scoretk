@@ -224,6 +224,10 @@ One line per document; read the one matching the subject before coding.
   `.ly` mapping, `\fixed` mode, snapshots), reading (subset of
   `parser.yy`/`lexer.ll`, measured round trip), limits and upgrade of the
   sources: read before touching the `scoretk-lilypond-*` crates.
+- `docs/agents/lilypond-scheme.md` — costed study of an in-house Scheme
+  evaluator for the LilyPond reader (inventory, corpus counts, levels
+  A/B/C, steel/scheme-rs comparison, recommendation): read before extending
+  the reader's Scheme handling.
 - `docs/agents/abc.md` — ABC reading and writing: split into three crates,
   subset, voices, snapshots, measured round trip, upgrade of
   `xml2abc`/`abc2xml`: read before touching the `scoretk-abc-*` crates.
