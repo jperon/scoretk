@@ -464,6 +464,23 @@ fn liaison_dans_un_accord_simultane_se_prolonge_dans_la_suite() {
     );
 }
 
+/// `\context Voice = sop` dans un `<< … \\ … >>` retrouve la voix **du même
+/// nom** déjà ouverte autour du passage (`lily/context.cc` `context_find_or_create`,
+/// `lily/parser.yy` `NEWCONTEXT`) : les têtes y gardent le même `Tie_performer`,
+/// donc la liaison se prolonge dans la musique qui suit le `>>`. Vérifié avec
+/// LilyPond 2.27 sur la source réduite (une seule attaque de durée 5/4).
+#[test]
+fn contexte_voice_de_meme_nom_prolonge_la_liaison() {
+    let source = "\\version \"2.27\"\n\\score { \\new Voice = sop { \
+        \\fixed c' { << \\context Voice = sop { c'1~ } \\\\ { s2 s2 } >> c'4 d'2 } } }";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(
+        hauteurs_attaques(&score),
+        vec![72, 74],
+        "la voix retrouvée par son nom prolonge la liaison"
+    );
+}
+
 /// `\compressMusic` est l'ancien nom de `\scaleDurations`
 /// (`python/convertrules.py` l. 2765) : meme argument et memes durees
 /// multipliees par n/d (bwv631a et trois autres chorals).

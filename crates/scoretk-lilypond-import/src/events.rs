@@ -679,6 +679,22 @@ impl<'a> Interpreter<'a> {
             self.walk(&group.staves[0].voices[0].music);
             return;
         }
+        // `\context Voice = sop` retrouve la voix déjà nommée `sop`
+        // (`lily/context.cc`, `context_find_or_create` ; `lily/parser.yy`
+        // `NEWCONTEXT`) au lieu d'en ouvrir une sœur. C'est courant dans un
+        // `<< … \\ … >>` dont la première branche reprend le nom de la voix
+        // englobante (`naujalis-caligaverunt.ly`) : la liaison posée avant le
+        // `>>` est alors fermée par la suite du flux, dans la même voix.
+        if group.existing
+            && group.kind == GroupKind::Voice
+            && group.staves.len() == 1
+            && group.staves[0].voices.len() == 1
+            && self.voice_name.is_some()
+            && group.staves[0].voices[0].name.as_deref() == self.voice_name.as_deref()
+        {
+            self.walk(&group.staves[0].voices[0].music);
+            return;
+        }
         let start = self.cursor;
         let mut end = start;
         let mut last_duration = self.default_duration;
