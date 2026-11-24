@@ -8874,7 +8874,7 @@ statement and were skipped. Sources containing Mutopia/LSR/openLilyLib or
 The six manifests are `ext.txt` (464 paths), `kno.txt` (197), `perso.txt`
 (110), `cc.txt` (139), `cpdl.txt` (16) and `af.txt` (2); the groups overlap
 only by being subsets of `ext`. `af.txt` is the two-score `alde-friezen` lot
-(`partituer.ly`, `fideo.ly`) added for §47; both include `noaten.ily`, which
+(`partituer.ly`, `fideo.ly`) added for §48; both include `noaten.ily`, which
 the builder checks out next to them. LilyPond produced a usable MIDI for
 **371** files; the other **91** are recorded as `echec` and excluded from both denominators (never
 silently dropped). All 91 have `raison_exclusion = référence MIDI inutilisable`:
@@ -9150,3 +9150,140 @@ files of §46 remain at 1/35 under a fair reference: their divergence comes
 from tag-filtered voices, per-Voice MIDI tracks and real-time grace timing,
 already listed as §46 exceptions. Fixing them needs a wider score/selection
 model, not a comparator change.
+
+## 48. External `alde-friezen` lot: includes, `midiInstrument` and the "extra low d's" (2026-11-24)
+
+### Protocol
+
+The branch was already at master (`3d72b41e`), so the rebase was a no-op. The
+baseline CLI was frozen at that commit; the final CLI was built after the four
+commits of this campaign. Every conversion ran with
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10`, the versioned manifests
+and the same cached reference tree (`ly95lect-refs-fresh/out3*`), with
+`mesure.sh --refs-only --python-ly '' --music21 ''` and **one lot at a time**
+(the driver is sequential). No comparator rule, exclusion rule or manifest of
+an existing lot was changed. The untrusted `alde-friezen` references were
+compiled **only** through
+`references.py --sandbox --sandbox-dir …/sandbox --inject-midi --jobs 1`:
+bubblewrap with `--unshare-all`, a read-only root bind and a single writable
+output directory. Both references regenerated (2/2, `code: 0`).
+
+### New external lot and multi-file reading
+
+`lots-externes.py` now pins [MacLotsen/alde-friezen](https://github.com/MacLotsen/alde-friezen)
+at `bba32e7492d2bfe581b15b5d82179db132937702` (CC0-1.0, `README.md:68-71` and
+`LICENSE:1`), group `af`, two scores. The builder checks out `noaten.ily` next
+to them; `af.txt` has `fideo.ly` and `partituer.ly`, and `ext.txt` grows from
+462 to 464 paths. The audit record is in `licences.jsonl`; no snapshot, MIDI
+reference or manifest is versioned.
+
+`\include` resolution was checked with a nested source: `main.ly` includes
+`sub/score.ily`, which defines `notes`; a decoy `notes.ily` in the main
+directory defines a different pitch. The facade/CLI resolver follows the
+**including file's** directory: the output is C5/D5/E5/F5 from
+`sub/score.ily`, not the decoy. The library remains I/O-free; the resolver
+lives in the CLI (`crates/scoretk-cli/src/main.rs`, `lilypond_resolver`).
+There is **no wasm folder path to check**: `crates/scoretk-wasm/src/api.rs`
+calls `scoretk::read(input, from)` on bytes, the stable API has no resolver or
+folder option (`baseUrl` only locates the wasm asset), and
+`crates/scoretk-wasm/src/lib.rs` states that no file I/O is performed. An
+external `\include` therefore stays unresolved in wasm by design; this is not
+changed here.
+
+### Oracle on the two files: no divergence
+
+| File | Ref notes | Test notes | N1 | Exact | First divergent tuple |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `partituer.ly` | 332 | 332 | 332/332 | yes | none |
+| `fideo.ly` | 352 | 352 | 352/352 | yes | none |
+
+`mesure.py` reports 2 files, 2 repeats, 0 failures, 0 empty, **2 exact
+(100 %)**, N1 100.00 % on both the frozen and the final binary; the
+first-divergence table of `lots-externes.py --causes --lot af` is empty. The
+user's two reports were therefore investigated outside the Q16 multiset
+comparison.
+
+### The four low d's are LilyPond's `CueVoice`, not a lost tie
+
+`fideo.ly` has 380 written notes against 356 for `partituer.ly`: exactly four
+extra D4, E4, F#4, G4 and A4 per score. They come from
+`noaten.ily:37-41`:
+
+```lilypond
+<<
+  { \voiceOne g4 r8 }
+  \tag #'partituer
+  \new CueVoice { \voiceTwo g16[ d e fis g a] }
+>> \oneVoice |
+```
+
+The `CueVoice` is played once per verse (four verses in `fideo.ly`); the
+second score of `partituer.ly` removes it with
+`\removeWithTag #'partituer`. `ly/performer-init.ly:100-115` defines
+`CueVoice` as a `\Voice` alias carrying `Note_performer`, so it is audible;
+`scm/music-functions.scm` (`remove-with-tag`) filters the tagged expression
+before playback. A reduced source written with `c' d' e' f'` and compiled
+with LilyPond 2.27 gives 72/74/76/77 plus the cue 55/54, and 72/74/76/77
+alone with `\removeWithTag`: six and four notes respectively. The reader
+already reproduces both; the new test `cue_voice_jouee_et_tag_retire_ses_notes`
+uses the same source with `c d e f` (60/62/64/65 plus 55/54) and locks the
+behaviour in (it passes on the baseline too, as a non-regression guard). **No reader change was warranted**:
+deleting those notes would make the import less faithful.
+
+A related but distinct observation: scoretk's **MIDI export** of `fideo.ly`
+has four more notes than LilyPond's MIDI, all G4 at 41.5/96.5/151.5/206.5
+quarters and of zero duration. They are the MuseScore `EventsHolder::fixupMIDI`
+restrikes of the unison `g4`/`g16` at the start of the cue voice
+(`crates/scoretk-midi-export/src/fixup.rs`, `lily/midi-walker.cc:88-147`),
+already documented in §14. The MusicXML oracle merges that unison before
+comparison, which is why the import is exact. This is an export-model
+difference, not an import defect, and changing it would regress the MuseScore
+reference lots.
+
+### `midiInstrument`
+
+`lily/staff-performer.cc:240-252` reads the string property `midiInstrument`
+of `Staff`; `scm/midi.scm:20-208` (`instrument-names-alist`) maps it to a
+General MIDI programme (`midi-program`, l. 217-224) and marks the drum kits
+(`percussion?`, l. 210-215). The reader now ports these 153 names in
+`crates/scoretk-lilypond-import/src/midi_instruments.rs` (GPL notice added to
+`NOTICE` and to the file table of §8). `\with { midiInstrument = "…" }`,
+`\set Staff.midiInstrument = "…"` and `\set PianoStaff.midiInstrument = "…"`
+are captured as **context properties**, not as music: emitting the string as a
+music event made `bwv-1006a_6.ly` open a third staff in an intermediate
+version, whereas LilyPond has two. The property is attached to the
+`StaffBlock`/`GroupBlock`, and the builder sets `Instrument::midi_program`
+(and `midi_channel = 9` for a kit, plus the instrument id when the name is
+recognised). Both writers consume that field: MusicXML writes
+`<midi-program>` and the MIDI writer a `Program Change`.
+
+Reduced test (two staves): `\with { midiInstrument = "violin" }` and
+`\set Staff.midiInstrument = "flute"`. Baseline XML contains **0**
+`<midi-program>`; final XML contains `<midi-program>41</midi-program>` and
+`<midi-program>74</midi-program>` (GM base one), and the SMF contains
+`0xC0 40` and `0xC1 73` (base zero). A third staff with `"rock drums"` gets
+programme 16 and channel 9. Tests: `programme_midi_depuis_midi_instrument`
+(import crate) and `midi_instrument_atteint_musicxml_et_midi` (facade).
+The 153-name lookup has its own unit test.
+
+### Non-regression: `ra`, `mut`, `rw`
+
+The lot figures are identical before and after, with a constant denominator
+and the same references. "Byte changes" counts converted MusicXML files whose
+bytes differ; none of those differences is outside the three instrument lines
+`<instrument-name>`, `<instrument-sound>` and `<midi-program>`.
+
+| Lot | Converted files | Baseline exact | Final exact | N1 % | N2 % (no repeat) | N2-grace % | Byte changes | Other byte changes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ra` | 1658 | 1605 (93.1 %) | **1605 (93.1 %)** | 98.43 | 96.02 | 97.03 | 2 | 0 |
+| `mut` | 1316 | 1257 (95.5 %) | **1257 (95.5 %)** | 99.86 | 98.60 | 97.54 | 442 | 0 |
+| `rw` | 1365 | 1300 (95.2 %) | **1300 (95.2 %)** | 99.86 | 98.58 | 97.52 | 442 | 0 |
+| `af` | 2 | 2 (100 %) | **2 (100 %)** | 100.00 | — (repeats) | — | 0 | 0 |
+
+Excluded rows are unchanged: 1 unsupported on `ra`, 61 on `mut`, 83 on `rw`;
+66 `ra` rows have an unusable MIDI reference and are excluded as before.
+For example `bwv-1006a_6.ly` keeps its two staves and now gains `<instrument-name>Harp</instrument-name>` and `<midi-program>7</midi-program>`.
+**Zero exact loss, zero N1/N2 loss and zero non-instrument byte change** on all
+three lots, one measurement at a time. `cargo test --workspace`,
+`cargo clippy --workspace --all-targets -D warnings`, `cargo fmt --all --check`
+and the `wasm32-unknown-unknown` build of `scoretk-wasm` are green.

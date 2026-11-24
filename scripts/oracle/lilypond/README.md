@@ -308,6 +308,13 @@ scripts/oracle/lilypond/mesure.sh \
   --lot ext=/home/jacques/tmp/scoretk/lots-ext/manifestes/ext.txt
 ```
 
+The `alde-friezen` control lot is built the same way, with `--only
+alde-friezen`; its two scores include `noaten.ily`, which the builder checks
+out beside them. Generate its references with the same sandboxed command and
+`--lot af`, then measure with
+`--lot af=…/lots-ext/manifestes/af.txt`. The `--causes --lot af` report lists
+the first divergent tuple of each inexact file.
+
 Downloaded `.ly` files are untrusted: compiling one executes embedded Scheme.
 `--sandbox` runs LilyPond in bubblewrap (`--unshare-all`, no network, source
 tree read-only via a read-only root bind, only the temporary output directory
