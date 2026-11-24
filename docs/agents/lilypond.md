@@ -8785,3 +8785,133 @@ and the real-time grace-part timing of `lily/grace-iterator.cc` /
 `python3 -I scripts/oracle/lilypond/ly_notes.py selftest`,
 `cargo test --workspace`, `clippy --workspace --all-targets -D warnings` and
 `fmt --check` are green.
+
+## 45. Independent external control lots (2026-11-24)
+
+### Purpose and protocol
+
+The three existing reading lots (`mus`, `ra`, `mut`) and the real-world lot
+`rw` all come from LilyPond's own neighbourhood (Mutopia, LSR, openLilyLib,
+`input/regression`). To check that the measured import score is not an artefact
+of those sources, **new lots were built from unrelated, personally engraved or
+public-domain repositories** and measured with the *current, unmodified*
+reader. No reader or comparator rule was changed for this campaign.
+
+- Builder: `scripts/oracle/lilypond/lots-externes.py`. It records the licence
+  before downloading, clones each repository with `--filter=blob:none` at a
+  pinned commit, checks out only `.ly`/`.ily` text files, and writes one
+  manifest per group plus `licences.jsonl`. It never runs a shipped script,
+  Makefile or Python file. Nothing is versioned: snapshots, manifests, MIDI
+  references and raw measurements live in
+  `/home/jacques/tmp/scoretk/lots-ext/` (no `NOTICE` entry is needed because no
+  derived data is committed).
+- References: `references.py --sandbox --sandbox-dir .../sandbox --inject-midi
+  --jobs 1`, with LilyPond **2.27.0**. `--inject-midi` reuses the injection of
+  `regen-refs.py` on a local copy; `--sandbox` runs LilyPond inside bubblewrap
+  (`bwrap --unshare-all --die-with-parent`, read-only root bind, no network,
+  only the temporary output directory writable). Embedded Scheme in a `.ly`
+  therefore executes only in that sandbox. A separate `-dsafe` fallback was
+  not needed: bwrap was available and used for every compilation.
+- Measurement: frozen `scoretk` built from master `35367c6c` before any edit,
+  `mesure.sh --refs-only --python-ly '' --music21 ''`, one worker, the same
+  Q16 oracle and the same exclusion rules as §12/§18. All conversions ran
+  under `timeout`/`prlimit --as=2000000000`.
+
+### Accepted sources (licence audited before download)
+
+Every URL below is pinned to the commit shown. The evidence is the licence
+statement at that commit (`file:line`), or the repository's licence file.
+"Files" is the number of `.ly` paths selected into the manifest (cap 40 per
+repository, deterministic spread over the sorted tree, includes kept beside
+the score).
+
+| Source | Pinned commit | Licence | Evidence | Files |
+| --- | --- | --- | --- | ---: |
+| [ksnortum/bach-15-sinfonias](https://github.com/ksnortum/bach-15-sinfonias) | `81ab75c5` | CC BY-SA 4.0 | `README.md:24` | 16 |
+| [ksnortum/bach-15-two-part-inventions](https://github.com/ksnortum/bach-15-two-part-inventions) | `2398bbbe` | CC BY-SA 4.0 | `README.md:30` | 16 |
+| [ksnortum/bach-goldberg](https://github.com/ksnortum/bach-goldberg) | `970dc7cc` | CC BY-SA 4.0 | `README.md:41` | 33 |
+| [ksnortum/bach-well-tempered-1](https://github.com/ksnortum/bach-well-tempered-1) | `cfddd9b9` | CC BY-SA 4.0 | `README.md:32` | 40 |
+| [ksnortum/bach-well-tempered-2](https://github.com/ksnortum/bach-well-tempered-2) | `27f5de11` | CC BY-SA 4.0 | `README.md:38` | 40 |
+| [ksnortum/chopin-opus-28](https://github.com/ksnortum/chopin-opus-28) | `9c0e38a8` | CC BY-SA 4.0 | `README.md:46` | 25 |
+| [ksnortum/chopin-opus-25](https://github.com/ksnortum/chopin-opus-25) | `e38cb721` | CC BY-SA 4.0 | `README.md:32` | 13 |
+| [ksnortum/satie-trois-valses](https://github.com/ksnortum/satie-trois-valses) | `1a7ff98e` | CC BY-SA 4.0 | `README.md:27` | 4 |
+| [ksnortum/scarlatti-sonatas-k1-k10](https://github.com/ksnortum/scarlatti-sonatas-k1-k10) | `1b7da6b8` | CC BY-SA 4.0 | `README.md:29` | 10 |
+| [ace214/cpdl](https://github.com/ace214/cpdl) | `5a02f2e5` | GPL-3.0 + per-file CPDL edition permission | `LICENSE:1`; `beethoven/abschiedgesang/Abschiedsgesang.ly:9` | 7 |
+| [wbsoft/lilymusic](https://github.com/wbsoft/lilymusic) | `ecf7415b` | per-file CPDL licence | `arcadelt/o-lord.ly:20-24` | 9 |
+| [juliedigne/scores](https://github.com/juliedigne/scores) | `b9d2564f` | public domain | `README.md:3` | 19 |
+| [Snapsakademien/scores-ly](https://github.com/Snapsakademien/scores-ly) | `5d95654e` | public-domain songs, free compilation | `README.md:5` | 40 |
+| [cellist/Lilypond-Sheet-Music](https://github.com/cellist/Lilypond-Sheet-Music) | `9568b990` | explicit "use and share" permission | `README.md:7` | 40 |
+| [phmccarty/compositions](https://github.com/phmccarty/compositions) | `90eed300` | CC BY-SA 4.0 / CC0 | `README.md:4` | 11 |
+| [jeandeaual/lilypond-allofme](https://github.com/jeandeaual/lilypond-allofme) | `a29330dd` | CC0-1.0 | `LICENSE:1` | 1 |
+| [yawnoc/guitar](https://github.com/yawnoc/guitar) | `fe48dbba` | CC0-1.0 / public domain | `README.md:5-8` | 12 |
+| [nwhetsell/horn-sheet-music](https://github.com/nwhetsell/horn-sheet-music) | `51e060ef` | MIT, public-domain music | `LICENSE.md:1-3` | 40 |
+| [AugmentedFifth/engravings](https://github.com/AugmentedFifth/engravings) | `fe85d3d0` | CC BY-SA 4.0-or-later | `README.md:37-39` | 0 |
+| [just-a-book-archivist/latvian-music](https://github.com/just-a-book-archivist/latvian-music) | `ac3cf707` | CC BY-SA 4.0 | `README.md:50` | 34 |
+| [hinariocentral/hinariocentral-core](https://github.com/hinariocentral/hinariocentral-core) | `c878675b` | CC BY-SA 4.0 | `LICENSE:1` | 12 |
+| [loyola-university-tech-ensemble/in-c-phrases-ly](https://github.com/loyola-university-tech-ensemble/in-c-phrases-ly) | `b0e446e8` | CC BY-SA 4.0 | `LICENSE.md:1` | 40 |
+
+`AugmentedFifth/engravings` is accepted but contains only `.mscz`, no `.ly`,
+so it contributes no path. CPDL files were admitted only when their own
+header grants copying/distribution; the other wbsoft files have no such
+statement and were skipped. Sources containing Mutopia/LSR/openLilyLib or
+`input/regression` markers were filtered out by path and by content.
+
+### Rejected sources
+
+| Source | Evidence | Reason |
+| --- | --- | --- |
+| BMdataset (BaroqueMusic.it), [Zenodo 18723290](https://zenodo.org/api/records/18723290) v1.0.0 | `metadata.license.id = cc-by-nc-nd-4.0` | NC forbids this reuse and ND forbids derived data; the 826 MB archive was never downloaded |
+| [CSCPadova/lilybert](https://github.com/CSCPadova/lilybert) `bd28a4a9` | `LICENSE:1` (Apache-2.0, code only); `tests/ly/00a01a21-…ly:1-2` | scores come from the NC-ND BMdataset and line 1 is a `@TOPLEVEL_VERSION@` placeholder: score data rejected as NC-ambiguous |
+| [allengarvin/typeset](https://github.com/allengarvin/typeset) `1fac63f4` | `LICENSE.txt:1` | CC BY-NC 4.0 International |
+| [ksnortum/openbook](https://github.com/ksnortum/openbook) `7b9ffb6c` | `README.md:77` | GPL-3.0 project, but "The tunes themselves have their own copyright holders": underlying rights ambiguous |
+| [nicovince/scores](https://github.com/nicovince/scores) `656a2d05` | `README.md:3` | public domain, but the tree duplicates `juliedigne/scores`; deduplicated, not measured twice |
+
+### Counts and score
+
+The five manifests are `ext.txt` (462 paths), `kno.txt` (197), `perso.txt`
+(110), `cc.txt` (139) and `cpdl.txt` (16); the groups overlap only by being
+subsets of `ext`. LilyPond produced a usable MIDI for **371** files; the other
+**91** are recorded as `echec` and excluded from both denominators (never
+silently dropped). All 91 have `raison_exclusion = référence MIDI inutilisable`:
+`snapsakademien` 36, `latvian` 18, `cellist` 10, `horn-mit` 8,
+`phmccarty` 7, `guitar-yawnoc` 3, `hinariocentral` 3, `juliedigne` 3,
+`cpdl-wbsoft` 1, `ksnortum-bach15` 1, `ksnortum-inventions` 1. They are mostly
+include-only fragments or sources whose injected copy emits no playable
+score.
+
+Raw figures (all 371 measured files in the denominator):
+
+| Lot | Measured | `echec` | Repeats | Exact | N1 % | N2 % (repeat-free) | N2-grace % |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ext` | 371 | 91 | 215 | **206 (55.5 %)** | 74.30 | 82.89 | 82.89 |
+| `kno` | 195 | 2 | 137 | 106 (54.4 %) | 68.18 | 91.77 | 91.77 |
+| `cpdl` | 15 | 1 | 6 | 12 (80.0 %) | 99.80 | 80.71 | 80.71 |
+| `perso` | 54 | 56 | 37 | 23 (42.6 %) | 93.32 | 100.00 | 100.00 |
+| `cc` | 107 | 32 | 35 | 65 (60.7 %) | 77.71 | 32.23 | 32.25 |
+
+This is a confirmation measurement, not a tuning campaign: the score is well
+below the 95 % of `mut`/`rw` because the external mix contains many scores
+whose LilyPond MIDI comes from a *different* `/score` than the engraved one,
+and many transposing-instrument parts. Those are reference/score-selection
+classes already documented in §7, §14 and §15, not new reader defects; the
+groups below account for every inexact file.
+
+### First divergence of the 165 inexact files
+
+`lots-externes.py --causes --lot ext` re-reads each reference MIDI and each
+converted MusicXML, sorts the note tuples on the Q16 grid and reports the
+first index where the multisets differ. The category is that first diverging
+tuple, not the oracle's primary flag (flags overlap: `notes_manquantes` 113,
+`octave` 109, `attaque_decalee` 26, `transposition` 24, `sortie_vide` 14,
+`notes_supp` 7, `autre` 7).
+
+| First divergence | Files | Sources | Example | Governing cause |
+| --- | ---: | --- | --- | --- |
+| Pitch | 66 | `kno` 41, `horn-mit` 24, other 1 | `fugue-5-bwv-850-individual.ly` | MIDI-only `\book`/`\keepWithTag midi` score (§7, §15) and `\transposition f` on horn parts; reference plays a different score or concert pitch |
+| Attack | 47 | `cellist` 24, `guitar-yawnoc` 9, `horn-mit` 6, other 8 | `bolstad_indian_summer.ly` | `\unfoldRepeats \music` in the MIDI score (§7) and complex tuplet/voice timing; note count and N1 are often exact |
+| Duration | 31 | `kno` 28, `cellist` 2, `allofme` 1 | `allofme.ly` | `\articulate` MIDI shortening of the second score (§14) and tagged MIDI variants; the engraved score is written once |
+| Empty output | 14 | `ksnortum-chopin25` 7, `ksnortum-chopin28` 6, `ksnortum-goldberg` 1 | `etude-op25-no1-individual.ly` | score is inside a `\book`/tag variable; the first engraved expression carries no playable notes for the reader (documented subset limit, §7) |
+| Empty reference | 7 | various | — | LilyPond produced a MIDI with no notes; reference artefact, not a conversion failure |
+
+No file was removed from a denominator for being inexact, and no reader code,
+oracle rule or existing manifest was changed by this campaign.
