@@ -9012,3 +9012,136 @@ No comparator change was made to gain files, and the rejected variants of
 the unison merge) were not retried. `cargo test --workspace`,
 `clippy --workspace --all-targets -D warnings`, `fmt --check` and the oracle
 selftest are green.
+
+## 47. Independent external control lots: fair same-score reference (2026-11-24)
+
+### Method: an additional, fair reference
+
+The raw reference of §45 is still useful as a confirmation instrument, but it
+can play a **different** `\score` than the one the reader imports:
+`regen-refs.py::candidats_avec_midi` injects `\midi { }` into the *last*
+`\score`, and LilyPond writes one MIDI per score carrying `\midi`. The
+driver keeps the first one. `references.py --same-score` (commit `3847d0e5`,
+refinements `f80acde3`, `5686c551`, `82d45f31`) builds a **second, additional**
+tree without touching the raw tree or the comparator: it injects `\midi { }`
+into the score the reader selects and removes `\midi` from every other score,
+so LilyPond writes exactly one MIDI, from that expression.
+
+The reader's selection is `Parser::document`,
+`crates/scoretk-lilypond-import/src/parser.rs:506-569`: explicit `\score`
+blocks are collected by `toplevel_item` (l. 637-650), `parse_book` descends
+into `\book` (l. 739-748), implicit top-level music is the fallback
+(`parse_toplevel_music`, l. 783-806), and l. 549-553 gives the **first score
+carrying `\midi`** priority. When the raw injection already plays that score,
+the raw MIDI is copied instead of being recompiled (documented in
+`scripts/oracle/lilypond/README.md`). The main file is visited before the
+files it includes, in textual include order. Every compilation used
+LilyPond 2.27 inside `bwrap --unshare-all --die-with-parent` with **one
+worker**; the 371 external references were completed in the foreground
+(223 resumed after an interrupted background run), plus 35 `mut` and 35 `rw`
+references for the second-`\score` files of §46. `references.py --selftest`,
+`ly_notes.py selftest` and `mesure.py --selftest` are OK.
+
+### Scores: raw and same-score, both kept
+
+The frozen baseline is `3d72b41e` (`scoretk-base`); the final binary is
+`af35661c`. All figures count the files for which LilyPond produced a usable
+MIDI reference (§45 denominators). The parenthesised figure uses only the
+references containing notes (7 of the 371 external references are empty).
+
+| Lot | Raw, frozen (§45) | Raw, after the empty-output fix | Same-score, final |
+| --- | ---: | ---: | ---: |
+| `ext` | 206/371 = **55.5 %** (56.6 %) | 161/371 (44.2 %) | **213/371 = 57.4 %** (58.5 %) |
+| `kno` | 106/195 = 54.4 % | — | **113/195 = 57.9 %** |
+| `cpdl` | 12/15 = 80.0 % | — | **12/15 = 80.0 %** |
+| `perso` | 23/54 = 42.6 % | — | **23/54 = 42.6 %** |
+| `cc` | 65/107 = 60.7 % | — | **65/107 = 60.7 %** |
+| `mut` (full) | 1,257/1,316 = 95.5 % | 1,257/1,316 | **1,257/1,316 = 95.5 %** |
+| `rw` (full) | 1,300/1,365 = 95.2 % | 1,300/1,365 | **1,300/1,365 = 95.2 %** |
+| `mut` (35 second-`\score` failures of §46) | 0/35 | — | **1/35 = 2.9 %** |
+| `rw` (the same 35 failures) | 0/35 | — | **1/35 = 2.9 %** |
+
+`ra` (1,724 files) keeps the documented 1,690/1,724 = 98.0 % of §46: its
+reference tree is gone, and only one `ra` file matches a source pattern
+touched by the fixes below (`identifiers.ly`); its converted MusicXML is
+byte-identical between the frozen and final binaries. The apparent 45-file
+drop of the raw `ext` figure after the empty-output fix is **not** a reader
+regression: the reader then engraves scores stored in variables, so the raw
+MIDI (which plays the last score) no longer describes what it reads; against
+the fair reference the same binary gains those files instead. No file was
+removed from a denominator and no comparator rule was changed.
+
+### Real reader defects with the fair reference
+
+On `ext` the final binary leaves 151 inexact files (7 empty references
+excluded from the note comparisons). Overlapping flags: `octave` 103,
+`notes_manquantes` 98, `attaque_decalee` 29, `notes_supp` 24,
+`transposition` 21. The first divergent tuple is a duration in 75 files, an
+attack in 50 and a pitch in 26. Grouped by cause:
+
+* **Empty output (14 files, fixed).** `Parser::assign` read a variable holding
+  `\score`/`\book` with the ordinary music grammar; the following `\markup`,
+  `\magnifyMusic` or tagged stanza swallowed the score. LilyPond sends every
+  top-level expression to `collect-music-aux` (`scm/lily-library.scm:180-196`,
+  via `toplevel-music-handler`, `ly/init.ly:66-86`) and adds the scores of a
+  `\book` (`lily/book.cc:125-127`). Commit `b745b154` parses the score at the
+  assignment; the reduced test `variable_contenant_un_score_est_gravee` fails
+  on the frozen binary (0 notes) and passes after the fix (62/64/65/67,
+  LilyPond 2.27 MIDI). All 14 files now produce notes; 9 became exact with
+  the raw reference.
+* **`\articulate` ornaments under a parallel `\global` (7 files, fixed).** In
+  the Goldberg variations and WTC preludes a `\mordent` whose key signature
+  is declared in a parallel `\global` played the *natural* lower neighbour
+  (sol–fa–sol) instead of the key-signature one (sol–fa♯–sol). The reader
+  seeded `fifths` from each voice separately. LilyPond's `ac:current-key` is
+  global to the articulated music (`ly/articulate.ly:193-202`, replaced by
+  every `KeyChangeEvent` at l. 818-820), and `ac:down` (l. 296-306) takes the
+  neighbour's alteration from it. Commit `af35661c` builds one key timeline
+  for all voices and uses it for every ornament. The reduced test
+  `mordent_avec_armure_dans_un_global_parallele` fails before (67/65/67/67)
+  and passes after (67/66/67/67), matching LilyPond 2.27's MIDI. On `ext`
+  this gains exactly 7 files (206 → 213) with **no** loss and no N1/N2
+  regression; all 7 are in `kno` (106 → 113).
+* **Apparent `\transposition` (21 files, no reader defect found).**
+  `lily/note-performer.cc` (`fill_note_info`) takes the sounding pitch from
+  `instrumentTransposition` (`scm/define-context-properties.scm`), and every
+  one of the 21 files already exports the correct `<transpose>
+  <chromatic>-7</chromatic></transpose>` for `\transposition f`. Reduced
+  sources with `\transposition f` in the music, in a `\global` variable, in
+  `\set Staff.instrumentTransposition` and in a `\midi` block all give the
+  same pitches in LilyPond 2.27's MIDI and in scoretk's MusicXML. The first
+  divergent event is a missing or octave-shifted note of a `\relative` +
+  tuplet passage (e.g. `kling-23.ly`: reference 66/62/66, reader 50/…), not
+  a transposition error. These files stay inexact, grouped with the octave
+  and missing-note causes.
+* **Cellist collection (about 24 files), horn exercises and Chopin/WTC
+  `notes_supp`:** note counts often match but attacks are shifted inside long
+  `\repeat volta` / `\unfoldRepeats` passages with several `\transpose`
+  staves; a single rule did not reproduce the first divergent event. They
+  are left for a dedicated campaign, not silently excluded.
+* **Legitimate exceptions (unchanged):** 7 empty references in `ext`, sources
+  with no notes, full-evaluator Scheme and the §46 second-`\score` timeline
+  differences on `mut`/`rw`. Some horn sources contain a bare `8` where a
+  pitch name is missing (`e2( 8 c)`): LilyPond compiles it with a warning,
+  but its MIDI cannot be a faithful oracle; those are faulty references, not
+  reader defects.
+
+### Zero loss (one lot at a time)
+
+After each reader change the full lots were measured with
+`mesure.py --refs-only`, one worker, `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2
+nice -n 10`: `mut` 1,257/1,316 and `rw` 1,300/1,365 were unchanged (no N1/N2
+loss) by both commits; `ra` is byte-identical for the only affected source.
+`cargo test --workspace` (263 `ok` result lines, no failure),
+`clippy --workspace --all-targets -- -D warnings` and `fmt --all -- --check`
+are green. No comparator change was used to gain files, and no oracle
+artefact was invoked without the selftests above.
+
+### Remaining work
+
+The largest open group is the cellist-template attack shifts (about 24 files)
+followed by the horn `\relative`/tuplet octaves (21). The 35 second-`\score`
+files of §46 remain at 1/35 under a fair reference: their divergence comes
+from tag-filtered voices, per-Voice MIDI tracks and real-time grace timing,
+already listed as §46 exceptions. Fixing them needs a wider score/selection
+model, not a comparator change.
