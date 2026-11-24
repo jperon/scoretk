@@ -56,7 +56,7 @@ impl Systems {
         }
 
         let mut hidden = vec![Vec::new(); count];
-        if score.style.hide_empty_staves {
+        if score.engraving.style.hide_empty_staves {
             // `SystemLayout::hideEmptyStaves` : le premier système n'est pas
             // concerné quand `dontHideStavesInFirstSystem` est actif.
             let mut begin = 0usize;
@@ -86,7 +86,7 @@ impl Systems {
 /// Calcule les portées masquées d'un système et les range à son début.
 fn hide_system(score: &Score, hidden: &mut [Vec<usize>], begin: usize, end: usize) {
     let first_system = begin == 0;
-    if first_system && score.style.dont_hide_staves_in_first_system {
+    if first_system && score.engraving.style.dont_hide_staves_in_first_system {
         return;
     }
     hidden[begin] = hidden_staves(score, begin, end);

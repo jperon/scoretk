@@ -141,7 +141,7 @@ pub(crate) struct VoiceCtx {
 impl Reader {
     fn new(version: MscVersion, origin_major: u32) -> Self {
         let mut score = Score::new();
-        score.style = StyleSettings::for_version(version.major());
+        score.engraving.style = StyleSettings::for_version(version.major());
         Self {
             version,
             origin_major,
@@ -185,7 +185,7 @@ impl Reader {
                 "source" => self.score.metadata.source = child.trimmed_text(),
                 "Part" => part::read_part(self, child),
                 "Style" => {
-                    self.score.style = credits::read_style(child, self.version);
+                    self.score.engraving.style = credits::read_style(child, self.version);
                     self.create_multi_measure_rests = child
                         .child("createMultiMeasureRests")
                         .and_then(Node::int_text)
@@ -193,7 +193,8 @@ impl Reader {
                     // Le style doit aussi rester dans le modèle : MuseScore
                     // reconstruit les `<multiMeasureRest>` seulement quand il
                     // est actif (`Measure::coveringMMRestOrThis`, dom/measure.cpp:2899).
-                    self.score.style.create_multi_measure_rests = self.create_multi_measure_rests;
+                    self.score.engraving.style.create_multi_measure_rests =
+                        self.create_multi_measure_rests;
                 }
                 // TODO(parité): `<Score>` imbriqué (parties liées),
                 // `<Order>`, `<SystemObjects>`, `<PageLocks>`, `<SystemLocks>`,
@@ -348,7 +349,8 @@ impl Reader {
             // Un saut de page s'applique après l'élément qui le porte.
             if staff == 0 && credits::page_break(child) {
                 page += 1;
-                self.score.style.page_count = self.score.style.page_count.max(page);
+                self.score.engraving.style.page_count =
+                    self.score.engraving.style.page_count.max(page);
             }
         }
     }

@@ -677,8 +677,7 @@ fn add_gap_rest(
         },
         tuplet: None,
         lyrics: Vec::new(),
-        beam_mode: crate::model::BeamMode::Auto,
-        beam_direction: None,
+        engraving: crate::model::ChordRestEngraving::default(),
         kind: crate::model::ChordRestKind::Rest(Rest {
             full_measure,
             gap: true,

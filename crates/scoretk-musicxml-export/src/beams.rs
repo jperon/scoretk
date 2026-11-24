@@ -297,8 +297,8 @@ fn measure_elements(
             dots: chord_rest.duration.dots,
             actual: global_ticks(score, chord_rest, measure),
             is_rest: chord_rest.is_rest(),
-            mode: chord_rest.beam_mode,
-            beam_direction: chord_rest.beam_direction,
+            mode: chord_rest.engraving.beam_mode,
+            beam_direction: chord_rest.engraving.beam_direction,
             tuplet: chord_rest.tuplet,
         });
     }
@@ -890,8 +890,8 @@ fn beam_up(
             continue;
         };
         has_notes = true;
-        if chord.stem != scoretk_core::model::StemDirection::Auto {
-            return chord.stem == scoretk_core::model::StemDirection::Up;
+        if chord.engraving.stem != scoretk_core::model::StemDirection::Auto {
+            return chord.engraving.stem == scoretk_core::model::StemDirection::Up;
         }
         for distance in stems::chord_distances(
             score,
@@ -1138,8 +1138,8 @@ fn element_from(score: &Score, cr: &BeamCr<'_>) -> Element {
         dots: cr.rest.duration.dots,
         actual: global_ticks(score, cr.rest, measure),
         is_rest: cr.rest.is_rest(),
-        mode: cr.rest.beam_mode,
-        beam_direction: cr.rest.beam_direction,
+        mode: cr.rest.engraving.beam_mode,
+        beam_direction: cr.rest.engraving.beam_direction,
         tuplet: cr.rest.tuplet,
     }
 }

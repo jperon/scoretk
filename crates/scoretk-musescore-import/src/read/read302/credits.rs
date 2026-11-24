@@ -118,10 +118,10 @@ mod tests {
         .expect("XML");
         let mut score = Score::new();
         read_vbox(&mut score, &node, 2);
-        assert_eq!(score.credits.len(), 1);
-        assert_eq!(score.credits[0].page, 2);
-        assert!((score.credits[0].vbox_height - 18.0).abs() < 1e-9);
-        assert_eq!(score.credits[0].justify, CreditJustify::Right);
+        assert_eq!(score.engraving.credits.len(), 1);
+        assert_eq!(score.engraving.credits[0].page, 2);
+        assert!((score.engraving.credits[0].vbox_height - 18.0).abs() < 1e-9);
+        assert_eq!(score.engraving.credits[0].justify, CreditJustify::Right);
 
         let break_node = super::super::xml::parse(
             "<VBox><LayoutBreak><subtype>page</subtype></LayoutBreak></VBox>",

@@ -877,13 +877,13 @@ pub(crate) fn write_rehearsal(out: &mut Out, mark: &RehearsalMark, xml_staff: us
 /// MuseScore parcourt les cadres verticaux de toutes les pages, dans l'ordre
 /// des pages ; `Credit::page` vient des `<LayoutBreak>` lus par le lecteur.
 pub(crate) fn write_credits(out: &mut Out, score: &Score) {
-    for credit in &score.credits {
-        write_credit(out, credit, &score.style);
+    for credit in &score.engraving.credits {
+        write_credit(out, credit, &score.engraving.style);
     }
 
     // MuseScore ajoute le copyright en bas au centre de chaque page.
     if !score.metadata.copyright.is_empty() {
-        for page in 1..=score.style.page_count.max(1) {
+        for page in 1..=score.engraving.style.page_count.max(1) {
             let credit = Credit {
                 text: RichText::new(score.metadata.copyright.clone()),
                 style: CreditStyle::Other("rights".to_owned()),
@@ -894,7 +894,7 @@ pub(crate) fn write_credits(out: &mut Out, score: &Score) {
                 vbox_height: 10.0,
                 extra_words: Vec::new(),
             };
-            write_credit(out, &credit, &score.style);
+            write_credit(out, &credit, &score.engraving.style);
         }
     }
 }

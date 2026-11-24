@@ -44,7 +44,7 @@ fn style_multi_repos_lu_et_ecrit() {
     let source = fs::read(racine.join("mmrest.mscx")).expect("corpus");
     let partition = lire(&source);
     assert!(
-        partition.style.create_multi_measure_rests,
+        partition.engraving.style.create_multi_measure_rests,
         "le corpus active les multi-repos"
     );
     let notes = partition.notes.len();
@@ -57,7 +57,7 @@ fn style_multi_repos_lu_et_ecrit() {
     );
     let relu = lire(ecrit.as_bytes());
     assert!(
-        relu.style.create_multi_measure_rests,
+        relu.engraving.style.create_multi_measure_rests,
         "le style doit survivre à la relecture"
     );
     let direct = scoretk_musicxml_export::export_musicxml(&partition).expect("export");
@@ -80,7 +80,7 @@ fn style_multi_repos_lu_et_ecrit() {
     // Cas non concerné : une partition sans ce style n'invente pas le tag.
     let nu = fs::read(racine.join("testNoteheads2.mscx")).expect("corpus");
     let nu_score = lire(&nu);
-    assert!(!nu_score.style.create_multi_measure_rests);
+    assert!(!nu_score.engraving.style.create_multi_measure_rests);
     let ecrit_nu = scoretk_musescore_export::write_mscx(&nu_score).expect("écriture");
     assert!(!ecrit_nu.contains("<createMultiMeasureRests>"));
 }

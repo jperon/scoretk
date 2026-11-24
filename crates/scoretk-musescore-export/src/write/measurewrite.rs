@@ -294,7 +294,7 @@ fn write_voice(
         }
         for chord_rest in group.chords {
             sync_tuplets(xml, ctx, chord_rest.tuplet, &mut open);
-            if let Some(direction) = chord_rest.beam_direction {
+            if let Some(direction) = chord_rest.engraving.beam_direction {
                 xml.start_element("Beam", &[]);
                 xml.tag("StemDirection", stem_name(direction));
                 xml.end_element();

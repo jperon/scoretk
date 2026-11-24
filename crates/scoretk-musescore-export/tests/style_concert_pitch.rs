@@ -44,8 +44,8 @@ fn style_concert_pitch_lu_et_ecrit() {
         .join("v3");
     let source = fs::read(racine.join("voices.mscx")).expect("corpus");
     let mut partition = lire(&source);
-    assert!(!partition.style.concert_pitch);
-    partition.style.concert_pitch = true;
+    assert!(!partition.engraving.style.concert_pitch);
+    partition.engraving.style.concert_pitch = true;
     let notes = partition.notes.len();
     let mesures = partition.measures.len();
 
@@ -56,7 +56,7 @@ fn style_concert_pitch_lu_et_ecrit() {
     );
     let relu = lire(ecrit.as_bytes());
     assert!(
-        relu.style.concert_pitch,
+        relu.engraving.style.concert_pitch,
         "le style doit survivre à la relecture"
     );
     let direct = scoretk_musicxml_export::export_musicxml(&partition).expect("export");
@@ -77,7 +77,7 @@ fn style_concert_pitch_lu_et_ecrit() {
     assert_eq!(partition.notes.len(), notes);
 
     // Cas non concerné : sans le style, aucun tag n'est inventé.
-    partition.style.concert_pitch = false;
+    partition.engraving.style.concert_pitch = false;
     let ordinaire = scoretk_musescore_export::write_mscx(&partition).expect("écriture");
     assert!(!ordinaire.contains("<concertPitch>"));
 }

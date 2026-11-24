@@ -313,7 +313,7 @@ pub(crate) fn read_direction(
     let default_placement = placement(placement_attribute);
 
     if let Some(spread) = wedge_spread {
-        score.style.hairpin_height_sp = spread / 10.0;
+        score.engraving.style.hairpin_height_sp = spread / 10.0;
     }
 
     if let Some((text, font_size)) = tbox_words {

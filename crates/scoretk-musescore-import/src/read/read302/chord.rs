@@ -30,9 +30,10 @@ use super::tables;
 use super::xml::Node;
 use super::{Reader, VoiceCtx};
 use scoretk_core::model::{
-    tpc, transpose_tpc, Accidental, BeamMode, Chord, ChordLineType, ChordRest, ChordRestKind,
-    Duration, DurationType, Fraction, GraceType, Lyrics, LyricsSyllabic, Note, NoteHeadType,
-    NoteId, Placement, Rest, Score, StemDirection, Transpose, Tuplet, TupletId, TupletNumberType,
+    tpc, transpose_tpc, Accidental, BeamMode, Chord, ChordEngraving, ChordLineType, ChordRest,
+    ChordRestEngraving, ChordRestKind, Duration, DurationType, Fraction, GraceType, Lyrics,
+    LyricsSyllabic, Note, NoteHeadType, NoteId, Placement, Rest, Score, StemDirection, Transpose,
+    Tuplet, TupletId, TupletNumberType,
 };
 
 /// Lit un `<Chord>` ou un `<Rest>`.
@@ -93,7 +94,10 @@ pub(crate) fn read_chord_rest(
             "small" => small = child.int_text().unwrap_or(0) != 0,
             "visible" => visible = child.int_text().unwrap_or(1) != 0,
             "BeamMode" => beam = tables::beam_mode(&child.trimmed_text()),
-            "Lyrics" => lyrics.push(read_lyrics(child, reader.score.style.lyrics_placement)),
+            "Lyrics" => lyrics.push(read_lyrics(
+                child,
+                reader.score.engraving.style.lyrics_placement,
+            )),
             "Articulation" => {
                 for articulation in notations::read_articulations(child) {
                     match crate::read::notation_names::ornament_from_articulation(&articulation) {
@@ -147,7 +151,7 @@ pub(crate) fn read_chord_rest(
         })
     } else {
         let mut chord = Chord {
-            stem,
+            engraving: ChordEngraving { stem },
             staff_move,
             small,
             grace,
@@ -181,8 +185,10 @@ pub(crate) fn read_chord_rest(
         ticks: None,
         tuplet: None,
         lyrics,
-        beam_mode: beam,
-        beam_direction: None,
+        engraving: ChordRestEngraving {
+            beam_mode: beam,
+            beam_direction: None,
+        },
         kind,
     }
 }

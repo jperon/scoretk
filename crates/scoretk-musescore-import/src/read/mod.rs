@@ -94,14 +94,14 @@ fn apply_style_file(score: &mut Score, mss: &[u8]) -> Result<()> {
             }
             Event::Text(value) if in_flag => {
                 if in_style_name == "createMultiMeasureRests" {
-                    score.style.create_multi_measure_rests = value.as_ref().trim() == "1";
+                    score.engraving.style.create_multi_measure_rests = value.as_ref().trim() == "1";
                 } else if in_style_name == "smallStaffMag" {
                     if let Ok(mag) = value.as_ref().trim().parse::<f64>() {
-                        score.style.small_staff_mag = mag;
+                        score.engraving.style.small_staff_mag = mag;
                     }
                 } else if in_style_name == "minEmptyMeasures" {
                     if let Ok(count) = value.as_ref().trim().parse::<usize>() {
-                        score.style.min_empty_measures = count.max(1);
+                        score.engraving.style.min_empty_measures = count.max(1);
                     }
                 }
             }

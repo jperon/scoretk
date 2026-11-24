@@ -93,7 +93,7 @@ pub(crate) fn render(
 
     let mut parts: Vec<String> = Vec::new();
     let mut token = String::new();
-    if let Some(stem) = stem_override(chord.stem) {
+    if let Some(stem) = stem_override(chord.engraving.stem) {
         token.push_str(stem);
         token.push(' ');
     }

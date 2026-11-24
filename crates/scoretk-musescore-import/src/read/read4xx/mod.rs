@@ -58,8 +58,8 @@ use crate::{Error, Result};
 use scoretk_core::model::{ids::StaffId, tpc};
 use scoretk_core::model::{
     text_style_defaults, Accidental, Annotation, Articulation, BarLine, BarLineType, BeamMode,
-    Breath, Chord, ChordRest, ChordRestKind, Clef, ClefType, Credit, CreditJustify, CreditStyle,
-    Duration, DurationType, Fraction, GraceChord, GraceType, Harmony, HarmonyDegree,
+    Breath, Chord, ChordEngraving, ChordRest, ChordRestKind, Clef, ClefType, Credit, CreditJustify,
+    CreditStyle, Duration, DurationType, Fraction, GraceChord, GraceType, Harmony, HarmonyDegree,
     HarmonyDegreeKind, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
     Measure, MidiArticulation, Note, NoteId, Part, Placement, RehearsalFrame, RehearsalMark,
     RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffText, StemDirection,
@@ -249,7 +249,7 @@ struct Reader {
 impl Reader {
     fn new(version: MscVersion) -> Self {
         let mut score = Score::new();
-        score.style = scoretk_core::model::StyleSettings::for_version(version.major());
+        score.engraving.style = scoretk_core::model::StyleSettings::for_version(version.major());
         Self {
             version: version.as_u32(),
             score,
@@ -296,7 +296,8 @@ impl Reader {
                 }
                 "Part" => self.read_part(child),
                 "Style" => {
-                    self.score.style = style::read(child, MscVersion::from_raw(self.version));
+                    self.score.engraving.style =
+                        style::read(child, MscVersion::from_raw(self.version));
                     self.create_multi_measure_rests = child
                         .child("createMultiMeasureRests")
                         .and_then(Element::int)
@@ -784,7 +785,8 @@ impl Reader {
             // commence la page d'après (mise en page de MuseScore).
             if staff_index == 0 && page_break(child) {
                 page += 1;
-                self.score.style.page_count = self.score.style.page_count.max(page);
+                self.score.engraving.style.page_count =
+                    self.score.engraving.style.page_count.max(page);
             }
         }
         Ok(())
@@ -1094,8 +1096,8 @@ impl Reader {
                     let mut chord_rest = ChordRest::chord(duration);
                     chord_rest.ticks = explicit_ticks;
                     chord_rest.tuplet = tuplet;
-                    chord_rest.beam_mode = beam;
-                    chord_rest.beam_direction = pending_beam.take();
+                    chord_rest.engraving.beam_mode = beam;
+                    chord_rest.engraving.beam_direction = pending_beam.take();
                     chord_rest.lyrics = lyrics;
                     chord_rest.kind = ChordRestKind::Chord(chord);
                     self.insert_item(
@@ -1121,7 +1123,7 @@ impl Reader {
                     chord_rest.ticks = parsed.explicit_ticks;
                     chord_rest.tuplet = tuplet;
                     chord_rest.lyrics = lyrics;
-                    chord_rest.beam_direction = pending_beam.take();
+                    chord_rest.engraving.beam_direction = pending_beam.take();
                     if let Some(rest) = chord_rest.rest_mut() {
                         rest.gap = gap;
                         rest.visible = visible;
@@ -1591,7 +1593,10 @@ impl Reader {
                 }
                 "Arpeggio" => arpeggio = Some(notations::read_arpeggio(child)),
                 "ChordLine" => chord_line = notations::read_chord_line(child),
-                "Lyrics" => lyrics.push(read_lyrics(child, self.score.style.lyrics_placement)),
+                "Lyrics" => lyrics.push(read_lyrics(
+                    child,
+                    self.score.engraving.style.lyrics_placement,
+                )),
                 "Spanner" => notations::read_spanner(self, child, tick, track),
                 // TODO(parité): <Stem>, <Hook>, <noStem>.
                 _ => {}
@@ -1663,7 +1668,10 @@ impl Reader {
                 "duration" => explicit = child.fraction(),
                 "gap" => gap = child.int().unwrap_or(0) != 0,
                 "visible" => visible = child.int().unwrap_or(1) != 0,
-                "Lyrics" => lyrics.push(read_lyrics(child, self.score.style.lyrics_placement)),
+                "Lyrics" => lyrics.push(read_lyrics(
+                    child,
+                    self.score.engraving.style.lyrics_placement,
+                )),
                 "Spanner" => notations::read_spanner(self, child, tick, track),
                 _ => {}
             }
@@ -2168,7 +2176,7 @@ impl ParsedChord {
         Chord {
             notes: self.notes,
             grace_chords,
-            stem: self.stem,
+            engraving: ChordEngraving { stem: self.stem },
             staff_move: self.staff_move,
             grace: self.grace,
             grace_slash: false,

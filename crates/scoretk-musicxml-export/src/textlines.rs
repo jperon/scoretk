@@ -233,7 +233,7 @@ fn write_line_words(out: &mut Out, text: &str, font: &LineFont) {
 /// Écrit le texte d'un cadre `TBox` au début de sa mesure
 /// (`tboxTextAsWords`), pour la première partie seulement.
 pub(crate) fn write_tboxes(out: &mut Out, context: &Context<'_>, measure_index: usize) {
-    for tbox in &context.score.tbox_texts {
+    for tbox in &context.score.engraving.tbox_texts {
         if tbox.measure == measure_index {
             super::text::write_tbox(out, tbox);
         }

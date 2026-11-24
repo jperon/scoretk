@@ -49,7 +49,7 @@ pub fn write_score(score: &Score) -> String {
     xml.tag("programRevision", "");
     xml.start_element("Score", &[]);
     xml.tag("Division", &score.division.to_string());
-    write_style(&mut xml, &score.style);
+    write_style(&mut xml, &score.engraving.style);
     write_meta_tags(&mut xml, &score.metadata);
     write_parts(&mut xml, &context);
     for staff_index in 0..score.staves.len() {

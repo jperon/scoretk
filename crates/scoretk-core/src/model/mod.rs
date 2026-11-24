@@ -114,7 +114,10 @@ pub use fret_diagram::{FretBarre, FretDiagram, FretDot, FretDotType, FretMarker,
 pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use instrument_channel::InstrumentChannel;
-pub use layers::{ConversionReport, Engraving, Extensions, Layers, Loss, Metric, Playback, Text};
+pub use layers::{
+    ChordEngraving, ChordRestEngraving, ConversionReport, Engraving, Extensions, Layers, Loss,
+    Metric, Playback, Text,
+};
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::{Measure, MeasureRepeatMark};
 pub use mmrest::{derived_mmrest_runs, MultiMeasureRests};

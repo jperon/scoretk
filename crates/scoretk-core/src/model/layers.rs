@@ -25,8 +25,11 @@
 
 use std::borrow::Cow;
 
+use super::chord::{BeamMode, StemDirection};
 use super::fraction::Fraction;
 use super::ids::Track;
+use super::style::StyleSettings;
+use super::text::{Credit, TboxText};
 
 /// Set of model layers, stored as a compact bit set.
 ///
@@ -174,9 +177,36 @@ pub struct Text {}
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Playback {}
 
-/// L5 engraving and layout. Empty until step 2 of the migration plan.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Engraving {}
+/// L5 engraving and layout: score-wide style and frame texts.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Engraving {
+    /// Global style settings (page size, hidden staves, lyrics placement…).
+    pub style: StyleSettings,
+    /// Title-frame texts exported as MusicXML `<credit>`.
+    pub credits: Vec<Credit>,
+    /// `TBox` frame texts exported as MusicXML directional `<words>`.
+    pub tbox_texts: Vec<TboxText>,
+}
+
+/// L5 engraving flags attached to a [`super::ChordRest`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ChordRestEngraving {
+    /// Beam mode (`BeamMode` in `engraving/types/types.h`).
+    pub beam_mode: BeamMode,
+    /// Beam direction read from `<Beam><StemDirection>`.
+    ///
+    /// MuseScore attaches the `Beam` object it reads to the first chord of the
+    /// group; its explicit direction then overrides the computed one. `None`
+    /// means no direction was written (4.x files write an empty `<Beam>`).
+    pub beam_direction: Option<StemDirection>,
+}
+
+/// L5 engraving flags attached to a [`super::Chord`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ChordEngraving {
+    /// Stem direction (`Chord::stemDirection()` in `engraving/dom/chord.h`).
+    pub stem: StemDirection,
+}
 
 /// L6 per-format extensions. Empty until step 5 of the migration plan.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

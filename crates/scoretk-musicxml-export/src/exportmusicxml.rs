@@ -434,7 +434,9 @@ impl<'a> Context<'a> {
         // `ExportMusicXml::write` (exportmusicxml.cpp:8944) suit le style
         // `Sid::concertPitch` de la partition ; `pitch2xml` (l. 1654) s'en sert
         // pour annuler la transposition. Une surcharge explicite gagne.
-        let concert_pitch = options.concert_pitch.unwrap_or(score.style.concert_pitch);
+        let concert_pitch = options
+            .concert_pitch
+            .unwrap_or(score.engraving.style.concert_pitch);
         Self {
             score,
             options,
@@ -495,7 +497,7 @@ impl<'a> Context<'a> {
 
         self.work(out);
         self.identification(out);
-        layout::write_defaults(out, &self.score.style, self.concert_pitch);
+        layout::write_defaults(out, &self.score.engraving.style, self.concert_pitch);
         text::write_credits(out, self.score);
         self.part_list(out);
         self.write_parts(out, nuances);
@@ -2461,7 +2463,7 @@ impl Context<'_> {
             // (`staff.cpp:806-809`) ; `smallStaffMag` vient du style
             // (défaut 0.7, mais un `.mscz` peut le fixer à 0.9).
             let mag = if staff.small {
-                self.score.style.small_staff_mag
+                self.score.engraving.style.small_staff_mag
             } else {
                 1.0
             } * f64::from(staff.user_mag_percent)
@@ -2965,7 +2967,7 @@ fn write_notehead(out: &mut Out, note: &Note, chord: &Chord, duration: Duration)
         _ => {}
     }
 
-    let up = chord.stem != StemDirection::Down;
+    let up = chord.engraving.stem != StemDirection::Down;
     let head_type = if note.head == NoteHeadType::Auto {
         duration.kind.head_type()
     } else {

@@ -96,10 +96,10 @@ struct PendingGrace {
 pub fn build(root: &Element, analysis: &Analysis) -> Result<Score> {
     let mut score = Score::with_division(analysis.divisions.max(1));
     score.metadata = read_metadata(root);
-    score.credits = crate::credits::read_credits(root);
+    score.engraving.credits = crate::credits::read_credits(root);
     // Le nombre de pages conditionne la répétition du copyright à l'export
     // (`credits`) : il se déduit des crédits, seule information lisible.
-    score.style.page_count = root
+    score.engraving.style.page_count = root
         .children_named("credit")
         .filter_map(|credit| credit.attribute("page"))
         .filter_map(|page| page.parse::<u32>().ok())
@@ -576,8 +576,8 @@ fn read_measure(
             if spacing {
                 // Visibilité par mesure (cutaway) : non modélisée par le pivot.
             } else if staff_only_rests(score, measure_index, staff_id) {
-                score.style.hide_empty_staves = true;
-                score.style.dont_hide_staves_in_first_system = false;
+                score.engraving.style.hide_empty_staves = true;
+                score.engraving.style.dont_hide_staves_in_first_system = false;
             } else {
                 score.staff_mut(staff_id).visible = false;
             }
@@ -709,20 +709,20 @@ fn read_note(
     }
     chord_rest.lyrics = read_lyrics(element);
     if let Some(mode) = read_beam(element) {
-        chord_rest.beam_mode = mode;
+        chord_rest.engraving.beam_mode = mode;
         if matches!(
             mode,
             scoretk_core::model::BeamMode::Begin
                 | scoretk_core::model::BeamMode::Begin16
                 | scoretk_core::model::BeamMode::Begin32
         ) {
-            chord_rest.beam_direction = read_stem(element);
+            chord_rest.engraving.beam_direction = read_stem(element);
         }
     }
     if let Some(chord) = chord_rest.chord_mut() {
         chord.staff_move = staff_move;
         if let Some(stem) = read_stem(element) {
-            chord.stem = stem;
+            chord.engraving.stem = stem;
         }
     }
 
@@ -1458,7 +1458,7 @@ fn read_stem(element: &Element) -> Option<StemDirection> {
 /// Attributs portés par l'accord (hampe, ornement barré, trémolo).
 fn apply_chord_attributes(element: &Element, chord: &mut Chord) {
     if let Some(stem) = read_stem(element) {
-        chord.stem = stem;
+        chord.engraving.stem = stem;
     }
     if let Some(grace) = element.child("grace") {
         chord.grace_slash = grace.attribute("slash") == Some("yes");

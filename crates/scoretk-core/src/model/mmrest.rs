@@ -112,7 +112,7 @@ impl MultiMeasureRests {
 /// groupe davantage.
 pub fn derived_mmrest_runs(score: &Score) -> Vec<Option<u16>> {
     let mut runs = vec![None; score.measures.len()];
-    if !score.style.create_multi_measure_rests {
+    if !score.engraving.style.create_multi_measure_rests {
         return runs;
     }
     // Un `.mscx` qui porte des marqueurs `<multiMeasureRest>` a déjà enregistré
@@ -129,7 +129,7 @@ pub fn derived_mmrest_runs(score: &Score) -> Vec<Option<u16>> {
     if has_explicit && !score.metadata.msc_version.starts_with("3.") {
         return runs;
     }
-    let minimum = score.style.min_empty_measures.max(1);
+    let minimum = score.engraving.style.min_empty_measures.max(1);
     let mut index = 0usize;
     while index < score.measures.len() {
         if !valid_mmrest_measure(score, index) {
@@ -354,8 +354,8 @@ mod tests {
         chords_on_hidden: bool,
     ) -> Score {
         let mut score = Score::new();
-        score.style = StyleSettings::for_version(3);
-        score.style.create_multi_measure_rests = true;
+        score.engraving.style = StyleSettings::for_version(3);
+        score.engraving.style.create_multi_measure_rests = true;
         let mut staff_ids = Vec::new();
         for &(visible, part_visible) in staves {
             let mut part = Part::new("P", "P");
@@ -409,7 +409,7 @@ mod tests {
     #[test]
     fn un_accord_sur_portee_affichee_coupe_le_groupe() {
         let mut score = partition(&[(true, true), (true, false)], 5, &[1, 2, 3], true);
-        score.style.min_empty_measures = 1;
+        score.engraving.style.min_empty_measures = 1;
         // Un accord sur la portée visible de la troisième mesure.
         let segment = &mut score.measures[2].segments[0];
         segment.set_element(
@@ -424,8 +424,8 @@ mod tests {
     fn le_minimum_depend_de_la_version_du_style() {
         let score = partition(&[(true, true)], 3, &[1], false);
         let mut v4 = score.clone();
-        v4.style = StyleSettings::for_version(4);
-        v4.style.create_multi_measure_rests = true;
+        v4.engraving.style = StyleSettings::for_version(4);
+        v4.engraving.style.create_multi_measure_rests = true;
         assert_eq!(derived_mmrest_runs(&score), vec![None, None, None]);
         assert_eq!(derived_mmrest_runs(&v4), vec![None, Some(1), None]);
     }
@@ -433,15 +433,15 @@ mod tests {
     #[test]
     fn rien_sans_create_multi_measure_rests() {
         let mut score = partition(&[(true, true)], 3, &[1], false);
-        score.style.min_empty_measures = 1;
-        score.style.create_multi_measure_rests = false;
+        score.engraving.style.min_empty_measures = 1;
+        score.engraving.style.create_multi_measure_rests = false;
         assert_eq!(derived_mmrest_runs(&score), vec![None, None, None]);
     }
 
     #[test]
     fn une_mesure_irreguliere_ne_groupe_pas() {
         let mut score = partition(&[(true, true)], 4, &[1, 2], false);
-        score.style.min_empty_measures = 1;
+        score.engraving.style.min_empty_measures = 1;
         score.measures[2].len = Fraction::new(3, 4);
         let runs = derived_mmrest_runs(&score);
         assert_eq!(runs, vec![None, Some(1), None, None]);
@@ -450,7 +450,7 @@ mod tests {
     #[test]
     fn la_mesure_vide_doit_etre_un_seul_silence() {
         let mut score = partition(&[(true, true)], 3, &[1], false);
-        score.style.min_empty_measures = 1;
+        score.engraving.style.min_empty_measures = 1;
         // Deuxième segment de silence dans la mesure vide : « measure is not
         // empty if there is more than one rest » (`measurelayout.cpp:629-635`).
         let tick = Fraction::from_integer(1) + Fraction::new(1, 2);
@@ -510,7 +510,7 @@ mod tests {
     #[test]
     fn un_point_d_orgue_coupe_le_groupe() {
         let mut score = partition(&[(true, true)], 3, &[1], false);
-        score.style.min_empty_measures = 1;
+        score.engraving.style.min_empty_measures = 1;
         let fermata = crate::model::Fermata::new(crate::model::FermataType::Normal);
         score.measures[1].segments[0].add_annotation(
             Track::new(StaffId::from_index(0), 0),

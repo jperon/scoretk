@@ -68,8 +68,9 @@ pub(crate) fn stem_up(
 ) -> bool {
     // 1. Direction explicite : elle ne s'applique pas à un accord ligaturé ni
     //    à un trémolo à deux notes (`computeUp`).
-    if chord.stem != StemDirection::Auto && beam_up.is_none() && !chord.tremolo_two_chord {
-        return chord.stem == StemDirection::Up;
+    if chord.engraving.stem != StemDirection::Auto && beam_up.is_none() && !chord.tremolo_two_chord
+    {
+        return chord.engraving.stem == StemDirection::Up;
     }
 
     // 2. Accord ligaturé : la ligature impose sa direction.

@@ -1617,7 +1617,7 @@ fn corpus_paroles() {
     for specification in &specifications {
         let note = score.add_note(Note::new(specification.pitch, specification.tpc));
         let mut chord_rest = ChordRest::chord(specification.duration);
-        chord_rest.beam_mode = specification.beam;
+        chord_rest.engraving.beam_mode = specification.beam;
         if let Some((syllabic, text, melisma)) = specification.lyric {
             let mut lyric = Lyrics::new(0, syllabic, text);
             if melisma {
@@ -2615,7 +2615,7 @@ fn concert_pitch_suit_le_style_de_la_partition() {
     let (part_id, staff) = piano(&mut score);
     // Piccolo : +12 chromatique, hauteur sonnante D5 (74), écrite D4.
     score.part_mut(part_id).instrument.transpose = Some(Transpose::new(0, 12));
-    score.style.concert_pitch = true;
+    score.engraving.style.concert_pitch = true;
     let piste = Track::new(staff, 0);
     let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
     ajouter_accord(
@@ -3091,7 +3091,7 @@ fn staff_size_selon_small_staff_mag_du_style() {
     let part_id = score.add_part(Part::new("Voix", "Vx"));
     let staff = score.add_staff(part_id);
     score.staff_mut(staff).small = true;
-    score.style.small_staff_mag = 0.9;
+    score.engraving.style.small_staff_mag = 0.9;
     let track = Track::new(score.staff(staff).id, 0);
     let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
     ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
@@ -3648,8 +3648,8 @@ fn multi_repos_deduit_des_mesures_vides() {
     // remplace la suite de mesures vides, et `measureStyle`
     // (`exportmusicxml.cpp:6581-6601`) écrit le groupe sur sa première mesure.
     let mut score = Score::new();
-    score.style = scoretk_core::model::StyleSettings::for_version(3);
-    score.style.create_multi_measure_rests = true;
+    score.engraving.style = scoretk_core::model::StyleSettings::for_version(3);
+    score.engraving.style.create_multi_measure_rests = true;
     let (_, staff) = piano(&mut score);
     let track = Track::new(staff, 0);
     for index in 0..4usize {
@@ -3685,8 +3685,8 @@ fn multi_repos_ignore_une_partie_masquee() {
     // (`staff.cpp:1420-1423`), donc ses accords ne rendent pas la mesure
     // non vide et le groupe couvre les deux mesures.
     let mut score = Score::new();
-    score.style = scoretk_core::model::StyleSettings::for_version(3);
-    score.style.create_multi_measure_rests = true;
+    score.engraving.style = scoretk_core::model::StyleSettings::for_version(3);
+    score.engraving.style.create_multi_measure_rests = true;
     let (_, visible) = piano(&mut score);
     let hidden_part = score.add_part(Part::new("Klaver", "Kl."));
     score.part_mut(hidden_part).visible = false;
@@ -3867,9 +3867,9 @@ fn triolet_avec_hampe(placement: Option<Placement>, stem: StemDirection) -> Stri
         let mut chord_rest = ChordRest::chord(Duration::eighth());
         chord_rest.tuplet = Some(tuplet);
         // Une ligature explicite isole le test des groupes de signature.
-        chord_rest.beam_mode = BeamMode::Mid;
+        chord_rest.engraving.beam_mode = BeamMode::Mid;
         let chord = chord_rest.chord_mut().expect("accord");
-        chord.stem = stem;
+        chord.engraving.stem = stem;
         chord.notes.push(score.add_note(Note::new(64, tpc::E)));
         ajouter_element(&mut score, &mut measure, track, tick, chord_rest);
     }
@@ -3917,7 +3917,7 @@ fn triolet_au_milieu_d_une_ligature() -> String {
     for index in 0..6 {
         let tick = Fraction::new(index, 8);
         let mut chord_rest = ChordRest::chord(Duration::eighth());
-        chord_rest.beam_mode = if index == 0 {
+        chord_rest.engraving.beam_mode = if index == 0 {
             BeamMode::Begin
         } else {
             BeamMode::Mid
@@ -3926,7 +3926,7 @@ fn triolet_au_milieu_d_une_ligature() -> String {
             chord_rest.tuplet = Some(tuplet);
         }
         let chord = chord_rest.chord_mut().expect("accord");
-        chord.stem = StemDirection::Up;
+        chord.engraving.stem = StemDirection::Up;
         chord.notes.push(score.add_note(Note::new(64, tpc::E)));
         ajouter_element(&mut score, &mut measure, track, tick, chord_rest);
     }

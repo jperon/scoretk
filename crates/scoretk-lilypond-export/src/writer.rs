@@ -83,6 +83,7 @@ impl<'a> Writer<'a> {
         let metadata = &self.score.metadata;
         let credit = |style: CreditStyle| {
             self.score
+                .engraving
                 .credits
                 .iter()
                 .find(|credit| credit.style == style)

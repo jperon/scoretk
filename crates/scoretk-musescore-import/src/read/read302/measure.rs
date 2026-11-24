@@ -179,7 +179,7 @@ fn read_voice(
                     chord.grace_chords = std::mem::take(&mut grace);
                 }
                 cr.tuplet = ctx.tuplets.last().copied();
-                cr.beam_direction = pending_beam.take();
+                cr.engraving.beam_direction = pending_beam.take();
                 let measure_len = reader.score.measures[index].len;
                 let advance = chord::advance(&cr, measure_len, &ctx.tuplets, &reader.score);
                 segment_mut(

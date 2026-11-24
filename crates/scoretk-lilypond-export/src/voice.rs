@@ -294,7 +294,7 @@ pub(crate) fn render_body(
     // un repère de répétition tombe au même endroit : le texte passe donc par
     // un `\markup` attaché à la note.
     if staff == 0 && voice == 0 {
-        for tbox in &score.tbox_texts {
+        for tbox in &score.engraving.tbox_texts {
             let measure_index = tbox.measure.min(score.measures.len().saturating_sub(1));
             if let Some(measure) = score.measures.get(measure_index) {
                 let plain = tbox.text.plain().trim();

@@ -161,7 +161,8 @@ fn staff_details_portee_vide_masquee_pas_invisible() {
         "la portée masquée sur un système ne doit pas devenir invisible"
     );
     assert!(
-        score.style.hide_empty_staves && !score.style.dont_hide_staves_in_first_system,
+        score.engraving.style.hide_empty_staves
+            && !score.engraving.style.dont_hide_staves_in_first_system,
         "le style hideEmptyStaves doit être déduit du print-object=\"no\""
     );
 }

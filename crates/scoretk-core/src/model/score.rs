@@ -36,7 +36,6 @@ use super::note::Note;
 use super::part::{Part, Staff};
 use super::playback::PlaybackTransposition;
 use super::spanner::Spanner;
-use super::style::StyleSettings;
 use super::text::{Credit, TboxText};
 use super::tuplet::Tuplet;
 
@@ -126,8 +125,6 @@ impl Default for ScoreMetadata {
 pub struct CoreScore {
     /// Métadonnées d'œuvre.
     pub metadata: ScoreMetadata,
-    /// Réglages de style globaux (format de page, `lyricsPlacement`…).
-    pub style: StyleSettings,
     /// Divisions MusicXML par noire.
     pub division: u32,
     /// Parties, dans l'ordre de la partition.
@@ -136,10 +133,6 @@ pub struct CoreScore {
     pub staves: Vec<Staff>,
     /// Mesures, dans l'ordre chronologique.
     pub measures: Vec<Measure>,
-    /// Textes de cadre de titre, exportés en `<credit>`.
-    pub credits: Vec<Credit>,
-    /// Textes de cadres `TBox`, exportés en `<words>` de direction.
-    pub tbox_texts: Vec<TboxText>,
     /// Transposition de lecture trouvée dans un second `\score` MIDI LilyPond.
     ///
     /// `None` pour toutes les autres sources. Ignoré par tous les écrivains
@@ -172,9 +165,10 @@ pub struct CoreScore {
 /// Partition en mémoire : noyau commun toujours présent et couches optionnelles.
 ///
 /// Le noyau est [`CoreScore`] ; `Score` lui transfère l'accès aux champs par
-/// [`Deref`], si bien que `score.notes`, `score.measures` ou `score.style`
-/// continuent de fonctionner. Les couches et le rapport sont des champs
-/// distincts, sans effet sur le format de données lu ou écrit.
+/// [`Deref`], si bien que `score.notes` ou `score.measures` continuent de
+/// fonctionner. Les couches et le rapport sont des champs distincts, sans
+/// effet sur le format de données lu ou écrit. La gravure est dans
+/// [`Score::engraving`] (accès explicite, voir `docs/agents/model-modularisation.md`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Score {
     /// Noyau commun : temps, arènes et événements.
@@ -190,8 +184,8 @@ pub struct Score {
     pub text: Option<Text>,
     /// Couche lecture (L4), vide tant que les champs n'y sont pas déplacés.
     pub playback: Option<Playback>,
-    /// Couche gravure (L5), vide tant que les champs n'y sont pas déplacés.
-    pub engraving: Option<Engraving>,
+    /// Couche gravure (L5) : style, `<credit>` et textes de cadres.
+    pub engraving: Engraving,
     /// Extensions par format (L6), vides tant qu'aucun format n'est ajouté.
     pub extensions: Extensions,
 }
@@ -247,13 +241,10 @@ impl Score {
         Self {
             core: CoreScore {
                 metadata: ScoreMetadata::default(),
-                style: StyleSettings::default(),
                 division,
                 parts: Vec::new(),
                 staves: Vec::new(),
                 measures: Vec::new(),
-                credits: Vec::new(),
-                tbox_texts: Vec::new(),
                 playback_transposition: None,
                 playback_articulate: false,
                 playback_unfold_repeats: true,
@@ -265,7 +256,7 @@ impl Score {
             metric: None,
             text: None,
             playback: None,
-            engraving: None,
+            engraving: Engraving::default(),
             extensions: Extensions::default(),
         }
     }
@@ -309,14 +300,14 @@ impl Score {
 
     /// Ajoute un texte de cadre de titre (`<credit>` à l'export).
     pub fn add_credit(&mut self, credit: Credit) -> usize {
-        self.credits.push(credit);
-        self.credits.len() - 1
+        self.engraving.credits.push(credit);
+        self.engraving.credits.len() - 1
     }
 
     /// Ajoute un texte de cadre `TBox` (`<words>` à l'export).
     pub fn add_tbox_text(&mut self, text: TboxText) -> usize {
-        self.tbox_texts.push(text);
-        self.tbox_texts.len() - 1
+        self.engraving.tbox_texts.push(text);
+        self.engraving.tbox_texts.len() - 1
     }
 
     /// Ajoute une note dans l'arène.

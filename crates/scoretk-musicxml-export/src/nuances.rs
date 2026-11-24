@@ -123,7 +123,7 @@ impl Nuances {
             true,
             number,
             xml_staff,
-            score.style.hairpin_height_sp,
+            score.engraving.style.hairpin_height_sp,
         );
         // L'arrêt a déjà été écrit (voix traitée avant celle du début) :
         // le numéro n'a plus à rester réservé.
@@ -166,7 +166,7 @@ impl Nuances {
                 false,
                 number,
                 xml_staff,
-                score.style.hairpin_height_sp,
+                score.engraving.style.hairpin_height_sp,
             );
             if self.started.remove(&index) {
                 self.release(SpannerId::from_index(index), line, number);

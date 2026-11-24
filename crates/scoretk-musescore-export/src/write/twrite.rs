@@ -79,11 +79,11 @@ pub(crate) fn write_chord_rest(
         if let Some(ticks) = chord_rest.ticks {
             xml.tag("duration", &fraction(ticks));
         }
-        if chord_rest.beam_mode != BeamMode::Auto {
-            xml.tag("BeamMode", names::beam_mode(chord_rest.beam_mode));
+        if chord_rest.engraving.beam_mode != BeamMode::Auto {
+            xml.tag("BeamMode", names::beam_mode(chord_rest.engraving.beam_mode));
         }
-        if chord.stem != StemDirection::Auto {
-            xml.tag("StemDirection", stem_name(chord.stem));
+        if chord.engraving.stem != StemDirection::Auto {
+            xml.tag("StemDirection", stem_name(chord.engraving.stem));
         }
         if chord.staff_move != 0 {
             xml.tag("staffMove", &chord.staff_move.to_string());
@@ -141,8 +141,8 @@ fn write_grace_chord(
     if grace.chord.small {
         xml.tag("small", "1");
     }
-    if grace.chord.stem != StemDirection::Auto {
-        xml.tag("StemDirection", stem_name(grace.chord.stem));
+    if grace.chord.engraving.stem != StemDirection::Auto {
+        xml.tag("StemDirection", stem_name(grace.chord.engraving.stem));
     }
     write_chord_contents(xml, ctx, parent, &grace.chord, tick, track);
     xml.end_element();

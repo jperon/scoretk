@@ -258,8 +258,8 @@ fn tuplet_direction_up(
         let Some(chord) = element.rest.chord_ref() else {
             continue;
         };
-        up += if chord.stem != StemDirection::Auto {
-            if chord.stem == StemDirection::Up {
+        up += if chord.engraving.stem != StemDirection::Auto {
+            if chord.engraving.stem == StemDirection::Up {
                 1000
             } else {
                 -1000

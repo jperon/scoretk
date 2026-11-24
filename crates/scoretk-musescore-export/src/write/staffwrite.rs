@@ -247,14 +247,14 @@ pub(crate) fn write_staff_music(xml: &mut XmlWriter, ctx: &WriteContext<'_>, sta
         }
     }
     if staff_index == 0 {
-        write_page_count(xml, ctx, ctx.score.style.page_count.max(1));
+        write_page_count(xml, ctx, ctx.score.engraving.style.page_count.max(1));
     }
     xml.end_element();
 }
 
 /// Écrit les crédits (`<VBox>`) et les sauts de page qui les séparent.
 fn write_frames(xml: &mut XmlWriter, ctx: &WriteContext<'_>) {
-    let credits = &ctx.score.credits;
+    let credits = &ctx.score.engraving.credits;
     let last_page = credits
         .iter()
         .map(|credit| credit.page.max(1))
@@ -328,7 +328,7 @@ fn write_tboxes(
     measure_index: usize,
     placement: Placement,
 ) {
-    for text in &ctx.score.tbox_texts {
+    for text in &ctx.score.engraving.tbox_texts {
         if text.measure != measure_index || text.placement != placement {
             continue;
         }
@@ -361,6 +361,7 @@ fn write_page_break(xml: &mut XmlWriter) {
 fn write_page_count(xml: &mut XmlWriter, ctx: &WriteContext<'_>, page_count: u32) {
     let credited_pages = ctx
         .score
+        .engraving
         .credits
         .iter()
         .map(|credit| credit.page.max(1))

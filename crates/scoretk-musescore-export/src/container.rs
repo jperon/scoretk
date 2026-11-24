@@ -97,7 +97,7 @@ fn style_file(score: &Score) -> String {
     let mut xml = XmlWriter::new();
     xml.start_document();
     xml.start_element("museScore", &[("version", crate::MSC_VERSION)]);
-    write_style(&mut xml, &score.style);
+    write_style(&mut xml, &score.engraving.style);
     xml.end_element();
     xml.finish()
 }

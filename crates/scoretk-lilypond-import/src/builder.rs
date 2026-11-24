@@ -32,13 +32,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use scoretk_core::duration_list::to_duration_list;
 use scoretk_core::model::{
-    Accidental, AccidentalType, Annotation, BarLineType, Chord, ChordRest, ChordRestKind, Clef,
-    Credit, CreditStyle, Duration, Dynamic, Fingering, Fraction, Glissando, GlissandoType,
-    GraceChord, Hairpin, HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic, Measure, Note,
-    NoteId, Part, PartId, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score,
-    ScoreMetadata, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation,
-    SpannerType, Staff, StaffBracket, StaffId, Tempo, Track, Transpose, Trill, TrillType, Tuplet,
-    TupletId, VOICES,
+    Accidental, AccidentalType, Annotation, BarLineType, Chord, ChordEngraving, ChordRest,
+    ChordRestEngraving, ChordRestKind, Clef, Credit, CreditStyle, Duration, Dynamic, Fingering,
+    Fraction, Glissando, GlissandoType, GraceChord, Hairpin, HairpinType, Instrument, LineStyle,
+    Lyrics, LyricsSyllabic, Measure, Note, NoteId, Part, PartId, PedalInfo, Placement,
+    RehearsalMark, Rest, RichText, Score, ScoreMetadata, Segment, SegmentItem, SegmentType,
+    Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff, StaffBracket, StaffId, Tempo,
+    Track, Transpose, Trill, TrillType, Tuplet, TupletId, VOICES,
 };
 
 mod articulate;
@@ -2181,8 +2181,7 @@ fn place_chord(
                         ticks: None,
                         tuplet: None,
                         lyrics: Vec::new(),
-                        beam_mode: Default::default(),
-                        beam_direction: None,
+                        engraving: ChordRestEngraving::default(),
                         kind: ChordRestKind::Rest(Rest {
                             full_measure: false,
                             gap: false,
@@ -2239,8 +2238,7 @@ fn place_chord(
                         ticks: None,
                         tuplet: event.tuplet.and_then(|n| tuplets.get(n).copied()),
                         lyrics: Vec::new(),
-                        beam_mode: Default::default(),
-                        beam_direction: None,
+                        engraving: ChordRestEngraving::default(),
                         kind: ChordRestKind::Rest(Rest {
                             full_measure: false,
                             gap: false,
@@ -2251,7 +2249,7 @@ fn place_chord(
                     match &event.content {
                         ChordContent::Notes(notes) => {
                             let mut chord = Chord {
-                                stem: event.stem,
+                                engraving: ChordEngraving { stem: event.stem },
                                 staff_move,
                                 articulations: articulation_objects(&event.articulations),
                                 ornaments: ornament_objects(&event.ornaments),
@@ -2324,7 +2322,7 @@ fn place_chord(
     let mut chord_rest = match &event.content {
         ChordContent::Notes(notes) => {
             let mut chord = Chord {
-                stem: event.stem,
+                engraving: ChordEngraving { stem: event.stem },
                 staff_move,
                 articulations: articulation_objects(&event.articulations),
                 ornaments: ornament_objects(&event.ornaments),
@@ -2355,8 +2353,7 @@ fn place_chord(
                 ticks: event.explicit_ticks,
                 tuplet: event.tuplet.and_then(|index| tuplets.get(index).copied()),
                 lyrics: Vec::new(),
-                beam_mode: Default::default(),
-                beam_direction: None,
+                engraving: ChordRestEngraving::default(),
                 kind: ChordRestKind::Chord(chord),
             }
         }
@@ -2365,8 +2362,7 @@ fn place_chord(
             ticks: event.explicit_ticks,
             tuplet: event.tuplet.and_then(|index| tuplets.get(index).copied()),
             lyrics: Vec::new(),
-            beam_mode: Default::default(),
-            beam_direction: None,
+            engraving: ChordRestEngraving::default(),
             kind: ChordRestKind::Rest(Rest {
                 full_measure: false,
                 gap: false,
@@ -2403,8 +2399,7 @@ fn place_chord(
             ticks: None,
             tuplet: None,
             lyrics: Vec::new(),
-            beam_mode: Default::default(),
-            beam_direction: None,
+            engraving: ChordRestEngraving::default(),
             kind: ChordRestKind::Rest(Rest {
                 full_measure: true,
                 gap: false,

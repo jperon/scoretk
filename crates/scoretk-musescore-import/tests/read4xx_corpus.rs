@@ -435,14 +435,17 @@ fn lit_les_textes_et_les_credits() {
     let score = read_score(&container).expect("lecture");
 
     // Crédits : les textes de `<VBox>` dans l'ordre, le texte invisible écarté.
-    assert_eq!(score.credits.len(), 3);
-    assert_eq!(score.credits[0].style, CreditStyle::Title);
-    assert_eq!(score.credits[0].text.plain(), "Mon titre");
-    assert_eq!(score.credits[0].style.credit_type(), Some("title"));
-    assert_eq!(score.credits[1].style, CreditStyle::Subtitle);
-    assert_eq!(score.credits[1].text.plain(), "Sous-titre");
-    assert_eq!(score.credits[2].style, CreditStyle::Composer);
-    assert_eq!(score.credits[2].text.plain(), "Compositrice");
+    assert_eq!(score.engraving.credits.len(), 3);
+    assert_eq!(score.engraving.credits[0].style, CreditStyle::Title);
+    assert_eq!(score.engraving.credits[0].text.plain(), "Mon titre");
+    assert_eq!(
+        score.engraving.credits[0].style.credit_type(),
+        Some("title")
+    );
+    assert_eq!(score.engraving.credits[1].style, CreditStyle::Subtitle);
+    assert_eq!(score.engraving.credits[1].text.plain(), "Sous-titre");
+    assert_eq!(score.engraving.credits[2].style, CreditStyle::Composer);
+    assert_eq!(score.engraving.credits[2].text.plain(), "Compositrice");
     assert_eq!(score.metadata.work_title, "Oeuvre");
 
     let annotations = &score.measures[0].segments[0].annotations;

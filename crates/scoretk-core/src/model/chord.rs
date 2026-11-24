@@ -34,6 +34,7 @@
 use super::duration::{Duration, DurationType};
 use super::fraction::Fraction;
 use super::ids::{NoteId, TupletId};
+use super::layers::{ChordEngraving, ChordRestEngraving};
 use super::lyrics::Lyrics;
 use super::notation::{Arpeggio, ChordLineType, Ornament, Tremolo};
 
@@ -229,8 +230,8 @@ pub struct Chord {
     /// [`GraceChord::duration`] leur durée. Leurs notes restent dans
     /// l'arène [`super::Score::notes`].
     pub grace_chords: Vec<GraceChord>,
-    /// Direction de hampe.
-    pub stem: StemDirection,
+    /// Données de gravure de l'accord (direction de hampe, L5).
+    pub engraving: ChordEngraving,
     /// Décalage de portée (`Chord::staffMove`).
     ///
     /// `0` : notes sur la portée de l'accord ; `1` : une portée en dessous
@@ -369,15 +370,8 @@ pub struct ChordRest {
     pub tuplet: Option<TupletId>,
     /// Paroles attachées à cet accord ou silence.
     pub lyrics: Vec<Lyrics>,
-    /// Mode de ligature.
-    pub beam_mode: BeamMode,
-    /// Direction de la ligature lue dans `<Beam><StemDirection>`.
-    ///
-    /// MuseScore attache l'objet `Beam` lu au premier accord de la ligature ;
-    /// sa direction explicite (`Beam::direction()`) l'emporte alors sur la
-    /// direction calculée. `None` pour une ligature sans direction écrite
-    /// (les fichiers 4.x écrivent un `<Beam>` vide).
-    pub beam_direction: Option<StemDirection>,
+    /// Données de gravure de l'élément (ligature et sa direction, L5).
+    pub engraving: ChordRestEngraving,
     /// Accord ou silence.
     pub kind: ChordRestKind,
 }
@@ -399,8 +393,7 @@ impl ChordRest {
             ticks: None,
             tuplet: None,
             lyrics: Vec::new(),
-            beam_mode: BeamMode::Auto,
-            beam_direction: None,
+            engraving: ChordRestEngraving::default(),
             kind: ChordRestKind::Chord(Chord::default()),
         }
     }
@@ -413,8 +406,7 @@ impl ChordRest {
             ticks: None,
             tuplet: None,
             lyrics: Vec::new(),
-            beam_mode: BeamMode::Auto,
-            beam_direction: None,
+            engraving: ChordRestEngraving::default(),
             kind: ChordRestKind::Rest(Rest {
                 full_measure,
                 gap: false,
