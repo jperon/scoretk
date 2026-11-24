@@ -47,19 +47,31 @@
 
         # cleanCargoSource ne garde que ce qui influence la compilation Cargo
         # (.rs, *.toml, Cargo.lock, .cargo/config, plus les répertoires) : pas
-        # besoin de reconstruire quand la doc change. Il faut y ajouter
-        # `tests/corpus/` (données .mscx/.mscz/.musicxml) : les tests
-        # d'intégration les lisent via CARGO_MANIFEST_DIR/../../tests/corpus,
-        # et sans elles le check `tests` échoue (« No such file or directory »),
+        # besoin de reconstruire quand la doc change. Il faut y ajouter toutes
+        # les données de test, quelle que soit leur extension :
+        # - `tests/corpus/` (.mscx/.mscz/.musicxml/.ly/.abc/.mid), lu par les
+        #   tests d'intégration via CARGO_MANIFEST_DIR/../../tests/corpus ;
+        # - les fixtures sous `crates/*/tests/` (.mscx, .ly, …), lues à la
+        #   compilation par include_str! (section_pause_jump.mscx) ou à
+        #   l'exécution via CARGO_MANIFEST_DIR (scheme_variants/*.ly).
+        # Sans elles, le check `tests` échoue (« No such file or directory »),
         # crane ne conservant que le répertoire vide.
-        # buildDepsOnly n'est pas alourdi par ce corpus : crane y remplace les
-        # sources par un dummy src, donc les dépendances ne sont pas
-        # recompilées quand le corpus change.
+        # buildDepsOnly n'est pas alourdi par ces données : crane y remplace
+        # les sources par un dummy src, donc les dépendances ne sont pas
+        # recompilées quand elles changent. Le filtre reste limité aux deux
+        # arborescences de test : aucun élargissement aux données non test.
+        isTestData = path:
+          let
+            p = toString path;
+          in
+          pkgs.lib.hasPrefix (toString ./tests/corpus + "/") p
+          || (
+            pkgs.lib.hasPrefix (toString ./crates + "/") p
+            && builtins.match ".*/tests/.*" p != null
+          );
         src = pkgs.lib.cleanSourceWith {
           src = pkgs.lib.cleanSource ./.;
-          filter = path: type:
-            craneLib.filterCargoSources path type
-            || pkgs.lib.hasPrefix (toString ./tests/corpus + "/") (toString path);
+          filter = path: type: craneLib.filterCargoSources path type || isTestData path;
           name = "scoretk-source";
         };
 
