@@ -7968,3 +7968,70 @@ The exceptions are unchanged from §35, each with its recorded reason:
 
 No file was silently dropped: the 61 deliberately unsupported sources remain
 excluded by exit code 3 on all three lots, exactly as in §33–§35.
+
+## 37. Duplicate context names and the `\change Staff` unison (2026-11-24)
+
+Protocol: frozen binary (`/tmp/ly5-fixE`), unchanged manifests and cached MIDI
+references (`--refs-only`), one lot at a time, `CARGO_BUILD_JOBS=2
+RUST_TEST_THREADS=2 nice -n 10`, `mesure.py` + `ly_notes.py selftest` (OK).
+No comparator rule was changed.
+
+### Fix: context lookup and same-name unisons
+
+The previous prototype resolved `\change Staff = name` with a global name
+table and marked every unison on a sibling staff `unperformed`: +4 files but
+5 losses. The exact LilyPond rule was established on a reduced source compiled
+with LilyPond 2.26 (two staves named `right`, two named `left`):
+
+- `lily/context.cc`, `Context::core_find` / `find_context` (FIND_ONLY): the
+  current context is checked first, then contexts with the requested name in
+  creation order. Two `\new Staff = right` in the same `\score` are distinct
+  contexts; `\change Staff = right` from the second one stays there, but after
+  `\change Staff = left` it reaches the **first** `right`.
+- `lily/staff-performer.cc`, `get_audio_staff` puts all voices of one Staff
+  into one `Audio_staff`; `lily/midi-walker.cc:95-115`,
+  `Midi_walker::do_start_note` emits a single note-on for two notes of the same
+  pitch starting at the same tick in that audio staff.
+
+The reader now resolves `\change` against the first staff with that name
+(current staff first, continuing from the staff where the voice was moved),
+and marks a moved note `unperformed` only when its target staff has the **same
+context name** and already sounds that pitch at that tick. This keeps the five
+previously lost files exact (`bwv656-let.ly`, `bwv656-a4.ly`, `bwv-988-v12.ly`,
+`bwv-988-v24.ly`, `all-my-heart.ly`) and gains `bwv604.ly`, whose second
+`\new Staff = right` re-sends a voice to the first `right` staff. Reduced test
+`change_vers_un_contexte_nomme_duplique_fusionne_l_unisson` (checked against
+LilyPond 2.26: one attack at ticks 2 and 3) failed before the fix.
+
+### Controlled measurement (one lot at a time, no loss)
+
+| Lot | Exact before | Exact after | N1 / N2 gains | N1 / N2 losses |
+| --- | ---: | ---: | ---: | ---: |
+| `ra` (1724) | 1690 | **1690** | 0 | 0 |
+| `mut` (1316) | 1227 | **1228** | 1 | 0 |
+| `rw` (1365) | 1269 | **1270** | 1 | 0 |
+
+The only file gained on both real lots is `bwv604.ly`. All other files keep
+their exact status, their N1 and their N2. `cargo test -p
+scoretk-lilypond-import`, `clippy -D warnings` and `fmt --check` are green.
+
+### Remaining failures
+
+Reusing the same cached work directories, the 88 `mut` / 95 `rw` inexact files
+still split as in §36: extra notes on sibling staves (24 `mut`), shifted
+attacks (22), octave/diatonic-step discrepancies (40) and a few isolated
+missing notes. A second prototype merging unisons between all sibling staves
+of one part was measured and reverted: it marked tie continuations rather than
+attacks, gained no file and lost one (`bwv656-let.ly`). The next fix must
+distinguish a genuine tie-stop from a new attack in the model.
+
+**Raw** (all measured files in the denominator): `ra` 1690/1724 = **98.0 %**,
+`mut` 1228/1316 = **93.3 %**, `rw` 1270/1365 = **93.0 %**.
+
+**Excluding only the legitimate exceptions** (unchanged numerators): 22
+exceptions on `mut`, 25 on `rw` — `mut` 1228/1294 = **94.9 %**, `rw`
+1270/1340 = **94.8 %**. The 95 % raw target is **not reached**: +23 exact
+files are still needed on `mut` and +27 on `rw`. The exception list is
+unchanged from §36 (faulty references that no longer compile with LilyPond
+2.26/2.27 and music requiring a full Scheme evaluator). No file was silently
+dropped.
