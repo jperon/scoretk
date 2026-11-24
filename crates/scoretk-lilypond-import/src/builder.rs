@@ -144,6 +144,31 @@ struct StaffBuild {
     lyrics: Vec<LyricsBuild>,
 }
 
+/// `Audio_staff` auquel appartient réellement une portée du modèle.
+///
+/// `lily/context.cc` (`find_create_context`, l. 269-273, et `unchecked_find`,
+/// l. 200-231) fait retrouver par `\context Staff = "nom"` le **premier**
+/// contexte portant ce nom, là où `\new Staff = "nom"` en crée un nouveau.
+/// Toutes les portées du modèle issues de ce même contexte partagent alors un
+/// seul `Audio_staff` (`lily/staff-performer.cc` l. 164-182, `get_audio_staff`
+/// avec le réglage par défaut `midiChannelMapping = #'staff`,
+/// `ly/performer-init.ly` l. 257), donc une seule piste MIDI
+/// (`lily/audio-staff.cc` l. 39-52). Un doublon de nom `\context` n'est qu'un
+/// artefact du modèle : il doit être ramené à la première portée du nom.
+fn audio_staff_of(staves: &[StaffBuild], staff_block: &StaffBlock, fallback: StaffId) -> StaffId {
+    if !staff_block.existing {
+        return fallback;
+    }
+    let Some(name) = staff_block.name.as_deref() else {
+        return fallback;
+    };
+    staves
+        .iter()
+        .find(|staff| staff.name.as_deref() == Some(name))
+        .map(|staff| staff.audio_staff)
+        .unwrap_or(fallback)
+}
+
 /// Construit la partition d'un document LilyPond.
 pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     let mut score = Score::new();
@@ -574,7 +599,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 lyrics.extend(premiere.lyrics);
                 staves.push(StaffBuild {
                     staff: staff_id,
-                    audio_staff: staff_id,
+                    audio_staff: audio_staff_of(&staves, staff_block, staff_id),
                     name: staff_block.name.clone(),
                     group: group_index,
                     voices: premiere.voices,

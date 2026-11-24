@@ -9570,6 +9570,42 @@ fn harmonic_by_fret_joue_le_partiel_pas_la_note_ecrite() {
     );
 }
 
+/// Deux `\context Staff = "one"` du même `\score` ne font qu'un contexte
+/// `Staff` pour LilyPond (`lily/context.cc` `find_create_context`, l. 269-273,
+/// et `unchecked_find`, l. 200-231) : une seule piste MIDI
+/// (`lily/staff-performer.cc` l. 164-182, `lily/audio-staff.cc` l. 39-52), où
+/// `Midi_walker::do_start_note` (`lily/midi-walker.cc` l. 88-147) n'émet
+/// qu'une attaque pour les deux `c'` du temps 0. Vérifié avec LilyPond 2.27
+/// sur cette source réduite : 60/62/64/65/67, cinq attaques. Le modèle garde
+/// les deux portées (gravure) mais marque le second `c'` `unperformed`.
+#[test]
+fn contextes_staff_de_meme_nom_partagent_le_audio_staff() {
+    let src = r#"\version "2.27.0"
+\score {
+  \new PianoStaff <<
+    \context Staff = "one" { \new Voice { \fixed c { c'2 d'2 } } }
+    \context Staff = "one" { \new Voice { \fixed c { c'4 e'4 f'4 g'4 } } }
+  >>
+}"#;
+    let score = read_lilypond(src).expect("lecture");
+    let muettes: Vec<u8> = score
+        .notes
+        .iter()
+        .filter(|note| note.unperformed)
+        .map(|note| note.pitch)
+        .collect();
+    assert_eq!(muettes, vec![60], "le second unisson n'est pas joué");
+    let mut jouees: Vec<u8> = score
+        .notes
+        .iter()
+        .filter(|note| !note.unperformed)
+        .map(|note| note.pitch)
+        .collect();
+    jouees.sort_unstable();
+    assert_eq!(jouees, vec![60, 62, 64, 65, 67]);
+    assert_eq!(score.staves.len(), 2, "deux portées gravées");
+}
+
 /// `\repeat tremolo` dans une variable définie avant le `\unfoldRepeats` du
 /// score MIDI : `scm/music-functions.scm` (`unfold-repeats`, type `tremolo`)
 /// déplie le corps au lieu d'utilisation, pas à la définition. Sans

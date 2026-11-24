@@ -598,6 +598,15 @@ pub(crate) struct Syllable {
 pub(crate) struct StaffBlock {
     /// Nom du contexte (`\new Staff = "…"`).
     pub name: Option<String>,
+    /// Vrai pour un `\context Staff = "…"` (contexte **retrouvé**),
+    /// faux pour un `\new Staff = "…"` (contexte créé).
+    ///
+    /// `lily/context.cc` (`find_create_context`, l. 269-273 ; `unchecked_find`,
+    /// l. 200-231) réutilise le premier contexte du même nom, alors que
+    /// `\new` en crée toujours un nouveau. Deux portées du modèle issues du
+    /// même contexte `Staff` partagent donc un seul `Audio_staff`
+    /// (`lily/staff-performer.cc` l. 164-182), même si le modèle les sépare.
+    pub existing: bool,
     /// Noms d'instrument (`\with { instrumentName = … }`).
     pub instrument_name: Option<String>,
     /// Nom abrégé (`shortInstrumentName`).
@@ -640,6 +649,7 @@ impl StaffBlock {
     pub(crate) fn new() -> Self {
         Self {
             name: None,
+            existing: false,
             instrument_name: None,
             short_instrument_name: None,
             muted: false,

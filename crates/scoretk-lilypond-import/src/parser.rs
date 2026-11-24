@@ -1307,6 +1307,7 @@ impl<'a> Parser<'a> {
                 let staves = self.staff_blocks_from_content(
                     content,
                     context_name,
+                    existing,
                     instrument_name.clone(),
                     short_instrument_name.clone(),
                     false,
@@ -1417,6 +1418,7 @@ impl<'a> Parser<'a> {
             staff.muted = true;
             staff.visible = false;
             staff.name = context_name.clone();
+            staff.existing = existing;
             staff.voices.push(VoiceBlock {
                 name: context_name,
                 music,
@@ -1443,6 +1445,7 @@ impl<'a> Parser<'a> {
             staff.muted = true;
             staff.visible = false;
             staff.name = context_name.clone();
+            staff.existing = existing;
             staff.voices.push(VoiceBlock {
                 name: context_name,
                 music,
@@ -1592,6 +1595,7 @@ impl<'a> Parser<'a> {
         staff.muted = midi_silent;
         staff.merge_unisons = merge_unisons;
         staff.name = context_name.clone();
+        staff.existing = existing;
         staff.instrument_name = instrument_name.clone();
         staff.short_instrument_name = short_instrument_name.clone();
 
@@ -1699,6 +1703,7 @@ impl<'a> Parser<'a> {
                 let staves = self.staff_blocks_from_content(
                     content,
                     staff.name.clone(),
+                    existing,
                     staff.instrument_name.clone(),
                     staff.short_instrument_name.clone(),
                     staff.muted,
@@ -1727,6 +1732,7 @@ impl<'a> Parser<'a> {
         &mut self,
         content: Music,
         context_name: Option<String>,
+        existing: bool,
         instrument_name: Option<String>,
         short_instrument_name: Option<String>,
         muted: bool,
@@ -1739,6 +1745,9 @@ impl<'a> Parser<'a> {
             let mut lyrics = Vec::new();
             self.collect_staves(content, &mut staves, &mut lyrics);
             if let Some(premiere) = staves.first_mut() {
+                if premiere.name.is_none() {
+                    premiere.existing = existing;
+                }
                 premiere.name = premiere.name.clone().or(context_name);
                 premiere.instrument_name = premiere.instrument_name.clone().or(instrument_name);
                 premiere.short_instrument_name = premiere
@@ -1756,6 +1765,7 @@ impl<'a> Parser<'a> {
         // l'interpréteur au tick courant, pas relues chacune depuis zéro.
         let mut staff = StaffBlock::new();
         staff.name = context_name;
+        staff.existing = existing;
         staff.instrument_name = instrument_name;
         staff.short_instrument_name = short_instrument_name;
         staff.muted = muted;
