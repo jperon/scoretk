@@ -8849,6 +8849,7 @@ the score).
 | [just-a-book-archivist/latvian-music](https://github.com/just-a-book-archivist/latvian-music) | `ac3cf707` | CC BY-SA 4.0 | `README.md:50` | 34 |
 | [hinariocentral/hinariocentral-core](https://github.com/hinariocentral/hinariocentral-core) | `c878675b` | CC BY-SA 4.0 | `LICENSE:1` | 12 |
 | [loyola-university-tech-ensemble/in-c-phrases-ly](https://github.com/loyola-university-tech-ensemble/in-c-phrases-ly) | `b0e446e8` | CC BY-SA 4.0 | `LICENSE.md:1` | 40 |
+| [MacLotsen/alde-friezen](https://github.com/MacLotsen/alde-friezen) | `bba32e74` | CC0-1.0 | `README.md:68-71`; `LICENSE:1` | 2 |
 
 `AugmentedFifth/engravings` is accepted but contains only `.mscz`, no `.ly`,
 so it contributes no path. CPDL files were admitted only when their own
@@ -8868,10 +8869,12 @@ statement and were skipped. Sources containing Mutopia/LSR/openLilyLib or
 
 ### Counts and score
 
-The five manifests are `ext.txt` (462 paths), `kno.txt` (197), `perso.txt`
-(110), `cc.txt` (139) and `cpdl.txt` (16); the groups overlap only by being
-subsets of `ext`. LilyPond produced a usable MIDI for **371** files; the other
-**91** are recorded as `echec` and excluded from both denominators (never
+The six manifests are `ext.txt` (464 paths), `kno.txt` (197), `perso.txt`
+(110), `cc.txt` (139), `cpdl.txt` (16) and `af.txt` (2); the groups overlap
+only by being subsets of `ext`. `af.txt` is the two-score `alde-friezen` lot
+(`partituer.ly`, `fideo.ly`) added for §47; both include `noaten.ily`, which
+the builder checks out next to them. LilyPond produced a usable MIDI for
+**371** files; the other **91** are recorded as `echec` and excluded from both denominators (never
 silently dropped). All 91 have `raison_exclusion = référence MIDI inutilisable`:
 `snapsakademien` 36, `latvian` 18, `cellist` 10, `horn-mit` 8,
 `phmccarty` 7, `guitar-yawnoc` 3, `hinariocentral` 3, `juliedigne` 3,

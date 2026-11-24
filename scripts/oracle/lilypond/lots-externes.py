@@ -110,6 +110,11 @@ SOURCES = [
     dict(key="allofme", group="cc", repo="jeandeaual/lilypond-allofme",
          sha="a29330dd0e9c88ad8f749106df055ae541f0f3dc", licence="CC0-1.0",
          evidence="LICENSE:1", max_files=40),
+    # De âlde Friezen: two scores sharing one included note/lyric file; the
+    # scoretk report from the ly2video author motivating this control lot.
+    dict(key="alde-friezen", group="af", repo="MacLotsen/alde-friezen",
+         sha="bba32e7492d2bfe581b15b5d82179db132937702", licence="CC0-1.0",
+         evidence="README.md:68-71; LICENSE:1", max_files=10),
     dict(key="guitar-yawnoc", group="cc", repo="yawnoc/guitar",
          sha="fe48dbba46be760fab453b3a72ef35746f20ea48", licence="CC0-1.0 / public domain",
          evidence="README.md:5-8", max_files=40),
