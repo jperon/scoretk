@@ -7061,25 +7061,13 @@ fn wrap_staves(wrappers: &[Wrapper], staves: &mut [StaffBlock]) {
     // `lily/music-sequence.cc`), la première note d'une portée se résolvant
     // depuis la dernière de la précédente. `chain` marque cette continuité
     // (`bar-line-define-bar-glyph.ly` : `\relative \new StaffGroup << … >>`).
-    let wrappers: Vec<Wrapper> = if staves.len() > 1 {
-        wrappers
-            .iter()
-            .map(|wrapper| match wrapper {
-                Wrapper::Relative(reference, _) => Wrapper::Relative(*reference, true),
-                other => *other,
-            })
-            .collect()
-    } else {
-        // Une enveloppe distribuée sur une **seule** portée vient d'une
-        // variable de voix (`soprano = \relative do'' \context Staff = "one"
-        // \new Voice { … }`) : elle ré-ancre sa propre conversion. La marquer
-        // `chain` la faisait hériter de la dernière note de la voix précédente
-        // (`bwv849b.ly` : do4 au lieu de do5). Le vrai enchaînement ne concerne
-        // qu'un `\relative` étendu à plusieurs portées
-        // (`bar-line-define-bar-glyph.ly`, `music_list_to_relative`,
-        // `lily/music-sequence.cc:143-160`).
-        wrappers.to_vec()
-    };
+    let wrappers: Vec<Wrapper> = wrappers
+        .iter()
+        .map(|wrapper| match wrapper {
+            Wrapper::Relative(reference, _) => Wrapper::Relative(*reference, true),
+            other => *other,
+        })
+        .collect();
     for staff in staves {
         for voice in &mut staff.voices {
             let music = std::mem::replace(&mut voice.music, Music::Empty);
