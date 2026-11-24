@@ -9025,6 +9025,29 @@ fn relative_sur_un_groupe_de_portees_enchaine_les_portees() {
 }
 
 #[test]
+fn relatif_enchaine_la_derniere_branche_d_un_passage_polyphonique() {
+    // `\relative` sur un `\new PianoStaff << … >>` : la portée suivante part
+    // de la dernière hauteur atteinte par la **dernière** branche d'un
+    // `<< … \\ … >>` (`music_list_to_relative`, `lily/music-sequence.cc:143-160`,
+    // callback de `SimultaneousMusic`, `scm/define-music-types.scm:715-724`).
+    // `relative_final` restait figé sur une branche de context ouverte plus
+    // tôt : la basse sonnait si4 au lieu de si3 (`Rimsky.ly`, vérifié sur le
+    // MIDI de LilyPond 2.26).
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\
+         \\relative c { \\new PianoStaff << \
+           \\new Staff { << { c'1 d'1 e'1 } \\\\ { c1 d1 e1 } >> \
+                          << { g1 } \\\\ { e1 } >> } \
+           \\new Staff { bes1 a1 c1 } \
+         >> }\n",
+    )
+    .expect("lecture");
+    let mut hauteurs = hauteurs_attaques(&score);
+    hauteurs.sort();
+    assert_eq!(hauteurs, vec![60, 74, 81, 82, 84, 84, 86, 88, 88, 88, 91]);
+}
+
+#[test]
 fn after_retarde_l_evenement() {
     // `\after 2. c'4 d'1` : `\context Bottom << { \skip 2. <> c'4 } d'1 >>`
     // (`ly/music-functions-init.ly:67-83`) — la ronde occupe 0..4 et

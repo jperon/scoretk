@@ -764,6 +764,14 @@ impl<'a> Interpreter<'a> {
             // part de la dernière note de celle-ci, et la continuation du
             // `>>` de la dernière note de la dernière branche.
             self.octave = child.octave;
+            // `relative_final` doit suivre le même état : sinon une branche
+            // ouverte plus tôt par un contexte imbriqué laisse sa dernière
+            // octave figée et la portée suivante d'un `\relative` est transposée
+            // d'une octave (`Rimsky.ly` : le `\new Staff = bass` après le
+            // `<< … \\ … >>` du dessus sonnait si4 au lieu de si3).
+            if self.octave.relative {
+                self.relative_final = Some(self.octave);
+            }
             self.last_chord_notes = child.last_chord_notes;
             self.last_event_chord_notes = child.last_event_chord_notes.clone();
             last_duration = child.default_duration;
