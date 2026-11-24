@@ -9720,3 +9720,39 @@ fn programme_midi_depuis_midi_instrument() {
         "le nom d'instrument est aussi reconnu"
     );
 }
+
+/// `ly/performer-init.ly:111-115` définit `CueVoice` comme un `\Voice` avec
+/// `Note_performer` : ses notes sont **jouées** dans le MIDI, comme les
+/// `g16 d e fis g a` de `noaten.ily` dans `fideo.ly` (quatre copies, une par
+/// couplet). `\removeWithTag` les retire au contraire de la seconde partition
+/// de `partituer.ly` (`scm/music-functions.scm`, `remove-with-tag`). Référence
+/// vérifiée avec LilyPond 2.27 : 72/74/76/77 + 55/54, puis 72/74/76/77 seul.
+#[test]
+fn cue_voice_jouee_et_tag_retire_ses_notes() {
+    let source = "\\version \"2.24.0\"\n\
+        mus = \\fixed c' { c4 d4 e4 f4 }\n\
+        cue = \\tag #'partituer \\new CueVoice { g4 fis4 }\n\
+        \\score { << \\new Voice = \"m\" { \\mus } \\cue >> \\midi { } }";
+    let score = read_lilypond(source).expect("lecture");
+    let mut pitches = score
+        .notes
+        .iter()
+        .map(|note| note.pitch)
+        .collect::<Vec<_>>();
+    pitches.sort_unstable();
+    assert_eq!(pitches, vec![54, 55, 60, 62, 64, 65]);
+
+    let source = "\\version \"2.24.0\"\n\
+        mus = \\fixed c' { c4 d4 e4 f4 }\n\
+        cue = \\tag #'partituer \\new CueVoice { g4 fis4 }\n\
+        \\score { << \\new Voice = \"m\" { \\mus } \
+            \\removeWithTag #'partituer { \\cue } >> \\midi { } }";
+    let score = read_lilypond(source).expect("lecture");
+    let mut pitches = score
+        .notes
+        .iter()
+        .map(|note| note.pitch)
+        .collect::<Vec<_>>();
+    pitches.sort_unstable();
+    assert_eq!(pitches, vec![60, 62, 64, 65]);
+}
