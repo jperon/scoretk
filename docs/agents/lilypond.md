@@ -9291,3 +9291,114 @@ and the `wasm32-unknown-unknown` build of `scoretk-wasm` are green.
 `3d72b41e`: `flake.nix`'s source filter drops
 `crates/scoretk-midi-export/tests/section_pause_jump.mscx`. That failure is
 pre-existing and unrelated to this campaign.
+
+## 49. Same-score classification: the tie-chain diagnostic artifact (2026-11-25)
+
+### Protocol
+
+The worktree was rebased on master (`46193176`, no commits to rebase). A
+baseline `scoretk` was frozen at that commit in the out-of-repo scratch
+directory (`ly15-tmp/bin/scoretk-base`). All reference regeneration and all
+measurements ran **in the foreground, one at a time, with two workers**
+(`--jobs 2`, `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10`).
+
+The fair, same-score references of §47 were rebuilt because the earlier trees
+were no longer present: `references.py --inject-midi --same-score --sandbox
+--jobs 2 --raw-refs …` produced 1,369 `mut`, 1,416 `rw` and 376 `ext` MIDI
+references with LilyPond 2.27 inside `bwrap --unshare-all --die-with-parent`.
+No `.ly` was downloaded during this campaign; the external snapshots of §45
+were reused. `references.py --selftest`, `mesure.py --selftest`,
+`ly_notes.py selftest` and `lots-externes.py --causes-selftest` are OK.
+
+### The 68 files: first divergent event, legacy and corrected
+
+The 35 `mut` and 35 `rw` files of the "second `\score`" class of §46/§47 were
+classified with `lots-externes.py --causes`. With the legacy
+`(pitch, attack, duration)` sort, the first divergent tuple was a **duration**
+for all 35 files on both lots (for example `bwv735.ly`: `(34,924,104)` vs
+`(34,924,8)`; `bwv663-a4.ly`: `(31,312,64)` vs `(31,312,24)`).
+
+That result is a **diagnostic artifact, not a reader defect and not a
+comparator defect**. `ly_notes.compare` defines an exact file by note count,
+pitch multiset and `(pitch, quantized attack)` multiset (`ly_notes.py:860`);
+duration is deliberately excluded. LilyPond's `Tie_performer` merges tied
+heads into one MIDI note covering the whole chain (`lily/tie-performer.cc:116-185`),
+whereas MusicXML writes one note per tie segment
+(`scoretk-musicxml-export/src/exportmusicxml.rs:1813-1816`) and `read_xml`
+skips the `<tie type="stop"/>` notes (`ly_notes.py:314`). Sorting on duration
+therefore reports the harmless tie-chain difference first and masks the
+missing or extra attack that actually makes the file inexact.
+
+This was proven with a reduced source compiled by LilyPond 2.27:
+
+```lilypond
+\relative { \time 4/4 c'4~4 d'2 e'1 }
+```
+
+LilyPond's MIDI is `(60,0,2) (74,2,2) (88,4,4)`; the reader writes two tied
+C4 quarters and the oracle sees `(60,0,1) (74,2,2) (88,4,4)` — both are
+correct under the oracle's own definition of exactness. The new
+`--causes-selftest` asserts that the legacy sort reports a duration difference
+for this shape while the corrected classifier reports the real event.
+
+**Change made:** `analyser_causes` in `lots-externes.py` now classifies on
+`(pitch, attack)`, the tuple used by `exact`, and the selftest was added.
+**The comparator was not changed.** No file was gained or lost: the exact
+counts are identical before and after, and all converted MusicXML files are
+produced by the same reader code. No oracle artefact was invoked without the
+selftest above.
+
+With the corrected classification:
+
+| Lot | Non-exact | Real first divergence | Examples |
+| --- | ---: | --- | --- |
+| `mut` | 56 | attack 53, pitch 3 | `BWV533`, `bwv-568`, `bwv663-a4`, `bwv657` |
+| `rw` | 59 | attack 55, pitch 3, empty output 1 | `BWV533`, `bwv612`, `bwv850b`, `late-evaluation-of-variables` |
+| `ext` | 151 | attack 120, pitch 31 | `allofme`, `bolstad_indian_summer`, `horn`, `kling-23` |
+
+The pitch group is mostly octave errors: `debussy_Ste_Bergamesq_Clair`
+(missing 78/81/75/85, extra 66/69/63/73, i.e. one octave down),
+`Chop-28-21` (80/71/83 → 82/73/85), `Concerto_No3`. The attack group splits
+into three shapes: a constant offset of one or three quarters
+(`mozart-hrn-3`, `51title-hub`, `gnomus`, `bridge`), local shifts of one Q16
+step (`bwv663-a4`, `ballade-4`, `violinoII`, `O_Mistress_Mine`) and extra notes
+(`wedding`, `two-jews`, `rach-prelude23-05`, `entertainer`, `schumann-op68-26`).
+They are consistent with the per-Voice MIDI tracks, tag-filtered voices and
+real-time grace timing already listed in §46/§47, not with one shared rule.
+
+A reduced `f,4~4` (tie with the second pitch omitted, as in `kling-11.ly`) was
+also compiled and compared: the reader writes the tie chain correctly, so this
+syntax is not a reader defect either.
+
+### Scores: raw and same-score
+
+Both trees and both figures are kept; no denominator was edited.
+
+| Lot | Raw | Same-score |
+| --- | ---: | ---: |
+| `ra` (1,724) | 1,605/1,724 = 93.1 % with the stale `out3ra` tree (1,690/1,724 = 98.0 % with the lost clean refs, §44–§46) | not regenerated; the only `ra` source matching a touched script is byte-identical |
+| `mut` | 1,257/1,316 = **95.5 %** | 1,252/1,309 = **95.6 %** |
+| `rw` | 1,300/1,365 = **95.2 %** | 1,296/1,356 = **95.6 %** |
+| `ext` | 161/371 = **43.4 %** | 218/376 = **58.0 %** |
+
+The same-score denominators differ from the raw ones because a few sources
+have no fair MIDI reference; they are reported, not hidden. The `ra` raw
+figure uses the stale tree documented in §44: its clean reference tree cannot
+be reconstructed, so the documented 98.0 % is kept and no file is removed from
+a denominator.
+
+### Zero loss and checks
+
+Only the diagnostic was changed, so the converted MusicXML of all four lots is
+byte-identical to the frozen baseline: 0 N1/N2 loss, 0 exact gain or loss.
+`cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`
+and `cargo fmt --all -- --check` are green.
+
+### Remaining work
+
+The 68 `mut`/`rw` files still need a wider score/voice model: tag filtering,
+per-Voice MIDI tracks and real-time grace timing (§46). On `ext` the largest
+open groups remain the horn `\relative` + tuplet cases (`kling-23`,
+`kopprasch-*`), the `cellist` long `\repeat volta`/`\unfoldRepeats` scores with
+several `\transpose` staves, and the `notes_supp` of Chopin/WTC. None of these
+was silently excluded; no comparator rule was relaxed to gain files.
