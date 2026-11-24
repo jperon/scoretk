@@ -2384,8 +2384,7 @@ fn place_chord(
                 ticks: event.explicit_ticks,
                 tuplet: None,
                 lyrics: Vec::new(),
-                beam_mode: Default::default(),
-                beam_direction: None,
+                engraving: ChordRestEngraving::default(),
                 kind: ChordRestKind::Rest(Rest {
                     full_measure: false,
                     gap: false,
