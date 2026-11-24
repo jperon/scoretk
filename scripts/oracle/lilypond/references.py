@@ -31,6 +31,9 @@ Usage :
     scripts/oracle/lilypond/references.py --manifest ext.txt --out refs \\
         --lot ext --jobs 1 --sandbox --sandbox-dir /path/to/writable \\
         --inject-midi   # untrusted third-party .ly, one worker
+    scripts/oracle/lilypond/references.py --manifest ext.txt --out refs-meme \\
+        --lot ext --jobs 1 --sandbox --sandbox-dir /path/to/writable \\
+        --inject-midi --same-score
 
 Le statut de chaque fichier va dans ``<out>/<lot>/status.jsonl`` ; un fichier
 dont LilyPond échoue n'a pas de ``ly.midi`` et sera exclu par l'oracle comme
@@ -43,6 +46,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -62,6 +66,112 @@ def _midi_produit(sortie: Path) -> Path:
         return direct
     candidats = sorted(sortie.parent.glob("*.midi"))
     return candidats[0] if candidats else direct
+
+
+def _masque_code(texte: str) -> str:
+    """Same length as ``texte``, with comments and string bodies blanked.
+
+    Brace matching must not see the braces of a Scheme expression, a comment
+    or a markup string; only LilyPond's syntactic braces count.
+    """
+    out = list(texte)
+    i, n = 0, len(texte)
+    while i < n:
+        c = texte[i]
+        if c == "%":
+            if i + 1 < n and texte[i + 1] == "{":
+                fin = texte.find("%}", i + 2)
+                fin = n if fin < 0 else fin + 2
+            else:
+                fin = texte.find("\n", i)
+                fin = n if fin < 0 else fin
+            for j in range(i, fin):
+                out[j] = " "
+            i = fin
+        elif c == '"':
+            j = i + 1
+            while j < n:
+                if texte[j] == "\\":
+                    j += 2
+                    continue
+                if texte[j] == '"':
+                    j += 1
+                    break
+                j += 1
+            for k in range(i + 1, min(j - 1, n)):
+                out[k] = " "
+            i = j
+        else:
+            i += 1
+    return "".join(out)
+
+
+def _fin_accolade(masque: str, ouverture: int) -> int:
+    """Index of the ``}`` closing the brace at ``ouverture`` (-1 if none)."""
+    profondeur = 0
+    for i in range(ouverture, len(masque)):
+        if masque[i] == "{":
+            profondeur += 1
+        elif masque[i] == "}":
+            profondeur -= 1
+            if profondeur == 0:
+                return i
+    return -1
+
+
+def blocs_score(texte: str) -> list[tuple[int, int, bool]]:
+    """Every ``\\score { … }`` as ``(start, closing_brace, has_midi)``."""
+    masque = _masque_code(texte)
+    blocs = []
+    for match in re.finditer(r"\\score\b", masque):
+        ouverture = masque.find("{", match.end())
+        if ouverture < 0:
+            continue
+        fin = _fin_accolade(masque, ouverture)
+        if fin < 0:
+            continue
+        blocs.append((match.start(), fin,
+                      bool(re.search(r"\\midi\b", masque[ouverture:fin]))))
+    return blocs
+
+
+def _retire_midi(texte: str, debut: int, fin: int) -> str:
+    """Remove ``\\midi { … }`` inside one score body, leaving text elsewhere."""
+    masque = _masque_code(texte)
+    for match in re.finditer(r"\\midi\b", masque[debut:fin]):
+        pos = debut + match.start()
+        j = debut + match.end()
+        while j < fin and masque[j].isspace():
+            j += 1
+        if j < fin and masque[j] == "{":
+            j = _fin_accolade(masque, j)
+            if j < 0:
+                continue
+            return texte[:pos] + " " * (j + 1 - pos) + texte[j + 1:]
+        return texte[:pos] + " " * (match.end() - match.start()) + texte[pos + (match.end() - match.start()):]
+    return texte
+
+
+def pour_meme_score(texte: str, index_cible: int | None) -> str:
+    """Inject ``\\midi { }`` in the target score, strip it from the others.
+
+    ``index_cible`` is the rank of the score the reader imports inside this
+    file, or ``None`` for a file holding only other scores.  The choice is made
+    on the copy of the whole source tree (main file first, then included
+    files), so LilyPond emits exactly one MIDI: the one of that score.
+    """
+    blocs = blocs_score(texte)
+    if not blocs:
+        return texte
+    resultat = texte
+    # Work from the end: edits never shift earlier offsets.
+    for index in range(len(blocs) - 1, -1, -1):
+        debut, fin, has_midi = blocs[index]
+        if index != index_cible:
+            resultat = _retire_midi(resultat, debut, fin)
+        elif not has_midi:
+            resultat = resultat[:fin] + "\n  \\midi { }\n" + resultat[fin:]
+    return resultat
 
 
 def bwrap_prefix(dossier: Path) -> list[str]:
@@ -179,14 +289,51 @@ def compiler(
     }
 
 
+def _fichier_score_lu(source: Path, dossier: Path) -> tuple[Path, int] | None:
+    """The file holding the score expression the reader imports.
+
+    Reader selection (`crates/scoretk-lilypond-import/src/parser.rs`,
+    `Parser::document`, l. 506-569): explicit ``\\score`` blocks are collected
+    everywhere (``Parser::toplevel_item``, l. 637-650, recursing through
+    ``\\book`` in `Parser::parse_book`, l. 739-748), implicit top-level music
+    expressions are the fallback (`Parser::parse_toplevel_music`, l. 783-806),
+    and the **first block carrying ``\\midi`` wins** (l. 549-553).  Here the
+    main file is considered first, then the included files in path order; a
+    file without ``\\score`` falls back to the raw injection below.
+    """
+    fichiers = [dossier / source.name]
+    fichiers += sorted(
+        p for p in dossier.rglob("*")
+        if p.suffix in (".ly", ".ily") and p.name != source.name
+    )
+    for fichier in fichiers:
+        if not fichier.is_file():
+            continue
+        texte = fichier.read_text(encoding="utf-8", errors="replace")
+        blocs = blocs_score(texte)
+        for index, (_, _, has_midi) in enumerate(blocs):
+            if has_midi:
+                return fichier, index
+    for fichier in fichiers:
+        if fichier.is_file():
+            blocs = blocs_score(fichier.read_text(encoding="utf-8", errors="replace"))
+            if blocs:
+                return fichier, 0
+    return None
+
+
 def compiler_injecte(
-    source: Path, destination: Path, lilypond: str, timeout: int, sandbox: Path
+    source: Path, destination: Path, lilypond: str, timeout: int, sandbox: Path,
+    same_score: bool = False,
 ) -> dict:
     """Compile une copie sandboxed avec ``\\midi { }`` injecté (regen-refs.py).
 
     Les lots externes n'ont pas de ``\\midi`` dans leurs sources : la
     référence est construite exactement comme `regen-refs.py` le fait, sur une
     copie locale (les ``\\include`` restent relatifs) et dans le bac à sable.
+    Avec ``same_score``, l'injection vise le score que le lecteur importe et
+    les ``\\midi`` des autres scores sont retirés, pour que LilyPond n'écrive
+    qu'un seul MIDI : celui de ce score.
     """
     debut = time.monotonic()
     with tempfile.TemporaryDirectory(dir=sandbox) as tmp:
@@ -204,9 +351,27 @@ def compiler_injecte(
         candidats_avec_midi = regen.candidats_avec_midi
         prepare_includes = regen.prepare_includes
 
-        texte = (dossier / source.name).read_text(encoding="utf-8", errors="replace")
-        candidats = candidats_avec_midi(texte) or [texte]
-        include_args = prepare_includes(source, dossier)
+        cible = _fichier_score_lu(source, dossier) if same_score else None
+        include_args = [] if cible is not None else prepare_includes(source, dossier)
+        if same_score:
+            if cible is not None:
+                for fichier in sorted(dossier.rglob("*")):
+                    if fichier.suffix not in (".ly", ".ily") or not fichier.is_file():
+                        continue
+                    texte = fichier.read_text(encoding="utf-8", errors="replace")
+                    modifie = pour_meme_score(texte, cible[1] if fichier == cible[0] else None)
+                    if modifie != texte:
+                        fichier.write_text(modifie, encoding="utf-8")
+                candidats = [(dossier / source.name).read_text(encoding="utf-8",
+                                                               errors="replace")]
+            else:
+                # No explicit score: the reader imports the first top-level
+                # music expression, which is what regen-refs.py wraps.
+                texte = (dossier / source.name).read_text(encoding="utf-8", errors="replace")
+                candidats = candidats_avec_midi(texte) or [texte]
+        else:
+            texte = (dossier / source.name).read_text(encoding="utf-8", errors="replace")
+            candidats = candidats_avec_midi(texte) or [texte]
         sortie = base / "ly"
         ok = False
         journal = "aucun candidat n'a compilé"
@@ -228,16 +393,37 @@ def compiler_injecte(
         "code": 0 if ok else code,
         "converti": False,
         "injecte": True,
+        "same_score": same_score,
         "temps": round(time.monotonic() - debut, 3),
         "erreur": "" if ok else journal[-400:],
     }
 
 
+def selftest() -> None:
+    """The same-score transformation must leave exactly one playable score."""
+    source = (
+        "\\score { { c'1 } }\n"
+        "\\score { \\unfoldRepeats { c'2 d'2 } \\midi { \\tempo 4=60 } }\n"
+    )
+    blocs = blocs_score(source)
+    assert len(blocs) == 2 and not blocs[0][2] and blocs[1][2]
+    premier = pour_meme_score(source, 0)
+    second = pour_meme_score(source, 1)
+    assert "\\midi" in premier.split("\\score")[1]
+    assert "\\midi" not in premier.split("\\score")[2]
+    assert "\\midi" not in second.split("\\score")[1]
+    assert "\\midi" in second.split("\\score")[2]
+    # Comments and strings must not create or hide score blocks.
+    assert len(blocs_score("% \\score { c'1 }\n\"\\score { d'1 }\"\n\\score { e'1 }")) == 1
+    print("selftest références : OK")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--manifest", required=True, help="une source .ly par ligne")
-    p.add_argument("--out", required=True, help="racine des références")
-    p.add_argument("--lot", required=True, help="nom du lot (mut, ra, mus)")
+    p.add_argument("--selftest", action="store_true", help="check the same-score transformation")
+    p.add_argument("--manifest", help="une source .ly par ligne")
+    p.add_argument("--out", default="", help="racine des références")
+    p.add_argument("--lot", default="", help="nom du lot (mut, ra, mus)")
     p.add_argument("--lilypond", default="lilypond")
     p.add_argument("--jobs", type=int, default=8)
     p.add_argument("--timeout", type=int, default=60)
@@ -253,7 +439,18 @@ def main() -> None:
                    help="writable parent for sandbox temporary directories")
     p.add_argument("--inject-midi", action="store_true",
                    help="inject \\midi { } into a copy, as regen-refs.py does")
+    p.add_argument("--same-score", action="store_true",
+                   help="with --inject-midi, target the score expression the reader imports "
+                        "(first \\midi score, else first explicit score, else first "
+                        "top-level music) and strip \\midi from every other score")
     args = p.parse_args()
+    if args.selftest:
+        selftest()
+        return
+    if not args.manifest or not args.out or not args.lot:
+        p.error("--manifest, --out and --lot are required")
+    if args.same_score and not args.inject_midi:
+        p.error("--same-score requires --inject-midi")
 
     sandbox = None
     if args.sandbox:
@@ -286,7 +483,8 @@ def main() -> None:
                 p.error("--inject-midi requires --sandbox for untrusted sources")
             futurs = [
                 pool.submit(compiler_injecte, source, destination,
-                            args.lilypond, args.timeout, sandbox)
+                            args.lilypond, args.timeout, sandbox,
+                            args.same_score)
                 for source, destination in a_faire
             ]
         else:
