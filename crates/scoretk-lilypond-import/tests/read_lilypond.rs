@@ -4202,6 +4202,45 @@ fn change_vers_un_contexte_nomme_duplique_fusionne_l_unisson() {
     assert_eq!(jouees_60, 6);
 }
 
+/// Une cinquième voix simultanée est reportée sur une portée sœur du modèle,
+/// mais LilyPond ne crée qu'un contexte `Staff`, donc un seul `Audio_staff`
+/// (`lily/staff-performer.cc:114-143`) : `Midi_walker::do_start_note` ne
+/// joue qu'une attaque pour les deux `c'`. Vérifié avec LilyPond 2.27 sur la
+/// source réduite ci-dessous (une seule attaque 60 et quatre attaques au
+/// temps 0).
+#[test]
+fn cinq_voix_sur_une_portee_fusionnent_le_unisson() {
+    let src = r#"\version "2.27.0"
+\score {
+  \new Staff {
+    <<
+      { \fixed c' c1 }
+      \new Voice { \fixed c' e'1 }
+      \new Voice { \fixed c' g'1 }
+      \new Voice { \fixed c' c''1 }
+      \new Voice { \fixed c' c1 }
+    >>
+  }
+}"#;
+    let score = read_lilypond(src).expect("lecture");
+    let muettes: Vec<u8> = score
+        .notes
+        .iter()
+        .filter(|note| note.unperformed)
+        .map(|note| note.pitch)
+        .collect();
+    assert_eq!(muettes, vec![60]);
+    let mut jouees: Vec<u8> = score
+        .notes
+        .iter()
+        .filter(|note| !note.unperformed)
+        .map(|note| note.pitch)
+        .collect();
+    jouees.sort_unstable();
+    assert_eq!(jouees, vec![60, 76, 79, 84]);
+    assert_eq!(score.staves.len(), 2);
+}
+
 /// `\change Staff` vers une portée **de nom différent** qui joue déjà la même
 /// hauteur : `lily/change-iterator.cc` déplace la voix dans l'autre contexte
 /// `Staff`, et `lily/midi-walker.cc:95-115` ne joue qu'une attaque pour les

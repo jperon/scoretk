@@ -122,6 +122,16 @@ struct LyricsBuild {
 struct StaffBuild {
     /// Identifiant de la portée.
     staff: StaffId,
+    /// `Audio_staff` MIDI de cette portée.
+    ///
+    /// Une portée sœur ouverte pour loger une cinquième voix simultanée
+    /// n'est qu'un artifact du modèle (quatre voies par portée) : pour
+    /// LilyPond toutes ces voix restent dans le même contexte `Staff`, donc
+    /// dans un seul `Audio_staff` (`lily/staff-performer.cc:114-143`,
+    /// `get_audio_staff`), où `Midi_walker::do_start_note` fusionne les
+    /// unissons de même attaque. Les portées ordinaires pointent vers elles-
+    /// mêmes.
+    audio_staff: StaffId,
     /// Nom du contexte (`\new Staff = "…"`), pour résoudre `\change`.
     name: Option<String>,
     /// Groupe du bloc `\score` d'appartenance (ordre de création des contextes).
@@ -231,6 +241,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                         None => {
                             staves.push(StaffBuild {
                                 staff: staff_id,
+                                audio_staff: staff_id,
                                 name: Some(nom.clone()),
                                 group: group_index,
                                 voices: Vec::new(),
@@ -288,6 +299,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                             .or(pending_transposition);
                         let mut nouveau = StaffBuild {
                             staff: staff_id,
+                            audio_staff: staff_id,
                             name: None,
                             group: group_index,
                             voices: premiere.voices,
@@ -313,6 +325,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                     for sœur in built {
                         staves.push(StaffBuild {
                             staff: sœur.staff,
+                            audio_staff: sœur.audio_staff,
                             name: None,
                             group: group_index,
                             voices: sœur.voices,
@@ -390,6 +403,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                     for sœur in built {
                         staves.push(StaffBuild {
                             staff: sœur.staff,
+                            audio_staff: sœur.audio_staff,
                             name: None,
                             group: group_index,
                             voices: sœur.voices,
@@ -547,6 +561,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 lyrics.extend(premiere.lyrics);
                 staves.push(StaffBuild {
                     staff: staff_id,
+                    audio_staff: staff_id,
                     name: staff_block.name.clone(),
                     group: group_index,
                     voices: premiere.voices,
@@ -559,6 +574,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
             for sœur in built {
                 staves.push(StaffBuild {
                     staff: sœur.staff,
+                    audio_staff: sœur.audio_staff,
                     name: None,
                     group: group_index,
                     voices: sœur.voices,
@@ -897,6 +913,7 @@ fn lyrics_build(block: &LyricsBlock) -> LyricsBuild {
 /// Voix et paroles effectivement placées sur une portée construite.
 struct BuiltVoices {
     staff: StaffId,
+    audio_staff: StaffId,
     voices: Vec<VoiceBuild>,
     lyrics: Vec<LyricsBuild>,
 }
@@ -1088,6 +1105,7 @@ fn build_voices(
     let (voices, lyrics, mut overflow) = assign_voice_slots(score, staff, kept, occupied.to_vec());
     let mut built = vec![BuiltVoices {
         staff,
+        audio_staff: staff,
         voices,
         lyrics,
     }];
@@ -1108,6 +1126,7 @@ fn build_voices(
         if !voices.is_empty() {
             built.push(BuiltVoices {
                 staff: extra_staff,
+                audio_staff: staff,
                 voices,
                 lyrics,
             });
@@ -1872,13 +1891,25 @@ fn ensure_segment(
 /// ne lui fait pas émettre de `note_on`. Elle ne peut donc pas masquer la
 /// note déplacée, et une note déjà partie vers une autre portée ne sonne pas
 /// sur celle qu'elle a quittée.
+///
+/// Une portée sœur créée pour loger une cinquième voix simultanée partage
+/// l'`Audio_staff` de la portée d'origine : les voix n'ont pas changé de
+/// contexte `Staff` dans LilyPond, seul le modèle les sépare en deux portées.
+/// Le même regroupement s'applique donc aux notes des portées sœurs et à
+/// celles déplacées par `\change`.
 fn fusionne_unissons_entre_portees(score: &mut Score, staves: &[StaffBuild]) {
-    let mut deplaces: Vec<(NoteId, StaffId, Fraction, u8)> = Vec::new();
+    let audio_staffs: BTreeMap<StaffId, StaffId> = staves
+        .iter()
+        .map(|staff| (staff.staff, staff.audio_staff))
+        .collect();
+    let audio_of = |staff: StaffId| audio_staffs.get(&staff).copied().unwrap_or(staff);
+
+    // (note, portée du modèle, Audio_staff, tick, hauteur, voix déplacée).
+    let mut sons: Vec<(NoteId, StaffId, StaffId, Fraction, u8, bool)> = Vec::new();
     for raw in 0..score.staves.len() * VOICES {
         let track = Track::from_raw(raw as u32);
-        let Some(index) = staves.iter().position(|s| s.staff == track.staff()) else {
-            continue;
-        };
+        let origine = audio_of(track.staff());
+        let index = staves.iter().position(|s| s.staff == track.staff());
         for measure in &score.measures {
             for segment in &measure.segments {
                 let Some(SegmentItem::ChordRest(chord_rest)) = segment.element(track) else {
@@ -1887,60 +1918,61 @@ fn fusionne_unissons_entre_portees(score: &mut Score, staves: &[StaffBuild]) {
                 let ChordRestKind::Chord(chord) = &chord_rest.kind else {
                     continue;
                 };
-                if chord.staff_move == 0 {
-                    continue;
-                }
-                let cible = index
-                    .checked_add_signed(isize::from(chord.staff_move))
-                    .and_then(|target| staves.get(target))
-                    .map(|target| target.staff);
-                let Some(cible) = cible else {
-                    continue;
+                // Une note déplacée ne sonne plus sur la portée qu'elle a
+                // quittée. Une cible introuvable (fin de `\score`, portée
+                // supprimée) laisse la note sur sa portée d'origine.
+                let (cible, deplacee) = if chord.staff_move == 0 {
+                    (origine, false)
+                } else {
+                    index
+                        .and_then(|i| i.checked_add_signed(isize::from(chord.staff_move)))
+                        .and_then(|target| staves.get(target))
+                        .map(|target| (audio_of(target.staff), true))
+                        .unwrap_or((origine, false))
                 };
-                let tick = measure.start_tick + segment.tick;
-                for id in &chord.notes {
-                    let note = score.note(*id);
-                    if note.is_tie_stop() {
-                        continue;
-                    }
-                    deplaces.push((*id, cible, tick, note.pitch));
-                }
-            }
-        }
-    }
-    if deplaces.is_empty() {
-        return;
-    }
-    let mut presents: Vec<(StaffId, Fraction, u8)> = Vec::new();
-    for raw in 0..score.staves.len() * VOICES {
-        let track = Track::from_raw(raw as u32);
-        for measure in &score.measures {
-            for segment in &measure.segments {
-                let Some(SegmentItem::ChordRest(chord_rest)) = segment.element(track) else {
-                    continue;
-                };
-                let ChordRestKind::Chord(chord) = &chord_rest.kind else {
-                    continue;
-                };
-                // Une note partie vers une autre portée ne sonne pas ici.
-                if chord.staff_move != 0 {
-                    continue;
-                }
                 let tick = measure.start_tick + segment.tick;
                 for id in &chord.notes {
                     let note = score.note(*id);
                     if note.unperformed || !note.play || note.is_tie_stop() {
                         continue;
                     }
-                    presents.push((track.staff(), tick, note.pitch));
+                    sons.push((*id, track.staff(), cible, tick, note.pitch, deplacee));
                 }
             }
         }
     }
-    for (id, cible, tick, pitch) in deplaces {
-        if presents.contains(&(cible, tick, pitch)) {
-            score.note_mut(id).unperformed = true;
+    if sons.is_empty() {
+        return;
+    }
+    sons.sort_by_key(|(_, _, audio, tick, pitch, _)| (*audio, *tick, *pitch));
+    let mut debut = 0;
+    while debut < sons.len() {
+        let mut fin = debut + 1;
+        while fin < sons.len()
+            && sons[fin].2 == sons[debut].2
+            && sons[fin].3 == sons[debut].3
+            && sons[fin].4 == sons[debut].4
+        {
+            fin += 1;
         }
+        let groupe = &sons[debut..fin];
+        // Deux notes de la même portée du modèle sont déjà fusionnées par
+        // l'oracle (`ly_notes.py`, unisson par partie/portée). Seuls les
+        // doublons entre portées distinctes ou après `\change` sont des
+        // artefacts du modèle.
+        let portees: BTreeSet<StaffId> = groupe.iter().map(|son| son.1).collect();
+        if groupe.len() > 1 && (portees.len() > 1 || groupe.iter().any(|son| son.5)) {
+            let gardee = groupe
+                .iter()
+                .min_by_key(|son| (son.5, son.1 != son.2, son.0))
+                .expect("groupe non vide");
+            for son in groupe {
+                if son.0 != gardee.0 {
+                    score.note_mut(son.0).unperformed = true;
+                }
+            }
+        }
+        debut = fin;
     }
 }
 
