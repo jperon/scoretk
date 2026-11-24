@@ -7865,3 +7865,106 @@ Le seuil de 95 % n'est donc atteint sur aucun des deux lots réels, même en
 écartant uniquement des références fautives et le Scheme : il reste des
 défauts de lecture à corriger (principalement l'allocation des portées pour
 les unissons, cf. §34). Aucun fichier n'a été retiré silencieusement.
+
+## 36. Real-world lots: harmonics, scores and the remaining gap (2026-11-24)
+
+Protocol: frozen binary (`/tmp/ly4-fix1`), unchanged manifests and cached MIDI
+references (`--refs-only`), one lot at a time, `CARGO_BUILD_JOBS=2
+RUST_TEST_THREADS=2 nice -n 10`, `mesure.py` + `ly_notes.py selftest` (OK).
+Every file is compared with the same oracle as in §33–§35; no comparator rule
+was changed during this campaign.
+
+### Fix: `\harmonicByFret` plays the partial, not the written note
+
+`faure-sicilienne-guitare-doigtee.ly` ends with `\harmonicByFret #5 g,4.`.
+`ly/music-functions-init.ly:779-797` passes the argument to
+`calc-harmonic-pitch` (`scm/tablature.scm:297-320,342-366`): fret 5 selects
+partial 3, `(2 0 0)`, i.e. **two octaves** are *added to already resolved
+pitches*. LilyPond 2.26 plays G5 (79), the reader played G3 (55).
+
+The reader now has a dedicated `Context::Harmonic { semitones, music }`
+wrapper (`ast.rs`, `parser.rs`, `events.rs`). It is also a `Wrapper`
+(`parser.rs`) so that an enclosing `\relative` is not applied twice, and it is
+traversed by the same helpers as `\transpose` (`builder.rs`, `parser.rs`).
+Unlike `Context::Transpose`, it does **not** move the relative reference:
+`\relative c { \harmonicByFret #5 g,4. c'2 }` under `\new Staff` plays
+55/48, as verified with LilyPond 2.26. Reduced test
+`harmonic_by_fret_joue_le_partiel_pas_la_note_ecrite` (55/48) fails before the
+fix (31/48).
+
+### Controlled measurement (one lot at a time, no loss)
+
+| Lot | Exact before | Exact after | N1 / N2 gains | N1 / N2 losses |
+| --- | ---: | ---: | ---: | ---: |
+| `ra` (1724 measured) | 1690 (98.0 %) | **1690 (98.0 %)** | 0 | 0 |
+| `mut` (1316) | 1226 (93.2 %) | **1227 (93.2 %)** | 1 | 0 |
+| `rw` (1365) | 1268 (92.9 %) | **1269 (93.0 %)** | 1 | 0 |
+
+The only file gained is `faure-sicilienne-guitare-doigtee.ly` on both real
+lots. N1/N2 and N2-grace are unchanged everywhere. `cargo test --workspace`,
+`clippy -D warnings` and `fmt --check` are green.
+
+### Remaining failures, grouped by first divergent event
+
+Reusing the cached work directories of the same run, the 89 `mut` / 96 `rw`
+inexact files split as follows (first divergent `(pitch, attack)` pair):
+
+| First divergence | `mut` | `rw` | Typical example |
+| --- | ---: | ---: | --- |
+| Extra note, no missing note | 29 | 46 | `BWV533.ly`, `bwv604.ly`, `bwv651.ly` |
+| Missing note, no extra note | 15 | 28 | `bwv855a.ly`, `Fuge_Opus137.ly` |
+| Extra note with nearby shift | 14 | 27 | `bwv612.ly`, `chopin_prelude_op9_n3.ly` |
+| One diatonic step | 4 | 4 | `Diademata.ly`, `Lyngham.ly` |
+| One octave (or more) | 8 | 8 | `Rimsky.ly`, `25EF-01.ly` |
+| Other | 19 | 19 | `w10-h-moll-cfi.ly`, `saltarello.ly` |
+
+The largest group is the **extra unison on sibling staves**. A cross-staff
+merge was prototyped in the reader (first matching staff name across parts,
+plus an `unperformed` mark when the target staff already sounds the pitch).
+On `mut` it gained 4 files and **lost 5** (`bwv656-let.ly`, `bwv656-a4.ly`,
+`bwv-988-v12.ly`, `bwv-988-v24.ly`, `all-my-heart.ly`): the prototype was
+reverted, the comparator was left untouched, and the zero-loss invariant was
+preserved. A correct port needs the per-`\score` context lookup of
+`find_context_near` (`lily/context.cc:200-225`) rather than a global name
+table; it is not yet implemented.
+
+`w10-h-moll-cfi.ly` compiles under LilyPond 2.26, so it remains a genuine
+reader defect: from tick 46.5 the right hand plays a diatonic step instead of
+the next written note and the offset grows to the end. Reduced sources with
+the same notes and with the text-spanner/fingering decorations are exact,
+which points at the interaction of `\partial`, `\repeat volta` in the global
+voice and the polyphonic `<< … \\ … >>`, not at a faulty reference.
+
+### Scores
+
+**Raw** (all measured files in the denominator):
+
+| Lot | Exact | Total | Raw |
+| --- | ---: | ---: | ---: |
+| `ra` | 1690 | 1724 | **98.0 %** |
+| `mut` | 1227 | 1316 | **93.2 %** |
+| `rw` | 1269 | 1365 | **93.0 %** |
+
+**Excluding only the legitimate exceptions** (unchanged numerators): 22
+exceptions on `mut`, 25 on `rw` — `mut` **1227/1294 = 94.8 %**, `rw`
+**1269/1340 = 94.7 %**. The 95 % raw target is therefore **not reached**:
++24 exact files are still needed on `mut` and +28 on `rw`.
+
+The exceptions are unchanged from §35, each with its recorded reason:
+
+- faulty references that no longer compile with LilyPond 2.26/2.27 (the MIDI
+  comes from error recovery): `\autochange` (`50/51title-hub.ly`),
+  `\compressFullBarRests` (`Symphony5_1/2.ly`, `bridge.ly`,
+  `mozart-hrn-3.ly`, `O_Mistress_Mine.ly`), `\compressMusic` (`bwv612.ly`,
+  `bwv631a.ly`, `bwv641.ly`, `bwv652.ly`), `\fermataMarkup` (`ballet.ly`,
+  `gnomus.ly`), reserved `q` (`Womut.ly`, `Ich_ruf_zu_dir2.ly`), Guile/note
+  errors or out-of-range compiles (`bwv544.ly`, `BWV-830-4.ly`,
+  `violinoII.ly`, `Symphony7_1.ly`, `…/dies_irae-lys/score.ly`);
+- music needing a full Scheme evaluator (level B, measured and not adopted,
+  `lilypond-scheme.md` §8): `saltarello.ly`, `baba.ly` (both lots),
+  `input-shorthands/fuzzy-scale/example.ly`,
+  `late-evaluation-of-variables.ly`,
+  `adding-orchestral-cues-to-a-vocal-score.ly` (`rw` only).
+
+No file was silently dropped: the 61 deliberately unsupported sources remain
+excluded by exit code 3 on all three lots, exactly as in §33–§35.
