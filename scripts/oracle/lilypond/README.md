@@ -316,3 +316,26 @@ writable). `--inject-midi` reuses `regen-refs.py`'s injection on a local copy;
 no MIDI are recorded as `echec` and excluded from both denominators (the count
 is printed in `resume.md`). `lots-externes.py --causes --lot ext` groups the
 non-exact files by their first divergent note tuple.
+
+### Fair reference: the score the reader imports (`--same-score`)
+
+The raw reference above is *not* always the score the reader turns into
+MusicXML. LilyPond writes one MIDI per `\score` carrying `\midi`, and
+`_midi_produit()` keeps the first one; meanwhile the reader selects its score
+in `scoretk-lilypond-import/src/parser.rs`, `Parser::document`, l. 506-569:
+
+- `\score` blocks are collected by `Parser::toplevel_item`, l. 637-650,
+  including those inside `\book`/`\bookpart` (`Parser::parse_book`, l. 739-748);
+- implicit top-level music expressions are the fallback
+  (`Parser::parse_toplevel_music`, l. 783-806);
+- the **first partition with `\midi` wins** (l. 549-553), otherwise the first
+  explicit score, otherwise the first expression (l. 511-519).
+
+`references.py --inject-midi --same-score` therefore rewrites a sandboxed
+copy: `\midi { }` is injected in the score so selected and removed from every
+other `\score`, so LilyPond emits exactly one MIDI — the one of that score.
+The transformation is checked by `references.py --selftest`. A main file
+without an explicit `\score` keeps the raw injection: its score comes from a
+top-level expression (possibly held by an included variable), which
+`regen-refs.py` already wraps. Keep the two reference trees separate; report
+both scores rather than replacing the raw one.

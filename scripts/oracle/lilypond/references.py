@@ -297,20 +297,31 @@ def _fichier_score_lu(source: Path, dossier: Path) -> tuple[Path, int] | None:
     everywhere (``Parser::toplevel_item``, l. 637-650, recursing through
     ``\\book`` in `Parser::parse_book`, l. 739-748), implicit top-level music
     expressions are the fallback (`Parser::parse_toplevel_music`, l. 783-806),
-    and the **first block carrying ``\\midi`` wins** (l. 549-553).  Here the
-    main file is considered first, then the included files in path order; a
-    file without ``\\score`` falls back to the raw injection below.
+    and the **first block carrying ``\\midi`` wins** (l. 549-553).  The main
+    file is visited before the files it includes, in textual include order;
+    a source with no ``\\score`` at all keeps the raw injection below.
     """
-    fichiers = [dossier / source.name]
-    fichiers += sorted(
-        p for p in dossier.rglob("*")
-        if p.suffix in (".ly", ".ily") and p.name != source.name
-    )
+    # Only the files the source actually includes (transitively): every
+    # directory of a repository holds the other pieces' includes, and taking
+    # the first score-bearing file by path would select the wrong score.
+    fichiers: list[Path] = []
+    vus: set[Path] = set()
+
+    def visiter(fichier: Path) -> None:
+        resolu = fichier.resolve()
+        if resolu in vus or not fichier.is_file():
+            return
+        vus.add(resolu)
+        fichiers.append(fichier)
+        texte = fichier.read_text(encoding="utf-8", errors="replace")
+        for nom in re.findall(r'\\include\s*"([^"]+)"', texte):
+            visiter(fichier.parent / nom)
+
+    visiter(dossier / source.name)
     for fichier in fichiers:
         if not fichier.is_file():
             continue
-        texte = fichier.read_text(encoding="utf-8", errors="replace")
-        blocs = blocs_score(texte)
+        blocs = blocs_score(fichier.read_text(encoding="utf-8", errors="replace"))
         for index, (_, _, has_midi) in enumerate(blocs):
             if has_midi:
                 return fichier, index
@@ -353,29 +364,37 @@ def compiler_injecte(
 
         cible = _fichier_score_lu(source, dossier) if same_score else None
         include_args = [] if cible is not None else prepare_includes(source, dossier)
-        if same_score:
-            if cible is not None:
-                for fichier in sorted(dossier.rglob("*")):
-                    if fichier.suffix not in (".ly", ".ily") or not fichier.is_file():
-                        continue
-                    texte = fichier.read_text(encoding="utf-8", errors="replace")
-                    modifie = pour_meme_score(texte, cible[1] if fichier == cible[0] else None)
-                    if modifie != texte:
-                        fichier.write_text(modifie, encoding="utf-8")
-                candidats = [(dossier / source.name).read_text(encoding="utf-8",
-                                                               errors="replace")]
-            else:
-                # No explicit score: the reader imports the first top-level
-                # music expression, which is what regen-refs.py wraps.
-                texte = (dossier / source.name).read_text(encoding="utf-8", errors="replace")
-                candidats = candidats_avec_midi(texte) or [texte]
+        texte_original = (dossier / source.name).read_text(encoding="utf-8",
+                                                           errors="replace")
+        bruts = candidats_avec_midi(texte_original) or [texte_original]
+        if same_score and cible is not None:
+            for fichier in sorted(dossier.rglob("*")):
+                if fichier.suffix not in (".ly", ".ily") or not fichier.is_file():
+                    continue
+                texte = fichier.read_text(encoding="utf-8", errors="replace")
+                modifie = pour_meme_score(texte, cible[1] if fichier == cible[0] else None)
+                if modifie != texte:
+                    fichier.write_text(modifie, encoding="utf-8")
+            # The targeted copy is tried first.  If the selected score lives
+            # in an include that is never engraved, LilyPond writes no MIDI;
+            # the raw injection is then the honest fallback.
+            candidats = [(dossier / source.name).read_text(encoding="utf-8",
+                                                           errors="replace")]
+            repli = bruts
         else:
-            texte = (dossier / source.name).read_text(encoding="utf-8", errors="replace")
-            candidats = candidats_avec_midi(texte) or [texte]
+            candidats = bruts
+            repli = []
         sortie = base / "ly"
         ok = False
         journal = "aucun candidat n'a compilé"
-        for candidat in candidats:
+        essais = [(c, False) for c in candidats] + [(c, True) for c in repli]
+        for candidat, restaurer in essais:
+            if restaurer:
+                # Restore pristine includes before the raw fallback.
+                shutil.rmtree(dossier)
+                shutil.copytree(source.parent, dossier)
+                if include_args:
+                    prepare_includes(source, dossier)
             (dossier / source.name).write_text(candidat, encoding="utf-8")
             code, journal, midi = _lancer(
                 dossier / source.name, sortie, lilypond, timeout,
