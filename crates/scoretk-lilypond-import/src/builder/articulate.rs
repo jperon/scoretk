@@ -173,14 +173,30 @@ pub(crate) fn expand_articulate(staves: &mut [StaffBuild], enabled: bool) {
     if !enabled {
         return;
     }
+    // `ac:current-key` est une variable Scheme **globale** à toute la musique
+    // articulée (`ly/articulate.ly:193-202`), initialisée en do majeur et
+    // remplacée par chaque `KeyChangeEvent` (l. 818-820). `ac:up`/`ac:down`
+    // (l. 283-306) en tire l'altération du degré voisin. Une armure posée
+    // dans un `\global` parallèle vaut donc pour les ornements de *toutes*
+    // les voix, même si celles-ci ne portent aucun événement `\key`.
+    let mut keys: Vec<(Fraction, usize, i8)> = staves
+        .iter()
+        .flat_map(|staff| staff.voices.iter())
+        .flat_map(|voice| voice.interpreted.events.iter())
+        .filter_map(|event| match &event.kind {
+            EventKind::Meta(MetaEvent::Key(key)) => {
+                Some((event.tick, event.order, key.concert_key.fifths()))
+            }
+            _ => None,
+        })
+        .collect();
+    keys.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
     for staff in staves.iter_mut() {
         for voice in &mut staff.voices {
             let mut events = Vec::with_capacity(voice.interpreted.events.len());
-            let mut fifths = 0i8;
             for event in voice.interpreted.events.drain(..) {
-                if let EventKind::Meta(MetaEvent::Key(key)) = &event.kind {
-                    fifths = key.concert_key.fifths();
-                }
+                let position = keys.partition_point(|(tick, _, _)| *tick <= event.tick);
+                let fifths = position.checked_sub(1).map_or(0, |index| keys[index].2);
                 let EventKind::Chord(chord) = &event.kind else {
                     events.push(event);
                     continue;

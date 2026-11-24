@@ -4363,6 +4363,28 @@ fn articulate_developpe_les_ornements_en_notes_jouees() {
     assert_eq!(notes, vec![71, 72, 72, 72, 74, 74, 74, 76, 76, 77, 77, 77]);
 }
 
+/// L'armure d'un `\global` parallèle vaut pour les ornements articulés :
+/// `ac:current-key` (`ly/articulate.ly:193-202`, remplacé en l. 818-820) est
+/// global à la musique, et `ac:down` (l. 296-306) prend l'altération du degré
+/// voisin dans **cette** armure. Un `\mordent` sur sol en sol majeur joue donc
+/// sol-fa♯-sol, pas sol-fa-sol. Vérifié avec LilyPond 2.27 sur la source
+/// réduite ci-dessous : MIDI 67/66/67/67.
+#[test]
+fn mordent_avec_armure_dans_un_global_parallele() {
+    let src = r#"\version "2.27.0"
+\include "articulate.ly"
+global = { \key g \major \time 2/2 }
+\score {
+  \articulate <<
+    \global
+    \new Staff { g'2\mordent g'2 }
+  >>
+}"#;
+    let score = read_lilypond(src).expect("lecture");
+    let hauteurs: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+    assert_eq!(hauteurs, vec![67, 66, 67, 67]);
+}
+
 /// `\change Staff` vers une portée **de nom différent** qui joue déjà la même
 /// hauteur : `lily/change-iterator.cc` déplace la voix dans l'autre contexte
 /// `Staff`, et `lily/midi-walker.cc:95-115` ne joue qu'une attaque pour les
