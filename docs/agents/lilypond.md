@@ -9287,3 +9287,7 @@ For example `bwv-1006a_6.ly` keeps its two staves and now gains `<instrument-nam
 three lots, one measurement at a time. `cargo test --workspace`,
 `cargo clippy --workspace --all-targets -D warnings`, `cargo fmt --all --check`
 and the `wasm32-unknown-unknown` build of `scoretk-wasm` are green.
+`nix flake check` still fails on both this branch and a pristine worktree at
+`3d72b41e`: `flake.nix`'s source filter drops
+`crates/scoretk-midi-export/tests/section_pause_jump.mscx`. That failure is
+pre-existing and unrelated to this campaign.
