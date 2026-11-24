@@ -320,6 +320,18 @@ assert.equal(
   'l\\include relatif à sub/ doit être résolu avant la racine',
 );
 
+// 25. convertDetailed : API additive, mêmes octets que convert et rapport.
+assert.equal(typeof wasm.convertDetailed, 'function', 'convertDetailed doit être exposé');
+const detailed = wasm.convertDetailed(mscx, { encodingDate: '2026-01-01', software: 'scoretk-test' });
+assert.ok(detailed.bytes instanceof Uint8Array, 'convertDetailed doit renvoyer des octets');
+assert.deepEqual(detailed.bytes, xml, 'convertDetailed doit produire les mêmes octets que convert');
+assert.ok(Array.isArray(detailed.losses), 'convertDetailed doit renvoyer une liste de pertes');
+for (const loss of detailed.losses) {
+  for (const key of ['layer', 'item', 'tick', 'track']) {
+    assert.ok(key in loss, `une perte doit porter ${key}`);
+  }
+}
+
 console.log(
   `node-smoke: ok (${pkgDir}, format détecté ${wasm.detect(mscx)}, ` +
     `taille ${new Uint8Array(readFileSync(join(esmDir, 'scoretk_wasm_bg.wasm'))).length} octets, ` +

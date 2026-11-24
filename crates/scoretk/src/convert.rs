@@ -18,7 +18,7 @@
 //! Orchestration historique MuseScore → MusicXML en un appel.
 
 use crate::options::{MidiOptions, Options};
-use crate::{read, write, Format, Result};
+use crate::{read_with_report, write_with_report, Format, Result};
 use scoretk_musicxml_export::ExportOptions;
 
 /// Format de sortie de [`convert`].
@@ -50,7 +50,15 @@ pub struct ConvertOptions {
 /// ([`write`]) ; tout se passe en mémoire. La date d'encodage vient de
 /// [`ExportOptions::encoding_date`], ce qui rend les sorties reproductibles.
 pub fn convert(input: &[u8], options: &ConvertOptions) -> Result<Vec<u8>> {
-    let score = read(input, Format::Mscz)?;
+    convert_with_report(input, options).map(|(bytes, _)| bytes)
+}
+
+/// Variante de [`convert`] qui renvoie aussi le rapport de pertes.
+pub fn convert_with_report(
+    input: &[u8],
+    options: &ConvertOptions,
+) -> Result<(Vec<u8>, crate::model::ConversionReport)> {
+    let (score, _) = read_with_report(input, Format::Mscz)?;
     let format = match options.format {
         OutputFormat::MusicXml => Format::MusicXml,
         OutputFormat::Mxl => Format::Mxl,
@@ -61,5 +69,5 @@ pub fn convert(input: &[u8], options: &ConvertOptions) -> Result<Vec<u8>> {
         concert_pitch: options.export.concert_pitch,
         midi: MidiOptions::default(),
     };
-    write(&score, format, &write_options)
+    write_with_report(&score, format, &write_options)
 }

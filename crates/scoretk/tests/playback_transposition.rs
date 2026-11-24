@@ -102,7 +102,7 @@ fn transposition_de_lecture_midi_seulement() {
     // le seul que LilyPond joue : c'est sa musique transposée qui fournit le
     // modèle, déjà en hauteur de concert.
     assert_eq!(
-        score.playback_transposition, None,
+        score.playback.transposition, None,
         "le modèle est déjà la partition MIDI transposée"
     );
 
@@ -175,7 +175,7 @@ fn transposition_non_enregistree_si_la_partition_midi_differe() {
     );
     let score = read(different.as_bytes(), Format::Ly).expect("lecture .ly");
     assert_eq!(
-        score.playback_transposition, None,
+        score.playback.transposition, None,
         "une partition MIDI différente ne doit pas être prise comme référence"
     );
     let midi = write(&score, Format::Midi, &Options::default()).expect("export MIDI");
@@ -192,9 +192,9 @@ fn transposition_non_enregistree_si_la_partition_midi_differe() {
     // gravée, il n'y a pas de partition « MIDI only » à détecter.
     let avec_layout = SOURCE.replace("  \\midi {}", "  \\layout {}\n  \\midi {}");
     let score = read(avec_layout.as_bytes(), Format::Ly).expect("lecture .ly");
-    assert_eq!(score.playback_transposition, None);
+    assert_eq!(score.playback.transposition, None);
 
     // Cas non concerné : une seule partition, sans `\midi`.
     let seul = read(SOURCE_GRAVE_SEULE.as_bytes(), Format::Ly).expect("lecture .ly");
-    assert_eq!(seul.playback_transposition, None);
+    assert_eq!(seul.playback.transposition, None);
 }

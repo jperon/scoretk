@@ -71,6 +71,7 @@ propre URL ; si l'environnement ne le permet pas, définir
 | --- | --- | --- |
 | `convert` | `(input: Uint8Array, options?: ConvertOptions) => Uint8Array` | conversion |
 | `convertWithTimeline` | `(input: Uint8Array, options?: ConvertOptions) => PlaybackResult` | MusicXML identifié + MIDI + carte des temps (`to` ignoré) |
+| `convertDetailed` | `(input: Uint8Array, options?: ConvertOptions) => DetailedResult` | additive : mêmes octets que `convert` + `{ bytes, losses }` |
 | `detect` | `(input: Uint8Array) => string \| null` | format détecté |
 | `formats` | `() => FormatInfo[]` | formats et sens pris en charge |
 | `version` | `() => string` | version de la bibliothèque |

@@ -1,6 +1,6 @@
 # Pivot model: layer audit and modularisation proposal
 
-Status: **migration in progress — steps 0, 1 and 2 executed** (§10). Audience: whoever
+Status: **migration in progress — steps 0, 1, 2 and 3 executed** (§10). Audience: whoever
 adds GABC, MEI, Capella, Guitar Pro or Humdrum after the ten current directions
 are stable (`docs/TODO.md:29-46`). The question answered here is not "is the
 model wrong?" but "which parts of it are a genuine common denominator, and
@@ -494,7 +494,20 @@ format or the wasm API.
 
 ### 10.1 Step 0 — frozen baselines
 
-All measurements were made outside the repository in
+**Re-frozen on 2026-11-24 before step 3.** Master had received three LilyPond
+import fixes since `d5159339` (`ef6dc9e5`, itself merged from `modular-1`); the
+old baselines no longer described the starting point. All five oracles were
+re-run with a CLI built from the clean `ef6dc9e5` tree (sha256 of the frozen
+binary `c346b310b09bc07a82a524aa66dca3edf75fc352f8a17b0ab612ca65fade6e9e`)
+and with the Rust core helper `oracle_core` running in that same clean tree.
+The first attempt was discarded: it ran the helper from the dirty migration
+worktree, so the MusicXML report showed a compile error and 0/173 core-identical
+scores instead of 171/173. The complete re-freeze gives 638 MuseScore rows,
+174 MusicXML rows, 2 230 MIDI rows, 1 824 LilyPond rows and 26 542 ABC
+measurements. Frozen wasm: **2 327 520 raw bytes / 911 434 gzip** (`SIZE-master`).
+All step 3–5 comparisons below use this new baseline, not the `d5159339` one.
+
+The original step-0 measurements below are kept for provenance. They were made outside the repository in
 `/home/jacques/tmp/scoretk/baselines-mod/` (binary, wasm size, lots, oracle raw
 outputs, comparison tool `compare.py`). Source commit: `d5159339`. Frozen
 release CLI: sha256 `2a0fd508eafbea524…`. Frozen wasm: **2 305 575 raw bytes /
@@ -569,3 +582,38 @@ Verification: `cargo test --workspace`, clippy `-D warnings`, fmt, all eight
 oracles again report 0 lost file and 0 changed output byte (same row counts as
 step 1). In particular, the MusicXML full-parity `hidden staff-details` counts
 and the MuseScore round trips are unchanged.
+
+### 10.4 Step 3 — playback layer and additive report API
+
+`NotePlayback { play, unperformed, velocity, user_velocity, velo_type }` owns the
+five per-note L4 fields and `Playback { transposition, articulate,
+unfold_repeats }` owns the score-wide ones; all 25 reader/writer/test call sites
+were changed to `note.playback.*` / `score.playback.*`. The facade gains
+`read_with_report`, `write_with_report` and `convert_with_report`; `read`,
+`write` and `convert` now delegate to them and ignore the report, so their
+signatures and bytes are unchanged. `write_with_report` appends L5 losses for
+credits and TBox texts that a writer cannot emit. On wasm, `convertDetailed`
+returns `{ bytes, losses }`; `convert`, `convertWithTimeline`, `detect`,
+`formats` and `version` are untouched, and `classic/scoretk.js` merely forwards
+the new function. The node smoke test asserts that `convertDetailed().bytes`
+equals `convert()` byte for byte.
+
+**Adjustments to §5.2/§6.3:** `Note::new` is `const fn`, so it cannot call
+`NotePlayback::default()`; the layer exposes `NotePlayback::DEFAULT` as a
+`const` and `Default` delegates to it. The write-side report is *not* a copy of
+`Score::report`: it starts with it and appends writer-specific losses, so the
+old test assumption "report == score.report" was replaced by a prefix check.
+These are local consequences of making the API additive, not design changes.
+
+Verification against the re-frozen `ef6dc9e5` baseline: `cargo test --workspace`,
+clippy `-D warnings`, fmt, all eight `wasm32-unknown-unknown` builds,
+`ly_notes.py selftest` and the Node smoke test pass. Wasm raw size **2 331 467
+bytes**, i.e. **+3 947 bytes (+0.170 %)** versus the new baseline, far below the
+2 % threshold. The five oracles report **0 lost file and 0 changed artefact
+byte**: MuseScore 638/638 rows (1 850/1 850 scoretk artefacts), MusicXML
+174/174 (352/352), MIDI 2 230/2 230 (2 197/2 197), LilyPond 1 824/1 824
+(2 586/2 586), ABC 26 542 measurements (53 076/53 076 artefacts). Two Lakh
+rows in the MIDI robustness lot flapped from success to the 10 s timeout under
+concurrent load (9.49 s and 5.87 s in the baseline); replaying exactly those
+two files without the load gives identical SHA-256 in both binaries
+(`852bf893…`, `b66941b0…`, 3 890 089 and 3 871 157 bytes). No output changed.

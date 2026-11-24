@@ -3040,8 +3040,8 @@ fn cue_tag_seulement_pour_note_non_jouee() {
     ajouter_element(&mut score, &mut measure, track, Fraction::ZERO, chord_rest);
 
     let mut muet = Note::new(62, tpc::D);
-    muet.play = false;
-    muet.unperformed = true; // cluster LilyPond : gravé, sans performer MIDI
+    muet.playback.play = false;
+    muet.playback.unperformed = true; // cluster LilyPond : gravé, sans performer MIDI
     let muet_id = score.add_note(muet);
     let mut chord_rest = ChordRest::chord(Duration::quarter());
     chord_rest.chord_mut().expect("accord").notes.push(muet_id);
@@ -3056,7 +3056,7 @@ fn cue_tag_seulement_pour_note_non_jouee() {
     // `<play>0</play>` d'une partition MuseScore : non jouée, mais ni petite
     // ni issue d'un performer absent. `isCueNote` (:4191-4193) n'écrit rien.
     let mut sourd = Note::new(64, tpc::E);
-    sourd.play = false;
+    sourd.playback.play = false;
     let sourd_id = score.add_note(sourd);
     let mut chord_rest = ChordRest::chord(Duration::quarter());
     chord_rest.chord_mut().expect("accord").notes.push(sourd_id);
@@ -3528,8 +3528,8 @@ fn note_non_jouee_liee_necrit_pas_de_tie_avec_cue() {
     let second = Note::new(60, tpc::C);
     let mut notes = [first, second];
     for note in &mut notes {
-        note.play = false;
-        note.unperformed = true; // ClusterNoteEvent : la branche `cue` exclut `tie`
+        note.playback.play = false;
+        note.playback.unperformed = true; // ClusterNoteEvent : la branche `cue` exclut `tie`
     }
     for (tick, note) in [(Fraction::ZERO, 0), (Fraction::HALF, 1)] {
         let id = score.add_note(notes[note].clone());

@@ -399,7 +399,7 @@ fn read_note(
     note.ghost = ghost;
     note.small = small;
     note.visible = visible;
-    note.play = play;
+    note.playback.play = play;
     note.fingerings = fingerings;
     id
 }

@@ -107,19 +107,19 @@ fn lit_les_velocites_utilisateur_en_4x() {
     let notes = lire("4.10", &voice);
     assert_eq!(notes.len(), 5);
 
-    assert_eq!(notes[0].user_velocity, Some(50));
-    assert_eq!(notes[0].velo_type, Some(VeloType::OffsetVal));
-    assert_eq!(notes[1].user_velocity, Some(-50));
-    assert_eq!(notes[1].velo_type, Some(VeloType::OffsetVal));
-    assert_eq!(notes[2].user_velocity, Some(42));
-    assert_eq!(notes[2].velo_type, Some(VeloType::UserVal));
-    assert_eq!(notes[3].user_velocity, Some(30));
-    assert_eq!(notes[3].velo_type, None);
-    assert_eq!(notes[4].user_velocity, Some(10));
-    assert_eq!(notes[4].velo_type, Some(VeloType::OffsetVal));
+    assert_eq!(notes[0].playback.user_velocity, Some(50));
+    assert_eq!(notes[0].playback.velo_type, Some(VeloType::OffsetVal));
+    assert_eq!(notes[1].playback.user_velocity, Some(-50));
+    assert_eq!(notes[1].playback.velo_type, Some(VeloType::OffsetVal));
+    assert_eq!(notes[2].playback.user_velocity, Some(42));
+    assert_eq!(notes[2].playback.velo_type, Some(VeloType::UserVal));
+    assert_eq!(notes[3].playback.user_velocity, Some(30));
+    assert_eq!(notes[3].playback.velo_type, None);
+    assert_eq!(notes[4].playback.user_velocity, Some(10));
+    assert_eq!(notes[4].playback.velo_type, Some(VeloType::OffsetVal));
 
     // `Note::velocity` reste réservé à l'import MIDI.
-    assert!(notes.iter().all(|note| note.velocity.is_none()));
+    assert!(notes.iter().all(|note| note.playback.velocity.is_none()));
 }
 
 #[test]
@@ -144,7 +144,9 @@ fn ignore_les_velocites_utilisateur_en_3x() {
     .concat();
     let notes = lire("3.02", &voice);
     assert_eq!(notes.len(), 3);
-    assert!(notes.iter().all(|note| note.user_velocity.is_none()));
-    assert!(notes.iter().all(|note| note.velo_type.is_none()));
-    assert!(notes.iter().all(|note| note.velocity.is_none()));
+    assert!(notes
+        .iter()
+        .all(|note| note.playback.user_velocity.is_none()));
+    assert!(notes.iter().all(|note| note.playback.velo_type.is_none()));
+    assert!(notes.iter().all(|note| note.playback.velocity.is_none()));
 }

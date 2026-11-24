@@ -1270,7 +1270,7 @@ fn build_note(
         note.visible = false;
     }
     if element.has_child("cue") {
-        note.play = false;
+        note.playback.play = false;
     }
     note
 }

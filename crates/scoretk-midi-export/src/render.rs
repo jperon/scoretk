@@ -1293,7 +1293,8 @@ fn actual_ticks(
 /// change aucun numéro de note, et les autres écrivains gardent l'armure écrite.
 fn played_pitch(score: &Score, note: &Note, source_tick: i64, offsets: &BTreeMap<i64, i32>) -> u8 {
     let shift = score
-        .playback_transposition
+        .playback
+        .transposition
         .map_or(0, |transposition| transposition.chromatic);
     (i32::from(note.pitch) + shift + pitch_offset(offsets, source_tick)).clamp(0, 127) as u8
 }
@@ -1338,7 +1339,7 @@ fn render_chord(
             .chord
             .notes
             .first()
-            .is_none_or(|id| score.notes[id.index()].play);
+            .is_none_or(|id| score.notes[id.index()].playback.play);
         if !playable {
             continue;
         }
@@ -1541,7 +1542,7 @@ fn render_chord(
 
     for (note_index, note) in chord.notes.iter().enumerate() {
         let note = &score.notes[note.index()];
-        if !note.play {
+        if !note.playback.play {
             continue;
         }
         if note.tie_back.is_some() && !trilled {
@@ -1810,7 +1811,7 @@ fn render_chord(
             continue;
         }
         let mut note_length = length;
-        if score.playback_articulate {
+        if score.playback.articulate {
             let (numerator, denominator) = articulate_factor(chord, slurred);
             note_length = note_length * numerator / denominator;
         }
@@ -1869,7 +1870,7 @@ fn render_grace_notes(
         (velocities.val(track, source_tick) as f64 * velocity_multiplier).round() as i32;
     for (note_index, note_id) in chord.notes.iter().enumerate() {
         let note = &score.notes[note_id.index()];
-        if !note.play || note.tie_back.is_some() {
+        if !note.playback.play || note.tie_back.is_some() {
             // Note tenue par la note précédente : pas de nouvelle attaque.
             continue;
         }
@@ -2216,7 +2217,7 @@ fn gate_time(
 ) -> i64 {
     // `\articulate` remplace le système de `gateTime` de MuseScore par ses
     // propres facteurs (`ly/articulate.ly`) : la durée de base reste pleine.
-    if score.playback_articulate {
+    if score.playback.articulate {
         return 100;
     }
     // Sous une liaison d'expression, la durée reste pleine.
@@ -2262,7 +2263,7 @@ fn gate_time(
 /// articulations, note fantôme) et déjà clampée, exactement comme
 /// `playNote` (`compatmidirenderinternal.cpp:227-229`) reçoit `params.velo`.
 fn customize_velocity(velocity: i32, note: &Note) -> i32 {
-    let Some(user_velocity) = note.user_velocity else {
+    let Some(user_velocity) = note.playback.user_velocity else {
         return velocity.clamp(1, 127);
     };
     // `playNote` ne personnalise que si `userVelocity() != 0`
@@ -2272,7 +2273,7 @@ fn customize_velocity(velocity: i32, note: &Note) -> i32 {
     }
     // Calcul en `i64` : une valeur `<velocity>` extrême ne doit pas déborder
     // en `i32` avant le clamp final.
-    let customized: i64 = match note.velo_type.unwrap_or(VeloType::UserVal) {
+    let customized: i64 = match note.playback.velo_type.unwrap_or(VeloType::UserVal) {
         VeloType::OffsetVal => {
             i64::from(velocity) + (i64::from(velocity) * i64::from(user_velocity)) / 100
         }

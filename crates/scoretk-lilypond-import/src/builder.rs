@@ -174,11 +174,11 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     let mut score = Score::new();
     // Transposition d'un second `\score` MIDI : ignorée par tous les écrivains
     // sauf MIDI, la partition gravée reste la référence du modèle.
-    score.playback_transposition = document
+    score.playback.transposition = document
         .playback_transposition
         .map(scoretk_core::model::PlaybackTransposition::new);
-    score.playback_articulate = document.playback_articulate;
-    score.playback_unfold_repeats = document.playback_unfold_repeats;
+    score.playback.articulate = document.playback_articulate;
+    score.playback.unfold_repeats = document.playback_unfold_repeats;
     write_metadata(&mut score, document);
 
     let mut staves: Vec<StaffBuild> = Vec::new();
@@ -729,7 +729,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     }
     // `ly/articulate.ly` transforme la musique *avant* le calcul des mesures :
     // les notes courtes de l'excursion tombent dans la durée de la note écrite.
-    articulate::expand_articulate(&mut staves, score.playback_articulate);
+    articulate::expand_articulate(&mut staves, score.playback.articulate);
     for (index, lyrics) in pending_lyrics {
         if let Some(staff) = staves.get_mut(index) {
             staff.lyrics.push(lyrics);
@@ -2006,7 +2006,7 @@ fn fusionne_unissons_entre_portees(score: &mut Score, staves: &[StaffBuild]) {
                 let tick = measure.start_tick + segment.tick;
                 for id in &chord.notes {
                     let note = score.note(*id);
-                    if note.unperformed || !note.play || note.is_tie_stop() {
+                    if note.playback.unperformed || !note.playback.play || note.is_tie_stop() {
                         continue;
                     }
                     sons.push((*id, track.staff(), cible, tick, note.pitch, deplacee));
@@ -2041,7 +2041,7 @@ fn fusionne_unissons_entre_portees(score: &mut Score, staves: &[StaffBuild]) {
                 .expect("groupe non vide");
             for son in groupe {
                 if son.0 != gardee.0 {
-                    score.note_mut(son.0).unperformed = true;
+                    score.note_mut(son.0).playback.unperformed = true;
                 }
             }
         }
@@ -2482,14 +2482,14 @@ fn place_chord(
         if let ChordRestKind::Chord(chord) = &chord_rest.kind {
             for id in &chord.notes {
                 let note = score.note_mut(*id);
-                note.play = false;
-                note.unperformed = true; // musique déplacée vers une portée muette
+                note.playback.play = false;
+                note.playback.unperformed = true; // musique déplacée vers une portée muette
             }
             for grace in &chord.grace_chords {
                 for id in &grace.chord.notes {
                     let note = score.note_mut(*id);
-                    note.play = false;
-                    note.unperformed = true;
+                    note.playback.play = false;
+                    note.playback.unperformed = true;
                 }
             }
         }
@@ -2512,8 +2512,8 @@ fn build_note(note: &crate::events::NoteEvent, fingerings: &[String]) -> Note {
     value.head_group = note.head_group.clone();
     value.small = note.small;
     value.visible = note.visible;
-    value.play = note.play;
-    value.unperformed = note.unperformed;
+    value.playback.play = note.play;
+    value.playback.unperformed = note.unperformed;
     if note.cautionary {
         value.accidental = Some(Accidental {
             kind: accidental_for(note.tpc),
@@ -3362,7 +3362,7 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
     // `ly/script-init.ly` n'est donc plus appliqué : le lecteur ne modelant
     // pas encore cette compression, il ne doit pas non plus raccourcir la fin
     // MIDI des notes (sinon `Celle.ly` perd ses liaisons).
-    let articulate = score.playback_articulate;
+    let articulate = score.playback.articulate;
     // Index des segments ChordRest par tick absolu : la recherche linéaire
     // dans toutes les mesures coûtait O(événements × mesures × segments)
     // (plus de 300 ms sur un concerto de 455 mesures).

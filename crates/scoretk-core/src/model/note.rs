@@ -27,6 +27,7 @@
 //! [`NoteId`] : plus de pointeur `tieBack` / `tieForward`, donc plus de cycle.
 
 use super::ids::NoteId;
+use super::layers::NotePlayback;
 use super::notation::Fingering;
 
 /// Constantes de classe de hauteur tonale (`Tpc`).
@@ -118,7 +119,7 @@ pub enum NoteHeadType {
 
 /// Type de vélocité de note (`VeloType` de `engraving/types/types.h`).
 ///
-/// Le sens de [`Note::user_velocity`] dépend de cette valeur :
+/// Le sens de [`NotePlayback::user_velocity`] dépend de cette valeur :
 /// `Pid::VELO_TYPE` (`<veloType>` du `.mscx`) vaut `USER_VAL` par défaut, comme
 /// `Note::m_veloType` dans `engraving/dom/note.h`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -307,45 +308,9 @@ pub struct Note {
     /// `<small>1</small>` de la note : `isSmallNote` (`exportmusicxml.cpp:4181-4184`)
     /// l'ajoute au `<small>` de l'accord pour écrire `size="cue"`.
     pub small: bool,
-    /// Vrai si la note est jouée.
-    pub play: bool,
-    /// Vrai pour une musique gravée mais sans performer MIDI
-    /// (`ClusterNoteEvent` de `scm/music-functions.scm`, `NullVoice`) : une
-    /// construction propre à LilyPond, que MuseScore ne peut pas exprimer.
-    ///
-    /// `play` seul ne suffit pas : les partitions MuseScore portent aussi
-    /// `<play>0</play>` sur des notes ordinaires, et `isCueNote`
-    /// (`exportmusicxml.cpp:4191-4193`) n'écrit alors aucun `<cue/>`. Ce
-    /// marqueur distinct permet à l'export MusicXML de réserver `<cue/>` aux
-    /// seules notes que MuseScore marquerait comme telles, tout en gardant
-    /// les notes silencieuses identifiables pour l'oracle LilyPond.
-    pub unperformed: bool,
-    /// Vélocité importée du MIDI, valeur absolue 1-127.
-    ///
-    /// Renseignée par l'import MIDI ; l'export MusicXML en tire l'attribut
-    /// `dynamics` de la note (`velo * 100 / 90`, échelle de MuseScore).
-    /// `None` quand la note suit les nuances de la partition.
-    ///
-    /// Ce champ est **distinct** de [`Note::user_velocity`] : il ne provient
-    /// pas de la propriété MuseScore `Pid::USER_VELOCITY` (`<velocity>` du
-    /// `.mscx`) et n'est pas interprété via [`Note::velo_type`]. Le rendu MIDI
-    /// utilise `user_velocity` ; l'export MusicXML conserve `velocity`.
-    pub velocity: Option<u8>,
-    /// `Pid::USER_VELOCITY` de la note (`<velocity>` du `.mscx`, `Note::userVelocity()`),
-    /// entier **signé** : pourcentage d'écart en mode [`VeloType::OffsetVal`],
-    /// vélocité absolue en mode [`VeloType::UserVal`].
-    ///
-    /// `None` quand la balise est absente, c'est-à-dire `m_userVelocity = 0`
-    /// (aucun effet, cf. `compatmidirenderinternal.cpp` : `if
-    /// (note->userVelocity() != 0)`).
-    pub user_velocity: Option<i32>,
-    /// Interprétation de [`Note::user_velocity`] (`Pid::VELO_TYPE`,
-    /// `<veloType>` du `.mscx`).
-    ///
-    /// `None` correspond à la valeur par défaut `VeloType::UserVal`
-    /// (`Note::m_veloType`). Le C++ n'écrit `<veloType>` que lorsqu'il vaut
-    /// `offset`.
-    pub velo_type: Option<VeloType>,
+    /// Données de lecture (L4) : `play`, `unperformed`, vélocités et
+    /// `velo_type`. Voir [`NotePlayback`] pour la sémantique de chaque champ.
+    pub playback: NotePlayback,
     /// Doigtés attachés à la note (`<Fingering>`), exportés en
     /// `<technical><fingering>`.
     pub fingerings: Vec<Fingering>,
@@ -370,11 +335,7 @@ impl Note {
             parentheses: false,
             ghost: false,
             small: false,
-            play: true,
-            unperformed: false,
-            velocity: None,
-            user_velocity: None,
-            velo_type: None,
+            playback: NotePlayback::DEFAULT,
             fingerings: Vec::new(),
         }
     }

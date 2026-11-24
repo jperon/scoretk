@@ -1785,13 +1785,14 @@ impl Reader {
                     }
                 }
                 "ghost" | "dead" => note.ghost = child.int().unwrap_or(0) != 0,
-                "play" => note.play = child.int().unwrap_or(1) != 0,
+                "play" => note.playback.play = child.int().unwrap_or(1) != 0,
                 "velocity" => {
                     // `rw/read410/tread.cpp:3174-3175` (identique en 4.60 et
                     // 5.00) : `n->setUserVelocity(e.readInt())`.
                     // `Pid::USER_VELOCITY` est un INT signé (`dom/property.cpp:87`) :
                     // en mode offset, une valeur négative réduit la vélocité.
-                    note.user_velocity = child.int().and_then(|value| i32::try_from(value).ok());
+                    note.playback.user_velocity =
+                        child.int().and_then(|value| i32::try_from(value).ok());
                 }
                 "veloType" => {
                     // `rw/read410/tread.cpp:3190-3191` : `TRead::readProperty(n,
@@ -1800,7 +1801,7 @@ impl Reader {
                     // sur `OFFSET_VAL` pour une valeur inconnue ; la valeur par
                     // défaut de la propriété est `USER_VAL`
                     // (`dom/note.cpp:3316-3317`).
-                    note.velo_type = Some(match child.text() {
+                    note.playback.velo_type = Some(match child.text() {
                         "user" => VeloType::UserVal,
                         _ => VeloType::OffsetVal,
                     });

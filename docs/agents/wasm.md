@@ -15,7 +15,7 @@ all seven formats.
 
 | Crate | Surface | Nix package |
 | --- | --- | --- |
-| `crates/scoretk-wasm` | `convert`, `convertWithTimeline`, `detect`, `formats`, `version` | `packages.wasm` (`nix build .#wasm`) |
+| `crates/scoretk-wasm` | `convert`, `convertWithTimeline`, `convertDetailed` (additive), `detect`, `formats`, `version` | `packages.wasm` (`nix build .#wasm`) |
 
 ## 2. Build and size
 
@@ -581,6 +581,7 @@ as `string | null`, `formats` as `FormatInfo[]` and `convertWithTimeline` as
 | --- | --- | --- |
 | `convert` | `(input: Uint8Array, options?: ConvertOptions) => Uint8Array` | bytes in both directions, all formats |
 | `convertWithTimeline` | `(input: Uint8Array, options?: ConvertOptions) => PlaybackResult` | identified MusicXML + MIDI + time map; `to` ignored |
+| `convertDetailed` | `(input: Uint8Array, options?: ConvertOptions) => DetailedResult` | additive: same bytes as `convert` plus `{ bytes, losses }` |
 | `detect` | `(input: Uint8Array) => string \| null` | `Format::detect` (content) |
 | `formats` | `() => FormatInfo[]` | seven entries, actual capabilities |
 | `version` | `() => string` | library version |

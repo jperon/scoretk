@@ -72,6 +72,10 @@ export interface TimelinePause { tick: number; endTick: number; timeUs: number; 
 export interface Timeline { division: number; ticks: number; tempo: TimelineTempo[]; measures: TimelineMeasure[]; notes: TimelineNote[]; pauses: TimelinePause[] }
 /** Résultat de `convertWithTimeline`. */
 export interface PlaybackResult { musicxml: Uint8Array; midi: Uint8Array; timeline: Timeline }
+/** Bloc que la conversion n'a pas pu transporter ; `tick` est en rondes. */
+export interface DetailedLoss { layer: string; item: string; tick: number | null; track: number | null }
+/** Résultat de `convertDetailed` : mêmes octets que `convert`, plus le rapport. */
+export interface DetailedResult { bytes: Uint8Array; losses: DetailedLoss[] }
 
 /** Capacités d'un format, telles que compilées dans ce paquet. */
 export interface FormatInfo {
@@ -85,6 +89,8 @@ export interface FormatInfo {
 export function convert(input: Uint8Array, options?: ConvertOptions): Uint8Array;
 /** Produit le MusicXML identifié, le MIDI et la carte des temps du même rendu. Lève une `Error` en cas d'échec. */
 export function convertWithTimeline(input: Uint8Array, options?: ConvertOptions): PlaybackResult;
+/** Convertit comme `convert` et renvoie aussi les pertes structurées (API additive). */
+export function convertDetailed(input: Uint8Array, options?: ConvertOptions): DetailedResult;
 /** Version de la bibliothèque. */
 export function version(): string;
 /** Format détecté d'après le contenu, ou `null`. */
@@ -144,6 +150,93 @@ pub fn convert(input: &[u8], options: Option<ConvertOptions>) -> Result<Vec<u8>,
     }
 
     scoretk::write(&score, to, &write_options).map_err(js_error)
+}
+
+/// Comme [`convert`], mais renvoie aussi le rapport de pertes structuré.
+///
+/// Les octets sont exactement ceux de [`convert`] ; seule la forme de retour
+/// change (`{ bytes, losses }`). Cette fonction est additive : `convert` et
+/// `convertWithTimeline` gardent leur signature et leur comportement.
+#[wasm_bindgen(js_name = "convertDetailed", skip_typescript)]
+pub fn convert_detailed(input: &[u8], options: Option<ConvertOptions>) -> Result<JsValue, JsError> {
+    let options = ApiOptions::from_js(options.as_ref());
+    let from = match options.from.as_deref() {
+        Some(text) => parse_format(text)?,
+        None => scoretk::Format::detect(input).ok_or_else(|| {
+            JsError::new(
+                "format d'entrée non reconnu d'après le contenu ; \
+                 précisez `from` (mscz, mscx, musicxml, xml, mxl, ly, lilypond, abc, mid, midi)",
+            )
+        })?,
+    };
+    let to = match options.to.as_deref() {
+        Some(text) => parse_format(text)?,
+        None => scoretk::Format::MusicXml,
+    };
+    if !from.supports_read() {
+        return Err(JsError::new(&format!(
+            "format « {from} » non pris en charge en lecture"
+        )));
+    }
+    if !to.supports_write() {
+        return Err(JsError::new(&format!(
+            "format « {to} » non pris en charge en écriture"
+        )));
+    }
+    let (score, _) = scoretk::read_with_report(input, from).map_err(js_error)?;
+    let mut write_options = scoretk::Options::default();
+    if let Some(date) = options.encoding_date {
+        write_options.encoding_date = date;
+    }
+    if let Some(software) = options.software {
+        write_options.software = software;
+    }
+    if let Some(concert_pitch) = options.concert_pitch {
+        write_options.concert_pitch = Some(concert_pitch);
+    }
+    if let Some(expand_repeats) = options.expand_repeats {
+        write_options.midi.expand_repeats = expand_repeats;
+    }
+    let (bytes, report) =
+        scoretk::write_with_report(&score, to, &write_options).map_err(js_error)?;
+
+    let result = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(
+        &result,
+        &JsValue::from_str("bytes"),
+        &js_sys::Uint8Array::from(bytes.as_slice()).into(),
+    );
+    let losses = js_sys::Array::new();
+    for loss in &report.losses {
+        let item = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(
+            &item,
+            &JsValue::from_str("layer"),
+            &JsValue::from_str(loss.layer.name()),
+        );
+        let _ = js_sys::Reflect::set(
+            &item,
+            &JsValue::from_str("item"),
+            &JsValue::from_str(loss.item.as_ref()),
+        );
+        let _ = js_sys::Reflect::set(
+            &item,
+            &JsValue::from_str("tick"),
+            &loss
+                .tick
+                .map_or(JsValue::NULL, |tick| JsValue::from_f64(tick.as_f64())),
+        );
+        let _ = js_sys::Reflect::set(
+            &item,
+            &JsValue::from_str("track"),
+            &loss
+                .track
+                .map_or(JsValue::NULL, |track| JsValue::from_f64(track.raw() as f64)),
+        );
+        losses.push(&item);
+    }
+    let _ = js_sys::Reflect::set(&result, &JsValue::from_str("losses"), &losses);
+    Ok(result.into())
 }
 
 /// Produit le MusicXML identifié, le MIDI et la carte des temps du même rendu.

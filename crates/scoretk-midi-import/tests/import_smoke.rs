@@ -33,7 +33,10 @@ fn lit_dynamics() {
     assert!(!score.parts.is_empty(), "aucune partie");
     assert_eq!(score.measures.len(), 5, "mesures");
     assert_eq!(score.notes.len(), 20, "notes");
-    assert!(score.notes.iter().all(|note| note.velocity.is_some()));
+    assert!(score
+        .notes
+        .iter()
+        .all(|note| note.playback.velocity.is_some()));
     let xml = scoretk_musicxml_export::export_musicxml(&score).expect("export");
     assert!(xml.contains("<score-partwise"), "{xml}");
     assert!(xml.contains("<step>D</step>"), "{xml}");

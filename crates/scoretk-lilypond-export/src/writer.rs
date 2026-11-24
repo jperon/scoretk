@@ -64,10 +64,10 @@ impl<'a> Writer<'a> {
         let _ = writeln!(out, "\\version \"{LILYPOND_VERSION}\"");
         out.push_str("\\language \"english\"\n\n");
         // `ly/articulate.ly` définit le music-function qui raccourcit les
-        // notes jouées. Le lecteur pose `playback_articulate` quand le source
+        // notes jouées. Le lecteur pose `Score::playback.articulate` quand le source
         // utilise `\articulate` (`ly/articulate.ly`) ; l'écrire ici conserve
         // les durées MIDI à la relecture du `.ly`.
-        if self.score.playback_articulate {
+        if self.score.playback.articulate {
             out.push_str("\\include \"articulate.ly\"\n");
         }
 
@@ -172,7 +172,7 @@ impl<'a> Writer<'a> {
     /// Bloc `\score` avec les regroupements de portées.
     fn write_score(&self, out: &mut String) {
         out.push_str("\\score {\n");
-        if self.score.playback_articulate {
+        if self.score.playback.articulate {
             out.push_str("  \\articulate {\n");
         }
         out.push_str("  <<\n");
@@ -218,7 +218,7 @@ impl<'a> Writer<'a> {
         }
 
         out.push_str("  >>\n");
-        if self.score.playback_articulate {
+        if self.score.playback.articulate {
             out.push_str("  }\n");
         }
         out.push_str("  \\layout { }\n}\n");
@@ -372,7 +372,7 @@ mod tests {
     }
 
     /// `ly/articulate.ly` raccourcit les notes jouées d'un facteur 7/8. Le
-    /// modèle porte ce réglage dans `Score::playback_articulate` ; si
+    /// modèle porte ce réglage dans `Score::playback.articulate` ; si
     /// l'écriture l'omet, la relecture du `.ly` rejoue des durées pleines
     /// (`22_StMichel.ly`, `GaudeteChristusEstNatus.ly`).
     #[test]
@@ -380,7 +380,7 @@ mod tests {
         let mut score = Score::new();
         let part = score.add_part(Part::new("Piano", "Pno."));
         score.add_staff(part);
-        score.playback_articulate = true;
+        score.playback.articulate = true;
         let rendered = Writer::new(&score).render().expect("écriture");
         assert!(
             rendered.contains("\\include \"articulate.ly\""),

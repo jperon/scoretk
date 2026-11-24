@@ -28,6 +28,8 @@ use std::borrow::Cow;
 use super::chord::{BeamMode, StemDirection};
 use super::fraction::Fraction;
 use super::ids::Track;
+use super::note::VeloType;
+use super::playback::PlaybackTransposition;
 use super::style::StyleSettings;
 use super::text::{Credit, TboxText};
 
@@ -173,9 +175,68 @@ pub struct Metric {}
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Text {}
 
-/// L4 playback data. Empty until step 3 of the migration plan.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Playback {}
+/// L4 playback data attached to a [`super::Note`].
+///
+/// These fields travel with the note because every consumer (MIDI renderer,
+/// MusicXML `dynamics`/`cue` writer, MuseScore `.mscx` writer) looks them up
+/// per event. Keeping them in one sub-struct makes the layer boundary
+/// explicit without changing the event spine's addressing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NotePlayback {
+    /// True when the note is played (`<play>` in `.mscx`).
+    pub play: bool,
+    /// True for a written note with no MIDI performer (LilyPond cluster notes,
+    /// `NullVoice`): the MusicXML writer reserves `<cue/>` for these.
+    pub unperformed: bool,
+    /// Absolute velocity imported from MIDI (1-127), used by MusicXML export.
+    pub velocity: Option<u8>,
+    /// MuseScore `Pid::USER_VELOCITY`, interpreted through `velo_type`.
+    pub user_velocity: Option<i32>,
+    /// Interpretation of `user_velocity` (`Pid::VELO_TYPE`).
+    pub velo_type: Option<VeloType>,
+}
+
+impl NotePlayback {
+    /// Default used by `Note::new`, which is a `const fn`.
+    pub const DEFAULT: Self = Self {
+        play: true,
+        unperformed: false,
+        velocity: None,
+        user_velocity: None,
+        velo_type: None,
+    };
+}
+
+impl Default for NotePlayback {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+/// L4 score-wide playback data.
+///
+/// A second LilyPond `\score` can carry a transposed MIDI rendition, an
+/// `\articulate` playback and an `\unfoldRepeats` reading flag. None of them
+/// changes the engraved score, so they live outside the common core.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Playback {
+    /// Transposition of the MIDI rendition only.
+    pub transposition: Option<PlaybackTransposition>,
+    /// The source was read inside LilyPond's `\articulate`.
+    pub articulate: bool,
+    /// The source was read under `\unfoldRepeats`.
+    pub unfold_repeats: bool,
+}
+
+impl Default for Playback {
+    fn default() -> Self {
+        Self {
+            transposition: None,
+            articulate: false,
+            unfold_repeats: true,
+        }
+    }
+}
 
 /// L5 engraving and layout: score-wide style and frame texts.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -236,5 +297,16 @@ mod tests {
         assert_eq!(report.lost(Layers::ENGRAVING), 1);
         assert_eq!(report.losses[1].layer, Layers::METRIC);
         assert_eq!(report.losses[1].tick, Some(Fraction::QUARTER));
+    }
+
+    #[test]
+    fn playback_defaults_match_the_previous_note_fields() {
+        let playback = NotePlayback::default();
+        assert!(playback.play);
+        assert!(!playback.unperformed);
+        assert_eq!(playback.velocity, None);
+        assert_eq!(playback.user_velocity, None);
+        assert_eq!(playback.velo_type, None);
+        assert!(Playback::default().unfold_repeats);
     }
 }

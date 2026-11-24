@@ -962,7 +962,7 @@ fn add_note(
             );
         }
     }
-    note.velocity = u8::try_from(midi_note.velocity.clamp(0, 127)).ok();
+    note.playback.velocity = u8::try_from(midi_note.velocity.clamp(0, 127)).ok();
     note.tie_back = midi_note.tie.map(scoretk_core::model::NoteId::from_index);
     let note_id = score.add_note(note);
     if let Some(previous) = midi_note.tie {

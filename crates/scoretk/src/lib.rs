@@ -94,7 +94,7 @@ mod hooks;
 mod options;
 
 #[cfg(feature = "musicxml-export")]
-pub use convert::{convert, ConvertOptions, OutputFormat};
+pub use convert::{convert, convert_with_report, ConvertOptions, OutputFormat};
 pub use error::Error;
 pub use format::{Format, Sens};
 pub use options::{MidiOptions, Options};
@@ -144,14 +144,26 @@ pub struct PlaybackOutput {
 /// `<format>-import` (`docs/agents/scoretk.md` § 3) ; sans elle, [`read`]
 /// renvoie [`Error::FormatNonPrisEnCharge`].
 pub fn read(bytes: &[u8], format: Format) -> Result<Score> {
-    match format {
-        Format::Mscz | Format::Mscx => hooks::read_musescore(bytes, format),
-        Format::MusicXml => hooks::read_musicxml(bytes),
-        Format::Mxl => hooks::read_mxl(bytes),
-        Format::Ly => hooks::read_lilypond(bytes),
-        Format::Abc => hooks::read_abc(bytes),
-        Format::Midi => hooks::read_midi(bytes),
-    }
+    read_with_report(bytes, format).map(|(score, _)| score)
+}
+
+/// Lit un fichier et renvoie la partition avec son rapport de pertes.
+///
+/// [`Score::report`] contient déjà le rapport ; la seconde valeur en est une
+/// copie, pour que les appelants qui ne veulent que le rapport n'aient pas à
+/// garder la partition entière. [`read`] est l'ancienne signature : elle
+/// ignore cette copie.
+pub fn read_with_report(bytes: &[u8], format: Format) -> Result<(Score, model::ConversionReport)> {
+    let score = match format {
+        Format::Mscz | Format::Mscx => hooks::read_musescore(bytes, format)?,
+        Format::MusicXml => hooks::read_musicxml(bytes)?,
+        Format::Mxl => hooks::read_mxl(bytes)?,
+        Format::Ly => hooks::read_lilypond(bytes)?,
+        Format::Abc => hooks::read_abc(bytes)?,
+        Format::Midi => hooks::read_midi(bytes)?,
+    };
+    let report = score.report.clone();
+    Ok((score, report))
 }
 
 /// Lit un MIDI avec des options d'import explicites.
@@ -190,14 +202,52 @@ pub fn read_lilypond_with_includes(
 /// sens, branché par la feature `<format>-export` ; sans elle, [`write`]
 /// renvoie [`Error::FormatNonPrisEnCharge`].
 pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>> {
-    match format {
-        Format::MusicXml => hooks::write_musicxml(score, options),
-        Format::Mxl => hooks::write_mxl(score, options),
-        Format::Midi => hooks::write_midi(score, options),
-        Format::Mscx => hooks::write_mscx(score),
-        Format::Mscz => hooks::write_mscz(score),
-        Format::Ly => hooks::write_lilypond(score),
-        Format::Abc => hooks::write_abc(score),
+    write_with_report(score, format, options).map(|(bytes, _)| bytes)
+}
+
+/// Écrit le modèle et renvoie les octets avec le rapport de pertes complet.
+///
+/// Le rapport reprend d'abord [`Score::report`] (pertes observées à la
+/// lecture), puis les pertes proprement liées à l'écriture dans `format`.
+/// [`write`] est l'ancienne signature : elle ignore le rapport.
+pub fn write_with_report(
+    score: &Score,
+    format: Format,
+    options: &Options,
+) -> Result<(Vec<u8>, model::ConversionReport)> {
+    let bytes = match format {
+        Format::MusicXml => hooks::write_musicxml(score, options)?,
+        Format::Mxl => hooks::write_mxl(score, options)?,
+        Format::Midi => hooks::write_midi(score, options)?,
+        Format::Mscx => hooks::write_mscx(score)?,
+        Format::Mscz => hooks::write_mscz(score)?,
+        Format::Ly => hooks::write_lilypond(score)?,
+        Format::Abc => hooks::write_abc(score)?,
+    };
+    let mut report = score.report.clone();
+    record_write_losses(score, format, &mut report);
+    Ok((bytes, report))
+}
+
+/// Ajoute au rapport les blocs que l'écrivain de `format` ne peut pas rendre.
+///
+/// L5 n'est pas transporté par tous les formats : les pertes sont comptées
+/// ici, sans modifier les octets produits (voir `docs/agents/model-modularisation.md`).
+fn record_write_losses(score: &Score, format: Format, report: &mut model::ConversionReport) {
+    let writes_credits = matches!(
+        format,
+        Format::MusicXml | Format::Mxl | Format::Mscx | Format::Mscz
+    );
+    let writes_tbox = writes_credits || matches!(format, Format::Ly);
+    if !writes_credits {
+        for _ in &score.engraving.credits {
+            report.record(model::Layers::ENGRAVING, "credit", None, None);
+        }
+    }
+    if !writes_tbox {
+        for _ in &score.engraving.tbox_texts {
+            report.record(model::Layers::ENGRAVING, "tbox-text", None, None);
+        }
     }
 }
 

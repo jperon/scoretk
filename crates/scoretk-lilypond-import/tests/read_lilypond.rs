@@ -3121,7 +3121,7 @@ fn transpose_traversant_articulate_et_unfold_repeats() {
     );
     // Le modèle est déjà la partition MIDI transposée : aucune transposition
     // de lecture supplémentaire ne doit être appliquée par l'écrivain MIDI.
-    assert_eq!(score.playback_transposition, None);
+    assert_eq!(score.playback.transposition, None);
     assert_eq!(
         warnings
             .iter()
@@ -3146,7 +3146,7 @@ fn transpose_traversant_articulate_et_unfold_repeats() {
     assert_eq!(hauteurs(&score), vec![58, 60]);
     assert_eq!(score.measures.len(), 1);
     // Le modèle est la partition MIDI : pas de transposition de lecture.
-    assert_eq!(score.playback_transposition, None);
+    assert_eq!(score.playback.transposition, None);
     assert_eq!(
         warnings
             .iter()
@@ -4255,7 +4255,7 @@ fn midi_merge_unisons_fusionne_les_unissons_qui_se_chevauchent() {
     let jouees: Vec<u8> = score
         .notes
         .iter()
-        .filter(|note| !note.unperformed)
+        .filter(|note| !note.playback.unperformed)
         .map(|note| note.pitch)
         .collect();
     assert_eq!(jouees, vec![69]);
@@ -4265,7 +4265,7 @@ fn midi_merge_unisons_fusionne_les_unissons_qui_se_chevauchent() {
     let jouees_sans: Vec<u8> = score_sans
         .notes
         .iter()
-        .filter(|note| !note.unperformed)
+        .filter(|note| !note.playback.unperformed)
         .map(|note| note.pitch)
         .collect();
     assert_eq!(jouees_sans, vec![69, 69]);
@@ -4293,14 +4293,14 @@ fn change_vers_un_contexte_nomme_duplique_fusionne_l_unisson() {
     let muettes: Vec<u8> = score
         .notes
         .iter()
-        .filter(|note| note.unperformed)
+        .filter(|note| note.playback.unperformed)
         .map(|note| note.pitch)
         .collect();
     assert_eq!(muettes, vec![60, 60]);
     let jouees_60 = score
         .notes
         .iter()
-        .filter(|note| !note.unperformed && note.pitch == 60)
+        .filter(|note| !note.playback.unperformed && note.pitch == 60)
         .count();
     assert_eq!(jouees_60, 6);
 }
@@ -4329,14 +4329,14 @@ fn cinq_voix_sur_une_portee_fusionnent_le_unisson() {
     let muettes: Vec<u8> = score
         .notes
         .iter()
-        .filter(|note| note.unperformed)
+        .filter(|note| note.playback.unperformed)
         .map(|note| note.pitch)
         .collect();
     assert_eq!(muettes, vec![60]);
     let mut jouees: Vec<u8> = score
         .notes
         .iter()
-        .filter(|note| !note.unperformed)
+        .filter(|note| !note.playback.unperformed)
         .map(|note| note.pitch)
         .collect();
     jouees.sort_unstable();
@@ -4403,7 +4403,7 @@ fn change_vers_une_autre_portee_fusionne_l_unisson() {
     let muettes: Vec<u8> = score
         .notes
         .iter()
-        .filter(|note| note.unperformed)
+        .filter(|note| note.playback.unperformed)
         .map(|note| note.pitch)
         .collect();
     assert_eq!(muettes, vec![60]);
@@ -4411,7 +4411,7 @@ fn change_vers_une_autre_portee_fusionne_l_unisson() {
         score
             .notes
             .iter()
-            .filter(|n| n.pitch == 60 && !n.unperformed)
+            .filter(|n| n.pitch == 60 && !n.playback.unperformed)
             .count(),
         3
     );
@@ -4430,7 +4430,7 @@ fn change_vers_une_portee_en_liaison_ne_fusionne_pas_l_unisson() {
   >>
 }"#;
     let score = read_lilypond(src).expect("lecture");
-    assert!(score.notes.iter().all(|note| !note.unperformed));
+    assert!(score.notes.iter().all(|note| !note.playback.unperformed));
 }
 
 /// `lily/change-iterator.cc` : `\change` ne s'applique qu'à la musique qu'il
@@ -6240,7 +6240,7 @@ fn score_midi_seul_choisi_meme_si_musique_differente() {
     assert_eq!(hauteurs(&score), vec![64, 65, 67, 69]);
     assert_eq!(score.measures.len(), 1);
     assert_eq!(durees_ecrites(&score), vec![Fraction::new(1, 4); 4]);
-    assert_eq!(score.playback_transposition, None);
+    assert_eq!(score.playback.transposition, None);
 }
 
 /// NR §1.1.3/§1.3.3 : `\clef "treble_8"` / `"G_8"` ne change que
@@ -7424,7 +7424,11 @@ fn make_clusters_nimporte_où_dans_la_musique_de_portee() {
         score.staves[0].muted,
         "\\makeClusters au milieu de la musique doit rendre la portée muette"
     );
-    let etats: Vec<_> = score.notes.iter().map(|n| (n.pitch, n.play)).collect();
+    let etats: Vec<_> = score
+        .notes
+        .iter()
+        .map(|n| (n.pitch, n.playback.play))
+        .collect();
     assert_eq!(
         etats,
         vec![(60, true), (64, false), (65, false), (62, true)],
@@ -7742,7 +7746,7 @@ musique = { \fixed c' { c4 d e f } }
 "#;
     let score = read_lilypond(source).expect("lecture");
     assert!(
-        !score.playback_articulate,
+        !score.playback.articulate,
         "la partition retenue n'est pas articulée"
     );
 }
@@ -8140,7 +8144,7 @@ fn nullvoice_garde_les_paroles_et_est_muette_dans_le_midi() {
         score
             .notes
             .iter()
-            .filter(|note| !note.play)
+            .filter(|note| !note.playback.play)
             .map(|note| note.pitch)
             .collect::<Vec<_>>(),
         vec![60, 62, 64, 65],
@@ -8631,7 +8635,11 @@ fn make_clusters_absent_du_modele_comme_dans_le_midi() {
          fragment = { c'4 d'4 }\n\
          << \\new Staff \\fragment \\new Staff \\makeClusters \\fragment >>\n";
     let score = read_lilypond(src).expect("lecture");
-    let etats: Vec<_> = score.notes.iter().map(|n| (n.pitch, n.play)).collect();
+    let etats: Vec<_> = score
+        .notes
+        .iter()
+        .map(|n| (n.pitch, n.playback.play))
+        .collect();
     assert_eq!(
         etats,
         vec![(60, true), (62, true), (60, false), (62, false)],
@@ -8909,7 +8917,7 @@ fn devnull_jette_la_musique_changee_de_portee() {
         score
             .notes
             .iter()
-            .map(|note| (note.pitch, note.play))
+            .map(|note| (note.pitch, note.playback.play))
             .collect::<Vec<_>>(),
         vec![(60, true), (60, false)],
         "la note changée vers Devnull reste dans le modèle mais muette"
@@ -9569,7 +9577,7 @@ fn note_dans_un_contexte_dynamics_n_est_pas_jouee() {
     let notes: Vec<(u8, bool)> = score
         .notes
         .iter()
-        .map(|note| (note.pitch, note.play))
+        .map(|note| (note.pitch, note.playback.play))
         .collect();
     assert_eq!(notes, vec![(72, true), (74, true), (59, false)]);
 }
@@ -9613,14 +9621,14 @@ fn contextes_staff_de_meme_nom_partagent_le_audio_staff() {
     let muettes: Vec<u8> = score
         .notes
         .iter()
-        .filter(|note| note.unperformed)
+        .filter(|note| note.playback.unperformed)
         .map(|note| note.pitch)
         .collect();
     assert_eq!(muettes, vec![60], "le second unisson n'est pas joué");
     let mut jouees: Vec<u8> = score
         .notes
         .iter()
-        .filter(|note| !note.unperformed)
+        .filter(|note| !note.playback.unperformed)
         .map(|note| note.pitch)
         .collect();
     jouees.sort_unstable();

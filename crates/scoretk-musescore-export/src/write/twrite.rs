@@ -261,7 +261,7 @@ fn write_note(xml: &mut XmlWriter, ctx: &WriteContext<'_>, note: &Note, tick: Ti
         // `<dead>` conserve la parité avec l'export direct.
         xml.tag("dead", "1");
     }
-    if !note.play {
+    if !note.playback.play {
         xml.tag("play", "0");
     }
     for fingering in &note.fingerings {

@@ -116,7 +116,7 @@ pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VO
 pub use instrument_channel::InstrumentChannel;
 pub use layers::{
     ChordEngraving, ChordRestEngraving, ConversionReport, Engraving, Extensions, Layers, Loss,
-    Metric, Playback, Text,
+    Metric, NotePlayback, Playback, Text,
 };
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::{Measure, MeasureRepeatMark};

@@ -1734,6 +1734,7 @@ impl Context<'_> {
             // Vélocité utilisateur (import MIDI) : MuseScore l'écrit en
             // `dynamics`, avec son échelle 90 = 100 % et rien pour zéro.
             let dynamics = note
+                .playback
                 .velocity
                 .filter(|velocity| *velocity != 0)
                 .map(|velocity| format_dynamics(f64::from(velocity) * 100.0 / 90.0));
@@ -1791,7 +1792,7 @@ impl Context<'_> {
             // MuseScore : `<cue/>` les rend identifiables à l'oracle LilyPond
             // sans toucher aux partitions MuseScore (XSD : la branche `cue`
             // exclut `tie`, musicxml-4.0.xsd:5182-5200).
-            let cue = is_cue_note(chord, note) || note.unperformed;
+            let cue = is_cue_note(chord, note) || note.playback.unperformed;
             if cue {
                 out.xml.tag_empty("cue", &[]);
             }
@@ -3189,7 +3190,7 @@ fn grace_is_after(kind: GraceType) -> bool {
 /// Vrai pour une petite note jouée comme repère (`isCueNote`).
 fn is_cue_note(chord: &Chord, note: &Note) -> bool {
     // `isCueNote` (`exportmusicxml.cpp:4191-4193`) : `isSmallNote && !play`.
-    (chord.small || note.small) && !note.play
+    (chord.small || note.small) && !note.playback.play
 }
 
 fn syllabic_name(syllabic: LyricsSyllabic) -> &'static str {

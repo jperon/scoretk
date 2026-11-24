@@ -34,7 +34,6 @@ use super::layers::{ConversionReport, Engraving, Extensions, Metric, Playback, T
 use super::measure::Measure;
 use super::note::Note;
 use super::part::{Part, Staff};
-use super::playback::PlaybackTransposition;
 use super::spanner::Spanner;
 use super::text::{Credit, TboxText};
 use super::tuplet::Tuplet;
@@ -133,27 +132,6 @@ pub struct CoreScore {
     pub staves: Vec<Staff>,
     /// Mesures, dans l'ordre chronologique.
     pub measures: Vec<Measure>,
-    /// Transposition de lecture trouvée dans un second `\score` MIDI LilyPond.
-    ///
-    /// `None` pour toutes les autres sources. Ignoré par tous les écrivains
-    /// sauf l'écrivain MIDI : la partition gravée reste la référence du modèle.
-    pub playback_transposition: Option<PlaybackTransposition>,
-    /// La partition est enveloppée dans `\articulate` (`ly/articulate.ly`).
-    ///
-    /// LilyPond remplace alors chaque note par une note plus courte et un
-    /// silence : facteur 7/8 par défaut, 1/2 pour un staccato, 1/4 pour un
-    /// staccatissimo, 3/4 pour un portato ou un staccato sous liaison, 1 pour
-    /// un tenuto. Seul l'écrivain MIDI s'en sert ; les autres écrivains
-    /// gardent la partition gravée.
-    pub playback_articulate: bool,
-    /// La partition a été lue sous `\unfoldRepeats`.
-    ///
-    /// Drapeau de **lecture** : le lecteur LilyPond déplie alors les reprises
-    /// dans le modèle. L'écrivain MIDI n'en dépend pas, il obéit à
-    /// `MidiOptions::expand_repeats` ; l'oracle LilyPond passe
-    /// `--no-expand-repeats` aux sources sans `\unfoldRepeats` pour jouer le
-    /// fichier tel qu'écrit.
-    pub playback_unfold_repeats: bool,
     /// Arène des notes.
     pub notes: Vec<Note>,
     /// Arène des n-olets.
@@ -182,8 +160,8 @@ pub struct Score {
     pub metric: Option<Metric>,
     /// Couche texte (L3), vide tant que les champs n'y sont pas déplacés.
     pub text: Option<Text>,
-    /// Couche lecture (L4), vide tant que les champs n'y sont pas déplacés.
-    pub playback: Option<Playback>,
+    /// Couche lecture (L4) : transposition, `\articulate`, `\unfoldRepeats`.
+    pub playback: Playback,
     /// Couche gravure (L5) : style, `<credit>` et textes de cadres.
     pub engraving: Engraving,
     /// Extensions par format (L6), vides tant qu'aucun format n'est ajouté.
@@ -245,9 +223,6 @@ impl Score {
                 parts: Vec::new(),
                 staves: Vec::new(),
                 measures: Vec::new(),
-                playback_transposition: None,
-                playback_articulate: false,
-                playback_unfold_repeats: true,
                 notes: Vec::new(),
                 tuplets: Vec::new(),
                 spanners: Vec::new(),
@@ -255,7 +230,7 @@ impl Score {
             report: ConversionReport::new(),
             metric: None,
             text: None,
-            playback: None,
+            playback: Playback::default(),
             engraving: Engraving::default(),
             extensions: Extensions::default(),
         }
