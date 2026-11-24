@@ -403,6 +403,50 @@ fn script_sans_equivalent_ne_mange_pas_le_nolet_suivant() {
     );
 }
 
+/// Un `\staccato` raccourcit la durée MIDI d'une note liée
+/// (`ly/script-init.ly` l. 66-71 : `len/2`). Si une autre portée crée un pas
+/// de temps à cette fin raccourcie, `Tie_performer::stop_translation_timestep`
+/// (`lily/tie-performer.cc` l. 147-185) jette la liaison pendante et la tête
+/// droite redevient une attaque. Sans pas de temps intermédiaire, la liaison
+/// tient : c'est la différence entre les deux sources ci-dessous.
+#[test]
+fn staccato_relache_la_liaison_si_un_autre_pas_de_temps_intervient() {
+    let avec_pas = "\\version \"2.24.0\"\n\\score { << \
+        \\new Staff { \\fixed c' { c'8\\staccato ~ c'16 r8 } } \
+        \\new Staff { \\fixed c' { r16 c'16 r4 } } >> }";
+    assert_eq!(
+        hauteurs_attaques(&read_lilypond(avec_pas).expect("lecture")),
+        vec![72, 72, 72],
+        "liaison rompue : la tête droite attaque à nouveau"
+    );
+
+    let sans_pas = "\\version \"2.24.0\"\n\\score { << \
+        \\new Staff { \\fixed c' { c'8\\staccato ~ c'16 r8 } } \
+        \\new Staff { \\fixed c' { r8 c'8 r4 } } >> }";
+    assert_eq!(
+        hauteurs_attaques(&read_lilypond(sans_pas).expect("lecture")),
+        vec![72, 72],
+        "aucun pas de temps à la fin raccourcie : la liaison tient"
+    );
+}
+
+/// Sous `\articulate`, `ac:getactions` (`ly/articulate.ly` l. 503-560) retire
+/// les articulations et compresse lui-même les durées : le `midi-length` natif
+/// de `\staccato` ne s'applique plus. La liaison tient donc malgré le pas de
+/// temps de l'autre portée ; `Celle.ly` (Satie) dépend de ce comportement.
+#[test]
+fn articulate_ne_raccourcit_pas_la_fin_midi_dune_note() {
+    let source = "\\version \"2.24.0\"\n\\include \"articulate.ly\"\n\
+        \\score { \\articulate << \
+          \\new Staff { \\fixed c' { c'8\\staccato ~ c'16 r8 } } \
+          \\new Staff { \\fixed c' { r16 c'16 r4 } } >> }";
+    assert_eq!(
+        hauteurs_attaques(&read_lilypond(source).expect("lecture")),
+        vec![72, 72],
+        "sous \\articulate la fin MIDI reste la durée écrite"
+    );
+}
+
 /// `\compressMusic` est l'ancien nom de `\scaleDurations`
 /// (`python/convertrules.py` l. 2765) : meme argument et memes durees
 /// multipliees par n/d (bwv631a et trois autres chorals).

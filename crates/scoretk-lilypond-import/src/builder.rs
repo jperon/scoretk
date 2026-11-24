@@ -32,10 +32,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use scoretk_core::duration_list::to_duration_list;
 use scoretk_core::model::{
-    Accidental, AccidentalType, Annotation, BarLineType, Chord, ChordEngraving, ChordRest,
-    ChordRestEngraving, ChordRestKind, Clef, Credit, CreditStyle, Duration, Dynamic, Fingering,
-    Fraction, Glissando, GlissandoType, GraceChord, Hairpin, HairpinType, Instrument, LineStyle,
-    Lyrics, LyricsSyllabic, Measure, Note, NoteId, Part, PartId, PedalInfo, Placement,
+    Accidental, AccidentalType, Annotation, ArticulationType, BarLineType, Chord, ChordEngraving,
+    ChordRest, ChordRestEngraving, ChordRestKind, Clef, Credit, CreditStyle, Duration, Dynamic,
+    Fingering, Fraction, Glissando, GlissandoType, GraceChord, Hairpin, HairpinType, Instrument,
+    LineStyle, Lyrics, LyricsSyllabic, Measure, Note, NoteId, Part, PartId, PedalInfo, Placement,
     RehearsalMark, Rest, RichText, Score, ScoreMetadata, Segment, SegmentItem, SegmentType,
     Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff, StaffBracket, StaffId, Tempo,
     Track, Transpose, Trill, TrillType, Tuplet, TupletId, VOICES,
@@ -3283,6 +3283,14 @@ fn key_alter(fifths: i8, step: u8) -> i8 {
 
 /// Relie les notes de prolongation.
 fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
+    // Sous `\articulate`, `ac:getactions` (`ly/articulate.ly` l. 503-560)
+    // retire les événements d'articulation de l'accord et *compresse les
+    // durées* selon le dernier facteur vu (1/2 pour `\staccato`, 3/4 pour
+    // `\portato`, 1 pour `\tenuto` ou un `\tie`). Le `midi-length` natif de
+    // `ly/script-init.ly` n'est donc plus appliqué : le lecteur ne modelant
+    // pas encore cette compression, il ne doit pas non plus raccourcir la fin
+    // MIDI des notes (sinon `Celle.ly` perd ses liaisons).
+    let articulate = score.playback_articulate;
     // Index des segments ChordRest par tick absolu : la recherche linéaire
     // dans toutes les mesures coûtait O(événements × mesures × segments)
     // (plus de 300 ms sur un concerto de 455 mesures).
@@ -3321,12 +3329,20 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     .find(|(start, _)| *start <= tick)
                     .is_some_and(|(_, on)| *on)
             };
-            // Une liaison n'attend que le pas de temps où la note liée se
-            // termine : `Tie_performer::stop_translation_timestep` retire les
-            // liaisons pendantes dont la fin est passée. Une note de même
-            // hauteur plusieurs mesures plus tard ne peut donc pas la fermer,
-            // sauf sous `tieWaitForNote`.
-            let mut sequence: Vec<(Fraction, Fraction, NoteId, bool)> = Vec::new();
+            // Une liaison n'attend que le pas de temps où la note liée cesse
+            // de sonner : `Tie_performer::stop_translation_timestep` retire
+            // les liaisons pendantes dont `end_moment_` est dépassé
+            // (`lily/tie-performer.cc` l. 147-185). `end_moment_` vient de la
+            // **durée MIDI** de la note (`lily/note-performer.cc` l. 86-97),
+            // raccourcie par les articulations pourvues d'un `midi-length`
+            // (`ly/script-init.ly` l. 46-71) : `\staccato` divise par deux,
+            // `\portato` par 3/4. Le pas de temps est global à la partition :
+            // une note dans une autre portée à `end_moment_` suffit à faire
+            // jeter la liaison, qui redevient une attaque à sa tête droite.
+            // Sans pas de temps intermédiaire, la tête pendante survit et la
+            // liaison tient (`Fuge_Opus137`, `bwv735`, `bwv855a`, …).
+            // `tieWaitForNote` désactive cette éviction.
+            let mut sequence: Vec<(Fraction, Fraction, Fraction, NoteId, bool)> = Vec::new();
             for event in &voice.interpreted.events {
                 let EventKind::Chord(chord) = &event.kind else {
                     continue;
@@ -3345,26 +3361,56 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     .map(|chord| chord.notes.clone())
                     .unwrap_or_default();
                 let end = event.tick + chord.actual;
+                let raccourci = if articulate {
+                    None
+                } else {
+                    chord
+                        .articulations
+                        .iter()
+                        .any(|articulation| {
+                            matches!(
+                                articulation,
+                                ArticulationType::Staccato
+                                    | ArticulationType::Spiccato
+                                    | ArticulationType::SoftAccentStaccato
+                                    | ArticulationType::SoftAccentTenutoStaccato
+                            )
+                        })
+                        .then_some(Fraction::new(1, 2))
+                        .or_else(|| {
+                            chord
+                                .articulations
+                                .contains(&ArticulationType::Portato)
+                                .then_some(Fraction::new(3, 4))
+                        })
+                };
+                let end_midi = raccourci
+                    .map(|facteur| event.tick + chord.actual * facteur)
+                    .unwrap_or(end);
                 for (note, id) in notes.iter().zip(ids) {
-                    sequence.push((event.tick, end, id, note.tie));
+                    sequence.push((event.tick, end, end_midi, id, note.tie));
                 }
             }
-            sequence.sort_by_key(|(tick, end, _, _)| (*tick, *end));
+            sequence.sort_by_key(|(tick, end, _, _, _)| (*tick, *end));
+            let mut instants: BTreeSet<Fraction> = segments_by_tick.keys().copied().collect();
+            instants.extend(sequence.iter().map(|(tick, _, _, _, _)| *tick));
             // Une file par hauteur : un accord peut contenir deux têtes de
             // même hauteur (`<bis' bis>`, `tie-chord-broken-extremal.ly`),
             // qu'une simple entrée par hauteur écrasait ; chaque tête lie
             // alors la tête de même rang de l'accord suivant.
-            let mut open: BTreeMap<u8, std::collections::VecDeque<(NoteId, Fraction)>> =
-                BTreeMap::new();
+            let mut open: BTreeMap<u8, VecDeque<(NoteId, Fraction, Fraction)>> = BTreeMap::new();
             let mut index = 0usize;
-            while index < sequence.len() {
-                let (tick, _, _, _) = sequence[index];
+            for now in instants {
                 let mut fin = index;
-                while fin < sequence.len() && sequence[fin].0 == tick {
+                while fin < sequence.len() && sequence[fin].0 < now {
                     fin += 1;
                 }
-                let wait = wait_for_note(tick);
-                for &(_, _, id, _) in &sequence[index..fin] {
+                let debut = fin;
+                while fin < sequence.len() && sequence[fin].0 == now {
+                    fin += 1;
+                }
+                let wait = wait_for_note(now);
+                for &(_, _, _, id, _) in &sequence[debut..fin] {
                     let pitch = score.note(id).pitch;
                     // Sans `tieWaitForNote`, seule la note liée qui se termine
                     // exactement ici peut être fermée. Avec, LilyPond cherche
@@ -3372,25 +3418,25 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     let closes = open.get_mut(&pitch).and_then(|queue| {
                         queue
                             .iter()
-                            .position(|&(_, end)| end == tick || wait)
+                            .position(|&(_, end, _)| end == now || wait)
                             .map(|position| queue.remove(position).expect("liaison à fermer"))
                     });
-                    if let Some((previous, _)) = closes {
+                    if let Some((previous, _, _)) = closes {
                         score.note_mut(previous).tie_forward = Some(id);
                         score.note_mut(id).tie_back = Some(previous);
                     }
                 }
                 if !wait {
                     open.retain(|_, queue| {
-                        queue.retain(|&(_, end)| end > tick);
+                        queue.retain(|&(_, _, end_midi)| end_midi > now);
                         !queue.is_empty()
                     });
                 }
-                for &(_, end, id, tie) in &sequence[index..fin] {
+                for &(_, end, end_midi, id, tie) in &sequence[debut..fin] {
                     if tie {
                         open.entry(score.note(id).pitch)
                             .or_default()
-                            .push_back((id, end));
+                            .push_back((id, end, end_midi));
                     }
                 }
                 index = fin;
