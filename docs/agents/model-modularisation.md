@@ -542,3 +542,30 @@ Verification: `cargo test --workspace`, clippy `-D warnings`, fmt and all eight
 **+137 bytes (+0.006 %)** versus step 0, far below the 2 % threshold. The five
 oracles report 0 lost file and 0 changed output byte (rows: musescore 528/528,
 musicxml 174/174, midi 2 459/2 459, lilypond 1 824/1 824, abc 26 542/26 542).
+
+### 10.3 Step 2 — engraving data moved to L5
+
+Commit `2d70af9c`. `Engraving` now owns `style: StyleSettings`,
+`credits: Vec<Credit>` and `tbox_texts: Vec<TboxText>`; two new small structs
+own the per-element flags previously scattered in the event spine:
+`ChordRestEngraving { beam_mode, beam_direction }` and
+`ChordEngraving { stem }`. `ChordRest` and `Chord` expose them as an `engraving`
+field. All readers and writers still produce the same bytes; 36 source and test
+files were updated to the explicit paths (`score.engraving.style`,
+`chord_rest.engraving.beam_mode`, `chord.engraving.stem`, …).
+
+**Adjustment to §5.2 / step 2:** the plan suggested `Option<Box<Engraving>>` and
+"field access through `Deref`". A `Deref` chain `Score → CoreScore → Engraving`
+(and the same trick on every `ChordRest`/`Chord`) would keep `score.style`
+spelling, but it hides the layer boundary, makes disjoint borrows worse than
+step 1's single `Deref`, and cannot express an absent layer (`Deref` targets a
+value, not an `Option`). `Engraving` is therefore **embedded by value** and
+accessed explicitly; the other layers stay `Option` because nothing writes
+them yet. This changes no output and keeps the wasm contract untouched.
+
+Verification: `cargo test --workspace`, clippy `-D warnings`, fmt, all eight
+`wasm32-unknown-unknown` builds and `ly_notes.py selftest` pass. Wasm raw size
+**2 305 411 bytes**, i.e. **−164 bytes (−0.007 %)** versus step 0. The five
+oracles again report 0 lost file and 0 changed output byte (same row counts as
+step 1). In particular, the MusicXML full-parity `hidden staff-details` counts
+and the MuseScore round trips are unchanged.
