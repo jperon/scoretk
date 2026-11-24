@@ -8915,3 +8915,100 @@ tuple, not the oracle's primary flag (flags overlap: `notes_manquantes` 113,
 
 No file was removed from a denominator for being inexact, and no reader code,
 oracle rule or existing manifest was changed by this campaign.
+
+## 46. Real-world reading: `Audio_staff` of a reused named Staff (2026-11-24)
+
+Protocol: rebased on master (`57c5a369`), baseline binary frozen at that commit
+in the out-of-repo work directory, same manifests and reference trees as §44
+(`out3ra` from `ly95lect-refs-clean` is gone, so `ra` is checked by **byte
+comparison of all 1,726 converted MusicXML files**; `out3mut`/`out3rw` from
+`ly95lect-refs-fresh`), one lot at a time, `CARGO_BUILD_JOBS=2
+RUST_TEST_THREADS=2 nice -n 10`, `mesure.py --refs-only` and
+`python3 -I scripts/oracle/lilypond/ly_notes.py selftest` (OK). No comparator
+rule, oracle script or manifest was modified. The §41–§44 rejected leads were
+not retried.
+
+### Fix: all `\context Staff = "name"` blocks share one `Audio_staff`
+
+`lily/context.cc` (`unchecked_find`, l. 200-231; `find_create_context`,
+l. 269-273) makes `\context Staff = "name"` **find the first context with that
+name** in creation order, whereas `\new Staff = "name"` always creates a new
+one. `lily/staff-performer.cc` l. 164-182 (`get_audio_staff`) then sends every
+voice of that one Staff context to a single `Audio_staff` with the default
+`midiChannelMapping = #'staff` (`ly/performer-init.ly` l. 257,
+`scm/define-context-properties.scm` l. 544-545), and `lily/audio-staff.cc`
+l. 39-52 writes **one MIDI track per `Audio_staff`**. When two notes of the
+same pitch start on that track at the same time, `Midi_walker::do_start_note`
+(`lily/midi-walker.cc` l. 88-147, condition `now_ticks == queued_ticks` at
+l. 106) emits a single attack and extends the longer note-off.
+
+The reader created one model part/staff per `\context Staff = "name"` block
+and left every `StaffBuild::audio_staff` pointing at itself, so the existing
+cross-staff unison pass (`fusionne_unissons_entre_portees`) could not merge
+those duplicates. `ast::StaffBlock` now records whether the context was found
+(`\context`) or created (`\new`); the builder resolves a found named staff to
+the `Audio_staff` of the first staff with that name. The overflow sister staves
+of §40 keep their parent's `Audio_staff`.
+
+Reduced source (compiled with LilyPond 2.27): a `\new PianoStaff` with two
+`\context Staff = "one"` blocks, `c'2 d'2` in the first and `c'4 e'4 f'4 g'4`
+in the second. LilyPond plays 60/62/64/65/67 — five attacks, one of them the
+merged `c'` of duration 2 — whereas the frozen binary emitted six. The test
+`contextes_staff_de_meme_nom_partagent_le_audio_staff` in
+`tests/read_lilypond.rs` checks the single `unperformed` `c'` and the five
+played pitches; it fails on the frozen binary. On the real corpus the only
+gained file is `bwv849b.ly` (11 extra unisons at pitches shared by the five
+voices of one `\context Staff`), recovered on both real lots.
+
+### Controlled results (one lot at a time, no loss)
+
+| Lot | Before (§44) | After | N1 / N2 losses |
+| --- | ---: | ---: | --- |
+| `ra` (1,724) | 1,690 (documented, clean refs) | **1,690** (0 changed MusicXML) | 0 |
+| `mut` (1,316) | 1,256 | **1,257** | 0 |
+| `rw` (1,365) | 1,299 | **1,300** | 0 |
+
+### Scores
+
+**Raw** (all measured files in the denominator):
+
+| Lot | Exact | Total | Raw |
+| --- | ---: | ---: | ---: |
+| `ra` | 1,690 | 1,724 | **98.0 %** |
+| `mut` | 1,257 | 1,316 | **95.5 %** |
+| `rw` | 1,300 | 1,365 | **95.2 %** |
+
+**Excluding only the legitimate exceptions** (unchanged numerators; 23 on
+`mut`, 26 on `rw`): `mut` **1,257/1,293 = 97.2 %** and
+`rw` **1,300/1,339 = 97.1 %**. The exception list and reasons are unchanged
+from §44: references that no longer compile with LilyPond 2.26/2.27
+(obsolete `\autochange`, `\compressFullBarRests`, `\compressMusic`,
+`\fermataMarkup`, removed commands, Guile errors), music needing a full Scheme
+evaluator (`saltarello`, `baba`, `example.ly`,
+`late-evaluation-of-variables.ly`,
+`adding-orchestral-cues-to-a-vocal-score.ly`) and references with no notes
+(`sor_op2_3`, `main.ly`). No file was silently dropped and no reader defect
+was reclassified as an exception.
+
+The raw 98 % target is **not reached**: +33 exact files are still needed on
+`mut` and +38 on `rw`. File-by-file analysis of the 31 files of §44's two
+groups shows that the remaining ones are not one shared `Audio_staff` rule:
+
+* most **missing attacks on duplicated staves** (`bwv735`, `bwv657`,
+  `bwv663-a4`, `bwv663-let`, `wedding`, `two-jews`) come from a **second,
+  MIDI-only `\score`** whose staves or `\keepWithTag` filtering differ from the
+  first engraved score that §7 makes the model read. The reference then has a
+  track/engraved voice the model does not have; reproducing it would mean
+  switching score, which the documented decision forbids.
+* the remaining **extra unisons** (`BWV533`, `bwv910`, `entertainer`,
+  `two-jews`) are tie re-articulations or tag-filtered voices, not two notes of
+  one `Audio_staff`; a wider per-Voice tie/score model is needed.
+* the **shifted attacks** (`ToccataFugue`, `rach-prelude23-05`, `BWV-830-4/6`)
+  are the real-time grace-part timing of `lily/grace-iterator.cc` and
+  `Global_context`, explicitly outside this pass.
+
+No comparator change was made to gain files, and the rejected variants of
+§41–§44 (tick-level tie eviction, cross-staff `<staff>` rewriting, disabling
+the unison merge) were not retried. `cargo test --workspace`,
+`clippy --workspace --all-targets -D warnings`, `fmt --check` and the oracle
+selftest are green.
