@@ -8147,3 +8147,144 @@ files are still needed on `mut` and +25 on `rw`; the excluding-exceptions
 figure crosses 95 % on `mut` only. The exception list is unchanged from §36
 (faulty references that no longer compile with LilyPond 2.26/2.27 and music
 requiring a full Scheme evaluator). No file was silently dropped.
+
+## 39. Real-world reading: shifted attacks and `\change Staff` (2026-11-24)
+
+Protocol: frozen reference trees and manifests, one lot at a time, `CARGO_BUILD_JOBS=2
+RUST_TEST_THREADS=2 nice -n 10`, `mesure.py --refs-only` + `ly_notes.py selftest`
+(OK). No comparator rule was changed; every fix has reduced tests that fail on
+the preceding binary.
+
+### Grouping the shifted attacks by first divergent onset
+
+The 25 `mut` / 27 `rw` files flagged `attaque_decalee` (`n1 == ref`, `n2 < ref`)
+were all measured again from the cached work directories; the first divergent
+`(pitch, quantized attack)` pair was printed, then the source and its direct
+`\include`s were inspected for tuplets, `\partial`, graces, volta/alternative,
+tempo settings, ties, multi-measure rests and `\skip`:
+
+| Group | Files | First divergence | Verdict |
+| --- | ---: | --- | --- |
+| Faulty references kept in the denominator | 17 (`mut`), 19 (`rw`) | 0.0–690.0, offsets of 0.5–8 quarters | `\autochange`, `\compressFullBarRests`, `\compressMusic`, `\fermataMarkup`, reserved `q`, Guile errors (§35), plus two Scheme `example.ly` on `rw`. Not reader defects. |
+| `\change Staff` unison on a sibling staff | 3 | `bwv735` 25.0, `bwv-988-v26` 71.0, `Chop-28-22` 3.0 (one extra unison each) | Same family as the 24 `notes_supp` files; fixed below for the files whose target staff is named. |
+| Grace timing | 4 | `QuartetOpus18_No4_1` 3.25 (+0.25), `ballade-4` 253.25, `chopin_nocturne_op9_n3` 205.75 (+0.25), `bayadere-nikya` 7.5 | `lily/grace-iterator.cc`, `lily/audio-item.cc:122`; `n2_grace` already pairs 127/127 to 35/39 graces. Residual notes are not fixed by an onset change. |
+| `\partial` + `\repeat volta` + polyphony | 1 | `w10-h-moll-cfi` 46.5 (F4 read as B4, +1 quarter thereafter) | Genuine reader defect, still open. |
+| Tuplets, `\tempo`, `\set Score.tempoWholesPerMinute`, `R`, `\skip` | 0 actionable | — | Present in many sources but never the first divergence: the grid stays exact until a unison or a documented faulty reference. |
+
+The largest actionable group is therefore the `\change Staff` unison family,
+which also contains most of the "few extra notes" files of §38.
+
+### Fix: `\change` context lookup, scope and MIDI unisons
+
+Three narrowly related rules were needed; each has a reduced source compiled
+with LilyPond 2.26 and a test that fails on the preceding binary.
+
+1. **Cross-part context lookup.** `lily/context.cc:152-194` (`Context::core_find`)
+   and `:219-235` (`find_context`, FIND_ONLY) search the contexts of a `\score`
+   by name; MusicXML parts do not exist there. The reader's "unique name, same
+   part only" guard made `\change Staff = left` a no-op when the two staves of a
+   keyboard were modelled as two parts (`bwv627`, `bwv544`, `bwv679`). The
+   lookup now accepts the single staff carrying that name wherever it sits in
+   the model. Reduced test `change_vers_une_autre_portee_fusionne_l_unisson`
+   verifies the resulting MIDI unison.
+2. **Unison after ties, across names.** `lily/midi-walker.cc:95-115`
+   (`Midi_walker::do_start_note`) emits one `note-on` when two notes of the same
+   pitch start at the same tick in one `Audio_staff` (`lily/staff-performer.cc:114-143`,
+   `get_audio_staff`), even with the default `midiMergeUnisons = ##f`
+   (`scm/define-context-properties.scm:555`); `followVoice`
+   (`scm/define-context-properties.scm:415`, `ly/property-init.ly:778-779`,
+   `showStaffSwitch`) is engraving only and never merges MIDI attacks.
+   The reader's merge was restricted
+   to two staves with the *same context name* and ran before `link_ties`; it now
+   runs after it, ignores tie stops (`lily/tie-performer.cc:81-140`, a tie stop
+   opens no attack) and notes already moved elsewhere, and merges any moved
+   note landing on a staff that sounds the pitch at that tick. Reduced tests
+   `change_vers_une_autre_portee_fusionne_l_unisson` and
+   `change_vers_une_portee_en_liaison_ne_fusionne_pas_l_unisson`.
+3. **`\change` scope.** `lily/parser.yy:2758-2760` (`context_change`) wraps the
+   following music in a `Change_iterator` (`lily/change-iterator.cc:42-95`):
+   the change belongs to that music expression, not to the whole voice. The
+   first branch of `<< … >>` is interpreted in the current interpreter, so its
+   `\change` leaked into the following branch and into the music after `>>`.
+   The interpreter now restores `staff_target` after that branch. Verified with
+   `<< { c1 \change Staff = up c1 } \\ { c1 c1 } >> | c1 c1`: LilyPond 2.26
+   plays the last note on the original staff. Reduced test
+   `change_dans_une_branche_polyphonique_ne_depasse_pas_le_passage`.
+
+Without (3), (1)+(2) gained three files but **lost** `all-my-heart.ly` (three
+D4 attacks suppressed): its `\change Staff = up` sits in a `<< … \\ … >>`
+branch and the reader kept it active for the following 30 measures, creating a
+false collision with the `up` staff. The guard is therefore not a special case
+for that file but the LilyPond scoping rule itself.
+
+One existing test, `change_vers_portee_d_autre_partie`, asserted that a
+`\change` to another part is a no-op. Its source had two bare `\new Staff`
+expressions directly under `\score`, which LilyPond 2.26 rejects (“Expression
+invalide dans \score”) and where it warns “impossible de repérer le contexte”.
+With the valid `<< … >>` wrapper, LilyPond 2.26 does move the notes to the
+flute staff (verified on the compiled MIDI). The test source and expectations
+were corrected to that proven behaviour; no comparator rule was touched.
+
+### Controlled measurement (one lot at a time, no loss)
+
+| Lot | Before (§38) | After | N1 / N2 gains | Losses |
+| --- | ---: | ---: | ---: | ---: |
+| `ra` (1724) | 1690 | **1690** | 0 | 0 |
+| `mut` (1316) | 1230 | **1235** | 5 | 0 |
+| `rw` (1365) | 1272 | **1277** | 5 | 0 |
+
+The five exact gains on each real lot are `bwv544.ly`, `bwv627.ly`,
+`bwv679.ly`, `debussy_Arabesque_2.ly` and
+`schumann-op68-13-Mai-cher-Mai.ly`. All other files keep their exact status,
+their N1 and their N2. `cargo test --workspace`, `clippy -D warnings` and
+`fmt --check` are green.
+
+### Step 2: the "few extra notes" files
+
+The 13 files that still have **all** reference notes matched and only 1–6
+extra notes were examined one by one from the candidate MusicXML (`part`,
+`staff`, `voice`, tie flags, chord flag) and against their source:
+`BWV533`, `ToccataFugue`, `bwv632`, `bwv651`, `french-suite-5-gigue`,
+`bach-french-suite-6-sarabande`, `BWV-830-4`, `BWV-830-6`, `bwv853a`,
+`bwv910`, `entertainer`, `naujalis-caligaverunt`,
+`schumann-op68-26-sans-titre`.
+
+- Seven of them still put the extra note on a **second staff of the same part**
+  at the same tick (`bwv632`, `bwv651`, `bach-french-suite-6-sarabande`,
+  `BWV-830-4`, `bwv910`, `naujalis-caligaverunt`, part of `BWV-830-6`).
+  LilyPond's single `note-on` means the two staves share an `Audio_staff` in
+  that `\score`, but the model does not record that sharing; marking all such
+  notes `unperformed` was already measured twice and rejected (§35–§37): it
+  gains a few files and loses five with genuine two-staff unisons.
+- Four show a **tie/chord artefact**: `BWV533` (two repeated F/E attacks 0.75
+  quarters apart), `french-suite-5-gigue` and `entertainer` (extra `<chord/>`
+  tone beside a tie stop), `bwv853a` (F5 written 1.0 + 0.25 quarters, played
+  as one 1.25-quarter note). LilyPond 2.26 reductions show that a tie is *not*
+  closed across voices of a `<< … >>` passage (`lily/tie-performer.cc:81-140`
+  keeps one pending tie per pitch per Staff), so a blind cross-voice tie pass
+  would be wrong; the exact source expression has not yet been isolated.
+- `ToccataFugue` has one extra E4 in a 64th-note hand-crossing passage
+  (`\change Staff = "LH"/"RH"`), `schumann-op68-26-sans-titre` six extras
+  grouped in three repeated pairs.
+
+No comparator rule was changed and no speculative merge was committed. The
+cheapest remaining exact-file target is still a faithful per-`\score`
+`Audio_staff` allocation, not a comparator change.
+
+### Scores
+
+**Raw** (all measured files in the denominator):
+
+| Lot | Exact | Total | Raw |
+| --- | ---: | ---: | ---: |
+| `ra` | 1690 | 1724 | **98.0 %** |
+| `mut` | 1235 | 1316 | **93.8 %** |
+| `rw` | 1277 | 1365 | **93.6 %** |
+
+**Excluding only the legitimate exceptions** (unchanged numerators): 22
+exceptions on `mut`, 25 on `rw` — `mut` **1235/1294 = 95.4 %**, `rw`
+**1277/1340 = 95.3 %**. Both figures now cross 95 %, but the **raw** target is
+still not reached: +16 exact files are needed on `mut` and +20 on `rw`.
+The exception list is unchanged from §36 (faulty references that no longer
+compile with LilyPond 2.26/2.27 and music requiring a full Scheme evaluator).
+No file was silently dropped.
