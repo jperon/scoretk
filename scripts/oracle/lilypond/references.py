@@ -335,7 +335,7 @@ def _fichier_score_lu(source: Path, dossier: Path) -> tuple[Path, int] | None:
 
 def compiler_injecte(
     source: Path, destination: Path, lilypond: str, timeout: int, sandbox: Path,
-    same_score: bool = False,
+    same_score: bool = False, raw_ref: Path | None = None,
 ) -> dict:
     """Compile une copie sandboxed avec ``\\midi { }`` injecté (regen-refs.py).
 
@@ -347,6 +347,19 @@ def compiler_injecte(
     qu'un seul MIDI : celui de ce score.
     """
     debut = time.monotonic()
+    if same_score and raw_ref is not None and raw_ref.is_file():
+        cible = _fichier_score_lu(source, source.parent)
+        if cible is None:
+            # No score block anywhere in the source or its includes: the
+            # same-score reference is exactly the raw injection (the reader's
+            # first top-level expression, wrapped by regen-refs.py).
+            destination.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(raw_ref, destination / "ly.midi")
+            return {
+                "fichier": str(source), "ok": True, "code": 0, "converti": False,
+                "injecte": True, "same_score": True, "copie_brute": True,
+                "temps": round(time.monotonic() - debut, 3), "erreur": "",
+            }
     with tempfile.TemporaryDirectory(dir=sandbox) as tmp:
         base = Path(tmp)
         dossier = base / "src"
@@ -462,6 +475,9 @@ def main() -> None:
                    help="with --inject-midi, target the score expression the reader imports "
                         "(first \\midi score, else first explicit score, else first "
                         "top-level music) and strip \\midi from every other score")
+    p.add_argument("--raw-refs", default="",
+                   help="raw reference tree; with --same-score, reuse a raw MIDI when "
+                        "there is no score block to retarget")
     args = p.parse_args()
     if args.selftest:
         selftest()
@@ -500,12 +516,16 @@ def main() -> None:
         if args.inject_midi:
             if sandbox is None:
                 p.error("--inject-midi requires --sandbox for untrusted sources")
-            futurs = [
-                pool.submit(compiler_injecte, source, destination,
-                            args.lilypond, args.timeout, sandbox,
-                            args.same_score)
-                for source, destination in a_faire
-            ]
+            futurs = []
+            for source, destination in a_faire:
+                brut = (
+                    Path(args.raw_refs) / args.lot / nom_court(str(source)) / "ly.midi"
+                    if args.raw_refs else None
+                )
+                futurs.append(pool.submit(
+                    compiler_injecte, source, destination,
+                    args.lilypond, args.timeout, sandbox, args.same_score, brut,
+                ))
         else:
             futurs = [
                 pool.submit(compiler, source, destination, args.lilypond, args.timeout,
