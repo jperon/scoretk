@@ -83,6 +83,11 @@ pub(crate) struct Parser<'a> {
     playback_articulate: bool,
     /// `\unfoldRepeats` a été rencontré : le MIDI déplie les reprises.
     playback_unfold_repeats: bool,
+    /// `midiInstrument` lu par `\set` en attendant le contexte `Staff` auquel
+    /// il s'applique (`lily/staff-performer.cc:244`). Une propriété de
+    /// contexte n'est **pas** une musique : l'émettre dans le flux en ferait
+    /// une portée anonyme surnuméraire dans un `\new PianoStaff << … >>`.
+    pending_midi_instrument: Option<String>,
     /// Fonctions musicales définies en Scheme (`define-music-function`…).
     music_functions: BTreeMap<String, MusicFunction>,
     /// Définitions `\addInstrumentDefinition` : nom → transposition
@@ -360,6 +365,7 @@ pub(crate) fn parse(
         midi_transposition: None,
         playback_articulate: false,
         playback_unfold_repeats: false,
+        pending_midi_instrument: None,
         music_functions: BTreeMap::new(),
         instrument_definitions: BTreeMap::new(),
         expansion_depth: 0,
@@ -1299,6 +1305,8 @@ impl<'a> Parser<'a> {
                     }
                 }
                 let content = self.parse_music();
+                let midi_instrument =
+                    midi_instrument.or_else(|| self.pending_midi_instrument.take());
                 // Règle LilyPond : tout le contenu d'un `\context Staff`
                 // appartient à **cette** portée. Les voix ouvertes par
                 // `\new Voice`, `\context Voice` ou `\\` sont des voix
@@ -1639,11 +1647,13 @@ impl<'a> Parser<'a> {
                     sequence_start: false,
                     instrument_name,
                     short_instrument_name,
-                    midi_instrument,
+                    midi_instrument: midi_instrument.clone(),
                     staves: Vec::new(),
                     lyrics: Vec::new(),
                 };
                 let (content, voix) = self.parse_group_content();
+                group.midi_instrument =
+                    midi_instrument.or_else(|| self.pending_midi_instrument.take());
                 let vide = matches!(&content, Music::Sim(items) | Music::Seq(items) if items.is_empty())
                     || matches!(&content, Music::Empty);
                 if vide {
@@ -1672,6 +1682,8 @@ impl<'a> Parser<'a> {
                     music: self.parse_music(),
                 });
                 self.collect_addlyrics(&mut staff);
+                let midi_instrument =
+                    midi_instrument.or_else(|| self.pending_midi_instrument.take());
                 Some(GroupBlock {
                     // La nature est conservée : l'interpréteur doit distinguer
                     // un `\new Voice` rencontré dans une voix d'une portée
@@ -1695,6 +1707,9 @@ impl<'a> Parser<'a> {
                 }
                 let mut content = self.parse_music();
                 self.note_mode = mode_precedent;
+                let midi_instrument =
+                    midi_instrument.or_else(|| self.pending_midi_instrument.take());
+                staff.midi_instrument = midi_instrument.clone();
                 staff.muted |= self.tokens[debut_musique..self.position]
                     .iter()
                     .any(|token| token.is_command("makeClusters"));
@@ -1758,6 +1773,10 @@ impl<'a> Parser<'a> {
         merge_unisons: bool,
         group_like: bool,
     ) -> Vec<StaffBlock> {
+        // Un `\set Staff.midiInstrument` lu dans la musique de la portée est
+        // une propriété de contexte, pas une musique : il ne doit pas ouvrir
+        // de portée surnuméraire.
+        let midi_instrument = midi_instrument.or_else(|| self.pending_midi_instrument.take());
         let addlyrics_target = last_voice_name(&content);
         if has_staff_context(&content, group_like, context_name.is_none()) {
             let mut staves = Vec::new();
@@ -4772,14 +4791,15 @@ impl<'a> Parser<'a> {
         }
         // `\set Staff.midiInstrument = "violin"` (`lily/parser.yy` `set_property`,
         // `lily/staff-performer.cc:244`) : la valeur est une chaîne, pas de la
-        // musique. Sans cette consommation, le jeton restait dans le flux et
-        // la propriété était perdue.
+        // musique. Elle est conservée comme propriété du contexte à venir :
+        // l'émettre comme un évènement musical créerait une portée anonyme
+        // dans `<< \set … \new Staff … >>` (bwv-1006a_6).
         if path
             .iter()
             .any(|part| part.eq_ignore_ascii_case("midiinstrument"))
         {
-            let name = self.parse_property_value();
-            return Music::Context(Context::MidiInstrument(name));
+            self.pending_midi_instrument = Some(self.parse_property_value());
+            return Music::Empty;
         }
         // `\set Timing.timing = ##f` / `##t` a le même effet que
         // `\cadenzaOn` / `\cadenzaOff`. Le lexer lit `##f` comme le jeton
@@ -8573,6 +8593,7 @@ mod tests {
             midi_transposition: None,
             playback_articulate: false,
             playback_unfold_repeats: false,
+            pending_midi_instrument: None,
             music_functions: BTreeMap::new(),
             instrument_definitions: BTreeMap::new(),
             expansion_depth: 0,
@@ -8608,6 +8629,7 @@ mod tests {
             let mut warnings = Warnings::new();
             let mut parser = Parser {
                 tokens: tokenize("c d"),
+                pending_midi_instrument: None,
                 position: 1,
                 language: Language::English,
                 variables: BTreeMap::new(),

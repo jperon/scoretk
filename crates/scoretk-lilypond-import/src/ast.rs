@@ -181,9 +181,6 @@ pub(crate) enum Context {
     /// mesure courante (négative pour une anacrouse, `lily/timing-translator.cc`
     /// l. 470-505).
     MeasurePosition(scoretk_core::model::Fraction),
-    /// `\set Staff.midiInstrument = "…"` : programme MIDI de la portée
-    /// (`lily/staff-performer.cc:244`, `scm/midi.scm` `instrument-names-alist`).
-    MidiInstrument(String),
     /// `\set tieWaitForNote = ##t` : une liaison attend une note de même
     /// hauteur même si la note liée est déjà terminée (`lily/tie-performer.cc`
     /// l. 166-180).
