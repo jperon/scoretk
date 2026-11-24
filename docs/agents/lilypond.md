@@ -8288,3 +8288,82 @@ still not reached: +16 exact files are needed on `mut` and +20 on `rw`.
 The exception list is unchanged from §36 (faulty references that no longer
 compile with LilyPond 2.26/2.27 and music requiring a full Scheme evaluator).
 No file was silently dropped.
+
+## 40. Real-world reading: `Audio_staff` allocation and `\articulate` (2026-11-24)
+
+Protocol: frozen manifests and reference trees (`out3ra` from
+`ly95lect-refs-clean`, `out3mut`/`out3rw` from `ly95lect-refs-fresh`), one lot
+at a time, `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10`, `mesure.py
+--refs-only` + `ly_notes.py selftest` (OK). No comparator rule was changed;
+each fix has a reduced source compiled with LilyPond 2.27 and a test that
+fails on the preceding binary.
+
+### Fix 1: a sister staff shares the `Audio_staff` of its original staff
+
+`lily/staff-performer.cc:114-143` (`get_audio_staff`) maps every `Voice` of
+one `Staff` context to a single `Audio_staff`; with the default
+`midiChannelMapping = staff` (`scm/define-context-properties.scm:544`) it even
+returns that single staff for all voices. The model has only four voices per
+staff, so a fifth simultaneous voice is stored on a sister staff. That split
+is a model artifact: LilyPond still plays all five voices in one track, and
+`lily/midi-walker.cc:95-115` emits one attack for two unisons. `StaffBuild`
+now records the `Audio_staff` of each staff, and the unison pass merges notes
+landing on the same `Audio_staff` after `link_ties`. Reduced source: five
+voices in one `Staff`, two of them on `c'`; LilyPond 2.27 plays four attacks,
+scoretk now marks the duplicate `c'` `unperformed`. Test
+`cinq_voix_sur_une_portee_fusionnent_le_unisson`.
+
+### Fix 2: `\articulate` excursions are played notes
+
+`ly/articulate.ly:733-780` replaces an ornamented note by a sequence whose
+durations sum to the written duration: `turn` gives four equal notes, `prall`
+three 32nds plus the longer main note, `mordent` the note, the lower note and
+the main note, and `ac:trill` alternates the upper note and the note. The
+reader only kept the written note, so the MusicXML omitted all the notes
+LilyPond plays. The new `builder/articulate.rs` ports these four actions
+(diatonic upper/lower degrees from the current key, compression rounded to
+LilyPond's 1/768-whole grid) and expands them into ordinary notes before
+measure planning. Reduced test
+`articulate_developpe_les_ornements_en_notes_jouees` (12 attacks on
+`turn`/`mordent`/`prall`, verified against LilyPond 2.27).
+
+### Controlled measurement (one lot at a time, no loss)
+
+| Lot | Before | After fix 1 | After fix 2 | N1 / N2 losses |
+| --- | ---: | ---: | ---: | ---: |
+| `ra` (1724) | 1690 | 1690 | 1690 | 0 |
+| `mut` (1316) | 1235 | 1239 | **1243** | 0 |
+| `rw` (1365) | 1277 | 1281 | **1285** | 0 |
+
+### Scores
+
+**Raw** (all measured files in the denominator):
+
+| Lot | Exact | Total | Raw |
+| --- | ---: | ---: | ---: |
+| `ra` | 1690 | 1724 | **98.0 %** |
+| `mut` | 1243 | 1316 | **94.5 %** |
+| `rw` | 1285 | 1365 | **94.1 %** |
+
+**Excluding only the legitimate exceptions** (unchanged numerators): 22
+exceptions on `mut`, 25 on `rw` — references that no longer compile with
+LilyPond 2.26/2.27 (obsolete `\autochange`, `\compressFullBarRests`,
+`\compressMusic`, `\fermataMarkup`, removed commands, Guile errors), music
+requiring a full Scheme evaluator (`saltarello`, `baba`, `example.ly`,
+`late-evaluation-of-variables.ly`, `adding-orchestral-cues-to-a-vocal-score.ly`)
+and one empty `adding-an-extra-staff.ly` reference. No file was silently
+dropped, and no exception was added for a reader defect. The same numerators
+give `mut` **1243/1294 = 96.1 %** and `rw` **1285/1340 = 95.9 %**, but the
+**raw** target of 95 % is still not reached: +8 exact files are needed on
+`mut` and +12 on `rw`.
+
+### Remaining causes
+
+The four tie/chord artefacts (`BWV533`, `french-suite-5-gigue`, `entertainer`,
+`bwv853a`) were re-checked against `lily/tie-performer.cc:81-140`: the
+performer lives in the `Voice` context and keeps one pending tie per pitch,
+so a tie is *not* closed across the voices of a `<< … \\ … >>` passage. A
+cross-voice tie pass would therefore be wrong, and no speculative tie rule was
+committed. The remaining shifted attacks and extra notes are dominated by
+faulty references and by `\articulate` time stealing / grace timing, which
+need a dedicated port of the Scheme implementation, not a comparator change.
