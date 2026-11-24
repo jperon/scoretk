@@ -193,8 +193,15 @@ const QUALITIES: &[(&str, &[i8])] = &[
     ("m7", &[0, 3, 7, 10]),
     ("maj7", &[0, 4, 7, 11]),
     ("dim", &[0, 3, 6]),
+    // `5-` : quinte diminuée seule. `interpret-removals` retire la quinte
+    // naturelle avant d'ajouter le degré altéré (`scm/chord-entry.scm:67-78`) ;
+    // le modificateur `m` de `m5-` abaisse ensuite la tierce (:235-236).
+    ("5-", &[0, 4, 6]),
     ("aug", &[0, 4, 8]),
     ("sus4", &[0, 5, 7]),
+    // `sus` sans 2 ni 4 : `sus-modifier` retire la tierce (:248-249), puis la
+    // quarte est ajoutée quand aucun degré 2/4 n'est explicite (:150-153).
+    ("sus", &[0, 5, 7]),
     ("sus2", &[0, 2, 7]),
     ("9", &[0, 4, 7, 10, 14]),
     ("m9", &[0, 3, 7, 10, 14]),
@@ -474,6 +481,34 @@ mod tests {
         assert_eq!(
             chord_pitches(langue, "b:min7.5-"),
             Some((vec![71, 74, 77, 81], None))
+        );
+    }
+
+    #[test]
+    fn quinte_diminuee_et_sus_sans_degre() {
+        // MIDI de LilyPond 2.27 sur `\chordmode { c:5-1 c:m5-1 c:sus1 }` :
+        // 60/64/66, 60/63/66 et 60/65/67. Vérifié aussi sous `\transpose c'
+        // bes` (Lyngham) et `c c'` (Diademata).
+        let langue = Language::Nederlands;
+        assert_eq!(
+            chord_pitches(langue, "c:5-"),
+            Some((vec![60, 64, 66], None))
+        );
+        assert_eq!(
+            chord_pitches(langue, "c:m5-"),
+            Some((vec![60, 63, 66], None))
+        );
+        assert_eq!(
+            chord_pitches(langue, "d:m5-"),
+            Some((vec![62, 65, 68], None))
+        );
+        assert_eq!(
+            chord_pitches(langue, "c:sus"),
+            Some((vec![60, 65, 67], None))
+        );
+        assert_eq!(
+            chord_pitches(langue, "d:sus"),
+            Some((vec![62, 67, 69], None))
         );
     }
 
