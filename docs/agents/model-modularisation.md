@@ -502,7 +502,7 @@ release CLI: sha256 `2a0fd508eafbea524…`. Frozen wasm: **2 305 575 raw bytes /
 
 | Oracle | Invocation (deterministic subset) | Rows | Raw artefacts |
 | --- | --- | ---: | ---: |
-| musescore | `mesure.sh` with the five standard lots (corpus 56, mscz 174, xml 32, ly 375, abc 1) | 528 | 3 038 |
+| musescore | `mesure.sh` with the five standard lots (corpus 56, mscz 174, xml 32, ly 375, abc 1) | 638 | 3 586 |
 | musicxml | `mesure.sh --manifest …/mscz.txt` (174 scores, 1 unsupported excluded) | 174 | 698 |
 | midi | `mesure.sh … --alt-stride 5`, `LAKH_STRIDE=50` (1 020 reading, 1 020 writing `.ly`, 122 Mutopia, 29 `.mscz`, 39 Lakh) | 2 459 | 2 397 |
 | lilypond | `mesure.sh --refs …/ly95lect-refs-fresh --stride 5` (mus 290, ra 346, mut 265) | 1 824 | 2 587 |
@@ -540,7 +540,7 @@ a second, chained `Deref` on every element type.
 Verification: `cargo test --workspace`, clippy `-D warnings`, fmt and all eight
 `wasm32-unknown-unknown` builds pass. Wasm raw size **2 305 712 bytes**, i.e.
 **+137 bytes (+0.006 %)** versus step 0, far below the 2 % threshold. The five
-oracles report 0 lost file and 0 changed output byte (rows: musescore 528/528,
+oracles report 0 lost file and 0 changed output byte (rows: musescore 638/638,
 musicxml 174/174, midi 2 459/2 459, lilypond 1 824/1 824, abc 26 542/26 542).
 
 ### 10.3 Step 2 — engraving data moved to L5
