@@ -4241,6 +4241,25 @@ fn cinq_voix_sur_une_portee_fusionnent_le_unisson() {
     assert_eq!(score.staves.len(), 2);
 }
 
+/// `\articulate` (`ly/articulate.ly`) joue les ornements comme des notes
+/// réelles : `turn` (4 notes), `mordent` (3), `prall` (4). Vérifié avec
+/// LilyPond 2.27 sur la source réduite ci-dessous (12 attaques, hauteurs
+/// 74/72/71/72, 74/72/74, 77/76/77/76, 77).
+#[test]
+fn articulate_developpe_les_ornements_en_notes_jouees() {
+    let src = r#"\version "2.27.0"
+\include "articulate.ly"
+\score {
+  \articulate <<
+    \new Staff { \fixed c' { c'4\turn d'4\mordent e'4\prall f'4 } }
+  >>
+}"#;
+    let score = read_lilypond(src).expect("lecture");
+    let mut notes: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+    notes.sort_unstable();
+    assert_eq!(notes, vec![71, 72, 72, 72, 74, 74, 74, 76, 76, 77, 77, 77]);
+}
+
 /// `\change Staff` vers une portée **de nom différent** qui joue déjà la même
 /// hauteur : `lily/change-iterator.cc` déplace la voix dans l'autre contexte
 /// `Staff`, et `lily/midi-walker.cc:95-115` ne joue qu'une attaque pour les

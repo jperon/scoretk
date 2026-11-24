@@ -107,6 +107,7 @@ example `../lilypond-ref/`, like `ref-musescore/`) and never distributed:
 | `read/lexer.rs` | `lily/lexer.ll` (states `notes`, `lyrics`, `markup`, comments) |
 | `read/parser.rs` | `lily/parser.yy` (`music_list`, `event_chord`, `chord_body`, `post_events`, `duration`, `repeated_music`, `context_change`, `\score`) |
 | `read/pitch.rs` | `lily/pitch.cc` (`Pitch::to_relative_octave`, `steps`, `up_to`/`down_to`) and `scm/define-note-names.scm` (name tables by language) |
+| `builder/articulate.rs` | `ly/articulate.ly` (`ac:trill`, `ac:articulate-chord`, actions `prall`, `mordent`, `turn`), file under GPL-3.0-only |
 | `modes.rs` | `ly/drumpitch-init.ly` (`drumPitchNames`, `midiDrumPitches`) and `scm/chord-entry.scm` (`construct-chord-elements`): MIDI pitch tables for `\drummode` and `\chordmode` |
 
 Licence: **GNU GPL version 3 or later**, Copyright (C) 1998--2026

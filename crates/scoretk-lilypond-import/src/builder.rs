@@ -41,6 +41,8 @@ use scoretk_core::model::{
     TupletId, VOICES,
 };
 
+mod articulate;
+
 use crate::ast::{Context, Document, GroupKind, LyricsBlock, Music, PitchSpec, StaffBlock};
 use crate::events::{
     arpeggio_object, articulation_objects, breath_object, ornament_objects, ottava_type,
@@ -679,6 +681,9 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     if staves.is_empty() {
         return score;
     }
+    // `ly/articulate.ly` transforme la musique *avant* le calcul des mesures :
+    // les notes courtes de l'excursion tombent dans la durée de la note écrite.
+    articulate::expand_articulate(&mut staves, score.playback_articulate);
     for (index, lyrics) in pending_lyrics {
         if let Some(staff) = staves.get_mut(index) {
             staff.lyrics.push(lyrics);
