@@ -334,8 +334,8 @@ in `scoretk-lilypond-import/src/parser.rs`, `Parser::document`, l. 506-569:
 `references.py --inject-midi --same-score` therefore rewrites a sandboxed
 copy: `\midi { }` is injected in the score so selected and removed from every
 other `\score`, so LilyPond emits exactly one MIDI — the one of that score.
-The transformation is checked by `references.py --selftest`. A main file
-without an explicit `\score` keeps the raw injection: its score comes from a
-top-level expression (possibly held by an included variable), which
-`regen-refs.py` already wraps. Keep the two reference trees separate; report
-both scores rather than replacing the raw one.
+The transformation is checked by `references.py --selftest`. A source without
+any `\score` block keeps the raw injection: its score comes from a top-level
+expression, which `regen-refs.py` already wraps; with `--raw-refs <raw tree>`
+that MIDI is reused instead of being recompiled. Keep the two reference trees
+separate; report both scores rather than replacing the raw one.
