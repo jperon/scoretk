@@ -8035,3 +8035,115 @@ files are still needed on `mut` and +27 on `rw`. The exception list is
 unchanged from §36 (faulty references that no longer compile with LilyPond
 2.26/2.27 and music requiring a full Scheme evaluator). No file was silently
 dropped.
+
+## 38. Real-world reading: octave sub-causes (2026-11-24)
+
+Protocol: frozen reference trees and manifests, one lot at a time, one binary
+change at a time, `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10`,
+`mesure.py --refs-only` + `ly_notes.py selftest` (OK). No comparator rule was
+changed; every fix has a reduced test that fails on the preceding binary.
+
+### Octave grouping (40 `mut` / 42 `rw` files at the start)
+
+Grouping by first divergent `(pitch, attack)` pair gives these sub-causes:
+
+| Sub-cause | Typical files | Outcome |
+| --- | --- | --- |
+| Stale `relative_final` after `<< … \\ … >>` | `Rimsky.ly` | fixed, +1 exact |
+| Octave mark written after the duration (`c8'`) | `25EF-01.ly` | fixed, +1 exact |
+| `\relative` local to a variable with its own Voice | `bwv849b.ly` (293 shifted notes) | fixed N1/N2, no exact file (11 extra unisons remain) |
+| Music variables reused under several `\relative` references | `debussy_Ste_Bergamesq_Clair.ly` | not fixed |
+| Dotted/diatonic-step exceptions in `\transpose` | `Diademata.ly`, `Lyngham.ly` | 2 notes each, not fixed |
+| Scheme-dependent or stale/different-`\score` references | `baba.ly`, `saltarello.ly`, `score.ly` | documented exceptions |
+| Grace-onset shifts mis-flagged `octave` | `Chop-28-17`, `chopin_prelude_op45`, `debussy…` | belong to the timing group |
+
+### Fix 1: `relative_final` follows the last branch of `<< … >>`
+
+`Music_sequence::simultaneous_relative_callback`
+(`lily/music-sequence.cc:199-208`) calls `music_list_to_relative`
+(`:143-160`): every branch starts from the previous branch's last pitch, and
+the music *after* the `>>` starts from the last pitch of the **last** branch.
+`SimultaneousMusic` carries that callback
+(`scm/define-music-types.scm:715-724`). The interpreter did update
+`self.octave` when adopting a spawned branch, but left `relative_final`
+pointing at an earlier context. `Interpreter::run` returns
+`relative_final.unwrap_or(octave)` to chain staves, so the next staff of a
+`\relative` group re-anchored one octave too high (`Rimsky.ly`: the bass
+staff played B♭4 instead of B♭3, 344 notes wrong, verified against a fresh
+LilyPond 2.26 MIDI). `events.rs` now refreshes `relative_final` whenever a
+branch is adopted. Reduced test
+`relatif_enchaine_la_derniere_branche_d_un_passage_polyphonique`.
+
+### Fix 2: octave marks after a duration
+
+`lily/parser.yy:3714-3742` (`pitch_or_music`) accepts `erroneous_quotes` after
+the duration: for `c8'` LilyPond warns « octave marks must precede duration »
+but still transposes the note (`:3367-3371`, `quotes` at `:3357-3390`). The
+reader discarded the quote, so the whole upper voice of `25EF-01.ly` sounded
+an octave low from its second `\repeat volta` (77 notes). `parser.rs` now
+consumes trailing `'` / `,` and adds them to the written octave (or to the
+controlled octave when `=` is present). Reduced test
+`marque_d_octave_apres_la_duree`.
+
+### Fix 3: variable-local `\relative` with its own Voice
+
+`\relative do'' \context Staff = "one" \new Voice { … }` applies
+`ly:make-music-relative!` (`lily/music.cc:134-180`) to **that variable's**
+music only: each variable re-anchors to its own reference. Marking such an
+envelope `chain` made the bass/bariton/tenor/alto/soprano variables of
+`bwv849b.ly` inherit the previous voice's final pitch (do4 instead of do5,
+293 notes). `builder.rs` now withholds the relative seed when the wrapper has
+an explicit reference and directly wraps a `\new Voice`; a `\relative`
+without a reference distributed over a group still chains
+(`relative_apres_un_contexte_de_voix_enchaine_la_portee_suivante`,
+`bar-line-define-bar-glyph.ly`). Reduced test
+`relative_propre_a_une_variable_reancre_chacune_ses_voix`. `bwv849b` goes
+from N1 1033/1310 and N2 1017/1310 to **1310/1310** on both; 11 extra unisons
+keep it out of the exact column.
+
+Two broader variants were measured and **reverted**: forcing `chain` only for
+groups with more than one staff lost `additional-voices-to-avoid-collisions.ly`
+(one exact file on `rw`, zero exact gain), and deriving `chain` from the
+wrapped `Seq`/`New` shape broke `transpose_dans_relative_reste_absolu`.
+The retained guard is the only variant with zero loss on all three lots.
+
+### Controlled measurement (one lot at a time, no loss)
+
+| Lot | Before (§37) | After fixes 1–2 | After fix 3 | N1 / N2 gains | Losses |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `ra` (1724) | 1690 | 1690 | **1690** | 1 (N1, `optional-args.ly`) | 0 |
+| `mut` (1316) | 1228 | 1230 | **1230** | `Rimsky.ly`, `25EF-01.ly` exact; `bwv849b.ly` N1/N2 | 0 |
+| `rw` (1365) | 1270 | 1272 | **1272** | same three files | 0 |
+
+`cargo test -p scoretk-lilypond-import`, `clippy -D warnings` and
+`fmt --check` are green. The only exact-file gains are `Rimsky.ly` and
+`25EF-01.ly` (one per real lot); `bwv849b.ly` is a large N1/N2 improvement
+with no exact gain.
+
+### Remaining failures and target
+
+The 86 `mut` / 93 `rw` inexact files still split as in §37: sibling-staff
+unisons (24 `mut`), shifted attacks (25), octave/diatonic-step discrepancies
+and isolated missing notes. Sixteen of them have **all** reference notes
+matched and only 1–6 extra notes (`BWV533`, `bwv627`, `bwv632`, `bwv651`,
+`bwv679`, `french-suite-5-gigue`, …); they are the cheapest exact-file target,
+but a cross-staff unison merge was already measured twice and rejected
+(§35–§37): it gains a few files and loses genuine two-staff unisons. A correct
+port needs `find_context_near` (`lily/context.cc:200-225`) and the tie-stop
+versus new-attack distinction, not a comparator rule.
+
+**Raw** (all measured files in the denominator):
+
+| Lot | Exact | Total | Raw |
+| --- | ---: | ---: | ---: |
+| `ra` | 1690 | 1724 | **98.0 %** |
+| `mut` | 1230 | 1316 | **93.5 %** |
+| `rw` | 1272 | 1365 | **93.2 %** |
+
+**Excluding only the legitimate exceptions** (unchanged numerators): 22
+exceptions on `mut`, 25 on `rw` — `mut` 1230/1294 = **95.1 %**, `rw`
+1272/1340 = **94.9 %**. The 95 % **raw** target is not reached: +21 exact
+files are still needed on `mut` and +25 on `rw`; the excluding-exceptions
+figure crosses 95 % on `mut` only. The exception list is unchanged from §36
+(faulty references that no longer compile with LilyPond 2.26/2.27 and music
+requiring a full Scheme evaluator). No file was silently dropped.
