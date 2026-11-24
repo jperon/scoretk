@@ -8671,3 +8671,117 @@ and no exception was added for a reader defect.
 
 `cargo test --workspace`, `clippy --workspace --all-targets -D warnings` and
 `fmt --check` are green; the comparator and oracle were not modified.
+
+## 44. Real-world reading: the `Tie_performer` Voice lifetime (2026-11-24)
+
+Protocol: baseline binary frozen at `35367c6c` (§43), the same manifests and
+MIDI trees (`out3ra` from `ly95lect-refs-clean` in §41–§43, `out3mut`/`out3rw`
+from `ly95lect-refs-fresh`), one lot at a time, `CARGO_BUILD_JOBS=2
+RUST_TEST_THREADS=2 nice -n 10`, `mesure.py --refs-only` and
+`ly_notes.py selftest` (OK). **Caveat:** the deleted `ly95lect-refs-clean`
+tree can no longer be reconstructed; the `ra` figures below were obtained with
+the stale `out3ra` of `ly95lect-refs-fresh`, which reports 66 failed
+conversions (mostly sources including a vanished `lyluatex/tmp-*` file) and
+1,605 exact instead of the documented 1,690. The **zero-loss check on `ra`**
+was therefore made by byte comparison of all 1,726 converted MusicXML files
+between the two binaries: **0 changed output**. No comparator rule, no oracle
+script and no manifest was modified.
+
+### Inventory before the fix (first divergent event)
+
+After excluding the legitimate exceptions of §35/§43, 39 `mut` and 40 `rw`
+files remain inexact (all `rw`-only ones are `main.ly`, an empty reference).
+Grouping by the first divergent `(pitch, attack)` event:
+
+| First divergence | Files | Examples |
+| --- | ---: | --- |
+| Missing attack (tie end / cross-staff allocation) | 21 | `bwv735`, `bwv657`, `bwv663-a4`, `bwv663-let`, `bwv-568`, `Chop-28-24`, `promenade-6` |
+| Extra unison / duplicate attack | 10 | `bwv849b`, `BWV533`, `wedding`, `two-jews`, `entertainer`, `ToccataFugue`, `rach-prelude23-05` |
+| Shifted attack by one Q16 step (grace / tie end) | 7 | `QuartetOpus18_No4_1`, `ballade-4`, `chopin_nocturne_op9_n3`, `bayadere-nikya`, `bwv-988-v26` |
+| Empty reference MIDI | 1 | `sor_op2_3` (111-byte `ly.midi`, no notes) |
+
+The tie group was fixed first, because its rule is explicit in the C++ and
+because §41–§43 had twice rejected tick-level heuristics for it.
+
+### Fix: a `Tie_performer` per numbered Voice context
+
+`ly/performer-init.ly:100-109` installs `Tie_performer` in every `Voice`
+context, not in `Staff`. Consequently `heads_to_tie_` is a **per-Voice**
+queue (`lily/tie-performer.cc:41-48`): `acknowledge_audio_element` closes a
+pending head of equal pitch (`:116-150`) and `stop_translation_timestep`
+discards heads whose `end_moment_` is past (`:147-185`). A `<< … \\ … >>`
+creates a new context for **every** branch, including the first
+(`lily/parser.yy:1581-1588`, `simultaneous_music`; `scm/music-functions.scm`
+`voicify-list`, lines 1025–1060, wraps each branch in a numbered `Bottom`
+context). A tie opened before `<<` therefore cannot be closed inside a branch:
+LilyPond 2.27 plays two attacks for
+`c'4~ << { c'16 d'8 } \\ { s2. } >> e'4` and one for
+`<< { c'4~ c'16 d'8 } \\ { s2. } >> e'4`. Conversely two successive
+`<< … \\ … >>` passages reuse the **same numbered Voice**, which is why ties
+continue across them in `BWV-827-*` and `waltz-op39-15`.
+
+`ChordEvent` now carries `voice_context`; `Interpreter` assigns a fresh id to
+every new context and shares a per-rank table of numbered branch contexts.
+`link_ties` only closes a pending head from the same context. A `\context
+Voice = sop` that finds an already open voice of that name keeps the context
+(`lily/context.cc`, `context_find_or_create`; `lily/parser.yy:1685-1690`), and
+the branches of a `<< … >>` **without** `\\` keep it too (they form a chord in
+the current Voice). Reduced test
+`liaison_avant_un_passage_polyphonique_ne_traverse_pas`, which fails on the
+baseline binary (one C5 attack) and passes with the fix (two attacks plus the
+unchanged inner-tie case).
+
+A first, deliberately simpler variant — a fresh context for every branch at
+every occurrence — gained the same two files but **lost 22** exact `mut`
+files (`BWV-827-*`, `BWV-830*`, `title-hub`, `corni`, …): those scores rely on
+the numbered Voice being reused. It was replaced by the numbered-context port
+before any commit, not retained as a heuristic.
+
+### Controlled results
+
+| Lot | Before §43 | After | N1 / N2 losses |
+| --- | ---: | ---: | ---: |
+| `ra` (1,724) | 1,690 (documented, clean refs) | **1,690** (0 changed MusicXML) | 0 |
+| `mut` (1,316) | 1,254 | **1,256** | 0 |
+| `rw` (1,365) | 1,297 | **1,299** | 0 |
+
+Exact gains: `bach-prelude17` and `bwv855a` on both real lots (one missing
+re-articulated attack each). No file was lost on any lot.
+
+### Scores
+
+**Raw** (all measured files in the denominator):
+
+| Lot | Exact | Total | Raw |
+| --- | ---: | ---: | ---: |
+| `ra` | 1,690 | 1,724 | **98.0 %** |
+| `mut` | 1,256 | 1,316 | **95.4 %** |
+| `rw` | 1,299 | 1,365 | **95.2 %** |
+
+**Excluding only legitimate exceptions** (unchanged numerators): 23 on `mut`
+(the §43 list plus `sor_op2_3`, whose reference MIDI contains no notes) and
+26 on `rw` (the same plus `main.ly`, whose reference is empty too). This gives
+`mut` **1,256/1,293 = 97.1 %** and `rw` **1,299/1,339 = 97.0 %**. No reader
+defect was reclassified as an exception.
+
+The raw 98 % target is **not reached**: +34 exact files are still needed on
+`mut` and +39 on `rw`. File-by-file analysis shows that the remaining groups
+are not one rule: they need the per-Voice MIDI track / cross-staff allocation
+`build_voices` rework (extra unisons, missing attacks on duplicated staves)
+and the real-time grace-part timing of `lily/grace-iterator.cc` /
+`Global_context` (shifted attacks). The §41–§43 rejected leads were not retried.
+
+### Rejected during this campaign
+
+* Rewriting the `<staff>` of overflow voices to their `Audio_staff`
+  (`lily/staff-performer.cc:114-143`, `lily/midi-walker.cc:98-106`) via
+  `Chord.staff_move`: 31 MusicXML outputs changed but **0 exact gain and 0 N1/N2
+  change** on `mut`. Reverted; the unison discrepancies are not caused by the
+  written `<staff>` alone.
+* Disabling `fusionne_unissons_entre_portees` as a diagnostic: **1,248/1,316**
+  instead of 1,256, so the existing per-`Audio_staff` merge is the correct
+  direction. Reverted.
+
+`python3 -I scripts/oracle/lilypond/ly_notes.py selftest`,
+`cargo test --workspace`, `clippy --workspace --all-targets -D warnings` and
+`fmt --check` are green.
