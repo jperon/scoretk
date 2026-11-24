@@ -154,13 +154,27 @@ def prepare_includes(source: Path, destination: Path) -> list[str]:
         modifie = avec_midi_dans_scores(contenu)
         if modifie == contenu:
             continue
-        (destination / nom).write_text(modifie, encoding="utf-8")
+        copie = destination / nom
+        copie.parent.mkdir(parents=True, exist_ok=True)
+        copie.write_text(modifie, encoding="utf-8")
         copies += 1
     return ["-I", str(destination)] if copies else []
 
 
+def bwrap_prefix(dossier: Path) -> list[str]:
+    """Same isolated LilyPond as `references.py` (no network, RO sources)."""
+    d = str(dossier)
+    return [
+        "bwrap", "--unshare-all", "--die-with-parent",
+        "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
+        "--tmpfs", "/tmp", "--bind", d, d,
+        "--setenv", "HOME", d, "--setenv", "XDG_CACHE_HOME", d + "/cache",
+        "--chdir", d, "--",
+    ]
+
+
 def regenerer(tache: tuple) -> dict:
-    src, refs, lot, out = tache
+    src, refs, lot, out, sandbox = tache
     source = Path(src)
     if not source.is_file():
         return {"fichier": src, "ok": False, "erreur": "source absente"}
@@ -187,9 +201,14 @@ def regenerer(tache: tuple) -> dict:
     for texte in candidats:
         tmp.write_text(texte, encoding="utf-8")
         midi.unlink(missing_ok=True)
+        commande = [
+            "lilypond", *include_args, "-dno-print-pages", "-dmidi-extension=midi",
+            "-o", str(destination / "ly"), str(tmp),
+        ]
+        if sandbox:
+            commande = bwrap_prefix(destination) + commande
         cp = subprocess.run(
-            ["lilypond", *include_args, "-dno-print-pages", "-dmidi-extension=midi",
-             "-o", str(destination / "ly"), str(tmp)],
+            commande,
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=120, check=False,
         )
         if midi.is_file() and midi.stat().st_size > 0:
@@ -211,6 +230,8 @@ def main() -> int:
     p.add_argument("--out", required=True, help="racine de la copie corrigée")
     p.add_argument("--lot", default="ra")
     p.add_argument("--jobs", type=int, default=min(2, os.cpu_count() or 1))
+    p.add_argument("--sandbox", action="store_true",
+                   help="compile inside bubblewrap (untrusted sources)")
     args = p.parse_args()
     srcs = [l.strip() for l in Path(args.manifest).read_text().splitlines() if l.strip()]
     # Copie en liens durs : seul le sous-ensemble régénéré est remplacé.
@@ -218,7 +239,7 @@ def main() -> int:
     copie = Path(args.out) / args.lot
     if not copie.exists():
         shutil.copytree(original, copie, copy_function=os.link)
-    taches = [(src, args.refs, args.lot, args.out) for src in srcs]
+    taches = [(src, args.refs, args.lot, args.out, args.sandbox) for src in srcs]
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
         resultats = list(pool.map(regenerer, taches))
     for r in resultats:

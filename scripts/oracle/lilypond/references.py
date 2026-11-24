@@ -28,6 +28,9 @@ disposition attendue par ``mesure.py --refs`` avec un préfixe vide.
 Usage :
     scripts/oracle/lilypond/references.py --manifest mut.txt --out refs \\
         --lot mut [--jobs 8] [--timeout 60] [--limit N] [--resume]
+    scripts/oracle/lilypond/references.py --manifest ext.txt --out refs \\
+        --lot ext --jobs 1 --sandbox --sandbox-dir /path/to/writable \\
+        --inject-midi   # untrusted third-party .ly, one worker
 
 Le statut de chaque fichier va dans ``<out>/<lot>/status.jsonl`` ; un fichier
 dont LilyPond échoue n'a pas de ``ly.midi`` et sera exclu par l'oracle comme
@@ -52,28 +55,54 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mesure import nom_court  # noqa: E402
 
 
-def _lancer(source: Path, sortie: Path, lilypond: str, timeout: int) -> tuple:
+def _midi_produit(sortie: Path) -> Path:
+    """LilyPond names one MIDI per score (``ly-1-….midi``, ``ly-2-…``)."""
+    direct = sortie.with_suffix(".midi")
+    if direct.is_file():
+        return direct
+    candidats = sorted(sortie.parent.glob("*.midi"))
+    return candidats[0] if candidats else direct
+
+
+def bwrap_prefix(dossier: Path) -> list[str]:
+    """Sandbox LilyPond: no network, source read-only, only ``dossier`` writable.
+
+    Compiling a `.ly` executes its embedded Scheme.  The sandbox is therefore
+    mandatory for untrusted third-party sources.  The Nix store and the source
+    tree stay visible through the read-only root bind; ``dossier`` is the only
+    writable path (output, font cache, injected copies of the source).
+    """
+    d = str(dossier)
+    return [
+        "bwrap", "--unshare-all", "--die-with-parent",
+        "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
+        "--tmpfs", "/tmp", "--bind", d, d,
+        "--setenv", "HOME", d, "--setenv", "XDG_CACHE_HOME", d + "/cache",
+        "--chdir", d, "--",
+    ]
+
+
+def _lancer(
+    source: Path, sortie: Path, lilypond: str, timeout: int,
+    sandbox: Path | None = None, extra: list[str] | None = None,
+) -> tuple:
     """Compile ``source`` vers ``sortie`` ; (code, erreur, midi)."""
+    commande = [
+        lilypond, *(extra or []), "-dno-print-pages", "-dmidi-extension=midi",
+        "-o", str(sortie), str(source),
+    ]
+    if sandbox is not None:
+        commande = bwrap_prefix(sandbox) + commande
+    commande = ["timeout", str(timeout), "prlimit", "--as=4000000000", *commande]
     try:
         p = subprocess.run(
-            [
-                "timeout",
-                str(timeout),
-                "prlimit",
-                "--as=4000000000",
-                lilypond,
-                "-dno-print-pages",
-                "-dmidi-extension=midi",
-                "-o",
-                str(sortie),
-                str(source),
-            ],
+            commande,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             timeout=timeout + 5,
             check=False,
         )
-        return p.returncode, p.stderr.decode("utf-8", "replace"), sortie.with_suffix(".midi")
+        return p.returncode, p.stderr.decode("utf-8", "replace"), _midi_produit(sortie)
     except subprocess.TimeoutExpired:
         return 124, "dépassement de la borne de temps", sortie.with_suffix(".midi")
 
@@ -108,7 +137,8 @@ def _convertir(source: Path, racine: Path) -> Path | None:
 
 
 def compiler(
-    source: Path, destination: Path, lilypond: str, timeout: int
+    source: Path, destination: Path, lilypond: str, timeout: int,
+    sandbox: Path | None = None,
 ) -> dict:
     """Compile une source et copie son MIDI ; renvoie une ligne de statut.
 
@@ -119,16 +149,17 @@ def compiler(
     """
     debut = time.monotonic()
     converti = False
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=sandbox) as tmp:
         sortie = Path(tmp) / "ly"
-        code, journal, midi = _lancer(source, sortie, lilypond, timeout)
+        code, journal, midi = _lancer(source, sortie, lilypond, timeout, Path(tmp) if sandbox else None)
         if "commande inconnue" in journal or "unknown command" in journal:
             converti_source = _convertir(source, Path(tmp))
             if converti_source is not None:
                 if midi.exists():
                     midi.unlink()
                 code, journal, midi = _lancer(
-                    converti_source, sortie, lilypond, timeout
+                    converti_source, sortie, lilypond, timeout,
+                    Path(tmp) if sandbox else None,
                 )
                 if midi.exists() and midi.stat().st_size > 0:
                     converti = True
@@ -148,6 +179,60 @@ def compiler(
     }
 
 
+def compiler_injecte(
+    source: Path, destination: Path, lilypond: str, timeout: int, sandbox: Path
+) -> dict:
+    """Compile une copie sandboxed avec ``\\midi { }`` injecté (regen-refs.py).
+
+    Les lots externes n'ont pas de ``\\midi`` dans leurs sources : la
+    référence est construite exactement comme `regen-refs.py` le fait, sur une
+    copie locale (les ``\\include`` restent relatifs) et dans le bac à sable.
+    """
+    debut = time.monotonic()
+    with tempfile.TemporaryDirectory(dir=sandbox) as tmp:
+        base = Path(tmp)
+        dossier = base / "src"
+        shutil.copytree(source.parent, dossier)
+        # `regen-refs.py` has a hyphen in its name: load it by path rather than
+        # duplicating its MIDI-injection logic here.
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "regen_refs", Path(__file__).resolve().parent / "regen-refs.py"
+        )
+        regen = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(regen)
+        candidats_avec_midi = regen.candidats_avec_midi
+        prepare_includes = regen.prepare_includes
+
+        texte = (dossier / source.name).read_text(encoding="utf-8", errors="replace")
+        candidats = candidats_avec_midi(texte) or [texte]
+        include_args = prepare_includes(source, dossier)
+        sortie = base / "ly"
+        ok = False
+        journal = "aucun candidat n'a compilé"
+        for candidat in candidats:
+            (dossier / source.name).write_text(candidat, encoding="utf-8")
+            code, journal, midi = _lancer(
+                dossier / source.name, sortie, lilypond, timeout,
+                sandbox=base, extra=include_args,
+            )
+            if midi.exists() and midi.stat().st_size > 0:
+                ok = True
+                break
+        if ok:
+            destination.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(midi, destination / "ly.midi")
+    return {
+        "fichier": str(source),
+        "ok": ok,
+        "code": 0 if ok else code,
+        "converti": False,
+        "injecte": True,
+        "temps": round(time.monotonic() - debut, 3),
+        "erreur": "" if ok else journal[-400:],
+    }
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--manifest", required=True, help="une source .ly par ligne")
@@ -162,7 +247,18 @@ def main() -> None:
         action="store_true",
         help="ne pas recompiler un fichier dont le ly.midi existe déjà",
     )
+    p.add_argument("--sandbox", action="store_true",
+                   help="compile under bubblewrap (mandatory for untrusted sources)")
+    p.add_argument("--sandbox-dir", default="",
+                   help="writable parent for sandbox temporary directories")
+    p.add_argument("--inject-midi", action="store_true",
+                   help="inject \\midi { } into a copy, as regen-refs.py does")
     args = p.parse_args()
+
+    sandbox = None
+    if args.sandbox:
+        sandbox = Path(args.sandbox_dir) if args.sandbox_dir else Path(args.out).parent / "sandbox"
+        sandbox.mkdir(parents=True, exist_ok=True)
 
     sources = [
         Path(ligne.strip())
@@ -185,10 +281,20 @@ def main() -> None:
     with statut.open("w", encoding="utf-8") as journal, ThreadPoolExecutor(
         max_workers=args.jobs
     ) as pool:
-        futurs = [
-            pool.submit(compiler, source, destination, args.lilypond, args.timeout)
-            for source, destination in a_faire
-        ]
+        if args.inject_midi:
+            if sandbox is None:
+                p.error("--inject-midi requires --sandbox for untrusted sources")
+            futurs = [
+                pool.submit(compiler_injecte, source, destination,
+                            args.lilypond, args.timeout, sandbox)
+                for source, destination in a_faire
+            ]
+        else:
+            futurs = [
+                pool.submit(compiler, source, destination, args.lilypond, args.timeout,
+                            sandbox)
+                for source, destination in a_faire
+            ]
         for index, futur in enumerate(futurs, 1):
             ligne = futur.result()
             journal.write(json.dumps(ligne, ensure_ascii=False) + "\n")

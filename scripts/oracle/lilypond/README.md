@@ -281,3 +281,38 @@ through `scripts/oracle/common.py`, never copied per script:
   `Unsupported (excluded): N` in `resume.md` plus one warning line on stderr.
   Example: the MuseScore 1.14
   `Canon_in_D_Pachelbel_-_arranged_for_accordion.mscz`.
+
+## External control lots (`lots-externes.py`)
+
+`lots-externes.py` builds **new, independent** reading lots from personally
+engraved or public-domain/CC/GPL/MIT repositories, outside Mutopia, LSR,
+openLilyLib and LilyPond's regression tests. Licences are recorded before
+download (URL, pinned commit, licence and file+line evidence); NC/ND or
+rights-ambiguous sources are listed as rejected, never copied. Snapshots and
+manifests stay outside the repository, under
+`/home/jacques/tmp/scoretk/lots-ext/`:
+
+```sh
+python3 scripts/oracle/lilypond/lots-externes.py
+python3 scripts/oracle/lilypond/references.py \
+  --manifest /home/jacques/tmp/scoretk/lots-ext/manifestes/ext.txt \
+  --out /home/jacques/tmp/scoretk/lots-ext/refs --lot ext \
+  --jobs 1 --timeout 120 \
+  --sandbox --sandbox-dir /home/jacques/tmp/scoretk/lots-ext/sandbox \
+  --inject-midi
+scripts/oracle/lilypond/mesure.sh \
+  --out /home/jacques/tmp/scoretk/lots-ext/mesure \
+  --refs /home/jacques/tmp/scoretk/lots-ext/refs --refs-prefix '' --refs-only \
+  --scoretk /home/jacques/tmp/scoretk/lots-ext/scoretk-master \
+  --python-ly '' --music21 '' \
+  --lot ext=/home/jacques/tmp/scoretk/lots-ext/manifestes/ext.txt
+```
+
+Downloaded `.ly` files are untrusted: compiling one executes embedded Scheme.
+`--sandbox` runs LilyPond in bubblewrap (`--unshare-all`, no network, source
+tree read-only via a read-only root bind, only the temporary output directory
+writable). `--inject-midi` reuses `regen-refs.py`'s injection on a local copy;
+`--jobs 1` keeps one compiler at a time. Sources that do not compile or emit
+no MIDI are recorded as `echec` and excluded from both denominators (the count
+is printed in `resume.md`). `lots-externes.py --causes --lot ext` groups the
+non-exact files by their first divergent note tuple.
