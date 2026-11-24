@@ -1,6 +1,6 @@
 # Pivot model: layer audit and modularisation proposal
 
-Status: **analysis only — no code change in this commit**. Audience: whoever
+Status: **migration in progress — steps 0, 1 and 2 executed** (§10). Audience: whoever
 adds GABC, MEI, Capella, Guitar Pro or Humdrum after the ten current directions
 are stable (`docs/TODO.md:29-46`). The question answered here is not "is the
 model wrong?" but "which parts of it are a genuine common denominator, and
@@ -489,3 +489,56 @@ format or the wasm API.
   the first L6-style field in the common model and the concrete precedent for
   §5.1 L6: a format-specific need (LilyPond cluster notes) that must not change
   MuseScore-faithful output.
+
+## 10. Migration report (steps 0–2)
+
+### 10.1 Step 0 — frozen baselines
+
+All measurements were made outside the repository in
+`/home/jacques/tmp/scoretk/baselines-mod/` (binary, wasm size, lots, oracle raw
+outputs, comparison tool `compare.py`). Source commit: `d5159339`. Frozen
+release CLI: sha256 `2a0fd508eafbea524…`. Frozen wasm: **2 305 575 raw bytes /
+904 058 gzip** (`result/SIZE`).
+
+| Oracle | Invocation (deterministic subset) | Rows | Raw artefacts |
+| --- | --- | ---: | ---: |
+| musescore | `mesure.sh` with the five standard lots (corpus 56, mscz 174, xml 32, ly 375, abc 1) | 528 | 3 038 |
+| musicxml | `mesure.sh --manifest …/mscz.txt` (174 scores, 1 unsupported excluded) | 174 | 698 |
+| midi | `mesure.sh … --alt-stride 5`, `LAKH_STRIDE=50` (1 020 reading, 1 020 writing `.ly`, 122 Mutopia, 29 `.mscz`, 39 Lakh) | 2 459 | 2 397 |
+| lilypond | `mesure.sh --refs …/ly95lect-refs-fresh --stride 5` (mus 290, ra 346, mut 265) | 1 824 | 2 587 |
+| abc | `mesure.sh liste.txt … abc2xml.py` (1 434 files, 26 542 tune measurements) | 26 542 TSV rows | 53 076 |
+
+The MusicXML oracle was replayed once with the frozen binary: 698/698 artefacts
+byte-identical after normalising the run directory, the encoding date and
+wall-clock fields, and 174/174 measurement rows identical. The comparison tool
+ignores wall-clock columns (`temps`), dates, panic PIDs, alternative-tool
+artefacts (`ms.*`, `alt.*`, LilyPond `ref.pdf`) and, for the MIDI oracle, rows of
+tools other than scoretk. Two borderline Lakh/Mutopia conversions are
+10-second timeout cases under load: a second full MIDI baseline with the frozen
+binary was used for step 1 so that the comparison is not polluted by scheduling.
+
+### 10.2 Step 1 — layers and report, no data moved
+
+Commit `49d179e8`. New `model/layers.rs` defines the hand-written `Layers(u8)`
+bit set (L0–L6), `Loss { layer, item, tick, track }`, `ConversionReport` with
+`record`/`lost`, and the five empty layer structs `Metric`, `Text`, `Playback`,
+`Engraving`, `Extensions`. `Score` now wraps `CoreScore` (all pre-existing
+fields) and dereferences to it, so `score.notes`, `score.style`, … keep
+compiling unchanged; `report`, `metric`, `text`, `playback`, `engraving` and
+`extensions` are new additive fields. No reader or writer output changed.
+
+**Adjustment to §5.2:** `Deref` borrows the whole `Score`, not one field, so
+`score.measures.get_mut(..)` plus `score.staves.len()` in the same expression no
+longer compiles. Three call sites (`gap_rests.rs`, MIDI import, a MusicXML
+export test) were changed to hoist the second read or to address
+`score.core` directly; `core` is `pub(crate)` inside `scoretk-core`, with public
+`core()`, `core_mut()` and `into_core()` (the last one lets a caller move an
+arena out without cloning, which `Deref` cannot do). This is a small, local
+deviation from "field access kept via Deref" and is preferable to cloning or to
+a second, chained `Deref` on every element type.
+
+Verification: `cargo test --workspace`, clippy `-D warnings`, fmt and all eight
+`wasm32-unknown-unknown` builds pass. Wasm raw size **2 305 712 bytes**, i.e.
+**+137 bytes (+0.006 %)** versus step 0, far below the 2 % threshold. The five
+oracles report 0 lost file and 0 changed output byte (rows: musescore 528/528,
+musicxml 174/174, midi 2 459/2 459, lilypond 1 824/1 824, abc 26 542/26 542).
