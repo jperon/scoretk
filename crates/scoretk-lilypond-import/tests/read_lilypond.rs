@@ -481,6 +481,31 @@ fn contexte_voice_de_meme_nom_prolonge_la_liaison() {
     );
 }
 
+/// Une liaison posée **avant** un `<< … \\ … >>` ne traverse pas le passage :
+/// chaque branche, y compris la première, s'exécute dans un contexte `Voice`
+/// neuf (`lily/parser.yy:1581-1588`, `simultaneous_music` ; `scm/music-functions.scm`
+/// `voicify-list` l. 1025-1060), donc avec un autre `Tie_performer`
+/// (`ly/performer-init.ly:100-109`, `lily/tie-performer.cc:116-150`). La tête
+/// droite redevient une attaque. En revanche une liaison **intérieure** à la
+/// première branche tient, le performer étant le même des deux côtés. Vérifié
+/// avec LilyPond 2.27 sur les deux sources réduites (attaques 72/72/74/76 et
+/// 72/74/76).
+#[test]
+fn liaison_avant_un_passage_polyphonique_ne_traverse_pas() {
+    let score = lire("c'4~ << { c'16 d'8 } \\\\ { s2. } >> e'4");
+    assert_eq!(
+        hauteurs_attaques(&score),
+        vec![72, 72, 74, 76],
+        "la tête à droite du \\\\ doit réattaquer"
+    );
+    let interne = lire("<< { c'4~ c'16 d'8 } \\\\ { s2. } >> e'4");
+    assert_eq!(
+        hauteurs_attaques(&interne),
+        vec![72, 74, 76],
+        "une liaison à l'intérieur d'une branche tient"
+    );
+}
+
 /// `\compressMusic` est l'ancien nom de `\scaleDurations`
 /// (`python/convertrules.py` l. 2765) : meme argument et memes durees
 /// multipliees par n/d (bwv631a et trois autres chorals).

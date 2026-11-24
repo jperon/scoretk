@@ -267,6 +267,18 @@ pub(crate) struct ChordEvent {
     /// (`lily/parser.yy:1581-1588`, `simultaneous_music`). Une liaison posée
     /// sur une telle tête doit donc pouvoir être fermée par la suite du flux.
     pub sim_chord: bool,
+    /// Identifiant du contexte `Voice` qui porte le `Tie_performer`.
+    ///
+    /// `ly/performer-init.ly:100-109` consacre un `Tie_performer` à chaque
+    /// `Voice` : `heads_to_tie_` est une file **par voix**, jamais globale à
+    /// la portée (`lily/tie-performer.cc:41-48,116-150`). Un `<< … \\ … >>`
+    /// ouvre un contexte `Voice` distinct pour chaque branche
+    /// (`lily/parser.yy:1581-1588`, `simultaneous_music` ; vérifié sur
+    /// `c4~ <<{c16 d} \\ {s1}>> c4` : LilyPond 2.27 re-articule à la tête
+    /// droite). Une liaison ne peut donc être fermée que par une tête du
+    /// **même** contexte. Les branches d'un `<< … >>` sans `\\` gardent au
+    /// contraire le contexte courant, puisqu'elles forment un accord.
+    pub voice_context: u32,
 }
 
 /// N-olet construit par la voix.
@@ -386,6 +398,17 @@ pub(crate) struct Interpreter<'a> {
     voice: InterpretedVoice,
     /// Nom du contexte Voice courant (`\new Voice = "sop"`), pour `\voices`.
     voice_name: Option<String>,
+    /// Contexte `Voice` portant le `Tie_performer` (`ly/performer-init.ly`
+    /// l. 100-109) ; voir [`ChordEvent::voice_context`].
+    voice_context: u32,
+    /// Compteur de contextes frais, partagé par toutes les voix du document.
+    next_voice_context: &'a mut u32,
+    /// Contextes numberés des branches de `<< … \\ … >>`, indexés par rang
+    /// de branche. `voicify-list` (`scm/music-functions.scm:1025-1060`)
+    /// enveloppe chaque branche dans un contexte `Bottom` dont le nom est son
+    /// numéro : deux passages successifs réutilisent donc le même
+    /// `Tie_performer` pour leur branche de même rang.
+    voice_contexts: &'a mut Vec<u32>,
     /// Position courante.
     cursor: Fraction,
     /// État d'octave.
@@ -473,13 +496,20 @@ impl<'a> Interpreter<'a> {
     pub(crate) fn run(
         music: &Music,
         warnings: &'a mut Warnings,
+        next_voice_context: &'a mut u32,
+        voice_contexts: &'a mut Vec<u32>,
         octave: OctaveState,
         start: Fraction,
         name: Option<&str>,
     ) -> (InterpretedVoice, OctaveState) {
+        let voice_context = *next_voice_context;
+        *next_voice_context += 1;
         let mut interpreter = Self {
             voice: InterpretedVoice::default(),
             voice_name: name.map(str::to_owned),
+            voice_context,
+            next_voice_context,
+            voice_contexts,
             cursor: start,
             cue: false,
             repeat_pass: None,
@@ -592,6 +622,7 @@ impl<'a> Interpreter<'a> {
                         grace_after: Vec::new(),
                         breath: None,
                         sim_chord: false,
+                        voice_context: interpreter.voice_context,
                     })),
                 });
                 interpreter.order += 1;
@@ -709,6 +740,7 @@ impl<'a> Interpreter<'a> {
                     lyrics.clone(),
                     self.temporary,
                     false,
+                    None,
                 );
                 end = end.max(child.end);
                 // La musique d'un contexte est un élément de la séquence :
@@ -776,8 +808,8 @@ impl<'a> Interpreter<'a> {
                 musical.push(item);
             }
         }
-        let mut branches = musical.into_iter();
-        let Some(first) = branches.next() else {
+        let mut branches = musical.into_iter().enumerate();
+        let Some((first_index, first)) = branches.next() else {
             self.cursor = self.cursor.max(start);
             return;
         };
@@ -789,13 +821,42 @@ impl<'a> Interpreter<'a> {
         // `<< { c1 \change Staff = up c1 } \\ { c1 c1 } >> | c1 c1`, la
         // dernière note est rejouée sur la portée d'origine).
         let staff_after_branch = self.staff_target.clone();
+        // `\\` sépare des voix : **toutes** les branches, y compris la
+        // première, sont exécutées dans un contexte `Voice` fraîchement créé
+        // (`lily/parser.yy:1581-1588` ; `scm/music-functions.scm`
+        // `voicify-list`, l. 1025-1060, enveloppe chaque branche dans un
+        // contexte `Bottom` portant un numéro de voix). La musique qui suit
+        // le `>>` revient au contexte englobant. Une liaison ouverte avant
+        // le `<<` ne peut donc pas être fermée dans une branche : le
+        // `Tie_performer` du contexte d'origine n'y entend pas la tête droite
+        // (`lily/tie-performer.cc:116-150`, `ly/performer-init.ly:100-109`).
+        // Le lecteur parcourt la première branche dans l'interpréteur courant
+        // pour la trame et l'octave ; seul l'identifiant du contexte change.
+        let parent_context = self.voice_context;
+        if !sim_chord && !reuses_current_voice(first, self.voice_name.as_deref()) {
+            self.voice_context = self.branch_context(first_index);
+        }
         self.walk(first);
+        self.voice_context = parent_context;
         self.staff_target = staff_after_branch;
         let mut end = self.cursor;
         let mut last_duration = self.default_duration;
-        for item in branches {
+        for (index, item) in branches {
             self.default_duration = default_duration;
-            let child = self.spawn_at(start, None, item, Vec::new(), true, sim_chord);
+            let context = if sim_chord {
+                self.voice_context
+            } else {
+                self.branch_context(index)
+            };
+            let child = self.spawn_at(
+                start,
+                None,
+                item,
+                Vec::new(),
+                true,
+                sim_chord,
+                Some(context),
+            );
             end = end.max(child.end);
             // `music_list_to_relative` enchaîne les branches : la suivante
             // part de la dernière note de celle-ci, et la continuation du
@@ -818,9 +879,27 @@ impl<'a> Interpreter<'a> {
         self.default_duration = last_duration;
     }
 
+    /// Contexte `Voice` de la branche de rang `index` d'un `<< … \\ … >>`.
+    /// `voicify-list` (`scm/music-functions.scm:1025-1060`) nomme ces voix
+    /// d'après leur numéro (1, 2, …) : deux passages polyphoniques successifs
+    /// reprennent le même contexte, et donc le même `Tie_performer`, pour leur
+    /// branche de même rang (`waltz-op39-15`, `BWV-827-*`).
+    fn branch_context(&mut self, index: usize) -> u32 {
+        if index >= self.voice_contexts.len() {
+            self.voice_contexts.resize(index + 1, 0);
+        }
+        if self.voice_contexts[index] == 0 {
+            let context = *self.next_voice_context;
+            *self.next_voice_context += 1;
+            self.voice_contexts[index] = context;
+        }
+        self.voice_contexts[index]
+    }
+
     /// Ouvre une voix sœur dans la portée et l'interprète à partir de
     /// `start`, en reprenant l'état courant (octave, transposition, durée par
     /// défaut). Rend son état final.
+    #[allow(clippy::too_many_arguments)]
     fn spawn_at(
         &mut self,
         start: Fraction,
@@ -829,12 +908,25 @@ impl<'a> Interpreter<'a> {
         lyrics: Vec<LyricsBlock>,
         temporary: bool,
         sim_chord: bool,
+        voice_context: Option<u32>,
     ) -> SpawnResult {
+        // Une branche de `<< … >>` sans `\\` forme un accord dans la voix
+        // courante : elle garde son `Tie_performer`. Les branches numérotées
+        // reçoivent le contexte de leur rang (cf. [`Self::branch_context`]).
+        let voice_context = voice_context.unwrap_or_else(|| {
+            let context = *self.next_voice_context;
+            *self.next_voice_context += 1;
+            context
+        });
+        let tuplet_scale = self.tuplet_scale * self.open_tuplet_scale();
         // Type explicite : la voix enfant emprunte les avertissements pour la
         // seule durée de son interprétation, pas pour `'a`.
         let mut child = Interpreter {
             voice: InterpretedVoice::default(),
             voice_name: name.clone(),
+            voice_context,
+            next_voice_context: &mut *self.next_voice_context,
+            voice_contexts: &mut *self.voice_contexts,
             cursor: start,
             cue: self.cue,
             repeat_pass: self.repeat_pass,
@@ -857,7 +949,7 @@ impl<'a> Interpreter<'a> {
             last_event_chord_notes: self.last_event_chord_notes.clone(),
             stem_override: self.stem_override,
             staff_target: None,
-            tuplet_scale: self.tuplet_scale * self.open_tuplet_scale(),
+            tuplet_scale,
             temporary,
             sim_chord,
             unfold_repeats: self.unfold_repeats,
@@ -1001,7 +1093,7 @@ impl<'a> Interpreter<'a> {
             } => {
                 let start = self.cursor;
                 if !event.is_empty() {
-                    self.spawn_at(start + *delta, None, event, Vec::new(), true, false);
+                    self.spawn_at(start + *delta, None, event, Vec::new(), true, false, None);
                 }
                 self.walk(music);
             }
@@ -1132,7 +1224,7 @@ impl<'a> Interpreter<'a> {
             Context::PartCombine { first, second } => {
                 let start = self.cursor;
                 self.walk(first);
-                self.spawn_at(start, None, second, Vec::new(), true, false);
+                self.spawn_at(start, None, second, Vec::new(), true, false, None);
                 let mut deuxieme = self.voice.spawned.pop().expect("deuxième partie");
                 crate::partcombine::retire_unissons(&self.voice.clone(), &mut deuxieme.interpreted);
                 self.cursor = self.cursor.max(deuxieme.interpreted.end);
@@ -1189,7 +1281,7 @@ impl<'a> Interpreter<'a> {
                 let fin = debut + *duration;
                 let saved = self.cue;
                 self.cue = true;
-                let _ = self.spawn_at(Fraction::ZERO, None, music, Vec::new(), false, false);
+                let _ = self.spawn_at(Fraction::ZERO, None, music, Vec::new(), false, false, None);
                 self.cue = saved;
                 if let Some(enfant) = self.voice.spawned.pop() {
                     let child = enfant.interpreted;
@@ -1852,6 +1944,7 @@ impl<'a> Interpreter<'a> {
             grace_after: Vec::new(),
             breath: breaths.first().copied(),
             sim_chord: self.sim_chord,
+            voice_context: self.voice_context,
         };
         if !self.tags_pass_filters() {
             // Le filtre retire ces notes AVANT l'interprétation chez LilyPond :
@@ -2153,6 +2246,7 @@ impl<'a> Interpreter<'a> {
                 Vec::new(),
                 true,
                 false,
+                None,
             );
             end = end.max(child.end);
             self.octave = child.octave;
@@ -2189,9 +2283,13 @@ impl<'a> Interpreter<'a> {
         // Même amorçage qu'une voix sœur (`spawn_at`) : l'argument hérite de
         // l'octave, de la transposition et des durées par défaut, mais ses
         // événements sont renversés avant d'être rendus à la voix courante.
+        let tuplet_scale = self.tuplet_scale * self.open_tuplet_scale();
         let mut child = Interpreter {
             voice: InterpretedVoice::default(),
             voice_name: self.voice_name.clone(),
+            voice_context: self.voice_context,
+            next_voice_context: &mut *self.next_voice_context,
+            voice_contexts: &mut *self.voice_contexts,
             cursor: start,
             cue: self.cue,
             repeat_pass: self.repeat_pass,
@@ -2214,7 +2312,7 @@ impl<'a> Interpreter<'a> {
             last_event_chord_notes: self.last_event_chord_notes.clone(),
             stem_override: self.stem_override,
             staff_target: None,
-            tuplet_scale: self.tuplet_scale * self.open_tuplet_scale(),
+            tuplet_scale,
             temporary: self.temporary,
             sim_chord: self.sim_chord,
             unfold_repeats: self.unfold_repeats,
@@ -2410,6 +2508,22 @@ fn transpose_pitch(
 /// Dans un `<< … >>` d'une portée, ces commandes (`\clef`, `\key`, `\time`,
 /// `\bar`, `\set`…) portent sur la portée : elles ne doivent pas ouvrir une
 /// voix comme le fait une branche musicale.
+/// Vrai si la branche est un `\context Voice = <nom>` qui retrouve la voix
+/// courante du même nom (`lily/context.cc`, `context_find_or_create` ;
+/// `lily/parser.yy:1685-1690`). Le `Tie_performer` est alors le même des deux
+/// côtés, même sous un `\\` (`naujalis-caligaverunt.ly`).
+fn reuses_current_voice(music: &Music, name: Option<&str>) -> bool {
+    let Music::New(group) = music else {
+        return false;
+    };
+    name.is_some()
+        && group.existing
+        && group.kind == GroupKind::Voice
+        && group.staves.len() == 1
+        && group.staves[0].voices.len() == 1
+        && group.staves[0].voices[0].name.as_deref() == name
+}
+
 fn is_context_only(music: &Music) -> bool {
     match music {
         Music::Empty | Music::Unknown(_) | Music::Lyrics(_) => true,

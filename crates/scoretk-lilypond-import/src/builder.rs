@@ -158,6 +158,11 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
 
     let mut staves: Vec<StaffBuild> = Vec::new();
     let mut octave_relatif = OctaveState::default();
+    // Identifiants des contextes `Voice` (un `Tie_performer` par voix,
+    // `ly/performer-init.ly:100-109`), partagés entre toutes les portées.
+    let mut next_voice_context = 0u32;
+    // Branches numberées des `<< … \\ … >>`, réutilisées d'un passage à l'autre.
+    let mut voice_contexts: Vec<u32> = Vec::new();
     let Some(score_ast) = &document.score else {
         return score;
     };
@@ -285,6 +290,8 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                         part_id,
                         staff_block,
                         warnings,
+                        &mut next_voice_context,
+                        &mut voice_contexts,
                         octave_relatif,
                         &occupied,
                         element_start,
@@ -385,6 +392,8 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                         part_id,
                         staff_block,
                         warnings,
+                        &mut next_voice_context,
+                        &mut voice_contexts,
                         octave_relatif,
                         &occupied,
                         start,
@@ -551,6 +560,8 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 staff_part_id,
                 staff_block,
                 warnings,
+                &mut next_voice_context,
+                &mut voice_contexts,
                 octave_relatif,
                 &[],
                 debut_sequence,
@@ -1005,6 +1016,8 @@ fn build_voices(
     part: PartId,
     staff_block: &StaffBlock,
     warnings: &mut Warnings,
+    next_voice_context: &mut u32,
+    voice_contexts: &mut Vec<u32>,
     octave: OctaveState,
     occupied: &[Option<Fraction>],
     start: Fraction,
@@ -1034,8 +1047,15 @@ fn build_voices(
             Music::Context(crate::ast::Context::Relative { chain: true, .. }) => octave,
             _ => OctaveState::default(),
         };
-        let (interpreted, octave_suivante) =
-            Interpreter::run(&block.music, warnings, seme, start, block.name.as_deref());
+        let (interpreted, octave_suivante) = Interpreter::run(
+            &block.music,
+            warnings,
+            next_voice_context,
+            voice_contexts,
+            seme,
+            start,
+            block.name.as_deref(),
+        );
         octave = octave_suivante;
         queue.push_back(PendingVoice {
             name: block.name.clone(),
@@ -3281,8 +3301,9 @@ fn key_alter(fifths: i8, step: u8) -> i8 {
     0
 }
 
-/// (attaque, fin écrite, fin MIDI, id, liaison, tête d'un `<< … >>`).
-type TieEvent = (Fraction, Fraction, Fraction, NoteId, bool, bool);
+/// (attaque, fin écrite, fin MIDI, id, liaison, tête d'un `<< … >>`,
+/// contexte `Voice`).
+type TieEvent = (Fraction, Fraction, Fraction, NoteId, bool, bool, u32);
 
 /// Relie les notes de prolongation.
 fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
@@ -3343,7 +3364,11 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
             // jeter la liaison, qui redevient une attaque à sa tête droite.
             // Sans pas de temps intermédiaire, la tête pendante survit et la
             // liaison tient (`Fuge_Opus137`, `bwv735`, `bwv855a`, …).
-            // `tieWaitForNote` désactive cette éviction.
+            // `tieWaitForNote` désactive cette éviction. La file est en outre
+            // propre au contexte `Voice` qui porte le performer : une branche
+            // de `<< … \\ … >>` ouvre un contexte neuf, si bien qu'une liaison
+            // ouverte avant le `<<` y devient une nouvelle attaque
+            // (`bach-prelude17`, `bwv855a`).
             let mut sequence: Vec<TieEvent> = Vec::new();
             for event in &voice.interpreted.events {
                 let EventKind::Chord(chord) = &event.kind else {
@@ -3390,10 +3415,18 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     .map(|facteur| event.tick + chord.actual * facteur)
                     .unwrap_or(end);
                 for (note, id) in notes.iter().zip(ids) {
-                    sequence.push((event.tick, end, end_midi, id, note.tie, chord.sim_chord));
+                    sequence.push((
+                        event.tick,
+                        end,
+                        end_midi,
+                        id,
+                        note.tie,
+                        chord.sim_chord,
+                        chord.voice_context,
+                    ));
                 }
             }
-            sequence.sort_by_key(|(tick, end, _, _, _, _)| (*tick, *end));
+            sequence.sort_by_key(|(tick, end, _, _, _, _, _)| (*tick, *end));
             sequences.push(sequence);
             tie_waits.push(tie_wait);
         }
@@ -3410,12 +3443,16 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     .is_some_and(|(_, on)| *on)
             };
             let mut instants: BTreeSet<Fraction> = segments_by_tick.keys().copied().collect();
-            instants.extend(sequence.iter().map(|(tick, _, _, _, _, _)| *tick));
+            instants.extend(sequence.iter().map(|(tick, _, _, _, _, _, _)| *tick));
             // Une file par hauteur : un accord peut contenir deux têtes de
             // même hauteur (`<bis' bis>`, `tie-chord-broken-extremal.ly`),
             // qu'une simple entrée par hauteur écrasait ; chaque tête lie
-            // alors la tête de même rang de l'accord suivant.
-            let mut open: BTreeMap<u8, VecDeque<(NoteId, Fraction, Fraction)>> = BTreeMap::new();
+            // alors la tête de même rang de l'accord suivant. Le contexte
+            // `Voice` est porté par chaque tête : `heads_to_tie_` est propre
+            // au `Tie_performer` de ce contexte (`lily/tie-performer.cc`
+            // l. 41-48, 116-150 ; `ly/performer-init.ly` l. 100-109).
+            let mut open: BTreeMap<u8, VecDeque<(NoteId, Fraction, Fraction, u32)>> =
+                BTreeMap::new();
             let mut index = 0usize;
             for now in instants {
                 let mut fin = index;
@@ -3427,18 +3464,23 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     fin += 1;
                 }
                 let wait = wait_for_note(now);
-                for &(_, _, _, id, _, _) in &sequence[debut..fin] {
+                for &(_, _, _, id, _, _, context) in &sequence[debut..fin] {
                     let pitch = score.note(id).pitch;
                     // Sans `tieWaitForNote`, seule la note liée qui se termine
                     // exactement ici peut être fermée. Avec, LilyPond cherche
-                    // n'importe quelle tête pendante de même hauteur.
+                    // n'importe quelle tête pendante de même hauteur. Dans les
+                    // deux cas la tête pendante appartient au même contexte
+                    // `Voice` : un `<< … \\ … >>` crée un performer distinct,
+                    // la liaison n'y traverse pas (`bach-prelude17`,
+                    // `bwv855a`), mais deux têtes d'une branche ou d'un accord
+                    // `<< … >>` sans `\\` partagent le leur.
                     let closes = open.get_mut(&pitch).and_then(|queue| {
                         queue
                             .iter()
-                            .position(|&(_, end, _)| end == now || wait)
+                            .position(|&(_, end, _, left)| left == context && (end == now || wait))
                             .map(|position| queue.remove(position).expect("liaison à fermer"))
                     });
-                    if let Some((previous, _, _)) = closes {
+                    if let Some((previous, _, _, _)) = closes {
                         score.note_mut(previous).tie_forward = Some(id);
                         score.note_mut(id).tie_back = Some(previous);
                         deja_lies.insert(previous);
@@ -3447,15 +3489,15 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                 }
                 if !wait {
                     open.retain(|_, queue| {
-                        queue.retain(|&(_, _, end_midi)| end_midi > now);
+                        queue.retain(|&(_, _, end_midi, _)| end_midi > now);
                         !queue.is_empty()
                     });
                 }
-                for &(_, end, end_midi, id, tie, _) in &sequence[debut..fin] {
+                for &(_, end, end_midi, id, tie, _, context) in &sequence[debut..fin] {
                     if tie {
                         open.entry(score.note(id).pitch)
                             .or_default()
-                            .push_back((id, end, end_midi));
+                            .push_back((id, end, end_midi, context));
                     }
                 }
                 index = fin;
@@ -3470,14 +3512,15 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
         // touche qu'une liaison encore pendante après le traitement normal, et
         // exige la même hauteur au tick exact de sa fin.
         for sequence in &sequences {
-            for &(_, end, _, id, tie, sim_chord) in sequence {
+            for &(_, end, _, id, tie, sim_chord, context) in sequence {
                 if !tie || !sim_chord || deja_lies.contains(&id) {
                     continue;
                 }
                 let pitch = score.note(id).pitch;
                 let cible = sequences.iter().flat_map(|seq| seq.iter()).find_map(
-                    |&(tick, _, _, other, _, _)| {
+                    |&(tick, _, _, other, _, _, other_context)| {
                         (tick == end
+                            && other_context == context
                             && !deja_lies.contains(&other)
                             && score.note(other).pitch == pitch)
                             .then_some(other)
