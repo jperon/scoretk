@@ -995,6 +995,18 @@ fn build_voices(
         // Seul un `\relative` distribué sur un `<< … >>` hérite de la voix
         // précédente ; une portée sans ce wrapper reste en octave absolue.
         let seme = match &block.music {
+            Music::Context(crate::ast::Context::Relative {
+                chain: true,
+                reference: Some(_),
+                music,
+                ..
+            }) if matches!(
+                music.as_ref(),
+                Music::New(group) if group.kind == crate::ast::GroupKind::Voice
+            ) =>
+            {
+                OctaveState::default()
+            }
             Music::Context(crate::ast::Context::Relative { chain: true, .. }) => octave,
             _ => OctaveState::default(),
         };

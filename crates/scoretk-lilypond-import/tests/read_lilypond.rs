@@ -9025,6 +9025,28 @@ fn relative_sur_un_groupe_de_portees_enchaine_les_portees() {
 }
 
 #[test]
+fn relative_propre_a_une_variable_reancre_chacune_ses_voix() {
+    // `\relative do'' \context Staff = "one" \new Voice { … }` : chaque
+    // variable porte **son** référence, même si les voix se retrouvent dans
+    // le même `\context PianoStaff`. Lui transmettre la dernière hauteur de
+    // la voix précédente la faisait sonner do4 au lieu de do5
+    // (`bwv849b.ly`, vérifié sur le MIDI de LilyPond 2.26). Un `\relative`
+    // sans référence distribué sur un groupe enchaîne au contraire ses voix
+    // (`relative_apres_un_contexte_de_voix_enchaine_la_portee_suivante`).
+    let score = read_lilypond(
+        "\\version \"2.24.0\"\n\
+         vA = \\relative c' \\context Staff = \"one\" \\new Voice { c1 d1 }\n\
+         vB = \\relative c'' \\context Staff = \"one\" \\new Voice { c1 d1 }\n\
+         \\score { \\context PianoStaff << \\context Staff = \"one\" { s1*2 } \
+                   \\context Staff = \"two\" { s1*2 } \\vA \\vB >> }\n",
+    )
+    .expect("lecture");
+    let mut hauteurs = hauteurs(&score);
+    hauteurs.sort();
+    assert_eq!(hauteurs, vec![60, 62, 72, 74]);
+}
+
+#[test]
 fn marque_d_octave_apres_la_duree() {
     // `c8'` : `pitch_or_music` (`lily/parser.yy:3714-3742`) range les
     // `erroneous_quotes` (l. 3367-3371) dans la hauteur, avec un avertissement
