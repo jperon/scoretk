@@ -262,6 +262,11 @@ pub(crate) enum Context {
         absolute: bool,
         music: Box<Music>,
     },
+    /// `\harmonicByFret` / `\harmonicByRatio` : `calc-harmonic-pitch`
+    /// (`scm/tablature.scm:351-366`) ajoute un intervalle aux hauteurs **déjà
+    /// résolues** de son argument. À la différence de `\transpose`, il ne
+    /// décale donc pas la référence d'un `\relative` environnant.
+    Harmonic { semitones: i8, music: Box<Music> },
     /// `\transposition` : transposition de l'instrument pour la hauteur
     /// concert, sans changer la hauteur écrite (`instrumentTransposition` de
     /// `ly/engraver-init.ly`).

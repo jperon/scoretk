@@ -1175,6 +1175,7 @@ fn music_has_pitched(music: &crate::ast::Music) -> bool {
         }
         Music::Seq(items) | Music::Sim(items) => items.iter().any(music_has_pitched),
         Music::Context(crate::ast::Context::Transpose { music, .. })
+        | Music::Context(crate::ast::Context::Harmonic { music, .. })
         | Music::Context(crate::ast::Context::Fixed { music, .. })
         | Music::Context(crate::ast::Context::Relative { music, .. })
         | Music::Context(crate::ast::Context::NonRelative { music })
@@ -1199,6 +1200,7 @@ fn music_has_chords(music: &crate::ast::Music) -> bool {
         Music::Chord(_) => true,
         Music::Seq(items) | Music::Sim(items) => items.iter().any(music_has_chords),
         Music::Context(crate::ast::Context::Transpose { music, .. })
+        | Music::Context(crate::ast::Context::Harmonic { music, .. })
         | Music::Context(crate::ast::Context::Fixed { music, .. })
         | Music::Context(crate::ast::Context::Relative { music, .. })
         | Music::Context(crate::ast::Context::NonRelative { music })
@@ -1230,6 +1232,7 @@ fn instrument_transpose(music: &Music) -> Option<(PitchSpec, bool)> {
         Music::Context(Context::MidiInstrumentTranspose(pitch)) => Some((*pitch, false)),
         Music::Seq(items) | Music::Sim(items) => items.iter().find_map(instrument_transpose),
         Music::Context(Context::Transpose { music, .. })
+        | Music::Context(Context::Harmonic { music, .. })
         | Music::Context(Context::Fixed { music, .. })
         | Music::Context(Context::Relative { music, .. })
         | Music::Context(Context::NonRelative { music })

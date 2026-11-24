@@ -411,6 +411,10 @@ pub(crate) struct Interpreter<'a> {
     last_event_chord_notes: Option<Vec<NoteEvent>>,
     /// Transposition en vigueur (degrés diatoniques, demi-tons).
     transpose: (i32, i32),
+    /// Décalage ajouté aux hauteurs déjà résolues par `\harmonicByFret`
+    /// (`scm/tablature.scm:351-366`) : contrairement à `\transpose`, il ne
+    /// décale pas la référence relative.
+    harmonic_shift: i32,
     /// Décalage concert du `\transposition` du bloc `\midi`, en demi-tons.
     /// Il vaut pour toutes les portées et n'est pas porté par `<transpose>`
     /// lorsque la partie en réunit plusieurs.
@@ -479,6 +483,7 @@ impl<'a> Interpreter<'a> {
             last_chord_notes: None,
             last_event_chord_notes: None,
             transpose: (0, 0),
+            harmonic_shift: 0,
             midi_instrument_transpose: 0,
             tuplets: Vec::new(),
             grace: None,
@@ -793,6 +798,7 @@ impl<'a> Interpreter<'a> {
             octave: self.octave,
             relative_final: None,
             transpose: self.transpose,
+            harmonic_shift: self.harmonic_shift,
             midi_instrument_transpose: self.midi_instrument_transpose,
             tuplets: Vec::new(),
             grace: None,
@@ -1011,6 +1017,15 @@ impl<'a> Interpreter<'a> {
                 self.walk(music);
                 self.octave = saved_octave;
                 self.transpose = saved_transpose;
+            }
+            Context::Harmonic { semitones, music } => {
+                // `calc-harmonic-pitch` ajoute l'intervalle aux notes déjà
+                // résolues : ni l'octave relative ni la transposition écrite
+                // environnante ne sont modifiées.
+                let saved = self.harmonic_shift;
+                self.harmonic_shift += i32::from(*semitones);
+                self.walk(music);
+                self.harmonic_shift = saved;
             }
             // `\transposition` de portée : le décalage concert est appliqué
             // par le constructeur, seulement si la partie porte `<transpose>`.
@@ -1930,8 +1945,11 @@ impl<'a> Interpreter<'a> {
                 } else {
                     (i32::from(self.octave.reference) - 3) * 12
                 };
-                u8::try_from((i32::from(pitch) + self.transpose.1 + fixed_shift).clamp(0, 127))
-                    .unwrap_or(pitch)
+                u8::try_from(
+                    (i32::from(pitch) + self.transpose.1 + self.harmonic_shift + fixed_shift)
+                        .clamp(0, 127),
+                )
+                .unwrap_or(pitch)
             } else {
                 pitch
             };
@@ -1970,7 +1988,8 @@ impl<'a> Interpreter<'a> {
             u8::try_from(step).unwrap_or(0),
             i8::try_from(alter.clamp(-127, 127)).unwrap_or(0),
             i8::try_from(octave).unwrap_or(4),
-        ) else {
+        )
+        .and_then(|pitch| u8::try_from(i32::from(pitch) + self.harmonic_shift).ok()) else {
             self.warn("hauteur hors de la plage MIDI (0..127) : note ignorée");
             return None;
         };
@@ -2121,6 +2140,7 @@ impl<'a> Interpreter<'a> {
             octave: self.octave,
             relative_final: None,
             transpose: self.transpose,
+            harmonic_shift: self.harmonic_shift,
             midi_instrument_transpose: self.midi_instrument_transpose,
             tuplets: Vec::new(),
             grace: None,
@@ -2350,7 +2370,8 @@ fn context_is_context_only(context: &Context) -> bool {
         | Context::Relative { music, .. }
         | Context::NonRelative { music, .. }
         | Context::Retrograde { music, .. }
-        | Context::Transpose { music, .. } => is_context_only(music),
+        | Context::Transpose { music, .. }
+        | Context::Harmonic { music, .. } => is_context_only(music),
         Context::AfterGrace { main, grace, .. } => is_context_only(main) && is_context_only(grace),
         Context::After { event, music, .. } => is_context_only(event) && is_context_only(music),
         Context::Voices { music, .. } => is_context_only(music),

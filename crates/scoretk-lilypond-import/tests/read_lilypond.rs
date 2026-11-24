@@ -9207,3 +9207,21 @@ fn note_dans_un_contexte_dynamics_n_est_pas_jouee() {
         .collect();
     assert_eq!(notes, vec![(72, true), (74, true), (59, false)]);
 }
+
+#[test]
+fn harmonic_by_fret_joue_le_partiel_pas_la_note_ecrite() {
+    // `ly/music-functions-init.ly:779-797` + `scm/tablature.scm:297-320,342-366`
+    // : `#5` sélectionne le partiel 3 (deux octaves). LilyPond 2.26 joue G5
+    // le partiel deux octaves plus haut (31 + 24 = 55), la note suivante
+    // (`c'`, 48) restant inchangée. Vérifié avec LilyPond 2.26 sur exactement
+    // cette source réduite (le `__` du coda de Faure est identique).
+    let src = r#"\version "2.24.0"
+\score { \new Staff { \relative c { \harmonicByFret #5 g,4. c'2 } } }"#;
+    let score = read_lilypond(src).expect("lecture");
+    let pitches: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+    assert_eq!(
+        pitches,
+        vec![55, 48],
+        "hauteur du partiel ajoutée à la note"
+    );
+}

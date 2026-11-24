@@ -3443,6 +3443,33 @@ impl<'a> Parser<'a> {
                 });
                 Music::Context(Context::InstrumentTranspose(pitch))
             }
+            // `ly/music-functions-init.ly:779-797` : `\harmonicByFret` transmet
+            // sa musique à `calc-harmonic-pitch`, qui *ajoute* à chaque hauteur
+            // l'intervalle du partiel correspondant au frettage
+            // (`scm/tablature.scm:297-320,342-366`). Par exemple `#5` donne le
+            // partiel 3, `(2 0 0)`, soit deux octaves : `g,4.` joue G5 et non
+            // G3 (`faure-sicilienne-guitare-doigtee.ly`, coda). L'intervalle
+            // s'ajoute aux hauteurs **déjà résolues**, sans décaler la
+            // référence d'un `\relative` environnant : un `Context::Harmonic`
+            // dédié, et non `Context::Transpose` (qui modifierait cette
+            // référence, comme le fait un `\transpose` littéral).
+            "harmonicByFret" => {
+                let fret = self
+                    .peek()
+                    .filter(|token| token.is_scheme())
+                    .map(|token| token.text.trim().trim_start_matches('#').to_owned());
+                if fret.is_some() {
+                    self.position += 1;
+                }
+                let (octave, step, alter) = harmonic_fret_pitch(fret.as_deref().unwrap_or("0"));
+                let semitones = [0, 2, 4, 5, 7, 9, 11][usize::from(step)]
+                    + i32::from(alter)
+                    + 12 * i32::from(octave);
+                Music::Context(Context::Harmonic {
+                    semitones: i8::try_from(semitones).unwrap_or(0),
+                    music: Box::new(self.parse_music()),
+                })
+            }
             "transpose" => {
                 let from = self.parse_optional_pitch().unwrap_or(PitchSpec {
                     step: 0,
@@ -6920,6 +6947,9 @@ enum Wrapper {
     /// `\unfoldRepeats` : enveloppe transparente pour la structure, mais
     /// porte le dépliage des reprises de son argument.
     UnfoldRepeats,
+    /// `\harmonicByFret` / `\harmonicByRatio` : décalage ajouté aux
+    /// hauteurs déjà résolues (`scm/tablature.scm:351-366`).
+    Harmonic(i8),
 }
 
 impl Wrapper {
@@ -6946,6 +6976,7 @@ impl Wrapper {
                 chain,
             } => Some((Self::Relative(*reference, *chain), music)),
             Context::UnfoldRepeats { music } => Some((Self::UnfoldRepeats, music)),
+            Context::Harmonic { semitones, music } => Some((Self::Harmonic(*semitones), music)),
             _ => None,
         }
     }
@@ -6967,6 +6998,7 @@ impl Wrapper {
                 music,
             },
             Self::UnfoldRepeats => Context::UnfoldRepeats { music },
+            Self::Harmonic(semitones) => Context::Harmonic { semitones, music },
         })
     }
 }
@@ -7211,6 +7243,7 @@ fn extract_alternatives(music: &mut Music, alternatives: &mut Vec<Music>) {
         | Music::Context(Context::Volta { music, .. })
         | Music::Context(Context::Tuplet { music, .. })
         | Music::Context(Context::Transpose { music, .. })
+        | Music::Context(Context::Harmonic { music, .. })
         | Music::Context(Context::AfterGrace { main: music, .. })
         | Music::Context(Context::After { music, .. })
         | Music::Context(Context::Voices { music, .. }) => {
@@ -7258,6 +7291,7 @@ fn context_music(context: &Context) -> &Music {
         | Context::NonRelative { music }
         | Context::Tuplet { music, .. }
         | Context::Transpose { music, .. }
+        | Context::Harmonic { music, .. }
         | Context::Skipped { music } => music,
         _ => &Music::Empty,
     }
@@ -7638,6 +7672,35 @@ fn markup_prend_liste_entre_accolades(name: &str) -> bool {
     )
 }
 
+/// Partiel associé à un frettage par `scm/tablature.scm:308-320`
+/// (`fret-partials`), puis hauteur ajoutée par `partial-pitch`
+/// (`scm/tablature.scm:297-306`) : (octaves, degré, altération).
+fn harmonic_fret_pitch(fret: &str) -> (i8, u8, i8) {
+    let partial = match fret {
+        "0" => 0,
+        "12" => 1,
+        "7" | "19" => 2,
+        "5" | "24" => 3,
+        "4" | "9" | "16" => 4,
+        "3" => 5,
+        "2.7" => 6,
+        "2.3" => 7,
+        "2" => 8,
+        _ => 0,
+    };
+    match partial {
+        0 => (0, 0, 0),
+        1 => (1, 0, 0),
+        2 => (1, 4, 0),
+        3 => (2, 0, 0),
+        4 => (2, 2, 0),
+        5 => (2, 4, 0),
+        6 => (2, 6, 0),
+        7 => (3, 0, 0),
+        _ => (3, 1, 0),
+    }
+}
+
 fn starts_music_command(name: &str) -> bool {
     is_mode_head(name)
         || matches!(
@@ -7648,6 +7711,7 @@ fn starts_music_command(name: &str) -> bool {
                 | "autoChange"
                 | "partCombine"
                 | "unfoldRepeats"
+                | "harmonicByFret"
                 | "transpose"
                 | "tuplet"
                 | "times"
@@ -7957,6 +8021,7 @@ fn skip_to_rest(music: &mut Music) {
         | Music::Context(Context::Relative { music, .. })
         | Music::Context(Context::NonRelative { music })
         | Music::Context(Context::Transpose { music, .. })
+        | Music::Context(Context::Harmonic { music, .. })
         | Music::Context(Context::Silent { music })
         | Music::Context(Context::Skipped { music })
         | Music::Context(Context::Cue { music, .. })
@@ -7992,6 +8057,7 @@ fn feather_music(music: &mut Music, scale: &Fraction) {
             | Music::Context(Context::Relative { music, .. })
             | Music::Context(Context::NonRelative { music })
             | Music::Context(Context::Transpose { music, .. })
+            | Music::Context(Context::Harmonic { music, .. })
             | Music::Context(Context::Silent { music })
             | Music::Context(Context::Skipped { music })
             | Music::Context(Context::Cue { music, .. })
@@ -8096,7 +8162,8 @@ fn scale_context(context: &mut Context, factor: &Fraction) {
         | Context::Fixed { music, .. }
         | Context::Relative { music, .. }
         | Context::NonRelative { music, .. }
-        | Context::Transpose { music, .. } => scale_music(music, factor),
+        | Context::Transpose { music, .. }
+        | Context::Harmonic { music, .. } => scale_music(music, factor),
         Context::AfterGrace { main, grace, .. } => {
             scale_music(main, factor);
             scale_music(grace, factor);
