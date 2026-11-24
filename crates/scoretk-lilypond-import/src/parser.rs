@@ -2570,6 +2570,43 @@ impl<'a> Parser<'a> {
 
     /// Affectation `nom = …` : fonction musicale Scheme ou variable musicale.
     fn assign(&mut self, name: String) {
+        // `lily-library.scm` `collect-music-aux` (via `toplevel-music-handler`,
+        // `ly/init.ly:66-86`) engraves a variable whose value is a `\score`,
+        // just like an explicit score.  `lily/book.cc:125-127` adds every
+        // `\score` of a `\book` to the book.  Reading such a variable with
+        // `parse_music` sees `\score`/`\book` as unknown commands: the score
+        // body is then swallowed by the next construct (a `\magnifyMusic`
+        // wrapper, a Scheme markup variable, a tagged stanza) and the reader
+        // emits an empty score.  Parse the score expression here instead.
+        // The partition is registered at the definition: the reader keeps a
+        // single score and LilyPond engraves the variable when it is used.
+        if self.peek().is_some_and(|token| token.is_command("score")) {
+            let token = self.peek().cloned().expect("score token");
+            self.position += 1;
+            let (score, has_layout, has_midi, unfold_repeats, articulate) = self.parse_score();
+            self.partitions.push(Partition {
+                score,
+                explicit: true,
+                has_layout,
+                has_midi,
+                unfold_repeats,
+                articulate,
+                line: token.line,
+                column: token.column,
+            });
+            self.variables.insert(name, Music::Empty);
+            return;
+        }
+        if self
+            .peek()
+            .is_some_and(|token| token.is_command("book") || token.is_command("bookpart"))
+        {
+            self.position += 1;
+            let mut document = Document::default();
+            self.parse_book(&mut document);
+            self.variables.insert(name, Music::Empty);
+            return;
+        }
         if name == "afterGraceFraction" {
             if let Some(fraction) = self.parse_scale_fraction() {
                 self.after_grace_fraction = fraction;

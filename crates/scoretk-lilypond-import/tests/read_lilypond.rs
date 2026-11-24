@@ -9631,3 +9631,34 @@ fn tremolo_de_variable_est_deplie_au_lieu_dutilisation() {
     let hauteurs: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
     assert_eq!(hauteurs, vec![60, 62], "sans dépliage, deux notes tenues");
 }
+
+/// Une variable dont la valeur est un `\score` est gravée au point où elle
+/// est utilisée : `ly/init.ly:66-86` confie chaque expression de haut niveau
+/// à `collect-music-aux`, dont `scm/lily-library.scm:180-196` fait un
+/// `scorify-music` ; un `\book` ajoute ses `\score` avec
+/// `lily/book.cc:125-127`. Lire la valeur avec la grammaire musicale
+/// ordinaire faisait avaler le corps du score par la commande suivante
+/// (`\markup`, `\magnifyMusic`, `\keepWithTag`…) et produisait une partition
+/// vide (études de Chopin). Vérifié avec LilyPond 2.27 : le MIDI joue
+/// 62/64/65/67, c'est-à-dire le second `\score`, celui qui porte `\midi`.
+#[test]
+fn variable_contenant_un_score_est_gravee() {
+    let src = r#"\version "2.27.0"
+ritenuto = \markup \large \italic "ritenuto"
+ns = \once \normalsize
+rightHand = \relative c'' { \ns c4^\ritenuto d e f }
+layoutScore = \score {
+  \keepWithTag layout
+  \new PianoStaff \with { instrumentName = \markup \huge "No. 1" } <<
+    \new Staff = "upper" \rightHand
+    \new Dynamics { s1 }
+  >>
+}
+midiScore = \book { \score { \new Staff { d'4 e' f' g' } \midi {} } }
+\layoutScore
+\midiScore
+"#;
+    let score = read_lilypond(src).expect("lecture");
+    let hauteurs: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+    assert_eq!(hauteurs, vec![62, 64, 65, 67]);
+}
