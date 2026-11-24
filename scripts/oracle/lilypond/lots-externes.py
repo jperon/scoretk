@@ -253,8 +253,63 @@ def ecrire_manifestes(work: Path, out: Path, max_par_source: int,
     return groupes
 
 
+def premiere_divergence(ref: list[tuple], test: list[tuple]) -> str:
+    """First divergent event, using the tuple that defines exactness.
+
+    ``ly_notes.compare`` defines ``exact`` as ``r == t == n1`` and
+    ``n2 == r``: it compares note count, pitch multiset and
+    ``(pitch, quantized attack)`` multiset.  Duration is deliberately not
+    part of that definition.  A tie chain is the reason: LilyPond's
+    ``Tie_performer`` merges tied heads into one MIDI note covering the whole
+    chain (``lily/tie-performer.cc:116-185``), whereas MusicXML writes one
+    note per tie segment (``<tie type="start"/>`` … ``<tie type="stop"/>``,
+    ``scoretk-musicxml-export/src/exportmusicxml.rs:1813-1816``).  ``read_xml``
+    skips the stop notes (``ly_notes.py:314``), so the single surviving attack
+    carries only the *first* segment's duration.  Sorting on duration would
+    therefore report that harmless difference as the "first divergence" and
+    mask the missing/extra attack that actually makes the file inexact.
+    Classifying on ``(pitch, attack)`` matches the oracle's own semantics.
+    """
+    if not test:
+        return "empty_output"
+    if not ref:
+        return "empty_reference"
+    for i in range(max(len(ref), len(test))):
+        a = ref[i] if i < len(ref) else None
+        b = test[i] if i < len(test) else None
+        if a == b:
+            continue
+        if a is None:
+            return "extra_note"
+        if b is None:
+            return "missing_note"
+        if a[0] != b[0]:
+            return "pitch"
+        return "attack"
+    return "other"
+
+
+def causes_selftest() -> None:
+    """A tie chain must not be reported as a duration divergence."""
+    # c'2~ c'1: LilyPond plays one attack of 3 quarters; MusicXML writes a
+    # half note tied to a whole note.  ``read_xml`` keeps one attack of 1
+    # quarter (the first segment).  With one extra unrelated note in the
+    # candidate, the real first divergence is that extra note, not duration.
+    ref = [(60, 0), (62, 1)]
+    test = [(60, 0), (62, 1), (64, 2)]
+    assert premiere_divergence(ref, test) == "extra_note"
+    # The legacy (pitch, attack, duration) sort reported duration first:
+    legacy_ref = sorted([(60, 0, 3), (62, 1, 1)])
+    legacy_test = sorted([(60, 0, 1), (62, 1, 1), (64, 2, 1)])
+    assert legacy_ref[0] != legacy_test[0] and legacy_ref[0][:2] == legacy_test[0][:2]
+    assert premiere_divergence([(60, 0)], [(60, 0)]) == "other"
+    assert premiere_divergence([], [(60, 0)]) == "empty_reference"
+    assert premiere_divergence([(60, 0)], []) == "empty_output"
+    print("selftest causes : OK")
+
+
 def analyser_causes(out: Path, lot: str) -> None:
-    """Group non-exact files by their first divergent note tuple."""
+    """Group non-exact files by their first divergent note event."""
     from ly_notes import GRID, read_midi, read_xml
 
     chemin = out / f"{lot}.jsonl"
@@ -265,33 +320,11 @@ def analyser_causes(out: Path, lot: str) -> None:
         if r.get("exclu") or not r.get("ok") or not r.get("ref") or r.get("exact"):
             continue
         travail = out / "travail" / lot / str(index)
-        ref = sorted((p, round(a / GRID), round(d / GRID)) for p, a, d, _ in
-                     read_midi(str(travail / "ref.mid")))
-        test = sorted((p, round(a / GRID), round(d / GRID)) for p, a, d, *_ in
-                      read_xml(str(travail / "tk.musicxml"), with_grace=True))
-        if not test:
-            cause = "empty_output"
-        elif not ref:
-            cause = "empty_reference"
-        else:
-            cause = "other"
-            for i in range(max(len(ref), len(test))):
-                a = ref[i] if i < len(ref) else None
-                b = test[i] if i < len(test) else None
-                if a == b:
-                    continue
-                if a is None:
-                    cause = "extra_note"
-                elif b is None:
-                    cause = "missing_note"
-                elif a[0] != b[0]:
-                    cause = "pitch"
-                elif a[1] != b[1]:
-                    cause = "attack"
-                elif a[2] != b[2]:
-                    cause = "duration"
-                break
-        groupes[cause].append(r["fichier"])
+        ref = [(p, round(a / GRID)) for p, a, d, _ in
+               read_midi(str(travail / "ref.mid"))]
+        test = [(p, round(a / GRID)) for p, a, d, *_ in
+                read_xml(str(travail / "tk.musicxml"), with_grace=True)]
+        groupes[premiere_divergence(sorted(ref), sorted(test))].append(r["fichier"])
     print(f"# First divergence, {lot}: {sum(map(len, groupes.values()))} non-exact files")
     for cause, fichiers in sorted(groupes.items(), key=lambda kv: -len(kv[1])):
         print(f"| {cause} | {len(fichiers)} | `{Path(fichiers[0]).name}` |")
@@ -312,8 +345,13 @@ def main() -> int:
     p.add_argument("--only", default="", help="comma-separated source keys")
     p.add_argument("--causes", action="store_true",
                    help="group first divergences of an existing --out measurement")
+    p.add_argument("--causes-selftest", action="store_true",
+                   help="check that tie chains do not mask the real divergence")
     p.add_argument("--lot", default="ext", help="lot name for --causes")
     args = p.parse_args()
+    if args.causes_selftest:
+        causes_selftest()
+        return 0
     out = Path(args.out) if args.out else Path(args.work) / "manifestes"
     if args.causes:
         analyser_causes(out, args.lot)
