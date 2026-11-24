@@ -349,10 +349,17 @@ def compiler_injecte(
     debut = time.monotonic()
     if same_score and raw_ref is not None and raw_ref.is_file():
         cible = _fichier_score_lu(source, source.parent)
-        if cible is None:
-            # No score block anywhere in the source or its includes: the
-            # same-score reference is exactly the raw injection (the reader's
-            # first top-level expression, wrapped by regen-refs.py).
+        blocs_main = blocs_score(source.read_text(encoding="utf-8", errors="replace"))
+        identique = cible is None or (
+            cible[0].name == source.name
+            and (any(has_midi for _, _, has_midi in blocs_main) or len(blocs_main) <= 1)
+        )
+        if identique:
+            # No score to retarget, or the raw injection already plays the
+            # reader's score: regen-refs.py injects `\midi` in the last score,
+            # and LilyPond writes the first MIDI of the first score carrying
+            # `\midi`, which is the score the reader selects.  The same-score
+            # reference is then exactly the raw one.
             destination.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(raw_ref, destination / "ly.midi")
             return {
