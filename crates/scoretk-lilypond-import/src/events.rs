@@ -262,6 +262,11 @@ pub(crate) struct ChordEvent {
     pub grace_after: Vec<GraceEvent>,
     /// Respiration attachée.
     pub breath: Option<BreathType>,
+    /// Vrai pour une note issue d'un `<< … >>` **sans** `\\` : LilyPond place
+    /// ces têtes dans la voix courante (un accord), pas dans des voix sœurs
+    /// (`lily/parser.yy:1581-1588`, `simultaneous_music`). Une liaison posée
+    /// sur une telle tête doit donc pouvoir être fermée par la suite du flux.
+    pub sim_chord: bool,
 }
 
 /// N-olet construit par la voix.
@@ -444,6 +449,9 @@ pub(crate) struct Interpreter<'a> {
     /// contextes qui y sont ouverts en héritent et pourront partager une piste
     /// avec ceux d'un autre passage.
     temporary: bool,
+    /// Vrai dans une branche de `<< … >>` sans `\\` : les têtes y forment un
+    /// accord de la voix courante (`lily/parser.yy:1581-1588`).
+    sim_chord: bool,
     /// `\unfoldRepeats` : déplier les reprises volta.
     unfold_repeats: bool,
     /// Pile des tags des expressions tag traversees.
@@ -496,6 +504,7 @@ impl<'a> Interpreter<'a> {
             staff_target: None,
             tuplet_scale: Fraction::ONE,
             temporary: false,
+            sim_chord: false,
             // `\unfoldRepeats` est une fonction musicale : elle ne concerne
             // que son argument, porté par `Context::UnfoldRepeats`. Le
             // dépliage n'est plus un état global de la voix, sinon la musique
@@ -582,6 +591,7 @@ impl<'a> Interpreter<'a> {
                         grace_before: pending,
                         grace_after: Vec::new(),
                         breath: None,
+                        sim_chord: false,
                     })),
                 });
                 interpreter.order += 1;
@@ -603,7 +613,8 @@ impl<'a> Interpreter<'a> {
                     self.walk(item);
                 }
             }
-            Music::Sim(items) | Music::SimVoices(items) => self.simultaneous(items),
+            Music::Sim(items) => self.simultaneous(items, true),
+            Music::SimVoices(items) => self.simultaneous(items, false),
             Music::Chord(chord) => self.emit_chord(chord),
             Music::Context(context) => self.context(context),
             Music::Tag { tags, music } => {
@@ -681,6 +692,7 @@ impl<'a> Interpreter<'a> {
                     &voice.music,
                     lyrics.clone(),
                     self.temporary,
+                    false,
                 );
                 end = end.max(child.end);
                 // La musique d'un contexte est un élément de la séquence :
@@ -726,7 +738,7 @@ impl<'a> Interpreter<'a> {
     /// suit le `>>` part de la dernière note de la **dernière** branche.
     /// Lire les branches en parallèle depuis la note qui précède le `<<`
     /// décalerait tout le reste d'une octave.
-    fn simultaneous(&mut self, items: &[Music]) {
+    fn simultaneous(&mut self, items: &[Music], sim_chord: bool) {
         if self.grace.is_some() {
             // Ornement : lecture séquentielle, comme avant (les ornements ne
             // font pas avancer le curseur).
@@ -767,7 +779,7 @@ impl<'a> Interpreter<'a> {
         let mut last_duration = self.default_duration;
         for item in branches {
             self.default_duration = default_duration;
-            let child = self.spawn_at(start, None, item, Vec::new(), true);
+            let child = self.spawn_at(start, None, item, Vec::new(), true, sim_chord);
             end = end.max(child.end);
             // `music_list_to_relative` enchaîne les branches : la suivante
             // part de la dernière note de celle-ci, et la continuation du
@@ -800,6 +812,7 @@ impl<'a> Interpreter<'a> {
         music: &Music,
         lyrics: Vec<LyricsBlock>,
         temporary: bool,
+        sim_chord: bool,
     ) -> SpawnResult {
         // Type explicite : la voix enfant emprunte les avertissements pour la
         // seule durée de son interprétation, pas pour `'a`.
@@ -830,6 +843,7 @@ impl<'a> Interpreter<'a> {
             staff_target: None,
             tuplet_scale: self.tuplet_scale * self.open_tuplet_scale(),
             temporary,
+            sim_chord,
             unfold_repeats: self.unfold_repeats,
             tag_stack: self.tag_stack.clone(),
             filter_stack: self.filter_stack.clone(),
@@ -971,7 +985,7 @@ impl<'a> Interpreter<'a> {
             } => {
                 let start = self.cursor;
                 if !event.is_empty() {
-                    self.spawn_at(start + *delta, None, event, Vec::new(), true);
+                    self.spawn_at(start + *delta, None, event, Vec::new(), true, false);
                 }
                 self.walk(music);
             }
@@ -1102,7 +1116,7 @@ impl<'a> Interpreter<'a> {
             Context::PartCombine { first, second } => {
                 let start = self.cursor;
                 self.walk(first);
-                self.spawn_at(start, None, second, Vec::new(), true);
+                self.spawn_at(start, None, second, Vec::new(), true, false);
                 let mut deuxieme = self.voice.spawned.pop().expect("deuxième partie");
                 crate::partcombine::retire_unissons(&self.voice.clone(), &mut deuxieme.interpreted);
                 self.cursor = self.cursor.max(deuxieme.interpreted.end);
@@ -1159,7 +1173,7 @@ impl<'a> Interpreter<'a> {
                 let fin = debut + *duration;
                 let saved = self.cue;
                 self.cue = true;
-                let _ = self.spawn_at(Fraction::ZERO, None, music, Vec::new(), false);
+                let _ = self.spawn_at(Fraction::ZERO, None, music, Vec::new(), false, false);
                 self.cue = saved;
                 if let Some(enfant) = self.voice.spawned.pop() {
                     let child = enfant.interpreted;
@@ -1821,6 +1835,7 @@ impl<'a> Interpreter<'a> {
             grace_before,
             grace_after: Vec::new(),
             breath: breaths.first().copied(),
+            sim_chord: self.sim_chord,
         };
         if !self.tags_pass_filters() {
             // Le filtre retire ces notes AVANT l'interprétation chez LilyPond :
@@ -2115,7 +2130,14 @@ impl<'a> Interpreter<'a> {
                 ));
                 continue;
             }
-            let child = self.spawn_at(start, nom.map(str::to_owned), branch, Vec::new(), true);
+            let child = self.spawn_at(
+                start,
+                nom.map(str::to_owned),
+                branch,
+                Vec::new(),
+                true,
+                false,
+            );
             end = end.max(child.end);
             self.octave = child.octave;
             self.last_chord_notes = child.last_chord_notes;
@@ -2178,6 +2200,7 @@ impl<'a> Interpreter<'a> {
             staff_target: None,
             tuplet_scale: self.tuplet_scale * self.open_tuplet_scale(),
             temporary: self.temporary,
+            sim_chord: self.sim_chord,
             unfold_repeats: self.unfold_repeats,
             tag_stack: self.tag_stack.clone(),
             filter_stack: self.filter_stack.clone(),

@@ -447,6 +447,23 @@ fn articulate_ne_raccourcit_pas_la_fin_midi_dune_note() {
     );
 }
 
+/// Un `<< … >>` sans `\\` forme un accord dans la **même** voix
+/// (`lily/parser.yy:1581-1588`, `simultaneous_music` ; Notation Reference
+/// §4.2.1). Une liaison posée sur une tête de cet accord se prolonge donc dans
+/// la note qui suit le `>>`, sans nouvelle attaque. Vérifié avec LilyPond 2.27 :
+/// `<< c'4 d'4 e'4~ >> e'16` joue trois attaques, la tête `e'` durant 5/4.
+#[test]
+fn liaison_dans_un_accord_simultane_se_prolonge_dans_la_suite() {
+    let score = lire("<< c'4 d'4 e'4~ >> e'16 f'16 g'4");
+    let mut attaques = hauteurs_attaques(&score);
+    attaques.sort_unstable();
+    assert_eq!(
+        attaques,
+        vec![72, 74, 76, 77, 79],
+        "la tête liée du accord simultané ne doit pas attaquer deux fois"
+    );
+}
+
 /// `\compressMusic` est l'ancien nom de `\scaleDurations`
 /// (`python/convertrules.py` l. 2765) : meme argument et memes durees
 /// multipliees par n/d (bwv631a et trois autres chorals).

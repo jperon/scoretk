@@ -28,7 +28,7 @@
 //! multi-mesures), puis range les événements datés dans les segments de chaque
 //! mesure, comme le fait le lecteur `.mscx` de MuseScore.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use scoretk_core::duration_list::to_duration_list;
 use scoretk_core::model::{
@@ -3281,6 +3281,9 @@ fn key_alter(fifths: i8, step: u8) -> i8 {
     0
 }
 
+/// (attaque, fin écrite, fin MIDI, id, liaison, tête d'un `<< … >>`).
+type TieEvent = (Fraction, Fraction, Fraction, NoteId, bool, bool);
+
 /// Relie les notes de prolongation.
 fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
     // Sous `\articulate`, `ac:getactions` (`ly/articulate.ly` l. 503-560)
@@ -3305,6 +3308,12 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
         }
     }
     for staff in staves {
+        // Première passe : construire les suites datées de chaque voix. Elles
+        // servent ensuite à la fois aux liaisons propres à la voix et aux
+        // liaisons partagées d'un `<< … >>` sans `\\`, dont la suite du flux
+        // se trouve souvent dans une autre voix.
+        let mut sequences: Vec<Vec<TieEvent>> = Vec::new();
+        let mut tie_waits: Vec<Vec<(Fraction, bool)>> = Vec::new();
         for voice in &staff.voices {
             // `\\set tieWaitForNote = ##t` : `Tie_performer::
             // stop_translation_timestep` ne retire plus les liaisons pendantes
@@ -3322,13 +3331,6 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                 })
                 .collect();
             tie_wait.sort_by_key(|(tick, _)| *tick);
-            let wait_for_note = |tick: Fraction| {
-                tie_wait
-                    .iter()
-                    .rev()
-                    .find(|(start, _)| *start <= tick)
-                    .is_some_and(|(_, on)| *on)
-            };
             // Une liaison n'attend que le pas de temps où la note liée cesse
             // de sonner : `Tie_performer::stop_translation_timestep` retire
             // les liaisons pendantes dont `end_moment_` est dépassé
@@ -3342,7 +3344,7 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
             // Sans pas de temps intermédiaire, la tête pendante survit et la
             // liaison tient (`Fuge_Opus137`, `bwv735`, `bwv855a`, …).
             // `tieWaitForNote` désactive cette éviction.
-            let mut sequence: Vec<(Fraction, Fraction, Fraction, NoteId, bool)> = Vec::new();
+            let mut sequence: Vec<TieEvent> = Vec::new();
             for event in &voice.interpreted.events {
                 let EventKind::Chord(chord) = &event.kind else {
                     continue;
@@ -3388,12 +3390,27 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     .map(|facteur| event.tick + chord.actual * facteur)
                     .unwrap_or(end);
                 for (note, id) in notes.iter().zip(ids) {
-                    sequence.push((event.tick, end, end_midi, id, note.tie));
+                    sequence.push((event.tick, end, end_midi, id, note.tie, chord.sim_chord));
                 }
             }
-            sequence.sort_by_key(|(tick, end, _, _, _)| (*tick, *end));
+            sequence.sort_by_key(|(tick, end, _, _, _, _)| (*tick, *end));
+            sequences.push(sequence);
+            tie_waits.push(tie_wait);
+        }
+
+        let mut deja_lies: HashSet<NoteId> = HashSet::new();
+        for voice_index in 0..staff.voices.len() {
+            let sequence = &sequences[voice_index];
+            let tie_wait = &tie_waits[voice_index];
+            let wait_for_note = |tick: Fraction| {
+                tie_wait
+                    .iter()
+                    .rev()
+                    .find(|(start, _)| *start <= tick)
+                    .is_some_and(|(_, on)| *on)
+            };
             let mut instants: BTreeSet<Fraction> = segments_by_tick.keys().copied().collect();
-            instants.extend(sequence.iter().map(|(tick, _, _, _, _)| *tick));
+            instants.extend(sequence.iter().map(|(tick, _, _, _, _, _)| *tick));
             // Une file par hauteur : un accord peut contenir deux têtes de
             // même hauteur (`<bis' bis>`, `tie-chord-broken-extremal.ly`),
             // qu'une simple entrée par hauteur écrasait ; chaque tête lie
@@ -3410,7 +3427,7 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     fin += 1;
                 }
                 let wait = wait_for_note(now);
-                for &(_, _, _, id, _) in &sequence[debut..fin] {
+                for &(_, _, _, id, _, _) in &sequence[debut..fin] {
                     let pitch = score.note(id).pitch;
                     // Sans `tieWaitForNote`, seule la note liée qui se termine
                     // exactement ici peut être fermée. Avec, LilyPond cherche
@@ -3424,6 +3441,8 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     if let Some((previous, _, _)) = closes {
                         score.note_mut(previous).tie_forward = Some(id);
                         score.note_mut(id).tie_back = Some(previous);
+                        deja_lies.insert(previous);
+                        deja_lies.insert(id);
                     }
                 }
                 if !wait {
@@ -3432,7 +3451,7 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                         !queue.is_empty()
                     });
                 }
-                for &(_, end, end_midi, id, tie) in &sequence[debut..fin] {
+                for &(_, end, end_midi, id, tie, _) in &sequence[debut..fin] {
                     if tie {
                         open.entry(score.note(id).pitch)
                             .or_default()
@@ -3440,6 +3459,36 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     }
                 }
                 index = fin;
+            }
+        }
+
+        // Un `<< … >>` sans `\\` forme un accord dans la voix courante
+        // (`lily/parser.yy:1581-1588`) : le lecteur répartit ses têtes en voix
+        // sœurs pour la gravure, alors que LilyPond garde une seule voix. Une
+        // liaison posée sur une de ces têtes peut donc être fermée par la suite
+        // du flux, dans une autre voix. Ce rattrapage est **additif** : il ne
+        // touche qu'une liaison encore pendante après le traitement normal, et
+        // exige la même hauteur au tick exact de sa fin.
+        for sequence in &sequences {
+            for &(_, end, _, id, tie, sim_chord) in sequence {
+                if !tie || !sim_chord || deja_lies.contains(&id) {
+                    continue;
+                }
+                let pitch = score.note(id).pitch;
+                let cible = sequences.iter().flat_map(|seq| seq.iter()).find_map(
+                    |&(tick, _, _, other, _, _)| {
+                        (tick == end
+                            && !deja_lies.contains(&other)
+                            && score.note(other).pitch == pitch)
+                            .then_some(other)
+                    },
+                );
+                if let Some(cible) = cible {
+                    score.note_mut(id).tie_forward = Some(cible);
+                    score.note_mut(cible).tie_back = Some(id);
+                    deja_lies.insert(id);
+                    deja_lies.insert(cible);
+                }
             }
         }
     }
