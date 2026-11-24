@@ -68,6 +68,23 @@ fn layout(score: &Score) -> Vec<(usize, u8)> {
 }
 
 #[test]
+fn nouveau_staff_dans_un_sim_devient_une_portee_soeur() {
+    // `\new Staff` dans le `<< … >>` d'une portée : LilyPond 2.27 joue trois
+    // attaques (deux sur la portée d'origine, une sur la nouvelle portée),
+    // dont deux unissons au même tick sur des pistes distinctes. Le lecteur
+    // les réunissait en une seule portée et n'en gardait qu'une.
+    let source = "\\version \"2.24.0\"\n\
+        \\score { << \\new Staff { c'1 << { c'1 } \\new Staff { c'1 } >> } >> }";
+    let score = scoretk_lilypond_import::read_lilypond(source).expect("lecture");
+    assert_eq!(notes(&score), vec![60, 60, 60]);
+    let dispositions = layout(&score);
+    assert!(
+        dispositions.iter().any(|(staff, _)| *staff == 1),
+        "la nouvelle portée doit porter sa propre piste : {dispositions:?}"
+    );
+}
+
+#[test]
 fn staff_group_bare_items_ouvrent_une_portee_chacun() {
     // `\new StaffGroup << { c'1 } { e'1 } >>` : le groupe accepte des
     // `Staff`, chaque élément simultané sans contexte en crée un. LilyPond

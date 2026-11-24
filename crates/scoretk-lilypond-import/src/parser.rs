@@ -1734,7 +1734,7 @@ impl<'a> Parser<'a> {
         group_like: bool,
     ) -> Vec<StaffBlock> {
         let addlyrics_target = last_voice_name(&content);
-        if has_staff_context(&content, group_like) {
+        if has_staff_context(&content, group_like, context_name.is_none()) {
             let mut staves = Vec::new();
             let mut lyrics = Vec::new();
             self.collect_staves(content, &mut staves, &mut lyrics);
@@ -7078,22 +7078,40 @@ fn wrap_staves(wrappers: &[Wrapper], staves: &mut [StaffBlock]) {
 /// `\layout { \context { \ChoirStaff \name "SemiChoirStaff" } }`),
 /// `group_like` est vrai : ses `\new Staff` enfants sont les portées du
 /// groupe (`Nunc-dimittis`, `Mendelssohn-BartholdyF_op_23_No_1`).
-fn has_staff_context(music: &Music, group_like: bool) -> bool {
+fn has_staff_context(music: &Music, group_like: bool, anonyme: bool) -> bool {
     match music {
         Music::New(group) => {
             group.kind == GroupKind::ChordNames
                 || group.kind == GroupKind::Other
                 || (group_like && group.kind == GroupKind::Staff)
         }
-        Music::Sim(items) | Music::Seq(items) => {
-            items.iter().any(|item| has_staff_context(item, group_like))
-        }
+        Music::Sim(items) => items.iter().any(|item| {
+            // `\new Staff` à l'intérieur d'un `<< … >>` est créé dans le
+            // contexte parent (Staff n'accepte pas Staff, `lily/context.cc`
+            // `context_create`) : c'est une portée sœur avec sa propre piste
+            // MIDI (`adding-an-extra-staff.ly`, LSR). `\new Dynamics` est
+            // représenté comme `GroupKind::Staff` mais marqué `muted` : il
+            // reste une portée silencieuse et ne doit pas déclencher ce
+            // partage.
+            let nouveau_staff = matches!(
+                item,
+                Music::New(group)
+                    if group.kind == GroupKind::Staff
+                    && !group.staves.first().is_some_and(|staff| {
+                        staff.muted || staff.name.is_some()
+                    })
+            );
+            (nouveau_staff && anonyme && !group_like)
+                || has_staff_context(item, group_like, anonyme)
+        }),
+        Music::Seq(items) => items
+            .iter()
+            .any(|item| has_staff_context(item, group_like, anonyme)),
         Music::Tag { music, .. } | Music::Filtered { music, .. } => {
-            has_staff_context(music, group_like)
+            has_staff_context(music, group_like, anonyme)
         }
-        Music::Context(context) => {
-            Wrapper::of(context).is_some_and(|(_, inner)| has_staff_context(inner, group_like))
-        }
+        Music::Context(context) => Wrapper::of(context)
+            .is_some_and(|(_, inner)| has_staff_context(inner, group_like, anonyme)),
         _ => false,
     }
 }
