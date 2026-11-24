@@ -114,9 +114,13 @@ pub use fret_diagram::{FretBarre, FretDiagram, FretDot, FretDotType, FretMarker,
 pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use instrument_channel::InstrumentChannel;
+pub use layers::metric::{
+    BarLine, BarLineType, Clef, ClefSign, ClefType, Key, KeyMode, KeySig, Metric, TimeSig,
+    TimeSigType, Tuplet, TupletNumberType,
+};
 pub use layers::{
     ChordEngraving, ChordRestEngraving, ConversionReport, Engraving, Extensions, Layers, Loss,
-    Metric, NotePlayback, Playback, Text,
+    NotePlayback, Playback, Text,
 };
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::{Measure, MeasureRepeatMark};
@@ -134,10 +138,7 @@ pub use part::{
 pub use playback::PlaybackTransposition;
 pub use repeat::{Jump, JumpType, Marker, MarkerType, RepeatMark, VoltaInfo};
 pub use score::{CoreScore, Score, ScoreMetadata, DEFAULT_DIVISION};
-pub use segment::{
-    BarLine, BarLineType, Breath, BreathType, Clef, ClefSign, ClefType, Key, KeyMode, KeySig,
-    Segment, SegmentAnnotation, SegmentItem, SegmentType, TimeSig, TimeSigType,
-};
+pub use segment::{Breath, BreathType, Segment, SegmentAnnotation, SegmentItem, SegmentType};
 pub use spanner::{
     HairpinType, HookType, LineFont, OttavaType, PedalInfo, Spanner, SpannerAnchor, SpannerType,
     TextLineInfo, TextLineStyle,
@@ -149,7 +150,6 @@ pub use text::{
     TextFormat, TextFragment, DEFAULT_TEXT_FONT, DEFAULT_TEXT_SIZE, MUSICAL_TEXT_FONT,
 };
 pub use tremolo_bar::{TremoloBar, TremoloBarPoint, TremoloBarType};
-pub use tuplet::{Tuplet, TupletNumberType};
 
 #[cfg(test)]
 mod tests;

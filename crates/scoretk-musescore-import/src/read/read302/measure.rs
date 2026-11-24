@@ -30,8 +30,8 @@ use super::xml::{parse_fraction, Node};
 use super::{annotations, chord, repeats, spanner, Reader, VoiceCtx};
 use scoretk_core::model::{
     Annotation, BarLine, BarLineType, Breath, BreathType, ChordRestKind, Clef, ClefType, Fraction,
-    GraceChord, Key, KeyMode, KeySig, Measure, Placement, Segment, SegmentItem, SegmentType,
-    StemDirection, TimeSig, Track, VOICES,
+    GraceChord, Key, KeyMode, KeySig, Layers, Measure, Placement, Segment, SegmentItem,
+    SegmentType, StemDirection, TimeSig, Track, VOICES,
 };
 
 /// Lit une mesure et renvoie son tick de fin.
@@ -260,11 +260,23 @@ fn read_voice(
                     .add_annotation(ctx.track, annotation);
                 }
             }
-            // TODO(parité): `<Symbol>`, `<FretDiagram>`, `<Arpeggio>`,
-            // `<StaffState>`, `<Sticking>`, `<PlayTechAnnotation>`, `<Image>`,
-            // `<Ambitus>`, `<Beam>`, `<Segment>`, `<LayoutBreak>` : sans effet
-            // sur le noyau musical lu ici (le tick n'avance pas).
-            _ => {}
+            // TODO(parité): `<Arpeggio>`, `<FretDiagram>` (3.x), `<Ambitus>`,
+            // `<Beam>`, `<Segment>`, `<LayoutBreak>` : sans effet sur le noyau
+            // musical lu ici (le tick n'avance pas). Les blocs de gravure sont
+            // comptés dans `Score::report` (L5).
+            _ => {
+                if matches!(
+                    child.name(),
+                    "Symbol" | "Image" | "StaffState" | "PlayTechAnnotation" | "Sticking"
+                ) {
+                    reader.score.report.record(
+                        Layers::ENGRAVING,
+                        child.name().to_owned(),
+                        None,
+                        Some(ctx.track),
+                    );
+                }
+            }
         }
     }
 }

@@ -25,6 +25,10 @@
 
 use std::borrow::Cow;
 
+pub mod metric;
+
+pub use metric::Metric;
+
 use super::chord::{BeamMode, StemDirection};
 use super::fraction::Fraction;
 use super::ids::Track;
@@ -166,10 +170,6 @@ impl ConversionReport {
             .count()
     }
 }
-
-/// L1 metric structure. Empty until step 4 of the migration plan.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Metric {}
 
 /// L3 text and analysis. Empty until later migration steps.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

@@ -1,6 +1,6 @@
 # Pivot model: layer audit and modularisation proposal
 
-Status: **migration in progress — steps 0, 1, 2 and 3 executed** (§10). Audience: whoever
+Status: **migration in progress — steps 0, 1, 2, 3 and 4 executed** (§10). Audience: whoever
 adds GABC, MEI, Capella, Guitar Pro or Humdrum after the ten current directions
 are stable (`docs/TODO.md:29-46`). The question answered here is not "is the
 model wrong?" but "which parts of it are a genuine common denominator, and
@@ -617,3 +617,37 @@ rows in the MIDI robustness lot flapped from success to the 10 s timeout under
 concurrent load (9.49 s and 5.87 s in the baseline); replaying exactly those
 two files without the load gives identical SHA-256 in both binaries
 (`852bf893…`, `b66941b0…`, 3 890 089 and 3 871 157 bytes). No output changed.
+
+### 10.5 Step 4 — metric layer, dead field and read-side losses
+
+`layers/metric.rs` now owns `Metric`, `Key`, `KeySig`, `KeyMode`, `TimeSig`,
+`TimeSigType`, `Clef`, `ClefType`, `ClefSign`, `BarLine`, `BarLineType`,
+`Tuplet` and `TupletNumberType`; `segment.rs` and `tuplet.rs` re-export them at
+their old paths and `model/mod.rs` re-exports them from `layers::metric`, so no
+reader or writer path changed. `Measure::time_sig_denominator` (initialised but
+never read, §4.1) is gone; `with_raw_timesig` takes only the raw numerator and
+the two MIDI import call sites were updated. The 3.x and 4.x MuseScore readers
+now append an `ENGRAVING` `Loss` to `Score::report` for `<Symbol>`, `<Image>`,
+`<StaffState>`, `<PlayTechAnnotation>`, `<Sticking>` and `<HarpPedalDiagram>`
+instead of ignoring them silently.
+
+**Adjustment to §8 step 4:** "give BarLine/TimeSig/… their `Metric` home" is
+implemented as a physical move plus re-exports, not as a `Deref` chain: as in
+step 2, `Deref` would obscure the layer boundary and worsen borrows. The
+report records *read-side* L5 drops only in the two MuseScore readers; the
+other directions had no explicit "ignored layout block" site to hook.
+
+Verification: `cargo test --workspace`, clippy `-D warnings`, fmt, all eight
+`wasm32-unknown-unknown` builds, `ly_notes.py selftest` and the Node smoke test
+pass. Wasm raw size **2 331 934 bytes**, i.e. **+4 414 bytes (+0.190 %)** versus
+the re-frozen baseline, far below the 2 % threshold. MuseScore (638/638 rows),
+MusicXML (174/174) and ABC (26 542 measurements) are byte-identical to the
+baseline. The first MIDI and LilyPond runs lost external *inputs*, not outputs:
+`wt-mod/tests/corpus/midi/v3/*.ref.mid` (21 files) and 66 `lyluatex/tmp-ly/*.ly`
+files were removed by other worktrees during the campaign. Both oracles were
+re-run with stable manifests (MIDI refs pointed at the scratch worktree, the 13
+affected `ra` files filtered out) for **both** binaries: 2 197/2 197 MIDI
+artefacts and 2 544/2 544 LilyPond artefacts byte-identical, 0 lost file.
+Scheduled 10 s Lakh timeouts flapped on eight rows under concurrent load;
+replaying those eight files without load produces identical SHA-256 on both
+binaries. No output byte changed in any of the five directions.

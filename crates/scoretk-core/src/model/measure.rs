@@ -69,8 +69,6 @@ pub struct Measure {
     /// [`Fraction`] le réduit à `1/1`. Les fonctions `isDuple`, `isCompound`,
     /// `beatLength`… (`importmidi_meter.cpp`) dépendent de ce numérateur brut.
     pub time_sig_numerator: i64,
-    /// Dénominateur non réduit de l'indication de mesure.
-    pub time_sig_denominator: i64,
     /// Mesure exclue de la numérotation (`Measure::excludeFromNumbering()`),
     /// c'est-à-dire une anacrouse ou une mesure irrégulière marquée
     /// `<irregular>1</irregular>` (3.x) ou `@len` (4.x). MuseScore l'exporte
@@ -141,7 +139,6 @@ impl Measure {
             len: nominal_len,
             nominal_len,
             time_sig_numerator: nominal_len.numerator(),
-            time_sig_denominator: nominal_len.denominator(),
             exclude_from_numbering: false,
             start_bar_line: BarLineType::Normal,
             end_bar_line: BarLineType::Normal,
@@ -164,13 +161,13 @@ impl Measure {
         self
     }
 
-    /// Pose l'indication de mesure non réduite (4/4, 12/8…).
+    /// Pose le numérateur non réduit de l'indication de mesure (4, 12…).
     ///
     /// La durée nominale reste la valeur réduite ; seul le numérateur brut est
-    /// conservé pour les calculs métriques de l'import MIDI.
-    pub fn with_raw_timesig(mut self, numerator: i64, denominator: i64) -> Self {
+    /// conservé pour les calculs métriques de l'import MIDI. Le dénominateur
+    /// était stocké mais jamais lu : `nominal_len.denominator()` le remplace.
+    pub fn with_raw_timesig(mut self, numerator: i64) -> Self {
         self.time_sig_numerator = numerator;
-        self.time_sig_denominator = denominator;
         self
     }
 

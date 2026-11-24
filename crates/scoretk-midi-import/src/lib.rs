@@ -565,7 +565,7 @@ fn create_measures(
     let _ = first_tick;
     if bar_count > 1 && first_timesig < second_timesig {
         let mut measure = Measure::new(0, Fraction::ZERO, second_timesig)
-            .with_raw_timesig(first_timesig.numerator(), first_timesig.denominator());
+            .with_raw_timesig(first_timesig.numerator());
         measure.len = first_timesig;
         score.add_measure(measure);
         begin = 1;
@@ -579,7 +579,7 @@ fn create_measures(
             fraction_from_ticks(start_ticks),
             timesig.measure_len(),
         )
-        .with_raw_timesig(timesig.numerator, timesig.denominator);
+        .with_raw_timesig(timesig.numerator);
         score.add_measure(measure);
     }
     score.end_tick()

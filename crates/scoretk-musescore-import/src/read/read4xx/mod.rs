@@ -60,11 +60,11 @@ use scoretk_core::model::{
     text_style_defaults, Accidental, Annotation, Articulation, BarLine, BarLineType, BeamMode,
     Breath, Chord, ChordEngraving, ChordRest, ChordRestKind, Clef, ClefType, Credit, CreditJustify,
     CreditStyle, Duration, DurationType, Fraction, GraceChord, GraceType, Harmony, HarmonyDegree,
-    HarmonyDegreeKind, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic,
-    Measure, MidiArticulation, Note, NoteId, Part, Placement, RehearsalFrame, RehearsalMark,
-    RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffText, StemDirection,
-    SystemText, Tempo, Tick, TimeSig, TimeSigType, Track, Transpose, TremoloKind, Tuplet, TupletId,
-    TupletNumberType, VeloType, VOICES,
+    HarmonyDegreeKind, Instrument, InstrumentChange, Key, KeyMode, KeySig, Layers, Lyrics,
+    LyricsSyllabic, Measure, MidiArticulation, Note, NoteId, Part, Placement, RehearsalFrame,
+    RehearsalMark, RichText, Score, Segment, SegmentItem, SegmentType, Staff, StaffText,
+    StemDirection, SystemText, Tempo, Tick, TimeSig, TimeSigType, Track, Transpose, TremoloKind,
+    Tuplet, TupletId, TupletNumberType, VeloType, VOICES,
 };
 
 /// Vrai si un cadre porte un saut de page (`LayoutBreak` `page`).
@@ -1493,10 +1493,27 @@ impl Reader {
                         self.pedal_halves.push(half);
                     }
                 }
-                // TODO(parité): <Beam>, <Ambitus>, <Segment>, <MeasureRepeat>,
-                // <Symbol>, <Image>, <StaffState>, <PlayTechAnnotation>,
-                // <Sticking>, <HarpPedalDiagram>.
-                _ => {}
+                // TODO(parité): <Beam>, <Ambitus>, <Segment>, <MeasureRepeat>.
+                // Les blocs de gravure ci-dessous sont comptés dans le rapport
+                // (L5) au lieu d'être silencieusement ignorés.
+                _ => {
+                    if matches!(
+                        child.name.as_str(),
+                        "Symbol"
+                            | "Image"
+                            | "StaffState"
+                            | "PlayTechAnnotation"
+                            | "Sticking"
+                            | "HarpPedalDiagram"
+                    ) {
+                        self.score.report.record(
+                            Layers::ENGRAVING,
+                            child.name.clone(),
+                            None,
+                            Some(track),
+                        );
+                    }
+                }
             }
         }
 

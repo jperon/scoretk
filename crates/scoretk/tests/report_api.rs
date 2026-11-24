@@ -54,5 +54,8 @@ fn write_variants_agree_and_report_lost_engraving() {
         write_with_report(&with_credit, Format::MusicXml, &Options::default()).unwrap();
     assert_eq!(musicxml.lost(Layers::ENGRAVING), 0);
     let (_, abc) = write_with_report(&with_credit, Format::Abc, &Options::default()).unwrap();
-    assert_eq!(abc.lost(Layers::ENGRAVING), with_credit.engraving.credits.len());
+    assert_eq!(
+        abc.lost(Layers::ENGRAVING),
+        with_credit.engraving.credits.len()
+    );
 }
