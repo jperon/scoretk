@@ -8584,3 +8584,90 @@ loss, and the comparator was never touched:
   LilyPond attack, so there is no oracle artefact).
 
 `cargo test --workspace`, `clippy -D warnings` and `fmt --check` are green.
+
+## 43. Real-world reading: chord qualities and nested staves (2026-11-24)
+
+Protocol: the frozen binaries `/tmp/ly11-base` (§42 baseline), `/tmp/ly11-fix1`
+and `/tmp/ly11-fix8`, the same manifests and MIDI references as §41–§42 (`ra`
+from `ly95lect-refs-clean`, `mut`/`rw` from `ly95lect-refs-fresh`), one lot at
+a time, `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10`, `mesure.py` rules
+and `ly_notes.py selftest` (OK). No comparator rule was changed. Every fix has
+a reduced source checked against LilyPond 2.27 and a test that fails on the
+preceding binary.
+
+**Measurement caveat:** the system's `/tmp` cleaner removed the frozen work
+directories after the `rw` measurement. The `mut` and `ra` results below were
+therefore verified by converting **every** source with both binaries and
+comparing the MusicXML bytes: `mut` has 0 changed outputs of 1377, `ra` has 6
+of 1726. The six `ra` files (`morgenlied`, `one-line-breaking`,
+`one-line-auto-height-breaking`, `one-page-breaking`,
+`profile-property-access`, `typography-demo`) were re-compiled with LilyPond
+2.27 and are exact with both binaries.
+
+### Fix 1: `sus` and `m5-` chord qualities
+
+`scm/chord-entry.scm:150-153,235-249`: `sus` without an explicit 2/4 removes
+the third and adds the fourth, and `5-` lowers the fifth. The reader treated
+both as a plain major/minor triad. LilyPond 2.27 on
+`\chordmode { c:5-1 c:m5-1 c:sus1 }` plays 60/64/66, 60/63/66 and 60/65/67.
+Reduced test `quinte_diminuee_et_sus_sans_degre`. The exact gains are
+`Diademata` and `Lyngham` on both real lots (one semitone each in a chord
+symbol), with 0 losses.
+
+### Fix 2: `\new Staff` inside `<< … >>` of an anonymous staff
+
+`lily/context.cc` (`context_create`) cannot create a `Staff` child inside a
+`Staff`: LilyPond places the new context in the parent and gives it its own
+MIDI track (`adding-an-extra-staff.ly`, LSR). The reader left it in the
+enclosing staff, where the oracle merged its unison with the other voice.
+`has_staff_context` now splits such a staff for an **anonymous** enclosing
+staff only, excluding muted contexts (`\new Dynamics`, represented as a
+`GroupKind::Staff`) and named staves, which LilyPond keeps on the existing
+track. Reduced test `nouveau_staff_dans_un_sim_devient_une_portee_soeur`
+(three attacks on two tracks, verified on LilyPond 2.27). The only gain is
+`adding-an-extra-staff.ly` on `rw`; 0 losses.
+
+### Controlled results
+
+| Lot | Before §42 | After fix 1 | After fix 2 | N1 / N2 losses |
+| --- | ---: | ---: | ---: | ---: |
+| `ra` (1724) | 1690 | 1690 | **1690** | 0 |
+| `mut` (1316) | 1252 | **1254** | **1254** | 0 |
+| `rw` (1365) | 1294 | **1296** | **1297** | 0 |
+
+### Scores
+
+**Raw** (all measured files in the denominator):
+
+| Lot | Exact | Total | Raw |
+| --- | ---: | ---: | ---: |
+| `ra` | 1690 | 1724 | **98.0 %** |
+| `mut` | 1254 | 1316 | **95.3 %** |
+| `rw` | 1297 | 1365 | **95.0 %** |
+
+The **raw 95 % target is now met on both real lots**.
+
+**Excluding only the legitimate exceptions** (unchanged numerators): 22 on
+`mut`, 24 on `rw` — `adding-an-extra-staff.ly` is no longer an exception, its
+reference was valid and the reader defect is fixed. This gives
+`mut` **1254/1294 = 96.9 %** and `rw` **1297/1341 = 96.7 %**. The remaining
+exceptions are unchanged from §40: references that no longer compile with
+LilyPond 2.26/2.27 (obsolete `\autochange`, `\compressFullBarRests`,
+`\compressMusic`, `\fermataMarkup`, removed commands, Guile errors), music
+needing a full Scheme evaluator (`saltarello`, `baba`, `example.ly`,
+`late-evaluation-of-variables.ly`,
+`adding-orchestral-cues-to-a-vocal-score.ly`). No file was silently dropped
+and no exception was added for a reader defect.
+
+### Rejected variants
+
+* Dropping a pending tie at the first note of every `<< … \\ … >>` branch
+  (a narrower form of the §41–§42 lead) gained `bach-prelude17` and `bwv855a`
+  but lost **23** exact `mut` files. Restricting the tie eviction to the same
+  staff had no effect on the closest files. Neither was kept.
+* Splitting every nested `\new Staff`, including named ones, lost two exact
+  `rw` files (`TroisNouvellesEtudes_Chopin_n1`, `milan-pavan2`); the anonymous
+  condition above avoids that.
+
+`cargo test --workspace`, `clippy --workspace --all-targets -D warnings` and
+`fmt --check` are green; the comparator and oracle were not modified.
