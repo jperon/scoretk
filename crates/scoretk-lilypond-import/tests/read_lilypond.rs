@@ -9684,3 +9684,39 @@ midiScore = \book { \score { \new Staff { d'4 e' f' g' } \midi {} } }
     let hauteurs: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
     assert_eq!(hauteurs, vec![62, 64, 65, 67]);
 }
+
+/// `midiInstrument` est une propriété de `Staff` :
+/// `lily/staff-performer.cc:240-252` la lit comme une chaîne et
+/// `scm/midi.scm::midi-program` la résout dans `instrument-names-alist`.
+/// Elle fixe le programme MIDI (base zéro), pas le nom gravé. Les deux
+/// formes `\with` et `\set` doivent donc porter le programme de la partie.
+#[test]
+fn programme_midi_depuis_midi_instrument() {
+    let source = "\\version \"2.24.0\"\n\
+        \\score { <<\n\
+          \\new Staff \\with { midiInstrument = \"violin\" } { \\fixed c' { c4 d e f } }\n\
+          \\new Staff { \\fixed c' { \\set Staff.midiInstrument = \"flute\" g4 a b c' } }\n\
+          \\new Staff \\with { midiInstrument = \"rock drums\" } { \\fixed c' { c4 d e f } }\n\
+        >> }";
+    let score = read_lilypond(source).expect("lecture");
+    let programmes: Vec<Option<u8>> = score
+        .parts
+        .iter()
+        .map(|part| part.instrument.midi_program)
+        .collect();
+    assert_eq!(
+        programmes,
+        vec![Some(40), Some(73), Some(16)],
+        "violon 41, flûte 74, kit rock 17 en numérotation GM"
+    );
+    assert_eq!(
+        score.parts[2].instrument.midi_channel,
+        Some(9),
+        "les kits utilisent le canal 9 (`scm/midi.scm::percussion?`)"
+    );
+    assert_eq!(score.notes.len(), 12, "la musique reste inchangée");
+    assert_eq!(
+        score.parts[0].instrument.id, "strings.violin",
+        "le nom d'instrument est aussi reconnu"
+    );
+}

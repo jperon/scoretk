@@ -105,6 +105,8 @@ pub(crate) enum MetaEvent {
     MeasureLength(Fraction),
     /// `\set Timing.measurePosition` : position dans la mesure courante.
     MeasurePosition(Fraction),
+    /// `\set Staff.midiInstrument = "…"` : programme MIDI de la portée.
+    MidiInstrument(String),
     /// `\set tieWaitForNote = ##t/#f`.
     TieWaitForNote(bool),
     /// `\transposition` : hauteur jouée par un do écrit, datée.
@@ -1031,6 +1033,7 @@ impl<'a> Interpreter<'a> {
             Context::MeasurePosition(position) => {
                 self.meta(MetaEvent::MeasurePosition(*position));
             }
+            Context::MidiInstrument(name) => self.meta(MetaEvent::MidiInstrument(name.clone())),
             Context::TieWaitForNote(on) => self.meta(MetaEvent::TieWaitForNote(*on)),
             Context::Cadenza(on) => self.meta(MetaEvent::Cadenza(*on)),
             Context::Bar(text) => {

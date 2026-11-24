@@ -122,8 +122,9 @@ opened at the current tick), variables (`name = { … }` then
 `\context Staff`/`PianoStaff`/`ChoirStaff`/`StaffGroup`/`Voice` (context
 names case-insensitive: `\new voice`, `\context staff`…),
 `\addlyrics`, `\lyricsto`, `\lyricmode`, `\header`, `\tempo`, `\mark` and
-simple `\markup` (text), `\chordmode` in a staff (chord names are
-**played**: `c:m7` → MIDI 60/63/67/70, tables of `scm/chord-entry.scm`),
+simple `\markup` (text), `midiInstrument` (`\with` and `\set Staff.…`,
+mapped to the model's MIDI program via `scm/midi.scm`), `\chordmode` in a
+staff (chord names are **played**: `c:m7` → MIDI 60/63/67/70, tables of `scm/chord-entry.scm`),
 `\drummode` and `\new DrumStaff` (drum names → MIDI pitches of
 `ly/drumpitch-init.ly`), embedded music `#{ … #}`/`$#{ … #}` and simple music
 functions (`name = #(define-music-function (a b) (predicate…) #{ … #})`
@@ -669,6 +670,7 @@ repository is a mirror); the stable version is also in nixpkgs
 | `parser.rs` | `lily/parser.yy` (`music_list`, `event_chord`, `chord_body`, `post_events`, `repeated_music`, `context_change`, `\score`) |
 | `pitch.rs` | `lily/pitch.cc` (`Pitch::to_relative_octave`, `steps`, `up_to`/`down_to`), `scm/define-note-names.scm` (tables by language) |
 | `parallel.rs` | `ly/music-functions-init.ly` (function `parallelMusic`) |
+| `midi_instruments.rs` | `scm/midi.scm` (`instrument-names-alist`, `midi-program`, `percussion?`), `lily/staff-performer.cc` (`new_instrument_string`) |
 | `ast.rs`, `events.rs`, `builder.rs` | no direct source: semantics of MuseScore's `engraving/dom/` objects |
 
 **Spot the relevant changes**:

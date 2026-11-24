@@ -515,9 +515,21 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
             .clone()
             .or_else(|| first.short_instrument_name.clone())
             .unwrap_or_default();
+        let midi_instrument = group
+            .midi_instrument
+            .as_deref()
+            .or(first.midi_instrument.as_deref())
+            .map(str::to_owned)
+            .or_else(|| {
+                group
+                    .staves
+                    .iter()
+                    .flat_map(|staff| staff.voices.iter())
+                    .find_map(|voice| midi_instrument_in_music(&voice.music))
+            });
         let mut part = Part::new(long_name.clone(), short_name.clone());
         part.name = long_name.clone();
-        part.instrument = instrument_for(&long_name, &short_name);
+        part.instrument = instrument_for(&long_name, &short_name, midi_instrument.as_deref());
         let part_id = score.add_part(part);
 
         let first_staff_index = staves.len();
@@ -543,9 +555,20 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                     .short_instrument_name
                     .clone()
                     .unwrap_or_default();
+                let midi_staff = staff_block
+                    .midi_instrument
+                    .as_deref()
+                    .map(str::to_owned)
+                    .or_else(|| {
+                        staff_block
+                            .voices
+                            .iter()
+                            .find_map(|voice| midi_instrument_in_music(&voice.music))
+                    })
+                    .or_else(|| midi_instrument.clone());
                 let mut part = Part::new(nom.clone(), court.clone());
                 part.name = nom;
-                part.instrument = instrument_for(&part.name, &court);
+                part.instrument = instrument_for(&part.name, &court, midi_staff.as_deref());
                 part.instrument.transpose = Some(interval);
                 score.add_part(part)
             } else {
@@ -1447,10 +1470,14 @@ fn decaler_notes(notes: &mut Vec<crate::events::NoteEvent>, chromatic: i32) {
     });
 }
 
-fn instrument_for(long_name: &str, short_name: &str) -> Instrument {
+fn instrument_for(long_name: &str, short_name: &str, midi_instrument: Option<&str>) -> Instrument {
     let mut instrument = Instrument::new(long_name, long_name, short_name);
     instrument.track_name = long_name.to_owned();
-    let name = long_name.to_lowercase();
+    let mut name = long_name.to_lowercase();
+    if let Some(midi) = midi_instrument {
+        name.push(' ');
+        name.push_str(&midi.to_lowercase());
+    }
     // (motif, identifiant MusicXML, programme MIDI base zéro, nom de piste).
     let table: [(&str, &str, u8, &str); 31] = [
         ("piccolo", "wind.flutes.piccolo", 72, "Piccolo"),
@@ -1494,7 +1521,41 @@ fn instrument_for(long_name: &str, short_name: &str) -> Instrument {
         instrument.midi_program = Some(*program);
         instrument.track_name = (*track_name).to_owned();
     }
+    // `scm/midi.scm::midi-program` : la chaîne de `midiInstrument` est la
+    // source du programme, même quand le nom gravé suggère un autre instrument.
+    if let Some(entry) = midi_instrument.and_then(crate::midi_instruments::lookup) {
+        instrument.midi_program = Some(entry.program);
+        // `scm/midi.scm::percussion?` : les kits utilisent le canal 9.
+        if entry.percussion {
+            instrument.midi_channel = Some(9);
+        }
+    }
     instrument
+}
+
+/// Cherche un `\set Staff.midiInstrument` dans une musique de voix.
+fn midi_instrument_in_music(music: &Music) -> Option<String> {
+    match music {
+        Music::Context(Context::MidiInstrument(name)) => Some(name.clone()),
+        Music::Seq(items) | Music::Sim(items) => items.iter().find_map(midi_instrument_in_music),
+        Music::Context(Context::Transpose { music, .. })
+        | Music::Context(Context::Harmonic { music, .. })
+        | Music::Context(Context::Fixed { music, .. })
+        | Music::Context(Context::Relative { music, .. })
+        | Music::Context(Context::NonRelative { music })
+        | Music::Context(Context::Tuplet { music, .. })
+        | Music::Context(Context::Grace { music, .. })
+        | Music::Context(Context::Repeat { body: music, .. })
+        | Music::Context(Context::UnfoldRepeats { music }) => midi_instrument_in_music(music),
+        Music::Context(Context::AfterGrace { main, .. }) => midi_instrument_in_music(main),
+        Music::New(group) => group
+            .staves
+            .iter()
+            .flat_map(|staff| staff.voices.iter())
+            .find_map(|voice| midi_instrument_in_music(&voice.music)),
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => midi_instrument_in_music(music),
+        _ => None,
+    }
 }
 
 /// Métadonnées et crédits de `\header`.
@@ -2740,7 +2801,8 @@ fn place_meta(
         | MetaEvent::MeasurePosition(_)
         | MetaEvent::TieWaitForNote(_)
         | MetaEvent::Cadenza(_)
-        | MetaEvent::Transposition(_) => {}
+        | MetaEvent::Transposition(_)
+        | MetaEvent::MidiInstrument(_) => {}
     }
 }
 

@@ -181,6 +181,9 @@ pub(crate) enum Context {
     /// mesure courante (négative pour une anacrouse, `lily/timing-translator.cc`
     /// l. 470-505).
     MeasurePosition(scoretk_core::model::Fraction),
+    /// `\set Staff.midiInstrument = "…"` : programme MIDI de la portée
+    /// (`lily/staff-performer.cc:244`, `scm/midi.scm` `instrument-names-alist`).
+    MidiInstrument(String),
     /// `\set tieWaitForNote = ##t` : une liaison attend une note de même
     /// hauteur même si la note liée est déjà terminée (`lily/tie-performer.cc`
     /// l. 166-180).
@@ -611,6 +614,10 @@ pub(crate) struct StaffBlock {
     pub instrument_name: Option<String>,
     /// Nom abrégé (`shortInstrumentName`).
     pub short_instrument_name: Option<String>,
+    /// `midiInstrument` (`\with { midiInstrument = "…" }`), propriété de
+    /// `Staff` lue par `Staff_performer` (`lily/staff-performer.cc:244`) :
+    /// elle fixe le programme MIDI de la partie, pas son nom gravé.
+    pub midi_instrument: Option<String>,
     /// Vrai si la portée est gravée mais absente du MIDI
     /// (`\with { \remove "Staff_performer" }`).
     pub muted: bool,
@@ -652,6 +659,7 @@ impl StaffBlock {
             existing: false,
             instrument_name: None,
             short_instrument_name: None,
+            midi_instrument: None,
             muted: false,
             merge_unisons: false,
             visible: true,
@@ -682,6 +690,8 @@ pub(crate) struct GroupBlock {
     pub instrument_name: Option<String>,
     /// Nom abrégé du groupe.
     pub short_instrument_name: Option<String>,
+    /// `midiInstrument` porté par le groupe (`\with`).
+    pub midi_instrument: Option<String>,
     /// Portées du groupe ; un `\new Staff` isolé en compte une.
     pub staves: Vec<StaffBlock>,
     /// Paroles directement dans le groupe.

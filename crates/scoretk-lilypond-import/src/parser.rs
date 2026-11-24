@@ -1035,6 +1035,7 @@ impl<'a> Parser<'a> {
                 sequence_start: false,
                 instrument_name: None,
                 short_instrument_name: None,
+                midi_instrument: None,
                 staves: Vec::new(),
                 lyrics: vec![*block],
             }],
@@ -1283,11 +1284,16 @@ impl<'a> Parser<'a> {
                 let context_name = self.parse_context_id();
                 let mut instrument_name = None;
                 let mut short_instrument_name = None;
+                let mut midi_instrument = None;
                 if self.eat_command("with") {
                     for (property, value) in self.parse_with_block() {
                         match property.as_str() {
                             "instrumentName" => instrument_name = Some(value),
                             "shortInstrumentName" => short_instrument_name = Some(value),
+                            // `Staff_performer::new_instrument_string`
+                            // (`lily/staff-performer.cc:244`) : cette
+                            // propriété fixe le programme MIDI, pas le nom.
+                            "midiInstrument" => midi_instrument = Some(value),
                             _ => {}
                         }
                     }
@@ -1310,6 +1316,7 @@ impl<'a> Parser<'a> {
                     existing,
                     instrument_name.clone(),
                     short_instrument_name.clone(),
+                    midi_instrument.clone(),
                     false,
                     false,
                     false,
@@ -1320,6 +1327,7 @@ impl<'a> Parser<'a> {
                     sequence_start: false,
                     instrument_name,
                     short_instrument_name,
+                    midi_instrument,
                     staves,
                     lyrics: Vec::new(),
                 }));
@@ -1429,6 +1437,7 @@ impl<'a> Parser<'a> {
                 sequence_start: false,
                 instrument_name: None,
                 short_instrument_name: None,
+                midi_instrument: None,
                 staves: vec![staff],
                 lyrics: Vec::new(),
             });
@@ -1456,6 +1465,7 @@ impl<'a> Parser<'a> {
                 sequence_start: false,
                 instrument_name: None,
                 short_instrument_name: None,
+                midi_instrument: None,
                 staves: vec![staff],
                 lyrics: Vec::new(),
             });
@@ -1478,6 +1488,7 @@ impl<'a> Parser<'a> {
 
         let mut instrument_name = None;
         let mut short_instrument_name = None;
+        let mut midi_instrument = None;
         let mut verse = None;
         let mut midi_silent = false;
         let mut merge_unisons = false;
@@ -1520,6 +1531,7 @@ impl<'a> Parser<'a> {
                 match property.as_str() {
                     "instrumentName" => instrument_name = Some(value),
                     "shortInstrumentName" => short_instrument_name = Some(value),
+                    "midiInstrument" => midi_instrument = Some(value),
                     "stanza" => verse = stanza_verse(&value),
                     "midiMergeUnisons" => {
                         merge_unisons = matches!(value.trim(), "#t" | "##t" | "t" | "true")
@@ -1585,6 +1597,7 @@ impl<'a> Parser<'a> {
                 sequence_start: false,
                 instrument_name: None,
                 short_instrument_name: None,
+                midi_instrument: None,
                 staves: Vec::new(),
                 lyrics,
             });
@@ -1598,6 +1611,7 @@ impl<'a> Parser<'a> {
         staff.existing = existing;
         staff.instrument_name = instrument_name.clone();
         staff.short_instrument_name = short_instrument_name.clone();
+        staff.midi_instrument = midi_instrument.clone();
 
         // `\makeClusters` (`scm/music-functions.scm::note-to-cluster`)
         // remplace les notes par des `ClusterNoteEvent` que le performer MIDI
@@ -1625,6 +1639,7 @@ impl<'a> Parser<'a> {
                     sequence_start: false,
                     instrument_name,
                     short_instrument_name,
+                    midi_instrument,
                     staves: Vec::new(),
                     lyrics: Vec::new(),
                 };
@@ -1666,6 +1681,7 @@ impl<'a> Parser<'a> {
                     sequence_start: false,
                     instrument_name,
                     short_instrument_name,
+                    midi_instrument,
                     staves: vec![staff],
                     lyrics: Vec::new(),
                 })
@@ -1706,6 +1722,7 @@ impl<'a> Parser<'a> {
                     existing,
                     staff.instrument_name.clone(),
                     staff.short_instrument_name.clone(),
+                    staff.midi_instrument.clone(),
                     staff.muted,
                     merge_unisons,
                     kind == GroupKind::Other,
@@ -1716,6 +1733,7 @@ impl<'a> Parser<'a> {
                     sequence_start: false,
                     instrument_name,
                     short_instrument_name,
+                    midi_instrument,
                     staves,
                     lyrics: Vec::new(),
                 })
@@ -1735,6 +1753,7 @@ impl<'a> Parser<'a> {
         existing: bool,
         instrument_name: Option<String>,
         short_instrument_name: Option<String>,
+        midi_instrument: Option<String>,
         muted: bool,
         merge_unisons: bool,
         group_like: bool,
@@ -1754,6 +1773,7 @@ impl<'a> Parser<'a> {
                     .short_instrument_name
                     .clone()
                     .or(short_instrument_name);
+                premiere.midi_instrument = premiere.midi_instrument.clone().or(midi_instrument);
                 premiere.muted |= muted;
                 premiere.merge_unisons |= merge_unisons;
                 premiere.lyrics.splice(0..0, lyrics);
@@ -1768,6 +1788,7 @@ impl<'a> Parser<'a> {
         staff.existing = existing;
         staff.instrument_name = instrument_name;
         staff.short_instrument_name = short_instrument_name;
+        staff.midi_instrument = midi_instrument;
         staff.muted = muted;
         staff.merge_unisons = merge_unisons;
         collect_lyrics_in_music(&content, &mut staff.lyrics);
@@ -4749,6 +4770,17 @@ impl<'a> Parser<'a> {
         if !self.eat_punct('=') {
             return Music::Empty;
         }
+        // `\set Staff.midiInstrument = "violin"` (`lily/parser.yy` `set_property`,
+        // `lily/staff-performer.cc:244`) : la valeur est une chaîne, pas de la
+        // musique. Sans cette consommation, le jeton restait dans le flux et
+        // la propriété était perdue.
+        if path
+            .iter()
+            .any(|part| part.eq_ignore_ascii_case("midiinstrument"))
+        {
+            let name = self.parse_property_value();
+            return Music::Context(Context::MidiInstrument(name));
+        }
         // `\set Timing.timing = ##f` / `##t` a le même effet que
         // `\cadenzaOn` / `\cadenzaOff`. Le lexer lit `##f` comme le jeton
         // Scheme `#f` (et `##t` comme `#t`).
@@ -7240,6 +7272,7 @@ fn anonymous_group(music: Music) -> GroupBlock {
         sequence_start: false,
         instrument_name: None,
         short_instrument_name: None,
+        midi_instrument: None,
         staves: vec![staff],
         lyrics: Vec::new(),
     }

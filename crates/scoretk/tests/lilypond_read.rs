@@ -76,3 +76,32 @@ fn paroles_mot_a_espace_survit_a_l_aller_retour_lilypond() {
     let relu = read(ly.as_bytes(), Format::Ly).expect("relecture LilyPond");
     assert_eq!(syllabes(&relu), vec!["Ah !", "qu'il", "fait", "bon"]);
 }
+
+/// `midiInstrument` doit traverser la façade jusqu'aux deux exports : le
+/// `<midi-program>` MusicXML est en numérotation GM (base un), l'évènement SMF
+/// `Program Change` est en base zéro (`scm/midi.scm::midi-program`).
+#[test]
+fn midi_instrument_atteint_musicxml_et_midi() {
+    const SOURCE: &str = r#"\version "2.24.0"
+\score {
+  <<
+    \new Staff \with { midiInstrument = "violin" } { \fixed c' { c4 d e f } }
+    \new Staff { \fixed c' { \set Staff.midiInstrument = "flute" g4 a b c' } }
+  >>
+}
+"#;
+    let score = read(SOURCE.as_bytes(), Format::Ly).expect("lecture LilyPond");
+    let xml = String::from_utf8(write(&score, Format::MusicXml, &Options::default()).expect("xml"))
+        .expect("UTF-8");
+    assert!(xml.contains("<midi-program>41</midi-program>"), "{xml}");
+    assert!(xml.contains("<midi-program>74</midi-program>"), "{xml}");
+    let midi = write(&score, Format::Midi, &Options::default()).expect("midi");
+    assert!(
+        midi.windows(2).any(|bytes| bytes == [0xC0, 40]),
+        "programme violon sur le canal 0"
+    );
+    assert!(
+        midi.windows(2).any(|bytes| bytes == [0xC1, 73]),
+        "programme flûte sur le canal 1"
+    );
+}
