@@ -8367,3 +8367,113 @@ cross-voice tie pass would therefore be wrong, and no speculative tie rule was
 committed. The remaining shifted attacks and extra notes are dominated by
 faulty references and by `\articulate` time stealing / grace timing, which
 need a dedicated port of the Scheme implementation, not a comparator change.
+
+## 41. Real-world reading: tie end moments and `\repeat tremolo` (2026-11-24)
+
+Protocol: the same frozen manifests and reference trees as §40 (`out3ra`
+from `ly95lect-refs-clean`, `out3mut`/`out3rw` from
+`ly95lect-refs-fresh`), one lot at a time, `CARGO_BUILD_JOBS=2
+RUST_TEST_THREADS=2 nice -n 10`, `mesure.py --refs-only` and
+`ly_notes.py selftest` (OK). No comparator rule was changed. Every retained
+fix has a reduced source and a test that fails on the preceding binary.
+
+### Fix 1: articulated notes shorten the MIDI end of a pending tie
+
+`Tie_performer::stop_translation_timestep` (`lily/tie-performer.cc:147-185`)
+drops a pending tie once `end_moment_ <= now`; `end_moment_` is the **MIDI**
+length from `lily/note-performer.cc:86-97`, shortened by the `midi-length`
+procedures of `ly/script-init.ly:46-71` (`\staccato` 1/2, `\portato` 3/4).
+A time step created by *another staff* at that shortened end discards the
+tie, which becomes a new attack at its right head. `link_ties` now visits
+every global segment tick (not only the ticks of the voice), tracks the
+shortened end and keeps ties per voice. Reduced tests:
+`staccato_relache_la_liaison_si_un_autre_pas_de_temps_intervient` and, for
+the exception below, `articulate_ne_raccourcit_pas_la_fin_midi_dune_note`.
+
+Under `\articulate`, `ac:getactions` (`ly/articulate.ly:503-560`) removes
+the articulation events and compresses durations itself, so the native
+`midi-length` is no longer applied. The reader does not yet model that
+compression either; applying the native shortening broke `Celle.ly`
+(Satie) and was disabled when `playback_articulate` is set. This was caught
+by a full-lot measurement, not by the reduced test.
+
+### Fix 2: `\repeat tremolo` unfolded at the *use* site
+
+`scm/music-functions.scm` (`unfold-repeats`, type `tremolo`) replaces the
+repeat by `UnfoldedRepeatedMusic` when the music is used under
+`\unfoldRepeats`. The parser used to stretch the durations while parsing,
+which is wrong for a variable defined *before* a MIDI `\score {
+\unfoldRepeats … }` (`promenade-6.ly`, `NotteEGiorno.ly`,
+`PesnyaVaryazhskogoGostya.ly`). `Context::Repeat` is now kept and the
+choice is made in `events.rs` (`RepeatKind::Tremolo`): `n`fold the body
+under `\unfoldRepeats`, otherwise stretch each duration by `n` (Notation
+Reference §4.2.2). Reduced test
+`tremolo_de_variable_est_deplie_au_lieu_dutilisation`.
+
+### Controlled measurement (one lot at a time, no loss)
+
+| Lot | Before (§40) | After fix 1 | After fix 2 | N1 / N2 losses |
+| --- | ---: | ---: | ---: | ---: |
+| `ra` (1724) | 1690 | 1690 | **1690** | 0 |
+| `mut` (1316) | 1243 | 1247 | **1249** | 0 |
+| `rw` (1365) | 1285 | 1289 | **1291** | 0 |
+
+Exact-file gains: `Fuge_Opus137`, `QuartetOpus18_No4_2`, `Romanze_Opus40`,
+`liszt-consolation-no3` (fix 1), `NotteEGiorno`,
+`PesnyaVaryazhskogoGostya` (fix 2). `Celle.ly` was lost then recovered
+inside fix 1 before it was committed.
+
+### Scores
+
+**Raw** (all measured files in the denominator):
+
+| Lot | Exact | Total | Raw |
+| --- | ---: | ---: | ---: |
+| `ra` | 1690 | 1724 | **98.0 %** |
+| `mut` | 1249 | 1316 | **94.9 %** |
+| `rw` | 1291 | 1365 | **94.6 %** |
+
+**Excluding only the legitimate exceptions** (unchanged numerators; 22 on
+`mut`, 25 on `rw`): `mut` **1249/1294 = 96.5 %** and `rw` **1291/1340 =
+96.3 %**. The exception list and its reasons are unchanged from §40:
+references that no longer compile with LilyPond 2.26/2.27 (obsolete
+`\autochange`, `\compressFullBarRests`, `\compressMusic`, `\fermataMarkup`,
+removed commands, Guile errors), music needing a full Scheme evaluator
+(`saltarello`, `baba`, `example.ly`,
+`late-evaluation-of-variables.ly`,
+`adding-orchestral-cues-to-a-vocal-score.ly`) and one empty
+`adding-an-extra-staff.ly` reference. No file was silently dropped and no
+exception was added for a reader defect. The **raw** 95 % target is still
+not reached: +2 exact files are needed on `mut`, +6 on `rw`.
+
+### Remaining non-exception files
+
+All 45 non-exception inexact files of `rw` are also inexact in `mut`: there
+is no `rw`-only inexact file. Grouping by first divergent onset gives 26
+shifted, 13 missing and 6 extra notes. The 12 cheapest files have a single
+global note difference (`bach-prelude17`, `bwv657`, `bwv735`, `bwv855a`,
+`BWV-830-4`, `ToccataFugue`, `bwv853a`, `BWV533`, `bwv910`, `entertainer`,
+`french-suite-5-gigue`, `naujalis-caligaverunt`); the first four lack an
+attack where LilyPond re-articulates, the others have one extra unison or
+octave-related attack. The residual causes are the cross-staff unison /
+tie-stop distinction of §35-§38 (`promenade-6`, `bwv849b`, `bwv735`),
+`\articulate` time stealing (`Dans_l_antre_du_roi_de_la_montagne`,
+`rach-prelude23-05`, `bwv850b`), grace timing (four files already listed in
+§39), and volta/alternative offsets (`bwv663-a4`, `bwv663-let`).
+
+Two broader variants were measured and **reverted**, with zero net gain:
+
+* Treating `<< … \\ … >>` as a `Voice` boundary for ties: this gained
+  `bwv855a` and `bach-prelude17` but lost 15 exact files on `mut`
+  (`BWV-827-*`, `BWV-830*`, `title-hub`, `corni`, …): LilyPond does not
+  consistently drop a pending tie at that boundary when the right note is
+  itself tied forward. A correct port needs the exact `Voice` context
+  lifetime, not a tick-level rule.
+* Applying the key signature to bare pitch names: LilyPond's lexer keeps
+  pitch names independent of `\key` (verified with LilyPond 2.27 on
+  `\key ees \major a4` → A4 and `\key bes \major e'4` → E5); the change
+  broke the existing `transposition_ne_consomme_pas_une_note_de_la_musique`
+  test and was reverted.
+
+`cargo test -p scoretk-lilypond-import`, `clippy -D warnings` and
+`fmt --check` are green. The comparator and the oracle were not modified.
