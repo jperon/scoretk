@@ -70,6 +70,7 @@ import common  # noqa: E402
 
 GRID = 0.25  # pas de quantification : une double croche = 1/16 de noire
 TOL = 0.25  # tolérance de rapprochement : ±1/16 de noire
+EPS = 1e-6  # bruit des temps MusicXML sérialisés en virgule flottante
 
 # Durées écrites des `<type>` MusicXML, en rondes (ronde = 1).
 TYPE_DUREE = {
@@ -680,7 +681,12 @@ def apparier_graces(
         attaque: float, hauteur: int, apres: bool, attendu: float | None,
         duree: float = 0.0,
     ) -> bool:
-        borne = attaque + grid / 2 if apres else attaque
+        # Une grâce « avant » doit précéder *strictement* sa note principale.
+        # Les temps du MusicXML écrit par scoretk dérivent de ~1e-13 (60.0
+        # devient 60.00000000000001) : sans EPS, la note principale à 120.0
+        # tombait dans l'intervalle ouvert d'une grâce à 120.00000000000017 et
+        # était volée comme grâce (`minuit_chretiens.ly`, `Fantasia.ly`).
+        borne = attaque + grid / 2 if apres else attaque - EPS
         if attendu is not None:
             tolerance = max(grid / 2, 0.25)
             proches = [
@@ -1053,6 +1059,17 @@ def selftest() -> None:
         assert compare(ref_retard, juste, graces=graces_retard)["exact"]
         faux_releve = compare(ref_retard, faux, graces=graces_retard)
         assert not faux_releve["exact"] and faux_releve["n2_grace"] < 3, faux_releve
+
+        # Temps MusicXML bruité : la grâce est à 119.385 dans le MIDI et
+        # écrite à 120.00000000000017 dans le XML (sa note principale est à
+        # 120.0). Sans la borne stricte, l'appariement volait la note
+        # principale et n2_grace restait à 1 au lieu de 2.
+        bruite = [(72, 119.385, 0.0546875, 0), (72, 120.0, 2.0, 0)]
+        xml_bruite = [(72, 120.00000000000017, 0.0, 0, True, 0.0625),
+                      (72, 120.00000000000017, 2.0, 0, False, 0.5)]
+        graces_bruitees = [(72, 120.00000000000017, False, 0.0625, 0)]
+        bruit = compare(bruite, xml_bruite, graces=graces_bruitees)
+        assert bruit["graces_match"] == 1 and bruit["n2_grace"] == 2 and bruit["exact"], bruit
 
         # Sans graces déclarées, le relevé n'a pas de champ supplémentaire.
         assert "n2_grace" not in brut, brut
