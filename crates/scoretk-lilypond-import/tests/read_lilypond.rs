@@ -4163,6 +4163,40 @@ fn midi_merge_unisons_fusionne_les_unissons_qui_se_chevauchent() {
     assert_eq!(jouees_sans, vec![69, 69]);
 }
 
+/// Deux `\new Staff = right` du même `\score` sont deux contextes distincts.
+/// `lily/context.cc` (`core_find`, `find_context`) retrouve le **premier**
+/// contexte du nom, et la voix qui y revient après un `\change Staff = left`
+/// partage alors son `Audio_staff` : `lily/midi-walker.cc:95-115` ne joue
+/// qu'une attaque pour les unissons. La note déplacée reste gravée, mais elle
+/// est marquée `unperformed`. Vérifié sur la source réduite compilée par
+/// LilyPond 2.26 : une seule attaque 60 aux temps 2 et 3.
+#[test]
+fn change_vers_un_contexte_nomme_duplique_fusionne_l_unisson() {
+    let src = r#"\version "2.26.0"
+\score {
+  <<
+    \new Staff = right { \fixed c' { c4 c4 c4 c4 } }
+    \new Staff = left  { \fixed c, { c4 c4 c4 c4 } }
+    \new Staff = right { \fixed c' { c4 \change Staff = "left" c4 \change Staff = "right" c4 c4 } }
+    \new Staff = left  { \fixed c, { c4 c4 c4 c4 } }
+  >>
+}"#;
+    let score = read_lilypond(src).expect("lecture");
+    let muettes: Vec<u8> = score
+        .notes
+        .iter()
+        .filter(|note| note.unperformed)
+        .map(|note| note.pitch)
+        .collect();
+    assert_eq!(muettes, vec![60, 60]);
+    let jouees_60 = score
+        .notes
+        .iter()
+        .filter(|note| !note.unperformed && note.pitch == 60)
+        .count();
+    assert_eq!(jouees_60, 6);
+}
+
 #[test]
 fn partcombine_deux_voix_simultanees() {
     // `\partcombine` (ancien nom de `\partCombine`, `ly/music-functions-init.ly`)

@@ -124,6 +124,8 @@ struct StaffBuild {
     staff: StaffId,
     /// Nom du contexte (`\new Staff = "…"`), pour résoudre `\change`.
     name: Option<String>,
+    /// Groupe du bloc `\score` d'appartenance (ordre de création des contextes).
+    group: usize,
     /// Voix.
     voices: Vec<VoiceBuild>,
     /// Paroles attachées à cette portée.
@@ -175,7 +177,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     // carcassi-op60-09/15), pas des portées séparées.
     let mut contexte_portee: Option<(StaffId, PartId, String)> = None;
     let mut derniere_portee: Option<(StaffId, PartId, String)> = None;
-    for group in &score_ast.groups {
+    for (group_index, group) in score_ast.groups.iter().enumerate() {
         if group.sequence_start {
             element_start = staves
                 .iter()
@@ -230,6 +232,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                             staves.push(StaffBuild {
                                 staff: staff_id,
                                 name: Some(nom.clone()),
+                                group: group_index,
                                 voices: Vec::new(),
                                 lyrics: Vec::new(),
                             });
@@ -286,6 +289,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                         let mut nouveau = StaffBuild {
                             staff: staff_id,
                             name: None,
+                            group: group_index,
                             voices: premiere.voices,
                             lyrics: premiere.lyrics,
                         };
@@ -310,6 +314,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                         staves.push(StaffBuild {
                             staff: sœur.staff,
                             name: None,
+                            group: group_index,
                             voices: sœur.voices,
                             lyrics: sœur.lyrics,
                         });
@@ -386,6 +391,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                         staves.push(StaffBuild {
                             staff: sœur.staff,
                             name: None,
+                            group: group_index,
                             voices: sœur.voices,
                             lyrics: sœur.lyrics,
                         });
@@ -542,6 +548,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 staves.push(StaffBuild {
                     staff: staff_id,
                     name: staff_block.name.clone(),
+                    group: group_index,
                     voices: premiere.voices,
                     lyrics,
                 });
@@ -553,6 +560,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 staves.push(StaffBuild {
                     staff: sœur.staff,
                     name: None,
+                    group: group_index,
                     voices: sœur.voices,
                     lyrics: sœur.lyrics,
                 });
@@ -672,6 +680,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
         }
     }
     place_measures(&mut score, &staves, &slots, warnings);
+    fusionne_unissons_entre_portees(&mut score, &staves);
     apply_accidentals(&mut score);
     place_spanners(&mut score, &staves);
     place_repeats(&mut score, &staves);
@@ -1831,6 +1840,83 @@ fn ensure_segment(
 // Placement des événements
 // ----------------------------------------------------------------------
 
+/// Unissons d'une note déplacée par `\change Staff` vers une portée qui joue
+/// déjà la même hauteur au même instant.
+///
+/// `lily/midi-walker.cc:95-115` (`Midi_walker::do_start_note`) ne produit
+/// qu'une attaque quand deux notes de même hauteur commencent au même tick
+/// dans le même `Audio_staff` (`lily/staff-performer.cc`, `get_audio_staff`).
+/// La résolution de `lily/context.cc` peut envoyer la musique d'une voix vers
+/// un contexte `Staff` déjà occupé par la même hauteur (par exemple deux
+/// portées nommées `right` dans le même `\score`) : la note déplacée est
+/// gravée, mais elle ne sonne pas une seconde fois. On la garde dans le
+/// modèle en la marquant `unperformed`, comme les autres musiques sans
+/// performer MIDI.
+fn fusionne_unissons_entre_portees(score: &mut Score, staves: &[StaffBuild]) {
+    let mut deplaces: Vec<(NoteId, StaffId, Fraction, u8)> = Vec::new();
+    for raw in 0..score.staves.len() * VOICES {
+        let track = Track::from_raw(raw as u32);
+        let Some(index) = staves.iter().position(|s| s.staff == track.staff()) else {
+            continue;
+        };
+        for measure in &score.measures {
+            for segment in &measure.segments {
+                let Some(SegmentItem::ChordRest(chord_rest)) = segment.element(track) else {
+                    continue;
+                };
+                let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                    continue;
+                };
+                if chord.staff_move == 0 {
+                    continue;
+                }
+                let cible = index
+                    .checked_add_signed(isize::from(chord.staff_move))
+                    .and_then(|target| staves.get(target))
+                    .filter(|target| target.name == staves[index].name && target.name.is_some());
+                let Some(cible) = cible.map(|target| target.staff) else {
+                    continue;
+                };
+                let tick = measure.start_tick + segment.tick;
+                for id in &chord.notes {
+                    let pitch = score.note(*id).pitch;
+                    deplaces.push((*id, cible, tick, pitch));
+                }
+            }
+        }
+    }
+    if deplaces.is_empty() {
+        return;
+    }
+    let mut presents: Vec<(StaffId, Fraction, u8)> = Vec::new();
+    for raw in 0..score.staves.len() * VOICES {
+        let track = Track::from_raw(raw as u32);
+        for measure in &score.measures {
+            for segment in &measure.segments {
+                let Some(SegmentItem::ChordRest(chord_rest)) = segment.element(track) else {
+                    continue;
+                };
+                let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+                    continue;
+                };
+                let tick = measure.start_tick + segment.tick;
+                for id in &chord.notes {
+                    let note = score.note(*id);
+                    if note.unperformed || !note.play {
+                        continue;
+                    }
+                    presents.push((track.staff(), tick, note.pitch));
+                }
+            }
+        }
+    }
+    for (id, cible, tick, pitch) in deplaces {
+        if presents.contains(&(cible, tick, pitch)) {
+            score.note_mut(id).unperformed = true;
+        }
+    }
+}
+
 /// Range les événements de toutes les voix dans les mesures.
 fn place_measures(
     score: &mut Score,
@@ -1850,21 +1936,25 @@ fn place_measures(
         })
         .filter_map(|candidate| candidate.name.clone())
         .collect();
+    // `lily/context.cc` `Context::core_find` (`find_context`, FIND_ONLY) :
+    // le contexte courant est examiné en premier, puis les contextes du nom
+    // dans l'ordre de création. Deux `\new Staff = right` du même `\score`
+    // désignent donc le **premier** contexte du nom, même s'il appartient à
+    // une autre partie (vérifié avec LilyPond 2.26).
+    let mut names: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (index, candidate) in staves.iter().enumerate() {
+        if let Some(name) = candidate.name.as_deref() {
+            names.entry(name).or_default().push(index);
+        }
+    }
     for (staff_index, staff) in staves.iter().enumerate() {
-        // `Chord::staffMove` ne traverse que les portées d'une même partie :
-        // un `\change` ne peut atteindre que les portées nommées de la partie
-        // courante, pas celles d'un autre instrument.
-        let part = score.staff(staff.staff).part;
-        let local_names: BTreeMap<&str, usize> = staves
-            .iter()
-            .enumerate()
-            .filter(|(_, candidate)| score.staff(candidate.staff).part == part)
-            .filter_map(|(index, candidate)| candidate.name.as_deref().map(|name| (name, index)))
-            .collect();
         for voice_index in 0..staff.voices.len() {
             // Un seul avertissement par nom inconnu et par voix, daté du
             // `\change` qui l'a introduit plutôt que de chaque accord.
             let mut warned: BTreeSet<&str> = BTreeSet::new();
+            // `\change` change le parent de la voix : la résolution suivante
+            // part de la portée où la musique vient d'être déplacée.
+            let mut current = staff_index;
             let mut events: Vec<VoiceEvent> = staff.voices[voice_index].interpreted.events.clone();
             events.sort_by_key(|event| (event.tick, event.order));
             for event in &events {
@@ -1876,16 +1966,25 @@ fn place_measures(
                             .is_some_and(|target| silent_staff_names.contains(&target.name));
                         let staff_move = if silent {
                             0
+                        } else if let Some(target) = &chord.staff {
+                            match staff_move_of(
+                                score,
+                                staves,
+                                &names,
+                                current,
+                                target,
+                                &mut warned,
+                                warnings,
+                            ) {
+                                Some(index) => {
+                                    current = index;
+                                    i8::try_from(index).unwrap_or(i8::MAX)
+                                        - i8::try_from(staff_index).unwrap_or(i8::MAX)
+                                }
+                                None => 0,
+                            }
                         } else {
-                            chord.staff.as_ref().map_or(0, |target| {
-                                staff_move_of(
-                                    &local_names,
-                                    staff_index,
-                                    target,
-                                    &mut warned,
-                                    warnings,
-                                )
-                            })
+                            0
                         };
                         place_chord(
                             score,
@@ -1915,34 +2014,53 @@ fn place_measures(
     }
 }
 
-/// Décalage de portée d'un `\change` vers le contexte nommé, ou 0 si la portée
-/// est inconnue ou hors de la partie (les notes restent alors sur leur portée
-/// d'origine). L'avertissement n'est émis qu'une fois par nom et par voix, à la
-/// position de la commande `\change`.
+/// Portée cible d'un `\change`, ou `None` si le nom est inconnu ou hors de la
+/// partie (les notes restent alors sur leur portée d'origine). L'avertissement
+/// n'est émis qu'une fois par nom et par voix, à la position du `\change`.
 fn staff_move_of<'a>(
-    names: &BTreeMap<&str, usize>,
+    score: &Score,
+    staves: &[StaffBuild],
+    names: &BTreeMap<&str, Vec<usize>>,
     from: usize,
     target: &'a StaffTarget,
     warned: &mut BTreeSet<&'a str>,
     warnings: &mut Warnings,
-) -> i8 {
-    match names.get(target.name.as_str()) {
-        Some(&index) => {
-            let from = i8::try_from(from).unwrap_or(i8::MAX);
-            let to = i8::try_from(index).unwrap_or(i8::MAX);
-            to.saturating_sub(from)
-        }
-        None => {
-            if warned.insert(target.name.as_str()) {
-                warnings.push(
-                    target.line,
-                    target.column,
-                    format!("portée inconnue : {}", target.name),
-                );
-            }
-            0
-        }
+) -> Option<usize> {
+    let name = target.name.as_str();
+    // `core_find` teste d'abord le contexte lui-même : depuis la seconde
+    // portée nommée `right`, `\change Staff = right` ne déplace rien.
+    if staves[from].name.as_deref() == Some(name) {
+        return Some(from);
     }
+    let found = names.get(name).and_then(|indices| {
+        let first = indices
+            .iter()
+            .copied()
+            .min_by_key(|&index| (staves[index].group, index));
+        match indices.as_slice() {
+            // Noms dupliqués : `find_context` renvoie le premier contexte créé,
+            // même s'il appartient à une autre partie (les parties MusicXML
+            // n'existent pas dans `lily/context.cc`).
+            [_, _, ..] => first,
+            // Un seul porteur du nom : garder la règle historique (portée de
+            // la même partie uniquement).
+            [only]
+                if score.staff(staves[*only].staff).part
+                    == score.staff(staves[from].staff).part =>
+            {
+                Some(*only)
+            }
+            _ => None,
+        }
+    });
+    if found.is_none() && warned.insert(name) {
+        warnings.push(
+            target.line,
+            target.column,
+            format!("portée inconnue : {}", target.name),
+        );
+    }
+    found
 }
 
 /// Place un accord ou un silence.
