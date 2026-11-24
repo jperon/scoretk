@@ -753,7 +753,16 @@ impl<'a> Interpreter<'a> {
             self.cursor = self.cursor.max(start);
             return;
         };
+        // `lily/change-iterator.cc` : `\change Staff` est porté par l'itéra-
+        // teur de la **musique qu'il précède**, pas par la voix entière. La
+        // première branche est lue dans l'interpréteur courant : son
+        // `\change` ne doit donc pas passer aux branches sœurs ni à la musique
+        // qui suit le `>>` (vérifié avec LilyPond 2.26 : dans
+        // `<< { c1 \change Staff = up c1 } \\ { c1 c1 } >> | c1 c1`, la
+        // dernière note est rejouée sur la portée d'origine).
+        let staff_after_branch = self.staff_target.clone();
         self.walk(first);
+        self.staff_target = staff_after_branch;
         let mut end = self.cursor;
         let mut last_duration = self.default_duration;
         for item in branches {

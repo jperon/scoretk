@@ -2607,27 +2607,32 @@ fn change_vers_portee_inconnue_avertissement_unique() {
 
 #[test]
 fn change_vers_portee_d_autre_partie() {
+    // La source d'origine avait deux `\new Staff` directs sous `\score`, ce
+    // que LilyPond refuse (« Expression invalide dans \score ») : le
+    // `\change` échouait alors (« impossible de repérer le contexte »). Avec
+    // le `<< … >>` valide, LilyPond 2.26 déplace bien la voix vers l'autre
+    // portée, même si le modèle en fait deux parties MusicXML : les pistes
+    // MIDI sont piano (60) et flûte (72, 62, 64, 65, 67).
     let (score, warnings) = read_lilypond_reporting(
-        r#"\version "2.24.0"
+        r#"\version "2.26.0"
 \language "english"
 \score {
-  \new Staff = "piano" { \fixed c' { c4 \change Staff = "flute" d e f g } }
-  \new Staff = "flute" { \fixed c' { c'1 } }
+  <<
+    \new Staff = "piano" { \fixed c' { c4 \change Staff = "flute" d e f g } }
+    \new Staff = "flute" { \fixed c' { c'1 } }
+  >>
 }"#,
     )
     .expect("lecture");
     assert_eq!(hauteurs(&score), vec![60, 62, 64, 65, 67, 72]);
-    // "flute" existe mais appartient à une autre partie : pas de staffMove.
     assert_eq!(
         notes_et_portees(&score),
-        vec![(60, 0), (62, 0), (64, 0), (65, 0), (67, 0)]
+        vec![(60, 0), (62, 1), (64, 1), (65, 1), (67, 1)]
     );
-    assert_eq!(
+    assert!(
         warnings
             .iter()
-            .filter(|warning| warning.message == "portée inconnue : flute")
-            .count(),
-        1,
+            .all(|warning| warning.message != "portée inconnue : flute"),
         "avertissements : {warnings:?}"
     );
 }
@@ -4195,6 +4200,94 @@ fn change_vers_un_contexte_nomme_duplique_fusionne_l_unisson() {
         .filter(|note| !note.unperformed && note.pitch == 60)
         .count();
     assert_eq!(jouees_60, 6);
+}
+
+/// `\change Staff` vers une portée **de nom différent** qui joue déjà la même
+/// hauteur : `lily/change-iterator.cc` déplace la voix dans l'autre contexte
+/// `Staff`, et `lily/midi-walker.cc:95-115` ne joue qu'une attaque pour les
+/// deux notes du même `Audio_staff`. Vérifié sur la source réduite compilée
+/// par LilyPond 2.26 : une seule attaque 60 aux temps 0 et 4.
+#[test]
+fn change_vers_une_autre_portee_fusionne_l_unisson() {
+    let src = r#"\version "2.26.0"
+\score {
+  <<
+    \new Staff = right { \fixed c' { c1 \change Staff = left c1 } }
+    \new Staff = left  { \fixed c' { c1 c1 } }
+  >>
+}"#;
+    let score = read_lilypond(src).expect("lecture");
+    let muettes: Vec<u8> = score
+        .notes
+        .iter()
+        .filter(|note| note.unperformed)
+        .map(|note| note.pitch)
+        .collect();
+    assert_eq!(muettes, vec![60]);
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .filter(|n| n.pitch == 60 && !n.unperformed)
+            .count(),
+        3
+    );
+}
+
+/// Une note liée n'ouvre pas d'attaque (`lily/tie-performer.cc`) : elle ne
+/// peut pas masquer la note déplacée, qui reste jouée. Vérifié avec LilyPond
+/// 2.26 sur la même source réduite avec `c1~ c1` à gauche.
+#[test]
+fn change_vers_une_portee_en_liaison_ne_fusionne_pas_l_unisson() {
+    let src = r#"\version "2.26.0"
+\score {
+  <<
+    \new Staff = right { \fixed c' { c1 \change Staff = left c1 } }
+    \new Staff = left  { \fixed c' { c1~ c1 } }
+  >>
+}"#;
+    let score = read_lilypond(src).expect("lecture");
+    assert!(score.notes.iter().all(|note| !note.unperformed));
+}
+
+/// `lily/change-iterator.cc` : `\change` ne s'applique qu'à la musique qu'il
+/// précède, pas à toute la voix. Vérifié avec LilyPond 2.26 sur
+/// `<< { c1 \change Staff = up c1 } \\ { c1 c1 } >> | c1 c1` : la note après
+/// le `>>` est rejouée sur la portée d'origine (piste `down`).
+#[test]
+fn change_dans_une_branche_polyphonique_ne_depasse_pas_le_passage() {
+    let src = r#"\version "2.26.0"
+\score {
+  <<
+    \new Staff = up   { \fixed c' { c1 | c1 | c1 } }
+    \new Staff = down {
+      \fixed c, {
+        << { c1 \change Staff = up c1 } \\ { c1 c1 } >>
+        | c1 c1
+      }
+    }
+  >>
+}"#;
+    let score = read_lilypond(src).expect("lecture");
+    let mut all: Vec<(u32, Vec<i8>)> = Vec::new();
+    for raw in 0..8 {
+        let mut offsets: Vec<i8> = Vec::new();
+        for measure in &score.measures {
+            for segment in &measure.segments {
+                if let Some(chord_rest) = segment.chord_rest(Track::from_raw(raw)) {
+                    if let ChordRestKind::Chord(chord) = &chord_rest.kind {
+                        offsets.push(chord.staff_move);
+                    }
+                }
+            }
+        }
+        if !offsets.is_empty() {
+            all.push((raw, offsets));
+        }
+    }
+    // La piste 4 porte la voix `down` du passage polyphonique : seul le
+    // deuxième accord (celui après `\change`) est déplacé vers `up`.
+    assert!(all.contains(&(4, vec![0, -1, 0, 0])), "pistes : {all:?}");
 }
 
 #[test]

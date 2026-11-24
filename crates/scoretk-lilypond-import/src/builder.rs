@@ -680,12 +680,14 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
         }
     }
     place_measures(&mut score, &staves, &slots, warnings);
-    fusionne_unissons_entre_portees(&mut score, &staves);
     apply_accidentals(&mut score);
     place_spanners(&mut score, &staves);
     place_repeats(&mut score, &staves);
     place_lyrics(&mut score, &staves, document.melisma_busy_disabled);
     link_ties(&mut score, &staves);
+    // Après `link_ties` : une note liée n'est pas une attaque et ne peut pas
+    // masquer la note déplacée (`lily/tie-performer.cc`).
+    fusionne_unissons_entre_portees(&mut score, &staves);
     resolve_after_grace_ties(&mut score);
     // LilyPond ne réalise pas \arpeggio au MIDI ; ses ornements ne sont
     // développés que par `\articulate` (`ly/articulate.ly`), pas par le
@@ -1857,13 +1859,19 @@ fn ensure_segment(
 ///
 /// `lily/midi-walker.cc:95-115` (`Midi_walker::do_start_note`) ne produit
 /// qu'une attaque quand deux notes de même hauteur commencent au même tick
-/// dans le même `Audio_staff` (`lily/staff-performer.cc`, `get_audio_staff`).
-/// La résolution de `lily/context.cc` peut envoyer la musique d'une voix vers
-/// un contexte `Staff` déjà occupé par la même hauteur (par exemple deux
-/// portées nommées `right` dans le même `\score`) : la note déplacée est
-/// gravée, mais elle ne sonne pas une seconde fois. On la garde dans le
-/// modèle en la marquant `unperformed`, comme les autres musiques sans
-/// performer MIDI.
+/// dans le même `Audio_staff` (`lily/staff-performer.cc:114-143`,
+/// `get_audio_staff`) : la condition `now_ticks == queued_ticks` s'applique
+/// même quand `midiMergeUnisons` est faux. `\change Staff` déplace en effet
+/// la voix dans l'autre contexte `Staff` (`lily/change-iterator.cc`), sans
+/// égard au nom des deux portées : une note gravée sur la portée d'origine
+/// mais jouée par l'autre portée ne donne qu'un seul `note_on` si cette
+/// dernière joue déjà la même hauteur. On garde la note dans le modèle en la
+/// marquant `unperformed`, comme les autres musiques sans performer MIDI.
+///
+/// Une liaison (`tie_back`) n'ouvre pas d'attaque : `lily/tie-performer.cc`
+/// ne lui fait pas émettre de `note_on`. Elle ne peut donc pas masquer la
+/// note déplacée, et une note déjà partie vers une autre portée ne sonne pas
+/// sur celle qu'elle a quittée.
 fn fusionne_unissons_entre_portees(score: &mut Score, staves: &[StaffBuild]) {
     let mut deplaces: Vec<(NoteId, StaffId, Fraction, u8)> = Vec::new();
     for raw in 0..score.staves.len() * VOICES {
@@ -1885,14 +1893,17 @@ fn fusionne_unissons_entre_portees(score: &mut Score, staves: &[StaffBuild]) {
                 let cible = index
                     .checked_add_signed(isize::from(chord.staff_move))
                     .and_then(|target| staves.get(target))
-                    .filter(|target| target.name == staves[index].name && target.name.is_some());
-                let Some(cible) = cible.map(|target| target.staff) else {
+                    .map(|target| target.staff);
+                let Some(cible) = cible else {
                     continue;
                 };
                 let tick = measure.start_tick + segment.tick;
                 for id in &chord.notes {
-                    let pitch = score.note(*id).pitch;
-                    deplaces.push((*id, cible, tick, pitch));
+                    let note = score.note(*id);
+                    if note.is_tie_stop() {
+                        continue;
+                    }
+                    deplaces.push((*id, cible, tick, note.pitch));
                 }
             }
         }
@@ -1911,10 +1922,14 @@ fn fusionne_unissons_entre_portees(score: &mut Score, staves: &[StaffBuild]) {
                 let ChordRestKind::Chord(chord) = &chord_rest.kind else {
                     continue;
                 };
+                // Une note partie vers une autre portée ne sonne pas ici.
+                if chord.staff_move != 0 {
+                    continue;
+                }
                 let tick = measure.start_tick + segment.tick;
                 for id in &chord.notes {
                     let note = score.note(*id);
-                    if note.unperformed || !note.play {
+                    if note.unperformed || !note.play || note.is_tie_stop() {
                         continue;
                     }
                     presents.push((track.staff(), tick, note.pitch));
@@ -1980,7 +1995,6 @@ fn place_measures(
                             0
                         } else if let Some(target) = &chord.staff {
                             match staff_move_of(
-                                score,
                                 staves,
                                 &names,
                                 current,
@@ -2026,11 +2040,10 @@ fn place_measures(
     }
 }
 
-/// Portée cible d'un `\change`, ou `None` si le nom est inconnu ou hors de la
-/// partie (les notes restent alors sur leur portée d'origine). L'avertissement
+/// Portée cible d'un `\change`, ou `None` si le nom est inconnu (les notes
+/// restent alors sur leur portée d'origine). L'avertissement
 /// n'est émis qu'une fois par nom et par voix, à la position du `\change`.
 fn staff_move_of<'a>(
-    score: &Score,
     staves: &[StaffBuild],
     names: &BTreeMap<&str, Vec<usize>>,
     from: usize,
@@ -2054,14 +2067,10 @@ fn staff_move_of<'a>(
             // même s'il appartient à une autre partie (les parties MusicXML
             // n'existent pas dans `lily/context.cc`).
             [_, _, ..] => first,
-            // Un seul porteur du nom : garder la règle historique (portée de
-            // la même partie uniquement).
-            [only]
-                if score.staff(staves[*only].staff).part
-                    == score.staff(staves[from].staff).part =>
-            {
-                Some(*only)
-            }
+            // Un seul porteur du nom : `find_context` le retrouve même si le
+            // modèle en a fait une partie distincte (les parties MusicXML
+            // n'existent pas dans `lily/context.cc`).
+            [only] => Some(*only),
             _ => None,
         }
     });
