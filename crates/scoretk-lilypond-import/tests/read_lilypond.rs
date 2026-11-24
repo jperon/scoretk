@@ -9025,6 +9025,17 @@ fn relative_sur_un_groupe_de_portees_enchaine_les_portees() {
 }
 
 #[test]
+fn marque_d_octave_apres_la_duree() {
+    // `c8'` : `pitch_or_music` (`lily/parser.yy:3714-3742`) range les
+    // `erroneous_quotes` (l. 3367-3371) dans la hauteur, avec un avertissement
+    // (« octave marks must precede duration »), au lieu de les perdre.
+    // Vérifié sur le MIDI de LilyPond 2.26 : do5, ré5, mi5, fa5, do6…
+    let score = read_lilypond("\\version \"2.24.0\"\n\\relative c' { c8' d e f c'8 d e f }\n")
+        .expect("lecture");
+    assert_eq!(hauteurs(&score), vec![72, 74, 76, 77, 84, 86, 88, 89]);
+}
+
+#[test]
 fn relatif_enchaine_la_derniere_branche_d_un_passage_polyphonique() {
     // `\relative` sur un `\new PianoStaff << … >>` : la portée suivante part
     // de la dernière hauteur atteinte par la **dernière** branche d'un

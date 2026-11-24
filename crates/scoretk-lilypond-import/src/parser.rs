@@ -5293,6 +5293,15 @@ impl<'a> Parser<'a> {
 
         let head = std::mem::take(&mut self.pending_head);
         let mut note_posts = self.parse_posts_until_note_end();
+        let (duration, multiplier) = self.parse_optional_duration_spec();
+        // `pitch_or_music` de `lily/parser.yy:3714-3742` accepte aussi les
+        // marques d'octave **après** la durée (`c8'`, production
+        // `erroneous_quotes`, l. 3367-3371) : LilyPond avertit
+        // (« octave marks must precede duration ») mais transpose bien la
+        // note. Les lire sinon comme une durée nue laissait la hauteur à
+        // l'octave inférieure (`25EF-01.ly`, vérifié sur le MIDI 2.26).
+        let mut pitch = pitch;
+        self.apply_trailing_octave_marks(&mut pitch, duration.is_some());
         let notes = vec![NoteSpec {
             pitch,
             posts: std::mem::take(&mut note_posts),
@@ -5300,7 +5309,6 @@ impl<'a> Parser<'a> {
             midi: None,
             transposable: false,
         }];
-        let (duration, multiplier) = self.parse_optional_duration_spec();
         let (duration, multiplier) = self.resolve_chord_duration(duration, multiplier);
         // Les post-événements peuvent suivre la durée d'un accord.
         let posts = self.parse_posts();
@@ -5877,6 +5885,37 @@ impl<'a> Parser<'a> {
             }
         }
         Some(pitch)
+    }
+
+    /// Marques d'octave placées après la durée d'une note (`c8'`).
+    ///
+    /// `lily/parser.yy:3714-3742` (`pitch_or_music`, `erroneous_quotes`) les
+    /// accepte avec un avertissement et les ajoute à l'octave écrite — ou à
+    /// l'octave contrôlée si la note porte un `=` (`octave_check`).
+    fn apply_trailing_octave_marks(&mut self, pitch: &mut PitchSpec, with_duration: bool) {
+        let mut count = 0i32;
+        while let Some(token) = self.peek() {
+            let delta = match token.kind {
+                Kind::Punct('\'') => 1,
+                Kind::Punct(',') => -1,
+                _ => break,
+            };
+            count += delta;
+            self.position += 1;
+        }
+        if count == 0 {
+            return;
+        }
+        if with_duration {
+            self.warn("octave marks must precede duration");
+        }
+        pitch.explicit_octave = true;
+        let delta = count.clamp(i32::from(i8::MIN), i32::from(i8::MAX)) as i8;
+        if let Some(check) = pitch.octave_check.as_mut() {
+            *check = check.saturating_add(delta);
+        } else {
+            pitch.octave = pitch.octave.saturating_add(delta);
+        }
     }
 
     /// Vrai si le mot est un nom de hauteur dans la langue courante.
