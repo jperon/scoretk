@@ -8477,3 +8477,110 @@ Two broader variants were measured and **reverted**, with zero net gain:
 
 `cargo test -p scoretk-lilypond-import`, `clippy -D warnings` and
 `fmt --check` are green. The comparator and the oracle were not modified.
+
+## 42. Real-world reading: chord ties and named Voice reuse (2026-11-24)
+
+Protocol: the frozen manifests and reference trees of §41 (`out3ra` from
+`ly95lect-refs-clean`, `out3mut`/`out3rw` from `ly95lect-refs-fresh`), one lot
+at a time, `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10`,
+`mesure.py --refs-only` and `ly_notes.py selftest` (OK). No comparator rule was
+changed. Every retained fix has a reduced source compiled with LilyPond 2.27
+and a test that fails on the preceding binary.
+
+**Measurement caveat:** the `out3ra` directory of `ly95lect-refs-fresh` is
+stale. Measuring `ra` against it reports 19 false losses (1671 instead of
+1690); all `ra` figures below use `ly95lect-refs-clean`, as in §33–§41.
+
+### Fix 1: a tie inside `<< bare notes >>` continues into the following music
+
+`<< c'4 d'4 e'4~ >> e'16` is a **chord in the current Voice**, not three
+Voices (`lily/parser.yy:1581-1588`, `simultaneous_music` applied to a
+`music_list` of bare notes; the Notation Reference §4.2.1 chord forms). The
+reader spawns a sister voice for each branch after the first, so the tie
+started on the last chord member was never closed by the `e'16` after `>>`.
+LilyPond 2.27 plays three attacks, the `e'` lasting 5/4; the reader played
+four. The interpreter now marks the branches of a `Music::Sim` (no `\\`) and
+`link_ties` performs an **additive** recovery pass: an unclosed tie from such
+a branch is linked to a note of the same pitch at the exact tick of its end.
+Reduced test `liaison_dans_un_accord_simultane_se_prolonge_dans_la_suite`.
+
+### Fix 2: `\context Voice = x` reuses the enclosing Voice of the same name
+
+`lily/context.cc` (`Context::core_find` / `find_context`, FIND_ONLY) and
+`lily/parser.yy:1685-1690` (`NEWCONTEXT`) make `\context Voice = sop` reuse a
+Voice named `sop` already open in the enclosing `\score`. In
+`naujalis-caligaverunt.ly`, a `<< \context Voice = sopVoice { fis'1( ~ } \\ {
+s2 s2 } >>` is followed by `fis'4 … dis'4)`; because the name is reused, the
+`Tie_performer` is the same and the tie holds (one attack of duration 5/4).
+The reader used to open a sister voice and lost the tie. `nested_context` now
+walks that music in the current voice, with a reduced test
+`contexte_voice_de_meme_nom_prolonge_la_liaison` faithful to the source.
+
+### Controlled measurement (one lot at a time, no loss)
+
+| Lot | Before (§41) | After fix 1 | After fix 2 | N1 / N2 losses |
+| --- | ---: | ---: | ---: | ---: |
+| `ra` (1724) | 1690 | 1690 | **1690** | 0 |
+| `mut` (1316) | 1249 | **1251** | **1252** | 0 |
+| `rw` (1365) | 1291 | **1293** | **1294** | 0 |
+
+Exact-file gains: `bwv853a` and `french-suite-5-gigue` (fix 1, both lots),
+`naujalis-caligaverunt` (fix 2, both lots). No file was lost on any lot.
+
+### Scores
+
+**Raw** (all measured files in the denominator):
+
+| Lot | Exact | Total | Raw |
+| --- | ---: | ---: | ---: |
+| `ra` | 1690 | 1724 | **98.0 %** |
+| `mut` | 1252 | 1316 | **95.1 %** |
+| `rw` | 1294 | 1365 | **94.8 %** |
+
+The **raw 95 % target is met on `mut`** (+3 files); `rw` is still **3 files
+short** of 1297.
+
+**Excluding only the legitimate exceptions** (unchanged numerators; 22 on
+`mut`, 25 on `rw`): `mut` **1252/1294 = 96.8 %**, `rw` **1294/1340 = 96.6 %**.
+The exception list and its reasons are unchanged from §40: faulty references
+that no longer compile with LilyPond 2.26/2.27 (obsolete `\autochange`,
+`\compressFullBarRests`, `\compressMusic`, `\fermataMarkup`, removed commands,
+Guile errors), music needing a full Scheme evaluator (`saltarello`, `baba`,
+`example.ly`, `late-evaluation-of-variables.ly`,
+`adding-orchestral-cues-to-a-vocal-score.ly`) and one empty
+`adding-an-extra-staff.ly` reference. No file was silently dropped and no
+exception was added for a reader defect. The 61/83 deliberately unsupported
+sources remain excluded by exit code 3 on `mut`/`rw`, exactly as in §33–§41.
+
+### Remaining non-exception files and rejected leads
+
+The 64 `mut` / 71 `rw` inexact files still include 43 shared non-exception
+files. Ranked by wrong notes, the closest are `bach-prelude17` and `bwv855a`
+(one missing re-articulated attack each), `bwv735`, `bwv657` (one unison
+missing after cross-staff `\transpose` voices are folded by the oracle),
+`ToccataFugue` (one extra E4), `BWV533`, `entertainer`, `bwv910` (extra unisons
+or tie stops), then `ballade-4` (shifted attack). They are dominated by the
+per-Voice MIDI track / cross-staff unison distinction of §35–§39 and by the
+tie-performer lifetime, not by comparator errors.
+
+Four variants were measured and **reverted** with zero net gain or a clear
+loss, and the comparator was never touched:
+
+* Dropping pending ties at an unnamed `<< … \\ … >>` boundary (the §41 lead,
+  rewritten here with the "right head tied forward" exception and excluding
+  named-Voice reuse): gained `bach-prelude17` and `bwv855a`, **lost 22** exact
+  files on `mut` (Bach preludes, `title-hub`, Beethoven, …). Note that a
+  reduced-source selftest confirms LilyPond *does* drop such ties; the loss
+  shows the reader cannot reproduce the surrounding Voice-context lifetime
+  with a tick-level rule.
+* The same rule restricted to ties starting after `>>`: **lost 59** files on
+  `mut`, gained none.
+* Applying the additive tie recovery to *all* pending ties, not only `<< … >>`
+  chords: gained `BWV-830-6` but **lost 7** (`Fuge_Opus137`,
+  `QuartetOpus18_No4_2`, `liszt-consolation-no3`, …).
+* Using the recovery across staves, or evicting ties because another staff
+  sounds at the tie end: no gain (the latter was disproved by a reduced
+  source: two Voices of one staff at the same pitch and tick give a single
+  LilyPond attack, so there is no oracle artefact).
+
+`cargo test --workspace`, `clippy -D warnings` and `fmt --check` are green.
