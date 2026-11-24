@@ -9510,3 +9510,29 @@ fn harmonic_by_fret_joue_le_partiel_pas_la_note_ecrite() {
         "hauteur du partiel ajoutée à la note"
     );
 }
+
+/// `\repeat tremolo` dans une variable définie avant le `\unfoldRepeats` du
+/// score MIDI : `scm/music-functions.scm` (`unfold-repeats`, type `tremolo`)
+/// déplie le corps au lieu d'utilisation, pas à la définition. Sans
+/// `\unfoldRepeats`, les deux notes sont au contraire tenues `n ×` leur durée
+/// (Notation Reference §4.2.2). Vérifié avec LilyPond 2.27.
+#[test]
+fn tremolo_de_variable_est_deplie_au_lieu_dutilisation() {
+    let source = "\\version \"2.24.0\"\n\
+        trem = { \\repeat tremolo 4 { c'8 d'8 } }\n\
+        \\score { \\unfoldRepeats { \\trem } }";
+    let score = read_lilypond(source).expect("lecture");
+    let hauteurs: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+    assert_eq!(
+        hauteurs,
+        vec![60, 62, 60, 62, 60, 62, 60, 62],
+        "le corps est rejoué quatre fois"
+    );
+
+    let source = "\\version \"2.24.0\"\n\
+        trem = { \\repeat tremolo 4 { c'8 d'8 } }\n\
+        \\score { \\trem }";
+    let score = read_lilypond(source).expect("lecture");
+    let hauteurs: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+    assert_eq!(hauteurs, vec![60, 62], "sans dépliage, deux notes tenues");
+}

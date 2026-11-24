@@ -4675,24 +4675,13 @@ impl<'a> Parser<'a> {
         let mut alternatives = Vec::new();
         extract_alternatives(&mut corps, &mut alternatives);
         let body = Box::new(corps);
-        if kind == RepeatKind::Tremolo && !self.playback_unfold_repeats {
-            // Notation Reference §4.2.2 : « The duration of the tremolo equals
-            // the duration of the braced expression multiplied by the number
-            // of repeats ». Le MIDI de LilyPond joue les deux notes du corps
-            // tenues `n ×` leur durée écrite, sans nouvelles attaques. Étirer
-            // les durées conserve les hauteurs et décale correctement la musique
-            // qui suit, sans déplier le trémolo en n passages.
-            //
-            // Sous `\unfoldRepeats`, `scm/music-functions.scm`
-            // (`unfold-repeats`, type `tremolo`) remplace au contraire le
-            // trémolo par `UnfoldedRepeatedMusic` : le corps est joué n fois
-            // avec ses durées écrites. On garde alors le contexte pour que
-            // l'interpréteur le rejoue.
-            let mut body = *body;
-            let factor = Fraction::from_integer(count.max(1) as i64);
-            scale_music(&mut body, &factor);
-            return body;
-        }
+        // `\repeat tremolo` est gardé tel quel : l'étirement des durées ou le
+        // dépliage dépendent de `\unfoldRepeats` **au lieu d'utilisation** de
+        // la variable musicale, pas de sa définition. Une variable définie en
+        // tête de fichier puis rejouée dans un `\score { \unfoldRepeats … }`
+        // (`promenade-6.ly`) doit être dépliée, même si elle a été analysée
+        // avant le `\unfoldRepeats`. L'interpréteur applique donc le facteur
+        // à la lecture (`events.rs`, `RepeatKind::Tremolo`).
         if alternatives.is_empty() && self.eat_command("alternative") {
             let content = self.parse_music();
             alternatives = blocks_of(content);
@@ -8120,7 +8109,7 @@ fn feather_music(music: &mut Music, scale: &Fraction) {
 /// Multiplie par `factor` le multiplicateur `*n/d` de chaque accord d'une
 /// musique. C'est le mécanisme déjà utilisé par l'interpréteur pour les durées
 /// allongées : aucune nouvelle durée n'est introduite.
-fn scale_music(music: &mut Music, factor: &Fraction) {
+pub(crate) fn scale_music(music: &mut Music, factor: &Fraction) {
     match music {
         Music::Seq(items) | Music::Sim(items) | Music::SimVoices(items) => {
             for item in items {

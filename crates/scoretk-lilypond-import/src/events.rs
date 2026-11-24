@@ -1354,11 +1354,14 @@ impl<'a> Interpreter<'a> {
                     }
                 }
             }
-            // Sans `\unfoldRepeats`, le facteur de trémolo est déjà appliqué
-            // aux durées par le parseur (§4.2.2) : ce bras ne peut survenir
-            // que sur un arbre construit à la main, on lit le corps tel quel.
-            // Sous `\unfoldRepeats`, `unfold-repeats` (`scm/music-functions.scm`)
-            // en fait `UnfoldedRepeatedMusic` : le corps est joué n fois.
+            // Notation Reference §4.2.2 : sans `\unfoldRepeats`, la durée du
+            // trémolo vaut celle du corps multipliée par le nombre de reprises
+            // (deux notes tenues, sans nouvelles attaques). Sous
+            // `\unfoldRepeats`, `unfold-repeats` (`scm/music-functions.scm`)
+            // construit `UnfoldedRepeatedMusic` : le corps est joué n fois.
+            // Le choix est fait ici, à l'utilisation de la musique : une
+            // variable définie avant le `\unfoldRepeats` mais rejouée dedans
+            // est bien dépliée (`promenade-6.ly`).
             RepeatKind::Tremolo => {
                 if self.unfold_repeats {
                     let reference = self.octave;
@@ -1367,7 +1370,10 @@ impl<'a> Interpreter<'a> {
                         self.walk(body);
                     }
                 } else {
-                    self.walk(body);
+                    let mut etire = body.clone();
+                    let factor = Fraction::from_integer(i64::from(count.max(1)));
+                    crate::parser::scale_music(&mut etire, &factor);
+                    self.walk(&etire);
                 }
             }
             RepeatKind::Volta => {
