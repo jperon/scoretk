@@ -80,6 +80,7 @@ pub mod fret_diagram;
 pub mod hairpin;
 pub mod ids;
 pub mod instrument_channel;
+pub mod layers;
 pub mod lyrics;
 pub mod measure;
 pub mod mmrest;
@@ -113,6 +114,7 @@ pub use fret_diagram::{FretBarre, FretDiagram, FretDot, FretDotType, FretMarker,
 pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use instrument_channel::InstrumentChannel;
+pub use layers::{ConversionReport, Engraving, Extensions, Layers, Loss, Metric, Playback, Text};
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::{Measure, MeasureRepeatMark};
 pub use mmrest::{derived_mmrest_runs, MultiMeasureRests};
@@ -128,7 +130,7 @@ pub use part::{
 };
 pub use playback::PlaybackTransposition;
 pub use repeat::{Jump, JumpType, Marker, MarkerType, RepeatMark, VoltaInfo};
-pub use score::{Score, ScoreMetadata, DEFAULT_DIVISION};
+pub use score::{CoreScore, Score, ScoreMetadata, DEFAULT_DIVISION};
 pub use segment::{
     BarLine, BarLineType, Breath, BreathType, Clef, ClefSign, ClefType, Key, KeyMode, KeySig,
     Segment, SegmentAnnotation, SegmentItem, SegmentType, TimeSig, TimeSigType,

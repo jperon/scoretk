@@ -644,17 +644,17 @@ fn add_gap_rest(
     kind: DurationType,
     full_measure: bool,
 ) {
-    let Some(measure) = score.measures.get_mut(index) else {
+    let Some(measure) = score.core.measures.get_mut(index) else {
         return;
     };
     let tick = measure.start_tick + position;
-    let staff_id = score.staves[staff].id;
+    let staff_id = score.core.staves[staff].id;
     if !measure
         .segments
         .iter()
         .any(|segment| segment.kind == SegmentType::ChordRest && segment.tick == tick)
     {
-        let segment = Segment::new(SegmentType::ChordRest, tick, score.staves.len());
+        let segment = Segment::new(SegmentType::ChordRest, tick, score.core.staves.len());
         measure.add_segment(segment);
     }
     let Some(segment_index) = measure

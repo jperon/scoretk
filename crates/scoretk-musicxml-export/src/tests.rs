@@ -1629,12 +1629,9 @@ fn corpus_paroles() {
 
         let measure_index =
             (specification.tick.numerator() / specification.tick.denominator()) as usize;
+        let staff_count = score.staves.len();
         let measure = &mut score.measures[measure_index.min(7)];
-        let mut segment = Segment::new(
-            SegmentType::ChordRest,
-            specification.tick,
-            score.staves.len(),
-        );
+        let mut segment = Segment::new(SegmentType::ChordRest, specification.tick, staff_count);
         segment.set_element(track, SegmentItem::ChordRest(chord_rest));
         measure.add_segment(segment);
     }

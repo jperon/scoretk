@@ -1156,8 +1156,8 @@ fn create_time_signatures(score: &mut Score, sigmap: &TimeSigMap) {
         let Some(measure_index) = measure_index_for_tick(score, tick) else {
             continue;
         };
+        let staff_count = score.staves.len();
         let segment = {
-            let staff_count = score.staves.len();
             let measure = &mut score.measures[measure_index];
             let position = measure
                 .segments
@@ -1178,7 +1178,7 @@ fn create_time_signatures(score: &mut Score, sigmap: &TimeSigMap) {
             };
             &mut score.measures[measure_index].segments[position]
         };
-        for staff in 0..score.staves.len() {
+        for staff in 0..staff_count {
             let staff_id = scoretk_core::model::StaffId::from_index(staff);
             let track_id = Track::new(staff_id, 0);
             segment.set_element(

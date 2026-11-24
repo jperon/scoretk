@@ -26,8 +26,11 @@
 //! identifiants typés, ce qui garde [`Score`] `Send + Sync` et facilite le
 //! portage wasm.
 
+use std::ops::{Deref, DerefMut};
+
 use super::fraction::{Fraction, Tick};
 use super::ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, TupletId};
+use super::layers::{ConversionReport, Engraving, Extensions, Metric, Playback, Text};
 use super::measure::Measure;
 use super::note::Note;
 use super::part::{Part, Staff};
@@ -120,7 +123,7 @@ impl Default for ScoreMetadata {
 /// [`Score::notes`], [`Score::tuplets`] et [`Score::spanners`]. Les accords et
 /// silences restent possédés par les segments, comme dans MuseScore.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Score {
+pub struct CoreScore {
     /// Métadonnées d'œuvre.
     pub metadata: ScoreMetadata,
     /// Réglages de style globaux (format de page, `lyricsPlacement`…).
@@ -166,7 +169,66 @@ pub struct Score {
     pub spanners: Vec<Spanner>,
 }
 
+/// Partition en mémoire : noyau commun toujours présent et couches optionnelles.
+///
+/// Le noyau est [`CoreScore`] ; `Score` lui transfère l'accès aux champs par
+/// [`Deref`], si bien que `score.notes`, `score.measures` ou `score.style`
+/// continuent de fonctionner. Les couches et le rapport sont des champs
+/// distincts, sans effet sur le format de données lu ou écrit.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Score {
+    /// Noyau commun : temps, arènes et événements.
+    ///
+    /// `pub(crate)` permet aux modules du cœur d'emprunter deux champs
+    /// distincts simultanément, ce que `Deref` interdit (il emprunte tout `Score`).
+    pub(crate) core: CoreScore,
+    /// Pertes structurées observées pendant la lecture ou l'écriture.
+    pub report: ConversionReport,
+    /// Couche métrique (L1), vide tant que les champs n'y sont pas déplacés.
+    pub metric: Option<Metric>,
+    /// Couche texte (L3), vide tant que les champs n'y sont pas déplacés.
+    pub text: Option<Text>,
+    /// Couche lecture (L4), vide tant que les champs n'y sont pas déplacés.
+    pub playback: Option<Playback>,
+    /// Couche gravure (L5), vide tant que les champs n'y sont pas déplacés.
+    pub engraving: Option<Engraving>,
+    /// Extensions par format (L6), vides tant qu'aucun format n'est ajouté.
+    pub extensions: Extensions,
+}
+
+impl Deref for Score {
+    type Target = CoreScore;
+
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
+impl DerefMut for Score {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.core
+    }
+}
+
 impl Score {
+    /// Accès en lecture au noyau commun.
+    pub fn core(&self) -> &CoreScore {
+        &self.core
+    }
+
+    /// Accès en écriture au noyau commun.
+    pub fn core_mut(&mut self) -> &mut CoreScore {
+        &mut self.core
+    }
+
+    /// Consomme la partition et rend le noyau commun.
+    ///
+    /// Utile quand un appelant veut déplacer une arène hors du modèle sans la
+    /// cloner : `Deref` ne permet pas de déplacer un champ hors de `Score`.
+    pub fn into_core(self) -> CoreScore {
+        self.core
+    }
+
     /// Construit une partition vide avec [`DEFAULT_DIVISION`].
     pub fn new() -> Self {
         Self::with_division(DEFAULT_DIVISION)
@@ -183,20 +245,28 @@ impl Score {
             "les divisions MusicXML doivent être non nulles"
         );
         Self {
-            metadata: ScoreMetadata::default(),
-            style: StyleSettings::default(),
-            division,
-            parts: Vec::new(),
-            staves: Vec::new(),
-            measures: Vec::new(),
-            credits: Vec::new(),
-            tbox_texts: Vec::new(),
-            playback_transposition: None,
-            playback_articulate: false,
-            playback_unfold_repeats: true,
-            notes: Vec::new(),
-            tuplets: Vec::new(),
-            spanners: Vec::new(),
+            core: CoreScore {
+                metadata: ScoreMetadata::default(),
+                style: StyleSettings::default(),
+                division,
+                parts: Vec::new(),
+                staves: Vec::new(),
+                measures: Vec::new(),
+                credits: Vec::new(),
+                tbox_texts: Vec::new(),
+                playback_transposition: None,
+                playback_articulate: false,
+                playback_unfold_repeats: true,
+                notes: Vec::new(),
+                tuplets: Vec::new(),
+                spanners: Vec::new(),
+            },
+            report: ConversionReport::new(),
+            metric: None,
+            text: None,
+            playback: None,
+            engraving: None,
+            extensions: Extensions::default(),
         }
     }
 

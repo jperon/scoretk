@@ -71,7 +71,7 @@ fn lire(version: &str, voice: &str) -> Vec<Note> {
     let source = mscx(version, voice);
     let container = MsczContainer::from_bytes(source.as_bytes()).expect("conteneur");
     let score = read_score(&container).expect("lecture du .mscx");
-    score.notes
+    score.into_core().notes
 }
 
 #[test]
