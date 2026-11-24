@@ -17,7 +17,9 @@
 
 //! Lecture des options JavaScript (`ConvertOptions`) vers une forme Rust.
 
-use wasm_bindgen::JsValue;
+use std::collections::BTreeMap;
+
+use wasm_bindgen::{JsCast, JsValue};
 
 /// Options lues depuis l'objet `ConvertOptions` (propriétés absentes, nulles ou
 /// vides ignorées).
@@ -28,6 +30,9 @@ pub(crate) struct ApiOptions {
     pub(crate) software: Option<String>,
     pub(crate) concert_pitch: Option<bool>,
     pub(crate) expand_repeats: Option<bool>,
+    /// Fichiers d'un dossier, indexés par leur chemin relatif à sa racine.
+    /// Utilisés uniquement pour résoudre les `\include` LilyPond.
+    pub(crate) includes: Option<BTreeMap<String, Vec<u8>>>,
 }
 
 impl ApiOptions {
@@ -45,8 +50,31 @@ impl ApiOptions {
             software: string(&value, "software"),
             concert_pitch: boolean(&value, "concertPitch"),
             expand_repeats: boolean(&value, "expandRepeats"),
+            includes: includes(&value),
         }
     }
+}
+
+/// Lit `includes` comme une table chemin relatif → octets.
+///
+/// Seules les valeurs `Uint8Array` sont retenues : les autres entrées sont
+/// ignorées, comme le sont les `\include` introuvables côté lecteur.
+fn includes(value: &JsValue) -> Option<BTreeMap<String, Vec<u8>>> {
+    let object = property(value, "includes")?
+        .dyn_into::<js_sys::Object>()
+        .ok()?;
+    let mut files = BTreeMap::new();
+    for key in js_sys::Object::keys(&object).iter() {
+        let Some(path) = key.as_string() else {
+            continue;
+        };
+        if let Ok(bytes) = js_sys::Reflect::get(&object, &key) {
+            if let Ok(bytes) = bytes.dyn_into::<js_sys::Uint8Array>() {
+                files.insert(path, bytes.to_vec());
+            }
+        }
+    }
+    Some(files)
 }
 
 fn property(value: &JsValue, name: &str) -> Option<JsValue> {

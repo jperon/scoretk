@@ -22,6 +22,8 @@
 //! marquées `skip_typescript` pour éviter les types approximatifs de
 //! wasm-bindgen (`Option<String>` sortirait en `string | undefined`).
 
+use std::collections::BTreeMap;
+
 use wasm_bindgen::prelude::*;
 
 use crate::formats;
@@ -54,6 +56,8 @@ export interface ConvertOptions {
   concertPitch?: boolean;
   /** Dérouler les reprises, voltas et sauts dans la sortie MIDI. Défaut : `true`. */
   expandRepeats?: boolean;
+  /** Fichiers d'un dossier, indexés par leur chemin relatif à sa racine (ex. `"noaten.ily"`, `"sub/x.ily"`), avec leurs octets UTF-8. Résout les `\include` des sources LilyPond ; ignoré pour les autres formats. Option additive : absente, le comportement est inchangé. */
+  includes?: Record<string, Uint8Array>;
 }
 
 /** Changement de tempo de la performance. */
@@ -123,7 +127,7 @@ pub fn convert(input: &[u8], options: Option<ConvertOptions>) -> Result<Vec<u8>,
         )));
     }
 
-    let score = scoretk::read(input, from).map_err(js_error)?;
+    let score = read_score(input, from, &options)?;
 
     let mut write_options = scoretk::Options::default();
     if let Some(date) = options.encoding_date {
@@ -172,7 +176,7 @@ pub fn convert_with_timeline(
         )));
     }
 
-    let score = scoretk::read(input, from).map_err(js_error)?;
+    let score = read_score(input, from, &options)?;
 
     let mut write_options = scoretk::Options::default();
     if let Some(date) = options.encoding_date {
@@ -225,6 +229,64 @@ pub fn formats() -> js_sys::Array {
         array.push(&formats::to_js(format));
     }
     array
+}
+
+/// Lit la source, en résolvant ses `\include` depuis `options.includes` quand
+/// l'entrée est du LilyPond. Sans la table, le chemin est exactement celui de
+/// `scoretk::read` (les `\include` restent ignorés avec un avertissement).
+fn read_score(
+    input: &[u8],
+    from: scoretk::Format,
+    options: &ApiOptions,
+) -> Result<scoretk::Score, JsError> {
+    if let (true, Some(files)) = (from == scoretk::Format::Ly, options.includes.as_ref()) {
+        let mut resolve = lilypond_resolver(files);
+        return scoretk::read_lilypond_with_includes(input, &mut resolve).map_err(js_error);
+    }
+    scoretk::read(input, from).map_err(js_error)
+}
+
+/// Résolveur en mémoire pour les `\include` LilyPond d'un dossier.
+///
+/// LilyPond cherche un fichier inclus d'abord dans le dossier du fichier qui
+/// l'inclut, puis dans son chemin de recherche (`lily/includable-lexer.cc`,
+/// `lily/sources.cc`). Ici le chemin de recherche est la racine du dossier
+/// fournie par `includes` : on essaie donc le chemin relatif au fichier
+/// incluant, puis celui relatif à la racine. Les `.` et `..` sont normalisés
+/// lexicalement, sans sortir de la racine. Un fichier absent n'est pas une
+/// erreur : le lecteur l'ignore avec un avertissement (comme pour
+/// `ly2video-events.ily` dans le lot alde-friezen).
+fn lilypond_resolver<'a>(
+    files: &'a BTreeMap<String, Vec<u8>>,
+) -> impl FnMut(&str, Option<&str>) -> Option<String> + 'a {
+    move |requested, includer| {
+        let requested = normalize_include_path(requested);
+        let mut candidates = Vec::with_capacity(2);
+        if let Some((directory, _)) = includer.and_then(|path| path.rsplit_once('/')) {
+            candidates.push(normalize_include_path(&format!("{directory}/{requested}")));
+        }
+        candidates.push(requested);
+        candidates
+            .iter()
+            .find_map(|path| files.get(path))
+            .and_then(|bytes| std::str::from_utf8(bytes).ok())
+            .map(str::to_owned)
+    }
+}
+
+/// Normalise un chemin relatif POSIX (`.` et `..` résolus, racine conservée).
+fn normalize_include_path(path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other),
+        }
+    }
+    parts.join("/")
 }
 
 /// `Format::from_str` fournit déjà le message listant les formats acceptés

@@ -22,6 +22,8 @@
 //
 // Le test charge la variante ESM depuis `result/` (ou depuis SCORETK_PKG_DIR,
 // utilisé par le check de flake) et couvre les sept formats sur le corpus.
+// Les cas 22 à 25 couvrent l'option additive `includes` sur le lot CC0
+// `tests/corpus/ly/alde-friezen/` (deux .ly qui partagent noaten.ily).
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -51,6 +53,69 @@ function text(bytes) {
 
 function startsWith(bytes, prefix) {
   return String.fromCharCode(...bytes.slice(0, prefix.length)) === prefix;
+}
+
+// Hauteurs des attaques MIDI (hors canal 10), pour comparer avec la référence
+// LilyPond du lot alde-friezen. SMF format 1, avec status running.
+function midiNotePitches(bytes) {
+  let pos = 0;
+  const u32 = () =>
+    ((bytes[pos++] << 24) | (bytes[pos++] << 16) | (bytes[pos++] << 8) | bytes[pos++]);
+  if (text(bytes.subarray(0, 4)) !== 'MThd') throw new Error('MIDI sans en-tête MThd');
+  pos = 4;
+  const headerLength = u32();
+  pos += headerLength;
+  const pitches = [];
+  while (pos + 8 <= bytes.length) {
+    if (text(bytes.subarray(pos, pos + 4)) !== 'MTrk') {
+      throw new Error(`piste MIDI invalide à l'octet ${pos}`);
+    }
+    pos += 4;
+    const trackLength = u32();
+    const end = pos + trackLength;
+    let running = 0;
+    while (pos < end) {
+      let byte;
+      do {
+        byte = bytes[pos++];
+      } while (byte & 0x80);
+      byte = bytes[pos++];
+      if (byte & 0x80) running = byte;
+      else pos--;
+      const status = running;
+      if (status === 0xff || status === 0xf0 || status === 0xf7) {
+        if (status === 0xff) {
+          const type = bytes[pos++];
+          let length = 0;
+          do {
+            byte = bytes[pos++];
+            length = (length << 7) | (byte & 0x7f);
+          } while (byte & 0x80);
+          pos += length;
+          if (type === 0x2f) break;
+        } else {
+          let length = 0;
+          do {
+            byte = bytes[pos++];
+            length = (length << 7) | (byte & 0x7f);
+          } while (byte & 0x80);
+          pos += length;
+        }
+      } else if ((status & 0xf0) === 0x90) {
+        const pitch = bytes[pos++];
+        const velocity = bytes[pos++];
+        if (velocity > 0 && (status & 0x0f) !== 9) pitches.push(pitch);
+      } else if ([0x80, 0xb0, 0xe0].includes(status & 0xf0)) {
+        pos += 2;
+      } else if ([0xc0, 0xd0].includes(status & 0xf0)) {
+        pos += 1;
+      } else {
+        throw new Error(`statut MIDI inattendu ${status.toString(16)}`);
+      }
+    }
+    pos = end;
+  }
+  return pitches;
 }
 
 // 1. version() suit package.json.
@@ -192,6 +257,68 @@ for (const note of timeline.notes) {
     `l'identifiant de note ${note.xmlId} doit exister dans le MusicXML`,
   );
 }
+
+// 22-24. Lot alde-friezen : deux .ly partagent noaten.ily, et fideo.ly a un
+// include absent (ly2video-events.ily) qui doit rester un avertissement.
+const afDir = join('ly', 'alde-friezen');
+const partituer = read(join(afDir, 'partituer.ly'));
+const fideo = read(join(afDir, 'fideo.ly'));
+const noaten = read(join(afDir, 'noaten.ily'));
+const includes = { 'noaten.ily': noaten, 'fideo.ly': fideo };
+
+// 22. Sans la nouvelle option, le comportement précédent est conservé.
+const withoutIncludes = text(wasm.convert(partituer, { from: 'ly' }));
+assert.ok(
+  !withoutIncludes.includes('<pitch>'),
+  'sans includes, le \\include non résolu ne doit pas produire de notes',
+);
+
+// 23. Avec includes, les notes sont là et le MIDI concorde avec la référence
+// LilyPond du lot externe (séquence exacte de hauteurs d'attaques).
+const withIncludes = text(wasm.convert(partituer, { from: 'ly', includes }));
+assert.ok(withIncludes.includes('<pitch>'), 'avec includes, partituer.ly doit produire des notes');
+const reference = midiNotePitches(read(join(afDir, 'partituer.ref.mid')));
+assert.ok(reference.length > 0, 'la référence MIDI doit contenir des notes');
+assert.deepEqual(
+  midiNotePitches(wasm.convert(partituer, { from: 'ly', to: 'midi', includes })),
+  reference,
+  'les hauteurs MIDI doivent être exactement celles de la référence LilyPond',
+);
+// Le second .ly du dossier, lui aussi tributaire de noaten.ily, donne des notes.
+assert.ok(
+  text(wasm.convert(fideo, { from: 'ly', includes: { 'noaten.ily': noaten } })).includes('<pitch>'),
+  'fideo.ly avec noaten.ily doit produire des notes malgré son include absent',
+);
+
+// 24. La même table fonctionne avec convertWithTimeline.
+const afPlayback = wasm.convertWithTimeline(partituer, { from: 'ly', includes });
+assert.ok(afPlayback.timeline.notes.length > 0, 'la timeline doit contenir les notes incluses');
+assert.deepEqual(
+  midiNotePitches(afPlayback.midi),
+  reference,
+  'le MIDI de playback doit concorder avec la référence LilyPond',
+);
+
+// 25. Un include dans un sous-dossier est résolu relativement au fichier
+// incluant avant la racine (table `includes` à clés "sub/...").
+const encoder = new TextEncoder();
+const nested = encoder.encode(
+  '\\version "2.24.0"\n\\include "sub/a.ily"\n{ \\a \\b e\'4 }\n',
+);
+const nestedXml = text(
+  wasm.convert(nested, {
+    from: 'ly',
+    includes: {
+      'sub/a.ily': encoder.encode('\\include "b.ily"\na = { c\'4 }'),
+      'sub/b.ily': encoder.encode('b = { d\'4 }'),
+    },
+  }),
+);
+assert.equal(
+  (nestedXml.match(/<pitch>/g) || []).length,
+  3,
+  'l\\include relatif à sub/ doit être résolu avant la racine',
+);
 
 console.log(
   `node-smoke: ok (${pkgDir}, format détecté ${wasm.detect(mscx)}, ` +

@@ -152,6 +152,12 @@ signatures without coordination:
 | Formats | `formats() => FormatInfo[]` |
 | Version | `version() => string` |
 
+The `includes?: Record<string, Uint8Array>` option is additive on both `convert`
+and `convertWithTimeline`: for LilyPond input it supplies the other files of a
+folder by relative path so that `\include` can be resolved in memory (including
+file's directory first, then root). It is ignored by other formats and changes
+nothing when absent.
+
 `convert`, `convertWithTimeline`, `detect`, `formats` and `version` of the wrapper
 are synchronous once `ready` is resolved and throw an `Error` otherwise. Rust errors become
 JavaScript `Error`s. Details (initialisation, base URL, size,

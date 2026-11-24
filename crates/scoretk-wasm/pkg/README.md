@@ -85,6 +85,7 @@ propre URL ; si l'environnement ne le permet pas, définir
 | `software`     | `string`  | constante Rust      | contenu de `<software>` (MusicXML) |
 | `concertPitch` | `boolean` | constante Rust      | exporter les hauteurs en sons réels (MusicXML) |
 | `expandRepeats`| `boolean` | `true`              | dérouler les reprises dans la sortie MIDI |
+| `includes`     | `Record<string, Uint8Array>` | absent | fichiers d'un dossier indexés par chemin relatif, pour résoudre les `\include` LilyPond (chemin du fichier incluant, puis racine) |
 
 `convertWithTimeline` renvoie `{ musicxml, midi, timeline }`. Le MusicXML porte
 `id` **et** `xml:id` sur chaque mesure et chaque note, exactement les `xmlId`

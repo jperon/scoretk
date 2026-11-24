@@ -185,6 +185,16 @@ scripts of **Willem Vree**:
   on the corpus, produced by the crate itself (command
   `UPDATE_ABC_SNAPSHOTS=1 cargo test -p scoretk --test abc_corpus`).
   Work of the project, licence GPL-3.0-only.
+- `tests/corpus/ly/alde-friezen/`: the three source files
+  (`partituer.ly`, `fideo.ly`, `noaten.ily`) of *De âlde Friezen*,
+  <https://github.com/MacLotsen/alde-friezen>, commit
+  `bba32e7492d2bfe581b15b5d82179db132937702`, used to test folder-wide
+  `\include` resolution. Licence **CC0-1.0** (full text in that directory's
+  `LICENSE`); text by Eeltsje Halbertsma / Jacobus van Loon, melody by
+  Heinrich Christian Schnoor, engraving by Erik Nijenhuis. The two
+  `*.ref.mid` files are MIDI references generated from these sources by
+  LilyPond (external oracle, `scripts/oracle/lilypond/`), same CC0-1.0
+  sources.
 
 ### Instruments table
 

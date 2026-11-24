@@ -593,6 +593,7 @@ interface ConvertOptions {
   software?: string;    // <software> (MusicXML)
   concertPitch?: boolean; // hauteurs en sons réels (MusicXML)
   expandRepeats?: boolean; // dérouler les reprises MIDI (défaut : true)
+  includes?: Record<string, Uint8Array>; // folder files by relative path, for LilyPond \include resolution
 }
 
 interface FormatInfo {
@@ -629,6 +630,19 @@ documented in `docs/agents/timemap.md` § 6. `MeasureSync::number`,
 A missing `from` is detected by content (`Format::detect`); an unrecognised input
 raises an explicit error rather than guessing. A missing `to` defaults to
 `musicxml`: `mscz → musicxml` remains the zero-option call.
+
+`includes` is additive and only affects LilyPond input (with `from: "ly"` or
+`"lilypond"`, or content detection). It maps folder-relative paths to the raw
+bytes of the other files of the folder, e.g.
+`{ "noaten.ily": new TextEncoder().encode(text), "sub/x.ily": bytes }`. The
+wasm wrapper builds an in-memory resolver for
+`scoretk::read_lilypond_with_includes`: an `\include` is looked up relative to
+the including file's directory first, then at the root (LilyPond's include
+search order, `lily/includable-lexer.cc` / `lily/sources.cc`), with `.` and `..`
+normalised. An unknown include keeps the previous behaviour: a warning, no
+failure. Other formats ignore the option; without it, `convert` and
+`convertWithTimeline` behave exactly as before. The classic wrapper forwards
+the options object unchanged.
 
 ## 4. Errors
 
@@ -677,7 +691,7 @@ correct but slower).
 ## 6. Tests
 
 `crates/scoretk-wasm/tests/node-smoke.mjs` loads the ESM variant of the package
-as produced by `nix build` and covers the following cases (numbered 1 to 21
+as produced by `nix build` and covers the following cases (numbered 1 to 25
 in the script):
 
 - `version()` equals `package.json` ;
@@ -692,7 +706,13 @@ in the script):
   `MThd`, non-empty measures with first tick/time at zero, `ordinal` equal to
   `measure`, strictly increasing ticks, at least one replayed measure,
   `expandRepeats: false` shorter, and every note `xmlId` present in the
-  MusicXML.
+  MusicXML;
+- `includes` on the CC0 `tests/corpus/ly/alde-friezen/` lot: `partituer.ly`
+  without the option still yields no notes, with `{ "noaten.ily": bytes }` it
+  yields notes whose MIDI pitch sequence is exactly that of the LilyPond
+  `partituer.ref.mid`, `fideo.ly` yields notes despite its unknown
+  `ly2video-events.ily` include, `convertWithTimeline` sees the included notes,
+  and a nested include under `sub/` resolves relative to the including file.
 
 Environment variables: `SCORETK_PKG_DIR` (default `result/`) and
 `SCORETK_CORPUS` (default `tests/corpus/`). The flake check
