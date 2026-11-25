@@ -198,6 +198,32 @@ fn gabc_measures_follow_separation_bars_not_syllables() {
     assert_eq!(playback.timemap.notes.len(), 8);
 }
 
+/// `Gabc.tex:36-58,452-700` : pas de hampe, une liure par neume.
+#[test]
+fn gabc_notes_are_stemless_and_neumes_are_slurred() {
+    const NEUMES: &str = "name:t;\n%%\n(c4) A(gh)ve(ih) (::)\n";
+    let score = read(NEUMES.as_bytes(), Format::Gabc).expect("GABC import");
+    let xml = String::from_utf8(
+        write(&score, Format::MusicXml, &Options::default()).expect("MusicXML export"),
+    )
+    .expect("UTF-8 MusicXML");
+    assert_eq!(
+        xml.matches("<stem>none</stem>").count(),
+        4,
+        "every sung pitch letter is stemless: {xml}"
+    );
+    assert_eq!(
+        xml.matches("<slur number=\"1\" type=\"start\"/>").count(),
+        2,
+        "one slur start per neume: {xml}"
+    );
+    assert_eq!(
+        xml.matches("<slur number=\"1\" type=\"stop\"/>").count(),
+        2,
+        "one slur stop per neume: {xml}"
+    );
+}
+
 /// `Gabc.tex:241-245,314-317` : `Ma-rí-a` est un mot, pas trois syllabes
 /// isolées ; MusicXML porte begin/middle/end.
 #[test]

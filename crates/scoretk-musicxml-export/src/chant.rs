@@ -248,6 +248,24 @@ pub(crate) fn write_note_signs(
     }
 }
 
+/// Liure d'un neume : une `<notations><slur>` ouverte sur la première note
+/// chantée du groupe et fermée sur la dernière (`Gabc.tex:36-58,452-700`).
+pub(crate) fn write_note_slur(out: &mut Out, start: bool, stop: bool) {
+    if !start && !stop {
+        return;
+    }
+    out.xml.start_element("notations", &[]);
+    if start {
+        out.xml
+            .tag_empty("slur", &[("number", "1"), ("type", "start")]);
+    }
+    if stop {
+        out.xml
+            .tag_empty("slur", &[("number", "1"), ("type", "stop")]);
+    }
+    out.xml.end_element();
+}
+
 fn write_direction(out: &mut Out, text: &str) {
     out.xml
         .start_element("direction", &[("print-object", "no")]);

@@ -1877,26 +1877,36 @@ impl Context<'_> {
             // MuseScore écrit toujours une hampe dès qu'il y en a une ; la
             // direction automatique se calcule comme `Chord::up()`.
             if duration.kind.has_stem() {
-                let actual = if grace.is_some() {
-                    Fraction::ZERO
+                // Le chant grégorien est sans hampe (`Gabc.tex:452-700`) :
+                // XSD 4.0 `stem-value` autorise explicitement `none`. Ce
+                // champ standard reste lisible par un tiers, sans changer
+                // l'inventaire du modèle.
+                if note.source.is_some()
+                    && matches!(self.score.extensions.format, Some(Extension::Gregorian(_)))
+                {
+                    out.xml.tag("stem", "none");
                 } else {
-                    self.actual_ticks(chord_rest, measure, track.staff())
-                };
-                let up = stems::stem_up(
-                    self.score,
-                    chord,
-                    measure,
-                    track,
-                    segment_tick,
-                    actual,
-                    self.concert_pitch,
-                    transpose,
-                    grace.and_then(|grace| grace.beam).map_or_else(
-                        || self.beams.up(measure.number, track, segment_tick),
-                        |beam| Some(beam.up),
-                    ),
-                );
-                out.xml.tag("stem", if up { "up" } else { "down" });
+                    let actual = if grace.is_some() {
+                        Fraction::ZERO
+                    } else {
+                        self.actual_ticks(chord_rest, measure, track.staff())
+                    };
+                    let up = stems::stem_up(
+                        self.score,
+                        chord,
+                        measure,
+                        track,
+                        segment_tick,
+                        actual,
+                        self.concert_pitch,
+                        transpose,
+                        grace.and_then(|grace| grace.beam).map_or_else(
+                            || self.beams.up(measure.number, track, segment_tick),
+                            |beam| Some(beam.up),
+                        ),
+                    );
+                    out.xml.tag("stem", if up { "up" } else { "down" });
+                }
             }
 
             write_notehead(out, note, chord, duration);
@@ -2034,6 +2044,34 @@ impl Context<'_> {
                             gregorian_note,
                             source.gregorian_syllable,
                             breath,
+                        );
+                        // Un neume est le groupe parenthesé source
+                        // (`Gabc.tex:36-58`) : une liure par syllabe chantée,
+                        // entre sa première et sa dernière note chantée.
+                        let sung: Vec<usize> = gregorian
+                            .syllables
+                            .get(source.gregorian_syllable)
+                            .map(|syllable| {
+                                syllable
+                                    .notes
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(_, note)| {
+                                        note.signs.iter().all(|sign| {
+                                            sign.kind != scoretk_core::model::SignKind::Alteration
+                                        })
+                                    })
+                                    .map(|(index, _)| index)
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let position = sung
+                            .iter()
+                            .position(|&index| index == source.gregorian_note);
+                        chant::write_note_slur(
+                            out,
+                            position == Some(0),
+                            sung.len() > 1 && position == Some(sung.len() - 1),
                         );
                     }
                 }

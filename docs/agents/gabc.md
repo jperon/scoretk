@@ -290,6 +290,7 @@ to carry (`Gabc.tex:801-845`).
 | Syllable text and word space | `<lyric>` with `syllabic` for the sung word; `gabc:syllable` in `<other-direction>` for markup and exact text | XSD 4.0 `lyric`, `syllabic`; `Gabc.tex:228-245,314-343` |
 | Pitch letter and neume shape | derived `<pitch>` + `gabc:note` in `<notations>/<other-notation>`; the shape fields are private (an alteration is **not** a `<notehead>` and emits no note, §7) | XSD 4.0 `notehead-value`, `other-notation` (“extended representation, though without application interoperability”); `Gabc.tex:408-443,452-540` |
 | Source position of a sung pitch | additive suffix `-o{offset}-e{end}` on `id`/`xml:id`, in UTF-16 units from the start of the file | XSD 4.0 `id`/`xml:id`; documented in `timemap.md`; `Gabc.tex:408-443` |
+| Stemless neumes and one slur per neume | `<stem>none</stem>` and a `<slur>` pair spanning the sung notes of each parenthesised group | XSD 4.0 `stem-value` (`none`), `slur`; `Gabc.tex:36-58,452-700` |
 | Rhythmic and shape signs | `<notations>/<technical>/<other-technical>` (`gabc:sign`) | XSD 4.0 `other-technical`; `Gabc.tex:702-797` |
 | Separation bars and their exact token | `<barline>/<bar-style>` for the modern view (`,` → `tick`, `;` → `short`, `:` → `light-light`, `::` → `light-heavy`); a `<breath-mark/>` on the last sung note; `gabc:syllable` `b=` fields for the exact tokens `;1`…`;8`, `::`, `:?`, … | XSD 4.0 `barline`, `breath-mark`; `Gabc.tex:801-845` (minima = quarter bar, minor = half bar, maior = full bar, finalis), `src/dump/dump.c:805-821` |
 
