@@ -874,6 +874,11 @@ fn midi_full_loss_table() {
 /// Round-trip MIDI measurement with the additive `smf_exact_ticks` import
 /// option, printed next to the default row. Both rows use the same writer,
 /// the same corpus and the same declared SMF kinds; only the reader changes.
+///
+/// This compares the re-read model to the **written** inventory, so it is a
+/// diagnostic of the 4.7.4 importer, NOT a measure of what the SMF carries.
+/// The capacity measurement against the bytes in the file lives in
+/// `midi_smf_capacity.rs` (see `docs/agents/midi.md`).
 #[test]
 fn midi_exact_ticks_full_support() {
     let midi = &DIRECTIONS[4];

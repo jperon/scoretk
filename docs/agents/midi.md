@@ -214,136 +214,156 @@ binary fixture added).
   `lyrics_export` (four quarter notes, three syllables, pitches and onsets
   unchanged, no `FF 05` without lyrics).
 
-## SMF item declaration audit (2026-11-25)
+## SMF item declaration and the measurement rule (2026-11-25)
 
-User decision: MIDI "full support" means 100 % of what the SMF itself can
-carry, not 100 % of what a score would like to store. Measures, barlines,
-credits and layout stay **out of the denominator** (`Capabilities::with_kinds`,
-§11 of `docs/agents/model-modularisation.md`). Every declared kind below is
-cited from the local normative text (`format-ref/midi.md` §"Source key"):
+User decision: MIDI "full support" means 100 % of **what the SMF itself
+carries**, not 100 % of what a score would like to store. That rule has two
+consequences, both now applied:
+
+1. a kind with no SMF object is outside the denominator (measures, barlines,
+   clefs, credits, layout, repeats, tuplets, ties, slurs —
+   `[SMF §Container layout; §Instruments, parts, repeats]`);
+2. the expected value is the **performance in the file**, not the written
+   score: Note On/Off ticks (repeats unfolded, gate times, tied notes merged,
+   grace notes shifted) and meta-events. Comparing the model's written ticks
+   to an SMF performance was a measurement error, not a format limit.
+
+Every declared kind below is cited from the local normative text
+(`format-ref/midi.md` §"Source key"):
 
 | Inventory kind | SMF carrier | Citation |
 | --- | --- | --- |
 | `time-sig` | `FF 58 04 nn dd cc bb` | `[SMF §Meta-Events]` |
 | `key-sig` | `FF 59 02 sf mi` | `[SMF §Meta-Events]` |
 | `note` | Note On/Off, note number, velocity | `[MIDI §Channel Voice; Table II]` |
-| `rest` | silence between Note Off and the next Note On (no rest object) | `[SMF §Track Chunk]` |
 | `lyric` | `FF 05`, one event per syllable | `[SMF §Meta-Events; RP-017]` |
 | `staff-text`, `system-text` | `FF 01 len text` ("Text event", types `01`–`0F` reserved for text) | `[SMF §Meta-Events]` |
 | `rehearsal-mark` | `FF 06` marker, `FF 07` cue point | `[SMF §Meta-Events]` |
 | `tempo` | `FF 51 03 tttttt` | `[SMF §Meta-Events]` |
-| `title` | `FF 02` copyright, `FF 03` track name, `FF 04` instrument name, `{#TITLE=}` in RP-026 text | `[SMF §Meta-Events; RP-026]` |
+| `title` | `FF 02` copyright, `FF 03` sequence/track name, `FF 04` instrument name, RP-026 `{#…=}` | `[SMF §Meta-Events; RP-026]` |
 | `instrument` | program change plus track/instrument names (SMF has no MuseScore instrument id) | `[MIDI §Program Change; GM §Sound Set]` |
 | `program`, `channel`, `volume`, `pan`, `velocity` | channel status nibble, `C0`, `CC 7`, `CC 10`, note-on data byte | `[MIDI §Channel Voice; GM §Requirements]` |
 
-The previous declaration listed `marker`, but the inventory's `marker` is a
-**segno/coda repeat marker** (L1). `FF 06` is a rehearsal mark / section name
-(`[SMF §Meta-Events]`), and SMF has no repeats (`[SMF §Instruments, parts,
-repeats]`); the declaration now uses `rehearsal-mark` (L3) instead. The audit
-also **added the missing `FF 01` text** (`staff-text`, `system-text`) and
-`FF 06`/`FF 07` (`rehearsal-mark`). Excluded with a citation: `measure`,
-`barline`, `clef`, `volta`, `tuplet`, `tie`, `slur`, `tremolo`, `credit`
-(`[SMF §Container layout]`, `[SMF §Instruments, parts, repeats]`) and
-`dynamic-velocity` (SMF has attack velocity only). The core test
-`midi_declaration_follows_smf_spec` pins both sides of the list, and
-`midi_full_loss_table` prints the full per-kind loss table (diagnostic only).
+**`rest` was removed from the declaration.** `[SMF §Track Chunk]` defines an
+`MTrk` as `<delta-time><event>` pairs and `[SMF §Events and time]` defines only
+Note On/Off: silence is the *absence* of a note, reconstructed by the importer.
+A rest is therefore not an object the format can carry, and counting 200 rest
+items as "lost" was wrong. The previous declaration also listed `marker`,
+but the inventory's `marker` is a segno/coda repeat marker (L1); `FF 06` is a
+rehearsal mark (L3) and SMF has no repeats. The core test
+`midi_declaration_follows_smf_spec` pins both sides of the list.
 
-Before the audit (14 kinds) the 56-score round trip scored **73.51 %**;
-after adding four spec-carried kinds and correcting `marker` it scores
-**72.71 %** over 2 550 items — a lower percentage with a *more honest*
-denominator, not a regression of any output byte. Import alone is
-51.68 % over the 21 MuseScore reference MIDIs. The complete loss table:
+| Declaration | Declared kinds | Denominator | Written-tick full support |
+| --- | ---: | ---: | ---: |
+| Before the 2026-11-25 audit | 14 | 2 522 | 73.51 % |
+| After adding `FF 01`/`FF 06` kinds, before removing `rest` | 16 | 2 550 | 72.71 % |
+| **Current (no `rest`)** | **15** | **2 278** | **78.23 %** |
 
-| Kind | Layer | Round trip | Import alone |
-| --- | --- | ---: | ---: |
-| `note` | L2 | 284 | 53 |
-| `rest` | L2 | 200 | 35 |
-| `title` | L3 | 60 | 22 |
-| `key-sig` | L1 | 37 | 5 |
-| `staff-text` (`FF 01`) | L3 | 24 | — |
-| `instrument` | L4 | 23 | 7 |
-| `time-sig` | L1 | 17 | 7 |
-| `tempo` | L3 | 14 | 10 |
-| `lyric` | L3 | 13 | — |
-| `program` | L4 | 9 | 5 |
-| `system-text` (`FF 01`) | L3 | 8 | — |
-| `rehearsal-mark` (`FF 06`) | L3 | 7 | — |
+No output byte changed in any direction: the denominator and the comparison
+rule changed, not the converters. `midi_full_loss_table` remains a diagnostic
+print of the *written-tick* comparison; it is not the capacity measurement.
 
-The `note`/`rest` losses are addressed by the additive `smf_exact_ticks`
-import option and the text/marker/title losses by the additive `smf_text`
-export+import option (§"Full SMF support measured with options"). Both keep
-MuseScore 4.7.4 behaviour as the default.
+## Format capacity measured against the written SMF
 
-## Full SMF support measured with options
+`crates/scoretk/tests/midi_smf_capacity.rs` parses the bytes **written by
+scoretk** with `midly`, independently of the importer, and compares what is
+actually in the file with the model obtained by reading it back. Notes are
+matched on the five fields the SMF carries; metas are matched value by value
+(occurrence counts would penalise repeats that the format must write). All
+options stay opt-in: the 4.7.4 default is unchanged, and "format capacity" is
+the row with **both** `smf_exact_ticks` and `smf_text` enabled.
 
-### Additive text/marker export and import (`smf_text`)
+### Notes: before / after (56 scores, 2 300 attacks)
+
+| Reader / writer | Combined | Pitch | Onset | Duration | Velocity | Channel |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Default 4.7.4 import / writer | 33.36 % | 100.00 % | 83.76 % | 34.54 % | 100.00 % | 99.78 % |
+| `smf_exact_ticks` | 98.91 % | **100.00 %** | **100.00 %** | **99.12 %** | **100.00 %** | 99.78 % |
+| `smf_exact_ticks` + `smf_text` | **98.91 %** | **100.00 %** | **100.00 %** | **99.12 %** | **100.00 %** | 99.78 % |
+
+The default row is *not* a capacity figure: MuseScore's importer requantises
+to the sixteenth grid and simplifies durations. The exact option now keeps
+note **offs** on the source grid too (`basic_quant`, not Q32): a gate of 912
+ticks used to be round-tripped as 960 because Q32 is 60 ticks. The written
+`end-1` convention is normalised by one tick, which is the format's own
+inclusive/exclusive ambiguity. Per-kind residuals with both options:
+
+- `v3/voices` — 5 notes: the writer's harmony channel (1) is not reconstructed;
+  the importer assigns them to the part's main channel 2. The SMF carries the
+  channel, the pivot model has no per-note channel field.
+- `v3/moonlight` — 20 notes: two Note On at the same tick for the same
+  (channel, pitch), then a velocity-0 Note On. A literal note-off pairing keeps
+  the long gate; MuseScore's `removeOverlappingNotes` cuts it at the next
+  same-pitch attack. Both readings are legal for the same bytes.
+
+### Other kinds: before / after (distinct values in the SMF)
+
+| Kind | Default | `smf_exact_ticks` + `smf_text` | With private prefixes removed |
+| --- | ---: | ---: | ---: |
+| `time-sig` (`FF 58`) | 90.16 % | **100.00 %** | 100.00 % |
+| `key-sig` (`FF 59`) | 83.33 % | 96.97 % | 98.48 % |
+| `tempo` (`FF 51`) | 96.72 % | 98.36 % | 98.36 % |
+| `lyric` (`FF 05`) | 100.00 % | 100.00 % | 100.00 % |
+| `staff-text` (`FF 01`) | — | **100.00 %** | 0.00 % |
+| `system-text` (`FF 01`) | — | **100.00 %** | 0.00 % |
+| `rehearsal-mark` (`FF 06`) | — | **100.00 %** | 100.00 % |
+| `title` | — | **100.00 %** | 50.00 % |
+| `program` / `channel` | 88.71 % / 85.29 % | **100.00 %** / 98.53 % | 100.00 % / 98.53 % |
+| `volume` / `pan` | 87.50 % / 87.50 % | **100.00 %** / **100.00 %** | 100.00 % / 100.00 % |
+
+The default column is low mostly because four corpus scores have no notes:
+MuseScore's importer drops tracks without notes, and with them `FF 58`/`FF 59`/
+`FF 51`/`C0`/`CC 7`/`CC 10`. In exact mode those tracks (and measures up to the
+last meta tick) are kept, which closes those losses without changing the
+default path. The remaining key-sig (2 values) and tempo (1 value) gaps are
+key/tempo changes at ticks where the importer has no segment; they are printed
+by the test and not hidden in the denominator.
+
+## Additive options and private extensions
+
+### Text/marker export and import (`smf_text`)
 
 `MidiOptions::smf_text` (writer) and `ImportOptions::smf_text` (reader), both
-default `false`, carry the remaining text metas of `[SMF §Meta-Events]`:
+default `false`, prefer the standard carriers of `[SMF §Meta-Events]`:
 
-- `FF 01` generic text for `Annotation::StaffText`/`Expression` (prefix
-  `@ST:`) and `Annotation::SystemText` (prefix `@SY:`);
-- `FF 01` with `@TK:<field>:<value>` for the eleven string metadata fields
-  inventoried as `title` (`work_title`, `subtitle`, `composer`, …); copyright
-  uses the standard `FF 02`;
-- `FF 06` marker for `Annotation::RehearsalMark`.
+- `FF 03` sequence name of track 0 for `work_title` (RP-019 conventions; the
+  part name remains a later `FF 03`, and `FF 04` names the instrument);
+- `FF 02` copyright, `FF 06` marker for `Annotation::RehearsalMark`;
+- `FF 01` generic text for staff/system text (`@ST:`/`@SY:`) and the remaining
+  metadata fields (`@TK:<field>:<value>`).
 
-The prefixes are private semantics inside a standard text payload, the same
-pattern as ABC's `%%scoretk` directives: another sequencer displays the text
-unchanged; scoretk's additive reader maps it back to the exact model field.
-The default writer emits none of these (MuseScore 4.7.4 fidelity) and the
-default reader still treats `FF 01` as lyrics. `smf_text_full_round_trip` in
-`crates/scoretk-midi-export/tests/smf_text.rs` pins both sides: 0 text metas
-by default, all three kinds with the option, exact annotation counts and
-metadata after re-import. Facade: `MidiOptions::smf_text`; CLI:
-`--midi-text`; wasm: `midiText`.
+The `@…` prefixes are **private semantics** inside a standard `FF 01` payload,
+like ABC's `%%scoretk` directives: another sequencer displays the text, but
+only scoretk maps it back to an exact model field. The "with private prefixes
+removed" column above is measured by deleting those `FF 01` events from the
+written file before re-importing it: staff/system text falls to 0 % and title
+to 50 %, while every standard meta stays at its previous score. The option is
+exposed by `MidiOptions::smf_text`, CLI `--midi-text`, wasm `midiText`.
 
-### Additive exact-tick import (`smf_exact_ticks`)
+### Exact-tick import (`smf_exact_ticks`)
 
-`ImportOptions::smf_exact_ticks` (default `false`) is an additive extension:
-`read_midi` and the default facade/CLI/wasm path stay byte-for-byte the
-MuseScore 4.7.4 importer. When enabled:
+`ImportOptions::smf_exact_ticks` (default `false`) keeps onsets **and** offsets
+on the source tick grid (`1/1920` of a whole note), disables human-performance
+detection, tuplet rewriting and duration simplification, keeps empty tracks
+and extends measures to the last meta tick. The `end-1` tick written by
+`exportmidi.cpp` is compensated. Defaults stay byte-for-byte MuseScore 4.7.4;
+the option is exposed by `read_midi_with`, CLI `--midi-exact-ticks`, wasm
+`midiExactTicks`. Keep `expand_repeats = true` (4.7.4 default): both options
+enabled are the reported **format capacity** figure, not a new default.
 
-- onsets are quantised on the **source tick grid** (`1/1920` of a whole note,
-  i.e. one MIDI tick at 480 PPQ) instead of the mandatory sixteenth grid;
-- note-offs are still quantised on a 1/32 grid (a written duration is a
-  notation figure, not an SMF field), and the `end-1` tick of MuseScore's
-  `exportmidi.cpp` is compensated by one tick;
-- n-tuplets are not rewritten and durations are not simplified; a performance
-  duration is kept in `ChordRest::ticks` rather than chained into binary
-  figures (which would swallow the following attacks);
-- human-performance beat detection is disabled.
+### Written-tick comparison (diagnostic only)
 
-The option is exposed by `scoretk::read_midi_with` (facade), by the CLI flag
-`--midi-exact-ticks` and by the additive wasm `midiExactTicks` property. It is
-measured by `midi_exact_ticks_full_support` in `crates/scoretk/tests/layer_coverage.rs`
-on the same 56 MuseScore scores, with the same writer, layers and kinds:
+`midi_exact_ticks_full_support` in `layer_coverage.rs` still compares the
+re-read model to the *written* inventory. It is kept to measure the port's
+4.7.4 behaviour, **not** the format's capacity:
 
-| Reader / writer | Essential | Full support | L3 text | `title` loss |
-| --- | ---: | ---: | ---: | ---: |
-| default import, default writer | 83.41 % | 72.71 % | 15.44 % | 60 |
-| `smf_exact_ticks`, default writer | 83.66 % | 73.14 % | 15.44 % | 60 |
-| `smf_text` writer + reader | 83.41 % | 75.88 % | **69.80 %** | 13 |
-| `smf_exact_ticks` + `smf_text` | **83.66 %** | **76.31 %** | 69.80 % | 13 |
-| flat (`expand_repeats = false`) + both | **84.83 %** | **77.53 %** | 70.47 % | 12 |
-
-Two earlier diagnostic rows confirm that this is not a denominator effect:
-`expand_repeats = false` alone gives 84.57 % / 73.88 %, and a finer grid alone
-(`quant_value = Q1024`) is *worse* than the default (83.15 % / 72.39 %). The
-text option closes every `staff-text` (24), `system-text` (8) and
-`rehearsal-mark` (7) loss and 47 of the 60 `title` losses; the exact-tick
-option closes 6 `note` and 5 `rest` losses. All defaults and the 21/21 MIDI
-reference exports, the 21/21 round trip, the 4/21 import corpus and
-`e2e_corpus` 8/8 remain unchanged; every option is opt-in.
-
-The remaining gap is not a missing SMF writer feature: a score stores *written*
-ticks while an SMF stores a *performance* (repeats unfolded, gate times,
-tuplets as tick arithmetic — `[SMF §Instruments, parts, repeats]`). The two
-small measurements of §11.6 of `model-modularisation.md` still hold: flat
-output gains 27 notes and projecting the reference through `RepeatList::unwind`
-gains 44. Exact tick recovery can only close the quantisation part of that
-gap; it cannot map a performed attack back to a written segment that SMF does
-not identify.
+| Written-tick row (2 278 items) | Essential | Full support |
+| --- | ---: | ---: |
+| default | 83.41 % | 78.23 % |
+| `smf_exact_ticks` | 83.41 % | 79.06 % |
+| `smf_text` | 83.41 % | 81.78 % |
+| both options | 83.54 % | 83.41 % |
+| flat output + both | 84.70 % | 84.59 % |
 
 ## References and compliance test
 
