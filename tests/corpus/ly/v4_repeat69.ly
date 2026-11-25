@@ -21,15 +21,15 @@ staffOneVoiceOne = \fixed c' {
   \clef treble \key c \major \time 4/4
   R1 |
   \mark \markup { "Segno" } R1 |
-  R1 |
-  \mark \markup { "D.S." } R1 \bar "|."
+  \mark \markup { "D.S." } R1 |
+  R1 \bar "|."
 }
 
 staffTwoVoiceOne = \fixed c' {
   \clef treble \key c \major \time 4/4
   R1 |
-  R1 |
-  R1 |
+  \mark \markup { "Segno" } R1 |
+  \mark \markup { "D.S." } R1 |
   R1 \bar "|."
 }
 

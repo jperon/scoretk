@@ -36,7 +36,7 @@ staffOneVoiceOne = \fixed c' {
   f4 |
   \break
   \ottava 0 c4 \glissando a4 c4 \glissando a4 |
-  <c e g>4 <c e g>4 r4 a4~-4 |
+  <c e g>4\arpeggio <c e g>4 r4 a4~-4 |
   a4 r4 r4 a4~ |
   a4 r4 r4 a4~-4 |
   a4 r4 r2 |

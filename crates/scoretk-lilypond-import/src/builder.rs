@@ -35,11 +35,11 @@ use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, ArticulationType, BarLine, BarLineType, Chord,
     ChordEngraving, ChordRest, ChordRestEngraving, ChordRestKind, Clef, Credit, CreditStyle,
     Duration, Dynamic, Fingering, Fraction, Glissando, GlissandoType, GraceChord, Hairpin,
-    HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic, Measure, Note, NoteId, Part,
-    PartId, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score, ScoreMetadata, Segment,
-    SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff,
-    StaffBracket, StaffId, TboxText, Tempo, Track, Transpose, Trill, TrillType, Tuplet, TupletId,
-    VOICES,
+    HairpinType, Instrument, Jump, LineStyle, Lyrics, LyricsSyllabic, Marker, Measure, Note,
+    NoteId, Part, PartId, PedalInfo, Placement, RehearsalMark, RepeatMark, Rest, RichText, Score,
+    ScoreMetadata, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation,
+    SpannerType, Staff, StaffBracket, StaffId, TboxText, Tempo, Track, Transpose, Trill, TrillType,
+    Tuplet, TupletId, VOICES,
 };
 use scoretk_lilypond_common::midi_instruments;
 
@@ -2979,8 +2979,27 @@ fn place_meta(
     };
     match meta {
         MetaEvent::Clef(clef) => {
+            // MuseScore place la clef d'en-tête dans `HeaderClef` et une
+            // éventuelle seconde clef au même tick dans `Clef` (v3/clef-1).
+            // Deux `\clef` successifs en tête de portée doivent donc rester
+            // deux éléments relus, pas écraser le premier.
+            let header_taken = score.measures.first().is_some_and(|measure| {
+                measure.segments.iter().any(|segment| {
+                    segment.kind == SegmentType::HeaderClef
+                        && segment
+                            .element(track)
+                            .is_some_and(|item| matches!(item, SegmentItem::Clef(_)))
+                })
+            });
             let (target_measure, kind) = if tick.is_zero() {
-                (0, SegmentType::HeaderClef)
+                (
+                    0,
+                    if header_taken {
+                        SegmentType::Clef
+                    } else {
+                        SegmentType::HeaderClef
+                    },
+                )
             } else if slots
                 .get(measure_index)
                 .is_some_and(|slot| slot.start == tick)
@@ -3247,6 +3266,40 @@ fn place_annotation(score: &mut Score, tick: Fraction, track: Track, annotation:
     else {
         return;
     };
+    match annotation {
+        AnnotationEvent::Marker { label, kind } => {
+            score.measures[measure_index]
+                .repeat_marks
+                .push(RepeatMark::Marker(Marker {
+                    kind: *kind,
+                    label: label.clone(),
+                    text: label.clone(),
+                    placement: Placement::Above,
+                    track,
+                    visible: true,
+                }));
+            return;
+        }
+        AnnotationEvent::Jump {
+            text,
+            jump_to,
+            play_until,
+            continue_at,
+        } => {
+            score.measures[measure_index]
+                .repeat_marks
+                .push(RepeatMark::Jump(Jump::new(
+                    text.clone(),
+                    jump_to.clone(),
+                    play_until.clone(),
+                    continue_at.clone(),
+                    Placement::Above,
+                    track,
+                )));
+            return;
+        }
+        _ => {}
+    }
     let segment_index = ensure_segment(score, measure_index, SegmentType::ChordRest, tick);
     let value = match annotation {
         AnnotationEvent::Dynamic {
@@ -3273,6 +3326,9 @@ fn place_annotation(score: &mut Score, tick: Fraction, track: Track, annotation:
             kind: Default::default(),
         }),
         AnnotationEvent::Mark(text) => Annotation::RehearsalMark(RehearsalMark::new(text.clone())),
+        AnnotationEvent::Marker { .. } | AnnotationEvent::Jump { .. } => {
+            unreachable!("marqueurs et sauts sont placés avant le segment")
+        }
         AnnotationEvent::Text { text, placement } => {
             let mut staff_text = scoretk_core::model::StaffText::new(text.clone());
             staff_text.placement = *placement;

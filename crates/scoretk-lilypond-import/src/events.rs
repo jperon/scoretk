@@ -36,7 +36,7 @@
 
 use scoretk_core::model::{
     Arpeggio, ArpeggioType, Articulation, ArticulationType, BarLineType, Breath, BreathType,
-    ChordLineType, Duration, DurationType, Fraction, GraceType, HairpinType, Key, KeySig,
+    ChordLineType, Duration, DurationType, Fraction, GraceType, HairpinType, Key, KeySig, MarkerType,
     NoteHeadGroup, Ornament, OrnamentType, OttavaType, Placement, StemDirection, Tremolo,
     TremoloKind,
 };
@@ -144,6 +144,15 @@ pub(crate) enum AnnotationEvent {
     },
     /// Repère de répétition.
     Mark(String),
+    /// Marqueur MuseScore (`segno`, `codab`, `fine`…) reconnu dans un `\mark`.
+    Marker { label: String, kind: MarkerType },
+    /// Saut MuseScore (`D.C.`, `D.S. al Coda`…) reconnu dans un `\mark`.
+    Jump {
+        text: String,
+        jump_to: String,
+        play_until: String,
+        continue_at: String,
+    },
     /// Texte de portée.
     Text {
         /// Texte.
@@ -1061,7 +1070,8 @@ impl<'a> Interpreter<'a> {
             }
             Context::Mark(text) => {
                 if !text.trim().is_empty() {
-                    self.annotation(AnnotationEvent::Mark(text.clone()));
+                    let event = repeat_mark_event(text.trim());
+                    self.annotation(event.unwrap_or_else(|| AnnotationEvent::Mark(text.clone())));
                 }
             }
             Context::Ottava(shift, visible) => self.event(EventKind::Ottava(*shift, *visible)),
@@ -2656,6 +2666,71 @@ fn tremolo_count(value: u8) -> u8 {
         count += 1;
     }
     count
+}
+
+/// `\mark \markup { "…" }` porte aussi les marqueurs et sauts MuseScore quand
+/// le texte est une étiquette connue (`MarkerType::from_label`) ou le libellé
+/// d'un saut (`jump_name` de l'écrivain). Les autres textes restent des
+/// repères de répétition ordinaires.
+fn repeat_mark_event(text: &str) -> Option<AnnotationEvent> {
+    let lower = text.trim().to_ascii_lowercase();
+    let known = [
+        "segno",
+        "varsegno",
+        "codab",
+        "varcoda",
+        "codetta",
+        "fine",
+        "coda",
+        "codasym",
+        "dacoda",
+        "dadblcoda",
+    ];
+    if known.contains(&lower.as_str()) {
+        return Some(AnnotationEvent::Marker {
+            kind: MarkerType::from_label(&lower),
+            label: lower,
+        });
+    }
+    // L'écrivain utilise `marker_name` quand le libellé du modèle est vide :
+    // « To Coda » porte le label `coda`, « Da Coda » le label `dacoda`.
+    if let Some(label) = match lower.as_str() {
+        "to coda" => Some("coda"),
+        "da coda" => Some("dacoda"),
+        "double coda" => Some("codetta"),
+        _ => None,
+    } {
+        return Some(AnnotationEvent::Marker {
+            kind: MarkerType::from_label(label),
+            label: label.to_owned(),
+        });
+    }
+    if lower.starts_with("segno")
+        && lower.len() > 5
+        && lower[5..].chars().all(|digit| digit.is_ascii_digit())
+    {
+        return Some(AnnotationEvent::Marker {
+            kind: MarkerType::User,
+            label: lower,
+        });
+    }
+    let targets = match lower.as_str() {
+        "d.c." | "dacapo" => ("start", "end", ""),
+        "d.c. al fine" => ("start", "fine", ""),
+        "d.c. al coda" => ("start", "coda", "codab"),
+        "d.s." | "dalsegno" => ("segno", "end", ""),
+        "d.s. al fine" => ("segno", "fine", ""),
+        "d.s. al coda" => ("segno", "coda", "codab"),
+        "d.c. al double coda" => ("start", "varcoda", "codab"),
+        "d.s. al double coda" => ("segno", "varcoda", "codab"),
+        _ => return None,
+    };
+    Some(AnnotationEvent::Jump {
+        text: text.trim().to_owned(),
+        jump_to: targets.0.to_owned(),
+        play_until: targets.1.to_owned(),
+        continue_at: targets.2.to_owned(),
+    })
 }
 
 /// Texte d'un tempo : `♩` (U+2669) est la forme LilyPond standard du symbole

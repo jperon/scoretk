@@ -29,14 +29,14 @@
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
   \tempo "♩ = 400" 4 = 400 \mark \markup { "segno" }
-  c1 ^\markup { "1,2,3   1   4,5,6,7,8   5,6" } |
-  \mark \markup { "To Coda" } d1 |
-  e1 |
-  \mark \markup { "D.S. al Coda" } f1 ^\markup { "coda" } |
+  c1 ^\markup { "1,2,3   1   4,5,6,7,8   5,6" } ^\markup { "To Coda" } |
+  d1 |
+  \mark \markup { "D.S. al Coda" } e1 |
+  \mark \markup { "coda" } f1 |
   \break
-  g1 |
-  \mark \markup { "segno1" } a1 |
-  \mark \markup { "Fine" } b1 |
+  \mark \markup { "segno1" } g1 |
+  \mark \markup { "Fine" } a1 |
+  b1 |
   \mark \markup { "D.S.1 al Fine" } c'1 \bar "|."
 }
 

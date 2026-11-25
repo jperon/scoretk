@@ -5941,6 +5941,44 @@ fn repeat_tremolo_etire_les_durees() {
     );
 }
 
+/// Notation Reference §5.1.4 : `\arpeggio` est l'arpeège normal, distinct des
+/// variantes fléchées.
+#[test]
+fn arpeggio_normal_est_relu() {
+    let score = lire("c'4 \\arpeggio d'4");
+    let kinds: Vec<_> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .filter_map(|chord_rest| chord_rest.chord_ref())
+        .filter_map(|chord| chord.arpeggio)
+        .map(|arpeggio| arpeggio.kind)
+        .collect();
+    assert_eq!(kinds, [scoretk_core::model::ArpeggioType::Normal]);
+}
+
+/// Les libellés de marqueurs et de sauts sont des `\mark` LilyPond ordinaires :
+/// le lecteur les rattache aux objets de reprise du modèle.
+#[test]
+fn mark_reconnait_un_marqueur_et_un_saut() {
+    let score = lire("\\mark \\markup { \"Fine\" } c'1 \\mark \\markup { \"D.C.\" } d'1");
+    let marks: Vec<String> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.repeat_marks.iter())
+        .map(|mark| match mark {
+            scoretk_core::model::RepeatMark::Marker(marker) => {
+                format!("{:?}:{}", marker.kind, marker.label)
+            }
+            scoretk_core::model::RepeatMark::Jump(jump) => {
+                format!("{:?}:{}", jump.kind, jump.jump_to)
+            }
+        })
+        .collect();
+    assert_eq!(marks, ["Fine:fine", "Dc:start"]);
+}
+
 /// Notation Reference §2.5.3 : les deux voix du corps portent les genres
 /// `Start` puis `Stop` du modèle, et `n = 2^(count-1)` encode `count` barres.
 #[test]

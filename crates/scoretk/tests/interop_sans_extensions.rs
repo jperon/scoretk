@@ -610,6 +610,13 @@ fn lilypond_other_loss_keys() {
             "tbox-text",
             "credit-position",
             "tempo",
+            "line-break",
+            "arpeggio",
+            "glissando",
+            "pedal",
+            "program",
+            "instrument",
+            "dynamic-velocity",
         ],
     );
 }

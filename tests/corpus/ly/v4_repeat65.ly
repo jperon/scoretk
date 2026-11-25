@@ -31,10 +31,10 @@ staffOneVoiceOne = \fixed c' {
   \alternative {
     {
       e1 |
-      f1 |
+      \mark \markup { "D.C." } f1 |
     }
     {
-      \mark \markup { "D.C." } g1 ^\markup { "3x" } \bar "|."
+      g1 ^\markup { "3x" } \bar "|."
     }
   }
 }

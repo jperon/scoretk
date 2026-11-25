@@ -366,43 +366,37 @@ pub(crate) fn render_body(
 
     // Marqueurs et sauts de reprise (`Measure::el()`) : MuseScore les range
     // dans la première partie, et LilyPond n'a qu'un `\mark` par instant.
-    if voice == 0 && staff == 0 {
+    if voice == 0 {
         for measure in &score.measures {
             for mark in &measure.repeat_marks {
-                let event = match mark {
-                    RepeatMark::Marker(marker) => {
-                        let plain = if marker.text.trim().is_empty() {
+                let (plain, at_end) = match mark {
+                    RepeatMark::Marker(marker) => (
+                        if marker.text.trim().is_empty() {
                             marker_name(marker.kind).to_owned()
                         } else {
                             marker.text.trim().to_owned()
-                        };
-                        let tick = if marker.kind.is_start_marker() {
-                            measure.start_tick
-                        } else {
-                            measure.end_tick()
-                        };
-                        Event::new(
-                            tick,
-                            before::MARK,
-                            format!("\\mark {}", text::markup(&text::escape(&plain))),
-                        )
-                    }
-                    RepeatMark::Jump(jump) => {
-                        let plain = if jump.text.trim().is_empty() {
+                        },
+                        !marker.kind.is_start_marker(),
+                    ),
+                    RepeatMark::Jump(jump) => (
+                        if jump.text.trim().is_empty() {
                             jump_name(jump.kind).to_owned()
                         } else {
                             jump.text.trim().to_owned()
-                        };
-                        Event::new(
-                            measure.end_tick(),
-                            before::MARK,
-                            format!("\\mark {}", text::markup(&text::escape(&plain))),
-                        )
-                    }
+                        },
+                        true,
+                    ),
                 };
-                if event.text == "\\mark \\markup { \"\" }" {
+                if plain.trim().is_empty() {
                     continue;
                 }
+                let token = format!("\\mark {}", text::markup(&text::escape(&plain)));
+                let _ = at_end;
+                // L'inventaire ancre les marqueurs et sauts au tick de début
+                // de mesure du `.mscx`. LilyPond attache `\mark` à la note
+                // suivante : le poser avant la première note de cette mesure
+                // garde le tick d'origine à la relecture.
+                let event = Event::new(measure.start_tick, before::MARK, token);
                 attach_mark(&mut pre_by_item, &mut post_by_item, &items, event);
             }
         }

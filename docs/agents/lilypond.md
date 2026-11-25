@@ -274,7 +274,7 @@ Instrument names go through `\with { instrumentName = … shortInstrumentName = 
 | `GraceType` | `\grace`, `\acciaccatura`, `\appoggiatura`; `…After` types → `\afterGrace` |
 | `ArticulationType` | `-.` staccato, `-!` staccatissimo/spiccato, `->` accent, `-^` marcato, `--` tenuto, `-_` portato, `\espressivo`, `\fermata` and variants, `\breathe`, `\caesura`, `\upbow`, `\downbow`, `\flageolet`, `\open`, `\stopped`, `\snappizzicato` |
 | `OrnamentType` | `\trill`, `\turn`, `\reverseturn`, `\slashturn`, `\mordent`, `\prall`, `\prallprall`, `\haydnturn`, `\upmordent` |
-| `Arpeggio` | `\arpeggio`, `\arpeggioArrowUp`/`Down`, `\arpeggioBracket` |
+| `Arpeggio` | `\arpeggio` (normal), `\arpeggioArrowUp`/`Down`, `\arpeggioBracket` |
 | `Tremolo` | single note `:8`, `:16`, `:32`; two-note `\repeat tremolo n { c16 e16 }` (`n = 2^(count-1)`, so MuseScore `c32` → `4`) |
 | `Fingering` | `-1` for a digit, `-\markup { "T" }` otherwise |
 | `ChordLine` | `\bendAfter`, the only standard command (fall, rise, plop and scoop are not distinguished by LilyPond) |
@@ -349,7 +349,10 @@ A start barline and an end barline (`<endRepeat>N</endRepeat>`) give
 
 The body stops at the start of the first ending; an ending that occupies the whole
 section stands in for the body. A repeat without a second ending is written as
-a simple repeat (the music is the same on both passes).
+a simple repeat (the music is the same on both passes). `\mark \markup { "…" }`
+carries MuseScore's markers and jumps as well: the reader maps known labels
+(`segno`, `codab`, `fine`, `To Coda`…) and jump names (`D.C.`, `D.S. al Coda`…)
+back to `RepeatMark` objects at the measure's reference tick.
 
 ## 5. Event attachment
 

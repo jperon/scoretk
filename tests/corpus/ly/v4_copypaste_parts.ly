@@ -24,7 +24,7 @@ staffOneVoiceOne = \fixed c' {
   \key e \major \time 3/4 \clef bass
   \set Staff.midiMinimumVolume = #0.385827
   \set Staff.midiMaximumVolume = #0.385827 \ottava 0
-  <b fs'>4 \sustainOff _\p \< b4~-^ b4 |
+  <b fs'>4\arpeggio \sustainOff _\p \< b4~-^ b4 |
   \key c \major \time 4/4 \clef treble
   b4 \! \startTrillSpan
   \repeat tremolo 4 { b16 \stopTrillSpan b16 \glissando } f4 |

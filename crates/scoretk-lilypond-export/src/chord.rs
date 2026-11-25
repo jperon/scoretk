@@ -32,9 +32,9 @@
 //! articulations, ornements, arpège, trémolo et accords d'agrément.
 
 use scoretk_core::model::{
-    AccidentalType, Articulation, ArticulationType, Chord, ChordLineType, ChordRest, Duration,
-    Fraction, GraceChord, GraceType, Note, Ornament, OrnamentType, Score, StemDirection, Tremolo,
-    TremoloKind, Tuplet,
+    AccidentalType, ArpeggioType, Articulation, ArticulationType, Chord, ChordLineType, ChordRest,
+    Duration, Fraction, GraceChord, GraceType, Note, Ornament, OrnamentType, Score, StemDirection,
+    Tremolo, TremoloKind, Tuplet,
 };
 
 use crate::duration::{duration_token, length_token, with_multiplier};
@@ -280,6 +280,16 @@ fn chord_token(
         if let Some(tremolo) = &chord.tremolo {
             token.push_str(&tremolo_token(tremolo));
         }
+    }
+    if chord
+        .arpeggio
+        .as_ref()
+        .is_some_and(|arpeggio| arpeggio.visible && arpeggio.kind == ArpeggioType::Normal)
+    {
+        // `\arpeggio` est un post-événement : les variantes fléchées sont
+        // écrites en préfixe par `arpeggio_prefix`, l'arpeège normal se place
+        // après la figure (Notation Reference §5.1.4).
+        token.push_str("\\arpeggio");
     }
     token.push_str(&articulations(&chord.articulations));
     token.push_str(&ornaments(&chord.ornaments));
