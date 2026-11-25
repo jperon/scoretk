@@ -184,11 +184,10 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
         &sigmap,
         last_tick,
         basic_quant,
-        quant::quant_value_to_fraction(if options.smf_exact_ticks {
-            operations::QuantValue::Q32
-        } else {
-            quant_value
-        }),
+        // Le tick de Note Off est, lui aussi, une donnée du SMF : en mode
+        // exact on garde sa valeur source (grille d'un tick), sinon on
+        // requantifie les fins comme MuseScore 4.7.4 (Q16 par défaut).
+        basic_quant,
         options,
         is_human,
         is_human && beat_data.is_none(),
