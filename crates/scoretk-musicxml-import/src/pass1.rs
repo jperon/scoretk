@@ -467,9 +467,11 @@ fn part_data(score_part: &Element, id: &str) -> PartData {
         instrument.volume = midi
             .child_f64("volume")
             .map(|percent| (percent / 100.0 * 127.0).round().clamp(0.0, 127.0) as u8);
+        // `MusicXmlParserPass1::midiInstrument` (`importmusicxmlpass1.cpp:2621`)
+        // convertit avec un `static_cast<int>` : 0 donne 63 et non 64.
         instrument.pan = midi.child_f64("pan").map(|pan| {
-            let raw = pan / 90.0 * 63.5 + 63.5;
-            raw.round().clamp(0.0, 127.0) as u8
+            let raw = (pan + 90.0) / 180.0 * 127.0;
+            raw.clamp(0.0, 127.0) as u8
         });
     }
     if instruments.is_empty() {

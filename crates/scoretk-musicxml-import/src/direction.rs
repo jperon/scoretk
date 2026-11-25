@@ -239,7 +239,17 @@ pub(crate) fn read_direction(
                                 let size = kind
                                     .attribute("font-size")
                                     .and_then(|size| size.parse::<f64>().ok());
-                                tbox_words = Some((kind.text_trimmed().to_owned(), size));
+                                // Le texte d'un cadre vient du `.mscx` sous forme
+                                // de balisage : les fins de ligne et les guillemets
+                                // échappés font partie du texte du modèle. Ne pas
+                                // rogner les blancs conserve `repeat65` et
+                                // `voiceswitching` (§52 de musicxml-export.md).
+                                tbox_words = Some((kind.text.clone(), size));
+                            } else if let Some((text, _)) = tbox_words.as_mut() {
+                                // Les lignes suivantes d'un même `<direction>` sont
+                                // des `<words>` sans `valign` : MuseScore les
+                                // concatène dans le même cadre.
+                                text.push_str(&kind.text);
                             } else {
                                 words.push_str(kind.text_trimmed());
                                 words_markup.push_str(&formatted_words(kind));
@@ -318,8 +328,9 @@ pub(crate) fn read_direction(
 
     if let Some((text, font_size)) = tbox_words {
         if !text.is_empty() {
+            let markup = text.replace('"', "&quot;");
             let mut tbox = scoretk_core::model::TboxText::new(
-                scoretk_core::model::RichText::new(text),
+                scoretk_core::model::RichText::new(markup),
                 measure_index,
             );
             tbox.placement = default_placement.unwrap_or(Placement::Above);
