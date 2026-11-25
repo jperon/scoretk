@@ -1054,7 +1054,7 @@ impl<'a> Interpreter<'a> {
             } => {
                 if !text.trim().is_empty() || beats_per_minute.is_some() {
                     self.annotation(AnnotationEvent::Tempo {
-                        text: text.clone(),
+                        text: tempo_text(text),
                         beats_per_minute: *beats_per_minute,
                     });
                 }
@@ -2656,6 +2656,12 @@ fn tremolo_count(value: u8) -> u8 {
         count += 1;
     }
     count
+}
+
+/// Texte d'un tempo : `♩` (U+2669) est la forme LilyPond standard du symbole
+/// métronomique que MuseScore range dans la zone privée (U+ECA5).
+fn tempo_text(text: &str) -> String {
+    text.replace('♩', "\u{ECA5}")
 }
 
 /// Texte d'une nuance.

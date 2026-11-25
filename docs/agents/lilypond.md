@@ -288,7 +288,7 @@ Instrument names go through `\with { instrumentName = … shortInstrumentName = 
 | --- | --- |
 | predefined `Dynamic` (`p`, `mf`, `sfz`…) | `\p`, `\mf` (with `_`/`^` according to placement) |
 | custom `Dynamic` | `-\markup { "…" }` |
-| `Tempo` | `\tempo "Allegro" 4 = 120` (text alone if there are no beats per second) |
+| `Tempo` | `\tempo "Allegro" 4 = 120`; MuseScore's private metronome glyph U+ECA5 is written as the standard `♩` (U+2669) and read back, e.g. `\tempo "♩ = 88" 4 = 88` |
 | `StaffText`, `Expression`, `SystemText`, `InstrumentChange` | `^\markup { "…" }` / `_\markup` |
 | `RehearsalMark` | `\mark \markup { "A" }`; a second mark at the same instant becomes a `\markup` |
 | `Harmony` | `^\markup { "Cm7" }` (the model's text, not `\chordmode`) |
@@ -491,11 +491,14 @@ not of reader regressions.
   them.
 - **Text**: markup (`<b>`, `<font>`, `<sym>` symbols) is lost; characters from
   the private use area (MuseScore symbols) are removed to
-  avoid missing glyphs. A tempo whose text is only a metronome
-  symbol (`♩ = 80`) loses its label and keeps `4 = 80`.
+  avoid missing glyphs, except the metronome symbol U+ECA5, which is written
+  as standard `♩` and read back (§52.4).
 - **Tempo unit**: `\tempo` is always written with the quarter note
   (`4 = bpm`), the model having no beat unit; a tempo at the half note or
-  dotted half note is therefore notated with the quarter note.
+  dotted half note is therefore notated with the quarter note. LilyPond 2.26
+  accepts only an exact unsigned integer after `4 =`: a decimal BPM has no
+  standard representation and is documented as such, not silently rounded in
+  the text.
 - **Invisible tempo**: a `print-object="no"` tempo direction is not
   written at all (MuseScore nevertheless keeps its playback effect).
 - **Lyrics**: no `\addlyrics`, only `\lyricsto`; syllables
@@ -9733,11 +9736,15 @@ per §52.3):
   credits in order, shared through `scoretk_lilypond_common::headers`.
   `opus` is deliberately excluded because it is the standard work-number
   field; `breakbefore` accepts a string and compiles without warning.
+- **Tempo.** The private metronome glyph U+ECA5 is translated to the standard
+  Unicode quarter note `♩` (U+2669) before escaping, so `\tempo "♩ = 88"
+  4 = 88` compiles without warning; the reader maps `♩` back to U+ECA5. This
+  closed the 16 remaining `tempo` items. A decimal BPM after `4 =` has no
+  representation: LilyPond 2.26 rejects both `120.5` and
+  `#(ly:make-moment 241 2)` ("not an exact unsigned number"), so the
+  integer BPM is written and the written text keeps MuseScore's value.
 - All 56 corpus outputs still compile with LilyPond 2.27
-  (`lilypond_compile`: 56/56), with no new warning. A decimal BPM after
-  `4 =` was tried and reverted: LilyPond rejects it (`unexpected REAL`).
-  Private-use glyphs in tempo text were also reverted: they produce a
-  "no glyph" warning that the compile test forbids.
+  (`lilypond_compile`: 56/56), with no new warning.
 
 ### 52.3 Honest declaration, now per value for heads and tremolos
 

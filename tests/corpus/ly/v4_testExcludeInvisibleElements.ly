@@ -21,7 +21,7 @@ staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
   c4 \fermata c4 \fermata d4-. d4 |
   c4 ^\markup { "Visible text" } c4 c4 c4 |
-  \tempo 4 = 80 d4 d4 d4 d4 |
+  \tempo "♩ = 80" 4 = 80 d4 d4 d4 d4 |
   c4\reverseturn c4\turn c4 c4 |
   \break
   \set Staff.midiMinimumVolume = #0.385827

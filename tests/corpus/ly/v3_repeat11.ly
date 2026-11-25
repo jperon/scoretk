@@ -28,7 +28,8 @@
 
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
-  \tempo 4 = 400 c'1 ^\markup { "1,2,3,4   2,3   5,6,7,8   2   9,10" } |
+  \tempo "♩ = 400" 4 = 400
+  c'1 ^\markup { "1,2,3,4   2,3   5,6,7,8   2   9,10" } |
   \repeat volta 2 {
     \mark \markup { "segno" } b1 |
     \mark \markup { "To Coda" } a1 |

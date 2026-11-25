@@ -28,7 +28,7 @@
 
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
-  \tempo 4 = 400 c1 ^\markup { "1,2,3,4,5,6   1,2,3" } |
+  \tempo "♩ = 400" 4 = 400 c1 ^\markup { "1,2,3,4,5,6   1,2,3" } |
   d1 |
   e1 |
   \mark \markup { "Fine" } f1 |

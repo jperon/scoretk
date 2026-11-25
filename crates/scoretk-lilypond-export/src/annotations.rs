@@ -79,19 +79,21 @@ pub(crate) fn events(annotation: &Annotation, tick: Tick) -> Vec<Event> {
             events
         }
         Annotation::Tempo(tempo) => {
-            // Un texte réduit à un symbole musical (`♩ = 80`) ne laisse rien
-            // après nettoyage : seule la valeur métronomique est écrite.
-            // Un texte réduit à un symbole musical (`♩ = 80`) ne laisse rien
-            // après nettoyage : les symboles de la zone à usage privé n'ont
-            // pas de glyphe dans les polices LilyPond et les écrire ferait
-            // échouer le test de compilation sans avertissement.
-            let plain = text::rich_text(&tempo.text);
-            let label = if plain.chars().any(char::is_alphabetic) {
-                format!("\"{}\"", plain.trim())
-            } else {
+            // Le symbole métronomique privé de MuseScore (U+ECA5) est rendu
+            // par `♩` (U+2669) : un glyphe standard, accepté sans avertissement
+            // par LilyPond et relu comme le symbole du modèle. Le texte n'est
+            // donc plus perdu quand il ne contient que `♩ = N`.
+            let plain = text::rich_text_standard(&tempo.text);
+            let label = if plain.trim().is_empty() {
                 String::new()
+            } else {
+                format!("\"{}\"", plain.trim())
             };
-            // LilyPond 2.26 n'accepte qu'un entier après `4 =`.
+            // LilyPond 2.26 n'accepte qu'un entier exact après `4 =` :
+            // `4 = 120.5` et `#(ly:make-moment 241 2)` sont refusés par le
+            // compilateur (« n'est pas un nombre exact sans signe »). Un BPM
+            // décimal n'a donc pas de représentation standard ici ; le texte
+            // garde la valeur écrite par MuseScore.
             let metronome = tempo
                 .beats_per_second
                 .filter(|beats| *beats > 0.0)
@@ -208,6 +210,14 @@ mod tests {
         tempo.beats_per_second = Some(2.0);
         let events = events(&Annotation::Tempo(tempo), Tick::ZERO);
         assert_eq!(events[0].text, "\\tempo \"Allegro\" 4 = 120");
+    }
+
+    #[test]
+    fn tempo_avec_symbole_metronomique_standard() {
+        let mut tempo = Tempo::new("\u{ECA5} = 88");
+        tempo.beats_per_second = Some(88.0 / 60.0);
+        let events = events(&Annotation::Tempo(tempo), Tick::ZERO);
+        assert_eq!(events[0].text, "\\tempo \"♩ = 88\" 4 = 88");
     }
 
     #[test]

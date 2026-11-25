@@ -24,7 +24,7 @@
 
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
-  \tempo 4 = 400 e1 ^\markup { "no playback" } \bar "|."
+  \tempo "♩ = 400" 4 = 400 e1 ^\markup { "no playback" } \bar "|."
 }
 
 \score {

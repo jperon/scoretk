@@ -41,9 +41,21 @@ pub(crate) fn escape(text: &str) -> String {
     escaped
 }
 
-/// Texte brut d'un [`RichText`], échappé pour LilyPond.
-pub(crate) fn rich_text(text: &RichText) -> String {
-    escape(text.plain())
+/// Texte brut avec les symboles musicaux privés de MuseScore remplacés par
+/// leurs équivalents Unicode standard. `U+ECA5` (symbole métronomique de
+/// MuseScore) devient `♩` (U+2669), que les polices LilyPond connaissent et
+/// que le lecteur ramène au symbole du modèle. Les autres caractères de la
+/// zone privée restent supprimés par [`escape`].
+pub(crate) fn rich_text_standard(text: &RichText) -> String {
+    let mapped: String = text
+        .plain()
+        .chars()
+        .map(|character| match character {
+            '\u{ECA5}' => '♩',
+            other => other,
+        })
+        .collect();
+    escape(&mapped)
 }
 
 /// `\markup { "…" }` pour un texte déjà échappé.

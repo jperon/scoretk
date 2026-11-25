@@ -19,8 +19,8 @@
 
 staffOneVoiceOne = \fixed c' {
   \clef treble \key c \major \time 4/4
-  \ottava 1 \tempo 4 = 80 b4->\bendAfter #-3 \sustainOn cs'4-. \=4( b4-- \=4)
-  \grace { b,32 } b4:16 \fermata \bar "||"
+  \ottava 1 \tempo "♩ = 80" 4 = 80 b4->\bendAfter #-3 \sustainOn cs'4-. \=4(
+  b4-- \=4) \grace { b,32 } b4:16 \fermata \bar "||"
   \key e \major \time 3/4 \clef bass
   \set Staff.midiMinimumVolume = #0.385827
   \set Staff.midiMaximumVolume = #0.385827 \ottava 0

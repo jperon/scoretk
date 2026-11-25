@@ -4273,6 +4273,25 @@ fn tempo_pointe_ne_fait_pas_perdre_le_time_suivant() {
     assert_eq!(score.measures.len(), 2);
 }
 
+/// Le `♩` standard de LilyPond est la transcription du symbole métronomique
+/// que MuseScore place dans la zone privée (U+ECA5) : la relecture doit le
+/// retrouver pour que l'inventaire `tempo` soit exact.
+#[test]
+fn tempo_symbole_metronomique_revient_au_symbole_du_modele() {
+    let score = lire("\\tempo \"♩ = 88\" 4 = 88 c4");
+    let texts: Vec<String> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .flat_map(|segment| segment.annotations.iter())
+        .filter_map(|annotation| match &annotation.annotation {
+            scoretk_core::model::Annotation::Tempo(tempo) => Some(tempo.text.plain().to_owned()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texts, vec!["\u{ECA5} = 88"]);
+}
+
 /// `midiMergeUnisons` (`scm/define-context-properties.scm:555`,
 /// `lily/midi-walker.cc:95-115`) ne joue qu'une attaque quand deux notes de
 /// même hauteur se chevauchent dans la même piste MIDI. Le modèle garde les
