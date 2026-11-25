@@ -1327,19 +1327,57 @@ fn xml_credit_types(xml: &str) -> (bool, bool, bool) {
     (has("title"), has("composer"), has("lyricist"))
 }
 
-fn xml_without_unrepresentable_styles(source: &LayerInventory, xml: &str) -> LayerInventory {
+/// Retire du dénominateur **uniquement les items manquants** dont le support
+/// est absent du format : un item avec le même `key` côté candidat reste
+/// compté. Retirer les items appariés réduirait le dénominateur sans raison
+/// et gonflerait le pourcentage.
+fn xml_without_unrepresentable_styles(
+    reference: &LayerInventory,
+    candidate: &LayerInventory,
+    xml: &str,
+) -> LayerInventory {
     let (title, composer, lyricist) = xml_credit_types(xml);
-    let carrier = |item: &InventoryItem| match item.value.as_str() {
-        "title_font_size:24.00000" => title,
-        "composer_font_size:12.00000" => composer,
-        "lyricist_font_size:12.00000" => lyricist,
-        _ => true,
+    let absent = |item: &InventoryItem| match item.value.as_str() {
+        "title_font_size:24.00000" => !title,
+        "composer_font_size:12.00000" => !composer,
+        "lyricist_font_size:12.00000" => !lyricist,
+        _ => false,
     };
+    let mut remaining: BTreeMap<_, usize> = BTreeMap::new();
+    for item in &candidate.items {
+        *remaining
+            .entry((
+                item.layer.bits(),
+                item.tick,
+                item.staff,
+                item.kind,
+                item.value.clone(),
+            ))
+            .or_insert(0) += 1;
+    }
     LayerInventory {
-        items: source
+        items: reference
             .items
             .iter()
-            .filter(|item| item.kind != "style" || carrier(item))
+            .filter(|item| {
+                if item.kind != "style" || !absent(item) {
+                    return true;
+                }
+                let key = (
+                    item.layer.bits(),
+                    item.tick,
+                    item.staff,
+                    item.kind,
+                    item.value.clone(),
+                );
+                if let Some(count) = remaining.get_mut(&key) {
+                    if *count > 0 {
+                        *count -= 1;
+                        return true;
+                    }
+                }
+                false
+            })
             .cloned()
             .collect(),
     }
@@ -1442,15 +1480,18 @@ fn musicxml_spec_reachable_table() {
                 )
                 .expect("read reference"),
             };
-            let filtered_reference = xml_without_unrepresentable_styles(&reference_inventory, &xml);
-            let filtered_candidate = xml_without_unrepresentable_styles(&candidate_inventory, &xml);
+            let filtered_reference = xml_without_unrepresentable_styles(
+                &reference_inventory,
+                &candidate_inventory,
+                &xml,
+            );
             raw.add(
                 &compare_with_kinds(&reference_inventory, &candidate_inventory, declared, kinds),
                 essential(&reference_inventory, &candidate_inventory),
             );
             reachable.add(
-                &compare_with_kinds(&filtered_reference, &filtered_candidate, declared, kinds),
-                essential(&filtered_reference, &filtered_candidate),
+                &compare_with_kinds(&filtered_reference, &candidate_inventory, declared, kinds),
+                essential(&filtered_reference, &candidate_inventory),
             );
         }
         println!(
