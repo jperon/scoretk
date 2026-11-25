@@ -72,6 +72,7 @@ mod container;
 
 pub use capabilities::CAPABILITIES;
 mod credits;
+mod defaults;
 mod direction;
 mod error;
 mod harmony;

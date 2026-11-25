@@ -96,6 +96,7 @@ struct PendingGrace {
 pub fn build(root: &Element, analysis: &Analysis) -> Result<Score> {
     let mut score = Score::with_division(analysis.divisions.max(1));
     score.metadata = read_metadata(root);
+    crate::defaults::read_defaults(root, &mut score.engraving.style);
     score.engraving.credits = crate::credits::read_credits(root);
     // Le nombre de pages conditionne la répétition du copyright à l'export
     // (`credits`) : il se déduit des crédits, seule information lisible.
