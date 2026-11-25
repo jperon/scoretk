@@ -27,6 +27,7 @@
 //! `Score::report` : comme MuseScore, l'import est un analyseur « best
 //! effort » et non un validateur RelaxNG.
 
+mod barlines;
 mod capabilities;
 mod controls;
 mod header;

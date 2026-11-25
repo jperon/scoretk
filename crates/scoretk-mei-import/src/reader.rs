@@ -101,6 +101,7 @@ impl<'a> Reader<'a> {
         reader.read_mei_head();
         reader.read_score(score_node)?;
         reader.add_spanner_ends();
+        crate::barlines::finalize(&mut reader.score);
         Ok(reader.score)
     }
 
