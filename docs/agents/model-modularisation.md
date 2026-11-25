@@ -780,6 +780,7 @@ code handles today — the difference is the gap being measured.
 | `scoretk-midi-{import,export}` | L0+L1+L2+L3+L4 | `format-ref/midi.md` « Events and time », « Meta-event types » (`FF 58`, `FF 59`, `FF 51`, text metas), « Instruments, parts, repeats », « Lyrics: RP-017 and RP-026 »; `format-mapping/midi.md` lines 15–36. L1 is declared for the time-signature/key/marker metas even though SMF has no measure element; L5/L6 do not exist in SMF. |
 | `scoretk-lilypond-{import,export}` | L0+L1+L2+L3+L4+L5 | `format-ref/lilypond.md` « Durations, ticks, bars », « Pitch, key, clef, accidentals », « Parts, staves, voices, chords », « Ties, slurs, tuplets, grace », articulations/ornaments (§3.1–3.3), « Repeats and lyrics », `\paper`/`\layout`; the second MIDI `\score` carries L4 (`format-mapping/lilypond.md` line 38; rows 16–40). |
 | `scoretk-abc-{import,export}` | L0+L1+L2+L3+L4 | `format-ref/abc.md` §3.1 headers, §4.3–4.5 durations/repeats, §4.8–4.10 barlines/endings, §4.11–4.17 ties/grace/tuplets/chords, §5 lyrics, §6.2 `%%MIDI` (L4), §7 voices; `format-mapping/abc.md` lines 11–33. **L5 is not declared**: ABC 2.1 has no page style, no per-element coordinates and only implicit beaming (§4.7, mapping « Model gaps » n°4). |
+| `scoretk-mei-{import,export}` | L0+L1+L2+L3+L4+L5 | `format-ref/mei.md` §2–§13 and `docs/agents/mei.md` §3: `<measure>`/`<staff>`/`<layer>` (§5–§6, L0/L1), `<note>`/`<rest>` (§7–§8, L2), `<dir>`/`<dynam>`/`<harm>` with `<lb/>`/`<rend>` (§10–§11, L3), `<instrDef @midi.instrnum>` and `@dur.ges`/`@tstamp.ges` (§4, §12, L4), `<beam>`/`<pb>`/`<sb>`/`<pgHead>` and `@color` (§9, §13, L5). L6/facsimile data (`@facs`, `<facsimile>`) is not read (§13). |
 | `scoretk-gabc-{import,export}` | L0+L1+L2+L3+L6 | `format-ref/gabc.md` §1 file structure, §2 headers, §3 syllables, §4 pitches, §5–§6 neumes and signs (L2), §7 bars (L1), §8 clefs; `Gabc.tex:228-343,408-443,452-870`; the L6 slot is §7.1. **L4/L5 are not declared**: no tempo/velocity header (`:67-154`) and no page geometry (`:801-845`). |
 
 MEI now declares L0–L5 (`scoretk-mei-{import,export}`, citation:
@@ -968,6 +969,9 @@ Round trip (`reference → write X → read X`):
 | midi | L0–L4, 14 kinds | 68.40 % | 73.51 % | **not reached — proven out of reach** |
 | lilypond | L0–L5 | 90.58 % | **95.15 %** | reached |
 | abc | L0–L4 | 89.75 % | **95.24 %** | reached |
+| mei | L0–L5 | — (absent from the previous table) | 73.52 % | not reached |
+| gabc (direct, own corpus) | L0+L1+L2+L3+L6 | — (absent from the previous table) | **100.00 %** | reached on its own corpus |
+| gabc → xml → gabc (cross) | L0+L1+L2+L3+L6 | — (absent from the previous table) | 59.07 % | not reached |
 
 Import alone (`reference file → reader`, same redefined inventory):
 
@@ -977,6 +981,23 @@ Import alone (`reference file → reader`, same redefined inventory):
 | midi | MuseScore 4.7.4 `*.ref.mid` | 39.81 % | 49.84 % |
 | lilypond | scoretk snapshot — self-consistency | 90.58 % | **95.15 %** |
 | abc | scoretk snapshot — self-consistency | 89.75 % | **95.24 %** |
+| mei | MuseScore 4.7.4 `*.ref.mei` | — (absent from the previous table) | 81.90 % |
+| gabc → model | Gregorio examples (own corpus, direct) | — (absent from the previous table) | **100.00 %** |
+| gabc → xml → gabc → model | Gregorio examples (own corpus, cross) | — (absent from the previous table) | 59.07 % |
+
+The MEI and GABC rows were measured after the rebase on master with
+`cargo test -p scoretk --test layer_coverage -- --nocapture`: MEI uses the
+same 56 MuseScore scores and 56 MuseScore 4.7.4 `*.ref.mei` references (5 879
+items, 0 skipped); GABC uses the nine Gregorio examples of
+`tests/corpus/gabc/` (3 435 items, 0 skipped) because it has no MuseScore
+corpus reference. GABC's two rows measure different things: a structured
+round trip and a real cross conversion through MusicXML (§11.7). Neither
+MEI row reaches 95 %: the largest MEI gaps are `style` (380 L5 items),
+`stem` (163), `barline` (85), `note` (70) and `credit` (67) in the round
+trip, and `style` (380), `barline` (85), `dynamic-velocity` (43) and
+`note-head` (41) against the MuseScore references. They are documented in
+`docs/agents/mei.md` and left as open work; no format declaration was
+weakened to raise a percentage.
 
 `e2e_corpus` stays at 8/8 passing with no changed discrepancy, as do
 `cargo test --workspace`, clippy `-D warnings` and `fmt --check` after each
@@ -1083,3 +1104,42 @@ Gregorio's independent oracle on the full 202-file lot scores the writer
 **193/194 = 99.48 % core-exact but 0/194 byte-identical dumps**; see
 `docs/agents/gabc.md` §9–§10 for the per-file causes (Dominican bars,
 verbatim `<v>`, custos, and the one residual `@[…]` fusion file).
+
+### 11.8 Honest portability: without the scoretk-private extensions
+
+The 95 % rows of §11.6 are **scoretk → scoretk** measurements: the writers
+emit private syntax that only scoretk's readers interpret. Other ABC and
+LilyPond tools ignore it. ABC 2.1 §11.0.1 explains that `%%` pseudo-comments
+were introduced so that "software that didn't recognise them would ignore
+them as a comment", and §3.1.17 says that unrecognised `I:` directives
+should be ignored; the private `!scoretk-velo-N!` and
+`!scoretk-tremolo-…!` decorations are not in the decoration list of §4.14.
+For LilyPond, Notation Reference §21.1.2 gives the complete list of default
+`\header` fields: `workTitle`, `scoretkCreditA`, `scoretkTboxA` and the
+`scoretk*FontSize` fields are not in it, and `^\markup { "scoretk-head-…" }`
+is ordinary text markup (§8.2.1), not a note-head style (§1.4.1). LilyPond
+accepts all of them without warning, but a different tool does not
+reconstruct the model facts they carry.
+
+The measurement below removes those private carriers **from the written
+files before re-importing them**, on the same 56 MuseScore scores, with the
+same declared layers/kinds and the same `layer_coverage` test logic. It was
+run with a temporary, uncommitted harness; no library code, snapshot or
+percentage definition was changed. The strip removed 211 private ABC items
+(`%%scoretk …` lines and `!scoretk-…!` decorations) and 267 private
+LilyPond items (non-standard `\header` fields and `scoretk-…` markups), with
+zero residual `scoretk` occurrence in the stripped files.
+
+| Direction | Declared | With private extensions | Without private extensions | Items | Essential (unchanged) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| abc | L0–L4 | 95.24 % | **92.26 %** (4 493/4 870) | 4 870 | 98.92 % |
+| lilypond | L0–L5 | 95.15 % | **91.84 %** (5 399/5 879) | 5 879 | 99.27 % |
+
+The private extensions are worth 2.98 points for ABC and 3.31 points for
+LilyPond; without them neither direction reaches 95 %. The musical core is
+unaffected (essential stays 98.92 % / 99.27 %): what is lost is instrument
+identity, dynamic velocities and tremolo kinds on the ABC side, and text
+styles, credits/frame texts, exact note-head groups and tremolo kinds on the
+LilyPond side. The "reached" labels of §11.6 therefore describe faithful
+**scoretk round trips**, not interoperability with other ABC/LilyPond tools:
+the honest interoperability figures are 92.26 % and 91.84 %.
