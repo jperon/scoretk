@@ -229,9 +229,12 @@ pub(crate) fn write_note_notation(
 /// Une barre qui appelle une respiration (`BarKind::has_breath`, gabctk
 /// `gabctk.py:930-936`) la porte sur sa dernière note chantée. Quand le groupe
 /// de barre ne contient aucune note (`(,)` avant un mot), la respiration est
-/// reportée sur la première note chantée suivante, pour ne pas la perdre ni
-/// l'empiler sur la dernière note du chant. Une barre finale `::` n'en porte
-/// pas : le `<barline>` final la remplace.
+/// reportée sur la dernière note chantée **précédant** la barre, jamais sur la
+/// suivante : un `<breath-mark>` posé sur une note MusicXML se dessine après
+/// elle, donc `x(g) (,) do(h)` placerait la virgule après `do`, de l'autre côté
+/// de la divisio. S'aucune note chantée ne précède la barre (juste après la
+/// clé), aucune respiration n'est émise. Une barre finale `::` n'en porte pas
+/// non plus : le `<barline>` final la remplace.
 pub(crate) fn bar_breath(gregorian: &Gregorian, source: &NoteSource) -> bool {
     let is_alteration = |note: &GregorianNote| {
         note.signs
@@ -241,32 +244,33 @@ pub(crate) fn bar_breath(gregorian: &Gregorian, source: &NoteSource) -> bool {
     let Some(syllable) = gregorian.syllables.get(source.gregorian_syllable) else {
         return false;
     };
+    // La note courante doit être la dernière chantée de son groupe : sinon
+    // c'est la note suivante, plus proche de la barre, qui en héritera.
     let last_sung = syllable
         .notes
         .iter()
         .skip(source.gregorian_note + 1)
         .all(is_alteration);
-    if last_sung && syllable.bars.iter().any(|bar| bar.has_breath()) {
-        return true;
-    }
-    // Un groupe de barres sans note ne peut pas porter la respiration : on
-    // la reporte sur la première note chantée qui suit, et jamais plus loin.
-    if syllable
-        .notes
-        .iter()
-        .take(source.gregorian_note)
-        .any(|note| !is_alteration(note))
-    {
+    if !last_sung {
         return false;
     }
-    for previous in gregorian.syllables[..source.gregorian_syllable]
+    // Une barre dans le même groupe est dessinée après cette dernière note.
+    if syllable.bars.iter().any(|bar| bar.has_breath()) {
+        return true;
+    }
+    // Un groupe de barres sans note après celui-ci remonte la respiration
+    // jusqu'à la note courante, dernière chantée avant la barre. On s'arrête
+    // à la première syllabe chantée suivante : elle est après la barre et ne
+    // doit donc pas recevoir sa virgule.
+    for following in gregorian
+        .syllables
         .iter()
-        .rev()
+        .skip(source.gregorian_syllable + 1)
     {
-        if previous.notes.iter().any(|note| !is_alteration(note)) {
+        if following.notes.iter().any(|note| !is_alteration(note)) {
             return false;
         }
-        if previous.bars.iter().any(|bar| bar.has_breath()) {
+        if following.bars.iter().any(|bar| bar.has_breath()) {
             return true;
         }
     }

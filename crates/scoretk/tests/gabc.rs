@@ -497,17 +497,27 @@ fn gabc_mora_and_finalis_do_not_emit_breath_marks() {
     assert_eq!(reread.notes.len(), score.notes.len());
 }
 
-/// Deux virgules sur la dernière note ; la première venait du segment `Breath`
-/// attaché à toute note dont la durée jouée se termine au tick de la barre, la
-/// seconde de la projection L6. Seule la barre qui appelle une respiration en
-/// dessine une, et jamais deux fois sur la même note.
+/// Un groupe de barres sans note `(,)` juste après la clé n'a aucune note
+/// chantée précédente sur qui porter la respiration : `<breath-mark>` se
+/// dessine après sa note, donc le reporter sur `do` le placerait après le mot
+/// et de l'autre côté de la divisio. La finalis n'en ajoute aucune sur `fa`.
 #[test]
-fn gabc_finalis_breath_is_not_stacked_on_the_last_note() {
+fn gabc_note_less_bar_without_previous_sung_note_has_no_breath() {
     const SOURCE: &str = "name:t;\n%%\n(c4) (,) do(h_) re(g) mi(h._) fa(g) (::)\n";
     let xml = gabc_modern_xml(SOURCE);
-    // La divisio minima ouvre la respiration sur `do`, la première
-    // note chantée après elle ; la finalis n'en ajoute aucune sur `fa`.
-    assert_eq!(breath_marks_per_note(&xml), [1, 0, 0, 0], "{xml}");
+    assert_eq!(breath_marks_per_note(&xml), [0, 0, 0, 0], "{xml}");
+    assert!(xml.contains("<bar-style>light-heavy</bar-style>"), "{xml}");
+}
+
+/// Un `(,)` sans note propre remonte la respiration sur la dernière note
+/// chantée *avant* la barre (`x`), pas sur la première après (`do`) : une
+/// virgule MusicXML se dessine après la note qui la porte. Une seule virgule
+/// par note, et aucune avant la finalis `::`.
+#[test]
+fn gabc_note_less_bar_breath_goes_backward_to_last_sung_note() {
+    const SOURCE: &str = "name:t;\n%%\n(c4) x(g) (,) do(h_) re(g) (::)\n";
+    let xml = gabc_modern_xml(SOURCE);
+    assert_eq!(breath_marks_per_note(&xml), [1, 0, 0], "{xml}");
     assert!(xml.contains("<bar-style>light-heavy</bar-style>"), "{xml}");
 }
 
