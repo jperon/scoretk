@@ -980,6 +980,104 @@ fn mei_core_loss_diagnostic() {
     println!();
 }
 
+/// Item kinds whose carrier is *never written* by MuseScore 4.7.4's MEI
+/// exporter. They are kept in the main import figure (never dropped), but a
+/// second figure excludes them to measure what the references allow.
+///
+/// - `style`: `Convert::staffToMEI` (meiconverter.cpp:3094-3112) writes no
+///   `att.pages`, `@vu.height` or numeric `@fontsize`; see the carrier test
+///   below.
+/// - `dynamic-velocity`: `Convert::dynamToMEI` (meiconverter.cpp:1356-1380)
+///   writes `@label` and text only, never a velocity.
+/// - `note-head`: `MeiExporter::writeNote` (meiexporter.cpp:1370) writes no
+///   `@head.shape` and no `@glyph.name` (the SMuFL glyphs are written for
+///   clefs, fermatas, caesuras, ornaments, but not for note heads).
+/// - `credit`/`credit-position` and `tbox-*`: `MeiExporter::writeScoreDef`
+///   (meiexporter.cpp:326-331) converts only the *first* VBox into a
+///   `<pgHead func="first">` (meiexporter.cpp:386-459); later frames have no
+///   MEI carrier.
+const MEI_KINDS_ABSENT_FROM_MUSESCORE_REFERENCES: &[&str] = &[
+    "style",
+    "dynamic-velocity",
+    "note-head",
+    "credit",
+    "credit-position",
+    "tbox-text",
+    "tbox-position",
+];
+
+/// The main import row above is a comparison against the whole `.mscx`
+/// reference model. This second row restricts both inventories to the kinds
+/// MuseScore 4.7.4 actually writes in its own `.ref.mei`; it is additive
+/// evidence, not a replacement for the first row.
+#[test]
+fn mei_import_figure_without_absent_carriers() {
+    let mei = &DIRECTIONS[7];
+    assert_eq!(mei.name, "mei");
+    let declared = mei.import.declared();
+    let mut all_kinds: Vec<&'static str> = Vec::new();
+    for (_, path) in corpus_scores() {
+        for item in &inventory(&reference_model(&path)).items {
+            if declared.contains(item.layer) && !all_kinds.contains(&item.kind) {
+                all_kinds.push(item.kind);
+            }
+        }
+    }
+    let measured_kinds: Vec<&str> = all_kinds
+        .iter()
+        .copied()
+        .filter(|kind| !MEI_KINDS_ABSENT_FROM_MUSESCORE_REFERENCES.contains(kind))
+        .collect();
+
+    let mut main = Totals::default();
+    let mut reachable = Totals::default();
+    for (name, path) in corpus_scores() {
+        let Some((reference_path, format)) = reference_file(&name, ReferenceKind::Mei) else {
+            continue;
+        };
+        let reference = inventory(&reference_model(&path));
+        let bytes = fs::read(&reference_path).expect("read MEI reference");
+        let imported = read(&bytes, format).expect("MEI import");
+        let candidate = inventory(&imported);
+        main.add(
+            &compare_with_kinds(&reference, &candidate, declared, Some(&all_kinds)),
+            essential(&reference, &candidate),
+        );
+        reachable.add(
+            &compare_with_kinds(&reference, &candidate, declared, Some(&measured_kinds)),
+            essential(&reference, &candidate),
+        );
+    }
+
+    println!("\n=== MEI import: main figure vs. kinds present in MuseScore's *.ref.mei ===");
+    print_row(
+        "import (all)",
+        declared,
+        &main,
+        reference_source(ReferenceKind::Mei),
+    );
+    print_row(
+        "import (ref)",
+        declared,
+        &reachable,
+        "same references, carriers MuseScore 4.7.4 writes",
+    );
+    println!(
+        "    excluded: {} reference items of {:?}",
+        main.total.reference - reachable.total.reference,
+        MEI_KINDS_ABSENT_FROM_MUSESCORE_REFERENCES
+    );
+    println!();
+
+    assert_eq!(main.files, 56);
+    assert_eq!(reachable.files, 56);
+    assert!(main.total.reference > reachable.total.reference);
+    assert!(
+        reachable.total.percent() > main.total.percent(),
+        "the reference-bound figure must be higher, not a replacement"
+    );
+}
+
 #[test]
 fn mei_import_alone_reads_musescore_474_references() {
     let mut checked = 0;
@@ -1035,6 +1133,24 @@ fn mei_musescore_references_carry_no_style() {
         assert!(
             !text.contains("fontsize=\"24pt\"") && !text.contains("fontsize=\"12pt\""),
             "{} carries a numeric font size",
+            path.display()
+        );
+        // `MeiExporter::writeNote` (meiexporter.cpp:1370) n'écrit ni
+        // `@head.shape` ni `@glyph.name` sur les notes ; `Convert::dynamToMEI`
+        // (meiconverter.cpp:1356-1380) n'écrit pas de vélocité.
+        assert!(
+            !text.contains("head.shape="),
+            "{} carries a note head",
+            path.display()
+        );
+        assert!(
+            !text.contains("glyph.name=\"notehead"),
+            "{} carries a SMuFL note head",
+            path.display()
+        );
+        assert!(
+            !text.contains("vel=\""),
+            "{} carries a velocity",
             path.display()
         );
     }
