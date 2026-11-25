@@ -36,6 +36,7 @@ use scoretk_core::model::{
 
 use crate::reader::{AnnotationSpec, Position, Reader, Voice};
 use scoretk_abc_common::Result;
+use scoretk_core::instruments::{template_has_program, TEMPLATES};
 
 /// Construit la partition.
 pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
@@ -74,7 +75,7 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
     }
 
     let groups = groups(reader, &voices);
-    let voice_tracks = create_parts(&mut score, &voices, &groups);
+    let voice_tracks = create_parts(&mut score, &voices, &groups, reader.midi_program);
     for part in &mut score.parts {
         part.instrument.midi_program = reader.midi_program;
         part.instrument.midi_channel = reader.midi_channel;
@@ -502,11 +503,57 @@ fn groups(reader: &Reader, voices: &[Voice]) -> Vec<PartSpec> {
     groups
 }
 
+/// Identifiant d'instrument déduit des seules données que l'ABC 2.1 porte :
+/// `V: name=`/`snm=` (§7.1) et `%%MIDI program` (§11.2). Port de
+/// `searchTemplateForInstrNameList` / `recognize`
+/// (`crates/scoretk-musescore-import/src/read/instruments.rs`, lui-même porté de
+/// `engraving/dom/instrument.cpp`) sur le catalogue partagé de `scoretk-core`.
+/// Les poids 4/2/1 et le premier à égalité reproduisent la reconnaissance de
+/// MuseScore ; aucun identifiant privé n'est nécessaire pour les noms GM.
+fn instrument_id_from_standard(names: [&str; 3], program: Option<u8>) -> Option<&'static str> {
+    let mut best: Option<&'static str> = None;
+    let mut best_strength = 0u8;
+    for name in names {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        for template in TEMPLATES {
+            let strength = 4 * u8::from(template.track_name.eq_ignore_ascii_case(name))
+                + 2 * u8::from(template.long_name.eq_ignore_ascii_case(name))
+                + u8::from(template.short_name.eq_ignore_ascii_case(name));
+            if strength > best_strength {
+                best = Some(template.music_xml_id);
+                best_strength = strength;
+            }
+        }
+    }
+    if best.is_none()
+        && names
+            .iter()
+            .any(|name| name.to_lowercase().contains("piano"))
+    {
+        return Some("keyboard.piano");
+    }
+    if let Some(id) = best.filter(|id| !id.is_empty()) {
+        return Some(id);
+    }
+    program.and_then(|program| {
+        TEMPLATES
+            .iter()
+            .find(|template| {
+                template_has_program(template, program) && !template.music_xml_id.is_empty()
+            })
+            .map(|template| template.music_xml_id)
+    })
+}
+
 /// Crée les parties et les portées ; renvoie `(portée, voix modèle)` par voix.
 fn create_parts(
     score: &mut Score,
     voices: &[Voice],
     groups: &[PartSpec],
+    midi_program: Option<u8>,
 ) -> Vec<(scoretk_core::model::StaffId, u8)> {
     let mut tracks = vec![(scoretk_core::model::StaffId::from_index(0), 0u8); voices.len()];
     for group in groups {
@@ -531,13 +578,21 @@ fn create_parts(
             .filter(|name| !name.trim().is_empty())
             .unwrap_or_else(|| name.clone());
         let part = score.add_part(Part::new(name.clone(), short_name));
-        // `%%scoretk instrument` (ABC 2.1 §11) complète `%%MIDI program` et
-        // `nm=`/`snm=` : il restaure l'identifiant d'instrument du modèle,
-        // que le numéro GM et les noms affichés ne portent pas.
-        if let Some(id) = first_voice
+        // `%%scoretk instrument` (ABC 2.1 §11) reste le transport exact quand
+        // il est présent. Sinon, l'identifiant est reconnu depuis les champs
+        // standard `V: name=`/`snm=` et `%%MIDI program` : un autre outil ABC
+        // lit ces champs et retrouve le même instrument GM.
+        let source_voice = first_voice
             .and_then(|number| voices.iter().position(|voice| voice.number == number))
-            .and_then(|index| voices.get(index))
+            .and_then(|index| voices.get(index));
+        if let Some(id) = source_voice
             .and_then(|voice| voice.instrument_id.clone())
+            .or_else(|| {
+                source_voice.and_then(|voice| {
+                    instrument_id_from_standard([&voice.name, &voice.short_name, ""], midi_program)
+                        .map(str::to_owned)
+                })
+            })
         {
             score.part_mut(part).instrument.id = id;
         }
