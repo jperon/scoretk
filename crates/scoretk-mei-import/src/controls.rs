@@ -34,6 +34,41 @@ use scoretk_xml_common::Element;
 
 use crate::reader::{PendingSpanner, Reader};
 
+/// `@artic` token → pivot articulation (`Convert::articFromMEI`,
+/// meiconverter.cpp:438), with the unknown values preserved verbatim.
+pub(crate) fn articulation_kind(name: &str) -> ArticulationType {
+    match name {
+        "stacc" => ArticulationType::Staccato,
+        "stacciss" | "spicc" => ArticulationType::Spiccato,
+        "accent" | "acc" => ArticulationType::Accent,
+        "marc" => ArticulationType::Marcato,
+        "ten" => ArticulationType::Tenuto,
+        "port" => ArticulationType::Portato,
+        "stress" => ArticulationType::Stress,
+        "unstress" => ArticulationType::Unstress,
+        "upbow" => ArticulationType::UpBow,
+        "dnbow" => ArticulationType::DownBow,
+        "harm" => ArticulationType::Harmonic,
+        "open" => ArticulationType::Open,
+        "stop" => ArticulationType::Stopped,
+        "snap" => ArticulationType::SnapPizzicato,
+        _ => ArticulationType::Other(name.to_owned()),
+    }
+}
+
+/// `att.articulation/@artic` on a `<note>`/`<chord>` (MEI 5.1 `data.ARTICULATION`)
+/// is an alternative to child `<artic>` elements in external encodings.
+pub(crate) fn articulations_of(node: &Element) -> Vec<Articulation> {
+    node.attribute("artic")
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(|name| Articulation {
+            kind: articulation_kind(name),
+            ..Articulation::new(ArticulationType::Staccato)
+        })
+        .collect()
+}
+
 /// Control events with no pivot representation are counted as losses.
 const IGNORED_CONTROLS: [&str; 8] = [
     "annot",
@@ -492,24 +527,7 @@ impl<'a> Reader<'a> {
 
     /// `MeiImporter::readArtic` (`meiimporter.cpp:1720`).
     fn add_articulation(&mut self, node: &Element, parent: &Element, measure: usize) {
-        let name = node.attribute("artic").unwrap_or_default();
-        let kind = match name {
-            "stacc" => ArticulationType::Staccato,
-            "stacciss" | "spicc" => ArticulationType::Spiccato,
-            "accent" | "acc" => ArticulationType::Accent,
-            "marc" => ArticulationType::Marcato,
-            "ten" => ArticulationType::Tenuto,
-            "port" => ArticulationType::Portato,
-            "stress" => ArticulationType::Stress,
-            "unstress" => ArticulationType::Unstress,
-            "upbow" => ArticulationType::UpBow,
-            "dnbow" => ArticulationType::DownBow,
-            "harm" => ArticulationType::Harmonic,
-            "open" => ArticulationType::Open,
-            "stop" => ArticulationType::Stopped,
-            "snap" => ArticulationType::SnapPizzicato,
-            _ => ArticulationType::Other(name.to_owned()),
-        };
+        let kind = articulation_kind(node.attribute("artic").unwrap_or_default());
         // `<artic>` enfant d'un événement : MEI 5.1 `att.articulated`
         // s'applique à cet événement, pas au dernier accord de la portée.
         // L'`xml:id` du parent (ou `@startid`) donne l'ancrage exact.

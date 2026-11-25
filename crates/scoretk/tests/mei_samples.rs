@@ -220,7 +220,24 @@ fn mei_samples_core_loss_diagnostic() {
     let Some(paths) = available_lot() else {
         return;
     };
-    const KINDS: &[&str] = &["note", "rest", "stem", "lyric", "tie", "slur", "time-sig"];
+    const KINDS: &[&str] = &[
+        "note",
+        "rest",
+        "stem",
+        "lyric",
+        "tie",
+        "slur",
+        "time-sig",
+        "articulation",
+        "tuplet-member",
+        "tuplet",
+        "dynamic",
+        "ornament",
+    ];
+    let options = Options {
+        mei_full_support: true,
+        ..Default::default()
+    };
     // Fichier → kind → (nombre manquant, exemples).
     let mut by_file: BTreeMap<String, BTreeMap<&'static str, (usize, Vec<String>)>> =
         BTreeMap::new();
@@ -230,7 +247,7 @@ fn mei_samples_core_loss_diagnostic() {
             continue;
         };
         let reference = inventory(&model);
-        let Ok(written) = write(&model, Format::Mei, &Options::default()) else {
+        let Ok(written) = write(&model, Format::Mei, &options) else {
             continue;
         };
         let Ok(candidate) = read(&written, Format::Mei) else {

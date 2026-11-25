@@ -374,6 +374,16 @@ pub fn artic_to_mei(kind: &ArticulationType) -> Option<&'static str> {
     }
 }
 
+/// Additive inverse of `artic_from_mei`: unlike `artic_to_mei` (the 4.7.4
+/// subset), this also carries `Other(name)`, including the empty name of
+/// `<artic/>` elements found in external MEI 5.1 encodings.
+pub fn artic_to_mei_full(kind: &ArticulationType) -> String {
+    match kind {
+        ArticulationType::Other(name) => name.clone(),
+        _ => artic_to_mei(kind).unwrap_or_default().to_owned(),
+    }
+}
+
 /// Suffix of `Convert::markerToMEI`'s `@type` (`mscore-marker-*`).
 pub fn marker_type_to_mei(kind: MarkerType) -> &'static str {
     match kind {

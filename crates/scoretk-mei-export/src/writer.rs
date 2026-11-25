@@ -731,7 +731,7 @@ fn write_layer(
                         );
                         xml.end_element();
                     }
-                    write_artics(xml, chord);
+                    write_artics(xml, chord, options.full_support);
                     write_verses(xml, cr);
                     xml.end_element();
                 }
@@ -782,9 +782,19 @@ fn tuplet_chain(
 
 /// `MeiExporter::writeArtics` (`meiexporter.cpp:1036`): articulations are
 /// children of the note/chord event they belong to.
-fn write_artics(xml: &mut XmlWriter, chord: &scoretk_core::model::Chord) {
+fn write_artics(xml: &mut XmlWriter, chord: &scoretk_core::model::Chord, full_support: bool) {
+    let startid = chord.notes.first().map(|id| format!("#n{}", id.index()));
     for articulation in &chord.articulations {
-        if let Some(name) = convert::artic_to_mei(&articulation.kind) {
+        if full_support {
+            let name = convert::artic_to_mei_full(&articulation.kind);
+            let mut attrs = vec![("artic", name.as_str())];
+            if let Some(startid) = &startid {
+                // Ancrage exact : un `<chord>` écrit n'a pas d'`xml:id`, donc
+                // le lecteur ne peut retrouver la portée que par une note.
+                attrs.push(("startid", startid.as_str()));
+            }
+            xml.tag_empty("artic", &attrs);
+        } else if let Some(name) = convert::artic_to_mei(&articulation.kind) {
             xml.tag_empty("artic", &[("artic", name)]);
         }
     }
@@ -848,7 +858,7 @@ fn write_note(
     // L'élément reste ouvert : l'appelant y écrit les `<verse>` puis le ferme.
     xml.start_element("note", &attrs);
     if let Some(chord) = chord {
-        write_artics(xml, chord);
+        write_artics(xml, chord, pitch.full_support);
     }
 }
 

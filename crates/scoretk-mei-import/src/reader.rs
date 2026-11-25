@@ -166,7 +166,18 @@ impl<'a> Reader<'a> {
     pub(crate) fn read_section_elements(&mut self, parent: &Element) {
         for child in &parent.children {
             match child.name.as_str() {
-                "scoreDef" => self.read_score_def(child, false),
+                "scoreDef" => {
+                    // MEI 5.1 permet le `<scoreDef>` initial à l'intérieur
+                    // d'une `<section>` (exemples officiels `beamSpans`,
+                    // `slur_element`, `Editorial_markup`). Tant qu'aucune
+                    // portée n'a été construite, c'est cette définition qui
+                    // porte les `staffDef` : la traiter comme non initiale
+                    // laissait `score.staves` vide et perdait notes, stems
+                    // et silences. Un `<scoreDef>` ultérieur reste un
+                    // changement local.
+                    let initial = self.score.staves.is_empty();
+                    self.read_score_def(child, initial);
+                }
                 "section" => self.read_section_elements(child),
                 "measure" => {
                     self.read_measure(child);
@@ -686,6 +697,9 @@ impl<'a> Reader<'a> {
         {
             if let ChordRestKind::Chord(chord) = &mut cr.kind {
                 chord.notes.push(note_id);
+                chord
+                    .articulations
+                    .extend(crate::controls::articulations_of(node));
             }
         }
         self.read_verses(node, measure, track, ticks);
@@ -744,6 +758,9 @@ impl<'a> Reader<'a> {
         if let Some(SegmentItem::ChordRest(cr)) = segment.element_mut(track) {
             if let ChordRestKind::Chord(chord) = &mut cr.kind {
                 chord.notes = notes;
+                chord
+                    .articulations
+                    .extend(crate::controls::articulations_of(node));
             }
         }
         self.read_verses(node, measure, track, ticks);
