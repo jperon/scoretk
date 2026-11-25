@@ -632,6 +632,99 @@ fn gabc_cross_totals(strip_extensions: bool) -> (Totals, Layers, usize) {
     (totals, declared, rewritten)
 }
 
+/// GABC → MEI → GABC → model, measured like the GABC direct/cross rows of
+/// `model-modularisation.md` §11.7. Until the MEI neumes module is implemented,
+/// the MEI writer only sees the derived modern view, so the L6 payload cannot
+/// cross the format: this is the baseline of the neumes campaign.
+fn gabc_mei_totals() -> (Totals, Layers, usize) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("corpus")
+        .join("gabc");
+    let mut paths: Vec<PathBuf> = fs::read_dir(root)
+        .expect("GABC corpus directory")
+        .filter_map(std::result::Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "gabc")
+        })
+        .collect();
+    paths.sort();
+    let declared = GABC_IMPORT.declared().union(GABC_EXPORT.declared());
+    let mut totals = Totals::default();
+    let mut rewritten = 0;
+    for path in paths {
+        let bytes = fs::read(&path).expect("read GABC example");
+        let reference = read(&bytes, Format::Gabc).expect("GABC import");
+        let reference_inventory = inventory(&reference);
+        let mei = match write(&reference, Format::Mei, &Options::default()) {
+            Ok(value) => value,
+            Err(_) => {
+                totals.skipped += 1;
+                continue;
+            }
+        };
+        let from_mei = match read(&mei, Format::Mei) {
+            Ok(value) => value,
+            Err(_) => {
+                totals.skipped += 1;
+                continue;
+            }
+        };
+        let gabc = match write(&from_mei, Format::Gabc, &Options::default()) {
+            Ok(value) => value,
+            Err(_) => {
+                totals.skipped += 1;
+                continue;
+            }
+        };
+        if gabc != bytes {
+            rewritten += 1;
+        }
+        let candidate = match read(&gabc, Format::Gabc) {
+            Ok(value) => inventory(&value),
+            Err(_) => {
+                totals.skipped += 1;
+                continue;
+            }
+        };
+        let coverage = compare(&reference_inventory, &candidate, declared);
+        totals.add(&coverage, essential(&reference_inventory, &candidate));
+    }
+    (totals, declared, rewritten)
+}
+
+#[test]
+fn gabc_mei_round_trip_table() {
+    let (totals, declared, rewritten) = gabc_mei_totals();
+    println!("\n=== GABC cross round trip: GABC → MEI → GABC (nine examples) ===");
+    println!(
+        "key = (layer, tick, staff, kind, value); {rewritten}/9 outputs differ from their source"
+    );
+    print_row(
+        "gabc→mei→gabc",
+        declared,
+        &totals,
+        "Gregorio examples (cross conversion, MEI 5.1 neumes module)",
+    );
+    print_details(declared, &totals);
+    println!();
+}
+
+#[test]
+fn gabc_mei_round_trip_is_measured() {
+    let (totals, _, rewritten) = gabc_mei_totals();
+    assert_eq!(totals.files, 9);
+    assert_eq!(totals.skipped, 0);
+    assert_eq!(
+        rewritten, 9,
+        "the MEI cross trip must re-serialise the GABC"
+    );
+}
+
 #[test]
 fn gabc_cross_round_trip_table() {
     let (private, declared, rewritten) = gabc_cross_totals(false);
