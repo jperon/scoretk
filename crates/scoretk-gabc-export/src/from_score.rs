@@ -31,8 +31,8 @@
 //! in `docs/agents/gabc.md` §8/§10.
 
 use scoretk_core::model::{
-    BarKind, BarLineType, ChordRestKind, Gregorian, GregorianHeader, GregorianNote, LyricsSyllabic,
-    NeumeSign, Score, SegmentItem, SignKind, Syllable,
+    BarKind, BarLineType, ChordRestKind, Duration, Gregorian, GregorianHeader, GregorianNote,
+    LyricsSyllabic, NeumeSign, Score, SegmentItem, SignKind, Syllable,
 };
 use scoretk_gabc_common::syntax;
 
@@ -46,6 +46,8 @@ const CLEFS: [&str; 8] = ["c3", "c4", "f3", "f4", "c2", "c1", "f2", "f1"];
 struct Event {
     /// Diatonic step (C = 0) and the semitone difference from its natural.
     note: Option<(i32, i32)>,
+    /// Durée du `ChordRest`, réécrite en signes GABC par `signs_for_duration`.
+    duration: Duration,
     text: String,
     space_after: bool,
     bar: Option<BarKind>,
@@ -105,10 +107,11 @@ pub(super) fn from_score(score: &Score) -> Gregorian {
                     });
                     effect[slot] = wanted;
                 }
+                let (glyph, signs) = signs_for_duration(event.duration);
                 notes.push(GregorianNote {
                     letter,
-                    glyph: String::new(),
-                    signs: Vec::new(),
+                    glyph,
+                    signs,
                     ..GregorianNote::default()
                 });
             }
@@ -218,6 +221,7 @@ fn collect_events(score: &Score, staff: usize) -> Vec<Event> {
                 let note = &score.notes[id.index()];
                 events.push(Event {
                     note: Some(pitch_step(note.pitch, note.tpc)),
+                    duration: chord_rest.duration,
                     text: lyric_text(chord_rest),
                     space_after: chord_rest.lyrics.first().is_some_and(|lyric| {
                         matches!(lyric.syllabic, LyricsSyllabic::Single | LyricsSyllabic::End)
@@ -236,6 +240,7 @@ fn collect_events(score: &Score, staff: usize) -> Vec<Event> {
             }
             events.push(Event {
                 note: None,
+                duration: Duration::quarter(),
                 text: String::new(),
                 space_after: false,
                 bar: Some(bar),
@@ -278,6 +283,26 @@ fn pitch_step(pitch: u8, tpc: i8) -> (i32, i32) {
 /// (`src/struct.c:1273-1288`; `src/struct.h:809-813`).
 fn letter_for_height(height: i32) -> char {
     char::from(b'a' + (height.clamp(3, 16) - 3) as u8)
+}
+
+/// Traduit une durée du pivot en signes GABC (`Gabc.tex:742-797`) : le
+/// punctum mora `.` double la note, l'épisème `_` l'allonge de 1,5. C'est la
+/// réciproque de `derived_duration` dans le noyau ; sans elle, un aller-retour
+/// par du MusicXML standard perdrait tous les écarts de durée.
+fn signs_for_duration(duration: Duration) -> (String, Vec<NeumeSign>) {
+    let has_mora = duration.ticks() >= Duration::half().ticks();
+    let has_episema = duration.is_dotted();
+    let mut glyph = String::new();
+    let mut signs = Vec::new();
+    if has_mora {
+        glyph.push('.');
+        signs.push(NeumeSign::new(SignKind::PunctumMora, "."));
+    }
+    if has_episema {
+        glyph.push('_');
+        signs.push(NeumeSign::new(SignKind::HorizontalEpisema, "_"));
+    }
+    (glyph, signs)
 }
 
 /// Picks the clef that keeps most notes inside the staff's letter range;
@@ -408,6 +433,7 @@ mod tests {
         let events = (48..=72)
             .map(|pitch| Event {
                 note: Some(pitch_step(pitch, 14)),
+                duration: Duration::quarter(),
                 text: String::new(),
                 space_after: false,
                 bar: None,

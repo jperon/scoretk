@@ -130,7 +130,9 @@ rhythmic information is the neume shape, punctum mora, episemata and bar
 weight (`:742-799`, `:801-845`). A converter that assigns durations is
 making a choice external to GABC and must state the rule it used; Gregorio
 itself keeps staff positions and signs, not durations (`src/struct.h:809-813`,
-`src/dump/dump.c:78-88,435-455`).
+`src/dump/dump.c:78-88,435-455`). scoretk's modern projection states its rule:
+one quarter per sung letter, punctum mora × 2, horizontal episema × 1.5
+(`docs/agents/gabc.md`, item 5).
 
 ## 8. Pitfalls for implementers
 

@@ -198,6 +198,26 @@ fn gabc_measures_follow_separation_bars_not_syllables() {
     assert_eq!(playback.timemap.notes.len(), 8);
 }
 
+/// `Gabc.tex:742-797` : punctum mora × 2, épisème horizontal × 1,5 ; les
+/// deux ensemble donnent une blanche pointée. La durée de base est la noire.
+#[test]
+fn gabc_durations_reach_musicxml_and_midi() {
+    const DUR: &str = "name:t;\n%%\n(c4) A(g.)h(i_)B(g._) (::)\n";
+    let score = read(DUR.as_bytes(), Format::Gabc).expect("GABC import");
+    let playback = scoretk::write_playback(&score, &Options::default()).expect("playback");
+    let ticks: Vec<i64> = playback
+        .timemap
+        .notes
+        .iter()
+        .map(|note| note.duration_ticks)
+        .collect();
+    // Le `NoteOff` SMF est à `NoteOn + durée - 1` (gate MIDI).
+    assert_eq!(ticks, [959, 719, 1439], "half, dotted quarter, dotted half");
+    let xml = String::from_utf8(playback.musicxml).expect("UTF-8 MusicXML");
+    assert!(xml.contains("<type>half</type>"), "{xml}");
+    assert!(xml.contains("<dot/>"), "episema lengthens by 1.5: {xml}");
+}
+
 /// Positions source UTF-16 : identifiants MusicXML et carte des temps sont
 /// calculés par la même fonction du noyau, donc exactement égaux.
 #[test]

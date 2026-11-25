@@ -33,8 +33,8 @@
 
 use super::{
     BarLineType, Breath, BreathType, Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration,
-    Fraction, Layers, Lyrics, LyricsSyllabic, Measure, Note, NoteSource, Part, Placement, Score,
-    Segment, SegmentItem, SegmentType, Track,
+    DurationType, Fraction, Layers, Lyrics, LyricsSyllabic, Measure, Note, NoteSource, Part,
+    Placement, Score, Segment, SegmentItem, SegmentType, Track,
 };
 
 /// One header field, in source order (`Gabc.tex:67-154`).
@@ -306,7 +306,7 @@ impl Gregorian {
         // Une entrée par lettre de hauteur (`a`…`n`, `p` ; `o` est l'oriscus).
         let mut alterations = [0i8; 16];
         let mut start = Fraction::ZERO;
-        let mut sung = 0usize;
+        let mut cursor = Fraction::ZERO;
         let mut measure_index = 0usize;
         let mut measure: Option<Measure> = None;
         for (index, syllable) in self.syllables.iter().enumerate() {
@@ -345,14 +345,19 @@ impl Gregorian {
                     gregorian_note: note_index,
                 });
                 let id = score.add_note(projected);
-                let mut chord_rest = ChordRest::chord(Duration::quarter());
+                // `Gabc.tex:742-797` : le punctum mora double la note,
+                // l'épisème horizontal l'allonge d'un facteur 1,5 (choix de
+                // projection documenté). Rien d'autre dans GABC n'est une
+                // durée fixe (`:801-845`).
+                let duration = derived_duration(note);
+                let mut chord_rest = ChordRest::chord(duration);
                 chord_rest.kind = ChordRestKind::Chord(Chord {
                     notes: vec![id],
                     ..Chord::default()
                 });
                 // Segment ticks are absolute in the pivot (`pass2.rs:495-518`),
                 // not relative to the measure.
-                let tick = start + Fraction::new(sung as i64, 4);
+                let tick = start + cursor;
                 if !syllable_sung {
                     let text = plain_lyric(&syllable.text);
                     if !text.is_empty() {
@@ -368,7 +373,7 @@ impl Gregorian {
                     .as_mut()
                     .expect("a sung note opens a measure")
                     .add_segment(segment);
-                sung += 1;
+                cursor += duration.ticks();
             }
             // Portée de l'alteration : fin de mot ou barre de séparation
             // (`Gabc.tex:801-845`, `:241-245`). Un naturel la cancelle déjà
@@ -386,7 +391,7 @@ impl Gregorian {
                 let opened = measure
                     .take()
                     .unwrap_or_else(|| Measure::new(measure_index, start, Fraction::ONE));
-                let mut opened = opened.with_len(Fraction::new(sung.max(1) as i64, 4));
+                let mut opened = opened.with_len(cursor.max(Fraction::new(1, 4)));
                 opened.end_bar_line = derived_bar_line(*bar);
                 // Une barre de séparation est une respiration : le MIDI
                 // insère une pause (0,5 s, choix de projection documenté)
@@ -404,11 +409,11 @@ impl Gregorian {
                 start = opened.end_tick();
                 score.add_measure(opened);
                 measure_index += 1;
-                sung = 0;
+                cursor = Fraction::ZERO;
             }
         }
         if let Some(opened) = measure {
-            let opened = opened.with_len(Fraction::new(sung.max(1) as i64, 4));
+            let opened = opened.with_len(cursor.max(Fraction::new(1, 4)));
             score.add_measure(opened);
         }
 
@@ -419,6 +424,30 @@ impl Gregorian {
             None,
         );
         score
+    }
+}
+
+/// Durée projetée d'une note (`Gabc.tex:742-797`).
+///
+/// La noire est la durée de base. Le punctum mora `.` la double (blanche),
+/// l'épisème horizontal `_` la multiplie par **1,5** (noire pointée, donc un
+/// `<dot/>` MusicXML) ; les deux ensemble donnent une blanche pointée. Ce
+/// facteur est un choix de projection : GABC n'a aucune durée fixe
+/// (`:801-845`) et Gregorio ne stocke que les signes.
+fn derived_duration(note: &GregorianNote) -> Duration {
+    let mora = note
+        .signs
+        .iter()
+        .any(|sign| sign.kind == SignKind::PunctumMora);
+    let episema = note
+        .signs
+        .iter()
+        .any(|sign| sign.kind == SignKind::HorizontalEpisema);
+    match (mora, episema) {
+        (true, true) => Duration::with_dots(DurationType::Half, 1),
+        (true, false) => Duration::half(),
+        (false, true) => Duration::with_dots(DurationType::Quarter, 1),
+        (false, false) => Duration::quarter(),
     }
 }
 

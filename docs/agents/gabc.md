@@ -157,6 +157,15 @@ meter nor invented measure numbers: MusicXML writes
 `senza-misura`). `derived_modern_view = true` and a `derived-modern-view` loss
 record make that choice explicit (`model-modularisation.md` §7.1).
 
+**Durations (item 5).** GABC has no fixed duration (`Gabc.tex:801-845`): the
+projection uses an equal **quarter note** per sung pitch letter, a punctum
+mora `.` (`:742-755`) **doubles** it (half note), and a horizontal episema `_`
+(`:769-797`) lengthens it by a documented **factor 1.5** (dotted quarter). Both
+together give a dotted half. These are written as `<type>`/`<dot/>` in
+MusicXML and as note-off ticks in MIDI; the separation bars add breaths
+instead of metric time. The reverse projection writes the corresponding `.`
+and `_` signs so a standard-MusicXML round trip keeps the durations.
+
 **Alterations (item 1).** `x`/`X` (flat), `#`/`##` (sharp), `y`/`Y` (natural)
 and their parenthesized forms are *not sung notes*: `Gabc.tex:512-515` calls
 them one-note neumes but explicitly says they are not notes; Gregorio's dump
