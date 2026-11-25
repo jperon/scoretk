@@ -971,7 +971,7 @@ Round trip (`reference → write X → read X`):
 | abc | L0–L4 | 89.75 % | **95.24 %** | reached |
 | gabc (direct, own corpus) | L0+L1+L2+L3+L6 | — (absent from the previous table) | **100.00 %** | reached on its own corpus |
 | gabc → xml → gabc (cross) | L0+L1+L2+L3+L6 | — (absent from the previous table) | 59.07 % | not reached |
-| mei | L0–L5 | — (absent from the previous table) | 92.35 % (was 73.52 %) | not reached |
+| mei | L0–L5 | — (absent from the previous table) | **95.03 %** (was 92.35 %, originally 73.52 %) | reached |
 
 Import alone (`reference file → reader`, same redefined inventory):
 
@@ -983,7 +983,7 @@ Import alone (`reference file → reader`, same redefined inventory):
 | abc | scoretk snapshot — self-consistency | 89.75 % | **95.24 %** |
 | gabc → model | Gregorio examples (own corpus, direct) | — (absent from the previous table) | **100.00 %** |
 | gabc → xml → gabc → model | Gregorio examples (own corpus, cross) | — (absent from the previous table) | 59.07 % |
-| mei | MuseScore 4.7.4 `*.ref.mei` | — (absent from the previous table) | 84.18 % (was 81.90 %) |
+| mei | MuseScore 4.7.4 `*.ref.mei` | — (absent from the previous table) | 87.11 % (was 84.18 %, originally 81.90 %); 95.60 % excluding carriers MuseScore never writes |
 
 The MEI and GABC rows were measured after the rebase on master with
 `cargo test -p scoretk --test layer_coverage -- --nocapture`: MEI uses the
@@ -992,14 +992,21 @@ items, 0 skipped); GABC uses the nine Gregorio examples of
 `tests/corpus/gabc/` (3 435 items, 0 skipped) because it has no MuseScore
 corpus reference. GABC's two rows measure different things: a structured
 round trip and a real cross conversion through MusicXML (§11.7). Neither
-MEI row reaches 95 % after the gap campaign of `docs/agents/mei.md` §7:
-the largest remaining round-trip gaps are `dynamic-velocity` (43, no MEI 5.1
-velocity attribute), `key-sig` mode (37, no MEI `@mode`), `lyric` (30),
-`note` (26), `tuplet-member` (26), `note-head` (22) and `slur` (19); on the
-import row the 380 `style` items are absent from MuseScore's own `.ref.mei`
-files and therefore unrecoverable (proved by
-`mei_musescore_references_carry_no_style`). No format declaration was
-weakened to raise a percentage, and no private carrier was counted as a gain.
+MEI round-trip row reaches 95 % after the gap campaigns of
+`docs/agents/mei.md` §7 and §8: the largest remaining round-trip gaps are
+`dynamic-velocity` (43, no MEI 5.1 velocity attribute on `<dynam>`), `lyric`
+(30), `slur` (19), `credit`/`credit-position` (15/18, first frame only) and
+`tbox` (30). `key-sig` mode, `note` (26), `tuplet-member` (26) and `note-head`
+(22) were closed by the second campaign: the reader sets `KeyMode::Unknown`
+as `Convert::keyFromMEI` does, writes/reads nested `<tuplet>` containers and
+SMuFL `@glyph.name` (`att.noteHeads`). On the import row, 628 reference items
+belong to seven kinds whose carrier is absent from MuseScore's own `.ref.mei`
+(`style` 380, `dynamic-velocity` 43, `note-head` 41, `credit` 15,
+`credit-position` 18, `tbox-text` 15, `tbox-position` 15); a second,
+*additional* figure excluding only those kinds is 95.60 %, printed by
+`mei_import_figure_without_absent_carriers`. The main 87.11 % figure is never
+replaced. No format declaration was weakened to raise a percentage, and no
+private carrier was counted as a gain.
 
 `e2e_corpus` stays at 8/8 passing with no changed discrepancy, as do
 `cargo test --workspace`, clippy `-D warnings` and `fmt --check` after each
