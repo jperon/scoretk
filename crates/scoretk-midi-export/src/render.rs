@@ -176,6 +176,17 @@ pub(crate) fn render(
         let offsets = &pitch_offsets[staff_index];
         let track = &mut performance.tracks[staff_index];
 
+        // Extension additive `smf_text` : `[SMF §Meta-Events]` fait de `FF 03`
+        // le **nom de séquence** de la première piste (format 1) et le nom de
+        // piste des suivantes. Le titre de l'œuvre y est donc porté par un
+        // méta standard, avant le nom de partie, que le lecteur reconnaît par
+        // l'ordre des deux `FF 03` au tick 0.
+        if smf_text && staff_index == 0 && !score.metadata.work_title.is_empty() {
+            track.events.push(Event {
+                tick: 0,
+                kind: EventKind::TrackName(score.metadata.work_title.clone()),
+            });
+        }
         // Nom de piste (`writeHeader`) : le nom de la partie, identique sur
         // toutes ses portées.
         let name = if part.name.is_empty() {

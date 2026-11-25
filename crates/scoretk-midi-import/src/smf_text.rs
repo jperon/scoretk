@@ -40,10 +40,36 @@ const TITLE_PREFIX: &str = "@TK:";
 /// Pose les textes et repères d'un SMF sur les portées importées.
 pub(crate) fn process_text_meta(
     score: &mut scoretk_core::model::Score,
-    tracks: &[MTrack],
+    tracks: &mut [MTrack],
     midi: &MidiFile,
 ) {
-    for track in tracks {
+    // `FF 03` est le nom de séquence de la première piste (`[SMF §Meta-Events]`) :
+    // l'écrivain `smf_text` y place le titre avant le nom de partie. Le lecteur
+    // par défaut garde le premier comme nom de piste ; l'option additive sépare
+    // les deux sans introduire de nouveau type de méta.
+    for track in tracks.iter_mut() {
+        let Some(staff) = track.staff else {
+            continue;
+        };
+        let names: Vec<String> = midi.tracks[track.index]
+            .events
+            .iter()
+            .filter_map(|(tick, raw)| match (&raw.kind, tick) {
+                (EventKind::Meta { kind, data }, 0) if *kind == meta::TRACK_NAME => {
+                    Some(decode_meta_text(data))
+                }
+                _ => None,
+            })
+            .collect();
+        if staff.index() == 0 && names.len() >= 2 {
+            score.metadata.work_title = names[0].clone();
+            if track.name == names[0] {
+                track.name = names[1].clone();
+            }
+        }
+    }
+
+    for track in tracks.iter() {
         let Some(staff) = track.staff else {
             continue;
         };

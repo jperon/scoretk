@@ -242,10 +242,15 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     drum::set_staff_bracket_for_drums(score, &track_list);
 
     let first_tick = find_first_chord_tick(&track_list);
-    let last_tick = create_measures(score, &sigmap, first_tick, last_tick);
+    let measure_end = if options.smf_exact_ticks {
+        last_tick.max(find_last_meta_tick(midi))
+    } else {
+        last_tick
+    };
+    let last_tick = create_measures(score, &sigmap, first_tick, measure_end);
     process_non_lyric_meta(score, &mut track_list, midi, &sigmap);
     if options.smf_text {
-        smf_text::process_text_meta(score, &track_list, midi);
+        smf_text::process_text_meta(score, &mut track_list, midi);
     }
     set_track_info(score, &mut track_list);
     create_keys(score, &mut track_list);
@@ -512,6 +517,28 @@ fn find_last_chord_tick(tracks: &[MTrack]) -> Fraction {
             let off_time = max_note_off_time(&chord.notes);
             if off_time > last {
                 last = off_time;
+            }
+        }
+    }
+    last
+}
+
+/// Dernier tickporté par un évènement du SMF, méta compris (`exact_ticks`).
+///
+/// En mode fidélité SMF, une armure ou un tempo après la dernière note est
+/// une donnée du fichier : les mesures doivent couvrir ce tick pour que
+/// `assign_key_list_to_staff` puisse le poser. Le chemin 4.7.4 garde la
+/// frontière de la dernière note.
+fn find_last_meta_tick(midi: &MidiFile) -> Fraction {
+    let mut last = Fraction::ZERO;
+    for track in &midi.tracks {
+        for (tick, event) in &track.events {
+            if event.kind.is_channel_event() || matches!(event.kind, EventKind::Meta { .. }) {
+                let converted =
+                    midifile::to_muse_score_ticks(*tick, midi.division, midi.is_division_in_tps);
+                if converted > last {
+                    last = converted;
+                }
             }
         }
     }

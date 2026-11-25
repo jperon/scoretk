@@ -188,10 +188,42 @@ fn text(bytes: &[u8]) -> String {
         .to_owned()
 }
 
+/// Retire les `FF 01` dont la charge utile commence par un préfixe privé
+/// (`@ST:`, `@SY:`, `@TK:`). Un lecteur standard les affiche comme du simple
+/// texte mais ne peut pas les rattacher à un champ du modèle : c'est la
+/// mesure « sans extensions privées », sur le même fichier et le même oracle.
+fn strip_private_text(bytes: &[u8]) -> Vec<u8> {
+    let smf = Smf::parse(bytes).expect("un SMF valide");
+    let mut stripped = Smf::new(midly::Header::new(smf.header.format, smf.header.timing));
+    stripped.tracks = smf
+        .tracks
+        .iter()
+        .map(|track| {
+            track
+                .iter()
+                .cloned()
+                .filter(|event| match event.kind {
+                    TrackEventKind::Meta(MetaMessage::Text(data)) => {
+                        let text = text(data);
+                        !text.starts_with("@ST:")
+                            && !text.starts_with("@SY:")
+                            && !text.starts_with("@TK:")
+                    }
+                    _ => true,
+                })
+                .collect()
+        })
+        .collect();
+    let mut result = Vec::new();
+    stripped.write(&mut result).expect("rewrite SMF");
+    result
+}
+
 /// Méta-évènements et messages de canal tels qu'ils sont dans le fichier.
 fn smf_kind_values(bytes: &[u8]) -> KindValues {
     let smf = Smf::parse(bytes).expect("un SMF valide");
     let mut values = KindValues::new();
+    let mut sequence_names: Vec<String> = Vec::new();
     for (track_index, track) in smf.tracks.iter().enumerate() {
         let mut tick = 0i64;
         for event in track {
@@ -223,8 +255,10 @@ fn smf_kind_values(bytes: &[u8]) -> KindValues {
                     insert(&mut values, "title", format!("copyright:{}", text(data)));
                 }
                 TrackEventKind::Meta(MetaMessage::TrackName(data)) => {
+                    // Le premier `FF 03` de la piste 0 est le nom de séquence
+                    // ([SMF §Meta-Events]), les suivants nomment les parties.
                     if tick == 0 && track_index == 0 {
-                        insert(&mut values, "title", format!("work_title:{}", text(data)));
+                        sequence_names.push(text(data));
                     }
                 }
                 TrackEventKind::Meta(MetaMessage::InstrumentName(data)) => {
@@ -240,10 +274,9 @@ fn smf_kind_values(bytes: &[u8]) -> KindValues {
                         if let Some((name, value)) = field.split_once(':') {
                             insert(&mut values, "title", format!("{name}:{value}"));
                         }
-                    } else if let Some(value) = content
-                        .strip_prefix("@ST:")
-                        .or_else(|| content.strip_prefix("@SY:"))
-                    {
+                    } else if let Some(value) = content.strip_prefix("@SY:") {
+                        insert(&mut values, "system-text", value.to_owned());
+                    } else if let Some(value) = content.strip_prefix("@ST:") {
                         insert(&mut values, "staff-text", value.to_owned());
                     } else {
                         insert(&mut values, "staff-text", content);
@@ -271,6 +304,12 @@ fn smf_kind_values(bytes: &[u8]) -> KindValues {
                 _ => {}
             }
         }
+    }
+    // Un seul `FF 03` au tick 0 est un nom de piste. Le nom de **séquence**
+    // n'est distinguishable que par l'ordre : l'écrivain `smf_text` le place
+    // avant le nom de partie.
+    if let Some(work_title) = sequence_names.first().filter(|_| sequence_names.len() >= 2) {
+        insert(&mut values, "title", format!("work_title:{work_title}"));
     }
     values
 }
@@ -651,23 +690,38 @@ fn midi_kind_capacity_table() {
         ..Default::default()
     };
     let default_write = Options::default();
-    let cases: [(&str, &Options, Option<&MidiImportOptions>); 2] = [
-        ("default (4.7.4)", &default_write, None),
-        ("exact + smf_text", &text_write, Some(&exact_text)),
+    let cases: [(&str, &Options, Option<&MidiImportOptions>, bool); 3] = [
+        ("default (4.7.4)", &default_write, None, false),
+        ("exact + smf_text", &text_write, Some(&exact_text), false),
+        (
+            "exact + smf_text (no private)",
+            &text_write,
+            Some(&exact_text),
+            true,
+        ),
     ];
     println!(
         "\n=== MIDI kind capacity: distinct values carried by the SMF ({} scores) ===",
         scores.len()
     );
-    for (label, write_options, read_options) in cases {
+    let mut rows: BTreeMap<&str, BTreeMap<&'static str, Counts>> = BTreeMap::new();
+    for (label, write_options, read_options, strip) in cases {
         let mut totals: BTreeMap<&'static str, Counts> = BTreeMap::new();
         let mut losses: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
         for (_, path) in &scores {
             let score = reference_model(path);
-            let Ok(bytes) = write(&score, Format::Midi, write_options) else {
+            let Ok(written) = write(&score, Format::Midi, write_options) else {
                 continue;
             };
-            let expected = smf_kind_values(&bytes);
+            // L'oracle reste le fichier tel qu'écrit : ce sont les faits que
+            // le format devrait porter. Seule l'entrée du lecteur est privée
+            // des extensions, comme dans §11.8 de `model-modularisation.md`.
+            let expected = smf_kind_values(&written);
+            let bytes = if strip {
+                strip_private_text(&written)
+            } else {
+                written
+            };
             let imported = match read_options {
                 Some(options) => read_midi_with(&bytes, options),
                 None => scoretk::read(&bytes, Format::Midi),
@@ -718,8 +772,24 @@ fn midi_kind_capacity_table() {
                 );
             }
         }
+        rows.insert(label, totals);
     }
     println!();
+
+    // Les `FF 01` privés ne sont pas des méta standard : sans eux, la couverture
+    // des textes et des métadonnées doit baisser, sans toucher aux notes ni
+    // aux méta standards (règle des extensions privées, §11.8).
+    let with = &rows["exact + smf_text"];
+    let without = &rows["exact + smf_text (no private)"];
+    for kind in ["staff-text", "title"] {
+        assert!(
+            without[kind].percent() < with[kind].percent(),
+            "{kind}: private prefixes must account for part of the coverage"
+        );
+    }
+    for kind in ["time-sig", "program", "volume", "pan", "lyric"] {
+        assert_eq!(with[kind].percent(), without[kind].percent());
+    }
 
     // Aucun kind fantôme : `rest` n'est ni porté par le SMF ni déclaré.
     let kinds = scoretk_midi_import::CAPABILITIES

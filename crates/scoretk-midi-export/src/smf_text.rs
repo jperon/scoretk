@@ -89,14 +89,14 @@ pub(crate) fn marker_events(score: &Score, staff: StaffId) -> Vec<(i64, String)>
 }
 
 /// Metadata fields that SMF text can carry. `copyright` is written as the
-/// standard `FF 02` and is therefore not repeated as an `@TK:` field.
+/// standard `FF 02`, `work_title` as the sequence name `FF 03` of track 0
+/// (`[SMF §Meta-Events]`), so neither is repeated as an `@TK:` field.
 type MetadataField = (
     &'static str,
     for<'a> fn(&'a scoretk_core::model::ScoreMetadata) -> &'a str,
 );
 
 pub(crate) const METADATA_FIELDS: &[MetadataField] = &[
-    ("work_title", |meta| &meta.work_title),
     ("subtitle", |meta| &meta.subtitle),
     ("composer", |meta| &meta.composer),
     ("lyricist", |meta| &meta.lyricist),
