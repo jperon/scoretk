@@ -80,6 +80,7 @@ pub mod fret_diagram;
 pub mod hairpin;
 pub mod ids;
 pub mod instrument_channel;
+pub mod inventory;
 pub mod layers;
 pub mod lyrics;
 pub mod measure;
@@ -114,6 +115,9 @@ pub use fret_diagram::{FretBarre, FretDiagram, FretDot, FretDotType, FretMarker,
 pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use instrument_channel::InstrumentChannel;
+pub use inventory::{
+    compare, essential, inventory, Coverage, InventoryItem, LayerCounts, LayerInventory, LAYERS,
+};
 pub use layers::metric::{
     BarLine, BarLineType, Clef, ClefSign, ClefType, Key, KeyMode, KeySig, Metric, TimeSig,
     TimeSigType, Tuplet, TupletNumberType,
