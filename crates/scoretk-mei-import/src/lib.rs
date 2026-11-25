@@ -266,6 +266,35 @@ mod tests {
         assert_eq!(key.mode, scoretk_core::model::KeyMode::Unknown);
     }
 
+    /// `<rend glyph.auth="smufl"></rend> = 80` : le glyphe et le texte
+    /// sont séparés par un espace dans le texte du tempo du modèle.
+    #[test]
+    fn tempo_text_keeps_the_space_after_the_smufl_glyph() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
+            <section><measure n="1">
+              <staff n="1"><layer n="1"><note dur="4" pname="c" oct="4"/></layer></staff>
+              <tempo staff="1" tstamp="1" midi.bpm="80"><rend glyph.auth="smufl">GLYPH</rend> = 80</tempo>
+            </measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let xml = String::from_utf8(bytes.to_vec())
+            .expect("UTF-8")
+            .replace("GLYPH", "\u{eca5}");
+        let score = read_mei(xml.as_bytes()).expect("MEI with an SMuFL tempo");
+        let tempo = score.measures[0]
+            .segments
+            .iter()
+            .flat_map(|segment| segment.annotations.iter())
+            .find_map(|annotation| match &annotation.annotation {
+                scoretk_core::model::Annotation::Tempo(tempo) => Some(tempo),
+                _ => None,
+            })
+            .expect("tempo");
+        assert_eq!(tempo.text.plain(), "\u{eca5} = 80");
+        assert_eq!(tempo.beats_per_second, Some(80.0 / 60.0));
+    }
+
     /// Un `<artic>` enfant de `<note>` s'applique à cette note précise, pas
     /// au dernier accord de la portée (MEI 5.1 `att.articulated`).
     #[test]

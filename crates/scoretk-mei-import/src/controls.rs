@@ -349,7 +349,13 @@ impl<'a> Reader<'a> {
                     text.push_str(&crate::lines_of(child));
                 }
             }
-            text.push_str(node.text_trimmed());
+            let plain = node.text_trimmed();
+            if !text.is_empty() && !plain.is_empty() {
+                // `<rend glyph.auth="smufl"></rend> = 80` : le glyphe et
+                // le texte sont séparés par un espace dans le modèle.
+                text.push(' ');
+            }
+            text.push_str(plain);
             text
         });
         let bpm = node

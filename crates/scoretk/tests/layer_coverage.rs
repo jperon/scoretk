@@ -901,6 +901,7 @@ fn mei_core_loss_diagnostic() {
         "credit",
         "credit-position",
         "note-head",
+        "lyric",
         "slur",
         "clef",
         "dynamic",
