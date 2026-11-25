@@ -52,7 +52,9 @@ pub enum Error {
     /// inconnu.
     ///
     /// [`Format::from_str`]: std::str::FromStr::from_str
-    #[error("format inconnu : « {0} » (attendu mscz, mscx, musicxml, mxl, mei, ly, abc, midi ou gabc)")]
+    #[error(
+        "format inconnu : « {0} » (attendu mscz, mscx, musicxml, mxl, mei, ly, abc, midi ou gabc)"
+    )]
     FormatInconnu(String),
 
     /// Le contenu ne correspond à aucun format reconnu.

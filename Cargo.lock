@@ -535,6 +535,7 @@ dependencies = [
  "scoretk-abc-export",
  "scoretk-abc-import",
  "scoretk-core",
+ "scoretk-gabc-common",
  "scoretk-gabc-export",
  "scoretk-gabc-import",
  "scoretk-lilypond-export",
