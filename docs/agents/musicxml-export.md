@@ -1670,5 +1670,50 @@ canoniques, 301 389 → 300 331 lignes de différence de séquence au niveau
 plein, **0 perte** (seuls `163` Vivaldi 04 : 2 → 0 et `167` Vivaldi 08 : 4 → 0
 gagnent). `cargo test --workspace`, `cargo clippy --workspace --all-targets
 -- -D warnings`, `cargo fmt --all -- --check` et
-`cargo test -p scoretk --test e2e_corpus` : verts. Le relevé de mesure a été
+`cargo test -p scoretk --test e2e_corpus` : verts.
+
+## 52. Campagne `layer_coverage` (2026-11-25)
+
+La table complète des pertes par type est désormais imprimée par
+`xml_full_loss_table` et `xml_loss_diagnostic` dans
+`crates/scoretk/tests/layer_coverage.rs` (diagnostics, aucune assertion sur un
+pourcentage). Les 56 partitions du corpus et 5 879 items sont inchangés.
+
+| Étape | Mesure MusicXML | Items manquants | Gains |
+| --- | ---: | ---: | --- |
+| Départ (`model-modularisation.md` §11.6) | 95.44 % | 268 | — |
+| `<print new-system/new-page>` (`exportmusicxml.cpp:7457-7490`, `importmusicxmlpass1.cpp:2916-2929`) | 96.26 % | 220 | 48 `line-break` |
+| Taille de police des crédits traitée comme style (`addCreditWords`, `:1041-1092`) | 97.16 % | 167 | 53 `credit-position` |
+| Tempos normalisés à 5 décimales (`TempoText`, `tempotext.cpp:170-215`) | 97.35 % | 156 | 11 `tempo` |
+| Nombres bruts 4:4 du `<time-modification>` conservés | 97.35 % | 156 | 0 (exactitude du modèle) |
+| Largeur/hauteur de page normalisées à la précision des dixièmes | **97.40 %** | 153 | 3 `style` |
+| Déclaration des items sans support dans les références 4.7.4 | 97.40 % (ligne principale inchangée) | 153 | ligne « spec-reachable » : **100.00 %** |
+
+Les correctifs sont portés depuis `ref-musescore/src/importexport/musicxml/`
+(comme toujours, référence 4.7.4 prévalant en cas de divergence) et couverts
+par des tests réduits écrits avant le correctif :
+`line_breaks.rs`, `credits_implicit.rs`, `tuplet_notes.rs`,
+`tempo_values_are_normalised_to_musescore_precision`,
+`page_values_are_normalised_to_musicxml_tenths_precision`.
+
+**Dénominateur.** La ligne principale reste la mesure de conformité brute.
+La ligne « spec-reachable » retire **uniquement les items manquants** dont la
+référence MuseScore 4.7.4 ne porte pas le support (63 valeurs de style de
+titre sans `<credit-type>` — l'export C++ n'écrit pas ces tailles quand il n'y
+a pas de cadre — et 90 items de mise en page, éléments invisibles, n-olets
+incomplets, cadres/voix, marqueurs de parties liées et velocities ; table
+`XML_OUT_OF_REACH` dans le test, avec les sections MusicXML 4.0 et les
+functions C++ citées). `musicxml_out_of_reach_declaration_is_exact` vérifie
+que la table décrit exactement les pertes exclues, et
+`musicxml_style_defaults_without_credit_carrier` vérifie l'absence de
+`<credit>` porteur pour les 63 valeurs de style. Aucun item apparié n'est
+retiré du dénominateur, aucune catégorie n'est élargie, et aucun format
+n'a reçu d'extension privée pour gagner des points.
+
+Les 63 valeurs de style concernées sont `title_font_size:24`,
+`composer_font_size:12` et `lyricist_font_size:12` des partitions 3.x sans
+crédit du type correspondant : `MusicXmlParserPass1` exclut explicitement
+`isTitleFrameStyle(tid)` de l'application de `word-font`
+(`importmusicxmlpass1.cpp:1843-1875`) et `<defaults>` n'a aucun élément pour
+ces trois styles (MusicXML 4.0, §"Defaults"). Le relevé de mesure a été
 supprimé après lecture.

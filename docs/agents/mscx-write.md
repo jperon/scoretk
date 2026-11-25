@@ -1191,3 +1191,27 @@ losses need MuseScore's playback model (ornament/grace generation, repeat
 expansion, hidden-stave layout), not another local writer property. The
 pass-14 table is therefore still the current baseline; no further writer
 cause with a measured gain could be identified in this pass.
+
+## 16. Layer coverage 99.51 % → 100 % (2026-11-25)
+
+`cargo test -p scoretk --test layer_coverage -- --nocapture` mesurait
+**99.51 %** de support complet (31 items manquants sur 6 310) pour `.mscx`
+et `.mscz`. `xml_full_loss_table` et `xml_loss_diagnostic` ont montré que
+les 31 items étaient :
+
+| Items | Cause | Correctif |
+| ---: | --- | --- |
+| 30 | `style-internal min_empty_measures:2` des partitions 3.x, perdues à la réécriture 4.70 | `write_style` émet `<minEmptyMeasures>` quand la valeur diffère du défaut 4.x (1), comme `MscWriter::writeStyleFile` ; `Sid::minEmptyMeasures`, `style/styledef.cpp:572`. Test `style_min_empty_measures.rs`. |
+| 1 | `title work_number:…` de `v3/testHarmony6`, dont le dernier saut de ligne était supprimé | le lecteur 4.x lit les `<metaTag>` avec `Element::raw_text()` au lieu de `text()` (qui `trim()`), comme le lecteur 3.x et `Score::setMetaTag`. Test `meta_tag_newline.rs`. |
+
+| Mesure | Avant | Après |
+| --- | ---: | ---: |
+| `.mscx` / `.mscz` support complet | 99.51 % (31 / 6 310 manquants) | **100.00 %** (0 / 6 310) |
+| items essentiels | 100.00 % | 100.00 % |
+| `e2e_corpus` | 8/8 | 8/8 |
+
+Les deux tests réduits ont été écrits avant le correctif et constatés en
+échec. Aucun format n'a reçu d'extension privée : `<minEmptyMeasures>` est un
+style `.mscx` natif et le texte des `<metaTag>` est conservé tel quel par
+MuseScore. Le rapport complet est dans `docs/agents/model-modularisation.md`
+§11.9.

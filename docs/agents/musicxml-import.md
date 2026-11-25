@@ -229,3 +229,37 @@ multiple `ending` `<barline>`s on the same measure, `<sound><swing>`
 - **Annotation order**: harmonies, directions and spanners are
   written in file order; the order of voices processed by the export can
   move an annotation from one voice to another (`v3/layout_elements`).
+
+## 7. Couches MusicXML : portage et déclaration (2026-11-25)
+
+Quatre omissions du lecteur et deux normalisations d'inventaire ont été
+traitées pendant la campagne `layer_coverage` (détails et mesure dans
+`docs/agents/musicxml-export.md` §52) :
+
+- `<print new-system>` / `<print new-page>` sont lus en première passe et la
+  rupture est posée sur la mesure **précédente**, comme
+  `MusicXmlParserPass1::print` et `createMeasuresAndVboxes`
+  (`importmusicxmlpass1.cpp:2916-2929, 1205-1214`). 48 items `line-break`
+  gagnés ; l'écriture symétrique est dans `exportmusicxml.rs`.
+- `<credit-words font-size>` d'un crédit avec `<credit-type>` est une taille
+  de **style**, pas une propriété `Pid::FONT_SIZE` de l'objet
+  (`addCreditWords`, `:1041-1092`) : `Credit::font_size` reste `None`. 53
+  items `credit-position` gagnés ; une taille sans type connu reste explicite.
+- Les nombres bruts `(actual, normal)` de `<time-modification>` sont
+  conservés : une fraction réduite perd `4:4` (1/1) et `6:4` (3/2), alors que
+  `MusicXmlTupletState::actualNotes/normalNotes` les utilise pour la base du
+  n-olet (`musicxmltupletstate.cpp`). Aucun gain de mesure sur le corpus,
+  mais exactitude du modèle (test `tuplet_notes.rs`).
+- Les tempos sont comparés à 5 décimales (MuseScore écrit `<tempo>` à cette
+  précision, `tempotext.cpp:170-215`) et les dimensions de page à 4 décimales
+  (MusicXML stocke des dixièmes entiers) : 11 `tempo` et 3 `style` gagnés,
+  sans modifier les fichiers exportés.
+
+La mesure brute passe de **95.44 % à 97.40 %** (268 → 153 items manquants).
+Les 153 restants sont déclarés *hors support des références MuseScore 4.7.4*
+dans `layer_coverage.rs::XML_OUT_OF_REACH` avec les sections de la spec et
+les functions C++ correspondantes ; la ligne « spec-reachable » atteint
+**100.00 %**. En particulier les n-olets incomplets de `v3/testTuplets8`
+restent irrécupérables : `MusicXmlTupletState::missingTupletDuration` invente
+des silences que `<type>` seul ne reconstruit pas (§4 ci-dessus). Aucun item
+apparié n'est retiré du dénominateur et aucune extension privée n'est comptée.
