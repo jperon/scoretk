@@ -49,11 +49,12 @@ use scoretk_core::model::stable_ids::{
     stable_grace_note_id_with_source, stable_measure_id, stable_note_id, stable_note_id_with_source,
 };
 use scoretk_core::model::{
-    Accidental, AccidentalType, Annotation, Chord, ChordRest, Clef, ClefType, Duration, Extension,
-    Fraction, GraceChord, GraceType, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
-    LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part, Placement, Score, Segment,
-    SegmentItem, SegmentType, SpannerType, StaffId, StemDirection, Tempo, TempoKind, Tick, TimeSig,
-    TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
+    Accidental, AccidentalType, Annotation, ArticulationType, Chord, ChordRest, Clef, ClefType,
+    Duration, Extension, Fraction, GraceChord, GraceType, Instrument, InstrumentChange, Key,
+    KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part,
+    Placement, Score, Segment, SegmentItem, SegmentType, SpannerType, StaffId, StemDirection,
+    Tempo, TempoKind, Tick, TimeSig, TimeSigType, Track, Tuplet, TupletId, TupletNumberType,
+    VOICES,
 };
 
 use super::beams;
@@ -1307,11 +1308,26 @@ impl<'a> Context<'a> {
     /// chantée (`docs/agents/gabc.md` §7). Les écrire dans `<duration>`
     /// décalerait toute la grille d'attaques et casserait l'aller-retour par
     /// du MusicXML standard, qui ne connaît ni le quilisma ni les mesures
-    /// inventées du chant.
+    /// inventées du chant. L'épisème horizontal est le seul cas où la durée
+    /// d'exécution doit traverser `<duration>` : il est noté en noire avec un
+    /// `<tenuto/>` et joué 1,5 fois plus longtemps (décision de l'utilisateur
+    /// du 2026-11-25).
     fn derived_chant(&self) -> bool {
         matches!(
             &self.score.extensions.format,
             Some(Extension::Gregorian(gregorian)) if gregorian.derived_modern_view
+        )
+    }
+
+    /// Vrai si la projection grégorienne a mis un tenuto sur cette note.
+    fn chant_tenuto(chord_rest: &ChordRest) -> bool {
+        matches!(
+            &chord_rest.kind,
+            ChordRestKind::Chord(chord)
+                if chord
+                    .articulations
+                    .iter()
+                    .any(|articulation| articulation.kind == ArticulationType::Tenuto)
         )
     }
 
@@ -1322,7 +1338,14 @@ impl<'a> Context<'a> {
     /// facteur correspondant vaut donc un. Quand `<duration>` diffère de la
     /// figure (trémolo, figure étirée), sa valeur fait foi.
     fn global_ticks(&self, chord_rest: &ChordRest, measure: &Measure) -> Fraction {
-        let mut ticks = if self.derived_chant() {
+        let derived = self.derived_chant();
+        let mut ticks = if derived && Self::chant_tenuto(chord_rest) {
+            // Le tenuto remplace le point : la figure reste une noire, mais
+            // `<duration>` porte la durée réellement jouée (×1,5). On la
+            // recalcule depuis la figure pour ne pas y mêler une retenue de
+            // quilisma, qui reste une durée d'exécution MIDI uniquement.
+            self.notated_ticks(chord_rest, measure) * Fraction::new(3, 2)
+        } else if derived {
             self.notated_ticks(chord_rest, measure)
         } else {
             chord_rest

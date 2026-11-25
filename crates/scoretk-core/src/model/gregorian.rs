@@ -32,10 +32,10 @@
 //! stays portable to `wasm32-unknown-unknown`.
 
 use super::{
-    Accidental, AccidentalType, BarLineType, Breath, BreathType, Chord, ChordRest, ChordRestKind,
-    Clef, ClefType, Duration, DurationType, Fraction, Layers, Lyrics, LyricsSyllabic, Measure,
-    Note, NoteSource, Ornament, OrnamentType, Part, Placement, Score, Segment, SegmentItem,
-    SegmentType, Track,
+    Accidental, AccidentalType, Articulation, ArticulationType, BarLineType, Breath, BreathType,
+    Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration, Fraction, Layers, Lyrics,
+    LyricsSyllabic, Measure, Note, NoteSource, Ornament, OrnamentType, Part, Placement, Score,
+    Segment, SegmentItem, SegmentType, Track,
 };
 
 /// One header field, in source order (`Gabc.tex:67-154`).
@@ -403,11 +403,15 @@ impl Gregorian {
                     gregorian_note: note_index,
                 });
                 let id = score.add_note(projected);
-                // `Gabc.tex:742-797` : le punctum mora double la note,
-                // l'épisème horizontal l'allonge d'un facteur 1,5 (choix de
-                // projection documenté). Rien d'autre dans GABC n'est une
-                // durée fixe (`:801-845`).
+                // `Gabc.tex:742-797` : le punctum mora double la figure notée.
+                // L'épisème horizontal, lui, est un tenuto (trait horizontal,
+                // comme dans les rendus modernes de gabctk/Gregorio) et garde
+                // une figure non pointée : son allongement ×1,5 est porté par
+                // `ticks` (durée d'exécution), exactement comme les retenues
+                // avant un quilisma. Rien d'autre dans GABC n'est une durée
+                // fixe (`:801-845`).
                 let duration = derived_duration(note);
+                let episema = has_episema(note);
                 let mut chord_rest = ChordRest::chord(duration);
                 // Un quilisma est vu comme un ornement (`gabctk.py:1051-1095`
                 // : `\prall` en LilyPond, `P` en ABC) et non comme une durée.
@@ -426,17 +430,26 @@ impl Gregorian {
                         .ornaments
                         .push(Ornament::new(OrnamentType::InvertedMordent));
                 }
+                if episema {
+                    // XSD 4.0 `<articulations><tenuto/></articulations>` :
+                    // le trait horizontal est un signe d'exécution, pas un
+                    // point de prolongation écrit (`docs/agents/gabc.md` §7).
+                    chord
+                        .articulations
+                        .push(Articulation::new(ArticulationType::Tenuto));
+                }
                 chord_rest.kind = ChordRestKind::Chord(chord);
                 // Les notes avant un quilisma sont retenues progressivement ;
                 // `ticks` porte la durée réelle quand elle diffère de la
                 // figure notée (`ChordRest::ticks`, convention MuseScore).
                 let held = quilisma_hold(syllable, note_index);
-                if held != Fraction::ONE {
+                let played = if episema { held * EPISEMA_HOLD } else { held };
+                if played != Fraction::ONE {
                     // La retenue est une durée d'exécution : elle ne décale
                     // pas la grille d'attaques déjà inventée par la projection
                     // (une noire par lettre), sinon un aller-retour par du
                     // MusicXML standard perdrait toutes les mesures dérivées.
-                    chord_rest.ticks = Some(duration.ticks() * held);
+                    chord_rest.ticks = Some(duration.ticks() * played);
                 }
                 // Segment ticks are absolute in the pivot (`pass2.rs:495-518`),
                 // not relative to the measure.
@@ -623,27 +636,38 @@ fn quilisma_hold(syllable: &Syllable, note_index: usize) -> Fraction {
     factor
 }
 
-/// Durée projetée d'une note (`Gabc.tex:742-797`).
+/// Allongement d'exécution d'une note portant un épisème horizontal
+/// (`Gabc.tex:769-797`) : le trait est un tenuto, la figure écrite reste
+/// non pointée, mais la durée jouée est multipliée par 1,5 (décision de
+/// l'utilisateur du 2026-11-25, `docs/agents/gabc.md` §7).
+pub const EPISEMA_HOLD: Fraction = Fraction::from_ratio(3, 2);
+
+/// Vrai si la note porte au moins un épisème horizontal (`Gabc.tex:769-797`).
 ///
-/// La noire est la durée de base. Le punctum mora `.` la double (blanche),
-/// l'épisème horizontal `_` la multiplie par **1,5** (noire pointée, donc un
-/// `<dot/>` MusicXML) ; les deux ensemble donnent une blanche pointée. Ce
-/// facteur est un choix de projection : GABC n'a aucune durée fixe
-/// (`:801-845`) et Gregorio ne stocke que les signes.
+/// Plusieurs épisèmes dans un même neume ne s'additionnent pas : c'est le même
+/// trait continu, porté une seule fois par la projection moderne.
+fn has_episema(note: &GregorianNote) -> bool {
+    note.signs
+        .iter()
+        .any(|sign| sign.kind == SignKind::HorizontalEpisema)
+}
+
+/// Figure **écrite** projetée d'une note (`Gabc.tex:742-797`).
+///
+/// La noire est la durée de base et le punctum mora `.` la double (blanche).
+/// L'épisème horizontal `_` n'ajoute plus de point : il devient un tenuto et
+/// son allongement ×1,5 passe dans `ChordRest::ticks` (voir
+/// [`EPISEMA_HOLD`]). Ce choix de projection est documenté dans
+/// `docs/agents/gabc.md` §7 ; GABC n'a aucune durée fixe (`:801-845`).
 fn derived_duration(note: &GregorianNote) -> Duration {
-    let mora = note
+    if note
         .signs
         .iter()
-        .any(|sign| sign.kind == SignKind::PunctumMora);
-    let episema = note
-        .signs
-        .iter()
-        .any(|sign| sign.kind == SignKind::HorizontalEpisema);
-    match (mora, episema) {
-        (true, true) => Duration::with_dots(DurationType::Half, 1),
-        (true, false) => Duration::half(),
-        (false, true) => Duration::with_dots(DurationType::Quarter, 1),
-        (false, false) => Duration::quarter(),
+        .any(|sign| sign.kind == SignKind::PunctumMora)
+    {
+        Duration::half()
+    } else {
+        Duration::quarter()
     }
 }
 
@@ -1155,6 +1179,74 @@ mod tests {
         assert_eq!(
             chords[1].ornaments,
             vec![Ornament::new(OrnamentType::InvertedMordent)]
+        );
+    }
+
+    fn note_with_signs(letter: char, signs: Vec<NeumeSign>) -> GregorianNote {
+        GregorianNote {
+            letter,
+            signs,
+            ..GregorianNote::default()
+        }
+    }
+
+    #[test]
+    fn episema_is_a_tenuto_with_a_longer_performance_duration() {
+        let episema = || NeumeSign::new(SignKind::HorizontalEpisema, "_");
+        let payload = Gregorian {
+            clefs: vec!["c4".to_owned()],
+            syllables: vec![Syllable {
+                text: "De".to_owned(),
+                notes: vec![
+                    note_with_signs('g', vec![episema()]),
+                    note_with_signs('h', vec![NeumeSign::new(SignKind::PunctumMora, ".")]),
+                    // Plusieurs épisèmes dans un même neume : un seul tenuto,
+                    // un seul allongement.
+                    note_with_signs('i', vec![episema(), episema()]),
+                    note_with_signs(
+                        'j',
+                        vec![NeumeSign::new(SignKind::PunctumMora, "."), episema()],
+                    ),
+                ],
+                space_after: true,
+                ..Syllable::default()
+            }],
+            ..Gregorian::default()
+        };
+        let score = payload.build_derived_score();
+        let chords: Vec<&Chord> = events(&score)
+            .iter()
+            .filter_map(|event| event.chord_ref())
+            .collect();
+        // Figure non pointée, mais durée jouée ×1,5 : le trait horizontal est
+        // un tenuto, pas un point (`docs/agents/gabc.md` §7).
+        assert_eq!(chords[0].articulations.len(), 1);
+        assert_eq!(chords[0].articulations[0].kind, ArticulationType::Tenuto);
+        assert!(chords[1].articulations.is_empty());
+        assert_eq!(chords[2].articulations.len(), 1);
+        assert_eq!(chords[3].articulations.len(), 1);
+        let written: Vec<Duration> = events(&score).iter().map(|event| event.duration).collect();
+        assert_eq!(
+            written,
+            [
+                Duration::quarter(),
+                Duration::half(),
+                Duration::quarter(),
+                Duration::half()
+            ]
+        );
+        let played: Vec<Fraction> = events(&score)
+            .iter()
+            .map(|event| event.ticks.unwrap_or_else(|| event.duration.ticks()))
+            .collect();
+        assert_eq!(
+            played,
+            [
+                Fraction::new(3, 8),
+                Fraction::new(1, 2),
+                Fraction::new(3, 8),
+                Fraction::new(3, 4)
+            ]
         );
     }
 

@@ -31,9 +31,9 @@
 //! in `docs/agents/gabc.md` §8/§10.
 
 use scoretk_core::model::{
-    BarKind, BarLineType, ChordRestKind, ClefType, Duration, Gregorian, GregorianHeader,
-    GregorianNote, LyricsSyllabic, NeumeSign, OrnamentType, Score, SegmentItem, SignKind, Syllable,
-    Track,
+    ArticulationType, BarKind, BarLineType, ChordRestKind, ClefType, Duration, Gregorian,
+    GregorianHeader, GregorianNote, LyricsSyllabic, NeumeSign, OrnamentType, Score, SegmentItem,
+    SignKind, Syllable, Track,
 };
 use scoretk_gabc_common::syntax;
 
@@ -55,6 +55,11 @@ struct Event {
     /// `<ornaments><inverted-mordent/></ornaments>` sur une note de chant :
     /// convention gabctk du quilisma (`gabctk.py:1051-1095`, `w` dans GABC).
     quilisma: bool,
+    /// `<articulations><tenuto/></articulations>` : l'épisème horizontal
+    /// (`Gabc.tex:769-797`) est noté comme un tenuto et joué ×1,5 dans la vue
+    /// moderne (`docs/agents/gabc.md` §7). Il doit revenir à `_`, jamais à un
+    /// point ou à un autre glyphe.
+    episema: bool,
 }
 
 /// Builds the payload the writer will serialise. Missing L4/L5 data is not
@@ -119,7 +124,7 @@ pub(super) fn from_score(score: &Score) -> Gregorian {
                     });
                     effect[slot] = wanted;
                 }
-                let (mut glyph, mut signs) = signs_for_duration(event.duration);
+                let (mut glyph, mut signs) = signs_for_duration(event.duration, event.episema);
                 if event.quilisma {
                     glyph.push('w');
                     signs.push(NeumeSign::new(SignKind::Quilisma, "w"));
@@ -294,6 +299,10 @@ fn collect_events(score: &Score, staff: usize) -> Vec<Event> {
                             .ornaments
                             .iter()
                             .any(|ornament| ornament.kind == OrnamentType::InvertedMordent),
+                    episema: chord
+                        .articulations
+                        .iter()
+                        .any(|articulation| articulation.kind == ArticulationType::Tenuto),
                 });
             }
         }
@@ -312,6 +321,7 @@ fn collect_events(score: &Score, staff: usize) -> Vec<Event> {
                 space_after: false,
                 bar: Some(bar),
                 quilisma: false,
+                episema: false,
             });
         }
     }
@@ -354,12 +364,14 @@ fn letter_for_height(height: i32) -> char {
 }
 
 /// Traduit une durée du pivot en signes GABC (`Gabc.tex:742-797`) : le
-/// punctum mora `.` double la note, l'épisème `_` l'allonge de 1,5. C'est la
-/// réciproque de `derived_duration` dans le noyau ; sans elle, un aller-retour
-/// par du MusicXML standard perdrait tous les écarts de durée.
-fn signs_for_duration(duration: Duration) -> (String, Vec<NeumeSign>) {
+/// punctum mora `.` double la note, l'épisème `_` est le tenuto (joué ×1,5
+/// dans la vue moderne). C'est la réciproque de `derived_duration` dans le
+/// noyau ; sans elle, un aller-retour par du MusicXML standard perdrait tous
+/// les écarts de durée. La figure pointée sans tenuto reste acceptée comme
+/// entrée tiers : elle devient aussi un épisème, jamais un point GABC.
+fn signs_for_duration(duration: Duration, episema: bool) -> (String, Vec<NeumeSign>) {
     let has_mora = duration.ticks() >= Duration::half().ticks();
-    let has_episema = duration.is_dotted();
+    let has_episema = episema || duration.is_dotted();
     let mut glyph = String::new();
     let mut signs = Vec::new();
     if has_mora {
@@ -528,6 +540,35 @@ mod tests {
     }
 
     #[test]
+    fn a_tenuto_on_a_plain_quarter_becomes_an_episema_not_a_dot() {
+        // L'inverse MusicXML → GABC : `<type>quarter</type>` sans `<dot/>` mais
+        // avec `<tenuto/>` (durée d'exécution ×1,5) doit réémettre `_`.
+        let mut score = score_with_notes(&[(60, 14)], &["Do"], &[]);
+        let track = Track::new(score.staves[0].id, 0);
+        let segment = score.measures[0]
+            .segments
+            .iter_mut()
+            .find(|segment| segment.element(track).is_some())
+            .expect("a note segment");
+        if let Some(SegmentItem::ChordRest(chord_rest)) = segment.element_mut(track) {
+            if let Some(chord) = chord_rest.chord_mut() {
+                chord
+                    .articulations
+                    .push(scoretk_core::model::Articulation::new(
+                        ArticulationType::Tenuto,
+                    ));
+            }
+        }
+        let gregorian = from_score(&score);
+        let note = &gregorian.syllables[0].notes[0];
+        assert_eq!(note.glyph, "_");
+        assert_eq!(
+            note.signs,
+            vec![NeumeSign::new(SignKind::HorizontalEpisema, "_")]
+        );
+    }
+
+    #[test]
     fn an_empty_score_still_yields_a_valid_header_block() {
         let gregorian = from_score(&Score::new());
         assert_eq!(gregorian.headers[0].value, "Cantus");
@@ -544,6 +585,7 @@ mod tests {
                 space_after: false,
                 bar: None,
                 quilisma: false,
+                episema: false,
             })
             .collect::<Vec<_>>();
         assert!(["c2", "c3", "c4", "f3", "f4"].contains(&choose_clef(&events, 15)));

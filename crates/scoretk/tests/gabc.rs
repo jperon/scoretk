@@ -296,8 +296,8 @@ fn gabc_word_syllabics_reach_musicxml() {
     }
 }
 
-/// `Gabc.tex:742-797` : punctum mora × 2, épisème horizontal × 1,5 ; les
-/// deux ensemble donnent une blanche pointée. La durée de base est la noire.
+/// `Gabc.tex:742-797` : punctum mora × 2 ; l'épisème horizontal est un tenuto
+/// noté sans point et joué ×1,5. MIDI et timeline gardent les mêmes durées.
 #[test]
 fn gabc_durations_reach_musicxml_and_midi() {
     const DUR: &str = "name:t;\n%%\n(c4) A(g.)h(i_)B(g._) (::)\n";
@@ -310,10 +310,76 @@ fn gabc_durations_reach_musicxml_and_midi() {
         .map(|note| note.duration_ticks)
         .collect();
     // Le `NoteOff` SMF est à `NoteOn + durée - 1` (gate MIDI).
-    assert_eq!(ticks, [959, 719, 1439], "half, dotted quarter, dotted half");
+    assert_eq!(ticks, [959, 719, 1439], "half, quarter ×1,5, half ×1,5");
     let xml = String::from_utf8(playback.musicxml).expect("UTF-8 MusicXML");
     assert!(xml.contains("<type>half</type>"), "{xml}");
-    assert!(xml.contains("<dot/>"), "episema lengthens by 1.5: {xml}");
+    assert!(xml.contains("<type>quarter</type>"), "{xml}");
+    assert_eq!(
+        xml.matches("<dot/>").count(),
+        0,
+        "an episema is a tenuto, not a dot: {xml}"
+    );
+    assert_eq!(
+        xml.matches("<tenuto/>").count(),
+        2,
+        "both episemata are tenutos: {xml}"
+    );
+    // Divisions = 2 : une noire vaut 2, le tenuto 3, la blanche 4 et
+    // l'épisème sur la blanche 6.
+    assert!(
+        xml.contains("<duration>3</duration>"),
+        "the tenuto note is played 1.5 quarters: {xml}"
+    );
+    assert!(
+        xml.contains("<duration>6</duration>"),
+        "mora + episema is played 1.5 halves: {xml}"
+    );
+}
+
+/// Le tenuto revient à l'épisème `_` sans point ni autre glyphe, même quand
+/// le MusicXML vient d'un tiers (aucun champ privé `gabc:`).
+#[test]
+fn musicxml_tenuto_returns_as_a_gabc_episema() {
+    const XML: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Tenuto</work-title></work>
+  <part-list><score-part id="P1"><part-name>Voice</part-name></score-part></part-list>
+  <part id="P1"><measure number="1">
+    <attributes>
+      <divisions>2</divisions>
+      <clef><sign>C</sign><line>4</line></clef>
+      <staff-details><staff-lines>4</staff-lines></staff-details>
+    </attributes>
+    <note><pitch><step>G</step><octave>3</octave></pitch><duration>3</duration>
+      <type>quarter</type>
+      <notations><articulations><tenuto/></articulations></notations>
+      <lyric number="1"><syllabic>single</syllabic><syllable>Do</syllable></lyric></note>
+  </measure></part>
+</score-partwise>"#;
+    let score = read(XML.as_bytes(), Format::MusicXml).expect("lecture MusicXML");
+    let gabc = String::from_utf8(write(&score, Format::Gabc, &Options::default()).expect("GABC"))
+        .expect("UTF-8 GABC");
+    assert!(
+        gabc.contains("g_"),
+        "le tenuto doit revenir en `_` : {gabc}"
+    );
+    assert!(
+        !gabc.contains("g."),
+        "aucun point de prolongation ne doit apparaître : {gabc}"
+    );
+    let again = read(gabc.as_bytes(), Format::Gabc).expect("relecture GABC");
+    let Some(Extension::Gregorian(payload)) = &again.extensions.format else {
+        panic!("charge grégorienne reconstruite");
+    };
+    assert!(
+        payload
+            .syllables
+            .iter()
+            .flat_map(|syllable| &syllable.notes)
+            .flat_map(|note| &note.signs)
+            .any(|sign| sign.kind == scoretk::model::SignKind::HorizontalEpisema),
+        "le signe `_` doit survivre : {gabc}"
+    );
 }
 
 /// Positions source UTF-16 : identifiants MusicXML et carte des temps sont

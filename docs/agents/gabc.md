@@ -158,13 +158,21 @@ meter nor invented measure numbers: MusicXML writes
 record make that choice explicit (`model-modularisation.md` §7.1).
 
 **Durations (item 5).** GABC has no fixed duration (`Gabc.tex:801-845`): the
-projection uses an equal **quarter note** per sung pitch letter, a punctum
-mora `.` (`:742-755`) **doubles** it (half note), and a horizontal episema `_`
-(`:769-797`) lengthens it by a documented **factor 1.5** (dotted quarter). Both
-together give a dotted half. These are written as `<type>`/`<dot/>` in
-MusicXML and as note-off ticks in MIDI; the separation bars add breaths
-instead of metric time. The reverse projection writes the corresponding `.`
-and `_` signs so a standard-MusicXML round trip keeps the durations.
+projection uses an equal **quarter note** per sung pitch letter and a punctum
+mora `.` (`:742-755`) **doubles** the written figure (half note). A horizontal
+episema `_` (`:769-797`) is shown as a **plain quarter with a tenuto**
+(`<notations><articulations><tenuto/></articulations></notations>`), as in
+gabctk/Gregorio modern renderings, while its played duration stays lengthened
+by the documented **factor 1.5** (user decision, 2026-11-25): the written
+figure has no `<dot/>`, `<duration>` carries 1.5 quarters, and
+`ChordRest::ticks` carries the same performance duration used by MIDI and the
+timeline. Mora + episema gives a written half played 1.5 halves. The
+separation bars add breaths instead of metric time. The reverse projection
+writes `.` from a doubled figure and `_` from a tenuto (also from a dotted
+figure coming from third-party MusicXML), so a standard-MusicXML round trip
+keeps the durations without inventing an extra dot or glyph. Tests:
+`crates/scoretk-core/src/model/gregorian.rs`,
+`crates/scoretk/tests/gabc.rs` and `scoretk-gabc-export/src/from_score.rs`.
 
 **Quilisma (user decision, 2026-11-25).** Following gabctk's convention
 (`gabctk.py:35,45,1001,1051-1095`; the script is read as text, never imported
@@ -340,7 +348,7 @@ to carry (`Gabc.tex:801-845`).
 | Optional modern view | `gabcModernClef` on wasm `convert` / `Options::gabc_modern_clef`: G clef with `<clef-octave-change>-1</clef-octave-change>` for a low range, 5 staff lines instead of the C clef/4 lines | XSD 4.0 `clef`, `clef-octave-change`, `staff-lines`; `Gabc.tex:847-870` |
 | Stemless neumes and one slur per neume | `<stem>none</stem>` and a `<slur>` pair spanning the sung notes of each parenthesised group | XSD 4.0 `stem-value` (`none`), `slur`; `Gabc.tex:36-58,452-700` |
 | Above-staff text `[alt:…]` | `<direction placement="above">/<direction-type>/<words>` with the plain text (no `gabc:` prefix); `gabc:syllable A=` keeps the L6 fact | XSD 4.0 `words`, `placement`; `Gabc.tex:1088-1091` |
-| Rhythmic and shape signs | `<notations>/<technical>/<other-technical>` (`gabc:sign`) | XSD 4.0 `other-technical`; `Gabc.tex:702-797` |
+| Rhythmic and shape signs | `<notations>/<technical>/<other-technical>` (`gabc:sign`); the horizontal episema also reaches standard MusicXML as `<articulations><tenuto/></articulations>` with an undotted `<type>` and a ×1,5 `<duration>` | XSD 4.0 `other-technical`, `articulations`, `tenuto`; `Gabc.tex:702-797` |
 | Separation bars and their exact token | `<barline>/<bar-style>` for the modern view (`,` → `tick`, `;` → `short`, `:` → `light-light`, `::` → `light-heavy`); a `<breath-mark/>` on the last sung note; `gabc:syllable` `b=` fields for the exact tokens `;1`…`;8`, `::`, `:?`, … | XSD 4.0 `barline`, `breath-mark`; `Gabc.tex:801-845` (minima = quarter bar, minor = half bar, maior = full bar, finalis), `src/dump/dump.c:805-821` |
 | Same bars in ABC | `,` → `!shortphrase![|]`, `;` → `!mediumphrase![|]` (`gabctk.py:932-933`, user decision 2026-11-25), `:` → `\|\|`, `::` → `\|]`; the reverse projection reads the MusicXML bar styles back as `BarKind::DivisioMinima`/`DivisioMinor` | gabctk `Barre.abc`, ABC 2.1 §4.2 phrase decorations; `crates/scoretk/tests/abc_barline_gabc.rs` |
 
