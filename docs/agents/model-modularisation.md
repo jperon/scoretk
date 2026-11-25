@@ -701,13 +701,13 @@ builds the instrument only; it changes no reader, no writer and no output byte.
   `spanner`, `breath`. L3: `lyric`, `dynamic`, `tempo`, `staff-text`,
   `system-text`, `rehearsal-mark`, `instrument-change`, `harmony`,
   `figured-bass`, `annotation`, `title`, `credit`, `tbox-text`. L4:
-  `instrument`, `program`, `channel`, `volume`, `pan`, `midi-articulation`,
+  `instrument`, `program`, `channel`, `volume`, `pan`,
   `velocity`, `user-velocity`, `dynamic-velocity`, `articulate`,
   `playback-transposition`. L5: `style`, `credit-position`, `tbox-position`,
-  `beam`, `stem`, `note-head`, `line-break`, `tuplet-bracket`. L0 has no
-  separate item kind (it is the event spine used to reach the others) and L6
-  is still a zero-sized marker: those layers are declared but contribute no
-  item yet, so they are neutral in the ratios.
+  `beam`, `stem`, `note-head`, `line-break`, `tuplet-bracket`. L6:
+  `midi-articulation`, `style-internal`. L0 has no separate item kind (it is
+  the event spine used to reach the others), so it is neutral in the ratios;
+  L6 counts only for MuseScore, which declares it.
 - **Matching.** Two inventories are multisets of item keys. An item in the
   candidate matches a reference item only if **all five** components are
   equal; duplicates are counted, so two identical attacks are two items.
@@ -836,15 +836,32 @@ writer, so its essential score (71.04 %) is lower than the round-trip one.
 
 Reading the table:
 
-1. **`midi-articulation` (L4, 367 items) is the largest cross-format gap.**
+1. **`midi-articulation` (was L4, now L6; 367 items) was the largest cross-format gap.**
    MuseScore files carry a per-instrument articulation/velocity table; no
-   other declared format writes it back. This is the first target for the
-   L4 work (`%%MIDI` in ABC, `<midi-instrument>` details in MusicXML,
-   playback rendering in MIDI).
-2. **`style` (L5, 434–444 items)** is lost by MusicXML and LilyPond; part of
-   it is legitimately unrepresentable in ABC/MIDI (L5 not declared there),
-   so the fix must be driven by each format's declaration, not by the raw
-   count.
+   other declared format writes it back. It has been moved out of L4 into
+   L6 (MuseScore-only) in the inventory: MusicXML's `<midi-instrument>` only
+   has channel/program/volume/pan (`format-ref/musicxml.md` §"Clef, time,
+   staves, parts"), SMF has channel voice and meta-events but no articulation
+   table (`format-ref/midi.md` §"Events and time", §"Instruments, parts,
+   repeats"), ABC's `%%MIDI` directives cannot reconstruct it
+   (`format-mapping/abc.md` §6.2 and "Model gaps" n°5), and LilyPond has no
+   equivalent. The formats' effects (velocity, gate time) remain in L4; the
+   table itself is a MuseScore instrument definition, not a format item.
+   `midi_articulation_table_is_a_musescore_extension` in the core asserts the
+   reclassification. The historical table above is left unchanged; the new
+   ratios are in §11.6.
+2. **`style` (L5, 434–444 items)** is *partly* a genuine format item and
+   partly a MuseScore-internal default. Page geometry (`spatium_mm`, page
+   width/height and margins) and credit font sizes are carried by MusicXML
+   `<defaults><scaling>/<page-layout>/<page-margins>` and `<credit-words
+   font-size>` (`format-ref/musicxml.md` §"Document shape") and by LilyPond
+   `\paper` (`format-mapping/lilypond.md`, `\paper` row): they stay in L5 and
+   the writers must be fixed. `hairpinHeight`, `smallStaffMag`,
+   `dontHideStavesInFirstSystem`, `concertPitch`, `createMultiMeasureRests`,
+   `pageCount` and `minEmptyMeasures` have no counterpart in those specs:
+   they are now `style-internal` (L6, MuseScore only) with a core test
+   (`muse_score_only_style_defaults_are_extensions`). ABC and MIDI do not
+   declare L5, so those rows are unaffected by the split.
 3. **`tuplet-bracket` (L5, 262 items)** is lost by the MuseScore round trip
    itself: the reader records `bracket`/`bracket_explicit` but the writer
    re-computes `bracket` from the beam groups. It is a writer fidelity bug,

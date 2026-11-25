@@ -772,8 +772,19 @@ pub fn inventory(score: &Score) -> LayerInventory {
             result.push(Layers::PLAYBACK, None, None, "pan", pan.to_string());
         }
         for articulation in &instrument.midi_articulations {
+            // The `<Instrument><Articulation>` table is a MuseScore instrument
+            // definition (`engraving/dom/instrument.h::MidiArticulation`), not a
+            // format-level playback item: MusicXML's `<midi-instrument>` only
+            // carries channel/program/volume/pan (format-ref/musicxml.md §"Clef,
+            // time, staves, parts"), SMF has channel voice messages and meta
+            // events but no articulation table (format-ref/midi.md §"Events and
+            // time", §"Instruments, parts, repeats"), ABC's `%%MIDI` directives
+            // cannot reconstruct one (format-mapping/abc.md §6.2 and "Model
+            // gaps" n°5) and LilyPond has no equivalent. Its *effect* can be
+            // rendered as note velocity, but the table itself is an L6 payload
+            // that only MuseScore carries.
             result.push(
-                Layers::PLAYBACK,
+                Layers::EXTENSIONS,
                 None,
                 None,
                 "midi-articulation",
@@ -797,6 +808,37 @@ pub fn inventory(score: &Score) -> LayerInventory {
         );
     }
 
+    // Page geometry, scaling and credit font sizes are real format data:
+    // MusicXML has `<defaults><scaling>/<page-layout>/<page-margins>` and
+    // `<credit-words font-size>` (format-ref/musicxml.md §"Document shape"),
+    // LilyPond has `\paper` (format-mapping/lilypond.md, `\paper` row). The
+    // other fields below are MuseScore's own layout defaults: no format spec
+    // carries `hairpinHeight`, `smallStaffMag`, `dontHideStavesInFirstSystem`,
+    // `concertPitch`, `createMultiMeasureRests`, `pageCount` or
+    // `minEmptyMeasures`. They are L6 extensions, not L5 format items.
+    let style_item = |result: &mut LayerInventory, name: &str, value: String| {
+        let internal = matches!(
+            name,
+            "hairpin_height_sp"
+                | "small_staff_mag"
+                | "dont_hide_staves_in_first_system"
+                | "concert_pitch"
+                | "create_multi_measure_rests"
+                | "page_count"
+                | "min_empty_measures"
+        );
+        result.push(
+            if internal {
+                Layers::EXTENSIONS
+            } else {
+                Layers::ENGRAVING
+            },
+            None,
+            None,
+            if internal { "style-internal" } else { "style" },
+            value,
+        );
+    };
     let style = &score.engraving.style;
     let default = StyleSettings::default();
     for (name, value, baseline) in [
@@ -894,13 +936,7 @@ pub fn inventory(score: &Score) -> LayerInventory {
         ),
     ] {
         if (value - baseline).abs() > 1e-9 {
-            result.push(
-                Layers::ENGRAVING,
-                None,
-                None,
-                "style",
-                format!("{name}:{}", float(value)),
-            );
+            style_item(&mut result, name, format!("{name}:{}", float(value)));
         }
     }
     for (name, value, baseline) in [
@@ -927,39 +963,27 @@ pub fn inventory(score: &Score) -> LayerInventory {
         ),
     ] {
         if value != baseline {
-            result.push(
-                Layers::ENGRAVING,
-                None,
-                None,
-                "style",
-                format!("{name}:{value}"),
-            );
+            style_item(&mut result, name, format!("{name}:{value}"));
         }
     }
     if style.lyrics_placement != default.lyrics_placement {
-        result.push(
-            Layers::ENGRAVING,
-            None,
-            None,
-            "style",
+        style_item(
+            &mut result,
+            "lyrics_placement",
             format!("lyrics_placement:{:?}", style.lyrics_placement),
         );
     }
     if style.page_count != default.page_count {
-        result.push(
-            Layers::ENGRAVING,
-            None,
-            None,
-            "style",
+        style_item(
+            &mut result,
+            "page_count",
             format!("page_count:{}", style.page_count),
         );
     }
     if style.min_empty_measures != default.min_empty_measures {
-        result.push(
-            Layers::ENGRAVING,
-            None,
-            None,
-            "style",
+        style_item(
+            &mut result,
+            "min_empty_measures",
             format!("min_empty_measures:{}", style.min_empty_measures),
         );
     }
@@ -1006,6 +1030,49 @@ mod tests {
         assert_eq!(note.staff, Some(0));
         assert_eq!(note.value, "60");
         assert_eq!(note.layer, Layers::EVENTS);
+    }
+
+    #[test]
+    fn midi_articulation_table_is_a_musescore_extension() {
+        let mut score = Score::new();
+        let part = score.add_part(crate::model::Part::new("Piano", "Pno"));
+        score.parts[part.index()]
+            .instrument
+            .midi_articulations
+            .push(crate::model::MidiArticulation {
+                name: "staccato".to_owned(),
+                velocity: 80,
+                gate_time: 50,
+            });
+        let found = inventory(&score)
+            .items
+            .into_iter()
+            .find(|item| item.kind == "midi-articulation")
+            .expect("the articulation table is inventoried");
+        assert_eq!(found.layer, Layers::EXTENSIONS);
+        let own = LayerInventory { items: vec![found] };
+        assert_eq!(compare(&own, &own, Layers::PLAYBACK).total.reference, 0);
+        assert_eq!(compare(&own, &own, Layers::ALL).total.reference, 1);
+    }
+
+    #[test]
+    fn muse_score_only_style_defaults_are_extensions() {
+        let mut score = Score::new();
+        score.engraving.style.min_empty_measures += 1;
+        score.engraving.style.spatium_mm += 1.0;
+        let items = inventory(&score).items;
+        let internal = items
+            .iter()
+            .find(|item| item.kind == "style-internal")
+            .expect("the MuseScore-only default is inventoried");
+        assert_eq!(internal.layer, Layers::EXTENSIONS);
+        assert!(internal.value.starts_with("min_empty_measures:"));
+        let page = items
+            .iter()
+            .find(|item| item.kind == "style")
+            .expect("page geometry stays a format item");
+        assert_eq!(page.layer, Layers::ENGRAVING);
+        assert!(page.value.starts_with("spatium_mm:"));
     }
 
     #[test]
