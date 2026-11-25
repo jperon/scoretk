@@ -714,6 +714,75 @@ fn reference_sources_distinguish_self_written_snapshots() {
     }
 }
 
+/// Full per-kind loss table for the two MEI rows (the main table only prints
+/// the eight largest gaps). Diagnostic only, like `layer_coverage_table`: it
+/// never asserts on a percentage.
+#[test]
+fn mei_full_loss_table() {
+    let mei = &DIRECTIONS[7];
+    assert_eq!(mei.name, "mei");
+    let declared = mei.import.declared().union(mei.export.declared());
+    let kinds = mei.import.declared_kinds().or(mei.export.declared_kinds());
+    let scores = corpus_scores();
+
+    let mut round_trip = Totals::default();
+    for (_, path) in &scores {
+        let score = reference_model(path);
+        let reference = inventory(&score);
+        let Ok(bytes) = write(&score, mei.format, &Options::default()) else {
+            round_trip.skipped += 1;
+            continue;
+        };
+        let Ok(candidate) = read(&bytes, mei.format) else {
+            round_trip.skipped += 1;
+            continue;
+        };
+        let candidate = inventory(&candidate);
+        let coverage = compare_with_kinds(&reference, &candidate, declared, kinds);
+        round_trip.add(&coverage, essential(&reference, &candidate));
+    }
+
+    let mut import = Totals::default();
+    for (name, path) in &scores {
+        let Some((reference_path, format)) = reference_file(name, ReferenceKind::Mei) else {
+            continue;
+        };
+        let reference = inventory(&reference_model(path));
+        let Ok(bytes) = fs::read(&reference_path) else {
+            import.skipped += 1;
+            continue;
+        };
+        let Ok(candidate) = read(&bytes, format) else {
+            import.skipped += 1;
+            continue;
+        };
+        let candidate = inventory(&candidate);
+        let coverage = compare_with_kinds(&reference, &candidate, declared, kinds);
+        import.add(&coverage, essential(&reference, &candidate));
+    }
+
+    for (label, totals) in [
+        ("round trip (own writer)", &round_trip),
+        ("import of *.ref.mei", &import),
+    ] {
+        println!(
+            "\n=== MEI per-kind losses: {label} ({:.2} %, {} skipped) ===",
+            totals.total.percent(),
+            totals.skipped
+        );
+        let mut gaps: Vec<((u8, &'static str), usize)> = totals
+            .missing_kinds
+            .iter()
+            .map(|((bits, kind), count)| ((*bits, *kind), *count))
+            .collect();
+        gaps.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+        for ((bits, kind), count) in gaps {
+            println!("    {:<28} {:<16} {:>5}", kind, layer_name(bits), count);
+        }
+    }
+    println!();
+}
+
 #[test]
 fn mei_import_alone_reads_musescore_474_references() {
     let mut checked = 0;
