@@ -184,6 +184,30 @@ ordering of bars versus notes, and exact line breaks/indentation. These are
 not fields of the payload, so a byte comparison would have hidden their loss
 by copying them; see §9 for the canonical results.
 
+### Scores without an L6 payload
+
+`write_gabc` no longer refuses a score read from MusicXML, MuseScore or MIDI.
+`from_score.rs` builds a plain-chant payload from the pivot:
+
+| Pivot fact | GABC produced | Rule |
+| --- | --- | --- |
+| `Note::pitch` + `tpc` | position letter under a chosen clef | `Gabc.tex:408-443`, key `2*line-1` / `2*line-4` (`struct.c:1273-1288`); the tpc gives the diatonic letter, MIDI pitch its octave, a mismatch gives an alteration glyph (`x`, `#`, `X`, `##`) |
+| clef choice | `c3`, `c4`, `f3`, `f4`, `c2`, `c1`, `f2`, `f1` | first clef keeping all notes inside the staff's letter range (`a`–`i`/`k`/`m`/`n,p`, `:415-443`), tie-break in that order |
+| `ChordRest::lyrics` (verse 0) | syllable text | `Single`/`End` get a trailing word space, `Begin`/`Middle` do not (`:241-245,314-317`) |
+| `Measure::end_bar_line` | `,` normal, `;`/`::` double/final, `:?` dotted, `:` repeats | separation bars are not metric measures (`:801-845`) |
+| `ScoreMetadata` | `name:`, `author:`, `language: latin;`, `staff-lines:` | `:79-93,128` |
+
+**What that projection loses:** all neume shapes and liquescents, rhythmic
+signs (the note durations in L0 are the source, not vice versa), melismas'
+extent, verse 1+, polyphony (only voice 0 of the staff with most notes),
+chord notes beyond the first, rests (silence is not a GABC token), all bar
+subtypes beyond the six above, key/meter/time signatures, dynamics, tempo,
+instrument and layout. A round trip through this path is *not* expected to be
+exact; it is measured in §9 as a cross conversion, not a self-comparison.
+`tests/corpus/v3/lyricsline01.mscx` (one staff, four notes, one syllable) is
+the versioned test case; `scripts/oracle/gabc/check_from_corpus.sh` checks
+that Gregorio's own parser accepts the output.
+
 `Capabilities` declares L0+L1+L2+L3+L6 for both directions, cited from
 `Gabc.tex:228-343` (text), `:408-443` (pitch), `:452-870` (neumes, signs,
 bars, clefs) and the L6 slot of the model. L4 (no tempo/velocity header,
@@ -214,8 +238,10 @@ from GABC).
   stay in the L6 `clefs` list but are not re-applied to L0 notes
   (`Gabc.tex:847-870`; `gabc-score-determination.c:89-100`). This does not
   affect the oracle, which reads the verbatim GABC, nor the round trip.
-- Export without an L6 payload is an error by design; MusicXML/MIDI → GABC
-  is not supported because the durations and bars would be invented.
+- Export without an L6 payload now projects concert pitch, first-voice
+  lyrics and bar lines into GABC; neume shapes, rhythmic signs and polyphony
+  cannot be recovered from that data and are lost (§8). The earlier refusal
+  was replaced because it made the conversion impossible rather than honest.
 - The Python `canonical.parse_source` sanity reader is still at 132/197;
   improving it is independent of the Rust writer score (the writer is
   measured through Gregorio's own dump of its output).

@@ -27,10 +27,6 @@ pub enum Error {
     /// (`Gabc.tex:51,58,79-82`).
     #[error("invalid GABC: {0}")]
     Syntax(String),
-    /// There is no L6 payload to write: GABC's primary data is not in L0/L1
-    /// (`model-modularisation.md` §7.1).
-    #[error("no Gregorian payload to write as GABC")]
-    MissingGregorian,
 }
 
 /// Result of a GABC conversion.

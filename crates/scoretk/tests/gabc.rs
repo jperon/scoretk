@@ -17,7 +17,10 @@
 
 //! Facade wiring of GABC: extension, content detection and round trip.
 
+use scoretk::model::Extension;
 use scoretk::{read, write, Format, Options};
+use std::fs;
+use std::path::Path;
 
 const GABC: &str = "% a comment\nname: Veni Sancte Spiritus;\nlanguage: latin;\nmode: 2;\n%%\n(c3)\nVE(g.)ni(h') (,)\n";
 
@@ -57,4 +60,49 @@ fn gabc_round_trip_serialises_the_payload() {
         (reference.items.len(), reference.items.len(), 0),
         "the structured inventory changed"
     );
+}
+
+/// A monophonic MuseScore example from the versioned corpus: one staff, four
+/// notes and one lyric syllable. It has no L6 payload, so it exercises the
+/// score → GABC projection rather than the payload serializer.
+#[test]
+fn a_score_without_a_gregorian_payload_is_written_as_chant() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("corpus")
+        .join("v3")
+        .join("lyricsline01.mscx");
+    let source = fs::read(&path).expect("read the monophonic corpus score");
+    let score = read(&source, Format::Mscx).expect("MuseScore import");
+    assert!(
+        score.extensions.format.is_none(),
+        "no L6 payload in the input"
+    );
+    let bytes = write(&score, Format::Gabc, &Options::default()).expect("GABC export");
+    let text = String::from_utf8(bytes).expect("UTF-8");
+    assert!(text.starts_with("name: "), "{text}");
+    assert!(text.contains("\n%%\n"), "{text}");
+
+    let again = read(text.as_bytes(), Format::Gabc).expect("written GABC parses back");
+    let Some(Extension::Gregorian(gregorian)) = &again.extensions.format else {
+        panic!("the output carries a Gregorian payload");
+    };
+    assert_eq!(gregorian.syllables.len(), score.notes.len());
+    assert!(
+        gregorian
+            .syllables
+            .iter()
+            .any(|syllable| !syllable.text.is_empty()),
+        "lyrics survived"
+    );
+    assert!(gregorian
+        .syllables
+        .iter()
+        .all(|syllable| syllable.notes.len() <= 1));
+    assert!(gregorian
+        .syllables
+        .last()
+        .is_some_and(|syllable| !syllable.bars.is_empty()));
 }

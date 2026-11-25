@@ -337,13 +337,14 @@ report. On wasm, add an **additive** `convertDetailed(...)` returning
   4/4 `Measure`) is a *derived projection into L0+L1*, flagged as derived in
   the report. A GABC→MusicXML→GABC round trip cannot be exact, and the report
   makes that explicit instead of silently losing `'_`/`~`. Export writes the
-  L6 payload back verbatim when present.
+  structured L6 payload; no raw source is kept in the model.
 - **Implemented (step 6):** `model/gregorian.rs` owns `Gregorian`,
   `Syllable`, `GregorianNote`, `NeumeSign`, `BarKind` and `GregorianHeader`;
   the derived projection flags itself with `derived_modern_view = true` and a
-  `derived-modern-view` loss record. The export writes the exact source of
-  both sections and refuses a score without an L6 payload instead of
-  inventing durations. Details and measurements: `docs/agents/gabc.md`.
+  `derived-modern-view` loss record. The export serialises every token from those fields
+  (three atomic-token exceptions are justified in §8 of the GABC report);
+  for a score without L6 it projects concert pitch, lyrics and bars instead of
+   refusing. Details and measurements: `docs/agents/gabc.md`.
 
 ### 7.2 MEI (import and export)
 

@@ -29,8 +29,12 @@
 //! of the source text: a byte-identical round trip would compare the input
 //! with itself and measure nothing (`docs/agents/gabc.md` §8).
 
+mod from_score;
+
+use std::borrow::Cow;
+
 use scoretk_core::model::{Capabilities, Extension, Gregorian, Layers, Score};
-use scoretk_gabc_common::{Error, Result};
+use scoretk_gabc_common::Result;
 
 /// Layers GABC carries (`Gabc.tex:228-343,408-443,452-870`; plan §7.1).
 /// GABC has no playback data (`:67-154`) and no score-wide layout (`:801-845`).
@@ -53,10 +57,17 @@ pub const CAPABILITIES: Capabilities = Capabilities::new(
 /// `docs/agents/gabc.md` §8; everything else — headers, separators, bars,
 /// word spaces, the `%%` marker — is generated here.
 pub fn write_gabc(score: &Score) -> Result<String> {
-    let Some(Extension::Gregorian(gregorian)) = &score.extensions.format else {
-        return Err(Error::MissingGregorian);
+    let gregorian: Cow<'_, Gregorian> = match &score.extensions.format {
+        Some(Extension::Gregorian(gregorian)) => Cow::Borrowed(gregorian),
+        // A score read from MusicXML, MuseScore or MIDI has no neume stream.
+        // Rather than refusing it, build a plain-chant projection from its
+        // concert pitches, lyrics and bar lines; `from_score` documents what
+        // that projection cannot carry.
+        // Other extension variants are payloads of another format: no GABC
+        // neume stream either.
+        _ => Cow::Owned(from_score::from_score(score)),
     };
-    Ok(emit(gregorian))
+    Ok(emit(&gregorian))
 }
 
 /// Serialises one payload. Kept separate from [`write_gabc`] so a score built
