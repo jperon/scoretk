@@ -212,6 +212,18 @@ displayed accidental; a following `y`/`Y` is a visible natural that cancels
 the scope, and word/bar boundaries drop any unasserted sign. Tests:
 `crates/scoretk/tests/gabc_accidentals.rs`.
 
+When a word ends **without** a modern barline, the sounding alteration resets
+but the sign already shown in the measure remains visible to a modern reader:
+`(c4) lé(ixi)i(i) la(i)` must therefore draw a **courtesy natural** on the last
+B, or it would read as B-flat. `build_derived_score` tracks the last alteration
+displayed per letter *per measure* and adds a courtesy sign whenever the next
+sung note's sounding alteration differs from it; a real barline clears the
+tracking. The sign is flagged as a user (cautionary) accidental without brackets
+or parentheses, exported as `cautionary="yes" parentheses="no"`. It belongs to
+the modern projection only: the inverse MusicXML → GABC writer derives glyphs
+from `pitch`/`tpc` and never reads `Note::accidental`, so the courtesy cannot
+become a GABC `y` glyph (round-trip test in `gabc_accidentals.rs`).
+
 ## 8. Writer (`scoretk-gabc-export`)
 
 `write_gabc(&Score) → String` **serialises the structured L6 payload**; it

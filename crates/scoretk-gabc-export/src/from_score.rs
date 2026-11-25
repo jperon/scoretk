@@ -85,6 +85,10 @@ pub(super) fn from_score(score: &Score) -> Gregorian {
     // alterée venant d'un autre format, on écrit d'abord le glyphe puis la
     // note chantée de même lettre. L'alteration s'applique ensuite à toutes
     // les notes de cette lettre jusqu'à la fin du mot ou à la barre.
+    // Le glyphe est déduit de `pitch`/`tpc` seul : `Note::accidental` n'est
+    // jamais lu. Les signes d'avertissement ajoutés par la projection moderne
+    // des L6 (`cautionary`, sans crochets) sont donc ignorés ici et ne peuvent
+    // pas réapparaître en glyphe `y` (`docs/agents/gabc.md` §7).
     let mut effect = [0i8; 16];
     let mut syllables: Vec<Syllable> = events
         .into_iter()

@@ -191,6 +191,109 @@ fn scope_ends_at_word_and_bar_without_inherited_signs() {
     assert!(notes.iter().all(|note| note.alter.is_none()), "{xml}");
 }
 
+/// Repro Cantus : `lé(ixi)i(i) la(i)` forme un seul mot GABC jusqu'à `i(i)`,
+/// mais une seule mesure moderne. Le bémol reste affiché dans la mesure après
+/// le mot, alors que le `i` de `la` sonne nature : il doit porter un bécarre
+/// d'avertissement (`cautionary` sur un signe sans parenthèses).
+#[test]
+fn word_reset_inside_a_measure_draws_a_courtesy_natural() {
+    const SOURCE: &str = "name:t;\n%%\n(c4) lé(ixi)i(i) la(i)\n";
+    let xml = export(SOURCE, false);
+    let notes = xml_notes(&xml);
+    assert_eq!(notes.len(), 3, "{xml}");
+    assert_eq!(
+        notes
+            .iter()
+            .map(|note| (note.alter, note.accidental.as_deref()))
+            .collect::<Vec<_>>(),
+        [
+            (Some(-1), Some("flat")),
+            (Some(-1), None),
+            (None, Some("natural")),
+        ],
+        "{xml}"
+    );
+    // Un avertissement de mesure, pas une altération GABC parenthésée.
+    assert!(
+        xml.contains("<accidental cautionary=\"yes\" parentheses=\"no\">natural</accidental>"),
+        "{xml}"
+    );
+    let score = read(SOURCE.as_bytes(), Format::Gabc).expect("import GABC");
+    let courtesy = score.notes[2].accidental.expect("courtesy natural");
+    use scoretk::model::{Accidental, AccidentalType};
+    assert_eq!(
+        courtesy,
+        Accidental {
+            kind: AccidentalType::Natural,
+            user: true,
+            ..Accidental::new(AccidentalType::Natural)
+        }
+    );
+}
+
+/// Même scénario avec un dièse : l'avertissement reste un bécarre, puisque la
+/// hauteur sonore revient à la normale dans la mesure.
+#[test]
+fn word_reset_after_a_sharp_draws_a_courtesy_natural_too() {
+    const SOURCE: &str = "name:t;\n%%\n(c4) lé(i#i)i(i) la(i)\n";
+    let xml = export(SOURCE, false);
+    let notes = xml_notes(&xml);
+    assert_eq!(
+        notes
+            .iter()
+            .map(|note| (note.alter, note.accidental.as_deref()))
+            .collect::<Vec<_>>(),
+        [
+            (Some(1), Some("sharp")),
+            (Some(1), None),
+            (None, Some("natural")),
+        ],
+        "{xml}"
+    );
+}
+
+/// Une vraie barre moderne sépare la mesure : l'avertissement disparaît et le
+/// naturel suivant redevient silencieux, comme avant la correction.
+#[test]
+fn bar_after_the_word_removes_the_courtesy() {
+    const SOURCE: &str = "name:t;\n%%\n(c4) lé(ixi)i(i) (,) la(i)\n";
+    let xml = export(SOURCE, false);
+    let notes = xml_notes(&xml);
+    assert_eq!(
+        notes
+            .iter()
+            .map(|note| (note.alter, note.accidental.as_deref()))
+            .collect::<Vec<_>>(),
+        [(Some(-1), Some("flat")), (Some(-1), None), (None, None)],
+        "{xml}"
+    );
+    assert!(!xml.contains("natural"), "{xml}");
+}
+
+/// L'avertissement n'existe que dans la projection moderne : l'inverse
+/// MusicXML → GABC ne doit jamais le réémettre en glyphe `y` (`Gabc.tex:483`).
+#[test]
+fn courtesy_natural_is_not_written_back_as_a_gabc_glyph() {
+    const SOURCE: &str = "name:t;\n%%\n(c4) lé(ixi)i(i) la(i)\n";
+    let xml = export(SOURCE, false);
+    let from_xml = read(xml.as_bytes(), Format::MusicXml).expect("import MusicXML");
+    use scoretk::model::{Accidental, AccidentalType};
+    assert_eq!(
+        from_xml.notes[2].accidental,
+        Some(Accidental {
+            kind: AccidentalType::Natural,
+            user: true,
+            ..Accidental::new(AccidentalType::Natural)
+        })
+    );
+    let gabc = String::from_utf8(
+        write(&from_xml, Format::Gabc, &Options::default()).expect("export GABC"),
+    )
+    .expect("UTF-8 GABC");
+    assert!(!gabc.contains('y'), "{gabc}");
+    assert!(!gabc.contains("iy"), "{gabc}");
+}
+
 /// `convertWithTimeline` exporte le même MusicXML identifié que `convert` :
 /// le chemin `write_playback` doit donc écrire le signe visible aussi.
 #[test]

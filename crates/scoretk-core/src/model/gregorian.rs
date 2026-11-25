@@ -308,6 +308,16 @@ impl Gregorian {
     /// portée. XSD 4.0 distingue en effet `<pitch>/<alter>` (hauteur sonore)
     /// de `<accidental>` (signe réellement noté), tous deux nécessaires à
     /// Verovio pour dessiner le bémol.
+    ///
+    /// **Avertissement de fin de mot** (`docs/agents/gabc.md` §7). La portée
+    /// GABC s'arrête à la fin du mot (`Gabc.tex:241-245`), mais une altération
+    /// moderne reste valable jusqu'à la barre de mesure. Quand un mot se
+    /// termine *sans* barre moderne, la prochaine note chantée d'une lettre
+    /// dont l'altération sonore diffère de celle encore affichée dans la
+    /// mesure porte un signe d'avertissement (naturel le plus souvent). Ce
+    /// signe est marqué « utilisateur » sans crochets : il s'exporte en
+    /// `cautionary="yes" parentheses="no"`, et l'inverse GABC ne doit jamais
+    /// le réémettre en glyphe `y`.
     #[must_use]
     pub fn build_derived_score(&self) -> Score {
         let mut score = Score::new();
@@ -326,6 +336,11 @@ impl Gregorian {
         // Signe affiché en attente pour la première note chantée de chaque
         // lettre après un glyphe d'alteration (`Gabc.tex:512-540`).
         let mut displayed = [None::<Accidental>; 16];
+        // Dernière altération *affichée* pour chaque lettre dans la mesure
+        // moderne en cours. Contrairement à `displayed`, elle ne s'efface pas
+        // à la fin d'un mot GABC : seule une vraie barre moderne la remet à
+        // zéro (`docs/agents/gabc.md` §7).
+        let mut measure_displayed = [None::<i8>; 16];
         let mut start = Fraction::ZERO;
         let mut cursor = Fraction::ZERO;
         let mut measure_index = 0usize;
@@ -367,7 +382,19 @@ impl Gregorian {
                 // chantée de la lettre qui porte le signe visible. Les notes
                 // suivantes sous la même portée gardent `<alter>` sans signe.
                 if let Some(slot) = letter_slot(note.letter) {
-                    projected.accidental = displayed[slot].take();
+                    let mut sign = displayed[slot].take();
+                    if sign.is_none() && measure_displayed[slot].is_some_and(|shown| shown != alter)
+                    {
+                        // Fin de mot GABC sans barre moderne : l'ancien signe
+                        // reste lu dans la mesure alors que la hauteur sonore
+                        // a changé. Avertissement nécessaire (XSD 4.0
+                        // `cautionary="yes"`, jamais un glyphe GABC `y`).
+                        sign = courtesy_accidental(alter);
+                    }
+                    if sign.is_some() {
+                        measure_displayed[slot] = Some(alter);
+                    }
+                    projected.accidental = sign;
                 }
                 projected.source = Some(NoteSource {
                     offset: note.source_offset.unwrap_or(0),
@@ -469,6 +496,9 @@ impl Gregorian {
                 score.add_measure(opened);
                 measure_index += 1;
                 cursor = Fraction::ZERO;
+                // Une barre moderne réinitialise la portée des altérations
+                // affichées : après elle, plus aucun avertissement n'est dû.
+                measure_displayed = [None; 16];
             }
         }
         if let Some(opened) = measure {
@@ -656,6 +686,28 @@ fn alteration_accidental(note: &GregorianNote, value: i8) -> Option<Accidental> 
     };
     let mut accidental = Accidental::new(kind);
     accidental.parentheses = sign.raw.ends_with('?');
+    Some(accidental)
+}
+
+/// Signe d'avertissement de la projection moderne, quand la portée GABC
+/// s'arrête au mot alors qu'aucune barre de mesure ne sépare encore la note
+/// suivante : l'altération déjà affichée dans la mesure continue d'être lue,
+/// mais la hauteur sonore a changé (`docs/agents/gabc.md` §7).
+///
+/// Le rôle « utilisateur » sans crochets ni parenthèses est exporté par
+/// `scoretk-musicxml-export` en `cautionary="yes" parentheses="no"`. Ce marquage
+/// distingue le signe ajouté par la projection d'un vrai glyphe GABC :
+/// l'inverse MusicXML → GABC ne doit pas le réémettre, en particulier pas
+/// sous forme de `y` (natures GABC, `Gabc.tex:483`).
+fn courtesy_accidental(value: i8) -> Option<Accidental> {
+    let kind = match value {
+        -1 => AccidentalType::Flat,
+        0 => AccidentalType::Natural,
+        1 => AccidentalType::Sharp,
+        _ => return None,
+    };
+    let mut accidental = Accidental::new(kind);
+    accidental.user = true;
     Some(accidental)
 }
 
@@ -1024,17 +1076,23 @@ mod tests {
         assert_eq!(pitches, [54, 54, 55, 56, 55]);
         let accidentals: Vec<_> = score.notes.iter().map(|note| note.accidental).collect();
         // Un seul signe par glyphe : la seconde note sous la portée n'en a
-        // pas, et le mot/barre suivant n'hérite d'aucun signe.
+        // pas. Le mot sans barre laisse le bémol affiché dans la mesure : la
+        // note suivante, sonée nature, porte un bécarre d'avertissement.
+        // Après une vraie barre, aucun signe n'hérite du dièse.
+        let mut courtesy = Accidental::new(AccidentalType::Natural);
+        courtesy.user = true;
         assert_eq!(
             accidentals,
             [
                 Some(Accidental::new(AccidentalType::Flat)),
                 None,
-                None,
+                Some(courtesy),
                 Some(Accidental::new(AccidentalType::Sharp)),
                 None,
             ]
         );
+        assert!(!accidentals[2].unwrap().bracket);
+        assert!(!accidentals[2].unwrap().parentheses);
     }
 
     fn note_with_quilisma(letter: char, quilisma: bool) -> GregorianNote {
