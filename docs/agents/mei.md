@@ -465,3 +465,25 @@ that a concert E4 in a +2 part is written as written D4 and read back as E4.
 
 Remaining leaders: `time-sig` 956, `key-sig` 406, `articulation` 376,
 `slur` 267, `stem` 219, `dynamic` 192, `rest` 114.
+
+### 9.7 Fourth fix: layout-only `<scoreDef>` must not repeat signatures
+
+`Hummel_Concerto_for_trumpet_E-major.mei` contains 104 mid-score
+`<scoreDef page.height=… page.width=…>` elements between systems. The reader
+`set signatures_pending = true` unconditionally at the end of `readScoreDef`,
+so each of those inserted a full `<TimeSig>` and `<KeySig>` segment in the
+following measure: 686 spurious `time-sig` items and 400 `key-sig` items.
+MuseScore's `readScoreDef` (meiimporter.cpp:1052) only updates `m_timeSigs` and
+`m_keySigs` when `@meter.*` / `@keysig` are present. The port now snapshots
+both maps and sets `signatures_pending` only when they actually change (or for
+the initial `scoreDef`), with a unit test.
+
+| Kind (round trip) | Before | After |
+| --- | ---: | ---: |
+| `time-sig` | 956 | 41 |
+| `key-sig` | 406 | 4 |
+| `dynamic` | 192 | 85 |
+| Full support | 98.98 % | **99.43 %** |
+
+Remaining leaders: `articulation` 376, `note` 329, `slur` 267, `stem` 219,
+`rest` 114, `tuplet-member` 114.

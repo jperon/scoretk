@@ -107,6 +107,12 @@ impl<'a> Reader<'a> {
 
     /// `MeiImporter::readScoreDef` (`meiimporter.cpp:1052`).
     pub(crate) fn read_score_def(&mut self, node: &Element, is_initial: bool) {
+        // MuseScore's `readScoreDef` (meiimporter.cpp:1052) only touches
+        // `m_timeSigs`/`m_keySigs` when the corresponding attributes are
+        // present. A mid-score `<scoreDef>` carrying only page layout must not
+        // re-emit the signatures in the following measure: `Hummel_Concerto`
+        // has 104 of those and the round trip gained 686 spurious time-sigs.
+        let signatures_before = (self.timesigs.clone(), self.keysigs.clone());
         let count = node.attribute("meter.count");
         let unit = node
             .attribute("meter.unit")
@@ -149,7 +155,10 @@ impl<'a> Reader<'a> {
             self.current_time = Fraction::try_new(i64::from(numerator), i64::from(denominator))
                 .unwrap_or(Fraction::new(4, 4));
         }
-        self.signatures_pending = true;
+        if is_initial || signatures_before.0 != self.timesigs || signatures_before.1 != self.keysigs
+        {
+            self.signatures_pending = true;
+        }
     }
 
     /// Page geometry from `att.pages` / `@vu.height` on `<scoreDef>`

@@ -140,6 +140,32 @@ mod tests {
         assert_eq!(notes[1].value, "62");
     }
 
+    /// Un `<scoreDef>` de mise en page en cours de partition ne change pas
+    /// les armures : `readScoreDef` (meiimporter.cpp:1052) ne touche que
+    /// `m_timeSigs`/`m_keySigs` quand les attributs sont présents.
+    #[test]
+    fn layout_only_score_def_does_not_repeat_signatures() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef meter.count="4" meter.unit="4"><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
+            <section>
+              <measure n="1"><staff n="1"><layer n="1"><note dur="4" pname="c" oct="4"/></layer></staff></measure>
+              <scoreDef page.width="8.5in"/>
+              <measure n="2"><staff n="1"><layer n="1"><note dur="4" pname="d" oct="4"/></layer></staff></measure>
+            </section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with a layout scoreDef");
+        let count = |index: usize| {
+            score.measures[index].segments.iter().any(|segment| {
+                segment
+                    .iter_elements()
+                    .any(|(_, item)| matches!(item, scoretk_core::model::SegmentItem::TimeSig(_)))
+            })
+        };
+        assert!(count(0));
+        assert!(!count(1), "no spurious time signature on measure 2");
+    }
+
     #[test]
     fn tempo_bpm_becomes_beats_per_second() {
         let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
