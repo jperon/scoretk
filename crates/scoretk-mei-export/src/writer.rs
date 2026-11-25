@@ -51,7 +51,9 @@ pub(crate) fn write(
     xml.start_element("section", &[("xml:id", "s1")]);
     let mut measure_n = 0;
     for (index, measure) in score.measures.iter().enumerate() {
+        write_ending_start(&mut xml, score, index);
         write_measure(&mut xml, score, measure, index, &mut measure_n, options);
+        write_ending_end(&mut xml, score, index);
     }
     xml.end_element();
     xml.end_element();
@@ -60,6 +62,72 @@ pub(crate) fn write(
     xml.end_element();
     xml.end_element();
     Ok(xml.finish())
+}
+
+/// Measure containing `tick`, used to place `<ending>` around its measures.
+fn measure_at(score: &Score, tick: Fraction) -> usize {
+    score
+        .measures
+        .iter()
+        .position(|measure| tick >= measure.start_tick && tick < measure.end_tick())
+        .unwrap_or(score.measures.len().saturating_sub(1))
+}
+
+/// Measure whose *end* is `tick` (a volta ends on its last measure's end tick).
+fn measure_at_end(score: &Score, tick: Fraction) -> usize {
+    score
+        .measures
+        .iter()
+        .rposition(|measure| measure.end_tick() == tick)
+        .unwrap_or_else(|| measure_at(score, tick))
+}
+
+/// `MeiExporter::writeEnding` (`meiexporter.cpp:796`).
+fn write_ending_start(xml: &mut XmlWriter, score: &Score, index: usize) {
+    for spanner in &score.spanners {
+        let SpannerType::Volta = &spanner.kind else {
+            continue;
+        };
+        if measure_at(score, spanner.start.tick) != index {
+            continue;
+        }
+        let Some(info) = &spanner.volta else {
+            continue;
+        };
+        let types = info
+            .endings
+            .iter()
+            .map(|number| format!("{}{number}", ids::ENDING_REPEAT_TYPE))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let label = info
+            .endings
+            .iter()
+            .map(|number| format!("{number}."))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut attrs = vec![("label".to_owned(), label)];
+        if !types.is_empty() {
+            attrs.push(("type".to_owned(), types));
+        }
+        if !info.closed {
+            attrs.push(("lendsym".to_owned(), "none".to_owned()));
+        }
+        let refs: Vec<(&str, &str)> = attrs
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        xml.start_element("ending", &refs);
+    }
+}
+
+/// `MeiExporter::writeEndingEnd` (`meiexporter.cpp:814`).
+fn write_ending_end(xml: &mut XmlWriter, score: &Score, index: usize) {
+    for spanner in &score.spanners {
+        if spanner.kind == SpannerType::Volta && measure_at_end(score, spanner.end.tick) == index {
+            xml.end_element();
+        }
+    }
 }
 
 /// `MeiExporter::writeMeasure` (`meiexporter.cpp:834`).
@@ -483,7 +551,7 @@ mod tests {
     use super::*;
     use scoretk_core::model::{
         ChordRest, Duration, Fraction, Measure, Note, Part, Score, Segment, SegmentType, Spanner,
-        SpannerAnchor, SpannerType, Track,
+        SpannerAnchor, SpannerType, Track, VoltaInfo,
     };
 
     #[test]
@@ -498,6 +566,27 @@ mod tests {
         score.add_measure(Measure::new(2, Fraction::new(8, 4), Fraction::new(4, 4)));
         let output = write(&score, &MeiOptions::default()).expect("MEI with a system break");
         assert_eq!(output.matches("<sb type=\"mscore-manual\"").count(), 1);
+    }
+
+    #[test]
+    fn voltas_are_written_as_endings() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno"));
+        let staff = score.add_staff(part);
+        let track = Track::new(staff, 0);
+        score.add_measure(Measure::new(0, Fraction::ZERO, Fraction::new(4, 4)));
+        let mut spanner = Spanner::new(
+            SpannerType::Volta,
+            SpannerAnchor::new(Fraction::ZERO, track),
+            SpannerAnchor::new(Fraction::new(4, 4), track),
+        );
+        spanner.volta = Some(VoltaInfo {
+            endings: vec![1, 2],
+            closed: true,
+        });
+        score.add_spanner(spanner);
+        let output = write(&score, &MeiOptions::default()).expect("MEI with a volta");
+        assert!(output.contains("type=\"mscore-ending-1 mscore-ending-2\""));
     }
 
     #[test]

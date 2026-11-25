@@ -149,12 +149,24 @@ impl<'a> Reader<'a> {
                     }
                 }
                 "ending" => {
-                    let endings = child
-                        .attribute("n")
-                        .unwrap_or("1")
-                        .split(',')
-                        .filter_map(|value| value.trim().parse::<u8>().ok())
-                        .collect::<Vec<_>>();
+                    // MuseScore writes the ending numbers as `@type`
+                    // values (`Convert::endingToMEI`, meiconverter.cpp:1448).
+                    let typed = convert::get_type_values_with_prefix(
+                        child.attribute("type").unwrap_or_default(),
+                        scoretk_mei_common::ids::ENDING_REPEAT_TYPE,
+                    )
+                    .filter_map(|value| value.parse::<u8>().ok())
+                    .collect::<Vec<_>>();
+                    let endings = if typed.is_empty() {
+                        child
+                            .attribute("n")
+                            .unwrap_or("1")
+                            .split(',')
+                            .filter_map(|value| value.trim().parse::<u8>().ok())
+                            .collect::<Vec<_>>()
+                    } else {
+                        typed
+                    };
                     let first = self.score.measures.len();
                     for measure in child.children_named("measure") {
                         self.read_measure(measure);
