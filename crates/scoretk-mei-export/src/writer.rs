@@ -157,6 +157,13 @@ fn write_layer(
         if cr.duration.dots > 0 {
             attributes.push(("dots".to_owned(), cr.duration.dots.to_string()));
         }
+        // `MeiExporter::writeStemAtt` (`meiexporter.cpp:2287`): `@stem.dir`
+        // is written on the chord/note event, not on a dedicated element.
+        if let ChordRestKind::Chord(chord) = &cr.kind {
+            if let Some(dir) = convert::stem_to_mei(chord.engraving.stem) {
+                attributes.push(("stem.dir".to_owned(), dir.to_owned()));
+            }
+        }
         let beam = convert::beam_to_mei(cr.engraving.beam_mode, ids::BEAM_ELEMENT_TYPE);
         if !beam.is_empty() {
             attributes.push(("type".to_owned(), beam));

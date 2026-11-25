@@ -27,7 +27,7 @@
 
 use scoretk_core::model::{
     AccidentalType, BarLineType, BeamMode, ClefType, DurationType, Fraction, Key, KeySig, Measure,
-    TimeSig, TimeSigType,
+    StemDirection, TimeSig, TimeSigType,
 };
 
 use crate::ids::MEASURE_REPEAT_TYPE;
@@ -175,6 +175,29 @@ pub fn barline_to_mei(barline: BarLineType) -> &'static str {
         BarLineType::Short => "heavy",
         BarLineType::DoubleShort => "dblheavy",
         BarLineType::Tick | BarLineType::Dashed => "dotted",
+    }
+}
+
+/// `Convert::stemFromMEI` (`meiconverter.cpp:3150`).
+///
+/// MEI's `@stem.dir` is `up`/`down`; anything else leaves the stem automatic.
+pub fn stem_from_mei(value: &str) -> Option<StemDirection> {
+    match value {
+        "up" => Some(StemDirection::Up),
+        "down" => Some(StemDirection::Down),
+        _ => None,
+    }
+}
+
+/// `Convert::stemToMEI` (`meiconverter.cpp:3172`).
+///
+/// A chord with an automatic stem has no `@stem.dir`, as libmei omits
+/// `STEMDIRECTION_NONE`.
+pub fn stem_to_mei(direction: StemDirection) -> Option<&'static str> {
+    match direction {
+        StemDirection::Up => Some("up"),
+        StemDirection::Down => Some("down"),
+        StemDirection::Auto => None,
     }
 }
 
@@ -669,5 +692,16 @@ mod tests {
         assert_eq!(clef_from_mei(Some("F"), 4, None, None), ClefType::F);
         assert_eq!(barline_from_mei("rptstart"), BarLineType::StartRepeat);
         assert_eq!(barline_to_mei(BarLineType::Double), "dbl");
+    }
+
+    #[test]
+    fn stem_directions_round_trip() {
+        use scoretk_core::model::StemDirection;
+        assert_eq!(stem_from_mei("up"), Some(StemDirection::Up));
+        assert_eq!(stem_from_mei("down"), Some(StemDirection::Down));
+        assert_eq!(stem_from_mei("none"), None);
+        assert_eq!(stem_to_mei(StemDirection::Up), Some("up"));
+        assert_eq!(stem_to_mei(StemDirection::Down), Some("down"));
+        assert_eq!(stem_to_mei(StemDirection::Auto), None);
     }
 }

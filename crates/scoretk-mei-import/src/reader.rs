@@ -412,7 +412,7 @@ impl<'a> Reader<'a> {
             ChordRest::chord(duration)
         };
         cr.ticks = Some(duration.ticks());
-        if let Some(stem) = stem_direction(node) {
+        if let Some(stem) = convert::stem_from_mei(node.attribute("stem.dir").unwrap_or_default()) {
             if let ChordRestKind::Chord(chord) = &mut cr.kind {
                 chord.engraving.stem = stem;
             }
@@ -799,15 +799,5 @@ fn collect_descendants<'a>(node: &'a Element, name: &str, result: &mut Vec<&'a E
             result.push(child);
         }
         collect_descendants(child, name, result);
-    }
-}
-
-/// `@stem.dir` → `StemDirection` (`Convert::stemFromMEI`, meiconverter.cpp:3150).
-fn stem_direction(node: &Element) -> Option<scoretk_core::model::StemDirection> {
-    use scoretk_core::model::StemDirection;
-    match node.attribute("stem.dir") {
-        Some("up") => Some(StemDirection::Up),
-        Some("down") => Some(StemDirection::Down),
-        _ => None,
     }
 }
