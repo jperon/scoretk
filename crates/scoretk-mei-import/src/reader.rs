@@ -359,6 +359,7 @@ impl<'a> Reader<'a> {
             // `.mscx` model has them, while keeping the group's total length.
             let end_bar_line = self.score.measures[index].end_bar_line;
             let repeat_count = self.score.measures[index].repeat_count;
+            self.score.measures[index].multi_measure_rest = Some(hidden as u16);
             self.score.measures[index].len = nominal;
             self.score.measures[index].end_bar_line = BarLineType::Normal;
             self.score.measures[index].repeat_count = 0;

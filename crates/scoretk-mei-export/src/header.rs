@@ -22,7 +22,7 @@
 
 //! Header et `scoreDef` de l'écrivain MEI.
 
-use scoretk_core::model::{CreditStyle, Score};
+use scoretk_core::model::{CreditStyle, Score, SegmentItem, SegmentType, StaffId, Track};
 use scoretk_mei_common::{convert, ids};
 use scoretk_xml_common::XmlWriter;
 
@@ -205,6 +205,29 @@ pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score) {
                 ("n".to_owned(), (staff_id.index() + 1).to_string()),
                 ("lines".to_owned(), staff.lines.to_string()),
             ];
+            // `Convert::staffToMEI`/`writeStaffDef` portent l'armure initiale
+            // sur chaque `<staffDef>` (meiexporter.cpp:716). La clé de Do est
+            // omise, comme dans `Convert::keyToMEI`.
+            if let Some(key) = score
+                .measures
+                .first()
+                .and_then(|measure| {
+                    measure.segments.iter().find_map(|segment| {
+                        match segment.element(Track::new(StaffId::from_index(staff_id.index()), 0))
+                        {
+                            Some(SegmentItem::KeySig(key))
+                                if segment.tick == measure.start_tick =>
+                            {
+                                Some(key.concert_key)
+                            }
+                            _ => None,
+                        }
+                    })
+                })
+                .filter(|key| key.fifths() != 0)
+            {
+                attrs.push(("keysig".to_owned(), convert::key_to_mei(key)));
+            }
             if let Some(count) = count {
                 attrs.push(("meter.count".to_owned(), count));
             }
@@ -219,7 +242,33 @@ pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score) {
                 .map(|(key, value)| (key.as_str(), value.as_str()))
                 .collect();
             xml.start_element("staffDef", &refs);
-            let clef_type = staff.default_clef.concert;
+            // MuseScore porte la clef initiale sur le segment de la première
+            // mesure (`writeStaffDef`, meiexporter.cpp:684) ; le `default_clef`
+            // de la portée reste souvent G. Prendre la clé réellement jouée.
+            let clef_type = score
+                .measures
+                .first()
+                .and_then(|measure| {
+                    measure
+                        .segments
+                        .iter()
+                        .find(|segment| {
+                            segment.kind == SegmentType::Clef
+                                && segment.tick == measure.start_tick
+                                && segment
+                                    .element(Track::new(StaffId::from_index(staff_id.index()), 0))
+                                    .is_some()
+                        })
+                        .and_then(|segment| {
+                            match segment
+                                .element(Track::new(StaffId::from_index(staff_id.index()), 0))
+                            {
+                                Some(SegmentItem::Clef(clef)) => Some(clef.concert),
+                                _ => None,
+                            }
+                        })
+                })
+                .unwrap_or(staff.default_clef.concert);
             let (shape, line, dis, place) = convert::clef_to_mei(clef_type);
             let line_owned = line.to_string();
             let mut clef_attrs = vec![("shape", shape), ("line", &line_owned)];

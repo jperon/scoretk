@@ -59,6 +59,31 @@ fn mei_round_trip_through_the_facade() {
     assert_eq!(again.notes[0].pitch, score.notes[0].pitch);
 }
 
+/// L'armure initiale est écrite sur chaque `<staffDef>` (MEI 5.1
+/// `att.staffDef.log/@keysig`), comme dans `writeStaffDef`
+/// (meiexporter.cpp:716) ; sans elle, l'aller-retour perd l'armure.
+#[test]
+fn mei_round_trip_keeps_the_initial_key_signature() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("corpus")
+        .join("v3")
+        .join("moonlight.mscx");
+    let reference = read(&fs::read(&path).expect("mscx"), Format::Mscx).expect("MuseScore import");
+    let written = write(&reference, Format::Mei, &Options::default()).expect("MEI export");
+    let text = String::from_utf8(written).expect("UTF-8 MEI");
+    assert!(
+        text.contains("keysig=\"4s\""),
+        "initial key must be written"
+    );
+    let again = read(text.as_bytes(), Format::Mei).expect("MEI import");
+    let before = inventory(&reference);
+    let after = inventory(&again);
+    assert_eq!(before.count_kind("key-sig"), after.count_kind("key-sig"));
+}
+
 /// MuseScore 4.7.4 n'exporte pas complètement les n-olets imbriqués
 /// (`writeTuplet`, meiexporter.cpp:1554-1560). L'écrivain scoretk utilise la
 /// structure imbriquée de MEI 5.1 pour que l'aller-retour conserve les notes

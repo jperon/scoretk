@@ -901,6 +901,15 @@ fn mei_core_loss_diagnostic() {
         "credit",
         "credit-position",
         "note-head",
+        "slur",
+        "clef",
+        "dynamic",
+        "instrument",
+        "program",
+        "grace",
+        "grace-note",
+        "tuplet-bracket",
+        "multi-measure-rest",
     ];
 
     fn report(
