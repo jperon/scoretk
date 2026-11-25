@@ -3,24 +3,28 @@
 
 #(set-global-staff-size 17.80004409)
 \header {
-  title = "Sonata No. 14, &quot;Moonlight&quot;"
+  title = \markup { \fontsize #24.00000 "Sonata No. 14, &quot;Moonlight&quot;" }
   subtitle = "Quasi una fantasia"
-  composer = "Ludwig van Beethoven"
+  composer = \markup { \fontsize #12.00000 "Ludwig van Beethoven" }
+  poet = \markup { \fontsize #12.00000 "" }
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  subsubtitle = "Sonata No. 14, &quot;Moonlight&quot;"
+  instrument = "Ludwig van Beethoven"
+  piece = "Quasi una fantasia"
   scoretkCreditA = "Sonata No. 14, &quot;Moonlight&quot;"
   scoretkCreditB = "Ludwig van Beethoven"
   scoretkCreditC = "Quasi una fantasia"
 }
 
 \paper {
-  paper-width = 210.058\mm
-  paper-height = 296.926\mm
-  left-margin = 10.000\mm
-  right-margin = 10.000\mm
-  top-margin = 10.000\mm
-  bottom-margin = 20.000\mm
+  paper-width = 210.05800\mm
+  paper-height = 296.92600\mm
+  left-margin = 10.00000\mm
+  right-margin = 10.00000\mm
+  top-margin = 10.00000\mm
+  bottom-margin = 20.00000\mm
 }
 
 staffOneVoiceOne = \fixed c' {

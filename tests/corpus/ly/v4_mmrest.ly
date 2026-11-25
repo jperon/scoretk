@@ -3,20 +3,22 @@
 
 #(set-global-staff-size 20.07501265)
 \header {
-  title = "Title"
+  title = \markup { \bold "Title" }
   workTitle = "Title"
   composer = "Composer"
+  subsubtitle = "Title"
+  instrument = "Composer"
   scoretkCreditA = "Title"
   scoretkCreditB = "Composer"
 }
 
 \paper {
-  paper-width = 210.000\mm
-  paper-height = 297.000\mm
-  left-margin = 10.000\mm
-  right-margin = 15.000\mm
-  top-margin = 10.000\mm
-  bottom-margin = 20.000\mm
+  paper-width = 209.99983\mm
+  paper-height = 296.99966\mm
+  left-margin = 10.00001\mm
+  right-margin = 15.00000\mm
+  top-margin = 10.00001\mm
+  bottom-margin = 20.00004\mm
 }
 
 staffOneVoiceOne = \fixed c' {

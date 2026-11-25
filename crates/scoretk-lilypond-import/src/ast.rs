@@ -714,10 +714,16 @@ pub(crate) struct ScoreAst {
 }
 
 /// Métadonnées lues dans `\header`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct HeaderAst {
     /// Champ du `\header` et sa valeur, dans l'ordre du fichier.
     pub entries: Vec<(String, String)>,
+    /// Taille `\fontsize #n` portée par un champ en markup, par nom de champ
+    /// (Notation Reference §8.3 et §21.1.2).
+    pub font_sizes: Vec<(String, f64)>,
+    /// Champs dont le markup contient `\bold` (§8.3) : signal standard qui
+    /// distingue un titre d'œuvre d'un simple crédit de titre.
+    pub bold_fields: Vec<String>,
 }
 
 impl HeaderAst {

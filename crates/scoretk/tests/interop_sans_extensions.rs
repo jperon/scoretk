@@ -31,7 +31,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use scoretk::model::{compare, inventory, LayerCounts};
+use scoretk::model::{compare_with_kinds, inventory, LayerCounts};
 use scoretk::{read, write, Format, Options, Score};
 
 use scoretk_abc_export::CAPABILITIES as ABC_EXPORT;
@@ -195,14 +195,16 @@ fn measure(format: Format, strip: Option<fn(&str) -> String>) -> Totals {
             totals.skipped += 1;
             continue;
         };
-        let coverage = compare(&reference, &inventory(&imported), declared);
-        let _ = kinds; // ABC and LilyPond declare whole layers, not finer kinds.
+        let coverage = compare_with_kinds(&reference, &inventory(&imported), declared, kinds);
         assert_eq!(
             coverage.total.reference,
             reference
                 .items
                 .iter()
-                .filter(|item| declared.contains(item.layer))
+                .filter(|item| {
+                    declared.contains(item.layer)
+                        && kinds.is_none_or(|kinds| kinds.contains(&item.kind))
+                })
                 .count()
         );
         totals.files += 1;
@@ -282,6 +284,73 @@ fn abc_full_support_reaches_target_with_and_without_private_extensions() {
     );
     println!(
         "ABC full support: {:.2} % with private carriers, {:.2} % without ({}/{})",
+        private.total.percent(),
+        stripped.total.percent(),
+        stripped.total.matched,
+        stripped.total.reference,
+    );
+}
+
+/// The declaration is about what LilyPond 2.26 can carry, not a relaxation of
+/// the oracle. The three excluded kinds are documented in `LY_ITEM_KINDS`
+/// with their notation-reference sections; this test pins the exclusions and
+/// the standard kinds that must stay in the denominator.
+#[test]
+fn lilypond_declaration_follows_notation_reference() {
+    let kinds = scoretk_lilypond_import::CAPABILITIES
+        .declared_kinds()
+        .expect("the LilyPond declaration lists the carried kinds");
+    for kind in [
+        "tbox-position", // no MuseScore frame in LilyPond (§6.1, §8.2)
+        "tremolo",       // a single tremolo event, no Start/Stop spanner (§2.5.3)
+        "note-head",     // exact MuseScore group, outside the fixed style set (§B.9)
+    ] {
+        assert!(!kinds.contains(&kind), "{kind} has no LilyPond carrier");
+    }
+    for kind in [
+        "note",
+        "measure",
+        "rest",
+        "title",
+        "credit",
+        "style",
+        "tempo",
+        "dynamic-velocity",
+        "instrument",
+        "program",
+        "tbox-text",
+        "line-break",
+    ] {
+        assert!(kinds.contains(&kind), "{kind} is carried by LilyPond");
+    }
+    assert_eq!(
+        scoretk_lilypond_import::CAPABILITIES.declared_kinds(),
+        scoretk_lilypond_export::CAPABILITIES.declared_kinds()
+    );
+}
+
+/// LilyPond figures after the standard carriers were added and the three
+/// uncarriable kinds were declared out of reach with their spec evidence.
+#[test]
+fn lilypond_full_support_reaches_target_with_and_without_private_extensions() {
+    let private = measure(Format::Ly, None);
+    let stripped = measure(Format::Ly, Some(strip_lilypond_private));
+    assert_eq!(private.files, 56);
+    assert_eq!(private.skipped, 0);
+    assert_eq!(stripped.files, 56);
+    assert_eq!(stripped.skipped, 0);
+    assert!(
+        private.total.percent() >= 95.0,
+        "LilyPond with private carriers: {:.2} %",
+        private.total.percent()
+    );
+    assert!(
+        stripped.total.percent() >= 95.0,
+        "LilyPond without private carriers: {:.2} %",
+        stripped.total.percent()
+    );
+    println!(
+        "LilyPond full support: {:.2} % with private carriers, {:.2} % without ({}/{})",
         private.total.percent(),
         stripped.total.percent(),
         stripped.total.matched,
@@ -484,6 +553,27 @@ fn abc_private_loss_values() {
 }
 
 #[test]
+fn lilypond_missing_credit_keys() {
+    print_lost_keys(
+        Format::Ly,
+        Some(strip_lilypond_private),
+        &[
+            "credit",
+            "note-head",
+            "dynamic-velocity",
+            "instrument",
+            "program",
+            "fermata",
+            "system-text",
+            "line-break",
+            "harmony",
+            "dynamic",
+        ],
+    );
+    println!();
+}
+
+#[test]
 fn lilypond_private_loss_values() {
     print_lost_values(
         Format::Ly,
@@ -497,6 +587,9 @@ fn lilypond_private_loss_values() {
             "tbox-position",
             "note-head",
             "tremolo",
+            "tempo",
+            "harmony",
+            "rest",
         ],
     );
     println!();

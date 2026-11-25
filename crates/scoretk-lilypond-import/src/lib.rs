@@ -67,7 +67,6 @@ pub use capabilities::CAPABILITIES;
 mod events;
 mod include;
 mod lexer;
-mod midi_instruments;
 mod modes;
 mod parallel;
 mod parser;

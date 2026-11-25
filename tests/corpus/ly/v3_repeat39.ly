@@ -3,24 +3,28 @@
 
 #(set-global-staff-size 20.07501265)
 \header {
-  title = "Repeat Test"
+  title = \markup { \bold \fontsize #24.00000 "Repeat Test" }
   workTitle = "Repeat Test"
   subtitle = "Alternating Volta"
+  composer = \markup { \fontsize #12.00000 "" }
+  poet = \markup { \fontsize #12.00000 "" }
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  subsubtitle = "repeat39"
+  instrument = "Alternating Volta"
   scoretkCreditA = "repeat39"
   scoretkCreditB = "Alternating Volta"
   scoretkTboxA = "0|1-3   2, 4-5   2-3   2, 4-5   2, 6"
 }
 
 \paper {
-  paper-width = 210.058\mm
-  paper-height = 296.926\mm
-  left-margin = 10.000\mm
-  right-margin = 10.000\mm
-  top-margin = 10.000\mm
-  bottom-margin = 20.000\mm
+  paper-width = 210.05800\mm
+  paper-height = 296.92600\mm
+  left-margin = 10.00000\mm
+  right-margin = 10.00000\mm
+  top-margin = 10.00000\mm
+  bottom-margin = 20.00000\mm
 }
 
 staffOneVoiceOne = \fixed c' {

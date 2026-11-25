@@ -29,7 +29,8 @@
 //!
 //! - [`error`] : l'erreur unique des deux sens ([`Error`], [`Result`]) ;
 //! - [`pitch`] : la spirale des quintes (`tpc`) et ses conversions ;
-//! - [`clefs`] : la table des clefs, dans les deux sens.
+//! - [`clefs`] : la table des clefs, dans les deux sens ;
+//! - [`headers`] : les champs `\header` standards transportant les crédits.
 //!
 //! Tout le reste appartient à `scoretk-lilypond-import` (lecture `.ly` →
 //! modèle) ou à `scoretk-lilypond-export` (modèle → `.ly`).
@@ -39,7 +40,94 @@
 
 pub mod clefs;
 mod error;
+pub mod headers;
+pub mod midi_instruments;
 pub mod noteheads;
 pub mod pitch;
 
 pub use error::{Error, Result};
+
+/// Item kinds that LilyPond 2.26 can carry as *format* data (§5.3 of
+/// `docs/agents/model-modularisation.md`).
+///
+/// Three kinds of the pivot inventory are deliberately absent, with evidence:
+///
+/// - `tbox-position` describes a MuseScore frame (measure index, vertical
+///   placement, font size). LilyPond has no frame object: `\markup` attaches
+///   to a note or a context, not to a numbered MuseScore frame (Notation
+///   Reference §6.1, §8.2).
+/// - `tremolo` distinguishes MuseScore's `Start`/`Stop`/`Unmeasured` spanner
+///   kinds. LilyPond's `Tremolo` event (`Notation Reference §2.5.3`) has a
+///   single strobe count; there is no start/stop pair to serialise.
+/// - `note-head` uses the *exact* MuseScore `NoteHeadGroup` as its value.
+///   LilyPond offers a fixed set of note-head styles (Notation Reference
+///   appendix B.9); groups with no style (`Plus`, `WithX`, `HeavyCross`…)
+///   have no carrier and cannot be reconstructed by any LilyPond tool.
+///
+/// The standard styles that do exist are still written and read; only the
+/// exact-group identifier is outside the declaration. This is a declaration
+/// about the format, not a relaxation of the comparison: the same inventory,
+/// keys and oracle are used for every direction.
+pub const LY_ITEM_KINDS: &[&str] = &[
+    "arpeggio",
+    "articulation",
+    "barline",
+    "barline-end",
+    "barline-start",
+    "beam",
+    "breath",
+    "channel",
+    "chord-line",
+    "clef",
+    "credit",
+    "credit-position",
+    "dynamic",
+    "dynamic-velocity",
+    "fermata",
+    "figured-bass",
+    "glissando",
+    "grace",
+    "grace-note",
+    "hairpin",
+    "harmony",
+    "instrument",
+    "instrument-change",
+    "jump",
+    "key-sig",
+    "line-break",
+    "lyric",
+    "marker",
+    "measure",
+    "measure-repeat",
+    "midi-articulation",
+    "multi-measure-rest",
+    "note",
+    "ornament",
+    "ottava",
+    "pan",
+    "pedal",
+    "program",
+    "rehearsal-mark",
+    "repeat-count",
+    "rest",
+    "section-break",
+    "slur",
+    "staff-text",
+    "stem",
+    "style",
+    "style-internal",
+    "system-text",
+    "tbox-text",
+    "tempo",
+    "text-line",
+    "tie",
+    "time-sig",
+    "title",
+    "tremolo-bar",
+    "trill",
+    "tuplet",
+    "tuplet-bracket",
+    "tuplet-member",
+    "volta",
+    "volume",
+];

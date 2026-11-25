@@ -2,22 +2,25 @@
 \language "english"
 
 \header {
-  title = "Naamloze partituur"
+  title = \markup { \bold "Naamloze partituur" }
   workTitle = "Naamloze partituur"
   subtitle = "Ondertitel"
   composer = "Componist / arrangeur"
+  subsubtitle = "Naamloze partituur"
+  instrument = "Ondertitel"
+  piece = "Componist / arrangeur"
   scoretkCreditA = "Naamloze partituur"
   scoretkCreditB = "Ondertitel"
   scoretkCreditC = "Componist / arrangeur"
 }
 
 \paper {
-  paper-width = 210.058\mm
-  paper-height = 296.926\mm
-  left-margin = 15.000\mm
-  right-margin = 15.000\mm
-  top-margin = 15.000\mm
-  bottom-margin = 15.000\mm
+  paper-width = 210.05800\mm
+  paper-height = 296.92600\mm
+  left-margin = 15.00000\mm
+  right-margin = 15.00000\mm
+  top-margin = 15.00000\mm
+  bottom-margin = 15.00000\mm
 }
 
 staffOneVoiceOne = \fixed c' {

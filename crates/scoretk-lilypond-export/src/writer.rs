@@ -173,12 +173,76 @@ impl<'a> Writer<'a> {
             }
         }
 
+        // Les tailles de texte ont aussi un transport standard : un champ
+        // `\header` peut être un markup (§21.1.2) et `\fontsize #n` est une
+        // commande de markup (§8.3). Les champs privés restent pour les outils
+        // qui ne lisent pas le markup, mais le format suffit à lui seul.
+        for (field, value) in &mut entries {
+            let (size, baseline) = match *field {
+                "title" => (style.title_font_size, defaults.title_font_size),
+                "composer" => (style.composer_font_size, defaults.composer_font_size),
+                "poet" => (style.lyricist_font_size, defaults.lyricist_font_size),
+                _ => continue,
+            };
+            if (size - baseline).abs() > 1e-9 {
+                *value = format!(
+                    "\\markup {{ \\fontsize #{} \"{}\" }}",
+                    format_args!("{size:.5}"),
+                    text::escape(value.trim())
+                );
+            }
+        }
+        // Un `title` en markup gras distingue le titre d'œuvre du modèle
+        // d'un simple crédit de titre (§8.3, §21.1.2). Le lecteur retrouve
+        // ainsi `work_title` sans champ privé, et un titre de crédit reste un
+        // crédit.
+        for (field, value) in &mut entries {
+            if *field == "title" && !metadata.work_title.trim().is_empty() {
+                *value = if let Some(inner) = value
+                    .strip_prefix("\\markup { ")
+                    .and_then(|text| text.strip_suffix(" }"))
+                {
+                    // Déjà un markup avec `\fontsize` : ajouter `\bold`.
+                    format!("\\markup {{ \\bold {inner} }}")
+                } else {
+                    format!("\\markup {{ \\bold \"{}\" }}", text::escape(value))
+                };
+            }
+        }
         let mut lines = Vec::new();
         for (field, value) in entries {
             let value = value.trim();
             if !value.is_empty() {
-                lines.push(format!("  {field} = \"{}\"", text::escape(value)));
+                if value.starts_with("\\markup") {
+                    lines.push(format!("  {field} = {value}"));
+                } else {
+                    lines.push(format!("  {field} = \"{}\"", text::escape(value)));
+                }
             }
+        }
+        // Les crédits du modèle peuvent différer des champs de titre (textes
+        // de cadre, auteurs multiples,…). Des champs `\header` **standards**
+        // non utilisés par les métadonnées les portent un par un, dans l'ordre
+        // (Notation Reference §21.1.2) : aucun outil n'a besoin de connaître
+        // une extension pour les afficher. Les champs privés restent en
+        // complément pour les index au-delà de la table standard.
+        let mut used: Vec<String> = lines
+            .iter()
+            .filter_map(|line| line.trim_start().split(' ').next().map(str::to_owned))
+            .collect();
+        for credit in &self.score.engraving.credits {
+            let text = credit.text.plain().trim().replace(['\n', '\r'], " ");
+            if text.is_empty() {
+                continue;
+            }
+            let Some(field) = scoretk_lilypond_common::headers::CREDIT_HEADER_FIELDS
+                .iter()
+                .find(|field| !used.iter().any(|used| used == *field))
+            else {
+                break;
+            };
+            lines.push(format!("  {field} = \"{}\"", text::escape(&text)));
+            used.push((*field).to_owned());
         }
         // Les crédits du modèle peuvent différer des champs de titre (textes
         // de cadre, auteurs multiples,…). Des champs `\header` privés les
@@ -233,7 +297,9 @@ impl<'a> Writer<'a> {
             ("top-margin", style.page_odd_top_margin_in),
             ("bottom-margin", style.page_odd_bottom_margin_in),
         ] {
-            let _ = writeln!(out, "  {name} = {:.3}\\mm", inches * 25.4);
+            // Cinq décimales : l'inventaire normalise les styles à cinq
+            // décimales, trois arrondissaient la largeur/hauteur de page.
+            let _ = writeln!(out, "  {name} = {:.5}\\mm", inches * 25.4);
         }
         out.push_str("}\n\n");
     }
@@ -484,7 +550,7 @@ mod tests {
         score.metadata.work_title = "Essai".to_owned();
         let rendered = Writer::new(&score).render().expect("écriture");
         assert!(rendered.contains("\\header {"));
-        assert!(rendered.contains("title = \"Essai\""));
+        assert!(rendered.contains("title = \\markup { \\bold \"Essai\" }"));
         assert!(rendered.contains("\\new Staff = \"staffOne\""));
         assert!(rendered.contains("instrumentName = \"Piano\""));
     }

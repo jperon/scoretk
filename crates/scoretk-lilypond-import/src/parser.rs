@@ -81,6 +81,12 @@ pub(crate) struct Parser<'a> {
     midi_transposition: Option<PitchSpec>,
     /// `#(set-global-staff-size n)` (Notation Reference §27.2).
     staff_size: Option<f64>,
+    /// Argument du dernier `\fontsize #n` lu dans un markup de `\header`.
+    last_markup_fontsize: Option<f64>,
+    /// Champ `\header` en cours d'analyse, pour les marqueurs de markup.
+    current_header_field: Option<String>,
+    /// Champs `\header` dont le markup contient `\bold`.
+    header_bold_fields: Vec<String>,
     /// Vélocité lue dans `\set Staff.midiMinimumVolume = #n` (§24.4.2),
     /// pour la nuance suivante.
     pending_dynamic_velocity: Option<u8>,
@@ -373,6 +379,9 @@ pub(crate) fn parse(
         partitions: Vec::new(),
         midi_transposition: None,
         staff_size: None,
+        last_markup_fontsize: None,
+        current_header_field: None,
+        header_bold_fields: Vec::new(),
         pending_dynamic_velocity: None,
         pending_tremolo_kind: None,
         pending_exact_head: None,
@@ -634,6 +643,8 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 let header = self.parse_header();
                 document.header.entries.extend(header.entries);
+                document.header.font_sizes.extend(header.font_sizes);
+                document.header.bold_fields.extend(header.bold_fields);
             }
             Kind::Command if token.text == "paper" => {
                 self.position += 1;
@@ -853,11 +864,20 @@ impl<'a> Parser<'a> {
             if !self.eat_punct('=') {
                 continue;
             }
+            self.last_markup_fontsize = None;
+            self.current_header_field = Some(name.clone());
             let value = self.parse_header_value();
+            self.current_header_field = None;
+            if let Some(size) = self.last_markup_fontsize.take() {
+                // `\fontsize #n` est une commande de markup standard ; sa
+                // valeur est le transport de la taille de texte du modèle.
+                header.font_sizes.push((name.clone(), size));
+            }
             if !name.is_empty() {
                 header.entries.push((name, value));
             }
         }
+        header.bold_fields = std::mem::take(&mut self.header_bold_fields);
         header
     }
 
@@ -6431,6 +6451,38 @@ impl<'a> Parser<'a> {
             }
             Some(Token {
                 kind: Kind::Command,
+                ref text,
+                ..
+            }) if text == "fontsize" => {
+                // Notation Reference §8.3 : `\fontsize #n` décale la taille
+                // de police. On retient `n` pour le modèle, sans changer le
+                // texte collecté.
+                self.position += 1;
+                self.last_markup_fontsize =
+                    self.peek().cloned().and_then(|token| match token.kind {
+                        Kind::Scheme | Kind::Number => token
+                            .text
+                            .trim_start_matches('#')
+                            .trim()
+                            .parse::<f64>()
+                            .ok(),
+                        _ => None,
+                    });
+            }
+            Some(Token {
+                kind: Kind::Command,
+                ref text,
+                ..
+            }) if text == "bold" => {
+                self.position += 1;
+                if let Some(field) = self.current_header_field.clone() {
+                    if !self.header_bold_fields.contains(&field) {
+                        self.header_bold_fields.push(field);
+                    }
+                }
+            }
+            Some(Token {
+                kind: Kind::Command,
                 ..
             }) => {
                 // Commande de mise en forme (`\italic`, `\bold`…) : ses
@@ -8695,6 +8747,9 @@ mod tests {
             pending_tuplet_number: None,
             default_tremolo_type: 8,
             staff_size: None,
+            last_markup_fontsize: None,
+            current_header_field: None,
+            header_bold_fields: Vec::new(),
             pending_dynamic_velocity: None,
             pending_tremolo_kind: None,
             pending_exact_head: None,
@@ -8751,6 +8806,9 @@ mod tests {
                 pending_tuplet_number: None,
                 default_tremolo_type: 8,
                 staff_size: None,
+                last_markup_fontsize: None,
+                current_header_field: None,
+                header_bold_fields: Vec::new(),
                 pending_dynamic_velocity: None,
                 pending_tremolo_kind: None,
                 pending_exact_head: None,

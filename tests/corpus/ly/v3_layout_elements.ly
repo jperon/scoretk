@@ -3,13 +3,18 @@
 
 #(set-global-staff-size 17.80004409)
 \header {
-  title = "Layout test"
+  title = \markup { \fontsize #24.00000 "Layout test" }
   subtitle = "Just an artificial score to test whether all elements are laid out"
-  composer = "Composer"
-  poet = "Lyricist"
+  composer = \markup { \fontsize #12.00000 "Composer" }
+  poet = \markup { \fontsize #12.00000 "Lyricist" }
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  subsubtitle = "Layout test"
+  instrument = "Just an artificial score to test whether all elements are laid out"
+  piece = "Composer"
+  dedication = "Lyricist"
+  tagline = "The only part"
   scoretkCreditA = "Layout test"
   scoretkCreditB = "Just an artificial score to test whether all elements are laid out"
   scoretkCreditC = "Composer"
@@ -18,12 +23,12 @@
 }
 
 \paper {
-  paper-width = 210.058\mm
-  paper-height = 296.926\mm
-  left-margin = 10.000\mm
-  right-margin = 10.000\mm
-  top-margin = 10.000\mm
-  bottom-margin = 20.000\mm
+  paper-width = 210.05800\mm
+  paper-height = 296.92600\mm
+  left-margin = 10.00000\mm
+  right-margin = 10.00000\mm
+  top-margin = 10.00000\mm
+  bottom-margin = 20.00000\mm
 }
 
 staffOneVoiceOne = \fixed c' {

@@ -9906,3 +9906,20 @@ fn version_ancienne_relative_sans_argument_part_de_do() {
         "\\relative f garde sa référence"
     );
 }
+
+/// `\fontsize #n` et `\bold` dans un champ `\header` en markup (Notation
+/// Reference §8.3, §21.1.2) transportent respectivement la taille de texte et
+/// la nature « titre d'œuvre » du modèle, sans champ privé. Un titre simple
+/// reste un crédit et ne crée pas de `work_title`.
+#[test]
+fn taille_de_texte_dans_un_header_markup_standard() {
+    let src = "\\version \"2.26.0\"\n\\header { title = \\markup { \\fontsize #24 \\bold \"T\" } }\n\\score { { c'4 } }\n";
+    let score = scoretk_lilypond_import::read_lilypond(src).expect("lecture");
+    assert_eq!(score.metadata.work_title, "T");
+    assert_eq!(score.engraving.style.title_font_size, 24.0);
+
+    let credit_only = "\\version \"2.26.0\"\n\\header { title = \"T\" }\n\\score { { c'4 } }\n";
+    let score = scoretk_lilypond_import::read_lilypond(credit_only).expect("lecture");
+    assert_eq!(score.metadata.work_title, "");
+    assert_eq!(score.engraving.credits.len(), 1);
+}

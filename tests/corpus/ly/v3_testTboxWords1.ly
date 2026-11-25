@@ -3,14 +3,21 @@
 
 #(set-global-staff-size 20.07501265)
 \header {
-  title = "Title"
+  title = \markup { \bold \fontsize #24.00000 "Title" }
   workTitle = "Title"
-  composer = "Composer on page 1"
-  poet = "Lyricist on page 1"
+  composer = \markup { \fontsize #12.00000 "Composer on page 1" }
+  poet = \markup { \fontsize #12.00000 "Lyricist on page 1" }
   copyright = "Copyright"
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  subsubtitle = "Title on page 1"
+  instrument = "Composer on page 1"
+  piece = "Lyricist on page 1"
+  dedication = "Title in vbox on page 2"
+  tagline = "Text on page 2"
+  meter = "Title in vbox on page 3"
+  breakbefore = "Part name on page 3"
   scoretkCreditA = "Title on page 1"
   scoretkCreditB = "Composer on page 1"
   scoretkCreditC = "Lyricist on page 1"
@@ -25,12 +32,12 @@
 }
 
 \paper {
-  paper-width = 210.058\mm
-  paper-height = 296.926\mm
-  left-margin = 10.000\mm
-  right-margin = 10.000\mm
-  top-margin = 10.000\mm
-  bottom-margin = 20.000\mm
+  paper-width = 210.05800\mm
+  paper-height = 296.92600\mm
+  left-margin = 10.00000\mm
+  right-margin = 10.00000\mm
+  top-margin = 10.00000\mm
+  bottom-margin = 20.00000\mm
 }
 
 staffOneVoiceOne = \fixed c' {

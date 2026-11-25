@@ -41,6 +41,7 @@ use scoretk_core::model::{
     StaffBracket, StaffId, TboxText, Tempo, Track, Transpose, Trill, TrillType, Tuplet, TupletId,
     VOICES,
 };
+use scoretk_lilypond_common::midi_instruments;
 
 mod articulate;
 
@@ -226,6 +227,26 @@ fn apply_text_styles(score: &mut Score, document: &Document) {
             .header
             .get(name)
             .and_then(|text| text.trim().parse::<f64>().ok())
+        {
+            if value.is_finite() && value > 0.0 {
+                *target = value;
+            }
+        }
+    }
+    // Un autre outil LilyPond n'écrit pas les champs privés, mais peut mettre
+    // la même taille dans un `\header` en markup standard, par exemple
+    // `title = \markup { \fontsize #24 "Titre" }` (§8.3, §21.1.2).
+    for (field, target) in [
+        ("title", &mut score.engraving.style.title_font_size),
+        ("composer", &mut score.engraving.style.composer_font_size),
+        ("poet", &mut score.engraving.style.lyricist_font_size),
+    ] {
+        if let Some(value) = document
+            .header
+            .font_sizes
+            .iter()
+            .find(|(name, _)| name == field)
+            .map(|(_, value)| *value)
         {
             if value.is_finite() && value > 0.0 {
                 *target = value;
@@ -1633,7 +1654,7 @@ fn instrument_for(long_name: &str, short_name: &str, midi_instrument: Option<&st
     }
     // `scm/midi.scm::midi-program` : la chaîne de `midiInstrument` est la
     // source du programme, même quand le nom gravé suggère un autre instrument.
-    if let Some(entry) = midi_instrument.and_then(crate::midi_instruments::lookup) {
+    if let Some(entry) = midi_instrument.and_then(midi_instruments::lookup) {
         instrument.midi_program = Some(entry.program);
         // `scm/midi.scm::percussion?` : les kits utilisent le canal 9.
         if entry.percussion {
@@ -1647,13 +1668,35 @@ fn instrument_for(long_name: &str, short_name: &str, midi_instrument: Option<&st
 fn write_metadata(score: &mut Score, document: &Document) {
     let header = &document.header;
     let field = |name: &str| header.get(name).map(str::trim).unwrap_or_default();
-    // `workTitle` n'est écrit par l'écrivain que si le modèle a un titre
-    // d'œuvre ; un simple crédit de titre ne doit pas créer `<work>`.
+    // `title` est le champ `\header` standard du titre de l'œuvre
+    // (Notation Reference §21.1.2). `workTitle` reste prioritaire quand il est
+    // présent, mais un fichier LilyPond écrit par un autre outil n'a que
+    // `title` : le modèle doit tout de même retrouver le titre.
+    let fallback = |standard: &str, private: &str| {
+        let private = field(private);
+        if private.is_empty() {
+            field(standard)
+        } else {
+            private
+        }
+    };
     let metadata = ScoreMetadata {
-        work_title: field("workTitle").to_owned(),
+        // `\header title` en markup gras est le signal standard d'un titre
+        // d'œuvre (Notation Reference §8.3) ; un titre simple est un crédit.
+        work_title: if document
+            .header
+            .bold_fields
+            .iter()
+            .any(|name| name == "title")
+        {
+            field("title").to_owned()
+        } else {
+            field("workTitle").to_owned()
+        },
         movement_title: field("movementTitle").to_owned(),
         movement_number: field("movementNumber").to_owned(),
-        work_number: field("workNumber").to_owned(),
+        // `opus` est le champ standard pour un numéro d'œuvre (§21.1.2).
+        work_number: fallback("opus", "workNumber").to_owned(),
         composer: field("composer").to_owned(),
         lyricist: field("poet").to_owned(),
         arranger: field("arranger").to_owned(),
@@ -1706,8 +1749,24 @@ fn write_metadata(score: &mut Score, document: &Document) {
         return;
     }
 
-    // Les crédits reprennent les champs de titre : l'export les écrit dans
-    // `<credit>`, comme MuseScore pour les cadres de titre.
+    // Champs `\header` standards réservés aux crédits supplémentaires
+    // (Notation Reference §21.1.2) : quand ils sont présents, ils portent la
+    // liste complète des crédits dans l'ordre, exactement comme le tableau
+    // partagé par l'écrivain. Sinon, les crédits reprennent les champs de
+    // titre, comme MuseScore pour les cadres de titre.
+    let standard_credits: Vec<String> = scoretk_lilypond_common::headers::CREDIT_HEADER_FIELDS
+        .iter()
+        .filter_map(|name| {
+            let value = field(name);
+            (!value.is_empty()).then(|| value.to_owned())
+        })
+        .collect();
+    if !standard_credits.is_empty() {
+        for text in standard_credits {
+            score.add_credit(Credit::new(RichText::new(text), CreditStyle::Title));
+        }
+        return;
+    }
     let credits = [
         (CreditStyle::Title, field("title")),
         (CreditStyle::Subtitle, field("subtitle")),

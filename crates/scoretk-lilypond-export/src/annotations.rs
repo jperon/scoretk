@@ -81,12 +81,17 @@ pub(crate) fn events(annotation: &Annotation, tick: Tick) -> Vec<Event> {
         Annotation::Tempo(tempo) => {
             // Un texte réduit à un symbole musical (`♩ = 80`) ne laisse rien
             // après nettoyage : seule la valeur métronomique est écrite.
+            // Un texte réduit à un symbole musical (`♩ = 80`) ne laisse rien
+            // après nettoyage : les symboles de la zone à usage privé n'ont
+            // pas de glyphe dans les polices LilyPond et les écrire ferait
+            // échouer le test de compilation sans avertissement.
             let plain = text::rich_text(&tempo.text);
             let label = if plain.chars().any(char::is_alphabetic) {
                 format!("\"{}\"", plain.trim())
             } else {
                 String::new()
             };
+            // LilyPond 2.26 n'accepte qu'un entier après `4 =`.
             let metronome = tempo
                 .beats_per_second
                 .filter(|beats| *beats > 0.0)

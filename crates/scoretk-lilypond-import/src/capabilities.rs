@@ -28,7 +28,7 @@
 use scoretk_core::model::{Capabilities, Layers};
 
 /// Couches lisibles depuis LilyPond.
-pub const CAPABILITIES: Capabilities = Capabilities::new(
+pub const CAPABILITIES: Capabilities = Capabilities::with_kinds(
     Layers::COMMON
         .union(Layers::METRIC)
         .union(Layers::EVENTS)
@@ -36,4 +36,5 @@ pub const CAPABILITIES: Capabilities = Capabilities::new(
         .union(Layers::PLAYBACK)
         .union(Layers::ENGRAVING),
     Layers::NONE,
+    scoretk_lilypond_common::LY_ITEM_KINDS,
 );

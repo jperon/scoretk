@@ -2,18 +2,18 @@
 \language "english"
 
 \header {
-  title = "Idee in Noten no.8"
+  title = \markup { \bold "Idee in Noten no.8" }
   workTitle = "Idee in Noten no.8"
   composer = "Yannis A. Paul"
 }
 
 \paper {
-  paper-width = 210.058\mm
-  paper-height = 296.926\mm
-  left-margin = 15.000\mm
-  right-margin = 15.000\mm
-  top-margin = 15.000\mm
-  bottom-margin = 15.000\mm
+  paper-width = 210.05800\mm
+  paper-height = 296.92600\mm
+  left-margin = 15.00000\mm
+  right-margin = 15.00000\mm
+  top-margin = 15.00000\mm
+  bottom-margin = 15.00000\mm
 }
 
 staffOneVoiceOne = \fixed c' {

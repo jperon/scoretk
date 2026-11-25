@@ -2,18 +2,19 @@
 \language "english"
 
 \header {
-  title = "Invisible elements test"
+  title = \markup { \bold "Invisible elements test" }
   workTitle = "Invisible elements test"
+  subsubtitle = "Invisible elements test"
   scoretkCreditA = "Invisible elements test"
 }
 
 \paper {
-  paper-width = 210.058\mm
-  paper-height = 296.926\mm
-  left-margin = 15.000\mm
-  right-margin = 15.000\mm
-  top-margin = 15.000\mm
-  bottom-margin = 15.000\mm
+  paper-width = 210.05800\mm
+  paper-height = 296.92600\mm
+  left-margin = 15.00000\mm
+  right-margin = 15.00000\mm
+  top-margin = 15.00000\mm
+  bottom-margin = 15.00000\mm
 }
 
 staffOneVoiceOne = \fixed c' {

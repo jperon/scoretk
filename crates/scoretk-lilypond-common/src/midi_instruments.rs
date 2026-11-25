@@ -32,7 +32,7 @@
 
 /// Programme MIDI base zéro et canal de percussion d'un `midiInstrument`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct MidiInstrument {
+pub struct MidiInstrument {
     pub program: u8,
     pub percussion: bool,
 }
@@ -195,7 +195,7 @@ const NAMES: &[(&str, u8, bool)] = &[
 ];
 
 /// Résout un nom d'instrument LilyPond (comparaison insensible à la casse).
-pub(crate) fn lookup(name: &str) -> Option<MidiInstrument> {
+pub fn lookup(name: &str) -> Option<MidiInstrument> {
     let name = name.trim();
     NAMES
         .iter()
@@ -204,6 +204,16 @@ pub(crate) fn lookup(name: &str) -> Option<MidiInstrument> {
             program: *program,
             percussion: *percussion,
         })
+}
+
+/// Premier nom `midiInstrument` (§`scm/midi.scm`) portant le programme GM.
+/// La table est ordonnée comme `instrument-names-alist` : le premier nom non
+/// percussion est le plus générique, donc le plus lisible dans un `.ly`.
+pub fn name_for_program(program: u8) -> Option<&'static str> {
+    NAMES
+        .iter()
+        .find(|(_, value, percussion)| *value == program && !percussion)
+        .map(|(name, _, _)| *name)
 }
 
 #[cfg(test)]

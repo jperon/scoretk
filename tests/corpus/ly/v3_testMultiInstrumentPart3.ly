@@ -3,21 +3,24 @@
 
 #(set-global-staff-size 20.07501265)
 \header {
-  title = "clarinet scales"
+  title = \markup { \bold \fontsize #24.00000 "clarinet scales" }
   workTitle = "clarinet scales"
+  composer = \markup { \fontsize #12.00000 "" }
+  poet = \markup { \fontsize #12.00000 "" }
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  subsubtitle = "clarinet scales"
   scoretkCreditA = "clarinet scales"
 }
 
 \paper {
-  paper-width = 215.900\mm
-  paper-height = 279.400\mm
-  left-margin = 10.000\mm
-  right-margin = 10.000\mm
-  top-margin = 10.000\mm
-  bottom-margin = 20.000\mm
+  paper-width = 215.90000\mm
+  paper-height = 279.40000\mm
+  left-margin = 10.00000\mm
+  right-margin = 10.00000\mm
+  top-margin = 10.00000\mm
+  bottom-margin = 20.00000\mm
 }
 
 staffOneVoiceOne = \fixed c' {
