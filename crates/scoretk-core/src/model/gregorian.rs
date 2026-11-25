@@ -32,9 +32,10 @@
 //! stays portable to `wasm32-unknown-unknown`.
 
 use super::{
-    BarLineType, Breath, BreathType, Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration,
-    DurationType, Fraction, Layers, Lyrics, LyricsSyllabic, Measure, Note, NoteSource, Ornament,
-    OrnamentType, Part, Placement, Score, Segment, SegmentItem, SegmentType, Track,
+    Accidental, AccidentalType, BarLineType, Breath, BreathType, Chord, ChordRest, ChordRestKind,
+    Clef, ClefType, Duration, DurationType, Fraction, Layers, Lyrics, LyricsSyllabic, Measure,
+    Note, NoteSource, Ornament, OrnamentType, Part, Placement, Score, Segment, SegmentItem,
+    SegmentType, Track,
 };
 
 /// One header field, in source order (`Gabc.tex:67-154`).
@@ -297,6 +298,16 @@ impl Gregorian {
     /// naturel (`x`, `y`, `#` et leurs variantes douces/parenthesées), ce qui
     /// est la convention chantée et l'attendu du consommateur Cantus ; elle
     /// est documentée comme choix dérivé dans `docs/agents/gabc.md`.
+    ///
+    /// Un glyphe d'alteration n'étant pas une attaque, l'alteration **affichée**
+    /// est reportée sur la première note chantée suivante de la même lettre :
+    /// `gx g` projette un `g` avec `AccidentalType::Flat`, donc
+    /// `<alter>-1</alter>` **et** `<accidental>flat</accidental>` en MusicXML.
+    /// Les notes suivantes sous la même portée gardent l'<alter> sans signe
+    /// affiché ; un `y`/`Y` suivant est un naturel visible qui annule la
+    /// portée. XSD 4.0 distingue en effet `<pitch>/<alter>` (hauteur sonore)
+    /// de `<accidental>` (signe réellement noté), tous deux nécessaires à
+    /// Verovio pour dessiner le bémol.
     #[must_use]
     pub fn build_derived_score(&self) -> Score {
         let mut score = Score::new();
@@ -312,6 +323,9 @@ impl Gregorian {
         let syllabics = self.syllabics();
         // Une entrée par lettre de hauteur (`a`…`n`, `p` ; `o` est l'oriscus).
         let mut alterations = [0i8; 16];
+        // Signe affiché en attente pour la première note chantée de chaque
+        // lettre après un glyphe d'alteration (`Gabc.tex:512-540`).
+        let mut displayed = [None::<Accidental>; 16];
         let mut start = Fraction::ZERO;
         let mut cursor = Fraction::ZERO;
         let mut measure_index = 0usize;
@@ -337,6 +351,10 @@ impl Gregorian {
                     // L'alteration est un glyphe, pas une attaque MIDI.
                     if let Some(slot) = letter_slot(note.letter) {
                         alterations[slot] = value;
+                        // `x`/`X`, `y`/`Y`, `#`/`##` et leurs formes
+                        // parenthesées portent le signe à dessiner : on le
+                        // remet à la première note chantée de cette lettre.
+                        displayed[slot] = alteration_accidental(note, value);
                     }
                     continue;
                 }
@@ -345,6 +363,12 @@ impl Gregorian {
                 let pitch = (i16::from(derived_pitch(step)) + i16::from(alter)).clamp(0, 127) as u8;
                 let tpc = (i16::from(derived_tpc(step)) + 7 * i16::from(alter)).clamp(0, 26) as i8;
                 let mut projected = Note::new(pitch, tpc);
+                // Le glyphe n'est pas une note : c'est la première note
+                // chantée de la lettre qui porte le signe visible. Les notes
+                // suivantes sous la même portée gardent `<alter>` sans signe.
+                if let Some(slot) = letter_slot(note.letter) {
+                    projected.accidental = displayed[slot].take();
+                }
                 projected.source = Some(NoteSource {
                     offset: note.source_offset.unwrap_or(0),
                     end: note.source_end.unwrap_or(0),
@@ -412,6 +436,9 @@ impl Gregorian {
             // quand il est rencontré comme note alterée ci-dessus.
             if syllable.space_after || !syllable.bars.is_empty() {
                 alterations = [0; 16];
+                // Aucune note de la portée suivante ne doit hériter d'un signe
+                // dont le glyphe n'a pas été répété après la barre/le mot.
+                displayed = [None; 16];
             }
             // Une mesure dérivée correspond à une **barre réelle** du `.gabc`
             // (`,` `;` `:` `::`, `Gabc.tex:801-845`), pas à un groupe de
@@ -606,6 +633,30 @@ fn alteration_value(note: &GregorianNote) -> Option<i8> {
         "#" | "#?" | "##" => Some(1),
         _ => None,
     }
+}
+
+/// Signe affiché correspondant à un glyphe d'alteration GABC.
+///
+/// `x`/`X` → bémol, `y`/`Y` → bécarre, `#`/`##` → dièse
+/// (`Gabc.tex:481-489`). Les formes `x?`/`y?`/`#?` sont parenthesées
+/// (`:484-486`) et le restent dans MusicXML via `parentheses="yes"`. Comme
+/// toute altération GABC est un glyphe distinct de la note chantée
+/// (`:512-540`), le signe est *visible* : XSD 4.0 `<accidental>` décrit
+/// l'altération réellement notée, distincte du `<alter>` sonore.
+fn alteration_accidental(note: &GregorianNote, value: i8) -> Option<Accidental> {
+    let sign = note
+        .signs
+        .iter()
+        .find(|sign| sign.kind == SignKind::Alteration)?;
+    let kind = match value {
+        -1 => AccidentalType::Flat,
+        0 => AccidentalType::Natural,
+        1 => AccidentalType::Sharp,
+        _ => return None,
+    };
+    let mut accidental = Accidental::new(kind);
+    accidental.parentheses = sign.raw.ends_with('?');
+    Some(accidental)
 }
 
 /// Index d'une lettre de hauteur pour la table d'alterations (`o` exclu).
@@ -920,6 +971,13 @@ mod tests {
         assert_eq!(score.notes[1].pitch, 58);
         assert_eq!(score.notes[1].tpc, super::super::tpc::B_FLAT);
         assert_eq!(score.notes[1].source.unwrap().gregorian_note, 2);
+        // Le glyphe n'est pas une note, mais le bémol est visible sur la
+        // première note chantée qui en porte l'effet (`<accidental>` MusicXML).
+        assert_eq!(score.notes[0].accidental, None);
+        assert_eq!(
+            score.notes[1].accidental,
+            Some(Accidental::new(AccidentalType::Flat))
+        );
     }
 
     #[test]
@@ -964,6 +1022,19 @@ mod tests {
         // g-flat, g-flat inside the word, then natural after the word,
         // g-sharp after `#`, natural again after the bar.
         assert_eq!(pitches, [54, 54, 55, 56, 55]);
+        let accidentals: Vec<_> = score.notes.iter().map(|note| note.accidental).collect();
+        // Un seul signe par glyphe : la seconde note sous la portée n'en a
+        // pas, et le mot/barre suivant n'hérite d'aucun signe.
+        assert_eq!(
+            accidentals,
+            [
+                Some(Accidental::new(AccidentalType::Flat)),
+                None,
+                None,
+                Some(Accidental::new(AccidentalType::Sharp)),
+                None,
+            ]
+        );
     }
 
     fn note_with_quilisma(letter: char, quilisma: bool) -> GregorianNote {

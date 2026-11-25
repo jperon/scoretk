@@ -202,6 +202,15 @@ pitch finding). The word/bar scope is thus our declared modern projection,
 matching the Cantus consumer and ordinary chant practice, not a claim about
 Gregorio's TeX output. The witness `A(gixi)ve(h_g.)` projects two sung notes
 (G3 then B♭3 under `c4`), and `gxf!gh` flattens the following `g` only.
+The **visible** sign is modelled too: since the glyph is not a sung note,
+`Accidental::new` (flat/natural/sharp) is attached to the first subsequent
+sung note of that letter, and `x?`/`y?`/`#?` keep `parentheses="yes"`.
+MusicXML XSD 4.0 distinguishes `<pitch>/<alter>` (sounding pitch) from
+`<accidental>` (notated sign); writing only the former meant Verovio drew no
+flat in Cantus. Later notes under the same scope keep `<alter>` but no
+displayed accidental; a following `y`/`Y` is a visible natural that cancels
+the scope, and word/bar boundaries drop any unasserted sign. Tests:
+`crates/scoretk/tests/gabc_accidentals.rs`.
 
 ## 8. Writer (`scoretk-gabc-export`)
 
