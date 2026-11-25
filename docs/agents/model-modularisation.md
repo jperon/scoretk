@@ -766,22 +766,28 @@ Round trip (`model → write X → read X`):
 | lilypond | L0–L5 | 99.27 % | 79.32 % | 85.71 | 97.19 | 65.54 | 21.59 | 50.61 | 6310 |
 | abc | L0–L4 | 98.92 % | 81.08 % | 83.41 | 96.32 | 50.34 | 0.00 | — | 5237 |
 
-Import alone (existing reference file → reader → compare):
+Import alone (existing reference file → reader → compare). The **Source**
+column is part of the measurement: it says what the row is evidence *about*.
 
-| Format | Declared | Essential | Full support | L1 | L2 | L3 | L4 | L5 | Files / items |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| musicxml | L0–L5 | 99.83 % | 78.32 % | 90.97 | 99.25 | 88.18 | 31.55 | 21.81 | 56 / 6310 |
-| mxl | L0–L5 | 99.83 % | 78.32 % | 90.97 | 99.25 | 88.18 | 31.55 | 21.81 | 56 / 6310 |
-| midi | L0–L4 | 71.04 % | 32.52 % | 43.95 | 43.31 | 2.47 | 16.67 | — | 21 / 781 |
-| lilypond | L0–L5 | 99.27 % | 79.32 % | 85.71 | 97.19 | 65.54 | 21.59 | 50.61 | 56 / 6310 |
-| abc | L0–L4 | 98.92 % | 81.08 % | 83.41 | 96.32 | 50.34 | 0.00 | — | 56 / 5237 |
+| Format | Declared | Essential | Full support | L1 | L2 | L3 | L4 | L5 | Files / items | Source |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| musicxml | L0–L5 | 99.83 % | 78.32 % | 90.97 | 99.25 | 88.18 | 31.55 | 21.81 | 56 / 6310 | MuseScore 4.7.4 `*.ref.musicxml` |
+| mxl | L0–L5 | 99.83 % | 78.32 % | 90.97 | 99.25 | 88.18 | 31.55 | 21.81 | 56 / 6310 | MuseScore 4.7.4 `*.ref.musicxml` |
+| midi | L0–L4 | 71.04 % | 32.52 % | 43.95 | 43.31 | 2.47 | 16.67 | — | 21 / 781 | MuseScore 4.7.4 `*.ref.mid` |
+| lilypond | L0–L5 | 99.27 % | 79.32 % | 85.71 | 97.19 | 65.54 | 21.59 | 50.61 | 56 / 6310 | **scoretk snapshot — self-consistency** |
+| abc | L0–L4 | 98.92 % | 81.08 % | 83.41 | 96.32 | 50.34 | 0.00 | — | 56 / 5237 | **scoretk snapshot — self-consistency** |
 
 The `mxl` import-alone row reads the same `.ref.musicxml` files as `musicxml`
 (the reader accepts both containers), so both rows are expected to be equal.
 The LilyPond and ABC snapshots under `tests/corpus/{ly,abc}/` were produced by
 scoretk's own writers, not by an independent tool: their import-alone rows
-are *self-consistency* measurements, not external compliance evidence. Only
-the MusicXML and MIDI references come from MuseScore 4.7.4.
+are *self-consistency* measurements, not external compliance evidence. They
+repeat the round trip and must never be quoted as a second, independent
+measurement. Only the MusicXML and MIDI references come from MuseScore 4.7.4.
+`reference_sources_distinguish_self_written_snapshots` in
+`crates/scoretk/tests/layer_coverage.rs` asserts that the test prints the same
+distinction.
+
 
 ### 11.4 Ranked per-layer gaps (round trip)
 

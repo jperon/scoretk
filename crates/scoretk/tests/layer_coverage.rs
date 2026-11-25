@@ -267,9 +267,21 @@ fn reference_file(scores: &str, kind: ReferenceKind) -> Option<(PathBuf, Format)
     path.is_file().then_some((path, format))
 }
 
-fn print_row(name: &str, declared: Layers, totals: &Totals) {
+/// Origin of the file an import-alone row reads. The LilyPond and ABC
+/// snapshots are written by scoretk's own writers: their rows are
+/// self-consistency checks, not external compliance evidence (§11.3).
+fn reference_source(kind: ReferenceKind) -> &'static str {
+    match kind {
+        ReferenceKind::MusicXml => "MuseScore 4.7.4 *.ref.musicxml",
+        ReferenceKind::Midi => "MuseScore 4.7.4 *.ref.mid",
+        ReferenceKind::Ly => "scoretk snapshot (self-consistency)",
+        ReferenceKind::Abc => "scoretk snapshot (self-consistency)",
+    }
+}
+
+fn print_row(name: &str, declared: Layers, totals: &Totals, source: &str) {
     println!(
-        "{:<14} {:<12} {:>9.2}% {:>12.2}% {:>6} {:>7} {:>8}",
+        "{:<14} {:<12} {:>9.2}% {:>12.2}% {:>6} {:>7} {:>8}  {:<38}",
         name,
         layers_label(declared),
         totals.essential.percent(),
@@ -277,6 +289,7 @@ fn print_row(name: &str, declared: Layers, totals: &Totals) {
         totals.files,
         totals.skipped,
         totals.total.reference,
+        source,
     );
 }
 
@@ -330,7 +343,7 @@ fn layer_coverage_table() {
          full support = all declared layers"
     );
     println!(
-        "{:<14} {:<12} {:>10} {:>13} {:>6} {:>7} {:>8}",
+        "{:<14} {:<12} {:>10} {:>13} {:>6} {:>7} {:>8}  source",
         "direction", "declared", "essential", "full-support", "files", "skipped", "ref-items"
     );
 
@@ -355,13 +368,17 @@ fn layer_coverage_table() {
             let coverage = compare(&reference_inventory, &candidate, declared);
             totals.add(&coverage, essential(&reference_inventory, &candidate));
         }
-        print_row(direction.name, declared, &totals);
+        print_row(direction.name, declared, &totals, "round trip (own writer)");
         print_details(declared, &totals);
     }
 
     println!("\n=== Import alone against the same reference model ===");
     println!(
-        "{:<14} {:<12} {:>10} {:>13} {:>6} {:>7} {:>8}",
+        "The LilyPond and ABC snapshots under tests/corpus/{{ly,abc}}/ were written \
+         by scoretk: those rows are self-consistency measurements, NOT external compliance."
+    );
+    println!(
+        "{:<14} {:<12} {:>10} {:>13} {:>6} {:>7} {:>8}  source",
         "format", "declared", "essential", "full-support", "files", "skipped", "ref-items"
     );
     for direction in DIRECTIONS {
@@ -388,8 +405,26 @@ fn layer_coverage_table() {
             let coverage = compare(&reference_inventory, &candidate, declared);
             totals.add(&coverage, essential(&reference_inventory, &candidate));
         }
-        print_row(direction.name, declared, &totals);
+        print_row(direction.name, declared, &totals, reference_source(kind));
         print_details(declared, &totals);
     }
     println!();
+}
+
+#[test]
+fn reference_sources_distinguish_self_written_snapshots() {
+    for kind in [ReferenceKind::Ly, ReferenceKind::Abc] {
+        assert!(
+            reference_source(kind).contains("self-consistency"),
+            "{} must be labelled as a self-consistency measurement",
+            reference_source(kind)
+        );
+    }
+    for kind in [ReferenceKind::MusicXml, ReferenceKind::Midi] {
+        assert!(
+            reference_source(kind).starts_with("MuseScore 4.7.4"),
+            "{} must be labelled as a MuseScore 4.7.4 reference",
+            reference_source(kind)
+        );
+    }
 }
