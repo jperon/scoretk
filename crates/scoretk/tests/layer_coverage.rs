@@ -42,7 +42,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use scoretk::model::{
-    compare_with_kinds, essential, inventory, Capabilities, Coverage, LayerCounts, Layers, LAYERS,
+    compare, compare_with_kinds, essential, inventory, Capabilities, Coverage, LayerCounts, Layers,
+    LAYERS,
 };
 use scoretk::{read, write, Format, Options, Score};
 
