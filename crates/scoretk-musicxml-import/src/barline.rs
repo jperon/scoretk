@@ -26,8 +26,8 @@
 //! spanners. L'export les réécrit dans `<barline location="left|right">`.
 
 use scoretk_core::model::{
-    Annotation, BarLineType, Fermata, FermataType, Placement, Score, Spanner, SpannerAnchor,
-    SpannerType, Track, VoltaInfo,
+    Annotation, BarLine, BarLineType, Fermata, FermataType, Placement, Score, SegmentItem,
+    SegmentType, Spanner, SpannerAnchor, SpannerType, Track, VoltaInfo,
 };
 
 use crate::pass2;
@@ -59,6 +59,14 @@ pub(crate) fn read_barline(
             if !current.is_repeat_end() {
                 score.measures[measure_index].end_bar_line = kind;
             }
+            // MuseScore représente aussi la barre par un élément sur le
+            // segment de fin (`engraving/dom/barline.h`) ; le lecteur ne
+            // conservait que le champ de mesure et perdait l'objet à un
+            // aller-retour MusicXML (85 items du corpus).
+            let index =
+                pass2::get_segment(score, measure_index, SegmentType::EndBarLine, measure_end);
+            score.measures[measure_index].segments[index]
+                .set_element(track, SegmentItem::BarLine(BarLine::new(kind)));
         }
     }
 

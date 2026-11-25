@@ -877,8 +877,12 @@ Reading the table:
    decision `bracket`, not the `bracket_explicit` encoding flag. Two tests
    (`crochet_implicite_pas_de_propriete`,
    `crochet_court_implicite_preserve_au_aller_retour`) cover both sides.
-4. **`barline` (L1, 85 items)** and `key-sig` (37 in ABC) are metric items
-   lost on import/export by the non-MuseScore formats.
+4. **`barline` (L1, 85 items)** is an `EndBarLine` segment object that the
+   MusicXML reader did not restore (only `Measure::end_bar_line` was set).
+   Fixed by recreating the segment, including the implicit `Normal` barlines
+   MuseScore keeps (`src/barline.rs`, `src/pass2.rs`; test
+   `barre_de_fin_est_un_element_du_segment`). `key-sig` (37 in ABC) remains a
+   metric item lost by the ABC writer.
 5. **MIDI L3 (7.77 % round trip, 2.47 % import alone)** is dominated by
    credits and titles: SMF carries track names and text metas, but the
    mapping to `Score::metadata`/`Credit` is only partial.

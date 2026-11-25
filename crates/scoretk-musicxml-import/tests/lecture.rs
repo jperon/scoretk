@@ -22,7 +22,7 @@
 //! mesure du C++ réécrit `4/4` en `8/8`, ce que la `Fraction` toujours réduite
 //! du modèle ne peut pas représenter ; l'implémentation doit donc avancer).
 
-use scoretk_core::model::{BarLineType, Fraction};
+use scoretk_core::model::{BarLineType, Fraction, SegmentItem};
 use scoretk_musicxml_import::read_musicxml;
 
 /// Document minimal d'une mesure 4/4 avec une ronde.
@@ -59,6 +59,23 @@ fn mesure_44_ne_boucle_pas() {
     assert_eq!(score.measures[0].nominal_len, Fraction::ONE);
     assert_eq!(score.notes.len(), 1);
     assert_eq!(score.notes[0].pitch, 60);
+}
+
+#[test]
+fn barre_de_fin_est_un_element_du_segment() {
+    let mut xml = partition_44();
+    let barline = br#"<barline location="right"><bar-style>light-light</bar-style></barline>"#;
+    // Insertion avant la fermeture de la mesure.
+    let end = xml.windows(10).rposition(|w| w == b"</measure>").unwrap();
+    xml.splice(end..end, barline.iter().copied());
+    let partition = read_musicxml(&xml).expect("lecture");
+    assert_eq!(partition.measures[0].end_bar_line, BarLineType::Double);
+    let found = partition.measures[0]
+        .segments
+        .iter()
+        .flat_map(|segment| segment.iter_elements())
+        .any(|(_, item)| matches!(item, SegmentItem::BarLine(bar) if bar.kind == BarLineType::Double));
+    assert!(found, "la barre doit aussi être un élément de segment");
 }
 
 #[test]

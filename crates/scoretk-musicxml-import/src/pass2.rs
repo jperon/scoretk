@@ -166,6 +166,40 @@ pub fn build(root: &Element, analysis: &Analysis) -> Result<Score> {
         );
     }
 
+    // MuseScore tient une barre de mesure sur chaque segment final, même
+    // quand son style est `Normal` et qu'aucun `<barline>` n'est écrit en
+    // MusicXML (`engraving/dom/barline.h`). Recréer cette barre implicite
+    // évite de perdre l'objet dans un aller-retour.
+    let ends: Vec<_> = score
+        .measures
+        .iter()
+        .map(|measure| measure.end_tick())
+        .collect();
+    let staves: Vec<_> = score
+        .parts
+        .iter()
+        .flat_map(|part| &part.staves)
+        .copied()
+        .collect();
+    for (index, end) in ends.into_iter().enumerate() {
+        let position = get_segment(&mut score, index, SegmentType::EndBarLine, end);
+        for staff in &staves {
+            let track = scoretk_core::model::Track::new(*staff, 0);
+            if score.measures[index].segments[position]
+                .element(track)
+                .is_some()
+            {
+                continue;
+            }
+            score.measures[index].segments[position].set_element(
+                track,
+                SegmentItem::BarLine(scoretk_core::model::BarLine::new(
+                    scoretk_core::model::BarLineType::Normal,
+                )),
+            );
+        }
+    }
+
     Ok(score)
 }
 
