@@ -157,6 +157,18 @@ fn write_layer(
         if cr.duration.dots > 0 {
             attributes.push(("dots".to_owned(), cr.duration.dots.to_string()));
         }
+        // `att.gestural.log/@dur.ges` (MEI 5.1) carries MuseScore's
+        // `actualTicks()` when it differs from the written `durationType`.
+        if let Some(actual) = cr.ticks {
+            if actual != cr.duration.ticks() {
+                if let Some((kind, dots)) = convert::duration_from_ticks(actual) {
+                    attributes.push(("dur.ges".to_owned(), convert::dur_to_mei(kind).to_owned()));
+                    if dots > 0 {
+                        attributes.push(("dots.ges".to_owned(), dots.to_string()));
+                    }
+                }
+            }
+        }
         // `MeiExporter::writeStemAtt` (`meiexporter.cpp:2287`): `@stem.dir`
         // is written on the chord/note event, not on a dedicated element.
         if let ChordRestKind::Chord(chord) = &cr.kind {

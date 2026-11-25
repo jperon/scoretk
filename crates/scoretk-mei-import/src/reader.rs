@@ -411,7 +411,7 @@ impl<'a> Reader<'a> {
         } else {
             ChordRest::chord(duration)
         };
-        cr.ticks = Some(duration.ticks());
+        cr.ticks = Some(gestural_duration_of(node).unwrap_or(duration).ticks());
         if let Some(stem) = convert::stem_from_mei(node.attribute("stem.dir").unwrap_or_default()) {
             if let ChordRestKind::Chord(chord) = &mut cr.kind {
                 chord.engraving.stem = stem;
@@ -510,7 +510,7 @@ impl<'a> Reader<'a> {
             }
         }
         self.read_verses(node, measure, track, ticks);
-        self.advance(ticks, duration, measure);
+        self.advance_event(ticks, node, duration, measure);
     }
 
     /// `MeiImporter::readChord` (`meiimporter.cpp:1835`).
@@ -553,7 +553,7 @@ impl<'a> Reader<'a> {
             }
         }
         self.read_verses(node, measure, track, ticks);
-        self.advance(ticks, duration, measure);
+        self.advance_event(ticks, node, duration, measure);
     }
 
     /// `MeiImporter::readRest` (`meiimporter.cpp:2139`).
@@ -569,7 +569,7 @@ impl<'a> Reader<'a> {
                 }
             }
         }
-        self.advance(ticks, duration, measure);
+        self.advance_event(ticks, node, duration, measure);
     }
 
     /// `MeiImporter::readSpace` (`meiimporter.cpp:2160`): an invisible rest.
@@ -584,7 +584,7 @@ impl<'a> Reader<'a> {
                 rest.visible = false;
             }
         }
-        self.advance(ticks, duration, measure);
+        self.advance_event(ticks, node, duration, measure);
     }
 
     /// `MeiImporter::readMRest` (`meiimporter.cpp:1972`).
@@ -729,6 +729,21 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// Advance by the performed duration when `@dur.ges` is present.
+    fn advance_event(
+        &self,
+        ticks: &mut Fraction,
+        node: &Element,
+        duration: Duration,
+        measure: usize,
+    ) {
+        self.advance(
+            ticks,
+            gestural_duration_of(node).unwrap_or(duration),
+            measure,
+        );
+    }
+
     /// `MeiImporter::addChordRest`: time advance, scaled inside a tuplet.
     fn advance(&self, ticks: &mut Fraction, duration: Duration, _measure: usize) {
         let mut advance = duration.ticks();
@@ -781,6 +796,16 @@ fn duration_of_opt(node: &Element) -> Option<Duration> {
     let kind = convert::dur_from_mei(node.attribute("dur")?)?;
     let dots = node
         .attribute("dots")
+        .and_then(|value| value.parse::<u8>().ok())
+        .unwrap_or(0);
+    Some(Duration::with_dots(kind, dots.min(4)))
+}
+
+/// `att.gestural.log/@dur.ges` + `@dots.ges` (MEI 5.1).
+fn gestural_duration_of(node: &Element) -> Option<Duration> {
+    let kind = convert::dur_from_mei(node.attribute("dur.ges")?)?;
+    let dots = node
+        .attribute("dots.ges")
         .and_then(|value| value.parse::<u8>().ok())
         .unwrap_or(0);
     Some(Duration::with_dots(kind, dots.min(4)))

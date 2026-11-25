@@ -26,8 +26,8 @@
 //! `@tstamp` is a one-based index in beats of the current meter.
 
 use scoretk_core::model::{
-    AccidentalType, BarLineType, BeamMode, ClefType, CreditStyle, DurationType, Fraction, Key,
-    KeySig, Measure, StemDirection, TimeSig, TimeSigType,
+    AccidentalType, BarLineType, BeamMode, ClefType, CreditStyle, Duration, DurationType, Fraction,
+    Key, KeySig, Measure, StemDirection, TimeSig, TimeSigType,
 };
 
 use crate::ids::MEASURE_REPEAT_TYPE;
@@ -70,6 +70,36 @@ pub fn dur_from_mei(value: &str) -> Option<DurationType> {
         "1024" => Some(DurationType::OneThousandTwentyFourth),
         _ => None,
     }
+}
+
+/// Exact `(kind, dots)` whose written ticks equal `ticks`, if representable.
+///
+/// Used for `@dur.ges`/`@dots.ges`, the MEI 5.1 gestural duration attributes
+/// (`att.gestural.log`, `data.DURATION.GESTURAL`): MuseScore stores a written
+/// `durationType` and an independent `actualTicks()` for the same chord.
+pub fn duration_from_ticks(ticks: Fraction) -> Option<(DurationType, u8)> {
+    for kind in [
+        DurationType::Whole,
+        DurationType::Half,
+        DurationType::Quarter,
+        DurationType::Eighth,
+        DurationType::Sixteenth,
+        DurationType::ThirtySecond,
+        DurationType::SixtyFourth,
+        DurationType::OneHundredTwentyEighth,
+        DurationType::TwoHundredFiftySixth,
+        DurationType::FiveHundredTwelfth,
+        DurationType::OneThousandTwentyFourth,
+        DurationType::Breve,
+        DurationType::Long,
+    ] {
+        for dots in 0..=3 {
+            if Duration::with_dots(kind, dots).ticks() == ticks {
+                return Some((kind, dots));
+            }
+        }
+    }
+    None
 }
 
 /// `Convert::durToMEI` (`meiconverter.cpp:2939`).
@@ -774,6 +804,20 @@ mod tests {
         assert_eq!(clef_from_mei(Some("F"), 4, None, None), ClefType::F);
         assert_eq!(barline_from_mei("rptstart"), BarLineType::StartRepeat);
         assert_eq!(barline_to_mei(BarLineType::Double), "dbl");
+    }
+
+    #[test]
+    fn gestural_durations_are_exact() {
+        use scoretk_core::model::DurationType;
+        assert_eq!(
+            duration_from_ticks(Fraction::new(1, 2)),
+            Some((DurationType::Half, 0))
+        );
+        assert_eq!(
+            duration_from_ticks(Fraction::new(3, 16)),
+            Some((DurationType::Eighth, 1))
+        );
+        assert_eq!(duration_from_ticks(Fraction::new(1, 3)), None);
     }
 
     #[test]
