@@ -32,7 +32,11 @@ citations are "§x.y" with the line in `cmn.html`.
   scholarly editing, text encoding, linking data, integration
   (`guidelines-index.html:1-300`). Only introduction, CMN and the schema are
   local; for tablature, neumes and mensural there is **no local guideline
-  text**, only the schema and MuseScore's (absent) support.
+  text**, only the schema and MuseScore's (absent) support. For the additive
+  `mei-all` neumes module, chapter 6 (§6.1, §6.1.1, §6.4.1–§6.4.10) was read
+  on 2026-11-26 from `https://music-encoding.org/guidelines/v5/content/neumes.html`
+  as a read-only reference (`docs/agents/mei.md` §10); no text from that
+  chapter is quoted here.
 
 ## 2. Document skeleton
 

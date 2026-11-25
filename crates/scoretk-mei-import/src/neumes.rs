@@ -58,7 +58,7 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
         if let Some(syl) = syllable_node.child("syl") {
             // Le texte exact est conservé (espaces de bord compris) :
             // `text_trimmed()` supprimerait les espaces de mot de GABC.
-            syllable.text = syl.text.clone();
+            syllable.text = neumes::syl_text(syl);
             let con = syl.attribute("con").unwrap_or("");
             let wordpos = syl.attribute("wordpos").unwrap_or("");
             syllable.space_after = con == "s" || wordpos == "t";

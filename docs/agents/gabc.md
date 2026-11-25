@@ -530,3 +530,34 @@ Scored on the 202-file lot (2026-11-25):
 The remaining 5 "both differ" files are the known L6 fusion gap (`@[…]`,
 `Gabc.tex:603-666`) plus one file Gregorio itself rejects; they are reported,
 not hidden.
+
+## 13. GABC → MEI → GABC (module NEUMES 5.1, mesuré à nouveau le 2026-11-26)
+
+Une troisième conversion croisée est mesurée comme les lignes directe et
+« cross » de `model-modularisation.md` §11.7, sur les mêmes neuf exemples
+Gregorio et le même inventaire `(layer, tick, staff, kind, value)`. Avant
+l'ajout du module Neumes, le writer MEI ne voyait que la vue L0/L1 dérivée :
+le payload L6 ne traversait pas le format.
+
+| Conversion | Essential | Plein support | L6 | Source |
+| --- | ---: | ---: | ---: | --- |
+| GABC → MEI → GABC, **avant** | 94.14 % | 66.35 % | 839/1 752 (47.89 %) | MEI CMN `5.1+basic`, payload reconstruit depuis la hauteur et les paroles |
+| Étape intermédiaire (module neumes, porteurs standard absents) | 27.54 % | 49.37 % | 1 273/1 752 (72.66 %) | structure neumatique lisible, glyphes et signes non reconstruits |
+| **GABC → MEI → GABC, sans `gabc-*` (chiffre retenu)** | **100.00 %** | **100.00 %** | **1 752/1 752** | MEI 5.1 `mei-all`, module Neumes seul : `<neume>`, `<nc>`, `<signifLet>`, `<episema>`, `<divLine>`, `<clef>`, `<meiHead>` standard |
+| GABC → MEI → GABC, avec extension privée (secondaire) | 100.00 % | 100.00 % | 1 752/1 752 | même couverture, avec `<annot type="gabc-*">` redondants, désactivés par défaut (`MeiOptions::gabc_tokens`) |
+
+Le détail des porteurs et les citations des *Guidelines* ch. 6 sont dans
+[`mei.md`](mei.md) §10 ; le test de structure est
+`crates/scoretk/tests/gabc_mei_neumes.rs` et la ligne de mesure est
+`crates/scoretk/tests/layer_coverage.rs` (`gabc_mei_round_trip_table`), qui
+imprime le chiffre standard **en premier**. Les neuf sorties MEI sont
+validées contre `mei-all-5.1.rng` par `scripts/check-mei-neumes.sh` (`jing`).
+
+Ce que MEI 5.1 n'a pas (table complète par genre dans `mei.md` §10.3) :
+la clé double `c1@c4`, les décalages UTF-16 de la source et les faits déjà
+absents du payload L6 (custos, coupures NABC, attributs `[…]`, sauts de
+ligne). Les signes sans élément dédié — punctum mora, virge, cavum,
+altération non chantée, chiffres de placement — passent par `<signifLet>`
+(`Guidelines` §6.4.8–§6.4.9) ; les barres dominicaines par un NMTOKEN de
+`<divLine @form>` (RNG `att.divLine.log/@form`) ; la clé basse `cbN` par
+`@type="clef-flat"` ; l'espace de mot et l'élision par `<syl @wordpos @con>`.

@@ -298,7 +298,32 @@ fn write_syllable(
     }
     // `tag_with` garde le texte sur une seule ligne : l'indentation de
     // `end_element` deviendrait un texte de syllable et décalerait les paroles.
-    xml.tag_with("syl", &syl_attributes, &syllable.text);
+    // Les styles réversibles passent par `<rend>` (`Guidelines` §6.4.10).
+    let pieces = neumes::syl_pieces(&syllable.text);
+    let plain_only = pieces.is_empty()
+        || matches!(pieces.as_slice(), [neumes::SylPiece::Plain(plain)] if plain == &syllable.text);
+    if plain_only {
+        xml.tag_with("syl", &syl_attributes, &syllable.text);
+    } else {
+        xml.start_element("syl", &syl_attributes);
+        for piece in &pieces {
+            match piece {
+                neumes::SylPiece::Plain(text) => {
+                    xml.tag_with("rend", &[("type", "plain")], text);
+                }
+                neumes::SylPiece::Styled {
+                    attributes, text, ..
+                } => {
+                    let refs: Vec<(&str, &str)> = attributes
+                        .iter()
+                        .map(|(key, value)| (*key, value.as_str()))
+                        .collect();
+                    xml.tag_with("rend", &refs, text);
+                }
+            }
+        }
+        xml.end_element();
+    }
 
     let current_clef = current_clef(syllable, gregorian, initial_clefs);
     if let Some(token) = &syllable.clef {

@@ -366,6 +366,18 @@ report. On wasm, add an **additive** `convertDetailed(...)` returning
   references and `<timeline>`/`<expansion>` are not representable.
 - **Layer:** L1 gains a `GesturalTime` sub-record (optional, per element);
   L6 adds `ExternalRef` (`facs`, `copyof`) and `MeiExpansion`.
+- **Implemented additively (2026-11-25, module NEUMES).** The MEI 5.1
+  Neume Notation module (*Guidelines* ch. 6) writes and reads the existing
+  `L6::Gregorian` slot: `<syllable>/<syl>/<neume>/<nc>` instead of
+  `<measure>/<staff>/<layer>` CMN events, with `<divLine>`, `<episema>`,
+  `<liquescent>`, `<quilisma>`, `<oriscus>`, `<strophicus>`, `<clef>` and
+  `<custos>` where the payload has data. No new core field, no new layer and
+  no change to the CMN path; all new code is in the three MEI crates
+  (`src/neumes.rs`). GABC → MEI → GABC restores the L6 payload exactly
+  (§11.7) through standard carriers (`<signifLet>`, `<episema>`, `meiHead`,
+  `<divLine>`, `<clef>`); the old `<annot type="gabc-*">` duplication is now
+  an opt-in option (`MeiOptions::gabc_tokens`, off by default), not the
+  interoperability figure. Details and citations: `docs/agents/mei.md` §10.
 
 ### 7.3 Capella (import only)
 
@@ -1113,6 +1125,26 @@ Gregorio's independent oracle on the full 202-file lot scores the writer
 **193/194 = 99.48 % core-exact but 0/194 byte-identical dumps**; see
 `docs/agents/gabc.md` §9–§10 for the per-file causes (Dominican bars,
 verbatim `<v>`, custos, and the one residual `@[…]` fusion file).
+
+A third row was added when MEI 5.1's Neume Notation module was wired to the
+same `L6::Gregorian` slot (`docs/agents/mei.md` §10). It uses the same nine
+files and the same 3 322 items (the current inventory; the older 3 435 count
+in the table above was measured before later field renamings):
+
+| Row | Declared | Essential | Full support | Files | Items | Source |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| gabc → mei → gabc, **before** | L0+L1+L2+L3+L6 | 94.14 % | 66.35 % | 9 | 3 322 | MEI writer saw only the derived CMN view |
+| gabc → mei → gabc, intermediate (neumes without standard carriers) | L0+L1+L2+L3+L6 | 27.54 % | 49.37 % | 9 | 3 322 | the figure rejected by review |
+| gabc → mei → gabc, **after, no `gabc-*` (retained figure)** | L0+L1+L2+L3+L6 | **100.00 %** | **100.00 %** | 9 | 3 322 | MEI 5.1 `mei-all` Neumes module only; 9/9 outputs differ from source |
+| gabc → mei → gabc, with the private extension (secondary) | L0+L1+L2+L3+L6 | 100.00 % | 100.00 % | 9 | 3 322 | the same coverage, but every atomic token duplicated in `<annot type="gabc-*">`; off by default |
+
+Per layer of the retained row: L1 135/135, L2 1 127/1 127, L3 308/308,
+L6 1 752/1 752, 0 extra. The standard carriers are the MEI 5.1 Neumes
+elements (`<neume>`, `<nc>`, `<signifLet>`, `<episema>`, `<divLine>`,
+`<clef>`) and standard `meiHead` elements, all cited in `docs/agents/mei.md`
+§10.1. The gap list per kind (no carrier for the double clef `c1@c4`, source
+UTF-16 offsets and facts already absent from the L6 payload) is in §10.3.
+No declaration was narrowed and no item removed from the denominator.
 
 ### 11.8 Honest portability: without the scoretk-private extensions
 

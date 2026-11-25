@@ -585,6 +585,112 @@ pub fn part_from_mei(element: &scoretk_xml_common::Element) -> Option<GlyphPart>
     }
 }
 
+/// Un fragment de texte de syllable GABC, transporté dans `<syl>` par un
+/// `<rend>` MEI 5.1 (`Guidelines` §6.4.10, exemple `<rend color="red">O</rend>`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SylPiece {
+    /// Texte sans style, écrit directement dans `<syl>`.
+    Plain(String),
+    /// Style GABC, avec ses attributs typographiques MEI.
+    Styled {
+        /// Nom du style GABC (`b`, `i`, `c`, `sc`, `tt`, `ul`).
+        tag: &'static str,
+        /// Attributs MEI standards (`@fontstyle`, `@fontweight`, `@color`, …).
+        attributes: Vec<(&'static str, String)>,
+        /// Texte contenu dans le style.
+        text: String,
+    },
+}
+
+fn style_attributes(tag: &str) -> Vec<(&'static str, String)> {
+    let mut attributes = vec![("type", format!("gabc-{tag}"))];
+    match tag {
+        "b" => attributes.push(("fontweight", "bold".to_owned())),
+        "i" => attributes.push(("fontstyle", "italic".to_owned())),
+        "c" => attributes.push(("color", "red".to_owned())),
+        "tt" => attributes.push(("fontfam", "monospace".to_owned())),
+        _ => {}
+    }
+    attributes
+}
+
+/// Découpe le texte d'une syllable en fragments, pour les seuls styles dont
+/// la réversibilité est garantie (`Gabc.tex:254-270`). Tout autre balisage
+/// (`<sp>`, `<v>`, `<e>`, `<clear>`, …) reste du texte exact, non interprété.
+pub fn syl_pieces(text: &str) -> Vec<SylPiece> {
+    let mut result = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find('<') {
+        let Some(tag) = ["sc", "tt", "b", "i", "c", "ul"]
+            .into_iter()
+            .find(|tag| rest[start + 1..].starts_with(&format!("{tag}>")))
+        else {
+            break;
+        };
+        let open = format!("<{tag}>");
+        let close = format!("</{tag}>");
+        let content_start = start + open.len();
+        let Some(end) = rest[content_start..].find(&close) else {
+            break;
+        };
+        let content = &rest[content_start..content_start + end];
+        if content.contains('<') {
+            // Styles imbriqués : on garde le texte source tel quel plutôt que
+            // de perdre une partie du balisage.
+            return vec![SylPiece::Plain(text.to_owned())];
+        }
+        if !rest[..start].is_empty() {
+            result.push(SylPiece::Plain(rest[..start].to_owned()));
+        }
+        result.push(SylPiece::Styled {
+            tag,
+            attributes: style_attributes(tag),
+            text: content.to_owned(),
+        });
+        rest = &rest[content_start + end + close.len()..];
+    }
+    if !rest.is_empty() {
+        result.push(SylPiece::Plain(rest.to_owned()));
+    }
+    result
+}
+
+/// Reconstruit le texte d'une syllable depuis ses `<rend>` enfants, ou depuis
+/// son texte brut quand il n'y a pas de style MEI.
+pub fn syl_text(syl: &scoretk_xml_common::Element) -> String {
+    let styled: Vec<_> = syl
+        .children
+        .iter()
+        .filter(|child| {
+            child.name == "rend"
+                && child
+                    .attribute("type")
+                    .is_some_and(|t| t.starts_with("gabc-"))
+        })
+        .collect();
+    if styled.is_empty() {
+        return syl.text.clone();
+    }
+    let mut result = String::new();
+    for child in &syl.children {
+        if child.name != "rend" {
+            continue;
+        }
+        let kind = child.attribute("type").unwrap_or("");
+        if kind == "plain" {
+            result.push_str(&child.text);
+            continue;
+        }
+        let Some(tag) = kind.strip_prefix("gabc-") else {
+            continue;
+        };
+        if ["b", "i", "c", "sc", "tt", "ul"].contains(&tag) {
+            result.push_str(&format!("<{tag}>{}</{tag}>", child.text));
+        }
+    }
+    result
+}
+
 /// Nom MEI 5.1 du type d'un neume, déduit de sa forme (`att.neumeType/@type`,
 /// valeurs suggérées par la RNG `mei-all-5.1.rng`).
 pub fn neume_type(notes: usize, glyphs: &[String]) -> &'static str {
@@ -973,6 +1079,27 @@ mod tests {
         assert_eq!(episema_form(SignKind::PunctumMora), None);
         assert_eq!(glyph_tilt("G0"), Some("sw"));
         assert_eq!(glyph_curve("~<"), Some("a"));
+    }
+
+    #[test]
+    fn syllable_styles_use_standard_rend_attributes() {
+        let pieces = syl_pieces("FA<sc>Ac</sc>");
+        assert_eq!(pieces.len(), 2);
+        let SylPiece::Styled {
+            tag,
+            attributes,
+            text,
+        } = &pieces[1]
+        else {
+            panic!("the small-caps segment is styled");
+        };
+        assert_eq!(*tag, "sc");
+        assert_eq!(text, "Ac");
+        assert!(attributes.iter().any(|(key, _)| *key == "type"));
+        assert_eq!(
+            syl_pieces("plain text"),
+            vec![SylPiece::Plain("plain text".to_owned())]
+        );
     }
 
     #[test]

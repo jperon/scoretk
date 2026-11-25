@@ -90,6 +90,27 @@ all under `ref-musescore/.474/src/importexport/mei/internal/`.
 | `@stem.dir`, `@stem.mod` | `Chord::stem` (`chord.rs:233`), `StemDirection` (`chord.rs:72-85`), `Tremolo` (`notation.rs:200-227`) | direct | L5 | `meiconverter.cpp:3150-3218`; `meiimporter.cpp:3240-3261` | `@stem.mod` values `1slash`…`4slash`, `z` map to tremolo counts. |
 | `@head.shape` / `@head` | `Note::head`, `head_group` (`note.rs:298-300`), `NoteHeadGroup` (`note.rs:138-200`) | conversion | L5 | not in `meiconverter.cpp` | MuseScore writes the shape in `@head.shape` for percussion; reading it is optional for the first port. |
 
+## Neume Notation (MEI 5.1 `mei-all`, extension additive)
+
+MuseScore 4.7.4 ne porte pas ce module ; les porteurs sont cités dans
+*Guidelines* ch. 6 (§6.1, §6.1.1, §6.4.1–§6.4.10) et dans le schéma
+`mei-all-5.1.rng`. Les colonnes `MuseScore` ci-dessus ne s'appliquent pas à
+ces lignes. Le flux source est le payload L6 `Gregorian`
+(`model/gregorian.rs`) ; la vue L0/L1 reste dérivée.
+
+| MEI property (spec) | Model type / field | Status | Layer | Notes |
+| --- | --- | --- | --- | --- |
+| `<section>/<staff>/<layer>/<syllable>` | `Gregorian::syllables` (`model/gregorian.rs:288`) | direct | L6 | Organisation hiérarchique du chant ; §6.1, §6.4.10. |
+| `<syl @wordpos @con>`, `<rend>` | `Syllable::text` (`:248`), `space_after` | direct | L3/L6 | Texte exact, balises GABC incluses ; `@con="s"` = espace de mot, `@con="t"` = élision ; `<i>/<b>/<c>/<sc>/<tt>/<ul>` → `<rend @fontstyle/@fontweight/@color>` (§6.4.10). |
+| `<neume type>` / `<nc @pname @oct>` | `GregorianNote::letter` (`:230`) | conversion | L6 | Un `<neume>` par groupe GABC ; type = nom de neume (`punctum`, `pes`, `clivis`, …) ; clé GABC → degré diatonique → `@pname/@oct` (do moyen = `c`/`4`) ; réciproque au retour. |
+| `<nc @tilt @curve @con @type>` + `<liquescent>`, `<quilisma>`, `<oriscus>`, `<strophicus>`, `<signifLet>` | `GregorianNote::glyph` (`:232`), `NeumeSign { kind, raw }` (`:208`) | conversion | L2/L6 | La casse majuscule (punctum inclinatum) est `@type="punctum-inclinatum"`/`@tilt="se"` ; les glyphes et signes sont décomposés en attributs/éléments MEI (§6.4.1, §6.4.2, §6.4.8) et reconstruits par `neumes::glyph_parts` / `part_from_mei` ; **aucune annotation requise**. |
+| `<episema form="h|v" place>` | `SignKind::HorizontalEpisema` / `Ictus` (`:177-179`) | conversion | L2/L6 | `h` = `_`, `v` = `'` ; placement et chiffres dans `@place`/`@n` (§6.4.4). Le punctum mora passe par `<signifLet type="PunctumMora">` (§6.4.9). |
+| `<divLine form>` | `BarKind` (`:59`) | conversion | L1/L6 | Valeurs suggérées + NMTOKEN (`virgula-ledger`, `minima-ledger`, `maior-dotted`, `dominican-1`…`8`) : réversible, aucun jeton atomique nécessaire (RNG `att.divLine.log/@form`). |
+| `<clef shape="C|F" line @type="clef-flat">`, `<staffDef @lines>` | `Gregorian::clefs` (`:281`), `staff_lines` (`:277`) | conversion | L1/L6 | `cb3` → `@type="clef-flat"` ; **la clé double `c1@c4` n'a pas de porteur** (`mei_clefGrp` n'est pas admissible dans `staffDef`). |
+| `titleStmt/title`, `respStmt/persName`, `workList/work/title`, `classification/termList/term`, `sourceDesc/source/bibl/rend` | `GregorianHeader { name, value }` (`:46`) | direct | L6 | `@n` = index source, `@type`/`@role` = nom du champ (Guidelines ch. 3) ; les `<annot type="gabc-header">` ne sont plus émis par défaut. |
+| `<custos>` | — | missing | L6 | MEI 5.1 le définit (§6.4.3) mais le payload GABC ne porte pas de custos (`gabc.md` §10) : aucun champ à alimenter. |
+| `<accid>` sur `<nc>` | `NeumeSign::Alteration` | missing | L6 | Le module neumes ne définit pas `<accid>` enfant de `<nc>` ; `x`/`X`/`#`/`y` sont encodés comme `<signifLet type="Alteration" n="flat|sharp|natural…">` (§6.4.9), pas comme des notes chantées (`Gabc.tex:512-540`). |
+
 ## Gaps in the model, ranked
 
 1. **L1 gestural/perform time.** `ChordRest` has one `duration`+`ticks`
