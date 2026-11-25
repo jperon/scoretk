@@ -24,6 +24,8 @@
 //! Wooden, deterministic MEI writer: one `<staff>`/`<layer>` per voice and
 //! control events after the staves, as MuseScore 4.7.4 writes them.
 
+use std::collections::BTreeMap;
+
 use scoretk_core::model::{
     Annotation, BeamMode, ChordRest, ChordRestKind, Fraction, Score, SegmentItem, SpannerType,
     Track, VOICES,
@@ -364,6 +366,23 @@ fn write_control_events(
             }
         }
     }
+    // MuseScore anchors its control events on note ids (`@startid`/`@endid`),
+    // which survives a tick that `@tstamp` can only approximate. Build the
+    // same anchor map from the generated `xml:id`s of the written notes.
+    let mut note_at: BTreeMap<(Fraction, u32), usize> = BTreeMap::new();
+    for source in &score.measures {
+        for segment in &source.segments {
+            for (track, item) in segment.iter_elements() {
+                if let Some(ChordRestKind::Chord(chord)) = item.as_chord_rest().map(|cr| &cr.kind) {
+                    if let Some(note) = chord.notes.first() {
+                        note_at
+                            .entry((segment.tick, track.raw()))
+                            .or_insert(note.index());
+                    }
+                }
+            }
+        }
+    }
     for (id, spanner) in score.spanners.iter().enumerate() {
         if spanner.start.tick < measure.start_tick || spanner.start.tick >= measure.end_tick() {
             continue;
@@ -374,15 +393,22 @@ fn write_control_events(
             (spanner.end.tick - measure.start_tick).max(Fraction::ZERO),
             den,
         );
-        let attrs = [
+        let start_note = note_at.get(&(spanner.start.tick, spanner.start.track.raw()));
+        let end_note = note_at.get(&(spanner.end.tick, spanner.end.track.raw()));
+        let mut attrs = vec![
             ("xml:id".to_owned(), format!("sp{id}")),
             (
                 "staff".to_owned(),
                 (spanner.start.track.staff().raw() + 1).to_string(),
             ),
-            ("tstamp".to_owned(), format!("{start:.3}")),
-            ("tstamp2".to_owned(), format!("{end:.3}")),
         ];
+        if let (Some(start_note), Some(end_note)) = (start_note, end_note) {
+            attrs.push(("startid".to_owned(), format!("#n{start_note}")));
+            attrs.push(("endid".to_owned(), format!("#n{end_note}")));
+        } else {
+            attrs.push(("tstamp".to_owned(), format!("{start:.3}")));
+            attrs.push(("tstamp2".to_owned(), format!("{end:.3}")));
+        }
         let refs: Vec<(&str, &str)> = attrs
             .iter()
             .map(|(key, value)| (key.as_str(), value.as_str()))
@@ -436,7 +462,10 @@ fn write_control_events(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scoretk_core::model::{Fraction, Measure, Part, Score};
+    use scoretk_core::model::{
+        ChordRest, Duration, Fraction, Measure, Note, Part, Score, Segment, SegmentType, Spanner,
+        SpannerAnchor, SpannerType, Track,
+    };
 
     #[test]
     fn manual_system_breaks_are_written() {
@@ -450,6 +479,39 @@ mod tests {
         score.add_measure(Measure::new(2, Fraction::new(8, 4), Fraction::new(4, 4)));
         let output = write(&score, &MeiOptions::default()).expect("MEI with a system break");
         assert_eq!(output.matches("<sb type=\"mscore-manual\"").count(), 1);
-        assert!(output.contains("<sb type=\"mscore-manual\""));
+    }
+
+    #[test]
+    fn spanners_are_anchored_on_note_ids() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno"));
+        let staff = score.add_staff(part);
+        let track = Track::new(staff, 0);
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(4, 4));
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+        let mut chord = ChordRest::chord(Duration::quarter());
+        let first = score.add_note(Note::new(60, 14));
+        let second = score.add_note(Note::new(62, 16));
+        if let scoretk_core::model::ChordRestKind::Chord(c) = &mut chord.kind {
+            c.notes = vec![first];
+        }
+        segment.set_element(track, SegmentItem::ChordRest(chord));
+        let mut segment2 = Segment::new(SegmentType::ChordRest, Fraction::new(1, 4), 1);
+        let mut chord2 = ChordRest::chord(Duration::quarter());
+        if let scoretk_core::model::ChordRestKind::Chord(c) = &mut chord2.kind {
+            c.notes = vec![second];
+        }
+        segment2.set_element(track, SegmentItem::ChordRest(chord2));
+        measure.add_segment(segment);
+        measure.add_segment(segment2);
+        score.add_measure(measure);
+        score.add_spanner(Spanner::new(
+            SpannerType::Slur,
+            SpannerAnchor::new(Fraction::ZERO, track),
+            SpannerAnchor::new(Fraction::new(1, 4), track),
+        ));
+        let output = write(&score, &MeiOptions::default()).expect("MEI with a slur");
+        assert!(output.contains("startid=\"#n0\""));
+        assert!(output.contains("endid=\"#n1\""));
     }
 }
