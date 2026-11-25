@@ -84,6 +84,16 @@ impl<'a> Writer<'a> {
         out.push_str("%abc-2.1\n");
         out.push_str("X:1\n");
         out.push_str(&format!("T:{}\n", self.title()));
+        // ABC 2.1 §3.1.2 : un `T:` répété est un titre alternatif. C'est le
+        // champ standard qui porte le sous-titre, sans directive privée.
+        if !self.score.metadata.subtitle.trim().is_empty() {
+            out.push_str(&format!(
+                "T:{}\n",
+                scoretk_abc_common::text::escape_annotation(
+                    &self.score.metadata.subtitle.replace(['\n', '\r'], " ")
+                )
+            ));
+        }
         if !self.score.metadata.composer.trim().is_empty() {
             out.push_str(&format!(
                 "C:{}\n",
@@ -100,21 +110,46 @@ impl<'a> Writer<'a> {
                 scoretk_abc_common::text::escape_annotation(&text)
             ));
         }
-        // `T:` et `C:` ne couvrent que deux des douze champs de métadonnées
-        // du modèle : la directive privée (ABC 2.1 §11) porte les autres.
+        // Champs standard : `T:` (titre et sous-titre, §3.1.2), `C:` (§3.1.3),
+        // `Z:abc-copyright` (convention explicite de §3.1.10) et `N:`
+        // (§3.1.11, notes générales, seul champ libre pour un numéro
+        // d'œuvre). La directive privée (ABC 2.1 §11) ne porte plus que les
+        // métadonnées qui n'ont aucun équivalent standard.
+        if !self.score.metadata.copyright.trim().is_empty() {
+            out.push_str(&format!(
+                "Z:abc-copyright {}\n",
+                scoretk_abc_common::text::escape_annotation(
+                    &self.score.metadata.copyright.replace(['\n', '\r'], " ")
+                )
+            ));
+        }
+        if !self.score.metadata.work_number.trim().is_empty() {
+            out.push_str(&format!(
+                "N:{}\n",
+                scoretk_abc_common::text::escape_annotation(
+                    &self.score.metadata.work_number.replace(['\n', '\r'], " ")
+                )
+            ));
+        }
+        // ABC 2.1 n'a pas de cadre (`tbox`) mais le champ `H:` (§3.1.13)
+        // transporte textes historiques multi-lignes : c'est le support
+        // standard le plus proche pour les textes de cadre du modèle.
+        for (index, tbox) in self.score.engraving.tbox_texts.iter().enumerate() {
+            let text = tbox.text.plain().replace(['\n', '\r'], " ");
+            let text = scoretk_abc_common::text::escape_annotation(&text);
+            if !text.is_empty() {
+                out.push_str(&format!("H:{text}\n"));
+            }
+            let _ = index;
+        }
         for (name, value) in [
-            ("work_title", &self.score.metadata.work_title),
             ("movement_title", &self.score.metadata.movement_title),
             ("movement_number", &self.score.metadata.movement_number),
-            ("work_number", &self.score.metadata.work_number),
-            ("composer", &self.score.metadata.composer),
             ("lyricist", &self.score.metadata.lyricist),
             ("poet", &self.score.metadata.poet),
             ("translator", &self.score.metadata.translator),
             ("arranger", &self.score.metadata.arranger),
-            ("copyright", &self.score.metadata.copyright),
             ("source", &self.score.metadata.source),
-            ("subtitle", &self.score.metadata.subtitle),
         ] {
             if value.trim().is_empty() {
                 continue;
@@ -311,8 +346,13 @@ impl<'a> Writer<'a> {
                 for annotation in &segment.annotations {
                     if let Annotation::Tempo(tempo) = &annotation.annotation {
                         let bps = tempo.beats_per_second?;
-                        let bpm = (bps * 60.0).round() as i64;
-                        if bpm <= 0 {
+                        // `Q:` porte des battements par minute. Écrire le
+                        // nombre exact (et non un entier arrondi) garde la
+                        // précision du tempo du modèle : un tempo de 80 BPM
+                        // enregistré 1,333333 bps doit rester 79,99998 BPM.
+                        let bpm = format!("{:.6}", bps * 60.0);
+                        let bpm = bpm.trim_end_matches('0').trim_end_matches('.');
+                        if bpm.parse::<f64>().is_ok_and(|value| value <= 0.0) {
                             return None;
                         }
                         let text = scoretk_abc_common::text::escape_annotation(tempo.text.plain());

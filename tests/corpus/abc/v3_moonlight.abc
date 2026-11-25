@@ -16,6 +16,7 @@ V:1 name="Piano" clef=treble
 (3G,CE(3G,CE(3G,CE(3G,CE |
 (3(A,CE(3A,CE)(3(A,=DF(3A,DF) |
 (3(G,^B,F(3G,CE(3G,CD(3F,B,D) |
+%%MIDI beat 33 33 33 1
 x2(3(G,CE)(3(G,CE)(3!scoretk-velo-33!!pp!(G,CE) |
 (3G,DF(3G,DF(3G,DF(3G,DF |
 (3G,CE(3G,CE(3A,CF(3A,CF |
@@ -39,6 +40,7 @@ x2(3(G,CE)(3(G,CE)(3!scoretk-velo-33!!pp!(G,CE) |
 (3"^cresc."CFA(3CFA(3^B,FA(3CFA |
 (3DFG(3DFG(3DFG(3DFG |
 (3EGc(3EGc(3"^decresc."DFA(3CE^A |
+%%MIDI beat 49 49 49 1
 (3!scoretk-velo-49!!p!!<(!^BB,D(3G!<)!B,D(3!>(!AB,D(3FB,!>)!D |
 (3z!<(!^B,D(3G,B,!<)!D(3!>(!A,B,D(3F,B,!>)!D |
 (3E,!<(!(EG(3cE!<)!G(3!>(!eEG(3c)E!>)!G |
@@ -53,13 +55,17 @@ x2(3(G,CE)(3(G,CE)(3!scoretk-velo-33!!pp!(G,CE) |
 (3^B,,F,G,(3A,G,F,(3D,F,A,(3C,F,A, |
 (3"^decresc."^B,,F,G,(3A,G,F,(3C,E,C(3C,E,C |
 (3D,A,C(3D,A,C(3D,G,^B,(3D,F,B, |
-(3!scoretk-velo-33!!pp!E,G,C(3[K:E clef=treble]G,CE(3G,CE(3!scoretk-velo-33!!pp!G,CE |
+%%MIDI beat 33 33 33 1
+(3!scoretk-velo-33!!pp!E,G,C(3[K:E clef=treble]G,CE(3G,CE(3
+%%MIDI beat 33 33 33 1
+!scoretk-velo-33!!pp!G,CE |
 (3G,DF(3G,DF(3G,DF(3G,DF |
 (3G,CE(3G,CE(3A,CF(3A,CF |
 (3G,B,E(3G,B,E(3A,B,D(3A,B,D |
 (3G,B,E(3B,EG(3B,EG(3B,EG |
 (3B,FA(3B,FA(3B,FA(3B,FA |
 (3"^cresc."B,EG(3B,EG(3^B,FG(3CEG |
+%%MIDI beat 49 49 49 1
 (3!scoretk-velo-49!!p!DFG(3DFG(3EGc(3EGc |
 (3=DFA(3DFA(3^B,FG(3B,FG |
 (3CEG(3CEG(3C^EG(3CEG |
@@ -70,7 +76,9 @@ x2(3(G,CE)(3(G,CE)(3!scoretk-velo-33!!pp!(G,CE) |
 (3B,FA(3B,FA(3B,FA(3B,EG |
 (3A,EG(3A,DF(3G,DF(3G,CE |
 (3"^cresc."F,CD(3F,CD(3G,CD(3A,CD |
+%%MIDI beat 49 49 49 1
 (3!scoretk-velo-49!!p!G,CE(3G,CE(3F,^B,D(3F,B,D |
+%%MIDI beat 33 33 33 1
 (3!scoretk-velo-33!!pp!E,G,C(3G,CE(3G,CE(3G,CE |
 (3G,DF(3G,DF(3G,DF(3G,DF |
 (3!<(!(G,EC(3GEc(3Gec(3ge!<)!c |
@@ -79,6 +87,7 @@ x2(3(G,CE)(3(G,CE)(3!scoretk-velo-33!!pp!(G,CE) |
 (3!>(!^BdA(3BFA(3[K:E clef=bass]DFA,-(3A,G,!>)!F,) |
 (3([E,C]G,C(3ECG,)(3z(E,G,(3CG,E,) |
 (3z(C,E,(3G,E,C,)z4 |
+%%MIDI beat 33 33 33 1
 z4!scoretk-velo-33!!pp![E,G,C]4 |
 !fermata![E,G,C]8 |]
 V:2 name="Piano" clef=treble
@@ -221,6 +230,7 @@ C,,8 |
 G,,,8 |
 C,,8- |
 C,,8 |
+%%MIDI beat 33 33 33 1
 !scoretk-velo-33!!pp!C,,4[C,,G,,C,]4 |
 !fermata![C,,G,,C,]8 |]
 V:4 name="Piano" clef=bass

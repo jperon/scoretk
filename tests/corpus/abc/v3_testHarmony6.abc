@@ -5,9 +5,7 @@ C:Leon Vinken
 W:Harmony 6
 W:MuseScore testfile Chords using normal, Roman and Nashville notation containing recognized text, unrecognized plaintext and unrecognized text requiring HTML escape
 W:Leon Vinken
-%%scoretk meta work_title Harmony 6
-%%scoretk meta work_number MuseScore testfile Chords using normal, Roman and Nashville notation containing recognized text, unrecognized plaintext and unrecognized text requiring HTML escape
-%%scoretk meta composer Leon Vinken
+N:MuseScore testfile Chords using normal, Roman and Nashville notation containing recognized text, unrecognized plaintext and unrecognized text requiring HTML escape
 M:4/4
 L:1/8
 K:C clef=treble

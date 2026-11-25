@@ -29,20 +29,23 @@
 
 use scoretk_core::model::{
     Annotation, BarLine, BarLineType, Clef, ClefType, Credit, CreditStyle, Dynamic, Fraction,
-    Harmony, KeySig, Measure, Part, Placement, RichText, Score, Segment, SegmentItem, SegmentType,
-    Slur, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff, StaffId, TboxText, TimeSig,
-    Track, Transpose, Tuplet, TupletId, VoltaInfo,
+    Harmony, Jump, KeySig, Marker, MarkerType, Measure, Part, Placement, RepeatMark, RichText,
+    Score, Segment, SegmentItem, SegmentType, Slur, Spanner, SpannerAnchor, SpannerNotation,
+    SpannerType, Staff, StaffId, TboxText, TimeSig, Track, Transpose, Tuplet, TupletId, VoltaInfo,
 };
 
 use crate::reader::{AnnotationSpec, Position, Reader, Voice};
 use scoretk_abc_common::Result;
-use scoretk_core::instruments::{template_has_program, TEMPLATES};
+use scoretk_core::instruments::{template_has_program, Template, TEMPLATES};
 
 /// Construit la partition.
 pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
     let voices = std::mem::take(&mut reader.voices);
     let mut score = std::mem::replace(&mut reader.score, Score::new());
     score.metadata.work_title = reader.title.clone();
+    score.metadata.subtitle = reader.second_title.clone();
+    score.metadata.copyright = reader.copyright.clone();
+    score.metadata.work_number = reader.note_field.clone();
     score.metadata.composer = reader.composer.clone();
     score.metadata.source = reader.source.clone();
     for (name, value) in &reader.meta {
@@ -69,6 +72,16 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
         score.add_credit(Credit::new(RichText::new(text.clone()), CreditStyle::Title));
     }
     let mut tbox_texts = std::mem::take(&mut reader.tbox_texts);
+    if tbox_texts.is_empty() {
+        // Sans la directive privée, les champs `H:` (ABC 2.1 §3.1.13) sont
+        // les textes de cadre : un champ par texte, dans l'ordre du fichier.
+        tbox_texts = reader
+            .history
+            .iter()
+            .enumerate()
+            .map(|(index, text)| (index, text.clone()))
+            .collect();
+    }
     tbox_texts.sort_by_key(|(index, _)| *index);
     for (index, text) in tbox_texts {
         score.add_tbox_text(TboxText::new(RichText::new(text), index));
@@ -219,10 +232,16 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
                 }
                 let segment = segment_at(&mut measure, SegmentType::ChordRest, tick, staff_count);
                 segment.set_element(track, SegmentItem::ChordRest(chord_rest));
+                let mut marks = Vec::new();
                 for annotation in &event.annotations {
+                    if let AnnotationSpec::RepeatMark(name) = annotation {
+                        marks.push(repeat_mark(name, track));
+                        continue;
+                    }
                     let annotation = annotation_object(annotation);
                     segment.add_annotation(track, annotation);
                 }
+                measure.repeat_marks.extend(marks);
             }
         }
 
@@ -510,40 +529,86 @@ fn groups(reader: &Reader, voices: &[Voice]) -> Vec<PartSpec> {
 /// `engraving/dom/instrument.cpp`) sur le catalogue partagé de `scoretk-core`.
 /// Les poids 4/2/1 et le premier à égalité reproduisent la reconnaissance de
 /// MuseScore ; aucun identifiant privé n'est nécessaire pour les noms GM.
-fn instrument_id_from_standard(names: [&str; 3], program: Option<u8>) -> Option<&'static str> {
-    let mut best: Option<&'static str> = None;
+fn instrument_id_from_standard(
+    names: [&str; 3],
+    program: Option<u8>,
+    transpose: i32,
+) -> Option<&'static str> {
+    // Poids 4/2/1 de `searchTemplateForInstrNameList` pour les noms exacts,
+    // puis 3 pour un préfixe suivi d'un numéro (« Flute 3 ») et 2 pour un nom
+    // qualifié (« A Clarinet »). En cas d'égalité (clarinettes la/si bémol),
+    // `transpose=` (ABC 2.1 §7.1) départage les gabarits.
+    let mut best: Vec<&'static Template> = Vec::new();
     let mut best_strength = 0u8;
     for name in names {
         let name = name.trim();
         if name.is_empty() {
             continue;
         }
+        let lower = name.to_lowercase();
         for template in TEMPLATES {
-            let strength = 4 * u8::from(template.track_name.eq_ignore_ascii_case(name))
+            let mut strength = 4 * u8::from(template.track_name.eq_ignore_ascii_case(name))
                 + 2 * u8::from(template.long_name.eq_ignore_ascii_case(name))
                 + u8::from(template.short_name.eq_ignore_ascii_case(name));
+            for candidate in [template.track_name, template.long_name, template.short_name] {
+                let candidate = candidate.to_lowercase();
+                if candidate.is_empty() || lower == candidate {
+                    continue;
+                }
+                let prefix = lower.starts_with(&candidate)
+                    && lower
+                        .as_bytes()
+                        .get(candidate.len())
+                        .is_some_and(|byte| byte.is_ascii_whitespace() || byte.is_ascii_digit());
+                let qualified = lower.contains(&format!(" {candidate}"));
+                if prefix {
+                    strength = strength.max(3);
+                } else if qualified {
+                    strength = strength.max(2);
+                }
+            }
             if strength > best_strength {
-                best = Some(template.music_xml_id);
                 best_strength = strength;
+                best.clear();
+                best.push(template);
+            } else if strength == best_strength && strength > 0 {
+                best.push(template);
             }
         }
     }
-    if best.is_none()
-        && names
+    if best_strength > 0 {
+        if let Some(template) = best.iter().find(|template| {
+            template.transpose_chromatic == transpose && !template.music_xml_id.is_empty()
+        }) {
+            return Some(template.music_xml_id);
+        }
+        if let Some(id) = best
             .iter()
-            .any(|name| name.to_lowercase().contains("piano"))
+            .find(|template| !template.music_xml_id.is_empty())
+            .map(|template| template.music_xml_id)
+        {
+            return Some(id);
+        }
+    }
+    if names
+        .iter()
+        .any(|name| name.to_lowercase().contains("piano"))
     {
         return Some("keyboard.piano");
     }
-    if let Some(id) = best.filter(|id| !id.is_empty()) {
-        return Some(id);
-    }
+    // Repli sur le programme GM : écarter les groupes génériques et les
+    // percussions (qui portent aussi le programme 0), puis choisir le
+    // gabarit le plus générique, comme `template_for_music_xml_id` le fait.
     program.and_then(|program| {
         TEMPLATES
             .iter()
-            .find(|template| {
-                template_has_program(template, program) && !template.music_xml_id.is_empty()
+            .filter(|template| {
+                template_has_program(template, program)
+                    && !template.music_xml_id.is_empty()
+                    && !template.music_xml_id.contains(".group")
+                    && template.group != "unpitched-percussion"
             })
+            .min_by_key(|template| template.id.len())
             .map(|template| template.music_xml_id)
     })
 }
@@ -589,8 +654,12 @@ fn create_parts(
             .and_then(|voice| voice.instrument_id.clone())
             .or_else(|| {
                 source_voice.and_then(|voice| {
-                    instrument_id_from_standard([&voice.name, &voice.short_name, ""], midi_program)
-                        .map(str::to_owned)
+                    instrument_id_from_standard(
+                        [&voice.name, &voice.short_name, ""],
+                        midi_program,
+                        voice.instrument_transpose,
+                    )
+                    .map(str::to_owned)
                 })
             })
         {
@@ -752,9 +821,58 @@ fn segment_at(
     }
 }
 
+/// Décoration standard de reprise (ABC 2.1 §4.14) → marqueur ou saut du
+/// modèle. Les libellés sont ceux de `MarkerType::from_label` /
+/// `JumpType::from_targets` du modèle, donc aucun identifiant privé.
+fn repeat_mark(name: &str, track: Track) -> RepeatMark {
+    match name {
+        "segno" => RepeatMark::Marker(Marker {
+            kind: MarkerType::Segno,
+            label: "segno".to_owned(),
+            text: "segno".to_owned(),
+            placement: Placement::Above,
+            track,
+            visible: true,
+        }),
+        "coda" | "To Coda" => RepeatMark::Marker(Marker {
+            kind: MarkerType::ToCoda,
+            label: "coda".to_owned(),
+            text: "To Coda".to_owned(),
+            placement: Placement::Above,
+            track,
+            visible: true,
+        }),
+        "Fine" => RepeatMark::Marker(Marker {
+            kind: MarkerType::Fine,
+            label: "fine".to_owned(),
+            text: "Fine".to_owned(),
+            placement: Placement::Above,
+            track,
+            visible: true,
+        }),
+        "D.S." => RepeatMark::Jump(Jump::new(
+            "D.S.",
+            "segno",
+            "end",
+            "",
+            Placement::Above,
+            track,
+        )),
+        _ => RepeatMark::Jump(Jump::new(
+            "D.C.",
+            "start",
+            "end",
+            "",
+            Placement::Above,
+            track,
+        )),
+    }
+}
+
 /// Convertit une annotation lue.
 fn annotation_object(spec: &AnnotationSpec) -> Annotation {
     match spec {
+        AnnotationSpec::RepeatMark(_) => unreachable!("les marqueurs sont ajoutés à la mesure"),
         AnnotationSpec::Fermata(fermata) => Annotation::Fermata(*fermata),
         AnnotationSpec::Tempo(bps, text) => {
             let mut tempo = scoretk_core::model::Tempo::new(text.clone());

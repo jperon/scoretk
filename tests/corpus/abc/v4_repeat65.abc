@@ -3,11 +3,11 @@ X:1
 T:Repeat Test
 W:repeat65
 W:Jump at volta end with end repeat interpretation order
-%%scoretk meta work_title Repeat Test
+H:1,2,3,4   2,3,4   1,2   5
 %%scoretk tbox 0 1,2,3,4   2,3,4   1,2   5
 M:4/4
 L:1/8
-Q:" = 400" 1/4=400
+Q:" = 400" 1/4=400.0002
 K:C clef=treble
 %%MIDI program 1
 V:1 name="Piano" snm="Pno." clef=treble
@@ -15,5 +15,5 @@ V:1 name="Piano" snm="Pno." clef=treble
 C8 |
 |: D8 |
 [1,2 E8 |
-F8 :|
+F8!D.C.! :|
 [3 G8 |]

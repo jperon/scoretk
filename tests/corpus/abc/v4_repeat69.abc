@@ -1,10 +1,8 @@
 %abc-2.1
 X:1
 T:Untitled score
+T:Subtitle
 C:Composer / arranger
-%%scoretk meta work_title Untitled score
-%%scoretk meta composer Composer / arranger
-%%scoretk meta subtitle Subtitle
 M:4/4
 L:1/8
 K:C
@@ -14,12 +12,12 @@ K:C
 V:1 name="Piano 1" snm="Pno. 1" clef=treble
 %%scoretk instrument keyboard.piano
 z8 |
-z8 |
-z8 |
+!segno!z8 |
+z8!D.S.! |
 z8 |]
 V:2 name="Piano 2" snm="Pno. 2" clef=treble
 %%scoretk instrument keyboard.piano
 z8 |
-z8 |
-z8 |
+!segno!z8 |
+z8!D.S.! |
 z8 |]

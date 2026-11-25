@@ -13,6 +13,7 @@ V:1 name="Flute" clef=treble
 !tenuto!.B2!tenuto!.c2"^simile"!>(!d2 |
 c2B2A2 |
 G2F2E2 |
+%%MIDI beat 49 49 49 1
 !>)!D2!scoretk-velo-49!!p!C4 |
 D4E2- |
 E2F4 |

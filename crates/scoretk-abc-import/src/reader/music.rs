@@ -291,6 +291,18 @@ impl Parser<'_> {
             // note of a measure. Decorations are only flushed by `push_event`,
             // so route text directions to annotations, which `finish_bar`
             // attaches to the last event of the measure.
+            // ABC 2.1 §4.14 : `!segno!`, `!coda!`, `!fine!`, `!D.S.!` et
+            // `!D.C.!` nomment des marqueurs/sauts de reprise du modèle.
+            Decoration::Text(text)
+                if matches!(
+                    text.as_str(),
+                    "segno" | "coda" | "Fine" | "To Coda" | "D.S." | "D.C."
+                ) =>
+            {
+                self.voice()
+                    .annotations
+                    .push(AnnotationSpec::RepeatMark(text));
+            }
             Decoration::Text(text) => self.voice().annotations.push(AnnotationSpec::Text {
                 text,
                 above: true,
@@ -845,6 +857,16 @@ impl Parser<'_> {
                     text,
                     self.reader.pending_dynamic_velocity.take(),
                 )),
+                Decoration::Text(text)
+                    if matches!(
+                        text.as_str(),
+                        "segno" | "coda" | "Fine" | "To Coda" | "D.S." | "D.C."
+                    ) =>
+                {
+                    // ABC 2.1 §4.14 : ces décorations standard nomment les
+                    // marqueurs et sauts de reprise du modèle pivot.
+                    annotations.push(AnnotationSpec::RepeatMark(text));
+                }
                 Decoration::Text(text) => annotations.push(AnnotationSpec::Text {
                     text,
                     above: true,

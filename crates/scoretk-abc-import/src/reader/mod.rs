@@ -400,6 +400,9 @@ pub(crate) enum AnnotationSpec {
     /// Champ Q: en cours d'air (`abc2xml.py::doTempo`, 1884-1906) : chaque
     /// occurrence produit sa propre direction, pas seulement la dernière.
     Tempo(f64, String),
+    /// Décoration standard de reprise (`!segno!`, `!coda!`, `!fine!`,
+    /// `!D.S.!`, `!D.C.!`, ABC 2.1 §4.14) : marqueur ou saut du modèle.
+    RepeatMark(String),
 }
 
 /// Accord d'agrément en attente.
@@ -708,10 +711,18 @@ pub(crate) struct Reader {
     pub score_spec: Option<String>,
     /// Titre.
     pub title: String,
+    /// Second `T:` (ABC 2.1 §3.1.2) : sous-titre du modèle.
+    pub second_title: String,
     /// Compositeur.
     pub composer: String,
     /// Source.
     pub source: String,
+    /// `Z:abc-copyright` (ABC 2.1 §3.1.10).
+    pub copyright: String,
+    /// `N:` (ABC 2.1 §3.1.11) : numéro d'œuvre du modèle.
+    pub note_field: String,
+    /// `H:` (ABC 2.1 §3.1.13) : textes de cadre du modèle, dans l'ordre.
+    pub history: Vec<String>,
     /// Champs `W:` (texte imprimé, ABC 2.1 §3.1), dans l'ordre du fichier.
     pub credits: Vec<String>,
     /// Métadonnées complémentaires `%%scoretk meta <nom> <valeur>` (ABC 2.1
@@ -760,8 +771,12 @@ impl Default for Reader {
             overlay_cursor: BTreeMap::new(),
             score_spec: None,
             title: String::new(),
+            second_title: String::new(),
             composer: String::new(),
             source: String::new(),
+            copyright: String::new(),
+            note_field: String::new(),
+            history: Vec::new(),
             credits: Vec::new(),
             meta: Vec::new(),
             tbox_texts: Vec::new(),
@@ -1003,6 +1018,13 @@ impl Reader {
                     ("channel", Some(channel)) if (1..=16).contains(&channel) => {
                         self.midi_channel = Some((channel - 1) as u8);
                     }
+                    // `%%MIDI beat a b c n` : abc2midi règle les vélocités
+                    // numériques sur 0–127 (guide abc2midi, § « MIDI beat »),
+                    // que la décoration `!p!` ne peut pas porter. La première
+                    // valeur est la vélocité de la nuance qui suit.
+                    ("beat", Some(velocity)) if velocity <= 127 => {
+                        self.pending_dynamic_velocity = Some(velocity as u8);
+                    }
                     _ => self.warnings.push(Warning::new(
                         number,
                         format!("directive « %%MIDI {value} » ignorée"),
@@ -1023,15 +1045,46 @@ impl Reader {
             // modèle le range dans `engraving.credits`, comme les `<credit>`
             // MusicXML dont il est la contrepartie ABC.
             'W' => self.credits.push(value.to_owned()),
-            'X' | 'R' | 'Z' | 'N' | 'H' | 'A' | 'D' | 'F' | 'G' | 'B' => {}
+            // §3.1.13 : `H:` est un texte historique ; un champ par texte
+            // de cadre du modèle, dans l'ordre.
+            'H' => {
+                if !value.is_empty() {
+                    self.history.push(value.to_owned());
+                }
+            }
+            'X' | 'R' | 'A' | 'D' | 'F' | 'G' | 'B' => {}
+            // §3.1.2 : les `T:` répétés sont des titres alternatifs ; le
+            // second est le sous-titre du modèle pivot.
             'T' => {
                 if self.title.is_empty() {
                     self.title = value.to_owned();
+                } else if self.second_title.is_empty() {
+                    self.second_title = value.to_owned();
                 }
             }
             'C' => {
                 if self.composer.is_empty() {
                     self.composer = value.to_owned();
+                }
+            }
+            // §3.1.10 documente explicitement la convention `Z:abc-copyright`.
+            'Z' => {
+                if let Some((_, text)) = value
+                    .trim()
+                    .split_once(char::is_whitespace)
+                    .map(|(name, text)| (name, text.trim()))
+                    .filter(|(name, _)| name.eq_ignore_ascii_case("abc-copyright"))
+                {
+                    if !text.is_empty() {
+                        self.copyright = text.to_owned();
+                    }
+                }
+            }
+            // §3.1.11 : `N:` est le champ libre des notes générales ; c'est
+            // le seul champ standard qui puisse porter un numéro d'œuvre.
+            'N' => {
+                if self.note_field.is_empty() {
+                    self.note_field = value.to_owned();
                 }
             }
             'O' | 'S' => {

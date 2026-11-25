@@ -2,8 +2,6 @@
 X:1
 T:Title
 C:Composer
-%%scoretk meta work_title Title
-%%scoretk meta composer Composer
 M:4/4
 L:1/8
 Q:"Tempo text" 1/4=120

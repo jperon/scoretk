@@ -1,6 +1,7 @@
 %abc-2.1
 X:1
 T:
+H:This test goes through each measure, moves note input to the segment/voice of the &quot;plus&quot; notehead, and  switches voices. After performing this action, the note input is expected to move to the segment/voice of the &quot;cross&quot; notehead.
 %%scoretk tbox 0 This test goes through each measure, moves note input to the segment/voice of the &quot;plus&quot; notehead, and  switches voices. After performing this action, the note input is expected to move to the segment/voice of the &quot;cross&quot; notehead.
 M:4/4
 L:1/8

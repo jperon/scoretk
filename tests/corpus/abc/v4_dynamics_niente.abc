@@ -1,24 +1,26 @@
 %abc-2.1
 X:1
 T:Naamloze partituur
+T:Ondertitel
 C:Componist / arrangeur
 W:Naamloze partituur
 W:Ondertitel
 W:Componist / arrangeur
-%%scoretk meta work_title Naamloze partituur
-%%scoretk meta composer Componist / arrangeur
-%%scoretk meta subtitle Ondertitel
 M:4/4
 L:1/8
 K:C clef=treble
 %%MIDI program 41
 V:1 name="Viool" snm="Vl." clef=treble
 %%scoretk instrument strings.violin
+%%MIDI beat 96 96 96 1
 !scoretk-velo-96!!f!!>(!d8- |
 "^n"!>)!d8 |
+%%MIDI beat 96 96 96 1
 !scoretk-velo-96!!f!!>(!d8- |
 !>)!d8 |
 "^n"!<(!d8- |
+%%MIDI beat 96 96 96 1
 !scoretk-velo-96!!f!!<)!d8 |
 !<(!d8- |
+%%MIDI beat 96 96 96 1
 !scoretk-velo-96!!f!!<)!d8 |]

@@ -2,7 +2,6 @@
 X:1
 T:voices
 W:voices
-%%scoretk meta work_title voices
 M:4/4
 L:1/8
 K:Ab
@@ -13,6 +12,7 @@ K:Ab
 %%score {(1 2 3) 4} (5 6)
 V:1 name="Piano" snm="Pno." clef=treble
 %%scoretk instrument keyboard.piano
+%%MIDI beat 33 33 33 1
 !scoretk-velo-33!!pp!z8 |
 !<(!!<)!z8 |
 "Eb7"z8 |

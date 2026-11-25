@@ -3,11 +3,11 @@ X:1
 T:Repeat Test
 W:repeat39
 W:Alternating Volta
-%%scoretk meta work_title Repeat Test
+H:1-3   2, 4-5   2-3   2, 4-5   2, 6
 %%scoretk tbox 0 1-3   2, 4-5   2-3   2, 4-5   2, 6
 M:4/4
 L:1/8
-Q:" = 400" 1/4=400
+Q:" = 400" 1/4=400.0002
 K:C clef=treble
 %%MIDI program 1
 V:1 name="Piano" snm="Pno." clef=treble

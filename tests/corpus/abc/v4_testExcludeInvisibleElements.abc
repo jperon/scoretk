@@ -2,10 +2,9 @@
 X:1
 T:Invisible elements test
 W:Invisible elements test
-%%scoretk meta work_title Invisible elements test
 M:4/4
 L:1/8
-Q:" = 80" 1/4=80
+Q:" = 80" 1/4=79.9998
 K:C clef=treble
 %%MIDI program 1
 V:1 name="Piano" snm="Pno." clef=treble
@@ -14,7 +13,10 @@ V:1 name="Piano" snm="Pno." clef=treble
 "^Visible text"C2C2C2C2 |
 D2D2D2D2 |
 !invertedturn!C2!turn!C2C2C2 |
-!scoretk-velo-49!!p!!<(!E2E2E2!scoretk-velo-96!!f!!<)!E2 |
+%%MIDI beat 49 49 49 1
+!scoretk-velo-49!!p!!<(!E2E2E2
+%%MIDI beat 96 96 96 1
+!scoretk-velo-96!!f!!<)!E2 |
 E2E2E2E2 |
 (C2D2E2F2) |
 (C2D2E2F2) |

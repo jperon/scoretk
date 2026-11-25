@@ -8,8 +8,11 @@ W:Title in vbox on page 2
 W:Text on page 2
 W:Title in vbox on page 3
 W:Part name on page 3
-%%scoretk meta work_title Title
-%%scoretk meta copyright Copyright
+Z:abc-copyright Copyright
+H:Above
+H:Below
+H:Above 2
+H:Below 2
 %%scoretk tbox 0 Above
 %%scoretk tbox 1 Below
 %%scoretk tbox 2 Above 2

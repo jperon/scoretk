@@ -3,11 +3,11 @@ X:1
 T:Repeat Test
 W:repeat68
 W:Volta skipping entire score
-%%scoretk meta work_title Repeat Test
+H:no playback
 %%scoretk tbox 0 no playback
 M:4/4
 L:1/8
-Q:" = 400" 1/4=400
+Q:" = 400" 1/4=400.0002
 K:C clef=treble
 %%MIDI program 1
 V:1 name="Piano" snm="Pno." clef=treble

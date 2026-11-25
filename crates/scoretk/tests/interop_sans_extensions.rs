@@ -259,6 +259,36 @@ fn abc_per_kind_losses_with_and_without_private_extensions() {
     println!();
 }
 
+/// The ABC figures after the standard carriers were added. Both rows are
+/// measured on the same 56 scores with the same declared layers; only the
+/// private carriers are deleted before re-reading.
+#[test]
+fn abc_full_support_reaches_target_with_and_without_private_extensions() {
+    let private = measure(Format::Abc, None);
+    let stripped = measure(Format::Abc, Some(strip_abc_private));
+    assert_eq!(private.files, 56);
+    assert_eq!(private.skipped, 0);
+    assert_eq!(stripped.files, 56);
+    assert_eq!(stripped.skipped, 0);
+    assert!(
+        private.total.percent() >= 95.0,
+        "ABC with private carriers: {:.2} %",
+        private.total.percent()
+    );
+    assert!(
+        stripped.total.percent() >= 95.0,
+        "ABC without private carriers: {:.2} %",
+        stripped.total.percent()
+    );
+    println!(
+        "ABC full support: {:.2} % with private carriers, {:.2} % without ({}/{})",
+        private.total.percent(),
+        stripped.total.percent(),
+        stripped.total.matched,
+        stripped.total.reference,
+    );
+}
+
 #[test]
 fn lilypond_per_kind_losses_with_and_without_private_extensions() {
     let private = measure(Format::Ly, None);
@@ -343,6 +373,92 @@ fn print_lost_values(format: Format, strip: Option<fn(&str) -> String>, kinds: &
     }
 }
 
+/// Multiset-exact diagnostic: prints the lost keys (tick, staff, value) of
+/// selected kinds, one line per missing reference item.
+fn print_lost_keys(format: Format, strip: Option<fn(&str) -> String>, kinds: &[&str]) {
+    use std::collections::BTreeMap;
+    let declared = match format {
+        Format::Abc => ABC_IMPORT.declared().union(ABC_EXPORT.declared()),
+        Format::Ly => LY_IMPORT.declared().union(LY_EXPORT.declared()),
+        _ => unreachable!(),
+    };
+    let mut missing: BTreeMap<String, usize> = BTreeMap::new();
+    for (_, path) in corpus_scores() {
+        let score = reference_model(&path);
+        let reference = inventory(&score);
+        let Ok(bytes) = write(&score, format, &Options::default()) else {
+            continue;
+        };
+        let bytes = match strip {
+            Some(strip) => strip(&String::from_utf8(bytes).expect("UTF-8 output")).into_bytes(),
+            None => bytes,
+        };
+        let Ok(imported) = read(&bytes, format) else {
+            continue;
+        };
+        let actual = inventory(&imported);
+        let key = |item: &scoretk::model::InventoryItem| {
+            (
+                item.layer.bits(),
+                item.tick,
+                item.staff,
+                item.kind,
+                item.value.clone(),
+            )
+        };
+        let mut wanted: BTreeMap<_, usize> = BTreeMap::new();
+        let mut found: BTreeMap<_, usize> = BTreeMap::new();
+        for item in &reference.items {
+            if declared.contains(item.layer) && kinds.contains(&item.kind) {
+                *wanted.entry(key(item)).or_insert(0) += 1;
+            }
+        }
+        for item in &actual.items {
+            if declared.contains(item.layer) && kinds.contains(&item.kind) {
+                *found.entry(key(item)).or_insert(0) += 1;
+            }
+        }
+        for (key, count) in wanted {
+            let got = found.get_mut(&key).map_or(0, |slot| {
+                let taken = (*slot).min(count);
+                *slot -= taken;
+                taken
+            });
+            for _ in got..count {
+                *missing
+                    .entry(format!(
+                        "{} tick {:?} staff {:?} {}",
+                        key.3, key.1, key.2, key.4
+                    ))
+                    .or_insert(0) += 1;
+            }
+        }
+    }
+    println!("\n--- {format:?} missing keys ---");
+    for (key, count) in missing {
+        println!("    {count:>4}  {key}");
+    }
+}
+
+#[test]
+fn abc_missing_private_keys() {
+    print_lost_keys(
+        Format::Abc,
+        Some(strip_abc_private),
+        &[
+            "instrument",
+            "dynamic-velocity",
+            "title",
+            "marker",
+            "jump",
+            "harmony",
+            "repeat-count",
+            "rehearsal-mark",
+        ],
+    );
+    println!();
+}
+
 #[test]
 fn abc_private_loss_values() {
     print_lost_values(
@@ -354,6 +470,14 @@ fn abc_private_loss_values() {
             "title",
             "tbox-text",
             "tremolo",
+            "tempo",
+            "harmony",
+            "rehearsal-mark",
+            "system-text",
+            "text-line",
+            "fermata",
+            "dynamic",
+            "rest",
         ],
     );
     println!();

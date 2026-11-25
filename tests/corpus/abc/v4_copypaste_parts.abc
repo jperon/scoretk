@@ -1,18 +1,17 @@
 %abc-2.1
 X:1
 T:Untitled score
+T:Subtitle
 C:Composer / arranger
-%%scoretk meta work_title Untitled score
-%%scoretk meta composer Composer / arranger
-%%scoretk meta subtitle Subtitle
 M:4/4
 L:1/8
-Q:" = 80" 1/4=80
+Q:" = 80" 1/4=79.99998
 K:C clef=treble
 %%MIDI program 74
 V:1 name="Flute" snm="Fl." clef=treble
 %%scoretk instrument wind.flutes.flute
 !>!b2.(^c'2!tenuto!b2){B/4}!//!!fermata!b2 ||
+%%MIDI beat 49 49 49 1
 [M:3/4] [K:E clef=treble] [1 !arpeggio!!scoretk-velo-49!!p!!<(![Bf]2!^!B2-B2 |
 [M:4/4] [K:C clef=bass] !<)!B2!scoretk-tremolo-start!B2!scoretk-tremolo-stop!B2F2 |
 [K:C clef=treble] z8 |

@@ -74,6 +74,31 @@ C D E F |]
     assert_eq!(instrument_id(piano), "keyboard.piano");
 }
 
+/// Hors de portée : ABC 2.1 §7.1 (`V: name=`/`snm=`) et §11.2
+/// (`%%MIDI program`, numéro GM) ne distinguent pas les identifiants internes
+/// de MuseScore partageant un même programme GM. Le catalogue ne contient
+/// aucun gabarit dont le nom et le programme reproduisent ces identifiants ;
+/// la directive privée reste nécessaire pour eux.
+#[test]
+fn variantes_de_guitare_restant_hors_de_portee_sans_extension_privee() {
+    let steel = "\
+X:1
+T:Guitar
+M:4/4
+L:1/8
+K:C
+%%MIDI program 26
+V:1 name=\"Steel Guitar\" snm=\"s.guit.\" clef=treble transpose=-12
+C D E F |]
+";
+    assert_ne!(instrument_id(steel), "pluck.guitar");
+    let with_private = steel.replace(
+        "C D E F |]",
+        "%%scoretk instrument pluck.guitar\nC D E F |]",
+    );
+    assert_eq!(instrument_id(&with_private), "pluck.guitar");
+}
+
 #[test]
 fn directive_privee_reste_prioritaire() {
     // Quand elle est présente, la directive privée garde la priorité : elle

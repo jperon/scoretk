@@ -127,6 +127,7 @@ pub(crate) fn render_voice(
             range.clone(),
             &mut before,
         );
+        draw_repeat_marks(measure, staff, &range, &mut before, &mut after);
         draw_spanners(
             score,
             measure,
@@ -308,14 +309,51 @@ pub(crate) fn render_voice(
         if !bar.is_empty() {
             full_line.push(bar);
         }
-        out.push_str(&full_line.join(" "));
-        out.push('\n');
+        push_velocity_lines(out, &full_line.join(" "));
 
         for lyric_line in lyrics_lines(&items, &all_verses, range.clone(), &mut pending_word) {
             out.push_str(&lyric_line);
             out.push('\n');
         }
     }
+}
+
+/// Écrit une ligne de musique en plaçant une directive `%%MIDI beat` avant
+/// chaque nuance numérique. `%%MIDI beat a b c n` est la direction abc2midi
+/// (guide « abc2midi-specific commands ») qui porte la vélocité ; ABC 2.1 §11
+/// prescrit qu'une directive `%%` occupe sa propre ligne. Quand une ligne de
+/// musique porte deux nuances différentes, elle est coupée avant la seconde :
+/// un saut de ligne ne change ni la mesure ni la musique.
+fn push_velocity_lines(out: &mut String, text: &str) {
+    const PREFIX: &str = "!scoretk-velo-";
+    let mut velocities = Vec::new();
+    let mut search = 0;
+    while let Some(relative) = text[search..].find(PREFIX) {
+        let position = search + relative;
+        if let Some(velocity) = text[position + PREFIX.len()..]
+            .split('!')
+            .next()
+            .and_then(|value| value.parse::<u8>().ok())
+        {
+            velocities.push((position, velocity));
+        }
+        search = position + PREFIX.len();
+    }
+    let Some(&(_, velocity)) = velocities.first() else {
+        out.push_str(text);
+        out.push('\n');
+        return;
+    };
+    out.push_str(&format!("%%MIDI beat {velocity} {velocity} {velocity} 1\n"));
+    let mut cut = 0;
+    for &(position, velocity) in velocities.iter().skip(1) {
+        out.push_str(&text[cut..position]);
+        out.push('\n');
+        out.push_str(&format!("%%MIDI beat {velocity} {velocity} {velocity} 1\n"));
+        cut = position;
+    }
+    out.push_str(&text[cut..]);
+    out.push('\n');
 }
 
 /// En-tête `V:` d'une voix.
@@ -826,6 +864,50 @@ fn draw_annotations(
                 continue;
             };
             before[offset].push(token);
+        }
+    }
+}
+
+/// Décorations standard de reprise (ABC 2.1 §4.14) : `!segno!`, `!coda!`,
+/// `!fine!`, `!D.S.!` et `!D.C.!`. Aucun `%%scoretk` n'est nécessaire pour
+/// ces marqueurs, que les lecteurs ABC connaissent.
+fn draw_repeat_marks(
+    measure: &Measure,
+    staff: usize,
+    range: &std::ops::Range<usize>,
+    before: &mut [Vec<String>],
+    after: &mut [Vec<String>],
+) {
+    for mark in &measure.repeat_marks {
+        let on_staff = match mark {
+            scoretk_core::model::RepeatMark::Marker(value) => value.track.staff().index() == staff,
+            scoretk_core::model::RepeatMark::Jump(value) => value.track.staff().index() == staff,
+        };
+        if !on_staff || range.is_empty() {
+            continue;
+        }
+        let token = match mark {
+            scoretk_core::model::RepeatMark::Marker(value) => match value.label.as_str() {
+                "segno" => Some("!segno!"),
+                "coda" | "codab" => Some("!coda!"),
+                "fine" => Some("!fine!"),
+                _ => None,
+            },
+            scoretk_core::model::RepeatMark::Jump(value) if value.kind.is_dal_segno() => {
+                Some("!D.S.!")
+            }
+            scoretk_core::model::RepeatMark::Jump(value) if value.kind.is_da_capo() => {
+                Some("!D.C.!")
+            }
+            scoretk_core::model::RepeatMark::Jump(_) => None,
+        };
+        let Some(token) = token else {
+            continue;
+        };
+        if matches!(mark, scoretk_core::model::RepeatMark::Marker(_)) {
+            before[0].push(token.to_owned());
+        } else {
+            after[range.len() - 1].push(token.to_owned());
         }
     }
 }

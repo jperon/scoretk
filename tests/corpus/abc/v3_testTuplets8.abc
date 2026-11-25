@@ -5,9 +5,7 @@ C:Leon Vinken
 W:Tuplets 8
 W:MuseScore testfile
 W:Leon Vinken
-%%scoretk meta work_title Tuplets 8
-%%scoretk meta work_number MuseScore testfile
-%%scoretk meta composer Leon Vinken
+N:MuseScore testfile
 M:2/4
 L:1/8
 K:C clef=treble

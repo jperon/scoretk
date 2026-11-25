@@ -15,8 +15,9 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! ABC 2.1 §11 : `T:`/`C:` ne couvrent qu'une partie des métadonnées du
-//! modèle ; une directive `%%scoretk meta` privée transporte les autres.
+//! ABC 2.1 : `T:` répété porte le sous-titre (§3.1.2) et `Z:abc-copyright`
+//! le copyright (§3.1.10) ; la directive `%%scoretk meta` privée ne reste
+//! que pour les métadonnées sans champ standard.
 
 use scoretk::model::{Fraction, Measure, Part, Score};
 use scoretk::{read, write, Format, Options};
@@ -34,10 +35,8 @@ fn metadonnees_complementaires_vont_et_reviennent_par_abc() {
 
     let abc = write(&source, Format::Abc, &Options::default()).expect("écriture ABC");
     let text = String::from_utf8(abc.clone()).expect("UTF-8");
-    assert!(
-        text.contains("%%scoretk meta subtitle Sous-titre\n"),
-        "{text}"
-    );
+    assert!(text.contains("T:Sous-titre\n"), "{text}");
+    assert!(text.contains("Z:abc-copyright copyright 2026\n"), "{text}");
     assert!(
         text.contains("%%scoretk meta lyricist Parolier\n"),
         "{text}"
