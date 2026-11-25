@@ -9402,3 +9402,134 @@ open groups remain the horn `\relative` + tuplet cases (`kling-23`,
 `kopprasch-*`), the `cellist` long `\repeat volta`/`\unfoldRepeats` scores with
 several `\transpose` staves, and the `notes_supp` of Chopin/WTC. None of these
 was silently excluded; no comparator rule was relaxed to gain files.
+
+## 50. Same-score reading: faulty quarter-offset references, and the grace-before-rest rule (2026-11-25)
+
+### Protocol
+
+The branch was already rebased on master (`13eea4fb`, no commits to rebase).
+A baseline `scoretk` was frozen at that commit in the out-of-repo scratch
+directory (`ly16-tmp/bin/scoretk-base`). All reference regeneration and all
+measurements ran in the **foreground, one at a time**, with two workers
+(`references.py --jobs 2`, `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n
+10`). The fair, same-score trees were rebuilt for `mut` (1,377 references),
+`rw` (1,428), `ra` (1,658 usable sources; 68 manifest entries point at files
+that no longer exist) and `ext` (376) with
+`references.py --inject-midi --same-score --sandbox --jobs 2 --raw-refs …`.
+Every untrusted `.ly` was compiled inside `bwrap --unshare-all
+--die-with-parent`; the reduced `.ly` files written for this section were
+compiled directly with LilyPond 2.27. `references.py --selftest`,
+`mesure.py --selftest`, `lots-externes.py --causes-selftest` and
+`python3 -I scripts/oracle/lilypond/ly_notes.py selftest` are OK. No
+comparator rule, manifest or existing manifest entry was changed to gain a
+file.
+
+### The largest attack-shift group is a faulty-reference class
+
+With the corrected classifier of §49, the 54 `mut` and 55 `rw` attack files
+split by their first divergent `(pitch, attack)` delta (Q16 steps, where 4
+steps = 1 quarter): −2 steps (9 files), +1 step (8), −4 steps (4), −12 steps
+(3), the rest scattered. The **constant whole-quarter offsets** are the
+largest coherent shape: `mozart-hrn-3`, `bridge`, `Symphony5_1/2`,
+`51title-hub`/`50title-hub`, `gnomus`, `baba`, `ballet`, `Dans_l_antre…`
+(−1, −2, −3, −4 or −9 quarters for essentially every note).
+
+A reduced source reproduces the effect exactly:
+
+```lilypond
+\relative c' {
+  \time 4/4
+  \key c \major
+  \compressFullBarRests
+  \partial 4
+  r4
+  R1*4
+  c'2 g2
+  c,2 r2
+  R1
+  d'2 e'2
+}
+\score { { … } \midi { } }
+```
+
+LilyPond 2.27 rejects `\compressFullBarRests` as an unknown command and
+emits a "string outside of a text script" error; it still writes a MIDI,
+whose first note is at **18** quarters. Without that obsolete command (or
+after `convert-ly`, which rewrites it to `\compressEmptyMeasures` at
+`python/convertrules.py:4239`), the same source plays its first note at
+**17** quarters — exactly where scoretk writes it, note for note (453 notes,
+identical attacks). The whole `mozart-hrn-3` score behaves the same way:
+compiling its converted `mozart-hrn3-allegro.ly` gives 453 MIDI notes that
+match the reader's MusicXML exactly. The other files of the group use the
+same rejected syntax (`\compressMusic` → `\scaleDurations` at
+`convertrules.py:4239`, `\autochange` → `\autoChange`, `\fermataMarkup` →
+`\fermata`, `\partcombine` → `\partCombine`). Their one- or three-quarter
+offsets are therefore **faulty references**, not reader defects: the reader
+correctly ignores the obsolete command while LilyPond mis-parses the next
+duration. They are recorded as legitimate exceptions, with that reason; no
+file was silently dropped and no comparator rule was relaxed.
+
+### Reader fix: a grace before a rest is played
+
+The next group, the "extra/missing" events adjacent to the attack group,
+does contain a reader defect. A generated minimal case,
+
+```lilypond
+\fixed c' { c4 \grace { d16 } r4 e4 f4 }
+\score { { … } \midi { } }
+```
+
+compiled with LilyPond 2.27 plays **four** attacks: C4 at 2, the grace D4 at
+2.9427 quarters, E4 at 4 and F4 at 5. The frozen reader wrote only **three**
+notes: the grace was lost. `Grace_iterator::process`
+(`lily/grace-iterator.cc:24-42`) computes the main moment from the child's
+grace part and processes the wrapped music before the main element;
+`def-grace-function` (`scm/music-functions.scm:1237-1248`) wraps the grace
+music in `GraceMusic` regardless of what follows. Nothing in that path
+depends on the main element being a note, so `\grace { … } r4` and
+`\grace { … } R1` are audible.
+
+`ChordEvent::grace_before` was already populated on rest events, but both
+`ChordRestKind::Rest` branches of `builder.rs` discarded it. The fix stores
+the graces on the new `Rest::grace_chords` field and the MusicXML writer
+emits them before (or after) the `<rest/>`, reusing the same grace-entry
+path as for chords. The Rust test `grace_avant_un_silence_est_jouee` in
+`tests/read_lilypond.rs` covers `r4`, `R1` and `R4.`; it fails on the frozen
+reader (no grace in the model) and passes with the fix. On the three real
+reading lots the converted MusicXML is byte-identical to the baseline
+(0 changed files on `ra`, `mut` and `rw`), because the corpus files whose
+graces precede a rest use skips or already carry the attacks elsewhere. The
+fix is therefore a fidelity correction with **no measured gain and no loss**,
+not a tuning knob. It is kept because it makes the reader faithful to the
+LilyPond MIDI rule; the attack-shift groups on `ext` and the remaining
+`mut`/`rw` files still need wider per-Voice tracks and real-time grace
+timing (§46–§49).
+
+### Scores: raw and same-score, before and after
+
+Both trees and both figures are kept; no denominator was edited.
+
+| Lot | Raw, frozen = final | Same-score, frozen | Same-score, final |
+| --- | ---: | ---: | ---: |
+| `ra` (1,724 / 1,658 fair) | 1,605/1,724 = **93.1 %** (stale `out3ra`, §44) | 1,605/1,658 = **96.8 %** | **1,605/1,658 = 96.8 %** |
+| `mut` (1,316 / 1,317 fair) | 1,257/1,316 = **95.5 %** | 1,258/1,317 = **95.5 %** | **1,258/1,317 = 95.5 %** |
+| `rw` (1,365 / 1,368 fair) | 1,300/1,365 = **95.2 %** | 1,303/1,368 = **95.2 %** | **1,303/1,368 = 95.2 %** |
+| `ext` (371 / 376 fair) | 161/371 = **43.4 %** | 218/376 = **58.0 %** | **218/376 = 58.0 %** |
+
+The raw `ra` figure is the stale tree of §44–§49 (its clean reference tree
+cannot be reconstructed); the fair figure is the rebuilt same-score tree.
+Zero exact gain, zero exact loss, zero N1/N2 change and zero byte change on
+`ra`, `mut` and `rw` after the commit, one lot at a time. `cargo test
+--workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo fmt --all -- --check` and the oracle selftests are green.
+
+### Remaining work
+
+The local Q16 shifts (`bwv663-a4`, `violinoII`, `ballade-4`) and the extra
+attacks (`wedding`, `two-jews`, `rach-prelude23-05`) are still open. A
+single-staff reduction of `bwv663-a4`'s `sopran` voice is exact, so its 16th
+shifts come from the six-staff MIDI score (transposed duplicates, per-Voice
+tracks), not from one local duration rule. The horn `\relative` + tuplet
+octaves and the cellist `\repeat volta`/`\unfoldRepeats` scores remain the
+largest open groups on `ext`. None of these was silently excluded and no
+comparator rule was relaxed to gain files.
