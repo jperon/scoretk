@@ -6,6 +6,15 @@
   workTitle = "clarinet scales"
 }
 
+\paper {
+  paper-width = 215.900\mm
+  paper-height = 279.400\mm
+  left-margin = 10.000\mm
+  right-margin = 10.000\mm
+  top-margin = 10.000\mm
+  bottom-margin = 20.000\mm
+}
+
 staffOneVoiceOne = \fixed c' {
   \clef treble \transposition a \key c \major \time 4/4
   ef4 ^\markup { "A Clarinet" } f4 g4 af4 |

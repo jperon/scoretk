@@ -6,6 +6,15 @@
   subtitle = "Volta after to coda"
 }
 
+\paper {
+  paper-width = 210.058\mm
+  paper-height = 296.926\mm
+  left-margin = 10.000\mm
+  right-margin = 10.000\mm
+  top-margin = 10.000\mm
+  bottom-margin = 20.000\mm
+}
+
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
   \tempo 4 = 400 c'1 ^\markup { "1,2,3,4   2,3   5,6,7,8   2   9,10" } |

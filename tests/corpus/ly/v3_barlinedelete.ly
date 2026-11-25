@@ -7,6 +7,15 @@
   composer = "Composer"
 }
 
+\paper {
+  paper-width = 210.058\mm
+  paper-height = 296.926\mm
+  left-margin = 10.000\mm
+  right-margin = 10.000\mm
+  top-margin = 10.000\mm
+  bottom-margin = 20.000\mm
+}
+
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
   \tempo "Tempo text" 4 = 120 c'4 e'4 g'4 e'4 \bar "||"

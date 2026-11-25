@@ -8,6 +8,15 @@
   composer = "Composer / arranger"
 }
 
+\paper {
+  paper-width = 210.058\mm
+  paper-height = 296.926\mm
+  left-margin = 15.000\mm
+  right-margin = 15.000\mm
+  top-margin = 15.000\mm
+  bottom-margin = 15.000\mm
+}
+
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
   gs8.-> r16 r4.

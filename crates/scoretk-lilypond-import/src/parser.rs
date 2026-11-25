@@ -621,6 +621,11 @@ impl<'a> Parser<'a> {
                 let header = self.parse_header();
                 document.header.entries.extend(header.entries);
             }
+            Kind::Command if token.text == "paper" => {
+                self.position += 1;
+                let paper = self.parse_header();
+                document.paper.entries.extend(paper.entries);
+            }
             Kind::Command if token.text == "addQuote" => {
                 // `ly/music-functions-init.ly:56-60` : `addQuote` déclare une
                 // musique citable ; elle n'est pas jouée ici, seulement

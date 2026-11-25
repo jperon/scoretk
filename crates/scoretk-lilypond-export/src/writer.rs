@@ -72,6 +72,7 @@ impl<'a> Writer<'a> {
         }
 
         self.write_header(&mut out);
+        self.write_paper(&mut out);
         self.write_variables(&mut out, &structure);
         self.write_score(&mut out);
 
@@ -150,6 +151,26 @@ impl<'a> Writer<'a> {
         for line in lines {
             out.push_str(&line);
             out.push('\n');
+        }
+        out.push_str("}\n\n");
+    }
+
+    /// Bloc `\paper` : la géométrie de page que le format porte réellement
+    /// (Notation Reference, `\paper` ; `format-mapping/lilypond.md` ligne 39).
+    /// LilyPond exprime ces valeurs en millimètres ; le modèle les stocke en
+    /// pouces comme MuseScore.
+    fn write_paper(&self, out: &mut String) {
+        let style = &self.score.engraving.style;
+        out.push_str("\\paper {\n");
+        for (name, inches) in [
+            ("paper-width", style.page_width_in),
+            ("paper-height", style.page_height_in),
+            ("left-margin", style.page_odd_left_margin_in),
+            ("right-margin", style.page_odd_right_margin_in),
+            ("top-margin", style.page_odd_top_margin_in),
+            ("bottom-margin", style.page_odd_bottom_margin_in),
+        ] {
+            let _ = writeln!(out, "  {name} = {:.3}\\mm", inches * 25.4);
         }
         out.push_str("}\n\n");
     }

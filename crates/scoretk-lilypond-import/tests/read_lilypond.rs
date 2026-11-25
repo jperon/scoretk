@@ -26,8 +26,8 @@ use std::collections::HashMap;
 
 use scoretk_core::model::Fraction;
 use scoretk_core::model::{
-    ArticulationType, BarLineType, ChordRestKind, ClefType, DurationType, GraceType, KeyMode,
-    LyricsSyllabic, SegmentItem, SegmentType, StaffId, Track, Transpose,
+    ArticulationType, BarLine, BarLineType, ChordRestKind, ClefType, DurationType, GraceType,
+    KeyMode, LyricsSyllabic, SegmentItem, SegmentType, StaffId, Track, Transpose,
 };
 use scoretk_lilypond_import::{
     read_lilypond, read_lilypond_reporting, read_lilypond_with_includes,
@@ -44,6 +44,35 @@ fn lire(music: &str) -> scoretk_core::model::Score {
          \\score {{ \\new Staff {{ \\fixed c' {{ {music} }} }} }}\n"
     );
     read_lilypond(&source).unwrap_or_else(|error| panic!("lecture : {error}"))
+}
+
+#[test]
+fn paper_porte_la_geometrie_de_page() {
+    let source = "\\version \"2.24.0\"\n\
+        \\paper { paper-width = 210\\mm paper-height = 297\\mm left-margin = 15\\mm }\n\
+        \\score { \\new Staff { \\fixed c' { c'4 d'4 e'4 f'4 } } }\n";
+    let partition = read_lilypond(source).expect("lecture");
+    let style = &partition.engraving.style;
+    assert!((style.page_width_in - 210.0 / 25.4).abs() < 1e-6);
+    assert!((style.page_height_in - 297.0 / 25.4).abs() < 1e-6);
+    assert!((style.page_odd_left_margin_in - 15.0 / 25.4).abs() < 1e-6);
+}
+
+#[test]
+fn barre_normale_est_un_element_de_segment() {
+    let partition = lire("c'4 d'4 e'4 f'4");
+    assert_eq!(partition.measures.len(), 1);
+    let found = partition.measures[0]
+        .segments
+        .iter()
+        .find(|segment| segment.kind == SegmentType::EndBarLine)
+        .and_then(|segment| segment.element(Track::new(StaffId::from_index(0), 0)))
+        .and_then(|item| match item {
+            SegmentItem::BarLine(bar) => Some(*bar),
+            _ => None,
+        })
+        .expect("barre finale");
+    assert_eq!(found, BarLine::new(BarLineType::Normal));
 }
 
 /// Hauteurs des notes de l'arène, dans l'ordre.

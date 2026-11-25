@@ -32,13 +32,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use scoretk_core::duration_list::to_duration_list;
 use scoretk_core::model::{
-    Accidental, AccidentalType, Annotation, ArticulationType, BarLineType, Chord, ChordEngraving,
-    ChordRest, ChordRestEngraving, ChordRestKind, Clef, Credit, CreditStyle, Duration, Dynamic,
-    Fingering, Fraction, Glissando, GlissandoType, GraceChord, Hairpin, HairpinType, Instrument,
-    LineStyle, Lyrics, LyricsSyllabic, Measure, Note, NoteId, Part, PartId, PedalInfo, Placement,
-    RehearsalMark, Rest, RichText, Score, ScoreMetadata, Segment, SegmentItem, SegmentType,
-    Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff, StaffBracket, StaffId, Tempo,
-    Track, Transpose, Trill, TrillType, Tuplet, TupletId, VOICES,
+    Accidental, AccidentalType, Annotation, ArticulationType, BarLine, BarLineType, Chord,
+    ChordEngraving, ChordRest, ChordRestEngraving, ChordRestKind, Clef, Credit, CreditStyle,
+    Duration, Dynamic, Fingering, Fraction, Glissando, GlissandoType, GraceChord, Hairpin,
+    HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic, Measure, Note, NoteId, Part,
+    PartId, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score, ScoreMetadata, Segment,
+    SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff,
+    StaffBracket, StaffId, Tempo, Track, Transpose, Trill, TrillType, Tuplet, TupletId, VOICES,
 };
 
 mod articulate;
@@ -195,6 +195,52 @@ fn audio_staff_of(staves: &[StaffBuild], staff_block: &StaffBlock, fallback: Sta
         .unwrap_or(fallback)
 }
 
+/// `\paper` ne porte que la géométrie de page (L5) : `paper-width`,
+/// `paper-height`, `left-margin`, `right-margin`, `top-margin` et
+/// `bottom-margin`, écrits en millimètres par l'exporteur. Les autres clés
+/// (polices, `\layout`) n'ont pas de champ dans `StyleSettings`.
+fn apply_paper(score: &mut Score, paper: &crate::ast::HeaderAst) {
+    let millimeters = |name: &str| {
+        paper
+            .get(name)
+            .and_then(|value| value.trim_end_matches("\\mm").trim().parse::<f64>().ok())
+            .filter(|value| *value > 0.0 && value.is_finite())
+            .map(|value| value / 25.4)
+    };
+    for (name, target) in [
+        ("paper-width", 0),
+        ("paper-height", 1),
+        ("left-margin", 2),
+        ("right-margin", 3),
+        ("top-margin", 4),
+        ("bottom-margin", 5),
+    ] {
+        let Some(inches) = millimeters(name) else {
+            continue;
+        };
+        match target {
+            0 => score.engraving.style.page_width_in = inches,
+            1 => score.engraving.style.page_height_in = inches,
+            2 => {
+                score.engraving.style.page_odd_left_margin_in = inches;
+                score.engraving.style.page_even_left_margin_in = inches;
+            }
+            3 => {
+                score.engraving.style.page_odd_right_margin_in = inches;
+                score.engraving.style.page_even_right_margin_in = inches;
+            }
+            4 => {
+                score.engraving.style.page_odd_top_margin_in = inches;
+                score.engraving.style.page_even_top_margin_in = inches;
+            }
+            _ => {
+                score.engraving.style.page_odd_bottom_margin_in = inches;
+                score.engraving.style.page_even_bottom_margin_in = inches;
+            }
+        }
+    }
+}
+
 /// Construit la partition d'un document LilyPond.
 pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     let mut score = Score::new();
@@ -206,6 +252,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     score.playback.articulate = document.playback_articulate;
     score.playback.unfold_repeats = document.playback_unfold_repeats;
     write_metadata(&mut score, document);
+    apply_paper(&mut score, &document.paper);
 
     let mut staves: Vec<StaffBuild> = Vec::new();
     let mut octave_relatif = OctaveState {
@@ -1941,6 +1988,17 @@ fn create_measures(score: &mut Score, slots: &[MeasureSlot]) {
         let mut measure = Measure::new(index, slot.start, slot.nominal);
         measure.len = slot.len;
         measure.multi_measure_rest = slot.multi_rest;
+        // MuseScore porte une barre sur le segment final de chaque mesure,
+        // même pour une barre normale sans symbole dans le `.ly`.
+        let end = measure.end_tick();
+        let mut segment = Segment::new(SegmentType::EndBarLine, end, score.staves.len().max(1));
+        for index in 0..score.staves.len() {
+            segment.set_element(
+                Track::new(StaffId::from_index(index), 0),
+                SegmentItem::BarLine(BarLine::new(BarLineType::Normal)),
+            );
+        }
+        measure.segments.push(segment);
         score.add_measure(measure);
     }
 }

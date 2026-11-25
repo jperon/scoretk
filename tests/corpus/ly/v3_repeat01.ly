@@ -6,6 +6,15 @@
   subtitle = "normal repeat barlines over 2 measures"
 }
 
+\paper {
+  paper-width = 210.058\mm
+  paper-height = 296.926\mm
+  left-margin = 10.000\mm
+  right-margin = 10.000\mm
+  top-margin = 10.000\mm
+  bottom-margin = 20.000\mm
+}
+
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
   \tempo 4 = 400 c1 ^\markup { "1,2,3   2,3,4,5,6" } |

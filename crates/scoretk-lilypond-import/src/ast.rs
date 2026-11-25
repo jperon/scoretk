@@ -730,6 +730,8 @@ pub(crate) struct Document {
     pub language: String,
     /// En-tête.
     pub header: HeaderAst,
+    /// Réglages de `\paper` (format de page, marges), en millimètres.
+    pub paper: HeaderAst,
     /// Bloc `\score`, s'il existe.
     pub score: Option<ScoreAst>,
     /// Écart chromatique (demi-tons) d'un second `\score` MIDI dont la musique

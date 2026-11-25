@@ -9,6 +9,15 @@
   composer = "Leon Vinken"
 }
 
+\paper {
+  paper-width = 210.058\mm
+  paper-height = 296.926\mm
+  left-margin = 10.000\mm
+  right-margin = 10.000\mm
+  top-margin = 10.000\mm
+  bottom-margin = 20.000\mm
+}
+
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 2/4
   \tuplet 3/2 {
