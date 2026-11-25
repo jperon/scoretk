@@ -109,6 +109,32 @@ mod tests {
     }
 
     #[test]
+    fn tempo_bpm_becomes_beats_per_second() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
+            <section><measure n="1"><staff n="1"><layer n="1">
+              <note dur="4" pname="c" oct="4"/>
+            </layer></staff>
+            <tempo staff="1" tstamp="1" midi.bpm="120"><rend>note</rend> = 120</tempo>
+            </measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with a tempo");
+        let tempo = score
+            .measures
+            .iter()
+            .flat_map(|measure| measure.segments.iter())
+            .flat_map(|segment| segment.annotations.iter())
+            .find_map(|annotation| match &annotation.annotation {
+                scoretk_core::model::Annotation::Tempo(tempo) => Some(tempo),
+                _ => None,
+            })
+            .expect("tempo annotation");
+        assert_eq!(tempo.beats_per_second, Some(2.0));
+        assert!(tempo.text.plain().ends_with("= 120"));
+    }
+
+    #[test]
     fn reads_page_geometry_and_text_sizes_from_score_def() {
         let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
           <music><body><mdiv><score>

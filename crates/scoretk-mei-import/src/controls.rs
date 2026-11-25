@@ -340,16 +340,25 @@ impl<'a> Reader<'a> {
 
     /// `MeiImporter::readTempo` (`meiimporter.cpp:3083`).
     fn add_tempo(&mut self, node: &Element, measure: usize) {
-        let text = node
-            .attribute("mm")
-            .map(str::to_owned)
-            .unwrap_or_else(|| crate::lines_of(node));
+        let text = node.attribute("mm").map(str::to_owned).unwrap_or_else(|| {
+            // Mixed content: MuseScore writes a SMuFL `<rend>` glyph before
+            // the plain text (`tempoFromMEI`, meiconverter.cpp:3327).
+            let mut text = String::new();
+            for child in &node.children {
+                if child.name == "rend" || child.name == "symbol" {
+                    text.push_str(&crate::lines_of(child));
+                }
+            }
+            text.push_str(node.text_trimmed());
+            text
+        });
         let bpm = node
             .attribute("midi.bpm")
             .and_then(|value| value.parse::<f64>().ok());
         let (tick, track) = self.anchor(node, measure);
         let mut tempo = Tempo::new(text);
-        tempo.beats_per_second = bpm;
+        // `@midi.bpm` is beats per minute; the pivot stores beats per second.
+        tempo.beats_per_second = bpm.map(|value| value / 60.0);
         self.add_annotation(tick, track, Annotation::Tempo(tempo));
     }
 
