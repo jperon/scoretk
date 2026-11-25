@@ -67,8 +67,9 @@ pub(crate) enum PostEvent {
     Articulation(ArticulationType),
     /// Ornement (`\trill`, `\mordent`…).
     Ornament(OrnamentType),
-    /// Nuance (`\p`, `\mf`).
-    Dynamic(String, Placement),
+    /// Nuance (`\p`, `\mf`) et vélocité transportée par
+    /// `\set Staff.midiMinimumVolume`/`midiMaximumVolume` (Notation §24.4.2).
+    Dynamic(String, Placement, Option<u8>),
     /// Texte (`^\markup { … }`, `_\markup`).
     Text(String, Placement),
     /// Doigté (`-1`, `^\markup { "T" }`).
@@ -732,6 +733,9 @@ pub(crate) struct Document {
     pub header: HeaderAst,
     /// Réglages de `\paper` (format de page, marges), en millimètres.
     pub paper: HeaderAst,
+    /// Taille globale de la portée en points `#(set-global-staff-size n)`
+    /// (Notation Reference §27.2) : `Spatium = n × 2540/7227/4 mm`.
+    pub staff_size: Option<f64>,
     /// Bloc `\score`, s'il existe.
     pub score: Option<ScoreAst>,
     /// Écart chromatique (demi-tons) d'un second `\score` MIDI dont la musique

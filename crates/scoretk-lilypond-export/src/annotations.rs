@@ -59,7 +59,24 @@ pub(crate) fn events(annotation: &Annotation, tick: Tick) -> Vec<Event> {
             } else {
                 format!("{direction}{}", text::markup(&text::escape(name)))
             };
-            vec![Event::new(tick, after::DYNAMIC, rendered)]
+            let mut events = Vec::new();
+            if let Some(velocity) = dynamic.velocity {
+                // Notation Reference §24.4.2 : poser les deux bornes sur la
+                // même fraction donne exactement la vélocité du modèle.
+                let fraction = f64::from(velocity) / 127.0;
+                events.push(Event::new(
+                    tick,
+                    before::MIDI_MIN_VOLUME,
+                    format!("\\set Staff.midiMinimumVolume = #{fraction:.6}"),
+                ));
+                events.push(Event::new(
+                    tick,
+                    before::MIDI_MAX_VOLUME,
+                    format!("\\set Staff.midiMaximumVolume = #{fraction:.6}"),
+                ));
+            }
+            events.push(Event::new(tick, after::DYNAMIC, rendered));
+            events
         }
         Annotation::Tempo(tempo) => {
             // Un texte réduit à un symbole musical (`♩ = 80`) ne laisse rien

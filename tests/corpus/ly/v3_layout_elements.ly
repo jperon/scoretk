@@ -1,11 +1,15 @@
 \version "2.24.0"
 \language "english"
 
+#(set-global-staff-size 17.80004409)
 \header {
   title = "Layout test"
   subtitle = "Just an artificial score to test whether all elements are laid out"
   composer = "Composer"
   poet = "Lyricist"
+  scoretkTitleFontSize = "24.00000"
+  scoretkComposerFontSize = "12.00000"
+  scoretkLyricistFontSize = "12.00000"
 }
 
 \paper {
@@ -21,6 +25,8 @@ staffOneVoiceOne = \fixed c' {
   \clef treble \key e \major \time 4/4
   \tempo "Allegro" 4 = 144 cs4 \=3( \< \glissando ^\markup { "System Text" }
   ds4 e4 fs4 |
+  \set Staff.midiMinimumVolume = #0.755906
+  \set Staff.midiMaximumVolume = #0.755906
   \tuplet 3/2 {
   cs8 _\f \=3) \! ^\markup { "Staff Text" } ds8 e8
   }

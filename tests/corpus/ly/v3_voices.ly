@@ -1,9 +1,13 @@
 \version "2.24.0"
 \language "english"
 
+#(set-global-staff-size 20.07501265)
 \header {
   title = "voices"
   workTitle = "voices"
+  scoretkTitleFontSize = "24.00000"
+  scoretkComposerFontSize = "12.00000"
+  scoretkLyricistFontSize = "12.00000"
 }
 
 \paper {
@@ -18,7 +22,8 @@
 staffOneVoiceOne = \fixed c' {
   \voiceOne
   \clef treble \key af \major \time 4/4
-  R1 _\pp |
+  \set Staff.midiMinimumVolume = #0.259843
+  \set Staff.midiMaximumVolume = #0.259843 R1 _\pp |
   R1 |
   R1 ^\markup { "Eb7" } |
   \time 2/4

@@ -79,6 +79,11 @@ pub(crate) struct Parser<'a> {
     partitions: Vec<Partition>,
     /// `\transposition` trouvé dans le bloc `\midi` de la partition courante.
     midi_transposition: Option<PitchSpec>,
+    /// `#(set-global-staff-size n)` (Notation Reference §27.2).
+    staff_size: Option<f64>,
+    /// Vélocité lue dans `\set Staff.midiMinimumVolume = #n` (§24.4.2),
+    /// pour la nuance suivante.
+    pending_dynamic_velocity: Option<u8>,
     /// `\articulate` a été rencontré (`ly/articulate.ly`).
     playback_articulate: bool,
     /// `\unfoldRepeats` a été rencontré : le MIDI déplie les reprises.
@@ -363,6 +368,8 @@ pub(crate) fn parse(
         pending_invisible_ottava: false,
         partitions: Vec::new(),
         midi_transposition: None,
+        staff_size: None,
+        pending_dynamic_velocity: None,
         playback_articulate: false,
         playback_unfold_repeats: false,
         pending_midi_instrument: None,
@@ -494,6 +501,7 @@ impl<'a> Parser<'a> {
             self.guard_progress(before);
         }
         document.melisma_busy_disabled = self.melisma_busy_disabled;
+        document.staff_size = self.staff_size;
         document.staff_local_timing = self.staff_local_timing;
         document.playback_unfold_repeats = self.playback_unfold_repeats;
         // `showFirstLength`/`showLastLength` sont des variables musicales
@@ -730,6 +738,9 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 if let Some(langage) = scheme_note_names_language(&datum) {
                     self.language = langage;
+                }
+                if let Some(size) = scheme_staff_size(&datum) {
+                    self.staff_size = Some(size);
                 }
                 if !self.record_after_grace_fraction(&datum) {
                     let _ = self.record_scheme_define(&datum);
@@ -4806,6 +4817,33 @@ impl<'a> Parser<'a> {
             self.pending_midi_instrument = Some(self.parse_property_value());
             return Music::Empty;
         }
+        // Notation Reference §24.4.2 : `midiMinimumVolume` et
+        // `midiMaximumVolume` règlent la plage MIDI des nuances. Quand les
+        // deux valent la même fraction, le modèle retrouve la vélocité
+        // numérique que le symbole `\p` ne porte pas.
+        if path
+            .iter()
+            .any(|part| part.eq_ignore_ascii_case("midiminimumvolume"))
+        {
+            let value = self
+                .peek()
+                .filter(|token| token.is_scheme())
+                .and_then(|token| token.text.trim_start_matches('#').parse::<f64>().ok())
+                .map(|fraction| (fraction * 127.0).round().clamp(0.0, 127.0) as u8);
+            if let Some(value) = value {
+                self.position += 1;
+                self.pending_dynamic_velocity = Some(value);
+                return Music::Empty;
+            }
+        }
+        if path
+            .iter()
+            .any(|part| part.eq_ignore_ascii_case("midimaximumvolume"))
+            && self.peek().is_some_and(|token| token.is_scheme())
+        {
+            self.position += 1;
+            return Music::Empty;
+        }
         // `\set Timing.timing = ##f` / `##t` a le même effet que
         // `\cadenzaOn` / `\cadenzaOff`. Le lexer lit `##f` comme le jeton
         // Scheme `#f` (et `##t` comme `#t`).
@@ -4849,6 +4887,7 @@ impl<'a> Parser<'a> {
             .iter()
             .any(|part| part.eq_ignore_ascii_case("tiewaitfornote"))
         {
+            eprintln!("SET MIN reached");
             let value = self
                 .peek()
                 .filter(|token| token.is_scheme())
@@ -5725,7 +5764,8 @@ impl<'a> Parser<'a> {
                     };
                     return vec![PostEvent::BendAfter(delta)];
                 }
-                if let Some(post) = post_event_for_command(&name, Placement::Below) {
+                if let Some(mut post) = post_event_for_command(&name, Placement::Below) {
+                    attach_dynamic_velocity(&mut post, &mut self.pending_dynamic_velocity);
                     return vec![post];
                 }
                 if is_articulation_command(&name) {
@@ -5850,7 +5890,8 @@ impl<'a> Parser<'a> {
                     let _ = self.parse_tag_names();
                     return self.parse_post_event();
                 }
-                if let Some(post) = post_event_for_command(&name, placement) {
+                if let Some(mut post) = post_event_for_command(&name, placement) {
+                    attach_dynamic_velocity(&mut post, &mut self.pending_dynamic_velocity);
                     return vec![post];
                 }
                 Vec::new()
@@ -6707,6 +6748,17 @@ fn scheme_music_definition(datum: &str) -> Option<(String, String)> {
 /// Langue des noms de notes posée par `#(ly:parser-set-note-names
 /// (ly:assoc-get '<lang> language-pitch-names))` (`note-names.ly`,
 /// `lily/parser-scheme.cc`).
+/// `#(set-global-staff-size n)` : la taille globale en points, d'après la
+/// Notation Reference 2.26 §27.2 (20 pt par défaut, 7,03 mm de haut).
+fn scheme_staff_size(datum: &str) -> Option<f64> {
+    let words: Vec<&str> = datum.split_whitespace().collect();
+    // Le lexeur retire le `#` initial du datum Scheme.
+    if words.first().copied() != Some("(set-global-staff-size") {
+        return None;
+    }
+    words.get(1)?.trim_end_matches(')').parse::<f64>().ok()
+}
+
 fn scheme_note_names_language(datum: &str) -> Option<Language> {
     if !datum.contains("ly:parser-set-note-names") || !datum.contains("language-pitch-names") {
         return None;
@@ -8464,6 +8516,12 @@ fn is_dynamic_command(name: &str) -> bool {
 }
 
 /// Événement d'une commande de post-traitement connue.
+fn attach_dynamic_velocity(post: &mut PostEvent, pending: &mut Option<u8>) {
+    if let PostEvent::Dynamic(_, _, velocity) = post {
+        *velocity = pending.take();
+    }
+}
+
 fn post_event_for_command(name: &str, placement: Placement) -> Option<PostEvent> {
     let event = match name {
         // `\\(`/`\\)` sont des commandes ponctuelles (`lily/parser.yy`
@@ -8522,7 +8580,7 @@ fn post_event_for_command(name: &str, placement: Placement) -> Option<PostEvent>
         "bendAfter" => PostEvent::BendAfter(0),
         "cresc" => PostEvent::HairpinStart(true),
         "decresc" | "dim" => PostEvent::HairpinStart(false),
-        name if is_dynamic_command(name) => PostEvent::Dynamic(name.to_owned(), placement),
+        name if is_dynamic_command(name) => PostEvent::Dynamic(name.to_owned(), placement, None),
         _ => return None,
     };
     Some(event)
@@ -8592,6 +8650,8 @@ mod tests {
             pending_head: NoteHeadGroup::Normal,
             pending_tuplet_number: None,
             default_tremolo_type: 8,
+            staff_size: None,
+            pending_dynamic_velocity: None,
             pending_invisible_rest: false,
             pending_invisible_ottava: false,
             partitions: Vec::new(),
@@ -8644,6 +8704,8 @@ mod tests {
                 pending_head: NoteHeadGroup::Normal,
                 pending_tuplet_number: None,
                 default_tremolo_type: 8,
+                staff_size: None,
+                pending_dynamic_velocity: None,
                 pending_invisible_rest: false,
                 pending_invisible_ottava: false,
                 partitions: Vec::new(),

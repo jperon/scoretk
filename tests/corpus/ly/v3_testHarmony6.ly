@@ -1,12 +1,16 @@
 \version "2.24.0"
 \language "english"
 
+#(set-global-staff-size 20.07501265)
 \header {
   title = "Harmony 6"
   workTitle = "Harmony 6"
   subtitle = "MuseScore testfile Chords using normal, Roman and Nashville notation containing recognized text, unrecognized plaintext and unrecognized text requiring HTML escape"
   workNumber = "MuseScore testfile Chords using normal, Roman and Nashville notation containing recognized text, unrecognized plaintext and unrecognized text requiring HTML escape"
   composer = "Leon Vinken"
+  scoretkTitleFontSize = "24.00000"
+  scoretkComposerFontSize = "12.00000"
+  scoretkLyricistFontSize = "12.00000"
 }
 
 \paper {

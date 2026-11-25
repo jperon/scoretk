@@ -63,6 +63,15 @@ impl<'a> Writer<'a> {
 
         let _ = writeln!(out, "\\version \"{LILYPOND_VERSION}\"");
         out.push_str("\\language \"english\"\n\n");
+        // Noter le spatium par la taille globale de portée (§27.2) plutôt
+        // que par un réglage `\paper` : c'est la seule écriture qui change
+        // effectivement la taille de la portée et de toutes les polices.
+        let style = &self.score.engraving.style;
+        let defaults = scoretk_core::model::StyleSettings::default();
+        if (style.spatium_mm - defaults.spatium_mm).abs() > 1e-9 {
+            let points = style.spatium_mm * 4.0 * 7227.0 / 2540.0;
+            let _ = writeln!(out, "#(set-global-staff-size {points:.8})");
+        }
         // `ly/articulate.ly` définit le music-function qui raccourcit les
         // notes jouées. Le lecteur pose `Score::playback.articulate` quand le source
         // utilise `\articulate` (`ly/articulate.ly`) ; l'écrire ici conserve
@@ -121,6 +130,33 @@ impl<'a> Writer<'a> {
             ("copyright", metadata.copyright.clone()),
             ("source", metadata.source.clone()),
         ];
+        // Les tailles de texte n'ont pas de champ `\paper` normalisé
+        // (Notation Reference §26.6) : des champs `\header` privés, acceptés
+        // sans avertissement par LilyPond, les transportent sans changer le
+        // rendu des titres. Voir `builder.rs::apply_text_styles` à la lecture.
+        let style = &self.score.engraving.style;
+        let defaults = scoretk_core::model::StyleSettings::default();
+        for (name, value, baseline) in [
+            (
+                "scoretkTitleFontSize",
+                style.title_font_size,
+                defaults.title_font_size,
+            ),
+            (
+                "scoretkComposerFontSize",
+                style.composer_font_size,
+                defaults.composer_font_size,
+            ),
+            (
+                "scoretkLyricistFontSize",
+                style.lyricist_font_size,
+                defaults.lyricist_font_size,
+            ),
+        ] {
+            if (value - baseline).abs() > 1e-9 {
+                entries.push((name, format!("{value:.5}")));
+            }
+        }
         let fallbacks = [
             ("title", CreditStyle::Title),
             ("subtitle", CreditStyle::Subtitle),

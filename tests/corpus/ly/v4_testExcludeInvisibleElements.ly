@@ -22,7 +22,10 @@ staffOneVoiceOne = \fixed c' {
   \tempo 4 = 80 d4 d4 d4 d4 |
   c4\reverseturn c4\turn c4 c4 |
   \break
-  e4 _\p \< e4 e4 e4 _\f \! |
+  \set Staff.midiMinimumVolume = #0.385827
+  \set Staff.midiMaximumVolume = #0.385827 e4 _\p \< e4 e4
+  \set Staff.midiMinimumVolume = #0.755906
+  \set Staff.midiMaximumVolume = #0.755906 e4 _\f \! |
   e4 \< e4 e4 e4 \! |
   c4 \sustainOn \=5( d4 e4 f4 \=5) |
   c4 \sustainOff \sustainOn \=6( d4 e4 f4 \=6) |

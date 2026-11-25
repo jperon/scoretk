@@ -1,10 +1,14 @@
 \version "2.24.0"
 \language "english"
 
+#(set-global-staff-size 20.07501265)
 \header {
   title = "Wedge 4"
   subtitle = "MuseScore testfile"
   composer = "Leon Vinken"
+  scoretkTitleFontSize = "24.00000"
+  scoretkComposerFontSize = "12.00000"
+  scoretkLyricistFontSize = "12.00000"
 }
 
 \paper {

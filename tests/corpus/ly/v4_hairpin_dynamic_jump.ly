@@ -12,10 +12,15 @@
 
 staffOneVoiceOne = \fixed c' {
   \clef treble \key c \major \time 4/4
-  \tempo 4 = 120 g,4 _\f \< a,4 c4 d4 |
-  c1 _\mf \! \bar "||"
-  g,4 _\f \> a,4 c4 d4 |
-  c1 _\ff \! \bar "|."
+  \set Staff.midiMinimumVolume = #0.755906
+  \set Staff.midiMaximumVolume = #0.755906 \tempo 4 = 120 g,4 _\f \< a,4 c4 d4
+  |
+  \set Staff.midiMinimumVolume = #0.629921
+  \set Staff.midiMaximumVolume = #0.629921 c1 _\mf \! \bar "||"
+  \set Staff.midiMinimumVolume = #0.755906
+  \set Staff.midiMaximumVolume = #0.755906 g,4 _\f \> a,4 c4 d4 |
+  \set Staff.midiMinimumVolume = #0.881890
+  \set Staff.midiMaximumVolume = #0.881890 c1 _\ff \! \bar "|."
 }
 
 \score {

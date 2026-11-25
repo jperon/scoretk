@@ -1,6 +1,7 @@
 \version "2.24.0"
 \language "english"
 
+#(set-global-staff-size 19.91442529)
 \paper {
   paper-width = 210.058\mm
   paper-height = 296.926\mm

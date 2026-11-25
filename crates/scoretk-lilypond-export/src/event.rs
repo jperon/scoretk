@@ -71,6 +71,10 @@ pub(crate) mod before {
     pub(crate) const OTTAVA: u8 = 50;
     /// `\tempo`.
     pub(crate) const TEMPO: u8 = 70;
+    /// `\set Staff.midiMinimumVolume` (§24.4.2), avant la nuance.
+    pub(crate) const MIDI_MIN_VOLUME: u8 = 4;
+    /// `\set Staff.midiMaximumVolume` (§24.4.2), avant la nuance.
+    pub(crate) const MIDI_MAX_VOLUME: u8 = 5;
     /// `\mark` (repères de répétition).
     pub(crate) const MARK: u8 = 80;
 }

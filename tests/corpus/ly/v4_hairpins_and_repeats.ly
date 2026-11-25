@@ -18,11 +18,16 @@
 
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
-  f4 _\p \< f4 f4 f4 |
+  \set Staff.midiMinimumVolume = #0.385827
+  \set Staff.midiMaximumVolume = #0.385827 f4 _\p \< f4 f4 f4 |
   \repeat volta 2 {
-    f4 _\f \! \< f4 f4 f4 \! |
+    \set Staff.midiMinimumVolume = #0.755906
+    \set Staff.midiMaximumVolume = #0.755906 f4 _\f \! \< f4 f4 f4 \! |
   }
-  g4 _\ppp \< g4 g4 g4 _\p \! \bar "|."
+  \set Staff.midiMinimumVolume = #0.125984
+  \set Staff.midiMaximumVolume = #0.125984 g4 _\ppp \< g4 g4
+  \set Staff.midiMinimumVolume = #0.385827
+  \set Staff.midiMaximumVolume = #0.385827 g4 _\p \! \bar "|."
 }
 
 \score {

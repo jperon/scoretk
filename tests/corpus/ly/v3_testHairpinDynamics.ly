@@ -1,12 +1,16 @@
 \version "2.24.0"
 \language "english"
 
+#(set-global-staff-size 20.07501265)
 \header {
   title = "Hairpin Dynamics"
   workTitle = "Hairpin Dynamics"
   subtitle = "MuseScore testfile"
   workNumber = "MuseScore testfile"
   composer = "Leon Vinken"
+  scoretkTitleFontSize = "24.00000"
+  scoretkComposerFontSize = "12.00000"
+  scoretkLyricistFontSize = "12.00000"
 }
 
 \paper {
@@ -20,7 +24,8 @@
 
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
-  g4 _\mf \< a4 b4 c'4 |
+  \set Staff.midiMinimumVolume = #0.629921
+  \set Staff.midiMaximumVolume = #0.629921 g4 _\mf \< a4 b4 c'4 |
   g4 \! \< a4 b4 c'4 |
   \break
   g4 \! \< a4 b4 c'4 |

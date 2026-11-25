@@ -19,14 +19,20 @@
 
 staffOneVoiceOne = \fixed c' {
   \clef treble \key c \major \time 4/4
-  d'1~ _\f \> |
-  d'1 _\n \! |
-  d'1~ _\f \> |
+  \set Staff.midiMinimumVolume = #0.755906
+  \set Staff.midiMaximumVolume = #0.755906 d'1~ _\f \> |
+  \set Staff.midiMinimumVolume = #0.385827
+  \set Staff.midiMaximumVolume = #0.385827 d'1 _\n \! |
+  \set Staff.midiMinimumVolume = #0.755906
+  \set Staff.midiMaximumVolume = #0.755906 d'1~ _\f \> |
   d'1 \! |
-  d'1~ _\n \< |
-  d'1 _\f \! |
+  \set Staff.midiMinimumVolume = #0.385827
+  \set Staff.midiMaximumVolume = #0.385827 d'1~ _\n \< |
+  \set Staff.midiMinimumVolume = #0.755906
+  \set Staff.midiMaximumVolume = #0.755906 d'1 _\f \! |
   d'1~ \< |
-  d'1 _\f \! \bar "|."
+  \set Staff.midiMinimumVolume = #0.755906
+  \set Staff.midiMaximumVolume = #0.755906 d'1 _\f \! \bar "|."
 }
 
 \score {

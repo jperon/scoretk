@@ -1,9 +1,13 @@
 \version "2.24.0"
 \language "english"
 
+#(set-global-staff-size 20.07501265)
 \header {
   title = "Instrument Change"
   workTitle = "Instrument Change"
+  scoretkTitleFontSize = "24.00000"
+  scoretkComposerFontSize = "12.00000"
+  scoretkLyricistFontSize = "12.00000"
 }
 
 \paper {

@@ -131,6 +131,8 @@ pub(crate) enum AnnotationEvent {
         placement: Placement,
         /// Vrai pour un texte personnalisé.
         custom: bool,
+        /// Vélocité MIDI explicite (§24.4.2).
+        velocity: Option<u8>,
     },
     /// Indication de tempo.
     Tempo {
@@ -1999,11 +2001,12 @@ impl<'a> Interpreter<'a> {
                 other => articulations.push(other.clone()),
             },
             PostEvent::Ornament(kind) => ornaments.push(kind.clone()),
-            PostEvent::Dynamic(text, placement) => {
+            PostEvent::Dynamic(text, placement, velocity) => {
                 self.annotation(AnnotationEvent::Dynamic {
                     text: dynamic_text(text),
                     placement: *placement,
                     custom: !is_predefined_dynamic(text),
+                    velocity: *velocity,
                 });
             }
             PostEvent::Text(text, placement) => {

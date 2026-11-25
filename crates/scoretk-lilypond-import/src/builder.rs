@@ -195,6 +195,44 @@ fn audio_staff_of(staves: &[StaffBuild], staff_block: &StaffBlock, fallback: Sta
         .unwrap_or(fallback)
 }
 
+/// Un point typographique mesure 2540/7227 mm (Notation Reference §27.2) ;
+/// une portée de `n` points a une hauteur de `n × 2540/7227` mm, soit quatre
+/// spatiums.
+const MM_PAR_POINT: f64 = 2540.0 / 7227.0;
+
+/// Applique `#(set-global-staff-size n)` et les tailles de texte propres à
+/// scoretk, écrites dans `\header` (les styles de texte n'ont pas de champ
+/// `\paper` standard, §26.6/§21.2).
+fn apply_text_styles(score: &mut Score, document: &Document) {
+    if let Some(size) = document.staff_size {
+        score.engraving.style.spatium_mm = size * MM_PAR_POINT / 4.0;
+    }
+    for (name, target) in [
+        (
+            "scoretkTitleFontSize",
+            &mut score.engraving.style.title_font_size,
+        ),
+        (
+            "scoretkComposerFontSize",
+            &mut score.engraving.style.composer_font_size,
+        ),
+        (
+            "scoretkLyricistFontSize",
+            &mut score.engraving.style.lyricist_font_size,
+        ),
+    ] {
+        if let Some(value) = document
+            .header
+            .get(name)
+            .and_then(|text| text.trim().parse::<f64>().ok())
+        {
+            if value.is_finite() && value > 0.0 {
+                *target = value;
+            }
+        }
+    }
+}
+
 /// `\paper` ne porte que la géométrie de page (L5) : `paper-width`,
 /// `paper-height`, `left-margin`, `right-margin`, `top-margin` et
 /// `bottom-margin`, écrits en millimètres par l'exporteur. Les autres clés
@@ -252,6 +290,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     score.playback.articulate = document.playback_articulate;
     score.playback.unfold_repeats = document.playback_unfold_repeats;
     write_metadata(&mut score, document);
+    apply_text_styles(&mut score, document);
     apply_paper(&mut score, &document.paper);
 
     let mut staves: Vec<StaffBuild> = Vec::new();
@@ -3088,9 +3127,10 @@ fn place_annotation(score: &mut Score, tick: Fraction, track: Track, annotation:
             text,
             placement,
             custom,
+            velocity,
         } => Annotation::Dynamic(Dynamic {
             text: text.clone(),
-            velocity: None,
+            velocity: *velocity,
             placement: *placement,
             custom: *custom,
             visible: true,

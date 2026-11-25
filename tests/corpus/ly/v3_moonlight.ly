@@ -1,10 +1,14 @@
 \version "2.24.0"
 \language "english"
 
+#(set-global-staff-size 17.80004409)
 \header {
   title = "Sonata No. 14, &quot;Moonlight&quot;"
   subtitle = "Quasi una fantasia"
   composer = "Ludwig van Beethoven"
+  scoretkTitleFontSize = "24.00000"
+  scoretkComposerFontSize = "12.00000"
+  scoretkLyricistFontSize = "12.00000"
 }
 
 \paper {
@@ -109,6 +113,8 @@ staffOneVoiceOne = \fixed c' {
   gs,8 \=5( cs8 e8 \=5)
   }
   \revert TupletNumber.stencil
+  \set Staff.midiMinimumVolume = #0.259843
+  \set Staff.midiMaximumVolume = #0.259843
   \override TupletNumber.stencil = ##f
   \tuplet 3/2 {
   gs,8 _\pp \=6( cs8 e8 \=6)
@@ -583,6 +589,8 @@ staffOneVoiceOne = \fixed c' {
   \revert TupletNumber.stencil
   |
   \break
+  \set Staff.midiMinimumVolume = #0.385827
+  \set Staff.midiMaximumVolume = #0.385827
   \override TupletNumber.stencil = ##f
   \tuplet 3/2 {
   bs8 _\p \< bs,8 ds8
@@ -883,6 +891,8 @@ staffOneVoiceOne = \fixed c' {
   |
   \break
   \clef treble
+  \set Staff.midiMinimumVolume = #0.259843
+  \set Staff.midiMaximumVolume = #0.259843
   \override TupletNumber.stencil = ##f
   \tuplet 3/2 {
   e,8 _\pp gs,8 cs8
@@ -898,6 +908,8 @@ staffOneVoiceOne = \fixed c' {
   gs,8 cs8 e8
   }
   \revert TupletNumber.stencil
+  \set Staff.midiMinimumVolume = #0.259843
+  \set Staff.midiMaximumVolume = #0.259843
   \override TupletNumber.stencil = ##f
   \tuplet 3/2 {
   gs,8 _\pp cs8 e8
@@ -1030,6 +1042,8 @@ staffOneVoiceOne = \fixed c' {
   }
   \revert TupletNumber.stencil
   |
+  \set Staff.midiMinimumVolume = #0.385827
+  \set Staff.midiMaximumVolume = #0.385827
   \override TupletNumber.stencil = ##f
   \tuplet 3/2 {
   ds8 _\p fs8 gs8
@@ -1243,6 +1257,8 @@ staffOneVoiceOne = \fixed c' {
   }
   \revert TupletNumber.stencil
   |
+  \set Staff.midiMinimumVolume = #0.385827
+  \set Staff.midiMaximumVolume = #0.385827
   \override TupletNumber.stencil = ##f
   \tuplet 3/2 {
   gs,8 _\p cs8 e8
@@ -1264,6 +1280,8 @@ staffOneVoiceOne = \fixed c' {
   }
   \revert TupletNumber.stencil
   |
+  \set Staff.midiMinimumVolume = #0.259843
+  \set Staff.midiMaximumVolume = #0.259843
   \override TupletNumber.stencil = ##f
   \tuplet 3/2 {
   e,8 _\pp gs,8 cs8
@@ -1427,7 +1445,8 @@ staffOneVoiceOne = \fixed c' {
   }
   \revert TupletNumber.stencil
   r2 |
-  r2 <e, gs, cs>2 _\pp |
+  r2 \set Staff.midiMinimumVolume = #0.259843
+  \set Staff.midiMaximumVolume = #0.259843 <e, gs, cs>2 _\pp |
   <e, gs, cs>1 \fermata \bar "|."
 }
 
@@ -1595,7 +1614,8 @@ staffTwoVoiceOne = \fixed c' {
   gs,,,1 |
   cs,,1~ |
   cs,,1 |
-  cs,,2 _\pp <cs,, gs,, cs,>2 |
+  \set Staff.midiMinimumVolume = #0.259843
+  \set Staff.midiMaximumVolume = #0.259843 cs,,2 _\pp <cs,, gs,, cs,>2 |
   <cs,, gs,, cs,>1 \fermata \bar "|."
 }
 

@@ -1,6 +1,13 @@
 \version "2.24.0"
 \language "english"
 
+#(set-global-staff-size 20.07501265)
+\header {
+  scoretkTitleFontSize = "24.00000"
+  scoretkComposerFontSize = "12.00000"
+  scoretkLyricistFontSize = "12.00000"
+}
+
 \paper {
   paper-width = 210.058\mm
   paper-height = 296.926\mm
@@ -19,7 +26,8 @@ staffOneVoiceOne = \fixed c' {
   b4-.-- c'4-.-- d'4 \> ^\markup { "simile" } |
   c'4 b4 a4 |
   g4 f4 e4 |
-  d4 \! c2 _\p |
+  d4 \! \set Staff.midiMinimumVolume = #0.385827
+  \set Staff.midiMaximumVolume = #0.385827 c2 _\p |
   d2 e4~ |
   e4 f2 |
   g2.~ ^\markup { "C" } ^\markup { "G7" } |

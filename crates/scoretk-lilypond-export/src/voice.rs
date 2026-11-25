@@ -356,6 +356,11 @@ pub(crate) fn render_body(
                         if !attached {
                             pre_by_measure[measure_index].push(event);
                         }
+                    } else if event.text.starts_with("\\set Staff.midi") {
+                        // Propriété de contexte (Notation §24.4.2) : elle doit
+                        // précéder la note, sinon la nuance qui suit n'est plus
+                        // un post-événement de cette note.
+                        attach_pre(&mut pre_by_item, &items, event);
                     } else {
                         attach_post(&mut post_by_item, &items, event);
                     }

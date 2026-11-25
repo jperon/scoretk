@@ -1,10 +1,14 @@
 \version "2.24.0"
 \language "english"
 
+#(set-global-staff-size 20.07501265)
 \header {
   title = "Beam Test Cross Measure"
   workTitle = "Beam Test Cross Measure"
   subtitle = "Recreation of beam"
+  scoretkTitleFontSize = "24.00000"
+  scoretkComposerFontSize = "12.00000"
+  scoretkLyricistFontSize = "12.00000"
 }
 
 \paper {

@@ -1,12 +1,16 @@
 \version "2.24.0"
 \language "english"
 
+#(set-global-staff-size 20.07501265)
 \header {
   title = "Tuplets 8"
   workTitle = "Tuplets 8"
   subtitle = "MuseScore testfile"
   workNumber = "MuseScore testfile"
   composer = "Leon Vinken"
+  scoretkTitleFontSize = "24.00000"
+  scoretkComposerFontSize = "12.00000"
+  scoretkLyricistFontSize = "12.00000"
 }
 
 \paper {

@@ -1,6 +1,7 @@
 \version "2.24.0"
 \language "english"
 
+#(set-global-staff-size 19.91442529)
 \header {
   title = "Title"
   workTitle = "Title"
