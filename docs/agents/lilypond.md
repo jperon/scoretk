@@ -9533,3 +9533,140 @@ tracks), not from one local duration rule. The horn `\relative` + tuplet
 octaves and the cellist `\repeat volta`/`\unfoldRepeats` scores remain the
 largest open groups on `ext`. None of these was silently excluded and no
 comparator rule was relaxed to gain files.
+
+## 51. LilyPond's own upgrade path as reference: `--convert-ly`, and the `old-relative` reader defect (2026-11-25)
+
+### Protocol
+
+The worktree was rebased on master (`40e59c11`, no commits to rebase). A baseline
+`scoretk` was frozen at the reference-generation commit (`d92261ce`) outside the
+repository (`ly17-tmp/bin/scoretk-base`); the final binary is `b0169972`. Every
+reference regeneration and every measurement ran **in the foreground, one lot
+at a time, with two workers** (`references.py --jobs 2`, `CARGO_BUILD_JOBS=2
+RUST_TEST_THREADS=2 nice -n 10`). Untrusted sources, including `convert-ly`, ran
+inside `bwrap --unshare-all --die-with-parent` with a read-only root bind and a
+single writable scratch directory; the corpus was never written. Three
+reference trees were kept separate: the old raw `out3mut`/`out3rw` of §44–§50,
+a rebuilt fair same-score tree (`--inject-midi --same-score --raw-refs`), and a
+converted tree built with the new `--convert-ly` option on top of the same-score
+transformation. No manifest entry, denominator or comparator rule was edited.
+`references.py --selftest`, `ly_notes.py selftest`, `mesure.py --selftest`,
+`lots-externes.py --causes-selftest` and `common.py` selftest are OK.
+
+### Reference generation: `references.py --convert-ly`
+
+When a source declares a `\version` older than the installed LilyPond 2.27.0,
+`--convert-ly` first runs **that same installation's `convert-ly`** on a copy of
+the source tree in the per-file scratch directory, inside the same bubblewrap
+sandbox, and compiles the converted copy. This is LilyPond's official upgrade
+path (`python/convertrules.py`), not a comparator change. Each `status.jsonl`
+row records `converti` (convert-ly applied) and `modifie` (bytes actually
+changed). A source with no older version keeps its raw MIDI; with
+`--same-score`, a raw MIDI is never reused once conversion is due, and the
+reader's target score is resolved again on the converted copy.
+
+An `\include` usually has no `\version` of its own but inherits the main file's
+one. `convert-ly`, invoked per file, would otherwise assume 2.27 and leave an
+old `\relative {` unrewritten in the include (`RegerM/O42/sonate/sonate.ly`), so
+the option passes `--from=<main version> --no-version` to such copies. The
+selftest checks that a second, unrelated `.ly` in the same directory is not
+converted.
+
+| Lot | Sources | Same-score usable MIDI | Converted usable MIDI | `converti` / `modifie` |
+| --- | ---: | ---: | ---: | ---: |
+| `mut` | 1,377 | 1,369 | 1,373 | 1,345 / 1,345 |
+| `rw` | 1,448 | 1,416 | 1,423 | 1,416 / 1,416 |
+| `ra` | 1,726 (68 paths no longer exist) | — | 1,589 | 1,657 / 1,657 |
+
+Conversion repairs four `mut` and seven `rw` sources that no longer compile at
+all with 2.27, so the converted denominators are larger than the same-score
+ones. They are reported, not hidden.
+
+### Figures with the frozen reader (before the reader fix)
+
+Raw = old references of §44–§50; same-score = rebuilt fair tree; converted =
+`--convert-ly` tree. All figures use the same frozen binary, so only the
+reference changes.
+
+| Lot | Tree | Exact | Measured | Raw score | N1 % | N2 % |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `mut` | raw (old refs) | 1,257 | 1,316 | **95.5 %** | 99.86 | 98.60 |
+| `mut` | same-score | 1,252 | 1,309 | **95.6 %** | 99.86 | 98.59 |
+| `mut` | converted | 1,253 | 1,313 | **95.4 %** | 99.53 | 98.48 |
+| `rw` | raw (old refs) | 1,300 | 1,365 | **95.2 %** | 99.86 | 98.58 |
+| `rw` | same-score | 1,296 | 1,356 | **95.6 %** | 99.86 | 98.59 |
+| `rw` | converted | 1,298 | 1,363 | **95.2 %** | 99.52 | 98.47 |
+
+Exclusions (unusable MIDI, kept explicit in the raw rows): `mut` 61 raw, 68
+same-score, 64 converted; `rw` 83, 92, 85. `ra` was regenerated with the
+converted option too: 1,542/1,589 = **97.0 %** (69 exclusions, of which 68 are
+manifest paths pointing at files that no longer exist). Its older raw figure of
+§44–§50 (1,605/1,724 = 93.1 %, stale tree) cannot be reconstructed and is not
+mixed into these tables.
+
+### Which files change status, and why
+
+Per-file comparison of the three `.jsonl` files (status = excluded / inexact /
+exact; no denominator was edited):
+
+| Transition | `mut` | `rw` | Cause |
+| --- | ---: | ---: | --- |
+| raw → same-score | 10 | 18 | 8/12 previously exact or inexact files lose their MIDI because the fair score selection has no playable MIDI; 1/3 inexact become exact (`Symphony7_1`; two `example.ly` copies on `rw`); 1/2 excluded become exact (`27-tmeiskin.orig`, `partial-compilation`) and 0/1 becomes inexact (`shapeII-example`). |
+| same-score → converted | 45 | 48 | 15 inexact → exact: obsolete-command references are repaired (`mozart-hrn-3` 453/453 notes, `bwv663-a4`, `bwv663-let`, `Symphony5_1/2`, `bwv612`, `bwv631a`, `bwv641`, `bridge`, `gnomus`, `50/51title-hub`, …); 17 exact → inexact: `convert-ly` rewrites the source, chiefly bare `\relative` to `\relative c'` (11 files, fixed below) and a few other duration/tag rewrites; 5/6 excluded → exact and 2/4 excluded → inexact: newly compilable references; 2 exact → excluded and 1 inexact → excluded: converted copies that now fail (`minuit_chretiens`, `TheDyingSwan`, `rach-prelude23-05`); 3 inexact → inexact with different flags. |
+| raw → converted | 42 | 49 | Combination of the two effects above; net exact change −4 on `mut`, −2 on `rw` with the **frozen** reader. |
+
+The 15 recovered files are the direct confirmation of §50: their old MIDI was
+faulty, not the reader. The 17 newly inexact files are not reader regressions
+either: the reference now plays the score that LilyPond's own upgrade defines,
+and one of those shapes is a genuine reader defect (below).
+
+### Real reader defect: `\relative` without an initial pitch
+
+Reduced source compiled from the converted copy with LilyPond 2.27:
+
+```lilypond
+\version "2.8.0"
+mus = \relative { f4 g a b c'2 f'2 }
+\score { { \time 4/4 \mus } \midi { \tempo 4=60 } }
+```
+
+`convert-ly` rewrites `\relative` to `\relative c'` because rule 2.17.15 of
+`python/convertrules.py` marks the switch of the default; the 2.27 MIDI plays
+65/67/69/71/84/101. The frozen reader, fed the *original* source, played
+53/55/57/59/72/89 — one octave lower — on 11 files per real lot.
+
+Since 2.17.15, `ly/music-functions-init.ly` defines the no-argument default as
+`f` (`ly:make-pitch -1`, step `f`); before it, LilyPond used `c'`, and the same
+conversion rule refuses `#(ly:set-option 'old-relative)`, the explicit old
+behaviour. `OctaveState::start_relative` now chooses `c'` when the document
+declares a version below 2.17.15, and keeps `f` otherwise; the flag survives
+`sans_relative` (\transpose, \partCombine) and the per-voice resets in
+`build_voices`. An explicit `\relative f` is unchanged. The Rust test
+`version_ancienne_relative_sans_argument_part_de_do` in
+`tests/read_lilypond.rs` checks the old version, the modern version and the
+explicit reference; it fails on the frozen reader.
+
+### Results after the fix (converted references)
+
+| Lot | Exact | Measured | Converted score | N1 % | N2 % | Gain | Loss |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `mut` | 1,264 | 1,313 | **96.3 %** | 99.85 | 99.42 | +11 | 0 |
+| `rw` | 1,309 | 1,363 | **96.0 %** | 99.84 | 99.42 | +11 | 0 |
+| `ra` | 1,542 | 1,589 | **97.0 %** | 98.30 | 95.61 | 0 | 0 |
+
+The 11 gained files per real lot are `14/16/20/21title-hub`, `alas`, `prelude`,
+`henwlad`, `eugenia`, `sonate`, `rimsky-korsakov-op11-1/-3`. Byte comparison of
+all converted MusicXML outputs shows exactly 11 changed files on `mut`, 11 on
+`rw` and **0 on `ra`**: no exact file was lost, no N1/N2 regression, and the
+only changed outputs are the intended octave corrections. Against the two
+diagnostic trees the same reader fix costs 11 files on raw and 10 on
+same-score (`mut`; 11 on both for `rw`), because those references compile the
+bare `\relative` with LilyPond 2.27's modern `f` default instead of the
+declared 2.8–2.10 `c'` default. Those trees are kept for comparison only; the
+valid reference for an old source is the converted one.
+
+The remaining inexact files are the attack group already described in §46–§50
+(per-Voice tracks, tag-filtered voices, real-time grace timing); adding those
+two rules here would be a different, wider change. No comparator rule was
+relaxed. `cargo test --workspace`, `cargo clippy --workspace --all-targets
+-- -D warnings` and `cargo fmt --all -- --check` are green.
