@@ -55,6 +55,17 @@ pub const MEASURE_REPEAT_TYPE: &str = "mscore-repeat-";
 /// `@type` prefix for markers on `<repeatMark>`.
 pub const MARKER_TYPE: &str = "mscore-marker-";
 
+/// `@type` prefix for a MuseScore text frame (`TBox`) written as a `<dir>`.
+pub const TBOX_TYPE: &str = "mscore-tbox-";
+
+/// `@label` prefix carrying a frame's measure, placement and font size.
+pub const TBOX_FRAME_LABEL: &str = "mscore-tbox:";
+
+/// `@type` prefix carrying the exact MuseScore grace type on `<graceGrp>`.
+/// MEI's `@grace` only distinguishes `acc`/`unacc`/`unknown`, while the pivot
+/// also records the written duration and an "after" variant.
+pub const GRACE_TYPE: &str = "mscore-grace-";
+
 /// `@label` prefix carrying a credit's page and frame height on `<rend>`.
 /// MEI 5.1 has no element for a MuseScore `VBox`: `@n` keeps the credit order,
 /// `@halign`/`@valign`/`@fontsize` are standard, and only the frame geometry

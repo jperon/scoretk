@@ -253,11 +253,37 @@ fn write_measure(
         );
         for voice in 0..VOICES as u8 {
             let track = Track::new(staff_id, voice);
-            write_layer(xml, score, measure, track, voice, index);
+            write_layer(xml, score, measure, track, voice, index, options);
         }
         xml.end_element();
     }
     write_control_events(xml, score, measure, index, options);
+    if options.full_support {
+        for (tbox_index, text) in score.engraving.tbox_texts.iter().enumerate() {
+            if text.measure != index {
+                continue;
+            }
+            let size = text
+                .font_size
+                .map(|value| format!("{value:.5}"))
+                .unwrap_or_else(|| "none".to_owned());
+            let label = format!(
+                "{}{}:{:?}:{}",
+                ids::TBOX_FRAME_LABEL,
+                text.measure,
+                text.placement,
+                size
+            );
+            let type_name = format!("{}{}", ids::TBOX_TYPE, tbox_index);
+            let attrs = [
+                ("staff", "1"),
+                ("tstamp", "1.000"),
+                ("type", type_name.as_str()),
+                ("label", label.as_str()),
+            ];
+            xml.tag_with("dir", &attrs, text.text.plain());
+        }
+    }
     // `MeiExporter::writeMeasure`: jumps and markers are direct children of
     // the measure (`writeRepeatMark`, meiexporter.cpp:2057/2112).
     for mark in &measure.repeat_marks {
@@ -309,6 +335,62 @@ fn write_measure(
     xml.end_element();
 }
 
+/// Écrit les accords d'agrément d'un accord dans un `<graceGrp>` MEI 5.1.
+/// `@grace` et `@dur` sont standard ; `@type="mscore-grace-*"` porte la
+/// variante exacte (les huit `GraceType` de MuseScore ne se réduisent pas aux
+/// trois valeurs de `data.GRACE`). Porteur additionnel.
+fn write_graces(
+    xml: &mut XmlWriter,
+    score: &Score,
+    chord: &scoretk_core::model::Chord,
+    transpose: i32,
+) {
+    for grace in &chord.grace_chords {
+        let Some(grace_type) = grace.chord.grace else {
+            continue;
+        };
+        let duration = convert::dur_to_mei(grace.duration.kind).to_owned();
+        let dots = grace.duration.dots.to_string();
+        let grace_name = format!(
+            "{}{}",
+            ids::GRACE_TYPE,
+            convert::grace_type_name(grace_type)
+        );
+        let mut attrs = vec![
+            (
+                "grace".to_owned(),
+                convert::grace_standard(grace_type).to_owned(),
+            ),
+            ("type".to_owned(), grace_name),
+            ("dur".to_owned(), duration),
+        ];
+        if grace.duration.dots > 0 {
+            attrs.push(("dots".to_owned(), dots));
+        }
+        let refs: Vec<(&str, &str)> = attrs
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        xml.start_element("graceGrp", &refs);
+        for id in &grace.chord.notes {
+            let note = &score.notes[id.index()];
+            let (pname, oct, accid, _) = convert::pitch_to_mei(
+                note.pitch,
+                note.tpc,
+                note.accidental.map(|value| value.kind),
+                transpose,
+            );
+            let oct = oct.to_string();
+            let mut note_attrs = vec![("pname", pname.as_str()), ("oct", oct.as_str())];
+            if let Some(accid) = accid {
+                note_attrs.push(("accid", accid));
+            }
+            xml.tag_empty("note", &note_attrs);
+        }
+        xml.end_element();
+    }
+}
+
 /// `MeiExporter::writeLayer` (`meiexporter.cpp:964`).
 fn write_layer(
     xml: &mut XmlWriter,
@@ -317,6 +399,7 @@ fn write_layer(
     track: Track,
     voice: u8,
     measure_index: usize,
+    options: &MeiOptions,
 ) {
     let events: Vec<(Fraction, &ChordRest)> = measure
         .segments
@@ -407,6 +490,11 @@ fn write_layer(
     let mut open_tuplets: Vec<scoretk_core::model::TupletId> = Vec::new();
     let mut open_beam = false;
     for (position, (tick, cr)) in events.iter().enumerate() {
+        if options.full_support {
+            if let ChordRestKind::Chord(chord) = &cr.kind {
+                write_graces(xml, score, chord, transpose);
+            }
+        }
         // MuseScore wraps consecutive beamed events in a `<beam>` container.
         if cr.engraving.beam_mode == BeamMode::Begin && !open_beam {
             xml.start_element("beam", &[]);
@@ -934,6 +1022,95 @@ mod tests {
             .items
             .iter()
             .any(|item| { item.kind == "dynamic-velocity" && item.value == "96" }));
+    }
+
+    /// Le type exact (huit variantes) et la durée d'un agrément sont portés
+    /// par `@type="mscore-grace-*"`/`@dur` dans un `<graceGrp>` MEI 5.1.
+    #[test]
+    fn grace_chords_survive_an_extended_round_trip() {
+        use scoretk_core::model::{
+            Chord, ChordRestKind, DurationType, GraceChord, GraceType, Note,
+        };
+
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno"));
+        let staff = score.add_staff(part);
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(4, 4));
+        let mut segment = Segment::new(
+            scoretk_core::model::SegmentType::ChordRest,
+            Fraction::ZERO,
+            1,
+        );
+        let mut chord = ChordRest::chord(Duration::quarter());
+        let main = score.add_note(Note::new(64, 16));
+        let grace_note = score.add_note(Note::new(64, 18));
+        let mut grace = GraceChord::new(
+            GraceType::Grace32,
+            Duration::new(DurationType::ThirtySecond),
+        );
+        grace.chord = Chord {
+            grace: Some(GraceType::Grace32),
+            notes: vec![grace_note],
+            ..Default::default()
+        };
+        if let ChordRestKind::Chord(c) = &mut chord.kind {
+            c.notes = vec![main];
+            c.grace_chords = vec![grace];
+        }
+        segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+        measure.add_segment(segment);
+        score.add_measure(measure);
+
+        let output = write(
+            &score,
+            &MeiOptions {
+                full_support: true,
+                ..Default::default()
+            },
+        )
+        .expect("MEI with a grace note");
+        assert!(output.contains("<graceGrp grace=\"acc\" type=\"mscore-grace-Grace32\""));
+        let back = scoretk_mei_import::read_mei(output.as_bytes()).expect("read MEI");
+        let items = scoretk_core::model::inventory(&back);
+        assert!(items
+            .items
+            .iter()
+            .any(|item| item.kind == "grace" && item.value == "Some(Grace32)"));
+        assert!(items
+            .items
+            .iter()
+            .any(|item| item.kind == "grace-note" && item.value == "64"));
+    }
+
+    /// MEI 5.1 n'a pas de cadre ancré sur une mesure : le `<dir>` additionnel
+    /// conserve le texte, la mesure et la taille d'un `TBox` MuseScore.
+    #[test]
+    fn tbox_text_survives_an_extended_round_trip() {
+        use scoretk_core::model::{Placement, RichText, TboxText};
+
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno"));
+        score.add_staff(part);
+        score.add_measure(Measure::new(0, Fraction::ZERO, Fraction::new(4, 4)));
+        let mut tbox = TboxText::new(RichText::new("Texte de cadre"), 0);
+        tbox.font_size = Some(12.0);
+        tbox.placement = Placement::Below;
+        score.engraving.tbox_texts.push(tbox);
+
+        let output = write(
+            &score,
+            &MeiOptions {
+                full_support: true,
+                ..Default::default()
+            },
+        )
+        .expect("MEI with a text frame");
+        assert!(output.contains("mscore-tbox-0"));
+        let back = scoretk_mei_import::read_mei(output.as_bytes()).expect("read MEI");
+        assert_eq!(back.engraving.tbox_texts.len(), 1);
+        assert_eq!(back.engraving.tbox_texts[0].text.plain(), "Texte de cadre");
+        assert_eq!(back.engraving.tbox_texts[0].placement, Placement::Below);
+        assert_eq!(back.engraving.tbox_texts[0].font_size, Some(12.0));
     }
 
     #[test]

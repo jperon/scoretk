@@ -27,8 +27,8 @@
 
 use scoretk_core::model::{
     AccidentalType, ArticulationType, BarLineType, BeamMode, ClefType, CreditStyle, Duration,
-    DurationType, Fraction, JumpType, Key, KeySig, MarkerType, Measure, NoteHeadGroup, Placement,
-    StemDirection, TimeSig, TimeSigType,
+    DurationType, Fraction, GraceType, JumpType, Key, KeySig, MarkerType, Measure, NoteHeadGroup,
+    Placement, StemDirection, TimeSig, TimeSigType,
 };
 
 use crate::ids::MEASURE_REPEAT_TYPE;
@@ -248,6 +248,44 @@ pub fn mm_to_mei(value: f64) -> String {
 /// Font size in printer's points (`data.FONTSIZENUMERIC`).
 pub fn points_to_mei(value: f64) -> String {
     format!("{value:.2}pt")
+}
+
+/// Exact name of a MuseScore grace type, appended to `ids::GRACE_TYPE`.
+pub fn grace_type_name(grace: GraceType) -> &'static str {
+    match grace {
+        GraceType::Acciaccatura => "Acciaccatura",
+        GraceType::Appoggiatura => "Appoggiatura",
+        GraceType::Grace4 => "Grace4",
+        GraceType::Grace8After => "Grace8After",
+        GraceType::Grace16 => "Grace16",
+        GraceType::Grace16After => "Grace16After",
+        GraceType::Grace32 => "Grace32",
+        GraceType::Grace32After => "Grace32After",
+    }
+}
+
+/// Inverse of [`grace_type_name`].
+pub fn grace_type_from_name(name: &str) -> Option<GraceType> {
+    Some(match name {
+        "Acciaccatura" => GraceType::Acciaccatura,
+        "Appoggiatura" => GraceType::Appoggiatura,
+        "Grace4" => GraceType::Grace4,
+        "Grace8After" => GraceType::Grace8After,
+        "Grace16" => GraceType::Grace16,
+        "Grace16After" => GraceType::Grace16After,
+        "Grace32" => GraceType::Grace32,
+        "Grace32After" => GraceType::Grace32After,
+        _ => return None,
+    })
+}
+
+/// Standard MEI `@grace` value: `acc` steals from the following note,
+/// `unacc` (an "after" grace) from the previous one (`data.GRACE`).
+pub fn grace_standard(grace: GraceType) -> &'static str {
+    match grace {
+        GraceType::Grace8After | GraceType::Grace16After | GraceType::Grace32After => "unacc",
+        _ => "acc",
+    }
 }
 
 /// Inverse of [`inches_to_mei`], also accepting the other schema units.

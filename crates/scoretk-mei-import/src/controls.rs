@@ -339,6 +339,44 @@ impl<'a> Reader<'a> {
     fn add_direction(&mut self, node: &Element, measure: usize) {
         let text = crate::lines_of(node);
         let typ = node.attribute("type").unwrap_or_default();
+        // Porteur additionnel pour un `TBox` de MuseScore : MEI 5.1 n'a pas
+        // d'élément de cadre ancré sur une mesure, mais `<dir>` est un
+        // événement de contrôle légal et `@label`/`@type` gardent la position.
+        if let Some(index) = typ
+            .strip_prefix(scoretk_mei_common::ids::TBOX_TYPE)
+            .and_then(|value| value.parse::<usize>().ok())
+        {
+            let mut tbox = scoretk_core::model::TboxText::new(
+                scoretk_core::model::RichText::new(text),
+                measure,
+            );
+            if let Some(frame) = node
+                .attribute("label")
+                .and_then(|label| label.strip_prefix(scoretk_mei_common::ids::TBOX_FRAME_LABEL))
+            {
+                let mut fields = frame.split(':');
+                tbox.measure = fields
+                    .next()
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(measure);
+                match fields.next() {
+                    Some("Below") => tbox.placement = Placement::Below,
+                    _ => tbox.placement = Placement::Above,
+                }
+                tbox.font_size = fields.next().and_then(|value| value.parse::<f64>().ok());
+            }
+            let texts = &mut self.score.engraving.tbox_texts;
+            if texts.len() <= index {
+                texts.resize_with(index + 1, || {
+                    scoretk_core::model::TboxText::new(
+                        scoretk_core::model::RichText::new(String::new()),
+                        0,
+                    )
+                });
+            }
+            texts[index] = tbox;
+            return;
+        }
         let (tick, track) = self.anchor(node, measure);
         if typ.contains("mscore-hairpin") {
             let kind = if typ.contains("cresc") {

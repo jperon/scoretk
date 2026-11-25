@@ -29,7 +29,7 @@ use scoretk_core::model::{
     Fraction, Key, KeyMode, Layers, Measure, Note, NoteId, Placement, Segment, SegmentItem,
     SegmentType, StaffId, TimeSig, TimeSigType, Track, Transpose, Tuplet, TupletId, VOICES,
 };
-use scoretk_mei_common::convert;
+use scoretk_mei_common::{convert, ids};
 use scoretk_xml_common::Element;
 
 use crate::{first_descendant, Error};
@@ -82,6 +82,9 @@ pub(crate) struct Reader<'a> {
     pub(crate) beam_mode: BeamMode,
     /// Alternates the two chords of an `<fTrem>` (`Start`, then `Stop`).
     pub(crate) tremolo_phase: u8,
+    /// `<graceGrp>` lu avant l'événement principal, attaché au prochain
+    /// accord/rest (`GraceChord` n'a pas de segment propre dans le modèle).
+    pub(crate) pending_graces: Vec<scoretk_core::model::GraceChord>,
     /// Signatures must be written in the next measure (initial `scoreDef` or
     /// a `scoreDef` change inside a section).
     pub(crate) signatures_pending: bool,
@@ -113,6 +116,7 @@ impl<'a> Reader<'a> {
             tuplet_stack: Vec::new(),
             beam_mode: BeamMode::Auto,
             tremolo_phase: 0,
+            pending_graces: Vec::new(),
             signatures_pending: true,
         };
         reader.build_staff_layer_map(score_node);
@@ -574,6 +578,11 @@ impl<'a> Reader<'a> {
         } else {
             ChordRest::chord(duration)
         };
+        if !self.pending_graces.is_empty() {
+            if let ChordRestKind::Chord(chord) = &mut cr.kind {
+                chord.grace_chords = std::mem::take(&mut self.pending_graces);
+            }
+        }
         cr.ticks = Some(gestural_duration_of(node).unwrap_or(duration).ticks());
         // L'événement appartient au n-olet le plus interne (`Tuplet::parent`
         // dans le modèle). Les n-olets externes ne reçoivent que les
@@ -959,23 +968,49 @@ impl<'a> Reader<'a> {
     fn read_grace_group(
         &mut self,
         node: &Element,
-        measure: usize,
+        _measure: usize,
         track: Track,
-        ticks: &mut Fraction,
+        _ticks: &mut Fraction,
     ) {
-        let before = *ticks;
-        self.read_elements(node, measure, track, ticks);
-        *ticks = before;
-        if let Some(cr) = self.last_chord_rest_mut(measure, track) {
-            if let ChordRestKind::Chord(chord) = &mut cr.kind {
-                chord
-                    .grace_chords
-                    .push(scoretk_core::model::GraceChord::new(
-                        scoretk_core::model::GraceType::Acciaccatura,
-                        Duration::eighth(),
-                    ));
-            }
+        use scoretk_core::model::{GraceChord, GraceType};
+        // `@type="mscore-grace-*"` (porteur additionnel) garde la variante
+        // exacte ; `@dur`/`@dots` portent la durée écrite, `@grace` la
+        // direction standard (`acc`/`unacc`).
+        let grace = node
+            .attribute("type")
+            .and_then(|value| value.strip_prefix(ids::GRACE_TYPE))
+            .and_then(convert::grace_type_from_name)
+            .unwrap_or_else(|| {
+                if node.attribute("grace") == Some("unacc") {
+                    GraceType::Grace8After
+                } else {
+                    GraceType::Acciaccatura
+                }
+            });
+        let mut chord = scoretk_core::model::Chord {
+            grace: Some(grace),
+            ..Default::default()
+        };
+        let staff_idx = track.staff().raw() as usize;
+        let transpose = self.transpose.get(&staff_idx).copied().unwrap_or_default();
+        for note_node in descendants_named(node, "note") {
+            let accid = first_descendant(note_node, "accid").unwrap_or(note_node);
+            let info = convert::pitch_from_mei(
+                note_node.attribute("pname"),
+                note_node.attribute("oct").and_then(|v| v.parse().ok()),
+                accid.attribute("accid"),
+                accid.attribute("accid.ges"),
+                transpose.chromatic,
+            );
+            let id = self.score.add_note(Note::new(info.pitch, info.tpc));
+            chord.notes.push(id);
         }
+        self.pending_graces.push(GraceChord {
+            duration: duration_of(node),
+            played_offset: None,
+            in_tuplet: false,
+            chord,
+        });
     }
 
     /// Advance by the performed duration when `@dur.ges` is present.

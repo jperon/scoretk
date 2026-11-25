@@ -148,6 +148,7 @@ const MAPPED_ATTRIBUTES: &[&str] = &[
     "func",
     "glyph.auth",
     "glyph.name",
+    "grace",
     "halign",
     "head.shape",
     "id",
