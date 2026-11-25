@@ -60,6 +60,33 @@ fn echelle_et_page_du_document_sont_lues() {
     assert!((style.page_odd_bottom_margin_in - 1.0).abs() < 1e-3);
 }
 
+/// Réduit des références 3.x : les marges 10/20 mm (contre 15 mm en 4.x)
+/// portent la génération du style, donc les tailles de police des cadres que
+/// `<defaults>` n'a pas d'élément pour exprimer.
+#[test]
+fn marges_3x_restaurent_les_tailles_de_cadre() {
+    let xml = document(
+        r#"<defaults>
+      <scaling><millimeters>7.05556</millimeters><tenths>40</tenths></scaling>
+      <page-layout>
+        <page-margins type="even">
+          <left-margin>56.6929</left-margin><right-margin>56.6929</right-margin>
+          <top-margin>56.6929</top-margin><bottom-margin>113.386</bottom-margin>
+          </page-margins>
+        <page-margins type="odd">
+          <left-margin>56.6929</left-margin><right-margin>56.6929</right-margin>
+          <top-margin>56.6929</top-margin><bottom-margin>113.386</bottom-margin>
+          </page-margins>
+        </page-layout>
+      </defaults>"#,
+    );
+    let partition = read_musicxml(&xml).expect("lecture");
+    let style = &partition.engraving.style;
+    assert!((style.title_font_size - 24.0).abs() < 1e-9);
+    assert!((style.composer_font_size - 12.0).abs() < 1e-9);
+    assert!((style.lyricist_font_size - 12.0).abs() < 1e-9);
+}
+
 #[test]
 fn aller_retour_preserve_le_format_de_page() {
     let mut partition = Score::new();

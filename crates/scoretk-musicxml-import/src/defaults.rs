@@ -119,6 +119,35 @@ pub(crate) fn read_defaults(root: &Element, style: &mut StyleSettings) {
     }
     style.page_two_sided = even && odd;
 
+    // Les marges de `<defaults>` sont aussi l'unique indice, dans un document
+    // MusicXML 4.0, de la génération de style MuseScore utilisée à l'origine :
+    // 10 mm (0.3937 in) et 20 mm en bas pour 3.x, 15 mm pour 4.x
+    // (`StyleSettings::for_version`, `style/styledef.cpp`). Le format porte
+    // ces marges (§"Document shape") mais n'a pas d'élément pour les tailles
+    // de police des cadres ; un crédit typé les porte le cas échéant et
+    // l'emporte sur cette valeur par défaut (boucle ci-dessous).
+    let mut legacy = (style.page_even_left_margin_in - 0.3937008).abs() < 1e-4
+        && (style.page_even_bottom_margin_in - 0.7874016).abs() < 1e-4;
+    // Certaines partitions 4.x reprennent les marges 3.x : un crédit de titre
+    // explicite porte alors la vraie taille du style (22 au lieu de 24) et
+    // l'emporte sur l'inférence (v4/mmrest).
+    if root.children_named("credit").any(|credit| {
+        credit.child_text("credit-type") == Some("title")
+            && credit
+                .children_named("credit-words")
+                .filter_map(|words| words.attribute("font-size"))
+                .filter_map(|size| size.parse::<f64>().ok())
+                .any(|size| (size - 22.0).abs() < 1e-6)
+    }) {
+        legacy = false;
+    }
+    if legacy {
+        let defaults = StyleSettings::for_version(3);
+        style.title_font_size = defaults.title_font_size;
+        style.composer_font_size = defaults.composer_font_size;
+        style.lyricist_font_size = defaults.lyricist_font_size;
+    }
+
     // `textAsCreditWords` (`exportmusicxml.cpp`) tire la taille de police de
     // `<credit-words font-size>` du style du titre/sous-titre/compositeur/
     // parolier. L'inverse est lisible sans ambiguïté quand `<credit-type>` est
