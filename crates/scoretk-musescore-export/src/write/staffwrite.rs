@@ -102,6 +102,12 @@ pub(crate) fn write_style(xml: &mut XmlWriter, style: &StyleSettings) {
         // `Measure::coveringMMRestOrThis` (`dom/measure.cpp:2899`).
         xml.tag("createMultiMeasureRests", "1");
     }
+    // `Sid::minEmptyMeasures` (`style/styledef.cpp:572`, défaut 1 en 4.x, 2 en
+    // 3.x) est écrit par `MscWriter::writeStyleFile` quand il diffère du
+    // défaut ; sans lui, une partition 3.x rouverte en 4.70 perd la valeur.
+    if style.min_empty_measures != StyleSettings::for_version(4).min_empty_measures {
+        xml.tag("minEmptyMeasures", &style.min_empty_measures.to_string());
+    }
     xml.end_element();
 }
 

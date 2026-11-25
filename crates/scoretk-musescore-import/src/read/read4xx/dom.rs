@@ -105,6 +105,15 @@ impl Element {
         self.text.trim()
     }
 
+    /// Texte direct tel quel, espaces et retours à la ligne compris.
+    ///
+    /// `Score::setMetaTag` ne normalise pas la valeur ; un `<metaTag>`
+    /// multiligne doit conserver son dernier saut de ligne (`read302` lit
+    /// déjà le texte brut).
+    pub fn raw_text(&self) -> &str {
+        &self.text
+    }
+
     /// Nom d'instrument hérité : `<br/>` devient un saut de ligne.
     ///
     /// Portage de `TRead::readLegacyStaffName` (`read500/tread.cpp:4200`) et

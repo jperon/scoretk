@@ -390,7 +390,7 @@ impl Reader {
 
     fn read_meta_tag(&mut self, element: &Element) {
         let name = element.attr("name").unwrap_or_default();
-        let value = element.text().to_owned();
+        let value = element.raw_text().to_owned();
         let metadata = &mut self.score.metadata;
         match name {
             "workTitle" => metadata.work_title = value,
