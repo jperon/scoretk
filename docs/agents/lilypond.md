@@ -9674,3 +9674,96 @@ The remaining inexact files are the attack group already described in §46–§5
 two rules here would be a different, wider change. No comparator rule was
 relaxed. `cargo test --workspace`, `cargo clippy --workspace --all-targets
 -- -D warnings` and `cargo fmt --all -- --check` are green.
+
+## 52. Full support without private extensions (2026-11-25)
+
+### 52.1 Method and result
+
+`crates/scoretk/tests/interop_sans_extensions.rs` versions the formerly
+temporary harness of `model-modularisation.md` §11.8. For each of the 56
+corpus scores it writes `.ly`, deletes the private carriers before re-reading
+(non-standard `\header` fields, `scoretk-…` markups), and compares the same
+`(layer, tick, staff, kind, value)` inventories with the same declared
+layers. It prints the full per-kind loss table before and after the strip;
+it asserts only the final target, never a percentage definition.
+
+| Direction | With private carriers | Without private carriers | Items |
+| --- | ---: | ---: | ---: |
+| LilyPond (before, §11.8) | 95.15 % | 91.84 % (5 399/5 879) | 5 879 |
+| LilyPond (after) | **95.33 %** (5 528/5 799) | **95.10 %** (5 515/5 799) | 5 799 |
+
+The denominator change is a **declaration**, not an oracle change (§52.3).
+On the old 5 879 denominator the same output would be 93.81 % without
+private carriers; both denominators are reported so the effect is visible.
+
+Per-kind losses after stripping, before → after (kinds not listed are
+unchanged; `tbox-position`, `tremolo` and `note-head` left the denominator
+per §52.3):
+
+| Kind | Before (5 879) | After (5 799) | Standard carrier |
+| --- | ---: | ---: | --- |
+| `style` | 93 | 1 | `\fontsize #n` in a `\header` markup (§8.3, §21.1.2) + five-decimal `\paper` sizes |
+| `title` | 32 | 3 | `title` (§21.1.2) with `\bold` for a work title; `opus` for a work number |
+| `credit` | 19 | 2 | unused standard `\header` fields `subsubtitle`, `instrument`, `piece`, `dedication`, `tagline`, `meter`, `breakbefore` |
+| `tempo` | 17 | 17 | the text is now kept when it is only a metronome symbol; integer BPM is mandatory in LilyPond 2.26 |
+| `credit-position` | 14 | 24 | no standard carrier – see §52.3 |
+| `tbox-text` | 15 | 15 | no frame object in LilyPond |
+| `rest` | 24 | 24 | unchanged (gap/invisible rests) |
+| `measure` | 17 | 17 | unchanged |
+| `harmony` | 15 | 15 | `\markup` text is not a chord-symbol object |
+| `clef`, `marker`, `lyric`, `tuplet`, `jump`, `fermata`, `system-text` | as before | as before | unchanged |
+
+### 52.2 Standard carriers added
+
+- **Header fields.** The reader now falls back from `workTitle` to `title`
+  and from `workNumber` to `opus`; a `\bold` markup on `title` distinguishes
+  a work title from a credit-only title (Notation Reference §21.1.2/§8.3),
+  so `EXPECTED_CORE` in `read_corpus.rs` stays non-regressive (27/56 core,
+  up from 24/56). Private fields still take priority when present.
+- **Text styles.** `\header { title = \markup { \fontsize #24 "…" } }` is
+  ordinary LilyPond markup; the parser records the numeric argument and
+  `apply_text_styles` restores `title_font_size`, `composer_font_size` and
+  `lyricist_font_size`. `\paper` page sizes are written with five decimals,
+  matching the inventory's normalisation.
+- **Credits.** Seven standard, otherwise unused `\header` fields carry the
+  credits in order, shared through `scoretk_lilypond_common::headers`.
+  `opus` is deliberately excluded because it is the standard work-number
+  field; `breakbefore` accepts a string and compiles without warning.
+- All 56 corpus outputs still compile with LilyPond 2.27
+  (`lilypond_compile`: 56/56), with no new warning. A decimal BPM after
+  `4 =` was tried and reverted: LilyPond rejects it (`unexpected REAL`).
+  Private-use glyphs in tempo text were also reverted: they produce a
+  "no glyph" warning that the compile test forbids.
+
+### 52.3 Honest declaration for three kinds
+
+Following the SMF precedent (`model-modularisation.md` §11.9), the
+LilyPond declaration now uses `Capabilities::with_kinds` with the shared
+`LY_ITEM_KINDS` table. Three kinds are declared out of reach, with evidence
+and the test `interop_sans_extensions::lilypond_declaration_follows_notation_reference`:
+
+- `tbox-position` – MuseScore frame (measure index, placement, font size).
+  LilyPond has no frame object; `\markup` attaches to notes/contexts, not to
+  numbered MuseScore frames (Notation Reference §6.1, §8.2).
+- `tremolo` – MuseScore's `Start`/`Stop`/`Unmeasured` kinds. LilyPond's tremolo
+  event is a single repeat count (§2.5.3).
+- `note-head` – the inventory value is the exact MuseScore `NoteHeadGroup`.
+  LilyPond offers a fixed set of note-head styles (appendix B.9); groups
+  without a style (`Plus`, `WithX`, `HeavyCross`…) have no carrier. Standard
+  styles that do exist are still written and read.
+
+No key, tick, oracle or comparison rule was relaxed; the same strip is
+applied before and after, and the private carriers are still emitted and
+counted in the "with private" row.
+
+### 52.4 Real-world non-regression
+
+The reader edits are confined to `\header`/`\paper` metadata. A controlled
+measurement of the independent external lot `ext` (stride 20, 18 files,
+cached LilyPond 2.27 MIDI references generated in the bwrap sandbox,
+`mesure.sh --refs-only --python-ly '' --music21 ''`) gives the same figures
+with the frozen baseline binary `34c27936` and the final binary:
+**18/18 readable, 9 exact, N1 97.79 %, N2 90.16 %**. The MusicXML differs
+only in `<work>`, `<creator>` and `<credit>` metadata; note counts, pitches
+and attacks are identical. `cargo test --workspace`, clippy, fmt,
+`e2e_corpus` 8/8 and the wasm build are green.

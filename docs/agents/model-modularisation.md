@@ -1252,3 +1252,34 @@ by either format; §11.8 remains the honest with/without figure for ABC and
 LilyPond, unchanged by this campaign. `cargo test --workspace`, clippy
 `-D warnings`, `fmt --check`, `e2e_corpus` 8/8 and the `scoretk-wasm` build
 were green after each commit.
+
+### 11.11 Honest interoperability after the ABC/LilyPond standard-carrier campaigns (2026-11-25)
+
+§11.8 measured the scoretk-private carriers: 92.26 % (ABC) and 91.84 %
+(LilyPond) once they were stripped. The two campaigns documented in
+`docs/agents/abc.md` §58 and `docs/agents/lilypond.md` §52 replace most of
+them with standard syntax (ABC `V: name=`/`snm=`, `%%MIDI beat`, repeated
+`T:`, `Z:abc-copyright`, `H:`, `!segno!`/`!D.S.!`…; LilyPond `\header` fields,
+`\fontsize`/`\bold` markup, standard credit fields, five-decimal `\paper`).
+The formerly temporary strip harness is now versioned as
+`crates/scoretk/tests/interop_sans_extensions.rs`; it prints the full
+per-kind loss table and asserts the final target only.
+
+| Direction | §11.6 / §11.8 with private | With private after | Without private before | Without private after |
+| --- | ---: | ---: | ---: | ---: |
+| abc (L0–L4, 4 870 items) | 95.24 % | **95.67 %** | 92.26 % | **95.13 %** |
+| lilypond (L0–L5) | 95.15 % | **95.33 %** (5 528/5 799) | 91.84 % (5 399/5 879) | **95.10 %** (5 515/5 799) |
+
+For LilyPond the declared item kinds were restricted to what the format can
+carry, following the SMF precedent of §11.9: `tbox-position`, `tremolo` and
+`note-head` (exact MuseScore group) are out of reach with notation-reference
+sections and a test, so the denominator falls from 5 879 to 5 799. No
+comparison key, oracle or snapshot was relaxed, and the private-carrier row
+is measured on exactly the same declared kinds. No ABC layer declaration was
+changed.
+
+Both formats now reach the 95 % target with **and** without scoretk-private
+extensions. The residual private carriers are kept only where the format
+has no equivalent (four ambiguous MuseScore instrument identifiers, a few
+multi-line frame texts and two-note tremolo on the ABC side; exact note-head
+groups and tremolo kinds on the LilyPond side).

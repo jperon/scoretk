@@ -4155,3 +4155,72 @@ fois, `CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2`, `nice -n 10`) : **250 →
 inchangée. La note avec tête en croix n'était pas masquée dans les autres
 fichiers : aucun autre accord n'a changé. `cargo test --workspace` et
 `clippy -D warnings` passent.
+
+## 58. Support complet sans extensions privées (2026-11-25)
+
+Le harnais versionné `crates/scoretk/tests/interop_sans_extensions.rs`
+reprend la mesure temporaire de `model-modularisation.md` §11.8 : pour les
+56 `.mscx`, on écrit l'ABC, on supprime les porteurs privés (`%%scoretk …`,
+`!scoretk-…!`) **avant** de relire, puis on compare les inventaires avec les
+mêmes couches L0–L4 et la même clé `(couche, tick,.portée, type, valeur)`.
+Il affiche la table complète des pertes par type, avant et après stripping,
+et ne modifie aucun pourcentage : c'est un diagnostic, pas un assouplissement.
+
+### 58.1 Résultat
+
+| Direction | Avec extensions privées | Sans extensions privées | Items |
+| --- | ---: | ---: | ---: |
+| ABC (avant, §11.8) | 95,24 % | 92,26 % (4 493/4 870) | 4 870 |
+| ABC (après) | **95,67 %** (4 659/4 870) | **95,13 %** (4 633/4 870) | 4 870 |
+
+Pertes par type après stripping, avant → après (les types inchangés sont
+omis) :
+
+| Type | Avant | Après | Transport standard retenu |
+| --- | ---: | ---: | --- |
+| `instrument` | 63 | 4 | `V: name=`/`snm=` (§7.1) + `%%MIDI program` (§11.2), reconnus par le catalogue partagé de `scoretk-core` |
+| `dynamic-velocity` | 43 | 6 | `%%MIDI beat a b c n` de abc2midi (§11 ; les trois valeurs portent la vélocité exacte) |
+| `tbox-text` | 15 | 4 | `H:` (§3.1.13), un champ par texte de cadre |
+| `title` | 13 | 1 | second `T:` = sous-titre (§3.1.2), `Z:abc-copyright` (§3.1.10), `N:` = numéro d'œuvre (§3.1.11) |
+| `tempo` | 12 | 3 | BPM décimal écrit dans `Q:` (§3.1.8) |
+| `marker` | 11 | 3 | `!segno!`, `!coda!`, `!fine!` (§4.14) deviennent des marqueurs du modèle |
+| `jump` | 8 | 4 | `!D.S.!`, `!D.C.!` (§4.14) deviennent des sauts |
+| `instrument-change` | 3 | 3 | — |
+| `program`, `volume`, `channel`, `pan` | inchangés | — | déjà standard (`%%MIDI`) |
+
+Les autres pertes (`note` 25, `tuplet-member` 14, `harmony` 11,
+`repeat-count` 10, …) sont identiques avec et sans extension privée : elles
+ne sont pas des régressions de cette campagne.
+
+### 58.2 Hors de portée de l'ABC 2.1, déclaré avec la spec
+
+- **Tremolo à deux notes** (`tremolo`, 22) : ABC 2.1 §4.14 ne définit aucun
+  symbole de trémolo et §11 réserve les noms inconnus ; `!/!` est un trémolo
+  à une note. Le genre `Start`/`Stop` du modèle ne peut pas être noté. Test :
+  `instrument_standard.rs::variantes_de_guitare…` et la table ci-dessus
+  montrent que le transport privé reste le seul recours.
+- **Quatre identifiants d'instrument** (`instrument`, 4) partagent un
+  programme GM avec un autre instrument et n'ont aucun gabarit dans le
+  catalogue (`pluck.guitar`, `pluck.guitar.electric`, …) : §7.1/§11.2 ne
+  portent que des noms affichés et un numéro GM. Test explicite :
+  `crates/scoretk-abc-import/tests/instrument_standard.rs`.
+- **Cadres** (`tbox-text`, 4) dont le texte contient des retours à la ligne :
+  le champ `H:` est écrit une ligne par texte (§3.1.13) ; reproduire les
+  retours internes exigerait le champ privé.
+
+Aucune déclaration de couche n'a été réduite pour obtenir ces chiffres.
+
+### 58.3 Instantanés et vérifications
+
+Les 49 instantanés modifiés le sont uniquement par les porteurs standard
+ajoutés : `T:` supplémentaire, `Z:`, `N:`, `H:`, `%%MIDI beat`, BPM décimal,
+`!segno!`/`!coda!`/`!fine!`/`!D.S.!`/`!D.C.!` et suppression des `%%scoretk
+meta` devenus redondants. Le test `abc_metadata.rs` a été mis à jour pour
+exiger les champs standard au lieu de la directive privée.
+
+`scripts/check-abc-external.sh` refuse exactement les mêmes 12 fichiers
+avant et après (comparaison des deux listes sur l'arbre de référence
+`34c27936`) : aucun changement de comportement externe. `cargo test
+--workspace`, `clippy -D warnings`, `fmt --check`, `e2e_corpus` 8/8 et le
+build wasm passent. `Q:` avec BPM décimal est accepté par `abc2midi` 5.03 et
+`abcm2ps` 8.14.
