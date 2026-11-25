@@ -29,7 +29,7 @@
 //! `layer_coverage.rs`. Les tests ci-dessous vérifient que l'oracle lit bien
 //! les champs qu'il prétend mesurer.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -170,6 +170,197 @@ fn model_notes(score: &Score) -> Vec<NoteKey> {
     }
     result.sort();
     result
+}
+
+/// Valeurs distinctes portées par chaque kind. Les méta-évènements étant
+/// réécrits à chaque passage de reprise, comparer les occurrences pénaliserait
+/// le format pour une répétition qu'il doit justement faire : on compare les
+/// **valeurs** que le SMF porte, pas le nombre de fois où il les répète.
+type KindValues = BTreeMap<&'static str, BTreeSet<String>>;
+
+fn insert(values: &mut KindValues, kind: &'static str, value: impl Into<String>) {
+    values.entry(kind).or_default().insert(value.into());
+}
+
+fn text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes)
+        .trim_end_matches('\0')
+        .to_owned()
+}
+
+/// Méta-évènements et messages de canal tels qu'ils sont dans le fichier.
+fn smf_kind_values(bytes: &[u8]) -> KindValues {
+    let smf = Smf::parse(bytes).expect("un SMF valide");
+    let mut values = KindValues::new();
+    for (track_index, track) in smf.tracks.iter().enumerate() {
+        let mut tick = 0i64;
+        for event in track {
+            tick += i64::from(event.delta.as_int());
+            match event.kind {
+                TrackEventKind::Meta(MetaMessage::TimeSignature(numerator, exponent, _, _)) => {
+                    insert(
+                        &mut values,
+                        "time-sig",
+                        format!("{numerator}:{}", 1u32 << exponent),
+                    );
+                }
+                TrackEventKind::Meta(MetaMessage::KeySignature(fifths, minor)) => insert(
+                    &mut values,
+                    "key-sig",
+                    format!("{fifths}:{}", if minor { "Minor" } else { "Major" }),
+                ),
+                TrackEventKind::Meta(MetaMessage::Tempo(micros)) => insert(
+                    &mut values,
+                    "tempo",
+                    // `FF 51` stocke des microsecondes entières : la valeur
+                    // relue en battements/s n'a pas la même précision.
+                    format!("{:.3}", 1_000_000.0 / f64::from(micros.as_int())),
+                ),
+                TrackEventKind::Meta(MetaMessage::Lyric(data)) => {
+                    insert(&mut values, "lyric", text(data).trim_end().to_owned());
+                }
+                TrackEventKind::Meta(MetaMessage::Copyright(data)) => {
+                    insert(&mut values, "title", format!("copyright:{}", text(data)));
+                }
+                TrackEventKind::Meta(MetaMessage::TrackName(data)) => {
+                    if tick == 0 && track_index == 0 {
+                        insert(&mut values, "title", format!("work_title:{}", text(data)));
+                    }
+                }
+                TrackEventKind::Meta(MetaMessage::InstrumentName(data)) => {
+                    insert(&mut values, "instrument", text(data));
+                }
+                TrackEventKind::Meta(MetaMessage::Marker(data))
+                | TrackEventKind::Meta(MetaMessage::CuePoint(data)) => {
+                    insert(&mut values, "rehearsal-mark", text(data));
+                }
+                TrackEventKind::Meta(MetaMessage::Text(data)) => {
+                    let content = text(data);
+                    if let Some(field) = content.strip_prefix("@TK:") {
+                        if let Some((name, value)) = field.split_once(':') {
+                            insert(&mut values, "title", format!("{name}:{value}"));
+                        }
+                    } else if let Some(value) = content
+                        .strip_prefix("@ST:")
+                        .or_else(|| content.strip_prefix("@SY:"))
+                    {
+                        insert(&mut values, "staff-text", value.to_owned());
+                    } else {
+                        insert(&mut values, "staff-text", content);
+                    }
+                }
+                TrackEventKind::Midi {
+                    channel,
+                    ref message,
+                } => {
+                    insert(&mut values, "channel", channel.as_int().to_string());
+                    match message {
+                        MidiMessage::ProgramChange { program } => {
+                            insert(&mut values, "program", program.as_int().to_string());
+                        }
+                        MidiMessage::Controller { controller, value } => {
+                            match controller.as_int() {
+                                7 => insert(&mut values, "volume", value.as_int().to_string()),
+                                10 => insert(&mut values, "pan", value.as_int().to_string()),
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    values
+}
+
+/// Les mêmes valeurs dans le modèle relu, ramenées à ce que le SMF porte.
+fn model_kind_values(score: &Score) -> KindValues {
+    use scoretk::model::Annotation;
+
+    let mut values = KindValues::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for (_, element) in segment.iter_elements() {
+                match element {
+                    SegmentItem::TimeSig(time) => insert(
+                        &mut values,
+                        "time-sig",
+                        format!("{}:{}", time.numerator, time.denominator),
+                    ),
+                    SegmentItem::KeySig(key) => insert(
+                        &mut values,
+                        "key-sig",
+                        format!("{}:{:?}", key.concert_key.fifths(), key.mode),
+                    ),
+                    SegmentItem::ChordRest(chord_rest) => {
+                        for lyric in &chord_rest.lyrics {
+                            insert(&mut values, "lyric", lyric.text.trim_end().to_owned());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for annotation in &segment.annotations {
+                match &annotation.annotation {
+                    Annotation::Tempo(tempo) => {
+                        if let Some(bps) = tempo.beats_per_second {
+                            insert(&mut values, "tempo", format!("{bps:.3}"));
+                        }
+                    }
+                    Annotation::StaffText(value) | Annotation::Expression(value) => {
+                        insert(&mut values, "staff-text", value.text.plain().to_owned());
+                    }
+                    Annotation::SystemText(value) => {
+                        insert(&mut values, "system-text", value.text.plain().to_owned());
+                    }
+                    Annotation::RehearsalMark(value) => {
+                        insert(&mut values, "rehearsal-mark", value.text.plain().to_owned());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    for (name, value) in [
+        ("work_title", &score.metadata.work_title),
+        ("subtitle", &score.metadata.subtitle),
+        ("composer", &score.metadata.composer),
+        ("lyricist", &score.metadata.lyricist),
+        ("poet", &score.metadata.poet),
+        ("translator", &score.metadata.translator),
+        ("arranger", &score.metadata.arranger),
+        ("source", &score.metadata.source),
+        ("movement_title", &score.metadata.movement_title),
+        ("movement_number", &score.metadata.movement_number),
+        ("work_number", &score.metadata.work_number),
+        ("copyright", &score.metadata.copyright),
+    ] {
+        if !value.is_empty() {
+            insert(&mut values, "title", format!("{name}:{value}"));
+        }
+    }
+    for part in &score.parts {
+        insert(
+            &mut values,
+            "instrument",
+            part.instrument.track_name.clone(),
+        );
+        if let Some(program) = part.instrument.midi_program {
+            insert(&mut values, "program", program.to_string());
+        }
+        if let Some(channel) = part.instrument.midi_channel {
+            insert(&mut values, "channel", channel.to_string());
+        }
+        if let Some(volume) = part.instrument.volume {
+            insert(&mut values, "volume", volume.to_string());
+        }
+        if let Some(pan) = part.instrument.pan {
+            insert(&mut values, "pan", pan.to_string());
+        }
+    }
+    values
 }
 
 #[derive(Clone, Default)]
@@ -436,6 +627,105 @@ fn midi_note_capacity_table() {
     assert!(exact.duration.percent() >= 99.0);
     assert!(exact.combined.percent() >= 98.0);
     assert!(default.duration.percent() < 50.0);
+}
+
+/// Couverture des kinds que le SMF porte réellement, valeur par valeur.
+///
+/// Le dénominateur est ce que le fichier contient (`FF 58`, `FF 59`, `FF 51`,
+/// `FF 05`, textes, programme/canal/CC), pas l'inventaire des ticks écrits de
+/// la partition. `rest` en est absent : `[SMF §Track Chunk]` ne contient que
+/// des évènements, et `[SMF §Events and time]` ne définit que Note On/Off.
+#[test]
+fn midi_kind_capacity_table() {
+    let scores = corpus_scores();
+    let exact_text = MidiImportOptions {
+        smf_exact_ticks: true,
+        smf_text: true,
+        ..Default::default()
+    };
+    let text_write = Options {
+        midi: MidiOptions {
+            smf_text: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let default_write = Options::default();
+    let cases: [(&str, &Options, Option<&MidiImportOptions>); 2] = [
+        ("default (4.7.4)", &default_write, None),
+        ("exact + smf_text", &text_write, Some(&exact_text)),
+    ];
+    println!(
+        "\n=== MIDI kind capacity: distinct values carried by the SMF ({} scores) ===",
+        scores.len()
+    );
+    for (label, write_options, read_options) in cases {
+        let mut totals: BTreeMap<&'static str, Counts> = BTreeMap::new();
+        let mut losses: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
+        for (_, path) in &scores {
+            let score = reference_model(path);
+            let Ok(bytes) = write(&score, Format::Midi, write_options) else {
+                continue;
+            };
+            let expected = smf_kind_values(&bytes);
+            let imported = match read_options {
+                Some(options) => read_midi_with(&bytes, options),
+                None => scoretk::read(&bytes, Format::Midi),
+            };
+            let Ok(imported) = imported else {
+                continue;
+            };
+            let actual = model_kind_values(&imported);
+            for (kind, values) in &expected {
+                let count = totals.entry(kind).or_default();
+                count.reference += values.len();
+                let here = actual.get(kind).cloned().unwrap_or_default();
+                count.matched += values.intersection(&here).count();
+                for missing in values.difference(&here) {
+                    losses.entry(kind).or_default().push(missing.clone());
+                }
+            }
+        }
+        println!("  {label}");
+        if label == "exact + smf_text" {
+            // Ce que le format porte est restitué : signatures de mesure,
+            // programme, volume, panoramique et paroles à 100 %. Les écarts
+            // résiduels (armures, tempo, canaux, textes) sont diagnostiqués
+            // ci-dessus et dans `docs/agents/midi.md`.
+            for kind in ["time-sig", "program", "volume", "pan", "lyric"] {
+                assert_eq!(
+                    totals[kind].percent(),
+                    100.0,
+                    "{kind} must be fully carried by the SMF"
+                );
+            }
+        }
+        for (kind, count) in &totals {
+            println!(
+                "    {:<20} {:>7.2}%  {}/{}",
+                kind,
+                count.percent(),
+                count.matched,
+                count.reference
+            );
+            if count.matched < count.reference {
+                let mut missing = losses.get(kind).cloned().unwrap_or_default();
+                missing.sort();
+                missing.dedup();
+                println!(
+                    "      missing: {}",
+                    missing[..missing.len().min(5)].join(" | ")
+                );
+            }
+        }
+    }
+    println!();
+
+    // Aucun kind fantôme : `rest` n'est ni porté par le SMF ni déclaré.
+    let kinds = scoretk_midi_import::CAPABILITIES
+        .declared_kinds()
+        .expect("SMF kinds");
+    assert!(!kinds.contains(&"rest"));
 }
 
 #[test]

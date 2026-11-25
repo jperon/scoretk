@@ -751,9 +751,9 @@ fn midi_declaration_follows_smf_spec() {
     // tuplets, ties or slurs; §"Meta-event types": FF 58/FF 59 (L1), FF 01
     // (generic text), FF 02/FF 03/FF 04 (copyright/track/instrument names),
     // FF 05 (RP-017 lyrics), FF 06/FF 07 (rehearsal marks / cue points),
-    // FF 51 (tempo); §"Events and time": Note On/Off and velocity, with
-    // silence between notes reconstructed as rests. A kind with no SMF
-    // object is outside the declaration, not a loss.
+    // FF 51 (tempo); §"Events and time": Note On/Off and velocity only — a
+    // rest is the absence of a note, not an SMF object, so it is outside the
+    // declaration. A kind with no SMF object is not a loss.
     let kinds = MIDI_IMPORT
         .declared_kinds()
         .expect("the SMF declares a subset of L1–L4");
@@ -762,7 +762,6 @@ fn midi_declaration_follows_smf_spec() {
         "key-sig",
         "rehearsal-mark",
         "note",
-        "rest",
         "lyric",
         "staff-text",
         "system-text",
@@ -778,6 +777,9 @@ fn midi_declaration_follows_smf_spec() {
         assert!(kinds.contains(&kind), "{kind} is carried by SMF");
     }
     for kind in [
+        // `[SMF §Track Chunk; §Events and time]` : absence de Note On/Off,
+        // jamais un évènement `rest` dans un `MTrk`.
+        "rest",
         "measure",
         "barline",
         "clef",

@@ -35,8 +35,10 @@
 //! §5.3 (la déclaration est celle du format, pas une cible de score).
 //! `FF 06`/`FF 07` sont des **repères de répétition** (« rehearsal mark /
 //! section name »), pas des marqueurs de reprise : ils portent le type L3
-//! `rehearsal-mark`. De même L2 ne retient que `note` et `rest` (silence entre
-//! deux `Note On`, reconstruit par l'importeur), L3 que `lyric` (`FF 05`,
+//! `rehearsal-mark`. De même L2 ne retient que `note` : `[SMF §Track Chunk]`
+//! ne définit que des évènements datés et `[SMF §Events and time]` des Note
+//! On/Off — le silence est l'absence de note, reconstruite à la lecture, et
+//! non un objet du format. L3 retient `lyric` (`FF 05`,
 //! RP-017), `staff-text`/`system-text` (`FF 01`, « Text event »),
 //! `rehearsal-mark` (`FF 06`/`FF 07`), `tempo` (`FF 51`) et `title`
 //! (`FF 02`/`FF 03`/`FF 04`, RP-026 `{#TITLE=}`), et L4 les champs réellement
@@ -52,7 +54,9 @@ pub const SMF_KINDS: &[&str] = &[
     "key-sig",
     "rehearsal-mark",
     "note",
-    "rest",
+    // `[SMF §Track Chunk; §Events and time]` : seuls Note On/Off existent ; un
+    // silence est l'absence de note entre deux attaques, reconstruite par
+    // l'importeur (`docs/agents/midi.md`). Aucun kind `rest` n'est déclaré.
     "lyric",
     "staff-text",
     "system-text",

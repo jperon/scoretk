@@ -229,7 +229,14 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
             }
         }
     }
-    let mut track_list = prepare_track_list(tracks);
+    // MuseScore ignore les pistes sans note. En mode « fidélité SMF », une
+    // piste qui porte FF 58/FF 59/FF 51/C0/CC7/CC10 est une piste du fichier :
+    // la garder conserve ces méta-évènements même dans une mesure vide.
+    let mut track_list = if options.smf_exact_ticks {
+        tracks
+    } else {
+        prepare_track_list(tracks)
+    };
     instrument::set_grand_staff_program(&mut track_list);
     create_instruments(score, &mut track_list, options);
     drum::set_staff_bracket_for_drums(score, &track_list);
@@ -332,13 +339,15 @@ fn create_mtrack_list(
             }
         }
 
-        if has_notes {
-            track.had_initial_notes = true;
+        // En mode fidélité SMF, une piste sans note mais avec FF 58/FF 59/
+        // FF 51/C0/CC7/CC10 est conservée : ces évènements sont dans le
+        // fichier et l'importeur doit les restituer.
+        if has_notes || options.smf_exact_ticks {
+            track.had_initial_notes = has_notes;
             track.index_of_operation = tracks.len();
             tracks.push(track);
         }
     }
-    let _ = options;
     tracks
 }
 

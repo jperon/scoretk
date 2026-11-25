@@ -531,6 +531,7 @@ name = "scoretk"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "midly",
  "quick-xml",
  "scoretk-abc-export",
  "scoretk-abc-import",

@@ -41,7 +41,10 @@ pub const SMF_KINDS: &[&str] = &[
     "key-sig",
     "rehearsal-mark",
     "note",
-    "rest",
+    // `[SMF §Track Chunk]` : un `MTrk` ne contient que des `<delta-time><event>`,
+    // et `[SMF §Events and time]` ne définit que Note On/Off. Le silence est
+    // l'**absence** de note, pas un objet que le format puisse porter : il
+    // est reconstruit par l'importeur et ne fait pas partie du dénominateur.
     "lyric",
     "staff-text",
     "system-text",
