@@ -68,6 +68,8 @@ pub(crate) struct Reader<'a> {
     pub(crate) current_time: Fraction,
     pub(crate) tuplet_ratio: Option<Fraction>,
     pub(crate) beam_mode: BeamMode,
+    /// Alternates the two chords of an `<fTrem>` (`Start`, then `Stop`).
+    pub(crate) tremolo_phase: u8,
     /// Signatures must be written in the next measure (initial `scoreDef` or
     /// a `scoreDef` change inside a section).
     pub(crate) signatures_pending: bool,
@@ -95,6 +97,7 @@ impl<'a> Reader<'a> {
             current_time: Fraction::new(4, 4),
             tuplet_ratio: None,
             beam_mode: BeamMode::Auto,
+            tremolo_phase: 0,
             signatures_pending: true,
         };
         reader.build_staff_layer_map(score_node);
@@ -710,6 +713,19 @@ impl<'a> Reader<'a> {
     /// `MeiImporter::readBTrem`/`readFTrem` (`meiimporter.cpp:1812`, `:1910`).
     fn read_tremolo(&mut self, node: &Element, measure: usize, track: Track, ticks: &mut Fraction) {
         let before = self.score.measures[measure].start_tick + *ticks;
+        let two_chord = node.name == "fTrem";
+        let kind = if two_chord {
+            let kind = if self.tremolo_phase == 0 {
+                scoretk_core::model::TremoloKind::Start
+            } else {
+                scoretk_core::model::TremoloKind::Stop
+            };
+            self.tremolo_phase = (self.tremolo_phase + 1) % 2;
+            kind
+        } else {
+            self.tremolo_phase = 0;
+            scoretk_core::model::TremoloKind::Single
+        };
         self.read_elements(node, measure, track, ticks);
         for segment in &mut self.score.measures[measure].segments {
             if segment.tick < before {
@@ -717,10 +733,8 @@ impl<'a> Reader<'a> {
             }
             if let Some(SegmentItem::ChordRest(cr)) = segment.element_mut(track) {
                 if let ChordRestKind::Chord(chord) = &mut cr.kind {
-                    chord.tremolo = Some(scoretk_core::model::Tremolo {
-                        kind: scoretk_core::model::TremoloKind::Single,
-                        count: 1,
-                    });
+                    chord.tremolo = Some(scoretk_core::model::Tremolo { kind, count: 1 });
+                    chord.tremolo_two_chord = two_chord;
                 }
             }
         }

@@ -361,6 +361,23 @@ fn write_layer(
             .iter()
             .map(|(key, value)| (key.as_str(), value.as_str()))
             .collect();
+        // `MeiExporter::writeChord`: tremolos wrap the note/chord event.
+        let tremolo = match &cr.kind {
+            ChordRestKind::Chord(chord) => chord.tremolo,
+            _ => None,
+        };
+        let two_chord = match &cr.kind {
+            ChordRestKind::Chord(chord) => chord.tremolo_two_chord,
+            _ => false,
+        };
+        let open_tremolo = tremolo.is_some() || two_chord;
+        if open_tremolo {
+            if two_chord {
+                xml.start_element("fTrem", &[("unitdur", "32")]);
+            } else {
+                xml.start_element("bTrem", &[]);
+            }
+        }
         match &cr.kind {
             ChordRestKind::Rest(rest) if rest.full_measure => {
                 xml.tag_empty("mRest", &[("xml:id", &format!("mr{measure_index}"))]);
@@ -388,6 +405,9 @@ fn write_layer(
                     xml.end_element();
                 }
             }
+        }
+        if open_tremolo {
+            xml.end_element();
         }
         if open_beam
             && matches!(
@@ -640,6 +660,32 @@ mod tests {
         score.add_measure(Measure::new(2, Fraction::new(8, 4), Fraction::new(4, 4)));
         let output = write(&score, &MeiOptions::default()).expect("MEI with a system break");
         assert_eq!(output.matches("<sb type=\"mscore-manual\"").count(), 1);
+    }
+
+    #[test]
+    fn tremolos_wrap_the_chord_event() {
+        use scoretk_core::model::{Tremolo, TremoloKind};
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno"));
+        let staff = score.add_staff(part);
+        let track = Track::new(staff, 0);
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(4, 4));
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+        let mut chord = ChordRest::chord(Duration::quarter());
+        let note = score.add_note(Note::new(60, 14));
+        if let scoretk_core::model::ChordRestKind::Chord(c) = &mut chord.kind {
+            c.notes = vec![note];
+            c.tremolo = Some(Tremolo {
+                kind: TremoloKind::Single,
+                count: 1,
+            });
+        }
+        segment.set_element(track, SegmentItem::ChordRest(chord));
+        measure.add_segment(segment);
+        score.add_measure(measure);
+        let output = write(&score, &MeiOptions::default()).expect("MEI with a tremolo");
+        assert!(output.contains("<bTrem>"));
+        assert!(output.contains("</bTrem>"));
     }
 
     #[test]
