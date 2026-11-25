@@ -100,6 +100,40 @@ impl<'a> Writer<'a> {
                 scoretk_abc_common::text::escape_annotation(&text)
             ));
         }
+        // `T:` et `C:` ne couvrent que deux des douze champs de métadonnées
+        // du modèle : la directive privée (ABC 2.1 §11) porte les autres.
+        for (name, value) in [
+            ("work_title", &self.score.metadata.work_title),
+            ("movement_title", &self.score.metadata.movement_title),
+            ("movement_number", &self.score.metadata.movement_number),
+            ("work_number", &self.score.metadata.work_number),
+            ("composer", &self.score.metadata.composer),
+            ("lyricist", &self.score.metadata.lyricist),
+            ("poet", &self.score.metadata.poet),
+            ("translator", &self.score.metadata.translator),
+            ("arranger", &self.score.metadata.arranger),
+            ("copyright", &self.score.metadata.copyright),
+            ("source", &self.score.metadata.source),
+            ("subtitle", &self.score.metadata.subtitle),
+        ] {
+            if value.trim().is_empty() {
+                continue;
+            }
+            let text = value.replace(['\n', '\r'], " ");
+            out.push_str(&format!(
+                "%%scoretk meta {name} {}\n",
+                scoretk_abc_common::text::escape_annotation(&text)
+            ));
+        }
+        // Textes de cadre : ABC 2.1 §11, directive privée (ils n'ont pas de
+        // champ dédié dans la norme, contrairement aux crédits `W:`).
+        for (index, tbox) in self.score.engraving.tbox_texts.iter().enumerate() {
+            let text = tbox.text.plain().replace(['\n', '\r'], " ");
+            out.push_str(&format!(
+                "%%scoretk tbox {index} {}\n",
+                scoretk_abc_common::text::escape_annotation(&text)
+            ));
+        }
         let time = self.initial_time_signature();
         out.push_str(&format!("M:{}/{}\n", time.numerator, time.denominator));
         out.push_str("L:1/8\n");

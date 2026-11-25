@@ -30,8 +30,8 @@
 use scoretk_core::model::{
     Annotation, BarLine, BarLineType, Clef, ClefType, Credit, CreditStyle, Dynamic, Fraction,
     Harmony, KeySig, Measure, Part, Placement, RichText, Score, Segment, SegmentItem, SegmentType,
-    Slur, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff, StaffId, TimeSig, Track,
-    Transpose, Tuplet, TupletId, VoltaInfo,
+    Slur, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff, StaffId, TboxText, TimeSig,
+    Track, Transpose, Tuplet, TupletId, VoltaInfo,
 };
 
 use crate::reader::{AnnotationSpec, Position, Reader, Voice};
@@ -44,10 +44,33 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
     score.metadata.work_title = reader.title.clone();
     score.metadata.composer = reader.composer.clone();
     score.metadata.source = reader.source.clone();
+    for (name, value) in &reader.meta {
+        let field = match name.as_str() {
+            "work_title" => &mut score.metadata.work_title,
+            "movement_title" => &mut score.metadata.movement_title,
+            "movement_number" => &mut score.metadata.movement_number,
+            "work_number" => &mut score.metadata.work_number,
+            "composer" => &mut score.metadata.composer,
+            "lyricist" => &mut score.metadata.lyricist,
+            "poet" => &mut score.metadata.poet,
+            "translator" => &mut score.metadata.translator,
+            "arranger" => &mut score.metadata.arranger,
+            "copyright" => &mut score.metadata.copyright,
+            "source" => &mut score.metadata.source,
+            "subtitle" => &mut score.metadata.subtitle,
+            _ => continue,
+        };
+        *field = value.clone();
+    }
     // ABC 2.1 §3.1 : `W:` porte un texte imprimé, pas une syllable de `w:`.
     // Il devient un `<credit>`-like du modèle (l'ordre est significatif).
     for text in &reader.credits {
         score.add_credit(Credit::new(RichText::new(text.clone()), CreditStyle::Title));
+    }
+    let mut tbox_texts = std::mem::take(&mut reader.tbox_texts);
+    tbox_texts.sort_by_key(|(index, _)| *index);
+    for (index, text) in tbox_texts {
+        score.add_tbox_text(TboxText::new(RichText::new(text), index));
     }
 
     let groups = groups(reader, &voices);
@@ -206,15 +229,17 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
         // même quand sa valeur est `Normal` (aucun symbole ABC n'est écrit).
         let end = measure.end_tick();
         let staff_count_read = score.staves.len();
+        let end_bar_line = measure.end_bar_line;
         {
             let segment = segment_at(&mut measure, SegmentType::EndBarLine, end, staff_count);
             for index in 0..staff_count_read {
                 let track = Track::new(StaffId::from_index(index), 0);
                 if segment.element(track).is_none() {
-                    segment.set_element(
-                        track,
-                        SegmentItem::BarLine(BarLine::new(BarLineType::Normal)),
-                    );
+                    // MuseScore porte la vraie barre de fin sur le segment, en
+                    // plus du champ `Measure::end_bar_line`. Écrire `Normal`
+                    // ici faisait perdre `End`, `Double` et `Dashed` à
+                    // l'aller-retour ABC (ABC 2.1 §4.8).
+                    segment.set_element(track, SegmentItem::BarLine(BarLine::new(end_bar_line)));
                 }
             }
         }

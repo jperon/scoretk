@@ -4,6 +4,9 @@ T:Untitled score
 C:Composer / arranger
 W:Local Timesig 1
 W:MuseScore testfile
+%%scoretk meta work_title Untitled score
+%%scoretk meta composer Composer / arranger
+%%scoretk meta subtitle Subtitle
 M:9/8
 L:1/8
 K:C

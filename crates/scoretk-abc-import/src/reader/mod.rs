@@ -43,6 +43,7 @@ use std::collections::BTreeMap;
 
 use scoretk_core::model::{
     BarLineType, ClefType, Fermata, Fraction, HairpinType, Key, KeySig, NoteId, Score, TimeSig,
+    TremoloKind,
 };
 
 use scoretk_abc_common::decorations::Decoration;
@@ -713,8 +714,16 @@ pub(crate) struct Reader {
     pub source: String,
     /// Champs `W:` (texte imprimé, ABC 2.1 §3.1), dans l'ordre du fichier.
     pub credits: Vec<String>,
+    /// Métadonnées complémentaires `%%scoretk meta <nom> <valeur>` (ABC 2.1
+    /// §11) : les seuls champs standard `T:`/`C:` ne portent pas tous ceux du modèle.
+    pub meta: Vec<(String, String)>,
+    /// Textes de cadre `%%scoretk tbox <index> <texte>` (ABC 2.1 §11).
+    pub tbox_texts: Vec<(usize, String)>,
     /// Vélocité lue dans `!scoretk-velo-N!`, pour la prochaine nuance.
     pub pending_dynamic_velocity: Option<u8>,
+    /// Type de trémolo lu dans `!scoretk-tremolo-<nom>!`, pour le prochain
+    /// `!…!` de trémolo (les noms standards ne portent que `single`).
+    pub pending_tremolo_kind: Option<TremoloKind>,
     /// Vrai si un champ `K:` a été lu.
     pub seen_key: bool,
     /// Clef par défaut issue des paramètres de `K:`.
@@ -754,7 +763,10 @@ impl Default for Reader {
             composer: String::new(),
             source: String::new(),
             credits: Vec::new(),
+            meta: Vec::new(),
+            tbox_texts: Vec::new(),
             pending_dynamic_velocity: None,
+            pending_tremolo_kind: None,
             seen_key: false,
             default_clef: None,
             header_key: KeySig::new(Key::C),
@@ -943,6 +955,37 @@ impl Reader {
                     for voice in &mut self.voices {
                         voice.transpose = transpose;
                         voice.instrument_transpose = transpose;
+                    }
+                }
+            }
+            "scoretk"
+                if value
+                    .split_whitespace()
+                    .next()
+                    .is_some_and(|key| key.eq_ignore_ascii_case("meta")) =>
+            {
+                let mut words = value.splitn(3, char::is_whitespace);
+                let _ = words.next();
+                if let (Some(name), Some(text)) = (words.next(), words.next().map(str::trim)) {
+                    if !text.is_empty() {
+                        self.meta.push((name.to_ascii_lowercase(), text.to_owned()));
+                    }
+                }
+            }
+            "scoretk"
+                if value
+                    .split_whitespace()
+                    .next()
+                    .is_some_and(|key| key.eq_ignore_ascii_case("tbox")) =>
+            {
+                let mut words = value.splitn(3, char::is_whitespace);
+                let _ = words.next();
+                if let (Some(index), Some(text)) = (
+                    words.next().and_then(|value| value.parse::<usize>().ok()),
+                    words.next().map(str::trim),
+                ) {
+                    if !text.is_empty() {
+                        self.tbox_texts.push((index, text.to_owned()));
                     }
                 }
             }

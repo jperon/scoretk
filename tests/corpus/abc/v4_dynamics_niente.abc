@@ -5,6 +5,9 @@ C:Componist / arrangeur
 W:Naamloze partituur
 W:Ondertitel
 W:Componist / arrangeur
+%%scoretk meta work_title Naamloze partituur
+%%scoretk meta composer Componist / arrangeur
+%%scoretk meta subtitle Ondertitel
 M:4/4
 L:1/8
 K:C clef=treble

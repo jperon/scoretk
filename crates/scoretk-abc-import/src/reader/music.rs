@@ -250,6 +250,20 @@ impl Parser<'_> {
                 return;
             }
         }
+        if let Some(kind) = name.strip_prefix("scoretk-tremolo-") {
+            let kind = match kind.to_ascii_lowercase().as_str() {
+                "single" => Some(TremoloKind::Single),
+                "start" => Some(TremoloKind::Start),
+                "stop" => Some(TremoloKind::Stop),
+                "unmeasured" => Some(TremoloKind::Unmeasured),
+                _ => None,
+            };
+            if kind.is_some() {
+                self.reader.pending_tremolo_kind = kind;
+                self.push_decoration(Decoration::Tremolo(0));
+                return;
+            }
+        }
         let Some(decoration) = decorations::parse_decoration(&name) else {
             self.warn(format!("décoration « {name} » inconnue, ignorée"));
             return;
@@ -811,12 +825,20 @@ impl Parser<'_> {
                 }
                 Decoration::Tremolo(count) => {
                     // `abc2xml.py:1464-1469` writes a single-note tremolo on
-                    // the note carrying `!/!` (`abc2xml.py:1688`).
+                    // the note carrying `!/!` (`abc2xml.py:1688`). A count of
+                    // zero is the private `!scoretk-tremolo-<kind>!` form,
+                    // which carries the two-note/unmeasured kinds the ABC
+                    // standard cannot name (ABC 2.1 §11).
+                    let kind = if count == 0 {
+                        self.reader
+                            .pending_tremolo_kind
+                            .take()
+                            .unwrap_or(TremoloKind::Single)
+                    } else {
+                        TremoloKind::Single
+                    };
                     if let Some(chord) = chord_rest.chord_mut() {
-                        chord.tremolo = Some(Tremolo {
-                            kind: TremoloKind::Single,
-                            count,
-                        });
+                        chord.tremolo = Some(Tremolo { kind, count });
                     }
                 }
                 Decoration::Dynamic(text) => annotations.push(AnnotationSpec::Dynamic(

@@ -8,6 +8,12 @@ W:Title in vbox on page 2
 W:Text on page 2
 W:Title in vbox on page 3
 W:Part name on page 3
+%%scoretk meta work_title Title
+%%scoretk meta copyright Copyright
+%%scoretk tbox 0 Above
+%%scoretk tbox 1 Below
+%%scoretk tbox 2 Above 2
+%%scoretk tbox 3 Below 2
 M:4/4
 L:1/8
 K:C clef=treble

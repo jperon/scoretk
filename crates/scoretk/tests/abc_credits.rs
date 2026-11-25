@@ -18,7 +18,7 @@
 //! ABC 2.1 §3.1 : `W:` est un texte imprimé, distinct des paroles `w:` (§5).
 //! Il transporte les crédits du modèle dans les deux sens.
 
-use scoretk::model::{Credit, CreditStyle, Fraction, Measure, Part, RichText, Score};
+use scoretk::model::{Credit, CreditStyle, Fraction, Measure, Part, RichText, Score, TboxText};
 use scoretk::{read, write, Format, Options};
 
 fn partition_avec_credits() -> Score {
@@ -47,6 +47,21 @@ fn credits_vont_et_reviennent_par_le_champ_w_majuscule() {
         .map(|credit| credit.text.plain().to_owned())
         .collect();
     assert_eq!(credits, ["Premier crédit", "Second crédit"]);
+}
+
+#[test]
+fn textes_de_cadre_vont_et_reviennent_par_la_directive_privee() {
+    let mut source = partition_avec_credits();
+    source.add_tbox_text(TboxText::new(RichText::new("Encart de titre"), 0));
+    let abc = write(&source, Format::Abc, &Options::default()).expect("écriture ABC");
+    let text = String::from_utf8(abc.clone()).expect("UTF-8");
+    assert!(
+        text.contains("%%scoretk tbox 0 Encart de titre\n"),
+        "{text}"
+    );
+    let back = read(&abc, Format::Abc).expect("lecture ABC");
+    assert_eq!(back.engraving.tbox_texts.len(), 1);
+    assert_eq!(back.engraving.tbox_texts[0].text.plain(), "Encart de titre");
 }
 
 #[test]

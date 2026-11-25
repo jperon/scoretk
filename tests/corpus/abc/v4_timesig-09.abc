@@ -7,13 +7,13 @@ K:C clef=treble
 %%MIDI program 1
 V:1 name="Piano" snm="Pno." clef=treble
 %%scoretk instrument keyboard.piano
-G4e4 |
-G4e4 |
-G4e4 |
-G4e4 |
-G4e4 |
-G4e4 |
-G4e4 |
-G4e4 |
-G4e4 |
-G4e4 |]
+!scoretk-tremolo-start!G4!scoretk-tremolo-stop!e4 |
+!scoretk-tremolo-start!G4!scoretk-tremolo-stop!e4 |
+!scoretk-tremolo-start!G4!scoretk-tremolo-stop!e4 |
+!scoretk-tremolo-start!G4!scoretk-tremolo-stop!e4 |
+!scoretk-tremolo-start!G4!scoretk-tremolo-stop!e4 |
+!scoretk-tremolo-start!G4!scoretk-tremolo-stop!e4 |
+!scoretk-tremolo-start!G4!scoretk-tremolo-stop!e4 |
+!scoretk-tremolo-start!G4!scoretk-tremolo-stop!e4 |
+!scoretk-tremolo-start!G4!scoretk-tremolo-stop!e4 |
+!scoretk-tremolo-start!G4!scoretk-tremolo-stop!e4 |]

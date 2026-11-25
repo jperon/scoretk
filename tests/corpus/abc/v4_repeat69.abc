@@ -2,6 +2,9 @@
 X:1
 T:Untitled score
 C:Composer / arranger
+%%scoretk meta work_title Untitled score
+%%scoretk meta composer Composer / arranger
+%%scoretk meta subtitle Subtitle
 M:4/4
 L:1/8
 K:C

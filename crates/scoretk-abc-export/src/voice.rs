@@ -717,6 +717,26 @@ fn draw_chords(
         {
             before[offset].push("!arpeggio!".to_owned());
         }
+        if let Some(tremolo) = &chord.tremolo {
+            let token = match tremolo.kind {
+                scoretk_core::model::TremoloKind::Single => {
+                    format!("!{}!", "/".repeat(tremolo.count.max(1) as usize))
+                }
+                // ABC 2.1 n'a que le trémolo d'une note : les autres genres
+                // passent par une décoration privée (§11), que les autres
+                // programmes ignorent.
+                other => format!(
+                    "!scoretk-tremolo-{}!",
+                    match other {
+                        scoretk_core::model::TremoloKind::Start => "start",
+                        scoretk_core::model::TremoloKind::Stop => "stop",
+                        scoretk_core::model::TremoloKind::Unmeasured => "unmeasured",
+                        scoretk_core::model::TremoloKind::Single => unreachable!(),
+                    }
+                ),
+            };
+            before[offset].push(token);
+        }
         for note_id in &chord.notes {
             let note = score.note(*note_id);
             for fingering in &note.fingerings {
