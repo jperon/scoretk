@@ -120,7 +120,8 @@ pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use instrument_channel::InstrumentChannel;
 pub use inventory::{
-    compare, essential, inventory, Coverage, InventoryItem, LayerCounts, LayerInventory, LAYERS,
+    compare, compare_with_kinds, essential, inventory, Coverage, InventoryItem, LayerCounts,
+    LayerInventory, LAYERS,
 };
 pub use layers::metric::{
     BarLine, BarLineType, Clef, ClefSign, ClefType, Key, KeyMode, KeySig, Metric, TimeSig,

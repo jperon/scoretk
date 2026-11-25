@@ -123,17 +123,45 @@ pub struct Capabilities {
     pub reads: Layers,
     /// Layers the direction writes from the pivot into the format.
     pub writes: Layers,
+    /// Item kinds the format can actually carry, when a layer is too coarse.
+    ///
+    /// `None` means "every kind of a declared layer", the historical default.
+    /// A format whose specification has no object for some kinds of a layer
+    /// can declare the exact subset it carries (e.g. SMF has `FF 58`/`FF 59`
+    /// metas but no measure or bar-line object, `format-ref/midi.md` §"Meta-event
+    /// types" and §"Container layout"). This is a *format* declaration, not a
+    /// claim that the current reader or writer implements every listed kind.
+    pub kinds: Option<&'static [&'static str]>,
 }
 
 impl Capabilities {
-    /// Builds a declaration from the two directions.
+    /// Builds a declaration from the two directions, with all kinds of the
+    /// declared layers (the historical behaviour).
     pub const fn new(reads: Layers, writes: Layers) -> Self {
-        Self { reads, writes }
+        Self {
+            reads,
+            writes,
+            kinds: None,
+        }
+    }
+
+    /// Builds a declaration restricted to the item kinds the format carries.
+    pub const fn with_kinds(reads: Layers, writes: Layers, kinds: &'static [&'static str]) -> Self {
+        Self {
+            reads,
+            writes,
+            kinds: Some(kinds),
+        }
     }
 
     /// Union of both directions: the layers a format covers as a whole.
     pub const fn declared(self) -> Layers {
         self.reads.union(self.writes)
+    }
+
+    /// Item kinds the format can carry, or `None` for all of them.
+    pub const fn declared_kinds(self) -> Option<&'static [&'static str]> {
+        self.kinds
     }
 }
 
@@ -343,6 +371,16 @@ mod tests {
             export.declared().union(import.declared()),
             Layers::COMMON.union(Layers::METRIC).union(Layers::TEXT)
         );
+    }
+
+    #[test]
+    fn capabilities_can_restrict_item_kinds() {
+        let all = Capabilities::new(Layers::METRIC, Layers::NONE);
+        assert_eq!(all.declared_kinds(), None);
+        const KINDS: &[&str] = &["time-sig", "key-sig"];
+        let some = Capabilities::with_kinds(Layers::METRIC, Layers::NONE, KINDS);
+        assert_eq!(some.declared(), Layers::METRIC);
+        assert_eq!(some.declared_kinds(), Some(KINDS));
     }
 
     #[test]

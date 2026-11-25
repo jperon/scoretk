@@ -42,7 +42,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use scoretk::model::{
-    compare, essential, inventory, Capabilities, Coverage, LayerCounts, Layers, LAYERS,
+    compare_with_kinds, essential, inventory, Capabilities, Coverage, LayerCounts, Layers, LAYERS,
 };
 use scoretk::{read, write, Format, Options, Score};
 
@@ -382,7 +382,11 @@ fn layer_coverage_table() {
                 continue;
             };
             let candidate = inventory(&round_trip);
-            let coverage = compare(&reference_inventory, &candidate, declared);
+            let kinds = direction
+                .import
+                .declared_kinds()
+                .or(direction.export.declared_kinds());
+            let coverage = compare_with_kinds(&reference_inventory, &candidate, declared, kinds);
             totals.add(&coverage, essential(&reference_inventory, &candidate));
         }
         print_row(direction.name, declared, &totals, "round trip (own writer)");
@@ -419,7 +423,11 @@ fn layer_coverage_table() {
                 continue;
             };
             let candidate = inventory(&imported);
-            let coverage = compare(&reference_inventory, &candidate, declared);
+            let kinds = direction
+                .import
+                .declared_kinds()
+                .or(direction.export.declared_kinds());
+            let coverage = compare_with_kinds(&reference_inventory, &candidate, declared, kinds);
             totals.add(&coverage, essential(&reference_inventory, &candidate));
         }
         print_row(direction.name, declared, &totals, reference_source(kind));

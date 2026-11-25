@@ -231,6 +231,21 @@ pub fn compare(reference: &LayerInventory, candidate: &LayerInventory, layers: L
     compare_items(reference, candidate, layers, None)
 }
 
+/// Compares two inventories on a finer format declaration.
+///
+/// `kinds` restricts the comparison to the item kinds the format can carry
+/// (§5.3 of `docs/agents/model-modularisation.md`); `None` keeps the coarse,
+/// whole-layer behaviour of [`compare`]. A kind absent from the format is not
+/// a loss: it is outside the declaration and is not counted in either ratio.
+pub fn compare_with_kinds(
+    reference: &LayerInventory,
+    candidate: &LayerInventory,
+    layers: Layers,
+    kinds: Option<&[&str]>,
+) -> Coverage {
+    compare_items(reference, candidate, layers, kinds)
+}
+
 /// "Essential" comparison of today's musical core: `note` and `measure`
 /// items only, whatever the declared layers (both are always declared).
 pub fn essential(reference: &LayerInventory, candidate: &LayerInventory) -> LayerCounts {
