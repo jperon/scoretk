@@ -9837,3 +9837,43 @@ fn grace_avant_un_silence_est_jouee() {
         assert_eq!(graces_du_rest, vec![62], "{music}");
     }
 }
+
+/// Un `\relative` sans argument ne part pas de la même hauteur selon le
+/// `\version` déclaré. Jusqu'à 2.17.14, LilyPond part de `c'` ; depuis 2.17.15,
+/// `ly/music-functions-init.ly` part de `f`. La règle 2.17.15 de
+/// `python/convertrules.py` (« `\relative -> \relative c'` », avec refus de
+/// `#(ly:set-option 'old-relative)`) est le point de bascule : elle réécrit
+/// exactement les sources anciennes que l'oracle compile après conversion.
+/// Le MIDI 2.27 de la copie convertie de la source ancienne ci-dessous joue
+/// 65/67/69/71/84/101 ; avant ce correctif le lecteur écrivait une octave
+/// en dessous (53/55/57/59/72/89), soit 10 fichiers inexacts de plus par lot
+/// réel avec les références converties.
+#[test]
+fn version_ancienne_relative_sans_argument_part_de_do() {
+    let source = |version: &str, reference: &str| {
+        format!(
+            "\\version \"{version}\"\n\
+             mus = \\relative{reference} {{ f4 g a b c'2 f'2 }}\n\
+             \\score {{ {{ \\time 4/4 \\mus }} \\midi {{ }} }}"
+        )
+    };
+    let ancien = read_lilypond(&source("2.8.0", "")).expect("lecture ancienne");
+    assert_eq!(
+        hauteurs(&ancien),
+        vec![65, 67, 69, 71, 84, 101],
+        "avant 2.17.15, \\relative sans argument part de c'"
+    );
+    let recent = read_lilypond(&source("2.24.0", "")).expect("lecture récente");
+    assert_eq!(
+        hauteurs(&recent),
+        vec![53, 55, 57, 59, 72, 89],
+        "depuis 2.17.15, le défaut est f"
+    );
+    // Une hauteur explicite garde priorité, quelle que soit la version.
+    let explicite = read_lilypond(&source("2.8.0", " f")).expect("lecture explicite");
+    assert_eq!(
+        hauteurs(&explicite),
+        vec![53, 55, 57, 59, 72, 89],
+        "\\relative f garde sa référence"
+    );
+}

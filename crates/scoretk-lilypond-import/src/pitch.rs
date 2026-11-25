@@ -809,6 +809,9 @@ pub(crate) struct OctaveState {
     pub previous: Option<(u8, i8)>,
     /// Mode relatif.
     pub relative: bool,
+    /// `\version` antérieur à 2.17.15 : un `\relative` sans argument part de
+    /// `c'` et non de `f` (`python/convertrules.py`, règle 2.17.15).
+    pub old_relative: bool,
 }
 
 impl Default for OctaveState {
@@ -819,6 +822,7 @@ impl Default for OctaveState {
             reference: 3,
             previous: None,
             relative: false,
+            old_relative: false,
         }
     }
 }
@@ -897,17 +901,25 @@ impl OctaveState {
     /// La référence joue donc le rôle de note précédente, comme la hauteur
     /// initiale passée à `Music::make_relative` (`lily/music.cc`).
     ///
-    /// Sans hauteur, LilyPond prend `f` sous le do central : la fonction
-    /// `relative` de `ly/music-functions-init.ly` construit
-    /// `(ly:make-pitch -1 (quotient (ly:pitch-steps (ly:make-pitch 1 0)) 2))`,
-    /// soit fa en octave -1 (`f` pour une gamme de sept degrés), donc l'octave
-    /// 3 dans notre numérotation.
+    /// Sans hauteur, LilyPond 2.17.15 et plus tard prennent `f` sous le do
+    /// central : la fonction `relative` de `ly/music-functions-init.ly`
+    /// construit `(ly:make-pitch -1 (quotient (ly:pitch-steps (ly:make-pitch
+    /// 1 0)) 2))`, soit fa en octave -1, donc l'octave 3 dans notre
+    /// numérotation. Avant cette version, le défaut était `c'` : la règle
+    /// 2.17.15 de `python/convertrules.py` réécrit précisément
+    /// `\relative {` en `\relative c' {` (et interdit
+    /// `#(ly:set-option 'old-relative)`, l'option explicite de l'ancien
+    /// comportement). Le `\\version` du document choisit donc la référence.
     pub(crate) fn start_relative(&mut self, reference: Option<&PitchSpec>) {
         self.relative = true;
         match reference {
             Some(pitch) => {
                 self.set_reference(pitch);
                 self.previous = Some((pitch.step, self.reference));
+            }
+            None if self.old_relative => {
+                self.reference = 4;
+                self.previous = Some((0, 4));
             }
             None => {
                 self.reference = 3;
@@ -930,7 +942,10 @@ impl OctaveState {
     /// `\relative` is included in the block. »
     pub(crate) fn sans_relative(self) -> Self {
         if self.relative {
-            Self::default()
+            Self {
+                old_relative: self.old_relative,
+                ..Self::default()
+            }
         } else {
             Self {
                 relative: false,
@@ -1097,6 +1112,7 @@ mod tests {
             relative: true,
             reference: 126,
             previous: Some((0, 126)),
+            ..OctaveState::default()
         };
         assert_eq!(state.resolve(&spec(0, 1)), 127);
         assert_eq!(state.resolve(&spec(0, 1)), 127);
@@ -1106,6 +1122,7 @@ mod tests {
             relative: true,
             reference: -126,
             previous: Some((0, -126)),
+            ..OctaveState::default()
         };
         assert_eq!(state.resolve(&spec(0, -1)), -127);
         assert_eq!(state.resolve(&spec(0, -1)), -128);

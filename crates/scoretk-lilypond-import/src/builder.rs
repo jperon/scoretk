@@ -53,6 +53,32 @@ use crate::pitch::OctaveState;
 use crate::warnings::Warnings;
 use crate::Interpreter;
 
+/// Le `\version` du document régit le défaut d'un `\relative` sans argument.
+///
+/// Jusqu'à 2.17.14 inclus, LilyPond partait de `c'` ; la règle 2.17.15 de
+/// `python/convertrules.py` (`\\relative -> \\relative c'`, avec refus de
+/// `#(ly:set-option 'old-relative)`) marque le changement, et depuis 2.17.15
+/// `ly/music-functions-init.ly` définit le défaut `f`. Un document qui déclare
+/// une version ancienne doit donc être lu avec l'ancien défaut, même si le
+/// compilateur installé est plus récent.
+fn old_relative_version(version: Option<&str>) -> bool {
+    let Some(version) = version else {
+        return false;
+    };
+    let mut parties = version.split('.');
+    let Some(majeur) = parties.next().and_then(|p| p.trim().parse::<u32>().ok()) else {
+        return false;
+    };
+    let Some(mineur) = parties.next().and_then(|p| p.trim().parse::<u32>().ok()) else {
+        return false;
+    };
+    let correctif = parties
+        .next()
+        .and_then(|p| p.trim().parse::<u32>().ok())
+        .unwrap_or(0);
+    (majeur, mineur, correctif) < (2, 17, 15)
+}
+
 /// Intervalle pendant lequel les barres automatiques sont suspendues.
 ///
 /// Correspond à `Timing.timing = ##f` de LilyPond : la mesure en cours
@@ -182,7 +208,10 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     write_metadata(&mut score, document);
 
     let mut staves: Vec<StaffBuild> = Vec::new();
-    let mut octave_relatif = OctaveState::default();
+    let mut octave_relatif = OctaveState {
+        old_relative: old_relative_version(document.version.as_deref()),
+        ..OctaveState::default()
+    };
     // Identifiants des contextes `Voice` (un `Tie_performer` par voix,
     // `ly/performer-init.ly:100-109`), partagés entre toutes les portées.
     let mut next_voice_context = 0u32;
@@ -1077,10 +1106,16 @@ fn build_voices(
                 Music::New(group) if group.kind == crate::ast::GroupKind::Voice
             ) =>
             {
-                OctaveState::default()
+                OctaveState {
+                    old_relative: octave.old_relative,
+                    ..OctaveState::default()
+                }
             }
             Music::Context(crate::ast::Context::Relative { chain: true, .. }) => octave,
-            _ => OctaveState::default(),
+            _ => OctaveState {
+                old_relative: octave.old_relative,
+                ..OctaveState::default()
+            },
         };
         let (interpreted, octave_suivante) = Interpreter::run(
             &block.music,
