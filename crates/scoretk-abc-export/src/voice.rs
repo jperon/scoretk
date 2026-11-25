@@ -652,6 +652,12 @@ fn end_bar_line(measure: &Measure, last: bool) -> String {
         BarLineType::EndRepeat => ":|".to_owned(),
         BarLineType::End => "|]".to_owned(),
         BarLineType::Double | BarLineType::DoubleShort => "||".to_owned(),
+        // Conventions gabctk (`gabctk.py:932-933`, décision de l'utilisateur)
+        // : la divisio minima `,` devient `!shortphrase![|]` et la divisio
+        // minor `;` devient `!mediumphrase![|]`. Ce sont aussi les styles
+        // MusicXML `tick` et `short` de la projection grégorienne.
+        BarLineType::Tick => "!shortphrase![|]".to_owned(),
+        BarLineType::Short => "!mediumphrase![|]".to_owned(),
         BarLineType::Dotted | BarLineType::DoubleDotted => ";".to_owned(),
         _ if last => "|]".to_owned(),
         _ => "|".to_owned(),
