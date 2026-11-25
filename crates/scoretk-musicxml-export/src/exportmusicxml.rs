@@ -1030,8 +1030,8 @@ impl<'a> Context<'a> {
                 out.attr(false);
                 if measure_index == 0 {
                     chant::write_header_directions(out, gregorian);
+                    chant::write_all_syllable_directions(out, gregorian);
                 }
-                chant::write_syllable_direction(out, gregorian, measure_index);
             }
         }
 
@@ -2013,7 +2013,7 @@ impl Context<'_> {
                             source.gregorian_syllable,
                             source.gregorian_note,
                         );
-                        chant::write_note_signs(out, gregorian_note);
+                        chant::write_note_signs(out, gregorian_note, source.gregorian_syllable);
                     }
                 }
             }

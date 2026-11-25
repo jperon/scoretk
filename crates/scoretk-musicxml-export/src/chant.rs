@@ -102,11 +102,19 @@ pub(crate) fn write_header_directions(out: &mut Out, gregorian: &Gregorian) {
     }
 }
 
-/// Une syllabe et ses barres : une direction par mesure dérivée.
+/// Écrit le payload L6 complet des syllabes dans la première mesure.
 ///
-/// La projection dérivée crée une mesure par syllabe (y compris les groupes
-/// qui ne contiennent qu'une barre) : l'index de mesure est donc l'index de
-/// la syllabe, sans ambiguïté.
+/// Une mesure dérivée se termine sur une barre réelle, pas sur une syllabe :
+/// il y a donc moins de mesures que de syllabes. Les directions privées sont
+/// regroupées au début du document pour que l'aller-retour L6 ne dépende pas
+/// du nombre de mesures projetées.
+pub(crate) fn write_all_syllable_directions(out: &mut Out, gregorian: &Gregorian) {
+    for index in 0..gregorian.syllables.len() {
+        write_syllable_direction(out, gregorian, index);
+    }
+}
+
+/// Une syllabe et ses barres, indexée par sa position source.
 pub(crate) fn write_syllable_direction(out: &mut Out, gregorian: &Gregorian, index: usize) {
     let Some(syllable) = gregorian.syllables.get(index) else {
         return;
@@ -203,7 +211,7 @@ pub(crate) fn write_note_notation(
 
 /// Signes attachés à une note : `<other-technical>` (XSD 4.0,
 /// `complexType other-technical`).
-pub(crate) fn write_note_signs(out: &mut Out, note: &GregorianNote) {
+pub(crate) fn write_note_signs(out: &mut Out, note: &GregorianNote, syllable_index: usize) {
     if note.signs.is_empty() {
         return;
     }
@@ -214,7 +222,11 @@ pub(crate) fn write_note_signs(out: &mut Out, note: &GregorianNote) {
         out.xml.tag_with(
             "other-technical",
             &[("print-object", "no")],
-            &format!("{PREFIX}sign:{}", field('s', &sign.raw)),
+            &format!(
+                "{PREFIX}sign:{}|{}",
+                field('s', &sign.raw),
+                field('i', &syllable_index.to_string())
+            ),
         );
     }
     out.xml.end_element();

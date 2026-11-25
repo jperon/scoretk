@@ -162,6 +162,30 @@ fn an_alteration_is_not_a_note_and_changes_pitch_and_musicxml_alter() {
     assert_eq!(again.notes.len(), score.notes.len());
 }
 
+/// Une mesure dérivée par barre de séparation réelle, jamais par syllabe
+/// (`Gabc.tex:801-845`), sans mesure métrique affichée.
+#[test]
+fn gabc_measures_follow_separation_bars_not_syllables() {
+    const BARS: &str = "name:t;\n%%\n(c4) A(g)h(i) (,) B(g)h(i) (;) C(g)h(i) (:) D(g)h(i) (::)\n";
+    let score = read(BARS.as_bytes(), Format::Gabc).expect("GABC import");
+    assert_eq!(
+        score.measures.len(),
+        4,
+        "one measure per separation bar, not one per syllable group"
+    );
+    assert_eq!(score.notes.len(), 8);
+    let xml = String::from_utf8(
+        write(&score, Format::MusicXml, &Options::default()).expect("MusicXML export"),
+    )
+    .expect("UTF-8 MusicXML");
+    assert!(
+        xml.contains("<time print-object=\"no\"><senza-misura/></time>")
+            || xml.contains("<senza-misura"),
+        "chant must be explicitly unmetered: {xml}"
+    );
+    assert!(!xml.contains("<beats>"), "no displayed meter: {xml}");
+}
+
 /// Positions source UTF-16 : identifiants MusicXML et carte des temps sont
 /// calculés par la même fonction du noyau, donc exactement égaux.
 #[test]
@@ -174,8 +198,8 @@ fn gabc_source_positions_reach_musicxml_ids_and_timeline() {
         ("m0-s0-v0-c0-n0", 18, 19),
         ("m0-s0-v0-c1-n0", 19, 20),
         ("m0-s0-v0-c2-n0", 20, 21),
-        ("m1-s0-v0-c0-n0", 24, 25),
-        ("m1-s0-v0-c1-n0", 27, 28),
+        ("m0-s0-v0-c3-n0", 24, 25),
+        ("m0-s0-v0-c4-n0", 27, 28),
     ];
     assert_eq!(playback.timemap.notes.len(), expected.len());
     for ((id, offset, end), note) in expected.iter().zip(&playback.timemap.notes) {

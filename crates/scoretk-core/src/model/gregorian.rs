@@ -306,22 +306,25 @@ impl Gregorian {
         // Une entrée par lettre de hauteur (`a`…`n`, `p` ; `o` est l'oriscus).
         let mut alterations = [0i8; 16];
         let mut start = Fraction::ZERO;
+        let mut sung = 0usize;
+        let mut measure_index = 0usize;
+        let mut measure: Option<Measure> = None;
         for (index, syllable) in self.syllables.iter().enumerate() {
-            let mut sung = 0usize;
-            // Une alteration est un glyphe et non une attaque : elle ne
-            // consomme aucun temps dans la mesure dérivée. Un groupe sans
-            // note chantée occupe malgré tout un quart, pour éviter une
-            // mesure de longueur nulle.
-            let sung_total = syllable
+            let has_sung = syllable
                 .notes
                 .iter()
-                .filter(|note| alteration_value(note).is_none())
-                .count();
-            let len = Fraction::new(sung_total.max(1) as i64, 4);
-            let mut measure = Measure::new(index, start, Fraction::ONE).with_len(len);
-            if let Some(bar) = syllable.bars.last() {
-                measure.end_bar_line = derived_bar_line(*bar);
+                .any(|note| alteration_value(note).is_none());
+            if (has_sung || !syllable.bars.is_empty()) && measure.is_none() {
+                let mut opened = Measure::new(measure_index, start, Fraction::ONE);
+                if measure_index == 0 {
+                    let mut segment = Segment::new(SegmentType::Clef, Fraction::ZERO, 1);
+                    segment
+                        .set_element(track, SegmentItem::Clef(Clef::new(derived_clef_type(clef))));
+                    opened.add_segment(segment);
+                }
+                measure = Some(opened);
             }
+            let mut syllable_sung = false;
             for (note_index, note) in syllable.notes.iter().enumerate() {
                 if let Some(value) = alteration_value(note) {
                     // L'alteration est un glyphe, pas une attaque MIDI.
@@ -350,23 +353,22 @@ impl Gregorian {
                 // Segment ticks are absolute in the pivot (`pass2.rs:495-518`),
                 // not relative to the measure.
                 let tick = start + Fraction::new(sung as i64, 4);
-                if sung == 0 {
+                if !syllable_sung {
                     let text = plain_lyric(&syllable.text);
                     if !text.is_empty() {
                         chord_rest
                             .lyrics
                             .push(Lyrics::new(0, LyricsSyllabic::Single, text));
                     }
+                    syllable_sung = true;
                 }
                 let mut segment = Segment::new(SegmentType::ChordRest, tick, 1);
                 segment.set_element(track, SegmentItem::ChordRest(chord_rest));
-                measure.add_segment(segment);
+                measure
+                    .as_mut()
+                    .expect("a sung note opens a measure")
+                    .add_segment(segment);
                 sung += 1;
-            }
-            if index == 0 {
-                let mut segment = Segment::new(SegmentType::Clef, Fraction::ZERO, 1);
-                segment.set_element(track, SegmentItem::Clef(Clef::new(derived_clef_type(clef))));
-                measure.add_segment(segment);
             }
             // Portée de l'alteration : fin de mot ou barre de séparation
             // (`Gabc.tex:801-845`, `:241-245`). Un naturel la cancelle déjà
@@ -374,13 +376,32 @@ impl Gregorian {
             if syllable.space_after || !syllable.bars.is_empty() {
                 alterations = [0; 16];
             }
-            start = measure.end_tick();
-            score.add_measure(measure);
+            // Une mesure dérivée correspond à une **barre réelle** du `.gabc`
+            // (`,` `;` `:` `::`, `Gabc.tex:801-845`), pas à un groupe de
+            // syllabes : les syllables sans barre s'accumulent dans la même
+            // mesure. Plusieurs barres dans un même groupe ouvrent plusieurs
+            // mesures (l'ordre exact des barres à l'intérieur du groupe est
+            // une donnée L6 hors de portée, documentée en §10).
+            for bar in &syllable.bars {
+                let opened = measure
+                    .take()
+                    .unwrap_or_else(|| Measure::new(measure_index, start, Fraction::ONE));
+                let mut opened = opened.with_len(Fraction::new(sung.max(1) as i64, 4));
+                opened.end_bar_line = derived_bar_line(*bar);
+                start = opened.end_tick();
+                score.add_measure(opened);
+                measure_index += 1;
+                sung = 0;
+            }
+        }
+        if let Some(opened) = measure {
+            let opened = opened.with_len(Fraction::new(sung.max(1) as i64, 4));
+            score.add_measure(opened);
         }
 
         score.report.record(
             Layers::COMMON,
-            "derived-modern-view: one note per pitch letter (alterations are signs), quarter duration, nominal 4/4",
+            "derived-modern-view: one note per sung letter, bars as measures, unmetered quarter durations",
             None,
             None,
         );

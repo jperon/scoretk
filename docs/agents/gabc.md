@@ -149,9 +149,13 @@ directions (`docs/agents/plan-fiabilite.md`).
 The L6 `Gregorian` payload owns this primary data. The L0/L1 view is a
 **derived projection** (`Gregorian::build_derived_score`, shared by the GABC
 and MusicXML readers): one `Note` per *sung* pitch letter, quarter-note
-default duration and one nominal measure per syllable. `derived_modern_view =
-true` and a `derived-modern-view` loss record make that choice explicit
-(`model-modularisation.md` §7.1).
+default duration, and **one measure per real separation bar** (`,` `;` `:`
+`::`, `Gabc.tex:801-845`), not one per syllable group. Syllables without a bar
+accumulate in the open measure, so the modern view has neither a displayed
+meter nor invented measure numbers: MusicXML writes
+`<time print-object="no"><senza-misura/></time>` (XSD 4.0 `time` /
+`senza-misura`). `derived_modern_view = true` and a `derived-modern-view` loss
+record make that choice explicit (`model-modularisation.md` §7.1).
 
 **Alterations (item 1).** `x`/`X` (flat), `#`/`##` (sharp), `y`/`Y` (natural)
 and their parenthesized forms are *not sung notes*: `Gabc.tex:512-515` calls
@@ -273,7 +277,7 @@ to carry (`Gabc.tex:801-845`).
 | --- | --- | --- |
 | Title, author and remaining headers | `<work>/<work-title>`, `<identification>/<creator>`, then `<other-direction>` for e.g. `mode`, `office-part` | XSD 4.0 `other-direction` (“any direction symbols not yet in the MusicXML format”); `Gabc.tex:67-154` |
 | Clef token (`c3`, `cb3`, `c1@c4`) | `<clef>` in the derived view + `gabc:clef` atomic token in `<other-direction>` | `Gabc.tex:847-870`, `src/struct.c:1273-1288`; XSD 4.0 `clef`, `other-direction` |
-| Absence of metre | `<time print-object="no"><senza-misura/></time>` | XSD 4.0 `time` / `senza-misura` (“explicitly indicates that no time signature is present”); `Gabc.tex:801-845` |
+| Absence of metre and measures per bar | `<time print-object="no"><senza-misura/></time>` and one `<measure>` ending at each separation bar | XSD 4.0 `time` / `senza-misura` (“explicitly indicates that no time signature is present”); `Gabc.tex:801-845` |
 | Syllable text and word space | `<lyric>` with `syllabic` for the sung word; `gabc:syllable` in `<other-direction>` for markup and exact text | XSD 4.0 `lyric`, `syllabic`; `Gabc.tex:228-245,314-343` |
 | Pitch letter and neume shape | derived `<pitch>` + `gabc:note` in `<notations>/<other-notation>`; the shape fields are private (an alteration is **not** a `<notehead>` and emits no note, §7) | XSD 4.0 `notehead-value`, `other-notation` (“extended representation, though without application interoperability”); `Gabc.tex:408-443,452-540` |
 | Source position of a sung pitch | additive suffix `-o{offset}-e{end}` on `id`/`xml:id`, in UTF-16 units from the start of the file | XSD 4.0 `id`/`xml:id`; documented in `timemap.md`; `Gabc.tex:408-443` |

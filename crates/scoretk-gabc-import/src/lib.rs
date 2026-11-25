@@ -102,7 +102,9 @@ mod tests {
         );
         assert!(gregorian.derived_modern_view);
         assert_eq!(score.notes.len(), 2);
-        assert_eq!(score.measures.len(), 3);
+        // La mesure dérivée s'achève sur la barre `,` : les deux syllabes
+        // chantées et le groupe de barre ne forment qu'une mesure.
+        assert_eq!(score.measures.len(), 1);
         assert!(score
             .report
             .losses

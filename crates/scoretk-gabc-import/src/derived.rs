@@ -38,8 +38,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn segment_ticks_are_absolute_and_measures_do_not_collapse() {
-        use scoretk_core::model::{Gregorian, Syllable};
+    fn segment_ticks_are_absolute_and_bars_close_measures() {
+        use scoretk_core::model::{BarKind, Gregorian, Syllable};
         let mut gregorian = Gregorian::default();
         for text in ["DE", "us"] {
             gregorian.syllables.push(Syllable {
@@ -51,12 +51,22 @@ mod tests {
                 ..Syllable::default()
             });
         }
-        gregorian.syllables.push(Syllable::default()); // bar-only group
+        gregorian.syllables.push(Syllable {
+            bars: vec![BarKind::DivisioMinima],
+            ..Syllable::default()
+        });
+        gregorian.syllables.push(Syllable {
+            notes: vec![scoretk_core::model::GregorianNote::default()],
+            bars: vec![BarKind::DivisioFinalis],
+            ..Syllable::default()
+        });
         let mut score = Score::new();
         build_projection(&mut score, &gregorian);
+        assert_eq!(score.measures.len(), 2, "one measure per separation bar");
+        assert_eq!(score.notes.len(), 5);
         assert!(score.measures[1].start_tick > score.measures[0].start_tick);
-        assert!(score.measures[2].len > scoretk_core::model::Fraction::ZERO);
         for measure in &score.measures {
+            assert!(measure.len > scoretk_core::model::Fraction::ZERO);
             for segment in &measure.segments {
                 assert!(segment.tick >= measure.start_tick, "absolute segment tick");
             }
