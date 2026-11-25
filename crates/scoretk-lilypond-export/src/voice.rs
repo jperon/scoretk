@@ -869,8 +869,23 @@ fn measure_length_plan(score: &Score, staff: usize, voice: usize) -> Vec<Measure
         // Une mesure irrégulière qui ne contient qu'un silence de mesure
         // entière est écrite `R1` sous `measureLength = #len` (§2.2.3), et non
         // `R1*N` : ce dernier étalerait le silence sur N mesures nominales et
-        // ferait perdre la mesure longue du modèle à la relecture.
-        let written_len = measure.len;
+        // ferait perdre la mesure longue du modèle à la relecture. En revanche,
+        // un vrai silence condensé couvre déjà `N` mesures nominales avec
+        // `R1*N` : figer `measureLength` sur `#N/1` le ferait sonner N fois
+        // trop long. Les mesures successives de silence conservent leurs
+        // frontières (`R1 | R1`) et ne sont pas condensées.
+        let condensed_multi_rest = measure
+            .multi_measure_rest
+            .filter(|count| *count > 1)
+            .is_some_and(|count| {
+                measure.nominal_len.is_positive()
+                    && measure.len == measure.nominal_len * Fraction::from_integer(i64::from(count))
+            });
+        let written_len = if condensed_multi_rest {
+            measure.nominal_len
+        } else {
+            measure.len
+        };
         let mut expected = current;
         if let Some(time) = time {
             meter = time.measure_len();
@@ -1518,6 +1533,12 @@ mod tests {
         let mut measure = Measure::new(0, Fraction::ZERO, nominal * Fraction::from_integer(2));
         measure.nominal_len = nominal;
         measure.multi_measure_rest = Some(2);
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+        segment.set_element(
+            Track::from_raw(0),
+            SegmentItem::ChordRest(ChordRest::full_measure_rest()),
+        );
+        measure.add_segment(segment);
         score.add_measure(measure);
 
         let plan = measure_length_plan(&score, 0, 0);
@@ -1526,6 +1547,13 @@ mod tests {
             "R1*2 sous 4/4 ne doit pas figer measureLength sur #2/1"
         );
         assert!(plan[0].bar_check);
+        let structure = crate::structure::Structure {
+            before: vec![Vec::new(); 1],
+            after: vec![Vec::new(); 1],
+        };
+        let body = render_body(&score, &structure, 0, 0, 1);
+        assert!(!body.contains("measureLength"), "{body}");
+        assert!(body.contains("R1*2"), "{body}");
     }
 
     #[test]
