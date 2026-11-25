@@ -28,9 +28,12 @@
 //! La bibliothèque reste portable : tout se passe en mémoire, sans disque,
 //! sans thread et sans horloge.
 
+pub mod capabilities;
 mod container;
 mod error;
 mod names;
+
+pub use capabilities::CAPABILITIES;
 mod text;
 mod write;
 mod xmlwriter;

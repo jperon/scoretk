@@ -76,6 +76,7 @@
 //! ```
 
 mod annotations;
+pub mod capabilities;
 mod chord;
 mod duration;
 mod event;
@@ -85,6 +86,8 @@ mod structure;
 mod text;
 mod voice;
 mod writer;
+
+pub use capabilities::CAPABILITIES;
 
 pub use scoretk_core::model::Fraction;
 pub use scoretk_lilypond_common::{Error, Result};

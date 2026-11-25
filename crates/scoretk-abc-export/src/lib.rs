@@ -50,8 +50,11 @@
 //! L'exemple suppose `scoretk-abc-import` en dev-dépendance ; l'écriture seule
 //! n'en a pas besoin. Voir `docs/agents/abc.md`.
 
+pub mod capabilities;
 mod voice;
 mod writer;
+
+pub use capabilities::CAPABILITIES;
 
 use scoretk_core::model::Score;
 

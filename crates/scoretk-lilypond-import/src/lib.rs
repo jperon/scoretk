@@ -61,6 +61,9 @@
 
 mod ast;
 mod builder;
+pub mod capabilities;
+
+pub use capabilities::CAPABILITIES;
 mod events;
 mod include;
 mod lexer;

@@ -39,8 +39,10 @@ use zip::{CompressionMethod, ZipWriter};
 
 use scoretk_core::model::Score;
 
+pub mod capabilities;
 mod error;
 
+pub use capabilities::CAPABILITIES;
 pub use error::{Error, Result};
 
 mod beams;

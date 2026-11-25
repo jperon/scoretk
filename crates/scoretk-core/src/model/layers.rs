@@ -108,6 +108,34 @@ impl Layers {
     }
 }
 
+/// Format-level layer contract of one direction crate (§5.3 of
+/// `docs/agents/model-modularisation.md`).
+///
+/// The layers describe what the **format** can carry, not what the current
+/// reader or writer implements: the difference is exactly what the coverage
+/// measurement reports. An import crate fills `reads`; an export crate fills
+/// `writes`; the other field is `NONE`. The declaration is format-level, so
+/// the import and export crates of a format declare the same layers.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Capabilities {
+    /// Layers the direction reads from the format into the pivot.
+    pub reads: Layers,
+    /// Layers the direction writes from the pivot into the format.
+    pub writes: Layers,
+}
+
+impl Capabilities {
+    /// Builds a declaration from the two directions.
+    pub const fn new(reads: Layers, writes: Layers) -> Self {
+        Self { reads, writes }
+    }
+
+    /// Union of both directions: the layers a format covers as a whole.
+    pub const fn declared(self) -> Layers {
+        self.reads.union(self.writes)
+    }
+}
+
 /// One structured loss: data the core could hold but the conversion dropped.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Loss {
@@ -306,6 +334,19 @@ mod tests {
         assert!(!both.contains(Layers::TEXT));
         assert!(Layers::ALL.contains(both));
         assert_eq!(Layers::ENGRAVING.name(), "engraving");
+    }
+
+    #[test]
+    fn capabilities_union_both_directions() {
+        let import = Capabilities::new(Layers::COMMON.union(Layers::METRIC), Layers::NONE);
+        let export = Capabilities::new(Layers::NONE, Layers::TEXT);
+        assert_eq!(import.reads, Layers::COMMON.union(Layers::METRIC));
+        assert_eq!(import.writes, Layers::NONE);
+        assert_eq!(import.declared(), Layers::COMMON.union(Layers::METRIC));
+        assert_eq!(
+            export.declared().union(import.declared()),
+            Layers::COMMON.union(Layers::METRIC).union(Layers::TEXT)
+        );
     }
 
     #[test]

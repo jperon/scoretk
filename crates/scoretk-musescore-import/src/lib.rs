@@ -28,9 +28,12 @@
 //! `.mscz` (ou accepte un `.mscx` nu) et [`detect_version`] lit la version du
 //! format. [`read::read_score`] répartit ensuite vers le lecteur 3.x ou 4.x.
 
+pub mod capabilities;
 mod container;
 mod error;
 pub mod read;
+
+pub use capabilities::CAPABILITIES;
 
 pub use container::{detect_version, MscVersion, MsczContainer};
 pub use error::{Error, Result};

@@ -67,7 +67,10 @@
 //! mal formé ou si la racine n'est pas `score-partwise`.
 
 mod barline;
+pub mod capabilities;
 mod container;
+
+pub use capabilities::CAPABILITIES;
 mod credits;
 mod direction;
 mod error;

@@ -44,7 +44,10 @@
 //! assert_eq!(score.measures.len(), 1);
 //! ```
 
+pub mod capabilities;
 mod reader;
+
+pub use capabilities::CAPABILITIES;
 
 pub use reader::{read_abc, read_abc_tune, read_abc_with, ReadOptions, ReadOutput};
 pub use scoretk_abc_common::{Error, Result, Warning};

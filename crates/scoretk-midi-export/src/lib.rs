@@ -43,8 +43,11 @@
 
 // Les erreurs sont partagées avec la lecture MIDI (types neutres du format).
 pub use scoretk_midi_common as error;
+pub mod capabilities;
 mod fixup;
 mod glissando;
+
+pub use capabilities::CAPABILITIES;
 mod harmony;
 mod ornaments;
 mod pause_map;

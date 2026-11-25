@@ -48,7 +48,10 @@
 //! croche, recherche des 3/5/7/9-olets, points, staccato, quatre voix, clefs
 //! adaptées) ; la logique de panneau d'options n'est pas portée.
 
+pub mod capabilities;
 pub mod midifile;
+
+pub use capabilities::CAPABILITIES;
 
 pub mod beat_locator;
 pub mod beatroot;
