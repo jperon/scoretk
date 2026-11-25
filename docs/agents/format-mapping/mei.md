@@ -7,10 +7,11 @@ Reference documents (outside the repository): `specs/README.md` § MEI;
 `ref-musescore/.474/src/importexport/mei/` (MuseScore **4.7.4**, the
 compliance target). Section numbers `§x.y` refer to MEI 5.1's CMN chapter.
 
-**Status.** Neither reader nor writer exists yet: no `scoretk-mei-*` crate.
-The *Model* column therefore gives the pivot capability
+**Status.** Reader and writer now exist in `scoretk-mei-{common,import,export}`
+and are ported from MuseScore 4.7.4 (see [`mei.md`](mei.md)). The *Model* column
+gives the pivot capability
 (`crates/scoretk-core/src/model`, file:line) and the **Status** column says
-whether a faithful port would be **direct** (existing field, no semantics
+whether the port is **direct** (existing field, no semantics
 lost), **conversion** (existing field but a computed mapping or an
 approximation), or **missing** (no field today). Layers are those of
 `docs/agents/model-modularisation.md` §5.1: L0 core, L1 metric, L2

@@ -261,6 +261,15 @@ Rust paths there are relative to `crates/scoretk-musescore-export/src/`.
 | `text.rs` | `engraving/dom/textbase.cpp` (markup writing) |
 | `container.rs` | `engraving/infrastructure/mscwriter.cpp` |
 
+### MEI (`crates/scoretk-mei-{common,import,export}/src/`)
+
+| Rust | Upstream C++ (4.7.4, `src/importexport/mei/internal/`) |
+| --- | --- |
+| `scoretk-mei-common/src/convert.rs` | `meiconverter.cpp`, `meiconverter.h` |
+| `scoretk-mei-common/src/ids.rs` | `meiconverter.h:64-89` (`mscore-*` `@type` values) |
+| `scoretk-mei-import/src/{lib,reader,header,controls}.rs` | `meiimporter.cpp`, `meireader.cpp` |
+| `scoretk-mei-export/src/{lib,header,writer}.rs` | `meiexporter.cpp`, `meiwriter.cpp`, `meiconfiguration.cpp` |
+
 ### MIDI (`crates/scoretk-midi-common/src/`, `crates/scoretk-midi-import/src/`, `crates/scoretk-midi-export/src/`)
 
 Writing (t35):

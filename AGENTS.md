@@ -7,10 +7,10 @@ in `docs/agents/` (index at the end of the file).
 
 **scoretk** (GPL-3.0-only) is a score conversion toolkit. A Rust port of the
 converters of **MuseScore Studio**: a generic core, reading `.mscz`/`.mscx`,
-`partwise` MusicXML export, then MuseScore, MusicXML, LilyPond, ABC and MIDI
-(see `docs/TODO.md`).
+`partwise` MusicXML export, then MuseScore, MusicXML, LilyPond, ABC, MIDI and
+MEI (see `docs/TODO.md`).
 
-Map of crates and modules (17 members: one core, one facade, its CLI and its
+Map of crates and modules (21 members: one core, one facade, its CLI and its
 wasm package, plus the formats split by direction):
 
 ```
@@ -29,6 +29,10 @@ crates/
   scoretk-abc-common        ABC tables and helpers shared by both directions
   scoretk-abc-import        .abc → model
   scoretk-abc-export        model → .abc
+  scoretk-xml-common        XML tree/writer shared by MusicXML and MEI
+  scoretk-mei-common        MEI tables and conversions shared by both directions
+  scoretk-mei-import        .mei → model (MEI 5.1, 4.7.4 port)
+  scoretk-mei-export        model → .mei
   scoretk                   facade: Format, read/write/convert, hooks
   scoretk-cli               `scoretk` binary (disk I/O)
   scoretk-wasm              wasm-bindgen wrapper
@@ -138,6 +142,7 @@ nix develop -c cargo build -p scoretk-core --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-midi-common -p scoretk-midi-import -p scoretk-midi-export --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-lilypond-common -p scoretk-lilypond-import -p scoretk-lilypond-export --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-abc-common -p scoretk-abc-import -p scoretk-abc-export --target wasm32-unknown-unknown
+nix develop -c cargo build -p scoretk-xml-common -p scoretk-mei-common -p scoretk-mei-import -p scoretk-mei-export --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-musescore-export --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk-musicxml-import --target wasm32-unknown-unknown
 nix develop -c cargo build -p scoretk --target wasm32-unknown-unknown
@@ -241,6 +246,9 @@ One line per document; read the one matching the subject before coding.
 - `docs/agents/plan-fiabilite.md` — reliability plan for the ten directions:
   reference batches, oracles, phases: read before a measurement campaign.
 - `docs/agents/model-modularisation.md` — audit of pivot-model field usage by the ten directions and proposal for common core + optional layers: read before adding GABC, MEI, Capella, Guitar Pro or Humdrum.
+- `docs/agents/mei.md` — MEI 5.1 port of MuseScore 4.7.4, corpus references,
+  measured coverage/conformity, limits and source upgrade: read before touching
+  the `scoretk-mei-*` crates.
 - `docs/agents/gabc.md` — GABC reference lot, licence record, oracle design and measured sanity baseline: read before running or extending `scripts/oracle/gabc/`.
 - docs/agents/format-mapping/ — format ↔ model tables per format and model
   gaps (musescore, musicxml, midi, lilypond, abc, gabc, mei, capella,

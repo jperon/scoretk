@@ -745,7 +745,9 @@ code handles today — the difference is the gap being measured.
 | `scoretk-lilypond-{import,export}` | L0+L1+L2+L3+L4+L5 | `format-ref/lilypond.md` « Durations, ticks, bars », « Pitch, key, clef, accidentals », « Parts, staves, voices, chords », « Ties, slurs, tuplets, grace », articulations/ornaments (§3.1–3.3), « Repeats and lyrics », `\paper`/`\layout`; the second MIDI `\score` carries L4 (`format-mapping/lilypond.md` line 38; rows 16–40). |
 | `scoretk-abc-{import,export}` | L0+L1+L2+L3+L4 | `format-ref/abc.md` §3.1 headers, §4.3–4.5 durations/repeats, §4.8–4.10 barlines/endings, §4.11–4.17 ties/grace/tuplets/chords, §5 lyrics, §6.2 `%%MIDI` (L4), §7 voices; `format-mapping/abc.md` lines 11–33. **L5 is not declared**: ABC 2.1 has no page style, no per-element coordinates and only implicit beaming (§4.7, mapping « Model gaps » n°4). |
 
-Coming formats (GABC §7.1, MEI §7.2, Capella §7.3, Guitar Pro §7.4,
+MEI now declares L0–L5 (`scoretk-mei-{import,export}`, citation:
+`docs/agents/format-ref/mei.md` §2–§13 and `docs/agents/mei.md` §3). The
+remaining coming formats (GABC §7.1, Capella §7.3, Guitar Pro §7.4,
 Humdrum §7.5) have no crate yet, so they have no declaration to export. Their
 mapping documents already assign layers and will reuse the same contract once
 their crates exist.

@@ -105,6 +105,13 @@ measurement and no tolerated regression).
 | Reading | to be built: **`abc2ly` tests** (`lilypond-ref/input/regression/abc2ly`, 8); examples from standard 2.1; a **public collection** (The Session, abcnotation.com, Nottingham Music Database — licence to check before any download, user agreement required) | `abc2midi` (abcMIDI, nixpkgs) → MIDI, N1–N2; `abc2xml.py` for N3 | no real measurement today |
 | Writing | all the other batches (mscz, xml, ly) | `abc2midi` on scoretk's output vs scoretk's / reference's MIDI; `abcm2ps` without error | 46/56 round trip |
 
+### MEI (`.mei`)
+
+| Direction | Batch | Oracle | State / target |
+| --- | --- | --- | --- |
+| Writing | 56 corpus `.mscx` exported to `.ref.mei` | MuseScore 4.7.4 `mscore -o out.mei in.mscx`, compared with normalised events (`mei_conformity.rs`) | 96.54 % normalised conformity |
+| Reading | the same 56 `.ref.mei` | MuseScore 4.7.4 `.mscx` reference model, `layer_coverage.rs` | 96.76 % essential, 81.90 % full (layout/style absent from MEI Basic) |
+
 ## 4. Phases and proposed order
 
 Order guided by usage (cantus mainly reads mscz/ly/xml) and by the expected

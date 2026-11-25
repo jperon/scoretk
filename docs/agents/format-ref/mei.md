@@ -8,7 +8,7 @@ Music Notation, the only notation chapter fetched), and the normative schema
 has **no licence statement** and is private, so quote nothing from it).
 Implementation to port: `ref-musescore/.474/src/importexport/mei/`.
 Companion: [MEI ↔ pivot model](../format-mapping/mei.md).
-Reader/writer planned: `crates/scoretk-mei-{common,import,export}`.
+Reader/writer: `crates/scoretk-mei-{common,import,export}` (see `docs/agents/mei.md`).
 
 Schema citations below are `<define>` lines of `mei-all-5.1.rng`; guideline
 citations are "§x.y" with the line in `cmn.html`.

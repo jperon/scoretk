@@ -6,7 +6,11 @@ score readers (`.mscx` / `.mscz`, 3.x and 4.x/5.x formats) of
 **MuseScore Studio**. The crates `scoretk-midi-common`, `scoretk-midi-import`
 and `scoretk-midi-export` port its SMF format, its MIDI import (reading an
 SMF into the model), its MIDI export and repeat unfolding
-(`RepeatList`). This file summarises the origin of the
+(`RepeatList`). The `scoretk-mei-{common,import,export}` crates port the MEI
+module of MuseScore **4.7.4** (tag `v4.7.4`, commit
+`7688c005ad963ba09ee715aae53dbc7e8c9d5ef8`); the MEI 5.1 format reference is
+the RelaxNG schema `mei-all-5.1.rng` (ECL-2.0, GPL-3 compatible), part of the
+MEI 5.1 specification at <https://music-encoding.org>. This file summarises the origin of the
 code and data, the corresponding licences and the trademarks.
 
 ## Project licence
@@ -52,6 +56,8 @@ Correspondence of the main sets:
 | `crates/scoretk-midi-import/src/` (reading, `midifile.rs` for the SMF format) | `importexport/midi/internal/midiimport/` (`importmidi.cpp`, `importmidi_chord.cpp`, `importmidi_quant.cpp`, `importmidi_simplify.cpp`, `importmidi_meter.cpp`, `importmidi_tuplet*.cpp`, `importmidi_voice.cpp`, `importmidi_key.cpp`, `importmidi_clef.cpp`, `importmidi_lrhand.cpp`, `importmidi_drum.cpp`, `importmidi_lyrics.cpp`, `importmidi_tempo.cpp`, `importmidi_instrument.cpp`, `importmidi_operations.h`), `importexport/midi/internal/midishared/{midifile,midievent,generalmidi}.cpp` and `engraving/dom/{sig,durationtype}.cpp` |
 | `crates/scoretk-lilypond-export/src/` | semantics of `engraving/dom/` (chords, measures, volatas, spanners); notation tables of `musicxml2ly` (see below) |
 | `crates/scoretk-musescore-export/src/` | `engraving/rw/write/` (`writer.cpp`, `staffwrite.cpp`, `measurewrite.cpp`, `twrite.cpp`, `connectorinfowriter.cpp`), `engraving/rw/xmlwriter.cpp` and `engraving/infrastructure/mscwriter.cpp` |
+| `crates/scoretk-mei-{common,import,export}/src/` | `importexport/mei/internal/{meiimporter,meiexporter,meiconverter}.cpp` (MuseScore 4.7.4); MEI 5.1 `mei-basic.rng` for the format contract |
+| `crates/scoretk-xml-common/src/` | in-memory XML tree and `engraving/rw/xmlwriter.cpp`, shared by MusicXML and MEI |
 | `crates/scoretk-abc-{common,import,export}/src/` | semantics of the `engraving/dom/` model; no MuseScore source for ABC (MuseScore has neither ABC import nor export); behaviour of `xml2abc.py`/`abc2xml.py` (see below) |
 
 ### Third-party code bundled by MuseScore: BeatRoot

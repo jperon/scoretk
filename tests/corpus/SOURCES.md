@@ -16,6 +16,13 @@ sources by `scripts/gen-references.sh` using MuseScore:
 - MuseScore 4.7.4 (`mscore`, nixpkgs), run headless
   (`QT_QPA_PLATFORM=offscreen`).
 
+The reference MEI files (`*.ref.mei`) are produced from the same `.mscx`
+sources by `scripts/gen-mei-references.sh` with MuseScore 4.7.4, two
+`mscore` processes at most, headless, foreign `LD_LIBRARY_PATH` removed.
+The command and the measurements are recorded in `docs/agents/mei.md`.
+Like the upstream sources they are derived from, these references are
+covered by the upstream GNU GPL version 3.
+
 The reference MIDI files (`midi/<version>/*.ref.mid`) are produced from the
 same sources by `scripts/gen-midi-references.sh`, with the same MuseScore
 version and the same headless mode; only a small subset of the corpus is

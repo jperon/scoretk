@@ -20,6 +20,10 @@ dependencies (`--edges normal,build`) nor packages present in
 dependencies"). Result as of 2026-11-17: **46 third-party crates**, all
 compatible.
 
+No third-party crate was added for the MEI directions: the
+`scoretk-mei-*` and `scoretk-xml-common` crates reuse the already listed
+`quick-xml` and `thiserror`.
+
 ## Table
 
 | Crate | Version | Declared licence | Role |
