@@ -42,8 +42,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use scoretk::model::{
-    compare, compare_with_kinds, essential, inventory, Capabilities, Coverage, LayerCounts, Layers,
-    LAYERS,
+    compare, compare_with_kinds, essential, inventory, Capabilities, Coverage, InventoryItem,
+    LayerCounts, LayerInventory, Layers, LAYERS,
 };
 use scoretk::{read, write, Format, MidiImportOptions, Options, Score};
 
@@ -1303,6 +1303,163 @@ fn xml_loss_diagnostic() {
                 }
             }
         }
+    }
+    println!();
+}
+
+/// MuseScore 3.x title-frame font-size defaults. MusicXML 4.0's `<defaults>`
+/// carries page geometry, `word-font` and `lyric-font`, but **no** element for
+/// the title/composer/lyricist text styles: `MusicXmlParserPass1` explicitly
+/// excludes `isTitleFrameStyle(tid)` from the word-font size
+/// (`importmusicxmlpass1.cpp:1843-1875`). The only carrier is
+/// `<credit-words font-size>` on a `<credit>` carrying that `<credit-type>`;
+/// when the score has no such credit, MuseScore 4.7.4's own export cannot
+/// encode the value. These items are therefore out of reach, not unported.
+const XML_STYLE_DEFAULTS_WITHOUT_CARRIER: &[&str] = &[
+    "title_font_size:24.00000",
+    "composer_font_size:12.00000",
+    "lyricist_font_size:12.00000",
+];
+
+/// Which title-frame credit types a MusicXML document actually carries.
+fn xml_credit_types(xml: &str) -> (bool, bool, bool) {
+    let has = |name: &str| xml.contains(&format!("<credit-type>{name}</credit-type>"));
+    (has("title"), has("composer"), has("lyricist"))
+}
+
+fn xml_without_unrepresentable_styles(source: &LayerInventory, xml: &str) -> LayerInventory {
+    let (title, composer, lyricist) = xml_credit_types(xml);
+    let carrier = |item: &InventoryItem| match item.value.as_str() {
+        "title_font_size:24.00000" => title,
+        "composer_font_size:12.00000" => composer,
+        "lyricist_font_size:12.00000" => lyricist,
+        _ => true,
+    };
+    LayerInventory {
+        items: source
+            .items
+            .iter()
+            .filter(|item| item.kind != "style" || carrier(item))
+            .cloned()
+            .collect(),
+    }
+}
+
+/// Evidence for the exclusion above: none of the 56 MuseScore 4.7.4
+/// references carries a credit of the corresponding type, so the style
+/// default cannot be reconstructed from the format. Diagnostic only.
+#[test]
+fn musicxml_style_defaults_without_credit_carrier() {
+    for (name, path) in corpus_scores() {
+        let reference = inventory(&reference_model(&path));
+        let xml_path = reference_file(&name, ReferenceKind::MusicXml)
+            .expect("MusicXML reference")
+            .0;
+        let xml = fs::read_to_string(&xml_path).expect("read MusicXML reference");
+        let (title, composer, lyricist) = xml_credit_types(&xml);
+        let imported = inventory(
+            &read(
+                &fs::read(xml_path).expect("read reference"),
+                Format::MusicXml,
+            )
+            .expect("MusicXML import"),
+        );
+        let mut expected: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut actual: BTreeMap<&str, usize> = BTreeMap::new();
+        for (bucket, source) in [(&mut expected, &reference), (&mut actual, &imported)] {
+            for item in &source.items {
+                if XML_STYLE_DEFAULTS_WITHOUT_CARRIER.contains(&item.value.as_str()) {
+                    *bucket.entry(item.value.as_str()).or_insert(0) += 1;
+                }
+            }
+        }
+        for (value, wanted) in expected {
+            let found = actual.get_mut(value).map_or(0, |count| {
+                let taken = (*count).min(wanted);
+                *count -= taken;
+                taken
+            });
+            for _ in found..wanted {
+                let present = match value {
+                    "title_font_size:24.00000" => title,
+                    "composer_font_size:12.00000" => composer,
+                    "lyricist_font_size:12.00000" => lyricist,
+                    _ => unreachable!(),
+                };
+                assert!(!present, "{name}: {value} has a MusicXML credit carrier");
+            }
+        }
+    }
+}
+
+/// Main row and spec-reachable row for both MusicXML directions. The main
+/// row is unchanged; the second only removes the style defaults proven above
+/// to have no carrier in the format. Diagnostic only.
+#[test]
+fn musicxml_spec_reachable_table() {
+    let scores = corpus_scores();
+    let declared = XML_IMPORT.declared().union(XML_EXPORT.declared());
+    let kinds = XML_IMPORT.declared_kinds().or(XML_EXPORT.declared_kinds());
+    for (name, reference) in [
+        ("musicxml round trip", None),
+        (
+            "musicxml import *.ref.musicxml",
+            Some(ReferenceKind::MusicXml),
+        ),
+    ] {
+        let mut raw = Totals::default();
+        let mut reachable = Totals::default();
+        for (score_name, path) in &scores {
+            let reference_inventory = inventory(&reference_model(path));
+            let (bytes, format) = match reference {
+                None => (
+                    write(
+                        &reference_model(path),
+                        Format::MusicXml,
+                        &Options::default(),
+                    )
+                    .ok(),
+                    Format::MusicXml,
+                ),
+                Some(kind) => match reference_file(score_name, kind) {
+                    Some((reference_path, format)) => (fs::read(reference_path).ok(), format),
+                    None => (None, Format::MusicXml),
+                },
+            };
+            let Some(bytes) = bytes else {
+                continue;
+            };
+            let Ok(candidate) = read(&bytes, format) else {
+                continue;
+            };
+            let candidate_inventory = inventory(&candidate);
+            let xml = match reference {
+                None => String::from_utf8_lossy(&bytes).into_owned(),
+                Some(_) => fs::read_to_string(
+                    reference_file(score_name, ReferenceKind::MusicXml)
+                        .expect("reference")
+                        .0,
+                )
+                .expect("read reference"),
+            };
+            let filtered_reference = xml_without_unrepresentable_styles(&reference_inventory, &xml);
+            let filtered_candidate = xml_without_unrepresentable_styles(&candidate_inventory, &xml);
+            raw.add(
+                &compare_with_kinds(&reference_inventory, &candidate_inventory, declared, kinds),
+                essential(&reference_inventory, &candidate_inventory),
+            );
+            reachable.add(
+                &compare_with_kinds(&filtered_reference, &filtered_candidate, declared, kinds),
+                essential(&filtered_reference, &filtered_candidate),
+            );
+        }
+        println!(
+            "\n=== {name}: raw {:.2}% ({} missing) / spec-reachable {:.2}% ({} missing) ===",
+            raw.total.percent(),
+            raw.total.reference - raw.total.matched,
+            reachable.total.percent(),
+            reachable.total.reference - reachable.total.matched
+        );
     }
     println!();
 }
