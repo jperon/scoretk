@@ -1150,6 +1150,163 @@ fn mei_core_loss_diagnostic() {
     println!();
 }
 
+/// Full per-kind loss table for the MuseScore and MusicXML rows (the main
+/// table only prints the eight largest gaps). Diagnostic only, like
+/// `layer_coverage_table`: it never asserts on a percentage.
+#[test]
+fn xml_full_loss_table() {
+    let scores = corpus_scores();
+    let rows: &[(&str, &Direction, Option<ReferenceKind>)] = &[
+        ("mscx round trip", &DIRECTIONS[0], None),
+        ("musicxml round trip", &DIRECTIONS[2], None),
+        (
+            "musicxml import *.ref.musicxml",
+            &DIRECTIONS[2],
+            Some(ReferenceKind::MusicXml),
+        ),
+    ];
+    for (label, direction, reference) in rows {
+        let declared = direction
+            .import
+            .declared()
+            .union(direction.export.declared());
+        let kinds = direction
+            .import
+            .declared_kinds()
+            .or(direction.export.declared_kinds());
+        let mut totals = Totals::default();
+        for (name, path) in &scores {
+            let reference_inventory = inventory(&reference_model(path));
+            let (bytes, format) = match reference {
+                None => (
+                    write(
+                        &reference_model(path),
+                        direction.format,
+                        &Options::default(),
+                    )
+                    .ok(),
+                    direction.format,
+                ),
+                Some(kind) => match reference_file(name, *kind) {
+                    Some((reference_path, format)) => (fs::read(reference_path).ok(), format),
+                    None => (None, direction.format),
+                },
+            };
+            let Some(bytes) = bytes else {
+                totals.skipped += 1;
+                continue;
+            };
+            let Ok(candidate) = read(&bytes, format) else {
+                totals.skipped += 1;
+                continue;
+            };
+            let candidate = inventory(&candidate);
+            let coverage = compare_with_kinds(&reference_inventory, &candidate, declared, kinds);
+            totals.add(&coverage, essential(&reference_inventory, &candidate));
+        }
+        println!(
+            "\n=== {} per-kind losses ({:.2} %, {} skipped, missing {} / {}) ===",
+            label,
+            totals.total.percent(),
+            totals.skipped,
+            totals.total.reference - totals.total.matched,
+            totals.total.reference
+        );
+        let mut gaps: Vec<((u8, &'static str), usize)> = totals
+            .missing_kinds
+            .iter()
+            .map(|((bits, kind), count)| ((*bits, *kind), *count))
+            .collect();
+        gaps.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+        for ((bits, kind), count) in gaps {
+            println!("    {:<28} {:<16} {:>5}", kind, layer_name(bits), count);
+        }
+    }
+    println!();
+}
+
+/// Every missing item of the MuseScore and MusicXML rows, with its score,
+/// tick, staff and value. Diagnostic only; it never asserts on a percentage.
+#[test]
+fn xml_loss_diagnostic() {
+    let scores = corpus_scores();
+    for (label, format, reference) in [
+        ("mscx round trip", Format::Mscx, None),
+        ("musicxml round trip", Format::MusicXml, None),
+        (
+            "musicxml import *.ref.musicxml",
+            Format::MusicXml,
+            Some(ReferenceKind::MusicXml),
+        ),
+    ] {
+        let (declared, kinds) = if format == Format::Mscx {
+            (
+                MSCX_IMPORT.declared().union(MSCX_EXPORT.declared()),
+                MSCX_IMPORT
+                    .declared_kinds()
+                    .or(MSCX_EXPORT.declared_kinds()),
+            )
+        } else {
+            (
+                XML_IMPORT.declared().union(XML_EXPORT.declared()),
+                XML_IMPORT.declared_kinds().or(XML_EXPORT.declared_kinds()),
+            )
+        };
+        println!("\n=== {label}: missing items ===");
+        for (name, path) in &scores {
+            let reference_inventory = inventory(&reference_model(path));
+            let bytes = match reference {
+                None => write(&reference_model(path), format, &Options::default()).expect("write"),
+                Some(kind) => fs::read(&reference_file(name, kind).expect("reference").0)
+                    .expect("read reference"),
+            };
+            let candidate = inventory(&read(&bytes, format).expect("read"));
+            let mut expected: BTreeMap<_, usize> = BTreeMap::new();
+            let mut actual: BTreeMap<_, usize> = BTreeMap::new();
+            for (bucket, source) in [
+                (&mut expected, &reference_inventory),
+                (&mut actual, &candidate),
+            ] {
+                for item in &source.items {
+                    if declared.contains(item.layer)
+                        && kinds.is_none_or(|ks| ks.contains(&item.kind))
+                    {
+                        *bucket
+                            .entry((item.tick, item.staff, item.kind, item.value.clone()))
+                            .or_insert(0) += 1;
+                    }
+                }
+            }
+            let mut lines = Vec::new();
+            for (key, wanted) in expected {
+                let found = actual.get_mut(&key).map_or(0, |count| {
+                    let taken = (*count).min(wanted);
+                    *count -= taken;
+                    taken
+                });
+                for _ in found..wanted {
+                    lines.push(format!(
+                        "    {:<22} tick {:<8} staff {:<3} {}",
+                        key.2,
+                        key.0
+                            .map(|tick| tick.to_string())
+                            .unwrap_or_else(|| "-".into()),
+                        key.1.map(|s| s.to_string()).unwrap_or_else(|| "-".into()),
+                        key.3,
+                    ));
+                }
+            }
+            if !lines.is_empty() {
+                println!("--- {name} ---");
+                for line in lines {
+                    println!("{line}");
+                }
+            }
+        }
+    }
+    println!();
+}
+
 /// Item kinds whose carrier is *never written* by MuseScore 4.7.4's MEI
 /// exporter. They are kept in the main import figure (never dropped), but a
 /// second figure excludes them to measure what the references allow.
