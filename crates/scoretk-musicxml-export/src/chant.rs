@@ -40,7 +40,7 @@
 //! (`gabc-score-determination.y:870-907`) et ordre exact des barres à
 //! l'intérieur d'un groupe.
 
-use scoretk_core::model::{Gregorian, GregorianNote, SignKind};
+use scoretk_core::model::{Gregorian, GregorianNote, NoteSource, SignKind};
 
 use crate::exportmusicxml::Out;
 
@@ -221,6 +221,56 @@ pub(crate) fn write_note_notation(
     out.xml
         .tag_with("other-notation", &[("type", "single")], &text);
     out.xml.end_element();
+}
+
+/// Vrai si une respiration visible doit être écrite sur cette note d'après
+/// les barres du payload L6 (`docs/agents/gabc.md` §9.1).
+///
+/// Une barre qui appelle une respiration (`BarKind::has_breath`, gabctk
+/// `gabctk.py:930-936`) la porte sur sa dernière note chantée. Quand le groupe
+/// de barre ne contient aucune note (`(,)` avant un mot), la respiration est
+/// reportée sur la première note chantée suivante, pour ne pas la perdre ni
+/// l'empiler sur la dernière note du chant. Une barre finale `::` n'en porte
+/// pas : le `<barline>` final la remplace.
+pub(crate) fn bar_breath(gregorian: &Gregorian, source: &NoteSource) -> bool {
+    let is_alteration = |note: &GregorianNote| {
+        note.signs
+            .iter()
+            .any(|sign| sign.kind == SignKind::Alteration)
+    };
+    let Some(syllable) = gregorian.syllables.get(source.gregorian_syllable) else {
+        return false;
+    };
+    let last_sung = syllable
+        .notes
+        .iter()
+        .skip(source.gregorian_note + 1)
+        .all(is_alteration);
+    if last_sung && syllable.bars.iter().any(|bar| bar.has_breath()) {
+        return true;
+    }
+    // Un groupe de barres sans note ne peut pas porter la respiration : on
+    // la reporte sur la première note chantée qui suit, et jamais plus loin.
+    if syllable
+        .notes
+        .iter()
+        .take(source.gregorian_note)
+        .any(|note| !is_alteration(note))
+    {
+        return false;
+    }
+    for previous in gregorian.syllables[..source.gregorian_syllable]
+        .iter()
+        .rev()
+    {
+        if previous.notes.iter().any(|note| !is_alteration(note)) {
+            return false;
+        }
+        if previous.bars.iter().any(|bar| bar.has_breath()) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Signes attachés à une note : `<other-technical>` (XSD 4.0,

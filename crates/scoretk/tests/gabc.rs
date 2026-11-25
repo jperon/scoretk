@@ -453,3 +453,70 @@ fn a_score_without_a_gregorian_payload_is_written_as_chant() {
         .last()
         .is_some_and(|syllable| !syllable.bars.is_empty()));
 }
+
+/// Nombre de `<breath-mark>` par `<note>` dans l'export MusicXML.
+fn breath_marks_per_note(xml: &str) -> Vec<usize> {
+    xml.split("<note>")
+        .skip(1)
+        .map(|chunk| {
+            chunk
+                .split("</note>")
+                .next()
+                .unwrap_or("")
+                .matches("<breath-mark")
+                .count()
+        })
+        .collect()
+}
+
+fn gabc_modern_xml(source: &str) -> String {
+    let score = read(source.as_bytes(), Format::Gabc).expect("GABC import");
+    let options = Options {
+        gabc_modern_clef: true,
+        ..Options::default()
+    };
+    String::from_utf8(write(&score, Format::MusicXml, &options).expect("MusicXML")).expect("UTF-8")
+}
+
+/// Un punctum mora n'est pas une respiration, et la divisio finalis `::` est
+/// une barre finale (`gabctk.py:935-936` : `||` ; `Gabc.tex:742-755,815-817`).
+/// Aucune virgule ne doit donc apparaître sur `d(h._)` ni sur la dernière
+/// note, malgré la durée jouée plus longue du mora.
+#[test]
+fn gabc_mora_and_finalis_do_not_emit_breath_marks() {
+    const SOURCE: &str = "name:t;\n%%\n(c4) a(g) b(h_) c(g) d(h._) e(g) (::)\n";
+    let xml = gabc_modern_xml(SOURCE);
+    assert_eq!(breath_marks_per_note(&xml), [0, 0, 0, 0, 0], "{xml}");
+    assert!(xml.contains("<bar-style>light-heavy</bar-style>"), "{xml}");
+    // L'aller-retour GABC reste intact : la respiration n'est qu'une
+    // projection moderne, aucun signe n'est réécrit dans le payload L6.
+    let score = read(SOURCE.as_bytes(), Format::Gabc).expect("import");
+    let again = String::from_utf8(write(&score, Format::Gabc, &Options::default()).expect("GABC"))
+        .expect("UTF-8");
+    let reread = read(again.as_bytes(), Format::Gabc).expect("second import");
+    assert_eq!(reread.notes.len(), score.notes.len());
+}
+
+/// Deux virgules sur la dernière note ; la première venait du segment `Breath`
+/// attaché à toute note dont la durée jouée se termine au tick de la barre, la
+/// seconde de la projection L6. Seule la barre qui appelle une respiration en
+/// dessine une, et jamais deux fois sur la même note.
+#[test]
+fn gabc_finalis_breath_is_not_stacked_on_the_last_note() {
+    const SOURCE: &str = "name:t;\n%%\n(c4) (,) do(h_) re(g) mi(h._) fa(g) (::)\n";
+    let xml = gabc_modern_xml(SOURCE);
+    // La divisio minima ouvre la respiration sur `do`, la première
+    // note chantée après elle ; la finalis n'en ajoute aucune sur `fa`.
+    assert_eq!(breath_marks_per_note(&xml), [1, 0, 0, 0], "{xml}");
+    assert!(xml.contains("<bar-style>light-heavy</bar-style>"), "{xml}");
+}
+
+/// Règle positive (`gabctk.py:930-936` : `,` → `!shortphrase![|]`,
+/// `;` → `!mediumphrase![|]`) : une divisio minima porte exactement une
+/// respiration, sur sa dernière note chantée, et la finalis reste sans.
+#[test]
+fn gabc_minima_breath_is_written_once_on_its_last_sung_note() {
+    const SOURCE: &str = "name:t;\n%%\n(c4) sol(g) la(h._,) si(i) (::)\n";
+    let xml = gabc_modern_xml(SOURCE);
+    assert_eq!(breath_marks_per_note(&xml), [0, 1, 0], "{xml}");
+}

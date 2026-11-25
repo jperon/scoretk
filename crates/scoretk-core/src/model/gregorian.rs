@@ -121,6 +121,28 @@ impl BarKind {
         }
     }
 
+    /// Vrai si la barre appelle une **respiration visible** dans la projection
+    /// moderne (`docs/agents/gabc.md` §9.1).
+    ///
+    /// Règle gabctk/Gregorio : la divisio minima `,` et la divisio minor `;`
+    /// (ainsi que les barres dominicaines `;n`, variantes positionnées de `;`)
+    /// sont des marques de phrase (`gabctk.py:930-936`, `Barre.abc` :
+    /// `!shortphrase![|]` / `!mediumphrase![|]` ; `Gabc.tex:812-820`). La
+    /// divisio maior `:` et la divisio finalis `::` sont des **barres**
+    /// (`gabctk.py:935-936` : `|` et `||`) : la barre de mesure finale remplace
+    /// la respiration, qui ne doit donc pas être ajoutée avant elle. Le punctum
+    /// mora `.` n'est pas une barre du tout (`Gabc.tex:742-755`) : il double la
+    /// figure notée et ne produit aucune respiration.
+    pub fn has_breath(self) -> bool {
+        matches!(
+            self,
+            Self::DivisioMinima
+                | Self::DivisioMinimaLedger
+                | Self::DivisioMinor
+                | Self::Dominican(_)
+        )
+    }
+
     /// Canonical GABC spelling of the bar, used as the inventory value.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -492,14 +514,22 @@ impl Gregorian {
                     .unwrap_or_else(|| Measure::new(measure_index, start, Fraction::ONE));
                 let mut opened = opened.with_len(cursor.max(Fraction::new(1, 4)));
                 opened.end_bar_line = derived_bar_line(*bar);
-                // Une barre de séparation est une respiration : le MIDI
-                // insère une pause (0,5 s, choix de projection documenté)
-                // et le MusicXML écrit `<breath-mark/>` sur la dernière note.
+                // Toute barre de séparation insère une pause MIDI (0,5 s,
+                // choix de projection documenté). Seule une barre qui appelle
+                // une respiration (`BarKind::has_breath`) porte une virgule :
+                // `:` et `::` sont des barres, pas des respirations, et le
+                // punctum mora n'en est même pas une. L'export MusicXML lit
+                // ce type pour ne pas dessiner de `<breath-mark>` sur une
+                // barre finale ni le dupliquer sur une note déjà pourvue.
                 let mut breath = Segment::new(SegmentType::Breath, opened.end_tick(), 1);
                 breath.set_element(
                     track,
                     SegmentItem::Breath(Breath {
-                        kind: BreathType::Comma,
+                        kind: if bar.has_breath() {
+                            BreathType::Comma
+                        } else {
+                            BreathType::Caesura
+                        },
                         placement: Placement::Above,
                         pause_ms: Some(500),
                     }),

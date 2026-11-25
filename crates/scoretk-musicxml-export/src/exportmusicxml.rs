@@ -2079,21 +2079,12 @@ impl Context<'_> {
                             source.gregorian_note,
                         );
                         // Une barre de séparation ferme la mesure sur la
-                        // dernière note *chantée* du groupe source.
-                        let breath = gregorian
-                            .syllables
-                            .get(source.gregorian_syllable)
-                            .is_some_and(|syllable| {
-                                !syllable.bars.is_empty()
-                                    && syllable.notes.iter().skip(source.gregorian_note + 1).all(
-                                        |note| {
-                                            note.signs.iter().all(|sign| {
-                                                sign.kind
-                                                    != scoretk_core::model::SignKind::Alteration
-                                            })
-                                        },
-                                    )
-                            });
+                        // dernière note *chantée* du groupe source. Seules
+                        // les barres qui appellent une respiration en portent
+                        // une : `:` et `::` sont des barres (`gabctk.py:935-936`,
+                        // `Gabc.tex:815-817`), pas des virgules à ajouter avant
+                        // la barre finale ; le punctum mora n'est pas une barre.
+                        let breath = chant::bar_breath(gregorian, &source);
                         chant::write_note_signs(
                             out,
                             gregorian_note,

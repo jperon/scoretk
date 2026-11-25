@@ -37,9 +37,9 @@ use std::collections::BTreeMap;
 
 use scoretk_core::model::{
     Accidental, Annotation, Articulation, ArticulationAnchor, ArticulationType, Breath, BreathType,
-    Chord, ChordLineType, Fermata, FermataType, Glissando, GlissandoType, LineStyle, Measure, Note,
-    Ornament, OrnamentType, Placement, Score, Segment, SpannerNotation, SpannerType, Tick, Track,
-    TremoloKind, Trill, TrillType,
+    Chord, ChordLineType, Extension, Fermata, FermataType, Glissando, GlissandoType, LineStyle,
+    Measure, Note, Ornament, OrnamentType, Placement, Score, Segment, SpannerNotation, SpannerType,
+    Tick, Track, TremoloKind, Trill, TrillType,
 };
 
 use super::exportmusicxml::{accidental_name, Notations};
@@ -254,8 +254,15 @@ pub(crate) fn chord_attributes(
         write_articulation(xml, articulation, notations);
     }
 
-    if let Some(breath) = breath_at(measure, track, end_tick) {
-        write_breath(xml, breath, notations);
+    // Le chant grégorien dérivé écrit ses respirations depuis les barres L6
+    // (`chant::write_note_signs`) : ses segments `Breath` ne portent que la
+    // pause MIDI. Les écrire aussi ici mettrait deux virgules sur la dernière
+    // note, et une virgule sur une note précédente dont la durée jouée se
+    // termine au même tick (punctum mora + épisème).
+    if !derived_gregorian(score) {
+        if let Some(breath) = breath_at(measure, track, end_tick) {
+            write_breath(xml, breath, notations);
+        }
     }
 
     if let Some(kind) = chord.chord_line {
@@ -548,8 +555,15 @@ pub(crate) fn rest_notations(
             }
         }
     }
-    if let Some(breath) = breath_at(measure, track, end_tick) {
-        write_breath(xml, breath, notations);
+    // Le chant grégorien dérivé écrit ses respirations depuis les barres L6
+    // (`chant::write_note_signs`) : ses segments `Breath` ne portent que la
+    // pause MIDI. Les écrire aussi ici mettrait deux virgules sur la dernière
+    // note, et une virgule sur une note précédente dont la durée jouée se
+    // termine au même tick (punctum mora + épisème).
+    if !derived_gregorian(score) {
+        if let Some(breath) = breath_at(measure, track, end_tick) {
+            write_breath(xml, breath, notations);
+        }
     }
     write_trills(score, xml, state, segment_tick, track, notations);
     slurs(score, xml, state, segment_tick, track, notations);
@@ -777,6 +791,16 @@ fn write_breath(xml: &mut XmlWriter, breath: &Breath, notations: &mut Notations)
         }
         None => xml.tag_empty(tag, &attributes),
     }
+}
+
+/// Vrai pour la vue L0/L1 dérivée du payload GABC : les respirations y sont
+/// écrites par `chant::write_note_signs` d'après les barres du source, jamais
+/// par le segment `Breath` qui ne sert qu'à la pause MIDI.
+fn derived_gregorian(score: &Score) -> bool {
+    matches!(
+        &score.extensions.format,
+        Some(Extension::Gregorian(gregorian)) if gregorian.derived_modern_view
+    )
 }
 
 /// Respiration attachée à un accord ou un silence (`ChordRest::hasBreathMark`).
