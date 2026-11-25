@@ -289,7 +289,7 @@ fn mei_samples_core_loss_diagnostic() {
             .iter()
             .filter_map(|(name, kinds)| kinds.get(kind).map(|entry| (name, entry)))
             .collect();
-        ranked.sort_by_key(|entry| std::cmp::Reverse(entry.1.0));
+        ranked.sort_by_key(|entry| std::cmp::Reverse(entry.1 .0));
         println!("\n=== {kind}: largest losses by file ===");
         for (name, (count, examples)) in ranked.into_iter().take(8) {
             println!("  {name}: {count} missing; {}", examples.join(" | "));

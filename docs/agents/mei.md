@@ -441,3 +441,27 @@ Two independent defects dropped 14 886 of the 14 934 missing `lyric` items:
 
 Remaining leaders: `note` 9 518, `time-sig` 956, `key-sig` 406,
 `articulation` 376, `slur` 267, `stem` 219, `dynamic` 192.
+
+### 9.6 Third fix: transposing instruments
+
+The remaining `note` losses were concentrated in `Handel_Messias` (3 779),
+`Berlioz_Symphony_Op25` (2 895) and `Hummel_Concerto` (2 257): all three use
+transposing parts. The reader applies `@trans.semi` in
+`Convert::pitchFromMEI` (meiconverter.cpp:2765) to get the concert pitch, but
+the writer called `Convert::pitchToMEI` (`:2820`) with `transpose = 0`, and
+emitted no `@trans.diat`/`@trans.semi` on `<staffDef>` although
+`Convert::staffToMEI` (`:3099`) writes both. The second read therefore
+transposed a second time.
+
+The writer now takes `part.instrument.transpose.chromatic` from the note's
+staff (MuseScore uses `staff->part()->instrument()->transpose()`), writes both
+`@trans.diat` and `@trans.semi` on every `<staffDef>`, and a unit test checks
+that a concert E4 in a +2 part is written as written D4 and read back as E4.
+
+| Kind (round trip) | Before | After |
+| --- | ---: | ---: |
+| `note` | 9 518 | 329 |
+| Full support | 96.24 % | **98.98 %** |
+
+Remaining leaders: `time-sig` 956, `key-sig` 406, `articulation` 376,
+`slur` 267, `stem` 219, `dynamic` 192, `rest` 114.

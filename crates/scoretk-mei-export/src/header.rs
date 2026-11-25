@@ -228,6 +228,14 @@ pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score) {
             {
                 attrs.push(("keysig".to_owned(), convert::key_to_mei(key)));
             }
+            // `Convert::staffToMEI` (meiconverter.cpp:3099) porte la
+            // transposition de la partie sur chaque `<staffDef>` : sans ces
+            // attributs, la lecture suivante prend la hauteur écrite pour une
+            // hauteur réelle et transpose une seconde fois.
+            if let Some(transpose) = part.instrument.transpose {
+                attrs.push(("trans.diat".to_owned(), transpose.diatonic.to_string()));
+                attrs.push(("trans.semi".to_owned(), transpose.chromatic.to_string()));
+            }
             if let Some(count) = count {
                 attrs.push(("meter.count".to_owned(), count));
             }

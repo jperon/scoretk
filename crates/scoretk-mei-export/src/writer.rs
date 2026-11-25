@@ -338,6 +338,15 @@ fn write_layer(
         voice + 1
     );
     let layer_n = (voice + 1).to_string();
+    // `MeiExporter::writeNote` (meiexporter.cpp:1370) appelle
+    // `Convert::pitchToMEI(note, accid, staff->part()->instrument()->transpose())`
+    // : la hauteur écrite est la hauteur réelle moins la transposition.
+    let transpose = score
+        .staves
+        .get(track.staff().raw() as usize)
+        .and_then(|staff| score.parts.get(staff.part.index()))
+        .and_then(|part| part.instrument.transpose)
+        .map_or(0, |value| value.chromatic);
     xml.start_element("layer", &[("xml:id", &layer_id), ("n", &layer_n)]);
     // MEI `<meterSig>` carries a time signature that changes inside a measure,
     // which a `<scoreDef>` at the measure boundary cannot express.
@@ -522,6 +531,7 @@ fn write_layer(
                         &refs,
                         Some(chord),
                         cr.duration.kind,
+                        transpose,
                     );
                     // `MeiExporter::writeVerse` (meiexporter.cpp:1594) attache
                     // `<verse>` à l'élément `<note>` ouvert : MEI 5.1 définit
@@ -531,7 +541,7 @@ fn write_layer(
                 } else {
                     xml.start_element("chord", &refs);
                     for id in &chord.notes {
-                        write_note(xml, score, id, &[], None, cr.duration.kind);
+                        write_note(xml, score, id, &[], None, cr.duration.kind, transpose);
                         xml.end_element();
                     }
                     write_artics(xml, chord);
@@ -601,10 +611,15 @@ fn write_note(
     extra: &[(&str, &str)],
     chord: Option<&scoretk_core::model::Chord>,
     kind: DurationType,
+    transpose: i32,
 ) {
     let note = &score.notes[id.index()];
-    let (pname, oct, accid, accid_ges) =
-        convert::pitch_to_mei(note.pitch, note.tpc, note.accidental.map(|a| a.kind), 0);
+    let (pname, oct, accid, accid_ges) = convert::pitch_to_mei(
+        note.pitch,
+        note.tpc,
+        note.accidental.map(|a| a.kind),
+        transpose,
+    );
     let mut attrs = extra.to_vec();
     let uid = format!("n{}", id.index());
     attrs.push(("xml:id", &uid));
@@ -998,5 +1013,37 @@ mod tests {
             .expect("chord rest")
             .lyrics[0];
         assert_eq!(lyric.text, "Du");
+    }
+
+    /// `Convert::staffToMEI` (meiconverter.cpp:3099) et `pitchToMEI` (`:2820`)
+    /// : la hauteur `__pitch__` du modèle est réelle, le TPC est la note
+    /// *écrite*. Sans `@trans.diat`/`@trans.semi` sur `<staffDef>`, la
+    /// relecture transposerait une seconde fois (Handel/Hummel/Berlioz).
+    #[test]
+    fn transposing_instruments_write_their_written_pitch() {
+        use scoretk_core::model::Transpose;
+
+        let mut score = Score::new();
+        let mut part = Part::new("Clarinet", "Cl");
+        part.instrument.transpose = Some(Transpose::new(2, 2));
+        let part_id = score.add_part(part);
+        let staff = score.add_staff_with(part_id, scoretk_core::model::Staff::new(part_id));
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(4, 4));
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+        let mut chord = ChordRest::chord(Duration::quarter());
+        let note = score.add_note(Note::new(64, 16)); // concert E4, écrit D4
+        if let scoretk_core::model::ChordRestKind::Chord(c) = &mut chord.kind {
+            c.notes = vec![note];
+        }
+        segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+        measure.add_segment(segment);
+        score.add_measure(measure);
+
+        let output = write(&score, &MeiOptions::default()).expect("MEI with transposition");
+        assert!(output.contains("trans.diat=\"2\""), "{output}");
+        assert!(output.contains("trans.semi=\"2\""), "{output}");
+        assert!(output.contains("pname=\"d\" oct=\"4\""), "{output}");
+        let read_back = scoretk_mei_import::read_mei(output.as_bytes()).expect("read MEI");
+        assert_eq!(read_back.notes[0].pitch, 64);
     }
 }
