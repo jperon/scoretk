@@ -148,6 +148,7 @@ pub(crate) fn read_chord_rest(
             gap: false,
             visible,
             note_dots,
+            grace_chords: Vec::new(),
         })
     } else {
         let mut chord = Chord {

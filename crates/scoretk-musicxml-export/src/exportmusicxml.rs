@@ -48,10 +48,10 @@ use scoretk_core::model::chord::ChordRestKind;
 use scoretk_core::model::stable_ids::{stable_grace_note_id, stable_measure_id, stable_note_id};
 use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, Chord, ChordRest, Clef, ClefType, Duration, Fraction,
-    GraceType, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure,
-    Note, NoteHeadGroup, NoteHeadType, Part, Placement, Score, Segment, SegmentItem, SegmentType,
-    SpannerType, StaffId, StemDirection, Tempo, TempoKind, Tick, TimeSig, TimeSigType, Track,
-    Tuplet, TupletId, TupletNumberType, VOICES,
+    GraceChord, GraceType, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
+    LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part, Placement, Score, Segment,
+    SegmentItem, SegmentType, SpannerType, StaffId, StemDirection, Tempo, TempoKind, Tick, TimeSig,
+    TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 
 use super::beams;
@@ -1606,24 +1606,57 @@ impl Context<'_> {
         if chord.notes.is_empty() && chord.grace_chords.is_empty() {
             return;
         }
-        let before: Vec<usize> = (0..chord.grace_chords.len())
+        self.grace_entries(
+            out,
+            &chord.grace_chords,
+            true,
+            chord_rest,
+            measure,
+            xml_staff,
+            track,
+            ids,
+        );
+        self.chord(out, chord, None, chord_rest, measure, xml_staff, track, ids);
+        self.grace_entries(
+            out,
+            &chord.grace_chords,
+            false,
+            chord_rest,
+            measure,
+            xml_staff,
+            track,
+            ids,
+        );
+    }
+
+    /// Écrit un groupe d'agréments (avant ou après l'élément principal).
+    /// `lily/grace-iterator.cc:24-42` les joue dans la partie « grâce » du
+    /// moment courant, même quand cet élément est un silence. L'ordre des
+    /// deux groupes est significatif pour la parité MusicXML.
+    #[allow(clippy::too_many_arguments)]
+    fn grace_entries(
+        &self,
+        out: &mut Out,
+        grace_chords: &[GraceChord],
+        before: bool,
+        chord_rest: &ChordRest,
+        measure: &Measure,
+        xml_staff: usize,
+        track: Track,
+        ids: StableIds,
+    ) {
+        let indices: Vec<usize> = (0..grace_chords.len())
             .filter(|index| {
-                let kind = chord.grace_chords[*index]
+                let kind = grace_chords[*index]
                     .chord
                     .grace
                     .unwrap_or(GraceType::Appoggiatura);
-                !grace_is_after(kind)
+                grace_is_after(kind) != before
             })
             .collect();
-        let after: Vec<usize> = (0..chord.grace_chords.len())
-            .filter(|index| {
-                let kind = chord.grace_chords[*index]
-                    .chord
-                    .grace
-                    .unwrap_or(GraceType::Appoggiatura);
-                grace_is_after(kind)
-            })
-            .collect();
+        if indices.is_empty() {
+            return;
+        }
         // `BeamLayout::beamGraceNotes` : les ornements avant et après forment
         // deux groupes distincts.
         let multiple_voices = stems::has_other_voices(
@@ -1633,42 +1666,21 @@ impl Context<'_> {
             self.actual_ticks(chord_rest, measure, track.staff()),
         );
         let track_even = track.raw().is_multiple_of(2);
-        let before_beams =
-            beams::grace_beams(&chord.grace_chords, &before, multiple_voices, track_even);
-        let after_beams =
-            beams::grace_beams(&chord.grace_chords, &after, multiple_voices, track_even);
+        let beams = beams::grace_beams(grace_chords, &indices, multiple_voices, track_even);
 
-        for (position, index) in before.iter().enumerate() {
-            let grace = &chord.grace_chords[*index];
-            let grace_ref = GraceRef {
-                duration: &grace.duration,
-                index: *index,
-                before: true,
-                offset: None,
-                beam: before_beams[position].as_ref(),
-                in_tuplet: grace.in_tuplet,
-            };
-            self.chord(
-                out,
-                &grace.chord,
-                Some(&grace_ref),
-                chord_rest,
-                measure,
-                xml_staff,
-                track,
-                ids,
-            );
-        }
-        self.chord(out, chord, None, chord_rest, measure, xml_staff, track, ids);
-        for (position, index) in after.iter().enumerate() {
-            let grace = &chord.grace_chords[*index];
+        for (position, index) in indices.iter().enumerate() {
+            let grace = &grace_chords[*index];
             let main_ticks = self.actual_ticks(chord_rest, measure, track.staff());
             let grace_ref = GraceRef {
                 duration: &grace.duration,
                 index: *index,
-                before: false,
-                offset: grace.played_offset.map(|offset| offset - main_ticks),
-                beam: after_beams[position].as_ref(),
+                before,
+                offset: if before {
+                    None
+                } else {
+                    grace.played_offset.map(|offset| offset - main_ticks)
+                },
+                beam: beams[position].as_ref(),
                 in_tuplet: grace.in_tuplet,
             };
             self.chord(
@@ -1996,6 +2008,14 @@ impl Context<'_> {
         ids: StableIds,
     ) {
         let segment_tick = out.tick;
+        // Les grâces du moment sont jouées par LilyPond avant le silence
+        // (`lily/grace-iterator.cc:24-42`) : les écrire ici, sinon l'oracle
+        // voit une attaque de moins et décale la classification du fichier.
+        if let Some(graces) = chord_rest.rest_ref().map(|rest| &rest.grace_chords) {
+            self.grace_entries(
+                out, graces, true, chord_rest, measure, xml_staff, track, ids,
+            );
+        }
         out.attr(false);
 
         let visible = chord_rest.rest_ref().is_none_or(|rest| rest.visible);
@@ -2082,6 +2102,11 @@ impl Context<'_> {
         }
 
         out.xml.end_element();
+        if let Some(graces) = chord_rest.rest_ref().map(|rest| &rest.grace_chords) {
+            self.grace_entries(
+                out, graces, false, chord_rest, measure, xml_staff, track, ids,
+            );
+        }
     }
 
     /// Écrit les articulations et ornements d'un accord (`chordAttributes`).

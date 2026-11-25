@@ -2255,6 +2255,11 @@ fn place_chord(
                             gap: false,
                             visible: true,
                             note_dots: Vec::new(),
+                            grace_chords: if cursor == tick {
+                                build_rest_graces(score, event)
+                            } else {
+                                Vec::new()
+                            },
                         }),
                     };
                     if let Some(segment) = score.measures[index].segments.get_mut(segment_index) {
@@ -2312,6 +2317,7 @@ fn place_chord(
                             gap: false,
                             visible: true,
                             note_dots: Vec::new(),
+                            grace_chords: Vec::new(),
                         }),
                     };
                     match &event.content {
@@ -2351,11 +2357,27 @@ fn place_chord(
                             chord_rest.kind = ChordRestKind::Chord(chord);
                         }
                         ChordContent::Rest { visible } => {
+                            let mut graces = Vec::new();
+                            if cursor == tick {
+                                for grace in &event.grace_before {
+                                    graces.push(build_grace(score, grace, None));
+                                }
+                            }
+                            if cursor + len == end {
+                                for grace in &event.grace_after {
+                                    graces.push(build_grace(
+                                        score,
+                                        grace,
+                                        Some(len * grace.fraction),
+                                    ));
+                                }
+                            }
                             chord_rest.kind = ChordRestKind::Rest(Rest {
                                 full_measure: false,
                                 gap: false,
                                 visible: *visible,
                                 note_dots: Vec::new(),
+                                grace_chords: graces,
                             });
                         }
                         _ => unreachable!("cas filtré avant la coupure"),
@@ -2425,19 +2447,27 @@ fn place_chord(
                 kind: ChordRestKind::Chord(chord),
             }
         }
-        ChordContent::Rest { visible } => ChordRest {
-            duration: event.written,
-            ticks: event.explicit_ticks,
-            tuplet: event.tuplet.and_then(|index| tuplets.get(index).copied()),
-            lyrics: Vec::new(),
-            engraving: ChordRestEngraving::default(),
-            kind: ChordRestKind::Rest(Rest {
-                full_measure: false,
-                gap: false,
-                visible: *visible,
-                note_dots: Vec::new(),
-            }),
-        },
+        // `Grace_iterator::process` (`lily/grace-iterator.cc:24-42`) insère
+        // les grâces du moment courant avant l'élément principal, silence
+        // compris. Sans ces lignes, `\grace { … } r4` perdait ses attaques
+        // (vérifié avec LilyPond 2.27 : 4 notes jouées contre 3 écrites).
+        ChordContent::Rest { visible } => {
+            let graces = build_rest_graces(score, event);
+            ChordRest {
+                duration: event.written,
+                ticks: event.explicit_ticks,
+                tuplet: event.tuplet.and_then(|index| tuplets.get(index).copied()),
+                lyrics: Vec::new(),
+                engraving: ChordRestEngraving::default(),
+                kind: ChordRestKind::Rest(Rest {
+                    full_measure: false,
+                    gap: false,
+                    visible: *visible,
+                    note_dots: Vec::new(),
+                    grace_chords: graces,
+                }),
+            }
+        }
         ChordContent::Skip { .. } => return,
         // `R4.` (figure explicite plus courte que la mesure) est un silence
         // daté chez LilyPond (`lily/parser.yy:3117`) : l'écrivain doit lui
@@ -2458,6 +2488,7 @@ fn place_chord(
                     gap: false,
                     visible: true,
                     note_dots: Vec::new(),
+                    grace_chords: build_rest_graces(score, event),
                 }),
             }
         }
@@ -2472,6 +2503,7 @@ fn place_chord(
                 gap: false,
                 visible: true,
                 note_dots: Vec::new(),
+                grace_chords: build_rest_graces(score, event),
             }),
         },
     };
@@ -2636,6 +2668,23 @@ fn build_grace(
         value.chord.notes.push(id);
     }
     value
+}
+
+/// Agréments d'un silence : `Grace_iterator::process`
+/// (`lily/grace-iterator.cc:24-42`) les joue avant l'élément principal,
+/// silence compris (`\grace { … } r4`, `\grace { … } R1`).
+fn build_rest_graces(score: &mut Score, event: &ChordEvent) -> Vec<GraceChord> {
+    let main_ticks = event
+        .explicit_ticks
+        .unwrap_or_else(|| event.written.ticks());
+    let mut graces = Vec::new();
+    for grace in &event.grace_before {
+        graces.push(build_grace(score, grace, None));
+    }
+    for grace in &event.grace_after {
+        graces.push(build_grace(score, grace, Some(main_ticks * grace.fraction)));
+    }
+    graces
 }
 
 /// Place une respiration.

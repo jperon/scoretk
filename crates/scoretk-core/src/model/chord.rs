@@ -337,6 +337,13 @@ pub struct Rest {
     /// (`exportmusicxml.cpp:4655-4669`) n'écrit `<dot>` que depuis
     /// `rest->dotList()`.
     pub note_dots: Vec<bool>,
+    /// Agréments portés par ce silence (`\grace { … } r4`).
+    ///
+    /// `Grace_iterator::process` (`lily/grace-iterator.cc:24-42`) joue les
+    /// grâces dans la partie « grâce » du moment, que l'élément principal
+    /// soit une note ou un silence. Le MIDI contient donc ces attaques et
+    /// l'écrivain doit les émettre avant le `<rest/>`.
+    pub grace_chords: Vec<GraceChord>,
 }
 
 impl Default for Rest {
@@ -346,6 +353,7 @@ impl Default for Rest {
             gap: false,
             visible: true,
             note_dots: Vec::new(),
+            grace_chords: Vec::new(),
         }
     }
 }
@@ -412,6 +420,7 @@ impl ChordRest {
                 gap: false,
                 visible: true,
                 note_dots: Vec::new(),
+                grace_chords: Vec::new(),
             }),
         }
     }

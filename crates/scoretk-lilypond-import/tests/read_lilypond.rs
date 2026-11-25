@@ -9764,3 +9764,76 @@ fn cue_voice_jouee_et_tag_retire_ses_notes() {
     pitches.sort_unstable();
     assert_eq!(pitches, vec![60, 62, 64, 65]);
 }
+
+/// Une grâce placée avant un silence est jouée par LilyPond :
+/// `Grace_iterator::process` (`lily/grace-iterator.cc:24-42`) traite la
+/// musique du moment dans sa partie « grâce » avant l'élément principal,
+/// note ou silence. Le MIDI 2.27 de `c4 \grace { d16 } r4 e4 f4` contient
+/// bien l'attaque de `d'` à 2,9427 quarts ; avant ce correctif le lecteur
+/// perdait cette attaque (3 notes au lieu de 4) et l'oracle classait le
+/// fichier comme incomplet. Le modèle porte maintenant la grâce sur le
+/// `Rest`, que l'écrivain MusicXML émet avant le `<rest/>`.
+#[test]
+fn grace_avant_un_silence_est_jouee() {
+    let score = lire("c4 \\grace { d16 } r4 e4 f4");
+    let graces: Vec<u8> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| {
+            let item = segment.element(Track::from_raw(0))?;
+            let SegmentItem::ChordRest(chord_rest) = item else {
+                return None;
+            };
+            let ChordRestKind::Rest(rest) = &chord_rest.kind else {
+                return None;
+            };
+            assert_eq!(chord_rest.duration.kind, DurationType::Quarter);
+            Some(
+                rest.grace_chords
+                    .iter()
+                    .flat_map(|grace| grace.chord.notes.iter())
+                    .map(|id| score.note(*id).pitch)
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .flatten()
+        .collect();
+    assert_eq!(graces, vec![62], "la grâce du silence reste dans le modèle");
+    let attaques: Vec<u8> = score
+        .notes
+        .iter()
+        .filter(|note| note.tie_back.is_none())
+        .map(|note| note.pitch)
+        .collect();
+    assert_eq!(attaques, vec![60, 62, 64, 65]);
+
+    // Même règle devant un silence de mesure entière (`R1`) et une figure
+    // courte (`R4.`) : l'oracle 2.27 y entend aussi l'attaque de la grâce.
+    for music in ["c4 \\grace { d16 } R1 c4", "c4 \\grace { d16 } R4. e4"] {
+        let score = lire(music);
+        let graces_du_rest: Vec<u8> = score
+            .measures
+            .iter()
+            .flat_map(|measure| measure.segments.iter())
+            .filter_map(|segment| {
+                let item = segment.element(Track::from_raw(0))?;
+                let SegmentItem::ChordRest(chord_rest) = item else {
+                    return None;
+                };
+                let ChordRestKind::Rest(rest) = &chord_rest.kind else {
+                    return None;
+                };
+                Some(
+                    rest.grace_chords
+                        .iter()
+                        .flat_map(|grace| grace.chord.notes.iter())
+                        .map(|id| score.note(*id).pitch)
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .flatten()
+            .collect();
+        assert_eq!(graces_du_rest, vec![62], "{music}");
+    }
+}
