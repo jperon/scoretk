@@ -788,6 +788,16 @@ measurement. Only the MusicXML and MIDI references come from MuseScore 4.7.4.
 `crates/scoretk/tests/layer_coverage.rs` asserts that the test prints the same
 distinction.
 
+The MusicXML import-alone row is **not** a re-read of scoretk's round-trip
+output: `reference_file()` opens `tests/corpus/{v3,v4}/<name>.ref.musicxml`, and
+`musicxml_import_alone_reads_musescore_474_references` checks for all 56 files
+that the path ends in `.ref.musicxml` and that the file carries
+`<software>MuseScore Studio 4.7.4</software>`. Its equality with the round-trip
+row to two decimals is therefore a meaningful result: scoretk's writer and
+reader reproduce exactly the comparable items that the MuseScore 4.7.4
+reference and scoretk's reader agree on (the only difference is one `extra`
+item, 135 instead of 134, from the round-trip writer's layout).
+
 
 ### 11.4 Ranked per-layer gaps (round trip)
 

@@ -412,6 +412,35 @@ fn layer_coverage_table() {
 }
 
 #[test]
+fn musicxml_import_alone_reads_musescore_474_references() {
+    // The import-alone row must not silently reuse scoretk's round-trip
+    // output: it reads the versioned `*.ref.musicxml` produced by MuseScore.
+    let mut checked = 0;
+    for (name, _) in corpus_scores() {
+        let (path, format) = reference_file(&name, ReferenceKind::MusicXml)
+            .expect("a MuseScore MusicXML reference for every corpus score");
+        assert_eq!(format, Format::MusicXml);
+        assert_eq!(path.extension().and_then(|e| e.to_str()), Some("musicxml"));
+        assert!(
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.ends_with(".ref.musicxml")),
+            "{} is not a *.ref.musicxml reference",
+            path.display()
+        );
+        let bytes = fs::read(&path).expect("read MuseScore MusicXML reference");
+        let text = String::from_utf8(bytes).expect("UTF-8 reference");
+        assert!(
+            text.contains("<software>MuseScore Studio 4.7.4</software>"),
+            "{} was not exported by MuseScore Studio 4.7.4",
+            path.display()
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 56);
+}
+
+#[test]
 fn reference_sources_distinguish_self_written_snapshots() {
     for kind in [ReferenceKind::Ly, ReferenceKind::Abc] {
         assert!(
