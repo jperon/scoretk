@@ -1,6 +1,7 @@
 %abc-2.1
 X:1
 T:voices
+W:voices
 M:4/4
 L:1/8
 K:Ab
@@ -11,7 +12,7 @@ K:Ab
 %%score {(1 2 3) 4} (5 6)
 V:1 name="Piano" snm="Pno." clef=treble
 %%scoretk instrument keyboard.piano
-!pp!z8 |
+!scoretk-velo-33!!pp!z8 |
 !<(!!<)!z8 |
 "Eb7"z8 |
 [M:2/4] z4 |

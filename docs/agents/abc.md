@@ -113,6 +113,12 @@ are written one per `V:`.
   <id>` directive immediately after the `V:` line. ABC 2.1 §11 explicitly
   reserves `%%` directives and requires unknown ones to be ignored, so the
   snapshots stay readable by other tools; the reader restores `Instrument::id`.
+- **Printed text**: one `W:` field (§3.1) per `Credit` of the model, in order.
+  It is distinct from lowercase `w:` lyrics (§5), which are aligned to notes.
+- **Dynamic velocity**: ABC dynamics are symbols (`!p!`) with no numeric
+  velocity. The private decoration `!scoretk-velo-N!` (§4.14/§11, unknown
+  decorations must be ignored) immediately before the dynamic transports the
+  model's `Dynamic::velocity`; other tools simply skip it.
 - **Lyrics**: `w:` after each music line, one line per verse;
   caesuras `-`, extensions `_`, missing syllables `*`, literal hyphen `\-`.
 

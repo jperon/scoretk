@@ -8,6 +8,6 @@ K:C clef=treble
 %%MIDI program 1
 V:1 name="Klavier" snm="Flgl." clef=treble
 %%scoretk instrument keyboard.piano
-!p!!<(!F2F2F2F2 |
-|: !f!!<)!!<(!F2F2F2!<)!F2 :|
-!ppp!!<(!G2G2G2!p!!<)!G2 |]
+!scoretk-velo-49!!p!!<(!F2F2F2F2 |
+|: !scoretk-velo-96!!f!!<)!!<(!F2F2F2!<)!F2 :|
+!scoretk-velo-16!!ppp!!<(!G2G2G2!scoretk-velo-49!!p!!<)!G2 |]

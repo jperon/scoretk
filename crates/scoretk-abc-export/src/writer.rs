@@ -90,6 +90,16 @@ impl<'a> Writer<'a> {
                 scoretk_abc_common::text::escape_annotation(&self.score.metadata.composer)
             ));
         }
+        // ABC 2.1 §3.1 : `W:` est le champ de texte imprimé (contrairement à
+        // `w:`, qui aligne des paroles sur les notes). C'est la contrepartie
+        // des `<credit>` du modèle ; un champ par crédit, dans l'ordre.
+        for credit in &self.score.engraving.credits {
+            let text = credit.text.plain().replace(['\n', '\r'], " ");
+            out.push_str(&format!(
+                "W:{}\n",
+                scoretk_abc_common::text::escape_annotation(&text)
+            ));
+        }
         let time = self.initial_time_signature();
         out.push_str(&format!("M:{}/{}\n", time.numerator, time.denominator));
         out.push_str("L:1/8\n");

@@ -8,4 +8,4 @@ K:C clef=treble
 %%MIDI program 26
 V:1 name="Steel Guitar" snm="s.guit." clef=treble transpose=-12
 %%scoretk instrument pluck.guitar
-!p!!<(!B2c2d2!f!!<)!e2 |]
+!scoretk-velo-49!!p!!<(!B2c2d2!scoretk-velo-96!!f!!<)!e2 |]

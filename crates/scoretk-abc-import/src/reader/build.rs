@@ -28,10 +28,10 @@
 //! [`Spanner`].
 
 use scoretk_core::model::{
-    Annotation, BarLine, BarLineType, Clef, ClefType, Dynamic, Fraction, Harmony, KeySig, Measure,
-    Part, Placement, RichText, Score, Segment, SegmentItem, SegmentType, Slur, Spanner,
-    SpannerAnchor, SpannerNotation, SpannerType, Staff, StaffId, TimeSig, Track, Transpose, Tuplet,
-    TupletId, VoltaInfo,
+    Annotation, BarLine, BarLineType, Clef, ClefType, Credit, CreditStyle, Dynamic, Fraction,
+    Harmony, KeySig, Measure, Part, Placement, RichText, Score, Segment, SegmentItem, SegmentType,
+    Slur, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff, StaffId, TimeSig, Track,
+    Transpose, Tuplet, TupletId, VoltaInfo,
 };
 
 use crate::reader::{AnnotationSpec, Position, Reader, Voice};
@@ -44,6 +44,11 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
     score.metadata.work_title = reader.title.clone();
     score.metadata.composer = reader.composer.clone();
     score.metadata.source = reader.source.clone();
+    // ABC 2.1 §3.1 : `W:` porte un texte imprimé, pas une syllable de `w:`.
+    // Il devient un `<credit>`-like du modèle (l'ordre est significatif).
+    for text in &reader.credits {
+        score.add_credit(Credit::new(RichText::new(text.clone()), CreditStyle::Title));
+    }
 
     let groups = groups(reader, &voices);
     let voice_tracks = create_parts(&mut score, &voices, &groups);
@@ -676,7 +681,11 @@ fn annotation_object(spec: &AnnotationSpec) -> Annotation {
             tempo.beats_per_second = Some(*bps);
             Annotation::Tempo(tempo)
         }
-        AnnotationSpec::Dynamic(text) => Annotation::Dynamic(Dynamic::new(text.clone())),
+        AnnotationSpec::Dynamic(text, velocity) => {
+            let mut dynamic = Dynamic::new(text.clone());
+            dynamic.velocity = *velocity;
+            Annotation::Dynamic(dynamic)
+        }
         AnnotationSpec::Text {
             text,
             above,

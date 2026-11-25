@@ -387,8 +387,10 @@ pub(crate) enum AnnotationSpec {
         /// Vrai pour un accord chiffré.
         harmony: bool,
     },
-    /// Nuance (`!p!`).
-    Dynamic(String),
+    /// Nuance (`!p!`) et vélocité transportée par la décoration privée
+    /// `!scoretk-velo-N!` (ABC 2.1 §11, les décorations inconnues sont
+    /// ignorées par les autres programmes).
+    Dynamic(String, Option<u8>),
     /// Point d'orgue sur un silence (`Hz`, `Hx`, `!fermata!z`). Le modèle
     /// n'attache pas d'articulation à un `Rest`, mais l'exporteur lit les
     /// `Annotation::Fermata` de segment sur chaque note, silence compris
@@ -709,6 +711,10 @@ pub(crate) struct Reader {
     pub composer: String,
     /// Source.
     pub source: String,
+    /// Champs `W:` (texte imprimé, ABC 2.1 §3.1), dans l'ordre du fichier.
+    pub credits: Vec<String>,
+    /// Vélocité lue dans `!scoretk-velo-N!`, pour la prochaine nuance.
+    pub pending_dynamic_velocity: Option<u8>,
     /// Vrai si un champ `K:` a été lu.
     pub seen_key: bool,
     /// Clef par défaut issue des paramètres de `K:`.
@@ -747,6 +753,8 @@ impl Default for Reader {
             title: String::new(),
             composer: String::new(),
             source: String::new(),
+            credits: Vec::new(),
+            pending_dynamic_velocity: None,
             seen_key: false,
             default_clef: None,
             header_key: KeySig::new(Key::C),
@@ -968,7 +976,11 @@ impl Reader {
     /// Traite un champ d'en-tête ou de corps.
     pub(crate) fn handle_field(&mut self, letter: char, value: &str, number: usize) -> Result<()> {
         match letter {
-            'X' | 'R' | 'Z' | 'N' | 'H' | 'A' | 'D' | 'F' | 'G' | 'B' | 'W' => {}
+            // §3.1 : `W:` est un texte imprimé séparé des paroles `w:`. Le
+            // modèle le range dans `engraving.credits`, comme les `<credit>`
+            // MusicXML dont il est la contrepartie ABC.
+            'W' => self.credits.push(value.to_owned()),
+            'X' | 'R' | 'Z' | 'N' | 'H' | 'A' | 'D' | 'F' | 'G' | 'B' => {}
             'T' => {
                 if self.title.is_empty() {
                     self.title = value.to_owned();

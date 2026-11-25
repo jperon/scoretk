@@ -2,14 +2,17 @@
 X:1
 T:Untitled score
 C:Composer / arranger
+W:Untitled score
+W:Subtitle
+W:Composer / arranger
 M:4/4
 L:1/8
 K:C clef=treble
 %%MIDI program 41
 V:1 name="Violin" snm="Vln." clef=treble
 %%scoretk instrument strings.violin
-!p!d2d2d2d2 |
+!scoretk-velo-49!!p!d2d2d2d2 |
 !<(!d2d2d2d2 |
-!f!!<)!d2d2d2d2 |
+!scoretk-velo-96!!f!!<)!d2d2d2d2 |
 !<(!d2d2d2d2 |
-!pp!!<)!d2d2d2d2 |]
+!scoretk-velo-33!!pp!!<)!d2d2d2d2 |]

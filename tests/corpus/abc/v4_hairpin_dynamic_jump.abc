@@ -8,7 +8,7 @@ K:C clef=treble
 %%MIDI program 28
 V:1 name="Clean Guitar" snm="el.guit." clef=treble transpose=-12
 %%scoretk instrument pluck.guitar.electric
-!f!!<(!G2A2c2d2 |
-!mf!!<)!c8 ||
-!f!!>(!G2A2c2d2 |
-!ff!!>)!c8 |]
+!scoretk-velo-96!!f!!<(!G2A2c2d2 |
+!scoretk-velo-80!!mf!!<)!c8 ||
+!scoretk-velo-96!!f!!>(!G2A2c2d2 |
+!scoretk-velo-112!!ff!!>)!c8 |]

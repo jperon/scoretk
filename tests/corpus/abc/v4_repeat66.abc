@@ -1,6 +1,8 @@
 %abc-2.1
 X:1
 T:Repeat Test
+W:repeat66
+W:Force Final Repeat should reset when crossing to next section.
 M:4/4
 L:1/8
 Q:" = 400" 1/4=400

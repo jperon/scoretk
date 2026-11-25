@@ -1,6 +1,7 @@
 %abc-2.1
 X:1
 T:Invisible elements test
+W:Invisible elements test
 M:4/4
 L:1/8
 Q:" = 80" 1/4=80
@@ -12,7 +13,7 @@ V:1 name="Piano" snm="Pno." clef=treble
 "^Visible text"C2C2C2C2 |
 D2D2D2D2 |
 !invertedturn!C2!turn!C2C2C2 |
-!p!!<(!E2E2E2!f!!<)!E2 |
+!scoretk-velo-49!!p!!<(!E2E2E2!scoretk-velo-96!!f!!<)!E2 |
 E2E2E2E2 |
 (C2D2E2F2) |
 (C2D2E2F2) |

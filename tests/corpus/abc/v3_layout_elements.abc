@@ -1,6 +1,11 @@
 %abc-2.1
 X:1
 T:
+W:Layout test
+W:Just an artificial score to test whether all elements are laid out
+W:Composer
+W:Lyricist
+W:The only part
 M:4/4
 L:1/8
 Q:"Allegro" 1/4=144
@@ -10,7 +15,7 @@ K:E
 V:1 name="Piano" clef=treble
 %%scoretk instrument keyboard.piano
 "^System Text"!<(!(C2D2E2F2 |
-(3"^Staff Text"!f!!<)!C)DEG6- |
+(3"^Staff Text"!scoretk-velo-96!!f!!<)!C)DEG6- |
 "_Expression"!<(!G2G4AB |
 {/=G}!fermata!"^Change Instr."!<)!^^F8 ||
 [K:E clef=mezzosoprano] A2B2c2z2 |

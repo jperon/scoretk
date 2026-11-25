@@ -815,7 +815,15 @@ fn annotation_token(annotation: &Annotation) -> Option<String> {
             // nuances de la table sont des `!nom!` ; `sf`, `fz`, `fp`… sont
             // écrites comme annotations et non comme décorations ignorées.
             if decorations::is_dynamic_token(&dynamic.text) {
-                format!("!{}!", dynamic.text.trim().to_ascii_lowercase())
+                let mut token = String::new();
+                // La vélocité numérique n'a pas de notation ABC standard :
+                // `!scoretk-velo-N!` est une décoration privée (ABC 2.1 §11,
+                // §4.14) que le lecteur scoretk rattache à la nuance suivante.
+                if let Some(velocity) = dynamic.velocity {
+                    token.push_str(&format!("!scoretk-velo-{velocity}!"));
+                }
+                token.push_str(&format!("!{}!", dynamic.text.trim().to_ascii_lowercase()));
+                token
             } else {
                 let value = text::escape_annotation(&dynamic.text);
                 return (!value.is_empty()).then(|| format!("\"^{value}\""));

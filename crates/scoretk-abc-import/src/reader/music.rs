@@ -241,6 +241,15 @@ impl Parser<'_> {
             }
             name.push(character);
         }
+        // Décoration privée : ABC 2.1 §11/§4.14 réservent les noms `!…!` et
+        // demandent d'ignorer ceux que l'on ne connaît pas.Elle complète la
+        // nuance suivante de la vélocité que le format standard ne porte pas.
+        if let Some(value) = name.strip_prefix("scoretk-velo-") {
+            if let Ok(velocity) = value.parse::<u8>() {
+                self.reader.pending_dynamic_velocity = Some(velocity);
+                return;
+            }
+        }
         let Some(decoration) = decorations::parse_decoration(&name) else {
             self.warn(format!("décoration « {name} » inconnue, ignorée"));
             return;
@@ -810,7 +819,10 @@ impl Parser<'_> {
                         });
                     }
                 }
-                Decoration::Dynamic(text) => annotations.push(AnnotationSpec::Dynamic(text)),
+                Decoration::Dynamic(text) => annotations.push(AnnotationSpec::Dynamic(
+                    text,
+                    self.reader.pending_dynamic_velocity.take(),
+                )),
                 Decoration::Text(text) => annotations.push(AnnotationSpec::Text {
                     text,
                     above: true,
