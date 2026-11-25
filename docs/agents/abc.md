@@ -210,15 +210,18 @@ ignored, so as not to lose a whole tune.
   the standard. Writing uses written pitch and the reader keeps it
   as concert pitch; a round trip through ABC therefore does not restore
   `<transpose>`.
-- **Local key signatures, metres and clefs**: ABC has only one key and one
-  metre per tune. Writing takes those of the part's first staff; MuseScore's
-  local directions are lost.
+- **Local key signatures**: inline `[K:…]` fields (§3.2/§7.3) are now written
+  on the staff that owns each change and restored by the reader. The global
+  `K:` header and a single `M:` still come from the part's first staff.
 - **Layout**: no system breaks, margins, stems, beams,
   noteheads, unlisted articulations, two-note tremolos, pedals,
   ottavas (the pitch shift is applied, the line is not written).
 - **Repeats**: play count (`repeat_count` > 2) has no
   ABC syntax; multi-measure voltas are approximated by the first
   barline.
+- **Instrument identity**: restored from `%%scoretk instrument` (§11); the
+  full MuseScore instrument definition (articulation table, channel count)
+  still has no ABC equivalent.
 - **Micro-intervals** (`AccidentalType::Other`, quarter tones) not written.
 - **`M:none`** is reduced to 4/4; **`K:` modal** loses the modal tonic.
 - The reader ignores `&` (superposition), `P:` (parts), `U:` and `I:` with

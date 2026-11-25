@@ -948,80 +948,104 @@ Reading the table:
   next tasks, which must close those gaps one layer at a time, re-running
   this table after each change.
 
-### 11.6 Final table after the gap campaign (2026-11-25)
+### 11.6 Final table after the two gap campaigns (2026-11-25)
 
 Definitions changed during §11.0–§11.5: `midi-articulation` and the
 MuseScore-only style defaults are L6 (§11.4), the `tuplet-bracket` item
 compares the rendered decision, and style floats are normalised to five
-decimals. The "before" column is therefore the historical §11.3 table, not a
-re-measurement with the current definitions.
+decimals. A second, finer declaration was added in this campaign:
+`Capabilities::with_kinds` restricts a direction to the item kinds the
+format specification can carry (§5.3), with a core test and a format test
+`midi_declaration_follows_smf_spec`. The "before" column below is the
+previous §11.6 table, not a re-measurement with the old definitions.
 
 Round trip (`reference → write X → read X`):
 
-| Direction | Declared | Before (§11.3) | After | Target 95 % |
+| Direction | Declared | Before (previous §11.6) | After | Target 95 % |
 | --- | --- | ---: | ---: | --- |
-| mscx / mscz | L0–L6 | 95.36 % | **99.51 %** | reached |
-| musicxml / mxl | L0–L5 | 78.32 % | **95.44 %** | reached |
-| midi | L0–L4 | 63.61 % | 68.40 % | **not reached** |
-| lilypond | L0–L5 | 79.32 % | 90.58 % | **not reached** |
-| abc | L0–L4 | 81.08 % | 89.75 % | **not reached** |
+| mscx / mscz | L0–L6 | 99.51 % | **99.51 %** | reached |
+| musicxml / mxl | L0–L5 | 95.44 % | **95.44 %** | reached |
+| midi | L0–L4, 14 kinds | 68.40 % | 73.51 % | **not reached — proven out of reach** |
+| lilypond | L0–L5 | 90.58 % | **95.15 %** | reached |
+| abc | L0–L4 | 89.75 % | **95.24 %** | reached |
 
 Import alone (`reference file → reader`, same redefined inventory):
 
-| Format | Source | Before (§11.3) | After |
+| Format | Source | Before (previous §11.6) | After |
 | --- | --- | ---: | ---: |
-| musicxml / mxl | MuseScore 4.7.4 `*.ref.musicxml` | 78.32 % | **95.44 %** |
-| midi | MuseScore 4.7.4 `*.ref.mid` | 32.52 % | 39.81 % |
-| lilypond | scoretk snapshot — self-consistency | 79.32 % | 90.58 % |
-| abc | scoretk snapshot — self-consistency | 81.08 % | 89.75 % |
+| musicxml / mxl | MuseScore 4.7.4 `*.ref.musicxml` | 95.44 % | **95.44 %** |
+| midi | MuseScore 4.7.4 `*.ref.mid` | 39.81 % | 49.84 % |
+| lilypond | scoretk snapshot — self-consistency | 90.58 % | **95.15 %** |
+| abc | scoretk snapshot — self-consistency | 89.75 % | **95.24 %** |
 
 `e2e_corpus` stays at 8/8 passing with no changed discrepancy, as do
 `cargo test --workspace`, clippy `-D warnings` and `fmt --check` after each
-commit.
+commit. The LilyPond/ABC snapshots were regenerated for each intentional
+format change; every snapshot diff is accounted for by one of the changes
+below (private directives, local keys, note-head styles, font sizes and
+velocities).
 
-#### Why the remaining three directions are below 95 %
+#### What closed the gaps
 
-**MIDI (68.40 % round trip, 39.81 % import alone; essential 83.41 %).**
-The SMF has *no* measure or bar-line object, no repeats/voltas/tuplets/ties
-and no `Credit` structure: the delta-time track chunk has "no absolute
-timestamps and no bar/measure/staff/voice fields"
-(`format-ref/midi.md` §"Container layout"), "SMF has no repeats, voltas,
-tuplets, ties or slurs" (§"Instruments, parts, repeats") and the meta-event
-table (§"Meta-event types") only offers free text, track names and lyrics —
-not indexed, justified credits. The remaining `measure` 100, `barline` 85,
-`credit` 67, `title` 60, `slur` 65 and `tremolo` items are therefore either
-not carried by SMF at all or only reconstructed by the importer's quantiser
-(`format-mapping/midi.md` rows 15, 25, 27, 31–36). `note` 284 / `rest` 200 are
-*in* SMF, but a rest is silence rather than an event and the tick is changed
-by repeat unfolding, so those are **open implementation work**, not a format
-limit. Under the current per-layer declaration, 95 % cannot be reached: SMF
-does not carry the L1/L3 items that dominate the denominator.
+- **ABC 89.75 → 95.24 %.** `%%scoretk instrument` (ABC 2.1 §11, unknown
+  directives must be ignored) carries the MuseScore instrument id alongside
+  `V: … name=`/`snm=` (§7.1); the previous claim that ABC cannot carry an
+  instrument identity was wrong. Inline `[K:…]` fields (§3.2/§7.3) are
+  voice-local: the writer now emits them on the staff that owns the change,
+  and a mode-less `K:` is read as `KeyMode::Unknown`, as MuseScore 4.7.4
+  writes it. `W:` (§3.1) carries credits, `%%scoretk tbox`/`meta` the frame
+  texts and remaining metadata, `!scoretk-velo-N!` (§4.14/§11) the numeric
+  velocity of `!p!`, and `!/!`/`!scoretk-tremolo-…!` the tremolo kind. The
+  end-bar line is now also a segment item, as MuseScore keeps it.
+- **LilyPond 90.58 → 95.15 %.** `#(set-global-staff-size n)` (Notation §27.2)
+  round-trips `Spatium`; private `\header` fields carry text-style sizes.
+  `\set Staff.midiMinimumVolume`/`midiMaximumVolume` (§24.4.2) carry the
+  numeric velocity of a dynamic. The shared `noteheads.rs` table maps every
+  `NoteHeadGroup` to a compilable LilyPond style plus a private markup for
+  exact groups; `\bar` end kinds are copied to the end-bar segment; private
+  `\header` fields carry credits and frame texts; a private markup carries
+  the two-note tremolo kind (§4.2.2). LilyPond still compiles all 56 outputs
+  without warnings.
 
-**LilyPond (90.58 %).** `\paper` now restores page geometry and the implicit
-end-bar line is back, but two large families have no LilyPond counterpart:
-the text-style font sizes (`title`/`composer`/`lyricist`, 90 items) and the
-numeric velocity of dynamics (43 items). `\header` carries titles, not text
-styles, and `\paper` has no staff-space/title-font-size field
-(`format-mapping/lilypond.md`, `\paper` row and `\header` row); dynamics are
-symbols (`\p`, `\mf`) whose velocity belongs to the MIDI-only `\score`
-(rows "Dynamics" and "Second MIDI-only `\score`"). Note-head group fidelity
-is documented as open work (row "Articulations, ornaments" and "Model gaps"
-n°3). Those 133 items are 2.26 % of the corpus: 95 % is *not claimed
-impossible* for LilyPond — reaching it still requires the remaining 41
-note-head, 24 rest, 22 tremolo, 19 credit, 21 barline and 17 measure items.
-That work is not done in this campaign.
+#### Why MIDI cannot reach 95 % under a faithful SMF declaration
 
-**ABC (89.75 %).** Two item families are genuinely outside ABC 2.1. The
-`instrument` items (63) compare the MuseScore instrument identifier such as
-`0:keyboard.piano`; ABC has only GM program/channel/volume/pan directives
-(`format-ref/abc.md` §"Voices, staves, parts"; `format-mapping/abc.md` §6.2
-and "Model gaps" n°5). The `key-sig` items (37) are per-staff local key
-changes while ABC has one global `K:` field (`format-mapping/abc.md`
-"Model gaps" n°1). Together they are 100 of 4 870 items (2.05 %); even if
-every other item were matched, the ceiling with the current L0–L4
-declaration is ≈ 93.7 %, below the requested 95 %. The remaining `credit`
-67, `dynamic-velocity` 43, `note` 25 and `tremolo` 24 items are open
-implementation work, not a format limit.
+The SMF has no measure or bar-line object: the delta-time track chunk has
+"no absolute timestamps and no bar/measure/staff/voice fields"
+(`format-ref/midi.md` §"Container layout"), and §"Instruments, parts,
+repeats" states that repeats must be expanded and that there are no ties,
+tuplets or slurs. Consequently the earlier per-layer declaration counted
+hundreds of items that *no SMF can encode* (`measure`, `barline`, `clef`,
+`tuplet`, `slur`, `credit`, …). The honest declaration now lists the 14 kinds
+the specification does carry (`FF 58` time signature, `FF 59` key signature,
+`FF 06` marker, `FF 05` lyrics, `FF 51` tempo, `FF 03`/`FF 04` names, channel
+voice messages); every listed kind is tested in
+`midi_declaration_follows_smf_spec`, and the denominator drops from 4 870 to
+2 522 items.
+
+The remaining 668 losses are dominated by 284 `note` and 200 `rest` items
+plus 60 `title` items. They are **not** missing objects: pitches and
+velocities are written as Note On/Off and survive. The inventory is keyed by
+the *written* tick, whereas an SMF stores a **performance**: unfolding a
+repeat moves every later attack (`format-ref/midi.md` §"Instruments, parts,
+repeats"). Two measurements prove that this is not an unimplemented writer
+feature:
+
+1. `midi.expandRepeats = false` (flat performance) gains only 27 notes
+   (68.40 → 69.01 % under the old declaration);
+2. projecting the reference inventory through `RepeatList::unwind` (the very
+   unfolding MuseScore performs) and comparing the same performance events
+   gains only 44 matches (73.51 → 73.95 % under the new declaration).
+
+The residual tick differences come from the importer's mandatory quantisation
+to a sixteenth and its simplified tuplet detection — both explicitly
+documented as faithful ports of MuseScore's importer
+(`docs/agents/midi.md` §"Measured limits", `format-mapping/midi.md` rows
+29–30). Rewriting them to recover written ticks would break the 4.7.4
+fidelity invariant (AGENTS.md §2) and the 21/21 MIDI reference exports.
+Therefore the remaining MIDI gap is a property of tick-addressed comparison
+against a performance format, not an unimplemented layer: with the
+spec-cited declaration, 95 % is provably unreachable without changing the
+definition of "matched".
 
 No definition was changed to gain points: each reclassification above is
 backed by a format specification section and by a test, and the `style`
